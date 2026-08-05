@@ -50,7 +50,7 @@ import yaml from 'js-yaml';
 import { parseArgv } from './_argv.mjs';
 import { validateAnyDocument, DOCUMENT_V2_SCHEMA } from '#domains/school/documents/documentV2.mjs';
 import { DOCUMENT_SOURCE_SCHEMA } from '#domains/school/documents/documentSource.mjs';
-import { RenderPrintDocument } from '#apps/school/documents/RenderPrintDocument.mjs';
+import { RenderPrintDocument, createYamlBankReader } from '#apps/school/documents/RenderPrintDocument.mjs';
 import { PublishPrintDocument } from '#apps/school/documents/PublishPrintDocument.mjs';
 import { YamlPrintDocumentRepository } from '#adapters/school/documents/YamlPrintDocumentRepository.mjs';
 
@@ -284,7 +284,14 @@ export async function runRender({
   // Source-schema files never need it (`RenderPrintDocument` auto-publishes
   // them in memory), and a repository this use case never calls is inert.
   const repository = new YamlPrintDocumentRepository({ directory: paths.contentRoot });
-  const useCase = new RenderPrintDocument({ repository });
+  // F5 (review finding): rooted at THIS command's own resolved `dataDir` (the
+  // same `--data-dir`/`$DAYLIGHT_BASE_PATH` value `paths` already carries) —
+  // without this, `RenderPrintDocument`'s constructor default silently
+  // re-resolves `$DAYLIGHT_BASE_PATH` itself, so a bank-select document
+  // rendered with `--data-dir <custom>` would resolve its bank against the
+  // WRONG root (or find nothing) whenever that env var differs from the flag.
+  const banks = createYamlBankReader({ dataDir: paths.dataDir });
+  const useCase = new RenderPrintDocument({ repository, banks });
 
   try {
     const result = await useCase.execute({ document, context: overridesContext(flags) });

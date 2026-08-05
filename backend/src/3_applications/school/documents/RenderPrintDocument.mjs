@@ -41,32 +41,59 @@ import { listYamlFiles, loadYaml } from '#system/utils/FileIO.mjs';
 const DUPLEX_ARCHETYPES = new Set(['worksheet']);
 
 /**
- * Default `banks` dependency for bank-select sugar (spec §6.2, Task 5):
- * synchronous `{getBank(id)}`, same shape `IssueDocument`/`PrintService`'s
- * `bankReader` already use elsewhere in this codebase — mirrored here rather
- * than reused because those two live in a different part of the School
- * application (the pre-Phase-B quiz/worksheet delivery path) with their own
- * injection story. Reads from the school content mount's question-banks
- * directory — the SAME default `schoolCatalog.mjs`'s composition wiring
- * resolves (`content/school/catalog/question-banks`) and the same
- * `$DAYLIGHT_BASE_PATH`-relative convention `school-docs.cli.mjs` uses for
- * its own content-root resolution.
+ * `banks` dependency for bank-select sugar (spec §6.2, Task 5): synchronous
+ * `{getBank(id)}`, same shape `IssueDocument`/`PrintService`'s `bankReader`
+ * already use elsewhere in this codebase — mirrored here rather than reused
+ * because those two live in a different part of the School application (the
+ * pre-Phase-B quiz/worksheet delivery path) with their own injection story.
+ * Reads from `<dataDir>/content/school/catalog/question-banks` — the SAME
+ * layout `schoolCatalog.mjs`'s composition wiring resolves (against the
+ * process's own `DAYLIGHT_BASE_PATH`) and the same data-root convention
+ * `school-docs.cli.mjs`'s `resolveSchoolDocsContentPaths` resolves against
+ * `--data-dir`/`$DAYLIGHT_BASE_PATH`.
+ *
+ * EXPORTED (review finding F5) so a caller that has ALREADY resolved its own
+ * `dataDir` — `school-docs.cli.mjs`'s `--data-dir` flag, in particular — can
+ * root this reader there instead of silently falling back to
+ * `defaultBankReader`'s own `$DAYLIGHT_BASE_PATH`/`/usr/src/app/data` guess,
+ * which never sees a CLI-supplied override. `defaultBankReader` (this
+ * constructor's own no-args default) is now a thin wrapper over this.
+ *
+ * Memoized (F5, "the ledger's no-cache minor"): the original implementation
+ * re-walked and re-parsed EVERY yml file in the directory on every single
+ * `getBank` call, including once per bank-select block in a document with
+ * several. A `RenderPrintDocument` (and the reader it builds/is given) is
+ * cheap to construct per render — see the constructor's own "cheap, so never
+ * cached across calls" note on `renderer` — so caching for the reader's own
+ * lifetime (one render, or one CLI invocation) is safe: nothing in this
+ * process is expected to publish a NEW bank file mid-render.
  */
-function defaultBankReader() {
-  const dataDir = process.env.DAYLIGHT_BASE_PATH
-    ? path.join(process.env.DAYLIGHT_BASE_PATH, 'data')
-    : '/usr/src/app/data';
-  const directory = path.resolve(dataDir, 'content/school/catalog/question-banks');
+export function createYamlBankReader({ dataDir } = {}) {
+  const resolvedDataDir = dataDir
+    ?? (process.env.DAYLIGHT_BASE_PATH ? path.join(process.env.DAYLIGHT_BASE_PATH, 'data') : '/usr/src/app/data');
+  const directory = path.resolve(resolvedDataDir, 'content/school/catalog/question-banks');
+  let cache = null;
+
+  function loadAll() {
+    if (cache) return cache;
+    cache = new Map();
+    const files = [...listYamlFiles(directory, { recursive: true })].sort();
+    for (const relative of files) {
+      const raw = loadYaml(path.join(directory, relative));
+      if (raw && typeof raw.id === 'string' && !cache.has(raw.id)) cache.set(raw.id, raw);
+    }
+    return cache;
+  }
+
   return {
     getBank(bankId) {
-      const files = [...listYamlFiles(directory, { recursive: true })].sort();
-      for (const relative of files) {
-        const raw = loadYaml(path.join(directory, relative));
-        if (raw && raw.id === bankId) return raw;
-      }
-      return null;
+      return loadAll().get(bankId) ?? null;
     },
   };
+}
+
+function defaultBankReader() {
+  return createYamlBankReader();
 }
 
 /** Bank-item types a bank-select sugar block can expand into a printable `question` (see `#expandBankSelectSugar`). */
@@ -253,6 +280,46 @@ function formatMatchingAnswer(block, item, letters) {
     .join(' ');
 }
 
+// ── teacher-key LABEL NAMESPACES (review finding F1) ────────────────────────
+//
+// Three label domains share one dense list, so they must never collide:
+//   - `question` entries: bare `N.` — the SAME number the student page prints
+//     next to the question (card-row identity, spec §5.3).
+//   - `matching` entries: `Matching:` (or `Matching <ordinal>:` when the
+//     document has more than one matching block) — NEVER the internal
+//     `block.key`, which is authoring plumbing that prints nowhere on the
+//     student page and gives a teacher nothing to correlate against.
+//   - `cloze` entries: grouped under a `Fill-in (passage <ordinal>):` heading
+//     (one per cloze block, in document order), then one `blank <n>:` line
+//     per blank underneath it. `<n>` matches the small raised digit
+//     `drawClozeBlank` (DocumentPdfRenderer.mjs) prints at the blank's start
+//     on the student page — so "blank 2" in the key IS the "2" the student
+//     sees. Deliberately a PLAIN digit label (`blank 2:`), not a literal
+//     Unicode superscript glyph: the student page's "superscript" is a raised
+//     SMALL regular digit (a y-offset + smaller font size), never a distinct
+//     code point, and the embedded OFL workbook font's glyph coverage for
+//     U+00B9/U+2070-2079 is unverified — spending that risk on a cosmetic
+//     flourish in a plain-text list buys nothing a teacher needs.
+// Grouping cloze answers under a per-block heading (rather than the bare
+// `blank.n` label the old code used, which reset to 1 at the start of EVERY
+// cloze block) is what stops a second cloze block's blanks from colliding
+// with the first's — see the kitchen-sink fixture's second cloze block.
+const NO_MATCHING_ORDINAL = 1;
+
+/** How many `matching` entries the answer key WILL emit — decides whether `Matching:` needs an ordinal suffix (F1: "Matching <ordinal>: when several"). */
+function countMatchingEntries(blocks, bankItemsById) {
+  let count = 0;
+  for (const block of blocks ?? []) {
+    if (!block || typeof block !== 'object') continue;
+    if (block.type === 'matching' && typeof block.itemRef === 'string' && bankItemsById.has(block.itemRef)) {
+      count += 1;
+    } else if ((block.type === 'question' || block.type === 'inset') && Array.isArray(block.blocks)) {
+      count += countMatchingEntries(block.blocks, bankItemsById);
+    }
+  }
+  return count;
+}
+
 /**
  * Walks the SAME prepared `blocks` the student render draws (post-shuffle,
  * post-bank-select-expansion — `#prepareV2Document`'s output), collecting one
@@ -261,41 +328,57 @@ function formatMatchingAnswer(block, item, letters) {
  * `blocks.mjs`), so an assessment block sitting one level inside either is
  * still found.
  *
+ * `counters` (F1) is a single mutable object threaded through every
+ * recursive call so ordinals ("passage 2", "Matching 2") stay correct in
+ * DOCUMENT order regardless of nesting depth — it is built once, from the
+ * FULL top-level `blocks` tree, by the outer (non-recursive) call.
+ *
  * A `question` whose OWN `itemId` resolves in the bank is the common,
  * card-mappable case (multiple_choice/multi_select/short-answer-as-question,
  * both hand-authored and bank-select-expanded — `expandedQuestionBlock`
- * always sets `itemId: item.id`) and is never recursed into further (its
- * answer is fully captured by the one entry). A `question` whose itemId does
- * NOT resolve (a composite question wrapping its own cloze/matching/
- * short_answer sugar child) falls through to the recursive walk instead, so
- * that child's own itemRef-based item is still found.
+ * always sets `itemId: item.id`) and gets its one entry pushed. Its
+ * `blocks[]` is THEN ALSO always walked (F3, review finding): a question can
+ * mint its own item AND wrap further answer-bearing children (e.g. a
+ * composite question whose body embeds its own cloze) — the OLD code's
+ * `else if` made these mutually exclusive, silently dropping the children's
+ * entries whenever the question's own itemId also resolved.
  */
-function collectAnswerKeyEntries(blocks, bankItemsById, letters, entries = []) {
+function collectAnswerKeyEntries(blocks, bankItemsById, letters, entries = [], counters = null) {
+  const state = counters ?? { matchingSeen: 0, matchingTotal: countMatchingEntries(blocks, bankItemsById), clozeSeen: 0 };
   for (const block of blocks ?? []) {
     if (!block || typeof block !== 'object') continue;
     if (block.type === 'question') {
       const item = typeof block.itemId === 'string' ? bankItemsById.get(block.itemId) : undefined;
-      if (item) {
-        entries.push({ label: `${block.number}.`, text: formatAnswer(item, letters) });
-      } else if (Array.isArray(block.blocks)) {
-        collectAnswerKeyEntries(block.blocks, bankItemsById, letters, entries);
+      if (item) entries.push({ label: `${block.number}.`, text: formatAnswer(item, letters) });
+      if (Array.isArray(block.blocks)) {
+        collectAnswerKeyEntries(block.blocks, bankItemsById, letters, entries, state);
       }
       continue;
     }
     if (block.type === 'inset' && Array.isArray(block.blocks)) {
-      collectAnswerKeyEntries(block.blocks, bankItemsById, letters, entries);
+      collectAnswerKeyEntries(block.blocks, bankItemsById, letters, entries, state);
       continue;
     }
     if (block.type === 'matching' && typeof block.itemRef === 'string') {
       const item = bankItemsById.get(block.itemRef);
-      if (item) entries.push({ label: `${block.key}:`, text: formatMatchingAnswer(block, item, letters) });
+      if (item) {
+        state.matchingSeen += 1;
+        const label = state.matchingTotal > NO_MATCHING_ORDINAL ? `Matching ${state.matchingSeen}:` : 'Matching:';
+        entries.push({ label, text: formatMatchingAnswer(block, item, letters) });
+      }
       continue;
     }
     if (block.type === 'cloze' && Array.isArray(block.blanks)) {
-      for (const blank of block.blanks) {
-        if (typeof blank.itemRef !== 'string') continue;
-        const item = bankItemsById.get(blank.itemRef);
-        if (item) entries.push({ label: `${blank.n}.`, text: formatAnswer(item, letters) });
+      const qualifying = block.blanks.filter(
+        (blank) => typeof blank.itemRef === 'string' && bankItemsById.has(blank.itemRef),
+      );
+      if (qualifying.length) {
+        state.clozeSeen += 1;
+        entries.push({ label: `Fill-in (passage ${state.clozeSeen}):`, text: '' });
+        for (const blank of qualifying) {
+          const item = bankItemsById.get(blank.itemRef);
+          entries.push({ label: `blank ${blank.n}:`, text: formatAnswer(item, letters) });
+        }
       }
       continue;
     }
