@@ -79,15 +79,62 @@ describe('GET /api/v1/school/print/:id', () => {
     }
   });
 
-  it('omr variety requires freshCard or card, mutually exclusive', async () => {
-    const app = appWith({ render: renderFake() });
-    const none = await request(app).get('/api/v1/school/print/pokemon-quiz-1?variety=omr');
-    expect(none.status).toBe(400);
-    expect(none.body.error).toMatch(/freshCard=1.*card=/);
-    const both = await request(app)
+  it('freshCard and card remain mutually exclusive', async () => {
+    const both = await request(appWith({ render: renderFake() }))
       .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&freshCard=1&card=1234567');
     expect(both.status).toBe(400);
     expect(both.body.error).toMatch(/mutually exclusive/);
+  });
+
+  it('bare omr with no existing sheet mints a fresh card automatically', async () => {
+    const render = renderFake({ allocation: { cardId: '1111111', rowRange: { start: 1, end: 6 }, recordId: 'r', status: 'live' } });
+    const allocations = { findByCard: vi.fn(), findByDocument: vi.fn().mockResolvedValue([]) };
+    const res = await request(appWith({ render, allocations }))
+      .get('/api/v1/school/print/pokemon-quiz-1?variety=omr');
+    expect(res.status).toBe(200);
+    expect(render.calls[0].context).toEqual({ freshCard: true });
+  });
+
+  it('bare omr reuses the document\'s newest usable sheet (refresh-safe)', async () => {
+    const render = renderFake();
+    const repo = {
+      get: vi.fn(),
+      getPublished: vi.fn().mockResolvedValue({ id: 'pokemon-quiz-1', rev: 'abcdef123', seed: 1, blocks: [] }),
+    };
+    const allocations = {
+      findByDocument: vi.fn().mockResolvedValue([
+        { documentId: 'pokemon-quiz-1', cardId: '2222222', status: 'satisfied', rev: 'abcdef123', variant: 0, rowRange: { start: 1, end: 6 }, renderedAt: '2026-08-05T01:00:00Z' },
+        { documentId: 'pokemon-quiz-1', cardId: '3333333', status: 'live', rev: 'abcdef123', variant: 1, rowRange: { start: 7, end: 12 }, renderedAt: '2026-08-05T00:00:00Z' },
+      ]),
+    };
+    const res = await request(appWith({ render, repo, allocations }))
+      .get('/api/v1/school/print/pokemon-quiz-1?variety=omr');
+    expect(res.status).toBe(200);
+    expect(allocations.findByDocument).toHaveBeenCalledWith('pokemon-quiz-1');
+    // live beats the newer satisfied record
+    expect(render.calls[0].context).toMatchObject({ cardId: '3333333', startRow: 7 });
+    expect(render.calls[0].document).toMatchObject({ variant: 1 });
+  });
+
+  it('bare omr with learnerId reuses only that learner\'s sheet, else mints', async () => {
+    const render = renderFake();
+    const allocations = {
+      findByDocument: vi.fn().mockResolvedValue([
+        { documentId: 'pokemon-quiz-1', cardId: '2222222', status: 'live', rev: 'abcdef123', variant: 0, rowRange: { start: 1, end: 6 }, learnerId: 'soren', renderedAt: '2026-08-05T01:00:00Z' },
+      ]),
+    };
+    await request(appWith({ render, allocations }))
+      .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&learnerId=milo');
+    expect(render.calls[0].context).toEqual({ freshCard: true, learnerId: 'milo' });
+  });
+
+  it('freshCard=1 forces a new card even when a sheet exists', async () => {
+    const render = renderFake();
+    const allocations = { findByDocument: vi.fn() };
+    await request(appWith({ render, allocations }))
+      .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&freshCard=1');
+    expect(allocations.findByDocument).not.toHaveBeenCalled();
+    expect(render.calls[0].context).toEqual({ freshCard: true });
   });
 
   it('omr freshCard render threads context and surfaces the allocation header', async () => {
