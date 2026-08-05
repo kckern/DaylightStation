@@ -21,10 +21,10 @@
  *
  * Print Design Phase B, Task 2 (assessment blocks — domain layer) added
  * `wordbank`/`matching`/`cloze`/`short_answer`/`essay` to
- * `BLOCK_TARGET_SUPPORT`. They join `plot`/`geometry` in bucket (b): Task 2
- * is domain-only (validation), so `measure.mjs` has no case for any of them
- * yet — Phase B Task 4 ("Assessment rendering") is what moves them into
- * bucket (a).
+ * `BLOCK_TARGET_SUPPORT`, landing them in bucket (b) (domain-only validation,
+ * no `measure.mjs` case yet). Phase B Task 4 ("Assessment rendering") moved
+ * all five into bucket (a): `measure.mjs`/`DocumentPdfRenderer.mjs` now carry
+ * a real case for each, so only `plot`/`geometry` remain in bucket (b).
  */
 import { describe, it, expect } from 'vitest';
 import { validateDocumentV2, BLOCK_TARGET_SUPPORT, DOCUMENT_V2_SCHEMA } from '#domains/school/documents/documentV2.mjs';
@@ -82,7 +82,7 @@ const FIXTURE_BLOCK = {
 };
 
 /** No Letter renderer exists at all (any theme) — see measure.mjs's own comment. */
-const NO_RENDERER_YET = new Set(['plot', 'geometry', 'wordbank', 'matching', 'cloze', 'short_answer', 'essay']);
+const NO_RENDERER_YET = new Set(['plot', 'geometry']);
 
 describe('BLOCK_TARGET_SUPPORT matrix — every entry validates and renders under createWorkbookTheme() (F1)', () => {
   const types = Object.keys(BLOCK_TARGET_SUPPORT);

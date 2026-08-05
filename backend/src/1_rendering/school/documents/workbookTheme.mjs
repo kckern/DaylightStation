@@ -262,6 +262,14 @@ export function createWorkbookTheme({ typeScale = 'standard', density = 'normal'
       choiceGapPt: density === 'compact' ? 2 : 3,
       /** Lines of choice text reserved when the probe has no bank to measure. */
       probeChoiceLines: 2,
+      /**
+       * Gap between a multi_select row's instruction caption ("Choose up to
+       * N." / "Mark all that apply.", spec §5.5) and the checkbox row below
+       * it. Never read for an ordinary multiple_choice/probe row (no
+       * instruction line exists there), so this token has no effect on the
+       * legacy circle-row geometry above.
+       */
+      instructionGapPt: density === 'compact' ? 3 : 5,
       spacingClass: 'body',
     },
 
@@ -295,12 +303,23 @@ export function createWorkbookTheme({ typeScale = 'standard', density = 'normal'
     },
 
     // placeholder geometry — revisit when consumed (Tasks 5-6)
-    /** Glyph-circle badge geometry (e.g. numbered/lettered markers), for later phases. */
+    /**
+     * Glyph badge geometry (e.g. numbered/lettered markers). `square` (Task 4,
+     * spec §5.5) is `multi_select`'s checkbox variant — drawn instead of the
+     * circle for a multi_select `omr_response` row (DocumentPdfRenderer's
+     * `drawOmrRow`), sized to roughly the same footprint as `theme.omr`'s
+     * circle (`bubbleRadiusPt * 2`) so the two variants read as the same
+     * "mark this" affordance at a glance.
+     */
     badge: {
       diameterPt: typeScale === 'young' ? 20 : 16,
       strokeWidthPt: 1,
       font: 'bold',
       sizePt: typeScale === 'young' ? 11 : 9,
+      square: {
+        sizePt: typeScale === 'young' ? 16 : 13,
+        strokeWidthPt: 0.9,
+      },
     },
 
     /** Inset box geometry (bordered callouts, answer boxes). Consumed by Task 5's `inset` block. */
@@ -366,6 +385,74 @@ export function createWorkbookTheme({ typeScale = 'standard', density = 'normal'
     /** An elastic blank fragment — same {minPt,maxPt} growth mechanics as `answer_space`, no ink. */
     spacer: {
       spacingClass: 'body',
+    },
+
+    /**
+     * `wordbank` (spec §6.2): a boxed, seeded-shuffled term set, printed as a
+     * WRAPPING FLOW of terms (not a bulleted list) in `label` style. `theme.box`
+     * supplies the border/padding/radius chrome; these two tokens are the
+     * flow-specific geometry `theme.box` has no reason to carry (an inset's
+     * children stack vertically, they never flow left-to-right).
+     */
+    wordbank: {
+      termGapPt: density === 'compact' ? 8 : 10,
+      rowGapPt: density === 'compact' ? 4 : 6,
+      spacingClass: 'body',
+    },
+
+    /**
+     * `matching` (spec §6.2): the block-internal two-column write-the-letter
+     * grid — see `measure.mjs`'s `measureMatchingNode`. `ruleWidthPt` is the
+     * short blank line before each left-column number (where the student
+     * writes the matching letter); `numberColPt`/`letterColPt` are FIXED
+     * marker-column widths, same "never sized to content" posture as
+     * `theme.list.markerColumnPt`.
+     */
+    matching: {
+      columnGapPt: 24,
+      ruleWidthPt: density === 'compact' ? 16 : 20,
+      ruleGapPt: 4,
+      numberColPt: 18,
+      numberGapPt: 4,
+      letterColPt: 18,
+      letterGapPt: 4,
+      rowGapPt: density === 'compact' ? 4 : 6,
+      spacingClass: 'body',
+    },
+
+    /**
+     * `cloze`'s inline blank atoms (spec §6.3): three author-chosen width
+     * classes, NEVER sized to the answer text (an answer-length leak is a
+     * pedagogical bug per spec). Scales with `typeScale` like every other
+     * glyph-adjacent token — a young reader's blank needs to be as legible/
+     * writeable as the prose around it.
+     */
+    blank: {
+      s: typeScale === 'young' ? 46 : 40,
+      m: typeScale === 'young' ? 80 : 70,
+      l: typeScale === 'young' ? 125 : 110,
+    },
+
+    /**
+     * `short_answer`'s sugar (spec §4.2, §6.2: prompt + `answer_space`) needs
+     * a default line count when the block omits `lines` — `blocks.mjs` bounds
+     * it 1..10 when present but never requires it.
+     */
+    shortAnswer: {
+      defaultLines: 3,
+    },
+
+    /**
+     * `essay`'s sugar (spec §4.2, §6.2): ruled lines (same shape as
+     * `shortAnswer`) OR, when the block says `box: true`, an OPEN box — a
+     * bordered rectangle with no ruled lines at all, styled via `theme.box`
+     * but reserving a fixed height token of its own (an inset's box sizes to
+     * its children; an essay's open box has none, so it needs a height to be
+     * instead of zero).
+     */
+    essay: {
+      defaultLines: 10,
+      boxHeightPt: density === 'compact' ? 130 : 160,
     },
   };
 
