@@ -50,6 +50,24 @@ const INLINE_SPAN_PLAIN = /\*\*(?<bold>[^*]+)\*\*|`(?<code>[^`]+)`|\$(?<math>[^$
  * is never used unless a caller opts in.
  */
 const INLINE_SPAN_ITALIC = /\*\*(?<bold>[^*]+)\*\*|\*(?<italic>[^*\n]+)\*|`(?<code>[^`]+)`|\$(?<math>[^$\n]+)\$/g;
+/**
+ * Cloze's own inline grammar (spec §6.3): identical bold/code/math handling to
+ * `inlineRuns` (math kept LITERAL, same rationale — a cloze passage is ONE
+ * wrapped node, so promoting math out of it would orphan it from its own
+ * blanks), plus `{{n}}` blank markers as a new alternative. A SEPARATE pair of
+ * patterns rather than extending `INLINE_SPAN_PLAIN`/`INLINE_SPAN_ITALIC` in
+ * place: those two are relied on, unmodified, by every non-cloze caller
+ * (`segmentParagraph`, `inlineRuns`), and this module's own doctrine is that
+ * measurement is the drawing plan — changing a shared pattern's alternation
+ * order/group set is exactly the kind of edit that could silently reshuffle
+ * which branch wins for existing text.
+ */
+const CLOZE_SPAN_PLAIN = /\*\*(?<bold>[^*]+)\*\*|`(?<code>[^`]+)`|\$(?<math>[^$\n]+)\$|\{\{(?<blank>\d+)\}\}/g;
+const CLOZE_SPAN_ITALIC = /\*\*(?<bold>[^*]+)\*\*|\*(?<italic>[^*\n]+)\*|`(?<code>[^`]+)`|\$(?<math>[^$\n]+)\$|\{\{(?<blank>\d+)\}\}/g;
+
+/** short_answer/essay desugar (measureNodes below) when the block omits `lines`. */
+const DEFAULT_SHORT_ANSWER_LINES = 3;
+const DEFAULT_ESSAY_LINES = 10;
 
 /** A block type with no Letter renderer — refuse rather than print a blank space. */
 export class UnsupportedBlockError extends Error {
@@ -225,6 +243,49 @@ function inlineRuns(text, { italic = false, baseFont = 'regular' } = {}) {
 }
 
 /**
+ * Inline items for a `cloze` block's `text` (spec §6.3): same bold/code/math
+ * handling as `inlineRuns` (math kept literal — see the `CLOZE_SPAN_*` doc
+ * comment), plus `{{n}}` blank markers turned into `{kind:'blank', n, widthPt}`
+ * items instead of text pieces. `widthPt` comes from the NEW `theme.blank`
+ * size tokens, keyed by the matching entry in `blanksByN` — never sized to
+ * the answer text (spec: "never sized to the answer — answer-length leaks are
+ * a pedagogical bug"). A marker with no matching `blanksByN` entry (cannot
+ * happen past `blocks.mjs` validation, which requires one `blanks[]` entry per
+ * `{{n}}`) falls back to the 'm' width class rather than crashing measurement.
+ *
+ * @returns {Array<{text:string, font:string}|{kind:'blank', n:number, widthPt:number}>}
+ *   fed straight into `tokenizeRuns`/`wrapRuns`, which special-case the
+ *   `kind:'blank'` shape as one unbreakable word.
+ */
+function clozeInlineItems(text, blanksByN, theme, { italic = false } = {}) {
+  const pattern = italic ? CLOZE_SPAN_ITALIC : CLOZE_SPAN_PLAIN;
+  pattern.lastIndex = 0;
+  const items = [];
+  const push = (raw, font) => { if (raw) items.push({ text: raw, font }); };
+  let cursor = 0;
+  let match = pattern.exec(text);
+  while (match) {
+    push(text.slice(cursor, match.index), 'regular');
+    const {
+      bold, italic: italicText, code, math, blank,
+    } = match.groups;
+    if (bold !== undefined) push(bold, 'bold');
+    else if (italicText !== undefined) push(italicText, 'italic');
+    else if (code !== undefined) push(code, 'regular');
+    else if (math !== undefined) push(match[0], 'regular'); // kept literal, including the `$`s
+    else {
+      const n = Number(blank);
+      const widthKey = blanksByN.get(n)?.width ?? 'm';
+      items.push({ kind: 'blank', n, widthPt: theme.blank[widthKey] });
+    }
+    cursor = match.index + match[0].length;
+    match = pattern.exec(text);
+  }
+  push(text.slice(cursor), 'regular');
+  return items;
+}
+
+/**
  * Split styled runs into words. A word may span runs: `**simplest form**.` puts
  * the closing period in a different run from `form` with no whitespace between
  * them, and they must stay one word — otherwise the period drifts a space away
@@ -236,6 +297,14 @@ function tokenizeRuns(runs) {
   const words = [];
   let current = null;
   for (const run of runs) {
+    // A cloze blank atom (measure.mjs's `clozeInlineItems`) is its OWN word —
+    // it never merges with adjacent text the way run-spanning pieces do above,
+    // because it carries no font/text to tokenize by whitespace at all.
+    if (run.kind === 'blank') {
+      current = null;
+      words.push({ pieces: [{ kind: 'blank', n: run.n, widthPt: run.widthPt }] });
+      continue;
+    }
     for (const part of run.text.split(/(\s+)/)) {
       if (!part) continue;
       if (/^\s+$/.test(part)) { current = null; continue; }
@@ -287,11 +356,18 @@ function wrapRuns(doc, theme, runs, { widthPt, sizePt, leadingPt }) {
   };
 
   for (const word of words) {
-    const pieces = word.pieces.map((piece) => ({
-      ...piece, sizePt, widthPt: stringWidth(doc, theme, piece.font, sizePt, piece.text),
-    }));
+    // A blank piece (cloze atom) already carries its final widthPt from
+    // `theme.blank` — it is never measured via `stringWidth` (it has no
+    // `.text`/`.font`, only `n`/`widthPt`), which is what makes it a
+    // fixed-width atom rather than one sized to its own content.
+    const pieces = word.pieces.map((piece) => (piece.kind === 'blank'
+      ? { ...piece, sizePt }
+      : { ...piece, sizePt, widthPt: stringWidth(doc, theme, piece.font, sizePt, piece.text) }));
     const wordWidth = pieces.reduce((total, piece) => total + piece.widthPt, 0);
-    const spaceWidth = stringWidth(doc, theme, pieces[pieces.length - 1].font, sizePt, ' ');
+    // `?? 'regular'`: a word made ENTIRELY of a blank piece has no `.font` to
+    // measure the trailing space in — every other word still measures the
+    // space in its actual last font, unchanged.
+    const spaceWidth = stringWidth(doc, theme, pieces[pieces.length - 1].font ?? 'regular', sizePt, ' ');
     // A word that overruns on its own is placed alone: breaking inside a word
     // would silently alter what the child reads.
     if (current.length && xPt + wordWidth > widthPt) flush();
@@ -374,6 +450,25 @@ function measureAssetNode(ctx, block, { widthPt, path }) {
 }
 
 /**
+ * `resolveChoices` has two legal return shapes:
+ *  - a bare `string[]` of labels — the ORIGINAL contract, still what every
+ *    non-multi_select caller (and `measure.test.mjs`'s own stub, a legacy
+ *    suite this task must not touch) returns. Treated exactly as before:
+ *    multiple_choice, circles, no instruction line.
+ *  - `{labels, multiSelect: true, maxSelect?}` — multi_select's richer shape
+ *    (spec §5.5): square checkboxes instead of circles, plus an instruction
+ *    caption. `createChoiceResolver` (DocumentPdfRenderer.mjs) is the only
+ *    production caller of the second shape, and only for a bank item whose
+ *    own `type` is `'multi_select'` — every other item keeps returning the
+ *    bare array, so ordinary multiple_choice rendering is untouched.
+ */
+function normalizeChoiceResolution(resolved) {
+  if (!resolved) return { labels: null, multiSelect: false, maxSelect: undefined };
+  if (Array.isArray(resolved)) return { labels: resolved, multiSelect: false, maxSelect: undefined };
+  return { labels: resolved.labels, multiSelect: resolved.multiSelect === true, maxSelect: resolved.maxSelect };
+}
+
+/**
  * A bubble row: one cell per choice, all bubbles on ONE baseline, the choice
  * text wrapped underneath its own bubble.
  *
@@ -391,9 +486,10 @@ function measureOmrNode(ctx, block, { widthPt, path }) {
   const { theme, doc } = ctx;
   const availablePt = widthPt - theme.omr.indentPt;
   const cellWidthPt = availablePt / block.choices;
-  const labels = ctx.resolveChoices
+  const resolved = ctx.resolveChoices
     ? ctx.resolveChoices(block.itemId, { choices: block.choices, path })
     : null;
+  const { labels, multiSelect, maxSelect } = normalizeChoiceResolution(resolved);
 
   const cells = [];
   for (let index = 0; index < block.choices; index += 1) {
@@ -413,6 +509,18 @@ function measureOmrNode(ctx, block, { widthPt, path }) {
     ? Math.max(...cells.map((cell) => cell.lines.length))
     : theme.omr.probeChoiceLines;
 
+  // multi_select's instruction caption (spec §5.3's row-mapped disposition
+  // text): "Choose up to N." when the bank item caps the selection,
+  // otherwise "Mark all that apply." — never present for an ordinary
+  // multiple_choice/probe row, so `instruction` stays null and the height
+  // formula below is byte-identical to before this feature existed.
+  const instructionText = multiSelect
+    ? (maxSelect ? `Choose up to ${maxSelect}.` : 'Mark all that apply.')
+    : null;
+  const instruction = instructionText
+    ? measureTextLines(doc, theme, [{ text: instructionText, font: 'italic' }], { widthPt, styleKey: 'caption' })
+    : null;
+
   return {
     kind: 'omr',
     itemId: block.itemId,
@@ -420,8 +528,11 @@ function measureOmrNode(ctx, block, { widthPt, path }) {
     cells,
     cellWidthPt,
     labelled: Boolean(labels),
+    multiSelect,
+    instruction,
     widthPt,
-    heightPt: theme.omr.rowHeightPt + theme.omr.choiceGapPt + textLines * theme.omr.choiceLeadingPt,
+    heightPt: (instruction ? instruction.heightPt + theme.omr.instructionGapPt : 0)
+      + theme.omr.rowHeightPt + theme.omr.choiceGapPt + textLines * theme.omr.choiceLeadingPt,
   };
 }
 
@@ -579,6 +690,116 @@ function measureListNode(ctx, block, { widthPt }) {
 }
 
 /**
+ * `wordbank` → ONE `wordbank` node: a boxed (theme.box border/padding/radius),
+ * seeded-shuffled term set (spec §6.2), printed as a WRAPPING FLOW of terms —
+ * not a bulleted list — in `label` style. Terms print in the order given:
+ * shuffling is an UPSTREAM concern (Task 5 orders `block.terms` before this
+ * ever runs), so measurement here is order-agnostic by construction — it just
+ * lays out whatever order it is handed.
+ */
+function measureWordbankNode(ctx, block, { widthPt }) {
+  const { theme, doc } = ctx;
+  const { box, wordbank } = theme;
+  const style = theme.styles.label;
+  const innerWidthPt = widthPt - 2 * box.paddingPt;
+
+  const rows = [];
+  let current = [];
+  let xPt = 0;
+  for (const term of block.terms) {
+    const termWidthPt = stringWidth(doc, theme, style.font, style.sizePt, term);
+    if (current.length && xPt + termWidthPt > innerWidthPt) {
+      rows.push(current);
+      current = [];
+      xPt = 0;
+    }
+    current.push({ text: term, xPt, widthPt: termWidthPt });
+    xPt += termWidthPt + wordbank.termGapPt;
+  }
+  if (current.length) rows.push(current);
+
+  const rowHeightPt = style.leadingPt;
+  const innerHeightPt = rows.length * rowHeightPt + Math.max(rows.length - 1, 0) * wordbank.rowGapPt;
+
+  return {
+    kind: 'wordbank',
+    rows,
+    rowHeightPt,
+    rowGapPt: wordbank.rowGapPt,
+    paddingPt: box.paddingPt,
+    radiusPt: box.radiusPt,
+    borderWidthPt: box.borderWidthPt,
+    widthPt,
+    heightPt: innerHeightPt + 2 * box.paddingPt,
+  };
+}
+
+/**
+ * `matching` → ONE `matching` node: a block-internal two-column layout, NOT
+ * the generic (Phase-A-cut) columns container — the two columns exist only
+ * inside this one atomic fragment, never as a general document layout
+ * primitive. Left items are numbered 1..n, each preceded by a short blank
+ * rule the student writes the matching letter into; right items are lettered
+ * A..n. `matching` is never row-mapped (spec §6.2), so there is no bubble
+ * geometry here at all — just two wrapped text columns with their own marker
+ * gutters. Order is as given (see `measureWordbankNode`'s identical note on
+ * upstream shuffling).
+ */
+function measureMatchingNode(ctx, block, { widthPt }) {
+  const { theme, doc } = ctx;
+  const { matching } = theme;
+  const bodyStyle = theme.styles.body;
+  const leftMarkerPt = matching.ruleWidthPt + matching.ruleGapPt + matching.numberColPt + matching.numberGapPt;
+  const rightMarkerPt = matching.letterColPt + matching.letterGapPt;
+  const halfWidthPt = (widthPt - matching.columnGapPt) / 2;
+  const leftBodyWidthPt = halfWidthPt - leftMarkerPt;
+  const rightBodyWidthPt = halfWidthPt - rightMarkerPt;
+
+  const wrapPlain = (text, colWidthPt) => wrapRuns(doc, theme, [{ text, font: 'regular' }], {
+    widthPt: colWidthPt, sizePt: bodyStyle.sizePt, leadingPt: bodyStyle.leadingPt,
+  });
+
+  const leftItems = block.left.map((text, index) => {
+    const lines = wrapPlain(text, leftBodyWidthPt);
+    return {
+      number: index + 1, lines, heightPt: Math.max(lines.length, 1) * bodyStyle.leadingPt,
+    };
+  });
+  const rightItems = block.right.map((text, index) => {
+    const lines = wrapPlain(text, rightBodyWidthPt);
+    return {
+      letter: String.fromCharCode(65 + index), lines, heightPt: Math.max(lines.length, 1) * bodyStyle.leadingPt,
+    };
+  });
+
+  const rowCount = Math.max(leftItems.length, rightItems.length);
+  let cursor = 0;
+  for (let index = 0; index < rowCount; index += 1) {
+    const leftHeightPt = leftItems[index]?.heightPt ?? 0;
+    const rightHeightPt = rightItems[index]?.heightPt ?? 0;
+    const rowHeightPt = Math.max(leftHeightPt, rightHeightPt, bodyStyle.leadingPt);
+    if (leftItems[index]) leftItems[index].offsetYPt = cursor;
+    if (rightItems[index]) rightItems[index].offsetYPt = cursor;
+    cursor += rowHeightPt + (index < rowCount - 1 ? matching.rowGapPt : 0);
+  }
+
+  return {
+    kind: 'matching',
+    left: leftItems,
+    right: rightItems,
+    leftMarkerPt,
+    rightMarkerPt,
+    ruleWidthPt: matching.ruleWidthPt,
+    numberColPt: matching.numberColPt,
+    letterColPt: matching.letterColPt,
+    halfWidthPt,
+    columnGapPt: matching.columnGapPt,
+    widthPt,
+    heightPt: cursor,
+  };
+}
+
+/**
  * `inset` → ONE `box` node wrapping its children's nodes, padded and
  * radius'd from `theme.box`. Children are measured with `measureNodes`
  * directly (not `measureBlocks`) — `blocks.mjs` already forbids nesting
@@ -702,6 +923,77 @@ function measureNodes(ctx, block, { widthPt, path, bodyStyleKey = 'body' }) {
       // `forceBreak: true` fragment that placement passes through harmlessly
       // today (Task 7 makes layout.mjs actually act on it).
       return [{ kind: 'pageBreak', widthPt, heightPt: 0 }];
+
+    case 'wordbank':
+      return [measureWordbankNode(ctx, block, { widthPt })];
+
+    case 'matching':
+      return [measureMatchingNode(ctx, block, { widthPt })];
+
+    case 'cloze': {
+      const blanksByN = new Map(block.blanks.map((blank) => [blank.n, blank]));
+      const items = clozeInlineItems(block.text, blanksByN, theme, { italic: ctx.italic });
+      return [{
+        kind: 'text',
+        ...measureTextLines(ctx.doc, theme, items, { widthPt, styleKey: bodyStyleKey }),
+        widthPt,
+      }];
+    }
+
+    // short_answer/essay (spec §4.2, §6.2): sugar over a prompt text node +
+    // an `answer_space` node, desugared HERE rather than upstream — this is
+    // the exact node pair `measureBoxNode` already stacks and `measureNodes`
+    // already knows how to place, so nesting one inside a box (or a question)
+    // costs the rest of the pipeline nothing new (see blocks.mjs's
+    // INSET_UNSUPPORTED_CHILD_TYPES comment, which reasons about this
+    // in-advance). At the top level, the two returned nodes become two
+    // independent fragments — same "author a prompt then a bare answer_space"
+    // behavior any v1 document already gets; the keep-together guarantee is
+    // scoped to `question`, not to this sugar.
+    case 'short_answer': {
+      const promptNode = {
+        kind: 'text',
+        ...measureTextLines(ctx.doc, theme, inlineRuns(block.prompt, { italic: ctx.italic }), {
+          widthPt, styleKey: bodyStyleKey,
+        }),
+        widthPt,
+      };
+      const linesCount = block.lines ?? DEFAULT_SHORT_ANSWER_LINES;
+      const minPt = theme.answerSpace.padAbovePt + linesCount * theme.answerSpace.rulePitchPt;
+      const spaceNode = {
+        kind: 'answerSpace', minPt, maxPt: minPt, widthPt, heightPt: minPt,
+      };
+      return [promptNode, spaceNode];
+    }
+
+    case 'essay': {
+      const promptNode = {
+        kind: 'text',
+        ...measureTextLines(ctx.doc, theme, inlineRuns(block.prompt, { italic: ctx.italic }), {
+          widthPt, styleKey: bodyStyleKey,
+        }),
+        widthPt,
+      };
+      if (block.box) {
+        const { box } = theme;
+        const boxNode = {
+          kind: 'box',
+          childNodes: [],
+          paddingPt: box.paddingPt,
+          radiusPt: box.radiusPt,
+          borderWidthPt: box.borderWidthPt,
+          widthPt,
+          heightPt: theme.essay.boxHeightPt,
+        };
+        return [promptNode, boxNode];
+      }
+      const linesCount = block.lines ?? DEFAULT_ESSAY_LINES;
+      const minPt = theme.answerSpace.padAbovePt + linesCount * theme.answerSpace.rulePitchPt;
+      const spaceNode = {
+        kind: 'answerSpace', minPt, maxPt: minPt, widthPt, heightPt: minPt,
+      };
+      return [promptNode, spaceNode];
+    }
 
     default:
       // plot/geometry are valid blocks with no Letter renderer yet. Refusing is
@@ -838,6 +1130,11 @@ function fragmentFromNode(node, { id, block, theme }) {
     list: theme.list?.spacingClass,
     divider: theme.divider?.spacingClass,
     elasticSpace: theme.spacer?.spacingClass,
+    // Task 4 (assessment rendering): wordbank/matching are each their own
+    // atomic single-node fragment, same path every other non-text kind above
+    // already takes.
+    wordbank: theme.wordbank?.spacingClass,
+    matching: theme.matching?.spacingClass,
   };
   node.offsetYPt = 0;
   return {
@@ -921,20 +1218,29 @@ export function measureBlocks(blocks, {
  * v1 (schema-less) documents never carry `.header`, so `headerConfig`
  * defaults to `{}`, which resolves to `showName`/`showDate` both true and no
  * instructions — the EXACT unconditional behavior this banner always had,
- * byte-identical for every v1 caller. `scoreBox` is validated but not yet
- * drawn (Phase B, spec §13 — "points/score box").
+ * byte-identical for every v1 caller.
+ *
+ * `totalPoints` (Phase B, spec §13 — "points/score box") is the score box's
+ * only new input: when `headerConfig.scoreBox` is true AND a caller supplies
+ * `totalPoints`, the banner gains a `Score ____ / <totalPoints>` line.
+ * Computing the points TOTAL (summing the quiz's scored items) is the
+ * caller's job (Task 5); this function only draws what it is handed —
+ * `scoreBox: true` with no `totalPoints` prints no score line at all, same as
+ * every caller before this field existed.
  */
 function headerFragment(document, {
-  theme, studentName, date, headerConfig = {}, widthPt: widthPtOverride,
+  theme, studentName, date, headerConfig = {}, widthPt: widthPtOverride, totalPoints,
 }) {
   const { header } = theme;
   const showName = headerConfig.name !== false;
   const showDate = headerConfig.date !== false;
   const showMetaLine = showName || showDate;
   const instructions = headerConfig.instructions || null;
+  const showScoreBox = Boolean(headerConfig.scoreBox) && totalPoints !== undefined && totalPoints !== null;
   const heightPt = header.titleLeadingPt
     + (instructions ? header.metaLeadingPt : 0)
     + (showMetaLine ? header.metaLeadingPt : 0)
+    + (showScoreBox ? header.metaLeadingPt : 0)
     + header.ruleGapPt + header.ruleWidthPt + header.gapBelowPt;
   // Same furniture-aware width override measureBlocks takes (F2) — the
   // title/name/date rule has to stop at the SAME gutter-narrowed right edge
@@ -952,6 +1258,8 @@ function headerFragment(document, {
     showName,
     showDate,
     instructions,
+    showScoreBox,
+    totalPoints: showScoreBox ? totalPoints : null,
     widthPt: contentWidthPt,
     heightPt,
     offsetYPt: 0,
@@ -977,7 +1285,7 @@ function headerFragment(document, {
  */
 export function measureDocumentFragments(document, {
   doc, theme = documentPdfTheme, texToSvg, resolveAsset = null, resolveChoices = null,
-  tokens = null, studentName = null, date = null, italic = false, header, widthPt,
+  tokens = null, studentName = null, date = null, italic = false, header, widthPt, totalPoints,
 } = {}) {
   // `header` override lets a caller force the banner shape (tests, answer
   // keys); omitted (the normal path), it reads the v2 document's own
@@ -987,7 +1295,7 @@ export function measureDocumentFragments(document, {
   const headerConfig = header ?? document.header ?? {};
   return [
     headerFragment(document, {
-      theme, studentName, date, headerConfig, widthPt,
+      theme, studentName, date, headerConfig, widthPt, totalPoints,
     }),
     ...measureBlocks(document.blocks, {
       doc, theme, texToSvg, resolveAsset, resolveChoices, tokens, italic, widthPt,

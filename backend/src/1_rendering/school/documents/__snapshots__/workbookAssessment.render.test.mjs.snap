@@ -1,0 +1,222 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`workbook assessment blocks — measure + draw > cloze > measures a flowable text fragment whose blanks are unbreakable inline atoms sized from theme.blank 1`] = `
+{
+  "answerSpace": null,
+  "atomic": false,
+  "hasBlank": true,
+  "heightPt": 14.5,
+  "id": "blocks[0]",
+  "lineCount": 1,
+  "nodeKinds": undefined,
+  "nodes": undefined,
+  "spacingClass": "body",
+  "styleKey": "body",
+}
+`;
+
+exports[`workbook assessment blocks — measure + draw > essay > \`box: true\` desugars to a prompt + an OPEN box (theme.box chrome, no ruled lines, no children) 1`] = `
+[
+  {
+    "answerSpace": null,
+    "atomic": false,
+    "hasBlank": false,
+    "heightPt": 14.5,
+    "id": "blocks[0]#p0",
+    "lineCount": 1,
+    "nodeKinds": undefined,
+    "nodes": undefined,
+    "spacingClass": "body",
+    "styleKey": "body",
+  },
+  {
+    "answerSpace": null,
+    "atomic": true,
+    "hasBlank": undefined,
+    "heightPt": 160,
+    "id": "blocks[0]#p1",
+    "lineCount": undefined,
+    "nodeKinds": [
+      "box",
+    ],
+    "nodes": [
+      {
+        "childKinds": [],
+        "heightPt": 160,
+        "kind": "box",
+        "paddingPt": 9,
+        "radiusPt": 4,
+        "widthPt": 504,
+      },
+    ],
+    "spacingClass": "body",
+    "styleKey": undefined,
+  },
+]
+`;
+
+exports[`workbook assessment blocks — measure + draw > matching > measures ONE atomic matching fragment — left numbered 1..n, right lettered A..n 1`] = `
+{
+  "answerSpace": null,
+  "atomic": true,
+  "hasBlank": undefined,
+  "heightPt": 35,
+  "id": "blocks[0]",
+  "lineCount": undefined,
+  "nodeKinds": [
+    "matching",
+  ],
+  "nodes": [
+    {
+      "heightPt": 35,
+      "kind": "matching",
+      "leftNumbers": [
+        1,
+        2,
+      ],
+      "rightLetters": [
+        "A",
+        "B",
+      ],
+      "widthPt": 504,
+    },
+  ],
+  "spacingClass": "body",
+  "styleKey": undefined,
+}
+`;
+
+exports[`workbook assessment blocks — measure + draw > multi_select — square checkboxes + instruction line on an omr_response row > a multi_select resolution measures square checkboxes and a "Choose up to N." instruction 1`] = `
+{
+  "answerSpace": null,
+  "atomic": true,
+  "hasBlank": undefined,
+  "heightPt": 77,
+  "id": "blocks[0]",
+  "lineCount": undefined,
+  "nodeKinds": [
+    "text",
+    "omr",
+  ],
+  "nodes": [
+    {
+      "hasBlank": false,
+      "heightPt": 14.5,
+      "kind": "text",
+      "lineCount": 1,
+      "styleKey": "question",
+      "widthPt": 480,
+    },
+    {
+      "choiceLetters": [
+        "A",
+        "B",
+        "C",
+        "D",
+      ],
+      "heightPt": 56.5,
+      "instructionText": "Choose up to 2.",
+      "kind": "omr",
+      "multiSelect": true,
+      "widthPt": 480,
+    },
+  ],
+  "spacingClass": "question",
+  "styleKey": undefined,
+}
+`;
+
+exports[`workbook assessment blocks — measure + draw > score box (quiz header) > header.scoreBox + totalPoints renders "Score ____ / N" and grows the banner height 1`] = `
+{
+  "answerSpace": null,
+  "atomic": true,
+  "hasBlank": undefined,
+  "heightPt": 68.8,
+  "id": "header",
+  "lineCount": undefined,
+  "nodeKinds": [
+    "header",
+  ],
+  "nodes": [
+    {
+      "heightPt": 68.8,
+      "kind": "header",
+      "widthPt": 504,
+    },
+  ],
+  "spacingClass": "heading",
+  "styleKey": undefined,
+}
+`;
+
+exports[`workbook assessment blocks — measure + draw > short_answer > desugars to a prompt text node + a ruled answer_space node, sized from the default line count 1`] = `
+[
+  {
+    "answerSpace": null,
+    "atomic": false,
+    "hasBlank": false,
+    "heightPt": 14.5,
+    "id": "blocks[0]#p0",
+    "lineCount": 1,
+    "nodeKinds": undefined,
+    "nodes": undefined,
+    "spacingClass": "body",
+    "styleKey": "body",
+  },
+  {
+    "answerSpace": {
+      "maxPt": 70,
+      "minPt": 70,
+    },
+    "atomic": true,
+    "hasBlank": undefined,
+    "heightPt": 70,
+    "id": "blocks[0]#p1",
+    "lineCount": undefined,
+    "nodeKinds": [
+      "answerSpace",
+    ],
+    "nodes": [
+      {
+        "heightPt": 70,
+        "kind": "answerSpace",
+        "maxPt": 70,
+        "minPt": 70,
+        "widthPt": 504,
+      },
+    ],
+    "spacingClass": "body",
+    "styleKey": undefined,
+  },
+]
+`;
+
+exports[`workbook assessment blocks — measure + draw > wordbank > measures ONE atomic wordbank fragment, boxed via theme.box, terms in the order given 1`] = `
+{
+  "answerSpace": null,
+  "atomic": true,
+  "hasBlank": undefined,
+  "heightPt": 31,
+  "id": "blocks[0]",
+  "lineCount": undefined,
+  "nodeKinds": [
+    "wordbank",
+  ],
+  "nodes": [
+    {
+      "heightPt": 31,
+      "kind": "wordbank",
+      "rowCount": 1,
+      "terms": [
+        "Photosynthesis",
+        "Mitosis",
+        "Osmosis",
+        "Respiration",
+      ],
+      "widthPt": 504,
+    },
+  ],
+  "spacingClass": "body",
+  "styleKey": undefined,
+}
+`;

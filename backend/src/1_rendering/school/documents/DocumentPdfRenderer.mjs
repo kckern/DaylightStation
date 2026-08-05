@@ -121,7 +121,17 @@ function createChoiceResolver(bank) {
         path, itemId,
       );
     }
-    return item.choices.map((choice) => String(choice));
+    const labels = item.choices.map((choice) => String(choice));
+    // multi_select (spec §5.5): the richer `{labels, multiSelect, maxSelect}`
+    // shape `measure.mjs`'s `measureOmrNode` knows how to read — square
+    // checkboxes + an instruction caption instead of circles. Every OTHER
+    // item type (including one with no `type` at all, e.g. this file's own
+    // test fixtures) keeps returning the bare `labels` array, so ordinary
+    // multiple_choice rendering is untouched.
+    if (item.type === 'multi_select') {
+      return { labels, multiSelect: true, maxSelect: item.maxSelect };
+    }
+    return labels;
   };
 }
 
@@ -155,11 +165,32 @@ export function createDocumentPdfRenderer({
     .fontSize(sizePt)
     .fillColor(theme.ink[inkKey]);
 
+  /**
+   * A cloze inline blank atom (spec §6.3): a superscript number at the
+   * blank's start, plus a baseline rule drawn at exactly `run.widthPt` — the
+   * SAME width the answer-length-blind measurement pass reserved for it.
+   * `run.xPt`/the caller's `xPt` already place this at the blank's measured
+   * position inside the line; nothing here re-decides where it sits.
+   */
+  function drawClozeBlank(out, run, { xPt, yPt, style }) {
+    const numberSizePt = Math.round(style.sizePt * 0.62 * 10) / 10;
+    setFont(out, 'regular', numberSizePt, style.ink);
+    out.text(String(run.n), xPt, yPt, { lineBreak: false });
+    const baselineYPt = yPt + style.sizePt * 0.86;
+    out.save().lineWidth(theme.answerSpace.ruleWidthPt).strokeColor(theme.ink.rule)
+      .moveTo(xPt, baselineYPt).lineTo(xPt + run.widthPt, baselineYPt).stroke().restore();
+  }
+
   function drawLines(out, lines, { xPt, yPt, styleKey }) {
     const style = theme.styles[styleKey];
     let cursorY = yPt;
     for (const line of lines) {
       for (const run of line.runs) {
+        // A cloze blank atom (measure.mjs's `clozeInlineItems`) carries no
+        // `.text`/`.font` — it is drawn as a superscript number + rule
+        // instead of `out.text`. Every other caller's runs never carry
+        // `kind: 'blank'`, so this branch is unreachable for them.
+        if (run.kind === 'blank') { drawClozeBlank(out, run, { xPt: xPt + run.xPt, yPt: cursorY, style }); continue; }
         setFont(out, run.font, run.sizePt ?? style.sizePt, style.ink);
         out.text(run.text, xPt + run.xPt, cursorY, { lineBreak: false });
       }
@@ -199,8 +230,19 @@ export function createDocumentPdfRenderer({
         'bubble row has no choice text to print', `omr_response(${node.itemId})`, node.itemId,
       );
     }
-    const centreY = yPt + rowHeightPt / 2;
-    const textY = yPt + rowHeightPt + choiceGapPt;
+
+    // multi_select's instruction caption prints ABOVE the row (spec §5.5);
+    // absent for every ordinary multiple_choice/probe row, in which case
+    // `rowYPt` is `yPt` unchanged and every calculation below is
+    // byte-identical to before this feature existed.
+    let rowYPt = yPt;
+    if (node.instruction) {
+      drawLines(out, node.instruction.lines, { xPt, yPt: rowYPt, styleKey: node.instruction.styleKey });
+      rowYPt += node.instruction.heightPt + theme.omr.instructionGapPt;
+    }
+
+    const centreY = rowYPt + rowHeightPt / 2;
+    const textY = rowYPt + rowHeightPt + choiceGapPt;
 
     node.cells.forEach((cell, index) => {
       const cellX = xPt + indentPt + index * node.cellWidthPt;
@@ -208,8 +250,17 @@ export function createDocumentPdfRenderer({
       const centreX = cellX + labelWidth + labelGapPt + bubbleRadiusPt;
 
       out.text(cell.choice, cellX, centreY - labelSizePt / 2, { lineBreak: false });
-      out.save().lineWidth(bubbleStrokeWidthPt).strokeColor(theme.ink.bubble)
-        .circle(centreX, centreY, bubbleRadiusPt).stroke().restore();
+      if (node.multiSelect) {
+        // Square checkbox (theme.badge's square variant) instead of the
+        // circle — same centre point a circle would occupy, so the letter
+        // label/choice text below it never has to move.
+        const { sizePt, strokeWidthPt } = theme.badge.square;
+        out.save().lineWidth(strokeWidthPt).strokeColor(theme.ink.bubble)
+          .rect(centreX - sizePt / 2, centreY - sizePt / 2, sizePt, sizePt).stroke().restore();
+      } else {
+        out.save().lineWidth(bubbleStrokeWidthPt).strokeColor(theme.ink.bubble)
+          .circle(centreX, centreY, bubbleRadiusPt).stroke().restore();
+      }
 
       let lineY = textY;
       for (const line of cell.lines) {
@@ -376,6 +427,56 @@ export function createDocumentPdfRenderer({
     }
   }
 
+  /**
+   * `wordbank` — a rounded box (theme.box chrome) around a wrapping flow of
+   * terms in `label` style, printed in the order `node.rows` was measured
+   * (upstream shuffling, Task 5, already baked that order in).
+   */
+  function drawWordbank(out, node, { xPt, yPt }) {
+    out.save().lineWidth(node.borderWidthPt).strokeColor(theme.ink.box)
+      .roundedRect(xPt, yPt, node.widthPt, node.heightPt, node.radiusPt).stroke().restore();
+    const style = theme.styles.label;
+    const innerXPt = xPt + node.paddingPt;
+    let rowYPt = yPt + node.paddingPt;
+    for (const row of node.rows) {
+      for (const term of row) {
+        setFont(out, style.font, style.sizePt, style.ink);
+        out.text(term.text, innerXPt + term.xPt, rowYPt, { lineBreak: false });
+      }
+      rowYPt += node.rowHeightPt + node.rowGapPt;
+    }
+  }
+
+  /**
+   * `matching` — the block-internal two-column write-the-letter grid (spec
+   * §6.2). Left items get a short blank rule + a number; right items get a
+   * letter. Both columns are drawn from the SAME `yPt` origin the fragment
+   * was placed at — `item.offsetYPt` (measure.mjs's `measureMatchingNode`)
+   * already accounts for uneven left/right row heights.
+   */
+  function drawMatching(out, node, { xPt, yPt }) {
+    const { matching } = theme;
+    const bodyStyle = theme.styles.body;
+    const leftXPt = xPt;
+    const rightXPt = xPt + node.halfWidthPt + node.columnGapPt;
+
+    for (const item of node.left) {
+      const rowYPt = yPt + item.offsetYPt;
+      const ruleY = rowYPt + bodyStyle.leadingPt / 2;
+      out.save().lineWidth(theme.answerSpace.ruleWidthPt).strokeColor(theme.ink.rule)
+        .moveTo(leftXPt, ruleY).lineTo(leftXPt + node.ruleWidthPt, ruleY).stroke().restore();
+      setFont(out, 'bold', bodyStyle.sizePt, bodyStyle.ink);
+      out.text(`${item.number}.`, leftXPt + node.ruleWidthPt + matching.ruleGapPt, rowYPt, { lineBreak: false });
+      drawLines(out, item.lines, { xPt: leftXPt + node.leftMarkerPt, yPt: rowYPt, styleKey: 'body' });
+    }
+    for (const item of node.right) {
+      const rowYPt = yPt + item.offsetYPt;
+      setFont(out, 'bold', bodyStyle.sizePt, bodyStyle.ink);
+      out.text(`${item.letter}.`, rightXPt, rowYPt, { lineBreak: false });
+      drawLines(out, item.lines, { xPt: rightXPt + node.rightMarkerPt, yPt: rowYPt, styleKey: 'body' });
+    }
+  }
+
   /** Small muted labels in the left margin, aligned to a passage's own wrapped lines. */
   function drawLineNumbers(out, lines, { xPt, yPt, gutterPt }) {
     const style = theme.styles.caption ?? theme.styles.instruction ?? theme.styles.body;
@@ -430,6 +531,17 @@ export function createDocumentPdfRenderer({
       cursorY += metaLeadingPt;
     }
 
+    // Score box (Phase B, spec §13): only when the quiz archetype's
+    // `header.scoreBox` is set AND a caller supplied `totalPoints` (Task 5
+    // computes it from the quiz's scored items) — absent either, this row
+    // never prints, byte-identical to before this field existed.
+    if (node.showScoreBox) {
+      const blank = BLANK_RULE.repeat(4);
+      setFont(out, 'regular', metaSizePt, 'muted');
+      out.text(`Score ${blank} / ${node.totalPoints}`, xPt, cursorY, { lineBreak: false });
+      cursorY += metaLeadingPt;
+    }
+
     const ruleY = cursorY + ruleGapPt;
     out.save().lineWidth(ruleWidthPt).strokeColor(theme.ink.rule)
       .moveTo(xPt, ruleY).lineTo(xPt + node.widthPt, ruleY).stroke().restore();
@@ -447,6 +559,8 @@ export function createDocumentPdfRenderer({
       case 'box': drawBox(out, node, position); break;
       case 'divider': drawDivider(out, node, position); break;
       case 'list': drawList(out, node, position); break;
+      case 'wordbank': drawWordbank(out, node, position); break;
+      case 'matching': drawMatching(out, node, position); break;
       // `spacer`: the whole point is blank space. The fragment's grown height
       // already pushes what follows down; nothing here puts ink on the page.
       case 'elasticSpace': break;
@@ -557,7 +671,7 @@ export function createDocumentPdfRenderer({
   // ── render ────────────────────────────────────────────────────────────
   function renderPlaced(document, {
     studentName, date = null, isAnswerKey, keyItems, bank, tokens, furniture = null, growLastPage = false,
-    italic = false,
+    italic = false, totalPoints = null,
   }) {
     // Opting into `furniture` shrinks the usable page height by the
     // footer-band + continuation-strip reservation (contentBox) BEFORE
@@ -586,6 +700,10 @@ export function createDocumentPdfRenderer({
       // MEASURED run (`wrapRuns`/`inlineRuns` at measure time) — so this flag
       // only needs to reach measurement; nothing downstream of it changes.
       italic,
+      // Score box (Phase B, spec §13): a pure passthrough to
+      // `headerFragment` — this renderer computes nothing about points,
+      // Task 5's caller supplies the already-summed total.
+      totalPoints,
     });
     const { pages, errors } = placeFragments(fragments, {
       pageHeightPt: box?.pageHeightPt ?? theme.page.heightPt,
@@ -721,11 +839,17 @@ export function createDocumentPdfRenderer({
    *   `passage` inline grammar (v2, spec §12.8). Default false reproduces
    *   every existing render byte-for-byte — a v1 caller's stray `*word*`
    *   keeps printing literally, exactly as before this option existed.
+   * @param {number|null} [options.totalPoints] - the quiz's summed points
+   *   (Phase B, spec §13). Printed as `Score ____ / <totalPoints>` in the
+   *   header ONLY when the document's `header.scoreBox` is also true; this
+   *   renderer does not compute a total itself — omitted/null (every caller
+   *   before this option existed) prints no score line, byte-identical to
+   *   before.
    * @returns {Promise<{pdf: Buffer, pageCount: number, formMap: Object|null, isAnswerKey: boolean, keyItems: Array}>}
    */
   async function render(source, {
     studentName = null, date = null, answers = null, answerKey = false, bank = null, tokens = null,
-    variant = null, furniture = null, growLastPage = false, italic = false,
+    variant = null, furniture = null, growLastPage = false, italic = false, totalPoints = null,
   } = {}) {
     // The variant rides on the DOCUMENT, not just alongside it: the footer and
     // the form map both derive from what was rendered, so a variant passed only
@@ -742,12 +866,12 @@ export function createDocumentPdfRenderer({
 
     if (!resolvedAnswers) {
       return renderPlaced(document, {
-        studentName, date, isAnswerKey: false, keyItems: [], bank, tokens, furniture, growLastPage, italic,
+        studentName, date, isAnswerKey: false, keyItems: [], bank, tokens, furniture, growLastPage, italic, totalPoints,
       });
     }
     const keyItems = keyItemsFor(document, resolvedAnswers);
     return renderPlaced(keyDocumentFor(document, keyItems), {
-      studentName: null, date: null, isAnswerKey: true, keyItems, bank, tokens, furniture, growLastPage, italic,
+      studentName: null, date: null, isAnswerKey: true, keyItems, bank, tokens, furniture, growLastPage, italic, totalPoints,
     });
   }
 
