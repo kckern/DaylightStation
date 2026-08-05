@@ -981,6 +981,41 @@ describe('RenderPrintDocument — teacher key render mode (spec §4.1, §12.1)',
     expect(text).toContain('Olympia');
   });
 
+  // Review finding 1: a standalone short_answer sugar block has no `.number`
+  // of its own and prints its prompt text UNNUMBERED on the student page
+  // (measure.mjs desugars it straight to prompt + answer_space) — so the
+  // bank item's own internal path-based id (`blocks-4`, never printed
+  // anywhere) gave a teacher nothing to correlate a key line against. The
+  // fix labels it with the prompt text itself instead.
+  it('labels a standalone short_answer key entry with its (truncated) prompt text, never the internal path-based item id', async () => {
+    const useCase = new RenderPrintDocument();
+    const result = await useCase.execute({ document: teacherSourceDoc(), context: { teacher: true } });
+    const text = pdfText(result.bytes);
+
+    expect(text).toContain('"Name a state capital." —');
+    expect(text).not.toMatch(/blocks-\d+\s+Olympia/);
+    for (const line of text.split('\n')) {
+      expect(line).not.toMatch(/^\s*blocks-\d/);
+    }
+  });
+
+  it('truncates a long standalone short_answer prompt rather than printing it in full', async () => {
+    const useCase = new RenderPrintDocument();
+    const longPrompt = 'What is the exact founding year of the state capital building, to the nearest decade?';
+    const document = teacherSourceDoc({
+      blocks: [{ type: 'short_answer', prompt: longPrompt, answer: 'Olympia' }],
+    });
+    const result = await useCase.execute({ document, context: { teacher: true } });
+    const text = pdfText(result.bytes);
+
+    // The student page legitimately prints the prompt IN FULL (it's the
+    // block's own body text) — only the KEY LABEL truncates it, so the
+    // assertion targets the labelled form specifically, not bare substring
+    // presence/absence of the prompt text.
+    expect(text).toContain(`"${longPrompt.slice(0, 39)}…" —`);
+    expect(text).not.toContain(`"${longPrompt}" —`);
+  });
+
   it('formats a matching block as "<n>-<letter> …" against the SAME shuffled left/right order the student page prints', async () => {
     const useCase = new RenderPrintDocument();
     const document = teacherSourceDoc();

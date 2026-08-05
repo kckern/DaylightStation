@@ -751,13 +751,20 @@ export function createDocumentPdfRenderer({
     // IDENTICAL `growLastPage`, regardless of whether a key follows.
     let keyPages = [];
     if (Array.isArray(keyBlocks) && keyBlocks.length > 0) {
+      // Plain page metrics — NOT `box` (furniture's gutter/duplex/footer-band
+      // reservation). A key page is a loose appendix, never bound into the
+      // duplex-punched student packet the gutter exists for, and it carries
+      // no footer of its own (below), so there is nothing for a footer-band
+      // reservation to protect either — reserving either would silently
+      // contradict this section's own "loose appendix" framing.
+      const keyWidthPt = theme.page.widthPt - 2 * theme.page.marginPt;
       const keyDocument = { ...document, id: `${document.id}-teacher-key`, title: keyTitle, blocks: keyBlocks };
       const keyFragments = measureDocumentFragments(keyDocument, {
         doc: measurementDoc,
         theme,
         texToSvg,
         resolveAsset: assetResolver,
-        widthPt: box?.widthPt,
+        widthPt: keyWidthPt,
         italic,
         // No Name/Date/score line on an appendix key page — it is not the
         // learner's sheet, and `keyTitle` already carries the section's own
@@ -765,8 +772,8 @@ export function createDocumentPdfRenderer({
         header: { name: false, date: false, scoreBox: false },
       });
       const placedKey = placeFragments(keyFragments, {
-        pageHeightPt: box?.pageHeightPt ?? theme.page.heightPt,
-        marginPt: box?.marginPt ?? theme.page.marginPt,
+        pageHeightPt: theme.page.heightPt,
+        marginPt: theme.page.marginPt,
         spacing: theme.spacing,
         // No elastic (answerSpace/spacer) nodes ever appear in a key section,
         // so this has no observable effect either way — explicit false for
@@ -864,9 +871,8 @@ export function createDocumentPdfRenderer({
       keyPages.forEach((page, index) => {
         out.addPage();
         out.page.margins = { top: 0, bottom: 0, left: 0, right: 0 };
-        const keyLeftPt = box ? box.xPt : contentLeftPt;
         for (const fragment of page.fragments) {
-          drawFragment(out, fragment, { page: pages.length + index + 1, marks, codes, leftPt: keyLeftPt });
+          drawFragment(out, fragment, { page: pages.length + index + 1, marks, codes, leftPt: contentLeftPt });
         }
       });
       out.end();

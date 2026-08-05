@@ -188,6 +188,25 @@ function choiceLetter(letters, choices, value) {
   return index === -1 ? '?' : letters[index];
 }
 
+const PROMPT_LABEL_MAX_LENGTH = 40;
+
+/**
+ * A standalone `short_answer` sugar block (spec §4.2/§6.2) has no `.number`
+ * of its own — it's a write-on aside, never card-mapped — and the SAME text
+ * this trims from prints verbatim, unnumbered, on the student page itself
+ * (`measure.mjs`'s `short_answer` case: prompt text + a bare `answer_space`,
+ * desugared directly, no numbering). So the only thing on the printed page a
+ * teacher can actually match a key entry against is that prompt text — never
+ * the bank item's internal path-based id (`blocks-0`, `blocks[2].blocks[0]`
+ * — `documentSource.mjs`'s keyless-item id scheme), which appears nowhere on
+ * paper. Truncated to `PROMPT_LABEL_MAX_LENGTH` so a long prompt doesn't
+ * blow out the dense key's one-line-per-entry layout.
+ */
+function truncatePrompt(prompt) {
+  const text = String(prompt ?? '').trim();
+  return text.length > PROMPT_LABEL_MAX_LENGTH ? `${text.slice(0, PROMPT_LABEL_MAX_LENGTH - 1)}…` : text;
+}
+
 /**
  * One bank item's answer text (spec §12.1's teacher-key acceptance:
  * "matching -> 1-C 2-A style; multi_select -> sorted letters; cloze blanks ->
@@ -282,7 +301,11 @@ function collectAnswerKeyEntries(blocks, bankItemsById, letters, entries = []) {
     }
     if (block.type === 'short_answer' && typeof block.itemRef === 'string') {
       const item = bankItemsById.get(block.itemRef);
-      if (item) entries.push({ label: item.id, text: formatAnswer(item, letters) });
+      // Label with the prompt text itself (see `truncatePrompt`'s doc
+      // comment) — the item's own `id` is an internal path-based identity
+      // (`blocks-0`) that never appears anywhere on the printed page, so it
+      // gives a teacher nothing to correlate the key line against.
+      if (item) entries.push({ label: `"${truncatePrompt(item.prompt)}" —`, text: formatAnswer(item, letters) });
     }
   }
   return entries;
