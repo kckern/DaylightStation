@@ -119,8 +119,16 @@ export class GradeSubmission {
     // including whatever a bank-select expansion put on it, which no static
     // document walk could reproduce.
     const isPrintUnit = typeof unit?.document === 'string' && PRINT_DOCUMENT_REF_PATTERN.test(unit.document);
+    // Single read of the session's queue: it is both the print-unit roster
+    // (below) and, for every unit type, the record of verdicts already on
+    // file (`marked`, further down) — and for a print unit it is also the
+    // ONLY place the genuine scan attempt ids live (each queue item's own
+    // `attemptId`, filed by `RecordCardScanOutcome` off the physical scan),
+    // so re-reading it separately per use risked the roster and the
+    // attempt-id collection disagreeing on what the queue held.
+    const queueItemsForSession = await this.#reviewQueue.listForSession(sessionId);
     const expectedItems = isPrintUnit
-      ? [...new Set((await this.#reviewQueue.listForSession(sessionId)).map((item) => item.itemId))]
+      ? [...new Set(queueItemsForSession.map((item) => item.itemId))]
       : (document ? questionItemIds(document) : (bank?.items ?? []).map((i) => i.id));
     if (!expectedItems.length) return this.#unavailable(sessionId, 'There are no questions to mark on that one.');
 
@@ -131,7 +139,7 @@ export class GradeSubmission {
     // machine marks included — so the second call can see what the first decided
     // without the caller having to re-send a sheet it no longer holds.
     const marked = new Map();
-    (await this.#reviewQueue.listForSession(sessionId))
+    queueItemsForSession
       .filter((item) => item.verdict === 'correct' || item.verdict === 'incorrect')
       .forEach((item) => marked.set(item.itemId, item.verdict === 'correct'));
 
@@ -208,7 +216,22 @@ export class GradeSubmission {
     // `graded` needs at least one attempt id; a wholly parent-marked sheet has
     // none, so the session itself stands in as the evidence pointer. Inventing a
     // fake attempt id would put un-earned rows in the attempt log.
-    const recordedAttempts = attemptIds.length ? attemptIds : [`review:${sessionId}`];
+    //
+    // For a print unit specifically, `attemptIds` above is the wrong source:
+    // it only ever gains entries from THIS call's own engine-graded loop
+    // (`gradable`, filtered to `bankItemIds` — a print unit carries no
+    // `bank`, so that loop never runs for one), while the genuine scan
+    // attempt ids live on the queue items themselves (`attemptId`, filed by
+    // `RecordCardScanOutcome` off the physical scan). Using the synthetic
+    // `review:<sessionId>` id instead would discard those real ids, so a
+    // print unit prefers them, falling back to the synthetic only when the
+    // queue carries none.
+    const printAttemptIds = isPrintUnit
+      ? [...new Set(queueItemsForSession.map((item) => item.attemptId).filter(Boolean))]
+      : [];
+    const recordedAttempts = isPrintUnit
+      ? (printAttemptIds.length ? printAttemptIds : [`review:${sessionId}`])
+      : (attemptIds.length ? attemptIds : [`review:${sessionId}`]);
     const { errors, event } = createEvent({
       type: 'graded', at: nowIso, sessionId, attemptIds: recordedAttempts, percent,
     });

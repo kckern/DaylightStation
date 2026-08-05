@@ -53,6 +53,17 @@
  * directory. The allocation result (`{cardId, rowRange, recordId, status}`)
  * prints alongside `{pages, density}` on success.
  *
+ * Card mode ALWAYS resolves the PUBLISHED document via the repository (re-
+ * review wave 2, F2), never `<file>`'s own on-disk content: rendering the
+ * source directly would let its in-memory auto-publish mint a rev that
+ * disagrees with whatever the last real `publish` actually persisted, and
+ * the allocation record would pin that phantom rev — a scan of the printed
+ * card could then never resolve it back. `<file>` only supplies the
+ * document `id` to look up in this mode; pass either the source file or a
+ * `published/` copy, they resolve to the same place. An id with no
+ * published revision fails with an instructive error (run `publish` first)
+ * rather than silently falling back to the source.
+ *
  * `release-card <cardId> [--rows a-b]` (Task 7, spec §5.4) is allocation
  * lifecycle housekeeping — `YamlAllocationStore#release`, against the same
  * content-root-rooted store `render`'s card flags use. Prints the records it
@@ -338,8 +349,6 @@ export async function runRender({
     };
   }
 
-  const document = applyRenderOverrides(raw, flags);
-  const extraWarnings = proofingFlagWarnings(raw, flags);
   // Same content root `publish`/`validate` resolve against (spec §10): a
   // PUBLISHED file (one with a `rev`, e.g. one `publish` just wrote) resolves
   // its own derived bank through this repository — needed for any inline
@@ -347,6 +356,54 @@ export async function runRender({
   // Source-schema files never need it (`RenderPrintDocument` auto-publishes
   // them in memory), and a repository this use case never calls is inert.
   const repository = new YamlPrintDocumentRepository({ directory: paths.contentRoot });
+  const cardMode = wantsCardContext(flags);
+
+  // Card-attach lane (re-review wave 2, F2: phantom-rev trap). A card-attach
+  // render must pin the SAME rev the allocation record persists, and the
+  // allocation store's rev comes straight off whatever `document` gets
+  // handed to `RenderPrintDocument` — for a SOURCE-schema file that is an
+  // IN-MEMORY publish computed fresh from `filePath`'s CURRENT on-disk
+  // content (see the `#renderV2`/`publishDocument` path below), not the
+  // repository's own persisted rev. If the source has drifted since the
+  // last real `publish` — even a cosmetic edit — that in-memory publish
+  // mints a rev `getPublished` can never serve, so the allocation record
+  // pins a phantom: the physical card prints fine, but the child's scan can
+  // never resolve it back (spec §5.2's "one resolver, no parallel mapping"
+  // depends on the rev it resolves against actually existing). So whenever
+  // card context is requested, this loads the PUBLISHED document for the
+  // file's own `id` through the SAME repository the allocation store
+  // shares, and renders THAT — never the possibly-drifted source — with any
+  // proofing overrides (`--type-scale`) still applied on top. No published
+  // rev at all means there is nothing safe to pin: fail loudly rather than
+  // silently falling back to the source, which is exactly the phantom-rev
+  // trap this guards against. A plain proof render (no card flags) is
+  // unaffected — it keeps rendering `raw` exactly as loaded.
+  let base = raw;
+  if (cardMode) {
+    const documentId = typeof raw?.id === 'string' && raw.id.trim() ? raw.id : null;
+    const published = documentId ? await repository.getPublished(documentId) : null;
+    if (!published) {
+      return {
+        ok: false,
+        mode: 'render',
+        file: filePath,
+        out: outPath,
+        pages: null,
+        density: null,
+        allocation: null,
+        warnings: [],
+        errors: [
+          documentId
+            ? `document '${documentId}' has no published revision; run 'school-docs publish ${filePath}' first — a card-attach render must pin a rev the allocation store can actually resolve later, never the source file's current (possibly drifted) content`
+            : `'${filePath}' has no document id; a card-attach render needs one to resolve its published revision`,
+        ],
+      };
+    }
+    base = published;
+  }
+
+  const document = applyRenderOverrides(base, flags);
+  const extraWarnings = proofingFlagWarnings(raw, flags);
   // F5 (review finding): rooted at THIS command's own resolved `dataDir` (the
   // same `--data-dir`/`$DAYLIGHT_BASE_PATH` value `paths` already carries) —
   // without this, `RenderPrintDocument`'s constructor default silently
@@ -360,7 +417,7 @@ export async function runRender({
   // the SAME content root as `repository` above, mirroring
   // `YamlAllocationStore`'s own directory convention (siblings of
   // `published/`/`derived-banks/`).
-  const allocationStore = wantsCardContext(flags)
+  const allocationStore = cardMode
     ? new YamlAllocationStore({ directory: paths.contentRoot })
     : null;
   const useCase = new RenderPrintDocument({ repository, banks, allocationStore });

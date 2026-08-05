@@ -829,6 +829,35 @@ describe('execute — resilience + review signals (re-review wave 2)', () => {
       { itemId: 'blocks[1]', prompt: 'Write a short reflection.' },
     ]);
   });
+
+  it('an essay write-on nested one level inside an inset also surfaces in unscannedItems (re-review wave 2 F1: inset write-ons were invisible to the queue)', async () => {
+    const repository = fakeRepository();
+    const allocationStore = fakeAllocationStore();
+    // `blocks.mjs`'s `INSET_UNSUPPORTED_CHILD_TYPES` deliberately leaves
+    // short_answer/essay OFF the ban list — an inset-wrapped write-on is a
+    // legal, printable shape — so it must still reach `unscannedItems`
+    // rather than silently printing invisibly to the review queue.
+    const source = sourceDoc('inset-writeon-quiz', [
+      mcQuestion('i1', 1, { choices: ['X', 'Y'], answer: 'X' }),
+      {
+        type: 'inset',
+        title: 'Reflection Box',
+        blocks: [
+          richText('Take a moment to reflect.'),
+          { type: 'essay', prompt: 'Write a short reflection.' },
+        ],
+      },
+    ]);
+    const { allocation } = await publishAndAllocate({
+      repository, allocationStore, source, context: { freshCard: true },
+    });
+    const useCase = new ResolveCardScan({ allocationStore, repository });
+    const result = await useCase.execute({ testId: allocation.cardId, answers: { 1: 'A' } });
+    const card = result.results[0];
+    expect(card.unscannedItems).toEqual([
+      { itemId: 'blocks[1].blocks[1]', prompt: 'Write a short reflection.' },
+    ]);
+  });
 });
 
 /** Small helper so the "unallocated rows" describe block reads as one call per test. */

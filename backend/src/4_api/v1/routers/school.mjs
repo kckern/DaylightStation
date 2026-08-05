@@ -273,10 +273,16 @@ export function createSchoolRouter({
           );
         }
         if (learnerId && (record.learnerId ?? null) !== learnerId) {
-          throw new DomainInvariantError(
-            `card ${record.cardId} belongs to a different learner; omit learnerId to reproduce its sheet`,
-            { code: 'CARD_LEARNER_MISMATCH', details: { cardId: record.cardId } },
-          );
+          // Same conflict code either way (the record can't be adopted under
+          // this learnerId), but "belongs to a different learner" is simply
+          // false when the record has no learnerId at all — it was rendered
+          // anonymously, not for someone else.
+          const message = record.learnerId
+            ? `card ${record.cardId} belongs to a different learner; omit learnerId to reproduce its sheet`
+            : `card ${record.cardId} carries an anonymous sheet; omit learnerId to reproduce it`;
+          throw new DomainInvariantError(message, {
+            code: 'CARD_LEARNER_MISMATCH', details: { cardId: record.cardId },
+          });
         }
         adoptedRecord = record;
         rev = record.rev;
