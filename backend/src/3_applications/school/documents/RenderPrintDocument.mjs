@@ -964,7 +964,7 @@ export class RenderPrintDocument {
    */
   #resolveCardContext(context) {
     const {
-      cardId, freshCard, startRow, learnerId,
+      cardId, freshCard, startRow, learnerId, sessionId,
     } = context;
     if (cardId === undefined && freshCard !== true) return null;
     return {
@@ -972,6 +972,11 @@ export class RenderPrintDocument {
       freshCard: freshCard === true,
       startRow: startRow ?? 1,
       learnerId: learnerId ?? null,
+      // Work-session lineage (review wave B1): IssueDocument's tracked-quiz
+      // path passes its sessionId so the allocation record — the one durable
+      // artifact a scan resolves — can carry the link back to the session a
+      // graded scan must advance. Absent for every other caller.
+      sessionId: sessionId ?? null,
     };
   }
 
@@ -992,7 +997,7 @@ export class RenderPrintDocument {
    * even for a worksheet with gaps between row-consuming questions.
    */
   async #allocateCard(document, bank, {
-    cardId, freshCard, startRow, learnerId,
+    cardId, freshCard, startRow, learnerId, sessionId,
   }) {
     if (!this.#allocationStore) {
       throw new ValidationError(
@@ -1030,6 +1035,7 @@ export class RenderPrintDocument {
       variant: document.variant ?? 0,
       rowRange,
       ...(learnerId != null ? { learnerId } : {}),
+      ...(sessionId != null ? { sessionId } : {}),
       // F4 (bank-select scan integrity vs mutable external banks): the row->
       // item mapping `planRows` JUST resolved, straight off THIS document/bank
       // pair — the store persists it verbatim as `rowItems` so a later scan

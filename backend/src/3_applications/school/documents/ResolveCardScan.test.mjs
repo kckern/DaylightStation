@@ -192,19 +192,19 @@ describe('execute — grading across item types (spec §5.4/§5.5)', () => {
     });
     expect(card.results).toEqual([
       {
-        row: 1, itemId: 'q1', status: 'correct', given: 'Alpha', points: 1, earned: 1,
+        row: 1, itemId: 'q1', itemType: 'multiple_choice', status: 'correct', given: 'Alpha', points: 1, earned: 1,
       },
       {
-        row: 2, itemId: 'q2', status: 'ambiguous', given: ['A', 'B'], points: 1, earned: 0,
+        row: 2, itemId: 'q2', itemType: 'multiple_choice', status: 'ambiguous', given: ['A', 'B'], points: 1, earned: 0,
       },
       {
-        row: 3, itemId: 'q3', status: 'correct', given: 'A', points: 1, earned: 1,
+        row: 3, itemId: 'q3', itemType: 'true_false', status: 'correct', given: 'A', points: 1, earned: 1,
       },
       {
-        row: 4, itemId: 'q4', status: 'correct', given: ['Red', 'Blue'], points: 1, earned: 1,
+        row: 4, itemId: 'q4', itemType: 'multi_select', status: 'correct', given: ['Red', 'Blue'], points: 1, earned: 1,
       },
       {
-        row: 5, itemId: 'q5', status: 'blank', given: null, points: 5, earned: 0,
+        row: 5, itemId: 'q5', itemType: 'multiple_choice', status: 'blank', given: null, points: 5, earned: 0,
       },
     ]);
     expect(card.totalPoints).toBe(9); // 1+1+1+1+5
@@ -290,18 +290,18 @@ describe('execute — multi-doc shared card spanning the bank boundary (spec §5
     const byDoc = Object.fromEntries(result.results.map((r) => [r.documentId, r]));
     expect(byDoc['boundary-doc-a'].results).toEqual([
       {
-        row: 1, itemId: 'a1', status: 'correct', given: 'X', points: 1, earned: 1,
+        row: 1, itemId: 'a1', itemType: 'multiple_choice', status: 'correct', given: 'X', points: 1, earned: 1,
       },
       {
-        row: 2, itemId: 'a2', status: 'incorrect', given: 'X', points: 1, earned: 0,
+        row: 2, itemId: 'a2', itemType: 'multiple_choice', status: 'incorrect', given: 'X', points: 1, earned: 0,
       },
     ]);
     expect(byDoc['boundary-doc-b'].results).toEqual([
       {
-        row: 26, itemId: 'b1', status: 'correct', given: 'B', points: 1, earned: 1,
+        row: 26, itemId: 'b1', itemType: 'true_false', status: 'correct', given: 'B', points: 1, earned: 1,
       },
       {
-        row: 27, itemId: 'b2', status: 'correct', given: 'A', points: 1, earned: 1,
+        row: 27, itemId: 'b2', itemType: 'true_false', status: 'correct', given: 'A', points: 1, earned: 1,
       },
     ]);
     expect(result.unallocatedRows).toBeUndefined();
@@ -491,10 +491,10 @@ describe('execute — row ownership on reuse: newest claimant wins (spec §5.4 r
     expect(result.results[0].documentId).toBe('reuse-quiz-2');
     expect(result.results[0].results).toEqual([
       {
-        row: 1, itemId: 'r2-q1', status: 'correct', given: 'P', points: 1, earned: 1,
+        row: 1, itemId: 'r2-q1', itemType: 'multiple_choice', status: 'correct', given: 'P', points: 1, earned: 1,
       },
       {
-        row: 2, itemId: 'r2-q2', status: 'incorrect', given: 'Q', points: 1, earned: 0,
+        row: 2, itemId: 'r2-q2', itemType: 'multiple_choice', status: 'incorrect', given: 'Q', points: 1, earned: 0,
       },
     ]);
     expect(result.unallocatedRows).toBeUndefined();
@@ -692,10 +692,10 @@ describe('execute — row-mapping integrity vs mutable external banks (F4 review
     expect(result.results[0].error).toBeUndefined();
     expect(result.results[0].results).toEqual([
       {
-        row: 1, itemId: 'ext-a', status: 'correct', given: 'X', points: 1, earned: 1,
+        row: 1, itemId: 'ext-a', itemType: 'multiple_choice', status: 'correct', given: 'X', points: 1, earned: 1,
       },
       {
-        row: 2, itemId: 'ext-b', status: 'correct', given: 'X', points: 1, earned: 1,
+        row: 2, itemId: 'ext-b', itemType: 'multiple_choice', status: 'correct', given: 'X', points: 1, earned: 1,
       },
     ]);
 
@@ -721,7 +721,7 @@ describe('execute — nonexistent bubble grading (F6 review fix, Low)', () => {
     const result = await useCase.execute({ testId: allocation.cardId, answers: { 1: 'D' } });
 
     expect(result.results[0].results[0]).toEqual({
-      row: 1, itemId: 'f6-q1', status: 'incorrect', given: 'D', points: 1, earned: 0,
+      row: 1, itemId: 'f6-q1', itemType: 'multiple_choice', status: 'incorrect', given: 'D', points: 1, earned: 0,
     });
   });
 });
