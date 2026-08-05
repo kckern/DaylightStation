@@ -22,6 +22,26 @@
  * proofing-workflow symmetry with `--learner-name`/`--date`/`--type-scale`;
  * it is intentionally NOT threaded anywhere, since there is nothing in the
  * renderer today for it to override.
+ *
+ * `publish <file>` (Task 6, spec §3/§10) runs `PublishPrintDocument` against
+ * a `YamlPrintDocumentRepository` rooted at the SAME content root `validate`/
+ * `render` resolve against — the published document + derived bank land at
+ * `<content-root>/published/<id>@<rev>.yml` and
+ * `<content-root>/derived-banks/<id>@<rev>.yml`, append-only. `render` wires
+ * the identical repository so a PUBLISHED file (one with a `rev`, e.g. one
+ * `publish` just wrote) can resolve its own derived bank at render time —
+ * needed for any inline `omr_response` and for `--teacher` on a published
+ * document; a SOURCE-schema file needs no repository at all (`render` always
+ * auto-publishes it in memory, spec §3).
+ *
+ * `--teacher` (Task 6, spec §4.1/§12.1) is a RENDER MODE, not a different
+ * command: it prints the identical student pages the same `render` call
+ * would have produced without it, then appends a dense answer-key section.
+ * Works on a SOURCE file (in-memory publish resolves the bank) or a
+ * PUBLISHED file whose derived bank the repository above can resolve; a
+ * hand-authored v2 file with no bank-bearing content renders a bare heading
+ * and surfaces a warning (`RenderPrintDocument`'s own "no answerable items"
+ * warning), never a hard failure.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -29,7 +49,10 @@ import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
 import { parseArgv } from './_argv.mjs';
 import { validateAnyDocument, DOCUMENT_V2_SCHEMA } from '#domains/school/documents/documentV2.mjs';
+import { DOCUMENT_SOURCE_SCHEMA } from '#domains/school/documents/documentSource.mjs';
 import { RenderPrintDocument } from '#apps/school/documents/RenderPrintDocument.mjs';
+import { PublishPrintDocument } from '#apps/school/documents/PublishPrintDocument.mjs';
+import { YamlPrintDocumentRepository } from '#adapters/school/documents/YamlPrintDocumentRepository.mjs';
 
 const EXIT_OK = 0;
 const EXIT_FAIL = 1;
@@ -37,9 +60,11 @@ const EXIT_USAGE = 2;
 const ENTRYPOINT = fileURLToPath(import.meta.url);
 
 const DENSITIES = new Set(['normal', 'compact']);
+const V2_LIKE_SCHEMAS = new Set([DOCUMENT_V2_SCHEMA, DOCUMENT_SOURCE_SCHEMA]);
 
 const COMMON_FLAGS = new Set(['data-dir', 'content-root']);
 const VALIDATE_FLAGS = new Set([...COMMON_FLAGS]);
+const PUBLISH_FLAGS = new Set([...COMMON_FLAGS]);
 const RENDER_FLAGS = new Set([
   ...COMMON_FLAGS,
   'out',
@@ -48,17 +73,22 @@ const RENDER_FLAGS = new Set([
   'type-scale',
   'density',
   'creation-date',
+  'teacher',
 ]);
 
 const HELP = `school-docs — validate and proof-render School print-document source YAML
 
 Usage:
   school-docs.cli.mjs validate <file|dir> [options]
+  school-docs.cli.mjs publish <file> [options]
   school-docs.cli.mjs render <file> --out <pdf> [options]
 
 Commands:
   validate <file|dir>   parse + validateAnyDocument (v1 or v2); directory form
                          walks *.yml (non-recursive). Render-free, sub-second.
+  publish <file>         compile a school.document-source/v1 file into a
+                         published document + derived question bank, written
+                         under the content root (append-only per revision).
   render <file>          run the real fit/render pipeline and write a PDF.
 
 Options:
@@ -73,10 +103,12 @@ Options:
   --creation-date <iso>  (render) accepted for proofing symmetry — the PDF's
                          CreationDate is already pinned unconditionally, so
                          this never changes the output
+  --teacher              (render) teacher-key mode: same student pages, plus
+                         an appended dense answer-key section (v2/source only)
   --help, -h             show this message
 
 <file|dir>/<file> resolve relative to the content root when not absolute.
-Exit codes: 0 ok, 1 validation/fit failure, 2 usage error.
+Exit codes: 0 ok, 1 validation/fit/publish failure, 2 usage error.
 `;
 
 function valueFlag(value, name) {
@@ -181,6 +213,10 @@ function overridesContext(flags) {
   const context = {};
   if (flags['learner-name'] !== undefined) context.learnerName = flags['learner-name'];
   if (flags.date !== undefined) context.date = flags.date;
+  // `--teacher` (Task 6): a render MODE, not a variant — see the module
+  // docstring. Usage-validated (must be a bare flag, no value) before this
+  // ever runs — see `runSchoolDocs`'s render branch.
+  if (flags.teacher === true) context.teacher = true;
   return context;
 }
 
@@ -206,15 +242,23 @@ function proofingFlagWarnings(raw, flags) {
   if (flags['type-scale'] !== undefined && raw?.schema !== DOCUMENT_V2_SCHEMA) {
     warnings.push('--type-scale is accepted but has no effect on this v1 (legacy) document; only v2 documents have a fit.typeScale');
   }
+  // `--teacher` is a v2/source-only render mode (RenderPrintDocument's
+  // `#renderLegacy` never reads `context.teacher`) — a v1 (legacy, schema-
+  // less) document renders exactly as it would without the flag.
+  if (flags.teacher === true && !V2_LIKE_SCHEMAS.has(raw?.schema)) {
+    warnings.push('--teacher is accepted but has no effect on this v1 (legacy) document; only v2 documents have a teacher key');
+  }
   return warnings;
 }
 
 /**
- * @param {{filePath: string, outPath: string, flags: object}} args
+ * @param {{filePath: string, outPath: string, flags: object, paths: {contentRoot: string}}} args
  * @returns {Promise<{ok: boolean, mode: 'render', file: string, out: string,
  *   pages: number|null, density: string|null, warnings: string[], errors: string[]}>}
  */
-export async function runRender({ filePath, outPath, flags }) {
+export async function runRender({
+  filePath, outPath, flags, paths,
+}) {
   let raw;
   try {
     raw = loadYamlDocument(filePath);
@@ -233,7 +277,14 @@ export async function runRender({ filePath, outPath, flags }) {
 
   const document = applyRenderOverrides(raw, flags);
   const extraWarnings = proofingFlagWarnings(raw, flags);
-  const useCase = new RenderPrintDocument();
+  // Same content root `publish`/`validate` resolve against (spec §10): a
+  // PUBLISHED file (one with a `rev`, e.g. one `publish` just wrote) resolves
+  // its own derived bank through this repository — needed for any inline
+  // `omr_response` and for `--teacher` on a published document.
+  // Source-schema files never need it (`RenderPrintDocument` auto-publishes
+  // them in memory), and a repository this use case never calls is inert.
+  const repository = new YamlPrintDocumentRepository({ directory: paths.contentRoot });
+  const useCase = new RenderPrintDocument({ repository });
 
   try {
     const result = await useCase.execute({ document, context: overridesContext(flags) });
@@ -267,6 +318,55 @@ export async function runRender({ filePath, outPath, flags }) {
   }
 }
 
+/**
+ * `publish <file>` (Task 6, spec §3/§10): compile a `school.document-source/v1`
+ * file into a published document + derived question bank, persisted
+ * append-only under `paths.contentRoot` via `YamlPrintDocumentRepository`
+ * (`<content-root>/published/<id>@<rev>.yml`,
+ * `<content-root>/derived-banks/<id>@<rev>.yml`). Any failure — YAML parse,
+ * source-stage validation, the publish transform's own answer-free/
+ * bank-shape POSTCONDITION checks, or the repository's append-only conflict
+ * guard — surfaces here as `errors` (exit 1 at the `runSchoolDocs` level);
+ * none of them are distinguished further, since every one is "this file did
+ * not publish" from the CLI's point of view.
+ *
+ * @param {{filePath: string, paths: {contentRoot: string}}} args
+ * @returns {Promise<{ok: boolean, mode: 'publish', file: string,
+ *   id: string|null, rev: string|null, bankId: string|null,
+ *   warnings: string[], errors: string[]}>}
+ */
+export async function runPublish({ filePath, paths }) {
+  let raw;
+  try {
+    raw = loadYamlDocument(filePath);
+  } catch (error) {
+    return {
+      ok: false, mode: 'publish', file: filePath, id: null, rev: null, bankId: null, warnings: [], errors: [`YAML parse error: ${error.message}`],
+    };
+  }
+
+  const repository = new YamlPrintDocumentRepository({ directory: paths.contentRoot });
+  const useCase = new PublishPrintDocument({ repository });
+
+  try {
+    const result = await useCase.execute({ source: raw });
+    return {
+      ok: true,
+      mode: 'publish',
+      file: filePath,
+      id: result.id,
+      rev: result.rev,
+      bankId: result.bankId,
+      warnings: result.warnings,
+      errors: [],
+    };
+  } catch (error) {
+    return {
+      ok: false, mode: 'publish', file: filePath, id: null, rev: null, bankId: null, warnings: [], errors: [error?.message ?? String(error)],
+    };
+  }
+}
+
 function usageResult(errors) {
   return {
     exitCode: EXIT_USAGE,
@@ -295,11 +395,13 @@ export async function runSchoolDocs(argv = [], deps = {}) {
     };
   }
 
-  if (subcommand !== 'validate' && subcommand !== 'render') {
+  if (subcommand !== 'validate' && subcommand !== 'publish' && subcommand !== 'render') {
     return usageResult([`Unknown command: ${subcommand}`]);
   }
 
-  const allowedFlags = subcommand === 'validate' ? VALIDATE_FLAGS : RENDER_FLAGS;
+  const allowedFlags = {
+    validate: VALIDATE_FLAGS, publish: PUBLISH_FLAGS, render: RENDER_FLAGS,
+  }[subcommand];
   const unknown = Object.keys(flags).filter((flag) => !allowedFlags.has(flag));
   if (unknown.length) {
     return usageResult(unknown.map((flag) => `Unknown option: --${flag}`));
@@ -317,6 +419,15 @@ export async function runSchoolDocs(argv = [], deps = {}) {
       return usageResult(['validate requires exactly one <file|dir> argument']);
     }
     const report = runValidate({ target: resolveContentPath(paths, positional[0]) });
+    return { exitCode: report.ok ? EXIT_OK : EXIT_FAIL, report };
+  }
+
+  if (subcommand === 'publish') {
+    if (positional.length !== 1) {
+      return usageResult(['publish requires exactly one <file> argument']);
+    }
+    const filePath = resolveContentPath(paths, positional[0]);
+    const report = await runPublish({ filePath, paths });
     return { exitCode: report.ok ? EXIT_OK : EXIT_FAIL, report };
   }
 
@@ -342,10 +453,16 @@ export async function runSchoolDocs(argv = [], deps = {}) {
       return usageResult(['--creation-date needs a valid ISO date string']);
     }
   }
+  // `--teacher` is a bare mode flag (no value) — see the module docstring.
+  if (flags.teacher !== undefined && flags.teacher !== true) {
+    return usageResult(['--teacher does not take a value']);
+  }
 
   const filePath = resolveContentPath(paths, positional[0]);
   const outPath = path.isAbsolute(outValue) ? path.resolve(outValue) : path.resolve(process.cwd(), outValue);
-  const report = await runRender({ filePath, outPath, flags });
+  const report = await runRender({
+    filePath, outPath, flags, paths,
+  });
   return { exitCode: report.ok ? EXIT_OK : EXIT_FAIL, report };
 }
 
@@ -358,6 +475,19 @@ export function formatSchoolDocsReport(report) {
     });
     if (!report.files.length) lines.push('  (no *.yml files found)');
     lines.push('', report.ok ? 'OK' : 'FAILED');
+    return `${lines.join('\n')}\n`;
+  }
+
+  if (report.mode === 'publish') {
+    if (report.ok) {
+      const lines = [JSON.stringify({ id: report.id, rev: report.rev, bankId: report.bankId })];
+      if (report.warnings.length) {
+        lines.push('', 'Warnings');
+        report.warnings.forEach((warning) => lines.push(`  - ${warning}`));
+      }
+      return `${lines.join('\n')}\n`;
+    }
+    const lines = ['FAILED', ...report.errors.map((error) => `  - ${error}`)];
     return `${lines.join('\n')}\n`;
   }
 

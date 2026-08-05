@@ -168,6 +168,150 @@ function mergeBank(baseBank, extraItems, documentId) {
   return { id: baseBank?.id ?? documentId, items };
 }
 
+// ── teacher key (spec §4.1, §12.1, Task 6) ─────────────────────────────────
+//
+// The teacher key is a RENDER MODE (`context.teacher: true`), never a
+// variant: it prints the exact same student pages, then a `page_break` and a
+// dense answer list. Every answer comes ONLY from the merged bank
+// (`mergeBank`'s output, already assembled above from the SAME derived/
+// bank-select items the student render used) — never re-derived, never read
+// off `rawDocument` (which the publish pipeline guarantees is answer-free
+// anyway). The formatted `{label, text}` entries this section builds are
+// handed to the renderer as a private `answer_key` node
+// (`measure.mjs`/`DocumentPdfRenderer.mjs`) that is not part of the
+// authorable block vocabulary (`blocks.mjs`'s BLOCK_TYPES) — it only ever
+// exists on this in-memory path, so it needs no schema/validator of its own.
+
+/** `theme.omr.letters[index]` — the SAME glyph a multiple_choice/multi_select bubble row prints for that choice position (spec §5.1's Ⓐ–Ⓔ contract), so the key's letters can never disagree with what a card bubbles. */
+function choiceLetter(letters, choices, value) {
+  const index = choices.indexOf(value);
+  return index === -1 ? '?' : letters[index];
+}
+
+/**
+ * One bank item's answer text (spec §12.1's teacher-key acceptance:
+ * "matching -> 1-C 2-A style; multi_select -> sorted letters; cloze blanks ->
+ * <n>. <answer>; short_answer -> the answer text"). `matching` is handled
+ * separately (`formatMatchingAnswer`) — it needs the printed left/right
+ * ORDER, not just the item itself. `multiple_choice` (not named in that
+ * list, since it predates Phase B) gets the same single-letter treatment as
+ * `multi_select`'s set, just one letter instead of several.
+ */
+function formatAnswer(item, letters) {
+  switch (item.type) {
+    case 'multiple_choice':
+      return choiceLetter(letters, item.choices, item.answer);
+    case 'multi_select':
+      return [...item.answers].map((answer) => choiceLetter(letters, item.choices, answer)).sort().join(', ');
+    case 'short_answer':
+    case 'cloze':
+      return item.answer;
+    default:
+      return String(item.answer ?? '');
+  }
+}
+
+/**
+ * A `matching` block's whole answer, as `"1-C 2-A 3-B"` (spec §12.1):
+ * `item.pairs` are TEXT pairs resolved at publish time from the block's
+ * document-order `left`/`right` (spec §4.3 — the derived bank holds the
+ * canonical correspondence; only PRINTED order shuffles). `block.left`/
+ * `block.right` here are the SAME (already shuffled, `#prepareV2Document`)
+ * arrays the student's printed page numbers/letters against
+ * (`measure.mjs`'s `measureMatchingNode`: left numbered 1..n by array
+ * position, right lettered A..n by array position) — resolving against THEM,
+ * not the bank's own order, is what keeps "1-C" in lockstep with what the
+ * student actually sees on the page.
+ */
+function formatMatchingAnswer(block, item, letters) {
+  return item.pairs
+    .map((pair) => ({
+      number: block.left.indexOf(pair.left) + 1,
+      letter: letters[block.right.indexOf(pair.right)],
+    }))
+    .sort((a, b) => a.number - b.number)
+    .map(({ number, letter }) => `${number}-${letter}`)
+    .join(' ');
+}
+
+/**
+ * Walks the SAME prepared `blocks` the student render draws (post-shuffle,
+ * post-bank-select-expansion — `#prepareV2Document`'s output), collecting one
+ * `{label, text}` key entry per answerable item found. Recurses into
+ * `question`/`inset` children (the only two block types that can nest — see
+ * `blocks.mjs`), so an assessment block sitting one level inside either is
+ * still found.
+ *
+ * A `question` whose OWN `itemId` resolves in the bank is the common,
+ * card-mappable case (multiple_choice/multi_select/short-answer-as-question,
+ * both hand-authored and bank-select-expanded — `expandedQuestionBlock`
+ * always sets `itemId: item.id`) and is never recursed into further (its
+ * answer is fully captured by the one entry). A `question` whose itemId does
+ * NOT resolve (a composite question wrapping its own cloze/matching/
+ * short_answer sugar child) falls through to the recursive walk instead, so
+ * that child's own itemRef-based item is still found.
+ */
+function collectAnswerKeyEntries(blocks, bankItemsById, letters, entries = []) {
+  for (const block of blocks ?? []) {
+    if (!block || typeof block !== 'object') continue;
+    if (block.type === 'question') {
+      const item = typeof block.itemId === 'string' ? bankItemsById.get(block.itemId) : undefined;
+      if (item) {
+        entries.push({ label: `${block.number}.`, text: formatAnswer(item, letters) });
+      } else if (Array.isArray(block.blocks)) {
+        collectAnswerKeyEntries(block.blocks, bankItemsById, letters, entries);
+      }
+      continue;
+    }
+    if (block.type === 'inset' && Array.isArray(block.blocks)) {
+      collectAnswerKeyEntries(block.blocks, bankItemsById, letters, entries);
+      continue;
+    }
+    if (block.type === 'matching' && typeof block.itemRef === 'string') {
+      const item = bankItemsById.get(block.itemRef);
+      if (item) entries.push({ label: `${block.key}:`, text: formatMatchingAnswer(block, item, letters) });
+      continue;
+    }
+    if (block.type === 'cloze' && Array.isArray(block.blanks)) {
+      for (const blank of block.blanks) {
+        if (typeof blank.itemRef !== 'string') continue;
+        const item = bankItemsById.get(blank.itemRef);
+        if (item) entries.push({ label: `${blank.n}.`, text: formatAnswer(item, letters) });
+      }
+      continue;
+    }
+    if (block.type === 'short_answer' && typeof block.itemRef === 'string') {
+      const item = bankItemsById.get(block.itemRef);
+      if (item) entries.push({ label: item.id, text: formatAnswer(item, letters) });
+    }
+  }
+  return entries;
+}
+
+/**
+ * The teacher-key section's block list + heading, for `renderer.render`'s
+ * `keyBlocks`/`keyTitle` options (DocumentPdfRenderer.mjs) — one `answer_key`
+ * node built from the merged bank, never the published document itself
+ * (spec: "Answers come ONLY from the derived bank object passed in-memory to
+ * the key renderer"). Zero answerable items is legal (a purely presentational
+ * worksheet, or a bank the caller failed to resolve) — it renders a bare
+ * heading and a note, plus a caller-facing warning, rather than failing the
+ * whole render.
+ */
+function buildTeacherKeyBlocks(document, bank, letters) {
+  const bankItemsById = new Map((bank?.items ?? []).map((item) => [item.id, item]));
+  const entries = collectAnswerKeyEntries(document.blocks, bankItemsById, letters);
+  const title = `Answer key — ${document.title || document.id} (variant ${document.variant ?? 0})`;
+  const blocks = [{
+    type: 'answer_key',
+    entries: entries.length ? entries : [{ label: '', text: 'No answerable items in this document.' }],
+  }];
+  const warning = entries.length
+    ? null
+    : `document '${document.id}' has no answerable items; the teacher key is a bare heading`;
+  return { blocks, title, warning };
+}
+
 export class RenderPrintDocument {
   #repository; #rendererFactory; #createMeasurementDocument; #measureDocumentFragments;
   #placeFragments; #contentHeightPt; #texToSvg; #resolveAsset; #legacyRenderer; #banks;
@@ -219,10 +363,14 @@ export class RenderPrintDocument {
    * @param {Object} args
    * @param {Object} [args.document] - a raw (unvalidated) document, v1 or v2 envelope
    * @param {string} [args.id] - looked up via `repository` when `document` is not given
-   * @param {{learnerName?: string, date?: string, gutter?: boolean|number}} [args.context] -
+   * @param {{learnerName?: string, date?: string, gutter?: boolean|number, teacher?: boolean}} [args.context] -
    *   `learnerName`/`date` prefill the header's Name/Date lines (blank ruled lines
    *   when absent); `gutter` overrides the default 3-hole-punch reservation
-   *   (v2 only — must be >= 0).
+   *   (v2 only — must be >= 0). `teacher` (v2 only, spec §4.1/§12.1) is a RENDER
+   *   MODE, orthogonal to `seed`/`variant`: it prints the identical student
+   *   pages this same call would have produced without it, then appends a
+   *   dense answer-key section built from the resolved bank. Ignored on the
+   *   v1 (legacy) path — v1 has no teacher-key concept.
    * @returns {Promise<{bytes: Buffer, pageCount: number, density: 'normal'|'compact'|null, warnings: string[]}>}
    *   `density` is null for a v1 (legacy-path) document, which has no density concept.
    */
@@ -462,6 +610,27 @@ export class RenderPrintDocument {
     const renderer = this.#rendererFactory({
       theme: chosenTheme, texToSvg: this.#texToSvg, resolveAsset: this.#resolveAsset,
     });
+
+    // Teacher key (spec §4.1, §12.1, Task 6): a RENDER MODE, orthogonal to
+    // everything above — the fit loop, `document`, `chosen` density/theme,
+    // `furnitureOpts` are ALL computed identically whether or not
+    // `context.teacher` is set, so a teacher render can never choose a
+    // different density/page-break plan for the student content than a
+    // plain render of the same document would. `keyBlocks`/`keyTitle` are
+    // appended by the renderer as EXTRA pages, entirely separately measured
+    // and placed from the student content (see DocumentPdfRenderer.mjs's
+    // `renderPlaced`) — never folded into the same fit/placement decision.
+    const teacher = context.teacher === true;
+    let keyBlocks = null;
+    let keyTitle = null;
+    const warnings = [...prepareWarnings];
+    if (teacher) {
+      const key = buildTeacherKeyBlocks(document, bank, chosenTheme.omr.letters);
+      keyBlocks = key.blocks;
+      keyTitle = key.title;
+      if (key.warning) warnings.push(key.warning);
+    }
+
     const result = await renderer.render(document, {
       studentName: context.learnerName ?? null,
       date: context.date ?? null,
@@ -479,9 +648,10 @@ export class RenderPrintDocument {
       // passthrough, already summed by `#renderV2` above.
       bank,
       totalPoints,
+      keyBlocks,
+      keyTitle,
     });
 
-    const warnings = [...prepareWarnings];
     if (chosen.density === 'compact') {
       warnings.push(`fit.policy 'one-page' required compact density to fit '${document.id}' on one page`);
     }

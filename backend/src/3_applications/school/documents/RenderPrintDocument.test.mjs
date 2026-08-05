@@ -858,3 +858,206 @@ describe('RenderPrintDocument — bank-select sugar resolution (spec §6.2)', ()
     expect(first.bytes.equals(second.bytes)).toBe(true);
   });
 });
+
+// ── Task 6: teacher key render mode (spec §4.1, §12.1) ──────────────────────
+
+describe('RenderPrintDocument — teacher key render mode (spec §4.1, §12.1)', () => {
+  /** One source document exercising every answerable item type the teacher key formats. */
+  const teacherSourceDoc = (over = {}) => ({
+    schema: DOCUMENT_SOURCE_SCHEMA,
+    id: 'teacher-fixture',
+    seed: 321,
+    variant: 2,
+    target: ['letter'],
+    archetype: 'quiz',
+    title: 'Teacher Fixture',
+    blocks: [
+      {
+        type: 'question',
+        itemId: 'mc1',
+        number: 1,
+        blocks: [
+          { type: 'rich_text', md: 'Pick a color.' },
+          { type: 'omr_response', itemId: 'mc1', choices: 3 },
+        ],
+        choices: ['Red', 'Green', 'Blue'],
+        answer: 'Blue',
+      },
+      {
+        type: 'question',
+        itemId: 'ms1',
+        number: 2,
+        blocks: [
+          { type: 'rich_text', md: 'Pick all primes.' },
+          { type: 'omr_response', itemId: 'ms1', choices: 4 },
+        ],
+        choices: ['2', '3', '4', '5'],
+        answers: ['2', '3', '5'],
+      },
+      {
+        type: 'cloze',
+        text: 'The sky is {{1}} and grass is {{2}}.',
+        blanks: [{ n: 1, answer: 'blue' }, { n: 2, answer: 'green' }],
+      },
+      {
+        type: 'matching',
+        key: 'm1',
+        left: ['WA', 'OR', 'ID'],
+        right: ['Boise', 'Salem', 'Olympia'],
+        pairs: [{ left: 'WA', right: 'Olympia' }, { left: 'OR', right: 'Salem' }, { left: 'ID', right: 'Boise' }],
+      },
+      { type: 'short_answer', prompt: 'Name a state capital.', answer: 'Olympia' },
+    ],
+    ...over,
+  });
+
+  it('renders the identical student pages a non-teacher render of the same document produces (same shuffles, same layout)', async () => {
+    const useCase = new RenderPrintDocument();
+    const document = v2doc({ archetype: 'quiz', seed: 999, blocks: [question(1), question(2)] });
+
+    const plain = await useCase.execute({ document });
+    const teacher = await useCase.execute({ document, context: { teacher: true } });
+
+    expect(teacher.pageCount).toBeGreaterThan(plain.pageCount);
+
+    const [plainItems, teacherItems] = await Promise.all([
+      pdfTextItems(plain.bytes), pdfTextItems(teacher.bytes),
+    ]);
+    // Every text run on every STUDENT page (1..plain.pageCount) is drawn at
+    // the identical string and position in both renders — the strongest
+    // "layout equality" check available at the text-layer, and exactly what
+    // the shared measure/place pass (unchanged by teacher mode) guarantees.
+    const studentItems = (items) => items.filter((item) => item.page <= plain.pageCount);
+    expect(studentItems(teacherItems)).toEqual(studentItems(plainItems));
+  });
+
+  it('published document objects are never mutated by a teacher render', async () => {
+    const document = {
+      schema: DOCUMENT_V2_SCHEMA,
+      id: 'published-teacher',
+      seed: 3,
+      target: ['letter'],
+      archetype: 'quiz',
+      rev: 'deadbeef1',
+      blocks: [{
+        type: 'question',
+        itemId: 'p1',
+        number: 1,
+        blocks: [
+          { type: 'rich_text', md: 'Pick a color.' },
+          { type: 'omr_response', itemId: 'p1', choices: 2 },
+        ],
+      }],
+    };
+    const bank = {
+      id: 'derived/published-teacher@deadbeef1',
+      items: [{
+        id: 'p1', type: 'multiple_choice', prompt: 'Pick a color.', choices: ['Red', 'Blue'], answer: 'Red',
+      }],
+    };
+    const snapshot = JSON.parse(JSON.stringify(document));
+    const repository = { get: async () => null, getDerivedBank: async () => bank };
+    const useCase = new RenderPrintDocument({ repository });
+
+    const result = await useCase.execute({ document, context: { teacher: true } });
+    expect(isPdf(result.bytes)).toBe(true);
+    expect(document).toEqual(snapshot);
+  });
+
+  it('formats multiple_choice/multi_select/cloze/matching/short_answer answers and prints the "Answer key — <title> (variant N)" heading', async () => {
+    const useCase = new RenderPrintDocument();
+    const result = await useCase.execute({ document: teacherSourceDoc(), context: { teacher: true } });
+    const text = pdfText(result.bytes);
+
+    expect(text).toContain('Answer key — Teacher Fixture (variant 2)');
+    // multiple_choice: 'Blue' is index 2 of ['Red','Green','Blue'] -> 'C'.
+    expect(text).toMatch(/1\.\s*C/);
+    // multi_select: '2','3','5' are indices 0,1,3 of ['2','3','4','5'] -> A, B, D (already sorted).
+    expect(text).toMatch(/2\.\s*A,\s*B,\s*D/);
+    // cloze blanks, by their own {{n}} number.
+    expect(text).toMatch(/1\.\s*blue/);
+    expect(text).toMatch(/2\.\s*green/);
+    // short_answer (standalone sugar block): the answer text prints verbatim.
+    expect(text).toContain('Olympia');
+  });
+
+  it('formats a matching block as "<n>-<letter> …" against the SAME shuffled left/right order the student page prints', async () => {
+    const useCase = new RenderPrintDocument();
+    const document = teacherSourceDoc();
+    const result = await useCase.execute({ document, context: { teacher: true } });
+    const text = pdfText(result.bytes);
+
+    const left = ['WA', 'OR', 'ID'];
+    const right = ['Boise', 'Salem', 'Olympia'];
+    const pairs = [{ left: 'WA', right: 'Olympia' }, { left: 'OR', right: 'Salem' }, { left: 'ID', right: 'Boise' }];
+    const shuffledLeft = applyShuffle(left, deriveShuffle(321, 2, 'm1:left', left.length));
+    const shuffledRight = applyShuffle(right, deriveShuffle(321, 2, 'm1:right', right.length));
+    const expected = pairs
+      .map((pair) => ({
+        number: shuffledLeft.indexOf(pair.left) + 1,
+        letter: String.fromCharCode(65 + shuffledRight.indexOf(pair.right)),
+      }))
+      .sort((a, b) => a.number - b.number)
+      .map(({ number, letter }) => `${number}-${letter}`)
+      .join(' ');
+
+    expect(text).toContain(expected);
+  });
+
+  it('a document with zero answerable items renders a bare heading and surfaces a warning, not a failure', async () => {
+    const useCase = new RenderPrintDocument();
+    const document = v2doc({ archetype: 'infopage', blocks: [{ type: 'rich_text', md: 'Just some prose, nothing gradeable.' }] });
+    const result = await useCase.execute({ document, context: { teacher: true } });
+
+    expect(isPdf(result.bytes)).toBe(true);
+    expect(result.warnings).toEqual(expect.arrayContaining([
+      expect.stringMatching(/no answerable items/i),
+    ]));
+    const text = pdfText(result.bytes);
+    expect(text).toContain('No answerable items in this document.');
+  });
+
+  it('a published v2 document resolves its teacher key from the repository-fetched derived bank', async () => {
+    const published = {
+      schema: DOCUMENT_V2_SCHEMA,
+      id: 'published-fixture',
+      seed: 3,
+      target: ['letter'],
+      archetype: 'quiz',
+      rev: 'deadbeef1',
+      blocks: [{
+        type: 'question',
+        itemId: 'p1',
+        number: 1,
+        blocks: [
+          { type: 'rich_text', md: 'Pick a color.' },
+          { type: 'omr_response', itemId: 'p1', choices: 2 },
+        ],
+      }],
+    };
+    const bank = {
+      id: 'derived/published-fixture@deadbeef1',
+      items: [{
+        id: 'p1', type: 'multiple_choice', prompt: 'Pick a color.', choices: ['Red', 'Blue'], answer: 'Red',
+      }],
+    };
+    const repository = {
+      get: async () => null,
+      getDerivedBank: async (id, rev) => (id === 'published-fixture' && rev === 'deadbeef1' ? bank : null),
+    };
+    const useCase = new RenderPrintDocument({ repository });
+    const result = await useCase.execute({ document: published, context: { teacher: true } });
+    const text = pdfText(result.bytes);
+    // Answer 'Red' is index 0 of ['Red','Blue'] -> letter A.
+    expect(text).toMatch(/1\.\s*A/);
+    expect(result.warnings).toEqual([]);
+  });
+
+  it('ignores context.teacher on the v1 legacy path — byte-identical to the same call without it', async () => {
+    const useCase = new RenderPrintDocument();
+    const raw = v1doc();
+    const withoutTeacher = await useCase.execute({ document: raw });
+    const withTeacher = await useCase.execute({ document: raw, context: { teacher: true } });
+    expect(withoutTeacher.bytes.equals(withTeacher.bytes)).toBe(true);
+  });
+});

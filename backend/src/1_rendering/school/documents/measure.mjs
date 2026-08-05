@@ -800,6 +800,46 @@ function measureMatchingNode(ctx, block, { widthPt }) {
 }
 
 /**
+ * `answer_key` (teacher render mode only — see the `measureNodes` case
+ * comment above): a dense, single-column "<label>  <answer>" list, printed
+ * at `theme.answerKey.lineStyleKey` ('caption' — italic, muted, smaller than
+ * body) — the style this theme reserves for meta/reference text, never
+ * primary content. The section's own HEADING ("Answer key — <title>
+ * (variant N)") is NOT drawn by this node — `RenderPrintDocument` sets it as
+ * the mini key-document's `title` instead, so it reuses the existing
+ * `headerFragment` banner (bold title + rule) rather than duplicating that
+ * mechanism here. `block.entries` already carries fully-formatted
+ * `{label, text}` strings (RenderPrintDocument resolved every answer against
+ * the bank before this ever runs — see this module's own doctrine,
+ * "Answer-key separation": rendering draws what it is handed, it does not
+ * know what a bank item is). Row gaps are deliberately tight
+ * (`theme.answerKey.rowGapPt`, far below any `theme.spacing[...]` value) —
+ * "dense end-of-doc key" (spec §5.4-analog), not one answer per paragraph.
+ */
+function measureAnswerKeyNode(ctx, block, { widthPt }) {
+  const { theme, doc } = ctx;
+  const { answerKey } = theme;
+
+  let cursor = 0;
+  const entries = block.entries.map((entry) => {
+    const runs = entry.label
+      ? [{ text: `${entry.label} `, font: 'bold' }, { text: entry.text, font: 'regular' }]
+      : [{ text: entry.text, font: 'regular' }];
+    const measured = measureTextLines(doc, theme, runs, { widthPt, styleKey: answerKey.lineStyleKey });
+    const offsetYPt = cursor;
+    cursor += measured.heightPt + answerKey.rowGapPt;
+    return { lines: measured.lines, offsetYPt };
+  });
+
+  return {
+    kind: 'answerKey',
+    entries,
+    widthPt,
+    heightPt: entries.length ? cursor - answerKey.rowGapPt : 0,
+  };
+}
+
+/**
  * `inset` → ONE `box` node wrapping its children's nodes, padded and
  * radius'd from `theme.box`. Children are measured with `measureNodes`
  * directly (not `measureBlocks`) — `blocks.mjs` already forbids nesting
@@ -929,6 +969,15 @@ function measureNodes(ctx, block, { widthPt, path, bodyStyleKey = 'body' }) {
 
     case 'matching':
       return [measureMatchingNode(ctx, block, { widthPt })];
+
+    // Teacher-key render mode ONLY (spec §4.1, §12.1, Task 6): built directly
+    // by `RenderPrintDocument` from the derived bank and fed straight to
+    // `measureDocumentFragments`/`render()`, bypassing `blocks.mjs`'s
+    // BLOCK_TYPES registry and `validateAnyDocument` entirely — it is never
+    // authored in source YAML, so it needs no validator. See
+    // `measureAnswerKeyNode` below.
+    case 'answer_key':
+      return [measureAnswerKeyNode(ctx, block, { widthPt })];
 
     case 'cloze': {
       const blanksByN = new Map(block.blanks.map((blank) => [blank.n, blank]));
@@ -1135,6 +1184,9 @@ function fragmentFromNode(node, { id, block, theme }) {
     // already takes.
     wordbank: theme.wordbank?.spacingClass,
     matching: theme.matching?.spacingClass,
+    // Teacher-key render mode (Task 6): same "atomic single-node fragment"
+    // path as wordbank/matching above.
+    answerKey: theme.answerKey?.spacingClass,
   };
   node.offsetYPt = 0;
   return {

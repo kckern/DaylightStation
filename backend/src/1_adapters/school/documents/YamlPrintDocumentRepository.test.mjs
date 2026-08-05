@@ -221,4 +221,38 @@ describe('writePublished / getPublished / getDerivedBank (Task 5, spec §3/§4.3
     const repo = new YamlPrintDocumentRepository({ directory: '/docs', io });
     expect(() => repo.getDerivedBank('states-quiz-3')).toThrow(/rev/);
   });
+
+  // Regression (Task 6, found via the `school:docs publish` CLI's real
+  // filesystem round-trip): `saveYaml`'s `js-yaml.dump` OMITS any key whose
+  // value is `undefined` — so a freshly-computed in-memory object that
+  // carries an optional field EXPLICITLY set to `undefined` (e.g.
+  // `questionBankValidation.mjs`'s `unit`/`readalong`) round-trips through a
+  // real save+load cycle WITHOUT that key at all. Comparing the two with
+  // `fakeStore`'s in-memory `io` (no serialization step) can never exercise
+  // this — it needs the REAL default `io` (`saveYaml`/`loadYaml`) against an
+  // actual file.
+  it('re-publishing identical content whose object carries explicit `undefined`-valued keys is still an idempotent no-op (real YAML round-trip)', async () => {
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'yaml-print-doc-repo-'));
+    try {
+      const repo = new YamlPrintDocumentRepository({ directory });
+      const bankWithUndefinedKeys = {
+        id: 'derived/states-quiz-3@abc123', title: 'States Quiz', items: [{ id: 'q1' }], unit: undefined, readalong: undefined,
+      };
+      const first = repo.writePublished({ document, bank: bankWithUndefinedKeys, rev: 'abc123' });
+      expect(first.bank).toEqual({ written: true, alreadyPublished: false });
+
+      // A SECOND call with a freshly-built object (same undefined-valued
+      // keys, new object identity) must recognise it as identical content —
+      // not throw "refusing to overwrite ... different content".
+      const second = repo.writePublished({
+        document: { ...document }, bank: { ...bankWithUndefinedKeys }, rev: 'abc123',
+      });
+      expect(second.bank).toEqual({ written: false, alreadyPublished: true });
+    } finally {
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
 });
