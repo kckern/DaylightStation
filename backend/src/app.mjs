@@ -2984,6 +2984,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     // allocation store, so a freshCard render here is a real card allocation.
     renderPrintDocument: schoolLifecycle.renderPrintDocument ?? null,
     printDocumentsRepo: schoolLifecycle.stores?.printDocuments ?? null,
+    printAllocationStore: schoolLifecycle.stores?.allocationStore ?? null,
     logger: rootLogger.child({ module: 'school-api' })
   });
 
