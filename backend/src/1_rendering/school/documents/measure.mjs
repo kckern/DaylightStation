@@ -1360,8 +1360,15 @@ function headerFragment(document, {
  * Card header strip (Print Design Phase C, Task 4, spec §5.2): the card ID a
  * student bubbles into OMR columns 1-7, printed directly below the document
  * banner as large letter-spaced digits — "Card 4 8 2 9 3 0 6 — questions
- * 18-30" — plus, on the first sheet issued against a fresh card, a
- * caption-style instruction line telling the student where to bubble it.
+ * 18-30" — plus a caption-style instruction line underneath. Every card
+ * sheet gets a reminder line (spec §5.2: "subsequent sheets ... print the
+ * same digits with 'use your card 4829306'"); the FIRST sheet issued
+ * against a fresh card gets a different instruction telling the student
+ * where to bubble it in. The two are mutually exclusive text for the SAME
+ * line, never both — `firstUse` just selects which. The reminder's digits
+ * are the plain `cardId` string, un-spaced (it is a reference line, not a
+ * bubbling guide) — the large tracked digit row above it is the only place
+ * letter-spacing applies.
  *
  * `card` is render context (`{cardId, startRow, endRow, firstUse}`, spec
  * §5.3/§5.4's allocation record) threaded by the caller exactly like
@@ -1375,9 +1382,17 @@ function headerFragment(document, {
  * discipline `wrapRuns` uses for word offsets — so the draw pass never
  * re-measures a digit and the two can never disagree about where digit 4
  * sits.
+ *
+ * A theme with no `card` token group (the legacy `documentPdfTheme` — this
+ * feature is workbook-only, same posture as `theme.badge`'s multi_select
+ * checkbox) refuses loudly here rather than crashing on an undefined read
+ * deep inside digit measurement.
  */
 function cardHeaderFragment(doc, theme, card, { widthPt: widthPtOverride } = {}) {
   const { card: cardTheme } = theme;
+  if (!cardTheme) {
+    throw new Error('card rendering requires a theme with card tokens (workbook theme)');
+  }
   const widthPt = widthPtOverride ?? (theme.page.widthPt - 2 * theme.page.marginPt);
   const cardId = String(card.cardId);
 
@@ -1398,13 +1413,14 @@ function cardHeaderFragment(doc, theme, card, { widthPt: widthPtOverride } = {})
   const metaText = `—  questions ${card.startRow}–${card.endRow}`;
 
   const firstUse = card.firstUse === true;
-  const instruction = firstUse
-    ? measureTextLines(doc, theme, [{ text: 'Bubble this number into columns 1–7 of a new card.', font: 'italic' }], {
-      widthPt, styleKey: 'caption',
-    })
-    : null;
+  const instructionText = firstUse
+    ? 'Bubble this number into columns 1–7 of a new card.'
+    : `Use your card ${cardId}.`;
+  const instruction = measureTextLines(doc, theme, [{ text: instructionText, font: 'italic' }], {
+    widthPt, styleKey: 'caption',
+  });
 
-  const heightPt = cardTheme.bandHeightPt + (instruction ? cardTheme.instructionGapPt + instruction.heightPt : 0);
+  const heightPt = cardTheme.bandHeightPt + cardTheme.instructionGapPt + instruction.heightPt;
 
   const node = {
     kind: 'cardHeader',

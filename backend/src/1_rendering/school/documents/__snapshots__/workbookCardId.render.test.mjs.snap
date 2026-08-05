@@ -27,7 +27,7 @@ exports[`card header strip — measure (spec §5.2/§5.3) > structural snapshot 
       122.41,
     ],
     "firstUse": true,
-    "hasInstruction": true,
+    "instructionText": "Bubble this number into columns 1–7 of a new card.",
     "kind": "cardHeader",
     "labelText": "Card",
     "metaText": "—  questions 1–12",
@@ -36,10 +36,10 @@ exports[`card header strip — measure (spec §5.2/§5.3) > structural snapshot 
 }
 `;
 
-exports[`card header strip — measure (spec §5.2/§5.3) > structural snapshot — no first-use 1`] = `
+exports[`card header strip — measure (spec §5.2/§5.3) > structural snapshot — non-first-use reminder 1`] = `
 {
   "atomic": true,
-  "heightPt": 28,
+  "heightPt": 44,
   "id": "cardHeader",
   "node": {
     "cardId": "4829306",
@@ -63,7 +63,7 @@ exports[`card header strip — measure (spec §5.2/§5.3) > structural snapshot 
       122.41,
     ],
     "firstUse": false,
-    "hasInstruction": false,
+    "instructionText": "Use your card 4829306.",
     "kind": "cardHeader",
     "labelText": "Card",
     "metaText": "—  questions 18–30",
