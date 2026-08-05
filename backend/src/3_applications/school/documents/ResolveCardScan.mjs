@@ -138,6 +138,56 @@ function pointsForRow(preparedDocument, blockPath) {
 }
 
 /**
+ * A write-on's display prompt: the first `rich_text` child's `md` for a
+ * top-level `question` block (mirrors `questionPrompts`'s own concatenation
+ * seed, `documentValidation.mjs`), or a standalone `short_answer` sugar
+ * block's own `prompt` field directly (it carries no `rich_text` sibling —
+ * `prompt` IS its printed text, `blocks.mjs`'s `short_answer` validator).
+ */
+function firstPromptText(block) {
+  if (block.type === 'short_answer') return typeof block.prompt === 'string' ? block.prompt : null;
+  for (const child of block.blocks ?? []) {
+    if (child?.type === 'rich_text' && typeof child.md === 'string') return child.md;
+    if (child?.type === 'short_answer' && typeof child.prompt === 'string') return child.prompt;
+  }
+  return null;
+}
+
+/**
+ * Write-ons (spec §5.3's "write-on blocks are worksheet-only or unscored"):
+ * top-level blocks of the PREPARED document that `planRows` did NOT turn
+ * into a card row. Two shapes reach here:
+ *   - a top-level `question` block whose `itemId` isn't among `plan.rows`'
+ *     itemIds (unscored, or an explicit `points: 0` override) — complement
+ *     of exactly the set `planRows` selected, never a re-derived guess at
+ *     block shape (F4-style drift risk `planRows` itself already fences off).
+ *   - a standalone `short_answer` sugar block (spec §4.2/§6.2) — NEVER
+ *     row-mapped regardless of whether it minted an answer-key item
+ *     (`RenderPrintDocument.mjs`'s own `collectAnswerKeyEntries` comment:
+ *     "it's a write-on aside, never card-mapped"), so it unconditionally
+ *     counts here. It carries no author-assigned id (`documentSource.mjs`'s
+ *     keyless-item scheme is a PUBLISH-time-only concern); `itemRef` is used
+ *     when present (an answer was authored), else a positional fallback
+ *     mirroring `blockIndexFromPath`'s own `blocks[N]` notation elsewhere in
+ *     this file — good enough for a diagnostic label, never fed back into
+ *     grading.
+ */
+function unscannedItemsFor(prepared, rowItemIds) {
+  const items = [];
+  (prepared.blocks ?? []).forEach((block, index) => {
+    if (!block || typeof block !== 'object') return;
+    if (block.type === 'question' && !rowItemIds.has(block.itemId)) {
+      items.push({ itemId: block.itemId ?? `blocks[${index}]`, prompt: firstPromptText(block) ?? null });
+      return;
+    }
+    if (block.type === 'short_answer') {
+      items.push({ itemId: block.itemRef ?? `blocks[${index}]`, prompt: firstPromptText(block) ?? null });
+    }
+  });
+  return items;
+}
+
+/**
  * A given letter -> the bank item's actual choice value at that position, or
  * `undefined` for an out-of-range letter (F6 review fix, Low: a nonexistent
  * bubble — a decoded letter past the item's own choice count — used to fall
@@ -306,6 +356,21 @@ export class ResolveCardScan {
       };
     }
 
+    // A card whose records EXIST but are all released/superseded (dead —
+    // no live|satisfied claimant left at all), scanned WITH real answers:
+    // never silence. Distinct from `unknownCard` above (which fires on ZERO
+    // records) — this is a card the store once knew, whose printed key(s)
+    // have since been fully retired, so every mark it carries needs a
+    // human's attention rather than vanishing into an empty `results: []`.
+    if (eligible.length === 0 && records.length > 0 && answeredRows.size > 0) {
+      return {
+        results: [],
+        deadCard: true,
+        answeredRowCount: answeredRows.size,
+        recordStatuses: records.map((record) => record.status),
+      };
+    }
+
     // Newest-claimant-wins row ownership (spec §5.4 review fix, CRITICAL —
     // see `resolveRowOwners`'s own doc comment): resolved ONCE, up front,
     // over every eligible record on the card, never per-record — a record's
@@ -339,8 +404,26 @@ export class ResolveCardScan {
         continue;
       }
 
-      // eslint-disable-next-line no-await-in-loop
-      const cardResult = await this.#resolveRecord(record, ownedRows, answers);
+      // A per-record throw (e.g. the published artifact/derived bank behind
+      // this record's PINNED rev is gone — a phantom rev, a deleted
+      // artifact) no longer aborts the whole scan (resilience fix): it
+      // becomes an error entry for THIS record only, and every OTHER
+      // record on the same card still resolves and grades normally.
+      let cardResult;
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        cardResult = await this.#resolveRecord(record, ownedRows, answers);
+      } catch (err) {
+        cardResult = {
+          cardId: record.cardId,
+          recordId: record.recordId,
+          documentId: record.documentId,
+          rev: record.rev,
+          variant: record.variant,
+          ...(record.learnerId != null ? { learnerId: record.learnerId } : {}),
+          error: { code: err.code ?? 'SCAN_RECORD_RESOLVE_FAILED', message: err.message },
+        };
+      }
       results.push(cardResult);
 
       // A drift-error entry (F4) carries no `results` at all — nothing was
@@ -497,12 +580,19 @@ export class ResolveCardScan {
         const points = pointsForRow(prepared, planned.blockPath);
         const graded = gradeRow(item, answers[planned.row], points);
         return {
-          row: planned.row, itemId, itemType: item.type, ...graded,
+          row: planned.row, itemId, itemType: item.type, prompt: item.prompt ?? null, ...graded,
         };
       });
 
     const totalPoints = rowResults.reduce((sum, row) => sum + row.points, 0);
     const earnedPoints = rowResults.reduce((sum, row) => sum + row.earned, 0);
+
+    // Write-ons (spec §5.3): top-level blocks of THIS record's own prepared
+    // document that consumed no card row at all — never re-derived per row,
+    // computed once over the whole document (see `unscannedItemsFor`'s own
+    // doc comment for the two shapes it recognises).
+    const rowItemIds = new Set(plan.rows.map((planned) => planned.itemId));
+    const unscannedItems = unscannedItemsFor(prepared, rowItemIds);
 
     return {
       cardId: record.cardId,
@@ -522,6 +612,7 @@ export class ResolveCardScan {
       results: rowResults,
       totalPoints,
       earnedPoints,
+      unscannedItems,
     };
   }
 

@@ -192,19 +192,19 @@ describe('execute — grading across item types (spec §5.4/§5.5)', () => {
     });
     expect(card.results).toEqual([
       {
-        row: 1, itemId: 'q1', itemType: 'multiple_choice', status: 'correct', given: 'Alpha', points: 1, earned: 1,
+        row: 1, itemId: 'q1', itemType: 'multiple_choice', prompt: 'Prompt for q1', status: 'correct', given: 'Alpha', points: 1, earned: 1,
       },
       {
-        row: 2, itemId: 'q2', itemType: 'multiple_choice', status: 'ambiguous', given: ['A', 'B'], points: 1, earned: 0,
+        row: 2, itemId: 'q2', itemType: 'multiple_choice', prompt: 'Prompt for q2', status: 'ambiguous', given: ['A', 'B'], points: 1, earned: 0,
       },
       {
-        row: 3, itemId: 'q3', itemType: 'true_false', status: 'correct', given: 'A', points: 1, earned: 1,
+        row: 3, itemId: 'q3', itemType: 'true_false', prompt: 'Prompt for q3', status: 'correct', given: 'A', points: 1, earned: 1,
       },
       {
-        row: 4, itemId: 'q4', itemType: 'multi_select', status: 'correct', given: ['Red', 'Blue'], points: 1, earned: 1,
+        row: 4, itemId: 'q4', itemType: 'multi_select', prompt: 'Prompt for q4', status: 'correct', given: ['Red', 'Blue'], points: 1, earned: 1,
       },
       {
-        row: 5, itemId: 'q5', itemType: 'multiple_choice', status: 'blank', given: null, points: 5, earned: 0,
+        row: 5, itemId: 'q5', itemType: 'multiple_choice', prompt: 'Prompt for q5', status: 'blank', given: null, points: 5, earned: 0,
       },
     ]);
     expect(card.totalPoints).toBe(9); // 1+1+1+1+5
@@ -290,18 +290,18 @@ describe('execute — multi-doc shared card spanning the bank boundary (spec §5
     const byDoc = Object.fromEntries(result.results.map((r) => [r.documentId, r]));
     expect(byDoc['boundary-doc-a'].results).toEqual([
       {
-        row: 1, itemId: 'a1', itemType: 'multiple_choice', status: 'correct', given: 'X', points: 1, earned: 1,
+        row: 1, itemId: 'a1', itemType: 'multiple_choice', prompt: 'Prompt for a1', status: 'correct', given: 'X', points: 1, earned: 1,
       },
       {
-        row: 2, itemId: 'a2', itemType: 'multiple_choice', status: 'incorrect', given: 'X', points: 1, earned: 0,
+        row: 2, itemId: 'a2', itemType: 'multiple_choice', prompt: 'Prompt for a2', status: 'incorrect', given: 'X', points: 1, earned: 0,
       },
     ]);
     expect(byDoc['boundary-doc-b'].results).toEqual([
       {
-        row: 26, itemId: 'b1', itemType: 'true_false', status: 'correct', given: 'B', points: 1, earned: 1,
+        row: 26, itemId: 'b1', itemType: 'true_false', prompt: 'Prompt for b1', status: 'correct', given: 'B', points: 1, earned: 1,
       },
       {
-        row: 27, itemId: 'b2', itemType: 'true_false', status: 'correct', given: 'A', points: 1, earned: 1,
+        row: 27, itemId: 'b2', itemType: 'true_false', prompt: 'Prompt for b2', status: 'correct', given: 'A', points: 1, earned: 1,
       },
     ]);
     expect(result.unallocatedRows).toBeUndefined();
@@ -359,7 +359,7 @@ describe('execute — unallocated rows (spec §5.4: "never guessed")', () => {
     expect(result).toEqual({ results: [] });
   });
 
-  it('reports a RELEASED record\'s rows as unallocated and grades nothing for them (spec §5.4 review fix, Important)', async () => {
+  it('a card whose ONLY record is RELEASED, scanned with answers, reports deadCard rather than a bare unallocatedRow (re-review wave 2: superseded by the more informative dead-card signal)', async () => {
     const repository = fakeRepository();
     const allocationStore = fakeAllocationStore();
     const source = sourceDoc('released-quiz', [
@@ -379,7 +379,10 @@ describe('execute — unallocated rows (spec §5.4: "never guessed")', () => {
     });
 
     expect(result.results).toEqual([]);
-    expect(result.unallocatedRows).toEqual([1]);
+    expect(result.deadCard).toBe(true);
+    expect(result.answeredRowCount).toBe(1);
+    expect(result.recordStatuses).toEqual(['released']);
+    expect(result.unallocatedRows).toBeUndefined();
   });
 });
 
@@ -491,10 +494,10 @@ describe('execute — row ownership on reuse: newest claimant wins (spec §5.4 r
     expect(result.results[0].documentId).toBe('reuse-quiz-2');
     expect(result.results[0].results).toEqual([
       {
-        row: 1, itemId: 'r2-q1', itemType: 'multiple_choice', status: 'correct', given: 'P', points: 1, earned: 1,
+        row: 1, itemId: 'r2-q1', itemType: 'multiple_choice', prompt: 'Prompt for r2-q1', status: 'correct', given: 'P', points: 1, earned: 1,
       },
       {
-        row: 2, itemId: 'r2-q2', itemType: 'multiple_choice', status: 'incorrect', given: 'Q', points: 1, earned: 0,
+        row: 2, itemId: 'r2-q2', itemType: 'multiple_choice', prompt: 'Prompt for r2-q2', status: 'incorrect', given: 'Q', points: 1, earned: 0,
       },
     ]);
     expect(result.unallocatedRows).toBeUndefined();
@@ -692,10 +695,10 @@ describe('execute — row-mapping integrity vs mutable external banks (F4 review
     expect(result.results[0].error).toBeUndefined();
     expect(result.results[0].results).toEqual([
       {
-        row: 1, itemId: 'ext-a', itemType: 'multiple_choice', status: 'correct', given: 'X', points: 1, earned: 1,
+        row: 1, itemId: 'ext-a', itemType: 'multiple_choice', prompt: 'A', status: 'correct', given: 'X', points: 1, earned: 1,
       },
       {
-        row: 2, itemId: 'ext-b', itemType: 'multiple_choice', status: 'correct', given: 'X', points: 1, earned: 1,
+        row: 2, itemId: 'ext-b', itemType: 'multiple_choice', prompt: 'B', status: 'correct', given: 'X', points: 1, earned: 1,
       },
     ]);
 
@@ -721,8 +724,88 @@ describe('execute — nonexistent bubble grading (F6 review fix, Low)', () => {
     const result = await useCase.execute({ testId: allocation.cardId, answers: { 1: 'D' } });
 
     expect(result.results[0].results[0]).toEqual({
-      row: 1, itemId: 'f6-q1', itemType: 'multiple_choice', status: 'incorrect', given: 'D', points: 1, earned: 0,
+      row: 1, itemId: 'f6-q1', itemType: 'multiple_choice', prompt: 'Prompt for f6-q1', status: 'incorrect', given: 'D', points: 1, earned: 0,
     });
+  });
+});
+
+describe('execute — resilience + review signals (re-review wave 2)', () => {
+  it('one record failing to resolve becomes an error entry; cardmates still grade', async () => {
+    const repository = fakeRepository();
+    const allocationStore = fakeAllocationStore();
+    const sourceA = sourceDoc('resilient-a', [
+      mcQuestion('ra1', 1, { choices: ['X', 'Y'], answer: 'X' }),
+    ]);
+    const { allocation } = await publishAndAllocate({
+      repository, allocationStore, source: sourceA, context: { freshCard: true },
+    });
+    const sourceB = sourceDoc('resilient-b', [
+      mcQuestion('rb2', 2, { choices: ['X', 'Y'], answer: 'Y' }),
+    ]);
+    await publishAndAllocate({
+      repository, allocationStore, source: sourceB, context: { cardId: allocation.cardId, startRow: 2 },
+    });
+    // Sabotage record A's pinned rev so its published doc is unresolvable —
+    // the exact phantom-rev / deleted-artifact failure — via a wrapper
+    // repository that 404s resilient-a only.
+    const wrapped = {
+      ...repository,
+      getPublished: (id, rev) => (id === 'resilient-a' ? null : repository.getPublished(id, rev)),
+      getDerivedBank: (id, rev) => repository.getDerivedBank(id, rev),
+    };
+    const useCase = new ResolveCardScan({ allocationStore, repository: wrapped });
+    const result = await useCase.execute({
+      testId: allocation.cardId, answers: { 1: 'A', 2: 'B' },
+    });
+    const byDoc = Object.fromEntries(result.results.map((r) => [r.documentId, r]));
+    expect(byDoc['resilient-a'].error.code).toBe('SCAN_RECORD_RESOLVE_FAILED');
+    expect(byDoc['resilient-b'].results).toHaveLength(1);
+    expect(byDoc['resilient-b'].results[0].status).toBe('correct');
+  });
+
+  it('a card whose records are ALL dead (released) with answers reports deadCard, never silence', async () => {
+    const repository = fakeRepository();
+    const allocationStore = fakeAllocationStore();
+    const source = sourceDoc('dead-quiz', [
+      mcQuestion('d1', 1, { choices: ['X', 'Y'], answer: 'X' }),
+    ]);
+    const { allocation } = await publishAndAllocate({
+      repository, allocationStore, source, context: { freshCard: true },
+    });
+    await allocationStore.release({ cardId: allocation.cardId });
+    const useCase = new ResolveCardScan({ allocationStore, repository });
+    const result = await useCase.execute({ testId: allocation.cardId, answers: { 1: 'A' } });
+    expect(result.results).toEqual([]);
+    expect(result.deadCard).toBe(true);
+    expect(result.answeredRowCount).toBe(1);
+    expect(result.recordStatuses).toEqual(['released']);
+  });
+
+  it('write-on questions (no card row) surface as unscannedItems with prompts; row results carry prompts', async () => {
+    const repository = fakeRepository();
+    const allocationStore = fakeAllocationStore();
+    // The write-on is a STANDALONE `short_answer` sugar block, not a bare
+    // `question` block: `blocks.mjs`'s `question` validator requires
+    // `number` even on a non-row-consuming question, so there is no legal
+    // "numberless question" shape — `short_answer` sugar is the actual v1
+    // write-on primitive (spec §4.2/§6.2), and per
+    // `RenderPrintDocument.mjs`'s own `collectAnswerKeyEntries` comment it
+    // is "never card-mapped" regardless of scoring, so it never competes for
+    // a row the way an unscored `question` block would.
+    const source = sourceDoc('writeon-quiz', [
+      mcQuestion('w1', 1, { choices: ['X', 'Y'], answer: 'X' }),
+      { type: 'short_answer', prompt: 'Explain your reasoning.' },
+    ]);
+    const { allocation } = await publishAndAllocate({
+      repository, allocationStore, source, context: { freshCard: true },
+    });
+    const useCase = new ResolveCardScan({ allocationStore, repository });
+    const result = await useCase.execute({ testId: allocation.cardId, answers: { 1: 'A' } });
+    const card = result.results[0];
+    expect(card.results[0].prompt).toBe('Prompt for w1');
+    expect(card.unscannedItems).toEqual([
+      { itemId: 'blocks[1]', prompt: 'Explain your reasoning.' },
+    ]);
   });
 });
 
