@@ -450,6 +450,11 @@ export function publishDocument(rawSource) {
 
   const bankId = `derived/${validatedSource.id}@${rev}`;
   const rawBank = { id: bankId, title: validatedSource.title || validatedSource.id, items };
+  // Taxonomy metadata rides from the document onto its derived bank so the
+  // minted items stay classifiable in the same subject/topics vocabulary the
+  // authored banks use.
+  if (validatedSource.subject !== undefined) rawBank.subject = validatedSource.subject;
+  if (validatedSource.topics !== undefined) rawBank.topics = [...validatedSource.topics];
 
   // Publish postcondition, part 2: the derived bank must be a real,
   // consumable question bank. A minted shape that doesn't fit

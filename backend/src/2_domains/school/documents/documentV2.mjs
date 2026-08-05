@@ -222,6 +222,21 @@ export function validateDocumentV2(raw, { allowAnswers = false } = {}) {
     else defaultPoints = raw.defaultPoints;
   }
 
+  // Taxonomy metadata (optional): `subject` is one kebab segment, `topics`
+  // a unique list of them — the same vocabulary question banks already carry.
+  // Publish stamps both onto the derived bank so selections stay classifiable.
+  const SEGMENT = /^[a-z0-9][a-z0-9-]*$/;
+  if (raw.subject !== undefined
+      && (typeof raw.subject !== 'string' || !SEGMENT.test(raw.subject))) {
+    errors.push('subject must be a kebab-case segment');
+  }
+  if (raw.topics !== undefined) {
+    const ok = Array.isArray(raw.topics) && raw.topics.length > 0 && raw.topics.length <= 12
+      && raw.topics.every((topic) => typeof topic === 'string' && SEGMENT.test(topic))
+      && new Set(raw.topics).size === raw.topics.length;
+    if (!ok) errors.push('topics must be 1-12 unique kebab-case segments');
+  }
+
   // `rev` (Task 3, spec §3/§4.2): optional here — a hand-authored v2 document
   // has none; `publishDocument` (documentSource.mjs) stamps one. Accepting it
   // as a plain hex string (not re-deriving/checking the hash here) keeps this
@@ -327,6 +342,8 @@ export function validateDocumentV2(raw, { allowAnswers = false } = {}) {
     defaultPoints,
   };
   if (rev !== undefined) document.rev = rev;
+  if (raw.subject !== undefined) document.subject = raw.subject;
+  if (raw.topics !== undefined) document.topics = [...raw.topics];
   return { errors: [], document };
 }
 

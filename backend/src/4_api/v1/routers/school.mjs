@@ -5,6 +5,7 @@
 import express from 'express';
 import { GuestForbiddenError, SessionGoneError } from '#domains/school/errors.mjs';
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
+import { splatPath } from '#api/utils/wildcard.mjs';
 
 export function createSchoolRouter({
   schoolService,
@@ -165,11 +166,13 @@ export function createSchoolRouter({
   // as IssueDocument does; the variant never lives in the published artifact).
   // Warnings and the allocation result ride response headers so the body can
   // stay a plain PDF.
-  const PRINT_DOC_ID = /^[a-z0-9][a-z0-9-]*$/;
+  const PRINT_DOC_ID = /^[a-z0-9][a-z0-9-]*(\/[a-z0-9][a-z0-9-]*){0,3}$/;
   const PRINT_CARD_ID = /^[0-9]{7}$/;
-  router.get('/print/:id', wrap(async (req, res) => {
+  // Hierarchical taxonomy ids contain '/', so the id is a named wildcard
+  // (Express 5 splat) rather than a single segment.
+  router.get('/print/*id', wrap(async (req, res) => {
     if (!renderPrintDocument) return res.status(503).json({ error: 'print-render-unavailable' });
-    const { id } = req.params;
+    const id = splatPath(req, 'id');
     if (!PRINT_DOC_ID.test(id)) throw new ValidationError('id must be a lowercase document id');
     const variety = textQuery(req.query.variety);
     if (variety !== 'omr' && variety !== 'hand') {
@@ -283,7 +286,8 @@ export function createSchoolRouter({
     if (warnings.length) res.set('X-School-Print-Warnings', JSON.stringify(warnings));
     if (result.allocation) res.set('X-School-Print-Allocation', JSON.stringify(result.allocation));
     res.set('Cache-Control', 'no-store');
-    res.set('Content-Disposition', `inline; filename="${id}${context.teacher ? '-key' : ''}.pdf"`);
+    const slug = id.split('/').pop();
+    res.set('Content-Disposition', `inline; filename="${slug}${context.teacher ? '-key' : ''}.pdf"`);
     return res.type('application/pdf').send(Buffer.from(result.bytes));
   }));
 

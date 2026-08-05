@@ -13,7 +13,12 @@
  */
 import { validateBlock } from './blocks.mjs';
 
-const ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
+// Hierarchical taxonomy ids: 1–4 slash-separated kebab segments, mirroring the
+// corpus layout (`<subject>/<course>/<slug>`) and the bank-id convention the
+// School content mount already uses. A flat single-segment id stays legal, so
+// every pre-existing document keeps validating.
+const ID_PATTERN = /^[a-z0-9][a-z0-9-]*(\/[a-z0-9][a-z0-9-]*){0,3}$/;
+const ID_MAX_LENGTH = 100;
 const TARGETS = new Set(['letter', 'receipt']);
 const ANSWER_KEYS = ['answer', 'answers'];
 
@@ -182,7 +187,9 @@ export function validateDocument(raw, { allowAnswers = false } = {}) {
     return { errors: ['document must be a mapping'] };
   }
   const errors = [];
-  if (typeof raw.id !== 'string' || !ID_PATTERN.test(raw.id)) errors.push('id must match ^[a-z0-9][a-z0-9-]*$');
+  if (typeof raw.id !== 'string' || !ID_PATTERN.test(raw.id) || raw.id.length > ID_MAX_LENGTH) {
+    errors.push('id must be 1-4 kebab-case segments separated by "/" (e.g. arts/pokemon-identification/quiz-1)');
+  }
   // Optional, because a receipt has no banner. But when it IS there it is what
   // heads the printed sheet, so it has to survive normalisation — a dropped
   // title prints the document's slug across the top of a child's worksheet.

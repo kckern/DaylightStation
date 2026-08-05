@@ -491,7 +491,7 @@ describe('validateDocumentV2: allowAnswers threading (Task 2 infrastructure — 
   it('a source document still enforces every other v1/v2 rule (id/seed/target/etc.)', () => {
     const raw = v2doc({ id: undefined, blocks: [clozeBlock({ blanks: [{ n: 1, answer: 'x' }] })] });
     const { errors } = validateDocumentV2(raw, { allowAnswers: true });
-    expect(errors.some((e) => e.includes('id must match'))).toBe(true);
+    expect(errors.some((e) => e.includes('id must be'))).toBe(true);
   });
 });
 
