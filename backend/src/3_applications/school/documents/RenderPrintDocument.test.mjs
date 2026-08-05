@@ -183,6 +183,51 @@ describe('RenderPrintDocument — fit policy fill bottoms out the last page (c)'
   });
 });
 
+// F4 (review finding): a standalone short_answer/essay prompt must never
+// strand on one page while its own write-space fragment lands on the next.
+// Same real pipeline the tests above already exercise directly
+// (measureDocumentFragments + placeFragments), swept across filler sizes
+// that straddle the page-1 boundary so this isn't pinned to one hand-tuned
+// number — before the fix, SOME sweep step would land the prompt on page N
+// and the space on page N+1.
+describe('RenderPrintDocument — short_answer keep-with-next at a page boundary (F4)', () => {
+  it('the prompt and its write space always land on the same page, across a sweep of filler sizes', () => {
+    const theme = createWorkbookTheme({ typeScale: 'standard', density: 'normal' });
+    const box = contentBox(theme, { gutter: true, duplex: false, pageIndex: 0 });
+    const usablePt = box.pageHeightPt - 2 * box.marginPt;
+
+    const buildDoc = (fillerPt) => ({
+      schema: DOCUMENT_V2_SCHEMA,
+      id: 'keep-with-next-fixture',
+      seed: 1,
+      variant: 0,
+      target: ['letter'],
+      archetype: 'worksheet',
+      fit: { policy: 'flow', typeScale: 'standard' },
+      blocks: [
+        { type: 'spacer', minPt: fillerPt, maxPt: fillerPt },
+        { type: 'short_answer', prompt: 'Name a state capital.', lines: 8 },
+      ],
+    });
+
+    const place = (fillerPt) => {
+      const measurementDoc = createMeasurementDocument({ theme });
+      const fragments = measureDocumentFragments(buildDoc(fillerPt), { doc: measurementDoc, theme, texToSvg });
+      return placeFragments(fragments, { pageHeightPt: box.pageHeightPt, marginPt: box.marginPt, spacing: theme.spacing });
+    };
+
+    for (let fillerPt = 0; fillerPt < usablePt; fillerPt += 25) {
+      const { pages, errors } = place(fillerPt);
+      expect(errors).toEqual([]);
+      const pageOf = (id) => pages.findIndex((p) => p.fragments.some((f) => f.id === id));
+      const promptPage = pageOf('blocks[1]#p0');
+      const spacePage = pageOf('blocks[1]#p1');
+      expect(promptPage).toBeGreaterThanOrEqual(0);
+      expect(spacePage).toBe(promptPage);
+    }
+  });
+});
+
 describe('RenderPrintDocument — v1 legacy passthrough (d)', () => {
   it('is byte-identical to calling the legacy renderer directly', async () => {
     const useCase = new RenderPrintDocument();
@@ -974,9 +1019,13 @@ describe('RenderPrintDocument — teacher key render mode (spec §4.1, §12.1)',
     expect(text).toMatch(/1\.\s*C/);
     // multi_select: '2','3','5' are indices 0,1,3 of ['2','3','4','5'] -> A, B, D (already sorted).
     expect(text).toMatch(/2\.\s*A,\s*B,\s*D/);
-    // cloze blanks, by their own {{n}} number.
-    expect(text).toMatch(/1\.\s*blue/);
-    expect(text).toMatch(/2\.\s*green/);
+    // cloze blanks (F1: grouped under a per-block "Fill-in (passage N):"
+    // heading, each blank labelled "blank <n>:" — not a bare "N." label,
+    // which would collide with question numbering and with a second cloze
+    // block's own blank 1/2).
+    expect(text).toContain('Fill-in (passage 1):');
+    expect(text).toMatch(/blank 1:\s*blue/);
+    expect(text).toMatch(/blank 2:\s*green/);
     // short_answer (standalone sugar block): the answer text prints verbatim.
     expect(text).toContain('Olympia');
   });
@@ -1016,6 +1065,51 @@ describe('RenderPrintDocument — teacher key render mode (spec §4.1, §12.1)',
     expect(text).not.toContain(`"${longPrompt}" —`);
   });
 
+  // F3 (review finding): a `question` that mints its OWN item (via `itemId`)
+  // AND wraps a further answer-bearing child (a nested `short_answer` with
+  // its own `itemRef`) must get key entries for BOTH — the old code's
+  // `else if` made the two mutually exclusive, silently dropping the child's
+  // entry whenever the question's own itemId also resolved.
+  it('a question minting its own item AND wrapping an answer-bearing child gets key entries for BOTH', async () => {
+    const document = {
+      schema: DOCUMENT_V2_SCHEMA,
+      id: 'composite-question-fixture',
+      seed: 5,
+      target: ['letter'],
+      archetype: 'worksheet',
+      rev: 'deadbeef2',
+      blocks: [{
+        type: 'question',
+        itemId: 'q1',
+        number: 1,
+        blocks: [
+          { type: 'rich_text', md: 'Pick a color, then explain your choice.' },
+          { type: 'omr_response', itemId: 'q1', choices: 2 },
+          { type: 'short_answer', prompt: 'Why?', itemRef: 'q1-explain' },
+        ],
+      }],
+    };
+    const bank = {
+      id: 'derived/composite-question-fixture@deadbeef2',
+      items: [
+        {
+          id: 'q1', type: 'multiple_choice', prompt: 'Pick a color.', choices: ['Red', 'Blue'], answer: 'Red',
+        },
+        { id: 'q1-explain', type: 'short_answer', prompt: 'Why?', answer: 'Because red is nice.' },
+      ],
+    };
+    const repository = { get: async () => null, getDerivedBank: async () => bank };
+    const useCase = new RenderPrintDocument({ repository });
+    const result = await useCase.execute({ document, context: { teacher: true } });
+    const text = pdfText(result.bytes);
+
+    // The question's own entry: 'Red' is index 0 of ['Red','Blue'] -> 'A'.
+    expect(text).toMatch(/1\.\s*A/);
+    // The nested short_answer's entry, labelled by its (truncated) prompt —
+    // exactly as a standalone short_answer already is.
+    expect(text).toMatch(/"Why\?" —\s*Because red is nice\./);
+  });
+
   it('formats a matching block as "<n>-<letter> …" against the SAME shuffled left/right order the student page prints', async () => {
     const useCase = new RenderPrintDocument();
     const document = teacherSourceDoc();
@@ -1036,7 +1130,34 @@ describe('RenderPrintDocument — teacher key render mode (spec §4.1, §12.1)',
       .map(({ number, letter }) => `${number}-${letter}`)
       .join(' ');
 
-    expect(text).toContain(expected);
+    // F1 (review finding): labelled `Matching:` — never the internal block
+    // `key` (`m1`), which prints nowhere on the student page.
+    expect(text).toContain(`Matching: ${expected}`);
+    expect(text).not.toMatch(/\bm1:/);
+  });
+
+  // F1 (review finding): a document with MORE THAN ONE matching block gets
+  // ordinal-suffixed labels (`Matching 1:`, `Matching 2:`) so the two never
+  // collide — the single-matching-block test above proves the bare
+  // `Matching:` form when there is nothing to disambiguate.
+  it('labels matching blocks "Matching 1:"/"Matching 2:" when the document has more than one', async () => {
+    const document = teacherSourceDoc({
+      blocks: [
+        {
+          type: 'matching', key: 'first', left: ['A', 'B'], right: ['1', '2'], pairs: [{ left: 'A', right: '1' }, { left: 'B', right: '2' }],
+        },
+        {
+          type: 'matching', key: 'second', left: ['X', 'Y'], right: ['9', '8'], pairs: [{ left: 'X', right: '9' }, { left: 'Y', right: '8' }],
+        },
+      ],
+    });
+    const useCase = new RenderPrintDocument();
+    const result = await useCase.execute({ document, context: { teacher: true } });
+    const text = pdfText(result.bytes);
+
+    expect(text).toContain('Matching 1:');
+    expect(text).toContain('Matching 2:');
+    expect(text).not.toContain('Matching:');
   });
 
   it('a document with zero answerable items renders a bare heading and surfaces a warning, not a failure', async () => {

@@ -141,15 +141,20 @@ function fakeRepository(sourcesById = {}) {
 const OMR_LETTERS = createWorkbookTheme({ typeScale: 'standard', density: 'normal' }).omr.letters;
 const letterFor = (choices, answer) => OMR_LETTERS[choices.indexOf(answer)];
 
-// ── the Task-7 kitchen-sink fixture (CARRY, Task 6's review) ────────────────
+// ── the Task-7 kitchen-sink fixture (CARRY, Task 6's review; F1's review) ───
 // One document exercising EVERY Phase B answer-bearing shape in the SAME
-// tree: standalone cloze (blank 1 WITH a wordbank ref, blank 2 WITHOUT),
-// wordbank, matching, standalone short_answer, essay (`box` AND `lines`
-// variants — essay never carries an answer either way), an inline
-// multiple_choice question, an inline multi_select question, and a
-// bank-select ("select") question against an EXTERNAL bank. This is ALSO
-// Task 7's visual-evidence document (see the "visual evidence" describe
-// block below) — one document, reviewed both structurally and visually.
+// tree: TWO standalone cloze blocks (the first: blank 1 WITH a wordbank ref,
+// blank 2 WITHOUT; the second: two more blanks, neither wordbank-referenced —
+// added by the F1 fix specifically to prove a second cloze block's blanks no
+// longer collide with the first's in the teacher key, now that they're
+// grouped under distinct "Fill-in (passage N):" headings instead of a bare
+// "N." label that reset to 1 at the start of every cloze block), wordbank,
+// matching, standalone short_answer, essay (`box` AND `lines` variants —
+// essay never carries an answer either way), an inline multiple_choice
+// question, an inline multi_select question, and a bank-select ("select")
+// question against an EXTERNAL bank. This is ALSO Task 7's visual-evidence
+// document (see the "visual evidence" describe block below) — one document,
+// reviewed both structurally and visually.
 
 const WORDBANK_TERMS = ['Photosynthesis', 'Mitosis', 'Osmosis', 'Respiration'];
 const MATCHING_LEFT = ['WA', 'OR', 'ID'];
@@ -191,6 +196,19 @@ const kitchenSinkSource = ({ variant = 0 } = {}) => ({
       blanks: [
         { n: 1, answer: 'Photosynthesis', wordbank: 'wb1' }, // WITH a wordbank ref
         { n: 2, answer: 'Mitosis' }, // WITHOUT a wordbank ref
+      ],
+    },
+    // Second cloze block (F1, review finding): proves two cloze blocks in the
+    // same document don't collide in the teacher key — each blank here is
+    // ALSO numbered {{1}}/{{2}} (blank numbering is local to its own block,
+    // same as the first cloze above), so a bare "N." label would print "1."
+    // and "2." twice, indistinguishably from the first block's entries.
+    {
+      type: 'cloze',
+      text: 'Water boils at {{1}} degrees F and freezes at {{2}} degrees F.',
+      blanks: [
+        { n: 1, answer: '212' },
+        { n: 2, answer: '32' },
       ],
     },
     {
@@ -265,11 +283,12 @@ describe('Phase B acceptance sweep (spec §12, items tagged [B], plus the Phase-
 
       // wordbank (terms are presentation, mints nothing) and the bank-select
       // question (references an EXTERNAL bank, mints nothing of its own)
-      // contribute 0 items; cloze (2 blanks) + matching (1) + short_answer
-      // (1) + inline multiple_choice (1) + inline multi_select (1) = 6.
-      expect(stored.bank.items).toHaveLength(6);
+      // contribute 0 items; cloze #1 (2 blanks) + cloze #2 (2 blanks) +
+      // matching (1) + short_answer (1) + inline multiple_choice (1) +
+      // inline multi_select (1) = 8.
+      expect(stored.bank.items).toHaveLength(8);
       expect(stored.bank.items.map((item) => item.type).sort()).toEqual(
-        ['cloze', 'cloze', 'matching', 'multi_select', 'multiple_choice', 'short_answer'],
+        ['cloze', 'cloze', 'cloze', 'cloze', 'matching', 'multi_select', 'multiple_choice', 'short_answer'],
       );
     });
 
@@ -339,11 +358,27 @@ describe('Phase B acceptance sweep (spec §12, items tagged [B], plus the Phase-
         for (const item of expected.omitted) expect(studentText).not.toContain(item.prompt);
 
         // -- every answerable item's teacher-key entry, scoped to the "Answer key" section --
-        // standalone cloze, WITH (blank 1) and WITHOUT (blank 2) a wordbank ref: fixed answers (cloze never shuffles).
-        expect(keySection).toMatch(/1\.\s*Photosynthesis/);
-        expect(keySection).toMatch(/2\.\s*Mitosis/);
-        // matching: shuffled order, per-variant "N-L ..." string.
-        expect(keySection).toContain(expected.matchingAnswer);
+        // standalone cloze #1, WITH (blank 1) and WITHOUT (blank 2) a
+        // wordbank ref: fixed answers (cloze never shuffles). F1 (review
+        // finding): grouped under its own "Fill-in (passage 1):" heading,
+        // each blank labelled "blank <n>:" — not a bare "N." (which would
+        // collide with question numbering AND with cloze #2's own blank 1/2
+        // below).
+        expect(keySection).toContain('Fill-in (passage 1):');
+        expect(keySection).toMatch(/blank 1:\s*Photosynthesis/);
+        expect(keySection).toMatch(/blank 2:\s*Mitosis/);
+        // standalone cloze #2 (F1's added second cloze block): its own
+        // "Fill-in (passage 2):" heading and blanks 1/2 — proving the two
+        // cloze blocks' identically-numbered blanks do NOT collide.
+        expect(keySection).toContain('Fill-in (passage 2):');
+        expect(keySection).toMatch(/blank 1:\s*212/);
+        expect(keySection).toMatch(/blank 2:\s*32/);
+        // matching: labelled "Matching:" (the ONLY matching block in this
+        // document — never the internal block key "m1", which prints
+        // nowhere on the student page), shuffled order, per-variant
+        // "N-L ..." string.
+        expect(keySection).toContain(`Matching: ${expected.matchingAnswer}`);
+        expect(keySection).not.toMatch(/\bm1:/);
         // standalone short_answer: labeled by its (truncated) prompt, never an internal path-based id.
         expect(keySection).toMatch(/"Name a state capital\." —\s*Olympia/);
         // essay (BOTH the `box` and `lines` variants) is NEVER answerable — no key entry for either, in any variant.

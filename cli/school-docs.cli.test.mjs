@@ -10,6 +10,7 @@ import {
   resolveSchoolDocsContentPaths,
   runSchoolDocs,
 } from './school-docs.cli.mjs';
+import { pdfText } from '../tests/_lib/school/pdfText.mjs';
 
 /** A single question: short stem + fixed-size answer space (no growth ambiguity). */
 const question = (n) => ({
@@ -312,6 +313,51 @@ describe('school-docs CLI', () => {
       expect(report.warnings).toContain(
         '--type-scale is accepted but has no effect on this v1 (legacy) document; only v2 documents have a fit.typeScale',
       );
+    }));
+
+    // F5 (review finding): a bank-select question's bank must resolve
+    // relative to `--data-dir`, not this process's own `$DAYLIGHT_BASE_PATH`
+    // — before the fix, `RenderPrintDocument`'s constructor default silently
+    // re-resolved `$DAYLIGHT_BASE_PATH` itself, ignoring whatever `--data-dir`
+    // the CLI had already computed.
+    it('resolves a bank-select question\'s bank from --data-dir, not $DAYLIGHT_BASE_PATH', async () => withTmpDir(async (root) => {
+      const customDataDir = path.join(root, 'custom-data');
+      const banksDir = path.join(customDataDir, 'content/school/catalog/question-banks');
+      await mkdir(banksDir, { recursive: true });
+      await writeFile(path.join(banksDir, 'planets.yml'), dump({
+        id: 'custom-root-bank',
+        title: 'Custom Root Bank',
+        items: [{
+          id: 'planet1', type: 'multiple_choice', prompt: 'Which planet is closest to the sun?', choices: ['Mercury', 'Venus'], answer: 'Mercury',
+        }],
+      }));
+
+      const contentRoot = path.join(customDataDir, 'content/school/print-documents');
+      await mkdir(contentRoot, { recursive: true });
+      await writeFile(path.join(contentRoot, 'doc.yml'), dump({
+        schema: 'school.document/v2',
+        id: 'bank-select-datadir-fixture',
+        seed: 11,
+        target: ['letter'],
+        archetype: 'worksheet',
+        blocks: [{
+          type: 'question', bankId: 'custom-root-bank', select: 1, key: 'sel1',
+        }],
+      }));
+
+      // A DIFFERENT $DAYLIGHT_BASE_PATH with no such bank at all — proves
+      // resolution came from --data-dir, never a silent env fallback.
+      const bogusEnv = { env: { DAYLIGHT_BASE_PATH: path.join(root, 'unrelated-env-root') } };
+      const outPath = path.join(root, 'out.pdf');
+      const { exitCode, report } = await runSchoolDocs(
+        ['render', 'doc.yml', '--out', outPath, '--data-dir', customDataDir],
+        bogusEnv,
+      );
+
+      expect(exitCode).toBe(0);
+      expect(report.ok).toBe(true);
+      const text = pdfText(await readFile(outPath));
+      expect(text).toContain('Which planet is closest to the sun?');
     }));
 
     it('prints warnings in the CLI text output', async () => withTmpDir(async (root) => {
