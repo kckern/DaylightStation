@@ -336,6 +336,21 @@ export class IssueDocument {
    * uncollected allocation, which is the accepted, simpler behaviour there
    * already — a lost or damaged physical card needs a NEW one regardless of
    * what the session calls the artifact.
+   *
+   * ORPHANED ALLOCATIONS ON A LATE FAILURE (Task 7 review, Finding 2): the
+   * write-before-print ordering above means a fit rejection or a print jam
+   * can both happen AFTER a card is already durably allocated. There is no
+   * rollback of the write itself (see this method's own comment on why —
+   * the paper-out-of-tray guarantee is about never letting a scan outrun a
+   * mapping, not about erasing history), but leaving that record silently
+   * `live` would burn a fresh physical card on every retry FOREVER, with no
+   * way for anyone to even discover the stranded cardId. Both failure
+   * branches below call `#orphanAllocation`, which logs the cardId/recordId
+   * at `warn` (`school.issue.allocation-orphaned` — the ONE thing the
+   * success-only `allocation-recorded` log never covers) and best-effort
+   * releases it via the store (the same `release` a `release-card` CLI call
+   * uses), so the very next retry's fresh allocation lands on a clean slate
+   * instead of accumulating dead cards.
    */
   async #issuePrintDocument({
     sessionId, nowIso, state, unit, printRef,
@@ -381,6 +396,14 @@ export class IssueDocument {
         pdf: result.bytes, pageCount: result.pageCount, formMap: null, allocation: result.allocation,
       };
     } catch (err) {
+      // A card may have been allocated and durably written before THIS
+      // error fired (e.g. FIT_OVERSET, discovered only after `#allocateCard`
+      // already ran) — `RenderPrintDocument` attaches that snapshot to
+      // `err.details.allocation` for exactly this reason (see its own doc
+      // comment). Absent for a failure that happened before any write (e.g.
+      // ALLOCATION_STORE_REQUIRED/ALLOCATION_REQUIRES_REV), in which case
+      // `#orphanAllocation` is a no-op.
+      await this.#orphanAllocation(err.details?.allocation, { sessionId, unitId: state.unitId, stage: 'render' });
       return this.#recordFailure({
         sessionId, stage: 'render', reason: err.message, nowIso, state,
         cause: err.name === 'UnresolvedAssetError' ? 'missing_artwork' : 'render',
@@ -393,6 +416,10 @@ export class IssueDocument {
         user: state.learnerId ?? 'daylight',
       });
     } catch (err) {
+      // Render already succeeded here, so the allocation (if any) is right
+      // on `rendered.allocation` — no error-detail plumbing needed for this
+      // branch the way the render-failure one above needs it.
+      await this.#orphanAllocation(rendered.allocation, { sessionId, unitId: state.unitId, stage: 'print' });
       return this.#recordFailure({ sessionId, stage: 'print', reason: err.message, nowIso, state, cause: 'printer' });
     }
 
@@ -433,6 +460,39 @@ export class IssueDocument {
       document: null,
       message: reprinting ? 'Printing that again for you.' : 'Printing your sheet.',
     };
+  }
+
+  /**
+   * Best-effort cleanup for a card that was durably allocated but whose
+   * render/print never completed (Task 7 review, Finding 2). `allocation`
+   * is the `{cardId, rowRange, recordId, status}` snapshot — absent (no-op)
+   * whenever nothing was actually written yet.
+   *
+   * Two things happen, and the FIRST never depends on the second: the
+   * cardId/recordId are logged at `warn` unconditionally, because a grown-up
+   * (or a future debugging session) needs to be able to find a stranded card
+   * even if the release itself also fails — a silent release failure must
+   * never also mean a silent orphan. `release` failing (e.g. the store is
+   * unreachable) is itself logged, never thrown — this runs from inside an
+   * already-failed issue attempt, and a SECOND failure here must not replace
+   * the FIRST one in what gets reported back to the child.
+   */
+  async #orphanAllocation(allocation, { sessionId, unitId, stage }) {
+    if (!allocation) return;
+    this.#logger.warn?.('school.issue.allocation-orphaned', {
+      sessionId, unitId, stage, cardId: allocation.cardId, recordId: allocation.recordId, rowRange: allocation.rowRange,
+    });
+    if (typeof this.#allocationStore?.release !== 'function') return;
+    try {
+      const released = await this.#allocationStore.release({ cardId: allocation.cardId, rows: allocation.rowRange });
+      this.#logger.warn?.('school.issue.allocation-released', {
+        sessionId, cardId: allocation.cardId, recordId: allocation.recordId, releasedCount: released.length,
+      });
+    } catch (err) {
+      this.#logger.warn?.('school.issue.allocation-release-failed', {
+        sessionId, cardId: allocation.cardId, recordId: allocation.recordId, error: err.message,
+      });
+    }
   }
 
   /**

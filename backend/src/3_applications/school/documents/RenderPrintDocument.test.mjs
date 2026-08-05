@@ -1354,6 +1354,78 @@ describe('RenderPrintDocument — card allocation context (spec §5.3/§5.4, Tas
     expect(text).not.toMatch(/\b1\.\s*A/);
   });
 
+  // Task 7 review, Finding 2 (Important): a failure AFTER the allocation
+  // write (fit rejection, an asset the renderer can't resolve, ...) used to
+  // leave a durable `live` record with no way for a caller to discover its
+  // cardId — the fresh card's id is otherwise unknowable from outside
+  // (`freshCard: true` never hands it back except on the happy-path return).
+  it('a failure AFTER the allocation write attaches the allocation snapshot to the thrown error, and the record really is durable', async () => {
+    const allocationStore = fakeAllocationStore();
+    const explodingRenderer = () => ({ render: async () => { throw new Error('renderer exploded'); } });
+    const useCase = new RenderPrintDocument({ allocationStore, renderer: explodingRenderer });
+
+    const err = await useCase.execute({
+      document: omrSourceDoc(2), context: { freshCard: true },
+    }).catch((e) => e);
+
+    expect(err.message).toBe('renderer exploded');
+    expect(err.details.allocation).toEqual({
+      cardId: expect.stringMatching(/^\d{7}$/),
+      rowRange: { start: 1, end: 2 },
+      recordId: expect.stringMatching(/^card-fixture@[0-9a-f]+:v0:1-2$/),
+      status: 'live',
+    });
+    // Not a fabricated id — the write genuinely happened and is orphaned
+    // (findable, not silently lost) until something releases it.
+    const stored = await allocationStore.findByCard(err.details.allocation.cardId);
+    expect(stored).toHaveLength(1);
+    expect(stored[0]).toMatchObject({ recordId: err.details.allocation.recordId, status: 'live' });
+  });
+
+  it('a FIT_OVERSET rejection (a real, non-injected failure) also attaches the allocation snapshot', async () => {
+    const allocationStore = fakeAllocationStore();
+    const useCase = new RenderPrintDocument({ allocationStore });
+    // 40 row-mappable questions with a padded prompt overflows both densities
+    // (the same "overlong fixture" shape as the fit-policy describe block
+    // above, just row-mappable so card allocation is legal for it).
+    const paddedOmrQuestion = (n) => ({
+      type: 'question',
+      itemId: `oq${n}`,
+      number: n,
+      blocks: [
+        { type: 'rich_text', md: `OMR prompt ${n}. `.repeat(30) },
+        { type: 'omr_response', itemId: `oq${n}`, choices: 3 },
+      ],
+      choices: ['Alpha', 'Beta', 'Gamma'],
+      answer: 'Alpha',
+    });
+    const document = omrSourceDoc(40, {
+      id: 'overset-card-fixture',
+      blocks: Array.from({ length: 40 }, (_, i) => paddedOmrQuestion(i + 1)),
+      fit: { policy: 'one-page', typeScale: 'standard' },
+    });
+
+    const err = await useCase.execute({ document, context: { freshCard: true } }).catch((e) => e);
+    expect(err.code).toBe('FIT_OVERSET');
+    expect(err.details.oversetPt).toBeGreaterThan(0);
+    expect(err.details.allocation).toMatchObject({ status: 'live' });
+    const stored = await allocationStore.findByCard(err.details.allocation.cardId);
+    expect(stored).toHaveLength(1);
+  });
+
+  it('a failure BEFORE any allocation write (the allocation call itself throws) attaches no allocation at all', async () => {
+    const allocationStore = fakeAllocationStore();
+    // A hand-authored (unpublished, no `rev`) v2 document: `#allocateCard`
+    // throws (ALLOCATION_REQUIRES_REV) before ever calling the store.
+    const useCase = new RenderPrintDocument({ allocationStore });
+    const err = await useCase.execute({
+      document: v2doc({ archetype: 'quiz', blocks: [question(1)] }),
+      context: { freshCard: true },
+    }).catch((e) => e);
+    expect(err.code).toBe('ALLOCATION_REQUIRES_REV');
+    expect(err.details.allocation).toBeUndefined();
+  });
+
   it('a quiz whose scored items are not row-mappable fails card allocation with a structured ALLOCATION_ROW_PLAN_INVALID error, and never calls the store', async () => {
     const allocationStore = fakeAllocationStore();
     let allocateCalls = 0;

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { IssueDocument } from '#apps/school/usecases/IssueDocument.mjs';
 import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
 import { validateDocument } from '#domains/school/documents/documentValidation.mjs';
@@ -460,6 +460,104 @@ describe('tracked quizzes (print/<id>@<rev> document references, spec §9)', () 
     expect(order).toEqual(['allocate', 'appendEvent']);
   });
 
+  // Task 7 review, Finding 2 (Important): a failure AFTER the allocation
+  // write used to leave a durable `live` record with no logged cardId and no
+  // release — an undiscoverable orphan that burns a fresh card on every
+  // retry. Both branches below force that ordering (allocation succeeds,
+  // something AFTER it fails) and assert the record ends `released`, with
+  // the orphan warning naming the stranded cardId.
+  it('a PRINT failure after a successful allocation logs the orphan warning and releases the card', async () => {
+    const sid = await openPrintSession();
+    const warnSpy = vi.fn();
+    let artifactSeq = 0;
+    const useCase = new IssueDocument({
+      curriculum, sessions: printSessions, tokens: printTokens, renderer: printRenderer,
+      printer: printPrinter, formMaps: printFormMaps,
+      printDocuments: repository, renderPrintDocument, allocationStore,
+      clock: printClock.now, rng: seededRng(11), newArtifactId: () => `art_${++artifactSeq}`,
+      logger: { ...silentLogger, warn: warnSpy },
+    });
+    printPrinter.setFault('offline');
+
+    const result = await useCase.execute({ sessionId: sid });
+    expect(result.status).toBe('print_failed');
+    expect(printSessions.derive(sid).lastFailure).toMatchObject({ stage: 'print' });
+
+    const orphanCall = warnSpy.mock.calls.find(([event]) => event === 'school.issue.allocation-orphaned');
+    expect(orphanCall).toBeTruthy();
+    const [, orphaned] = orphanCall;
+    expect(orphaned).toMatchObject({ sessionId: sid, stage: 'print' });
+    expect(orphaned.cardId).toMatch(/^\d{7}$/);
+
+    const releasedCall = warnSpy.mock.calls.find(([event]) => event === 'school.issue.allocation-released');
+    expect(releasedCall).toBeTruthy();
+    expect(releasedCall[1]).toMatchObject({ cardId: orphaned.cardId, releasedCount: 1 });
+
+    const records = await allocationStore.findByCard(orphaned.cardId);
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ recordId: orphaned.recordId, status: 'released' });
+  });
+
+  it('a RENDER failure after a successful allocation logs the orphan warning and releases the card', async () => {
+    const sid = await openPrintSession();
+    // A real RenderPrintDocument, sharing the SAME repository/allocationStore
+    // (so the allocation it writes is inspectable afterward) but with a
+    // renderer factory that always throws — the allocation write happens
+    // BEFORE this call inside RenderPrintDocument's own `#renderV2` (see its
+    // doc comments), so this reproduces "allocation succeeded, then the
+    // render itself failed" deterministically.
+    const explodingRenderer = () => ({ render: async () => { throw new Error('renderer exploded'); } });
+    const explodingRenderPrintDocument = new RenderPrintDocument({
+      repository, allocationStore, renderer: explodingRenderer,
+    });
+    const warnSpy = vi.fn();
+    const useCase = new IssueDocument({
+      curriculum, sessions: printSessions, tokens: printTokens, renderer: printRenderer,
+      printer: printPrinter, formMaps: printFormMaps,
+      printDocuments: repository, renderPrintDocument: explodingRenderPrintDocument, allocationStore,
+      clock: printClock.now, rng: seededRng(11), newArtifactId: () => 'art_render_fail',
+      logger: { ...silentLogger, warn: warnSpy },
+    });
+
+    const result = await useCase.execute({ sessionId: sid });
+    expect(result.status).toBe('render_failed');
+    expect(printPrinter.jobs).toEqual([]); // never reached the printer
+    expect(printSessions.derive(sid).lastFailure).toMatchObject({ stage: 'render' });
+
+    const orphanCall = warnSpy.mock.calls.find(([event]) => event === 'school.issue.allocation-orphaned');
+    expect(orphanCall).toBeTruthy();
+    const [, orphaned] = orphanCall;
+    expect(orphaned).toMatchObject({ sessionId: sid, stage: 'render' });
+    expect(orphaned.cardId).toMatch(/^\d{7}$/);
+
+    const releasedCall = warnSpy.mock.calls.find(([event]) => event === 'school.issue.allocation-released');
+    expect(releasedCall).toBeTruthy();
+    expect(releasedCall[1]).toMatchObject({ cardId: orphaned.cardId, releasedCount: 1 });
+
+    const records = await allocationStore.findByCard(orphaned.cardId);
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ status: 'released' });
+  });
+
+  it('a failure BEFORE any allocation write never logs an orphan warning (nothing to release)', async () => {
+    // Reuses the "dangling print-document reference" scenario: no-document
+    // never reaches render at all, so #orphanAllocation must never fire.
+    curriculum.getUnit = async (unitId) => (unitId === PRINT_UNIT
+      ? { unitId: PRINT_UNIT, document: `print/${QUIZ_DOC_ID}@not-a-real-rev` }
+      : null);
+    const warnSpy = vi.fn();
+    const useCase = new IssueDocument({
+      curriculum, sessions: printSessions, tokens: printTokens, renderer: printRenderer,
+      printer: printPrinter, formMaps: printFormMaps,
+      printDocuments: repository, renderPrintDocument, allocationStore,
+      clock: printClock.now, rng: seededRng(11), newArtifactId: () => 'art_no_doc',
+      logger: { ...silentLogger, warn: warnSpy },
+    });
+    const sid = await openPrintSession();
+    await useCase.execute({ sessionId: sid });
+    expect(warnSpy.mock.calls.some(([event]) => event === 'school.issue.allocation-orphaned')).toBe(false);
+  });
+
   it('mints no scan_action/media_action tokens for a print-document quiz (none in the v2 envelope)', async () => {
     const sid = await openPrintSession();
     const result = await printUseCase.execute({ sessionId: sid });
@@ -502,5 +600,49 @@ describe('tracked quizzes (print/<id>@<rev> document references, spec §9)', () 
     const sid = await openPrintSession();
     const result = await printUseCase.execute({ sessionId: sid });
     expect(result.status).toBe('unavailable');
+  });
+
+  // Task 7 review, Finding 1 (Important): the duck-typed `curriculum` double
+  // used everywhere above proves IssueDocument's OWN branch is correct, but
+  // NOT that a real, authored unit YAML can ever reach it — `validateUnit`
+  // (unitValidation.mjs) used to reject `document: print/<id>@<rev>` outright
+  // (dangling-reference error, since `documentIds` never contains a print
+  // ref), which would have kept a real unit out of the publishable catalog
+  // forever. `unitValidation.mjs` now shape-validates (not existence-checks)
+  // a `print/` ref; this test proves the WHOLE real chain — real
+  // `validateUnit` -> real `CurriculumAccess.getUnit` -> `IssueDocument` ->
+  // real `RenderPrintDocument` — actually works end to end, not just the
+  // duck-typed shortcut.
+  it('a REAL CurriculumAccess (real validateUnit) resolves and issues a print-document unit end to end (spec §9, Task 7 review Finding 1)', async () => {
+    const catalog = new FakeCatalog({
+      units: [{
+        unitId: PRINT_UNIT,
+        title: 'Tracked quiz',
+        subject: 'math',
+        document: `print/${QUIZ_DOC_ID}@${printRev}`,
+        provenance: { source: 'hand-authored', reviewState: 'approved' },
+      }],
+    });
+    const realCurriculum = new CurriculumAccess({ catalog, clock: printClock.epoch, logger: silentLogger });
+
+    // Proves reachability at the CurriculumAccess layer specifically —
+    // `validateUnit` no longer drops the unit as an unresolvable reference.
+    const resolvedUnit = await realCurriculum.getUnit(PRINT_UNIT);
+    expect(resolvedUnit).toMatchObject({ document: `print/${QUIZ_DOC_ID}@${printRev}` });
+
+    // And proves the full IssueDocument path still works when wired against
+    // that real curriculum instead of the test double.
+    const realUseCase = new IssueDocument({
+      curriculum: realCurriculum, sessions: printSessions, tokens: printTokens, renderer: printRenderer,
+      printer: printPrinter, formMaps: printFormMaps,
+      printDocuments: repository, renderPrintDocument, allocationStore,
+      clock: printClock.now, rng: seededRng(11), newArtifactId: () => 'art_real_1',
+      logger: silentLogger,
+    });
+    const sid = await openPrintSession('ses_real');
+    const result = await realUseCase.execute({ sessionId: sid });
+    expect(result).toMatchObject({ status: 'issued', artifactId: 'art_real_1' });
+    expect(result.allocation).toMatchObject({ status: 'live' });
+    expect(printPrinter.jobs).toHaveLength(1);
   });
 });
