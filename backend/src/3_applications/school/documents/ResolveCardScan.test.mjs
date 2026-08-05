@@ -807,6 +807,28 @@ describe('execute — resilience + review signals (re-review wave 2)', () => {
       { itemId: 'blocks[1]', prompt: 'Explain your reasoning.' },
     ]);
   });
+
+  it('an essay write-on (no card row, never carries an answer) also surfaces in unscannedItems', async () => {
+    const repository = fakeRepository();
+    const allocationStore = fakeAllocationStore();
+    // `essay` (blocks.mjs) is structurally the same write-on as `short_answer`
+    // for this purpose — no itemId, NEVER carries an answer ("unmarked prose
+    // has nothing for a bank to hold") — so it must get the same treatment,
+    // never silently dropped from unscannedItems.
+    const source = sourceDoc('essay-writeon-quiz', [
+      mcQuestion('e1', 1, { choices: ['X', 'Y'], answer: 'X' }),
+      { type: 'essay', prompt: 'Write a short reflection.' },
+    ]);
+    const { allocation } = await publishAndAllocate({
+      repository, allocationStore, source, context: { freshCard: true },
+    });
+    const useCase = new ResolveCardScan({ allocationStore, repository });
+    const result = await useCase.execute({ testId: allocation.cardId, answers: { 1: 'A' } });
+    const card = result.results[0];
+    expect(card.unscannedItems).toEqual([
+      { itemId: 'blocks[1]', prompt: 'Write a short reflection.' },
+    ]);
+  });
 });
 
 /** Small helper so the "unallocated rows" describe block reads as one call per test. */

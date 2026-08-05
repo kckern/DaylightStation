@@ -140,12 +140,15 @@ function pointsForRow(preparedDocument, blockPath) {
 /**
  * A write-on's display prompt: the first `rich_text` child's `md` for a
  * top-level `question` block (mirrors `questionPrompts`'s own concatenation
- * seed, `documentValidation.mjs`), or a standalone `short_answer` sugar
- * block's own `prompt` field directly (it carries no `rich_text` sibling —
- * `prompt` IS its printed text, `blocks.mjs`'s `short_answer` validator).
+ * seed, `documentValidation.mjs`), or a standalone `short_answer`/`essay`
+ * sugar block's own `prompt` field directly (neither carries a `rich_text`
+ * sibling — `prompt` IS its printed text, `blocks.mjs`'s `short_answer` AND
+ * `essay` validators both require exactly this field, same name on both).
  */
 function firstPromptText(block) {
-  if (block.type === 'short_answer') return typeof block.prompt === 'string' ? block.prompt : null;
+  if (block.type === 'short_answer' || block.type === 'essay') {
+    return typeof block.prompt === 'string' ? block.prompt : null;
+  }
   for (const child of block.blocks ?? []) {
     if (child?.type === 'rich_text' && typeof child.md === 'string') return child.md;
     if (child?.type === 'short_answer' && typeof child.prompt === 'string') return child.prompt;
@@ -156,7 +159,7 @@ function firstPromptText(block) {
 /**
  * Write-ons (spec §5.3's "write-on blocks are worksheet-only or unscored"):
  * top-level blocks of the PREPARED document that `planRows` did NOT turn
- * into a card row. Two shapes reach here:
+ * into a card row. Three shapes reach here:
  *   - a top-level `question` block whose `itemId` isn't among `plan.rows`'
  *     itemIds (unscored, or an explicit `points: 0` override) — complement
  *     of exactly the set `planRows` selected, never a re-derived guess at
@@ -165,12 +168,19 @@ function firstPromptText(block) {
  *     row-mapped regardless of whether it minted an answer-key item
  *     (`RenderPrintDocument.mjs`'s own `collectAnswerKeyEntries` comment:
  *     "it's a write-on aside, never card-mapped"), so it unconditionally
- *     counts here. It carries no author-assigned id (`documentSource.mjs`'s
- *     keyless-item scheme is a PUBLISH-time-only concern); `itemRef` is used
- *     when present (an answer was authored), else a positional fallback
- *     mirroring `blockIndexFromPath`'s own `blocks[N]` notation elsewhere in
- *     this file — good enough for a diagnostic label, never fed back into
- *     grading.
+ *     counts here.
+ *   - a standalone `essay` sugar block (spec §4.2/§6.2) — structurally the
+ *     same write-on as `short_answer` for this purpose (`blocks.mjs`: no
+ *     `itemId`, NEVER carries an answer at all — "unmarked prose has nothing
+ *     for a bank to hold"), so it is never row-mapped either and gets the
+ *     same treatment.
+ *   `short_answer`/`essay` carry no author-assigned id
+ *   (`documentSource.mjs`'s keyless-item scheme is a PUBLISH-time-only
+ *   concern, and `essay` never mints a bank item at all); `itemRef` is used
+ *   when present (a `short_answer` authored with an answer), else a
+ *   positional fallback mirroring `blockIndexFromPath`'s own `blocks[N]`
+ *   notation elsewhere in this file — good enough for a diagnostic label,
+ *   never fed back into grading.
  */
 function unscannedItemsFor(prepared, rowItemIds) {
   const items = [];
@@ -180,7 +190,7 @@ function unscannedItemsFor(prepared, rowItemIds) {
       items.push({ itemId: block.itemId ?? `blocks[${index}]`, prompt: firstPromptText(block) ?? null });
       return;
     }
-    if (block.type === 'short_answer') {
+    if (block.type === 'short_answer' || block.type === 'essay') {
       items.push({ itemId: block.itemRef ?? `blocks[${index}]`, prompt: firstPromptText(block) ?? null });
     }
   });
@@ -309,20 +319,37 @@ export class ResolveCardScan {
   /**
    * @param {{testId: string|null, answers?: Record<number, string|string[]>}} args
    * @returns {Promise<{error: {code: 'CARD_ID_UNREADABLE'}}
-   *   |{results: object[], unallocatedRows?: number[]}>}
+   *   |{results: object[], unallocatedRows?: number[]}
+   *   |{results: [], deadCard: true, answeredRowCount: number, recordStatuses: string[]}>}
    *   Each `results[]` entry is EITHER a graded result —
    *   `{cardId, recordId, documentId, rev, variant, learnerId?,
-   *   revisionSuperseded, results: [{row, itemId, status, given, points,
-   *   earned}], totalPoints, earnedPoints}` — OR, when the record's own
-   *   persisted `rowItems` no longer matches what re-derivation just produced
-   *   (F4, an external bank mutated after the card printed), a per-record
-   *   error entry instead: `{cardId, recordId, documentId, rev, variant,
-   *   learnerId?, error: {code: 'ALLOCATION_ROW_MAPPING_DRIFT'}}` — no
-   *   `results`/`totalPoints`/`earnedPoints`, and nothing in it is graded;
-   *   every OTHER record on the same scan still resolves normally.
+   *   revisionSuperseded, results: [{row, itemId, itemType, prompt,
+   *   status, given, points, earned}], totalPoints, earnedPoints,
+   *   unscannedItems: [{itemId, prompt}]}` (`prompt` is the resolved bank
+   *   item's own prompt text, `null` when it has none; `unscannedItems` is
+   *   the write-on questions/short_answer/essay sugar this record's own
+   *   prepared document carries that consumed no card row — empty array
+   *   when none) — OR, when the record's own persisted `rowItems` no longer
+   *   matches what re-derivation just produced (F4, an external bank
+   *   mutated after the card printed), a per-record error entry instead:
+   *   `{cardId, recordId, documentId, rev, variant, learnerId?, error:
+   *   {code: 'ALLOCATION_ROW_MAPPING_DRIFT'}}` — no
+   *   `results`/`totalPoints`/`earnedPoints`/`unscannedItems`, and nothing
+   *   in it is graded — OR, when `#resolveRecord` itself throws (a
+   *   sabotaged/deleted published artifact behind this record's pinned rev,
+   *   a phantom rev), an error entry with a DIFFERENT code carried through
+   *   from the failure: `{cardId, recordId, documentId, rev, variant,
+   *   learnerId?, error: {code, message}}` (`code` defaults to
+   *   `'SCAN_RECORD_RESOLVE_FAILED'` when the thrown error carries none);
+   *   every OTHER record on the same scan still resolves normally either way.
    *   `unallocatedRows` (answered rows that matched no live/satisfied
    *   allocation on this card) is present only when non-empty — never
    *   guessed at (spec §5.4).
+   *   A card whose records EXIST but are ALL released/superseded (no
+   *   live|satisfied claimant left), scanned with real answers, short-
+   *   circuits to `{results: [], deadCard: true, answeredRowCount,
+   *   recordStatuses}` instead of falling through to a bare
+   *   `unallocatedRows` report — the whole card is dead, not just some rows.
    *   Diagnostics (each present only when applicable): a graded entry
    *   carries `reScored: true` when its record had already settled before
    *   this scan; top-level `silentLiveRecords` lists live records whose
