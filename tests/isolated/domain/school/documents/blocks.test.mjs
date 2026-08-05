@@ -677,6 +677,39 @@ describe('validateBlock: question extensions (Task 2 — points, bank-select sug
   });
 });
 
+describe('validateBlock: question extensions (Task 2 — omr flag, trueFalse marker)', () => {
+  const question = (over = {}) => ({
+    type: 'question',
+    itemId: 'q1',
+    number: 1,
+    blocks: [{ type: 'rich_text', md: 'What is $x$?' }],
+    ...over,
+  });
+
+  it('accepts an optional omr: true|false on the itemId/number/blocks shape', () => {
+    expect(errs(question({ omr: true }))).toEqual([]);
+    expect(errs(question({ omr: false }))).toEqual([]);
+  });
+
+  it.each(['true', 1, 0, null])('rejects a non-boolean omr value %s', (omr) => {
+    expect(errs(question({ omr }))).toContain('question omr must be a boolean');
+  });
+
+  it('accepts omr on bank-select sugar too (spec §6.1: legal on either question shape)', () => {
+    expect(errs({
+      type: 'question', bankId: 'b', select: 5, key: 'sel1', omr: true,
+    })).toEqual([]);
+  });
+
+  it('accepts trueFalse: true on the itemId/number/blocks shape', () => {
+    expect(errs(question({ trueFalse: true }))).toEqual([]);
+  });
+
+  it.each([false, 'true', 1])('rejects a trueFalse value that is not literally true: %s', (trueFalse) => {
+    expect(errs(question({ trueFalse }))).toContain('question trueFalse must be true when present');
+  });
+});
+
 describe('validateBlock: wordbank', () => {
   it('accepts a key with unique non-empty terms', () => {
     expect(errs({ type: 'wordbank', key: 'wb1', terms: ['mitosis', 'meiosis'] })).toEqual([]);

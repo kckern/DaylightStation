@@ -276,15 +276,30 @@ function collectInlineQuestionShapeErrors(blocks, path, errors) {
     const at = `${path}[${i}]`;
     if (!block || typeof block !== 'object') return;
     if (block.type === 'question' && block.select === undefined) {
-      const choicesRequired = block.answers !== undefined;
-      const choicesGiven = block.choices !== undefined;
-      if (choicesRequired || choicesGiven) {
-        if (!choicesGiven) {
-          errors.push(`${at}: question choices is required when answers is present`);
-        } else if (!Array.isArray(block.choices)) {
-          errors.push(`${at}: question choices must be an array when present`);
-        } else if (block.choices.length === 0) {
-          errors.push(`${at}: question choices must be a non-empty array when present`);
+      // true_false (Task 2): `trueFalse: true` is its own explicit marker
+      // (blocks.mjs), mutually exclusive with the choices/answer(s) shapes
+      // below — a question can't be both a 2-fixed-option true_false AND a
+      // multiple_choice/multi_select at once. Checked FIRST and exclusively
+      // (early `continue` via the outer `if/else`) so a malformed combination
+      // never also trips the choices-required branch with a second, confusing
+      // error about a field this shape was never going to have anyway.
+      if (block.trueFalse === true) {
+        if (block.choices !== undefined || block.answers !== undefined) {
+          errors.push(`${at}: question trueFalse must not be combined with choices/answers`);
+        } else if (block.answer !== undefined && typeof block.answer !== 'boolean') {
+          errors.push(`${at}: question answer must be a boolean when trueFalse is true`);
+        }
+      } else {
+        const choicesRequired = block.answers !== undefined;
+        const choicesGiven = block.choices !== undefined;
+        if (choicesRequired || choicesGiven) {
+          if (!choicesGiven) {
+            errors.push(`${at}: question choices is required when answers is present`);
+          } else if (!Array.isArray(block.choices)) {
+            errors.push(`${at}: question choices must be an array when present`);
+          } else if (block.choices.length === 0) {
+            errors.push(`${at}: question choices must be a non-empty array when present`);
+          }
         }
       }
     }
@@ -317,6 +332,24 @@ function publishQuestion(block, at, items, promptsByItemId, recurse) {
   if (block.select !== undefined) return block; // bank-select sugar already references an existing bank (spec §3): passes through untouched
   const published = { ...block };
   if (Array.isArray(block.blocks)) published.blocks = recurse(block.blocks, `${at}.blocks`);
+  // true_false (Task 2): shape (boolean `answer`, mutual exclusivity with
+  // choices/answers) is already gated by collectInlineQuestionShapeErrors
+  // before this ever runs. `trueFalse` itself is NOT a secret — it is what
+  // tells the renderer to print Ⓐ True / Ⓑ False, the same "structural, not
+  // an answer" status `choices` has for multiple_choice/multi_select — so it
+  // stays on `published` untouched (only `answer` is stripped).
+  if (block.trueFalse === true) {
+    if (block.answer !== undefined) {
+      items.push({
+        id: block.itemId,
+        type: 'true_false',
+        prompt: mintedQuestionPrompt(block.itemId, promptsByItemId),
+        answer: block.answer,
+      });
+      delete published.answer;
+    }
+    return published;
+  }
   if (block.answers !== undefined) {
     items.push({
       id: block.itemId,

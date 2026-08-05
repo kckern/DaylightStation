@@ -281,6 +281,41 @@ export function validateDocumentV2(raw, { allowAnswers = false } = {}) {
   // §4.3, §6.3) — see validateKeysAndWordbankRefs' own doc comment.
   if (Array.isArray(blocks)) validateKeysAndWordbankRefs(blocks, errors);
 
+  // Quiz-archetype STRUCTURAL row-mapping check (Task 2, spec §5.3) — the
+  // half of allocation.mjs's row-mappability rule that IS decidable from the
+  // document alone, without a resolved bank: a SCORED quiz question whose own
+  // nested content wraps a cloze/matching/short_answer block can never
+  // resolve to a row-mappable bank item (`ROW_MAPPABLE_TYPES` in
+  // allocation.mjs is multiple_choice/true_false/multi_select only — those
+  // three block types mint items of exactly the types this list excludes).
+  // Catching it here gives a dotted-path authoring error immediately, rather
+  // than a confusing "itemId not found in bank" / "not row-mappable" surfacing
+  // later from `planRows`, only once a bank happens to exist.
+  //
+  // Deliberately NOT checked here (stays at render-time planning, in
+  // `allocation.mjs`'s `planRows`, which alone has the resolved bank item):
+  // choice COUNT (>5 choices) and the row-mappable TYPE check for a question
+  // whose `itemId` legitimately resolves via `choices`/`answer`/`answers` or
+  // bank-select sugar — neither is decidable from the document alone. This
+  // check only catches the one class of mistake that is: a question that
+  // wraps non-row-mappable CONTENT as if that content were what gets scored,
+  // when row-mapping actually resolves the question's own itemId.
+  const NON_ROW_MAPPABLE_NESTED_TYPES = new Set(['cloze', 'matching', 'short_answer']);
+  if (raw.archetype === 'quiz' && Array.isArray(blocks)) {
+    walkBlocks(blocks, (block, at) => {
+      if (block.type !== 'question' || block.select !== undefined) return;
+      const points = typeof block.points === 'number' ? block.points : defaultPoints;
+      if (!(points > 0) || !Array.isArray(block.blocks)) return;
+      let offender = null;
+      walkBlocks(block.blocks, (child) => {
+        if (!offender && NON_ROW_MAPPABLE_NESTED_TYPES.has(child.type)) offender = child.type;
+      }, { path: `${at}.blocks` });
+      if (offender) {
+        errors.push(`${at}: scored quiz question wraps a non-row-mappable '${offender}' block as its content (row-mapping resolves the question's own itemId, not nested content)`);
+      }
+    });
+  }
+
   if (errors.length) return { errors };
 
   const document = {

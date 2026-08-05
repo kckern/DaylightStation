@@ -460,3 +460,91 @@ describe('publishDocument: inline question choices shape gate (review fix)', () 
     expect(notArray.errors).toEqual(['blocks[0]: question choices must be an array when present']);
   });
 });
+
+// Task 2 (spec §5.3, §6.1): inline true_false question. The inline marker is
+// the explicit `trueFalse: true` flag (blocks.mjs) — NOT inferred from
+// `typeof answer === 'boolean'` — because the marker is what survives onto
+// the published (answer-free) document; the renderer needs to know "print
+// Ⓐ True / Ⓑ False" whether or not an answer happens to be present.
+describe('publishDocument: inline true_false question (Task 2)', () => {
+  const tfSource = (over = {}) => fullSource({
+    blocks: [
+      {
+        type: 'question',
+        itemId: 'q1',
+        number: 1,
+        blocks: [richText('The sky is blue.')],
+        trueFalse: true,
+        answer: true,
+        ...over,
+      },
+    ],
+  });
+
+  it('mints a true_false bank item keyed by the question itemId; answer does not survive publish, trueFalse does', () => {
+    const result = publishDocument(tfSource());
+    expect(result.errors).toBeUndefined();
+    const q1 = result.published.blocks[0];
+    expect(q1.trueFalse).toBe(true);
+    expect(q1.answer).toBeUndefined();
+
+    const item = result.bank.items.find((i) => i.id === 'q1');
+    expect(item).toMatchObject({ id: 'q1', type: 'true_false', answer: true });
+    expect(item.prompt).toBe('The sky is blue.');
+  });
+
+  it('mints answer: false the same way', () => {
+    const result = publishDocument(tfSource({ answer: false }));
+    expect(result.errors).toBeUndefined();
+    const item = result.bank.items.find((i) => i.id === 'q1');
+    expect(item.answer).toBe(false);
+  });
+
+  it('omr flag passes through publish untouched', () => {
+    const result = publishDocument(tfSource({ omr: true }));
+    expect(result.errors).toBeUndefined();
+    expect(result.published.blocks[0].omr).toBe(true);
+  });
+
+  it('a trueFalse question with no answer field at all mints nothing (unscored/write-on, legal same as other inline shapes)', () => {
+    const source = fullSource({
+      blocks: [
+        {
+          type: 'question', itemId: 'q1', number: 1, blocks: [richText('The sky is blue.')], trueFalse: true,
+        },
+      ],
+    });
+    const result = publishDocument(source);
+    expect(result.errors).toBeUndefined();
+    expect(result.bank).toBeNull();
+    expect(result.published.blocks[0].trueFalse).toBe(true);
+  });
+
+  it('rejects a non-boolean answer alongside trueFalse: true, before minting', () => {
+    const result = publishDocument(tfSource({ answer: 'true' }));
+    expect(result.published).toBeUndefined();
+    expect(result.bank).toBeUndefined();
+    expect(result.errors).toEqual(['blocks[0]: question answer must be a boolean when trueFalse is true']);
+  });
+
+  it('rejects trueFalse combined with choices, before minting', () => {
+    const result = publishDocument(tfSource({ choices: ['True', 'False'] }));
+    expect(result.published).toBeUndefined();
+    expect(result.bank).toBeUndefined();
+    expect(result.errors).toEqual(['blocks[0]: question trueFalse must not be combined with choices/answers']);
+  });
+
+  it('rejects trueFalse combined with answers (multi_select shape), before minting', () => {
+    const source = fullSource({
+      blocks: [
+        {
+          type: 'question', itemId: 'q1', number: 1, blocks: [richText('The sky is blue.')], trueFalse: true, answers: ['A'],
+        },
+      ],
+    });
+    const result = publishDocument(source);
+    expect(result.published).toBeUndefined();
+    expect(result.bank).toBeUndefined();
+    expect(result.errors).toEqual(['blocks[0]: question trueFalse must not be combined with choices/answers']);
+  });
+});

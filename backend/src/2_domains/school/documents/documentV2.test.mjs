@@ -53,6 +53,67 @@ describe('validateDocumentV2: minimal valid quiz', () => {
   });
 });
 
+// Task 2 (spec §5.3): the bankless HALF of allocation.mjs's row-mappability
+// rule — a scored quiz question whose own nested content wraps a
+// cloze/matching/short_answer block can never resolve to a row-mappable bank
+// item (ROW_MAPPABLE_TYPES is multiple_choice/true_false/multi_select only),
+// which is decidable from the document alone. Choice-COUNT/TYPE checks that
+// need a resolved bank stay at render-time planning (allocation.mjs's
+// planRows) — not duplicated here.
+describe('validateDocumentV2: quiz-archetype structural row-mapping check (Task 2, spec §5.3)', () => {
+  const nestedBlockFor = {
+    cloze: { type: 'cloze', text: 'x is {{1}}.', blanks: [{ n: 1 }] },
+    matching: {
+      type: 'matching', key: 'm1', left: ['a', 'b'], right: ['c', 'd'],
+    },
+    short_answer: { type: 'short_answer', prompt: 'Name it.' },
+  };
+
+  it.each(['cloze', 'matching', 'short_answer'])(
+    'rejects a scored quiz question wrapping a nested %s block, at the question\'s own path',
+    (nestedType) => {
+      const doc = v2doc({
+        blocks: [question({ blocks: [{ type: 'rich_text', md: 'Q' }, nestedBlockFor[nestedType]] })],
+      });
+      const { errors } = validateDocumentV2(doc);
+      expect(errors.some((e) => e.startsWith('blocks[0]:') && e.includes(nestedType))).toBe(true);
+    },
+  );
+
+  it('does not flag an unscored (points: 0) quiz question with the same nested content', () => {
+    const doc = v2doc({
+      blocks: [question({
+        points: 0,
+        blocks: [{ type: 'rich_text', md: 'Q' }, nestedBlockFor.short_answer],
+      })],
+    });
+    expect(validateDocumentV2(doc).errors).toEqual([]);
+  });
+
+  it('does not flag a worksheet archetype with the same nested content (write-on blocks are legal there)', () => {
+    const doc = v2doc({
+      archetype: 'worksheet',
+      blocks: [question({
+        blocks: [{ type: 'rich_text', md: 'Q' }, nestedBlockFor.short_answer],
+      })],
+    });
+    expect(validateDocumentV2(doc).errors).toEqual([]);
+  });
+
+  it('does not flag a scored quiz question with ordinary content (rich_text/answer_space)', () => {
+    expect(validateDocumentV2(v2doc()).errors).toEqual([]);
+  });
+
+  it('does not flag a scored quiz question with a trueFalse/multiple_choice inline answer shape (row-mappable)', () => {
+    const doc = v2doc({
+      blocks: [question({
+        trueFalse: true, blocks: [{ type: 'rich_text', md: 'The sky is blue.' }],
+      })],
+    });
+    expect(validateDocumentV2(doc).errors).toEqual([]);
+  });
+});
+
 describe('validateAnyDocument: v1 passthrough', () => {
   it('dispatches a schema-less document to the existing v1 validator, unchanged', () => {
     const raw = {

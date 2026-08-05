@@ -9,7 +9,7 @@
  * empty/whitespace value that slips through is a live UI crash or a silently
  * unanswerable question.
  */
-const ITEM_TYPES = new Set(['multiple_choice', 'short_answer', 'cloze', 'matching', 'region_click', 'asset_choice', 'multi_select']);
+const ITEM_TYPES = new Set(['multiple_choice', 'short_answer', 'cloze', 'matching', 'region_click', 'asset_choice', 'multi_select', 'true_false']);
 const AUDIENCES = new Set(['generic', 'assigned']);
 
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
@@ -173,6 +173,12 @@ export function validateQuestionBank(raw) {
           }
         }
       }
+    }
+    // true_false (spec §5.3, §6.1): rendered/graded as A/B (True/False) on the
+    // OMR card. No `choices` array — the two-option shape is fixed and never
+    // authored (allocation.mjs's `planRows` hardcodes choiceCount 2 for it).
+    if (item.type === 'true_false') {
+      if (typeof item.answer !== 'boolean') errors.push(`${at}: answer must be a boolean`);
     }
     if (item.type === 'region_click') {
       if (!isNonEmptyString(item.asset)) errors.push(`${at}: asset is required`);
