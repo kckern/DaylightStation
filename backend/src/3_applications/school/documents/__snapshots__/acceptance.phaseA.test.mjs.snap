@@ -3,6 +3,7 @@
 exports[`Phase A acceptance sweep (spec §12, items tagged [A]) > §12.6 fit — the three-policy matrix (one file, three fixtures) + the receipt-target rejection > policy: flow — paginates with correct footers + continuation strips > extracted page text is snapshot-pinned — a regression that reflows/renumbers pages shows up as a text diff 1`] = `
 "acceptance-fixture
 Name: Riley                                               Date: ________________________
+Score ____ / 10
 
 1.   Problem 1. Solve and show your work.
 
@@ -20,10 +21,10 @@ Name: Riley                                               Date: ________________
 
 8.   Problem 8. Solve and show your work.
 
-9.   Problem 9. Solve and show your work.
-
                                             Page 1 of 2
-10.   Problem 10. Solve and show your work.
+9.    Problem 9. Solve and show your work.
+
+10.   Problem 10. Solve and show your work.
 
 acceptance-fixture                                          Name: Riley
 
@@ -43,7 +44,7 @@ exports[`Phase A acceptance sweep (spec §12, items tagged [A]) > §12.8 type > 
 exports[`Phase A acceptance sweep (spec §12, items tagged [A]) > §12.10-A archetype dial — envelope-only difference (Phase A scope; visible score box is Phase B) > the SAME body renders to different bytes for quiz vs worksheet, purely from the archetype field (duplex threading) 1`] = `
 {
   "quiz": {
-    "hash": "1083c6d2538cdc0a727dcba731d314e13cb10f37892aa08754b3358445aab180",
+    "hash": "7d7765a3b4a779f53b7e9606b083b4b3caaf24173e84bf7801ee64be94303090",
     "pageCount": 2,
   },
   "worksheet": {
