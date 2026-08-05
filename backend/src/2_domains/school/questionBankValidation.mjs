@@ -9,7 +9,7 @@
  * empty/whitespace value that slips through is a live UI crash or a silently
  * unanswerable question.
  */
-const ITEM_TYPES = new Set(['multiple_choice', 'short_answer', 'cloze', 'matching', 'region_click', 'asset_choice']);
+const ITEM_TYPES = new Set(['multiple_choice', 'short_answer', 'cloze', 'matching', 'region_click', 'asset_choice', 'multi_select']);
 const AUDIENCES = new Set(['generic', 'assigned']);
 
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
@@ -132,6 +132,28 @@ export function validateQuestionBank(raw) {
         }
         if (new Set(lefts).size !== lefts.length) errors.push(`${at}: left values must be unique`);
         if (new Set(rights).size !== rights.length) errors.push(`${at}: right values must be unique`);
+      }
+    }
+    // multi_select (spec §5.5, §4.3): a fixed 2..5 choice set (row-mappable
+    // to a card, per §5.3's "≤5 options"), graded exact-set (grading.mjs) —
+    // `answers` (plural) is the ANSWER KEY, distinct from single-answer types'
+    // `answer`, because more than one choice can be correct at once.
+    if (item.type === 'multi_select') {
+      if (!Array.isArray(item.choices) || item.choices.length < 2 || item.choices.length > 5) {
+        errors.push(`${at}: choices must have between 2 and 5 entries`);
+      } else {
+        if (!item.choices.every(isNonEmptyString)) errors.push(`${at}: choices must be non-empty strings`);
+        if (new Set(item.choices).size !== item.choices.length) errors.push(`${at}: choices must be unique`);
+        if (!Array.isArray(item.answers) || item.answers.length === 0) {
+          errors.push(`${at}: answers must be a non-empty array`);
+        } else {
+          if (!item.answers.every(isNonEmptyString)) errors.push(`${at}: answers must be non-empty strings`);
+          if (new Set(item.answers).size !== item.answers.length) errors.push(`${at}: answers must be distinct`);
+          else if (!item.answers.every((a) => item.choices.includes(a))) errors.push(`${at}: answers must be a subset of choices`);
+        }
+      }
+      if (item.maxSelect !== undefined && (!Number.isInteger(item.maxSelect) || item.maxSelect < 1)) {
+        errors.push(`${at}: maxSelect must be an integer >= 1`);
       }
     }
     if (item.type === 'region_click') {

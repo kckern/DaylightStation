@@ -149,3 +149,67 @@ describe('validateQuestionBank', () => {
     expect(r.ok).toBe(true);
   });
 });
+
+// Task 2 (spec §5.5): multi_select — the OMR-row-mappable item type that can
+// have more than one correct choice. Exact-set grading lives in grading.mjs;
+// this file owns only the bank item's own shape.
+describe('validateQuestionBank: multi_select', () => {
+  const ms = (over = {}) => ({
+    id: 'q1', type: 'multi_select', prompt: 'Which are primary colors?', choices: ['Red', 'Green', 'Blue', 'Orange'], answers: ['Red', 'Blue'], ...over,
+  });
+
+  it('accepts a minimal valid multi_select item', () => {
+    const r = validateQuestionBank(bank({ items: [ms()] }));
+    expect(r.ok).toBe(true);
+  });
+
+  it('accepts an optional maxSelect', () => {
+    const r = validateQuestionBank(bank({ items: [ms({ maxSelect: 2 })] }));
+    expect(r.ok).toBe(true);
+  });
+
+  it.each([
+    ['fewer than 2', ['Only one']],
+    ['more than 5', ['A', 'B', 'C', 'D', 'E', 'F']],
+  ])('rejects choices with %s entries', (_label, choices) => {
+    const r = validateQuestionBank(bank({ items: [ms({ choices, answers: [choices[0]] })] }));
+    expect(r.ok).toBe(false);
+    expect(r.errors).toContain('items[0]: choices must have between 2 and 5 entries');
+  });
+
+  it('rejects a non-string / empty choice entry', () => {
+    const r = validateQuestionBank(bank({ items: [ms({ choices: ['Red', ''] })] }));
+    expect(r.ok).toBe(false);
+    expect(r.errors).toContain('items[0]: choices must be non-empty strings');
+  });
+
+  it('rejects duplicate choices', () => {
+    const r = validateQuestionBank(bank({ items: [ms({ choices: ['Red', 'Red', 'Blue'] })] }));
+    expect(r.ok).toBe(false);
+    expect(r.errors).toContain('items[0]: choices must be unique');
+  });
+
+  it('rejects a missing or empty answers array', () => {
+    expect(validateQuestionBank(bank({ items: [ms({ answers: undefined })] })).ok).toBe(false);
+    const r = validateQuestionBank(bank({ items: [ms({ answers: [] })] }));
+    expect(r.errors).toContain('items[0]: answers must be a non-empty array');
+  });
+
+  it('rejects duplicate answers', () => {
+    const r = validateQuestionBank(bank({ items: [ms({ answers: ['Red', 'Red'] })] }));
+    expect(r.ok).toBe(false);
+    expect(r.errors).toContain('items[0]: answers must be distinct');
+  });
+
+  it('rejects an answers entry that is not one of the choices', () => {
+    const r = validateQuestionBank(bank({ items: [ms({ answers: ['Purple'] })] }));
+    expect(r.ok).toBe(false);
+    expect(r.errors).toContain('items[0]: answers must be a subset of choices');
+  });
+
+  it.each([0, -1, 1.5, '2'])('rejects an invalid maxSelect of %s', (maxSelect) => {
+    const r = validateQuestionBank(bank({ items: [ms({ maxSelect })] }));
+    expect(r.ok).toBe(false);
+    expect(r.errors).toContain('items[0]: maxSelect must be an integer >= 1');
+  });
+});

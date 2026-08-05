@@ -14,6 +14,13 @@ export function givenShapeError(item, given) {
     }
     return null;
   }
+  // multi_select is the only OTHER item type an array is legal for (spec
+  // §5.5) — every other type below still requires a single string.
+  if (item.type === 'multi_select') {
+    if (!Array.isArray(given) || given.length === 0) return 'multi_select answer must be a non-empty array of choice strings';
+    if (given.some((v) => typeof v !== 'string' || v.length === 0)) return 'every multi_select answer entry must be a non-empty string';
+    return null;
+  }
   if (typeof given !== 'string' || given.length === 0) return 'answer must be a non-empty string';
   return null;
 }
@@ -44,6 +51,15 @@ export function gradeAnswer(item, given) {
     // Values are machine-generated ids (region codes / choice values), never
     // free text — strict equality, no normalization (see multiple_choice).
     return { correct: given === item.answer, expected: item.answer };
+  }
+  if (item.type === 'multi_select') {
+    // Exact-set match: full credit or zero, no partial credit (spec §5.5) —
+    // order-insensitive and duplicate-tolerant, since `given` is compared as
+    // a SET against the answer set, not position-by-position.
+    const wantSet = new Set(item.answers);
+    const givenSet = new Set(given);
+    const correct = givenSet.size === wantSet.size && [...wantSet].every((v) => givenSet.has(v));
+    return { correct, expected: item.answers };
   }
   throw new Error(`gradeAnswer: unrecognised item.type "${item.type}"`);
 }

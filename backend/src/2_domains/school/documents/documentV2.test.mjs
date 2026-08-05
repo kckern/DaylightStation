@@ -212,6 +212,7 @@ describe('BLOCK_TARGET_SUPPORT matrix', () => {
     for (const t of [
       'math', 'plot', 'geometry', 'asset', 'question', 'answer_space', 'omr_response',
       'passage', 'figure', 'inset', 'list', 'divider', 'spacer', 'page_break',
+      'wordbank', 'matching', 'cloze', 'short_answer', 'essay',
     ]) {
       expect(BLOCK_TARGET_SUPPORT[t]).toEqual(['letter']);
       expect(Object.isFrozen(BLOCK_TARGET_SUPPORT[t])).toBe(true);
@@ -262,5 +263,120 @@ describe('validateDocumentV2: answers still banned', () => {
     const raw = v2doc({ blocks: [question({ answer: 'A' })] });
     const { errors } = validateDocumentV2(raw);
     expect(errors.some((e) => e.includes('must not carry an answer key'))).toBe(true);
+  });
+});
+
+const wordbank = (over = {}) => ({ type: 'wordbank', key: 'wb1', terms: ['a', 'b'], ...over });
+const matchingBlock = (over = {}) => ({
+  type: 'matching', key: 'm1', left: ['WA', 'OR'], right: ['Olympia', 'Salem'], ...over,
+});
+const clozeBlock = (over = {}) => ({
+  type: 'cloze', text: 'The {{1}} is red.', blanks: [{ n: 1 }], ...over,
+});
+
+describe('validateDocumentV2: document-wide key uniqueness (Task 2, spec §4.3)', () => {
+  it('accepts distinct keys across wordbank/matching/bank-select question', () => {
+    const raw = v2doc({
+      blocks: [
+        wordbank({ key: 'wb1' }),
+        matchingBlock({ key: 'm1' }),
+        { type: 'question', bankId: 'b', select: 3, key: 'sel1' },
+      ],
+    });
+    const { errors } = validateDocumentV2(raw);
+    expect(errors).toEqual([]);
+  });
+
+  it('rejects two wordbank blocks sharing a key', () => {
+    const raw = v2doc({ blocks: [wordbank({ key: 'wb1' }), wordbank({ key: 'wb1', terms: ['c', 'd'] })] });
+    const { errors } = validateDocumentV2(raw);
+    expect(errors.some((e) => e.includes('duplicate key "wb1"'))).toBe(true);
+  });
+
+  it('rejects a wordbank and a matching block sharing a key (cross-type collision)', () => {
+    const raw = v2doc({ blocks: [wordbank({ key: 'shared' }), matchingBlock({ key: 'shared' })] });
+    const { errors } = validateDocumentV2(raw);
+    expect(errors.some((e) => e.includes('duplicate key "shared"'))).toBe(true);
+  });
+
+  it('rejects a matching block and a bank-select question sharing a key', () => {
+    const raw = v2doc({
+      blocks: [matchingBlock({ key: 'shared' }), { type: 'question', bankId: 'b', select: 3, key: 'shared' }],
+    });
+    const { errors } = validateDocumentV2(raw);
+    expect(errors.some((e) => e.includes('duplicate key "shared"'))).toBe(true);
+  });
+
+  it('names both positions in the duplicate-key error', () => {
+    const raw = v2doc({ blocks: [wordbank({ key: 'wb1' }), wordbank({ key: 'wb1', terms: ['c', 'd'] })] });
+    const { errors } = validateDocumentV2(raw);
+    const msg = errors.find((e) => e.includes('duplicate key "wb1"'));
+    expect(msg).toBe('blocks[1]: duplicate key "wb1" (already used at blocks[0])');
+  });
+
+  it('does not double-report a key that already failed its own shape check (blocks.mjs)', () => {
+    const raw = v2doc({ blocks: [wordbank({ key: '' }), wordbank({ key: '', terms: ['c', 'd'] })] });
+    const { errors } = validateDocumentV2(raw);
+    expect(errors.some((e) => e.includes('duplicate key'))).toBe(false);
+  });
+});
+
+describe('validateDocumentV2: cloze -> wordbank ref resolution (Task 2, spec §6.3)', () => {
+  it('accepts a cloze blank referencing an existing wordbank key', () => {
+    const raw = v2doc({ blocks: [wordbank({ key: 'wb1' }), clozeBlock({ blanks: [{ n: 1, wordbank: 'wb1' }] })] });
+    const { errors } = validateDocumentV2(raw);
+    expect(errors).toEqual([]);
+  });
+
+  it('rejects a cloze blank referencing a wordbank key that does not exist (dangling ref)', () => {
+    const raw = v2doc({ blocks: [clozeBlock({ blanks: [{ n: 1, wordbank: 'missing' }] })] });
+    const { errors } = validateDocumentV2(raw);
+    expect(errors).toContain('blocks[0].blanks[0]: wordbank "missing" does not match any wordbank block\'s key');
+  });
+});
+
+describe('validateDocumentV2: allowAnswers threading (Task 2 infrastructure — Task 3 is the first real caller)', () => {
+  it('defaults to allowAnswers: false — SOURCE-only fields are rejected exactly as before this option existed', () => {
+    const raw = v2doc({
+      blocks: [matchingBlock({ pairs: [{ left: 'WA', right: 'Olympia' }, { left: 'OR', right: 'Salem' }] })],
+    });
+    const { errors } = validateDocumentV2(raw);
+    expect(errors.some((e) => e.includes('matching pairs is a source-only field'))).toBe(true);
+  });
+
+  it('allowAnswers: true permits matching pairs, a cloze blank answer, and short_answer answer together', () => {
+    const raw = v2doc({
+      blocks: [
+        matchingBlock({ pairs: [{ left: 'WA', right: 'Olympia' }, { left: 'OR', right: 'Salem' }] }),
+        clozeBlock({ blanks: [{ n: 1, answer: 'mitochondria' }] }),
+        { type: 'short_answer', prompt: 'Capital of WA?', answer: 'Olympia' },
+      ],
+    });
+    const { errors } = validateDocumentV2(raw, { allowAnswers: true });
+    expect(errors).toEqual([]);
+  });
+
+  it('a source document still enforces every other v1/v2 rule (id/seed/target/etc.)', () => {
+    const raw = v2doc({ id: undefined, blocks: [clozeBlock({ blanks: [{ n: 1, answer: 'x' }] })] });
+    const { errors } = validateDocumentV2(raw, { allowAnswers: true });
+    expect(errors.some((e) => e.includes('id must match'))).toBe(true);
+  });
+});
+
+describe('validateDocumentV2: answer-ban interplay when allowAnswers is false (default)', () => {
+  it('a cloze blank answer is caught by BOTH mechanisms — the block validator\'s source-only gate AND the generic collectAnswerKeys walk (defense in depth for a literal "answer" key)', () => {
+    const raw = v2doc({ blocks: [clozeBlock({ blanks: [{ n: 1, answer: 'mitochondria' }] })] });
+    const { errors } = validateDocumentV2(raw);
+    expect(errors).toContain('blocks[0]: cloze blanks[0].answer is a source-only field and must not appear in a published document');
+    expect(errors.some((e) => e.includes('must not carry an answer key'))).toBe(true);
+  });
+
+  it('matching pairs (not a literal "answer"/"answers" key) is caught ONLY by the block validator, not the generic answer-key walk', () => {
+    const raw = v2doc({
+      blocks: [matchingBlock({ pairs: [{ left: 'WA', right: 'Olympia' }, { left: 'OR', right: 'Salem' }] })],
+    });
+    const { errors } = validateDocumentV2(raw);
+    expect(errors.some((e) => e.includes('source-only field'))).toBe(true);
+    expect(errors.some((e) => e.includes('must not carry an answer key'))).toBe(false);
   });
 });

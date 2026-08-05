@@ -1,7 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { BLOCK_TYPES, validateBlock } from '#domains/school/documents/blocks.mjs';
 
-const errs = (raw) => validateBlock(raw).errors;
+const errs = (raw, opts) => validateBlock(raw, opts).errors;
+// SOURCE-stage validation (spec §3): allowAnswers: true permits the
+// SOURCE-only fields (matching.pairs, a cloze blank's answer, short_answer's
+// answer) that PUBLISHED validation (the `errs` default above) must reject.
+const srcErrs = (raw) => validateBlock(raw, { allowAnswers: true }).errors;
 
 describe('BLOCK_TYPES', () => {
   it('is the closed spec §3.3 set, in document order', () => {
@@ -9,7 +13,9 @@ describe('BLOCK_TYPES', () => {
       'rich_text', 'math', 'plot', 'geometry', 'asset',
       'question', 'answer_space', 'omr_response',
       'media_action', 'scan_action',
-      'passage', 'figure', 'inset', 'list', 'divider', 'spacer', 'page_break',
+      'passage', 'figure', 'inset', 'list',
+      'wordbank', 'matching', 'cloze', 'short_answer', 'essay',
+      'divider', 'spacer', 'page_break',
     ]);
   });
 
@@ -440,6 +446,44 @@ describe('validateBlock: inset', () => {
       expect(errors).toContain('blocks[0]: inset blocks must not contain a geometry (no Letter renderer exists for geometry yet)');
     });
 
+    // Task 2: keyed/shuffled exam furniture is deferred out of insets (v1) —
+    // see the audit note above INSET_UNSUPPORTED_CHILD_TYPES in blocks.mjs.
+    it('wordbank — keyed exam furniture, deferred to a v2 of the box path', () => {
+      const errors = errs(inset({ blocks: [{ type: 'wordbank', key: 'wb1', terms: ['a', 'b'] }] }));
+      expect(errors).toContain('blocks[0]: inset blocks must not contain a wordbank (a seeded-shuffle boxed term set is keyed exam furniture; nesting a box inside a box is deferred to a v2 of the box path)');
+    });
+
+    it('matching — same v1 disposition as wordbank', () => {
+      const errors = errs(inset({
+        blocks: [{
+          type: 'matching', key: 'm1', left: ['A'], right: ['1'],
+        }],
+      }));
+      expect(errors).toContain('blocks[0]: inset blocks must not contain a matching (a seeded-shuffle write-the-letter grid is keyed exam furniture — same v1 disposition as wordbank)');
+    });
+
+    it('cloze — same v1 disposition as wordbank/matching', () => {
+      const errors = errs(inset({
+        blocks: [{
+          type: 'cloze', text: 'The {{1}} is red.', blanks: [{ n: 1 }],
+        }],
+      }));
+      expect(errors).toContain('blocks[0]: inset blocks must not contain a cloze (fixed-width numbered blanks are keyed exam furniture — same v1 disposition as wordbank/matching)');
+    });
+
+    // short_answer/essay ARE allowed nested (unlike wordbank/matching/cloze
+    // above): both desugar to prompt + answer_space, and BOTH of those
+    // primitives are already legal inside a box today.
+    it('short_answer and essay nest cleanly (desugar to already-supported prompt + answer_space)', () => {
+      const allowed = inset({
+        blocks: [
+          { type: 'short_answer', prompt: 'Name a state.' },
+          { type: 'essay', prompt: 'Describe the state.' },
+        ],
+      });
+      expect(errs(allowed)).toEqual([]);
+    });
+
     it('reports the rejection at the nested child\'s own dotted path, not the inset\'s', () => {
       const errors = errs(inset({
         blocks: [{ type: 'rich_text', md: 'Before.' }, { type: 'page_break' }],
@@ -460,6 +504,8 @@ describe('validateBlock: inset', () => {
           { type: 'passage', text: 'A passage.' },
           { type: 'figure', asset: 'a', caption: 'C' },
           { type: 'list', style: 'bullet', items: ['One'] },
+          { type: 'short_answer', prompt: 'Name a state.' },
+          { type: 'essay', prompt: 'Describe the state.' },
           { type: 'divider' },
           { type: 'spacer', minPt: 10, maxPt: 20 },
         ],
@@ -546,5 +592,396 @@ describe('validateBlock: page_break', () => {
 
   it('ignores unknown fields, matching the house convention', () => {
     expect(errs({ type: 'page_break', force: true })).toEqual([]);
+  });
+});
+
+describe('validateBlock: question extensions (Task 2 — points, bank-select sugar)', () => {
+  const question = (over = {}) => ({
+    type: 'question',
+    itemId: 'q1',
+    number: 1,
+    blocks: [{ type: 'rich_text', md: 'What is $x$?' }],
+    ...over,
+  });
+
+  it('accepts an optional points >= 0 on the itemId/number/blocks shape', () => {
+    expect(errs(question({ points: 2 }))).toEqual([]);
+    expect(errs(question({ points: 0 }))).toEqual([]);
+  });
+
+  it.each([-1, '2', NaN, Infinity])('rejects an invalid points value %s', (points) => {
+    expect(errs(question({ points }))).toContain('question points must be a number >= 0');
+  });
+
+  it('accepts a minimal bank-select sugar shape', () => {
+    expect(errs({
+      type: 'question', bankId: 'states-bank', select: 5, key: 'sel1',
+    })).toEqual([]);
+  });
+
+  it('accepts bank-select sugar with points and filter', () => {
+    expect(errs({
+      type: 'question',
+      bankId: 'states-bank',
+      select: 5,
+      key: 'sel1',
+      points: 3,
+      filter: { topics: ['geography'], difficulty: 'easy' },
+    })).toEqual([]);
+  });
+
+  it('rejects bank-select sugar missing bankId', () => {
+    expect(errs({ type: 'question', select: 5, key: 'sel1' }))
+      .toContain('question bankId must be a non-empty string');
+  });
+
+  it.each([0, -1, 1.5, '5'])('rejects a select value that is %s', (select) => {
+    expect(errs({ type: 'question', bankId: 'b', select, key: 'sel1' }))
+      .toContain('question select must be an integer >= 1');
+  });
+
+  it('key is required when select is present', () => {
+    const errors = errs({ type: 'question', bankId: 'b', select: 5 });
+    expect(errors.some((e) => e.includes('question key (required when select is present)'))).toBe(true);
+  });
+
+  it('rejects a key that does not match the shuffle key pattern', () => {
+    const errors = errs({
+      type: 'question', bankId: 'b', select: 5, key: 'Not Valid!',
+    });
+    expect(errors.some((e) => e.includes('question key (required when select is present)'))).toBe(true);
+  });
+
+  it('rejects a non-mapping filter', () => {
+    expect(errs({
+      type: 'question', bankId: 'b', select: 5, key: 'sel1', filter: 'geography',
+    })).toContain('question filter must be a mapping when present');
+  });
+
+  it('rejects filter.topics that is not an array of non-empty strings', () => {
+    expect(errs({
+      type: 'question', bankId: 'b', select: 5, key: 'sel1', filter: { topics: 'geography' },
+    })).toContain('question filter.topics must be an array of non-empty strings when present');
+  });
+
+  it('rejects a non-string filter.difficulty', () => {
+    expect(errs({
+      type: 'question', bankId: 'b', select: 5, key: 'sel1', filter: { difficulty: 3 },
+    })).toContain('question filter.difficulty must be a non-empty string when present');
+  });
+
+  it('bank-select sugar does not require itemId/number/blocks', () => {
+    expect(errs({
+      type: 'question', bankId: 'b', select: 5, key: 'sel1',
+    })).toEqual([]);
+  });
+});
+
+describe('validateBlock: wordbank', () => {
+  it('accepts a key with unique non-empty terms', () => {
+    expect(errs({ type: 'wordbank', key: 'wb1', terms: ['mitosis', 'meiosis'] })).toEqual([]);
+  });
+
+  it.each([
+    ['missing', undefined],
+    ['empty', ''],
+    ['pattern-violating (uppercase)', 'Wb1'],
+    ['pattern-violating (starts with hyphen)', '-wb1'],
+    ['too long', 'a'.repeat(33)],
+  ])('rejects a key that is %s', (_label, key) => {
+    const errors = errs({ type: 'wordbank', key, terms: ['a', 'b'] });
+    expect(errors.some((e) => e.startsWith('wordbank key must be a non-empty string matching'))).toBe(true);
+  });
+
+  it('rejects a missing or empty terms array', () => {
+    expect(errs({ type: 'wordbank', key: 'wb1', terms: [] })).toContain('wordbank terms must be a non-empty array');
+    expect(errs({ type: 'wordbank', key: 'wb1', terms: undefined })).toContain('wordbank terms must be a non-empty array');
+  });
+
+  it('rejects a non-empty-string term', () => {
+    expect(errs({ type: 'wordbank', key: 'wb1', terms: ['a', '  '] })).toContain('wordbank terms must be non-empty strings');
+    expect(errs({ type: 'wordbank', key: 'wb1', terms: ['a', 2] })).toContain('wordbank terms must be non-empty strings');
+  });
+
+  it('rejects duplicate terms', () => {
+    expect(errs({ type: 'wordbank', key: 'wb1', terms: ['a', 'a'] })).toContain('wordbank terms must be unique');
+  });
+
+  it('terms are presentation, not answers — legal in a published document', () => {
+    expect(errs({ type: 'wordbank', key: 'wb1', terms: ['a', 'b'] }, { allowAnswers: false })).toEqual([]);
+  });
+});
+
+describe('validateBlock: matching', () => {
+  const matching = (over = {}) => ({
+    type: 'matching', key: 'm1', left: ['WA', 'OR'], right: ['Olympia', 'Salem'], ...over,
+  });
+
+  it('accepts the published shape (key, left, right, no pairs)', () => {
+    expect(errs(matching())).toEqual([]);
+  });
+
+  it('rejects a missing/invalid key', () => {
+    const errors = errs(matching({ key: undefined }));
+    expect(errors.some((e) => e.startsWith('matching key must be a non-empty string matching'))).toBe(true);
+  });
+
+  it('rejects a missing/empty left or right', () => {
+    expect(errs(matching({ left: [] }))).toContain('matching left must be a non-empty array of non-empty strings');
+    expect(errs(matching({ right: undefined }))).toContain('matching right must be a non-empty array of non-empty strings');
+  });
+
+  it('rejects a non-empty-string entry in left/right', () => {
+    expect(errs(matching({ left: ['WA', '  '] }))).toContain('matching left must be a non-empty array of non-empty strings');
+    expect(errs(matching({ right: ['Olympia', 2] }))).toContain('matching right must be a non-empty array of non-empty strings');
+  });
+
+  it('rejects duplicate entries in left/right', () => {
+    expect(errs(matching({ left: ['WA', 'WA'] }))).toContain('matching left must be unique');
+    expect(errs(matching({ right: ['Olympia', 'Olympia'] }))).toContain('matching right must be unique');
+  });
+
+  describe('pairs (SOURCE-only answer field)', () => {
+    const pairs = [{ left: 'WA', right: 'Olympia' }, { left: 'OR', right: 'Salem' }];
+
+    it('rejects pairs in a PUBLISHED document (default allowAnswers: false)', () => {
+      expect(errs(matching({ pairs }))).toContain('matching pairs is a source-only field and must not appear in a published document');
+    });
+
+    it('accepts pairs in a SOURCE document (allowAnswers: true)', () => {
+      expect(srcErrs(matching({ pairs }))).toEqual([]);
+    });
+
+    it('accepts pairs referencing left/right by index', () => {
+      expect(srcErrs(matching({ pairs: [{ left: 0, right: 0 }, { left: 1, right: 1 }] }))).toEqual([]);
+    });
+
+    it('rejects a malformed pair entry', () => {
+      const errors = srcErrs(matching({ pairs: [{ left: 'WA' }, { left: 'OR', right: 'Salem' }] }));
+      expect(errors).toContain('matching pairs[0] must be a mapping of {left: idx|string, right: idx|string}');
+    });
+
+    it('rejects an empty pairs array', () => {
+      expect(srcErrs(matching({ pairs: [] }))).toContain('matching pairs must be a non-empty array when present');
+    });
+
+    it('rejects a pair referencing a left/right value that does not exist', () => {
+      const errors = srcErrs(matching({ pairs: [{ left: 'CA', right: 'Olympia' }, { left: 'OR', right: 'Salem' }] }));
+      expect(errors).toContain('matching pairs must reference entries present in left/right');
+    });
+
+    it('rejects a pairs set that repeats one left entry (not a complete, unique cover)', () => {
+      const errors = srcErrs(matching({ pairs: [{ left: 'WA', right: 'Olympia' }, { left: 'WA', right: 'Salem' }] }));
+      expect(errors).toContain('matching pairs must reference each left entry at most once');
+      expect(errors).toContain('matching pairs must cover every left entry');
+    });
+
+    it('rejects an incomplete cover of left', () => {
+      const errors = srcErrs(matching({ pairs: [{ left: 'WA', right: 'Olympia' }] }));
+      expect(errors).toContain('matching pairs must cover every left entry');
+    });
+  });
+});
+
+describe('validateBlock: cloze', () => {
+  const cloze = (over = {}) => ({
+    type: 'cloze',
+    text: 'The mitochondria is the {{1}} of the cell.',
+    blanks: [{ n: 1 }],
+    ...over,
+  });
+
+  it('accepts a single blank matching its marker', () => {
+    expect(errs(cloze())).toEqual([]);
+  });
+
+  it('accepts multiple blanks numbered 1..count, each exactly once', () => {
+    expect(errs({
+      type: 'cloze',
+      text: 'The {{1}} is red, the {{2}} is blue.',
+      blanks: [{ n: 1 }, { n: 2 }],
+    })).toEqual([]);
+  });
+
+  it.each([
+    ['empty', ''],
+    ['whitespace only', '   '],
+    ['not a string', { fake: 1 }],
+    ['missing', undefined],
+  ])('rejects text that is %s', (_label, text) => {
+    expect(errs(cloze({ text }))).toContain('cloze text must be a non-empty string');
+  });
+
+  it('rejects \\require in text (reaches the math-capable path)', () => {
+    expect(errs(cloze({ text: 'Simplify $\\require{enclose} x$ {{1}}.' })))
+      .toContain('cloze text must not use \\require{} (server rendering loads all packages)');
+  });
+
+  it('rejects text with no {{n}} marker at all', () => {
+    expect(errs(cloze({ text: 'No blanks here.' }))).toContain('cloze text must contain at least one {{n}} blank marker');
+  });
+
+  it('rejects markers that skip a number (not 1..count)', () => {
+    const errors = errs({
+      type: 'cloze', text: 'The {{1}} and the {{3}}.', blanks: [{ n: 1 }, { n: 3 }],
+    });
+    expect(errors.some((e) => e.startsWith('cloze text blank markers must be'))).toBe(true);
+  });
+
+  it('rejects a repeated marker number', () => {
+    const errors = errs({
+      type: 'cloze', text: 'The {{1}} and the {{1}} again.', blanks: [{ n: 1 }],
+    });
+    expect(errors.some((e) => e.startsWith('cloze text blank markers must be'))).toBe(true);
+  });
+
+  it('rejects a missing or empty blanks array', () => {
+    expect(errs(cloze({ blanks: [] }))).toContain('cloze blanks must be a non-empty array');
+    expect(errs(cloze({ blanks: undefined }))).toContain('cloze blanks must be a non-empty array');
+  });
+
+  it('rejects a blank whose n does not match any marker', () => {
+    expect(errs(cloze({ blanks: [{ n: 2 }] }))).toContain('cloze blanks[0].n must be an integer matching a {{n}} marker in text');
+  });
+
+  it('rejects a blank missing entirely for a marker in text', () => {
+    const errors = errs({
+      type: 'cloze', text: 'The {{1}} and the {{2}}.', blanks: [{ n: 1 }],
+    });
+    expect(errors).toContain('cloze blanks must include one entry for every {{n}} marker in text');
+  });
+
+  it('rejects duplicate blank n values', () => {
+    const errors = errs({
+      type: 'cloze', text: 'The {{1}} thing.', blanks: [{ n: 1 }, { n: 1 }],
+    });
+    expect(errors.some((e) => e.includes('duplicates blank {{1}}'))).toBe(true);
+  });
+
+  it.each(['s', 'm', 'l'])('accepts width %s', (width) => {
+    expect(errs(cloze({ blanks: [{ n: 1, width }] }))).toEqual([]);
+  });
+
+  it('rejects an unrecognised width', () => {
+    expect(errs(cloze({ blanks: [{ n: 1, width: 'xl' }] }))).toContain("cloze blanks[0].width must be 's', 'm', or 'l'");
+  });
+
+  it('defaults width when absent (no error)', () => {
+    expect(errs(cloze({ blanks: [{ n: 1 }] }))).toEqual([]);
+  });
+
+  it('accepts an optional wordbank reference (shape only — resolution is document-level)', () => {
+    expect(errs(cloze({ blanks: [{ n: 1, wordbank: 'wb1' }] }))).toEqual([]);
+  });
+
+  it('rejects a non-empty-string wordbank reference', () => {
+    expect(errs(cloze({ blanks: [{ n: 1, wordbank: '' }] }))).toContain('cloze blanks[0].wordbank must be a non-empty string when present');
+  });
+
+  describe('answer (SOURCE-only per-blank field)', () => {
+    it('rejects an answer in a PUBLISHED document (default allowAnswers: false)', () => {
+      expect(errs(cloze({ blanks: [{ n: 1, answer: 'mitochondria' }] })))
+        .toContain('cloze blanks[0].answer is a source-only field and must not appear in a published document');
+    });
+
+    it('accepts an answer in a SOURCE document (allowAnswers: true)', () => {
+      expect(srcErrs(cloze({ blanks: [{ n: 1, answer: 'mitochondria' }] }))).toEqual([]);
+    });
+
+    it('rejects a non-empty-string answer even in source mode', () => {
+      expect(srcErrs(cloze({ blanks: [{ n: 1, answer: '  ' }] })))
+        .toContain('cloze blanks[0].answer must be a non-empty string when present');
+    });
+  });
+});
+
+describe('validateBlock: short_answer', () => {
+  it('accepts a prompt with the default 2 lines', () => {
+    expect(errs({ type: 'short_answer', prompt: 'Name the capital of Washington.' })).toEqual([]);
+  });
+
+  it('accepts an explicit lines count in 1..10', () => {
+    expect(errs({ type: 'short_answer', prompt: 'P?', lines: 1 })).toEqual([]);
+    expect(errs({ type: 'short_answer', prompt: 'P?', lines: 10 })).toEqual([]);
+  });
+
+  it.each([
+    ['empty', ''],
+    ['whitespace only', '   '],
+    ['not a string', { fake: 1 }],
+    ['missing', undefined],
+  ])('rejects a prompt that is %s', (_label, prompt) => {
+    expect(errs({ type: 'short_answer', prompt })).toContain('short_answer prompt must be a non-empty string');
+  });
+
+  it.each([0, 11, 1.5, '2'])('rejects a lines value of %s', (lines) => {
+    expect(errs({ type: 'short_answer', prompt: 'P?', lines }))
+      .toContain('short_answer lines must be an integer between 1 and 10');
+  });
+
+  describe('answer (SOURCE-only field)', () => {
+    it('rejects an answer in a PUBLISHED document (default allowAnswers: false)', () => {
+      expect(errs({ type: 'short_answer', prompt: 'P?', answer: 'Olympia' }))
+        .toContain('short_answer answer is a source-only field and must not appear in a published document');
+    });
+
+    it('accepts an answer in a SOURCE document (allowAnswers: true)', () => {
+      expect(srcErrs({ type: 'short_answer', prompt: 'P?', answer: 'Olympia' })).toEqual([]);
+    });
+
+    it('rejects a non-empty-string answer even in source mode', () => {
+      expect(srcErrs({ type: 'short_answer', prompt: 'P?', answer: '  ' }))
+        .toContain('short_answer answer must be a non-empty string when present');
+    });
+
+    it('short_answer without an answer is fine in either mode (ungraded prompt is legal)', () => {
+      expect(errs({ type: 'short_answer', prompt: 'P?' })).toEqual([]);
+      expect(srcErrs({ type: 'short_answer', prompt: 'P?' })).toEqual([]);
+    });
+  });
+});
+
+describe('validateBlock: essay', () => {
+  it('accepts a bare prompt (default lines applied downstream)', () => {
+    expect(errs({ type: 'essay', prompt: 'Describe the water cycle.' })).toEqual([]);
+  });
+
+  it('accepts an explicit lines count in 2..30', () => {
+    expect(errs({ type: 'essay', prompt: 'P?', lines: 2 })).toEqual([]);
+    expect(errs({ type: 'essay', prompt: 'P?', lines: 30 })).toEqual([]);
+  });
+
+  it('accepts box: true instead of lines', () => {
+    expect(errs({ type: 'essay', prompt: 'P?', box: true })).toEqual([]);
+  });
+
+  it.each([
+    ['empty', ''],
+    ['whitespace only', '   '],
+    ['not a string', { fake: 1 }],
+    ['missing', undefined],
+  ])('rejects a prompt that is %s', (_label, prompt) => {
+    expect(errs({ type: 'essay', prompt })).toContain('essay prompt must be a non-empty string');
+  });
+
+  it.each([1, 31, 2.5, '8'])('rejects a lines value of %s', (lines) => {
+    expect(errs({ type: 'essay', prompt: 'P?', lines }))
+      .toContain('essay lines must be an integer between 2 and 30');
+  });
+
+  it('rejects box: false (only true is meaningful)', () => {
+    expect(errs({ type: 'essay', prompt: 'P?', box: false })).toContain('essay box must be true when present');
+  });
+
+  it('rejects specifying both lines and box', () => {
+    expect(errs({
+      type: 'essay', prompt: 'P?', lines: 8, box: true,
+    })).toContain('essay must not specify both lines and box');
+  });
+
+  it('NEVER carries an answer, even in source mode', () => {
+    expect(errs({ type: 'essay', prompt: 'P?', answer: 'x' })).toContain('essay must not carry an answer (unmarked prose)');
+    expect(srcErrs({ type: 'essay', prompt: 'P?', answer: 'x' })).toContain('essay must not carry an answer (unmarked prose)');
+    expect(srcErrs({ type: 'essay', prompt: 'P?', answers: ['x'] })).toContain('essay must not carry an answer (unmarked prose)');
   });
 });

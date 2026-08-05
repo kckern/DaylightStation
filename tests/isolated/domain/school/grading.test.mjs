@@ -71,3 +71,47 @@ describe('givenShapeError', () => {
     expect(givenShapeError(sa, undefined)).toBeTruthy();
   });
 });
+
+// Task 2 (spec §5.5): multi_select is the second (and only other) item type
+// that legally takes an array `given` — a set of chosen choice strings,
+// unlike matching's array of {left,right} pairs.
+const msItem = {
+  id: 'ms', type: 'multi_select', prompt: 'Which are primary colors?', choices: ['Red', 'Green', 'Blue', 'Orange'], answers: ['Red', 'Blue'],
+};
+
+describe('givenShapeError: multi_select', () => {
+  it('accepts a non-empty array of non-empty strings', () => {
+    expect(givenShapeError(msItem, ['Red', 'Blue'])).toBe(null);
+  });
+  it('rejects an empty array', () => {
+    expect(givenShapeError(msItem, [])).toBeTruthy();
+  });
+  it('rejects a non-array', () => {
+    expect(givenShapeError(msItem, 'Red')).toBeTruthy();
+  });
+  it('rejects an array containing a non-string entry', () => {
+    expect(givenShapeError(msItem, ['Red', 3])).toBeTruthy();
+  });
+});
+
+describe('gradeAnswer: multi_select (spec §5.5 — exact-set match, full credit or zero)', () => {
+  it('full credit for the exact answer set, any order', () => {
+    expect(gradeAnswer(msItem, ['Blue', 'Red']).correct).toBe(true);
+    expect(gradeAnswer(msItem, ['Red', 'Blue'])).toEqual({ correct: true, expected: ['Red', 'Blue'] });
+  });
+  it('zero credit for a subset (missing one correct choice)', () => {
+    expect(gradeAnswer(msItem, ['Red']).correct).toBe(false);
+  });
+  it('zero credit for a superset (an extra, incorrect choice included)', () => {
+    expect(gradeAnswer(msItem, ['Red', 'Blue', 'Green']).correct).toBe(false);
+  });
+  it('zero credit for the wrong set entirely', () => {
+    expect(gradeAnswer(msItem, ['Green', 'Orange']).correct).toBe(false);
+  });
+  it('no partial credit — one wrong swap fails the whole item', () => {
+    expect(gradeAnswer(msItem, ['Red', 'Green']).correct).toBe(false);
+  });
+  it('duplicate entries in given do not fake extra credit or break equality', () => {
+    expect(gradeAnswer(msItem, ['Red', 'Red', 'Blue']).correct).toBe(true);
+  });
+});
