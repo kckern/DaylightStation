@@ -235,6 +235,19 @@ export function createSchoolRouter({
     let rev = revParam;
     let adoptedRecord = null;
 
+    // Memoized archetype probe: both the bare-lane gate and the card-adopt
+    // gate below need to know if this document is a quiz, and both may run
+    // in the same request — one repo read serves them both.
+    let quizProbe = null;
+    const isQuizDocument = async () => {
+      if (!printDocumentsRepo) return false;
+      if (quizProbe === null) {
+        const probe = (await printDocumentsRepo.getPublished(id)) ?? (await printDocumentsRepo.get(id));
+        quizProbe = probe?.archetype === 'quiz';
+      }
+      return quizProbe;
+    };
+
     if (variety === 'omr') {
       const freshCard = req.query.freshCard === '1' || req.query.freshCard === 'true';
       const card = textQuery(req.query.card);
@@ -247,19 +260,22 @@ export function createSchoolRouter({
       // number, same shuffle — and their scans would grade into one record.
       // Teacher renders are reads, not takes, and stay exempt. Worksheets
       // (lower stakes) may still render anonymously.
-      if (!card && !learnerId && !context.teacher && printDocumentsRepo) {
-        const raw = (await printDocumentsRepo.getPublished(id)) ?? (await printDocumentsRepo.get(id));
-        if (raw?.archetype === 'quiz') {
-          throw new ValidationError(
-            'quiz sheets are per-student: add learnerId=<id> (or card=<7 digits> to reproduce a printed sheet)',
-          );
-        }
+      if (!card && !learnerId && !context.teacher && await isQuizDocument()) {
+        throw new ValidationError(
+          'quiz sheets are per-student: add learnerId=<id> (or card=<7 digits> to reproduce a printed sheet)',
+        );
       }
 
       const adopt = (record) => {
         if (revParam !== null || variant !== null) {
           throw new ValidationError(
             'this render reproduces an existing sheet; rev/variant come from its allocation record',
+          );
+        }
+        if (learnerId && (record.learnerId ?? null) !== learnerId) {
+          throw new DomainInvariantError(
+            `card ${record.cardId} belongs to a different learner; omit learnerId to reproduce its sheet`,
+            { code: 'CARD_LEARNER_MISMATCH', details: { cardId: record.cardId } },
           );
         }
         adoptedRecord = record;
@@ -304,6 +320,13 @@ export function createSchoolRouter({
             .filter((entry) => entry.documentId === id));
           if (record) adopt(record);
         }
+        if (req.query.startRow === undefined && !adoptedRecord && !learnerId
+            && (await isQuizDocument())) {
+          throw new ValidationError(
+            `card ${card} has no usable allocation for this quiz — add learnerId=<id> to attach it `
+            + '(or check the card number)',
+          );
+        }
         if (!adoptedRecord) {
           context.startRow = boundedIntegerQuery(req.query.startRow, 1, 1, 50, 'startRow');
         }
@@ -336,19 +359,18 @@ export function createSchoolRouter({
     }
 
     let target;
-    if (rev === null && variant === null) {
+    if (!printDocumentsRepo) {
+      // No repo wired (embedded/test harness): rev/variant pinning is impossible,
+      // and the renderer resolves the id itself.
+      if (rev !== null || variant !== null) return res.status(503).json({ error: 'print-render-unavailable' });
       target = { id };
     } else {
-      if (!printDocumentsRepo) return res.status(503).json({ error: 'print-render-unavailable' });
-      // A variant override with no pinned rev must ride the LATEST PUBLISHED
-      // document, never the raw source: a source render re-publishes
-      // in-memory, and mutating `variant` first changes the content hash —
-      // the allocation record would pin a rev that exists nowhere, and the
-      // scan-back (`getPublished(id, record.rev)`) would fail on a card a
-      // child already took. A published v2 doc carries its rev as a FIELD,
-      // which a variant override leaves untouched — the same in-memory
-      // pattern IssueDocument uses. Source is the fallback only for a
-      // document never published at all.
+      // Published-first on EVERY lane: a source render re-publishes in-memory and
+      // a drifted source hashes to a rev getPublished can never serve — the
+      // allocation record would pin a phantom rev and the card would die at scan
+      // time, taking innocent cardmates with it. The published artifact's rev is
+      // a FIELD, which variant overrides leave intact. Source is the fallback
+      // only for a document never published at all (proofing a draft).
       const raw = rev !== null
         ? await printDocumentsRepo.getPublished(id, rev)
         : ((await printDocumentsRepo.getPublished(id)) ?? (await printDocumentsRepo.get(id)));
