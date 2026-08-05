@@ -134,6 +134,10 @@ Options:
                          mutually exclusive with --card
   --start-row <n>        (render) first physical row to allocate (default 1);
                          only meaningful alongside --card or --fresh-card
+                         (there is no --learner-id flag, so a card allocated
+                         from this CLI is always anonymous — its record's
+                         learnerId is never set, unlike a card issued through
+                         IssueDocument)
   --rows <a-b>            (release-card) release only rows a..b (inclusive);
                          omitted releases every live record on the card
   --help, -h             show this message
