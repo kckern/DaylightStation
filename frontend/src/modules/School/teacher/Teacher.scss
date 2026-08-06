@@ -869,3 +869,6 @@
 .teacher-stale__reason { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;
   input { min-height: 44px; padding: 0 0.75rem; border: 1px solid #d8cfb8; border-radius: 8px; min-width: 240px; }
 }
+
+.teacher-assignments__pick.is-stale { color: #6b201a; }
+.teacher-assignments__stale-tag { margin-left: 0.4rem; font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: #a15b16; }

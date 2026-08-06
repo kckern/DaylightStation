@@ -44,6 +44,7 @@ describe('YamlAssignmentStore', () => {
     await assignments.put({ learnerId: 'kid1', courses: ['math-fractions'], units: [{ unitId: 'art.01', elective: true }], updatedAt: AT });
     expect(await assignments.get('kid1')).toEqual({
       learnerId: 'kid1', courses: ['math-fractions'], units: [{ unitId: 'art.01', elective: true }], updatedAt: AT,
+      assignedBy: null,
     });
     expect(yaml.load(fs.readFileSync(under('assignments', 'kid1.yml'), 'utf8')).courses).toEqual(['math-fractions']);
   });
@@ -84,7 +85,10 @@ describe('YamlAssignmentStore', () => {
     expect(history[0]).toMatchObject({ courses: ['math-fractions'], assignedBy: 'mom', recordedAt: AT });
     expect(history[1]).toMatchObject({ courses: ['math-fractions', 'reading-basics'], assignedBy: 'dad', recordedAt: later });
 
-    expect(await assignments.get('kid1')).toMatchObject({ courses: ['math-fractions', 'reading-basics'], updatedAt: later });
+    expect(await assignments.get('kid1')).toMatchObject({
+      courses: ['math-fractions', 'reading-basics'], updatedAt: later,
+      assignedBy: 'dad', // returned on read since wave 8 (advocacy #9) — the UI attribution line lives again
+    });
   });
 
   it('returns an empty history for a learner with no assignments', async () => {
