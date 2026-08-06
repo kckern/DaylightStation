@@ -53,7 +53,9 @@ function courseIdsFromAssignment(courses) {
  * every timestamp this use case touches.
  */
 function withinPeriod(iso, period) {
-  return isNonEmptyString(iso) && iso >= period.startsAt && iso <= period.endsAt;
+  // HALF-OPEN [startsAt, endsAt) — admin advocacy #15: both-ends-inclusive
+  // counted a boundary-instant session into TWO adjacent periods.
+  return isNonEmptyString(iso) && iso >= period.startsAt && iso < period.endsAt;
 }
 
 export class GetReportCard {
