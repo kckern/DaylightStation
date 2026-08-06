@@ -25,8 +25,9 @@ reassignment UI — not yet designed" as a known gap. This design closes the
 |---|---|
 | Surface | Phone/desktop **browser**, responsive, phone-first. Never a Portal widget. |
 | Placement | **Standalone route `/school/teacher`**. The Admin review queue (`/admin/school/review`) stays for deep work; the console links/embeds the same capability. |
-| Identity | **Soft grown-up claim** — shared `lib/identity` picker, roster filtered to ≥ 18 by `birthyear` (the `GrownUpGate` rule), session-persisted, stamped on every future mutation (`assignedBy` / `closedBy` / `approver`). No PIN; the network perimeter is the gate, consistent with School's repairable-not-prevented identity philosophy. No idle lapse (a parent's own phone, not a shared kiosk). |
-| Sequencing | **Approach B — full skeleton first**: all four tabs ship read-only over existing APIs; mutations and new domains land wave by wave on that foundation. |
+| Identity | **Soft grown-up claim** — shared `lib/identity` picker over a new server-filtered grown-ups read (see §4.7; the school roster endpoint excludes adults by design, so client-side filtering is impossible), session-persisted, stamped on every future mutation (`assignedBy` / `closedBy` / `approver`). No idle lapse. |
+| Security posture | **Soft reads, PIN-gated mutations.** The claim is attribution, not authentication — spoofable by design, like the kids' identity model. That is acceptable for the read-only skeleton but not for marking work, closing periods, or approving prints: any kiosk browser in the house can reach `/school/teacher`, and the codebase already PIN-gates teacher answer keys against exactly that population (`print.teacherPin`). Every mutation wave therefore lands its writes behind a `teacherPin`-class server check in addition to the grown-up stamp. |
+| Sequencing | **Approach B — full skeleton first**: all four tabs ship read-only; mutations and new domains land wave by wave on that foundation. Wave 1 needs three small backend enablers (§4.7) — not zero backend work. |
 
 ## 2. Use-case catalog
 
@@ -39,8 +40,8 @@ needed; ❌ = new domain.
 |---|---|---|
 | A1 | Roster-at-a-glance today strip: per learner — attempts, correct, sessions touched, items awaiting a mark (4am→4am study day) | ✅ `GET /teacher/today` |
 | A2 | Drill into one learner's day: sessions, scores, what's next, where they're stuck | ✅ `GET /lifecycle/learners/:id/sessions`, `GET /progress` |
-| A3 | Work the review queue from the phone: mark essays / short answers / ambiguous OMR, with notes that reach the child's agenda and receipts | ✅ `GET /lifecycle/review`, `POST …/review/:itemId` (Admin `ReviewQueue` exists — reuse, restyle) |
-| A4 | Approve/deny children's over-budget print requests | ✅ `GET /print/pending`, approve/deny endpoints |
+| A3 | Work the review queue from the phone: mark essays / short answers / ambiguous OMR, with notes that reach the child's agenda and receipts | ✅ `GET /lifecycle/review`, `POST …/review/:itemId` (Admin `ReviewQueue` exists — reimplement its behavioral contract, §4.2) |
+| A4 | Approve/deny children's over-budget print requests | ⚠️ approve/deny endpoints ✅; `GET /print/pending` is route-shadowed and 404s today (§4.7 bugfix) |
 | A5 | Quiz-request backlog: units children flagged as quiz-gated with no bank | ✅ `GET /quiz-requests` |
 
 ### B. Planning — periods, enrollment, curriculum, pacing
@@ -95,8 +96,8 @@ school*. Three rules:
 
 | Wave | Contents | New backend |
 |---|---|---|
-| **1 — Skeleton** (this design, §4) | Shell + identity + all four tabs read-only + honest stubs | **None** |
-| 2 — Daily-loop mutations | A3 resolve-with-note, A4 approve/deny, A2 polish | None (endpoints exist) |
+| **1 — Skeleton** (this design, §4) | Shell + identity + all four tabs read-only + honest stubs | **Three small enablers (§4.7):** grown-ups read, print route-order bugfix, sessions `window` param |
+| 2 — Daily-loop mutations | A3 resolve-with-note, A4 approve/deny, A2 polish | `teacherPin`-class gate on the write endpoints (they exist, but soft-claim alone must not drive them) |
 | 3 — Planning | B2 assignment editing; **config→data promotion** for periods & pass-criteria (B1, B5); B4 milestones domain; B6 enrichment log | Promotion + two new domains |
 | 4 — Records | C1 close/supersede UI; C2 progress-report & certificate renderers; C4/C5 render + enrichment credit | Renderers; C5 read model |
 | 5 — Repair | D2 attestation evidence type; D1 evidence reassignment; D3 standalone notes | Two new use cases + evidence kind |
@@ -111,14 +112,21 @@ navigable foundation rather than a document.
 ### 4.1 Shell, mounting, identity
 
 - **Module:** `frontend/src/modules/School/teacher/`, root `TeacherConsole.jsx`,
-  mounted at **`/school/teacher`** — resolved *before* SchoolApp's route
-  handling so the kids' shell never parses it (its URL parser would read
-  `teacher` as no-section). Browser-only; never in kiosk nav. Living under
-  `modules/School/` keeps `schoolApi`, subject metadata, and icons importable
-  without crossing module boundaries.
+  mounted at **`/school/teacher`**. Concretely: today that URL redirects
+  through `SchoolDeepLinkRedirect` → `/app/school/teacher` → SchoolApp, whose
+  parser reads `teacher` as no-section and shows the kids' home grid. Wave 1
+  adds an explicit `<Route path="/school/teacher/*">` in `main.jsx` (React
+  Router ranks it above the school catch-all) **and** redirects
+  `/app/school/teacher` to `/school/teacher` so both spellings reach the
+  console. Browser-only; never in kiosk nav. Living under `modules/School/`
+  keeps `schoolApi`, subject metadata, and icons importable without crossing
+  module boundaries.
 - **Identity:** `TeacherProfileContext` — thin sibling of
   `SchoolProfileContext`, reusing shared `lib/identity` `ProfilePicker` /
-  `ProfileAvatar`, roster filtered to grown-ups. Claim soft,
+  `ProfileAvatar`, sourced from the **new grown-ups read** (§4.7): the
+  existing school roster endpoint serves learners only (adults are filtered
+  out server-side in `ConfiguredSchoolLearningDirectory`), so a client-side
+  ≥18 filter would yield a permanently empty picker. Claim soft,
   `sessionStorage`-persisted, shown as a header chip. In the skeleton it is
   chrome plus the future mutation stamp; built now so every later wave
   inherits it.
@@ -141,13 +149,23 @@ stubs** — a titled card stating what will live there and that it isn't built,
 never a disabled fake control.
 
 **Today** *(roster-scoped; the one tab not driven by the learner selector)*
-- Roster strip — per-learner cards from `GET /teacher/today`.
-- Learner day drill-in — tap a card: sessions today
-  (`GET /lifecycle/learners/:id/sessions`, filtered to the study day) +
+- Roster strip — per-learner cards from `GET /teacher/today`. Rows carry
+  `learnerId` only (no name/avatar; `sessionsToday` is an array of touched
+  sessions, not a count) — the client joins against the kids' roster fetch.
+- Learner day drill-in — tap a card: sessions today via
+  `GET /lifecycle/learners/:id/sessions?window=today` (the `window` param is
+  a wave-1 enabler, §4.7 — the 4am boundary and household timezone are
+  server-side only, so the client cannot compute the study day itself) +
   recent scores (`GET /progress`).
 - Review queue (read) — `GET /lifecycle/review` grouped by learner, showing
-  the answer awaiting a mark; "resolve in Admin" link until wave 2.
-- Print approvals (read) — `GET /print/pending` with pages/copies.
+  the answer awaiting a mark; "resolve in Admin" link until wave 2. This is a
+  **reimplementation of the Admin `ReviewQueue`'s behavioral contract**
+  (server-authoritative refresh, per-item error attribution, verdict/note
+  state) in School's own SCSS design language — not a restyle; the Admin
+  component is Mantine-based and imports Admin's throwing API client, which
+  School must not cross-import.
+- Print approvals (read) — `GET /print/pending` with pages/copies (works only
+  after the route-order bugfix, §4.7 — the route is shadowed and 404s today).
 - Quiz-request backlog — `GET /quiz-requests`.
 
 **Planning** *(learner-scoped except periods/curriculum)*
@@ -176,17 +194,31 @@ never a disabled fake control.
 
 ### 4.3 Data access and panel isolation
 
-- **One API client:** extend the existing `schoolApi.js` with the missing read
-  wrappers (lifecycle reads, `progress/insights`, `print/pending`,
-  `quiz-requests`) in the same thin `{ok, data}` style. No second client.
+- **One API client:** extend the existing `schoolApi.js`. Already present:
+  `teacherToday`, `periods`, `reportCard`, `reviewLearner`, `printPending`,
+  `quizRequests`, `instructionalInsights`. Actually missing: the lifecycle
+  reads (pending review list, learner sessions, assignments, curriculum
+  units), `report-card/frozen`, and the new grown-ups read — added in the
+  same thin `{ok, data}` style. The Admin module's `schoolAdminApi` (throwing
+  contract) is never imported.
 - **`usePanelFetch`:** every panel gets the same contract — `loading` →
   skeleton, `error` → small inline notice naming the panel with a retry,
-  `empty` → quiet zero-state, `ok` → render. Fetches are per-panel and
-  independent: one failing endpoint never blanks its tab (the
-  `GetSchoolReport` posture). Failures log through `teacherLog`.
+  `empty` → quiet zero-state, `unavailable` → feature-not-configured, `ok` →
+  render. Fetches are per-panel and independent: one failing endpoint never
+  blanks its tab (the `GetSchoolReport` posture). Failures log through
+  `teacherLog`.
 - **Zero-state rule:** *nothing yet* is quiet and empty (the `StudentPanel`
   posture); *fetch failed* is a named inline error. The two are never
-  conflated.
+  conflated — and neither is *not configured*:
+- **The lifecycle-disabled posture.** On a deployment with
+  `lifecycle.enabled: false`, every `/lifecycle/*` read 404s while
+  `/teacher/today` quietly answers `[]` and `/report-card` answers `null`.
+  The console must not render an empty roster next to a wall of red. The
+  shell probes once (a lifecycle read at mount); when the feature is absent
+  it shows **one** "School lifecycle is not enabled on this install" banner
+  and marks lifecycle-backed panels `unavailable`. Known 404-as-empty shapes
+  are handled per-panel, not as errors: `GET /lifecycle/assignments/:learnerId`
+  404s for a learner with nothing assigned — that is an empty state.
 
 ### 4.4 File layout
 
@@ -206,6 +238,10 @@ frontend/src/modules/School/teacher/
                             #   TutorInsights, FeedbackNotes, …
   panels/StubCard.jsx       # the honest-placeholder card
 ```
+
+Plus two files **outside** the module that must change: `main.jsx` (the
+`/school/teacher/*` route + the `/app/school/teacher` redirect, §4.1) and
+`schoolApi.js` (the new wrappers, §4.3).
 
 ### 4.5 Testing
 
@@ -247,6 +283,12 @@ failure.
 | `teacher.attestation` | Repair → stub card | D2 | Record "I verify this was done/passed" as its own evidence type (`attestedBy`, reason); unlock a wedged gate. Never edits engine evidence | skeleton | new evidence kind + use case + endpoint |
 | `teacher.reassign` | Repair → stub card | D1 | Move a mis-attributed sitting's evidence between learners (fold-an-event model per §5) | skeleton | new use case + endpoint; semantics decided at wave 5 planning |
 | `teacher.notes.standalone` | Repair → FeedbackNotes | D3 | Write a note to a learner outside the review flow, delivered via the same agenda/receipt path | skeleton | new endpoint (delivery path exists) |
+| `teacher.quizrequests.clear` | Today → QuizRequestBacklog | A5 | The backlog can shrink: a request is auto-fulfilled when a bank bound to its unit is authored, plus an explicit dismiss for requests overtaken by events. Without this the panel only ever grows | skeleton | new resolve/dismiss endpoint (only create + list exist today) |
+
+Every row whose "What it becomes" is a **write** (resolve, decide, edit,
+close, attest, reassign, dismiss) lands behind the `teacherPin`-class server
+gate per the security posture in §1 — the soft claim supplies attribution,
+the PIN supplies authorization.
 
 Also out of scope, deliberately **not** a stub card: **B3 curriculum
 authoring** (its own future programme; the skeleton's CurriculumBrowser is
@@ -257,6 +299,35 @@ Acceptance shape for any future wave: pick rows, satisfy their "Depends on",
 build the "Backend work", replace the stub card with the live panel, delete
 the registry row (the table shrinks to zero as the programme completes), and
 update `docs/reference/school/README.md`.
+
+### 4.7 Wave-1 backend enablers
+
+Three small, read-only-or-bugfix items — the honest replacement for the
+earlier "zero backend changes" claim, which review disproved:
+
+1. **Grown-ups read.** `GET /api/v1/school/grownups` → `[{id, name}]`,
+   filtered server-side by the same ≥18 rule `GrownUpGate` applies
+   (`people.mjs`). The school roster endpoint deliberately excludes adults
+   (`ConfiguredSchoolLearningDirectory.listLearners`), so no client-side
+   filter can produce a teacher picker; birthyear and other profile fields
+   never leave the server (the alternative — consuming
+   `/api/v1/admin/household`, with emails and device ids — is rejected).
+   *Side benefit:* the Admin `ReviewQueue`'s sign-off is live-broken today
+   because its `adults = roster.filter(isAdult)` runs against that adult-free
+   roster; pointing it at this endpoint fixes it (tracked as a wave-2 item,
+   not skeleton scope).
+2. **Print route-order bugfix + regression test.** `GET /print/*id`
+   (`school.mjs:205`) is registered before `/print/printables`, `/print/quota`,
+   and `/print/pending` (`school.mjs:514–526`), so the Express 5 splat
+   shadows all three — `/print/pending` 404s in production today, and the
+   kids' PrintCenter reads are broken by the same bug. Move the splat below
+   the fixed routes (or exclude the reserved names) and pin it with a test.
+3. **Sessions study-day window.** `GET /lifecycle/learners/:id/sessions`
+   returns every session ever, and the 4am→4am boundary plus household
+   timezone live server-side only (`GetTeacherToday`) — the client cannot
+   compute "today" correctly across DST or from outside the household zone.
+   Add an optional `?window=today` that applies the same shared study-day
+   window server-side.
 
 ## 5. Open questions for later waves
 
@@ -270,3 +341,7 @@ update `docs/reference/school/README.md`.
 - **Milestone authoring shape (B4):** per-course dated targets vs
   period-relative pacing curves. Decide with real usage of the skeleton's
   assignments/curriculum views.
+- **Settled (2026-08-06, stern review):** the security posture — soft reads,
+  `teacherPin`-gated mutations (§1). The earlier "network perimeter is the
+  gate" framing was rejected because kiosk browsers sit inside the perimeter
+  and the codebase already PIN-gates answer keys against that population.
