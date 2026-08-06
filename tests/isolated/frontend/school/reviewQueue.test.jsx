@@ -26,6 +26,7 @@ vi.mock('#frontend/modules/Admin/School/schoolAdminApi.js', () => ({
     pendingReview: (...a) => pendingReviewMock(...a),
     resolveReview: (...a) => resolveReviewMock(...a),
     curriculumUnits: (...a) => curriculumUnitsMock(...a),
+    teachers: async () => ({ configured: false, teachers: [] }),
   },
   default: {},
 }));
@@ -186,7 +187,7 @@ describe('ReviewQueue — signing off', () => {
     fireEvent.click(screen.getByRole('button', { name: /Sign off as Papa/i }));
 
     await waitFor(() => expect(resolveReviewMock).toHaveBeenCalledWith(
-      'ses_a', 'q3', { verdict: 'correct', gradedBy: 'dad', note: null },
+      'ses_a', 'q3', { verdict: 'correct', gradedBy: 'dad', note: null, pin: null },
     ));
   });
 
@@ -199,7 +200,7 @@ describe('ReviewQueue — signing off', () => {
     fireEvent.click(screen.getByRole('button', { name: /Sign off as Papa/i }));
 
     await waitFor(() => expect(resolveReviewMock).toHaveBeenCalledWith(
-      'ses_a', 'q3', { verdict: 'incorrect', gradedBy: 'dad', note: null },
+      'ses_a', 'q3', { verdict: 'incorrect', gradedBy: 'dad', note: null, pin: null },
     ));
   });
 
@@ -217,6 +218,7 @@ describe('ReviewQueue — signing off', () => {
       'ses_a', 'q3', {
         verdict: 'incorrect', gradedBy: 'dad',
         note: 'Right method — you forgot to simplify at the end.',
+        pin: null,
       },
     ));
   });
@@ -253,7 +255,7 @@ describe('ReviewQueue — adults only', () => {
     renderQueue();
 
     await screen.findByText('Test Learner');
-    expect(screen.getByText('No grown-up on the roster')).toBeInTheDocument();
+    expect(screen.getByText('No teachers configured')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Sign off/i })).toBeNull();
   });
 
@@ -273,7 +275,7 @@ describe('ReviewQueue — adults only', () => {
     renderQueue();
 
     await screen.findByText('Test Learner');
-    expect(screen.getByText('No grown-up on the roster')).toBeInTheDocument();
+    expect(screen.getByText('No teachers configured')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Sign off/i })).toBeNull();
   });
 

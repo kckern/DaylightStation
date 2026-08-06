@@ -20,7 +20,7 @@ import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index
 const VERDICTS = new Set(['correct', 'incorrect']);
 
 export class ResolveReviewItem {
-  #reviewQueue; #grownUps; #teacherGate; #clock; #logger;
+  #reviewQueue; #grownUps; #teacherGate; #clock; #logger; #gradeSubmission; #closeSessionOutcome;
 
   /**
    * @param {object} deps
@@ -29,12 +29,21 @@ export class ResolveReviewItem {
    * @param {() => Date} [deps.clock]
    * @param {object} [deps.logger]
    */
-  constructor({ reviewQueue, grownUps, teacherGate = null, clock = () => new Date(), logger = console } = {}) {
+  constructor({
+    reviewQueue, grownUps, teacherGate = null,
+    // Optional finishers (student-advocacy A1): with both present, resolving
+    // the LAST pending item of a session grades and closes it in the same
+    // act. Absent (tests, partial wiring) → resolve-only, as before.
+    gradeSubmission = null, closeSessionOutcome = null,
+    clock = () => new Date(), logger = console,
+  } = {}) {
     if (!reviewQueue) throw new Error('ResolveReviewItem requires a reviewQueue');
     if (!grownUps) throw new Error('ResolveReviewItem requires grownUps (a GrownUpGate)');
     this.#reviewQueue = reviewQueue;
     this.#grownUps = grownUps;
     this.#teacherGate = teacherGate;
+    this.#gradeSubmission = gradeSubmission;
+    this.#closeSessionOutcome = closeSessionOutcome;
     this.#clock = clock;
     this.#logger = logger;
   }
@@ -71,7 +80,33 @@ export class ResolveReviewItem {
     this.#logger.info?.('school.review.resolved', {
       sessionId, itemId, verdict, gradedBy, note: Boolean(note),
     });
-    return item;
+
+    // The review loop closes itself (student-advocacy A1): if that was the
+    // session's LAST pending item, grade and settle NOW — a child's finished
+    // work must never wait on an actor nobody wired. Failures here degrade
+    // to resolve-only (the verdict is safely on record either way) and log.
+    let sessionFinished = null;
+    if (this.#gradeSubmission && this.#closeSessionOutcome) {
+      try {
+        const remaining = (await this.#reviewQueue.listForSession(sessionId))
+          .filter((row) => row.verdict !== 'correct' && row.verdict !== 'incorrect');
+        if (remaining.length === 0) {
+          const graded = await this.#gradeSubmission.execute({ sessionId });
+          if (graded?.status === 'graded') {
+            const outcome = await this.#closeSessionOutcome.execute({ sessionId });
+            sessionFinished = {
+              result: outcome?.result ?? null,
+              percent: graded.percent ?? null,
+              passingPercent: graded.passingPercent ?? null,
+            };
+            this.#logger.info?.('school.review.session-finished', { sessionId, ...sessionFinished });
+          }
+        }
+      } catch (err) {
+        this.#logger.warn?.('school.review.finish-failed', { sessionId, error: err.message });
+      }
+    }
+    return sessionFinished ? { ...item, sessionFinished } : item;
   }
 }
 

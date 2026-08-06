@@ -101,6 +101,23 @@ describe('the outcome', () => {
     expect(await close.execute({ sessionId: SID })).toMatchObject({ result: 'passed' });
   });
 
+  it('the passing bar STAMPED at grading beats a later-changed override — the bar never moves under a graded kid (M7/A4)', async () => {
+    // Grading stamped 40 into the event; the override has since been raised
+    // to 70. 50% must still pass: the child was graded against 40.
+    build({ passOverrides: { percentFor: () => 70 } });
+    await sessions.appendEvent(SID, { type: 'created', at: clock.iso(), sessionId: SID, learnerId: 'kid1', unitId: WORKSHEET_UNIT });
+    await sessions.appendEvent(SID, { type: 'issued', at: clock.iso(), sessionId: SID, artifactId: 'art_1' });
+    await sessions.appendEvent(SID, { type: 'submitted', at: clock.iso(), sessionId: SID, transport: 'paper' });
+    await sessions.appendEvent(SID, { type: 'graded', at: clock.iso(), sessionId: SID, attemptIds: ['att_1'], percent: 50, passingPercent: 40 });
+    expect(await close.execute({ sessionId: SID })).toMatchObject({ result: 'passed' });
+  });
+
+  it('an UNSTAMPED (legacy) graded event still falls through to the live override (M7/A4)', async () => {
+    build({ passOverrides: { percentFor: () => 40 } });
+    await graded({ percent: 50 }); // graded event carries no passingPercent
+    expect(await close.execute({ sessionId: SID })).toMatchObject({ result: 'passed' });
+  });
+
   it('a null override falls through to the authored percent (W3-2)', async () => {
     build({ passOverrides: { percentFor: () => null } });
     await graded({ percent: 50 });
@@ -345,6 +362,7 @@ describe('the result receipt reaches paper', () => {
     expect(result.printed).toBe(true);
     expect(thermal.jobs).toHaveLength(1);
     expect(thermal.lastTranscript()).toContain('Score: 90%');
+    expect(thermal.lastTranscript()).toMatch(/passing is \d+%/); // the bar is on the paper (M7/A4)
   });
 
   it('PUTS THE RETRY TICKET ON PAPER after a fail, scannably', async () => {

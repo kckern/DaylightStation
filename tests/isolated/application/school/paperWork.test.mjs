@@ -62,7 +62,7 @@ class FakeGrader {
   }
 }
 
-let clock, sessions, formMaps, reviewQueue, grader, submit, grade;
+let clock, sessions, formMaps, reviewQueue, grader, submit, grade, curriculum;
 
 const BANKS = {
   [OMR_BANK_ID]: OMR_BANK,
@@ -72,7 +72,7 @@ const BANKS = {
 const build = () => {
   clock = fakeClock();
   const catalog = new FakeCatalog({ units: rawUnits(), documents: rawDocuments(), manifests: rawManifests() });
-  const curriculum = new CurriculumAccess({ catalog, bankIds: () => BANK_IDS, clock: clock.epoch, logger: silentLogger });
+  curriculum = new CurriculumAccess({ catalog, bankIds: () => BANK_IDS, clock: clock.epoch, logger: silentLogger });
   sessions = new FakeSessionRepository();
   formMaps = new FakeFormMapStore();
   reviewQueue = new FakeReviewQueue();
@@ -220,6 +220,21 @@ describe('GradeSubmission through the one engine', () => {
     const result = await grade.execute({ sessionId: SID, entries: RIGHT });
     expect(result).toMatchObject({ status: 'graded', percent: 100, correct: PRINTED.length, expected: PRINTED.length });
     expect(grader.attempts.every((a) => a.transport === 'paper' && a.mode === 'quiz')).toBe(true);
+  });
+
+  it('stamps the EFFECTIVE passing bar into the graded event — override first, authored as fallback (M7/A4)', async () => {
+    // With an override wired, grading stamps the override; the return says it too.
+    const withOverride = new GradeSubmission({
+      curriculum, sessions, reviewQueue, grader, bankReader: { getBank: (id) => BANKS[id] ?? null },
+      grownUps: fakeGrownUps(clock), passOverrides: { percentFor: () => 55 },
+      clock: clock.now, logger: silentLogger,
+    });
+    await submitAll(RIGHT);
+    const result = await withOverride.execute({ sessionId: SID, entries: RIGHT });
+    expect(result.passingPercent).toBe(55);
+    const gradedEvent = sessions.events(SID).find((e) => e.type === 'graded');
+    expect(gradedEvent.passingPercent).toBe(55);
+    expect(sessions.derive(SID).gradedPassingPercent).toBe(55);
   });
 
   it('scores out of what the sheet printed, not out of what came back', async () => {
@@ -443,7 +458,7 @@ describe('GradeSubmission on a print-document unit', () => {
       documents: rawDocuments(),
       manifests: rawManifests(),
     });
-    const curriculum = new CurriculumAccess({ catalog, bankIds: () => BANK_IDS, clock: clock.epoch, logger: silentLogger });
+    curriculum = new CurriculumAccess({ catalog, bankIds: () => BANK_IDS, clock: clock.epoch, logger: silentLogger });
     const printSessions = new FakeSessionRepository();
     const printReviewQueue = new FakeReviewQueue();
     const printGrader = new FakeGrader(BANKS);

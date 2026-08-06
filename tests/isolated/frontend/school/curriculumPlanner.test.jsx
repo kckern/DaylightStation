@@ -24,6 +24,7 @@ vi.mock('#frontend/modules/Admin/School/schoolAdminApi.js', () => ({
     roster: (...a) => rosterMock(...a),
     assignments: (...a) => assignmentsMock(...a),
     putAssignment: (...a) => putAssignmentMock(...a),
+    teachers: async () => ({ configured: false, teachers: [] }),
   },
   default: {},
 }));
@@ -102,7 +103,7 @@ describe('CurriculumPlanner — adults only', () => {
     renderPlanner();
 
     await settled();
-    expect(screen.getByText('No grown-up on the roster')).toBeInTheDocument();
+    expect(screen.getByText('No teachers configured')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Save plan/i })).toBeDisabled();
     // The controls render, but every one of them is shut.
     expect(screen.getByRole('button', { name: /Remove math-fractions/i })).toBeDisabled();
@@ -133,6 +134,7 @@ describe('CurriculumPlanner — writing a plan', () => {
       courses: [{ courseId: 'math-fractions', elective: true }],
       units: [{ unitId: 'art.01', elective: true }],
       assignedBy: 'dad',
+      pin: null,
     }));
   });
 
@@ -153,6 +155,7 @@ describe('CurriculumPlanner — writing a plan', () => {
       ],
       units: [],
       assignedBy: 'dad',
+      pin: null,
     }));
   });
 
@@ -167,6 +170,7 @@ describe('CurriculumPlanner — writing a plan', () => {
       courses: [],
       units: [{ unitId: 'art.01', elective: true }],
       assignedBy: 'dad',
+      pin: null,
     }));
   });
 

@@ -112,11 +112,14 @@ export class WorkSessionReporter {
 
     const nextStep = (() => {
       if (waiting.length) {
+        // The child sees the SAME wait the teacher's queue shows (student-
+        // advocacy A1): since when, not just "waiting".
+        const since = waiting[0].updatedAt ? ` since ${String(waiting[0].updatedAt).slice(0, 10)}` : '';
         return {
           label: `Check ${waiting[0].title}`,
-          detail: 'Handed in and waiting for a grown-up to mark it.',
+          detail: `Handed in${since} — waiting for a grown-up to mark it.`,
           blocked: true,
-          blockedReason: 'Waiting on a grown-up to mark it',
+          blockedReason: `Waiting on a grown-up to mark it${since}`,
         };
       }
       if (next) return { label: next.title, detail: next.status === 'in_progress' ? 'In progress' : 'Ready to start' };

@@ -155,7 +155,45 @@
   &__got { border: none; background: var(--school-accent); color: var(--school-accent-ink); }
   &__score { font-size: 2rem; font-weight: 800; margin: 0; }
   &__loading, &__hint, &__cards-seen, &__unrecorded-summary { color: var(--school-muted); }
+
+  // --- wave-7 student-advocacy additions ---
+  &__guest { padding: 0.6rem 1rem; border-radius: 10px; background: var(--school-surface-2); border: 1px dashed var(--school-border); color: var(--school-muted); font-weight: 700; }
+  &__cheer { font-size: 1.15rem; font-weight: 800; margin: 0; }
+  &__passbar { margin: 0; font-weight: 700; }
+  &__skipped, &__flag { color: var(--school-muted); margin: 0; }
+  &__retake { color: var(--school-accent); font-weight: 700; margin: 0; }
+  &__retake-btn, &__flag-btn {
+    min-height: 52px; padding: 0 1rem; border: 1px solid var(--school-border); border-radius: 10px;
+    background: var(--school-surface); color: var(--school-fg); font-weight: 700; cursor: pointer;
+  }
+  &__stop {
+    min-height: 40px; padding: 0 0.9rem; margin-left: auto; border: 1px solid var(--school-border);
+    border-radius: 999px; background: transparent; color: var(--school-muted); font-weight: 700; cursor: pointer;
+  }
+  &__skip {
+    min-height: 48px; border: 1px dashed var(--school-border); border-radius: 10px;
+    background: transparent; color: var(--school-muted); font-weight: 700; cursor: pointer;
+  }
+  &--error { text-align: center; }
+  .school-runner__progress { display: flex; align-items: center; gap: 0.6rem; }
 }
+
+.school-probe__out-of-tries { color: var(--school-muted); margin: 0; }
+
+.school-item__choice--chosen-wrong { border: 2px solid var(--school-warn); opacity: 1; }
+.school-item__you { font-size: 0.8em; color: var(--school-muted); }
+.school-item__verdict { margin: 0.35rem 0 0; font-weight: 700; }
+
+.school-rail__feedback-new {
+  margin-left: 0.5rem; padding: 0.1rem 0.5rem; border-radius: 999px;
+  background: var(--school-accent); color: var(--school-accent-ink);
+  font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em;
+}
+
+.school-print__ask { display: flex; justify-content: space-between; gap: 0.75rem; align-items: baseline; }
+.school-print__ask-status { color: var(--school-muted); font-weight: 700; }
+.school-print__ask.is-denied .school-print__ask-status { color: var(--school-danger); }
+
 
 .school-probe {
   &__header {
@@ -1414,4 +1452,10 @@
   &__label { font-weight: 700; text-align: center; }
   &--soon { opacity: 0.5; cursor: default; }
   &__soon { font-size: 0.7rem; color: var(--school-muted); }
+}
+
+.school-app__leave-confirm {
+  position: absolute; top: 100%; left: 0; right: 0; z-index: 5;
+  padding: 0.6rem 1rem; background: var(--school-warn, #c98a1b); color: #241a02;
+  font-weight: 800; text-align: center;
 }

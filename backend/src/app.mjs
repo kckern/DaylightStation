@@ -2227,6 +2227,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     datastore: schoolDatastore,
     userService,
     teacherGate: schoolTeacherGate,
+    // Thunk: the notes store is constructed later in this function; dismissal
+    // notes resolve it at call time.
+    teacherNotesRef: () => schoolTeacherNotes,
     learnerDirectory: schoolLearnerDirectory,
     logger: rootLogger.child({ module: 'school' }),
     bankSources: [new GeneratedBankSource({
@@ -3022,6 +3025,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         datastore: schoolDatastore,
         sessions: schoolLifecycle.stores.sessions,
         reviewQueue: schoolLifecycle.stores.reviewQueue ?? null,
+        evidenceRepository: schoolLearningEvidence ?? null,
         timezone: configService.getTimezone?.() || null,
         logger: rootLogger.child({ module: 'school-teacher-today' })
       });
@@ -3122,13 +3126,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const { ReassignEvidence } = await import('#apps/school/usecases/ReassignEvidence.mjs');
   const schoolAttestations = new YamlAttestationLog({ configService, logger: rootLogger.child({ module: 'school-attestations' }) });
   const schoolTeacherNotes = new YamlTeacherNotes({ configService, logger: rootLogger.child({ module: 'school-teacher-notes' }) });
-  const recordAttestation = new RecordAttestation({ log: schoolAttestations, teacherGate: schoolTeacherGate });
+  const recordAttestation = new RecordAttestation({ log: schoolAttestations, teacherGate: schoolTeacherGate, notes: schoolTeacherNotes });
   const recordTeacherNote = new RecordTeacherNote({ notes: schoolTeacherNotes, teacherGate: schoolTeacherGate });
-  const reassignEvidence = new ReassignEvidence({ datastore: schoolDatastore, teacherGate: schoolTeacherGate });
+  const reassignEvidence = new ReassignEvidence({ datastore: schoolDatastore, teacherGate: schoolTeacherGate, notes: schoolTeacherNotes });
   const { RetractTeacherRecord } = await import('#apps/school/usecases/RetractTeacherRecord.mjs');
   const retractTeacherRecord = new RetractTeacherRecord({
     stores: { enrichment: schoolEnrichmentLog, attestation: schoolAttestations, note: schoolTeacherNotes },
     teacherGate: schoolTeacherGate,
+    notes: schoolTeacherNotes,
   });
   const { GetTranscript } = await import('#apps/school/usecases/GetTranscript.mjs');
   const getTranscript = new GetTranscript({ reportCardsStore: schoolDatastore });

@@ -60,7 +60,7 @@ const SESSION_STATE_LABEL = {
  * a broken/dead link would be worse than the count alone, but a link that
  * goes nowhere is worse than either.
  */
-function TodayStrip({ digest, status }) {
+function TodayStrip({ digest, status, kidMode = false }) {
   if (status === 'error') {
     return <p className="school-report__today school-report__today-error">Could not load today&apos;s activity.</p>;
   }
@@ -97,11 +97,17 @@ function TodayStrip({ digest, status }) {
         <span className="school-report__today-empty">No work recorded today</span>
       )}
 
-      {pendingReview > 0 && (
+      {pendingReview > 0 && (kidMode ? (
+        // A kid's board never links into the admin app; the same fact in
+        // their terms — waiting is normal, not their problem to fix.
+        <span className="school-report__today-badge">
+          {pendingReview} waiting for a grown-up to check
+        </span>
+      ) : (
         <a href="/admin/school/review" className="school-report__today-badge">
           {pendingReview} {pendingReview === 1 ? 'item needs' : 'items need'} marking
         </a>
-      )}
+      ))}
     </div>
   );
 }
@@ -226,7 +232,7 @@ function ProgressFigure({ label, value, pending = false }) {
   );
 }
 
-export default function ReportPanel({ userId = null, onFollowUp = null }) {
+export default function ReportPanel({ userId = null, onFollowUp = null, kidMode = false }) {
   const [data, setData] = useState(null);
   const [progress, setProgress] = useState(null);
   const [insights, setInsights] = useState(null);
@@ -295,7 +301,7 @@ export default function ReportPanel({ userId = null, onFollowUp = null }) {
 
   return (
     <div className="school-report">
-      {focus && (
+      {focus && !kidMode && (
         <button type="button" className="school-report__all" onClick={() => setFocus(null)}>
           ‹ Everyone
         </button>
@@ -323,15 +329,16 @@ export default function ReportPanel({ userId = null, onFollowUp = null }) {
             <button
               type="button"
               className="school-report__learner-name"
-              onClick={() => setFocus(focus ? null : learner.id)}
+              onClick={kidMode ? undefined : () => setFocus(focus ? null : learner.id)}
+              disabled={kidMode}
             >
               {learner.name}
             </button>
-            {learner.needsAttention && (
+            {learner.needsAttention && !kidMode && (
               <span className="school-report__flag">Needs attention</span>
             )}
           </header>
-          <TodayStrip digest={todayByLearner.get(learner.id)} status={todayStatus} />
+          <TodayStrip digest={todayByLearner.get(learner.id)} status={todayStatus} kidMode={kidMode} />
           <div className="school-report__cards">
             {learner.reports.map((r) => <ProgramCard key={`${r.program}:${r.label}`} report={r} />)}
           </div>

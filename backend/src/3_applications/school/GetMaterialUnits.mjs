@@ -136,7 +136,13 @@ export class GetMaterialUnits {
       });
       return {
         unit, percent, playhead, completed, needsQuiz,
-        quiz: bank ? { bankId: bank.bankId } : null,
+        quiz: bank ? {
+          bankId: bank.bankId,
+          // The gate's own bar, told to the child (advocacy M7 fix): the
+          // SAME threshold quizSessionPassed applies above — the runner's
+          // pass line and retake ask key off it.
+          passingPercent: this.#config.quiz_pass_percent ?? 80,
+        } : null,
         gateInfo: { hasQuiz: !!bank, gateSatisfied, needsQuiz, played },
       };
     });

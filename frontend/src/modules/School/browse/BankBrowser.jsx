@@ -10,10 +10,16 @@ import { schoolApi } from '../schoolApi.js';
 
 export default function BankBrowser({ guestOnly, onLaunch, notice, subjectFilter }) {
   const [banks, setBanks] = useState(null);
+  const [failed, setFailed] = useState(false);
   useEffect(() => {
     let alive = true;
+    setFailed(false);
     schoolApi.banks(guestOnly ? 'generic' : undefined).then(({ ok, data }) => {
-      if (alive) setBanks(ok && Array.isArray(data) ? data : []);
+      if (!alive) return;
+      // A failed fetch must not masquerade as an empty library (advocacy:
+      // "there is nothing for you" and "something broke" are different facts).
+      if (!ok || !Array.isArray(data)) { setFailed(true); setBanks([]); return; }
+      setBanks(data);
     });
     return () => { alive = false; };
   }, [guestOnly]);
@@ -36,14 +42,21 @@ export default function BankBrowser({ guestOnly, onLaunch, notice, subjectFilter
   };
 
   if (banks === null) return <div className="school-browse school-browse--loading">Loading…</div>;
+  if (failed) {
+    return (
+      <div className="school-browse school-browse--empty" data-testid="banks-error">
+        <p>The quiz shelf wouldn&rsquo;t load. Tell a grown-up, or try again in a bit.</p>
+      </div>
+    );
+  }
   const visible = subjectFilter === undefined
     ? banks
     : banks.filter((b) => (subjectFilter === null ? !b.subject : b.subject === subjectFilter));
   if (visible.length === 0) {
     return (
       <div className="school-browse school-browse--empty">
-        <p>No quizzes yet.</p>
-        <p className="school-browse__hint">Add a bank YAML under data/content/quizzes/ to get started.</p>
+        <p>No quizzes here yet.</p>
+        <p className="school-browse__hint">Ask a grown-up to add some — they know how.</p>
       </div>
     );
   }

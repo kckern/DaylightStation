@@ -313,8 +313,10 @@ export default function MaterialDetail({ material, userId, onBack, onPlay, notic
                       <span className="school-material-detail__chapter-index">{u.index}</span>
                       <span className="school-material-detail__chapter-body">
                         <span className="school-material-detail__chapter-title">{u.title}</span>
-                        {u.locked && u.lockReason && (
-                          <span className="school-material-detail__chapter-lockreason">{u.lockReason}</span>
+                        {u.locked && (
+                          <span className="school-material-detail__chapter-lockreason">
+                            {u.lockReason ?? 'Finish the one before it first.'}
+                          </span>
                         )}
                       </span>
                       <span className="school-material-detail__chapter-status">
