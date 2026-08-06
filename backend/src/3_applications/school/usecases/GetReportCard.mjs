@@ -129,6 +129,11 @@ export class GetReportCard {
     const courses = courseIds.map((courseId) => this.#courseSection({
       courseId, units, flatSessions, periodSessions, period,
     }));
+    // Catalog drift must never ERASE recorded work (admin advocacy A2): a
+    // graded session whose unitId no longer resolves in the live catalog
+    // contributes to no course above — surface it flagged instead of letting
+    // a September pass vanish from a December card because a unit was re-cut.
+    const unresolvedUnits = this.#unresolvedSection({ periodSessions, unitCourse, learnerId, periodId });
 
     const materials = await this.#materialsSection(learnerId);
     const evidence = await this.#evidenceSection(learnerId, period);
@@ -146,6 +151,7 @@ export class GetReportCard {
       period,
       generatedAt: this.#clock().toISOString(),
       courses,
+      unresolvedUnits,
       materials,
       evidence,
       activeDays,
@@ -153,6 +159,26 @@ export class GetReportCard {
       pendingReview,
       remediationArcs,
     };
+  }
+
+  #unresolvedSection({ periodSessions, unitCourse, learnerId, periodId }) {
+    const byUnit = new Map();
+    periodSessions
+      .filter((s) => s.unitId && s.gradedPercent !== null && s.gradedPercent !== undefined
+        && !unitCourse.has(s.unitId))
+      .forEach((s) => {
+        const row = byUnit.get(s.unitId) ?? { unitId: s.unitId, sessions: 0, bestPercent: null };
+        row.sessions += 1;
+        if (row.bestPercent === null || s.gradedPercent > row.bestPercent) row.bestPercent = s.gradedPercent;
+        byUnit.set(s.unitId, row);
+      });
+    const rows = [...byUnit.values()].sort((a, b) => a.unitId.localeCompare(b.unitId));
+    if (rows.length) {
+      this.#logger.warn?.('school.report-card.unit-unresolved', {
+        learnerId, periodId, unitIds: rows.map((r) => r.unitId),
+      });
+    }
+    return rows;
   }
 
   #selectPeriodCourses({
