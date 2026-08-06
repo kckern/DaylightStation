@@ -320,6 +320,24 @@ nothing; a partial feed then a complete re-feed appends only the missing
 rows; changed answers append as new evidence (and warn). An unattributed
 scan (an anonymous worksheet card) records nothing, loudly.
 
+Each attempt also carries **full curriculum context, not just subject**: a
+`learning: {subjectId, courseId, unitId, conceptIds}` block — subject/course
+off the document's own taxonomy path, unit off the work session that issued
+the sheet (when there was one), concepts off the graded bank item itself
+(empty when the item names none) — plus a `workSessionId` in provenance,
+which is the session that issued the paper, never the throwaway per-scan
+grading session. This is what lets a report card fold paper-transport
+evidence into the same course grades and concept-mastery facets on-screen
+work produces.
+
+**Assessment grouping is by card record, not by evidence id.** Attempts have
+no work session behind a purely printed (non-tracked) sheet, so grouping them
+into "one assessment" falls back to the scanned card's own record id rather
+than treating each graded row as its own singleton — the same grouping
+`buildRecentScores` already gives a session-backed quiz. Before this, two
+attempts scanned off the same card with no session landed as two separate
+one-question assessments in recent scores instead of one multi-row sheet.
+
 **The session bridge.** A tracked quiz's allocation record carries its work
 session, so a complete scan advances the session the same way every other
 transport does — `issued → submitted → graded`, with an item-count percent
