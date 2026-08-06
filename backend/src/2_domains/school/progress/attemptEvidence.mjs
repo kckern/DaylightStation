@@ -27,6 +27,11 @@ export function learningEvidenceFromAttempt(attempt) {
       id: attempt.bankId,
       kind: attempt.mode,
       sessionId: attempt.sessionId,
+      // A card-scanned attempt with no work session (an untracked print) has
+      // no sessionId to group by; the printed card's own record identity
+      // takes over so its rows still land in one assessment, not one
+      // singleton per item. `buildRecentScores` reads this field first.
+      assessmentId: attempt.sessionId ?? attempt.provenance?.recordId ?? null,
       itemId: attempt.itemId,
       graded,
       ...(attempt.mode === 'learning_probe' ? {

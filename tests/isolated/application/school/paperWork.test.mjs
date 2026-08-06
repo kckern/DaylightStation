@@ -48,12 +48,16 @@ class FakeGrader {
     return { sessionId: `quiz_${this.sessions}`, userId, bankId, mode };
   }
 
-  answer({ sessionId, itemId, given, transport }) {
+  answer({
+    sessionId, itemId, given, transport, provenance = null,
+  }) {
     const bank = Object.values(this.banks).find((b) => b.items.some((i) => i.id === itemId));
     const item = bank.items.find((i) => i.id === itemId);
     const correct = item.answer === given;
     const attemptId = `att_${this.attempts.length + 1}`;
-    this.attempts.push({ id: attemptId, sessionId, itemId, given, correct, mode: 'quiz', transport });
+    this.attempts.push({
+      id: attemptId, sessionId, itemId, given, correct, mode: 'quiz', transport, provenance,
+    });
     return { correct, expected: item.answer, attemptId };
   }
 }
@@ -278,6 +282,18 @@ describe('GradeSubmission through the one engine', () => {
     await submitAll(RIGHT);
     await grade.execute({ sessionId: SID, entries: RIGHT });
     expect(grader.sessions).toBe(1);
+  });
+
+  it('a screen-graded paper submission records the WORK session id, not only the throwaway grader session', async () => {
+    await submitAll(RIGHT);
+    await grade.execute({ sessionId: SID, entries: RIGHT });
+    // grader.sessions opened its own disposable quiz_1 session (asserted above);
+    // every machine-graded attempt must still carry the WORK session (SID) that
+    // will not otherwise appear anywhere on the attempt itself.
+    expect(grader.attempts.every((a) => a.sessionId !== SID)).toBe(true);
+    expect(grader.attempts).not.toHaveLength(0);
+    expect(grader.attempts.every((a) => a.provenance && a.provenance.kind === 'review-grade'
+      && a.provenance.workSessionId === SID)).toBe(true);
   });
 });
 

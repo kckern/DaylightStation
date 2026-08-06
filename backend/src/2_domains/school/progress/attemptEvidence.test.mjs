@@ -33,5 +33,22 @@ describe('attempt progress evidence', () => {
       provenance: { schoolCalc: { deviceId: '86A001' } },
     })).source).toEqual({ surface: 'calculator', transport: 'calculator', deviceId: '86A001' });
   });
+
+  it('carries the attempt session as the assessmentId when one exists', () => {
+    expect(learningEvidenceFromAttempt(attempt({ sessionId: 'quiz_1' })).activity)
+      .toMatchObject({ sessionId: 'quiz_1', assessmentId: 'quiz_1' });
+  });
+
+  it('falls back to the printed-card record id when a scan carries no session', () => {
+    expect(learningEvidenceFromAttempt(attempt({
+      sessionId: null,
+      transport: 'paper',
+      provenance: { kind: 'omr-card', recordId: 'math/q@abc:v0:1-2' },
+    })).activity).toMatchObject({ assessmentId: 'math/q@abc:v0:1-2' });
+  });
+
+  it('has no assessmentId when neither a session nor a record id is known', () => {
+    expect(learningEvidenceFromAttempt(attempt({ sessionId: null })).activity.assessmentId ?? null).toBeNull();
+  });
 });
 

@@ -352,8 +352,12 @@ function normalizeActivity(raw, path, errors) {
   if (!isObject(raw)) { errors.push(`${path}: must be a mapping`); return null; }
   if (!isText(raw.id)) errors.push(`${path}.id: is required`);
   if (!isText(raw.kind)) errors.push(`${path}.kind: is required`);
-  for (const field of ['sessionId', 'itemId']) {
-    if (raw[field] !== undefined && !isText(raw[field])) errors.push(`${path}.${field}: must be non-empty text`);
+  // `!= null` (not `!== undefined`): an untracked scan attempt carries a real
+  // `sessionId: null` (and, before an assessmentId is derivable, the same for
+  // assessmentId) rather than omitting the key — that must stay optional, not
+  // become a validation failure.
+  for (const field of ['sessionId', 'itemId', 'assessmentId']) {
+    if (raw[field] != null && !isText(raw[field])) errors.push(`${path}.${field}: must be non-empty text`);
   }
   if (raw.attemptNumber !== undefined
       && (!Number.isInteger(raw.attemptNumber) || raw.attemptNumber < 1 || raw.attemptNumber > 255)) {
@@ -365,6 +369,7 @@ function normalizeActivity(raw, path, errors) {
     id: String(raw.id ?? ''), kind: String(raw.kind ?? ''), graded: raw.graded === true,
     ...(raw.sessionId ? { sessionId: String(raw.sessionId) } : {}),
     ...(raw.itemId ? { itemId: String(raw.itemId) } : {}),
+    ...(raw.assessmentId ? { assessmentId: String(raw.assessmentId) } : {}),
     ...(raw.attemptNumber !== undefined ? { attemptNumber: raw.attemptNumber } : {}),
     ...(raw.action ? { action: String(raw.action) } : {}),
   });
@@ -497,7 +502,9 @@ function buildRecentScores(entries) {
   const grouped = new Map();
   for (const entry of entries) {
     if (!entry.activity.graded || entry.measures.responses === 0) continue;
-    const assessmentId = entry.activity.sessionId ?? entry.evidenceId;
+    // assessmentId (a session, or a scanned card's record id) first; sessionId
+    // kept in the chain for evidence written before assessmentId existed.
+    const assessmentId = entry.activity.assessmentId ?? entry.activity.sessionId ?? entry.evidenceId;
     const key = `${entry.learnerId}\u0000${assessmentId}`;
     const current = grouped.get(key) ?? {
       assessmentId,
