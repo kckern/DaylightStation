@@ -221,12 +221,42 @@ Mirrors the module's existing patterns:
 - `TeacherProfileContext` test — the grown-up roster filter (a child never
   appears in the teacher picker).
 
-### 4.6 Out of scope for the skeleton
+### 4.6 Placeholder registry — the skeleton's TODO contract
 
-Recorded so future planning starts from it: all mutations; the periods /
-pass-criteria config→data promotion; the milestones domain; the enrichment
-evidence kind and calendar exceptions; attestation; evidence reassignment;
-progress-report and certificate renderers; curriculum authoring.
+Out of scope for the skeleton, but **not vaguely so**: every stub in the UI is
+one row of this registry, and every registry row is one future work item. Each
+`StubCard` rendered in the skeleton carries its row's `todoId` (as a
+`data-todo` attribute and in its rendered copy), so "list the TODOs" is
+answerable both from this table and from the running app, and they cannot
+drift apart — a stub with no registry row, or a row with no stub, is a review
+failure.
+
+| todoId | Where (tab → panel) | Use case | What it becomes | Depends on | Backend work |
+|---|---|---|---|---|---|
+| `teacher.review.resolve` | Today → ReviewQueueView | A3 | Resolve controls (verdict + note) inline on each pending item, replacing the "resolve in Admin" link | skeleton | none — `POST /lifecycle/sessions/:sessionId/review/:itemId` exists |
+| `teacher.print.decide` | Today → PrintPendingView | A4 | Approve/deny buttons per pending job, stamped with the claimed grown-up as `approver` | skeleton | none — approve/deny endpoints exist |
+| `teacher.assignments.edit` | Planning → AssignmentsView | B2 | Add/remove courses, standalone units, programs per learner; writes `PUT /lifecycle/assignments/:learnerId` with `assignedBy` | skeleton | none — endpoint + `GrownUpGate` exist |
+| `teacher.periods.edit` | Planning → PeriodsTimeline | B1 | Create/edit/end academic periods from the UI | config→data promotion of `progress.academicPeriods` | promotion + CRUD endpoints + append-only change history |
+| `teacher.passcriteria.edit` | Planning → CurriculumBrowser | B5 | Adjust pass thresholds mid-period with audit trail | config→data promotion of pass-criteria | promotion + endpoint + history |
+| `teacher.milestones` | Planning → stub card | B4 | Expected-progress schedule: dated per-course targets, behind/ahead computation against the study calendar | new milestones domain | domain + persistence + `GET`/`PUT` endpoints |
+| `teacher.enrichment.log` | Planning → stub card | B6 | Entry form + list: dated, subject-tagged, attributed enrichment entries (educational travel, museums, projects) | new enrichment evidence kind | evidence kind + append-only store + endpoints |
+| `teacher.period.close` | Records → stub card | C1 | Close/freeze the period from the UI (with supersede flow), stamped `closedBy` | skeleton | none — `POST /report-card/close` exists |
+| `teacher.progressreport.print` | Records → stub card | C2 | Progress-report PDF: period-to-date vs milestones, including enrichment credit | `teacher.milestones`, `teacher.enrichment.log` | new renderer (sibling of `ReportCardRenderer`) |
+| `teacher.certificates.print` | Records → stub card | C2 | Certificate PDF on course/program completion | skeleton | new renderer |
+| `teacher.enrichment.credit` | Records → stub card | C5 | "Enrichment / experiential learning" section on report card + progress report; enrichment days as pacing calendar exceptions (never delinquency; never moves grades/mastery/gates) | `teacher.enrichment.log`, `teacher.milestones` | read-model + renderer integration |
+| `teacher.attestation` | Repair → stub card | D2 | Record "I verify this was done/passed" as its own evidence type (`attestedBy`, reason); unlock a wedged gate. Never edits engine evidence | skeleton | new evidence kind + use case + endpoint |
+| `teacher.reassign` | Repair → stub card | D1 | Move a mis-attributed sitting's evidence between learners (fold-an-event model per §5) | skeleton | new use case + endpoint; semantics decided at wave 5 planning |
+| `teacher.notes.standalone` | Repair → FeedbackNotes | D3 | Write a note to a learner outside the review flow, delivered via the same agenda/receipt path | skeleton | new endpoint (delivery path exists) |
+
+Also out of scope, deliberately **not** a stub card: **B3 curriculum
+authoring** (its own future programme; the skeleton's CurriculumBrowser is
+its read-only precursor) and the **wave-2+ styling/interaction polish** of
+live panels.
+
+Acceptance shape for any future wave: pick rows, satisfy their "Depends on",
+build the "Backend work", replace the stub card with the live panel, delete
+the registry row (the table shrinks to zero as the programme completes), and
+update `docs/reference/school/README.md`.
 
 ## 5. Open questions for later waves
 
