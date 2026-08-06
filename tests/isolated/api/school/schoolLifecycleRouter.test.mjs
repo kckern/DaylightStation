@@ -321,3 +321,49 @@ describe('fail closed', () => {
     await new Promise((res) => bare.close(res));
   });
 });
+
+describe('production error-handler statuses (object shape)', () => {
+  // The PRODUCTION app mounts errorHandlerMiddleware() with its DEFAULT
+  // object shape — not the string shape the suites above use. These pin that
+  // a lifecycle refusal / missing-entity reaches a real 403/404 through that
+  // exact path (it was a silent 500 until 2026-08-06).
+  let server2; let base2;
+  beforeAll(async () => {
+    const { GuestForbiddenError } = await import('#domains/school/errors.mjs');
+    const { EntityNotFoundError } = await import('#domains/core/errors/index.mjs');
+    const app = express();
+    app.use(express.json());
+    app.use('/api/v1/school/lifecycle', createSchoolLifecycleRouter({
+      buildAgenda: echo(),
+      resolveReviewItem: {
+        execute: async ({ gradedBy }) => {
+          if (gradedBy === 'child') throw new GuestForbiddenError('Only a grown-up can do this.');
+          throw new EntityNotFoundError('review-item', 'ghost');
+        },
+      },
+      reviewQueue,
+      logger: silent,
+    }));
+    const { errorHandlerMiddleware } = await import('#system/http/middleware/index.mjs');
+    app.use(errorHandlerMiddleware()); // DEFAULT object shape — production wiring
+    await new Promise((res) => { server2 = app.listen(0, res); });
+    base2 = `http://127.0.0.1:${server2.address().port}/api/v1/school/lifecycle`;
+  });
+  afterAll(() => new Promise((res) => server2.close(res)));
+
+  it('a refusal is 403 through the production handler, never 500', async () => {
+    const res = await fetch(`${base2}/sessions/s/review/i`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ verdict: 'correct', gradedBy: 'child' }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it('a missing entity is 404 through the production handler, never 500', async () => {
+    const res = await fetch(`${base2}/sessions/s/review/i`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ verdict: 'correct', gradedBy: 'kckern' }),
+    });
+    expect(res.status).toBe(404);
+  });
+});

@@ -384,6 +384,26 @@ export function createSchoolLifecycleRouter({
     }));
   }
 
+  // Status stamping at this boundary, by NAME (api-no-domains forbids the
+  // classes): the app-level object-shape error handler maps by explicit
+  // `err.status` first, and without a stamp a lifecycle refusal or missing
+  // entity surfaced as an anonymous 500 — which no client (the teacher
+  // console's PIN prompt keys on 403; the panels' empty-mapping keys on 404)
+  // can act on. Stamp-and-forward: the shape stays the handler's.
+  const STATUS_BY_ERROR_NAME = Object.freeze({
+    GuestForbiddenError: 403,
+    EntityNotFoundError: 404,
+    ValidationError: 400,
+    DomainInvariantError: 409,
+  });
+  // eslint-disable-next-line no-unused-vars
+  router.use((err, req, res, next) => {
+    if (err && err.status === undefined && STATUS_BY_ERROR_NAME[err.name] !== undefined) {
+      err.status = STATUS_BY_ERROR_NAME[err.name];
+    }
+    next(err);
+  });
+
   return router;
 }
 
