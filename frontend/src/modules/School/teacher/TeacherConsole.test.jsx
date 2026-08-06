@@ -3,16 +3,32 @@ import { render, screen, waitFor, act, fireEvent } from '@testing-library/react'
 import TeacherConsole from './TeacherConsole.jsx';
 import { TODO } from './todoRegistry.js';
 
-vi.mock('../schoolApi.js', () => ({
-  schoolApi: {
+vi.mock('../schoolApi.js', () => {
+  const okEmpty = async () => ({ ok: true, status: 200, data: [] });
+  return { schoolApi: {
     teachers: vi.fn(async () => ({
       ok: true, status: 200, data: { configured: true, teachers: [{ id: 'kckern', name: 'KC' }] },
     })),
     roster: vi.fn(async () => ({
       ok: true, status: 200, data: [{ id: 'felix', name: 'Felix' }, { id: 'milo', name: 'Milo' }],
     })),
-  },
-}));
+    // Panel reads — benign empties; panel behavior has its own per-tab tests.
+    teacherToday: vi.fn(async () => ({ ok: true, status: 200, data: [{ learnerId: 'felix', attemptsToday: 0, correctToday: 0, sessionsToday: [], pendingReview: 0 }, { learnerId: 'milo', attemptsToday: 0, correctToday: 0, sessionsToday: [], pendingReview: 0 }] })),
+    lifecycleReview: vi.fn(async () => ({ ok: true, status: 200, data: { items: [] } })),
+    learnerSessions: vi.fn(async () => ({ ok: true, status: 200, data: { sessions: [] } })),
+    progress: vi.fn(async () => ({ ok: true, status: 200, data: { recentScores: [] } })),
+    printPending: vi.fn(okEmpty),
+    quizRequests: vi.fn(okEmpty),
+    assignments: vi.fn(async () => ({ ok: false, status: 404, data: null })),
+    periods: vi.fn(okEmpty),
+    curriculumUnits: vi.fn(okEmpty),
+    learningCatalogs: vi.fn(okEmpty),
+    reportCard: vi.fn(async () => ({ ok: true, status: 200, data: null })),
+    reportCardFrozen: vi.fn(okEmpty),
+    instructionalInsights: vi.fn(async () => ({ ok: true, status: 200, data: null })),
+    reviewLearner: vi.fn(okEmpty),
+  } };
+});
 const { schoolApi } = await import('../schoolApi.js');
 
 beforeEach(() => {
