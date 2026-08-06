@@ -38,6 +38,7 @@
  * @module cli/school-catalog
  */
 
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
@@ -138,6 +139,12 @@ function report(result, { dataDir }) {
   reportFileErrors('documents', result.documentErrors);
   reportFileErrors('manifests', result.manifestErrors);
 
+  if ((result.historyDrift ?? []).length) {
+    process.stdout.write('\nHISTORY DRIFT (advisory) — recorded sessions reference unitIds this catalog no longer resolves.\n');
+    process.stdout.write('These grades will appear FLAGGED (not counted into any course) on report cards:\n');
+    for (const unitId of result.historyDrift) process.stdout.write(`  - ${unitId}\n`);
+  }
+
   process.stdout.write(result.ok ? '\nOK — catalog is clean\n' : '\nFAILED — catalog is not promotable\n');
 }
 
@@ -167,6 +174,25 @@ async function cmdValidate({ dataDirFlag, renderProbe }) {
     bankIds: new YamlSchoolDatastore({ configService }).listBankIds(),
     surfaceValidators: surfaceValidatorsForCli(),
     measureProbe,
+    // Reverse sweep (admin advocacy A2): recorded-session unitIds, roster-wide.
+    // Bare --data-dir trees have no user shards; the thunk degrades to none.
+    recordedUnitIds: async () => {
+      try {
+        const { YamlWorkSessionDatastore } = await import('#adapters/persistence/yaml/YamlWorkSessionDatastore.mjs');
+        const sessions = new YamlWorkSessionDatastore({ configService });
+        const usersDir = path.join(configService.getDataDir(), 'users');
+        const learnerIds = fs.existsSync(usersDir)
+          ? fs.readdirSync(usersDir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name)
+          : [];
+        const ids = [];
+        for (const learnerId of learnerIds) {
+          // eslint-disable-next-line no-await-in-loop
+          const rows = await sessions.listForLearner(learnerId).catch(() => []);
+          rows.forEach((r) => { if (r.unitId) ids.push(r.unitId); });
+        }
+        return ids;
+      } catch { return []; }
+    },
   });
 
   const result = await useCase.execute({ renderProbe });

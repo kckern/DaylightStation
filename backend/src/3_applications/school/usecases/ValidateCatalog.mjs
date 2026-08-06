@@ -47,6 +47,7 @@ export class ValidateCatalog {
   #programIds;
   #surfaceValidators;
   #measureProbe;
+  #recordedUnitIds;
 
   /**
    * @param {object} deps
@@ -61,13 +62,19 @@ export class ValidateCatalog {
    * @param {(document: object, ctx: {id: string}) => (void|{errors?: string[]}|Promise<*>)} [deps.measureProbe]
    *   optional render-measure callback; only consulted under `renderProbe`
    */
-  constructor({ catalog, bankIds = [], programIds = [], surfaceValidators = new Map(), measureProbe = null } = {}) {
+  constructor({ catalog, bankIds = [], programIds = [], surfaceValidators = new Map(), measureProbe = null, recordedUnitIds = null } = {}) {
     if (!catalog) throw new Error('ValidateCatalog requires a catalog');
     this.#catalog = catalog;
     this.#bankIds = bankIds instanceof Set ? bankIds : new Set(bankIds);
     this.#programIds = programIds instanceof Set ? programIds : new Set(programIds);
     this.#surfaceValidators = surfaceValidators instanceof Map ? surfaceValidators : new Map(surfaceValidators);
     this.#measureProbe = typeof measureProbe === 'function' ? measureProbe : null;
+    // The REVERSE sweep (admin advocacy A2): a thunk answering unitIds that
+    // appear in recorded session history. Forward validation asks "does
+    // authored content resolve?"; this asks "does recorded HISTORY still
+    // resolve against the catalog being promoted?" — the drift that silently
+    // erases grades from report cards. Absent = sweep off (advisory feature).
+    this.#recordedUnitIds = typeof recordedUnitIds === 'function' ? recordedUnitIds : null;
   }
 
   /**
@@ -162,6 +169,18 @@ export class ValidateCatalog {
       && Object.keys(manifestErrors).length === 0
       && Object.keys(workErrors).length === 0;
 
+    // Advisory, never an ok-blocker: an intentionally retired unit would
+    // otherwise fail promotion forever. The point is that the drift is NAMED
+    // at promotion time instead of discovered on a child's report card.
+    let historyDrift = [];
+    if (this.#recordedUnitIds) {
+      const catalogUnitIds = new Set((units.items ?? []).map(({ id }) => id));
+      const recorded = await this.#recordedUnitIds();
+      historyDrift = [...new Set(recorded)]
+        .filter((unitId) => typeof unitId === 'string' && unitId && !catalogUnitIds.has(unitId))
+        .sort();
+    }
+
     return {
       ok,
       unitErrors,
@@ -169,6 +188,7 @@ export class ValidateCatalog {
       manifestErrors,
       workErrors,
       catalogErrors,
+      historyDrift,
       summary: {
         units: (units.items ?? []).length,
         documents: (documents.items ?? []).length,

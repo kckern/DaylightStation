@@ -323,3 +323,19 @@ describe('work configs', () => {
   });
 });
 
+
+describe('history-vs-catalog reverse sweep (admin advocacy A2)', () => {
+  it('names recorded unitIds the promoted catalog no longer resolves — advisory, never an ok-blocker', async () => {
+    const result = await build(
+      { units: [aUnit()], documents: [aDocument()] },
+      { recordedUnitIds: async () => ['math-fractions-01', 'ghost.99', 'ghost.99', 'retired.03'] },
+    ).execute();
+    expect(result.ok).toBe(true); // drift is advisory
+    expect(result.historyDrift).toEqual(['ghost.99', 'retired.03']);
+  });
+
+  it('no thunk wired -> empty drift, feature off', async () => {
+    const result = await build({ units: [aUnit()], documents: [aDocument()] }).execute();
+    expect(result.historyDrift).toEqual([]);
+  });
+});
