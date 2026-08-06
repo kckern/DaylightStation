@@ -63,6 +63,18 @@ export const schoolApi = {
   // The teacher's one-glance "today" digest (Task 6, `GetTeacherToday`):
   // a plain array, one row per roster learner — NOT wrapped in `{learners}`.
   teacherToday: () => req('/teacher/today'),
+  // A period-scoped snapshot of one learner's schooling (Task 6, `GetReportCard`).
+  reportCard: ({ learnerId, periodId }) => req(
+    `/report-card?learnerId=${encodeURIComponent(learnerId)}&periodId=${encodeURIComponent(periodId)}`,
+  ),
+  // The configured academic calendar (Task 9) — a plain array, so a
+  // child-facing surface can resolve "the current period" for itself.
+  periods: () => req('/periods'),
+  // A learner's own RESOLVED review items, newest first (Task 9, spec R7) —
+  // the feedback a child can see. Never a pending item.
+  reviewLearner: (learnerId, { limit = 20 } = {}) => req(
+    `/review/learner/${encodeURIComponent(learnerId)}?limit=${encodeURIComponent(limit)}`,
+  ),
   progressOptions: () => req('/progress/options'),
   progress: (query = {}) => {
     const p = new URLSearchParams();

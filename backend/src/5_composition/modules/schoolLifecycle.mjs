@@ -411,7 +411,10 @@ export async function createSchoolLifecycle({
     curriculum, assignments: stores.assignments, sessions: stores.sessions, tokens: stores.tokens,
     launchers, timezone, clock, rng: draw, newSessionId,
     // Optional knob; BuildAgenda's own default (168h) applies when unset.
-    subjectTokenTtlHours: lifecycleCfg.subjectTokenTtlHours, logger,
+    subjectTokenTtlHours: lifecycleCfg.subjectTokenTtlHours,
+    // Read-only: the "Notes for you" section (spec R7) reads a learner's
+    // resolved review items, never writes one.
+    reviewQueue: stores.reviewQueue, logger,
   });
   const resolveSubjectNext = new ResolveSubjectNext({
     curriculum, assignments: stores.assignments, sessions: stores.sessions,
@@ -436,6 +439,9 @@ export async function createSchoolLifecycle({
     tokens: { put: async () => {} },
     launchers, timezone, clock, rng: draw, newSessionId,
     subjectTokenTtlHours: lifecycleCfg.subjectTokenTtlHours,
+    // Same real, read-only review queue as `buildAgenda` — a preview showing
+    // no notes when the real print would have some is a preview that lies.
+    reviewQueue: stores.reviewQueue,
     logger: logger.child ? logger.child({ preview: true }) : logger,
   });
   // The rendering-layer PNG renderer, same optional-dependency posture as the
@@ -502,6 +508,9 @@ export async function createSchoolLifecycle({
     economyAction: lifecycleCfg.economy?.action || 'school-unit-complete',
     economyEnabled: lifecycleCfg.economy?.enabled === true,
     grownUps,
+    // Read-only: this session's own resolved-item notes on the result receipt
+    // (spec R7) — the same store `gradeSubmission`/`resolveReviewItem` write.
+    reviewQueue: stores.reviewQueue,
     clock, rng: draw, logger,
   });
   const openRemediation = new OpenRemediation({ curriculum, sessions: stores.sessions, clock, logger });

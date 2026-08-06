@@ -90,6 +90,44 @@ const receipt = (id, blocks, { title = null } = {}) => ({
 });
 
 /**
+ * Resolved-review-item notes as printable lines: `Note: <note> (<ref>)`,
+ * newest first, capped, each line truncated so a long grown-up sentence
+ * cannot blow out the receipt's width (spec R7). Shared by CloseSessionOutcome
+ * (this session's own notes) and BuildAgenda (a learner's recent notes) so
+ * both receipts format a note identically.
+ *
+ * `<ref>` is the printed question number when the item carries one — a
+ * child matches the note back to the sheet in their hand — and the bare
+ * itemId otherwise.
+ *
+ * @param {Array<{note?: string|null, questionNumber?: number|null,
+ *   itemId?: string, gradedAt?: string|null}>} items
+ * @param {object} [opts]
+ * @param {number} [opts.limit=3]
+ * @param {number} [opts.maxChars=120]
+ * @returns {string[]}
+ */
+export function reviewNoteLines(items, { limit = 3, maxChars = 120 } = {}) {
+  return (Array.isArray(items) ? items : [])
+    .filter((item) => item && typeof item.note === 'string' && item.note.trim())
+    .slice()
+    .sort((a, b) => String(b.gradedAt ?? '').localeCompare(String(a.gradedAt ?? '')))
+    .slice(0, limit)
+    .map((item) => {
+      const ref = item.questionNumber ?? item.itemId ?? '?';
+      const line = `Note: ${item.note.trim()} (${ref})`;
+      return line.length > maxChars ? line.slice(0, maxChars) : line;
+    });
+}
+
+/** Appends the "Notes for you" section, informational only — no scan_action. */
+function appendNoteLines(blocks, noteLines) {
+  if (!noteLines.length) return;
+  blocks.push(text('## NOTES FOR YOU'));
+  noteLines.forEach((line) => blocks.push(text(line)));
+}
+
+/**
  * The agenda: what this learner can do right now, one subject section at a
  * time (spec §6.2 v2 — sectioned by subject rather than a flat list of unit
  * entries).
@@ -114,12 +152,16 @@ const receipt = (id, blocks, { title = null } = {}) => ({
  *   programUnavailable?: boolean,
  * }>} args.sections   `planDailyAgenda` sections, one per subject
  * @param {Record<string, string>} [args.tokensBySubject] subject -> opaque scan token, for that section's `next`
+ * @param {string[]} [args.notes] pre-formatted "Notes for you" lines (spec R7,
+ *   `reviewNoteLines`) — informational only, printed with no `scan_action`,
+ *   so a grown-up's feedback reaches the child without pretending to be a
+ *   thing to scan.
  * @param {string} [args.footer]
  * @returns {object} a document ready for `validateDocument`
  */
 export function agendaDocument({
   learnerId, learnerName = null, generatedAt = null, timeZone = 'UTC',
-  sections = [], tokensBySubject = {}, footer = null,
+  sections = [], tokensBySubject = {}, footer = null, notes = [],
 } = {}) {
   // The learner's name is the document TITLE, not a text block: the renderers
   // give a title the standard-header treatment (inverted banner), which a
@@ -129,9 +171,11 @@ export function agendaDocument({
   const printedAt = formatPrintedAt(generatedAt, timeZone);
   if (printedAt) blocks.push(text(`Printed ${printedAt}`));
 
+  const noteLines = (Array.isArray(notes) ? notes : []).filter(isNonEmptyString);
   const offered = (Array.isArray(sections) ? sections : []).filter((s) => s && typeof s === 'object');
   if (!offered.length) {
     blocks.push(text('Nothing is assigned right now. Ask a grown-up what to do next.'));
+    appendNoteLines(blocks, noteLines);
     return receipt(`agenda-${slugify(learnerId, 'learner')}`, blocks, { title });
   }
 
@@ -173,6 +217,7 @@ export function agendaDocument({
     }
   });
 
+  appendNoteLines(blocks, noteLines);
   blocks.push(text(footer || 'Scan a line above to start. Scan your card any time for a new list.'));
   return receipt(`agenda-${slugify(learnerId, 'learner')}`, blocks, { title });
 }
@@ -190,11 +235,14 @@ export function agendaDocument({
  * @param {Array<{token?: string, label: string}>} [args.actions]
  * @param {{amount: number}|null} [args.reward] coins actually awarded
  * @param {string|null} [args.unlockedTitle] the unit this pass opened up
+ * @param {string[]} [args.notes] pre-formatted "Notes for you" lines (spec R7,
+ *   `reviewNoteLines`) — a grown-up's written feedback on this session's
+ *   review items, reaching the child on the SAME receipt as the score.
  * @returns {object}
  */
 export function resultDocument({
   sessionId, unitTitle, result, percent = null, objectives = [],
-  actions = [], reward = null, unlockedTitle = null,
+  actions = [], reward = null, unlockedTitle = null, notes = [],
 } = {}) {
   const passed = result === 'passed';
   const blocks = [
@@ -208,6 +256,7 @@ export function resultDocument({
     blocks.push(text('Worth another look:'));
     objectives.filter(isNonEmptyString).forEach((o) => blocks.push(text(`- ${o}`)));
   }
+  appendNoteLines(blocks, (Array.isArray(notes) ? notes : []).filter(isNonEmptyString));
   if (passed && reward && Number.isFinite(reward.amount) && reward.amount > 0) {
     blocks.push(text(`You earned ${reward.amount} ${reward.amount === 1 ? 'coin' : 'coins'}.`));
   }

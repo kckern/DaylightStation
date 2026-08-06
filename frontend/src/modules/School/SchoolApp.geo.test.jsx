@@ -25,6 +25,11 @@ vi.mock('./schoolApi.js', () => ({
     geoDecks: (...a) => geoDecksMock(...a),
     surfaceProfile: vi.fn(async () => ({ ok: false, status: 404, data: { error: 'surface-profile-unresolved' } })),
     certification: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
+    // Feedback delivery + kid-visible standing (Task 9) — the student panel
+    // fetches these unconditionally once a learner is claimed.
+    periods: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
+    reportCard: vi.fn(async () => ({ ok: true, status: 200, data: null })),
+    reviewLearner: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
   },
 }));
 

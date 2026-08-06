@@ -49,6 +49,14 @@ export function createSchoolRouter({
   // `?format=pdf` is on either report-card GET. Absent → 503 rather than a
   // silent JSON fallback, since a caller explicitly asked for a PDF.
   renderReportCardPdf = null,
+  // Feedback delivery + kid-visible standing (Task 9, spec R7 / adequacy
+  // SHOULD 9). `reviewQueue` is the SAME `IReviewQueue` `getReportCard`'s
+  // pending-count already reads (`stores.reviewQueue`); `academicPeriods`
+  // the SAME `IAcademicPeriodSource` `getReportCard` resolves periods
+  // through — both reused, not re-instantiated, so this router never
+  // disagrees with the report card about what "the current period" means.
+  reviewQueue = null,
+  academicPeriods = null,
   logger = console,
 }) {
   const router = express.Router();
@@ -755,6 +763,38 @@ export function createSchoolRouter({
   router.get('/teacher/today', wrap(async (req, res) => {
     if (!getTeacherToday) return res.json([]);
     res.set('Cache-Control', 'no-store').json(await getTeacherToday.execute());
+  }));
+
+  // The configured academic calendar — a plain array, not wrapped, matching
+  // `getTeacherToday`'s own "answer the whole list" posture. This is the
+  // ONLY thing a child-facing surface needs to work out "the current period"
+  // for itself (Task 9's student panel): `listPeriods()` carries
+  // `startsAt`/`endsAt` for every period, and the client picks the one that
+  // contains "now".
+  router.get('/periods', wrap(async (req, res) => {
+    if (!academicPeriods) return res.json([]);
+    res.set('Cache-Control', 'no-store').json(academicPeriods.listPeriods());
+  }));
+
+  // A learner's own RESOLVED review items, newest first — the feedback a
+  // child can see (Task 9, spec R7). Never a pending item still awaiting a
+  // grown-up's verdict; that queue is the parent-only `/lifecycle/review`.
+  router.get('/review/learner/:learnerId', wrap(async (req, res) => {
+    if (!reviewQueue) return res.json([]);
+    const learnerId = requiredTextQuery(req.params.learnerId, 'learnerId');
+    const limit = boundedIntegerQuery(req.query.limit, 20, 1, 100, 'limit');
+    const items = await reviewQueue.listForLearner(learnerId, { limit });
+    res.set('Cache-Control', 'no-store').json(items.map((item) => ({
+      itemId: item.itemId,
+      sessionId: item.sessionId,
+      unitId: item.unitId ?? null,
+      verdict: item.verdict,
+      note: item.note ?? null,
+      gradedBy: item.gradedBy ?? null,
+      gradedAt: item.gradedAt ?? null,
+      prompt: item.prompt ?? null,
+      questionNumber: item.questionNumber ?? null,
+    })));
   }));
 
   if (schoolCalcRouter) router.use('/calc', schoolCalcRouter);

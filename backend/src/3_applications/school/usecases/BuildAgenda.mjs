@@ -32,16 +32,21 @@
 import { planLearnerWork } from '#domains/school/planner.mjs';
 import { planDailyAgenda } from '#domains/school/agenda.mjs';
 import { mintToken } from '#domains/school/sessions/tokens.mjs';
-import { agendaDocument, noticeDocument } from '#domains/school/documents/receipts.mjs';
+import { agendaDocument, noticeDocument, reviewNoteLines } from '#domains/school/documents/receipts.mjs';
+import { studyDayIndex, offsetMinutesFor } from '#domains/school/studyDay.mjs';
 import { shortId } from '#domains/core/utils/id.mjs';
 import { ensureSession, nextMove } from './offerSession.mjs';
 
 const DEFAULT_SUBJECT_TOKEN_TTL_HOURS = 168;
 const HOUR_MS = 3_600_000;
+// Study-day boundary agenda.mjs's own `planDailyAgenda` uses when BuildAgenda
+// calls it without one (its own default) — kept in step so "yesterday's
+// note" and "served today" roll over on the exact same instant.
+const BOUNDARY_HOUR = 4;
 
 export class BuildAgenda {
   #curriculum; #assignments; #sessions; #tokens; #launchers; #timezone;
-  #clock; #rng; #newSessionId; #ttlMs; #logger;
+  #clock; #rng; #newSessionId; #ttlMs; #logger; #reviewQueue;
 
   /**
    * @param {object} deps
@@ -58,13 +63,17 @@ export class BuildAgenda {
    * @param {() => number} [deps.rng] - injected so a test can mint predictable tokens
    * @param {() => string} [deps.newSessionId]
    * @param {number} [deps.subjectTokenTtlHours]
+   * @param {import('../ports/IReviewQueue.mjs').IReviewQueue} [deps.reviewQueue] - read
+   *   for the "Notes for you" section (spec R7): a grown-up's resolved-item
+   *   notes for this learner, from the current or previous study day.
+   *   Optional — absent, the agenda simply carries no notes section.
    * @param {object} [deps.logger]
    */
   constructor({
     curriculum, assignments, sessions, tokens, launchers = new Map(),
     timezone = null, clock = () => new Date(), rng = Math.random,
     newSessionId = () => `ses_${shortId(8)}`,
-    subjectTokenTtlHours = DEFAULT_SUBJECT_TOKEN_TTL_HOURS, logger = console,
+    subjectTokenTtlHours = DEFAULT_SUBJECT_TOKEN_TTL_HOURS, reviewQueue = null, logger = console,
   } = {}) {
     if (!curriculum || !assignments || !sessions || !tokens) {
       throw new Error('BuildAgenda requires curriculum, assignments, sessions and tokens');
@@ -79,6 +88,7 @@ export class BuildAgenda {
     this.#rng = rng;
     this.#newSessionId = newSessionId;
     this.#ttlMs = subjectTokenTtlHours * HOUR_MS;
+    this.#reviewQueue = reviewQueue;
     this.#logger = logger;
   }
 
@@ -168,6 +178,8 @@ export class BuildAgenda {
       ? { ...section, next: { ...section.next, actionLabel: actionLabelBySubject.get(section.subject) } }
       : section));
 
+    const notes = await this.#collectNotes(learnerId, now.getTime());
+
     return {
       learnerId,
       plan,
@@ -176,9 +188,40 @@ export class BuildAgenda {
       createdSessions,
       document: agendaDocument({
         learnerId, learnerName, generatedAt: nowIso, timeZone: this.#timezone,
-        sections: sectionsForDocument, tokensBySubject,
+        sections: sectionsForDocument, tokensBySubject, notes,
       }),
     };
+  }
+
+  /**
+   * "Notes for you" (spec R7): a grown-up's resolved-item notes for this
+   * learner, restricted to items marked within the CURRENT or PREVIOUS study
+   * day (`studyDay.mjs` boundaries, same 4am rollover `planDailyAgenda`
+   * already uses for "served today") — a note from last week is stale
+   * homework feedback, not something worth reprinting on every agenda from
+   * here on. Never blocks the agenda: an unwired or failing review queue
+   * just means no notes section, same as `#collectProgramStatuses`'s own
+   * per-source degrade.
+   */
+  async #collectNotes(learnerId, nowMs) {
+    if (!this.#reviewQueue?.listForLearner) return [];
+    try {
+      const items = await this.#reviewQueue.listForLearner(learnerId, { limit: 20 });
+      const offsetMinutes = offsetMinutesFor(this.#timezone, nowMs);
+      const todayIndex = studyDayIndex(nowMs, { boundaryHour: BOUNDARY_HOUR, offsetMinutes });
+      const windowed = items.filter((item) => {
+        const at = Date.parse(item?.gradedAt ?? '');
+        if (!Number.isFinite(at)) return false;
+        const itemOffset = offsetMinutesFor(this.#timezone, at);
+        const itemIndex = studyDayIndex(at, { boundaryHour: BOUNDARY_HOUR, offsetMinutes: itemOffset });
+        const daysAgo = todayIndex - itemIndex;
+        return daysAgo === 0 || daysAgo === 1;
+      });
+      return reviewNoteLines(windowed);
+    } catch (err) {
+      this.#logger.warn?.('school.agenda.notes-failed', { learnerId, error: err?.message ?? String(err) });
+      return [];
+    }
   }
 
   /**

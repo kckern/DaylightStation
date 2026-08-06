@@ -256,6 +256,14 @@ export class FakeReviewQueue extends IReviewQueue {
   async listPending() {
     return [...this.#items.values()].flat().filter((i) => !i.verdict);
   }
+
+  async listForLearner(learnerId, { limit = 20 } = {}) {
+    return [...this.#items.values()]
+      .flat()
+      .filter((i) => i.learnerId === learnerId && (i.verdict === 'correct' || i.verdict === 'incorrect'))
+      .sort((a, b) => String(b.gradedAt ?? '').localeCompare(String(a.gradedAt ?? '')))
+      .slice(0, limit);
+  }
 }
 
 /**
