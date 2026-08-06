@@ -40,6 +40,11 @@ export function createSchoolRouter({
   // `listReportCards`) — distinct from `getReportCard` above, which derives a
   // LIVE report; this one only ever reads what `closeAcademicPeriod` already froze.
   reportCardsStore = null,
+  // `(report, {learnerName}) => Promise<{pdf, pageCount, mode}>` (Task 7) — a
+  // plain function, not a `{execute}` use case; called directly whenever
+  // `?format=pdf` is on either report-card GET. Absent → 503 rather than a
+  // silent JSON fallback, since a caller explicitly asked for a PDF.
+  renderReportCardPdf = null,
   logger = console,
 }) {
   const router = express.Router();
@@ -707,7 +712,9 @@ export function createSchoolRouter({
     if (!getReportCard) return res.json(null);
     const learnerId = requiredTextQuery(req.query.learnerId, 'learnerId');
     const periodId = requiredTextQuery(req.query.periodId, 'periodId');
-    res.set('Cache-Control', 'no-store').json(await getReportCard.execute({ learnerId, periodId }));
+    const report = await getReportCard.execute({ learnerId, periodId });
+    if (wantsPdf(req)) return sendReportCardPdf(res, renderReportCardPdf, report, { learnerId, periodId, req });
+    return res.set('Cache-Control', 'no-store').json(report);
   }));
 
   router.get('/report-card/frozen', wrap(async (req, res) => {
@@ -717,8 +724,12 @@ export function createSchoolRouter({
     if (periodId) {
       const record = reportCardsStore.readReportCard(learnerId, periodId);
       if (!record) throw new EntityNotFoundError('Frozen report card', `${learnerId}/${periodId}`);
+      if (wantsPdf(req)) return sendReportCardPdf(res, renderReportCardPdf, record, { learnerId, periodId, req });
       return res.set('Cache-Control', 'no-store').json(record);
     }
+    // The list variety returns every frozen record for the learner — `format=pdf`
+    // names exactly one document, so it does not apply here; served as JSON
+    // regardless of the query param.
     return res.set('Cache-Control', 'no-store').json(reportCardsStore.listReportCards(learnerId));
   }));
 
@@ -783,6 +794,24 @@ async function nearMissLiveCards(store, cardId) {
     if (records.some((record) => record.status === 'live')) out.push(candidate);
   }
   return out.sort();
+}
+
+/** `?format=pdf` on either report-card GET; JSON stays the default either way. */
+function wantsPdf(req) {
+  return textQuery(req.query.format) === 'pdf';
+}
+
+/**
+ * Render and send a report card as `application/pdf` — shared by the live
+ * and frozen GET routes so the content-type/filename/cache-header contract
+ * (and the "not wired" 503) stays identical between them.
+ */
+async function sendReportCardPdf(res, renderReportCardPdf, report, { learnerId, periodId, req }) {
+  if (!renderReportCardPdf) return res.status(503).json({ error: 'report-card-pdf-unavailable' });
+  const { pdf } = await renderReportCardPdf(report, { learnerName: textQuery(req.query.learnerName) });
+  res.set('Cache-Control', 'no-store');
+  res.set('Content-Disposition', `inline; filename="report-card-${learnerId}-${periodId}.pdf"`);
+  return res.type('application/pdf').send(pdf);
 }
 
 function textQuery(value) {

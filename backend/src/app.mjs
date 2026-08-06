@@ -2958,6 +2958,21 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     }
   }
 
+  // Printable report card (Task 7, spec R5b adequacy MUST 2) — a bespoke
+  // pdfkit renderer under `1_rendering/school/reportcard/`, sharing the
+  // `documents/` theme's fonts but none of the block-pipeline machinery.
+  // Unlike the three use cases just above, this has no lifecycle store
+  // dependency at all — constructed unconditionally, so `format=pdf` works
+  // on any wired report-card route regardless of the (independent) lifecycle
+  // gate those routes' own use cases are behind.
+  let renderReportCardPdf = null;
+  try {
+    const { createReportCardPdfRenderer } = await import('#rendering/school/reportcard/ReportCardRenderer.mjs');
+    renderReportCardPdf = createReportCardPdfRenderer();
+  } catch (err) {
+    schoolLifecycleLogger.error('school.report-card.pdf-wiring-failed', { error: err.message });
+  }
+
   // Printing (worksheets → kitchen laser printer). Wired only when the school
   // config declares a `printer` host — no printer, no print feature (the
   // router serves inert). The printer host defaults to the `kitchen-printer`
@@ -3055,6 +3070,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     // Frozen-record reads work off `schoolDatastore` alone (no lifecycle
     // stores needed), so this is wired unconditionally.
     reportCardsStore: schoolDatastore,
+    // Printable report card PDF (Task 7) — also wired unconditionally.
+    renderReportCardPdf,
     logger: rootLogger.child({ module: 'school-api' })
   });
 
