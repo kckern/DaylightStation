@@ -252,7 +252,18 @@ export class GetReportCard {
   #periodAttempts(learnerId, period) {
     const fromDay = period.startsAt.slice(0, 10);
     const toDay = period.endsAt.slice(0, 10);
-    return this.#datastore.readAttemptsInRange(learnerId, fromDay, toDay) ?? [];
+    // The day-file read above is a windowed-read OPTIMIZATION (whole day
+    // files, cheap to fetch from disk) — it is necessarily DAY-granular, so
+    // it over-includes attempts on the boundary days that fall outside the
+    // period's actual instant bounds (e.g. an attempt at 09:00 on the day
+    // `endsAt` itself lands at 00:00). Tighten to the exact instant window
+    // here, in memory, so every consumer of this shared read (activeDays,
+    // concepts) only ever sees attempts strictly inside
+    // `[period.startsAt, period.endsAt)`.
+    const dayAttempts = this.#datastore.readAttemptsInRange(learnerId, fromDay, toDay) ?? [];
+    return dayAttempts.filter(
+      (a) => isNonEmptyString(a.at) && a.at >= period.startsAt && a.at < period.endsAt,
+    );
   }
 
   /**
@@ -288,8 +299,11 @@ export class GetReportCard {
    * the report PERIOD itself (not the domain function's own rolling-90-day
    * default) so "mastery this period" actually means this period, not an
    * independent trailing window that could disagree with it; every attempt
-   * this method receives already falls inside `[period.startsAt,
-   * period.endsAt]`; `now: period.endsAt` anchors that window at the
+   * this method receives already falls inside the half-open instant window
+   * `[period.startsAt, period.endsAt)` — `#periodAttempts` filters to that
+   * exact bound, not just the day-granular file read — so this is a true
+   * per-period aggregation, never a window that silently disagrees with the
+   * period at its edges; `now: period.endsAt` anchors that window at the
    * period's own close.
    * `conceptRegistry` only supplies a LABEL — an unregistered (or entirely
    * unwired) registry falls back to the raw conceptId, never drops the row.

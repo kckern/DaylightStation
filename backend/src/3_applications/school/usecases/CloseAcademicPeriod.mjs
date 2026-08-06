@@ -56,12 +56,18 @@ export class CloseAcademicPeriod {
       action: 'report-card.close', learnerId, periodId,
     });
 
-    // Archive BEFORE re-generating the report: a slow report build must never
-    // leave the archive step racing a concurrent close for the same period.
+    // Generate BEFORE archiving: a report-build failure must never leave a
+    // period with NO current frozen record. If archive ran first and the
+    // report build then threw, the old freeze would already be
+    // archived-and-unlinked with nothing written in its place — the period
+    // would 404 on `readReportCard` until someone retried. Building the
+    // report first means a build failure leaves the ORIGINAL freeze fully
+    // intact (never archived), so `readReportCard` keeps answering with it.
     //
-    // RACE (accepted at household scale): archive -> re-generate report ->
-    // write is not one atomic step. Two concurrent `supersede: true` closes
-    // for the SAME learner+period can interleave — worst case, whichever
+    // RACE (accepted at household scale): generate -> archive -> write is
+    // still not one atomic step; the failure window is now just the
+    // archive -> write pair. Two concurrent `supersede: true` closes for the
+    // SAME learner+period can interleave — worst case, whichever
     // `writeReportCard` lands SECOND simply refuses
     // (`REPORT_CARD_ALREADY_CLOSED`, 409): no freeze is ever silently
     // overwritten or destroyed, the archived copy(ies) already on disk are
@@ -69,11 +75,10 @@ export class CloseAcademicPeriod {
     // one parent, rarely, and never from two devices at once in practice, so
     // this gap is left unlocked rather than adding cross-request
     // coordination for a scenario that does not happen.
+    const report = await this.#getReportCard.execute({ learnerId, periodId });
     const supersededVersions = supersede
       ? await this.#datastore.archiveReportCard(learnerId, periodId)
       : 0;
-
-    const report = await this.#getReportCard.execute({ learnerId, periodId });
     const frozen = {
       ...report, closedBy, closedAt: this.#clock().toISOString(), supersededVersions,
     };

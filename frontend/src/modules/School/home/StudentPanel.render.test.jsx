@@ -53,9 +53,11 @@ describe('feedback list', () => {
     const { container } = render(<StudentPanel onOpen={vi.fn()} />);
     expect(await screen.findByText('Feedback')).toBeTruthy();
     expect(screen.getByText('Carry the remainder next time')).toBeTruthy();
-    expect(screen.getByText('✗')).toBeTruthy();
     const item = container.querySelector('.school-rail__feedback-item');
     expect(item.className).toContain('is-incorrect');
+    // House rule: inline SVG, never a unicode glyph — WebView renders
+    // unrecognized unicode as tofu.
+    expect(item.querySelector('.school-rail__feedback-verdict svg')).toBeTruthy();
   });
 
   it('renders a correct verdict\'s icon and is-correct class, falling back to the prompt with no note', async () => {
@@ -66,8 +68,9 @@ describe('feedback list', () => {
     }] });
     const { container } = render(<StudentPanel onOpen={vi.fn()} />);
     expect(await screen.findByText('What is 1/2 + 1/2?')).toBeTruthy();
-    expect(screen.getByText('✓')).toBeTruthy();
-    expect(container.querySelector('.school-rail__feedback-item').className).toContain('is-correct');
+    const item = container.querySelector('.school-rail__feedback-item');
+    expect(item.className).toContain('is-correct');
+    expect(item.querySelector('.school-rail__feedback-verdict svg')).toBeTruthy();
   });
 
   it('omits the section entirely — no heading — when there is nothing resolved', async () => {
