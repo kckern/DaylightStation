@@ -142,6 +142,10 @@ export function createSchoolLifecycleRouter({
   setAssignments = null,
   curriculum = null,
   sessions = null,
+  // Study-day-windowed sessions read (`?window=today`) — a use case, not an
+  // inline filter, because the 4am window needs the clock+timezone this
+  // router deliberately does not hold.
+  listLearnerSessions = null,
   roster = null,
   // No clock: every timestamp this router used to stamp (a verdict's `gradedAt`,
   // an assignment's `updatedAt`) is now written by the use case that owns the
@@ -227,7 +231,11 @@ export function createSchoolLifecycleRouter({
   // --- sessions -------------------------------------------------------------
   if (sessions) {
     router.get('/learners/:learnerId/sessions', asyncHandler(async (req, res) => {
-      res.json({ sessions: await sessions.listForLearner(req.params.learnerId) });
+      res.json({
+        sessions: listLearnerSessions
+          ? await listLearnerSessions.execute({ learnerId: req.params.learnerId, window: req.query.window ?? null })
+          : await sessions.listForLearner(req.params.learnerId),
+      });
     }));
 
     router.get('/sessions/:sessionId/events', asyncHandler(async (req, res) => {

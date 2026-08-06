@@ -107,6 +107,15 @@ beforeAll(async () => {
     resolveReviewItem,
     setAssignments,
     sessions,
+    // Window-aware sessions read: the route must delegate here (with the raw
+    // `window` query) whenever the use case is wired, not filter inline.
+    listLearnerSessions: {
+      execute: async ({ learnerId, window }) => (
+        window === 'today'
+          ? [{ sessionId: 'ses_today', state: 'issued', learnerId }]
+          : [{ sessionId: 'ses_1', state: 'issued' }]
+      ),
+    },
     logger: silent,
   }));
   app.use(errorHandlerMiddleware({ logger: silent, shape: 'string' }));
@@ -160,6 +169,11 @@ describe('agenda and sessions', () => {
   it('lists a learner\'s sessions and one session\'s events', async () => {
     expect(await (await fetch(`${base}/learners/kid1/sessions`)).json()).toMatchObject({ sessions: [{ sessionId: 'ses_1' }] });
     expect(await (await fetch(`${base}/sessions/ses_1/events`)).json()).toMatchObject({ events: [{ type: 'created' }] });
+  });
+
+  it('?window=today delegates to the windowed use case with the raw query value', async () => {
+    expect(await (await fetch(`${base}/learners/kid1/sessions?window=today`)).json())
+      .toMatchObject({ sessions: [{ sessionId: 'ses_today', learnerId: 'kid1' }] });
   });
 
   it('issues a document, and 404s an unissuable one', async () => {
