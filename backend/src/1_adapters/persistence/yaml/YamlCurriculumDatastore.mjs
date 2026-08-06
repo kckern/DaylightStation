@@ -3,9 +3,9 @@
  * only — it parses files and hands the result straight back; every rule about
  * what a valid unit/document/manifest looks like lives in the domain.
  *
- *   units      <dataDir>/content/school/{subject}/units/{unitId}.yml
- *   documents  <dataDir>/content/school/{subject}/documents/{id}.yml
- *   manifests  <dataDir>/content/school/{subject}/manifests/{id}.yml
+ *   units      <dataDir>/content/school/{subject}/{work}/units/{unitId}.yml
+ *   documents  <dataDir>/content/school/{subject}/{work}/documents/{id}.yml
+ *   manifests  <dataDir>/content/school/{subject}/{work}/manifests/{id}.yml
  *
  * Filed under the nine subject shelves so the tree reads the way the School home
  * does. The shelf is a DIRECTORY here, but it is not the address: ids stay flat

@@ -57,7 +57,10 @@ never imports from `modules/Piano/`; both import from the shared home.
 
 ### Quizzes and flashcards
 
-One canonical question-bank format at `data/content/quizzes/*.yml`. `type`
+One canonical question-bank format. Banks live INSIDE their work:
+`data/content/school/{subject}/{work}/quizzes/…​.yml`, and a bank id is the
+path with the `quizzes/` container elided (`history/us-capitals/us-state-capitals`)
+— see [authoring/content-layout.md](authoring/content-layout.md). `type`
 describes how an item is **graded**; mode describes how it is **presented** —
 so one bank serves both a quiz and a flashcard drill without duplicating
 content.
@@ -652,7 +655,7 @@ printables:
   - id: state-capitals
     label: US State Capitals
     type: bank
-    bankId: us-state-capitals   # a TOP-LEVEL bank id under data/content/quizzes/
+    bankId: history/us-capitals/us-state-capitals   # a full path-form bank id
     subject: history
 ```
 
@@ -907,9 +910,11 @@ available, `.02`–`.04` **locked** behind it, `next: math-fractions.01`. Passin
 unit releases the next; only sequential courses gate. A standalone unit named
 under `units` (curriculum or program) carries no such gate.
 
-Seeded catalog lives at `data/content/school/curriculum/{units,documents,manifests}/`,
-and referenced question banks at `data/content/quizzes/<bankId>.yml` — a bank id is
-the path under that directory. A unit whose bank is missing is **rejected at load**
+The catalog lives inside each work at
+`data/content/school/{subject}/{work}/{units,documents,manifests}/` (curriculum
+ids stay flat basenames; see [authoring/content-layout.md](authoring/content-layout.md)),
+and question banks at `…/{work}/quizzes/` — a bank id is the subject/work path
+with `quizzes/` elided. A unit whose bank is missing is **rejected at load**
 with `school.curriculum.invalid-units` rather than failing when a child opens it.
 
 **The printed agenda is sectioned by subject, not listed by unit.** It opens
@@ -1434,8 +1439,7 @@ No code exists for anything in this section. Each links its spec.
   sequence — a macro typo, the single likeliest authoring mistake — renders as
   **red literal text** instead of raising an error, and prints that way on a
   child's worksheet. `mathSvg.mjs` filters it; any new MathJax consumer must too.
-- **Bank ids for printables must be top-level.** `readBankRaw` forbids `/` in a
-  bank id and `listYamlFiles` is non-recursive, so only `*.yml` directly under
-  `data/content/quizzes/` (e.g. `us-state-capitals`) resolve as a printable
-  `bankId`. Nested banks (`math/…`, `civ/…`) are reachable only via a material
-  unit's `unit:` backlink, not by path id.
+- **Printable bankIds are full path-form ids.** Since the 2026-07-30
+  restructure `readBankRaw` resolves the `{subject}/{work}/…` path form (the
+  `quizzes/` container elided) — the old "top-level only" restriction is gone;
+  this bullet previously documented the pre-restructure layout.

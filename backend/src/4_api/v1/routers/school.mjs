@@ -127,6 +127,11 @@ export function createSchoolRouter({
   )));
   // Await the (async, off-thread) warm so a cold cache returns the full list
   // rather than empty — without ever blocking the event loop on the file scan.
+  // Content health (admin advocacy #7): banks that failed to parse at warm.
+  router.get('/banks/health', wrap(async (req, res) => {
+    await schoolService.warmBanks();
+    res.json(schoolService.bankHealth());
+  }));
   router.get('/banks', wrap(async (req, res) => {
     await schoolService.warmBanks();
     res.json(schoolService.listBanks({ audience: req.query.audience }));

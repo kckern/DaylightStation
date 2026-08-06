@@ -54,8 +54,8 @@ virtualDevices: false
 
 | Path | Holds |
 |---|---|
-| `<dataDir>/content/school/curriculum/{units,documents,manifests}/*.yml` | the published catalog |
-| `<dataDir>/content/quizzes/*.yml` | question banks (existing location) |
+| `<dataDir>/content/school/{subject}/{work}/{units,documents,manifests}/*.yml` | the published catalog |
+| `<dataDir>/content/school/{subject}/{work}/quizzes/…` | question banks (path-form ids, `quizzes/` elided) |
 | `<dataDir>/content/assets/<ref>.svg` | artwork referenced by `asset` blocks |
 | `<dataDir>/apps/school/{sessions,tokens,forms,assignments}/` | written at runtime |
 | `<dataDir>/apps/school/captures/` | virtual-device output (test only) |

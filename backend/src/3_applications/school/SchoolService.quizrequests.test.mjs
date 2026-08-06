@@ -39,6 +39,29 @@ beforeEach(() => {
   saved = null;
 });
 
+describe('bank warm honesty (admin advocacy #7)', () => {
+  it('a bank that fails to summarize is LOGGED and counted, never silently dropped', async () => {
+    const errors = [];
+    const loud = { info() {}, warn() {}, error: (...a) => errors.push(a) };
+    const svc = new SchoolService({
+      datastore: {
+        readAllBankRaws: async () => [
+          { id: 'good/one/quiz', raw: BANK_RAW },
+          { id: 'bad/one/quiz', raw: { id: 'bad', items: 'not-a-list' } },
+          { id: 'unparseable/one/quiz', raw: null },
+        ],
+        readAllAttempts: () => [], readQuizRequests: () => [], saveQuizRequests: () => {},
+      },
+      userService: users, logger: loud, now: () => 1000,
+    });
+    const list = await svc.warmBanks();
+    expect(list).toHaveLength(1);
+    expect(errors).toHaveLength(1);
+    expect(errors[0][1]).toMatchObject({ count: 2 });
+    expect(svc.bankHealth()).toMatchObject({ banks: 1, failed: ['bad/one/quiz', 'unparseable/one/quiz'] });
+  });
+});
+
 describe('listQuizRequests fulfilled annotation', () => {
   it('marks a request fulfilled once a bank bound to its unit exists', async () => {
     const svc = makeService();
