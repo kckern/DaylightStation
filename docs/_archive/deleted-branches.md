@@ -198,3 +198,13 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-08-04 | feat/print-design-system | bbd46e04e | Print design system: spec + Phase A (theme, envelope v2, blocks, fit, furniture, CLI) |
 | 2026-08-04 | feat/print-design-phase-b | d3cbdff84 | Print design system Phase B: source/publish, derived banks, assessment blocks, teacher key |
 | 2026-08-05 | feat/print-design-phase-c | cded0dbfc | Print design system Phase C: card allocation, scan-back grading, IssueDocument integration |
+| 2026-08-05 | feat/school-print-auto-omr | 1fd58be86 | print route auto-omr sheet identity + hierarchical taxonomy ids |
+| 2026-08-05 | fix/school-print-nested-source-list | ecd3fea1b949989671eb27aefa6baf5022f8132b | print repo recursive source walk for taxonomy ids |
+| 2026-08-05 | fix/school-omr-card-no-bubbles | 442e10e0c | card-backed sheets suppress on-page bubbles |
+| 2026-08-05 | fix/school-print-review-wave | 40d290483 | fable print-review fix wave: B1/B2/B3 + M1-M4 + minors |
+| 2026-08-05 | fix/school-print-variant-published-rev | 7c1a067cef879ef58eecb24edaf2d1470d7b50ad | variant renders pin published rev, not phantom source hash |
+| 2026-08-05 | fix/school-print-rereview-wave2 | 68f234293 | re-review wave 2: review-queue bridge, taxonomy filing, row dedup, card gates, published-first everywhere |
+| 2026-08-05 | docs/school-print-reference | 817c8a89625175cc0b7029c8cd4e9543cc4e010f | print-documents reference doc |
+| 2026-08-05 | feat/school-print-card-path | f8bdb700ba7a90aa1410c824fddf0b2e83ac61c4 | /print/<cardId> lookup + omr default variety |
+| 2026-08-05 | feat/school-gradebook | 898d13c88 | gradebook wave: report cards, periods, digest, feedback, concepts, outline |
+| 2026-08-06 | school-teacher-console | 92127c109 | Teacher console programme (5 waves + e2e), merged to main |
