@@ -22,14 +22,15 @@ const MODES = new Set(['quiz', 'flashcard', 'drill', 'learning_probe']);
 const BANK_SUMMARY_TTL_MS = 300_000; // 10 min? banks change rarely; 5 min keeps it warm through use gaps
 
 export class SchoolService {
-  #ds; #userService; #learnerDirectory; #logger; #now; #bankSources; #teacherGate;
+  #ds; #userService; #learnerDirectory; #logger; #now; #bankSources; #teacherGate; #teacherNotesRef;
   #sessions = new Map(); // sessionId -> {id, userId|null, bankId, mode, bank, startedAt, lastActiveAt}
   #bankSummaries = null; // { at: number, list: Array<summary> }
   #warming = null; // in-flight warmBanks() promise (dedupe)
 
-  constructor({ datastore, userService, learnerDirectory = null, logger = console, now = () => Date.now(), bankSources = [], teacherGate = null }) {
+  constructor({ datastore, userService, learnerDirectory = null, logger = console, now = () => Date.now(), bankSources = [], teacherGate = null, teacherNotesRef = null }) {
     this.#ds = datastore;
     this.#teacherGate = teacherGate;
+    this.#teacherNotesRef = teacherNotesRef;
     this.#userService = userService;
     this.#learnerDirectory = learnerDirectory;
     this.#logger = logger;
@@ -90,18 +91,63 @@ export class SchoolService {
   }
 
   /**
-   * A teacher clears a backlog entry (teacher-console spec §4.6,
-   * `teacher.quizrequests.clear`): gate-checked, then the entry is removed.
-   * Matching is by unitId+userId — the same pair `requestQuiz` dedupes on.
+   * A KID asks for another go at something they failed (student-advocacy
+   * A2): kid-safe like requestQuiz — no gate, no side effects beyond the
+   * backlog row the teacher's Today tab lists. Dedupe per user+target.
    */
-  dismissQuizRequest({ unitId, userId, dismissedBy = null, pin = null } = {}) {
+  requestRetake({ userId = null, bankId = null, unitId = null, title = null } = {}) {
+    if (!userId) throw new GuestForbiddenError('Sign in to ask for a retake');
+    if (!this.getRoster().some((u) => u.id === userId)) {
+      throw new ValidationError(`unknown user: ${userId}`);
+    }
+    if (!bankId && !unitId) throw new ValidationError('bankId or unitId is required');
+    const list = this.#ds.readQuizRequests();
+    if (list.some((r) => r.kind === 'retake' && r.userId === userId
+        && (r.bankId ?? null) === bankId && (r.unitId ?? null) === unitId)) {
+      return { requested: true, duplicate: true };
+    }
+    const entry = {
+      kind: 'retake', at: new Date(this.#now()).toISOString(), userId,
+      ...(bankId ? { bankId } : {}), ...(unitId ? { unitId } : {}),
+      ...(title ? { unitTitle: title } : {}),
+    };
+    this.#ds.saveQuizRequests([...list, entry]);
+    this.#logger.info?.('school.retake.requested', entry);
+    return { requested: true, duplicate: false };
+  }
+
+  /**
+   * A teacher clears a backlog entry (teacher-console spec §4.6,
+   * `teacher.quizrequests.clear`): gate-checked, then the entry is removed —
+   * and (student-advocacy A5: no silent verbs about children) the dismissal
+   * REQUIRES a reason, delivered to the child through the notes channel, so
+   * the ✓ never just silently reverts on them.
+   */
+  async dismissQuizRequest({ unitId = null, bankId = null, userId, dismissedBy = null, pin = null, reason } = {}) {
     if (!this.#teacherGate) throw new GuestForbiddenError('Dismissing requests is not configured on this install');
     this.#teacherGate.assert({ userId: dismissedBy, pin, action: 'quizrequests.dismiss' });
+    if (typeof reason !== 'string' || !reason.trim()) {
+      throw new ValidationError('a reason is required — the child is told why');
+    }
     const list = this.#ds.readQuizRequests();
-    const keep = list.filter((r) => !(r.unitId === unitId && r.userId === userId));
+    const matches = (r) => r.userId === userId
+      && (unitId ? r.unitId === unitId : true) && (bankId ? r.bankId === bankId : true);
+    const keep = list.filter((r) => !matches(r));
     if (keep.length === list.length) return { dismissed: false };
+    const dismissedRow = list.find(matches);
     this.#ds.saveQuizRequests(keep);
-    this.#logger.info?.('school.quiz.request-dismissed', { unitId, userId, dismissedBy });
+    const notes = this.#teacherNotesRef?.();
+    if (notes) {
+      const what = dismissedRow?.unitTitle ?? dismissedRow?.unitId ?? dismissedRow?.bankId ?? 'your request';
+      await notes.append({
+        id: `note_${Math.random().toString(36).slice(2, 10)}`,
+        at: new Date(this.#now()).toISOString(),
+        from: dismissedBy,
+        learnerId: userId,
+        note: `About ${what}: ${reason.trim()}`.slice(0, 240),
+      });
+    }
+    this.#logger.info?.('school.quiz.request-dismissed', { unitId, bankId, userId, dismissedBy });
     return { dismissed: true };
   }
 

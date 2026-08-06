@@ -11,14 +11,15 @@ import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export class ReassignEvidence {
-  #datastore; #teacherGate; #clock;
+  #datastore; #teacherGate; #clock; #notes;
 
-  constructor({ datastore, teacherGate, clock = () => new Date() } = {}) {
+  constructor({ datastore, teacherGate, notes = null, clock = () => new Date() } = {}) {
     if (!datastore) throw new Error('ReassignEvidence requires datastore');
     if (!teacherGate) throw new Error('ReassignEvidence requires teacherGate');
     this.#datastore = datastore;
     this.#teacherGate = teacherGate;
     this.#clock = clock;
+    this.#notes = notes;
   }
 
   async execute({ fromLearnerId, toLearnerId, day, assessmentId, reassignedBy = null, pin = null } = {}) {
@@ -36,6 +37,21 @@ export class ReassignEvidence {
       reassignedBy, at: this.#clock().toISOString(),
     });
     if (!moved) throw new EntityNotFoundError('assessment attempts', `${fromLearnerId}/${day}/${assessmentId}`);
+    // No silent verbs about children (student-advocacy A5): both kids hear
+    // what happened to the record in their own feed.
+    await this.#tellKids({ fromLearnerId, toLearnerId, day, reassignedBy });
     return { moved, fromLearnerId, toLearnerId, day, assessmentId };
+  }
+
+  async #tellKids({ fromLearnerId, toLearnerId, day, reassignedBy }) {
+    if (!this.#notes) return;
+    const at = this.#clock().toISOString();
+    const mk = (learnerId, note) => this.#notes.append({
+      id: `note_${Math.random().toString(36).slice(2, 10)}`, at, from: reassignedBy, learnerId, note,
+    });
+    try {
+      await mk(fromLearnerId, `Some work recorded on your account on ${day} was moved to the right person. Ask a grown-up if that seems wrong.`);
+      await mk(toLearnerId, `Some work you did on ${day} was credited to you — it had landed on the wrong account.`);
+    } catch { /* the move already succeeded; the note is best-effort */ }
   }
 }

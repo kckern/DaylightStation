@@ -241,8 +241,8 @@ export function agendaDocument({
  * @returns {object}
  */
 export function resultDocument({
-  sessionId, unitTitle, result, percent = null, objectives = [],
-  actions = [], reward = null, unlockedTitle = null, notes = [],
+  sessionId, unitTitle, result, percent = null, passingPercent = null, objectives = [],
+  actions = [], reward = null, rewardSkipReason = null, unlockedTitle = null, notes = [],
 } = {}) {
   const passed = result === 'passed';
   const blocks = [
@@ -250,7 +250,11 @@ export function resultDocument({
     text(unitTitle || 'Your work'),
   ];
   if (typeof percent === 'number' && Number.isFinite(percent)) {
-    blocks.push(text(`Score: ${Math.round(percent)}%`));
+    // The bar is printed WITH the score (student-advocacy A4): a child is
+    // told what passing meant, not left to infer it.
+    blocks.push(text(typeof passingPercent === 'number' && Number.isFinite(passingPercent)
+      ? `Score: ${Math.round(percent)}% (passing is ${Math.round(passingPercent)}%)`
+      : `Score: ${Math.round(percent)}%`));
   }
   if (!passed && Array.isArray(objectives) && objectives.length) {
     blocks.push(text('Worth another look:'));
@@ -259,6 +263,11 @@ export function resultDocument({
   appendNoteLines(blocks, (Array.isArray(notes) ? notes : []).filter(isNonEmptyString));
   if (passed && reward && Number.isFinite(reward.amount) && reward.amount > 0) {
     blocks.push(text(`You earned ${reward.amount} ${reward.amount === 1 ? 'coin' : 'coins'}.`));
+  }
+  // Held coins are NAMED, never silent (student-advocacy A5): a pass whose
+  // payout waits on a grown-up says so where the coins line would be.
+  if (passed && rewardSkipReason === 'awaiting_signoff') {
+    blocks.push(text('Coins: waiting for a grown-up\'s OK.'));
   }
   if (passed && isNonEmptyString(unlockedTitle)) {
     blocks.push(text(`Next up: ${unlockedTitle}`));

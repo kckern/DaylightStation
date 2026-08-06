@@ -208,3 +208,63 @@ describe('advocacy wave 6 — transcript (B11)', () => {
     expect(out.periods[1].courses[0]).toEqual({ courseId: 'math', coursePercent: 91 });
   });
 });
+
+describe('the review loop closes itself (student-advocacy A1)', () => {
+  const mkQueue = (rows) => ({
+    resolve: vi.fn(async ({ sessionId, itemId, verdict, gradedBy, at }) => {
+      const row = rows.find((r) => r.itemId === itemId);
+      if (!row) return null;
+      row.verdict = verdict;
+      return { sessionId, itemId, verdict, gradedBy, gradedAt: at };
+    }),
+    listForSession: vi.fn(async () => rows),
+  });
+
+  it('resolving the LAST pending item grades and settles in the same act', async () => {
+    const { ResolveReviewItem } = await import('./ResolveReviewItem.mjs');
+    const rows = [
+      { itemId: 'q1', verdict: 'correct' },
+      { itemId: 'q2', verdict: null },
+    ];
+    const gradeSubmission = { execute: vi.fn(async () => ({ status: 'graded', percent: 90, passingPercent: 80 })) };
+    const closeSessionOutcome = { execute: vi.fn(async () => ({ result: 'passed' })) };
+    const uc = new ResolveReviewItem({
+      reviewQueue: mkQueue(rows), grownUps: { assert: () => {} },
+      gradeSubmission, closeSessionOutcome,
+    });
+    const out = await uc.execute({ sessionId: 's1', itemId: 'q2', verdict: 'correct', gradedBy: 'kckern' });
+    expect(gradeSubmission.execute).toHaveBeenCalledWith({ sessionId: 's1' });
+    expect(closeSessionOutcome.execute).toHaveBeenCalledWith({ sessionId: 's1' });
+    expect(out.sessionFinished).toEqual({ result: 'passed', percent: 90, passingPercent: 80 });
+  });
+
+  it('items still pending -> resolve only, no premature grade', async () => {
+    const { ResolveReviewItem } = await import('./ResolveReviewItem.mjs');
+    const rows = [
+      { itemId: 'q1', verdict: null },
+      { itemId: 'q2', verdict: null },
+    ];
+    const gradeSubmission = { execute: vi.fn() };
+    const closeSessionOutcome = { execute: vi.fn() };
+    const uc = new ResolveReviewItem({
+      reviewQueue: mkQueue(rows), grownUps: { assert: () => {} },
+      gradeSubmission, closeSessionOutcome,
+    });
+    const out = await uc.execute({ sessionId: 's1', itemId: 'q1', verdict: 'incorrect', gradedBy: 'kckern' });
+    expect(gradeSubmission.execute).not.toHaveBeenCalled();
+    expect(out.sessionFinished).toBeUndefined();
+  });
+
+  it('a finish failure degrades to resolve-only — the verdict is safe either way', async () => {
+    const { ResolveReviewItem } = await import('./ResolveReviewItem.mjs');
+    const rows = [{ itemId: 'q1', verdict: null }];
+    const uc = new ResolveReviewItem({
+      reviewQueue: mkQueue(rows), grownUps: { assert: () => {} },
+      gradeSubmission: { execute: vi.fn(async () => { throw new Error('boom'); }) },
+      closeSessionOutcome: { execute: vi.fn() },
+    });
+    const out = await uc.execute({ sessionId: 's1', itemId: 'q1', verdict: 'correct', gradedBy: 'kckern' });
+    expect(out.itemId).toBe('q1');
+    expect(out.sessionFinished).toBeUndefined();
+  });
+});
