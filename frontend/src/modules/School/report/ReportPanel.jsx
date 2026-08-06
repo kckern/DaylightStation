@@ -64,11 +64,14 @@ function TodayStrip({ digest, status }) {
   if (status === 'error') {
     return <p className="school-report__today school-report__today-error">Could not load today&apos;s activity.</p>;
   }
-  // Nothing to show yet (still loading, or this learner has no row at all) —
-  // stay out of the way rather than flash an empty strip before data lands.
-  if (status !== 'ready' || !digest) return null;
+  // Still loading — stay out of the way rather than flash an empty strip
+  // before data lands. Once the fetch has resolved, though, a learner with
+  // NO row (reachable in prod: the route answers `[]` whenever the
+  // lifecycle isn't fully wired) gets the same zero-state as an explicit
+  // all-zero row — "no work recorded today", never blank.
+  if (status !== 'ready') return null;
 
-  const { attemptsToday, correctToday, sessionsToday, pendingReview } = digest;
+  const { attemptsToday = 0, correctToday = 0, sessionsToday = [], pendingReview = 0 } = digest ?? {};
   const hasWork = attemptsToday > 0 || sessionsToday.length > 0;
 
   return (
