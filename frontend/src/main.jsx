@@ -17,6 +17,7 @@ import MediaApp from './Apps/MediaApp.jsx';
 import LiveStreamApp from './Apps/LiveStreamApp.jsx';
 import PianoApp from './Apps/PianoApp.jsx';
 import AppContainer from './modules/AppContainer/AppContainer.jsx';
+import TeacherConsole from './modules/School/teacher/TeacherConsole.jsx';
 import Blank from './modules/Blank/Blank.jsx';
 import FilterPoc from './modules/Player/poc/FilterPoc.jsx';
 import SetupWizard from './modules/Auth/SetupWizard.jsx';
@@ -101,6 +102,15 @@ const SchoolDeepLinkRedirect = () => {
   return <Navigate to={`/app${pathname}${search}`} replace />;
 };
 
+// /app/school/teacher[/…] → /school/teacher[/…]: the teacher console is a
+// standalone surface, never the school app widget — but the /app spelling is
+// one redirect away for anyone who lands there, sub-path and query preserved
+// (a phone home-screen shortcut may deep-link a tab + learner).
+const TeacherDeepLinkRedirect = () => {
+  const { pathname, search } = useLocation();
+  return <Navigate to={`${pathname.replace(/^\/app/, '')}${search}`} replace />;
+};
+
 // Standalone /app/:appId route — renders a registered app directly without the TV shell.
 // Used for testing and direct linking to specific apps (e.g. /app/weekly-review).
 const AppDirectRoute = () => {
@@ -167,6 +177,13 @@ ReactDOM.createRoot(document.getElementById('root')).render(
             The splat carries School's own deep-link segments (subject/…,
             library, material/…), which SchoolApp parses itself. */}
         <Route path="/school" element={<Navigate to="/app/school" replace />} />
+        {/* The teacher console is its OWN surface, not the school app — these
+            static routes outrank the /school/* splat (v6 ranking), so the
+            kids' shell never parses a /school/teacher URL. */}
+        <Route path="/school/teacher" element={<TeacherConsole />} />
+        <Route path="/school/teacher/*" element={<TeacherConsole />} />
+        <Route path="/app/school/teacher" element={<TeacherDeepLinkRedirect />} />
+        <Route path="/app/school/teacher/*" element={<TeacherDeepLinkRedirect />} />
         <Route path="/school/*" element={<SchoolDeepLinkRedirect />} />
         <Route path="/app/:appId/*" element={<AppDirectRoute />} />
         <Route path="/app/:appId" element={<AppDirectRoute />} />
