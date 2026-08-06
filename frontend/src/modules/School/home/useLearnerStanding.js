@@ -9,13 +9,15 @@ import { schoolLog } from '../schoolLog.js';
  * `startsAt <= now < endsAt`), then reads that period's live report card for
  * every course with a graded session.
  *
- * Two independent zero-states, both silent (no error chrome for something
+ * Three independent zero-states, all silent (no error chrome for something
  * that just hasn't happened yet):
  *   - no current period configured -> `courses: []`, `status: 'empty'`
  *   - a current period exists but nothing is graded in it -> same
+ *   - `getReportCard` isn't wired server-side (a literal `null` body,
+ *     `ok:true`) -> same, logged at info ('not-wired'), never as an error
  *
- * A genuine fetch failure is logged and also renders as empty — a broken
- * standing panel must never look like a crash to a child.
+ * A genuine fetch failure (`ok:false`) is logged at error and also renders
+ * as empty — a broken standing panel must never look like a crash to a child.
  */
 
 /** Pure: which configured period (if any) contains `nowIso`. */
@@ -69,6 +71,16 @@ export function useLearnerStanding(learnerId) {
     setStatus('loading');
     schoolApi.reportCard({ learnerId, periodId: currentPeriod.periodId }).then(({ ok, data }) => {
       if (!alive) return;
+      if (ok && data === null) {
+        // `GET /report-card` answers a 200 with a literal `null` body when
+        // `getReportCard` isn't wired server-side (`school.mjs`'s own
+        // `if (!getReportCard) return res.json(null)`) — an expected shape
+        // for an install without the lifecycle live, not a fetch failure.
+        schoolLog.standing('not-wired', { learnerId, periodId: currentPeriod.periodId });
+        setReport(null);
+        setStatus('empty');
+        return;
+      }
       if (!ok || !data) {
         schoolLog.standingError('fetch-failed', { learnerId, periodId: currentPeriod.periodId });
         setReport(null);

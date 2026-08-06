@@ -9,9 +9,11 @@ vi.mock('../schoolApi.js', () => ({ schoolApi: {
   reportCard: (...a) => reportCardMock(...a),
 } }));
 
+const standingMock = vi.fn();
+const standingErrorMock = vi.fn();
 vi.mock('../schoolLog.js', () => ({ schoolLog: {
-  standing: vi.fn(),
-  standingError: vi.fn(),
+  standing: (...a) => standingMock(...a),
+  standingError: (...a) => standingErrorMock(...a),
 } }));
 
 // Deliberately wide (not "this semester") so the hook's real system clock
@@ -109,5 +111,20 @@ describe('useLearnerStanding', () => {
     const { result } = renderHook(() => useLearnerStanding('kid1'));
     await waitFor(() => expect(result.current.status).toBe('error'));
     expect(result.current.courses).toEqual([]);
+    expect(standingErrorMock).toHaveBeenCalledWith('fetch-failed', { learnerId: 'kid1', periodId: 'fall-2026' });
+  });
+
+  // The router answers a 200 with a literal `null` body when `getReportCard`
+  // isn't wired server-side — an expected, unwired-install shape, not a
+  // fetch failure. Must be the SAME silent zero-state as "nothing graded",
+  // logged informationally rather than through the error facade.
+  it('treats an unwired report-card route (ok:true, data:null) as the empty zero-state, not an error', async () => {
+    periodsMock.mockResolvedValue({ ok: true, status: 200, data: [PERIOD] });
+    reportCardMock.mockResolvedValue({ ok: true, status: 200, data: null });
+    const { result } = renderHook(() => useLearnerStanding('kid1'));
+    await waitFor(() => expect(result.current.status).toBe('empty'));
+    expect(result.current.courses).toEqual([]);
+    expect(standingErrorMock).not.toHaveBeenCalled();
+    expect(standingMock).toHaveBeenCalledWith('not-wired', { learnerId: 'kid1', periodId: 'fall-2026' });
   });
 });
