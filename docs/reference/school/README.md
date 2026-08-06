@@ -1276,6 +1276,55 @@ math shared with `GetTeacherToday`.
 
 **Design spec:** [`2026-08-06-school-teacher-console-design.md`](../../superpowers/specs/2026-08-06-school-teacher-console-design.md) — includes the full use-case catalog, wave decomposition (mutations, planning domains, renderers, repair), and the placeholder registry future waves work from.
 
+### Student advocacy (wave 7)
+
+The kid-facing surfaces hold up their end of the same contract the teacher
+console got: **no silent verbs about children.** Every adult action whose
+subject is a child produces one child-readable sentence through the notes
+channel, and every kid surface tells the truth about waiting, passing, and
+what didn't save.
+
+- **The review loop closes itself.** Resolving the LAST pending review item
+  of a session grades and closes it in the same act (receipt, coins, unlock)
+  — `ResolveReviewItem` takes optional `gradeSubmission`/`closeSessionOutcome`
+  finishers and degrades to resolve-only if either fails.
+- **The pass bar is stamped, not remembered.** `GradeSubmission` writes the
+  effective passing percent into the graded event; `CloseSessionOutcome`
+  prefers the stamp, so a later override never moves a bar under an
+  already-graded kid. Quiz summaries and paper receipts both state the
+  threshold, and a passing-but-unsignedoff receipt prints "Coins: waiting
+  for a grown-up's OK."
+- **Kids can talk back.** Kid-safe (ungated) requests: `POST
+  /retake-requests` from a failed quiz summary and `POST /flags` ("Something
+  seem wrong? Tell a grown-up") — both land as `kind:'retake'` / `kind:'flag'`
+  rows in the quiz-request backlog with badges on the teacher's Today tab.
+  Dismissing ANY backlog row requires a reason, delivered to the child as a
+  note. Reassignment, attestation, and attestation-retraction auto-write
+  child-readable notes.
+- **Runners tell the truth.** Guest runs carry a "won't be saved" banner; a
+  failed session open shows a sign (never eternal Loading); unrecorded
+  answers say "didn't save — won't count as wrong" in a child's register;
+  every summary celebrates in tiers; a wrong multiple-choice keeps the kid's
+  own pick marked ("— your pick") with a one-line text verdict. The geo
+  drill has a Stop exit and a skip-after-two-misses escape hatch; flashcards'
+  Missed is "Not yet."
+- **The kid's board is theirs.** `ReportPanel kidMode` (wired by roster age)
+  drops the Everyone unfocus, admin links, and the Needs-attention flag;
+  the review badge reads "waiting for a grown-up to check." The student
+  panel shows banked coins (optional wallet call), humanized standings,
+  a note-envelope icon for teacher notes (never a wrong-answer X), 60s
+  feedback polling with a New badge, and softens the last-active counter
+  past two weeks. The profile picker's auto-dismiss shows a countdown.
+- **Outcomes never vanish.** `PrintService.deny` keeps the row as a
+  `denied` record (30-day prune); `GET /print/requests?userId=` +
+  PrintCenter's "Your asks" show pending/denied outcomes to the child.
+  Learner reflections surface on the teacher's roster strip
+  (`GetTeacherToday` optional `evidenceRepository` dep).
+
+Deferred with records (plan appendix): mid-quiz resumability, tap-confirm on
+choices, a third no-stakes flashcard lane, tutor deep-links from fail
+summaries, the Portal day-plan panel.
+
 ## 3. Specced, not built
 
 No code exists for anything in this section. Each links its spec.
