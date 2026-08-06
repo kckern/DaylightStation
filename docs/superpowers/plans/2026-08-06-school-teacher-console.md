@@ -1,0 +1,383 @@
+# School Teacher Console Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Build the full teacher console (`/school/teacher`) per `docs/superpowers/specs/2026-08-06-school-teacher-console-design.md` — Wave 1 (read-only skeleton + three backend enablers) in full detail here; waves 2–5 get their own plan authored at each milestone after the previous wave's Fable review.
+
+**Architecture:** New frontend module `frontend/src/modules/School/teacher/` (four read-only tabs over existing APIs, honest StubCards carrying registry todoIds), plus three small backend enablers: a config-declared teachers read, a print route-order bugfix, and a study-day session window. Identity is a soft teacher claim; per-panel fetch isolation with five states.
+
+**Tech Stack:** React (no router lib inside the module — own pushState model like SchoolApp), SCSS, vitest + @testing-library/react, Express 5 backend with DDD layers.
+
+## Global Constraints
+
+- Spec is authoritative: `docs/superpowers/specs/2026-08-06-school-teacher-console-design.md`. Registry todoIds in §4.6 are load-bearing copy.
+- Structured logging only — `teacherLog` facade; never raw `console.*` (CLAUDE.md rule).
+- All policy in use cases, never routers (`schoolLifecycle.mjs` header doctrine).
+- Never import `modules/Admin/**` or `schoolAdminApi` from School (module-boundary rule).
+- Frontend api calls return `{ok, data}` via `schoolApi.js`'s `req()` — no throwing clients.
+- Tests: vitest. In this worktree run with the main repo's binary + worktree config (known gotcha): `npx vitest run <paths>` from the worktree root works because node_modules is symlinked; if it fails, `cd` stays in worktree and use `/opt/Code/DaylightStation/node_modules/.bin/vitest`.
+- Commit after each task (this host has autonomous commit/build/deploy authority; deploy only at end of wave, honoring the garage/player deploy gate in CLAUDE.local.md).
+- Skipping is not passing: no vacuous tests; failed preconditions fail the test.
+
+## Programme roadmap (milestone gates)
+
+| Milestone | Deliverable | Gate |
+|---|---|---|
+| M1 (this plan) | Wave 1: skeleton + enablers, deployed | Fable stern review of the diff + live verification; fixes applied |
+| M2 | Wave 2 plan authored → daily-loop mutations (`teacherConsolePin`, review resolve, print decide, quizrequests clear, Admin grader fix) | Fable review |
+| M3 | Wave 3 plan authored → planning (assignments edit, config→data promotion for periods/pass-criteria, milestones domain, enrichment log) | Fable review |
+| M4 | Wave 4 plan authored → records (close period UI, progress-report + certificate renderers, enrichment credit, tutor insights polish) | Fable review |
+| M5 | Wave 5 plan authored → repair (attestation, reassignment, standalone notes) + reference README update + final deploy | Fable review |
+
+---
+
+### Task 1: Extract `studyDayWindow` into the domain
+
+**Files:**
+- Modify: `backend/src/2_domains/school/studyDay.mjs` (add `studyDayWindow`, `withinStudyWindow`)
+- Modify: `backend/src/3_applications/school/usecases/GetTeacherToday.mjs` (delete local copies, import from domain)
+- Test: `backend/src/2_domains/school/studyDay.window.test.mjs` (new)
+
+**Interfaces:**
+- Produces: `studyDayWindow(nowMs, {timezone=null, boundaryHour=4}) -> {startAtMs, endAtMs}` and `withinStudyWindow(iso, {startAtMs, endAtMs}) -> boolean`, exported from `#domains/school/studyDay.mjs`.
+- `GetTeacherToday` behavior unchanged (its existing tests are the regression net).
+
+- [ ] **Step 1: Write failing test** — port the window semantics into domain-level cases:
+
+```js
+import { describe, it, expect } from 'vitest';
+import { studyDayWindow, withinStudyWindow } from './studyDay.mjs';
+
+describe('studyDayWindow', () => {
+  it('rolls at the 4am boundary, not midnight (UTC household)', () => {
+    const at0330 = Date.parse('2026-08-06T03:30:00Z');
+    const w = studyDayWindow(at0330, { timezone: null });
+    expect(new Date(w.startAtMs).toISOString()).toBe('2026-08-05T04:00:00.000Z');
+    expect(w.endAtMs - w.startAtMs).toBe(86_400_000);
+  });
+  it('after the roll, the window starts today 4am', () => {
+    const at0430 = Date.parse('2026-08-06T04:30:00Z');
+    const w = studyDayWindow(at0430, { timezone: null });
+    expect(new Date(w.startAtMs).toISOString()).toBe('2026-08-06T04:00:00.000Z');
+  });
+  it('applies the household timezone offset', () => {
+    // 2026-08-06T05:00Z = 2026-08-05T22:00 in America/Los_Angeles (UTC-7):
+    // before the LA 4am boundary of Aug 6 → window starts Aug 5 04:00 LA = Aug 5 11:00Z
+    const w = studyDayWindow(Date.parse('2026-08-06T05:00:00Z'), { timezone: 'America/Los_Angeles' });
+    expect(new Date(w.startAtMs).toISOString()).toBe('2026-08-05T11:00:00.000Z');
+  });
+});
+
+describe('withinStudyWindow', () => {
+  const w = { startAtMs: Date.parse('2026-08-05T04:00:00Z'), endAtMs: Date.parse('2026-08-06T04:00:00Z') };
+  it('includes the start, excludes the end', () => {
+    expect(withinStudyWindow('2026-08-05T04:00:00Z', w)).toBe(true);
+    expect(withinStudyWindow('2026-08-06T04:00:00Z', w)).toBe(false);
+  });
+  it('rejects garbage without throwing', () => {
+    expect(withinStudyWindow(null, w)).toBe(false);
+    expect(withinStudyWindow('not-a-date', w)).toBe(false);
+  });
+});
+```
+
+- [ ] **Step 2: Run to verify failure** (`studyDayWindow` not exported).
+- [ ] **Step 3: Move the functions** — cut `studyDayWindow` and `withinWindow` (rename export `withinStudyWindow`) from `GetTeacherToday.mjs` into `studyDay.mjs` verbatim (keep the DST-caveat docblock); in `GetTeacherToday.mjs` import them (`daysTouchedBy` stays local — it's about the datastore's sharding, not the day rule) and alias `withinStudyWindow as withinWindow` to keep call sites unchanged.
+- [ ] **Step 4: Run new test + existing `GetTeacherToday` tests** — all pass: `npx vitest run backend/src/2_domains/school/studyDay.window.test.mjs backend/src/3_applications/school/usecases 2>/dev/null || npx vitest run backend/src/2_domains/school backend/src/3_applications/school`
+- [ ] **Step 5: Commit** `feat(school): studyDayWindow extracted to domain — one copy of the 4am window math`
+
+### Task 2: `ListLearnerSessions` use case + `?window=today`
+
+**Files:**
+- Create: `backend/src/3_applications/school/usecases/ListLearnerSessions.mjs`
+- Create: `backend/src/3_applications/school/usecases/ListLearnerSessions.test.mjs`
+- Modify: `backend/src/4_api/v1/routers/schoolLifecycle.mjs` (sessions route honors the use case)
+- Modify: `backend/src/5_composition/modules/schoolLifecycle.mjs` (wire it; timezone same source as `GetTeacherToday`: `configService.getTimezone?.() || null`)
+
+**Interfaces:**
+- Consumes: Task 1's `studyDayWindow`/`withinStudyWindow`; `IWorkSessionRepository.listForLearner(learnerId)`.
+- Produces: `new ListLearnerSessions({sessions, timezone=null, boundaryHour=4, clock=()=>new Date()})` with `execute({learnerId, window=null}) -> Promise<Array<session>>`; `window:'today'` filters on **`updatedAt`** (falling back to `created` when `updatedAt` is absent — same instant a fresh session was touched); any other/absent window returns all.
+- Route: `GET /lifecycle/learners/:learnerId/sessions?window=today` → `{sessions: [...]}` (same envelope as today).
+
+- [ ] **Step 1: Failing test:**
+
+```js
+import { describe, it, expect } from 'vitest';
+import { ListLearnerSessions } from './ListLearnerSessions.mjs';
+
+const mk = (id, updatedAt) => ({ id, updatedAt });
+const repo = (rows) => ({ listForLearner: async () => rows });
+
+describe('ListLearnerSessions', () => {
+  const clock = () => new Date('2026-08-06T18:00:00Z'); // window = Aug 6 04:00Z → Aug 7 04:00Z
+  it('window=today keeps only sessions whose updatedAt falls in the study-day window', async () => {
+    const uc = new ListLearnerSessions({ sessions: repo([
+      mk('old', '2026-08-05T12:00:00Z'), mk('now', '2026-08-06T09:00:00Z'),
+    ]), clock });
+    const rows = await uc.execute({ learnerId: 'felix', window: 'today' });
+    expect(rows.map((r) => r.id)).toEqual(['now']);
+  });
+  it('no window returns everything', async () => {
+    const uc = new ListLearnerSessions({ sessions: repo([mk('a', '2026-01-01T00:00:00Z')]), clock });
+    expect((await uc.execute({ learnerId: 'felix' })).length).toBe(1);
+  });
+  it('falls back to created when updatedAt is absent', async () => {
+    const uc = new ListLearnerSessions({ sessions: repo([{ id: 'c', created: '2026-08-06T05:00:00Z' }]), clock });
+    expect((await uc.execute({ learnerId: 'felix', window: 'today' })).map((r) => r.id)).toEqual(['c']);
+  });
+});
+```
+
+- [ ] **Step 2: Verify failure.**
+- [ ] **Step 3: Implement** (constructor throws without `sessions`; docblock states why this is a use case — the router's no-clock doctrine):
+
+```js
+import { studyDayWindow, withinStudyWindow } from '#domains/school/studyDay.mjs';
+
+export class ListLearnerSessions {
+  #sessions; #timezone; #boundaryHour; #clock;
+  constructor({ sessions, timezone = null, boundaryHour = 4, clock = () => new Date() } = {}) {
+    if (!sessions) throw new Error('ListLearnerSessions requires sessions');
+    this.#sessions = sessions; this.#timezone = timezone;
+    this.#boundaryHour = boundaryHour; this.#clock = clock;
+  }
+  async execute({ learnerId, window = null } = {}) {
+    const rows = await this.#sessions.listForLearner(learnerId);
+    if (window !== 'today') return rows;
+    const w = studyDayWindow(this.#clock().getTime(), { timezone: this.#timezone, boundaryHour: this.#boundaryHour });
+    return rows.filter((s) => withinStudyWindow(s?.updatedAt ?? s?.created, w));
+  }
+}
+```
+
+- [ ] **Step 4: Router + composition.** In `schoolLifecycle.mjs` router: add `listLearnerSessions = null` to the factory signature; in the sessions block replace the inline handler body with `res.json({ sessions: listLearnerSessions ? await listLearnerSessions.execute({ learnerId: req.params.learnerId, window: req.query.window ?? null }) : await sessions.listForLearner(req.params.learnerId) })`. In `backend/src/5_composition/modules/schoolLifecycle.mjs`: construct `new ListLearnerSessions({ sessions: <the same sessions repo passed to the router>, timezone: configService.getTimezone?.() || null })` and pass it. Add a router-level test beside the existing lifecycle router tests asserting `?window=today` delegates to the use case with `window:'today'`.
+- [ ] **Step 5: Run tests, commit** `feat(school): sessions read gains study-day window (?window=today)`
+
+### Task 3: Print route-order bugfix
+
+**Files:**
+- Modify: `backend/src/4_api/v1/routers/school.mjs` (move the `router.get('/print/*id', …)` registration currently at ~line 205 to AFTER `/print/pending` at ~line 526)
+- Test: `backend/src/4_api/v1/routers/school.print.routes.test.mjs` (new)
+
+**Interfaces:** none new — route behavior only.
+
+- [ ] **Step 1: Failing tests** (supertest-style like the existing `school.print.test.mjs`; reuse its router construction helpers):
+
+```js
+// Asserts the three fixed print GETs win over the splat, and the splat still
+// serves a multi-segment document id. Build the router with a stub
+// printService ({listPrintables, quotaFor, pending}) and a stub
+// renderPrintDocument that echoes the id it was asked for.
+it('GET /print/pending reaches the pending handler, not the document splat', ...)
+it('GET /print/printables reaches printables', ...)
+it('GET /print/quota reaches quota', ...)
+it('GET /print/math/fractions/quiz-1 still resolves as a document id', ...)
+```
+
+- [ ] **Step 2: Verify the pending/printables/quota tests FAIL against current order** (they hit the splat).
+- [ ] **Step 3: Move the splat registration** below the last fixed `/print/…` route. Keep its handler byte-identical; add a comment: registration order is the fix — fixed routes must precede the splat (Express matches in order; no reserved-name list, it would drift).
+- [ ] **Step 4: All four tests pass; run the whole existing print test files too.**
+- [ ] **Step 5: Commit** `fix(school): fixed /print routes registered before the *id splat — pending/printables/quota no longer shadowed`
+
+### Task 4: `GetTeachers` use case + `GET /api/v1/school/teachers`
+
+**Files:**
+- Create: `backend/src/3_applications/school/usecases/GetTeachers.mjs` (+ colocated `GetTeachers.test.mjs`)
+- Modify: `backend/src/4_api/v1/routers/school.mjs` (add `getTeachers = null` dep + route)
+- Modify: `backend/src/app.mjs` (wire near the `createSchoolRouter` call ~line 3076; teachers list from the same school config object the lifecycle block reads; roster fn `() => userService.getHouseholdRoster(householdId) ?? []`)
+- Test: router case in a new/existing school router test file
+
+**Interfaces:**
+- Produces: `new GetTeachers({ teachers, roster, clock=()=>new Date(), logger })` where `teachers` is `() => (string[] | undefined)` (undefined = key absent) and `roster` is `() => Array<{id,name,birthyear}>`. `execute() -> {configured: boolean, teachers: Array<{id, name}>}`.
+- Route: `GET /teachers` → that object verbatim. Frontend treats `configured:false` OR `configured:true && teachers.length===0` as the no-teachers card.
+- Resolution is per-request; ids that don't resolve to an `isAdult`-passing member are dropped with `logger.warn('school.teachers.unresolved', {id, reason})`. Shape violations (non-string, empty, duplicate) are dropped-and-warned too (`school.teachers.bad-shape`) — never a boot failure (spec §4.7.1).
+
+- [ ] **Step 1: Failing tests:**
+
+```js
+import { describe, it, expect, vi } from 'vitest';
+import { GetTeachers } from './GetTeachers.mjs';
+
+const roster = () => [
+  { id: 'kckern', name: 'KC', birthyear: 1984 },
+  { id: 'felix', name: 'Felix', birthyear: 2014 },
+  { id: 'nan', name: 'Nan' }, // no birthyear
+];
+const logger = { warn: vi.fn() };
+
+describe('GetTeachers', () => {
+  it('absent key -> configured:false, empty list', async () => {
+    const uc = new GetTeachers({ teachers: () => undefined, roster, logger });
+    expect(await uc.execute()).toEqual({ configured: false, teachers: [] });
+  });
+  it('resolves ids at request time, dropping non-adults and unknowns with a warning', async () => {
+    const uc = new GetTeachers({ teachers: () => ['kckern', 'felix', 'ghost'], roster, logger });
+    const out = await uc.execute();
+    expect(out).toEqual({ configured: true, teachers: [{ id: 'kckern', name: 'KC' }] });
+    expect(logger.warn).toHaveBeenCalledWith('school.teachers.unresolved', expect.objectContaining({ id: 'felix' }));
+  });
+  it('a blank birthyear costs a picker entry, never a throw', async () => {
+    const uc = new GetTeachers({ teachers: () => ['nan'], roster, logger });
+    expect((await uc.execute()).teachers).toEqual([]);
+  });
+  it('duplicates and non-strings are dropped as bad shape', async () => {
+    const uc = new GetTeachers({ teachers: () => ['kckern', 'kckern', 7], roster, logger });
+    expect((await uc.execute()).teachers).toEqual([{ id: 'kckern', name: 'KC' }]);
+  });
+  it('an unreadable roster refuses everyone (empty, configured stays true)', async () => {
+    const uc = new GetTeachers({ teachers: () => ['kckern'], roster: () => { throw new Error('boom'); }, logger });
+    expect(await uc.execute()).toEqual({ configured: true, teachers: [] });
+  });
+});
+```
+
+- [ ] **Step 2: Verify failure. Step 3: Implement** using `isAdult` from `#domains/school/index.mjs` (per-call roster read, GrownUpGate's pattern; name from `member.name ?? member.id`). Router: `router.get('/teachers', wrap(async (_req, res) => res.json(getTeachers ? await getTeachers.execute() : { configured: false, teachers: [] })));`
+- [ ] **Step 4: Wire in app.mjs, run tests. Step 5: Commit** `feat(school): GET /teachers — config-declared teacher roster, resolved per request`
+
+### Task 5: `teacherUrl` + `teacherLog`
+
+**Files:**
+- Create: `frontend/src/modules/School/teacher/teacherUrl.js`, `teacherUrl.test.js`, `teacherLog.js`
+
+**Interfaces:**
+- Produces: `TABS = ['today','planning','records','repair']`; `parseTeacherPath(pathname) -> {tab, learnerId}` (unknown tab → `{tab:'today', learnerId:null}`); `teacherPathFor(tab, learnerId=null) -> '/school/teacher/<tab>[/<learnerId>]'`; `teacherLog` = child logger facade `{nav, fetch, claim}` each `(event, data)`.
+
+- [ ] **Step 1: Failing tests** — round-trips: `parseTeacherPath('/school/teacher') → {tab:'today', learnerId:null}`; `/school/teacher/records/felix → {tab:'records', learnerId:'felix'}`; `teacherPathFor('records','felix') → '/school/teacher/records/felix'`; unknown tab normalizes to today; learnerId is URI-decoded/encoded.
+- [ ] **Step 2–4: Implement, pass.** `teacherLog` mirrors `schoolLog.js`'s facade shape (`getLogger().child({component:'school-teacher'})`, lazy).
+- [ ] **Step 5: Commit** `feat(school): teacher console url model + log facade`
+
+### Task 6: `schoolApi` wrappers
+
+**Files:**
+- Modify: `frontend/src/modules/School/schoolApi.js`
+- Modify: `frontend/src/modules/School/schoolApi.test.js`
+
+**Interfaces (all `{ok,data}` via the existing `req()`):**
+- `teachers: () => req('/teachers')`
+- `reportCardFrozen: ({learnerId, periodId=null})` → `/report-card/frozen?...`
+- `lifecycleReview: () => req('/lifecycle/review')`
+- `learnerSessions: (learnerId, {window=null}={})` → `/lifecycle/learners/<id>/sessions[?window=]`
+- `assignments: (learnerId) => req('/lifecycle/assignments/<id>')`
+- `curriculumUnits: () => req('/lifecycle/curriculum/units')`
+
+- [ ] Steps: failing tests asserting exact fetch URLs (existing test file's pattern), implement, pass, commit `feat(school): schoolApi wrappers for teacher console reads`.
+
+### Task 7: `usePanelFetch`
+
+**Files:**
+- Create: `frontend/src/modules/School/teacher/usePanelFetch.js`, `usePanelFetch.test.jsx`
+
+**Interfaces:**
+- Produces: `usePanelFetch(fetcher, {deps=[], isEmpty=(d)=>looksEmpty(d), notFoundAs='error', nullAs='empty', panel})` → `{state: 'loading'|'error'|'empty'|'unavailable'|'ok', data, retry}`.
+  - `fetcher: () => Promise<{ok, data, status?}>` (schoolApi call). `ok:false` + `status===404` → `notFoundAs` (`'empty'` for assignments, `'unavailable'` for lifecycle panels). `ok:true` + `data===null` → `nullAs` (`'unavailable'` for report card). `ok:true` + `isEmpty(data)` → `'empty'`. Other `ok:false` → `'error'` + `teacherLog.fetch('fetch-failed', {panel, status})`.
+  - NOTE: `req()` must expose `status` — extend it to return `{ok, data, status}` (verify no existing destructuring breaks: additive key).
+- Also produces `allUnavailable(states) -> boolean` helper for the single-banner rule.
+
+- [ ] **Step 1: Failing tests** covering: ok→ok; 404+notFoundAs:'unavailable'→unavailable; 404+notFoundAs:'empty'→empty; null+nullAs:'unavailable'→unavailable; []→empty; 500→error and logs; retry refetches.
+- [ ] **Steps 2–5:** implement, pass, commit `feat(school): usePanelFetch — five-state per-panel isolation`.
+
+### Task 8: `TeacherProfileContext`
+
+**Files:**
+- Create: `frontend/src/modules/School/teacher/TeacherProfileContext.jsx`, `TeacherProfileContext.test.jsx`
+
+**Interfaces:**
+- Produces: `<TeacherProfileProvider>` + `useTeacherProfile() -> {status:'loading'|'ready', configured, teachers, currentTeacher, claim(id), release(), pickerOpen, openPicker, closePicker}`.
+- Fetches `schoolApi.teachers()` once on mount. Claim persisted to `sessionStorage['school-teacher-claim']`; restored only if the id is in the fetched list. `configured=false` OR empty list → the shell renders the no-teachers card (an `unavailable`-class state); picker never opens.
+
+- [ ] **Step 1: Failing tests:** ready-with-teachers exposes list; claim persists to sessionStorage and restores on remount; a persisted id no longer in the list is dropped; `configured:false` → `configured` false and `teachers` empty; child ids never appear (server-trust: whatever the endpoint returns IS the list — test asserts no client-side filtering is added).
+- [ ] **Steps 2–5:** implement (pattern-match `SchoolProfileContext.jsx`'s provider/hook shape), pass, commit `feat(school): teacher soft-claim context over the teachers read`.
+
+### Task 9: Shell — `TeacherConsole`, routes, `StubCard` + todo registry
+
+**Files:**
+- Create: `frontend/src/modules/School/teacher/TeacherConsole.jsx`, `TeacherConsole.test.jsx`, `panels/StubCard.jsx`, `todoRegistry.js`, `Teacher.scss`
+- Create: `frontend/src/modules/School/teacher/tabs/TodayTab.jsx`, `PlanningTab.jsx`, `RecordsTab.jsx`, `RepairTab.jsx` (skeletal — panels arrive Tasks 10–13; each tab renders its StubCards from day one)
+- Modify: `frontend/src/main.jsx`
+
+**Interfaces:**
+- `todoRegistry.js` exports `TODO = {REVIEW_RESOLVE:'teacher.review.resolve', PRINT_DECIDE:'teacher.print.decide', ASSIGNMENTS_EDIT:'teacher.assignments.edit', PERIODS_EDIT:'teacher.periods.edit', PASSCRITERIA_EDIT:'teacher.passcriteria.edit', MILESTONES:'teacher.milestones', ENRICHMENT_LOG:'teacher.enrichment.log', PERIOD_CLOSE:'teacher.period.close', PROGRESSREPORT_PRINT:'teacher.progressreport.print', CERTIFICATES_PRINT:'teacher.certificates.print', ENRICHMENT_CREDIT:'teacher.enrichment.credit', ATTESTATION:'teacher.attestation', REASSIGN:'teacher.reassign', NOTES_STANDALONE:'teacher.notes.standalone', QUIZREQUESTS_CLEAR:'teacher.quizrequests.clear'}` — exactly the spec §4.6 rows.
+- `<StubCard todoId title>children</StubCard>` renders `data-todo={todoId}`, the title, body copy, and the fixed line `Planned — not built yet.` No buttons ever.
+- `TeacherConsole` renders: header (title, teacher chip/picker via `ProfilePicker` with `title="Who's teaching?"`), learner selector (kid faces from `schoolApi.roster()`, horizontal scroll, selected persisted in URL), bottom tab bar, active tab. URL sync via `teacherUrl` + `popstate`. No-teachers card replaces the chip area when `!configured || teachers.length===0`.
+- `main.jsx`: add above the `/school` routes: `<Route path="/school/teacher" element={<TeacherConsoleRoute />} />`, `<Route path="/school/teacher/*" element={<TeacherConsoleRoute />} />`, and `<Route path="/app/school/teacher/*" element={<TeacherRedirect />} />` + `<Route path="/app/school/teacher" element={<TeacherRedirect />} />` where `TeacherRedirect` mirrors `SchoolDeepLinkRedirect` (preserves sub-path + query, `replace`). `TeacherConsoleRoute` lazy-imports the module (keep the kids' bundle unaffected).
+
+- [ ] **Step 1: Failing tests:** renders four tabs; tab click updates URL (`/school/teacher/planning`); learner select appends id (`/school/teacher/planning/felix`); popstate re-parses; every `TODO` value appears in the document exactly once across tabs (`data-todo` scan — the registry/stub drift test from the spec); no-teachers card when `configured:false`; StubCard renders no `<button>`.
+- [ ] **Steps 2–5:** implement, pass (mock schoolApi), commit `feat(school): teacher console shell — tabs, claim, learner selector, stub registry`.
+
+### Task 10: Today tab panels
+
+**Files:**
+- Create: `panels/RosterStrip.jsx`, `panels/LearnerDay.jsx`, `panels/ReviewQueueView.jsx`, `panels/PrintPendingView.jsx`, `panels/QuizRequestBacklog.jsx` (+ one `TodayTab.test.jsx` covering the tab)
+- Modify: `tabs/TodayTab.jsx`
+
+**Interfaces:**
+- `RosterStrip`: joins `schoolApi.teacherToday()` rows (`{learnerId, attemptsToday, correctToday, sessionsToday:[{unitId,state}], pendingReview}`) with `schoolApi.roster()` names/avatars; tap → expands `LearnerDay` (fetches `learnerSessions(id,{window:'today'})` + `progress` recent scores). `teacherToday` unavailable-tell: `[]` alongside a non-empty kids roster renders the lifecycle-unavailable treatment for this panel (spec: reliable unwired signal), plain empty roster otherwise.
+- `ReviewQueueView`: `lifecycleReview()` (`notFoundAs:'unavailable'`), grouped by learner, each item shows submitted answer + prompt; footer link `Resolve in Admin → /admin/school/review`. Carries `data-todo` NOTHING (live panel) — the stub for resolution controls is `TODO.REVIEW_RESOLVE` rendered as a StubCard beneath the list.
+- `PrintPendingView`: `printPending()`; rows: learner, printable, pages×copies; StubCard `TODO.PRINT_DECIDE` beneath.
+- `QuizRequestBacklog`: `quizRequests()`; StubCard `TODO.QUIZREQUESTS_CLEAR` beneath.
+- Single-banner rule lives in `TodayTab`: collects lifecycle-backed panel states; when ALL are `unavailable` renders one banner `School lifecycle is not enabled on this install` and suppresses per-panel unavailable notices.
+
+- [ ] **Step 1: Failing tests:** roster cards join names; drill-in calls `learnerSessions` with `window:'today'`; one panel 500 leaves siblings rendered (error isolation); all-lifecycle-404 → exactly one banner; mixed availability → no banner, per-panel notices.
+- [ ] **Steps 2–5:** implement, pass, commit `feat(school): teacher Today tab — roster digest, drill-in, review/print/quiz-request reads`.
+
+### Task 11: Planning tab panels
+
+**Files:**
+- Create: `panels/AssignmentsView.jsx`, `panels/PeriodsTimeline.jsx`, `panels/CurriculumBrowser.jsx` (+ `PlanningTab.test.jsx`)
+- Modify: `tabs/PlanningTab.jsx`
+
+**Interfaces:**
+- `AssignmentsView` (learner-scoped): `assignments(learnerId)` with `notFoundAs:'empty'` (a 404 is "nothing assigned"); renders courses → unit gating states, standalone units, programs; StubCard `TODO.ASSIGNMENTS_EDIT`.
+- `PeriodsTimeline`: `periods()` — horizontal timeline, current period highlighted (`startsAt <= now < endsAt`); StubCards `TODO.PERIODS_EDIT`, `TODO.PASSCRITERIA_EDIT`.
+- `CurriculumBrowser`: `curriculumUnits()` (`notFoundAs:'unavailable'`) + `learningCatalogs()`; course → units listing with sequence; read-only.
+- StubCards `TODO.MILESTONES`, `TODO.ENRICHMENT_LOG` at tab level. No learner selected → prompt to pick from header selector (not an error).
+
+- [ ] Steps: failing tests (assignments 404 renders empty-state copy not error; current-period highlight logic; stubs present), implement, pass, commit `feat(school): teacher Planning tab — assignments, periods, curriculum reads`.
+
+### Task 12: Records tab panels
+
+**Files:**
+- Create: `panels/ReportCardView.jsx`, `panels/FrozenHistory.jsx`, `panels/EvidenceTree.jsx`, `panels/TutorInsights.jsx`, `panels/PeriodSelect.jsx` (+ `RecordsTab.test.jsx`)
+- Modify: `tabs/RecordsTab.jsx`
+
+**Interfaces:**
+- `PeriodSelect`: from `periods()`, defaults to current; lifted state in `RecordsTab`.
+- `ReportCardView`: `reportCard({learnerId, periodId})` with `nullAs:'unavailable'` (spec: unwired `null` must not read as nothing-graded-yet); renders DRAFT banner, course grades + policy label, materials progress, active days, concept mastery `{mastered, developing}`, remediation arcs, pending-review count; `?format=pdf` link (`<a href={apiBase + …} target="_blank">`).
+- `FrozenHistory`: `reportCardFrozen({learnerId})` list → tap to view one; FROZEN banner + closedBy/closedAt; StubCard `TODO.PERIOD_CLOSE`.
+- `EvidenceTree`: `progress({userId: learnerId, …})` `curriculumHistory` — collapsible nodes showing evidence counts, `outline` badge, `outstanding` list.
+- `TutorInsights`: `instructionalInsights(...)` (verify its existing wrapper signature before use) rendered as a readable brief; quiet empty state.
+- StubCards `TODO.PROGRESSREPORT_PRINT`, `TODO.CERTIFICATES_PRINT`, `TODO.ENRICHMENT_CREDIT` at tab level.
+
+- [ ] Steps: failing tests (null report card → unavailable, not empty; period default = current; frozen list renders), implement, pass, commit `feat(school): teacher Records tab — report card, frozen history, evidence tree, tutor insights`.
+
+### Task 13: Repair tab panels
+
+**Files:**
+- Create: `panels/FeedbackNotes.jsx` (+ `RepairTab.test.jsx`)
+- Modify: `tabs/RepairTab.jsx`
+
+**Interfaces:**
+- `FeedbackNotes`: `reviewLearner(learnerId)` — resolved verdicts + notes newest first, the child's-eye view; StubCard `TODO.NOTES_STANDALONE` beneath; StubCards `TODO.ATTESTATION`, `TODO.REASSIGN` at tab level.
+
+- [ ] Steps: failing tests, implement, pass, commit `feat(school): teacher Repair tab — feedback notes read + repair stubs`.
+
+### Task 14: Styling, full verification, deploy, docs
+
+**Files:**
+- Modify: `frontend/src/modules/School/teacher/Teacher.scss` (phone-first: bottom tab bar fixed, content scroll, width-capped desktop ≤ 760px centered, School palette but denser type)
+- Modify: `docs/reference/school/README.md` (new "Teacher console" subsection under Built and deployed: surface, route, identity/teachers config, five-state posture, registry pointer to the spec)
+- Modify: `data/household/config/school.yml` **in the container** (add `teachers:` list — kckern + spouse ids from the household roster) — via `docker exec` heredoc per CLAUDE.local.md; requires container restart to take effect (boot-cached).
+
+- [ ] **Step 1:** Run the entire School test surface + new tests: `npx vitest run frontend/src/modules/School backend/src/2_domains/school backend/src/3_applications/school backend/src/4_api/v1/routers` — everything green (capture real exit code).
+- [ ] **Step 2:** `npm run build` (vite) — clean.
+- [ ] **Step 3:** Commit docs + code remnants. Check the deploy gate (CLAUDE.local.md: fitness session + playing video greps) — HALT if active.
+- [ ] **Step 4:** Build + deploy (`./scripts/build-daylight.sh`, stop/rm, `sudo deploy-daylight`), add `teachers:` to school.yml first so the restart picks it up.
+- [ ] **Step 5:** Live verification (evidence, not "should"): `curl -s localhost:3111/api/v1/school/teachers` shows the configured teachers; `curl -s localhost:3111/api/v1/school/print/pending` returns JSON not 404; `curl -s "localhost:3111/api/v1/school/lifecycle/learners/<kid>/sessions?window=today"` returns a filtered list; headless Playwright screenshot of `https://daylightlocal.kckern.net/school/teacher` renders the console (memory: headless screenshot recipe). `/school` still serves the kids' app.
+- [ ] **Step 6: Milestone M1 — dispatch the Fable stern reviewer** over the wave-1 diff + live behavior; apply its verdicts; commit fixes.
+
+---
+
+## Self-review notes (plan)
+
+- Spec coverage (wave 1): §4.1 shell/identity/URL → Tasks 5, 8, 9; §4.2 tabs → 10–13; §4.3 client/isolation/lifecycle posture → 6, 7, 10; §4.4 layout → 9 + main.jsx in 9; §4.5 testing → embedded per task (five states in 7/10, stub-drift scan in 9, teachers filtering in 8, url round-trips in 5); §4.6 registry → 9 (`todoRegistry.js` mirrors all 15 rows); §4.7 enablers → 1–4. Waves 2–5: deliberately deferred to per-milestone plans (roadmap table) — not placeholders, a sequencing decision recorded in the spec itself.
+- Type consistency: `usePanelFetch` consumed in 10–13 with the option names defined in 7 (`notFoundAs`, `nullAs`); `TODO` keys in 10–13 match 9's registry; `ListLearnerSessions.execute({learnerId, window})` matches the router call in 2 and the client call in 6/10 (`window:'today'`).
