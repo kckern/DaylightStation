@@ -22,7 +22,10 @@ export default function QuizRequestBacklog({ kids }) {
 
   const dismiss = (r, key) => {
     run(key, ({ actorId, pin }) => schoolApi.quizRequestDismiss({
-      unitId: r.unitId ?? null, bankId: r.bankId ?? null, userId: r.userId,
+      // kind + sessionId ride along so the server dismisses EXACTLY this row
+      // — a retake ask and a flag on the same bank are different sentences.
+      unitId: r.unitId ?? null, bankId: r.bankId ?? null,
+      kind: r.kind ?? null, sessionId: r.sessionId ?? null, userId: r.userId,
       dismissedBy: actorId, pin, reason: reason.trim(),
     }), { onSuccess: () => { setAsking(null); setReason(''); requests.retry(); } });
   };
@@ -31,7 +34,7 @@ export default function QuizRequestBacklog({ kids }) {
     <PanelFrame title="Quiz requests" state={requests.state} retry={requests.retry} emptyCopy="No quiz requests waiting.">
       <ul className="teacher-quizreq">
         {(requests.data ?? []).map((r, i) => {
-          const key = `${r.unitId ?? r.bankId}:${r.userId}`;
+          const key = `${r.kind ?? 'quiz'}:${r.unitId ?? r.bankId}:${r.sessionId ?? ''}:${r.userId}`;
           return (
             <li key={`${key}:${i}`} className="teacher-quizreq__row">
               {r.kind === 'retake' && <span className="teacher-quizreq__kind">retake</span>}

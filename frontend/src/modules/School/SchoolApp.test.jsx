@@ -380,6 +380,25 @@ describe('SchoolApp bank flows (via the Library)', () => {
 
     expect(await screen.findByText('WA?')).toBeInTheDocument();
   });
+
+  it('the apple mid-quiz arms a leave confirm — one stray tap never discards a run (M7)', async () => {
+    render(<SchoolApp clear={() => {}} />);
+    await openLibrary();
+    await screen.findByText('Animals');
+    fireEvent.click(within(cardFor('Animals')).getByRole('button', { name: /quiz/i }));
+    await screen.findByRole('dialog');
+    fireEvent.click(screen.getByLabelText(/close/i));
+    await screen.findByText('WA?'); // in the runner
+
+    fireEvent.click(screen.getByRole('button', { name: /^home$/i }));
+    // First tap: still in the quiz, with the warning up.
+    expect(screen.getByTestId('leave-confirm')).toBeInTheDocument();
+    expect(screen.getByText('WA?')).toBeInTheDocument();
+    // Second tap: actually leaves.
+    fireEvent.click(screen.getByRole('button', { name: /^home$/i }));
+    expect(await screen.findByText('History & Geography')).toBeInTheDocument();
+    expect(screen.queryByText('WA?')).toBeNull();
+  });
 });
 
 describe('SchoolApp materials flows', () => {

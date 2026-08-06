@@ -185,7 +185,7 @@ export default function QuizRunner({ bank, mode = 'quiz', learning = null, onExi
             {unrecordedCount} answer{unrecordedCount === 1 ? '' : 's'} not recorded — not counted as wrong
           </p>
         )}
-        {learning ? (
+        {learning?.moduleId ? (
           <LearningReflectionPrompt
             activity={{ id: bank.id, sessionId }}
             learning={learning}

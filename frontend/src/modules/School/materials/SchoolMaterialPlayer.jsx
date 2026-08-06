@@ -200,7 +200,17 @@ export default function SchoolMaterialPlayer({ material, unit, userId, onExit, o
   }, [chrome]);
 
   if (quizBank) {
-    return <QuizRunner bank={quizBank} onExit={exitToDetail} />;
+    // The gate quiz is pass/fail — hand the runner the bar so the summary
+    // says so and a fail offers the retake ask (advocacy M7 fix). Only the
+    // threshold: no moduleId means no catalog reflection prompt.
+    const passingPercent = typeof unit?.quiz?.passingPercent === 'number' ? unit.quiz.passingPercent : null;
+    return (
+      <QuizRunner
+        bank={quizBank}
+        learning={passingPercent !== null ? { passingPercent } : null}
+        onExit={exitToDetail}
+      />
+    );
   }
 
   if (!contentId) {

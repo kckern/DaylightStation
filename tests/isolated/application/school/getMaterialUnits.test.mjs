@@ -102,7 +102,7 @@ describe('GetMaterialUnits.execute — quiz-gated (course) material', () => {
     const { units } = await useCase.execute({ materialId: material.id, userId: 'kid1' });
 
     expect(units[0].percent).toBe(100);
-    expect(units[0].quiz).toEqual({ bankId: 'act1-quiz' });
+    expect(units[0].quiz).toEqual({ bankId: 'act1-quiz', passingPercent: 80 }); // the gate's bar rides the payload (advocacy M7)
     expect(units[0].completed).toBe(false); // gate unsatisfied -> incomplete despite 100% played
     expect(units[0].locked).toBe(false);
     expect(units[0].current).toBe(true);

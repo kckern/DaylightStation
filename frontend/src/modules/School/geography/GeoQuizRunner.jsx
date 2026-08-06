@@ -70,6 +70,9 @@ export default function GeoQuizRunner({ bank, onExit }) {
   // The escape hatch for a card the child can't get: drop it from the queue
   // entirely. It stays un-mastered and the summary counts it honestly.
   const skip = () => {
+    // An answer in flight owns the card: skipping now would rotate the queue
+    // and land the late verdict on the NEXT card (M7 fix).
+    if (submittingRef.current) return;
     setVerdict(null);
     setUnrecorded(false);
     setSkipped((n) => n + 1);
