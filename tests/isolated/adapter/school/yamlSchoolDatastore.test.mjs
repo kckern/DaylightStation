@@ -194,3 +194,74 @@ describe('banks', () => {
     expect(ds.readBankRaw('math/algebra/domain_and_range_0.5')).toMatchObject({ title: 'Half' });
   });
 });
+
+describe('report cards (Task 6)', () => {
+  const CARD = { schema: 'school.report-card/v1', learnerId: USER, courses: [] };
+
+  it('writes and reads a report card under the learner\'s own user directory', () => {
+    ds.writeReportCard(USER, 'fall-2026', CARD);
+    expect(fs.existsSync(path.join(tmp, 'users', USER, 'apps', 'school', 'report-cards', 'fall-2026.yml'))).toBe(true);
+    expect(ds.readReportCard(USER, 'fall-2026')).toMatchObject(CARD);
+  });
+
+  it('readReportCard/listReportCards return nothing for a period never closed', () => {
+    expect(ds.readReportCard(USER, 'never-closed')).toBe(null);
+    expect(ds.listReportCards(USER)).toEqual([]);
+  });
+
+  it('writeReportCard REFUSES a second write for the same period (already closed)', () => {
+    ds.writeReportCard(USER, 'fall-2026', CARD);
+    expect(() => ds.writeReportCard(USER, 'fall-2026', { ...CARD, closedBy: 'dad' }))
+      .toThrow(/already closed/);
+    try {
+      ds.writeReportCard(USER, 'fall-2026', CARD);
+    } catch (err) {
+      expect(err.name).toBe('DomainInvariantError');
+      expect(err.code).toBe('REPORT_CARD_ALREADY_CLOSED');
+    }
+  });
+
+  it('archiveReportCard moves the current file to v1, and writeReportCard can then freeze anew', () => {
+    ds.writeReportCard(USER, 'fall-2026', CARD);
+    const n = ds.archiveReportCard(USER, 'fall-2026');
+    expect(n).toBe(1);
+    expect(fs.existsSync(path.join(tmp, 'users', USER, 'apps', 'school', 'report-cards', 'fall-2026.yml'))).toBe(false);
+    expect(fs.existsSync(path.join(tmp, 'users', USER, 'apps', 'school', 'report-cards', 'fall-2026.v1.yml'))).toBe(true);
+
+    ds.writeReportCard(USER, 'fall-2026', { ...CARD, supersededVersions: 1 });
+    expect(ds.readReportCard(USER, 'fall-2026')).toMatchObject({ supersededVersions: 1 });
+    // The archived copy is never destroyed (still on disk, just not "current").
+    expect(fs.existsSync(path.join(tmp, 'users', USER, 'apps', 'school', 'report-cards', 'fall-2026.v1.yml'))).toBe(true);
+  });
+
+  it('archiveReportCard picks the next free version rather than colliding with v1', () => {
+    ds.writeReportCard(USER, 'fall-2026', CARD);
+    expect(ds.archiveReportCard(USER, 'fall-2026')).toBe(1);
+    ds.writeReportCard(USER, 'fall-2026', { ...CARD, supersededVersions: 1 });
+    expect(ds.archiveReportCard(USER, 'fall-2026')).toBe(2);
+    expect(fs.existsSync(path.join(tmp, 'users', USER, 'apps', 'school', 'report-cards', 'fall-2026.v2.yml'))).toBe(true);
+  });
+
+  it('archiveReportCard is a no-op (returns 0) when nothing is frozen yet', () => {
+    expect(ds.archiveReportCard(USER, 'fall-2026')).toBe(0);
+  });
+
+  it('listReportCards lists only CURRENT (unversioned) freezes, sorted, never archived copies', () => {
+    ds.writeReportCard(USER, 'fall-2026', { ...CARD, period: { periodId: 'fall-2026' } });
+    ds.writeReportCard(USER, 'spring-2027', { ...CARD, period: { periodId: 'spring-2027' } });
+    ds.archiveReportCard(USER, 'fall-2026');
+    ds.writeReportCard(USER, 'fall-2026', { ...CARD, period: { periodId: 'fall-2026' }, supersededVersions: 1 });
+
+    const list = ds.listReportCards(USER);
+    expect(list).toHaveLength(2);
+    expect(list.map((r) => r.period.periodId).sort()).toEqual(['fall-2026', 'spring-2027']);
+  });
+
+  it('unknown user or unsafe periodId: reads answer null/[], writes/archives refuse safely', () => {
+    expect(ds.readReportCard('ghost', 'fall-2026')).toBe(null);
+    expect(ds.listReportCards('ghost')).toEqual([]);
+    expect(ds.archiveReportCard('ghost', 'fall-2026')).toBe(0);
+    expect(() => ds.writeReportCard('ghost', 'fall-2026', CARD)).toThrow(/unknown user/);
+    expect(() => ds.writeReportCard(USER, '../../etc/passwd', CARD)).toThrow(/unsafe periodId/);
+  });
+});

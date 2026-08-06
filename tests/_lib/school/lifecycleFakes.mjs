@@ -181,6 +181,9 @@ export class FakeTokenRegistry extends ITokenRegistry {
 
 export class FakeAssignmentStore extends IAssignmentStore {
   #records = new Map();
+  // learnerId -> AssignmentRecord[] (oldest first), mirroring the real store's
+  // separate history log (YamlAssignmentStore#historyFileFor).
+  #history = new Map();
 
   constructor(seed = []) {
     super();
@@ -188,8 +191,22 @@ export class FakeAssignmentStore extends IAssignmentStore {
   }
 
   async get(learnerId) { return this.#records.get(learnerId) ?? null; }
-  async put(record) { this.#records.set(record.learnerId, record); return record; }
+
+  async put(record) {
+    this.#records.set(record.learnerId, record);
+    const entry = { ...record, recordedAt: record.updatedAt ?? new Date().toISOString() };
+    const list = this.#history.get(record.learnerId) ?? [];
+    list.push(entry);
+    this.#history.set(record.learnerId, list);
+    return record;
+  }
+
   async list() { return [...this.#records.values()]; }
+
+  async history(learnerId) { return [...(this.#history.get(learnerId) ?? [])]; }
+
+  /** Test-only: seed history directly, without going through `put`. */
+  seedHistory(learnerId, entries) { this.#history.set(learnerId, [...entries]); }
 }
 
 export class FakeFormMapStore extends IFormMapStore {
