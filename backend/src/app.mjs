@@ -3186,6 +3186,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     setMilestones,
     enrichmentLog: schoolEnrichmentLog,
     recordEnrichment,
+    getProgressReport,
+    renderProgressReportPdf: createProgressReportPdfRenderer(),
+    renderCertificatePdf: createCertificatePdfRenderer(),
     // Frozen-record reads work off `schoolDatastore` alone (no lifecycle
     // stores needed), so this is wired unconditionally.
     reportCardsStore: schoolDatastore,
