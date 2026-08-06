@@ -20,6 +20,7 @@ import yaml from 'js-yaml';
 import { loadYamlSafe, saveYaml, ensureDir, listYamlFiles } from '#system/utils/FileIO.mjs';
 import { SUBJECT_IDS } from '#domains/school/curriculum/unitValidation.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { DomainInvariantError } from '#domains/core/errors/index.mjs';
 
 // Bank ids are nested paths ("history/i-survived/02-shark-attacks/01-alone") so the
 // bank tree can be browsed as folders. Every segment must start alphanumeric, which is
@@ -33,6 +34,12 @@ import { InfrastructureError } from '#system/utils/errors/index.mjs';
 // pattern — loaded them fine; routing both through one path made that split visible.
 const BANK_ID_RE = /^[a-z0-9][a-z0-9._-]*(\/[a-z0-9][a-z0-9._-]*)*$/i;
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+// One flat, alphanumeric-first segment, no dots — matches YamlAssignmentStore's
+// learnerId guard. Archive files (`{periodId}.v<n>.yml`, stripped to
+// `{periodId}.v<n>`) fail this on the dot, which is exactly what keeps
+// `listReportCards` from ever surfacing a superseded copy as current.
+const PERIOD_ID_RE = /^[a-z0-9][a-z0-9_-]*$/i;
+const isSafePeriodId = (id) => typeof id === 'string' && PERIOD_ID_RE.test(id);
 
 export class YamlSchoolDatastore {
   #configService;
@@ -208,6 +215,85 @@ export class YamlSchoolDatastore {
       })
       .sort()
       .flatMap((f) => loadYamlSafe(path.join(dir, f.replace(/\.yml$/, ''))) || []);
+  }
+
+  // --- report cards (Task 6, spec R5b) --------------------------------------
+  //   <userDir>/apps/school/report-cards/{periodId}.yml            (current freeze)
+  //   <userDir>/apps/school/report-cards/{periodId}.v<n>.yml        (superseded, archived)
+  //
+  // Filed under the LEARNER's own user directory (same home as their attempt
+  // log), not the household tree — a report card is that child's record.
+  #reportCardsDir(userId) {
+    if (!this.#configService.getUserProfile?.(userId)) return null;
+    return path.join(this.#configService.getUserDir(userId), 'apps', 'school', 'report-cards');
+  }
+
+  readReportCard(userId, periodId) {
+    const dir = this.#reportCardsDir(userId);
+    if (!dir || !isSafePeriodId(periodId)) return null;
+    return loadYamlSafe(path.join(dir, periodId));
+  }
+
+  /** Every FROZEN (unversioned) report card on file for a learner. */
+  listReportCards(userId) {
+    const dir = this.#reportCardsDir(userId);
+    if (!dir) return [];
+    return listYamlFiles(dir)
+      .filter(isSafePeriodId)
+      .sort()
+      .map((periodId) => loadYamlSafe(path.join(dir, periodId)))
+      .filter(Boolean);
+  }
+
+  /**
+   * Freeze a report card. Refuses when one already exists for this period —
+   * frozen report cards are events, never silently-overwritten documents.
+   * A supersede close must archive the existing file first (`archiveReportCard`,
+   * below); called without that step, this is the ONE place the
+   * `REPORT_CARD_ALREADY_CLOSED` invariant is enforced, for the router to map
+   * to a 409 regardless of which use case (or a future one) calls it.
+   */
+  writeReportCard(userId, periodId, payload) {
+    const dir = this.#reportCardsDir(userId);
+    if (!dir) {
+      throw new DomainInvariantError(`writeReportCard: unknown user '${userId}'`, {
+        code: 'REPORT_CARD_UNKNOWN_USER', details: { userId },
+      });
+    }
+    if (!isSafePeriodId(periodId)) {
+      throw new DomainInvariantError(`writeReportCard: unsafe periodId '${periodId}'`, {
+        code: 'REPORT_CARD_INVALID_PERIOD', details: { periodId },
+      });
+    }
+    const file = path.join(dir, `${periodId}.yml`);
+    if (fs.existsSync(file)) {
+      throw new DomainInvariantError(`Report card for period '${periodId}' is already closed`, {
+        code: 'REPORT_CARD_ALREADY_CLOSED', details: { userId, periodId },
+      });
+    }
+    ensureDir(dir);
+    saveYaml(file, payload, { noRefs: true });
+    return payload;
+  }
+
+  /**
+   * Archive the CURRENT frozen file (if any) to the next free
+   * `{periodId}.v<n>.yml`, then remove the unversioned file — clearing the way
+   * for `writeReportCard` to freeze anew. The archived copy is never
+   * destroyed, only renamed aside. Returns the version number used, or `0`
+   * when there was nothing to archive (no prior freeze).
+   */
+  archiveReportCard(userId, periodId) {
+    const dir = this.#reportCardsDir(userId);
+    if (!dir || !isSafePeriodId(periodId)) return 0;
+    const file = path.join(dir, `${periodId}.yml`);
+    if (!fs.existsSync(file)) return 0;
+    const current = loadYamlSafe(file);
+    let n = 1;
+    while (fs.existsSync(path.join(dir, `${periodId}.v${n}.yml`))) n += 1;
+    saveYaml(path.join(dir, `${periodId}.v${n}`), current, { noRefs: true });
+    fs.unlinkSync(file);
+    return n;
   }
 }
 
