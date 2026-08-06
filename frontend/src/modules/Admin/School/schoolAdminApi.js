@@ -56,6 +56,14 @@ export const schoolAdminApi = {
   /** Household roster: `[{ id, name, group_label, birthyear }]`. */
   roster: () => call(`${SCHOOL}/roster`),
 
+  /**
+   * The config-declared teacher roster (`{configured, teachers: [{id, name}]}`).
+   * The sign-off adults come from HERE, not the roster above — the school
+   * roster is learners-only by server design (adults are filtered out), so
+   * an age filter over it yields nobody.
+   */
+  teachers: () => call(`${SCHOOL}/teachers`),
+
   /** Everything still awaiting a grown-up, across every session. */
   pendingReview: () => call(`${LIFECYCLE}/review`),
 
@@ -71,9 +79,9 @@ export const schoolAdminApi = {
    * was marked that way. It is stored with the verdict, and sending none leaves
    * any earlier note alone.
    */
-  resolveReview: (sessionId, itemId, { verdict, gradedBy, note = null }) => call(
+  resolveReview: (sessionId, itemId, { verdict, gradedBy, note = null, pin = null }) => call(
     `${LIFECYCLE}/sessions/${enc(sessionId)}/review/${enc(itemId)}`,
-    { method: 'POST', body: { verdict, gradedBy, note } },
+    { method: 'POST', body: { verdict, gradedBy, note, pin } },
   ),
 
   /** Index rows: `{ sessionId, learnerId, unitId, state, terminal, outcome, day, updatedAt }`. */
@@ -103,9 +111,9 @@ export const schoolAdminApi = {
    * the household roster and answers 403 for a child, an unknown id, or none at
    * all. Sending it is what makes the write land, not a formality.
    */
-  putAssignment: (learnerId, { courses, units, assignedBy }) => call(
+  putAssignment: (learnerId, { courses, units, assignedBy, pin = null }) => call(
     `${LIFECYCLE}/assignments/${enc(learnerId)}`,
-    { method: 'PUT', body: { courses, units, assignedBy } },
+    { method: 'PUT', body: { courses, units, assignedBy, pin } },
   ),
 };
 

@@ -55,15 +55,25 @@ function writeStored(id) {
 
 /**
  * @param {Array<{id: string, name: string, birthyear?: number|null}>} roster
+ * @param {{configured: boolean, teachers: Array<{id, name}>}|null} [teachersRead]
+ *   - the `GET /teachers` result. When present, THE ADULTS COME FROM IT: the
+ *   school roster endpoint is learners-only by server design (adults are
+ *   filtered out before it answers), so the age filter below finds nobody on
+ *   a live payload. The legacy filter remains only for callers that have not
+ *   wired the teachers read yet.
  * @returns {{adults: object[], learners: object[], graderId: string|null,
  *            grader: object|null, canSignOff: boolean, setGraderId: (id: string|null) => void}}
  */
-export function useGrader(roster) {
+export function useGrader(roster, teachersRead = null) {
   const list = useMemo(() => (Array.isArray(roster) ? roster : []), [roster]);
   const [graderId, setGraderIdState] = useState(() => readStored());
 
-  const adults = useMemo(() => list.filter((u) => isAdult(u)), [list]);
-  const learners = useMemo(() => list.filter((u) => !isAdult(u)), [list]);
+  const adults = useMemo(() => (
+    teachersRead ? (teachersRead.teachers ?? []) : list.filter((u) => isAdult(u))
+  ), [teachersRead, list]);
+  const learners = useMemo(() => (
+    teachersRead ? list : list.filter((u) => !isAdult(u))
+  ), [teachersRead, list]);
 
   // Re-validated against the CURRENT roster every render: the remembered id is
   // a hint, never a grant.

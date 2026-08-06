@@ -9,7 +9,7 @@
  *
  * @module Admin/School/GraderBar
  */
-import { Alert, Group, Select, Text } from '@mantine/core';
+import { Alert, Group, PasswordInput, Select, Text } from '@mantine/core';
 
 /**
  * @param {object} props
@@ -23,27 +23,50 @@ import { Alert, Group, Select, Text } from '@mantine/core';
  */
 export default function GraderBar({
   adults, graderId, grader, onChange, action = 'sign off', label = 'Marking as',
+  teachersConfigured = null, pin = undefined, onPinChange = null,
 }) {
   if (!adults.length) {
+    // Distinguish the two empties (teacher-console spec §4.7.1): no
+    // `teachers:` key configured at all vs a configured list none of whose
+    // entries resolve to a grown-up on the roster.
+    if (teachersConfigured === false) {
+      return (
+        <Alert color="yellow" title="No teachers configured">
+          Add a <strong>teachers:</strong> list (roster ids) to{' '}
+          <strong>school.yml</strong> — sign-off authority comes from it.
+        </Alert>
+      );
+    }
     return (
-      <Alert color="yellow" title="No grown-up on the roster">
-        Nobody in the household roster has a <strong>birthyear</strong> that makes them 18 or
-        over, so there is nobody who may {action}. Add or correct a birthyear in{' '}
-        <strong>Household → Members</strong>. A profile with no birthyear is treated as a child.
+      <Alert color="yellow" title="No grown-up available to sign off">
+        No configured teacher resolves to a grown-up on the household roster, so there is
+        nobody who may {action}. Check the <strong>teachers:</strong> list in school.yml and
+        each member&apos;s <strong>birthyear</strong> in <strong>Household → Members</strong>.
       </Alert>
     );
   }
 
   const picker = (
-    <Select
-      label={label}
-      placeholder="Choose your profile"
-      data={adults.map((u) => ({ value: u.id, label: u.name }))}
-      value={grader ? grader.id : null}
-      onChange={onChange}
-      allowDeselect={false}
-      w={240}
-    />
+    <Group align="end" gap="sm">
+      <Select
+        label={label}
+        placeholder="Choose your profile"
+        data={adults.map((u) => ({ value: u.id, label: u.name }))}
+        value={grader ? grader.id : null}
+        onChange={onChange}
+        allowDeselect={false}
+        w={240}
+      />
+      {onPinChange && (
+        <PasswordInput
+          label="Teacher PIN"
+          placeholder="If configured"
+          value={pin ?? ''}
+          onChange={(e) => onPinChange(e.currentTarget.value)}
+          w={140}
+        />
+      )}
+    </Group>
   );
 
   // Nobody claimed yet: say it once, loudly, at the top. A quiet line of helper
