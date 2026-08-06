@@ -18,11 +18,13 @@ const optionsMock = vi.fn(async () => ({ ok: true, status: 200, data: { learners
 const insightsMock = vi.fn(async () => ({ ok: true, status: 200, data: {
   concepts: [], items: [], pacing: [],
 } }));
+const teacherTodayMock = vi.fn(async () => ({ ok: true, status: 200, data: [] }));
 vi.mock('../schoolApi.js', () => ({ schoolApi: {
   report: (...a) => reportMock(...a),
   progress: (...a) => progressMock(...a),
   progressOptions: (...a) => optionsMock(...a),
   instructionalInsights: (...a) => insightsMock(...a),
+  teacherToday: (...a) => teacherTodayMock(...a),
 } }));
 
 const metric = (kind, extra) => ({ id: kind, kind, label: kind, ...extra });
@@ -160,6 +162,53 @@ describe('failure and emptiness', () => {
     reportMock.mockResolvedValue(payload([]));
     render(<ReportPanel />);
     expect(await screen.findByText(/Nobody has started anything/)).toBeTruthy();
+  });
+});
+
+describe('the "Today" strip', () => {
+  it('says so when a learner has done nothing today', async () => {
+    reportMock.mockResolvedValue(payload([learner()]));
+    teacherTodayMock.mockResolvedValueOnce({ ok: true, status: 200, data: [
+      { learnerId: 'kid1', attemptsToday: 0, correctToday: 0, sessionsToday: [], pendingReview: 0 },
+    ] });
+    render(<ReportPanel />);
+    await screen.findByText('Alpha');
+    expect(await screen.findByText('No work recorded today')).toBeTruthy();
+  });
+
+  it('shows attempts, correct count, sessions in flight, and a needs-marking badge', async () => {
+    reportMock.mockResolvedValue(payload([learner()]));
+    teacherTodayMock.mockResolvedValueOnce({ ok: true, status: 200, data: [
+      {
+        learnerId: 'kid1', attemptsToday: 3, correctToday: 2,
+        sessionsToday: [{ unitId: 'math-fractions.03', state: 'active' }],
+        pendingReview: 1,
+      },
+    ] });
+    render(<ReportPanel />);
+    expect(await screen.findByText(/3 attempts today/)).toBeTruthy();
+    expect(screen.getByText(/2 correct/)).toBeTruthy();
+    expect(screen.getByText(/math-fractions\.03/)).toBeTruthy();
+    const badge = screen.getByRole('link', { name: /1 item needs marking/ });
+    expect(badge.getAttribute('href')).toBe('/admin/school/review');
+  });
+
+  it('shows the needs-marking badge even when nothing happened today', async () => {
+    reportMock.mockResolvedValue(payload([learner()]));
+    teacherTodayMock.mockResolvedValueOnce({ ok: true, status: 200, data: [
+      { learnerId: 'kid1', attemptsToday: 0, correctToday: 0, sessionsToday: [], pendingReview: 2 },
+    ] });
+    render(<ReportPanel />);
+    expect(await screen.findByText('No work recorded today')).toBeTruthy();
+    expect(screen.getByRole('link', { name: /2 items need marking/ })).toBeTruthy();
+  });
+
+  it('says so, visibly, when the digest fails to load', async () => {
+    reportMock.mockResolvedValue(payload([learner()]));
+    teacherTodayMock.mockResolvedValueOnce({ ok: false, status: 500, data: null });
+    render(<ReportPanel />);
+    await screen.findByText('Alpha');
+    expect(await screen.findByText(/Could not load today.s activity/)).toBeTruthy();
   });
 });
 
