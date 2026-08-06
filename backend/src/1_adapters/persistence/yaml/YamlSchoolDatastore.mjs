@@ -186,6 +186,29 @@ export class YamlSchoolDatastore {
       .sort()
       .flatMap((f) => loadYamlSafe(path.join(dir, f.replace(/\.yml$/, ''))) || []);
   }
+
+  /**
+   * Same shape as `readAllAttempts`, but only day files whose name falls
+   * within `[fromDay, toDay]` (inclusive) are ever read off disk — a caller
+   * asking about last week does not pay to parse three years of history.
+   * String comparison is correct ordering for `YYYY-MM-DD` names, so no
+   * Date parsing is needed to bound the readdir listing.
+   */
+  readAttemptsInRange(userId, fromDay, toDay) {
+    const dir = this.#attemptsDir(userId);
+    if (!dir || !fs.existsSync(dir)) return [];
+    const from = String(fromDay);
+    const to = String(toDay);
+    if (!DAY_RE.test(from) || !DAY_RE.test(to)) return [];
+    return fs.readdirSync(dir)
+      .filter((f) => /^\d{4}-\d{2}-\d{2}\.yml$/.test(f))
+      .filter((f) => {
+        const day = f.slice(0, 10);
+        return day >= from && day <= to;
+      })
+      .sort()
+      .flatMap((f) => loadYamlSafe(path.join(dir, f.replace(/\.yml$/, ''))) || []);
+  }
 }
 
 export default YamlSchoolDatastore;

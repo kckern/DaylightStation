@@ -1,4 +1,6 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import {
+  describe, it, expect, beforeEach, afterEach, vi,
+} from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -59,6 +61,47 @@ describe('attempt log', () => {
     expect(ds.readAttemptDay(USER, ['2026-07-21', '2026-07-22'])).toEqual([]);
     expect(() => ds.readAttemptDay(USER, null)).not.toThrow();
     expect(ds.readAttemptDay(USER, null)).toEqual([]);
+  });
+});
+
+describe('readAttemptsInRange', () => {
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it('returns only attempts from day files inside [fromDay, toDay], oldest first', () => {
+    ds.appendAttempt(USER, att({ id: 'att_old', at: '2025-01-01T09:00:00.000Z' }));
+    ds.appendAttempt(USER, att({ id: 'att_2', at: '2026-07-22T09:00:00.000Z' }));
+    ds.appendAttempt(USER, att({ id: 'att_1', at: '2026-07-21T09:00:00.000Z' }));
+    ds.appendAttempt(USER, att({ id: 'att_future', at: '2026-08-01T09:00:00.000Z' }));
+
+    expect(ds.readAttemptsInRange(USER, '2026-07-21', '2026-07-22').map((a) => a.id))
+      .toEqual(['att_1', 'att_2']);
+  });
+
+  it('never parses a day file outside the requested range (fake io counts the loads)', () => {
+    ds.appendAttempt(USER, att({ id: 'att_old', at: '2025-01-01T09:00:00.000Z' }));
+    ds.appendAttempt(USER, att({ id: 'att_in', at: '2026-07-21T09:00:00.000Z' }));
+    ds.appendAttempt(USER, att({ id: 'att_future', at: '2026-08-01T09:00:00.000Z' }));
+
+    const reads = vi.spyOn(fs, 'readFileSync');
+    const result = ds.readAttemptsInRange(USER, '2026-07-21', '2026-07-21');
+
+    expect(result.map((a) => a.id)).toEqual(['att_in']);
+    const readPaths = reads.mock.calls.map(([p]) => String(p));
+    expect(readPaths.some((p) => p.includes('2026-07-21'))).toBe(true);
+    expect(readPaths.some((p) => p.includes('2025-01-01'))).toBe(false);
+    expect(readPaths.some((p) => p.includes('2026-08-01'))).toBe(false);
+  });
+
+  it('an empty/out-of-range window returns []', () => {
+    ds.appendAttempt(USER, att({ id: 'att_1', at: '2026-07-21T09:00:00.000Z' }));
+    expect(ds.readAttemptsInRange(USER, '2026-01-01', '2026-01-31')).toEqual([]);
+  });
+
+  it('unknown user or malformed day bounds return [] instead of throwing', () => {
+    expect(ds.readAttemptsInRange('ghost', '2026-07-21', '2026-07-22')).toEqual([]);
+    ds.appendAttempt(USER, att());
+    expect(() => ds.readAttemptsInRange(USER, 'not-a-day', '2026-07-22')).not.toThrow();
+    expect(ds.readAttemptsInRange(USER, 'not-a-day', '2026-07-22')).toEqual([]);
   });
 });
 

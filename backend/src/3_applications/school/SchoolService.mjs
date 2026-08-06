@@ -506,6 +506,18 @@ export class SchoolService {
    */
   summarize({ userId }) {
     if (!userId) return [];
+    // Deliberately NOT windowed like the dedup reads elsewhere in this file
+    // (`importCalculatorReceipt`, `importSchoolCalcAssessment`) or the
+    // evidence-source read `YamlSchoolAttemptEvidenceSource` uses for a
+    // scoped progress query: every metric below ("questions answered",
+    // accuracy, cards drilled) is LIFETIME by definition — sets attempted,
+    // ever. Windowing this read would silently change every number a family
+    // sees on the board depending on when they last loaded it. If this full
+    // scan ever becomes the cost floor (years of accumulated attempt-day
+    // files per learner), the parked remedy is a per-user month index —
+    // attempts pre-aggregated by `YYYY-MM` so a lifetime summarize stays
+    // O(months) instead of O(days) — not built now, since no household is
+    // near that scale.
     const attempts = this.#ds.readAllAttempts(userId) || [];
     if (attempts.length === 0) return [];
 

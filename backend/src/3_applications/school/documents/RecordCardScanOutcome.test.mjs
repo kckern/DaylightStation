@@ -21,6 +21,26 @@ function fakeDatastore() {
     readAllAttempts(learnerId) {
       return structuredClone(byLearner.get(learnerId) ?? []);
     },
+    // Day-bounded read, same semantics as YamlSchoolDatastore.readAttemptsInRange:
+    // only attempts whose `at` falls on a day within [fromDay, toDay] (inclusive).
+    readAttemptsInRange(learnerId, fromDay, toDay) {
+      return structuredClone(byLearner.get(learnerId) ?? [])
+        .filter((attempt) => {
+          const day = String(attempt.at).slice(0, 10);
+          return day >= fromDay && day <= toDay;
+        });
+    },
+  };
+}
+
+/** A datastore double that records which read method the use case called, without serving real data. */
+function spyDatastore({ renderedDayAttempt, oldAttempt } = {}) {
+  const readAttemptsInRange = vi.fn(() => (renderedDayAttempt ? [renderedDayAttempt] : []));
+  const readAllAttempts = vi.fn(() => [oldAttempt, renderedDayAttempt].filter(Boolean));
+  return {
+    readAttemptsInRange,
+    readAllAttempts,
+    appendAttempt: vi.fn((learnerId, attempt) => attempt),
   };
 }
 
@@ -289,6 +309,44 @@ describe('attempt persistence', () => {
     const outcome = await useCase.execute({ testId: '1234567', card: gradedCard({ learnerId: undefined }) });
     expect(outcome).toMatchObject({ recorded: false, reason: 'unattributed' });
     expect(logger.warn).toHaveBeenCalledWith('school.print.scan-unattributed', expect.anything());
+  });
+});
+
+describe('dedup read windowing', () => {
+  it('a card rendered today scopes the dedup read to [renderedAt day, today] and never touches readAllAttempts', async () => {
+    const datastore = spyDatastore();
+    const useCase = new RecordCardScanOutcome({
+      datastore, clock: () => new Date('2026-08-05T10:00:00.000Z'), logger: quietLogger,
+    });
+    await useCase.execute({ testId: '1234567', card: gradedCard({ renderedAt: '2026-08-04T00:00:00.000Z' }) });
+
+    expect(datastore.readAttemptsInRange).toHaveBeenCalledWith('felix', '2026-08-04', '2026-08-05');
+    expect(datastore.readAllAttempts).not.toHaveBeenCalled();
+  });
+
+  it('a legacy card with no renderedAt falls back to the full scan (readAllAttempts)', async () => {
+    const datastore = spyDatastore();
+    const useCase = new RecordCardScanOutcome({
+      datastore, clock: () => new Date('2026-08-05T10:00:00.000Z'), logger: quietLogger,
+    });
+    await useCase.execute({ testId: '1234567', card: gradedCard({ renderedAt: undefined }) });
+
+    expect(datastore.readAllAttempts).toHaveBeenCalledWith('felix');
+    expect(datastore.readAttemptsInRange).not.toHaveBeenCalled();
+  });
+
+  it('without readAttemptsInRange on the datastore, dedup still works via the full-scan fallback', async () => {
+    const store = fakeDatastore();
+    const bareDatastore = {
+      appendAttempt: store.appendAttempt.bind(store),
+      readAllAttempts: store.readAllAttempts.bind(store),
+    };
+    const useCase = new RecordCardScanOutcome({
+      datastore: bareDatastore, clock: () => new Date('2026-08-05T10:00:00.000Z'), logger: quietLogger,
+    });
+    const outcome = await useCase.execute({ testId: '1234567', card: gradedCard() });
+    expect(outcome.recorded).toBe(true);
+    expect(store.readAllAttempts('felix')).toHaveLength(2);
   });
 });
 
