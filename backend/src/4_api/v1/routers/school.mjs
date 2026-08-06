@@ -200,6 +200,22 @@ export function createSchoolRouter({
   // stay a plain PDF.
   const PRINT_DOC_ID = /^[a-z0-9][a-z0-9-]*(\/[a-z0-9][a-z0-9-]*){0,3}$/;
   const PRINT_CARD_ID = /^[0-9]{7}$/;
+  // The FIXED /print routes must register BEFORE the /print/*id splat below —
+  // Express matches in registration order, and the splat would otherwise
+  // swallow them as document ids (it did, in production, until 2026-08-06:
+  // /print/pending 404'd as "print document not found: pending"). No
+  // reserved-name exclusion list on purpose — it would silently drift the
+  // day a new fixed /print route is added; order is the one source of truth.
+  router.get('/print/printables', wrap(async (req, res) => {
+    res.json(printService ? await printService.listPrintables() : []);
+  }));
+  router.get('/print/quota', wrap((req, res) => {
+    if (!printService || !req.query.userId) return res.json(null);
+    res.json(printService.getQuota(req.query.userId));
+  }));
+  router.get('/print/pending', wrap((req, res) => {
+    res.json(printService ? printService.listPending() : []);
+  }));
   // Hierarchical taxonomy ids contain '/', so the id is a named wildcard
   // (Express 5 splat) rather than a single segment.
   router.get('/print/*id', wrap(async (req, res) => {
@@ -511,20 +527,14 @@ export function createSchoolRouter({
   // Printing — a child prints their own worksheets, quota-gated with grown-up
   // approval over the limit. A missing printService (no printer/printables
   // configured) serves empty/inert rather than 500ing the whole app.
-  router.get('/print/printables', wrap(async (req, res) => {
-    res.json(printService ? await printService.listPrintables() : []);
-  }));
-  router.get('/print/quota', wrap((req, res) => {
-    if (!printService || !req.query.userId) return res.json(null);
-    res.json(printService.getQuota(req.query.userId));
-  }));
+  // NOTE: the fixed GET routes (/print/printables, /print/quota,
+  // /print/pending) are registered ABOVE the /print/*id splat, earlier in
+  // this file — registration order is what keeps the splat from shadowing
+  // them (school.print.routes.test.mjs pins both directions).
   router.post('/print/request', wrap(async (req, res) => {
     if (!printService) throw new EntityNotFoundError('printing', 'not configured');
     const { userId = null, printableId, copies = 1 } = req.body || {};
     res.json(await printService.requestPrint({ userId, printableId, copies }));
-  }));
-  router.get('/print/pending', wrap((req, res) => {
-    res.json(printService ? printService.listPending() : []);
   }));
   router.post('/print/:requestId/approve', wrap(async (req, res) => {
     if (!printService) throw new EntityNotFoundError('printing', 'not configured');

@@ -1,0 +1,70 @@
+// Registration-order regression net for the /print namespace. The Express 5
+// splat `/print/*id` (the document renderer) and the fixed quota-printing
+// routes (`/print/printables|quota|pending`) share a prefix; whichever is
+// registered first wins. These tests pin BOTH directions: the fixed routes
+// must not be shadowed by the splat (the 2026-08-06 production bug — all
+// three 404'd as "print document not found"), and the splat must still serve
+// a real multi-segment document id afterward.
+import { describe, expect, it, vi } from 'vitest';
+import express from 'express';
+import request from 'supertest';
+import { createSchoolRouter } from './school.mjs';
+
+const PDF_BYTES = Buffer.from('%PDF-1.7 fake');
+
+function appWith({ printService = null } = {}) {
+  const app = express();
+  app.use(express.json());
+  app.use('/api/v1/school', createSchoolRouter({
+    schoolService: { listBankSourceSummaries: () => [] },
+    renderPrintDocument: {
+      async execute() {
+        return { bytes: PDF_BYTES, pageCount: 1, density: 'normal', warnings: [] };
+      },
+    },
+    printDocumentsRepo: null,
+    printAllocationStore: null,
+    printService,
+    logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() },
+  }));
+  return app;
+}
+
+const printService = {
+  listPrintables: async () => [{ id: 'state-capitals', pages: 2 }],
+  getQuota: (userId) => ({ userId, remaining: 5 }),
+  listPending: () => [{ requestId: 'req-1', userId: 'felix', pages: 6 }],
+};
+
+describe('/print fixed routes vs the *id splat', () => {
+  it('GET /print/pending reaches the pending handler, not the document splat', async () => {
+    const res = await request(appWith({ printService })).get('/api/v1/school/print/pending');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([{ requestId: 'req-1', userId: 'felix', pages: 6 }]);
+  });
+
+  it('GET /print/printables reaches printables', async () => {
+    const res = await request(appWith({ printService })).get('/api/v1/school/print/printables');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([{ id: 'state-capitals', pages: 2 }]);
+  });
+
+  it('GET /print/quota reaches quota', async () => {
+    const res = await request(appWith({ printService })).get('/api/v1/school/print/quota?userId=felix');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ userId: 'felix', remaining: 5 });
+  });
+
+  it('fixed routes answer their inert shapes even with no printService wired', async () => {
+    const app = appWith();
+    expect((await request(app).get('/api/v1/school/print/pending')).body).toEqual([]);
+    expect((await request(app).get('/api/v1/school/print/printables')).body).toEqual([]);
+    expect((await request(app).get('/api/v1/school/print/quota?userId=x')).body).toEqual(null);
+  });
+
+  it('a multi-segment document id still resolves through the splat', async () => {
+    const res = await request(appWith({ printService })).get('/api/v1/school/print/math/fractions/quiz-1?variety=hand');
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/application\/pdf/);
+  });
+});
