@@ -468,3 +468,15 @@ describe('GetTeachers', () => {
 
 ### W3-6: Verify, deploy, M3 review
 Full sweep → build → gate → deploy → live probes (periods PUT wrong-pin 403 / right-pin no-op is NOT safe (it writes) — verify via GET-after-PUT on a COPY? No: verify wrong-pin 403 only, plus unit tests for the write path; enrichment POST with right pin IS safe-ish but writes real data — use a clearly-labeled test entry then leave it (append-only; harmless) or verify 403 path only) → README/spec updates → Fable M3 review → apply verdicts.
+
+---
+
+# Wave 4 — Records (authored at M4, after the M3 review)
+
+**Contract:** registry rows `teacher.period.close`, `teacher.progressreport.print`, `teacher.certificates.print`, `teacher.enrichment.credit` (registry shrinks to 3). Spec C1/C2/C5.
+
+- **W4-1 Pacing domain (C5):** `2_domains/school/milestones.mjs` gains `paceMilestones(milestones, enrichmentEntries, {today})` → rows `{...m, status, overdueDays, excusedDays, effectiveStatus}` where a 'behind' milestone whose overdue window is fully covered by the learner's enrichment days becomes `effectiveStatus: 'excused'` (never delinquency); other statuses pass through. Pure + tested. Enrichment days count = distinct dates in [from..to] ∩ (dueBy, today].
+- **W4-2 Progress report:** `GetProgressReport` use case composes the live report card + paced milestones + in-period enrichment entries → `school.progress-report/v1 {learnerId, period, generatedAt, courses, activeDays, milestones (paced), enrichment: {entries, daysInPeriod}}`. `ProgressReportRenderer` (sibling of ReportCardRenderer, same theme/fonts/pinned CreationDate) renders it with an explicit "Enrichment / experiential learning" section and per-milestone pacing lines ("excused — N enrichment days"). Route `GET /progress-report?learnerId&periodId[&format=pdf]`.
+- **W4-3 Certificates:** `CertificateRenderer` — one-page landscape-ish Letter certificate: learner display name, course id/label, completion percent, period label, date, "issued by" line. Route `GET /certificate?learnerId&periodId&courseId&format=pdf` (renders from the live report card's course row; a course with no graded sessions 404s — no fabricated diplomas).
+- **W4-4 Console UI:** ReportCardView gains the Close-period flow (confirm + supersede when already frozen; POST close with stamp+pin through useTeacherWrite; refresh frozen list) — stub deleted; RecordsTab gains a PacingPanel (paced milestones + enrichment credit visible on-screen) — enrichment-credit stub deleted; Progress-report PDF link — stub deleted; per-course Certificate links (only for courses with a coursePercent) — stub deleted. Registry/spec table → 3 rows.
+- **W4-5:** sweep → build → gate → deploy → live verify (close-period NEVER exercised against prod — wrong-pin 403 only; progress-report/certificate GETs are safe reads) → README → M4 Fable review → apply verdicts.
