@@ -841,3 +841,23 @@
   li { display: flex; justify-content: space-between; gap: 0.75rem; }
 }
 .teacher-reportcard__drift-title { margin: 0; font-weight: 700; color: #6b5111; }
+
+.teacher-learner-day__plan-errors { list-style: none; margin: 0 0 0.4rem; padding: 0.5rem 0.75rem; border-radius: 10px; background: #f8e3df; color: #6b201a; font-weight: 700;
+  li + li { margin-top: 0.2rem; }
+}
+
+.teacher-matrix { overflow-x: auto; }
+.teacher-matrix__grid { border-collapse: collapse; min-width: 100%;
+  th, td { padding: 0.3rem 0.55rem; text-align: center; border-bottom: 1px solid #eee4cf; font-size: 0.85rem; }
+  th[scope=row] { text-align: left; white-space: nowrap; }
+  thead th { vertical-align: bottom; }
+  thead th.is-unenrolled { color: #a15b16; }
+  td.is-assigned { color: #3d6a3d; font-weight: 800; }
+}
+.teacher-matrix__flag { color: #a15b16; }
+.teacher-matrix__dead { margin-top: 0.5rem; padding: 0.5rem 0.75rem; border-radius: 10px; background: #f8e3df; color: #6b201a;
+  p { margin: 0; font-weight: 700; }
+  ul { margin: 0.3rem 0 0; padding-left: 1.1rem; }
+}
+.teacher-matrix__note { margin: 0.4rem 0 0; color: #6b5111; font-weight: 700; }
+.teacher-matrix__note--orphan { color: #6b201a; }

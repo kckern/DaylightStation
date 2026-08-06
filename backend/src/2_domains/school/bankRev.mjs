@@ -1,5 +1,3 @@
-import crypto from 'node:crypto';
-
 /**
  * bankContentRev — a stable content hash of what a bank actually ASKS.
  *
@@ -11,9 +9,23 @@ import crypto from 'node:crypto';
  * Presentation-only fields (title, topics, audience) are deliberately outside
  * the hash — reshelving a bank is not a content change.
  *
- * Pure: no IO, no clock. Canonical JSON via sorted keys so property order
- * never changes the hash.
+ * Pure: no IO, no clock, no node imports (the domain purity gate forbids
+ * node:crypto here) — FNV-1a 64-bit over the canonical JSON is plenty for
+ * distinguishing revisions of one bank over time; this is a drift marker,
+ * not a security digest.
  */
+const FNV_OFFSET = 0xcbf29ce484222325n;
+const FNV_PRIME = 0x100000001b3n;
+const MASK64 = 0xffffffffffffffffn;
+
+function fnv1a64(text) {
+  let h = FNV_OFFSET;
+  for (let i = 0; i < text.length; i += 1) {
+    h ^= BigInt(text.charCodeAt(i));
+    h = (h * FNV_PRIME) & MASK64;
+  }
+  return h.toString(16).padStart(16, '0');
+}
 export function bankContentRev(bank) {
   if (!bank || !Array.isArray(bank.items)) return null;
   const substance = bank.items.map((item) => ({
@@ -32,7 +44,7 @@ export function bankContentRev(bank) {
       ? Object.fromEntries(Object.keys(value).sort().map((k) => [k, value[k]]))
       : value
   ));
-  return crypto.createHash('sha1').update(canonical).digest('hex').slice(0, 12);
+  return fnv1a64(canonical).slice(0, 12);
 }
 
 export default bankContentRev;
