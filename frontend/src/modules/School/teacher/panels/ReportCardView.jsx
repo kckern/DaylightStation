@@ -40,7 +40,19 @@ export default function ReportCardView({ learnerId, periodId }) {
             {(data.courses ?? []).map((c) => (
               <li key={c.courseId}>
                 <span>{c.courseId}</span>
-                <span>{typeof c.coursePercent === 'number' ? `${Math.round(c.coursePercent)}%` : '—'}</span>
+                <span>
+                  {typeof c.coursePercent === 'number' ? `${Math.round(c.coursePercent)}%` : '—'}
+                  {typeof c.coursePercent === 'number' && (
+                    <a
+                      className="teacher-reportcard__cert"
+                      href={`/api/v1/school/certificate?learnerId=${encodeURIComponent(learnerId)}&periodId=${encodeURIComponent(periodId)}&courseId=${encodeURIComponent(c.courseId)}&format=pdf`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Certificate
+                    </a>
+                  )}
+                </span>
               </li>
             ))}
           </ul>

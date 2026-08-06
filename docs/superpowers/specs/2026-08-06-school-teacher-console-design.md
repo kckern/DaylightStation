@@ -280,10 +280,6 @@ failure.
 
 | todoId | Where (tab → panel) | Use case | What it becomes | Depends on | Backend work |
 |---|---|---|---|---|---|
-| `teacher.period.close` | Records → stub card | C1 | Close/freeze the period from the UI (with supersede flow), stamped `closedBy` | skeleton | PIN gate in `CloseAcademicPeriod` (endpoint exists) |
-| `teacher.progressreport.print` | Records → stub card | C2 | Progress-report PDF: period-to-date vs milestones, including enrichment credit | `teacher.milestones`, `teacher.enrichment.log` | new renderer (sibling of `ReportCardRenderer`) |
-| `teacher.certificates.print` | Records → stub card | C2 | Certificate PDF on course/program completion | skeleton | new renderer |
-| `teacher.enrichment.credit` | Records → stub card | C5 | "Enrichment / experiential learning" section on report card + progress report; enrichment days as pacing calendar exceptions (never delinquency; never moves grades/mastery/gates) | `teacher.enrichment.log`, `teacher.milestones` | read-model + renderer integration |
 | `teacher.attestation` | Repair → stub card | D2 | Record "I verify this was done/passed" as its own evidence type (`attestedBy`, reason); unlock a wedged gate. Never edits engine evidence | skeleton | new evidence kind + use case + endpoint |
 | `teacher.reassign` | Repair → stub card | D1 | Move a mis-attributed sitting's evidence between learners (fold-an-event model per §5) | skeleton | new use case + endpoint; semantics decided at wave 5 planning |
 | `teacher.notes.standalone` | Repair → FeedbackNotes | D3 | Write a note to a learner outside the review flow, delivered via the same agenda/receipt path | skeleton | new endpoint (delivery path exists) |

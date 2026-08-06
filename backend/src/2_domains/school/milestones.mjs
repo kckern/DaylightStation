@@ -36,3 +36,42 @@ export function milestoneStatus(milestone, { passedUnitIds, today }) {
   if (passedUnitIds.has(milestone.unitId)) return 'met';
   return today > milestone.dueBy ? 'behind' : 'upcoming';
 }
+
+/**
+ * Enrichment-aware pacing (spec C5): a 'behind' milestone whose overdue
+ * window is fully covered by the learner's enrichment days is 'excused' —
+ * out-of-band learning excuses pacing, never reads as delinquency. Days are
+ * whole calendar dates; the excusable set is the enrichment dates falling
+ * strictly AFTER the due day and no later than today.
+ */
+const dayMs = 86_400_000;
+const parseDay = (d) => Date.parse(`${d}T00:00:00Z`);
+
+function enrichmentDaysBetween(entries, { after, until }) {
+  const days = new Set();
+  for (const entry of entries) {
+    if (typeof entry?.from !== 'string') continue;
+    const to = typeof entry.to === 'string' ? entry.to : entry.from;
+    for (let t = parseDay(entry.from); t <= parseDay(to); t += dayMs) {
+      const date = new Date(t).toISOString().slice(0, 10);
+      if (date > after && date <= until) days.add(date);
+    }
+  }
+  return days.size;
+}
+
+export function paceMilestones(milestones, enrichmentEntries, { today }) {
+  return milestones.map((m) => {
+    if (m.status !== 'behind') {
+      return { ...m, overdueDays: 0, excusedDays: 0, effectiveStatus: m.status };
+    }
+    const overdueDays = Math.max(0, Math.round((parseDay(today) - parseDay(m.dueBy)) / dayMs));
+    const excusedDays = enrichmentDaysBetween(enrichmentEntries, { after: m.dueBy, until: today });
+    return {
+      ...m,
+      overdueDays,
+      excusedDays,
+      effectiveStatus: excusedDays >= overdueDays ? 'excused' : 'behind',
+    };
+  });
+}

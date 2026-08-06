@@ -95,6 +95,11 @@ export const schoolApi = {
   putMilestones: (body) => req('/milestones', body, 'PUT'),
   enrichment: (learnerId = null) => req(`/enrichment${learnerId ? `?learnerId=${encodeURIComponent(learnerId)}` : ''}`),
   postEnrichment: (body) => req('/enrichment', body),
+  // Wave-4 records.
+  closePeriod: (body) => req('/report-card/close', body),
+  progressReport: ({ learnerId, periodId }) => req(
+    `/progress-report?learnerId=${encodeURIComponent(learnerId)}&periodId=${encodeURIComponent(periodId)}`,
+  ),
   // A period-scoped snapshot of one learner's schooling (Task 6, `GetReportCard`).
   reportCard: ({ learnerId, periodId }) => req(
     `/report-card?learnerId=${encodeURIComponent(learnerId)}&periodId=${encodeURIComponent(periodId)}`,

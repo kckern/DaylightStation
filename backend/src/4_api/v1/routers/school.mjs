@@ -63,6 +63,9 @@ export function createSchoolRouter({
   // Wave-3 planning domains (teacher-console W3-1..W3-4): all writes are
   // TeacherGate-checked inside their use cases; reads are open like the rest.
   setAcademicPeriods = null,
+  getProgressReport = null,
+  renderProgressReportPdf = null,
+  renderCertificatePdf = null,
   passOverrideStore = null,
   setPassOverride = null,
   milestoneStatuses = null,
@@ -792,6 +795,49 @@ export function createSchoolRouter({
       learnerId, periodId, closedBy, supersede: body.supersede === true, pin: body.pin ?? null,
     });
     return res.status(201).json(frozen);
+  }));
+
+  // --- wave-4 records --------------------------------------------------------
+  router.get('/progress-report', wrap(async (req, res) => {
+    if (!getProgressReport) return res.json(null);
+    const learnerId = requiredTextQuery(req.query.learnerId, 'learnerId');
+    const periodId = requiredTextQuery(req.query.periodId, 'periodId');
+    const report = await getProgressReport.execute({ learnerId, periodId });
+    if (wantsPdf(req)) {
+      if (!renderProgressReportPdf) return res.status(503).json({ error: 'progress-report-render-unavailable' });
+      const { pdf } = await renderProgressReportPdf(report);
+      return res
+        .set('Content-Type', 'application/pdf')
+        .set('Content-Disposition', `inline; filename="progress-report-${slugify(learnerId)}-${slugify(periodId)}.pdf"`)
+        .send(pdf);
+    }
+    return res.set('Cache-Control', 'no-store').json(report);
+  }));
+  router.get('/certificate', wrap(async (req, res) => {
+    if (!getReportCard || !renderCertificatePdf) return res.status(503).json({ error: 'certificate-render-unavailable' });
+    const learnerId = requiredTextQuery(req.query.learnerId, 'learnerId');
+    const periodId = requiredTextQuery(req.query.periodId, 'periodId');
+    const courseId = requiredTextQuery(req.query.courseId, 'courseId');
+    const card = await getReportCard.execute({ learnerId, periodId });
+    const course = (card?.courses ?? []).find((c) => c.courseId === courseId);
+    // No fabricated diplomas: a course with nothing graded has no percent.
+    if (!course || typeof course.coursePercent !== 'number') {
+      throw new EntityNotFoundError('completed course', `${learnerId}/${courseId}`);
+    }
+    const roster = learnerDirectory ? await learnerDirectory.listLearners() : [];
+    const learnerName = roster.find((r) => r.id === learnerId)?.name ?? learnerId;
+    const { pdf } = await renderCertificatePdf({
+      learnerName,
+      courseId,
+      percent: course.coursePercent,
+      periodLabel: card.period?.label ?? periodId,
+      issuedOn: new Date().toISOString().slice(0, 10),
+      issuedBy: textQuery(req.query.issuedBy) ?? null,
+    });
+    return res
+      .set('Content-Type', 'application/pdf')
+      .set('Content-Disposition', `inline; filename="certificate-${slugify(learnerId)}-${slugify(courseId)}.pdf"`)
+      .send(pdf);
   }));
 
   // --- wave-3 planning domains ---------------------------------------------

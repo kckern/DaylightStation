@@ -201,3 +201,37 @@ describe('corrupt-file posture (M3 F3)', () => {
       .rejects.toThrow(/missing parent/);
   });
 });
+
+describe('paceMilestones (spec C5)', async () => {
+  const { paceMilestones } = await import('#domains/school/milestones.mjs');
+  const behind = { id: 'm1', unitId: 'u', dueBy: '2026-08-01', status: 'behind' };
+
+  it('a behind milestone fully covered by enrichment days is excused', () => {
+    const out = paceMilestones([behind], [
+      { from: '2026-08-02', to: '2026-08-06', learnerIds: ['felix'] },
+    ], { today: '2026-08-05' });
+    expect(out[0]).toMatchObject({ effectiveStatus: 'excused', overdueDays: 4, excusedDays: 4 });
+  });
+
+  it('partial coverage stays behind, with the excused count visible', () => {
+    const out = paceMilestones([behind], [
+      { from: '2026-08-02', to: '2026-08-02' },
+    ], { today: '2026-08-05' });
+    expect(out[0]).toMatchObject({ effectiveStatus: 'behind', overdueDays: 4, excusedDays: 1 });
+  });
+
+  it('enrichment days outside the overdue window never count', () => {
+    const out = paceMilestones([behind], [
+      { from: '2026-07-20', to: '2026-07-25' }, { from: '2026-09-01' },
+    ], { today: '2026-08-05' });
+    expect(out[0]).toMatchObject({ effectiveStatus: 'behind', excusedDays: 0 });
+  });
+
+  it('met and upcoming pass through untouched', () => {
+    const out = paceMilestones([
+      { id: 'a', unitId: 'u', dueBy: '2026-08-01', status: 'met' },
+      { id: 'b', unitId: 'u', dueBy: '2026-09-01', status: 'upcoming' },
+    ], [{ from: '2026-08-02' }], { today: '2026-08-05' });
+    expect(out.map((m) => m.effectiveStatus)).toEqual(['met', 'upcoming']);
+  });
+});

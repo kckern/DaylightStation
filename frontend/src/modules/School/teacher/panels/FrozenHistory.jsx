@@ -42,10 +42,10 @@ function FrozenRecord({ learnerId, periodId }) {
   );
 }
 
-export default function FrozenHistory({ learnerId }) {
+export default function FrozenHistory({ learnerId, refreshKey = 0 }) {
   const [openPeriodId, setOpenPeriodId] = useState(null);
   const frozen = usePanelFetch(() => schoolApi.reportCardFrozen({ learnerId }), {
-    deps: [learnerId],
+    deps: [learnerId, refreshKey],
     panel: 'frozen-history',
     isEmpty: (d) => !(Array.isArray(d) ? d : []).length,
   });
