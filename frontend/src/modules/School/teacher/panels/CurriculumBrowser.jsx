@@ -1,11 +1,50 @@
 /**
- * CurriculumBrowser — the published catalog, read-only: courses with their
- * units in authored sequence, standalone units after. Authoring stays YAML
- * (the promotion boundary); this is the planning view of what exists.
+ * CurriculumBrowser — the published catalog, read-only for structure
+ * (authoring stays YAML), plus the wave-3 pass-criteria overrides
+ * (teacher.passcriteria.edit): each unit shows its EFFECTIVE passing percent
+ * (override ?? authored) with a gated set/clear. The override is data with an
+ * audit trail; the authored curriculum is never edited here.
  */
+import { useState } from 'react';
 import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
+import { useTeacherWrite } from '../useTeacherWrite.js';
 import PanelFrame from './PanelFrame.jsx';
+
+function PassOverride({ unit, override, onSaved }) {
+  const { run, busy, errors } = useTeacherWrite({ panel: 'pass-override' });
+  const [value, setValue] = useState('');
+  const effective = override ?? unit.passingPercent;
+  const key = unit.unitId;
+
+  const set = () => {
+    const percent = Number.parseInt(value, 10);
+    run(key, ({ actorId, pin }) => schoolApi.putPassOverride(unit.unitId, {
+      percent: Number.isInteger(percent) ? percent : null, editedBy: actorId, pin,
+    }), { onSuccess: () => { setValue(''); onSaved(); } });
+  };
+  const clear = () => run(key, ({ actorId, pin }) => schoolApi.putPassOverride(unit.unitId, {
+    percent: null, editedBy: actorId, pin,
+  }), { onSuccess: onSaved });
+
+  return (
+    <span className="teacher-curriculum__pass">
+      <span className="teacher-curriculum__pass-now" data-overridden={override != null ? '' : undefined}>
+        pass {effective != null ? `${effective}%` : '—'}
+      </span>
+      <input
+        aria-label={`Pass override for ${unit.unitId}`}
+        inputMode="numeric"
+        placeholder="%"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+      />
+      <button type="button" disabled={busy === key || !value} onClick={set}>Set</button>
+      {override != null && <button type="button" disabled={busy === key} onClick={clear}>Clear</button>}
+      {errors[key] && <span className="teacher-panel__error">{errors[key]}</span>}
+    </span>
+  );
+}
 
 export default function CurriculumBrowser() {
   const catalog = usePanelFetch(() => schoolApi.curriculumUnits(), {
@@ -13,6 +52,9 @@ export default function CurriculumBrowser() {
     notFoundAs: 'unavailable',
     isEmpty: (d) => !(d?.units ?? []).length,
   });
+  const overrides = usePanelFetch(() => schoolApi.passOverrides(), { panel: 'pass-overrides', nullAs: 'empty' });
+  const overrideMap = overrides.data?.overrides ?? {};
+
   const units = catalog.data?.units ?? [];
   const byCourse = new Map();
   const standalone = [];
@@ -23,6 +65,14 @@ export default function CurriculumBrowser() {
     } else standalone.push(unit);
   }
   for (const list of byCourse.values()) list.sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0));
+
+  const row = (u) => (
+    <li key={u.unitId}>
+      <span className="teacher-curriculum__unit-title">{u.title}</span>
+      {!u.hasBank && <span className="teacher-curriculum__flag">no quiz bank</span>}
+      <PassOverride unit={u} override={overrideMap[u.unitId] ?? null} onSaved={overrides.retry} />
+    </li>
+  );
 
   return (
     <PanelFrame
@@ -36,26 +86,13 @@ export default function CurriculumBrowser() {
         {[...byCourse.entries()].map(([courseId, list]) => (
           <div key={courseId} className="teacher-curriculum__course">
             <h3>{courseId}</h3>
-            <ol>
-              {list.map((u) => (
-                <li key={u.unitId}>
-                  <span className="teacher-curriculum__unit-title">{u.title}</span>
-                  {!u.hasBank && <span className="teacher-curriculum__flag">no quiz bank</span>}
-                </li>
-              ))}
-            </ol>
+            <ol>{list.map(row)}</ol>
           </div>
         ))}
         {standalone.length > 0 && (
           <div className="teacher-curriculum__course">
             <h3>Standalone</h3>
-            <ul>
-              {standalone.map((u) => (
-                <li key={u.unitId}>
-                  <span className="teacher-curriculum__unit-title">{u.title}</span>
-                </li>
-              ))}
-            </ul>
+            <ul>{standalone.map(row)}</ul>
           </div>
         )}
       </div>

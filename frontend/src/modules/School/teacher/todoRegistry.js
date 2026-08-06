@@ -6,11 +6,6 @@
  * TeacherConsole.test.jsx enforces the UI side).
  */
 export const TODO = {
-  ASSIGNMENTS_EDIT: 'teacher.assignments.edit',
-  PERIODS_EDIT: 'teacher.periods.edit',
-  PASSCRITERIA_EDIT: 'teacher.passcriteria.edit',
-  MILESTONES: 'teacher.milestones',
-  ENRICHMENT_LOG: 'teacher.enrichment.log',
   PERIOD_CLOSE: 'teacher.period.close',
   PROGRESSREPORT_PRINT: 'teacher.progressreport.print',
   CERTIFICATES_PRINT: 'teacher.certificates.print',
@@ -22,26 +17,6 @@ export const TODO = {
 
 /** Card copy per stub — what will live there, in the teacher's language. */
 export const STUB_COPY = {
-  [TODO.ASSIGNMENTS_EDIT]: {
-    title: 'Edit assignments',
-    body: 'Add or remove courses, standalone units, and programs per learner.',
-  },
-  [TODO.PERIODS_EDIT]: {
-    title: 'Edit academic periods',
-    body: 'Create and adjust terms from here, once periods move from config into editable data.',
-  },
-  [TODO.PASSCRITERIA_EDIT]: {
-    title: 'Adjust pass criteria',
-    body: 'Change pass thresholds mid-period with a full audit trail.',
-  },
-  [TODO.MILESTONES]: {
-    title: 'Milestones & pacing',
-    body: 'Expected-progress targets ("by week 6, unit 4") with behind/ahead flags against the study calendar.',
-  },
-  [TODO.ENRICHMENT_LOG]: {
-    title: 'Enrichment log',
-    body: 'Record educational travel, museums, and projects as dated, subject-tagged entries — school outside the catalog.',
-  },
   [TODO.PERIOD_CLOSE]: {
     title: 'Close the period',
     body: 'Freeze this report card as the period record (with a supersede flow for corrections).',

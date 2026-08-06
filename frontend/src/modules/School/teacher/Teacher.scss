@@ -487,3 +487,162 @@
     }
   }
 }
+
+.teacher-assignments__pick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  padding: 3px 0;
+}
+
+.teacher-assignments__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+
+  button {
+    border: 1px solid #d9bfae;
+    background: #fff;
+    border-radius: 8px;
+    padding: 6px 14px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+}
+
+.teacher-assignments__edit {
+  margin-top: 10px;
+  border: 1px solid #d9bfae;
+  background: #fff;
+  border-radius: 8px;
+  padding: 5px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.teacher-periods__editor, .teacher-milestones__editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+
+  button {
+    align-self: flex-start;
+    border: 1px solid #d9bfae;
+    background: #fff;
+    border-radius: 8px;
+    padding: 4px 10px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+}
+
+.teacher-periods__editrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+
+  input, select {
+    border: 1px solid #e0d8c8;
+    border-radius: 8px;
+    padding: 4px 8px;
+    font-size: 13px;
+    flex: 1 1 100px;
+    min-width: 0;
+  }
+}
+
+.teacher-milestones {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+
+  &__row {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+    padding: 5px 0;
+    border-top: 1px solid #f1ece0;
+    &:first-child { border-top: none; }
+  }
+  &__unit { font-weight: 600; }
+  &__due { color: #8a8272; font-size: 12px; }
+  &__status {
+    margin-left: auto;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-radius: 6px;
+    padding: 1px 8px;
+    background: #f1ece0;
+    color: #6d6455;
+  }
+  &__row[data-status='met'] .teacher-milestones__status { background: #eef5e8; color: #4a7c3a; }
+  &__row[data-status='behind'] .teacher-milestones__status { background: #fbeae2; color: #93412c; }
+}
+
+.teacher-curriculum__pass {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 10px;
+  font-size: 12px;
+
+  &-now { color: #6d6455; }
+  &-now[data-overridden] { color: #8a5a2a; font-weight: 700; }
+
+  input {
+    width: 44px;
+    border: 1px solid #e0d8c8;
+    border-radius: 6px;
+    padding: 2px 6px;
+    font-size: 12px;
+  }
+  button {
+    border: 1px solid #d9bfae;
+    background: #fff;
+    border-radius: 6px;
+    padding: 2px 8px;
+    font-size: 11px;
+    cursor: pointer;
+  }
+}
+
+.teacher-enrichment {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+
+  &__row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 6px 0;
+    border-top: 1px solid #f1ece0;
+    &:first-child { border-top: none; }
+  }
+  &__title { font-weight: 700; }
+  &__dates { color: #8a8272; font-size: 12px; }
+  &__meta { color: #8a8272; font-size: 12px; flex-basis: 100%; }
+  &__note { flex-basis: 100%; color: #5d5647; font-style: italic; }
+
+  &__form {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 10px;
+
+    input, textarea {
+      border: 1px solid #e0d8c8;
+      border-radius: 8px;
+      padding: 6px 10px;
+      font-size: 13px;
+    }
+    textarea { min-height: 60px; resize: vertical; }
+  }
+  &__dates-row { display: flex; gap: 8px; }
+  &__picks { display: flex; flex-wrap: wrap; gap: 2px 14px; }
+}

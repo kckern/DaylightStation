@@ -121,14 +121,15 @@ describe('gated planning use cases', () => {
     expect(store.percentFor('math.01')).toBe(null);
   });
 
-  it('SetMilestones validates every entry before writing', async () => {
+  it('SetMilestones is learner-scoped: validates every entry and preserves the siblings', async () => {
     const store = new YamlMilestoneStore({ configService });
+    await store.replace([{ id: 'mx', learnerId: 'milo', courseId: 'math', unitId: 'math.01', dueBy: '2026-09-01' }], { editedBy: 'k' });
     const uc = new SetMilestones({ store, teacherGate: passingGate(), clock: () => new Date() });
-    const good = { id: 'm1', learnerId: 'felix', courseId: 'math', unitId: 'math.04', dueBy: '2026-10-01' };
-    await uc.execute({ milestones: [good], editedBy: 'kckern' });
-    expect(store.list().length).toBe(1);
-    await expect(uc.execute({ milestones: [{ ...good, dueBy: 'later' }], editedBy: 'kckern' })).rejects.toThrow(/dueBy/);
-    expect(store.list().length).toBe(1);
+    const good = { id: 'm1', courseId: 'math', unitId: 'math.04', dueBy: '2026-10-01' };
+    await uc.execute({ learnerId: 'felix', milestones: [good], editedBy: 'kckern' });
+    expect(store.list().map((m) => m.id).sort()).toEqual(['m1', 'mx']);
+    await expect(uc.execute({ learnerId: 'felix', milestones: [{ ...good, dueBy: 'later' }], editedBy: 'kckern' })).rejects.toThrow(/dueBy/);
+    expect(store.list().length).toBe(2);
   });
 
   it('GetMilestoneStatuses joins passed sessions, scoped to the learner', async () => {
