@@ -121,6 +121,25 @@ describe('POST /api/v1/school/report-card/close', () => {
     });
   });
 
+  it('400s on a missing learnerId, periodId, or closedBy — never a 500 from a deep guard', async () => {
+    const closeAcademicPeriod = { execute: vi.fn(async () => CARD) };
+    const app = appWith({ closeAcademicPeriod });
+
+    const noLearner = await request(app).post('/api/v1/school/report-card/close')
+      .send({ periodId: 'fall-2026', closedBy: 'dad' });
+    expect(noLearner.status).toBe(400);
+
+    const noPeriod = await request(app).post('/api/v1/school/report-card/close')
+      .send({ learnerId: 'kid1', closedBy: 'dad' });
+    expect(noPeriod.status).toBe(400);
+
+    const noClosedBy = await request(app).post('/api/v1/school/report-card/close')
+      .send({ learnerId: 'kid1', periodId: 'fall-2026' });
+    expect(noClosedBy.status).toBe(400);
+
+    expect(closeAcademicPeriod.execute).not.toHaveBeenCalled();
+  });
+
   it('409s a plain re-close (REPORT_CARD_ALREADY_CLOSED)', async () => {
     const closeAcademicPeriod = {
       execute: vi.fn(async () => {

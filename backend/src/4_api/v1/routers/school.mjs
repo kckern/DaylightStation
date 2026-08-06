@@ -724,11 +724,15 @@ export function createSchoolRouter({
 
   router.post('/report-card/close', wrap(async (req, res) => {
     if (!closeAcademicPeriod) throw new EntityNotFoundError('report card close', 'not configured');
-    const {
-      learnerId, periodId, closedBy, supersede,
-    } = req.body || {};
+    const body = req.body || {};
+    // Same required-text validation the GET route above uses — a missing
+    // field is a 400 from THIS boundary, never a 500 surfaced from a use-case
+    // guard several layers down.
+    const learnerId = requiredTextQuery(body.learnerId, 'learnerId');
+    const periodId = requiredTextQuery(body.periodId, 'periodId');
+    const closedBy = requiredTextQuery(body.closedBy, 'closedBy');
     const frozen = await closeAcademicPeriod.execute({
-      learnerId, periodId, closedBy, supersede: supersede === true,
+      learnerId, periodId, closedBy, supersede: body.supersede === true,
     });
     return res.status(201).json(frozen);
   }));

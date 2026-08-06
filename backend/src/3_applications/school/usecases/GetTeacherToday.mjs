@@ -7,16 +7,59 @@
  * arithmetic), not the plain UTC calendar date — a session opened at 11pm
  * still belongs to "today" until the boundary rolls, exactly as
  * `isSameStudyDay`/`agenda.mjs` already treat it everywhere else.
+ *
+ * The boundary is a WINDOW of real instants, `[startAtMs, endAtMs)`, not a
+ * single calendar-date string. `readAttemptDay`/session rows are bucketed by
+ * the RAW UTC date of `at`/`created` (`YamlSchoolDatastore`/
+ * `YamlWorkSessionDatastore`'s own on-disk sharding), which does NOT line up
+ * with the boundary-shifted date around 4am: comparing a plain date string
+ * either misses attempts filed under tomorrow's raw date that are still
+ * "today" study-day-wise (e.g. 03:15Z, queried at 03:30Z, before the 4am
+ * roll), or wrongly counts attempts filed under today's raw date that
+ * actually belong to YESTERDAY's study day (e.g. 02:00Z, queried at 04:30Z,
+ * after the roll). The fix: compute the window as instants, read every raw
+ * calendar-date day-file the window can touch (at most two, since the window
+ * is exactly 24h), and filter every attempt/session by its OWN timestamp
+ * against the window — never by a precomputed date-string match.
  */
 import { offsetMinutesFor } from '#domains/school/studyDay.mjs';
 
 const DEFAULT_BOUNDARY_HOUR = 4;
+const DAY_MS = 86_400_000;
 
-/** The calendar date (YYYY-MM-DD) of the current study day, boundary-shifted. */
-function todayStudyDay(nowMs, { timezone = null, boundaryHour = DEFAULT_BOUNDARY_HOUR } = {}) {
+/**
+ * The current study day as a window of real UTC instants, `[startAtMs,
+ * endAtMs)`. The household's UTC offset is resolved ONCE, at `nowMs`, and
+ * held constant across the window — matching `studyDay.mjs`'s own
+ * documented DST caveat (a boundary computed with a stale offset can drift
+ * by an hour around a transition); a window that straddled a DST change
+ * would need the offset re-resolved per edge, which this digest does not.
+ */
+function studyDayWindow(nowMs, { timezone = null, boundaryHour = DEFAULT_BOUNDARY_HOUR } = {}) {
   const offsetMinutes = offsetMinutesFor(timezone, nowMs);
-  const shifted = new Date(nowMs + offsetMinutes * 60_000 - boundaryHour * 3_600_000);
-  return shifted.toISOString().slice(0, 10);
+  const localMs = nowMs + offsetMinutes * 60_000;
+  const boundaryMs = boundaryHour * 3_600_000;
+  // The local calendar day the boundary-shifted instant falls on, as a whole
+  // multiple of DAY_MS — floor, not round, so we always land on the most
+  // recent boundary crossing at or before "now".
+  const dayIndex = Math.floor((localMs - boundaryMs) / DAY_MS);
+  const startLocalMs = dayIndex * DAY_MS + boundaryMs;
+  const startAtMs = startLocalMs - offsetMinutes * 60_000;
+  return { startAtMs, endAtMs: startAtMs + DAY_MS };
+}
+
+/** Every raw calendar date (`YYYY-MM-DD`) the window can touch — one or two. */
+function daysTouchedBy({ startAtMs, endAtMs }) {
+  const fromDay = new Date(startAtMs).toISOString().slice(0, 10);
+  const toDay = new Date(endAtMs - 1).toISOString().slice(0, 10);
+  return fromDay === toDay ? [fromDay] : [fromDay, toDay];
+}
+
+/** Whether an ISO timestamp falls inside `[startAtMs, endAtMs)`. */
+function withinWindow(iso, { startAtMs, endAtMs }) {
+  if (typeof iso !== 'string') return false;
+  const t = Date.parse(iso);
+  return Number.isFinite(t) && t >= startAtMs && t < endAtMs;
 }
 
 export class GetTeacherToday {
@@ -56,9 +99,10 @@ export class GetTeacherToday {
    *   pendingReview: number}>>}
    */
   async execute() {
-    const today = todayStudyDay(this.#clock().getTime(), {
+    const window = studyDayWindow(this.#clock().getTime(), {
       timezone: this.#timezone, boundaryHour: this.#boundaryHour,
     });
+    const days = daysTouchedBy(window);
     const learners = await this.#learnerDirectory.listLearners();
     const pending = this.#reviewQueue ? await this.#reviewQueue.listPending() : [];
 
@@ -66,18 +110,23 @@ export class GetTeacherToday {
     for (const learner of learners) {
       // eslint-disable-next-line no-await-in-loop
       const rows = await this.#sessions.listForLearner(learner.id);
-      const attemptsToday = this.#datastore.readAttemptDay(learner.id, today) ?? [];
+      // Read every raw-date file the window can touch, THEN filter by each
+      // attempt's own timestamp — the day file a row lands in and the study
+      // day it belongs to are not the same thing around the 4am boundary.
+      const attemptsToday = days
+        .flatMap((day) => this.#datastore.readAttemptDay(learner.id, day) ?? [])
+        .filter((a) => withinWindow(a.at, window));
       results.push({
         learnerId: learner.id,
         attemptsToday: attemptsToday.length,
         correctToday: attemptsToday.filter((a) => a.correct === true).length,
         sessionsToday: rows
-          .filter((row) => row.day === today)
+          .filter((row) => withinWindow(row.updatedAt, window))
           .map((row) => ({ unitId: row.unitId ?? null, state: row.state ?? null })),
         pendingReview: pending.filter((item) => item.learnerId === learner.id).length,
       });
     }
-    this.#logger.debug?.('school.teacher-today.built', { today, learners: results.length });
+    this.#logger.debug?.('school.teacher-today.built', { days, learners: results.length });
     return results;
   }
 }

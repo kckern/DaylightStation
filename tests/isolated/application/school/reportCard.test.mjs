@@ -35,9 +35,10 @@ function fakeCurriculum(units) {
   return { listUnits: async () => units };
 }
 
-function fakeAssignments(historyByLearner = {}) {
+function fakeAssignments(historyByLearner = {}, currentByLearner = {}) {
   return {
     history: async (learnerId) => historyByLearner[learnerId] ?? [],
+    get: async (learnerId) => currentByLearner[learnerId] ?? null,
   };
 }
 
@@ -125,7 +126,12 @@ function sessionRow({
     terminal,
     outcome: result ? { result } : null,
     gradedPercent,
-    day,
+    // The real datastore derives `day` from the session's CREATED-event date,
+    // not from `updatedAt` — but for a single-timestamp fixture, deriving it
+    // the same way (rather than letting a caller hand-set a `day` that could
+    // silently diverge from `updatedAt`) is what keeps a test honest about
+    // which field the use case under test actually reads.
+    day: day ?? (typeof updatedAt === 'string' ? updatedAt.slice(0, 10) : null),
     updatedAt,
   };
 }
@@ -161,6 +167,39 @@ describe('GetReportCard', () => {
 
     const card = await useCase.execute({ learnerId: 'kid1', periodId: 'fall-2026' });
     expect(card.courses.map((c) => c.courseId).sort()).toEqual(['history-capitals', 'math-fractions']);
+  });
+
+  it('falls back to the CURRENT assignment when history is EMPTY (legacy learner predates Task 3)', async () => {
+    const units = [unit({ unitId: 'frac.01', courseId: 'math-fractions' })];
+    const useCase = new GetReportCard({
+      curriculum: fakeCurriculum(units),
+      // No history at all for kid1 — only a plain `assignments.get` record.
+      assignments: fakeAssignments({}, {
+        kid1: {
+          learnerId: 'kid1', courses: ['math-fractions'], units: [], assignedBy: 'dad', updatedAt: '2026-07-01T00:00:00.000Z',
+        },
+      }),
+      sessions: fakeSessions([]), // no graded sessions either — (b) contributes nothing
+      datastore: fakeSchoolDatastore(),
+      academicPeriods: fakeAcademicPeriods(),
+      logger: silent,
+    });
+
+    const card = await useCase.execute({ learnerId: 'kid1', periodId: 'fall-2026' });
+    expect(card.courses.map((c) => c.courseId)).toEqual(['math-fractions']);
+  });
+
+  it('an empty history AND no current assignment reports zero courses, never a crash', async () => {
+    const useCase = new GetReportCard({
+      curriculum: fakeCurriculum([]),
+      assignments: fakeAssignments({}, {}),
+      sessions: fakeSessions([]),
+      datastore: fakeSchoolDatastore(),
+      academicPeriods: fakeAcademicPeriods(),
+      logger: silent,
+    });
+    const card = await useCase.execute({ learnerId: 'kid1', periodId: 'fall-2026' });
+    expect(card.courses).toEqual([]);
   });
 
   it('composes course grades from session rows using Task 5\'s projection, flattening outcome.result', async () => {
@@ -447,21 +486,21 @@ describe('CloseAcademicPeriod', () => {
 
 describe('GetTeacherToday', () => {
   it('counts only TODAY\'s (study-day, 4am boundary) attempts and sessions per roster learner', async () => {
-    const clock = () => new Date('2026-09-10T10:00:00.000Z'); // well after the 4am boundary -> today is 2026-09-10
+    const clock = () => new Date('2026-09-10T10:00:00.000Z'); // well after the 4am boundary
     const learnerDirectory = { listLearners: () => ROSTER.filter((r) => r.id === 'kid1') };
     const attempts = {
       kid1: [
         { at: '2026-09-10T09:00:00.000Z', correct: true },
         { at: '2026-09-10T09:05:00.000Z', correct: false },
-        { at: '2026-09-09T23:00:00.000Z', correct: true }, // yesterday — must NOT count
+        { at: '2026-09-09T23:00:00.000Z', correct: true }, // before today's 4am boundary — must NOT count
       ],
     };
     const rows = [
       sessionRow({
-        sessionId: 'ses_today', unitId: 'frac.01', state: 'in_progress', terminal: false, day: '2026-09-10', updatedAt: '2026-09-10T09:00:00.000Z',
+        sessionId: 'ses_today', unitId: 'frac.01', state: 'in_progress', terminal: false, updatedAt: '2026-09-10T09:00:00.000Z',
       }),
       sessionRow({
-        sessionId: 'ses_yesterday', unitId: 'frac.02', state: 'outcome_recorded', day: '2026-09-09', updatedAt: '2026-09-09T09:00:00.000Z',
+        sessionId: 'ses_yesterday', unitId: 'frac.02', state: 'outcome_recorded', updatedAt: '2026-09-09T09:00:00.000Z',
       }),
     ];
     const reviewQueue = { listPending: async () => [{ learnerId: 'kid1', itemId: 'q1' }] };
@@ -484,24 +523,52 @@ describe('GetTeacherToday', () => {
     }]);
   });
 
-  it('a session created just before the 4am boundary still belongs to YESTERDAY\'s digest', async () => {
-    // 03:30 UTC — before the 4am rollover, so "today" is still the PREVIOUS calendar day.
+  // The two boundary reproductions from code review: raw day-FILE date
+  // (`at.slice(0,10)`) and the study-day WINDOW disagree around 4am, in both
+  // directions. A single boundary-shifted date string cannot answer either
+  // case correctly — the fix reads every day file the window can touch and
+  // filters by each attempt's own timestamp.
+  it('a 03:15Z attempt IS visible when queried at 03:30Z — same not-yet-rolled study day, even though it is filed under TOMORROW\'s raw date', async () => {
+    // The study day live at 03:30Z on the 10th started 04:00Z on the 9th and
+    // runs to 04:00Z on the 10th. A naive single-date lookup would compute
+    // "2026-09-09" (03:30 shifted back 4h) and never see this attempt, which
+    // the datastore actually filed under "2026-09-10" (its own raw date).
     const clock = () => new Date('2026-09-10T03:30:00.000Z');
     const learnerDirectory = { listLearners: () => ROSTER.filter((r) => r.id === 'kid1') };
-    const rows = [
-      sessionRow({
-        sessionId: 'ses_late', unitId: 'frac.01', day: '2026-09-09', updatedAt: '2026-09-10T03:15:00.000Z',
-      }),
-    ];
+    const attempts = { kid1: [{ at: '2026-09-10T03:15:00.000Z', correct: true }] };
+    const rows = [sessionRow({ sessionId: 'ses_edge', unitId: 'frac.01', updatedAt: '2026-09-10T03:15:00.000Z' })];
     const useCase = new GetTeacherToday({
       learnerDirectory,
-      datastore: fakeSchoolDatastore({ attempts: {} }),
+      datastore: fakeSchoolDatastore({ attempts }),
       sessions: fakeSessions(rows),
       clock,
       logger: silent,
     });
     const digest = await useCase.execute();
+    expect(digest[0].attemptsToday).toBe(1);
     expect(digest[0].sessionsToday).toEqual([{ unitId: 'frac.01', state: 'outcome_recorded' }]);
+  });
+
+  it('a 02:00Z attempt is NOT counted after the boundary rolls at 04:30Z — same raw date as "today", but before the boundary so it is YESTERDAY\'s study day', async () => {
+    // At 04:30Z on the 10th the window has just rolled to [04:00Z the 10th,
+    // 04:00Z the 11th). The attempt at 02:00Z on the 10th shares its raw
+    // day-file date ("2026-09-10") with "today", but happened before 04:00Z,
+    // so it belongs to the PREVIOUS study day. A naive single-date lookup on
+    // "2026-09-10" would wrongly include it.
+    const clock = () => new Date('2026-09-10T04:30:00.000Z');
+    const learnerDirectory = { listLearners: () => ROSTER.filter((r) => r.id === 'kid1') };
+    const attempts = { kid1: [{ at: '2026-09-10T02:00:00.000Z', correct: true }] };
+    const rows = [sessionRow({ sessionId: 'ses_before', unitId: 'frac.01', updatedAt: '2026-09-10T02:00:00.000Z' })];
+    const useCase = new GetTeacherToday({
+      learnerDirectory,
+      datastore: fakeSchoolDatastore({ attempts }),
+      sessions: fakeSessions(rows),
+      clock,
+      logger: silent,
+    });
+    const digest = await useCase.execute();
+    expect(digest[0].attemptsToday).toBe(0);
+    expect(digest[0].sessionsToday).toEqual([]);
   });
 
   it('cannot be built without learnerDirectory/datastore/sessions', () => {
