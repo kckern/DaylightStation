@@ -966,7 +966,9 @@ export function createSchoolRouter({
       gradedAt: item.gradedAt ?? null,
       prompt: item.prompt ?? null,
       questionNumber: item.questionNumber ?? null,
-    })), ...standaloneNotes].sort((a, b) => String(b.gradedAt ?? '').localeCompare(String(a.gradedAt ?? ''))));
+    })), ...standaloneNotes]
+      .sort((a, b) => String(b.gradedAt ?? '').localeCompare(String(a.gradedAt ?? '')))
+      .slice(0, limit));
   }));
 
   if (schoolCalcRouter) router.use('/calc', schoolCalcRouter);

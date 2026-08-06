@@ -15,13 +15,6 @@ export default function FeedbackNotes({ learnerId, learnerName }) {
     deps: [learnerId],
     panel: 'feedback-notes',
   });
-  const { run, busy, errors } = useTeacherWrite({ panel: 'feedback-notes' });
-  const [draft, setDraft] = useState('');
-
-  const send = () => run('send', ({ actorId, pin }) => schoolApi.postTeacherNote({
-    learnerId, note: draft, from: actorId, pin,
-  }), { onSuccess: () => { setDraft(''); feedback.retry(); } });
-
   return (
     <PanelFrame
       title="Feedback delivered"

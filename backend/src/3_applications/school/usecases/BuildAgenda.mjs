@@ -58,7 +58,7 @@ function withAttestedPasses(history, attestations, learnerId) {
     ...history,
     ...entries.map((a) => ({
       sessionId: `attested:${a.id}`, learnerId, unitId: a.unitId,
-      outcome: { result: 'passed' }, attested: true, updatedAt: a.at,
+      outcome: { result: 'passed' }, attested: true, terminal: true, updatedAt: a.at,
     })),
   ];
 }
@@ -157,8 +157,12 @@ export class BuildAgenda {
     if (plan.errors.length) this.#logger.warn?.('school.agenda.plan-errors', { learnerId, errors: plan.errors });
 
     const programStatuses = await this.#collectProgramStatuses(plan, learnerId);
+    // RAW history only (M5 review): the synthetic attested rows exist to
+    // unlock the PLANNER's gate — the daily-serving layer must not read an
+    // attestation as "this subject was served today", or the repair day is
+    // exactly the day the agenda goes silent.
     const { sections } = planDailyAgenda({
-      plan, sessions: history, programStatuses, now: nowIso, timezone: this.#timezone,
+      plan, sessions: rawHistory, programStatuses, now: nowIso, timezone: this.#timezone,
     });
 
     const unitsById = new Map(units.map((u) => [u.unitId, u]));

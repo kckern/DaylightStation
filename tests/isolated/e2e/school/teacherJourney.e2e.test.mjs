@@ -35,7 +35,7 @@ describe('fake student → Pokemon course → virtual OMR → results → teache
     h = await createLifecycleHarness({ roster: ROSTER, startIso: '2026-08-06T16:00:00.000Z' });
   });
 
-  it('runs the whole journey against one production graph', async () => {
+  it('runs the lifecycle on the production composition; teacher views on the same classes app.mjs wires', async () => {
     // --- the TEACHER enrolls the student (the console's own write path) -----
     const enrolled = await h.useCases.setAssignments.execute({
       learnerId: ASH, courses: [POKEMON_COURSE], units: [], assignedBy: TEACHER,
@@ -80,6 +80,10 @@ describe('fake student → Pokemon course → virtual OMR → results → teache
     expect(new Set(attempts.map((a) => a.itemId))).toEqual(new Set(bank.items.map((i) => i.id)));
 
     // --- TEACHER VIEW 1: the today digest (the console's roster strip) ------
+    // Honesty note (M5 review): the teacher-view reads below construct the
+    // SAME use-case classes app.mjs wires, but with hand-shimmed config /
+    // directory / periods — app.mjs's own teacher-read wiring is covered by
+    // the route-level suites, not here.
     const teacherViewDatastore = new YamlSchoolDatastore({
       configService: {
         getDataDir: () => h.dataDir,

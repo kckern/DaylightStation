@@ -193,6 +193,12 @@ export class YamlSchoolDatastore {
     const dayStr = String(day);
     if (!DAY_RE.test(dayStr)) return 0;
     const fromBase = path.join(fromDir, dayStr);
+    const toBaseCheck = path.join(toDir, dayStr);
+    // Same shard = the two writes below would erase the assessment entirely.
+    // The use case already refuses from===to; the persistence layer refuses
+    // independently — one caller must not be the only thing between an
+    // append-only evidence store and silent loss.
+    if (path.resolve(fromBase) === path.resolve(toBaseCheck)) return 0;
     const rows = loadYamlSafe(fromBase) || [];
     const matches = (a) => (a?.sessionId ?? a?.provenance?.recordId ?? null) === assessmentId;
     const moving = rows.filter(matches);
@@ -210,8 +216,11 @@ export class YamlSchoolDatastore {
         reassignedAt: at,
       });
     }
-    // Destination first: a crash between the two writes duplicates rather
-    // than loses evidence, and a duplicate is visible and fixable.
+    // Destination first: a crash BETWEEN the two writes duplicates rather
+    // than loses evidence, and a duplicate is visible and fixable. (A crash
+    // MID-write shares saveYaml's own non-atomic posture with every other
+    // shard write in this file — not a new exposure, but not covered by
+    // this ordering either.)
     saveYaml(toBase, target, { noRefs: true });
     saveYaml(fromBase, keeping, { noRefs: true });
     return moving.length;
