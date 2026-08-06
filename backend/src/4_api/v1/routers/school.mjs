@@ -547,11 +547,11 @@ export function createSchoolRouter({
   }));
   router.post('/print/:requestId/approve', wrap(async (req, res) => {
     if (!printService) throw new EntityNotFoundError('printing', 'not configured');
-    res.json(await printService.approve({ requestId: req.params.requestId, approver: req.body?.approver }));
+    res.json(await printService.approve({ requestId: req.params.requestId, approver: req.body?.approver, pin: req.body?.pin ?? null }));
   }));
   router.post('/print/:requestId/deny', wrap(async (req, res) => {
     if (!printService) throw new EntityNotFoundError('printing', 'not configured');
-    res.json(await printService.deny({ requestId: req.params.requestId, approver: req.body?.approver }));
+    res.json(await printService.deny({ requestId: req.params.requestId, approver: req.body?.approver, pin: req.body?.pin ?? null }));
   }));
 
   // Materials framework (catalog + per-unit progress/quiz gates). The panel
@@ -774,7 +774,7 @@ export function createSchoolRouter({
     const periodId = requiredTextQuery(body.periodId, 'periodId');
     const closedBy = requiredTextQuery(body.closedBy, 'closedBy');
     const frozen = await closeAcademicPeriod.execute({
-      learnerId, periodId, closedBy, supersede: body.supersede === true,
+      learnerId, periodId, closedBy, supersede: body.supersede === true, pin: body.pin ?? null,
     });
     return res.status(201).json(frozen);
   }));

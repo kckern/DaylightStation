@@ -328,9 +328,9 @@ export function createSchoolLifecycleRouter({
   // than performing it unguarded.
   if (resolveReviewItem) {
     router.post('/sessions/:sessionId/review/:itemId', guarded(async (req, res) => {
-      const { verdict, gradedBy = null, note = null } = req.body || {};
+      const { verdict, gradedBy = null, note = null, pin = null } = req.body || {};
       res.json(await resolveReviewItem.execute({
-        sessionId: req.params.sessionId, itemId: req.params.itemId, verdict, gradedBy, note,
+        sessionId: req.params.sessionId, itemId: req.params.itemId, verdict, gradedBy, note, pin,
       }));
     }));
   }
@@ -377,9 +377,9 @@ export function createSchoolLifecycleRouter({
   // its use case, while the reads above stay open.
   if (setAssignments) {
     router.put('/assignments/:learnerId', guarded(async (req, res) => {
-      const { courses = [], units = [], assignedBy = null } = req.body || {};
+      const { courses = [], units = [], assignedBy = null, pin = null } = req.body || {};
       res.json(await setAssignments.execute({
-        learnerId: req.params.learnerId, courses, units, assignedBy,
+        learnerId: req.params.learnerId, courses, units, assignedBy, pin,
       }));
     }));
   }

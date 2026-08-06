@@ -2983,6 +2983,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         logger: rootLogger.child({ module: 'school-report-card' })
       });
       closeAcademicPeriod = new CloseAcademicPeriod({
+        teacherGate: schoolLifecycle.teacherGate ?? null,
         getReportCard,
         datastore: schoolDatastore,
         grownUps: schoolLifecycle.grownUps,
@@ -3068,6 +3069,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       },
       userService,
       paperCertifyBank,
+      teacherGate: schoolLifecycle.teacherGate ?? null,
       logger: rootLogger.child({ module: 'school-print' })
     });
     rootLogger.child({ module: 'school-print' }).info?.('school.print.ready', { host: printerHost, printables: schoolFullConfig.printables?.length || 0, paperCertified: paperProfiles.length > 0 });

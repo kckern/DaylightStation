@@ -14,7 +14,7 @@
 import { ValidationError } from '#domains/core/errors/index.mjs';
 
 export class SetAssignments {
-  #assignments; #grownUps; #clock; #logger;
+  #assignments; #grownUps; #teacherGate; #clock; #logger;
 
   /**
    * @param {object} deps
@@ -23,11 +23,12 @@ export class SetAssignments {
    * @param {() => Date} [deps.clock]
    * @param {object} [deps.logger]
    */
-  constructor({ assignments, grownUps, clock = () => new Date(), logger = console } = {}) {
+  constructor({ assignments, grownUps, teacherGate = null, clock = () => new Date(), logger = console } = {}) {
     if (!assignments) throw new Error('SetAssignments requires an assignments store');
     if (!grownUps) throw new Error('SetAssignments requires grownUps (a GrownUpGate)');
     this.#assignments = assignments;
     this.#grownUps = grownUps;
+    this.#teacherGate = teacherGate;
     this.#clock = clock;
     this.#logger = logger;
   }
@@ -42,8 +43,9 @@ export class SetAssignments {
    * @throws {import('#domains/school/errors.mjs').GuestForbiddenError} not a grown-up
    * @throws {ValidationError} the record is not a shape the store can hold
    */
-  async execute({ learnerId, courses = [], units = [], assignedBy = null } = {}) {
-    this.#grownUps.assert(assignedBy, 'Only a grown-up can change what a child is assigned', {
+  async execute({ learnerId, courses = [], units = [], assignedBy = null, pin = null } = {}) {
+    if (this.#teacherGate) this.#teacherGate.assert({ userId: assignedBy, pin, action: 'assignments.put' });
+    else this.#grownUps.assert(assignedBy, 'Only a grown-up can change what a child is assigned', {
       action: 'assignments.put', learnerId,
     });
 

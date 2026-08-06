@@ -20,7 +20,7 @@ import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index
 const VERDICTS = new Set(['correct', 'incorrect']);
 
 export class ResolveReviewItem {
-  #reviewQueue; #grownUps; #clock; #logger;
+  #reviewQueue; #grownUps; #teacherGate; #clock; #logger;
 
   /**
    * @param {object} deps
@@ -29,11 +29,12 @@ export class ResolveReviewItem {
    * @param {() => Date} [deps.clock]
    * @param {object} [deps.logger]
    */
-  constructor({ reviewQueue, grownUps, clock = () => new Date(), logger = console } = {}) {
+  constructor({ reviewQueue, grownUps, teacherGate = null, clock = () => new Date(), logger = console } = {}) {
     if (!reviewQueue) throw new Error('ResolveReviewItem requires a reviewQueue');
     if (!grownUps) throw new Error('ResolveReviewItem requires grownUps (a GrownUpGate)');
     this.#reviewQueue = reviewQueue;
     this.#grownUps = grownUps;
+    this.#teacherGate = teacherGate;
     this.#clock = clock;
     this.#logger = logger;
   }
@@ -50,8 +51,11 @@ export class ResolveReviewItem {
    * @throws {ValidationError} the verdict is not correct|incorrect
    * @throws {EntityNotFoundError} nothing with that itemId is queued
    */
-  async execute({ sessionId, itemId, verdict, gradedBy = null, note = null } = {}) {
-    this.#grownUps.assert(gradedBy, 'Only a grown-up can sign off schoolwork', {
+  async execute({ sessionId, itemId, verdict, gradedBy = null, note = null, pin = null } = {}) {
+    // TeacherGate (spec §1) subsumes the grown-up rule and adds role + pin;
+    // absent (pre-console composition, paper flows' tests) → legacy gate.
+    if (this.#teacherGate) this.#teacherGate.assert({ userId: gradedBy, pin, action: 'review.resolve' });
+    else this.#grownUps.assert(gradedBy, 'Only a grown-up can sign off schoolwork', {
       action: 'review.resolve', sessionId, itemId,
     });
 
