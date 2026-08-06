@@ -4,6 +4,7 @@ import { schoolLog } from '../schoolLog.js';
 import MetricTile from './MetricTile.jsx';
 import CurriculumHistoryOverview from '../progress/CurriculumHistoryOverview.jsx';
 import InstructionalInsightsOverview from '../progress/InstructionalInsightsOverview.jsx';
+import { useTeacherToday } from './useTeacherToday.js';
 
 /**
  * The aggregate board: every program × every learner, in one shape.
@@ -37,6 +38,69 @@ function relativeDay(iso) {
   if (months < 12) return `${months} ${months === 1 ? 'month' : 'months'} ago`;
   const years = Math.floor(days / 365);
   return `${years} ${years === 1 ? 'year' : 'years'} ago`;
+}
+
+const SESSION_STATE_LABEL = {
+  blocked: 'Blocked',
+  active: 'Active',
+  idle: 'Paused',
+  'not-started': 'Not started',
+  complete: 'Complete',
+};
+
+/**
+ * "Today" strip — attempts, sessions in flight, and anything waiting on a
+ * grown-up, for ONE learner (Task 6's `GetTeacherToday`). Rendered above that
+ * learner's program cards so the household teacher sees today before the
+ * historical board underneath it.
+ *
+ * The pending-review badge is the only navigation this view has ever needed
+ * to a DIFFERENT app: the review queue lives in Admin (`/admin/school/review`,
+ * behind its own auth gate), not on this kiosk board, so it is a real link —
+ * a broken/dead link would be worse than the count alone, but a link that
+ * goes nowhere is worse than either.
+ */
+function TodayStrip({ digest, status }) {
+  if (status === 'error') {
+    return <p className="school-report__today school-report__today-error">Could not load today&apos;s activity.</p>;
+  }
+  // Nothing to show yet (still loading, or this learner has no row at all) —
+  // stay out of the way rather than flash an empty strip before data lands.
+  if (status !== 'ready' || !digest) return null;
+
+  const { attemptsToday, correctToday, sessionsToday, pendingReview } = digest;
+  const hasWork = attemptsToday > 0 || sessionsToday.length > 0;
+
+  return (
+    <div className="school-report__today">
+      {hasWork ? (
+        <>
+          <span className="school-report__today-stat">
+            {attemptsToday} {attemptsToday === 1 ? 'attempt' : 'attempts'} today
+            {attemptsToday > 0 && ` · ${correctToday} correct`}
+          </span>
+          {sessionsToday.length > 0 && (
+            <span className="school-report__today-sessions">
+              {sessionsToday.map((s, i) => (
+                // eslint-disable-next-line react/no-array-index-key -- unitId can repeat/be null; order is stable within one fetch.
+                <span key={`${s.unitId ?? 'unit'}-${i}`} className="school-report__today-session">
+                  {s.unitId ?? 'Unnamed unit'} · {SESSION_STATE_LABEL[s.state] ?? s.state ?? 'in progress'}
+                </span>
+              ))}
+            </span>
+          )}
+        </>
+      ) : (
+        <span className="school-report__today-empty">No work recorded today</span>
+      )}
+
+      {pendingReview > 0 && (
+        <a href="/admin/school/review" className="school-report__today-badge">
+          {pendingReview} {pendingReview === 1 ? 'item needs' : 'items need'} marking
+        </a>
+      )}
+    </div>
+  );
 }
 
 function ProgramCard({ report }) {
@@ -169,6 +233,7 @@ export default function ReportPanel({ userId = null, onFollowUp = null }) {
   const [periodId, setPeriodId] = useState('');
   const [subjectId, setSubjectId] = useState('');
   const [coreOnly, setCoreOnly] = useState(false);
+  const { byLearner: todayByLearner, status: todayStatus } = useTeacherToday();
 
   useEffect(() => { setFocus(userId); }, [userId]);
 
@@ -263,6 +328,7 @@ export default function ReportPanel({ userId = null, onFollowUp = null }) {
               <span className="school-report__flag">Needs attention</span>
             )}
           </header>
+          <TodayStrip digest={todayByLearner.get(learner.id)} status={todayStatus} />
           <div className="school-report__cards">
             {learner.reports.map((r) => <ProgramCard key={`${r.program}:${r.label}`} report={r} />)}
           </div>

@@ -60,6 +60,9 @@ export const schoolApi = {
     const qs = p.toString();
     return req(`/report${qs ? `?${qs}` : ''}`);
   },
+  // The teacher's one-glance "today" digest (Task 6, `GetTeacherToday`):
+  // a plain array, one row per roster learner — NOT wrapped in `{learners}`.
+  teacherToday: () => req('/teacher/today'),
   progressOptions: () => req('/progress/options'),
   progress: (query = {}) => {
     const p = new URLSearchParams();
