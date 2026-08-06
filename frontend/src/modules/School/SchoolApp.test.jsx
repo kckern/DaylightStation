@@ -11,6 +11,7 @@ vi.mock('./schoolLog.js', () => ({
     bank: vi.fn(), nav: vi.fn(), home: vi.fn(), materials: vi.fn(), materialsError: vi.fn(),
     print: vi.fn(), typing: vi.fn(), player: vi.fn(),
     surface: (...a) => surfaceLogMock(...a),
+    feedback: vi.fn(), feedbackError: vi.fn(), standing: vi.fn(), standingError: vi.fn(),
   },
 }));
 
@@ -42,6 +43,11 @@ vi.mock('./schoolApi.js', () => ({
     materialProgress: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
     surfaceProfile: (...a) => surfaceProfileMock(...a),
     certification: (...a) => certificationMock(...a),
+    // Feedback delivery + kid-visible standing (Task 9) — the student panel
+    // fetches these unconditionally once a learner is claimed.
+    periods: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
+    reportCard: vi.fn(async () => ({ ok: true, status: 200, data: null })),
+    reviewLearner: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
   },
 }));
 

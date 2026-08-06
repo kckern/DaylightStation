@@ -41,12 +41,12 @@
 import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
 import { outcomeIdFor, evaluateOutcome, rewardDecision } from '#domains/school/sessions/outcome.mjs';
 import { mintToken } from '#domains/school/sessions/tokens.mjs';
-import { resultDocument, noticeDocument } from '#domains/school/documents/receipts.mjs';
+import { resultDocument, noticeDocument, reviewNoteLines } from '#domains/school/documents/receipts.mjs';
 import { planLearnerWork } from '#domains/school/planner.mjs';
 
 export class CloseSessionOutcome {
   #curriculum; #sessions; #tokens; #assignments; #economy; #economyAction; #economyEnabled;
-  #receipts; #grownUps; #clock; #rng; #logger;
+  #receipts; #grownUps; #clock; #rng; #logger; #reviewQueue;
 
   /**
    * @param {object} deps
@@ -64,12 +64,17 @@ export class CloseSessionOutcome {
    *   approve a reward; required, so the check cannot be omitted by wiring
    * @param {() => Date} [deps.clock]
    * @param {() => number} [deps.rng]
+   * @param {import('../ports/IReviewQueue.mjs').IReviewQueue} [deps.reviewQueue] - read to
+   *   surface a grown-up's resolved-item notes on the result receipt (spec
+   *   R7). Optional: absent, the receipt simply carries no "Notes for you"
+   *   section, same as a household with no review queue wired at all.
    * @param {object} [deps.logger]
    */
   constructor({
     curriculum, sessions, tokens, assignments,
     economy = null, economyAction = 'school-unit-complete', economyEnabled = false,
-    receipts = null, grownUps = null, clock = () => new Date(), rng = Math.random, logger = console,
+    receipts = null, grownUps = null, clock = () => new Date(), rng = Math.random,
+    reviewQueue = null, logger = console,
   } = {}) {
     if (!curriculum || !sessions || !tokens || !assignments) {
       throw new Error('CloseSessionOutcome requires curriculum, sessions, tokens and assignments');
@@ -86,6 +91,7 @@ export class CloseSessionOutcome {
     this.#grownUps = grownUps;
     this.#clock = clock;
     this.#rng = rng;
+    this.#reviewQueue = reviewQueue;
     this.#logger = logger;
   }
 
@@ -196,6 +202,7 @@ export class CloseSessionOutcome {
     const actions = [];
     if (retryToken) actions.push({ token: retryToken, label: 'Try again with a fresh sheet' });
 
+    const notes = await this.#collectNotes(sessionId);
     const document = resultDocument({
       sessionId,
       unitTitle: unit?.title ?? state.unitId,
@@ -205,6 +212,7 @@ export class CloseSessionOutcome {
       actions,
       reward: reward && reward.amount > 0 ? { amount: reward.amount } : null,
       unlockedTitle: unlocked?.title ?? null,
+      notes,
     });
 
     return {
@@ -220,6 +228,22 @@ export class CloseSessionOutcome {
       document,
       ...(await this.#printed(document)),
     };
+  }
+
+  /**
+   * A grown-up's written feedback on THIS session's review items, formatted
+   * for the result receipt (spec R7) — never more than a handful of lines,
+   * and never something a missing/failing review queue should block the
+   * settlement over.
+   */
+  async #collectNotes(sessionId) {
+    if (!this.#reviewQueue) return [];
+    try {
+      return reviewNoteLines(await this.#reviewQueue.listForSession(sessionId));
+    } catch (err) {
+      this.#logger.warn?.('school.outcome.notes-failed', { sessionId, error: err.message });
+      return [];
+    }
   }
 
   /**

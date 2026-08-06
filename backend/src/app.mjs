@@ -3072,6 +3072,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     reportCardsStore: schoolDatastore,
     // Printable report card PDF (Task 7) — also wired unconditionally.
     renderReportCardPdf,
+    // Feedback delivery + kid-visible standing (Task 9, spec R7 / adequacy
+    // SHOULD 9) — the SAME review-queue store and academic-period source
+    // `getReportCard` already reads above, reused rather than rebuilt.
+    reviewQueue: schoolLifecycle.stores?.reviewQueue ?? null,
+    academicPeriods: schoolAcademicPeriods,
     logger: rootLogger.child({ module: 'school-api' })
   });
 

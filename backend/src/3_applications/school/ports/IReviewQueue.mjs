@@ -68,6 +68,20 @@ export class IReviewQueue {
   async listPending() {
     throw new Error('IReviewQueue.listPending must be implemented');
   }
+
+  /**
+   * A learner's own RESOLVED items, newest-first — the feedback a child can
+   * see (spec R7): what a grown-up already marked and why, never a pending
+   * item still awaiting a verdict.
+   *
+   * @param {string} learnerId
+   * @param {object} [opts]
+   * @param {number} [opts.limit=20]
+   * @returns {Promise<ReviewItem[]>}
+   */
+  async listForLearner(learnerId, { limit = 20 } = {}) {
+    throw new Error('IReviewQueue.listForLearner must be implemented');
+  }
 }
 
 export default IReviewQueue;

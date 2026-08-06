@@ -148,6 +148,59 @@ export class YamlReviewQueue extends IReviewQueue {
     });
   }
 
+  /**
+   * @inheritdoc
+   *
+   * A learner's own review files are not day-bucketed the way work sessions
+   * are (`YamlWorkSessionDatastore`'s `{YYYY-MM-DD}/{sessionId}/` layout) —
+   * this store is flat, one file per session, forever. So "windowed to the
+   * last 60 days" is expressed against each FILE's own mtime rather than a
+   * day-directory listing: a session's review file stops being written the
+   * moment every item on it is resolved, so its mtime IS the date of the
+   * last verdict recorded against it. A file untouched in the window is
+   * skipped WITHOUT opening it — the whole point of bounding this scan, since
+   * the review directory only ever grows across a household's lifetime.
+   */
+  async listForLearner(learnerId, { limit = 20, maxAgeDays = 60 } = {}) {
+    if (typeof learnerId !== 'string' || !learnerId.trim()) return [];
+    let entries;
+    try {
+      entries = await fs.readdir(this.#root(), { withFileTypes: true });
+    } catch {
+      return [];
+    }
+    const sessionIds = new Set();
+    entries.forEach((entry) => {
+      if (!entry.isFile() || !YAML_FILE_RE.test(entry.name)) return;
+      const sessionId = entry.name.replace(SETTLED_FILE_RE, '').replace(YAML_FILE_RE, '');
+      if (isSafeSessionId(sessionId)) sessionIds.add(sessionId);
+    });
+
+    const cutoffMs = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
+    const collected = [];
+    await Promise.all([...sessionIds].map(async (sessionId) => {
+      const mtimes = (await Promise.all([
+        fs.stat(this.#liveFile(sessionId)).catch(() => null),
+        fs.stat(this.#settledFile(sessionId)).catch(() => null),
+      ])).filter(Boolean).map((s) => s.mtimeMs);
+      // Neither name stat-able (raced with a delete) or genuinely stale:
+      // nothing here can contribute a row within the window.
+      if (mtimes.length && !mtimes.some((mtime) => mtime >= cutoffMs)) return;
+
+      // `#read` already checks live-then-settled — the same "both names"
+      // handling every other reader on this store gets for free.
+      const items = await this.#read(sessionId);
+      items
+        .filter((item) => item && item.learnerId === learnerId
+          && (item.verdict === 'correct' || item.verdict === 'incorrect'))
+        .forEach((item) => collected.push(item));
+    }));
+
+    return collected
+      .sort((a, b) => String(b.gradedAt ?? '').localeCompare(String(a.gradedAt ?? '')))
+      .slice(0, limit);
+  }
+
   /** @inheritdoc */
   async listPending() {
     let names;

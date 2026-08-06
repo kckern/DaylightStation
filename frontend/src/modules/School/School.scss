@@ -1163,6 +1163,35 @@
     display: flex; flex-direction: column; gap: 0.25rem; margin-top: auto;
     color: var(--school-muted); font-size: 0.9rem;
   }
+
+  // Kid-visible standing + feedback delivery (Task 9, spec R7 / adequacy
+  // SHOULD 9) — both sections omit entirely rather than render empty, so no
+  // "nothing here" chrome of their own is needed.
+  &__standing, &__feedback {
+    display: flex; flex-direction: column; gap: 0.4rem;
+    padding: 0.75rem; border-radius: 12px; background: var(--school-surface-2);
+  }
+  &__standing-title, &__feedback-title {
+    margin: 0; font-size: 0.8rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--school-muted);
+  }
+  &__standing-list, &__feedback-list {
+    list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.35rem;
+  }
+  &__standing-item {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem;
+    font-size: 0.95rem;
+  }
+  &__standing-label { font-weight: 600; }
+  &__standing-percent { color: var(--school-muted); font-weight: 700; }
+
+  &__feedback-item {
+    display: flex; align-items: flex-start; gap: 0.5rem; font-size: 0.9rem;
+    &.is-correct .school-rail__feedback-verdict { color: var(--school-fg); }
+    &.is-incorrect .school-rail__feedback-verdict { color: var(--school-warn); }
+  }
+  &__feedback-verdict { flex: 0 0 auto; font-weight: 800; }
+  &__feedback-note { color: var(--school-muted); }
 }
 
 // --- subject / library pages -------------------------------------------------

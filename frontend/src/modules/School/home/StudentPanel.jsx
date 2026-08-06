@@ -4,6 +4,8 @@ import { schoolLog } from '../schoolLog.js';
 import { sectionForReport } from '../programs.js';
 import { useSchoolProfile } from '../identity/SchoolProfileContext.jsx';
 import ProfileAvatar from '../../../lib/identity/ProfileAvatar.jsx';
+import { useLearnerFeedback } from './useLearnerFeedback.js';
+import { useLearnerStanding } from './useLearnerStanding.js';
 
 /**
  * The student panel — the top of the home's meta rail. This is where the old
@@ -80,6 +82,10 @@ export default function StudentPanel({ onOpen, bankTitles }) {
 
   const model = useMemo(() => derivePanelModel(reports), [reports]);
   const score = useMemo(() => deriveLatestScore(results, bankTitles), [results, bankTitles]);
+  // Feedback delivery + kid-visible standing (Task 9, spec R7 / adequacy
+  // SHOULD 9). Both hooks no-op quietly with no claimed learner.
+  const { items: feedback } = useLearnerFeedback(currentUser?.id ?? null);
+  const { courses: standing } = useLearnerStanding(currentUser?.id ?? null);
 
   if (!currentUser) {
     // The faces ARE the claim affordance: one tap on your own face, no
@@ -167,6 +173,44 @@ export default function StudentPanel({ onOpen, bankTitles }) {
         <div className="school-rail__facts">
           {score && <span>Latest: {score.label} · {score.pct}%</span>}
           {model.lastActivity && <span>Last active {relativeDay(model.lastActivity)}</span>}
+        </div>
+      )}
+
+      {/* Kid-visible standing (adequacy SHOULD 9): "Fractions: 87%" per
+          course with a graded session, this period. No current period or
+          nothing graded yet -> omit quietly, never a "no grades" scold. */}
+      {standing.length > 0 && (
+        <div className="school-rail__standing">
+          <h4 className="school-rail__standing-title">Where you stand</h4>
+          <ul className="school-rail__standing-list">
+            {standing.map((course) => (
+              <li key={course.courseId} className="school-rail__standing-item">
+                <span className="school-rail__standing-label">{course.label}</span>
+                <span className="school-rail__standing-percent">{course.percent}%</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Feedback delivery (spec R7): a grown-up's marks and notes, where the
+          child can actually see them. No resolved items -> omit quietly, a
+          kid needs no empty scold. */}
+      {feedback.length > 0 && (
+        <div className="school-rail__feedback">
+          <h4 className="school-rail__feedback-title">Feedback</h4>
+          <ul className="school-rail__feedback-list">
+            {feedback.map((item) => (
+              <li key={item.itemId} className={`school-rail__feedback-item is-${item.verdict}`}>
+                <span className="school-rail__feedback-verdict" aria-hidden="true">
+                  {item.verdict === 'correct' ? '✓' : '✗'}
+                </span>
+                <span className="school-rail__feedback-note">
+                  {item.note || item.prompt || `Question ${item.questionNumber ?? item.itemId}`}
+                </span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </section>

@@ -7,7 +7,7 @@ import { validateDocument } from '#domains/school/documents/documentValidation.m
 import { isSchoolToken } from '#domains/school/sessions/tokens.mjs';
 import {
   FakeCatalog, FakeSessionRepository, FakeTokenRegistry, FakeAssignmentStore, FakeEconomy,
-  FakeReceiptPrinter, FakeReceiptRenderer,
+  FakeReceiptPrinter, FakeReceiptRenderer, FakeReviewQueue,
   fakeClock, fakeGrownUps, seededRng, sequentialIds, silentLogger,
 } from '#testlib/school/lifecycleFakes.mjs';
 import {
@@ -17,9 +17,9 @@ import {
 
 const SID = 'ses_1';
 
-let clock, sessions, tokens, economy, thermal, close, remediate;
+let clock, sessions, tokens, economy, thermal, reviewQueue, close, remediate;
 
-const build = ({ economyEnabled = true, throwOn = null, receiptPrinter = undefined } = {}) => {
+const build = ({ economyEnabled = true, throwOn = null, receiptPrinter = undefined, wireReviewQueue = true } = {}) => {
   clock = fakeClock();
   const catalog = new FakeCatalog({ units: rawUnits(), documents: rawDocuments(), manifests: rawManifests() });
   const curriculum = new CurriculumAccess({ catalog, bankIds: () => BANK_IDS, clock: clock.epoch, logger: silentLogger });
@@ -27,6 +27,7 @@ const build = ({ economyEnabled = true, throwOn = null, receiptPrinter = undefin
   tokens = new FakeTokenRegistry();
   economy = new FakeEconomy({ throwOn });
   thermal = new FakeReceiptPrinter();
+  reviewQueue = new FakeReviewQueue();
   const assignments = new FakeAssignmentStore([{ learnerId: 'kid1', courses: ['math-fractions'] }]);
   const receipts = new ReceiptPrinting({
     renderer: new FakeReceiptRenderer(),
@@ -37,6 +38,7 @@ const build = ({ economyEnabled = true, throwOn = null, receiptPrinter = undefin
     curriculum, sessions, tokens, assignments, economy, receipts,
     economyAction: 'school-unit-complete', economyEnabled,
     grownUps: fakeGrownUps(clock),
+    reviewQueue: wireReviewQueue ? reviewQueue : null,
     clock: clock.now, rng: seededRng(5), logger: silentLogger,
   });
   remediate = new OpenRemediation({
@@ -229,6 +231,93 @@ describe('the result receipt', () => {
     await graded({ percent: 10 });
     const { document } = await close.execute({ sessionId: SID });
     expect(document.blocks.map((b) => b.md ?? '').join('\n')).not.toContain('coin');
+  });
+});
+
+/**
+ * Spec R7: a grown-up's written feedback reaches the child on the result
+ * receipt, not just the parent's own review queue.
+ */
+describe('the result receipt carries a resolved note (spec R7)', () => {
+  it('prints a resolved review item\'s note on the receipt', async () => {
+    await graded({ percent: 20 });
+    await reviewQueue.enqueue([{
+      sessionId: SID, itemId: 'q1', learnerId: 'kid1', unitId: WORKSHEET_UNIT, reason: 'free_response',
+      given: 'x', prompt: 'What is 1/2 + 1/2?', questionNumber: 3, rubric: null, enqueuedAt: clock.iso(),
+    }]);
+    await reviewQueue.resolve({
+      sessionId: SID, itemId: 'q1', verdict: 'incorrect', gradedBy: 'parent',
+      note: 'Remember to find a common denominator first', at: clock.iso(),
+    });
+    const { document } = await close.execute({ sessionId: SID });
+    const transcript = document.blocks.map((b) => b.md ?? '').join('\n');
+    expect(transcript).toContain('Note: Remember to find a common denominator first (3)');
+    expect(validateDocument(document).errors).toEqual([]);
+  });
+
+  it('falls back to the itemId when the item carries no questionNumber', async () => {
+    await graded({ percent: 20 });
+    await reviewQueue.enqueue([{
+      sessionId: SID, itemId: 'free_1', learnerId: 'kid1', unitId: WORKSHEET_UNIT, reason: 'free_response',
+      given: 'x', prompt: null, questionNumber: null, rubric: null, enqueuedAt: clock.iso(),
+    }]);
+    await reviewQueue.resolve({
+      sessionId: SID, itemId: 'free_1', verdict: 'correct', gradedBy: 'parent', note: 'Nice work here', at: clock.iso(),
+    });
+    const { document } = await close.execute({ sessionId: SID });
+    expect(document.blocks.map((b) => b.md ?? '').join('\n')).toContain('Note: Nice work here (free_1)');
+  });
+
+  it('caps at 3 notes and never prints a resolved item with no note at all', async () => {
+    await graded({ percent: 20 });
+    for (const [i, at] of ['2026-07-27T09:00:01.000Z', '2026-07-27T09:00:02.000Z', '2026-07-27T09:00:03.000Z', '2026-07-27T09:00:04.000Z'].entries()) {
+      // eslint-disable-next-line no-await-in-loop
+      await reviewQueue.enqueue([{
+        sessionId: SID, itemId: `q${i}`, learnerId: 'kid1', unitId: WORKSHEET_UNIT, reason: 'free_response',
+        given: 'x', prompt: null, questionNumber: i + 1, rubric: null, enqueuedAt: clock.iso(),
+      }]);
+      // eslint-disable-next-line no-await-in-loop
+      await reviewQueue.resolve({ sessionId: SID, itemId: `q${i}`, verdict: 'incorrect', gradedBy: 'parent', note: `Note number ${i}`, at });
+    }
+    // A fifth, note-less item — must never surface as a "Note:" line.
+    await reviewQueue.enqueue([{
+      sessionId: SID, itemId: 'silent', learnerId: 'kid1', unitId: WORKSHEET_UNIT, reason: 'free_response',
+      given: 'x', prompt: null, questionNumber: 5, rubric: null, enqueuedAt: clock.iso(),
+    }]);
+    await reviewQueue.resolve({ sessionId: SID, itemId: 'silent', verdict: 'correct', gradedBy: 'parent', note: null, at: clock.iso() });
+
+    const { document } = await close.execute({ sessionId: SID });
+    const noteLines = document.blocks.map((b) => b.md ?? '').filter((md) => md.startsWith('Note: '));
+    expect(noteLines).toHaveLength(3);
+    // Newest-first: the last-resolved notes win the cap.
+    expect(noteLines).toEqual(['Note: Note number 3 (4)', 'Note: Note number 2 (3)', 'Note: Note number 1 (2)']);
+  });
+
+  it('truncates an overlong note to 120 characters', async () => {
+    await graded({ percent: 20 });
+    const longNote = 'x'.repeat(200);
+    await reviewQueue.enqueue([{
+      sessionId: SID, itemId: 'q1', learnerId: 'kid1', unitId: WORKSHEET_UNIT, reason: 'free_response',
+      given: 'x', prompt: null, questionNumber: 1, rubric: null, enqueuedAt: clock.iso(),
+    }]);
+    await reviewQueue.resolve({ sessionId: SID, itemId: 'q1', verdict: 'incorrect', gradedBy: 'parent', note: longNote, at: clock.iso() });
+    const { document } = await close.execute({ sessionId: SID });
+    const noteLine = document.blocks.map((b) => b.md ?? '').find((md) => md.startsWith('Note: '));
+    expect(noteLine.length).toBe(120);
+  });
+
+  it('carries no notes section when nothing was resolved with a note', async () => {
+    await graded({ percent: 20 });
+    const { document } = await close.execute({ sessionId: SID });
+    expect(document.blocks.map((b) => b.md ?? '').join('\n')).not.toContain('Note:');
+  });
+
+  it('settles fine with no review queue wired at all', async () => {
+    build({ wireReviewQueue: false });
+    await graded({ percent: 20 });
+    const result = await close.execute({ sessionId: SID });
+    expect(result.status).toBe('settled');
+    expect(validateDocument(result.document).errors).toEqual([]);
   });
 });
 

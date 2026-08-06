@@ -4,7 +4,7 @@ import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
 import { validateDocument } from '#domains/school/documents/documentValidation.mjs';
 import { isSchoolToken } from '#domains/school/sessions/tokens.mjs';
 import {
-  FakeCatalog, FakeSessionRepository, FakeTokenRegistry, FakeAssignmentStore,
+  FakeCatalog, FakeSessionRepository, FakeTokenRegistry, FakeAssignmentStore, FakeReviewQueue,
   fakeClock, seededRng, sequentialIds, silentLogger,
 } from '#testlib/school/lifecycleFakes.mjs';
 import {
@@ -17,10 +17,11 @@ import {
 // program unit without repeating the plumbing.
 const PROGRAM_ID = 'lang-app';
 
-let clock, catalog, curriculum, sessions, tokens, assignments, useCase;
+let clock, catalog, curriculum, sessions, tokens, assignments, reviewQueue, useCase;
 
 const build = ({
   assignment = { learnerId: 'kid1', courses: ['math-fractions'] }, units, launchers = new Map(),
+  timezone = null,
 } = {}) => {
   clock = fakeClock();
   catalog = new FakeCatalog({ units: units ?? rawUnits(), documents: rawDocuments(), manifests: rawManifests() });
@@ -30,8 +31,9 @@ const build = ({
   sessions = new FakeSessionRepository();
   tokens = new FakeTokenRegistry();
   assignments = new FakeAssignmentStore(assignment ? [assignment] : []);
+  reviewQueue = new FakeReviewQueue();
   useCase = new BuildAgenda({
-    curriculum, assignments, sessions, tokens, launchers,
+    curriculum, assignments, sessions, tokens, launchers, reviewQueue, timezone,
     clock: clock.now, rng: seededRng(7), newSessionId: sequentialIds(),
     logger: silentLogger,
   });
@@ -389,5 +391,65 @@ describe('nothing to do', () => {
     // WORKSHEET_UNIT (course-next, still gated) — never MEDIA_UNIT again, and
     // never OMR_UNIT, which stays locked behind it.
     expect(second.offers.map((o) => o.unitId)).toEqual([WORKSHEET_UNIT]);
+  });
+});
+
+/**
+ * Spec R7: "Notes for you" — a grown-up's resolved-item notes, printed on
+ * the agenda itself, bounded to the current/previous study day so a note
+ * never goes stale on the paper.
+ */
+describe('notes for you (spec R7)', () => {
+  const seedNote = async ({ itemId, at, note, questionNumber = null }) => {
+    await reviewQueue.enqueue([{
+      sessionId: 'ses_review', itemId, learnerId: 'kid1', unitId: WORKSHEET_UNIT, reason: 'free_response',
+      given: 'x', prompt: null, questionNumber, rubric: null, enqueuedAt: at,
+    }]);
+    await reviewQueue.resolve({
+      sessionId: 'ses_review', itemId, verdict: 'incorrect', gradedBy: 'parent', note, at,
+    });
+  };
+
+  it('prints yesterday\'s note and omits a week-old one', async () => {
+    await seedNote({ itemId: 'q1', at: '2026-07-26T10:00:00.000Z', note: 'Carry the remainder next time', questionNumber: 2 });
+    await seedNote({ itemId: 'q2', at: '2026-07-20T10:00:00.000Z', note: 'This note is a week old', questionNumber: 1 });
+    const result = await useCase.execute({ learnerId: 'kid1' });
+    const text = transcript(result.document);
+    expect(text).toContain('Note: Carry the remainder next time (2)');
+    expect(text).not.toContain('week old');
+  });
+
+  it('prints a note resolved earlier today', async () => {
+    await seedNote({ itemId: 'q1', at: clock.iso(), note: 'Great job today', questionNumber: 4 });
+    const result = await useCase.execute({ learnerId: 'kid1' });
+    expect(transcript(result.document)).toContain('Note: Great job today (4)');
+  });
+
+  it('carries no NOTES FOR YOU section when nothing is within the window', async () => {
+    await seedNote({ itemId: 'q1', at: '2026-07-20T10:00:00.000Z', note: 'Ancient note' });
+    const result = await useCase.execute({ learnerId: 'kid1' });
+    expect(transcript(result.document)).not.toContain('NOTES FOR YOU');
+  });
+
+  it('carries no NOTES FOR YOU section when nothing was ever resolved', async () => {
+    const result = await useCase.execute({ learnerId: 'kid1' });
+    expect(transcript(result.document)).not.toContain('NOTES FOR YOU');
+  });
+
+  it('stays a valid receipt document with notes present', async () => {
+    await seedNote({ itemId: 'q1', at: clock.iso(), note: 'Nice recovery' });
+    const result = await useCase.execute({ learnerId: 'kid1' });
+    expect(validateDocument(result.document).errors).toEqual([]);
+  });
+
+  it('builds fine with no review queue wired at all', async () => {
+    useCase = new BuildAgenda({
+      curriculum, assignments, sessions, tokens,
+      clock: clock.now, rng: seededRng(7), newSessionId: sequentialIds(),
+      logger: silentLogger,
+    });
+    const result = await useCase.execute({ learnerId: 'kid1' });
+    expect(validateDocument(result.document).errors).toEqual([]);
+    expect(transcript(result.document)).not.toContain('NOTES FOR YOU');
   });
 });

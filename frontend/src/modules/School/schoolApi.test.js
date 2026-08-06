@@ -83,6 +83,20 @@ describe('schoolApi', () => {
     expect(fetch).toHaveBeenLastCalledWith('/api/v1/school/progress/options', expect.any(Object));
   });
 
+  it('reads report cards, periods, and a learner\'s resolved review feedback (Task 9)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 200 })));
+    await schoolApi.reportCard({ learnerId: 'kid1', periodId: 'fall-2026' });
+    expect(fetch).toHaveBeenLastCalledWith(
+      '/api/v1/school/report-card?learnerId=kid1&periodId=fall-2026', expect.any(Object),
+    );
+    await schoolApi.periods();
+    expect(fetch).toHaveBeenLastCalledWith('/api/v1/school/periods', expect.any(Object));
+    await schoolApi.reviewLearner('kid1');
+    expect(fetch).toHaveBeenLastCalledWith('/api/v1/school/review/learner/kid1?limit=20', expect.any(Object));
+    await schoolApi.reviewLearner('kid 1', { limit: 5 });
+    expect(fetch).toHaveBeenLastCalledWith('/api/v1/school/review/learner/kid%201?limit=5', expect.any(Object));
+  });
+
   it('reads adult instructional insights and records a learner reflection through generic School routes', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 200 })));
     await schoolApi.instructionalInsights({ scopeType: 'classroom', scopeId: 'math' });
