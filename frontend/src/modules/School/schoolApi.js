@@ -63,6 +63,21 @@ export const schoolApi = {
   // The teacher's one-glance "today" digest (Task 6, `GetTeacherToday`):
   // a plain array, one row per roster learner — NOT wrapped in `{learners}`.
   teacherToday: () => req('/teacher/today'),
+  // Teacher console reads (teacher-console spec §4.3). `teachers` answers
+  // `{configured, teachers: [{id, name}]}` — configured:false means the
+  // school.yml `teachers:` key is absent entirely.
+  teachers: () => req('/teachers'),
+  reportCardFrozen: ({ learnerId, periodId = null }) => {
+    const p = new URLSearchParams({ learnerId });
+    if (periodId) p.set('periodId', periodId);
+    return req(`/report-card/frozen?${p}`);
+  },
+  lifecycleReview: () => req('/lifecycle/review'),
+  learnerSessions: (learnerId, { window = null } = {}) => req(
+    `/lifecycle/learners/${encodeURIComponent(learnerId)}/sessions${window ? `?window=${encodeURIComponent(window)}` : ''}`,
+  ),
+  assignments: (learnerId) => req(`/lifecycle/assignments/${encodeURIComponent(learnerId)}`),
+  curriculumUnits: () => req('/lifecycle/curriculum/units'),
   // A period-scoped snapshot of one learner's schooling (Task 6, `GetReportCard`).
   reportCard: ({ learnerId, periodId }) => req(
     `/report-card?learnerId=${encodeURIComponent(learnerId)}&periodId=${encodeURIComponent(periodId)}`,

@@ -158,3 +158,36 @@ describe('schoolApi', () => {
     expect(JSON.parse(opts.body)).toEqual({ userId: 'kid1', percent: 50, playhead: 30, durationMs: 60000 });
   });
 });
+
+describe('teacher console wrappers', () => {
+  beforeEach(() => vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 200 }))));
+
+  it('teachers() hits /teachers', async () => {
+    await schoolApi.teachers();
+    expect(fetch).toHaveBeenCalledWith('/api/v1/school/teachers', expect.any(Object));
+  });
+  it('reportCardFrozen() carries learner and optional period', async () => {
+    await schoolApi.reportCardFrozen({ learnerId: 'felix' });
+    expect(fetch).toHaveBeenCalledWith('/api/v1/school/report-card/frozen?learnerId=felix', expect.any(Object));
+    await schoolApi.reportCardFrozen({ learnerId: 'felix', periodId: '2026-fall' });
+    expect(fetch).toHaveBeenCalledWith('/api/v1/school/report-card/frozen?learnerId=felix&periodId=2026-fall', expect.any(Object));
+  });
+  it('lifecycleReview() hits the pending queue', async () => {
+    await schoolApi.lifecycleReview();
+    expect(fetch).toHaveBeenCalledWith('/api/v1/school/lifecycle/review', expect.any(Object));
+  });
+  it('learnerSessions() encodes the learner and forwards the window', async () => {
+    await schoolApi.learnerSessions('felix');
+    expect(fetch).toHaveBeenCalledWith('/api/v1/school/lifecycle/learners/felix/sessions', expect.any(Object));
+    await schoolApi.learnerSessions('a b', { window: 'today' });
+    expect(fetch).toHaveBeenCalledWith('/api/v1/school/lifecycle/learners/a%20b/sessions?window=today', expect.any(Object));
+  });
+  it('assignments() hits the per-learner lifecycle read', async () => {
+    await schoolApi.assignments('felix');
+    expect(fetch).toHaveBeenCalledWith('/api/v1/school/lifecycle/assignments/felix', expect.any(Object));
+  });
+  it('curriculumUnits() lists the catalog', async () => {
+    await schoolApi.curriculumUnits();
+    expect(fetch).toHaveBeenCalledWith('/api/v1/school/lifecycle/curriculum/units', expect.any(Object));
+  });
+});
