@@ -3073,6 +3073,17 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     rootLogger.child({ module: 'school-print' }).info?.('school.print.ready', { host: printerHost, printables: schoolFullConfig.printables?.length || 0, paperCertified: paperProfiles.length > 0 });
   }
 
+  // Teacher console picker (teacher-console spec §4.7.1): config-declared
+  // `teachers:` ids resolved against the LIVE roster per request — never a
+  // boot-time snapshot, and only {id, name} ever leaves. Deliberately NOT
+  // lifecycle-gated: the teachers read works on any install.
+  const { GetTeachers } = await import('#apps/school/usecases/GetTeachers.mjs');
+  const getTeachers = new GetTeachers({
+    teachers: () => (configService.getHouseholdAppConfig(null, 'school') || {}).teachers,
+    roster: () => userService.getHouseholdRoster(householdId) ?? [],
+    logger: rootLogger.child({ module: 'school-teachers' }),
+  });
+
   v1Routers.school = createSchoolRouter({
     schoolService,
     getMaterialCatalog,
@@ -3110,6 +3121,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     getReportCard,
     closeAcademicPeriod,
     getTeacherToday,
+    getTeachers,
     // Frozen-record reads work off `schoolDatastore` alone (no lifecycle
     // stores needed), so this is wired unconditionally.
     reportCardsStore: schoolDatastore,

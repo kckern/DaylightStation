@@ -68,3 +68,28 @@ describe('/print fixed routes vs the *id splat', () => {
     expect(res.headers['content-type']).toMatch(/application\/pdf/);
   });
 });
+
+describe('GET /api/v1/school/teachers', () => {
+  it('serves the use case result', async () => {
+    const app = express();
+    app.use('/api/v1/school', createSchoolRouter({
+      schoolService: { listBankSourceSummaries: () => [] },
+      getTeachers: { execute: async () => ({ configured: true, teachers: [{ id: 'kckern', name: 'KC' }] }) },
+      logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() },
+    }));
+    const res = await request(app).get('/api/v1/school/teachers');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ configured: true, teachers: [{ id: 'kckern', name: 'KC' }] });
+  });
+
+  it('unwired answers the honest not-configured shape, not a 404', async () => {
+    const app = express();
+    app.use('/api/v1/school', createSchoolRouter({
+      schoolService: { listBankSourceSummaries: () => [] },
+      logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() },
+    }));
+    const res = await request(app).get('/api/v1/school/teachers');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ configured: false, teachers: [] });
+  });
+});
