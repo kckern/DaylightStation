@@ -86,6 +86,20 @@ A `subject` naming anything outside the nine routes to the Library rather than
 erroring — so a typo hides content instead of announcing itself. Check the shelf
 after adding.
 
+## Which validator owns which tree
+
+Two parallel authored systems exist by design, each with its own validator —
+know which one your content belongs to (admin advocacy #17):
+
+| tree | system | validator / CLI |
+|---|---|---|
+| `content/school/{subject}/{work}/…` (works, units, documents, quizzes) | lifecycle curriculum | `node cli/school-catalog.cli.mjs validate` — parses, cross-resolves references, checks the bank↔unit seam (duplicate `unit:` claims and dead curriculum backlinks are refusals), and prints history drift |
+| `content/school/catalogs/…` (`school.catalog/v1` Learning Catalog) | Learning Catalog | `npm run school:certify` — catalog + surface certification |
+| `content/school/print-documents/…` | print documents | `node cli/school-docs.cli.mjs validate` |
+
+`school:certify` does NOT cover the lifecycle curriculum; run the
+school-catalog CLI before mounting new works.
+
 ## Related
 
 - Banks bind to a unit by carrying `unit:` (a unitId, or `plex:<ratingKey>` for

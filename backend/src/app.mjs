@@ -284,6 +284,7 @@ import { MediaLabelSource } from './3_applications/school/sources/MediaLabelSour
 import { PlexSchoolMediaCatalog } from './1_adapters/school/media/plex/PlexSchoolMediaCatalog.mjs';
 import { GeneratedBankSource } from '#adapters/school/generated-content/GeneratedBankSource.mjs';
 import { GetLearnerRecord } from '#apps/school/usecases/GetLearnerRecord.mjs';
+import { RegradeBankAttempts } from '#apps/school/usecases/RegradeBankAttempts.mjs';
 import { UserVideoProgressStore as SchoolUserVideoProgressStore } from './3_applications/piano/UserVideoProgressStore.mjs';
 import { PrintService } from './3_applications/school/PrintService.mjs';
 import { renderBankWorksheet } from './1_rendering/school/WorksheetRenderer.mjs';
@@ -3203,6 +3204,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     learnerDirectory: schoolLearnerDirectory,
     printService: schoolPrintService,
     academicPeriodStore: schoolAcademicPeriods,
+    schoolDatastore,
+    regradeBankAttempts: schoolTeacherGate ? new RegradeBankAttempts({
+      datastore: schoolDatastore,
+      bankReader: schoolService,
+      teacherGate: schoolTeacherGate,
+      learnerDirectory: schoolLearnerDirectory,
+      logger: rootLogger.child({ module: 'school-regrade' }),
+    }) : null,
     milestoneStore: schoolMilestoneStore,
     assignmentsStore: schoolLifecycle.stores?.assignments ?? null,
     getLearnerRecord: new GetLearnerRecord({
@@ -3782,6 +3791,24 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         }
       } catch (err) {
         rootLogger.warn('school.teacher-nudge.failed', { error: err.message });
+      }
+    });
+  }
+
+  // Content-tree manifest (admin advocacy #20): nightly hash of the authored
+  // school content; the diff vs yesterday is logged and the manifest file is
+  // the record — version control the Dropbox-synced volume can't safely have.
+  if (agentsServices.scheduler) {
+    agentsServices.scheduler.registerTask('school:content-manifest', '50 3 * * *', async () => {
+      try {
+        const { ContentTreeManifest } = await import('#adapters/school/content/ContentTreeManifest.mjs');
+        new ContentTreeManifest({
+          contentDir: path.join(contentPath, 'school'),
+          manifestFile: configService.getHouseholdPath('apps/school/content-manifest.yml'),
+          logger: rootLogger.child({ module: 'school-content-manifest' }),
+        }).run();
+      } catch (err) {
+        rootLogger.warn('school.content-manifest.failed', { error: err.message });
       }
     });
   }

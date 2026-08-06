@@ -32,6 +32,8 @@ export function createSchoolRouter({
   academicPeriodStore = null,
   milestoneStore = null,
   assignmentsStore = null,
+  schoolDatastore = null,
+  regradeBankAttempts = null,
   schoolCalcRouter = null,
   surfaceCertification = null,
   surfaceRegistry = null,
@@ -1035,6 +1037,23 @@ export function createSchoolRouter({
   // A learner's own RESOLVED review items, newest first — the feedback a
   // child can see (Task 9, spec R7). Never a pending item still awaiting a
   // grown-up's verdict; that queue is the parent-only `/lifecycle/review`.
+  // The systematic-grading-bug story (admin advocacy #5): re-run the one
+  // grading engine over recorded attempts. Dry-run unless apply:true.
+  router.post('/attempts/regrade', wrap(async (req, res) => {
+    if (!regradeBankAttempts) throw new EntityNotFoundError('regrade', 'not configured');
+    const { bankId, fromDay, toDay, reason, regradedBy = null, pin = null, apply = false } = req.body || {};
+    res.json(await regradeBankAttempts.execute({ bankId, fromDay, toDay, reason, regradedBy, pin, apply: apply === true }));
+  }));
+
+  // Superseded freeze versions (admin advocacy #5): the preserved history,
+  // finally readable — supersede-close archives were write-only.
+  router.get('/report-card/frozen/versions', wrap((req, res) => {
+    const learnerId = textQuery(req.query.learnerId);
+    const periodId = textQuery(req.query.periodId);
+    if (!learnerId || !periodId) return res.status(400).json({ error: 'learnerId and periodId are required' });
+    res.json({ versions: schoolDatastore?.listReportCardVersions?.(learnerId, periodId) ?? [] });
+  }));
+
   // The merged who-changed-what trail (admin advocacy #9): the four
   // append-only history arrays (assignments per learner, periods,
   // pass-overrides, milestones) had no read at all — reconstructing last
