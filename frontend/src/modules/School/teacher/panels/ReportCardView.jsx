@@ -44,6 +44,26 @@ export default function ReportCardView({ learnerId, periodId }) {
               </li>
             ))}
           </ul>
+          {(data.materials ?? []).length > 0 && (
+            <ul className="teacher-reportcard__materials">
+              {data.materials.map((m) => (
+                <li key={m.materialId}>
+                  <span>{m.label ?? m.materialId}</span>
+                  <span>{m.unitsDone} / {m.unitTotal} units</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {(data.remediationArcs ?? []).length > 0 && (
+            <ul className="teacher-reportcard__arcs">
+              {data.remediationArcs.map((arc) => (
+                <li key={`${arc.originalSessionId}:${arc.remediationSessionId}`}>
+                  <span>{arc.unitId}</span>
+                  <span>remediation {arc.result ?? 'open'}</span>
+                </li>
+              ))}
+            </ul>
+          )}
           <p className="teacher-reportcard__meta">
             {data.activeDays ?? 0} active days · {data.pendingReview ?? 0} awaiting review
             {data.courses?.[0]?.policy ? ` · scored by ${data.courses[0].policy}` : ''}

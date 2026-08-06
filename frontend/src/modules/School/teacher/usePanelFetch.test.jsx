@@ -86,3 +86,10 @@ describe('allUnavailable', () => {
     expect(allUnavailable([])).toBe(false);
   });
 });
+
+describe('usePanelFetch rejection path', () => {
+  it('a throwing fetcher lands in error, never loading-forever', async () => {
+    const { result } = renderHook(() => usePanelFetch(async () => { throw new Error('boom'); }, { panel: 'x' }));
+    await waitFor(() => expect(result.current.state).toBe('error'));
+  });
+});

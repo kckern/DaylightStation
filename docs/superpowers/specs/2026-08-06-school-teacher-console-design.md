@@ -384,3 +384,10 @@ earlier "zero backend changes" claim, which review disproved:
   `teacherPin`-gated mutations (§1). The earlier "network perimeter is the
   gate" framing was rejected because kiosk browsers sit inside the perimeter
   and the codebase already PIN-gates answer keys against that population.
+- **Assignments panel scope correction (2026-08-06, M1 review):** §4.2's
+  "courses with unit-by-unit gating state, standalone units, programs"
+  over-promises the assignments API, which returns plain course/unit id
+  lists — no gating state, no programs field. The shipped panel honestly
+  renders what the endpoint provides. Gating state would have to join from
+  `/progress`; decide whether to build that join (or extend the API) at
+  wave-3 planning.

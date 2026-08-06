@@ -65,13 +65,11 @@ function TeacherShell() {
   }, [learnerId, sync]);
 
   const pickLearner = useCallback((id) => {
-    setLearnerId((current) => {
-      const next = current === id ? null : id;
-      sync(tab, next);
-      teacherLog.nav('learner', { learnerId: next });
-      return next;
-    });
-  }, [tab, sync]);
+    const next = learnerId === id ? null : id;
+    setLearnerId(next);
+    sync(tab, next);
+    teacherLog.nav('learner', { learnerId: next });
+  }, [learnerId, tab, sync]);
 
   if (status !== 'ready') return <div className="teacher-console teacher-console--loading">Loading…</div>;
 
