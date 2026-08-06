@@ -66,6 +66,8 @@ export function createSchoolRouter({
   getProgressReport = null,
   renderProgressReportPdf = null,
   renderCertificatePdf = null,
+  // `(nowMs) => minutes` — the household's UTC offset (certificate dating).
+  getHouseholdOffsetMinutes = null,
   passOverrideStore = null,
   setPassOverride = null,
   milestoneStatuses = null,
@@ -798,6 +800,12 @@ export function createSchoolRouter({
   }));
 
   // --- wave-4 records --------------------------------------------------------
+  // The certificate's issue date in the HOUSEHOLD's calendar (6pm local must
+  // not date a certificate tomorrow) — same offset policy as the pacing reads.
+  const householdToday = () => {
+    const nowMs = Date.now();
+    return new Date(nowMs + (getHouseholdOffsetMinutes?.(nowMs) ?? 0) * 60_000).toISOString().slice(0, 10);
+  };
   router.get('/progress-report', wrap(async (req, res) => {
     if (!getProgressReport) return res.json(null);
     const learnerId = requiredTextQuery(req.query.learnerId, 'learnerId');
@@ -831,7 +839,7 @@ export function createSchoolRouter({
       courseId,
       percent: course.coursePercent,
       periodLabel: card.period?.label ?? periodId,
-      issuedOn: new Date().toISOString().slice(0, 10),
+      issuedOn: householdToday(),
       issuedBy: textQuery(req.query.issuedBy) ?? null,
     });
     return res

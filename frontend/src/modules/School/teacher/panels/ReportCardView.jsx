@@ -77,7 +77,7 @@ export default function ReportCardView({ learnerId, periodId }) {
             </ul>
           )}
           <p className="teacher-reportcard__meta">
-            {data.activeDays ?? 0} active days · {data.pendingReview ?? 0} awaiting review
+            {data.activeDays?.total ?? 0} active days · {data.pendingReview ?? 0} awaiting review
             {data.courses?.[0]?.policy ? ` · scored by ${data.courses[0].policy}` : ''}
           </p>
           {data.concepts && (data.concepts.mastered?.length || data.concepts.developing?.length) ? (

@@ -57,7 +57,7 @@ export default function PacingPanel({ learnerId, periodId }) {
               {data.enrichment.entries.map((e) => (
                 <li key={e.id} className="teacher-enrichment__row">
                   <span className="teacher-enrichment__title">{e.title}</span>
-                  <span className="teacher-enrichment__dates">{e.from}{e.to !== e.from ? ` → ${e.to}` : ''}</span>
+                  <span className="teacher-enrichment__dates">{e.from}{e.to && e.to !== e.from ? ` → ${e.to}` : ''}</span>
                 </li>
               ))}
             </ul>

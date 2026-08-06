@@ -3138,6 +3138,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       timezone: configService.getTimezone?.() || null,
     });
   }
+  const { offsetMinutesFor: schoolOffsetMinutesFor } = await import('#domains/school/studyDay.mjs');
   const { createProgressReportPdfRenderer } = await import('#rendering/school/reports/ProgressReportRenderer.mjs');
   const { createCertificatePdfRenderer } = await import('#rendering/school/reports/CertificateRenderer.mjs');
 
@@ -3189,6 +3190,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     getProgressReport,
     renderProgressReportPdf: createProgressReportPdfRenderer(),
     renderCertificatePdf: createCertificatePdfRenderer(),
+    getHouseholdOffsetMinutes: (nowMs) => schoolOffsetMinutesFor(configService.getTimezone?.() || null, nowMs),
     // Frozen-record reads work off `schoolDatastore` alone (no lifecycle
     // stores needed), so this is wired unconditionally.
     reportCardsStore: schoolDatastore,

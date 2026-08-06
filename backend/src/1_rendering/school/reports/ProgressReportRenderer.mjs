@@ -35,7 +35,7 @@ function drawProgressReport(out, theme, report) {
   }
   out.moveDown(0.6);
   out.font(theme.fonts.regular.name).fontSize(10).fillColor(muted)
-    .text(`${report.activeDays ?? 0} active instructional days this period.`);
+    .text(`${report.activeDays?.total ?? 0} active instructional days this period.`);
   out.moveDown(1);
 
   out.font(theme.fonts.bold.name).fontSize(13).fillColor(ink).text('Milestones');

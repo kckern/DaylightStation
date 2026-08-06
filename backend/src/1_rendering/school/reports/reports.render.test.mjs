@@ -13,7 +13,7 @@ const REPORT = {
   period: { periodId: '2026-fall', label: 'Fall 2026' },
   generatedAt: '2026-08-06T12:00:00Z',
   courses: [{ courseId: 'math-fractions', policy: 'best-of-unit-mean-v1', coursePercent: 88 }],
-  activeDays: 12,
+  activeDays: { bySubject: [{ subjectId: 'math', days: 12 }], total: 12 },
   milestones: [
     { id: 'm1', unitId: 'math-fractions.02', dueBy: '2026-08-01', status: 'behind', overdueDays: 4, excusedDays: 4, effectiveStatus: 'excused' },
     { id: 'm2', unitId: 'math-fractions.03', dueBy: '2026-09-01', status: 'upcoming', overdueDays: 0, excusedDays: 0, effectiveStatus: 'upcoming' },
@@ -27,7 +27,6 @@ describe('ProgressReportRenderer', () => {
     const { pdf, pageCount } = await render(REPORT);
     expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');
     expect(pageCount).toBe(1);
-    const text = pdf.toString('latin1');
     expect(pdf.length).toBeGreaterThan(2000);
   });
 });
