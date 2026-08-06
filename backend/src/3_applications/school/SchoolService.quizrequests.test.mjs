@@ -89,6 +89,34 @@ describe('dismissQuizRequest (reason delivered as a note — advocacy A5)', () =
     }));
   });
 
+  it('dismisses EXACTLY the addressed row — a retake and a flag on the same bank survive (M7 fix)', async () => {
+    requests = [
+      { at: 't', userId: 'felix', unitId: 'plex:123', materialId: 'm1', unitTitle: 'Ep 1' },
+      { at: 't', kind: 'retake', userId: 'felix', bankId: 'caps' },
+      { at: 't', kind: 'flag', userId: 'felix', bankId: 'caps', sessionId: 'ses_1', note: 'marked wrong' },
+    ];
+    const svc = makeService({ teacherGate: { assert: () => {} } });
+    await expect(svc.dismissQuizRequest({ kind: 'flag', bankId: 'caps', sessionId: 'ses_1', userId: 'felix', dismissedBy: 'kckern', reason: 'Checked — the key is right' }))
+      .resolves.toEqual({ dismissed: true });
+    expect(saved.map((r) => r.kind ?? 'quiz')).toEqual(['quiz', 'retake']); // ONLY the flag went
+    // …and the legacy quiz row (no kind field) is addressable with kind:null.
+    requests = saved; saved = null;
+    await svc.dismissQuizRequest({ unitId: 'plex:123', userId: 'felix', dismissedBy: 'kckern', reason: 'r' });
+    expect(saved.map((r) => r.kind)).toEqual(['retake']);
+  });
+
+  it('the note is written BEFORE the row is removed — a failed note keeps the row (M7 fix)', async () => {
+    const store = ds();
+    const broken = { append: vi.fn(async () => { throw new Error('notes volume offline'); }) };
+    const svc = new SchoolService({
+      datastore: store, userService: users, logger: silent, now: () => 1000,
+      teacherGate: { assert: () => {} }, teacherNotesRef: () => broken,
+    });
+    await expect(svc.dismissQuizRequest({ unitId: 'plex:123', userId: 'felix', dismissedBy: 'kckern', reason: 'r' }))
+      .rejects.toThrow('notes volume offline');
+    expect(store.saveQuizRequests).not.toHaveBeenCalled(); // the child's row survives
+  });
+
   it('an unknown entry answers dismissed:false without writing', async () => {
     const store = ds();
     const svc = makeService({ teacherGate: { assert: () => {} }, datastore: store });

@@ -567,8 +567,8 @@ export function createSchoolRouter({
     res.json(schoolService.listQuizRequests({ materialId: req.query.materialId || null }));
   }));
   router.post('/quiz-requests/dismiss', wrap(async (req, res) => {
-    const { unitId = null, bankId = null, userId, dismissedBy = null, pin = null, reason } = req.body || {};
-    res.json(await schoolService.dismissQuizRequest({ unitId, bankId, userId, dismissedBy, pin, reason }));
+    const { unitId = null, bankId = null, kind = null, sessionId = null, userId, dismissedBy = null, pin = null, reason } = req.body || {};
+    res.json(await schoolService.dismissQuizRequest({ unitId, bankId, kind, sessionId, userId, dismissedBy, pin, reason }));
   }));
   // Kid-safe like /quiz-requests: a child asks for another go; the row lands
   // on the teacher's backlog (student-advocacy A2).

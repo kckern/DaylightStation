@@ -185,7 +185,7 @@ describe('wave-2 mutations', () => {
     });
     act(() => { fireEvent.click(screen.getByRole('button', { name: /Dismiss & tell them/ })); });
     await waitFor(() => expect(schoolApi.quizRequestDismiss).toHaveBeenCalledWith(
-      { unitId: 'plex:123', bankId: null, userId: 'milo', dismissedBy: 'kckern', pin: null, reason: 'We will do this one together' }));
+      { unitId: 'plex:123', bankId: null, kind: null, sessionId: null, userId: 'milo', dismissedBy: 'kckern', pin: null, reason: 'We will do this one together' }));
   });
 
   it('a kid-filed retake ask renders with its badge and want-another-try copy', async () => {

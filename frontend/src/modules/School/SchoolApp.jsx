@@ -9,6 +9,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import ProfilePicker from '../../lib/identity/ProfilePicker.jsx';
 import ProfileAvatar from '../../lib/identity/ProfileAvatar.jsx';
 import { SchoolProfileProvider, useSchoolProfile } from './identity/SchoolProfileContext.jsx';
+import useArmedAction from '../../lib/identity/useArmedAction.js';
 import BankBrowser from './browse/BankBrowser.jsx';
 import QuizRunner from './quiz/QuizRunner.jsx';
 import FlashcardRunner from './flashcards/FlashcardRunner.jsx';
@@ -408,12 +409,18 @@ function SchoolShell({ clear }) {
   // bar and no browser chrome, so this is the only way to pick up a deploy or
   // shake off a wedged view from inside the app. Mounted as an app (with
   // `clear`) it still exits instead: there is something behind it to exit to.
+  // Mid-run leave confirm (advocacy M7): a graded run in flight holds a
+  // child's un-resumable answers — one stray tap on the apple must not
+  // discard them silently. Two-tap arm/confirm, the kiosk house pattern.
+  const gradedRunInFlight = ['quiz', 'problems', 'probe'].includes(active?.mode);
+  const { armed: leaveArmed, trigger: confirmLeave } = useArmedAction(goHome, { armMs: 4000 });
   const onApple = useCallback(() => {
+    if (gradedRunInFlight) { confirmLeave(); return; }
     if (section || active) { goHome(); return; }
     if (clear) { clear(); return; }
     schoolLog.nav('reload', {});
     window.location.reload();
-  }, [section, active, clear, goHome]);
+  }, [gradedRunInFlight, confirmLeave, section, active, clear, goHome]);
 
   // The header trail past the apple home anchor. Deep material routes publish
   // their own full sub-trail (section crumb → material → unit, each with its
@@ -465,6 +472,11 @@ function SchoolShell({ clear }) {
               ? (<><ProfileAvatar id={currentUser.id} name={currentUser.name} /><span>{currentUser.name}</span></>)
               : <span>Guest</span>}
           </button>
+        )}
+        {leaveArmed && (
+          <div className="school-app__leave-confirm" data-testid="leave-confirm" role="alert">
+            Leave the quiz? Your answers so far won&rsquo;t be saved — tap the apple again to leave.
+          </div>
         )}
       </header>
       <main className="school-app__body">

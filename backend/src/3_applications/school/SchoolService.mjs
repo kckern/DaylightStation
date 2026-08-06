@@ -151,19 +151,32 @@ export class SchoolService {
    * REQUIRES a reason, delivered to the child through the notes channel, so
    * the ✓ never just silently reverts on them.
    */
-  async dismissQuizRequest({ unitId = null, bankId = null, userId, dismissedBy = null, pin = null, reason } = {}) {
+  async dismissQuizRequest({ unitId = null, bankId = null, kind = null, sessionId = null, userId, dismissedBy = null, pin = null, reason } = {}) {
     if (!this.#teacherGate) throw new GuestForbiddenError('Dismissing requests is not configured on this install');
     this.#teacherGate.assert({ userId: dismissedBy, pin, action: 'quizrequests.dismiss' });
     if (typeof reason !== 'string' || !reason.trim()) {
       throw new ValidationError('a reason is required — the child is told why');
     }
     const list = this.#ds.readQuizRequests();
+    // EXACTLY ONE row (M7 fix): a retake ask and a flag on the same bank are
+    // different sentences owed to the same child — dismissing one must never
+    // sweep the others. kind is part of identity ('' matches the legacy
+    // quiz-request rows, which carry no kind field), and only the FIRST
+    // matching row goes.
     const matches = (r) => r.userId === userId
-      && (unitId ? r.unitId === unitId : true) && (bankId ? r.bankId === bankId : true);
-    const keep = list.filter((r) => !matches(r));
-    if (keep.length === list.length) return { dismissed: false };
-    const dismissedRow = list.find(matches);
-    this.#ds.saveQuizRequests(keep);
+      && (r.kind ?? null) === kind
+      && (unitId ? r.unitId === unitId : true)
+      && (bankId ? r.bankId === bankId : true)
+      && (sessionId ? r.sessionId === sessionId : true);
+    const idx = list.findIndex(matches);
+    if (idx === -1) return { dismissed: false };
+    const dismissedRow = list[idx];
+    const keep = list.filter((_, i) => i !== idx);
+    // The sentence to the child comes FIRST (M7 fix): if it cannot be
+    // written, the row stays and the teacher sees the failure — a dismissal
+    // whose reason never arrives is exactly the silent verb this contract
+    // forbids. (A note without a dismissal, if the save below fails, is the
+    // harmless direction.)
     const notes = this.#teacherNotesRef?.();
     if (notes) {
       const what = dismissedRow?.unitTitle ?? dismissedRow?.unitId ?? dismissedRow?.bankId ?? 'your request';
@@ -175,7 +188,8 @@ export class SchoolService {
         note: `About ${what}: ${reason.trim()}`.slice(0, 240),
       });
     }
-    this.#logger.info?.('school.quiz.request-dismissed', { unitId, bankId, userId, dismissedBy });
+    this.#ds.saveQuizRequests(keep);
+    this.#logger.info?.('school.quiz.request-dismissed', { unitId, bankId, kind, sessionId, userId, dismissedBy });
     return { dismissed: true };
   }
 

@@ -26,6 +26,7 @@ export default function LearningProbeRunner({ module, learning = {}, onExit }) {
   const { status, currentUser, isGuest } = useSchoolProfile();
   const bank = module?.bank;
   const [sessionId, setSessionId] = useState(null);
+  const [openFailed, setOpenFailed] = useState(false);
   const [index, setIndex] = useState(0);
   const [attemptNumber, setAttemptNumber] = useState(1);
   const [renderNonce, setRenderNonce] = useState(0);
@@ -65,7 +66,9 @@ export default function LearningProbeRunner({ module, learning = {}, onExit }) {
       learning: learningContext,
     }).then(({ ok, data }) => {
       if (!alive) return;
-      if (!ok) { onExit(); return; }
+      // Same sign the other runners carry (M7 fix): a failed open must never
+      // silently bounce the child back to the menu.
+      if (!ok) { setOpenFailed(true); return; }
       setSessionId(data.sessionId);
       schoolLog.session('start', {
         sessionId: data.sessionId, bankId: bank.id, mode: 'learning_probe',
@@ -161,6 +164,15 @@ export default function LearningProbeRunner({ module, learning = {}, onExit }) {
           onDone={onExit}
         />
       </section>
+    );
+  }
+  if (openFailed) {
+    return (
+      <div className="school-runner school-runner--error" data-testid="probe-open-failed">
+        <h2>{module.title ?? bank.title}</h2>
+        <p>This one wouldn&rsquo;t open. Tell a grown-up, or try again in a bit.</p>
+        <button type="button" className="school-runner__done" onClick={onExit}>Back</button>
+      </div>
     );
   }
   if (!sessionId) return <div className="school-runner"><p className="school-runner__loading">Loading check…</p></div>;

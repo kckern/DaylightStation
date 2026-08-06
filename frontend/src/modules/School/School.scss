@@ -1453,3 +1453,9 @@
   &--soon { opacity: 0.5; cursor: default; }
   &__soon { font-size: 0.7rem; color: var(--school-muted); }
 }
+
+.school-app__leave-confirm {
+  position: absolute; top: 100%; left: 0; right: 0; z-index: 5;
+  padding: 0.6rem 1rem; background: var(--school-warn, #c98a1b); color: #241a02;
+  font-weight: 800; text-align: center;
+}
