@@ -495,3 +495,18 @@ Full sweep → build → gate → deploy → live probes (periods PUT wrong-pin 
 - **W5-5 E2E journey (goal addition):** isolated e2e on the lifecycle harness + virtual devices: fake household learner enrolls in the pokemon course (SetAssignments), agenda offers it, session issues a sheet, the VIRTUAL OMR submits marks from the real form map, grading + close outcome record results, then the teacher-side reads see it all (teacher/today digest, report card, progress; review queue if a human mark is required).
 - **Deviations recorded at M5:** the promised `apps/school/reassignments.yml` audit log was NOT shipped — provenance rides the moved events themselves (`reassignedFrom/By/At` stamped into each attempt, `attributedTo` rewritten), which the review judged sufficient for a household-scale audit; a cross-learner "what moved this month" query would need a shard scan, accepted. The e2e journey covers the stated goal end-to-end but does not drive the browser console UI against the live wiring (panels are unit-tested with mocked api; routes are tested with injected deps) — the browser↔prod-wiring seam remains the one honestly-open gap.
 - **W5-6:** sweep → build → gate → deploy → live verify (safe probes only) → README/spec → M5 Fable review (covers wave 5 + e2e) → apply verdicts → merge to main + branch cleanup.
+
+---
+
+# Wave 6 — Teacher-advocacy remediation (authored after the advocacy review)
+
+**Contract:** the advocate's 19 findings, top-5 first, ALL addressed or explicitly deviation-recorded. Same review cycle (M6 Fable review at the end).
+
+**Batch A (top-5):**
+- A1 Notice: tab-bar backlog badges (pending review + pending prints, 60s poll while open) + an hourly `school:teacher-backlog-nudge` scheduler task sending a deduped Telegram intent to each configured teacher (notificationService, dedupeKey = day+counts) with a tappable /school/teacher link.
+- A2 Review context: render `rubric`, `reason`, and wait-age (`enqueuedAt`) on every queue item.
+- A3 Morning plan: `?format=json` on the agenda-preview route (dry-run sections, no side effects); LearnerDay renders "Today's plan" (subject → next, served-today) above the session history.
+- A4 One-tap marks: `useTeacherWrite` stashes an action blocked on claim/PIN and replays it automatically once the claim/PIN lands.
+- A5 Honest close: `currentPeriodId` prefers the NARROWEST current period; ClosePeriodPanel's confirm names the period label and the live pending-review count.
+
+**Batch B (6-19):** absence entry kind (excuses pacing, never credit); slug→label rendering everywhere + materials label join; periods editor rails (kind select, id prefill, two-tap remove with frozen-records warning, parent select, friendly validation); authoring dead-end copy; unit objectives expansion + course syllabus PDF; learner transcript (JSON + PDF across frozen periods); periods clone-forward-a-year; feedback dates/authors + load-more; stale-save guards (409 on concurrent edits); append-only retractions for enrichment/attestations/notes (an attestation retraction re-locks the gate by construction); teacher-triggered retake via the existing remediation route; tree-aware empty states; recent-days chips for reassignment; print-pending wait-age; Admin nav link to the console; picker timeout 10min on the phone surface.
