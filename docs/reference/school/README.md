@@ -1211,6 +1211,23 @@ error handler discarded stamped `err.status`, so every lifecycle refusal or
 missing-entity surfaced as 500 — explicit status now wins, and the lifecycle
 router stamps statuses by name at its boundary.
 
+**Wave 3 — the planning domains are live.** The Planning tab carries no
+stubs: assignments and academic periods are editable (periods are promoted
+from boot-cached config to `data/household/apps/school/periods.yml` with
+append-only history — the stored file wins after the first teacher edit,
+config remains the fallback before it); pass-criteria overrides
+(`apps/school/pass-overrides.yml`) win over a unit's authored
+`passing.percent` at the one grading consumption point
+(`CloseSessionOutcome`); milestones (`apps/school/milestones.yml`,
+`2_domains/school/milestones.mjs`) carry derived met/behind/upcoming
+statuses joined from passed sessions — due dates are fixed facts, enrichment
+excusal is a report-time adjustment (wave 4); and the enrichment log
+(`apps/school/enrichment.yml`, append-only) records out-of-band learning as
+its own attributed evidence kind, never merged into graded evidence. Routes:
+`PUT /periods`, `GET/PUT /pass-overrides[/:unitId]`, `GET/PUT /milestones`
+(learner-scoped write — a one-learner save never touches siblings),
+`GET/POST /enrichment` — every write through the same `TeacherGate`.
+
 Three backend enablers shipped with the skeleton: the teachers read; the
 `/print` route-order fix (the `/print/*id` splat had shadowed
 `printables`/`quota`/`pending` — all three 404'd in production; fixed routes
