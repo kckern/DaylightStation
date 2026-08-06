@@ -37,8 +37,11 @@ export class TeacherGate {
     this.#logger = logger;
   }
 
-  #refuse(reason, { userId, action, message }) {
-    this.#logger.warn?.('school.teacher-gate.refused', { action, userId: userId ?? null, reason });
+  #refuse(reason, { userId, action, message, context }) {
+    // Context rides the refusal log (which period, which item) — never any pin.
+    this.#logger.warn?.('school.teacher-gate.refused', {
+      action, userId: userId ?? null, reason, ...(context ?? {}),
+    });
     throw new GuestForbiddenError(message);
   }
 
@@ -48,26 +51,45 @@ export class TeacherGate {
    * @param {string|null} [args.pin] - the presented console pin
    * @param {string} args.action - what is being attempted (for the log)
    */
-  assert({ userId = null, pin = null, action = 'write' } = {}) {
+  assert({ userId = null, pin = null, action = 'write', context = null } = {}) {
     let roster;
     try {
       roster = this.#roster();
     } catch (err) {
       this.#logger.warn?.('school.teacher-gate.roster-unreadable', { error: err.message });
-      this.#refuse('roster-unreadable', { userId, action, message: 'Cannot verify who is asking — try again.' });
+      this.#refuse('roster-unreadable', { userId, action, context, message: 'Cannot verify who is asking — try again.' });
     }
     if (!isAdult({ roster, userId, now: this.#clock() })) {
-      this.#refuse('not-a-grown-up', { userId, action, message: 'Only a grown-up can do this.' });
+      this.#refuse('not-a-grown-up', { userId, action, context, message: 'Only a grown-up can do this.' });
     }
     const teachers = this.#teachers();
     if (teachers !== undefined && teachers !== null && !(Array.isArray(teachers) && teachers.includes(userId))) {
-      this.#refuse('not-a-teacher', { userId, action, message: 'Only a listed teacher can do this.' });
+      this.#refuse('not-a-teacher', { userId, action, context, message: 'Only a listed teacher can do this.' });
     }
     const requiredPin = this.#pin();
     if (typeof requiredPin === 'string' && requiredPin.length > 0 && pin !== requiredPin) {
-      this.#refuse('bad-pin', { userId, action, message: 'The teacher PIN is missing or wrong.' });
+      this.#refuse('bad-pin', { userId, action, context, message: 'The teacher PIN is missing or wrong.' });
     }
   }
+}
+
+/**
+ * The one place the config-accessor text exists (F4, M2 review): both
+ * composition sites (schoolLifecycle module + app.mjs for SchoolService)
+ * build their gate through this factory, so a school.yml key rename cannot
+ * drift between them.
+ */
+export function makeTeacherGate({ configService, userService, householdId = null, clock, logger }) {
+  return new TeacherGate({
+    teachers: () => (configService.getHouseholdAppConfig(null, 'school') || {}).teachers,
+    pin: () => {
+      const cfg = configService.getHouseholdAppConfig(null, 'school') || {};
+      return cfg.teacher?.pin != null ? String(cfg.teacher.pin) : null;
+    },
+    roster: () => userService?.getHouseholdRoster?.(householdId) ?? [],
+    ...(clock ? { clock } : {}),
+    logger,
+  });
 }
 
 export default TeacherGate;

@@ -179,7 +179,7 @@ export class PrintService {
 
   /** A grown-up approves a pending request: print it, log it, drop it from pending. */
   async approve({ requestId, approver, pin = null }) {
-    if (this.#teacherGate) this.#teacherGate.assert({ userId: approver, pin, action: 'print.approve' });
+    if (this.#teacherGate) this.#teacherGate.assert({ userId: approver, pin, action: 'print.approve', context: { requestId } });
     else if (!this.#isAdult(approver)) throw new GuestForbiddenError('Only a grown-up can approve a print');
     const pending = this.#ds.readPrintPending();
     const req = pending.find((r) => r.id === requestId && r.status === 'pending');
@@ -198,7 +198,7 @@ export class PrintService {
 
   /** A grown-up denies a pending request: drop it, print nothing. */
   async deny({ requestId, approver, pin = null }) {
-    if (this.#teacherGate) this.#teacherGate.assert({ userId: approver, pin, action: 'print.deny' });
+    if (this.#teacherGate) this.#teacherGate.assert({ userId: approver, pin, action: 'print.deny', context: { requestId } });
     else if (!this.#isAdult(approver)) throw new GuestForbiddenError('Only a grown-up can deny a print');
     const pending = this.#ds.readPrintPending();
     const req = pending.find((r) => r.id === requestId && r.status === 'pending');

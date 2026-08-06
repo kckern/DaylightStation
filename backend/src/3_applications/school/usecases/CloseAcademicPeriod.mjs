@@ -53,7 +53,7 @@ export class CloseAcademicPeriod {
   async execute({
     learnerId, periodId, closedBy, supersede = false, pin = null,
   } = {}) {
-    if (this.#teacherGate) this.#teacherGate.assert({ userId: closedBy, pin, action: 'report-card.close' });
+    if (this.#teacherGate) this.#teacherGate.assert({ userId: closedBy, pin, action: 'report-card.close', context: { learnerId, periodId } });
     else this.#grownUps.assert(closedBy, 'Only a grown-up can close a report card', {
       action: 'report-card.close', learnerId, periodId,
     });

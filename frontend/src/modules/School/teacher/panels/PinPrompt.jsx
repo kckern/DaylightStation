@@ -19,7 +19,7 @@ export default function PinPrompt() {
         <input
           type="password"
           inputMode="numeric"
-          autoComplete="off"
+          autoComplete="new-password"
           value={value}
           onChange={(e) => setValue(e.target.value)}
           aria-label="PIN"

@@ -123,7 +123,11 @@ describe('wave-2 mutations', () => {
 
   it('a 403 opens the PIN prompt and marks only that item', async () => {
     await claim();
-    schoolApi.resolveReview.mockResolvedValue({ ok: false, status: 403, data: { error: 'The teacher PIN is missing or wrong.' } });
+    // The REAL lifecycle 403 body (app-level object-shape handler): the error
+    // field is an OBJECT — the UI must normalize it, never render it raw.
+    schoolApi.resolveReview.mockResolvedValue({ ok: false, status: 403, data: {
+      ok: false, error: { type: 'GuestForbiddenError', message: 'The teacher PIN is missing or wrong.' }, traceId: 'unknown',
+    } });
     mount(<TodayTab kids={KIDS} />);
     await waitFor(() => expect(screen.getByText(/Explain photosynthesis/)).toBeTruthy());
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Incorrect' })); });

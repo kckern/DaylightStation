@@ -44,7 +44,7 @@ export class SetAssignments {
    * @throws {ValidationError} the record is not a shape the store can hold
    */
   async execute({ learnerId, courses = [], units = [], assignedBy = null, pin = null } = {}) {
-    if (this.#teacherGate) this.#teacherGate.assert({ userId: assignedBy, pin, action: 'assignments.put' });
+    if (this.#teacherGate) this.#teacherGate.assert({ userId: assignedBy, pin, action: 'assignments.put', context: { learnerId } });
     else this.#grownUps.assert(assignedBy, 'Only a grown-up can change what a child is assigned', {
       action: 'assignments.put', learnerId,
     });

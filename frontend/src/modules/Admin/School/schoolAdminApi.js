@@ -45,7 +45,11 @@ async function call(url, { method = 'GET', body } = {}) {
   try { parsed = text ? JSON.parse(text) : null; } catch { parsed = null; }
 
   if (!res.ok) {
-    const err = new Error(parsed?.message || parsed?.error || `HTTP ${res.status}`);
+    // Two handler shapes exist: {error: string} (school router wrap) and
+    // {error: {type, message}} (app-level object shape) — never let an
+    // object reach Error's message ("[object Object]").
+    const detail = typeof parsed?.error === 'string' ? parsed.error : parsed?.error?.message;
+    const err = new Error(parsed?.message || detail || `HTTP ${res.status}`);
     err.status = res.status;
     throw err;
   }

@@ -30,7 +30,7 @@ export default function QuizRequestBacklog({ kids }) {
             <li key={`${key}:${i}`} className="teacher-quizreq__row">
               <span>{r.unitTitle ?? r.unitId}</span>
               <span className="teacher-quizreq__meta">{r.materialTitle ?? ''} — asked by {nameFor(r.userId)}</span>
-              {r.fulfilled && <span className="teacher-quizreq__done">bank authored ✓</span>}
+              {r.fulfilled && <span className="teacher-quizreq__done">bank authored</span>}
               <button type="button" disabled={busy === key} onClick={() => dismiss(r)}>Dismiss</button>
               {errors[key] && <p className="teacher-panel__error">{errors[key]}</p>}
             </li>

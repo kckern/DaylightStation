@@ -23,7 +23,7 @@ describe('TeacherGate wiring', () => {
     const uc = new ResolveReviewItem({ reviewQueue: { resolve: vi.fn() }, grownUps, teacherGate: gate });
     await expect(uc.execute({ sessionId: 's', itemId: 'i', verdict: 'correct', gradedBy: 'kckern', pin: '9' }))
       .rejects.toThrow(GuestForbiddenError);
-    expect(gate.assert).toHaveBeenCalledWith({ userId: 'kckern', pin: '9', action: 'review.resolve' });
+    expect(gate.assert).toHaveBeenCalledWith({ userId: 'kckern', pin: '9', action: 'review.resolve', context: { sessionId: 's', itemId: 'i' } });
     expect(grownUps.assert).not.toHaveBeenCalled();
   });
 
@@ -32,7 +32,7 @@ describe('TeacherGate wiring', () => {
     const store = { put: vi.fn(async (r) => r) };
     const uc = new SetAssignments({ assignments: store, grownUps, teacherGate: gate });
     await uc.execute({ learnerId: 'felix', courses: ['math'], units: [], assignedBy: 'kckern', pin: '4321' });
-    expect(gate.assert).toHaveBeenCalledWith({ userId: 'kckern', pin: '4321', action: 'assignments.put' });
+    expect(gate.assert).toHaveBeenCalledWith({ userId: 'kckern', pin: '4321', action: 'assignments.put', context: { learnerId: 'felix' } });
     expect(store.put).toHaveBeenCalled();
   });
 
@@ -56,7 +56,7 @@ describe('TeacherGate wiring', () => {
     await expect(svc.approve({ requestId: 'r', approver: 'kckern', pin: 'x' })).rejects.toThrow(GuestForbiddenError);
     await expect(svc.deny({ requestId: 'r', approver: 'kckern', pin: 'x' })).rejects.toThrow(GuestForbiddenError);
     expect(ds.readPrintPending).not.toHaveBeenCalled();
-    expect(gate.assert).toHaveBeenCalledWith({ userId: 'kckern', pin: 'x', action: 'print.approve' });
-    expect(gate.assert).toHaveBeenCalledWith({ userId: 'kckern', pin: 'x', action: 'print.deny' });
+    expect(gate.assert).toHaveBeenCalledWith({ userId: 'kckern', pin: 'x', action: 'print.approve', context: { requestId: 'r' } });
+    expect(gate.assert).toHaveBeenCalledWith({ userId: 'kckern', pin: 'x', action: 'print.deny', context: { requestId: 'r' } });
   });
 });

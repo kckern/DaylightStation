@@ -54,7 +54,7 @@ export class ResolveReviewItem {
   async execute({ sessionId, itemId, verdict, gradedBy = null, note = null, pin = null } = {}) {
     // TeacherGate (spec §1) subsumes the grown-up rule and adds role + pin;
     // absent (pre-console composition, paper flows' tests) → legacy gate.
-    if (this.#teacherGate) this.#teacherGate.assert({ userId: gradedBy, pin, action: 'review.resolve' });
+    if (this.#teacherGate) this.#teacherGate.assert({ userId: gradedBy, pin, action: 'review.resolve', context: { sessionId, itemId } });
     else this.#grownUps.assert(gradedBy, 'Only a grown-up can sign off schoolwork', {
       action: 'review.resolve', sessionId, itemId,
     });
