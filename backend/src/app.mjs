@@ -3143,7 +3143,22 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Wave-3 gated planning writes — constructed HERE because they borrow the
   // lifecycle's pass-override store and sessions repo (both null-safe when
   // the lifecycle is unwired).
-  const setAcademicPeriods = new SetAcademicPeriods({ store: schoolAcademicPeriods, teacherGate: schoolTeacherGate });
+  const setAcademicPeriods = new SetAcademicPeriods({
+    store: schoolAcademicPeriods,
+    teacherGate: schoolTeacherGate,
+    // Frozen-card guard (admin advocacy #15): the roster-wide set of periodIds
+    // holding a FROZEN card — removing/renaming one of those ids is refused.
+    frozenPeriodIds: async () => {
+      const roster = userService.getHouseholdRoster?.() ?? [];
+      const ids = [];
+      for (const member of roster) {
+        try {
+          (schoolDatastore.listReportCards(member.id) ?? []).forEach((r) => { if (r?.periodId) ids.push(r.periodId); });
+        } catch { /* one unreadable shard must not lock period edits */ }
+      }
+      return ids;
+    },
+  });
   const setPassOverride = schoolLifecycle.passOverrides
     ? new SetPassOverride({ store: schoolLifecycle.passOverrides, teacherGate: schoolTeacherGate })
     : null;
