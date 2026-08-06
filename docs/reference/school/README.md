@@ -1069,7 +1069,8 @@ slugified query values so a hostile `learnerId` can never inject a second
 
 **The teacher's day digest is one glance at the whole roster.**
 `GET /teacher/today` answers, per learner, attempts today, correct-today,
-in-flight sessions, and how many items are waiting on a grown-up's mark — all
+the sessions touched today (whatever their state — finished work shows
+alongside in-flight), and how many items are waiting on a grown-up's mark — all
 scoped to the same 4am→4am study day the language ladder and the printed
 agenda already use, not the plain UTC calendar date, so a session at 11pm
 still belongs to "today" until the boundary rolls. The parent report board
