@@ -32,6 +32,14 @@ export function createSchoolRouter({
   printDocumentsRepo = null,
   printAllocationStore = null,
   getPrintTeacherPin = null,
+  // Report cards, period close, teacher digest (Task 6, spec R5b).
+  getReportCard = null,
+  closeAcademicPeriod = null,
+  getTeacherToday = null,
+  // Raw frozen-record reader (`YamlSchoolDatastore`-shaped: `readReportCard`,
+  // `listReportCards`) — distinct from `getReportCard` above, which derives a
+  // LIVE report; this one only ever reads what `closeAcademicPeriod` already froze.
+  reportCardsStore = null,
   logger = console,
 }) {
   const router = express.Router();
@@ -690,6 +698,44 @@ export function createSchoolRouter({
       duration: durationMs != null ? durationMs / 1000 : undefined,
     });
     return res.json({ ok: true });
+  }));
+
+  // --- report cards, period close, teacher digest (Task 6, spec R5b) --------
+  // LEAN by design: this feeds Task 7's PDF and Task 9's parent panel. It must
+  // never grow dashboard extras of its own — those belong on `/progress`.
+  router.get('/report-card', wrap(async (req, res) => {
+    if (!getReportCard) return res.json(null);
+    const learnerId = requiredTextQuery(req.query.learnerId, 'learnerId');
+    const periodId = requiredTextQuery(req.query.periodId, 'periodId');
+    res.set('Cache-Control', 'no-store').json(await getReportCard.execute({ learnerId, periodId }));
+  }));
+
+  router.get('/report-card/frozen', wrap(async (req, res) => {
+    if (!reportCardsStore) return res.json(null);
+    const learnerId = requiredTextQuery(req.query.learnerId, 'learnerId');
+    const periodId = textQuery(req.query.periodId);
+    if (periodId) {
+      const record = reportCardsStore.readReportCard(learnerId, periodId);
+      if (!record) throw new EntityNotFoundError('Frozen report card', `${learnerId}/${periodId}`);
+      return res.set('Cache-Control', 'no-store').json(record);
+    }
+    return res.set('Cache-Control', 'no-store').json(reportCardsStore.listReportCards(learnerId));
+  }));
+
+  router.post('/report-card/close', wrap(async (req, res) => {
+    if (!closeAcademicPeriod) throw new EntityNotFoundError('report card close', 'not configured');
+    const {
+      learnerId, periodId, closedBy, supersede,
+    } = req.body || {};
+    const frozen = await closeAcademicPeriod.execute({
+      learnerId, periodId, closedBy, supersede: supersede === true,
+    });
+    return res.status(201).json(frozen);
+  }));
+
+  router.get('/teacher/today', wrap(async (req, res) => {
+    if (!getTeacherToday) return res.json([]);
+    res.set('Cache-Control', 'no-store').json(await getTeacherToday.execute());
   }));
 
   if (schoolCalcRouter) router.use('/calc', schoolCalcRouter);
