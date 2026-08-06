@@ -107,6 +107,7 @@ const RENDER_FLAGS = new Set([
   'learner-id',
 ]);
 const RELEASE_CARD_FLAGS = new Set([...COMMON_FLAGS, 'rows']);
+const LIST_CARDS_FLAGS = new Set([...COMMON_FLAGS, 'status', 'older-than']);
 
 const HELP = `school-docs — validate and proof-render School print-document source YAML
 
@@ -115,6 +116,7 @@ Usage:
   school-docs.cli.mjs publish <file> [options]
   school-docs.cli.mjs render <file> --out <pdf> [options]
   school-docs.cli.mjs release-card <cardId> [options]
+  school-docs.cli.mjs list-cards [options]
 
 Commands:
   validate <file|dir>   parse + validateAnyDocument (v1 or v2); directory form
@@ -125,6 +127,10 @@ Commands:
   render <file>          run the real fit/render pipeline and write a PDF.
   release-card <cardId>  release live allocation records on a physical card
                          (whole card, or just the rows named by --rows).
+  list-cards             every allocation record across every card — the read
+                         release-card never had (admin advocacy A5: stranded
+                         live cards were a documented leak with no tool to
+                         find them). Filter with --status / --older-than.
 
 Options:
   --data-dir <path>      data root (default: $DAYLIGHT_BASE_PATH/data)
@@ -150,6 +156,8 @@ Options:
                          mutually exclusive with --card
   --start-row <n>        (render) first physical row to allocate (default 1);
                          only meaningful alongside --card or --fresh-card
+  --status <s>            (list-cards) only records with this status (e.g. live)
+  --older-than <Nd>       (list-cards) only records rendered more than N days ago
   --rows <a-b>            (release-card) release only rows a..b (inclusive);
                          omitted releases every live record on the card
   --help, -h             show this message
@@ -466,6 +474,41 @@ export async function runRender({
  * @returns {Promise<{ok: boolean, mode: 'release-card', cardId: string,
  *   rows: {start: number, end: number}|null, released: object[], errors: string[]}>}
  */
+/**
+ * `list-cards` (admin advocacy A5): every allocation record across every
+ * card, flattened, filterable by status and age. This is the read that makes
+ * `release-card <cardId>` usable — before it, releasing a stranded card
+ * required already knowing its id.
+ */
+export async function runListCards({ status = null, olderThanDays = null, paths, now = Date.now() } = {}) {
+  const allocationStore = new YamlAllocationStore({ directory: paths.contentRoot });
+  try {
+    const cutoff = olderThanDays !== null ? now - olderThanDays * 86400000 : null;
+    const cards = [];
+    for (const cardId of await allocationStore.listCardIds()) {
+      // eslint-disable-next-line no-await-in-loop
+      for (const record of await allocationStore.findByCard(cardId)) {
+        if (status !== null && record.status !== status) continue;
+        if (cutoff !== null && (!record.renderedAt || Date.parse(record.renderedAt) >= cutoff)) continue;
+        cards.push({
+          cardId,
+          recordId: record.recordId,
+          status: record.status,
+          documentId: record.documentId,
+          rev: record.rev ?? null,
+          learnerId: record.learnerId ?? null,
+          rowRange: record.rowRange ?? null,
+          renderedAt: record.renderedAt ?? null,
+        });
+      }
+    }
+    cards.sort((a, b) => String(a.renderedAt ?? '').localeCompare(String(b.renderedAt ?? '')));
+    return { ok: true, mode: 'list-cards', cards, errors: [] };
+  } catch (error) {
+    return { ok: false, mode: 'list-cards', cards: [], errors: [error?.message ?? String(error)] };
+  }
+}
+
 export async function runReleaseCard({ cardId, rows, paths }) {
   const allocationStore = new YamlAllocationStore({ directory: paths.contentRoot });
   try {
@@ -557,13 +600,13 @@ export async function runSchoolDocs(argv = [], deps = {}) {
     };
   }
 
-  const KNOWN_COMMANDS = new Set(['validate', 'publish', 'render', 'release-card']);
+  const KNOWN_COMMANDS = new Set(['validate', 'publish', 'render', 'release-card', 'list-cards']);
   if (!KNOWN_COMMANDS.has(subcommand)) {
     return usageResult([`Unknown command: ${subcommand}`]);
   }
 
   const allowedFlags = {
-    validate: VALIDATE_FLAGS, publish: PUBLISH_FLAGS, render: RENDER_FLAGS, 'release-card': RELEASE_CARD_FLAGS,
+    validate: VALIDATE_FLAGS, publish: PUBLISH_FLAGS, render: RENDER_FLAGS, 'release-card': RELEASE_CARD_FLAGS, 'list-cards': LIST_CARDS_FLAGS,
   }[subcommand];
   const unknown = Object.keys(flags).filter((flag) => !allowedFlags.has(flag));
   if (unknown.length) {
@@ -591,6 +634,22 @@ export async function runSchoolDocs(argv = [], deps = {}) {
     }
     const filePath = resolveContentPath(paths, positional[0]);
     const report = await runPublish({ filePath, paths });
+    return { exitCode: report.ok ? EXIT_OK : EXIT_FAIL, report };
+  }
+
+  if (subcommand === 'list-cards') {
+    if (positional.length !== 0) return usageResult(['list-cards takes no positional arguments']);
+    let olderThanDays = null;
+    if (flags['older-than'] !== undefined) {
+      const m = /^(\d+)d$/.exec(String(flags['older-than']));
+      if (!m) return usageResult(['--older-than must look like 30d']);
+      olderThanDays = Number.parseInt(m[1], 10);
+    }
+    const report = await runListCards({
+      status: flags.status !== undefined ? String(flags.status) : null,
+      olderThanDays,
+      paths,
+    });
     return { exitCode: report.ok ? EXIT_OK : EXIT_FAIL, report };
   }
 
@@ -707,6 +766,15 @@ export function formatSchoolDocsReport(report) {
       report.warnings.forEach((warning) => lines.push(`  - ${warning}`));
     }
     return `${lines.join('\n')}\n`;
+  }
+
+  if (report.mode === 'list-cards') {
+    if (report.ok) {
+      const lines = report.cards.map((c) => JSON.stringify(c));
+      lines.push(`${report.cards.length} record${report.cards.length === 1 ? '' : 's'}`);
+      return `${lines.join('\n')}\n`;
+    }
+    return `FAILED\n${report.errors.map((e) => `  - ${e}`).join('\n')}\n`;
   }
 
   if (report.mode === 'release-card') {

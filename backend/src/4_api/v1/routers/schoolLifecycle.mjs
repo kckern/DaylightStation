@@ -140,6 +140,7 @@ export function createSchoolLifecycleRouter({
   reviewQueue = null,
   resolveReviewItem = null,
   setAssignments = null,
+  markSessionAbandoned = null,
   curriculum = null,
   sessions = null,
   // Study-day-windowed sessions read (`?window=today`) — a use case, not an
@@ -389,6 +390,24 @@ export function createSchoolLifecycleRouter({
 
   // Same shape as the sign-off: the planning WRITE is adult-only and lives in
   // its use case, while the reads above stay open.
+  if (markSessionAbandoned) {
+    // The stale-work sweep (admin advocacy A5): who never came back.
+    router.get('/sessions/stale', guarded(async (req, res) => {
+      const olderThanDays = Number.parseInt(req.query.olderThanDays, 10);
+      res.json({
+        sessions: await markSessionAbandoned.listStale({
+          olderThanDays: Number.isFinite(olderThanDays) && olderThanDays > 0 ? olderThanDays : 7,
+        }),
+      });
+    }));
+    router.post('/sessions/:sessionId/abandon', guarded(async (req, res) => {
+      const { learnerId, reason, decidedBy = null, pin = null } = req.body || {};
+      res.json(await markSessionAbandoned.execute({
+        sessionId: req.params.sessionId, learnerId, reason, decidedBy, pin,
+      }));
+    }));
+  }
+
   if (setAssignments) {
     router.put('/assignments/:learnerId', guarded(async (req, res) => {
       const { courses = [], units = [], assignedBy = null, pin = null, baseUpdatedAt } = req.body || {};

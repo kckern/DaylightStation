@@ -7,6 +7,7 @@ import { useState } from 'react';
 import FeedbackNotes, { NoteComposer } from '../panels/FeedbackNotes.jsx';
 import AttestationPanel from '../panels/AttestationPanel.jsx';
 import ReassignPanel from '../panels/ReassignPanel.jsx';
+import StaleSessions from '../panels/StaleSessions.jsx';
 
 export default function RepairTab({ learnerId, kids = [] }) {
   const learnerName = kids.find((k) => k.id === learnerId)?.name ?? null;
@@ -14,6 +15,10 @@ export default function RepairTab({ learnerId, kids = [] }) {
   if (!learnerId) {
     return (
       <div className="teacher-tab teacher-tab--repair">
+        {/* Household-wide leak detection stays visible with NO learner picked
+            (admin advocacy A5) — a wedged session is an operational fact,
+            not a per-kid one. */}
+        <StaleSessions kids={kids} />
         <p className="teacher-panel__empty">Pick a learner above to see their feedback and repairs.</p>
       </div>
     );
@@ -24,6 +29,7 @@ export default function RepairTab({ learnerId, kids = [] }) {
       <NoteComposer learnerId={learnerId} learnerName={learnerName} onSent={() => setFeedbackRefresh((n) => n + 1)} />
       <AttestationPanel learnerId={learnerId} learnerName={learnerName} />
       <ReassignPanel learnerId={learnerId} learnerName={learnerName} kids={kids} />
+      <StaleSessions kids={kids} />
     </div>
   );
 }
