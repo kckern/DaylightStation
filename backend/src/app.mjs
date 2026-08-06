@@ -3124,6 +3124,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const setMilestones = new SetMilestones({ store: schoolMilestoneStore, teacherGate: schoolTeacherGate });
   const milestoneStatuses = new GetMilestoneStatuses({
     store: schoolMilestoneStore, sessions: schoolLifecycle.stores?.sessions ?? null,
+    timezone: configService.getTimezone?.() || null,
   });
   const recordEnrichment = new RecordEnrichment({ log: schoolEnrichmentLog, teacherGate: schoolTeacherGate });
 

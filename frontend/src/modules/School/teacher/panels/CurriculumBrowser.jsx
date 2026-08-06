@@ -17,10 +17,17 @@ function PassOverride({ unit, override, onSaved }) {
   const effective = override ?? unit.passingPercent;
   const key = unit.unitId;
 
+  const [localError, setLocalError] = useState(null);
   const set = () => {
     const percent = Number.parseInt(value, 10);
+    // Garbage must never become a silent CLEAR of a real override.
+    if (!Number.isInteger(percent) || percent < 1 || percent > 100) {
+      setLocalError('1-100');
+      return;
+    }
+    setLocalError(null);
     run(key, ({ actorId, pin }) => schoolApi.putPassOverride(unit.unitId, {
-      percent: Number.isInteger(percent) ? percent : null, editedBy: actorId, pin,
+      percent, editedBy: actorId, pin,
     }), { onSuccess: () => { setValue(''); onSaved(); } });
   };
   const clear = () => run(key, ({ actorId, pin }) => schoolApi.putPassOverride(unit.unitId, {
@@ -41,7 +48,7 @@ function PassOverride({ unit, override, onSaved }) {
       />
       <button type="button" disabled={busy === key || !value} onClick={set}>Set</button>
       {override != null && <button type="button" disabled={busy === key} onClick={clear}>Clear</button>}
-      {errors[key] && <span className="teacher-panel__error">{errors[key]}</span>}
+      {(localError || errors[key]) && <span className="teacher-panel__error">{localError ?? errors[key]}</span>}
     </span>
   );
 }

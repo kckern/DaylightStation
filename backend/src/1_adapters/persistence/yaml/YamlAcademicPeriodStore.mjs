@@ -15,6 +15,14 @@ import { validateAcademicPeriod } from '#domains/school/progress/learningProgres
 
 const dumpYaml = (value) => yaml.dump(value, { indent: 2, lineWidth: -1, noRefs: true });
 
+async function atomicWrite(file, text) {
+  const tmp = `${file}.tmp-${process.pid}`;
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.writeFile(tmp, text, 'utf8');
+  await fs.rename(tmp, file);
+}
+
+
 export function validatePeriodList(raw) {
   if (!Array.isArray(raw)) throw new Error('periods must be an array');
   const seen = new Set();
@@ -25,6 +33,13 @@ export function validatePeriodList(raw) {
     if (seen.has(result.period.periodId)) throw new Error(`periods[${index}]: duplicate periodId '${result.period.periodId}'`);
     seen.add(result.period.periodId);
     return result.period;
+  }).map((period, _i, all) => {
+    // Runtime-writable now (the editor makes periodId free text), so a
+    // dangling parent is a real hazard the boot path never had to face.
+    if (period.parentPeriodId && !all.some((p) => p.periodId === period.parentPeriodId)) {
+      throw new Error(`period '${period.periodId}' names missing parent '${period.parentPeriodId}'`);
+    }
+    return period;
   });
 }
 
@@ -40,16 +55,31 @@ export class YamlAcademicPeriodStore {
 
   #file() { return path.join(this.#configService.getHouseholdPath('apps/school'), 'periods.yml'); }
 
-  #readFile() {
+  /**
+   * Missing and corrupt are DIFFERENT answers (M3 review): a missing file is
+   * the pre-promotion normal (serve the fallback); an existing-but-unreadable
+   * file must never silently revert the calendar to the config era, and must
+   * refuse writes so history cannot be rebuilt from null over real data.
+   */
+  #readState() {
+    let text;
     try {
-      const raw = yaml.load(fsSync.readFileSync(this.#file(), 'utf8'));
-      return raw && typeof raw === 'object' && Array.isArray(raw.periods) ? raw : null;
-    } catch { return null; }
+      text = fsSync.readFileSync(this.#file(), 'utf8');
+    } catch { return { state: 'missing' }; }
+    try {
+      const raw = yaml.load(text);
+      if (raw && typeof raw === 'object' && Array.isArray(raw.periods)) return { state: 'ok', raw };
+      return { state: 'corrupt' };
+    } catch { return { state: 'corrupt' }; }
   }
 
   listPeriods() {
-    const stored = this.#readFile();
-    if (stored) return structuredClone(stored.periods);
+    const read = this.#readState();
+    if (read.state === 'ok') return structuredClone(read.raw.periods);
+    if (read.state === 'corrupt') {
+      this.#logger.error?.('school.periods.file-corrupt', { file: this.#file() });
+      return this.#fallback?.listPeriods?.() ?? [];
+    }
     return this.#fallback?.listPeriods?.() ?? [];
   }
 
@@ -60,10 +90,12 @@ export class YamlAcademicPeriodStore {
   async replacePeriods(periods, { editedBy = null, at = new Date().toISOString() } = {}) {
     const validated = validatePeriodList(periods);
     this.#writeChain = this.#writeChain.then(async () => {
-      const current = this.#readFile();
-      const history = [...(current?.history ?? []), { at, editedBy, periods: validated }];
-      await fs.mkdir(path.dirname(this.#file()), { recursive: true });
-      await fs.writeFile(this.#file(), dumpYaml({ periods: validated, history }), 'utf8');
+      const read = this.#readState();
+      if (read.state === 'corrupt') {
+        throw new Error(`periods.yml exists but cannot be read — fix or move it before editing (${this.#file()})`);
+      }
+      const history = [...(read.raw?.history ?? []), { at, editedBy, periods: validated }];
+      await atomicWrite(this.#file(), dumpYaml({ periods: validated, history }));
       this.#logger.info?.('school.periods.replaced', { editedBy, count: validated.length });
     });
     await this.#writeChain;

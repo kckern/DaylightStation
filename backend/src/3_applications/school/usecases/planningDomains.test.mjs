@@ -139,7 +139,11 @@ describe('gated planning use cases', () => {
       { id: 'm2', learnerId: 'felix', courseId: 'math', unitId: 'math.05', dueBy: '2026-07-01' },
       { id: 'm3', learnerId: 'milo', courseId: 'math', unitId: 'math.04', dueBy: '2026-07-01' },
     ], { editedBy: 'k', at: 't' });
-    const sessions = { listForLearner: async () => [{ unitId: 'math.04', result: 'passed' }, { unitId: 'math.05', result: 'needs_remediation' }] };
+    // The REAL repo fact shape: result lives under `outcome`, never top-level.
+    const sessions = { listForLearner: async () => [
+      { unitId: 'math.04', outcome: { result: 'passed' } },
+      { unitId: 'math.05', outcome: { result: 'needs_remediation' } },
+    ] };
     const uc = new GetMilestoneStatuses({ store, sessions, clock: () => new Date('2026-08-06T12:00:00Z') });
     const out = await uc.execute({ learnerId: 'felix' });
     expect(out.milestones.map((m) => [m.id, m.status])).toEqual([['m1', 'met'], ['m2', 'behind']]);
@@ -170,12 +174,30 @@ describe('gated planning use cases', () => {
   });
 });
 
-describe('CloseSessionOutcome pass-override threading', () => {
-  it('the override wins over the unit passing percent', async () => {
-    const { evaluateOutcome } = await import('#domains/school/sessions/outcome.mjs');
-    // The threading contract: effective = override ?? unit percent. Pinned at
-    // the domain boundary here; the use-case wiring test lives with its suite.
-    expect(evaluateOutcome({ gradedPercent: 72, passingPercent: 70 }).result).toBe('passed');
-    expect(evaluateOutcome({ gradedPercent: 72, passingPercent: 80 }).result).toBe('needs_remediation');
+
+describe('corrupt-file posture (M3 F3)', () => {
+  it('a corrupt periods file never silently reverts: reads warn, writes refuse', async () => {
+    const store = new YamlAcademicPeriodStore({ configService, fallback: null, logger: { error: vi.fn(), info: vi.fn() } });
+    await store.replacePeriods([PERIOD], { editedBy: 'k', at: 't1' });
+    await fs.writeFile(path.join(dir, 'apps/school/periods.yml'), '{ not: [ yaml', 'utf8');
+    const logger = { error: vi.fn(), info: vi.fn() };
+    const reread = new YamlAcademicPeriodStore({ configService, fallback: null, logger });
+    expect(reread.listPeriods()).toEqual([]);
+    expect(logger.error).toHaveBeenCalledWith('school.periods.file-corrupt', expect.anything());
+    await expect(reread.replacePeriods([PERIOD], { editedBy: 'k' })).rejects.toThrow(/cannot be read/);
+  });
+
+  it('a corrupt enrichment log refuses to append rather than truncating itself', async () => {
+    const log = new YamlEnrichmentLog({ configService, logger: { error: vi.fn(), info: vi.fn() } });
+    await log.append({ id: 'e1', title: 'T', learnerIds: ['felix'], from: '2026-08-01', to: '2026-08-01' });
+    await fs.writeFile(path.join(dir, 'apps/school/enrichment.yml'), 'entries: { broken', 'utf8');
+    await expect(log.append({ id: 'e2', title: 'U', learnerIds: ['felix'], from: '2026-08-02', to: '2026-08-02' }))
+      .rejects.toThrow(/cannot be read/);
+  });
+
+  it('a dangling parentPeriodId is refused now that periodId is runtime-editable', async () => {
+    const store = new YamlAcademicPeriodStore({ configService, fallback: null });
+    await expect(store.replacePeriods([{ ...PERIOD, parentPeriodId: 'ghost-year' }], { editedBy: 'k' }))
+      .rejects.toThrow(/missing parent/);
   });
 });

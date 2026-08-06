@@ -5,22 +5,31 @@
  * "met" or "behind"-by-evidence — statuses degrade to calendar-only.
  */
 import { milestoneStatus } from '#domains/school/milestones.mjs';
+import { offsetMinutesFor } from '#domains/school/studyDay.mjs';
 
 export class GetMilestoneStatuses {
-  #store; #sessions; #clock;
+  #store; #sessions; #timezone; #clock;
 
-  constructor({ store, sessions = null, clock = () => new Date() } = {}) {
+  constructor({ store, sessions = null, timezone = null, clock = () => new Date() } = {}) {
     if (!store) throw new Error('GetMilestoneStatuses requires store');
     this.#store = store;
     this.#sessions = sessions;
+    this.#timezone = timezone;
     this.#clock = clock;
   }
 
   async execute({ learnerId } = {}) {
     const mine = this.#store.list().filter((m) => m.learnerId === learnerId);
     const rows = this.#sessions ? await this.#sessions.listForLearner(learnerId) : [];
-    const passedUnitIds = new Set(rows.filter((r) => r?.result === 'passed').map((r) => r.unitId).filter(Boolean));
-    const today = this.#clock().toISOString().slice(0, 10);
+    // The repo's fact shape nests the verdict: `outcome.result`, never a
+    // top-level `result` (the M3 review caught a join against the wrong
+    // field — statuses could never reach 'met').
+    const passedUnitIds = new Set(rows.filter((r) => r?.outcome?.result === 'passed').map((r) => r.unitId).filter(Boolean));
+    // "Today" in the HOUSEHOLD's calendar, not UTC — a milestone must not
+    // flip 'behind' at 5pm local the day before (the domain's own due-day
+    // rule). Same offset source as the study-day math.
+    const nowMs = this.#clock().getTime();
+    const today = new Date(nowMs + offsetMinutesFor(this.#timezone, nowMs) * 60_000).toISOString().slice(0, 10);
     return {
       milestones: mine.map((m) => ({ ...m, status: milestoneStatus(m, { passedUnitIds, today }) })),
     };

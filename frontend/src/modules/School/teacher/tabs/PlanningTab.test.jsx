@@ -38,8 +38,10 @@ beforeEach(() => {
   }));
   schoolApi.putAssignments.mockResolvedValue(ok({ learnerId: 'felix' }));
   schoolApi.periods.mockResolvedValue(ok([
-    { periodId: '2026-spring', kind: 'semester', label: 'Spring 2026', startsAt: '2026-01-05T00:00:00.000Z', endsAt: '2026-06-12T00:00:00.000Z' },
-    { periodId: '2026-fall', kind: 'semester', label: 'Fall 2026', startsAt: '2026-08-01T00:00:00.000Z', endsAt: '2026-12-19T00:00:00.000Z' },
+    // The LIVE calendar's instants carry a timezone-offset time-of-day
+    // (midnight LA = T07:00Z) — the editor must round-trip them verbatim.
+    { periodId: '2026-spring', kind: 'semester', label: 'Spring 2026', startsAt: '2026-01-05T07:00:00.000Z', endsAt: '2026-06-12T07:00:00.000Z' },
+    { periodId: '2026-fall', kind: 'semester', label: 'Fall 2026', startsAt: '2026-08-01T07:00:00.000Z', endsAt: '2026-12-19T07:00:00.000Z' },
   ]));
   schoolApi.putPeriods.mockResolvedValue(ok({ periods: [] }));
   schoolApi.curriculumUnits.mockResolvedValue(ok({ units: [
@@ -78,7 +80,7 @@ describe('PlanningTab (wave 3, all live)', () => {
     expect(screen.getByRole('button', { name: 'Edit assignments' })).toBeTruthy();
   });
 
-  it('periods edit round-trips date-only fields back to canonical ISO', async () => {
+  it('an untouched save round-trips the ORIGINAL instants verbatim — no boundary shift', async () => {
     mount(<PlanningTab learnerId="felix" kids={KIDS} />);
     await waitFor(() => expect(screen.getByText('Fall 2026')).toBeTruthy());
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Edit periods' })); });
@@ -86,7 +88,20 @@ describe('PlanningTab (wave 3, all live)', () => {
     await waitFor(() => expect(schoolApi.putPeriods).toHaveBeenCalledWith(expect.objectContaining({
       editedBy: 'kckern',
       periods: expect.arrayContaining([expect.objectContaining({
-        periodId: '2026-fall', startsAt: '2026-08-01T00:00:00.000Z', endsAt: '2026-12-19T00:00:00.000Z',
+        periodId: '2026-fall', startsAt: '2026-08-01T07:00:00.000Z', endsAt: '2026-12-19T07:00:00.000Z',
+      })]),
+    })));
+  });
+
+  it('an edited date keeps the original time-of-day suffix', async () => {
+    mount(<PlanningTab learnerId="felix" kids={KIDS} />);
+    await waitFor(() => expect(screen.getByText('Fall 2026')).toBeTruthy());
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Edit periods' })); });
+    act(() => { fireEvent.change(screen.getByLabelText('Ends 1'), { target: { value: '2026-12-20' } }); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Save' })); });
+    await waitFor(() => expect(schoolApi.putPeriods).toHaveBeenCalledWith(expect.objectContaining({
+      periods: expect.arrayContaining([expect.objectContaining({
+        periodId: '2026-fall', endsAt: '2026-12-20T07:00:00.000Z',
       })]),
     })));
   });

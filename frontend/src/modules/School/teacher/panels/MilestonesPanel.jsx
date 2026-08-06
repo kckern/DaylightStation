@@ -40,7 +40,7 @@ export default function MilestonesPanel({ learnerId }) {
     if (idx !== i) return row;
     if (field === 'unitId') {
       const unit = units.find((u) => u.unitId === value);
-      return { ...row, unitId: value, courseId: unit?.courseId ?? row.courseId ?? value };
+      return { ...row, unitId: value, courseId: unit?.courseId ?? row.courseId };
     }
     return { ...row, [field]: value };
   }));
