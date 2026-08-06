@@ -35,6 +35,7 @@ vi.mock('../schoolApi.js', () => {
     retract: vi.fn(okEmpty),
     transcript: vi.fn(okEmpty),
     offerRetake: vi.fn(okEmpty),
+    attestations: vi.fn(async () => ({ ok: true, status: 200, data: { entries: [] } })),
     passOverrides: vi.fn(async () => ({ ok: true, status: 200, data: { overrides: {} } })),
     milestones: vi.fn(async () => ({ ok: true, status: 200, data: { milestones: [] } })),
     enrichment: vi.fn(async () => ({ ok: true, status: 200, data: { entries: [] } })),

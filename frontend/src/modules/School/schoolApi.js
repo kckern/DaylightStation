@@ -101,7 +101,7 @@ export const schoolApi = {
   // Wave-4 records.
   closePeriod: (body) => req('/report-card/close', body),
   // Wave-5 repair.
-  attestations: (learnerId) => req(`/attestations?learnerId=${encodeURIComponent(learnerId)}`),
+  attestations: (learnerId) => req(learnerId ? `/attestations?learnerId=${encodeURIComponent(learnerId)}` : '/attestations'),
   postAttestation: (body) => req('/attestations', body),
   teacherNotes: (learnerId) => req(`/teacher-notes?learnerId=${encodeURIComponent(learnerId)}`),
   postTeacherNote: (body) => req('/teacher-notes', body),

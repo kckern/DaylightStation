@@ -5,6 +5,7 @@
  */
 import AssignmentsView from '../panels/AssignmentsView.jsx';
 import SchoolMatrix from '../panels/SchoolMatrix.jsx';
+import ActiveOverrides from '../panels/ActiveOverrides.jsx';
 import PeriodsTimeline from '../panels/PeriodsTimeline.jsx';
 import CurriculumBrowser from '../panels/CurriculumBrowser.jsx';
 import MilestonesPanel from '../panels/MilestonesPanel.jsx';
@@ -23,6 +24,7 @@ export default function PlanningTab({ learnerId, kids = [] }) {
         <p className="teacher-panel__empty">Pick a learner above to see their assignments and milestones.</p>
       )}
       <SchoolMatrix kids={kids} />
+      <ActiveOverrides kids={kids} />
       <PeriodsTimeline />
       <CurriculumBrowser />
       <EnrichmentPanel kids={kids} />

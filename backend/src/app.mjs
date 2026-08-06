@@ -283,6 +283,7 @@ import { MediaSeriesSource } from './3_applications/school/sources/MediaSeriesSo
 import { MediaLabelSource } from './3_applications/school/sources/MediaLabelSource.mjs';
 import { PlexSchoolMediaCatalog } from './1_adapters/school/media/plex/PlexSchoolMediaCatalog.mjs';
 import { GeneratedBankSource } from '#adapters/school/generated-content/GeneratedBankSource.mjs';
+import { GetLearnerRecord } from '#apps/school/usecases/GetLearnerRecord.mjs';
 import { UserVideoProgressStore as SchoolUserVideoProgressStore } from './3_applications/piano/UserVideoProgressStore.mjs';
 import { PrintService } from './3_applications/school/PrintService.mjs';
 import { renderBankWorksheet } from './1_rendering/school/WorksheetRenderer.mjs';
@@ -3201,6 +3202,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     remediationTutor: schoolLearningLoop.tutor,
     learnerDirectory: schoolLearnerDirectory,
     printService: schoolPrintService,
+    getLearnerRecord: new GetLearnerRecord({
+      teacherNotes: schoolTeacherNotes,
+      reviewQueue: schoolLifecycle.stores?.reviewQueue ?? null,
+      attestations: schoolAttestations,
+      enrichment: schoolEnrichmentLog,
+      quizRequests: () => schoolService.listQuizRequests(),
+      printRequests: (learnerId) => schoolPrintService?.listRequestsFor?.(learnerId) ?? [],
+      logger: rootLogger.child({ module: 'school-learner-record' }),
+    }),
     schoolCalcRouter: schoolCalc.router,
     surfaceCertification: schoolSurfaces.certification,
     surfaceRegistry: schoolSurfaces.registry,

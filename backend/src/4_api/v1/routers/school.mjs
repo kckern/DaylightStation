@@ -28,6 +28,7 @@ export function createSchoolRouter({
   learnerDirectory = null,
   issueContinuationCode = null,
   printService = null,
+  getLearnerRecord = null,
   schoolCalcRouter = null,
   surfaceCertification = null,
   surfaceRegistry = null,
@@ -876,7 +877,12 @@ export function createSchoolRouter({
 
   // --- wave-5 repair ---------------------------------------------------------
   router.get('/attestations', wrap((req, res) => {
-    res.json({ entries: attestationLog ? attestationLog.list({ learnerId: textQuery(req.query.learnerId) }) : [] });
+    res.json({ entries: attestationLog ? attestationLog.list({
+      learnerId: textQuery(req.query.learnerId),
+      // ?includeRetracted=1 (admin advocacy #13): withdrawn records visible,
+      // annotated with retractedBy/retractedAt, instead of folded out.
+      includeRetracted: req.query.includeRetracted === '1',
+    }) : [] });
   }));
   router.post('/attestations', wrap(async (req, res) => {
     if (!recordAttestation) throw new EntityNotFoundError('attestations', 'not configured');
@@ -884,7 +890,12 @@ export function createSchoolRouter({
     res.status(201).json(await recordAttestation.execute({ learnerId, unitId, reason, attestedBy, pin }));
   }));
   router.get('/teacher-notes', wrap((req, res) => {
-    res.json({ entries: teacherNotesStore ? teacherNotesStore.list({ learnerId: textQuery(req.query.learnerId) }) : [] });
+    res.json({ entries: teacherNotesStore ? teacherNotesStore.list({
+      learnerId: textQuery(req.query.learnerId),
+      // ?includeRetracted=1 (admin advocacy #13): withdrawn records visible,
+      // annotated with retractedBy/retractedAt, instead of folded out.
+      includeRetracted: req.query.includeRetracted === '1',
+    }) : [] });
   }));
   router.post('/teacher-notes', wrap(async (req, res) => {
     if (!recordTeacherNote) throw new EntityNotFoundError('teacher notes', 'not configured');
@@ -989,7 +1000,12 @@ export function createSchoolRouter({
     res.json(await setMilestones.execute({ learnerId, milestones, editedBy, pin, baseHistoryLength }));
   }));
   router.get('/enrichment', wrap((req, res) => {
-    res.json({ entries: enrichmentLog ? enrichmentLog.list({ learnerId: textQuery(req.query.learnerId) }) : [] });
+    res.json({ entries: enrichmentLog ? enrichmentLog.list({
+      learnerId: textQuery(req.query.learnerId),
+      // ?includeRetracted=1 (admin advocacy #13): withdrawn records visible,
+      // annotated with retractedBy/retractedAt, instead of folded out.
+      includeRetracted: req.query.includeRetracted === '1',
+    }) : [] });
   }));
   router.post('/enrichment', wrap(async (req, res) => {
     if (!recordEnrichment) throw new EntityNotFoundError('enrichment log', 'not configured');
@@ -1016,6 +1032,16 @@ export function createSchoolRouter({
   // A learner's own RESOLVED review items, newest first — the feedback a
   // child can see (Task 9, spec R7). Never a pending item still awaiting a
   // grown-up's verdict; that queue is the parent-only `/lifecycle/review`.
+  // One child's complete communications record (admin advocacy #14).
+  router.get('/learner/:learnerId/record', wrap(async (req, res) => {
+    if (!getLearnerRecord) return res.json({ learnerId: req.params.learnerId, entries: [] });
+    const limit = Number.parseInt(req.query.limit, 10);
+    res.json(await getLearnerRecord.execute({
+      learnerId: req.params.learnerId,
+      limit: Number.isFinite(limit) && limit > 0 ? Math.min(limit, 500) : 200,
+    }));
+  }));
+
   router.get('/review/learner/:learnerId', wrap(async (req, res) => {
     if (!reviewQueue) return res.json([]);
     const learnerId = requiredTextQuery(req.params.learnerId, 'learnerId');
