@@ -132,8 +132,11 @@ export class GetReportCard {
 
     const materials = await this.#materialsSection(learnerId);
     const evidence = await this.#evidenceSection(learnerId, period);
-    const activeDays = this.#activeDaysSection(learnerId, period);
-    const concepts = this.#conceptsSection(learnerId, period);
+    // One period-scoped attempt read, shared by both facets below — never two
+    // independent `readAttemptsInRange` calls with identical bounds.
+    const periodAttempts = this.#periodAttempts(learnerId, period);
+    const activeDays = this.#activeDaysSection(periodAttempts);
+    const concepts = this.#conceptsSection(periodAttempts, period, learnerId);
     const remediationArcs = await this.#resolveRemediationArcs(periodSessions);
     const pendingReview = await this.#pendingReviewCount(learnerId);
 
@@ -242,13 +245,21 @@ export class GetReportCard {
   }
 
   /**
+   * The one period-scoped attempt read `#activeDaysSection` and
+   * `#conceptsSection` both build their facet from — read exactly once per
+   * `execute()` call and passed into each, never re-read per facet.
+   */
+  #periodAttempts(learnerId, period) {
+    const fromDay = period.startsAt.slice(0, 10);
+    const toDay = period.endsAt.slice(0, 10);
+    return this.#datastore.readAttemptsInRange(learnerId, fromDay, toDay) ?? [];
+  }
+
+  /**
    * An honest instructional-time PROXY, never "attendance": distinct attempt
    * DAY FILES in the period, per subject and overall (adequacy SHOULD 6).
    */
-  #activeDaysSection(learnerId, period) {
-    const fromDay = period.startsAt.slice(0, 10);
-    const toDay = period.endsAt.slice(0, 10);
-    const attempts = this.#datastore.readAttemptsInRange(learnerId, fromDay, toDay) ?? [];
+  #activeDaysSection(attempts) {
     const bySubject = new Map();
     const allDays = new Set();
     for (const attempt of attempts) {
@@ -269,16 +280,17 @@ export class GetReportCard {
   }
 
   /**
-   * Concept mastery (Task 10, R8): the SAME period-scoped attempt read
-   * `#activeDaysSection` already does (`readAttemptsInRange`), translated
-   * through `attemptEvidence.mjs`'s `learningEvidenceFromAttempt` into
-   * `conceptMastery`'s pure domain aggregation — one evidence read, two
-   * facets. `windowDays` is sized to the report PERIOD itself (not the
-   * domain function's own rolling-90-day default) so "mastery this period"
-   * actually means this period, not an independent trailing window that
-   * could disagree with it; every attempt this method feeds in already
-   * falls inside `[period.startsAt, period.endsAt]`; `now: period.endsAt`
-   * anchors that window at the period's own close.
+   * Concept mastery (Task 10, R8): the SAME period-scoped attempts
+   * `#periodAttempts` already read for `#activeDaysSection` — passed in here
+   * rather than re-read — translated through `attemptEvidence.mjs`'s
+   * `learningEvidenceFromAttempt` into `conceptMastery`'s pure domain
+   * aggregation — one evidence read, two facets. `windowDays` is sized to
+   * the report PERIOD itself (not the domain function's own rolling-90-day
+   * default) so "mastery this period" actually means this period, not an
+   * independent trailing window that could disagree with it; every attempt
+   * this method receives already falls inside `[period.startsAt,
+   * period.endsAt]`; `now: period.endsAt` anchors that window at the
+   * period's own close.
    * `conceptRegistry` only supplies a LABEL — an unregistered (or entirely
    * unwired) registry falls back to the raw conceptId, never drops the row.
    * A row too incomplete to become evidence (pre-dates a required field,
@@ -286,10 +298,7 @@ export class GetReportCard {
    * whole report card — the same tolerance `#materialsSection`/`#evidenceSection`
    * already give an unreliable dependency.
    */
-  #conceptsSection(learnerId, period) {
-    const fromDay = period.startsAt.slice(0, 10);
-    const toDay = period.endsAt.slice(0, 10);
-    const attempts = this.#datastore.readAttemptsInRange(learnerId, fromDay, toDay) ?? [];
+  #conceptsSection(attempts, period, learnerId) {
     const entries = attempts.flatMap((attempt) => {
       try {
         return [learningEvidenceFromAttempt(attempt)];
