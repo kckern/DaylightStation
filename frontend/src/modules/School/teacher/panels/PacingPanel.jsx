@@ -7,6 +7,7 @@
 import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
 import PanelFrame from './PanelFrame.jsx';
+import { labelize } from '../labelize.js';
 
 export default function PacingPanel({ learnerId, periodId }) {
   const report = usePanelFetch(() => schoolApi.progressReport({ learnerId, periodId }), {
@@ -36,7 +37,7 @@ export default function PacingPanel({ learnerId, periodId }) {
           <ul className="teacher-milestones">
             {(data.milestones ?? []).map((m) => (
               <li key={m.id} className="teacher-milestones__row" data-status={m.effectiveStatus}>
-                <span className="teacher-milestones__unit">{m.label ?? m.unitId}</span>
+                <span className="teacher-milestones__unit">{m.label ?? labelize(m.unitId)}</span>
                 <span className="teacher-milestones__due">by {m.dueBy}</span>
                 <span className="teacher-milestones__status">
                   {m.effectiveStatus === 'excused'

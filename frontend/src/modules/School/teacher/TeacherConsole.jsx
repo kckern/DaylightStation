@@ -155,7 +155,7 @@ function TeacherShell() {
         activeId={currentTeacher?.id}
         onPick={claim}
         onDismiss={closePicker}
-        timeoutMs={30000}
+        timeoutMs={600000}
         title="Who's teaching?"
       />
     </div>

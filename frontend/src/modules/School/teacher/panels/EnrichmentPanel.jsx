@@ -11,7 +11,7 @@ import { usePanelFetch } from '../usePanelFetch.js';
 import { useTeacherWrite } from '../useTeacherWrite.js';
 import { SUBJECTS } from '../../home/subjects.js';
 
-const EMPTY_FORM = { title: '', from: '', to: '', note: '', learnerIds: [], subjectIds: [] };
+const EMPTY_FORM = { title: '', from: '', to: '', note: '', learnerIds: [], subjectIds: [], kind: 'enrichment' };
 
 export default function EnrichmentPanel({ kids = [] }) {
   const entries = usePanelFetch(() => schoolApi.enrichment(), {
@@ -19,6 +19,9 @@ export default function EnrichmentPanel({ kids = [] }) {
     isEmpty: (d) => !(d?.entries ?? []).length,
   });
   const { run, busy, errors } = useTeacherWrite({ panel: 'enrichment' });
+  const retract = (e) => run(`retract:${e.id}`, ({ actorId, pin }) => schoolApi.retract({
+    kind: 'enrichment', entryId: e.id, retractedBy: actorId, pin,
+  }), { onSuccess: entries.retry });
   const [form, setForm] = useState(EMPTY_FORM);
   const [open, setOpen] = useState(false);
 
@@ -31,6 +34,7 @@ export default function EnrichmentPanel({ kids = [] }) {
     recordedBy: actorId, pin, title: form.title, from: form.from,
     to: form.to || null, note: form.note || null,
     learnerIds: form.learnerIds, subjectIds: form.subjectIds,
+    kind: form.kind,
   }), { onSuccess: () => { setForm(EMPTY_FORM); setOpen(false); entries.retry(); } });
 
   return (
@@ -51,12 +55,14 @@ export default function EnrichmentPanel({ kids = [] }) {
             <ul className="teacher-enrichment">
               {[...entries.data.entries].reverse().map((e) => (
                 <li key={e.id} className="teacher-enrichment__row">
-                  <span className="teacher-enrichment__title">{e.title}</span>
+                  <span className="teacher-enrichment__title">{e.title}{e.kind === 'absence' ? ' (excused absence)' : ''}</span>
                   <span className="teacher-enrichment__dates">{e.from}{e.to !== e.from ? ` → ${e.to}` : ''}</span>
                   <span className="teacher-enrichment__meta">
                     {(e.learnerIds ?? []).join(', ')}{(e.subjectIds ?? []).length ? ` · ${e.subjectIds.join(', ')}` : ''}
                   </span>
                   {e.note && <span className="teacher-enrichment__note">{e.note}</span>}
+                  <button type="button" disabled={busy === `retract:${e.id}`} onClick={() => retract(e)}>Retract</button>
+                  {errors[`retract:${e.id}`] && <p className="teacher-panel__error">{errors[`retract:${e.id}`]}</p>}
                 </li>
               ))}
             </ul>
@@ -64,7 +70,17 @@ export default function EnrichmentPanel({ kids = [] }) {
           {!open && <button type="button" className="teacher-assignments__edit" onClick={() => setOpen(true)}>Record enrichment</button>}
           {open && (
             <div className="teacher-enrichment__form">
-              <input aria-label="Title" placeholder="Title (e.g. Yellowstone trip)" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} />
+              <div className="teacher-enrichment__picks">
+                <label className="teacher-assignments__pick">
+                  <input type="radio" name="entry-kind" checked={form.kind === 'enrichment'} onChange={() => setForm((f) => ({ ...f, kind: 'enrichment' }))} />
+                  Enrichment (counts as credit)
+                </label>
+                <label className="teacher-assignments__pick">
+                  <input type="radio" name="entry-kind" checked={form.kind === 'absence'} onChange={() => setForm((f) => ({ ...f, kind: 'absence' }))} />
+                  Excused absence (excuses pacing only)
+                </label>
+              </div>
+              <input aria-label="Title" placeholder={form.kind === 'absence' ? 'Reason (e.g. Flu)' : 'Title (e.g. Yellowstone trip)'} value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} />
               <div className="teacher-enrichment__dates-row">
                 <input aria-label="From" type="date" value={form.from} onChange={(e) => setForm((f) => ({ ...f, from: e.target.value }))} />
                 <input aria-label="To" type="date" value={form.to} onChange={(e) => setForm((f) => ({ ...f, to: e.target.value }))} />

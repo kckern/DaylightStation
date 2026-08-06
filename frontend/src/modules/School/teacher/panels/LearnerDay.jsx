@@ -5,6 +5,23 @@
  */
 import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
+import { useTeacherWrite } from '../useTeacherWrite.js';
+import { labelize } from '../labelize.js';
+
+/**
+ * The teacher's most common mercy (advocacy B16): re-open a failed unit as a
+ * remediation session through the SAME route the console's own arcs use.
+ */
+function RetakeButton({ sessionId, onDone }) {
+  const { run, busy, errors } = useTeacherWrite({ panel: 'retake' });
+  const offer = () => run(sessionId, () => schoolApi.offerRetake(sessionId), { onSuccess: onDone });
+  return (
+    <>
+      <button type="button" disabled={busy === sessionId} onClick={offer}>Offer retake</button>
+      {errors[sessionId] && <span className="teacher-panel__error">{errors[sessionId]}</span>}
+    </>
+  );
+}
 
 export default function LearnerDay({ learnerId }) {
   // "What SHOULD they do today" (advocacy A3) — the dry-run agenda plan, so
@@ -57,8 +74,11 @@ export default function LearnerDay({ learnerId }) {
         <ul className="teacher-learner-day__sessions">
           {sessions.data.sessions.map((s, i) => (
             <li key={s.sessionId ?? s.id ?? i}>
-              <span>{s.unitId ?? s.sessionId ?? 'session'}</span>
+              <span>{labelize(s.unitId) || s.sessionId || 'session'}</span>
               <span className="teacher-learner-day__state">{s.state ?? ''}</span>
+              {(s.result === 'needs_remediation' || s.outcome?.result === 'needs_remediation') && s.sessionId && (
+                <RetakeButton sessionId={s.sessionId} onDone={sessions.retry} />
+              )}
             </li>
           ))}
         </ul>

@@ -43,7 +43,7 @@ export class SetAssignments {
    * @throws {import('#domains/school/errors.mjs').GuestForbiddenError} not a grown-up
    * @throws {ValidationError} the record is not a shape the store can hold
    */
-  async execute({ learnerId, courses = [], units = [], assignedBy = null, pin = null } = {}) {
+  async execute({ learnerId, courses = [], units = [], assignedBy = null, pin = null, baseUpdatedAt = undefined } = {}) {
     if (this.#teacherGate) this.#teacherGate.assert({ userId: assignedBy, pin, action: 'assignments.put', context: { learnerId } });
     else this.#grownUps.assert(assignedBy, 'Only a grown-up can change what a child is assigned', {
       action: 'assignments.put', learnerId,
@@ -54,6 +54,19 @@ export class SetAssignments {
     }
     if (!Array.isArray(courses) || !Array.isArray(units)) {
       throw new ValidationError('courses and units must be arrays');
+    }
+    // Concurrent-edit guard (advocacy B14): a caller that says what it
+    // LOADED is refused when someone else saved since — last-write-wins
+    // silently losing a co-teacher's edit is the bug. Optional: a caller
+    // that sends nothing keeps the legacy behavior.
+    if (baseUpdatedAt !== undefined) {
+      const current = await this.#assignments.get(learnerId);
+      const currentAt = current?.updatedAt ?? null;
+      if (currentAt !== baseUpdatedAt) {
+        const err = new ValidationError('Assignments changed since you loaded them — reload and try again.');
+        err.code = 'STALE_SAVE';
+        throw err;
+      }
     }
 
     const record = await this.#assignments.put({

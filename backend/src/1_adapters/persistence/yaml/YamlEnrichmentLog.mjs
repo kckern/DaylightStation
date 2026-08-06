@@ -46,8 +46,20 @@ export class YamlEnrichmentLog {
 
   list({ learnerId = null } = {}) {
     const entries = this.#read();
-    return learnerId ? entries.filter((e) => (e.learnerIds ?? []).includes(learnerId)) : entries;
+    const retracted = new Set(entries.filter((e) => e.kind === 'retraction').map((e) => e.retracts));
+    const liveEntries = entries.filter((e) => e.kind !== 'retraction' && !retracted.has(e.id));
+    return learnerId ? liveEntries.filter((e) => (e.learnerIds ?? []).includes(learnerId)) : liveEntries;
   }
+
+  /**
+   * Append-only correction (advocacy B15): a retraction entry names the id
+   * it retracts; `list()` folds them out. Nothing is ever edited or deleted
+   * — the eraser is itself a record.
+   */
+  async retract(entryId, { by = null, at = new Date().toISOString() } = {}) {
+    return this.append({ id: `ret_${entryId}`, kind: 'retraction', retracts: entryId, by, at });
+  }
+
 
   async append(entry) {
     this.#writeChain = this.#writeChain.then(async () => {

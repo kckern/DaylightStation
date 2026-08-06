@@ -45,6 +45,8 @@ export class YamlMilestoneStore {
 
   list() { return structuredClone(this.#read().milestones); }
 
+  historyLength() { return (this.#read().history ?? []).length; }
+
   async replace(milestones, { editedBy = null, at = new Date().toISOString() } = {}) {
     this.#writeChain = this.#writeChain.then(async () => {
       await this.#write(() => milestones, { editedBy, at });

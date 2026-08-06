@@ -8,6 +8,7 @@ import { useState } from 'react';
 import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
 import PanelFrame from './PanelFrame.jsx';
+import { labelize } from '../labelize.js';
 
 function FrozenRecord({ learnerId, periodId }) {
   const record = usePanelFetch(() => schoolApi.reportCardFrozen({ learnerId, periodId }), {
@@ -30,7 +31,7 @@ function FrozenRecord({ learnerId, periodId }) {
       <ul className="teacher-reportcard__courses">
         {(data.courses ?? []).map((c) => (
           <li key={c.courseId}>
-            <span>{c.courseId}</span>
+            <span>{labelize(c.courseId)}</span>
             <span>{typeof c.coursePercent === 'number' ? `${Math.round(c.coursePercent)}%` : '—'}</span>
           </li>
         ))}
@@ -59,7 +60,7 @@ export default function FrozenHistory({ learnerId, refreshKey = 0 }) {
               className="teacher-frozen__toggle"
               onClick={() => setOpenPeriodId((cur) => (cur === rec.periodId ? null : rec.periodId))}
             >
-              <span className="teacher-frozen__period">{rec.periodId}</span>
+              <span className="teacher-frozen__period">{rec.period?.label ?? labelize(rec.periodId)}</span>
               <span className="teacher-frozen__meta">
                 FROZEN — Closed by {rec.closedBy ?? 'unknown'}{rec.closedAt ? ` on ${String(rec.closedAt).slice(0, 10)}` : ''}
               </span>

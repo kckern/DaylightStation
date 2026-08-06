@@ -48,6 +48,7 @@ const navSections = [
   {
     label: 'SCHOOL',
     items: [
+      { label: 'Teacher Console', icon: IconChecklist, to: '/school/teacher' },
       { label: 'Review Queue', icon: IconChecklist, to: '/admin/school/review' },
       { label: 'Work Sessions', icon: IconHistory, to: '/admin/school/sessions' },
       { label: 'Planning', icon: IconBooks, to: '/admin/school/planning' },

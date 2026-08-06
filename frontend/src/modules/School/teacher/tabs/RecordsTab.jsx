@@ -26,11 +26,23 @@ export default function RecordsTab({ learnerId, kids = [] }) {
 
   const history = usePanelFetch(
     () => schoolApi.progress({ learnerId, periodId: periodId ?? undefined }),
-    { deps: [learnerId, periodId], panel: 'curriculum-history' },
+    {
+      deps: [learnerId, periodId],
+      panel: 'curriculum-history',
+      // Tree-aware (advocacy B17): an ok payload whose tree has no roots and
+      // no unscoped evidence is EMPTY — the quiet copy, never a blank card.
+      isEmpty: (d) => !(d?.curriculumHistory?.roots ?? []).length
+        && !(d?.curriculumHistory?.unscoped?.evidenceCount ?? 0),
+    },
   );
   const insights = usePanelFetch(
     () => schoolApi.instructionalInsights({ scopeType: 'learner', scopeId: learnerId }),
-    { deps: [learnerId], panel: 'tutor-insights', nullAs: 'empty' },
+    {
+      deps: [learnerId],
+      panel: 'tutor-insights',
+      nullAs: 'empty',
+      isEmpty: (d) => !d || (!(d.highlights ?? []).length && !(d.insights ?? []).length && !Object.keys(d).length),
+    },
   );
 
   if (!learnerId) {
@@ -68,6 +80,14 @@ export default function RecordsTab({ learnerId, kids = [] }) {
       )}
       {periodId && <PacingPanel learnerId={learnerId} periodId={periodId} />}
       <FrozenHistory learnerId={learnerId} refreshKey={frozenRefresh} />
+      <a
+        className="teacher-reportcard__pdf"
+        href={`/api/v1/school/transcript?learnerId=${encodeURIComponent(learnerId)}&format=pdf`}
+        target="_blank"
+        rel="noreferrer"
+      >
+        Transcript — every closed period (PDF)
+      </a>
       <PanelFrame
         title="Curriculum history"
         state={history.state}

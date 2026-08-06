@@ -10,6 +10,7 @@ import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
 import { useTeacherWrite } from '../useTeacherWrite.js';
 import PanelFrame from './PanelFrame.jsx';
+import { labelize } from '../labelize.js';
 
 function PassOverride({ unit, override, onSaved }) {
   const { run, busy, errors } = useTeacherWrite({ panel: 'pass-override' });
@@ -75,9 +76,21 @@ export default function CurriculumBrowser() {
 
   const row = (u) => (
     <li key={u.unitId}>
-      <span className="teacher-curriculum__unit-title">{u.title}</span>
-      {!u.hasBank && <span className="teacher-curriculum__flag">no quiz bank</span>}
-      <PassOverride unit={u} override={overrideMap[u.unitId] ?? null} onSaved={overrides.retry} />
+      <details className="teacher-curriculum__unit">
+        <summary>
+          <span className="teacher-curriculum__unit-title">{u.title}</span>
+          {!u.hasBank && <span className="teacher-curriculum__flag">no quiz bank</span>}
+          <PassOverride unit={u} override={overrideMap[u.unitId] ?? null} onSaved={overrides.retry} />
+        </summary>
+        {(u.objectives ?? []).length > 0 && (
+          <ul className="teacher-curriculum__objectives">
+            {u.objectives.map((o, i) => <li key={i}>{o}</li>)}
+          </ul>
+        )}
+        {(u.grades ?? []).length > 0 && (
+          <p className="teacher-curriculum__grades">grades: {u.grades.join(', ')}</p>
+        )}
+      </details>
     </li>
   );
 
@@ -86,13 +99,23 @@ export default function CurriculumBrowser() {
       title="Curriculum"
       state={catalog.state}
       retry={catalog.retry}
-      emptyCopy="No published curriculum yet."
+      emptyCopy="No published curriculum yet. Courses are authored as reviewed YAML under data/content/school/ (see docs/reference/school/README.md) — the console reads what's published; it doesn't author."
       unavailableCopy="The curriculum catalog isn't available on this install."
     >
       <div className="teacher-curriculum">
         {[...byCourse.entries()].map(([courseId, list]) => (
           <div key={courseId} className="teacher-curriculum__course">
-            <h3>{courseId}</h3>
+            <h3>
+              {labelize(courseId)}
+              <a
+                className="teacher-reportcard__pdf"
+                href={`/api/v1/school/syllabus?courseId=${encodeURIComponent(courseId)}&format=pdf`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Syllabus
+              </a>
+            </h3>
             <ol>{list.map(row)}</ol>
           </div>
         ))}

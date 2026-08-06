@@ -761,3 +761,59 @@
     text-transform: capitalize;
   }
 }
+
+.teacher-reassign__days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+
+  button {
+    border: 1px solid #e0d8c8;
+    background: #fff;
+    border-radius: 999px;
+    padding: 3px 10px;
+    font-size: 12px;
+    cursor: pointer;
+
+    &[data-active] { background: #fbf4e6; border-color: #b8873b; font-weight: 700; }
+  }
+}
+
+.teacher-curriculum__unit {
+  summary {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    list-style: none;
+  }
+  summary::-webkit-details-marker { display: none; }
+}
+
+.teacher-curriculum__objectives {
+  margin: 4px 0 0 14px;
+  padding: 0 0 0 12px;
+  font-size: 12px;
+  color: #5d5647;
+}
+
+.teacher-curriculum__grades {
+  margin: 2px 0 0 14px;
+  font-size: 11px;
+  color: #8a8272;
+}
+
+.teacher-feedback__meta {
+  font-size: 11px;
+  color: #8a8272;
+}
+
+.teacher-feedback__retract, .teacher-enrichment button {
+  border: 1px solid #d9bfae;
+  background: #fff;
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}

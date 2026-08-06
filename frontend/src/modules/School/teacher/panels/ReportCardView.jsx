@@ -7,6 +7,7 @@
 import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
 import PanelFrame from './PanelFrame.jsx';
+import { labelize } from '../labelize.js';
 
 export default function ReportCardView({ learnerId, periodId }) {
   const card = usePanelFetch(() => schoolApi.reportCard({ learnerId, periodId }), {
@@ -14,6 +15,14 @@ export default function ReportCardView({ learnerId, periodId }) {
     panel: 'report-card',
     nullAs: 'unavailable',
   });
+  // Material display names live in the materials catalog (advocacy B6): the
+  // card's own label is deliberately the honest raw id, so the join to a
+  // human name happens here, presentation-side.
+  const catalog = usePanelFetch(() => schoolApi.materials(), { panel: 'materials-labels' });
+  const materialLabel = (id) => {
+    const hit = (catalog.data?.materials ?? []).find((m) => m.id === id);
+    return hit?.label ?? hit?.title ?? id;
+  };
   const data = card.data;
   return (
     <PanelFrame
@@ -39,7 +48,7 @@ export default function ReportCardView({ learnerId, periodId }) {
           <ul className="teacher-reportcard__courses">
             {(data.courses ?? []).map((c) => (
               <li key={c.courseId}>
-                <span>{c.courseId}</span>
+                <span>{labelize(c.courseId)}</span>
                 <span>
                   {typeof c.coursePercent === 'number' ? `${Math.round(c.coursePercent)}%` : '—'}
                   {typeof c.coursePercent === 'number' && (
@@ -60,7 +69,7 @@ export default function ReportCardView({ learnerId, periodId }) {
             <ul className="teacher-reportcard__materials">
               {data.materials.map((m) => (
                 <li key={m.materialId}>
-                  <span>{m.label ?? m.materialId}</span>
+                  <span>{materialLabel(m.materialId)}</span>
                   <span>{m.unitsDone} / {m.unitTotal} units</span>
                 </li>
               ))}
