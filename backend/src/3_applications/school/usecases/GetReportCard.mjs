@@ -22,7 +22,11 @@
  *       never hidden because nobody currently assigns it.
  *
  * A course dropped mid-period by (a) or never formally assigned but worked
- * anyway by (b) both still appear. This is deliberately NOT `assignments.get`.
+ * anyway by (b) both still appear. This is deliberately NOT plain
+ * `assignments.get` (current assignment) — EXCEPT as a fallback when a
+ * learner has no history at all (predates Task 3's history feature), in
+ * which case the current assignment is the only signal available and is
+ * used in place of (a) rather than silently reporting zero courses.
  */
 import { EntityNotFoundError } from '#domains/core/errors/index.mjs';
 import { courseGradeFromSessions } from '#domains/school/progress/courseGrade.mjs';
@@ -99,8 +103,9 @@ export class GetReportCard {
     const period = this.#academicPeriods.getPeriod(periodId);
     if (!period) throw new EntityNotFoundError('Academic period', periodId);
 
-    const [history, rawSessions, units] = await Promise.all([
+    const [history, currentAssignment, rawSessions, units] = await Promise.all([
       this.#assignments.history(learnerId),
+      this.#assignments.get(learnerId),
       this.#sessions.listForLearner(learnerId),
       this.#curriculum.listUnits(),
     ]);
@@ -112,7 +117,7 @@ export class GetReportCard {
     const periodSessions = flatSessions.filter((s) => withinPeriod(s.updatedAt, period));
 
     const courseIds = this.#selectPeriodCourses({
-      history, period, periodSessions, unitCourse,
+      history, currentAssignment, period, periodSessions, unitCourse,
     });
     const courses = courseIds.map((courseId) => this.#courseSection({
       courseId, units, flatSessions, periodSessions, period,
@@ -138,20 +143,31 @@ export class GetReportCard {
     };
   }
 
-  #selectPeriodCourses({ history, period, periodSessions, unitCourse }) {
+  #selectPeriodCourses({
+    history, currentAssignment, period, periodSessions, unitCourse,
+  }) {
     const courseIds = new Set();
 
-    // (a) assignment history: the record in effect at period start...
-    const atStart = [...history]
-      .filter((rec) => isNonEmptyString(rec.recordedAt) && rec.recordedAt <= period.startsAt)
-      .sort((x, y) => x.recordedAt.localeCompare(y.recordedAt))
-      .at(-1);
-    if (atStart) courseIdsFromAssignment(atStart.courses).forEach((id) => courseIds.add(id));
-    // ...plus every record that landed DURING the period, so a course
-    // assigned and then dropped again inside the same period still counts.
-    history
-      .filter((rec) => withinPeriod(rec.recordedAt, period))
-      .forEach((rec) => courseIdsFromAssignment(rec.courses).forEach((id) => courseIds.add(id)));
+    if (history.length === 0) {
+      // Legacy learners predate the assignment-history feature (Task 3): with
+      // no history AT ALL, the current assignment (`assignments.get`) is the
+      // best available stand-in for "what was assigned at period start".
+      // Silently returning zero courses would be wrong for an artifact a
+      // parent signs — better to fall back than to under-report.
+      courseIdsFromAssignment(currentAssignment?.courses).forEach((id) => courseIds.add(id));
+    } else {
+      // (a) assignment history: the record in effect at period start...
+      const atStart = [...history]
+        .filter((rec) => isNonEmptyString(rec.recordedAt) && rec.recordedAt <= period.startsAt)
+        .sort((x, y) => x.recordedAt.localeCompare(y.recordedAt))
+        .at(-1);
+      if (atStart) courseIdsFromAssignment(atStart.courses).forEach((id) => courseIds.add(id));
+      // ...plus every record that landed DURING the period, so a course
+      // assigned and then dropped again inside the same period still counts.
+      history
+        .filter((rec) => withinPeriod(rec.recordedAt, period))
+        .forEach((rec) => courseIdsFromAssignment(rec.courses).forEach((id) => courseIds.add(id)));
+    }
 
     // (b) any unit graded in the window, regardless of assignment.
     periodSessions

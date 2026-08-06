@@ -58,6 +58,17 @@ export class CloseAcademicPeriod {
 
     // Archive BEFORE re-generating the report: a slow report build must never
     // leave the archive step racing a concurrent close for the same period.
+    //
+    // RACE (accepted at household scale): archive -> re-generate report ->
+    // write is not one atomic step. Two concurrent `supersede: true` closes
+    // for the SAME learner+period can interleave — worst case, whichever
+    // `writeReportCard` lands SECOND simply refuses
+    // (`REPORT_CARD_ALREADY_CLOSED`, 409): no freeze is ever silently
+    // overwritten or destroyed, the archived copy(ies) already on disk are
+    // untouched, and the loser just has to retry. A report card is closed by
+    // one parent, rarely, and never from two devices at once in practice, so
+    // this gap is left unlocked rather than adding cross-request
+    // coordination for a scenario that does not happen.
     const supersededVersions = supersede
       ? await this.#datastore.archiveReportCard(learnerId, periodId)
       : 0;
