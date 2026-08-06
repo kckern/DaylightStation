@@ -114,8 +114,8 @@ export function reviewNoteLines(items, { limit = 3, maxChars = 120 } = {}) {
     .sort((a, b) => String(b.gradedAt ?? '').localeCompare(String(a.gradedAt ?? '')))
     .slice(0, limit)
     .map((item) => {
-      const ref = item.questionNumber ?? item.itemId ?? '?';
-      const line = `Note: ${item.note.trim()} (${ref})`;
+      const ref = item.questionNumber ?? item.itemId ?? null;
+      const line = ref === null ? `Note: ${item.note.trim()}` : `Note: ${item.note.trim()} (${ref})`;
       return line.length > maxChars ? line.slice(0, maxChars) : line;
     });
 }

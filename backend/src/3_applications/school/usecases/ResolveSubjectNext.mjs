@@ -88,11 +88,13 @@ export class ResolveSubjectNext {
       this.#curriculum.listUnits(),
       this.#sessions.listForLearner(learnerId),
     ]);
-    // Same attestation gate-unlock as BuildAgenda: a ticket scanned after a
-    // teacher attested the unit resolves to the NEXT unit, not the wedged one.
+    // Same attestation gate-unlock as BuildAgenda: the PLANNER sees the
+    // attested unit as passed so its successor unlocks; the daily-serving
+    // layer below reads RAW history only — an attestation must not mark the
+    // subject served on the repair day itself.
     const attested = (this.#attestations?.list?.({ learnerId }) ?? []).map((a) => ({
       sessionId: `attested:${a.id}`, learnerId, unitId: a.unitId,
-      outcome: { result: 'passed' }, attested: true, updatedAt: a.at,
+      outcome: { result: 'passed' }, attested: true, terminal: true, updatedAt: a.at,
     }));
     const history = attested.length ? [...rawHistory, ...attested] : rawHistory;
 
@@ -103,7 +105,7 @@ export class ResolveSubjectNext {
 
     const programStatuses = await this.#collectProgramStatuses(plan, learnerId);
     const { sections } = planDailyAgenda({
-      plan, sessions: history, programStatuses, now: nowIso, timezone: this.#timezone,
+      plan, sessions: rawHistory, programStatuses, now: nowIso, timezone: this.#timezone,
     });
 
     const section = sections.find((s) => s.subject === subject);
