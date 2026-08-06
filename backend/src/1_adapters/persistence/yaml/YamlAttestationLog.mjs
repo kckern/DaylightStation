@@ -42,8 +42,20 @@ export class YamlAttestationLog {
     return { state: 'corrupt', entries: [] };
   }
 
-  list({ learnerId = null } = {}) {
+  list({ learnerId = null, includeRetracted = false } = {}) {
     const entries = this.#readState().entries;
+    if (includeRetracted) {
+      // The withdrawn record, visible (admin advocacy #13): every non-retraction
+      // row, annotated with who withdrew it and when — 'what was retracted'
+      // used to be answerable only by reading YAML off the volume.
+      const byTarget = new Map(entries.filter((e) => e.kind === 'retraction').map((e) => [e.retracts, e]));
+      const all = entries.filter((e) => e.kind !== 'retraction').map((e) => {
+        const r = byTarget.get(e.id);
+        return r ? { ...e, retracted: true, retractedBy: r.by ?? null, retractedAt: r.at ?? null } : { ...e, retracted: false };
+      });
+      const scoped = learnerId ? all.filter((e) => e.learnerId === learnerId) : all;
+      return scoped;
+    }
     const retracted = new Set(entries.filter((e) => e.kind === 'retraction').map((e) => e.retracts));
     const liveEntries = entries.filter((e) => e.kind !== 'retraction' && !retracted.has(e.id));
     return learnerId ? liveEntries.filter((e) => e.learnerId === learnerId) : liveEntries;
