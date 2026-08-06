@@ -180,6 +180,10 @@
 
 .school-probe__out-of-tries { color: var(--school-muted); margin: 0; }
 
+.school-item__choice--chosen-wrong { border: 2px solid var(--school-warn); opacity: 1; }
+.school-item__you { font-size: 0.8em; color: var(--school-muted); }
+.school-item__verdict { margin: 0.35rem 0 0; font-weight: 700; }
+
 .school-rail__feedback-new {
   margin-left: 0.5rem; padding: 0.1rem 0.5rem; border-radius: 999px;
   background: var(--school-accent); color: var(--school-accent-ink);
