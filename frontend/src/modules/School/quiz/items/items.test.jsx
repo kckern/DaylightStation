@@ -15,7 +15,9 @@ describe('MultipleChoiceItem', () => {
     rerender(<MultipleChoiceItem item={item} onSubmit={onSubmit} verdict={{ correct: false, expected: 'Olympia' }} />);
     fireEvent.click(screen.getByRole('button', { name: 'Seattle' }));
     expect(onSubmit).toHaveBeenCalledTimes(1);
-    expect(screen.getByText(/Olympia/)).toBeInTheDocument(); // expected shown on wrong
+    // The kid's own pick stays marked and the verdict says it in words (wave 7).
+    expect(screen.getByTestId('mc-verdict')).toHaveTextContent('Not quite — the answer is Olympia.');
+    expect(screen.getByText('— your pick')).toBeInTheDocument();
   });
   it('double-tap on the same choice submits exactly once while verdict is still null', () => {
     const onSubmit = vi.fn();
