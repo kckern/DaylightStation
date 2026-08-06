@@ -209,3 +209,4 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-08-05 | feat/school-gradebook | 898d13c88 | gradebook wave: report cards, periods, digest, feedback, concepts, outline |
 | 2026-08-06 | school-teacher-console | 92127c109 | Teacher console programme (5 waves + e2e), merged to main |
 | 2026-08-06 | school-teacher-console-w6 | HEAD-of-main | Teacher console wave 6 (advocacy remediation), merged to main |
+| 2026-08-06 | school-student-advocacy | 1b96ca105 | Wave 7 student-advocacy remediation (28 findings + M7 verdicts), merged to main |
