@@ -69,6 +69,20 @@ describe('GET /api/v1/school/report-card', () => {
     expect(renderReportCardPdf).toHaveBeenCalledWith(CARD, { learnerName: 'Milo' });
   });
 
+  it('format=pdf sanitizes a hostile learnerId out of the filename header', async () => {
+    const getReportCard = { execute: vi.fn(async () => CARD) };
+    const renderReportCardPdf = vi.fn(async () => ({ pdf: Buffer.from('%PDF-1.4 fake'), pageCount: 1, mode: 'draft' }));
+    const res = await request(appWith({ getReportCard, renderReportCardPdf }))
+      .get('/api/v1/school/report-card')
+      .query({
+        learnerId: 'kid1"; filename="evil.pdf', periodId: 'fall-2026', format: 'pdf',
+      });
+    expect(res.status).toBe(200);
+    expect(res.headers['content-disposition']).toBe('inline; filename="report-card-kid1-filename-evil-pdf-fall-2026.pdf"');
+    expect(res.headers['content-disposition']).not.toContain('"evil.pdf"');
+    expect((res.headers['content-disposition'].match(/"/g) || []).length).toBe(2);
+  });
+
   it('format=pdf 503s when no renderer is wired', async () => {
     const getReportCard = { execute: vi.fn(async () => CARD) };
     const res = await request(appWith({ getReportCard }))
