@@ -73,6 +73,28 @@ describe('YamlAssignmentStore', () => {
     await Promise.all(['kid1', 'kid2', 'kid3'].map((learnerId) => assignments.put({ learnerId, courses: [learnerId] })));
     expect((await assignments.list()).map((r) => r.learnerId)).toEqual(['kid1', 'kid2', 'kid3']);
   });
+
+  it('appends every put to the learner history, oldest first, with assignedBy preserved and get() still latest-only', async () => {
+    await assignments.put({ learnerId: 'kid1', courses: ['math-fractions'], assignedBy: 'mom', updatedAt: AT });
+    const later = '2026-07-28T10:00:00.000Z';
+    await assignments.put({ learnerId: 'kid1', courses: ['math-fractions', 'reading-basics'], assignedBy: 'dad', updatedAt: later });
+
+    const history = await assignments.history('kid1');
+    expect(history).toHaveLength(2);
+    expect(history[0]).toMatchObject({ courses: ['math-fractions'], assignedBy: 'mom', recordedAt: AT });
+    expect(history[1]).toMatchObject({ courses: ['math-fractions', 'reading-basics'], assignedBy: 'dad', recordedAt: later });
+
+    expect(await assignments.get('kid1')).toMatchObject({ courses: ['math-fractions', 'reading-basics'], updatedAt: later });
+  });
+
+  it('returns an empty history for a learner with no assignments', async () => {
+    expect(await assignments.history('nobody')).toEqual([]);
+  });
+
+  it('treats a malformed history file as empty rather than throwing', async () => {
+    write(under('history', 'kid9.yml'), '- [unclosed');
+    expect(await assignments.history('kid9')).toEqual([]);
+  });
 });
 
 describe('YamlFormMapStore', () => {

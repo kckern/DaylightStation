@@ -46,6 +46,20 @@ export class IAssignmentStore {
   async list() {
     throw new Error('IAssignmentStore.list must be implemented');
   }
+
+  /**
+   * Every plan change for a learner, oldest first — not just the latest.
+   * Each entry is the `AssignmentRecord` in effect at that point plus
+   * `recordedAt` (the moment it became current). `get()` only ever answers
+   * "what's assigned now"; this is the only place "what used to be assigned,
+   * and who changed it" survives.
+   * @param {string} learnerId
+   * @returns {Promise<Array<AssignmentRecord & {recordedAt: string}>>} empty
+   *   when the learner has no recorded history
+   */
+  async history(learnerId) {
+    throw new Error('IAssignmentStore.history must be implemented');
+  }
 }
 
 export default IAssignmentStore;
