@@ -990,6 +990,178 @@ the one caller that opts into QR.
 | Frontend | `frontend/src/modules/School/useSchoolLaunch.js` — the Portal-launch subscription hook |
 | API | `GET /api/v1/school/lifecycle/learners/:learnerId/agenda/preview` — dry-run twin of the printed agenda (no session/token side effects), PNG with a real scannable QR |
 
+### Gradebook, report cards, and the teacher's day
+
+Everything above this section produces evidence — quiz attempts, card scans,
+work-session outcomes, a grown-up's review verdicts. This section is the
+rollup: one course grade, one printable report card, one glance at what
+happened today, and the notes a grown-up writes finding their way back to the
+child who earned them.
+
+**Academic periods are configured, not computed.** A household names its own
+terms — `school.yml` → `progress.academicPeriods`, a flat array of
+`school.academic-period/v1` records, each a `periodId` + `kind` + `label`
+bounded by canonical-ISO `startsAt`/`endsAt` (an optional `parentPeriodId`
+records that one period nests inside another; `kind` — term, semester,
+season, or whatever a household calls it — is data, not a closed set).
+Boot-cached, validated at construction — a malformed period or a duplicate
+`periodId` fails at startup, not on first report-card request. `GET /api/v1/school/periods` answers the whole
+configured list as a plain array (no envelope), which is the one thing a
+child-facing surface needs to work out "the current period" for itself: the
+period whose `startsAt <= now < endsAt`.
+
+```yaml
+progress:
+  academicPeriods:
+    - schema: school.academic-period/v1
+      periodId: 2026-fall
+      kind: semester
+      label: Fall 2026
+      startsAt: '2026-08-24T00:00:00.000Z'
+      endsAt: '2026-12-19T00:00:00.000Z'
+```
+
+**Course grades are a pure projection, `best-of-unit-mean-v1`.** A retake must
+*improve* a grade, never dilute it into a mean over every attempt: each unit
+contributes only its single best graded session, and the course percent is
+the mean of `bestPercent` across units that were attempted at all — an
+unattempted unit does not drag the average toward zero, it simply doesn't
+enter it. The policy name travels with every projection it produces
+(`courseGradeFromSessions` → `{courseId, policy, coursePercent, unitGrades}`),
+so a report card can print which rule scored it without the reader having to
+trust an unlabeled number.
+
+**The report card is a period-scoped snapshot**, not "current state re-read
+into a template." `GetReportCard` answers course grades, materials-framework
+progress, an evidence aggregate, active-instructional-days, concept mastery,
+open remediation arcs, and the review backlog for one learner and one
+period — read-only; nothing here writes.
+
+Which courses appear is deliberately **not** "what is this learner currently
+assigned" — a course assigned in week 2 and dropped in week 6 still happened,
+and work done on a course nobody currently assigns is still work. The course
+list is the union of (a) every course named in the learner's assignment
+*history* at any point during the period, plus whatever was assigned at the
+moment the period started, and (b) the course of any unit with a graded
+session inside the window regardless of assignment. A learner who predates
+the assignment-history feature (empty history) falls back to their plain
+current assignment rather than silently reporting zero courses.
+
+**Frozen closes are events, not documents.** A live report card
+(`GET /report-card?learnerId=&periodId=`) is generated fresh on every
+request and marked **DRAFT**; `POST /report-card/close` (`GrownUpGate` —
+only a roster grown-up may close) freezes that exact snapshot into a durable
+record under the learner's own data, marked **FROZEN** with `closedBy` /
+`closedAt`. A plain re-close of an already-closed period is refused outright;
+the only way to replace one is `supersede: true`, which archives the current
+freeze to `{periodId}.v<n>.yml` **first** — the prior record is preserved,
+never destroyed — before writing the new one.
+`GET /report-card/frozen?learnerId=&periodId=` reads one frozen record (or,
+with no `periodId`, every frozen record the learner has).
+
+**The report card prints.** `?format=pdf` on either report-card GET renders
+the same snapshot as a Letter PDF — courses, materials, active days,
+per-unit pass/needs-remediation, concept mastery, remediation arcs, and the
+pending-review count — with a DRAFT or FROZEN banner matching the JSON's own
+mode, and the file name (`report-card-<learner>-<period>.pdf`) built from
+slugified query values so a hostile `learnerId` can never inject a second
+`filename=` into the response header.
+
+**The teacher's day digest is one glance at the whole roster.**
+`GET /teacher/today` answers, per learner, attempts today, correct-today,
+in-flight sessions, and how many items are waiting on a grown-up's mark — all
+scoped to the same 4am→4am study day the language ladder and the printed
+agenda already use, not the plain UTC calendar date, so a session at 11pm
+still belongs to "today" until the boundary rolls. The parent report board
+renders it as a **Today strip** above each learner's card; a needs-review
+badge on that strip links straight to the Admin review queue
+(`/admin/school/review`) — the digest names the backlog, Admin is where it
+gets worked.
+
+**A grown-up's written feedback reaches the child, not just the parent's
+paper.** Resolving a review item (`ResolveReviewItem`) may carry a free-text
+`note`. Notes surface in three places, capped to the most recent three at 120
+characters each so a receipt or a printed agenda never drowns in commentary:
+the result receipt for the session the note belongs to, the printed agenda's
+"Notes for you" section (current or previous study day only — a note from
+last week is stale), and `GET /review/learner/:learnerId`, which answers only
+a learner's own *resolved* items, newest first — never a pending one still
+awaiting a verdict — backing the student panel's Feedback list.
+
+**A child sees where they stand.** The student panel resolves the current
+period from `GET /periods` client-side, then reads that period's live report
+card and renders every course with a graded session as `courseId: N%`. Three
+zero-states — no current period configured, a current period with nothing
+graded yet, or the report-card feature simply not wired server-side — all
+render as the same quiet empty panel, never error chrome for something that
+just hasn't happened yet.
+
+**The concept registry is household-authored and optional.**
+`data/content/school/concepts.yml` (`{concepts: [{id, label, parent?}]}`,
+kebab ids) supplies a friendly label for concept ids graded evidence already
+names — `conceptMastery` counts a concept whether or not it is registered;
+the registry only decides whether the report card prints a label or falls
+back to the bare id. An absent file degrades to an empty registry (the
+feature is opt-in); a file that exists but is malformed — a bad id shape, a
+missing label, a duplicate id — fails loud at construction, because that is
+authored content and a typo there deserves to be caught at boot. The report
+card's `concepts` facet reduces the period's own attempts into
+`{mastered, developing}` rows, windowed to the report period itself rather
+than the domain's independent rolling default, so "mastery this period"
+cannot disagree with the period it is printed on. `school:certify
+--strict-concepts` escalates a bank's use of an unregistered concept id from
+a warning to a hard failure, certifying nothing until the registry catches
+up.
+
+**The authored curriculum feeds the same outline the evidence tree reads
+against.** A `CurriculumExpectationSource` derives one expectation per
+cataloged unit directly from the curriculum catalog — grouped by course,
+ordered by each unit's authored sequence — and merges with any
+configuration-authored expectations, which win a same-target collision.
+`curriculumHistory` (§ above) annotates an evidence-backed tree node with
+`outline` wherever a merged expectation names that same target, and lists an
+authored-but-untouched unit under a new `outstanding` field. The honesty rule
+holds exactly as before: a bare expectation still never fabricates tree
+ancestry evidence didn't produce, and a course never cataloged still
+generates no expectation at all — this source can only narrow the "we don't
+actually know" gap, never paper over it.
+
+**Every graded attempt carries where it happened, not just that it
+happened.** A quiz attempt and a scanned card row alike now record a
+`learning: {subjectId, courseId, unitId, conceptIds}` context and a
+`workSessionId` in provenance — the session that issued the paper, not the
+throwaway per-scan grading session. This fixed a real bug: two attempts
+scanned off the same printed card with no work session behind them were
+grouping as separate singleton assessments in recent-scores, because grouping
+fell straight back to a bare evidence id once `sessionId` was absent.
+Evidence now derives an `assessmentId` — the session id, or failing that the
+scanned card's own record id — and groups on that first, so a card's rows
+land together as one assessment the way an on-screen quiz's answers already
+did.
+
+| Layer | Path |
+|---|---|
+| Domain (pure) | `backend/src/2_domains/school/progress/courseGrade.mjs` — `courseGradeFromSessions`, `best-of-unit-mean-v1` |
+| Domain (pure) | `backend/src/2_domains/school/progress/conceptMastery.mjs`, `attemptEvidence.mjs` — concept aggregation, attempt → evidence (incl. `assessmentId`) |
+| Domain (pure) | `backend/src/2_domains/school/progress/learningProgress.mjs` — academic-period validation, expectation merge, `curriculumHistory` outline/`outstanding` |
+| Application | `backend/src/3_applications/school/usecases/GetReportCard.mjs` — the period-scoped snapshot |
+| Application | `backend/src/3_applications/school/usecases/CloseAcademicPeriod.mjs` — freeze + supersede-archive, `GrownUpGate` |
+| Application | `backend/src/3_applications/school/usecases/GetTeacherToday.mjs` — the 4am→4am digest |
+| Application | `backend/src/3_applications/school/usecases/ResolveReviewItem.mjs` — the `note` field a verdict may carry |
+| Application | `backend/src/3_applications/school/usecases/BuildAgenda.mjs`, `CloseSessionOutcome.mjs` — "Notes for you" on the agenda and the result receipt (`reviewNoteLines`, cap 3 / 120 chars) |
+| Adapter | `backend/src/1_adapters/school/progress/ConfiguredSchoolLearningDirectory.mjs` — `ConfiguredAcademicPeriodSource` |
+| Adapter | `backend/src/1_adapters/school/progress/YamlConceptRegistry.mjs`, `CurriculumExpectationSource.mjs` |
+| Adapter | `backend/src/1_adapters/persistence/yaml/YamlSchoolDatastore.mjs` — `readAttemptsInRange`, frozen report-card read/write/archive |
+| Adapter | `backend/src/1_adapters/persistence/yaml/YamlAssignmentStore.mjs` — `history()`, append-only alongside current state |
+| Adapter | `backend/src/1_adapters/persistence/yaml/YamlReviewQueue.mjs` — settled sessions (`*.settled.yml`) skip the pending scan |
+| Rendering | `backend/src/1_rendering/school/reportcard/ReportCardRenderer.mjs` — the printable PDF |
+| API | `GET /api/v1/school/report-card`, `GET /report-card/frozen`, `POST /report-card/close`, `GET /teacher/today`, `GET /periods`, `GET /review/learner/:learnerId` (`backend/src/4_api/v1/routers/school.mjs`) |
+| Frontend | `frontend/src/modules/School/report/useTeacherToday.js`, `ReportPanel.jsx` (Today strip) |
+| Frontend | `frontend/src/modules/School/home/useLearnerFeedback.js`, `useLearnerStanding.js`, `StudentPanel.jsx` |
+| CLI | `cli/school-certify.cli.mjs` — `--strict-concepts` |
+| Content | `data/content/school/concepts.yml` — the concept label registry |
+| Config | `data/household/config/school.yml` → `progress.academicPeriods` |
+
 ## 3. Specced, not built
 
 No code exists for anything in this section. Each links its spec.
