@@ -177,6 +177,46 @@ export class YamlSchoolDatastore {
     return attempt;
   }
 
+  /**
+   * Attribution repair (teacher-console spec D1): MOVE a day's attempt
+   * events matching one assessment between two learners' shards — the
+   * mechanism the append-only design was built to allow ("a later
+   * reassignment moves the evidence and the statistics together"). Each
+   * moved event is stamped with `{reassignedFrom, reassignedBy,
+   * reassignedAt}` and its `attributedTo` rewritten, so provenance survives
+   * inside the event itself. Returns the number of events moved.
+   */
+  moveAttempts({ fromUserId, toUserId, day, assessmentId, reassignedBy = null, at = new Date().toISOString() }) {
+    const fromDir = this.#attemptsDir(fromUserId);
+    const toDir = this.#attemptsDir(toUserId);
+    if (!fromDir || !toDir) return 0;
+    const dayStr = String(day);
+    if (!DAY_RE.test(dayStr)) return 0;
+    const fromBase = path.join(fromDir, dayStr);
+    const rows = loadYamlSafe(fromBase) || [];
+    const matches = (a) => (a?.sessionId ?? a?.provenance?.recordId ?? null) === assessmentId;
+    const moving = rows.filter(matches);
+    if (!moving.length) return 0;
+    const keeping = rows.filter((a) => !matches(a));
+    const toBase = path.join(toDir, dayStr);
+    ensureDir(toDir);
+    const target = loadYamlSafe(toBase) || [];
+    for (const attempt of moving) {
+      target.push({
+        ...attempt,
+        attributedTo: toUserId,
+        reassignedFrom: fromUserId,
+        reassignedBy,
+        reassignedAt: at,
+      });
+    }
+    // Destination first: a crash between the two writes duplicates rather
+    // than loses evidence, and a duplicate is visible and fixable.
+    saveYaml(toBase, target, { noRefs: true });
+    saveYaml(fromBase, keeping, { noRefs: true });
+    return moving.length;
+  }
+
   readAttemptDay(userId, day) {
     const dir = this.#attemptsDir(userId);
     if (!dir) return [];

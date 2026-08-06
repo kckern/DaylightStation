@@ -3114,6 +3114,17 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'school-teachers' }),
   });
 
+  // Wave-5 repair stores + gated writes (spec D1/D2/D3).
+  const { YamlAttestationLog } = await import('#adapters/persistence/yaml/YamlAttestationLog.mjs');
+  const { YamlTeacherNotes } = await import('#adapters/persistence/yaml/YamlTeacherNotes.mjs');
+  const { RecordAttestation } = await import('#apps/school/usecases/RecordAttestation.mjs');
+  const { RecordTeacherNote } = await import('#apps/school/usecases/RecordTeacherNote.mjs');
+  const { ReassignEvidence } = await import('#apps/school/usecases/ReassignEvidence.mjs');
+  const schoolAttestations = new YamlAttestationLog({ configService, logger: rootLogger.child({ module: 'school-attestations' }) });
+  const schoolTeacherNotes = new YamlTeacherNotes({ configService, logger: rootLogger.child({ module: 'school-teacher-notes' }) });
+  const recordAttestation = new RecordAttestation({ log: schoolAttestations, teacherGate: schoolTeacherGate });
+  const recordTeacherNote = new RecordTeacherNote({ notes: schoolTeacherNotes, teacherGate: schoolTeacherGate });
+  const reassignEvidence = new ReassignEvidence({ datastore: schoolDatastore, teacherGate: schoolTeacherGate });
   // Wave-3 gated planning writes — constructed HERE because they borrow the
   // lifecycle's pass-override store and sessions repo (both null-safe when
   // the lifecycle is unwired).
@@ -3124,6 +3135,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const setMilestones = new SetMilestones({ store: schoolMilestoneStore, teacherGate: schoolTeacherGate });
   const milestoneStatuses = new GetMilestoneStatuses({
     store: schoolMilestoneStore, sessions: schoolLifecycle.stores?.sessions ?? null,
+    attestations: schoolAttestations,
     timezone: configService.getTimezone?.() || null,
   });
   const recordEnrichment = new RecordEnrichment({ log: schoolEnrichmentLog, teacherGate: schoolTeacherGate });
@@ -3191,6 +3203,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     renderProgressReportPdf: createProgressReportPdfRenderer(),
     renderCertificatePdf: createCertificatePdfRenderer(),
     getHouseholdOffsetMinutes: (nowMs) => schoolOffsetMinutesFor(configService.getTimezone?.() || null, nowMs),
+    attestationLog: schoolAttestations,
+    recordAttestation,
+    teacherNotesStore: schoolTeacherNotes,
+    recordTeacherNote,
+    reassignEvidence,
+    attemptsStore: schoolDatastore,
     // Frozen-record reads work off `schoolDatastore` alone (no lifecycle
     // stores needed), so this is wired unconditionally.
     reportCardsStore: schoolDatastore,

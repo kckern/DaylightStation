@@ -32,7 +32,7 @@ import { planDailyAgenda } from '#domains/school/agenda.mjs';
 import { ensureSession, nextMove } from './offerSession.mjs';
 
 export class ResolveSubjectNext {
-  #curriculum; #assignments; #sessions; #launchers; #timezone; #clock; #newSessionId; #logger;
+  #curriculum; #assignments; #sessions; #launchers; #timezone; #clock; #newSessionId; #logger; #attestations;
 
   /**
    * @param {object} deps
@@ -49,7 +49,10 @@ export class ResolveSubjectNext {
    */
   constructor({
     curriculum, assignments, sessions, launchers = new Map(),
-    timezone = null, clock = () => new Date(), newSessionId, logger = console,
+    timezone = null, clock = () => new Date(), newSessionId,
+    // Attestation gate-unlock source (spec D2), optional.
+    attestations = null,
+    logger = console,
   } = {}) {
     if (!curriculum || !assignments || !sessions || typeof newSessionId !== 'function') {
       throw new Error('ResolveSubjectNext requires curriculum, assignments, sessions and newSessionId');
@@ -62,6 +65,7 @@ export class ResolveSubjectNext {
     this.#clock = clock;
     this.#newSessionId = newSessionId;
     this.#logger = logger;
+    this.#attestations = attestations;
   }
 
   /**
@@ -79,11 +83,18 @@ export class ResolveSubjectNext {
    */
   async execute({ learnerId, subject } = {}) {
     const nowIso = this.#clock().toISOString();
-    const [assignment, units, history] = await Promise.all([
+    const [assignment, units, rawHistory] = await Promise.all([
       this.#assignments.get(learnerId),
       this.#curriculum.listUnits(),
       this.#sessions.listForLearner(learnerId),
     ]);
+    // Same attestation gate-unlock as BuildAgenda: a ticket scanned after a
+    // teacher attested the unit resolves to the NEXT unit, not the wedged one.
+    const attested = (this.#attestations?.list?.({ learnerId }) ?? []).map((a) => ({
+      sessionId: `attested:${a.id}`, learnerId, unitId: a.unitId,
+      outcome: { result: 'passed' }, attested: true, updatedAt: a.at,
+    }));
+    const history = attested.length ? [...rawHistory, ...attested] : rawHistory;
 
     const plan = planLearnerWork({ learnerId, assignment, units, sessions: history, now: nowIso });
     if (plan.errors.length) {

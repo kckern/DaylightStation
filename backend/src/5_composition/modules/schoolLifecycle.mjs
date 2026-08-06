@@ -57,6 +57,8 @@ import { BuildAgenda } from '#apps/school/usecases/BuildAgenda.mjs';
 import { ListLearnerSessions } from '#apps/school/usecases/ListLearnerSessions.mjs';
 import { makeTeacherGate } from '#apps/school/TeacherGate.mjs';
 import { YamlPassOverrideStore } from '#adapters/persistence/yaml/YamlPassOverrideStore.mjs';
+import { YamlAttestationLog } from '#adapters/persistence/yaml/YamlAttestationLog.mjs';
+import { YamlTeacherNotes } from '#adapters/persistence/yaml/YamlTeacherNotes.mjs';
 import { IssueDocument } from '#apps/school/usecases/IssueDocument.mjs';
 import { DispatchMedia } from '#apps/school/usecases/DispatchMedia.mjs';
 import { RecordMediaCompletion } from '#apps/school/usecases/RecordMediaCompletion.mjs';
@@ -416,9 +418,14 @@ export async function createSchoolLifecycle({
   // Mid-period pass-criteria overrides (W3-2): read at grade time, one
   // consumption point (CloseSessionOutcome).
   const passOverrides = new YamlPassOverrideStore({ configService, logger });
+  // Repair-wave sources (spec D2/D3): same files app.mjs's route instances
+  // read — stateless per-call reads, so two instances cannot drift.
+  const attestations = new YamlAttestationLog({ configService, logger });
+  const teacherNotes = new YamlTeacherNotes({ configService, logger });
 
   // --- use cases -------------------------------------------------------------
   const buildAgenda = new BuildAgenda({
+    attestations, teacherNotes,
     curriculum, assignments: stores.assignments, sessions: stores.sessions, tokens: stores.tokens,
     launchers, timezone, clock, rng: draw, newSessionId,
     // Optional knob; BuildAgenda's own default (168h) applies when unset.
@@ -428,6 +435,7 @@ export async function createSchoolLifecycle({
     reviewQueue: stores.reviewQueue, logger,
   });
   const resolveSubjectNext = new ResolveSubjectNext({
+    attestations,
     curriculum, assignments: stores.assignments, sessions: stores.sessions,
     launchers, timezone, clock, newSessionId, logger,
   });
@@ -446,6 +454,7 @@ export async function createSchoolLifecycle({
     appendEvent: async () => {},
   };
   const previewAgenda = new BuildAgenda({
+    attestations, teacherNotes,
     curriculum, assignments: stores.assignments, sessions: previewSessions,
     tokens: { put: async () => {} },
     launchers, timezone, clock, rng: draw, newSessionId,

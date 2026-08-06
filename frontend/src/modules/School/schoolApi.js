@@ -97,6 +97,15 @@ export const schoolApi = {
   postEnrichment: (body) => req('/enrichment', body),
   // Wave-4 records.
   closePeriod: (body) => req('/report-card/close', body),
+  // Wave-5 repair.
+  attestations: (learnerId) => req(`/attestations?learnerId=${encodeURIComponent(learnerId)}`),
+  postAttestation: (body) => req('/attestations', body),
+  teacherNotes: (learnerId) => req(`/teacher-notes?learnerId=${encodeURIComponent(learnerId)}`),
+  postTeacherNote: (body) => req('/teacher-notes', body),
+  attemptsSummary: (learnerId, day) => req(
+    `/attempts-summary?learnerId=${encodeURIComponent(learnerId)}&day=${encodeURIComponent(day)}`,
+  ),
+  reassign: (body) => req('/reassign', body),
   progressReport: ({ learnerId, periodId }) => req(
     `/progress-report?learnerId=${encodeURIComponent(learnerId)}&periodId=${encodeURIComponent(periodId)}`,
   ),
