@@ -229,4 +229,48 @@ describe('YamlReviewQueue', () => {
     write(under('review', 'ses_bad.yml'), '- [unclosed');
     expect(await review.listForSession('ses_bad')).toEqual([]);
   });
+
+  describe('settled files leave the pending scan', () => {
+    it('resolving the last unmarked item renames the live file to .settled.yml', async () => {
+      await review.enqueue([item()]);
+      await review.resolve({ sessionId: 'ses_a', itemId: 'q3', verdict: 'correct', gradedBy: 'p', at: AT });
+      expect(fs.existsSync(under('review', 'ses_a.yml'))).toBe(false);
+      expect(fs.existsSync(under('review', 'ses_a.settled.yml'))).toBe(true);
+    });
+
+    it('a fully-resolved session is skipped by listPending but still served by listForSession', async () => {
+      await review.enqueue([item()]);
+      await review.enqueue([item({ sessionId: 'ses_b', itemId: 'q1' })]);
+      await review.resolve({ sessionId: 'ses_a', itemId: 'q3', verdict: 'correct', gradedBy: 'p', at: AT });
+
+      expect((await review.listPending()).map((i) => `${i.sessionId}/${i.itemId}`)).toEqual(['ses_b/q1']);
+      const served = await review.listForSession('ses_a');
+      expect(served).toHaveLength(1);
+      expect(served[0]).toMatchObject({ itemId: 'q3', verdict: 'correct' });
+    });
+
+    it('resolving a second time on an already-settled session finds the item under the settled name', async () => {
+      await review.enqueue([item()]);
+      await review.resolve({ sessionId: 'ses_a', itemId: 'q3', verdict: 'incorrect', gradedBy: 'p', at: AT });
+      expect(fs.existsSync(under('review', 'ses_a.settled.yml'))).toBe(true);
+
+      const again = await review.resolve({ sessionId: 'ses_a', itemId: 'q3', verdict: 'correct', gradedBy: 'p', at: AT });
+      expect(again).toMatchObject({ verdict: 'correct' });
+      expect(fs.existsSync(under('review', 'ses_a.settled.yml'))).toBe(true);
+      expect(fs.existsSync(under('review', 'ses_a.yml'))).toBe(false);
+    });
+
+    it('enqueueing a fresh unresolved item on a settled session reopens it (renames settled back to live)', async () => {
+      await review.enqueue([item()]);
+      await review.resolve({ sessionId: 'ses_a', itemId: 'q3', verdict: 'correct', gradedBy: 'p', at: AT });
+      expect(fs.existsSync(under('review', 'ses_a.settled.yml'))).toBe(true);
+
+      await review.enqueue([item({ itemId: 'q9', reason: 'ambiguous' })]);
+      expect(fs.existsSync(under('review', 'ses_a.settled.yml'))).toBe(false);
+      expect(fs.existsSync(under('review', 'ses_a.yml'))).toBe(true);
+      expect((await review.listPending()).map((i) => `${i.sessionId}/${i.itemId}`)).toEqual(['ses_a/q9']);
+      const served = await review.listForSession('ses_a');
+      expect(served.map((i) => i.itemId).sort()).toEqual(['q3', 'q9']);
+    });
+  });
 });

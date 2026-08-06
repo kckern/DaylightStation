@@ -56,13 +56,23 @@ export function scanKey(card) {
   return `${card.recordId}|${rows.join('|')}`;
 }
 
+/** `YYYY-MM-DDTHH:mm:ss...` -> `YYYY-MM-DD`, or null for anything else. */
+function dayOf(iso) {
+  return typeof iso === 'string' && iso.length >= 10 ? iso.slice(0, 10) : null;
+}
+
 export class RecordCardScanOutcome {
   #datastore; #sessions; #reviewQueue; #clock; #logger;
 
   /**
    * @param {object} deps
-   * @param {{appendAttempt: Function, readAllAttempts: Function}} deps.datastore -
+   * @param {{appendAttempt: Function, readAllAttempts: Function,
+   *   readAttemptsInRange?: Function}} deps.datastore -
    *   `YamlSchoolDatastore`-shaped: the canonical per-learner attempt log.
+   *   `readAttemptsInRange` is optional — when present, the dedup read below
+   *   uses it to scope the scan to `[card.renderedAt's day, today]` instead
+   *   of parsing the learner's entire history; without it (or for a legacy
+   *   card with no `renderedAt`) the dedup read falls back to a full scan.
    * @param {{readEvents: Function, appendEvent: Function}} [deps.sessions] -
    *   `IWorkSessionRepository`-shaped; optional — without it (or for a scan
    *   whose record carries no sessionId) only attempts are recorded.
@@ -110,8 +120,17 @@ export class RecordCardScanOutcome {
     }
 
     const key = scanKey(card);
-    const priorAttempts = this.#datastore.readAllAttempts(learnerId)
-      .filter((attempt) => attempt?.provenance?.recordId === card.recordId);
+    // Dedup only ever needs to see attempts from this card's own printing
+    // forward — a card rendered today cannot collide with a day file from
+    // last year. `renderedAt`'s day is the lower bound, `today` (this
+    // execute's own clock) the upper; a legacy card with no `renderedAt`
+    // (pre-dates the field) falls back to the full scan.
+    const renderedDay = dayOf(card.renderedAt);
+    const priorAttempts = (
+      renderedDay !== null && typeof this.#datastore.readAttemptsInRange === 'function'
+        ? this.#datastore.readAttemptsInRange(learnerId, renderedDay, dayOf(this.#clock().toISOString()))
+        : this.#datastore.readAllAttempts(learnerId)
+    ).filter((attempt) => attempt?.provenance?.recordId === card.recordId);
     const recordedRows = new Set(
       priorAttempts.map((attempt) => `${attempt.provenance.row}:${JSON.stringify(attempt.given)}`),
     );

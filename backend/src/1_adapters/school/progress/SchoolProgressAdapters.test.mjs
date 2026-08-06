@@ -80,6 +80,36 @@ describe('YAML attempt evidence adapter', () => {
       learnerIds: ['kid-a'], from: '2026-08-01T00:00:00.000Z', to: '2026-08-02T00:00:00.000Z',
     })).toEqual([expect.objectContaining({ learnerId: 'kid-a', learning: expect.objectContaining({ subjectId: 'math' }) })]);
   });
+
+  it('uses readAttemptsInRange (day-bounded) instead of a full scan when the datastore supports it and both bounds are given', () => {
+    const attempt = {
+      id: 'att-1', at: '2026-08-01T12:00:00.000Z', sessionId: 's1',
+      bankId: 'math/work/check', itemId: 'q1', itemType: 'multiple_choice',
+      mode: 'quiz', correct: true, attributedTo: 'kid-a', transport: 'screen',
+    };
+    const datastore = {
+      readAllAttempts: vi.fn(() => { throw new Error('should not be called when a window is supplied'); }),
+      readAttemptsInRange: vi.fn(() => [attempt]),
+    };
+    const source = new YamlSchoolAttemptEvidenceSource({ datastore });
+    const result = source.listEvidence({
+      learnerIds: ['kid-a'], from: '2026-08-01T00:00:00.000Z', to: '2026-08-02T05:00:00.000Z',
+    });
+    expect(datastore.readAttemptsInRange).toHaveBeenCalledWith('kid-a', '2026-08-01', '2026-08-02');
+    expect(datastore.readAllAttempts).not.toHaveBeenCalled();
+    expect(result).toEqual([expect.objectContaining({ learnerId: 'kid-a' })]);
+  });
+
+  it('falls back to a full scan when the caller leaves a bound unset (unbounded query)', () => {
+    const datastore = {
+      readAllAttempts: vi.fn(() => []),
+      readAttemptsInRange: vi.fn(() => { throw new Error('should not be called for an unbounded query'); }),
+    };
+    const source = new YamlSchoolAttemptEvidenceSource({ datastore });
+    source.listEvidence({ learnerIds: ['kid-a'], from: '2026-08-01T00:00:00.000Z', to: null });
+    expect(datastore.readAllAttempts).toHaveBeenCalledWith('kid-a');
+    expect(datastore.readAttemptsInRange).not.toHaveBeenCalled();
+  });
 });
 
 describe('generic School learning evidence repository', () => {

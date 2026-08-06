@@ -1,12 +1,23 @@
 /**
  * YAML persistence for the parent review queue (spec §7.3).
  *
- *   <dataDir>/household/apps/school/review/{sessionId}.yml   (a list of review items)
+ *   <dataDir>/household/apps/school/review/{sessionId}.yml            (live — has unresolved items)
+ *   <dataDir>/household/apps/school/review/{sessionId}.settled.yml    (every item resolved)
  *
  * One file per session, so a queue read for a session that has just been
  * submitted costs one read, and a corrupt file isolates to the one piece of work
  * it describes. Dumb storage: what belongs in the queue and what a verdict means
  * are the submission use case's business.
+ *
+ * A session's items live under EXACTLY ONE of the two names at a time.
+ * `resolve` renames live -> settled the moment zero items remain unresolved,
+ * so `listPending`'s household-wide scan never has to open a file that
+ * cannot possibly contribute a pending row. `enqueue` renames settled -> live
+ * when new, unresolved items land on an already-settled session (the scan
+ * bridge can re-open one: a re-fed card can surface a fresh ambiguous row on
+ * a session that was previously fully cleared). `listForSession` and
+ * `resolve` both check live first, then settled, so neither cares which name
+ * currently holds the data.
  */
 import path from 'path';
 import { promises as fs } from 'fs';
@@ -15,6 +26,7 @@ import { IReviewQueue } from '#apps/school/ports/IReviewQueue.mjs';
 
 const SESSION_ID_RE = /^[a-z0-9][a-z0-9_-]*$/i;
 const YAML_FILE_RE = /\.(yml|yaml)$/;
+const SETTLED_FILE_RE = /\.settled\.(yml|yaml)$/;
 
 const dumpYaml = (value) => yaml.dump(value, { indent: 2, lineWidth: -1, noRefs: true });
 const isSafeSessionId = (id) => typeof id === 'string' && SESSION_ID_RE.test(id);
@@ -33,20 +45,43 @@ export class YamlReviewQueue extends IReviewQueue {
 
   #root() { return this.#configService.getHouseholdPath('apps/school/review'); }
 
-  #fileFor(sessionId) { return path.join(this.#root(), `${sessionId}.yml`); }
+  #liveFile(sessionId) { return path.join(this.#root(), `${sessionId}.yml`); }
 
-  async #read(sessionId) {
+  #settledFile(sessionId) { return path.join(this.#root(), `${sessionId}.settled.yml`); }
+
+  async #readFile(file) {
     try {
-      const raw = yaml.load(await fs.readFile(this.#fileFor(sessionId), 'utf8'));
+      const raw = yaml.load(await fs.readFile(file, 'utf8'));
       return Array.isArray(raw) ? raw.filter((i) => i && typeof i === 'object' && !Array.isArray(i)) : [];
     } catch {
-      return [];
+      return null;
     }
   }
 
+  /** Live file first, then settled — the caller never needs to know which name currently holds the session. */
+  async #read(sessionId) {
+    const live = await this.#readFile(this.#liveFile(sessionId));
+    if (live !== null) return live;
+    const settled = await this.#readFile(this.#settledFile(sessionId));
+    return settled ?? [];
+  }
+
+  /**
+   * Write `items` to whichever name matches their state (any unresolved
+   * item -> live, all resolved -> settled), and remove the other name so a
+   * session's data never lives under both at once.
+   */
   async #write(sessionId, items) {
     await fs.mkdir(this.#root(), { recursive: true });
-    await fs.writeFile(this.#fileFor(sessionId), dumpYaml(items), 'utf8');
+    const settled = items.length > 0 && items.every((i) => i.verdict);
+    const target = settled ? this.#settledFile(sessionId) : this.#liveFile(sessionId);
+    const stale = settled ? this.#liveFile(sessionId) : this.#settledFile(sessionId);
+    await fs.writeFile(target, dumpYaml(items), 'utf8');
+    try {
+      await fs.unlink(stale);
+    } catch {
+      // Nothing under the other name — the common case.
+    }
     return items;
   }
 
@@ -122,12 +157,15 @@ export class YamlReviewQueue extends IReviewQueue {
       return [];
     }
     const ids = names
-      .filter((n) => YAML_FILE_RE.test(n))
+      // A `.settled.yml` file has zero unresolved items by construction (see
+      // `#write`) — skip it without opening it, so a household's backlog of
+      // long-cleared sessions never costs a read here.
+      .filter((n) => YAML_FILE_RE.test(n) && !SETTLED_FILE_RE.test(n))
       .map((n) => n.replace(YAML_FILE_RE, ''))
       .filter(isSafeSessionId)
       .sort();
-    const perSession = await Promise.all(ids.map((id) => this.#read(id)));
-    return perSession.flat().filter((i) => !i.verdict);
+    const perSession = await Promise.all(ids.map((id) => this.#readFile(this.#liveFile(id))));
+    return perSession.flat().filter((i) => i && !i.verdict);
   }
 }
 
