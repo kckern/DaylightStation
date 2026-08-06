@@ -25,7 +25,7 @@ reassignment UI — not yet designed" as a known gap. This design closes the
 |---|---|
 | Surface | Phone/desktop **browser**, responsive, phone-first. Never a Portal widget. |
 | Placement | **Standalone route `/school/teacher`**. The Admin review queue (`/admin/school/review`) stays for deep work; the console links/embeds the same capability. |
-| Identity | **Soft grown-up claim** — shared `lib/identity` picker over a new server-filtered grown-ups read (see §4.7; the school roster endpoint excludes adults by design, so client-side filtering is impossible), session-persisted, stamped on every future mutation (`assignedBy` / `closedBy` / `approver`). No idle lapse. |
+| Identity | **Soft teacher claim** — shared `lib/identity` picker over a new teachers read backed by a config-declared `teachers:` list in `school.yml` (see §4.7; the school roster endpoint excludes adults by design, so client-side filtering is impossible, and teacher is a *role*, not an age), session-persisted, stamped on every future mutation (`assignedBy` / `closedBy` / `approver`). No idle lapse. |
 | Security posture | **Soft reads, PIN-gated mutations.** The claim is attribution, not authentication — spoofable by design, like the kids' identity model. That is acceptable for the read-only skeleton but not for marking work, closing periods, or approving prints: any kiosk browser in the house can reach `/school/teacher`, and the codebase already PIN-gates teacher answer keys against exactly that population (`print.teacherPin`). Every mutation wave therefore lands its writes behind a `teacherPin`-class server check in addition to the grown-up stamp. |
 | Sequencing | **Approach B — full skeleton first**: all four tabs ship read-only; mutations and new domains land wave by wave on that foundation. Wave 1 needs three small backend enablers (§4.7) — not zero backend work. |
 
@@ -96,7 +96,7 @@ school*. Three rules:
 
 | Wave | Contents | New backend |
 |---|---|---|
-| **1 — Skeleton** (this design, §4) | Shell + identity + all four tabs read-only + honest stubs | **Three small enablers (§4.7):** grown-ups read, print route-order bugfix, sessions `window` param |
+| **1 — Skeleton** (this design, §4) | Shell + identity + all four tabs read-only + honest stubs | **Three small enablers (§4.7):** teachers read, print route-order bugfix, sessions `window` param |
 | 2 — Daily-loop mutations | A3 resolve-with-note, A4 approve/deny, A2 polish | `teacherPin`-class gate on the write endpoints (they exist, but soft-claim alone must not drive them) |
 | 3 — Planning | B2 assignment editing; **config→data promotion** for periods & pass-criteria (B1, B5); B4 milestones domain; B6 enrichment log | Promotion + two new domains |
 | 4 — Records | C1 close/supersede UI; C2 progress-report & certificate renderers; C4/C5 render + enrichment credit | Renderers; C5 read model |
@@ -123,7 +123,7 @@ navigable foundation rather than a document.
   module boundaries.
 - **Identity:** `TeacherProfileContext` — thin sibling of
   `SchoolProfileContext`, reusing shared `lib/identity` `ProfilePicker` /
-  `ProfileAvatar`, sourced from the **new grown-ups read** (§4.7): the
+  `ProfileAvatar`, sourced from the **new teachers read** (§4.7): the
   existing school roster endpoint serves learners only (adults are filtered
   out server-side in `ConfiguredSchoolLearningDirectory`), so a client-side
   ≥18 filter would yield a permanently empty picker. Claim soft,
@@ -198,7 +198,7 @@ never a disabled fake control.
   `teacherToday`, `periods`, `reportCard`, `reviewLearner`, `printPending`,
   `quizRequests`, `instructionalInsights`. Actually missing: the lifecycle
   reads (pending review list, learner sessions, assignments, curriculum
-  units), `report-card/frozen`, and the new grown-ups read — added in the
+  units), `report-card/frozen`, and the new teachers read — added in the
   same thin `{ok, data}` style. The Admin module's `schoolAdminApi` (throwing
   contract) is never imported.
 - **`usePanelFetch`:** every panel gets the same contract — `loading` →
@@ -305,13 +305,17 @@ update `docs/reference/school/README.md`.
 Three small, read-only-or-bugfix items — the honest replacement for the
 earlier "zero backend changes" claim, which review disproved:
 
-1. **Grown-ups read.** `GET /api/v1/school/grownups` → `[{id, name}]`,
-   filtered server-side by the same ≥18 rule `GrownUpGate` applies
-   (`people.mjs`). The school roster endpoint deliberately excludes adults
-   (`ConfiguredSchoolLearningDirectory.listLearners`), so no client-side
-   filter can produce a teacher picker; birthyear and other profile fields
-   never leave the server (the alternative — consuming
-   `/api/v1/admin/household`, with emails and device ids — is rejected).
+1. **Teachers read, config-declared.** Teachers are **named in `school.yml`**
+   (a `teachers:` list of roster ids), not derived from age: being a
+   grown-up in the household does not make you the teacher, and the config
+   file School already owns is where that role belongs. Boot-validated like
+   the rest of `school.yml`: every id must resolve to a household roster
+   member who passes the `GrownUpGate` ≥18 rule — a typo or a child listed
+   as teacher fails at startup, not at first claim. `GET
+   /api/v1/school/teachers` → `[{id, name}]` serves the picker; birthyear
+   and other profile fields never leave the server (the alternative —
+   consuming `/api/v1/admin/household`, with emails and device ids — is
+   rejected). The school roster endpoint stays learners-only, untouched.
    *Side benefit:* the Admin `ReviewQueue`'s sign-off is live-broken today
    because its `adults = roster.filter(isAdult)` runs against that adult-free
    roster; pointing it at this endpoint fixes it (tracked as a wave-2 item,
