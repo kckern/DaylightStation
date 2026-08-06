@@ -20,6 +20,11 @@ export function TeacherProfileProvider({ children }) {
   const [teachers, setTeachers] = useState([]);
   const [currentId, setCurrentId] = useState(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  // The console PIN, held IN MEMORY only — never persisted (sessionStorage
+  // would hand it to any kiosk tab that reopens the console). Entered once
+  // per visit via the PinPrompt; the server is the enforcer either way.
+  const [pin, setPinState] = useState(null);
+  const [pinPromptOpen, setPinPromptOpen] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -54,6 +59,11 @@ export function TeacherProfileProvider({ children }) {
     teacherLog.claim('released', {});
   }, []);
 
+  const setPin = useCallback((value) => {
+    setPinState(typeof value === 'string' && value.length ? value : null);
+    setPinPromptOpen(false);
+  }, []);
+
   const value = useMemo(() => ({
     status,
     configured,
@@ -64,7 +74,12 @@ export function TeacherProfileProvider({ children }) {
     pickerOpen,
     openPicker: () => setPickerOpen(true),
     closePicker: () => setPickerOpen(false),
-  }), [status, configured, teachers, currentId, claim, release, pickerOpen]);
+    pin,
+    setPin,
+    pinPromptOpen,
+    openPinPrompt: () => setPinPromptOpen(true),
+    closePinPrompt: () => setPinPromptOpen(false),
+  }), [status, configured, teachers, currentId, claim, release, pickerOpen, pin, setPin, pinPromptOpen]);
 
   return (
     <TeacherProfileContext.Provider value={value}>

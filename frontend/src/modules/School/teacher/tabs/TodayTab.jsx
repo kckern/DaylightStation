@@ -13,8 +13,6 @@ import RosterStrip from '../panels/RosterStrip.jsx';
 import ReviewQueueView from '../panels/ReviewQueueView.jsx';
 import PrintPendingView from '../panels/PrintPendingView.jsx';
 import QuizRequestBacklog from '../panels/QuizRequestBacklog.jsx';
-import StubCard from '../panels/StubCard.jsx';
-import { TODO } from '../todoRegistry.js';
 
 export default function TodayTab({ kids = [] }) {
   const today = usePanelFetch(() => schoolApi.teacherToday(), { panel: 'teacher-today' });
@@ -52,13 +50,10 @@ export default function TodayTab({ kids = [] }) {
         unavailableCopy="The review queue isn't available on this install."
         suppressUnavailable={lifecycleDown}
       >
-        <ReviewQueueView items={review.data?.items ?? []} kids={kids} />
+        <ReviewQueueView items={review.data?.items ?? []} kids={kids} onResolved={review.retry} />
       </PanelFrame>
-      <StubCard todoId={TODO.REVIEW_RESOLVE} />
       <PrintPendingView kids={kids} />
-      <StubCard todoId={TODO.PRINT_DECIDE} />
       <QuizRequestBacklog kids={kids} />
-      <StubCard todoId={TODO.QUIZREQUESTS_CLEAR} />
     </div>
   );
 }

@@ -7,6 +7,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import ProfilePicker from '../../../lib/identity/ProfilePicker.jsx';
+import PinPrompt from './panels/PinPrompt.jsx';
 import ProfileAvatar from '../../../lib/identity/ProfileAvatar.jsx';
 import { TeacherProfileProvider, useTeacherProfile } from './TeacherProfileContext.jsx';
 import { schoolApi } from '../schoolApi.js';
@@ -124,6 +125,7 @@ function TeacherShell() {
           </button>
         ))}
       </nav>
+      <PinPrompt />
       <ProfilePicker
         open={pickerOpen}
         users={teachers}

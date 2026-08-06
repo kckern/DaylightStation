@@ -6,9 +6,6 @@
  * TeacherConsole.test.jsx enforces the UI side).
  */
 export const TODO = {
-  REVIEW_RESOLVE: 'teacher.review.resolve',
-  PRINT_DECIDE: 'teacher.print.decide',
-  QUIZREQUESTS_CLEAR: 'teacher.quizrequests.clear',
   ASSIGNMENTS_EDIT: 'teacher.assignments.edit',
   PERIODS_EDIT: 'teacher.periods.edit',
   PASSCRITERIA_EDIT: 'teacher.passcriteria.edit',
@@ -25,18 +22,6 @@ export const TODO = {
 
 /** Card copy per stub — what will live there, in the teacher's language. */
 export const STUB_COPY = {
-  [TODO.REVIEW_RESOLVE]: {
-    title: 'Resolve reviews here',
-    body: 'Verdict and note controls will land on each pending item, so marking work happens right on this list.',
-  },
-  [TODO.PRINT_DECIDE]: {
-    title: 'Approve or deny prints',
-    body: 'Approve/deny buttons for over-budget print jobs, stamped with your name as the approver.',
-  },
-  [TODO.QUIZREQUESTS_CLEAR]: {
-    title: 'Clear the backlog',
-    body: 'Requests will auto-clear when a quiz bank is authored for their unit, with a dismiss for the rest.',
-  },
   [TODO.ASSIGNMENTS_EDIT]: {
     title: 'Edit assignments',
     body: 'Add or remove courses, standalone units, and programs per learner.',
