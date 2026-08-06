@@ -78,6 +78,14 @@ export const schoolApi = {
   ),
   assignments: (learnerId) => req(`/lifecycle/assignments/${encodeURIComponent(learnerId)}`),
   curriculumUnits: () => req('/lifecycle/curriculum/units'),
+  // Teacher console writes (wave 2): every body carries the teacher stamp and
+  // the console pin; the server's TeacherGate is the enforcer.
+  resolveReview: (sessionId, itemId, body) => req(
+    `/lifecycle/sessions/${encodeURIComponent(sessionId)}/review/${encodeURIComponent(itemId)}`, body,
+  ),
+  printApprove: (requestId, body) => req(`/print/${encodeURIComponent(requestId)}/approve`, body),
+  printDeny: (requestId, body) => req(`/print/${encodeURIComponent(requestId)}/deny`, body),
+  quizRequestDismiss: (body) => req('/quiz-requests/dismiss', body),
   // A period-scoped snapshot of one learner's schooling (Task 6, `GetReportCard`).
   reportCard: ({ learnerId, periodId }) => req(
     `/report-card?learnerId=${encodeURIComponent(learnerId)}&periodId=${encodeURIComponent(periodId)}`,

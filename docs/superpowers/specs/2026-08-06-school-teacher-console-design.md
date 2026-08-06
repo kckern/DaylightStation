@@ -280,8 +280,6 @@ failure.
 
 | todoId | Where (tab → panel) | Use case | What it becomes | Depends on | Backend work |
 |---|---|---|---|---|---|
-| `teacher.review.resolve` | Today → ReviewQueueView | A3 | Resolve controls (verdict + note) inline on each pending item, replacing the "resolve in Admin" link | skeleton | PIN gate in `ResolveReviewItem` (endpoint exists) |
-| `teacher.print.decide` | Today → PrintPendingView | A4 | Approve/deny buttons per pending job, stamped with the claimed grown-up as `approver` | skeleton | PIN gate in `PrintService` (endpoints exist) |
 | `teacher.assignments.edit` | Planning → AssignmentsView | B2 | Add/remove courses, standalone units, programs per learner; writes `PUT /lifecycle/assignments/:learnerId` with `assignedBy` | skeleton | PIN gate in `SetAssignments` (endpoint + `GrownUpGate` exist) |
 | `teacher.periods.edit` | Planning → PeriodsTimeline | B1 | Create/edit/end academic periods from the UI | config→data promotion of `progress.academicPeriods` | promotion + CRUD endpoints + append-only change history |
 | `teacher.passcriteria.edit` | Planning → CurriculumBrowser | B5 | Adjust pass thresholds mid-period with audit trail | config→data promotion of pass-criteria | promotion + endpoint + history |
@@ -294,7 +292,6 @@ failure.
 | `teacher.attestation` | Repair → stub card | D2 | Record "I verify this was done/passed" as its own evidence type (`attestedBy`, reason); unlock a wedged gate. Never edits engine evidence | skeleton | new evidence kind + use case + endpoint |
 | `teacher.reassign` | Repair → stub card | D1 | Move a mis-attributed sitting's evidence between learners (fold-an-event model per §5) | skeleton | new use case + endpoint; semantics decided at wave 5 planning |
 | `teacher.notes.standalone` | Repair → FeedbackNotes | D3 | Write a note to a learner outside the review flow, delivered via the same agenda/receipt path | skeleton | new endpoint (delivery path exists) |
-| `teacher.quizrequests.clear` | Today → QuizRequestBacklog | A5 | The backlog can shrink: a request is auto-fulfilled when a bank bound to its unit is authored, plus an explicit dismiss for requests overtaken by events. Without this the panel only ever grows | skeleton | new resolve/dismiss endpoint (only create + list exist today) |
 
 Every row whose "What it becomes" is a **write** (resolve, decide, edit,
 close, attest, reassign, dismiss) lands behind the `teacherPin`-class server

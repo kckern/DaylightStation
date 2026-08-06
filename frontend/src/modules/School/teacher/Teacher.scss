@@ -386,3 +386,104 @@
   padding: 6px 10px;
   font-size: 14px;
 }
+
+.teacher-review__controls {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+
+  input {
+    flex: 1 1 160px;
+    border: 1px solid #e0d8c8;
+    border-radius: 8px;
+    padding: 5px 8px;
+    font-size: 13px;
+  }
+
+  button {
+    border: 1px solid #d9bfae;
+    background: #fff;
+    border-radius: 8px;
+    padding: 5px 12px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+}
+
+.teacher-prints__actions {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+
+  button {
+    border: 1px solid #d9bfae;
+    background: #fff;
+    border-radius: 8px;
+    padding: 4px 10px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+}
+
+.teacher-quizreq__done {
+  font-size: 11px;
+  color: #4a7c3a;
+  background: #eef5e8;
+  border-radius: 6px;
+  padding: 1px 8px;
+}
+
+.teacher-quizreq button {
+  border: 1px solid #d9bfae;
+  background: #fff;
+  border-radius: 8px;
+  padding: 3px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.teacher-pin {
+  position: fixed;
+  inset: 0;
+  background: rgba(43, 38, 32, 0.45);
+  display: grid;
+  place-items: center;
+  z-index: 40;
+
+  &__card {
+    background: #fffdf8;
+    border-radius: 14px;
+    padding: 18px 20px;
+    width: min(320px, 86vw);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+
+    h3 { margin: 0; font-size: 15px; }
+    p { margin: 0; font-size: 13px; color: #6d6455; }
+    input {
+      border: 1px solid #e0d8c8;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 18px;
+      letter-spacing: 0.2em;
+      text-align: center;
+    }
+  }
+
+  &__actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+
+    button {
+      border: 1px solid #d9bfae;
+      background: #fff;
+      border-radius: 8px;
+      padding: 6px 14px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+  }
+}

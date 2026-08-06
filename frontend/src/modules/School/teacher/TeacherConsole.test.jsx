@@ -76,7 +76,7 @@ describe('TeacherConsole shell', () => {
     for (const label of ['Today', 'Planning', 'Records', 'Repair']) {
       act(() => { fireEvent.click(screen.getByRole('button', { name: label })); });
       // eslint-disable-next-line no-await-in-loop
-      await waitFor(() => expect(document.querySelectorAll('[data-todo]').length).toBeGreaterThan(0));
+      await waitFor(() => expect(document.querySelector('.teacher-tab')).toBeTruthy());
       for (const el of document.querySelectorAll('[data-todo]')) {
         const id = el.getAttribute('data-todo');
         seen.set(id, (seen.get(id) ?? 0) + 1);
