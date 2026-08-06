@@ -2196,9 +2196,24 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'school-learners' }),
   });
   const schoolAcademicPeriods = new ConfiguredAcademicPeriodSource({ config: schoolFullConfig });
+  // The console write predicate for SchoolService's own teacher writes
+  // (quiz-request dismissal). The lifecycle composition builds an identical
+  // instance for its writes — both are stateless over per-call config
+  // accessors, so two instances cannot drift.
+  const { TeacherGate } = await import('#apps/school/TeacherGate.mjs');
+  const schoolTeacherGate = new TeacherGate({
+    teachers: () => (configService.getHouseholdAppConfig(null, 'school') || {}).teachers,
+    pin: () => {
+      const cfg = configService.getHouseholdAppConfig(null, 'school') || {};
+      return cfg.teacher?.pin != null ? String(cfg.teacher.pin) : null;
+    },
+    roster: () => userService.getHouseholdRoster(householdId) ?? [],
+    logger: rootLogger.child({ module: 'school-teacher-gate' }),
+  });
   const schoolService = new SchoolService({
     datastore: schoolDatastore,
     userService,
+    teacherGate: schoolTeacherGate,
     learnerDirectory: schoolLearnerDirectory,
     logger: rootLogger.child({ module: 'school' }),
     bankSources: [new GeneratedBankSource({

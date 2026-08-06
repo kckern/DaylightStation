@@ -22,13 +22,14 @@ const MODES = new Set(['quiz', 'flashcard', 'drill', 'learning_probe']);
 const BANK_SUMMARY_TTL_MS = 300_000; // 10 min? banks change rarely; 5 min keeps it warm through use gaps
 
 export class SchoolService {
-  #ds; #userService; #learnerDirectory; #logger; #now; #bankSources;
+  #ds; #userService; #learnerDirectory; #logger; #now; #bankSources; #teacherGate;
   #sessions = new Map(); // sessionId -> {id, userId|null, bankId, mode, bank, startedAt, lastActiveAt}
   #bankSummaries = null; // { at: number, list: Array<summary> }
   #warming = null; // in-flight warmBanks() promise (dedupe)
 
-  constructor({ datastore, userService, learnerDirectory = null, logger = console, now = () => Date.now(), bankSources = [] }) {
+  constructor({ datastore, userService, learnerDirectory = null, logger = console, now = () => Date.now(), bankSources = [], teacherGate = null }) {
     this.#ds = datastore;
+    this.#teacherGate = teacherGate;
     this.#userService = userService;
     this.#learnerDirectory = learnerDirectory;
     this.#logger = logger;
@@ -78,7 +79,30 @@ export class SchoolService {
   /** The request backlog, optionally scoped to one material. */
   listQuizRequests({ materialId = null } = {}) {
     const list = this.#ds.readQuizRequests();
-    return materialId ? list.filter((r) => r.materialId === materialId) : list;
+    // A request is FULFILLED once a bank bound to its unit exists (the same
+    // `unit:` backlink the quiz gate resolves) — the backlog can shrink by
+    // authoring, not only by dismissal. Callers who need the flag warm
+    // (route: await warmBanks() first) get real answers; a cold cache
+    // degrades to fulfilled:false, never a throw.
+    const boundUnits = new Set(this.listBanks().map((b) => b.unit).filter(Boolean));
+    const scoped = materialId ? list.filter((r) => r.materialId === materialId) : list;
+    return scoped.map((r) => ({ ...r, fulfilled: boundUnits.has(r.unitId) }));
+  }
+
+  /**
+   * A teacher clears a backlog entry (teacher-console spec §4.6,
+   * `teacher.quizrequests.clear`): gate-checked, then the entry is removed.
+   * Matching is by unitId+userId — the same pair `requestQuiz` dedupes on.
+   */
+  dismissQuizRequest({ unitId, userId, dismissedBy = null, pin = null } = {}) {
+    if (!this.#teacherGate) throw new GuestForbiddenError('Dismissing requests is not configured on this install');
+    this.#teacherGate.assert({ userId: dismissedBy, pin, action: 'quizrequests.dismiss' });
+    const list = this.#ds.readQuizRequests();
+    const keep = list.filter((r) => !(r.unitId === unitId && r.userId === userId));
+    if (keep.length === list.length) return { dismissed: false };
+    this.#ds.saveQuizRequests(keep);
+    this.#logger.info?.('school.quiz.request-dismissed', { unitId, userId, dismissedBy });
+    return { dismissed: true };
   }
 
   #loadBank(bankId) {
