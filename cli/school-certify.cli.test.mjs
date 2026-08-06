@@ -134,6 +134,33 @@ function certifyFlags(root, extra = {}) {
   return { 'data-dir': root, 'content-root': '.', ...extra };
 }
 
+/** A standalone bank declaring one bank-scoped concept its item binds against. */
+function conceptBank({ id = 'concepts-1', conceptId = 'fractions-add' } = {}) {
+  return {
+    id,
+    title: 'Concept bank',
+    audience: 'assigned',
+    concepts: [{ conceptId, title: 'Adding fractions' }],
+    items: [{
+      id: 'q1',
+      type: 'multiple_choice',
+      prompt: 'One half plus one half?',
+      choices: ['1', '2'],
+      answer: '1',
+      concepts: [conceptId],
+    }],
+  };
+}
+
+/** Task 10's household concept registry, `<data-dir>/content/school/concepts.yml`. */
+async function writeConceptRegistry(root, ids) {
+  await mkdir(path.join(root, 'content', 'school'), { recursive: true });
+  await writeFile(
+    path.join(root, 'content', 'school', 'concepts.yml'),
+    dump({ concepts: ids.map((id) => ({ id, label: id })) }),
+  );
+}
+
 async function withTmpDir(fn) {
   const root = await mkdtemp(path.join(tmpdir(), 'school-certify-'));
   try {
@@ -394,6 +421,67 @@ describe('school-certify CLI', () => {
       const firstLine = json.trim().split('\n')[0];
       const keys = Object.keys(JSON.parse(firstLine));
       expect(keys).toEqual([...keys].sort());
+    });
+  });
+
+  // --- Task 10: concept registry lint ---
+
+  it('(p) gate mode passes with one notice when no concept registry file exists at all', async () => {
+    await withTmpDir(async (root) => {
+      const dirs = await buildFixture(root);
+      await writeFile(path.join(dirs.banks, 'concepts-1.yml'), dump(conceptBank()));
+      const { exitCode, report } = await runCertify(flagsToArgv(certifyFlags(root)));
+      expect(exitCode).toBe(0);
+      expect(report.ok).toBe(true);
+      expect(report.notices.some((n) => n.includes('concepts.yml'))).toBe(true);
+      // Absence of a registry is not itself a warning or error.
+      expect(report.warnings.some((w) => w.includes('concept registry'))).toBe(false);
+      expect(report.errors).toEqual([]);
+    });
+  });
+
+  it('(q) gate mode WARNS (does not fail) on a bank concept id absent from the registry', async () => {
+    await withTmpDir(async (root) => {
+      const dirs = await buildFixture(root);
+      await writeFile(path.join(dirs.banks, 'concepts-1.yml'), dump(conceptBank({ conceptId: 'fractions-add' })));
+      await writeConceptRegistry(root, ['some-other-concept']);
+      const { exitCode, report } = await runCertify(flagsToArgv(certifyFlags(root)));
+      expect(exitCode).toBe(0);
+      expect(report.ok).toBe(true);
+      expect(report.warnings.some((w) => w.includes('fractions-add') && w.includes('concepts-1'))).toBe(true);
+      expect(report.errors).toEqual([]);
+      expect(report.rows.length).toBeGreaterThan(0);
+    });
+  });
+
+  it('(r) --strict-concepts escalates an unregistered concept id to a hard failure, certifying nothing', async () => {
+    await withTmpDir(async (root) => {
+      const dirs = await buildFixture(root);
+      await writeFile(path.join(dirs.banks, 'concepts-1.yml'), dump(conceptBank({ conceptId: 'fractions-add' })));
+      await writeConceptRegistry(root, ['some-other-concept']);
+      const { exitCode, report } = await runCertify(flagsToArgv(
+        certifyFlags(root, { 'strict-concepts': true }),
+      ));
+      expect(exitCode).toBe(1);
+      expect(report.ok).toBe(false);
+      expect(report.rows).toEqual([]);
+      expect(report.errors.some((e) => e.includes('fractions-add') && e.includes('concepts-1'))).toBe(true);
+    });
+  });
+
+  it('(s) a bank concept id that IS in the registry raises no warning even under --strict-concepts', async () => {
+    await withTmpDir(async (root) => {
+      const dirs = await buildFixture(root);
+      await writeFile(path.join(dirs.banks, 'concepts-1.yml'), dump(conceptBank({ conceptId: 'fractions-add' })));
+      await writeConceptRegistry(root, ['fractions-add']);
+      const { exitCode, report } = await runCertify(flagsToArgv(
+        certifyFlags(root, { 'strict-concepts': true }),
+      ));
+      expect(exitCode).toBe(0);
+      expect(report.ok).toBe(true);
+      expect(report.warnings.some((w) => w.includes('fractions-add'))).toBe(false);
+      expect(report.errors).toEqual([]);
+      expect(report.notices).toEqual([]);
     });
   });
 });

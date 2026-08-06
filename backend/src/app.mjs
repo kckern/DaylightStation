@@ -267,6 +267,7 @@ import {
   ConfiguredAcademicPeriodSource,
   ConfiguredLearningExpectationSource,
   ConfiguredSchoolLearningDirectory,
+  YamlConceptRegistry,
   YamlLearningEvidenceRepository,
   YamlSchoolAttemptEvidenceSource,
 } from './1_adapters/school/progress/index.mjs';
@@ -2913,6 +2914,21 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'school-report' })
   });
 
+  // Concept registry (Task 10, R8) — household concept labels for the report
+  // card's `concepts` facet (`data/content/school/concepts.yml`). Its own
+  // narrow try/catch, independent of the report-card gate below: a
+  // missing file degrades to an empty registry inside the adapter itself
+  // (never throws), but a PRESENT, malformed one does throw at construction
+  // — and that must disable only concept LABELING, never the report card
+  // (or the rest of School) entirely. `GetReportCard` already falls back to
+  // the raw conceptId as its own label whenever `conceptRegistry` is null.
+  let schoolConceptRegistry = null;
+  try {
+    schoolConceptRegistry = new YamlConceptRegistry({ dataDir });
+  } catch (err) {
+    schoolLifecycleLogger.error('school.concept-registry.wiring-failed', { error: err.message });
+  }
+
   // Report cards, period close, teacher digest (Task 6, spec R5b). Needs the
   // lifecycle's shared curriculum/sessions/assignments stores AND the SAME
   // grown-up gate every other parent-only write already asserts through
@@ -2937,6 +2953,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         getMaterialProgressSummary,
         getLearningProgress,
         reviewQueue: schoolLifecycle.stores.reviewQueue ?? null,
+        conceptRegistry: schoolConceptRegistry,
         logger: rootLogger.child({ module: 'school-report-card' })
       });
       closeAcademicPeriod = new CloseAcademicPeriod({

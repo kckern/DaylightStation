@@ -136,6 +136,26 @@ function sessionRow({
   };
 }
 
+/** A raw School attempt row, as `readAttemptsInRange` returns it — enough
+ * shape for `learningEvidenceFromAttempt` to turn into graded evidence. */
+function attempt({
+  id, learnerId = 'kid1', bankId = 'math/work/check', itemId = 'q1', mode = 'quiz',
+  correct = true, at, conceptIds = ['fractions-add'], transport = 'screen',
+} = {}) {
+  return {
+    id,
+    attributedTo: learnerId,
+    at,
+    sessionId: `${id}-session`,
+    bankId,
+    itemId,
+    mode,
+    correct,
+    transport,
+    learning: { conceptIds },
+  };
+}
+
 describe('GetReportCard', () => {
   it('period-scoped course selection: a course assigned during the period but since unassigned STILL appears', async () => {
     const history = [
@@ -335,6 +355,71 @@ describe('GetReportCard', () => {
       bySubject: [{ subjectId: 'history', days: 1 }, { subjectId: 'math', days: 1 }],
       total: 3,
     });
+  });
+
+  it('concepts aggregates graded attempts into mastered/developing, honoring the domain thresholds and labeling from the registry', async () => {
+    const strongAttempts = Array.from({ length: 5 }, (_, i) => attempt({
+      id: `strong-${i}`, correct: true, at: `2026-09-0${i + 1}T09:00:00.000Z`, conceptIds: ['strong-concept'],
+    }));
+    const weakAttempts = Array.from({ length: 5 }, (_, i) => attempt({
+      id: `weak-${i}`, correct: i < 1, at: `2026-09-1${i}T09:00:00.000Z`, conceptIds: ['weak-concept'],
+    }));
+    const conceptRegistry = { get: (id) => (id === 'strong-concept' ? { id, label: 'Strong Concept' } : null) };
+    const useCase = new GetReportCard({
+      curriculum: fakeCurriculum([]),
+      assignments: fakeAssignments({}),
+      sessions: fakeSessions([]),
+      datastore: fakeSchoolDatastore({ attempts: { kid1: [...strongAttempts, ...weakAttempts] } }),
+      academicPeriods: fakeAcademicPeriods(),
+      conceptRegistry,
+      logger: silent,
+    });
+    const card = await useCase.execute({ learnerId: 'kid1', periodId: 'fall-2026' });
+    expect(card.concepts.mastered).toEqual([
+      {
+        conceptId: 'strong-concept', label: 'Strong Concept', ratio: 1, responses: 5,
+      },
+    ]);
+    // Registry has no entry for 'weak-concept' — the raw id is the honest fallback label.
+    expect(card.concepts.developing).toEqual([
+      {
+        conceptId: 'weak-concept', label: 'weak-concept', ratio: 0.2, responses: 5,
+      },
+    ]);
+  });
+
+  it('concepts degrades to empty mastered/developing arrays when no conceptRegistry is wired, never a crash', async () => {
+    const useCase = new GetReportCard({
+      curriculum: fakeCurriculum([]),
+      assignments: fakeAssignments({}),
+      sessions: fakeSessions([]),
+      datastore: fakeSchoolDatastore(),
+      academicPeriods: fakeAcademicPeriods(),
+      logger: silent,
+    });
+    const card = await useCase.execute({ learnerId: 'kid1', periodId: 'fall-2026' });
+    expect(card.concepts).toEqual({ mastered: [], developing: [] });
+  });
+
+  it('concepts falls back to the raw conceptId as label when the registry has no entry for it at all', async () => {
+    const attempts = Array.from({ length: 5 }, (_, i) => attempt({
+      id: `a-${i}`, correct: true, at: `2026-09-0${i + 1}T09:00:00.000Z`, conceptIds: ['unregistered-id'],
+    }));
+    const useCase = new GetReportCard({
+      curriculum: fakeCurriculum([]),
+      assignments: fakeAssignments({}),
+      sessions: fakeSessions([]),
+      datastore: fakeSchoolDatastore({ attempts: { kid1: attempts } }),
+      academicPeriods: fakeAcademicPeriods(),
+      // No conceptRegistry wired at all — labeling must still degrade gracefully.
+      logger: silent,
+    });
+    const card = await useCase.execute({ learnerId: 'kid1', periodId: 'fall-2026' });
+    expect(card.concepts.mastered).toEqual([
+      {
+        conceptId: 'unregistered-id', label: 'unregistered-id', ratio: 1, responses: 5,
+      },
+    ]);
   });
 
   it('remediationArcs links a needs_remediation session to its later OpenRemediation session on the same unit', async () => {

@@ -30,6 +30,8 @@
  */
 import { EntityNotFoundError } from '#domains/core/errors/index.mjs';
 import { courseGradeFromSessions } from '#domains/school/progress/courseGrade.mjs';
+import { conceptMastery } from '#domains/school/progress/conceptMastery.mjs';
+import { learningEvidenceFromAttempt } from '#domains/school/progress/attemptEvidence.mjs';
 
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
 
@@ -56,7 +58,7 @@ function withinPeriod(iso, period) {
 
 export class GetReportCard {
   #curriculum; #assignments; #sessions; #datastore; #academicPeriods;
-  #getMaterialProgressSummary; #getLearningProgress; #reviewQueue; #clock; #logger;
+  #getMaterialProgressSummary; #getLearningProgress; #reviewQueue; #conceptRegistry; #clock; #logger;
 
   /**
    * @param {object} deps
@@ -68,13 +70,16 @@ export class GetReportCard {
    * @param {{execute: Function}|null} [deps.getMaterialProgressSummary]
    * @param {{execute: Function}|null} [deps.getLearningProgress]
    * @param {import('../ports/IReviewQueue.mjs').IReviewQueue|null} [deps.reviewQueue]
+   * @param {{get: (id: string) => {id: string, label: string}|null}|null} [deps.conceptRegistry] -
+   *   `YamlConceptRegistry`-shaped (Task 10); absent entirely OR absent a given
+   *   id both degrade to the raw conceptId as its own label, never a crash.
    * @param {() => Date} [deps.clock]
    * @param {object} [deps.logger]
    */
   constructor({
     curriculum, assignments, sessions, datastore, academicPeriods,
     getMaterialProgressSummary = null, getLearningProgress = null, reviewQueue = null,
-    clock = () => new Date(), logger = console,
+    conceptRegistry = null, clock = () => new Date(), logger = console,
   } = {}) {
     if (!curriculum) throw new Error('GetReportCard requires curriculum');
     if (!assignments) throw new Error('GetReportCard requires assignments');
@@ -89,6 +94,7 @@ export class GetReportCard {
     this.#getMaterialProgressSummary = getMaterialProgressSummary;
     this.#getLearningProgress = getLearningProgress;
     this.#reviewQueue = reviewQueue;
+    this.#conceptRegistry = conceptRegistry;
     this.#clock = clock;
     this.#logger = logger;
   }
@@ -96,7 +102,8 @@ export class GetReportCard {
   /**
    * @param {{learnerId: string, periodId: string}} args
    * @returns {Promise<object>} `{schema: 'school.report-card/v1', learnerId, period,
-   *   generatedAt, courses, materials, evidence, activeDays, pendingReview, remediationArcs}`
+   *   generatedAt, courses, materials, evidence, activeDays, concepts, pendingReview,
+   *   remediationArcs}`
    */
   async execute({ learnerId, periodId } = {}) {
     if (!isNonEmptyString(learnerId)) throw new Error('GetReportCard requires learnerId');
@@ -126,6 +133,7 @@ export class GetReportCard {
     const materials = await this.#materialsSection(learnerId);
     const evidence = await this.#evidenceSection(learnerId, period);
     const activeDays = this.#activeDaysSection(learnerId, period);
+    const concepts = this.#conceptsSection(learnerId, period);
     const remediationArcs = await this.#resolveRemediationArcs(periodSessions);
     const pendingReview = await this.#pendingReviewCount(learnerId);
 
@@ -138,6 +146,7 @@ export class GetReportCard {
       materials,
       evidence,
       activeDays,
+      concepts,
       pendingReview,
       remediationArcs,
     };
@@ -260,6 +269,51 @@ export class GetReportCard {
   }
 
   /**
+   * Concept mastery (Task 10, R8): the SAME period-scoped attempt read
+   * `#activeDaysSection` already does (`readAttemptsInRange`), translated
+   * through `attemptEvidence.mjs`'s `learningEvidenceFromAttempt` into
+   * `conceptMastery`'s pure domain aggregation — one evidence read, two
+   * facets. `windowDays` is sized to the report PERIOD itself (not the
+   * domain function's own rolling-90-day default) so "mastery this period"
+   * actually means this period, not an independent trailing window that
+   * could disagree with it; every attempt this method feeds in already
+   * falls inside `[period.startsAt, period.endsAt]`; `now: period.endsAt`
+   * anchors that window at the period's own close.
+   * `conceptRegistry` only supplies a LABEL — an unregistered (or entirely
+   * unwired) registry falls back to the raw conceptId, never drops the row.
+   * A row too incomplete to become evidence (pre-dates a required field,
+   * hand-built test/fixture data, etc.) is skipped rather than failing the
+   * whole report card — the same tolerance `#materialsSection`/`#evidenceSection`
+   * already give an unreliable dependency.
+   */
+  #conceptsSection(learnerId, period) {
+    const fromDay = period.startsAt.slice(0, 10);
+    const toDay = period.endsAt.slice(0, 10);
+    const attempts = this.#datastore.readAttemptsInRange(learnerId, fromDay, toDay) ?? [];
+    const entries = attempts.flatMap((attempt) => {
+      try {
+        return [learningEvidenceFromAttempt(attempt)];
+      } catch (err) {
+        this.#logger.warn?.('school.report-card.concept-evidence-skipped', { learnerId, error: err.message });
+        return [];
+      }
+    });
+    const periodDays = Math.max(
+      1,
+      Math.ceil((Date.parse(period.endsAt) - Date.parse(period.startsAt)) / DAY_MS) + 1,
+    );
+    const mastery = conceptMastery(entries, { now: period.endsAt, windowDays: periodDays });
+    const label = (conceptId) => this.#conceptRegistry?.get(conceptId)?.label ?? conceptId;
+    const project = (row) => ({
+      conceptId: row.conceptId, label: label(row.conceptId), ratio: row.ratio, responses: row.responses,
+    });
+    return {
+      mastered: mastery.filter((row) => row.mastered).map(project),
+      developing: mastery.filter((row) => !row.mastered).map(project),
+    };
+  }
+
+  /**
    * A remediation arc links an original session (`result: 'needs_remediation'`)
    * to the later session `OpenRemediation` opened for the same unit —
    * `remediationOf` lives on the NEW session's `created` event, not on the day
@@ -301,5 +355,6 @@ export class GetReportCard {
 }
 
 const DAY_TEXT_RE = /^\d{4}-\d{2}-\d{2}$/;
+const DAY_MS = 86_400_000;
 
 export default GetReportCard;

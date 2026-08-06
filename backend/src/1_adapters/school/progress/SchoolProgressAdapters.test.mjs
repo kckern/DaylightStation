@@ -2,9 +2,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { dump } from 'js-yaml';
 import { YamlSchoolAttemptEvidenceSource } from './YamlSchoolAttemptEvidenceSource.mjs';
 import { YamlLearningEvidenceRepository } from './YamlLearningEvidenceRepository.mjs';
 import { ConfiguredLearningExpectationSource } from './ConfiguredLearningExpectationSource.mjs';
+import { YamlConceptRegistry } from './YamlConceptRegistry.mjs';
 import {
   ConfiguredAcademicPeriodSource,
   ConfiguredSchoolLearningDirectory,
@@ -193,5 +195,71 @@ describe('configured School learning expectations', () => {
     expect(() => new ConfiguredLearningExpectationSource({
       config: { progress: { expectations: [entry, entry] } },
     })).toThrow(/duplicate expectationId/);
+  });
+});
+
+describe('YAML concept registry (Task 10)', () => {
+  function tmpDataDir() {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'school-concepts-'));
+    temporaryDirectories.push(root);
+    return root;
+  }
+
+  function writeRegistry(dataDir, content) {
+    fs.mkdirSync(path.join(dataDir, 'content', 'school'), { recursive: true });
+    fs.writeFileSync(path.join(dataDir, 'content', 'school', 'concepts.yml'), dump(content));
+  }
+
+  it('get/has/list serve a written registry', () => {
+    const dataDir = tmpDataDir();
+    writeRegistry(dataDir, {
+      concepts: [
+        { id: 'fractions-add', label: 'Adding fractions' },
+        { id: 'fractions-add-unlike', label: 'Adding unlike fractions', parent: 'fractions-add' },
+      ],
+    });
+    const registry = new YamlConceptRegistry({ dataDir });
+    expect(registry.has('fractions-add')).toBe(true);
+    expect(registry.has('nope')).toBe(false);
+    expect(registry.get('fractions-add')).toMatchObject({ id: 'fractions-add', label: 'Adding fractions' });
+    expect(registry.get('nope')).toBeNull();
+    expect(registry.list()).toEqual([
+      { id: 'fractions-add', label: 'Adding fractions' },
+      { id: 'fractions-add-unlike', label: 'Adding unlike fractions', parent: 'fractions-add' },
+    ]);
+  });
+
+  it('a missing registry file degrades to empty — never a crash', () => {
+    const dataDir = tmpDataDir(); // no content/school/concepts.yml written
+    const registry = new YamlConceptRegistry({ dataDir });
+    expect(registry.list()).toEqual([]);
+    expect(registry.has('anything')).toBe(false);
+    expect(registry.get('anything')).toBeNull();
+  });
+
+  it('loads once at construction — a later file edit is not picked up', () => {
+    const dataDir = tmpDataDir();
+    writeRegistry(dataDir, { concepts: [{ id: 'a', label: 'A' }] });
+    const registry = new YamlConceptRegistry({ dataDir });
+    writeRegistry(dataDir, { concepts: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }] });
+    expect(registry.list()).toEqual([{ id: 'a', label: 'A' }]);
+  });
+
+  it('rejects a malformed registry (bad id, missing label, duplicate id) fail-loud at construction', () => {
+    const badId = tmpDataDir();
+    writeRegistry(badId, { concepts: [{ id: 'Not-Kebab', label: 'x' }] });
+    expect(() => new YamlConceptRegistry({ dataDir: badId })).toThrow(/id/);
+
+    const noLabel = tmpDataDir();
+    writeRegistry(noLabel, { concepts: [{ id: 'ok-id' }] });
+    expect(() => new YamlConceptRegistry({ dataDir: noLabel })).toThrow(/label/);
+
+    const dupe = tmpDataDir();
+    writeRegistry(dupe, { concepts: [{ id: 'dup', label: 'One' }, { id: 'dup', label: 'Two' }] });
+    expect(() => new YamlConceptRegistry({ dataDir: dupe })).toThrow(/duplicate/);
+  });
+
+  it('requires dataDir or filePath', () => {
+    expect(() => new YamlConceptRegistry({})).toThrow(/dataDir|filePath/);
   });
 });
