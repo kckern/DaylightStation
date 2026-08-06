@@ -1163,6 +1163,56 @@ did.
 | Content | `data/content/school/concepts.yml` — the concept label registry |
 | Config | `data/household/config/school.yml` → `progress.academicPeriods` |
 
+### The teacher console (read-only skeleton)
+
+The grown-up side of the desk: a phone-first browser surface at
+**`/school/teacher`** — never a Portal widget, never in kiosk nav — with four
+tabs (**Today · Planning · Records · Repair**) over the existing read APIs.
+The URL carries the whole nav state (`/school/teacher/<tab>[/<learnerId>]`).
+Wave 1 is deliberately read-only: every future mutation renders as an honest
+**stub card** carrying a stable `data-todo` id from the placeholder registry
+(spec §4.6) — a stub with no registry row, or a row with no stub, is a test
+failure (`TeacherConsole.test.jsx` scans the rendered set).
+
+**Teachers are config-declared, not age-derived.** `school.yml` `teachers:`
+lists roster ids; `GET /api/v1/school/teachers` resolves them against the
+live roster per request (shape-only validation at boot; a typo or blank
+birthyear costs a picker entry and a warning, never the container) and
+answers `{configured, teachers: [{id, name}]}` — profile fields never leave
+the server. The console's soft claim (sessionStorage) is attribution only;
+per the spec's settled security posture, every future mutation wave lands
+behind a distinct `teacherConsolePin` checked in the owning use cases, with
+role-is-authority (the stamped id must be a configured teacher when the key
+exists).
+
+**Panel isolation, five states.** Every panel fetches independently through
+`usePanelFetch` (`loading | error | empty | unavailable | ok`): one failing
+endpoint never blanks a tab; a 404 maps per read (lifecycle route absent →
+`unavailable`; assignments-for-unassigned-learner → `empty`); `/report-card`'s
+unwired `null` maps to `unavailable`, never a quiet zero-state. On a
+lifecycle-disabled install each lifecycle panel derives `unavailable` from
+its own fetch and ONE banner renders only when all of them do.
+
+Three backend enablers shipped with the skeleton: the teachers read; the
+`/print` route-order fix (the `/print/*id` splat had shadowed
+`printables`/`quota`/`pending` — all three 404'd in production; fixed routes
+now register first, pinned both directions by `school.print.routes.test.mjs`);
+and `GET /lifecycle/learners/:id/sessions?window=today`, backed by
+`ListLearnerSessions` filtering on `updatedAt` with the `studyDayWindow`
+extracted to `2_domains/school/studyDay.mjs` — one copy of the 4am window
+math shared with `GetTeacherToday`.
+
+| Layer | Path |
+|---|---|
+| Domain | `backend/src/2_domains/school/studyDay.mjs` — `studyDayWindow`, `withinStudyWindow` |
+| Application | `backend/src/3_applications/school/usecases/GetTeachers.mjs`, `ListLearnerSessions.mjs` |
+| API | `GET /api/v1/school/teachers`; `?window=today` on the lifecycle sessions read |
+| Frontend | `frontend/src/modules/School/teacher/` — `TeacherConsole`, `TeacherProfileContext`, `usePanelFetch`, `todoRegistry`, `tabs/`, `panels/` |
+| Routes | `frontend/src/main.jsx` — `/school/teacher[/*]` + `/app/school/teacher` redirect |
+| Config | `data/household/config/school.yml` → `teachers:` (boot-cached; adding a teacher takes a restart) |
+
+**Design spec:** [`2026-08-06-school-teacher-console-design.md`](../../superpowers/specs/2026-08-06-school-teacher-console-design.md) — includes the full use-case catalog, wave decomposition (mutations, planning domains, renderers, repair), and the placeholder registry future waves work from.
+
 ## 3. Specced, not built
 
 No code exists for anything in this section. Each links its spec.
