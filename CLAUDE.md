@@ -210,6 +210,7 @@ git rev-parse HEAD > docs/docs-last-updated.txt
 | OMR bubble-sheet reader (Chatsworth OMR-1100) | `docs/reference/omr/README.md` |
 | Journalist domain (journaling bot) | `docs/reference/journalist/journalist-domain.md` |
 | School / Portal homeschool | `docs/reference/school/README.md` |
+| School print documents (worksheets/quizzes + OMR card grading) | `docs/reference/school/print-documents.md` |
 | NewsReporter framework (scheduled reports) | `docs/reference/newsreporter/newsreporter-framework.md` |
 
 ---

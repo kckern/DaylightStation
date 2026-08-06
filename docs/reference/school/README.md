@@ -4,7 +4,9 @@
 > wall home (nine paired subjects, 3×3), the materials framework (video/audio
 > courses with quiz gates, quiz-on-demand, the FitnessShow-style unit browser),
 > the program report interface, language study (Glossika ladder),
-> **printing** (worksheets on the kitchen laser printer), and interactive
+> **printing** (worksheets on the kitchen laser printer), **print documents**
+> (authored worksheet/quiz PDFs with OMR bubble-card grading — see
+> [`print-documents.md`](./print-documents.md)), and interactive
 > geography quizzes (click-a-region and image-choice item types, a
 > generated-content deck pipeline, a resurfacing drill mode). Writing, typing, the
 > parent reassignment UI, and reading (PDF/EPUB) remain **specced only** —
@@ -660,6 +662,36 @@ Boot-cached like the rest of `school.yml`; edits need a container restart.
 print single-sided default), a print history surface for parents (the log
 exists; nothing renders it), and Telegram approval (the pending API is ready
 for it, no bot hook is wired).
+
+### Print documents — worksheets, quizzes, and OMR grading
+
+> **Full reference:** [`print-documents.md`](./print-documents.md)
+
+The richer sibling of the quota printing above: authored YAML sources publish
+into answer-free revisioned documents, render on demand as per-student
+worksheet/quiz PDFs (modern workbook aesthetic, teacher answer keys as a
+pin-gated render mode, per-child shuffle variants and retakes), and grade
+through physical Chatsworth OMR bubble cards. The card is the sheet's
+identity: random 7-digit ids, shared across documents via row offsets,
+tracked in an allocation store with a full lifecycle
+(`live → satisfied | released | superseded`), and a card-backed sheet prints
+**no on-page bubbles** — answers ride the card.
+
+A card scan resolves rows to their newest claimant, grades at the record's
+pinned revision/variant against the derived bank, files paper-transport
+attempts into the same per-learner log the on-screen engine writes, and
+advances the issuing work session `issued → submitted → graded` — holding at
+`submitted` whenever a person must look first (ambiguous marks, essays,
+short answers land in the parent review queue as pending; machine marks land
+as resolved engine verdicts on the same sheet). Mis-bubbled card ids, retired
+cards, and refused records all surface at `warn` with actionable detail —
+a child's work never vanishes silently.
+
+`GET /api/v1/school/print/<taxonomy-id>?variety=omr|hand` is the surface;
+`cli/school-docs.cli.mjs` covers validate/publish/render/release-card.
+Sources live at `data/content/school/print-documents/` under hierarchical
+taxonomy ids (`subject/course/slug`); curriculum units reference a printed
+quiz as `document: print/<id>@<rev>`.
 
 ### The physical learning console
 
