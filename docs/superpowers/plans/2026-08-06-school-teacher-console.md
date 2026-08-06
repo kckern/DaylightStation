@@ -381,3 +381,54 @@ describe('GetTeachers', () => {
 
 - Spec coverage (wave 1): §4.1 shell/identity/URL → Tasks 5, 8, 9; §4.2 tabs → 10–13; §4.3 client/isolation/lifecycle posture → 6, 7, 10; §4.4 layout → 9 + main.jsx in 9; §4.5 testing → embedded per task (five states in 7/10, stub-drift scan in 9, teachers filtering in 8, url round-trips in 5); §4.6 registry → 9 (`todoRegistry.js` mirrors all 15 rows); §4.7 enablers → 1–4. Waves 2–5: deliberately deferred to per-milestone plans (roadmap table) — not placeholders, a sequencing decision recorded in the spec itself.
 - Type consistency: `usePanelFetch` consumed in 10–13 with the option names defined in 7 (`notFoundAs`, `nullAs`); `TODO` keys in 10–13 match 9's registry; `ListLearnerSessions.execute({learnerId, window})` matches the router call in 2 and the client call in 6/10 (`window:'today'`).
+
+---
+
+# Wave 2 — Daily-loop mutations (authored at M2, after the M1 review)
+
+**Contract:** spec §1 security posture (distinct `teacherConsolePin`, checked in owning use cases, role-is-authority with any-adult fallback when `teachers:` absent) + registry rows `teacher.review.resolve`, `teacher.print.decide`, `teacher.quizrequests.clear` + the Admin ReviewQueue grader fix. Acceptance shape per §4.6: live panel replaces stub, registry row deleted (spec table + todoRegistry.js + tab), drift test keeps passing.
+
+### Task W2-1: `TeacherGate`
+
+**Files:** Create `backend/src/3_applications/school/TeacherGate.mjs` (+ colocated test).
+**Interface:** `new TeacherGate({ teachers, pin, roster, clock, logger })` where `teachers: () => (string[]|undefined)` and `pin: () => (string|null)` are config accessors (read per call, never snapshotted — the GrownUpGate discipline). `assert({ userId, pin, action })` throws `GuestForbiddenError` unless: (a) `isAdult` passes for userId against the live roster; (b) when the `teachers:` key exists, userId is listed (role IS authority; absent key → any-adult fallback); (c) when a console PIN is configured (non-empty), the provided pin strictly equals it. Refusal messages name the missing thing without echoing the pin; every refusal logs `school.teacher-gate.refused {action, userId, reason}`.
+**Config:** `school.yml` gains `teacher: { pin: '<digits>' }` — distinct from `print.teacherPin` by design (answer-key shoulder-surf must not close semesters).
+
+- [ ] Failing tests: adult+listed+right-pin passes; child refused; unlisted adult refused only when key present; wrong/missing pin refused only when configured; unreadable roster refuses all; pin never appears in the thrown message or log payload.
+- [ ] Implement, pass, commit.
+
+### Task W2-2: Gate the four writes
+
+**Files:** Modify `ResolveReviewItem.mjs`, `SetAssignments.mjs`, `CloseAcademicPeriod.mjs`, `PrintService.mjs` (+ their tests); `schoolLifecycle.mjs` router (pass `pin` from body); `school.mjs` router (close + print approve/deny pass `pin`); compositions wire `teacherGate`.
+**Interface:** each use case gains optional `teacherGate` dep and optional `pin` execute arg. When `teacherGate` present it REPLACES the plain grown-up assert (it subsumes it); absent → behavior byte-identical to today (back-compat: every existing test passes unchanged). PrintService `approve`/`deny` take `{requestId, approver, pin}`.
+
+- [ ] Failing tests per use case: gate invoked with `{userId, pin, action}`; refusal propagates as 403; absent gate = legacy.
+- [ ] Wire in `backend/src/5_composition/modules/schoolLifecycle.mjs` + `backend/src/app.mjs` (print service + close): one `TeacherGate` instance shared, accessors reading `getHouseholdAppConfig(null,'school')`.
+- [ ] Routers forward `req.body.pin`. Run `lifecycleParentWrites.test.mjs` + router tests. Commit.
+
+### Task W2-3: Quiz-request lifecycle (`teacher.quizrequests.clear`)
+
+**Files:** Modify `SchoolService.mjs` (`listQuizRequests` gains `fulfilled` annotation via the bank `unit:` backlink index; new `dismissQuizRequest({unitId, userId, dismissedBy, pin})` using the gate), `school.mjs` router (`POST /quiz-requests/dismiss`), `YamlSchoolDatastore` if a delete helper is missing (+ tests).
+**Interface:** list rows gain `fulfilled: boolean` (a bank bound to the request's unit now exists). Dismiss removes the entry (gate-checked), returns `{dismissed: true}`.
+
+- [ ] Failing tests: fulfilled=true when a bank with matching `unit:` exists; dismiss removes and is gate-checked; commit.
+
+### Task W2-4: Console mutation UI
+
+**Files:** Modify `TeacherProfileContext.jsx` (in-memory `pin` state + `setPin` — never persisted), new `panels/PinPrompt.jsx`, modify `ReviewQueueView.jsx` (verdict correct/incorrect + note ≤120 chars per item, submit via new `schoolApi.resolveReview(sessionId, itemId, {verdict, note, gradedBy, pin})`), `PrintPendingView.jsx` (approve/deny via new wrappers), `QuizRequestBacklog.jsx` (fulfilled badge + dismiss), `todoRegistry.js` (DELETE the three rows), tabs (drop the three StubCards), spec §4.6 table (delete rows), schoolApi wrappers + tests.
+**Behavior:** a mutation attempted with no claimed teacher opens the picker; with no pin entered (and the server refusing 403) opens `PinPrompt`; optimistic-nothing — every mutation is server-authoritative refresh (the Admin queue's contract). Per-item error attribution (a failed resolve marks that item, siblings untouched).
+
+- [ ] Failing tests: resolve posts the claimed teacher + pin and refreshes; 403 surfaces the pin prompt, not a dead panel; print approve/deny wired; dismiss wired; drift test now expects 12 registry ids; commit.
+
+### Task W2-5: Admin ReviewQueue grader fix
+
+**Files:** Modify `frontend/src/modules/Admin/School/schoolAdminApi.js` (add `teachers()`), `useGrader.js` (adults from the teachers read instead of the adult-free roster; not-configured → sign-off disabled with an explanatory note), ReviewQueue pin field (small, only when a pin is configured — send it through resolve calls) + tests.
+- [ ] Commit.
+
+### Task W2-6: Verify, deploy, M2 review
+
+- [ ] Full School-scoped test sweep green; vite build clean.
+- [ ] Add `teacher: { pin }` to the live school.yml (data volume) alongside `teachers:`.
+- [ ] Deploy-gate check → build → deploy → live verify (a real resolve with pin via curl on a synthetic pending item is NOT possible without fabricating child work — verify the 403/gate behavior instead: wrong pin → 403, missing pin with pin configured → 403).
+- [ ] Update `docs/reference/school/README.md` (console section: wave 2 now live) + spec registry table.
+- [ ] Dispatch the Fable stern reviewer (M2); apply verdicts.
