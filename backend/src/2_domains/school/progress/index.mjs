@@ -41,3 +41,4 @@ export {
   createLearningRecommendation,
   isLearningRecommendationActive,
 } from './learningRecommendation.mjs';
+export { COURSE_GRADE_POLICY, courseGradeFromSessions } from './courseGrade.mjs';
