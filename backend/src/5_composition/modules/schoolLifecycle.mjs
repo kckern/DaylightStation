@@ -54,6 +54,7 @@ import { SurfaceProgramLauncher } from '#apps/school/SurfaceProgramLauncher.mjs'
 import { DoNowSchoolBridge } from '#apps/school/DoNowSchoolBridge.mjs';
 import { WorkSessionReporter } from '#apps/school/WorkSessionReporter.mjs';
 import { BuildAgenda } from '#apps/school/usecases/BuildAgenda.mjs';
+import { ListLearnerSessions } from '#apps/school/usecases/ListLearnerSessions.mjs';
 import { IssueDocument } from '#apps/school/usecases/IssueDocument.mjs';
 import { DispatchMedia } from '#apps/school/usecases/DispatchMedia.mjs';
 import { RecordMediaCompletion } from '#apps/school/usecases/RecordMediaCompletion.mjs';
@@ -590,6 +591,7 @@ export async function createSchoolLifecycle({
     reviewQueue: stores.reviewQueue,
     curriculum,
     sessions: stores.sessions,
+    listLearnerSessions: new ListLearnerSessions({ sessions: stores.sessions, timezone, clock }),
     roster: displayRoster,
     logger,
   });
