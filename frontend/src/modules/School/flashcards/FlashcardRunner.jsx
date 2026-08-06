@@ -34,6 +34,7 @@ export default function FlashcardRunner({ bank, learning = null, onExit }) {
   const [cardsSeen, setCardsSeen] = useState(0);
   const [unrecordedCount, setUnrecordedCount] = useState(0);
   const [unrecorded, setUnrecorded] = useState(false);
+  const [openFailed, setOpenFailed] = useState(false);
   const [grading, setGrading] = useState(false);
   const missedOnce = useRef(new Set());
   // Synchronous in-flight guard: a double-tap on Missed/Got-it before the
@@ -76,7 +77,9 @@ export default function FlashcardRunner({ bank, learning = null, onExit }) {
       userId, bankId: bank.id, mode: 'flashcard', ...(learning ? { learning } : {}),
     }).then(({ ok, data }) => {
       if (!alive) return;
-      if (!ok) { onExit(); return; }
+      // A failed open must never silently dump the child back to the menu
+      // with no explanation (advocacy: every wall gets a sign).
+      if (!ok) { setOpenFailed(true); return; }
       setSessionId(data.sessionId);
       schoolLog.session('start', { sessionId: data.sessionId, bankId: bank.id, mode: 'flashcard', userId, itemCount: bank.items.length });
     });
@@ -134,15 +137,32 @@ export default function FlashcardRunner({ bank, learning = null, onExit }) {
     return (
       <div className="school-runner school-runner--summary" data-testid="cards-summary">
         <h2>{bank.title}</h2>
+        <p className="school-runner__cheer" data-testid="cards-cheer">
+          {firstTry === bank.items.length
+            ? 'Every card, first try — amazing!'
+            : firstTry >= bank.items.length / 2
+              ? 'Nice work — you finished the whole deck!'
+              : 'You stuck with it to the very last card. That\u2019s how you learn.'}
+        </p>
         <p className="school-runner__score">{firstTry} / {bank.items.length}</p>
         <p className="school-runner__hint">first try</p>
         <p className="school-runner__cards-seen">{cardsSeen} cards seen</p>
         {unrecordedCount > 0 && (
           <p className="school-runner__unrecorded-summary" data-testid="unrecorded-summary">
-            {unrecordedCount} grade{unrecordedCount === 1 ? '' : 's'} not recorded
+            {unrecordedCount} card{unrecordedCount === 1 ? '' : 's'} didn&rsquo;t save — tell a grown-up.
           </p>
         )}
         <button type="button" className="school-runner__done" onClick={onExit}>Done</button>
+      </div>
+    );
+  }
+
+  if (openFailed) {
+    return (
+      <div className="school-runner school-runner--error" data-testid="cards-open-failed">
+        <h2>{bank.title}</h2>
+        <p>That one wouldn&rsquo;t open. Tell a grown-up, or try again in a bit.</p>
+        <button type="button" className="school-runner__done" onClick={onExit}>Back</button>
       </div>
     );
   }
@@ -158,10 +178,21 @@ export default function FlashcardRunner({ bank, learning = null, onExit }) {
     );
   }
 
+  const unsaved = (currentUser?.id ?? null) === null;
+
   return (
     <div className="school-runner school-runner--cards">
+      {unsaved && (
+        <div className="school-runner__guest" data-testid="guest-banner">
+          Playing as guest — this won&rsquo;t be saved.
+        </div>
+      )}
       <div className="school-runner__progress">{cardsSeen} seen · {queue.length} left</div>
-      {unrecorded && <div className="school-runner__unrecorded" data-testid="unrecorded">Answer not recorded — check the server.</div>}
+      {unrecorded && (
+        <div className="school-runner__unrecorded" data-testid="unrecorded">
+          That one didn&rsquo;t save. Keep going — tell a grown-up if this keeps happening.
+        </div>
+      )}
       <div className="school-card">
         <p className="school-card__prompt">{card.prompt}</p>
         {revealed && <p className="school-card__answer" style={{ whiteSpace: 'pre-line' }}>{answerText(card)}</p>}
@@ -170,7 +201,7 @@ export default function FlashcardRunner({ bank, learning = null, onExit }) {
         ? <button type="button" className="school-runner__next" onClick={() => setRevealed(true)}>Show answer</button>
         : (
           <div className="school-runner__grades">
-            <button type="button" className="school-runner__missed" disabled={grading} onClick={() => grade(false)}>Missed</button>
+            <button type="button" className="school-runner__missed" disabled={grading} onClick={() => grade(false)}>Not yet</button>
             <button type="button" className="school-runner__got" disabled={grading} onClick={() => grade(true)}>Got it</button>
           </div>
         )}

@@ -16,6 +16,7 @@ vi.mock('../schoolApi.js', () => ({
     printPending: (...a) => pendingMock(...a),
     approvePrint: (...a) => approveMock(...a),
     denyPrint: (...a) => denyMock(...a),
+    printRequests: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
   },
 }));
 

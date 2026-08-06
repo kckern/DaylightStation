@@ -117,6 +117,34 @@ export class SchoolService {
   }
 
   /**
+   * A KID flags something that seems wrong — a mis-keyed answer, a score
+   * that doesn't match what they did, a broken screen (student-advocacy
+   * wave 7: the child's voice channel). Kid-safe like requestQuiz; the row
+   * lands in the same backlog the teacher's Today tab lists, kind:'flag'.
+   * The note is the kid's own words, capped, never required.
+   */
+  flagConcern({ userId = null, bankId = null, sessionId = null, title = null, note = null } = {}) {
+    if (!userId) throw new GuestForbiddenError('Sign in to flag a problem');
+    if (!this.getRoster().some((u) => u.id === userId)) {
+      throw new ValidationError(`unknown user: ${userId}`);
+    }
+    const list = this.#ds.readQuizRequests();
+    if (list.some((r) => r.kind === 'flag' && r.userId === userId
+        && (r.bankId ?? null) === bankId && (r.sessionId ?? null) === sessionId)) {
+      return { flagged: true, duplicate: true };
+    }
+    const entry = {
+      kind: 'flag', at: new Date(this.#now()).toISOString(), userId,
+      ...(bankId ? { bankId } : {}), ...(sessionId ? { sessionId } : {}),
+      ...(title ? { unitTitle: title } : {}),
+      ...(typeof note === 'string' && note.trim() ? { note: note.trim().slice(0, 240) } : {}),
+    };
+    this.#ds.saveQuizRequests([...list, entry]);
+    this.#logger.info?.('school.flag.raised', entry);
+    return { flagged: true, duplicate: false };
+  }
+
+  /**
    * A teacher clears a backlog entry (teacher-console spec §4.6,
    * `teacher.quizrequests.clear`): gate-checked, then the entry is removed —
    * and (student-advocacy A5: no silent verbs about children) the dismissal

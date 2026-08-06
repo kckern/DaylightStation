@@ -4,10 +4,12 @@ import QuizRunner from './QuizRunner.jsx';
 
 const answerMock = vi.fn();
 const openSessionMock = vi.fn();
+const requestRetakeMock = vi.fn();
 vi.mock('../schoolApi.js', () => ({
   schoolApi: {
     openSession: (...a) => openSessionMock(...a),
     answer: (...a) => answerMock(...a),
+    requestRetake: (...a) => requestRetakeMock(...a),
   },
 }));
 
@@ -29,6 +31,7 @@ beforeEach(() => {
   profile = { status: 'ready', currentUser: { id: 'kid1', name: 'KID1' }, isGuest: false };
   answerMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: { correct: true, expected: 'Olympia', attemptId: 'att_1' } });
   openSessionMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: { sessionId: 'ses_1' } });
+  requestRetakeMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: { requested: true } });
 });
 
 describe('QuizRunner', () => {
@@ -150,5 +153,49 @@ describe('QuizRunner', () => {
     expect(screen.queryByText(/2 \/ 2/)).not.toBeInTheDocument();
     // Should NOT reach the summary
     expect(screen.queryByTestId('quiz-summary')).not.toBeInTheDocument();
+  });
+});
+
+describe('student-advocacy wave 7', () => {
+  it('an unsaved (guest) run carries the banner; a signed-in run does not', async () => {
+    profile = { status: 'ready', currentUser: null, isGuest: true };
+    render(<QuizRunner bank={bank} onExit={() => {}} />);
+    expect(await screen.findByTestId('guest-banner')).toHaveTextContent(/won’t be saved/);
+  });
+
+  it('a failed open shows the sign with a Back button, never an eternal Loading', async () => {
+    openSessionMock.mockResolvedValue({ ok: false, status: 503, data: null });
+    const onExit = vi.fn();
+    render(<QuizRunner bank={bank} onExit={onExit} />);
+    expect(await screen.findByTestId('quiz-open-failed')).toHaveTextContent(/wouldn’t open/i);
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(onExit).toHaveBeenCalled();
+  });
+
+  it('a failing graded run shows the pass bar honestly and offers the retake ask', async () => {
+    answerMock
+      .mockResolvedValueOnce({ ok: true, status: 200, data: { correct: false, expected: 'Olympia', attemptId: 'a1' } })
+      .mockResolvedValueOnce({ ok: true, status: 200, data: { correct: false, expected: 'Salem', attemptId: 'a2' } });
+    render(<QuizRunner bank={bank} learning={{ passingPercent: 80 }} onExit={() => {}} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Seattle' }));
+    fireEvent.click(await screen.findByRole('button', { name: /next/i }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Boise' }));
+    fireEvent.click(await screen.findByRole('button', { name: /next/i }));
+    expect(await screen.findByTestId('quiz-passbar')).toHaveTextContent('0% — passing is 80%. You can try again.');
+    fireEvent.click(screen.getByRole('button', { name: /ask for a retake/i }));
+    await waitFor(() => expect(requestRetakeMock).toHaveBeenCalledWith(
+      { userId: 'kid1', bankId: 'caps', title: 'Caps' }));
+    expect(await screen.findByTestId('retake-asked')).toBeInTheDocument();
+  });
+
+  it('a passing graded run celebrates and does NOT offer the retake ask', async () => {
+    render(<QuizRunner bank={bank} learning={{ passingPercent: 80 }} onExit={() => {}} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Olympia' }));
+    fireEvent.click(await screen.findByRole('button', { name: /next/i }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Salem' }));
+    fireEvent.click(await screen.findByRole('button', { name: /next/i }));
+    expect(await screen.findByTestId('quiz-passbar')).toHaveTextContent('Passed — 100%, and passing is 80%.');
+    expect(screen.getByTestId('quiz-cheer')).toHaveTextContent('Perfect! Every single one.');
+    expect(screen.queryByRole('button', { name: /ask for a retake/i })).toBeNull();
   });
 });

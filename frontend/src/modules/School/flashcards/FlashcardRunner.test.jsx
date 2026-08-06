@@ -45,7 +45,7 @@ describe('FlashcardRunner', () => {
     render(<FlashcardRunner bank={bank} onExit={() => {}} />);
     // miss q1
     fireEvent.click(await screen.findByRole('button', { name: /show answer/i }));
-    fireEvent.click(screen.getByRole('button', { name: /missed/i }));
+    fireEvent.click(screen.getByRole('button', { name: /not yet/i }));
     // q2 got
     fireEvent.click(await screen.findByRole('button', { name: /show answer/i }));
     fireEvent.click(screen.getByRole('button', { name: /got it/i }));
@@ -119,7 +119,7 @@ describe('FlashcardRunner', () => {
     fireEvent.click(screen.getByRole('button', { name: /show answer/i }));
     fireEvent.click(screen.getByRole('button', { name: /got it/i }));
     const summary = await screen.findByTestId('cards-summary');
-    expect(summary).toHaveTextContent(/not recorded/i);
+    expect(summary).toHaveTextContent(/didn’t save — tell a grown-up/i);
   });
 
   it('a failed self-grade recording surfaces an immediate per-card indicator, not just the end-of-session summary', async () => {
@@ -127,7 +127,7 @@ describe('FlashcardRunner', () => {
     render(<FlashcardRunner bank={bank} onExit={() => {}} />);
     fireEvent.click(await screen.findByRole('button', { name: /show answer/i }));
     fireEvent.click(screen.getByRole('button', { name: /got it/i }));
-    expect(await screen.findByTestId('unrecorded')).toHaveTextContent(/answer not recorded/i);
+    expect(await screen.findByTestId('unrecorded')).toHaveTextContent(/didn’t save\. keep going/i);
   });
 
   it('a double-tap on Got it produces exactly one POST and does not drop the next card', async () => {
@@ -155,7 +155,7 @@ describe('FlashcardRunner', () => {
     render(<FlashcardRunner bank={bank} onExit={() => {}} />);
     fireEvent.click(await screen.findByRole('button', { name: /show answer/i }));
     const gotBtn = screen.getByRole('button', { name: /got it/i });
-    const missedBtn = screen.getByRole('button', { name: /missed/i });
+    const missedBtn = screen.getByRole('button', { name: /not yet/i });
     fireEvent.click(gotBtn);
     expect(gotBtn).toBeDisabled();
     expect(missedBtn).toBeDisabled();

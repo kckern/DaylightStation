@@ -98,6 +98,19 @@ describe('dismissQuizRequest (reason delivered as a note — advocacy A5)', () =
   });
 });
 
+describe('flagConcern (kid-safe "this seems wrong" — advocacy wave 7)', () => {
+  it('files a kind:flag row with the kid\'s words; dedupes; guests refused', () => {
+    const svc = makeService();
+    expect(svc.flagConcern({ userId: 'felix', bankId: 'caps', sessionId: 'ses_1', title: 'Caps', note: 'It marked Olympia wrong!' }))
+      .toEqual({ flagged: true, duplicate: false });
+    expect(saved.at(-1)).toMatchObject({ kind: 'flag', userId: 'felix', bankId: 'caps', note: 'It marked Olympia wrong!' });
+    requests = saved;
+    expect(svc.flagConcern({ userId: 'felix', bankId: 'caps', sessionId: 'ses_1' }))
+      .toEqual({ flagged: true, duplicate: true });
+    expect(() => svc.flagConcern({ userId: null, bankId: 'x' })).toThrow(GuestForbiddenError);
+  });
+});
+
 describe('requestRetake (kid-safe — advocacy A2)', () => {
   it('a signed-in kid files a retake row; guests are refused; dedupe holds', () => {
     const svc = makeService();

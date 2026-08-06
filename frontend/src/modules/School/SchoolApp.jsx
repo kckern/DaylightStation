@@ -484,7 +484,18 @@ function SchoolShell({ clear }) {
         {/* Opens on the signed-in learner when there is one, otherwise the
             whole household. Both scopes are the same endpoint, filtered. */}
         {section === 'progress' && !active && (
-          <ReportPanel userId={currentUser?.id || null} onFollowUp={currentUser ? onProgressFollowUp : null} />
+          <ReportPanel
+            userId={currentUser?.id || null}
+            onFollowUp={currentUser ? onProgressFollowUp : null}
+            /* A claimed KID gets a kid-scoped board: no Everyone unfocus, no
+               admin links, no Needs-attention flag (advocacy: the kiosk board
+               a child reads is theirs, not a supervision surface). Missing
+               birthyear fails toward kid — same rule as the claim faces. */
+            kidMode={!!currentUser && (() => {
+              const u = roster.find((r) => r.id === currentUser.id);
+              return !u?.birthyear || new Date().getFullYear() - u.birthyear < 18;
+            })()}
+          />
         )}
         {section === 'catalog' && !active && <LearningCatalogBrowser onLaunch={onLearningLaunch} surfaceId={surfaceId} />}
         {section === 'print' && <PrintCenter />}
@@ -549,7 +560,7 @@ function SchoolShell({ clear }) {
           />
         )}
       </main>
-      <ProfilePicker open={pickerOpen} users={roster} activeId={currentUser?.id} onPick={onPick} onDismiss={onDismiss} timeoutMs={30000} title="Who's here?" />
+      <ProfilePicker open={pickerOpen} users={roster} activeId={currentUser?.id} onPick={onPick} onDismiss={onDismiss} timeoutMs={30000} title="Who's here?" showCountdown />
     </div>
   );
 }

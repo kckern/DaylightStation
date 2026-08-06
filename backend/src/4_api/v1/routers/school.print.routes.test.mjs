@@ -34,6 +34,7 @@ const printService = {
   listPrintables: async () => [{ id: 'state-capitals', pages: 2 }],
   getQuota: (userId) => ({ userId, remaining: 5 }),
   listPending: () => [{ requestId: 'req-1', userId: 'felix', pages: 6 }],
+  listRequestsFor: (userId) => [{ id: 'pr_1', userId, status: 'denied', label: 'Maze' }],
 };
 
 describe('/print fixed routes vs the *id splat', () => {
@@ -41,6 +42,13 @@ describe('/print fixed routes vs the *id splat', () => {
     const res = await request(appWith({ printService })).get('/api/v1/school/print/pending');
     expect(res.status).toBe(200);
     expect(res.body).toEqual([{ requestId: 'req-1', userId: 'felix', pages: 6 }]);
+  });
+
+  it('GET /print/requests serves a learner\'s own asks; no userId answers []', async () => {
+    const res = await request(appWith({ printService })).get('/api/v1/school/print/requests?userId=felix');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([{ id: 'pr_1', userId: 'felix', status: 'denied', label: 'Maze' }]);
+    expect((await request(appWith({ printService })).get('/api/v1/school/print/requests')).body).toEqual([]);
   });
 
   it('GET /print/printables reaches printables', async () => {

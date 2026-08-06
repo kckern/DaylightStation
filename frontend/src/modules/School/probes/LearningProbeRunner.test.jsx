@@ -72,7 +72,7 @@ describe('LearningProbeRunner', () => {
     render(<LearningProbeRunner module={module} onExit={() => {}} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Division' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Continue' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent(/not recorded/);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/didn’t go through/);
     expect(screen.queryByTestId('probe-summary')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     expect(await screen.findByTestId('probe-summary')).toHaveTextContent('Initial check: 1 / 1');

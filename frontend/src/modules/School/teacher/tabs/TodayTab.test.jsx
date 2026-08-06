@@ -169,16 +169,34 @@ describe('wave-2 mutations', () => {
     await waitFor(() => expect(schoolApi.printPending.mock.calls.length).toBeGreaterThan(1));
   });
 
-  it('a quiz request can be dismissed; fulfilled requests carry the badge', async () => {
+  it('dismissing a quiz request demands a reason and sends it (advocacy A5)', async () => {
     await claim();
     schoolApi.quizRequests.mockResolvedValue(ok([
       { at: 't', userId: 'milo', unitId: 'plex:123', unitTitle: 'Fractions Ep. 4', materialTitle: 'Math Course', fulfilled: true },
     ]));
     mount(<TodayTab kids={KIDS} />);
     await waitFor(() => expect(screen.getByText(/bank authored/)).toBeTruthy());
-    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Dismiss' })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Dismiss…' })); });
+    // Reason empty -> the confirm stays disabled; the child is never told nothing.
+    const confirm = screen.getByRole('button', { name: /Dismiss & tell them/ });
+    expect(confirm.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('Dismissal reason'), {
+      target: { value: 'We will do this one together' },
+    });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /Dismiss & tell them/ })); });
     await waitFor(() => expect(schoolApi.quizRequestDismiss).toHaveBeenCalledWith(
-      { unitId: 'plex:123', userId: 'milo', dismissedBy: 'kckern', pin: null }));
+      { unitId: 'plex:123', bankId: null, userId: 'milo', dismissedBy: 'kckern', pin: null, reason: 'We will do this one together' }));
+  });
+
+  it('a kid-filed retake ask renders with its badge and want-another-try copy', async () => {
+    await claim();
+    schoolApi.quizRequests.mockResolvedValue(ok([
+      { at: 't', kind: 'retake', userId: 'milo', bankId: 'science/pokemon-basics/01-quiz', title: 'Pokemon Basics Quiz' },
+    ]));
+    mount(<TodayTab kids={KIDS} />);
+    await waitFor(() => expect(screen.getByText('retake')).toBeTruthy());
+    expect(screen.getByText('Pokemon Basics Quiz')).toBeTruthy();
+    expect(screen.getByText(/wants another try — asked by Milo/)).toBeTruthy();
   });
 });
 

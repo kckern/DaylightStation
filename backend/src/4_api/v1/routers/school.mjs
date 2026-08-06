@@ -252,6 +252,11 @@ export function createSchoolRouter({
   router.get('/print/pending', wrap((req, res) => {
     res.json(printService ? printService.listPending() : []);
   }));
+  // A learner's own asks (pending + denied) — the kid-facing outcome view.
+  router.get('/print/requests', wrap((req, res) => {
+    if (!printService || !req.query.userId) return res.json([]);
+    res.json(printService.listRequestsFor(req.query.userId));
+  }));
   // Hierarchical taxonomy ids contain '/', so the id is a named wildcard
   // (Express 5 splat) rather than a single segment.
   router.get('/print/*id', wrap(async (req, res) => {
@@ -570,6 +575,11 @@ export function createSchoolRouter({
   router.post('/retake-requests', wrap((req, res) => {
     const { userId = null, bankId = null, unitId = null, title = null } = req.body || {};
     res.json(schoolService.requestRetake({ userId, bankId, unitId, title }));
+  }));
+  // Kid-safe "this seems wrong" flag — lands in the same teacher backlog.
+  router.post('/flags', wrap((req, res) => {
+    const { userId = null, bankId = null, sessionId = null, title = null, note = null } = req.body || {};
+    res.json(schoolService.flagConcern({ userId, bankId, sessionId, title, note }));
   }));
 
   // Printing — a child prints their own worksheets, quota-gated with grown-up

@@ -20,7 +20,7 @@ import './identity.scss';
  * grid to `columnsForCount` columns. A roster larger than 6 paginates, with page
  * dots beneath the grid.
  */
-export default function ProfilePicker({ open, users = [], activeId, onPick, onDismiss, onScreenOff, timeoutMs = 30000, title = "Who's playing?" }) {
+export default function ProfilePicker({ open, users = [], activeId, onPick, onDismiss, onScreenOff, timeoutMs = 30000, title = "Who's playing?", showCountdown = false }) {
   const onDismissRef = useRef(onDismiss);
   onDismissRef.current = onDismiss;
 
@@ -48,6 +48,17 @@ export default function ProfilePicker({ open, users = [], activeId, onPick, onDi
     return () => clearTimeout(t);
   }, [open, timeoutMs, interactionEpoch]);
 
+  // Opt-in visible countdown (school advocacy: an auto-dismiss a child can
+  // SEE coming is a rule; one that fires from silence is a trick). Ticks a
+  // once-a-second display; any interaction resets it with the timer above.
+  const [secondsLeft, setSecondsLeft] = useState(null);
+  useEffect(() => {
+    if (!open || !showCountdown || !(timeoutMs > 0)) { setSecondsLeft(null); return undefined; }
+    setSecondsLeft(Math.round(timeoutMs / 1000));
+    const iv = setInterval(() => setSecondsLeft((n) => (n !== null && n > 0 ? n - 1 : n)), 1000);
+    return () => clearInterval(iv);
+  }, [open, showCountdown, timeoutMs, interactionEpoch]);
+
   if (!open) return null;
   const current = pages[Math.min(page, Math.max(0, pages.length - 1))] || [];
   const columns = columnsForCount(current.length);
@@ -57,6 +68,11 @@ export default function ProfilePicker({ open, users = [], activeId, onPick, onDi
       <div className="piano-userpicker__sheet" onPointerDown={() => setInteractionEpoch((e) => e + 1)}>
         <button type="button" className="piano-userpicker__close" aria-label="Close" onClick={() => onDismiss?.()}>✕</button>
         <h2 className="piano-userpicker__title">{title}</h2>
+        {showCountdown && secondsLeft !== null && secondsLeft <= 10 && (
+          <p className="piano-userpicker__countdown" data-testid="picker-countdown" aria-live="polite">
+            Closing in {secondsLeft}…
+          </p>
+        )}
         <ul
           className="piano-userpicker__grid"
           data-columns={columns}
