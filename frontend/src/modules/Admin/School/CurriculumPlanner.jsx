@@ -151,7 +151,16 @@ export default function CurriculumPlanner() {
   const logger = useMemo(() => getLogger().child({ component: 'school-planner' }), []);
 
   const { roster, error: rosterError } = useRoster();
-  const { adults, graderId, grader, canSignOff, setGraderId } = useGrader(roster);
+  const [teachersRead, setTeachersRead] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    schoolAdminApi.teachers()
+      .then((t) => { if (alive) setTeachersRead(t); })
+      .catch(() => { if (alive) setTeachersRead({ configured: false, teachers: [] }); });
+    return () => { alive = false; };
+  }, []);
+  const { adults, graderId, grader, canSignOff, setGraderId } = useGrader(roster, teachersRead);
+  const [pin, setPin] = useState('');
 
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -245,6 +254,7 @@ export default function CurriculumPlanner() {
       courses: toStored(courses, 'courseId'),
       units: toStored(units, 'unitId'),
       assignedBy: grader.id,
+      pin: pin || null,
     };
     logger.info('assignment-save-dispatch', {
       learnerId, by: grader.id, courses: body.courses.length, units: body.units.length,
@@ -294,6 +304,9 @@ export default function CurriculumPlanner() {
         onChange={setGraderId}
         action="change a plan"
         label="Signed in as"
+        teachersConfigured={teachersRead ? teachersRead.configured : null}
+        pin={pin}
+        onPinChange={setPin}
       />
 
       {rosterError && <Alert color="red" title="Could not load the household roster">{rosterError}</Alert>}
