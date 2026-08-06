@@ -2195,7 +2195,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     householdId,
     logger: rootLogger.child({ module: 'school-learners' }),
   });
-  const schoolAcademicPeriods = new ConfiguredAcademicPeriodSource({ config: schoolFullConfig });
+  // Periods: config→data promotion (teacher-console W3-1). The stored source
+  // serves the boot-validated config until the first teacher edit writes
+  // apps/school/periods.yml; every downstream consumer (report cards, the
+  // /periods route, agendas) inherits the same instance.
+  const { YamlAcademicPeriodStore } = await import('#adapters/persistence/yaml/YamlAcademicPeriodStore.mjs');
+  const schoolAcademicPeriods = new YamlAcademicPeriodStore({
+    configService,
+    fallback: new ConfiguredAcademicPeriodSource({ config: schoolFullConfig }),
+    logger: rootLogger.child({ module: 'school-periods' }),
+  });
   // The console write predicate for SchoolService's own teacher writes
   // (quiz-request dismissal). Built through the same factory the lifecycle
   // composition uses — one copy of the accessor text, no drift.
@@ -2204,6 +2213,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     configService, userService, householdId,
     logger: rootLogger.child({ module: 'school-teacher-gate' }),
   });
+  // Wave-3 planning domains: stores + gated writes (teacher-console W3-1..4).
+  const { SetAcademicPeriods } = await import('#apps/school/usecases/SetAcademicPeriods.mjs');
+  const { SetPassOverride } = await import('#apps/school/usecases/SetPassOverride.mjs');
+  const { YamlMilestoneStore } = await import('#adapters/persistence/yaml/YamlMilestoneStore.mjs');
+  const { SetMilestones } = await import('#apps/school/usecases/SetMilestones.mjs');
+  const { GetMilestoneStatuses } = await import('#apps/school/usecases/GetMilestoneStatuses.mjs');
+  const { YamlEnrichmentLog } = await import('#adapters/persistence/yaml/YamlEnrichmentLog.mjs');
+  const { RecordEnrichment } = await import('#apps/school/usecases/RecordEnrichment.mjs');
+  const schoolMilestoneStore = new YamlMilestoneStore({ configService, logger: rootLogger.child({ module: 'school-milestones' }) });
+  const schoolEnrichmentLog = new YamlEnrichmentLog({ configService, logger: rootLogger.child({ module: 'school-enrichment' }) });
   const schoolService = new SchoolService({
     datastore: schoolDatastore,
     userService,
@@ -3095,6 +3114,19 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'school-teachers' }),
   });
 
+  // Wave-3 gated planning writes — constructed HERE because they borrow the
+  // lifecycle's pass-override store and sessions repo (both null-safe when
+  // the lifecycle is unwired).
+  const setAcademicPeriods = new SetAcademicPeriods({ store: schoolAcademicPeriods, teacherGate: schoolTeacherGate });
+  const setPassOverride = schoolLifecycle.passOverrides
+    ? new SetPassOverride({ store: schoolLifecycle.passOverrides, teacherGate: schoolTeacherGate })
+    : null;
+  const setMilestones = new SetMilestones({ store: schoolMilestoneStore, teacherGate: schoolTeacherGate });
+  const milestoneStatuses = new GetMilestoneStatuses({
+    store: schoolMilestoneStore, sessions: schoolLifecycle.stores?.sessions ?? null,
+  });
+  const recordEnrichment = new RecordEnrichment({ log: schoolEnrichmentLog, teacherGate: schoolTeacherGate });
+
   v1Routers.school = createSchoolRouter({
     schoolService,
     getMaterialCatalog,
@@ -3133,6 +3165,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     closeAcademicPeriod,
     getTeacherToday,
     getTeachers,
+    setAcademicPeriods,
+    passOverrideStore: schoolLifecycle.passOverrides ?? null,
+    setPassOverride,
+    milestoneStatuses,
+    setMilestones,
+    enrichmentLog: schoolEnrichmentLog,
+    recordEnrichment,
     // Frozen-record reads work off `schoolDatastore` alone (no lifecycle
     // stores needed), so this is wired unconditionally.
     reportCardsStore: schoolDatastore,

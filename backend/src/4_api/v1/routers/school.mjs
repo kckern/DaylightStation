@@ -60,6 +60,15 @@ export function createSchoolRouter({
   // disagrees with the report card about what "the current period" means.
   reviewQueue = null,
   academicPeriods = null,
+  // Wave-3 planning domains (teacher-console W3-1..W3-4): all writes are
+  // TeacherGate-checked inside their use cases; reads are open like the rest.
+  setAcademicPeriods = null,
+  passOverrideStore = null,
+  setPassOverride = null,
+  milestoneStatuses = null,
+  setMilestones = null,
+  enrichmentLog = null,
+  recordEnrichment = null,
   logger = console,
 }) {
   const router = express.Router();
@@ -783,6 +792,38 @@ export function createSchoolRouter({
       learnerId, periodId, closedBy, supersede: body.supersede === true, pin: body.pin ?? null,
     });
     return res.status(201).json(frozen);
+  }));
+
+  // --- wave-3 planning domains ---------------------------------------------
+  router.put('/periods', wrap(async (req, res) => {
+    if (!setAcademicPeriods) throw new EntityNotFoundError('periods editing', 'not configured');
+    const { periods, editedBy = null, pin = null } = req.body || {};
+    res.json(await setAcademicPeriods.execute({ periods, editedBy, pin }));
+  }));
+  router.get('/pass-overrides', wrap((req, res) => {
+    res.json({ overrides: passOverrideStore ? passOverrideStore.all() : {} });
+  }));
+  router.put('/pass-overrides/:unitId', wrap(async (req, res) => {
+    if (!setPassOverride) throw new EntityNotFoundError('pass overrides', 'not configured');
+    const { percent = null, editedBy = null, pin = null } = req.body || {};
+    res.json(await setPassOverride.execute({ unitId: req.params.unitId, percent, editedBy, pin }));
+  }));
+  router.get('/milestones', wrap(async (req, res) => {
+    if (!milestoneStatuses) return res.json({ milestones: [] });
+    res.json(await milestoneStatuses.execute({ learnerId: requiredTextQuery(req.query.learnerId, 'learnerId') }));
+  }));
+  router.put('/milestones', wrap(async (req, res) => {
+    if (!setMilestones) throw new EntityNotFoundError('milestones', 'not configured');
+    const { milestones, editedBy = null, pin = null } = req.body || {};
+    res.json(await setMilestones.execute({ milestones, editedBy, pin }));
+  }));
+  router.get('/enrichment', wrap((req, res) => {
+    res.json({ entries: enrichmentLog ? enrichmentLog.list({ learnerId: textQuery(req.query.learnerId) }) : [] });
+  }));
+  router.post('/enrichment', wrap(async (req, res) => {
+    if (!recordEnrichment) throw new EntityNotFoundError('enrichment log', 'not configured');
+    const { recordedBy = null, pin = null, learnerIds = [], from, to = null, title, subjectIds = [], note = null } = req.body || {};
+    res.status(201).json(await recordEnrichment.execute({ recordedBy, pin, learnerIds, from, to, title, subjectIds, note }));
   }));
 
   router.get('/teacher/today', wrap(async (req, res) => {
