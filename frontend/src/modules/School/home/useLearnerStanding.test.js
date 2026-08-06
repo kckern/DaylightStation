@@ -63,11 +63,11 @@ describe('currentPeriodFor', () => {
 
 describe('deriveStanding', () => {
   it('keeps only courses with a graded session, rounds the percent', () => {
-    expect(deriveStanding(REPORT)).toEqual([{ courseId: 'math-fractions', label: 'math-fractions', percent: 87 }]);
+    expect(deriveStanding(REPORT)).toEqual([{ courseId: 'math-fractions', label: 'Math Fractions', percent: 87 }]);
   });
 
-  it('falls back to courseId when no label field is present', () => {
-    expect(deriveStanding({ courses: [{ courseId: 'science', coursePercent: 50 }] })[0].label).toBe('science');
+  it('falls back to a humanized courseId when no label field is present', () => {
+    expect(deriveStanding({ courses: [{ courseId: 'science', coursePercent: 50 }] })[0].label).toBe('Science');
   });
 
   it('prefers a label field when the payload carries one', () => {
@@ -87,7 +87,7 @@ describe('useLearnerStanding', () => {
     reportCardMock.mockResolvedValue({ ok: true, status: 200, data: REPORT });
     const { result } = renderHook(() => useLearnerStanding('kid1'));
     await waitFor(() => expect(result.current.status).toBe('ready'));
-    expect(result.current.courses).toEqual([{ courseId: 'math-fractions', label: 'math-fractions', percent: 87 }]);
+    expect(result.current.courses).toEqual([{ courseId: 'math-fractions', label: 'Math Fractions', percent: 87 }]);
     expect(reportCardMock).toHaveBeenCalledWith({ learnerId: 'kid1', periodId: 'fall-2026' });
   });
 

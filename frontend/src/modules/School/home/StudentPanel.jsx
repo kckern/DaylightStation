@@ -64,6 +64,16 @@ function CorrectIcon() {
   );
 }
 
+function NoteIcon() {
+  // A little envelope: a note is a message, not a verdict.
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+      <rect x="3" y="6" width="18" height="13" rx="2" fill="none" stroke="#3d5a80" strokeWidth="2" />
+      <path d="M4 8l8 6 8-6" fill="none" stroke="#3d5a80" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function IncorrectIcon() {
   return (
     <svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true">
@@ -78,16 +88,20 @@ function relativeDay(iso) {
   if (!Number.isFinite(days)) return null;
   if (days <= 0) return 'today';
   if (days === 1) return 'yesterday';
-  return `${days} days ago`;
+  // A precise growing counter ("24 days ago") reads as a scoreboard of guilt
+  // on a kid's own panel; past two weeks the honest, kind answer is vaguer.
+  if (days <= 13) return `${days} days ago`;
+  return 'a while ago';
 }
 
 export default function StudentPanel({ onOpen, bankTitles }) {
   const { currentUser, openPicker, roster, claim } = useSchoolProfile();
   const [reports, setReports] = useState(null);
   const [results, setResults] = useState(null);
+  const [coins, setCoins] = useState(null);
 
   useEffect(() => {
-    if (!currentUser?.id) { setReports(null); setResults(null); return undefined; }
+    if (!currentUser?.id) { setReports(null); setResults(null); setCoins(null); return undefined; }
     let alive = true;
     schoolApi.report(currentUser.id, 'learner').then(({ ok, data }) => {
       if (!alive) return;
@@ -97,6 +111,13 @@ export default function StudentPanel({ onOpen, bankTitles }) {
     schoolApi.results(currentUser.id).then(({ ok, data }) => {
       if (alive && ok && Array.isArray(data)) setResults(data);
     });
+    // Coins the kid has actually banked (advocacy: rewards they can SEE).
+    // Wallet unavailable -> omit the fact quietly, never an error. Optional
+    // call: the economy app is a separate module and this panel must not
+    // depend on its presence.
+    schoolApi.wallet?.(currentUser.id)?.then(({ ok, data }) => {
+      if (alive && ok && typeof data?.balance === 'number') setCoins(data.balance);
+    });
     return () => { alive = false; };
   }, [currentUser?.id]);
 
@@ -104,7 +125,7 @@ export default function StudentPanel({ onOpen, bankTitles }) {
   const score = useMemo(() => deriveLatestScore(results, bankTitles), [results, bankTitles]);
   // Feedback delivery + kid-visible standing (Task 9, spec R7 / adequacy
   // SHOULD 9). Both hooks no-op quietly with no claimed learner.
-  const { items: feedback } = useLearnerFeedback(currentUser?.id ?? null);
+  const { items: feedback, hasNew, markSeen } = useLearnerFeedback(currentUser?.id ?? null);
   const { courses: standing } = useLearnerStanding(currentUser?.id ?? null);
 
   if (!currentUser) {
@@ -189,9 +210,10 @@ export default function StudentPanel({ onOpen, bankTitles }) {
         </div>
       )}
 
-      {(score || model.lastActivity) && (
+      {(score || model.lastActivity || coins != null) && (
         <div className="school-rail__facts">
           {score && <span>Latest: {score.label} · {score.pct}%</span>}
+          {coins != null && <span>Coins: {coins}</span>}
           {model.lastActivity && <span>Last active {relativeDay(model.lastActivity)}</span>}
         </div>
       )}
@@ -218,15 +240,19 @@ export default function StudentPanel({ onOpen, bankTitles }) {
           kid needs no empty scold. */}
       {feedback.length > 0 && (
         <div className="school-rail__feedback">
-          <h4 className="school-rail__feedback-title">Feedback</h4>
+          <h4 className="school-rail__feedback-title" onClick={markSeen}>
+            Feedback
+            {hasNew && <span className="school-rail__feedback-new" data-testid="feedback-new">New</span>}
+          </h4>
           <ul className="school-rail__feedback-list">
             {feedback.map((item) => (
-              <li key={item.itemId} className={`school-rail__feedback-item is-${item.verdict}`}>
+              <li key={item.itemId} className={`school-rail__feedback-item is-${item.kind === 'note' ? 'note' : item.verdict}`}>
                 <span className="school-rail__feedback-verdict" aria-hidden="true">
-                  {item.verdict === 'correct' ? <CorrectIcon /> : <IncorrectIcon />}
+                  {/* A parent's NOTE is never a wrong-answer X (student-advocacy #4). */}
+                  {item.kind === 'note' ? <NoteIcon /> : item.verdict === 'correct' ? <CorrectIcon /> : <IncorrectIcon />}
                 </span>
                 <span className="school-rail__feedback-note">
-                  {item.note || item.prompt || `Question ${item.questionNumber ?? item.itemId}`}
+                  {item.note || item.prompt || (item.questionNumber != null ? `Question ${item.questionNumber}` : 'One of your answers')}
                 </span>
               </li>
             ))}

@@ -196,14 +196,13 @@ export default function AdaptiveTutorPanel({ sessionId, learnerId, onExit }) {
           <p className="school-tutor__explanation">{currentTurn.body}</p>
           <h3>{currentTurn.prompt}</h3>
           <div className="school-tutor__choices" aria-label="Tutor choices">
-            {currentTurn.choices.map((choice, index) => (
+            {currentTurn.choices.map((choice) => (
               <button
                 key={choice.id}
                 type="button"
                 disabled={busy}
                 onClick={() => act('choice', choice.id)}
               >
-                <kbd>{choice.functionKey ?? `F${index + 1}`}</kbd>
                 <span>{choice.id}. {choice.label}</span>
               </button>
             ))}

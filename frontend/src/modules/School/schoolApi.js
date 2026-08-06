@@ -113,6 +113,17 @@ export const schoolApi = {
   periodsMeta: () => req('/periods-meta'),
   attemptDays: (learnerId) => req(`/attempt-days?learnerId=${encodeURIComponent(learnerId)}`),
   offerRetake: (sessionId) => req(`/lifecycle/sessions/${encodeURIComponent(sessionId)}/remediation`, {}),
+  requestRetake: (body) => req('/retake-requests', body),
+  flagConcern: (body) => req('/flags', body),
+  // The coin balance lives on the economy API (different base) — same
+  // never-throws contract as req().
+  wallet: async (userId) => {
+    try {
+      const r = await fetch(`/api/v1/economy/users/${encodeURIComponent(userId)}/wallet`);
+      const data = await r.json().catch(() => null);
+      return { ok: r.ok, status: r.status, data };
+    } catch { return { ok: false, status: 0, data: null }; }
+  },
   progressReport: ({ learnerId, periodId }) => req(
     `/progress-report?learnerId=${encodeURIComponent(learnerId)}&periodId=${encodeURIComponent(periodId)}`,
   ),
@@ -191,6 +202,7 @@ export const schoolApi = {
   printables: () => req('/print/printables'),
   printQuota: (userId) => req(`/print/quota${userId ? `?userId=${encodeURIComponent(userId)}` : ''}`),
   requestPrint: (body) => req('/print/request', body),
+  printRequests: (userId) => req(`/print/requests?userId=${encodeURIComponent(userId)}`),
   printPending: () => req('/print/pending'),
   approvePrint: (requestId, approver) => req(`/print/${encodeURIComponent(requestId)}/approve`, { approver }),
   denyPrint: (requestId, approver) => req(`/print/${encodeURIComponent(requestId)}/deny`, { approver }),

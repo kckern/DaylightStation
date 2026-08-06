@@ -80,6 +80,11 @@ export default function LearningProbeRunner({ module, learning = {}, onExit }) {
   const canRetry = Boolean(verdict && !verdict.unrecorded && !verdict.correct
     && module.feedback?.onIncorrect === 'explain_then_retry'
     && attemptNumber < module.feedback.maxAttemptsPerItem);
+  // Out of tries is a normal end, not a silent one: name it kindly instead
+  // of just downgrading the button copy (advocacy papercut).
+  const outOfTries = Boolean(verdict && !verdict.unrecorded && !verdict.correct
+    && module.feedback?.onIncorrect === 'explain_then_retry'
+    && attemptNumber >= module.feedback.maxAttemptsPerItem);
 
   const submit = async (given) => {
     if (!sessionId || verdict || abandoned.current || !item) return;
@@ -92,7 +97,7 @@ export default function LearningProbeRunner({ module, learning = {}, onExit }) {
     if (response.status === 410) { onExit(); return; }
     if (!response.ok) {
       setVerdict({ unrecorded: true });
-      setRecordError('Response not recorded. Retry the same answer before continuing.');
+      setRecordError('That answer didn’t save. Tap “Retry same answer” to send it again.');
       return;
     }
     if (attemptNumber === 1 && response.data.correct) setInitialCorrect((value) => value + 1);
@@ -120,7 +125,7 @@ export default function LearningProbeRunner({ module, learning = {}, onExit }) {
     });
     setSavingInteraction(false);
     if (!recorded) {
-      setRecordError('Feedback progress was not recorded. Retry to continue safely.');
+      setRecordError('That didn’t go through. Tap again to keep going.');
       return;
     }
     if (continuation === 'retry') {
@@ -162,7 +167,7 @@ export default function LearningProbeRunner({ module, learning = {}, onExit }) {
   if (!item || !ItemComponent) {
     return (
       <div className="school-runner school-probe">
-        <p>This check uses an interaction this screen does not support.</p>
+        <p>This one won&rsquo;t work on this screen. Tell a grown-up what happened.</p>
         <button type="button" className="school-runner__done" onClick={onExit}>Return</button>
       </div>
     );
@@ -173,7 +178,7 @@ export default function LearningProbeRunner({ module, learning = {}, onExit }) {
     <section className="school-runner school-probe" aria-label="Learning check">
       <header className="school-probe__header">
         <div>
-          <span>{module.phase ?? 'check'} · difficulty {module.difficulty ?? '—'}</span>
+          <span>{module.phase ?? 'check'}</span>
           <strong>{module.title ?? bank.title}</strong>
         </div>
         <span>{index + 1}/{bank.items.length} · attempt {attemptNumber}</span>
@@ -192,6 +197,11 @@ export default function LearningProbeRunner({ module, learning = {}, onExit }) {
         <div className={`school-probe__feedback${verdict.correct ? ' is-correct' : ' is-corrective'}`}>
           <strong>{feedbackLead(item, verdict.correct)}</strong>
           <p>{item.feedback?.explanation}</p>
+          {outOfTries && (
+            <p className="school-probe__out-of-tries" data-testid="probe-out-of-tries">
+              That&rsquo;s all the tries for this one — the answer above is the one to remember.
+            </p>
+          )}
           <div className="school-probe__actions">
             {canRetry && (
               <button type="button" disabled={savingInteraction} onClick={() => continueAfterFeedback('retry')}>

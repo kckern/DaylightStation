@@ -56,11 +56,14 @@ function writeStored(id) {
 /**
  * @param {Array<{id: string, name: string, birthyear?: number|null}>} roster
  * @param {{configured: boolean, teachers: Array<{id, name}>}|null} [teachersRead]
- *   - the `GET /teachers` result. When present, THE ADULTS COME FROM IT: the
- *   school roster endpoint is learners-only by server design (adults are
- *   filtered out before it answers), so the age filter below finds nobody on
- *   a live payload. The legacy filter remains only for callers that have not
- *   wired the teachers read yet.
+ *   - the `GET /teachers` result. When it is present AND `configured`, THE
+ *   ADULTS COME FROM IT: the school roster endpoint is learners-only by
+ *   server design (adults are filtered out before it answers), so the age
+ *   filter below finds nobody on a live payload. `configured: false` (no
+ *   `teachers:` key in school.yml, or the read failed) falls back to the
+ *   any-adult age filter — the same absent-key→any-adult rule TeacherGate
+ *   itself applies — instead of emptying the adult list and locking every
+ *   sign-off shut.
  * @returns {{adults: object[], learners: object[], graderId: string|null,
  *            grader: object|null, canSignOff: boolean, setGraderId: (id: string|null) => void}}
  */
@@ -68,12 +71,13 @@ export function useGrader(roster, teachersRead = null) {
   const list = useMemo(() => (Array.isArray(roster) ? roster : []), [roster]);
   const [graderId, setGraderIdState] = useState(() => readStored());
 
+  const useTeachers = Boolean(teachersRead?.configured);
   const adults = useMemo(() => (
-    teachersRead ? (teachersRead.teachers ?? []) : list.filter((u) => isAdult(u))
-  ), [teachersRead, list]);
+    useTeachers ? (teachersRead.teachers ?? []) : list.filter((u) => isAdult(u))
+  ), [useTeachers, teachersRead, list]);
   const learners = useMemo(() => (
-    teachersRead ? list : list.filter((u) => !isAdult(u))
-  ), [teachersRead, list]);
+    useTeachers ? list : list.filter((u) => !isAdult(u))
+  ), [useTeachers, list]);
 
   // Re-validated against the CURRENT roster every render: the remembered id is
   // a hint, never a grant.

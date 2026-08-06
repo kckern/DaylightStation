@@ -13,6 +13,7 @@ import { useSchoolProfile } from '../identity/SchoolProfileContext.jsx';
 export function useGradedSession({ bank, mode, onExit }) {
   const { status, currentUser, isGuest } = useSchoolProfile();
   const [sessionId, setSessionId] = useState(null);
+  const [openFailed, setOpenFailed] = useState(false);
   const identityKey = currentUser?.id ?? (isGuest ? 'guest' : 'none');
   const initialIdentity = useRef(null);
   const sessionOpenedRef = useRef(false);
@@ -36,7 +37,9 @@ export function useGradedSession({ bank, mode, onExit }) {
     const userId = currentUser?.id ?? null;
     schoolApi.openSession({ userId, bankId: bank.id, mode }).then(({ ok, data }) => {
       if (!alive) return;
-      if (!ok) { onExit(); return; }
+      // Surface the failure to the runner (advocacy: a failed open must show
+      // a sign, never silently bounce the child back to the menu).
+      if (!ok) { setOpenFailed(true); return; }
       setSessionId(data.sessionId);
       schoolLog.session('start', { sessionId: data.sessionId, bankId: bank.id, mode, userId, itemCount: bank.items.length });
     });
@@ -57,7 +60,7 @@ export function useGradedSession({ bank, mode, onExit }) {
     return data;
   };
 
-  return { sessionId, submit, status };
+  return { sessionId, submit, status, openFailed, unsaved: (currentUser?.id ?? null) === null };
 }
 
 export default useGradedSession;

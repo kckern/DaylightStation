@@ -196,16 +196,36 @@ export class PrintService {
     return { decision: 'printed', pages: req.pages };
   }
 
-  /** A grown-up denies a pending request: drop it, print nothing. */
+  /**
+   * A grown-up denies a pending request: print nothing, but KEEP the row as
+   * a `denied` record (advocacy: the child who asked must be able to see the
+   * outcome — a vanished request reads as "lost", not "answered"). Denied
+   * rows older than 30 days are pruned on the same write.
+   */
   async deny({ requestId, approver, pin = null }) {
     if (this.#teacherGate) this.#teacherGate.assert({ userId: approver, pin, action: 'print.deny', context: { requestId } });
     else if (!this.#isAdult(approver)) throw new GuestForbiddenError('Only a grown-up can deny a print');
     const pending = this.#ds.readPrintPending();
     const req = pending.find((r) => r.id === requestId && r.status === 'pending');
     if (!req) throw new EntityNotFoundError('print-request', requestId);
-    this.#ds.savePrintPending(pending.filter((r) => r.id !== requestId));
+    const deniedAt = new Date(this.#now()).toISOString();
+    const cutoff = this.#now() - 30 * 86400000;
+    const next = pending
+      .map((r) => (r.id === requestId ? { ...r, status: 'denied', deniedBy: approver, deniedAt } : r))
+      .filter((r) => r.status !== 'denied' || Date.parse(r.deniedAt ?? deniedAt) >= cutoff);
+    this.#ds.savePrintPending(next);
     this.#logger.info?.('school.print.denied-by-parent', { requestId, approver, userId: req.userId });
     return { decision: 'denied' };
+  }
+
+  /**
+   * One learner's own requests — pending and denied — newest first, so the
+   * child's Print Center can answer "what happened to my ask?".
+   */
+  listRequestsFor(userId) {
+    return this.#ds.readPrintPending()
+      .filter((r) => r.userId === userId)
+      .sort((a, b) => String(b.at ?? '').localeCompare(String(a.at ?? '')));
   }
 }
 

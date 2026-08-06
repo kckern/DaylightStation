@@ -34,7 +34,7 @@ function daysTouchedBy({ startAtMs, endAtMs }) {
 }
 
 export class GetTeacherToday {
-  #learnerDirectory; #datastore; #sessions; #reviewQueue; #timezone; #boundaryHour; #clock; #logger;
+  #learnerDirectory; #datastore; #sessions; #reviewQueue; #evidence; #timezone; #boundaryHour; #clock; #logger;
 
   /**
    * @param {object} deps
@@ -42,13 +42,14 @@ export class GetTeacherToday {
    * @param {object} deps.datastore - `YamlSchoolDatastore`-shaped: `readAttemptDay`
    * @param {import('../ports/IWorkSessionRepository.mjs').IWorkSessionRepository} deps.sessions
    * @param {import('../ports/IReviewQueue.mjs').IReviewQueue|null} [deps.reviewQueue]
+   * @param {{listEvidence: Function}|null} [deps.evidenceRepository] - optional; adds reflectionsToday
    * @param {string|null} [deps.timezone] - IANA zone; null = UTC boundary
    * @param {number} [deps.boundaryHour]
    * @param {() => Date} [deps.clock]
    * @param {object} [deps.logger]
    */
   constructor({
-    learnerDirectory, datastore, sessions, reviewQueue = null,
+    learnerDirectory, datastore, sessions, reviewQueue = null, evidenceRepository = null,
     timezone = null, boundaryHour = DEFAULT_BOUNDARY_HOUR, clock = () => new Date(), logger = console,
   } = {}) {
     if (!learnerDirectory) throw new Error('GetTeacherToday requires learnerDirectory');
@@ -58,6 +59,7 @@ export class GetTeacherToday {
     this.#datastore = datastore;
     this.#sessions = sessions;
     this.#reviewQueue = reviewQueue;
+    this.#evidence = evidenceRepository;
     this.#timezone = timezone;
     this.#boundaryHour = boundaryHour;
     this.#clock = clock;
@@ -67,7 +69,8 @@ export class GetTeacherToday {
   /**
    * @returns {Promise<Array<{learnerId: string, attemptsToday: number,
    *   correctToday: number, sessionsToday: Array<{unitId: string|null, state: string|null}>,
-   *   pendingReview: number}>>}
+   *   pendingReview: number, reflectionsToday: Array<{selfAssessment: string|null,
+   *   confidence: number|null, note: string|null, at: string}>}>>}
    */
   async execute() {
     const window = studyDayWindow(this.#clock().getTime(), {
@@ -87,6 +90,26 @@ export class GetTeacherToday {
       const attemptsToday = days
         .flatMap((day) => this.#datastore.readAttemptDay(learner.id, day) ?? [])
         .filter((a) => withinWindow(a.at, window));
+      // A child's own words about the work (advocacy wave 7): reflections
+      // were being written into the ledger and read by nobody. Optional dep;
+      // failures degrade to an empty list, never a broken digest.
+      let reflectionsToday = [];
+      if (this.#evidence) {
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          const entries = await this.#evidence.listEvidence({ learnerIds: [learner.id] });
+          reflectionsToday = entries
+            .filter((e) => e.kind === 'reflection' && withinWindow(e.occurredAt, window))
+            .map((e) => ({
+              selfAssessment: e.selfRegulation?.selfAssessment ?? null,
+              confidence: e.selfRegulation?.confidence ?? null,
+              note: e.selfRegulation?.note ?? null,
+              at: e.occurredAt,
+            }));
+        } catch (err) {
+          this.#logger.warn?.('school.teacher-today.reflections-failed', { learnerId: learner.id, error: err?.message });
+        }
+      }
       results.push({
         learnerId: learner.id,
         attemptsToday: attemptsToday.length,
@@ -95,6 +118,7 @@ export class GetTeacherToday {
           .filter((row) => withinWindow(row.updatedAt, window))
           .map((row) => ({ unitId: row.unitId ?? null, state: row.state ?? null })),
         pendingReview: pending.filter((item) => item.learnerId === learner.id).length,
+        reflectionsToday,
       });
     }
     this.#logger.debug?.('school.teacher-today.built', { days, learners: results.length });

@@ -3025,6 +3025,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         datastore: schoolDatastore,
         sessions: schoolLifecycle.stores.sessions,
         reviewQueue: schoolLifecycle.stores.reviewQueue ?? null,
+        evidenceRepository: schoolLearningEvidence ?? null,
         timezone: configService.getTimezone?.() || null,
         logger: rootLogger.child({ module: 'school-teacher-today' })
       });
