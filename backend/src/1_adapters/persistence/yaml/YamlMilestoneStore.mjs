@@ -47,6 +47,11 @@ export class YamlMilestoneStore {
 
   historyLength() { return (this.#read().history ?? []).length; }
 
+  /** The edit trail, oldest first (admin advocacy #9): who replaced milestones, when. */
+  history() {
+    return (this.#read().history ?? []).map(({ at, editedBy, milestones }) => ({ at, editedBy, count: (milestones ?? []).length }));
+  }
+
   async replace(milestones, { editedBy = null, at = new Date().toISOString() } = {}) {
     this.#writeChain = this.#writeChain.then(async () => {
       await this.#write(() => milestones, { editedBy, at });

@@ -92,6 +92,14 @@ export class YamlAcademicPeriodStore {
     return this.#fallback?.listPeriods?.() ?? [];
   }
 
+  /** The edit trail, oldest first (admin advocacy #9): who replaced the periods, when. */
+  history() {
+    const read = this.#readState();
+    return read.state === 'ok'
+      ? (read.raw.history ?? []).map(({ at, editedBy, periods }) => ({ at, editedBy, count: (periods ?? []).length }))
+      : [];
+  }
+
   historyLength() {
     const read = this.#readState();
     return read.state === 'ok' ? (read.raw.history ?? []).length : 0;

@@ -29,6 +29,9 @@ export function createSchoolRouter({
   issueContinuationCode = null,
   printService = null,
   getLearnerRecord = null,
+  academicPeriodStore = null,
+  milestoneStore = null,
+  assignmentsStore = null,
   schoolCalcRouter = null,
   surfaceCertification = null,
   surfaceRegistry = null,
@@ -1032,6 +1035,42 @@ export function createSchoolRouter({
   // A learner's own RESOLVED review items, newest first — the feedback a
   // child can see (Task 9, spec R7). Never a pending item still awaiting a
   // grown-up's verdict; that queue is the parent-only `/lifecycle/review`.
+  // The merged who-changed-what trail (admin advocacy #9): the four
+  // append-only history arrays (assignments per learner, periods,
+  // pass-overrides, milestones) had no read at all — reconstructing last
+  // week's changes meant YAML off the volume. Read-only, newest first.
+  router.get('/audit', wrap(async (req, res) => {
+    const since = textQuery(req.query.since); // ISO prefix compare; optional
+    const rows = [];
+    const push = (kind, at, payload) => {
+      if (!at || (since && at < since)) return;
+      rows.push({ kind, at, ...payload });
+    };
+    try {
+      (academicPeriodStore?.history?.() ?? []).forEach((h) => push('periods', h.at, { by: h.editedBy ?? null, count: h.count ?? null }));
+    } catch { /* one unreadable trail must not blank the rest */ }
+    try {
+      (passOverrideStore?.history?.() ?? []).forEach((h) => push('pass-override', h.at, { by: h.editedBy ?? null, unitId: h.unitId ?? null, percent: h.percent ?? null }));
+    } catch { /* ditto */ }
+    try {
+      (milestoneStore?.history?.() ?? []).forEach((h) => push('milestones', h.at, { by: h.editedBy ?? null, count: h.count ?? null }));
+    } catch { /* ditto */ }
+    if (assignmentsStore?.history && assignmentsStore?.list) {
+      try {
+        const records = await assignmentsStore.list();
+        for (const record of records) {
+          // eslint-disable-next-line no-await-in-loop
+          const trail = await assignmentsStore.history(record.learnerId);
+          trail.forEach((h) => push('assignments', h.recordedAt, {
+            by: h.assignedBy ?? null, learnerId: record.learnerId, courses: (h.courses ?? []).length,
+          }));
+        }
+      } catch { /* ditto */ }
+    }
+    rows.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+    res.json({ entries: rows.slice(0, 500) });
+  }));
+
   // One child's complete communications record (admin advocacy #14).
   router.get('/learner/:learnerId/record', wrap(async (req, res) => {
     if (!getLearnerRecord) return res.json({ learnerId: req.params.learnerId, entries: [] });

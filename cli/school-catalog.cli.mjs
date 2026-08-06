@@ -139,6 +139,11 @@ function report(result, { dataDir }) {
   reportFileErrors('documents', result.documentErrors);
   reportFileErrors('manifests', result.manifestErrors);
 
+  if ((result.bankLinkErrors ?? []).length) {
+    process.stdout.write('\nbank↔unit seam\n');
+    for (const message of result.bankLinkErrors) process.stdout.write(`  - ${message}\n`);
+  }
+
   if ((result.historyDrift ?? []).length) {
     process.stdout.write('\nHISTORY DRIFT (advisory) — recorded sessions reference unitIds this catalog no longer resolves.\n');
     process.stdout.write('These grades will appear FLAGGED (not counted into any course) on report cards:\n');
@@ -169,9 +174,14 @@ async function cmdValidate({ dataDirFlag, renderProbe }) {
     }
   }
 
+  const schoolDatastore = new YamlSchoolDatastore({ configService });
   const useCase = new ValidateCatalog({
     catalog: new YamlCurriculumDatastore({ configService }),
-    bankIds: new YamlSchoolDatastore({ configService }).listBankIds(),
+    bankIds: schoolDatastore.listBankIds(),
+    // The bank↔unit seam (admin advocacy #17): every bank's `unit:` backlink.
+    bankUnits: async () => (await schoolDatastore.readAllBankRaws())
+      .filter(({ raw }) => raw && typeof raw.unit === 'string' && raw.unit)
+      .map(({ id, raw }) => ({ bankId: id, unit: raw.unit })),
     surfaceValidators: surfaceValidatorsForCli(),
     measureProbe,
     // Reverse sweep (admin advocacy A2): recorded-session unitIds, roster-wide.

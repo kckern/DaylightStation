@@ -119,3 +119,36 @@ describe('print approve/deny forward the body pin', () => {
     expect(deny).toHaveBeenCalledWith({ requestId: 'pr_1', approver: 'kckern', pin: '7410' });
   });
 });
+
+describe('GET /api/v1/school/audit (admin advocacy #9)', () => {
+  it('merges the four history trails newest-first and honors ?since=', async () => {
+    const app = express();
+    app.use('/api/v1/school', createSchoolRouter({
+      schoolService: { listBankSourceSummaries: () => [] },
+      academicPeriodStore: { history: () => [{ at: '2026-08-01T10:00:00Z', editedBy: 'kckern', count: 3 }] },
+      passOverrideStore: { all: () => ({}), history: () => [{ at: '2026-08-03T10:00:00Z', editedBy: 'elizabeth', unitId: 'frac.01', percent: 60 }] },
+      milestoneStore: { history: () => [{ at: '2026-07-01T10:00:00Z', editedBy: 'kckern', count: 2 }] },
+      assignmentsStore: {
+        list: async () => [{ learnerId: 'felix' }],
+        history: async () => [{ recordedAt: '2026-08-02T10:00:00Z', assignedBy: 'kckern', courses: ['math'] }],
+      },
+      logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() },
+    }));
+    const res = await request(app).get('/api/v1/school/audit');
+    expect(res.status).toBe(200);
+    expect(res.body.entries.map((e) => e.kind)).toEqual(['pass-override', 'assignments', 'periods', 'milestones']);
+    expect(res.body.entries[0]).toMatchObject({ by: 'elizabeth', unitId: 'frac.01', percent: 60 });
+
+    const since = await request(app).get('/api/v1/school/audit?since=2026-08-02');
+    expect(since.body.entries.map((e) => e.kind)).toEqual(['pass-override', 'assignments']);
+  });
+
+  it('no stores wired answers an empty trail, never a crash', async () => {
+    const app = express();
+    app.use('/api/v1/school', createSchoolRouter({
+      schoolService: { listBankSourceSummaries: () => [] },
+      logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() },
+    }));
+    expect((await request(app).get('/api/v1/school/audit')).body).toEqual({ entries: [] });
+  });
+});

@@ -99,6 +99,11 @@ export function validateUnit(raw, sets = {}) {
   if (!isPlainObject(raw)) return { errors: ['unit must be a mapping'] };
   const errors = [];
 
+  // Optional schema discriminator (admin advocacy #18): absent = v1.
+  if (raw.schema !== undefined && raw.schema !== 'school.unit/v1') {
+    errors.push(`schema must be school.unit/v1 when present, got: ${raw.schema}`);
+  }
+
   if (!isNonEmptyString(raw.unitId)) errors.push('unitId is required');
   else if (!UNIT_ID_PATTERN.test(raw.unitId)) errors.push(`unitId must match ${UNIT_ID_PATTERN.source}, got: ${raw.unitId}`);
 
