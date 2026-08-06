@@ -56,6 +56,7 @@ import { WorkSessionReporter } from '#apps/school/WorkSessionReporter.mjs';
 import { BuildAgenda } from '#apps/school/usecases/BuildAgenda.mjs';
 import { ListLearnerSessions } from '#apps/school/usecases/ListLearnerSessions.mjs';
 import { makeTeacherGate } from '#apps/school/TeacherGate.mjs';
+import { YamlPassOverrideStore } from '#adapters/persistence/yaml/YamlPassOverrideStore.mjs';
 import { IssueDocument } from '#apps/school/usecases/IssueDocument.mjs';
 import { DispatchMedia } from '#apps/school/usecases/DispatchMedia.mjs';
 import { RecordMediaCompletion } from '#apps/school/usecases/RecordMediaCompletion.mjs';
@@ -154,7 +155,7 @@ export async function createSchoolLifecycle({
       wired: false, reason, handlesCode: () => false, handleScan: null,
       reporter: null, router: null, devicesRouter: null,
       useCases: {}, stores: {}, devices: {}, renderers: {},
-      donowSchoolBridge: null, grownUps: null, teacherGate: null,
+      donowSchoolBridge: null, grownUps: null, teacherGate: null, passOverrides: null,
     };
   };
 
@@ -412,6 +413,9 @@ export async function createSchoolLifecycle({
   // the same live-roster adult rule, via the one shared factory so the
   // config accessors cannot drift between composition sites.
   const teacherGate = makeTeacherGate({ configService, userService, clock, logger });
+  // Mid-period pass-criteria overrides (W3-2): read at grade time, one
+  // consumption point (CloseSessionOutcome).
+  const passOverrides = new YamlPassOverrideStore({ configService, logger });
 
   // --- use cases -------------------------------------------------------------
   const buildAgenda = new BuildAgenda({
@@ -507,6 +511,7 @@ export async function createSchoolLifecycle({
   });
   const closeSessionOutcome = new CloseSessionOutcome({
     curriculum, sessions: stores.sessions, tokens: stores.tokens, assignments: stores.assignments,
+    passOverrides,
     // The result receipt is where a FAILED attempt's retry barcode reaches the
     // child's hand. Without this the close-out returned JSON and the loop
     // dead-ended.
@@ -663,6 +668,9 @@ export async function createSchoolLifecycle({
     // The console write predicate — exposed for the same reason as grownUps:
     // app.mjs wires CloseAcademicPeriod and PrintService with THIS instance.
     teacherGate,
+    // The same override store CloseSessionOutcome grades against — the
+    // routes read/write THIS instance so a PUT is live at the next close.
+    passOverrides,
   };
 }
 

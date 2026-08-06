@@ -46,7 +46,7 @@ import { planLearnerWork } from '#domains/school/planner.mjs';
 
 export class CloseSessionOutcome {
   #curriculum; #sessions; #tokens; #assignments; #economy; #economyAction; #economyEnabled;
-  #receipts; #grownUps; #clock; #rng; #logger; #reviewQueue;
+  #receipts; #grownUps; #clock; #rng; #logger; #reviewQueue; #passOverrides;
 
   /**
    * @param {object} deps
@@ -74,7 +74,11 @@ export class CloseSessionOutcome {
     curriculum, sessions, tokens, assignments,
     economy = null, economyAction = 'school-unit-complete', economyEnabled = false,
     receipts = null, grownUps = null, clock = () => new Date(), rng = Math.random,
-    reviewQueue = null, logger = console,
+    reviewQueue = null,
+    // Optional pass-criteria override store (teacher-console W3-2):
+    // `{percentFor(unitId)}` — an override wins over the authored percent.
+    passOverrides = null,
+    logger = console,
   } = {}) {
     if (!curriculum || !sessions || !tokens || !assignments) {
       throw new Error('CloseSessionOutcome requires curriculum, sessions, tokens and assignments');
@@ -92,6 +96,7 @@ export class CloseSessionOutcome {
     this.#clock = clock;
     this.#rng = rng;
     this.#reviewQueue = reviewQueue;
+    this.#passOverrides = passOverrides;
     this.#logger = logger;
   }
 
@@ -163,7 +168,7 @@ export class CloseSessionOutcome {
     // payment (in `rewardDecision`), not the result.
     const evaluated = evaluateOutcome({
       gradedPercent: state.gradedPercent,
-      passingPercent: unit?.passing?.percent,
+      passingPercent: this.#passOverrides?.percentFor?.(unit?.unitId) ?? unit?.passing?.percent,
     });
     return this.#recordOutcomeAndSettle({
       sessionId, state, unit, nowIso, signedOff, result: evaluated.result, reason: evaluated.reason,
