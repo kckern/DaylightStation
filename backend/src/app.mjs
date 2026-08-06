@@ -3758,6 +3758,25 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     });
   }
 
+  // School retention sweep (admin advocacy A5): the one scheduled janitor
+  // for the household stores that grew forever. Daily at 03:30 — before the
+  // 4am study-day roll, after the house is asleep.
+  if (agentsServices.scheduler && schoolDatastore) {
+    agentsServices.scheduler.registerTask('school:retention-sweep', '30 3 * * *', async () => {
+      try {
+        const { SchoolRetentionSweep } = await import('#apps/school/SchoolRetentionSweep.mjs');
+        const sweep = new SchoolRetentionSweep({
+          datastore: schoolDatastore,
+          schoolService,
+          logger: rootLogger.child({ module: 'school-retention' }),
+        });
+        await sweep.execute();
+      } catch (err) {
+        rootLogger.warn('school.retention.failed', { error: err.message });
+      }
+    });
+  }
+
   if (agentsServices.scheduler) {
     agentsServices.scheduler.registerTask('lifeplan:ceremony-check', '0 * * * *', async () => {
       const lifePlanStore = lifeplanResult.container.getLifePlanStore();

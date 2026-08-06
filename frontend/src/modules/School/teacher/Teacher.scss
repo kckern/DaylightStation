@@ -861,3 +861,11 @@
 }
 .teacher-matrix__note { margin: 0.4rem 0 0; color: #6b5111; font-weight: 700; }
 .teacher-matrix__note--orphan { color: #6b201a; }
+
+.teacher-stale { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.teacher-stale__row { display: flex; flex-wrap: wrap; gap: 0.5rem 0.75rem; align-items: center; padding: 0.4rem 0; border-bottom: 1px solid #eee4cf; }
+.teacher-stale__who { font-weight: 800; }
+.teacher-stale__meta { color: #8a8272; }
+.teacher-stale__reason { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;
+  input { min-height: 44px; padding: 0 0.75rem; border: 1px solid #d8cfb8; border-radius: 8px; min-width: 240px; }
+}

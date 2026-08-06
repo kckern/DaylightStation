@@ -21,6 +21,7 @@ vi.mock('../schoolApi.js', () => {
     quizRequests: vi.fn(okEmpty),
     assignments: vi.fn(async () => ({ ok: false, status: 404, data: null })),
     allAssignments: vi.fn(async () => ({ ok: true, status: 200, data: { assignments: [] } })),
+    staleSessions: vi.fn(async () => ({ ok: true, status: 200, data: { sessions: [] } })),
     periods: vi.fn(okEmpty),
     curriculumUnits: vi.fn(okEmpty),
     learningCatalogs: vi.fn(okEmpty),

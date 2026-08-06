@@ -119,6 +119,29 @@ export class YamlSchoolDatastore {
     return entry;
   }
 
+  /**
+   * Retention support (admin advocacy A5): move print-log entries older than
+   * `cutoffIso` into an append-only archive file so the hot log — a full
+   * read-modify-write on EVERY print and a full read on every quota banner —
+   * stays household-week sized. Returns how many moved. The archive is
+   * write-only by design: it is the permanent record, not a working set.
+   */
+  archivePrintLogBefore(cutoffIso) {
+    const list = this.readPrintLog();
+    const keep = [];
+    const old = [];
+    for (const entry of list) {
+      if (entry?.at && entry.at < cutoffIso) old.push(entry); else keep.push(entry);
+    }
+    if (!old.length) return 0;
+    const archivePath = this.#configService.getHouseholdPath('apps/school/print-log.archive');
+    ensureDir(path.dirname(archivePath));
+    const archived = loadYamlSafe(archivePath) || [];
+    saveYaml(archivePath, [...archived, ...old], { noRefs: true });
+    saveYaml(this.#printLogPath(), keep, { noRefs: true });
+    return old.length;
+  }
+
   readPrintPending() { return loadYamlSafe(this.#printPendingPath()) || []; }
 
   savePrintPending(list) {

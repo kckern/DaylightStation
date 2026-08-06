@@ -71,6 +71,7 @@ import { ResolveScanAction } from '#apps/school/usecases/ResolveScanAction.mjs';
 import { ResolveSubjectNext } from '#apps/school/usecases/ResolveSubjectNext.mjs';
 import { ResolveReviewItem } from '#apps/school/usecases/ResolveReviewItem.mjs';
 import { SetAssignments } from '#apps/school/usecases/SetAssignments.mjs';
+import { MarkSessionAbandoned } from '#apps/school/usecases/MarkSessionAbandoned.mjs';
 import { isSchoolToken } from '#domains/school/sessions/tokens.mjs';
 import { shortId } from '#domains/core/utils/id.mjs';
 import { createSchoolLifecycleRouter } from '#api/v1/routers/schoolLifecycle.mjs';
@@ -598,6 +599,16 @@ export async function createSchoolLifecycle({
     // child's finished work hostage to an out-of-band actor.
     gradeSubmission, closeSessionOutcome,
   });
+  // Stale-sweep roster (admin advocacy A5): the same students: list the rest
+  // of the lifecycle serves — enough identity for listStale, no directory dep.
+  const staleLearnerDirectory = {
+    listLearners: async () => (cfg.students ?? []).map((id) => ({
+      id, name: userService?.getProfile?.(id)?.name ?? id,
+    })),
+  };
+  const markSessionAbandoned = new MarkSessionAbandoned({
+    sessions: stores.sessions, teacherGate, learnerDirectory: staleLearnerDirectory, clock, logger,
+  });
   const setAssignments = new SetAssignments({
     assignments: stores.assignments, grownUps, teacherGate, curriculum,
     roster: () => userService?.getHouseholdRoster?.() ?? [],
@@ -608,7 +619,7 @@ export async function createSchoolLifecycle({
     buildAgenda, issueDocument, dispatchMedia, recordMediaCompletion,
     submitPaperWork, gradeSubmission, closeSessionOutcome, openRemediation,
     resolvePersonalCard, resolveScanAction, resolveReviewItem, setAssignments,
-    previewAgenda,
+    previewAgenda, markSessionAbandoned,
   };
 
   const router = createSchoolLifecycleRouter({

@@ -6,6 +6,7 @@ import PinPrompt from '../panels/PinPrompt.jsx';
 
 vi.mock('../../schoolApi.js', () => ({
   schoolApi: {
+    staleSessions: vi.fn(async () => ({ ok: true, status: 200, data: { sessions: [] } })),
     teachers: vi.fn(),
     reviewLearner: vi.fn(),
     postTeacherNote: vi.fn(),

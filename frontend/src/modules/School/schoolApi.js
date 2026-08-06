@@ -78,6 +78,8 @@ export const schoolApi = {
   ),
   assignments: (learnerId) => req(`/lifecycle/assignments/${encodeURIComponent(learnerId)}`),
   allAssignments: () => req('/lifecycle/assignments'),
+  staleSessions: () => req('/lifecycle/sessions/stale'),
+  abandonSession: (sessionId, body) => req(`/lifecycle/sessions/${encodeURIComponent(sessionId)}/abandon`, body),
   curriculumUnits: () => req('/lifecycle/curriculum/units'),
   // Teacher console writes (wave 2): every body carries the teacher stamp and
   // the console pin; the server's TeacherGate is the enforcer.
