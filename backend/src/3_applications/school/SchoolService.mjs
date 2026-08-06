@@ -6,7 +6,7 @@
  */
 import {
   validateQuestionBank, summarizeQuestionBank, gradeAnswer, givenShapeError,
-  createAttempt, GuestForbiddenError, SessionGoneError, normalizeLearningContext,
+  createAttempt, GuestForbiddenError, SessionGoneError, normalizeLearningContext, bankContentRev,
 } from '#domains/school/index.mjs';
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 import { PersistenceError } from '#system/utils/errors/index.mjs';
@@ -338,6 +338,7 @@ export class SchoolService {
   }
 
   #openResolvedSession({ userId, bank, mode, learningContext }) {
+    const bankRev = bankContentRev(bank);
     this.#sweepExpired();
     if (!MODES.has(mode)) throw new ValidationError(`mode must be quiz|flashcard|drill|learning_probe, got: ${mode}`);
     if (userId != null && !this.#isLearner(userId)) throw new ValidationError(`unknown learner: ${userId}`);
@@ -347,7 +348,7 @@ export class SchoolService {
       throw new GuestForbiddenError(`guests cannot open assigned bank: ${bank.id}`);
     }
     const session = {
-      id: `ses_${shortId(8)}`, userId, bankId: bank.id, mode, bank,
+      id: `ses_${shortId(8)}`, userId, bankId: bank.id, mode, bank, bankRev,
       learningContext: normalized.learning,
       startedAt: this.#now(), lastActiveAt: this.#now(), responseClaims: new Map(),
     };
@@ -432,6 +433,7 @@ export class SchoolService {
         at: attemptAt,
         sessionId: s.id, bankId: s.bankId, itemId: item.id, itemType: item.type,
         mode: s.mode, given: recordedGiven, correct, attributedTo: s.userId, transport, provenance,
+        bankRev: s.bankRev ?? null,
         learning: {
           ...(learningContext ?? s.learningContext ?? {}),
           ...((learningContext ?? s.learningContext)?.subjectId || !s.bank.subject ? {} : { subjectId: s.bank.subject }),

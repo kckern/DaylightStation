@@ -62,6 +62,25 @@ describe('bank warm honesty (admin advocacy #7)', () => {
   });
 });
 
+describe('bankRev stamping (admin advocacy A3)', () => {
+  it('every screen attempt carries the content rev of the bank it was graded against', async () => {
+    let written = null;
+    const svc = new SchoolService({
+      datastore: {
+        readAllBankRaws: async () => [{ id: 'fractions-quiz', raw: BANK_RAW }],
+        readAllAttempts: () => [], readQuizRequests: () => [], saveQuizRequests: () => {},
+        readBankRaw: (id) => (id === 'fractions-quiz' ? BANK_RAW : null),
+        appendAttempt: (userId, attempt) => { written = attempt; return attempt; },
+      },
+      userService: users, logger: silent, now: () => 1000,
+    });
+    const { sessionId } = svc.openSession({ userId: 'u1', bankId: 'fractions-quiz', mode: 'quiz' });
+    svc.answer({ sessionId, itemId: 'q1', given: 'a' });
+    expect(written.bankRev).toMatch(/^[0-9a-f]{12}$/);
+    expect(written.correct).toBe(true);
+  });
+});
+
 describe('listQuizRequests fulfilled annotation', () => {
   it('marks a request fulfilled once a bank bound to its unit exists', async () => {
     const svc = makeService();
