@@ -27,6 +27,18 @@ vi.mock('../schoolApi.js', () => {
     reportCardFrozen: vi.fn(okEmpty),
     instructionalInsights: vi.fn(async () => ({ ok: true, status: 200, data: null })),
     reviewLearner: vi.fn(okEmpty),
+    passOverrides: vi.fn(async () => ({ ok: true, status: 200, data: { overrides: {} } })),
+    milestones: vi.fn(async () => ({ ok: true, status: 200, data: { milestones: [] } })),
+    enrichment: vi.fn(async () => ({ ok: true, status: 200, data: { entries: [] } })),
+    putAssignments: vi.fn(okEmpty),
+    putPeriods: vi.fn(okEmpty),
+    putPassOverride: vi.fn(okEmpty),
+    putMilestones: vi.fn(okEmpty),
+    postEnrichment: vi.fn(okEmpty),
+    resolveReview: vi.fn(okEmpty),
+    printApprove: vi.fn(okEmpty),
+    printDeny: vi.fn(okEmpty),
+    quizRequestDismiss: vi.fn(okEmpty),
   } };
 });
 const { schoolApi } = await import('../schoolApi.js');

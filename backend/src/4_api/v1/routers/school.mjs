@@ -814,8 +814,8 @@ export function createSchoolRouter({
   }));
   router.put('/milestones', wrap(async (req, res) => {
     if (!setMilestones) throw new EntityNotFoundError('milestones', 'not configured');
-    const { milestones, editedBy = null, pin = null } = req.body || {};
-    res.json(await setMilestones.execute({ milestones, editedBy, pin }));
+    const { learnerId, milestones, editedBy = null, pin = null } = req.body || {};
+    res.json(await setMilestones.execute({ learnerId, milestones, editedBy, pin }));
   }));
   router.get('/enrichment', wrap((req, res) => {
     res.json({ entries: enrichmentLog ? enrichmentLog.list({ learnerId: textQuery(req.query.learnerId) }) : [] });

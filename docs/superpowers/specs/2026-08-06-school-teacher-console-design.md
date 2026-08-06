@@ -280,11 +280,6 @@ failure.
 
 | todoId | Where (tab → panel) | Use case | What it becomes | Depends on | Backend work |
 |---|---|---|---|---|---|
-| `teacher.assignments.edit` | Planning → AssignmentsView | B2 | Add/remove courses, standalone units, programs per learner; writes `PUT /lifecycle/assignments/:learnerId` with `assignedBy` | skeleton | PIN gate in `SetAssignments` (endpoint + `GrownUpGate` exist) |
-| `teacher.periods.edit` | Planning → PeriodsTimeline | B1 | Create/edit/end academic periods from the UI | config→data promotion of `progress.academicPeriods` | promotion + CRUD endpoints + append-only change history |
-| `teacher.passcriteria.edit` | Planning → CurriculumBrowser | B5 | Adjust pass thresholds mid-period with audit trail | config→data promotion of pass-criteria | promotion + endpoint + history |
-| `teacher.milestones` | Planning → stub card | B4 | Expected-progress schedule: dated per-course targets, behind/ahead computation against the study calendar | new milestones domain | domain + persistence + `GET`/`PUT` endpoints |
-| `teacher.enrichment.log` | Planning → stub card | B6 | Entry form + list: dated, subject-tagged, attributed enrichment entries (educational travel, museums, projects) | new enrichment evidence kind | evidence kind + append-only store + endpoints |
 | `teacher.period.close` | Records → stub card | C1 | Close/freeze the period from the UI (with supersede flow), stamped `closedBy` | skeleton | PIN gate in `CloseAcademicPeriod` (endpoint exists) |
 | `teacher.progressreport.print` | Records → stub card | C2 | Progress-report PDF: period-to-date vs milestones, including enrichment credit | `teacher.milestones`, `teacher.enrichment.log` | new renderer (sibling of `ReportCardRenderer`) |
 | `teacher.certificates.print` | Records → stub card | C2 | Certificate PDF on course/program completion | skeleton | new renderer |

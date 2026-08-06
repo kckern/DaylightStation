@@ -86,6 +86,15 @@ export const schoolApi = {
   printApprove: (requestId, body) => req(`/print/${encodeURIComponent(requestId)}/approve`, body),
   printDeny: (requestId, body) => req(`/print/${encodeURIComponent(requestId)}/deny`, body),
   quizRequestDismiss: (body) => req('/quiz-requests/dismiss', body),
+  // Wave-3 planning domains.
+  putAssignments: (learnerId, body) => req(`/lifecycle/assignments/${encodeURIComponent(learnerId)}`, body, 'PUT'),
+  putPeriods: (body) => req('/periods', body, 'PUT'),
+  passOverrides: () => req('/pass-overrides'),
+  putPassOverride: (unitId, body) => req(`/pass-overrides/${encodeURIComponent(unitId)}`, body, 'PUT'),
+  milestones: (learnerId) => req(`/milestones?learnerId=${encodeURIComponent(learnerId)}`),
+  putMilestones: (body) => req('/milestones', body, 'PUT'),
+  enrichment: (learnerId = null) => req(`/enrichment${learnerId ? `?learnerId=${encodeURIComponent(learnerId)}` : ''}`),
+  postEnrichment: (body) => req('/enrichment', body),
   // A period-scoped snapshot of one learner's schooling (Task 6, `GetReportCard`).
   reportCard: ({ learnerId, periodId }) => req(
     `/report-card?learnerId=${encodeURIComponent(learnerId)}&periodId=${encodeURIComponent(periodId)}`,

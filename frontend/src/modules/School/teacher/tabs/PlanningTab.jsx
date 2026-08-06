@@ -1,31 +1,29 @@
 /**
- * Planning — periods, enrollment, curriculum, pacing (spec §4.2). Assignments
- * follow the header's learner selector; periods and the curriculum catalog
- * are household-wide. Milestones and the enrichment log are future domains
- * (stubs).
+ * Planning — periods, enrollment, curriculum, pacing (spec §4.2), all live
+ * as of wave 3: editable assignments and periods, pass-criteria overrides on
+ * the curriculum, milestones with derived statuses, and the enrichment log.
  */
 import AssignmentsView from '../panels/AssignmentsView.jsx';
 import PeriodsTimeline from '../panels/PeriodsTimeline.jsx';
 import CurriculumBrowser from '../panels/CurriculumBrowser.jsx';
-import StubCard from '../panels/StubCard.jsx';
-import { TODO } from '../todoRegistry.js';
+import MilestonesPanel from '../panels/MilestonesPanel.jsx';
+import EnrichmentPanel from '../panels/EnrichmentPanel.jsx';
 
 export default function PlanningTab({ learnerId, kids = [] }) {
   const learnerName = kids.find((k) => k.id === learnerId)?.name ?? null;
   return (
     <div className="teacher-tab teacher-tab--planning">
       {learnerId ? (
-        <AssignmentsView learnerId={learnerId} learnerName={learnerName} />
+        <>
+          <AssignmentsView learnerId={learnerId} learnerName={learnerName} />
+          <MilestonesPanel learnerId={learnerId} />
+        </>
       ) : (
-        <p className="teacher-panel__empty">Pick a learner above to see their assignments.</p>
+        <p className="teacher-panel__empty">Pick a learner above to see their assignments and milestones.</p>
       )}
-      <StubCard todoId={TODO.ASSIGNMENTS_EDIT} />
       <PeriodsTimeline />
-      <StubCard todoId={TODO.PERIODS_EDIT} />
-      <StubCard todoId={TODO.PASSCRITERIA_EDIT} />
       <CurriculumBrowser />
-      <StubCard todoId={TODO.MILESTONES} />
-      <StubCard todoId={TODO.ENRICHMENT_LOG} />
+      <EnrichmentPanel kids={kids} />
     </div>
   );
 }
