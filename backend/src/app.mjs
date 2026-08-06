@@ -2233,7 +2233,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     learnerDirectory: schoolLearnerDirectory,
     logger: rootLogger.child({ module: 'school' }),
     bankSources: [new GeneratedBankSource({
-      dataDir: path.join(contentPath, 'school', 'generated-banks')
+      dataDir: path.join(contentPath, 'school', 'generated-banks'),
+      logger: rootLogger.child({ module: 'school-generated-banks' })
     })]
   });
   const schoolLearningEvidence = new YamlLearningEvidenceRepository({ configService });

@@ -241,13 +241,24 @@ export class SchoolService {
     if (this.#warming) return this.#warming;
     this.#warming = (async () => {
       const raws = await this.#ds.readAllBankRaws();
+      // A bank that fails to summarize must not VANISH (admin advocacy #7):
+      // with ~4600 files, one YAML typo silently un-authoring a quiz gate is
+      // indistinguishable from "never written". Name every casualty once per
+      // warm, and keep the count readable (bankHealth) for a health surface.
+      const failed = [];
       const list = raws
         .map(({ id, raw }) => {
           const s = raw ? summarizeQuestionBank(raw) : null;
-          return s ? { ...s, id: s.id ?? id, subject: s.subject ?? null } : null;
+          if (!s) { failed.push(id); return null; }
+          return { ...s, id: s.id ?? id, subject: s.subject ?? null };
         })
         .filter(Boolean);
-      this.#bankSummaries = { at: this.#now(), list };
+      if (failed.length) {
+        this.#logger.error?.('school.bank.summarize-failed', {
+          count: failed.length, ids: failed.slice(0, 20), truncated: failed.length > 20,
+        });
+      }
+      this.#bankSummaries = { at: this.#now(), list, failed };
       return list;
     })().finally(() => { this.#warming = null; });
     return this.#warming;
@@ -262,6 +273,15 @@ export class SchoolService {
     if (!this.#bankSummariesFresh()) this.warmBanks().catch(() => {});
     const list = this.#bankSummaries?.list ?? [];
     return audience ? list.filter((b) => b.audience === audience) : list;
+  }
+
+  /** Health read (admin advocacy #7): how the last warm went. */
+  bankHealth() {
+    return {
+      warmedAt: this.#bankSummaries?.at ?? null,
+      banks: this.#bankSummaries?.list?.length ?? 0,
+      failed: [...(this.#bankSummaries?.failed ?? [])],
+    };
   }
 
   getBank(bankId) {
