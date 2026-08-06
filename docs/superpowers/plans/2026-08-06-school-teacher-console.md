@@ -432,3 +432,39 @@ describe('GetTeachers', () => {
 - [ ] Deploy-gate check → build → deploy → live verify (a real resolve with pin via curl on a synthetic pending item is NOT possible without fabricating child work — verify the 403/gate behavior instead: wrong pin → 403, missing pin with pin configured → 403).
 - [ ] Update `docs/reference/school/README.md` (console section: wave 2 now live) + spec registry table.
 - [ ] Dispatch the Fable stern reviewer (M2); apply verdicts.
+
+---
+
+# Wave 3 — Planning domains (authored at M3, after the M2 review)
+
+**Contract:** registry rows `teacher.assignments.edit`, `teacher.periods.edit`, `teacher.passcriteria.edit`, `teacher.milestones`, `teacher.enrichment.log`. All writes through the existing `TeacherGate` (context field carries what changed). Data lives under `data/apps/school/` (household app data, the assignments pattern), append-only history everywhere.
+
+### W3-1: Periods config→data promotion
+- **Adapter** `backend/src/1_adapters/persistence/yaml/YamlAcademicPeriodStore.mjs`: file `data/apps/school/periods.yml` `{periods: [...], history: [...]}`. Implements `IAcademicPeriodSource` (`listPeriods`, `getPeriod`) + `replacePeriods(periods, {editedBy, at})` (validates every entry via `validateAcademicPeriod`, appends `{at, editedBy, periods}` to history, atomic write). **Fallback:** constructed with the existing `ConfiguredAcademicPeriodSource`; when the data file is ABSENT, reads serve the config source verbatim (no silent migration); the FIRST successful `replacePeriods` writes the data file and it wins thereafter.
+- **Use case** `SetAcademicPeriods` (`usecases/`): gate (`action: 'periods.edit'`, context `{count}`), validate, `replacePeriods`. Route `PUT /api/v1/school/periods` `{periods, editedBy, pin}` → the stored list. `GET /periods` unchanged (now serves the store).
+- **Wiring:** app.mjs replaces `schoolAcademicPeriods` with the store (config source as fallback); everything downstream (`GetReportCard`, router, agenda) inherits.
+
+### W3-2: Pass-criteria overrides
+- **Store** `YamlPassOverrideStore` (same file pattern, `data/apps/school/pass-overrides.yml` `{overrides: {unitId: percent}, history: []}`) + `SetPassOverride` use case (gate `passcriteria.edit`, context `{unitId, percent}`; percent 1–100 integer or null to clear).
+- **Consumption:** `CloseSessionOutcome` gains optional `passOverrides` (`{percentFor(unitId)}`): effective passing percent = override ?? `unit.passing?.percent`. One consumption point, threaded once.
+- **Routes:** `GET /pass-overrides`, `PUT /pass-overrides/:unitId` (gated).
+
+### W3-3: Milestones domain
+- **Domain** `2_domains/school/milestones.mjs`: `validateMilestone` (`{id, learnerId, courseId, unitId, dueBy: 'YYYY-MM-DD', label?}`) and `milestoneStatus(milestone, {passedUnitIds, today}) -> 'met'|'behind'|'upcoming'` (met if unit passed; behind if today > dueBy and not passed; else upcoming). Due dates are FIXED; enrichment excusal is a wave-4 presentation-time adjustment, not stored state.
+- **Store** `YamlMilestoneStore` (`data/apps/school/milestones.yml`); **use cases** `SetMilestones` (gate, whole-list replace with history — planner-scale) + `GetMilestoneStatuses({learnerId})` deriving passedUnitIds from the work-session repo (`listForLearner` → sessions with passing outcome … reuse the same `result === 'passed'`-shaped check `GetReportCard` uses).
+- **Routes:** `GET /milestones?learnerId=`, `PUT /milestones` (gated).
+
+### W3-4: Enrichment log
+- **Store** `YamlEnrichmentLog` (`data/apps/school/enrichment.yml`, append-only entries `{id, at, recordedBy, learnerIds, from, to, title, subjectIds, note}`); **use cases** `RecordEnrichment` (gate `enrichment.record`; validates dates/title/learnerIds) + list read (filter by learnerId). Entries are attributed evidence-kind records — never merged into graded evidence.
+- **Routes:** `GET /enrichment?learnerId=`, `POST /enrichment` (gated).
+
+### W3-5: Console UI
+- **AssignmentsView** gains edit mode (add/remove courses + standalone units from the curriculum catalog; save via new `schoolApi.putAssignments(learnerId, {courses, units, assignedBy, pin})` through `useTeacherWrite`; server-authoritative refresh). Stub `teacher.assignments.edit` removed.
+- **PeriodsTimeline** gains an editor (list-edit rows: label, kind, startsAt, endsAt date inputs; save-all via `PUT /periods`). Stub `teacher.periods.edit` removed.
+- **CurriculumBrowser** rows show effective passing percent with an override input (PUT per unit). Stub `teacher.passcriteria.edit` removed.
+- **MilestonesPanel** (new): per-learner list with status chips + editor (course/unit/dueBy). Stub `teacher.milestones` removed.
+- **EnrichmentPanel** (new): entry form (dates, title, subjects multi, learners multi, note) + list. Stub `teacher.enrichment.log` removed.
+- Registry shrinks to 7 rows (spec table + todoRegistry + drift test).
+
+### W3-6: Verify, deploy, M3 review
+Full sweep → build → gate → deploy → live probes (periods PUT wrong-pin 403 / right-pin no-op is NOT safe (it writes) — verify via GET-after-PUT on a COPY? No: verify wrong-pin 403 only, plus unit tests for the write path; enrichment POST with right pin IS safe-ish but writes real data — use a clearly-labeled test entry then leave it (append-only; harmless) or verify 403 path only) → README/spec updates → Fable M3 review → apply verdicts.
