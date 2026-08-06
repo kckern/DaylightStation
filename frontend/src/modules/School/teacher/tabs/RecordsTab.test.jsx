@@ -12,6 +12,7 @@ vi.mock('../../schoolApi.js', () => ({
     instructionalInsights: vi.fn(),
     progressReport: vi.fn(),
     closePeriod: vi.fn(),
+    materials: vi.fn(),
   },
 }));
 const { schoolApi } = await import('../../schoolApi.js');
@@ -58,6 +59,7 @@ beforeEach(() => {
     enrichment: { entries: [{ id: 'e1', title: 'Yellowstone trip', from: '2026-08-02', to: '2026-08-06' }] },
   }));
   schoolApi.closePeriod.mockResolvedValue(ok({ closedBy: 'kckern', closedAt: '2026-08-06T12:00:00Z' }));
+  schoolApi.materials.mockResolvedValue(ok({ materials: [{ id: 'plex:384855', label: 'I Survived (audio)' }] }));
 });
 
 const mount = (ui) => render(<TeacherProfileProvider>{ui}<PinPrompt /></TeacherProfileProvider>);

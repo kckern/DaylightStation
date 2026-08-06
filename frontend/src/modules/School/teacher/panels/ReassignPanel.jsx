@@ -6,10 +6,18 @@
  */
 import { useState } from 'react';
 import { schoolApi } from '../../schoolApi.js';
+import { usePanelFetch } from '../usePanelFetch.js';
 import { useTeacherWrite } from '../useTeacherWrite.js';
+import { labelize } from '../labelize.js';
 
 export default function ReassignPanel({ learnerId, learnerName, kids = [] }) {
   const [day, setDay] = useState('');
+  // Recent days WITH recorded work (advocacy B18) — no more typing dates blind.
+  const recentDays = usePanelFetch(() => schoolApi.attemptDays(learnerId), {
+    deps: [learnerId],
+    panel: 'attempt-days',
+    isEmpty: (d) => !(d?.days ?? []).length,
+  });
   const [assessments, setAssessments] = useState(null); // null = not loaded
   const [loadError, setLoadError] = useState(null);
   const [target, setTarget] = useState('');
@@ -34,6 +42,13 @@ export default function ReassignPanel({ learnerId, learnerName, kids = [] }) {
       <p className="teacher-panel__empty">
         Work recorded against {learnerName ?? learnerId} that belongs to a sibling — pick the day it happened.
       </p>
+      {recentDays.state === 'ok' && (
+        <div className="teacher-reassign__days">
+          {recentDays.data.days.map((d) => (
+            <button key={d} type="button" data-active={d === day ? '' : undefined} onClick={() => setDay(d)}>{d}</button>
+          ))}
+        </div>
+      )}
       <div className="teacher-reassign__controls">
         <input aria-label="Day" type="date" value={day} onChange={(e) => setDay(e.target.value)} />
         <button type="button" disabled={!day} onClick={load}>Load that day</button>
@@ -50,7 +65,7 @@ export default function ReassignPanel({ learnerId, learnerName, kids = [] }) {
         <ul className="teacher-quizreq">
           {assessments.map((a) => (
             <li key={a.assessmentId} className="teacher-quizreq__row">
-              <span>{a.bankId ?? a.assessmentId}</span>
+              <span>{a.bankId ? labelize(a.bankId.split('/').pop()) : a.assessmentId}</span>
               <span className="teacher-quizreq__meta">{a.count} answer{a.count === 1 ? '' : 's'}</span>
               <button type="button" disabled={!target || busy === a.assessmentId} onClick={() => move(a)}>Reassign</button>
               {errors[a.assessmentId] && <p className="teacher-panel__error">{errors[a.assessmentId]}</p>}

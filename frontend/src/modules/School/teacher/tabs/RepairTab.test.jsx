@@ -14,6 +14,8 @@ vi.mock('../../schoolApi.js', () => ({
     curriculumUnits: vi.fn(),
     attemptsSummary: vi.fn(),
     reassign: vi.fn(),
+    attemptDays: vi.fn(),
+    retract: vi.fn(),
   },
 }));
 const { schoolApi } = await import('../../schoolApi.js');
@@ -42,6 +44,8 @@ beforeEach(() => {
     { assessmentId: 'ses_9', count: 8, bankId: 'pokemon-quiz-1', firstAt: 't' },
   ] }));
   schoolApi.reassign.mockResolvedValue(ok({ moved: 8 }));
+  schoolApi.attemptDays.mockResolvedValue(ok({ days: ['2026-08-06', '2026-08-05'] }));
+  schoolApi.retract.mockResolvedValue(ok({ retracted: 'x' }));
 });
 
 describe('RepairTab (wave 5, all live)', () => {
@@ -81,7 +85,7 @@ describe('RepairTab (wave 5, all live)', () => {
     await waitFor(() => expect(screen.getByLabelText('Day')).toBeTruthy());
     act(() => { fireEvent.change(screen.getByLabelText('Day'), { target: { value: '2026-08-06' } }); });
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Load that day' })); });
-    await waitFor(() => expect(screen.getByText('pokemon-quiz-1')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Pokemon Quiz 1')).toBeTruthy());
     const moveBtn = screen.getByRole('button', { name: 'Reassign' });
     expect(moveBtn.disabled).toBe(true); // no target yet
     act(() => { fireEvent.change(screen.getByLabelText('Move to'), { target: { value: 'milo' } }); });

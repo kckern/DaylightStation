@@ -83,6 +83,11 @@ export class YamlAcademicPeriodStore {
     return this.#fallback?.listPeriods?.() ?? [];
   }
 
+  historyLength() {
+    const read = this.#readState();
+    return read.state === 'ok' ? (read.raw.history ?? []).length : 0;
+  }
+
   getPeriod(periodId) {
     return structuredClone(this.listPeriods().find((p) => p.periodId === periodId) ?? null);
   }

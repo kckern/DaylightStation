@@ -37,6 +37,13 @@ export default function QuizRequestBacklog({ kids }) {
           );
         })}
       </ul>
+      {(requests.data ?? []).length > 0 && (
+        <p className="teacher-panel__empty">
+          Fulfilling a request means authoring a quiz bank YAML bound to that
+          unit (data/content/quizzes/, `unit:` backlink) — the badge flips the
+          moment one exists.
+        </p>
+      )}
     </PanelFrame>
   );
 }

@@ -11,6 +11,7 @@ import { useState } from 'react';
 import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
 import { useTeacherWrite } from '../useTeacherWrite.js';
+import { labelize } from '../labelize.js';
 
 export default function AssignmentsView({ learnerId, learnerName }) {
   const record = usePanelFetch(() => schoolApi.assignments(learnerId), {
@@ -47,6 +48,9 @@ export default function AssignmentsView({ learnerId, learnerName }) {
 
   const save = () => run('save', ({ actorId, pin }) => schoolApi.putAssignments(learnerId, {
     courses: draft.courses, units: draft.units, assignedBy: actorId, pin,
+    // Concurrent-edit guard (B14): what we LOADED; a stale save is refused
+    // with a friendly reload message instead of silently clobbering.
+    baseUpdatedAt: record.data?.updatedAt ?? null,
   }), { onSuccess: () => { setEditing(false); record.retry(); } });
 
   return (
@@ -68,13 +72,13 @@ export default function AssignmentsView({ learnerId, learnerName }) {
               {(record.data.courses ?? []).length > 0 && (
                 <div className="teacher-assignments__group">
                   <h3>Courses</h3>
-                  <ul>{record.data.courses.map((c) => <li key={c}>{c}</li>)}</ul>
+                  <ul>{record.data.courses.map((c) => <li key={c}>{labelize(c)}</li>)}</ul>
                 </div>
               )}
               {(record.data.units ?? []).length > 0 && (
                 <div className="teacher-assignments__group">
                   <h3>Standalone units</h3>
-                  <ul>{record.data.units.map((u) => <li key={u}>{u}</li>)}</ul>
+                  <ul>{record.data.units.map((u) => <li key={u}>{labelize(u)}</li>)}</ul>
                 </div>
               )}
               {record.data.assignedBy && (
@@ -94,7 +98,7 @@ export default function AssignmentsView({ learnerId, learnerName }) {
             {courseIds.map((id) => (
               <label key={id} className="teacher-assignments__pick">
                 <input type="checkbox" checked={draft.courses.includes(id)} onChange={() => toggle('courses', id)} />
-                {id}
+                {labelize(id)}
               </label>
             ))}
           </div>
@@ -103,7 +107,7 @@ export default function AssignmentsView({ learnerId, learnerName }) {
             {standaloneIds.map((id) => (
               <label key={id} className="teacher-assignments__pick">
                 <input type="checkbox" checked={draft.units.includes(id)} onChange={() => toggle('units', id)} />
-                {id}
+                {labelize(id)}
               </label>
             ))}
           </div>

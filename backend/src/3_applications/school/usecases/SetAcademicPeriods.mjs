@@ -13,11 +13,18 @@ export class SetAcademicPeriods {
     this.#clock = clock;
   }
 
-  async execute({ periods, editedBy = null, pin = null } = {}) {
+  async execute({ periods, editedBy = null, pin = null, baseHistoryLength = undefined } = {}) {
     this.#teacherGate.assert({
       userId: editedBy, pin, action: 'periods.edit',
       context: { count: Array.isArray(periods) ? periods.length : 0 },
     });
+    // Concurrent-edit guard (advocacy B14), optional like assignments'.
+    if (baseHistoryLength !== undefined && typeof this.#store.historyLength === 'function'
+        && this.#store.historyLength() !== baseHistoryLength) {
+      const err = new Error('The periods changed since you loaded them — reload and try again.');
+      err.name = 'ValidationError';
+      throw err;
+    }
     const validated = await this.#store.replacePeriods(periods, {
       editedBy, at: this.#clock().toISOString(),
     });

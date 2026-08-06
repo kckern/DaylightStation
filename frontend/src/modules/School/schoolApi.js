@@ -108,6 +108,10 @@ export const schoolApi = {
   reassign: (body) => req('/reassign', body),
   // The dry-run daily plan as data (advocacy A3) — no side effects.
   agendaPreview: (learnerId) => req(`/lifecycle/learners/${encodeURIComponent(learnerId)}/agenda/preview?format=json`),
+  retract: (body) => req('/retract', body),
+  transcript: (learnerId) => req(`/transcript?learnerId=${encodeURIComponent(learnerId)}`),
+  attemptDays: (learnerId) => req(`/attempt-days?learnerId=${encodeURIComponent(learnerId)}`),
+  offerRetake: (sessionId) => req(`/lifecycle/sessions/${encodeURIComponent(sessionId)}/remediation`, {}),
   progressReport: ({ learnerId, periodId }) => req(
     `/progress-report?learnerId=${encodeURIComponent(learnerId)}&periodId=${encodeURIComponent(periodId)}`,
   ),

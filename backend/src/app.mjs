@@ -3125,6 +3125,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const recordAttestation = new RecordAttestation({ log: schoolAttestations, teacherGate: schoolTeacherGate });
   const recordTeacherNote = new RecordTeacherNote({ notes: schoolTeacherNotes, teacherGate: schoolTeacherGate });
   const reassignEvidence = new ReassignEvidence({ datastore: schoolDatastore, teacherGate: schoolTeacherGate });
+  const { RetractTeacherRecord } = await import('#apps/school/usecases/RetractTeacherRecord.mjs');
+  const retractTeacherRecord = new RetractTeacherRecord({
+    stores: { enrichment: schoolEnrichmentLog, attestation: schoolAttestations, note: schoolTeacherNotes },
+    teacherGate: schoolTeacherGate,
+  });
+  const { GetTranscript } = await import('#apps/school/usecases/GetTranscript.mjs');
+  const getTranscript = new GetTranscript({ reportCardsStore: schoolDatastore });
+  const { createTranscriptPdfRenderer } = await import('#rendering/school/reports/TranscriptRenderer.mjs');
+  const { createSyllabusPdfRenderer } = await import('#rendering/school/reports/SyllabusRenderer.mjs');
   // Wave-3 gated planning writes — constructed HERE because they borrow the
   // lifecycle's pass-override store and sessions repo (both null-safe when
   // the lifecycle is unwired).
@@ -3209,6 +3218,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     recordTeacherNote,
     reassignEvidence,
     attemptsStore: schoolDatastore,
+    retractTeacherRecord,
+    getTranscript,
+    renderTranscriptPdf: createTranscriptPdfRenderer(),
+    renderSyllabusPdf: createSyllabusPdfRenderer(),
+    curriculumForSyllabus: schoolLifecycle.stores?.curriculum ?? null,
     // Frozen-record reads work off `schoolDatastore` alone (no lifecycle
     // stores needed), so this is wired unconditionally.
     reportCardsStore: schoolDatastore,

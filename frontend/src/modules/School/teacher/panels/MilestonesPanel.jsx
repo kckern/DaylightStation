@@ -8,6 +8,7 @@ import { useState } from 'react';
 import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
 import { useTeacherWrite } from '../useTeacherWrite.js';
+import { labelize } from '../labelize.js';
 
 export default function MilestonesPanel({ learnerId }) {
   const statuses = usePanelFetch(() => schoolApi.milestones(learnerId), {
@@ -67,7 +68,7 @@ export default function MilestonesPanel({ learnerId }) {
             <ul className="teacher-milestones">
               {statuses.data.milestones.map((m) => (
                 <li key={m.id} className="teacher-milestones__row" data-status={m.status}>
-                  <span className="teacher-milestones__unit">{m.label ?? m.unitId}</span>
+                  <span className="teacher-milestones__unit">{m.label ?? labelize(m.unitId)}</span>
                   <span className="teacher-milestones__due">by {m.dueBy}</span>
                   <span className="teacher-milestones__status">{m.status}</span>
                 </li>

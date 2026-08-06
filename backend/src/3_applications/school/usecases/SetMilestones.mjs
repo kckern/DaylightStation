@@ -18,7 +18,7 @@ export class SetMilestones {
     this.#clock = clock;
   }
 
-  async execute({ learnerId, milestones, editedBy = null, pin = null } = {}) {
+  async execute({ learnerId, milestones, editedBy = null, pin = null, baseHistoryLength = undefined } = {}) {
     this.#teacherGate.assert({
       userId: editedBy, pin, action: 'milestones.edit',
       context: { learnerId, count: Array.isArray(milestones) ? milestones.length : 0 },
@@ -32,6 +32,10 @@ export class SetMilestones {
     });
     const ids = new Set(validated.map((m) => m.id));
     if (ids.size !== validated.length) throw new ValidationError('milestone ids must be unique');
+    if (baseHistoryLength !== undefined && typeof this.#store.historyLength === 'function'
+        && this.#store.historyLength() !== baseHistoryLength) {
+      throw new ValidationError('Milestones changed since you loaded them — reload and try again.');
+    }
     await this.#store.replaceForLearner(learnerId, validated, { editedBy, at: this.#clock().toISOString() });
     return { milestones: validated };
   }

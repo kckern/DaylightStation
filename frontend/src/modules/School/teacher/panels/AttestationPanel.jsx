@@ -22,6 +22,9 @@ export default function AttestationPanel({ learnerId, learnerName }) {
     isEmpty: (d) => !(d?.units ?? []).length,
   });
   const { run, busy, errors } = useTeacherWrite({ panel: 'attestations' });
+  const retract = (a) => run(`retract:${a.id}`, ({ actorId, pin }) => schoolApi.retract({
+    kind: 'attestation', entryId: a.id, retractedBy: actorId, pin,
+  }), { onSuccess: log.retry });
   const [open, setOpen] = useState(false);
   const [unitId, setUnitId] = useState('');
   const [reason, setReason] = useState('');
@@ -52,6 +55,8 @@ export default function AttestationPanel({ learnerId, learnerName }) {
                   <span className="teacher-enrichment__title">{a.unitId}</span>
                   <span className="teacher-enrichment__dates">{String(a.at).slice(0, 10)} — {a.attestedBy}</span>
                   <span className="teacher-enrichment__note">{a.reason}</span>
+                  <button type="button" disabled={busy === `retract:${a.id}`} onClick={() => retract(a)}>Retract</button>
+                  {errors[`retract:${a.id}`] && <p className="teacher-panel__error">{errors[`retract:${a.id}`]}</p>}
                 </li>
               ))}
             </ul>

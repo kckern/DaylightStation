@@ -64,12 +64,15 @@ beforeEach(() => {
 describe('PlanningTab (wave 3, all live)', () => {
   it('renders assignments and offers edit; saving PUTs with the stamp and pin', async () => {
     mount(<PlanningTab learnerId="felix" kids={KIDS} />);
-    await waitFor(() => expect(screen.getAllByText('math-fractions').length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText('Math Fractions').length).toBeGreaterThan(0));
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Edit assignments' })); });
     await waitFor(() => expect(screen.getAllByRole('checkbox').length).toBeGreaterThan(0));
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Save' })); });
     await waitFor(() => expect(schoolApi.putAssignments).toHaveBeenCalledWith('felix',
-      expect.objectContaining({ courses: ['math-fractions'], units: ['language-daily'], assignedBy: 'kckern', pin: null })));
+      expect.objectContaining({
+        courses: ['math-fractions'], units: ['language-daily'], assignedBy: 'kckern', pin: null,
+        baseUpdatedAt: '2026-08-01T00:00:00Z', // the B14 concurrent-edit guard
+      })));
     await waitFor(() => expect(schoolApi.assignments.mock.calls.length).toBeGreaterThan(1));
   });
 

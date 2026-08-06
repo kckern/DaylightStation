@@ -234,6 +234,17 @@ export class YamlSchoolDatastore {
     return loadYamlSafe(path.join(dir, dayStr)) || [];
   }
 
+  /** Day stamps (YYYY-MM-DD) that have recorded attempts, newest first. */
+  listAttemptDays(userId) {
+    const dir = this.#attemptsDir(userId);
+    if (!dir || !fs.existsSync(dir)) return [];
+    return fs.readdirSync(dir)
+      .filter((f) => /^\d{4}-\d{2}-\d{2}\.yml$/.test(f))
+      .map((f) => f.replace(/\.yml$/, ''))
+      .sort()
+      .reverse();
+  }
+
   readAllAttempts(userId) {
     const dir = this.#attemptsDir(userId);
     if (!dir || !fs.existsSync(dir)) return [];

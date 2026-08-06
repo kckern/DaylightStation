@@ -63,7 +63,14 @@ export class GetProgressReport {
       courses: card.courses,
       activeDays: card.activeDays,
       milestones: paceMilestones(milestones, inPeriod, { today }),
-      enrichment: { entries: inPeriod, daysInPeriod: enrichmentDaysInPeriod(inPeriod, fromDayScope, toDayScope) },
+      // Credit lists ENRICHMENT only; absences excuse pacing (they rode the
+      // paceMilestones call above) but are reported as their own count,
+      // never as credit.
+      enrichment: {
+        entries: inPeriod.filter((e) => (e.kind ?? 'enrichment') === 'enrichment'),
+        daysInPeriod: enrichmentDaysInPeriod(inPeriod.filter((e) => (e.kind ?? 'enrichment') === 'enrichment'), fromDayScope, toDayScope),
+        absenceDaysInPeriod: enrichmentDaysInPeriod(inPeriod.filter((e) => e.kind === 'absence'), fromDayScope, toDayScope),
+      },
     };
   }
 }

@@ -75,6 +75,12 @@ export function createSchoolRouter({
   recordTeacherNote = null,
   reassignEvidence = null,
   attemptsStore = null,
+  // Advocacy wave 6.
+  retractTeacherRecord = null,
+  getTranscript = null,
+  renderTranscriptPdf = null,
+  renderSyllabusPdf = null,
+  curriculumForSyllabus = null,
   passOverrideStore = null,
   setPassOverride = null,
   milestoneStatuses = null,
@@ -804,6 +810,47 @@ export function createSchoolRouter({
       learnerId, periodId, closedBy, supersede: body.supersede === true, pin: body.pin ?? null,
     });
     return res.status(201).json(frozen);
+  }));
+
+  // --- wave-6 advocacy -------------------------------------------------------
+  router.post('/retract', wrap(async (req, res) => {
+    if (!retractTeacherRecord) throw new EntityNotFoundError('retraction', 'not configured');
+    const { kind, entryId, retractedBy = null, pin = null } = req.body || {};
+    res.json(await retractTeacherRecord.execute({ kind, entryId, retractedBy, pin }));
+  }));
+  router.get('/transcript', wrap(async (req, res) => {
+    if (!getTranscript) return res.json(null);
+    const learnerId = requiredTextQuery(req.query.learnerId, 'learnerId');
+    const transcript = await getTranscript.execute({ learnerId });
+    if (wantsPdf(req)) {
+      if (!renderTranscriptPdf) return res.status(503).json({ error: 'transcript-render-unavailable' });
+      const roster = learnerDirectory ? await learnerDirectory.listLearners() : [];
+      const learnerName = roster.find((r) => r.id === learnerId)?.name ?? learnerId;
+      const { pdf } = await renderTranscriptPdf(transcript, { learnerName });
+      return res
+        .set('Content-Type', 'application/pdf')
+        .set('Content-Disposition', `inline; filename="transcript-${slugify(learnerId)}.pdf"`)
+        .send(pdf);
+    }
+    return res.set('Cache-Control', 'no-store').json(transcript);
+  }));
+  router.get('/syllabus', wrap(async (req, res) => {
+    if (!curriculumForSyllabus || !renderSyllabusPdf) return res.status(503).json({ error: 'syllabus-render-unavailable' });
+    const courseId = requiredTextQuery(req.query.courseId, 'courseId');
+    const units = (await curriculumForSyllabus.listUnitSummaries())
+      .filter((u) => u.courseId === courseId)
+      .sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0));
+    if (!units.length) throw new EntityNotFoundError('course', courseId);
+    const { pdf } = await renderSyllabusPdf({ courseId, units });
+    return res
+      .set('Content-Type', 'application/pdf')
+      .set('Content-Disposition', `inline; filename="syllabus-${slugify(courseId)}.pdf"`)
+      .send(pdf);
+  }));
+  router.get('/attempt-days', wrap((req, res) => {
+    if (!attemptsStore?.listAttemptDays) return res.json({ days: [] });
+    const learnerId = requiredTextQuery(req.query.learnerId, 'learnerId');
+    res.json({ days: attemptsStore.listAttemptDays(learnerId).slice(0, 14) });
   }));
 
   // --- wave-5 repair ---------------------------------------------------------

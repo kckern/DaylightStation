@@ -22,9 +22,15 @@ export class RecordEnrichment {
 
   async execute({
     recordedBy = null, pin = null, learnerIds = [], from, to = null,
-    title, subjectIds = [], note = null,
+    title, subjectIds = [], note = null, kind = 'enrichment',
   } = {}) {
-    this.#teacherGate.assert({ userId: recordedBy, pin, action: 'enrichment.record', context: { title } });
+    this.#teacherGate.assert({ userId: recordedBy, pin, action: 'enrichment.record', context: { title, kind } });
+    // Two entry kinds share the calendar-exception machinery (advocacy B5):
+    // 'enrichment' excuses pacing AND prints as credit; 'absence' (sick week,
+    // non-educational travel) excuses pacing and NEVER appears as credit —
+    // a flu must not be falsified as a museum trip to stop the delinquency
+    // math.
+    if (kind !== 'enrichment' && kind !== 'absence') throw new ValidationError("kind must be 'enrichment' or 'absence'");
     if (typeof title !== 'string' || !title.trim()) throw new ValidationError('title is required');
     if (!Array.isArray(learnerIds) || learnerIds.length === 0) throw new ValidationError('at least one learner is required');
     if (typeof from !== 'string' || !DATE_RE.test(from)) throw new ValidationError('from must be YYYY-MM-DD');
@@ -33,6 +39,7 @@ export class RecordEnrichment {
     const entry = {
       id: this.#idGen(),
       at: this.#clock().toISOString(),
+      kind,
       recordedBy,
       learnerIds: [...learnerIds],
       from,

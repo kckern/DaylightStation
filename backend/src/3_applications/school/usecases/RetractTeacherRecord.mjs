@@ -1,0 +1,36 @@
+/**
+ * RetractTeacherRecord — the gated eraser (advocacy B15): appends a
+ * retraction against an enrichment entry, attestation, or standalone note.
+ * Retracting an attestation re-locks the gates it opened BY CONSTRUCTION
+ * (every reader folds retractions out of list()). The record itself
+ * survives; only its effect ends.
+ */
+import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
+
+const STORES = ['enrichment', 'attestation', 'note'];
+
+export class RetractTeacherRecord {
+  #stores; #teacherGate; #clock;
+
+  /** @param {{stores: {enrichment, attestation, note}, teacherGate, clock?}} deps */
+  constructor({ stores, teacherGate, clock = () => new Date() } = {}) {
+    if (!stores) throw new Error('RetractTeacherRecord requires stores');
+    if (!teacherGate) throw new Error('RetractTeacherRecord requires teacherGate');
+    this.#stores = stores;
+    this.#teacherGate = teacherGate;
+    this.#clock = clock;
+  }
+
+  async execute({ kind, entryId, retractedBy = null, pin = null } = {}) {
+    this.#teacherGate.assert({ userId: retractedBy, pin, action: 'record.retract', context: { kind, entryId } });
+    if (!STORES.includes(kind)) throw new ValidationError(`kind must be one of ${STORES.join('|')}`);
+    if (typeof entryId !== 'string' || !entryId.trim()) throw new ValidationError('entryId is required');
+    const store = this.#stores[kind];
+    if (!store) throw new EntityNotFoundError('retraction store', kind);
+    if (!store.list().some((e) => e.id === entryId)) {
+      throw new EntityNotFoundError(`${kind} entry`, entryId);
+    }
+    await store.retract(entryId, { by: retractedBy, at: this.#clock().toISOString() });
+    return { retracted: entryId, kind };
+  }
+}

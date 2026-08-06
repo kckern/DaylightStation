@@ -69,6 +69,11 @@ function drawProgressReport(out, theme, report) {
   if (!(report.enrichment?.entries ?? []).length) {
     out.font(theme.fonts.regular.name).fontSize(11).fillColor(muted).text('No enrichment recorded this period.');
   }
+  if ((report.enrichment?.absenceDaysInPeriod ?? 0) > 0) {
+    out.moveDown(0.4);
+    out.font(theme.fonts.regular.name).fontSize(10).fillColor(muted)
+      .text(`${report.enrichment.absenceDaysInPeriod} excused-absence day${report.enrichment.absenceDaysInPeriod === 1 ? '' : 's'} this period (excused from pacing; not credit).`);
+  }
 }
 
 export function createProgressReportPdfRenderer({ theme = documentPdfTheme, fontDir = undefined } = {}) {

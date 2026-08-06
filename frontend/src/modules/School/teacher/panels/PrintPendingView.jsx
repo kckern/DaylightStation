@@ -8,6 +8,7 @@ import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
 import { useTeacherWrite } from '../useTeacherWrite.js';
 import PanelFrame from './PanelFrame.jsx';
+import { waitAge } from './ReviewQueueView.jsx';
 
 export default function PrintPendingView({ kids }) {
   const nameFor = (id) => kids.find((k) => k.id === id)?.name ?? id;
@@ -28,6 +29,7 @@ export default function PrintPendingView({ kids }) {
             <span>{nameFor(job.userId)}</span>
             <span>{job.label ?? job.printableId}</span>
             <span>{job.pages} pages × {job.copies}</span>
+            {waitAge(job.at) && <span className="teacher-review__age">waiting {waitAge(job.at)}</span>}
             <span className="teacher-prints__actions">
               <button type="button" disabled={busy === job.id} onClick={() => decide(job, 'approve')}>Approve</button>
               <button type="button" disabled={busy === job.id} onClick={() => decide(job, 'deny')}>Deny</button>
