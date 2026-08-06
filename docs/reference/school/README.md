@@ -1228,6 +1228,16 @@ its own attributed evidence kind, never merged into graded evidence. Routes:
 (learner-scoped write — a one-learner save never touches siblings),
 `GET/POST /enrichment` — every write through the same `TeacherGate`.
 
+**Wave 4 — records are live.** The Records tab closes/supersedes periods
+from the UI (two-tap confirm, gate-checked); `GET /progress-report`
+(`GetProgressReport` + `ProgressReportRenderer`) renders the period-to-date
+read model where `paceMilestones` turns a behind-but-enrichment-covered
+milestone into **excused — never delinquency** (spec C5), with the period's
+enrichment entries as their own credit section; `GET /certificate`
+(`CertificateRenderer`) prints a course-completion certificate and refuses a
+course with nothing graded — no fabricated diplomas. Only the three repair
+rows remain in the placeholder registry.
+
 Three backend enablers shipped with the skeleton: the teachers read; the
 `/print` route-order fix (the `/print/*id` splat had shadowed
 `printables`/`quota`/`pending` — all three 404'd in production; fixed routes
