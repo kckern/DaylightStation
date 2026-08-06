@@ -152,7 +152,7 @@ export async function createSchoolLifecycle({
       wired: false, reason, handlesCode: () => false, handleScan: null,
       reporter: null, router: null, devicesRouter: null,
       useCases: {}, stores: {}, devices: {}, renderers: {},
-      donowSchoolBridge: null,
+      donowSchoolBridge: null, grownUps: null,
     };
   };
 
@@ -638,6 +638,11 @@ export async function createSchoolLifecycle({
     // `schoolLifecycle.donowSchoolBridge?.stop()` on shutdown, same
     // conditional-on-existence pattern as its other graceful-shutdown hooks.
     donowSchoolBridge,
+    // The SAME gate `gradeSubmission`/`closeSessionOutcome`/`resolveReviewItem`/
+    // `setAssignments` already assert through — exposed so `app.mjs` can wire
+    // Task 6's `CloseAcademicPeriod` (a parent-only write, same rule) without
+    // constructing a second `GrownUpGate` against a possibly-stale roster read.
+    grownUps,
   };
 }
 

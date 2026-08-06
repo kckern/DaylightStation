@@ -2913,6 +2913,51 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'school-report' })
   });
 
+  // Report cards, period close, teacher digest (Task 6, spec R5b). Needs the
+  // lifecycle's shared curriculum/sessions/assignments stores AND the SAME
+  // grown-up gate every other parent-only write already asserts through
+  // (`schoolLifecycle.grownUps`) — tolerant of an unwired lifecycle exactly
+  // like the print-scan consumer above: no sessions store, no report cards,
+  // rather than a half-built feature reaching for a store that isn't there.
+  let getReportCard = null;
+  let closeAcademicPeriod = null;
+  let getTeacherToday = null;
+  if (schoolLifecycle.wired && schoolLifecycle.stores?.sessions && schoolLifecycle.stores?.assignments
+      && schoolLifecycle.stores?.curriculum && schoolLifecycle.grownUps) {
+    try {
+      const { GetReportCard } = await import('#apps/school/usecases/GetReportCard.mjs');
+      const { CloseAcademicPeriod } = await import('#apps/school/usecases/CloseAcademicPeriod.mjs');
+      const { GetTeacherToday } = await import('#apps/school/usecases/GetTeacherToday.mjs');
+      getReportCard = new GetReportCard({
+        curriculum: schoolLifecycle.stores.curriculum,
+        assignments: schoolLifecycle.stores.assignments,
+        sessions: schoolLifecycle.stores.sessions,
+        datastore: schoolDatastore,
+        academicPeriods: schoolAcademicPeriods,
+        getMaterialProgressSummary,
+        getLearningProgress,
+        reviewQueue: schoolLifecycle.stores.reviewQueue ?? null,
+        logger: rootLogger.child({ module: 'school-report-card' })
+      });
+      closeAcademicPeriod = new CloseAcademicPeriod({
+        getReportCard,
+        datastore: schoolDatastore,
+        grownUps: schoolLifecycle.grownUps,
+        logger: rootLogger.child({ module: 'school-report-card' })
+      });
+      getTeacherToday = new GetTeacherToday({
+        learnerDirectory: schoolLearnerDirectory,
+        datastore: schoolDatastore,
+        sessions: schoolLifecycle.stores.sessions,
+        reviewQueue: schoolLifecycle.stores.reviewQueue ?? null,
+        timezone: configService.getTimezone?.() || null,
+        logger: rootLogger.child({ module: 'school-teacher-today' })
+      });
+    } catch (err) {
+      schoolLifecycleLogger.error('school.report-card.wiring-failed', { error: err.message });
+    }
+  }
+
   // Printing (worksheets → kitchen laser printer). Wired only when the school
   // config declares a `printer` host — no printer, no print feature (the
   // router serves inert). The printer host defaults to the `kitchen-printer`
@@ -3003,6 +3048,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       const schoolConfig = configService.getHouseholdAppConfig(null, 'school') || {};
       return schoolConfig.print?.teacherPin != null ? String(schoolConfig.print.teacherPin) : null;
     },
+    // Report cards, period close, teacher digest (Task 6, spec R5b).
+    getReportCard,
+    closeAcademicPeriod,
+    getTeacherToday,
+    // Frozen-record reads work off `schoolDatastore` alone (no lifecycle
+    // stores needed), so this is wired unconditionally.
+    reportCardsStore: schoolDatastore,
     logger: rootLogger.child({ module: 'school-api' })
   });
 
