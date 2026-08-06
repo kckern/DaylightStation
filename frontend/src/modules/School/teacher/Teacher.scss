@@ -294,6 +294,16 @@
 }
 
 .teacher-quizreq__meta, .teacher-frozen__meta { color: #8a8272; }
+.teacher-quizreq__kind {
+  align-self: flex-start; padding: 0.1rem 0.5rem; border-radius: 999px;
+  background: #ead9a8; color: #4a3d14; font-size: 0.7rem; font-weight: 800;
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.teacher-quizreq__kind--flag { background: #f3c3bd; color: #5a1610; }
+.teacher-quizreq__note { color: #4a4436; font-style: italic; }
+.teacher-quizreq__reason { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;
+  input { min-height: 44px; padding: 0 0.75rem; border: 1px solid #d8cfb8; border-radius: 8px; min-width: 240px; }
+}
 
 .teacher-feedback {
   &__verdict { font-weight: 700; text-transform: capitalize; }
@@ -820,3 +830,8 @@
 
 .teacher-curriculum__course > h3 .teacher-reportcard__pdf { margin-left: 10px; }
 .teacher-reportcard__courses .teacher-reportcard__cert { margin-left: 10px; }
+
+.teacher-roster__reflections { list-style: none; margin: 0.35rem 0 0; padding: 0 0.5rem; display: flex; flex-direction: column; gap: 0.2rem; }
+.teacher-roster__reflection { display: flex; gap: 0.5rem; align-items: baseline; }
+.teacher-roster__reflection-mood { font-weight: 800; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; color: #6b5d33; }
+.teacher-roster__reflection-note { color: #4a4436; font-style: italic; }

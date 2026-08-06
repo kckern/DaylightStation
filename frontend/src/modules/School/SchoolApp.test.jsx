@@ -26,6 +26,7 @@ const certificationMock = vi.fn();
 vi.mock('./schoolApi.js', () => ({
   schoolApi: {
     roster: vi.fn(async () => ({ ok: true, status: 200, data: [{ id: 'kid1', name: 'Alpha', birthyear: 2016 }, { id: 'dad1', name: 'Papa', birthyear: 1984 }] })),
+    wallet: vi.fn(async () => ({ ok: false, status: 503, data: null })),
     banks: (...a) => banksMock(...a),
     bank: vi.fn(async (id) => ({ ok: true, status: 200, data: { id, title: 'Caps', audience: 'assigned', items: [{ id: 'q1', type: 'multiple_choice', prompt: 'WA?', answer: 'Olympia', choices: ['Seattle', 'Olympia'] }] } })),
     openSession: vi.fn(async () => ({ ok: true, status: 200, data: { sessionId: 'ses_1' } })),
@@ -227,11 +228,11 @@ describe('SchoolApp home — the subject wall', () => {
     for (const label of ['English & Literature', 'Writing & Typing', 'Language & Culture', 'Math & Money', 'Science & Nature', 'Life & Skills', 'History & Geography', 'Scripture & Gospel', 'Art & Music']) {
       expect(await screen.findByText(label)).toBeInTheDocument();
     }
-    // Empty catalog: the shelf is disabled but keeps its own subtitle — a
-    // greyed tile already says "not yet"; no apology copy.
+    // Empty catalog: the shelf is disabled and says so in words (wave-7
+    // advocacy) — a dead tap with no caption reads as "broken" to a child.
     const science = screen.getByText('Science & Nature').closest('button');
     expect(science).toBeDisabled();
-    expect(within(science).getByText('How the world and nature work')).toBeInTheDocument();
+    expect(within(science).getByText('Nothing here yet')).toBeInTheDocument();
     // Unclaimed: no header sign-in chip — the panel's face row is the claim
     // affordance (their face appears there instead). Kids only: adults claim
     // via the launch-prompt picker, not the panel.
@@ -378,6 +379,25 @@ describe('SchoolApp bank flows (via the Library)', () => {
     fireEvent.click(screen.getByLabelText(/close/i)); // dismiss picker -> guest, but generic work proceeds
 
     expect(await screen.findByText('WA?')).toBeInTheDocument();
+  });
+
+  it('the apple mid-quiz arms a leave confirm — one stray tap never discards a run (M7)', async () => {
+    render(<SchoolApp clear={() => {}} />);
+    await openLibrary();
+    await screen.findByText('Animals');
+    fireEvent.click(within(cardFor('Animals')).getByRole('button', { name: /quiz/i }));
+    await screen.findByRole('dialog');
+    fireEvent.click(screen.getByLabelText(/close/i));
+    await screen.findByText('WA?'); // in the runner
+
+    fireEvent.click(screen.getByRole('button', { name: /^home$/i }));
+    // First tap: still in the quiz, with the warning up.
+    expect(screen.getByTestId('leave-confirm')).toBeInTheDocument();
+    expect(screen.getByText('WA?')).toBeInTheDocument();
+    // Second tap: actually leaves.
+    fireEvent.click(screen.getByRole('button', { name: /^home$/i }));
+    expect(await screen.findByText('History & Geography')).toBeInTheDocument();
+    expect(screen.queryByText('WA?')).toBeNull();
   });
 });
 

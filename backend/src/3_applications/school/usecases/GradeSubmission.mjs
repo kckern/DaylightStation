@@ -30,7 +30,7 @@ import { questionItemIds, questionPrompts } from '#domains/school/documents/docu
 import { PRINT_DOCUMENT_REF_PATTERN } from '#domains/school/curriculum/unitValidation.mjs';
 
 export class GradeSubmission {
-  #curriculum; #sessions; #reviewQueue; #grader; #bankReader; #grownUps; #clock; #logger;
+  #curriculum; #sessions; #reviewQueue; #grader; #bankReader; #grownUps; #clock; #logger; #passOverrides;
 
   /**
    * @param {object} deps
@@ -46,7 +46,7 @@ export class GradeSubmission {
    * @param {() => Date} [deps.clock]
    * @param {object} [deps.logger]
    */
-  constructor({ curriculum, sessions, reviewQueue, grader, bankReader = null, grownUps = null, clock = () => new Date(), logger = console } = {}) {
+  constructor({ curriculum, sessions, reviewQueue, grader, bankReader = null, grownUps = null, passOverrides = null, clock = () => new Date(), logger = console } = {}) {
     if (!curriculum || !sessions || !reviewQueue || !grader) {
       throw new Error('GradeSubmission requires curriculum, sessions, reviewQueue and grader');
     }
@@ -59,6 +59,7 @@ export class GradeSubmission {
     this.#grownUps = grownUps;
     this.#clock = clock;
     this.#logger = logger;
+    this.#passOverrides = passOverrides;
   }
 
   /**
@@ -241,8 +242,14 @@ export class GradeSubmission {
     const recordedAttempts = isPrintUnit
       ? (printAttemptIds.length ? printAttemptIds : [`review:${sessionId}`])
       : (attemptIds.length ? attemptIds : [`review:${sessionId}`]);
+    // Stamp the bar IN EFFECT now (student-advocacy A4): the close prefers
+    // this over a later override edit — the bar cannot move under a kid who
+    // has already been graded.
+    const effectivePassingPercent = this.#passOverrides?.percentFor?.(state.unitId)
+      ?? unit?.passing?.percent;
     const { errors, event } = createEvent({
       type: 'graded', at: nowIso, sessionId, attemptIds: recordedAttempts, percent,
+      ...(typeof effectivePassingPercent === 'number' ? { passingPercent: effectivePassingPercent } : {}),
     });
     if (errors.length) throw new Error(`GradeSubmission: could not record the grade: ${errors.join('; ')}`);
     await this.#sessions.appendEvent(sessionId, event);
@@ -255,6 +262,7 @@ export class GradeSubmission {
       status: 'graded',
       sessionId,
       percent,
+      passingPercent: typeof effectivePassingPercent === 'number' ? effectivePassingPercent : null,
       correct,
       expected: expectedItems.length,
       attemptIds: recordedAttempts,

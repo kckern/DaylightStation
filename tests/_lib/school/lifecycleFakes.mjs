@@ -148,6 +148,9 @@ export class FakeSessionRepository extends IWorkSessionRepository {
   /** Test-only: every event type appended to a session, in order. */
   types(sessionId) { return (this.#logs.get(sessionId) ?? []).map((e) => e.type); }
 
+  /** Test-only: the raw stored events, in order. */
+  events(sessionId) { return [...(this.#logs.get(sessionId) ?? [])]; }
+
   /** Test-only: every session id that exists. */
   ids() { return [...this.#logs.keys()]; }
 }

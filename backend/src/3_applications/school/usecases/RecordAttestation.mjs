@@ -7,14 +7,15 @@
 import { ValidationError } from '#domains/core/errors/index.mjs';
 
 export class RecordAttestation {
-  #log; #teacherGate; #clock; #idGen;
+  #log; #teacherGate; #clock; #idGen; #notes;
 
-  constructor({ log, teacherGate, clock = () => new Date(), idGen = () => `att_${Math.random().toString(36).slice(2, 10)}` } = {}) {
+  constructor({ log, teacherGate, notes = null, clock = () => new Date(), idGen = () => `att_${Math.random().toString(36).slice(2, 10)}` } = {}) {
     if (!log) throw new Error('RecordAttestation requires log');
     if (!teacherGate) throw new Error('RecordAttestation requires teacherGate');
     this.#log = log;
     this.#teacherGate = teacherGate;
     this.#clock = clock;
+    this.#notes = notes;
     this.#idGen = idGen;
   }
 
@@ -32,6 +33,13 @@ export class RecordAttestation {
       reason: reason.trim(),
     };
     await this.#log.append(entry);
+    // The child hears the vouch too (student-advocacy A5).
+    try {
+      await this.#notes?.append({
+        id: `note_${Math.random().toString(36).slice(2, 10)}`, at: entry.at, from: attestedBy,
+        learnerId, note: `A grown-up verified you completed this unit: ${unitId}. It counts.`,
+      });
+    } catch { /* best-effort */ }
     return { entry };
   }
 }

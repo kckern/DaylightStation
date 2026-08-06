@@ -11,9 +11,9 @@ import Icon from './icons/Icon.jsx';
  *
  * An empty shelf renders greyed rather than hidden (the Piano/registry
  * convention): the shape of the whole curriculum stays visible instead of the
- * wall pretending that what exists is all there is. The subtitle is always
- * the subject's own hint — a greyed tile already says "not yet" visually;
- * repeating it in words made the wall read like a list of apologies.
+ * wall pretending that what exists is all there is. A greyed tile carries one
+ * short honest caption ("Nothing here yet") — wave-7 advocacy: a dead tap
+ * with no words reads as "broken", not "empty", to a child.
  */
 export default function SchoolHome({ grouped, onOpen, bankTitles }) {
   const libraryCount = grouped.library.materials.length + grouped.library.banks.length;
@@ -33,7 +33,7 @@ export default function SchoolHome({ grouped, onOpen, bankTitles }) {
             >
               <Icon name={s.id} className="school-home2__subject-icon" />
               <h3 className="school-home2__subject-label">{s.label}</h3>
-              <p className="school-home2__subject-hint">{s.hint}</p>
+              <p className="school-home2__subject-hint">{has ? s.hint : 'Nothing here yet'}</p>
             </button>
           );
         })}

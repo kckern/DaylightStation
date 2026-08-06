@@ -24,6 +24,7 @@ vi.mock('../schoolApi.js', () => ({ schoolApi: {
   periods: (...a) => periodsMock(...a),
   reportCard: (...a) => reportCardMock(...a),
   reviewLearner: (...a) => reviewLearnerMock(...a),
+  wallet: async () => ({ ok: false, status: 503, data: null }),
 } }));
 
 vi.mock('../schoolLog.js', () => ({ schoolLog: {
@@ -94,7 +95,7 @@ describe('standing', () => {
     } });
     render(<StudentPanel onOpen={vi.fn()} />);
     expect(await screen.findByText('Where you stand')).toBeTruthy();
-    expect(screen.getByText('math-fractions')).toBeTruthy();
+    expect(screen.getByText('Math Fractions')).toBeTruthy();
     expect(screen.getByText('87%')).toBeTruthy();
     // The ungraded course must never appear.
     expect(screen.queryByText('never-graded')).toBeNull();

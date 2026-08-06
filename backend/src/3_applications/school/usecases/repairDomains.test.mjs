@@ -123,6 +123,66 @@ describe('YamlSchoolDatastore.moveAttempts (real shards)', () => {
   });
 });
 
+describe('advocacy wave 7 — auto-notes (A5: no silent verbs about children)', () => {
+  const noteStore = () => ({ entries: [], append: vi.fn(async function a(e) { this.entries.push(e); }) });
+  const mkDatastore = () => {
+    const shards = new Map();
+    return {
+      shards,
+      seed(user, day, rows) { shards.set(`${user}:${day}`, rows); },
+      moveAttempts({ fromUserId, toUserId, day, assessmentId, reassignedBy, at }) {
+        const from = shards.get(`${fromUserId}:${day}`) ?? [];
+        const matches = (a) => (a.sessionId ?? a.provenance?.recordId ?? null) === assessmentId;
+        const moving = from.filter(matches);
+        shards.set(`${fromUserId}:${day}`, from.filter((a) => !matches(a)));
+        const to = shards.get(`${toUserId}:${day}`) ?? [];
+        shards.set(`${toUserId}:${day}`, [...to, ...moving.map((a) => ({ ...a, attributedTo: toUserId, reassignedFrom: fromUserId, reassignedBy, reassignedAt: at }))]);
+        return moving.length;
+      },
+    };
+  };
+
+  it('RecordAttestation tells the child their unit counts', async () => {
+    const log = new YamlAttestationLog({ configService });
+    const notes = noteStore();
+    const uc = new RecordAttestation({ log, teacherGate: passingGate(), notes, clock: () => new Date('2026-08-06T12:00:00Z'), idGen: () => 'att_1' });
+    await uc.execute({ learnerId: 'felix', unitId: 'math-fractions.02', reason: 'graded on paper', attestedBy: 'kckern', pin: '7410' });
+    expect(notes.append).toHaveBeenCalledWith(expect.objectContaining({
+      learnerId: 'felix', from: 'kckern',
+      note: expect.stringMatching(/verified you completed.*It counts/),
+    }));
+  });
+
+  it('ReassignEvidence tells BOTH children about the move; a broken notes store never blocks it', async () => {
+    const ds = mkDatastore();
+    ds.seed('felix', '2026-08-06', [{ sessionId: 'ses_1', itemId: 'q1', attributedTo: 'felix', at: '2026-08-06T10:00:00Z' }]);
+    const notes = noteStore();
+    const uc = new ReassignEvidence({ datastore: ds, teacherGate: passingGate(), notes, clock: () => new Date('2026-08-06T12:00:00Z') });
+    await uc.execute({ fromLearnerId: 'felix', toLearnerId: 'milo', day: '2026-08-06', assessmentId: 'ses_1', reassignedBy: 'kckern', pin: '7410' });
+    expect(notes.entries.map((n) => n.learnerId).sort()).toEqual(['felix', 'milo']);
+
+    // best-effort: append throwing must not fail the move itself
+    ds.seed('felix', '2026-08-07', [{ sessionId: 'ses_9', itemId: 'q1', attributedTo: 'felix', at: '2026-08-07T10:00:00Z' }]);
+    const broken = { append: vi.fn(async () => { throw new Error('offline'); }) };
+    const uc2 = new ReassignEvidence({ datastore: ds, teacherGate: passingGate(), notes: broken, clock: () => new Date('2026-08-07T12:00:00Z') });
+    await expect(uc2.execute({ fromLearnerId: 'felix', toLearnerId: 'milo', day: '2026-08-07', assessmentId: 'ses_9', reassignedBy: 'kckern', pin: '7410' }))
+      .resolves.toMatchObject({ moved: 1 });
+  });
+
+  it('retracting an attestation tells the child the unit is back on their list', async () => {
+    const { RetractTeacherRecord } = await import('./RetractTeacherRecord.mjs');
+    const log = new YamlAttestationLog({ configService });
+    await log.append({ id: 'att_1', at: 't', attestedBy: 'kckern', learnerId: 'felix', unitId: 'math-fractions.02', reason: 'r' });
+    const notes = noteStore();
+    const uc = new RetractTeacherRecord({ stores: { enrichment: null, attestation: log, note: null }, teacherGate: passingGate(), notes });
+    await uc.execute({ kind: 'attestation', entryId: 'att_1', retractedBy: 'kckern', pin: '7410' });
+    expect(notes.append).toHaveBeenCalledWith(expect.objectContaining({
+      learnerId: 'felix',
+      note: expect.stringMatching(/completion mark.*removed.*back on your list/),
+    }));
+  });
+});
+
 describe('advocacy wave 6 — retractions (B15)', () => {
   it('a retracted attestation re-locks by construction: list() no longer serves it', async () => {
     const log = new YamlAttestationLog({ configService });
@@ -206,5 +266,65 @@ describe('advocacy wave 6 — transcript (B11)', () => {
     const out = await uc.execute({ learnerId: 'felix' });
     expect(out.periods.map((p) => p.periodId)).toEqual(['spring', 'fall']);
     expect(out.periods[1].courses[0]).toEqual({ courseId: 'math', coursePercent: 91 });
+  });
+});
+
+describe('the review loop closes itself (student-advocacy A1)', () => {
+  const mkQueue = (rows) => ({
+    resolve: vi.fn(async ({ sessionId, itemId, verdict, gradedBy, at }) => {
+      const row = rows.find((r) => r.itemId === itemId);
+      if (!row) return null;
+      row.verdict = verdict;
+      return { sessionId, itemId, verdict, gradedBy, gradedAt: at };
+    }),
+    listForSession: vi.fn(async () => rows),
+  });
+
+  it('resolving the LAST pending item grades and settles in the same act', async () => {
+    const { ResolveReviewItem } = await import('./ResolveReviewItem.mjs');
+    const rows = [
+      { itemId: 'q1', verdict: 'correct' },
+      { itemId: 'q2', verdict: null },
+    ];
+    const gradeSubmission = { execute: vi.fn(async () => ({ status: 'graded', percent: 90, passingPercent: 80 })) };
+    const closeSessionOutcome = { execute: vi.fn(async () => ({ result: 'passed' })) };
+    const uc = new ResolveReviewItem({
+      reviewQueue: mkQueue(rows), grownUps: { assert: () => {} },
+      gradeSubmission, closeSessionOutcome,
+    });
+    const out = await uc.execute({ sessionId: 's1', itemId: 'q2', verdict: 'correct', gradedBy: 'kckern' });
+    expect(gradeSubmission.execute).toHaveBeenCalledWith({ sessionId: 's1' });
+    expect(closeSessionOutcome.execute).toHaveBeenCalledWith({ sessionId: 's1' });
+    expect(out.sessionFinished).toEqual({ result: 'passed', percent: 90, passingPercent: 80 });
+  });
+
+  it('items still pending -> resolve only, no premature grade', async () => {
+    const { ResolveReviewItem } = await import('./ResolveReviewItem.mjs');
+    const rows = [
+      { itemId: 'q1', verdict: null },
+      { itemId: 'q2', verdict: null },
+    ];
+    const gradeSubmission = { execute: vi.fn() };
+    const closeSessionOutcome = { execute: vi.fn() };
+    const uc = new ResolveReviewItem({
+      reviewQueue: mkQueue(rows), grownUps: { assert: () => {} },
+      gradeSubmission, closeSessionOutcome,
+    });
+    const out = await uc.execute({ sessionId: 's1', itemId: 'q1', verdict: 'incorrect', gradedBy: 'kckern' });
+    expect(gradeSubmission.execute).not.toHaveBeenCalled();
+    expect(out.sessionFinished).toBeUndefined();
+  });
+
+  it('a finish failure degrades to resolve-only — the verdict is safe either way', async () => {
+    const { ResolveReviewItem } = await import('./ResolveReviewItem.mjs');
+    const rows = [{ itemId: 'q1', verdict: null }];
+    const uc = new ResolveReviewItem({
+      reviewQueue: mkQueue(rows), grownUps: { assert: () => {} },
+      gradeSubmission: { execute: vi.fn(async () => { throw new Error('boom'); }) },
+      closeSessionOutcome: { execute: vi.fn() },
+    });
+    const out = await uc.execute({ sessionId: 's1', itemId: 'q1', verdict: 'correct', gradedBy: 'kckern' });
+    expect(out.itemId).toBe('q1');
+    expect(out.sessionFinished).toBeUndefined();
   });
 });

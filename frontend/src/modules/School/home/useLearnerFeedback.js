@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { schoolApi } from '../schoolApi.js';
 import { schoolLog } from '../schoolLog.js';
 
@@ -15,6 +15,10 @@ import { schoolLog } from '../schoolLog.js';
  * No learnerId (unclaimed panel) fetches nothing and reports the empty
  * zero-state rather than an error — there is nobody's feedback to ask for.
  *
+ * Polls every 60s while mounted (advocacy: a kid at the kiosk should see a
+ * parent's note land without a reload) and reports `hasNew` when a poll
+ * surfaces an item the previous list didn't have.
+ *
  * @param {string|null} learnerId
  * @param {{limit?: number}} [opts]
  * @returns {{items: Array<{itemId: string, sessionId: string, unitId: string|null,
@@ -22,30 +26,42 @@ import { schoolLog } from '../schoolLog.js';
  *   gradedAt: string|null, prompt: string|null, questionNumber: number|null}>,
  *   status: 'loading'|'ready'|'empty'|'error'}}
  */
+const POLL_MS = 60_000;
+
 export function useLearnerFeedback(learnerId, { limit = 20 } = {}) {
   const [items, setItems] = useState([]);
   const [status, setStatus] = useState(learnerId ? 'loading' : 'empty');
+  const [hasNew, setHasNew] = useState(false);
+  const seenRef = useRef(null); // itemId set from the previous load; null until first load
 
   useEffect(() => {
-    if (!learnerId) { setItems([]); setStatus('empty'); return undefined; }
+    if (!learnerId) { setItems([]); setStatus('empty'); setHasNew(false); return undefined; }
     let alive = true;
+    seenRef.current = null;
+    setHasNew(false);
     setStatus('loading');
-    schoolApi.reviewLearner(learnerId, { limit }).then(({ ok, data }) => {
+    const load = () => schoolApi.reviewLearner(learnerId, { limit }).then(({ ok, data }) => {
       if (!alive) return;
       if (!ok || !Array.isArray(data)) {
         schoolLog.feedbackError('fetch-failed', { learnerId });
-        setItems([]);
-        setStatus('error');
+        // A failed POLL keeps the last good list on screen; only the first
+        // load reports the error state.
+        if (seenRef.current === null) { setItems([]); setStatus('error'); }
         return;
       }
+      const prev = seenRef.current;
+      if (prev !== null && data.some((it) => !prev.has(it.itemId))) setHasNew(true);
+      seenRef.current = new Set(data.map((it) => it.itemId));
       setItems(data);
       setStatus(data.length ? 'ready' : 'empty');
       schoolLog.feedback('loaded', { learnerId, count: data.length });
     });
-    return () => { alive = false; };
+    load();
+    const timer = setInterval(load, POLL_MS);
+    return () => { alive = false; clearInterval(timer); };
   }, [learnerId, limit]);
 
-  return { items, status };
+  return { items, status, hasNew, markSeen: () => setHasNew(false) };
 }
 
 export default useLearnerFeedback;

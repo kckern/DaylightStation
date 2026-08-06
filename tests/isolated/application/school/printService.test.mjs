@@ -119,14 +119,17 @@ describe('PrintService.approve / deny', () => {
     expect(store.log.at(-1)).toMatchObject({ userId: 'learner-two', pages: 2, approvedBy: 'dad' });
   });
 
-  it('deny removes the pending job without printing', async () => {
+  it('deny prints nothing and KEEPS the row as a denied record the child can see (advocacy wave 7)', async () => {
     const { deps, store, printed } = makeDeps();
     store.pending = [{ id: 'req1', userId: 'learner-two', printableId: 'caps', copies: 1, pages: 2, status: 'pending', at: new Date(T0).toISOString() }];
     const svc = new PrintService(deps);
     const r = await svc.deny({ requestId: 'req1', approver: 'dad' });
     expect(r.decision).toBe('denied');
     expect(printed).toHaveLength(0);
-    expect(store.pending).toHaveLength(0);
+    expect(store.pending).toHaveLength(1);
+    expect(store.pending[0]).toMatchObject({ id: 'req1', status: 'denied', deniedBy: 'dad' });
+    // …and it is no longer offered on the parent's approval surface.
+    expect(svc.listPending()).toHaveLength(0);
   });
 
   it('approving an unknown request throws', async () => {

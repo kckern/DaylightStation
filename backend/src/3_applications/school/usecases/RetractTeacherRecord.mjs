@@ -10,15 +10,16 @@ import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index
 const STORES = ['enrichment', 'attestation', 'note'];
 
 export class RetractTeacherRecord {
-  #stores; #teacherGate; #clock;
+  #stores; #teacherGate; #clock; #notes;
 
   /** @param {{stores: {enrichment, attestation, note}, teacherGate, clock?}} deps */
-  constructor({ stores, teacherGate, clock = () => new Date() } = {}) {
+  constructor({ stores, teacherGate, notes = null, clock = () => new Date() } = {}) {
     if (!stores) throw new Error('RetractTeacherRecord requires stores');
     if (!teacherGate) throw new Error('RetractTeacherRecord requires teacherGate');
     this.#stores = stores;
     this.#teacherGate = teacherGate;
     this.#clock = clock;
+    this.#notes = notes;
   }
 
   async execute({ kind, entryId, retractedBy = null, pin = null } = {}) {
@@ -30,7 +31,19 @@ export class RetractTeacherRecord {
     if (!store.list().some((e) => e.id === entryId)) {
       throw new EntityNotFoundError(`${kind} entry`, entryId);
     }
+    const target = store.list().find((e) => e.id === entryId);
     await store.retract(entryId, { by: retractedBy, at: this.#clock().toISOString() });
+    // A withdrawn completion mark re-locks a child's gate — they hear it
+    // rather than discovering a lock reappeared (student-advocacy A5).
+    if (kind === 'attestation' && target?.learnerId) {
+      try {
+        await this.#notes?.append({
+          id: `note_${Math.random().toString(36).slice(2, 10)}`, at: this.#clock().toISOString(),
+          from: retractedBy, learnerId: target.learnerId,
+          note: `The completion mark for ${target.unitId} was removed — that unit is back on your list.`,
+        });
+      } catch { /* best-effort */ }
+    }
     return { retracted: entryId, kind };
   }
 }

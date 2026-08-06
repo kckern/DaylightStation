@@ -81,8 +81,15 @@ const SCHEMA = {
   },
   submitted: { fields: ['transport'], validate: oneOfField('transport', TRANSPORTS) },
   graded: {
-    fields: ['attemptIds', 'percent'],
+    // `passingPercent` (optional) is the bar IN EFFECT at grading time
+    // (student-advocacy A4): a later pass-override edit must never move the
+    // bar under an already-graded kid, so the close reads this stamp first.
+    fields: ['attemptIds', 'percent', 'passingPercent'],
     validate: (raw, push) => {
+      if (raw.passingPercent !== undefined && (typeof raw.passingPercent !== 'number'
+          || !Number.isFinite(raw.passingPercent) || raw.passingPercent < 1 || raw.passingPercent > 100)) {
+        push('passingPercent: must be a number from 1-100 when present');
+      }
       if (!Array.isArray(raw.attemptIds) || raw.attemptIds.length === 0) {
         push('attemptIds: must be a non-empty array');
       } else {
@@ -214,6 +221,7 @@ const emptyState = () => ({
   issuedArtifacts: [],
   attemptIds: [],
   gradedPercent: null,
+  gradedPassingPercent: null,
   transport: null,
   mediaDispatch: null,
   outcome: null,
@@ -282,6 +290,7 @@ const APPLY = {
       if (isNonEmptyString(id) && !s.attemptIds.includes(id)) s.attemptIds.push(id);
     });
     if (typeof e.percent === 'number') s.gradedPercent = e.percent;
+    if (typeof e.passingPercent === 'number') s.gradedPassingPercent = e.passingPercent;
   },
   outcome_recorded(s, e) {
     s.outcome = { outcomeId: e.outcomeId ?? null, result: e.result ?? null, at: e.at };

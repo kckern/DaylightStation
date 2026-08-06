@@ -27,6 +27,7 @@ export default function PrintCenter() {
   const [printables, setPrintables] = useState(null);
   const [quota, setQuota] = useState(null);
   const [pending, setPending] = useState([]);
+  const [myAsks, setMyAsks] = useState([]);
   const [busyId, setBusyId] = useState(null);
   const [flash, setFlash] = useState(null); // { kind, text }
 
@@ -41,6 +42,16 @@ export default function PrintCenter() {
     schoolApi.printPending().then(({ ok, data }) => { if (ok && Array.isArray(data)) setPending(data); });
   }, []);
 
+  // The child's own asks and their outcomes (advocacy: an answered request
+  // must never just vanish — "still waiting" and "not this time" are both
+  // facts the kid deserves to see).
+  const refreshMyAsks = useCallback(() => {
+    if (!currentUser?.id) { setMyAsks([]); return; }
+    schoolApi.printRequests(currentUser.id).then(({ ok, data }) => {
+      if (ok && Array.isArray(data)) setMyAsks(data);
+    });
+  }, [currentUser?.id]);
+
   useEffect(() => {
     let alive = true;
     schoolApi.printables().then(({ ok, data }) => { if (alive) setPrintables(ok && Array.isArray(data) ? data : []); });
@@ -48,6 +59,7 @@ export default function PrintCenter() {
   }, []);
   useEffect(refreshQuota, [refreshQuota]);
   useEffect(() => { if (isAdult) refreshPending(); }, [isAdult, refreshPending]);
+  useEffect(() => { if (!isAdult) refreshMyAsks(); }, [isAdult, refreshMyAsks]);
 
   const onPrint = useCallback(async (p) => {
     if (!currentUser?.id) { openPicker(); return; }
@@ -61,8 +73,8 @@ export default function PrintCenter() {
     else if (data.decision === 'approval') setFlash({ kind: 'wait', text: `“${p.label}” needs a grown-up's OK — asked them for you.` });
     else setFlash({ kind: 'error', text: data.reason || 'That can\'t be printed right now.' });
     refreshQuota();
-    if (isAdult) refreshPending();
-  }, [currentUser?.id, openPicker, refreshQuota, isAdult, refreshPending]);
+    if (isAdult) refreshPending(); else refreshMyAsks();
+  }, [currentUser?.id, openPicker, refreshQuota, isAdult, refreshPending, refreshMyAsks]);
 
   const onApprove = useCallback(async (req, approve) => {
     if (!currentUser?.id) return;
@@ -109,6 +121,22 @@ export default function PrintCenter() {
             </li>
           ))}
         </ul>
+      )}
+
+      {!isAdult && myAsks.length > 0 && (
+        <section className="school-print__asks" data-testid="my-print-asks">
+          <h3 className="school-print__approvals-heading">Your asks</h3>
+          <ul className="school-print__approvals-list">
+            {myAsks.map((r) => (
+              <li key={r.id} className={`school-print__ask is-${r.status}`}>
+                <span className="school-print__approval-text"><strong>{r.label}</strong></span>
+                <span className="school-print__ask-status">
+                  {r.status === 'pending' ? 'Still waiting for a grown-up' : 'A grown-up said not this time'}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       {isAdult && pending.length > 0 && (

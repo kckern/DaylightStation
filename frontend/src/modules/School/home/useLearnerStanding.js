@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { schoolApi } from '../schoolApi.js';
+import { labelize } from '../teacher/labelize.js';
 import { schoolLog } from '../schoolLog.js';
 
 /**
@@ -37,7 +38,7 @@ export function deriveStanding(report) {
     .filter((c) => typeof c?.coursePercent === 'number' && Number.isFinite(c.coursePercent))
     .map((c) => ({
       courseId: c.courseId,
-      label: c.label ?? c.courseId,
+      label: c.label ?? labelize(c.courseId),
       percent: Math.round(c.coursePercent),
     }));
 }

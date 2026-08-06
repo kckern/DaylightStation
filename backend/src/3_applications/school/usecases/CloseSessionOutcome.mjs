@@ -168,7 +168,10 @@ export class CloseSessionOutcome {
     // payment (in `rewardDecision`), not the result.
     const evaluated = evaluateOutcome({
       gradedPercent: state.gradedPercent,
-      passingPercent: this.#passOverrides?.percentFor?.(unit?.unitId) ?? unit?.passing?.percent,
+      // The bar stamped AT GRADING wins (advocacy A4); the live override /
+      // authored percent is only the fallback for pre-stamp sessions.
+      passingPercent: state.gradedPassingPercent
+        ?? this.#passOverrides?.percentFor?.(unit?.unitId) ?? unit?.passing?.percent,
     });
     return this.#recordOutcomeAndSettle({
       sessionId, state, unit, nowIso, signedOff, result: evaluated.result, reason: evaluated.reason,
@@ -213,9 +216,11 @@ export class CloseSessionOutcome {
       unitTitle: unit?.title ?? state.unitId,
       result: outcome.result,
       percent: state.gradedPercent,
+      passingPercent: state.gradedPassingPercent ?? unit?.passing?.percent ?? null,
       objectives: unit?.objectives ?? [],
       actions,
       reward: reward && reward.amount > 0 ? { amount: reward.amount } : null,
+      rewardSkipReason: reward?.skipReason ?? null,
       unlockedTitle: unlocked?.title ?? null,
       notes,
     });

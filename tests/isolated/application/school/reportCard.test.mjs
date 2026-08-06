@@ -699,7 +699,42 @@ describe('GetTeacherToday', () => {
       correctToday: 1,
       sessionsToday: [{ unitId: 'frac.01', state: 'in_progress' }],
       pendingReview: 1,
+      reflectionsToday: [],
     }]);
+  });
+
+  it('surfaces today\'s reflections (kid\'s own words) when an evidence repo is wired; failures degrade to []', async () => {
+    const clock = () => new Date('2026-09-10T10:00:00.000Z');
+    const learnerDirectory = { listLearners: () => ROSTER.filter((r) => r.id === 'kid1') };
+    const evidenceRepository = {
+      listEvidence: async () => [
+        { kind: 'reflection', occurredAt: '2026-09-10T09:30:00.000Z', selfRegulation: { selfAssessment: 'uncertain', confidence: 2, note: 'fractions felt hard' } },
+        { kind: 'reflection', occurredAt: '2026-09-09T01:00:00.000Z', selfRegulation: { selfAssessment: 'ready' } }, // yesterday — excluded
+        { kind: 'assessment', occurredAt: '2026-09-10T09:00:00.000Z' }, // not a reflection
+      ],
+    };
+    const useCase = new GetTeacherToday({
+      learnerDirectory,
+      datastore: fakeSchoolDatastore({ attempts: {} }),
+      sessions: fakeSessions([]),
+      evidenceRepository,
+      clock,
+      logger: silent,
+    });
+    const digest = await useCase.execute();
+    expect(digest[0].reflectionsToday).toEqual([{
+      selfAssessment: 'uncertain', confidence: 2, note: 'fractions felt hard', at: '2026-09-10T09:30:00.000Z',
+    }]);
+
+    const broken = new GetTeacherToday({
+      learnerDirectory,
+      datastore: fakeSchoolDatastore({ attempts: {} }),
+      sessions: fakeSessions([]),
+      evidenceRepository: { listEvidence: async () => { throw new Error('ledger offline'); } },
+      clock,
+      logger: silent,
+    });
+    expect((await broken.execute())[0].reflectionsToday).toEqual([]);
   });
 
   // The two boundary reproductions from code review: raw day-FILE date
