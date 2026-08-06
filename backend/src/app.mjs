@@ -3700,6 +3700,41 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // household-local delivery hour (plan.ceremonies[type].at or per-type
   // default), so each nudge fires at most once per day. Dedupe is per period
   // via ceremony records, so a completed ceremony is never re-notified.
+  // Teacher backlog nudge (teacher-console advocacy A1): a child's session
+  // BLOCKS on review, so the teachers must be told, not left to poll.
+  // Hourly check, deduped per study-day+counts, so a stable backlog nudges
+  // once and a grown one nudges again — Telegram via the same notification
+  // stack the lifeplan ceremonies use, with a tappable console link.
+  if (agentsServices.scheduler && notificationStack?.notificationService) {
+    agentsServices.scheduler.registerTask('school:teacher-backlog-nudge', '0 * * * *', async () => {
+      try {
+        const pendingReview = schoolLifecycle.stores?.reviewQueue
+          ? (await schoolLifecycle.stores.reviewQueue.listPending()).length : 0;
+        const pendingPrints = schoolPrintService ? schoolPrintService.listPending().length : 0;
+        if (!pendingReview && !pendingPrints) return;
+        const teacherIds = (configService.getHouseholdAppConfig(null, 'school') || {}).teachers ?? [];
+        const day = new Date().toISOString().slice(0, 10);
+        const parts = [];
+        if (pendingReview) parts.push(`${pendingReview} item${pendingReview === 1 ? '' : 's'} waiting on a mark`);
+        if (pendingPrints) parts.push(`${pendingPrints} print${pendingPrints === 1 ? '' : 's'} awaiting approval`);
+        for (const username of teacherIds) {
+          // eslint-disable-next-line no-await-in-loop
+          await notificationStack.notificationService.send({
+            title: 'School backlog',
+            body: `${parts.join(' and ')} — a child may be blocked on you.`,
+            category: 'school',
+            urgency: 'normal',
+            actions: [{ label: 'Open the console', action: 'open', data: { url: '/school/teacher' } }],
+            metadata: { username },
+            dedupeKey: `school-backlog:${username}:${day}:${pendingReview}:${pendingPrints}`,
+          });
+        }
+      } catch (err) {
+        rootLogger.warn('school.teacher-nudge.failed', { error: err.message });
+      }
+    });
+  }
+
   if (agentsServices.scheduler) {
     agentsServices.scheduler.registerTask('lifeplan:ceremony-check', '0 * * * *', async () => {
       const lifePlanStore = lifeplanResult.container.getLifePlanStore();

@@ -22,8 +22,15 @@ export default function PeriodSelect({ periods, value, onChange }) {
 }
 
 export function currentPeriodId(periods, now = Date.now()) {
-  const hit = periods.find((p) => Date.parse(p.startsAt) <= now && now < Date.parse(p.endsAt));
-  if (hit) return hit.periodId;
+  // NARROWEST current period (advocacy A5): in October, "close this period"
+  // must mean Fall, not the whole school year that also contains now.
+  const current = periods.filter((p) => Date.parse(p.startsAt) <= now && now < Date.parse(p.endsAt));
+  if (current.length) {
+    const hit = current.sort((a, b) => (
+      (Date.parse(a.endsAt) - Date.parse(a.startsAt)) - (Date.parse(b.endsAt) - Date.parse(b.startsAt))
+    ))[0];
+    return hit.periodId;
+  }
   // Between terms: the most recent period that has STARTED — a records view
   // should default to what just ended, never to a pre-configured future term.
   const started = periods

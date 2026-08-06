@@ -7,6 +7,17 @@ import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
 
 export default function LearnerDay({ learnerId }) {
+  // "What SHOULD they do today" (advocacy A3) — the dry-run agenda plan, so
+  // the morning check-in reads as a plan, not an autopsy.
+  const planned = usePanelFetch(
+    () => schoolApi.agendaPreview(learnerId),
+    {
+      deps: [learnerId],
+      panel: 'learner-plan',
+      notFoundAs: 'unavailable',
+      isEmpty: (d) => !(d?.sections ?? []).length,
+    },
+  );
   const sessions = usePanelFetch(
     () => schoolApi.learnerSessions(learnerId, { window: 'today' }),
     {
@@ -27,6 +38,21 @@ export default function LearnerDay({ learnerId }) {
 
   return (
     <div className="teacher-learner-day">
+      {planned.state === 'ok' && (
+        <ul className="teacher-learner-day__plan">
+          {planned.data.sections.map((section) => (
+            <li key={section.subject}>
+              <span className="teacher-learner-day__subject">{section.subject}</span>
+              <span>
+                {section.servedToday
+                  ? 'done today'
+                  : (section.next?.title ?? section.next?.label ?? section.next?.unitId ?? section.locked?.remedy ?? 'nothing offered')}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {planned.state === 'empty' && <p className="teacher-panel__empty">Nothing assigned for today.</p>}
       {sessions.state === 'ok' && (
         <ul className="teacher-learner-day__sessions">
           {sessions.data.sessions.map((s, i) => (

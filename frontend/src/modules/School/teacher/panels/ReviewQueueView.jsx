@@ -9,6 +9,21 @@ import { useState } from 'react';
 import { schoolApi } from '../../schoolApi.js';
 import { useTeacherWrite } from '../useTeacherWrite.js';
 
+const REASON_COPY = {
+  ambiguous: 'the scanner could not tell which bubble was meant',
+  blank: 'the row was left blank',
+  free_response: 'a written answer needs a human mark',
+};
+
+export function waitAge(enqueuedAt, now = Date.now()) {
+  const at = Date.parse(enqueuedAt ?? '');
+  if (!Number.isFinite(at)) return null;
+  const mins = Math.max(0, Math.round((now - at) / 60_000));
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.round(mins / 60);
+  return hours < 48 ? `${hours}h` : `${Math.round(hours / 24)}d`;
+}
+
 export default function ReviewQueueView({ items, kids, onResolved }) {
   const nameFor = (id) => kids.find((k) => k.id === id)?.name ?? id ?? 'Unknown';
   const { run, busy, errors } = useTeacherWrite({ panel: 'review-queue' });
@@ -40,7 +55,16 @@ export default function ReviewQueueView({ items, kids, onResolved }) {
                 <li key={key} className="teacher-review__item">
                   {item.questionNumber != null && <span className="teacher-review__qnum">Q{item.questionNumber}</span>}
                   <span className="teacher-review__prompt">{item.prompt ?? item.itemId}</span>
+                  {waitAge(item.enqueuedAt) && (
+                    <span className="teacher-review__age">waiting {waitAge(item.enqueuedAt)}</span>
+                  )}
+                  {item.reason && (
+                    <span className="teacher-review__reason">{REASON_COPY[item.reason] ?? item.reason}</span>
+                  )}
                   {item.given != null && <blockquote className="teacher-review__given">{String(item.given)}</blockquote>}
+                  {item.rubric && (
+                    <p className="teacher-review__rubric">Marking guide: {item.rubric}</p>
+                  )}
                   <div className="teacher-review__controls">
                     <input
                       type="text"

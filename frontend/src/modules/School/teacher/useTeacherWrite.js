@@ -4,7 +4,7 @@
  * open the PIN prompt and surface a per-item message; success → the caller's
  * server-authoritative refresh. Never optimistic.
  */
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTeacherProfile } from './TeacherProfileContext.jsx';
 import { teacherLog } from './teacherLog.js';
 
@@ -12,26 +12,50 @@ export function useTeacherWrite({ panel }) {
   const { currentTeacher, pin, openPicker, openPinPrompt } = useTeacherProfile();
   const [busy, setBusy] = useState(null);   // caller-chosen key of the in-flight row
   const [errors, setErrors] = useState({}); // key -> message
+  // A tap blocked on the claim or the PIN is STASHED and replayed once the
+  // missing piece lands (advocacy A4): one tap becomes one mark, not the
+  // first of three. Replay fires at most once per stash.
+  const pendingRef = useRef(null);
 
-  const run = useCallback(async (key, call, { onSuccess } = {}) => {
-    if (!currentTeacher) { openPicker(); return; }
+  const attempt = useCallback(async (key, call, onSuccess, { actorId, pin: usePin }) => {
     setBusy(key);
     setErrors((e) => ({ ...e, [key]: null }));
-    const { ok, status, data } = await call({ actorId: currentTeacher.id, pin });
+    const { ok, status, data } = await call({ actorId, pin: usePin });
     setBusy(null);
-    if (ok) { onSuccess?.(data); return; }
-    // The two handlers speak different shapes: school.mjs's wrap sends
-    // {error: string}; the app-level object-shape handler sends
-    // {error: {type, message}}. Normalize — an object must never reach JSX.
+    if (ok) { pendingRef.current = null; onSuccess?.(data); return true; }
     const message = typeof data?.error === 'string' ? data.error : data?.error?.message;
     if (status === 403) {
+      pendingRef.current = { key, call, onSuccess, pinAtStash: usePin, hadTeacher: true };
       openPinPrompt();
-      setErrors((e) => ({ ...e, [key]: message ?? 'The teacher PIN is missing or wrong — enter it and try again.' }));
+      setErrors((e) => ({ ...e, [key]: message ?? 'Enter the teacher PIN — this will save automatically.' }));
     } else {
+      pendingRef.current = null;
       setErrors((e) => ({ ...e, [key]: message ?? 'That didn’t save — try again.' }));
     }
     teacherLog.fetch('write-refused', { panel, key, status });
-  }, [currentTeacher, pin, openPicker, openPinPrompt, panel]);
+    return false;
+  }, [openPinPrompt, panel]);
+
+  const run = useCallback(async (key, call, { onSuccess } = {}) => {
+    if (!currentTeacher) {
+      pendingRef.current = { key, call, onSuccess, pinAtStash: pin, hadTeacher: false };
+      openPicker();
+      return;
+    }
+    await attempt(key, call, onSuccess, { actorId: currentTeacher.id, pin });
+  }, [currentTeacher, pin, openPicker, attempt]);
+
+  // Replay the stashed action ONLY when the piece it was missing actually
+  // arrives — a claim for a claim-blocked tap, a NEW pin for a pin-blocked
+  // one. Never a blind refire on unrelated re-renders.
+  useEffect(() => {
+    const pending = pendingRef.current;
+    if (!pending || !currentTeacher) return;
+    const unblocked = (!pending.hadTeacher) || (pin !== pending.pinAtStash);
+    if (!unblocked) return;
+    pendingRef.current = null;
+    attempt(pending.key, pending.call, pending.onSuccess, { actorId: currentTeacher.id, pin });
+  }, [currentTeacher, pin, attempt]);
 
   return { run, busy, errors };
 }

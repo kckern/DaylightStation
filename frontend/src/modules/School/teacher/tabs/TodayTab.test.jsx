@@ -12,6 +12,7 @@ vi.mock('../../schoolApi.js', () => ({
     progress: vi.fn(),
     printPending: vi.fn(),
     quizRequests: vi.fn(),
+    agendaPreview: vi.fn(),
     teachers: vi.fn(),
     resolveReview: vi.fn(),
     printApprove: vi.fn(),
@@ -52,6 +53,9 @@ beforeEach(() => {
   ] }));
   schoolApi.learnerSessions.mockResolvedValue(ok({ sessions: [{ sessionId: 'ses_1', state: 'graded', unitId: 'math.01' }] }));
   schoolApi.progress.mockResolvedValue(ok({ recentScores: [] }));
+  schoolApi.agendaPreview.mockResolvedValue(ok({ sections: [
+    { subject: 'science', servedToday: false, next: { title: 'Pokemon Basics' } },
+  ] }));
   schoolApi.printPending.mockResolvedValue(ok([
     { id: 'pr_1', userId: 'felix', printableId: 'state-capitals', label: 'US State Capitals', pages: 6, copies: 1 },
   ]));
@@ -175,5 +179,47 @@ describe('wave-2 mutations', () => {
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Dismiss' })); });
     await waitFor(() => expect(schoolApi.quizRequestDismiss).toHaveBeenCalledWith(
       { unitId: 'plex:123', userId: 'milo', dismissedBy: 'kckern', pin: null }));
+  });
+});
+
+describe('advocacy wave 6A', () => {
+  it('the drill-in shows what the kid SHOULD do today, from the dry-run plan', async () => {
+    sessionStorage.setItem('school-teacher-claim', 'kckern');
+    mount(<TodayTab kids={KIDS} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /Felix/ })).toBeTruthy());
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /Felix/ })); });
+    await waitFor(() => expect(schoolApi.agendaPreview).toHaveBeenCalledWith('felix'));
+    await waitFor(() => expect(screen.getByText('Pokemon Basics')).toBeTruthy());
+  });
+
+  it('review items show rubric, reason, and wait-age', async () => {
+    sessionStorage.setItem('school-teacher-claim', 'kckern');
+    schoolApi.lifecycleReview.mockResolvedValue(ok({ items: [{
+      sessionId: 'ses_1', itemId: 'q3', learnerId: 'felix', prompt: 'Explain photosynthesis',
+      given: 'plants eat light', questionNumber: 3, reason: 'free_response',
+      rubric: 'Full credit for light + chlorophyll + sugar', enqueuedAt: new Date(Date.now() - 3 * 3600_000).toISOString(),
+    }] }));
+    mount(<TodayTab kids={KIDS} />);
+    await waitFor(() => expect(screen.getByText(/Marking guide: Full credit/)).toBeTruthy());
+    expect(screen.getByText(/written answer needs a human mark/)).toBeTruthy();
+    expect(screen.getByText(/waiting 3h/)).toBeTruthy();
+  });
+
+  it('a pin-blocked tap REPLAYS itself once the pin is entered — one tap, one mark', async () => {
+    sessionStorage.setItem('school-teacher-claim', 'kckern');
+    schoolApi.resolveReview
+      .mockResolvedValueOnce({ ok: false, status: 403, data: { ok: false, error: { type: 'GuestForbiddenError', message: 'The teacher PIN is missing or wrong.' } } })
+      .mockResolvedValue(ok({ verdict: 'correct' }));
+    mount(<TodayTab kids={KIDS} />);
+    await waitFor(() => expect(screen.getByText(/Explain photosynthesis/)).toBeTruthy());
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Correct' })); });
+    await waitFor(() => expect(screen.getByRole('dialog', { name: 'Teacher PIN' })).toBeTruthy());
+    act(() => {
+      fireEvent.change(screen.getByLabelText('PIN'), { target: { value: '7410' } });
+    });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Save' })); });
+    await waitFor(() => expect(schoolApi.resolveReview).toHaveBeenCalledTimes(2));
+    expect(schoolApi.resolveReview).toHaveBeenLastCalledWith('ses_1', 'q3',
+      expect.objectContaining({ pin: '7410' }));
   });
 });

@@ -27,6 +27,7 @@ vi.mock('../schoolApi.js', () => {
     reportCardFrozen: vi.fn(okEmpty),
     instructionalInsights: vi.fn(async () => ({ ok: true, status: 200, data: null })),
     reviewLearner: vi.fn(okEmpty),
+    agendaPreview: vi.fn(async () => ({ ok: true, status: 200, data: { sections: [] } })),
     passOverrides: vi.fn(async () => ({ ok: true, status: 200, data: { overrides: {} } })),
     milestones: vi.fn(async () => ({ ok: true, status: 200, data: { milestones: [] } })),
     enrichment: vi.fn(async () => ({ ok: true, status: 200, data: { entries: [] } })),
