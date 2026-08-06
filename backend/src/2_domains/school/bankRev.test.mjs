@@ -31,3 +31,20 @@ describe('bankContentRev (admin advocacy A3)', () => {
     expect(bankContentRev({ items: 'nope' })).toBeNull();
   });
 });
+
+describe('schema discriminator (admin advocacy #18)', () => {
+  it('banks and units accept v1 or absent, refuse unknown versions', async () => {
+    const { validateQuestionBank } = await import('./questionBankValidation.mjs');
+    const { validateUnit } = await import('./curriculum/unitValidation.mjs');
+    const okBank = { id: 'b', title: 'B', items: [{ id: 'q1', type: 'multiple_choice', prompt: 'p', choices: ['a', 'b'], answer: 'a' }] };
+    expect(validateQuestionBank(okBank).ok).toBe(true);
+    expect(validateQuestionBank({ ...okBank, schema: 'school.question-bank/v1' }).ok).toBe(true);
+    expect(validateQuestionBank({ ...okBank, schema: 'school.question-bank/v9' }).ok).toBe(false);
+    const okUnit = {
+      unitId: 'x-01', title: 'X', subject: 'math',
+      provenance: { source: 'hand-authored', reviewState: 'approved' },
+    };
+    expect(validateUnit({ ...okUnit, schema: 'school.unit/v9' }).errors.join(' ')).toMatch(/schema/);
+    expect(validateUnit({ ...okUnit, schema: 'school.unit/v1' }).errors.join(' ')).not.toMatch(/schema/);
+  });
+});

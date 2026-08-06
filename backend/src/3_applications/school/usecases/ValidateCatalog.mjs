@@ -48,6 +48,7 @@ export class ValidateCatalog {
   #surfaceValidators;
   #measureProbe;
   #recordedUnitIds;
+  #bankUnits;
 
   /**
    * @param {object} deps
@@ -62,7 +63,7 @@ export class ValidateCatalog {
    * @param {(document: object, ctx: {id: string}) => (void|{errors?: string[]}|Promise<*>)} [deps.measureProbe]
    *   optional render-measure callback; only consulted under `renderProbe`
    */
-  constructor({ catalog, bankIds = [], programIds = [], surfaceValidators = new Map(), measureProbe = null, recordedUnitIds = null } = {}) {
+  constructor({ catalog, bankIds = [], programIds = [], surfaceValidators = new Map(), measureProbe = null, recordedUnitIds = null, bankUnits = null } = {}) {
     if (!catalog) throw new Error('ValidateCatalog requires a catalog');
     this.#catalog = catalog;
     this.#bankIds = bankIds instanceof Set ? bankIds : new Set(bankIds);
@@ -75,6 +76,11 @@ export class ValidateCatalog {
     // resolve against the catalog being promoted?" — the drift that silently
     // erases grades from report cards. Absent = sweep off (advisory feature).
     this.#recordedUnitIds = typeof recordedUnitIds === 'function' ? recordedUnitIds : null;
+    // The bank↔unit SEAM (admin advocacy #17): `unit:` backlinks were checked
+    // by neither validator — a typo'd backlink silently orphaned the quiz
+    // gate, and two banks claiming one unit resolved by silent
+    // last-write-wins. Optional thunk answering [{bankId, unit}].
+    this.#bankUnits = typeof bankUnits === 'function' ? bankUnits : null;
   }
 
   /**
@@ -163,11 +169,33 @@ export class ValidateCatalog {
       await this.#runRenderProbe(validDocuments, documentErrors);
     }
 
+    // Backlink seam errors ARE promotion blockers: a duplicate claim grades
+    // children against whichever file loaded last, and a dead curriculum
+    // backlink is a gate that can never open. `plex:` targets are media ids
+    // outside this catalog — exempt from resolution, included in dedup.
+    const bankLinkErrors = [];
+    if (this.#bankUnits) {
+      const catalogUnitIds = new Set((units.items ?? []).map(({ id }) => id));
+      const claims = new Map();
+      for (const { bankId, unit } of await this.#bankUnits()) {
+        if (typeof unit !== 'string' || !unit) continue;
+        if (claims.has(unit)) {
+          bankLinkErrors.push(`unit '${unit}' is claimed by both '${claims.get(unit)}' and '${bankId}' — the gate would silently use whichever loaded last`);
+        } else {
+          claims.set(unit, bankId);
+        }
+        if (!unit.startsWith('plex:') && !catalogUnitIds.has(unit)) {
+          bankLinkErrors.push(`bank '${bankId}' backlinks unit '${unit}', which this catalog does not publish`);
+        }
+      }
+    }
+
     const ok = catalogErrors.length === 0
       && Object.keys(unitErrors).length === 0
       && Object.keys(documentErrors).length === 0
       && Object.keys(manifestErrors).length === 0
-      && Object.keys(workErrors).length === 0;
+      && Object.keys(workErrors).length === 0
+      && bankLinkErrors.length === 0;
 
     // Advisory, never an ok-blocker: an intentionally retired unit would
     // otherwise fail promotion forever. The point is that the drift is NAMED
@@ -188,6 +216,7 @@ export class ValidateCatalog {
       manifestErrors,
       workErrors,
       catalogErrors,
+      bankLinkErrors,
       historyDrift,
       summary: {
         units: (units.items ?? []).length,

@@ -3202,6 +3202,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     remediationTutor: schoolLearningLoop.tutor,
     learnerDirectory: schoolLearnerDirectory,
     printService: schoolPrintService,
+    academicPeriodStore: schoolAcademicPeriods,
+    milestoneStore: schoolMilestoneStore,
+    assignmentsStore: schoolLifecycle.stores?.assignments ?? null,
     getLearnerRecord: new GetLearnerRecord({
       teacherNotes: schoolTeacherNotes,
       reviewQueue: schoolLifecycle.stores?.reviewQueue ?? null,
