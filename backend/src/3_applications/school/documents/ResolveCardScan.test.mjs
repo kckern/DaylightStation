@@ -192,19 +192,19 @@ describe('execute — grading across item types (spec §5.4/§5.5)', () => {
     });
     expect(card.results).toEqual([
       {
-        row: 1, itemId: 'q1', itemType: 'multiple_choice', prompt: 'Prompt for q1', status: 'correct', given: 'Alpha', points: 1, earned: 1,
+        row: 1, itemId: 'q1', itemType: 'multiple_choice', prompt: 'Prompt for q1', status: 'correct', given: 'Alpha', points: 1, earned: 1, concepts: [],
       },
       {
-        row: 2, itemId: 'q2', itemType: 'multiple_choice', prompt: 'Prompt for q2', status: 'ambiguous', given: ['A', 'B'], points: 1, earned: 0,
+        row: 2, itemId: 'q2', itemType: 'multiple_choice', prompt: 'Prompt for q2', status: 'ambiguous', given: ['A', 'B'], points: 1, earned: 0, concepts: [],
       },
       {
-        row: 3, itemId: 'q3', itemType: 'true_false', prompt: 'Prompt for q3', status: 'correct', given: 'A', points: 1, earned: 1,
+        row: 3, itemId: 'q3', itemType: 'true_false', prompt: 'Prompt for q3', status: 'correct', given: 'A', points: 1, earned: 1, concepts: [],
       },
       {
-        row: 4, itemId: 'q4', itemType: 'multi_select', prompt: 'Prompt for q4', status: 'correct', given: ['Red', 'Blue'], points: 1, earned: 1,
+        row: 4, itemId: 'q4', itemType: 'multi_select', prompt: 'Prompt for q4', status: 'correct', given: ['Red', 'Blue'], points: 1, earned: 1, concepts: [],
       },
       {
-        row: 5, itemId: 'q5', itemType: 'multiple_choice', prompt: 'Prompt for q5', status: 'blank', given: null, points: 5, earned: 0,
+        row: 5, itemId: 'q5', itemType: 'multiple_choice', prompt: 'Prompt for q5', status: 'blank', given: null, points: 5, earned: 0, concepts: [],
       },
     ]);
     expect(card.totalPoints).toBe(9); // 1+1+1+1+5
@@ -249,6 +249,49 @@ describe('execute — grading across item types (spec §5.4/§5.5)', () => {
   });
 });
 
+describe('execute — row results carry concepts and renderedAt (R2)', () => {
+  it('row results carry the bank item concepts and the record renderedAt', async () => {
+    const repository = fakeRepository();
+    const allocationStore = fakeAllocationStore();
+    // Concepts are a BANK ITEM field (questionBankValidation.mjs:57-61); an
+    // inline `question` block (mcQuestion above) never threads a `concepts`
+    // key through `publishQuestion` (documentSource.mjs) into its minted
+    // item, so the only fixture shape that actually carries concepts through
+    // this pipeline is a bank-select block against an external bank whose
+    // item defines them directly (mirrors the F1/F4 review-fix fixtures
+    // above).
+    const bank = {
+      id: 'concepts-bank',
+      items: [
+        {
+          id: 'c-mc1', type: 'multiple_choice', prompt: 'Q1', choices: ['A', 'B'], answer: 'A', concepts: ['fraction-add'],
+        },
+      ],
+    };
+    const banks = { getBank: (id) => (id === bank.id ? bank : null) };
+    const source = sourceDoc('concepts-doc', [
+      {
+        type: 'question', bankId: bank.id, select: 1, key: 'sel1',
+      },
+    ]);
+
+    const publisher = new PublishPrintDocument({ repository });
+    const { id, rev } = await publisher.execute({ source });
+    const published = await repository.getPublished(id, rev);
+    const renderer = new RenderPrintDocument({ repository, allocationStore, banks });
+    const { allocation } = await renderer.execute({ document: published, context: { freshCard: true } });
+    const [record] = await allocationStore.findByCard(allocation.cardId);
+
+    const useCase = new ResolveCardScan({ allocationStore, repository, banks });
+    const result = await useCase.execute({ testId: allocation.cardId, answers: { 1: 'A' } });
+
+    expect(result.results).toHaveLength(1);
+    const card = result.results[0];
+    expect(card.results[0].concepts).toEqual(['fraction-add']);
+    expect(card.renderedAt).toBe(record.renderedAt);
+  });
+});
+
 describe('execute — multi-doc shared card spanning the bank boundary (spec §5.1/§5.4)', () => {
   it('resolves two allocation records on the same physical card independently, one per document', async () => {
     const repository = fakeRepository();
@@ -290,18 +333,18 @@ describe('execute — multi-doc shared card spanning the bank boundary (spec §5
     const byDoc = Object.fromEntries(result.results.map((r) => [r.documentId, r]));
     expect(byDoc['boundary-doc-a'].results).toEqual([
       {
-        row: 1, itemId: 'a1', itemType: 'multiple_choice', prompt: 'Prompt for a1', status: 'correct', given: 'X', points: 1, earned: 1,
+        row: 1, itemId: 'a1', itemType: 'multiple_choice', prompt: 'Prompt for a1', status: 'correct', given: 'X', points: 1, earned: 1, concepts: [],
       },
       {
-        row: 2, itemId: 'a2', itemType: 'multiple_choice', prompt: 'Prompt for a2', status: 'incorrect', given: 'X', points: 1, earned: 0,
+        row: 2, itemId: 'a2', itemType: 'multiple_choice', prompt: 'Prompt for a2', status: 'incorrect', given: 'X', points: 1, earned: 0, concepts: [],
       },
     ]);
     expect(byDoc['boundary-doc-b'].results).toEqual([
       {
-        row: 26, itemId: 'b1', itemType: 'true_false', prompt: 'Prompt for b1', status: 'correct', given: 'B', points: 1, earned: 1,
+        row: 26, itemId: 'b1', itemType: 'true_false', prompt: 'Prompt for b1', status: 'correct', given: 'B', points: 1, earned: 1, concepts: [],
       },
       {
-        row: 27, itemId: 'b2', itemType: 'true_false', prompt: 'Prompt for b2', status: 'correct', given: 'A', points: 1, earned: 1,
+        row: 27, itemId: 'b2', itemType: 'true_false', prompt: 'Prompt for b2', status: 'correct', given: 'A', points: 1, earned: 1, concepts: [],
       },
     ]);
     expect(result.unallocatedRows).toBeUndefined();
@@ -494,10 +537,10 @@ describe('execute — row ownership on reuse: newest claimant wins (spec §5.4 r
     expect(result.results[0].documentId).toBe('reuse-quiz-2');
     expect(result.results[0].results).toEqual([
       {
-        row: 1, itemId: 'r2-q1', itemType: 'multiple_choice', prompt: 'Prompt for r2-q1', status: 'correct', given: 'P', points: 1, earned: 1,
+        row: 1, itemId: 'r2-q1', itemType: 'multiple_choice', prompt: 'Prompt for r2-q1', status: 'correct', given: 'P', points: 1, earned: 1, concepts: [],
       },
       {
-        row: 2, itemId: 'r2-q2', itemType: 'multiple_choice', prompt: 'Prompt for r2-q2', status: 'incorrect', given: 'Q', points: 1, earned: 0,
+        row: 2, itemId: 'r2-q2', itemType: 'multiple_choice', prompt: 'Prompt for r2-q2', status: 'incorrect', given: 'Q', points: 1, earned: 0, concepts: [],
       },
     ]);
     expect(result.unallocatedRows).toBeUndefined();
@@ -695,10 +738,10 @@ describe('execute — row-mapping integrity vs mutable external banks (F4 review
     expect(result.results[0].error).toBeUndefined();
     expect(result.results[0].results).toEqual([
       {
-        row: 1, itemId: 'ext-a', itemType: 'multiple_choice', prompt: 'A', status: 'correct', given: 'X', points: 1, earned: 1,
+        row: 1, itemId: 'ext-a', itemType: 'multiple_choice', prompt: 'A', status: 'correct', given: 'X', points: 1, earned: 1, concepts: [],
       },
       {
-        row: 2, itemId: 'ext-b', itemType: 'multiple_choice', prompt: 'B', status: 'correct', given: 'X', points: 1, earned: 1,
+        row: 2, itemId: 'ext-b', itemType: 'multiple_choice', prompt: 'B', status: 'correct', given: 'X', points: 1, earned: 1, concepts: [],
       },
     ]);
 
@@ -724,7 +767,7 @@ describe('execute — nonexistent bubble grading (F6 review fix, Low)', () => {
     const result = await useCase.execute({ testId: allocation.cardId, answers: { 1: 'D' } });
 
     expect(result.results[0].results[0]).toEqual({
-      row: 1, itemId: 'f6-q1', itemType: 'multiple_choice', prompt: 'Prompt for f6-q1', status: 'incorrect', given: 'D', points: 1, earned: 0,
+      row: 1, itemId: 'f6-q1', itemType: 'multiple_choice', prompt: 'Prompt for f6-q1', status: 'incorrect', given: 'D', points: 1, earned: 0, concepts: [],
     });
   });
 });

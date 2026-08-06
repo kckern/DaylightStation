@@ -129,8 +129,31 @@ export class RecordCardScanOutcome {
       return { recorded: false, reason: 'duplicate-scan' };
     }
 
+    // Curriculum spine (R2): `subjectId`/`courseId` come off the document's
+    // own path — a print document is always filed `subject/course/...` when
+    // it carries either segment at all (spec's taxonomy convention, same
+    // split the pre-R2 subjectId-only derivation already used). `unitId`
+    // comes off the ISSUING WORK SESSION when there is one — a URL-printed
+    // sheet has no session and therefore no unit, never guessed at.
     const documentSegments = card.documentId.split('/');
     const subjectId = documentSegments.length > 1 ? documentSegments[0] : null;
+    const courseId = documentSegments.length > 2 ? documentSegments[1] : null;
+
+    // Read + reduce the issuing session ONCE, up front — never inside
+    // `#bridgeSession` (which used to do its own `readEvents` call). A read
+    // failure here must not block attempt recording (the attempts are real
+    // evidence regardless of whether the session bridge can run): caught and
+    // reported as `null`, which `#bridgeSession` below turns into the SAME
+    // `bridge-failed` outcome the old inline try/catch reported.
+    let preReadState = null;
+    if (card.sessionId && this.#sessions) {
+      try {
+        preReadState = reduceSession(await this.#sessions.readEvents(card.sessionId));
+      } catch {
+        preReadState = null;
+      }
+    }
+    const unitId = preReadState?.unitId ?? null;
 
     const at = this.#clock().toISOString();
     const attemptIds = [];
@@ -140,6 +163,12 @@ export class RecordCardScanOutcome {
     // still needs its attemptId to resolve for the machine mark below.
     const attemptIdByItem = new Map();
     for (const row of freshRows) {
+      const learning = {
+        ...(subjectId ? { subjectId } : {}),
+        ...(courseId ? { courseId } : {}),
+        ...(unitId ? { unitId } : {}),
+        conceptIds: row.concepts ?? [],
+      };
       const attempt = createAttempt({
         at,
         sessionId: card.sessionId ?? null,
@@ -151,7 +180,7 @@ export class RecordCardScanOutcome {
         correct: row.status === 'correct',
         attributedTo: learnerId,
         transport: 'paper',
-        ...(subjectId ? { learning: { subjectId } } : {}),
+        learning,
         provenance: {
           kind: 'omr-card',
           cardId: card.cardId,
@@ -186,7 +215,9 @@ export class RecordCardScanOutcome {
     });
 
     const priorAttemptIdsForRecord = priorAttempts.map((attempt) => attempt.id);
-    const session = await this.#bridgeSession(card, attemptIds, attemptIdByItem, at, priorAttemptIdsForRecord);
+    const session = await this.#bridgeSession(
+      card, attemptIds, attemptIdByItem, at, preReadState, priorAttemptIdsForRecord,
+    );
     return { recorded: true, attemptIds, ...(session ? { session } : {}) };
   }
 
@@ -202,12 +233,24 @@ export class RecordCardScanOutcome {
    * pending holds the session at `submitted` instead of advancing to `graded`
    * — the same "a grown-up still has some of this to check" wait
    * `SubmitPaperWork`/`GradeSubmission` already use for a screen-facing sheet.
+   *
+   * `preReadState` is the session state `execute` already read + reduced
+   * ONCE up front (never a fresh `readEvents` call here). `null` means that
+   * pre-read itself failed (a thrown error, e.g. the store is unreachable) —
+   * reported as the same `bridge-failed` outcome a `readEvents` throw inside
+   * this method used to produce. A session `execute` genuinely couldn't find
+   * (empty event history) still reduces to a real state object whose
+   * `sessionId` is `null` — that is the pre-existing `session-missing` path,
+   * distinct from a pre-read failure.
    */
-  async #bridgeSession(card, attemptIds, attemptIdByItem, at, priorAttemptIdsForRecord = []) {
+  async #bridgeSession(card, attemptIds, attemptIdByItem, at, preReadState, priorAttemptIdsForRecord = []) {
     if (!this.#sessions || card.sessionId == null) return null;
     const { sessionId } = card;
     try {
-      const state = reduceSession(await this.#sessions.readEvents(sessionId));
+      if (preReadState === null) {
+        throw new Error('session pre-read failed');
+      }
+      const state = preReadState;
       if (!state.sessionId) {
         this.#logger.warn?.('school.print.scan-session-missing', { sessionId, recordId: card.recordId });
         return { sessionId, advancedTo: null, reason: 'session-missing' };
