@@ -110,6 +110,7 @@ export const schoolApi = {
   agendaPreview: (learnerId) => req(`/lifecycle/learners/${encodeURIComponent(learnerId)}/agenda/preview?format=json`),
   retract: (body) => req('/retract', body),
   transcript: (learnerId) => req(`/transcript?learnerId=${encodeURIComponent(learnerId)}`),
+  periodsMeta: () => req('/periods-meta'),
   attemptDays: (learnerId) => req(`/attempt-days?learnerId=${encodeURIComponent(learnerId)}`),
   offerRetake: (sessionId) => req(`/lifecycle/sessions/${encodeURIComponent(sessionId)}/remediation`, {}),
   progressReport: ({ learnerId, periodId }) => req(

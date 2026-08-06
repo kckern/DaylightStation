@@ -54,10 +54,10 @@ const resolveReviewItem = {
 };
 
 const setAssignments = {
-  execute: async ({ learnerId, courses, units, assignedBy, pin = null }) => {
+  execute: async ({ learnerId, courses, units, assignedBy, pin = null, baseUpdatedAt = null }) => {
     if (assignedBy === 'kid1') throw named('GuestForbiddenError', 'Only a grown-up can change what a child is assigned');
     if (!Array.isArray(courses) || !Array.isArray(units)) throw named('ValidationError', 'courses and units must be arrays');
-    return { learnerId, courses, units, assignedBy, pin, updatedAt: '2026-07-27T09:00:00.000Z' };
+    return { learnerId, courses, units, assignedBy, pin, baseUpdatedAt, updatedAt: '2026-07-27T09:00:00.000Z' };
   },
 };
 
@@ -379,5 +379,16 @@ describe('production error-handler statuses (object shape)', () => {
       body: JSON.stringify({ verdict: 'correct', gradedBy: 'kckern' }),
     });
     expect(res.status).toBe(404);
+  });
+});
+
+describe('stale-save baseline (M6 gate 3)', () => {
+  it('PUT /assignments forwards baseUpdatedAt to the use case', async () => {
+    const r = await put('/assignments/kid1', { courses: [], units: [], assignedBy: 'dad', baseUpdatedAt: 'T9' });
+    expect(r.status).toBe(200);
+    // The stub echoes its args; pin/baseUpdatedAt ride through when present.
+    const body = await r.json();
+    expect(body.assignedBy).toBe('dad');
+    expect(body.baseUpdatedAt).toBe('T9');
   });
 });

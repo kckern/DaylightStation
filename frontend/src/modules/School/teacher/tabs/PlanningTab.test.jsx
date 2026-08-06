@@ -12,6 +12,7 @@ vi.mock('../../schoolApi.js', () => ({
     periods: vi.fn(),
     putPeriods: vi.fn(),
     curriculumUnits: vi.fn(),
+    periodsMeta: vi.fn(),
     passOverrides: vi.fn(),
     putPassOverride: vi.fn(),
     milestones: vi.fn(),
@@ -44,6 +45,7 @@ beforeEach(() => {
     { periodId: '2026-fall', kind: 'semester', label: 'Fall 2026', startsAt: '2026-08-01T07:00:00.000Z', endsAt: '2026-12-19T07:00:00.000Z' },
   ]));
   schoolApi.putPeriods.mockResolvedValue(ok({ periods: [] }));
+  schoolApi.periodsMeta.mockResolvedValue(ok({ historyLength: 2 }));
   schoolApi.curriculumUnits.mockResolvedValue(ok({ units: [
     { unitId: 'math-fractions.02', title: 'Adding Fractions', subject: 'math', courseId: 'math-fractions', sequence: 2, hasBank: true, passingPercent: 80 },
     { unitId: 'math-fractions.01', title: 'What Is a Fraction', subject: 'math', courseId: 'math-fractions', sequence: 1, hasBank: true, passingPercent: 80 },
@@ -87,9 +89,11 @@ describe('PlanningTab (wave 3, all live)', () => {
     mount(<PlanningTab learnerId="felix" kids={KIDS} />);
     await waitFor(() => expect(screen.getByText('Fall 2026')).toBeTruthy());
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Edit periods' })); });
+    await waitFor(() => expect(screen.getByLabelText('Ends 1')).toBeTruthy()); // editor rows loaded (startEditing awaits the baseline)
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Save' })); });
     await waitFor(() => expect(schoolApi.putPeriods).toHaveBeenCalledWith(expect.objectContaining({
       editedBy: 'kckern',
+      baseHistoryLength: 2, // the B14 baseline travels
       periods: expect.arrayContaining([expect.objectContaining({
         periodId: '2026-fall', startsAt: '2026-08-01T07:00:00.000Z', endsAt: '2026-12-19T07:00:00.000Z',
       })]),
@@ -100,6 +104,7 @@ describe('PlanningTab (wave 3, all live)', () => {
     mount(<PlanningTab learnerId="felix" kids={KIDS} />);
     await waitFor(() => expect(screen.getByText('Fall 2026')).toBeTruthy());
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Edit periods' })); });
+    await waitFor(() => expect(screen.getByLabelText('Ends 1')).toBeTruthy());
     act(() => { fireEvent.change(screen.getByLabelText('Ends 1'), { target: { value: '2026-12-20' } }); });
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Save' })); });
     await waitFor(() => expect(schoolApi.putPeriods).toHaveBeenCalledWith(expect.objectContaining({

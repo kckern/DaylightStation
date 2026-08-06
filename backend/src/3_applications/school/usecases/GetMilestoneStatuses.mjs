@@ -36,6 +36,8 @@ export class GetMilestoneStatuses {
     const today = new Date(nowMs + offsetMinutesFor(this.#timezone, nowMs) * 60_000).toISOString().slice(0, 10);
     return {
       milestones: mine.map((m) => ({ ...m, status: milestoneStatus(m, { passedUnitIds, today }) })),
+      // The concurrent-edit baseline (advocacy B14) the editor sends back.
+      historyLength: typeof this.#store.historyLength === 'function' ? this.#store.historyLength() : 0,
     };
   }
 }

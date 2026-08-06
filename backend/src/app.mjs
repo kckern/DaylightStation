@@ -3740,7 +3740,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
             urgency: 'normal',
             actions: [{ label: 'Open the console', action: 'open', data: { url: '/school/teacher' } }],
             metadata: { username },
-            dedupeKey: `school-backlog:${username}:${day}:${pendingReview}:${pendingPrints}`,
+            // Once per study day per teacher — count changes must not
+            // re-nudge (the 60-min category cooldown in notifications.yml is
+            // the belt; this key is the braces).
+            dedupeKey: `school-backlog:${username}:${day}`,
           });
         }
       } catch (err) {

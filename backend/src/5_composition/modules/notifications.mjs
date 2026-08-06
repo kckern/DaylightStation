@@ -18,11 +18,15 @@ import { YamlNotificationLedgerStore } from '#adapters/persistence/yaml/YamlNoti
 
 // Category -> channels routing when no explicit preferences are configured.
 // Ceremony and drift nudges reach the user directly; the rest stay in-app.
-const DEFAULT_PREFERENCES = {
+export const DEFAULT_PREFERENCES = {
   ceremony: { normal: ['telegram', 'push', 'app'], high: ['telegram', 'push', 'app'] },
   drift_alert: { normal: ['telegram', 'app'] },
   goal_update: { normal: ['app'] },
   system: { normal: ['app'] },
+  // The teacher backlog nudge (teacher-console advocacy A1): its entire
+  // premise is reaching a parent who is NOT looking at a screen — app-only
+  // routing would defeat it.
+  school: { normal: ['telegram', 'app'], high: ['telegram', 'app'] },
 };
 
 /**

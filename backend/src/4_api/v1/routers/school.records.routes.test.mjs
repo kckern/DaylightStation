@@ -98,3 +98,33 @@ describe('GET /api/v1/school/certificate', () => {
     expect(res.status).toBe(503);
   });
 });
+
+describe('stale-save baselines travel through the routes (M6 gate 3)', () => {
+  it('PUT /periods forwards baseHistoryLength; GET /periods-meta serves it', async () => {
+    const setAcademicPeriods = { execute: vi.fn(async (args) => ({ periods: [], got: args })) };
+    const academicPeriods = { listPeriods: () => [], historyLength: () => 7 };
+    const app = express();
+    app.use(express.json());
+    app.use('/api/v1/school', createSchoolRouter({
+      schoolService: { listBankSourceSummaries: () => [] },
+      setAcademicPeriods, academicPeriods, logger: silent,
+    }));
+    const meta = await request(app).get('/api/v1/school/periods-meta');
+    expect(meta.body).toEqual({ historyLength: 7 });
+    await request(app).put('/api/v1/school/periods').send({ periods: [], editedBy: 'k', pin: 'p', baseHistoryLength: 7 });
+    expect(setAcademicPeriods.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ baseHistoryLength: 7 }));
+  });
+
+  it('PUT /milestones forwards baseHistoryLength', async () => {
+    const setMilestones = { execute: vi.fn(async () => ({ milestones: [] })) };
+    const app = express();
+    app.use(express.json());
+    app.use('/api/v1/school', createSchoolRouter({
+      schoolService: { listBankSourceSummaries: () => [] },
+      setMilestones, logger: silent,
+    }));
+    await request(app).put('/api/v1/school/milestones').send({ learnerId: 'felix', milestones: [], editedBy: 'k', baseHistoryLength: 3 });
+    expect(setMilestones.execute).toHaveBeenCalledWith(expect.objectContaining({ baseHistoryLength: 3 }));
+  });
+});

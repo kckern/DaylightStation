@@ -9,7 +9,7 @@ import { useTeacherProfile } from './TeacherProfileContext.jsx';
 import { teacherLog } from './teacherLog.js';
 
 export function useTeacherWrite({ panel }) {
-  const { currentTeacher, pin, openPicker, openPinPrompt } = useTeacherProfile();
+  const { currentTeacher, pin, openPicker, openPinPrompt, pinPromptOpen, pickerOpen } = useTeacherProfile();
   const [busy, setBusy] = useState(null);   // caller-chosen key of the in-flight row
   const [errors, setErrors] = useState({}); // key -> message
   // A tap blocked on the claim or the PIN is STASHED and replayed once the
@@ -47,15 +47,23 @@ export function useTeacherWrite({ panel }) {
 
   // Replay the stashed action ONLY when the piece it was missing actually
   // arrives — a claim for a claim-blocked tap, a NEW pin for a pin-blocked
-  // one. Never a blind refire on unrelated re-renders.
+  // one. A DISMISSED prompt/picker clears the stash instead: an abandoned
+  // tap must never fire as a ghost write on a later unrelated unlock.
   useEffect(() => {
     const pending = pendingRef.current;
-    if (!pending || !currentTeacher) return;
-    const unblocked = (!pending.hadTeacher) || (pin !== pending.pinAtStash);
-    if (!unblocked) return;
-    pendingRef.current = null;
-    attempt(pending.key, pending.call, pending.onSuccess, { actorId: currentTeacher.id, pin });
-  }, [currentTeacher, pin, attempt]);
+    if (!pending) return;
+    if (currentTeacher) {
+      const unblocked = (!pending.hadTeacher) || (pin !== pending.pinAtStash);
+      if (unblocked) {
+        pendingRef.current = null;
+        attempt(pending.key, pending.call, pending.onSuccess, { actorId: currentTeacher.id, pin });
+        return;
+      }
+    }
+    const dismissed = (pending.hadTeacher && !pinPromptOpen && pin === pending.pinAtStash)
+      || (!pending.hadTeacher && !pickerOpen && !currentTeacher);
+    if (dismissed) pendingRef.current = null;
+  }, [currentTeacher, pin, pinPromptOpen, pickerOpen, attempt]);
 
   return { run, busy, errors };
 }

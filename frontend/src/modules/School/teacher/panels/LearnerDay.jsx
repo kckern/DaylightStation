@@ -63,7 +63,7 @@ export default function LearnerDay({ learnerId }) {
               <span>
                 {section.servedToday
                   ? 'done today'
-                  : (section.next?.title ?? section.next?.label ?? section.next?.unitId ?? section.locked?.remedy ?? 'nothing offered')}
+                  : (section.next?.title ?? section.next?.label ?? section.next?.unitId ?? section.lockedRemedy ?? 'nothing offered')}
               </span>
             </li>
           ))}
