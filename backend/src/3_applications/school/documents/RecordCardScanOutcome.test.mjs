@@ -82,12 +82,13 @@ const gradedCard = (over = {}) => ({
   variant: 0,
   learnerId: 'felix',
   revisionSuperseded: false,
+  renderedAt: '2026-08-04T00:00:00.000Z',
   results: [
     {
-      row: 1, itemId: 'q1', itemType: 'multiple_choice', prompt: null, status: 'correct', given: 'blue', points: 1, earned: 1,
+      row: 1, itemId: 'q1', itemType: 'multiple_choice', prompt: null, status: 'correct', given: 'blue', points: 1, earned: 1, concepts: [],
     },
     {
-      row: 2, itemId: 'q2', itemType: 'multiple_choice', prompt: null, status: 'incorrect', given: 'fox', points: 1, earned: 0,
+      row: 2, itemId: 'q2', itemType: 'multiple_choice', prompt: null, status: 'incorrect', given: 'fox', points: 1, earned: 0, concepts: [],
     },
   ],
   totalPoints: 2,
@@ -188,6 +189,32 @@ describe('attempt persistence', () => {
     const attempts = datastore.readAllAttempts('felix');
     expect(attempts.at(-1).bankId).toBe('quiz-1@abcdef123');
     expect(attempts.at(-1).learning?.subjectId ?? null).toBeNull();
+  });
+
+  it('attempts carry course and unit context when the session and taxonomy know them', async () => {
+    const datastore = fakeDatastore();
+    const sessions = fakeSessions(seededSession('ws-1', { unitId: 'unit-frac-3' }));
+    const useCase = new RecordCardScanOutcome({ datastore, sessions, logger: quietLogger });
+    const card = gradedCard({
+      sessionId: 'ws-1',
+      documentId: 'math/fractions/quiz-3',
+      recordId: 'math/fractions/quiz-3@abcdef123:v0:1-2',
+    });
+    card.results[0].concepts = ['fraction-add'];
+    await useCase.execute({ testId: '1234567', card });
+    const attempt = datastore.readAllAttempts('felix')[0];
+    expect(attempt.learning).toMatchObject({
+      subjectId: 'math', courseId: 'fractions', unitId: 'unit-frac-3', conceptIds: ['fraction-add'],
+    });
+  });
+
+  it('a URL-printed sheet (no session) still files subject + course from the taxonomy', async () => {
+    const datastore = fakeDatastore();
+    const card = gradedCard({ documentId: 'math/fractions/quiz-3', recordId: 'math/fractions/quiz-3@abcdef123:v0:1-2' });
+    await new RecordCardScanOutcome({ datastore, logger: quietLogger }).execute({ testId: '1234567', card });
+    const attempt = datastore.readAllAttempts('felix')[0];
+    expect(attempt.learning).toMatchObject({ subjectId: 'math', courseId: 'fractions' });
+    expect(attempt.learning.unitId ?? null).toBeNull();
   });
 
   it('a partial feed then a complete re-feed appends ONLY the rows not already recorded', async () => {

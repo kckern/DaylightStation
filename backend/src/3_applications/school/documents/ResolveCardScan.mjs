@@ -351,11 +351,14 @@ export class ResolveCardScan {
    *   |{results: object[], unallocatedRows?: number[]}
    *   |{results: [], deadCard: true, answeredRowCount: number, recordStatuses: string[]}>}
    *   Each `results[]` entry is EITHER a graded result —
-   *   `{cardId, recordId, documentId, rev, variant, learnerId?,
+   *   `{cardId, recordId, documentId, rev, variant, learnerId?, renderedAt,
    *   revisionSuperseded, results: [{row, itemId, itemType, prompt,
-   *   status, given, points, earned}], totalPoints, earnedPoints,
+   *   status, given, points, earned, concepts}], totalPoints, earnedPoints,
    *   unscannedItems: [{itemId, prompt}]}` (`prompt` is the resolved bank
-   *   item's own prompt text, `null` when it has none; `unscannedItems` is
+   *   item's own prompt text, `null` when it has none; `concepts` is the
+   *   resolved bank item's own optional `concepts` array (R2,
+   *   questionBankValidation.mjs), empty when it has none; `renderedAt` is
+   *   the allocation record's own render timestamp; `unscannedItems` is
    *   the write-on questions/short_answer/essay sugar this record's own
    *   prepared document carries that consumed no card row — empty array
    *   when none) — OR, when the record's own persisted `rowItems` no longer
@@ -636,7 +639,16 @@ export class ResolveCardScan {
         const points = pointsForRow(prepared, planned.blockPath);
         const graded = gradeRow(item, answers[planned.row], points);
         return {
-          row: planned.row, itemId, itemType: item.type, prompt: item.prompt ?? null, ...graded,
+          row: planned.row,
+          itemId,
+          itemType: item.type,
+          prompt: item.prompt ?? null,
+          ...graded,
+          // Curriculum spine (R2): the bank item's own optional `concepts`
+          // (questionBankValidation.mjs:57-61) rides the row result — empty
+          // when the item defines none — so `RecordCardScanOutcome` can file
+          // each attempt's `conceptIds` without re-reading the bank itself.
+          concepts: item.concepts ?? [],
         };
       });
 
@@ -658,6 +670,9 @@ export class ResolveCardScan {
       variant: record.variant,
       ...(record.learnerId != null ? { learnerId: record.learnerId } : {}),
       ...(record.sessionId != null ? { sessionId: record.sessionId } : {}),
+      // The allocation record's own render timestamp (Task 4 needs it to
+      // place a scan attempt in time relative to when the card was printed).
+      renderedAt: record.renderedAt,
       revisionSuperseded: await this.#isSuperseded(record),
       // The record had ALREADY settled before this scan arrived — a re-fed
       // card, or a different child bubbling this card's id. Grading still
