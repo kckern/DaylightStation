@@ -37,6 +37,23 @@ export class YamlAssignmentStore extends IAssignmentStore {
 
   #fileFor(learnerId) { return path.join(this.#root(), `${learnerId}.yml`); }
 
+  // History lives one level up, alongside (not inside) the current-state
+  // directory: `apps/school/history/{learnerId}.yml`, not `apps/school/assignments/history/...`.
+  #historyRoot() { return path.join(this.#root(), '..', 'history'); }
+
+  #historyFileFor(learnerId) { return path.join(this.#historyRoot(), `${learnerId}.yml`); }
+
+  async #readHistory(learnerId) {
+    try {
+      const raw = yaml.load(await fs.readFile(this.#historyFileFor(learnerId), 'utf8'));
+      return Array.isArray(raw) ? raw : [];
+    } catch {
+      // Missing OR unparseable: same forgiving answer as #read — a mid-edit
+      // or absent history file means "nothing recorded yet", not a 500.
+      return [];
+    }
+  }
+
   async #read(learnerId) {
     try {
       const raw = yaml.load(await fs.readFile(this.#fileFor(learnerId), 'utf8'));
@@ -80,10 +97,24 @@ export class YamlAssignmentStore extends IAssignmentStore {
     const queued = this.#writeChain.then(async () => {
       await fs.mkdir(this.#root(), { recursive: true });
       await fs.writeFile(this.#fileFor(learnerId), dumpYaml(stored), 'utf8');
+      // History append happens in the SAME queued task as the current-state
+      // write — never a torn pair where one lands and the other doesn't, and
+      // never racing a concurrent put for the same or another learner.
+      const entry = { ...stored, recordedAt: stored.updatedAt ?? new Date().toISOString() };
+      const history = await this.#readHistory(learnerId);
+      history.push(entry);
+      await fs.mkdir(this.#historyRoot(), { recursive: true });
+      await fs.writeFile(this.#historyFileFor(learnerId), dumpYaml(history), 'utf8');
       return stored;
     });
     this.#writeChain = queued.catch(() => {});
     return queued;
+  }
+
+  /** @inheritdoc */
+  async history(learnerId) {
+    if (!isSafeLearnerId(learnerId)) return [];
+    return this.#readHistory(learnerId);
   }
 
   /** @inheritdoc */
