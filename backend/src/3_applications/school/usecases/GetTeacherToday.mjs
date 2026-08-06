@@ -22,44 +22,15 @@
  * is exactly 24h), and filter every attempt/session by its OWN timestamp
  * against the window — never by a precomputed date-string match.
  */
-import { offsetMinutesFor } from '#domains/school/studyDay.mjs';
+import { studyDayWindow, withinStudyWindow as withinWindow } from '#domains/school/studyDay.mjs';
 
 const DEFAULT_BOUNDARY_HOUR = 4;
-const DAY_MS = 86_400_000;
-
-/**
- * The current study day as a window of real UTC instants, `[startAtMs,
- * endAtMs)`. The household's UTC offset is resolved ONCE, at `nowMs`, and
- * held constant across the window — matching `studyDay.mjs`'s own
- * documented DST caveat (a boundary computed with a stale offset can drift
- * by an hour around a transition); a window that straddled a DST change
- * would need the offset re-resolved per edge, which this digest does not.
- */
-function studyDayWindow(nowMs, { timezone = null, boundaryHour = DEFAULT_BOUNDARY_HOUR } = {}) {
-  const offsetMinutes = offsetMinutesFor(timezone, nowMs);
-  const localMs = nowMs + offsetMinutes * 60_000;
-  const boundaryMs = boundaryHour * 3_600_000;
-  // The local calendar day the boundary-shifted instant falls on, as a whole
-  // multiple of DAY_MS — floor, not round, so we always land on the most
-  // recent boundary crossing at or before "now".
-  const dayIndex = Math.floor((localMs - boundaryMs) / DAY_MS);
-  const startLocalMs = dayIndex * DAY_MS + boundaryMs;
-  const startAtMs = startLocalMs - offsetMinutes * 60_000;
-  return { startAtMs, endAtMs: startAtMs + DAY_MS };
-}
 
 /** Every raw calendar date (`YYYY-MM-DD`) the window can touch — one or two. */
 function daysTouchedBy({ startAtMs, endAtMs }) {
   const fromDay = new Date(startAtMs).toISOString().slice(0, 10);
   const toDay = new Date(endAtMs - 1).toISOString().slice(0, 10);
   return fromDay === toDay ? [fromDay] : [fromDay, toDay];
-}
-
-/** Whether an ISO timestamp falls inside `[startAtMs, endAtMs)`. */
-function withinWindow(iso, { startAtMs, endAtMs }) {
-  if (typeof iso !== 'string') return false;
-  const t = Date.parse(iso);
-  return Number.isFinite(t) && t >= startAtMs && t < endAtMs;
 }
 
 export class GetTeacherToday {
