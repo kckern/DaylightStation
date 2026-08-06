@@ -189,6 +189,12 @@ export function validateDocument(raw, { allowAnswers = false } = {}) {
   const errors = [];
   if (typeof raw.id !== 'string' || !ID_PATTERN.test(raw.id) || raw.id.length > ID_MAX_LENGTH) {
     errors.push('id must be 1-4 kebab-case segments separated by "/" (e.g. arts/pokemon-identification/quiz-1)');
+  } else if (/^[0-9]{7}$/.test(raw.id)) {
+    // A bare 7-digit id is RESERVED: it is the OMR card-id shape, and the
+    // print route resolves /print/<7 digits> as a card lookup. A document
+    // named like a card would be unreachable there — refuse at authoring
+    // time so the ambiguity can never exist.
+    errors.push('id must not be a bare 7-digit number (that shape is reserved for OMR card ids)');
   }
   // Optional, because a receipt has no banner. But when it IS there it is what
   // heads the printed sheet, so it has to survive normalisation — a dropped

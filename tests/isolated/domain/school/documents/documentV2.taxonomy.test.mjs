@@ -22,6 +22,15 @@ describe('documentV2 taxonomy (hierarchical ids + subject/topics)', () => {
     }
   });
 
+  it('reserves bare 7-digit ids — that shape is an OMR card id, never a document', () => {
+    expect(validateDocumentV2({ ...base, id: '9251793' }).errors.join())
+      .toMatch(/reserved for OMR card ids/);
+    // Six or eight digits, or a digit-led kebab id, are still ordinary ids.
+    for (const id of ['925179', '92517931', '9251793-quiz', 'arts/9251793']) {
+      expect(validateDocumentV2({ ...base, id }).errors).toEqual([]);
+    }
+  });
+
   it('normalizes subject and topics; rejects malformed shapes', () => {
     const ok = validateDocumentV2({ ...base, subject: 'arts', topics: ['pokemon', 'identification'] });
     expect(ok.errors).toEqual([]);

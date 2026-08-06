@@ -210,9 +210,18 @@ Rules the record system holds to:
 (filename from the slug), with `X-School-Print-Allocation` (the card record
 summary) and `X-School-Print-Warnings` headers.
 
+**`GET /print/<7 digits>` is a card lookup.** The card number is the one
+thing printed in large digits on the sheet in a child's hand, so it is
+enough by itself: the path resolves the card's newest usable allocation and
+reproduces its exact sheet (adoption semantics — the record's
+rev/variant/rows/learner govern; `teacher=1&pin=` works on top for its key).
+An unknown card 404s with Hamming-1 live near-miss suggestions, the same
+courtesy a mis-bubbled scan gets. Bare 7-digit *document* ids are reserved
+at validation time so the shape can never be ambiguous.
+
 | Param | Meaning |
 |---|---|
-| `variety=omr\|hand` | required — card-backed or hand-graded |
+| `variety=omr\|hand` | **default `omr`** — card-backed (the main mode) unless `hand` is asked for |
 | `learnerId=` | whose sheet. **Required for quiz-archetype omr renders** (or an explicit `card=`) — without it two siblings would share one sheet identity. Worksheets may stay anonymous; teacher renders are reads and stay exempt |
 | `teacher=1&pin=` | append the answer key; pin must match `print.teacherPin` |
 | `rev=` | pin a 9-hex published revision (default: latest published) |

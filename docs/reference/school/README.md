@@ -687,7 +687,10 @@ as resolved engine verdicts on the same sheet). Mis-bubbled card ids, retired
 cards, and refused records all surface at `warn` with actionable detail —
 a child's work never vanishes silently.
 
-`GET /api/v1/school/print/<taxonomy-id>?variety=omr|hand` is the surface;
+`GET /api/v1/school/print/<taxonomy-id>` (variety defaults to `omr`;
+`variety=hand` for on-page bubbles) is the surface — and
+`GET /print/<7-digit card id>` alone reproduces the sheet that card was
+printed for;
 `cli/school-docs.cli.mjs` covers validate/publish/render/release-card.
 Sources live at `data/content/school/print-documents/` under hierarchical
 taxonomy ids (`subject/course/slug`); curriculum units reference a printed
