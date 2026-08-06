@@ -599,7 +599,9 @@ export async function createSchoolLifecycle({
     gradeSubmission, closeSessionOutcome,
   });
   const setAssignments = new SetAssignments({
-    assignments: stores.assignments, grownUps, teacherGate, clock, logger,
+    assignments: stores.assignments, grownUps, teacherGate, curriculum,
+    roster: () => userService?.getHouseholdRoster?.() ?? [],
+    clock, logger,
   });
 
   const useCases = {

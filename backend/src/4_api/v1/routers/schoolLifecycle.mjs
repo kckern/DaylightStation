@@ -213,6 +213,9 @@ export function createSchoolLifecycleRouter({
           learnerId: req.params.learnerId,
           sections: result.sections ?? [],
           entries: result.plan?.entries ?? [],
+          // Planner refusals (admin advocacy A4): a dead course id used to
+          // surface only as a warn log — now the console can render it.
+          errors: result.plan?.errors ?? [],
         });
       }
       // The document's own `scan_action.action` fields already carry the real

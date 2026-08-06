@@ -8,6 +8,7 @@ vi.mock('../../schoolApi.js', () => ({
   schoolApi: {
     teachers: vi.fn(),
     assignments: vi.fn(),
+    allAssignments: vi.fn(async () => ({ ok: true, status: 200, data: { assignments: [] } })),
     putAssignments: vi.fn(),
     periods: vi.fn(),
     putPeriods: vi.fn(),

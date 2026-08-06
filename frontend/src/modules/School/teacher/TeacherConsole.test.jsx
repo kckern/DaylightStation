@@ -20,6 +20,7 @@ vi.mock('../schoolApi.js', () => {
     printPending: vi.fn(okEmpty),
     quizRequests: vi.fn(okEmpty),
     assignments: vi.fn(async () => ({ ok: false, status: 404, data: null })),
+    allAssignments: vi.fn(async () => ({ ok: true, status: 200, data: { assignments: [] } })),
     periods: vi.fn(okEmpty),
     curriculumUnits: vi.fn(okEmpty),
     learningCatalogs: vi.fn(okEmpty),
