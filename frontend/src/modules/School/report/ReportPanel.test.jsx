@@ -210,6 +210,17 @@ describe('the "Today" strip', () => {
     await screen.findByText('Alpha');
     expect(await screen.findByText(/Could not load today.s activity/)).toBeTruthy();
   });
+
+  it('shows the zero-state, not a blank strip, when the digest has no row for a learner', async () => {
+    // Reachable in prod: the route answers `[]` whenever the school lifecycle
+    // isn't fully wired, even though the report itself has learners.
+    reportMock.mockResolvedValue(payload([learner(), learner({ id: 'kid2', name: 'Beta' })]));
+    teacherTodayMock.mockResolvedValueOnce({ ok: true, status: 200, data: [] });
+    render(<ReportPanel />);
+    await screen.findByText('Alpha');
+    await screen.findByText('Beta');
+    expect(screen.getAllByText('No work recorded today')).toHaveLength(2);
+  });
 });
 
 describe('cross-surface evidence progress', () => {
