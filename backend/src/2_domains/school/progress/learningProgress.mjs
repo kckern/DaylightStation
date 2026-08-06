@@ -658,7 +658,7 @@ function curriculumPathKey(path) {
 }
 
 function curriculumTargetKey({ kind, id }) {
-  return `${kind} ${id}`;
+  return `${kind}\u0000${id}`;
 }
 
 function groupParts(entry, dimensions) {
