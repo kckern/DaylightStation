@@ -118,6 +118,20 @@ describe('print route + real store + real renderer', () => {
     expect(await allocationStore.findByCard(minted.cardId)).toHaveLength(1);
   });
 
+  it('/print/<cardId> alone reproduces the sheet the card was printed for', async () => {
+    const minted = await request(app)
+      .get('/api/v1/school/print/arts/integration/quiz-1?variety=omr&freshCard=1&learnerId=alan');
+    expect(minted.status).toBe(200);
+    const { cardId, recordId } = JSON.parse(minted.headers['x-school-print-allocation']);
+
+    // The card number is the only thing on the paper — it must be enough.
+    const byCard = await request(app).get(`/api/v1/school/print/${cardId}`);
+    expect(byCard.status).toBe(200);
+    expect(JSON.parse(byCard.headers['x-school-print-allocation']).recordId).toBe(recordId);
+    expect(byCard.headers['content-disposition']).toBe('inline; filename="quiz-1.pdf"');
+    expect(Buffer.from(byCard.body).subarray(0, 4).toString()).toBe('%PDF');
+  });
+
   it('a retake pins the PUBLISHED rev — the record a scan must later resolve', async () => {
     const retake = await request(app)
       .get('/api/v1/school/print/arts/integration/quiz-1?variety=omr&retake=1&learnerId=milo');

@@ -43,12 +43,64 @@ describe('GET /api/v1/school/print/:id', () => {
     expect(res.body.error).toBe('print-render-unavailable');
   });
 
-  it('400s on a missing or unknown variety', async () => {
+  it('400s on an unknown variety; a MISSING variety defaults to omr', async () => {
     const app = appWith({ render: renderFake() });
-    for (const q of ['', '?variety=fancy']) {
-      const res = await request(app).get(`/api/v1/school/print/pokemon-quiz-1${q}`);
+    const unknown = await request(app).get('/api/v1/school/print/pokemon-quiz-1?variety=fancy');
+    expect(unknown.status).toBe(400);
+    expect(unknown.body.error).toMatch(/variety/);
+    // No variety at all: card-backed is the system's main mode, so a bare
+    // URL renders omr — here that means an automatic fresh mint.
+    const bare = await request(app).get('/api/v1/school/print/pokemon-quiz-1');
+    expect(bare.status).toBe(200);
+    expect(bare.headers['content-type']).toMatch(/application\/pdf/);
+  });
+
+  it('/print/<7 digits> is a card lookup: resolves the card\'s document and reproduces its sheet', async () => {
+    const render = renderFake();
+    const doc = { id: 'arts/quiz-1', seed: 1, rev: 'abcdef123', blocks: [] };
+    const repo = { get: vi.fn().mockResolvedValue(doc), getPublished: vi.fn().mockResolvedValue(doc) };
+    const record = {
+      documentId: 'arts/quiz-1', cardId: '9251793', learnerId: 'felix', status: 'live',
+      rev: 'abcdef123', variant: 2, rowRange: { start: 1, end: 6 }, renderedAt: 't1',
+    };
+    const allocations = { findByCard: vi.fn().mockResolvedValue([record]), findByDocument: vi.fn() };
+    const res = await request(appWith({ render, repo, allocations }))
+      .get('/api/v1/school/print/9251793');
+    expect(res.status).toBe(200);
+    expect(allocations.findByCard).toHaveBeenCalledWith('9251793');
+    // Adopted: the record's identity governs, filename comes from the doc slug.
+    expect(render.calls[0].context).toMatchObject({ cardId: '9251793', startRow: 1, learnerId: 'felix' });
+    expect(render.calls[0].document).toMatchObject({ variant: 2 });
+    expect(res.headers['content-disposition']).toBe('inline; filename="quiz-1.pdf"');
+  });
+
+  it('an unknown card path 404s with Hamming-1 live near-miss suggestions', async () => {
+    const nearRecord = {
+      documentId: 'arts/quiz-1', cardId: '9251793', status: 'live',
+      rev: 'abcdef123', variant: 0, rowRange: { start: 1, end: 6 }, renderedAt: 't1',
+    };
+    const allocations = {
+      findByCard: vi.fn().mockImplementation(async (cardId) => (cardId === '9251793' ? [nearRecord] : [])),
+      listCardIds: vi.fn().mockResolvedValue(['9251793']),
+      findByDocument: vi.fn(),
+    };
+    const res = await request(appWith({ render: renderFake(), allocations }))
+      .get('/api/v1/school/print/9251792');
+    expect(res.status).toBe(404);
+    expect(res.body.error).toMatch(/no sheet found for card 9251792/);
+    expect(res.body.nearMissCardIds).toEqual(['9251793']);
+  });
+
+  it('a card path rejects hand variety and explicit card params', async () => {
+    const allocations = { findByCard: vi.fn().mockResolvedValue([]), findByDocument: vi.fn() };
+    const app = appWith({ render: renderFake(), allocations });
+    const hand = await request(app).get('/api/v1/school/print/9251793?variety=hand');
+    expect(hand.status).toBe(400);
+    expect(hand.body.error).toMatch(/hand variety does not apply/);
+    for (const q of ['card=1234567', 'freshCard=1', 'startRow=2', 'retake=1']) {
+      const res = await request(app).get(`/api/v1/school/print/9251793?${q}`);
       expect(res.status).toBe(400);
-      expect(res.body.error).toMatch(/variety/);
+      expect(res.body.error).toMatch(/already names the sheet/);
     }
   });
 

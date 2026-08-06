@@ -179,11 +179,49 @@ export function createSchoolRouter({
   // (Express 5 splat) rather than a single segment.
   router.get('/print/*id', wrap(async (req, res) => {
     if (!renderPrintDocument) return res.status(503).json({ error: 'print-render-unavailable' });
-    const id = splatPath(req, 'id');
-    if (!PRINT_DOC_ID.test(id)) throw new ValidationError('id must be a lowercase document id');
-    const variety = textQuery(req.query.variety);
+    const rawId = splatPath(req, 'id');
+    // omr is the default: card-backed sheets are the system's main mode, and
+    // the common ask is "print my sheet", not "choose a variety".
+    const variety = textQuery(req.query.variety) ?? 'omr';
     if (variety !== 'omr' && variety !== 'hand') {
       throw new ValidationError("variety must be 'omr' or 'hand'");
+    }
+
+    // /print/<7 digits> is a CARD lookup, not a document id. Card ids are
+    // unique and unambiguous — documentValidation reserves bare 7-digit ids
+    // so no document can ever collide — and the card number is the one thing
+    // physically printed in large digits on the sheet in a child's hand. The
+    // card's newest usable allocation names the document; the request then
+    // flows exactly as `?card=<id>` on that document (adoption, teacher key,
+    // learner-mismatch checks all apply unchanged).
+    let id = rawId;
+    let cardFromPath = null;
+    if (PRINT_CARD_ID.test(rawId)) {
+      if (!printAllocationStore?.findByCard) {
+        return res.status(503).json({ error: 'print-render-unavailable' });
+      }
+      if (variety === 'hand') {
+        throw new ValidationError('a card-id path names an omr sheet; hand variety does not apply');
+      }
+      for (const param of ['card', 'freshCard', 'startRow', 'retake']) {
+        if (req.query[param] !== undefined) {
+          throw new ValidationError(`a card-id path already names the sheet; ${param} does not apply`);
+        }
+      }
+      const record = newestUsableRecord(await printAllocationStore.findByCard(rawId));
+      if (!record) {
+        // The same courtesy a mis-bubbled scan gets: a mistyped card number
+        // suggests the live cards one digit away instead of a bare 404.
+        const nearMissCardIds = await nearMissLiveCards(printAllocationStore, rawId);
+        return res.status(404).json({
+          error: `no sheet found for card ${rawId}`,
+          ...(nearMissCardIds.length ? { nearMissCardIds } : {}),
+        });
+      }
+      id = record.documentId;
+      cardFromPath = rawId;
+    } else if (!PRINT_DOC_ID.test(rawId)) {
+      throw new ValidationError('id must be a lowercase document id');
     }
 
     const context = {};
@@ -250,7 +288,7 @@ export function createSchoolRouter({
 
     if (variety === 'omr') {
       const freshCard = req.query.freshCard === '1' || req.query.freshCard === 'true';
-      const card = textQuery(req.query.card);
+      const card = cardFromPath ?? textQuery(req.query.card);
       const learnerId = textQuery(req.query.learnerId);
       if (freshCard && card) throw new ValidationError('freshCard and card are mutually exclusive');
 
@@ -291,14 +329,7 @@ export function createSchoolRouter({
         context.startRow = record.rowRange.start;
         if (record.learnerId) context.learnerId = record.learnerId;
       };
-      // Newest usable record wins, live before satisfied — the same
-      // precedence scan-back resolution uses for row ownership.
-      const newestUsable = (records) => records
-        .filter((record) => record.status === 'live' || record.status === 'satisfied')
-        .sort((a, b) => {
-          const rank = (record) => (record.status === 'live' ? 1 : 0);
-          return (rank(b) - rank(a)) || String(b.renderedAt).localeCompare(String(a.renderedAt));
-        })[0] ?? null;
+      const newestUsable = newestUsableRecord;
 
       // retake=1: a deliberate fresh attempt — new card, next unused shuffle
       // variant for this learner's document, so the retake sheet is never
@@ -664,6 +695,44 @@ export function createSchoolRouter({
   if (schoolCalcRouter) router.use('/calc', schoolCalcRouter);
 
   return router;
+}
+
+/**
+ * Newest usable allocation record, live before satisfied, then most recently
+ * rendered — the same precedence scan-back resolution uses for row ownership.
+ * Shared by the print route's bare-omr reuse, card adoption, and the
+ * card-id-path lookup.
+ */
+function newestUsableRecord(records) {
+  return records
+    .filter((record) => record.status === 'live' || record.status === 'satisfied')
+    .sort((a, b) => {
+      const rank = (record) => (record.status === 'live' ? 1 : 0);
+      return (rank(b) - rank(a)) || String(b.renderedAt).localeCompare(String(a.renderedAt));
+    })[0] ?? null;
+}
+
+/**
+ * Live cards exactly one digit off a card id nobody recognizes — the same
+ * Hamming-1 courtesy the scan consumer extends to a mis-bubbled card, for a
+ * mistyped URL. Household-scale linear scan; a store without `listCardIds`
+ * yields no suggestions.
+ */
+async function nearMissLiveCards(store, cardId) {
+  if (typeof store.listCardIds !== 'function') return [];
+  const out = [];
+  for (const candidate of await store.listCardIds()) {
+    if (candidate.length !== cardId.length) continue;
+    let distance = 0;
+    for (let i = 0; i < candidate.length && distance < 2; i += 1) {
+      if (candidate[i] !== cardId[i]) distance += 1;
+    }
+    if (distance !== 1) continue;
+    // eslint-disable-next-line no-await-in-loop
+    const records = await store.findByCard(candidate);
+    if (records.some((record) => record.status === 'live')) out.push(candidate);
+  }
+  return out.sort();
 }
 
 function textQuery(value) {
