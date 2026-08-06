@@ -22,6 +22,12 @@ const logger = createLogger({ source: 'middleware', app: 'http' });
  * @returns {number}
  */
 function getHttpStatus(error) {
+  // An explicitly stamped status wins. Routers that cannot import domain
+  // classes (api-no-domains) stamp `err.status` by NAME at their boundary
+  // (e.g. schoolLifecycle's guarded 403) — before this line, that stamp was
+  // silently discarded and every such refusal surfaced as a 500.
+  const explicit = error?.status ?? error?.statusCode;
+  if (typeof explicit === 'number' && Number.isFinite(explicit)) return explicit;
   if (error instanceof ValidationError) return 400;
   if (error instanceof AuthorizationError) return 403;
   if (error instanceof NotFoundError) return 404;
