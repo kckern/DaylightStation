@@ -26,6 +26,9 @@ export default function GraderBar({
   teachersConfigured = null, pin = undefined, onPinChange = null,
 }) {
   if (!adults.length) {
+    // The teachers read is still in flight: say nothing yet rather than
+    // flashing a wrong explanation for an empty list.
+    if (teachersConfigured === null) return null;
     // Distinguish the two empties (teacher-console spec §4.7.1): no
     // `teachers:` key configured at all vs a configured list none of whose
     // entries resolve to a grown-up on the roster.

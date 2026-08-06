@@ -93,3 +93,21 @@ describe('GET /api/v1/school/teachers', () => {
     expect(res.body).toEqual({ configured: false, teachers: [] });
   });
 });
+
+describe('print approve/deny forward the body pin', () => {
+  it('approve and deny hand {requestId, approver, pin} to the service', async () => {
+    const approve = vi.fn(async (args) => ({ decision: 'printed', ...args }));
+    const deny = vi.fn(async (args) => ({ decision: 'denied', ...args }));
+    const app = express();
+    app.use(express.json());
+    app.use('/api/v1/school', createSchoolRouter({
+      schoolService: { listBankSourceSummaries: () => [] },
+      printService: { approve, deny, listPending: () => [], listPrintables: async () => [], getQuota: () => null },
+      logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() },
+    }));
+    await request(app).post('/api/v1/school/print/pr_1/approve').send({ approver: 'kckern', pin: '7410' });
+    expect(approve).toHaveBeenCalledWith({ requestId: 'pr_1', approver: 'kckern', pin: '7410' });
+    await request(app).post('/api/v1/school/print/pr_1/deny').send({ approver: 'kckern', pin: '7410' });
+    expect(deny).toHaveBeenCalledWith({ requestId: 'pr_1', approver: 'kckern', pin: '7410' });
+  });
+});

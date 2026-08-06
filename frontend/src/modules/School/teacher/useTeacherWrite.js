@@ -20,11 +20,15 @@ export function useTeacherWrite({ panel }) {
     const { ok, status, data } = await call({ actorId: currentTeacher.id, pin });
     setBusy(null);
     if (ok) { onSuccess?.(data); return; }
+    // The two handlers speak different shapes: school.mjs's wrap sends
+    // {error: string}; the app-level object-shape handler sends
+    // {error: {type, message}}. Normalize — an object must never reach JSX.
+    const message = typeof data?.error === 'string' ? data.error : data?.error?.message;
     if (status === 403) {
       openPinPrompt();
-      setErrors((e) => ({ ...e, [key]: data?.error ?? 'The teacher PIN is missing or wrong — enter it and try again.' }));
+      setErrors((e) => ({ ...e, [key]: message ?? 'The teacher PIN is missing or wrong — enter it and try again.' }));
     } else {
-      setErrors((e) => ({ ...e, [key]: data?.error ?? 'That didn’t save — try again.' }));
+      setErrors((e) => ({ ...e, [key]: message ?? 'That didn’t save — try again.' }));
     }
     teacherLog.fetch('write-refused', { panel, key, status });
   }, [currentTeacher, pin, openPicker, openPinPrompt, panel]);

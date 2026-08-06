@@ -55,7 +55,7 @@ import { DoNowSchoolBridge } from '#apps/school/DoNowSchoolBridge.mjs';
 import { WorkSessionReporter } from '#apps/school/WorkSessionReporter.mjs';
 import { BuildAgenda } from '#apps/school/usecases/BuildAgenda.mjs';
 import { ListLearnerSessions } from '#apps/school/usecases/ListLearnerSessions.mjs';
-import { TeacherGate } from '#apps/school/TeacherGate.mjs';
+import { makeTeacherGate } from '#apps/school/TeacherGate.mjs';
 import { IssueDocument } from '#apps/school/usecases/IssueDocument.mjs';
 import { DispatchMedia } from '#apps/school/usecases/DispatchMedia.mjs';
 import { RecordMediaCompletion } from '#apps/school/usecases/RecordMediaCompletion.mjs';
@@ -409,17 +409,9 @@ export async function createSchoolLifecycle({
   });
 
   // The console write predicate (teacher-console spec §1): role + pin over
-  // the same live-roster adult rule. Accessors read school.yml per call.
-  const teacherGate = new TeacherGate({
-    teachers: () => (configService.getHouseholdAppConfig(null, 'school') || {}).teachers,
-    pin: () => {
-      const cfg = configService.getHouseholdAppConfig(null, 'school') || {};
-      return cfg.teacher?.pin != null ? String(cfg.teacher.pin) : null;
-    },
-    roster: () => userService?.getHouseholdRoster?.() ?? [],
-    clock,
-    logger,
-  });
+  // the same live-roster adult rule, via the one shared factory so the
+  // config accessors cannot drift between composition sites.
+  const teacherGate = makeTeacherGate({ configService, userService, clock, logger });
 
   // --- use cases -------------------------------------------------------------
   const buildAgenda = new BuildAgenda({

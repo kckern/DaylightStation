@@ -45,19 +45,19 @@ const assignments = {
 const named = (name, message) => Object.assign(new Error(message), { name });
 
 const resolveReviewItem = {
-  execute: async ({ sessionId, itemId, verdict, gradedBy, note = null }) => {
+  execute: async ({ sessionId, itemId, verdict, gradedBy, note = null, pin = null }) => {
     if (gradedBy === 'kid1') throw named('GuestForbiddenError', 'Only a grown-up can sign off schoolwork');
     if (verdict !== 'correct' && verdict !== 'incorrect') throw named('ValidationError', `verdict must be correct|incorrect, got: ${verdict}`);
     if (itemId === 'ghost') throw named('EntityNotFoundError', `review-item not found: ${sessionId}/${itemId}`);
-    return { sessionId, itemId, verdict, gradedBy, note, gradedAt: '2026-07-27T09:00:00.000Z' };
+    return { sessionId, itemId, verdict, gradedBy, note, pin, gradedAt: '2026-07-27T09:00:00.000Z' };
   },
 };
 
 const setAssignments = {
-  execute: async ({ learnerId, courses, units, assignedBy }) => {
+  execute: async ({ learnerId, courses, units, assignedBy, pin = null }) => {
     if (assignedBy === 'kid1') throw named('GuestForbiddenError', 'Only a grown-up can change what a child is assigned');
     if (!Array.isArray(courses) || !Array.isArray(units)) throw named('ValidationError', 'courses and units must be arrays');
-    return { learnerId, courses, units, assignedBy, updatedAt: '2026-07-27T09:00:00.000Z' };
+    return { learnerId, courses, units, assignedBy, pin, updatedAt: '2026-07-27T09:00:00.000Z' };
   },
 };
 
@@ -319,6 +319,20 @@ describe('fail closed', () => {
     expect((await fetch(`${url}/review`)).status).toBe(404);
     expect((await fetch(`${url}/learners/kid1/agenda`)).status).toBe(404);
     await new Promise((res) => bare.close(res));
+  });
+});
+
+describe('pin forwarding (teacher-console wave 2)', () => {
+  it('the review resolve forwards the body pin to the use case', async () => {
+    const r = await post('/sessions/ses_1/review/q3', { verdict: 'correct', gradedBy: 'dad', pin: '7410' });
+    expect(r.status).toBe(200);
+    expect((await r.json()).pin).toBe('7410');
+  });
+
+  it('the assignments write forwards the body pin to the use case', async () => {
+    const r = await put('/assignments/kid1', { courses: [], units: [], assignedBy: 'dad', pin: '7410' });
+    expect(r.status).toBe(200);
+    expect((await r.json()).pin).toBe('7410');
   });
 });
 
