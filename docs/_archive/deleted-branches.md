@@ -208,3 +208,4 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-08-05 | feat/school-print-card-path | f8bdb700ba7a90aa1410c824fddf0b2e83ac61c4 | /print/<cardId> lookup + omr default variety |
 | 2026-08-05 | feat/school-gradebook | 898d13c88 | gradebook wave: report cards, periods, digest, feedback, concepts, outline |
 | 2026-08-06 | school-teacher-console | 92127c109 | Teacher console programme (5 waves + e2e), merged to main |
+| 2026-08-06 | school-teacher-console-w6 | HEAD-of-main | Teacher console wave 6 (advocacy remediation), merged to main |
