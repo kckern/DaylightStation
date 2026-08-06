@@ -6,7 +6,7 @@ import { GuestForbiddenError } from '#domains/school/errors.mjs';
 import { DomainInvariantError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 
 function appWith({
-  getReportCard, closeAcademicPeriod, getTeacherToday, reportCardsStore,
+  getReportCard, closeAcademicPeriod, getTeacherToday, reportCardsStore, renderReportCardPdf,
 } = {}) {
   const app = express();
   app.use(express.json());
@@ -16,6 +16,7 @@ function appWith({
     closeAcademicPeriod: closeAcademicPeriod ?? null,
     getTeacherToday: getTeacherToday ?? null,
     reportCardsStore: reportCardsStore ?? null,
+    renderReportCardPdf: renderReportCardPdf ?? null,
     logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() },
   }));
   return app;
@@ -55,6 +56,35 @@ describe('GET /api/v1/school/report-card', () => {
       .get('/api/v1/school/report-card?learnerId=kid1&periodId=ghost');
     expect(res.status).toBe(404);
   });
+
+  it('format=pdf renders through the wired renderer and serves it inline with the card-id filename', async () => {
+    const getReportCard = { execute: vi.fn(async () => CARD) };
+    const renderReportCardPdf = vi.fn(async () => ({ pdf: Buffer.from('%PDF-1.4 fake'), pageCount: 1, mode: 'draft' }));
+    const res = await request(appWith({ getReportCard, renderReportCardPdf }))
+      .get('/api/v1/school/report-card?learnerId=kid1&periodId=fall-2026&format=pdf&learnerName=Milo');
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/application\/pdf/);
+    expect(res.headers['content-disposition']).toBe('inline; filename="report-card-kid1-fall-2026.pdf"');
+    expect(res.body.toString('latin1')).toContain('%PDF-1.4 fake');
+    expect(renderReportCardPdf).toHaveBeenCalledWith(CARD, { learnerName: 'Milo' });
+  });
+
+  it('format=pdf 503s when no renderer is wired', async () => {
+    const getReportCard = { execute: vi.fn(async () => CARD) };
+    const res = await request(appWith({ getReportCard }))
+      .get('/api/v1/school/report-card?learnerId=kid1&periodId=fall-2026&format=pdf');
+    expect(res.status).toBe(503);
+  });
+
+  it('JSON stays the default when format is omitted', async () => {
+    const getReportCard = { execute: vi.fn(async () => CARD) };
+    const renderReportCardPdf = vi.fn(async () => ({ pdf: Buffer.from('%PDF-'), pageCount: 1, mode: 'draft' }));
+    const res = await request(appWith({ getReportCard, renderReportCardPdf }))
+      .get('/api/v1/school/report-card?learnerId=kid1&periodId=fall-2026');
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/json/);
+    expect(renderReportCardPdf).not.toHaveBeenCalled();
+  });
 });
 
 describe('GET /api/v1/school/report-card/frozen', () => {
@@ -90,6 +120,46 @@ describe('GET /api/v1/school/report-card/frozen', () => {
     const res = await request(appWith()).get('/api/v1/school/report-card/frozen?learnerId=kid1');
     expect(res.status).toBe(200);
     expect(res.body).toBe(null);
+  });
+
+  it('format=pdf renders the frozen record and serves it inline with the card-id filename', async () => {
+    const frozen = { ...CARD, closedBy: 'dad', closedAt: 't1' };
+    const reportCardsStore = { readReportCard: vi.fn(() => frozen), listReportCards: vi.fn() };
+    const renderReportCardPdf = vi.fn(async () => ({ pdf: Buffer.from('%PDF-1.4 frozen'), pageCount: 1, mode: 'frozen' }));
+    const res = await request(appWith({ reportCardsStore, renderReportCardPdf }))
+      .get('/api/v1/school/report-card/frozen?learnerId=kid1&periodId=fall-2026&format=pdf');
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/application\/pdf/);
+    expect(res.headers['content-disposition']).toBe('inline; filename="report-card-kid1-fall-2026.pdf"');
+    expect(renderReportCardPdf).toHaveBeenCalledWith(frozen, { learnerName: null });
+  });
+
+  it('format=pdf 404s when the named period was never closed — never reaches the renderer', async () => {
+    const reportCardsStore = { readReportCard: vi.fn(() => null), listReportCards: vi.fn() };
+    const renderReportCardPdf = vi.fn(async () => ({ pdf: Buffer.from('%PDF-'), pageCount: 1, mode: 'frozen' }));
+    const res = await request(appWith({ reportCardsStore, renderReportCardPdf }))
+      .get('/api/v1/school/report-card/frozen?learnerId=kid1&periodId=never-closed&format=pdf');
+    expect(res.status).toBe(404);
+    expect(renderReportCardPdf).not.toHaveBeenCalled();
+  });
+
+  it('format=pdf 503s when no renderer is wired', async () => {
+    const reportCardsStore = { readReportCard: vi.fn(() => ({ ...CARD, closedBy: 'dad', closedAt: 't1' })), listReportCards: vi.fn() };
+    const res = await request(appWith({ reportCardsStore }))
+      .get('/api/v1/school/report-card/frozen?learnerId=kid1&periodId=fall-2026&format=pdf');
+    expect(res.status).toBe(503);
+  });
+
+  it('format=pdf is ignored on the list variety (periodId omitted) — still JSON', async () => {
+    const records = [{ ...CARD, closedBy: 'dad' }];
+    const reportCardsStore = { readReportCard: vi.fn(), listReportCards: vi.fn(() => records) };
+    const renderReportCardPdf = vi.fn(async () => ({ pdf: Buffer.from('%PDF-'), pageCount: 1, mode: 'frozen' }));
+    const res = await request(appWith({ reportCardsStore, renderReportCardPdf }))
+      .get('/api/v1/school/report-card/frozen?learnerId=kid1&format=pdf');
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/json/);
+    expect(res.body).toEqual(records);
+    expect(renderReportCardPdf).not.toHaveBeenCalled();
   });
 });
 
