@@ -3127,6 +3127,19 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     timezone: configService.getTimezone?.() || null,
   });
   const recordEnrichment = new RecordEnrichment({ log: schoolEnrichmentLog, teacherGate: schoolTeacherGate });
+  // Wave-4 records: the progress-report read model + the two renderers.
+  let getProgressReport = null;
+  if (getReportCard) {
+    const { GetProgressReport } = await import('#apps/school/usecases/GetProgressReport.mjs');
+    getProgressReport = new GetProgressReport({
+      getReportCard,
+      milestoneStatuses,
+      enrichmentLog: schoolEnrichmentLog,
+      timezone: configService.getTimezone?.() || null,
+    });
+  }
+  const { createProgressReportPdfRenderer } = await import('#rendering/school/reports/ProgressReportRenderer.mjs');
+  const { createCertificatePdfRenderer } = await import('#rendering/school/reports/CertificateRenderer.mjs');
 
   v1Routers.school = createSchoolRouter({
     schoolService,

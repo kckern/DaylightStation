@@ -10,15 +10,15 @@ import { usePanelFetch } from '../usePanelFetch.js';
 import PanelFrame from '../panels/PanelFrame.jsx';
 import ReportCardView from '../panels/ReportCardView.jsx';
 import FrozenHistory from '../panels/FrozenHistory.jsx';
+import ClosePeriodPanel from '../panels/ClosePeriodPanel.jsx';
+import PacingPanel from '../panels/PacingPanel.jsx';
 import PeriodSelect, { currentPeriodId } from '../panels/PeriodSelect.jsx';
 import CurriculumHistoryOverview from '../../progress/CurriculumHistoryOverview.jsx';
 import InstructionalInsightsOverview from '../../progress/InstructionalInsightsOverview.jsx';
-import StubCard from '../panels/StubCard.jsx';
-import { TODO } from '../todoRegistry.js';
-
 export default function RecordsTab({ learnerId, kids = [] }) {
   const periods = usePanelFetch(() => schoolApi.periods(), { panel: 'periods' });
   const [periodId, setPeriodId] = useState(null);
+  const [frozenRefresh, setFrozenRefresh] = useState(0);
   const periodList = Array.isArray(periods.data) ? periods.data : [];
   useEffect(() => {
     if (!periodId && periodList.length) setPeriodId(currentPeriodId(periodList));
@@ -37,10 +37,6 @@ export default function RecordsTab({ learnerId, kids = [] }) {
     return (
       <div className="teacher-tab teacher-tab--records">
         <p className="teacher-panel__empty">Pick a learner above to see their records.</p>
-        <StubCard todoId={TODO.PERIOD_CLOSE} />
-        <StubCard todoId={TODO.PROGRESSREPORT_PRINT} />
-        <StubCard todoId={TODO.CERTIFICATES_PRINT} />
-        <StubCard todoId={TODO.ENRICHMENT_CREDIT} />
       </div>
     );
   }
@@ -61,8 +57,15 @@ export default function RecordsTab({ learnerId, kids = [] }) {
       )}
       <PeriodSelect periods={periodList} value={periodId} onChange={setPeriodId} />
       {periodId && <ReportCardView learnerId={learnerId} periodId={periodId} />}
-      <StubCard todoId={TODO.PERIOD_CLOSE} />
-      <FrozenHistory learnerId={learnerId} />
+      {periodId && (
+        <ClosePeriodPanel
+          learnerId={learnerId}
+          periodId={periodId}
+          onClosed={() => setFrozenRefresh((n) => n + 1)}
+        />
+      )}
+      {periodId && <PacingPanel learnerId={learnerId} periodId={periodId} />}
+      <FrozenHistory learnerId={learnerId} refreshKey={frozenRefresh} />
       <PanelFrame
         title="Curriculum history"
         state={history.state}
@@ -79,9 +82,6 @@ export default function RecordsTab({ learnerId, kids = [] }) {
       >
         {insights.data && <InstructionalInsightsOverview insights={insights.data} />}
       </PanelFrame>
-      <StubCard todoId={TODO.PROGRESSREPORT_PRINT} />
-      <StubCard todoId={TODO.CERTIFICATES_PRINT} />
-      <StubCard todoId={TODO.ENRICHMENT_CREDIT} />
     </div>
   );
 }

@@ -6,10 +6,6 @@
  * TeacherConsole.test.jsx enforces the UI side).
  */
 export const TODO = {
-  PERIOD_CLOSE: 'teacher.period.close',
-  PROGRESSREPORT_PRINT: 'teacher.progressreport.print',
-  CERTIFICATES_PRINT: 'teacher.certificates.print',
-  ENRICHMENT_CREDIT: 'teacher.enrichment.credit',
   ATTESTATION: 'teacher.attestation',
   REASSIGN: 'teacher.reassign',
   NOTES_STANDALONE: 'teacher.notes.standalone',
@@ -17,22 +13,6 @@ export const TODO = {
 
 /** Card copy per stub — what will live there, in the teacher's language. */
 export const STUB_COPY = {
-  [TODO.PERIOD_CLOSE]: {
-    title: 'Close the period',
-    body: 'Freeze this report card as the period record (with a supersede flow for corrections).',
-  },
-  [TODO.PROGRESSREPORT_PRINT]: {
-    title: 'Progress report (PDF)',
-    body: 'Period-to-date progress against milestones, including enrichment credit — printable.',
-  },
-  [TODO.CERTIFICATES_PRINT]: {
-    title: 'Certificates (PDF)',
-    body: 'A printable certificate when a course or program completes.',
-  },
-  [TODO.ENRICHMENT_CREDIT]: {
-    title: 'Enrichment credit',
-    body: 'Enrichment renders as its own credit section, and enrichment days excuse pacing — never delinquency.',
-  },
   [TODO.ATTESTATION]: {
     title: 'Attestation override',
     body: 'When the Portal, calculator, or bubble sheets fail, record "I verify this was done" as its own evidence — never a silent edit.',
