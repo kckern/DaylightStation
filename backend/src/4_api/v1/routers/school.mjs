@@ -529,8 +529,14 @@ export function createSchoolRouter({
     const { userId = null, unitId, materialId, unitTitle = null, materialTitle = null } = req.body || {};
     res.json(schoolService.requestQuiz({ userId, unitId, materialId, unitTitle, materialTitle }));
   }));
-  router.get('/quiz-requests', wrap((req, res) => {
+  router.get('/quiz-requests', wrap(async (req, res) => {
+    // Warm first so the `fulfilled` annotation answers from a real bank scan.
+    await schoolService.warmBanks();
     res.json(schoolService.listQuizRequests({ materialId: req.query.materialId || null }));
+  }));
+  router.post('/quiz-requests/dismiss', wrap((req, res) => {
+    const { unitId, userId, dismissedBy = null, pin = null } = req.body || {};
+    res.json(schoolService.dismissQuizRequest({ unitId, userId, dismissedBy, pin }));
   }));
 
   // Printing — a child prints their own worksheets, quota-gated with grown-up
