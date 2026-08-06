@@ -1,0 +1,160 @@
+/* Teacher console — phone-first, an adult reading surface: School's palette,
+ * denser type, bottom tab bar. Desktop gets the same layout width-capped. */
+.teacher-console {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  max-width: 760px;
+  margin: 0 auto;
+  background: #f7f5f0;
+  color: #2b2620;
+  font-size: 15px;
+
+  &--loading {
+    display: grid;
+    place-items: center;
+    color: #8a8272;
+  }
+
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 14px;
+    border-bottom: 1px solid #e4ddcf;
+    background: #fffdf8;
+  }
+
+  &__title {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+  }
+
+  &__no-teachers {
+    font-size: 13px;
+    color: #8a5a2a;
+    background: #fdf3e4;
+    border: 1px solid #eeD9b8;
+    border-radius: 8px;
+    padding: 6px 10px;
+  }
+
+  &__chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid #e0d8c8;
+    background: #fff;
+    border-radius: 999px;
+    padding: 4px 12px 4px 6px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+
+  &__learners {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 10px 14px;
+    background: #fffdf8;
+    border-bottom: 1px solid #eee7d9;
+
+    &::-webkit-scrollbar { display: none; }
+  }
+
+  &__learner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    border: 2px solid transparent;
+    background: none;
+    border-radius: 10px;
+    padding: 6px 10px;
+    font-size: 12px;
+    color: #6d6455;
+    cursor: pointer;
+    flex: 0 0 auto;
+
+    &--active {
+      border-color: #b8873b;
+      background: #fbf4e6;
+      color: #2b2620;
+    }
+  }
+
+  &__body {
+    flex: 1;
+    padding: 14px;
+    padding-bottom: 76px; /* clear the fixed tab bar */
+  }
+
+  &__tabs {
+    position: fixed;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 100%;
+    max-width: 760px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    background: #fffdf8;
+    border-top: 1px solid #e4ddcf;
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+    gap: 6px;
+  }
+
+  &__tab {
+    border: none;
+    background: none;
+    border-radius: 10px;
+    padding: 10px 4px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #8a8272;
+    cursor: pointer;
+
+    &--active {
+      background: #f3ead7;
+      color: #2b2620;
+    }
+  }
+}
+
+.teacher-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.teacher-stub {
+  border: 1px dashed #d5cbb6;
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: #fbf9f3;
+
+  &__title {
+    margin: 0 0 4px;
+    font-size: 14px;
+    font-weight: 700;
+    color: #6d6455;
+  }
+
+  &__body {
+    margin: 0 0 6px;
+    font-size: 13px;
+    color: #8a8272;
+    line-height: 1.45;
+  }
+
+  &__badge {
+    margin: 0;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #b8873b;
+  }
+}
