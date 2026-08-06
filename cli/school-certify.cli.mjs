@@ -73,7 +73,7 @@ const VALUE_FLAGS = new Set([
   'address',
   'file',
 ]);
-const BOOLEAN_FLAGS = new Set(['json', 'write-manifest']);
+const BOOLEAN_FLAGS = new Set(['json', 'write-manifest', 'strict-concepts']);
 const ALLOWED_FLAGS = new Set([...VALUE_FLAGS, ...BOOLEAN_FLAGS]);
 
 const HELP = `school-certify — certify published School content against registered surface profiles
@@ -96,6 +96,8 @@ Options:
   --json                             emit certification rows as sorted, byte-stable JSON lines
   --write-manifest                   write the certification manifest to <content-root>/certification-manifest.json
                                      (gate mode only — usage error otherwise)
+  --strict-concepts                  fail on a bank concept id absent from the concept registry
+                                     (<data-dir>/content/school/concepts.yml) instead of warning
   --help, -h                         show this message
 
 Directory lists are comma-separated; relative entries resolve under --data-dir.
@@ -330,6 +332,60 @@ async function validateRequiredCapabilityReferences({ catalogs, customCapabiliti
   return errors;
 }
 
+/**
+ * Concept-id lint (Task 10, concept registry + mastery facet). Every
+ * bank-scoped concept a bank NAMES (`bank.concepts[].conceptId` —
+ * questionBankValidation.mjs's declared vocabulary its items bind against,
+ * NOT the household-wide registry) should resolve to a real, labeled entry
+ * in the household concept registry (`<data-dir>/content/school/concepts.yml`,
+ * `{concepts: [{id, label, parent?}]}`). The registry backs Task 10's
+ * report-card `concepts` facet — it is a labeling/reporting aid, not a
+ * publication gate, so an unresolved id is a WARNING by default and only
+ * escalates to a hard error under `--strict-concepts`. The registry itself
+ * is opt-in: most household mounts will never author one, so its total
+ * absence earns one informational notice rather than a warning for every
+ * bank that happens to declare concepts.
+ */
+function collectBankConceptRefs(bankDirectories) {
+  const refs = [];
+  bankDirectories.forEach((directory) => {
+    [...listYamlFiles(directory, { recursive: true })].sort().forEach((relative) => {
+      const bank = loadYaml(path.join(directory, relative));
+      if (!bank || !Array.isArray(bank.concepts)) return;
+      bank.concepts.forEach((concept) => {
+        if (concept && typeof concept.conceptId === 'string' && concept.conceptId) {
+          refs.push({ conceptId: concept.conceptId, bankId: bank.id ?? relative });
+        }
+      });
+    });
+  });
+  return refs;
+}
+
+function evaluateConceptRegistry({ dataDir, bankDirectories }) {
+  const registryPath = path.join(dataDir, 'content', 'school', 'concepts');
+  const raw = loadYaml(registryPath);
+  if (raw === null) {
+    return {
+      notices: ['concept registry not found at content/school/concepts.yml — concept-id lint skipped'],
+      unresolved: [],
+    };
+  }
+  const known = new Set(
+    Array.isArray(raw?.concepts)
+      ? raw.concepts.map((entry) => entry?.id).filter((id) => typeof id === 'string' && id)
+      : [],
+  );
+  const unresolved = collectBankConceptRefs(bankDirectories).filter((ref) => !known.has(ref.conceptId));
+  return { notices: [], unresolved };
+}
+
+function conceptReferenceMessages(unresolved) {
+  return unresolved.map(({ conceptId, bankId }) => (
+    `question bank '${bankId}': concept '${conceptId}' is not in the concept registry (content/school/concepts.yml)`
+  )).sort();
+}
+
 function buildCorpus(paths) {
   const catalogs = new YamlLearningCatalogRepository({ directories: paths.catalogDirectories });
   const content = new YamlLearningContentRepository({
@@ -417,9 +473,20 @@ async function certifyTargets(certification, targets) {
  * scope") IS the whole corpus, so it must be validated exactly like gate
  * mode before any of it is certified; a malformed catalog must not be
  * silently skipped and reported as "certification ran, verdicts are the
- * answer" for the rest.
+ * answer" for the rest. Also runs Task 10's concept-id lint.
+ *
+ * @param {{corpus: object, paths: object, strictConcepts?: boolean}} args
+ * @returns {Promise<{errors: string[], conceptWarnings: string[], conceptNotices: string[]}>}
+ *   `errors` is the historical flat "abort, certify nothing" list (schema +
+ *   reference + asset-existence, now also concept-id references when
+ *   `strictConcepts`). `conceptWarnings`/`conceptNotices` are Task 10's
+ *   softer concept-registry surfaces — non-strict unresolved concept ids and
+ *   the "no registry at all" notice — left for the caller to attach to a
+ *   report's `warnings`/`notices` (gate mode does; query mode's whole-corpus
+ *   validation reuses only `errors`, matching the existing "no query-mode
+ *   warnings" scope of `certifiedNowhereWarnings`).
  */
-async function validateCorpusScope({ corpus, paths }) {
+async function validateCorpusScope({ corpus, paths, strictConcepts = false }) {
   const validation = await new ValidateSchoolCalcPublication({
     catalogs: corpus.catalogs, bundles: corpus.buildLesson,
   }).execute();
@@ -432,7 +499,19 @@ async function validateCorpusScope({ corpus, paths }) {
     catalogs: corpus.catalogs,
     customCapabilities: corpus.moduleRegistry.list().map((definition) => definition.capability),
   });
-  return [...flattenValidationErrors(validation), ...assetErrors, ...capabilityErrors].sort();
+  const conceptRegistry = evaluateConceptRegistry({ dataDir: paths.dataDir, bankDirectories: paths.bankDirectories });
+  const conceptMessages = conceptReferenceMessages(conceptRegistry.unresolved);
+  const errors = [
+    ...flattenValidationErrors(validation),
+    ...assetErrors,
+    ...capabilityErrors,
+    ...(strictConcepts ? conceptMessages : []),
+  ].sort();
+  return {
+    errors,
+    conceptWarnings: strictConcepts ? [] : conceptMessages,
+    conceptNotices: conceptRegistry.notices,
+  };
 }
 
 function maybeWriteManifest({ flags, rows, manifestPath, fs: fsDep = fs }) {
@@ -444,15 +523,16 @@ function maybeWriteManifest({ flags, rows, manifestPath, fs: fsDep = fs }) {
 
 async function runGateMode({ paths, flags, deps }) {
   const corpus = buildCorpus(paths);
-  const corpusErrors = await validateCorpusScope({ corpus, paths });
+  const strictConcepts = Boolean(flags['strict-concepts']);
+  const corpusValidation = await validateCorpusScope({ corpus, paths, strictConcepts });
   const { registry, profileErrors } = await buildRegistry({
     surfacesDirectory: paths.surfacesDirectory, moduleRegistry: corpus.moduleRegistry,
   });
 
-  const errors = [...corpusErrors, ...profileErrors].sort();
+  const errors = [...corpusValidation.errors, ...profileErrors].sort();
   if (errors.length) {
     return {
-      ok: false, mode: 'gate', errors, warnings: [], rows: [], manifestWritten: null,
+      ok: false, mode: 'gate', errors, warnings: [], notices: corpusValidation.conceptNotices, rows: [], manifestWritten: null,
     };
   }
 
@@ -470,18 +550,18 @@ async function runGateMode({ paths, flags, deps }) {
   // would be a programming error, not authored content — surface it, don't swallow it.
   if (certifyErrors.length) {
     return {
-      ok: false, mode: 'gate', errors: certifyErrors, warnings: [], rows: [], manifestWritten: null,
+      ok: false, mode: 'gate', errors: certifyErrors, warnings: [], notices: corpusValidation.conceptNotices, rows: [], manifestWritten: null,
     };
   }
 
-  const warnings = certifiedNowhereWarnings(rows);
+  const warnings = [...certifiedNowhereWarnings(rows), ...corpusValidation.conceptWarnings].sort();
   const sortedRows = sortRows(rows);
   const manifestWritten = maybeWriteManifest({
     flags, rows: sortedRows, manifestPath: paths.manifestPath, fs: deps.fs,
   });
 
   return {
-    ok: true, mode: 'gate', errors: [], warnings, rows: sortedRows, manifestWritten,
+    ok: true, mode: 'gate', errors: [], warnings, notices: corpusValidation.conceptNotices, rows: sortedRows, manifestWritten,
   };
 }
 
@@ -522,8 +602,8 @@ async function resolveQueryTargets({ flags, corpus, paths }) {
   // (finding: this branch used to reuse listAllLessonAddresses's silent
   // continue-on-error, which is only safe when a prior pass already
   // validated — which, unlike gate mode, this path never did).
-  const corpusErrors = await validateCorpusScope({ corpus, paths });
-  if (corpusErrors.length) return { targets: [], errors: corpusErrors };
+  const corpusValidation = await validateCorpusScope({ corpus, paths, strictConcepts: Boolean(flags['strict-concepts']) });
+  if (corpusValidation.errors.length) return { targets: [], errors: corpusValidation.errors };
 
   const lessonAddresses = await listAllLessonAddresses(corpus.catalogs);
   const bankIds = listAllBankIds(paths.bankDirectories);
@@ -543,7 +623,7 @@ async function runQueryMode({ paths, flags, surfaces, deps }) {
   });
   if (profileErrors.length) {
     return {
-      ok: false, mode: 'query', errors: profileErrors, warnings: [], rows: [], manifestWritten: null,
+      ok: false, mode: 'query', errors: profileErrors, warnings: [], notices: [], rows: [], manifestWritten: null,
     };
   }
 
@@ -560,6 +640,7 @@ async function runQueryMode({ paths, flags, surfaces, deps }) {
         mode: 'query',
         errors: unknownSurfaces.map((id) => `unknown surface '${id}'`),
         warnings: [],
+        notices: [],
         rows: [],
         manifestWritten: null,
       };
@@ -587,7 +668,7 @@ async function runQueryMode({ paths, flags, surfaces, deps }) {
   });
 
   return {
-    ok: errors.length === 0, mode: 'query', errors, warnings: [], rows: sortedRows, manifestWritten,
+    ok: errors.length === 0, mode: 'query', errors, warnings: [], notices: [], rows: sortedRows, manifestWritten,
   };
 }
 
@@ -608,7 +689,7 @@ export async function runCertify(argv = [], deps = {}) {
     return {
       exitCode: EXIT_OK,
       report: {
-        ok: true, mode: 'help', errors: [], warnings: [], rows: [], manifestWritten: null,
+        ok: true, mode: 'help', errors: [], warnings: [], notices: [], rows: [], manifestWritten: null,
       },
     };
   }
@@ -620,6 +701,7 @@ export async function runCertify(argv = [], deps = {}) {
         mode: 'usage',
         errors: [...unknown.map((token) => `Unknown option: --${token}`), ...usageErrors],
         warnings: [],
+        notices: [],
         rows: [],
         manifestWritten: null,
       },
@@ -633,7 +715,7 @@ export async function runCertify(argv = [], deps = {}) {
     return {
       exitCode: EXIT_USAGE,
       report: {
-        ok: false, mode: 'usage', errors: [error.message], warnings: [], rows: [], manifestWritten: null,
+        ok: false, mode: 'usage', errors: [error.message], warnings: [], notices: [], rows: [], manifestWritten: null,
       },
     };
   }
@@ -653,6 +735,7 @@ export async function runCertify(argv = [], deps = {}) {
         mode: 'usage',
         errors: ['--write-manifest is only valid in gate mode (no --surface/--address/--file present)'],
         warnings: [],
+        notices: [],
         rows: [],
         manifestWritten: null,
       },
@@ -689,6 +772,10 @@ export function formatCertifyReport(report, { json = false } = {}) {
   if (report.warnings.length) {
     lines.push('', 'Warnings');
     report.warnings.forEach((warning) => lines.push(`  - ${warning}`));
+  }
+  if (report.notices?.length) {
+    lines.push('', 'Notices');
+    report.notices.forEach((notice) => lines.push(`  - ${notice}`));
   }
   if (report.manifestWritten) lines.push('', `Manifest written to ${report.manifestWritten}`);
   lines.push('', report.ok ? 'OK' : 'FAILED');

@@ -29,16 +29,17 @@
  *    got remediated is normally the remediation session itself. There is no
  *    "before" percent available anywhere in the v1 shape, so the line omits
  *    one rather than fabricate it.
- *  - There is no concept-level mastery field in the v1 shape (no `concepts`
- *    facet on `evidence`, no per-concept breakdown — `GetLearningProgress`
- *    is invoked with no `groupBy`). What's rendered below is UNIT pass/fail
- *    from `courses[].unitOutcomes[].result` (`passed`/`needs_remediation`),
- *    labelled "Units — passed / needs remediation" rather than "Concepts" —
- *    a signable document must not claim concept-level granularity it does
- *    not have. A later task in this wave (the concept registry) is expected
- *    to add a real `concepts` field to the report shape; when it lands, a
- *    true Concepts section should be ADDED alongside this units section,
- *    not replace it.
+ *  - Task 10 (concept registry + mastery facet) added a real `concepts`
+ *    field to the report shape (`{mastered, developing}`, each an array of
+ *    `{conceptId, label, ratio, responses}` from `conceptMastery` — the
+ *    domain aggregation over graded evidence bound to `learning.conceptIds`,
+ *    labeled via the household concept registry). A "Concepts — mastered /
+ *    developing" section renders ALONGSIDE the unit pass/fail section below,
+ *    never replacing it — the two answer different questions (which DISCRETE
+ *    IDEAS a learner has vs. which WHOLE UNITS they passed), and a report
+ *    predating Task 10 (or with an unwired/empty registry) simply omits or
+ *    empties `concepts`, so the section renders only when there is
+ *    something honest to say.
  *
  * @module rendering/school/reportcard/ReportCardRenderer
  */
@@ -141,6 +142,7 @@ function drawReportCard(doc, theme, report, { learnerName, mode }) {
   drawMaterials(doc, theme, report.materials ?? []);
   drawActiveDays(doc, theme, report.activeDays);
   drawUnitOutcomes(doc, theme, report.courses ?? []);
+  drawConcepts(doc, theme, report.concepts);
   drawRemediationArcs(doc, theme, report);
   drawFeedbackNotes(doc, theme, report.pendingReview);
 }
@@ -242,10 +244,11 @@ function drawActiveDays(doc, theme, activeDays) {
 
 /**
  * UNIT pass/fail, rolled up from `unitOutcomes[].result` across every course
- * — deliberately labelled at the grain the data actually has ("Units"), not
- * "Concepts": there is no concept-level mastery field in the v1 shape (see
- * module comment), and this document is signable — it must not claim a
- * granularity it cannot back up.
+ * — deliberately labelled at the grain this section actually has ("Units"),
+ * distinct from the DISCRETE-CONCEPT grain `drawConcepts` below renders (Task
+ * 10's `report.concepts` facet). Neither section subsumes the other: a
+ * learner can pass a unit while still developing one of its concepts (or the
+ * reverse), so both stay on the printed page.
  */
 function drawUnitOutcomes(doc, theme, courses) {
   sectionHeading(doc, theme, 'Units — passed / needs remediation');
@@ -267,6 +270,34 @@ function drawUnitOutcomes(doc, theme, courses) {
     doc,
     theme,
     `Needs remediation (${needsRemediation.length}): ${needsRemediation.length ? needsRemediation.join(', ') : '—'}`,
+    { sizePt: 11, gapAfterPt: 10 },
+  );
+}
+
+/**
+ * DISCRETE-CONCEPT mastery (Task 10's `report.concepts`, `{mastered,
+ * developing}` from `conceptMastery`), rendered only when there is something
+ * to say — a report predating Task 10, or one with no wired/empty concept
+ * registry, has `concepts` absent or both lists empty, and this section is
+ * skipped entirely rather than printing a hollow "Concepts" heading with
+ * nothing under it.
+ */
+function drawConcepts(doc, theme, concepts) {
+  const mastered = concepts?.mastered ?? [];
+  const developing = concepts?.developing ?? [];
+  if (mastered.length === 0 && developing.length === 0) return;
+  sectionHeading(doc, theme, 'Concepts — mastered / developing');
+  const describe = (row) => `${row.label} (${formatPercent(row.ratio * 100)}, ${row.responses} response${row.responses === 1 ? '' : 's'})`;
+  writeLine(
+    doc,
+    theme,
+    `Mastered (${mastered.length}): ${mastered.length ? mastered.map(describe).join('; ') : '—'}`,
+    { sizePt: 11, gapAfterPt: 4 },
+  );
+  writeLine(
+    doc,
+    theme,
+    `Developing (${developing.length}): ${developing.length ? developing.map(describe).join('; ') : '—'}`,
     { sizePt: 11, gapAfterPt: 10 },
   );
 }

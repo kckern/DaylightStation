@@ -8,6 +8,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { createReportCardPdfRenderer } from './ReportCardRenderer.mjs';
+import { pdfText } from '../../../../../tests/_lib/school/pdfText.mjs';
 
 const LIVE_REPORT = Object.freeze({
   schema: 'school.report-card/v1',
@@ -54,6 +55,22 @@ const LIVE_REPORT = Object.freeze({
   ],
 });
 
+const REPORT_WITH_CONCEPTS = Object.freeze({
+  ...LIVE_REPORT,
+  concepts: {
+    mastered: [
+      {
+        conceptId: 'fractions-add', label: 'Adding fractions', ratio: 0.9, responses: 10,
+      },
+    ],
+    developing: [
+      {
+        conceptId: 'fractions-subtract', label: 'Subtracting fractions', ratio: 0.4, responses: 5,
+      },
+    ],
+  },
+});
+
 const FROZEN_REPORT = Object.freeze({
   ...LIVE_REPORT,
   closedBy: 'dad',
@@ -89,6 +106,33 @@ describe('renderReportCardPdf', () => {
     const first = await renderReportCardPdf(LIVE_REPORT, { learnerName: 'Milo K.' });
     const second = await renderReportCardPdf(LIVE_REPORT, { learnerName: 'Milo K.' });
     expect(first.pdf.equals(second.pdf)).toBe(true);
+  });
+
+  it('renders the units section but OMITS the Concepts section when report.concepts is absent (pre-Task-10 shape)', async () => {
+    const renderReportCardPdf = createReportCardPdfRenderer();
+    const { pdf } = await renderReportCardPdf(LIVE_REPORT, { learnerName: 'Milo K.' });
+    const text = pdfText(pdf);
+    expect(text).toContain('Units — passed / needs remediation');
+    expect(text).not.toContain('Concepts —');
+  });
+
+  it('renders a true Concepts section ALONGSIDE the units section when report.concepts has entries', async () => {
+    const renderReportCardPdf = createReportCardPdfRenderer();
+    const { pdf } = await renderReportCardPdf(REPORT_WITH_CONCEPTS, { learnerName: 'Milo K.' });
+    const text = pdfText(pdf);
+    // The units section must STILL be present (Task 7 ruling: never replaced).
+    expect(text).toContain('Units — passed / needs remediation');
+    expect(text).toContain('Concepts — mastered / developing');
+    expect(text).toContain('Adding fractions');
+    expect(text).toContain('Subtracting fractions');
+  });
+
+  it('omits the Concepts section when concepts is present but both lists are empty', async () => {
+    const renderReportCardPdf = createReportCardPdfRenderer();
+    const emptyConcepts = { ...LIVE_REPORT, concepts: { mastered: [], developing: [] } };
+    const { pdf } = await renderReportCardPdf(emptyConcepts, { learnerName: 'Milo K.' });
+    const text = pdfText(pdf);
+    expect(text).not.toContain('Concepts —');
   });
 
   it('paginates a report with many courses onto more than one page', async () => {
