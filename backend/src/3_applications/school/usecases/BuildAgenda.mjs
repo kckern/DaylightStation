@@ -44,8 +44,27 @@ const HOUR_MS = 3_600_000;
 // note" and "served today" roll over on the exact same instant.
 const BOUNDARY_HOUR = 4;
 
+
+/**
+ * Attestation gate-unlock (spec D2): an attested unit enters the planner's
+ * history as a synthetic PASSED session, so its successor unlocks exactly
+ * as if the engine had graded it. The row is marked `attested: true` — a
+ * reader that must distinguish evidence kinds can.
+ */
+function withAttestedPasses(history, attestations, learnerId) {
+  const entries = attestations?.list?.({ learnerId }) ?? [];
+  if (!entries.length) return history;
+  return [
+    ...history,
+    ...entries.map((a) => ({
+      sessionId: `attested:${a.id}`, learnerId, unitId: a.unitId,
+      outcome: { result: 'passed' }, attested: true, updatedAt: a.at,
+    })),
+  ];
+}
+
 export class BuildAgenda {
-  #curriculum; #assignments; #sessions; #tokens; #launchers; #timezone;
+  #curriculum; #assignments; #sessions; #tokens; #launchers; #timezone; #attestations; #teacherNotes;
   #clock; #rng; #newSessionId; #ttlMs; #logger; #reviewQueue;
 
   /**
@@ -73,7 +92,11 @@ export class BuildAgenda {
     curriculum, assignments, sessions, tokens, launchers = new Map(),
     timezone = null, clock = () => new Date(), rng = Math.random,
     newSessionId = () => `ses_${shortId(8)}`,
-    subjectTokenTtlHours = DEFAULT_SUBJECT_TOKEN_TTL_HOURS, reviewQueue = null, logger = console,
+    subjectTokenTtlHours = DEFAULT_SUBJECT_TOKEN_TTL_HOURS, reviewQueue = null,
+    // Repair-wave sources (spec D2/D3), both optional: attestations feed the
+    // planner's gate-unlock; teacher notes join the "Notes for you" window.
+    attestations = null, teacherNotes = null,
+    logger = console,
   } = {}) {
     if (!curriculum || !assignments || !sessions || !tokens) {
       throw new Error('BuildAgenda requires curriculum, assignments, sessions and tokens');
@@ -90,6 +113,8 @@ export class BuildAgenda {
     this.#ttlMs = subjectTokenTtlHours * HOUR_MS;
     this.#reviewQueue = reviewQueue;
     this.#logger = logger;
+    this.#attestations = attestations;
+    this.#teacherNotes = teacherNotes;
   }
 
   /**
@@ -121,11 +146,12 @@ export class BuildAgenda {
 
     const now = this.#clock();
     const nowIso = now.toISOString();
-    const [assignment, units, history] = await Promise.all([
+    const [assignment, units, rawHistory] = await Promise.all([
       this.#assignments.get(learnerId),
       this.#curriculum.listUnits(),
       this.#sessions.listForLearner(learnerId),
     ]);
+    const history = withAttestedPasses(rawHistory, this.#attestations, learnerId);
 
     const plan = planLearnerWork({ learnerId, assignment, units, sessions: history, now: nowIso });
     if (plan.errors.length) this.#logger.warn?.('school.agenda.plan-errors', { learnerId, errors: plan.errors });
@@ -204,9 +230,16 @@ export class BuildAgenda {
    * per-source degrade.
    */
   async #collectNotes(learnerId, nowMs) {
-    if (!this.#reviewQueue?.listForLearner) return [];
+    if (!this.#reviewQueue?.listForLearner && !this.#teacherNotes) return [];
     try {
-      const items = await this.#reviewQueue.listForLearner(learnerId, { limit: 20 });
+      const reviewItems = this.#reviewQueue?.listForLearner
+        ? await this.#reviewQueue.listForLearner(learnerId, { limit: 20 })
+        : [];
+      // Standalone teacher notes (spec D3) ride the same window and cap as
+      // resolved-review notes — one delivery rule, two sources.
+      const standalone = (this.#teacherNotes?.list?.({ learnerId }) ?? [])
+        .map((n) => ({ note: n.note, gradedAt: n.at }));
+      const items = [...reviewItems, ...standalone];
       const offsetMinutes = offsetMinutesFor(this.#timezone, nowMs);
       const todayIndex = studyDayIndex(nowMs, { boundaryHour: BOUNDARY_HOUR, offsetMinutes });
       const windowed = items.filter((item) => {

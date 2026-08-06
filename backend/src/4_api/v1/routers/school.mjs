@@ -68,6 +68,13 @@ export function createSchoolRouter({
   renderCertificatePdf = null,
   // `(nowMs) => minutes` — the household's UTC offset (certificate dating).
   getHouseholdOffsetMinutes = null,
+  // Wave-5 repair (spec D1/D2/D3) — writes gated inside their use cases.
+  attestationLog = null,
+  recordAttestation = null,
+  teacherNotesStore = null,
+  recordTeacherNote = null,
+  reassignEvidence = null,
+  attemptsStore = null,
   passOverrideStore = null,
   setPassOverride = null,
   milestoneStatuses = null,
@@ -799,6 +806,45 @@ export function createSchoolRouter({
     return res.status(201).json(frozen);
   }));
 
+  // --- wave-5 repair ---------------------------------------------------------
+  router.get('/attestations', wrap((req, res) => {
+    res.json({ entries: attestationLog ? attestationLog.list({ learnerId: textQuery(req.query.learnerId) }) : [] });
+  }));
+  router.post('/attestations', wrap(async (req, res) => {
+    if (!recordAttestation) throw new EntityNotFoundError('attestations', 'not configured');
+    const { learnerId, unitId, reason, attestedBy = null, pin = null } = req.body || {};
+    res.status(201).json(await recordAttestation.execute({ learnerId, unitId, reason, attestedBy, pin }));
+  }));
+  router.get('/teacher-notes', wrap((req, res) => {
+    res.json({ entries: teacherNotesStore ? teacherNotesStore.list({ learnerId: textQuery(req.query.learnerId) }) : [] });
+  }));
+  router.post('/teacher-notes', wrap(async (req, res) => {
+    if (!recordTeacherNote) throw new EntityNotFoundError('teacher notes', 'not configured');
+    const { learnerId, note, from = null, pin = null } = req.body || {};
+    res.status(201).json(await recordTeacherNote.execute({ learnerId, note, from, pin }));
+  }));
+  // A day's attempts grouped by assessment — the reassignment picker's read.
+  router.get('/attempts-summary', wrap((req, res) => {
+    if (!attemptsStore) return res.json({ assessments: [] });
+    const learnerId = requiredTextQuery(req.query.learnerId, 'learnerId');
+    const day = requiredTextQuery(req.query.day, 'day');
+    const byAssessment = new Map();
+    for (const attempt of attemptsStore.readAttemptDay(learnerId, day)) {
+      const id = attempt.sessionId ?? attempt.provenance?.recordId ?? null;
+      if (!id) continue;
+      const entry = byAssessment.get(id) ?? { assessmentId: id, count: 0, bankId: attempt.bankId ?? null, firstAt: attempt.at };
+      entry.count += 1;
+      if (attempt.at < entry.firstAt) entry.firstAt = attempt.at;
+      byAssessment.set(id, entry);
+    }
+    res.json({ assessments: [...byAssessment.values()] });
+  }));
+  router.post('/reassign', wrap(async (req, res) => {
+    if (!reassignEvidence) throw new EntityNotFoundError('reassignment', 'not configured');
+    const { fromLearnerId, toLearnerId, day, assessmentId, reassignedBy = null, pin = null } = req.body || {};
+    res.json(await reassignEvidence.execute({ fromLearnerId, toLearnerId, day, assessmentId, reassignedBy, pin }));
+  }));
+
   // --- wave-4 records --------------------------------------------------------
   // The certificate's issue date in the HOUSEHOLD's calendar (6pm local must
   // not date a certificate tomorrow) — same offset policy as the pacing reads.
@@ -904,7 +950,13 @@ export function createSchoolRouter({
     const learnerId = requiredTextQuery(req.params.learnerId, 'learnerId');
     const limit = boundedIntegerQuery(req.query.limit, 20, 1, 100, 'limit');
     const items = await reviewQueue.listForLearner(learnerId, { limit });
-    res.set('Cache-Control', 'no-store').json(items.map((item) => ({
+    // Standalone teacher notes (spec D3) join the same child-visible feed,
+    // marked kind:'note' so a renderer can tell them from verdicts.
+    const standaloneNotes = (teacherNotesStore?.list?.({ learnerId }) ?? []).map((n) => ({
+      itemId: n.id, sessionId: null, unitId: null, verdict: null, kind: 'note',
+      note: n.note, gradedBy: n.from ?? null, gradedAt: n.at,
+    }));
+    res.set('Cache-Control', 'no-store').json([...items.map((item) => ({
       itemId: item.itemId,
       sessionId: item.sessionId,
       unitId: item.unitId ?? null,
@@ -914,7 +966,7 @@ export function createSchoolRouter({
       gradedAt: item.gradedAt ?? null,
       prompt: item.prompt ?? null,
       questionNumber: item.questionNumber ?? null,
-    })));
+    })), ...standaloneNotes].sort((a, b) => String(b.gradedAt ?? '').localeCompare(String(a.gradedAt ?? ''))));
   }));
 
   if (schoolCalcRouter) router.use('/calc', schoolCalcRouter);

@@ -8,12 +8,13 @@ import { milestoneStatus } from '#domains/school/milestones.mjs';
 import { offsetMinutesFor } from '#domains/school/studyDay.mjs';
 
 export class GetMilestoneStatuses {
-  #store; #sessions; #timezone; #clock;
+  #store; #sessions; #attestations; #timezone; #clock;
 
-  constructor({ store, sessions = null, timezone = null, clock = () => new Date() } = {}) {
+  constructor({ store, sessions = null, attestations = null, timezone = null, clock = () => new Date() } = {}) {
     if (!store) throw new Error('GetMilestoneStatuses requires store');
     this.#store = store;
     this.#sessions = sessions;
+    this.#attestations = attestations;
     this.#timezone = timezone;
     this.#clock = clock;
   }
@@ -25,6 +26,9 @@ export class GetMilestoneStatuses {
     // top-level `result` (the M3 review caught a join against the wrong
     // field — statuses could never reach 'met').
     const passedUnitIds = new Set(rows.filter((r) => r?.outcome?.result === 'passed').map((r) => r.unitId).filter(Boolean));
+    // A teacher attestation (spec D2) counts as met — the same rule the
+    // planner's gate-unlock applies.
+    for (const a of this.#attestations?.list?.({ learnerId }) ?? []) passedUnitIds.add(a.unitId);
     // "Today" in the HOUSEHOLD's calendar, not UTC — a milestone must not
     // flip 'behind' at 5pm local the day before (the domain's own due-day
     // rule). Same offset source as the study-day math.

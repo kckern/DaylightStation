@@ -1,24 +1,29 @@
 /**
- * Repair — when people or tech fail (spec §4.2): the delivered-feedback read,
- * plus the attestation-override and attribution-repair stubs (new evidence
- * kinds, wave 5).
+ * Repair — when people or tech fail (spec §4.2), fully live as of wave 5:
+ * the delivered-feedback read + standalone note composer (D3), attestation
+ * overrides (D2), and attribution repair (D1).
  */
-import FeedbackNotes from '../panels/FeedbackNotes.jsx';
-import StubCard from '../panels/StubCard.jsx';
-import { TODO } from '../todoRegistry.js';
+import { useState } from 'react';
+import FeedbackNotes, { NoteComposer } from '../panels/FeedbackNotes.jsx';
+import AttestationPanel from '../panels/AttestationPanel.jsx';
+import ReassignPanel from '../panels/ReassignPanel.jsx';
 
 export default function RepairTab({ learnerId, kids = [] }) {
   const learnerName = kids.find((k) => k.id === learnerId)?.name ?? null;
+  const [feedbackRefresh, setFeedbackRefresh] = useState(0);
+  if (!learnerId) {
+    return (
+      <div className="teacher-tab teacher-tab--repair">
+        <p className="teacher-panel__empty">Pick a learner above to see their feedback and repairs.</p>
+      </div>
+    );
+  }
   return (
     <div className="teacher-tab teacher-tab--repair">
-      {learnerId ? (
-        <FeedbackNotes learnerId={learnerId} learnerName={learnerName} />
-      ) : (
-        <p className="teacher-panel__empty">Pick a learner above to see their feedback.</p>
-      )}
-      <StubCard todoId={TODO.NOTES_STANDALONE} />
-      <StubCard todoId={TODO.ATTESTATION} />
-      <StubCard todoId={TODO.REASSIGN} />
+      <FeedbackNotes key={feedbackRefresh} learnerId={learnerId} learnerName={learnerName} />
+      <NoteComposer learnerId={learnerId} learnerName={learnerName} onSent={() => setFeedbackRefresh((n) => n + 1)} />
+      <AttestationPanel learnerId={learnerId} learnerName={learnerName} />
+      <ReassignPanel learnerId={learnerId} learnerName={learnerName} kids={kids} />
     </div>
   );
 }

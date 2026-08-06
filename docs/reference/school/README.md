@@ -1238,6 +1238,24 @@ enrichment entries as their own credit section; `GET /certificate`
 course with nothing graded — no fabricated diplomas. Only the three repair
 rows remain in the placeholder registry.
 
+**Wave 5 — repair is live; the placeholder registry is EMPTY.** Attestation
+overrides (`apps/school/attestations.yml`, append-only, reason mandatory)
+unlock gates for real — `BuildAgenda`/`ResolveSubjectNext` fold an attested
+unit into the planner's history as a synthetic pass, and milestones count it
+met — while the report card deliberately never reads them (an override is
+its own evidence kind, not an engine grade). Attribution repair moves the
+attempt events themselves (`YamlSchoolDatastore.moveAttempts` — destination
+shard first, provenance stamped into each moved event, `attributedTo`
+rewritten), so every derived rollup follows the evidence; `GET
+/attempts-summary` feeds the picker and `POST /reassign` is the gated
+write. Standalone teacher notes (`apps/school/teacher-notes.yml`) ride the
+same delivery surfaces as review notes: merged into `GET /review/learner`
+(kind:'note') and the agenda's "Notes for you" window. The **e2e journey
+test** (`tests/isolated/e2e/school/teacherJourney.e2e.test.mjs`) drives a
+fake student through teacher enrollment → printed Pokemon quiz → the
+virtual OMR reader → grading → and asserts the today digest, report card,
+and milestone pacing all tell the truth about it.
+
 Three backend enablers shipped with the skeleton: the teachers read; the
 `/print` route-order fix (the `/print/*id` splat had shadowed
 `printables`/`quota`/`pending` — all three 404'd in production; fixed routes

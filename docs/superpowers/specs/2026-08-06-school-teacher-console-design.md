@@ -280,9 +280,6 @@ failure.
 
 | todoId | Where (tab → panel) | Use case | What it becomes | Depends on | Backend work |
 |---|---|---|---|---|---|
-| `teacher.attestation` | Repair → stub card | D2 | Record "I verify this was done/passed" as its own evidence type (`attestedBy`, reason); unlock a wedged gate. Never edits engine evidence | skeleton | new evidence kind + use case + endpoint |
-| `teacher.reassign` | Repair → stub card | D1 | Move a mis-attributed sitting's evidence between learners (fold-an-event model per §5) | skeleton | new use case + endpoint; semantics decided at wave 5 planning |
-| `teacher.notes.standalone` | Repair → FeedbackNotes | D3 | Write a note to a learner outside the review flow, delivered via the same agenda/receipt path | skeleton | new endpoint (delivery path exists) |
 
 Every row whose "What it becomes" is a **write** (resolve, decide, edit,
 close, attest, reassign, dismiss) lands behind the `teacherPin`-class server

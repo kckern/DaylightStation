@@ -690,3 +690,27 @@
   font-size: 12px;
   color: #8a5a2a;
 }
+
+.teacher-reassign__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0;
+
+  input, select {
+    border: 1px solid #e0d8c8;
+    border-radius: 8px;
+    padding: 5px 8px;
+    font-size: 13px;
+  }
+  button {
+    border: 1px solid #d9bfae;
+    background: #fff;
+    border-radius: 8px;
+    padding: 5px 12px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+}
+
+.teacher-feedback__row[data-verdict='note'] .teacher-feedback__verdict { color: #3d5a80; }

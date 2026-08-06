@@ -1,0 +1,77 @@
+# Pokemon Basics printed quiz: each question block pairs a stem with a
+# four-bubble omr_response whose itemId equals the question's — the equality
+# the scanner and grader agree through. Choices render from
+# science/pokemon-basics/01-quiz, so paper and grader cannot drift.
+id: pokemon-basics-01-omr
+title: Pokemon Basics Quiz
+seed: 20260806
+variant: 0
+target:
+  - letter
+blocks:
+  - type: rich_text
+    md: |
+      ## Pokemon Basics Quiz
+
+      Fill in ONE bubble for each question. Press hard enough to fill the
+      whole circle, and erase completely if you change your mind.
+
+  - type: question
+    itemId: pk-q1
+    number: 1
+    blocks:
+      - type: rich_text
+        md: Which type is Pikachu?
+      - type: omr_response
+        itemId: pk-q1
+        choices: 4
+
+  - type: question
+    itemId: pk-q2
+    number: 2
+    blocks:
+      - type: rich_text
+        md: What does Charmander evolve into?
+      - type: omr_response
+        itemId: pk-q2
+        choices: 4
+
+  - type: question
+    itemId: pk-q3
+    number: 3
+    blocks:
+      - type: rich_text
+        md: Which move is super effective against a Water type?
+      - type: omr_response
+        itemId: pk-q3
+        choices: 4
+
+  - type: question
+    itemId: pk-q4
+    number: 4
+    blocks:
+      - type: rich_text
+        md: What item heals a fainted Pokemon?
+      - type: omr_response
+        itemId: pk-q4
+        choices: 4
+
+  - type: question
+    itemId: pk-q5
+    number: 5
+    blocks:
+      - type: rich_text
+        md: Which Pokemon is the Grass starter of Kanto?
+      - type: omr_response
+        itemId: pk-q5
+        choices: 4
+
+  - type: question
+    itemId: pk-q6
+    number: 6
+    blocks:
+      - type: rich_text
+        md: What do you use to catch a wild Pokemon?
+      - type: omr_response
+        itemId: pk-q6
+        choices: 4
