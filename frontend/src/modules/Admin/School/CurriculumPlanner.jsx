@@ -255,6 +255,9 @@ export default function CurriculumPlanner() {
       units: toStored(units, 'unitId'),
       assignedBy: grader.id,
       pin: pin || null,
+      // What this screen LOADED (null = no record existed): arms the server's
+      // concurrent-edit refusal instead of last-write-wins (advocacy #19).
+      baseUpdatedAt: records.find((r) => r.learnerId === learnerId)?.updatedAt ?? null,
     };
     logger.info('assignment-save-dispatch', {
       learnerId, by: grader.id, courses: body.courses.length, units: body.units.length,
@@ -271,7 +274,7 @@ export default function CurriculumPlanner() {
     } finally {
       setSaving(false);
     }
-  }, [learnerId, grader, graderId, courses, units, logger, loadAssignments]);
+  }, [learnerId, grader, graderId, courses, units, records, pin, logger, loadAssignments]);
 
   const learnerOptions = useMemo(() => {
     const ids = new Set(roster.map((u) => u.id));

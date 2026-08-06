@@ -13,6 +13,13 @@ import { usePanelFetch } from '../usePanelFetch.js';
 import { useTeacherWrite } from '../useTeacherWrite.js';
 import { labelize } from '../labelize.js';
 
+/** Stored entries can be strings or {courseId|unitId, elective} objects
+ * (CurriculumPlanner.toStored always writes the object form). Everything in
+ * this panel normalizes to the bare id — rendering the object raw printed
+ * `[object Object]` (admin advocacy #6). */
+const idOf = (entry, key) => (typeof entry === 'string' ? entry : entry?.[key] ?? null);
+const idsOf = (list, key) => (list ?? []).map((e) => idOf(e, key)).filter(Boolean);
+
 export default function AssignmentsView({ learnerId, learnerName }) {
   const record = usePanelFetch(() => schoolApi.assignments(learnerId), {
     deps: [learnerId],
@@ -35,8 +42,8 @@ export default function AssignmentsView({ learnerId, learnerName }) {
 
   const startEditing = () => {
     setDraft({
-      courses: [...(record.data?.courses ?? [])],
-      units: [...(record.data?.units ?? [])],
+      courses: idsOf(record.data?.courses, 'courseId'),
+      units: idsOf(record.data?.units, 'unitId'),
     });
     setEditing(true);
   };
@@ -72,13 +79,13 @@ export default function AssignmentsView({ learnerId, learnerName }) {
               {(record.data.courses ?? []).length > 0 && (
                 <div className="teacher-assignments__group">
                   <h3>Courses</h3>
-                  <ul>{record.data.courses.map((c) => <li key={c}>{labelize(c)}</li>)}</ul>
+                  <ul>{idsOf(record.data.courses, 'courseId').map((c) => <li key={c}>{labelize(c)}</li>)}</ul>
                 </div>
               )}
               {(record.data.units ?? []).length > 0 && (
                 <div className="teacher-assignments__group">
                   <h3>Standalone units</h3>
-                  <ul>{record.data.units.map((u) => <li key={u}>{labelize(u)}</li>)}</ul>
+                  <ul>{idsOf(record.data.units, 'unitId').map((u) => <li key={u}>{labelize(u)}</li>)}</ul>
                 </div>
               )}
               {record.data.assignedBy && (
@@ -95,19 +102,24 @@ export default function AssignmentsView({ learnerId, learnerName }) {
         <div className="teacher-assignments teacher-assignments--editing">
           <div className="teacher-assignments__group">
             <h3>Courses</h3>
-            {courseIds.map((id) => (
-              <label key={id} className="teacher-assignments__pick">
+            {/* Catalog ids first, then any STALE assigned ids the catalog no
+                longer publishes (advocacy #6): stale entries used to have no
+                checkbox at all — un-untickable, re-saved verbatim forever. */}
+            {[...courseIds, ...draft.courses.filter((id) => !courseIds.includes(id))].map((id) => (
+              <label key={id} className={`teacher-assignments__pick${courseIds.includes(id) ? '' : ' is-stale'}`}>
                 <input type="checkbox" checked={draft.courses.includes(id)} onChange={() => toggle('courses', id)} />
                 {labelize(id)}
+                {!courseIds.includes(id) && <span className="teacher-assignments__stale-tag">not in catalog</span>}
               </label>
             ))}
           </div>
           <div className="teacher-assignments__group">
             <h3>Standalone units</h3>
-            {standaloneIds.map((id) => (
-              <label key={id} className="teacher-assignments__pick">
+            {[...standaloneIds, ...draft.units.filter((id) => !standaloneIds.includes(id))].map((id) => (
+              <label key={id} className={`teacher-assignments__pick${standaloneIds.includes(id) ? '' : ' is-stale'}`}>
                 <input type="checkbox" checked={draft.units.includes(id)} onChange={() => toggle('units', id)} />
                 {labelize(id)}
+                {!standaloneIds.includes(id) && <span className="teacher-assignments__stale-tag">not in catalog</span>}
               </label>
             ))}
           </div>
