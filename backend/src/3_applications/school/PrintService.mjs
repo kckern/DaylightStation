@@ -18,7 +18,7 @@ import { GuestForbiddenError } from '#domains/school/errors.mjs';
 import { shortId } from '#domains/core/utils/id.mjs';
 
 export class PrintService {
-  #config; #ds; #printer; #worksheet; #bankReader; #pdfReader; #userService; #logger; #now; #paperCertifyBank;
+  #config; #ds; #printer; #worksheet; #bankReader; #pdfReader; #userService; #logger; #now; #paperCertifyBank; #teacherGate;
 
   constructor({
     config, datastore, printerAdapter, worksheetRenderer, bankReader, pdfReader, userService,
@@ -27,9 +27,13 @@ export class PrintService {
     // (bank) => {verdict, reasons}. Null (the default) leaves listPrintables
     // byte-for-byte unchanged — the legacy path the spec exempts.
     paperCertifyBank = null,
+    // Optional console write gate (teacher-console spec §1): when present it
+    // subsumes the plain adult check on approve/deny (role + pin).
+    teacherGate = null,
   }) {
     this.#config = config || {};
     this.#ds = datastore;
+    this.#teacherGate = teacherGate;
     this.#printer = printerAdapter;
     this.#worksheet = worksheetRenderer;
     this.#bankReader = bankReader;
@@ -174,8 +178,9 @@ export class PrintService {
   }
 
   /** A grown-up approves a pending request: print it, log it, drop it from pending. */
-  async approve({ requestId, approver }) {
-    if (!this.#isAdult(approver)) throw new GuestForbiddenError('Only a grown-up can approve a print');
+  async approve({ requestId, approver, pin = null }) {
+    if (this.#teacherGate) this.#teacherGate.assert({ userId: approver, pin, action: 'print.approve' });
+    else if (!this.#isAdult(approver)) throw new GuestForbiddenError('Only a grown-up can approve a print');
     const pending = this.#ds.readPrintPending();
     const req = pending.find((r) => r.id === requestId && r.status === 'pending');
     if (!req) throw new EntityNotFoundError('print-request', requestId);
@@ -192,8 +197,9 @@ export class PrintService {
   }
 
   /** A grown-up denies a pending request: drop it, print nothing. */
-  async deny({ requestId, approver }) {
-    if (!this.#isAdult(approver)) throw new GuestForbiddenError('Only a grown-up can deny a print');
+  async deny({ requestId, approver, pin = null }) {
+    if (this.#teacherGate) this.#teacherGate.assert({ userId: approver, pin, action: 'print.deny' });
+    else if (!this.#isAdult(approver)) throw new GuestForbiddenError('Only a grown-up can deny a print');
     const pending = this.#ds.readPrintPending();
     const req = pending.find((r) => r.id === requestId && r.status === 'pending');
     if (!req) throw new EntityNotFoundError('print-request', requestId);

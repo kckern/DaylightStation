@@ -13,7 +13,7 @@
  * parent-only-write rule as `SetAssignments`/`ResolveReviewItem`).
  */
 export class CloseAcademicPeriod {
-  #getReportCard; #datastore; #grownUps; #clock; #logger;
+  #getReportCard; #datastore; #grownUps; #teacherGate; #clock; #logger;
 
   /**
    * @param {object} deps
@@ -25,7 +25,7 @@ export class CloseAcademicPeriod {
    * @param {object} [deps.logger]
    */
   constructor({
-    getReportCard, datastore, grownUps, clock = () => new Date(), logger = console,
+    getReportCard, datastore, grownUps, teacherGate = null, clock = () => new Date(), logger = console,
   } = {}) {
     if (!getReportCard) throw new Error('CloseAcademicPeriod requires getReportCard');
     if (!datastore) throw new Error('CloseAcademicPeriod requires datastore');
@@ -33,6 +33,7 @@ export class CloseAcademicPeriod {
     this.#getReportCard = getReportCard;
     this.#datastore = datastore;
     this.#grownUps = grownUps;
+    this.#teacherGate = teacherGate;
     this.#clock = clock;
     this.#logger = logger;
   }
@@ -50,9 +51,10 @@ export class CloseAcademicPeriod {
    *   `REPORT_CARD_ALREADY_CLOSED` on a plain re-close
    */
   async execute({
-    learnerId, periodId, closedBy, supersede = false,
+    learnerId, periodId, closedBy, supersede = false, pin = null,
   } = {}) {
-    this.#grownUps.assert(closedBy, 'Only a grown-up can close a report card', {
+    if (this.#teacherGate) this.#teacherGate.assert({ userId: closedBy, pin, action: 'report-card.close' });
+    else this.#grownUps.assert(closedBy, 'Only a grown-up can close a report card', {
       action: 'report-card.close', learnerId, periodId,
     });
 

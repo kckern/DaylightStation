@@ -55,6 +55,7 @@ import { DoNowSchoolBridge } from '#apps/school/DoNowSchoolBridge.mjs';
 import { WorkSessionReporter } from '#apps/school/WorkSessionReporter.mjs';
 import { BuildAgenda } from '#apps/school/usecases/BuildAgenda.mjs';
 import { ListLearnerSessions } from '#apps/school/usecases/ListLearnerSessions.mjs';
+import { TeacherGate } from '#apps/school/TeacherGate.mjs';
 import { IssueDocument } from '#apps/school/usecases/IssueDocument.mjs';
 import { DispatchMedia } from '#apps/school/usecases/DispatchMedia.mjs';
 import { RecordMediaCompletion } from '#apps/school/usecases/RecordMediaCompletion.mjs';
@@ -153,7 +154,7 @@ export async function createSchoolLifecycle({
       wired: false, reason, handlesCode: () => false, handleScan: null,
       reporter: null, router: null, devicesRouter: null,
       useCases: {}, stores: {}, devices: {}, renderers: {},
-      donowSchoolBridge: null, grownUps: null,
+      donowSchoolBridge: null, grownUps: null, teacherGate: null,
     };
   };
 
@@ -407,6 +408,19 @@ export async function createSchoolLifecycle({
     logger,
   });
 
+  // The console write predicate (teacher-console spec §1): role + pin over
+  // the same live-roster adult rule. Accessors read school.yml per call.
+  const teacherGate = new TeacherGate({
+    teachers: () => (configService.getHouseholdAppConfig(null, 'school') || {}).teachers,
+    pin: () => {
+      const cfg = configService.getHouseholdAppConfig(null, 'school') || {};
+      return cfg.teacher?.pin != null ? String(cfg.teacher.pin) : null;
+    },
+    roster: () => userService?.getHouseholdRoster?.() ?? [],
+    clock,
+    logger,
+  });
+
   // --- use cases -------------------------------------------------------------
   const buildAgenda = new BuildAgenda({
     curriculum, assignments: stores.assignments, sessions: stores.sessions, tokens: stores.tokens,
@@ -571,10 +585,10 @@ export async function createSchoolLifecycle({
   // The two parent-only writes. They are use cases rather than raw store calls
   // because the router may not be the place a child's sign-off is checked.
   const resolveReviewItem = new ResolveReviewItem({
-    reviewQueue: stores.reviewQueue, grownUps, clock, logger,
+    reviewQueue: stores.reviewQueue, grownUps, teacherGate, clock, logger,
   });
   const setAssignments = new SetAssignments({
-    assignments: stores.assignments, grownUps, clock, logger,
+    assignments: stores.assignments, grownUps, teacherGate, clock, logger,
   });
 
   const useCases = {
@@ -654,6 +668,9 @@ export async function createSchoolLifecycle({
     // Task 6's `CloseAcademicPeriod` (a parent-only write, same rule) without
     // constructing a second `GrownUpGate` against a possibly-stale roster read.
     grownUps,
+    // The console write predicate — exposed for the same reason as grownUps:
+    // app.mjs wires CloseAcademicPeriod and PrintService with THIS instance.
+    teacherGate,
   };
 }
 
