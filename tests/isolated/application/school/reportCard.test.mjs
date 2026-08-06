@@ -57,12 +57,14 @@ function fakeSchoolDatastore({ attempts = {} } = {}) {
   const reportCards = new Map(); // learnerId -> Map(periodId -> record)
   const archiveVersions = new Map(); // learnerId -> Map(periodId -> n)
   return {
-    readAttemptsInRange(learnerId, fromDay, toDay) {
-      return (attempts[learnerId] ?? []).filter((a) => {
-        const day = String(a.at).slice(0, 10);
-        return day >= fromDay && day <= toDay;
-      });
-    },
+    // A `vi.fn` wrapper (not a plain method) so call-count assertions can
+    // pin the "one shared read" contract `#periodAttempts` exists to
+    // guarantee — `#activeDaysSection` and `#conceptsSection` must consume
+    // the SAME read, never each trigger their own.
+    readAttemptsInRange: vi.fn((learnerId, fromDay, toDay) => (attempts[learnerId] ?? []).filter((a) => {
+      const day = String(a.at).slice(0, 10);
+      return day >= fromDay && day <= toDay;
+    })),
     readAttemptDay(learnerId, day) {
       return (attempts[learnerId] ?? []).filter((a) => String(a.at).slice(0, 10) === day);
     },
@@ -420,6 +422,22 @@ describe('GetReportCard', () => {
         conceptId: 'unregistered-id', label: 'unregistered-id', ratio: 1, responses: 5,
       },
     ]);
+  });
+
+  it('reads attempts for the period exactly ONCE — activeDays and concepts share the same read, never two independent reads', async () => {
+    const attempts = { kid1: [{ at: '2026-09-01T09:00:00.000Z', correct: true, learning: { subjectId: 'math' } }] };
+    const datastore = fakeSchoolDatastore({ attempts });
+    const useCase = new GetReportCard({
+      curriculum: fakeCurriculum([]),
+      assignments: fakeAssignments({}),
+      sessions: fakeSessions([]),
+      datastore,
+      academicPeriods: fakeAcademicPeriods(),
+      logger: silent,
+    });
+    await useCase.execute({ learnerId: 'kid1', periodId: 'fall-2026' });
+    expect(datastore.readAttemptsInRange).toHaveBeenCalledTimes(1);
+    expect(datastore.readAttemptsInRange).toHaveBeenCalledWith('kid1', '2026-08-01', '2026-12-01');
   });
 
   it('remediationArcs links a needs_remediation session to its later OpenRemediation session on the same unit', async () => {
