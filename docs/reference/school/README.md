@@ -1193,6 +1193,24 @@ unwired `null` maps to `unavailable`, never a quiet zero-state. On a
 lifecycle-disabled install each lifecycle panel derives `unavailable` from
 its own fetch and ONE banner renders only when all of them do.
 
+**Wave 2 — the daily-loop mutations are live.** Marking work (verdict + a
+≤120-char note that reaches the child's agenda and receipts), approving or
+denying print requests, and clearing the quiz-request backlog (auto-`fulfilled`
+once a bank bound to the unit exists, plus explicit dismiss via
+`POST /quiz-requests/dismiss`) all run inline on the Today tab. Every write
+goes through **`TeacherGate`** (`3_applications/school/TeacherGate.mjs`) inside
+the owning use case — adult on the live roster, listed in `teachers:` when the
+key exists (role is authority; absent key falls back to any-adult), and the
+distinct console PIN (`school.yml` → `teacher.pin`) when configured. The PIN is
+held in client memory only; a 403 opens the PIN prompt. The Admin
+`ReviewQueue`/`CurriculumPlanner` sign-off now draws its adults from the
+teachers read (the school roster is learners-only, so the old age filter found
+nobody — sign-off had been dead on live installs) and carries the same PIN.
+Along the way a latent transport bug was fixed: the production object-shape
+error handler discarded stamped `err.status`, so every lifecycle refusal or
+missing-entity surfaced as 500 — explicit status now wins, and the lifecycle
+router stamps statuses by name at its boundary.
+
 Three backend enablers shipped with the skeleton: the teachers read; the
 `/print` route-order fix (the `/print/*id` splat had shadowed
 `printables`/`quota`/`pending` — all three 404'd in production; fixed routes
