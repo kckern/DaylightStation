@@ -944,8 +944,11 @@ export function createSchoolRouter({
   // --- wave-3 planning domains ---------------------------------------------
   router.put('/periods', wrap(async (req, res) => {
     if (!setAcademicPeriods) throw new EntityNotFoundError('periods editing', 'not configured');
-    const { periods, editedBy = null, pin = null } = req.body || {};
-    res.json(await setAcademicPeriods.execute({ periods, editedBy, pin }));
+    const { periods, editedBy = null, pin = null, baseHistoryLength } = req.body || {};
+    res.json(await setAcademicPeriods.execute({ periods, editedBy, pin, baseHistoryLength }));
+  }));
+  router.get('/periods-meta', wrap((req, res) => {
+    res.json({ historyLength: typeof academicPeriods?.historyLength === 'function' ? academicPeriods.historyLength() : 0 });
   }));
   router.get('/pass-overrides', wrap((req, res) => {
     res.json({ overrides: passOverrideStore ? passOverrideStore.all() : {} });
@@ -961,8 +964,8 @@ export function createSchoolRouter({
   }));
   router.put('/milestones', wrap(async (req, res) => {
     if (!setMilestones) throw new EntityNotFoundError('milestones', 'not configured');
-    const { learnerId, milestones, editedBy = null, pin = null } = req.body || {};
-    res.json(await setMilestones.execute({ learnerId, milestones, editedBy, pin }));
+    const { learnerId, milestones, editedBy = null, pin = null, baseHistoryLength } = req.body || {};
+    res.json(await setMilestones.execute({ learnerId, milestones, editedBy, pin, baseHistoryLength }));
   }));
   router.get('/enrichment', wrap((req, res) => {
     res.json({ entries: enrichmentLog ? enrichmentLog.list({ learnerId: textQuery(req.query.learnerId) }) : [] });

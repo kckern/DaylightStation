@@ -41,7 +41,7 @@ export default function RecordsTab({ learnerId, kids = [] }) {
       deps: [learnerId],
       panel: 'tutor-insights',
       nullAs: 'empty',
-      isEmpty: (d) => !d || (!(d.highlights ?? []).length && !(d.insights ?? []).length && !Object.keys(d).length),
+      isEmpty: (d) => !d || Object.values(d).every((v) => (Array.isArray(v) ? v.length === 0 : v == null)),
     },
   );
 

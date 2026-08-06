@@ -48,6 +48,8 @@ export default function MilestonesPanel({ learnerId }) {
 
   const save = () => run('save', ({ actorId, pin }) => schoolApi.putMilestones({
     learnerId, milestones: draft, editedBy: actorId, pin,
+    // The concurrent-edit baseline (B14) from the read this editor started at.
+    baseHistoryLength: statuses.data?.historyLength,
   }), { onSuccess: () => { setEditing(false); statuses.retry(); } });
 
   return (

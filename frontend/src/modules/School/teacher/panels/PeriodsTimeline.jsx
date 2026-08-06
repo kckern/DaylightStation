@@ -34,11 +34,19 @@ export default function PeriodsTimeline() {
   const KINDS = ['term', 'semester', 'trimester', 'quarter', 'year'];
   const idFromLabel = (label) => label.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
-  const startEditing = () => {
+  const [baseHistoryLength, setBaseHistoryLength] = useState(null);
+  const startEditing = async () => {
+    // The concurrent-edit baseline (B14): what we LOADED; the server refuses
+    // a save when someone else edited since.
+    const meta = await schoolApi.periodsMeta();
+    setBaseHistoryLength(meta.ok ? (meta.data?.historyLength ?? null) : null);
     setDraft((periods.data ?? []).map((p) => ({
       periodId: p.periodId, kind: p.kind ?? 'term', label: p.label ?? p.periodId,
       startsAt: day(p.startsAt), endsAt: day(p.endsAt),
       origStartsAt: p.startsAt, origEndsAt: p.endsAt,
+      // An EXISTING period's id is settled — a label typo-fix must never
+      // silently rename the key its frozen records hang on (M6 gate).
+      idTouched: true,
       ...(p.parentPeriodId ? { parentPeriodId: p.parentPeriodId } : {}),
     })));
     setEditing(true);
@@ -62,8 +70,7 @@ export default function PeriodsTimeline() {
       endsAt: row.endsAt === day(origEndsAt) ? origEndsAt : withOriginalTime(row.endsAt, origEndsAt),
     })),
     editedBy: actorId, pin,
-    // Concurrent-edit guard (B14) travels as the loaded history baseline —
-    // absent on old servers, harmless.
+    ...(baseHistoryLength !== null ? { baseHistoryLength } : {}),
   }), { onSuccess: () => { setEditing(false); periods.retry(); } });
   };
 
@@ -150,23 +157,29 @@ export default function PeriodsTimeline() {
               // one tap. Dates shift +1 year; ids/labels get the year bumped
               // where one appears, else a -next suffix.
               ...d.filter((r) => !r.cloned).map((r) => {
-                const bumpYear = (str) => String(str ?? '').replace(/(20\d{2})/g, (y) => String(Number(y) + 1));
+                // Bump full years AND paired spans: '2026-27' → '2027-28',
+                // never '2027-27' (the live year id's real shape, M6 gate).
+                const bumpYear = (str) => String(str ?? '')
+                  .replace(/(20\d{2})-(\d{2})(?!\d)/g, (_, y, yy) => `${Number(y) + 1}-${String(Number(yy) + 1).padStart(2, '0')}`)
+                  .replace(/(20\d{2})(?!-\d{2})/g, (y) => String(Number(y) + 1));
                 const shift = (dateStr) => {
                   if (!dateStr) return dateStr;
-                  const [y, rest] = [dateStr.slice(0, 4), dateStr.slice(4)];
-                  return `${Number(y) + 1}${rest}`;
+                  return `${Number(dateStr.slice(0, 4)) + 1}${dateStr.slice(4)}`;
                 };
                 const periodId = bumpYear(r.periodId) !== r.periodId ? bumpYear(r.periodId) : `${r.periodId}-next`;
                 return {
                   ...r,
                   cloned: true,
+                  idTouched: true,
                   periodId,
                   label: bumpYear(r.label) !== r.label ? bumpYear(r.label) : `${r.label} (next)`,
                   parentPeriodId: r.parentPeriodId ? (bumpYear(r.parentPeriodId) !== r.parentPeriodId ? bumpYear(r.parentPeriodId) : `${r.parentPeriodId}-next`) : undefined,
                   startsAt: shift(r.startsAt),
                   endsAt: shift(r.endsAt),
-                  origStartsAt: undefined,
-                  origEndsAt: undefined,
+                  // The clone keeps the ORIGINAL boundary time-of-day (the M3
+                  // rule): shifted date + the source instant's suffix.
+                  origStartsAt: r.origStartsAt ? shift(day(r.origStartsAt)) + String(r.origStartsAt).slice(10) : undefined,
+                  origEndsAt: r.origEndsAt ? shift(day(r.origEndsAt)) + String(r.origEndsAt).slice(10) : undefined,
                 };
               }),
             ])}

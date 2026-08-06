@@ -45,8 +45,10 @@ export default function FeedbackNotes({ learnerId, learnerName }) {
           </li>
         ))}
       </ul>
-      {Array.isArray(feedback.data) && feedback.data.length >= limit && (
-        <button type="button" className="teacher-assignments__edit" onClick={() => setLimit((n) => n + 20)}>Show more</button>
+      {Array.isArray(feedback.data) && feedback.data.length >= limit && limit < 100 && (
+        // The route clamps at 100 — never ask past it (a 400 here would
+        // collapse the whole panel).
+        <button type="button" className="teacher-assignments__edit" onClick={() => setLimit((n) => Math.min(n + 20, 100))}>Show more</button>
       )}
     </PanelFrame>
   );
