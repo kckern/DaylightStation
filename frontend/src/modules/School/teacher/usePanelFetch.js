@@ -52,6 +52,13 @@ export function usePanelFetch(fetcher, {
         return;
       }
       setResult(isEmpty(data) ? { state: 'empty', data } : { state: 'ok', data });
+    }).catch((err) => {
+      // schoolApi's req() never throws, but the hook is the module-wide
+      // contract and callers pass composed closures — a rejection must land
+      // in `error`, never leave the panel loading forever.
+      if (!alive) return;
+      teacherLog.fetchError('fetcher-threw', { panel, error: err?.message });
+      setResult({ state: 'error', data: null });
     });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps

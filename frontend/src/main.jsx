@@ -17,7 +17,12 @@ import MediaApp from './Apps/MediaApp.jsx';
 import LiveStreamApp from './Apps/LiveStreamApp.jsx';
 import PianoApp from './Apps/PianoApp.jsx';
 import AppContainer from './modules/AppContainer/AppContainer.jsx';
-import TeacherConsole from './modules/School/teacher/TeacherConsole.jsx';
+// Lazy: the teacher console is a parent's phone surface — its module and
+// styles must not ride in the bundle every kiosk loads.
+const TeacherConsole = React.lazy(() => import('./modules/School/teacher/TeacherConsole.jsx'));
+const TeacherConsoleRoute = () => (
+  <React.Suspense fallback={<div />}> <TeacherConsole /> </React.Suspense>
+);
 import Blank from './modules/Blank/Blank.jsx';
 import FilterPoc from './modules/Player/poc/FilterPoc.jsx';
 import SetupWizard from './modules/Auth/SetupWizard.jsx';
@@ -180,8 +185,8 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         {/* The teacher console is its OWN surface, not the school app — these
             static routes outrank the /school/* splat (v6 ranking), so the
             kids' shell never parses a /school/teacher URL. */}
-        <Route path="/school/teacher" element={<TeacherConsole />} />
-        <Route path="/school/teacher/*" element={<TeacherConsole />} />
+        <Route path="/school/teacher" element={<TeacherConsoleRoute />} />
+        <Route path="/school/teacher/*" element={<TeacherConsoleRoute />} />
         <Route path="/app/school/teacher" element={<TeacherDeepLinkRedirect />} />
         <Route path="/app/school/teacher/*" element={<TeacherDeepLinkRedirect />} />
         <Route path="/school/*" element={<SchoolDeepLinkRedirect />} />

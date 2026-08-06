@@ -30,12 +30,12 @@ beforeEach(() => {
     period: { periodId: '2026-fall', label: 'Fall 2026' },
     generatedAt: '2026-08-06T12:00:00Z',
     courses: [{ courseId: 'math-fractions', policy: 'best-of-unit-mean-v1', coursePercent: 88, unitGrades: [] }],
-    materials: [],
+    materials: [{ materialId: 'plex:384855', label: 'plex:384855', unitsDone: 3, unitTotal: 24 }],
     evidence: null,
     activeDays: 3,
     concepts: { mastered: [{ conceptId: 'fractions', label: 'Fractions' }], developing: [] },
     pendingReview: 1,
-    remediationArcs: [],
+    remediationArcs: [{ unitId: 'math-fractions.02', originalSessionId: 'ses_a', remediationSessionId: 'ses_b', result: 'passed' }],
   }));
   schoolApi.reportCardFrozen.mockResolvedValue(ok([
     { periodId: '2026-spring', closedBy: 'kckern', closedAt: '2026-06-13T00:00:00Z' },
@@ -49,9 +49,32 @@ describe('RecordsTab', () => {
     render(<RecordsTab learnerId="felix" kids={KIDS} />);
     await vi.waitFor(() => expect(schoolApi.reportCard).toHaveBeenCalledWith({ learnerId: 'felix', periodId: '2026-fall' }));
     await vi.waitFor(() => expect(screen.getByText('DRAFT')).toBeTruthy());
-    expect(screen.getByText(/math-fractions/)).toBeTruthy();
+    expect(screen.getAllByText(/math-fractions/).length).toBeGreaterThan(0);
     expect(screen.getByText(/88%/)).toBeTruthy();
     expect(screen.getByText(/best-of-unit-mean-v1/)).toBeTruthy();
+    // Spec 4.2: materials progress and remediation arcs are part of the card.
+    expect(screen.getByText(/3 \/ 24 units/)).toBeTruthy();
+    expect(screen.getByText(/remediation passed/)).toBeTruthy();
+  });
+
+  it('a failed periods read surfaces a named error with retry, never a silently missing selector', async () => {
+    schoolApi.periods.mockResolvedValue({ ok: false, status: 500, data: null });
+    render(<RecordsTab learnerId="felix" kids={KIDS} />);
+    await vi.waitFor(() => expect(screen.getByText(/Couldn.t load the academic periods/)).toBeTruthy());
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
+  });
+
+  it('tapping a frozen row expands the frozen record', async () => {
+    const { fireEvent, act } = await import('@testing-library/react');
+    schoolApi.reportCardFrozen.mockImplementation(({ periodId }) => (periodId
+      ? Promise.resolve(ok({ courses: [{ courseId: 'math-fractions', coursePercent: 91 }], activeDays: 40, pendingReview: 0 }))
+      : Promise.resolve(ok([{ periodId: '2026-spring', closedBy: 'kckern', closedAt: '2026-06-13T00:00:00Z' }]))));
+    render(<RecordsTab learnerId="felix" kids={KIDS} />);
+    await vi.waitFor(() => expect(screen.getByText(/Closed by kckern/)).toBeTruthy());
+    act(() => { fireEvent.click(screen.getByText(/Closed by kckern/)); });
+    await vi.waitFor(() => expect(screen.getByText('FROZEN')).toBeTruthy());
+    expect(screen.getByText(/91%/)).toBeTruthy();
+    expect(schoolApi.reportCardFrozen).toHaveBeenCalledWith({ learnerId: 'felix', periodId: '2026-spring' });
   });
 
   it('a null report card is UNAVAILABLE, never a quiet empty (unwired tell)', async () => {

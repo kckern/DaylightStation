@@ -47,6 +47,18 @@ export default function RecordsTab({ learnerId, kids = [] }) {
 
   return (
     <div className="teacher-tab teacher-tab--records">
+      {/* The periods read is the tab's spine — a failure must surface as a
+          named error with a retry, never a silently missing selector, and
+          an empty config gets its own explicit copy (spec §4.3). */}
+      {periods.state === 'error' && (
+        <p className="teacher-panel__error">
+          Couldn&rsquo;t load the academic periods.
+          <button type="button" className="teacher-panel__retry" onClick={periods.retry}>Retry</button>
+        </p>
+      )}
+      {periods.state === 'empty' && (
+        <p className="teacher-panel__empty">No academic periods configured — records are period-scoped.</p>
+      )}
       <PeriodSelect periods={periodList} value={periodId} onChange={setPeriodId} />
       {periodId && <ReportCardView learnerId={learnerId} periodId={periodId} />}
       <StubCard todoId={TODO.PERIOD_CLOSE} />
