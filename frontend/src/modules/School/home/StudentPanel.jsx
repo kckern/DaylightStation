@@ -52,6 +52,26 @@ export function deriveLatestScore(results, bankTitles) {
   return { label: bankTitles?.get(best.bankId) ?? best.bankId, pct: best.pct };
 }
 
+/** Kiosk house rule: inline SVG, never unicode glyphs (WebView renders
+ * unrecognized unicode as tofu boxes). currentColor so it inherits the
+ * item's is-correct/is-incorrect ink; sized to sit inline with the note
+ * text like the glyph it replaces. */
+function CorrectIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true">
+      <path fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" d="M4 12.5l5.5 5.5L20 6" />
+    </svg>
+  );
+}
+
+function IncorrectIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true">
+      <path fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" d="M5 5l14 14M19 5L5 19" />
+    </svg>
+  );
+}
+
 function relativeDay(iso) {
   if (!iso) return null;
   const days = Math.floor((Date.now() - Date.parse(iso)) / 86400000);
@@ -203,7 +223,7 @@ export default function StudentPanel({ onOpen, bankTitles }) {
             {feedback.map((item) => (
               <li key={item.itemId} className={`school-rail__feedback-item is-${item.verdict}`}>
                 <span className="school-rail__feedback-verdict" aria-hidden="true">
-                  {item.verdict === 'correct' ? '✓' : '✗'}
+                  {item.verdict === 'correct' ? <CorrectIcon /> : <IncorrectIcon />}
                 </span>
                 <span className="school-rail__feedback-note">
                   {item.note || item.prompt || `Question ${item.questionNumber ?? item.itemId}`}

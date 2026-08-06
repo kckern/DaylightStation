@@ -329,9 +329,13 @@ function drawRemediationArcs(doc, theme, report) {
   doc.y += 6;
 }
 
+// Honest framing (not "Feedback"): this count is the review-queue BACKLOG at
+// render time — items nobody has graded yet — not feedback a grown-up gave.
+// One phrasing covers both draft (a live, still-growing backlog) and frozen
+// (the backlog as it stood at close) without needing `mode` threaded in.
 function drawFeedbackNotes(doc, theme, pendingReview) {
   sectionHeading(doc, theme, 'Feedback');
-  writeLine(doc, theme, `Items awaiting a grown-up's review: ${pendingReview ?? 0}`, { sizePt: 11, gapAfterPt: 4 });
+  writeLine(doc, theme, `Items awaiting review: ${pendingReview ?? 0}`, { sizePt: 11, gapAfterPt: 4 });
 }
 
 export default createReportCardPdfRenderer;

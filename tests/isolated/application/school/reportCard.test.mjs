@@ -440,6 +440,48 @@ describe('GetReportCard', () => {
     expect(datastore.readAttemptsInRange).toHaveBeenCalledWith('kid1', '2026-08-01', '2026-12-01');
   });
 
+  it('a boundary-day attempt outside the exact period instant window is excluded from BOTH activeDays and concepts, even though the day-file read includes it', async () => {
+    // Non-midnight bounds so "the start day" and "the instant startsAt" are
+    // different moments — the gap the day-granular file read can leak.
+    const period = {
+      schema: 'school.academic-period/v1',
+      periodId: 'narrow',
+      kind: 'custom',
+      label: 'Narrow',
+      startsAt: '2026-09-01T12:00:00.000Z',
+      endsAt: '2026-09-03T12:00:00.000Z',
+    };
+    const attempts = {
+      kid1: [
+        // Same DAY as startsAt but BEFORE the instant startsAt — the day-file
+        // read (bounded 09-01..09-03) would include it; the instant filter
+        // must not.
+        attempt({ id: 'before-start', at: '2026-09-01T09:00:00.000Z', conceptIds: ['c1'] }),
+        // Genuinely inside the window.
+        attempt({ id: 'inside', at: '2026-09-02T09:00:00.000Z', conceptIds: ['c1'] }),
+        // Exactly AT endsAt — the window is half-open ([startsAt, endsAt)),
+        // so this is the next period's first instant, not this one's.
+        attempt({ id: 'at-end', at: '2026-09-03T12:00:00.000Z', conceptIds: ['c1'] }),
+      ],
+    };
+    const useCase = new GetReportCard({
+      curriculum: fakeCurriculum([]),
+      assignments: fakeAssignments({}),
+      sessions: fakeSessions([]),
+      datastore: fakeSchoolDatastore({ attempts }),
+      academicPeriods: fakeAcademicPeriods(period),
+      logger: silent,
+    });
+    const card = await useCase.execute({ learnerId: 'kid1', periodId: 'narrow' });
+    // activeDays: only 09-02 counts — 09-01 (before-start) and 09-03
+    // (at-end) must both be excluded.
+    expect(card.activeDays.total).toBe(1);
+    // concepts: only the ONE inside attempt's response counts toward c1 —
+    // 3 would mean the boundary attempts leaked in.
+    const c1 = [...card.concepts.mastered, ...card.concepts.developing].find((r) => r.conceptId === 'c1');
+    expect(c1.responses).toBe(1);
+  });
+
   it('remediationArcs links a needs_remediation session to its later OpenRemediation session on the same unit', async () => {
     const units = [unit({ unitId: 'frac.01', courseId: 'math-fractions' })];
     const rows = [
@@ -564,6 +606,40 @@ describe('CloseAcademicPeriod', () => {
       learnerId: 'kid1', periodId: 'fall-2026', closedBy: 'dad', supersede: true,
     });
     expect(third.supersededVersions).toBe(2);
+  });
+
+  it('supersede: a report-generation failure leaves the ORIGINAL frozen record intact and readable — never a mid-failure 404', async () => {
+    const store = fakeSchoolDatastore();
+    let calls = 0;
+    // First call (the initial close) succeeds; the second call (the
+    // supersede's re-generation) blows up — simulating a report build
+    // failure mid-supersede.
+    const getReportCard = {
+      execute: vi.fn(async () => {
+        calls += 1;
+        if (calls === 1) {
+          return {
+            schema: 'school.report-card/v1', learnerId: 'kid1', period: PERIOD, courses: [],
+          };
+        }
+        throw new Error('report build blew up');
+      }),
+    };
+    const closeAcademicPeriod = new CloseAcademicPeriod({
+      getReportCard, datastore: store, grownUps: fakeGrownUps(), logger: silent,
+    });
+    await closeAcademicPeriod.execute({ learnerId: 'kid1', periodId: 'fall-2026', closedBy: 'dad' });
+    const original = store.readReportCard('kid1', 'fall-2026');
+    expect(original).toBeTruthy();
+
+    await expect(closeAcademicPeriod.execute({
+      learnerId: 'kid1', periodId: 'fall-2026', closedBy: 'dad', supersede: true,
+    })).rejects.toThrow('report build blew up');
+
+    // Generate-before-archive means the failed re-generation never reached
+    // `archiveReportCard` — the original freeze is still the CURRENT record,
+    // never unlinked, never a readReportCard 404 window.
+    expect(store.readReportCard('kid1', 'fall-2026')).toEqual(original);
   });
 
   it('a non-grown-up closedBy REFUSES, and nothing is written', async () => {
