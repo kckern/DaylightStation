@@ -147,6 +147,42 @@ describe('progress aggregation', () => {
     expect(out.curriculumHistory.unscoped).toMatchObject({ evidenceCount: 0 });
   });
 
+  it('annotates a fully-evidenced unit with the curriculum-backed outline, without fabricating untouched units (Task 11)', () => {
+    const outlineExpectation = (over = {}) => ({
+      schema: 'school.learning-expectation/v1', scopeType: 'household', scopeId: 'home',
+      dueAt: '9999-12-31T00:00:00.000Z', expectedCompletedPercent: 100, ...over,
+    });
+    const expectations = [
+      outlineExpectation({
+        expectationId: 'outline-fractions-equivalence', target: { kind: 'unit', id: 'equivalence' },
+      }),
+      // 'decimals' has zero evidence in `rows` — an authored-but-untouched unit.
+      outlineExpectation({
+        expectationId: 'outline-fractions-decimals', target: { kind: 'unit', id: 'decimals' },
+      }),
+    ];
+    const out = aggregateLearningProgress({
+      evidence: rows, scope, generatedAt: '2026-08-03T00:00:00.000Z', expectations,
+    });
+
+    const math = out.curriculumHistory.roots.find((node) => node.id === 'math');
+    const unitNode = math.children[0].children[0];
+    expect(unitNode).toMatchObject({
+      kind: 'unit', id: 'equivalence',
+      outline: {
+        expectationId: 'outline-fractions-equivalence', dueAt: '9999-12-31T00:00:00.000Z',
+        expectedCompletedPercent: 100,
+      },
+    });
+    // The untouched unit is never nested into the tree under an ancestry the
+    // bare expectation can't supply — it is named honestly as outstanding.
+    expect(out.curriculumHistory.outstanding).toEqual([
+      expect.objectContaining({
+        expectationId: 'outline-fractions-decimals', target: { kind: 'unit', id: 'decimals' },
+      }),
+    ]);
+  });
+
   it('preserves partially classified and unscoped evidence in curriculum history totals', () => {
     const partial = evidence({
       evidenceId: 'partial', activity: { id: 'read', kind: 'notes' },

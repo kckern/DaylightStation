@@ -1,4 +1,5 @@
 import { normalizeSelfRegulation, summarizeSelfRegulation } from './selfRegulation.mjs';
+import { validateLearningExpectation } from './learningExpectation.mjs';
 
 /**
  * School learning-progress model. Pure domain code: no clocks, persistence,
@@ -222,7 +223,7 @@ export function normalizeFollowUpAction(raw, { path = 'followUp' } = {}) {
  */
 export function aggregateLearningProgress({
   evidence = [], scope, window = {}, filters = {}, groupBy = [],
-  followUps = [], generatedAt, recentLimit = 10,
+  followUps = [], expectations = [], generatedAt, recentLimit = 10,
 } = {}) {
   const scopeResult = normalizeLearningScope(scope);
   if (scopeResult.errors.length) throw new TypeError(scopeResult.errors.join('; '));
@@ -252,6 +253,12 @@ export function aggregateLearningProgress({
   }).filter((action) => !action.learnerId || learnerSet.has(action.learnerId))
     .sort((a, b) => a.priority - b.priority || a.actionId.localeCompare(b.actionId));
 
+  const normalizedExpectations = expectations.map((entry, index) => {
+    const result = validateLearningExpectation(entry, { path: `expectations[${index}]` });
+    if (result.errors.length) throw new TypeError(result.errors.join('; '));
+    return result.expectation;
+  });
+
   return Object.freeze({
     schema: LEARNING_PROGRESS_SCHEMA,
     generatedAt,
@@ -261,7 +268,7 @@ export function aggregateLearningProgress({
     summary: summarizeEvidence(selected),
     facets: buildFacets(selected),
     breakdowns: buildBreakdowns(selected, dimensions),
-    curriculumHistory: buildCurriculumHistory(selected),
+    curriculumHistory: buildCurriculumHistory(selected, normalizedExpectations),
     selfRegulation: summarizeSelfRegulation(selected),
     recentScores: buildRecentScores(selected).slice(0, recentLimit),
     followUps: Object.freeze(actions),
@@ -270,11 +277,23 @@ export function aggregateLearningProgress({
 
 /**
  * Build an evidence-backed, subject-neutral curriculum tree for overview /
- * focus / inspector surfaces. Only paths actually present in evidence appear.
- * Consequently this deliberately does not infer "complete" or "not started"
- * for an authored unit: those coverage claims require a curriculum outline.
+ * focus / inspector surfaces. Only paths actually present in evidence appear
+ * as tree nodes — this function never invents a course or unit a learner
+ * hasn't touched.
+ *
+ * `expectations` (Task 11: the curriculum-backed outline, merged with any
+ * hand-authored pacing dates — see `CurriculumExpectationSource`) is the ONE
+ * exception, and even then only additively: an expectation whose target
+ * (course/unit/lesson/module + id) matches a node the evidence already built
+ * annotates that node with `outline` (due date + expected completion) rather
+ * than fabricating completion state out of thin air. An expectation with NO
+ * matching evidence node — an authored unit the learner hasn't started — is
+ * surfaced separately in `outstanding`, named but never nested under an
+ * invented ancestry the expectation itself doesn't carry. Passing no
+ * `expectations` (the default) reproduces the pre-Task-11 behavior exactly:
+ * no `outline` anywhere, an empty `outstanding` list.
  */
-export function buildCurriculumHistory(entries = []) {
+export function buildCurriculumHistory(entries = [], expectations = []) {
   const rootMap = new Map();
   const unscoped = [];
 
@@ -302,10 +321,27 @@ export function buildCurriculumHistory(entries = []) {
     });
   });
 
+  const expectationByTarget = new Map(
+    expectations.map((expectation) => [curriculumTargetKey(expectation.target), expectation]),
+  );
+  const matchedExpectationIds = new Set();
+  const roots = finalizeCurriculumNodes(rootMap, expectationByTarget, matchedExpectationIds);
+  const outstanding = expectations
+    .filter((expectation) => !matchedExpectationIds.has(expectation.expectationId))
+    .map((expectation) => Object.freeze({
+      expectationId: expectation.expectationId,
+      target: expectation.target,
+      dueAt: expectation.dueAt,
+      expectedCompletedPercent: expectation.expectedCompletedPercent,
+    }))
+    .sort((left, right) => left.target.kind.localeCompare(right.target.kind)
+      || left.target.id.localeCompare(right.target.id));
+
   return Object.freeze({
     hierarchy: CURRICULUM_HISTORY_LEVELS.map(({ kind }) => kind),
-    roots: Object.freeze(finalizeCurriculumNodes(rootMap)),
+    roots: Object.freeze(roots),
     unscoped: summarizeEvidence(unscoped),
+    outstanding: Object.freeze(outstanding),
   });
 }
 
@@ -581,19 +617,33 @@ function buildBreakdowns(entries, dimensions) {
   })).sort((a, b) => a.key.localeCompare(b.key)));
 }
 
-function finalizeCurriculumNodes(nodes) {
-  return [...nodes.values()].map((node) => Object.freeze({
-    key: node.key,
-    kind: node.kind,
-    id: node.id,
-    path: Object.freeze(node.path),
-    // Direct evidence is useful in an inspector; summary rolls up this node
-    // and all descendants, so a parent remains a truthful aggregate.
-    directEvidenceCount: node.directEntries.length,
-    evidenceState: 'recorded',
-    summary: summarizeEvidence(node.entries),
-    children: Object.freeze(finalizeCurriculumNodes(node.children)),
-  })).sort((left, right) => (
+function finalizeCurriculumNodes(nodes, expectationByTarget = new Map(), matchedExpectationIds = new Set()) {
+  return [...nodes.values()].map((node) => {
+    const expectation = expectationByTarget.get(curriculumTargetKey({ kind: node.kind, id: node.id }));
+    if (expectation) matchedExpectationIds.add(expectation.expectationId);
+    return Object.freeze({
+      key: node.key,
+      kind: node.kind,
+      id: node.id,
+      path: Object.freeze(node.path),
+      // Direct evidence is useful in an inspector; summary rolls up this node
+      // and all descendants, so a parent remains a truthful aggregate.
+      directEvidenceCount: node.directEntries.length,
+      evidenceState: 'recorded',
+      summary: summarizeEvidence(node.entries),
+      // Outline annotation (Task 11): present only when a supplied expectation
+      // names this EXACT node (same kind + id) — never inferred, never added
+      // to a node evidence didn't already put in the tree.
+      ...(expectation ? {
+        outline: Object.freeze({
+          expectationId: expectation.expectationId,
+          dueAt: expectation.dueAt,
+          expectedCompletedPercent: expectation.expectedCompletedPercent,
+        }),
+      } : {}),
+      children: Object.freeze(finalizeCurriculumNodes(node.children, expectationByTarget, matchedExpectationIds)),
+    });
+  }).sort((left, right) => (
     (right.summary.lastActivityAt ?? '').localeCompare(left.summary.lastActivityAt ?? '')
     || left.id.localeCompare(right.id)
     || left.key.localeCompare(right.key)
@@ -605,6 +655,10 @@ function curriculumPathKey(path) {
     .filter(({ field }) => isText(path[field]))
     .map(({ kind, field }) => `${kind}=${encodeURIComponent(path[field])}`)
     .join('|');
+}
+
+function curriculumTargetKey({ kind, id }) {
+  return `${kind} ${id}`;
 }
 
 function groupParts(entry, dimensions) {
