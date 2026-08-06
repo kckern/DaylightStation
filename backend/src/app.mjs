@@ -267,6 +267,7 @@ import {
   ConfiguredAcademicPeriodSource,
   ConfiguredLearningExpectationSource,
   ConfiguredSchoolLearningDirectory,
+  CurriculumExpectationSource,
   YamlConceptRegistry,
   YamlLearningEvidenceRepository,
   YamlSchoolAttemptEvidenceSource,
@@ -2217,6 +2218,28 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     evidenceRepository: schoolLearningEvidence,
     learnerDirectory: schoolLearnerDirectory,
   });
+  // One configured-expectations instance shared by every consumer (Task 11):
+  // constructed once, validated once, rather than re-parsing school.yml's
+  // `progress.expectations` per use case.
+  const schoolConfiguredExpectationSource = new ConfiguredLearningExpectationSource({ config: schoolFullConfig });
+  // The curriculum accessor (`schoolLifecycle.stores.curriculum`) does not
+  // exist yet at this point in composition — `schoolLifecycle` wires up
+  // several hundred lines below, and `schoolCalc`'s composition (just below
+  // this block) already depends on THIS EXACT `getLearningProgress` instance,
+  // so construction can't simply be deferred until after the lifecycle block.
+  // This thin forwarding source lets `getLearningProgress` be built now while
+  // still picking up the real curriculum-derived outline the moment
+  // `schoolLifecycle` finishes wiring: `schoolLifecycle` is a `let` reassigned
+  // later in this same function, and a closure over it observes that
+  // reassignment by the time an actual request runs `listExpectations`. An
+  // unwired lifecycle (or no `stores.curriculum`) makes this emit nothing —
+  // GetLearningProgress and curriculumHistory behave exactly as before Task 11.
+  const schoolCurriculumExpectationSource = {
+    async listExpectations(query) {
+      const curriculum = schoolLifecycle.stores?.curriculum;
+      return curriculum ? new CurriculumExpectationSource({ curriculum }).listExpectations(query) : [];
+    },
+  };
   const getLearningProgress = new GetLearningProgress({
     evidenceSources: schoolEvidenceSources,
     cohortDirectory: schoolLearnerDirectory,
@@ -2224,12 +2247,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     followUpSources: [new AssessmentReviewFollowUpSource({
       thresholdPercent: schoolFullConfig.progress?.reviewThresholdPercent ?? 80,
     }), schoolLearningLoop.followUps],
+    // Configured pacing dates win a same-target collision over the
+    // curriculum-derived outline (Task 11 merge rule) — order matters here.
+    expectationSources: [schoolConfiguredExpectationSource, schoolCurriculumExpectationSource],
     logger: rootLogger.child({ module: 'school-progress' }),
   });
   const getInstructionalInsights = new GetInstructionalInsights({
     evidenceSources: schoolEvidenceSources,
     cohortDirectory: schoolLearnerDirectory,
-    expectationSource: new ConfiguredLearningExpectationSource({ config: schoolFullConfig }),
+    expectationSource: schoolConfiguredExpectationSource,
     policy: {
       accuracyThresholdPercent: schoolFullConfig.progress?.instructionalInsights?.accuracyThresholdPercent ?? 70,
       minimumResponses: schoolFullConfig.progress?.instructionalInsights?.minimumResponses ?? 2,
