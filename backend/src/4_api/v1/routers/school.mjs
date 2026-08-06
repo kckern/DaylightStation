@@ -40,6 +40,9 @@ export function createSchoolRouter({
   getReportCard = null,
   closeAcademicPeriod = null,
   getTeacherToday = null,
+  // Teacher console picker (teacher-console spec §4.7.1) — the config-declared
+  // teacher roster, `{configured, teachers: [{id, name}]}`.
+  getTeachers = null,
   // Raw frozen-record reader (`YamlSchoolDatastore`-shaped: `readReportCard`,
   // `listReportCards`) — distinct from `getReportCard` above, which derives a
   // LIVE report; this one only ever reads what `closeAcademicPeriod` already froze.
@@ -88,6 +91,12 @@ export function createSchoolRouter({
 
   router.get('/roster', wrap(async (req, res) => res.json(
     learnerDirectory ? await learnerDirectory.listLearners() : schoolService.getRoster(),
+  )));
+  // The teacher console's picker roster: config-declared teacher ids resolved
+  // against the live household roster per request. Unwired serves the honest
+  // "not configured" shape rather than 404ing a surface that can explain it.
+  router.get('/teachers', wrap(async (req, res) => res.json(
+    getTeachers ? await getTeachers.execute() : { configured: false, teachers: [] },
   )));
   // Await the (async, off-thread) warm so a cold cache returns the full list
   // rather than empty — without ever blocking the event loop on the file scan.
