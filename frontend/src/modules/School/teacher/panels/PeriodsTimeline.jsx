@@ -1,9 +1,12 @@
 /**
  * PeriodsTimeline — the academic calendar, now EDITABLE (wave 3,
  * teacher.periods.edit over the config→data promotion): whole-list edit
- * (labels, kinds, date bounds, add/remove) saved through the gate. Dates are
- * edited as local dates and stored canonical-ISO midnight-UTC — the same
- * shape the config era used.
+ * (labels, kinds, date bounds, add/remove) saved through the gate.
+ * BOUNDARY PRESERVATION (M3 review): the live calendar's instants carry a
+ * timezone-offset time-of-day (e.g. T07:00:00.000Z = midnight LA). An
+ * untouched date round-trips the ORIGINAL instant verbatim; an edited date
+ * keeps the original time-of-day suffix, so a label fix can never shift a
+ * period boundary by hours.
  */
 import { useState } from 'react';
 import { schoolApi } from '../../schoolApi.js';
@@ -11,7 +14,13 @@ import { usePanelFetch } from '../usePanelFetch.js';
 import { useTeacherWrite } from '../useTeacherWrite.js';
 
 const day = (iso) => (typeof iso === 'string' ? iso.slice(0, 10) : '');
-const toIso = (d) => `${d}T00:00:00.000Z`;
+// Re-attach the ORIGINAL instant's time-of-day to an edited date; a new row
+// (no original) gets midnight UTC.
+const withOriginalTime = (date, original) => (
+  typeof original === 'string' && original.length > 10
+    ? `${date}${original.slice(10)}`
+    : `${date}T00:00:00.000Z`
+);
 
 export default function PeriodsTimeline() {
   const periods = usePanelFetch(() => schoolApi.periods(), { panel: 'periods' });
@@ -24,6 +33,7 @@ export default function PeriodsTimeline() {
     setDraft((periods.data ?? []).map((p) => ({
       periodId: p.periodId, kind: p.kind ?? 'term', label: p.label ?? p.periodId,
       startsAt: day(p.startsAt), endsAt: day(p.endsAt),
+      origStartsAt: p.startsAt, origEndsAt: p.endsAt,
       ...(p.parentPeriodId ? { parentPeriodId: p.parentPeriodId } : {}),
     })));
     setEditing(true);
@@ -32,8 +42,10 @@ export default function PeriodsTimeline() {
   const patch = (i, field, value) => setDraft((d) => d.map((row, idx) => (idx === i ? { ...row, [field]: value } : row)));
 
   const save = () => run('save', ({ actorId, pin }) => schoolApi.putPeriods({
-    periods: draft.map((row) => ({
-      ...row, startsAt: toIso(row.startsAt), endsAt: toIso(row.endsAt),
+    periods: draft.map(({ origStartsAt, origEndsAt, ...row }) => ({
+      ...row,
+      startsAt: row.startsAt === day(origStartsAt) ? origStartsAt : withOriginalTime(row.startsAt, origStartsAt),
+      endsAt: row.endsAt === day(origEndsAt) ? origEndsAt : withOriginalTime(row.endsAt, origEndsAt),
     })),
     editedBy: actorId, pin,
   }), { onSuccess: () => { setEditing(false); periods.retry(); } });

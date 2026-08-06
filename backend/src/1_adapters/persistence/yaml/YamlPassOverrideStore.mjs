@@ -12,6 +12,14 @@ import yaml from 'js-yaml';
 
 const dumpYaml = (value) => yaml.dump(value, { indent: 2, lineWidth: -1, noRefs: true });
 
+async function atomicWrite(file, text) {
+  const tmp = `${file}.tmp-${process.pid}`;
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.writeFile(tmp, text, 'utf8');
+  await fs.rename(tmp, file);
+}
+
+
 export class YamlPassOverrideStore {
   #configService; #logger; #writeChain = Promise.resolve();
 
@@ -23,12 +31,18 @@ export class YamlPassOverrideStore {
 
   #file() { return path.join(this.#configService.getHouseholdPath('apps/school'), 'pass-overrides.yml'); }
 
-  #read() {
+  #readState() {
+    let text;
+    try { text = fsSync.readFileSync(this.#file(), 'utf8'); } catch { return { state: 'missing', overrides: {}, history: [] }; }
     try {
-      const raw = yaml.load(fsSync.readFileSync(this.#file(), 'utf8'));
-      return raw && typeof raw === 'object' ? { overrides: raw.overrides ?? {}, history: raw.history ?? [] } : { overrides: {}, history: [] };
-    } catch { return { overrides: {}, history: [] }; }
+      const raw = yaml.load(text);
+      if (raw && typeof raw === 'object') return { state: 'ok', overrides: raw.overrides ?? {}, history: raw.history ?? [] };
+    } catch { /* fall through */ }
+    this.#logger.error?.('school.pass-overrides.file-corrupt', { file: this.#file() });
+    return { state: 'corrupt', overrides: {}, history: [] };
   }
+
+  #read() { return this.#readState(); }
 
   all() { return { ...this.#read().overrides }; }
 
@@ -39,13 +53,15 @@ export class YamlPassOverrideStore {
 
   async set(unitId, percent, { editedBy = null, at = new Date().toISOString() } = {}) {
     this.#writeChain = this.#writeChain.then(async () => {
-      const current = this.#read();
+      const current = this.#readState();
+      if (current.state === 'corrupt') {
+        throw new Error(`pass-overrides.yml exists but cannot be read — fix or move it before editing (${this.#file()})`);
+      }
       const overrides = { ...current.overrides };
       if (percent === null) delete overrides[unitId];
       else overrides[unitId] = percent;
       const history = [...current.history, { at, editedBy, unitId, percent }];
-      await fs.mkdir(path.dirname(this.#file()), { recursive: true });
-      await fs.writeFile(this.#file(), dumpYaml({ overrides, history }), 'utf8');
+      await atomicWrite(this.#file(), dumpYaml({ overrides, history }));
       this.#logger.info?.('school.pass-override.set', { unitId, percent, editedBy });
     });
     await this.#writeChain;

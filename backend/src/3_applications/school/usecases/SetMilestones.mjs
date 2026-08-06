@@ -32,8 +32,7 @@ export class SetMilestones {
     });
     const ids = new Set(validated.map((m) => m.id));
     if (ids.size !== validated.length) throw new ValidationError('milestone ids must be unique');
-    const others = this.#store.list().filter((m) => m.learnerId !== learnerId);
-    await this.#store.replace([...others, ...validated], { editedBy, at: this.#clock().toISOString() });
+    await this.#store.replaceForLearner(learnerId, validated, { editedBy, at: this.#clock().toISOString() });
     return { milestones: validated };
   }
 }

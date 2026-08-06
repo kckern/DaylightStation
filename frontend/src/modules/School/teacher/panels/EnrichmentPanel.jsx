@@ -9,7 +9,6 @@ import { useState } from 'react';
 import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
 import { useTeacherWrite } from '../useTeacherWrite.js';
-import PanelFrame from './PanelFrame.jsx';
 import { SUBJECTS } from '../../home/subjects.js';
 
 const EMPTY_FORM = { title: '', from: '', to: '', note: '', learnerIds: [], subjectIds: [] };

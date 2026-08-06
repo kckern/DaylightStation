@@ -19,7 +19,7 @@ const SID = 'ses_1';
 
 let clock, sessions, tokens, economy, thermal, reviewQueue, close, remediate;
 
-const build = ({ economyEnabled = true, throwOn = null, receiptPrinter = undefined, wireReviewQueue = true } = {}) => {
+const build = ({ economyEnabled = true, throwOn = null, receiptPrinter = undefined, wireReviewQueue = true, passOverrides = null } = {}) => {
   clock = fakeClock();
   const catalog = new FakeCatalog({ units: rawUnits(), documents: rawDocuments(), manifests: rawManifests() });
   const curriculum = new CurriculumAccess({ catalog, bankIds: () => BANK_IDS, clock: clock.epoch, logger: silentLogger });
@@ -39,6 +39,7 @@ const build = ({ economyEnabled = true, throwOn = null, receiptPrinter = undefin
     economyAction: 'school-unit-complete', economyEnabled,
     grownUps: fakeGrownUps(clock),
     reviewQueue: wireReviewQueue ? reviewQueue : null,
+    passOverrides,
     clock: clock.now, rng: seededRng(5), logger: silentLogger,
   });
   remediate = new OpenRemediation({
@@ -89,6 +90,19 @@ describe('the outcome', () => {
   });
 
   it('records a fail below the unit\'s passing bar', async () => {
+    await graded({ percent: 50 });
+    expect(await close.execute({ sessionId: SID })).toMatchObject({ result: 'needs_remediation' });
+  });
+
+  it('a pass-criteria override wins over the authored percent, keyed by unitId (W3-2)', async () => {
+    // 50% fails the authored bar (previous test); an override at 40 passes it.
+    build({ passOverrides: { percentFor: (unitId) => (unitId === WORKSHEET_UNIT ? 40 : null) } });
+    await graded({ percent: 50 });
+    expect(await close.execute({ sessionId: SID })).toMatchObject({ result: 'passed' });
+  });
+
+  it('a null override falls through to the authored percent (W3-2)', async () => {
+    build({ passOverrides: { percentFor: () => null } });
     await graded({ percent: 50 });
     expect(await close.execute({ sessionId: SID })).toMatchObject({ result: 'needs_remediation' });
   });

@@ -12,6 +12,14 @@ import yaml from 'js-yaml';
 
 const dumpYaml = (value) => yaml.dump(value, { indent: 2, lineWidth: -1, noRefs: true });
 
+async function atomicWrite(file, text) {
+  const tmp = `${file}.tmp-${process.pid}`;
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.writeFile(tmp, text, 'utf8');
+  await fs.rename(tmp, file);
+}
+
+
 export class YamlEnrichmentLog {
   #configService; #logger; #writeChain = Promise.resolve();
 
@@ -23,12 +31,18 @@ export class YamlEnrichmentLog {
 
   #file() { return path.join(this.#configService.getHouseholdPath('apps/school'), 'enrichment.yml'); }
 
-  #read() {
+  #readState() {
+    let text;
+    try { text = fsSync.readFileSync(this.#file(), 'utf8'); } catch { return { state: 'missing', entries: [] }; }
     try {
-      const raw = yaml.load(fsSync.readFileSync(this.#file(), 'utf8'));
-      return Array.isArray(raw?.entries) ? raw.entries : [];
-    } catch { return []; }
+      const raw = yaml.load(text);
+      if (Array.isArray(raw?.entries)) return { state: 'ok', entries: raw.entries };
+    } catch { /* fall through */ }
+    this.#logger.error?.('school.enrichment.file-corrupt', { file: this.#file() });
+    return { state: 'corrupt', entries: [] };
   }
+
+  #read() { return this.#readState().entries; }
 
   list({ learnerId = null } = {}) {
     const entries = this.#read();
@@ -37,9 +51,13 @@ export class YamlEnrichmentLog {
 
   async append(entry) {
     this.#writeChain = this.#writeChain.then(async () => {
-      const entries = [...this.#read(), entry];
-      await fs.mkdir(path.dirname(this.#file()), { recursive: true });
-      await fs.writeFile(this.#file(), dumpYaml({ entries }), 'utf8');
+      const current = this.#readState();
+      // An append-only evidence log must never truncate itself over a file
+      // it could not read (M3 review): corrupt refuses, it never overwrites.
+      if (current.state === 'corrupt') {
+        throw new Error(`enrichment.yml exists but cannot be read — fix or move it before recording (${this.#file()})`);
+      }
+      await atomicWrite(this.#file(), dumpYaml({ entries: [...current.entries, entry] }));
       this.#logger.info?.('school.enrichment.recorded', { id: entry.id, recordedBy: entry.recordedBy });
     });
     await this.#writeChain;

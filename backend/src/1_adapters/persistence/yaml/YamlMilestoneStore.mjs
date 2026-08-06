@@ -11,6 +11,14 @@ import yaml from 'js-yaml';
 
 const dumpYaml = (value) => yaml.dump(value, { indent: 2, lineWidth: -1, noRefs: true });
 
+async function atomicWrite(file, text) {
+  const tmp = `${file}.tmp-${process.pid}`;
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.writeFile(tmp, text, 'utf8');
+  await fs.rename(tmp, file);
+}
+
+
 export class YamlMilestoneStore {
   #configService; #logger; #writeChain = Promise.resolve();
 
@@ -22,24 +30,51 @@ export class YamlMilestoneStore {
 
   #file() { return path.join(this.#configService.getHouseholdPath('apps/school'), 'milestones.yml'); }
 
-  #read() {
+  #readState() {
+    let text;
+    try { text = fsSync.readFileSync(this.#file(), 'utf8'); } catch { return { state: 'missing', milestones: [], history: [] }; }
     try {
-      const raw = yaml.load(fsSync.readFileSync(this.#file(), 'utf8'));
-      return raw && typeof raw === 'object' ? { milestones: raw.milestones ?? [], history: raw.history ?? [] } : { milestones: [], history: [] };
-    } catch { return { milestones: [], history: [] }; }
+      const raw = yaml.load(text);
+      if (raw && typeof raw === 'object') return { state: 'ok', milestones: raw.milestones ?? [], history: raw.history ?? [] };
+    } catch { /* fall through */ }
+    this.#logger.error?.('school.milestones.file-corrupt', { file: this.#file() });
+    return { state: 'corrupt', milestones: [], history: [] };
   }
+
+  #read() { return this.#readState(); }
 
   list() { return structuredClone(this.#read().milestones); }
 
   async replace(milestones, { editedBy = null, at = new Date().toISOString() } = {}) {
     this.#writeChain = this.#writeChain.then(async () => {
-      const current = this.#read();
-      const history = [...current.history, { at, editedBy, milestones }];
-      await fs.mkdir(path.dirname(this.#file()), { recursive: true });
-      await fs.writeFile(this.#file(), dumpYaml({ milestones, history }), 'utf8');
-      this.#logger.info?.('school.milestones.replaced', { editedBy, count: milestones.length });
+      await this.#write(() => milestones, { editedBy, at });
     });
     await this.#writeChain;
+  }
+
+  /**
+   * Learner-scoped replace INSIDE the write chain (M3 review): the
+   * read-merge happens in the same chained closure as the write, so two
+   * teachers saving different learners cannot lose each other's edit.
+   */
+  async replaceForLearner(learnerId, rows, { editedBy = null, at = new Date().toISOString() } = {}) {
+    this.#writeChain = this.#writeChain.then(async () => {
+      await this.#write((current) => [
+        ...current.filter((m) => m.learnerId !== learnerId), ...rows,
+      ], { editedBy, at });
+    });
+    await this.#writeChain;
+  }
+
+  async #write(nextFrom, { editedBy, at }) {
+    const current = this.#readState();
+    if (current.state === 'corrupt') {
+      throw new Error(`milestones.yml exists but cannot be read — fix or move it before editing (${this.#file()})`);
+    }
+    const milestones = nextFrom(current.milestones);
+    const history = [...current.history, { at, editedBy, milestones }];
+    await atomicWrite(this.#file(), dumpYaml({ milestones, history }));
+    this.#logger.info?.('school.milestones.replaced', { editedBy, count: milestones.length });
   }
 }
 
