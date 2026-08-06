@@ -516,7 +516,7 @@ export async function createSchoolLifecycle({
   });
   const gradeSubmission = new GradeSubmission({
     curriculum, sessions: stores.sessions, reviewQueue: stores.reviewQueue,
-    grader: schoolService, bankReader, grownUps, clock, logger,
+    grader: schoolService, bankReader, grownUps, passOverrides, clock, logger,
   });
   const closeSessionOutcome = new CloseSessionOutcome({
     curriculum, sessions: stores.sessions, tokens: stores.tokens, assignments: stores.assignments,
@@ -592,6 +592,11 @@ export async function createSchoolLifecycle({
   // because the router may not be the place a child's sign-off is checked.
   const resolveReviewItem = new ResolveReviewItem({
     reviewQueue: stores.reviewQueue, grownUps, teacherGate, clock, logger,
+    // The review loop CLOSES ITSELF (student-advocacy A1): when the last
+    // pending item of a session gets its verdict, the same act grades and
+    // settles the session — receipt, coins, unlock — instead of holding a
+    // child's finished work hostage to an out-of-band actor.
+    gradeSubmission, closeSessionOutcome,
   });
   const setAssignments = new SetAssignments({
     assignments: stores.assignments, grownUps, teacherGate, clock, logger,

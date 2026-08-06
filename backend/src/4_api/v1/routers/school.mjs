@@ -561,9 +561,15 @@ export function createSchoolRouter({
     await schoolService.warmBanks();
     res.json(schoolService.listQuizRequests({ materialId: req.query.materialId || null }));
   }));
-  router.post('/quiz-requests/dismiss', wrap((req, res) => {
-    const { unitId, userId, dismissedBy = null, pin = null } = req.body || {};
-    res.json(schoolService.dismissQuizRequest({ unitId, userId, dismissedBy, pin }));
+  router.post('/quiz-requests/dismiss', wrap(async (req, res) => {
+    const { unitId = null, bankId = null, userId, dismissedBy = null, pin = null, reason } = req.body || {};
+    res.json(await schoolService.dismissQuizRequest({ unitId, bankId, userId, dismissedBy, pin, reason }));
+  }));
+  // Kid-safe like /quiz-requests: a child asks for another go; the row lands
+  // on the teacher's backlog (student-advocacy A2).
+  router.post('/retake-requests', wrap((req, res) => {
+    const { userId = null, bankId = null, unitId = null, title = null } = req.body || {};
+    res.json(schoolService.requestRetake({ userId, bankId, unitId, title }));
   }));
 
   // Printing — a child prints their own worksheets, quota-gated with grown-up
