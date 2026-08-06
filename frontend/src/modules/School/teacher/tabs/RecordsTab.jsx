@@ -62,6 +62,7 @@ export default function RecordsTab({ learnerId, kids = [] }) {
           key={`${learnerId}:${periodId}`}
           learnerId={learnerId}
           periodId={periodId}
+          periodLabel={periodList.find((p) => p.periodId === periodId)?.label ?? null}
           onClosed={() => setFrozenRefresh((n) => n + 1)}
         />
       )}

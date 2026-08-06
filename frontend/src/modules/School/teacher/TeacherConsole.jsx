@@ -34,6 +34,9 @@ function TeacherShell() {
   const [tab, setTab] = useState(initial.tab);
   const [learnerId, setLearnerId] = useState(initial.learnerId);
   const [kids, setKids] = useState([]);
+  // Backlog badge (advocacy A1): pending marks + prints, refreshed while the
+  // console is open, so the tab bar NOTICES for the teacher.
+  const [backlog, setBacklog] = useState(0);
 
   useEffect(() => {
     teacherLog.nav('mounted', { tab: initial.tab, learnerId: initial.learnerId });
@@ -43,6 +46,20 @@ function TeacherShell() {
     });
     return () => { alive = false; };
   }, [initial]);
+
+  useEffect(() => {
+    let alive = true;
+    const poll = async () => {
+      const [review, prints] = await Promise.all([schoolApi.lifecycleReview(), schoolApi.printPending()]);
+      if (!alive) return;
+      const reviewCount = review.ok ? (review.data?.items ?? []).length : 0;
+      const printCount = prints.ok && Array.isArray(prints.data) ? prints.data.length : 0;
+      setBacklog(reviewCount + printCount);
+    };
+    poll();
+    const timer = setInterval(poll, 60_000);
+    return () => { alive = false; clearInterval(timer); };
+  }, []);
 
   // Browser back/forward re-parse the URL — address bar and shell never disagree.
   useEffect(() => {
@@ -125,6 +142,9 @@ function TeacherShell() {
             onClick={() => openTab(id)}
           >
             {TAB_LABELS[id]}
+            {id === 'today' && backlog > 0 && (
+              <span className="teacher-console__badge" aria-label={`${backlog} items waiting`}>{backlog}</span>
+            )}
           </button>
         ))}
       </nav>

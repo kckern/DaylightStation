@@ -204,6 +204,17 @@ export function createSchoolLifecycleRouter({
         learnerId: req.params.learnerId,
         learnerName: learnerName(req),
       });
+      // The teacher console's morning drill-in (advocacy A3): the same
+      // dry-run plan as DATA — subject sections with next/served — instead
+      // of the printed PNG. No side effects either way (previewAgenda never
+      // opens a session or mints a live ticket).
+      if (req.query.format === 'json') {
+        return res.set('Cache-Control', 'no-store').json({
+          learnerId: req.params.learnerId,
+          sections: result.sections ?? [],
+          entries: result.plan?.entries ?? [],
+        });
+      }
       // The document's own `scan_action.action` fields already carry the real
       // (dry-run) token values, so an empty tokens map falls back to them —
       // see `actionOp` in `DocumentReceiptRenderer.mjs`.

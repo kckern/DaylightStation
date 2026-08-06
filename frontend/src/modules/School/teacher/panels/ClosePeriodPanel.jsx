@@ -9,12 +9,19 @@ import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
 import { useTeacherWrite } from '../useTeacherWrite.js';
 
-export default function ClosePeriodPanel({ learnerId, periodId, onClosed }) {
+export default function ClosePeriodPanel({ learnerId, periodId, periodLabel = null, onClosed }) {
   // A 404 here simply means "not closed yet" — the empty state, never an error.
   const frozen = usePanelFetch(() => schoolApi.reportCardFrozen({ learnerId, periodId }), {
     deps: [learnerId, periodId],
     panel: 'close-period',
     notFoundAs: 'empty',
+  });
+  // The live card, for an honest confirm (advocacy A5): what period, and how
+  // many marks are still waiting — BEFORE the freeze, not after.
+  const live = usePanelFetch(() => schoolApi.reportCard({ learnerId, periodId }), {
+    deps: [learnerId, periodId],
+    panel: 'close-period-card',
+    nullAs: 'unavailable',
   });
   const { run, busy, errors } = useTeacherWrite({ panel: 'close-period' });
   const [armed, setArmed] = useState(false);
@@ -35,8 +42,11 @@ export default function ClosePeriodPanel({ learnerId, periodId, onClosed }) {
         <span className="teacher-close-period__confirm">
           <span>
             {alreadyClosed
-              ? 'Archive the current freeze and re-close with today’s snapshot?'
-              : 'Freeze this report card as the period record?'}
+              ? `Archive the current freeze of ${periodLabel ?? periodId} and re-close with today’s snapshot?`
+              : `Freeze ${periodLabel ?? periodId} as the period record?`}
+            {(live.data?.pendingReview ?? 0) > 0 && (
+              ` ${live.data.pendingReview} item${live.data.pendingReview === 1 ? '' : 's'} still await a mark.`
+            )}
           </span>
           <button type="button" disabled={busy === 'close'} onClick={close}>Confirm</button>
           <button type="button" onClick={() => setArmed(false)}>Cancel</button>

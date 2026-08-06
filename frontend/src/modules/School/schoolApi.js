@@ -106,6 +106,8 @@ export const schoolApi = {
     `/attempts-summary?learnerId=${encodeURIComponent(learnerId)}&day=${encodeURIComponent(day)}`,
   ),
   reassign: (body) => req('/reassign', body),
+  // The dry-run daily plan as data (advocacy A3) — no side effects.
+  agendaPreview: (learnerId) => req(`/lifecycle/learners/${encodeURIComponent(learnerId)}/agenda/preview?format=json`),
   progressReport: ({ learnerId, periodId }) => req(
     `/progress-report?learnerId=${encodeURIComponent(learnerId)}&periodId=${encodeURIComponent(periodId)}`,
   ),
