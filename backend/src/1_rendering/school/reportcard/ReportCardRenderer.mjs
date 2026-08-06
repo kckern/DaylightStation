@@ -31,10 +31,14 @@
  *    one rather than fabricate it.
  *  - There is no concept-level mastery field in the v1 shape (no `concepts`
  *    facet on `evidence`, no per-concept breakdown — `GetLearningProgress`
- *    is invoked with no `groupBy`). "Concepts mastered/developing" is
- *    rendered from the closest available proxy: each course's unit-level
- *    `unitOutcomes[].result` (`passed` → mastered, `needs_remediation` →
- *    developing), labelled by unit rather than by concept id.
+ *    is invoked with no `groupBy`). What's rendered below is UNIT pass/fail
+ *    from `courses[].unitOutcomes[].result` (`passed`/`needs_remediation`),
+ *    labelled "Units — passed / needs remediation" rather than "Concepts" —
+ *    a signable document must not claim concept-level granularity it does
+ *    not have. A later task in this wave (the concept registry) is expected
+ *    to add a real `concepts` field to the report shape; when it lands, a
+ *    true Concepts section should be ADDED alongside this units section,
+ *    not replace it.
  *
  * @module rendering/school/reportcard/ReportCardRenderer
  */
@@ -136,7 +140,7 @@ function drawReportCard(doc, theme, report, { learnerName, mode }) {
   drawCourses(doc, theme, report.courses ?? []);
   drawMaterials(doc, theme, report.materials ?? []);
   drawActiveDays(doc, theme, report.activeDays);
-  drawConcepts(doc, theme, report.courses ?? []);
+  drawUnitOutcomes(doc, theme, report.courses ?? []);
   drawRemediationArcs(doc, theme, report);
   drawFeedbackNotes(doc, theme, report.pendingReview);
 }
@@ -237,30 +241,32 @@ function drawActiveDays(doc, theme, activeDays) {
 }
 
 /**
- * Concept-level mastery data does not exist in the v1 shape (see module
- * comment) — this rolls up unit-level `unitOutcomes[].result` across every
- * course instead, labelled per unit.
+ * UNIT pass/fail, rolled up from `unitOutcomes[].result` across every course
+ * — deliberately labelled at the grain the data actually has ("Units"), not
+ * "Concepts": there is no concept-level mastery field in the v1 shape (see
+ * module comment), and this document is signable — it must not claim a
+ * granularity it cannot back up.
  */
-function drawConcepts(doc, theme, courses) {
-  sectionHeading(doc, theme, 'Concepts — mastered / developing');
-  const mastered = [];
-  const developing = [];
+function drawUnitOutcomes(doc, theme, courses) {
+  sectionHeading(doc, theme, 'Units — passed / needs remediation');
+  const passed = [];
+  const needsRemediation = [];
   for (const course of courses) {
     for (const outcome of course.unitOutcomes ?? []) {
-      if (outcome.result === 'passed') mastered.push(outcome.unitId);
-      else if (outcome.result === 'needs_remediation') developing.push(outcome.unitId);
+      if (outcome.result === 'passed') passed.push(outcome.unitId);
+      else if (outcome.result === 'needs_remediation') needsRemediation.push(outcome.unitId);
     }
   }
   writeLine(
     doc,
     theme,
-    `Mastered (${mastered.length}): ${mastered.length ? mastered.join(', ') : '—'}`,
+    `Passed (${passed.length}): ${passed.length ? passed.join(', ') : '—'}`,
     { sizePt: 11, gapAfterPt: 4 },
   );
   writeLine(
     doc,
     theme,
-    `Developing (${developing.length}): ${developing.length ? developing.join(', ') : '—'}`,
+    `Needs remediation (${needsRemediation.length}): ${needsRemediation.length ? needsRemediation.join(', ') : '—'}`,
     { sizePt: 11, gapAfterPt: 10 },
   );
 }
@@ -294,7 +300,7 @@ function drawRemediationArcs(doc, theme, report) {
 
 function drawFeedbackNotes(doc, theme, pendingReview) {
   sectionHeading(doc, theme, 'Feedback');
-  writeLine(doc, theme, `Feedback notes pending review: ${pendingReview ?? 0}`, { sizePt: 11, gapAfterPt: 4 });
+  writeLine(doc, theme, `Items awaiting a grown-up's review: ${pendingReview ?? 0}`, { sizePt: 11, gapAfterPt: 4 });
 }
 
 export default createReportCardPdfRenderer;

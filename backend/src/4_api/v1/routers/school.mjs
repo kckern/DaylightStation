@@ -6,6 +6,10 @@ import express from 'express';
 import { GuestForbiddenError, SessionGoneError } from '#domains/school/errors.mjs';
 import { ValidationError, EntityNotFoundError, DomainInvariantError } from '#domains/core/errors/index.mjs';
 import { splatPath } from '#api/utils/wildcard.mjs';
+// Same slug the school receipts already use to keep an untrusted id out of a
+// filename/document-id — see receipts.mjs:30. Reused here (not replicated) so
+// the two Content-Disposition-adjacent id-sanitizing call sites can't drift.
+import { slugify } from '#domains/school/documents/receipts.mjs';
 
 export function createSchoolRouter({
   schoolService,
@@ -805,12 +809,20 @@ function wantsPdf(req) {
  * Render and send a report card as `application/pdf` — shared by the live
  * and frozen GET routes so the content-type/filename/cache-header contract
  * (and the "not wired" 503) stays identical between them.
+ *
+ * `learnerId`/`periodId` are query-string values, not path segments — a
+ * caller can put anything in them (quotes, semicolons, CRLF). They are
+ * slugged before landing in `Content-Disposition`, the same way `receipts.mjs`
+ * sluggs a learner id before it becomes part of a document id: a hostile
+ * `learnerId=kid1"; filename="evil.pdf` must not be able to inject a second
+ * `filename=` parameter into the header.
  */
 async function sendReportCardPdf(res, renderReportCardPdf, report, { learnerId, periodId, req }) {
   if (!renderReportCardPdf) return res.status(503).json({ error: 'report-card-pdf-unavailable' });
   const { pdf } = await renderReportCardPdf(report, { learnerName: textQuery(req.query.learnerName) });
   res.set('Cache-Control', 'no-store');
-  res.set('Content-Disposition', `inline; filename="report-card-${learnerId}-${periodId}.pdf"`);
+  const slug = `report-card-${slugify(learnerId, 'learner')}-${slugify(periodId, 'period')}.pdf`;
+  res.set('Content-Disposition', `inline; filename="${slug}"`);
   return res.type('application/pdf').send(pdf);
 }
 
