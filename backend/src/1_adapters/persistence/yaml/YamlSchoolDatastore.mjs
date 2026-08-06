@@ -366,6 +366,25 @@ export class YamlSchoolDatastore {
    * destroyed, only renamed aside. Returns the version number used, or `0`
    * when there was nothing to archive (no prior freeze).
    */
+  /**
+   * Superseded freeze versions, readable at last (admin advocacy #5): the
+   * archived `{periodId}.v<n>.yml` copies were deliberately hidden from
+   * `listReportCards` — correctly — but had NO read at all, making the
+   * preserved history write-only. Returns [{version, record}], oldest first.
+   */
+  listReportCardVersions(userId, periodId) {
+    const dir = this.#reportCardsDir(userId);
+    if (!dir || !isSafePeriodId(periodId)) return [];
+    const out = [];
+    let n = 1;
+    while (fs.existsSync(path.join(dir, `${periodId}.v${n}.yml`))) {
+      const record = loadYamlSafe(path.join(dir, `${periodId}.v${n}.yml`));
+      if (record) out.push({ version: n, record });
+      n += 1;
+    }
+    return out;
+  }
+
   archiveReportCard(userId, periodId) {
     const dir = this.#reportCardsDir(userId);
     if (!dir || !isSafePeriodId(periodId)) return 0;
