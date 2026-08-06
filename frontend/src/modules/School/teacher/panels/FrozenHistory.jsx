@@ -36,7 +36,7 @@ function FrozenRecord({ learnerId, periodId }) {
         ))}
       </ul>
       <p className="teacher-reportcard__meta">
-        {data.activeDays ?? 0} active days · {data.pendingReview ?? 0} were awaiting review at close
+        {data.activeDays?.total ?? 0} active days · {data.pendingReview ?? 0} were awaiting review at close
       </p>
     </div>
   );

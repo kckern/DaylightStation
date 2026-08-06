@@ -59,6 +59,7 @@ export default function RecordsTab({ learnerId, kids = [] }) {
       {periodId && <ReportCardView learnerId={learnerId} periodId={periodId} />}
       {periodId && (
         <ClosePeriodPanel
+          key={`${learnerId}:${periodId}`}
           learnerId={learnerId}
           periodId={periodId}
           onClosed={() => setFrozenRefresh((n) => n + 1)}

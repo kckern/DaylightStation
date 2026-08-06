@@ -13,6 +13,7 @@ import { TeacherProfileProvider, useTeacherProfile } from './TeacherProfileConte
 import { schoolApi } from '../schoolApi.js';
 import { teacherLog } from './teacherLog.js';
 import { TABS, parseTeacherPath, teacherPathFor } from './teacherUrl.js';
+import TabErrorBoundary from './TabErrorBoundary.jsx';
 import TodayTab from './tabs/TodayTab.jsx';
 import PlanningTab from './tabs/PlanningTab.jsx';
 import RecordsTab from './tabs/RecordsTab.jsx';
@@ -110,7 +111,9 @@ function TeacherShell() {
         </div>
       )}
       <main className="teacher-console__body">
-        <View learnerId={learnerId} kids={kids} />
+        <TabErrorBoundary tab={tab} resetKey={learnerId ?? ''}>
+          <View learnerId={learnerId} kids={kids} />
+        </TabErrorBoundary>
       </main>
       <nav className="teacher-console__tabs" aria-label="Sections">
         {TABS.map((id) => (

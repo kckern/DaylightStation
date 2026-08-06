@@ -37,7 +37,7 @@ beforeEach(() => {
     courses: [{ courseId: 'math-fractions', policy: 'best-of-unit-mean-v1', coursePercent: 88, unitGrades: [] }],
     materials: [{ materialId: 'plex:384855', label: 'plex:384855', unitsDone: 3, unitTotal: 24 }],
     evidence: null,
-    activeDays: 3,
+    activeDays: { bySubject: [{ subjectId: 'math', days: 3 }], total: 3 },
     concepts: { mastered: [{ conceptId: 'fractions', label: 'Fractions' }], developing: [] },
     pendingReview: 1,
     remediationArcs: [{ unitId: 'math-fractions.02', originalSessionId: 'ses_a', remediationSessionId: 'ses_b', result: 'passed' }],
@@ -53,7 +53,7 @@ beforeEach(() => {
   schoolApi.progressReport.mockResolvedValue(ok({
     schema: 'school.progress-report/v1', learnerId: 'felix',
     period: { periodId: '2026-fall', label: 'Fall 2026' },
-    courses: [], activeDays: 3,
+    courses: [], activeDays: { bySubject: [{ subjectId: 'math', days: 3 }], total: 3 },
     milestones: [{ id: 'm1', unitId: 'math-fractions.02', dueBy: '2026-08-01', status: 'behind', overdueDays: 4, excusedDays: 4, effectiveStatus: 'excused' }],
     enrichment: { entries: [{ id: 'e1', title: 'Yellowstone trip', from: '2026-08-02', to: '2026-08-06' }] },
   }));
@@ -85,7 +85,7 @@ describe('RecordsTab', () => {
   it('tapping a frozen row expands the frozen record', async () => {
     const { fireEvent, act } = await import('@testing-library/react');
     schoolApi.reportCardFrozen.mockImplementation(({ periodId }) => (periodId
-      ? Promise.resolve(ok({ courses: [{ courseId: 'math-fractions', coursePercent: 91 }], activeDays: 40, pendingReview: 0 }))
+      ? Promise.resolve(ok({ courses: [{ courseId: 'math-fractions', coursePercent: 91 }], activeDays: { bySubject: [], total: 40 }, pendingReview: 0 }))
       : Promise.resolve(ok([{ periodId: '2026-spring', closedBy: 'kckern', closedAt: '2026-06-13T00:00:00Z' }]))));
     mount(<RecordsTab learnerId="felix" kids={KIDS} />);
     await vi.waitFor(() => expect(screen.getByText(/Closed by kckern/)).toBeTruthy());
@@ -149,7 +149,7 @@ describe('RecordsTab', () => {
 
   it('an already-frozen period offers supersede instead', async () => {
     schoolApi.reportCardFrozen.mockImplementation(({ periodId }) => (periodId
-      ? Promise.resolve(ok({ courses: [], activeDays: 1, pendingReview: 0 }))
+      ? Promise.resolve(ok({ courses: [], activeDays: { bySubject: [], total: 1 }, pendingReview: 0 }))
       : Promise.resolve(ok([{ periodId: '2026-fall', closedBy: 'kckern', closedAt: 't' }]))));
     mount(<RecordsTab learnerId="felix" kids={KIDS} />);
     await vi.waitFor(() => expect(screen.getByRole('button', { name: /Supersede & re-close/ })).toBeTruthy());
