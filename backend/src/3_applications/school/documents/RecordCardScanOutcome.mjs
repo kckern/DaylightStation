@@ -189,6 +189,10 @@ export class RecordCardScanOutcome {
           rowStatus: row.status,
           scanKey: key,
           ...(card.reScored ? { reScored: true } : {}),
+          // The attempt's own `sessionId` already carries `card.sessionId`
+          // (set below); this copy is for evidence-layer reach, since
+          // `attemptEvidence` maps provenance rather than the raw attempt.
+          ...(card.sessionId ? { workSessionId: card.sessionId } : {}),
         },
       });
       const appended = this.#datastore.appendAttempt(learnerId, attempt);

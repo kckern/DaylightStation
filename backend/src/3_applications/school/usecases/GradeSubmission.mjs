@@ -175,7 +175,16 @@ export class GradeSubmission {
       });
       const machineMarks = [];
       for (const [itemId, given] of gradable) {
-        const result = this.#grader.answer({ sessionId: quizSessionId, itemId, given, transport: 'paper' });
+        // `quizSessionId` is a throwaway grader session opened fresh above —
+        // it never appears anywhere else. The WORK session (`sessionId`, this
+        // execute()'s own argument) is what a parent handed in and what the
+        // review queue and evidence readers key off of, so it travels in
+        // provenance rather than being lost once the disposable one takes
+        // over `sessionId` on the recorded attempt.
+        const result = this.#grader.answer({
+          sessionId: quizSessionId, itemId, given, transport: 'paper',
+          provenance: { kind: 'review-grade', workSessionId: sessionId },
+        });
         marked.set(itemId, result.correct === true);
         if (result.attemptId) attemptIds.push(result.attemptId);
         machineMarks.push({

@@ -208,6 +208,30 @@ describe('attempt persistence', () => {
     });
   });
 
+  it('carries the work session id in provenance when the card is session-tracked, for evidence-layer reach', async () => {
+    const datastore = fakeDatastore();
+    const sessions = fakeSessions(seededSession('ws-1', { unitId: 'unit-frac-3' }));
+    const useCase = new RecordCardScanOutcome({ datastore, sessions, logger: quietLogger });
+    const card = gradedCard({
+      sessionId: 'ws-1',
+      documentId: 'math/fractions/quiz-3',
+      recordId: 'math/fractions/quiz-3@abcdef123:v0:1-2',
+    });
+    await useCase.execute({ testId: '1234567', card });
+    const attempt = datastore.readAllAttempts('felix')[0];
+    expect(attempt.sessionId).toBe('ws-1');
+    expect(attempt.provenance.workSessionId).toBe('ws-1');
+  });
+
+  it('omits workSessionId from provenance when the card carries no session', async () => {
+    const datastore = fakeDatastore();
+    const useCase = new RecordCardScanOutcome({ datastore, logger: quietLogger });
+    await useCase.execute({ testId: '1234567', card: gradedCard() });
+    const attempt = datastore.readAllAttempts('felix')[0];
+    expect(attempt.sessionId).toBeNull();
+    expect(attempt.provenance.workSessionId).toBeUndefined();
+  });
+
   it('a URL-printed sheet (no session) still files subject + course from the taxonomy', async () => {
     const datastore = fakeDatastore();
     const card = gradedCard({ documentId: 'math/fractions/quiz-3', recordId: 'math/fractions/quiz-3@abcdef123:v0:1-2' });

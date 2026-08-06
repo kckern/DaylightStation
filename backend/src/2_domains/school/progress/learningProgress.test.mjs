@@ -102,6 +102,26 @@ describe('progress aggregation', () => {
     expect(out.facets.classifications.map((row) => row.id)).toEqual(['core', 'elective']);
   });
 
+  it('two attempts from one printed card group into ONE recent-score assessment, not two singletons', () => {
+    const cardEntry = (evidenceId, itemId, correct, occurredAt) => evidence({
+      evidenceId,
+      occurredAt,
+      activity: {
+        id: 'fractions-check', kind: 'quiz', assessmentId: 'math/q@abc:v0:1-2', itemId, graded: true,
+      },
+      measures: { engagements: 1, responses: 1, correct: correct ? 1 : 0 },
+    });
+    const rows = [
+      cardEntry('att-10', 'q1', true, '2026-08-01T12:00:00.000Z'),
+      cardEntry('att-11', 'q2', false, '2026-08-01T12:00:01.000Z'),
+    ];
+    const out = aggregateLearningProgress({ evidence: rows, scope, generatedAt: '2026-08-03T00:00:00.000Z' });
+    expect(out.recentScores).toHaveLength(1);
+    expect(out.recentScores[0]).toMatchObject({
+      assessmentId: 'math/q@abc:v0:1-2', score: { correct: 1, total: 2, percent: 50 },
+    });
+  });
+
   it('builds a stable evidence-backed course/unit/lesson/module history without inventing completion', () => {
     const out = aggregateLearningProgress({
       evidence: rows, scope, generatedAt: '2026-08-03T00:00:00.000Z',
