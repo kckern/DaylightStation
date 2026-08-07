@@ -379,7 +379,9 @@ export function createDocumentPdfRenderer({
 
     const codeX = xPt + node.widthPt - padPt - codeAreaPt;
     drawQrCode(out, {
-      text: node.codeText,
+      // Proof renders (no tokens) still need a scannable placeholder — the
+      // action id goes in the QR, never in the printed caption.
+      text: node.codeText || node.action,
       xPt: codeX,
       yPt: yPt + padPt,
       sizePt: Math.min(codeAreaPt, node.heightPt - 2 * padPt),
@@ -390,8 +392,10 @@ export function createDocumentPdfRenderer({
     const textWidth = codeX - codeGapPt - (xPt + padPt);
     setFont(out, 'bold', labelSizePt);
     out.text(node.label, xPt + padPt, yPt + padPt, { width: textWidth, lineBreak: true, height: node.heightPt - 2 * padPt });
-    setFont(out, 'regular', codeSizePt, 'muted');
-    out.text(node.codeText, xPt + padPt, yPt + node.heightPt - padPt - codeSizePt, { width: textWidth, lineBreak: false });
+    if (node.codeText) {
+      setFont(out, 'regular', codeSizePt, 'muted');
+      out.text(node.codeText, xPt + padPt, yPt + node.heightPt - padPt - codeSizePt, { width: textWidth, lineBreak: false });
+    }
   }
 
   function drawAsset(out, node, { xPt, yPt }) {

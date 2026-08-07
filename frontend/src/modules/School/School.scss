@@ -1521,3 +1521,15 @@
 }
 
 .school-progress__score-value, .school-progress__score-when { white-space: nowrap; }
+
+// Poster placeholders SHIMMER while art loads (design audit: five seconds of
+// identical dark rectangles reads as broken on a television).
+.school-skel__poster, .school-poster--loading {
+  position: relative; overflow: hidden; background: var(--school-surface-2);
+  &::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.06) 50%, transparent 70%);
+    animation: school-shimmer 1.4s infinite;
+  }
+}
+@keyframes school-shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }

@@ -134,6 +134,24 @@ function formatTimestamp(iso) {
   return isNonEmptyString(iso) ? iso.replace('T', ' ').replace(/\.\d{3}Z$/, ' UTC') : '—';
 }
 
+/** 'August 6, 2026' — a semester document carries a date, not a UTC
+ * timestamp to the second (design audit #4). */
+function formatHumaneDate(iso) {
+  if (!isNonEmptyString(iso)) return '—';
+  const d = new Date(iso);
+  if (!Number.isFinite(d.valueOf())) return '—';
+  const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}`;
+}
+
+/** slug → Title Case for display (design audit #3): 'math-fractions' is a
+ * filename, not a course title a parent signs under. */
+function labelize(slug) {
+  if (!isNonEmptyString(slug)) return '—';
+  return slug.split(/[-_.]/).filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
 function drawReportCard(doc, theme, report, { learnerName, mode }) {
   drawHeader(doc, theme, report, { learnerName, mode });
   ruleAcross(doc, theme);
@@ -145,6 +163,7 @@ function drawReportCard(doc, theme, report, { learnerName, mode }) {
   drawConcepts(doc, theme, report.concepts);
   drawRemediationArcs(doc, theme, report);
   drawFeedbackNotes(doc, theme, report.pendingReview);
+  drawPolicyFootnote(doc, theme, report);
 }
 
 function drawHeader(doc, theme, report, { learnerName, mode }) {
@@ -155,8 +174,9 @@ function drawHeader(doc, theme, report, { learnerName, mode }) {
     font: 'bold', sizePt: 12, ink: mode === 'frozen' ? 'text' : 'muted', gapAfterPt: 8,
   });
 
-  const displayName = isNonEmptyString(learnerName) ? learnerName : (report.learnerId ?? '—');
-  writeLine(doc, theme, `Learner: ${displayName}`, { sizePt: 11, gapAfterPt: 3 });
+  const displayName = isNonEmptyString(learnerName) ? learnerName : labelize(report.learnerId);
+  // The learner's name is the typographic LEAD (design audit #4).
+  writeLine(doc, theme, displayName, { font: 'bold', sizePt: 15, gapAfterPt: 4 });
 
   const period = report.period ?? {};
   const periodLabel = isNonEmptyString(period.label) ? period.label : (period.periodId ?? '—');
@@ -169,19 +189,27 @@ function drawHeader(doc, theme, report, { learnerName, mode }) {
     writeLine(
       doc,
       theme,
-      `Closed: ${formatTimestamp(report.closedAt)} by ${report.closedBy ?? '—'}`,
+      `Closed ${formatHumaneDate(report.closedAt)} by ${report.closedBy ?? '—'}`,
       { sizePt: 11, gapAfterPt: 3 },
     );
   } else {
-    writeLine(doc, theme, `Generated: ${formatTimestamp(report.generatedAt)}`, { sizePt: 11, gapAfterPt: 3 });
+    writeLine(doc, theme, formatHumaneDate(report.generatedAt), { sizePt: 11, gapAfterPt: 3 });
   }
+  // The grading-policy string moves to a page-bottom footnote (drawn in
+  // drawPolicyFootnote) — a versioned algorithm name under the title read
+  // as OCR noise (design audit #4).
+}
 
-  writeLine(
-    doc,
-    theme,
-    `Course grading policy: ${report.courses?.[0]?.policy ?? COURSE_GRADE_POLICY} (best graded session per unit, averaged across attempted units)`,
-    { sizePt: 8, ink: 'muted', gapAfterPt: 2 },
-  );
+function drawPolicyFootnote(doc, theme, report) {
+  const text = `Course grading policy: ${report.courses?.[0]?.policy ?? COURSE_GRADE_POLICY} (best graded session per unit, averaged across attempted units). Generated ${formatTimestamp(report.generatedAt)}.`;
+  const left = theme.page.marginPt;
+  const width = theme.page.widthPt - 2 * theme.page.marginPt;
+  const y = theme.page.heightPt - theme.page.marginPt - 18;
+  const savedX = doc.x; const savedY = doc.y;
+  doc.save().font(theme.fonts.regular.name).fontSize(7).fillColor(theme.ink.muted)
+    .text(text, left, y, { width, align: 'left' })
+    .restore();
+  doc.x = savedX; doc.y = savedY;
 }
 
 function drawCourses(doc, theme, courses) {
@@ -190,18 +218,49 @@ function drawCourses(doc, theme, courses) {
     writeLine(doc, theme, 'No courses assigned or worked this period.', { ink: 'muted', gapAfterPt: 10 });
     return;
   }
+  // Grades are the one content type that DEMANDS a table (design audit #4):
+  // Course | Grade | Passed | Attempted | Units, on a ruled grid.
+  const left = theme.page.marginPt;
+  const width = theme.page.widthPt - 2 * theme.page.marginPt;
+  const cols = [
+    { label: 'Course', w: 0.44, align: 'left' },
+    { label: 'Grade', w: 0.14, align: 'right' },
+    { label: 'Passed', w: 0.14, align: 'right' },
+    { label: 'Attempted', w: 0.14, align: 'right' },
+    { label: 'Units', w: 0.14, align: 'right' },
+  ];
+  const rowH = 18;
+  const drawRow = (cells, { bold = false } = {}) => {
+    let x = left;
+    const y = doc.y;
+    doc.save().font(bold ? theme.fonts.bold.name : theme.fonts.regular.name).fontSize(10).fillColor(theme.ink.text);
+    cells.forEach((cell, i) => {
+      const colW = cols[i].w * width;
+      doc.text(String(cell), x + 2, y + 4, { width: colW - 8, align: cols[i].align, lineBreak: false });
+      x += colW;
+    });
+    doc.restore();
+    // pdfkit's text cursor inherits the LAST explicit x — reset both axes or
+    // every later writeLine renders far-right and clips at the page edge.
+    doc.x = left;
+    doc.y = y + rowH;
+    doc.save().lineWidth(0.5).strokeColor(theme.ink.rule)
+      .moveTo(left, doc.y).lineTo(left + width, doc.y).stroke().restore();
+  };
+  drawRow(cols.map((c) => c.label), { bold: true });
   for (const course of courses) {
     const unitGrades = course.unitGrades ?? [];
     const attempted = unitGrades.filter((u) => (u.attempts ?? 0) > 0).length;
     const passed = unitGrades.filter((u) => u.passed === true).length;
-    writeLine(
-      doc,
-      theme,
-      `${course.courseId} — ${formatPercent(course.coursePercent)} (${passed} passed / ${attempted} attempted, ${unitGrades.length} units)`,
-      { sizePt: 11, gapAfterPt: 4 },
-    );
+    drawRow([
+      labelize(course.courseId),
+      formatPercent(course.coursePercent),
+      passed,
+      attempted,
+      unitGrades.length,
+    ]);
   }
-  doc.y += 6;
+  doc.y += 10;
 }
 
 function drawMaterials(doc, theme, materials) {
@@ -211,10 +270,16 @@ function drawMaterials(doc, theme, materials) {
     return;
   }
   for (const material of materials) {
+    // A media-server id (plex:384855) never prints for a parent (design
+    // audit #4): label, or a neutral placeholder.
+    const label = isNonEmptyString(material.label) && !/^plex:/.test(material.label)
+      ? material.label
+      : (isNonEmptyString(material.materialId) && !/^plex:/.test(material.materialId)
+        ? material.materialId : 'Course material');
     writeLine(
       doc,
       theme,
-      `${material.label ?? material.materialId} — ${material.unitsDone ?? 0} / ${material.unitTotal ?? '—'} units`,
+      `${label} — ${material.unitsDone ?? 0} / ${material.unitTotal ?? '—'} units`,
       { sizePt: 11, gapAfterPt: 4 },
     );
   }

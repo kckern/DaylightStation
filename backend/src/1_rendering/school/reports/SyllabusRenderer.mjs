@@ -32,7 +32,9 @@ export function createSyllabusPdfRenderer({ theme = documentPdfTheme, fontDir = 
       const muted = theme.ink?.muted ?? '#666';
       out.font(theme.fonts.bold.name).fontSize(20).fillColor(ink).text('Syllabus');
       out.moveDown(0.2);
-      out.font(theme.fonts.regular.name).fontSize(12).fillColor(muted).text(courseLabel ?? courseId);
+      const label = courseLabel ?? String(courseId ?? '').split(/[-_.]/).filter(Boolean)
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+      out.font(theme.fonts.regular.name).fontSize(12).fillColor(muted).text(label);
       out.moveDown(1);
 
       for (const unit of units) {
