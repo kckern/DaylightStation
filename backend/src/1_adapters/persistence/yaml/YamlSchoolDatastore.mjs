@@ -17,7 +17,9 @@
 import path from 'path';
 import fs from 'fs';
 import yaml from 'js-yaml';
-import { loadYamlSafe, saveYaml, ensureDir, listYamlFiles } from '#system/utils/FileIO.mjs';
+import {
+  loadYaml, loadYamlSafe, saveYamlToPathAtomic, ensureDir, listYamlFiles, resolveYamlPath,
+} from '#system/utils/FileIO.mjs';
 import { SUBJECT_IDS } from '#domains/school/curriculum/unitValidation.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { DomainInvariantError } from '#domains/core/errors/index.mjs';
@@ -41,8 +43,15 @@ const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const PERIOD_ID_RE = /^[a-z0-9][a-z0-9_-]*$/i;
 const isSafePeriodId = (id) => typeof id === 'string' && PERIOD_ID_RE.test(id);
 
+// saveYamlToPathAtomic (unlike saveYaml) wants a full path — it does not append
+// an extension for you — so every base-style path built with path.join(dir, name)
+// needs this before it can move to the atomic writer.
+const withYamlExt = (base) => (base.endsWith('.yml') || base.endsWith('.yaml') ? base : `${base}.yml`);
+
 export class YamlSchoolDatastore {
   #configService;
+
+  #logger;
 
   constructor(config = {}) {
     if (!config.configService) {
@@ -51,6 +60,32 @@ export class YamlSchoolDatastore {
       });
     }
     this.#configService = config.configService;
+    this.#logger = config.logger || console;
+  }
+
+  /**
+   * Missing and corrupt are DIFFERENT answers (same posture as
+   * YamlAcademicPeriodStore#readState): a missing shard is the normal
+   * before-first-attempt state; an existing-but-unparseable shard must never
+   * be silently treated as empty — that is exactly how a corrupt file gets
+   * clobbered down to a single new row, destroying every prior attempt.
+   *
+   * `file` in the returned shape is the ACTUAL on-disk path when one exists
+   * (via `resolveYamlPath`, which tries `.yml` then `.yaml`) — used for
+   * diagnostics (log/error `details.file`) so a legacy `.yaml` shard isn't
+   * misreported as `.yml`. For `missing`, no such path exists yet, so this
+   * falls back to the `.yml` name a write would create.
+   */
+  #readAttemptShard(base) {
+    const resolved = resolveYamlPath(base);
+    if (!resolved) return { state: 'missing', rows: [], file: withYamlExt(base) };
+    try {
+      const rows = loadYaml(base);
+      if (!Array.isArray(rows)) return { state: 'corrupt', rows: [], file: resolved };
+      return { state: 'ok', rows, file: resolved };
+    } catch {
+      return { state: 'corrupt', rows: [], file: resolved };
+    }
   }
 
   #schoolDir() { return path.join(this.#configService.getDataDir(), 'content', 'school'); }
@@ -97,8 +132,7 @@ export class YamlSchoolDatastore {
   }
 
   saveQuizRequests(list) {
-    ensureDir(path.dirname(this.#quizRequestsPath()));
-    saveYaml(this.#quizRequestsPath(), list, { noRefs: true });
+    saveYamlToPathAtomic(withYamlExt(this.#quizRequestsPath()), list, { noRefs: true });
     return list;
   }
 
@@ -112,10 +146,9 @@ export class YamlSchoolDatastore {
   readPrintLog() { return loadYamlSafe(this.#printLogPath()) || []; }
 
   appendPrintLog(entry) {
-    ensureDir(path.dirname(this.#printLogPath()));
     const list = this.readPrintLog();
     list.push(entry);
-    saveYaml(this.#printLogPath(), list, { noRefs: true });
+    saveYamlToPathAtomic(withYamlExt(this.#printLogPath()), list, { noRefs: true });
     return entry;
   }
 
@@ -135,18 +168,16 @@ export class YamlSchoolDatastore {
     }
     if (!old.length) return 0;
     const archivePath = this.#configService.getHouseholdPath('apps/school/print-log.archive');
-    ensureDir(path.dirname(archivePath));
     const archived = loadYamlSafe(archivePath) || [];
-    saveYaml(archivePath, [...archived, ...old], { noRefs: true });
-    saveYaml(this.#printLogPath(), keep, { noRefs: true });
+    saveYamlToPathAtomic(withYamlExt(archivePath), [...archived, ...old], { noRefs: true });
+    saveYamlToPathAtomic(withYamlExt(this.#printLogPath()), keep, { noRefs: true });
     return old.length;
   }
 
   readPrintPending() { return loadYamlSafe(this.#printPendingPath()) || []; }
 
   savePrintPending(list) {
-    ensureDir(path.dirname(this.#printPendingPath()));
-    saveYaml(this.#printPendingPath(), list, { noRefs: true });
+    saveYamlToPathAtomic(withYamlExt(this.#printPendingPath()), list, { noRefs: true });
     return list;
   }
 
@@ -193,10 +224,13 @@ export class YamlSchoolDatastore {
     if (!dir) return null;
     const day = String(attempt.at).slice(0, 10);
     const base = path.join(dir, day);
-    ensureDir(dir);
-    const list = loadYamlSafe(base) || [];
-    list.push(attempt);
-    saveYaml(base, list, { noRefs: true });
+    const read = this.#readAttemptShard(base);
+    if (read.state === 'corrupt') {
+      throw new DomainInvariantError('attempt shard is corrupt — refusing to overwrite recorded evidence', {
+        code: 'ATTEMPT_SHARD_CORRUPT', details: { userId, file: read.file },
+      });
+    }
+    saveYamlToPathAtomic(withYamlExt(base), [...read.rows, attempt], { noRefs: true });
     return attempt;
   }
 
@@ -228,8 +262,21 @@ export class YamlSchoolDatastore {
     if (!moving.length) return 0;
     const keeping = rows.filter((a) => !matches(a));
     const toBase = path.join(toDir, dayStr);
+    // Destination gated the same way appendAttempt is: `loadYamlSafe(toBase)
+    // || []` would treat an existing-but-corrupt destination shard as empty
+    // and then atomically overwrite it with ONLY the moved rows — the exact
+    // clobber class this store exists to close, just reached via reassignment
+    // instead of a plain append. Source-side stays tolerant (an unreadable
+    // fromBase already returned 0 above, via `rows = loadYamlSafe(...) || []`)
+    // because nothing is destroyed there — there is simply nothing to move.
+    const destRead = this.#readAttemptShard(toBase);
+    if (destRead.state === 'corrupt') {
+      throw new DomainInvariantError('attempt shard is corrupt — refusing to overwrite recorded evidence', {
+        code: 'ATTEMPT_SHARD_CORRUPT', details: { userId: toUserId, file: destRead.file },
+      });
+    }
     ensureDir(toDir);
-    const target = loadYamlSafe(toBase) || [];
+    const target = destRead.rows;
     for (const attempt of moving) {
       target.push({
         ...attempt,
@@ -240,12 +287,13 @@ export class YamlSchoolDatastore {
       });
     }
     // Destination first: a crash BETWEEN the two writes duplicates rather
-    // than loses evidence, and a duplicate is visible and fixable. (A crash
-    // MID-write shares saveYaml's own non-atomic posture with every other
-    // shard write in this file — not a new exposure, but not covered by
-    // this ordering either.)
-    saveYaml(toBase, target, { noRefs: true });
-    saveYaml(fromBase, keeping, { noRefs: true });
+    // than loses evidence, and a duplicate is visible and fixable. Each
+    // individual write is now atomic (saveYamlToPathAtomic), so a crash
+    // MID-write can no longer leave a torn/partial shard — this ordering
+    // only covers the gap BETWEEN the two atomic writes.
+
+    saveYamlToPathAtomic(withYamlExt(toBase), target, { noRefs: true });
+    saveYamlToPathAtomic(withYamlExt(fromBase), keeping, { noRefs: true });
     return moving.length;
   }
 
@@ -254,7 +302,12 @@ export class YamlSchoolDatastore {
     if (!dir) return [];
     const dayStr = String(day);
     if (!DAY_RE.test(dayStr)) return [];
-    return loadYamlSafe(path.join(dir, dayStr)) || [];
+    const base = path.join(dir, dayStr);
+    const read = this.#readAttemptShard(base);
+    if (read.state === 'corrupt') {
+      this.#logger.warn?.('school.attempts.shard-corrupt', { file: read.file });
+    }
+    return read.rows;
   }
 
   /** Day stamps (YYYY-MM-DD) that have recorded attempts, newest first. */
@@ -268,13 +321,29 @@ export class YamlSchoolDatastore {
       .reverse();
   }
 
+  /**
+   * One day file's rows for the multi-day readers below — routed through
+   * `#readAttemptShard` (not raw `loadYamlSafe`) so a corrupt day is LOUD
+   * (logged, same `school.attempts.shard-corrupt` event as `readAttemptDay`)
+   * instead of silently vanishing into an empty array. These readers stay
+   * tolerant either way — a corrupt day is dropped from the aggregate, the
+   * healthy days around it still come back.
+   */
+  #readAttemptDayFile(dir, filename) {
+    const read = this.#readAttemptShard(path.join(dir, filename.replace(/\.yml$/, '')));
+    if (read.state === 'corrupt') {
+      this.#logger.warn?.('school.attempts.shard-corrupt', { file: read.file });
+    }
+    return read.rows;
+  }
+
   readAllAttempts(userId) {
     const dir = this.#attemptsDir(userId);
     if (!dir || !fs.existsSync(dir)) return [];
     return fs.readdirSync(dir)
       .filter((f) => /^\d{4}-\d{2}-\d{2}\.yml$/.test(f))
       .sort()
-      .flatMap((f) => loadYamlSafe(path.join(dir, f.replace(/\.yml$/, ''))) || []);
+      .flatMap((f) => this.#readAttemptDayFile(dir, f));
   }
 
   /**
@@ -297,7 +366,7 @@ export class YamlSchoolDatastore {
         return day >= from && day <= to;
       })
       .sort()
-      .flatMap((f) => loadYamlSafe(path.join(dir, f.replace(/\.yml$/, ''))) || []);
+      .flatMap((f) => this.#readAttemptDayFile(dir, f));
   }
 
   // --- report cards (Task 6, spec R5b) --------------------------------------
@@ -354,8 +423,7 @@ export class YamlSchoolDatastore {
         code: 'REPORT_CARD_ALREADY_CLOSED', details: { userId, periodId },
       });
     }
-    ensureDir(dir);
-    saveYaml(file, payload, { noRefs: true });
+    saveYamlToPathAtomic(file, payload, { noRefs: true });
     return payload;
   }
 
@@ -393,7 +461,7 @@ export class YamlSchoolDatastore {
     const current = loadYamlSafe(file);
     let n = 1;
     while (fs.existsSync(path.join(dir, `${periodId}.v${n}.yml`))) n += 1;
-    saveYaml(path.join(dir, `${periodId}.v${n}`), current, { noRefs: true });
+    saveYamlToPathAtomic(withYamlExt(path.join(dir, `${periodId}.v${n}`)), current, { noRefs: true });
     fs.unlinkSync(file);
     return n;
   }

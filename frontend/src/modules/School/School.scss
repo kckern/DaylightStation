@@ -156,6 +156,11 @@
     padding: 0.15rem 0.7rem; border: 1px dashed var(--school-border); border-radius: 999px;
     color: var(--school-muted); font-size: 0.8rem; font-weight: 700;
   }
+  // Mid-quiz resume (Task 17): a quiet one-liner beside the progress count.
+  &__resume-chip {
+    padding: 0.15rem 0.7rem; border: 1px solid var(--school-border); border-radius: 999px;
+    background: var(--school-surface-2); color: var(--school-muted); font-size: 0.8rem; font-weight: 700;
+  }
   &__unrecorded { padding: 0.85rem 1rem; border-radius: 12px; background: var(--school-danger); color: #2a0806; font-weight: 700; }
   // The advance is NEUTRAL ink (audit #5): green belongs to CORRECT alone —
   // it must never celebrate you into the next question you just missed.
@@ -453,6 +458,10 @@
     &.is-partial { background: var(--school-warn); border-color: var(--school-warn); }
   }
   &__summary { margin: 0.15rem 0 0; color: var(--school-muted); font-size: 0.78rem; line-height: 1; }
+
+  // Chapter-quiz sequence position ("Quiz 2 of 5") for units gated by
+  // several rolled-up chapter banks.
+  &__quiz-sequence { margin: 0.35rem 0 0; color: var(--school-muted); font-size: 0.9rem; font-weight: 700; }
 
   &__quiz-request {
     display: flex; flex-direction: column; gap: 0.5rem;
@@ -1145,7 +1154,10 @@
     background: var(--school-surface-2); border: 1px solid var(--school-border);
   }
   &__approval-text { flex: 1; }
-  &__approval-actions { flex: 0 0 auto; display: flex; gap: 0.5rem; }
+  &__approval-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 0.5rem; }
+  // A plain link, not a button — opening the sheet in a new tab is a read,
+  // never a decision, so it must never look like Allow/No's weight.
+  &__preview { color: var(--school-muted); font-weight: 700; font-size: 0.9rem; text-decoration: underline; }
   &__approve, &__deny {
     min-height: 48px; padding: 0 1.1rem; border-radius: 10px; font-weight: 700; cursor: pointer;
     border: 1px solid var(--school-border); background: var(--school-surface); color: var(--school-fg);
@@ -1225,6 +1237,26 @@
     display: flex; flex-direction: column; gap: 0.25rem; margin-top: auto;
     color: var(--school-muted); font-size: 0.9rem;
   }
+
+  // Today's dry-run plan (debt W7a) — same omit-quietly rule as standing
+  // and feedback below: no sections, no block, never an empty-state scold.
+  &__today {
+    display: flex; flex-direction: column; gap: 0.4rem;
+    padding: 0.75rem; border-radius: 12px; background: var(--school-surface-2);
+  }
+  &__today-title {
+    margin: 0; font-size: 0.8rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--school-muted);
+  }
+  &__today-list {
+    list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.35rem;
+  }
+  &__today-item {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem;
+    font-size: 0.95rem;
+  }
+  &__today-subject { font-weight: 600; }
+  &__today-next { color: var(--school-muted); }
 
   // Kid-visible standing + feedback delivery (Task 9, spec R7 / adequacy
   // SHOULD 9) — both sections omit entirely rather than render empty, so no

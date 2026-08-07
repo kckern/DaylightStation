@@ -118,6 +118,30 @@
     &:focus-visible { outline: 2px solid var(--piano-accent, #2ec46f); outline-offset: 2px; }
   }
 
+  // Explicit "continue as guest" (School, opt-in via guestLabel+onGuest) — a
+  // plain-text affordance under the faces, deliberately quieter than a face
+  // card: guest is an available choice, not the path of least resistance.
+  &__guest-row {
+    margin-top: 1.25rem;
+    display: flex;
+    justify-content: center;
+  }
+
+  &__guest {
+    min-height: 48px;
+    padding: 0.5rem 1.25rem;
+    border-radius: var(--r-pill, 999px);
+    background: transparent;
+    border: 1px solid var(--piano-border, #34343f);
+    color: var(--piano-muted, #9a9aa6);
+    font-family: inherit;
+    font-size: 0.95rem;
+    cursor: pointer;
+
+    &:hover,
+    &:focus-visible { background: var(--piano-surface-2, #2a2a33); color: var(--piano-fg, #f1f1f4); outline: none; }
+  }
+
   // "Turn off screen" — for someone who doesn't want the tablet. Mirrors the
   // connect gate's device kill-switch (divider above, 2-tap armed → warn).
   &__device {

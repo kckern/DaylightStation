@@ -27,6 +27,7 @@ export default function LearningProbeRunner({ module, learning = {}, onExit }) {
   const bank = module?.bank;
   const [sessionId, setSessionId] = useState(null);
   const [openFailed, setOpenFailed] = useState(false);
+  const [sessionLost, setSessionLost] = useState(false);
   const [index, setIndex] = useState(0);
   const [attemptNumber, setAttemptNumber] = useState(1);
   const [renderNonce, setRenderNonce] = useState(0);
@@ -97,7 +98,10 @@ export default function LearningProbeRunner({ module, learning = {}, onExit }) {
       itemId: item.id, given, probeAttemptNumber: attemptNumber, responseId,
     });
     if (abandoned.current) return;
-    if (response.status === 410) { onExit(); return; }
+    // A 410 means the session timed out server-side — never a silent bounce
+    // (same sign the quiz/flashcard/geo runners carry): show a card, exit
+    // only on Back. Probes have no restart plumbing, so no Start-again here.
+    if (response.status === 410) { setSessionLost(true); return; }
     if (!response.ok) {
       setVerdict({ unrecorded: true });
       setRecordError('That answer didn’t save. Tap “Retry same answer” to send it again.');
@@ -164,6 +168,15 @@ export default function LearningProbeRunner({ module, learning = {}, onExit }) {
           onDone={onExit}
         />
       </section>
+    );
+  }
+  if (sessionLost) {
+    return (
+      <div className="school-runner school-runner--error" data-testid="session-lost">
+        <h2>{module.title ?? bank.title}</h2>
+        <p>This check took a long break and timed out. Your answers so far are saved — you can try it again from the start.</p>
+        <button type="button" className="school-runner__done" onClick={onExit}>Back</button>
+      </div>
     );
   }
   if (openFailed) {

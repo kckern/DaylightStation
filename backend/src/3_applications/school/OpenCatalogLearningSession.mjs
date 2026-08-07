@@ -27,7 +27,7 @@ export class OpenCatalogLearningSession {
     this.#grader = grader;
   }
 
-  async execute({ learnerId = null, learning, bankId = null, mode = null } = {}) {
+  async execute({ learnerId = null, learning, bankId = null, mode = null, fresh = false } = {}) {
     const address = catalogModuleAddress(learning);
     const bundle = await this.#catalog.lesson({
       learnerId,
@@ -56,6 +56,9 @@ export class OpenCatalogLearningSession {
       bankSnapshot: module.bank,
       mode: resolvedMode,
       learningContext: learningContext(bundle, module),
+      // Catalog quizzes share QuizRunner's restart affordance, so the
+      // deliberate-restart flag must survive this path too (Task 17).
+      fresh: fresh === true,
     });
   }
 }

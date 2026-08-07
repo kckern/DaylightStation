@@ -78,6 +78,18 @@ describe('LearningProbeRunner', () => {
     expect(await screen.findByTestId('probe-summary')).toHaveTextContent('Initial check: 1 / 1');
   });
 
+  it('a 410 (session timed out) shows the session-lost card — never a silent bounce; Back exits', async () => {
+    const onExit = vi.fn();
+    answer.mockResolvedValue({ ok: false, status: 410, data: null });
+    render(<LearningProbeRunner module={module} onExit={onExit} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Division' }));
+    const card = await screen.findByTestId('session-lost');
+    expect(card).toHaveTextContent(/timed out/i);
+    expect(onExit).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(onExit).toHaveBeenCalledTimes(1);
+  });
+
   it('abandons the learner-scoped probe when identity changes', async () => {
     const onExit = vi.fn();
     const view = render(<LearningProbeRunner module={module} onExit={onExit} />);

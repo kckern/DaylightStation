@@ -13,6 +13,10 @@ import { PersistenceError } from '#system/utils/errors/index.mjs';
 import { shortId } from '#domains/core/utils/id.mjs';
 
 const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
+// A persisted sitting outlives the in-memory session (2h) but not the day it
+// belongs to: after 24h a half-finished quiz is a stale intention, not a
+// resume point — it is ignored and the next run replaces it.
+const SITTING_TTL_MS = 24 * 60 * 60 * 1000;
 const MODES = new Set(['quiz', 'flashcard', 'drill', 'learning_probe']);
 // The household has 4600+ bank files; even summarising them is 4600 synchronous
 // file reads (~10s) — and the gating bank index rebuilds via listBanks() on
@@ -22,13 +26,14 @@ const MODES = new Set(['quiz', 'flashcard', 'drill', 'learning_probe']);
 const BANK_SUMMARY_TTL_MS = 300_000; // 10 min? banks change rarely; 5 min keeps it warm through use gaps
 
 export class SchoolService {
-  #ds; #userService; #learnerDirectory; #logger; #now; #bankSources; #teacherGate; #teacherNotesRef;
+  #ds; #userService; #learnerDirectory; #logger; #now; #bankSources; #teacherGate; #teacherNotesRef; #sittings;
   #sessions = new Map(); // sessionId -> {id, userId|null, bankId, mode, bank, startedAt, lastActiveAt}
   #bankSummaries = null; // { at: number, list: Array<summary> }
   #warming = null; // in-flight warmBanks() promise (dedupe)
 
-  constructor({ datastore, userService, learnerDirectory = null, logger = console, now = () => Date.now(), bankSources = [], teacherGate = null, teacherNotesRef = null }) {
+  constructor({ datastore, userService, learnerDirectory = null, logger = console, now = () => Date.now(), bankSources = [], teacherGate = null, teacherNotesRef = null, sittings = null }) {
     this.#ds = datastore;
+    this.#sittings = sittings;
     this.#teacherGate = teacherGate;
     this.#teacherNotesRef = teacherNotesRef;
     this.#userService = userService;
@@ -319,9 +324,9 @@ export class SchoolService {
     return [...this.#sessions.values()].map((s) => ({ userId: s.userId, lastActiveAt: s.lastActiveAt }));
   }
 
-  openSession({ userId = null, bankId, mode }) {
+  openSession({ userId = null, bankId, mode, fresh = false }) {
     const bank = this.getBank(bankId); // throws EntityNotFoundError
-    return this.#openResolvedSession({ userId, bank, mode, learningContext: null });
+    return this.#openResolvedSession({ userId, bank, mode, learningContext: null, fresh });
   }
 
   /**
@@ -329,15 +334,15 @@ export class SchoolService {
    * HTTP never supplies this snapshot directly: Catalog session opening first
    * verifies learner visibility, address, module, mode, and bank identity.
    */
-  openResolvedSession({ userId = null, bankSnapshot, mode, learningContext = null }) {
+  openResolvedSession({ userId = null, bankSnapshot, mode, learningContext = null, fresh = false }) {
     const validated = validateQuestionBank(bankSnapshot);
     if (!validated.ok) {
       throw new ValidationError(`resolved question bank is invalid: ${validated.errors.join('; ')}`);
     }
-    return this.#openResolvedSession({ userId, bank: validated.bank, mode, learningContext });
+    return this.#openResolvedSession({ userId, bank: validated.bank, mode, learningContext, fresh });
   }
 
-  #openResolvedSession({ userId, bank, mode, learningContext }) {
+  #openResolvedSession({ userId, bank, mode, learningContext, fresh = false }) {
     const bankRev = bankContentRev(bank);
     this.#sweepExpired();
     if (!MODES.has(mode)) throw new ValidationError(`mode must be quiz|flashcard|drill|learning_probe, got: ${mode}`);
@@ -352,13 +357,100 @@ export class SchoolService {
       learningContext: normalized.learning,
       startedAt: this.#now(), lastActiveAt: this.#now(), responseClaims: new Map(),
     };
+    // Mid-quiz resumability (Task 17): only interactively-opened, signed-in
+    // QUIZ sessions carry a sitting — never guests (nothing on disk to
+    // resume), never drill/flashcard/probe (different evidence purposes),
+    // never the synthetic sessions the import paths build (they manage their
+    // own dedupe via provenance). The sitting is a convenience: every branch
+    // below is best-effort and can only cost the resume point, never a grade.
+    const resume = this.#sittings && userId != null && mode === 'quiz'
+      ? this.#attachSitting(session, { fresh })
+      : null;
     this.#sessions.set(session.id, session);
     this.#logger.info?.('school.session.open', {
       sessionId: session.id, bankId: bank.id, mode, userId,
       lessonId: normalized.learning.lessonId ?? null,
       moduleId: normalized.learning.moduleId ?? null,
+      ...(resume ? { resumedAnswers: resume.answeredItemIds.length } : {}),
     });
-    return { sessionId: session.id };
+    return resume ? { sessionId: session.id, resume } : { sessionId: session.id };
+  }
+
+  /**
+   * Wire a session to its persisted sitting. Marks the session
+   * sitting-eligible (so #gradeAndRecord upserts after each recorded answer),
+   * and, unless `fresh`, preloads a matching sitting: same mode, carrying
+   * the originating sessionId (reused as the resumed session's id), same
+   * bankRev (an edited bank invalidates the resume point — the questions the
+   * answers belong to no longer exist as asked), younger than 24h, and
+   * strictly PARTIAL (a full sitting should have been deleted on completion;
+   * if one survives a crash, reopening it would leave nothing to answer).
+   * Returns the resume payload for the caller, or null.
+   */
+  #attachSitting(session, { fresh }) {
+    session.sittingEligible = true;
+    session.sittingStartedAt = new Date(this.#now()).toISOString();
+    session.sittingAnswers = [];
+    session.answeredItemIds = new Set();
+    if (fresh) {
+      // A deliberate restart wipes the old run before it can ever resume.
+      try {
+        this.#sittings.remove(session.userId, session.bankId);
+      } catch (err) {
+        this.#logger.warn?.('school.sitting.write-failed', {
+          userId: session.userId, bankId: session.bankId, op: 'fresh-wipe', error: err?.message,
+        });
+      }
+      return null;
+    }
+    let sitting;
+    try {
+      sitting = this.#sittings.read(session.userId, session.bankId); // corrupt file → null (store warns)
+    } catch (err) {
+      // A convenience must never cost the open: a throwing store reads as
+      // "no sitting" — the quiz starts at the top instead of 500ing.
+      this.#logger.warn?.('school.sitting.read-failed', {
+        userId: session.userId, bankId: session.bankId, error: err?.message,
+      });
+      return null;
+    }
+    if (!sitting || sitting.mode !== 'quiz') return null;
+    // A sitting persisted before session identity was recorded (no sessionId)
+    // cannot resume: the resumed run would answer under a NEW session id, so
+    // quizSessionPassed — which folds distinct-correct items BY sessionId —
+    // would never see one passing session, and the unit gate would stay shut
+    // while the runner shows "Passed". Ignored + replaced, same as the
+    // bankRev/prefix rules (final-review F1).
+    if (typeof sitting.sessionId !== 'string' || sitting.sessionId.length === 0) return null;
+    if ((sitting.bankRev ?? null) !== (session.bankRev ?? null)) return null;
+    const age = this.#now() - Date.parse(sitting.startedAt ?? '');
+    if (!Number.isFinite(age) || age < 0 || age >= SITTING_TTL_MS) return null;
+    const answers = sitting.answers
+      .filter((a) => a && typeof a.itemId === 'string')
+      .map((a) => ({ itemId: a.itemId, correct: a.correct === true ? true : a.correct === false ? false : null }));
+    if (answers.length === 0 || answers.length >= session.bank.items.length) return null;
+    // Resume is INDEX-BASED (the runner restarts at answers.length), so the
+    // sitting must be an ordered PREFIX of the bank. A gap — an append that
+    // failed mid-run, leaving e.g. [q1, q3] — would resume onto an
+    // already-answered item, get refused, and loop until the TTL; and its
+    // outcomes would misattribute positionally in the summary dots. Any
+    // mismatch is ignored and replaced, same as the stale/bankRev rules.
+    if (!answers.every((a, i) => a.itemId === session.bank.items[i]?.id)) return null;
+    session.sittingStartedAt = typeof sitting.startedAt === 'string' ? sitting.startedAt : session.sittingStartedAt;
+    session.sittingAnswers = answers;
+    session.answeredItemIds = new Set(answers.map((a) => a.itemId));
+    // REUSE the originating session id: the resumed run's attempts land in
+    // the attempt log under the same sessionId as the answers it resumes, so
+    // the whole quiz reads as ONE session to quizSessionPassed. If a
+    // still-live entry holds that id in this process (a same-process reopen),
+    // the caller's #sessions.set(session.id, …) deliberately replaces it —
+    // same identity, same sitting, fresher state.
+    session.id = sitting.sessionId;
+    return {
+      answeredItemIds: answers.map((a) => a.itemId),
+      score: answers.filter((a) => a.correct === true).length,
+      outcomes: answers.map((a) => a.correct),
+    };
   }
 
   #session(sessionId) {
@@ -412,6 +504,16 @@ export class SchoolService {
   }
 
   #gradeAndRecord({ session: s, item, given, selfGrade, transport, provenance, recordedAt = null, learningContext = null }) {
+    // A resumed sitting has already banked some answers: re-answering one
+    // would double-record the item and skew the score, so it is refused
+    // outright (the runner skips answered items; only a stale/forged client
+    // can reach this). SCREEN answers only: a sitting is the interactive
+    // screen run — paper grading (GradeSubmission opens a quiz session with
+    // transport 'paper') manages its own dedupe and must be neither refused
+    // by nor recorded into a screen sitting.
+    if (transport === 'screen' && s.answeredItemIds?.has(item.id)) {
+      throw new ValidationError(`item ${item.id} already answered in this sitting`);
+    }
     let correct, expected, recordedGiven;
     if (s.mode === 'quiz' || s.mode === 'drill' || s.mode === 'learning_probe') {
       if (selfGrade !== undefined) throw new ValidationError('selfGrade is not accepted on a quiz session');
@@ -461,6 +563,34 @@ export class SchoolService {
         });
       }
       attemptId = attempt.id;
+      // Sitting persistence (Task 17) — ONLY after the attempt append
+      // succeeded, ONLY for sessions #attachSitting marked eligible
+      // (signed-in interactive quiz), and ONLY for screen answers (see the
+      // transport note above). Best-effort by contract: the attempt IS the
+      // record; a sitting-store failure warns and never fails the answer.
+      if (s.sittingEligible && transport === 'screen') {
+        s.answeredItemIds.add(item.id);
+        s.sittingAnswers.push({ itemId: item.id, correct });
+        try {
+          if (s.sittingAnswers.length >= s.bank.items.length) {
+            this.#sittings.remove(s.userId, s.bankId); // complete — nothing left to resume
+          } else {
+            this.#sittings.upsert(s.userId, s.bankId, {
+              mode: s.mode,
+              // The ORIGINATING session identity: #attachSitting reuses it as
+              // the resumed session's id so the attempt log stays one session.
+              sessionId: s.id,
+              startedAt: s.sittingStartedAt,
+              bankRev: s.bankRev ?? null,
+              answers: s.sittingAnswers.map((a) => ({ itemId: a.itemId, correct: a.correct })),
+            });
+          }
+        } catch (err) {
+          this.#logger.warn?.('school.sitting.write-failed', {
+            userId: s.userId, bankId: s.bankId, itemId: item.id, error: err?.message,
+          });
+        }
+      }
     }
     return (s.mode === 'quiz' || s.mode === 'drill' || s.mode === 'learning_probe')
       ? { correct, expected, attemptId }

@@ -72,7 +72,10 @@ export class YamlAttestationLog {
 
 
   async append(entry) {
-    this.#writeChain = this.#writeChain.then(async () => {
+    // The stored chain swallows prior failures (final-review F2): one
+    // rejected append must not wedge every later one for the process
+    // lifetime. Each caller still awaits `run` and sees its own failure.
+    const run = this.#writeChain.catch(() => {}).then(async () => {
       const current = this.#readState();
       if (current.state === 'corrupt') {
         throw new Error(`attestations.yml exists but cannot be read — fix or move it before recording (${this.#file()})`);
@@ -80,7 +83,8 @@ export class YamlAttestationLog {
       await atomicWrite(this.#file(), dumpYaml({ entries: [...current.entries, entry] }));
       this.#logger.info?.('school.attestation.recorded', { id: entry.id, learnerId: entry.learnerId, unitId: entry.unitId });
     });
-    await this.#writeChain;
+    this.#writeChain = run;
+    await run;
     return entry;
   }
 }

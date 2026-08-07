@@ -14,6 +14,7 @@ export function useGradedSession({ bank, mode, onExit }) {
   const { status, currentUser, isGuest } = useSchoolProfile();
   const [sessionId, setSessionId] = useState(null);
   const [openFailed, setOpenFailed] = useState(false);
+  const [sessionLost, setSessionLost] = useState(false);
   const identityKey = currentUser?.id ?? (isGuest ? 'guest' : 'none');
   const initialIdentity = useRef(null);
   const sessionOpenedRef = useRef(false);
@@ -51,7 +52,11 @@ export function useGradedSession({ bank, mode, onExit }) {
     if (!sessionId || abandonedRef.current) return null;
     const { ok, status: st, data } = await schoolApi.answer(sessionId, { itemId, given });
     if (abandonedRef.current) return null;
-    if (st === 410) { onExit(); return null; }
+    // A 410 means the session timed out server-side — never a silent
+    // bounce (student-advocacy #8): the consuming runner shows a sign and
+    // exits only on an explicit Back tap, so this hook itself must not
+    // call onExit() here.
+    if (st === 410) { setSessionLost(true); return null; }
     if (!ok) {
       schoolLog.answerError('record-failed', { sessionId, itemId, status: st });
       return { unrecorded: true };
@@ -60,7 +65,9 @@ export function useGradedSession({ bank, mode, onExit }) {
     return data;
   };
 
-  return { sessionId, submit, status, openFailed, unsaved: (currentUser?.id ?? null) === null };
+  return {
+    sessionId, submit, status, openFailed, sessionLost, unsaved: (currentUser?.id ?? null) === null,
+  };
 }
 
 export default useGradedSession;

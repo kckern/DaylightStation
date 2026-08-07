@@ -33,5 +33,54 @@ describe('MediaAlbumSource', () => {
     });
     expect(material.units.map((unit) => unit.index)).toEqual([2, 1]);
     expect(material.units.every((unit) => unit.group === null)).toBe(true);
+    expect(material.trackParents).toBeUndefined(); // leaf children: nothing to roll up
+  });
+
+  it('two-level material (children are albums): maps every leaf track to its parent work via ONE batched listLeaves call', async () => {
+    const works = [
+      { id: 'provider:w1', kind: 'album', index: 1, title: 'Play One', parent: { title: 'Anthology', poster: '/img/root' } },
+      { id: 'provider:w2', kind: 'album', index: 2, title: 'Play Two', parent: { title: 'Anthology', poster: '/img/root' } },
+    ];
+    let leafCalls = 0;
+    const mediaCatalog = {
+      ...catalog(works),
+      listLeaves: async () => {
+        leafCalls += 1;
+        return [
+          { id: 'provider:c1', parentId: 'provider:w1' },
+          { id: 'provider:c2', parentId: 'provider:w1' },
+          { id: 'provider:c3', parentId: 'provider:w2' },
+        ];
+      },
+    };
+    const material = await new MediaAlbumSource({ mediaCatalog }).getMaterial('root');
+    expect(leafCalls).toBe(1);
+    expect(material.units.map((u) => u.id)).toEqual(['provider:w1', 'provider:w2']);
+    expect(material.trackParents).toEqual(new Map([
+      ['provider:c1', 'provider:w1'],
+      ['provider:c2', 'provider:w1'],
+      ['provider:c3', 'provider:w2'],
+    ]));
+  });
+
+  it('a FAILING listLeaves degrades to no roll-up (trackParents absent) — the material still resolves, warn-logged', async () => {
+    const works = [
+      { id: 'provider:w1', kind: 'album', index: 1, title: 'Play One', parent: { title: 'Anthology', poster: '/img/root' } },
+    ];
+    const warns = [];
+    const mediaCatalog = {
+      ...catalog(works),
+      listLeaves: async () => { throw new Error('plex 503'); },
+    };
+    const logger = { warn: (event, data) => warns.push({ event, data }) };
+    const material = await new MediaAlbumSource({ mediaCatalog, logger }).getMaterial('root');
+    // Resolves — a leaf-listing failure must never block the units fetch;
+    // gates just degrade to today's needsQuiz behavior (no trackParents).
+    expect(material.units.map((u) => u.id)).toEqual(['provider:w1']);
+    expect(material.trackParents).toBeUndefined();
+    expect(warns).toEqual([{
+      event: 'school.material.leaves-failed',
+      data: { materialId: 'root', error: 'plex 503' },
+    }]);
   });
 });
