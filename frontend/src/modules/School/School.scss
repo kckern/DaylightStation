@@ -1459,3 +1459,39 @@
   padding: 0.6rem 1rem; background: var(--school-warn, #c98a1b); color: #241a02;
   font-weight: 800; text-align: center;
 }
+
+// --- wave-9 design remediation: THE empty-state pattern + practice browse ---
+.school-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 0.5rem; padding: 3.5rem 1.5rem; text-align: center; min-height: 40vh;
+}
+.school-empty__icon { font-size: 3rem; opacity: 0.5; }
+.school-empty__title { margin: 0; font-size: 1.25rem; font-weight: 800; }
+.school-empty__hint { margin: 0; color: var(--school-muted); max-width: 34rem; }
+.school-empty__action {
+  margin-top: 0.6rem; min-height: 52px; padding: 0 1.4rem; border: none; border-radius: 12px;
+  background: var(--school-accent); color: var(--school-accent-ink); font-weight: 700; cursor: pointer;
+}
+.school-empty--loading .school-empty__title { color: var(--school-muted); font-weight: 700; }
+
+.school-home2__library-icon { margin-right: 0.4rem; vertical-align: -0.12em; }
+
+.school-shelf__count {
+  margin-left: 0.45rem; padding: 0.05rem 0.5rem; border-radius: 999px;
+  background: var(--school-surface-2); color: var(--school-muted);
+  font-size: 0.78rem; font-weight: 800;
+}
+
+.school-browse__group { margin-bottom: 1.4rem; }
+.school-browse__group-head {
+  display: flex; align-items: center; gap: 0.5rem; margin: 0 0 0.6rem;
+  font-size: 1.15rem; font-weight: 800;
+}
+.school-browse__group-count {
+  padding: 0.05rem 0.55rem; border-radius: 999px;
+  background: var(--school-surface-2); color: var(--school-muted); font-size: 0.8rem;
+}
+.school-browse__more {
+  margin-top: 0.5rem; min-height: 44px; padding: 0 1rem; border: 1px solid var(--school-border);
+  border-radius: 10px; background: transparent; color: var(--school-fg); font-weight: 700; cursor: pointer;
+}

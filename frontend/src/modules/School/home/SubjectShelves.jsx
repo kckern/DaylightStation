@@ -12,11 +12,16 @@ import { planBands } from './shelfLayout.js';
  *
  * `shelves` items: { kindId, verb, icon, token, Tile, items, onOpen }.
  */
+// A deck shelf can hold thousands (math: 3,567) — expansion is BOUNDED so
+// "See more" never floods a TV with a wall of identical cards (audit #1).
+const EXPAND_CAP = 24;
+
 function KindShelf({ shelf }) {
   const { kindId, verb, icon, token, Tile, items, onOpen, wide, cap } = shelf;
   const [expanded, setExpanded] = useState(false);
 
-  const visible = expanded ? items : items.slice(0, cap);
+  const expandLimit = kindId === 'decks' ? EXPAND_CAP : items.length;
+  const visible = expanded ? items.slice(0, expandLimit) : items.slice(0, cap);
   const hidden = items.length - visible.length;
 
   return (
@@ -26,8 +31,8 @@ function KindShelf({ shelf }) {
       <header className="school-shelf__head">
         <span className="school-shelf__icon" style={{ color: `var(--kind-${token})` }}><Icon name={icon} /></span>
         <h2 className="school-shelf__verb">{verb}</h2>
-        <span className="school-shelf__count">·{items.length}</span>
-        {hidden > 0 && (
+        <span className="school-shelf__count">{items.length}</span>
+        {hidden > 0 && !expanded && (
           <button type="button" className="school-shelf__more" onClick={() => setExpanded(true)}>
             See {hidden} more →
           </button>

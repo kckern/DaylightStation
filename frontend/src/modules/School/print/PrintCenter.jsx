@@ -13,6 +13,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { schoolApi } from '../schoolApi.js';
 import { schoolLog } from '../schoolLog.js';
 import { useSchoolProfile } from '../identity/SchoolProfileContext.jsx';
+import EmptyState, { LoadingState } from '../home/EmptyState.jsx';
 
 function useAdult(currentUser) {
   return useMemo(() => {
@@ -95,9 +96,13 @@ export default function PrintCenter() {
       )}
       {flash && <div className={`school-print__flash school-print__flash--${flash.kind}`}>{flash.text}</div>}
 
-      {printables === null && <p className="school-print__muted">Loading…</p>}
+      {printables === null && <LoadingState label="Loading printables…" />}
       {printables !== null && printables.length === 0 && (
-        <p className="school-print__muted">Nothing to print yet.</p>
+        <EmptyState
+          icon="print"
+          title="Nothing to print yet."
+          hint="Worksheets appear here as a grown-up adds printables in school.yml."
+        />
       )}
       {printables !== null && printables.length > 0 && (
         <ul className="school-print__grid">
