@@ -2433,6 +2433,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     // `opts.trackParents` (Map<trackId, unitId>, from the material fetch)
     // rolls chapter-level bank backlinks up to the unit they gate (Blocker 2).
     const schoolMaterialBankIndex = { byUnit: (unitId, opts) => buildBankIndex(schoolService.listBanks(), opts).byUnit(unitId) };
+    // Disk snapshot of the compiled material index: seeds the units cache at
+    // boot so a redeploy serves in ~0.5s from day-old data (refreshed in the
+    // background) instead of re-paying the serialized Plex sweep cold.
+    const { YamlMaterialSnapshotStore } = await import('#adapters/persistence/yaml/YamlMaterialSnapshotStore.mjs');
     getMaterialUnits = new GetMaterialUnits({
       catalog: getMaterialCatalog,
       sources: schoolMaterialSources,
@@ -2440,7 +2444,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       progressStore: schoolMaterialProgressStore,
       bankIndex: schoolMaterialBankIndex,
       attemptsReader: { read: (userId) => schoolDatastore.readAllAttempts(userId) },
-      logger: rootLogger.child({ module: 'school-materials' })
+      logger: rootLogger.child({ module: 'school-materials' }),
+      snapshot: new YamlMaterialSnapshotStore({ configService, logger: rootLogger.child({ module: 'school-materials' }) })
     });
     getMaterialProgressSummary = new GetMaterialProgressSummary({
       catalog: getMaterialCatalog,
