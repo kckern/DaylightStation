@@ -140,6 +140,14 @@ export function createDocumentReceiptRenderer({
     return { kind: 'math', png, widthPx, heightPx, totalHeightPx: heightPx + 2 * theme.math.padY };
   }
 
+  function chunkCode(code) {
+    const text = String(code ?? '');
+    const m = /^([a-z0-9]+:)(.+)$/i.exec(text);
+    if (!m) return text;
+    const chunks = m[2].match(/.{1,4}/g) ?? [];
+    return `${m[1]}${chunks.join('-')}`;
+  }
+
   function actionOp(ctx, block, tokens, { icon = null } = {}) {
     const code = tokens?.[block.action] ?? block.code ?? block.token ?? block.action;
     const iconSpan = icon ? theme.action.iconPx + theme.action.iconGap : 0;
@@ -148,7 +156,10 @@ export function createDocumentReceiptRenderer({
       - theme.action.labelGap - iconSpan;
     const labelLines = wrapTight(ctx, block.label, labelWidth);
     ctx.font = theme.fonts.code;
-    const codeLines = wrapTight(ctx, code, theme.action.codeAreaPx);
+    // The human-readable fallback code CHUNKS in fours past the scheme prefix
+    // (design audit: 'sch:8V2QWGT4A / FXHHD4U' wrapped mid-token). A code a
+    // person may have to type by hand deserves phone-number ergonomics.
+    const codeLines = wrapTight(ctx, chunkCode(code), theme.action.codeAreaPx);
     const textHeight = labelLines.length * theme.text.bodyLineHeight;
     const iconHeight = icon ? theme.action.iconPx : 0;
     const codeBlockHeight = theme.action.codeAreaPx + theme.action.codeGap

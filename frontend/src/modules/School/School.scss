@@ -1495,3 +1495,5 @@
   margin-top: 0.5rem; min-height: 44px; padding: 0 1rem; border: 1px solid var(--school-border);
   border-radius: 10px; background: transparent; color: var(--school-fg); font-weight: 700; cursor: pointer;
 }
+
+.school-progress__score-value, .school-progress__score-when { white-space: nowrap; }
