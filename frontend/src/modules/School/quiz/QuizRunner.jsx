@@ -63,7 +63,7 @@ function FlagAsk({ userId, bankId, sessionId, title }) {
   );
 }
 
-export default function QuizRunner({ bank, mode = 'quiz', learning = null, onExit, onRestart = null }) {
+export default function QuizRunner({ bank, mode = 'quiz', learning = null, onExit, onRestart = null, onReview = null }) {
   const { status, currentUser, isGuest } = useSchoolProfile();
   const [sessionId, setSessionId] = useState(null);
   const [index, setIndex] = useState(0);
@@ -192,6 +192,21 @@ export default function QuizRunner({ bank, mode = 'quiz', learning = null, onExi
         )}
         {passed === false && currentUser?.id && (
           <RetakeAsk userId={currentUser.id} bankId={bank.id} title={bank.title} />
+        )}
+        {/* Student-advocacy W7b: a fail is also a way back to the lesson, not
+            just a retake ask. Gated on `learning?.unitId` — the context only a
+            catalog-launched quiz module carries (see LearningCatalogBrowser) —
+            and on `onReview` actually being wired, since a bank-practice run
+            or the materials gate quiz (SchoolMaterialPlayer) has neither. */}
+        {passed === false && learning?.unitId && onReview && (
+          <button
+            type="button"
+            className="school-runner__review-lesson-btn"
+            data-testid="review-lesson"
+            onClick={() => onReview(learning)}
+          >
+            Review this lesson
+          </button>
         )}
         {currentUser?.id && (
           <FlagAsk userId={currentUser.id} bankId={bank.id} sessionId={sessionId} title={bank.title} />

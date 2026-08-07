@@ -67,6 +67,41 @@ describe('LearningCatalogBrowser', () => {
     render(<LearningCatalogBrowser onLaunch={() => {}} />);
     expect(await screen.findByText('Nothing here yet.')).toBeInTheDocument();
   });
+
+  // Task 16 (debt W7b): a quiz module's authored `passingPercent` must reach
+  // QuizRunner via `learning` — otherwise a catalog-launched quiz can never
+  // register `passed === false` and the failed-summary review link never has
+  // anything to gate on (moduleValidation.mjs validates `passingPercent` only
+  // on `type: 'quiz'` modules).
+  it('carries an authored passingPercent onto the learning payload for a quiz module', async () => {
+    learningLesson.mockResolvedValueOnce({ ok: true, data: {
+      schema: 'school.learning-lesson/v1',
+      context: { catalog: { catalogId: 'core' }, subject: { subjectId: 'quant' }, course: { courseId: 'rates' }, unit: { unitId: 'intro' } },
+      lesson: { lessonId: 'unit-rate', title: 'Unit rates', modules: [{
+        moduleId: 'gate', type: 'quiz', title: 'Gate quiz', passingPercent: 75, bank: { id: 'rate-quiz', items: [] },
+      }] },
+    } });
+    const onLaunch = vi.fn();
+    render(<LearningCatalogBrowser onLaunch={onLaunch} />);
+    for (const label of ['Core', 'Quantitative', 'Rates', 'Introduction', 'Unit rates']) {
+      fireEvent.click(await screen.findByRole('button', { name: new RegExp(label, 'i') }));
+    }
+    fireEvent.click(await screen.findByRole('button', { name: /Gate quiz/ }));
+    expect(onLaunch).toHaveBeenCalledWith(expect.objectContaining({
+      learning: expect.objectContaining({ unitId: 'intro', passingPercent: 75 }),
+    }));
+  });
+
+  it('leaves passingPercent off the learning payload when the module has none', async () => {
+    const onLaunch = vi.fn();
+    render(<LearningCatalogBrowser onLaunch={onLaunch} />);
+    for (const label of ['Core', 'Quantitative', 'Rates', 'Introduction', 'Unit rates']) {
+      fireEvent.click(await screen.findByRole('button', { name: new RegExp(label, 'i') }));
+    }
+    fireEvent.click(await screen.findByRole('button', { name: /Check it/ }));
+    const [launch] = onLaunch.mock.calls.at(-1);
+    expect(launch.learning.passingPercent).toBeUndefined();
+  });
 });
 
 // Two lessons reusing the same generic moduleId ('check') — the shape the
