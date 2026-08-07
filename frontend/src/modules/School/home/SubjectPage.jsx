@@ -6,6 +6,7 @@ import { subjectLabel } from './subjects.js';
 import { useSchoolProfile } from '../identity/SchoolProfileContext.jsx';
 import { schoolApi } from '../schoolApi.js';
 import { rankWithin, gradeFromBirthyear } from './ranking.js';
+import EmptyState from './EmptyState.jsx';
 
 /**
  * One subject's shelf, redesigned around the four content KINDS (Watch /
@@ -68,11 +69,11 @@ export default function SubjectPage({ subjectId, shelf, guestOnly, onLaunch, not
   // Programs (e.g. typing) already set their own `hint` and pass through.
   grouped.apps = grouped.apps.map((item) => (item.hint ? item : { ...item, hint: 'Listen, say it, write it' }));
 
-  // Quizzes/flashcards (the `decks` kind) are NOT browsable on a subject page —
-  // a quiz exists only as the interstitial shown after finishing the video unit
-  // it's attached to (the gating bank index, backend-side). So the subject wall
-  // shows only Watch / Listen / Apps.
-  const shelfKinds = KINDS.filter((k) => k.id !== 'decks');
+  // Every kind renders, INCLUDING Practice (design audit #1): a subject with
+  // published banks used to hide them all — the product's largest content
+  // investment was reachable only through gate interstitials. The shelf shows
+  // the first few; "See more" expands within the packer's cap discipline.
+  const shelfKinds = KINDS;
   const anyContent = shelfKinds.some((k) => grouped[k.id].length > 0);
   // The catalog is Plex-backed and slow on a cold cache (first open after a
   // redeploy). While it's still loading, show a skeleton row — NOT the empty
@@ -88,9 +89,11 @@ export default function SubjectPage({ subjectId, shelf, guestOnly, onLaunch, not
   }
   if (!anyContent) {
     return (
-      <div className="school-subject school-subject--empty">
-        <p>Nothing on this shelf yet.</p>
-      </div>
+      <EmptyState
+        icon={subjectId}
+        title="Nothing on this shelf yet."
+        hint="Courses land here as a grown-up shelves them for this subject."
+      />
     );
   }
 
@@ -112,7 +115,6 @@ export default function SubjectPage({ subjectId, shelf, guestOnly, onLaunch, not
       sectionLabel={subjectLabel(subjectId)}
       renderCatalog={({ onSelect }) => {
         // One shelf per kind (ranked, progress-joined); the packer bands them.
-        // Decks (quizzes) are excluded — they're interstitials, not shelf content.
         const shelves = shelfKinds.map((kind) => ({
           kindId: kind.id,
           verb: kind.verb,

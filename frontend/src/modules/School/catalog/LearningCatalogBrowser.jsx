@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { schoolApi } from '../schoolApi.js';
 import { useSchoolProfile } from '../identity/SchoolProfileContext.jsx';
 import { buildVerdictMap } from './certification.js';
+import EmptyState, { LoadingState } from '../home/EmptyState.jsx';
 
 const VERDICT_LABELS = Object.freeze({ full: 'Full', partial: 'Partial' });
 
@@ -127,7 +128,7 @@ export default function LearningCatalogBrowser({ onLaunch, surfaceId = null }) {
     certRequestRef.current += 1; // invalidate any certification request still in flight
   };
 
-  if (catalogs === null) return <div className="school-learning-catalog is-status">Loading Catalog…</div>;
+  if (catalogs === null) return <LoadingState label="Loading the catalog…" />;
 
   const modules = current?.kind === 'lesson' ? (lesson?.lesson?.modules ?? []) : [];
   return (
@@ -155,7 +156,13 @@ export default function LearningCatalogBrowser({ onLaunch, surfaceId = null }) {
               </button>
             );
           })}
-          {choices.length === 0 && !error && <p className="school-learning-catalog__status">Nothing is published here yet.</p>}
+          {choices.length === 0 && !error && (
+            <EmptyState
+              icon="kind-app"
+              title="Nothing here yet."
+              hint="Lessons appear as a grown-up publishes catalog courses."
+            />
+          )}
         </div>
       )}
       {!loadingLesson && current?.kind === 'lesson' && lesson && (
