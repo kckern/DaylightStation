@@ -62,4 +62,25 @@ describe('MediaAlbumSource', () => {
       ['provider:c3', 'provider:w2'],
     ]));
   });
+
+  it('a FAILING listLeaves degrades to no roll-up (trackParents absent) — the material still resolves, warn-logged', async () => {
+    const works = [
+      { id: 'provider:w1', kind: 'album', index: 1, title: 'Play One', parent: { title: 'Anthology', poster: '/img/root' } },
+    ];
+    const warns = [];
+    const mediaCatalog = {
+      ...catalog(works),
+      listLeaves: async () => { throw new Error('plex 503'); },
+    };
+    const logger = { warn: (event, data) => warns.push({ event, data }) };
+    const material = await new MediaAlbumSource({ mediaCatalog, logger }).getMaterial('root');
+    // Resolves — a leaf-listing failure must never block the units fetch;
+    // gates just degrade to today's needsQuiz behavior (no trackParents).
+    expect(material.units.map((u) => u.id)).toEqual(['provider:w1']);
+    expect(material.trackParents).toBeUndefined();
+    expect(warns).toEqual([{
+      event: 'school.material.leaves-failed',
+      data: { materialId: 'root', error: 'plex 503' },
+    }]);
+  });
 });

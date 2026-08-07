@@ -274,6 +274,24 @@ describe('GetMaterialUnits.execute — chapter banks roll up to their PARENT uni
     expect(units[0].completed).toBe(false);
     expect(units[0].quiz).toEqual({ bankId: 'ch1-quiz', passingPercent: 80, banksTotal: 3, banksPassed: 0 });
   });
+
+  it('with NO trackParents (leaf-listing failed/absent): track-level banks cannot bind — units degrade to needsQuiz, no throw', async () => {
+    const material = { id: 'plex:619778', title: 'Shakespeare Tales', category: 'course' };
+    const full = { ...material, units: makeUnits() }; // fetch degraded: no trackParents rode the material
+    const useCase = new GetMaterialUnits({
+      catalog: makeCatalog(material),
+      sources: makeSources(full),
+      config: CONFIG,
+      progressStore: makeProgressStore({ 'plex:u1': { percent: 100, playhead: 60000 } }),
+      bankIndex,
+      attemptsReader: { read: () => [] },
+      logger,
+    });
+    const { units } = await useCase.execute({ materialId: 'plex:619778', userId: 'kid1' });
+    expect(units[0].quiz).toBeNull();
+    expect(units[0].needsQuiz).toBe(true); // today's behavior: gate unmet in principle, quiz "not authored"
+    expect(units[0].completed).toBe(false);
+  });
 });
 
 describe('GetMaterialUnits.execute — course unit with NO authored quiz (needsQuiz)', () => {

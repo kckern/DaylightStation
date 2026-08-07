@@ -3,10 +3,12 @@ const SOURCE = 'media-album';
 
 export class MediaAlbumSource {
   #mediaCatalog;
+  #logger;
 
-  constructor({ mediaCatalog } = {}) {
+  constructor({ mediaCatalog, logger = console } = {}) {
     if (!mediaCatalog) throw new Error('MediaAlbumSource requires mediaCatalog');
     this.#mediaCatalog = mediaCatalog;
+    this.#logger = logger;
   }
 
   async listMaterials(rootReference) {
@@ -55,12 +57,19 @@ export class MediaAlbumSource {
     // per-album fetch. Leaf children (a single album's tracks) need no map.
     let trackParents = null;
     if (tracks.some((child) => child.kind === 'album')) {
-      const leaves = await this.#mediaCatalog.listLeaves(materialId);
-      const map = new Map();
-      for (const leaf of leaves) {
-        if (leaf.parentId) map.set(leaf.id, leaf.parentId);
+      // A leaf-listing failure must NEVER block the units fetch (the provider
+      // throws on HTTP errors): degrade to no roll-up — gates fall back to
+      // today's needsQuiz behavior — and say so in the log.
+      try {
+        const leaves = await this.#mediaCatalog.listLeaves(materialId);
+        const map = new Map();
+        for (const leaf of leaves) {
+          if (leaf.parentId) map.set(leaf.id, leaf.parentId);
+        }
+        if (map.size > 0) trackParents = map;
+      } catch (err) {
+        this.#logger.warn?.('school.material.leaves-failed', { materialId, error: err?.message });
       }
-      if (map.size > 0) trackParents = map;
     }
     const first = tracks[0] ?? {};
     return {
