@@ -53,7 +53,10 @@ export class YamlReassignmentLog {
   }
 
   async append(entry) {
-    this.#writeChain = this.#writeChain.then(async () => {
+    // The stored chain swallows prior failures (final-review F2): one
+    // rejected append must not wedge every later one for the process
+    // lifetime. Each caller still awaits `run` and sees its own failure.
+    const run = this.#writeChain.catch(() => {}).then(async () => {
       const current = this.#readState();
       if (current.state === 'corrupt') {
         throw new Error(`reassignments.yml exists but cannot be read — fix or move it before recording (${this.#file()})`);
@@ -63,7 +66,8 @@ export class YamlReassignmentLog {
         fromLearnerId: entry.fromLearnerId, toLearnerId: entry.toLearnerId, assessmentId: entry.assessmentId,
       });
     });
-    await this.#writeChain;
+    this.#writeChain = run;
+    await run;
     return entry;
   }
 }
