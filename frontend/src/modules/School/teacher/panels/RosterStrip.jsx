@@ -25,12 +25,20 @@ export default function RosterStrip({ rows, kids }) {
           >
             <ProfileAvatar id={row.learnerId} name={nameFor(row.learnerId)} />
             <span className="teacher-roster__name">{nameFor(row.learnerId)}</span>
-            <span className="teacher-roster__stats">
-              {row.correctToday} / {row.attemptsToday} correct
-            </span>
-            <span className="teacher-roster__sessions">
-              {row.sessionsToday.length ? `${row.sessionsToday.length} session${row.sessionsToday.length > 1 ? 's' : ''}` : 'idle'}
-            </span>
+            {row.attemptsToday > 0 ? (
+              <span className="teacher-roster__stats">
+                {row.correctToday} / {row.attemptsToday} correct
+              </span>
+            ) : (
+              // "0 / 0 correct — idle" was division-by-zero as a status line
+              // (design audit): a quiet phrase carries the same fact kindly.
+              <span className="teacher-roster__stats teacher-roster__stats--none">nothing yet today</span>
+            )}
+            {row.sessionsToday.length > 0 && (
+              <span className="teacher-roster__sessions">
+                {`${row.sessionsToday.length} session${row.sessionsToday.length > 1 ? 's' : ''}`}
+              </span>
+            )}
             {row.pendingReview > 0 && (
               <span className="teacher-roster__badge">{row.pendingReview} to review</span>
             )}

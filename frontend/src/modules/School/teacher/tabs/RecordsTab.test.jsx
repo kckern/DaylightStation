@@ -110,8 +110,8 @@ describe('RecordsTab', () => {
 
   it('links the report-card PDF for the selected period', async () => {
     mount(<RecordsTab learnerId="felix" kids={KIDS} />);
-    await vi.waitFor(() => expect(screen.getByRole('link', { name: 'PDF' })).toBeTruthy());
-    expect(screen.getByRole('link', { name: 'PDF' }).getAttribute('href'))
+    await vi.waitFor(() => expect(screen.getByRole('link', { name: 'PDF · Report card' })).toBeTruthy());
+    expect(screen.getByRole('link', { name: 'PDF · Report card' }).getAttribute('href'))
       .toBe('/api/v1/school/report-card?learnerId=felix&periodId=2026-fall&format=pdf');
   });
 
@@ -131,7 +131,7 @@ describe('RecordsTab', () => {
     mount(<RecordsTab learnerId="felix" kids={KIDS} />);
     await vi.waitFor(() => expect(screen.getByText(/excused — 4 enrichment days/)).toBeTruthy());
     expect(screen.getByText('Yellowstone trip')).toBeTruthy();
-    expect(screen.getByRole('link', { name: /Progress report \(PDF\)/ })).toBeTruthy();
+    expect(screen.getByRole('link', { name: /PDF · Progress report/ })).toBeTruthy();
   });
 
   it('close-period is two-tap and posts the stamp + pin; supersede offered when already frozen', async () => {

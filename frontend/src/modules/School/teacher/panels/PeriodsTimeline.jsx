@@ -92,11 +92,18 @@ export default function PeriodsTimeline() {
             <ol className="teacher-periods">
               {(periods.data ?? []).map((p) => {
                 const current = Date.parse(p.startsAt) <= now && now < Date.parse(p.endsAt);
+                // Only the NARROWEST current period wears the badge (design
+                // audit): a year AND its fall semester both shouting CURRENT
+                // gives the container and its child equal rank.
+                const span = Date.parse(p.endsAt) - Date.parse(p.startsAt);
+                const narrowestCurrent = current && !(periods.data ?? []).some((q) => q !== p
+                  && Date.parse(q.startsAt) <= now && now < Date.parse(q.endsAt)
+                  && (Date.parse(q.endsAt) - Date.parse(q.startsAt)) < span);
                 return (
                   <li key={p.periodId} className="teacher-periods__period" data-current={current ? '' : undefined}>
                     <span className="teacher-periods__label">{p.label}</span>
                     <span className="teacher-periods__range">{day(p.startsAt)} → {day(p.endsAt)}</span>
-                    {current && <span className="teacher-periods__now">current</span>}
+                    {narrowestCurrent && <span className="teacher-periods__now">current</span>}
                   </li>
                 );
               })}
