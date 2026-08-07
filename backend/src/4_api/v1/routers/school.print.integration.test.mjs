@@ -64,6 +64,12 @@ function allocationIo() {
   };
 }
 
+// Card-minting params (freshCard/card) moved off the GET splat onto this
+// POST (punch 5b) — the real render/allocation stack behind it is unchanged.
+function postRender(app, body) {
+  return request(app).post('/api/v1/school/print/render').send(body);
+}
+
 describe('print route + real store + real renderer', () => {
   let app; let allocationStore;
 
@@ -77,6 +83,7 @@ describe('print route + real store + real renderer', () => {
     await new PublishPrintDocument({ repository }).execute({ source: SOURCE });
     const renderPrintDocument = new RenderPrintDocument({ repository, allocationStore });
     app = express();
+    app.use(express.json());
     app.repositoryForTest = repository;
     app.use('/api/v1/school', createSchoolRouter({
       schoolService: { listBankSourceSummaries: () => [] },
@@ -119,8 +126,9 @@ describe('print route + real store + real renderer', () => {
   });
 
   it('/print/<cardId> alone reproduces the sheet the card was printed for', async () => {
-    const minted = await request(app)
-      .get('/api/v1/school/print/arts/integration/quiz-1?variety=omr&freshCard=1&learnerId=alan');
+    const minted = await postRender(app, {
+      id: 'arts/integration/quiz-1', variety: 'omr', freshCard: true, learnerId: 'alan',
+    });
     expect(minted.status).toBe(200);
     const { cardId, recordId } = JSON.parse(minted.headers['x-school-print-allocation']);
 
@@ -145,8 +153,9 @@ describe('print route + real store + real renderer', () => {
   });
 
   it('a genuine allocation conflict surfaces as 409 with its invariant code, not a 500', async () => {
-    const minted = await request(app)
-      .get('/api/v1/school/print/arts/integration/quiz-1?variety=omr&freshCard=1&learnerId=soren');
+    const minted = await postRender(app, {
+      id: 'arts/integration/quiz-1', variety: 'omr', freshCard: true, learnerId: 'soren',
+    });
     expect(minted.status).toBe(200);
     const { cardId } = JSON.parse(minted.headers['x-school-print-allocation']);
 
@@ -160,8 +169,9 @@ describe('print route + real store + real renderer', () => {
     // `supersedes` match on documentId+learnerId excludes the supersede
     // target from the collision pool), turning this into a 200 and defeating
     // the very conflict this test exists to exercise.
-    const clash = await request(app)
-      .get(`/api/v1/school/print/arts/integration/quiz-1?variety=omr&card=${cardId}&startRow=2&variant=5`);
+    const clash = await postRender(app, {
+      id: 'arts/integration/quiz-1', variety: 'omr', card: cardId, startRow: 2, variant: 5,
+    });
     expect(clash.status).toBe(409);
     expect(clash.body.code).toBe('ALLOCATION_COLLISION');
   });

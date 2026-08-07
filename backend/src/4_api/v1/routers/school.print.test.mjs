@@ -36,6 +36,14 @@ function renderFake(result = {}) {
   };
 }
 
+// Card-minting params (card/freshCard/retake+identity, teacher pin) moved off
+// the GET splat onto this POST (punch 5b) — every case below that exercises
+// one of those params goes through here instead of a `card=`/`freshCard=`
+// query string.
+function postRender(app, body) {
+  return request(app).post('/api/v1/school/print/render').send(body);
+}
+
 describe('GET /api/v1/school/print/:id', () => {
   it('503s when the render pipeline is not wired', async () => {
     const res = await request(appWith()).get('/api/v1/school/print/pokemon-quiz-1?variety=hand');
@@ -97,8 +105,14 @@ describe('GET /api/v1/school/print/:id', () => {
     const hand = await request(app).get('/api/v1/school/print/9251793?variety=hand');
     expect(hand.status).toBe(400);
     expect(hand.body.error).toMatch(/hand variety does not apply/);
-    for (const q of ['card=1234567', 'freshCard=1', 'startRow=2', 'retake=1']) {
+    for (const q of ['startRow=2', 'retake=1']) {
       const res = await request(app).get(`/api/v1/school/print/9251793?${q}`);
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/already names the sheet/);
+    }
+    // card=/freshCard= are card-minting params — POST /print/render now.
+    for (const body of [{ card: '1234567' }, { freshCard: true }]) {
+      const res = await postRender(app, { id: '9251793', ...body });
       expect(res.status).toBe(400);
       expect(res.body.error).toMatch(/already names the sheet/);
     }
@@ -124,16 +138,21 @@ describe('GET /api/v1/school/print/:id', () => {
 
   it('hand variety rejects card parameters', async () => {
     const app = appWith({ render: renderFake() });
-    for (const q of ['card=1234567', 'freshCard=1', 'startRow=3']) {
-      const res = await request(app).get(`/api/v1/school/print/pokemon-quiz-1?variety=hand&${q}`);
+    const startRow = await request(app).get('/api/v1/school/print/pokemon-quiz-1?variety=hand&startRow=3');
+    expect(startRow.status).toBe(400);
+    expect(startRow.body.error).toMatch(/hand variety/);
+    // card=/freshCard= are card-minting params — POST /print/render now.
+    for (const body of [{ card: '1234567' }, { freshCard: true }]) {
+      const res = await postRender(app, { id: 'pokemon-quiz-1', variety: 'hand', ...body });
       expect(res.status).toBe(400);
       expect(res.body.error).toMatch(/hand variety/);
     }
   });
 
   it('freshCard and card remain mutually exclusive', async () => {
-    const both = await request(appWith({ render: renderFake() }))
-      .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&freshCard=1&card=1234567');
+    const both = await postRender(appWith({ render: renderFake() }), {
+      id: 'pokemon-quiz-1', variety: 'omr', freshCard: true, card: '1234567',
+    });
     expect(both.status).toBe(400);
     expect(both.body.error).toMatch(/mutually exclusive/);
   });
@@ -185,20 +204,30 @@ describe('GET /api/v1/school/print/:id', () => {
     expect(bare.status).toBe(400);
     expect(bare.body.error).toMatch(/per-student/);
     // freshCard does not evade the rule — an anonymous mint is the problem.
-    const fresh = await request(appWith({ render, repo, allocations }))
-      .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&freshCard=1');
+    // (freshCard is a card-minting param — POST /print/render now.)
+    const fresh = await postRender(appWith({ render, repo, allocations }), {
+      id: 'pokemon-quiz-1', variety: 'omr', freshCard: true,
+    });
     expect(fresh.status).toBe(400);
+    expect(fresh.body.error).toMatch(/per-student/);
     // An explicit card with an explicit startRow and NO learner is the same
-    // fabricated-identity bypass with one extra query param — still 400.
-    const fabricatedCard = await request(appWith({ render, repo, allocations }))
-      .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&card=1234567&startRow=1');
+    // fabricated-identity bypass with one extra param — still 400.
+    const fabricatedCard = await postRender(appWith({ render, repo, allocations }), {
+      id: 'pokemon-quiz-1', variety: 'omr', card: '1234567', startRow: 1,
+    });
     expect(fabricatedCard.status).toBe(400);
-    // With a learner, an explicit card (with a learner), or in teacher mode, it renders.
-    for (const q of ['learnerId=felix', 'card=1234567&startRow=1&learnerId=felix', 'teacher=1']) {
+    // With a learner, or in teacher mode (neither one a card-minting param),
+    // a plain GET still renders.
+    for (const q of ['learnerId=felix', 'teacher=1']) {
       const res = await request(appWith({ render, repo, allocations }))
         .get(`/api/v1/school/print/pokemon-quiz-1?variety=omr&${q}`);
       expect(res.status).toBe(200);
     }
+    // An explicit card with a learner also renders — via the POST route.
+    const withLearner = await postRender(appWith({ render, repo, allocations }), {
+      id: 'pokemon-quiz-1', variety: 'omr', card: '1234567', startRow: 1, learnerId: 'felix',
+    });
+    expect(withLearner.status).toBe(200);
   });
 
   it('worksheet-archetype omr renders may stay anonymous', async () => {
@@ -240,8 +269,14 @@ describe('GET /api/v1/school/print/:id', () => {
 
   it('retake rejects explicit identity parameters', async () => {
     const app = appWith({ render: renderFake() });
-    for (const q of ['card=1234567', 'freshCard=1', 'variant=3', 'rev=abcdef123']) {
+    for (const q of ['variant=3', 'rev=abcdef123']) {
       const res = await request(app).get(`/api/v1/school/print/pokemon-quiz-1?variety=omr&retake=1&${q}`);
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/retake/);
+    }
+    // card=/freshCard= are card-minting params — POST /print/render now.
+    for (const body of [{ card: '1234567' }, { freshCard: true }]) {
+      const res = await postRender(app, { id: 'pokemon-quiz-1', variety: 'omr', retake: true, ...body });
       expect(res.status).toBe(400);
       expect(res.body.error).toMatch(/retake/);
     }
@@ -305,8 +340,7 @@ describe('GET /api/v1/school/print/:id', () => {
   it('freshCard=1 forces a new card even when a sheet exists', async () => {
     const render = renderFake();
     const allocations = { findByDocument: vi.fn() };
-    await request(appWith({ render, allocations }))
-      .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&freshCard=1');
+    await postRender(appWith({ render, allocations }), { id: 'pokemon-quiz-1', variety: 'omr', freshCard: true });
     expect(allocations.findByDocument).not.toHaveBeenCalled();
     expect(render.calls[0].context).toEqual({ freshCard: true });
   });
@@ -314,8 +348,9 @@ describe('GET /api/v1/school/print/:id', () => {
   it('omr freshCard render threads context and surfaces the allocation header', async () => {
     const allocation = { cardId: '4829306', rowRange: { start: 1, end: 6 }, recordId: 'r1', status: 'live' };
     const render = renderFake({ allocation });
-    const res = await request(appWith({ render }))
-      .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&freshCard=1&learnerId=milo');
+    const res = await postRender(appWith({ render }), {
+      id: 'pokemon-quiz-1', variety: 'omr', freshCard: true, learnerId: 'milo',
+    });
     expect(res.status).toBe(200);
     expect(render.calls[0].context).toEqual({ freshCard: true, learnerId: 'milo' });
     expect(JSON.parse(res.headers['x-school-print-allocation'])).toEqual(allocation);
@@ -323,22 +358,20 @@ describe('GET /api/v1/school/print/:id', () => {
 
   it('omr card attachment validates card digits and startRow bounds', async () => {
     const app = appWith({ render: renderFake() });
-    const badCard = await request(app)
-      .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&card=12345');
+    const badCard = await postRender(app, { id: 'pokemon-quiz-1', variety: 'omr', card: '12345' });
     expect(badCard.status).toBe(400);
     expect(badCard.body.error).toMatch(/7 digits/);
-    const badRow = await request(app)
-      .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&card=1234567&startRow=51');
+    const badRow = await postRender(app, {
+      id: 'pokemon-quiz-1', variety: 'omr', card: '1234567', startRow: 51,
+    });
     expect(badRow.status).toBe(400);
-    const ok = await request(app)
-      .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&card=1234567&startRow=18');
+    const ok = await postRender(app, { id: 'pokemon-quiz-1', variety: 'omr', card: '1234567', startRow: 18 });
     expect(ok.status).toBe(200);
   });
 
   it('omr card without startRow defaults to row 1', async () => {
     const render = renderFake();
-    await request(appWith({ render }))
-      .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&card=1234567');
+    await postRender(appWith({ render }), { id: 'pokemon-quiz-1', variety: 'omr', card: '1234567' });
     expect(render.calls[0].context).toEqual({ cardId: '1234567', startRow: 1 });
   });
 
@@ -429,8 +462,9 @@ describe('GET /api/v1/school/print/:id', () => {
         { documentId: 'pokemon-quiz-1', status: 'satisfied', rev: 'abcdef123', variant: 2, rowRange: { start: 5, end: 10 }, learnerId: 'milo', renderedAt: '2026-08-05T03:00:00Z' },
       ]),
     };
-    const res = await request(appWith({ render, repo, allocations }))
-      .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&card=4829306&teacher=1');
+    const res = await postRender(appWith({ render, repo, allocations }), {
+      id: 'pokemon-quiz-1', variety: 'omr', card: '4829306', teacher: true,
+    });
     expect(res.status).toBe(200);
     expect(repo.getPublished).toHaveBeenCalledWith('pokemon-quiz-1', 'abcdef123');
     expect(render.calls[0].document).toMatchObject({ variant: 2 });
@@ -445,8 +479,9 @@ describe('GET /api/v1/school/print/:id', () => {
         { documentId: 'pokemon-quiz-1', status: 'live', rev: 'abcdef123', variant: 0, rowRange: { start: 1, end: 6 }, renderedAt: '2026-08-05T01:00:00Z' },
       ]),
     };
-    const res = await request(appWith({ render: renderFake(), repo: { get: vi.fn(), getPublished: vi.fn() }, allocations }))
-      .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&card=4829306&variant=1');
+    const res = await postRender(appWith({
+      render: renderFake(), repo: { get: vi.fn(), getPublished: vi.fn() }, allocations,
+    }), { id: 'pokemon-quiz-1', variety: 'omr', card: '4829306', variant: 1 });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/allocation record/);
   });
@@ -454,16 +489,16 @@ describe('GET /api/v1/school/print/:id', () => {
   it('omr card with no matching record falls back to attach-new semantics', async () => {
     const render = renderFake();
     const allocations = { findByCard: vi.fn().mockResolvedValue([]) };
-    await request(appWith({ render, allocations }))
-      .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&card=1234567');
+    await postRender(appWith({ render, allocations }), { id: 'pokemon-quiz-1', variety: 'omr', card: '1234567' });
     expect(render.calls[0].context).toEqual({ cardId: '1234567', startRow: 1 });
   });
 
   it('explicit startRow skips the identity lookup entirely', async () => {
     const render = renderFake();
     const allocations = { findByCard: vi.fn() };
-    await request(appWith({ render, allocations }))
-      .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&card=1234567&startRow=18');
+    await postRender(appWith({ render, allocations }), {
+      id: 'pokemon-quiz-1', variety: 'omr', card: '1234567', startRow: 18,
+    });
     expect(allocations.findByCard).not.toHaveBeenCalled();
     expect(render.calls[0].context).toEqual({ cardId: '1234567', startRow: 18 });
   });
@@ -497,8 +532,7 @@ describe('GET /api/v1/school/print/:id', () => {
 
   it('omr keeps its warnings in the header (nothing filtered)', async () => {
     const render = renderFake({ warnings: ['some genuine warning'] });
-    const res = await request(appWith({ render }))
-      .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&freshCard=1');
+    const res = await postRender(appWith({ render }), { id: 'pokemon-quiz-1', variety: 'omr', freshCard: true });
     expect(JSON.parse(res.headers['x-school-print-warnings'])).toEqual(['some genuine warning']);
   });
 
@@ -533,20 +567,23 @@ describe('GET /api/v1/school/print/:id', () => {
     const doc = { id: 'q', archetype: 'quiz', seed: 1, rev: 'abcdef123', blocks: [] };
     const repo = { get: vi.fn().mockResolvedValue(doc), getPublished: vi.fn().mockResolvedValue(doc) };
     const allocations = { findByCard: vi.fn().mockResolvedValue([]), findByDocument: vi.fn().mockResolvedValue([]) };
-    const bare = await request(appWith({ render, repo, allocations }))
-      .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&card=1111111');
+    const bare = await postRender(appWith({ render, repo, allocations }), {
+      id: 'pokemon-quiz-1', variety: 'omr', card: '1111111',
+    });
     expect(bare.status).toBe(400);
     expect(bare.body.error).toMatch(/learnerId/);
     // Adding an explicit startRow does NOT reopen the bypass — a fabricated
     // card with no usable record for this document is still fabricated,
     // startRow or not.
-    const fabricatedWithStartRow = await request(appWith({ render, repo, allocations }))
-      .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&card=1111111&startRow=1');
+    const fabricatedWithStartRow = await postRender(appWith({ render, repo, allocations }), {
+      id: 'pokemon-quiz-1', variety: 'omr', card: '1111111', startRow: 1,
+    });
     expect(fabricatedWithStartRow.status).toBe(400);
     expect(fabricatedWithStartRow.body.error).toMatch(/learnerId/);
     // With a learner, attach-new on an explicit card stays legal.
-    const ok = await request(appWith({ render, repo, allocations }))
-      .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&card=1111111&learnerId=felix');
+    const ok = await postRender(appWith({ render, repo, allocations }), {
+      id: 'pokemon-quiz-1', variety: 'omr', card: '1111111', learnerId: 'felix',
+    });
     expect(ok.status).toBe(200);
   });
 
@@ -560,8 +597,9 @@ describe('GET /api/v1/school/print/:id', () => {
       ]),
       findByDocument: vi.fn(),
     };
-    const res = await request(appWith({ render, repo, allocations }))
-      .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&card=4829306&learnerId=soren');
+    const res = await postRender(appWith({ render, repo, allocations }), {
+      id: 'pokemon-quiz-1', variety: 'omr', card: '4829306', learnerId: 'soren',
+    });
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('CARD_LEARNER_MISMATCH');
     expect(res.body.error).toMatch(/belongs to a different learner/);
@@ -577,8 +615,9 @@ describe('GET /api/v1/school/print/:id', () => {
       ]),
       findByDocument: vi.fn(),
     };
-    const res = await request(appWith({ render, repo, allocations }))
-      .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&card=4829306&learnerId=soren');
+    const res = await postRender(appWith({ render, repo, allocations }), {
+      id: 'pokemon-quiz-1', variety: 'omr', card: '4829306', learnerId: 'soren',
+    });
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('CARD_LEARNER_MISMATCH');
     expect(res.body.error).toMatch(/anonymous sheet/);
