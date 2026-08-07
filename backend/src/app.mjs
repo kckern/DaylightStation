@@ -3779,7 +3779,18 @@ export async function createApp({ server, logger, configPaths, configExists, ena
           ? (await schoolLifecycle.stores.reviewQueue.listPending()).length : 0;
         const pendingPrints = schoolPrintService ? schoolPrintService.listPending().length : 0;
         if (!pendingReview && !pendingPrints) return;
-        const teacherIds = (configService.getHouseholdAppConfig(null, 'school') || {}).teachers ?? [];
+        // Re-read fresh from disk so a teacher added to school.yml since boot
+        // is nudged this hour, not only after a restart; fall back to the
+        // boot-cached snapshot on any reload failure (missing file, disk
+        // error) so the task never throws.
+        let freshSchoolConfig;
+        try {
+          freshSchoolConfig = await configService.reloadHouseholdAppConfig?.(null, 'school');
+        } catch (err) {
+          rootLogger.warn('school.teacher-nudge.reload-failed', { error: err.message });
+        }
+        const teacherIds = (freshSchoolConfig || configService.getHouseholdAppConfig(null, 'school') || {}).teachers ?? [];
+        rootLogger.info('school.teacher-nudge.teachers', { count: teacherIds.length });
         const day = new Date().toISOString().slice(0, 10);
         const parts = [];
         if (pendingReview) parts.push(`${pendingReview} item${pendingReview === 1 ? '' : 's'} waiting on a mark`);
