@@ -8,6 +8,7 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { SchoolService } from './SchoolService.mjs';
+import { quizSessionPassed } from '#domains/school/index.mjs';
 import { YamlSittingStore } from '../../1_adapters/persistence/yaml/YamlSittingStore.mjs';
 
 const bank = {
@@ -229,6 +230,56 @@ describe('SchoolService sittings (mid-quiz resume)', () => {
     const { svc: svc3 } = makeService();
     const reopened = svc3.openSession({ userId: 'u1', bankId: bank.id, mode: 'quiz' });
     expect(reopened.resume).toEqual({ answeredItemIds: ['q1'], score: 1, outcomes: [true] });
+  });
+
+  it('a resumed quiz REUSES the originating sessionId, so the unit gate sees ONE passing session (final-review F1)', () => {
+    const { svc } = makeService();
+    const opened = svc.openSession({ userId: 'u1', bankId: bank.id, mode: 'quiz' });
+    answerN(svc, opened.sessionId, 2); // q1, q2 — both correct
+
+    // Restart: new service instance over the same store. The resumed open
+    // must come back under the SAME session identity the sitting began as.
+    const { svc: svc2 } = makeService();
+    const reopened = svc2.openSession({ userId: 'u1', bankId: bank.id, mode: 'quiz' });
+    expect(reopened.resume.answeredItemIds).toEqual(['q1', 'q2']);
+    expect(reopened.sessionId).toBe(opened.sessionId);
+
+    // Finish the quiz on the resumed session; the combined attempt log now
+    // holds a single session with all three items correct — the gate opens.
+    svc2.answer({ sessionId: reopened.sessionId, itemId: 'q3', given: 'Boise' });
+    expect(attempts).toHaveLength(3);
+    expect(new Set(attempts.map((a) => a.sessionId)).size).toBe(1);
+    expect(quizSessionPassed(attempts, { bankId: bank.id, itemCount: 3, passPercent: 100 })).toBe(true);
+  });
+
+  it('a legacy sitting WITHOUT a sessionId is ignored on open (no resume), same as the bankRev/prefix rules', () => {
+    const { svc } = makeService();
+    const { sessionId } = svc.openSession({ userId: 'u1', bankId: bank.id, mode: 'quiz' });
+    answerN(svc, sessionId, 2);
+    // Rewrite the sitting as the pre-fix code persisted it: no sessionId field.
+    const text = fs.readFileSync(sittingsFile(), 'utf8');
+    fs.writeFileSync(sittingsFile(), text.split('\n').filter((l) => !l.includes('sessionId:')).join('\n'), 'utf8');
+
+    const { svc: svc2 } = makeService();
+    const reopened = svc2.openSession({ userId: 'u1', bankId: bank.id, mode: 'quiz' });
+    expect(reopened.resume).toBeUndefined();
+  });
+
+  it('a SAME-PROCESS reopen deliberately replaces the still-live session entry under the reused id', () => {
+    const { svc } = makeService();
+    const opened = svc.openSession({ userId: 'u1', bankId: bank.id, mode: 'quiz' });
+    svc.answer({ sessionId: opened.sessionId, itemId: 'q1', given: 'Olympia' });
+
+    // Same service (map still holds the live session): reopen resumes under
+    // the same id, and the fresh entry — not the stale one — answers.
+    const reopened = svc.openSession({ userId: 'u1', bankId: bank.id, mode: 'quiz' });
+    expect(reopened.sessionId).toBe(opened.sessionId);
+    expect(reopened.resume.answeredItemIds).toEqual(['q1']);
+    const res = svc.answer({ sessionId: reopened.sessionId, itemId: 'q2', given: 'Salem' });
+    expect(res.correct).toBe(true);
+    // The resumed entry still refuses the already-banked item.
+    expect(() => svc.answer({ sessionId: reopened.sessionId, itemId: 'q1', given: 'Olympia' }))
+      .toThrow(/already answered in this sitting/);
   });
 
   it('without a sitting store wired, quiz sessions behave exactly as before', () => {

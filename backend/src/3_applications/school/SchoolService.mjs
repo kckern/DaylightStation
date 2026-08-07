@@ -379,7 +379,8 @@ export class SchoolService {
   /**
    * Wire a session to its persisted sitting. Marks the session
    * sitting-eligible (so #gradeAndRecord upserts after each recorded answer),
-   * and, unless `fresh`, preloads a matching sitting: same mode, same
+   * and, unless `fresh`, preloads a matching sitting: same mode, carrying
+   * the originating sessionId (reused as the resumed session's id), same
    * bankRev (an edited bank invalidates the resume point — the questions the
    * answers belong to no longer exist as asked), younger than 24h, and
    * strictly PARTIAL (a full sitting should have been deleted on completion;
@@ -414,6 +415,13 @@ export class SchoolService {
       return null;
     }
     if (!sitting || sitting.mode !== 'quiz') return null;
+    // A sitting persisted before session identity was recorded (no sessionId)
+    // cannot resume: the resumed run would answer under a NEW session id, so
+    // quizSessionPassed — which folds distinct-correct items BY sessionId —
+    // would never see one passing session, and the unit gate would stay shut
+    // while the runner shows "Passed". Ignored + replaced, same as the
+    // bankRev/prefix rules (final-review F1).
+    if (typeof sitting.sessionId !== 'string' || sitting.sessionId.length === 0) return null;
     if ((sitting.bankRev ?? null) !== (session.bankRev ?? null)) return null;
     const age = this.#now() - Date.parse(sitting.startedAt ?? '');
     if (!Number.isFinite(age) || age < 0 || age >= SITTING_TTL_MS) return null;
@@ -431,6 +439,13 @@ export class SchoolService {
     session.sittingStartedAt = typeof sitting.startedAt === 'string' ? sitting.startedAt : session.sittingStartedAt;
     session.sittingAnswers = answers;
     session.answeredItemIds = new Set(answers.map((a) => a.itemId));
+    // REUSE the originating session id: the resumed run's attempts land in
+    // the attempt log under the same sessionId as the answers it resumes, so
+    // the whole quiz reads as ONE session to quizSessionPassed. If a
+    // still-live entry holds that id in this process (a same-process reopen),
+    // the caller's #sessions.set(session.id, …) deliberately replaces it —
+    // same identity, same sitting, fresher state.
+    session.id = sitting.sessionId;
     return {
       answeredItemIds: answers.map((a) => a.itemId),
       score: answers.filter((a) => a.correct === true).length,
@@ -562,6 +577,9 @@ export class SchoolService {
           } else {
             this.#sittings.upsert(s.userId, s.bankId, {
               mode: s.mode,
+              // The ORIGINATING session identity: #attachSitting reuses it as
+              // the resumed session's id so the attempt log stays one session.
+              sessionId: s.id,
               startedAt: s.sittingStartedAt,
               bankRev: s.bankRev ?? null,
               answers: s.sittingAnswers.map((a) => ({ itemId: a.itemId, correct: a.correct })),

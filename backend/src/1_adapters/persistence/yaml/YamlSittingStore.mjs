@@ -3,7 +3,7 @@
  * per user:
  *
  *   <userDir>/apps/school/sittings.yml
- *   { [bankId]: { mode, startedAt, bankRev, answers: [{itemId, correct}] } }
+ *   { [bankId]: { mode, sessionId, startedAt, bankRev, answers: [{itemId, correct}] } }
  *
  * A sitting is a CONVENIENCE, not evidence — the append-only attempt log is
  * the record. That asymmetry sets the posture (same as YamlSchoolDatastore
