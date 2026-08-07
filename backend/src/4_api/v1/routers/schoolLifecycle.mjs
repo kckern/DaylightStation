@@ -97,11 +97,15 @@ function reply(res, result) {
 /**
  * @param {object} deps - each use case is optional and gates its own routes
  * @param {object} [deps.resolveScanAction]
- * @param {object} [deps.buildAgenda]
+ * @param {object} [deps.buildAgenda] - mints real sessions/tokens; gates
+ *   `POST .../agenda` (the real print) together with `deps.receiptPngRenderer`.
+ *   Not `GET` — a GET must never mint (readiness punch 5)
  * @param {object} [deps.previewAgenda] - dry-run twin of `buildAgenda` (Task 2);
- *   gates `GET .../agenda/preview` together with `deps.receiptPngRenderer`
+ *   gates `GET .../agenda` and `GET .../agenda/preview`, both together with
+ *   `deps.receiptPngRenderer`
  * @param {object} [deps.receiptPngRenderer] - `1_rendering`'s PNG receipt
- *   renderer (`createCanvas(document, {tokens})`); the preview route's other gate
+ *   renderer (`createCanvas(document, {tokens})`); the other gate for all
+ *   three agenda routes above
  * @param {object} [deps.issueDocument]
  * @param {object} [deps.dispatchMedia]
  * @param {object} [deps.recordMediaCompletion]
@@ -176,19 +180,71 @@ export function createSchoolLifecycleRouter({
   }
 
   // --- agenda ---------------------------------------------------------------
-  // The printed name: an explicit `?name=` wins, then the household roster's
-  // display name, then (inside the use case) the learner id itself.
-  const learnerName = (req) => (typeof req.query.name === 'string' && req.query.name
-    ? req.query.name
-    : roster?.displayName?.(req.params.learnerId) ?? null);
+  // The printed name: an explicit `?name=` (query, or body on the minting
+  // POST) wins, then the household roster's display name, then (inside the
+  // use case) the learner id itself.
+  const learnerName = (req) => {
+    const bodyName = typeof req.body?.name === 'string' && req.body.name ? req.body.name : null;
+    const queryName = typeof req.query.name === 'string' && req.query.name ? req.query.name : null;
+    return bodyName || queryName || (roster?.displayName?.(req.params.learnerId) ?? null);
+  };
 
-  if (buildAgenda) {
+  // Shared PNG plumbing (readiness punch 5): `GET .../agenda` (dry run),
+  // `GET .../agenda/preview`, and `POST .../agenda` (the real mint) all render
+  // the SAME kind of document to the SAME kind of PNG — one place to do it.
+  // The document's own `scan_action.action` fields already carry the real (or
+  // dry-run) token values, so an empty tokens map falls back to them — see
+  // `actionOp` in `DocumentReceiptRenderer.mjs`. `result.document.id` is
+  // already the slugged, filename-safe id `agendaDocument`/`noticeDocument`
+  // computed in `2_domains` (`agenda-<learner>` for a real learner, `notice-
+  // <slug>` for the guest/no-learner slip) — reusing it here means this
+  // router never needs its own `#domains` import (`api-no-domains`) just to
+  // slug a filename.
+  async function sendAgendaPng(res, result) {
+    const { canvas } = await receiptPngRenderer.createCanvas(result.document, { tokens: {} });
+    const buffer = canvas.toBuffer('image/png');
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Content-Length', buffer.length);
+    res.setHeader('Content-Disposition', `inline; filename="${result.document.id}.png"`);
+    res.send(buffer);
+  }
+
+  // GET is a DRY RUN (readiness punch 5): it used to execute `buildAgenda`,
+  // which mints real sessions and tokens on every load — a GET with side
+  // effects. It now runs the exact same algorithm `previewAgenda` does for
+  // the preview route below, never opening a session or minting a live
+  // ticket. Both `previewAgenda` and `receiptPngRenderer` are required;
+  // either alone is a half-configured deployment (501, not 404 or a crash) —
+  // same posture as the preview route.
+  if (previewAgenda && receiptPngRenderer) {
     router.get('/learners/:learnerId/agenda', asyncHandler(async (req, res) => {
+      const result = await previewAgenda.execute({
+        learnerId: req.params.learnerId,
+        learnerName: learnerName(req),
+      });
+      await sendAgendaPng(res, result);
+    }));
+  } else if (previewAgenda || receiptPngRenderer) {
+    router.get('/learners/:learnerId/agenda', asyncHandler(async (_req, res) => {
+      res.status(501).json({ error: 'agenda not configured' });
+    }));
+  }
+
+  // POST is the real mint, for any caller that truly needs it — no known HTTP
+  // caller today (the NFC path calls `handleScan` in-process), but the route
+  // exists so a future one does not have to reach for the dry-run GET. Same
+  // pairing rule as GET: `buildAgenda` and `receiptPngRenderer` both required.
+  if (buildAgenda && receiptPngRenderer) {
+    router.post('/learners/:learnerId/agenda', asyncHandler(async (req, res) => {
       const result = await buildAgenda.execute({
         learnerId: req.params.learnerId,
         learnerName: learnerName(req),
       });
-      res.json(result);
+      await sendAgendaPng(res, result);
+    }));
+  } else if (buildAgenda || receiptPngRenderer) {
+    router.post('/learners/:learnerId/agenda', asyncHandler(async (_req, res) => {
+      res.status(501).json({ error: 'agenda not configured' });
     }));
   }
 
@@ -219,20 +275,7 @@ export function createSchoolLifecycleRouter({
           errors: result.plan?.errors ?? [],
         });
       }
-      // The document's own `scan_action.action` fields already carry the real
-      // (dry-run) token values, so an empty tokens map falls back to them —
-      // see `actionOp` in `DocumentReceiptRenderer.mjs`.
-      const { canvas } = await receiptPngRenderer.createCanvas(result.document, { tokens: {} });
-      const buffer = canvas.toBuffer('image/png');
-      // `result.document.id` is already the slugged, filename-safe id
-      // `agendaDocument`/`noticeDocument` computed in `2_domains` (`agenda-
-      // <learner>` for a real learner, `notice-<slug>` for the guest/no-learner
-      // slip) — reusing it here means this router never needs its own
-      // `#domains` import (`api-no-domains`) just to slug a filename.
-      res.setHeader('Content-Type', 'image/png');
-      res.setHeader('Content-Length', buffer.length);
-      res.setHeader('Content-Disposition', `inline; filename="${result.document.id}.png"`);
-      res.send(buffer);
+      await sendAgendaPng(res, result);
     }));
   } else if (previewAgenda || receiptPngRenderer) {
     // Same not-configured posture as `gratitude.mjs`'s card endpoint: one half
