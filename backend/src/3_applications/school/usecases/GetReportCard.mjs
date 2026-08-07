@@ -53,7 +53,9 @@ function courseIdsFromAssignment(courses) {
  * every timestamp this use case touches.
  */
 function withinPeriod(iso, period) {
-  return isNonEmptyString(iso) && iso >= period.startsAt && iso <= period.endsAt;
+  // HALF-OPEN [startsAt, endsAt) — admin advocacy #15: both-ends-inclusive
+  // counted a boundary-instant session into TWO adjacent periods.
+  return isNonEmptyString(iso) && iso >= period.startsAt && iso < period.endsAt;
 }
 
 export class GetReportCard {
@@ -129,6 +131,11 @@ export class GetReportCard {
     const courses = courseIds.map((courseId) => this.#courseSection({
       courseId, units, flatSessions, periodSessions, period,
     }));
+    // Catalog drift must never ERASE recorded work (admin advocacy A2): a
+    // graded session whose unitId no longer resolves in the live catalog
+    // contributes to no course above — surface it flagged instead of letting
+    // a September pass vanish from a December card because a unit was re-cut.
+    const unresolvedUnits = this.#unresolvedSection({ periodSessions, unitCourse, learnerId, periodId });
 
     const materials = await this.#materialsSection(learnerId);
     const evidence = await this.#evidenceSection(learnerId, period);
@@ -146,6 +153,7 @@ export class GetReportCard {
       period,
       generatedAt: this.#clock().toISOString(),
       courses,
+      unresolvedUnits,
       materials,
       evidence,
       activeDays,
@@ -153,6 +161,29 @@ export class GetReportCard {
       pendingReview,
       remediationArcs,
     };
+  }
+
+  #unresolvedSection({ periodSessions, unitCourse, learnerId, periodId }) {
+    const byUnit = new Map();
+    periodSessions
+      // `get(...) == null` covers BOTH a unitId the catalog dropped AND a
+      // catalog unit authored with no courseId (M8 challenge 9) — either way
+      // the grade counts toward no course, and that is the fact to flag.
+      .filter((s) => s.unitId && s.gradedPercent !== null && s.gradedPercent !== undefined
+        && unitCourse.get(s.unitId) == null)
+      .forEach((s) => {
+        const row = byUnit.get(s.unitId) ?? { unitId: s.unitId, sessions: 0, bestPercent: null };
+        row.sessions += 1;
+        if (row.bestPercent === null || s.gradedPercent > row.bestPercent) row.bestPercent = s.gradedPercent;
+        byUnit.set(s.unitId, row);
+      });
+    const rows = [...byUnit.values()].sort((a, b) => a.unitId.localeCompare(b.unitId));
+    if (rows.length) {
+      this.#logger.warn?.('school.report-card.unit-unresolved', {
+        learnerId, periodId, unitIds: rows.map((r) => r.unitId),
+      });
+    }
+    return rows;
   }
 
   #selectPeriodCourses({
@@ -262,7 +293,11 @@ export class GetReportCard {
     // `[period.startsAt, period.endsAt)`.
     const dayAttempts = this.#datastore.readAttemptsInRange(learnerId, fromDay, toDay) ?? [];
     return dayAttempts.filter(
-      (a) => isNonEmptyString(a.at) && a.at >= period.startsAt && a.at < period.endsAt,
+      // Regrade corrections excluded (M8 fix 1): their `at` is the regrade
+      // instant — counting them would fabricate active days and concept
+      // evidence inside whatever period the ADMIN ran the fix in.
+      (a) => isNonEmptyString(a.at) && a.at >= period.startsAt && a.at < period.endsAt
+        && a.provenance?.kind !== 'regrade',
     );
   }
 

@@ -14,7 +14,7 @@ import { normalizeLearningContext } from './progress/learningProgress.mjs';
  * grading engine and produce the same attempt, so the only honest difference is
  * provenance. Nothing scores differently because of it.
  */
-export function createAttempt({ at, sessionId, bankId, itemId, itemType, mode, given, correct, attributedTo, transport = 'screen', provenance = null, learning = null }) {
+export function createAttempt({ at, sessionId, bankId, itemId, itemType, mode, given, correct, attributedTo, transport = 'screen', provenance = null, learning = null, bankRev = null }) {
   if (!isCanonicalTimestamp(at)) {
     throw new TypeError('Attempt at must be a canonical ISO-8601 timestamp');
   }
@@ -27,6 +27,10 @@ export function createAttempt({ at, sessionId, bankId, itemId, itemType, mode, g
     given, correct, attributedTo, transport,
     learning: normalized.learning,
     ...(provenance ? { provenance } : {}),
+    // The screen path's content rev (admin advocacy A3): which VERSION of the
+    // bank this answer was graded against — the print path's rev discipline,
+    // applied here. Null on legacy attempts; never affects scoring.
+    ...(bankRev ? { bankRev } : {}),
   };
 }
 
@@ -34,4 +38,16 @@ function isCanonicalTimestamp(value) {
   if (typeof value !== 'string') return false;
   const parsed = new Date(value);
   return Number.isFinite(parsed.valueOf()) && parsed.toISOString() === value;
+}
+
+/**
+ * A regrade CORRECTION is a verdict amendment, not new work (admin advocacy
+ * M8 fix 1): counting it alongside its original inflates attempt counts,
+ * shifts accuracy by phantom rows, and fabricates active days at the regrade
+ * timestamp. Aggregations that count work filter with this; the corrected
+ * VERDICT still reaches consumers that resolve per-item truth by reading the
+ * correction's `provenance.of` chain.
+ */
+export function isRegradeCorrection(attempt) {
+  return attempt?.provenance?.kind === 'regrade';
 }

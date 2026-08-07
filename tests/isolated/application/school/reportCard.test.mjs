@@ -211,6 +211,35 @@ describe('GetReportCard', () => {
     expect(card.courses.map((c) => c.courseId)).toEqual(['math-fractions']);
   });
 
+  it('a graded session whose unitId no longer resolves is SURFACED flagged, never silently dropped (admin advocacy A2)', async () => {
+    // The catalog only knows frac.01; ghost.99 was graded in September and
+    // then re-cut out of the catalog.
+    const units = [unit({ unitId: 'frac.01', courseId: 'math-fractions' })];
+    const warns = [];
+    const history = [{
+      learnerId: 'kid1', courses: ['math-fractions'], units: [], assignedBy: 'dad', recordedAt: '2026-07-01T00:00:00.000Z',
+    }];
+    const rows = [
+      sessionRow({ sessionId: 'ses_ok', unitId: 'frac.01', updatedAt: '2026-09-01T00:00:00.000Z', gradedPercent: 90, result: 'passed' }),
+      sessionRow({ sessionId: 'ses_ghost', unitId: 'ghost.99', updatedAt: '2026-09-02T00:00:00.000Z', gradedPercent: 85, result: 'passed' }),
+      sessionRow({ sessionId: 'ses_ghost2', unitId: 'ghost.99', updatedAt: '2026-09-03T00:00:00.000Z', gradedPercent: 70, result: 'passed' }),
+    ];
+    const useCase = new GetReportCard({
+      curriculum: fakeCurriculum(units),
+      assignments: fakeAssignments({ kid1: history }),
+      sessions: fakeSessions(rows),
+      datastore: fakeSchoolDatastore(),
+      academicPeriods: fakeAcademicPeriods(),
+      logger: { warn: (...a) => warns.push(a), debug() {}, error() {}, info() {} },
+    });
+    const card = await useCase.execute({ learnerId: 'kid1', periodId: 'fall-2026' });
+    expect(card.unresolvedUnits).toEqual([{ unitId: 'ghost.99', sessions: 2, bestPercent: 85 }]);
+    expect(warns.some(([evt, data]) => evt === 'school.report-card.unit-unresolved'
+      && data.unitIds.includes('ghost.99'))).toBe(true);
+    // The resolvable course is untouched.
+    expect(card.courses.find((c) => c.courseId === 'math-fractions')).toBeTruthy();
+  });
+
   it('an empty history AND no current assignment reports zero courses, never a crash', async () => {
     const useCase = new GetReportCard({
       curriculum: fakeCurriculum([]),

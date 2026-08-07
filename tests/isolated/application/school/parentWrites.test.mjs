@@ -182,3 +182,43 @@ describe('GrownUpGate', () => {
       .toThrow('Only a grown-up can sign off schoolwork');
   });
 });
+
+describe('SetAssignments referential honesty (admin advocacy A4)', () => {
+  const curriculum = { listUnits: async () => [
+    { unitId: 'frac.01', courseId: 'math-fractions' },
+    { unitId: 'caps.01', courseId: 'history-capitals' },
+  ] };
+  const roster = () => ROSTER;
+
+  it('refuses a course the published catalog does not know, NAMING it', async () => {
+    const uc = new SetAssignments({ assignments, grownUps: gate(), curriculum, roster, clock, logger: silent });
+    await expect(uc.execute({ learnerId: 'learner-1', courses: ['math-fractions', 'ghost-course'], assignedBy: 'dad' }))
+      .rejects.toThrow(/ghost-course/);
+    expect(assignments.put).not.toHaveBeenCalled();
+  });
+
+  it('refuses a learner who is not on the household roster', async () => {
+    const uc = new SetAssignments({ assignments, grownUps: gate(), curriculum, roster, clock, logger: silent });
+    await expect(uc.execute({ learnerId: 'nobody', courses: ['math-fractions'], assignedBy: 'dad' }))
+      .rejects.toThrow(/roster/);
+  });
+
+  it('accepts object-form courses the catalog knows', async () => {
+    const uc = new SetAssignments({ assignments, grownUps: gate(), curriculum, roster, clock, logger: silent });
+    await expect(uc.execute({
+      learnerId: 'learner-1', courses: [{ courseId: 'history-capitals', elective: true }], assignedBy: 'dad',
+    })).resolves.toBeTruthy();
+  });
+
+  it('a BROKEN catalog degrades to accepting — reference checks must not lock edits shut', async () => {
+    const broken = { listUnits: async () => { throw new Error('catalog offline'); } };
+    const uc = new SetAssignments({ assignments, grownUps: gate(), curriculum: broken, roster, clock, logger: silent });
+    await expect(uc.execute({ learnerId: 'learner-1', courses: ['anything'], assignedBy: 'dad' }))
+      .resolves.toBeTruthy();
+  });
+
+  it('no curriculum/roster wired keeps the legacy accept-anything behavior', async () => {
+    await expect(setAssignments.execute({ learnerId: 'whoever', courses: ['whatever'], assignedBy: 'dad' }))
+      .resolves.toBeTruthy();
+  });
+});

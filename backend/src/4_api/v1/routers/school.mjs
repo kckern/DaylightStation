@@ -28,6 +28,12 @@ export function createSchoolRouter({
   learnerDirectory = null,
   issueContinuationCode = null,
   printService = null,
+  getLearnerRecord = null,
+  academicPeriodStore = null,
+  milestoneStore = null,
+  assignmentsStore = null,
+  schoolDatastore = null,
+  regradeBankAttempts = null,
   schoolCalcRouter = null,
   surfaceCertification = null,
   surfaceRegistry = null,
@@ -127,6 +133,11 @@ export function createSchoolRouter({
   )));
   // Await the (async, off-thread) warm so a cold cache returns the full list
   // rather than empty — without ever blocking the event loop on the file scan.
+  // Content health (admin advocacy #7): banks that failed to parse at warm.
+  router.get('/banks/health', wrap(async (req, res) => {
+    await schoolService.warmBanks();
+    res.json(schoolService.bankHealth());
+  }));
   router.get('/banks', wrap(async (req, res) => {
     await schoolService.warmBanks();
     res.json(schoolService.listBanks({ audience: req.query.audience }));
@@ -871,7 +882,12 @@ export function createSchoolRouter({
 
   // --- wave-5 repair ---------------------------------------------------------
   router.get('/attestations', wrap((req, res) => {
-    res.json({ entries: attestationLog ? attestationLog.list({ learnerId: textQuery(req.query.learnerId) }) : [] });
+    res.json({ entries: attestationLog ? attestationLog.list({
+      learnerId: textQuery(req.query.learnerId),
+      // ?includeRetracted=1 (admin advocacy #13): withdrawn records visible,
+      // annotated with retractedBy/retractedAt, instead of folded out.
+      includeRetracted: req.query.includeRetracted === '1',
+    }) : [] });
   }));
   router.post('/attestations', wrap(async (req, res) => {
     if (!recordAttestation) throw new EntityNotFoundError('attestations', 'not configured');
@@ -879,7 +895,12 @@ export function createSchoolRouter({
     res.status(201).json(await recordAttestation.execute({ learnerId, unitId, reason, attestedBy, pin }));
   }));
   router.get('/teacher-notes', wrap((req, res) => {
-    res.json({ entries: teacherNotesStore ? teacherNotesStore.list({ learnerId: textQuery(req.query.learnerId) }) : [] });
+    res.json({ entries: teacherNotesStore ? teacherNotesStore.list({
+      learnerId: textQuery(req.query.learnerId),
+      // ?includeRetracted=1 (admin advocacy #13): withdrawn records visible,
+      // annotated with retractedBy/retractedAt, instead of folded out.
+      includeRetracted: req.query.includeRetracted === '1',
+    }) : [] });
   }));
   router.post('/teacher-notes', wrap(async (req, res) => {
     if (!recordTeacherNote) throw new EntityNotFoundError('teacher notes', 'not configured');
@@ -984,7 +1005,12 @@ export function createSchoolRouter({
     res.json(await setMilestones.execute({ learnerId, milestones, editedBy, pin, baseHistoryLength }));
   }));
   router.get('/enrichment', wrap((req, res) => {
-    res.json({ entries: enrichmentLog ? enrichmentLog.list({ learnerId: textQuery(req.query.learnerId) }) : [] });
+    res.json({ entries: enrichmentLog ? enrichmentLog.list({
+      learnerId: textQuery(req.query.learnerId),
+      // ?includeRetracted=1 (admin advocacy #13): withdrawn records visible,
+      // annotated with retractedBy/retractedAt, instead of folded out.
+      includeRetracted: req.query.includeRetracted === '1',
+    }) : [] });
   }));
   router.post('/enrichment', wrap(async (req, res) => {
     if (!recordEnrichment) throw new EntityNotFoundError('enrichment log', 'not configured');
@@ -1011,6 +1037,69 @@ export function createSchoolRouter({
   // A learner's own RESOLVED review items, newest first — the feedback a
   // child can see (Task 9, spec R7). Never a pending item still awaiting a
   // grown-up's verdict; that queue is the parent-only `/lifecycle/review`.
+  // The systematic-grading-bug story (admin advocacy #5): re-run the one
+  // grading engine over recorded attempts. Dry-run unless apply:true.
+  router.post('/attempts/regrade', wrap(async (req, res) => {
+    if (!regradeBankAttempts) throw new EntityNotFoundError('regrade', 'not configured');
+    const { bankId, fromDay, toDay, reason, regradedBy = null, pin = null, apply = false } = req.body || {};
+    res.json(await regradeBankAttempts.execute({ bankId, fromDay, toDay, reason, regradedBy, pin, apply: apply === true }));
+  }));
+
+  // Superseded freeze versions (admin advocacy #5): the preserved history,
+  // finally readable — supersede-close archives were write-only.
+  router.get('/report-card/frozen/versions', wrap((req, res) => {
+    const learnerId = textQuery(req.query.learnerId);
+    const periodId = textQuery(req.query.periodId);
+    if (!learnerId || !periodId) return res.status(400).json({ error: 'learnerId and periodId are required' });
+    res.json({ versions: schoolDatastore?.listReportCardVersions?.(learnerId, periodId) ?? [] });
+  }));
+
+  // The merged who-changed-what trail (admin advocacy #9): the four
+  // append-only history arrays (assignments per learner, periods,
+  // pass-overrides, milestones) had no read at all — reconstructing last
+  // week's changes meant YAML off the volume. Read-only, newest first.
+  router.get('/audit', wrap(async (req, res) => {
+    const since = textQuery(req.query.since); // ISO prefix compare; optional
+    const rows = [];
+    const push = (kind, at, payload) => {
+      if (!at || (since && at < since)) return;
+      rows.push({ kind, at, ...payload });
+    };
+    try {
+      (academicPeriodStore?.history?.() ?? []).forEach((h) => push('periods', h.at, { by: h.editedBy ?? null, count: h.count ?? null }));
+    } catch { /* one unreadable trail must not blank the rest */ }
+    try {
+      (passOverrideStore?.history?.() ?? []).forEach((h) => push('pass-override', h.at, { by: h.editedBy ?? null, unitId: h.unitId ?? null, percent: h.percent ?? null }));
+    } catch { /* ditto */ }
+    try {
+      (milestoneStore?.history?.() ?? []).forEach((h) => push('milestones', h.at, { by: h.editedBy ?? null, count: h.count ?? null }));
+    } catch { /* ditto */ }
+    if (assignmentsStore?.history && assignmentsStore?.list) {
+      try {
+        const records = await assignmentsStore.list();
+        for (const record of records) {
+          // eslint-disable-next-line no-await-in-loop
+          const trail = await assignmentsStore.history(record.learnerId);
+          trail.forEach((h) => push('assignments', h.recordedAt, {
+            by: h.assignedBy ?? null, learnerId: record.learnerId, courses: (h.courses ?? []).length,
+          }));
+        }
+      } catch { /* ditto */ }
+    }
+    rows.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+    res.json({ entries: rows.slice(0, 500) });
+  }));
+
+  // One child's complete communications record (admin advocacy #14).
+  router.get('/learner/:learnerId/record', wrap(async (req, res) => {
+    if (!getLearnerRecord) return res.json({ learnerId: req.params.learnerId, entries: [] });
+    const limit = Number.parseInt(req.query.limit, 10);
+    res.json(await getLearnerRecord.execute({
+      learnerId: req.params.learnerId,
+      limit: Number.isFinite(limit) && limit > 0 ? Math.min(limit, 500) : 200,
+    }));
+  }));
+
   router.get('/review/learner/:learnerId', wrap(async (req, res) => {
     if (!reviewQueue) return res.json([]);
     const learnerId = requiredTextQuery(req.params.learnerId, 'learnerId');

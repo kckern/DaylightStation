@@ -55,6 +55,17 @@ export default function LearnerDay({ learnerId }) {
 
   return (
     <div className="teacher-learner-day">
+      {/* Planner refusals rendered, not warn-logged (admin advocacy A4): a
+          dead course id silently omitting a subject from a child's day is
+          exactly the failure a teacher must SEE. */}
+      {planned.state === 'ok' && (planned.data.errors ?? []).length > 0 && (
+        <ul className="teacher-learner-day__plan-errors" data-testid="plan-errors">
+          {planned.data.errors.map((e, i) => (
+            // eslint-disable-next-line react/no-array-index-key -- order stable within one fetch
+            <li key={i}>{typeof e === 'string' ? e : e?.message ?? JSON.stringify(e)}</li>
+          ))}
+        </ul>
+      )}
       {planned.state === 'ok' && (
         <ul className="teacher-learner-day__plan">
           {planned.data.sections.map((section) => (

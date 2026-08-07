@@ -693,6 +693,43 @@ describe('school-docs CLI', () => {
     }));
   });
 
+  describe('list-cards (admin advocacy A5)', () => {
+    it('lists every allocation record with card/status/age fields; --status filters', async () => withTmpDir(async (root) => {
+      const contentRoot = path.join(root, 'content');
+      await mkdir(contentRoot, { recursive: true });
+      await writeFile(path.join(contentRoot, 'quiz.yml'), dump(sourceQuizDoc()));
+      const published = await runSchoolDocs(['publish', 'quiz.yml', '--content-root', contentRoot]);
+      const publishedFile = path.join(contentRoot, 'published', `teacher-cli-fixture@${published.report.rev}.yml`);
+      const rendered = await runSchoolDocs([
+        'render', publishedFile, '--out', path.join(root, 'a.pdf'), '--content-root', contentRoot, '--fresh-card',
+      ]);
+      const cardId = rendered.report.allocation.cardId;
+
+      const all = await runSchoolDocs(['list-cards', '--content-root', contentRoot]);
+      expect(all.exitCode).toBe(0);
+      expect(all.report.cards).toHaveLength(1);
+      expect(all.report.cards[0]).toMatchObject({ cardId, status: 'live' });
+      expect(all.report.cards[0].renderedAt).toBeTruthy();
+
+      const live = await runSchoolDocs(['list-cards', '--status', 'live', '--content-root', contentRoot]);
+      expect(live.report.cards).toHaveLength(1);
+      await runSchoolDocs(['release-card', cardId, '--content-root', contentRoot]);
+      const liveAfter = await runSchoolDocs(['list-cards', '--status', 'live', '--content-root', contentRoot]);
+      expect(liveAfter.report.cards).toEqual([]);
+    }));
+
+    it('--older-than filters by render age and rejects malformed values as usage errors', async () => withTmpDir(async (root) => {
+      const contentRoot = path.join(root, 'content');
+      await mkdir(contentRoot, { recursive: true });
+      const empty = await runSchoolDocs(['list-cards', '--older-than', '30d', '--content-root', contentRoot]);
+      expect(empty.exitCode).toBe(0);
+      expect(empty.report.cards).toEqual([]);
+      const bad = await runSchoolDocs(['list-cards', '--older-than', 'nope', '--content-root', contentRoot]);
+      expect(bad.exitCode).toBe(2);
+      expect(bad.report.mode).toBe('usage');
+    }));
+  });
+
   describe('release-card (Task 7, spec §5.4)', () => {
     it('requires exactly one <cardId> argument (usage error)', async () => {
       const { exitCode, report } = await runSchoolDocs(['release-card']);

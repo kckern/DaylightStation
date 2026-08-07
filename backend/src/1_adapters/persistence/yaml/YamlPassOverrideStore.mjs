@@ -42,6 +42,9 @@ export class YamlPassOverrideStore {
     return { state: 'corrupt', overrides: {}, history: [] };
   }
 
+  /** The edit trail, oldest first (admin advocacy #9). */
+  history() { return [...this.#read().history]; }
+
   #read() { return this.#readState(); }
 
   all() { return { ...this.#read().overrides }; }

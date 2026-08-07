@@ -77,6 +77,9 @@ export const schoolApi = {
     `/lifecycle/learners/${encodeURIComponent(learnerId)}/sessions${window ? `?window=${encodeURIComponent(window)}` : ''}`,
   ),
   assignments: (learnerId) => req(`/lifecycle/assignments/${encodeURIComponent(learnerId)}`),
+  allAssignments: () => req('/lifecycle/assignments'),
+  staleSessions: () => req('/lifecycle/sessions/stale'),
+  abandonSession: (sessionId, body) => req(`/lifecycle/sessions/${encodeURIComponent(sessionId)}/abandon`, body),
   curriculumUnits: () => req('/lifecycle/curriculum/units'),
   // Teacher console writes (wave 2): every body carries the teacher stamp and
   // the console pin; the server's TeacherGate is the enforcer.
@@ -98,7 +101,7 @@ export const schoolApi = {
   // Wave-4 records.
   closePeriod: (body) => req('/report-card/close', body),
   // Wave-5 repair.
-  attestations: (learnerId) => req(`/attestations?learnerId=${encodeURIComponent(learnerId)}`),
+  attestations: (learnerId) => req(learnerId ? `/attestations?learnerId=${encodeURIComponent(learnerId)}` : '/attestations'),
   postAttestation: (body) => req('/attestations', body),
   teacherNotes: (learnerId) => req(`/teacher-notes?learnerId=${encodeURIComponent(learnerId)}`),
   postTeacherNote: (body) => req('/teacher-notes', body),

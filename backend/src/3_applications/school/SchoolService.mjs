@@ -6,7 +6,7 @@
  */
 import {
   validateQuestionBank, summarizeQuestionBank, gradeAnswer, givenShapeError,
-  createAttempt, GuestForbiddenError, SessionGoneError, normalizeLearningContext,
+  createAttempt, isRegradeCorrection, GuestForbiddenError, SessionGoneError, normalizeLearningContext, bankContentRev,
 } from '#domains/school/index.mjs';
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 import { PersistenceError } from '#system/utils/errors/index.mjs';
@@ -241,13 +241,24 @@ export class SchoolService {
     if (this.#warming) return this.#warming;
     this.#warming = (async () => {
       const raws = await this.#ds.readAllBankRaws();
+      // A bank that fails to summarize must not VANISH (admin advocacy #7):
+      // with ~4600 files, one YAML typo silently un-authoring a quiz gate is
+      // indistinguishable from "never written". Name every casualty once per
+      // warm, and keep the count readable (bankHealth) for a health surface.
+      const failed = [];
       const list = raws
         .map(({ id, raw }) => {
           const s = raw ? summarizeQuestionBank(raw) : null;
-          return s ? { ...s, id: s.id ?? id, subject: s.subject ?? null } : null;
+          if (!s) { failed.push(id); return null; }
+          return { ...s, id: s.id ?? id, subject: s.subject ?? null };
         })
         .filter(Boolean);
-      this.#bankSummaries = { at: this.#now(), list };
+      if (failed.length) {
+        this.#logger.error?.('school.bank.summarize-failed', {
+          count: failed.length, ids: failed.slice(0, 20), truncated: failed.length > 20,
+        });
+      }
+      this.#bankSummaries = { at: this.#now(), list, failed };
       return list;
     })().finally(() => { this.#warming = null; });
     return this.#warming;
@@ -262,6 +273,15 @@ export class SchoolService {
     if (!this.#bankSummariesFresh()) this.warmBanks().catch(() => {});
     const list = this.#bankSummaries?.list ?? [];
     return audience ? list.filter((b) => b.audience === audience) : list;
+  }
+
+  /** Health read (admin advocacy #7): how the last warm went. */
+  bankHealth() {
+    return {
+      warmedAt: this.#bankSummaries?.at ?? null,
+      banks: this.#bankSummaries?.list?.length ?? 0,
+      failed: [...(this.#bankSummaries?.failed ?? [])],
+    };
   }
 
   getBank(bankId) {
@@ -318,6 +338,7 @@ export class SchoolService {
   }
 
   #openResolvedSession({ userId, bank, mode, learningContext }) {
+    const bankRev = bankContentRev(bank);
     this.#sweepExpired();
     if (!MODES.has(mode)) throw new ValidationError(`mode must be quiz|flashcard|drill|learning_probe, got: ${mode}`);
     if (userId != null && !this.#isLearner(userId)) throw new ValidationError(`unknown learner: ${userId}`);
@@ -327,7 +348,7 @@ export class SchoolService {
       throw new GuestForbiddenError(`guests cannot open assigned bank: ${bank.id}`);
     }
     const session = {
-      id: `ses_${shortId(8)}`, userId, bankId: bank.id, mode, bank,
+      id: `ses_${shortId(8)}`, userId, bankId: bank.id, mode, bank, bankRev,
       learningContext: normalized.learning,
       startedAt: this.#now(), lastActiveAt: this.#now(), responseClaims: new Map(),
     };
@@ -412,6 +433,7 @@ export class SchoolService {
         at: attemptAt,
         sessionId: s.id, bankId: s.bankId, itemId: item.id, itemType: item.type,
         mode: s.mode, given: recordedGiven, correct, attributedTo: s.userId, transport, provenance,
+        bankRev: s.bankRev ?? null,
         learning: {
           ...(learningContext ?? s.learningContext ?? {}),
           ...((learningContext ?? s.learningContext)?.subjectId || !s.bank.subject ? {} : { subjectId: s.bank.subject }),
@@ -560,6 +582,7 @@ export class SchoolService {
     const all = this.#ds.readAllAttempts(userId);
     const byBank = new Map();
     for (const a of all) {
+      if (isRegradeCorrection(a)) continue; // verdict amendments, not new work (M8)
       if (bankId && a.bankId !== bankId) continue;
       if (!byBank.has(a.bankId)) {
         byBank.set(a.bankId, { bankId: a.bankId,
@@ -630,7 +653,7 @@ export class SchoolService {
     // attempts pre-aggregated by `YYYY-MM` so a lifetime summarize stays
     // O(months) instead of O(days) — not built now, since no household is
     // near that scale.
-    const attempts = this.#ds.readAllAttempts(userId) || [];
+    const attempts = (this.#ds.readAllAttempts(userId) || []).filter((a) => !isRegradeCorrection(a));
     if (attempts.length === 0) return [];
 
     const graded = attempts.filter((a) => a.mode === 'quiz');

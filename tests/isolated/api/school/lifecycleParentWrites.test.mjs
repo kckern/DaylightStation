@@ -16,6 +16,7 @@ import { errorHandlerMiddleware } from '#system/http/middleware/index.mjs';
 import { GrownUpGate } from '#apps/school/GrownUpGate.mjs';
 import { ResolveReviewItem } from '#apps/school/usecases/ResolveReviewItem.mjs';
 import { SetAssignments } from '#apps/school/usecases/SetAssignments.mjs';
+import { MarkSessionAbandoned } from '#apps/school/usecases/MarkSessionAbandoned.mjs';
 
 const silent = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
 const clock = () => new Date('2026-07-27T09:00:00.000Z');
@@ -29,6 +30,13 @@ const ROSTER = [
 /** In-memory stand-ins for the YAML stores — what was actually written matters. */
 let queued;
 let assigned;
+let sessionRows;
+let appendedEvents;
+
+const sessionsStore = {
+  listForLearner: async (learnerId) => sessionRows.filter((r) => r.learnerId === learnerId),
+  appendEvent: async (sessionId, event) => { appendedEvents.push({ sessionId, ...event }); return event; },
+};
 
 const reviewQueue = {
   listPending: async () => queued.filter((i) => !i.verdict),
@@ -61,6 +69,12 @@ beforeAll(async () => {
     reviewQueue,
     resolveReviewItem: new ResolveReviewItem({ reviewQueue, grownUps, clock, logger: silent }),
     setAssignments: new SetAssignments({ assignments, grownUps, clock, logger: silent }),
+    markSessionAbandoned: new MarkSessionAbandoned({
+      sessions: sessionsStore,
+      teacherGate: { assert: ({ userId }) => { if (userId !== 'dad') { const e = new Error('nope'); e.name = 'GuestForbiddenError'; throw e; } } },
+      learnerDirectory: { listLearners: async () => [{ id: 'learner-1', name: 'Test Learner' }] },
+      clock, logger: silent,
+    }),
     clock,
     logger: silent,
   }));
@@ -72,6 +86,12 @@ beforeAll(async () => {
 afterAll(() => new Promise((res) => server.close(res)));
 
 beforeEach(() => {
+  sessionRows = [
+    { sessionId: 'ses_stuck', learnerId: 'learner-1', unitId: 'frac.01', state: 'issued', terminal: false, updatedAt: '2026-07-01T09:00:00.000Z' },
+    { sessionId: 'ses_done', learnerId: 'learner-1', unitId: 'frac.02', state: 'outcome_recorded', terminal: true, updatedAt: '2026-07-02T09:00:00.000Z' },
+    { sessionId: 'ses_fresh', learnerId: 'learner-1', unitId: 'frac.03', state: 'issued', terminal: false, updatedAt: '2026-07-26T09:00:00.000Z' },
+  ];
+  appendedEvents = [];
   queued = [{
     sessionId: 'ses_a', itemId: 'q3', learnerId: 'learner-1', unitId: 'math-fractions.03',
     reason: 'free_response', given: 'because you flip it', verdict: null, gradedBy: null, gradedAt: null,
@@ -177,5 +197,43 @@ describe('fail closed when the guarded use case is missing', () => {
     expect((await fetch(`${url}/review`)).status).toBe(200);
 
     await new Promise((res) => bare.close(res));
+  });
+});
+
+describe('the stale-work sweep over HTTP (admin advocacy A5)', () => {
+  it('GET /sessions/stale lists non-terminal sessions older than the window, oldest first', async () => {
+    const res = await fetch(`${base}/sessions/stale?olderThanDays=7`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // ses_stuck (26 days idle) qualifies; ses_done is terminal; ses_fresh is 1 day old.
+    expect(body.sessions.map((s) => s.sessionId)).toEqual(['ses_stuck']);
+    expect(body.sessions[0]).toMatchObject({ learnerId: 'learner-1', state: 'issued', unitId: 'frac.01' });
+  });
+
+  it('POST /sessions/:id/abandon: gated, reason required, appends the terminal event with attribution', async () => {
+    const refused = await post('/sessions/ses_stuck/abandon', { learnerId: 'learner-1', decidedBy: 'learner-1', reason: 'r' });
+    expect(refused.status).toBe(403);
+    expect(appendedEvents).toEqual([]);
+
+    const noReason = await post('/sessions/ses_stuck/abandon', { learnerId: 'learner-1', decidedBy: 'dad' });
+    expect(noReason.status).toBe(400);
+
+    const ok = await post('/sessions/ses_stuck/abandon', { learnerId: 'learner-1', decidedBy: 'dad', reason: 'Paper lost over the summer' });
+    expect(ok.status).toBe(200);
+    expect(await ok.json()).toEqual({ sessionId: 'ses_stuck', state: 'abandoned' });
+    expect(appendedEvents[0]).toMatchObject({ sessionId: 'ses_stuck', type: 'abandoned', reason: 'Paper lost over the summer', decidedBy: 'dad' });
+  });
+
+  it('refuses to abandon a settled session — settling real work is CloseSessionOutcome\'s job', async () => {
+    const res = await post('/sessions/ses_done/abandon', { learnerId: 'learner-1', decidedBy: 'dad', reason: 'r' });
+    expect(res.status).toBe(400);
+  });
+
+  it('refuses states where the event machine forbids abandoned — no anomalous append that "succeeds" and lies (M8 fix 2)', async () => {
+    sessionRows.push({ sessionId: 'ses_submitted', learnerId: 'learner-1', unitId: 'frac.04', state: 'submitted', terminal: false, updatedAt: '2026-07-01T09:00:00.000Z' });
+    const res = await post('/sessions/ses_submitted/abandon', { learnerId: 'learner-1', decidedBy: 'dad', reason: 'r' });
+    expect(res.status).toBe(400);
+    expect(await res.text()).toMatch(/grading/);
+    expect(appendedEvents).toEqual([]);
   });
 });

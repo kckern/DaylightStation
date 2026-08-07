@@ -65,6 +65,23 @@ export default function ReportCardView({ learnerId, periodId }) {
               </li>
             ))}
           </ul>
+          {/* Catalog drift, named (admin advocacy A2): graded work whose
+              unit was re-cut out of the catalog is FLAGGED here, not erased. */}
+          {(data.unresolvedUnits ?? []).length > 0 && (
+            <div className="teacher-reportcard__drift" data-testid="unresolved-units">
+              <p className="teacher-reportcard__drift-title">
+                Recorded work no longer in the catalog — these grades count toward no course:
+              </p>
+              <ul>
+                {data.unresolvedUnits.map((u) => (
+                  <li key={u.unitId}>
+                    <span>{u.unitId}</span>
+                    <span>{u.sessions} session{u.sessions === 1 ? '' : 's'} · best {u.bestPercent}%</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {(data.materials ?? []).length > 0 && (
             <ul className="teacher-reportcard__materials">
               {data.materials.map((m) => (
