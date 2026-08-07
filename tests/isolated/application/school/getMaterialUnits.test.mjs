@@ -57,9 +57,56 @@ describe('buildBankIndex', () => {
       { id: 'act2-quiz', unit: 'plex:u2', itemCount: 5 },
     ];
     const idx = buildBankIndex(banks);
-    expect(idx.byUnit('plex:u1')).toEqual({ bankId: 'act1-quiz', itemCount: 4 });
-    expect(idx.byUnit('plex:u2')).toEqual({ bankId: 'act2-quiz', itemCount: 5 });
+    expect(idx.byUnit('plex:u1')).toEqual({
+      banks: [{ bankId: 'act1-quiz', itemCount: 4 }],
+      bankId: 'act1-quiz',
+      itemCount: 4,
+    });
+    expect(idx.byUnit('plex:u2')).toEqual({
+      banks: [{ bankId: 'act2-quiz', itemCount: 5 }],
+      bankId: 'act2-quiz',
+      itemCount: 5,
+    });
     expect(idx.byUnit('plex:u3')).toBeNull();
+  });
+
+  it('a WORK-level direct backlink (bank.unit IS the listed unit id) binds exactly as today: banks:[one]', () => {
+    const idx = buildBankIndex(
+      [{ id: 'hamlet-quiz', unit: 'plex:u1', itemCount: 4 }],
+      { trackParents: new Map([['plex:t1', 'plex:u2']]) }, // unrelated map must not disturb it
+    );
+    expect(idx.byUnit('plex:u1')).toEqual({
+      banks: [{ bankId: 'hamlet-quiz', itemCount: 4 }],
+      bankId: 'hamlet-quiz',
+      itemCount: 4,
+    });
+  });
+
+  it('rolls track-level backlinks up to the parent unit, ordered by TRACK order (not bank list order)', () => {
+    const banks = [
+      // deliberately shuffled relative to track order
+      { id: 'ch3', unit: 'plex:t3', itemCount: 10 },
+      { id: 'ch1', unit: 'plex:t1', itemCount: 10 },
+      { id: 'other-unit', unit: 'plex:x9', itemCount: 2 },
+      { id: 'ch2', unit: 'plex:t2', itemCount: 10 },
+    ];
+    const trackParents = new Map([
+      ['plex:t1', 'plex:u1'],
+      ['plex:t2', 'plex:u1'],
+      ['plex:t3', 'plex:u1'],
+    ]);
+    const idx = buildBankIndex(banks, { trackParents });
+    expect(idx.byUnit('plex:u1')).toEqual({
+      banks: [
+        { bankId: 'ch1', itemCount: 10 },
+        { bankId: 'ch2', itemCount: 10 },
+        { bankId: 'ch3', itemCount: 10 },
+      ],
+      bankId: 'ch1',
+      itemCount: 10,
+    });
+    // The track ids themselves are not listed units here — nothing binds to them.
+    expect(idx.byUnit('plex:u2')).toBeNull();
   });
 });
 
@@ -102,7 +149,7 @@ describe('GetMaterialUnits.execute — quiz-gated (course) material', () => {
     const { units } = await useCase.execute({ materialId: material.id, userId: 'kid1' });
 
     expect(units[0].percent).toBe(100);
-    expect(units[0].quiz).toEqual({ bankId: 'act1-quiz', passingPercent: 80 }); // the gate's bar rides the payload (advocacy M7)
+    expect(units[0].quiz).toEqual({ bankId: 'act1-quiz', passingPercent: 80, banksTotal: 1, banksPassed: 0 }); // the gate's bar rides the payload (advocacy M7)
     expect(units[0].completed).toBe(false); // gate unsatisfied -> incomplete despite 100% played
     expect(units[0].locked).toBe(false);
     expect(units[0].current).toBe(true);
@@ -157,6 +204,75 @@ describe('GetMaterialUnits.execute — quiz-gated (course) material', () => {
     expect(units[0].completed).toBe(false);
     expect(units[0].current).toBe(true);
     expect(units[1].locked).toBe(true);
+  });
+});
+
+describe('GetMaterialUnits.execute — chapter banks roll up to their PARENT unit (Blocker 2)', () => {
+  // The Shakespeare shape: the material's units are WORKS (plays); banks
+  // backlink the works' TRACKS (chapters). The material fetch supplies
+  // trackParents so the gate can roll every chapter bank up to its unit.
+  const trackParents = new Map([
+    ['plex:t1', 'plex:u1'],
+    ['plex:t2', 'plex:u1'],
+    ['plex:t3', 'plex:u1'],
+  ]);
+  const banks = [
+    { id: 'ch1-quiz', unit: 'plex:t1', itemCount: 2 },
+    { id: 'ch2-quiz', unit: 'plex:t2', itemCount: 2 },
+    { id: 'ch3-quiz', unit: 'plex:t3', itemCount: 2 },
+  ];
+  // Mirrors the composition root: the index is rebuilt per lookup with the
+  // trackParents the material fetch supplies.
+  const bankIndex = { byUnit: (unitId, opts) => buildBankIndex(banks, opts).byUnit(unitId) };
+  const passSession = (bankId, sessionId) => ([
+    { mode: 'quiz', bankId, sessionId, itemId: 'q1', correct: true },
+    { mode: 'quiz', bankId, sessionId, itemId: 'q2', correct: true },
+  ]);
+
+  function makeCase(attempts) {
+    const material = { id: 'plex:619778', title: 'Shakespeare Tales', category: 'course' };
+    const full = { ...material, units: makeUnits(), trackParents };
+    const catalog = makeCatalog(material);
+    const sources = makeSources(full);
+    const progressStore = makeProgressStore({ 'plex:u1': { percent: 100, playhead: 60000 } });
+    const attemptsReader = { read: () => attempts };
+    return new GetMaterialUnits({ catalog, sources, config: CONFIG, progressStore, bankIndex, attemptsReader, logger });
+  }
+
+  it('with chapters 1-2 passed only: incomplete, quiz points at the NEXT UNPASSED chapter bank, successors stay locked', async () => {
+    const useCase = makeCase([
+      ...passSession('ch1-quiz', 's1'),
+      ...passSession('ch2-quiz', 's2'),
+    ]);
+    const { units, material } = await useCase.execute({ materialId: 'plex:619778', userId: 'kid1' });
+
+    expect(units[0].completed).toBe(false); // 100% listened, but chapter 3's quiz is unpassed
+    expect(units[0].quiz).toEqual({ bankId: 'ch3-quiz', passingPercent: 80, banksTotal: 3, banksPassed: 2 });
+    expect(units[0].needsQuiz).toBe(false);
+    expect(units[1].locked).toBe(true);
+    // The fetch-internal trackParents map must not leak into the API material.
+    expect(material.trackParents).toBeUndefined();
+  });
+
+  it('with ALL three chapters passed: gate satisfied, unit completes, next unit unlocks; quiz falls back to the FIRST bank', async () => {
+    const useCase = makeCase([
+      ...passSession('ch1-quiz', 's1'),
+      ...passSession('ch2-quiz', 's2'),
+      ...passSession('ch3-quiz', 's3'),
+    ]);
+    const { units } = await useCase.execute({ materialId: 'plex:619778', userId: 'kid1' });
+
+    expect(units[0].completed).toBe(true);
+    expect(units[0].quiz).toEqual({ bankId: 'ch1-quiz', passingPercent: 80, banksTotal: 3, banksPassed: 3 });
+    expect(units[1].locked).toBe(false);
+    expect(units[1].current).toBe(true);
+  });
+
+  it('with none passed: quiz launches chapter 1 first', async () => {
+    const useCase = makeCase([]);
+    const { units } = await useCase.execute({ materialId: 'plex:619778', userId: 'kid1' });
+    expect(units[0].completed).toBe(false);
+    expect(units[0].quiz).toEqual({ bankId: 'ch1-quiz', passingPercent: 80, banksTotal: 3, banksPassed: 0 });
   });
 });
 

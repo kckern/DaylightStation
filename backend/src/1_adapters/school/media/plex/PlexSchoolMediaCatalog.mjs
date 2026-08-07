@@ -29,6 +29,15 @@ export class PlexSchoolMediaCatalog extends ISchoolMediaCatalog {
     return (data?.MediaContainer?.Metadata ?? []).map((item) => this.#map(item));
   }
 
+  async listLeaves(reference) {
+    if (!this.#adapter?.client) return [];
+    // ONE call for every leaf under the container (all tracks of an artist's
+    // albums, all episodes of a show) — each row carries parentRatingKey, so
+    // chapter→work mapping never needs per-album children fetches.
+    const data = await this.#adapter.client.getContainer(`/library/metadata/${rawId(reference)}/allLeaves`);
+    return (data?.MediaContainer?.Metadata ?? []).map((item) => this.#map(item));
+  }
+
   async listTagged(libraryReference, label) {
     if (!this.#adapter?.client) return [];
     const sectionId = rawId(libraryReference);
@@ -67,6 +76,7 @@ export class PlexSchoolMediaCatalog extends ISchoolMediaCatalog {
       durationMs: item.duration == null ? null : Number(item.duration),
       index: item.index ?? null,
       childCount: item.leafCount ?? null,
+      parentId: item.parentRatingKey != null ? this.canonicalId(item.parentRatingKey) : null,
       labels: (item.Label ?? []).map((entry) => String(entry.tag)),
       parent: (item.parentTitle || item.parentThumb) ? {
         title: item.parentTitle ?? null,

@@ -2426,7 +2426,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     // cache of its own) on every lookup rather than once at boot, so a newly
     // authored gating bank takes effect without a restart — matching
     // listBanks()'s own no-cache behaviour.
-    const schoolMaterialBankIndex = { byUnit: (unitId) => buildBankIndex(schoolService.listBanks()).byUnit(unitId) };
+    // `opts.trackParents` (Map<trackId, unitId>, from the material fetch)
+    // rolls chapter-level bank backlinks up to the unit they gate (Blocker 2).
+    const schoolMaterialBankIndex = { byUnit: (unitId, opts) => buildBankIndex(schoolService.listBanks(), opts).byUnit(unitId) };
     getMaterialUnits = new GetMaterialUnits({
       catalog: getMaterialCatalog,
       sources: schoolMaterialSources,

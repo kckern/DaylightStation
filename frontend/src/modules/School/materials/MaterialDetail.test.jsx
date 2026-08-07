@@ -170,4 +170,33 @@ describe('MaterialDetail', () => {
     expect(screen.queryByRole('button', { name: /request a quiz/i })).toBeNull();
     expect(screen.getByText(/sign in to request one/i)).toBeInTheDocument();
   });
+
+  it('a current unit gated by several rolled-up chapter banks shows its quiz sequence position ("Quiz 3 of 5")', async () => {
+    materialUnitsMock.mockResolvedValue({
+      ok: true, status: 200,
+      data: {
+        material,
+        units: [
+          { id: 'plex:10', index: 1, title: 'Hamlet', durationMs: null, group: null, percent: 100, playhead: 0, completed: false, locked: false, current: true, lockReason: null, quiz: { bankId: 'ch3-quiz', passingPercent: 80, banksTotal: 5, banksPassed: 2 }, needsQuiz: false, played: true },
+        ],
+      },
+    });
+    render(<MaterialDetail material={material} userId="kid1" onBack={() => {}} onPlay={() => {}} notice={null} sectionLabel="Courses" />);
+    expect(await screen.findByText(/Quiz 3 of 5/)).toBeInTheDocument();
+  });
+
+  it('a single-bank gate shows NO sequence copy (banksTotal 1 is just "the quiz")', async () => {
+    materialUnitsMock.mockResolvedValue({
+      ok: true, status: 200,
+      data: {
+        material,
+        units: [
+          { id: 'plex:10', index: 1, title: 'Budgets', durationMs: null, group: null, percent: 100, playhead: 0, completed: false, locked: false, current: true, lockReason: null, quiz: { bankId: 'one-quiz', passingPercent: 80, banksTotal: 1, banksPassed: 0 }, needsQuiz: false, played: true },
+        ],
+      },
+    });
+    render(<MaterialDetail material={material} userId="kid1" onBack={() => {}} onPlay={() => {}} notice={null} sectionLabel="Courses" />);
+    expect(await screen.findByText('Budgets')).toBeInTheDocument();
+    expect(screen.queryByText(/Quiz \d+ of \d+/)).toBeNull();
+  });
 });
