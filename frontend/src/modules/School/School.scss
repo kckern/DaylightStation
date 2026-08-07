@@ -454,6 +454,10 @@
   }
   &__summary { margin: 0.15rem 0 0; color: var(--school-muted); font-size: 0.78rem; line-height: 1; }
 
+  // Chapter-quiz sequence position ("Quiz 2 of 5") for units gated by
+  // several rolled-up chapter banks.
+  &__quiz-sequence { margin: 0.35rem 0 0; color: var(--school-muted); font-size: 0.9rem; font-weight: 700; }
+
   &__quiz-request {
     display: flex; flex-direction: column; gap: 0.5rem;
     padding: 0.85rem 1rem; border-radius: 12px;

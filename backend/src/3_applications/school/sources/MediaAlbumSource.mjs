@@ -48,6 +48,20 @@ export class MediaAlbumSource {
       durationMs: track.durationMs ?? null,
       group: null,
     }));
+    // Two-level material (an artist/collection whose children are ALBUMS):
+    // the units are whole WORKS, but quiz banks backlink the works' TRACKS.
+    // One batched leaf listing exposes every track's parent, so the quiz gate
+    // can roll chapter banks up to their unit (Blocker 2) — never a
+    // per-album fetch. Leaf children (a single album's tracks) need no map.
+    let trackParents = null;
+    if (tracks.some((child) => child.kind === 'album')) {
+      const leaves = await this.#mediaCatalog.listLeaves(materialId);
+      const map = new Map();
+      for (const leaf of leaves) {
+        if (leaf.parentId) map.set(leaf.id, leaf.parentId);
+      }
+      if (map.size > 0) trackParents = map;
+    }
     const first = tracks[0] ?? {};
     return {
       id: this.#mediaCatalog.canonicalId(materialId),
@@ -58,6 +72,7 @@ export class MediaAlbumSource {
       durationMs: units.reduce((sum, unit) => sum + (unit.durationMs ?? 0), 0),
       unitCount: units.length,
       units,
+      ...(trackParents ? { trackParents } : {}),
     };
   }
 }

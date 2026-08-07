@@ -204,6 +204,16 @@ export default function MaterialDetail({ material, userId, onBack, onPlay, notic
   const showRequestPanel = Boolean(current?.needsQuiz && current?.played);
   const currentRequested = current ? requestedUnitIds.has(current.id) : false;
 
+  // Chapter-quiz roll-up (Blocker 2): a unit gated by SEVERAL chapter banks
+  // says where the child is in the sequence — "Quiz 2 of 5". quiz.bankId is
+  // always the next unpassed chapter, so the ordinal is banksPassed + 1
+  // (clamped once every chapter has been passed).
+  const quizMeta = current?.quiz;
+  const showQuizSequence = Boolean(quizMeta && quizMeta.banksTotal > 1);
+  const quizOrdinal = showQuizSequence
+    ? Math.min((quizMeta.banksPassed ?? 0) + 1, quizMeta.banksTotal)
+    : null;
+
   return (
     <div className="school-material-detail">
       {/* No back row here — the app header's breadcrumb (…› section › this
@@ -256,6 +266,11 @@ export default function MaterialDetail({ material, userId, onBack, onPlay, notic
           )}
           {material.summary && (
             <p className="school-material-detail__summary">{material.summary}</p>
+          )}
+          {showQuizSequence && (
+            <p className="school-material-detail__quiz-sequence">
+              Quiz {quizOrdinal} of {quizMeta.banksTotal}
+            </p>
           )}
           {showRequestPanel && (
             <div className="school-material-detail__quiz-request">
