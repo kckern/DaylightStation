@@ -152,3 +152,19 @@ describe('GET /api/v1/school/audit (admin advocacy #9)', () => {
     expect((await request(app).get('/api/v1/school/audit')).body).toEqual({ entries: [] });
   });
 });
+
+describe('report-card PDF name resolution (M9 fix)', () => {
+  it('resolves the display name from a SYNC learnerDirectory without crashing', async () => {
+    const app = express();
+    app.use('/api/v1/school', createSchoolRouter({
+      schoolService: { listBankSourceSummaries: () => [] },
+      getReportCard: { execute: async () => ({ schema: 'school.report-card/v1', learnerId: 'felix', period: { label: 'Fall' }, courses: [], materials: [], activeDays: { bySubject: {}, total: 0 }, concepts: null, pendingReview: 0, remediationArcs: [] }) },
+      renderReportCardPdf: async (report, { learnerName }) => ({ pdf: Buffer.from(`PDF:${learnerName}`), pageCount: 1, mode: 'draft' }),
+      learnerDirectory: { listLearners: () => [{ id: 'felix', name: 'Felix' }] }, // SYNC return
+      logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() },
+    }));
+    const res = await request(app).get('/api/v1/school/report-card?learnerId=felix&periodId=p1&format=pdf');
+    expect(res.status).toBe(200);
+    expect(res.body.toString()).toBe('PDF:Felix');
+  });
+});
