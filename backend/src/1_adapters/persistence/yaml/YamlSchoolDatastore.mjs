@@ -18,7 +18,7 @@ import path from 'path';
 import fs from 'fs';
 import yaml from 'js-yaml';
 import {
-  loadYaml, loadYamlSafe, saveYamlToPathAtomic, ensureDir, listYamlFiles, yamlExists,
+  loadYaml, loadYamlSafe, saveYamlToPathAtomic, ensureDir, listYamlFiles, resolveYamlPath,
 } from '#system/utils/FileIO.mjs';
 import { SUBJECT_IDS } from '#domains/school/curriculum/unitValidation.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
@@ -69,15 +69,22 @@ export class YamlSchoolDatastore {
    * before-first-attempt state; an existing-but-unparseable shard must never
    * be silently treated as empty — that is exactly how a corrupt file gets
    * clobbered down to a single new row, destroying every prior attempt.
+   *
+   * `file` in the returned shape is the ACTUAL on-disk path when one exists
+   * (via `resolveYamlPath`, which tries `.yml` then `.yaml`) — used for
+   * diagnostics (log/error `details.file`) so a legacy `.yaml` shard isn't
+   * misreported as `.yml`. For `missing`, no such path exists yet, so this
+   * falls back to the `.yml` name a write would create.
    */
   #readAttemptShard(base) {
-    if (!yamlExists(base)) return { state: 'missing', rows: [] };
+    const resolved = resolveYamlPath(base);
+    if (!resolved) return { state: 'missing', rows: [], file: withYamlExt(base) };
     try {
       const rows = loadYaml(base);
-      if (!Array.isArray(rows)) return { state: 'corrupt', rows: [] };
-      return { state: 'ok', rows };
+      if (!Array.isArray(rows)) return { state: 'corrupt', rows: [], file: resolved };
+      return { state: 'ok', rows, file: resolved };
     } catch {
-      return { state: 'corrupt', rows: [] };
+      return { state: 'corrupt', rows: [], file: resolved };
     }
   }
 
@@ -220,7 +227,7 @@ export class YamlSchoolDatastore {
     const read = this.#readAttemptShard(base);
     if (read.state === 'corrupt') {
       throw new DomainInvariantError('attempt shard is corrupt — refusing to overwrite recorded evidence', {
-        code: 'ATTEMPT_SHARD_CORRUPT', details: { userId, file: withYamlExt(base) },
+        code: 'ATTEMPT_SHARD_CORRUPT', details: { userId, file: read.file },
       });
     }
     saveYamlToPathAtomic(withYamlExt(base), [...read.rows, attempt], { noRefs: true });
@@ -255,8 +262,21 @@ export class YamlSchoolDatastore {
     if (!moving.length) return 0;
     const keeping = rows.filter((a) => !matches(a));
     const toBase = path.join(toDir, dayStr);
+    // Destination gated the same way appendAttempt is: `loadYamlSafe(toBase)
+    // || []` would treat an existing-but-corrupt destination shard as empty
+    // and then atomically overwrite it with ONLY the moved rows — the exact
+    // clobber class this store exists to close, just reached via reassignment
+    // instead of a plain append. Source-side stays tolerant (an unreadable
+    // fromBase already returned 0 above, via `rows = loadYamlSafe(...) || []`)
+    // because nothing is destroyed there — there is simply nothing to move.
+    const destRead = this.#readAttemptShard(toBase);
+    if (destRead.state === 'corrupt') {
+      throw new DomainInvariantError('attempt shard is corrupt — refusing to overwrite recorded evidence', {
+        code: 'ATTEMPT_SHARD_CORRUPT', details: { userId: toUserId, file: destRead.file },
+      });
+    }
     ensureDir(toDir);
-    const target = loadYamlSafe(toBase) || [];
+    const target = destRead.rows;
     for (const attempt of moving) {
       target.push({
         ...attempt,
@@ -285,7 +305,7 @@ export class YamlSchoolDatastore {
     const base = path.join(dir, dayStr);
     const read = this.#readAttemptShard(base);
     if (read.state === 'corrupt') {
-      this.#logger.warn?.('school.attempts.shard-corrupt', { file: withYamlExt(base) });
+      this.#logger.warn?.('school.attempts.shard-corrupt', { file: read.file });
     }
     return read.rows;
   }
@@ -301,13 +321,29 @@ export class YamlSchoolDatastore {
       .reverse();
   }
 
+  /**
+   * One day file's rows for the multi-day readers below — routed through
+   * `#readAttemptShard` (not raw `loadYamlSafe`) so a corrupt day is LOUD
+   * (logged, same `school.attempts.shard-corrupt` event as `readAttemptDay`)
+   * instead of silently vanishing into an empty array. These readers stay
+   * tolerant either way — a corrupt day is dropped from the aggregate, the
+   * healthy days around it still come back.
+   */
+  #readAttemptDayFile(dir, filename) {
+    const read = this.#readAttemptShard(path.join(dir, filename.replace(/\.yml$/, '')));
+    if (read.state === 'corrupt') {
+      this.#logger.warn?.('school.attempts.shard-corrupt', { file: read.file });
+    }
+    return read.rows;
+  }
+
   readAllAttempts(userId) {
     const dir = this.#attemptsDir(userId);
     if (!dir || !fs.existsSync(dir)) return [];
     return fs.readdirSync(dir)
       .filter((f) => /^\d{4}-\d{2}-\d{2}\.yml$/.test(f))
       .sort()
-      .flatMap((f) => loadYamlSafe(path.join(dir, f.replace(/\.yml$/, ''))) || []);
+      .flatMap((f) => this.#readAttemptDayFile(dir, f));
   }
 
   /**
@@ -330,7 +366,7 @@ export class YamlSchoolDatastore {
         return day >= from && day <= to;
       })
       .sort()
-      .flatMap((f) => loadYamlSafe(path.join(dir, f.replace(/\.yml$/, ''))) || []);
+      .flatMap((f) => this.#readAttemptDayFile(dir, f));
   }
 
   // --- report cards (Task 6, spec R5b) --------------------------------------

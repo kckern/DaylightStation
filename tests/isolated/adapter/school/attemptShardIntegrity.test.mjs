@@ -62,4 +62,42 @@ describe('attempt shard integrity (readiness Blocker 1)', () => {
     // No leftover staging file from the atomic rename.
     expect(fs.readdirSync(attemptsDir('felix')).filter((f) => f.includes('.tmp-'))).toEqual([]);
   });
+
+  it('moveAttempts refuses a CORRUPT destination shard — never clobbers it down to just the moved rows', () => {
+    const ds = new YamlSchoolDatastore({ configService: cs(), logger });
+    fs.mkdirSync(attemptsDir('penny'), { recursive: true });
+    const fromFile = path.join(attemptsDir('felix'), '2026-08-06.yml');
+    fs.writeFileSync(fromFile, [
+      '- id: att_1',
+      '  at: \'2026-08-06T10:00:00.000Z\'',
+      '  sessionId: sess_1',
+      '  bankId: b',
+      '  itemId: q',
+      '  correct: true',
+      '',
+    ].join('\n'));
+    const toFile = path.join(attemptsDir('penny'), '2026-08-06.yml');
+    fs.writeFileSync(toFile, '{ nope: [');
+    expect(() => ds.moveAttempts({
+      fromUserId: 'felix', toUserId: 'penny', day: '2026-08-06', assessmentId: 'sess_1',
+    })).toThrow(/corrupt/i);
+    // Destination bytes untouched — not overwritten with just the moved row.
+    expect(fs.readFileSync(toFile, 'utf8')).toContain('nope');
+    // Source untouched too: refusing the destination means nothing moved.
+    expect(fs.readFileSync(fromFile, 'utf8')).toContain('att_1');
+  });
+
+  it('readAttemptsInRange logs a corrupt day and still returns the healthy days around it', () => {
+    const ds = new YamlSchoolDatastore({ configService: cs(), logger });
+    ds.appendAttempt('felix', {
+      id: 'att_1', at: '2026-08-05T10:00:00.000Z', bankId: 'b', itemId: 'q', correct: true,
+    });
+    fs.writeFileSync(path.join(attemptsDir('felix'), '2026-08-06.yml'), '{ nope: [');
+    ds.appendAttempt('felix', {
+      id: 'att_3', at: '2026-08-07T10:00:00.000Z', bankId: 'b', itemId: 'q', correct: true,
+    });
+    const rows = ds.readAttemptsInRange('felix', '2026-08-05', '2026-08-07');
+    expect(rows.map((a) => a.id)).toEqual(['att_1', 'att_3']);
+    expect(warns.some(([evt]) => evt === 'school.attempts.shard-corrupt')).toBe(true);
+  });
 });
