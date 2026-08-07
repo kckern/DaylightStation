@@ -126,9 +126,10 @@ function ProgramCard({ report }) {
   return (
     <article className={`school-report__card is-${report.state}`}>
       <header className="school-report__card-head">
-        <h4 className="school-report__program">{report.label}</h4>
+        {/* Human words, never slugs, on a child's board (M9 fix 1). */}
+        <h4 className="school-report__program">{labelize(report.label)}</h4>
         <span className={`school-report__state is-${report.state}`}>
-          {STATE_LABEL[report.state] ?? report.state}
+          {STATE_LABEL[report.state] ?? labelize(report.state)}
         </span>
       </header>
 

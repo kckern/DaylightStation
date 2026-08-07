@@ -11,6 +11,12 @@
  * nothing so the gap is visible instead of silent.
  */
 
+/** '1 days' is not a sentence (M9 fix 1): singularize plural units at 1. */
+function pluralUnit(unit, value) {
+  if (value === 1 && typeof unit === 'string' && unit.endsWith('s')) return unit.slice(0, -1);
+  return unit;
+}
+
 function pct(value) {
   return `${Math.round(value * 100)}%`;
 }
@@ -71,7 +77,7 @@ export default function MetricTile({ metric }) {
         return (
           <span className="school-metric__value school-metric__value--figure">
             {metric.value.toLocaleString()}
-            {metric.unit && <span className="school-metric__unit"> {metric.unit}</span>}
+            {metric.unit && <span className="school-metric__unit"> {pluralUnit(metric.unit, metric.value)}</span>}
           </span>
         );
       case 'score':
@@ -80,7 +86,7 @@ export default function MetricTile({ metric }) {
         return (
           <span className="school-metric__value school-metric__value--figure">
             {metric.value.toLocaleString()}
-            <span className="school-metric__unit"> {metric.unit}</span>
+            <span className="school-metric__unit"> {pluralUnit(metric.unit, metric.value)}</span>
           </span>
         );
       case 'trend':
