@@ -159,7 +159,7 @@ describe('print approve/deny forward the body pin', () => {
 });
 
 describe('GET /api/v1/school/audit (admin advocacy #9)', () => {
-  it('merges the four history trails newest-first and honors ?since=', async () => {
+  it('merges the five history trails newest-first and honors ?since=', async () => {
     const app = express();
     app.use('/api/v1/school', createSchoolRouter({
       schoolService: { listBankSourceSummaries: () => [] },
@@ -170,15 +170,30 @@ describe('GET /api/v1/school/audit (admin advocacy #9)', () => {
         list: async () => [{ learnerId: 'felix' }],
         history: async () => [{ recordedAt: '2026-08-02T10:00:00Z', assignedBy: 'kckern', courses: ['math'] }],
       },
+      // Task 12 (debt M5): the reassignment audit trail joins the merge too.
+      reassignmentLog: { list: () => [{ at: '2026-08-04T09:00:00Z', fromLearnerId: 'felix', toLearnerId: 'milo', moved: 1, reassignedBy: 'kckern' }] },
       logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() },
     }));
     const res = await request(app).get('/api/v1/school/audit');
     expect(res.status).toBe(200);
-    expect(res.body.entries.map((e) => e.kind)).toEqual(['pass-override', 'assignments', 'periods', 'milestones']);
-    expect(res.body.entries[0]).toMatchObject({ by: 'elizabeth', unitId: 'frac.01', percent: 60 });
+    expect(res.body.entries.map((e) => e.kind)).toEqual(['reassignment', 'pass-override', 'assignments', 'periods', 'milestones']);
+    expect(res.body.entries[0]).toMatchObject({ kind: 'reassignment', by: 'kckern', learnerId: 'felix', toLearnerId: 'milo', moved: 1 });
 
     const since = await request(app).get('/api/v1/school/audit?since=2026-08-02');
-    expect(since.body.entries.map((e) => e.kind)).toEqual(['pass-override', 'assignments']);
+    expect(since.body.entries.map((e) => e.kind)).toEqual(['reassignment', 'pass-override', 'assignments']);
+  });
+
+  it('a throwing reassignment trail must not blank the rest (same posture as the other trails)', async () => {
+    const app = express();
+    app.use('/api/v1/school', createSchoolRouter({
+      schoolService: { listBankSourceSummaries: () => [] },
+      academicPeriodStore: { history: () => [{ at: '2026-08-01T10:00:00Z', editedBy: 'kckern', count: 3 }] },
+      reassignmentLog: { list: () => { throw new Error('reassignments.yml is corrupt'); } },
+      logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() },
+    }));
+    const res = await request(app).get('/api/v1/school/audit');
+    expect(res.status).toBe(200);
+    expect(res.body.entries.map((e) => e.kind)).toEqual(['periods']);
   });
 
   it('no stores wired answers an empty trail, never a crash', async () => {

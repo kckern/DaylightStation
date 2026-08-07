@@ -102,6 +102,38 @@ describe('ReassignEvidence', () => {
     await expect(uc.execute({ fromLearnerId: 'felix', toLearnerId: 'milo', day: '2026-08-06', assessmentId: 'ghost', reassignedBy: 'k' })).rejects.toThrow(/attempts/);
     await expect(uc.execute({ fromLearnerId: 'felix', toLearnerId: 'felix', day: '2026-08-06', assessmentId: 's', reassignedBy: 'k' })).rejects.toThrow(/differ/);
   });
+
+  it('a successful move appends its own audit-trail entry (Task 12, debt M5)', async () => {
+    const ds = mkDatastore();
+    ds.seed('felix', '2026-08-06', [{ sessionId: 'ses_1', itemId: 'q1', attributedTo: 'felix', at: '2026-08-06T10:00:00Z' }]);
+    const auditLog = { append: vi.fn(async () => {}) };
+    const uc = new ReassignEvidence({ datastore: ds, teacherGate: passingGate(), auditLog, clock: () => new Date('2026-08-06T12:00:00Z') });
+    await uc.execute({ fromLearnerId: 'felix', toLearnerId: 'milo', day: '2026-08-06', assessmentId: 'ses_1', reassignedBy: 'kckern', pin: '7410' });
+    expect(auditLog.append).toHaveBeenCalledWith({
+      at: '2026-08-06T12:00:00.000Z', fromLearnerId: 'felix', toLearnerId: 'milo',
+      day: '2026-08-06', assessmentId: 'ses_1', moved: 1, reassignedBy: 'kckern',
+    });
+  });
+
+  it('no audit log wired -> no append attempted, move still succeeds', async () => {
+    const ds = mkDatastore();
+    ds.seed('felix', '2026-08-06', [{ sessionId: 'ses_1', itemId: 'q1', attributedTo: 'felix', at: '2026-08-06T10:00:00Z' }]);
+    const uc = new ReassignEvidence({ datastore: ds, teacherGate: passingGate() });
+    await expect(uc.execute({ fromLearnerId: 'felix', toLearnerId: 'milo', day: '2026-08-06', assessmentId: 'ses_1', reassignedBy: 'kckern', pin: '7410' }))
+      .resolves.toMatchObject({ moved: 1 });
+  });
+
+  it('a throwing audit log never blocks or unwinds the move (best-effort)', async () => {
+    const ds = mkDatastore();
+    ds.seed('felix', '2026-08-06', [{ sessionId: 'ses_1', itemId: 'q1', attributedTo: 'felix', at: '2026-08-06T10:00:00Z' }]);
+    const auditLog = { append: vi.fn(async () => { throw new Error('disk full'); }) };
+    const logger = { warn: vi.fn() };
+    const uc = new ReassignEvidence({ datastore: ds, teacherGate: passingGate(), auditLog, logger, clock: () => new Date('2026-08-06T12:00:00Z') });
+    await expect(uc.execute({ fromLearnerId: 'felix', toLearnerId: 'milo', day: '2026-08-06', assessmentId: 'ses_1', reassignedBy: 'kckern', pin: '7410' }))
+      .resolves.toMatchObject({ moved: 1 });
+    expect(ds.shards.get('milo:2026-08-06')[0]).toMatchObject({ sessionId: 'ses_1' });
+    expect(logger.warn).toHaveBeenCalledWith('school.reassign.audit-failed', expect.anything());
+  });
 });
 
 describe('YamlSchoolDatastore.moveAttempts (real shards)', () => {

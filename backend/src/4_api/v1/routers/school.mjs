@@ -80,6 +80,8 @@ export function createSchoolRouter({
   teacherNotesStore = null,
   recordTeacherNote = null,
   reassignEvidence = null,
+  // Task 12 (debt M5) — the reassignment audit trail, merged into GET /audit.
+  reassignmentLog = null,
   attemptsStore = null,
   // Advocacy wave 6.
   retractTeacherRecord = null,
@@ -1136,6 +1138,13 @@ export function createSchoolRouter({
     } catch { /* ditto */ }
     try {
       (milestoneStore?.history?.() ?? []).forEach((h) => push('milestones', h.at, { by: h.editedBy ?? null, count: h.count ?? null }));
+    } catch { /* ditto */ }
+    try {
+      // Task 12 (debt M5): the reassignment audit trail joins the merge —
+      // same shape as the other trails, same per-trail try/catch posture.
+      (reassignmentLog?.list?.() ?? []).forEach((h) => push('reassignment', h.at, {
+        by: h.reassignedBy ?? null, learnerId: h.fromLearnerId ?? null, toLearnerId: h.toLearnerId ?? null, moved: h.moved ?? null,
+      }));
     } catch { /* ditto */ }
     if (assignmentsStore?.history && assignmentsStore?.list) {
       try {
