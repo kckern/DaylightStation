@@ -2391,7 +2391,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     const schoolMediaCatalog = new PlexSchoolMediaCatalog({
       plexAdapter: contentRegistry?.get('plex') || null
     });
-    const mediaAlbumSource = new MediaAlbumSource({ mediaCatalog: schoolMediaCatalog });
+    const mediaAlbumSource = new MediaAlbumSource({ mediaCatalog: schoolMediaCatalog, logger: rootLogger.child({ module: 'school-materials' }) });
     const mediaSeriesSource = new MediaSeriesSource({ mediaCatalog: schoolMediaCatalog });
     const schoolMaterialSources = {
       'media-album': mediaAlbumSource,
