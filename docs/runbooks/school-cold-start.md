@@ -21,6 +21,7 @@ Those two files are the course-creator's manual; this runbook is the operator's.
 | `content/school/catalog/surfaces/*.yml` | Certified surface profiles (paper, screen) — `capabilities:` gates which printables/documents that surface may render | A printable whose bank needs a capability the profile lacks is silently excluded from `GET /print/printables` (see step 2.8) |
 | `household/config/works/{slug}.yml` | Per-work enrolment drill-downs | That work unrestricted / unlisted |
 | `household/apps/school/*.yml` | Runtime state (periods, overrides, milestones, attestations, notes, quiz-requests) | Created on first write; absence is a valid cold state |
+| `household/apps/school/cache/materials.yml` | Disk snapshot of the compiled material index — seeds the units cache at boot (`school.material.snapshot-seeded`) so a redeploy skips the provider's serialized cold sweep | First post-boot sweep pays the full provider fan-out once, then rewrites it. **Regenerable cache** — safe to delete; corrupt = warn + rebuild, never a refusal |
 | `users/{id}/apps/school/` | Per-learner attempts, sessions, report cards | Created on first activity |
 
 `school.yml` is **boot-cached**: every edit needs a container restart.
