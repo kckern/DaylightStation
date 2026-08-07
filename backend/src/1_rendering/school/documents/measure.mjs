@@ -538,7 +538,11 @@ function measureOmrNode(ctx, block, { widthPt, path }) {
  * here mints, signs, or derives a code.
  */
 function actionCodeText(block, tokens) {
-  return tokens?.[block.action] ?? block.code ?? block.token ?? block.action;
+  // Never the internal action id as a printed caption (design audit #10): a
+  // proof render with no tokens used to put 'recovery' / 'media_action' in
+  // grey mono on a child's worksheet. No real code -> no caption; the QR
+  // still encodes the placeholder for proofing.
+  return tokens?.[block.action] ?? block.code ?? block.token ?? '';
 }
 
 /**

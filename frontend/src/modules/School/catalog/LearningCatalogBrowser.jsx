@@ -133,6 +133,10 @@ export default function LearningCatalogBrowser({ onLaunch, surfaceId = null }) {
   const modules = current?.kind === 'lesson' ? (lesson?.lesson?.modules ?? []) : [];
   return (
     <section className="school-learning-catalog" aria-label="Learning Catalog">
+      {/* The app header already names this section — a second 'Catalog' 80px
+          below it was a double heading (design audit). The trail earns its
+          row only once there is a path to walk back. */}
+      {path.length > 0 && (
       <nav className="school-learning-catalog__trail" aria-label="Catalog location">
         <button type="button" onClick={() => goTo(0)}>Catalog</button>
         {path.map((entry, index) => (
@@ -142,6 +146,7 @@ export default function LearningCatalogBrowser({ onLaunch, surfaceId = null }) {
           </span>
         ))}
       </nav>
+      )}
       {error && <p className="school-learning-catalog__error" role="alert">{error}</p>}
       {loadingLesson && <p className="school-learning-catalog__status">Loading lesson…</p>}
       {!loadingLesson && current?.kind !== 'lesson' && (
