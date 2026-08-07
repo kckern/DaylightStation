@@ -8,6 +8,9 @@ import os from 'os';
 import path from 'path';
 import { promises as fs } from 'fs';
 import { YamlReassignmentLog } from './YamlReassignmentLog.mjs';
+import { YamlAttestationLog } from './YamlAttestationLog.mjs';
+import { YamlTeacherNotes } from './YamlTeacherNotes.mjs';
+import { YamlEnrichmentLog } from './YamlEnrichmentLog.mjs';
 
 let dir;
 const configService = { getHouseholdPath: (p) => path.join(dir, p) };
@@ -60,5 +63,31 @@ describe('YamlReassignmentLog', () => {
     expect(logger.error).toHaveBeenCalledWith('school.reassignments.file-corrupt', expect.anything());
     await expect(reread.append({ at: 't2', fromLearnerId: 'milo', toLearnerId: 'felix', day: '2026-08-07', assessmentId: 'ses_2', moved: 1, reassignedBy: 'k' }))
       .rejects.toThrow(/cannot be read/);
+  });
+});
+
+/**
+ * Final-review F2: one rejected append must not WEDGE the write chain for the
+ * process lifetime — once the file is fixed, the next append succeeds. All
+ * four school append-only logs share the chain skeleton, so all four are held
+ * to it.
+ */
+describe.each([
+  ['YamlReassignmentLog', YamlReassignmentLog, 'reassignments.yml'],
+  ['YamlAttestationLog', YamlAttestationLog, 'attestations.yml'],
+  ['YamlTeacherNotes', YamlTeacherNotes, 'teacher-notes.yml'],
+  ['YamlEnrichmentLog', YamlEnrichmentLog, 'enrichment.yml'],
+])('%s write chain recovery', (name, LogClass, filename) => {
+  it('append → forced failure (corrupt file) → fix the file → append succeeds (un-wedged)', async () => {
+    const log = new LogClass({ configService, logger: { error: vi.fn(), info: vi.fn() } });
+    const file = path.join(dir, 'apps/school', filename);
+    await log.append({ id: 'e1', at: 't1' });
+    await fs.writeFile(file, 'entries: { broken', 'utf8');
+    await expect(log.append({ id: 'e2', at: 't2' })).rejects.toThrow(/cannot be read/);
+    // Restore a readable file (the human fixed it) — the SAME instance must
+    // append again without a restart.
+    await fs.writeFile(file, 'entries: []\n', 'utf8');
+    await log.append({ id: 'e3', at: 't3' });
+    expect(log.list().map((e) => e.at)).toEqual(['t3']);
   });
 });
