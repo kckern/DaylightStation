@@ -287,6 +287,20 @@ export function createSchoolRouter({
     if (!printService || !req.query.userId) return res.json([]);
     res.json(printService.listRequestsFor(req.query.userId));
   }));
+  // A read-only render of an authored printable (debt M6a) — an approver
+  // should be able to see the sheet before saying yes. Deliberately bare:
+  // PrintService.previewPrintable does NOT check quota, print, or log — it's
+  // the same #resolve the print path uses, minus every side effect. Fixed
+  // route registered here (with the other /print/* fixed routes, ABOVE the
+  // /print/*id splat) so `:printableId` never collides with a document id —
+  // same registration-order rule the comment above `/print/printables`
+  // documents.
+  router.get('/print/printables/:printableId/preview', wrap(async (req, res) => {
+    if (!printService) return res.status(503).json({ error: 'print-unavailable' });
+    const { pdf } = await printService.previewPrintable(req.params.printableId);
+    res.set('Content-Disposition', `inline; filename="preview-${slugify(req.params.printableId)}.pdf"`);
+    return res.type('application/pdf').send(pdf);
+  }));
   // Card-minting render, moved off the GET splat (see the comment block
   // above). Body mirrors the query params the splat used to accept, plus
   // `teacherPin` — the GET's `pin=` name stays GET-only (a bare teacher-key

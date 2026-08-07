@@ -35,6 +35,13 @@ const printService = {
   getQuota: (userId) => ({ userId, remaining: 5 }),
   listPending: () => [{ requestId: 'req-1', userId: 'felix', pages: 6 }],
   listRequestsFor: (userId) => [{ id: 'pr_1', userId, status: 'denied', label: 'Maze' }],
+  previewPrintable: async (printableId) => {
+    if (printableId !== 'state-capitals') {
+      const { EntityNotFoundError } = await import('#domains/core/errors/index.mjs');
+      throw new EntityNotFoundError('printable', printableId);
+    }
+    return { pdf: PDF_BYTES, label: 'State Capitals' };
+  },
 };
 
 describe('/print fixed routes vs the *id splat', () => {
@@ -74,6 +81,24 @@ describe('/print fixed routes vs the *id splat', () => {
     const res = await request(appWith({ printService })).get('/api/v1/school/print/math/fractions/quiz-1?variety=hand');
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toMatch(/application\/pdf/);
+  });
+
+  it('GET /print/printables/:printableId/preview reaches the preview handler, not the document splat', async () => {
+    const res = await request(appWith({ printService })).get('/api/v1/school/print/printables/state-capitals/preview');
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/application\/pdf/);
+    expect(res.headers['content-disposition']).toMatch(/inline; filename="preview-state-capitals\.pdf"/);
+    expect(res.body).toEqual(PDF_BYTES);
+  });
+
+  it('GET preview of an unknown printableId 404s', async () => {
+    const res = await request(appWith({ printService })).get('/api/v1/school/print/printables/nope/preview');
+    expect(res.status).toBe(404);
+  });
+
+  it('preview 503s when no printService is wired', async () => {
+    const res = await request(appWith()).get('/api/v1/school/print/printables/state-capitals/preview');
+    expect(res.status).toBe(503);
   });
 });
 

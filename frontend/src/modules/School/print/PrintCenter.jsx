@@ -154,6 +154,14 @@ export default function PrintCenter() {
                   <strong>{nameFor(req.userId)}</strong> wants to print <strong>{req.label}</strong> ({req.pages} pages)
                 </span>
                 <span className="school-print__approval-actions">
+                  <a
+                    className="school-print__preview"
+                    href={`/api/v1/school/print/printables/${encodeURIComponent(req.printableId)}/preview`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Preview
+                  </a>
                   <button type="button" className="school-print__approve" disabled={busyId === req.id} onClick={() => onApprove(req, true)}>Allow</button>
                   <button type="button" className="school-print__deny" disabled={busyId === req.id} onClick={() => onApprove(req, false)}>No</button>
                 </span>
