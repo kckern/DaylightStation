@@ -74,14 +74,27 @@ export default function CurriculumBrowser() {
   }
   for (const list of byCourse.values()) list.sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0));
 
+  // Two-line cell (design audit #6): line 1 = title (+ a quiet no-bank dot),
+  // line 2 = a right-aligned control cluster that NEVER wraps internally —
+  // the old inline chip + input + Set shattered into three ragged lines at
+  // phone width, nine times per course.
   const row = (u) => (
     <li key={u.unitId}>
       <details className="teacher-curriculum__unit">
         <summary>
-          <span className="teacher-curriculum__unit-title">{u.title}</span>
-          {!u.hasBank && <span className="teacher-curriculum__flag">no quiz bank</span>}
-          <PassOverride unit={u} override={overrideMap[u.unitId] ?? null} onSaved={overrides.retry} />
+          <span className="teacher-curriculum__unit-line1">
+            <span className="teacher-curriculum__unit-title">
+              {!u.hasBank && <span className="teacher-curriculum__nobank-dot" title="No quiz bank yet" aria-label="No quiz bank yet" />}
+              {u.title}
+            </span>
+          </span>
+          <span className="teacher-curriculum__unit-line2">
+            <PassOverride unit={u} override={overrideMap[u.unitId] ?? null} onSaved={overrides.retry} />
+          </span>
         </summary>
+        {!u.hasBank && (
+          <p className="teacher-curriculum__grades">No quiz bank is bound to this unit yet — the gate waits until one is authored.</p>
+        )}
         {(u.objectives ?? []).length > 0 && (
           <ul className="teacher-curriculum__objectives">
             {u.objectives.map((o, i) => <li key={i}>{o}</li>)}

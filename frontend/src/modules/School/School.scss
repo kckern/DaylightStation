@@ -132,9 +132,10 @@
 // --- quiz / flashcard items ---
 .school-item {
   display: flex; flex-direction: column; gap: 1rem;
-  &__prompt { font-size: 1.3rem; margin: 0; }
-  &__choices { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem; }
-  &__choice, &__check, &__chip { min-height: 64px; border: 1px solid var(--school-border); border-radius: 12px; background: var(--school-surface-2); color: var(--school-fg); font-size: 1.1rem; cursor: pointer; }
+  // Couch-legible type (audit #5): the question outranks everything else.
+  &__prompt { font-size: 2rem; line-height: 1.3; margin: 0; font-weight: 800; }
+  &__choices { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.9rem; }
+  &__choice, &__check, &__chip { min-height: 84px; border: 1px solid var(--school-border); border-radius: 14px; background: var(--school-surface-2); color: var(--school-fg); font-size: 1.3rem; font-weight: 700; cursor: pointer; }
   &__choice--right { border-color: var(--school-accent); color: var(--school-accent); }
   &__choice--dim { opacity: 0.5; }
   &__chip { width: 100%; &--selected { border-color: var(--school-accent); } &--paired { opacity: 0.5; } }
@@ -146,10 +147,33 @@
 
 // --- runner chrome (quiz + flashcards) ---
 .school-runner {
-  display: flex; flex-direction: column; gap: 1rem; max-width: 640px; margin: 0 auto;
-  &__progress { color: var(--school-muted); }
+  // TV layout (design audit #5): centered, generous, couch-legible — no more
+  // phone column marooned left-of-center on a television.
+  display: flex; flex-direction: column; gap: 1.25rem; max-width: 860px;
+  margin: 0 auto; padding: 2rem 1rem 3rem; justify-content: center; min-height: 60vh;
+  &__progress { display: flex; align-items: center; justify-content: space-between; color: var(--school-muted); font-weight: 700; }
+  &__guest-chip {
+    padding: 0.15rem 0.7rem; border: 1px dashed var(--school-border); border-radius: 999px;
+    color: var(--school-muted); font-size: 0.8rem; font-weight: 700;
+  }
   &__unrecorded { padding: 0.85rem 1rem; border-radius: 12px; background: var(--school-danger); color: #2a0806; font-weight: 700; }
-  &__next, &__done { min-height: 64px; border: none; border-radius: 12px; background: var(--school-accent); color: var(--school-accent-ink); font-size: 1.1rem; font-weight: 700; cursor: pointer; }
+  // The advance is NEUTRAL ink (audit #5): green belongs to CORRECT alone —
+  // it must never celebrate you into the next question you just missed.
+  &__next {
+    min-height: 64px; border: 1px solid var(--school-border); border-radius: 12px;
+    background: var(--school-surface-2); color: var(--school-fg); font-size: 1.15rem; font-weight: 800; cursor: pointer;
+  }
+  &__done, &__again { min-height: 64px; border: none; border-radius: 12px; background: var(--school-accent); color: var(--school-accent-ink); font-size: 1.1rem; font-weight: 700; cursor: pointer; padding: 0 1.6rem; }
+  &__again { background: var(--school-surface-2); color: var(--school-fg); border: 1px solid var(--school-border); }
+  &__summary-actions { display: flex; gap: 0.75rem; justify-content: center; }
+  &__score--display { font-size: 4rem; letter-spacing: 0.02em; }
+  &__dots { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center; }
+  &__dot { width: 18px; height: 18px; border-radius: 50%;
+    &.is-right { background: var(--school-accent); }
+    &.is-missed { background: transparent; border: 2px solid var(--school-warn); }
+    &.is-unknown { background: transparent; border: 2px dashed var(--school-border); }
+  }
+  &--summary { text-align: center; align-items: center; }
   &__grades { display: flex; gap: 0.75rem; button { flex: 0 0 calc(50% - 0.375rem); min-height: 64px; border-radius: 12px; font-size: 1.1rem; cursor: pointer; } }
   &__missed { border: 1px solid var(--school-danger); background: transparent; color: var(--school-danger); }
   &__got { border: none; background: var(--school-accent); color: var(--school-accent-ink); }
@@ -1459,3 +1483,56 @@
   padding: 0.6rem 1rem; background: var(--school-warn, #c98a1b); color: #241a02;
   font-weight: 800; text-align: center;
 }
+
+// --- wave-9 design remediation: THE empty-state pattern + practice browse ---
+.school-learning-catalog__grid .school-empty { grid-column: 1 / -1; } // one pattern, one optical center (M9 fix 4)
+
+.school-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 0.5rem; padding: 3.5rem 1.5rem; text-align: center; min-height: 40vh;
+}
+.school-empty__icon { font-size: 3rem; opacity: 0.5; }
+.school-empty__title { margin: 0; font-size: 1.25rem; font-weight: 800; }
+.school-empty__hint { margin: 0; color: var(--school-muted); max-width: 34rem; }
+.school-empty__action {
+  margin-top: 0.6rem; min-height: 52px; padding: 0 1.4rem; border: none; border-radius: 12px;
+  background: var(--school-accent); color: var(--school-accent-ink); font-weight: 700; cursor: pointer;
+}
+.school-empty--loading .school-empty__title { color: var(--school-muted); font-weight: 700; }
+
+.school-home2__library-icon { margin-right: 0.4rem; vertical-align: -0.12em; }
+
+.school-shelf__count {
+  margin-left: 0.45rem; padding: 0.05rem 0.5rem; border-radius: 999px;
+  background: var(--school-surface-2); color: var(--school-muted);
+  font-size: 0.78rem; font-weight: 800;
+}
+
+.school-browse__group { margin-bottom: 1.4rem; }
+.school-browse__group-head {
+  display: flex; align-items: center; gap: 0.5rem; margin: 0 0 0.6rem;
+  font-size: 1.15rem; font-weight: 800;
+}
+.school-browse__group-count {
+  padding: 0.05rem 0.55rem; border-radius: 999px;
+  background: var(--school-surface-2); color: var(--school-muted); font-size: 0.8rem;
+}
+.school-browse__more {
+  margin-top: 0.5rem; min-height: 44px; padding: 0 1rem; border: 1px solid var(--school-border);
+  border-radius: 10px; background: transparent; color: var(--school-fg); font-weight: 700; cursor: pointer;
+}
+
+.school-progress__score-value, .school-progress__score-when { white-space: nowrap; }
+
+// Poster placeholders SHIMMER while art loads (design audit: five seconds of
+// identical dark rectangles reads as broken on a television).
+.school-poster-frame { display: block; width: 100%; height: 100%; }
+.school-skel__poster, .school-poster--loading {
+  position: relative; overflow: hidden; background: var(--school-surface-2);
+  &::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.06) 50%, transparent 70%);
+    animation: school-shimmer 1.4s infinite;
+  }
+}
+@keyframes school-shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }

@@ -42,7 +42,7 @@ beforeEach(() => {
 });
 
 describe('SubjectPage', () => {
-  it('renders Watch/Listen/Apps shelves — but NOT Practice (quizzes are interstitials, not shelf content)', async () => {
+  it('renders ALL four shelves — Practice included (design audit #1: the quiz corpus must be reachable by walking)', async () => {
     render(
       <SubjectPage
         subjectId="writing"
@@ -58,9 +58,9 @@ describe('SubjectPage', () => {
     expect(screen.getByText('Watch')).toBeInTheDocument();
     expect(screen.getByText('Listen')).toBeInTheDocument();
     expect(screen.getByText('Apps')).toBeInTheDocument();
-    // Decks/quizzes are excluded from subject pages — no Practice shelf, no bank tile.
-    expect(screen.queryByText('Practice')).not.toBeInTheDocument();
-    expect(screen.queryByText('US States')).not.toBeInTheDocument();
+    // Wave 9: the Practice shelf renders its banks like any other kind.
+    expect(screen.getByText('Practice')).toBeInTheDocument();
+    expect(screen.getByText('US States')).toBeInTheDocument();
 
     // Video/audio tiles without a poster render a text placeholder AND the
     // clamped title, so the title text appears twice — assert presence, not

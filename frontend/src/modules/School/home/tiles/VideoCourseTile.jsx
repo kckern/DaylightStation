@@ -4,6 +4,7 @@
 // no ranking. Kind colour (var(--kind-video)) appears only on the chip and
 // the progress underline, never as a tile background.
 import Icon from '../icons/Icon.jsx';
+import PosterImg from './PosterImg.jsx';
 
 export default function VideoCourseTile({ item, onOpen }) {
   const hasProgress = typeof item.percent === 'number' && item.percent > 0;
@@ -12,13 +13,7 @@ export default function VideoCourseTile({ item, onOpen }) {
       <button type="button" className="school-tile__button" onClick={() => onOpen(item)}>
         <span className="school-tile__poster-wrap">
           {item.poster ? (
-            <img
-              src={item.poster}
-              alt={item.title}
-              loading="lazy"
-              decoding="async"
-              className="school-tile__poster"
-            />
+            <PosterImg src={item.poster} alt={item.title} />
           ) : (
             <span className="school-tile__poster school-tile__poster--placeholder">
               <span>{item.title}</span>

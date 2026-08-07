@@ -38,7 +38,7 @@ export function createTranscriptPdfRenderer({ theme = documentPdfTheme, fontDir 
 
       if (!(transcript.periods ?? []).length) {
         out.font(theme.fonts.regular.name).fontSize(11).fillColor(muted)
-          .text('No closed periods yet — a transcript records closes.');
+          .text('No closed terms yet. When a term is closed, its final grades are recorded here permanently — one section per term.');
       }
       for (const period of transcript.periods ?? []) {
         out.font(theme.fonts.bold.name).fontSize(13).fillColor(ink).text(period.label);

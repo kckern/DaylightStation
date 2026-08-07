@@ -27,12 +27,12 @@ export default function PacingPanel({ learnerId, periodId }) {
       {data && (
         <div className="teacher-pacing">
           <a
-            className="teacher-reportcard__pdf"
+            className="teacher-pdf-pill"
             href={`/api/v1/school/progress-report?learnerId=${encodeURIComponent(learnerId)}&periodId=${encodeURIComponent(periodId)}&format=pdf`}
             target="_blank"
             rel="noreferrer"
           >
-            Progress report (PDF)
+            PDF · Progress report
           </a>
           <ul className="teacher-milestones">
             {(data.milestones ?? []).map((m) => (
