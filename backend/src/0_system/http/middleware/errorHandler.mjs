@@ -5,6 +5,7 @@
  * Catches and formats errors for HTTP responses.
  */
 
+import crypto from 'node:crypto';
 import { createLogger } from '../../logging/logger.mjs';
 import {
   DomainError,
@@ -149,7 +150,12 @@ export function errorHandlerMiddleware(options = {}) {
   }
 
   return (err, req, res, next) => {
-    const traceId = req.traceId || 'unknown';
+    // `req.traceId` is normally stamped by the tracing middleware; `req.id` is
+    // the fallback some routers/tests set instead. If neither ran, mint a real
+    // id rather than the literal 'unknown' — a client-visible trace id that
+    // can never be grepped in the logs is worse than one that just wasn't
+    // pre-correlated.
+    const traceId = req.traceId ?? req.id ?? crypto.randomUUID();
     const actualStatus = getHttpStatus(err);
 
     // Log based on error type

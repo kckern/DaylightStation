@@ -116,6 +116,27 @@ describe('stale-save baselines travel through the routes (M6 gate 3)', () => {
       expect.objectContaining({ baseHistoryLength: 7 }));
   });
 
+  it('PUT /periods: a stale baseHistoryLength is refused 409, not the router\'s ValidationError 400', async () => {
+    const setAcademicPeriods = {
+      execute: vi.fn(async () => {
+        const err = new Error('The periods changed since you loaded them — reload and try again.');
+        err.name = 'ValidationError';
+        err.code = 'STALE_SAVE';
+        err.status = 409;
+        throw err;
+      }),
+    };
+    const app = express();
+    app.use(express.json());
+    app.use('/api/v1/school', createSchoolRouter({
+      schoolService: { listBankSourceSummaries: () => [] },
+      setAcademicPeriods, logger: silent,
+    }));
+    const res = await request(app).put('/api/v1/school/periods').send({ periods: [], editedBy: 'k', baseHistoryLength: 0 });
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({ code: 'STALE_SAVE' });
+  });
+
   it('PUT /milestones forwards baseHistoryLength', async () => {
     const setMilestones = { execute: vi.fn(async () => ({ milestones: [] })) };
     const app = express();

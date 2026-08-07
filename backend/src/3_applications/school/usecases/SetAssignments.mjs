@@ -100,6 +100,10 @@ export class SetAssignments {
       if (currentAt !== baseUpdatedAt) {
         const err = new ValidationError('Assignments changed since you loaded them — reload and try again.');
         err.code = 'STALE_SAVE';
+        // A stale-base write is a conflict with someone else's edit, not a
+        // malformed request — 409, not this class's default 400 (the app
+        // error handler maps an explicit err.status first).
+        err.status = 409;
         throw err;
       }
     }

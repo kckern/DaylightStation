@@ -70,3 +70,31 @@ describe('errorHandlerMiddleware shape:string', () => {
     expect(res.body).toEqual({ error: 'bad', code: 'X' });
   });
 });
+
+describe('errorHandlerMiddleware shape:object (default) — envelope traceId', () => {
+  it('carries the real req.traceId in the envelope, not a literal "unknown"', () => {
+    const mw = errorHandlerMiddleware();
+    const req = { traceId: 'real-trace-id' };
+    const res = mockRes();
+    mw(new Error('boom'), req, res, () => {});
+    expect(res.body.traceId).toBe('real-trace-id');
+  });
+
+  it('a request with no traceId (tracing middleware absent/short-circuited) still gets a real, non-"unknown" id', () => {
+    const mw = errorHandlerMiddleware();
+    const req = {}; // no .traceId, no .id
+    const res = mockRes();
+    mw(new Error('boom'), req, res, () => {});
+    expect(typeof res.body.traceId).toBe('string');
+    expect(res.body.traceId.length).toBeGreaterThan(0);
+    expect(res.body.traceId).not.toBe('unknown');
+  });
+
+  it('falls back to req.id when req.traceId is absent', () => {
+    const mw = errorHandlerMiddleware();
+    const req = { id: 'from-req-id' };
+    const res = mockRes();
+    mw(new Error('boom'), req, res, () => {});
+    expect(res.body.traceId).toBe('from-req-id');
+  });
+});
