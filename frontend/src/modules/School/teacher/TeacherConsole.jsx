@@ -90,11 +90,21 @@ function TeacherShell() {
     teacherLog.nav('learner', { learnerId: next });
   }, [learnerId, tab, sync]);
 
-  if (status !== 'ready') return <div className="teacher-console teacher-console--loading">Loading…</div>;
+  if (status !== 'ready') {
+    return (
+      <div className="teacher-console-page">
+        <div className="teacher-console teacher-console--loading">Loading…</div>
+      </div>
+    );
+  }
 
   const noTeachers = !configured || teachers.length === 0;
   const View = TAB_VIEWS[tab];
   return (
+    // Full-bleed page wrapper (design audit #7): the console used to be a
+    // cream column slammed onto the app root's raw #000 at desktop width —
+    // the page behind the column now belongs to the same palette.
+    <div className="teacher-console-page">
     <div className="teacher-console">
       <header className="teacher-console__header">
         <h1 className="teacher-console__title">Teacher</h1>
@@ -158,6 +168,7 @@ function TeacherShell() {
         timeoutMs={600000}
         title="Who's teaching?"
       />
+    </div>
     </div>
   );
 }

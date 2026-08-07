@@ -1,10 +1,14 @@
 /* Teacher console — phone-first, an adult reading surface: School's palette,
  * denser type, bottom tab bar. Desktop gets the same layout width-capped. */
+.teacher-console-page {
+  min-height: 100vh;
+  background: #ece5d6;   // a darkened sibling of the console cream — never raw #000 gutters
+}
 .teacher-console {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-  max-width: 760px;
+  max-width: 980px;   // relaxes at desk width (audit #7); phones are unaffected
   margin: 0 auto;
   background: #f7f5f0;
   color: #2b2620;
@@ -98,7 +102,7 @@
     left: 50%;
     transform: translateX(-50%);
     width: 100%;
-    max-width: 760px;
+    max-width: 980px;   // relaxes at desk width (audit #7); phones are unaffected
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     background: #fffdf8;
@@ -597,8 +601,8 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-left: 10px;
   font-size: 12px;
+  white-space: nowrap;   // the control cluster never wraps internally (audit #6)
 
   &-now { color: #6d6455; }
   &-now[data-overridden] { color: #8a5a2a; font-weight: 700; }
@@ -793,12 +797,21 @@
 .teacher-curriculum__unit {
   summary {
     display: flex;
-    align-items: center;
-    gap: 6px;
+    flex-direction: column;   // two-line cell (audit #6)
+    align-items: stretch;
+    gap: 4px;
     cursor: pointer;
     list-style: none;
+    padding: 6px 0;
+    border-bottom: 1px solid #f0e9d8;
   }
   summary::-webkit-details-marker { display: none; }
+}
+.teacher-curriculum__unit-line1 { display: flex; align-items: center; }
+.teacher-curriculum__unit-line2 { display: flex; justify-content: flex-end; }
+.teacher-curriculum__nobank-dot {
+  display: inline-block; width: 8px; height: 8px; margin-right: 8px;
+  border-radius: 50%; background: #d9a53a; flex: none;
 }
 
 .teacher-curriculum__objectives {
@@ -879,3 +892,22 @@
   li { display: flex; justify-content: space-between; gap: 0.75rem; padding: 0.2rem 0; border-bottom: 1px solid #eee4cf; }
   li span:last-child { color: #8a8272; }
 }
+
+.teacher-reportcard__materials, .teacher-reportcard__arcs {
+  list-style: none; margin: 8px 0 0; padding: 0;
+  li { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 3px 0; }
+  li span:last-child { white-space: nowrap; color: #6d6455; }
+}
+
+.teacher-pdf-pill {
+  display: inline-flex; align-items: center; align-self: flex-start;
+  padding: 4px 12px; border: 1px solid #d8cfb8; border-radius: 999px;
+  background: #fffdf8; color: #2b2620; font-size: 12px; font-weight: 700;
+  text-decoration: none; white-space: nowrap;
+  &:hover { background: #fbf4e6; }
+}
+.teacher-danger-btn {
+  min-height: 44px; padding: 0 16px; border: 2px solid #a33a2a; border-radius: 10px;
+  background: #fdf0ed; color: #7c2417; font-weight: 800; cursor: pointer; white-space: nowrap;
+}
+.teacher-stale__row button { white-space: nowrap; }
