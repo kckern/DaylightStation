@@ -2225,9 +2225,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const { RecordEnrichment } = await import('#apps/school/usecases/RecordEnrichment.mjs');
   const schoolMilestoneStore = new YamlMilestoneStore({ configService, logger: rootLogger.child({ module: 'school-milestones' }) });
   const schoolEnrichmentLog = new YamlEnrichmentLog({ configService, logger: rootLogger.child({ module: 'school-enrichment' }) });
+  // Mid-quiz resumability (Task 17): per-user users/{id}/apps/school/sittings.yml.
+  const { YamlSittingStore } = await import('#adapters/persistence/yaml/YamlSittingStore.mjs');
+  const schoolSittingStore = new YamlSittingStore({ configService, logger: rootLogger.child({ module: 'school-sittings' }) });
   const schoolService = new SchoolService({
     datastore: schoolDatastore,
     userService,
+    sittings: schoolSittingStore,
     teacherGate: schoolTeacherGate,
     // Thunk: the notes store is constructed later in this function; dismissal
     // notes resolve it at call time.

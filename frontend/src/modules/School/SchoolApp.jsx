@@ -139,6 +139,13 @@ function SchoolShell({ clear }) {
   const [materialPath, setMaterialPath] = useState(initialLink.materialPath);
   const [active, setActive] = useState(null);
   const [runNonce, setRunNonce] = useState(0); // Try-again remount counter   // bounded runner or shared remediation session
+  // Whether the NEXT runner mount should open its session fresh (Task 17):
+  // Try again on a finished quiz restarts from q1 (wipes the sitting), while
+  // Start again after a server timeout resumes it. Latched by the restart
+  // handler because the remount-by-key reopens the session with only props —
+  // without this flag the restarted run would silently resume itself.
+  const [runFresh, setRunFresh] = useState(false);
+  useEffect(() => { setRunFresh(false); }, [active]); // a NEW launch is never a restart
   const [pending, setPending] = useState(null); // bank/module launch awaiting a claim
   const [notice, setNotice] = useState(null);
   const [materials, setMaterials] = useState([]); // full catalog materials list, unfiltered
@@ -557,8 +564,9 @@ function SchoolShell({ clear }) {
             key={`quiz:${active.bank.id}:${runNonce}`}
             bank={active.bank}
             learning={active.learning}
+            fresh={runFresh}
             onExit={() => setActive(null)}
-            onRestart={() => setRunNonce((n) => n + 1)}
+            onRestart={({ fresh = true } = {}) => { setRunFresh(fresh); setRunNonce((n) => n + 1); }}
             onReview={onReviewLesson}
           />
         )}
