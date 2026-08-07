@@ -49,6 +49,9 @@ vi.mock('./schoolApi.js', () => ({
     periods: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
     reportCard: vi.fn(async () => ({ ok: true, status: 200, data: null })),
     reviewLearner: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
+    // Today's dry-run plan (debt W7a) — the student panel fetches this
+    // unconditionally once a learner is claimed.
+    agendaPreview: vi.fn(async () => ({ ok: true, status: 200, data: { sections: [] } })),
   },
 }));
 
