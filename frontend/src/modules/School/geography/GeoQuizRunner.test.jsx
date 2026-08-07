@@ -3,14 +3,18 @@ import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import GeoQuizRunner from './GeoQuizRunner.jsx';
 
 const submit = vi.fn();
-vi.mock('./useGradedSession.js', () => ({ useGradedSession: () => ({ sessionId: 'ses_1', submit, status: 'ready' }) }));
+const gradedSessionMock = vi.fn(() => ({ sessionId: 'ses_1', submit, status: 'ready' }));
+vi.mock('./useGradedSession.js', () => ({ useGradedSession: (...a) => gradedSessionMock(...a) }));
 
 const bank = { id: 'geo:us-state-capitals', title: 'US Capitals', items: [
   { id: 'i1', type: 'multiple_choice', prompt: 'Capital of Nevada?', answer: 'Carson City', choices: ['Carson City', 'Reno'] },
   { id: 'i2', type: 'multiple_choice', prompt: 'Capital of Oregon?', answer: 'Salem', choices: ['Salem', 'Portland'] },
 ] };
 
-beforeEach(() => submit.mockReset());
+beforeEach(() => {
+  submit.mockReset();
+  gradedSessionMock.mockReset().mockReturnValue({ sessionId: 'ses_1', submit, status: 'ready' });
+});
 
 it('drops correct items and ends with a mastery summary', async () => {
   submit.mockResolvedValue({ correct: true, expected: 'x' });
@@ -55,4 +59,14 @@ it('requeues an unrecorded answer as not-mastered (no crash, no mastery)', async
   fireEvent.click(await screen.findByRole('button', { name: 'Carson City' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Next' }));
   expect(await screen.findByTestId('geo-summary')).toHaveTextContent('Mastered 2 / 2');
+});
+
+it('shows a session-lost card when the hook reports a lost session, without a silent exit', async () => {
+  const onExit = vi.fn();
+  gradedSessionMock.mockReturnValue({ sessionId: 'ses_1', submit, status: 'ready', sessionLost: true });
+  render(<GeoQuizRunner bank={bank} onExit={onExit} />);
+  expect(await screen.findByTestId('session-lost')).toHaveTextContent(/took a long break and timed out/i);
+  expect(onExit).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+  expect(onExit).toHaveBeenCalled();
 });

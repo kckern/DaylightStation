@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import SchoolApp from './SchoolApp.jsx';
+import { schoolApi } from './schoolApi.js';
 
 // Spy on the schoolLog facade so the launch-refused path (F12) is directly
 // observable, not just inferred from the rendered panel.
@@ -49,6 +50,9 @@ vi.mock('./schoolApi.js', () => ({
     periods: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
     reportCard: vi.fn(async () => ({ ok: true, status: 200, data: null })),
     reviewLearner: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
+    // Today's dry-run plan (debt W7a) — the student panel fetches this
+    // unconditionally once a learner is claimed.
+    agendaPreview: vi.fn(async () => ({ ok: true, status: 200, data: { sections: [] } })),
   },
 }));
 
@@ -187,6 +191,55 @@ describe('authored learning Catalog', () => {
     expect(screen.queryByText('A unit rate?')).toBeNull();
     // F12: the refusal is logged with the moduleId that was refused.
     expect(surfaceLogMock).toHaveBeenCalledWith('launch-refused', expect.objectContaining({ moduleId: 'check' }));
+  });
+
+  // Task 16 (debt W7b): a failed catalog quiz offers a way back to the
+  // Catalog (the real, reachable target -- AdaptiveTutorPanel needs a
+  // pre-existing remediation sessionId this screen doesn't have yet).
+  it('a failed catalog quiz module offers Review this lesson, which reopens the Catalog', async () => {
+    // Not `...Once`: LearningCatalogBrowser unmounts while the quiz plays
+    // (`section === 'catalog' && !active`) and re-fetches on remount after
+    // Review this lesson is tapped, so both mounts need this same catalog.
+    learningCatalogsMock.mockResolvedValue({ ok: true, status: 200, data: {
+      schema: 'school.catalog-index/v1', catalogs: [{
+        schema: 'school.catalog/v1', catalogId: 'core', title: 'Core', subjects: [{
+          subjectId: 'quant', title: 'Quantitative', courses: [{ courseId: 'rates', title: 'Rates', units: [{
+            unitId: 'intro', title: 'Introduction', lessons: [{ lessonId: 'unit-rate', title: 'Unit rates', modules: [{ moduleId: 'gate', type: 'quiz' }] }],
+          }] }],
+        }],
+      }],
+    } });
+    learningLessonMock.mockResolvedValueOnce({ ok: true, status: 200, data: {
+      schema: 'school.learning-lesson/v1',
+      context: { catalog: { catalogId: 'core' }, subject: { subjectId: 'quant' }, course: { courseId: 'rates' }, unit: { unitId: 'intro' } },
+      lesson: { lessonId: 'unit-rate', title: 'Unit rates', modules: [{
+        moduleId: 'gate', type: 'quiz', title: 'Gate quiz', passingPercent: 80,
+        bank: { id: 'rate-quiz', title: 'Rate quiz', items: [{ id: 'q1', type: 'multiple_choice', prompt: 'A unit rate?', choices: ['Yes', 'No'], answer: 'Yes' }] },
+      }] },
+    } });
+    surfaceProfileMock.mockResolvedValueOnce({ ok: true, status: 200, data: { surfaceId: 'screen-test', family: 'screen', title: 'Test Screen', liveness: 'live', capabilities: {}, limits: {} } });
+    certificationMock.mockResolvedValueOnce({ ok: true, status: 200, data: [{
+      address: 'core/quant/rates/intro/unit-rate', surfaceId: 'screen-test', verdict: 'full', reasons: [], warnings: [],
+      moduleVerdicts: [{ moduleId: 'gate', verdict: 'render', reasons: [], warnings: [] }],
+    }] });
+    render(<SchoolApp clear={() => {}} />);
+    fireEvent.click(await screen.findByRole('button', { name: /^catalog/i }));
+    for (const label of ['Core', 'Quantitative', 'Rates', 'Introduction', 'Unit rates']) {
+      fireEvent.click(await screen.findByRole('button', { name: new RegExp(label, 'i') }));
+    }
+    fireEvent.click(await screen.findByRole('button', { name: /Gate quiz/ }));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Alpha'));
+    // The shared `answer` mock always grades "correct" regardless of which
+    // choice was tapped; override once so this run actually fails the bar.
+    schoolApi.answer.mockResolvedValueOnce({ ok: true, status: 200, data: { correct: false, expected: 'Yes', attemptId: 'a1' } });
+    fireEvent.click(await screen.findByRole('button', { name: 'No' })); // wrong answer -> fails the 80% bar
+    fireEvent.click(await screen.findByRole('button', { name: /next/i }));
+    expect(await screen.findByTestId('quiz-passbar')).toHaveTextContent(/passing is 80%/);
+    fireEvent.click(screen.getByTestId('review-lesson'));
+    // Back at the Catalog root, quiz gone -- the same tile trail is walkable again.
+    expect(screen.queryByTestId('quiz-summary')).toBeNull();
+    expect(await screen.findByRole('button', { name: /^Core$/i })).toBeInTheDocument();
   });
 });
 
@@ -354,13 +407,50 @@ describe('SchoolApp bank flows (via the Library)', () => {
     expect(await screen.findByText('WA?')).toBeInTheDocument();
   });
 
-  it('unclaimed: launching an assigned bank then dismissing the picker refuses it, does not enter the runner, and narrows the list to generic', async () => {
+  it('a claimed kid launching a generic bank never sees the picker', async () => {
+    localStorage.setItem('school:user', 'kid1'); // pre-claimed, as if picked on a prior visit
+    render(<SchoolApp clear={() => {}} />);
+    await openLibrary();
+    await screen.findByText('Animals');
+    fireEvent.click(within(cardFor('Animals')).getByRole('button', { name: /quiz/i }));
+    expect(await screen.findByText('WA?')).toBeInTheDocument(); // straight into the runner
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('a claimed kid launching an assigned bank never sees the picker', async () => {
+    localStorage.setItem('school:user', 'kid1');
+    render(<SchoolApp clear={() => {}} />);
+    await openLibrary();
+    await screen.findByText('Caps');
+    fireEvent.click(within(cardFor('Caps')).getByRole('button', { name: /quiz/i }));
+    expect(await screen.findByText('WA?')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('unclaimed: launching an assigned bank then dismissing the picker CANCELS — no guest demotion, no notice, no runner', async () => {
     render(<SchoolApp clear={() => {}} />);
     await openLibrary();
     await screen.findByText('Caps');
     fireEvent.click(within(cardFor('Caps')).getByRole('button', { name: /quiz/i }));
     await screen.findByRole('dialog');
-    fireEvent.click(screen.getByLabelText(/close/i)); // dismiss picker -> guest
+    fireEvent.click(screen.getByLabelText(/close/i)); // ✕ -> cancel, not guest
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByText(/sign in to take this one/i)).toBeNull();
+    expect(screen.queryByText('WA?')).toBeNull();
+    // Identity is untouched (still unclaimed) -- no guest chip appeared, and
+    // the bank list still shows the assigned bank too (never narrowed).
+    expect(screen.queryByRole('button', { name: /^guest$/i })).toBeNull();
+    expect(screen.getByText('Caps')).toBeInTheDocument();
+  });
+
+  it('unclaimed: the picker guest button on an assigned bank refuses it with the sign-in notice, and narrows the list to generic', async () => {
+    render(<SchoolApp clear={() => {}} />);
+    await openLibrary();
+    await screen.findByText('Caps');
+    fireEvent.click(within(cardFor('Caps')).getByRole('button', { name: /quiz/i }));
+    await screen.findByRole('dialog');
+    fireEvent.click(screen.getByRole('button', { name: /just practicing/i })); // explicit guest
 
     expect(await screen.findByText(/sign in to take this one/i)).toBeInTheDocument();
     expect(screen.queryByText('WA?')).toBeNull();
@@ -370,13 +460,26 @@ describe('SchoolApp bank flows (via the Library)', () => {
     expect(screen.queryByText('Caps')).toBeNull();
   });
 
-  it('unclaimed: launching a generic bank then dismissing the picker proceeds as guest into the runner', async () => {
+  it('unclaimed: launching a generic bank then dismissing the picker CANCELS — stays put, no guest, no runner', async () => {
     render(<SchoolApp clear={() => {}} />);
     await openLibrary();
     await screen.findByText('Animals');
     fireEvent.click(within(cardFor('Animals')).getByRole('button', { name: /quiz/i }));
     await screen.findByRole('dialog');
-    fireEvent.click(screen.getByLabelText(/close/i)); // dismiss picker -> guest, but generic work proceeds
+    fireEvent.click(screen.getByLabelText(/close/i)); // ✕ -> cancel, not guest
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByText('WA?')).toBeNull();
+    expect(screen.queryByRole('button', { name: /^guest$/i })).toBeNull();
+  });
+
+  it('unclaimed: the picker guest button on a generic bank proceeds as guest into the runner', async () => {
+    render(<SchoolApp clear={() => {}} />);
+    await openLibrary();
+    await screen.findByText('Animals');
+    fireEvent.click(within(cardFor('Animals')).getByRole('button', { name: /quiz/i }));
+    await screen.findByRole('dialog');
+    fireEvent.click(screen.getByRole('button', { name: /just practicing/i })); // explicit guest, generic work proceeds
 
     expect(await screen.findByText('WA?')).toBeInTheDocument();
   });
@@ -387,7 +490,7 @@ describe('SchoolApp bank flows (via the Library)', () => {
     await screen.findByText('Animals');
     fireEvent.click(within(cardFor('Animals')).getByRole('button', { name: /quiz/i }));
     await screen.findByRole('dialog');
-    fireEvent.click(screen.getByLabelText(/close/i));
+    fireEvent.click(screen.getByRole('button', { name: /just practicing/i })); // explicit guest into the runner
     await screen.findByText('WA?'); // in the runner
 
     fireEvent.click(screen.getByRole('button', { name: /^home$/i }));
@@ -417,7 +520,7 @@ describe('SchoolApp materials flows', () => {
     expect(await screen.findByTestId('player-stub')).toHaveTextContent('plex:10');
   });
 
-  it('unclaimed: dismissing the picker on a course unit refuses it (notice, no player)', async () => {
+  it('unclaimed: dismissing the picker on a course unit CANCELS — no notice, no player, identity untouched', async () => {
     materialsMock.mockResolvedValue(SAMPLE_CATALOG);
     materialUnitsMock.mockResolvedValue({
       ok: true, status: 200,
@@ -428,30 +531,40 @@ describe('SchoolApp materials flows', () => {
     await tapMaterial('Bill Nye');
     fireEvent.click(await screen.findByText('Air'));
     await screen.findByRole('dialog');
-    fireEvent.click(screen.getByLabelText(/close/i));
-    expect(await screen.findByText(/sign in for courses/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText(/close/i)); // ✕ -> cancel, not guest
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByText(/sign in for courses/i)).toBeNull();
     expect(screen.queryByTestId('player-stub')).toBeNull();
+    expect(screen.queryByRole('button', { name: /^guest$/i })).toBeNull();
   });
 
-  it('explicit guest tapping a course unit gets the notice directly, no picker', async () => {
+  it('unclaimed: the picker guest button on a course unit refuses it directly (course notice, no player)', async () => {
     materialsMock.mockResolvedValue(SAMPLE_CATALOG);
     materialUnitsMock.mockResolvedValue({
       ok: true, status: 200,
       data: { material: SAMPLE_CATALOG.data.materials[0], units: [{ id: 'plex:10', index: 1, title: 'Air', durationMs: null, group: null, percent: 0, playhead: 0, completed: false, locked: false, current: true, lockReason: null, quiz: null }] },
     });
     render(<SchoolApp clear={() => {}} />);
-    // The header has no sign-in chip anymore: guesthood arises from waving
-    // off the picker when tracked work asks who's there.
+    // The header has no sign-in chip anymore: guesthood arises from the
+    // picker's own explicit guest row (Task 18), not from waving it off.
     await openSubject(/science/i);
     await tapMaterial('Bill Nye');
     fireEvent.click(await screen.findByText('Air'));
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
-    fireEvent.click(await screen.findByLabelText(/close/i));
-    // The dismissed launch proceeds as guest and hits the course gate: the
-    // notice appears, the guest chip shows, and the picker does not return.
+    fireEvent.click(await screen.findByRole('button', { name: /just practicing/i }));
+    // Explicit guest hits the course gate: the notice appears, the guest chip
+    // shows, and the picker does not return.
     expect(await screen.findByText(/sign in for courses/i)).toBeInTheDocument();
     await screen.findByRole('button', { name: /^guest$/i });
     expect(screen.queryByRole('dialog')).toBeNull();
+
+    // Now already-explicit-guest: tapping the same unit again hits the notice
+    // directly, with no picker in between.
+    fireEvent.click(await screen.findByText('Air'));
+    expect(await screen.findByText(/sign in for courses/i)).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByTestId('player-stub')).toBeNull();
   });
 
   it('a listening material unit in the Library plays without any identity gating', async () => {

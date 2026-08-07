@@ -170,6 +170,15 @@ describe('assigning work over HTTP', () => {
     expect((await fetch(`${base}/assignments`)).status).toBe(200);
     expect((await fetch(`${base}/assignments/learner-1`)).status).toBe(200);
   });
+
+  it('a stale save (someone else wrote since this was loaded) is refused 409, not 400 — a co-teacher\'s edit was NOT silently clobbered', async () => {
+    const r = await put('/assignments/learner-1', {
+      courses: ['history'], units: [], assignedBy: 'dad', baseUpdatedAt: 'an-updatedAt-nobody-wrote',
+    });
+    expect(r.status).toBe(409);
+    expect((await r.json()).error).toMatch(/reload/i);
+    expect(assigned.get('learner-1').courses).toEqual(['math-fractions']);
+  });
 });
 
 describe('fail closed when the guarded use case is missing', () => {

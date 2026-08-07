@@ -74,7 +74,10 @@ export class YamlEnrichmentLog {
 
 
   async append(entry) {
-    this.#writeChain = this.#writeChain.then(async () => {
+    // The stored chain swallows prior failures (final-review F2): one
+    // rejected append must not wedge every later one for the process
+    // lifetime. Each caller still awaits `run` and sees its own failure.
+    const run = this.#writeChain.catch(() => {}).then(async () => {
       const current = this.#readState();
       // An append-only evidence log must never truncate itself over a file
       // it could not read (M3 review): corrupt refuses, it never overwrites.
@@ -84,7 +87,8 @@ export class YamlEnrichmentLog {
       await atomicWrite(this.#file(), dumpYaml({ entries: [...current.entries, entry] }));
       this.#logger.info?.('school.enrichment.recorded', { id: entry.id, recordedBy: entry.recordedBy });
     });
-    await this.#writeChain;
+    this.#writeChain = run;
+    await run;
     return entry;
   }
 }

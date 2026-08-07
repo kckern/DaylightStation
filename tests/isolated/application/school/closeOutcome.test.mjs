@@ -1,10 +1,11 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { CloseSessionOutcome } from '#apps/school/usecases/CloseSessionOutcome.mjs';
 import { OpenRemediation } from '#apps/school/usecases/OpenRemediation.mjs';
 import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
 import { ReceiptPrinting } from '#apps/school/ReceiptPrinting.mjs';
 import { validateDocument } from '#domains/school/documents/documentValidation.mjs';
 import { isSchoolToken } from '#domains/school/sessions/tokens.mjs';
+import { GuestForbiddenError } from '#domains/school/errors.mjs';
 import {
   FakeCatalog, FakeSessionRepository, FakeTokenRegistry, FakeAssignmentStore, FakeEconomy,
   FakeReceiptPrinter, FakeReceiptRenderer, FakeReviewQueue,
@@ -19,7 +20,10 @@ const SID = 'ses_1';
 
 let clock, sessions, tokens, economy, thermal, reviewQueue, close, remediate;
 
-const build = ({ economyEnabled = true, throwOn = null, receiptPrinter = undefined, wireReviewQueue = true, passOverrides = null } = {}) => {
+const build = ({
+  economyEnabled = true, throwOn = null, receiptPrinter = undefined, wireReviewQueue = true,
+  passOverrides = null, teacherGate = null,
+} = {}) => {
   clock = fakeClock();
   const catalog = new FakeCatalog({ units: rawUnits(), documents: rawDocuments(), manifests: rawManifests() });
   const curriculum = new CurriculumAccess({ catalog, bankIds: () => BANK_IDS, clock: clock.epoch, logger: silentLogger });
@@ -38,6 +42,7 @@ const build = ({ economyEnabled = true, throwOn = null, receiptPrinter = undefin
     curriculum, sessions, tokens, assignments, economy, receipts,
     economyAction: 'school-unit-complete', economyEnabled,
     grownUps: fakeGrownUps(clock),
+    teacherGate,
     reviewQueue: wireReviewQueue ? reviewQueue : null,
     passOverrides,
     clock: clock.now, rng: seededRng(5), logger: silentLogger,
@@ -603,5 +608,59 @@ describe('who may sign off a reward', () => {
     expect(() => new CloseSessionOutcome({
       curriculum: {}, sessions, tokens, assignments: new FakeAssignmentStore([]), clock: clock.now,
     })).toThrow(/grownUps/);
+  });
+});
+
+/**
+ * PIN on the coin sign-off lane (readiness punch 2). The grown-up rule STAYS —
+ * it is the floor, not something the gate replaces — and a wired TeacherGate
+ * adds the console PIN on top, ONLY when `signedOff === true`. A plain
+ * (unsigned) close — including the finisher-style `execute({sessionId})` call
+ * `ResolveReviewItem` makes on itself — must never reach the gate at all: the
+ * finisher is already behind the gated resolve, and re-asserting there would
+ * either double-prompt or wrongly refuse a session nobody is signing off.
+ */
+describe('TeacherGate on the coin sign-off lane (readiness punch 2)', () => {
+  const rewardable = () => graded({ unitId: OMR_UNIT, percent: 100, passedEarlier: [
+    { sessionId: 'ses_a', unitId: 'math-fractions.01' },
+    { sessionId: 'ses_b', unitId: WORKSHEET_UNIT },
+  ] });
+
+  it('a refusing gate stops a sign-off and pays no reward', async () => {
+    const teacherGate = { assert: vi.fn(() => { throw new GuestForbiddenError('The teacher PIN is missing or wrong.'); }) };
+    build({ teacherGate });
+    await rewardable();
+    await expect(close.execute({ sessionId: SID, signedOff: true, signedOffBy: 'parent', pin: 'wrong' }))
+      .rejects.toMatchObject({ name: 'GuestForbiddenError' });
+    expect(teacherGate.assert).toHaveBeenCalledWith({
+      userId: 'parent', pin: 'wrong', action: 'sessions.close-signoff', context: { sessionId: SID },
+    });
+    expect(economy.calls).toEqual([]);
+    expect(sessions.types(SID)).not.toContain('rewarded');
+  });
+
+  it('with no gate wired, a pin is ignored and the legacy grown-up rule alone governs', async () => {
+    await rewardable();
+    const result = await close.execute({ sessionId: SID, signedOff: true, signedOffBy: 'parent', pin: 'wrong' });
+    expect(result.reward).toMatchObject({ amount: 15 });
+  });
+
+  it('a passing gate lets the sign-off through', async () => {
+    const teacherGate = { assert: vi.fn() };
+    build({ teacherGate });
+    await rewardable();
+    const result = await close.execute({ sessionId: SID, signedOff: true, signedOffBy: 'parent', pin: 'right' });
+    expect(result.reward).toMatchObject({ amount: 15 });
+    expect(teacherGate.assert).toHaveBeenCalledTimes(1);
+  });
+
+  it('a finisher-style close (no signedOff at all) never reaches a wired gate, and still settles unsigned', async () => {
+    const teacherGate = { assert: vi.fn(() => { throw new GuestForbiddenError('nope'); }) };
+    build({ teacherGate });
+    await rewardable();
+    const result = await close.execute({ sessionId: SID });
+    expect(result.result).toBe('passed');
+    expect(result.reward).toMatchObject({ skipReason: 'awaiting_signoff' });
+    expect(teacherGate.assert).not.toHaveBeenCalled();
   });
 });

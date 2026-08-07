@@ -45,8 +45,12 @@ async function main() {
   check('scanning the card prints an agenda', card.status === 'agenda_printed' && card.printed, card.status);
   const agenda = harness.lastReceiptText() ?? '';
   if (VERBOSE) process.stdout.write(`\n--- agenda ---\n${agenda}\n\n`);
+  // The masthead is the resolved learner name rendered as an inverted banner,
+  // which the renderer prints in caps (see receipts.mjs: title = learnerName
+  // || 'Hello!' — never the raw id; DocumentEscPosRenderer uppercases title
+  // text for the banner).
   check('the agenda names the learner and the unit',
-    agenda.includes('Test Learner') && agenda.includes('Equivalent Fractions'),
+    agenda.includes('TEST LEARNER') && agenda.includes('Equivalent Fractions'),
     agenda.split('\n')[0]);
 
   const offers = harness.tokensInLastReceipt();
@@ -76,7 +80,9 @@ async function main() {
   check('the session advanced to media_completed', afterMedia.state === 'media_completed', afterMedia.state);
 
   // --- 4. the quiz, through the one grading engine -------------------------
-  const bank = fixtureBank('math-fractions-01-quiz');
+  // Path-form bank id since the 2026-07-30 curriculum restructure — see
+  // tests/_fixtures/school/curriculum/banks/math-fractions-01-quiz.yml `id:`.
+  const bank = fixtureBank('math/math-fractions/01-quiz');
   const entries = {};
   for (const item of bank.items) {
     entries[item.id] = item.type === 'matching' ? item.pairs.map((p) => ({ ...p })) : item.answer;
@@ -110,10 +116,22 @@ async function main() {
   check('unit 01 is completed', unit01?.status === 'completed', unit01?.status);
   check('unit 02 is no longer locked', unit02?.status === 'available', unit02?.status);
 
+  // MATH already served today (a passing outcome just now) — the agenda
+  // caps a subject at one scannable action per study day and prints
+  // "done today" instead (spec §6.2 v2, docs/reference/school/README.md
+  // "at most one scannable action"). Rescanning the SAME day proves that
+  // cap, not a bug in unlocking; cross the 4am study-day boundary to see
+  // unit 02 actually offered.
+  await harness.scanCard();
+  const sameDayAgenda = harness.lastReceiptText() ?? '';
+  if (VERBOSE) process.stdout.write(`\n--- same-day agenda ---\n${sameDayAgenda}\n\n`);
+  check('MATH is marked done for today, not re-offered', /MATH.*done today/i.test(sameDayAgenda));
+
+  harness.advanceDays(1);
   await harness.scanCard();
   const nextAgenda = harness.lastReceiptText() ?? '';
-  if (VERBOSE) process.stdout.write(`\n--- next agenda ---\n${nextAgenda}\n\n`);
-  check('the next agenda offers unit 02 as a scannable line',
+  if (VERBOSE) process.stdout.write(`\n--- next-day agenda ---\n${nextAgenda}\n\n`);
+  check('the next-day agenda offers unit 02 as a scannable line',
     nextAgenda.includes('Adding and Subtracting Unlike Denominators — print your sheet')
     && harness.tokensInLastReceipt().length === 1);
 

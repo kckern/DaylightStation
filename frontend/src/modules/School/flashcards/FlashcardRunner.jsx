@@ -35,6 +35,7 @@ export default function FlashcardRunner({ bank, learning = null, onExit }) {
   const [unrecordedCount, setUnrecordedCount] = useState(0);
   const [unrecorded, setUnrecorded] = useState(false);
   const [openFailed, setOpenFailed] = useState(false);
+  const [sessionLost, setSessionLost] = useState(false);
   const [grading, setGrading] = useState(false);
   const missedOnce = useRef(new Set());
   // Synchronous in-flight guard: a double-tap on Missed/Got-it before the
@@ -98,7 +99,9 @@ export default function FlashcardRunner({ bank, learning = null, onExit }) {
       const selfGrade = got ? 'correct' : 'incorrect';
       const { ok, status: answerStatus } = await schoolApi.answer(sessionId, { itemId: card.id, selfGrade });
       if (abandonedRef.current) return; // identity changed while the request was in flight
-      if (answerStatus === 410) { onExit(); return; }
+      // A 410 means the session timed out server-side — never a silent
+      // bounce (student-advocacy #8): show a sign, exit only on Back.
+      if (answerStatus === 410) { setSessionLost(true); return; }
       if (!ok) {
         // Unlike a quiz's server-computed correctness, the self-grade is
         // already known to the child the instant they tap Got it/Missed —
@@ -153,6 +156,18 @@ export default function FlashcardRunner({ bank, learning = null, onExit }) {
           </p>
         )}
         <button type="button" className="school-runner__done" onClick={onExit}>Done</button>
+      </div>
+    );
+  }
+
+  // A lost (410) session must show a sign, not a silent bounce — same
+  // student-advocacy contract as openFailed below.
+  if (sessionLost) {
+    return (
+      <div className="school-runner school-runner--error" data-testid="session-lost">
+        <h2>{bank.title}</h2>
+        <p>Your cards took a long break and timed out. Your finished answers are saved — start again to keep going.</p>
+        <button type="button" className="school-runner__done" onClick={onExit}>Back</button>
       </div>
     );
   }

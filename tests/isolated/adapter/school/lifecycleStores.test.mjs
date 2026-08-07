@@ -16,11 +16,20 @@ let tmp;
 let assignments;
 let forms;
 let review;
+let warnings;
+
+const logger = {
+  warn: (...args) => warnings.push(args),
+  info: () => {},
+  error: () => {},
+  debug: () => {},
+};
 
 beforeEach(() => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'school-lifecycle-'));
+  warnings = [];
   const configService = { getDataDir: () => tmp, getHouseholdPath: (rel) => `${tmp}/${rel}` };
-  assignments = new YamlAssignmentStore({ configService });
+  assignments = new YamlAssignmentStore({ configService, logger });
   forms = new YamlFormMapStore({ configService });
   review = new YamlReviewQueue({ configService });
 });
@@ -98,6 +107,48 @@ describe('YamlAssignmentStore', () => {
   it('treats a malformed history file as empty rather than throwing', async () => {
     write(under('history', 'kid9.yml'), '- [unclosed');
     expect(await assignments.history('kid9')).toEqual([]);
+  });
+
+  describe('corrupt-file refusal', () => {
+    it('put() refuses a corrupt current file, leaves its bytes untouched, and get() logs + returns null', async () => {
+      const file = under('assignments', 'kid1.yml');
+      write(file, 'courses: [: :\n  broken');
+      const before = fs.readFileSync(file, 'utf8');
+
+      await expect(assignments.put({ learnerId: 'kid1', courses: ['math-fractions'] }))
+        .rejects.toMatchObject({ message: expect.stringMatching(/corrupt/), code: 'ASSIGNMENTS_CORRUPT' });
+      expect(fs.readFileSync(file, 'utf8')).toBe(before);
+
+      expect(await assignments.get('kid1')).toBeNull();
+      expect(warnings.some(([event]) => event === 'school.assignments.file-corrupt')).toBe(true);
+    });
+
+    it('put() refuses when the HISTORY file is corrupt even though the current file is fine', async () => {
+      await assignments.put({ learnerId: 'kid5', courses: ['math-fractions'] });
+      const historyFile = under('history', 'kid5.yml');
+      write(historyFile, '- [unclosed');
+      const beforeCurrent = fs.readFileSync(under('assignments', 'kid5.yml'), 'utf8');
+      const beforeHistory = fs.readFileSync(historyFile, 'utf8');
+
+      await expect(assignments.put({ learnerId: 'kid5', courses: ['reading-basics'] }))
+        .rejects.toMatchObject({ message: expect.stringMatching(/corrupt/), code: 'ASSIGNMENTS_CORRUPT' });
+
+      // Neither file moved — a corrupt history must not be allowed to make the
+      // caller believe a fresh append-only history was legitimately started.
+      expect(fs.readFileSync(under('assignments', 'kid5.yml'), 'utf8')).toBe(beforeCurrent);
+      expect(fs.readFileSync(historyFile, 'utf8')).toBe(beforeHistory);
+      expect(warnings.some(([event]) => event === 'school.assignments.history-corrupt')).toBe(true);
+    });
+
+    it('a fixed file clears the refusal — put() succeeds once the corrupt bytes are gone', async () => {
+      const file = under('assignments', 'kid7.yml');
+      write(file, 'courses: [: :\n  broken');
+      await expect(assignments.put({ learnerId: 'kid7', courses: ['x'] })).rejects.toThrow(/corrupt/);
+
+      fs.rmSync(file);
+      await expect(assignments.put({ learnerId: 'kid7', courses: ['math-fractions'] })).resolves.toMatchObject({ learnerId: 'kid7' });
+      expect(await assignments.get('kid7')).toMatchObject({ courses: ['math-fractions'] });
+    });
   });
 });
 

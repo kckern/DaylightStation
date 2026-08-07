@@ -7,9 +7,11 @@
  * Flow per unit: read raw playhead/percent via `progressStore.enrich` (dumb
  * store read only — School must never consume its `userWatched`/
  * `userEngaged`/`userCompletedAt`, which are Piano completion policy, spec §6);
- * look up a gating bank via `bankIndex.byUnit`; if one exists, fold the user's
- * attempt log through `quizSessionPassed` to derive `gateSatisfied` (a guest,
- * i.e. no `userId`, never satisfies a gate — nothing to attribute a pass to);
+ * look up the unit's gating banks via `bankIndex.byUnit` (chapter banks roll
+ * up to their parent unit through the fetch's `trackParents` map); if any
+ * exist, fold the user's attempt log through `quizSessionPassed` PER BANK —
+ * every one must pass — to derive `gateSatisfied` (a guest, i.e. no `userId`,
+ * never satisfies a gate — nothing to attribute a pass to);
  * fold `percent`+`gateSatisfied` through the category's `unitCompleted`
  * conditions; then `annotateLocks` the whole ordered list in one pass.
  */
@@ -21,16 +23,49 @@ import { EntityNotFoundError } from '#domains/core/errors/index.mjs';
  * gates. Banks without a `unit` backlink are not gates for anything and are
  * skipped.
  *
+ * Backlinks come in two grains (Blocker 2):
+ * - WORK level — `bank.unit` IS a listed unit id. Binds directly, as always.
+ * - TRACK level — `bank.unit` is a CHAPTER of a listed unit (the Shakespeare
+ *   shape: units are plays, banks backlink the plays' tracks). `trackParents`
+ *   (Map<trackId, unitId>, supplied by the material fetch, which already sees
+ *   the tracks) rolls every chapter bank up to its parent unit, in TRACK order
+ *   — ALL of them must pass for the unit's gate (fold lives in execute()).
+ *
+ * `byUnit` keeps the legacy `{bankId, itemCount}` face (first bank) so
+ * existing consumers read it unchanged, plus the ordered `banks` roll-up.
+ *
  * @param {Array<{id:string, unit?:string, itemCount:number}>} banks
- * @returns {{byUnit: function(string): ({bankId:string, itemCount:number}|null)}}
+ * @param {{trackParents?: Map<string,string>|null}} [options]
+ * @returns {{byUnit: function(string): ({banks:Array<{bankId:string,itemCount:number}>, bankId:string, itemCount:number}|null)}}
  */
-export function buildBankIndex(banks) {
-  const map = new Map();
+export function buildBankIndex(banks, { trackParents = null } = {}) {
+  const direct = new Map(); // unitId -> [{bankId, itemCount}...] (backlink IS the unit id)
+  const byTrack = new Map(); // trackId -> [{bankId, itemCount}...]
   for (const bank of banks || []) {
     if (!bank.unit) continue;
-    map.set(bank.unit, { bankId: bank.id, itemCount: bank.itemCount });
+    const entry = { bankId: bank.id, itemCount: bank.itemCount };
+    const bucket = trackParents?.has(bank.unit) ? byTrack : direct;
+    if (!bucket.has(bank.unit)) bucket.set(bank.unit, []);
+    bucket.get(bank.unit).push(entry);
   }
-  return { byUnit: (unitId) => map.get(unitId) || null };
+  // Chapter banks in TRACK order (the map's insertion order is the material's
+  // own track order), not the arbitrary order the bank scan returned them in.
+  const rolled = new Map(); // unitId -> [{bankId, itemCount}...]
+  if (trackParents) {
+    for (const [trackId, unitId] of trackParents) {
+      const entries = byTrack.get(trackId);
+      if (!entries) continue;
+      if (!rolled.has(unitId)) rolled.set(unitId, []);
+      rolled.get(unitId).push(...entries);
+    }
+  }
+  return {
+    byUnit: (unitId) => {
+      const list = [...(direct.get(unitId) ?? []), ...(rolled.get(unitId) ?? [])];
+      if (list.length === 0) return null;
+      return { banks: list, bankId: list[0].bankId, itemCount: list[0].itemCount };
+    },
+  };
 }
 
 // Fetching a material's remote units (episodes/chapters) occasionally stalls
@@ -41,7 +76,7 @@ export function buildBankIndex(banks) {
 // instant for everyone; coalesce concurrent fetches so the frontend's retries
 // don't stampede the stall.
 const MATERIAL_TIMEOUT_MS = 20_000;
-const MATERIAL_TTL_MS = 300_000; // units rarely change; progress is folded fresh each call
+const MATERIAL_TTL_MS = 3_600_000; // units rarely change; progress is folded fresh each call
 
 export class GetMaterialUnits {
   #catalog;
@@ -117,8 +152,17 @@ export class GetMaterialUnits {
 
     const attempts = userId != null ? this.#attemptsReader.read(userId) : [];
 
+    // The material fetch's track→parent map (Map<trackContentId, unitContentId>,
+    // built from children the fetch already walks — no extra provider calls).
+    // Threaded into the bank lookup so CHAPTER banks roll up to the unit they
+    // gate; absent (null) for materials whose units are already leaves.
+    const trackParents = full.trackParents ?? null;
+
     const rows = ordered.map((unit, i) => {
-      const bank = this.#bankIndex.byUnit(unit.id);
+      const gate = this.#bankIndex.byUnit(unit.id, { trackParents });
+      // Defensive: an injected index may still answer in the legacy
+      // single-bank shape; treat it as a one-bank roll-up.
+      const gateBanks = gate ? (Array.isArray(gate.banks) && gate.banks.length ? gate.banks : [{ bankId: gate.bankId, itemCount: gate.itemCount }]) : [];
       const percent = enriched[i]?.userPercent ?? null;
       const playhead = enriched[i]?.userPlayhead ?? null;
       // A gated (course) unit with NO bank does not auto-satisfy its gate:
@@ -126,24 +170,34 @@ export class GetMaterialUnits {
       // (quizzes are made on demand — see the request-a-quiz affordance).
       // Watching stays open; moving on waits for the quiz. Ungated categories
       // are unaffected (their completion never consults the gate).
-      const gateSatisfied = bank
-        ? (userId != null && quizSessionPassed(attempts, { bankId: bank.bankId, itemCount: bank.itemCount, passPercent: this.#config.quiz_pass_percent }))
+      //
+      // With a roll-up, ALL of the unit's chapter banks must pass (user
+      // decision 2026-08-06); the quiz affordance always launches the NEXT
+      // UNPASSED chapter (or the first again, once every one has passed).
+      const passPercent = this.#config.quiz_pass_percent;
+      const passedFlags = gateBanks.map((b) => userId != null
+        && quizSessionPassed(attempts, { bankId: b.bankId, itemCount: b.itemCount, passPercent }));
+      const gateSatisfied = gate
+        ? passedFlags.length > 0 && passedFlags.every(Boolean)
         : !categoryDef.gated;
-      const needsQuiz = Boolean(categoryDef.gated && !bank);
+      const nextBank = gateBanks.find((b, j) => !passedFlags[j]) ?? gateBanks[0] ?? null;
+      const needsQuiz = Boolean(categoryDef.gated && !gate);
       const played = (percent ?? 0) >= this.#config.completion_threshold_percent;
       const completed = unitCompleted({ percent: percent ?? 0, gateSatisfied }, categoryDef, {
         completionThresholdPercent: this.#config.completion_threshold_percent,
       });
       return {
         unit, percent, playhead, completed, needsQuiz,
-        quiz: bank ? {
-          bankId: bank.bankId,
+        quiz: nextBank ? {
+          bankId: nextBank.bankId,
           // The gate's own bar, told to the child (advocacy M7 fix): the
           // SAME threshold quizSessionPassed applies above — the runner's
           // pass line and retake ask key off it.
-          passingPercent: this.#config.quiz_pass_percent ?? 80,
+          passingPercent: passPercent ?? 80,
+          banksTotal: gateBanks.length,
+          banksPassed: passedFlags.filter(Boolean).length,
         } : null,
-        gateInfo: { hasQuiz: !!bank, gateSatisfied, needsQuiz, played },
+        gateInfo: { hasQuiz: !!gate, gateSatisfied, needsQuiz, played },
       };
     });
 
@@ -168,8 +222,11 @@ export class GetMaterialUnits {
     // A series source may return them null when it fetches episodes directly;
     // the catalog already
     // carries a proxied poster + title for the detail header.
+    // trackParents is fetch-internal plumbing (a Map, useless over JSON) —
+    // it never rides the API payload.
+    const { trackParents: _tp, ...fullRest } = full;
     const material = {
-      ...full,
+      ...fullRest,
       title: full.title ?? catalogMaterial.title ?? null,
       poster: full.poster ?? catalogMaterial.poster ?? null,
       category: catalogMaterial.category,

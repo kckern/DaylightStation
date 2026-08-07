@@ -57,16 +57,19 @@ describe('agendaDocument', () => {
 
   // The name is the document TITLE (the renderers' standard-header banner),
   // never a text block — a markdown heading cannot ask for the inverted band.
+  // A raw id in the masthead is an accidental insult (design audit): no
+  // resolvable display name means we GREET, we never echo the learner id.
   it('carries the learner name as the document title, preferring the display name', () => {
     expect(agendaDocument({ learnerId: 'kid1', learnerName: 'Kid One', sections, tokensBySubject }).title).toBe('Kid One');
-    expect(agendaDocument({ learnerId: 'kid1', sections, tokensBySubject }).title).toBe('kid1');
-    expect(agendaDocument({ sections: [] }).title).toBe('School');
+    expect(agendaDocument({ learnerId: 'kid1', sections, tokensBySubject }).title).toBe('Hello!');
+    expect(agendaDocument({ sections: [] }).title).toBe('Hello!');
     expect(textOf(agendaDocument({ learnerId: 'kid1', learnerName: 'Kid One', sections, tokensBySubject })))
       .not.toContain('# Kid One');
   });
 
   it('titles the empty agenda too', () => {
     expect(valid(agendaDocument({ learnerId: 'kid1', learnerName: 'Kid One', sections: [] })).title).toBe('Kid One');
+    expect(valid(agendaDocument({ learnerId: 'kid1', sections: [] })).title).toBe('Hello!');
   });
 
   it('never prints the checkmark glyph — escposEncode silently drops non-cp858 chars', () => {

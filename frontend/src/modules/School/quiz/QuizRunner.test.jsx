@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { useState } from 'react';
 import QuizRunner from './QuizRunner.jsx';
 
 const answerMock = vi.fn();
@@ -54,12 +55,27 @@ describe('QuizRunner', () => {
     expect(await screen.findByTestId('unrecorded')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /next/i })).toBeInTheDocument();
   });
-  it('exits on a 410 (session gone after restart)', async () => {
+  it('shows a session-lost card on a 410 — no silent exit until Back is clicked', async () => {
     const onExit = vi.fn();
     answerMock.mockResolvedValueOnce({ ok: false, status: 410, data: null });
     render(<QuizRunner bank={bank} onExit={onExit} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Olympia' }));
-    await waitFor(() => expect(onExit).toHaveBeenCalled());
+    expect(await screen.findByTestId('session-lost')).toHaveTextContent(/took a long break and timed out/i);
+    expect(onExit).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(onExit).toHaveBeenCalled();
+  });
+
+  it('offers Start again on the session-lost card when onRestart is available', async () => {
+    const onExit = vi.fn();
+    const onRestart = vi.fn();
+    answerMock.mockResolvedValueOnce({ ok: false, status: 410, data: null });
+    render(<QuizRunner bank={bank} onExit={onExit} onRestart={onRestart} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Olympia' }));
+    await screen.findByTestId('session-lost');
+    fireEvent.click(screen.getByRole('button', { name: 'Start again' }));
+    expect(onRestart).toHaveBeenCalled();
+    expect(onExit).not.toHaveBeenCalled();
   });
   it('abandons the run when identity changes mid-quiz', async () => {
     const onExit = vi.fn();
@@ -199,5 +215,142 @@ describe('student-advocacy wave 7', () => {
     expect(screen.queryByRole('button', { name: /ask for a retake/i })).toBeNull();
     // Summary ceremony (design wave 9): one dot per question, all right here.
     expect(screen.getByTestId('quiz-dots').querySelectorAll('.is-right')).toHaveLength(2);
+  });
+
+  // Task 16 (debt W7b): a failed catalog quiz offers a way back to the lesson,
+  // not just the retake ask. AdaptiveTutorPanel needs a pre-existing
+  // remediation sessionId that a live failing summary never has, so this is
+  // the real, reachable target — SchoolApp supplies `onReview` and the unit
+  // context comes from the catalog-launch `learning` object.
+  describe('review-lesson link (debt W7b)', () => {
+    const failBoth = () => {
+      answerMock
+        .mockResolvedValueOnce({ ok: true, status: 200, data: { correct: false, expected: 'Olympia', attemptId: 'a1' } })
+        .mockResolvedValueOnce({ ok: true, status: 200, data: { correct: false, expected: 'Salem', attemptId: 'a2' } });
+    };
+    const runToSummary = async (labels = ['Seattle', 'Boise']) => {
+      fireEvent.click(await screen.findByRole('button', { name: labels[0] }));
+      fireEvent.click(await screen.findByRole('button', { name: /next/i }));
+      fireEvent.click(await screen.findByRole('button', { name: labels[1] }));
+      fireEvent.click(await screen.findByRole('button', { name: /next/i }));
+      return screen.findByTestId('quiz-summary');
+    };
+
+    it('shows the link on a failing summary with unit context and fires onReview', async () => {
+      failBoth();
+      const onReview = vi.fn();
+      const learning = { passingPercent: 80, unitId: 'intro' };
+      render(<QuizRunner bank={bank} learning={learning} onExit={() => {}} onReview={onReview} />);
+      await runToSummary();
+      expect(await screen.findByTestId('quiz-passbar')).toHaveTextContent(/passing is 80%/);
+      const link = screen.getByTestId('review-lesson');
+      expect(link).toHaveTextContent(/review this lesson/i);
+      fireEvent.click(link);
+      expect(onReview).toHaveBeenCalledWith(learning);
+    });
+
+    it('does NOT show the link on a passing summary', async () => {
+      const onReview = vi.fn();
+      render(<QuizRunner bank={bank} learning={{ passingPercent: 80, unitId: 'intro' }} onExit={() => {}} onReview={onReview} />);
+      await runToSummary(['Olympia', 'Salem']);
+      expect(screen.queryByTestId('review-lesson')).toBeNull();
+    });
+
+    it('does NOT show the link when the summary lacks unit context (e.g. the materials gate quiz)', async () => {
+      failBoth();
+      const onReview = vi.fn();
+      // Same shape SchoolMaterialPlayer hands a gate quiz today: passingPercent only.
+      render(<QuizRunner bank={bank} learning={{ passingPercent: 80 }} onExit={() => {}} onReview={onReview} />);
+      await runToSummary();
+      expect(screen.queryByTestId('review-lesson')).toBeNull();
+    });
+
+    it('does NOT show the link when no onReview handler is wired', async () => {
+      failBoth();
+      render(<QuizRunner bank={bank} learning={{ passingPercent: 80, unitId: 'intro' }} onExit={() => {}} />);
+      await runToSummary();
+      expect(screen.queryByTestId('review-lesson')).toBeNull();
+    });
+  });
+});
+
+// Task 17: mid-quiz resumability — the server answers openSession with an
+// optional `resume` payload; the runner picks up mid-bank instead of at q1.
+describe('mid-quiz resume (Task 17)', () => {
+  it('resumes at question 2 with the chip, preloaded score, and dots that include the resumed outcome', async () => {
+    openSessionMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: {
+      sessionId: 'ses_1', resume: { answeredItemIds: ['q1'], score: 1, outcomes: [true] },
+    } });
+    render(<QuizRunner bank={bank} onExit={() => {}} />);
+    // The chip names where the kid landed, and q2 (not q1) is on screen.
+    expect(await screen.findByTestId('resume-chip'))
+      .toHaveTextContent('Picked up where you left off — question 2');
+    expect(screen.getByRole('button', { name: 'Salem' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Olympia' })).not.toBeInTheDocument();
+    // Finish the run: the summary score and dots carry the resumed point.
+    answerMock.mockResolvedValueOnce({ ok: true, status: 200, data: { correct: true, expected: 'Salem', attemptId: 'att_2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Salem' }));
+    fireEvent.click(await screen.findByRole('button', { name: /next/i }));
+    const summary = await screen.findByTestId('quiz-summary');
+    expect(summary).toHaveTextContent('2 / 2');
+    expect(screen.getByTestId('quiz-dots').querySelectorAll('.is-right')).toHaveLength(2);
+  });
+
+  it('no resume payload → no chip, starts at question 1', async () => {
+    render(<QuizRunner bank={bank} onExit={() => {}} />);
+    expect(await screen.findByRole('button', { name: 'Olympia' })).toBeInTheDocument();
+    expect(screen.queryByTestId('resume-chip')).toBeNull();
+  });
+
+  it('Try again reopens the session with fresh:true (SchoolApp remount wiring)', async () => {
+    // Mimics SchoolApp exactly: Try again bumps a remount nonce, and the
+    // restart handler latches fresh for the remounted runner's open call.
+    function Host() {
+      const [nonce, setNonce] = useState(0);
+      const [fresh, setFresh] = useState(false);
+      return (
+        <QuizRunner
+          key={nonce}
+          bank={bank}
+          fresh={fresh}
+          onExit={() => {}}
+          onRestart={({ fresh: wantFresh = true } = {}) => { setFresh(wantFresh); setNonce((n) => n + 1); }}
+        />
+      );
+    }
+    render(<Host />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Olympia' }));
+    fireEvent.click(await screen.findByRole('button', { name: /next/i }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Salem' }));
+    fireEvent.click(await screen.findByRole('button', { name: /next/i }));
+    await screen.findByTestId('quiz-summary');
+    expect(openSessionMock).toHaveBeenCalledTimes(1);
+    expect(openSessionMock).toHaveBeenCalledWith({ userId: 'kid1', bankId: 'caps', mode: 'quiz' });
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(openSessionMock).toHaveBeenCalledTimes(2));
+    expect(openSessionMock).toHaveBeenLastCalledWith({ userId: 'kid1', bankId: 'caps', mode: 'quiz', fresh: true });
+  });
+
+  it('Start again after a lost session reopens WITHOUT fresh, so the sitting resumes', async () => {
+    function Host() {
+      const [nonce, setNonce] = useState(0);
+      const [fresh, setFresh] = useState(false);
+      return (
+        <QuizRunner
+          key={nonce}
+          bank={bank}
+          fresh={fresh}
+          onExit={() => {}}
+          onRestart={({ fresh: wantFresh = true } = {}) => { setFresh(wantFresh); setNonce((n) => n + 1); }}
+        />
+      );
+    }
+    answerMock.mockResolvedValueOnce({ ok: false, status: 410, data: null });
+    render(<Host />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Olympia' }));
+    await screen.findByTestId('session-lost');
+    fireEvent.click(screen.getByRole('button', { name: 'Start again' }));
+    await waitFor(() => expect(openSessionMock).toHaveBeenCalledTimes(2));
+    expect(openSessionMock).toHaveBeenLastCalledWith({ userId: 'kid1', bankId: 'caps', mode: 'quiz' });
   });
 });

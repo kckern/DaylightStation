@@ -63,14 +63,18 @@ function FlagAsk({ userId, bankId, sessionId, title }) {
   );
 }
 
-export default function QuizRunner({ bank, mode = 'quiz', learning = null, onExit, onRestart = null }) {
+export default function QuizRunner({ bank, mode = 'quiz', learning = null, fresh = false, onExit, onRestart = null, onReview = null }) {
   const { status, currentUser, isGuest } = useSchoolProfile();
   const [sessionId, setSessionId] = useState(null);
   const [index, setIndex] = useState(0);
+  // Mid-quiz resume (Task 17): question number the run picked up at (1-based),
+  // or null when the run started at the top. Drives the resume chip.
+  const [resumedAt, setResumedAt] = useState(null);
   const [verdict, setVerdict] = useState(null);
   const [unrecorded, setUnrecorded] = useState(false);
   const [unrecordedCount, setUnrecordedCount] = useState(0);
   const [openFailed, setOpenFailed] = useState(false);
+  const [sessionLost, setSessionLost] = useState(false);
   const [score, setScore] = useState(0);
   // Per-question outcomes for the summary dots (design audit #5): true /
   // false / null (unrecorded), in question order.
@@ -105,7 +109,7 @@ export default function QuizRunner({ bank, mode = 'quiz', learning = null, onExi
     let alive = true;
     const userId = currentUser?.id ?? null;
     schoolApi.openSession({
-      userId, bankId: bank.id, mode, ...(learning ? { learning } : {}),
+      userId, bankId: bank.id, mode, ...(learning ? { learning } : {}), ...(fresh ? { fresh: true } : {}),
     }).then(({ ok, data }) => {
       if (!alive) return;
       if (!ok) {
@@ -113,8 +117,20 @@ export default function QuizRunner({ bank, mode = 'quiz', learning = null, onExi
         setOpenFailed(true);
         return;
       }
+      // Mid-quiz resume (Task 17): the server may answer with the answers a
+      // dropped sitting already banked — pick up there, not at q1.
+      const answered = data.resume?.answeredItemIds?.length ?? 0;
+      if (answered > 0 && answered < bank.items.length) {
+        setIndex(answered);
+        setScore(data.resume.score);
+        setOutcomes(data.resume.outcomes);
+        setResumedAt(answered + 1);
+      }
       setSessionId(data.sessionId);
-      schoolLog.session('start', { sessionId: data.sessionId, bankId: bank.id, mode, userId, itemCount: bank.items.length });
+      schoolLog.session('start', {
+        sessionId: data.sessionId, bankId: bank.id, mode, userId, itemCount: bank.items.length,
+        ...(answered > 0 ? { resumedAnswers: answered } : {}),
+      });
     });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -127,7 +143,10 @@ export default function QuizRunner({ bank, mode = 'quiz', learning = null, onExi
     if (!sessionId || verdict || abandonedRef.current) return;
     const { ok, status: answerStatus, data } = await schoolApi.answer(sessionId, { itemId: item.id, given });
     if (abandonedRef.current) return; // identity changed while the request was in flight
-    if (answerStatus === 410) { onExit(); return; }
+    // A 410 means the session timed out server-side (spec §8) — never a
+    // silent bounce (student-advocacy #8): the child gets a sign, and only
+    // an explicit Back/Start-again tap actually exits.
+    if (answerStatus === 410) { setSessionLost(true); return; }
     if (!ok) {
       // Grading state unknowable; the attempt is NOT on disk. Never silent (spec §8).
       // The true grade is UNKNOWN, not wrong — the verdict must not claim one.
@@ -189,6 +208,21 @@ export default function QuizRunner({ bank, mode = 'quiz', learning = null, onExi
         {passed === false && currentUser?.id && (
           <RetakeAsk userId={currentUser.id} bankId={bank.id} title={bank.title} />
         )}
+        {/* Student-advocacy W7b: a fail is also a way back to the lesson, not
+            just a retake ask. Gated on `learning?.unitId` — the context only a
+            catalog-launched quiz module carries (see LearningCatalogBrowser) —
+            and on `onReview` actually being wired, since a bank-practice run
+            or the materials gate quiz (SchoolMaterialPlayer) has neither. */}
+        {passed === false && learning?.unitId && onReview && (
+          <button
+            type="button"
+            className="school-runner__review-lesson-btn"
+            data-testid="review-lesson"
+            onClick={() => onReview(learning)}
+          >
+            Review this lesson
+          </button>
+        )}
         {currentUser?.id && (
           <FlagAsk userId={currentUser.id} bankId={bank.id} sessionId={sessionId} title={bank.title} />
         )}
@@ -207,11 +241,33 @@ export default function QuizRunner({ bank, mode = 'quiz', learning = null, onExi
         ) : (
           <div className="school-runner__summary-actions">
             {onRestart && (
-              <button type="button" className="school-runner__again" onClick={onRestart}>Try again</button>
+              // A deliberate restart: fresh wipes the persisted sitting so the
+              // new run starts at q1 instead of resuming this finished one.
+              <button type="button" className="school-runner__again" onClick={() => onRestart({ fresh: true })}>Try again</button>
             )}
             <button type="button" className="school-runner__done" onClick={onExit}>Done</button>
           </div>
         )}
+      </div>
+    );
+  }
+  // A lost (410) session must show a sign, not a silent bounce — same
+  // student-advocacy contract as openFailed below, checked ahead of the
+  // loading gate for the same reason.
+  if (sessionLost) {
+    return (
+      <div className="school-runner school-runner--error" data-testid="session-lost">
+        <h2>{bank.title}</h2>
+        <p className="school-runner__unrecorded-summary">Your quiz took a long break and timed out. Your finished answers are saved — start again to keep going.</p>
+        <div className="school-runner__summary-actions">
+          {onRestart && (
+            // NOT fresh: this card promises "your finished answers are saved —
+            // start again to keep going", and the sitting is what keeps that
+            // promise — the reopened run resumes where the timeout cut it off.
+            <button type="button" className="school-runner__again" onClick={() => onRestart({ fresh: false })}>Start again</button>
+          )}
+          <button type="button" className="school-runner__done" onClick={onExit}>Back</button>
+        </div>
       </div>
     );
   }
@@ -243,6 +299,13 @@ export default function QuizRunner({ bank, mode = 'quiz', learning = null, onExi
     <div className="school-runner school-runner--quiz">
       <div className="school-runner__progress">
         <span>{index + 1} / {bank.items.length}</span>
+        {/* One quiet line, not a modal (Task 17): the kid should know the
+            earlier answers counted without the fact upstaging the question. */}
+        {resumedAt !== null && (
+          <span className="school-runner__resume-chip" data-testid="resume-chip">
+            Picked up where you left off — question {resumedAt}
+          </span>
+        )}
         {/* A corner chip, not a headline (audit #5): the disclaimer must not
             outrank the question on every screen. */}
         {unsaved && <span className="school-runner__guest-chip" data-testid="guest-banner">guest — not saved</span>}

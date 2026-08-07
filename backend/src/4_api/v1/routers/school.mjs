@@ -80,6 +80,8 @@ export function createSchoolRouter({
   teacherNotesStore = null,
   recordTeacherNote = null,
   reassignEvidence = null,
+  // Task 12 (debt M5) — the reassignment audit trail, merged into GET /audit.
+  reassignmentLog = null,
   attemptsStore = null,
   // Advocacy wave 6.
   retractTeacherRecord = null,
@@ -104,8 +106,14 @@ export function createSchoolRouter({
         if (err instanceof GuestForbiddenError) return res.status(403).json({ error: err.message });
         if (err instanceof SessionGoneError) return res.status(410).json({ error: err.message });
         if (err instanceof EntityNotFoundError) return res.status(404).json({ error: err.message });
-        if (['REMEDIATION_ACTION_CONFLICT', 'REMEDIATION_ACTION_OUT_OF_ORDER'].includes(err?.code)) {
-          return res.status(409).json({ error: err.message, code: err.code });
+        if ([
+          'REMEDIATION_ACTION_CONFLICT', 'REMEDIATION_ACTION_OUT_OF_ORDER',
+          // A concurrent-edit refusal (SetAcademicPeriods, SetAssignments): the
+          // CLIENT's base was stale, not malformed — 409, never this router's
+          // by-instanceof 400 for a plain name='ValidationError' error.
+          'STALE_SAVE',
+        ].includes(err?.code)) {
+          return res.status(err.status ?? 409).json({ error: err.message, code: err.code });
         }
         if (err instanceof ValidationError) return res.status(400).json({ error: err.message });
         // A store/domain invariant refusal (allocation collision, illegal
@@ -245,6 +253,16 @@ export function createSchoolRouter({
   // as IssueDocument does; the variant never lives in the published artifact).
   // Warnings and the allocation result ride response headers so the body can
   // stay a plain PDF.
+  //
+  // Card-minting is a MUTATION (it allocates/consumes a card) and a teacher
+  // pin is a secret — neither belongs on a GET, whose URL lands in browser
+  // history, proxy access logs, and Referer headers. `POST /print/render`
+  // (below, registered with the other fixed routes) carries card=/freshCard=
+  // /teacherPin= — and everything else this handler reads — in the JSON
+  // body instead. The GET splat stays a plain, repeatable proof render and
+  // 400s if it sees any of those three query params, naming the POST route.
+  // Both routes share the render body via the local `renderPrintResponse`
+  // helper so the allocation semantics can't drift between them.
   const PRINT_DOC_ID = /^[a-z0-9][a-z0-9-]*(\/[a-z0-9][a-z0-9-]*){0,3}$/;
   const PRINT_CARD_ID = /^[0-9]{7}$/;
   // The FIXED /print routes must register BEFORE the /print/*id splat below —
@@ -253,6 +271,7 @@ export function createSchoolRouter({
   // /print/pending 404'd as "print document not found: pending"). No
   // reserved-name exclusion list on purpose — it would silently drift the
   // day a new fixed /print route is added; order is the one source of truth.
+  // /print/render (added 2026-08-06) is a fixed route for the same reason.
   router.get('/print/printables', wrap(async (req, res) => {
     res.json(printService ? await printService.listPrintables() : []);
   }));
@@ -268,14 +287,74 @@ export function createSchoolRouter({
     if (!printService || !req.query.userId) return res.json([]);
     res.json(printService.listRequestsFor(req.query.userId));
   }));
+  // A read-only render of an authored printable (debt M6a) — an approver
+  // should be able to see the sheet before saying yes. Deliberately bare:
+  // PrintService.previewPrintable does NOT check quota, print, or log — it's
+  // the same #resolve the print path uses, minus every side effect. Fixed
+  // route registered here (with the other /print/* fixed routes, ABOVE the
+  // /print/*id splat) so `:printableId` never collides with a document id —
+  // same registration-order rule the comment above `/print/printables`
+  // documents.
+  router.get('/print/printables/:printableId/preview', wrap(async (req, res) => {
+    if (!printService) return res.status(503).json({ error: 'print-unavailable' });
+    const { pdf } = await printService.previewPrintable(req.params.printableId);
+    res.set('Content-Disposition', `inline; filename="preview-${slugify(req.params.printableId)}.pdf"`);
+    return res.type('application/pdf').send(pdf);
+  }));
+  // Card-minting render, moved off the GET splat (see the comment block
+  // above). Body mirrors the query params the splat used to accept, plus
+  // `teacherPin` — the GET's `pin=` name stays GET-only (a bare teacher-key
+  // READ never mints and was never blocked here); a mutating render's pin
+  // belongs in a body, never a URL.
+  router.post('/print/render', wrap(async (req, res) => {
+    if (!renderPrintDocument) return res.status(503).json({ error: 'print-render-unavailable' });
+    const body = req.body || {};
+    return renderPrintResponse({
+      id: toParamString(body.id),
+      variety: toParamString(body.variety),
+      learnerName: toParamString(body.learnerName),
+      date: toParamString(body.date),
+      teacher: toParamString(body.teacher),
+      pin: toParamString(body.teacherPin),
+      rev: toParamString(body.rev),
+      variant: toParamString(body.variant),
+      freshCard: toParamString(body.freshCard),
+      card: toParamString(body.card),
+      learnerId: toParamString(body.learnerId),
+      retake: toParamString(body.retake),
+      startRow: toParamString(body.startRow),
+    }, res);
+  }));
   // Hierarchical taxonomy ids contain '/', so the id is a named wildcard
   // (Express 5 splat) rather than a single segment.
   router.get('/print/*id', wrap(async (req, res) => {
     if (!renderPrintDocument) return res.status(503).json({ error: 'print-render-unavailable' });
-    const rawId = splatPath(req, 'id');
+    // card=/freshCard=/teacherPin= mint or spend a card, or carry a secret —
+    // none belong in a GET query string. POST /print/render is the mutating
+    // path now; a plain proof render (no card params) renders exactly as
+    // before.
+    if (req.query.card !== undefined || req.query.freshCard !== undefined || req.query.teacherPin !== undefined) {
+      return res.status(400).json({ error: 'card-minting renders require POST /print/render' });
+    }
+    // `id` is explicitly LAST: the path segment is the id, always — a stray
+    // `?id=` in the query string (there is no legitimate reason for one)
+    // must never override it.
+    return renderPrintResponse({ ...req.query, id: splatPath(req, 'id') }, res);
+  }));
+
+  /**
+   * Render a print document to a PDF response — the shared body of the
+   * `/print/*id` proof-GET and `/print/render` card-minting POST (see the
+   * comment block above `PRINT_DOC_ID`). `params` mirrors the query-string
+   * shape both callers pass (string values — exactly what `textQuery`/
+   * `boundedIntegerQuery` expect); the POST route coerces its JSON body into
+   * that shape via `toParamString` first.
+   */
+  async function renderPrintResponse(params, res) {
+    const rawId = params.id;
     // omr is the default: card-backed sheets are the system's main mode, and
     // the common ask is "print my sheet", not "choose a variety".
-    const variety = textQuery(req.query.variety) ?? 'omr';
+    const variety = textQuery(params.variety) ?? 'omr';
     if (variety !== 'omr' && variety !== 'hand') {
       throw new ValidationError("variety must be 'omr' or 'hand'");
     }
@@ -297,7 +376,7 @@ export function createSchoolRouter({
         throw new ValidationError('a card-id path names an omr sheet; hand variety does not apply');
       }
       for (const param of ['card', 'freshCard', 'startRow', 'retake']) {
-        if (req.query[param] !== undefined) {
+        if (params[param] !== undefined) {
           throw new ValidationError(`a card-id path already names the sheet; ${param} does not apply`);
         }
       }
@@ -318,11 +397,11 @@ export function createSchoolRouter({
     }
 
     const context = {};
-    const learnerName = textQuery(req.query.learnerName);
+    const learnerName = textQuery(params.learnerName);
     if (learnerName) context.learnerName = learnerName;
-    const date = textQuery(req.query.date);
+    const date = textQuery(params.date);
     if (date) context.date = date;
-    if (req.query.teacher === '1' || req.query.teacher === 'true') {
+    if (params.teacher === '1' || params.teacher === 'true') {
       // Answer keys are gated: this is a kid-facing app, and the population
       // being kept from the key is exactly the population with URL-bar
       // access. `getPrintTeacherPin` (composition-wired, reads the household
@@ -337,7 +416,7 @@ export function createSchoolRouter({
             error: 'teacher keys are disabled: set print.teacherPin in the school household config',
           });
         }
-        if (textQuery(req.query.pin) !== String(pin)) {
+        if (textQuery(params.pin) !== String(pin)) {
           return res.status(403).json({ error: 'teacher key requires the correct pin=<value>' });
         }
       }
@@ -356,13 +435,13 @@ export function createSchoolRouter({
     //                   exact sheet the card was printed for. Explicit
     //                   rev/variant params are rejected in that mode — the
     //                   record is the identity, not the query string.
-    const revParam = textQuery(req.query.rev);
+    const revParam = textQuery(params.rev);
     if (revParam !== null && !/^[0-9a-f]{9}$/.test(revParam)) {
       throw new ValidationError('rev must be 9 lowercase hex characters');
     }
-    let variant = req.query.variant === undefined
+    let variant = params.variant === undefined
       ? null
-      : boundedIntegerQuery(req.query.variant, 0, 0, 999, 'variant');
+      : boundedIntegerQuery(params.variant, 0, 0, 999, 'variant');
     let rev = revParam;
     let adoptedRecord = null;
 
@@ -380,9 +459,9 @@ export function createSchoolRouter({
     };
 
     if (variety === 'omr') {
-      const freshCard = req.query.freshCard === '1' || req.query.freshCard === 'true';
-      const card = cardFromPath ?? textQuery(req.query.card);
-      const learnerId = textQuery(req.query.learnerId);
+      const freshCard = params.freshCard === '1' || params.freshCard === 'true';
+      const card = cardFromPath ?? textQuery(params.card);
+      const learnerId = textQuery(params.learnerId);
       if (freshCard && card) throw new ValidationError('freshCard and card are mutually exclusive');
 
       // Quiz sheets are PER-STUDENT: without a learner (or an explicit card,
@@ -429,7 +508,7 @@ export function createSchoolRouter({
       // the memorizable duplicate of the first (and never touches the
       // original's record). Mutually exclusive with every explicit-identity
       // param: a retake's identity is derived, not supplied.
-      const retake = req.query.retake === '1' || req.query.retake === 'true';
+      const retake = params.retake === '1' || params.retake === 'true';
       if (retake) {
         if (freshCard || card || revParam !== null || variant !== null) {
           throw new ValidationError('retake takes no card/freshCard/rev/variant parameters');
@@ -447,7 +526,7 @@ export function createSchoolRouter({
         context.cardId = card;
         let usableRecordExists = false;
         if (printAllocationStore) {
-          if (req.query.startRow === undefined) {
+          if (params.startRow === undefined) {
             const record = newestUsable((await printAllocationStore.findByCard(card))
               .filter((entry) => entry.documentId === id));
             usableRecordExists = !!record;
@@ -471,7 +550,7 @@ export function createSchoolRouter({
           );
         }
         if (!adoptedRecord) {
-          context.startRow = boundedIntegerQuery(req.query.startRow, 1, 1, 50, 'startRow');
+          context.startRow = boundedIntegerQuery(params.startRow, 1, 1, 50, 'startRow');
         }
       } else {
         // Automatic sheet identity: a bare omr render reuses this document's
@@ -496,8 +575,8 @@ export function createSchoolRouter({
         else if (!context.teacher) context.freshCard = true;
       }
       if (learnerId && !adoptedRecord) context.learnerId = learnerId;
-    } else if (req.query.card !== undefined || req.query.freshCard !== undefined
-        || req.query.startRow !== undefined) {
+    } else if (params.card !== undefined || params.freshCard !== undefined
+        || params.startRow !== undefined) {
       throw new ValidationError('hand variety takes no card parameters');
     }
 
@@ -531,7 +610,7 @@ export function createSchoolRouter({
     const slug = id.split('/').pop();
     res.set('Content-Disposition', `inline; filename="${slug}${context.teacher ? '-key' : ''}.pdf"`);
     return res.type('application/pdf').send(Buffer.from(result.bytes));
-  }));
+  }
 
   router.get('/geography/decks', wrap((req, res) => {
     // Geography is an outer presentation here. The service/source expose only
@@ -541,16 +620,18 @@ export function createSchoolRouter({
     res.json({ decks });
   }));
   router.post('/sessions', wrap((req, res) => {
-    const { userId = null, bankId, mode, learning = null } = req.body || {};
+    // `fresh` is the deliberate-restart flag (Task 17): it wipes any persisted
+    // sitting before opening, so "Try again" never resumes the run it replaces.
+    const { userId = null, bankId, mode, learning = null, fresh = false } = req.body || {};
     if (learning !== null) {
       if (!openCatalogLearningSession) {
         throw new EntityNotFoundError('School Catalog sessions', 'not configured');
       }
       return Promise.resolve(openCatalogLearningSession.execute({
-        learnerId: userId, bankId, mode, learning,
+        learnerId: userId, bankId, mode, learning, fresh: fresh === true,
       })).then((result) => res.json(result));
     }
-    return res.json(schoolService.openSession({ userId, bankId, mode }));
+    return res.json(schoolService.openSession({ userId, bankId, mode, fresh: fresh === true }));
   }));
   router.post('/sessions/:sessionId/answer', wrap((req, res) => {
     const {
@@ -1074,6 +1155,13 @@ export function createSchoolRouter({
     try {
       (milestoneStore?.history?.() ?? []).forEach((h) => push('milestones', h.at, { by: h.editedBy ?? null, count: h.count ?? null }));
     } catch { /* ditto */ }
+    try {
+      // Task 12 (debt M5): the reassignment audit trail joins the merge —
+      // same shape as the other trails, same per-trail try/catch posture.
+      (reassignmentLog?.list?.() ?? []).forEach((h) => push('reassignment', h.at, {
+        by: h.reassignedBy ?? null, learnerId: h.fromLearnerId ?? null, toLearnerId: h.toLearnerId ?? null, moved: h.moved ?? null,
+      }));
+    } catch { /* ditto */ }
     if (assignmentsStore?.history && assignmentsStore?.list) {
       try {
         const records = await assignmentsStore.list();
@@ -1209,6 +1297,20 @@ async function sendReportCardPdf(res, renderReportCardPdf, report, { learnerId, 
 function textQuery(value) {
   if (value === undefined || value === null || value === '') return null;
   if (Array.isArray(value) || typeof value !== 'string') throw new ValidationError('query value must be text');
+  return value;
+}
+
+/**
+ * Coerce a JSON body value into the query-string-shaped string `textQuery`/
+ * `boundedIntegerQuery` expect — `POST /print/render`'s only adaptation of a
+ * GET-shaped body into query-string terms. Booleans/numbers (the natural
+ * JSON spellings of `freshCard: true` or `startRow: 5`) become their string
+ * form; everything else (undefined/null/string/array/object) passes through
+ * unchanged so the existing `textQuery` validation still rejects arrays and
+ * objects exactly as it did for a malformed query value.
+ */
+function toParamString(value) {
+  if (typeof value === 'boolean' || typeof value === 'number') return String(value);
   return value;
 }
 

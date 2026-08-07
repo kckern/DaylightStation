@@ -100,13 +100,16 @@ describe('FlashcardRunner', () => {
     expect(answerMock).not.toHaveBeenCalled();
   });
 
-  it('exits on a 410 (session gone)', async () => {
+  it('shows a session-lost card on a 410 — no silent exit until Back is clicked', async () => {
     const onExit = vi.fn();
     answerMock.mockResolvedValueOnce({ ok: false, status: 410, data: null });
     render(<FlashcardRunner bank={bank} onExit={onExit} />);
     fireEvent.click(await screen.findByRole('button', { name: /show answer/i }));
     fireEvent.click(screen.getByRole('button', { name: /got it/i }));
-    await waitFor(() => expect(onExit).toHaveBeenCalled());
+    expect(await screen.findByTestId('session-lost')).toHaveTextContent(/took a long break and timed out/i);
+    expect(onExit).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(onExit).toHaveBeenCalled();
   });
 
   it('a failed self-grade recording does not strand the child — it still advances and is surfaced on the summary', async () => {

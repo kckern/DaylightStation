@@ -18,6 +18,7 @@ Those two files are the course-creator's manual; this runbook is the operator's.
 | `household/config/school.yml` | THE config: students, subjects, materials sources, teachers, PINs, periods, printables, lifecycle | School surfaces empty / gated features off |
 | `content/school/{subject}/{work}/…` | Authored curriculum tree (works, units, documents, quizzes) | Empty shelves — normal for a fresh install |
 | `content/school/generated-banks/recipes.yml` | Generated-bank recipes | Empty generated shelf, **warn log** (`school.generated-banks.recipes-missing`). Malformed ⇒ empty + **error log**. Never a crash. |
+| `content/school/catalog/surfaces/*.yml` | Certified surface profiles (paper, screen) — `capabilities:` gates which printables/documents that surface may render | A printable whose bank needs a capability the profile lacks is silently excluded from `GET /print/printables` (see step 2.8) |
 | `household/config/works/{slug}.yml` | Per-work enrolment drill-downs | That work unrestricted / unlisted |
 | `household/apps/school/*.yml` | Runtime state (periods, overrides, milestones, attestations, notes, quiz-requests) | Created on first write; absence is a valid cold state |
 | `users/{id}/apps/school/` | Per-learner attempts, sessions, report cards | Created on first activity |
@@ -49,6 +50,20 @@ birthyear cannot approve anything).
 7. `schoolcalc.continuation.learner_slots` — stable digit slots for printed
    continuation codes. Changing a slot invalidates already-printed codes.
 8. `printables:` — quota-printed worksheets (`{id, label, type: bank|pdf, …}`).
+   **A `type: bank` printable is served only if the paper surface profile
+   declares every capability its items need.** The profile
+   (`content/school/catalog/surfaces/<profile>.yml` → `capabilities:`,
+   boot-cached — see the content-tree table below) must carry
+   `response.text@1` for any bank with `short_answer`/`cloze` items and
+   `response.matching@1` for any bank with `matching` items, alongside the
+   baseline `response.choice@1`/`response.asset-choice@1`. A printable
+   missing a capability its bank needs is silently excluded from
+   `GET /print/printables` — the Print Center just never lists it — and the
+   tell is a warn log naming exactly what's missing:
+   `{"event":"print.printable-excluded","data":{"printableId":"...",
+   "bankId":"...","reasons":["missing capability response.text@1", ...]}}`.
+   Grep for `print.printable-excluded` after standing up any new printable
+   whose bank has short-answer or matching items.
 9. `lifecycle:` — the physical console (cards, OMR, thermal printer). See
    [`school-physical-console-deploy.md`](school-physical-console-deploy.md).
 10. `quiz_pass_percent` (materials config) — the media quiz-gate bar, exposed

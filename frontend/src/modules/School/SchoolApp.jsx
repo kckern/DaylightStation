@@ -126,7 +126,7 @@ export function schoolPathFor(urlBase, section, materialPath = []) {
 }
 
 function SchoolShell({ clear }) {
-  const { status, roster, currentUser, isGuest, pickerOpen, openPicker, claim, continueAsGuest } = useSchoolProfile();
+  const { status, roster, currentUser, isGuest, pickerOpen, openPicker, closePicker, claim, continueAsGuest } = useSchoolProfile();
   const { crumbs: extraCrumbs } = useSchoolBreadcrumbBar();
   const urlBase = useMemo(schoolUrlBase, []);
   const screenId = useMemo(() => screenIdFromUrlBase(urlBase), [urlBase]);
@@ -139,6 +139,13 @@ function SchoolShell({ clear }) {
   const [materialPath, setMaterialPath] = useState(initialLink.materialPath);
   const [active, setActive] = useState(null);
   const [runNonce, setRunNonce] = useState(0); // Try-again remount counter   // bounded runner or shared remediation session
+  // Whether the NEXT runner mount should open its session fresh (Task 17):
+  // Try again on a finished quiz restarts from q1 (wipes the sitting), while
+  // Start again after a server timeout resumes it. Latched by the restart
+  // handler because the remount-by-key reopens the session with only props —
+  // without this flag the restarted run would silently resume itself.
+  const [runFresh, setRunFresh] = useState(false);
+  useEffect(() => { setRunFresh(false); }, [active]); // a NEW launch is never a restart
   const [pending, setPending] = useState(null); // bank/module launch awaiting a claim
   const [notice, setNotice] = useState(null);
   const [materials, setMaterials] = useState([]); // full catalog materials list, unfiltered
@@ -212,7 +219,10 @@ function SchoolShell({ clear }) {
       return;
     }
     const { ok, data } = await schoolApi.bank(bankSummary.id);
-    if (ok) { setNotice(null); setActive({ bank: data, mode }); }
+    // setRunFresh(false): a new launch is never a restart — cleared here (not
+    // only in the active-change effect) so correctness never rides on
+    // parent/child effect ordering.
+    if (ok) { setNotice(null); setRunFresh(false); setActive({ bank: data, mode }); }
   }, []);
 
   // Returns the in-flight promise (rather than firing-and-forgetting) so a
@@ -238,6 +248,7 @@ function SchoolShell({ clear }) {
   // fits a screen the module isn't certified for.
   const startLearning = useCallback((launch) => {
     const { module, learning, certification } = launch;
+    setRunFresh(false); // a new launch is never a restart (see `start` above)
     if (!moduleLaunchAllowed(certification, module.moduleId)) {
       const reasons = certification?.get?.(module.moduleId)?.reasons ?? [];
       schoolLog.surface('launch-refused', { moduleId: module.moduleId, surfaceId, reasons });
@@ -269,12 +280,27 @@ function SchoolShell({ clear }) {
     setPending(null);
   }, [claim, pending, start, startLearning]);
 
-  const onDismiss = useCallback(() => {
+  // Explicit "continue as guest" (the picker's guest row) — the ONLY path
+  // that demotes an unclaimed learner to Guest and resolves whatever launch
+  // is pending. `start`'s own asGuest/audience gate still applies here, so a
+  // guest tapping through on an assigned bank gets the "sign in" refusal
+  // notice rather than the runner (unchanged from the old dismiss behavior —
+  // only WHICH affordance triggers it has moved).
+  const onGuest = useCallback(() => {
     continueAsGuest();
     if (pending?.kind === 'bank') start(pending.bankSummary, pending.mode, true);
     if (pending?.kind === 'learning') startLearning(pending.launch);
     setPending(null);
   }, [continueAsGuest, pending, start, startLearning]);
+
+  // ✕ / backdrop / auto-timeout — a CANCEL, not a guest demotion. Closes the
+  // sheet and drops whatever launch was pending; identity (claimed, guest, or
+  // unclaimed) is left exactly as it was. Guest is a choice made via the
+  // guest row (onGuest above), never a side effect of walking away.
+  const onDismiss = useCallback(() => {
+    closePicker();
+    setPending(null);
+  }, [closePicker]);
 
   const syncUrl = useCallback((sec, chain = []) => {
     if (!urlBase) return;
@@ -361,6 +387,20 @@ function SchoolShell({ clear }) {
     }
     setNotice('That follow-up action is not available on this screen yet.');
   }, [banks, currentUser, start, openSection]);
+
+  // Task 16 (debt W7b): a failed catalog quiz's "Review this lesson" link.
+  // AdaptiveTutorPanel (the real remediation tutor, `active.mode ===
+  // 'remediation'` below) needs a pre-existing `remediation_session` id that
+  // only ever arrives later via a Progress follow-up recommendation
+  // (onProgressFollowUp above) -- a live failing QuizRunner summary has no
+  // session to hand it, so there is no tutor surface to deep-link to yet.
+  // The real, reachable target is the Learning Catalog the quiz was launched
+  // from; it has no deep-link into a specific lesson today, so this reopens
+  // the Catalog at its root rather than mid-navigating to the failed unit.
+  const onReviewLesson = useCallback(() => {
+    setActive(null);
+    openSection('catalog');
+  }, [openSection]);
 
   // Browser back/forward re-parse the URL — the address bar and the shell
   // never disagree, at any depth.
@@ -543,8 +583,10 @@ function SchoolShell({ clear }) {
             key={`quiz:${active.bank.id}:${runNonce}`}
             bank={active.bank}
             learning={active.learning}
+            fresh={runFresh}
             onExit={() => setActive(null)}
-            onRestart={() => setRunNonce((n) => n + 1)}
+            onRestart={({ fresh = true } = {}) => { setRunFresh(fresh); setRunNonce((n) => n + 1); }}
+            onReview={onReviewLesson}
           />
         )}
         {active?.mode === 'flashcard' && <FlashcardRunner bank={active.bank} learning={active.learning} onExit={() => setActive(null)} />}
@@ -581,7 +623,18 @@ function SchoolShell({ clear }) {
           />
         )}
       </main>
-      <ProfilePicker open={pickerOpen} users={roster} activeId={currentUser?.id} onPick={onPick} onDismiss={onDismiss} timeoutMs={30000} title="Who's here?" showCountdown />
+      <ProfilePicker
+        open={pickerOpen}
+        users={roster}
+        activeId={currentUser?.id}
+        onPick={onPick}
+        onDismiss={onDismiss}
+        onGuest={onGuest}
+        guestLabel="Just practicing — continue as guest"
+        timeoutMs={30000}
+        title="Who's here?"
+        showCountdown
+      />
     </div>
   );
 }

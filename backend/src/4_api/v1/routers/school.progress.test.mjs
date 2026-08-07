@@ -204,7 +204,7 @@ describe('School progress HTTP projection', () => {
       userId: 'kid-a', bankId: 'rates/check', mode: 'learning_probe', learning,
     }).expect(200, { sessionId: 'ses-catalog' });
     expect(openCatalogLearningSession.execute).toHaveBeenCalledWith({
-      learnerId: 'kid-a', bankId: 'rates/check', mode: 'learning_probe', learning,
+      learnerId: 'kid-a', bankId: 'rates/check', mode: 'learning_probe', learning, fresh: false,
     });
   });
 

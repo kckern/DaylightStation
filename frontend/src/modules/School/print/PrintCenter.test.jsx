@@ -72,11 +72,30 @@ describe('PrintCenter', () => {
 
   it('an adult sees pending approvals and can allow one', async () => {
     profile.currentUser = { id: 'dad', name: 'Papa', birthyear: 1984 };
-    pendingMock.mockResolvedValue({ ok: true, status: 200, data: [{ id: 'pr_1', userId: 'learner-two', label: 'Big Worksheet', pages: 8 }] });
+    pendingMock.mockResolvedValue({ ok: true, status: 200, data: [{ id: 'pr_1', userId: 'learner-two', printableId: 'big-worksheet', label: 'Big Worksheet', pages: 8 }] });
     render(<PrintCenter />);
     expect(await screen.findByText(/waiting for your ok/i)).toBeInTheDocument();
     expect(screen.getByText(/big worksheet/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /allow/i }));
     await waitFor(() => expect(approveMock).toHaveBeenCalledWith('pr_1', 'dad'));
+  });
+
+  it('an adult gets a Preview link per pending row, pointed at that printable', async () => {
+    profile.currentUser = { id: 'dad', name: 'Papa', birthyear: 1984 };
+    pendingMock.mockResolvedValue({
+      ok: true, status: 200,
+      data: [
+        { id: 'pr_1', userId: 'learner-two', printableId: 'big-worksheet', label: 'Big Worksheet', pages: 8 },
+        { id: 'pr_2', userId: 'learner-two', printableId: 'state-capitals', label: 'State Capitals', pages: 2 },
+      ],
+    });
+    render(<PrintCenter />);
+    await screen.findByText(/waiting for your ok/i);
+    const links = screen.getAllByRole('link', { name: /preview/i });
+    expect(links).toHaveLength(2);
+    expect(links[0]).toHaveAttribute('href', '/api/v1/school/print/printables/big-worksheet/preview');
+    expect(links[0]).toHaveAttribute('target', '_blank');
+    expect(links[0]).toHaveAttribute('rel', 'noreferrer');
+    expect(links[1]).toHaveAttribute('href', '/api/v1/school/print/printables/state-capitals/preview');
   });
 });

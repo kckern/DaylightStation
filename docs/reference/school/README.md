@@ -96,13 +96,38 @@ the other a self-report.
 
 A guest grades normally and records nothing.
 
+### Mid-quiz resume (sittings)
+
+A signed-in quiz survives a dropped tab or a server restart:
+`data/users/{userId}/apps/school/sittings.yml` holds one entry per bank —
+mode, start time, bank content-rev, and the answers banked so far. Opening the
+same quiz again resumes where it left off (the runner shows a "picked up where
+you left off" chip; re-answering an already-banked item is refused), and the
+sitting is deleted the moment the last item is answered. A deliberate restart
+("Try again") opens with `fresh: true`, which wipes the sitting first; the
+timed-out-session card's "Start again" deliberately does NOT, so its "your
+finished answers are saved" promise actually resumes the run.
+
+A sitting is a **convenience, not evidence** — the attempt log stays the sole
+record. That asymmetry sets every edge rule: sittings are quiz-mode,
+signed-in, screen-transport only (paper grading and calculator imports never
+touch them); one older than 24h or from an edited bank (content-rev mismatch)
+is ignored and replaced; so is one that isn't an ordered **prefix** of the
+bank's items — `answers[i].itemId` must equal `bank.items[i].id` for every
+`i`, or a gap left by a failed mid-run write would otherwise land the
+index-based resume on an already-answered item and loop on the 400 refusal
+until the 24h TTL finally clears it; a corrupt file reads as "no sittings" and
+refuses writes until cleared; and every sitting write is best-effort — a store
+failure warns (`school.sitting.write-failed`) and never fails the answer.
+
 ### Where it lives
 
 | Layer | Path |
 |---|---|
 | Domain (pure) | `backend/src/2_domains/school/` — bank validation, grading, attempt factory |
 | Persistence | `backend/src/1_adapters/persistence/yaml/YamlSchoolDatastore.mjs` |
-| Application | `backend/src/3_applications/school/SchoolService.mjs` — sessions, guest rule, mode contract, results fold |
+| Persistence (sittings) | `backend/src/1_adapters/persistence/yaml/YamlSittingStore.mjs` |
+| Application | `backend/src/3_applications/school/SchoolService.mjs` — sessions, guest rule, mode contract, results fold, sitting resume |
 | API | `backend/src/4_api/v1/routers/school.mjs` → `/api/v1/school` |
 | Frontend | `frontend/src/modules/School/` |
 | Shared identity | `frontend/src/lib/identity/` |
@@ -1370,6 +1395,90 @@ that says so.
   overlap and frozen-card strandings, boundaries are half-open; banks/units
   accept an optional `schema:` (absent = v1); the Admin planner arms the
   stale-save guard and renders stale assignment ids honestly.
+
+### Production hardening (wave 10)
+
+The stores that record a child's work now refuse to make things worse when
+they're already broken, two mutating GETs stopped minting side effects on a
+plain read, human sign-off lanes carry a PIN, and a chapter-structured
+course gates correctly for the first time.
+
+- **Corrupt ≠ missing, everywhere it matters.** The attempt shards
+  (`YamlSchoolDatastore`), the assignment store (`YamlAssignmentStore`), and
+  sittings (`YamlSittingStore`) all now hold the posture the academic-period
+  store set: a missing file is a valid cold state (quiet `[]`/`null`); a file
+  that exists but won't parse is a LOUD read (one `warn` log naming the file)
+  and a REFUSED write — never a silent clobber down to one fresh row. Every
+  write in these three stores is atomic (stage + rename).
+- **Two GETs stopped minting.** `GET /learners/:id/agenda` now runs the
+  side-effect-free preview (the same dry-run twin `/agenda/preview` already
+  used) instead of building a real session; `POST /learners/:id/agenda` is
+  the mutating twin for a caller that genuinely needs to print. `GET
+  /print/*id` refuses `card=`/`freshCard=`/`teacherPin=` query params with a
+  400 naming `POST /print/render`, which takes the same fields — including
+  the PIN — in the request body instead of the URL; a plain proof GET (no
+  card params) is unaffected.
+- **PIN on the human sign-off lanes.** `GradeSubmission`'s human-verdict
+  branch and `CloseSessionOutcome`'s signed-off-coin-release branch now also
+  assert `TeacherGate` — additive on top of the existing grown-up check, not
+  a replacement, and only when a gate is wired — so a wrong or missing PIN
+  refuses the verdict/sign-off outright. The self-closing finisher lane (a
+  review item's last mark auto-grading and auto-closing its session) supplies
+  neither `verdicts` nor `signedOff`, so it never reaches the gate and keeps
+  settling unattended.
+- **Chapter banks gate their parent unit — ALL must pass.** A course
+  material whose chapters (Plex tracks) each carry their own quiz bank used
+  to never gate at all — the units fetch only ever matched a bank bound
+  directly to the listed unit, and no real chapter content does that. The
+  fetch now rolls every chapter bank bound under a unit into one ordered
+  gate: `unit.quiz` names the next UNPASSED chapter
+  (`{bankId, banksTotal, banksPassed}`), and the unit only completes once
+  every chapter bank has a passed session. `MaterialDetail` shows "Quiz N of
+  M" whenever a unit has more than one chapter bank. A failed leaf listing
+  degrades to the old ungated behavior (`needsQuiz: true`) rather than
+  blocking the unit fetch.
+- **One identity ceremony, everywhere.** Dismissing the shared
+  `ProfilePicker` — the ✕, the backdrop, the auto-timeout — is now always a
+  **cancel**: it drops the pending launch and leaves identity exactly as it
+  was. Guest is reachable through exactly one door: an explicit button
+  inside the picker itself ("Just practicing — continue as guest"). Tapping
+  it is the only thing that ever demotes to guest, and it still trips the
+  existing "sign in for this one" refusal notices for assigned banks and
+  course units. A claimed kid launching generic work never sees the picker
+  at all.
+- **`/audit` gains reassignments; approvers can preview.** Every
+  attribution move (`ReassignEvidence`) appends a best-effort entry to
+  `apps/school/reassignments.yml`, merged into `GET /audit` under its own
+  `kind`. `GET /print/printables/:id/preview` streams the resolved PDF for a
+  pending quota approval — no quota check, no print, no log — and a
+  `Preview` link on each PrintCenter approval row lets the approver see the
+  sheet before saying yes.
+- **The nudge reads live teachers; stale saves are 409s.** The hourly
+  `school:teacher-backlog-nudge` task reloads `teachers:` from disk instead
+  of the boot-cached copy (falling back to the cached list if the reload
+  fails), so a teacher added to `school.yml` gets nudged the same day.
+  Concurrent-edit refusals (`STALE_SAVE`, on both assignments and periods)
+  are `409`, not `400`/`500`, and error envelopes carry a real `traceId`.
+- **A lost session says so.** A 410 mid-quiz/flashcard/drill no longer
+  bounces the child out silently — the runner shows a "took a long break and
+  timed out — your finished answers are saved" card with Back (and Start
+  again wherever a restart affordance exists).
+- **The console is smoke-tested live.** `tests/live/flow/school/teacherConsole.runtime.test.mjs`
+  drives `/school/teacher` headless against the real running server — four
+  tabs, the Today roster matching the live household roster by name, the
+  Planning matrix, and a wrong-PIN write refusal through the real UI
+  ceremony — gated by a `beforeAll` probe that refuses to run the mutation
+  test at all unless the install's PIN gate proves itself armed first.
+
+**Deliberately not built, still open by choice** — design choices the
+teacher/student/administrator advocates themselves accepted, not debt: tap-
+to-confirm on multiple-choice items, paper's "one more?" affordance past the
+daily serve cap, a third no-stakes flashcard lane, and the certificate's
+portrait orientation. A failed catalog quiz's "Review this lesson" link
+reopens the Catalog root, not the exact failed lesson (no deep-link support
+exists yet); a failed quiz never synchronously offers the adaptive tutor
+(the tutor needs a server-side remediation-offer id a live quiz close has no
+way to mint) — both recorded here rather than reopened as new debt.
 
 ## 3. Specced, not built
 

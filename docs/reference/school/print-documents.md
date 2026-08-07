@@ -143,8 +143,10 @@ student pages plus appended dense answer pages (namespaced entries — bare
 numbers for questions, `Fill-in (passage N): blank n:`, `Matching:`). The
 fit/pagination decision is computed identically with or without the key, so a
 key can never disagree with the sheet it answers. Keys are gated: `teacher=1`
-requires `pin=` matching the household school config's `print.teacherPin`,
-and denies when unset or wrong (see §9, trust model).
+requires a pin matching the household school config's `print.teacherPin`,
+and denies when unset or wrong (see §9, trust model) — `pin=` on the GET for
+a bare key read, `teacherPin` in the `POST /print/render` body when the key
+combines with a card mint (`freshCard=1&teacher=1`).
 
 **Variants** are per-student shuffles of one document (variant 0 unmarked;
 variant 1 prints as "Form B", etc.). `retake=1` mints a fresh card at the
@@ -208,29 +210,44 @@ Rules the record system holds to:
 `GET /api/v1/school/print/<id-path>` — the id is the full taxonomy path
 (`…/print/arts/pokemon-identification/quiz-1`). Returns the PDF inline
 (filename from the slug), with `X-School-Print-Allocation` (the card record
-summary) and `X-School-Print-Warnings` headers.
+summary) and `X-School-Print-Warnings` headers. This GET is a **plain proof
+render**, safe to bookmark, refresh, and share a link to — repeating it never
+mutates anything.
 
-**`GET /print/<7 digits>` is a card lookup.** The card number is the one
-thing printed in large digits on the sheet in a child's hand, so it is
-enough by itself: the path resolves the card's newest usable allocation and
-reproduces its exact sheet (adoption semantics — the record's
-rev/variant/rows/learner govern; `teacher=1&pin=` works on top for its key).
-An unknown card 404s with Hamming-1 live near-miss suggestions, the same
-courtesy a mis-bubbled scan gets. Bare 7-digit *document* ids are reserved
-at validation time so the shape can never be ambiguous.
+**Card-minting renders are `POST /print/render`, not the GET (punch 5b).**
+Minting or spending a card is a mutation, and a teacher pin is a secret —
+neither belongs on a GET, whose URL lands in browser history, proxy access
+logs, and `Referer` headers. The GET 400s
+(`{ error: 'card-minting renders require POST /print/render' }`) if it sees
+`card=`, `freshCard=`, or `teacherPin=` in the query string; those three (plus
+everything else the GET accepts) move into the JSON body of
+`POST /print/render: { id, variety, learnerName, learnerId, card, freshCard,
+startRow, teacherPin, date, rev, variant, retake, teacher }`. Both routes
+render through the same shared logic, so the allocation semantics below are
+identical either way — only the transport (and where the pin lives) differs.
 
-| Param | Meaning |
-|---|---|
-| `variety=omr\|hand` | **default `omr`** — card-backed (the main mode) unless `hand` is asked for |
-| `learnerId=` | whose sheet. **Required for quiz-archetype omr renders** (or an explicit `card=`) — without it two siblings would share one sheet identity. Worksheets may stay anonymous; teacher renders are reads and stay exempt |
-| `teacher=1&pin=` | append the answer key; pin must match `print.teacherPin` |
-| `rev=` | pin a 9-hex published revision (default: latest published) |
-| `variant=0..999` | per-student shuffle variant |
-| `card=NNNNNNN` | reproduce (or extend) a specific physical card |
-| `startRow=1..50` | with `card=`: attach this document at a row offset (card sharing) |
-| `freshCard=1` | force-mint a new card |
-| `retake=1` | fresh card at the learner's next unused variant; rejects all explicit identity params |
-| `learnerName=`, `date=` | prefill the header lines |
+**`GET /print/<7 digits>` is a card lookup**, and stays a GET — it is a pure
+read, not a mint. The card number is the one thing printed in large digits on
+the sheet in a child's hand, so it is enough by itself: the path resolves the
+card's newest usable allocation and reproduces its exact sheet (adoption
+semantics — the record's rev/variant/rows/learner govern; `teacher=1&pin=`
+works on top for its key, same as the plain-document GET). An unknown card
+404s with Hamming-1 live near-miss suggestions, the same courtesy a
+mis-bubbled scan gets. Bare 7-digit *document* ids are reserved at validation
+time so the shape can never be ambiguous.
+
+| Param | Meaning | Where |
+|---|---|---|
+| `variety=omr\|hand` | **default `omr`** — card-backed (the main mode) unless `hand` is asked for | GET or POST |
+| `learnerId=` | whose sheet. **Required for quiz-archetype omr renders** (or an explicit `card=`) — without it two siblings would share one sheet identity. Worksheets may stay anonymous; teacher renders are reads and stay exempt | GET or POST |
+| `teacher=1&pin=` | append the answer key; pin must match `print.teacherPin`. `pin=` stays a GET query param — a bare teacher-key read never mints | GET or POST (POST's body key is `teacherPin`, not `pin`) |
+| `rev=` | pin a 9-hex published revision (default: latest published) | GET or POST |
+| `variant=0..999` | per-student shuffle variant | GET or POST |
+| `card=NNNNNNN` | reproduce (or extend) a specific physical card | **POST body only** |
+| `startRow=1..50` | with `card=`: attach this document at a row offset (card sharing) | **POST body only** |
+| `freshCard=1` | force-mint a new card | **POST body only** |
+| `retake=1` | fresh card at the learner's next unused variant; rejects all explicit identity params | GET or POST — retake alone doesn't carry `card`/`freshCard` |
+| `learnerName=`, `date=` | prefill the header lines | GET or POST |
 
 **Sheet identity is automatic and stable.** A bare `variety=omr` render
 reuses the document's newest usable record (live before satisfied, filtered
@@ -362,9 +379,12 @@ remediation), exactly as for on-screen work.
 
 Print endpoints are unauthenticated household surfaces; the only privileged
 artifact is the answer key, gated by `print.teacherPin` (school config,
-boot-cached). The pin rides the query string — visible in access logs and
-browser history — an accepted trade at household scale: **it gates children,
-not adversaries.**
+boot-cached). A bare teacher-key read (`teacher=1&pin=` on the GET) still
+rides the query string — visible in access logs and browser history — an
+accepted trade at household scale: **it gates children, not adversaries.**
+Card-minting renders (`freshCard=`/`card=`, and a key combined with either)
+moved to `POST /print/render`'s JSON body (punch 5b) precisely because that
+render also mutates state — a mutation's pin belongs in a body, not a URL.
 
 Known, accepted limits (each was reviewed, not overlooked):
 
@@ -391,7 +411,7 @@ Known, accepted limits (each was reviewed, not overlooked):
 | Issue + grade + review (session use cases) | `backend/src/3_applications/school/usecases/` |
 | Stores | `backend/src/1_adapters/school/documents/` — document repository (sources, `published/`, `derived-banks/`), allocation store (`allocations/`) |
 | PDF rendering | `backend/src/1_rendering/school/documents/` — workbook theme, measure/place, draw, furniture |
-| API | `backend/src/4_api/v1/routers/school.mjs` → `GET /api/v1/school/print/*` |
+| API | `backend/src/4_api/v1/routers/school.mjs` → `GET /api/v1/school/print/*` (proof renders + card lookup) and `POST /api/v1/school/print/render` (card-minting renders) |
 | Scan wiring | `backend/src/5_composition/modules/schoolPrintScanConsumer.mjs` |
 | CLI | `cli/school-docs.cli.mjs` |
 | Content | `data/content/school/print-documents/` (sources by taxonomy path, `published/`, `derived-banks/`, `allocations/`) |

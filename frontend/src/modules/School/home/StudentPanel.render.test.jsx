@@ -17,6 +17,7 @@ const resultsMock = vi.fn(async () => ({ ok: true, status: 200, data: [] }));
 const periodsMock = vi.fn(async () => ({ ok: true, status: 200, data: [] }));
 const reportCardMock = vi.fn(async () => ({ ok: true, status: 200, data: null }));
 const reviewLearnerMock = vi.fn(async () => ({ ok: true, status: 200, data: [] }));
+const agendaPreviewMock = vi.fn(async () => ({ ok: true, status: 200, data: { sections: [] } }));
 
 vi.mock('../schoolApi.js', () => ({ schoolApi: {
   report: (...a) => reportMock(...a),
@@ -25,6 +26,7 @@ vi.mock('../schoolApi.js', () => ({ schoolApi: {
   reportCard: (...a) => reportCardMock(...a),
   reviewLearner: (...a) => reviewLearnerMock(...a),
   wallet: async () => ({ ok: false, status: 503, data: null }),
+  agendaPreview: (...a) => agendaPreviewMock(...a),
 } }));
 
 vi.mock('../schoolLog.js', () => ({ schoolLog: {
@@ -118,5 +120,45 @@ describe('standing', () => {
     await screen.findByText('Alpha');
     expect(screen.queryByText('Where you stand')).toBeNull();
     expect(container.querySelector('.school-rail__standing')).toBeNull();
+  });
+});
+
+describe('today plan (debt W7a)', () => {
+  it('renders a row per section — subject label, next title, and done-today', async () => {
+    agendaPreviewMock.mockResolvedValue({ ok: true, status: 200, data: {
+      learnerId: 'kid1',
+      sections: [
+        { subject: 'math-fractions', servedToday: false, next: { title: 'Adding halves' } },
+        { subject: 'reading', servedToday: true, next: null },
+        // No title/label -> falls through the chain to the labelized unitId.
+        { subject: 'science', servedToday: false, next: { unitId: 'water-cycle.03' } },
+      ],
+      entries: [],
+      errors: [],
+    } });
+    const { container } = render(<StudentPanel onOpen={vi.fn()} />);
+    expect(await screen.findByText('Today')).toBeTruthy();
+    expect(screen.getByText('Math Fractions')).toBeTruthy();
+    expect(screen.getByText('Adding halves')).toBeTruthy();
+    expect(screen.getByText('Reading')).toBeTruthy();
+    expect(screen.getByText('done today')).toBeTruthy();
+    expect(screen.getByText('Water Cycle 03')).toBeTruthy();
+    expect(container.querySelectorAll('.school-rail__today-item')).toHaveLength(3);
+  });
+
+  it('omits the section entirely — no heading — when there are no sections', async () => {
+    agendaPreviewMock.mockResolvedValue({ ok: true, status: 200, data: { sections: [] } });
+    const { container } = render(<StudentPanel onOpen={vi.fn()} />);
+    await screen.findByText('Alpha');
+    expect(screen.queryByText('Today')).toBeNull();
+    expect(container.querySelector('.school-rail__today')).toBeNull();
+  });
+
+  it('omits the section entirely — never an error card — when the fetch fails', async () => {
+    agendaPreviewMock.mockResolvedValue({ ok: false, status: 503, data: null });
+    const { container } = render(<StudentPanel onOpen={vi.fn()} />);
+    await screen.findByText('Alpha');
+    expect(screen.queryByText('Today')).toBeNull();
+    expect(container.querySelector('.school-rail__today')).toBeNull();
   });
 });

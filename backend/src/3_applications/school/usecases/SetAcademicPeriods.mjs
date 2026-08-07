@@ -30,6 +30,10 @@ export class SetAcademicPeriods {
         && this.#store.historyLength() !== baseHistoryLength) {
       const err = new Error('The periods changed since you loaded them — reload and try again.');
       err.name = 'ValidationError';
+      err.code = 'STALE_SAVE';
+      // A stale-base write is a conflict with someone else's edit, not a
+      // malformed request — 409, not this name's default 400.
+      err.status = 409;
       throw err;
     }
     if (this.#frozenPeriodIds && Array.isArray(periods)) {

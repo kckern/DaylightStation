@@ -35,6 +35,13 @@ const printService = {
   getQuota: (userId) => ({ userId, remaining: 5 }),
   listPending: () => [{ requestId: 'req-1', userId: 'felix', pages: 6 }],
   listRequestsFor: (userId) => [{ id: 'pr_1', userId, status: 'denied', label: 'Maze' }],
+  previewPrintable: async (printableId) => {
+    if (printableId !== 'state-capitals') {
+      const { EntityNotFoundError } = await import('#domains/core/errors/index.mjs');
+      throw new EntityNotFoundError('printable', printableId);
+    }
+    return { pdf: PDF_BYTES, label: 'State Capitals' };
+  },
 };
 
 describe('/print fixed routes vs the *id splat', () => {
@@ -72,6 +79,62 @@ describe('/print fixed routes vs the *id splat', () => {
 
   it('a multi-segment document id still resolves through the splat', async () => {
     const res = await request(appWith({ printService })).get('/api/v1/school/print/math/fractions/quiz-1?variety=hand');
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/application\/pdf/);
+  });
+
+  it('GET /print/printables/:printableId/preview reaches the preview handler, not the document splat', async () => {
+    const res = await request(appWith({ printService })).get('/api/v1/school/print/printables/state-capitals/preview');
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/application\/pdf/);
+    expect(res.headers['content-disposition']).toMatch(/inline; filename="preview-state-capitals\.pdf"/);
+    expect(res.body).toEqual(PDF_BYTES);
+  });
+
+  it('GET preview of an unknown printableId 404s', async () => {
+    const res = await request(appWith({ printService })).get('/api/v1/school/print/printables/nope/preview');
+    expect(res.status).toBe(404);
+  });
+
+  it('preview 503s when no printService is wired', async () => {
+    const res = await request(appWith()).get('/api/v1/school/print/printables/state-capitals/preview');
+    expect(res.status).toBe(503);
+  });
+});
+
+describe('card-minting print renders are POSTs, not GETs (punch 5b)', () => {
+  it('GET with freshCard= 400s, naming POST /print/render', async () => {
+    const res = await request(appWith({ printService }))
+      .get('/api/v1/school/print/math/fractions/quiz-1?freshCard=1');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('card-minting renders require POST /print/render');
+  });
+
+  it('GET with card= 400s the same way', async () => {
+    const res = await request(appWith({ printService }))
+      .get('/api/v1/school/print/math/fractions/quiz-1?card=1234567');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('card-minting renders require POST /print/render');
+  });
+
+  it('GET with teacherPin= 400s the same way', async () => {
+    const res = await request(appWith({ printService }))
+      .get('/api/v1/school/print/math/fractions/quiz-1?teacherPin=4321');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('card-minting renders require POST /print/render');
+  });
+
+  it('POST /print/render with a JSON body renders the PDF (card-minting behavior lives here now)', async () => {
+    const res = await request(appWith({ printService }))
+      .post('/api/v1/school/print/render')
+      .send({ id: 'math/fractions/quiz-1', freshCard: true });
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/application\/pdf/);
+  });
+
+  it('a plain proof GET (no card params) still 200s a PDF, unchanged', async () => {
+    const res = await request(appWith({ printService }))
+      .get('/api/v1/school/print/math/fractions/quiz-1');
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toMatch(/application\/pdf/);
   });
@@ -121,7 +184,7 @@ describe('print approve/deny forward the body pin', () => {
 });
 
 describe('GET /api/v1/school/audit (admin advocacy #9)', () => {
-  it('merges the four history trails newest-first and honors ?since=', async () => {
+  it('merges the five history trails newest-first and honors ?since=', async () => {
     const app = express();
     app.use('/api/v1/school', createSchoolRouter({
       schoolService: { listBankSourceSummaries: () => [] },
@@ -132,15 +195,30 @@ describe('GET /api/v1/school/audit (admin advocacy #9)', () => {
         list: async () => [{ learnerId: 'felix' }],
         history: async () => [{ recordedAt: '2026-08-02T10:00:00Z', assignedBy: 'kckern', courses: ['math'] }],
       },
+      // Task 12 (debt M5): the reassignment audit trail joins the merge too.
+      reassignmentLog: { list: () => [{ at: '2026-08-04T09:00:00Z', fromLearnerId: 'felix', toLearnerId: 'milo', moved: 1, reassignedBy: 'kckern' }] },
       logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() },
     }));
     const res = await request(app).get('/api/v1/school/audit');
     expect(res.status).toBe(200);
-    expect(res.body.entries.map((e) => e.kind)).toEqual(['pass-override', 'assignments', 'periods', 'milestones']);
-    expect(res.body.entries[0]).toMatchObject({ by: 'elizabeth', unitId: 'frac.01', percent: 60 });
+    expect(res.body.entries.map((e) => e.kind)).toEqual(['reassignment', 'pass-override', 'assignments', 'periods', 'milestones']);
+    expect(res.body.entries[0]).toMatchObject({ kind: 'reassignment', by: 'kckern', learnerId: 'felix', toLearnerId: 'milo', moved: 1 });
 
     const since = await request(app).get('/api/v1/school/audit?since=2026-08-02');
-    expect(since.body.entries.map((e) => e.kind)).toEqual(['pass-override', 'assignments']);
+    expect(since.body.entries.map((e) => e.kind)).toEqual(['reassignment', 'pass-override', 'assignments']);
+  });
+
+  it('a throwing reassignment trail must not blank the rest (same posture as the other trails)', async () => {
+    const app = express();
+    app.use('/api/v1/school', createSchoolRouter({
+      schoolService: { listBankSourceSummaries: () => [] },
+      academicPeriodStore: { history: () => [{ at: '2026-08-01T10:00:00Z', editedBy: 'kckern', count: 3 }] },
+      reassignmentLog: { list: () => { throw new Error('reassignments.yml is corrupt'); } },
+      logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() },
+    }));
+    const res = await request(app).get('/api/v1/school/audit');
+    expect(res.status).toBe(200);
+    expect(res.body.entries.map((e) => e.kind)).toEqual(['periods']);
   });
 
   it('no stores wired answers an empty trail, never a crash', async () => {
