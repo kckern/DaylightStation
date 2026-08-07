@@ -77,6 +77,44 @@ describe('/print fixed routes vs the *id splat', () => {
   });
 });
 
+describe('card-minting print renders are POSTs, not GETs (punch 5b)', () => {
+  it('GET with freshCard= 400s, naming POST /print/render', async () => {
+    const res = await request(appWith({ printService }))
+      .get('/api/v1/school/print/math/fractions/quiz-1?freshCard=1');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('card-minting renders require POST /print/render');
+  });
+
+  it('GET with card= 400s the same way', async () => {
+    const res = await request(appWith({ printService }))
+      .get('/api/v1/school/print/math/fractions/quiz-1?card=1234567');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('card-minting renders require POST /print/render');
+  });
+
+  it('GET with teacherPin= 400s the same way', async () => {
+    const res = await request(appWith({ printService }))
+      .get('/api/v1/school/print/math/fractions/quiz-1?teacherPin=4321');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('card-minting renders require POST /print/render');
+  });
+
+  it('POST /print/render with a JSON body renders the PDF (card-minting behavior lives here now)', async () => {
+    const res = await request(appWith({ printService }))
+      .post('/api/v1/school/print/render')
+      .send({ id: 'math/fractions/quiz-1', freshCard: true });
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/application\/pdf/);
+  });
+
+  it('a plain proof GET (no card params) still 200s a PDF, unchanged', async () => {
+    const res = await request(appWith({ printService }))
+      .get('/api/v1/school/print/math/fractions/quiz-1');
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/application\/pdf/);
+  });
+});
+
 describe('GET /api/v1/school/teachers', () => {
   it('serves the use case result', async () => {
     const app = express();
