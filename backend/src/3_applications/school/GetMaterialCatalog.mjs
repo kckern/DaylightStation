@@ -7,7 +7,7 @@
  * — one unavailable media root must not blank the whole catalog for every other
  * section.
  *
- * `listMaterials` results are cached in-memory per root for 60s (`#ttlMs`),
+ * `listMaterials` results are cached in-memory per root for 10 min (`TTL_MS`),
  * shared by `execute()` and `findMaterial()`, so that `GetMaterialUnits`
  * (Task 4) and repeated catalog renders don't fan out duplicate provider calls.
  * `now` is injectable for testability; production leaves it at the `Date.now`

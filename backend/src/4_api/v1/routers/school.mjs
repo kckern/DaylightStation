@@ -104,8 +104,14 @@ export function createSchoolRouter({
         if (err instanceof GuestForbiddenError) return res.status(403).json({ error: err.message });
         if (err instanceof SessionGoneError) return res.status(410).json({ error: err.message });
         if (err instanceof EntityNotFoundError) return res.status(404).json({ error: err.message });
-        if (['REMEDIATION_ACTION_CONFLICT', 'REMEDIATION_ACTION_OUT_OF_ORDER'].includes(err?.code)) {
-          return res.status(409).json({ error: err.message, code: err.code });
+        if ([
+          'REMEDIATION_ACTION_CONFLICT', 'REMEDIATION_ACTION_OUT_OF_ORDER',
+          // A concurrent-edit refusal (SetAcademicPeriods, SetAssignments): the
+          // CLIENT's base was stale, not malformed — 409, never this router's
+          // by-instanceof 400 for a plain name='ValidationError' error.
+          'STALE_SAVE',
+        ].includes(err?.code)) {
+          return res.status(err.status ?? 409).json({ error: err.message, code: err.code });
         }
         if (err instanceof ValidationError) return res.status(400).json({ error: err.message });
         // A store/domain invariant refusal (allocation collision, illegal
