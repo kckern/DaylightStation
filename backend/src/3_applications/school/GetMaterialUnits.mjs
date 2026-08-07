@@ -77,6 +77,13 @@ export function buildBankIndex(banks, { trackParents = null } = {}) {
 // don't stampede the stall.
 const MATERIAL_TIMEOUT_MS = 20_000;
 const MATERIAL_TTL_MS = 3_600_000; // units rarely change; progress is folded fresh each call
+// Past the TTL a cached material is STALE, not gone: it is served immediately
+// while a background refresh replaces it (stale-while-revalidate), so nobody
+// waits out the provider's serialized fan-out at the TTL boundary or after a
+// redeploy (the disk snapshot re-seeds the cache at boot). The bound exists
+// for a provider that stays down: a material older than this blocks on a real
+// fetch rather than serving arbitrarily old units forever.
+const MATERIAL_MAX_STALE_MS = 86_400_000; // 24h
 
 export class GetMaterialUnits {
   #catalog;
@@ -87,10 +94,11 @@ export class GetMaterialUnits {
   #attemptsReader;
   #logger;
   #materialTimeoutMs;
+  #snapshot;
   #materialCache = new Map(); // materialId -> { full, at }
   #materialInflight = new Map(); // materialId -> Promise
 
-  constructor({ catalog, sources, config, progressStore, bankIndex, attemptsReader, logger = console, materialTimeoutMs = MATERIAL_TIMEOUT_MS }) {
+  constructor({ catalog, sources, config, progressStore, bankIndex, attemptsReader, logger = console, materialTimeoutMs = MATERIAL_TIMEOUT_MS, snapshot = null }) {
     this.#catalog = catalog;
     this.#sources = sources;
     this.#config = config;
@@ -99,6 +107,18 @@ export class GetMaterialUnits {
     this.#attemptsReader = attemptsReader;
     this.#logger = logger;
     this.#materialTimeoutMs = materialTimeoutMs;
+    this.#snapshot = snapshot;
+    if (snapshot) {
+      // Seed the in-memory cache from the last process's snapshot so a
+      // redeploy starts warm. Best-effort: a failed seed just means a cold
+      // start, exactly what we had before snapshots existed.
+      try {
+        for (const [materialId, entry] of snapshot.load()) this.#materialCache.set(materialId, entry);
+        this.#logger.info?.('school.material.snapshot-seeded', { count: this.#materialCache.size });
+      } catch (err) {
+        this.#logger.warn?.('school.material.snapshot-seed-failed', { error: err?.message });
+      }
+    }
   }
 
   #withTimeout(promise, ms, materialId) {
@@ -115,7 +135,8 @@ export class GetMaterialUnits {
   // it is folded fresh from the store on every execute() call.
   async #fetchFull(adapter, materialId) {
     const cached = this.#materialCache.get(materialId);
-    if (cached && (Date.now() - cached.at) < MATERIAL_TTL_MS) return cached.full;
+    const age = cached ? Date.now() - cached.at : Infinity;
+    if (cached && age < MATERIAL_TTL_MS) return cached.full;
 
     // One real fetch per material, shared by all concurrent callers. It caches
     // on completion INDEPENDENT of any caller's timeout — so even a very slow
@@ -124,9 +145,21 @@ export class GetMaterialUnits {
     let real = this.#materialInflight.get(materialId);
     if (!real) {
       real = adapter.getMaterial(materialId)
-        .then((full) => { this.#materialCache.set(materialId, { full, at: Date.now() }); return full; })
+        .then((full) => {
+          const at = Date.now();
+          this.#materialCache.set(materialId, { full, at });
+          this.#snapshot?.put(materialId, full, at); // never throws — see the store
+          return full;
+        })
         .finally(() => this.#materialInflight.delete(materialId));
       this.#materialInflight.set(materialId, real);
+    }
+    // Stale-while-revalidate: a past-TTL (but bounded) entry is served NOW and
+    // the refresh above lands in the background — the caller never waits on
+    // the provider for a material we already know.
+    if (cached && age < MATERIAL_MAX_STALE_MS) {
+      real.catch((err) => this.#logger.warn?.('school.material.refresh-failed', { materialId, error: err?.message }));
+      return cached.full;
     }
     // Each caller bounds its OWN wait so a stall fails THIS request fast (the
     // detail shows a retry) without cancelling the shared, cache-warming fetch.
