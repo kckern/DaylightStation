@@ -77,6 +77,30 @@ const sessions = {
   readEvents: async () => [{ type: 'created', seq: 1 }],
 };
 
+// `GET .../agenda` now previews (dry run) and `POST .../agenda` mints — these
+// arrays let the agenda tests below assert WHICH use case a given request
+// reached without re-declaring the router per test.
+const previewCalls = [];
+const buildCalls = [];
+const previewAgenda = {
+  execute: async ({ learnerId, learnerName }) => {
+    previewCalls.push({ learnerId, learnerName });
+    return {
+      learnerId, learnerName, sections: [], plan: { entries: [], errors: [] }, document: { id: `agenda-${learnerId}` },
+    };
+  },
+};
+const buildAgenda = {
+  execute: async ({ learnerId, learnerName }) => {
+    buildCalls.push({ learnerId, learnerName });
+    return { learnerId, learnerName, offers: [], document: { id: `agenda-${learnerId}` } };
+  },
+};
+/** Stub of `1_rendering`'s PNG receipt renderer — a fixed, tiny "PNG". */
+const receiptPngRenderer = {
+  createCanvas: async (document) => ({ canvas: { toBuffer: () => Buffer.from(`png:${document.id}`) } }),
+};
+
 let server, base;
 
 beforeAll(async () => {
@@ -84,7 +108,9 @@ beforeAll(async () => {
   app.use(express.json());
   app.use('/api/v1/school/lifecycle', createSchoolLifecycleRouter({
     resolveScanAction: { execute: async ({ code }) => ({ status: code.replace('sch:', ''), message: 'stubbed', printed: true }) },
-    buildAgenda: { execute: async ({ learnerId, learnerName }) => ({ learnerId, learnerName, offers: [], document: { id: 'agenda-kid1' } }) },
+    buildAgenda,
+    previewAgenda,
+    receiptPngRenderer,
     issueDocument: { execute: async ({ sessionId }) => ({ status: sessionId === 'ses_bad' ? 'unavailable' : 'issued', sessionId, artifactId: 'art_1' }) },
     dispatchMedia: {
       selectableTargets: () => [{ id: 'living-room-tv', label: 'the TV', childSelectable: true }],
@@ -160,10 +186,27 @@ describe('outcome → status mapping', () => {
 });
 
 describe('agenda and sessions', () => {
-  it('builds an agenda, passing the display name through', async () => {
+  it('GET /agenda is a dry run: it previews (never mints) and returns a PNG, passing the display name through', async () => {
+    const previewBefore = previewCalls.length;
+    const buildBefore = buildCalls.length;
     const r = await fetch(`${base}/learners/kid1/agenda?name=Sam`);
     expect(r.status).toBe(200);
-    expect(await r.json()).toMatchObject({ learnerId: 'kid1', learnerName: 'Sam' });
+    expect(r.headers.get('content-type')).toBe('image/png');
+    expect(r.headers.get('content-disposition')).toContain('agenda-kid1');
+    expect(previewCalls.length).toBe(previewBefore + 1);
+    expect(previewCalls.at(-1)).toMatchObject({ learnerId: 'kid1', learnerName: 'Sam' });
+    expect(buildCalls.length).toBe(buildBefore);
+  });
+
+  it('POST /agenda mints (buildAgenda, never previewAgenda) and returns the same PNG shape, name from the body', async () => {
+    const previewBefore = previewCalls.length;
+    const buildBefore = buildCalls.length;
+    const r = await post('/learners/kid1/agenda', { name: 'Sam' });
+    expect(r.status).toBe(200);
+    expect(r.headers.get('content-type')).toBe('image/png');
+    expect(buildCalls.length).toBe(buildBefore + 1);
+    expect(buildCalls.at(-1)).toMatchObject({ learnerId: 'kid1', learnerName: 'Sam' });
+    expect(previewCalls.length).toBe(previewBefore);
   });
 
   it('lists a learner\'s sessions and one session\'s events', async () => {
