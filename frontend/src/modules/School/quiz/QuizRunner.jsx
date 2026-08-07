@@ -63,7 +63,7 @@ function FlagAsk({ userId, bankId, sessionId, title }) {
   );
 }
 
-export default function QuizRunner({ bank, mode = 'quiz', learning = null, onExit }) {
+export default function QuizRunner({ bank, mode = 'quiz', learning = null, onExit, onRestart = null }) {
   const { status, currentUser, isGuest } = useSchoolProfile();
   const [sessionId, setSessionId] = useState(null);
   const [index, setIndex] = useState(0);
@@ -72,6 +72,9 @@ export default function QuizRunner({ bank, mode = 'quiz', learning = null, onExi
   const [unrecordedCount, setUnrecordedCount] = useState(0);
   const [openFailed, setOpenFailed] = useState(false);
   const [score, setScore] = useState(0);
+  // Per-question outcomes for the summary dots (design audit #5): true /
+  // false / null (unrecorded), in question order.
+  const [outcomes, setOutcomes] = useState([]);
   const [done, setDone] = useState(false);
 
   const identityKey = currentUser?.id ?? (isGuest ? 'guest' : 'none');
@@ -131,11 +134,13 @@ export default function QuizRunner({ bank, mode = 'quiz', learning = null, onExi
       schoolLog.answerError('record-failed', { sessionId, itemId: item.id, status: answerStatus });
       setUnrecorded(true);
       setUnrecordedCount((c) => c + 1);
+      setOutcomes((o) => [...o, null]);
       setVerdict({ unrecorded: true });
       return;
     }
     schoolLog.answer('graded', { sessionId, itemId: item.id, itemType: item.type, correct: data.correct });
     if (data.correct) setScore((s) => s + 1);
+    setOutcomes((o) => [...o, data.correct]);
     setVerdict(data);
   };
 
@@ -166,7 +171,14 @@ export default function QuizRunner({ bank, mode = 'quiz', learning = null, onExi
       <div className="school-runner school-runner--summary" data-testid="quiz-summary" data-passed={passed === null ? undefined : String(passed)}>
         <h2>{bank.title}</h2>
         <p className="school-runner__cheer" data-testid="quiz-cheer">{cheer}</p>
-        <p className="school-runner__score">{score} / {gradedCount}</p>
+        <p className="school-runner__score school-runner__score--display">{score} / {gradedCount}</p>
+        {/* One dot per question, in order — the recap at a glance (audit #5). */}
+        <div className="school-runner__dots" data-testid="quiz-dots" aria-label="Question results">
+          {outcomes.map((ok, i) => (
+            // eslint-disable-next-line react/no-array-index-key -- question order is the identity
+            <span key={i} className={`school-runner__dot ${ok === null ? 'is-unknown' : ok ? 'is-right' : 'is-missed'}`} />
+          ))}
+        </div>
         {passingPercent !== null && (
           <p className="school-runner__passbar" data-testid="quiz-passbar">
             {passed
@@ -192,7 +204,14 @@ export default function QuizRunner({ bank, mode = 'quiz', learning = null, onExi
             onDone={onExit}
             continueLabel="Done"
           />
-        ) : <button type="button" className="school-runner__done" onClick={onExit}>Done</button>}
+        ) : (
+          <div className="school-runner__summary-actions">
+            {onRestart && (
+              <button type="button" className="school-runner__again" onClick={onRestart}>Try again</button>
+            )}
+            <button type="button" className="school-runner__done" onClick={onExit}>Done</button>
+          </div>
+        )}
       </div>
     );
   }
@@ -222,12 +241,12 @@ export default function QuizRunner({ bank, mode = 'quiz', learning = null, onExi
   const ItemComponent = ITEM_COMPONENTS[item.type];
   return (
     <div className="school-runner school-runner--quiz">
-      {unsaved && (
-        <div className="school-runner__guest" data-testid="guest-banner">
-          Playing as guest — this won’t be saved.
-        </div>
-      )}
-      <div className="school-runner__progress">{index + 1} / {bank.items.length}</div>
+      <div className="school-runner__progress">
+        <span>{index + 1} / {bank.items.length}</span>
+        {/* A corner chip, not a headline (audit #5): the disclaimer must not
+            outrank the question on every screen. */}
+        {unsaved && <span className="school-runner__guest-chip" data-testid="guest-banner">guest — not saved</span>}
+      </div>
       {unrecorded && <div className="school-runner__unrecorded" data-testid="unrecorded">That answer didn’t save — it won’t count as wrong. Tell a grown-up if this keeps happening.</div>}
       <ItemComponent key={item.id} item={item} onSubmit={submit} verdict={verdict} />
       {verdict && <button type="button" className="school-runner__next" onClick={next}>Next</button>}
