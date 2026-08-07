@@ -17,13 +17,24 @@
  *     sign-in picker (client-side claim, no PIN needed to claim), then
  *     attempt a pass-override Set with pin "0000" — NEVER the real PIN —
  *     and assert the PinPrompt/refusal path surfaces the server's error
- *     copy. This is the full UI ceremony (TeacherGate's bad-pin branch is
- *     also covered directly via the API in the setup assertions below).
+ *     copy. This is the full UI ceremony against a REAL curriculum unit.
+ *
+ * Structural safety (review finding, Task 19 fix-up): test 4 above types
+ * into a REAL unit's pass-override control. "The wrong PIN never succeeds"
+ * is a property of THIS INSTALL's config (TeacherGate only checks the PIN
+ * when `school.yml`'s `teacher.pin` is non-empty) — it is not structurally
+ * guaranteed by the test itself. So `beforeAll` proves the gate is armed
+ * BEFORE any UI mutation attempt runs: it PUTs a SYNTHETIC unit id with pin
+ * '0000' and demands a 403. If the gate ever answers anything else (e.g. the
+ * pin key was unset and the write would have gone through), `beforeAll`
+ * throws — which fails/skips every test in this file, including the one
+ * that would otherwise have written `percent: 77` into real curriculum data.
  */
 import { test, expect } from '@playwright/test';
 import { FRONTEND_URL, BACKEND_URL } from '#fixtures/runtime/urls.mjs';
 
 const BASE_URL = FRONTEND_URL;
+const GATE_PROBE_UNIT_ID = '__task19_smoke_probe__';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -34,6 +45,8 @@ test.describe('Teacher Console — live smoke', () => {
   let roster;
   /** @type {{configured: boolean, teachers: Array<{id: string, name: string}>}} */
   let teachersPayload;
+  /** @type {object} snapshot of GET /pass-overrides taken before any mutation attempt */
+  let overridesBefore;
 
   test.beforeAll(async ({ request }) => {
     // No-excuses live reads: a failure here must fail the suite, not degrade
@@ -48,6 +61,30 @@ test.describe('Teacher Console — live smoke', () => {
     teachersPayload = await teachersRes.json();
     expect(teachersPayload.configured, 'this install must have teachers: configured for the console to be claimable').toBeTruthy();
     expect(Array.isArray(teachersPayload.teachers) && teachersPayload.teachers.length > 0, 'live teachers list must be non-empty').toBeTruthy();
+
+    // Snapshot BEFORE any mutation attempt, so the final test can prove
+    // nothing changed as a side effect of this suite.
+    const overridesRes = await request.get(`${BACKEND_URL}/api/v1/school/pass-overrides`);
+    expect(overridesRes.ok(), `GET /api/v1/school/pass-overrides must succeed (got ${overridesRes.status()})`).toBeTruthy();
+    overridesBefore = await overridesRes.json();
+
+    // STRUCTURAL gate-armed guard (not config-trusting): a real teacher id,
+    // a synthetic unit id (cannot collide with real curriculum), pin '0000'.
+    // If this isn't a 403, the PIN gate is not enforcing on this install and
+    // the suite must refuse to run its UI mutation test at all.
+    const gateRes = await request.put(
+      `${BACKEND_URL}/api/v1/school/pass-overrides/${GATE_PROBE_UNIT_ID}`,
+      { data: { percent: 50, editedBy: teachersPayload.teachers[0].id, pin: '0000' } },
+    );
+    if (gateRes.status() !== 403) {
+      throw new Error(
+        'refusing to run mutation tests — the teacher PIN gate is not armed on this install '
+        + `(expected 403 from the wrong-PIN probe, got ${gateRes.status()}). `
+        + 'The UI wrong-PIN test types into a REAL curriculum unit and would rely on this gate to refuse the write.',
+      );
+    }
+    const gateBody = await gateRes.json().catch(() => null);
+    expect(gateBody?.error, 'the armed gate must refuse with a PIN-shaped error message').toMatch(/pin/i);
   });
 
   test('renders the four tabs and Today shows every live roster kid by name', async ({ page }) => {
@@ -145,15 +182,15 @@ test.describe('Teacher Console — live smoke', () => {
     await expect(pinDialog).toBeVisible();
   });
 
-  test('the API refuses a wrong-PIN pass-override write directly with 403 (defense in depth)', async ({ request }) => {
-    // Direct API check of the same refusal path, independent of UI timing —
-    // belt-and-suspenders for the headless ceremony above. Targets a unit id
-    // that cannot collide with real curriculum data.
-    const res = await request.put(`${BACKEND_URL}/api/v1/school/pass-overrides/__task19_smoke_probe__`, {
-      data: { percent: 50, editedBy: teachersPayload.teachers[0].id, pin: '0000' },
-    });
-    expect(res.status()).toBe(403);
-    const body = await res.json();
-    expect(body.error).toMatch(/pin/i);
+  test('pass-overrides is unchanged after the run — the wrong-PIN attempts never wrote real data', async ({ request }) => {
+    // Runs last (serial mode) — after beforeAll's gate probe AND the UI
+    // test's real-unit Set attempt. Proves the whole file, structurally, by
+    // comparing against the pre-mutation-attempt snapshot rather than just
+    // assuming "empty" — this holds even on an install that already had
+    // legitimate overrides before this suite ran.
+    const res = await request.get(`${BACKEND_URL}/api/v1/school/pass-overrides`);
+    expect(res.ok(), `GET /api/v1/school/pass-overrides must succeed (got ${res.status()})`).toBeTruthy();
+    const overridesAfter = await res.json();
+    expect(overridesAfter, 'pass-overrides must be byte-for-byte unchanged by this suite').toEqual(overridesBefore);
   });
 });
