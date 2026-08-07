@@ -39,6 +39,15 @@ export function validatePeriodList(raw) {
     if (period.parentPeriodId && !all.some((p) => p.periodId === period.parentPeriodId)) {
       throw new Error(`period '${period.periodId}' names missing parent '${period.parentPeriodId}'`);
     }
+    // Same-KIND overlap refusal (admin advocacy #15): two semesters sharing
+    // an instant makes narrowest-wins a coin flip and double-counts the
+    // boundary. Different kinds nest by design (a semester inside a year).
+    for (const other of all) {
+      if (other === period || other.kind !== period.kind) continue;
+      if (period.startsAt < other.endsAt && other.startsAt < period.endsAt) {
+        throw new Error(`period '${period.periodId}' overlaps '${other.periodId}' (both kind '${period.kind}')`);
+      }
+    }
     return period;
   });
 }
@@ -81,6 +90,14 @@ export class YamlAcademicPeriodStore {
       return this.#fallback?.listPeriods?.() ?? [];
     }
     return this.#fallback?.listPeriods?.() ?? [];
+  }
+
+  /** The edit trail, oldest first (admin advocacy #9): who replaced the periods, when. */
+  history() {
+    const read = this.#readState();
+    return read.state === 'ok'
+      ? (read.raw.history ?? []).map(({ at, editedBy, periods }) => ({ at, editedBy, count: (periods ?? []).length }))
+      : [];
   }
 
   historyLength() {

@@ -35,7 +35,10 @@ export class YamlSchoolAttemptEvidenceSource extends ILearningEvidenceSource {
         ? this.#datastore.readAttemptsInRange(learnerId, fromDay, toDay)
         : this.#datastore.readAllAttempts(learnerId);
       return (attempts ?? [])
-        .filter((attempt) => (from === null || attempt.at >= from) && (to === null || attempt.at < to))
+        .filter((attempt) => (from === null || attempt.at >= from) && (to === null || attempt.at < to)
+          // Regrade corrections are verdict amendments, not learning
+          // evidence rows of their own (M8 fix 1).
+          && attempt.provenance?.kind !== 'regrade')
         .map(learningEvidenceFromAttempt);
     });
   }

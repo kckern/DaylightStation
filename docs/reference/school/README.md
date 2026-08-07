@@ -57,7 +57,10 @@ never imports from `modules/Piano/`; both import from the shared home.
 
 ### Quizzes and flashcards
 
-One canonical question-bank format at `data/content/quizzes/*.yml`. `type`
+One canonical question-bank format. Banks live INSIDE their work:
+`data/content/school/{subject}/{work}/quizzes/…​.yml`, and a bank id is the
+path with the `quizzes/` container elided (`history/us-capitals/us-state-capitals`)
+— see [authoring/content-layout.md](authoring/content-layout.md). `type`
 describes how an item is **graded**; mode describes how it is **presented** —
 so one bank serves both a quiz and a flashcard drill without duplicating
 content.
@@ -652,7 +655,7 @@ printables:
   - id: state-capitals
     label: US State Capitals
     type: bank
-    bankId: us-state-capitals   # a TOP-LEVEL bank id under data/content/quizzes/
+    bankId: history/us-capitals/us-state-capitals   # a full path-form bank id
     subject: history
 ```
 
@@ -907,9 +910,11 @@ available, `.02`–`.04` **locked** behind it, `next: math-fractions.01`. Passin
 unit releases the next; only sequential courses gate. A standalone unit named
 under `units` (curriculum or program) carries no such gate.
 
-Seeded catalog lives at `data/content/school/curriculum/{units,documents,manifests}/`,
-and referenced question banks at `data/content/quizzes/<bankId>.yml` — a bank id is
-the path under that directory. A unit whose bank is missing is **rejected at load**
+The catalog lives inside each work at
+`data/content/school/{subject}/{work}/{units,documents,manifests}/` (curriculum
+ids stay flat basenames; see [authoring/content-layout.md](authoring/content-layout.md)),
+and question banks at `…/{work}/quizzes/` — a bank id is the subject/work path
+with `quizzes/` elided. A unit whose bank is missing is **rejected at load**
 with `school.curriculum.invalid-units` rather than failing when a child opens it.
 
 **The printed agenda is sectioned by subject, not listed by unit.** It opens
@@ -1325,6 +1330,47 @@ Deferred with records (plan appendix): mid-quiz resumability, tap-confirm on
 choices, a third no-stakes flashcard lane, tutor deep-links from fail
 summaries, the Portal day-plan panel.
 
+### Administration (wave 8)
+
+The recording was always honest; wave 8 makes the system RECONCILE — every
+store that can drift from another now has a read, a sweep, or a refusal
+that says so.
+
+- **Boot resilience**: a missing/malformed `generated-banks/recipes.yml`
+  degrades to an empty source with a warn/error log — never a crash-loop.
+  Malformed banks are named at warm (`GET /banks/health`). Cold start is a
+  runbook: [`runbooks/school-cold-start.md`](../../runbooks/school-cold-start.md);
+  authoring docs live in git under [`authoring/`](authoring/).
+- **Drift is named**: report cards surface graded work whose unitId no
+  longer resolves (`unresolvedUnits`, warn-logged, rendered on Records);
+  the catalog CLI prints history drift and refuses bank↔unit seam breaks
+  (duplicate claims, dead backlinks); screen attempts stamp `bankRev` (a
+  content hash) so an answer-key fix never silently rewrites history; a
+  nightly manifest task (`school:content-manifest`) diffs the content tree.
+- **The bird's-eye view**: the Planning tab's SchoolMatrix (learners ×
+  courses with dead-reference/zero-enrollment/override/orphan flags) and
+  ActiveOverrides (every pass-override and attestation, by whom, since
+  when). Planner refusals render on the morning drill-in. `SetAssignments`
+  refuses unknown learners/courses BY NAME (degrading when the catalog
+  itself is down).
+- **Corrections have a full story**: `POST /attempts/regrade` re-runs the
+  one grading engine over recorded attempts (dry-run default, gated, reason
+  required, corrective rows carry `provenance: {kind: 'regrade'}`);
+  superseded freezes are readable (`GET /report-card/frozen/versions`);
+  retractions are visible (`?includeRetracted=1`); `GET /audit?since=`
+  merges the four history trails; `GET /learner/:id/record` is one child's
+  whole communications record.
+- **Stale work is noticed**: `abandoned` finally has its writer (gated
+  `MarkSessionAbandoned`, reason required) with a Repair-tab list of stuck
+  sessions; `school-docs list-cards` finds stranded OMR cards; a daily
+  retention sweep archives the print log and drops settled rows (a child's
+  retakes/flags are NEVER swept).
+- **Identity and format**: `school-rekey-learner` CLI walks both data
+  roots (dry-run default, actor keys untouched); periods refuse same-kind
+  overlap and frozen-card strandings, boundaries are half-open; banks/units
+  accept an optional `schema:` (absent = v1); the Admin planner arms the
+  stale-save guard and renders stale assignment ids honestly.
+
 ## 3. Specced, not built
 
 No code exists for anything in this section. Each links its spec.
@@ -1434,8 +1480,7 @@ No code exists for anything in this section. Each links its spec.
   sequence — a macro typo, the single likeliest authoring mistake — renders as
   **red literal text** instead of raising an error, and prints that way on a
   child's worksheet. `mathSvg.mjs` filters it; any new MathJax consumer must too.
-- **Bank ids for printables must be top-level.** `readBankRaw` forbids `/` in a
-  bank id and `listYamlFiles` is non-recursive, so only `*.yml` directly under
-  `data/content/quizzes/` (e.g. `us-state-capitals`) resolve as a printable
-  `bankId`. Nested banks (`math/…`, `civ/…`) are reachable only via a material
-  unit's `unit:` backlink, not by path id.
+- **Printable bankIds are full path-form ids.** Since the 2026-07-30
+  restructure `readBankRaw` resolves the `{subject}/{work}/…` path form (the
+  `quizzes/` container elided) — the old "top-level only" restriction is gone;
+  this bullet previously documented the pre-restructure layout.

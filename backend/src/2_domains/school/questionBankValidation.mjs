@@ -22,6 +22,13 @@ export function validateQuestionBank(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     return { ok: false, errors: ['bank must be a mapping'] };
   }
+  // Optional schema discriminator (admin advocacy #18): absent means v1 —
+  // ~4600 existing files stay valid byte-for-byte — but a future semantic
+  // change now has an escape hatch, and an unknown version is refused
+  // instead of half-parsed.
+  if (raw.schema !== undefined && raw.schema !== 'school.question-bank/v1') {
+    errors.push(`schema must be school.question-bank/v1 when present, got: ${raw.schema}`);
+  }
   if (!isNonEmptyString(raw.id)) errors.push('id is required');
   if (!isNonEmptyString(raw.title)) errors.push('title is required');
   const audience = raw.audience === undefined || raw.audience === null ? 'assigned' : raw.audience;

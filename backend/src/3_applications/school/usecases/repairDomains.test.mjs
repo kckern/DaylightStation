@@ -8,6 +8,7 @@ import os from 'os';
 import path from 'path';
 import { promises as fs } from 'fs';
 import { YamlAttestationLog } from '#adapters/persistence/yaml/YamlAttestationLog.mjs';
+import * as periodStoreExports from '#adapters/persistence/yaml/YamlAcademicPeriodStore.mjs';
 import { YamlEnrichmentLog } from '#adapters/persistence/yaml/YamlEnrichmentLog.mjs';
 import { YamlTeacherNotes } from '#adapters/persistence/yaml/YamlTeacherNotes.mjs';
 import { RecordAttestation } from './RecordAttestation.mjs';
@@ -210,6 +211,40 @@ describe('advocacy wave 6 — retractions (B15)', () => {
     await expect(uc.execute({ kind: 'enrichment', entryId: 'ghost', retractedBy: 'kckern' })).rejects.toThrow(/entry/);
     await uc.execute({ kind: 'enrichment', entryId: 'enr_1', retractedBy: 'kckern', pin: '7410' });
     expect(enrichment.list({ learnerId: 'felix' })).toEqual([]);
+  });
+});
+
+describe('admin advocacy #15 — period rails', () => {
+  const { validatePeriodList } = periodStoreExports;
+  const P = (over = {}) => ({
+    periodId: 'fall-2026', kind: 'semester', label: 'Fall',
+    startsAt: '2026-08-01T07:00:00.000Z', endsAt: '2026-12-19T07:00:00.000Z', ...over,
+  });
+
+  it('refuses same-kind overlap; different kinds still nest', () => {
+    expect(() => validatePeriodList([
+      P(), P({ periodId: 'fall-b', startsAt: '2026-12-01T07:00:00.000Z', endsAt: '2027-01-15T07:00:00.000Z' }),
+    ])).toThrow(/overlaps/);
+    expect(() => validatePeriodList([
+      P(), P({ periodId: 'year-2026', kind: 'year', startsAt: '2026-08-01T07:00:00.000Z', endsAt: '2027-06-15T07:00:00.000Z' }),
+    ])).not.toThrow();
+    // Half-open: back-to-back same-kind periods sharing the boundary instant are fine.
+    expect(() => validatePeriodList([
+      P(), P({ periodId: 'spring-2027', startsAt: '2026-12-19T07:00:00.000Z', endsAt: '2027-06-15T07:00:00.000Z' }),
+    ])).not.toThrow();
+  });
+
+  it('SetAcademicPeriods refuses to drop a periodId that holds frozen report cards, BY NAME', async () => {
+    const { SetAcademicPeriods } = await import('./SetAcademicPeriods.mjs');
+    const store = { replacePeriods: vi.fn(async (p) => p), historyLength: () => 0 };
+    const uc = new SetAcademicPeriods({
+      store, teacherGate: passingGate(),
+      frozenPeriodIds: async () => ['fall-2026'],
+    });
+    await expect(uc.execute({ periods: [P({ periodId: 'renamed-fall' })], editedBy: 'kckern', pin: '7410' }))
+      .rejects.toThrow(/fall-2026/);
+    expect(store.replacePeriods).not.toHaveBeenCalled();
+    await expect(uc.execute({ periods: [P()], editedBy: 'kckern', pin: '7410' })).resolves.toBeTruthy();
   });
 });
 

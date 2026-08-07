@@ -283,6 +283,8 @@ import { MediaSeriesSource } from './3_applications/school/sources/MediaSeriesSo
 import { MediaLabelSource } from './3_applications/school/sources/MediaLabelSource.mjs';
 import { PlexSchoolMediaCatalog } from './1_adapters/school/media/plex/PlexSchoolMediaCatalog.mjs';
 import { GeneratedBankSource } from '#adapters/school/generated-content/GeneratedBankSource.mjs';
+import { GetLearnerRecord } from '#apps/school/usecases/GetLearnerRecord.mjs';
+import { RegradeBankAttempts } from '#apps/school/usecases/RegradeBankAttempts.mjs';
 import { UserVideoProgressStore as SchoolUserVideoProgressStore } from './3_applications/piano/UserVideoProgressStore.mjs';
 import { PrintService } from './3_applications/school/PrintService.mjs';
 import { renderBankWorksheet } from './1_rendering/school/WorksheetRenderer.mjs';
@@ -2233,7 +2235,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     learnerDirectory: schoolLearnerDirectory,
     logger: rootLogger.child({ module: 'school' }),
     bankSources: [new GeneratedBankSource({
-      dataDir: path.join(contentPath, 'school', 'generated-banks')
+      dataDir: path.join(contentPath, 'school', 'generated-banks'),
+      logger: rootLogger.child({ module: 'school-generated-banks' })
     })]
   });
   const schoolLearningEvidence = new YamlLearningEvidenceRepository({ configService });
@@ -3142,7 +3145,22 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Wave-3 gated planning writes — constructed HERE because they borrow the
   // lifecycle's pass-override store and sessions repo (both null-safe when
   // the lifecycle is unwired).
-  const setAcademicPeriods = new SetAcademicPeriods({ store: schoolAcademicPeriods, teacherGate: schoolTeacherGate });
+  const setAcademicPeriods = new SetAcademicPeriods({
+    store: schoolAcademicPeriods,
+    teacherGate: schoolTeacherGate,
+    // Frozen-card guard (admin advocacy #15): the roster-wide set of periodIds
+    // holding a FROZEN card — removing/renaming one of those ids is refused.
+    frozenPeriodIds: async () => {
+      const roster = userService.getHouseholdRoster?.() ?? [];
+      const ids = [];
+      for (const member of roster) {
+        try {
+          (schoolDatastore.listReportCards(member.id) ?? []).forEach((r) => { if (r?.periodId) ids.push(r.periodId); });
+        } catch { /* one unreadable shard must not lock period edits */ }
+      }
+      return ids;
+    },
+  });
   const setPassOverride = schoolLifecycle.passOverrides
     ? new SetPassOverride({ store: schoolLifecycle.passOverrides, teacherGate: schoolTeacherGate })
     : null;
@@ -3185,6 +3203,26 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     remediationTutor: schoolLearningLoop.tutor,
     learnerDirectory: schoolLearnerDirectory,
     printService: schoolPrintService,
+    academicPeriodStore: schoolAcademicPeriods,
+    schoolDatastore,
+    regradeBankAttempts: schoolTeacherGate ? new RegradeBankAttempts({
+      datastore: schoolDatastore,
+      bankReader: schoolService,
+      teacherGate: schoolTeacherGate,
+      learnerDirectory: schoolLearnerDirectory,
+      logger: rootLogger.child({ module: 'school-regrade' }),
+    }) : null,
+    milestoneStore: schoolMilestoneStore,
+    assignmentsStore: schoolLifecycle.stores?.assignments ?? null,
+    getLearnerRecord: new GetLearnerRecord({
+      teacherNotes: schoolTeacherNotes,
+      reviewQueue: schoolLifecycle.stores?.reviewQueue ?? null,
+      attestations: schoolAttestations,
+      enrichment: schoolEnrichmentLog,
+      quizRequests: () => schoolService.listQuizRequests(),
+      printRequests: (learnerId) => schoolPrintService?.listRequestsFor?.(learnerId) ?? [],
+      logger: rootLogger.child({ module: 'school-learner-record' }),
+    }),
     schoolCalcRouter: schoolCalc.router,
     surfaceCertification: schoolSurfaces.certification,
     surfaceRegistry: schoolSurfaces.registry,
@@ -3753,6 +3791,43 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         }
       } catch (err) {
         rootLogger.warn('school.teacher-nudge.failed', { error: err.message });
+      }
+    });
+  }
+
+  // Content-tree manifest (admin advocacy #20): nightly hash of the authored
+  // school content; the diff vs yesterday is logged and the manifest file is
+  // the record — version control the Dropbox-synced volume can't safely have.
+  if (agentsServices.scheduler) {
+    agentsServices.scheduler.registerTask('school:content-manifest', '50 3 * * *', async () => {
+      try {
+        const { ContentTreeManifest } = await import('#adapters/school/content/ContentTreeManifest.mjs');
+        new ContentTreeManifest({
+          contentDir: path.join(contentPath, 'school'),
+          manifestFile: configService.getHouseholdPath('apps/school/content-manifest.yml'),
+          logger: rootLogger.child({ module: 'school-content-manifest' }),
+        }).run();
+      } catch (err) {
+        rootLogger.warn('school.content-manifest.failed', { error: err.message });
+      }
+    });
+  }
+
+  // School retention sweep (admin advocacy A5): the one scheduled janitor
+  // for the household stores that grew forever. Daily at 03:30 — before the
+  // 4am study-day roll, after the house is asleep.
+  if (agentsServices.scheduler && schoolDatastore) {
+    agentsServices.scheduler.registerTask('school:retention-sweep', '30 3 * * *', async () => {
+      try {
+        const { SchoolRetentionSweep } = await import('#apps/school/SchoolRetentionSweep.mjs');
+        const sweep = new SchoolRetentionSweep({
+          datastore: schoolDatastore,
+          schoolService,
+          logger: rootLogger.child({ module: 'school-retention' }),
+        });
+        await sweep.execute();
+      } catch (err) {
+        rootLogger.warn('school.retention.failed', { error: err.message });
       }
     });
   }

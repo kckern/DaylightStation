@@ -115,9 +115,12 @@ export const schoolAdminApi = {
    * the household roster and answers 403 for a child, an unknown id, or none at
    * all. Sending it is what makes the write land, not a formality.
    */
-  putAssignment: (learnerId, { courses, units, assignedBy, pin = null }) => call(
+  putAssignment: (learnerId, { courses, units, assignedBy, pin = null, baseUpdatedAt }) => call(
     `${LIFECYCLE}/assignments/${enc(learnerId)}`,
-    { method: 'PUT', body: { courses, units, assignedBy, pin } },
+    // `baseUpdatedAt` arms the server's STALE_SAVE guard (admin advocacy
+    // #19): without it this surface silently clobbered a co-teacher's edit
+    // made on the teacher console between load and save.
+    { method: 'PUT', body: { courses, units, assignedBy, pin, ...(baseUpdatedAt !== undefined ? { baseUpdatedAt } : {}) } },
   ),
 };
 

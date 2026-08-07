@@ -14,21 +14,29 @@
 import { ValidationError } from '#domains/core/errors/index.mjs';
 
 export class SetAssignments {
-  #assignments; #grownUps; #teacherGate; #clock; #logger;
+  #assignments; #grownUps; #teacherGate; #curriculum; #roster; #clock; #logger;
 
   /**
    * @param {object} deps
    * @param {import('../ports/IAssignmentStore.mjs').IAssignmentStore} deps.assignments
    * @param {import('../GrownUpGate.mjs').GrownUpGate} deps.grownUps
+   * @param {{listUnits: Function}|null} [deps.curriculum] - optional; when
+   *   present, course ids are validated against the published catalog
+   *   (admin advocacy A4: an assignment naming a course that does not exist
+   *   silently deletes a subject from the child's day — refuse it by name).
+   * @param {(() => Array<{id: string}>)|null} [deps.roster] - optional; when
+   *   present, learnerId must be on the household roster.
    * @param {() => Date} [deps.clock]
    * @param {object} [deps.logger]
    */
-  constructor({ assignments, grownUps, teacherGate = null, clock = () => new Date(), logger = console } = {}) {
+  constructor({ assignments, grownUps, teacherGate = null, curriculum = null, roster = null, clock = () => new Date(), logger = console } = {}) {
     if (!assignments) throw new Error('SetAssignments requires an assignments store');
     if (!grownUps) throw new Error('SetAssignments requires grownUps (a GrownUpGate)');
     this.#assignments = assignments;
     this.#grownUps = grownUps;
     this.#teacherGate = teacherGate;
+    this.#curriculum = curriculum;
+    this.#roster = typeof roster === 'function' ? roster : null;
     this.#clock = clock;
     this.#logger = logger;
   }
@@ -54,6 +62,33 @@ export class SetAssignments {
     }
     if (!Array.isArray(courses) || !Array.isArray(units)) {
       throw new ValidationError('courses and units must be arrays');
+    }
+    // Referential honesty (admin advocacy A4). Both checks are advisory in
+    // posture — they DEGRADE to accepting when the reference source itself
+    // is unavailable (a broken catalog must not lock assignment edits shut)
+    // — but a resolvable source that does not know the id is a refusal that
+    // NAMES the ghost, not a warn log nobody reads.
+    if (this.#roster) {
+      const ids = new Set((this.#roster() ?? []).map((u) => u.id));
+      if (ids.size && !ids.has(learnerId)) {
+        throw new ValidationError(`unknown learner: '${learnerId}' is not on the household roster`);
+      }
+    }
+    if (this.#curriculum) {
+      let known = null;
+      try {
+        known = new Set((await this.#curriculum.listUnits() ?? [])
+          .map((u) => u.courseId).filter(Boolean));
+      } catch (err) {
+        this.#logger.warn?.('school.assignments.course-check-skipped', { error: err?.message });
+      }
+      if (known && known.size) {
+        const asked = courses.map((c) => (typeof c === 'string' ? c : c?.courseId)).filter(Boolean);
+        const ghosts = asked.filter((id) => !known.has(id));
+        if (ghosts.length) {
+          throw new ValidationError(`unknown course${ghosts.length > 1 ? 's' : ''}: ${ghosts.join(', ')} — not in the published catalog`);
+        }
+      }
     }
     // Concurrent-edit guard (advocacy B14): a caller that says what it
     // LOADED is refused when someone else saved since — last-write-wins

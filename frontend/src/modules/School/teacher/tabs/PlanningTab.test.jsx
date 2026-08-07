@@ -8,11 +8,13 @@ vi.mock('../../schoolApi.js', () => ({
   schoolApi: {
     teachers: vi.fn(),
     assignments: vi.fn(),
+    allAssignments: vi.fn(async () => ({ ok: true, status: 200, data: { assignments: [] } })),
     putAssignments: vi.fn(),
     periods: vi.fn(),
     putPeriods: vi.fn(),
     curriculumUnits: vi.fn(),
     periodsMeta: vi.fn(),
+    attestations: vi.fn(async () => ({ ok: true, status: 200, data: { entries: [] } })),
     passOverrides: vi.fn(),
     putPassOverride: vi.fn(),
     milestones: vi.fn(),

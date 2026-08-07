@@ -63,6 +63,9 @@ export class YamlAssignmentStore extends IAssignmentStore {
         courses: Array.isArray(raw.courses) ? raw.courses : [],
         units: Array.isArray(raw.units) ? raw.units : [],
         updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : null,
+        // Written on every put and then DROPPED on read for two waves — the
+        // UI's "Assigned by …" line was dead code (admin advocacy #9).
+        assignedBy: typeof raw.assignedBy === 'string' ? raw.assignedBy : null,
       };
     } catch {
       // Missing OR unparseable, deliberately the same answer: a parent

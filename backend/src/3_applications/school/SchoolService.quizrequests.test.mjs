@@ -39,6 +39,66 @@ beforeEach(() => {
   saved = null;
 });
 
+describe('bank warm honesty (admin advocacy #7)', () => {
+  it('a bank that fails to summarize is LOGGED and counted, never silently dropped', async () => {
+    const errors = [];
+    const loud = { info() {}, warn() {}, error: (...a) => errors.push(a) };
+    const svc = new SchoolService({
+      datastore: {
+        readAllBankRaws: async () => [
+          { id: 'good/one/quiz', raw: BANK_RAW },
+          { id: 'bad/one/quiz', raw: { id: 'bad', items: 'not-a-list' } },
+          { id: 'unparseable/one/quiz', raw: null },
+        ],
+        readAllAttempts: () => [], readQuizRequests: () => [], saveQuizRequests: () => {},
+      },
+      userService: users, logger: loud, now: () => 1000,
+    });
+    const list = await svc.warmBanks();
+    expect(list).toHaveLength(1);
+    expect(errors).toHaveLength(1);
+    expect(errors[0][1]).toMatchObject({ count: 2 });
+    expect(svc.bankHealth()).toMatchObject({ banks: 1, failed: ['bad/one/quiz', 'unparseable/one/quiz'] });
+  });
+});
+
+describe('bankRev stamping (admin advocacy A3)', () => {
+  it('every screen attempt carries the content rev of the bank it was graded against', async () => {
+    let written = null;
+    const svc = new SchoolService({
+      datastore: {
+        readAllBankRaws: async () => [{ id: 'fractions-quiz', raw: BANK_RAW }],
+        readAllAttempts: () => [], readQuizRequests: () => [], saveQuizRequests: () => {},
+        readBankRaw: (id) => (id === 'fractions-quiz' ? BANK_RAW : null),
+        appendAttempt: (userId, attempt) => { written = attempt; return attempt; },
+      },
+      userService: users, logger: silent, now: () => 1000,
+    });
+    const { sessionId } = svc.openSession({ userId: 'u1', bankId: 'fractions-quiz', mode: 'quiz' });
+    svc.answer({ sessionId, itemId: 'q1', given: 'a' });
+    expect(written.bankRev).toMatch(/^[0-9a-f]{12}$/);
+    expect(written.correct).toBe(true);
+  });
+});
+
+describe('regrade corrections never count as work (M8 fix 1)', () => {
+  it('getResults ignores provenance kind regrade rows', () => {
+    const svc = new SchoolService({
+      datastore: {
+        readAllBankRaws: async () => [],
+        readAllAttempts: () => [
+          { id: 'att_1', at: '2026-08-01T10:00:00.000Z', bankId: 'caps', itemId: 'q1', mode: 'quiz', correct: false },
+          { id: 'att_rg_att_1', at: '2026-08-20T12:00:00.000Z', bankId: 'caps', itemId: 'q1', mode: 'quiz', correct: true, provenance: { kind: 'regrade', of: 'att_1' } },
+        ],
+        readQuizRequests: () => [], saveQuizRequests: () => {},
+      },
+      userService: users, logger: silent, now: () => 1000,
+    });
+    const [row] = svc.getResults('u1');
+    expect(row.quiz.attempts).toBe(1); // the correction is a verdict amendment, not a second attempt
+  });
+});
+
 describe('listQuizRequests fulfilled annotation', () => {
   it('marks a request fulfilled once a bank bound to its unit exists', async () => {
     const svc = makeService();
