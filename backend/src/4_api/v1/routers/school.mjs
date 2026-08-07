@@ -1193,8 +1193,11 @@ async function sendReportCardPdf(res, renderReportCardPdf, report, { learnerId, 
   // the raw id unless nothing else resolves.
   let learnerName = textQuery(req.query.learnerName);
   if (!learnerName && learnerDirectory) {
-    const roster = await learnerDirectory.listLearners().catch(() => []);
-    learnerName = roster.find((r) => r.id === learnerId)?.name ?? null;
+    try {
+      // listLearners may be sync on some directories — never assume a thenable.
+      const roster = await Promise.resolve(learnerDirectory.listLearners());
+      learnerName = roster.find((r) => r.id === learnerId)?.name ?? null;
+    } catch { /* name resolution is a courtesy, never a 500 */ }
   }
   const { pdf } = await renderReportCardPdf(report, { learnerName });
   res.set('Cache-Control', 'no-store');
