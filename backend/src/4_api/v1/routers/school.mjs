@@ -620,16 +620,18 @@ export function createSchoolRouter({
     res.json({ decks });
   }));
   router.post('/sessions', wrap((req, res) => {
-    const { userId = null, bankId, mode, learning = null } = req.body || {};
+    // `fresh` is the deliberate-restart flag (Task 17): it wipes any persisted
+    // sitting before opening, so "Try again" never resumes the run it replaces.
+    const { userId = null, bankId, mode, learning = null, fresh = false } = req.body || {};
     if (learning !== null) {
       if (!openCatalogLearningSession) {
         throw new EntityNotFoundError('School Catalog sessions', 'not configured');
       }
       return Promise.resolve(openCatalogLearningSession.execute({
-        learnerId: userId, bankId, mode, learning,
+        learnerId: userId, bankId, mode, learning, fresh: fresh === true,
       })).then((result) => res.json(result));
     }
-    return res.json(schoolService.openSession({ userId, bankId, mode }));
+    return res.json(schoolService.openSession({ userId, bankId, mode, fresh: fresh === true }));
   }));
   router.post('/sessions/:sessionId/answer', wrap((req, res) => {
     const {

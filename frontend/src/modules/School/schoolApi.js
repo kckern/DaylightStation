@@ -45,8 +45,10 @@ export const schoolApi = {
     `/continuation-code?learnerId=${encodeURIComponent(learnerId)}&moduleCode=${encodeURIComponent(moduleCode)}`,
   ),
   geoDecks: () => req('/geography/decks'),
-  openSession: ({ userId = null, bankId, mode, learning = null }) => req('/sessions', {
-    userId, bankId, mode, ...(learning ? { learning } : {}),
+  // `fresh: true` is the deliberate-restart flag (Task 17): the server wipes
+  // any persisted mid-quiz sitting before opening, so the run starts at q1.
+  openSession: ({ userId = null, bankId, mode, learning = null, fresh = false }) => req('/sessions', {
+    userId, bankId, mode, ...(learning ? { learning } : {}), ...(fresh ? { fresh: true } : {}),
   }),
   answer: (sessionId, body = {}) => req(`/sessions/${encodeURIComponent(sessionId)}/answer`, body),
   results: (userId, bankId) => req(`/users/${encodeURIComponent(userId)}/results${bankId ? `?bankId=${encodeURIComponent(bankId)}` : ''}`),

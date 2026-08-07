@@ -156,6 +156,11 @@
     padding: 0.15rem 0.7rem; border: 1px dashed var(--school-border); border-radius: 999px;
     color: var(--school-muted); font-size: 0.8rem; font-weight: 700;
   }
+  // Mid-quiz resume (Task 17): a quiet one-liner beside the progress count.
+  &__resume-chip {
+    padding: 0.15rem 0.7rem; border: 1px solid var(--school-border); border-radius: 999px;
+    background: var(--school-surface-2); color: var(--school-muted); font-size: 0.8rem; font-weight: 700;
+  }
   &__unrecorded { padding: 0.85rem 1rem; border-radius: 12px; background: var(--school-danger); color: #2a0806; font-weight: 700; }
   // The advance is NEUTRAL ink (audit #5): green belongs to CORRECT alone —
   // it must never celebrate you into the next question you just missed.

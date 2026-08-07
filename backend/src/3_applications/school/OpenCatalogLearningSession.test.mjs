@@ -35,6 +35,7 @@ describe('OpenCatalogLearningSession', () => {
     });
     expect(grader.openResolvedSession).toHaveBeenCalledWith({
       userId: 'kid-a', bankSnapshot: bundle.lesson.modules[0].bank, mode: 'learning_probe',
+      fresh: false,
       learningContext: {
         catalogId: 'main', subjectId: 'quant', courseId: 'rates', unitId: 'unit-rates',
         lessonId: 'intro', moduleId: 'check', areaIds: ['stem'], conceptIds: ['unit-rate'],

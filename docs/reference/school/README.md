@@ -96,13 +96,34 @@ the other a self-report.
 
 A guest grades normally and records nothing.
 
+### Mid-quiz resume (sittings)
+
+A signed-in quiz survives a dropped tab or a server restart:
+`data/users/{userId}/apps/school/sittings.yml` holds one entry per bank —
+mode, start time, bank content-rev, and the answers banked so far. Opening the
+same quiz again resumes where it left off (the runner shows a "picked up where
+you left off" chip; re-answering an already-banked item is refused), and the
+sitting is deleted the moment the last item is answered. A deliberate restart
+("Try again") opens with `fresh: true`, which wipes the sitting first; the
+timed-out-session card's "Start again" deliberately does NOT, so its "your
+finished answers are saved" promise actually resumes the run.
+
+A sitting is a **convenience, not evidence** — the attempt log stays the sole
+record. That asymmetry sets every edge rule: sittings are quiz-mode,
+signed-in, screen-transport only (paper grading and calculator imports never
+touch them); one older than 24h or from an edited bank (content-rev mismatch)
+is ignored and replaced; a corrupt file reads as "no sittings" and refuses
+writes until cleared; and every sitting write is best-effort — a store failure
+warns (`school.sitting.write-failed`) and never fails the answer.
+
 ### Where it lives
 
 | Layer | Path |
 |---|---|
 | Domain (pure) | `backend/src/2_domains/school/` — bank validation, grading, attempt factory |
 | Persistence | `backend/src/1_adapters/persistence/yaml/YamlSchoolDatastore.mjs` |
-| Application | `backend/src/3_applications/school/SchoolService.mjs` — sessions, guest rule, mode contract, results fold |
+| Persistence (sittings) | `backend/src/1_adapters/persistence/yaml/YamlSittingStore.mjs` |
+| Application | `backend/src/3_applications/school/SchoolService.mjs` — sessions, guest rule, mode contract, results fold, sitting resume |
 | API | `backend/src/4_api/v1/routers/school.mjs` → `/api/v1/school` |
 | Frontend | `frontend/src/modules/School/` |
 | Shared identity | `frontend/src/lib/identity/` |
