@@ -126,7 +126,7 @@ export function schoolPathFor(urlBase, section, materialPath = []) {
 }
 
 function SchoolShell({ clear }) {
-  const { status, roster, currentUser, isGuest, pickerOpen, openPicker, claim, continueAsGuest } = useSchoolProfile();
+  const { status, roster, currentUser, isGuest, pickerOpen, openPicker, closePicker, claim, continueAsGuest } = useSchoolProfile();
   const { crumbs: extraCrumbs } = useSchoolBreadcrumbBar();
   const urlBase = useMemo(schoolUrlBase, []);
   const screenId = useMemo(() => screenIdFromUrlBase(urlBase), [urlBase]);
@@ -280,12 +280,27 @@ function SchoolShell({ clear }) {
     setPending(null);
   }, [claim, pending, start, startLearning]);
 
-  const onDismiss = useCallback(() => {
+  // Explicit "continue as guest" (the picker's guest row) — the ONLY path
+  // that demotes an unclaimed learner to Guest and resolves whatever launch
+  // is pending. `start`'s own asGuest/audience gate still applies here, so a
+  // guest tapping through on an assigned bank gets the "sign in" refusal
+  // notice rather than the runner (unchanged from the old dismiss behavior —
+  // only WHICH affordance triggers it has moved).
+  const onGuest = useCallback(() => {
     continueAsGuest();
     if (pending?.kind === 'bank') start(pending.bankSummary, pending.mode, true);
     if (pending?.kind === 'learning') startLearning(pending.launch);
     setPending(null);
   }, [continueAsGuest, pending, start, startLearning]);
+
+  // ✕ / backdrop / auto-timeout — a CANCEL, not a guest demotion. Closes the
+  // sheet and drops whatever launch was pending; identity (claimed, guest, or
+  // unclaimed) is left exactly as it was. Guest is a choice made via the
+  // guest row (onGuest above), never a side effect of walking away.
+  const onDismiss = useCallback(() => {
+    closePicker();
+    setPending(null);
+  }, [closePicker]);
 
   const syncUrl = useCallback((sec, chain = []) => {
     if (!urlBase) return;
@@ -608,7 +623,18 @@ function SchoolShell({ clear }) {
           />
         )}
       </main>
-      <ProfilePicker open={pickerOpen} users={roster} activeId={currentUser?.id} onPick={onPick} onDismiss={onDismiss} timeoutMs={30000} title="Who's here?" showCountdown />
+      <ProfilePicker
+        open={pickerOpen}
+        users={roster}
+        activeId={currentUser?.id}
+        onPick={onPick}
+        onDismiss={onDismiss}
+        onGuest={onGuest}
+        guestLabel="Just practicing — continue as guest"
+        timeoutMs={30000}
+        title="Who's here?"
+        showCountdown
+      />
     </div>
   );
 }
