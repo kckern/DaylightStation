@@ -105,6 +105,41 @@ describe('ProfilePicker', () => {
   });
 });
 
+describe('ProfilePicker guest row (School, opt-in)', () => {
+  it('renders no guest row when neither guestLabel nor onGuest is passed (Piano-style usage unchanged)', () => {
+    render(<ProfilePicker open users={users} onPick={() => {}} onDismiss={() => {}} />);
+    expect(screen.queryByRole('button', { name: /guest/i })).toBeNull();
+  });
+
+  it('renders no guest row when only guestLabel is passed (no onGuest)', () => {
+    render(<ProfilePicker open users={users} onPick={() => {}} onDismiss={() => {}} guestLabel="Continue as guest" />);
+    expect(screen.queryByRole('button', { name: /continue as guest/i })).toBeNull();
+  });
+
+  it('renders no guest row when only onGuest is passed (no guestLabel)', () => {
+    render(<ProfilePicker open users={users} onPick={() => {}} onDismiss={() => {}} onGuest={() => {}} />);
+    expect(screen.queryByText(/guest/i)).toBeNull();
+  });
+
+  it('renders the guest row and fires onGuest when both props are set', () => {
+    const onGuest = vi.fn();
+    render(
+      <ProfilePicker
+        open
+        users={users}
+        onPick={() => {}}
+        onDismiss={() => {}}
+        onGuest={onGuest}
+        guestLabel="Just practicing — continue as guest"
+      />
+    );
+    const btn = screen.getByRole('button', { name: /just practicing/i });
+    expect(btn.className).toContain('piano-userpicker__guest');
+    fireEvent.click(btn);
+    expect(onGuest).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('ProfilePicker screen-off button', () => {
   it('renders no screen-off button without onScreenOff', () => {
     render(<ProfilePicker open users={users} onPick={() => {}} onDismiss={() => {}} />);

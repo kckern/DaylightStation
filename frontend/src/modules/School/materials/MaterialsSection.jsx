@@ -6,12 +6,16 @@
  *
  * Identity gating (spec §6) lives here, not in MaterialDetail/MaterialGrid
  * (both stay dumb/presentational, same as BankBrowser): tapping a unit in a
- * `course` material while unclaimed opens the shared ProfilePicker with a
- * local pending-launch; picking a profile launches the pending unit; an
- * explicit-guest dismissal (or an already-explicit guest tapping a course
- * unit directly) shows a notice and does NOT launch. Non-course materials
- * (listening, reference, ...) are never gated -- they play with whatever
- * identity is (or isn't) current.
+ * `course` material while unclaimed opens the shared ProfilePicker (Task 18:
+ * SchoolShell's single picker instance, guest row and all) with a local
+ * pending-launch; picking a profile launches the pending unit; tapping the
+ * picker's explicit guest button (or an already-explicit guest tapping a
+ * course unit directly) shows a notice and does NOT launch. Dismissing the
+ * picker (✕/backdrop/timeout) is a plain cancel here too -- it neither
+ * launches nor changes identity, so the pending ref is simply left stale
+ * until the next tap overwrites it. Non-course materials (listening,
+ * reference, ...) are never gated -- they play with whatever identity is (or
+ * isn't) current.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSchoolProfile } from '../identity/SchoolProfileContext.jsx';

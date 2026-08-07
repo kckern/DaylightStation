@@ -407,13 +407,50 @@ describe('SchoolApp bank flows (via the Library)', () => {
     expect(await screen.findByText('WA?')).toBeInTheDocument();
   });
 
-  it('unclaimed: launching an assigned bank then dismissing the picker refuses it, does not enter the runner, and narrows the list to generic', async () => {
+  it('a claimed kid launching a generic bank never sees the picker', async () => {
+    localStorage.setItem('school:user', 'kid1'); // pre-claimed, as if picked on a prior visit
+    render(<SchoolApp clear={() => {}} />);
+    await openLibrary();
+    await screen.findByText('Animals');
+    fireEvent.click(within(cardFor('Animals')).getByRole('button', { name: /quiz/i }));
+    expect(await screen.findByText('WA?')).toBeInTheDocument(); // straight into the runner
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('a claimed kid launching an assigned bank never sees the picker', async () => {
+    localStorage.setItem('school:user', 'kid1');
+    render(<SchoolApp clear={() => {}} />);
+    await openLibrary();
+    await screen.findByText('Caps');
+    fireEvent.click(within(cardFor('Caps')).getByRole('button', { name: /quiz/i }));
+    expect(await screen.findByText('WA?')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('unclaimed: launching an assigned bank then dismissing the picker CANCELS — no guest demotion, no notice, no runner', async () => {
     render(<SchoolApp clear={() => {}} />);
     await openLibrary();
     await screen.findByText('Caps');
     fireEvent.click(within(cardFor('Caps')).getByRole('button', { name: /quiz/i }));
     await screen.findByRole('dialog');
-    fireEvent.click(screen.getByLabelText(/close/i)); // dismiss picker -> guest
+    fireEvent.click(screen.getByLabelText(/close/i)); // ✕ -> cancel, not guest
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByText(/sign in to take this one/i)).toBeNull();
+    expect(screen.queryByText('WA?')).toBeNull();
+    // Identity is untouched (still unclaimed) -- no guest chip appeared, and
+    // the bank list still shows the assigned bank too (never narrowed).
+    expect(screen.queryByRole('button', { name: /^guest$/i })).toBeNull();
+    expect(screen.getByText('Caps')).toBeInTheDocument();
+  });
+
+  it('unclaimed: the picker guest button on an assigned bank refuses it with the sign-in notice, and narrows the list to generic', async () => {
+    render(<SchoolApp clear={() => {}} />);
+    await openLibrary();
+    await screen.findByText('Caps');
+    fireEvent.click(within(cardFor('Caps')).getByRole('button', { name: /quiz/i }));
+    await screen.findByRole('dialog');
+    fireEvent.click(screen.getByRole('button', { name: /just practicing/i })); // explicit guest
 
     expect(await screen.findByText(/sign in to take this one/i)).toBeInTheDocument();
     expect(screen.queryByText('WA?')).toBeNull();
@@ -423,13 +460,26 @@ describe('SchoolApp bank flows (via the Library)', () => {
     expect(screen.queryByText('Caps')).toBeNull();
   });
 
-  it('unclaimed: launching a generic bank then dismissing the picker proceeds as guest into the runner', async () => {
+  it('unclaimed: launching a generic bank then dismissing the picker CANCELS — stays put, no guest, no runner', async () => {
     render(<SchoolApp clear={() => {}} />);
     await openLibrary();
     await screen.findByText('Animals');
     fireEvent.click(within(cardFor('Animals')).getByRole('button', { name: /quiz/i }));
     await screen.findByRole('dialog');
-    fireEvent.click(screen.getByLabelText(/close/i)); // dismiss picker -> guest, but generic work proceeds
+    fireEvent.click(screen.getByLabelText(/close/i)); // ✕ -> cancel, not guest
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByText('WA?')).toBeNull();
+    expect(screen.queryByRole('button', { name: /^guest$/i })).toBeNull();
+  });
+
+  it('unclaimed: the picker guest button on a generic bank proceeds as guest into the runner', async () => {
+    render(<SchoolApp clear={() => {}} />);
+    await openLibrary();
+    await screen.findByText('Animals');
+    fireEvent.click(within(cardFor('Animals')).getByRole('button', { name: /quiz/i }));
+    await screen.findByRole('dialog');
+    fireEvent.click(screen.getByRole('button', { name: /just practicing/i })); // explicit guest, generic work proceeds
 
     expect(await screen.findByText('WA?')).toBeInTheDocument();
   });
@@ -440,7 +490,7 @@ describe('SchoolApp bank flows (via the Library)', () => {
     await screen.findByText('Animals');
     fireEvent.click(within(cardFor('Animals')).getByRole('button', { name: /quiz/i }));
     await screen.findByRole('dialog');
-    fireEvent.click(screen.getByLabelText(/close/i));
+    fireEvent.click(screen.getByRole('button', { name: /just practicing/i })); // explicit guest into the runner
     await screen.findByText('WA?'); // in the runner
 
     fireEvent.click(screen.getByRole('button', { name: /^home$/i }));
@@ -470,7 +520,7 @@ describe('SchoolApp materials flows', () => {
     expect(await screen.findByTestId('player-stub')).toHaveTextContent('plex:10');
   });
 
-  it('unclaimed: dismissing the picker on a course unit refuses it (notice, no player)', async () => {
+  it('unclaimed: dismissing the picker on a course unit CANCELS — no notice, no player, identity untouched', async () => {
     materialsMock.mockResolvedValue(SAMPLE_CATALOG);
     materialUnitsMock.mockResolvedValue({
       ok: true, status: 200,
@@ -481,30 +531,40 @@ describe('SchoolApp materials flows', () => {
     await tapMaterial('Bill Nye');
     fireEvent.click(await screen.findByText('Air'));
     await screen.findByRole('dialog');
-    fireEvent.click(screen.getByLabelText(/close/i));
-    expect(await screen.findByText(/sign in for courses/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText(/close/i)); // ✕ -> cancel, not guest
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByText(/sign in for courses/i)).toBeNull();
     expect(screen.queryByTestId('player-stub')).toBeNull();
+    expect(screen.queryByRole('button', { name: /^guest$/i })).toBeNull();
   });
 
-  it('explicit guest tapping a course unit gets the notice directly, no picker', async () => {
+  it('unclaimed: the picker guest button on a course unit refuses it directly (course notice, no player)', async () => {
     materialsMock.mockResolvedValue(SAMPLE_CATALOG);
     materialUnitsMock.mockResolvedValue({
       ok: true, status: 200,
       data: { material: SAMPLE_CATALOG.data.materials[0], units: [{ id: 'plex:10', index: 1, title: 'Air', durationMs: null, group: null, percent: 0, playhead: 0, completed: false, locked: false, current: true, lockReason: null, quiz: null }] },
     });
     render(<SchoolApp clear={() => {}} />);
-    // The header has no sign-in chip anymore: guesthood arises from waving
-    // off the picker when tracked work asks who's there.
+    // The header has no sign-in chip anymore: guesthood arises from the
+    // picker's own explicit guest row (Task 18), not from waving it off.
     await openSubject(/science/i);
     await tapMaterial('Bill Nye');
     fireEvent.click(await screen.findByText('Air'));
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
-    fireEvent.click(await screen.findByLabelText(/close/i));
-    // The dismissed launch proceeds as guest and hits the course gate: the
-    // notice appears, the guest chip shows, and the picker does not return.
+    fireEvent.click(await screen.findByRole('button', { name: /just practicing/i }));
+    // Explicit guest hits the course gate: the notice appears, the guest chip
+    // shows, and the picker does not return.
     expect(await screen.findByText(/sign in for courses/i)).toBeInTheDocument();
     await screen.findByRole('button', { name: /^guest$/i });
     expect(screen.queryByRole('dialog')).toBeNull();
+
+    // Now already-explicit-guest: tapping the same unit again hits the notice
+    // directly, with no picker in between.
+    fireEvent.click(await screen.findByText('Air'));
+    expect(await screen.findByText(/sign in for courses/i)).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByTestId('player-stub')).toBeNull();
   });
 
   it('a listening material unit in the Library plays without any identity gating', async () => {

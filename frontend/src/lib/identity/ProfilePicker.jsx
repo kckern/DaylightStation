@@ -19,8 +19,14 @@ import './identity.scss';
  * a smaller trailing page balances into even rows (5→3+2) by capping the flex
  * grid to `columnsForCount` columns. A roster larger than 6 paginates, with page
  * dots beneath the grid.
+ *
+ * Guest button (opt-in, School): both `guestLabel` and `onGuest` must be set
+ * for the row to render — Piano never passes either, so its picker is
+ * unchanged. When present, it's a THIRD affordance alongside a face and the
+ * ✕: a face claims, the ✕ cancels (leaves things as they were), and this
+ * button is the only way to explicitly become Guest.
  */
-export default function ProfilePicker({ open, users = [], activeId, onPick, onDismiss, onScreenOff, timeoutMs = 30000, title = "Who's playing?", showCountdown = false }) {
+export default function ProfilePicker({ open, users = [], activeId, onPick, onDismiss, onScreenOff, guestLabel, onGuest, timeoutMs = 30000, title = "Who's playing?", showCountdown = false }) {
   const onDismissRef = useRef(onDismiss);
   onDismissRef.current = onDismiss;
 
@@ -94,6 +100,13 @@ export default function ProfilePicker({ open, users = [], activeId, onPick, onDi
             </li>
           ))}
         </ul>
+        {guestLabel && onGuest && (
+          <div className="piano-userpicker__guest-row">
+            <button type="button" className="piano-userpicker__guest" onClick={() => onGuest()}>
+              {guestLabel}
+            </button>
+          </div>
+        )}
         {pages.length > 1 && (
           <div className="piano-userpicker__dots" role="tablist" aria-label="Player pages">
             {pages.map((_, i) => (
