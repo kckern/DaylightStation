@@ -362,6 +362,20 @@ function SchoolShell({ clear }) {
     setNotice('That follow-up action is not available on this screen yet.');
   }, [banks, currentUser, start, openSection]);
 
+  // Task 16 (debt W7b): a failed catalog quiz's "Review this lesson" link.
+  // AdaptiveTutorPanel (the real remediation tutor, `active.mode ===
+  // 'remediation'` below) needs a pre-existing `remediation_session` id that
+  // only ever arrives later via a Progress follow-up recommendation
+  // (onProgressFollowUp above) -- a live failing QuizRunner summary has no
+  // session to hand it, so there is no tutor surface to deep-link to yet.
+  // The real, reachable target is the Learning Catalog the quiz was launched
+  // from; it has no deep-link into a specific lesson today, so this reopens
+  // the Catalog at its root rather than mid-navigating to the failed unit.
+  const onReviewLesson = useCallback(() => {
+    setActive(null);
+    openSection('catalog');
+  }, [openSection]);
+
   // Browser back/forward re-parse the URL — the address bar and the shell
   // never disagree, at any depth.
   useEffect(() => {
@@ -545,6 +559,7 @@ function SchoolShell({ clear }) {
             learning={active.learning}
             onExit={() => setActive(null)}
             onRestart={() => setRunNonce((n) => n + 1)}
+            onReview={onReviewLesson}
           />
         )}
         {active?.mode === 'flashcard' && <FlashcardRunner bank={active.bank} learning={active.learning} onExit={() => setActive(null)} />}

@@ -197,6 +197,12 @@ export default function LearningCatalogBrowser({ onLaunch, surfaceId = null }) {
                     lessonId: lesson.lesson.lessonId,
                     moduleId: module.moduleId,
                     conceptIds: module.conceptIds ?? [],
+                    // Only `type: 'quiz'` modules author this (moduleValidation.mjs);
+                    // it's what lets QuizRunner's summary compute a real
+                    // passed/failed verdict for a catalog-launched quiz —
+                    // without it `learning.unitId` exists but `passed` never
+                    // leaves `null` (debt W7b).
+                    ...(typeof module.passingPercent === 'number' ? { passingPercent: module.passingPercent } : {}),
                   },
                   certification: verdictMap,
                 })}>

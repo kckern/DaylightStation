@@ -215,4 +215,60 @@ describe('student-advocacy wave 7', () => {
     // Summary ceremony (design wave 9): one dot per question, all right here.
     expect(screen.getByTestId('quiz-dots').querySelectorAll('.is-right')).toHaveLength(2);
   });
+
+  // Task 16 (debt W7b): a failed catalog quiz offers a way back to the lesson,
+  // not just the retake ask. AdaptiveTutorPanel needs a pre-existing
+  // remediation sessionId that a live failing summary never has, so this is
+  // the real, reachable target — SchoolApp supplies `onReview` and the unit
+  // context comes from the catalog-launch `learning` object.
+  describe('review-lesson link (debt W7b)', () => {
+    const failBoth = () => {
+      answerMock
+        .mockResolvedValueOnce({ ok: true, status: 200, data: { correct: false, expected: 'Olympia', attemptId: 'a1' } })
+        .mockResolvedValueOnce({ ok: true, status: 200, data: { correct: false, expected: 'Salem', attemptId: 'a2' } });
+    };
+    const runToSummary = async (labels = ['Seattle', 'Boise']) => {
+      fireEvent.click(await screen.findByRole('button', { name: labels[0] }));
+      fireEvent.click(await screen.findByRole('button', { name: /next/i }));
+      fireEvent.click(await screen.findByRole('button', { name: labels[1] }));
+      fireEvent.click(await screen.findByRole('button', { name: /next/i }));
+      return screen.findByTestId('quiz-summary');
+    };
+
+    it('shows the link on a failing summary with unit context and fires onReview', async () => {
+      failBoth();
+      const onReview = vi.fn();
+      const learning = { passingPercent: 80, unitId: 'intro' };
+      render(<QuizRunner bank={bank} learning={learning} onExit={() => {}} onReview={onReview} />);
+      await runToSummary();
+      expect(await screen.findByTestId('quiz-passbar')).toHaveTextContent(/passing is 80%/);
+      const link = screen.getByTestId('review-lesson');
+      expect(link).toHaveTextContent(/review this lesson/i);
+      fireEvent.click(link);
+      expect(onReview).toHaveBeenCalledWith(learning);
+    });
+
+    it('does NOT show the link on a passing summary', async () => {
+      const onReview = vi.fn();
+      render(<QuizRunner bank={bank} learning={{ passingPercent: 80, unitId: 'intro' }} onExit={() => {}} onReview={onReview} />);
+      await runToSummary(['Olympia', 'Salem']);
+      expect(screen.queryByTestId('review-lesson')).toBeNull();
+    });
+
+    it('does NOT show the link when the summary lacks unit context (e.g. the materials gate quiz)', async () => {
+      failBoth();
+      const onReview = vi.fn();
+      // Same shape SchoolMaterialPlayer hands a gate quiz today: passingPercent only.
+      render(<QuizRunner bank={bank} learning={{ passingPercent: 80 }} onExit={() => {}} onReview={onReview} />);
+      await runToSummary();
+      expect(screen.queryByTestId('review-lesson')).toBeNull();
+    });
+
+    it('does NOT show the link when no onReview handler is wired', async () => {
+      failBoth();
+      render(<QuizRunner bank={bank} learning={{ passingPercent: 80, unitId: 'intro' }} onExit={() => {}} />);
+      await runToSummary();
+      expect(screen.queryByTestId('review-lesson')).toBeNull();
+    });
+  });
 });

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import SchoolApp from './SchoolApp.jsx';
+import { schoolApi } from './schoolApi.js';
 
 // Spy on the schoolLog facade so the launch-refused path (F12) is directly
 // observable, not just inferred from the rendered panel.
@@ -190,6 +191,55 @@ describe('authored learning Catalog', () => {
     expect(screen.queryByText('A unit rate?')).toBeNull();
     // F12: the refusal is logged with the moduleId that was refused.
     expect(surfaceLogMock).toHaveBeenCalledWith('launch-refused', expect.objectContaining({ moduleId: 'check' }));
+  });
+
+  // Task 16 (debt W7b): a failed catalog quiz offers a way back to the
+  // Catalog (the real, reachable target -- AdaptiveTutorPanel needs a
+  // pre-existing remediation sessionId this screen doesn't have yet).
+  it('a failed catalog quiz module offers Review this lesson, which reopens the Catalog', async () => {
+    // Not `...Once`: LearningCatalogBrowser unmounts while the quiz plays
+    // (`section === 'catalog' && !active`) and re-fetches on remount after
+    // Review this lesson is tapped, so both mounts need this same catalog.
+    learningCatalogsMock.mockResolvedValue({ ok: true, status: 200, data: {
+      schema: 'school.catalog-index/v1', catalogs: [{
+        schema: 'school.catalog/v1', catalogId: 'core', title: 'Core', subjects: [{
+          subjectId: 'quant', title: 'Quantitative', courses: [{ courseId: 'rates', title: 'Rates', units: [{
+            unitId: 'intro', title: 'Introduction', lessons: [{ lessonId: 'unit-rate', title: 'Unit rates', modules: [{ moduleId: 'gate', type: 'quiz' }] }],
+          }] }],
+        }],
+      }],
+    } });
+    learningLessonMock.mockResolvedValueOnce({ ok: true, status: 200, data: {
+      schema: 'school.learning-lesson/v1',
+      context: { catalog: { catalogId: 'core' }, subject: { subjectId: 'quant' }, course: { courseId: 'rates' }, unit: { unitId: 'intro' } },
+      lesson: { lessonId: 'unit-rate', title: 'Unit rates', modules: [{
+        moduleId: 'gate', type: 'quiz', title: 'Gate quiz', passingPercent: 80,
+        bank: { id: 'rate-quiz', title: 'Rate quiz', items: [{ id: 'q1', type: 'multiple_choice', prompt: 'A unit rate?', choices: ['Yes', 'No'], answer: 'Yes' }] },
+      }] },
+    } });
+    surfaceProfileMock.mockResolvedValueOnce({ ok: true, status: 200, data: { surfaceId: 'screen-test', family: 'screen', title: 'Test Screen', liveness: 'live', capabilities: {}, limits: {} } });
+    certificationMock.mockResolvedValueOnce({ ok: true, status: 200, data: [{
+      address: 'core/quant/rates/intro/unit-rate', surfaceId: 'screen-test', verdict: 'full', reasons: [], warnings: [],
+      moduleVerdicts: [{ moduleId: 'gate', verdict: 'render', reasons: [], warnings: [] }],
+    }] });
+    render(<SchoolApp clear={() => {}} />);
+    fireEvent.click(await screen.findByRole('button', { name: /^catalog/i }));
+    for (const label of ['Core', 'Quantitative', 'Rates', 'Introduction', 'Unit rates']) {
+      fireEvent.click(await screen.findByRole('button', { name: new RegExp(label, 'i') }));
+    }
+    fireEvent.click(await screen.findByRole('button', { name: /Gate quiz/ }));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Alpha'));
+    // The shared `answer` mock always grades "correct" regardless of which
+    // choice was tapped; override once so this run actually fails the bar.
+    schoolApi.answer.mockResolvedValueOnce({ ok: true, status: 200, data: { correct: false, expected: 'Yes', attemptId: 'a1' } });
+    fireEvent.click(await screen.findByRole('button', { name: 'No' })); // wrong answer -> fails the 80% bar
+    fireEvent.click(await screen.findByRole('button', { name: /next/i }));
+    expect(await screen.findByTestId('quiz-passbar')).toHaveTextContent(/passing is 80%/);
+    fireEvent.click(screen.getByTestId('review-lesson'));
+    // Back at the Catalog root, quiz gone -- the same tile trail is walkable again.
+    expect(screen.queryByTestId('quiz-summary')).toBeNull();
+    expect(await screen.findByRole('button', { name: /^Core$/i })).toBeInTheDocument();
   });
 });
 
