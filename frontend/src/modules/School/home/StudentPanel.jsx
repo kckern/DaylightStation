@@ -216,7 +216,11 @@ export default function StudentPanel({ onOpen, bankTitles }) {
         <div className="school-rail__facts">
           {score && <span>Latest: {score.label} · {score.pct}%</span>}
           {coins != null && <span>Coins: {coins}</span>}
-          {model.lastActivity && <span>Last active {relativeDay(model.lastActivity)}</span>}
+          {/* A label with no value is worse than a vague phrase (M9 fix 3):
+              render the row only when the humane date exists. */}
+          {model.lastActivity && relativeDay(model.lastActivity) && (
+            <span>Last active {relativeDay(model.lastActivity)}</span>
+          )}
         </div>
       )}
 

@@ -2,6 +2,7 @@
 // a null-safe "N works" / "N chapters" meta line. Pure/presentational.
 // Kind colour (var(--kind-audio)) appears only on the chip.
 import Icon from '../icons/Icon.jsx';
+import PosterImg from './PosterImg.jsx';
 
 function formatMeta(item) {
   if (item.unitCount == null) return '';
@@ -15,13 +16,7 @@ export default function AudioCourseTile({ item, onOpen }) {
       <button type="button" className="school-tile__button" onClick={() => onOpen(item)}>
         <span className="school-tile__poster-wrap">
           {item.poster ? (
-            <img
-              src={item.poster}
-              alt={item.title}
-              loading="lazy"
-              decoding="async"
-              className="school-tile__poster"
-            />
+            <PosterImg src={item.poster} alt={item.title} />
           ) : (
             <span className="school-tile__poster school-tile__poster--placeholder">
               <span>{item.title}</span>

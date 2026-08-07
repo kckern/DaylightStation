@@ -101,7 +101,7 @@ export default function PrintCenter() {
         <EmptyState
           icon="print"
           title="Nothing to print yet."
-          hint="Worksheets appear here as a grown-up adds printables in school.yml."
+          hint="Worksheets appear here once a grown-up sets some up."
         />
       )}
       {printables !== null && printables.length > 0 && (
