@@ -7,12 +7,13 @@
  * instead of the choice printed under the bubble agreed with the fixture and
  * disagreed with every real sheet — 0 out of 6, green tests.
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { SubmitPaperWork } from '#apps/school/usecases/SubmitPaperWork.mjs';
 import { GradeSubmission } from '#apps/school/usecases/GradeSubmission.mjs';
 import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
 import { VirtualOmrReader } from '#adapters/hardware/omr/VirtualOmrReader.mjs';
 import { questionItemIds } from '#domains/school/documents/documentValidation.mjs';
+import { GuestForbiddenError } from '#domains/school/errors.mjs';
 import {
   FakeCatalog, FakeSessionRepository, FakeFormMapStore, FakeReviewQueue,
   fakeClock, fakeGrownUps, silentLogger,
@@ -364,6 +365,65 @@ describe('who may mark a child\'s work', () => {
 });
 
 /**
+ * PIN on the human grading lane (readiness punch 2). The grown-up rule STAYS —
+ * it is the floor, not something the gate replaces — and a wired TeacherGate
+ * adds the console PIN on top, ONLY when a person's verdicts are actually on
+ * the call. `ResolveReviewItem`'s self-closing finisher calls
+ * `execute({sessionId})` with no verdicts at all — already behind the gated
+ * resolve — and that lane must never re-assert.
+ */
+describe('TeacherGate on the grading lane (readiness punch 2)', () => {
+  const submitBlank = async () => {
+    await issued();
+    return submit.execute({ sessionId: SID, entries: {}, blank: PRINTED });
+  };
+
+  const withGate = (teacherGate) => new GradeSubmission({
+    curriculum, sessions, reviewQueue, grader, bankReader: { getBank: (id) => BANKS[id] ?? null },
+    grownUps: fakeGrownUps(clock), teacherGate, clock: clock.now, logger: silentLogger,
+  });
+
+  it('a refusing gate stops a human verdict and leaves the review queue untouched', async () => {
+    await submitBlank();
+    const teacherGate = { assert: vi.fn(() => { throw new GuestForbiddenError('The teacher PIN is missing or wrong.'); }) };
+    const gated = withGate(teacherGate);
+    await expect(gated.execute({
+      sessionId: SID, verdicts: { 'u3-q1': 'correct' }, gradedBy: 'parent', pin: 'wrong',
+    })).rejects.toMatchObject({ name: 'GuestForbiddenError' });
+    expect(teacherGate.assert).toHaveBeenCalledWith({
+      userId: 'parent', pin: 'wrong', action: 'sessions.grade', context: { sessionId: SID },
+    });
+    expect((await reviewQueue.listForSession(SID)).every((i) => i.verdict === null)).toBe(true);
+    expect(sessions.types(SID)).not.toContain('graded');
+  });
+
+  it('with no gate wired, a pin is ignored and the legacy grown-up rule alone governs', async () => {
+    await submitBlank();
+    const result = await grade.execute({
+      sessionId: SID,
+      verdicts: Object.fromEntries(PRINTED.map((id) => [id, 'correct'])),
+      gradedBy: 'parent',
+      pin: 'wrong',
+    });
+    expect(result).toMatchObject({ status: 'graded', percent: 100 });
+  });
+
+  it('a passing gate lets a grown-up\'s verdict through', async () => {
+    await submitBlank();
+    const teacherGate = { assert: vi.fn() };
+    const gated = withGate(teacherGate);
+    const result = await gated.execute({
+      sessionId: SID,
+      verdicts: Object.fromEntries(PRINTED.map((id) => [id, 'correct'])),
+      gradedBy: 'parent',
+      pin: 'right',
+    });
+    expect(result).toMatchObject({ status: 'graded', percent: 100 });
+    expect(teacherGate.assert).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
  * WHAT WAS ASKED, AND HOW TO MARK IT — two different things.
  *
  * Every review item used to carry the unit's whole-sheet rubric in a field
@@ -451,7 +511,7 @@ describe('GradeSubmission on a print-document unit', () => {
   const PRINT_DOCUMENT_REF = 'print/science/biology/quiz-1@abcdef123';
 
   /** A fresh curriculum/session/queue/grade set, isolated from the shared beforeEach. */
-  const buildPrintCase = () => {
+  const buildPrintCase = ({ teacherGate = null } = {}) => {
     const clock = fakeClock();
     const catalog = new FakeCatalog({
       units: rawUnits({ [OMR_UNIT]: { document: PRINT_DOCUMENT_REF, bank: undefined } }),
@@ -465,7 +525,7 @@ describe('GradeSubmission on a print-document unit', () => {
     const bankReader = { getBank: (id) => BANKS[id] ?? null };
     const printGrade = new GradeSubmission({
       curriculum, sessions: printSessions, reviewQueue: printReviewQueue, grader: printGrader, bankReader,
-      grownUps: fakeGrownUps(clock), clock: clock.now, logger: silentLogger,
+      grownUps: fakeGrownUps(clock), teacherGate, clock: clock.now, logger: silentLogger,
     });
     return {
       clock, sessions: printSessions, reviewQueue: printReviewQueue, grade: printGrade,
@@ -534,5 +594,23 @@ describe('GradeSubmission on a print-document unit', () => {
     const result = await grade.execute({ sessionId: SID });
     expect(result).toMatchObject({ status: 'awaiting_review', outstanding: ['w-essay'] });
     expect(sessions.types(SID)).not.toContain('graded');
+  });
+
+  // Readiness punch 2: this is the EXACT call shape `ResolveReviewItem`'s
+  // self-closing finisher makes on itself (`execute({sessionId})`, no
+  // verdicts) — it must never reach a wired gate, on a print-document unit or
+  // any other.
+  it('the self-closing finisher call — execute({sessionId}) alone — never reaches a wired gate', async () => {
+    const teacherGate = { assert: vi.fn(() => { throw new GuestForbiddenError('nope'); }) };
+    const { clock, sessions, reviewQueue, grade } = buildPrintCase({ teacherGate });
+    await submittedAt(sessions, clock);
+    const at = clock.iso();
+    await seedMachineMarks(reviewQueue, at);
+    await seedPendingEssay(reviewQueue, at);
+    await reviewQueue.resolve({ sessionId: SID, itemId: 'w-essay', verdict: 'correct', gradedBy: 'dad', at });
+
+    const result = await grade.execute({ sessionId: SID });
+    expect(result).toMatchObject({ status: 'graded' });
+    expect(teacherGate.assert).not.toHaveBeenCalled();
   });
 });

@@ -517,7 +517,7 @@ export async function createSchoolLifecycle({
   });
   const gradeSubmission = new GradeSubmission({
     curriculum, sessions: stores.sessions, reviewQueue: stores.reviewQueue,
-    grader: schoolService, bankReader, grownUps, passOverrides, clock, logger,
+    grader: schoolService, bankReader, grownUps, teacherGate, passOverrides, clock, logger,
   });
   const closeSessionOutcome = new CloseSessionOutcome({
     curriculum, sessions: stores.sessions, tokens: stores.tokens, assignments: stores.assignments,
@@ -530,6 +530,7 @@ export async function createSchoolLifecycle({
     economyAction: lifecycleCfg.economy?.action || 'school-unit-complete',
     economyEnabled: lifecycleCfg.economy?.enabled === true,
     grownUps,
+    teacherGate,
     // Read-only: this session's own resolved-item notes on the result receipt
     // (spec R7) — the same store `gradeSubmission`/`resolveReviewItem` write.
     reviewQueue: stores.reviewQueue,

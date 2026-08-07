@@ -301,19 +301,27 @@ export function createSchoolLifecycleRouter({
   if (gradeSubmission) {
     // `gradedBy` is checked in the use case whenever verdicts are present: a
     // person's mark overrides the engine, so it has to be a person who may.
+    // `pin` is forwarded unconditionally — the use case only ever consults it
+    // when a `teacherGate` is wired AND verdicts are on the call.
     router.post('/sessions/:sessionId/grade', guarded(async (req, res) => {
-      const { entries = {}, verdicts = {}, gradedBy = null } = req.body || {};
-      reply(res, await gradeSubmission.execute({ sessionId: req.params.sessionId, entries, verdicts, gradedBy }));
+      const {
+        entries = {}, verdicts = {}, gradedBy = null, pin = null,
+      } = req.body || {};
+      reply(res, await gradeSubmission.execute({
+        sessionId: req.params.sessionId, entries, verdicts, gradedBy, pin,
+      }));
     }));
   }
 
   if (closeSessionOutcome) {
     // Closing is open; claiming the grown-up's approval that releases a reward
-    // is not, and the use case checks `signedOffBy` for it.
+    // is not, and the use case checks `signedOffBy` for it. `pin` is forwarded
+    // unconditionally — consulted only when a `teacherGate` is wired AND
+    // `signedOff` is true.
     router.post('/sessions/:sessionId/close', guarded(async (req, res) => {
-      const { signedOff = false, signedOffBy = null } = req.body || {};
+      const { signedOff = false, signedOffBy = null, pin = null } = req.body || {};
       reply(res, await closeSessionOutcome.execute({
-        sessionId: req.params.sessionId, signedOff: signedOff === true, signedOffBy,
+        sessionId: req.params.sessionId, signedOff: signedOff === true, signedOffBy, pin,
       }));
     }));
   }

@@ -30,7 +30,7 @@ import { questionItemIds, questionPrompts } from '#domains/school/documents/docu
 import { PRINT_DOCUMENT_REF_PATTERN } from '#domains/school/curriculum/unitValidation.mjs';
 
 export class GradeSubmission {
-  #curriculum; #sessions; #reviewQueue; #grader; #bankReader; #grownUps; #clock; #logger; #passOverrides;
+  #curriculum; #sessions; #reviewQueue; #grader; #bankReader; #grownUps; #teacherGate; #clock; #logger; #passOverrides;
 
   /**
    * @param {object} deps
@@ -43,10 +43,21 @@ export class GradeSubmission {
    * @param {import('../GrownUpGate.mjs').GrownUpGate} deps.grownUps - who may
    *   hand down a verdict; required, because a gate that can be left out is a
    *   gate that will be
+   * @param {import('../TeacherGate.mjs').TeacherGate|null} [deps.teacherGate] -
+   *   readiness punch 2 (console PIN). ADDITIVE, not a replacement: `grownUps`
+   *   below always runs first and is never skipped, so a pre-console install
+   *   (or a test with no gate wired) keeps its exact legacy behavior. When
+   *   wired, the console PIN is asked ON TOP of the grown-up check, and ONLY
+   *   for a call that actually carries a person's verdicts — the self-closing
+   *   finisher (`execute({sessionId})`, no verdicts) is already behind the
+   *   gated resolve that triggered it and must never re-assert.
    * @param {() => Date} [deps.clock]
    * @param {object} [deps.logger]
    */
-  constructor({ curriculum, sessions, reviewQueue, grader, bankReader = null, grownUps = null, passOverrides = null, clock = () => new Date(), logger = console } = {}) {
+  constructor({
+    curriculum, sessions, reviewQueue, grader, bankReader = null, grownUps = null, teacherGate = null,
+    passOverrides = null, clock = () => new Date(), logger = console,
+  } = {}) {
     if (!curriculum || !sessions || !reviewQueue || !grader) {
       throw new Error('GradeSubmission requires curriculum, sessions, reviewQueue and grader');
     }
@@ -57,6 +68,7 @@ export class GradeSubmission {
     this.#grader = grader;
     this.#bankReader = bankReader;
     this.#grownUps = grownUps;
+    this.#teacherGate = teacherGate;
     this.#clock = clock;
     this.#logger = logger;
     this.#passOverrides = passOverrides;
@@ -69,12 +81,16 @@ export class GradeSubmission {
    * @param {Record<string,'correct'|'incorrect'>} [args.verdicts] - a person's marks
    * @param {string} [args.gradedBy] - the roster id of the grown-up who marked
    *   the review items; required (and checked) whenever `verdicts` is non-empty
+   * @param {string|null} [args.pin] - the console PIN, consulted only when a
+   *   `teacherGate` is wired AND a human verdict is present
    * @returns {Promise<{ status: 'graded'|'awaiting_review'|'duplicate'|'unavailable',
    *                     sessionId: string, percent: number|null, correct: number,
    *                     expected: number, attemptIds: string[], outstanding: string[],
    *                     message: string, pointsAt?: object }>}
    */
-  async execute({ sessionId, entries = {}, verdicts = {}, gradedBy = null } = {}) {
+  async execute({
+    sessionId, entries = {}, verdicts = {}, gradedBy = null, pin = null,
+  } = {}) {
     // Before anything is read, let alone written: a human verdict is a claim of
     // authority over a child's work, and this is the only place it can be
     // checked once for every caller — HTTP, a scan, or a reconciliation job.
@@ -82,6 +98,14 @@ export class GradeSubmission {
       this.#grownUps.assert(gradedBy, 'Only a grown-up can mark a child\'s work', {
         action: 'grade.verdicts', sessionId,
       });
+      // The console PIN rides ON TOP of the grown-up rule, not instead of it —
+      // and only for THIS lane (a person's verdicts on the call). The
+      // finisher (no verdicts) skips this whole block, gate or no gate.
+      if (this.#teacherGate) {
+        this.#teacherGate.assert({
+          userId: gradedBy, pin, action: 'sessions.grade', context: { sessionId },
+        });
+      }
     }
 
     const nowIso = this.#clock().toISOString();
