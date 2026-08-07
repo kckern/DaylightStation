@@ -17,7 +17,9 @@
 import path from 'path';
 import fs from 'fs';
 import yaml from 'js-yaml';
-import { loadYamlSafe, saveYaml, ensureDir, listYamlFiles } from '#system/utils/FileIO.mjs';
+import {
+  loadYaml, loadYamlSafe, saveYamlToPathAtomic, ensureDir, listYamlFiles, yamlExists,
+} from '#system/utils/FileIO.mjs';
 import { SUBJECT_IDS } from '#domains/school/curriculum/unitValidation.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { DomainInvariantError } from '#domains/core/errors/index.mjs';
@@ -41,8 +43,15 @@ const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const PERIOD_ID_RE = /^[a-z0-9][a-z0-9_-]*$/i;
 const isSafePeriodId = (id) => typeof id === 'string' && PERIOD_ID_RE.test(id);
 
+// saveYamlToPathAtomic (unlike saveYaml) wants a full path — it does not append
+// an extension for you — so every base-style path built with path.join(dir, name)
+// needs this before it can move to the atomic writer.
+const withYamlExt = (base) => (base.endsWith('.yml') || base.endsWith('.yaml') ? base : `${base}.yml`);
+
 export class YamlSchoolDatastore {
   #configService;
+
+  #logger;
 
   constructor(config = {}) {
     if (!config.configService) {
@@ -51,6 +60,25 @@ export class YamlSchoolDatastore {
       });
     }
     this.#configService = config.configService;
+    this.#logger = config.logger || console;
+  }
+
+  /**
+   * Missing and corrupt are DIFFERENT answers (same posture as
+   * YamlAcademicPeriodStore#readState): a missing shard is the normal
+   * before-first-attempt state; an existing-but-unparseable shard must never
+   * be silently treated as empty — that is exactly how a corrupt file gets
+   * clobbered down to a single new row, destroying every prior attempt.
+   */
+  #readAttemptShard(base) {
+    if (!yamlExists(base)) return { state: 'missing', rows: [] };
+    try {
+      const rows = loadYaml(base);
+      if (!Array.isArray(rows)) return { state: 'corrupt', rows: [] };
+      return { state: 'ok', rows };
+    } catch {
+      return { state: 'corrupt', rows: [] };
+    }
   }
 
   #schoolDir() { return path.join(this.#configService.getDataDir(), 'content', 'school'); }
@@ -97,8 +125,7 @@ export class YamlSchoolDatastore {
   }
 
   saveQuizRequests(list) {
-    ensureDir(path.dirname(this.#quizRequestsPath()));
-    saveYaml(this.#quizRequestsPath(), list, { noRefs: true });
+    saveYamlToPathAtomic(withYamlExt(this.#quizRequestsPath()), list, { noRefs: true });
     return list;
   }
 
@@ -112,10 +139,9 @@ export class YamlSchoolDatastore {
   readPrintLog() { return loadYamlSafe(this.#printLogPath()) || []; }
 
   appendPrintLog(entry) {
-    ensureDir(path.dirname(this.#printLogPath()));
     const list = this.readPrintLog();
     list.push(entry);
-    saveYaml(this.#printLogPath(), list, { noRefs: true });
+    saveYamlToPathAtomic(withYamlExt(this.#printLogPath()), list, { noRefs: true });
     return entry;
   }
 
@@ -135,18 +161,16 @@ export class YamlSchoolDatastore {
     }
     if (!old.length) return 0;
     const archivePath = this.#configService.getHouseholdPath('apps/school/print-log.archive');
-    ensureDir(path.dirname(archivePath));
     const archived = loadYamlSafe(archivePath) || [];
-    saveYaml(archivePath, [...archived, ...old], { noRefs: true });
-    saveYaml(this.#printLogPath(), keep, { noRefs: true });
+    saveYamlToPathAtomic(withYamlExt(archivePath), [...archived, ...old], { noRefs: true });
+    saveYamlToPathAtomic(withYamlExt(this.#printLogPath()), keep, { noRefs: true });
     return old.length;
   }
 
   readPrintPending() { return loadYamlSafe(this.#printPendingPath()) || []; }
 
   savePrintPending(list) {
-    ensureDir(path.dirname(this.#printPendingPath()));
-    saveYaml(this.#printPendingPath(), list, { noRefs: true });
+    saveYamlToPathAtomic(withYamlExt(this.#printPendingPath()), list, { noRefs: true });
     return list;
   }
 
@@ -193,10 +217,13 @@ export class YamlSchoolDatastore {
     if (!dir) return null;
     const day = String(attempt.at).slice(0, 10);
     const base = path.join(dir, day);
-    ensureDir(dir);
-    const list = loadYamlSafe(base) || [];
-    list.push(attempt);
-    saveYaml(base, list, { noRefs: true });
+    const read = this.#readAttemptShard(base);
+    if (read.state === 'corrupt') {
+      throw new DomainInvariantError('attempt shard is corrupt — refusing to overwrite recorded evidence', {
+        code: 'ATTEMPT_SHARD_CORRUPT', details: { userId, file: withYamlExt(base) },
+      });
+    }
+    saveYamlToPathAtomic(withYamlExt(base), [...read.rows, attempt], { noRefs: true });
     return attempt;
   }
 
@@ -240,12 +267,13 @@ export class YamlSchoolDatastore {
       });
     }
     // Destination first: a crash BETWEEN the two writes duplicates rather
-    // than loses evidence, and a duplicate is visible and fixable. (A crash
-    // MID-write shares saveYaml's own non-atomic posture with every other
-    // shard write in this file — not a new exposure, but not covered by
-    // this ordering either.)
-    saveYaml(toBase, target, { noRefs: true });
-    saveYaml(fromBase, keeping, { noRefs: true });
+    // than loses evidence, and a duplicate is visible and fixable. Each
+    // individual write is now atomic (saveYamlToPathAtomic), so a crash
+    // MID-write can no longer leave a torn/partial shard — this ordering
+    // only covers the gap BETWEEN the two atomic writes.
+
+    saveYamlToPathAtomic(withYamlExt(toBase), target, { noRefs: true });
+    saveYamlToPathAtomic(withYamlExt(fromBase), keeping, { noRefs: true });
     return moving.length;
   }
 
@@ -254,7 +282,12 @@ export class YamlSchoolDatastore {
     if (!dir) return [];
     const dayStr = String(day);
     if (!DAY_RE.test(dayStr)) return [];
-    return loadYamlSafe(path.join(dir, dayStr)) || [];
+    const base = path.join(dir, dayStr);
+    const read = this.#readAttemptShard(base);
+    if (read.state === 'corrupt') {
+      this.#logger.warn?.('school.attempts.shard-corrupt', { file: withYamlExt(base) });
+    }
+    return read.rows;
   }
 
   /** Day stamps (YYYY-MM-DD) that have recorded attempts, newest first. */
@@ -354,8 +387,7 @@ export class YamlSchoolDatastore {
         code: 'REPORT_CARD_ALREADY_CLOSED', details: { userId, periodId },
       });
     }
-    ensureDir(dir);
-    saveYaml(file, payload, { noRefs: true });
+    saveYamlToPathAtomic(file, payload, { noRefs: true });
     return payload;
   }
 
@@ -393,7 +425,7 @@ export class YamlSchoolDatastore {
     const current = loadYamlSafe(file);
     let n = 1;
     while (fs.existsSync(path.join(dir, `${periodId}.v${n}.yml`))) n += 1;
-    saveYaml(path.join(dir, `${periodId}.v${n}`), current, { noRefs: true });
+    saveYamlToPathAtomic(withYamlExt(path.join(dir, `${periodId}.v${n}`)), current, { noRefs: true });
     fs.unlinkSync(file);
     return n;
   }
