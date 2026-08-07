@@ -166,7 +166,9 @@ export function agendaDocument({
   // The learner's name is the document TITLE, not a text block: the renderers
   // give a title the standard-header treatment (inverted banner), which a
   // markdown heading in the block stream cannot ask for.
-  const title = learnerName || learnerId || 'School';
+  // A raw id in the masthead is an accidental insult ("NOBODY", design
+  // audit): no resolvable display name means we GREET, we don't echo.
+  const title = learnerName || 'Hello!';
   const blocks = [];
   const printedAt = formatPrintedAt(generatedAt, timeZone);
   if (printedAt) blocks.push(text(`Printed ${printedAt}`));
