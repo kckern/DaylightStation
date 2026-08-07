@@ -13,6 +13,24 @@
  * Guests (`!userId`) have no recorded progress by definition, so `execute`
  * short-circuits to `[]` before touching the catalog or media provider at all.
  */
+
+// Per-material units fetches are independent Plex round-trips; run them
+// bounded-parallel instead of one-at-a-time (the ~66-material cold sweep was
+// otherwise serialized end to end). Order-preserving: results land at the
+// same index as their input item regardless of completion order.
+async function mapLimit(items, limit, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i], i);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
 export class GetMaterialProgressSummary {
   #catalog;
   #getMaterialUnits;
@@ -40,18 +58,17 @@ export class GetMaterialProgressSummary {
     const { materials } = await this.#catalog.execute();
     const scoped = subject ? materials.filter((m) => m.subject === subject) : materials;
 
-    const results = [];
-    for (const m of scoped) {
+    const mapped = await mapLimit(scoped, 6, async (m) => {
       let units;
       try {
         ({ units } = await this.#getMaterialUnits.execute({ materialId: m.id, userId }));
       } catch (err) {
         this.#logger.warn?.('school.progress-summary.units-failed', { materialId: m.id, error: err.message });
-        continue;
+        return null;
       }
 
       const hasProgress = units.some((u) => (u.percent ?? 0) > 0 || u.completed);
-      if (!hasProgress) continue;
+      if (!hasProgress) return null;
 
       const unitsDone = units.filter((u) => u.completed).length;
       const unitTotal = units.length;
@@ -59,7 +76,7 @@ export class GetMaterialProgressSummary {
       const percent = unitTotal ? Math.round((unitsDone / unitTotal) * 100) : 0;
       const lastActivity = this.#progressStore.summarize(units, userId).lastPlayedAt;
 
-      results.push({
+      return {
         materialId: m.id,
         unitsDone,
         unitTotal,
@@ -67,8 +84,9 @@ export class GetMaterialProgressSummary {
         nextUnitTitle: nextUnit?.title ?? null,
         percent,
         lastActivity,
-      });
-    }
+      };
+    });
+    const results = mapped.filter((r) => r !== null);
 
     results.sort((a, b) => String(b.lastActivity ?? '').localeCompare(String(a.lastActivity ?? '')));
 
