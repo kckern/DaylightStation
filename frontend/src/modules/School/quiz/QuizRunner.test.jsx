@@ -54,12 +54,27 @@ describe('QuizRunner', () => {
     expect(await screen.findByTestId('unrecorded')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /next/i })).toBeInTheDocument();
   });
-  it('exits on a 410 (session gone after restart)', async () => {
+  it('shows a session-lost card on a 410 — no silent exit until Back is clicked', async () => {
     const onExit = vi.fn();
     answerMock.mockResolvedValueOnce({ ok: false, status: 410, data: null });
     render(<QuizRunner bank={bank} onExit={onExit} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Olympia' }));
-    await waitFor(() => expect(onExit).toHaveBeenCalled());
+    expect(await screen.findByTestId('session-lost')).toHaveTextContent(/took a long break and timed out/i);
+    expect(onExit).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(onExit).toHaveBeenCalled();
+  });
+
+  it('offers Start again on the session-lost card when onRestart is available', async () => {
+    const onExit = vi.fn();
+    const onRestart = vi.fn();
+    answerMock.mockResolvedValueOnce({ ok: false, status: 410, data: null });
+    render(<QuizRunner bank={bank} onExit={onExit} onRestart={onRestart} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Olympia' }));
+    await screen.findByTestId('session-lost');
+    fireEvent.click(screen.getByRole('button', { name: 'Start again' }));
+    expect(onRestart).toHaveBeenCalled();
+    expect(onExit).not.toHaveBeenCalled();
   });
   it('abandons the run when identity changes mid-quiz', async () => {
     const onExit = vi.fn();

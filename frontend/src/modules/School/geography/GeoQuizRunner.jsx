@@ -23,7 +23,9 @@ const ITEM_COMPONENTS = {
 };
 
 export default function GeoQuizRunner({ bank, onExit }) {
-  const { sessionId, submit, openFailed, unsaved } = useGradedSession({ bank, mode: 'drill', onExit });
+  const {
+    sessionId, submit, openFailed, sessionLost, unsaved,
+  } = useGradedSession({ bank, mode: 'drill', onExit });
   const [queue, setQueue] = useState(bank.items);
   const [verdict, setVerdict] = useState(null);
   const [unrecorded, setUnrecorded] = useState(false);
@@ -85,6 +87,17 @@ export default function GeoQuizRunner({ bank, onExit }) {
       <div className="school-runner school-runner--error" data-testid="geo-open-failed">
         <h2>{bank.title}</h2>
         <p>That one wouldn&rsquo;t open. Tell a grown-up, or try again in a bit.</p>
+        <button type="button" className="school-runner__done" onClick={onExit}>Back</button>
+      </div>
+    );
+  }
+  // A lost (410) session must show a sign, not a silent bounce — same
+  // student-advocacy contract as openFailed above.
+  if (sessionLost) {
+    return (
+      <div className="school-runner school-runner--error" data-testid="session-lost">
+        <h2>{bank.title}</h2>
+        <p>Your drill took a long break and timed out. Your finished answers are saved — start again to keep going.</p>
         <button type="button" className="school-runner__done" onClick={onExit}>Back</button>
       </div>
     );

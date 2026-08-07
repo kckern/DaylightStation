@@ -39,13 +39,16 @@ it('surfaces unrecorded on a 500', async () => {
   expect(verdict).toEqual({ unrecorded: true });
 });
 
-it('exits on a 410', async () => {
+it('marks the session lost on a 410 — no silent onExit', async () => {
   schoolApi.answer.mockResolvedValueOnce({ ok: false, status: 410, data: null });
   const onExit = vi.fn();
   const { result } = renderHook(() => useGradedSession({ bank, mode: 'drill', onExit }));
   await waitFor(() => expect(result.current.sessionId).toBe('ses_1'));
-  await act(async () => { await result.current.submit('i1', 'NV'); });
-  expect(onExit).toHaveBeenCalled();
+  let verdict;
+  await act(async () => { verdict = await result.current.submit('i1', 'NV'); });
+  expect(verdict).toBeNull();
+  expect(result.current.sessionLost).toBe(true);
+  expect(onExit).not.toHaveBeenCalled();
 });
 
 it('abandons the session and blocks submit when identity changes mid-session', async () => {

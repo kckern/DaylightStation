@@ -71,6 +71,7 @@ export default function QuizRunner({ bank, mode = 'quiz', learning = null, onExi
   const [unrecorded, setUnrecorded] = useState(false);
   const [unrecordedCount, setUnrecordedCount] = useState(0);
   const [openFailed, setOpenFailed] = useState(false);
+  const [sessionLost, setSessionLost] = useState(false);
   const [score, setScore] = useState(0);
   // Per-question outcomes for the summary dots (design audit #5): true /
   // false / null (unrecorded), in question order.
@@ -127,7 +128,10 @@ export default function QuizRunner({ bank, mode = 'quiz', learning = null, onExi
     if (!sessionId || verdict || abandonedRef.current) return;
     const { ok, status: answerStatus, data } = await schoolApi.answer(sessionId, { itemId: item.id, given });
     if (abandonedRef.current) return; // identity changed while the request was in flight
-    if (answerStatus === 410) { onExit(); return; }
+    // A 410 means the session timed out server-side (spec §8) — never a
+    // silent bounce (student-advocacy #8): the child gets a sign, and only
+    // an explicit Back/Start-again tap actually exits.
+    if (answerStatus === 410) { setSessionLost(true); return; }
     if (!ok) {
       // Grading state unknowable; the attempt is NOT on disk. Never silent (spec §8).
       // The true grade is UNKNOWN, not wrong — the verdict must not claim one.
@@ -212,6 +216,23 @@ export default function QuizRunner({ bank, mode = 'quiz', learning = null, onExi
             <button type="button" className="school-runner__done" onClick={onExit}>Done</button>
           </div>
         )}
+      </div>
+    );
+  }
+  // A lost (410) session must show a sign, not a silent bounce — same
+  // student-advocacy contract as openFailed below, checked ahead of the
+  // loading gate for the same reason.
+  if (sessionLost) {
+    return (
+      <div className="school-runner school-runner--error" data-testid="session-lost">
+        <h2>{bank.title}</h2>
+        <p className="school-runner__unrecorded-summary">Your quiz took a long break and timed out. Your finished answers are saved — start again to keep going.</p>
+        <div className="school-runner__summary-actions">
+          {onRestart && (
+            <button type="button" className="school-runner__again" onClick={onRestart}>Start again</button>
+          )}
+          <button type="button" className="school-runner__done" onClick={onExit}>Back</button>
+        </div>
       </div>
     );
   }
