@@ -160,7 +160,7 @@ describe('student-advocacy wave 7', () => {
   it('an unsaved (guest) run carries the banner; a signed-in run does not', async () => {
     profile = { status: 'ready', currentUser: null, isGuest: true };
     render(<QuizRunner bank={bank} onExit={() => {}} />);
-    expect(await screen.findByTestId('guest-banner')).toHaveTextContent(/won’t be saved/);
+    expect(await screen.findByTestId('guest-banner')).toHaveTextContent(/not saved/);
   });
 
   it('a failed open shows the sign with a Back button, never an eternal Loading', async () => {
@@ -197,5 +197,7 @@ describe('student-advocacy wave 7', () => {
     expect(await screen.findByTestId('quiz-passbar')).toHaveTextContent('Passed — 100%, and passing is 80%.');
     expect(screen.getByTestId('quiz-cheer')).toHaveTextContent('Perfect! Every single one.');
     expect(screen.queryByRole('button', { name: /ask for a retake/i })).toBeNull();
+    // Summary ceremony (design wave 9): one dot per question, all right here.
+    expect(screen.getByTestId('quiz-dots').querySelectorAll('.is-right')).toHaveLength(2);
   });
 });
