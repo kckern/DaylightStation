@@ -219,7 +219,10 @@ function SchoolShell({ clear }) {
       return;
     }
     const { ok, data } = await schoolApi.bank(bankSummary.id);
-    if (ok) { setNotice(null); setActive({ bank: data, mode }); }
+    // setRunFresh(false): a new launch is never a restart — cleared here (not
+    // only in the active-change effect) so correctness never rides on
+    // parent/child effect ordering.
+    if (ok) { setNotice(null); setRunFresh(false); setActive({ bank: data, mode }); }
   }, []);
 
   // Returns the in-flight promise (rather than firing-and-forgetting) so a
@@ -245,6 +248,7 @@ function SchoolShell({ clear }) {
   // fits a screen the module isn't certified for.
   const startLearning = useCallback((launch) => {
     const { module, learning, certification } = launch;
+    setRunFresh(false); // a new launch is never a restart (see `start` above)
     if (!moduleLaunchAllowed(certification, module.moduleId)) {
       const reasons = certification?.get?.(module.moduleId)?.reasons ?? [];
       schoolLog.surface('launch-refused', { moduleId: module.moduleId, surfaceId, reasons });
