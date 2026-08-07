@@ -105,6 +105,21 @@ export class PrintService {
     return out;
   }
 
+  /**
+   * A read-only render of an authored printable — debt M6a: an approver
+   * should be able to see the sheet before saying yes. Deliberately bare:
+   * no quota check, no printer call, no print-log append, no pending-queue
+   * write. Shares `#resolve` with `requestPrint`/`approve` so the preview is
+   * byte-identical to what would actually print, minus the student-name
+   * header (no `studentName` — the previewer isn't necessarily the printee).
+   */
+  async previewPrintable(printableId) {
+    const def = this.#findPrintable(printableId);
+    if (!def) throw new EntityNotFoundError('printable', printableId);
+    const { pdf } = await this.#resolve(def, {});
+    return { pdf, label: def.label };
+  }
+
   /** A user's rolling-window usage (for the quota banner). */
   getQuota(userId) {
     const jobs = this.#ds.readPrintLog().filter((j) => j.userId === userId);
