@@ -211,3 +211,4 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-08-06 | school-teacher-console-w6 | HEAD-of-main | Teacher console wave 6 (advocacy remediation), merged to main |
 | 2026-08-06 | school-student-advocacy | 1b96ca105 | Wave 7 student-advocacy remediation (28 findings + M7 verdicts), merged to main |
 | 2026-08-06 | school-admin-advocacy | a47b14a64 | Wave 8 administration-advocacy remediation (20 findings + M8 verdicts), merged to main |
+| 2026-08-06 | school-design-wave9 | 042e78cf0 | Wave 9 design-audit remediation (top-10 + teardown + M9 verdicts), merged to main |
