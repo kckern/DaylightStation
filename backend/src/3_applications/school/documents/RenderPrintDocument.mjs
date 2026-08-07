@@ -38,6 +38,20 @@ import { contentBox } from '#rendering/school/documents/furniture.mjs';
 import { texToSvg as mathJaxTexToSvg } from '#rendering/school/documents/mathSvg.mjs';
 import { listYamlFiles, loadYaml } from '#system/utils/FileIO.mjs';
 
+/**
+ * The header furniture already prints `document.title`; a leading rich_text
+ * heading that repeats the SAME words printed the title twice, 40pt apart
+ * (design audit #10). Authoring keeps both (the source is self-contained);
+ * the render drops the echo.
+ */
+function dropRedundantTitleHeading(document) {
+  const first = document.blocks?.[0];
+  if (!document.title || first?.type !== 'rich_text' || typeof first.md !== 'string') return document;
+  const heading = first.md.trim().replace(/^#+\s*/, '').trim();
+  if (heading.toLowerCase() !== String(document.title).trim().toLowerCase()) return document;
+  return { ...document, blocks: document.blocks.slice(1) };
+}
+
 /** Archetypes bound through a physical binder get the alternating gutter (spec §7 furniture). */
 const DUPLEX_ARCHETYPES = new Set(['worksheet']);
 
@@ -788,12 +802,12 @@ export class RenderPrintDocument {
     // expected to carry allocation (Task 7 wires that expectation in).
     const warnings = [...prepareWarnings];
     const cardContext = this.#resolveCardContext(context);
-    let document = prepared;
+    let document = dropRedundantTitleHeading(prepared);
     let allocationRecord = null;
     if (cardContext) {
       const allocation = await this.#allocateCard(prepared, bank, cardContext);
       allocationRecord = allocation.record;
-      document = this.#renumberQuestions(prepared, allocation.rows);
+      document = dropRedundantTitleHeading(this.#renumberQuestions(prepared, allocation.rows));
     } else if (prepared.archetype === 'quiz') {
       warnings.push(`quiz '${prepared.id}' rendered without card allocation`);
     }

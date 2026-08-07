@@ -50,8 +50,13 @@ export default function SchoolHome({ grouped, onOpen, bankTitles }) {
             Reference and browsing{libraryCount ? ` · ${libraryCount}` : ''}
           </p>
         </button>
+        <button type="button" className="school-home2__library" onClick={() => onOpen('banks')}>
+          <h3 className="school-home2__subject-label"><Icon name="kind-deck" className="school-home2__library-icon" /> Practice</h3>
+          <p className="school-home2__subject-hint">Quizzes and flashcards</p>
+        </button>
         <button type="button" className="school-home2__library" onClick={() => onOpen('print')}>
-          <h3 className="school-home2__subject-label">Print 🖨️</h3>
+          {/* Inline SVG, never emoji (kiosk icon rule — WebView tofu). */}
+          <h3 className="school-home2__subject-label"><Icon name="print" className="school-home2__library-icon" /> Print</h3>
           <p className="school-home2__subject-hint">Worksheets you can print</p>
         </button>
       </aside>

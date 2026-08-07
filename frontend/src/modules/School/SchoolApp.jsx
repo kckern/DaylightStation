@@ -137,7 +137,8 @@ function SchoolShell({ clear }) {
   // live nav state it reports back so the URL stays in lock-step with the
   // breadcrumb all the way down to a playing track.
   const [materialPath, setMaterialPath] = useState(initialLink.materialPath);
-  const [active, setActive] = useState(null);   // bounded runner or shared remediation session
+  const [active, setActive] = useState(null);
+  const [runNonce, setRunNonce] = useState(0); // Try-again remount counter   // bounded runner or shared remediation session
   const [pending, setPending] = useState(null); // bank/module launch awaiting a claim
   const [notice, setNotice] = useState(null);
   const [materials, setMaterials] = useState([]); // full catalog materials list, unfiltered
@@ -537,7 +538,15 @@ function SchoolShell({ clear }) {
             onMaterialNav={onMaterialNav}
           />
         )}
-        {active?.mode === 'quiz' && <QuizRunner bank={active.bank} learning={active.learning} onExit={() => setActive(null)} />}
+        {active?.mode === 'quiz' && (
+          <QuizRunner
+            key={`quiz:${active.bank.id}:${runNonce}`}
+            bank={active.bank}
+            learning={active.learning}
+            onExit={() => setActive(null)}
+            onRestart={() => setRunNonce((n) => n + 1)}
+          />
+        )}
         {active?.mode === 'flashcard' && <FlashcardRunner bank={active.bank} learning={active.learning} onExit={() => setActive(null)} />}
         {active?.mode === 'problems' && <QuizRunner bank={active.bank} mode="drill" learning={active.learning} onExit={() => setActive(null)} />}
         {active?.mode === 'learning_probe' && (

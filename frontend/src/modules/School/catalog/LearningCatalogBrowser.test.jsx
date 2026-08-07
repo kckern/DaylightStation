@@ -65,7 +65,7 @@ describe('LearningCatalogBrowser', () => {
   it('keeps browsing available when the Catalog is empty', async () => {
     learningCatalogs.mockResolvedValueOnce({ ok: true, data: { schema: 'school.catalog-index/v1', catalogs: [] } });
     render(<LearningCatalogBrowser onLaunch={() => {}} />);
-    expect(await screen.findByText(/Nothing is published/)).toBeInTheDocument();
+    expect(await screen.findByText('Nothing here yet.')).toBeInTheDocument();
   });
 });
 

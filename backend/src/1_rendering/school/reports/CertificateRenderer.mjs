@@ -1,9 +1,11 @@
 /**
  * The course-completion certificate (teacher-console spec C2): one Letter
- * page, deliberately plain and dignified — learner, course, percent, period,
- * issue date, issuer line. Same theme/fonts/pinned-CreationDate posture as
- * its report siblings. The caller decides eligibility (no fabricated
- * diplomas here — the route refuses a course with nothing graded).
+ * page. Wave-9 ceremony (design audit #9): a certificate is THEATRE — a
+ * double border rule, content vertically centered on the page (not crammed
+ * into the top half), the learner's name at display size, a humane date,
+ * and a real signature line above "Teacher". A child should want this on
+ * the wall. Same theme/fonts/pinned-CreationDate posture as its report
+ * siblings; the caller still decides eligibility (no fabricated diplomas).
  */
 import PDFDocument from 'pdfkit';
 import { documentPdfTheme } from '../documents/documentPdfTheme.mjs';
@@ -31,30 +33,55 @@ export function createCertificatePdfRenderer({ theme = documentPdfTheme, fontDir
 
       const ink = theme.ink?.text ?? '#111';
       const muted = theme.ink?.muted ?? '#666';
-      out.moveDown(4);
-      out.font(theme.fonts.bold.name).fontSize(26).fillColor(ink)
+      const pageW = 612; const pageH = 792; // US Letter, points
+      const m = theme.page.marginPt;
+
+      // The frame: a double border rule — outer heavy, inner hairline.
+      out.save();
+      out.lineWidth(2).strokeColor(ink).rect(m, m, pageW - 2 * m, pageH - 2 * m).stroke();
+      out.lineWidth(0.5).strokeColor(muted).rect(m + 8, m + 8, pageW - 2 * (m + 8), pageH - 2 * (m + 8)).stroke();
+      out.restore();
+
+      // Content block, vertically centered by construction: start a third of
+      // the way down so the composition sits at the page's optical center.
+      const humaneDate = (() => {
+        const d = new Date(issuedOn);
+        if (!Number.isFinite(d.valueOf())) return issuedOn ?? '';
+        const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+        return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}`;
+      })();
+
+      out.y = pageH * 0.24;
+      out.font(theme.fonts.bold.name).fontSize(30).fillColor(ink)
         .text('Certificate of Completion', { align: 'center' });
-      out.moveDown(1.5);
-      out.font(theme.fonts.regular.name).fontSize(12).fillColor(muted).text('This certifies that', { align: 'center' });
-      out.moveDown(0.5);
-      out.font(theme.fonts.bold.name).fontSize(22).fillColor(ink).text(learnerName, { align: 'center' });
-      out.moveDown(0.5);
-      out.font(theme.fonts.regular.name).fontSize(12).fillColor(muted).text('has completed', { align: 'center' });
-      out.moveDown(0.5);
-      out.font(theme.fonts.bold.name).fontSize(18).fillColor(ink).text(courseLabel ?? courseId, { align: 'center' });
+      out.moveDown(1.6);
+      out.font(theme.fonts.regular.name).fontSize(13).fillColor(muted).text('This certifies that', { align: 'center' });
+      out.moveDown(0.6);
+      out.font(theme.fonts.bold.name).fontSize(40).fillColor(ink).text(learnerName, { align: 'center' });
+      out.moveDown(0.6);
+      out.font(theme.fonts.regular.name).fontSize(13).fillColor(muted).text('has completed', { align: 'center' });
+      out.moveDown(0.6);
+      out.font(theme.fonts.bold.name).fontSize(22).fillColor(ink).text(courseLabel ?? courseId, { align: 'center' });
       if (typeof percent === 'number') {
-        out.moveDown(0.5);
-        out.font(theme.fonts.regular.name).fontSize(12).fillColor(muted)
+        out.moveDown(0.6);
+        out.font(theme.fonts.regular.name).fontSize(13).fillColor(muted)
           .text(`with a course grade of ${Math.round(percent)}%`, { align: 'center' });
       }
-      out.moveDown(1.5);
-      out.font(theme.fonts.regular.name).fontSize(11).fillColor(muted)
-        .text([periodLabel, issuedOn].filter(Boolean).join(' · '), { align: 'center' });
-      if (issuedBy) {
-        out.moveDown(2);
-        out.font(theme.fonts.regular.name).fontSize(11).fillColor(ink).text(issuedBy, { align: 'center' });
-        out.font(theme.fonts.regular.name).fontSize(9).fillColor(muted).text('Teacher', { align: 'center' });
-      }
+      out.moveDown(1.4);
+      out.font(theme.fonts.regular.name).fontSize(12).fillColor(muted)
+        .text([periodLabel, humaneDate].filter(Boolean).join(' · '), { align: 'center' });
+
+      // Signature block anchored to the LOWER band of the frame: a real rule
+      // to sign above, the issuer's name beneath it, the role beneath that.
+      const sigW = 220;
+      const sigX = (pageW - sigW) / 2;
+      const sigY = pageH - m - 120;
+      out.save().lineWidth(0.75).strokeColor(ink)
+        .moveTo(sigX, sigY).lineTo(sigX + sigW, sigY).stroke().restore();
+      out.font(theme.fonts.regular.name).fontSize(12).fillColor(ink)
+        .text(issuedBy ?? '', sigX, sigY + 6, { width: sigW, align: 'center' });
+      out.font(theme.fonts.regular.name).fontSize(9).fillColor(muted)
+        .text('Teacher', sigX, sigY + 24, { width: sigW, align: 'center' });
       out.end();
     });
   };

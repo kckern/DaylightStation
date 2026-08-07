@@ -35,7 +35,9 @@ export default function ClosePeriodPanel({ learnerId, periodId, periodLabel = nu
   return (
     <div className="teacher-close-period">
       {!armed ? (
-        <button type="button" className="teacher-assignments__edit" onClick={() => setArmed(true)}>
+        // Consequence wears a costume (design audit): the records-freezing
+        // verb must not dress like 'Edit milestones'.
+        <button type="button" className="teacher-danger-btn" onClick={() => setArmed(true)}>
           {alreadyClosed ? 'Supersede & re-close this period' : 'Close this period'}
         </button>
       ) : (

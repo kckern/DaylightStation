@@ -45,7 +45,9 @@ export default function StaleSessions({ kids = [] }) {
             <span className="teacher-stale__who">{nameFor(row.learnerId)}</span>
             <span className="teacher-stale__what">{labelize(row.unitId) || row.sessionId}</span>
             <span className="teacher-stale__meta">
-              {row.state ?? 'open'} since {String(row.updatedAt ?? '').slice(0, 10)}
+              {/* Human copy (audit): 'created since 2026-07-30' was written by
+                  string concatenation, not a person. */}
+              waiting since {String(row.updatedAt ?? '').slice(0, 10)} ({row.state ?? 'open'})
             </span>
             {asking === row.sessionId ? (
               <span className="teacher-stale__reason">

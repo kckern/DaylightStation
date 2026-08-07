@@ -81,12 +81,12 @@ export default function RecordsTab({ learnerId, kids = [] }) {
       {periodId && <PacingPanel learnerId={learnerId} periodId={periodId} />}
       <FrozenHistory learnerId={learnerId} refreshKey={frozenRefresh} />
       <a
-        className="teacher-reportcard__pdf"
+        className="teacher-pdf-pill"
         href={`/api/v1/school/transcript?learnerId=${encodeURIComponent(learnerId)}&format=pdf`}
         target="_blank"
         rel="noreferrer"
       >
-        Transcript — every closed period (PDF)
+        PDF · Transcript
       </a>
       <PanelFrame
         title="Curriculum history"

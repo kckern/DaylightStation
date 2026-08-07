@@ -5,6 +5,16 @@ import MetricTile from './MetricTile.jsx';
 import CurriculumHistoryOverview from '../progress/CurriculumHistoryOverview.jsx';
 import InstructionalInsightsOverview from '../progress/InstructionalInsightsOverview.jsx';
 import { useTeacherToday } from './useTeacherToday.js';
+import { labelize } from '../teacher/labelize.js';
+
+/** A recent-score title for humans: the LAST path segment, labelized —
+ * never 'history/i-survived/02-…/01-alone-in-the-matawan-creek' as a
+ * child's achievement (design audit #3). */
+function scoreTitle(score) {
+  const raw = score.learning?.lessonId ?? score.activityId ?? '';
+  const last = String(raw).split('/').filter(Boolean).at(-1) ?? String(raw);
+  return labelize(last) || raw;
+}
 
 /**
  * The aggregate board: every program × every learner, in one shape.
@@ -116,9 +126,10 @@ function ProgramCard({ report }) {
   return (
     <article className={`school-report__card is-${report.state}`}>
       <header className="school-report__card-head">
-        <h4 className="school-report__program">{report.label}</h4>
+        {/* Human words, never slugs, on a child's board (M9 fix 1). */}
+        <h4 className="school-report__program">{labelize(report.label)}</h4>
         <span className={`school-report__state is-${report.state}`}>
-          {STATE_LABEL[report.state] ?? report.state}
+          {STATE_LABEL[report.state] ?? labelize(report.state)}
         </span>
       </header>
 
@@ -148,7 +159,7 @@ function ProgramCard({ report }) {
   );
 }
 
-function ProgressOverview({ snapshot, options, periodId, setPeriodId, subjectId, setSubjectId, coreOnly, setCoreOnly, focus, onFollowUp }) {
+function ProgressOverview({ snapshot, options, periodId, setPeriodId, subjectId, setSubjectId, coreOnly, setCoreOnly, focus, onFollowUp, kidMode = false }) {
   if (!snapshot) return null;
   const summary = snapshot.summary;
   const learnerNames = new Map((options?.learners ?? []).map((learner) => [learner.id, learner.name]));
@@ -182,7 +193,9 @@ function ProgressOverview({ snapshot, options, periodId, setPeriodId, subjectId,
         <ProgressFigure label="Questions" value={summary.responseCount.toLocaleString()} />
         <ProgressFigure label="Accuracy" value={summary.scorePercent === null ? '—' : `${summary.scorePercent}%`} />
         <ProgressFigure label="Completed" value={summary.completionCount.toLocaleString()} />
-        <ProgressFigure label="Pending sync" value={summary.pendingCount.toLocaleString()} pending={summary.pendingCount > 0} />
+        {/* "Pending sync" is infrastructure gossip on a child's dashboard
+            (design audit) — teachers keep it, kids don't. */}
+        {!kidMode && <ProgressFigure label="Pending sync" value={summary.pendingCount.toLocaleString()} pending={summary.pendingCount > 0} />}
       </div>
 
       {snapshot.followUps.length > 0 && (
@@ -210,7 +223,7 @@ function ProgressOverview({ snapshot, options, periodId, setPeriodId, subjectId,
             {snapshot.recentScores.map((score) => (
               <article key={`${score.learnerId}:${score.assessmentId}`} className="school-progress__score">
                 {!focus && <span className="school-progress__score-learner">{learnerNames.get(score.learnerId) ?? score.learnerId}</span>}
-                <strong>{score.learning.lessonId ?? score.activityId}</strong>
+                <strong>{scoreTitle(score)}</strong>
                 <span className="school-progress__score-value">{score.score.correct}/{score.score.total} · {score.score.percent}%</span>
                 {score.verification === 'pending' && <span className="school-progress__pending">Pending sync</span>}
                 <span className="school-progress__score-when">{relativeDay(score.occurredAt)}</span>
@@ -318,6 +331,7 @@ export default function ReportPanel({ userId = null, onFollowUp = null, kidMode 
         setCoreOnly={setCoreOnly}
         focus={focus}
         onFollowUp={onFollowUp}
+        kidMode={kidMode}
       />
 
       {!focus && <InstructionalInsightsOverview insights={insights} />}

@@ -804,7 +804,7 @@ export function createSchoolRouter({
     const learnerId = requiredTextQuery(req.query.learnerId, 'learnerId');
     const periodId = requiredTextQuery(req.query.periodId, 'periodId');
     const report = await getReportCard.execute({ learnerId, periodId });
-    if (wantsPdf(req)) return sendReportCardPdf(res, renderReportCardPdf, report, { learnerId, periodId, req });
+    if (wantsPdf(req)) return sendReportCardPdf(res, renderReportCardPdf, report, { learnerId, periodId, req, learnerDirectory });
     return res.set('Cache-Control', 'no-store').json(report);
   }));
 
@@ -815,7 +815,7 @@ export function createSchoolRouter({
     if (periodId) {
       const record = reportCardsStore.readReportCard(learnerId, periodId);
       if (!record) throw new EntityNotFoundError('Frozen report card', `${learnerId}/${periodId}`);
-      if (wantsPdf(req)) return sendReportCardPdf(res, renderReportCardPdf, record, { learnerId, periodId, req });
+      if (wantsPdf(req)) return sendReportCardPdf(res, renderReportCardPdf, record, { learnerId, periodId, req, learnerDirectory });
       return res.set('Cache-Control', 'no-store').json(record);
     }
     // The list variety returns every frozen record for the learner — `format=pdf`
@@ -1186,9 +1186,20 @@ function wantsPdf(req) {
  * `learnerId=kid1"; filename="evil.pdf` must not be able to inject a second
  * `filename=` parameter into the header.
  */
-async function sendReportCardPdf(res, renderReportCardPdf, report, { learnerId, periodId, req }) {
+async function sendReportCardPdf(res, renderReportCardPdf, report, { learnerId, periodId, req, learnerDirectory = null }) {
   if (!renderReportCardPdf) return res.status(503).json({ error: 'report-card-pdf-unavailable' });
-  const { pdf } = await renderReportCardPdf(report, { learnerName: textQuery(req.query.learnerName) });
+  // The child's NAME is the string this document exists to honor (design
+  // audit #3): query override wins, then the roster's display name — never
+  // the raw id unless nothing else resolves.
+  let learnerName = textQuery(req.query.learnerName);
+  if (!learnerName && learnerDirectory) {
+    try {
+      // listLearners may be sync on some directories — never assume a thenable.
+      const roster = await Promise.resolve(learnerDirectory.listLearners());
+      learnerName = roster.find((r) => r.id === learnerId)?.name ?? null;
+    } catch { /* name resolution is a courtesy, never a 500 */ }
+  }
+  const { pdf } = await renderReportCardPdf(report, { learnerName });
   res.set('Cache-Control', 'no-store');
   const slug = `report-card-${slugify(learnerId, 'learner')}-${slugify(periodId, 'period')}.pdf`;
   res.set('Content-Disposition', `inline; filename="${slug}"`);

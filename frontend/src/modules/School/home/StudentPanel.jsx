@@ -5,6 +5,7 @@ import { sectionForReport } from '../programs.js';
 import { useSchoolProfile } from '../identity/SchoolProfileContext.jsx';
 import ProfileAvatar from '../../../lib/identity/ProfileAvatar.jsx';
 import { useLearnerFeedback } from './useLearnerFeedback.js';
+import { labelize } from '../teacher/labelize.js';
 import { useLearnerStanding } from './useLearnerStanding.js';
 
 /**
@@ -89,9 +90,10 @@ function relativeDay(iso) {
   if (days <= 0) return 'today';
   if (days === 1) return 'yesterday';
   // A precise growing counter ("24 days ago") reads as a scoreboard of guilt
-  // on a kid's own panel; past two weeks the honest, kind answer is vaguer.
+  // on a kid's own panel — and "a while ago" is a shrug typeset as data
+  // (design audit). Past two weeks, say nothing at all.
   if (days <= 13) return `${days} days ago`;
-  return 'a while ago';
+  return null;
 }
 
 export default function StudentPanel({ onOpen, bankTitles }) {
@@ -189,7 +191,7 @@ export default function StudentPanel({ onOpen, bankTitles }) {
           disabled={!primarySection}
         >
           <span className="school-rail__next-tag">Up next</span>
-          <span className="school-rail__next-course">{model.primary.label}</span>
+          <span className="school-rail__next-course">{labelize(model.primary.label)}</span>
           {/* When blocked, the REMEDY is the button text (LearnerHome's rule,
               carried forward): a child never meets a wall without a sign. */}
           <span className="school-rail__next-action">
@@ -214,7 +216,11 @@ export default function StudentPanel({ onOpen, bankTitles }) {
         <div className="school-rail__facts">
           {score && <span>Latest: {score.label} · {score.pct}%</span>}
           {coins != null && <span>Coins: {coins}</span>}
-          {model.lastActivity && <span>Last active {relativeDay(model.lastActivity)}</span>}
+          {/* A label with no value is worse than a vague phrase (M9 fix 3):
+              render the row only when the humane date exists. */}
+          {model.lastActivity && relativeDay(model.lastActivity) && (
+            <span>Last active {relativeDay(model.lastActivity)}</span>
+          )}
         </div>
       )}
 

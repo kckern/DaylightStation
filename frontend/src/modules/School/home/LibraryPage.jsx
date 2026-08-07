@@ -3,9 +3,9 @@ import BankBrowser from '../browse/BankBrowser.jsx';
 
 /**
  * The Library — reference material plus everything unshelved: content for
- * looking things up or free browsing, never part of a curriculum. Untagged
- * generic banks appear here as the Practice group (`subjectFilter={null}` =
- * untagged only).
+ * looking things up or free browsing, never part of a curriculum. The
+ * Practice group shows EVERY bank, grouped by subject (design audit #2):
+ * the old untagged-only filter told children a full room was empty.
  */
 export default function LibraryPage({ library, guestOnly, onLaunch, notice, initialMaterialPath = [], onMaterialNav }) {
   return (
@@ -17,7 +17,7 @@ export default function LibraryPage({ library, guestOnly, onLaunch, notice, init
       )}
       <section className="school-subject__group">
         <h3 className="school-subject__heading">Practice</h3>
-        <BankBrowser guestOnly={guestOnly} onLaunch={onLaunch} notice={notice} subjectFilter={null} />
+        <BankBrowser guestOnly={guestOnly} onLaunch={onLaunch} notice={notice} grouped />
       </section>
     </div>
   );

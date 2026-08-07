@@ -37,12 +37,12 @@ export default function ReportCardView({ learnerId, periodId }) {
           <div className="teacher-reportcard__head">
             <span className="teacher-reportcard__mode">DRAFT</span>
             <a
-              className="teacher-reportcard__pdf"
+              className="teacher-pdf-pill"
               href={`/api/v1/school/report-card?learnerId=${encodeURIComponent(learnerId)}&periodId=${encodeURIComponent(periodId)}&format=pdf`}
               target="_blank"
               rel="noreferrer"
             >
-              PDF
+              PDF · Report card
             </a>
           </div>
           <ul className="teacher-reportcard__courses">
