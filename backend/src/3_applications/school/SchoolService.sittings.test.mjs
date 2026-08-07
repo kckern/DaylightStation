@@ -142,17 +142,18 @@ describe('SchoolService sittings (mid-quiz resume)', () => {
   it('a >24h-old sitting is ignored on open and replaced by the new run', () => {
     const { svc } = makeService();
     const { sessionId } = svc.openSession({ userId: 'u1', bankId: bank.id, mode: 'quiz' });
-    svc.answer({ sessionId, itemId: 'q1', given: 'Olympia' });
+    svc.answer({ sessionId, itemId: 'q1', given: 'Seattle' }); // WRONG — marks the stale run
 
     nowMs += 25 * HOUR;
     const { svc: svc2 } = makeService();
     const reopened = svc2.openSession({ userId: 'u1', bankId: bank.id, mode: 'quiz' });
     expect(reopened.resume).toBeUndefined();
-    // The new run REPLACES the stale sitting from its own first answer.
-    svc2.answer({ sessionId: reopened.sessionId, itemId: 'q2', given: 'Salem' });
+    // The un-resumed runner restarts at q1; its first answer REPLACES the
+    // stale sitting — proven by the outcome flipping to the new run's true.
+    svc2.answer({ sessionId: reopened.sessionId, itemId: 'q1', given: 'Olympia' });
     const { svc: svc3 } = makeService();
     const third = svc3.openSession({ userId: 'u1', bankId: bank.id, mode: 'quiz' });
-    expect(third.resume).toEqual({ answeredItemIds: ['q2'], score: 1, outcomes: [true] });
+    expect(third.resume).toEqual({ answeredItemIds: ['q1'], score: 1, outcomes: [true] });
   });
 
   it('a bankRev mismatch (bank edited since) ignores the sitting', () => {
@@ -176,6 +177,39 @@ describe('SchoolService sittings (mid-quiz resume)', () => {
     expect(attempts).toHaveLength(1);
     // The corrupt file was NOT clobbered.
     expect(fs.readFileSync(sittingsFile(), 'utf8')).toBe('{{{{ not: yaml');
+  });
+
+  it('a gap sitting ([q1, q3] — an append failed mid-run) is ignored on open and replaced by the new run', () => {
+    // Reproduce the gap exactly as production creates it: the runner advanced
+    // past a failed append, so the NEXT recorded answer is not the next item.
+    const { svc } = makeService();
+    const { sessionId } = svc.openSession({ userId: 'u1', bankId: bank.id, mode: 'quiz' });
+    svc.answer({ sessionId, itemId: 'q1', given: 'Olympia' });
+    svc.answer({ sessionId, itemId: 'q3', given: 'Boise' }); // q2's append never landed
+
+    // A non-prefix sitting must NOT resume: index-based resume would land on
+    // an already-answered item and refusal-loop until the TTL.
+    const { svc: svc2 } = makeService();
+    const reopened = svc2.openSession({ userId: 'u1', bankId: bank.id, mode: 'quiz' });
+    expect(reopened.resume).toBeUndefined();
+
+    // The new run replaces the broken sitting from its first answer, and CAN
+    // re-answer q1 (the attempt log is append-only; a re-ask is honest).
+    svc2.answer({ sessionId: reopened.sessionId, itemId: 'q1', given: 'Olympia' });
+    const { svc: svc3 } = makeService();
+    const third = svc3.openSession({ userId: 'u1', bankId: bank.id, mode: 'quiz' });
+    expect(third.resume).toEqual({ answeredItemIds: ['q1'], score: 1, outcomes: [true] });
+  });
+
+  it('a sitting store whose read() throws is treated as no-sitting — openSession never 500s', () => {
+    const { svc, store } = makeService();
+    const { sessionId } = svc.openSession({ userId: 'u1', bankId: bank.id, mode: 'quiz' });
+    svc.answer({ sessionId, itemId: 'q1', given: 'Olympia' });
+    const { svc: svc2, store: store2 } = makeService();
+    store2.read = () => { throw new Error('store exploded'); };
+    const reopened = svc2.openSession({ userId: 'u1', bankId: bank.id, mode: 'quiz' });
+    expect(reopened.sessionId).toBeTruthy();
+    expect(reopened.resume).toBeUndefined();
   });
 
   it('paper-transport answers (GradeSubmission machine-grading) neither collide with nor advance a screen sitting', () => {

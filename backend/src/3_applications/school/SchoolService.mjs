@@ -402,7 +402,17 @@ export class SchoolService {
       }
       return null;
     }
-    const sitting = this.#sittings.read(session.userId, session.bankId); // corrupt file → null (store warns)
+    let sitting;
+    try {
+      sitting = this.#sittings.read(session.userId, session.bankId); // corrupt file → null (store warns)
+    } catch (err) {
+      // A convenience must never cost the open: a throwing store reads as
+      // "no sitting" — the quiz starts at the top instead of 500ing.
+      this.#logger.warn?.('school.sitting.read-failed', {
+        userId: session.userId, bankId: session.bankId, error: err?.message,
+      });
+      return null;
+    }
     if (!sitting || sitting.mode !== 'quiz') return null;
     if ((sitting.bankRev ?? null) !== (session.bankRev ?? null)) return null;
     const age = this.#now() - Date.parse(sitting.startedAt ?? '');
@@ -411,6 +421,13 @@ export class SchoolService {
       .filter((a) => a && typeof a.itemId === 'string')
       .map((a) => ({ itemId: a.itemId, correct: a.correct === true ? true : a.correct === false ? false : null }));
     if (answers.length === 0 || answers.length >= session.bank.items.length) return null;
+    // Resume is INDEX-BASED (the runner restarts at answers.length), so the
+    // sitting must be an ordered PREFIX of the bank. A gap — an append that
+    // failed mid-run, leaving e.g. [q1, q3] — would resume onto an
+    // already-answered item, get refused, and loop until the TTL; and its
+    // outcomes would misattribute positionally in the summary dots. Any
+    // mismatch is ignored and replaced, same as the stale/bankRev rules.
+    if (!answers.every((a, i) => a.itemId === session.bank.items[i]?.id)) return null;
     session.sittingStartedAt = typeof sitting.startedAt === 'string' ? sitting.startedAt : session.sittingStartedAt;
     session.sittingAnswers = answers;
     session.answeredItemIds = new Set(answers.map((a) => a.itemId));
