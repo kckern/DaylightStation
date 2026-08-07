@@ -39,3 +39,15 @@ function isCanonicalTimestamp(value) {
   const parsed = new Date(value);
   return Number.isFinite(parsed.valueOf()) && parsed.toISOString() === value;
 }
+
+/**
+ * A regrade CORRECTION is a verdict amendment, not new work (admin advocacy
+ * M8 fix 1): counting it alongside its original inflates attempt counts,
+ * shifts accuracy by phantom rows, and fabricates active days at the regrade
+ * timestamp. Aggregations that count work filter with this; the corrected
+ * VERDICT still reaches consumers that resolve per-item truth by reading the
+ * correction's `provenance.of` chain.
+ */
+export function isRegradeCorrection(attempt) {
+  return attempt?.provenance?.kind === 'regrade';
+}

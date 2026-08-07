@@ -6,7 +6,7 @@
  */
 import {
   validateQuestionBank, summarizeQuestionBank, gradeAnswer, givenShapeError,
-  createAttempt, GuestForbiddenError, SessionGoneError, normalizeLearningContext, bankContentRev,
+  createAttempt, isRegradeCorrection, GuestForbiddenError, SessionGoneError, normalizeLearningContext, bankContentRev,
 } from '#domains/school/index.mjs';
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 import { PersistenceError } from '#system/utils/errors/index.mjs';
@@ -582,6 +582,7 @@ export class SchoolService {
     const all = this.#ds.readAllAttempts(userId);
     const byBank = new Map();
     for (const a of all) {
+      if (isRegradeCorrection(a)) continue; // verdict amendments, not new work (M8)
       if (bankId && a.bankId !== bankId) continue;
       if (!byBank.has(a.bankId)) {
         byBank.set(a.bankId, { bankId: a.bankId,
@@ -652,7 +653,7 @@ export class SchoolService {
     // attempts pre-aggregated by `YYYY-MM` so a lifetime summarize stays
     // O(months) instead of O(days) — not built now, since no household is
     // near that scale.
-    const attempts = this.#ds.readAllAttempts(userId) || [];
+    const attempts = (this.#ds.readAllAttempts(userId) || []).filter((a) => !isRegradeCorrection(a));
     if (attempts.length === 0) return [];
 
     const graded = attempts.filter((a) => a.mode === 'quiz');

@@ -22,6 +22,12 @@ beforeEach(() => {
   ]));
   fs.writeFileSync(path.join(school, 'sessions', '2026-08-01', 'ses_1.yml'), yaml.dump([
     { type: 'created', learnerId: 'user_2', sessionId: 'ses_1' },
+    // the household session reassignment EVENT (M8 fix 4): fromLearnerId /
+    // toLearnerId are the fields the reducer derives learnerId from
+    { type: 'reassigned', sessionId: 'ses_1', fromLearnerId: 'user_2', toLearnerId: 'user_2', reassignedBy: 'kckern' },
+  ]));
+  fs.writeFileSync(path.join(root, 'users', 'user_2', 'apps', 'school', 'attempts-2026-08-01.yml'), yaml.dump([
+    { id: 'att_1', attributedTo: 'user_2', bankId: 'caps', correct: true },
   ]));
 });
 afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -51,6 +57,12 @@ describe('school-rekey-learner (admin advocacy #8)', () => {
     expect(enrichment[0].learnerIds).toEqual(['user_2-k', 'user_3']);
     const events = yaml.load(fs.readFileSync(path.join(school, 'sessions', '2026-08-01', 'ses_1.yml'), 'utf8'));
     expect(events[0].learnerId).toBe('user_2-k');
+    // M8 fix 4: the reassigned event's own learner fields follow too — the
+    // reducer sets learnerId from toLearnerId on the next reindex.
+    expect(events[1]).toMatchObject({ fromLearnerId: 'user_2-k', toLearnerId: 'user_2-k', reassignedBy: 'kckern' });
+    // M8 fix 5: identities INSIDE the moved user dir are rewritten, not just the dir name.
+    const attempts = yaml.load(fs.readFileSync(path.join(root, 'users', 'user_2-k', 'apps', 'school', 'attempts-2026-08-01.yml'), 'utf8'));
+    expect(attempts[0].attributedTo).toBe('user_2-k');
   });
 
   it('refuses when the new id already exists in either root', () => {

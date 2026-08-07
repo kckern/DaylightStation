@@ -1,6 +1,6 @@
 export { validateQuestionBank, summarizeQuestionBank } from './questionBankValidation.mjs';
 export { gradeAnswer, givenShapeError } from './grading.mjs';
-export { createAttempt } from './attempt.mjs';
+export { createAttempt, isRegradeCorrection } from './attempt.mjs';
 export { bankContentRev } from './bankRev.mjs';
 export { GuestForbiddenError, SessionGoneError } from './errors.mjs';
 export { isAdult, ADULT_AGE } from './people.mjs';

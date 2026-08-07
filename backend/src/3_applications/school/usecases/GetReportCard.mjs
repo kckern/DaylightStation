@@ -166,8 +166,11 @@ export class GetReportCard {
   #unresolvedSection({ periodSessions, unitCourse, learnerId, periodId }) {
     const byUnit = new Map();
     periodSessions
+      // `get(...) == null` covers BOTH a unitId the catalog dropped AND a
+      // catalog unit authored with no courseId (M8 challenge 9) — either way
+      // the grade counts toward no course, and that is the fact to flag.
       .filter((s) => s.unitId && s.gradedPercent !== null && s.gradedPercent !== undefined
-        && !unitCourse.has(s.unitId))
+        && unitCourse.get(s.unitId) == null)
       .forEach((s) => {
         const row = byUnit.get(s.unitId) ?? { unitId: s.unitId, sessions: 0, bestPercent: null };
         row.sessions += 1;
@@ -290,7 +293,11 @@ export class GetReportCard {
     // `[period.startsAt, period.endsAt)`.
     const dayAttempts = this.#datastore.readAttemptsInRange(learnerId, fromDay, toDay) ?? [];
     return dayAttempts.filter(
-      (a) => isNonEmptyString(a.at) && a.at >= period.startsAt && a.at < period.endsAt,
+      // Regrade corrections excluded (M8 fix 1): their `at` is the regrade
+      // instant — counting them would fabricate active days and concept
+      // evidence inside whatever period the ADMIN ran the fix in.
+      (a) => isNonEmptyString(a.at) && a.at >= period.startsAt && a.at < period.endsAt
+        && a.provenance?.kind !== 'regrade',
     );
   }
 

@@ -81,6 +81,24 @@ describe('bankRev stamping (admin advocacy A3)', () => {
   });
 });
 
+describe('regrade corrections never count as work (M8 fix 1)', () => {
+  it('getResults ignores provenance kind regrade rows', () => {
+    const svc = new SchoolService({
+      datastore: {
+        readAllBankRaws: async () => [],
+        readAllAttempts: () => [
+          { id: 'att_1', at: '2026-08-01T10:00:00.000Z', bankId: 'caps', itemId: 'q1', mode: 'quiz', correct: false },
+          { id: 'att_rg_att_1', at: '2026-08-20T12:00:00.000Z', bankId: 'caps', itemId: 'q1', mode: 'quiz', correct: true, provenance: { kind: 'regrade', of: 'att_1' } },
+        ],
+        readQuizRequests: () => [], saveQuizRequests: () => {},
+      },
+      userService: users, logger: silent, now: () => 1000,
+    });
+    const [row] = svc.getResults('u1');
+    expect(row.quiz.attempts).toBe(1); // the correction is a verdict amendment, not a second attempt
+  });
+});
+
 describe('listQuizRequests fulfilled annotation', () => {
   it('marks a request fulfilled once a bank bound to its unit exists', async () => {
     const svc = makeService();
