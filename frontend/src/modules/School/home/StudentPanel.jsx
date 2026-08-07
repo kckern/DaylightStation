@@ -101,9 +101,13 @@ export default function StudentPanel({ onOpen, bankTitles }) {
   const [reports, setReports] = useState(null);
   const [results, setResults] = useState(null);
   const [coins, setCoins] = useState(null);
+  const [todaySections, setTodaySections] = useState(null);
 
   useEffect(() => {
-    if (!currentUser?.id) { setReports(null); setResults(null); setCoins(null); return undefined; }
+    if (!currentUser?.id) {
+      setReports(null); setResults(null); setCoins(null); setTodaySections(null);
+      return undefined;
+    }
     let alive = true;
     schoolApi.report(currentUser.id, 'learner').then(({ ok, data }) => {
       if (!alive) return;
@@ -119,6 +123,14 @@ export default function StudentPanel({ onOpen, bankTitles }) {
     // depend on its presence.
     schoolApi.wallet?.(currentUser.id)?.then(({ ok, data }) => {
       if (alive && ok && typeof data?.balance === 'number') setCoins(data.balance);
+    });
+    // Today's dry-run plan (debt W7a) — the same side-effect-free preview
+    // the teacher's LearnerDay panel reads. Any failure or an empty plan
+    // just omits the block quietly: a rail never shows an error card.
+    schoolApi.agendaPreview(currentUser.id).then(({ ok, data }) => {
+      if (!alive) return;
+      const sections = ok && data ? (data.sections ?? []) : [];
+      setTodaySections(sections.length ? sections : null);
     });
     return () => { alive = false; };
   }, [currentUser?.id]);
@@ -221,6 +233,29 @@ export default function StudentPanel({ onOpen, bankTitles }) {
           {model.lastActivity && relativeDay(model.lastActivity) && (
             <span>Last active {relativeDay(model.lastActivity)}</span>
           )}
+        </div>
+      )}
+
+      {/* Today's plan (debt W7a) — the dry-run agenda, so the kid sees their
+          own day, not just the single "up next" pick above. No sections or
+          a failed fetch -> omit quietly, never an error card on the rail. */}
+      {todaySections && todaySections.length > 0 && (
+        <div className="school-rail__today">
+          <h4 className="school-rail__today-title">Today</h4>
+          <ul className="school-rail__today-list">
+            {todaySections.map((section) => (
+              <li key={section.subject} className="school-rail__today-item">
+                <span className="school-rail__today-subject">{labelize(section.subject)}</span>
+                <span className="school-rail__today-next">
+                  {section.servedToday
+                    ? 'done today'
+                    : (section.next?.title ?? section.next?.label
+                        ?? (section.next?.unitId ? labelize(section.next.unitId) : undefined)
+                        ?? section.lockedRemedy ?? 'nothing offered')}
+                </span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 

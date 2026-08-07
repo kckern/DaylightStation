@@ -1233,6 +1233,26 @@
     color: var(--school-muted); font-size: 0.9rem;
   }
 
+  // Today's dry-run plan (debt W7a) — same omit-quietly rule as standing
+  // and feedback below: no sections, no block, never an empty-state scold.
+  &__today {
+    display: flex; flex-direction: column; gap: 0.4rem;
+    padding: 0.75rem; border-radius: 12px; background: var(--school-surface-2);
+  }
+  &__today-title {
+    margin: 0; font-size: 0.8rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--school-muted);
+  }
+  &__today-list {
+    list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.35rem;
+  }
+  &__today-item {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem;
+    font-size: 0.95rem;
+  }
+  &__today-subject { font-weight: 600; }
+  &__today-next { color: var(--school-muted); }
+
   // Kid-visible standing + feedback delivery (Task 9, spec R7 / adequacy
   // SHOULD 9) — both sections omit entirely rather than render empty, so no
   // "nothing here" chrome of their own is needed.
