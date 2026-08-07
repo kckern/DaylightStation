@@ -16,6 +16,7 @@
  * somebody finally NOTICES.
  */
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
+import { TRANSITIONS } from '#domains/school/sessions/sessionEvents.mjs';
 
 export class MarkSessionAbandoned {
   #sessions; #teacherGate; #learnerDirectory; #clock; #logger;
@@ -40,6 +41,14 @@ export class MarkSessionAbandoned {
     if (!row) throw new EntityNotFoundError('session', sessionId);
     if (row.terminal) {
       throw new ValidationError(`session ${sessionId} is already settled (${row.state}) — nothing to abandon`);
+    }
+    // The event machine is the authority (M8 fix): `abandoned` is legal from
+    // only some states. Appending it anyway would record a permanent anomaly
+    // WITHOUT changing state — the row would 'succeed' and then reappear.
+    if (!(TRANSITIONS[row.state] ?? []).includes('abandoned')) {
+      throw new ValidationError(
+        `session ${sessionId} is ${row.state} — that work settles through grading/close, not abandonment`,
+      );
     }
     await this.#sessions.appendEvent(sessionId, {
       type: 'abandoned',

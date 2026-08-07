@@ -52,13 +52,25 @@ export class RegradeBankAttempts {
 
     const changes = [];
     let checked = 0;
+    let alreadyCorrected = 0;
+    const today = this.#clock().toISOString().slice(0, 10);
     const learners = await this.#learnerDirectory.listLearners();
     for (const learner of learners) {
       const attempts = this.#datastore.readAttemptsInRange(learner.id, fromDay, toDay) ?? [];
+      // Idempotency (M8 fix 3): corrective rows carry `at` = APPLY time, which
+      // lands outside the scanned window — so re-running used to re-append
+      // every correction. Scan forward to today for existing corrections and
+      // skip their targets.
+      const corrected = new Set(
+        (this.#datastore.readAttemptsInRange(learner.id, fromDay, today) ?? [])
+          .filter((a) => a.provenance?.kind === 'regrade')
+          .map((a) => a.provenance.of),
+      );
       for (const attempt of attempts) {
         if (attempt.bankId !== bankId) continue;
         if (attempt.given === null || attempt.given === undefined) continue; // self-graded: nothing to re-run
         if (attempt.provenance?.kind === 'regrade') continue; // never regrade a correction
+        if (corrected.has(attempt.id)) { alreadyCorrected += 1; continue; } // already amended — idempotent re-run
         const item = items.get(attempt.itemId);
         if (!item) continue; // item re-cut out of the bank — visible via bankRev drift, not regradeable
         checked += 1;
@@ -98,6 +110,7 @@ export class RegradeBankAttempts {
       bankId,
       applied: Boolean(apply),
       checked,
+      alreadyCorrected,
       changed: changes.map(({ original, ...rest }) => rest),
       sessionsAffected,
     };

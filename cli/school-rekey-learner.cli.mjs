@@ -26,7 +26,15 @@ import path from 'node:path';
 import yaml from 'js-yaml';
 
 /** Keys whose VALUE is a learner identity. Actor keys are deliberately absent. */
-const LEARNER_KEYS = new Set(['learnerId', 'userId', 'attributedTo', 'reassignedFrom', 'reassignedTo']);
+const LEARNER_KEYS = new Set([
+  'learnerId', 'userId', 'attributedTo',
+  // attempt-store reassignment stamps (live in per-user files)
+  'reassignedFrom', 'reassignedTo',
+  // household session `reassigned` EVENT field names (M8 fix 4): the reducer
+  // sets learnerId from toLearnerId, and index.yml is recomputed from reduced
+  // events on the next append — missing these flips a rekeyed session back.
+  'fromLearnerId', 'toLearnerId',
+]);
 const LEARNER_LIST_KEYS = new Set(['learnerIds']);
 
 /** Recursively rewrite learner identities in a parsed YAML value. Returns hit count. */
@@ -96,12 +104,17 @@ export function runRekey({ dataDir, oldId, newId, apply = false }) {
     }
   }
 
-  // 3. Learner identities INSIDE every YAML under the school root.
-  for (const file of walkYamlFiles(schoolDir)) {
-    let doc;
-    try { doc = yaml.load(fs.readFileSync(file, 'utf8')); } catch { warnings.push(`unparseable, skipped: ${file}`); continue; }
-    const hits = rewriteLearnerIds(doc, oldId, newId);
-    if (hits) edits.push({ file, hits, doc });
+  // 3. Learner identities INSIDE every YAML under the household school root
+  //    AND under the per-user school dir (M8 fix 5): renaming users/{id}
+  //    wholesale left attempts' attributedTo and frozen report cards'
+  //    learnerId carrying the old string inside the moved directory.
+  for (const root of [schoolDir, path.join(userDirOld, 'apps', 'school')]) {
+    for (const file of walkYamlFiles(root)) {
+      let doc;
+      try { doc = yaml.load(fs.readFileSync(file, 'utf8')); } catch { warnings.push(`unparseable, skipped: ${file}`); continue; }
+      const hits = rewriteLearnerIds(doc, oldId, newId);
+      if (hits) edits.push({ file, hits, doc });
+    }
   }
 
   if (apply) {

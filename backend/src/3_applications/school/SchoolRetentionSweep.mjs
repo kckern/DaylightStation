@@ -53,15 +53,18 @@ export class SchoolRetentionSweep {
     let droppedQuizRequests = 0;
     if (this.#schoolService && this.#ds.readQuizRequests && this.#ds.saveQuizRequests) {
       await this.#schoolService.warmBanks?.();
+      // \u0000 join (house rule, 870a9725d): ids can carry ':' (web:kckern
+      // is on the prod roster) — a raw colon key can collide.
+      const key = (r) => `${r.userId}\u0000${r.unitId ?? ''}`;
       const fulfilled = new Set(
         this.#schoolService.listQuizRequests?.()
           ?.filter((r) => r.fulfilled)
-          .map((r) => `${r.userId}:${r.unitId ?? ''}`) ?? [],
+          .map(key) ?? [],
       );
       const list = this.#ds.readQuizRequests();
       const keep = list.filter((r) => {
         if (r.kind) return true; // retakes/flags: a child's voice, never swept
-        if (!fulfilled.has(`${r.userId}:${r.unitId ?? ''}`)) return true;
+        if (!fulfilled.has(key(r))) return true;
         return !(r.at && r.at < iso(fulfilledDays));
       });
       droppedQuizRequests = list.length - keep.length;

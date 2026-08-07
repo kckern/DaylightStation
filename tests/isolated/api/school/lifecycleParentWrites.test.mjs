@@ -228,4 +228,12 @@ describe('the stale-work sweep over HTTP (admin advocacy A5)', () => {
     const res = await post('/sessions/ses_done/abandon', { learnerId: 'learner-1', decidedBy: 'dad', reason: 'r' });
     expect(res.status).toBe(400);
   });
+
+  it('refuses states where the event machine forbids abandoned — no anomalous append that "succeeds" and lies (M8 fix 2)', async () => {
+    sessionRows.push({ sessionId: 'ses_submitted', learnerId: 'learner-1', unitId: 'frac.04', state: 'submitted', terminal: false, updatedAt: '2026-07-01T09:00:00.000Z' });
+    const res = await post('/sessions/ses_submitted/abandon', { learnerId: 'learner-1', decidedBy: 'dad', reason: 'r' });
+    expect(res.status).toBe(400);
+    expect(await res.text()).toMatch(/grading/);
+    expect(appendedEvents).toEqual([]);
+  });
 });

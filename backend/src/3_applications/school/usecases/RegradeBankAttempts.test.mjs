@@ -22,7 +22,15 @@ const ATTEMPTS = {
 
 const make = ({ appended = [] } = {}) => new RegradeBankAttempts({
   datastore: {
-    readAttemptsInRange: (learnerId) => ATTEMPTS[learnerId] ?? [],
+    // The fake honors the ranged read INCLUDING appended corrections, so the
+    // idempotency scan-to-today sees them like the real store would.
+    readAttemptsInRange: (learnerId, fromDay, toDay) => [
+      ...(ATTEMPTS[learnerId] ?? []),
+      ...appended.filter((r) => r.learnerId === learnerId).map((r) => r.attempt),
+    ].filter((a) => {
+      const day = String(a.at).slice(0, 10);
+      return day >= fromDay && day <= toDay;
+    }),
     appendAttempt: vi.fn((learnerId, attempt) => { appended.push({ learnerId, attempt }); return attempt; }),
   },
   bankReader: { getBank: (id) => (id === 'caps' ? BANK : null) },
@@ -53,7 +61,18 @@ describe('RegradeBankAttempts (admin advocacy #5)', () => {
       provenance: { kind: 'regrade', of: 'att_1', by: 'kckern', reason: 'answer key fixed' },
     });
     expect(appended[0].attempt.bankRev).toMatch(/^[0-9a-f]{12}$/);
-    // Re-running skips prior corrections (provenance kind regrade).
+  });
+
+  it('re-running --apply is IDEMPOTENT — prior corrections are found forward-of-window and skipped (M8 fix 3)', async () => {
+    const appended = [];
+    const uc = make({ appended });
+    const args = { bankId: 'caps', fromDay: '2026-08-01', toDay: '2026-08-02', reason: 'answer key fixed', regradedBy: 'kckern', apply: true };
+    await uc.execute(args);
+    expect(appended).toHaveLength(1);
+    const second = await uc.execute(args); // the corrective row's at (2026-08-20) is OUTSIDE the scanned window
+    expect(second.changed).toEqual([]);
+    expect(second.alreadyCorrected).toBe(1);
+    expect(appended).toHaveLength(1); // nothing re-appended
   });
 
   it('gate-checked and reason required', async () => {
