@@ -76,7 +76,7 @@ export function buildBankIndex(banks, { trackParents = null } = {}) {
 // instant for everyone; coalesce concurrent fetches so the frontend's retries
 // don't stampede the stall.
 const MATERIAL_TIMEOUT_MS = 20_000;
-const MATERIAL_TTL_MS = 300_000; // units rarely change; progress is folded fresh each call
+const MATERIAL_TTL_MS = 3_600_000; // units rarely change; progress is folded fresh each call
 
 export class GetMaterialUnits {
   #catalog;
