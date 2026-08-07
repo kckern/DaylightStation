@@ -3129,11 +3129,18 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const { RecordAttestation } = await import('#apps/school/usecases/RecordAttestation.mjs');
   const { RecordTeacherNote } = await import('#apps/school/usecases/RecordTeacherNote.mjs');
   const { ReassignEvidence } = await import('#apps/school/usecases/ReassignEvidence.mjs');
+  const { YamlReassignmentLog } = await import('#adapters/persistence/yaml/YamlReassignmentLog.mjs');
   const schoolAttestations = new YamlAttestationLog({ configService, logger: rootLogger.child({ module: 'school-attestations' }) });
   const schoolTeacherNotes = new YamlTeacherNotes({ configService, logger: rootLogger.child({ module: 'school-teacher-notes' }) });
   const recordAttestation = new RecordAttestation({ log: schoolAttestations, teacherGate: schoolTeacherGate, notes: schoolTeacherNotes });
   const recordTeacherNote = new RecordTeacherNote({ notes: schoolTeacherNotes, teacherGate: schoolTeacherGate });
-  const reassignEvidence = new ReassignEvidence({ datastore: schoolDatastore, teacherGate: schoolTeacherGate, notes: schoolTeacherNotes });
+  // Task 12 (debt M5): reassignments write their own audit trail — a
+  // best-effort append that never blocks or unwinds the move itself.
+  const schoolReassignmentLog = new YamlReassignmentLog({ configService, logger: rootLogger.child({ module: 'school-reassignments' }) });
+  const reassignEvidence = new ReassignEvidence({
+    datastore: schoolDatastore, teacherGate: schoolTeacherGate, notes: schoolTeacherNotes,
+    auditLog: schoolReassignmentLog, logger: rootLogger.child({ module: 'school-reassignments' }),
+  });
   const { RetractTeacherRecord } = await import('#apps/school/usecases/RetractTeacherRecord.mjs');
   const retractTeacherRecord = new RetractTeacherRecord({
     stores: { enrichment: schoolEnrichmentLog, attestation: schoolAttestations, note: schoolTeacherNotes },
@@ -3262,6 +3269,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     teacherNotesStore: schoolTeacherNotes,
     recordTeacherNote,
     reassignEvidence,
+    reassignmentLog: schoolReassignmentLog,
     attemptsStore: schoolDatastore,
     retractTeacherRecord,
     getTranscript,

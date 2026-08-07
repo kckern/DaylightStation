@@ -4,22 +4,29 @@
  * one. The move IS the design ("the log is the source of truth, so a later
  * reassignment moves the evidence and the statistics together"); every
  * derived rollup follows automatically. Gated; audited in the moved events
- * themselves (reassignedFrom/By/At) and in the returned receipt.
+ * themselves (reassignedFrom/By/At) and in the returned receipt. Optionally
+ * also appended to a standalone audit trail (`auditLog`, Task 12 / debt
+ * M5) — a queryable "who moved what, when" history distinct from the
+ * per-event provenance stamps. That append is BEST-EFFORT: the move has
+ * already committed by the time it runs, so a broken/corrupt log can
+ * never block or unwind it (same posture as `#tellKids` below).
  */
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export class ReassignEvidence {
-  #datastore; #teacherGate; #clock; #notes;
+  #datastore; #teacherGate; #clock; #notes; #auditLog; #logger;
 
-  constructor({ datastore, teacherGate, notes = null, clock = () => new Date() } = {}) {
+  constructor({ datastore, teacherGate, notes = null, auditLog = null, clock = () => new Date(), logger = console } = {}) {
     if (!datastore) throw new Error('ReassignEvidence requires datastore');
     if (!teacherGate) throw new Error('ReassignEvidence requires teacherGate');
     this.#datastore = datastore;
     this.#teacherGate = teacherGate;
     this.#clock = clock;
     this.#notes = notes;
+    this.#auditLog = auditLog;
+    this.#logger = logger;
   }
 
   async execute({ fromLearnerId, toLearnerId, day, assessmentId, reassignedBy = null, pin = null } = {}) {
@@ -37,10 +44,24 @@ export class ReassignEvidence {
       reassignedBy, at: this.#clock().toISOString(),
     });
     if (!moved) throw new EntityNotFoundError('assessment attempts', `${fromLearnerId}/${day}/${assessmentId}`);
+    // The standalone audit trail (Task 12, debt M5) — best-effort, after the
+    // move already committed; see class doc.
+    await this.#recordAudit({ fromLearnerId, toLearnerId, day, assessmentId, moved, reassignedBy });
     // No silent verbs about children (student-advocacy A5): both kids hear
     // what happened to the record in their own feed.
     await this.#tellKids({ fromLearnerId, toLearnerId, day, reassignedBy });
     return { moved, fromLearnerId, toLearnerId, day, assessmentId };
+  }
+
+  async #recordAudit({ fromLearnerId, toLearnerId, day, assessmentId, moved, reassignedBy }) {
+    if (!this.#auditLog) return;
+    try {
+      await this.#auditLog.append({
+        at: this.#clock().toISOString(), fromLearnerId, toLearnerId, day, assessmentId, moved, reassignedBy,
+      });
+    } catch (err) {
+      this.#logger.warn?.('school.reassign.audit-failed', { fromLearnerId, toLearnerId, day, assessmentId, error: err?.message });
+    }
   }
 
   async #tellKids({ fromLearnerId, toLearnerId, day, reassignedBy }) {
