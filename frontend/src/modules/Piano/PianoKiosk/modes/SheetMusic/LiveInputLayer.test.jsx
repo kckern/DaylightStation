@@ -89,4 +89,32 @@ describe('LiveInputLayer', () => {
     cleanup();
     expect(marks(renderLayer({ step: null }).container)).toHaveLength(0);
   });
+
+  // The staff a mark lands on is the staff of the NEAREST written pitch, so a
+  // fumbled left-hand note inks on the left-hand staff. Fixture: staff 0 top=10,
+  // staff 1 top=120 — a mark's notehead cy tells us unambiguously which it chose.
+  const noteheadCy = (c) => {
+    const el = c.querySelector('.piano-live-input__note ellipse');
+    return el ? Number(el.getAttribute('cy')) : null;
+  };
+
+  it('places a held pitch on the staff of the nearest written pitch', () => {
+    // 61 is 1 semitone from the LH's written 60 and 6 from the RH's 67, so it
+    // belongs on the LOWER staff even though it matches neither.
+    hold(61);
+    const { container } = renderLayer();
+    expect(noteheadCy(container)).toBeGreaterThan(100);
+  });
+
+  it('places a pitch nearest the upper staff on the upper staff', () => {
+    hold(67);
+    const { container } = renderLayer();
+    expect(noteheadCy(container)).toBeLessThan(100);
+  });
+
+  it('falls back to the top staff when the step writes nothing', () => {
+    hold(67);
+    const { container } = renderLayer({ step: { notes: [] } });
+    expect(noteheadCy(container)).toBeLessThan(100);
+  });
 });
