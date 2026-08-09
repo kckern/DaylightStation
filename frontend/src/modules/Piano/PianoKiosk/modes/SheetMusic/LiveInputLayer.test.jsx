@@ -16,7 +16,14 @@ const STAFF_BOXES = [
   { system: 0, staff: 0, top: 10, left: 40, right: 300, lineSpacing: 10 },
   { system: 0, staff: 1, top: 120, left: 40, right: 300, lineSpacing: 10 },
 ];
-const STEP = { notes: [{ midi: 67, staff: 0 }, { midi: 60, staff: 1 }] };
+// x/top/bottom/width are the engraved notehead's own box (osmdRender.js's
+// buildSteps) — Fix 1 registers a match mark on THIS geometry, not cursorX.
+const STEP = {
+  notes: [
+    { midi: 67, staff: 0, x: 210, top: 30, bottom: 42, width: 12 },
+    { midi: 60, staff: 1, x: 180, top: 140, bottom: 152, width: 12 },
+  ],
+};
 const hold = (...midis) => { h.active = new Map(midis.map((m) => [m, { velocity: 80, timestamp: 0 }])); };
 
 const renderLayer = (props = {}) => render(
@@ -59,8 +66,10 @@ describe('LiveInputLayer', () => {
   });
 
   it('still draws the match while the gate is active', () => {
+    // Both hands active, matching the un-gated default — 67 is written for RH
+    // and RH is active, so it still reads as a match; 61 is written nowhere.
     hold(67, 61);
-    const { container } = renderLayer({ gateActive: true });
+    const { container } = renderLayer({ gateActive: true, activeParts: { 0: true, 1: true } });
     expect(kinds(container)).toEqual(['is-match']);
   });
 
@@ -109,7 +118,9 @@ describe('LiveInputLayer', () => {
   });
 
   it('places a pitch nearest the upper staff on the upper staff', () => {
-    hold(67);
+    // 68 is unwritten (a ghost, exercising nearest-staff fallback), 1 semitone
+    // from the RH's written 67 and 7 from the LH's written 60.
+    hold(68);
     const { container } = renderLayer();
     expect(noteheadCy(container)).toBeLessThan(100);
   });
@@ -118,6 +129,73 @@ describe('LiveInputLayer', () => {
     hold(67);
     const { container } = renderLayer({ step: { notes: [] } });
     expect(noteheadCy(container)).toBeLessThan(100);
+  });
+
+  // Fix 1 — a match registers on the WRITTEN note's own engraved geometry
+  // (step.notes[].x/top/bottom/width), never on cursorX. cursorX is the OSMD
+  // cursor element's centre, a different point than the notehead's true centre;
+  // drawing there produced a smeared second note beside the real one.
+  it('registers a match on the written note\'s own x, not cursorX', () => {
+    hold(67);
+    const { container } = renderLayer({ cursorX: 999 }); // far from the written 67's x=210
+    const head = container.querySelector('.piano-live-input__note.is-match ellipse');
+    expect(Number(head.getAttribute('cx'))).toBe(210);
+    expect(Number(head.getAttribute('cy'))).toBe(36); // (top 30 + bottom 42) / 2
+  });
+
+  it('draws a match as a notehead only — no stem, no ledger, no second glyph', () => {
+    hold(67);
+    const { container } = renderLayer();
+    const g = container.querySelector('.piano-live-input__note.is-match');
+    expect(g.children).toHaveLength(1);
+    expect(g.querySelector('ellipse')).not.toBeNull();
+    expect(g.querySelector('line')).toBeNull();
+    expect(g.querySelector('path')).toBeNull();
+  });
+
+  it('still draws a ghost as a full glyph at the cursor column', () => {
+    hold(61);
+    const { container } = renderLayer({ cursorX: 333 });
+    const g = container.querySelector('.piano-live-input__note.is-ghost');
+    // WetNoteGlyph draws a stem for a quarter note — the ghost path, unlike the
+    // match path, is unchanged by Fix 1.
+    expect(g.querySelector('line')).not.toBeNull();
+    const head = g.querySelector('ellipse');
+    expect(Number(head.getAttribute('cx'))).toBe(333);
+  });
+
+  it('renders nothing for a match with no corresponding entry in step.notes, rather than throwing', () => {
+    // Shouldn't happen — `written` is built FROM step.notes, so a midi it yields
+    // is normally guaranteed to have an entry. Prove the defensive `if (!n)
+    // continue` holds anyway, by giving `step.notes` a getter that answers
+    // differently on the two reads the component makes (once to build the
+    // written set, once to look up the matched note's geometry).
+    hold(67);
+    let call = 0;
+    const trickyStep = {
+      get notes() {
+        call += 1;
+        return call === 1 ? [{ midi: 67, staff: 0, x: 210, top: 30, bottom: 42, width: 12 }] : [];
+      },
+    };
+    const { container } = renderLayer({ step: trickyStep });
+    expect(marks(container)).toHaveLength(0);
+  });
+
+  // Fix 2 — while the gate grades, "match" must mean what the GATE means: scoped
+  // to the active hands, via expectedMidisAtStep. Otherwise a pitch the gate
+  // calls wrong (the other hand's note during one-handed practice) would draw
+  // green here at the same time the gate inks it red elsewhere.
+  it('draws nothing for the inactive hand\'s written pitch while the gate grades RH only', () => {
+    hold(60); // LH's written pitch
+    const { container } = renderLayer({ gateActive: true, activeParts: { 0: true } });
+    expect(marks(container)).toHaveLength(0);
+  });
+
+  it('draws that same pitch as a match once the gate is off', () => {
+    hold(60);
+    const { container } = renderLayer({ gateActive: false, activeParts: { 0: true } });
+    expect(kinds(container)).toEqual(['is-match']);
   });
 });
 

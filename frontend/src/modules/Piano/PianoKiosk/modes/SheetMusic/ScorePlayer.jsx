@@ -1986,6 +1986,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
               clefs={inkClefs}
               keyFifths={inkFifths}
               gateActive={learnGate}
+              activeParts={activeParts}
             />
           )}
           {showGrades && layoutFresh && (
