@@ -2785,8 +2785,6 @@
 
   &__note {
     &.is-wrong { color: #ff5252; animation: piano-ink-fade 900ms ease-out forwards; }
-    &.is-hit { color: var(--piano-accent, #2ec46f); animation: piano-ink-fade 350ms ease-out forwards; }
-    &.is-neutral { color: var(--piano-muted, #8a8f98); animation: piano-ink-fade 500ms ease-out forwards; }
   }
 }
 @keyframes piano-ink-fade {

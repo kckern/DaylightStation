@@ -66,6 +66,14 @@ const h = vi.hoisted(() => ({
   // landing after the score has already engraved.
   prefsLoaded: true,
   prefsListeners: new Set(),
+  // usePianoMidiNotes (Task 4, live input viz) — the HELD-note store LiveInputLayer
+  // subscribes to. It is deliberately a SEPARATE mechanism from noteCbs above (the
+  // note_on/note_off event bus): production's real hook is its own multicast
+  // subscription, unrelated to `subscribe()`. `activeNotes` starts empty like every
+  // OTHER test's "nothing held" default; holdNotes() (below, near play/enterLearn)
+  // sets it and notifies midiNotesListeners so components re-render with it.
+  activeNotes: new Map(),
+  midiNotesListeners: new Set(),
 }));
 
 // Derive per-onset full-staff steps from the melody events: the first pitch of
@@ -80,18 +88,33 @@ const deriveSteps = (events) => events.map((e) => ({
 // exist for the Follow tracker + part chips.
 const deriveNotes = (steps) => steps.flatMap((s) => s.notes.map((n) => ({ midi: n.midi, staff: n.staff, onsetQuarter: s.onsetQuarter, durationQuarters: 1 })));
 
-vi.mock('../../PianoMidiContext.jsx', () => ({
-  usePianoMidi: () => ({
-    subscribe: (fn) => { h.noteCbs.add(fn); return () => { h.noteCbs.delete(fn); }; },
-    subscribeRaw: (fn) => { h.rawCb = fn; return () => { h.rawCb = null; }; },
-    pressNote: h.pressNote,
-    releaseNote: h.releaseNote,
-    sendNoteAt: h.sendNoteAt,
-    sendNoteOffAt: h.sendNoteOffAt,
-    sendPanic: h.sendPanic,
-  }),
-  usePianoMidiNotes: () => ({ activeNotes: new Map(), noteHistory: [], sustainPedal: false, isPlaying: false }),
-}));
+vi.mock('../../PianoMidiContext.jsx', async () => {
+  const { useEffect, useReducer } = await import('react');
+  return {
+    usePianoMidi: () => ({
+      subscribe: (fn) => { h.noteCbs.add(fn); return () => { h.noteCbs.delete(fn); }; },
+      subscribeRaw: (fn) => { h.rawCb = fn; return () => { h.rawCb = null; }; },
+      pressNote: h.pressNote,
+      releaseNote: h.releaseNote,
+      sendNoteAt: h.sendNoteAt,
+      sendNoteOffAt: h.sendNoteOffAt,
+      sendPanic: h.sendPanic,
+    }),
+    // Backs LiveInputLayer's held-note display (Task 4). Subscribed exactly like
+    // the usePianoPreferences mock above (a listener set + a bump reducer), so
+    // holdNotes() can update h.activeNotes after mount and have every subscribed
+    // component re-render with it — the real hook's own multicast subscription,
+    // reproduced just enough to exercise the consumer.
+    usePianoMidiNotes: () => {
+      const [, bump] = useReducer((c) => c + 1, 0);
+      useEffect(() => {
+        h.midiNotesListeners.add(bump);
+        return () => h.midiNotesListeners.delete(bump);
+      }, [bump]);
+      return { activeNotes: h.activeNotes, noteHistory: [], sustainPedal: false, isPlaying: h.activeNotes.size > 0 };
+    },
+  };
+});
 vi.mock('../../PianoPlaybackContext.jsx', () => ({ usePianoPlayback: () => ({ setPlaying: () => {} }) }));
 vi.mock('../../PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ config: { keyboard: { startNote: 21, endNote: 108 } } }) }));
 vi.mock('../../PianoBreadcrumbContext.jsx', () => ({ usePianoBreadcrumb: (crumbs) => { h.crumbs = crumbs || []; } }));
@@ -196,6 +219,16 @@ const play = (note) => emitNote({ type: 'note_on', note, velocity: 80 });
 const renderPlayer = () =>
   render(<MemoryRouter><ScorePlayer score={{ title: 'Mary', musicXml: '<score/>' }} /></MemoryRouter>);
 
+// Sets the mocked live-note store's activeNotes and notifies every subscribed
+// component (see the usePianoMidiNotes mock above) so it re-renders holding
+// exactly these midis — no args releases everything. Snapshot the listener set
+// first, same discipline as emitNote: a bump can itself (re)subscribe as a side
+// effect of the render it triggers.
+const holdNotes = (...midis) => act(() => {
+  h.activeNotes = new Map(midis.map((m) => [m, { velocity: 80, timestamp: 0 }]));
+  [...h.midiNotesListeners].forEach((bump) => bump());
+});
+
 beforeEach(() => {
   h.noteCbs = new Set(); h.rawCb = null; h.layoutExtras = {};
   h.holdLayout = false; h.releaseLayout = null;
@@ -221,6 +254,8 @@ beforeEach(() => {
   h.practicePersistent = true;
   h.prefsLoaded = true;
   h.prefsListeners = new Set();
+  h.activeNotes = new Map();
+  h.midiNotesListeners = new Set();
 });
 
 // Mode switching now lives in the header crumb → ModeSheet (wave-2 B), not a
@@ -268,6 +303,10 @@ const clearAutoRange = () => {
 
 // Scores now open in Listen (default). The Learn tests select Learn first.
 const enterLearn = () => { pickMode('Learn'); clearAutoRange(); };
+// Polish and Perform carry no per-score range state, so neither needs the
+// auto-range clear enterLearn does.
+const enterPolish = () => pickMode('Polish');
+const enterPerform = () => pickMode('Perform');
 
 // Learn's GATE (wave-3 §B): the follow tracker only drives the cursor when a
 // practice range is armed AND looping is on — Learn WITHOUT a range is machine
@@ -2645,17 +2684,25 @@ describe('ScorePlayer — Learn state matrix (wave-3 B)', () => {
   it('Learn without a range runs no wrong-note gate — a mismatched note neither shakes nor blocks', async () => {
     h.layoutExtras = THREE;
     await enterLearnFresh();
-    // EXACTLY one subscriber, and it is the neutral wet ink (wave-3 D) — the
-    // follow tracker is not on the bus at all. The count is the load-bearing
-    // assertion: it is what fails if the tracker's `enabled` is ever widened from
-    // `learnGate` to `mode === 'learn'`, which the behavioural checks below cannot
-    // catch on their own (a second subscriber is invisible to them).
-    expect(h.noteCbs.size).toBe(1);
-    play(61); // a wrong note against step 0 (E4/E2)
-    expect(document.querySelector('.piano-learn-ink__note.is-neutral')).not.toBeNull(); // ink is the one subscriber
+    // ZERO subscribers on the note bus — the follow tracker is not on it (no
+    // gate), and nothing else subscribes there either: the neutral wet ink this
+    // used to cover is retired (Task 4, live input viz) — the held-note live
+    // layer draws it instead, off a different store entirely, not this bus. The
+    // count is the load-bearing assertion: it is what fails if the tracker's
+    // `enabled` is ever widened from `learnGate` to `mode === 'learn'`, which the
+    // behavioural checks below cannot catch on their own (a subscriber appearing
+    // is invisible to them).
+    expect(h.noteCbs.size).toBe(0);
+    play(61); // a wrong note against step 0 (E4/E2) — the bus is inert, a no-op
     expect(document.querySelector('.piano-score-cursor.is-wrong')).toBeNull();
     expect(document.querySelector('.piano-learn-ink__note.is-wrong')).toBeNull();
     expect(pos()).toContain('m 1 / 3'); // and input does not drive the cursor either
+
+    // Held anyway, the live layer still shows it — recessed (61 isn't written at
+    // step 0), never judged, since nothing is gated in the machine rows.
+    holdNotes(61);
+    await act(async () => {});
+    expect(document.querySelectorAll('.piano-live-input__note.is-ghost')).toHaveLength(1);
   });
 
   // ── Spec 2: range + loop ON = the gate ──────────────────────────────────────
@@ -2666,9 +2713,10 @@ describe('ScorePlayer — Learn state matrix (wave-3 B)', () => {
     expect(screen.getByRole('button', { name: 'Learn advances as you play' })).toBeDisabled();
     act(() => vi.advanceTimersByTime(2000));
     expect(h.sendNoteAt).not.toHaveBeenCalled(); // the kiosk performs nothing in the gate
-    // Exactly one subscriber here too — the TRACKER. The wet-ink effect gates on
-    // machineLearn, so the gate row inks via the tracker's own hit/wrong callbacks
-    // rather than a second subscription.
+    // Exactly one subscriber here too — the TRACKER. The gate row's red wrong-note
+    // ink comes from the tracker's own onWrong callback, not a second subscription
+    // (the neutral-ink effect that used to share the bus in the machine rows is
+    // retired — Task 4, live input viz).
     expect(h.noteCbs.size).toBe(1);
     play(64); play(40);                          // all active-staff notes of step 0
     expect(pos()).toContain('m 2 / 3');           // …advances the cursor
@@ -2725,16 +2773,21 @@ describe('ScorePlayer — Learn state matrix (wave-3 B)', () => {
     armLoopAt(160);
     expect(h.noteCbs.size).toBe(1); // the tracker, alone
     toggleLoop(); // loop OFF
-    // The tracker actually UNSUBSCRIBED — still exactly one subscriber, but now it
-    // is the neutral wet ink (wave-3 D), which gates nothing. Without the count,
-    // "tracker gone, ink here" and "tracker still here, ink stacked on top" look
-    // identical from the DOM.
-    expect(h.noteCbs.size).toBe(1);
-    play(63);
+    // The tracker actually UNSUBSCRIBED — the bus drops to ZERO subscribers.
+    // Nothing takes its place: the neutral wet ink that used to share the bus
+    // here is retired (Task 4, live input viz); the live layer reads the
+    // held-note store, not this bus.
+    expect(h.noteCbs.size).toBe(0);
+    play(63); // the bus is inert now — a no-op
     expect(document.querySelector('.piano-score-cursor.is-wrong')).toBeNull();
-    expect(document.querySelector('.piano-learn-ink__note.is-neutral')).not.toBeNull();
     expect(pos()).toContain('m 2 / 3');                            // cursor stays where it was
     expect(screen.getByRole('button', { name: 'Play' })).not.toBeDisabled();
+
+    // Held anyway, the live layer still shows it — recessed (63 doesn't match m2's
+    // written D4/62), never judged, since the gate just dropped.
+    holdNotes(63);
+    await act(async () => {});
+    expect(document.querySelectorAll('.piano-live-input__note.is-ghost')).toHaveLength(1);
   });
 
   // ── Spec 6: loop/focus is Learn-only state ──────────────────────────────────
@@ -3711,6 +3764,40 @@ describe('ScorePlayer — staff dim (Task 8)', () => {
   });
 });
 
+describe('ScorePlayer — live input viz', () => {
+  afterEach(() => { cleanup(); });
+
+  const liveMarks = () => document.querySelectorAll('.piano-live-input__note');
+
+  it('draws held notes in Listen', async () => {
+    renderPlayer(); // opens in Listen
+    await act(async () => {});
+    holdNotes(64); // the first step's written pitch in this fixture
+    await act(async () => {});
+    expect(liveMarks()).toHaveLength(1);
+  });
+
+  it('draws held notes in Polish', async () => {
+    renderPlayer();
+    await act(async () => {});
+    enterPolish();
+    await act(async () => {});
+    holdNotes(64);
+    await act(async () => {});
+    expect(liveMarks()).toHaveLength(1);
+  });
+
+  it('draws nothing in Perform — that mode has no chrome at all', async () => {
+    renderPlayer();
+    await act(async () => {});
+    enterPerform();
+    await act(async () => {});
+    holdNotes(64);
+    await act(async () => {});
+    expect(liveMarks()).toHaveLength(0);
+  });
+});
+
 // Learn wet ink (wave-3 D): a wrong note draws the PLAYED pitch in red on the
 // staff, so "no" also answers "then what did I play?". The keyboard reveal moves
 // onto a 3-consecutive-wrongs budget — help when genuinely stuck, not a spoiler
@@ -3748,15 +3835,19 @@ describe('ScorePlayer — Learn wet ink + reveal budget (wave-3 D)', () => {
     expect(document.querySelector('svg.piano-learn-ink')).toBeNull(); // layer folds away entirely
   });
 
-  it('inks a correct note as a hit flash', async () => {
+  it('draws a correct note as a live match mark while held, gone once released', async () => {
+    // The wet-ink hit flash is retired (Task 4, live input viz) — the held-note
+    // live layer covers this now: green while the key is down, not a timed fade.
     renderPlayer();
     await act(async () => {});
     enterLearnGate();
-    play(64); // step 0's RH note — a hit (the step needs the LH notes too, so no advance)
-    expect(ink('hit')).toHaveLength(1);
+    holdNotes(64); // step 0's RH note — matches what's written at the cursor
+    await act(async () => {});
+    expect(document.querySelectorAll('.piano-live-input__note.is-match')).toHaveLength(1);
     expect(ink('wrong')).toHaveLength(0);
-    act(() => vi.advanceTimersByTime(400)); // past the 350ms hit TTL
-    expect(ink('hit')).toHaveLength(0);
+    holdNotes(); // release
+    await act(async () => {});
+    expect(document.querySelectorAll('.piano-live-input__note')).toHaveLength(0);
   });
 
   it('does not reveal the keyboard on the first two wrongs — the third does', async () => {
@@ -3801,20 +3892,28 @@ describe('ScorePlayer — Learn wet ink + reveal budget (wave-3 D)', () => {
     expect(targets()).toHaveLength(0);
   });
 
-  it('inks NEUTRAL in the machine rows — never red, never a shake', async () => {
+  it('shows held notes as live matches/ghosts in the machine rows — never red, never a shake', async () => {
+    // The wet-ink neutral trace this used to cover is retired (Task 4, live
+    // input viz) — the held-note live layer draws every held note here too, off
+    // the held-note store rather than this bus, and un-judged either way: a
+    // match if it's written at the cursor, a recessed ghost if it isn't.
     renderPlayer();
     await act(async () => {});
     enterLearn(); // Learn WITHOUT a range = machine playback (wave-3 §B row 1)
-    expect(h.noteCbs.size).toBe(1); // the ink effect, and nothing else — no gate on the bus
-    play(63);
-    expect(ink('neutral')).toHaveLength(1);
-    expect(ink('wrong')).toHaveLength(0);
+    expect(h.noteCbs.size).toBe(0); // nothing subscribes to the note bus without a gate
+    play(63); // the bus is inert here — no wrong ink, no reveal, however many notes land
+    expect(document.querySelector('svg.piano-learn-ink')).toBeNull();
     expect(document.querySelector('.piano-score-cursor.is-wrong')).toBeNull();
-    expect(targets()).toHaveLength(0); // and no reveal, however many notes land
+    expect(targets()).toHaveLength(0);
     play(63); play(63); play(63);
     expect(targets()).toHaveLength(0);
-    act(() => vi.advanceTimersByTime(600)); // past the 500ms neutral TTL
-    expect(ink('neutral')).toHaveLength(0);
+
+    holdNotes(63); // not written at step 0 — shown, recessed, never judged
+    await act(async () => {});
+    expect(document.querySelectorAll('.piano-live-input__note.is-ghost')).toHaveLength(1);
+    holdNotes(64); // step 0's RH note — shown as a match, not a "hit"
+    await act(async () => {});
+    expect(document.querySelectorAll('.piano-live-input__note.is-match')).toHaveLength(1);
   });
 
   it('renders no ink layer outside Learn', async () => {

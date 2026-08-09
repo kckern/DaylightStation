@@ -45,6 +45,7 @@ import LearnComplete from './LearnComplete.jsx';
 import FocusRangeLayer from './FocusRangeLayer.jsx';
 import RangeHandleLayer from './RangeHandleLayer.jsx';
 import LearnInkLayer from './LearnInkLayer.jsx';
+import LiveInputLayer from './LiveInputLayer.jsx';
 import { soundingFifths } from '../../../../MusicNotation/model/spellMidi.js';
 import SelectBanner from './SelectBanner.jsx';
 import StuckPrompt from './StuckPrompt.jsx';
@@ -65,10 +66,11 @@ const SELECT_IDLE_MS = 15000;
 // offered on the score (audit H3).
 const STUCK_PROMPT_MS = 5000;
 
-// How long a wet-ink mark lives, per kind (wave-3 D). A wrong note lingers long
-// enough to be READ against the note that was expected; a hit is a flash, not a
-// record; the machine rows' neutral trace sits between the two.
-const INK_TTL = { wrong: 900, hit: 350, neutral: 500 };
+// How long a wrong-note wet-ink mark lives (wave-3 D): long enough to be READ
+// against the note that was expected. The hit flash and the machine rows'
+// neutral trace are retired (Task 4, live input viz) — the held-note live layer
+// draws both cases now, for as long as the key stays down, not on a timer.
+const INK_TTL = { wrong: 900 };
 
 // Consecutive wrongs on ONE step before Learn reveals the keyboard hint (wave-3 D).
 // The reveal is STUCK SUPPORT, not punishment: spoiling the keys on the first
@@ -760,11 +762,12 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, [scoreMeta.musicXml]);
 
   // ── Learn wet ink (wave-3 D) ──────────────────────────────────────────────────
-  // Every note the user plays in Learn leaves a short-lived mark on the staff at
-  // the cursor column — red at the PLAYED pitch when it was wrong (so "no" also
-  // answers "then what did I play?"), a green flash on a hit, muted grey in the
-  // machine rows where nothing is gated. LearnInkLayer is pure; the lifecycle
-  // (append + timed removal) lives here.
+  // A wrong note in Learn's gate leaves a short-lived red mark on the staff at the
+  // cursor column, at the PLAYED pitch (so "no" also answers "then what did I
+  // play?"). The hit flash and the machine rows' neutral trace this used to draw
+  // are retired (Task 4, live input viz) — LiveInputLayer now covers both, live,
+  // for as long as the key is held. LearnInkLayer is pure; the lifecycle (append +
+  // timed removal) for what remains (wrong only) lives here.
   //
   // These callbacks run from a MIDI subscription, so every score-derived value
   // they read comes from a ref mirror, not the render closure: the subscription is
@@ -846,7 +849,6 @@ export default function ScorePlayer({ score: scoreMeta }) {
   useEffect(() => { if (mode === 'learn') lastAdvanceRef.current = performance.now(); }, [mode]);
   const onFollowHit = useCallback((note) => {
     setStruck((prev) => { const n = new Set(prev); n.add(note); return n; });
-    pushInk(note, 'hit');
     // A hit means the reading landed — the "is this player stuck?" evidence resets
     // even mid-chord, so three wrongs SPREAD across a chord's right notes never
     // add up to a reveal (only three genuinely consecutive misses do).
@@ -854,7 +856,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     followHitsRef.current += 1;
     if (!lastAdvanceRef.current) return; // no reference point yet — don't invent one
     recordFollowHit({ step: stepRef.current, note, sinceAdvanceMs: performance.now() - lastAdvanceRef.current });
-  }, [recordFollowHit, pushInk]);
+  }, [recordFollowHit]);
   const onFollowStep = useCallback((next) => {
     setStep(next);
     setStruck(() => new Set());
@@ -943,18 +945,6 @@ export default function ScorePlayer({ score: scoreMeta }) {
     onWrap: onFollowWrap,
     range, // wrap advancement within the practice range (null → linear)
   });
-
-  // Machine rows of the Learn matrix (wave-3 §B rows 1/3): nothing is gated, so
-  // there is no right or wrong note to report — but playing along with the kiosk
-  // should still leave a trace. Ink every note_on NEUTRALLY: never red, never a
-  // shake, never a reveal. This is the ONLY subscription these rows make.
-  useEffect(() => {
-    if (!machineLearn || !subscribe) return undefined;
-    return subscribe((evt) => {
-      if (!evt || evt.type !== 'note_on' || !evt.velocity) return;
-      pushInk(evt.note, 'neutral');
-    });
-  }, [machineLearn, subscribe, pushInk]);
 
   // Flush follow-timing stats when leaving Learn (and on unmount if still in it).
   const flushFollowNow = useCallback(() => {
@@ -1920,6 +1910,17 @@ export default function ScorePlayer({ score: scoreMeta }) {
     [showGrades, showFocusLayer, events],
   );
 
+  // Which system is the cursor on? The cursor box spans the whole grand staff, so
+  // its vertical midpoint lands inside one system's band. Same rule pushInk uses —
+  // the wet ink and the live input must not disagree about where the cursor is.
+  const cursorSystem = useMemo(() => {
+    const cur = events?.[step];
+    const boxes = layout.staffBoxes || [];
+    if (!cur || !boxes.length) return 0;
+    const mid = (cur.top + cur.bottom) / 2;
+    return boxes.find((b) => mid >= b.top - b.lineSpacing * 3 && mid <= b.top + b.lineSpacing * 7)?.system ?? 0;
+  }, [events, step, layout.staffBoxes]);
+
   // Staves the user has deselected — dimmed in every interactive mode (wave-3 A).
   const dimmedStaves = useMemo(
     () => parts.filter((p) => !activeParts[p.staff]).map((p) => p.staff),
@@ -1971,6 +1972,20 @@ export default function ScorePlayer({ score: scoreMeta }) {
               staffBoxes={layout.staffBoxes}
               clefs={inkClefs}
               keyFifths={inkFifths}
+            />
+          )}
+          {/* The notes being held RIGHT NOW (Task 4) — live in Listen, Learn and
+              Polish; absent in Perform, which has no chrome. Mounted AFTER the wet
+              ink so live marks paint above it. */}
+          {mode !== 'perform' && layoutFresh && (
+            <LiveInputLayer
+              step={steps?.[step] || null}
+              cursorX={events?.[step]?.x ?? 0}
+              system={cursorSystem}
+              staffBoxes={layout.staffBoxes}
+              clefs={inkClefs}
+              keyFifths={inkFifths}
+              gateActive={learnGate}
             />
           )}
           {showGrades && layoutFresh && (
