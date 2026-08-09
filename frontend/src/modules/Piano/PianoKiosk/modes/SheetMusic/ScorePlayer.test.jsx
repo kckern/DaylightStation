@@ -3796,6 +3796,21 @@ describe('ScorePlayer — live input viz', () => {
     await act(async () => {});
     expect(liveMarks()).toHaveLength(0);
   });
+
+  it('a correct note in the gate draws the live mark and NO wet ink', async () => {
+    // Through the real MIDI bus, not holdNotes — this is the path that used to
+    // call pushInk(note, 'hit'). One keypress must produce exactly one glyph:
+    // reintroducing the hit ink would silently double it, and only a bus-driven
+    // test can catch that.
+    renderPlayer();
+    await act(async () => {});
+    enterLearnGate();
+    await act(async () => {});
+    expect(h.noteCbs.size).toBe(1); // the tracker is genuinely subscribed — otherwise play() below proves nothing
+    play(64); // a pitch written at the first step of this fixture
+    await act(async () => {});
+    expect(document.querySelectorAll('.piano-learn-ink__note')).toHaveLength(0);
+  });
 });
 
 // Learn wet ink (wave-3 D): a wrong note draws the PLAYED pitch in red on the
