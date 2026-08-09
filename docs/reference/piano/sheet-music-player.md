@@ -88,8 +88,9 @@ two icon-only toggles (left-/right-hand glyphs, no text label) on a standard
 two-staff (grand-staff) score:
 
 - **Listen** — which hands the kiosk *performs*. An inactive staff is engraved
-  but silent, not just dimmed; there is no "play along and get lit up" layer
-  in Listen — that machinery retired with wave 3. Both hands on is the
+  but silent, not just dimmed. Playing along shows what you are holding (see
+  "Live input" below), but nothing in Listen gates, advances or grades on it.
+  Both hands on is the
   default; either or both can be off (an all-off Listen is a valid "just
   watch the page" state, since the kiosk is doing the playing either way — the
   only floor is Learn/Polish's own).
@@ -136,6 +137,25 @@ as a free-running click at the practice tempo — offered only when the score's
 tempo map has a single entry, since a free-running click has no one BPM to
 lock to across a mid-piece tempo change; scores with tempo changes keep the
 metronome disabled-in-place rather than ticking against a ritardando.
+
+## Live input
+
+In Listen, Learn and Polish, the notes you are **currently holding** are drawn in
+the cursor column at the pitch you played, spelled from the sounding key so a
+transposed score still reads correctly. A pitch that is written at the cursor
+takes an affirming green; anything else is recessed rather than hidden, so you
+can always see what you actually played. Releasing the key removes the mark.
+
+The rule is the same in all three modes and deliberately ignores which hands are
+active: it answers "is this on the page right now?", not "is this your job right
+now?" — the only question that still means something in Listen, where the hand
+toggles pick what the kiosk performs rather than what you owe.
+
+While Learn's gate is grading, a note that isn't written at the cursor draws
+nothing here, because the gate already answers it with the red wrong-note ink.
+That division is what keeps one glyph per keypress instead of two.
+
+Perform has no live input, as it has no chrome of any kind.
 
 ## Learn: landing and the state matrix
 
@@ -476,6 +496,8 @@ running on the per-step fallback (keyboard stays note-precise regardless).
 | `learnRange.js` | pure auto-range heuristic for the Learn landing (frontier → section → density → fallback) |
 | `usePracticeRecord.js` / `practiceKey.js` | per-user practice-history hook + score-key/hands-bucket helpers |
 | `LearnInkLayer.jsx` | wrong-note wet ink drawn at the played pitch, on the score |
+| `LiveInputLayer.jsx` | the notes being held right now, drawn in the cursor column |
+| `inputKind.js` | whether a held pitch reads as a match, a ghost, or nothing |
 | `measureAtPoint.js` | armed-tap → nearest-measure hit-testing |
 | `polishTiers.js` | pure tempo-tier math: bucket, run score, overclocked extra credit |
 | `RangeHandleLayer.jsx` | draggable in/out range handles on the score (tap-to-arm or drag) |
