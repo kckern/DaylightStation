@@ -42,10 +42,6 @@ export function HeroSongPicker({ sheetmusic, onSelect }) {
 
   return (
     <section className="piano-hero-picker">
-      <header className="piano-hero-picker__header">
-        <h1>Piano Hero</h1>
-        <p>Choose a score, then play the notes as they reach the keys.</p>
-      </header>
       {groups.length > 1 && (
         <div className="piano-course-tabs" role="tablist" aria-label="Piano Hero score collections">
           {groups.map((group, index) => (
@@ -93,6 +89,9 @@ function HeroHighway({ chart, targets, elapsedMs, fallDurationMs }) {
   const range = useMemo(() => computeKeyboardRange([chart.startNote, chart.endNote]), [chart.startNote, chart.endNote]);
   const visible = targets.filter((target) => {
     const age = elapsedMs - target.targetTimeMs;
+    const resolutionAge = target.resolvedAt === null ? 0 : elapsedMs - target.resolvedAt;
+    if (target.state === 'hit') return resolutionAge < 450;
+    if (target.state === 'missed') return resolutionAge < 750;
     return age > -fallDurationMs - 100 && age < 900;
   });
   return (
