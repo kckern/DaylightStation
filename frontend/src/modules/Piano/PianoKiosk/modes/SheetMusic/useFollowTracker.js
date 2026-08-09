@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { expectedMidisAtStep, isStepSatisfied } from './activeParts.js';
-import { nextStepInRange } from './focusRange.js';
+import { nextPlayableStep } from './focusRange.js';
 
 /**
  * useFollowTracker — full-hand Follow tracking. Advances the cursor only once
@@ -55,6 +55,22 @@ export function useFollowTracker({ enabled, steps, activeParts, step, subscribe,
     struckRef.current = new Set();
   }, [step]);
 
+  // The cursor can be PUT on a step these hands have nothing to play at — a range
+  // whose in-point falls on a left-hand onset, a hand toggled off, a tap-seek.
+  // Advancing away is not enough; nothing can satisfy the step we're parked on, so
+  // step off it here too. A wrap crossed this way is deliberately NOT reported: a
+  // practice lap has to be played, not skipped into.
+  useEffect(() => {
+    if (!enabled) return;
+    const stepObj = steps?.[step];
+    if (!stepObj) return;
+    if (expectedMidisAtStep(stepObj, activeParts || {}).size > 0) return;
+    const res = nextPlayableStep(step, { steps, activeParts: activeParts || {}, range });
+    if (res.complete) { onCompleteRef.current?.(); return; }
+    if (res.stuck) return;
+    onStepRef.current?.(res.next);
+  }, [enabled, step, steps, activeParts, range]);
+
   useEffect(() => {
     if (!enabled || !subscribe) return undefined;
     return subscribe((evt) => {
@@ -67,22 +83,20 @@ export function useFollowTracker({ enabled, steps, activeParts, step, subscribe,
         onHitRef.current?.(evt.note);
         if (isStepSatisfied(expected, struckRef.current)) {
           // With a focus range active, wrap back to its in-point after the
-          // out-point (loop the section); otherwise advance linearly. Reaching the
-          // final step (no range) COMPLETES the piece instead of clamping in place
+          // out-point (loop the section); otherwise advance linearly, skipping
+          // any step these hands have nothing to play at. Reaching the final
+          // step (no range) COMPLETES the piece instead of clamping in place
           // (audit M5) — the piece is done, don't silently dead-end.
-          const r = rangeRef.current;
-          const atEnd = !r && stepRef.current >= (stepsRef.current?.length || 1) - 1;
-          if (atEnd) {
-            struckRef.current = new Set();
-            onCompleteRef.current?.();
-            return;
-          }
-          const next = r
-            ? nextStepInRange(stepRef.current, r)
-            : stepRef.current + 1;
-          if (r && next === r[0] && stepRef.current >= r[1]) onWrapRef.current?.();
-          onStepRef.current?.(next);
+          const res = nextPlayableStep(stepRef.current, {
+            steps: stepsRef.current,
+            activeParts: activePartsRef.current || {},
+            range: rangeRef.current,
+          });
           struckRef.current = new Set();
+          if (res.complete) { onCompleteRef.current?.(); return; }
+          if (res.stuck) return; // nothing in the range is theirs to play
+          if (res.wrapped) onWrapRef.current?.();
+          onStepRef.current?.(res.next);
         }
         return;
       }
