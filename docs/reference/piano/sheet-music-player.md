@@ -148,10 +148,12 @@ than hidden, so you can always see what you actually played — inside the gate,
 non-match is answered by the red wrong-note ink instead (see below). Releasing
 the key removes the mark.
 
-The rule is the same in all three modes and deliberately ignores which hands are
-active: it answers "is this on the page right now?", not "is this your job right
-now?" — the only question that still means something in Listen, where the hand
-toggles pick what the kiosk performs rather than what you owe.
+Outside Learn's gate, the rule deliberately ignores which hands are active: it
+answers "is this on the page right now?", not "is this your job right now?" —
+the only question that still means something in Listen, where the hand toggles
+pick what the kiosk performs rather than what you owe. Inside Learn's active
+gate, the rule narrows to the hands the player is responsible for, so the page
+cannot call a note green while the gate is calling it wrong.
 
 While Learn's gate is grading, a note that isn't written at the cursor draws
 nothing here, because the gate already answers it with the red wrong-note ink.
