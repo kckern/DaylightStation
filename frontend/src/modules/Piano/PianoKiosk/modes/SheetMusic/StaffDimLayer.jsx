@@ -22,15 +22,17 @@ const DIM = 'is-dimmed';
  * have to be stacked above a mask to avoid being muted by it.
  *
  * @param {object} p
- * @param {{current: Element|null}} p.containerRef - any ancestor of the engraved <svg>
+ * @param {Element|null} p.container - the element containing the engraved <svg>.
+ *   An ELEMENT, deliberately not a ref: React commits layout effects bottom-up,
+ *   so an ancestor's ref is not yet attached when this child's effect first runs.
  * @param {number[]} [p.dimmed] - 0-based staff ids to dim
  * @param {unknown} [p.layoutToken] - identity changes on re-engrave; a fresh
  *   engrave replaces the SVG and with it every class set here, so the effect
  *   must re-run. Zoom, flow and transpose all force one.
  */
-export default function StaffDimLayer({ containerRef, dimmed = [], layoutToken = null }) {
+export default function StaffDimLayer({ container = null, dimmed = [], layoutToken = null }) {
   useLayoutEffect(() => {
-    const svg = containerRef?.current?.querySelector('svg');
+    const svg = container?.querySelector?.('svg');
     if (!svg) return undefined;
     const want = new Set(dimmed);
     const touched = [];
@@ -42,7 +44,7 @@ export default function StaffDimLayer({ containerRef, dimmed = [], layoutToken =
     // Clear exactly what we set. The SVG outlives this component across mode
     // changes, so leaving the class behind would strand a dimmed staff.
     return () => { for (const el of touched) el.classList.remove(DIM); };
-  }, [containerRef, dimmed, layoutToken]);
+  }, [container, dimmed, layoutToken]);
 
   return null;
 }

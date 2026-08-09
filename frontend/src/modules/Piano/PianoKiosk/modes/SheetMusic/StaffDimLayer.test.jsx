@@ -1,60 +1,65 @@
-import { render } from '@testing-library/react';
-import { useRef } from 'react';
+import { render, cleanup } from '@testing-library/react';
 import StaffDimLayer from './StaffDimLayer.jsx';
 
-// Mirrors the real engraved DOM: OSMD renders its <svg> inside the renderer's
-// host div, one g.staffline per staff per system, 1-based id suffix.
-function Harness({ dimmed, layoutToken = 1, ids = ['Piano0-1', 'Piano0-2'] }) {
-  const ref = useRef(null);
-  return (
-    <div ref={ref}>
-      <div className="musicxml-renderer__svg">
-        <svg>
-          {ids.map((id, i) => <g key={i} className="staffline" id={id} />)}
-        </svg>
-      </div>
-      <StaffDimLayer containerRef={ref} dimmed={dimmed} layoutToken={layoutToken} />
-    </div>
-  );
+// Mirrors the real engraved DOM: OSMD renders its <svg> into the renderer's host
+// div, one g.staffline per staff PER SYSTEM, with a 1-based id suffix.
+function makeHost(ids = ['Piano0-1', 'Piano0-2']) {
+  const host = document.createElement('div');
+  const groups = ids.map((id) => `<g class="staffline" id="${id}"></g>`).join('');
+  host.innerHTML = `<div class="musicxml-renderer__svg"><svg>${groups}</svg></div>`;
+  document.body.appendChild(host);
+  return host;
 }
 
-const dimmedIds = (c) => [...c.querySelectorAll('g.staffline.is-dimmed')].map((g) => g.id);
+const dimmedIds = (host) => [...host.querySelectorAll('g.staffline.is-dimmed')].map((g) => g.id);
+
+// Stable identity, so the re-engrave test proves layoutToken drives the re-apply
+// rather than a fresh array reference doing it incidentally.
+const DIM_LH = [1];
+
+afterEach(() => { cleanup(); document.body.innerHTML = ''; });
 
 describe('StaffDimLayer', () => {
-  it('dims only the deselected staff, by class on OSMD\'s own group', () => {
-    const { container } = render(<Harness dimmed={[1]} />);
-    expect(dimmedIds(container)).toEqual(['Piano0-2']);
+  it("dims only the deselected staff, by class on OSMD's own group", () => {
+    const host = makeHost();
+    render(<StaffDimLayer container={host} dimmed={[1]} />);
+    expect(dimmedIds(host)).toEqual(['Piano0-2']);
   });
 
   it('dims every system of that staff, not just the first', () => {
-    const { container } = render(
-      <Harness dimmed={[0]} ids={['Piano0-1', 'Piano0-2', 'Piano0-1', 'Piano0-2']} />,
-    );
-    expect(dimmedIds(container)).toEqual(['Piano0-1', 'Piano0-1']);
+    const host = makeHost(['Piano0-1', 'Piano0-2', 'Piano0-1', 'Piano0-2']);
+    render(<StaffDimLayer container={host} dimmed={[0]} />);
+    expect(dimmedIds(host)).toEqual(['Piano0-1', 'Piano0-1']);
   });
 
   it('renders no element of its own — nothing is covered', () => {
-    const { container } = render(<Harness dimmed={[1]} />);
-    expect(container.querySelectorAll('.piano-score-staff-dim')).toHaveLength(0);
+    const host = makeHost();
+    const { container } = render(<StaffDimLayer container={host} dimmed={[1]} />);
+    expect(container.innerHTML).toBe('');
+    expect(host.querySelectorAll('.piano-score-staff-dim')).toHaveLength(0);
   });
 
   it('clears the class when the staff is reselected', () => {
-    const { container, rerender } = render(<Harness dimmed={[1]} />);
-    expect(dimmedIds(container)).toEqual(['Piano0-2']);
-    rerender(<Harness dimmed={[]} />);
-    expect(dimmedIds(container)).toEqual([]);
+    const host = makeHost();
+    const { rerender } = render(<StaffDimLayer container={host} dimmed={[1]} />);
+    expect(dimmedIds(host)).toEqual(['Piano0-2']);
+    rerender(<StaffDimLayer container={host} dimmed={[]} />);
+    expect(dimmedIds(host)).toEqual([]);
   });
 
   it('re-applies after a re-engrave replaces the SVG', () => {
-    // A new layoutToken stands for a fresh engrave (zoom, flow, transpose).
-    const { container, rerender } = render(<Harness dimmed={[1]} layoutToken={1} />);
-    container.querySelector('g.staffline.is-dimmed').classList.remove('is-dimmed');
-    rerender(<Harness dimmed={[1]} layoutToken={2} />);
-    expect(dimmedIds(container)).toEqual(['Piano0-2']);
+    const host = makeHost();
+    const { rerender } = render(<StaffDimLayer container={host} dimmed={DIM_LH} layoutToken={1} />);
+    host.querySelector('g.staffline.is-dimmed').classList.remove('is-dimmed');
+    rerender(<StaffDimLayer container={host} dimmed={DIM_LH} layoutToken={2} />);
+    expect(dimmedIds(host)).toEqual(['Piano0-2']);
   });
 
-  it('does nothing when nothing is deselected or nothing is engraved', () => {
-    const { container } = render(<Harness dimmed={[]} ids={[]} />);
-    expect(dimmedIds(container)).toEqual([]);
+  it('does nothing when nothing is deselected, nothing is engraved, or there is no container', () => {
+    const host = makeHost([]);
+    render(<StaffDimLayer container={host} dimmed={[]} />);
+    expect(dimmedIds(host)).toEqual([]);
+    cleanup();
+    expect(() => render(<StaffDimLayer container={null} dimmed={[1]} />)).not.toThrow();
   });
 });
