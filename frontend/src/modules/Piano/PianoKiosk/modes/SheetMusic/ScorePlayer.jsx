@@ -45,7 +45,7 @@ import LearnComplete from './LearnComplete.jsx';
 import FocusRangeLayer from './FocusRangeLayer.jsx';
 import RangeHandleLayer from './RangeHandleLayer.jsx';
 import LearnInkLayer from './LearnInkLayer.jsx';
-import LiveInputLayer from './LiveInputLayer.jsx';
+import LiveInputLayer, { MATCH_CLASS } from './LiveInputLayer.jsx';
 import { soundingFifths } from '../../../../MusicNotation/model/spellMidi.js';
 import SelectBanner from './SelectBanner.jsx';
 import StuckPrompt from './StuckPrompt.jsx';
@@ -71,6 +71,15 @@ const STUCK_PROMPT_MS = 5000;
 // neutral trace are retired (Task 4, live input viz) — the held-note live layer
 // draws both cases now, for as long as the key stays down, not on a timer.
 const INK_TTL = { wrong: 900 };
+
+// How long a landed note wears the match colour when the cursor advances out from
+// under it. Long enough to register as a flash, short enough not to trail behind
+// a fast passage and read as the note still being held.
+const MATCH_FLASH_MS = 280;
+
+// The cursor band's one colour, in every mode. A cool slate: present enough to
+// track at a glance, uncommitted enough that it never reads as a verdict.
+const CURSOR_BAND = '#5b6472';
 
 // Consecutive wrongs on ONE step before Learn reveals the keyboard hint (wave-3 D).
 // The reveal is STUCK SUPPORT, not punishment: spoiling the keys on the first
@@ -839,6 +848,23 @@ export default function ScorePlayer({ score: scoreMeta }) {
   );
 
   // ── Learn mode: full-hand tracker (all active-staff notes → advance) ──────────
+  // A landed note wears the match colour briefly, on the engraved notehead itself.
+  // The live layer cannot cover this case: it reads rendered state, and a
+  // step-completing hit advances the cursor before anything paints.
+  const flashTimersRef = useRef(new Map());
+  const flashMatch = useCallback((el) => {
+    if (!el?.classList) return;
+    clearTimeout(flashTimersRef.current.get(el));
+    el.classList.add(MATCH_CLASS);
+    flashTimersRef.current.set(el, setTimeout(() => {
+      flashTimersRef.current.delete(el);
+      el.classList.remove(MATCH_CLASS);
+    }, MATCH_FLASH_MS));
+  }, []);
+  useEffect(() => () => {
+    flashTimersRef.current.forEach((t, el) => { clearTimeout(t); el.classList?.remove(MATCH_CLASS); });
+    flashTimersRef.current.clear();
+  }, []);
   const lastAdvanceRef = useRef(0);
   const followHitsRef = useRef(0);
   const followWrongsRef = useRef(0);
@@ -849,6 +875,13 @@ export default function ScorePlayer({ score: scoreMeta }) {
   useEffect(() => { if (mode === 'learn') lastAdvanceRef.current = performance.now(); }, [mode]);
   const onFollowHit = useCallback((note) => {
     setStruck((prev) => { const n = new Set(prev); n.add(note); return n; });
+    // Flash the note you just landed, HERE rather than from rendered state. A hit
+    // that completes the step advances the cursor in this same task, so by the
+    // time anything paints the note is no longer the current step's and no live
+    // mark can exist for it — in a single-note passage that is every correct note,
+    // which left the gate with no affirmation at all. This runs before the
+    // advance, while stepRef still points at the note that was actually played.
+    flashMatch(stepsRef.current?.[stepRef.current]?.notes?.find((n) => n.midi === note)?.el);
     // A hit means the reading landed — the "is this player stuck?" evidence resets
     // even mid-chord, so three wrongs SPREAD across a chord's right notes never
     // add up to a reveal (only three genuinely consecutive misses do).
@@ -1872,7 +1905,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
   // The band keeps its mode colour; lit NOTEHEADS get a fixed near-black ink
   // (wave-2 A): visibly "current", nothing louder.
-  const cursorColor = mode === 'learn' ? '#2ec46f' : mode === 'listen' ? '#e8a33d' : '#6cf';
+  // The cursor band says "you are here" — the same thing in every mode, so it is
+  // one neutral slate rather than the mode accent. It used to be green in Learn,
+  // which is now the colour of a correctly played note; the band must not compete
+  // for that meaning. The mode is already named in the breadcrumb.
+  const cursorColor = CURSOR_BAND;
 
   // Teleport (don't sweep diagonally) when the cursor crosses to a new system.
   const jump = current != null && prevTopRef.current != null && Math.abs(current.top - prevTopRef.current) > 1;

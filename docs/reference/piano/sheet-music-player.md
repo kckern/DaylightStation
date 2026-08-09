@@ -140,13 +140,20 @@ metronome disabled-in-place rather than ticking against a ritardando.
 
 ## Live input
 
-In Listen, Learn and Polish, the notes you are **currently holding** are drawn in
-the cursor column at the pitch you played, spelled from the sounding key so a
-transposed score still reads correctly. A pitch that is written at the cursor
-takes an affirming green; outside Learn's gate, anything else is recessed rather
-than hidden, so you can always see what you actually played — inside the gate, a
-non-match is answered by the red wrong-note ink instead (see below). Releasing
-the key removes the mark.
+In Listen, Learn and Polish, the score answers what you are **currently
+holding**. A pitch written where the cursor is turns that printed note green —
+the engraved notehead itself is recoloured, so the answer can never appear
+beside the note it is answering. A pitch that is *not* on the page has no
+printed note to recolour, so it is drawn instead: at the pitch you played, in
+the cursor column, spelled from the sounding key so a transposed score still
+reads correctly. Outside Learn's gate it sits recessed rather than hidden, so
+you can see what you actually played; inside the gate a non-match is answered by
+the red wrong-note ink instead (see below). Releasing the key restores the page.
+
+A note you land also flashes briefly. Without that, a note that *completes* a
+step would show nothing at all: the cursor advances the instant you satisfy it,
+before the screen can paint, which in a passage of single notes is every correct
+note you play.
 
 Outside Learn's gate, the rule deliberately ignores which hands are active: it
 answers "is this on the page right now?", not "is this your job right now?" —
@@ -160,6 +167,29 @@ nothing here, because the gate already answers it with the red wrong-note ink.
 That division is what keeps one glyph per keypress instead of two.
 
 Perform has no live input, as it has no chrome of any kind.
+
+## What each colour on the staff means
+
+One rule holds the page together: **a colour belongs to exactly one channel.**
+
+The **engraving** carries the score's own state, in value rather than hue — the
+printed black, a near-black once the cursor reaches it, a pulse toward brown
+while a note is still owed, and brown once it is struck. Keeping this channel
+free of saturated colour is what keeps the page looking engraved rather than lit
+up like a game.
+
+**Drawn marks** carry yours, and are the only place saturated colour appears:
+green for a pitch written where you are, a recessed grey for one that isn't, red
+for a wrong note under the gate.
+
+**Regions** carry place, and recede. The cursor band is one neutral slate in
+every mode, because "you are here" means the same thing in all of them and the
+mode is already named in the breadcrumb. The practice range is a warm shade of
+the paper, because a passage you are looping is not a verdict. Polish's
+per-measure washes keep their green, amber and red — they cover a whole bar and
+never sit on a notehead, so they read as scoring rather than as note state.
+
+Green means one thing only: you are playing the right note, right now.
 
 ## Learn: landing and the state matrix
 
@@ -224,11 +254,12 @@ same step**, as stuck-support rather than a correction on every slip.
 
 **Notes the step is still waiting on.** Learn advances only once every
 active-staff note of a step has been struck, so a note that is expected but
-hasn't arrived yet pulses at reduced strength — it is never drawn hollow. A
-hollow notehead means a half or whole note, so outlining a quarter note would
-state the wrong duration. The pulse carries "still owed" instead, and its
-ceiling stays below full strength so a waiting note is never mistaken for one
-already played.
+hasn't arrived yet pulses — between the engraved ink and the struck-note brown,
+at full strength. The pulse previews the reward: this is the note, and this is
+what it becomes once you play it. It is never drawn hollow (a hollow notehead
+means a half or whole note, so outlining a quarter note would state the wrong
+duration) and never drawn faint, because faintness is what tells you a note is
+*not* the one being asked for.
 
 ## The loop group and range handles (Learn only)
 
