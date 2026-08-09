@@ -430,10 +430,23 @@ with:
 `scrollRef` is the existing scroll container ref declared at `ScorePlayer.jsx:268`
 and attached to `.piano-score-player__scroll`, which contains the renderer. Pass
 `scrollRef.current` — the **element**, not the ref (see the amendment note on
-Task 2). This render is already gated on `layoutFresh`, which only becomes true
-after a layout has been published, so the scroll div mounted in an earlier commit
-and `scrollRef.current` is a real element here. `layout` gets a fresh identity on
-every engrave, which is exactly when the class needs re-applying.
+Task 2). `layout` gets a fresh identity on every engrave, which is exactly when
+the class needs re-applying.
+
+> **Correction (found in review).** An earlier draft of this step claimed the
+> `layoutFresh` gate "only becomes true after a layout has been published, so
+> `scrollRef.current` is a real element here." That is **false**: `layout`
+> initialises with `flow/scale/transpose: null` (`ScorePlayer.jsx:159`) and
+> `layoutFresh` deliberately treats null as fresh so the first paint isn't
+> hidden (`ScorePlayer.jsx:294-296`). It is therefore true on the FIRST render,
+> where `scrollRef.current` is genuinely `null`.
+>
+> The code is still correct, for a different reason: at that same instant
+> nothing is engraved either, so the layer's effect finds no `<svg>` and no-ops.
+> `onLayout` fires after mount, and the `setLayout` it triggers re-renders with
+> the ref attached and a fresh `layout` identity that re-runs the effect. The
+> real reason is now recorded as a comment at the wiring site, so a future
+> maintainer doesn't remove the gate on the strength of the wrong one.
 
 - [ ] **Step 5: Replace the stylesheet rule**
 
