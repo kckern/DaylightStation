@@ -1,0 +1,89 @@
+schema_version: 1
+game_id: card-game
+title: Card Game
+view_id: card-battle-v1
+ruleset: card-battle-v1
+players:
+  min: 1
+  max: 1
+
+card_battle:
+  opening_hand: 3
+  player:
+    health: 8
+    max_energy: 2
+  enemy:
+    id: scale-goblin
+    name: Scale Goblin
+    health: 12
+    attack: 1
+  deck:
+    - c-major
+    - g-major
+    - f-major
+    - d-major
+    - c-major
+    - g-major
+
+cards:
+  c-major:
+    title: C Major
+    cost: 1
+    damage: 4
+    challenge:
+      domain: piano
+      kind: scale
+      prompt:
+        label: C major scale
+        key_signature: C
+        abc: C D E F G A B c
+        expected_midi: [60, 62, 64, 65, 67, 69, 71, 72]
+    outcomes: &scale_outcomes
+      - id: fluent
+        min_score: 1
+        multiplier: 1
+      - id: recovered
+        min_score: 0
+        multiplier: 0.5
+
+  g-major:
+    title: G Major
+    cost: 1
+    damage: 4
+    challenge:
+      domain: piano
+      kind: scale
+      prompt:
+        label: G major scale
+        key_signature: G
+        abc: G A B c d e ^f g
+        expected_midi: [55, 57, 59, 60, 62, 64, 66, 67]
+    outcomes: *scale_outcomes
+
+  f-major:
+    title: F Major
+    cost: 1
+    damage: 4
+    challenge:
+      domain: piano
+      kind: scale
+      prompt:
+        label: F major scale
+        key_signature: F
+        abc: F G A B c d e f
+        expected_midi: [53, 55, 57, 58, 60, 62, 64, 65]
+    outcomes: *scale_outcomes
+
+  d-major:
+    title: D Major
+    cost: 1
+    damage: 4
+    challenge:
+      domain: piano
+      kind: scale
+      prompt:
+        label: D major scale
+        key_signature: D
+        abc: D E ^F G A B ^c d
+        expected_midi: [50, 52, 54, 55, 57, 59, 61, 62]
+    outcomes: *scale_outcomes

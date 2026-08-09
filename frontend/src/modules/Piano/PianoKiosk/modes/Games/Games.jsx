@@ -12,6 +12,7 @@ import { SkeletonStage } from '../../Skeleton.jsx';
 
 // Friendly labels for the registry ids.
 const GAME_LABELS = {
+  'card-game': 'Card Game',
   'space-invaders': 'Space Invaders',
   tetris: 'Tetris',
   flashcards: 'Flashcards',
@@ -21,6 +22,7 @@ const GAME_LABELS = {
 
 // Per-game tile icons (currentColor SVGs in ../../icons/svg).
 const GAME_ICONS = {
+  'card-game': 'game',
   'space-invaders': 'game-space-invaders',
   tetris: 'game-tetris',
   flashcards: 'game-flashcards',

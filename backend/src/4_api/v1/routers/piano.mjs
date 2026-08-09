@@ -61,7 +61,7 @@ import { musicXmlToNotes } from '#shared/music/musicXmlToNotes.mjs';
  *   Menu activity strip:
  *   GET    /activity/recent                  → { players: [...] }  (per-player most-recent lesson-course progress)
  */
-export function createPianoRouter({ pianoContainer, logger = console }) {
+export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, logger = console }) {
   if (!pianoContainer) throw new Error('createPianoRouter: pianoContainer required');
   const router = express.Router();
   const ds = pianoContainer.studioDatastore;
@@ -88,6 +88,30 @@ export function createPianoRouter({ pianoContainer, logger = console }) {
   // ── Roster ────────────────────────────────────────────────────────────────
   router.get('/users', asyncHandler((req, res) => {
     res.json({ users: ds.getRoster() });
+  }));
+
+  // Challenge-provider attempt ledger. Gaming stores only the returned id and
+  // immutable result snapshot; piano owns the durable practice evidence.
+  router.post('/users/:userId/attempts', asyncHandler((req, res) => {
+    if (!pianoAttemptStore) return res.status(501).json({ error: 'Attempt store unavailable' });
+    if (!ds.isKnownUser(req.params.userId) && req.params.userId !== 'guest') {
+      return res.status(400).json({ error: 'Invalid user' });
+    }
+    const body = req.body || {};
+    const validStatus = ['completed', 'aborted', 'timeout', 'error'].includes(body.status);
+    const validScore = body.status === 'completed'
+      ? Number.isFinite(body.score) && body.score >= 0 && body.score <= 1
+      : body.score == null;
+    if (!validStatus || !validScore || typeof body.challenge_id !== 'string') {
+      return res.status(400).json({ error: 'Invalid attempt result' });
+    }
+    const attempt = pianoAttemptStore.save(req.params.userId, {
+      ...body,
+      attempt_id: body.attempt_id || shortId(),
+      trust_source: 'client-midi',
+    });
+    logger.info?.('piano.attempt.saved', { userId: req.params.userId, attemptId: attempt.attempt_id, status: attempt.status });
+    res.status(201).json(attempt);
   }));
 
   // Loop-library manifest: walk the five MusicXML brick folders, bake per-beat

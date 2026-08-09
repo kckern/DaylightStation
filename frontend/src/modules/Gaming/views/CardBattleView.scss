@@ -1,0 +1,31 @@
+.gaming-shell {
+  min-height: 100vh;
+  box-sizing: border-box;
+  color: #f5f2ff;
+  background: radial-gradient(circle at 50% 35%, #32205c, #120b26 65%);
+  font-family: system-ui, sans-serif;
+}
+
+.gaming-loading, .gaming-error { display: grid; place-content: center; text-align: center; }
+.card-battle { display: grid; grid-template-rows: auto auto 1fr auto auto; gap: 1rem; padding: 1.25rem; }
+.card-battle__header, .combatant > div { display: flex; justify-content: space-between; align-items: center; }
+.card-battle__header div { display: flex; flex-direction: column; }
+.card-battle__header button { font-size: 2rem; background: transparent; border: 0; color: inherit; }
+.combatant { max-width: 42rem; width: 100%; margin: auto; display: grid; gap: .35rem; }
+.combatant h1 { margin: 0; }
+.combatant meter { width: 100%; height: 1.2rem; }
+.battle-stage { display: grid; place-items: center; min-height: 8rem; }
+.battle-prompt, .battle-result { font-size: clamp(1.5rem, 5vw, 3rem); font-weight: 800; }
+.battle-warning { color: #ffd166; }
+.card-hand { display: flex; justify-content: center; gap: .75rem; overflow-x: auto; padding-bottom: .5rem; }
+.battle-card { position: relative; flex: 0 0 10rem; min-height: 9rem; display: flex; flex-direction: column; justify-content: space-between; padding: 1rem; border: 2px solid #aa8cff; border-radius: 1rem; color: #1a1030; background: #f8f4ff; box-shadow: 0 .5rem 1.5rem #0008; }
+.battle-card:disabled { opacity: .42; }
+.battle-card__cost { align-self: flex-end; font-weight: 800; }
+.challenge-overlay { position: fixed; inset: 0; z-index: 20; display: grid; place-content: center; gap: 1rem; padding: 2rem; text-align: center; background: #090512ee; }
+.piano-challenge { display: grid; gap: 1rem; min-width: min(80vw, 30rem); }
+.piano-challenge__chord { font-size: clamp(5rem, 20vw, 10rem); font-weight: 900; }
+.piano-scale-challenge { width: min(90vw, 52rem); }
+.piano-scale-challenge > strong { font-size: clamp(1.5rem, 5vw, 2.5rem); }
+.piano-scale-challenge__staff { overflow-x: auto; border-radius: .75rem; color: #171122; background: #fff; }
+.piano-scale-challenge__staff svg { display: block; margin: auto; }
+.challenge-abort { justify-self: center; padding: .7rem 1.2rem; border: 1px solid #806da8; border-radius: 999px; color: inherit; background: transparent; }

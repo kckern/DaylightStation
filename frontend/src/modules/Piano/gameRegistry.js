@@ -11,6 +11,12 @@ import { importWithReload, lazyWithReload } from '../../lib/chunkReload.js';
 // leave a game DOA on a long-lived tab — it hard-reloads to the fresh shell
 // instead of failing into a blank Suspense. See lib/chunkReload.js.
 const GAME_REGISTRY = {
+  'card-game': {
+    component: () => importWithReload(() => import('./PianoCardGame/CardGame')),
+    hook: () => importWithReload(() => import('./PianoCardGame/CardGame')),
+    layout: 'replace',
+    LazyComponent: lazyWithReload(() => import('./PianoCardGame/CardGame')),
+  },
   'space-invaders': {
     component: () => importWithReload(() => import('./PianoSpaceInvaders/SpaceInvadersGame')),
     hook: () => importWithReload(() => import('./PianoSpaceInvaders/useSpaceInvadersGame')),
