@@ -165,7 +165,19 @@ vi.mock('../../../../MusicNotation/renderers/MusicXmlRenderer.jsx', async () => 
         if (h.holdLayout) { h.releaseLayout = () => { h.holdLayout = false; publish(); }; return; }
         publish();
       }, [onLayout, onReady, scale, transpose]);
-      return <div data-testid="renderer" className="musicxml-renderer">{children}</div>;
+      return (
+        <div data-testid="renderer" className="musicxml-renderer">
+          {/* Mirrors the engraved DOM: OSMD renders its <svg> into the host div,
+              one g.staffline per staff per system with a 1-based id suffix. */}
+          <div className="musicxml-renderer__svg">
+            <svg>
+              <g className="staffline" id="Piano0-1" />
+              <g className="staffline" id="Piano0-2" />
+            </svg>
+          </div>
+          {children}
+        </div>
+      );
     },
   };
 });
@@ -3642,21 +3654,42 @@ describe('ScorePlayer — Learn stuck prompt (audit H3)', () => {
   });
 });
 
-describe('ScorePlayer — staff dim layer (Task 8)', () => {
+describe('ScorePlayer — staff dim (Task 8)', () => {
   afterEach(() => { cleanup(); });
+
+  const dimmedIds = () => [...document.querySelectorAll('g.staffline.is-dimmed')].map((g) => g.id);
 
   it('dims the deselected staff in Learn and clears when reselected', async () => {
     renderPlayer(); // opens in Listen
     await act(async () => {});
     enterLearn();
     await act(async () => {});
-    expect(document.querySelectorAll('.piano-score-staff-dim')).toHaveLength(0);
+    expect(dimmedIds()).toEqual([]);
 
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Left hand' })); }); // deselect LH
-    expect(document.querySelectorAll('.piano-score-staff-dim').length).toBeGreaterThan(0);
+    // The LOWER staff specifically — a count alone would pass if we dimmed the
+    // hand the player is actually using.
+    expect(dimmedIds()).toEqual(['Piano0-2']);
 
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Left hand' })); }); // reselect LH
+    expect(dimmedIds()).toEqual([]);
+  });
+
+  it('covers nothing — no mask element is rendered', async () => {
+    renderPlayer();
+    await act(async () => {});
+    enterLearn();
+    await act(async () => {});
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Left hand' })); });
     expect(document.querySelectorAll('.piano-score-staff-dim')).toHaveLength(0);
+  });
+
+  it('PianoApp.scss fades the staff group and keeps no mask rule', () => {
+    // jsdom computes no stylesheet, so assert the source (same pattern as the
+    // .piano-note-hit colour check above).
+    const scss = readFileSync(fileURLToPath(new URL('../../../../../Apps/PianoApp.scss', import.meta.url)), 'utf8');
+    expect(scss).toMatch(/g\.staffline\.is-dimmed\s*\{[^}]*opacity/);
+    expect(scss).not.toContain('.piano-score-staff-dim');
   });
 });
 
