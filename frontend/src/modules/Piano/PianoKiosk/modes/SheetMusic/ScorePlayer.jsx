@@ -1937,8 +1937,9 @@ export default function ScorePlayer({ score: scoreMeta }) {
         <MusicXmlRenderer score={parsed} musicXml={scoreMeta.musicXml} flow={flow} scale={scale} transpose={transpose} onLayout={onLayout} onReady={onReady} holdExtraction={running}>
           {mode !== 'perform' && layoutFresh && (
             <StaffDimLayer
-              staffBoxes={layout.staffBoxes}
+              container={scrollRef.current}
               dimmed={dimmedStaves}
+              layoutToken={layout}
             />
           )}
           {mode !== 'perform' && current && layoutFresh && (

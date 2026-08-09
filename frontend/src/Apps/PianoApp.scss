@@ -2840,16 +2840,20 @@
   50%      { opacity: 1; }
 }
 
-// Deselected-staff mask (wave-3 A): paper at 65% ⇒ engraved ink reads ~0.35.
-// z2 — under the range tint (3), cursor (5) and wet ink; wrong notes on a
-// dimmed staff still render at full strength above this.
-.piano-score-staff-dim {
-  position: absolute;
-  z-index: 2;
-  pointer-events: none;
-  background: rgba(255, 255, 255, 0.65); // the engraved sheet's paper white
-  border-radius: 4px;
-}
+// Deselected staff (wave-3 A) — dimmed NATIVELY: fade OSMD's own per-staff
+// group instead of covering the staff with a rectangle. Every mark on the
+// staff (lines, clef, noteheads, stems, beams, flags, ledgers, modifiers) is a
+// child of this group, so nothing escapes the way stems and beams escaped a
+// band-shaped mask, and there are no straight edges cutting across curved ink.
+//
+// Group opacity composites the group ONCE rather than per element, so
+// overlapping strokes do not darken each other: the staff reads as genuinely
+// lighter ink, not as a translucent film laid over it.
+//
+// No z-index, deliberately. The engraving itself is dimmed, so the cursor,
+// wet ink and note chips are unaffected — they no longer need to be stacked
+// above a mask to avoid being muted by it.
+.musicxml-renderer__svg g.staffline.is-dimmed { opacity: 0.32; }
 
 // ── Task 14: Polish per-measure grade wash + run summary ──────────────────────
 // Translucent fill over each graded measure (MeasureGradeLayer sets geometry

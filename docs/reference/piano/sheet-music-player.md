@@ -109,12 +109,14 @@ buckets always collapse to a single "both" bucket; per-staff dimming still
 applies to whichever chip staff is deselected.
 
 **Staff dimming** (Listen/Learn/Polish, grand-staff scores): a deselected
-staff renders under a translucent mask rather than disappearing, using real
-per-staff geometry (not a bounding-box guess) — so the shape of what you
-aren't playing stays visible for context. A wrong note struck on a dimmed
-staff still renders at full strength above the mask; the stacking order,
-bottom to top, is dim mask → range tint → cursor band → engraved ink → wet
-ink, so nothing live is ever muted by the dim layer.
+staff is faded rather than hidden, so the shape of what you aren't playing
+stays visible for context. The fade is applied to the engraving itself — the
+staff's own group in the rendered notation — not to an overlay laid on top of
+it. Everything on that staff fades together, including the stems, beams and
+ledger lines that reach outside the staff, and the fade has no edges of its
+own to notice. Because the ink itself is dimmed, live overlays — the cursor,
+wet ink, note chips — are unaffected and need no stacking order to stay clear
+of it.
 
 The current-step notehead itself is recolored directly on the engraved SVG
 rather than drawn as an overlay: it takes a subtle near-black ink, the same
@@ -462,7 +464,7 @@ running on the per-step fallback (keyboard stays note-precise regardless).
 | `ScoreTransportBar.jsx` | pinned bottom bar (presentational, three-zone grid) |
 | `ModeSheet.jsx` | header mode crumb's Listen/Learn/Polish/Perform picker |
 | `HandsControl.jsx` | icon-only left/right-hand toggle, one semantic in every mode (grand-staff scores) |
-| `StaffDimLayer.jsx` | translucent mask over deselected staves, from per-staff geometry |
+| `StaffDimLayer.jsx` | fades deselected staves by classing the engraving's own per-staff group |
 | `learnRange.js` | pure auto-range heuristic for the Learn landing (frontier → section → density → fallback) |
 | `usePracticeRecord.js` / `practiceKey.js` | per-user practice-history hook + score-key/hands-bucket helpers |
 | `LearnInkLayer.jsx` | wrong-note wet ink drawn at the played pitch, on the score |
