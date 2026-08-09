@@ -1,34 +1,60 @@
 import { render } from '@testing-library/react';
-import StaffDimLayer, { dimBands } from './StaffDimLayer.jsx';
+import { useRef } from 'react';
+import StaffDimLayer from './StaffDimLayer.jsx';
 
-const GRAND = [
-  { system: 0, staff: 0, top: 100, left: 50, right: 550, lineSpacing: 10 },
-  { system: 0, staff: 1, top: 200, left: 50, right: 550, lineSpacing: 10 },
-  { system: 1, staff: 0, top: 400, left: 50, right: 550, lineSpacing: 10 },
-  { system: 1, staff: 1, top: 500, left: 50, right: 550, lineSpacing: 10 },
-];
+// Mirrors the real engraved DOM: OSMD renders its <svg> inside the renderer's
+// host div, one g.staffline per staff per system, 1-based id suffix.
+function Harness({ dimmed, layoutToken = 1, ids = ['Piano0-1', 'Piano0-2'] }) {
+  const ref = useRef(null);
+  return (
+    <div ref={ref}>
+      <div className="musicxml-renderer__svg">
+        <svg>
+          {ids.map((id, i) => <g key={i} className="staffline" id={id} />)}
+        </svg>
+      </div>
+      <StaffDimLayer containerRef={ref} dimmed={dimmed} layoutToken={layoutToken} />
+    </div>
+  );
+}
 
-describe('dimBands', () => {
-  it('covers the dimmed staff from the inter-staff midpoint(s)', () => {
-    const bands = dimBands(GRAND, [1]);
-    // system 0: staff 1 band runs from midpoint(140, 200)=170 to bottom 240 + 15 pad
-    expect(bands).toEqual([
-      { left: 50, top: 170, width: 500, height: 255 - 170 },
-      { left: 50, top: 470, width: 500, height: 555 - 470 },
-    ]);
-  });
-  it('first staff pads upward instead of splitting', () => {
-    const [band] = dimBands(GRAND.slice(0, 2), [0]);
-    expect(band.top).toBe(100 - 15);            // top - 1.5*lineSpacing
-    expect(band.top + band.height).toBe(170);   // midpoint to staff 1
-  });
-  it('empty inputs render nothing', () => {
-    expect(dimBands([], [0])).toEqual([]);
-    expect(dimBands(GRAND, [])).toEqual([]);
-  });
-});
+const dimmedIds = (c) => [...c.querySelectorAll('g.staffline.is-dimmed')].map((g) => g.id);
 
-it('renders one mask div per band', () => {
-  const { container } = render(<StaffDimLayer staffBoxes={GRAND} dimmed={[1]} />);
-  expect(container.querySelectorAll('.piano-score-staff-dim')).toHaveLength(2);
+describe('StaffDimLayer', () => {
+  it('dims only the deselected staff, by class on OSMD\'s own group', () => {
+    const { container } = render(<Harness dimmed={[1]} />);
+    expect(dimmedIds(container)).toEqual(['Piano0-2']);
+  });
+
+  it('dims every system of that staff, not just the first', () => {
+    const { container } = render(
+      <Harness dimmed={[0]} ids={['Piano0-1', 'Piano0-2', 'Piano0-1', 'Piano0-2']} />,
+    );
+    expect(dimmedIds(container)).toEqual(['Piano0-1', 'Piano0-1']);
+  });
+
+  it('renders no element of its own — nothing is covered', () => {
+    const { container } = render(<Harness dimmed={[1]} />);
+    expect(container.querySelectorAll('.piano-score-staff-dim')).toHaveLength(0);
+  });
+
+  it('clears the class when the staff is reselected', () => {
+    const { container, rerender } = render(<Harness dimmed={[1]} />);
+    expect(dimmedIds(container)).toEqual(['Piano0-2']);
+    rerender(<Harness dimmed={[]} />);
+    expect(dimmedIds(container)).toEqual([]);
+  });
+
+  it('re-applies after a re-engrave replaces the SVG', () => {
+    // A new layoutToken stands for a fresh engrave (zoom, flow, transpose).
+    const { container, rerender } = render(<Harness dimmed={[1]} layoutToken={1} />);
+    container.querySelector('g.staffline.is-dimmed').classList.remove('is-dimmed');
+    rerender(<Harness dimmed={[1]} layoutToken={2} />);
+    expect(dimmedIds(container)).toEqual(['Piano0-2']);
+  });
+
+  it('does nothing when nothing is deselected or nothing is engraved', () => {
+    const { container } = render(<Harness dimmed={[]} ids={[]} />);
+    expect(dimmedIds(container)).toEqual([]);
+  });
 });
