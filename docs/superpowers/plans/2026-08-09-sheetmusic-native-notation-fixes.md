@@ -145,7 +145,15 @@ by fading its own group instead of covering it with a rectangle."
 
 **Interfaces:**
 - Consumes: `staffGroups(svgRoot)` from Task 1.
-- Produces: `<StaffDimLayer containerRef={RefObject<Element>} dimmed={number[]} layoutToken={unknown} />`, rendering `null`. `containerRef` is any ancestor of the engraved `<svg>`. `layoutToken` is any value whose identity changes when the score is re-engraved. The exported `dimBands` function and the `.piano-score-staff-dim` class are **removed**. Task 3 consumes this signature.
+- Produces: `<StaffDimLayer container={Element|null} dimmed={number[]} layoutToken={unknown} />`, rendering `null`. `container` is the ELEMENT containing the engraved `<svg>` — not a ref. `layoutToken` is any value whose identity changes when the score is re-engraved. The exported `dimBands` function and the `.piano-score-staff-dim` class are **removed**. Task 3 consumes this signature.
+
+> **Amended mid-execution (human ruling).** This task originally specified a
+> `containerRef` prop. React commits layout effects bottom-up, so an ancestor
+> host element's ref is **not yet attached** when a child's `useLayoutEffect`
+> runs on first mount — verified by probe (first mount `false`, later commit
+> `true`). The component would silently no-op; production only escaped it
+> because `layoutFresh` delays mounting to a later commit. Passing the element
+> removes the ordering dependency entirely.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -310,7 +318,7 @@ staff with it, and group opacity reads as lighter ink rather than a film."
 - Modify: `docs/reference/piano/sheet-music-player.md`
 
 **Interfaces:**
-- Consumes: `<StaffDimLayer containerRef dimmed layoutToken />` from Task 2.
+- Consumes: `<StaffDimLayer container dimmed layoutToken />` from Task 2 — `container` is an **element**, not a ref (see the amendment note on Task 2).
 - Produces: nothing new for later tasks.
 
 - [ ] **Step 1: Give the renderer mock a real SVG to dim**
@@ -413,16 +421,19 @@ with:
 
 ```jsx
             <StaffDimLayer
-              containerRef={scrollRef}
+              container={scrollRef.current}
               dimmed={dimmedStaves}
               layoutToken={layout}
             />
 ```
 
-`scrollRef` is the existing scroll container ref declared in this component and
-already attached to `.piano-score-player__scroll`, which contains the renderer.
-`layout` gets a fresh identity on every engrave, which is exactly when the class
-needs re-applying.
+`scrollRef` is the existing scroll container ref declared at `ScorePlayer.jsx:268`
+and attached to `.piano-score-player__scroll`, which contains the renderer. Pass
+`scrollRef.current` — the **element**, not the ref (see the amendment note on
+Task 2). This render is already gated on `layoutFresh`, which only becomes true
+after a layout has been published, so the scroll div mounted in an earlier commit
+and `scrollRef.current` is a real element here. `layout` gets a fresh identity on
+every engrave, which is exactly when the class needs re-applying.
 
 - [ ] **Step 5: Replace the stylesheet rule**
 
