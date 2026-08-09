@@ -41,16 +41,20 @@ and is reused unchanged.
 | Kind | Condition | Appearance |
 |------|-----------|------------|
 | `match` | the pitch is written at the current step | filled, green |
-| `ghost` | not written here, and nothing is grading it | filled, neutral grey, ~30% opacity |
-| `wrong` | not written here, and Learn's gate is grading it | filled, red |
+| `ghost` | not written here — Listen, Polish, and ungated Learn | filled, neutral grey, ~30% opacity |
+| `wrong` | not written here, inside Learn's active gate | filled, red |
 
 `wrong` is the single exception to the held lifecycle: it persists for its
 existing TTL after release, because a slip the player has already let go of
 still has to be readable. `match` and `ghost` disappear the instant the key
 comes up.
 
-This keeps Learn's existing wrong-note ink intact while giving the other modes
-a non-judgemental treatment: ghosted where nothing is graded, red where it is.
+Red is scoped to Learn's gate specifically, not to "wherever grading happens".
+Polish grades, but it grades in per-measure washes and has never inked an
+individual note — reddening notes there would introduce a second, louder error
+signal competing with the wash it already shows. Learn's gate is the one place
+a single wrong note is already a per-note event, so it keeps its existing ink
+and everywhere else ghosts.
 
 ### What counts as a match
 
