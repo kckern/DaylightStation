@@ -7,6 +7,7 @@ import {
   extractPerStaffGeometry,
   extractEvents,
   extractLayoutSliced,
+  staffGroups,
 } from './osmdRender.js';
 
 const note = ({ halfTone, rest = false, grace = false, tieCont = false, staff = 0 }) => {
@@ -211,5 +212,45 @@ describe('layout extract publishes staff geometry', () => {
     const out = extractEvents(osmd);
     expect(out.staves).toEqual([{ system: 0, top: 63.5, left: 120, right: 1120, lineSpacing: 10 }]);
     expect(out.events).toEqual([]);
+  });
+});
+
+describe('staffGroups', () => {
+  // Mirrors the real OSMD output: one <g class="staffline"> per staff per
+  // system, id `{Instrument}{n}-{staffNumber}` with a 1-BASED trailing number.
+  const svgWith = (ids) => {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    for (const id of ids) {
+      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      g.setAttribute('class', 'staffline');
+      g.setAttribute('id', id);
+      svg.appendChild(g);
+    }
+    return svg;
+  };
+
+  it('converts the 1-based id suffix to a 0-based staff id', () => {
+    const svg = svgWith(['Piano0-1', 'Piano0-2']);
+    expect(staffGroups(svg).map((g) => g.staff)).toEqual([0, 1]);
+  });
+
+  it('returns one entry per system, not per staff', () => {
+    // Two systems of a grand staff = four groups, staff ids repeating.
+    const svg = svgWith(['Piano0-1', 'Piano0-2', 'Piano0-1', 'Piano0-2']);
+    expect(staffGroups(svg).map((g) => g.staff)).toEqual([0, 1, 0, 1]);
+  });
+
+  it('hands back the element itself so a caller can class it', () => {
+    const svg = svgWith(['Piano0-2']);
+    expect(staffGroups(svg)[0].el).toBe(svg.querySelector('g.staffline'));
+  });
+
+  it('skips a group whose id carries no staff number rather than guessing', () => {
+    expect(staffGroups(svgWith(['Piano0-1', 'junk', 'Piano0-2']))).toHaveLength(2);
+  });
+
+  it('survives null and an empty sheet', () => {
+    expect(staffGroups(null)).toEqual([]);
+    expect(staffGroups(svgWith([]))).toEqual([]);
   });
 });
