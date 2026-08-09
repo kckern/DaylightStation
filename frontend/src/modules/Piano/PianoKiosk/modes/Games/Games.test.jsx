@@ -38,14 +38,9 @@ beforeEach(() => vi.clearAllMocks());
 describe('Games mode', () => {
   it('renders a picker tile per registered game with friendly labels (index route)', () => {
     renderGames();
-    for (const label of ['Card Game', 'Space Invaders', 'Tetris', 'Flashcards', 'Side Scroller']) {
+    for (const label of ['Card Game', 'Space Invaders', 'Tetris', 'Flashcards', 'Piano Hero', 'Side Scroller']) {
       expect(screen.getByText(label)).toBeTruthy();
     }
-  });
-
-  it('does not list Note Hero (it lives under Lessons now)', () => {
-    renderGames();
-    expect(screen.queryByText('Note Hero')).toBeNull();
   });
 
   it('navigates to the game host on tile click (relative nav)', () => {
