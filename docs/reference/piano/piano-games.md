@@ -1,6 +1,6 @@
 # Piano Games Architecture
 
-Reference for the DaylightStation piano game system — MIDI-driven games layered on the piano visualizer. Currently supports three game modes: Rhythm (falling-note accuracy game with invaders/hero modes), Tetris (block-stacking controlled by musical note matching), and Flashcards (untimed note-reading trainer).
+Reference for the DaylightStation piano game system — MIDI-driven games layered on the piano visualizer. The kiosk Games picker includes Piano Hero, Space Invaders, Tetris, Flashcards, Side Scroller, and the YAML-driven Card Game.
 
 ---
 
@@ -122,7 +122,7 @@ Maps game IDs to their component loaders, layout modes, and lazy React component
 - `waterfall` — game overlays on top of the existing waterfall view (rhythm)
 - `replace` — game takes over the entire PianoVisualizer viewport (tetris, flashcards)
 
-**Fullscreen games** (layout: `replace`) have a `LazyComponent` entry — a `React.lazy()` wrapper used by PianoVisualizer to render them inside a `<Suspense>` boundary.
+**Fullscreen games** (layout: `replace`) have a `LazyComponent` entry — a `React.lazy()` wrapper used by the kiosk game host to render them inside a `<Suspense>` boundary.
 
 **Config prop naming:** All fullscreen games receive their config as `gameConfig` (not game-specific names like `tetrisConfig`). PianoVisualizer passes `gamesConfig[activeGameId]` as the `gameConfig` prop.
 
@@ -411,6 +411,51 @@ Quality vocabulary (`CHORD_QUALITIES`): major ``, minor `m`, diminished `°`, au
 |------|-----------|----------|
 | `flashcardEngine.test.js` | Vitest | 35 tests: card generation (staff + chord, roots filter), match evaluation (both types), miss reasons, voicing, start-level resolution |
 | `useFlashcardGame.test.js` | Vitest | 5 tests: per-user start, scoring, wrong-bass miss, carryover rearm guard, level select |
+
+---
+
+## Piano Hero
+
+Piano Hero turns the kiosk's configured Sheet Music library into a falling-note
+timing game. Its first chart source is MusicXML (`.musicxml` and `.mxl`); Studio
+takes are deliberately not part of the initial picker, but can be added later as
+another source without changing the timing engine.
+
+### Flow
+
+1. `/piano/games` exposes the registered `hero` tile as **Piano Hero**.
+2. The song picker resolves the same `sheetmusic.collections` config and generic
+   content-list endpoints as Sheet Music, filtering the results to MusicXML.
+3. Selecting a song fetches raw XML through
+   `api/v1/proxy/media/stream/:encodedPath` (`.mxl` is decompressed by the
+   backend, exactly as in Sheet Music).
+4. `parseMusicXml` creates the shared renderer-independent score model.
+5. `buildHeroChart` groups simultaneous onsets into chord targets and converts
+   quarter-note time to milliseconds using the score's opening tempo.
+6. Live note-on events are judged against the nearest matching target. Chords
+   resolve only when every pitch is struck.
+
+### Timing and scoring
+
+| Result | Window | Base score |
+|--------|--------|------------|
+| Perfect | ±90 ms | 1000 |
+| Good | ±220 ms (outside Perfect) | 600 |
+| Miss | target expires after +420 ms | 0 |
+
+Every ten consecutive resolved targets raises the score multiplier by 0.25,
+capped at 2×. A wrong key or expired target resets the streak. Tied
+continuations are excluded from the attack chart: only the original tie start
+becomes a falling target.
+
+### Files
+
+| File | Purpose |
+|------|---------|
+| `PianoHeroGame/PianoHeroGame.jsx` | MusicXML picker, loading, highway, keyboard, and results UI |
+| `PianoHeroGame/heroChart.js` | Pure score-to-chart conversion and hit/miss judging |
+| `PianoHeroGame/usePianoHeroGame.js` | MIDI subscription and timed run lifecycle |
+| `PianoHeroGame/PianoHeroGame.scss` | Picker, highway, HUD, notes, and results styling |
 
 ---
 

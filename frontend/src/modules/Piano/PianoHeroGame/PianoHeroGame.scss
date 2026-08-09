@@ -1,27 +1,183 @@
-.piano-hero-placeholder {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.piano-hero-picker,
+.piano-hero-game {
   width: 100%;
   height: 100%;
-  background: #1a1a2e;
+  min-height: 0;
+  color: #f7fbff;
+  background:
+    radial-gradient(circle at 50% -20%, rgba(23, 216, 196, .2), transparent 46%),
+    linear-gradient(180deg, #10162b 0%, #080b17 100%);
+}
 
-  &__content {
-    text-align: center;
+.piano-hero-picker {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 22px 34px 28px;
+
+  &__header { text-align: center; }
+  &__header h1 { margin: 0; font-size: 38px; letter-spacing: -.03em; }
+  &__header p { margin: 4px 0 0; color: rgba(255,255,255,.65); font-size: 16px; }
+
+  &__grid {
+    display: grid;
+    grid-template-columns: repeat(var(--hero-cols), minmax(0, 1fr));
+    grid-template-rows: repeat(var(--hero-rows), minmax(0, 1fr));
+    flex: 1;
+    min-height: 0;
+    gap: 14px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
   }
 
-  &__title {
-    font-size: 3rem;
-    font-weight: 900;
-    color: #00ffc8;
-    text-shadow: 0 0 30px rgba(0, 255, 200, 0.5);
-    margin: 0 0 1rem 0;
+  &__grid li { min-width: 0; min-height: 0; }
+  &__grid button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    width: 100%;
+    height: 100%;
+    min-height: 112px;
+    padding: 12px;
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 16px;
+    color: #fff;
+    background: rgba(255,255,255,.07);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.06);
   }
+  &__grid button:active { transform: scale(.98); background: rgba(23,216,196,.15); }
+  &__grid img { width: 100%; min-height: 0; flex: 1; object-fit: contain; border-radius: 9px; }
+  &__grid strong { overflow: hidden; width: 100%; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
+  &__note { font-size: 54px; line-height: 1; color: #17d8c4; }
+}
 
-  &__subtitle {
-    font-size: 1.2rem;
-    color: rgba(255, 255, 255, 0.5);
-    text-transform: uppercase;
-    letter-spacing: 0.2em;
+.piano-hero-game {
+  position: relative;
+  display: grid;
+  grid-template-rows: 74px minmax(0, 1fr) 132px;
+  overflow: hidden;
+
+  &__hud {
+    position: relative;
+    z-index: 4;
+    display: grid;
+    grid-template-columns: 120px 1fr 180px;
+    align-items: center;
+    gap: 18px;
+    padding: 0 22px;
+    background: rgba(5,8,18,.88);
+    border-bottom: 1px solid rgba(255,255,255,.1);
+  }
+  &__songs {
+    min-height: 46px;
+    border: 1px solid rgba(255,255,255,.2);
+    border-radius: 12px;
+    color: #fff;
+    background: rgba(255,255,255,.08);
+    font-weight: 700;
+  }
+  &__title { display: flex; flex-direction: column; text-align: center; }
+  &__title strong { font-size: 21px; }
+  &__title span, &__score span { color: rgba(255,255,255,.55); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+  &__score { display: flex; flex-direction: column; align-items: flex-end; }
+  &__score strong { color: #38f0cf; font-size: 26px; font-variant-numeric: tabular-nums; }
+  &__progress { position: absolute; inset: auto 0 0; height: 3px; background: rgba(255,255,255,.08); }
+  &__progress span { display: block; height: 100%; background: #17d8c4; box-shadow: 0 0 12px #17d8c4; }
+  &__keyboard { position: relative; z-index: 3; min-height: 0; }
+  &__keyboard .piano-keyboard { height: 100%; }
+}
+
+.piano-hero-highway {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  background: linear-gradient(90deg, rgba(0,0,0,.22), rgba(255,255,255,.025) 50%, rgba(0,0,0,.22));
+
+  &__lanes {
+    position: absolute;
+    inset: 0;
+    opacity: .18;
+    background: repeating-linear-gradient(90deg, transparent 0, transparent calc(2% - 1px), rgba(255,255,255,.16) 2%);
+    mask-image: linear-gradient(to bottom, transparent, #000 38%, #000);
+  }
+  &__hit-line {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 82%;
+    height: 4px;
+    background: #fff;
+    box-shadow: 0 0 8px #fff, 0 0 22px #17d8c4;
   }
 }
+
+.piano-hero-note {
+  position: absolute;
+  z-index: 2;
+  left: var(--x);
+  top: var(--y);
+  width: var(--w);
+  height: var(--h);
+  min-height: 12px;
+  border: 2px solid hsla(var(--hue), 95%, 82%, .9);
+  border-radius: 7px;
+  transform: translate(-50%, -100%);
+  background: linear-gradient(90deg, hsl(var(--hue), 88%, 45%), hsl(var(--hue), 94%, 67%));
+  box-shadow: 0 0 12px hsla(var(--hue), 95%, 58%, .72), inset 0 0 7px rgba(255,255,255,.45);
+
+  &--hit { opacity: .18; filter: saturate(.5); }
+  &--missed { opacity: .2; background: #ff3d62; border-color: #ff9aae; box-shadow: 0 0 16px rgba(255,61,98,.7); }
+  &.is-struck { border-color: #fff; box-shadow: 0 0 9px #fff, 0 0 24px #38f0cf; }
+}
+
+.piano-hero-countdown {
+  position: absolute;
+  z-index: 6;
+  inset: 74px 0 132px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-size: 112px;
+  font-weight: 900;
+  text-shadow: 0 0 34px #17d8c4;
+  pointer-events: none;
+}
+
+.piano-hero-overlay {
+  position: absolute;
+  z-index: 7;
+  inset: 74px 0 132px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 30px;
+  text-align: center;
+  background: rgba(5,8,18,.84);
+  backdrop-filter: blur(8px);
+
+  h2 { margin: 0; font-size: 40px; }
+  p { color: rgba(255,255,255,.68); font-size: 17px; }
+  > button, &__actions button {
+    min-width: 160px;
+    min-height: 54px;
+    padding: 0 22px;
+    border: 0;
+    border-radius: 14px;
+    color: #07131a;
+    background: #38f0cf;
+    font-size: 18px;
+    font-weight: 800;
+  }
+  &--complete h2 { color: #38f0cf; font-size: 68px; }
+  &__actions { display: flex; gap: 12px; margin-top: 22px; }
+  &__actions button.is-secondary { color: #fff; background: rgba(255,255,255,.13); border: 1px solid rgba(255,255,255,.2); }
+}
+
+.piano-hero-results { display: flex; gap: 28px; margin-top: 8px; }
+.piano-hero-results span { display: flex; flex-direction: column; color: rgba(255,255,255,.62); }
+.piano-hero-results strong { color: #fff; font-size: 26px; }

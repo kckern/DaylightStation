@@ -16,7 +16,7 @@ const GAME_LABELS = {
   'space-invaders': 'Space Invaders',
   tetris: 'Tetris',
   flashcards: 'Flashcards',
-  hero: 'Note Hero',
+  hero: 'Piano Hero',
   'side-scroller': 'Side Scroller',
 };
 
@@ -55,10 +55,8 @@ export function Games() {
 function GamePicker() {
   const logger = useMemo(() => getLogger().child({ component: 'piano-games' }), []);
   const navigate = useNavigate();
-  // Note Hero now lives under Lessons (it's a timing/learning game), so it is
-  // excluded from the arcade Games picker.
-  const ids = getGameIds().filter((id) => id !== 'hero');
-  const cols = balancedColumns(ids.length); // 4 → 4, centered, no empty column
+  const ids = getGameIds();
+  const cols = balancedColumns(ids.length);
 
   return (
     <section className="piano-menu piano-mode--games">
