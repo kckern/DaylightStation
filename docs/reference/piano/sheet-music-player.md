@@ -518,6 +518,14 @@ running on the per-step fallback (keyboard stays note-precise regardless).
 
 ## Key files
 
+Piano Hero is a separate MusicXML consumer under
+`frontend/src/modules/Piano/PianoHeroGame/`. Its score picker reuses the
+configured `sheetmusic.collections` tabs without repeating the route-level
+title. During play, completed targets burst and vanish; expired targets pulse
+bright red before fading so success and failure cannot be confused at a
+glance. Reduced-motion clients keep the same semantic distinction with a
+short dissolve and a persistent red miss state.
+
 | File | Role |
 |------|------|
 | `SheetMusic.jsx` | routing (grid ↔ viewer), MusicXML fetch + load timing |
