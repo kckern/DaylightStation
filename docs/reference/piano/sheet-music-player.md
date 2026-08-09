@@ -119,9 +119,11 @@ ink, so nothing live is ever muted by the dim layer.
 The current-step notehead itself is recolored directly on the engraved SVG
 rather than drawn as an overlay: it takes a subtle near-black ink, the same
 fixed shade in every mode (only the cursor band keeps the per-mode accent
-color). A note struck correctly glows green with a soft drop-shadow — a fixed
-color, independent of mode or the current-step ink, so "hit" always reads the
-same regardless of what's playing.
+color). A note struck correctly takes a warm dark brown with a soft
+drop-shadow — a fixed color, independent of mode or the current-step ink, so
+"hit" always reads the same regardless of what's playing. It reads as ink
+rather than as the kiosk's accent green, which keeps the page looking engraved
+instead of lit up like a game.
 
 ## Listen
 

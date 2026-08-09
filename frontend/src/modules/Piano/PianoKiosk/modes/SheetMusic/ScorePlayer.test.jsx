@@ -425,7 +425,7 @@ describe('ScorePlayer — note-highlight ink (wave-2 A)', () => {
     expect(litOnlyEl.style.getPropertyValue('--nh-color')).toBe('#23262b');
   });
 
-  it('PianoApp.scss gives .piano-note-hit its own fixed green, never the shared --nh-color ink (wave-2 A)', () => {
+  it('PianoApp.scss gives .piano-note-hit its own fixed dark brown, never the shared --nh-color ink (wave-2 A)', () => {
     // jsdom doesn't compute styles from the stylesheet, so assert the source
     // directly (same pattern as TransportButton.test.jsx's SCSS floor check).
     const scss = readFileSync(fileURLToPath(new URL('../../../../../Apps/PianoApp.scss', import.meta.url)), 'utf8');
@@ -433,7 +433,8 @@ describe('ScorePlayer — note-highlight ink (wave-2 A)', () => {
     // through that inner brace pair too, not just up to the first `}`.
     const hitBlock = scss.match(/\.piano-note-hit\s*\{(?:[^{}]|\{[^{}]*\})*\}/s)?.[0];
     expect(hitBlock).toBeTruthy();
-    expect(hitBlock).toContain('#2ec46f'); // struck-correctly stays affirming green
+    expect(hitBlock).toContain('#6b4423'); // struck-correctly reads as dark brown ink
+    expect(hitBlock).not.toContain('#2ec46f'); // not the shared kiosk accent green
     expect(hitBlock).not.toMatch(/var\(--nh-color/); // never inherits the near-black lit ink
   });
 });

@@ -24,8 +24,8 @@ const PENDING = 'piano-note-pending'; // expected here, still outstanding (Learn
  * @param {string} [p.accent] - light-up colour (matches the mode's cursor colour)
  * @param {boolean} [p.showPending] - mark expected-but-unstruck noteheads. Learn
  *   advances only when EVERY active-staff note of the step is struck; without
- *   this the struck note lights green and the user has no way to see they still
- *   owe the other hand (audit H3).
+ *   this the struck note takes the hit colour and the user has no way to see
+ *   they still owe the other hand (audit H3).
  */
 export default function NoteHighlightLayer({ step, activeParts = {}, struck, accent, showPending = false }) {
   useLayoutEffect(() => {
