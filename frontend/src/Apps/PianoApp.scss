@@ -2816,8 +2816,10 @@
   z-index: 5;
   pointer-events: none;
 }
-.piano-live-input__note.is-match { color: var(--piano-accent, #2ec46f); }
-.piano-live-input__note.is-ghost { color: var(--piano-muted, #8a8f98); opacity: 0.3; }
+.piano-live-input__note {
+  &.is-match { color: var(--piano-accent, #2ec46f); }
+  &.is-ghost { color: var(--piano-muted, #8a8f98); opacity: 0.3; }
+}
 
 // Active-note light-up: recolour the ENGRAVED notehead itself — NO overlay
 // rectangle. NoteHighlightLayer toggles these classes on OSMD's per-note <g>

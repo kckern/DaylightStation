@@ -122,23 +122,34 @@ describe('LiveInputLayer', () => {
 });
 
 describe('LiveInputLayer styling', () => {
-  const scss = () => readFileSync(fileURLToPath(new URL('../../../../../Apps/PianoApp.scss', import.meta.url)), 'utf8');
+  // Scope to the live-input section, then assert nesting-agnostically: these
+  // rules are about which PROPERTIES carry the styling, not how the source
+  // happens to be nested. Re-nesting them must not break this test.
+  const liveBlock = () => {
+    const s = readFileSync(fileURLToPath(new URL('../../../../../Apps/PianoApp.scss', import.meta.url)), 'utf8');
+    const start = s.indexOf('.piano-live-input {');
+    const end = s.indexOf('// Active-note light-up');
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    return s.slice(start, end);
+  };
 
-  it('positions the layer without covering the engraving', () => {
-    const block = scss().match(/\.piano-live-input\s*\{(?:[^{}]|\{[^{}]*\})*\}/s)?.[0];
-    expect(block).toBeTruthy();
-    expect(block).toMatch(/pointer-events:\s*none/); // never intercepts a tap on the score
+  it('never intercepts a tap meant for the score', () => {
+    expect(liveBlock()).toMatch(/pointer-events:\s*none/);
   });
 
-  it('fills a match green and a ghost at reduced strength', () => {
-    const s = scss();
-    const match = s.match(/\.piano-live-input__note\.is-match\s*\{(?:[^{}]|\{[^{}]*\})*\}/s)?.[0];
-    const ghost = s.match(/\.piano-live-input__note\.is-ghost\s*\{(?:[^{}]|\{[^{}]*\})*\}/s)?.[0];
-    expect(match).toBeTruthy();
-    expect(ghost).toBeTruthy();
-    expect(match).toContain('#2ec46f');          // the kiosk's affirming green
-    expect(ghost).toMatch(/opacity:\s*0?\.3/);   // recessed, not absent
-    // A ghost must never be drawn hollow — a hollow head means a half or whole note.
-    expect(ghost).not.toMatch(/fill:\s*none/);
+  it('colours a match with the kiosk accent green', () => {
+    expect(liveBlock()).toMatch(/is-match\s*\{[^}]*color:\s*var\(--piano-accent[^}]*#2ec46f/);
+  });
+
+  it('recesses a ghost rather than hiding it', () => {
+    expect(liveBlock()).toMatch(/is-ghost\s*\{[^}]*opacity:\s*0?\.3/);
+  });
+
+  it('carries colour with `color`, never `fill`', () => {
+    // WetNoteGlyph paints with currentColor, so a `fill` declaration here would
+    // silently do nothing. A ghost must also never be hollow — `fill: none`
+    // would state a half or whole note.
+    expect(liveBlock()).not.toMatch(/fill:/);
   });
 });
