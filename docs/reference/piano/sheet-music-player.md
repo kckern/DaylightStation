@@ -521,7 +521,9 @@ running on the per-step fallback (keyboard stays note-precise regardless).
 Piano Hero is a separate MusicXML consumer under
 `frontend/src/modules/Piano/PianoHeroGame/`. Its score picker reuses the
 configured `sheetmusic.collections` tabs without repeating the route-level
-title. During play, completed targets burst and vanish; expired targets pulse
+title. The selected collection is the single game-owned URL segment after
+`/piano/games/hero`; changing tabs replaces that segment rather than appending
+another game id. During play, completed targets burst and vanish; expired targets pulse
 bright red before fading so success and failure cannot be confused at a
 glance. Reduced-motion clients keep the same semantic distinction with a
 short dissolve and a persistent red miss state.
