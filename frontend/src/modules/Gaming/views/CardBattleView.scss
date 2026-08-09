@@ -1,31 +1,182 @@
 .gaming-shell {
-  min-height: 100vh;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
   box-sizing: border-box;
-  color: #f5f2ff;
-  background: radial-gradient(circle at 50% 35%, #32205c, #120b26 65%);
-  font-family: system-ui, sans-serif;
+  overflow: hidden;
+  color: var(--piano-fg, #f1f1f4);
+  background: var(--piano-bg, #16161b);
+  font-family: 'Roboto Condensed', system-ui, sans-serif;
 }
 
-.gaming-loading, .gaming-error { display: grid; place-content: center; text-align: center; }
-.card-battle { display: grid; grid-template-rows: auto auto 1fr auto auto; gap: 1rem; padding: 1.25rem; }
-.card-battle__header, .combatant > div { display: flex; justify-content: space-between; align-items: center; }
-.card-battle__header div { display: flex; flex-direction: column; }
-.card-battle__header button { font-size: 2rem; background: transparent; border: 0; color: inherit; }
-.combatant { max-width: 42rem; width: 100%; margin: auto; display: grid; gap: .35rem; }
-.combatant h1 { margin: 0; }
-.combatant meter { width: 100%; height: 1.2rem; }
-.battle-stage { display: grid; place-items: center; min-height: 8rem; }
-.battle-prompt, .battle-result { font-size: clamp(1.5rem, 5vw, 3rem); font-weight: 800; }
-.battle-warning { color: #ffd166; }
-.card-hand { display: flex; justify-content: center; gap: .75rem; overflow-x: auto; padding-bottom: .5rem; }
-.battle-card { position: relative; flex: 0 0 10rem; min-height: 9rem; display: flex; flex-direction: column; justify-content: space-between; padding: 1rem; border: 2px solid #aa8cff; border-radius: 1rem; color: #1a1030; background: #f8f4ff; box-shadow: 0 .5rem 1.5rem #0008; }
-.battle-card:disabled { opacity: .42; }
-.battle-card__cost { align-self: flex-end; font-weight: 800; }
-.challenge-overlay { position: fixed; inset: 0; z-index: 20; display: grid; place-content: center; gap: 1rem; padding: 2rem; text-align: center; background: #090512ee; }
-.piano-challenge { display: grid; gap: 1rem; min-width: min(80vw, 30rem); }
-.piano-challenge__chord { font-size: clamp(5rem, 20vw, 10rem); font-weight: 900; }
-.piano-scale-challenge { width: min(90vw, 52rem); }
-.piano-scale-challenge > strong { font-size: clamp(1.5rem, 5vw, 2.5rem); }
-.piano-scale-challenge__staff { overflow-x: auto; border-radius: .75rem; color: #171122; background: #fff; }
-.piano-scale-challenge__staff svg { display: block; margin: auto; }
-.challenge-abort { justify-self: center; padding: .7rem 1.2rem; border: 1px solid #806da8; border-radius: 999px; color: inherit; background: transparent; }
+.gaming-loading,
+.gaming-error { display: grid; place-content: center; text-align: center; }
+
+.card-battle {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto auto minmax(3rem, 1fr) auto;
+  gap: var(--sp-3, 12px);
+  padding: var(--sp-4, 16px) var(--sp-5, 24px) var(--sp-5, 24px);
+}
+
+.card-battle__header {
+  min-height: 3.25rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--sp-5, 24px);
+  padding-bottom: var(--sp-3, 12px);
+  border-bottom: 1px solid var(--piano-border, #34343f);
+}
+
+.card-battle__identity { display: flex; align-items: baseline; gap: var(--sp-3, 12px); }
+.card-battle__identity strong { font-size: var(--t-title, 1.6rem); }
+.card-battle__eyebrow {
+  color: var(--piano-muted, #9a9aa6);
+  font-size: var(--t-cap, 0.85rem);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.card-battle__player-status { display: flex; gap: var(--sp-5, 24px); color: var(--piano-muted, #9a9aa6); }
+.card-battle__player-status b { color: var(--piano-fg, #f1f1f4); font-size: 1.2rem; }
+.card-battle__header > button {
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 1px solid var(--piano-border, #34343f);
+  border-radius: var(--r-md, 12px);
+  color: var(--piano-muted, #9a9aa6);
+  background: var(--piano-surface, #1f1f26);
+  font: inherit;
+  font-size: 1.5rem;
+}
+
+.combatant--enemy {
+  min-height: 4.5rem;
+  display: grid;
+  grid-template-columns: minmax(12rem, auto) minmax(18rem, 1fr);
+  align-items: center;
+  gap: var(--sp-5, 24px);
+  padding: var(--sp-3, 12px) var(--sp-4, 16px);
+  border: 1px solid var(--piano-border, #34343f);
+  border-radius: var(--r-md, 12px);
+  background: var(--piano-surface, #1f1f26);
+}
+
+.combatant__label { display: flex; flex-direction: column; min-width: 0; }
+.combatant__label span { color: var(--piano-muted, #9a9aa6); font-size: var(--t-cap, 0.85rem); }
+.combatant__label strong { overflow: hidden; font-size: var(--t-h, 1.25rem); text-overflow: ellipsis; white-space: nowrap; }
+.combatant__health { display: grid; grid-template-columns: minmax(0, 1fr) 4.5rem; align-items: center; gap: var(--sp-3, 12px); }
+.combatant__health progress { width: 100%; height: 0.9rem; accent-color: var(--piano-danger, #e05a4f); }
+.combatant__health span { color: var(--piano-muted, #9a9aa6); font-variant-numeric: tabular-nums; text-align: right; }
+
+.battle-stage { min-height: 0; display: grid; place-content: center; text-align: center; }
+.battle-prompt { display: flex; flex-direction: column; gap: var(--sp-1, 4px); }
+.battle-prompt strong,
+.battle-result { font-size: clamp(1.5rem, 3vw, 2.4rem); }
+.battle-prompt span { color: var(--piano-muted, #9a9aa6); font-size: 1.1rem; }
+.battle-prompt--blocked strong { color: var(--piano-warn, #e0a83a); }
+.battle-warning { margin-top: var(--sp-2, 8px); color: var(--piano-warn, #e0a83a); }
+
+.card-hand {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 7rem minmax(0, 1fr);
+  align-items: stretch;
+  gap: var(--sp-4, 16px);
+  padding-top: var(--sp-4, 16px);
+  border-top: 1px solid var(--piano-border, #34343f);
+}
+
+.card-hand__heading { display: flex; flex-direction: column; justify-content: center; }
+.card-hand__heading strong { font-size: var(--t-h, 1.25rem); }
+.card-hand__heading span { color: var(--piano-muted, #9a9aa6); }
+.card-hand__cards { min-width: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(10rem, 1fr); gap: var(--sp-3, 12px); }
+
+.battle-card {
+  min-width: 0;
+  min-height: 9.5rem;
+  display: grid;
+  grid-template-rows: auto 1fr auto auto;
+  gap: var(--sp-2, 8px);
+  padding: var(--sp-3, 12px) var(--sp-4, 16px);
+  border: 1px solid var(--piano-border, #34343f);
+  border-radius: var(--r-md, 12px);
+  color: var(--piano-fg, #f1f1f4);
+  background: var(--piano-surface, #1f1f26);
+  font: inherit;
+  text-align: left;
+  touch-action: manipulation;
+}
+
+.battle-card:active:not(:disabled) { background: var(--piano-surface-2, #2a2a33); transform: scale(0.985); }
+.battle-card:focus-visible { outline: 3px solid var(--piano-accent, #2ec46f); outline-offset: 2px; }
+.battle-card:disabled { opacity: 0.38; }
+.battle-card__meta { display: flex; justify-content: space-between; gap: var(--sp-2, 8px); color: var(--piano-muted, #9a9aa6); font-size: var(--t-cap, 0.85rem); }
+.battle-card > strong { align-self: end; overflow: hidden; font-size: clamp(1.25rem, 2.2vw, 1.8rem); text-overflow: ellipsis; white-space: nowrap; }
+.battle-card__detail { color: var(--piano-muted, #9a9aa6); }
+.battle-card__action {
+  justify-self: start;
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--r-pill, 999px);
+  color: var(--piano-accent-ink, #07210f);
+  background: var(--piano-accent, #2ec46f);
+  font-weight: 700;
+}
+
+.gaming-challenge-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-5, 24px);
+  background: rgba(11, 11, 15, 0.96);
+}
+
+.gaming-challenge-overlay__panel {
+  width: min(60rem, 100%);
+  max-height: 100%;
+  display: grid;
+  gap: var(--sp-4, 16px);
+  padding: var(--sp-5, 24px);
+  overflow: hidden;
+  border: 1px solid var(--piano-stage-border, #2c2c38);
+  border-radius: var(--r-lg, 16px);
+  background: var(--piano-stage-panel, #14141b);
+}
+
+.challenge-loading { min-height: 12rem; display: grid; place-content: center; }
+.piano-challenge { min-height: 0; display: grid; justify-items: center; gap: var(--sp-3, 12px); }
+.piano-challenge__chord { font-size: clamp(4rem, 14vw, 8rem); font-weight: 800; }
+.piano-scale-challenge > strong { font-size: var(--t-display, 2.2rem); }
+.piano-scale-challenge__staff {
+  width: 100%;
+  min-height: 11rem;
+  max-height: 15rem;
+  overflow: hidden;
+  border-radius: var(--r-md, 12px);
+  color: #171122;
+  background: #fff;
+}
+.piano-scale-challenge__staff svg { display: block; max-height: 15rem; margin: auto; }
+.challenge-abort {
+  justify-self: center;
+  min-height: 2.75rem;
+  padding: 0.55rem 1.1rem;
+  border: 1px solid var(--piano-stage-border, #2c2c38);
+  border-radius: var(--r-pill, 999px);
+  color: var(--piano-stage-muted, #bbbbbb);
+  background: transparent;
+  font: inherit;
+}
+
+@media (max-height: 620px) {
+  .card-battle { gap: var(--sp-2, 8px); padding-block: var(--sp-3, 12px); }
+  .card-battle__header { min-height: 2.75rem; padding-bottom: var(--sp-2, 8px); }
+  .combatant--enemy { min-height: 3.5rem; padding-block: var(--sp-2, 8px); }
+  .battle-card { min-height: 7.75rem; }
+  .gaming-challenge-overlay__panel { padding: var(--sp-3, 12px); }
+}

@@ -4,13 +4,15 @@ import { createPianoChordProvider } from '../modules/Piano/challenge/provider/cr
 import { PianoMidiProvider, usePianoMidiNotes } from '../modules/Piano/PianoKiosk/PianoMidiContext.jsx';
 
 export default function GamingApp({ clear = null }) {
-  const userId = useMemo(() => new URLSearchParams(window.location.search).get('user') || 'guest', []);
+  const query = useMemo(() => new URLSearchParams(window.location.search), []);
+  const userId = query.get('user') || 'guest';
+  const gameId = query.get('game') || 'scale-clash';
   const participants = useMemo(() => [{ user_id: userId, role: 'player' }], [userId]);
   const providers = useMemo(() => [createPianoChordProvider({ useNotes: usePianoMidiNotes })], []);
   return (
     <PianoMidiProvider>
       <GamingRuntime
-        gameId="scale-clash"
+        gameId={gameId}
         participants={participants}
         providers={providers}
         onClose={clear}

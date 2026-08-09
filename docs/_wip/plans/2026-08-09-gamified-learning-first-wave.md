@@ -29,6 +29,7 @@ pilot is registered as **Card Game** at `/piano/games` and deep-links at
 | App composition | `GamingApp` and `PianoCardGame` register the piano provider | Gaming runtime remains free of Piano imports |
 | YAML game content | `shared/gaming/definitions/card-game.yml` | Cards, balance, scale pitches, ABC notation, and outcomes remain editable without game-specific React |
 | Resume | Active session id persisted per game/user in local storage | Browser reload resumes rather than silently starting another game |
+| Experience telemetry | Structured client journey events plus authoritative server outcomes | Field monitoring can separate UI abandonment, blocked hands, practice difficulty, persistence failure, and completed play |
 
 ## Deliberate first-wave constraints
 
@@ -55,8 +56,8 @@ where the next implementation must supply evidence.
 - [ ] Field-test balance, tutorial clarity, and whether the loop actually sustains interest.
 - [ ] Choose numeric gates for challenge duration, retry rate, abandonment, and replay
   willingness before supervised sessions begin.
-- [ ] Add structured duration telemetry for prepare, start, first input, result, and
-  persistence.
+- [x] Add structured duration telemetry for prepare, start, first input, result, and
+  persistence, including aggregate wrong-note/restart counts without per-note log spam.
 - [ ] Compare against an equivalent non-game chord-practice baseline.
 - [ ] Decide go/revise/stop before adding another ruleset.
 
@@ -106,6 +107,29 @@ Focused tests cover:
 - Reload recovery of an already-started challenge.
 - HTTP definition/session/command routes.
 - Ordered-scale restart/completion semantics and Piano Games registration.
+- Tappable hand rendering, explicit no-card states, and deduplicated blocked/empty-hand logs.
+
+## Player-experience telemetry
+
+Client journey events use the `gaming.*` namespace and always include `gameId`,
+`sessionId`, `userId`, `revision`, and `turn` when a session exists:
+
+| Event | Monitoring question |
+|---|---|
+| `gaming.session.ready` / `gaming.session.closed` | Did the player start, resume, finish, or abandon? How long were they present? |
+| `gaming.card.selected` | Which scale did they choose, at what cost and turn? |
+| `gaming.challenge.prepared` / `started` | Did setup stall before input became possible? |
+| `gaming.challenge.completed` | How long to first input and completion; how many wrong notes/restarts; first try or recovered; persistence healthy? |
+| `gaming.challenge.aborted` / `abandoned` | Did the player cancel, reload during play, or leave the surface? |
+| `gaming.hand.empty` | Did an authoritative player-choice state contain no cards? |
+| `gaming.hand.blocked` | Were cards present but unplayable, and was energy the reason? |
+| `gaming.session.completed` | Winner, turns, health, elapsed observation time, and aggregate challenge counts |
+
+The backend separately emits `gaming.authority.challenge.resolved`,
+`gaming.authority.challenge.aborted`, and `gaming.authority.session.completed`. This keeps
+authoritative outcomes distinct from browser experience events so dashboards do not
+double-count them. Hand warnings are keyed by session revision and hand contents, preventing
+React rerenders from producing duplicate alerts.
 
 The production frontend build passes after restoring the already-declared, lockfile-pinned
 `signalsmith-stretch` dependency to `frontend/node_modules`. The install changed no tracked

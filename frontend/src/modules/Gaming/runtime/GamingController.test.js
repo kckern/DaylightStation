@@ -4,13 +4,14 @@ import { scaleClashDefinition } from '@shared-gaming/fixtures/scaleClash.mjs';
 import { GamingController } from './GamingController.js';
 import { createProviderRegistry } from './providerRegistry.js';
 
-function harness({ resumeStarted = false } = {}) {
+function harness({ resumeStarted = false, definition = scaleClashDefinition, mutateState = null, runtimeResult = null, clock = () => 1000 } = {}) {
   let session = {
     session_id: 'game_test', game_id: 'scale-clash', status: 'active', revision: 0,
-    definition: scaleClashDefinition,
-    state: createInitialState(scaleClashDefinition, { seed: 7, participants: [{ user_id: 'guest' }] }),
+    definition,
+    state: createInitialState(definition, { seed: 7, participants: [{ user_id: 'guest' }] }),
     events: [],
   };
+  mutateState?.(session.state);
   session.interaction = deriveInteraction(session.state, session.definition, 'guest');
   if (resumeStarted) {
     const card = session.state.zones.hand[0];
@@ -48,7 +49,11 @@ function harness({ resumeStarted = false } = {}) {
     Surface: () => null,
     ready: Promise.resolve(),
     prepare: vi.fn(async (request) => ({ challenge_id: request.challenge_id, prompt: request.prompt, provider_version: 'test' })),
-    start: vi.fn(async () => ({ status: 'completed', score: 1, metrics: {}, provider_version: 'test', attempt_id: 'attempt-1' })),
+    start: vi.fn(async () => runtimeResult || ({
+      status: 'completed', score: 1,
+      metrics: { durationMs: 900, timeToFirstInputMs: 200, firstTry: true, notesPlayed: 8, wrongNotes: 0, restarts: 0 },
+      provider_version: 'test', attempt_id: 'attempt-1',
+    })),
     cancel: vi.fn(),
     dispose: vi.fn(),
   };
@@ -56,14 +61,14 @@ function harness({ resumeStarted = false } = {}) {
   const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), child() { return this; } };
   const controller = new GamingController({
     api, providerRegistry: createProviderRegistry([provider]), gameId: 'scale-clash',
-    participants: [{ user_id: 'guest' }], viewerId: 'guest', resumeSessionId: resumeStarted ? 'game_test' : null, logger,
+    participants: [{ user_id: 'guest' }], viewerId: 'guest', resumeSessionId: resumeStarted ? 'game_test' : null, logger, clock,
   });
-  return { controller, api, runtime };
+  return { controller, api, runtime, logger };
 }
 
 describe('GamingController', () => {
   it('drives the persisted challenge saga through one provider result', async () => {
-    const { controller, api, runtime } = harness();
+    const { controller, api, runtime, logger } = harness();
     await controller.start();
     const initial = controller.getSnapshot().session;
     const enemyBefore = initial.state.enemy.health;
@@ -76,6 +81,46 @@ describe('GamingController', () => {
     expect(final.state.pending_action).toBeNull();
     expect(final.state.enemy.health).toBeLessThan(enemyBefore);
     expect(runtime.dispose).toHaveBeenCalledOnce();
+    const experienceEvents = logger.info.mock.calls.map(([event]) => event);
+    expect(experienceEvents).toEqual(expect.arrayContaining([
+      'gaming.session.ready',
+      'gaming.card.selected',
+      'gaming.challenge.prepared',
+      'gaming.challenge.started',
+      'gaming.challenge.completed',
+    ]));
+    expect(logger.info).toHaveBeenCalledWith('gaming.challenge.completed', expect.objectContaining({
+      durationMs: 900,
+      timeToFirstInputMs: 200,
+      firstTry: true,
+      notesPlayed: 8,
+      wrongNotes: 0,
+      restarts: 0,
+    }));
+    controller.dispose();
+    expect(logger.info).toHaveBeenCalledWith('gaming.session.closed', expect.objectContaining({
+      outcome: 'abandoned', cardsSelected: 1, challengesCompleted: 1,
+    }));
+  });
+
+  it('warns once when cards exist but none are playable', async () => {
+    const definition = structuredClone(scaleClashDefinition);
+    for (const card of Object.values(definition.cards)) card.cost = 99;
+    const { controller, logger } = harness({ definition });
+    await controller.start();
+    expect(logger.warn).toHaveBeenCalledWith('gaming.hand.blocked', expect.objectContaining({
+      reason: 'insufficient_energy', handCount: 3, playableCount: 0, energy: 3,
+    }));
+    expect(logger.warn.mock.calls.filter(([event]) => event === 'gaming.hand.blocked')).toHaveLength(1);
+    controller.dispose();
+  });
+
+  it('warns when the authoritative player-choice state has an empty hand', async () => {
+    const { controller, logger } = harness({ mutateState: (state) => { state.zones.hand = []; } });
+    await controller.start();
+    expect(logger.warn).toHaveBeenCalledWith('gaming.hand.empty', expect.objectContaining({
+      handCount: 0, playableCount: 0,
+    }));
     controller.dispose();
   });
 

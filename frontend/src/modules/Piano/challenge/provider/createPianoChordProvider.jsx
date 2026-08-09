@@ -16,7 +16,7 @@ function makeAttemptId() {
  * definition-owned; this adapter only translates live MIDI into a scored result.
  * The legacy export name remains stable for the existing standalone route.
  */
-export function createPianoChordProvider({ useNotes }) {
+export function createPianoChordProvider({ useNotes, clock = () => Date.now() }) {
   if (typeof useNotes !== 'function') throw new Error('createPianoChordProvider requires a useNotes hook');
   return {
     id: 'piano',
@@ -32,6 +32,11 @@ export function createPianoChordProvider({ useNotes }) {
       };
       let resolveAttempt = null;
       let settled = false;
+      let attemptStartedAt = null;
+      let firstInputAt = null;
+      let notesPlayed = 0;
+      let wrongNotes = 0;
+      let restarts = 0;
 
       const publish = (patch) => {
         snapshot = { ...snapshot, ...patch };
@@ -39,15 +44,30 @@ export function createPianoChordProvider({ useNotes }) {
       };
       const subscribe = (listener) => { listeners.add(listener); return () => listeners.delete(listener); };
 
+      const timedMetrics = (metrics = {}) => ({
+        ...metrics,
+        durationMs: attemptStartedAt == null ? null : Math.max(0, clock() - attemptStartedAt),
+        timeToFirstInputMs: attemptStartedAt == null || firstInputAt == null ? null : Math.max(0, firstInputAt - attemptStartedAt),
+        notesPlayed,
+        wrongNotes,
+        restarts,
+      });
+
+      const recordInput = () => {
+        if (firstInputAt == null) firstInputAt = clock();
+        notesPlayed += 1;
+      };
+
       const finish = async (score, metrics) => {
         if (settled || !resolveAttempt) return;
         settled = true;
         publish({ status: 'complete' });
         const result = {
-          status: 'completed', score, metrics,
+          status: 'completed', score, metrics: timedMetrics(metrics),
           provider_version: PROVIDER_VERSION,
           attempt_id: makeAttemptId(),
         };
+        const persistenceStartedAt = clock();
         try {
           const saved = await api.recordPianoAttempt(userId, {
             ...result,
@@ -59,8 +79,9 @@ export function createPianoChordProvider({ useNotes }) {
         } catch (error) {
           logger.warn('piano-challenge-attempt-save-failed', { error: error.message });
           result.attempt_id = null;
-          result.metrics = { ...metrics, persistence_error: true };
+          result.metrics = { ...result.metrics, persistenceError: true };
         }
+        result.metrics.persistenceDurationMs = Math.max(0, clock() - persistenceStartedAt);
         resolveAttempt(result);
         resolveAttempt = null;
       };
@@ -91,16 +112,22 @@ export function createPianoChordProvider({ useNotes }) {
             let progress = snapshot.progress;
             let hadWrong = snapshot.hadWrong;
             for (const note of freshNotes) {
+              recordInput();
+              const previousProgress = progress;
               const advanced = advanceScaleProgress(prompt.expected_midi, progress, note);
               progress = advanced.progress;
               hadWrong ||= advanced.wrong;
+              if (advanced.wrong) {
+                wrongNotes += 1;
+                if (previousProgress > 0) restarts += 1;
+              }
               if (advanced.complete) {
                 const firstTry = !hadWrong;
                 publish({ progress, hadWrong });
                 finish(firstTry ? 1 : 0.5, {
-                  first_try: firstTry,
-                  wrong_attempt_seen: !firstTry,
-                  notes_required: prompt.expected_midi.length,
+                  firstTry,
+                  wrongAttemptSeen: !firstTry,
+                  notesRequired: prompt.expected_midi.length,
                 });
                 return;
               }
@@ -115,10 +142,17 @@ export function createPianoChordProvider({ useNotes }) {
           }
           const card = { root: prompt.root, pitchClasses: new Set(prompt.pitch_classes) };
           const match = evaluateChordMatch(activeNotes, card);
-          if (match === 'wrong') publish({ hadWrong: true });
+          if (activeNotes.size > 0 && firstInputAt == null) {
+            firstInputAt = clock();
+            notesPlayed = activeNotes.size;
+          }
+          if (match === 'wrong') {
+            if (!snapshot.hadWrong) wrongNotes += 1;
+            publish({ hadWrong: true });
+          }
           if (match === 'correct') {
             const firstTry = !snapshot.hadWrong;
-            finish(firstTry ? 1 : 0.5, { first_try: firstTry, wrong_attempt_seen: !firstTry });
+            finish(firstTry ? 1 : 0.5, { firstTry, wrongAttemptSeen: !firstTry });
           }
         }, [activeNotes, noteHistory, view.status, view.prepared, view.armed]);
 
@@ -168,20 +202,25 @@ export function createPianoChordProvider({ useNotes }) {
         },
         async start(prepared) {
           settled = false;
+          attemptStartedAt = clock();
+          firstInputAt = null;
+          notesPlayed = 0;
+          wrongNotes = 0;
+          restarts = 0;
           publish({ status: 'running', prepared, armed: false, hadWrong: false, progress: 0 });
           return new Promise((resolve) => { resolveAttempt = resolve; });
         },
         cancel(reason = 'aborted') {
           if (!settled && resolveAttempt) {
             settled = true;
-            resolveAttempt({ status: 'aborted', score: null, metrics: { reason }, provider_version: PROVIDER_VERSION, attempt_id: null });
+            resolveAttempt({ status: 'aborted', score: null, metrics: timedMetrics({ reason }), provider_version: PROVIDER_VERSION, attempt_id: null });
             resolveAttempt = null;
           }
           publish({ status: 'cancelled' });
         },
         dispose() {
           if (!settled && resolveAttempt) {
-            resolveAttempt({ status: 'aborted', score: null, metrics: { reason: 'disposed' }, provider_version: PROVIDER_VERSION, attempt_id: null });
+            resolveAttempt({ status: 'aborted', score: null, metrics: timedMetrics({ reason: 'disposed' }), provider_version: PROVIDER_VERSION, attempt_id: null });
           }
           settled = true;
           resolveAttempt = null;
