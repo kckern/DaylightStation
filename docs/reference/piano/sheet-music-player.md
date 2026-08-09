@@ -143,8 +143,10 @@ metronome disabled-in-place rather than ticking against a ritardando.
 In Listen, Learn and Polish, the notes you are **currently holding** are drawn in
 the cursor column at the pitch you played, spelled from the sounding key so a
 transposed score still reads correctly. A pitch that is written at the cursor
-takes an affirming green; anything else is recessed rather than hidden, so you
-can always see what you actually played. Releasing the key removes the mark.
+takes an affirming green; outside Learn's gate, anything else is recessed rather
+than hidden, so you can always see what you actually played — inside the gate, a
+non-match is answered by the red wrong-note ink instead (see below). Releasing
+the key removes the mark.
 
 The rule is the same in all three modes and deliberately ignores which hands are
 active: it answers "is this on the page right now?", not "is this your job right
