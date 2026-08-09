@@ -48,13 +48,23 @@ const kinds = (c) => marks(c).map((el) => el.getAttribute('class').replace('pian
 afterEach(() => { cleanup(); h.active = new Map(); buildStep(); });
 
 describe('LiveInputLayer', () => {
-  it('turns the PRINTED note green when you hold a pitch written at the cursor', () => {
-    // No mark is drawn for a match — the engraved notehead itself is recoloured,
-    // so the affirmation can never sit beside the note it is affirming.
+  it('makes no claim at all about a pitch written at the cursor', () => {
+    // Whether that note was played correctly is an EVENT, reported by the flash
+    // at the moment it is judged. Held state is read only after the cursor has
+    // already advanced, so anything it said here would be about the wrong note.
     hold(67);
     const { container } = renderLayer();
-    expect(RH_EL.classList.contains('piano-note-match')).toBe(true);
-    expect(LH_EL.classList.contains('piano-note-match')).toBe(false);
+    expect(RH_EL.classList.contains('piano-note-match')).toBe(false);
+    expect(marks(container)).toHaveLength(0);
+  });
+
+  it('stays silent on a repeated note still held from the one before it', () => {
+    // Cursor on E, next note also E, the first still down. Reading held state
+    // would call it correct while the gate waits for a press that never came.
+    const heldOver = { notes: [{ midi: 67, staff: 0, x: 210, top: 30, bottom: 42, width: 12, el: RH_EL }] };
+    hold(67);
+    const { container } = renderLayer({ step: heldOver, gateActive: true, activeParts: { 0: true } });
+    expect(RH_EL.classList.contains('piano-note-match')).toBe(false);
     expect(marks(container)).toHaveLength(0);
   });
 
@@ -64,10 +74,9 @@ describe('LiveInputLayer', () => {
     expect(kinds(container)).toEqual(['is-ghost']);
   });
 
-  it('recolours the match and draws the ghost, one of each', () => {
-    hold(67, 61);
+  it('draws only the pitch that is not on the page', () => {
+    hold(67, 61); // 67 is written here, 61 is not
     const { container } = renderLayer();
-    expect(RH_EL.classList.contains('piano-note-match')).toBe(true);
     expect(kinds(container)).toEqual(['is-ghost']);
   });
 
@@ -78,24 +87,22 @@ describe('LiveInputLayer', () => {
     expect(marks(container)).toHaveLength(0);
   });
 
-  it('still marks the match while the gate is active', () => {
-    // Both hands active, matching the un-gated default — 67 is written for RH
-    // and RH is active, so it still reads as a match; 61 is written nowhere and
-    // draws nothing at all under the gate.
+  it('draws nothing whatsoever while the gate is judging', () => {
+    // Every held pitch under the gate is either written (the flash owns it) or
+    // wrong (the red ink owns it). A mark from here would be the second glyph
+    // for one keypress.
     hold(67, 61);
     const { container } = renderLayer({ gateActive: true, activeParts: { 0: true, 1: true } });
-    expect(RH_EL.classList.contains('piano-note-match')).toBe(true);
     expect(marks(container)).toHaveLength(0);
   });
 
-  it('releasing the key puts the printed note back', () => {
-    hold(67);
-    renderLayer();
-    expect(RH_EL.classList.contains('piano-note-match')).toBe(true);
+  it('releasing the key clears the ghost', () => {
+    hold(61);
+    const { container } = renderLayer();
+    expect(marks(container)).toHaveLength(1);
     h.active = new Map();
     cleanup();
-    // The class must never be stranded: OSMD's SVG outlives this component.
-    expect(RH_EL.classList.contains('piano-note-match')).toBe(false);
+    expect(document.querySelectorAll('.piano-live-input__note')).toHaveLength(0);
   });
 
   it('renders one <svg> holding every ghost, not one element per ghost', () => {
@@ -146,17 +153,9 @@ describe('LiveInputLayer', () => {
   // (step.notes[].x/top/bottom/width), never on cursorX. cursorX is the OSMD
   // cursor element's centre, a different point than the notehead's true centre;
   // drawing there produced a smeared second note beside the real one.
-  it('cannot land a match away from its note — nothing is positioned at all', () => {
-    // The predecessor drew a mark at measured coordinates and got it wrong twice:
-    // beside the note (the cursor's x is not the notehead's centre), and adrift
-    // mid-system when a notehead's own measurement was unavailable and the
-    // geometry fell back to the cursor's full-height box. Recolouring the
-    // engraved element removes coordinates from the problem, so a cursorX
-    // nowhere near the note cannot displace anything.
-    hold(67);
-    const { container } = renderLayer({ cursorX: 999 }); // far from the written 67
-    expect(RH_EL.classList.contains('piano-note-match')).toBe(true);
-    expect(container.querySelectorAll('.piano-live-input__note')).toHaveLength(0);
+  it('renders no layer at all when everything held is on the page', () => {
+    hold(67, 60); // both written here
+    const { container } = renderLayer();
     expect(container.querySelector('svg.piano-live-input')).toBeNull();
   });
 
@@ -199,10 +198,12 @@ describe('LiveInputLayer', () => {
     expect(marks(container)).toHaveLength(0);
   });
 
-  it('marks that same pitch as a match once the gate is off', () => {
+  it('makes no claim about that pitch once the gate is off either', () => {
+    // 60 is written here, so it is the flash's business in every mode.
     hold(60);
-    renderLayer({ gateActive: false, activeParts: { 0: true } });
-    expect(LH_EL.classList.contains('piano-note-match')).toBe(true);
+    const { container } = renderLayer({ gateActive: false, activeParts: { 0: true } });
+    expect(LH_EL.classList.contains('piano-note-match')).toBe(false);
+    expect(marks(container)).toHaveLength(0);
   });
 });
 

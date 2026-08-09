@@ -76,8 +76,10 @@ describe('FocusRangeLayer — multi-system ranges (audit L4)', () => {
     );
     const tints = [...container.querySelectorAll('.piano-score-range-tint')];
     expect(tints).toHaveLength(2);
-    // Band 1: measure 1 on system 1 (x 110–160, top 0).
-    expect(tints[0].style.left).toBe('110px');
+    // Band 1: measure 1 on system 1 (notes at x 110–160, top 0). Its left edge
+    // reaches BACK past the first note — midway to the previous one at x 60 —
+    // so the notehead sits inside the band instead of being cut in half.
+    expect(tints[0].style.left).toBe('85px');
     expect(tints[0].style.top).toBe('0px');
     // Band 2: measure 2 on system 2 (x from 10, top 200) — NOT a rect spanning both systems.
     expect(tints[1].style.left).toBe('10px');
@@ -86,5 +88,37 @@ describe('FocusRangeLayer — multi-system ranges (audit L4)', () => {
 
   it('rangeBands: single-system range yields one band', () => {
     expect(rangeBands(measures, boxes, { inMeasure: 0, outMeasure: 1 })).toHaveLength(1);
+  });
+});
+
+describe('rangeBands — the band lands between notes, never through them', () => {
+  // Evenly spaced notes, 20px apart, one measure per two steps.
+  const BOXES = [0, 1, 2, 3, 4, 5].map((i) => ({ x: 100 + i * 20, top: 10, bottom: 40 }));
+  const MEAS = [
+    { index: 0, firstStep: 0, lastStep: 1 },
+    { index: 1, firstStep: 2, lastStep: 3 },
+    { index: 2, firstStep: 4, lastStep: 5 },
+  ];
+
+  it('reaches back past the first note and forward past the last', () => {
+    // Measure 1 spans notes at x=140 and x=160. Anchoring the band on those
+    // centres cut both noteheads in half. It now stops midway to the neighbours
+    // either side — where the barline is — so whole notes sit inside it.
+    const [band] = rangeBands(MEAS, BOXES, { inMeasure: 1, outMeasure: 1 });
+    expect(band.left).toBe(130);  // midway back to the previous note at 120
+    expect(band.right).toBe(170); // midway on to the next note at 180
+  });
+
+  it('still contains every note of a multi-measure range', () => {
+    const [band] = rangeBands(MEAS, BOXES, { inMeasure: 0, outMeasure: 1 });
+    expect(band.left).toBeLessThan(100);  // before the very first note
+    expect(band.right).toBe(170);
+  });
+
+  it('pads the outer edge when the range runs to the end of the music', () => {
+    // No neighbour to measure against — the band must still clear the last note
+    // rather than stopping dead on its centre.
+    const [band] = rangeBands(MEAS, BOXES, { inMeasure: 2, outMeasure: 2 });
+    expect(band.right).toBeGreaterThan(200);
   });
 });

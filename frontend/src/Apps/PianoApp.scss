@@ -3041,9 +3041,10 @@
   margin-top: 0.8rem; appearance: none; cursor: pointer;
   padding: 0.5rem 1rem; border-radius: var(--r-md, 12px);
   border: 1px solid var(--piano-accent, #2ec46f); color: var(--piano-accent, #2ec46f);
-  // A passage you are looping is not a verdict, so it carries no hue — just a
-  // warm shade of the paper, enough to bound the region and nothing more.
-  background: rgba(120, 106, 82, 0.10);
+  // The loop's own colour — a muted orange, deliberately not the accent green a
+  // correctly played note wears. It bounds a region rather than judging it, so
+  // it stays low enough to read the engraving straight through.
+  background: rgba(200, 129, 63, 0.13);
   font: inherit; font-weight: 600;
 }
 
@@ -3130,8 +3131,10 @@
   &::after {
     content: ''; position: absolute; top: 0; bottom: 0; left: 50%;
     width: 3px; margin-left: -1.5px; border-radius: 2px;
-    background: var(--piano-accent, #2ec46f);
-    box-shadow: 0 0 6px rgba(46, 196, 111, 0.5);
+    // Muted orange, not the accent green: green is what a correctly played note
+    // says, and a loop boundary is not a verdict about your playing.
+    background: var(--piano-loop, #c8813f);
+    box-shadow: 0 0 6px rgba(200, 129, 63, 0.45);
   }
   &.is-dragging {
     cursor: grabbing;

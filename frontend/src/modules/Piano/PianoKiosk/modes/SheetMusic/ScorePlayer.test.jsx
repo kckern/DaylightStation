@@ -3815,12 +3815,12 @@ describe('ScorePlayer — live input viz', () => {
   it('draws held notes in Listen', async () => {
     renderPlayer(); // opens in Listen
     await act(async () => {});
-    holdNotes(64); // the first step's written pitch in this fixture
+    holdNotes(64); // written here — holding makes no claim; the flash reports hits
     await act(async () => {});
-    expect(matched()).toHaveLength(1); // the PRINTED note turns green
-    holdNotes(61); // not written here
+    expect(matched()).toHaveLength(0);
+    holdNotes(61); // not written here — this IS what held state can say
     await act(async () => {});
-    expect(liveMarks()).toHaveLength(1); // a ghost IS drawn — nothing to recolour
+    expect(liveMarks()).toHaveLength(1);
   });
 
   it('shows held notes in Polish', async () => {
@@ -3828,9 +3828,9 @@ describe('ScorePlayer — live input viz', () => {
     await act(async () => {});
     enterPolish();
     await act(async () => {});
-    holdNotes(64);
+    holdNotes(61); // not written at the cursor
     await act(async () => {});
-    expect(matched()).toHaveLength(1);
+    expect(liveMarks()).toHaveLength(1);
   });
 
   it('draws nothing in Perform — that mode has no chrome at all', async () => {
@@ -3896,19 +3896,20 @@ describe('ScorePlayer — Learn wet ink + reveal budget (wave-3 D)', () => {
     expect(document.querySelector('svg.piano-learn-ink')).toBeNull(); // layer folds away entirely
   });
 
-  it('draws a correct note as a live match mark while held, gone once released', async () => {
-    // The wet-ink hit flash is retired (Task 4, live input viz) — the held-note
-    // live layer covers this now: green while the key is down, not a timed fade.
+  it('makes no green claim from held state, in the gate', async () => {
+    // Green is an EVENT signal — "that was right", at the moment it is judged —
+    // so holding a key never asserts correctness on its own.
     renderPlayer();
     await act(async () => {});
     enterLearnGate();
     holdNotes(64); // step 0's RH note — matches what's written at the cursor
     await act(async () => {});
-    expect(matched()).toHaveLength(1); // the printed note turns green
+    // Holding it claims nothing — green is reported by the judged event, not by
+    // which keys are down.
+    expect(matched()).toHaveLength(0);
     expect(ink('wrong')).toHaveLength(0);
     holdNotes(); // release
     await act(async () => {});
-    expect(matched()).toHaveLength(0);
     expect(document.querySelectorAll('.piano-live-input__note')).toHaveLength(0);
   });
 
@@ -3973,9 +3974,9 @@ describe('ScorePlayer — Learn wet ink + reveal budget (wave-3 D)', () => {
     holdNotes(63); // not written at step 0 — shown, recessed, never judged
     await act(async () => {});
     expect(document.querySelectorAll('.piano-live-input__note.is-ghost')).toHaveLength(1);
-    holdNotes(64); // step 0's RH note — the printed note turns green, not a "hit"
+    holdNotes(64); // step 0's RH note — written here, so held state says nothing
     await act(async () => {});
-    expect(matched()).toHaveLength(1);
+    expect(matched()).toHaveLength(0);
   });
 
   it('renders no ink layer outside Learn', async () => {

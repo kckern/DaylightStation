@@ -45,7 +45,7 @@ import LearnComplete from './LearnComplete.jsx';
 import FocusRangeLayer from './FocusRangeLayer.jsx';
 import RangeHandleLayer from './RangeHandleLayer.jsx';
 import LearnInkLayer from './LearnInkLayer.jsx';
-import LiveInputLayer, { MATCH_CLASS } from './LiveInputLayer.jsx';
+import LiveInputLayer from './LiveInputLayer.jsx';
 import { soundingFifths } from '../../../../MusicNotation/model/spellMidi.js';
 import SelectBanner from './SelectBanner.jsx';
 import StuckPrompt from './StuckPrompt.jsx';
@@ -76,6 +76,14 @@ const INK_TTL = { wrong: 900 };
 // under it. Long enough to register as a flash, short enough not to trail behind
 // a fast passage and read as the note still being held.
 const MATCH_FLASH_MS = 280;
+
+// Class the engraved notehead wears for the moment after you play it correctly.
+// Green is a NOW signal about an EVENT — "that was right" — so it is applied at
+// the instant the note is judged and removed on a timer, never derived from which
+// keys happen to be down. Held state cannot make this claim honestly: the cursor
+// advances in the same task as the press, and a key still down when a note
+// repeats would be read as correctly playing the next one.
+const MATCH_CLASS = 'piano-note-match';
 
 // The cursor band's one colour, in every mode. A cool slate: present enough to
 // track at a glance, uncommitted enough that it never reads as a verdict.
