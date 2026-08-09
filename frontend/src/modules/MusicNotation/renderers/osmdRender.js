@@ -192,6 +192,30 @@ export function extractPerStaffGeometry(osmd) {
 }
 
 /**
+ * Every engraved staff group in the rendered SVG, tagged with the 0-based staff
+ * id the rest of the app speaks. OSMD emits one `<g class="staffline">` per staff
+ * PER SYSTEM, id shaped `{Instrument}{n}-{staffNumber}` where the trailing number
+ * is 1-BASED (`Piano0-1` is staff 0). Everything engraved on that staff — lines,
+ * clef, noteheads, stems, beams, flags, ledger lines, modifiers — is a child of
+ * the group. That containment is the point: it lets a whole staff be dimmed
+ * without an overlay rectangle, which stems and beams legitimately escape.
+ * @param {Element|null} svgRoot
+ * @returns {Array<{staff:number, el:Element}>} empty when nothing is rendered
+ */
+export function staffGroups(svgRoot) {
+  if (!svgRoot?.querySelectorAll) return [];
+  const out = [];
+  for (const el of svgRoot.querySelectorAll('g.staffline')) {
+    const n = Number(String(el.getAttribute('id') || '').split('-').pop());
+    // An unparseable id means we cannot say which staff this is; skipping it
+    // dims nothing, while guessing could dim the staff the user is playing.
+    if (!Number.isInteger(n) || n < 1) continue;
+    out.push({ staff: n - 1, el });
+  }
+  return out;
+}
+
+/**
  * The engraved SVG `<g>` for a note's notehead (OSMD's per-note group: notehead,
  * stem, flag). The light-up overlay recolors this element directly instead of
  * painting a rectangle over it. Null if the graphical note / element is missing.
