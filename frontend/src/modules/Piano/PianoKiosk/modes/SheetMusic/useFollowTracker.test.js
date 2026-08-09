@@ -62,6 +62,54 @@ describe('useFollowTracker', () => {
     expect(onStep).toHaveBeenCalledWith(0); // wrapped to range start
   });
 
+  // Green Hill Zone m2→m3: a G4+B4 chord ties across the barline, so m3's
+  // downbeat has only the left hand's C4 as a new onset. Practicing RH-only,
+  // that step expects nothing — the gate must step over it, not wait forever.
+  const TIED = [
+    { onsetQuarter: 0, notes: [{ midi: 67, staff: 0 }, { midi: 60, staff: 1 }] }, // 0 · both
+    { onsetQuarter: 1, notes: [{ midi: 60, staff: 1 }] },                          // 1 · LH only (tie held the RH)
+    { onsetQuarter: 2, notes: [{ midi: 65, staff: 0 }] },                          // 2 · RH resumes
+  ];
+
+  it('steps over an onset the active hand has nothing to play at', () => {
+    const { subscribe, emit } = makeSubscribe();
+    const onStep = vi.fn();
+    renderHook(() => useFollowTracker({
+      enabled: true, steps: TIED, activeParts: { 0: true, 1: false }, step: 0,
+      subscribe, onStep, onHit: vi.fn(), onWrong: vi.fn(), range: [0, 2],
+    }));
+    act(() => emit(67));
+    expect(onStep).toHaveBeenCalledWith(2); // NOT 1 — step 1 is unplayable RH-only
+  });
+
+  it('moves off an unplayable step it has been parked on', () => {
+    const { subscribe } = makeSubscribe();
+    const onStep = vi.fn();
+    // Landing on step 1 (LH-only) with RH-only active — e.g. a range whose
+    // in-point falls on a left-hand onset. No key can satisfy it, so the gate
+    // must move on by itself.
+    renderHook(() => useFollowTracker({
+      enabled: true, steps: TIED, activeParts: { 0: true, 1: false }, step: 1,
+      subscribe, onStep, onHit: vi.fn(), onWrong: vi.fn(), range: [0, 2],
+    }));
+    expect(onStep).toHaveBeenCalledWith(2);
+  });
+
+  it('fires onWrap when the skip carries past the range out-point', () => {
+    const { subscribe, emit } = makeSubscribe();
+    const onWrap = vi.fn();
+    const onStep = vi.fn();
+    // Range [0,1] RH-only: step 1 is LH-only, so satisfying step 0 skips it and
+    // wraps home — still one completed lap of the loop.
+    renderHook(() => useFollowTracker({
+      enabled: true, steps: TIED, activeParts: { 0: true, 1: false }, step: 0,
+      subscribe, onStep, onHit: vi.fn(), onWrong: vi.fn(), range: [0, 1], onWrap,
+    }));
+    act(() => emit(67));
+    expect(onStep).toHaveBeenCalledWith(0);
+    expect(onWrap).toHaveBeenCalledTimes(1);
+  });
+
   it('fires onWrap when the range wraps out→in', () => {
     const { subscribe, emit } = makeSubscribe();
     const onWrap = vi.fn();

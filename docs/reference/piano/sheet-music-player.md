@@ -168,6 +168,19 @@ it never auto-plays into the new state. Toggling the loop ON snaps the cursor
 to the range's in-point; toggling it OFF, or clearing the range, leaves the
 cursor exactly where it was.
 
+**The gate only ever waits on notes you are responsible for.** Plenty of
+onsets belong entirely to the hand you aren't practicing — a tie held across a
+barline vacates one staff while the other re-attacks, and any single-hand
+passage does the same. Those steps are on the page and the cursor passes over
+them, but they ask nothing of the active hands, so the gate steps straight
+over them rather than waiting on a key that is never coming. This applies both
+to advancing (the next stop is the next step these hands actually play) and to
+arriving — a range whose in-point lands on the other hand's onset, or a hand
+toggled off mid-passage, moves the cursor on by itself. A wrap crossed that
+way doesn't count as a lap: a practice pass has to be played, not skipped
+into. If a range holds nothing at all for the active hands, the cursor stays
+put instead of spinning.
+
 **Finishing Learn.** When a clean pass wraps a range that spans the *whole*
 piece, that pass is the end of the piece: Learn shows a completion card
 offering another pass or the next rung ("Polish it"). A pass over a partial
@@ -466,8 +479,8 @@ running on the per-step fallback (keyboard stays note-precise regardless).
 | `countIn.js` / `useCountIn.js` | count-in beats before a run |
 | `clickScheduler.js` | look-ahead scheduling for the metronome click |
 | `RunSummary.jsx` | Polish end-of-run summary, extended with run score/tier + tier-best strip |
-| `activeParts.js` / `focusRange.js` | staff-responsibility model / practice-range math |
-| `useFollowTracker.js` | Learn matching + advancement (range-aware) |
+| `activeParts.js` / `focusRange.js` | staff-responsibility model / practice-range math, including the next step the active hands actually play |
+| `useFollowTracker.js` | Learn matching + advancement (range-aware, skips steps the active hands are silent at) |
 | `useScoreEvaluator.js` / `scoreEvaluator.js` | Polish per-measure grading hook / math |
 | `useMetronomeClick.js` / `click.js` | click scheduler / WebAudio blip |
 | `pedalEdge.js` | Perform pedal rising-edge |
