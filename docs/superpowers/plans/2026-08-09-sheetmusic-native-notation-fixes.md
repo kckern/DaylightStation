@@ -762,8 +762,12 @@ grand-staff score (Green Hill Zone), enter Learn, and deselect the left hand.
 Check specifically:
 1. **No rectangle.** No visible band edge anywhere, especially between the staves.
 2. **Stems and beams fade with their staff** — nothing renders at full strength outside the staff lines.
-3. **The brace and barlines.** `vf-connector` (the brace and the barlines spanning both staves) lives inside the *lower* staff's group, so dimming the left hand also dims them. If half-faded barlines look wrong, add `.musicxml-renderer__svg g.staffline.is-dimmed .vf-connector { opacity: 1; }` — but only if it actually reads badly, not preemptively.
-4. **Pending notes** read as faint pulsing filled heads, never as half notes.
+3. **The brace and barlines — look for the OPPOSITE of what this step first claimed.** An earlier draft said `vf-connector` lives inside the lower staff's group and would dim with it. That is **wrong**, corrected from OSMD's bundle source during final review: `drawMusicSystemComponents` opens and closes each staff line's group first, and only *afterwards* draws the system lines, instrument braces, group brackets and measure-number labels — all at SVG top level, outside every `g.staffline`. So braces, cross-staff connectors and measure numbers will **not** dim, and the `.vf-connector { opacity: 1 }` rule that draft prepared would be a no-op.
+
+   What to actually look for: a full-strength brace or connector running alongside a faded staff. If that reads badly, the fix is the reverse — dim those top-level elements too, which needs a separate selector, not a child of `.is-dimmed`.
+
+   Same mechanism affects lyrics on a singalong score: lyric *words* are drawn inside the group (via `drawMeasure`) and would fade, while their extender dashes and lyric lines are drawn outside and would not. No score in the current library has lyrics, so this is a note for later rather than something to check now.
+4. **Pending notes** read as faint pulsing filled heads, never as half notes. **Judge the strength deliberately**: they now pulse 0.3→0.65 against engraving at full strength, which makes the note the gate is *waiting on* the faintest thing on the staff — fainter than notes not yet reached, with only the pulse to distinguish it. That may invert the affordance. The original reason for capping below 1.0 was to keep a pending note distinct from a struck one, but the struck note already has its own colour (`#6b4423`) and drop-shadow, so the cap may be doing less work than assumed. If it reads weakly, raise the keyframes toward `0.55 → 0.95`.
 5. **Zoom in and out**, and change key, to force re-engraves — the dim must survive each one.
 
 - [ ] **Step 7: Reload the piano kiosk**
