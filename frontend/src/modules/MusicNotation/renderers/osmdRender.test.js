@@ -7,6 +7,7 @@ import {
   extractPerStaffGeometry,
   extractEvents,
   extractLayoutSliced,
+  tagStaffGroups,
   staffGroups,
 } from './osmdRender.js';
 
@@ -215,9 +216,10 @@ describe('layout extract publishes staff geometry', () => {
   });
 });
 
-describe('staffGroups', () => {
+describe('tagStaffGroups', () => {
   // Mirrors the real OSMD output: one <g class="staffline"> per staff per
-  // system, id `{Instrument}{n}-{staffNumber}` with a 1-BASED trailing number.
+  // system, id `{Instrument}{n}-{staffNumber}` with a 1-BASED, PER-INSTRUMENT
+  // trailing number — deliberately NOT what tagStaffGroups stamps (see below).
   const svgWith = (ids) => {
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     for (const id of ids) {
@@ -229,24 +231,99 @@ describe('staffGroups', () => {
     return svg;
   };
 
-  it('converts the 1-based id suffix to a 0-based staff id', () => {
-    const svg = svgWith(['Piano0-1', 'Piano0-2']);
+  // Fake osmd instance: `container` resolves the SVG the same way the real
+  // instance does (osmd.container.querySelector('svg')); the graphical model
+  // is one MusicSystem whose StaffLines carry the sheet-global idInMusicSheet
+  // in DRAW order — the same order tagStaffGroups zips against the rendered
+  // g.staffline elements.
+  const makeOsmd = (ids, staffIdsPerSystem) => {
+    const host = document.createElement('div');
+    host.appendChild(svgWith(ids));
+    return {
+      container: host,
+      GraphicSheet: {
+        MusicPages: [{
+          MusicSystems: staffIdsPerSystem.map((sysIds) => ({
+            StaffLines: sysIds.map((idInMusicSheet) => ({ ParentStaff: { idInMusicSheet } })),
+          })),
+        }],
+      },
+    };
+  };
+
+  it("stamps the model's sheet-global idInMusicSheet, not the id suffix", () => {
+    const osmd = makeOsmd(['Piano0-1', 'Piano0-2'], [[0, 1]]);
+    expect(tagStaffGroups(osmd)).toBe(2);
+    const svg = osmd.container.querySelector('svg');
+    expect([...svg.querySelectorAll('g.staffline')].map((el) => el.dataset.staff)).toEqual(['0', '1']);
+  });
+
+  it('reports sheet-global ids on a multi-instrument score, not the colliding per-instrument suffix', () => {
+    // Voice + piano: SVG ids are per-INSTRUMENT (Staff.Id) — Voice0-1, Piano1-1,
+    // Piano1-2 — trailing numbers 1, 1, 2. Parsing that suffix would stamp
+    // 0, 0, 1 (colliding two different staves onto "0" and losing "2" entirely).
+    // The app's ids are sheet-global: 0, 1, 2.
+    const osmd = makeOsmd(['Voice0-1', 'Piano1-1', 'Piano1-2'], [[0, 1, 2]]);
+    expect(tagStaffGroups(osmd)).toBe(3);
+    const svg = osmd.container.querySelector('svg');
+    expect([...svg.querySelectorAll('g.staffline')].map((el) => el.dataset.staff)).toEqual(['0', '1', '2']);
+  });
+
+  it('stamps nothing when the model and DOM staff-line counts disagree, rather than mispairing', () => {
+    // Two rendered groups, but the model only accounts for one staff line.
+    const osmd = makeOsmd(['Piano0-1', 'Piano0-2'], [[0]]);
+    expect(tagStaffGroups(osmd)).toBe(0);
+    const svg = osmd.container.querySelector('svg');
+    expect([...svg.querySelectorAll('g.staffline')].every((el) => el.dataset.staff === undefined)).toBe(true);
+  });
+
+  it('skips an entry whose idInMusicSheet is not a non-negative integer, rather than guessing', () => {
+    const osmd = makeOsmd(['Piano0-1', 'Piano0-2', 'Piano0-3'], [[0, undefined, 2]]);
+    expect(tagStaffGroups(osmd)).toBe(2);
+    const svg = osmd.container.querySelector('svg');
+    expect([...svg.querySelectorAll('g.staffline')].map((el) => el.dataset.staff)).toEqual(['0', undefined, '2']);
+  });
+
+  it('is a no-op with no container/svg or an empty sheet', () => {
+    expect(tagStaffGroups(null)).toBe(0);
+    expect(tagStaffGroups({})).toBe(0);
+    expect(tagStaffGroups(makeOsmd([], []))).toBe(0);
+  });
+});
+
+describe('staffGroups', () => {
+  const svgWith = (ids) => {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    for (const id of ids) {
+      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      g.setAttribute('class', 'staffline');
+      g.setAttribute('id', id);
+      svg.appendChild(g);
+    }
+    return svg;
+  };
+  const tag = (svg, dataStaffs) => {
+    [...svg.querySelectorAll('g.staffline')].forEach((el, i) => {
+      if (dataStaffs[i] !== undefined) el.dataset.staff = String(dataStaffs[i]);
+    });
+    return svg;
+  };
+
+  it('reads the stamped data-staff attribute, not the id suffix', () => {
+    // id suffixes here would parse (wrongly, per-instrument) to 0, 0 — the
+    // stamped data-staff values are the sheet-global ids that must win.
+    const svg = tag(svgWith(['Piano0-1', 'Piano1-1']), [0, 1]);
     expect(staffGroups(svg).map((g) => g.staff)).toEqual([0, 1]);
   });
 
-  it('returns one entry per system, not per staff', () => {
-    // Two systems of a grand staff = four groups, staff ids repeating.
-    const svg = svgWith(['Piano0-1', 'Piano0-2', 'Piano0-1', 'Piano0-2']);
-    expect(staffGroups(svg).map((g) => g.staff)).toEqual([0, 1, 0, 1]);
-  });
-
   it('hands back the element itself so a caller can class it', () => {
-    const svg = svgWith(['Piano0-2']);
+    const svg = tag(svgWith(['Piano0-2']), [1]);
     expect(staffGroups(svg)[0].el).toBe(svg.querySelector('g.staffline'));
   });
 
-  it('skips a group whose id carries no staff number rather than guessing', () => {
-    expect(staffGroups(svgWith(['Piano0-1', 'junk', 'Piano0-2']))).toHaveLength(2);
+  it('ignores a group with no stamped data-staff, rather than guessing from its id', () => {
+    const svg = tag(svgWith(['Piano0-1', 'Piano0-2']), [0]); // only the first is tagged
+    expect(staffGroups(svg).map((g) => g.staff)).toEqual([0]);
   });
 
   it('survives null and an empty sheet', () => {

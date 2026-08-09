@@ -192,25 +192,83 @@ export function extractPerStaffGeometry(osmd) {
 }
 
 /**
- * Every engraved staff group in the rendered SVG, tagged with the 0-based staff
- * id the rest of the app speaks. OSMD emits one `<g class="staffline">` per staff
- * PER SYSTEM, id shaped `{Instrument}{n}-{staffNumber}` where the trailing number
- * is 1-BASED (`Piano0-1` is staff 0). Everything engraved on that staff — lines,
- * clef, noteheads, stems, beams, flags, ledger lines, modifiers — is a child of
- * the group. That containment is the point: it lets a whole staff be dimmed
- * without an overlay rectangle, which stems and beams legitimately escape.
+ * Stamp each engraved staff group in the rendered SVG with the staff id the
+ * rest of the app speaks — OSMD's `ParentStaff.idInMusicSheet` (sheet-global,
+ * 0-based; the same id `extractPerStaffGeometry`, the note extraction, and
+ * `activeParts`/`dimmedStaves` in ScorePlayer all use) — as `data-staff` on
+ * the group.
+ *
+ * Deliberately does NOT read the group's `id` attribute. OSMD emits one
+ * `<g class="staffline">` per staff PER SYSTEM, id shaped
+ * `{Instrument}{n}-{staffNumber}` — but that trailing number is OSMD's
+ * `Staff.Id`, which is PER-INSTRUMENT, not sheet-global. The two coincide only
+ * for a single-instrument score. On a 3-staff score (voice + piano, or organ)
+ * the ids come out `Voice0-1`, `Piano1-1`, `Piano1-2` — trailing numbers
+ * 1, 1, 2 — which parsing would report as 0, 0, 1, colliding two different
+ * staves onto "0" and losing "2" entirely, where the app means 0, 1, 2.
+ *
+ * Instead this pairs by DRAW ORDER against the graphical model: OSMD draws
+ * staff lines in a deterministic nested loop — for each MusicSystem, for each
+ * StaffLine — and each `drawStaffLine` call opens exactly one
+ * `<g class="staffline">`. So the Nth `g.staffline` in the rendered SVG
+ * corresponds to the Nth StaffLine in `MusicSystems.flatMap(s => s.StaffLines)`
+ * (the same order `extractPerStaffGeometry` walks), whose
+ * `ParentStaff.idInMusicSheet` is the id stamped here. If the model and DOM
+ * counts ever disagree, pairing by position would be a guess — so this stamps
+ * NOTHING instead: an untagged sheet dims nothing, which is the safe failure,
+ * versus guessing and dimming the staff the player is using.
+ *
+ * Call this wherever the SVG is (re)built — a repaint discards every
+ * attribute set here along with the old groups, so it must re-run on every
+ * engrave and every repaint, not just the first.
+ * @param {object|null} osmd - an OSMD instance (or null)
+ * @returns {number} how many groups were stamped (0 if untagged: no
+ *   container/svg, or a model/DOM staff-line count mismatch)
+ */
+export function tagStaffGroups(osmd) {
+  const svgRoot = osmd?.container?.querySelector?.('svg');
+  if (!svgRoot) return 0;
+  const systems = osmd?.GraphicSheet?.MusicPages?.[0]?.MusicSystems || [];
+  const modelIds = [];
+  for (const sys of systems) {
+    for (const sl of sys?.StaffLines || []) modelIds.push(sl?.ParentStaff?.idInMusicSheet);
+  }
+  const els = [...svgRoot.querySelectorAll('g.staffline')];
+  // A count mismatch means the draw-order pairing can't be trusted — never
+  // guess which SVG group belongs to which model staff.
+  if (modelIds.length !== els.length) return 0;
+  let stamped = 0;
+  for (let i = 0; i < els.length; i++) {
+    const id = modelIds[i];
+    if (!Number.isInteger(id) || id < 0) continue;
+    els[i].dataset.staff = String(id);
+    stamped++;
+  }
+  return stamped;
+}
+
+/**
+ * Every engraved staff group in the rendered SVG that carries a stamped staff
+ * id, tagged with that id. Pure DOM read — the `data-staff` attribute is
+ * stamped by {@link tagStaffGroups} during extraction (which has the OSMD
+ * graphical model in hand); this function never touches the model itself, so
+ * a sheet that hasn't been tagged yet (or failed to tag — see tagStaffGroups)
+ * dims nothing, by design, rather than guessing from the group's `id`.
+ * Everything engraved on that staff — lines, clef, noteheads, stems, beams,
+ * flags, ledger lines, modifiers — is a child of the group. That containment
+ * is the point: it lets a whole staff be dimmed without an overlay rectangle,
+ * which stems and beams legitimately escape.
  * @param {Element|null} svgRoot
  * @returns {Array<{staff:number, el:Element}>} empty when nothing is rendered
+ *   or nothing is tagged
  */
 export function staffGroups(svgRoot) {
   if (!svgRoot?.querySelectorAll) return [];
   const out = [];
-  for (const el of svgRoot.querySelectorAll('g.staffline')) {
-    const n = Number(String(el.getAttribute('id') || '').split('-').pop());
-    // An unparseable id means we cannot say which staff this is; skipping it
-    // dims nothing, while guessing could dim the staff the user is playing.
-    if (!Number.isInteger(n) || n < 1) continue;
-    out.push({ staff: n - 1, el });
+  for (const el of svgRoot.querySelectorAll('g.staffline[data-staff]')) {
+    const n = Number(el.dataset.staff);
+    if (!Number.isInteger(n) || n < 0) continue;
+    out.push({ staff: n, el });
   }
   return out;
 }
@@ -380,6 +438,10 @@ function leadMidi(stepNotes) {
  * shares the exact same per-step body, see {@link extractLayoutSliced}.
  */
 export function extractEvents(osmd) {
+  // Re-stamp staff groups every extraction: a repaint rebuilds the SVG (and
+  // discards the previous pass's data-staff attributes) before this runs, so
+  // StaffDimLayer's DOM read must never rely on a stale tag from an old <svg>.
+  tagStaffGroups(osmd);
   const cursor = osmd.cursor;
   // No cursor == a score with nothing to walk (the blank-draft case) — still
   // publish staff geometry, which is exactly what a blank staff's caret needs.
@@ -434,6 +496,8 @@ export async function extractLayoutSliced(osmd, opts = {}) {
     onProgress,
     shouldAbort = () => false,
   } = opts;
+  // Re-stamp staff groups every extraction — see the note in extractEvents.
+  tagStaffGroups(osmd);
   const cursor = osmd?.cursor;
   if (!cursor) { onProgress?.(1); return { events: [], notes: [], tempoEntries: [], steps: [], measures: [], staves: extractStaffGeometry(osmd), staffBoxes: extractPerStaffGeometry(osmd) }; }
 
