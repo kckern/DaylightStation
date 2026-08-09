@@ -1,5 +1,7 @@
 import { render, cleanup } from '@testing-library/react';
 import { vi } from 'vitest';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
 
 // The layer subscribes to the live-note store itself, so the test drives that
 // store rather than firing synthetic MIDI events.
@@ -116,5 +118,27 @@ describe('LiveInputLayer', () => {
     hold(67);
     const { container } = renderLayer({ step: { notes: [] } });
     expect(noteheadCy(container)).toBeLessThan(100);
+  });
+});
+
+describe('LiveInputLayer styling', () => {
+  const scss = () => readFileSync(fileURLToPath(new URL('../../../../../Apps/PianoApp.scss', import.meta.url)), 'utf8');
+
+  it('positions the layer without covering the engraving', () => {
+    const block = scss().match(/\.piano-live-input\s*\{(?:[^{}]|\{[^{}]*\})*\}/s)?.[0];
+    expect(block).toBeTruthy();
+    expect(block).toMatch(/pointer-events:\s*none/); // never intercepts a tap on the score
+  });
+
+  it('fills a match green and a ghost at reduced strength', () => {
+    const s = scss();
+    const match = s.match(/\.piano-live-input__note\.is-match\s*\{(?:[^{}]|\{[^{}]*\})*\}/s)?.[0];
+    const ghost = s.match(/\.piano-live-input__note\.is-ghost\s*\{(?:[^{}]|\{[^{}]*\})*\}/s)?.[0];
+    expect(match).toBeTruthy();
+    expect(ghost).toBeTruthy();
+    expect(match).toContain('#2ec46f');          // the kiosk's affirming green
+    expect(ghost).toMatch(/opacity:\s*0?\.3/);   // recessed, not absent
+    // A ghost must never be drawn hollow — a hollow head means a half or whole note.
+    expect(ghost).not.toMatch(/fill:\s*none/);
   });
 });
