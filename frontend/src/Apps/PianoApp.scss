@@ -2800,6 +2800,25 @@
   .piano-learn-ink__note { animation: none; opacity: 0.95; }
 }
 
+// Live input (the notes being HELD right now), drawn in the cursor column at the
+// pitch played. Sits at the same z as the wet ink so it reads as part of the same
+// hand-written trace, and never intercepts a tap meant for the score.
+//
+// A match takes the kiosk's affirming green; anything else is recessed rather
+// than absent, so the player can still see what they actually played. Neither is
+// ever drawn hollow — a hollow notehead means a half or whole note.
+.piano-live-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  z-index: 5;
+  pointer-events: none;
+}
+.piano-live-input__note.is-match { color: var(--piano-accent, #2ec46f); }
+.piano-live-input__note.is-ghost { color: var(--piano-muted, #8a8f98); opacity: 0.3; }
+
 // Active-note light-up: recolour the ENGRAVED notehead itself — NO overlay
 // rectangle. NoteHighlightLayer toggles these classes on OSMD's per-note <g>
 // and sets --nh-color to a fixed near-black ink (wave-2 A, ScorePlayer's
