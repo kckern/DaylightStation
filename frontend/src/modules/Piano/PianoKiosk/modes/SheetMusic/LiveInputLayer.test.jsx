@@ -18,12 +18,20 @@ const STAFF_BOXES = [
 ];
 // x/top/bottom/width are the engraved notehead's own box (osmdRender.js's
 // buildSteps) — Fix 1 registers a match mark on THIS geometry, not cursorX.
-const STEP = {
-  notes: [
-    { midi: 67, staff: 0, x: 210, top: 30, bottom: 42, width: 12 },
-    { midi: 60, staff: 1, x: 180, top: 140, bottom: 152, width: 12 },
-  ],
+// A match now RECOLOURS the engraved notehead, so each written note needs the
+// element the engraver produced. x/top/bottom/width remain for the ghost path.
+const mkEl = () => document.createElement('div');
+let RH_EL; let LH_EL; let STEP;
+const buildStep = () => {
+  RH_EL = mkEl(); LH_EL = mkEl();
+  STEP = {
+    notes: [
+      { midi: 67, staff: 0, x: 210, top: 30, bottom: 42, width: 12, el: RH_EL },
+      { midi: 60, staff: 1, x: 180, top: 140, bottom: 152, width: 12, el: LH_EL },
+    ],
+  };
 };
+buildStep();
 const hold = (...midis) => { h.active = new Map(midis.map((m) => [m, { velocity: 80, timestamp: 0 }])); };
 
 const renderLayer = (props = {}) => render(
@@ -37,13 +45,17 @@ const renderLayer = (props = {}) => render(
 const marks = (c) => [...c.querySelectorAll('.piano-live-input__note')];
 const kinds = (c) => marks(c).map((el) => el.getAttribute('class').replace('piano-live-input__note ', ''));
 
-afterEach(() => { cleanup(); h.active = new Map(); });
+afterEach(() => { cleanup(); h.active = new Map(); buildStep(); });
 
 describe('LiveInputLayer', () => {
-  it('draws a held pitch that is written at the cursor as a match', () => {
+  it('turns the PRINTED note green when you hold a pitch written at the cursor', () => {
+    // No mark is drawn for a match — the engraved notehead itself is recoloured,
+    // so the affirmation can never sit beside the note it is affirming.
     hold(67);
     const { container } = renderLayer();
-    expect(kinds(container)).toEqual(['is-match']);
+    expect(RH_EL.classList.contains('piano-note-match')).toBe(true);
+    expect(LH_EL.classList.contains('piano-note-match')).toBe(false);
+    expect(marks(container)).toHaveLength(0);
   });
 
   it('ghosts a held pitch that is not written at the cursor', () => {
@@ -52,10 +64,11 @@ describe('LiveInputLayer', () => {
     expect(kinds(container)).toEqual(['is-ghost']);
   });
 
-  it('draws one mark per held note', () => {
+  it('recolours the match and draws the ghost, one of each', () => {
     hold(67, 61);
     const { container } = renderLayer();
-    expect(marks(container)).toHaveLength(2);
+    expect(RH_EL.classList.contains('piano-note-match')).toBe(true);
+    expect(kinds(container)).toEqual(['is-ghost']);
   });
 
   it('draws NOTHING for a non-match while the gate grades it', () => {
@@ -65,30 +78,28 @@ describe('LiveInputLayer', () => {
     expect(marks(container)).toHaveLength(0);
   });
 
-  it('still draws the match while the gate is active', () => {
+  it('still marks the match while the gate is active', () => {
     // Both hands active, matching the un-gated default — 67 is written for RH
-    // and RH is active, so it still reads as a match; 61 is written nowhere.
+    // and RH is active, so it still reads as a match; 61 is written nowhere and
+    // draws nothing at all under the gate.
     hold(67, 61);
     const { container } = renderLayer({ gateActive: true, activeParts: { 0: true, 1: true } });
-    expect(kinds(container)).toEqual(['is-match']);
-  });
-
-  it('releasing the key removes the mark', () => {
-    hold(67);
-    const { container, rerender } = renderLayer();
-    expect(marks(container)).toHaveLength(1);
-    h.active = new Map();
-    rerender(
-      <LiveInputLayer
-        step={STEP} cursorX={120} system={0} staffBoxes={STAFF_BOXES}
-        clefs={{ 0: { sign: 'G' }, 1: { sign: 'F' } }} keyFifths={0} gateActive={false}
-      />,
-    );
+    expect(RH_EL.classList.contains('piano-note-match')).toBe(true);
     expect(marks(container)).toHaveLength(0);
   });
 
-  it('renders one <svg> holding every mark, not one element per mark', () => {
-    hold(67, 61, 72);
+  it('releasing the key puts the printed note back', () => {
+    hold(67);
+    renderLayer();
+    expect(RH_EL.classList.contains('piano-note-match')).toBe(true);
+    h.active = new Map();
+    cleanup();
+    // The class must never be stranded: OSMD's SVG outlives this component.
+    expect(RH_EL.classList.contains('piano-note-match')).toBe(false);
+  });
+
+  it('renders one <svg> holding every ghost, not one element per ghost', () => {
+    hold(61, 72, 74); // none written here — all ghosts
     const { container } = renderLayer();
     expect(container.querySelectorAll('svg.piano-live-input')).toHaveLength(1);
     expect(marks(container)).toHaveLength(3);
@@ -135,22 +146,18 @@ describe('LiveInputLayer', () => {
   // (step.notes[].x/top/bottom/width), never on cursorX. cursorX is the OSMD
   // cursor element's centre, a different point than the notehead's true centre;
   // drawing there produced a smeared second note beside the real one.
-  it('registers a match on the written note\'s own x, not cursorX', () => {
+  it('cannot land a match away from its note — nothing is positioned at all', () => {
+    // The predecessor drew a mark at measured coordinates and got it wrong twice:
+    // beside the note (the cursor's x is not the notehead's centre), and adrift
+    // mid-system when a notehead's own measurement was unavailable and the
+    // geometry fell back to the cursor's full-height box. Recolouring the
+    // engraved element removes coordinates from the problem, so a cursorX
+    // nowhere near the note cannot displace anything.
     hold(67);
-    const { container } = renderLayer({ cursorX: 999 }); // far from the written 67's x=210
-    const head = container.querySelector('.piano-live-input__note.is-match ellipse');
-    expect(Number(head.getAttribute('cx'))).toBe(210);
-    expect(Number(head.getAttribute('cy'))).toBe(36); // (top 30 + bottom 42) / 2
-  });
-
-  it('draws a match as a notehead only — no stem, no ledger, no second glyph', () => {
-    hold(67);
-    const { container } = renderLayer();
-    const g = container.querySelector('.piano-live-input__note.is-match');
-    expect(g.children).toHaveLength(1);
-    expect(g.querySelector('ellipse')).not.toBeNull();
-    expect(g.querySelector('line')).toBeNull();
-    expect(g.querySelector('path')).toBeNull();
+    const { container } = renderLayer({ cursorX: 999 }); // far from the written 67
+    expect(RH_EL.classList.contains('piano-note-match')).toBe(true);
+    expect(container.querySelectorAll('.piano-live-input__note')).toHaveLength(0);
+    expect(container.querySelector('svg.piano-live-input')).toBeNull();
   });
 
   it('still draws a ghost as a full glyph at the cursor column', () => {
@@ -192,10 +199,10 @@ describe('LiveInputLayer', () => {
     expect(marks(container)).toHaveLength(0);
   });
 
-  it('draws that same pitch as a match once the gate is off', () => {
+  it('marks that same pitch as a match once the gate is off', () => {
     hold(60);
-    const { container } = renderLayer({ gateActive: false, activeParts: { 0: true } });
-    expect(kinds(container)).toEqual(['is-match']);
+    renderLayer({ gateActive: false, activeParts: { 0: true } });
+    expect(LH_EL.classList.contains('piano-note-match')).toBe(true);
   });
 });
 

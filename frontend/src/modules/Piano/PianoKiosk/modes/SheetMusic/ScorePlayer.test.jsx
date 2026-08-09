@@ -79,10 +79,21 @@ const h = vi.hoisted(() => ({
 // Derive per-onset full-staff steps from the melody events: the first pitch of
 // each onset is the top staff (0), the rest are accompaniment (staff 1). Mirrors
 // osmdRender.buildSteps so the full-hand Follow tracker + light-up have geometry.
+// A match recolours the ENGRAVED notehead, so each note needs the element the
+// engraver produced (osmdRender's `steps[].notes[].el`). They are attached to the
+// document so a recoloured note is findable exactly as it is in production.
+const mockNoteEl = () => {
+  const el = document.createElement('span');
+  el.className = 'mock-notehead';
+  document.body.appendChild(el);
+  return el;
+};
 const deriveSteps = (events) => events.map((e) => ({
   onsetQuarter: e.onsetQuarter,
-  notes: (e.midis || [e.midi]).map((midi, i) => ({ midi, staff: i === 0 ? 0 : 1, x: e.x, top: e.top, bottom: e.bottom, width: 8 })),
+  notes: (e.midis || [e.midi]).map((midi, i) => ({ midi, staff: i === 0 ? 0 : 1, x: e.x, top: e.top, bottom: e.bottom, width: 8, el: mockNoteEl() })),
 }));
+/** Engraved noteheads currently wearing the live match colour. */
+const matched = () => document.querySelectorAll('.mock-notehead.piano-note-match');
 // Flatten the per-onset steps into playback note records (all staves) — mirrors
 // osmdRender emitting `notes` alongside `steps` from one walk, so parts/activeParts
 // exist for the Follow tracker + part chips.
@@ -3764,6 +3775,38 @@ describe('ScorePlayer — staff dim (Task 8)', () => {
   });
 });
 
+describe('ScorePlayer — live match flash (the advance outruns the paint)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.spyOn(performance, 'now').mockImplementation(() => Date.now());
+    vi.stubGlobal('requestAnimationFrame', (cb) => setTimeout(() => cb(Date.now()), 16));
+    vi.stubGlobal('cancelAnimationFrame', (id) => clearTimeout(id));
+    vi.setSystemTime(0);
+  });
+  afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+  const matchedNow = () => document.querySelectorAll('.mock-notehead.piano-note-match');
+
+  it('flashes the note you land, even when the cursor advances out from under it', async () => {
+    // The failure this guards: a hit that COMPLETES the step advances the cursor
+    // in the same task, so by the time anything paints the note is no longer the
+    // current step's and no live mark can exist for it. In a single-note passage
+    // that is every correct note, which left the gate with no affirmation at all.
+    // The flash is applied at hit time, before the advance, so it survives.
+    renderPlayer();
+    await act(async () => {});
+    enterLearnGate();
+    await act(async () => {});
+    expect(h.noteCbs.size).toBe(1); // the tracker is subscribed — play() is not inert
+    play(64); // step 0's written RH pitch, through the real bus: satisfies and advances
+    await act(async () => {});
+    expect(matchedNow()).toHaveLength(1);
+    // ...and it clears itself rather than trailing behind the cursor.
+    await act(async () => { vi.advanceTimersByTime(400); });
+    expect(matchedNow()).toHaveLength(0);
+  });
+});
+
 describe('ScorePlayer — live input viz', () => {
   afterEach(() => { cleanup(); });
 
@@ -3774,17 +3817,20 @@ describe('ScorePlayer — live input viz', () => {
     await act(async () => {});
     holdNotes(64); // the first step's written pitch in this fixture
     await act(async () => {});
-    expect(liveMarks()).toHaveLength(1);
+    expect(matched()).toHaveLength(1); // the PRINTED note turns green
+    holdNotes(61); // not written here
+    await act(async () => {});
+    expect(liveMarks()).toHaveLength(1); // a ghost IS drawn — nothing to recolour
   });
 
-  it('draws held notes in Polish', async () => {
+  it('shows held notes in Polish', async () => {
     renderPlayer();
     await act(async () => {});
     enterPolish();
     await act(async () => {});
     holdNotes(64);
     await act(async () => {});
-    expect(liveMarks()).toHaveLength(1);
+    expect(matched()).toHaveLength(1);
   });
 
   it('draws nothing in Perform — that mode has no chrome at all', async () => {
@@ -3858,10 +3904,11 @@ describe('ScorePlayer — Learn wet ink + reveal budget (wave-3 D)', () => {
     enterLearnGate();
     holdNotes(64); // step 0's RH note — matches what's written at the cursor
     await act(async () => {});
-    expect(document.querySelectorAll('.piano-live-input__note.is-match')).toHaveLength(1);
+    expect(matched()).toHaveLength(1); // the printed note turns green
     expect(ink('wrong')).toHaveLength(0);
     holdNotes(); // release
     await act(async () => {});
+    expect(matched()).toHaveLength(0);
     expect(document.querySelectorAll('.piano-live-input__note')).toHaveLength(0);
   });
 
@@ -3926,9 +3973,9 @@ describe('ScorePlayer — Learn wet ink + reveal budget (wave-3 D)', () => {
     holdNotes(63); // not written at step 0 — shown, recessed, never judged
     await act(async () => {});
     expect(document.querySelectorAll('.piano-live-input__note.is-ghost')).toHaveLength(1);
-    holdNotes(64); // step 0's RH note — shown as a match, not a "hit"
+    holdNotes(64); // step 0's RH note — the printed note turns green, not a "hit"
     await act(async () => {});
-    expect(document.querySelectorAll('.piano-live-input__note.is-match')).toHaveLength(1);
+    expect(matched()).toHaveLength(1);
   });
 
   it('renders no ink layer outside Learn', async () => {
