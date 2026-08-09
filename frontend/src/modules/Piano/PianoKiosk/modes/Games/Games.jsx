@@ -36,8 +36,12 @@ const GAME_ICONS = {
  *
  * Routed so the game id lives in the URL (deep-linkable, survives reload,
  * physical/browser Back becomes an "up" gesture):
- *   index    → game picker grid
- *   :gameId  → fullscreen game host
+ *   index             → game picker grid
+ *   :gameId           → fullscreen game host
+ *   :gameId/:subRoute → the same host, with one more segment the GAME gives
+ *                       meaning to (Piano Hero uses it for the collection tab,
+ *                       so /piano/games/hero/video-games opens on that tab).
+ *                       Games owns the routing; the game owns what it means.
  *
  * All navigation is RELATIVE (navigate('subpath') / navigate('..')) so the mode
  * works under either /piano/* (single piano) or /piano/:pianoId/* (multi).
@@ -47,6 +51,7 @@ export function Games() {
     <Routes>
       <Route index element={<GamePicker />} />
       <Route path=":gameId" element={<GameHost />} />
+      <Route path=":gameId/:subRoute" element={<GameHost />} />
     </Routes>
   );
 }
@@ -84,7 +89,7 @@ function GamePicker() {
  */
 function GameHost() {
   const logger = useMemo(() => getLogger().child({ component: 'piano-games' }), []);
-  const { gameId } = useParams();
+  const { gameId, subRoute } = useParams();
   const navigate = useNavigate();
   const { pressNote, releaseNote } = usePianoMidi();
   const { activeNotes, noteHistory } = usePianoMidiNotes();
@@ -100,7 +105,14 @@ function GameHost() {
 
   const exit = () => {
     logger.info('piano.game-exit', { game: gameId });
-    navigate('..', { relative: 'path' });
+    navigate(subRoute ? '../..' : '..', { relative: 'path' });
+  };
+
+  // A game asking to change its own sub-route REPLACES rather than pushes: Back
+  // should leave the game, not walk back through every tab you looked at.
+  const goSubRoute = (next) => {
+    const to = next ? `${gameId}/${next}` : gameId;
+    navigate(`../${to}`, { relative: 'path', replace: true });
   };
 
   if (!entry?.LazyComponent) {
@@ -119,6 +131,8 @@ function GameHost() {
           activeNotes={activeNotes}
           noteHistory={noteHistory}
           gameConfig={config.games?.[gameId]}
+          subRoute={subRoute ?? null}
+          onSubRoute={goSubRoute}
           currentUser={currentUser}
           onDeactivate={exit}
           onNoteOn={pressNote}

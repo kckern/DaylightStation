@@ -65,4 +65,21 @@ describe('Games mode', () => {
     // Navigated up to /games — picker is visible again.
     expect(screen.getByText('Space Invaders')).toBeTruthy();
   });
+
+  it('a game may carry one more url segment of its own', () => {
+    // /piano/games/hero/video-games — the segment is the GAME's business (Piano
+    // Hero uses it for the collection tab), but the router has to admit it or
+    // the deep link cannot exist at all. Asserted against an unknown game so the
+    // test does not depend on any real game's lazy chunk loading.
+    renderGames('/games/nonexistent-game/some-tab');
+    expect(screen.getByText(/Game not found/i)).toBeTruthy();
+  });
+
+  it('back from a sub-route returns to the picker, not to the game', () => {
+    // Two segments deep, "up" still means out of the game — otherwise Back would
+    // strand you on the game with no tab.
+    renderGames('/games/nonexistent-game/some-tab');
+    fireEvent.click(screen.getByText('Back'));
+    expect(screen.getByText('Space Invaders')).toBeTruthy();
+  });
 });
