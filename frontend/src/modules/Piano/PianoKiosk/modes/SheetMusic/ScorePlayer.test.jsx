@@ -449,6 +449,21 @@ describe('ScorePlayer — note-highlight ink (wave-2 A)', () => {
     expect(hitBlock).not.toContain('#2ec46f'); // not the shared kiosk accent green
     expect(hitBlock).not.toMatch(/var\(--nh-color/); // never inherits the near-black lit ink
   });
+
+  it('PianoApp.scss never draws a pending notehead hollow — that reads as a half note', () => {
+    const scss = readFileSync(fileURLToPath(new URL('../../../../../Apps/PianoApp.scss', import.meta.url)), 'utf8');
+    const block = scss.match(/\.piano-note-pending\s*\{(?:[^{}]|\{[^{}]*\})*\}/s)?.[0];
+    expect(block).toBeTruthy();
+    // A hollow head means a half or whole note. An outlined quarter note is a
+    // notation error, whatever it is trying to signal.
+    expect(block).not.toMatch(/fill:\s*none/);
+    expect(block).toMatch(/fill:\s*var\(--nh-color/);
+    // The pulse is what now distinguishes pending from a struck note, so it
+    // must never reach full strength.
+    const frames = scss.match(/@keyframes piano-note-pending-pulse\s*\{(?:[^{}]|\{[^{}]*\})*\}/s)?.[0];
+    expect(frames).toBeTruthy();
+    expect(frames).not.toMatch(/opacity:\s*1\b/);
+  });
 });
 
 describe('ScorePlayer — keyboard visibility policy (M2)', () => {

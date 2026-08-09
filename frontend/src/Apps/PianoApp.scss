@@ -2822,22 +2822,21 @@
     path, rect, ellipse, text { fill: var(--nh-hit-color); }
     filter: drop-shadow(0 0 2.5px var(--nh-hit-color));
   }
-  // Expected at this step but not yet struck (Learn's all-notes rule). Outlined
-  // and pulsing rather than filled, so "you still owe me the left hand" is legible
-  // without competing with the hit colour.
+  // Expected at this step but not yet struck (Learn's all-notes rule). FILLED
+  // and pulsing, never outlined: a hollow notehead means a half or whole note,
+  // so outlining a quarter note states the wrong duration — a notation error
+  // whatever it is signalling. The PULSE carries "you still owe me this one"
+  // instead, and its ceiling stays below full strength so a pending note is
+  // never mistaken for one already struck.
   .piano-note-pending {
-    path, rect, ellipse, text {
-      fill: none;
-      stroke: var(--nh-color, #23262b);
-      stroke-width: 1.2;
-    }
+    path, rect, ellipse, text { fill: var(--nh-color, #23262b); }
     animation: piano-note-pending-pulse 1.1s ease-in-out infinite;
   }
 }
 
 @keyframes piano-note-pending-pulse {
-  0%, 100% { opacity: 0.45; }
-  50%      { opacity: 1; }
+  0%, 100% { opacity: 0.3; }
+  50%      { opacity: 0.65; }
 }
 
 // Deselected staff (wave-3 A) — dimmed NATIVELY: fade OSMD's own per-staff

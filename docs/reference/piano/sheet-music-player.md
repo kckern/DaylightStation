@@ -198,6 +198,14 @@ whole punishment. The on-screen keyboard doesn't reveal the expected key on
 every miss — it arms only after **three consecutive wrong attempts on the
 same step**, as stuck-support rather than a correction on every slip.
 
+**Notes the step is still waiting on.** Learn advances only once every
+active-staff note of a step has been struck, so a note that is expected but
+hasn't arrived yet pulses at reduced strength — it is never drawn hollow. A
+hollow notehead means a half or whole note, so outlining a quarter note would
+state the wrong duration. The pulse carries "still owed" instead, and its
+ceiling stays below full strength so a waiting note is never mistaken for one
+already played.
+
 ## The loop group and range handles (Learn only)
 
 The loop cluster — mark-in, mark-out, toggle, clear — lives in the bar's
