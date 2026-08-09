@@ -87,6 +87,7 @@ export class GamingSessionService {
     const definition = this.definitionStore.getPinned(session.definition_hash);
     if (!definition) throw new GamingServiceError('definition_snapshot_missing', 'Pinned game definition is unavailable', 500);
 
+    const pendingBefore = session.state.pending_action;
     const outcome = transition(session.state, command, definition);
     if (outcome.error) throw new GamingServiceError(outcome.error.code, outcome.error.message, 422, outcome.error.details);
     const updatedAt = this.clock().toISOString();
@@ -102,7 +103,42 @@ export class GamingSessionService {
       completed_at: outcome.state.status === 'complete' ? updatedAt : session.completed_at,
     };
     this.sessionStore.compareAndSwap(next, session.revision);
-    this.logger?.info?.('gaming.command.accepted', { sessionId, commandId: command.command_id, type: command.type, revision: next.revision });
+    const logFields = {
+      sessionId,
+      gameId: session.game_id,
+      userId: session.participants[0]?.user_id || session.participants[0]?.id || null,
+      revision: next.revision,
+      turn: next.state.turn,
+    };
+    this.logger?.info?.('gaming.command.accepted', { ...logFields, commandId: command.command_id, type: command.type });
+    for (const event of outcome.events) {
+      if (event.type === 'challenge_resolved') {
+        this.logger?.info?.('gaming.authority.challenge.resolved', {
+          ...logFields,
+          challengeId: event.challenge_id,
+          cardDefinitionId: pendingBefore?.card_definition_id || null,
+          challengeKind: pendingBefore?.request?.kind || null,
+          score: event.score,
+          outcome: event.outcome,
+        });
+      } else if (event.type === 'action_aborted' || event.type === 'challenge_interrupted') {
+        this.logger?.info?.('gaming.authority.challenge.aborted', {
+          ...logFields,
+          challengeId: event.challenge_id,
+          cardDefinitionId: pendingBefore?.card_definition_id || null,
+          challengeKind: pendingBefore?.request?.kind || null,
+          reason: event.reason || event.status || 'aborted',
+        });
+      } else if (event.type === 'game_ended') {
+        this.logger?.info?.('gaming.authority.session.completed', {
+          ...logFields,
+          winner: event.winner,
+          playerHealth: next.state.player.health,
+          enemyHealth: next.state.enemy.health,
+          durationMs: Math.max(0, new Date(updatedAt).getTime() - new Date(session.created_at).getTime()),
+        });
+      }
+    }
     return this.#response(next, definition, viewerId, outcome.events);
   }
 
