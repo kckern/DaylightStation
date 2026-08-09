@@ -10,7 +10,7 @@ import PianoEmpty from '../PianoKiosk/PianoEmpty.jsx';
 import { SkeletonPoster, SkeletonStage } from '../PianoKiosk/Skeleton.jsx';
 import usePianoList from '../PianoKiosk/usePianoList.js';
 import { balancedGrid } from '../PianoKiosk/tileGridLayout.js';
-import { resolveScoreGroups } from '../PianoKiosk/modes/SheetMusic/scoreGroups.js';
+import { resolveScoreGroups, groupSlug, groupIndexBySlug } from '../PianoKiosk/modes/SheetMusic/scoreGroups.js';
 import { prettyTitle } from '../PianoKiosk/modes/SheetMusic/scoreTitle.js';
 import { buildHeroChart, heroAccuracy } from './heroChart.js';
 import { usePianoHeroGame } from './usePianoHeroGame.js';
@@ -29,12 +29,19 @@ const listPath = (ref) => {
 const localMediaId = (contentId) => String(contentId || '').replace(/^[a-z]+:/i, '');
 
 /** MusicXML-only first source for Piano Hero. Studio takes can join this picker later. */
-export function HeroSongPicker({ sheetmusic, onSelect }) {
+/**
+ * @param {string|null} [subRoute] - the collection tab named in the URL, so a
+ *   reload or a shared link opens on the same tab.
+ * @param {(slug:string)=>void} [onSubRoute] - report a tab change up to the router.
+ */
+export function HeroSongPicker({ sheetmusic, onSelect, subRoute = null, onSubRoute }) {
   const groups = useMemo(() => resolveScoreGroups(sheetmusic).map((group) => ({
     ...group,
     listPath: listPath(group.ref),
   })), [sheetmusic]);
-  const [tab, setTab] = useState(0);
+  // The URL is the source of truth for which tab is open. An unknown slug falls
+  // back to the first collection rather than a dead end (see groupIndexBySlug).
+  const tab = groupIndexBySlug(groups, subRoute);
   const active = groups[Math.min(tab, Math.max(0, groups.length - 1))];
   const { data, error } = usePianoList(active?.listPath || null);
   const songs = (data || []).filter((item) => NOTATION_RE.test(String(item?.id || '')));
@@ -51,7 +58,7 @@ export function HeroSongPicker({ sheetmusic, onSelect }) {
               role="tab"
               aria-selected={tab === index}
               className={`piano-course-tab${tab === index ? ' is-active' : ''}`}
-              onClick={() => setTab(index)}
+              onClick={() => onSubRoute?.(groupSlug(group, index))}
             >
               {group.label || 'Scores'}
             </button>
@@ -190,7 +197,7 @@ function HeroGame({ song, chart, gameConfig, onChooseSong, onNoteOn, onNoteOff }
 }
 
 /** MusicXML-backed falling-note game. */
-export function PianoHeroGame({ gameConfig, onNoteOn, onNoteOff }) {
+export function PianoHeroGame({ gameConfig, onNoteOn, onNoteOff, subRoute = null, onSubRoute }) {
   const logger = useMemo(() => getChildLogger({ component: 'piano-hero-game' }), []);
   const { config } = usePianoKioskConfig();
   const [song, setSong] = useState(null);
@@ -225,7 +232,7 @@ export function PianoHeroGame({ gameConfig, onNoteOn, onNoteOff }) {
     return () => { cancelled = true; };
   }, [song, gameConfig?.leadInMs, gameConfig?.fallDurationMs, logger]);
 
-  if (!song) return <HeroSongPicker sheetmusic={config.sheetmusic} onSelect={setSong} />;
+  if (!song) return <HeroSongPicker sheetmusic={config.sheetmusic} onSelect={setSong} subRoute={subRoute} onSubRoute={onSubRoute} />;
   if (loading) return <SkeletonStage />;
   if (error) return <PianoEmpty message={error} actionLabel="Choose another song" onAction={() => setSong(null)} />;
   if (!chart) return <SkeletonStage />;
