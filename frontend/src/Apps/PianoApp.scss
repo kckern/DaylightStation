@@ -2809,20 +2809,22 @@
   .piano-note-lit {
     path, rect, ellipse, text { fill: var(--nh-color, #23262b); }
   }
-  // Struck correctly — always an affirming green, regardless of --nh-color
-  // (which is the near-black lit ink, not a "you got it" signal). Fixed
-  // literal, not threaded through NoteHighlightLayer's accent prop: the hit
-  // glow must stay green in every mode, not follow the lit ink or the mode
-  // accent. Declared after .piano-note-lit so its fill wins the cascade (same
-  // specificity, later source order) on notes carrying both classes.
+  // Struck correctly — always a warm dark brown, regardless of --nh-color
+  // (which is the near-black lit ink, not a "you got it" signal). Deliberately
+  // NOT the kiosk's accent green: on a white score page an affirming colour that
+  // reads as ink keeps the page looking engraved rather than lit up like a game.
+  // Fixed literal, not threaded through NoteHighlightLayer's accent prop: the
+  // hit colour must stay the same in every mode, not follow the lit ink or the
+  // mode accent. Declared after .piano-note-lit so its fill wins the cascade
+  // (same specificity, later source order) on notes carrying both classes.
   .piano-note-hit {
-    --nh-hit-color: #2ec46f;
+    --nh-hit-color: #6b4423;
     path, rect, ellipse, text { fill: var(--nh-hit-color); }
     filter: drop-shadow(0 0 2.5px var(--nh-hit-color));
   }
   // Expected at this step but not yet struck (Learn's all-notes rule). Outlined
   // and pulsing rather than filled, so "you still owe me the left hand" is legible
-  // without competing with the green hit colour.
+  // without competing with the hit colour.
   .piano-note-pending {
     path, rect, ellipse, text {
       fill: none;
