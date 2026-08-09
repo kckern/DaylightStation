@@ -1936,6 +1936,14 @@ export default function ScorePlayer({ score: scoreMeta }) {
       <div className={`piano-score-player__scroll piano-score-player__scroll--${flow}`} ref={scrollRef} onClick={onScoreClick}>
         <MusicXmlRenderer score={parsed} musicXml={scoreMeta.musicXml} flow={flow} scale={scale} transpose={transpose} onLayout={onLayout} onReady={onReady} holdExtraction={running}>
           {mode !== 'perform' && layoutFresh && (
+            /* container is the ELEMENT, not a ref: React commits layout effects
+               bottom-up, so an ancestor's ref is not yet attached when a child's
+               effect first runs. On the very first render this IS null —
+               layoutFresh is true pre-first-layout by design (see its definition
+               above) — and that is harmless: nothing is engraved yet either, so
+               the layer's effect finds no <svg> and no-ops. onLayout then fires
+               after mount, and the setLayout it triggers re-renders with the ref
+               attached and a fresh layout identity that re-runs the effect. */
             <StaffDimLayer
               container={scrollRef.current}
               dimmed={dimmedStaves}
