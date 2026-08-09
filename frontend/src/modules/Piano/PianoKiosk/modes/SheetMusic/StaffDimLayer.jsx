@@ -1,43 +1,48 @@
-import React from 'react';
+import { useLayoutEffect } from 'react';
+import { staffGroups } from '../../../../MusicNotation/renderers/osmdRender.js';
+
+const DIM = 'is-dimmed';
 
 /**
- * StaffDimLayer — translucent paper mask over DESELECTED staves (wave-3 A).
- * Sits UNDER the range tint and cursor (z2 < tint z3 < cursor z5), so active
- * overlays — including wrong-note wet ink — always render at full strength
- * above it. Pure: geometry in, absolutely-positioned divs out.
+ * StaffDimLayer — dims DESELECTED staves by fading OSMD's own per-staff group
+ * rather than covering the staff.
+ *
+ * The overlay this replaces painted translucent white rectangles over each
+ * staff band. Musical ink is not rectangular: stems, beams, ledger lines and
+ * slurs all legitimately extend past the band, so they escaped it, and the
+ * band's straight edges cut across them. Fading `g.staffline` instead takes
+ * every mark on that staff with it, because they are all its children.
+ *
+ * Group opacity composites the group ONCE rather than per element, so
+ * overlapping strokes do not darken each other — the staff reads as genuinely
+ * lighter ink instead of a film laid on top.
+ *
+ * Renders nothing, and needs no z-index: dimming the engraving itself means
+ * live overlays (cursor, wet ink, note chips) are untouched, so they no longer
+ * have to be stacked above a mask to avoid being muted by it.
+ *
+ * @param {object} p
+ * @param {{current: Element|null}} p.containerRef - any ancestor of the engraved <svg>
+ * @param {number[]} [p.dimmed] - 0-based staff ids to dim
+ * @param {unknown} [p.layoutToken] - identity changes on re-engrave; a fresh
+ *   engrave replaces the SVG and with it every class set here, so the effect
+ *   must re-run. Zoom, flow and transpose all force one.
  */
-const PAD_UNITS = 1.5; // ledger territory above the first / below the last staff
+export default function StaffDimLayer({ containerRef, dimmed = [], layoutToken = null }) {
+  useLayoutEffect(() => {
+    const svg = containerRef?.current?.querySelector('svg');
+    if (!svg) return undefined;
+    const want = new Set(dimmed);
+    const touched = [];
+    for (const { staff, el } of staffGroups(svg)) {
+      if (!want.has(staff)) continue;
+      el.classList.add(DIM);
+      touched.push(el);
+    }
+    // Clear exactly what we set. The SVG outlives this component across mode
+    // changes, so leaving the class behind would strand a dimmed staff.
+    return () => { for (const el of touched) el.classList.remove(DIM); };
+  }, [containerRef, dimmed, layoutToken]);
 
-export function dimBands(staffBoxes = [], dimmed = []) {
-  if (!staffBoxes.length || !dimmed.length) return [];
-  const want = new Set(dimmed);
-  const bySystem = new Map();
-  for (const b of staffBoxes) {
-    if (!bySystem.has(b.system)) bySystem.set(b.system, []);
-    bySystem.get(b.system).push(b);
-  }
-  const bands = [];
-  for (const staves of bySystem.values()) {
-    staves.sort((a, b) => a.top - b.top);
-    staves.forEach((s, i) => {
-      if (!want.has(s.staff)) return;
-      const bottom = s.top + s.lineSpacing * 4;
-      const prev = staves[i - 1];
-      const next = staves[i + 1];
-      const top = prev ? (prev.top + prev.lineSpacing * 4 + s.top) / 2 : s.top - s.lineSpacing * PAD_UNITS;
-      const end = next ? (bottom + next.top) / 2 : bottom + s.lineSpacing * PAD_UNITS;
-      bands.push({ left: s.left, top, width: s.right - s.left, height: end - top });
-    });
-  }
-  return bands;
-}
-
-export default function StaffDimLayer({ staffBoxes = [], dimmed = [] }) {
-  return (
-    <>
-      {dimBands(staffBoxes, dimmed).map((b, i) => (
-        <div key={i} className="piano-score-staff-dim" style={{ left: b.left, top: b.top, width: b.width, height: b.height }} />
-      ))}
-    </>
-  );
+  return null;
 }
