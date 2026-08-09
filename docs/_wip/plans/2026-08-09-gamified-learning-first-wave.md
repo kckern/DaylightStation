@@ -1,0 +1,112 @@
+# Gamified Learning — First-Wave Structural Implementation
+
+**Date:** 2026-08-09
+**Status:** Implemented scaffold; field gameplay and later generalization remain open.
+**Design context:** `2026-08-09-gamified-learning-framework-design.md`
+
+## Purpose
+
+This wave builds the load-bearing seams once, while keeping game mechanics deliberately
+narrow. It is a playable single-player card/piano slice, not evidence that a universal
+game DSL is warranted.
+
+Launch the original chord fixture at `/gaming` or `/app/gaming`. The YAML-authored scale
+pilot is registered as **Card Game** at `/piano/games` and deep-links at
+`/piano/games/card-game`; it uses the kiosk's selected piano user, falling back to `guest`.
+
+## Implemented structural seams
+
+| Seam | Current implementation | Why it is load-bearing |
+|---|---|---|
+| Shared engine contract | `shared/gaming/` | Browser and server execute the same command/reducer contract |
+| Read model | `deriveInteraction()` + `projectState()` | Views consume legal commands instead of reimplementing rules |
+| Deterministic state | Seeded RNG and pinned definition hash | Replays and server verification have stable inputs |
+| Challenge recovery | `requested → prepared → started → resolved/aborted` | Prepared work is durable before physical execution begins |
+| Server authority | `GamingSessionService` independently applies every command | Client checkpoints are never trusted as authoritative state |
+| Write safety | Optimistic revision, command idempotency, atomic file replacement | Retries and stale clients do not double-apply an action |
+| Domain ownership | Piano attempt ledger under each user | Gaming references practice evidence without owning it |
+| Provider boundary | Registered provider runtime with `ready/prepare/restore/start/cancel/dispose` | Later domains can plug in without importing into Gaming |
+| App composition | `GamingApp` and `PianoCardGame` register the piano provider | Gaming runtime remains free of Piano imports |
+| YAML game content | `shared/gaming/definitions/card-game.yml` | Cards, balance, scale pitches, ABC notation, and outcomes remain editable without game-specific React |
+| Resume | Active session id persisted per game/user in local storage | Browser reload resumes rather than silently starting another game |
+
+## Deliberate first-wave constraints
+
+- Only `card-battle-v1` definitions validate.
+- Untimed root-position chords and ordered one-octave scales execute; timing and fingering
+  are deliberately not graded.
+- `scale-clash` is bundled as a bootable definition; household YAML with the same id
+  overrides it.
+- `card-game` is bundled from YAML, and household
+  `apps/gaming/games/card-game/game.yml` transparently overrides the bundled definition.
+- A challenge found in `started` state after reload is conservatively refunded. The
+  browser cannot prove whether the physical performance completed while it was absent.
+- The first view has no hidden information, so projection currently copies every field.
+- Session history is one YAML file per session. Definition snapshots are content-addressed.
+
+These are constraints, not accidental omissions. Extension points exist at the boundary
+where the next implementation must supply evidence.
+
+## TODO map
+
+### Field pilot — next
+
+- [x] Author a minimal YAML card set and a short win/loss loop using scale interstitials.
+- [ ] Field-test balance, tutorial clarity, and whether the loop actually sustains interest.
+- [ ] Choose numeric gates for challenge duration, retry rate, abandonment, and replay
+  willingness before supervised sessions begin.
+- [ ] Add structured duration telemetry for prepare, start, first input, result, and
+  persistence.
+- [ ] Compare against an equivalent non-game chord-practice baseline.
+- [ ] Decide go/revise/stop before adding another ruleset.
+
+### Challenge providers
+
+- [ ] Add device-disconnect and explicit timeout results to the piano runtime.
+- [ ] Add latency/clock-domain calibration before any timed grading.
+- [ ] Build the occurrence aligner only when a timed passage use case is approved.
+- [ ] Add reconciliation for an attempt saved immediately before a session write fails.
+- [ ] Add a durable provider-version compatibility policy.
+
+### Engine growth — evidence gated
+
+- [ ] Add typed effect/path semantics only after a second game repeats a mechanic.
+- [ ] Add visibility policies to state, events, yields, and legal commands together.
+- [ ] Add behavior manifests only when a real mechanic cannot fit the shared primitive set.
+- [ ] Run track, hidden-grid, and initiative traces before claiming a generalized schema.
+- [ ] Keep purpose-built reducers if those traces do not converge cleanly.
+
+### Persistence and operations
+
+- [ ] Partition sessions by date once listing/retention requirements are known.
+- [ ] Add a session index and explicit abandon/complete endpoints.
+- [ ] Bound or compact command/idempotency history for long sessions.
+- [ ] Add cross-process locking if more than one backend process can write the same data tree.
+- [ ] Define engine/definition migration and supported-resume windows before changing the
+  serialized state schema.
+- [ ] Add reconciliation/repair tooling and checkpoint-vs-replay verification.
+
+### Product and presentation
+
+- [ ] Replace the temporary `?user=` assignment with the household profile picker.
+- [ ] Add keyboard/focus testing, screen-reader announcements, and reduced-motion variants.
+- [ ] Add authored sound/art manifests after the mechanic survives the field gate.
+- [x] Register the scale pilot in Piano Games while retaining the standalone framework fixture.
+
+## Verification
+
+Focused tests cover:
+
+- Legal-action derivation.
+- Requested/prepared/started challenge boundaries.
+- Successful result commit and interrupted-result refund.
+- Definition pinning and authoritative server replay.
+- Stale-revision rejection and duplicate-command idempotency.
+- Frontend controller/provider orchestration.
+- Reload recovery of an already-started challenge.
+- HTTP definition/session/command routes.
+- Ordered-scale restart/completion semantics and Piano Games registration.
+
+The production frontend build passes after restoring the already-declared, lockfile-pinned
+`signalsmith-stretch` dependency to `frontend/node_modules`. The install changed no tracked
+manifest or lockfile content. Existing Sass deprecation and bundle-size warnings remain.

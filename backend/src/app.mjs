@@ -245,6 +245,12 @@ import { YamlPianoStudioDatastore } from './1_adapters/piano/YamlPianoStudioData
 import { ComposerSongStore } from './3_applications/piano/ComposerSongStore.mjs';
 import { createFeedbackRouter } from './4_api/v1/routers/feedback.mjs';
 import { createGameshowRouter } from './4_api/v1/routers/gameshow.mjs';
+import { createGamingRouter } from './4_api/v1/routers/gaming.mjs';
+import { GamingSessionService } from './3_applications/gaming/GamingSessionService.mjs';
+import { YamlGamingDefinitionStore } from './1_adapters/persistence/yaml/gaming/YamlGamingDefinitionStore.mjs';
+import { YamlGamingSessionStore } from './1_adapters/persistence/yaml/gaming/YamlGamingSessionStore.mjs';
+import { YamlPianoAttemptStore } from './1_adapters/persistence/yaml/gaming/YamlPianoAttemptStore.mjs';
+import { scaleClashDefinition } from '#shared/gaming/fixtures/scaleClash.mjs';
 import { createWikipediaRouter } from './4_api/v1/routers/wikipedia.mjs';
 import { WikipediaAdapter } from './1_adapters/reference/WikipediaAdapter.mjs';
 import { GameShowService } from './3_applications/gameshow/GameShowService.mjs';
@@ -1635,6 +1641,32 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'gameshow-api' }),
   });
 
+  // Gaming first wave: the backend independently executes every shared-core
+  // command and persists authoritative state. The builtin definition makes the
+  // vertical slice bootable before household-authored YAML exists. Card Game is
+  // itself bundled as YAML; a household games/{gameId}/game.yml overrides either
+  // bundled source without changing composition code.
+  const gamingDefinitionStore = new YamlGamingDefinitionStore({
+    definitionsDir: configService.getHouseholdPath('apps/gaming/games'),
+    archiveDir: configService.getHouseholdPath('history/gaming/_definitions'),
+    builtIns: { 'scale-clash': scaleClashDefinition },
+    builtInFiles: {
+      'card-game': path.resolve(__dirname, '../../shared/gaming/definitions/card-game.yml'),
+    },
+    logger: rootLogger.child({ module: 'gaming-definitions' }),
+  });
+  const gamingSessionStore = new YamlGamingSessionStore({
+    sessionsDir: configService.getHouseholdPath('history/gaming/sessions'),
+  });
+  v1Routers.gaming = createGamingRouter({
+    gamingService: new GamingSessionService({
+      definitionStore: gamingDefinitionStore,
+      sessionStore: gamingSessionStore,
+      logger: rootLogger.child({ module: 'gaming' }),
+    }),
+    logger: rootLogger.child({ module: 'gaming-api' }),
+  });
+
   // Self-hosted Wikipedia (kiwix-backed, plain-text) proxy. URL from services.yml;
   // router is skipped entirely when no wikipedia service is declared.
   const wikipediaUrl = configService.resolveServiceUrl('wikipedia');
@@ -2183,6 +2215,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
   v1Routers.piano = createPianoRouter({
     pianoContainer,
+    pianoAttemptStore: new YamlPianoAttemptStore({
+      usersDir: join(configService.getDataDir(), 'users'),
+    }),
     logger: rootLogger.child({ module: 'piano-api' })
   });
 

@@ -38,7 +38,7 @@ beforeEach(() => vi.clearAllMocks());
 describe('Games mode', () => {
   it('renders a picker tile per registered game with friendly labels (index route)', () => {
     renderGames();
-    for (const label of ['Space Invaders', 'Tetris', 'Flashcards', 'Side Scroller']) {
+    for (const label of ['Card Game', 'Space Invaders', 'Tetris', 'Flashcards', 'Side Scroller']) {
       expect(screen.getByText(label)).toBeTruthy();
     }
   });

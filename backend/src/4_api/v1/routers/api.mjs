@@ -125,6 +125,7 @@ export function createApiRouter(config) {
     '/economy': 'economy',
     '/feedback': 'feedback',
     '/gameshow': 'gameshow',
+    '/gaming': 'gaming',
     '/school': 'school',
     '/donow': 'donow',
     '/content-filter': 'content-filter',
