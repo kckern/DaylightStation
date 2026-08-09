@@ -168,11 +168,14 @@ vi.mock('../../../../MusicNotation/renderers/MusicXmlRenderer.jsx', async () => 
       return (
         <div data-testid="renderer" className="musicxml-renderer">
           {/* Mirrors the engraved DOM: OSMD renders its <svg> into the host div,
-              one g.staffline per staff per system with a 1-based id suffix. */}
+              one g.staffline per staff per system with a 1-based id suffix.
+              data-staff mirrors what tagStaffGroups stamps during real
+              extraction (osmdRender.js) — this mock never runs real
+              extraction, so staffGroups would find nothing to dim without it. */}
           <div className="musicxml-renderer__svg">
             <svg>
-              <g className="staffline" id="Piano0-1" />
-              <g className="staffline" id="Piano0-2" />
+              <g className="staffline" id="Piano0-1" data-staff="0" />
+              <g className="staffline" id="Piano0-2" data-staff="1" />
             </svg>
           </div>
           {children}

@@ -2,10 +2,13 @@ import { render, cleanup } from '@testing-library/react';
 import StaffDimLayer from './StaffDimLayer.jsx';
 
 // Mirrors the real engraved DOM: OSMD renders its <svg> into the renderer's host
-// div, one g.staffline per staff PER SYSTEM, with a 1-based id suffix.
-function makeHost(ids = ['Piano0-1', 'Piano0-2']) {
+// div, one g.staffline per staff PER SYSTEM, with a 1-based id suffix; staffGroups
+// reads the sheet-global `data-staff` stamped by tagStaffGroups during extraction
+// (see osmdRender.js), not the id suffix, so the fixture stamps it directly —
+// this component's own tests aren't exercising tagStaffGroups.
+function makeHost(ids = ['Piano0-1', 'Piano0-2'], staffIds = [0, 1]) {
   const host = document.createElement('div');
-  const groups = ids.map((id) => `<g class="staffline" id="${id}"></g>`).join('');
+  const groups = ids.map((id, i) => `<g class="staffline" id="${id}" data-staff="${staffIds[i]}"></g>`).join('');
   host.innerHTML = `<div class="musicxml-renderer__svg"><svg>${groups}</svg></div>`;
   document.body.appendChild(host);
   return host;
@@ -27,7 +30,7 @@ describe('StaffDimLayer', () => {
   });
 
   it('dims every system of that staff, not just the first', () => {
-    const host = makeHost(['Piano0-1', 'Piano0-2', 'Piano0-1', 'Piano0-2']);
+    const host = makeHost(['Piano0-1', 'Piano0-2', 'Piano0-1', 'Piano0-2'], [0, 1, 0, 1]);
     render(<StaffDimLayer container={host} dimmed={[0]} />);
     expect(dimmedIds(host)).toEqual(['Piano0-1', 'Piano0-1']);
   });
