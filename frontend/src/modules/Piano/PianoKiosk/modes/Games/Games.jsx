@@ -31,6 +31,18 @@ const GAME_ICONS = {
 };
 
 /**
+ * Relative destination for a game-owned URL segment.
+ *
+ * From /games/hero, append the first segment directly. Once a segment already
+ * exists, replace that leaf with a sibling. Re-appending the game id from the
+ * latter state produces /hero/hero/:segment.
+ */
+export function gameSubRouteTarget(currentSubRoute, next) {
+  if (!next) return currentSubRoute ? '..' : '.';
+  return currentSubRoute ? `../${next}` : next;
+}
+
+/**
  * Games mode — picks a registered piano game and mounts it fullscreen, fed by the
  * shared Web-MIDI (BLE) stream from usePianoMidi().
  *
@@ -111,8 +123,7 @@ function GameHost() {
   // A game asking to change its own sub-route REPLACES rather than pushes: Back
   // should leave the game, not walk back through every tab you looked at.
   const goSubRoute = (next) => {
-    const to = next ? `${gameId}/${next}` : gameId;
-    navigate(`../${to}`, { relative: 'path', replace: true });
+    navigate(gameSubRouteTarget(subRoute, next), { relative: 'path', replace: true });
   };
 
   if (!entry?.LazyComponent) {

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { MemoryRouter, Routes, Route } from 'react-router-dom';
+import { MemoryRouter, Routes, Route, resolvePath } from 'react-router-dom';
 
 // Keep the games-config fetch hermetic (no real network).
 vi.mock('../../../../../lib/api.mjs', () => ({
@@ -9,7 +9,7 @@ vi.mock('../../../../../lib/api.mjs', () => ({
 
 import { PianoMidiProvider } from '../../PianoMidiContext.jsx';
 import { ActivePianoProvider } from '../../PianoConfig.jsx';
-import { Games } from './Games.jsx';
+import { Games, gameSubRouteTarget } from './Games.jsx';
 
 const testConfig = {
   voices: [], videos: { plexCollection: null }, games: {},
@@ -36,6 +36,15 @@ function renderGames(initialEntry = '/games') {
 beforeEach(() => vi.clearAllMocks());
 
 describe('Games mode', () => {
+  it('appends the first game sub-route, then replaces it without duplicating the game id', () => {
+    const first = resolvePath(gameSubRouteTarget(null, 'video-games'), '/games/hero').pathname;
+    const switched = resolvePath(gameSubRouteTarget('video-games', 'tv-shows'), first).pathname;
+
+    expect(first).toBe('/games/hero/video-games');
+    expect(switched).toBe('/games/hero/tv-shows');
+    expect(switched).not.toContain('/hero/hero/');
+  });
+
   it('renders a picker tile per registered game with friendly labels (index route)', () => {
     renderGames();
     for (const label of ['Card Game', 'Space Invaders', 'Tetris', 'Flashcards', 'Piano Hero', 'Side Scroller']) {
