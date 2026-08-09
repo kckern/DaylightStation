@@ -4,31 +4,31 @@ import { inputKind, writtenMidisAtStep } from './inputKind.js';
 describe('inputKind', () => {
   const written = new Set([67, 60]);
 
-  it('is a match when the pitch is written at the cursor', () => {
-    expect(inputKind(67, written, false)).toBe('match');
+  it('draws nothing for a pitch written here — the flash reports that, as an event', () => {
+    // "You played this and it was right" is a claim about a moment. Held state
+    // cannot make it: the cursor advances in the same task as the press, so held
+    // state is only ever read against the NEXT note.
+    expect(inputKind(67, written, false)).toBe(null);
   });
 
-  it('is a match regardless of which staff wrote it', () => {
-    // 60 is the left hand's note; the player is holding it while practising RH.
-    // The layer answers "is this on the page right now?", not "is it your job?".
-    expect(inputKind(60, written, false)).toBe('match');
+  it('draws nothing for a repeated pitch still held from the previous note', () => {
+    // The trap: cursor on E, next note also E, first one still down. Reading held
+    // state would paint it correct against the new note while the gate waits for
+    // a press that never came — the page saying "right" and refusing to move.
+    // Nothing is drawn, so holding a key makes no claim at all.
+    expect(inputKind(64, new Set([64]), true)).toBe(null);
+    expect(inputKind(64, new Set([64]), false)).toBe(null);
   });
 
-  it('ghosts a pitch that is not written here, when nothing is grading it', () => {
+  it('ghosts a pitch that is not written here, when nothing is judging', () => {
     expect(inputKind(61, written, false)).toBe('ghost');
   });
 
-  it('draws NOTHING for a non-match while the gate is grading', () => {
-    // Learn's gate already inks this note red. Returning a kind would put a
-    // second glyph in the same column on the same keypress.
+  it('draws nothing for an unwritten pitch while the gate judges — red owns it', () => {
     expect(inputKind(61, written, true)).toBe(null);
   });
 
-  it('still matches while the gate is active', () => {
-    expect(inputKind(67, written, true)).toBe('match');
-  });
-
-  it('ghosts everything when the step writes nothing', () => {
+  it('ghosts everything unwritten when the step writes nothing', () => {
     expect(inputKind(67, new Set(), false)).toBe('ghost');
   });
 });

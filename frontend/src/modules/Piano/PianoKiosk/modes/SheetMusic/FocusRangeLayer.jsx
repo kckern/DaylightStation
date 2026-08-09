@@ -43,7 +43,28 @@ export function measureExtent(m, stepBoxes) {
  * is LOWER than its predecessor starts a new system (wrapped-flow line break);
  * horizontal flow never resets x, so it always yields a single band. Covers
  * every step in the range — not just the endpoint measures (audit L4).
+ *
+ * The band's OUTER edges reach past the first and last notes, to roughly where
+ * the barline sits. Step boxes carry a note's CENTRE, so anchoring the band on
+ * them cut the endpoint noteheads in half — the range appeared to slice through
+ * the very notes it was asking you to play. Each outer edge now stops midway to
+ * the neighbouring note outside the range, which is where the barline falls when
+ * notes are evenly spaced and is always at least clear of the notehead itself.
+ * With no neighbour to measure against (the music starts or ends there) it falls
+ * back to half the range's own median gap.
  */
+const EDGE_FALLBACK_PX = 12;
+
+function halfGapTo(stepBoxes, from, to) {
+  const a = stepBoxes[from];
+  const b = stepBoxes[to];
+  // A neighbour on ANOTHER system is not adjacent in space, only in time — its x
+  // runs backwards, so measuring to it would pull the edge the wrong way.
+  if (!a || !b) return null;
+  const gap = Math.abs(b.x - a.x);
+  return gap > 0 ? gap / 2 : null;
+}
+
 export function rangeBands(measures, stepBoxes, { inMeasure, outMeasure }) {
   const inM = measures[inMeasure];
   const outM = measures[outMeasure];
@@ -65,6 +86,22 @@ export function rangeBands(measures, stepBoxes, { inMeasure, outMeasure }) {
     }
     prevX = b.x;
   }
+  if (!bands.length) return bands;
+
+  // Push the outer edges out to the barline. Inner edges of a wrapped range are
+  // system breaks, not boundaries of the range, so they are left alone.
+  const lo = inM.firstStep;
+  const hi = outM.lastStep;
+  const first = bands[0];
+  const last = bands[bands.length - 1];
+  const leftPad = (stepBoxes[lo - 1] && stepBoxes[lo - 1].x < stepBoxes[lo]?.x)
+    ? halfGapTo(stepBoxes, lo, lo - 1)
+    : null;
+  const rightPad = (stepBoxes[hi + 1] && stepBoxes[hi + 1].x > stepBoxes[hi]?.x)
+    ? halfGapTo(stepBoxes, hi, hi + 1)
+    : null;
+  first.left -= leftPad ?? EDGE_FALLBACK_PX;
+  last.right += rightPad ?? EDGE_FALLBACK_PX;
   return bands;
 }
 

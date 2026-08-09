@@ -178,14 +178,24 @@ while a note is still owed, and brown once it is struck. Keeping this channel
 free of saturated colour is what keeps the page looking engraved rather than lit
 up like a game.
 
-**Drawn marks** carry yours, and are the only place saturated colour appears:
-green for a pitch written where you are, a recessed grey for one that isn't, red
-for a wrong note under the gate.
+**Your playing** is reported as it happens, and is the only place saturated
+colour appears: green the instant you play a note correctly, red the instant you
+play a wrong one. Both are marks about an EVENT — what you just did — never
+about which keys happen to be down. That distinction matters: the cursor
+advances in the same instant you satisfy a note, so held state is only ever read
+against the note *after* the one you played, and on a repeated note a key still
+held from before would otherwise be called correct while the gate waits for a
+press that never came. A held pitch that isn't written where you are draws a
+recessed grey ghost — the one thing held state can honestly say.
 
 **Regions** carry place, and recede. The cursor band is one neutral slate in
 every mode, because "you are here" means the same thing in all of them and the
-mode is already named in the breadcrumb. The practice range is a warm shade of
-the paper, because a passage you are looping is not a verdict. Polish's
+mode is already named in the breadcrumb. The practice loop — its band and its
+two handles — is a muted orange, deliberately not the green a correctly played
+note wears: a loop marks where you are working, it does not judge how you are
+doing. Its band reaches out to the barlines rather than stopping on the first
+and last noteheads, so the range never appears to slice through the notes it is
+asking you to play. Polish's
 per-measure washes keep their green, amber and red — they cover a whole bar and
 never sit on a notehead, so they read as scoring rather than as note state.
 
