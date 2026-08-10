@@ -2806,9 +2806,10 @@
 // pitch played. Sits at the same z as the wet ink so it reads as part of the same
 // hand-written trace, and never intercepts a tap meant for the score.
 //
-// A match takes the kiosk's affirming green; anything else is recessed rather
-// than absent, so the player can still see what they actually played. Neither is
-// ever drawn hollow — a hollow notehead means a half or whole note.
+// It draws GHOSTS only — pitches you are holding that are not on the page here —
+// recessed rather than absent, so you can still see what you actually played. A
+// correctly played note is reported on the engraved notehead instead. Never drawn
+// hollow: a hollow notehead means a half or whole note.
 .piano-live-input {
   position: absolute;
   inset: 0;
@@ -2819,7 +2820,9 @@
   pointer-events: none;
 }
 .piano-live-input__note {
-  &.is-match { color: var(--piano-accent, #2ec46f); }
+  // Ghost is the only kind this layer draws. A correctly played note is reported
+  // as an event on the ENGRAVED notehead (.piano-note-match), not from held
+  // state, so there is no match kind here to style.
   &.is-ghost { color: var(--piano-muted, #8a8f98); opacity: 0.3; }
 }
 
