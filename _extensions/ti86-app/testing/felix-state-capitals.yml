@@ -1,0 +1,60 @@
+schema: schoolcalc.ti86-mame-scenarios/v1
+scenarios:
+  - id: felix-state-capitals
+    description: Felix completes the exact code 000000 state-capitals prescription and queues a perfect result.
+    boot_settle_frames: 300
+    settle_frames: 90
+    steps:
+      - { key: '0', capture: code-1 }
+      - { key: '0', capture: code-2 }
+      - { key: '0', capture: code-3 }
+      - { key: '0', capture: code-4 }
+      - { key: '0', capture: code-5 }
+      - { key: '0', capture: code-ready, expect_text: '000 000' }
+      - { key: F1, capture: card-01-front, settle_frames: 300, expect_text: [ADAPTIVE STUDY, ALABAMA, FLIP] }
+      - { key: F1, capture: card-01-back, expect_text: [MONTGOMERY, AGAIN, HARD, KNOW] }
+      - { key: F5, capture: card-02-front, expect_text: ALASKA }
+      - { key: F1, capture: card-02-back, expect_text: JUNEAU }
+      - { key: F5, capture: card-03-front, expect_text: ARIZONA }
+      - { key: F1, capture: card-03-back, expect_text: PHOENIX }
+      - { key: F5, capture: card-04-front, expect_text: ARKANSAS }
+      - { key: F1, capture: card-04-back, expect_text: LITTLE ROCK }
+      - { key: F5, capture: card-05-front, expect_text: CALIFORNIA }
+      - { key: F1, capture: card-05-back, expect_text: SACRAMENTO }
+      - { key: F5, capture: card-06-front, expect_text: COLORADO }
+      - { key: F1, capture: card-06-back, expect_text: DENVER }
+      - { key: F5, capture: card-07-front, expect_text: CONNECTICUT }
+      - { key: F1, capture: card-07-back, expect_text: HARTFORD }
+      - { key: F5, capture: card-08-front, expect_text: DELAWARE }
+      - { key: F1, capture: card-08-back, expect_text: DOVER }
+      - { key: F5, capture: card-09-front, expect_text: FLORIDA }
+      - { key: F1, capture: card-09-back, expect_text: TALLAHASSEE }
+      - { key: F5, capture: card-10-front, expect_text: GEORGIA }
+      - { key: F1, capture: card-10-back, expect_text: ATLANTA }
+      - { key: F5, capture: card-11-front, expect_text: HAWAII }
+      - { key: F1, capture: card-11-back, expect_text: HONOLULU }
+      - { key: F5, capture: card-12-front, expect_text: IDAHO }
+      - { key: F1, capture: card-12-back, expect_text: BOISE }
+      - { key: F5, capture: study-summary, settle_frames: 300, expect_text: [STUDY SUMMARY, KNOWN, HARD, AGAIN, UNRESOLVED, QUIZ] }
+      - { key: F5, capture: quiz-01-prompt, expect_text: [QUIZ, GEOGRAPHY] }
+      - { key: F5, capture: quiz-01-choices, expect_text: [MONTGOMERY, A] }
+      - { key: F1, capture: quiz-02-prompt }
+      - { key: F5, capture: quiz-02-choices }
+      - { key: F1, capture: quiz-03-prompt }
+      - { key: F5, capture: quiz-03-choices }
+      - { key: F1, capture: quiz-04-prompt }
+      - { key: F5, capture: quiz-04-choices }
+      - { key: F1, capture: quiz-05-prompt }
+      - { key: F5, capture: quiz-05-choices }
+      - { key: F1, capture: quiz-06-prompt }
+      - { key: F5, capture: quiz-06-choices }
+      - { key: F1, capture: quiz-07-prompt }
+      - { key: F5, capture: quiz-07-choices }
+      - { key: F1, capture: quiz-08-prompt }
+      - { key: F5, capture: quiz-08-choices }
+      - { key: F1, capture: quiz-09-prompt }
+      - { key: F5, capture: quiz-09-choices }
+      - { key: F1, capture: quiz-10-prompt }
+      - { key: F5, capture: quiz-10-choices }
+      - { key: F1, capture: perfect-result, settle_frames: 1200, expect_text: [RESULT, SCORE, 10, RESULT SAVED OFFLINE.] }
+      - { key: F1, capture: result-qr, settle_frames: 300, expect_symbols: QR V5/M }
