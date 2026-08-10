@@ -5,6 +5,7 @@ import {
   buildHeroChart,
   createHeroRun,
   heroAccuracy,
+  retimeHeroChart,
 } from './heroChart.js';
 
 const score = {
@@ -22,6 +23,17 @@ const score = {
 };
 
 describe('Piano Hero chart', () => {
+  it('retimes target onsets and durations without changing the lead-in', () => {
+    const original = buildHeroChart(score, { leadInMs: 3000 });
+    const slower = retimeHeroChart(original, 60);
+
+    expect(slower.leadInMs).toBe(3000);
+    expect(slower.targets[0].targetTimeMs).toBe(3000);
+    expect(slower.targets[1].targetTimeMs - 3000)
+      .toBeCloseTo((original.targets[1].targetTimeMs - 3000) * 2);
+    expect(slower.targets[0].durationMs).toBeCloseTo(original.targets[0].durationMs * 2);
+  });
+
   it('groups MusicXML chord onsets and honors score tempo', () => {
     const chart = buildHeroChart(score, { leadInMs: 3000 });
     expect(chart.targets).toHaveLength(3);

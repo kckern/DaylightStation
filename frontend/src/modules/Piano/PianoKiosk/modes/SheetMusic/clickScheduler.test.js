@@ -28,6 +28,25 @@ describe('createClickScheduler', () => {
     s.stop();
   });
 
+  it('uses the supplied phase and accents beat one of each measure', () => {
+    const ac = fakeCtx();
+    const beats = [];
+    const s = createClickScheduler({
+      getCtx: () => ac,
+      scheduleBlip: (_a, t, options) => beats.push({ t, ...options }),
+      lookaheadS: 2,
+      tickMs: 100,
+    });
+    s.start(120, { firstBeatDelayS: 0.25, beatsPerBar: 3, firstBeatIndex: 2 });
+    expect(beats.map(({ t, accent }) => ({ t, accent }))).toEqual([
+      { t: 0.25, accent: false },
+      { t: 0.75, accent: true },
+      { t: 1.25, accent: false },
+      { t: 1.75, accent: false },
+    ]);
+    s.stop();
+  });
+
   it('setBpm changes spacing from the NEXT beat (keeps phase, no restart)', () => {
     const ac = fakeCtx();
     const blips = [];

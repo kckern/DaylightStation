@@ -16,17 +16,17 @@ function audioContext() {
 export { audioContext };
 
 /** Schedule the standard ~1kHz/40ms blip at an exact AudioContext time. */
-export function scheduleBlipAt(ac, t) {
+export function scheduleBlipAt(ac, t, { accent = false } = {}) {
   try {
     const osc = ac.createOscillator();
     const gain = ac.createGain();
     osc.type = 'square';
-    osc.frequency.value = 1000;
-    gain.gain.setValueAtTime(0.18, t);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
+    osc.frequency.value = accent ? 1450 : 1000;
+    gain.gain.setValueAtTime(accent ? 0.25 : 0.18, t);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + (accent ? 0.055 : 0.04));
     osc.connect(gain).connect(ac.destination);
     osc.start(t);
-    osc.stop(t + 0.045);
+    osc.stop(t + (accent ? 0.06 : 0.045));
   } catch { /* audio device gone — ignore */ }
 }
 

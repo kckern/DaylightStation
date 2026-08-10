@@ -20,6 +20,23 @@ describe('useMetronomeClick', () => {
     expect(sched.start).toHaveBeenCalledWith(120);
   });
 
+  it('passes an aligned first beat and measure accent plan when supplied', () => {
+    const { sched, createScheduler } = makeHarness();
+    renderHook(() => useMetronomeClick({
+      enabled: true,
+      bpm: 92,
+      startDelayMs: 240,
+      beatsPerBar: 3,
+      firstBeatIndex: 2,
+      createScheduler,
+    }));
+    expect(sched.start).toHaveBeenCalledWith(92, {
+      firstBeatDelayS: 0.24,
+      beatsPerBar: 3,
+      firstBeatIndex: 2,
+    });
+  });
+
   it('does not start when disabled from the start', () => {
     const { sched, createScheduler } = makeHarness();
     renderHook(() => useMetronomeClick({ enabled: false, bpm: 120, createScheduler }));
