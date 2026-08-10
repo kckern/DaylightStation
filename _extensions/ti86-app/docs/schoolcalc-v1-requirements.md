@@ -333,6 +333,14 @@ centered `LOADING...` acknowledgement before persistence, scheduling, or next
 surface rendering. That stable acknowledgement remains visible until the next
 card or study summary is complete.
 
+The immutable artifact is fully CRC-, schema-, and identity-validated once at
+runtime startup. Between cards, the runtime may refind its relocated TI-OS
+address, require the exact validated length, and reuse its module/item offsets;
+it MUST NOT repeat the whole-bank validation scan on every rating transition.
+The next selected face is composed completely in the hidden framebuffer while
+`LOADING...` remains stable, then revealed with one bounded copy. Learners MUST
+NOT see a partially drawn border, prompt, graphic, or rail.
+
 Eligibility is measured in intervening presentations, not wall-clock time.
 When several cards are eligible, choose the earliest scheduled due position,
 breaking ties by authored order. If every active card is cooling down, advance
