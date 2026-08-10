@@ -437,6 +437,13 @@ another source without changing the timing engine.
    target. Chords resolve only when every pitch is struck; Hero adapts the
    resulting events into its own points and combo rules.
 
+The white strike line is active feedback, not only a boundary marker. While the
+metronome is enabled it gives a brief score-aligned pulse on every click (with a
+stronger downbeat); resolved targets add a lane-local white/teal spark for hits
+or a red fractured flash for misses. These effects use the same elapsed score
+clock as target judging, so changing the selected tempo keeps sound, targets,
+and the threshold pulse phase-locked.
+
 ### Timing and scoring
 
 | Result | Window | Base score |

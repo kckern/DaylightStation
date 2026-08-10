@@ -25,7 +25,7 @@ vi.mock('./usePianoHeroGame.js', () => ({
   }),
 }));
 
-import { HeroGame } from './PianoHeroGame.jsx';
+import { HeroGame, HeroHighway } from './PianoHeroGame.jsx';
 
 const chart = {
   startNote: 60,
@@ -67,5 +67,28 @@ describe('HeroGame metronome', () => {
     expect(screen.getByRole('dialog', { name: 'tempo' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '72' }));
     expect(screen.getByRole('button', { name: 'Tempo' })).toHaveTextContent('72 BPM');
+  });
+});
+
+describe('HeroHighway threshold feedback', () => {
+  it('renders score-aligned beat, hit, and miss sparks on the hit line', () => {
+    const targets = [
+      { id: 1, pitches: [60], targetTimeMs: 900, durationMs: 300, state: 'hit', hitPitches: [60], resolvedAt: 900 },
+      { id: 2, pitches: [67], targetTimeMs: 900, durationMs: 300, state: 'missed', hitPitches: [], resolvedAt: 950 },
+    ];
+    const { container } = render(
+      <HeroHighway
+        chart={{ ...chart, leadInMs: 0, tempo: 60 }}
+        targets={targets}
+        elapsedMs={1000}
+        fallDurationMs={3000}
+        metronomeOn
+        playing
+      />,
+    );
+    const line = screen.getByTestId('hero-hit-line');
+    expect(line.querySelector('.piano-hero-highway__beat-flash')).toBeTruthy();
+    expect(container.querySelector('.piano-hero-highway__threshold-spark.is-hit')).toBeTruthy();
+    expect(container.querySelector('.piano-hero-highway__threshold-spark.is-miss')).toBeTruthy();
   });
 });

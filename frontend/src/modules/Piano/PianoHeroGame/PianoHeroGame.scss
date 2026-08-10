@@ -143,13 +143,114 @@
   }
   &__hit-line {
     position: absolute;
+    z-index: 4;
     left: 0;
     right: 0;
     top: 82%;
     height: 4px;
     background: #fff;
     box-shadow: 0 0 8px #fff, 0 0 22px #17d8c4;
+    pointer-events: none;
   }
+  &__beat-flash {
+    position: absolute;
+    inset: -5px 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,.78) 18%, #fff 50%, rgba(255,255,255,.78) 82%, transparent);
+    box-shadow: 0 0 16px rgba(255,255,255,.9), 0 0 34px rgba(23,216,196,.62);
+    animation: piano-hero-threshold-beat 150ms ease-out forwards;
+
+    &.is-downbeat {
+      background: linear-gradient(90deg, transparent, #a9fff1 18%, #fff 50%, #a9fff1 82%, transparent);
+      box-shadow: 0 0 18px #fff, 0 0 44px rgba(56,240,207,.92);
+    }
+  }
+  &__threshold-spark {
+    position: absolute;
+    left: var(--x);
+    top: 50%;
+    width: max(var(--w), 18px);
+    height: 10px;
+    border-radius: 999px;
+    transform: translate(-50%, -50%);
+
+    &::before,
+    &::after {
+      content: '';
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+    }
+
+    &.is-hit {
+      background: #fff;
+      box-shadow: 0 0 10px #fff, 0 0 28px #38f0cf;
+      animation: piano-hero-threshold-hit 260ms ease-out forwards;
+
+      &::before {
+        background: #fff;
+        box-shadow: -18px -8px #38f0cf, 16px -12px #fff, 21px 8px #38f0cf, -16px 12px #fff;
+        animation: piano-hero-threshold-particles 260ms ease-out forwards;
+      }
+      &::after {
+        width: 34px;
+        height: 34px;
+        border: 2px solid #bafff3;
+        background: transparent;
+        animation: piano-hero-threshold-ring 260ms ease-out forwards;
+      }
+    }
+
+    &.is-miss {
+      background: #fff;
+      box-shadow: 0 0 12px #fff, 0 0 34px #ff244d;
+      animation: piano-hero-threshold-miss 260ms ease-out forwards;
+
+      &::before,
+      &::after {
+        width: 3px;
+        height: 34px;
+        border-radius: 2px;
+        background: #ff244d;
+        box-shadow: 0 0 9px #ff244d;
+      }
+      &::before { transform: translate(-50%, -50%) rotate(34deg); }
+      &::after { transform: translate(-50%, -50%) rotate(-34deg); }
+    }
+  }
+}
+
+@keyframes piano-hero-threshold-beat {
+  0% { opacity: 1; transform: scaleY(1); }
+  100% { opacity: 0; transform: scaleY(.22); }
+}
+
+@keyframes piano-hero-threshold-hit {
+  0% { opacity: 1; transform: translate(-50%, -50%) scale(.6); }
+  35% { opacity: 1; transform: translate(-50%, -50%) scale(1.45); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(2.3); }
+}
+
+@keyframes piano-hero-threshold-particles {
+  0% { opacity: 1; transform: translate(-50%, -50%) scale(.35); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.8); }
+}
+
+@keyframes piano-hero-threshold-ring {
+  0% { opacity: .95; transform: translate(-50%, -50%) scale(.3); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.45); }
+}
+
+@keyframes piano-hero-threshold-miss {
+  0%, 100% { transform: translate(-50%, -50%); }
+  0% { opacity: 1; }
+  22% { transform: translate(calc(-50% - 6px), -50%) scaleY(1.6); }
+  44% { transform: translate(calc(-50% + 5px), -50%) scaleY(.7); }
+  68% { transform: translate(calc(-50% - 3px), -50%) scaleY(1.25); opacity: .9; }
+  100% { opacity: 0; }
 }
 
 .piano-hero-note {
@@ -262,6 +363,12 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .piano-hero-highway__beat-flash,
+  .piano-hero-highway__threshold-spark,
+  .piano-hero-highway__threshold-spark::before,
+  .piano-hero-highway__threshold-spark::after {
+    animation-duration: 100ms;
+  }
   .piano-hero-note--hit {
     animation: piano-hero-note-burst 120ms ease-out forwards;
   }
