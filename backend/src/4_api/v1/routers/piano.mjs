@@ -61,7 +61,7 @@ import { musicXmlToNotes } from '#shared/music/musicXmlToNotes.mjs';
  *   Menu activity strip:
  *   GET    /activity/recent                  → { players: [...] }  (per-player most-recent lesson-course progress)
  */
-export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, logger = console }) {
+export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pianoChallengePolicy = null, logger = console }) {
   if (!pianoContainer) throw new Error('createPianoRouter: pianoContainer required');
   const router = express.Router();
   const ds = pianoContainer.studioDatastore;
@@ -112,6 +112,32 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, lo
     });
     logger.info?.('piano.attempt.saved', { userId: req.params.userId, attemptId: attempt.attempt_id, status: attempt.status });
     res.status(201).json(attempt);
+  }));
+
+  router.post('/users/:userId/challenges/prepare', asyncHandler((req, res) => {
+    if (!pianoChallengePolicy) return res.status(501).json({ error: 'Challenge policy unavailable' });
+    if (!ds.isKnownUser(req.params.userId) && req.params.userId !== 'guest') {
+      return res.status(400).json({ error: 'Invalid user' });
+    }
+    const body = req.body || {};
+    if (typeof body.challenge_id !== 'string' || typeof body.kind !== 'string') {
+      return res.status(400).json({ error: 'Invalid challenge request' });
+    }
+    const prepared = pianoChallengePolicy.prepare({
+      userId: req.params.userId,
+      challengeId: body.challenge_id,
+      kind: body.kind,
+      requirements: body.requirements,
+      context: body.context,
+    });
+    logger.info?.('piano.challenge.prepared', {
+      userId: req.params.userId,
+      challengeId: body.challenge_id,
+      kind: body.kind,
+      policyVersion: prepared.pedagogy_policy_version,
+      challengeLabel: prepared.prompt?.label || null,
+    });
+    res.json(prepared);
   }));
 
   // Loop-library manifest: walk the five MusicXML brick folders, bake per-beat

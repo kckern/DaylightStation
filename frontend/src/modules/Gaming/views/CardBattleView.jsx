@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import './CardBattleView.scss';
 import { CardIdenticon } from './CardIdenticon.jsx';
 import { cardIdenticonHue } from './cardIdenticonModel.js';
@@ -36,6 +37,53 @@ function Resolution({ result, enemyName }) {
       {result.retaliation > 0 && (
         <span className="battle-resolution__counter">{enemyName} struck back for {result.retaliation}</span>
       )}
+    </div>
+  );
+}
+
+function ChallengeDialog({ ChallengeSurface, onAbort }) {
+  const panelRef = useRef(null);
+  useEffect(() => {
+    const previous = document.activeElement;
+    const panel = panelRef.current;
+    panel?.focus();
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onAbort?.();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const focusable = [...(panel?.querySelectorAll('button:not(:disabled), [href], [tabindex]:not([tabindex="-1"])') || [])];
+      if (focusable.length === 0) {
+        event.preventDefault();
+        panel?.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable.at(-1);
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      previous?.focus?.();
+    };
+  }, [onAbort]);
+  return (
+    <div className="gaming-challenge-overlay" role="dialog" aria-modal="true" aria-label="Piano challenge">
+      <div className="gaming-challenge-overlay__panel" ref={panelRef} tabIndex={-1}>
+        {ChallengeSurface
+          ? <ChallengeSurface />
+          : <div className="challenge-loading" role="status">Preparing piano challenge…</div>}
+        <button type="button" className="challenge-abort" onClick={onAbort}>Cancel challenge</button>
+      </div>
     </div>
   );
 }
@@ -107,7 +155,7 @@ export function CardBattleView({
           </div>
         )}
         <div className="combatant__health">
-          <progress max={state.enemy.max_health} value={state.enemy.health} />
+          <progress aria-label={`${state.enemy.name} health`} max={state.enemy.max_health} value={state.enemy.health} />
           <span>
             {state.enemy.health} / {state.enemy.max_health}
             {state.enemy.block > 0 ? ` · ${state.enemy.block} block` : ''}
@@ -208,14 +256,7 @@ export function CardBattleView({
       </section>
 
       {state.pending_action && (
-        <div className="gaming-challenge-overlay" role="dialog" aria-modal="true" aria-label="Piano challenge">
-          <div className="gaming-challenge-overlay__panel">
-            {ChallengeSurface
-              ? <ChallengeSurface />
-              : <div className="challenge-loading">Preparing {state.pending_action.request.prompt.label}…</div>}
-            <button type="button" className="challenge-abort" onClick={onAbort}>Cancel challenge</button>
-          </div>
-        </div>
+        <ChallengeDialog ChallengeSurface={ChallengeSurface} onAbort={onAbort} />
       )}
     </main>
   );

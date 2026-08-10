@@ -155,6 +155,33 @@ describe('GamingController', () => {
     }));
   });
 
+  it('authoritatively abandons the session when the player closes the game', async () => {
+    const { controller, api, logger } = harness();
+    await controller.start();
+    await controller.close();
+    expect(api.applyCommand).toHaveBeenCalledOnce();
+    expect(api.applyCommand.mock.calls[0][1]).toMatchObject({
+      type: 'abandon_session', payload: { reason: 'player_closed' },
+    });
+    expect(controller.getSnapshot().session.status).toBe('abandoned');
+    expect(logger.info).toHaveBeenCalledWith('gaming.session.close-requested', expect.objectContaining({ reason: 'player_closed' }));
+    controller.dispose();
+  });
+
+  it('refunds a pending card when provider preparation fails', async () => {
+    const { controller, api, runtime } = harness();
+    runtime.prepare.mockRejectedValueOnce(new Error('piano unavailable'));
+    await controller.start();
+    const card = controller.getSnapshot().session.state.zones.hand[0];
+    await controller.chooseAction(card.instance_id);
+    expect(api.applyCommand.mock.calls.map(([, command]) => command.type)).toEqual([
+      'choose_action', 'abort_pending_action',
+    ]);
+    expect(controller.getSnapshot().session.state.pending_action).toBeNull();
+    expect(controller.getSnapshot().session.state.zones.hand).toContainEqual(card);
+    controller.dispose();
+  });
+
   it('keeps tactical card plays in the same turn and resolves announced intent on end turn', async () => {
     const definition = structuredClone(scaleClashDefinition);
     definition.card_battle.turn_mode = 'tactical';

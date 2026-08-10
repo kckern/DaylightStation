@@ -6,7 +6,6 @@ import {
 } from './contracts.mjs';
 import { assertDefinition } from './definition.mjs';
 import { shuffle } from './rng.mjs';
-import { materializePianoScalePrompt } from '../music/pianoScale.mjs';
 
 const clone = (value) => structuredClone(value);
 const isTactical = (definition) => definition.card_battle.turn_mode === 'tactical';
@@ -92,20 +91,20 @@ function selectOutcome(card, score) {
 }
 
 function resolveChallenge(card, definition, state) {
-  let prompt;
+  let prompt = null;
   if (!card.challenge.pool) {
-    prompt = clone(card.challenge.prompt);
+    prompt = card.challenge.prompt ? clone(card.challenge.prompt) : null;
   } else {
     const prompts = definition.card_battle.challenge_pools[card.challenge.pool].prompts;
     const index = state.challenge_cursor % prompts.length;
     state.challenge_cursor += 1;
     prompt = clone(prompts[index]);
   }
-  return card.challenge.kind === 'scale' ? materializePianoScalePrompt(prompt) : prompt;
+  return prompt;
 }
 
 function deriveYield(state) {
-  if (state.status === 'complete') return { type: 'terminal', winner: state.winner };
+  if (state.status !== 'active') return { type: 'terminal', winner: state.winner, status: state.status };
   if (state.pending_action) {
     return {
       type: 'challenge',
@@ -127,7 +126,9 @@ function chooseAction(state, command, definition) {
   if (card.cost > state.player.energy) return failure(state, 'insufficient_energy', 'Not enough energy for this card');
 
   const next = clone(state);
+  const challengeSequence = next.challenge_cursor;
   const prompt = resolveChallenge(card, definition, next);
+  if (!card.challenge.pool) next.challenge_cursor += 1;
   next.pending_action = {
     id: `challenge:${command.command_id}`,
     status: CHALLENGE_STATES.REQUESTED,
@@ -140,11 +141,14 @@ function chooseAction(state, command, definition) {
       domain: card.challenge.domain,
       kind: card.challenge.kind,
       user_id: state.participants[0]?.user_id || state.participants[0]?.id || 'guest',
-      prompt,
+      ...(prompt ? { prompt } : {}),
+      requirements: clone(card.challenge.requirements || {}),
+      timeout_ms: card.challenge.timeout_ms ?? null,
       context: {
         action_id: command.command_id,
         turn: state.turn,
         challenge_pool: card.challenge.pool || null,
+        challenge_sequence: challengeSequence,
       },
     },
   };
@@ -321,6 +325,20 @@ function abortPendingAction(state, command) {
   return success(next, [{ type: 'action_aborted', challenge_id: pending.id, reason }]);
 }
 
+function abandonSession(state, command) {
+  if (state.status !== 'active') return failure(state, 'session_terminal', 'The game is already terminal');
+  const next = clone(state);
+  const pending = next.pending_action;
+  next.status = 'abandoned';
+  next.pending_action = null;
+  next.winner = null;
+  const reason = String(command.payload?.reason || 'player_closed');
+  const events = [];
+  if (pending) events.push({ type: 'challenge_interrupted', challenge_id: pending.id, status: 'aborted', reason });
+  events.push({ type: 'session_abandoned', reason });
+  return success(next, events);
+}
+
 export function transition(state, command, definition) {
   const def = assertDefinition(definition);
   if (!state || typeof state !== 'object') return failure(state, 'invalid_state', 'State is required');
@@ -331,6 +349,7 @@ export function transition(state, command, definition) {
     case COMMAND_TYPES.START_CHALLENGE: return startChallenge(state, command);
     case COMMAND_TYPES.SUBMIT_CHALLENGE_RESULT: return applyTerminalResult(state, command, def);
     case COMMAND_TYPES.ABORT_PENDING_ACTION: return abortPendingAction(state, command);
+    case COMMAND_TYPES.ABANDON_SESSION: return abandonSession(state, command);
     default: return failure(state, 'unsupported_command', `Unsupported command: ${command.type}`);
   }
 }

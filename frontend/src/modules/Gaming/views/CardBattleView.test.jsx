@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { createInitialState, deriveInteraction } from '@shared-gaming/index.mjs';
+import { createInitialState, deriveInteraction, transition } from '@shared-gaming/index.mjs';
 import { scaleClashDefinition } from '@shared-gaming/fixtures/scaleClash.mjs';
 import { CardBattleView } from './CardBattleView.jsx';
 
@@ -130,5 +130,24 @@ describe('CardBattleView', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: /Second Wind/ }));
     expect(onRestart).toHaveBeenCalledWith('second-wind');
+  });
+
+  it('focuses the modal challenge and lets Escape cancel it', () => {
+    const session = makeSession();
+    const card = session.state.zones.hand[0];
+    const outcome = transition(session.state, {
+      command_id: 'open-challenge', session_revision: 0, type: 'choose_action',
+      payload: { card_instance_id: card.instance_id },
+    }, session.definition);
+    session.state = outcome.state;
+    session.revision = 1;
+    session.interaction = deriveInteraction(session.state, session.definition, 'guest');
+    const onAbort = vi.fn();
+    render(<CardBattleView session={session} onChoose={vi.fn()} onAbort={onAbort} />);
+
+    const dialog = screen.getByRole('dialog', { name: 'Piano challenge' });
+    expect(document.activeElement).toBe(dialog.firstElementChild);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onAbort).toHaveBeenCalledOnce();
   });
 });

@@ -1,13 +1,29 @@
 # Gamified Learning Framework & Challenge Engine — Revised Design
 
 **Date:** 2026-08-09
-**Revision:** 2 — assumption-audit corrections
-**Status:** Design only. No implementation authorized by this document.
+**Revision:** 3 — pilot implementation checkpoint
+**Status:** Card-battle engineering pilot implemented; supervised field gate pending.
 
 The previously named “System Requirements Specification: Gamified Learning Framework &
 Challenge Engine” is not present in this repository. Requirement IDs are retained for
 continuity, but this document does not claim that an absent source requirement has been
-satisfied. The canonical SRS must be committed or linked before implementation approval.
+satisfied. The implementation below is a deliberately narrow pilot, not approval of the
+unproven generalized engine.
+
+### Implementation checkpoint (2026-08-10)
+
+The narrow card-battle slice is now executable. Gaming owns cards, combat, authoritative
+commands, and sessions. Piano owns curriculum selection, semantic scale materialization,
+staff pitches, MIDI grading, attempt evidence, timeout, and disconnect handling. Game YAML
+requests `foundation-major-scales`; it does not contain MIDI codes, ABC, or named scales.
+
+Completed engineering gates for the pilot include deterministic reducer traces, pinned
+definition persistence, duplicate/stale-command handling, battle-result feedback, semantic
+exercise preparation, exact staff/grading pitch contract tests, attempt persistence,
+authoritative close/abandon, and stale-session recovery. The remaining gate is product
+evidence: supervised players must still establish whether the loop is clear, enjoyable,
+and worth replaying. No generalized DSL or additional provider should be inferred from
+this checkpoint.
 
 ---
 
@@ -15,7 +31,7 @@ satisfied. The canonical SRS must be committed or linked before implementation a
 
 Build a reusable game/challenge boundary in which a game can ask a domain provider to
 measure a skill attempt. The first vertical slice is a **single-player card battle** whose
-attacks are resolved by piano chord challenges.
+card actions are resolved by ordered piano scale challenges.
 
 The long-term goal is a data-driven engine capable of supporting card, track, grid, and
 initiative-based games. That is a hypothesis to prove with executable fixtures, not a
@@ -47,7 +63,7 @@ system, fitness provider, or additional genre UI is authorized.
 | Decision | Revised position |
 |---|---|
 | Runtime | Client-side for immediate interaction; server persists versioned sessions and domain attempts |
-| First release | One card battle and one piano chord provider |
+| First release | One card battle and one ordered piano scale provider |
 | Data-driven rules | A small versioned schema for the vertical slice; a broader DSL is derived later from four executable genre fixtures |
 | Presentation | The first game has a purpose-built React view. YAML-only presentation is not promised |
 | Additional genres | Representative semantic fixtures precede DSL expansion; complete Monopoly/Sorry/Stratego implementations are not implied |
@@ -883,18 +899,18 @@ Statuses are deliberately conservative.
 | Requirement | Status | Evidence required |
 |---|---|---|
 | FR-ENG-01 Pure YAML instantiation | **Unproven / modified** | A game using no new view or behavior; definitions with behaviors are code-plus-data |
-| FR-ENG-02 Zero domain binding | **Designed** | Shared-core and frontend dependency audits pass |
+| FR-ENG-02 Zero domain binding | **Met for pilot** | Gaming emits semantic requests; Piano selects/materializes exercises |
 | FR-ENG-03 Board/deck/encounter abstraction | **Unproven** | Four representative genre traces pass through one schema |
 | FR-ENG-04 Variable resolution engines | **Designed** | Deterministic, seeded-random, and challenge action fixtures pass |
-| FR-CHL-01 Invocation contract | **Designed** | Provider lifecycle contract tests pass |
+| FR-CHL-01 Invocation contract | **Met for pilot** | Prepare/start/result/cancel, timeout, disconnect, and recovery tests pass |
 | FR-CHL-02 Outcome contract | **Modified** | Continuous score plus terminal status; game owns outcome mapping |
-| FR-PNO-01 Exercise vocabulary | **Partial** | Chords first; other exercise generators require separate fixtures |
+| FR-PNO-01 Exercise vocabulary | **Partial** | Ordered major scales implemented; other exercise kinds require separate fixtures |
 | FR-PNO-02 Static + procedural selection | **Designed** | Both normalize into the occurrence event model |
-| FR-PNO-03 Untimed mode | **New integration work** | Attempt-state corpus passes |
+| FR-PNO-03 Untimed mode | **Met for scale pilot** | Ordered-note progress and attempt-state tests pass |
 | FR-PNO-04 Metronome sync | **Integration work** | Provider-owned clock/lifecycle tests and field timing evidence |
 | FR-PNO-05 Timing tolerance | **New grading work** | One-to-one alignment corpus passes |
 | FR-PNO-06 Non-blocking stray notes | **New grading work** | Strays are recorded and penalized without freezing progression |
-| FR-PNO-07 Dual-staff rendering | **Foundation exists** | Generated supported score renders correctly in provider surface |
+| FR-PNO-07 Staff rendering | **Met for scale pilot** | Staff ABC is generated from the exact MIDI pitch array used by grading |
 | FR-PNO-08 Target overlay | **Integration work** | Provider surface usability test |
 | FR-PNO-08 Split view | **Deferred pending field evidence** | Reconsider only if overlay is insufficient |
 | FR-FIT-01 Abstract metric mapping | **Deferred** | Piano SPI field-proven first |
