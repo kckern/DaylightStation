@@ -16,6 +16,7 @@ import useMetronomeClick from '../PianoKiosk/modes/SheetMusic/useMetronomeClick.
 import { TempoSheet } from '../PianoKiosk/producer/TempoSheet.jsx';
 import { buildHeroChart, clampHeroTempo, heroAccuracy, retimeHeroChart } from './heroChart.js';
 import { heroMetronomePlan } from './heroMetronome.js';
+import { heroThresholdState } from './heroThreshold.js';
 import { usePianoHeroGame } from './usePianoHeroGame.js';
 import './PianoHeroGame.scss';
 
@@ -95,8 +96,16 @@ export function HeroSongPicker({ sheetmusic, onSelect, subRoute = null, onSubRou
   );
 }
 
-function HeroHighway({ chart, targets, elapsedMs, fallDurationMs }) {
+export function HeroHighway({ chart, targets, elapsedMs, fallDurationMs, metronomeOn = false, playing = false }) {
   const range = useMemo(() => computeKeyboardRange([chart.startNote, chart.endNote]), [chart.startNote, chart.endNote]);
+  const threshold = heroThresholdState({
+    targets,
+    elapsedMs,
+    leadInMs: chart.leadInMs,
+    bpm: chart.tempo,
+    beatsPerBar: chart.timeSig?.beats,
+    pulseBeat: metronomeOn && playing,
+  });
   const visible = targets.filter((target) => {
     const age = elapsedMs - target.targetTimeMs;
     const resolutionAge = target.resolvedAt === null ? 0 : elapsedMs - target.resolvedAt;
@@ -125,7 +134,24 @@ function HeroHighway({ chart, targets, elapsedMs, fallDurationMs }) {
           />
         );
       }))}
-      <div className="piano-hero-highway__hit-line" />
+      <div className="piano-hero-highway__hit-line" data-testid="hero-hit-line">
+        {threshold.beatIndex !== null && (
+          <span
+            key={`beat-${threshold.beatIndex}`}
+            className={`piano-hero-highway__beat-flash${threshold.downbeat ? ' is-downbeat' : ''}`}
+          />
+        )}
+        {threshold.effects.map((effect) => (
+          <span
+            key={effect.id}
+            className={`piano-hero-highway__threshold-spark is-${effect.kind}`}
+            style={{
+              '--x': `${getNotePosition(effect.pitch, range.startNote, range.endNote)}%`,
+              '--w': `${getNoteWidth(effect.pitch, range.startNote, range.endNote, true)}%`,
+            }}
+          />
+        ))}
+      </div>
     </div>
   );
 }
@@ -206,7 +232,14 @@ export function HeroGame({ song, chart, gameConfig, onChooseSong, onNoteOn, onNo
         <div className="piano-hero-game__progress"><span style={{ width: `${progress}%` }} /></div>
       </header>
 
-      <HeroHighway chart={activeChart} targets={game.run.targets} elapsedMs={game.elapsedMs} fallDurationMs={game.timing.fallDurationMs} />
+      <HeroHighway
+        chart={activeChart}
+        targets={game.run.targets}
+        elapsedMs={game.elapsedMs}
+        fallDurationMs={game.timing.fallDurationMs}
+        metronomeOn={metronomeOn}
+        playing={game.phase === 'playing'}
+      />
 
       <div className="piano-hero-game__keyboard">
         <PianoKeyboard
