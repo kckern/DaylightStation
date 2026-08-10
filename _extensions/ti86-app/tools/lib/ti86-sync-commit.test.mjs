@@ -129,7 +129,7 @@ function stagedFixture({
     platformId: 'ti86',
     generation: catalogGeneration,
     storage: {},
-    catalogs: [],
+    catalogs: [{ catalogId: 'main', title: 'Main', subjects: [] }],
   });
   const results = queueSequences.map((sequence) => encodeTi86ResultRecord({
     schema: 'school.calc.result/v1', kind: 'responses', deviceId, sequence, learnerKey: 4,

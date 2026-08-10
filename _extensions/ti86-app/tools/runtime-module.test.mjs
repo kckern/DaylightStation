@@ -25,6 +25,7 @@ const EXTENSION = path.resolve(HERE, '..');
 const ROOT = path.resolve(EXTENSION, '..', '..');
 const SHELL_SOURCE = readFileSync(path.join(EXTENSION, 'src', 'schoolcalc.asm'), 'utf8');
 const RUNTIME_SOURCE = readFileSync(path.join(EXTENSION, 'src', 'runtime-standard.asm'), 'utf8');
+const ADAPTIVE_RUNTIME_SOURCE = readFileSync(path.join(EXTENSION, 'src', 'runtime-adaptive.asm'), 'utf8');
 const SYNC_RUNTIME_SOURCE = readFileSync(path.join(EXTENSION, 'src', 'runtime-sync.asm'), 'utf8');
 const NATIVE_RUNTIME_SOURCE = readFileSync(path.join(EXTENSION, 'src', 'runtime-native.asm'), 'utf8');
 const PROFILE_RUNTIME_SOURCE = readFileSync(path.join(EXTENSION, 'src', 'runtime-profile.asm'), 'utf8');
@@ -58,37 +59,22 @@ describe('TI-86 reviewed runtime-module boundary', () => {
     expect(() => inspectTi86RuntimeProgram(corrupt)).toThrow();
   });
 
-  it('keeps dispatch build-owned and preserves continuation before the OS call', () => {
+  it('keeps the adaptive dispatch build-owned and excludes inactive learner routes', () => {
     expect(SHELL_SOURCE).toMatch(/launch_standard_runtime:\s+ld hl,sclearn_name/);
     expect(SHELL_SOURCE).toContain('call _exec_assembly');
     expect(SHELL_SOURCE).toContain('call local_state_load');
     expect(SHELL_SOURCE).toContain('sclearn_name:   defb 0x12,7,"SCLEARN",0');
     expect(SHELL_SOURCE).toContain('call local_state_save\n        ld hl,scsync_name');
     expect(SHELL_SOURCE).toContain('scsync_name:    defb 0x12,6,"SCSYNC",0,0');
+    expect(SHELL_SOURCE).toMatch(/start:[\s\S]{0,800}call sync_commit_staged[\s\S]{0,800}jp show_code/);
+    expect(SHELL_SOURCE).toMatch(/show_home:\s+show_catalog:\s+jp show_code/);
+    expect(SHELL_SOURCE).toMatch(/shell_code_open:[\s\S]{0,220}jp nz,launch_standard_runtime/);
+    expect(SHELL_SOURCE).toContain('publish_study_entry:');
+    expect(SHELL_SOURCE).toContain('dsentry_name:   defb 0x0C,7,"DSENTRY",0');
     expect(SHELL_SOURCE).toMatch(
-      /launch_profile_runtime:[\s\S]*?ld hl,scprof_name[\s\S]*?call _exec_assembly[\s\S]*?call local_state_load/,
+      /launch_sync_runtime:[\s\S]*?call publish_device_info[\s\S]*?call local_state_save[\s\S]*?call _exec_assembly[\s\S]*?call sync_commit_staged/,
     );
-    expect(SHELL_SOURCE).toContain('scprof_name:    defb 0x12,6,"SCPROF",0,0');
-    expect(SHELL_SOURCE).toMatch(
-      /start:[\s\S]{0,420}call sync_commit_staged[\s\S]*?SCL_FLAGS_HIGH_ADDR[\s\S]*?and 0x04[\s\S]*?jp z,launch_profile_runtime[\s\S]*?local_state_save[\s\S]*?jp launch_catalog_runtime/,
-    );
-    const bootPath = SHELL_SOURCE.match(/start:[\s\S]*?jp launch_catalog_runtime/)?.[0] ?? '';
-    expect(bootPath).not.toContain('call publish_device_info');
-    expect(SHELL_SOURCE).toMatch(
-      /launch_profile_runtime:[\s\S]*?SCREEN_CATALOG\s+jp z,launch_catalog_runtime[\s\S]*?SCREEN_LESSON\s+jp z,launch_standard_runtime/,
-    );
-    expect(SHELL_SOURCE).toMatch(
-      /launch_catalog_runtime:[\s\S]*?SCREEN_LESSON\s+jp z,launch_standard_runtime/,
-    );
-    expect(SHELL_SOURCE).toMatch(
-      /show_sync:\s+ld a,SCREEN_SYNC\s+ld \(current_screen\),a\s+jp launch_sync_runtime/,
-    );
-    expect(SHELL_SOURCE).toMatch(
-      /show_catalog:\s+[\s\S]{0,280}ld a,\(SCL_FLAGS_ADDR\)\s+and 1\s+jp nz,launch_standard_runtime/,
-    );
-    expect(SHELL_SOURCE).toMatch(
-      /launch_sync_runtime:[\s\S]*?call _exec_assembly[\s\S]*?call local_state_load[\s\S]*?call sync_commit_staged[\s\S]*?call publish_device_info[\s\S]*?jp launch_profile_runtime/,
-    );
+    expect(SHELL_SOURCE).toContain('if 0\nlaunch_profile_runtime:');
     expect(SHELL_SOURCE).not.toMatch(/hydrate_.*(?:program|exec)|sc_map_find_literal[\s\S]{0,80}_exec_assembly/i);
   });
 
@@ -126,8 +112,8 @@ describe('TI-86 reviewed runtime-module boundary', () => {
   });
 
   it('validates the immutable SCX1 executor envelope before TI-OS loads the runtime and rejects lesson-shaped bytes', () => {
-    expect(RUNTIME_SOURCE).toMatch(
-      /standard_runtime_start:[\s\S]{0,160}call _runindicoff\s+call sc_input_init/,
+    expect(ADAPTIVE_RUNTIME_SOURCE).toMatch(
+      /adaptive_start:[\s\S]{0,100}call _runindicoff\s+call sc_input_init/,
     );
     expect(SHELL_SOURCE).toContain('The SCX1 executor envelope is 21 executable bytes');
     expect(SHELL_SOURCE).toContain('runtime_header_prefix:  defb 0x8E,0x28,0x00,0xC3,0x5E,0xD7,0x00,0x00,0x5D,0xD7,"SCX1",1');
@@ -140,7 +126,29 @@ describe('TI-86 reviewed runtime-module boundary', () => {
       .toThrow(/entry jump|magic/);
   });
 
-  it('creates a digest-pinned client release without turning module plans into capability claims', () => {
+  it('creates the digest-pinned Adaptive Study v1 default installation', () => {
+    const output = execFileSync(process.execPath, [path.join(EXTENSION, 'tools', 'build-complete-install.mjs')], {
+      cwd: ROOT,
+      encoding: 'utf8',
+    });
+    const bundle = output.match(/audited install [^:]+: (.+)\n/)?.[1];
+    expect(bundle).toBeTruthy();
+    const manifest = JSON.parse(readFileSync(path.join(bundle, 'complete-install.json'), 'utf8'));
+    expect(manifest).toMatchObject({
+      schema: 'school.calc.ti86-complete-install/v1',
+      product: 'schoolcalc-adaptive-study/v1',
+      programs: ['SCHLCALC', 'SCLEARN', 'SCQUEUE', 'SCQR', 'SCSYNC'],
+      launcher: 'ASCHL',
+      inactiveLearnerRoutes: ['SCCAT', 'SCPROF', 'SCTUTOR', 'SCNATIVE', 'SCREQ'],
+    });
+    expect(manifest.transfer.map(({ fileName }) => fileName)).toEqual([
+      'SCHLCALC.86p', 'SCLEARN.86p', 'SCQUEUE.86p', 'SCQR.86p', 'SCSYNC.86p',
+      'DSID.86s', 'ASCHL.86p',
+    ]);
+    for (const entry of manifest.transfer) expect(entry.sha256).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it.skip('retains the superseded broad v0 client-release builder as reference tooling', () => {
     execFileSync(process.execPath, [path.join(EXTENSION, 'tools', 'build-schoolcalc-client.mjs')], {
       cwd: ROOT,
       stdio: 'pipe',

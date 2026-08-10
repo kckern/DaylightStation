@@ -63,7 +63,7 @@ describe('SCLEARN durable generic-content contract', () => {
     expect(SOURCE).toContain('runtime_type_examples: defb "examples",0');
     expect(SOURCE).toContain('runtime_key_pages: defb "pages",0');
     expect(SOURCE).not.toContain('runtime_key_blocks:');
-    expect(RECORD_READER).toMatch(/cp 121\s+jr nc,sc_copy_string_invalid/);
+    expect(RECORD_READER).toMatch(/inc a\s+cp 122\s+jr nc,sc_copy_string_invalid/);
     expect(RECORD_READER).not.toContain('sc_copy_string_cap:');
     expect(SOURCE).toContain('runtime_artifact_name: defb 0x0C,8,"DP"');
     expect(SOURCE).toMatch(/call runtime_state_save\s+ret c\s+call runtime_open_artifact_and_module/);
@@ -103,8 +103,8 @@ describe('SCLEARN durable generic-content contract', () => {
     );
   });
 
-  it('gives long reader views fixed Top, Back, Page Up, and More/EOM affordances', () => {
-    expect(RUNTIME).toContain('STANDARD_READER_PAGE_STEP: equ 4');
+  it('retains the inactive generic reader with fixed Top, Back, Page Up, and Next/End affordances', () => {
+    expect(RUNTIME).toContain('STANDARD_READER_PAGE_STEP: equ 1');
     expect(RUNTIME).toMatch(
       /standard_runtime_wait:[\s\S]{0,700}SC_SCAN_F2[\s\S]{0,80}standard_runtime_leave_viewed[\s\S]{0,180}SC_SCAN_F4[\s\S]{0,80}standard_runtime_page_up[\s\S]{0,180}SC_SCAN_F5[\s\S]{0,80}standard_runtime_page_down/,
     );
@@ -114,7 +114,7 @@ describe('SCLEARN durable generic-content contract', () => {
     expect(RUNTIME).toMatch(
       /standard_runtime_render_softkeys:[\s\S]{0,1000}call standard_runtime_has_more[\s\S]{0,260}standard_runtime_eom_label[\s\S]{0,160}standard_runtime_more_label/,
     );
-    for (const label of ['TOP', 'BACK', 'PGUP', 'MORE', 'EOM']) {
+    for (const label of ['TOP', 'BACK', 'PGUP', 'NEXT', 'END']) {
       expect(RUNTIME).toContain(`defb "${label}",0`);
     }
   });

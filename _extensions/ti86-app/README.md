@@ -44,9 +44,10 @@ the v1 shell.
 | Variable | Contract |
 | --- | --- |
 | `DSENTRY` / `SCE1` | calculator-owned `{deviceId, requestId, sixDigitCode}` resolution claim |
-| `DSSTUDY` / `SCSP` | canonical device-bound prescription and continuation |
+| `DSSTUDY` / `SCSP` | canonical immutable device-bound prescription |
 | `DSSTDNEW` / `SCSP` | staged prescription written by relay |
 | `DSSYNC` | exact acknowledgement written last |
+| alternating local slots / `SCL1` | one 45-byte calculator-owned adaptive continuation |
 | result queue | multiple immutable, unacknowledged compact study results |
 
 Only one unfinished prescription may occupy continuation state. Multiple
@@ -94,12 +95,12 @@ node _extensions/ti86-app/tools/build-result-queue-runtime.mjs
 node _extensions/ti86-app/tools/build-qr-runtime.mjs
 node _extensions/ti86-app/tools/build-sync-runtime.mjs
 node _extensions/ti86-app/ti86.cli.mjs --help
-node --test _extensions/ti86-app/tools/*.test.mjs \
-  _extensions/ti86-app/tools/lib/*.test.mjs
+npx vitest run _extensions/ti86-app/tools
+node _extensions/ti86-app/ti86.cli.mjs --inspect-result-file retained-DSQ.86s
 ```
 
-The v1 packaging builder must emit a digest-pinned manifest containing only
-the active release boundary. Existing complete-install output that includes
+`build-complete-install.mjs` emits the digest-pinned v1 manifest containing
+only the active release boundary. Existing complete-install output that includes
 `SCCAT`, `SCPROF`, `SCTUTOR`, or `SCNATIVE` is v0 evidence, not the default v1
 package.
 

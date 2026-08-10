@@ -69,6 +69,10 @@ const ALPHA = Object.freeze({
 
 try {
   const options = parseArgs(process.argv.slice(2));
+  if (options.inspectResultFile) {
+    process.stdout.write(`${inspectAdaptiveResultFile(options.inspectResultFile)}\n`);
+    process.exit(0);
+  }
   if (options.detach) {
     process.stdout.write(detach(options));
     process.exit(0);
@@ -294,7 +298,7 @@ function parseArgs(argv) {
     }
     if (token === '--text') { inputs.push({ kind: 'text', value: argv[++index] }); continue; }
     if (token === '--wait') { inputs.push({ kind: 'wait', frames: integer(argv[++index], '--wait') }); continue; }
-    if (token === '--rom' || token === '--bundle' || token === '--load' || token === '--transfer' || token === '--mame' || token === '--graph-link' || token === '--output' || token === '--hold-frames' || token === '--settle-frames') { values.set(token, argv[++index]); continue; }
+    if (token === '--rom' || token === '--bundle' || token === '--load' || token === '--transfer' || token === '--mame' || token === '--graph-link' || token === '--output' || token === '--hold-frames' || token === '--settle-frames' || token === '--inspect-result-file') { values.set(token, argv[++index]); continue; }
     throw new Error(`unknown option '${token}'`);
   }
   const screens = values.get('--screens') ?? 'final';
@@ -302,6 +306,12 @@ function parseArgs(argv) {
   const screen = values.get('--screen') ?? 'hybrid';
   if (!['hybrid', 'text', 'braille', 'pixels'].includes(screen)) {
     throw new Error('--screen must be hybrid, text, braille, or pixels');
+  }
+  const inspectResultFile = values.get('--inspect-result-file')
+    ? path.resolve(values.get('--inspect-result-file')) : null;
+  if (inspectResultFile) {
+    if (!existsSync(inspectResultFile)) throw new Error(`result file not found: ${inspectResultFile}`);
+    return { inspectResultFile };
   }
   const rom = path.resolve(values.get('--rom') ?? DEFAULT_ROM);
   const bundle = values.get('--bundle') && path.resolve(values.get('--bundle'));
@@ -335,6 +345,18 @@ function parseArgs(argv) {
     transferTimeoutMs: 240_000,
     scenarioTimeoutMs: 360_000,
   };
+}
+
+function inspectAdaptiveResultFile(file) {
+  const bytes = readFileSync(file);
+  if (bytes.subarray(0, 8).toString('ascii') === '**TI86**') {
+    const parsed = parseTi86StringFile(bytes);
+    if (parsed.name !== 'DSQ') throw new Error(`result transfer contains ${parsed.name}, expected DSQ`);
+    return formatTi86AdaptiveResultInspection(
+      inspectTi86AdaptiveResultQueue(parsed.variableData.subarray(2)),
+    );
+  }
+  return formatTi86AdaptiveResultInspection(inspectTi86AdaptiveResultQueue(bytes));
 }
 
 // A complete virtual Graph Link transfer is deliberately paced; it can outlive
@@ -539,6 +561,7 @@ function usage(message = null) {
     + `  --debug-memory CAFA:32    Append a bounded final emulator-memory diagnostic\n`
     + `  --debug-receipt            Retrieve and validate F1 MARK's private DSQOUT/SCO1 receipt\n`
     + `  --debug-result             Retrieve DSQ and decode the newest adaptive study result\n`
+    + `  --inspect-result-file PATH Decode a retained raw DSQ record or DSQ.86s without MAME\n`
     + `  --case-id NAME            Write an input + output review-case artifact\n`
     + `  --output PATH             Save the transcript (useful for long emulator runs)\n`
     + `  --detach                  Continue a long exact run in the background (requires --output)\n`

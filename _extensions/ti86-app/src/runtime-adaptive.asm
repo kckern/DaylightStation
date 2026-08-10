@@ -1031,12 +1031,22 @@ adaptive_choice_wait:
         jr z,adaptive_quiz_back_prompt
         cp SC_SCAN_UP
         jr z,adaptive_quiz_back_prompt
-        ld b,a
-        ld a,0x36
-        sub b
-        or a
-        jr z,adaptive_choice_wait
-        ld b,a
+        cp SC_SCAN_F1
+        ld b,1
+        jr z,adaptive_choice_selected
+        cp SC_SCAN_F2
+        ld b,2
+        jr z,adaptive_choice_selected
+        cp SC_SCAN_F3
+        ld b,3
+        jr z,adaptive_choice_selected
+        cp SC_SCAN_F4
+        ld b,4
+        jr z,adaptive_choice_selected
+        cp SC_SCAN_F5
+        ld b,5
+        jr nz,adaptive_choice_wait
+adaptive_choice_selected:
         ld a,(adaptive_choice_count)
         cp b
         jr c,adaptive_choice_wait

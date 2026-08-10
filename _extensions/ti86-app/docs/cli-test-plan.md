@@ -44,27 +44,25 @@ tutor, and native-tool screens must not appear or be reachable.
 
 | Case ID | Setup / route | Required assertions |
 | --- | --- | --- |
-| `adaptive-cold-enter-code` | fresh v1 bundle -> `ASCHL` | first screen is `ENTER CODE`; inactive routes absent |
-| `adaptive-new-code-request` | enter code absent locally | `DSENTRY/SCE1` retains exact zero-padded code, device, request; recovery asks for relay |
-| `adaptive-preresolved-open` | preinstall exact artifact + `DSSTUDY` | entered code opens prescribed learner/topic and first authored card |
-| `adaptive-again-two` | rate first card AGAIN | it returns only after two intervening presentations |
-| `adaptive-hard-four` | rate first card HARD | it returns only after four intervening presentations |
-| `adaptive-all-cooling` | short fixture where every active card is cooling | earliest due card appears immediately; no wait screen or fake exposure |
-| `adaptive-f2-blank` | inspect/press F2 on front and back | slot has no pixels and key produces no state change |
-| `adaptive-exposure-cap` | repeatedly rate at configured cap | card retires unresolved at exact cap |
-| `adaptive-know-retires` | rate KNOW | card never reappears |
-| `adaptive-pause-resume` | pause after a committed rating; relaunch | opens Enter Code with Resume; exact next card/count resumes |
-| `adaptive-study-quiz-result-qr` | complete study and prescribed quiz | summary has F5 QUIZ; result exists before success; Version-5/M QR renders |
-| `adaptive-completed-code-result` | return to code entry and re-enter completed code | Result reopens; study/quiz do not restart |
-| `adaptive-multiple-results` | fixture with older pending result plus new completion | both queue records remain distinct and selectable/deliverable |
-| `adaptive-inactive-routes-absent` | exhaust all shell keys/routes | no v0 learner screen or dispatch is reachable |
+| `cold-enter-code` | fresh v1 bundle -> `ASCHL` | first screen is `ENTER CODE`; inactive routes absent |
+| `unknown-code-relay` | enter code absent locally | `DSENTRY/SCE1` retains exact zero-padded code, device, request; recovery asks for relay |
+| `resolved-code-prescription` | preinstall exact artifact + `DSSTUDY` | entered code opens prescribed learner/topic and first authored card |
+| `again-two-card-spacing` | rate first card AGAIN | it returns only after two intervening presentations |
+| `hard-four-card-spacing` | rate first card HARD | it returns only after four intervening presentations |
+| `f2-blank` | inspect/press F2 on front and back | slot has no pixels and key produces no state change |
+| `power-safe-resume` | pause after a committed rating; relaunch | opens Enter Code with Resume; exact next card/count resumes |
+| `study-quiz-result-qr` | complete study and prescribed quiz | summary has F5 QUIZ; result exists before success; Version-5/M QR renders |
+| `completed-code-result` | return to code entry and re-enter completed code | Result reopens; study/quiz do not restart |
+| `inactive-routes-absent` | exhaust all shell keys/routes | no v0 learner screen or dispatch is reachable |
 
 ## Decoded result inspection
 
-Extend `ti86.cli.mjs` with a result-inspection option usable alongside
-`--case-id`. It reads the actual retained queue variable through the virtual
+`ti86.cli.mjs --debug-result` reads the actual retained queue variable through
+the virtual Graph Link during a case. `--inspect-result-file DSQ.86s` performs
+the same semantic decode on a retained transfer without MAME. Both validate
+the envelope and checksum, select the newest result,
 Graph Link, validates the envelope and checksum, selects the requested result,
-and emits deterministic semantic fields:
+and emit deterministic semantic fields:
 
 ```text
 sessionCode: 012345

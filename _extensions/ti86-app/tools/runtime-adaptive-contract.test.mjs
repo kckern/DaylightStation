@@ -43,6 +43,15 @@ describe('SchoolCalc Adaptive Study SCLEARN contract', () => {
     expect(SOURCE.match(/adaptive_card_wait:[\s\S]*?adaptive_flip:/)?.[0]).not.toContain('SC_SCAN_F2');
   });
 
+  it('maps the five physical function keys explicitly to quiz choices A-E', () => {
+    const choices = SOURCE.match(/adaptive_choice_wait:[\s\S]*?adaptive_quiz_back_prompt:/)?.[0];
+    expect(choices).toBeTruthy();
+    for (const [key, value] of [['F1', 1], ['F2', 2], ['F3', 3], ['F4', 4], ['F5', 5]]) {
+      expect(choices).toMatch(new RegExp(`cp SC_SCAN_${key}\\s+ld b,${value}`));
+    }
+    expect(choices).not.toContain('sub b');
+  });
+
   it('packs canonical mode-4 cards and choices through the crash-safe queue', () => {
     expect(QUEUE).toContain('QUEUE_DRAFT_ADAPTIVE:   equ 9');
     expect(QUEUE).toMatch(/queue_build_adaptive:[\s\S]*ld \(hl\),4[\s\S]*queue_adaptive_card_loop:[\s\S]*and 0x0F[\s\S]*queue_adaptive_choice_loop:/);
