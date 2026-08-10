@@ -1,5 +1,5 @@
 /**
- * VoicePicker — GM voice chooser for a channel strip (design §7 Mix view).
+ * VoicePicker — GM voice chooser for a Loop channel strip.
  *
  * Surface choice: design §7 sends deep-scroll surfaces full-bleed but allows
  * "drawer when shallow". The always-available list is 8 voices — shallow — so
@@ -24,50 +24,7 @@
  * changes; ChannelStrip renders their voice chip disabled ("Drums").
  */
 import { useState } from 'react';
-import { GM_PROGRAMS } from './presetManifest.js';
-import { VOICE_GROUPS } from '../devices/suzukiMdg400.js';
-
-/** Friendly labels for the tier-2 loadable programs (keyed by GM program #). */
-export const FRIENDLY_VOICE_NAMES = Object.freeze({
-  0: 'Grand Piano',
-  4: 'E-Piano',
-  24: 'Nylon Guitar',
-  25: 'Steel Guitar',
-  32: 'Acoustic Bass',
-  33: 'Fingered Bass',
-  48: 'Strings',
-  88: 'Synth Pad',
-});
-
-/** The 16 standard GM families with their 8 programs each (bank 0 only). */
-export const GM_FAMILY_SECTIONS = Object.freeze(
-  VOICE_GROUPS
-    .filter((g) => g.voices.every((v) => v.bank === 0))
-    .map((g) => Object.freeze({
-      family: g.group,
-      voices: Object.freeze(g.voices.map(({ name, pc }) => Object.freeze({ program: pc, name }))),
-    })),
-);
-
-const GM_NAME_BY_PROGRAM = new Map(
-  GM_FAMILY_SECTIONS.flatMap((s) => s.voices.map((v) => [v.program, v.name])),
-);
-
-/**
- * Display name for a layer's voice: friendly tier-2 label, else the GM
- * catalog name, else a numbered fallback. `null` program = the drum channel.
- */
-export function voiceName(program) {
-  if (program == null) return 'Drums';
-  return FRIENDLY_VOICE_NAMES[program]
-    ?? GM_NAME_BY_PROGRAM.get(program)
-    ?? `Voice ${program + 1}`;
-}
-
-/** The always-offered voices: tier-2 loadable programs with friendly names. */
-export const BASE_VOICES = Object.freeze(
-  GM_PROGRAMS.map((program) => Object.freeze({ program, name: voiceName(program) })),
-);
+import { BASE_VOICES, GM_FAMILY_SECTIONS } from './voicePickerModel.js';
 
 function VoiceOption({ program, name, current, onPick }) {
   const isCurrent = program === current;

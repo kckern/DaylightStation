@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { RomanChord } from '../../components/roman/RomanProgression.jsx';
 import { keyedChordName } from '../../components/roman/keyedChordName.js';
-import { loopBars } from './LoopRoll.jsx';
+import { loopBars } from './loopRollModel.js';
+import { cumulativeBounds } from './chordLaneModel.js';
 
 /**
  * ChordLane — a chord loop as a TIME LINE: the Roman chords laid out
@@ -37,18 +38,6 @@ import { loopBars } from './LoopRoll.jsx';
  * @param {boolean} muted
  * @param {number|null} tonicPc  pitch class Roman `I` sounds at (null → Roman only)
  */
-/** Cumulative END fractions per chord from durations, or null when the
- *  durations don't line up with the chord count. */
-export function cumulativeBounds(durations, count) {
-  if (!Array.isArray(durations) || durations.length !== count) return null;
-  const total = durations.reduce((a, b) => a + (b > 0 ? b : 0), 0);
-  if (!(total > 0)) return null;
-  const bounds = [];
-  let acc = 0;
-  for (const d of durations) { acc += Math.max(0, d); bounds.push(acc / total); }
-  return bounds; // bounds[i] = end fraction of chord i (bounds[count-1] === 1)
-}
-
 export function ChordLane({
   roman, durations = null, cycles = 1, notesBundle, positionRef,
   isPlaying = false, muted = false, tonicPc = null,

@@ -79,7 +79,6 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
  * the global namespace.
  */
 function evalPresetSource(sourceText, variableName) {
-  // eslint-disable-next-line no-new-func
   const fn = new Function(`${sourceText}\n;return (typeof ${variableName} !== 'undefined') ? ${variableName} : undefined;`);
   return fn();
 }
@@ -87,7 +86,6 @@ function evalPresetSource(sourceText, variableName) {
 /** Default player factory: evaluate the npm dist source (no module exports). */
 async function defaultPlayerFactory() {
   const { default: source } = await import('webaudiofont/npm/dist/WebAudioFontPlayer.js?raw');
-  // eslint-disable-next-line no-new-func
   const PlayerCtor = new Function(`${source}\n;return WebAudioFontPlayer;`)();
   return new PlayerCtor();
 }

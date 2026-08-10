@@ -151,6 +151,12 @@
     grid-template-columns: repeat(auto-fit, minmax(4.2rem, 1fr));
     gap: 0.5rem;
   }
+  &__drum-note {
+    grid-column: 1 / -1;
+    margin: 0;
+    color: var(--piano-muted, #aab);
+    font: 500 0.82rem 'Roboto Condensed', sans-serif;
+  }
   &__pad {
     min-height: 4rem; // ≥48px finger pads
     border-radius: 10px;

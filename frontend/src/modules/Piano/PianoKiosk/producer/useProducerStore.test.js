@@ -16,7 +16,7 @@ let currentUser = 'kc';
 vi.mock('../PianoUserContext.jsx', () => ({ usePianoUser: () => ({ currentUser }) }));
 
 import { useProducerStore, FALLBACK_AUTHOR } from './useProducerStore.js';
-import { draftReducer, hydrate, resolveSectionStack } from './draftReducer.js';
+import { draftReducer, hydrate, resolveSectionStack, toSchedulerInputs } from './draftReducer.js';
 
 /** Default: the three list GETs resolve empty; tests override per call. */
 function mockLists({ loops = [], crate = [], songs = [] } = {}) {
@@ -66,6 +66,21 @@ describe('list fetch on mount', () => {
     expect(result.current.loops).toEqual([]);
   });
 
+  it('keeps healthy list items and visibly reports quarantined records', async () => {
+    api.mockImplementation((path) => {
+      if (path.endsWith('/producer/loops')) {
+        return Promise.resolve({
+          items: [{ id: 'healthy-loop' }],
+          invalidRecords: [{ id: 'broken-loop', errors: ['notes invalid'] }],
+        });
+      }
+      return Promise.resolve({ items: [], invalidRecords: [] });
+    });
+    const { result } = await mountStore();
+    expect(result.current.loops).toEqual([{ id: 'healthy-loop' }]);
+    expect(result.current.error).toBe('1 saved item is unavailable because the data needs repair.');
+  });
+
   it('refresh() re-fetches the lists', async () => {
     mockLists({ songs: [{ id: 's1' }] });
     const { result } = await mountStore();
@@ -99,6 +114,22 @@ describe('author tagging', () => {
     });
     const post = api.mock.calls.find(([, , m]) => m === 'POST');
     expect(post[1].author).toBe(FALLBACK_AUTHOR);
+  });
+
+  it('persists builder provenance with a generated loop', async () => {
+    mockLists();
+    const { result } = await mountStore();
+    api.mockResolvedValueOnce({ id: 'generated-1', kind: 'chords' });
+    const builder = { kind: 'chords', version: 1, rhythm: 'syncopated', roman: ['I', 'V'] };
+    await act(async () => {
+      await result.current.saveLoop({
+        kind: 'chords', takeId: 'take-generated',
+        notes: [{ ticks: 0, durationTicks: 480, midi: 60, velocity: 92 }],
+        ppq: 480, lengthBars: 2, builder,
+      });
+    });
+    const post = api.mock.calls.find(([, , method]) => method === 'POST');
+    expect(post[1]).toMatchObject({ sourceTakeId: 'take-generated', builder });
   });
 });
 
@@ -196,6 +227,41 @@ describe('saveSong crystallize', () => {
     expect(songPost[1].sections[0].stack[0].source).toEqual({ kind: 'loop', loopId: 'loop-1' });
     expect(songPost[1].sections[1].stack[0].source).toEqual({ kind: 'loop', loopId: 'loop-1' });
   });
+
+  it('does not alias different legacy takes that reused the same takeId', async () => {
+    mockLists();
+    const { result } = await mountStore();
+    api.mockResolvedValueOnce({ id: 'loop-1' });
+    api.mockResolvedValueOnce({ id: 'loop-2' });
+    api.mockResolvedValueOnce({ id: 'song1' });
+    const a = takeLayer('take-1');
+    const b = takeLayer('take-1');
+    b.source.notes = [{ ticks: 0, durationTicks: 480, midi: 41 }];
+    const draft = {
+      sections: [
+        { id: 'a', name: 'A', lengthBars: 2, stack: [a] },
+        { id: 'b', name: 'B', lengthBars: 2, stack: [b] },
+      ],
+      arrangement: [{ sectionId: 'a', repeats: 1 }, { sectionId: 'b', repeats: 1 }],
+      carriedLayers: {}, meta: { keyShift: 0, bpm: 100 },
+    };
+    await act(async () => { await result.current.saveSong(draft); });
+    const loopPosts = api.mock.calls.filter(([p, , method]) => method === 'POST' && p.endsWith('/producer/loops'));
+    expect(loopPosts).toHaveLength(2);
+  });
+
+  it('updates a known song with optimistic revision control instead of POSTing a duplicate', async () => {
+    mockLists({ songs: [{ id: 'song1', revision: 2, title: 'Tune' }] });
+    const { result } = await mountStore();
+    api.mockResolvedValueOnce({ id: 'song1', revision: 3, title: 'Tune' });
+    await act(async () => {
+      await result.current.saveSong(draftWith([libraryLayer('loops/a.mid')]), { id: 'song1', revision: 2 });
+    });
+    const patch = api.mock.calls.find(([p, , method]) => method === 'PATCH' && p.endsWith('/producer/songs/song1'));
+    expect(patch[1].expectedRevision).toBe(2);
+    expect(api.mock.calls.some(([p, , method]) => method === 'POST' && p.endsWith('/producer/songs'))).toBe(false);
+    expect(result.current.songs[0].revision).toBe(3);
+  });
 });
 
 // ── loadSong resolves refs ────────────────────────────────────────────────────
@@ -233,7 +299,7 @@ describe('loadSong', () => {
     expect(loaded.draft.meta.keyShift).toBe(3);
   });
 
-  it('leaves a ref intact (no crash) when the referenced loop is gone', async () => {
+  it('rejects an incomplete song instead of loading a silent layer', async () => {
     mockLists();
     const { result } = await mountStore();
     api.mockImplementation((path) => {
@@ -247,9 +313,8 @@ describe('loadSong', () => {
       if (path.endsWith('/producer/loops/gone')) return Promise.reject(new Error('HTTP 404'));
       return Promise.resolve({});
     });
-    let loaded;
-    await act(async () => { loaded = await result.current.loadSong('song1'); });
-    expect(loaded.draft.sections[0].stack[0].source).toEqual({ kind: 'loop', loopId: 'gone' });
+    await expect(act(async () => result.current.loadSong('song1')))
+      .rejects.toThrow('Saved song is incomplete because one of its loops is unavailable.');
   });
 });
 
@@ -290,6 +355,56 @@ describe('saveSong → loadSong round trip', () => {
     expect(restored.source.notes).toEqual(takeLayer.source.notes);
     expect(restored.gain).toBe(0.8);
     expect(loaded.draft.meta.bpm).toBe(100);
+  });
+
+  it('preserves a non-C source tonic and target key through save/reload scheduling', async () => {
+    mockLists();
+    const { result } = await mountStore();
+    const libraryLayer = {
+      id: 'f-source', role: 'chords', channel: 0, gmProgram: 0, gain: 1,
+      muted: false, soloed: false, carried: false,
+      source: { kind: 'library', entry: { path: 'f-source', tonicPc: 5 } },
+    };
+    const notesById = { 'f-source': { notes: [{ ticks: 0, durationTicks: 480, midi: 65 }], ppq: 480, barSpan: 1 } };
+    const draft = {
+      sections: [{ id: 'a', name: 'A', lengthBars: 1, stack: [libraryLayer] }],
+      arrangement: [{ sectionId: 'a', repeats: 1 }], carriedLayers: {},
+      meta: { title: 'Key proof', keyShift: 2, bpm: 100 },
+    };
+    let savedSong;
+    api.mockImplementation((path, data, method) => {
+      if (method === 'POST' && path.endsWith('/producer/songs')) {
+        savedSong = { id: 'song1', revision: 1, ...data };
+        return Promise.resolve(savedSong);
+      }
+      if (path.endsWith('/producer/songs/song1')) return Promise.resolve(savedSong);
+      return Promise.resolve({});
+    });
+    const before = toSchedulerInputs(draft, notesById);
+    await act(async () => { await result.current.saveSong(draft); });
+    let loaded;
+    await act(async () => { loaded = await result.current.loadSong('song1'); });
+    expect(toSchedulerInputs(loaded.draft, notesById)).toEqual(before);
+    expect(before.sections[0].stack[0].transpose).toBe(-3);
+  });
+
+  it('re-saving a loaded loop reference reuses its existing loop record', async () => {
+    mockLists();
+    const { result } = await mountStore();
+    const draft = {
+      sections: [{ id: 'a', name: 'A', lengthBars: 1, stack: [{
+        id: 'take', role: 'melody', channel: 0, gain: 1,
+        source: {
+          kind: 'take', takeId: 'loop-1', persistedLoopId: 'loop-1',
+          notes: [{ ticks: 0, durationTicks: 480, midi: 60 }], ppq: 480, lengthBars: 1,
+        },
+      }] }],
+      arrangement: [{ sectionId: 'a', repeats: 1 }], carriedLayers: {},
+      meta: { title: 'Loaded', keyShift: 0, bpm: 100 },
+    };
+    api.mockResolvedValueOnce({ id: 'song1', revision: 2, title: 'Loaded' });
+    await act(async () => { await result.current.saveSong(draft, { id: 'song1', revision: 1 }); });
+    expect(api.mock.calls.some(([p, , method]) => method === 'POST' && p.endsWith('/producer/loops'))).toBe(false);
   });
 });
 
@@ -397,6 +512,23 @@ describe('loadCrateStack / getFull (Ours facet)', () => {
     expect(loaded.layers[0].source.kind).toBe('library'); // untouched
     expect(loaded.layers[1].source.kind).toBe('take');
     expect(loaded.layers[1].source.notes).toEqual([{ ticks: 0, durationTicks: 480, midi: 40 }]);
+  });
+
+  it('rejects an incomplete stack instead of loading a silent layer', async () => {
+    mockLists();
+    const { result } = await mountStore();
+    api.mockImplementation((path) => {
+      if (path.endsWith('/producer/crate/c1')) {
+        return Promise.resolve({
+          id: 'c1', kind: 'stack',
+          layers: [{ id: 'gone', source: { kind: 'loop', loopId: 'gone' } }],
+        });
+      }
+      if (path.endsWith('/producer/loops/gone')) return Promise.reject(new Error('HTTP 422'));
+      return Promise.resolve({});
+    });
+    await expect(act(async () => result.current.loadCrateStack('c1')))
+      .rejects.toThrow('Saved stack is incomplete because one of its loops is unavailable.');
   });
 });
 

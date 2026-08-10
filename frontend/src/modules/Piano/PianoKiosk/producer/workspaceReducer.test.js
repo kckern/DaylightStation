@@ -17,6 +17,7 @@ import {
   toggleMetronome,
   loadStack,
   clearWorkspace,
+  restoreWorkspace,
   setEditingSection,
   anySolo,
   effectiveMuted,
@@ -180,10 +181,7 @@ describe('ADD_LAYER', () => {
       const full = fullMelodicState();
       expect(full.layers).toHaveLength(15);
       const after = workspaceReducer(deepFreeze(full), addChords(99));
-      expect(after.lastError).toBe('channels-exhausted');
-      const { lastError: _a, ...restAfter } = after;
-      const { lastError: _b, ...restFull } = full;
-      expect(restAfter).toEqual(restFull);
+      expect(after).toEqual({ ...full, lastError: 'channels-exhausted' });
     });
 
     it('a groove can still be added when melodic channels are exhausted', () => {
@@ -480,6 +478,14 @@ describe('toTransportLayers', () => {
     }]);
   });
 
+  it('transposes an authored non-C library layer to the absolute target key', () => {
+    const s = run(
+      addLayer({ source: librarySource('loops/f-chords.mid', { tonicPc: 5 }), role: 'chords' }),
+      setKey(2),
+    );
+    expect(toTransportLayers(s, loaded('loops/f-chords.mid'))[0].transpose).toBe(-3);
+  });
+
   it('pins groove transpose to 0 while keyShift is 3 (percussion never transposes)', () => {
     const s = run(addGroove(1), addChords(1), setKey(3));
     const grooveId = s.layers[0].id;
@@ -533,10 +539,31 @@ describe('action creators', () => {
       removeLayer('a'), setGain('a', 1), toggleMute('a'), toggleSolo('a'),
       setVoice('a', 0), toggleCarried('a'), setKey(0), nudgeKey(1), setBpm(100), toggleMetronome(),
       loadStack({ layers: [] }), clearWorkspace(), setEditingSection(null),
+      restoreWorkspace(initialWorkspace),
     ];
     const types = new Set(Object.values(ActionTypes));
     for (const a of samples) expect(types.has(a.type)).toBe(true);
     expect(new Set(samples.map((a) => a.type)).size).toBe(samples.length);
+  });
+});
+
+describe('RESTORE (Undo contract)', () => {
+  it('restores an exact prior workspace snapshot without aliasing it', () => {
+    const snapshot = run(addChords(1), setKey(5), setBpm(128), setLengthBars(8));
+    const changed = workspaceReducer(snapshot, clearWorkspace());
+    const restored = workspaceReducer(changed, restoreWorkspace(snapshot));
+    expect(restored).toEqual(snapshot);
+    expect(restored).not.toBe(snapshot);
+    expect(restored.layers).not.toBe(snapshot.layers);
+    // Layers are immutable reducer values, so retaining those object references
+    // is both safe and materially cheaper than cloning note-heavy take sources.
+    expect(restored.layers[0]).toBe(snapshot.layers[0]);
+  });
+
+  it('rejects malformed snapshots as a no-op', () => {
+    const state = run(addChords(1));
+    expect(workspaceReducer(state, restoreWorkspace(null))).toBe(state);
+    expect(workspaceReducer(state, restoreWorkspace({ layers: 'nope' }))).toBe(state);
   });
 });
 
@@ -556,7 +583,7 @@ describe('takeToSource', () => {
 
   it('normalizes non-groove notes to canonical pitch (midi − keyShift)', () => {
     // Played at keyShift 3: heard 3 up, played real 60 → canonical 57 so the
-    // single-transpose rule (toTransportLayers adds keyShift) stays uniform.
+    // source-to-target transpose rule stays uniform.
     const src = takeToSource(baseTake(), 3);
     expect(src.notes[0].midi).toBe(57);
     expect(src.notes[0]).toMatchObject({ ticks: 0, durationTicks: 480, velocity: 90 });

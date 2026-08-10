@@ -55,7 +55,8 @@
  * ch 9 so the player hears the drums they're playing. HONEST LIMITATION: on
  * physical keys the piano's own (local) sound still plays too — piano+drum
  * together — unless local control is off (a separate CC122 concern, out of
- * scope here). The on-screen finger pads give pure drum sound.
+ * scope here). The on-screen finger pads give pure drum sound, and the visible
+ * pad hint discloses that difference before the player records.
  *
  * @param {object} props
  * @param {number} props.bpm                      workspace bpm (engine snapshots at arm)
@@ -72,7 +73,7 @@
  * @param {() => void} props.onClose
  * @param {() => void} [props.onAudioGesture]     ensureAudio (arm tap unlocks the synth)
  */
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import getLogger from '../../../../lib/logging/Logger.js';
 import { useLoopCapture, DRUM_KEY_MAP, PPQ } from './useLoopCapture.js';
 import { DRUM_CHANNEL } from './workspaceReducer.js';
@@ -152,6 +153,7 @@ export function CaptureCard({
   const [dial, setDial] = useState(null);
 
   const armed = capture.state !== 'idle';
+  const paused = !armed && capture.passCount > 0;
   const drumMode = capture.drumMode;
   const drumModeRef = useRef(drumMode); drumModeRef.current = drumMode;
 
@@ -170,6 +172,13 @@ export function CaptureCard({
   /** Sounding drum monitors: original key → mapped GM note. Kept OUTSIDE the
    * drum-mode gate so a note-off after a mode flip still silences ch 9. */
   const soundingDrumsRef = useRef(new Map());
+
+  const silenceDrumMonitors = useCallback(() => {
+    for (const mapped of soundingDrumsRef.current.values()) {
+      routerRef.current?.noteOff(DRUM_CHANNEL, mapped);
+    }
+    soundingDrumsRef.current.clear();
+  }, []);
 
   useEffect(() => {
     logger().info('capture-ui.open', { hasLayers: !!hasLayers, jamBars });
@@ -286,6 +295,24 @@ export function CaptureCard({
     return unsub;
   }, [armed, subscribeMidi]);
 
+  // The main transport Stop is also capture Stop. Without this falling-edge
+  // bridge the audio went silent while the card kept claiming "loop rolling"
+  // and continued accepting notes against a wall clock with no audible anchor.
+  // Disarm discards only the incomplete pass; completed passes remain available
+  // below for Keep/Undo/Clear, and Resume re-arms them against a fresh anchor.
+  const wasTransportPlayingRef = useRef(!!transport.isPlaying);
+  useEffect(() => {
+    const playing = !!transport.isPlaying;
+    const stopped = wasTransportPlayingRef.current && !playing;
+    wasTransportPlayingRef.current = playing;
+    if (!armed || !stopped) return;
+    silenceDrumMonitors();
+    captureRef.current.disarm();
+    logger().info('capture-ui.transport-stopped', {
+      completedPasses: captureRef.current.passCount,
+    });
+  }, [armed, transport.isPlaying, silenceDrumMonitors]);
+
   // Pass milestones (sampled — a long session rolls many).
   const lastPassRef = useRef(0);
   useEffect(() => {
@@ -299,16 +326,13 @@ export function CaptureCard({
   // playing (the jam outlives the session) EXCEPT when this session started
   // it and nothing was kept — then it's a silent empty cycle, stop it. ──────
   useEffect(() => () => {
-    for (const mapped of soundingDrumsRef.current.values()) {
-      routerRef.current?.noteOff(DRUM_CHANNEL, mapped);
-    }
-    soundingDrumsRef.current.clear();
+    silenceDrumMonitors();
     if (forcedMetroRef.current) onSetMetronomeRef.current?.(false);
     if (startedTransportRef.current && !hasLayersRef.current) {
       logger().info('capture-ui.stop-orphan-transport', {});
       transportRef.current?.stop();
     }
-  }, []);
+  }, [silenceDrumMonitors]);
 
   const handleClose = useCallback(() => {
     capture.disarm(); // unmount tears the engine down anyway; disarm keeps logs honest
@@ -372,7 +396,7 @@ export function CaptureCard({
       <div className="piano-capture-card" role="dialog" aria-label="capture">
         <div className="piano-capture-card__top">
           <h3 className="piano-capture-card__title">
-            {armed ? 'Recording — loop rolling' : 'Record a loop'}
+            {paused ? 'Recording paused — completed passes kept' : (armed ? 'Recording — loop rolling' : 'Record a loop')}
           </h3>
           <button
             type="button"
@@ -382,7 +406,7 @@ export function CaptureCard({
           >✕</button>
         </div>
 
-        {!armed && (
+        {!armed && !paused && (
           <div className="piano-capture-card__setup">
             <div className="piano-capture-card__row" role="group" aria-label="loop length">
               <span className="piano-capture-card__label">Length</span>
@@ -430,7 +454,7 @@ export function CaptureCard({
           </div>
         )}
 
-        {armed && (
+        {(armed || paused) && (
           <div className="piano-capture-card__live">
             {/* Live piano-roll (design §8): your playing appears here each loop
                 and thickens, so you SEE the take building — not just a counter. */}
@@ -440,7 +464,7 @@ export function CaptureCard({
                 ppq={PPQ}
                 barSpan={capture.lengthBars || lengthBars}
                 positionRef={transport?.positionRef}
-                isPlaying
+                isPlaying={armed}
               />
             ) : (
               <div className="piano-capture-card__roll-empty" role="status">
@@ -453,11 +477,11 @@ export function CaptureCard({
                 className={`piano-capture-card__dial${dial?.phase === 'countin' ? ' is-countin' : ''}`}
                 aria-label="bar dial"
               >
-                {dial?.phase === 'countin' ? `−${dial.bar}` : `${dial?.bar ?? 1} / ${dial?.of ?? lengthBars}`}
+                {paused ? 'Paused' : (dial?.phase === 'countin' ? `−${dial.bar}` : `${dial?.bar ?? 1} / ${dial?.of ?? lengthBars}`)}
               </span>
               <span className="piano-capture-card__passes" aria-label="passes">
                 {capture.passCount} pass{capture.passCount === 1 ? '' : 'es'}
-                {capture.takeNoteCount > 0 ? ` · ${capture.takeNoteCount} notes` : ''}
+                {capture.takeNoteCount > 0 ? ` · ${capture.takeNoteCount} note${capture.takeNoteCount === 1 ? '' : 's'}` : ''}
               </span>
             </div>
 
@@ -507,6 +531,11 @@ export function CaptureCard({
                 onClick={() => setSnap((s) => (s === 'sixteenth' ? 'off' : 'sixteenth'))}
               >Snap 1/16</button>
               {drumToggle}
+              {paused && (
+                <button type="button" className="piano-chip" onClick={handleArm}>
+                  Resume
+                </button>
+              )}
               <button type="button" className="piano-capture-card__done" onClick={handleClose}>
                 Done
               </button>
@@ -516,6 +545,9 @@ export function CaptureCard({
 
         {drumMode && (
           <div className="piano-capture-card__pads" role="group" aria-label="drum pads">
+            <p className="piano-capture-card__drum-note">
+              Touch pads play drums only. Piano keys may also sound the piano.
+            </p>
             {PADS.map(({ key, label }) => (
               <button
                 key={key}

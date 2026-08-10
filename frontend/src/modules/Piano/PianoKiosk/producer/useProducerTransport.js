@@ -660,7 +660,7 @@ export function useProducerTransport({
       atWall: anchor.wall + (atBar - anchor.bar) * liveBarMs,
     };
     logger().sampled('transport.swap-queued', { atBar, mode: next.mode }, SAMPLE_OPTS);
-  }, [mode, cycle, compiled, barMs, beatsPerBar, metroBar]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [mode, cycle, compiled, barMs, beatsPerBar, metroBar]);
 
   // Unmount: stop the clock and silence everything through the panic path.
   useEffect(() => () => {
@@ -669,7 +669,7 @@ export function useProducerTransport({
       isPlayingRef.current = false;
       routerRef.current?.panic();
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   return {
     isPlaying,

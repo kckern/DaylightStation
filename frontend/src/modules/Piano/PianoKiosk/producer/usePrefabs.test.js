@@ -40,7 +40,7 @@ beforeEach(() => { vi.restoreAllMocks(); });
 
 describe('listing fetch on mount', () => {
   it('fetches the manifest and exposes stacks + songs', async () => {
-    global.fetch = mockFetch({ 'prefabs/index.yml': MANIFEST });
+    globalThis.fetch = mockFetch({ 'prefabs/index.yml': MANIFEST });
     const { result } = await mount();
     expect(result.current.error).toBeNull();
     expect(result.current.stacks).toEqual([{ id: 'pop', title: 'Pop', author: 'curated', kind: 'stack', layerCount: 2 }]);
@@ -49,7 +49,7 @@ describe('listing fetch on mount', () => {
 
   it('hits the manifest at the local-stream prefabs path', async () => {
     const f = mockFetch({ 'prefabs/index.yml': MANIFEST });
-    global.fetch = f;
+    globalThis.fetch = f;
     await mount();
     expect(f).toHaveBeenCalledWith('/api/v1/local/stream/midi/prefabs/index.yml');
   });
@@ -58,7 +58,7 @@ describe('listing fetch on mount', () => {
 describe('getFull (lazy payload + cache)', () => {
   it('fetches a payload on demand and caches it (one network call)', async () => {
     const f = mockFetch({ 'prefabs/index.yml': MANIFEST, 'stacks/pop.yml': STACK_YAML });
-    global.fetch = f;
+    globalThis.fetch = f;
     const { result } = await mount();
     const callsAfterMount = f.mock.calls.length;
 
@@ -78,7 +78,7 @@ describe('getFull (lazy payload + cache)', () => {
 
 describe('read-only surface', () => {
   it('exposes no write methods (save/remove/rename/create)', async () => {
-    global.fetch = mockFetch({ 'prefabs/index.yml': MANIFEST });
+    globalThis.fetch = mockFetch({ 'prefabs/index.yml': MANIFEST });
     const { result } = await mount();
     for (const verb of ['save', 'saveSong', 'saveCrateItem', 'remove', 'rename', 'create', 'delete']) {
       expect(result.current[verb]).toBeUndefined();
@@ -88,7 +88,7 @@ describe('read-only surface', () => {
 
 describe('error handling', () => {
   it('sets error when the manifest fetch fails', async () => {
-    global.fetch = vi.fn(() => Promise.resolve({ ok: false, status: 500, text: () => Promise.resolve('') }));
+    globalThis.fetch = vi.fn(() => Promise.resolve({ ok: false, status: 500, text: () => Promise.resolve('') }));
     const { result } = await mount();
     expect(result.current.error).toMatch(/500/);
     expect(result.current.stacks).toEqual([]);
@@ -96,7 +96,7 @@ describe('error handling', () => {
   });
 
   it('rejects getFull for a missing payload', async () => {
-    global.fetch = mockFetch({ 'prefabs/index.yml': MANIFEST }); // no stack file → 404
+    globalThis.fetch = mockFetch({ 'prefabs/index.yml': MANIFEST }); // no stack file → 404
     const { result } = await mount();
     await expect(result.current.getFull('stacks', 'ghost')).rejects.toThrow(/404/);
   });

@@ -1,50 +1,75 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { ChordBuilder, chordTriadMidi, chordProgressionToTake } from './ChordBuilder.jsx';
+import { ChordBuilder } from './ChordBuilder.jsx';
+import { chordTriadMidi, chordProgressionToTake, voiceLeadChord } from './chordBuilderModel.js';
 
-describe('chordTriadMidi', () => {
-  it('voices canonical-C triads (Roman I = C = 60)', () => {
-    expect(chordTriadMidi({ offset: 0, quality: 'major' })).toEqual([60, 64, 67]); // C E G
-    expect(chordTriadMidi({ offset: 9, quality: 'minor' })).toEqual([69, 72, 76]); // A C E
-    expect(chordTriadMidi({ offset: 11, quality: 'dim' })).toEqual([71, 74, 77]); // B D F
+const I = { roman: 'I', offset: 0, quality: 'major' };
+const V = { roman: 'V', offset: 7, quality: 'major' };
+
+describe('chord voicing', () => {
+  it('spells canonical-C triads deterministically', () => {
+    expect(chordTriadMidi(I)).toEqual([60, 64, 67]);
+    expect(chordTriadMidi({ offset: 9, quality: 'minor' })).toEqual([69, 72, 76]);
+  });
+
+  it('voice-leads I → V through the nearest inversion instead of jumping root position', () => {
+    const first = voiceLeadChord(I);
+    const second = voiceLeadChord(V, first);
+    expect(first).toEqual([60, 64, 67]);
+    expect(second).toEqual([59, 62, 67]); // B-D-G, all voices move <= 2 semitones
   });
 });
 
 describe('chordProgressionToTake', () => {
-  it('lays each filled bar as a whole-bar canonical chord', () => {
-    const slots = [
-      { roman: 'I', offset: 0, quality: 'major' },
-      null,
-      { roman: 'V', offset: 7, quality: 'major' },
-    ];
-    const take = chordProgressionToTake(slots, 1);
-    expect(take.kind).toBe('chords');
-    expect(take.lengthBars).toBe(3);
-    // Bar 0 = C major at tick 0; bar 2 = G major at tick 3840 (2 bars × 1920).
+  it('builds a dynamic quarter-pulse part with harmonic/provenance metadata', () => {
+    const take = chordProgressionToTake([I, null, V], { rhythm: 'pulse' });
+    expect(take).toMatchObject({
+      kind: 'chords', lengthBars: 3, drumMode: false,
+      builder: { kind: 'chords', version: 1, rhythm: 'pulse', roman: ['I', null, 'V'] },
+      timeline: { root: 0, specificity: 'triad' },
+    });
+    expect(take.timeline.slots).toHaveLength(12);
     expect(take.notes.filter((n) => n.ticks === 0).map((n) => n.midi)).toEqual([60, 64, 67]);
-    expect(take.notes.filter((n) => n.ticks === 3840).map((n) => n.midi)).toEqual([67, 71, 74]);
-    // The empty bar 1 contributes nothing.
+    expect(take.notes.filter((n) => n.ticks === 3840).map((n) => n.midi)).toEqual([59, 62, 67]);
     expect(take.notes.some((n) => n.ticks === 1920)).toBe(false);
+    expect(new Set(take.notes.map((n) => n.velocity)).size).toBeGreaterThan(1);
+  });
+
+  it('supports sustain and syncopated rhythms without changing loop length', () => {
+    const sustain = chordProgressionToTake([I], { rhythm: 'sustain' });
+    const sync = chordProgressionToTake([I], { rhythm: 'syncopated' });
+    expect(sustain.notes).toHaveLength(3);
+    expect(sync.notes).toHaveLength(6);
+    expect(sustain.lengthBars).toBe(1);
+    expect(sync.lengthBars).toBe(1);
   });
 });
 
 describe('ChordBuilder', () => {
-  it('shows keyed palette names for the jam key and fills slots on tap', () => {
+  it('uses keyed labels, previews without committing, and then commits the exact rhythm choice', () => {
     const onCommit = vi.fn();
+    const onPreview = vi.fn();
     const onClose = vi.fn();
-    // keyPc 2 = D → Roman I labelled "D", V labelled "A".
-    render(<ChordBuilder keyPc={2} lengthBars={2} onCommit={onCommit} onClose={onClose} />);
+    render(<ChordBuilder keyPc={2} lengthBars={2} onCommit={onCommit} onPreview={onPreview} onClose={onClose} />);
     expect(screen.getByRole('button', { name: 'add D' })).toBeInTheDocument();
-    const add = screen.getByRole('button', { name: 'Add chords' });
-    expect(add).toBeDisabled();
-    fireEvent.click(screen.getByRole('button', { name: 'add D' }));  // bar 1 ← I
-    fireEvent.click(screen.getByRole('button', { name: 'add A' }));  // bar 2 ← V (auto-advanced)
-    expect(add).toBeEnabled();
-    fireEvent.click(add);
-    const take = onCommit.mock.calls[0][0];
-    // Canonical: bar 0 C major (60,64,67), bar 1 G major (67,71,74).
-    expect(take.notes.filter((n) => n.ticks === 0).map((n) => n.midi)).toEqual([60, 64, 67]);
-    expect(take.notes.filter((n) => n.ticks === 1920).map((n) => n.midi)).toEqual([67, 71, 74]);
+    fireEvent.click(screen.getByRole('button', { name: 'add D' }));
+    fireEvent.click(screen.getByRole('button', { name: 'add A' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Syncopated' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+    expect(onPreview).toHaveBeenCalledWith(expect.objectContaining({
+      lengthBars: 2,
+      builder: expect.objectContaining({ rhythm: 'syncopated' }),
+    }));
+    expect(onCommit).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Add chords' }));
+    expect(onCommit).toHaveBeenCalledWith(expect.objectContaining({
+      builder: expect.objectContaining({ roman: ['I', 'V'] }),
+    }));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('supports the same 16-bar maximum as the Loop workspace', () => {
+    render(<ChordBuilder lengthBars={16} onCommit={vi.fn()} onPreview={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'bar 16 empty' })).toBeInTheDocument();
   });
 });

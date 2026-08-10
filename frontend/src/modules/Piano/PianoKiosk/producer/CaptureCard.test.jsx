@@ -254,9 +254,11 @@ describe('setup and arm paths', () => {
     renderCard();
     const toggle = screen.getByRole('button', { name: 'Drums' });
     expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.queryByText(/piano keys may also sound the piano/i)).not.toBeInTheDocument();
     fireEvent.click(toggle);
     expect(captureMock.setDrumMode).toHaveBeenCalledWith(true);
     expect(screen.getByRole('group', { name: 'drum pads' })).toBeInTheDocument();
+    expect(screen.getByText(/piano keys may also sound the piano/i)).toBeInTheDocument();
   });
 });
 
@@ -457,6 +459,73 @@ describe('close and teardown', () => {
     fireEvent.pointerDown(screen.getByRole('button', { name: 'Crash' }));
     unmount();
     expect(router.noteOff).toHaveBeenCalledWith(9, 49);
+  });
+
+  it('main transport Stop pauses capture, releases drum monitoring, and preserves completed passes', () => {
+    transport.isPlaying = true;
+    transport.lengthMs = 8000;
+    const view = renderCard({ hasLayers: true });
+    fireEvent.click(screen.getByRole('button', { name: 'Drums' }));
+    arm();
+    setCapture({ passCount: 1, takeNoteCount: 1, takeNotes: TAKE.notes });
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Crash' }));
+
+    transport.isPlaying = false;
+    view.rerender(
+      <CaptureCard
+        bpm={120}
+        timeSig={[4, 4]}
+        transport={transport}
+        router={router}
+        subscribeMidi={subscribeMidi}
+        metronome={false}
+        onSetMetronome={onSetMetronome}
+        countInBars={1}
+        onCountInBars={onCountInBars}
+        hasLayers
+        onKeep={onKeep}
+        onClose={onClose}
+      />,
+    );
+
+    expect(captureMock.disarm).toHaveBeenCalled();
+    expect(router.noteOff).toHaveBeenCalledWith(9, 49);
+    expect(screen.getByText(/recording paused/i)).toBeInTheDocument();
+    expect(screen.getByLabelText('passes')).toHaveTextContent('1 pass · 1 note');
+    expect(screen.getByRole('button', { name: 'Keep' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Resume' })).toBeInTheDocument();
+  });
+
+  it('Resume from a stopped capture starts a fresh aligned transport/capture run', () => {
+    transport.isPlaying = true;
+    transport.lengthMs = 8000;
+    const view = renderCard({ hasLayers: true });
+    arm();
+    setCapture({ passCount: 1, takeNoteCount: 1, takeNotes: TAKE.notes });
+    transport.isPlaying = false;
+    view.rerender(
+      <CaptureCard
+        bpm={120}
+        timeSig={[4, 4]}
+        transport={transport}
+        router={router}
+        subscribeMidi={subscribeMidi}
+        metronome={false}
+        onSetMetronome={onSetMetronome}
+        countInBars={1}
+        onCountInBars={onCountInBars}
+        hasLayers
+        onKeep={onKeep}
+        onClose={onClose}
+      />,
+    );
+    transport.play.mockClear();
+    captureMock.arm.mockClear();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Resume' }));
+    expect(transport.play).toHaveBeenCalledTimes(1);
+    expect(captureMock.arm).toHaveBeenCalledWith(expect.objectContaining({ lengthBars: 4 }));
+    expect(screen.getByText(/recording — loop rolling/i)).toBeInTheDocument();
   });
 
   it('metronome-path session closed with an EMPTY workspace stops the transport (no silent zombie playback)', () => {

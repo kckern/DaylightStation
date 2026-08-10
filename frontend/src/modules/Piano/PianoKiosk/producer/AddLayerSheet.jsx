@@ -51,7 +51,7 @@ export function AddLayerSheet({ onPickRole, onRecord, onBuildDrums, onBuildChord
             type="button"
             className="piano-add-layer__maker"
             disabled={!onBuildDrums}
-            title={onBuildDrums ? undefined : 'Coming soon'}
+            title={onBuildDrums ? undefined : 'Builder unavailable'}
             onClick={onBuildDrums}
           >
             <span aria-hidden="true">🥁</span> Build a drum loop
@@ -60,7 +60,7 @@ export function AddLayerSheet({ onPickRole, onRecord, onBuildDrums, onBuildChord
             type="button"
             className="piano-add-layer__maker"
             disabled={!onBuildChords}
-            title={onBuildChords ? undefined : 'Coming soon'}
+            title={onBuildChords ? undefined : 'Builder unavailable'}
             onClick={onBuildChords}
           >
             <span aria-hidden="true">🎹</span> Build chords

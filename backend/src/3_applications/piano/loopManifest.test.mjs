@@ -9,6 +9,12 @@ const measure2Triad = '<measure number="2"><note><pitch><step>C</step><octave>4<
 const twoBarTriad = cMajorTriad + measure2Triad;
 
 describe('buildBrickEntry', () => {
+  it('surfaces the ledger harmony verdict so Best can exclude explicit failures', () => {
+    const xml = `<x>${misc({ type: 'chord-progression' })}${cMajorTriad}</x>`;
+    expect(buildBrickEntry('chords/no.musicxml', xml, { harmonyVerified: 'no' }).harmonyVerified).toBe(false);
+    expect(buildBrickEntry('chords/yes.musicxml', xml, { harmonyVerified: 'yes' }).harmonyVerified).toBe(true);
+    expect(buildBrickEntry('chords/unknown.musicxml', xml, { harmonyVerified: '' })).not.toHaveProperty('harmonyVerified');
+  });
   it('splits comma metadata into arrays and coerces bpm', () => {
     const xml = `<x>${misc({ type: 'melody', title: 'Lofi', genre: 'lofi,jazz', emotion: '', tags: 'lofi,jazz', quality: 'best', artist: '', bpm: '160', 'source-slug': 'lofi-1', 'derived-signature': '' })}${cMajorTriad}</x>`;
     const e = buildBrickEntry('melodies/lofi-1.musicxml', xml);
@@ -55,13 +61,20 @@ describe('buildBrickEntry', () => {
     expect(e.needsReview).toBeUndefined();
   });
 
-  it('skips timeline for grooves', () => {
-    const xml = `<x>${misc({ type: 'groove', 'source-slug': 'four-on-floor', 'canonical-name': 'four-on-floor' })}</x>`;
+  it('skips harmony for grooves but still proves they contain playable notes', () => {
+    const xml = `<x>${misc({ type: 'groove', 'source-slug': 'four-on-floor', 'canonical-name': 'four-on-floor' })}${cMajorTriad}</x>`;
     const e = buildBrickEntry('percussion/four-on-floor.musicxml', xml);
     expect(e.type).toBe('groove');
     expect(e.timeline).toBeUndefined();
     expect(e.needsReview).toBeUndefined();
     expect(e.feel).toBe('four-on-floor');
+  });
+
+  it('flags an empty groove instead of counting it as playable percussion', () => {
+    const xml = `<x>${misc({ type: 'groove', 'source-slug': 'empty', 'canonical-name': 'empty' })}</x>`;
+    const e = buildBrickEntry('percussion/empty.musicxml', xml);
+    expect(e.needsReview).toBe(true);
+    expect(e.needsReviewReason).toBe('parse-fail');
   });
 
   it('flags a harmonic brick with no notes as needsReview', () => {

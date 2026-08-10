@@ -8,12 +8,27 @@
 
   &__title { margin: 0; font: 700 1.3rem 'Roboto Condensed', sans-serif; text-align: center; }
 
-  // The grid scrolls horizontally INSIDE the modal (long loops = many steps),
-  // so it never overflows the viewport; the row label stays pinned at the left.
-  // min-width:0 + align-self:stretch are load-bearing: as a flex item the grid's
-  // default min-width:auto refuses to shrink below content, so overflow-x:auto
-  // never engages and the grid spills out of the modal. These make it fill the
-  // modal width and scroll internally instead.
+  &__presets, &__bars {
+    display: flex;
+    gap: 0.35rem;
+    overflow-x: auto;
+    button {
+      flex: 0 0 auto;
+      min-width: 2.35rem;
+      min-height: 2.35rem;
+      border: 1px solid var(--piano-border, #3a3a48);
+      border-radius: 999px;
+      background: var(--piano-surface-2, #1b1b27);
+      color: var(--piano-fg, #dde);
+      cursor: pointer;
+      &.is-on { border-color: var(--piano-role-groove, #ff5a6a); color: var(--piano-role-groove, #ff8792); }
+    }
+  }
+  &__presets { justify-content: center; }
+  &__bars { justify-content: flex-start; }
+
+  // Only one bar is edited at a time. This preserves 44px-class touch targets
+  // even when the musical loop is 8 or 16 bars long.
   &__grid {
     display: flex;
     flex-direction: column;
@@ -22,7 +37,7 @@
     min-width: 0;
     align-self: stretch;
   }
-  &__row { display: flex; align-items: center; gap: 0.6rem; width: max-content; }
+  &__row { display: flex; align-items: center; gap: 0.6rem; width: 100%; }
   &__row-label {
     position: sticky;
     left: 0;
@@ -36,13 +51,14 @@
   }
   &__cells {
     display: grid;
-    grid-template-columns: repeat(var(--steps), 1.5rem);
-    grid-auto-rows: 1.5rem;
+    grid-template-columns: repeat(16, minmax(1.7rem, 1fr));
+    grid-auto-rows: 2rem;
     gap: 3px;
+    flex: 1;
   }
   &__cell {
-    width: 1.5rem;
-    height: 1.5rem;
+    min-width: 1.7rem;
+    height: 2rem;
     border-radius: 4px;
     border: 1px solid var(--piano-border, #2c2c3a);
     background: var(--piano-surface-2, #14141c);
@@ -55,5 +71,5 @@
   }
 
   &__actions { display: flex; gap: 0.6rem; justify-content: flex-end; }
-  &__cancel { background: var(--piano-surface-2, #1b1b27); border-color: var(--piano-border, #3a3a48); color: var(--piano-fg, #dde); }
+  &__clear, &__cancel { background: var(--piano-surface-2, #1b1b27); border-color: var(--piano-border, #3a3a48); color: var(--piano-fg, #dde); }
 }

@@ -9,7 +9,8 @@
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
-import { SongView, entryStartBlock, entryIndexOfBlock } from './SongView.jsx';
+import { SongView } from './SongView.jsx';
+import { entryStartBlock, entryIndexOfBlock } from './songViewModel.js';
 import { STRUCTURE_TEMPLATES } from './structureTemplates.js';
 import {
   draftReducer, promote, applyTemplate, setArrangement, ActionTypes,
@@ -52,6 +53,7 @@ function renderView(draft, props = {}) {
     onStartFromJam: vi.fn(),
     onApplyTemplate: vi.fn(),
     onUseJam: vi.fn(),
+    onFromMyLoops: vi.fn(),
     onOpenSection: vi.fn(),
     onQueueJump: vi.fn(),
   };
@@ -148,12 +150,12 @@ describe('structure rail', () => {
     expect(seeds[0]).toBe(seeds[1]);
   });
 
-  it('empty template sections render as dashed fillable slots with the Save stub in the footer', () => {
+  it('empty template sections render as dashed fillable slots without a fake Save action', () => {
     const { container } = renderView(templatedDraft());
     expect(screen.getAllByRole('listitem')).toHaveLength(POP.arrangement.length);
     expect(container.querySelectorAll('.piano-song-view__slot--empty')).toHaveLength(POP.arrangement.length);
     expect(screen.getAllByText('fill me').length).toBeGreaterThan(0);
-    expect(screen.getByRole('button', { name: /save song — coming soon/i })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: /save song/i })).toBeNull();
   });
 
   it('the rail ends with an "add a new section" control that dispatches ADD_SECTION (grow the song past the first part)', () => {
@@ -180,11 +182,19 @@ describe('fill sheet', () => {
     expect(screen.queryByRole('dialog')).toBeNull(); // sheet closes
   });
 
-  it('"Use current jam" is disabled without jam layers; "From My Loops" is a disabled stub', () => {
+  it('disables unavailable fill sources instead of presenting dead actions', () => {
     renderView(templatedDraft(), { hasJamLayers: false });
     fireEvent.click(screen.getByRole('button', { name: 'Intro slot 1' }));
     expect(screen.getByRole('button', { name: 'Use current jam' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'From My Loops' })).toBeDisabled();
+  });
+
+  it('"From My Loops" hands the exact empty section to the shell when saved material exists', () => {
+    const { onFromMyLoops } = renderView(templatedDraft(), { hasMyLoops: true });
+    fireEvent.click(screen.getByRole('button', { name: 'Verse slot 2' }));
+    fireEvent.click(screen.getByRole('button', { name: 'From My Loops' }));
+    expect(onFromMyLoops).toHaveBeenCalledWith('sec-2');
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('"Open in Loop to build" hands the section to the shell', () => {
@@ -277,19 +287,28 @@ describe('section action sheet', () => {
 // ── scene launch (playback) ──────────────────────────────────────────────────
 
 describe('persistence wiring (Task 8.2)', () => {
-  it('footer Save enabled when onSaveSong is provided; saves with no typed title (default name)', () => {
+  it('a new draft exposes one unambiguous Save action', () => {
     const onSaveSong = vi.fn();
     const { getByRole, queryByRole } = renderView(filledDraft(), { onSaveSong });
-    // No text input in the kiosk — no title field; Save fires with no argument
-    // so the store stamps a default timestamped name.
+    // No text input in the kiosk — the store stamps a default title.
     expect(queryByRole('textbox')).toBeNull();
     fireEvent.click(getByRole('button', { name: 'Save song' }));
-    expect(onSaveSong).toHaveBeenCalledWith();
+    expect(onSaveSong).toHaveBeenCalledWith('save-as');
+    expect(queryByRole('button', { name: 'Save as new' })).toBeNull();
   });
 
-  it('keeps the disabled "coming soon" stub when onSaveSong is absent', () => {
-    const { getByRole } = renderView(filledDraft());
-    expect(getByRole('button', { name: /save song — coming soon/i })).toBeDisabled();
+  it('a loaded/saved song makes Update and Save As explicit', () => {
+    const onSaveSong = vi.fn();
+    renderView(filledDraft(), { onSaveSong, savedSong: { id: 'song-1', title: 'Tune' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Update song' }));
+    expect(onSaveSong).toHaveBeenCalledWith('update');
+    fireEvent.click(screen.getByRole('button', { name: 'Save as new' }));
+    expect(onSaveSong).toHaveBeenCalledWith('save-as');
+  });
+
+  it('does not advertise persistence when onSaveSong is absent', () => {
+    const { queryByRole } = renderView(filledDraft());
+    expect(queryByRole('button', { name: /save song/i })).toBeNull();
   });
 
   it('a filled section exposes "Keep to My Loops" when onKeepSection is provided', () => {

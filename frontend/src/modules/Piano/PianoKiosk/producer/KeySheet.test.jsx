@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { KeySheet, shortestKeyDelta } from './KeySheet.jsx';
+import { KeySheet } from './KeySheet.jsx';
+import { shortestKeyDelta } from './keyModel.js';
 
 describe('shortestKeyDelta', () => {
   it('takes the shortest signed path (−6..+5)', () => {

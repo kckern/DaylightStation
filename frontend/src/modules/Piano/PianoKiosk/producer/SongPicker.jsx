@@ -27,7 +27,8 @@
  */
 import { useMemo, useRef, useState, useEffect } from 'react';
 import getLogger from '../../../../lib/logging/Logger.js';
-import { MaterialGlyph, seedFor } from './MaterialGlyph.jsx';
+import { MaterialGlyph } from './MaterialGlyph.jsx';
+import { seedFor } from './materialGlyphModel.js';
 import './SongPicker.scss';
 
 const REMOVE_ARM_MS = 3000;
