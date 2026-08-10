@@ -14,6 +14,9 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 describe('Adaptive Study emulator journey documentation', () => {
   it('defines the complete code-to-QR key journey', () => {
     const specification = parseYaml(readFileSync(path.join(HERE, '..', 'testing', 'adaptive-journey.yml'), 'utf8'));
+    expect(specification.scenarios.map(({ id }) => id)).toEqual([
+      'adaptive-v1-journey', 'missing-module-relay',
+    ]);
     const scenario = normalizeTi86MameScenario(specification.scenarios[0]);
     expect(scenario.id).toBe('adaptive-v1-journey');
     expect(scenario.steps.map(({ capture }) => capture)).toEqual([
@@ -23,19 +26,29 @@ describe('Adaptive Study emulator journey documentation', () => {
       '12-quiz-choices', '13-durable-result', '14-result-qr',
     ]);
     expect(scenario.steps.at(-1).expectSymbols).toEqual(['QR V5/M']);
+    const missingScenario = normalizeTi86MameScenario(specification.scenarios[1]);
+    expect(missingScenario.steps.filter(({ capture }) => /^\d{2}-/.test(capture)).map(({ capture }) => capture)).toEqual([
+      '01-missing-code-ready', '02-connect-relay', '03-sync-paused', '04-return-to-code',
+    ]);
   });
 
   it('compiles report frames into digest-bearing standalone HTML', () => {
     const directory = mkdtempSync(path.join(tmpdir(), 'schoolcalc-journey-doc-'));
     const frames = path.join(directory, 'adaptive-v1-journey');
+    const missingFrames = path.join(directory, 'missing-module-relay');
     mkdirSync(frames);
+    mkdirSync(missingFrames);
     writeFileSync(path.join(frames, '01-enter-code.png'), Buffer.from('89504e470d0a1a0a', 'hex'));
+    writeFileSync(path.join(missingFrames, '01-missing-code-ready.png'), Buffer.from('89504e470d0a1a0b', 'hex'));
     writeFileSync(path.join(directory, 'report.json'), JSON.stringify({
       schema: 'schoolcalc.ti86-mame-scenario-report/v1', releaseId: 'release123',
       rom: { version: '1.4', sha1: 'abc123' },
       scenarios: [{
         id: 'adaptive-v1-journey', description: 'Exact journey',
         frames: [{ capture: '01-enter-code', pc: 'D748', sha256: 'frame123', fileName: '01-enter-code.png' }],
+      }, {
+        id: 'missing-module-relay', description: 'Missing module journey',
+        frames: [{ capture: '01-missing-code-ready', pc: 'D748', sha256: 'frame456', fileName: '01-missing-code-ready.png' }],
       }],
     }));
     const output = path.join(directory, 'docs', 'journey.html');
@@ -44,12 +57,20 @@ describe('Adaptive Study emulator journey documentation', () => {
     const html = readFileSync(output, 'utf8');
     expect(html).toContain('Exact TI-86 / MAME evidence');
     expect(html).toContain('MAME PASS');
-    expect(html).toContain('scenario adaptive-v1-journey');
-    expect(html).toContain('passed every configured text, transition, and Version-5/M QR assertion');
+    expect(html).toContain('2 scenarios');
+    expect(html).toContain('Installed study');
+    expect(html).toContain('Study not loaded yet');
+    expect(html).toContain('passed every configured text, transition, recovery, and Version-5/M QR assertion');
+    expect(html).toContain('.screen img{display:block;width:512px;max-width:100%;height:auto;');
+    expect(html).toContain('outline:10px solid #111a14');
+    expect(html).not.toContain('aspect-ratio:2/1');
+    expect(html).not.toContain('border:10px solid #111a14');
     expect(html).toContain('release release123');
     expect(html).toContain('ROM SHA-1 abc123');
     expect(html).toContain('frame SHA-256 frame123');
     expect(readFileSync(path.join(directory, 'docs', 'adaptive-study-journey', '01-01-enter-code.png')))
       .toEqual(Buffer.from('89504e470d0a1a0a', 'hex'));
+    expect(readFileSync(path.join(directory, 'docs', 'adaptive-study-journey', 'missing-01-01-missing-code-ready.png')))
+      .toEqual(Buffer.from('89504e470d0a1a0b', 'hex'));
   });
 });

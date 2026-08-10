@@ -1493,23 +1493,26 @@ shell_render_code:
         call ui_mode_set
         call ui_select_compact
         ld hl,code_instruction
-        ld b,2
+        ld b,32
         ld c,15
         call ui_draw_text
         call shell_draw_code_display
         ld a,(shell_code_status)
         ld hl,code_prompt
+        ld b,36
         or a
         jr z,shell_code_status_ready
         cp 1
         ld hl,code_short
+        ld b,32
         jr z,shell_code_status_ready
         cp 2
         ld hl,code_missing
+        ld b,24
         jr z,shell_code_status_ready
         ld hl,code_busy
+        ld b,26
 shell_code_status_ready:
-        ld b,2
         ld c,40
         jp ui_draw_text
 
@@ -1560,7 +1563,10 @@ shell_draw_code_done:
 ; A = dash or digit. The compact table order is -0123456789.
 shell_code_glyph_pointer:
         cp '-'
-        jr z,shell_code_glyph_index_ready
+        jr nz,shell_code_glyph_digit
+        xor a
+        jr shell_code_glyph_index_ready
+shell_code_glyph_digit:
         sub '0' - 1
 shell_code_glyph_index_ready:
         ld l,a
@@ -1776,7 +1782,7 @@ shell_softkey_f1_not_code:
         jr nz,shell_softkey_f1_ready
         ld hl,softkey_qr
 shell_softkey_f1_ready:
-        ld b,5
+        ld b,2
         ld c,58
         call ui_draw_text
         ld hl,softkey_empty
@@ -1936,16 +1942,13 @@ sync_presence_rejected: defb "Queue/content preserved",0
 sync_safety_safe:       defb "Safe to unplug",0
 focus_chevron:          defb ">",0
 softkey_home:           defb "HOME",0
-softkey_qr:             defb "QR",0
-softkey_catalog:        defb "CAT",0
-softkey_review:         defb "OPEN",0
+softkey_qr:             defb " QR",0
 softkey_sync:           defb "OFF",0
 softkey_cable:          defb "CABLE",0
 softkey_user:           defb "USER",0
 softkey_code:           defb "CODE",0
-softkey_open:           defb "OPEN",0
+softkey_open:           defb " OPEN",0
 softkey_resume:         defb "RESUME",0
-softkey_back:           defb "BACK",0
 softkey_clear:          defb "CLR",0
 softkey_empty:          defb 0
 ; Direct-input scan code pairs for the TI-86's physical numeric keypad.

@@ -2267,9 +2267,9 @@ sync_ui_cable:              defb "CABLE",0
 sync_ui_linked:             defb "LINKED",0
 sync_ui_done:               defb "DONE",0
 sync_ui_stopped:            defb "STOP",0
-sync_ui_checking:           defb "Cable: checking...",0
-sync_ui_wait_relay:         defb "Relay: waiting",0
-sync_ui_no_transfer:        defb "No data moving",0
+sync_ui_checking:           defb "CONNECT RELAY",0
+sync_ui_wait_relay:         defb "WAITING FOR LINK",0
+sync_ui_no_transfer:        defb "EXIT PAUSES SAFELY",0
 sync_ui_connected:          defb "Cable: connected",0
 sync_ui_verified:           defb "Relay: verified",0
 sync_ui_negotiated:         defb "Session negotiated",0

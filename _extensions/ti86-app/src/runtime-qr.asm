@@ -1424,8 +1424,8 @@ scqr_error_title: defb "SCHOOLCALC / QR",0
 scqr_error_text: defb "NO QR RESULT. FINISH A QUIZ.",0
 scqr_dsq_name: defb 0x0C,3,"DSQ",0,0,0,0,0
 scqr_dsqout_name: defb 0x0C,6,"DSQOUT",0,0
-scqr_scan_instruction: defb "QR RESULT F1=SCANNED",0
-scqr_done_label: defb "MARK",0
+scqr_scan_instruction: defb "SCAN RESULT",0
+scqr_done_label: defb "DONE",0
 scqr_later_label: defb "LATER",0
 ; SCO1: fixed envelope header, queue-base sequence, 170 receipt bits, CRC.
 scqr_output_prefix: defb "SCO1",1,25,0

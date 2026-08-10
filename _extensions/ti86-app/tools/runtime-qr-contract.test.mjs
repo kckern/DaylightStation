@@ -69,6 +69,9 @@ describe('TI-86 SCQR runtime contract', () => {
     expect(SOURCE).toMatch(/scqr_mark_output_done:[\s\S]{0,900}scqr_store_output_receipt/);
     expect(SOURCE).toMatch(/scqr_store_output_receipt:[\s\S]{0,520}_createstrng/);
     expect(SOURCE).toMatch(/scqr_draw_output_rail:[\s\S]{0,360}scqr_done_label[\s\S]{0,180}scqr_later_label/);
+    expect(SOURCE).toContain('scqr_scan_instruction: defb "SCAN RESULT",0');
+    expect(SOURCE).toContain('scqr_done_label: defb "DONE",0');
+    expect(SOURCE).not.toContain('F1=SCANNED');
   });
 
   it('uses a fixed shell-owned dispatch and leaves the queue as the recovery point', () => {
