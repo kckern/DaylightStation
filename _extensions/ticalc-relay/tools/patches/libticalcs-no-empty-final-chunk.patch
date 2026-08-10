@@ -1,0 +1,5 @@
+--- a/src/dbus_pkt.cc
++++ b/src/dbus_pkt.cc
+@@ -285 +285 @@
+-			if (!ret)
++			if (!ret && r)
