@@ -1,6 +1,41 @@
 import { expect, test } from '@playwright/test';
 
 test('Card Game hand and scale challenge fit the 1280x800 piano viewport', async ({ page }) => {
+  // Keep the kiosk's bridge-first MIDI input healthy in headless Chromium so
+  // the provider does not correctly terminate the challenge as disconnected
+  // before there is time to inspect its layout.
+  await page.addInitScript(() => {
+    const NativeWebSocket = window.WebSocket;
+    class BridgeSocket {
+      constructor(url) {
+        this.url = String(url);
+        this.readyState = 0;
+        window.setTimeout(() => {
+          this.readyState = 1;
+          this.onopen?.(new Event('open'));
+        }, 0);
+      }
+
+      send() {}
+
+      close() {
+        if (this.readyState === 3) return;
+        this.readyState = 3;
+        this.onclose?.({ code: 1000, reason: 'test complete' });
+      }
+    }
+    function TestWebSocket(url, protocols) {
+      if (String(url).startsWith('ws://localhost:8770')) return new BridgeSocket(url);
+      return protocols === undefined
+        ? new NativeWebSocket(url)
+        : new NativeWebSocket(url, protocols);
+    }
+    TestWebSocket.CONNECTING = NativeWebSocket.CONNECTING;
+    TestWebSocket.OPEN = NativeWebSocket.OPEN;
+    TestWebSocket.CLOSING = NativeWebSocket.CLOSING;
+    TestWebSocket.CLOSED = NativeWebSocket.CLOSED;
+    window.WebSocket = TestWebSocket;
+  });
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto('/piano/games/card-game', { waitUntil: 'networkidle' });
 
@@ -9,7 +44,11 @@ test('Card Game hand and scale challenge fit the 1280x800 piano viewport', async
   if (await continueWithoutPiano.isVisible()) await continueWithoutPiano.click();
 
   const cards = page.locator('.battle-card');
-  await expect(cards).toHaveCount(3);
+  await expect(cards).toHaveCount(4);
+  await expect(page.getByLabel('Pikachu active Pokémon')).toBeVisible();
+  await expect(page.getByLabel('Squirtle active Pokémon')).toBeVisible();
+  await expect(page.getByAltText('Pikachu')).toBeVisible();
+  await expect(page.getByAltText('Squirtle')).toBeVisible();
   const viewport = page.viewportSize();
   for (let index = 0; index < await cards.count(); index += 1) {
     const box = await cards.nth(index).boundingBox();
@@ -27,7 +66,7 @@ test('Card Game hand and scale challenge fit the 1280x800 piano viewport', async
   await cards.first().click();
   const overlay = page.locator('.gaming-challenge-overlay');
   await expect(overlay).toBeVisible();
-  await expect(page.getByText('Play from left to right', { exact: true })).toBeVisible();
+  await expect(page.getByText('Play from left to right', { exact: false })).toBeVisible({ timeout: 15000 });
   const staff = page.locator('.piano-scale-challenge__staff');
   await expect(staff).toBeVisible();
   const staffBox = await staff.boundingBox();

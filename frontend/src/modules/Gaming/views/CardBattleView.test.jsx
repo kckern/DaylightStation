@@ -28,6 +28,59 @@ describe('CardBattleView', () => {
     expect(screen.queryByText(/notes$/i)).toBeNull();
   });
 
+  it('renders the Pokémon theme from authored Pokédex metadata and proxied SVGs', () => {
+    const definition = structuredClone(scaleClashDefinition);
+    definition.title = 'Scale Stadium';
+    definition.presentation = { theme: 'pokemon-tcg', data_source: 'PokeAPI' };
+    definition.card_battle.player = {
+      ...definition.card_battle.player,
+      name: 'Pikachu',
+      pokemon: {
+        dex: '0025', name: 'Pikachu', genus: 'Mouse Pokémon', types: ['electric'],
+        stats: { hp: 35, speed: 90 }, assets: { svg: 'games/pokemon/svg/0025-pikachu-gen1.svg' },
+      },
+    };
+    definition.card_battle.enemy = {
+      ...definition.card_battle.enemy,
+      name: 'Squirtle',
+      weakness: { type: 'electric', multiplier: 1.5 },
+      pokemon: {
+        dex: '0007', name: 'Squirtle', genus: 'Tiny Turtle Pokémon', types: ['water'],
+        stats: { hp: 44, defense: 65 }, assets: { svg: 'games/pokemon/svg/0007-squirtle-gen1.svg' },
+      },
+    };
+    for (const card of Object.values(definition.cards)) card.move_type = 'electric';
+
+    const { container } = render(
+      <CardBattleView session={makeSession(definition)} onChoose={vi.fn()} onEndTurn={vi.fn()} onAbort={vi.fn()} />,
+    );
+
+    const battle = container.querySelector('.card-battle--pokemon');
+    expect(battle).toBeTruthy();
+    expect(battle.dataset).toMatchObject({
+      gameTheme: 'pokemon-tcg', battleStatus: 'active', turn: '1', winner: '',
+    });
+    const moveCards = [...container.querySelectorAll('[data-card-instance-id]')];
+    expect(moveCards).toHaveLength(4);
+    expect(moveCards.every((card) => (
+      card.dataset.cardTitle
+      && card.dataset.cardType
+      && Number.isFinite(Number(card.dataset.cardCost))
+      && Number.isFinite(Number(card.dataset.cardEffect))
+    ))).toBe(true);
+    expect(screen.getByText('Move deck')).toBeTruthy();
+    expect(screen.getByLabelText('Pikachu active Pokémon')).toBeTruthy();
+    expect(screen.getByLabelText('Squirtle active Pokémon')).toBeTruthy();
+    expect(screen.getByText('Mouse Pokémon · Speed 90')).toBeTruthy();
+    expect(screen.getByText('Tiny Turtle Pokémon · Defense 65')).toBeTruthy();
+    expect(screen.getByAltText('Pikachu').getAttribute('src')).toBe(
+      '/api/v1/proxy/media/stream/games%2Fpokemon%2Fsvg%2F0025-pikachu-gen1.svg',
+    );
+    expect(screen.getByAltText('Squirtle').getAttribute('src')).toBe(
+      '/api/v1/proxy/media/stream/games%2Fpokemon%2Fsvg%2F0007-squirtle-gen1.svg',
+    );
+  });
+
   it('makes a no-playable-card state visible instead of silently disabling the hand', () => {
     const definition = structuredClone(scaleClashDefinition);
     for (const card of Object.values(definition.cards)) card.cost = 99;
