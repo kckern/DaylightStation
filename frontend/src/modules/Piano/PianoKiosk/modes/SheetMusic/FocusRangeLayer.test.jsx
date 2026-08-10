@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
 import FocusRangeLayer, { rangeBands } from './FocusRangeLayer.jsx';
 
 const measures = [
@@ -120,5 +122,30 @@ describe('rangeBands — the band lands between notes, never through them', () =
     // rather than stopping dead on its centre.
     const [band] = rangeBands(MEAS, BOXES, { inMeasure: 2, outMeasure: 2 });
     expect(band.right).toBeGreaterThan(200);
+  });
+});
+
+describe('PianoApp.scss — the loop wears its own colour', () => {
+  // Pinned by SELECTOR, not by a colour value appearing somewhere in the file.
+  // The first attempt at this recoloured `.piano-empty__action` instead, because
+  // it happened to carry the same background value earlier in the stylesheet.
+  const rule = (selector) => {
+    const scss = readFileSync(fileURLToPath(new URL('../../../../../Apps/PianoApp.scss', import.meta.url)), 'utf8');
+    const m = scss.match(new RegExp(`\\${selector}\\s*\\{[^}]*\\}`, 's'));
+    return m?.[0] ?? null;
+  };
+
+  it('the range band is the muted orange, never the accent green', () => {
+    const block = rule('.piano-score-range-tint');
+    expect(block).toBeTruthy();
+    expect(block).toMatch(/background:\s*rgba\(200,\s*129,\s*63/);
+    expect(block).not.toContain('#2ec46f'); // green means a correctly played note
+  });
+
+  it('the retry button keeps the accent green — it is not a loop', () => {
+    const block = rule('.piano-empty__action');
+    expect(block).toBeTruthy();
+    expect(block).toContain('#2ec46f');
+    expect(block).not.toMatch(/rgba\(200,\s*129,\s*63/);
   });
 });

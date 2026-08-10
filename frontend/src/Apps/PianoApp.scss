@@ -3041,10 +3041,7 @@
   margin-top: 0.8rem; appearance: none; cursor: pointer;
   padding: 0.5rem 1rem; border-radius: var(--r-md, 12px);
   border: 1px solid var(--piano-accent, #2ec46f); color: var(--piano-accent, #2ec46f);
-  // The loop's own colour — a muted orange, deliberately not the accent green a
-  // correctly played note wears. It bounds a region rather than judging it, so
-  // it stays low enough to read the engraving straight through.
-  background: rgba(200, 129, 63, 0.13);
+  background: color-mix(in srgb, var(--piano-accent, #2ec46f) 12%, transparent);
   font: inherit; font-weight: 600;
 }
 
@@ -3098,7 +3095,10 @@
 // you can see but not grab is a decoy target.
 .piano-score-range-tint {
   position: absolute; z-index: 3; pointer-events: none;
-  background: color-mix(in srgb, var(--piano-accent, #2ec46f) 12%, transparent);
+  // The loop's own colour — a muted orange, deliberately not the accent green a
+  // correctly played note wears. It marks where you are working; it does not
+  // judge how you are doing. Low enough to read the engraving straight through.
+  background: rgba(200, 129, 63, 0.13);
   border-radius: 4px;
 }
 
