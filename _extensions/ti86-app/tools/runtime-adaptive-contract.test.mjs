@@ -32,6 +32,18 @@ describe('SchoolCalc Adaptive Study SCLEARN contract', () => {
     expect(SOURCE).toMatch(/adaptive_quiz_complete:[\s\S]*call adaptive_save[\s\S]*call adaptive_launch_queue/);
   });
 
+  it('renders persisted outcome counts on their intended summary rows', () => {
+    expect(SOURCE).toMatch(
+      /adaptive_render_count_line:[\s\S]*?push bc[\s\S]*?call ui_draw_text[\s\S]*?call adaptive_format_byte[\s\S]*?pop bc[\s\S]*?ld b,108[\s\S]*?jp ui_draw_text/,
+    );
+  });
+
+  it('labels quiz screens with the immutable artifact subject', () => {
+    expect(SOURCE).toMatch(/adaptive_validate_artifact:[\s\S]*?call adaptive_load_subject/);
+    expect(SOURCE).toMatch(/adaptive_load_subject:[\s\S]*?adaptive_key_context[\s\S]*?adaptive_key_subject[\s\S]*?adaptive_key_title[\s\S]*?ld b,18/);
+    expect(SOURCE).toMatch(/adaptive_render_quiz_header:[\s\S]*?adaptive_quiz_title[\s\S]*?adaptive_subject_title/);
+  });
+
   it('keeps F2 blank and exposes the exact front/back rails', () => {
     const rail = SOURCE.match(/adaptive_render_card_rail:[\s\S]*?; ---------------------------------------------------------------------------\n; Summary/)?.[0];
     expect(rail).toBeTruthy();

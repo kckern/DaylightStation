@@ -34,6 +34,11 @@ pause path. After study the summary exposes `F5 QUIZ`; after the result is
 durably queued, Result exposes QR and return-to-code actions. Re-entering the
 completed local code reopens Result.
 
+The study summary is four aligned label/value rows—`KNOWN`, `HARD`, `AGAIN`,
+and `UNRESOLVED`—and every row includes its numeric count. Quiz screens replace
+the study title with `QUIZ: <subject>` from the immutable artifact while keeping
+the current item position at the right edge.
+
 The adaptive card body is always bounded by a one-pixel frame at x=1..126 and
 y=9..54. Text-only pages are centered by measured line width and total block
 height. A graphic page divides the interior into an upper vector canvas and a
@@ -46,6 +51,13 @@ The v1 QR template renders a Version-5/M symbol whose actual encoded payload is
 at most 69 bytes. It does not treat optical display as acknowledgement. Plain
 recovery text is mandatory for unknown, closed, unauthorized, incompatible,
 memory-blocked, and interrupted code resolutions.
+
+Before relay verification, Sync uses a bordered four-position moving `LINK`
+meter. It is explicitly indeterminate: motion means the calculator is still
+polling, not that content bytes have arrived. A verified handshake replaces it
+with the existing direction/phase view and determinate item bar. Terminal
+headers use `DONE` for success and `STOP` for blocked, cancelled, disconnected,
+or protocol-failure states, with safe-unplug guidance in the body.
 
 ## Taxonomy
 

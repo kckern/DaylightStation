@@ -18,8 +18,9 @@ const JOURNEY_COPY = Object.freeze({
 const MISSING_COPY = Object.freeze({
   '01-missing-code-ready': 'Unresolved code',
   '02-connect-relay': 'Connect the relay',
-  '03-sync-paused': 'Safe paused recovery',
-  '04-return-to-code': 'Return to Enter Code',
+  '03-link-active': 'Live relay search indicator',
+  '04-sync-paused': 'Safe paused recovery',
+  '05-return-to-code': 'Return to Enter Code',
 });
 const options = parseArguments(process.argv.slice(2));
 const report = JSON.parse(readFileSync(options.report, 'utf8'));
