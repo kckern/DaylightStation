@@ -1,7 +1,8 @@
 # Gamified Learning — First-Wave Structural Implementation
 
 **Date:** 2026-08-09
-**Status:** Implemented scaffold; field gameplay and later generalization remain open.
+**Status:** Implemented scaffold; player-experience field gate failed. Freeze generalization
+until the tactical vertical slice in the card-game audit earns replay willingness.
 **Design context:** `2026-08-09-gamified-learning-framework-design.md`
 
 ## Purpose
@@ -53,7 +54,9 @@ where the next implementation must supply evidence.
 ### Field pilot — next
 
 - [x] Author a minimal YAML card set and a short win/loss loop using scale interstitials.
-- [ ] Field-test balance, tutorial clarity, and whether the loop actually sustains interest.
+- [x] Field-test balance, tutorial clarity, and whether the loop actually sustains interest.
+  Initial result: **revise**. See
+  `../audits/2026-08-09-card-game-player-experience-audit.md`.
 - [ ] Choose numeric gates for challenge duration, retry rate, abandonment, and replay
   willingness before supervised sessions begin.
 - [x] Add structured duration telemetry for prepare, start, first input, result, and
