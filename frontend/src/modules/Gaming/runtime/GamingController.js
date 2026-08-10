@@ -110,8 +110,25 @@ export class GamingController {
       let session = null;
       if (this.resumeSessionId) {
         try {
-          const candidate = await this.api.getSession(this.resumeSessionId, this.viewerId);
-          if (candidate.status === 'active' && candidate.game_id === this.gameId) session = candidate;
+          const [candidate, currentDefinition] = await Promise.all([
+            this.api.getSession(this.resumeSessionId, this.viewerId),
+            this.api.getDefinition(this.gameId),
+          ]);
+          const sameGame = candidate.status === 'active' && candidate.game_id === this.gameId;
+          const currentHash = currentDefinition.definition_hash || null;
+          const definitionMatches = candidate.definition_hash && candidate.definition_hash === currentHash;
+          if (sameGame && definitionMatches) {
+            session = candidate;
+          } else if (sameGame && !definitionMatches) {
+            this.logger.warn('gaming.session.resume-invalidated', {
+              gameId: this.gameId,
+              sessionId: this.resumeSessionId,
+              userId: this.viewerId,
+              pinnedDefinitionHash: candidate.definition_hash || null,
+              currentDefinitionHash: currentHash,
+              reason: 'definition_changed',
+            });
+          }
         } catch (error) {
           this.logger.warn('gaming.session.resume-missed', {
             gameId: this.gameId,

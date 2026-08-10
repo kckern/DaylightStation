@@ -16,6 +16,9 @@ async function request(url, options = {}) {
 
 export function createGamingApi() {
   return {
+    getDefinition(gameId) {
+      return request(`/api/v1/gaming/definitions/${encodeURIComponent(gameId)}`);
+    },
     createSession(input) {
       return request('/api/v1/gaming/sessions', { method: 'POST', body: JSON.stringify(input) });
     },

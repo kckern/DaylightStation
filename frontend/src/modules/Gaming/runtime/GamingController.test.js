@@ -7,7 +7,7 @@ import { createProviderRegistry } from './providerRegistry.js';
 function harness({ resumeStarted = false, definition = scaleClashDefinition, mutateState = null, runtimeResult = null, clock = () => 1000 } = {}) {
   let session = {
     session_id: 'game_test', game_id: 'scale-clash', status: 'active', revision: 0,
-    definition,
+    definition_hash: 'definition-current', definition,
     state: createInitialState(definition, { seed: 7, participants: [{ user_id: 'guest' }] }),
     events: [],
   };
@@ -28,6 +28,7 @@ function harness({ resumeStarted = false, definition = scaleClashDefinition, mut
     session = { ...session, revision: 3, state: outcome.state, interaction: deriveInteraction(outcome.state, session.definition, 'guest') };
   }
   const api = {
+    getDefinition: vi.fn(async () => ({ definition_hash: 'definition-current', definition })),
     createSession: vi.fn(async () => structuredClone(session)),
     getSession: vi.fn(async () => structuredClone(session)),
     applyCommand: vi.fn(async (_id, command) => {
@@ -67,6 +68,51 @@ function harness({ resumeStarted = false, definition = scaleClashDefinition, mut
 }
 
 describe('GamingController', () => {
+  it('starts a fresh battle instead of resuming a stale pinned definition', async () => {
+    const definition = structuredClone(scaleClashDefinition);
+    const state = createInitialState(definition, { seed: 7, participants: [{ user_id: 'guest' }] });
+    const response = (sessionId, definitionHash) => ({
+      session_id: sessionId,
+      game_id: 'scale-clash',
+      status: 'active',
+      revision: 0,
+      definition_hash: definitionHash,
+      definition,
+      state: structuredClone(state),
+      interaction: deriveInteraction(state, definition, 'guest'),
+      events: [],
+    });
+    const stale = response('game_stale', 'definition-old');
+    const fresh = response('game_fresh', 'definition-current');
+    const api = {
+      getSession: vi.fn(async () => structuredClone(stale)),
+      getDefinition: vi.fn(async () => ({ definition_hash: 'definition-current', definition })),
+      createSession: vi.fn(async () => structuredClone(fresh)),
+    };
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), child() { return this; } };
+    const controller = new GamingController({
+      api,
+      providerRegistry: createProviderRegistry([]),
+      gameId: 'scale-clash',
+      participants: [{ user_id: 'guest' }],
+      viewerId: 'guest',
+      resumeSessionId: 'game_stale',
+      logger,
+    });
+
+    await controller.start();
+
+    expect(api.createSession).toHaveBeenCalledOnce();
+    expect(controller.getSnapshot().session.session_id).toBe('game_fresh');
+    expect(logger.warn).toHaveBeenCalledWith('gaming.session.resume-invalidated', expect.objectContaining({
+      sessionId: 'game_stale',
+      pinnedDefinitionHash: 'definition-old',
+      currentDefinitionHash: 'definition-current',
+      reason: 'definition_changed',
+    }));
+    controller.dispose();
+  });
+
   it('drives the persisted challenge saga through one provider result', async () => {
     const { controller, api, runtime, logger } = harness();
     await controller.start();
