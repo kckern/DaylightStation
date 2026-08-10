@@ -1270,6 +1270,16 @@ export class Ti86SchoolCalcCodec extends ISchoolCalcCodec {
       reasons.push(`lesson exceeds ${RESULT_MODULE_MASK + 1} TI-86 modules`);
     } else {
       reasons.push(...ti86ProjectionReasons(bundle.lesson.modules, this.#nativeToolMapper));
+      if (bundle.lesson.modules.length === 2
+          && bundle.lesson.modules[0]?.type === 'flashcards'
+          && bundle.lesson.modules[1]?.type === 'quiz') {
+        const subjectTitle = bundle.context?.subject?.title;
+        const subjectReason = ti86TextReason(subjectTitle, 'Adaptive Study quiz subject');
+        if (subjectReason) reasons.push(subjectReason);
+        else if (Buffer.byteLength(subjectTitle, 'ascii') > 18) {
+          reasons.push('Adaptive Study quiz subject exceeds the 18-glyph TI-86 header budget');
+        }
+      }
     }
     return { compatible: reasons.length === 0, reasons: [...new Set(reasons)] };
   }

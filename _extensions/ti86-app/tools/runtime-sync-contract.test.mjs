@@ -47,6 +47,13 @@ describe('TI-86 cooperative foreground-sync runtime', () => {
     expect(SOURCE).not.toContain('No data moving');
   });
 
+  it('animates an indeterminate link meter while polling for an absent relay', () => {
+    expect(SOURCE).toMatch(/link_cancel_probe:[\s\S]*?sync_connected[\s\S]*?call z,sync_wait_activity_tick/);
+    expect(SOURCE).toMatch(/sync_wait_activity_tick:[\s\S]*?sync_wait_divider[\s\S]*?and 3[\s\S]*?jp sync_draw_wait_activity/);
+    expect(SOURCE).toMatch(/sync_draw_wait_activity:[\s\S]*?ld b,24[\s\S]*?ld d,101[\s\S]*?sync_wait_phase[\s\S]*?ld d,20/);
+    expect(SOURCE).toContain('sync_ui_activity:           defb "LINK",0');
+  });
+
   it('locks the calculator offer and frame envelope to the relay SCF1 v1 contract', () => {
     expect(asmEqu('SCF_FRAME_HEADER_BYTES')).toBe(cxxConstant('FRAME_HEADER_BYTES'));
     expect(asmEqu('SCF_FRAME_MAX_BYTES')).toBe(

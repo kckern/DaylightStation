@@ -28,7 +28,7 @@ describe('Adaptive Study emulator journey documentation', () => {
     expect(scenario.steps.at(-1).expectSymbols).toEqual(['QR V5/M']);
     const missingScenario = normalizeTi86MameScenario(specification.scenarios[1]);
     expect(missingScenario.steps.filter(({ capture }) => /^\d{2}-/.test(capture)).map(({ capture }) => capture)).toEqual([
-      '01-missing-code-ready', '02-connect-relay', '03-sync-paused', '04-return-to-code',
+      '01-missing-code-ready', '02-connect-relay', '03-link-active', '04-sync-paused', '05-return-to-code',
     ]);
   });
 

@@ -254,6 +254,14 @@ Plain recovery outcomes are required:
 | insufficient verified memory | `NOT ENOUGH MEMORY`; do not remove prior usable content |
 | interrupted/invalid transfer | `SYNC INTERRUPTED - TRY AGAIN`; ignore uncommitted staging |
 
+While waiting for the first relay response, the calculator MUST show a visibly
+changing indeterminate link indicator so a learner can distinguish active
+polling from a frozen calculator. The indicator MUST NOT imply byte or percent
+progress before a verified handshake. After connection, it is replaced by the
+verified direction/phase and determinate item progress. Every terminal state
+MUST say whether the transfer completed or stopped and whether it is safe to
+unplug.
+
 Codes are never logged as credentials or used to bypass relay/device
 authentication. Relay HTTP authentication and the protected TI electrical/link
 layers remain as previously specified.
@@ -326,12 +334,15 @@ rating.
 
 ## 11. Study summary, quiz, and local completion
 
-After every card retires, show a compact summary of known, hard, again, and
-unresolved outcomes. `F5 QUIZ` starts the one prescribed quiz. There is no
-same-session restudy or remediation loop.
+After every card retires, show a compact summary with an explicit numeric count
+for each of known, hard, again, and unresolved. Labels without values are not a
+summary. `F5 QUIZ` starts the one prescribed quiz. There is no same-session
+restudy or remediation loop.
 
 The quiz:
 
+- labels every prompt and choice screen `QUIZ: <subject>` using the immutable
+  artifact subject, with the item position retained at right;
 - uses the persisted quiz IDs and order;
 - presents exactly one A-E choice per item;
 - records one four-bit choice value per item;

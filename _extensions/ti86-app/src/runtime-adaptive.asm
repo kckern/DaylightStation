@@ -500,6 +500,8 @@ adaptive_choice_address:
 ; Artifact navigation
 
 adaptive_validate_artifact:
+        call adaptive_load_subject
+        ret c
         xor a
         call adaptive_open_module
         ret c
@@ -517,6 +519,47 @@ adaptive_validate_artifact:
         cp b
         jp nz,adaptive_invalid
         or a
+        ret
+
+; Copy the learner-facing subject from the immutable artifact. The compiler
+; limits this header value to 18 compact glyphs, and the runtime independently
+; rejects anything longer rather than clipping it into the quiz position.
+adaptive_load_subject:
+        ld hl,adaptive_artifact_name
+        ld de,adaptive_scp1_magic
+        call sc_record_open
+        ret c
+        ld de,(sc_record_root_offset)
+        ld hl,adaptive_key_context
+        call sc_map_find_literal
+        ret c
+        ld hl,adaptive_key_subject
+        call sc_map_find_literal
+        ret c
+        ld hl,adaptive_key_title
+        call sc_map_find_literal
+        ret c
+        call sc_copy_node_string
+        ret c
+        ld a,(hl)
+        or a
+        jp z,adaptive_invalid
+        ld de,adaptive_subject_title
+        ld b,18
+adaptive_subject_copy:
+        ld a,(hl)
+        or a
+        jr z,adaptive_subject_done
+        ld (de),a
+        inc hl
+        inc de
+        djnz adaptive_subject_copy
+        ld a,(hl)
+        or a
+        jp nz,adaptive_invalid
+adaptive_subject_done:
+        xor a
+        ld (de),a
         ret
 
 ; A = module index. Opens the immutable SCP1 and captures its bank items.
@@ -1252,11 +1295,15 @@ adaptive_summary_wait:
         jp adaptive_render_quiz
 
 adaptive_render_count_line:
+        ; Both helpers reuse C. Keep the row stable until the number has been
+        ; formatted, or the value can be drawn outside the 64-pixel LCD.
+        push bc
         push af
         ld b,2
         call ui_draw_text
         pop af
         call adaptive_format_byte
+        pop bc
         ld hl,adaptive_number
         ld b,108
         jp ui_draw_text
@@ -1634,10 +1681,24 @@ adaptive_render_header:
         call ui_fill_rect
         call ui_mode_clear
         call ui_select_compact
+        ld a,(scstate_record + AD_PHASE)
+        cp AD_PHASE_QUIZ
+        jr z,adaptive_render_quiz_header
         ld hl,adaptive_title
         ld b,1
         ld c,1
         call ui_draw_text
+        jr adaptive_render_header_position
+adaptive_render_quiz_header:
+        ld hl,adaptive_quiz_title
+        ld b,1
+        ld c,1
+        call ui_draw_text
+        ld hl,adaptive_subject_title
+        ld b,25
+        ld c,1
+        call ui_draw_text
+adaptive_render_header_position:
         ld a,(scstate_record + AD_PHASE)
         cp AD_PHASE_QUIZ
         ld a,(scstate_record + AD_CURRENT_CARD)
@@ -1885,6 +1946,7 @@ adaptive_again_count:        defb 0
 adaptive_unresolved_count:   defb 0
 adaptive_choice_label:       defb 'A',':',0
 adaptive_number:             defb ' ','0',0
+adaptive_subject_title:      defs 19,0
 
 adaptive_scl1_prefix:        defb "SCL1",1,115,0
 adaptive_scsp_magic:         defb "SCSP"
@@ -1893,6 +1955,9 @@ adaptive_artifact_prefix:    defb "sc:ti86:"
 adaptive_package_schema:     defb "school.calc.ti86-package/v2",0
 adaptive_key_schema:         defb "schema",0
 adaptive_key_artifact_id:    defb "artifactId",0
+adaptive_key_context:        defb "context",0
+adaptive_key_subject:        defb "subject",0
+adaptive_key_title:          defb "title",0
 adaptive_key_lesson:         defb "lesson",0
 adaptive_key_modules:        defb "modules",0
 adaptive_key_type:           defb "type",0
@@ -1908,6 +1973,7 @@ adaptive_type_flashcards:    defb "flashcards",0
 adaptive_type_quiz:          defb "quiz",0
 
 adaptive_title:              defb "ADAPTIVE STUDY",0
+adaptive_quiz_title:         defb "QUIZ:",0
 adaptive_summary_title:      defb "STUDY SUMMARY",0
 adaptive_result_title:       defb "RESULT",0
 adaptive_error_title:        defb "STUDY UNAVAILABLE",0

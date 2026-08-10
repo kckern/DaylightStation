@@ -69,4 +69,19 @@ describe('BuildAdaptiveStudyArtifact', () => {
     await expect(builder.execute({ unit, bank, curation: curateAdaptiveStudy({ unit, bank }) }))
       .rejects.toThrow(/more than 160 bytes/);
   });
+
+  it('rejects a subject that cannot fit beside the quiz position without clipping', async () => {
+    const unit = {
+      unitId: 'facts', title: 'Facts', subject: 'a-subject-name-that-is-too-long', bank: 'facts-bank',
+      schoolcalc: { mode: 'adaptive_flashcards', study: { cardCount: 1, maxExposuresPerCard: 4 }, quiz: { itemCount: 1 } },
+    };
+    const bank = { id: 'facts-bank', items: [{
+      id: 'q1', type: 'multiple_choice', prompt: 'One plus one?', choices: ['1', '2'], answer: '2',
+    }] };
+    const builder = new BuildAdaptiveStudyArtifact({
+      codec: new Ti86SchoolCalcCodec(), artifacts: { putArtifact: async (value) => value },
+    });
+    await expect(builder.execute({ unit, bank, curation: curateAdaptiveStudy({ unit, bank }) }))
+      .rejects.toThrow(/18-glyph TI-86 header budget/);
+  });
 });
