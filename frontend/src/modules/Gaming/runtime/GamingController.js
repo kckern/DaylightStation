@@ -360,7 +360,7 @@ export class GamingController {
       absorbed: absorbed?.amount ?? 0,
       focusSpent: focusSpent?.amount ?? 0,
       retaliation: retaliation?.amount ?? 0,
-      effectiveness: multiplier >= 1 ? 'Full power' : multiplier > 0 ? 'Reduced power' : 'Fizzled',
+      effectiveness: outcome?.label || (multiplier >= 1 ? 'Full power' : multiplier > 0 ? 'Reduced power' : 'Fizzled'),
       winner: events.find((event) => event.type === 'game_ended')?.winner || null,
     };
   }

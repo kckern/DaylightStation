@@ -1,130 +1,223 @@
 schema_version: 1
 game_id: card-game
-title: Riff Raiders
+title: Scale Stadium
 view_id: card-battle-v1
 ruleset: card-battle-v1
 players:
   min: 1
   max: 1
 
+# The combatants below are a curated vertical slice of the PokeAPI corpus at
+# media/games/pokemon. Game balance is authored here; identity, Pokédex stats,
+# types, legal move names, and SVG paths come from the matching per-Pokémon YAML.
+presentation:
+  theme: pokemon-tcg
+  data_source: PokeAPI
+
 card_battle:
   turn_mode: tactical
   opening_hand: 4
   hand_size: 4
   player:
-    health: 14
+    name: Pikachu
+    health: 35
     max_energy: 3
+    pokemon:
+      id: 25
+      dex: "0025"
+      slug: pikachu
+      name: Pikachu
+      genus: Mouse Pokémon
+      generation: 1
+      region: Kanto
+      types: [electric]
+      ability: static
+      stats:
+        hp: 35
+        attack: 55
+        defense: 40
+        sp_attack: 50
+        sp_defense: 50
+        speed: 90
+      assets:
+        svg: games/pokemon/svg/0025-pikachu-gen1.svg
+      source_file: games/pokemon/data/0025-pikachu-gen1.yml
   upgrades:
-    - id: second-wind
-      title: Second Wind
-      description: Start the next battle with 2 extra health.
+    - id: oran-berry
+      title: Oran Berry
+      description: Start the rematch with 6 extra HP.
       effect:
-        max_health: 2
-    - id: opening-note
-      title: Opening Note
-      description: Start the next battle with 2 focus.
+        max_health: 6
+    - id: light-ball
+      title: Light Ball
+      description: Start the rematch with 4 attack focus.
       effect:
-        starting_focus: 2
+        starting_focus: 4
   enemy:
-    id: iron-conductor
-    name: Iron Conductor
-    health: 24
+    id: squirtle
+    name: Squirtle
+    health: 44
+    weakness:
+      type: electric
+      multiplier: 1.5
+    pokemon:
+      id: 7
+      dex: "0007"
+      slug: squirtle
+      name: Squirtle
+      genus: Tiny Turtle Pokémon
+      generation: 1
+      region: Kanto
+      types: [water]
+      ability: torrent
+      stats:
+        hp: 44
+        attack: 48
+        defense: 65
+        sp_attack: 50
+        sp_defense: 64
+        speed: 43
+      assets:
+        svg: games/pokemon/svg/0007-squirtle-gen1.svg
+      source_file: games/pokemon/data/0007-squirtle-gen1.yml
     intents:
-      - id: baton-strike
-        title: Baton Strike
+      - id: water-gun
+        title: Water Gun
         kind: attack
-        amount: 4
-      - id: iron-tempo
-        title: Iron Tempo
+        amount: 8
+      - id: withdraw
+        title: Withdraw
         kind: defend
-        amount: 5
-      - id: crescendo
-        title: Crescendo
+        amount: 8
+      - id: tail-whip
+        title: Tail Whip
         kind: charge
-        amount: 3
-      - id: downbeat
-        title: Crushing Downbeat
+        amount: 4
+      - id: aqua-tail
+        title: Aqua Tail
         kind: attack
-        amount: 5
+        amount: 10
   deck:
-    - quick-cut
-    - quick-cut
-    - resonant-blow
-    - resonant-blow
-    - brace
-    - brace
-    - fortify
-    - fortify
-    - tune-up
-    - tune-up
-    - finale
-    - finale
+    - thunder-shock
+    - thunder-shock
+    - spark
+    - spark
+    - agility
+    - agility
+    - light-screen
+    - light-screen
+    - charge
+    - charge
+    - iron-tail
+    - iron-tail
 
 cards:
-  quick-cut:
-    title: Quick Cut
+  thunder-shock:
+    title: Thunder Shock
     type: attack
-    description: A light attack that leaves energy for another card.
+    move_type: electric
+    description: A quick Electric attack. Squirtle is weak to it.
     cost: 1
-    damage: 2
+    damage: 6
     challenge: &scale_challenge
       domain: piano
       kind: scale
       requirements:
         curriculum: foundation-major-scales
       timeout_ms: 90000
-    outcomes: &scale_outcomes
+    outcomes: &electric_outcomes
+      - id: super-effective
+        min_score: 1
+        multiplier: 1.5
+        label: Super effective! Fluent scale · 150% power
+        power_label: 150% fluent
+      - id: recovered-hit
+        min_score: 0.5
+        multiplier: 0.75
+        label: Recovered scale · 75% power
+        power_label: 75% recovered
+      - id: missed
+        min_score: 0
+        multiplier: 0
+        label: The move fizzled
+        power_label: Miss after 3 mistakes
+
+  spark:
+    title: Spark
+    type: attack
+    move_type: electric
+    description: Spend 2 energy for a stronger super-effective hit.
+    cost: 2
+    damage: 10
+    challenge: *scale_challenge
+    outcomes: *electric_outcomes
+
+  agility:
+    title: Agility
+    type: guard
+    move_type: psychic
+    description: Move with the melody and dodge Squirtle's next attack.
+    cost: 1
+    block: 7
+    challenge: *scale_challenge
+    outcomes: &support_outcomes
       - id: fluent
         min_score: 1
         multiplier: 1
+        label: Fluent scale · full effect
+        power_label: 100% fluent
       - id: recovered
         min_score: 0.5
         multiplier: 0.65
+        label: Recovered scale · 65% effect
+        power_label: 65% recovered
       - id: fizzled
         min_score: 0
         multiplier: 0
+        label: The move fizzled
+        power_label: Miss after 3 mistakes
 
-  resonant-blow:
-    title: Resonant Blow
-    type: attack
-    description: Trade most of your energy for a heavy hit.
-    cost: 2
-    damage: 5
-    challenge: *scale_challenge
-    outcomes: *scale_outcomes
-
-  brace:
-    title: Brace
+  light-screen:
+    title: Light Screen
     type: guard
-    description: Block the Conductor's announced attack.
-    cost: 1
-    block: 4
-    challenge: *scale_challenge
-    outcomes: *scale_outcomes
-
-  fortify:
-    title: Fortify
-    type: guard
-    description: Commit two energy to a stronger defense.
+    move_type: psychic
+    description: A powerful barrier for Squirtle's announced attack.
     cost: 2
-    block: 7
+    block: 12
     challenge: *scale_challenge
-    outcomes: *scale_outcomes
+    outcomes: *support_outcomes
 
-  tune-up:
-    title: Tune Up
+  charge:
+    title: Charge
     type: focus
-    description: Add power to your next attack, even next turn.
+    move_type: electric
+    description: Store 5 power for Pikachu's next attack—even next turn.
     cost: 1
-    focus: 3
+    focus: 5
     challenge: *scale_challenge
-    outcomes: *scale_outcomes
+    outcomes: *support_outcomes
 
-  finale:
-    title: Finale
+  iron-tail:
+    title: Iron Tail
     type: attack
-    description: Cash in stored focus for a decisive strike.
-    cost: 2
-    damage: 4
+    move_type: steel
+    description: A 3-energy finishing move; stored focus makes it stronger.
+    cost: 3
+    damage: 17
     challenge: *scale_challenge
-    outcomes: *scale_outcomes
+    outcomes: &neutral_outcomes
+      - id: fluent
+        min_score: 1
+        multiplier: 1
+        label: Fluent scale · full power
+        power_label: 100% fluent
+      - id: recovered
+        min_score: 0.5
+        multiplier: 0.65
+        label: Recovered scale · 65% power
+        power_label: 65% recovered
+      - id: fizzled
+        min_score: 0
+        multiplier: 0
+        label: The move fizzled
+        power_label: Miss after 3 mistakes
