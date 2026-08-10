@@ -18,6 +18,7 @@ QUEUE_DRAFT_CHOICE:     equ 1
 QUEUE_DRAFT_PROGRESS:   equ 6
 QUEUE_DRAFT_SCORE:      equ 7
 QUEUE_DRAFT_PROBE:      equ 8
+QUEUE_DRAFT_ADAPTIVE:   equ 9
 QUEUE_PROBE_MAX_ITEMS:  equ 12
 QUEUE_FLAG_RESULT_PENDING_HIGH: equ 0x02
 
@@ -40,6 +41,9 @@ queue_build_result:
         ld a,(runtime_state_record + RUNTIME_SCL_FLAGS_OFFSET + 1)
         and QUEUE_FLAG_RESULT_PENDING_HIGH
         jp z,queue_fail
+        ld a,(runtime_state_record + RUNTIME_SCL_DRAFT_KIND_OFFSET)
+        cp QUEUE_DRAFT_ADAPTIVE
+        jp z,queue_build_adaptive
         ld a,(runtime_state_record + RUNTIME_SCL_FLAGS_OFFSET)
         and 0x03
         cp 0x03
@@ -319,6 +323,342 @@ queue_build_payload_done:
         or a
         sbc hl,de
         jp nc,queue_fail
+        or a
+        ret
+
+; Adaptive Study result mode 4. The continuation stores card telemetry at
+; draft bytes 9..20 and quiz choices at bytes 33..44. Only prescribed counts
+; are packed, keeping the exact SCR1 within the 69-byte Version-5/M ceiling.
+queue_build_adaptive:
+        ld a,(runtime_state_record + RUNTIME_SCL_DRAFT_LENGTH_OFFSET)
+        cp 45
+        jp nz,queue_fail
+        ld a,(runtime_state_record + RUNTIME_SCL_DRAFT_OFFSET)
+        cp 'A'
+        jp nz,queue_fail
+        ld a,(runtime_state_record + RUNTIME_SCL_DRAFT_OFFSET + 1)
+        cp 3
+        jp nz,queue_fail
+        call queue_adaptive_load_prescription
+        ret c
+        ld hl,runtime_state_record + RUNTIME_SCL_NEXT_SEQUENCE_OFFSET
+        ld a,(hl)
+        inc hl
+        and (hl)
+        inc hl
+        and (hl)
+        cp 0xFF
+        jp z,queue_fail
+        xor a
+        ld (queue_result_kind),a
+
+        ld hl,queue_scr1_prefix
+        ld de,queue_scr1_record
+        ld bc,8
+        ldir
+        ex de,hl
+        ld a,1                            ; responses, quiz module index 1
+        ld (queue_scr1_record + 7),a
+        ld a,(queue_device_length)
+        ld (hl),a
+        inc hl
+        ld de,queue_device_id
+        ld b,a
+queue_adaptive_device_loop:
+        ld a,(de)
+        ld (hl),a
+        inc de
+        inc hl
+        djnz queue_adaptive_device_loop
+        ld de,runtime_state_record + RUNTIME_SCL_NEXT_SEQUENCE_OFFSET
+        ld b,3
+queue_adaptive_sequence_loop:
+        ld a,(de)
+        ld (hl),a
+        inc de
+        inc hl
+        djnz queue_adaptive_sequence_loop
+        ld de,runtime_state_record + RUNTIME_SCL_SESSION_LEARNER_OFFSET
+        ld a,(de)
+        ld (hl),a
+        inc de
+        inc hl
+        ld a,(de)
+        ld (hl),a
+        inc hl
+        ld de,runtime_state_record + RUNTIME_SCL_ARTIFACT_KEY_OFFSET
+        ld b,10
+queue_adaptive_key_loop:
+        ld a,(de)
+        ld (hl),a
+        inc de
+        inc hl
+        djnz queue_adaptive_key_loop
+        ld (hl),4
+        inc hl
+        ld a,(queue_adaptive_quiz_count)
+        ld (hl),a
+        inc hl
+        ld de,queue_adaptive_code
+        ld b,6
+queue_adaptive_code_loop:
+        ld a,(de)
+        ld (hl),a
+        inc de
+        inc hl
+        djnz queue_adaptive_code_loop
+        ld a,(queue_adaptive_card_count)
+        ld (hl),a
+        inc hl
+        xor a
+        ld (queue_adaptive_index),a
+queue_adaptive_card_loop:
+        ld a,(queue_adaptive_index)
+        ld b,a
+        ld a,(queue_adaptive_card_count)
+        cp b
+        jr z,queue_adaptive_cards_done
+        ld a,b
+        ld e,a
+        ld d,0
+        push hl
+        ld hl,runtime_state_record + RUNTIME_SCL_DRAFT_OFFSET + 9
+        add hl,de
+        ld a,(hl)
+        pop hl
+        ld c,a
+        and 0x10
+        jp z,queue_fail
+        ld a,c
+        and 0x0C
+        jp z,queue_fail
+        cp 0x0C
+        jr z,queue_adaptive_card_valid
+        ld a,c
+        and 3
+        ld b,a
+        ld a,(queue_adaptive_exposure_cap)
+        dec a
+        cp b
+        jp nz,queue_fail
+queue_adaptive_card_valid:
+        ld a,c
+        and 0x0F
+        ld c,a
+        ld a,(queue_adaptive_index)
+        and 1
+        jr nz,queue_adaptive_card_low
+        ld a,c
+        rlca
+        rlca
+        rlca
+        rlca
+        ld (hl),a
+        jr queue_adaptive_card_next
+queue_adaptive_card_low:
+        ld a,(hl)
+        or c
+        ld (hl),a
+        inc hl
+queue_adaptive_card_next:
+        ld a,(queue_adaptive_index)
+        inc a
+        ld (queue_adaptive_index),a
+        jr queue_adaptive_card_loop
+queue_adaptive_cards_done:
+        ld a,(queue_adaptive_card_count)
+        and 1
+        jr z,queue_adaptive_choice_begin
+        inc hl
+queue_adaptive_choice_begin:
+        xor a
+        ld (queue_adaptive_index),a
+queue_adaptive_choice_loop:
+        ld a,(queue_adaptive_index)
+        ld b,a
+        ld a,(queue_adaptive_quiz_count)
+        cp b
+        jr z,queue_adaptive_choices_done
+        ld a,b
+        ld e,a
+        ld d,0
+        push hl
+        ld hl,runtime_state_record + RUNTIME_SCL_DRAFT_OFFSET + 33
+        add hl,de
+        ld a,(hl)
+        pop hl
+        or a
+        jp z,queue_fail
+        cp 6
+        jp nc,queue_fail
+        ld c,a
+        ld a,(queue_adaptive_index)
+        and 1
+        jr nz,queue_adaptive_choice_low
+        ld a,c
+        rlca
+        rlca
+        rlca
+        rlca
+        ld (hl),a
+        jr queue_adaptive_choice_next
+queue_adaptive_choice_low:
+        ld a,(hl)
+        or c
+        ld (hl),a
+        inc hl
+queue_adaptive_choice_next:
+        ld a,(queue_adaptive_index)
+        inc a
+        ld (queue_adaptive_index),a
+        jr queue_adaptive_choice_loop
+queue_adaptive_choices_done:
+        ld a,(queue_adaptive_quiz_count)
+        and 1
+        jr z,queue_adaptive_score
+        inc hl
+queue_adaptive_score:
+        ld a,(runtime_state_record + RUNTIME_SCL_SCROLL_OFFSET)
+        ld b,a
+        ld a,(queue_adaptive_quiz_count)
+        cp b
+        jp c,queue_fail
+        ld a,b
+        ld (hl),a
+        inc hl
+        jp queue_build_payload_done
+
+; Extract the session code and policy from canonical SCSP and bind its learner
+; and artifact key to the continuation before any queue mutation.
+queue_adaptive_load_prescription:
+        ld hl,queue_dsstudy_name
+        ld de,queue_scsp_magic
+        call sc_envelope_open
+        ret c
+        ld de,7
+        call sc_record_read_byte
+        ret c
+        ld b,a
+        ld a,(queue_device_length)
+        cp b
+        jp nz,queue_fail
+        inc de
+        ld hl,queue_device_id
+queue_adaptive_prescription_device:
+        call sc_record_read_byte
+        ret c
+        cp (hl)
+        jp nz,queue_fail
+        inc de
+        inc hl
+        djnz queue_adaptive_prescription_device
+        inc de
+        inc de
+        inc de
+        ld hl,queue_adaptive_code
+        ld b,6
+queue_adaptive_prescription_code:
+        call sc_record_read_byte
+        ret c
+        ld (hl),a
+        inc hl
+        inc de
+        djnz queue_adaptive_prescription_code
+        call queue_adaptive_skip_short
+        ret c
+        call queue_adaptive_skip_short
+        ret c
+        call sc_record_read_byte
+        ret c
+        ld c,a
+        inc de
+        call sc_record_read_byte
+        ret c
+        ld b,a
+        inc de
+        ld hl,(runtime_state_record + RUNTIME_SCL_SESSION_LEARNER_OFFSET)
+        ld a,l
+        cp c
+        jp nz,queue_fail
+        ld a,h
+        cp b
+        jp nz,queue_fail
+        call sc_record_read_byte
+        ret c
+        cp 18
+        jp nz,queue_fail
+        inc de
+        ld hl,queue_artifact_prefix
+        ld b,8
+queue_adaptive_prefix_loop:
+        call sc_record_read_byte
+        ret c
+        cp (hl)
+        jp nz,queue_fail
+        inc de
+        inc hl
+        djnz queue_adaptive_prefix_loop
+        ld hl,runtime_state_record + RUNTIME_SCL_ARTIFACT_KEY_OFFSET
+        ld b,10
+queue_adaptive_artifact_key_loop:
+        call sc_record_read_byte
+        ret c
+        cp (hl)
+        jp nz,queue_fail
+        inc de
+        inc hl
+        djnz queue_adaptive_artifact_key_loop
+        call queue_adaptive_skip_short       ; artifact variable
+        ret c
+        ld hl,35                            ; u16 length + digest + client
+        add hl,de
+        ret c
+        ex de,hl
+        call sc_record_read_byte
+        ret c
+        ld (queue_adaptive_card_count),a
+        or a
+        jp z,queue_fail
+        cp 13
+        jp nc,queue_fail
+        inc de
+        call sc_record_read_byte
+        ret c
+        ld (queue_adaptive_quiz_count),a
+        or a
+        jp z,queue_fail
+        cp 13
+        jp nc,queue_fail
+        inc de
+        call sc_record_read_byte
+        ret c
+        ld (queue_adaptive_exposure_cap),a
+        ld b,a
+        ld a,(runtime_state_record + RUNTIME_SCL_DRAFT_OFFSET + 2)
+        ld c,a
+        ld a,(queue_adaptive_card_count)
+        cp c
+        jp nz,queue_fail
+        ld a,(runtime_state_record + RUNTIME_SCL_DRAFT_OFFSET + 3)
+        ld c,a
+        ld a,(queue_adaptive_quiz_count)
+        cp c
+        jp nz,queue_fail
+        ld a,(runtime_state_record + RUNTIME_SCL_DRAFT_OFFSET + 4)
+        cp b
+        jp nz,queue_fail
+        or a
+        ret
+
+queue_adaptive_skip_short:
+        call sc_record_read_byte
+        ret c
+        ld l,a
+        ld h,0
+        inc de
+        add hl,de
+        ret c
+        ex de,hl
         or a
         ret
 
@@ -1025,6 +1365,9 @@ queue_sequence_advanced:
         ld a,(runtime_state_record + RUNTIME_SCL_FLAGS_OFFSET + 1)
         and 0xFD
         ld (runtime_state_record + RUNTIME_SCL_FLAGS_OFFSET + 1),a
+        ld a,(runtime_state_record + RUNTIME_SCL_DRAFT_KIND_OFFSET)
+        cp QUEUE_DRAFT_ADAPTIVE
+        jr z,queue_advance_adaptive
         ld a,(queue_result_kind)
         cp QUEUE_KIND_PROGRESS
         jr z,queue_advance_clear_draft
@@ -1064,6 +1407,12 @@ queue_advance_common:
         ld (runtime_state_record + RUNTIME_SCL_VIEW_OFFSET),a
 queue_advance_view_ready:
         jp runtime_state_save
+queue_advance_adaptive:
+        ; Retain the completed continuation so the same code can reopen Result
+        ; while its immutable queue record awaits cable acknowledgement.
+        ld a,3
+        ld (runtime_state_record + RUNTIME_SCL_DRAFT_OFFSET + 1),a
+        jp runtime_state_save
 
 queue_delete_if_present:
         rst 0x20
@@ -1086,6 +1435,11 @@ queue_scr1_length:       defw 0
 queue_result_kind:       defb 0
 queue_pack_remaining:    defb 0
 queue_score_total:        defb 0
+queue_adaptive_card_count: defb 0
+queue_adaptive_quiz_count: defb 0
+queue_adaptive_exposure_cap: defb 0
+queue_adaptive_index:      defb 0
+queue_adaptive_code:       defs 6,0
 queue_record_exists:     defb 0
 queue_existing_present:  defb 0
 queue_existing_count:    defw 0
@@ -1118,10 +1472,13 @@ queue_scq1_prefix: defb "SCQ1",1,0,0,0
 queue_scr1_magic:  defb "SCR1"
 queue_scq1_magic:  defb "SCQ1"
 queue_sci1_magic:  defb "SCI1"
+queue_scsp_magic:  defb "SCSP"
+queue_artifact_prefix: defb "sc:ti86:"
 queue_key_schema:  defb "schema",0
 queue_key_device_id: defb "deviceId",0
 queue_identity_schema: defb "school.calc.device-identity/v1",0
 
 queue_dsid_name: defb 0x0C,4,"DSID",0,0,0,0
+queue_dsstudy_name: defb 0x0C,7,"DSSTUDY",0
 queue_dsq_name:  defb 0x0C,3,"DSQ",0,0,0,0,0
 queue_dsqb_name: defb 0x0C,4,"DSQB",0,0,0,0

@@ -196,6 +196,7 @@ describe('Ti86SchoolCalcCodec', () => {
     expect(record.subarray(0, 4).toString('ascii')).toBe('SCSP');
     expect(decodeTi86StudyPrescription(record)).toEqual(prescription);
     expect(() => encodeTi86StudyPrescription({ ...prescription, itemCount: 13 })).toThrow(/invalid/);
+    expect(() => encodeTi86StudyPrescription({ ...prescription, cardCount: 13 })).toThrow(/invalid/);
     expect(() => encodeTi86StudyPrescription({ ...prescription, artifactDigest: 'short' })).toThrow(/invalid/);
   });
 

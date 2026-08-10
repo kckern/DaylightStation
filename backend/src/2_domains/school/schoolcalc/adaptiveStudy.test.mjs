@@ -47,4 +47,18 @@ describe('curateAdaptiveStudy', () => {
     curateAdaptiveStudy({ unit: unit(), bank: source });
     expect(source).toEqual(before);
   });
+
+  it('rejects policies that cannot fit the exact 48-byte calculator continuation', () => {
+    const items = bank().items.concat(Array.from({ length: 10 }, (_, index) => ({
+      id: `extra-${index}`, type: 'multiple_choice', prompt: 'Pick one',
+      choices: ['A', 'B'], answer: 'A',
+    })));
+    expect(() => curateAdaptiveStudy({
+      unit: unit({ schoolcalc: {
+        mode: 'adaptive_flashcards', study: { cardCount: 13, maxExposuresPerCard: 4 },
+        quiz: { itemCount: 10 },
+      } }),
+      bank: bank(items),
+    })).toThrow(/48-byte/);
+  });
 });
