@@ -1,6 +1,8 @@
 import './CardBattleView.scss';
+import { CardIdenticon } from './CardIdenticon.jsx';
+import { cardIdenticonHue } from './cardIdenticonModel.js';
 
-export function CardBattleView({ session, providerRuntime, error, onChoose, onAbort, onClose }) {
+export function CardBattleView({ session, providerRuntime, combatResult = null, error, onChoose, onAbort, onClose }) {
   const { state, definition, interaction } = session;
   const legalIds = new Set(
     (interaction?.legal_commands || []).map((command) => command.payload?.card_instance_id),
@@ -38,10 +40,34 @@ export function CardBattleView({ session, providerRuntime, error, onChoose, onAb
 
       <section className="battle-stage" aria-live="polite">
         {state.status === 'complete'
-          ? <div className="battle-result">{state.winner === 'player' ? 'Victory!' : 'Defeated'}</div>
+          ? (
+            <div className="battle-result">
+              <strong>{state.winner === 'player' ? 'Victory' : 'Defeated'}</strong>
+              {combatResult?.damage > 0 && <span>{combatResult.damage} damage on the final attack</span>}
+            </div>
+          )
           : noPlayableCards
             ? <div className="battle-prompt battle-prompt--blocked"><strong>No card available</strong><span>{blockedReason}</span></div>
-            : <div className="battle-prompt"><strong>Choose a card.</strong><span>The piano challenge begins after you play it.</span></div>}
+            : combatResult
+              ? (
+                <div className="battle-resolution" role="status">
+                  <span className="battle-resolution__card">{combatResult.cardTitle}</span>
+                  {combatResult.resolving
+                    ? <strong className="battle-resolution__pending">Resolving attack…</strong>
+                    : (
+                      <>
+                        <strong><b>{combatResult.damage}</b> damage</strong>
+                        <span className="battle-resolution__effect">{combatResult.effectiveness}</span>
+                      </>
+                    )}
+                  {combatResult.retaliation > 0 && (
+                    <span className="battle-resolution__counter">
+                      {state.enemy.name} struck back for {combatResult.retaliation}
+                    </span>
+                  )}
+                </div>
+              )
+              : <div className="battle-prompt"><strong>Choose a card.</strong><span>The piano challenge begins after you play it.</span></div>}
         {error && <div className="battle-warning">Recovered after: {error.message}</div>}
       </section>
 
@@ -54,19 +80,34 @@ export function CardBattleView({ session, providerRuntime, error, onChoose, onAb
           {state.zones.hand.map((instance) => {
             const card = definition.cards[instance.definition_id];
             const legal = legalIds.has(instance.instance_id);
+            const identiconSeed = `${definition.game_id}:${instance.definition_id}`;
+            const cardHue = cardIdenticonHue(identiconSeed);
             return (
               <button
                 type="button"
                 className="battle-card"
                 key={instance.instance_id}
+                style={{ '--card-hue': cardHue }}
                 disabled={!legal}
                 onClick={() => onChoose(instance.instance_id)}
                 aria-label={`Play ${card.title}, ${card.damage} damage`}
               >
-                <span className="battle-card__meta"><span>{card.cost} energy</span><span>{card.damage} damage</span></span>
-                <strong>{card.title}</strong>
-                <span className="battle-card__detail">Attack card</span>
-                <span className="battle-card__action">Play card</span>
+                <span className="battle-card__art" aria-hidden="true">
+                  <CardIdenticon seed={identiconSeed} />
+                </span>
+                <span className="battle-card__body">
+                  <span className="battle-card__stats">
+                    <span><b>{card.cost}</b><small>energy</small></span>
+                    <span><b>{card.damage}</b><small>damage</small></span>
+                  </span>
+                  <strong>{card.title}</strong>
+                  <span className="battle-card__footer">
+                    <span>Attack</span>
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M5 12h13M13 7l5 5-5 5" />
+                    </svg>
+                  </span>
+                </span>
               </button>
             );
           })}

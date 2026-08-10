@@ -14,7 +14,9 @@ export class GamingController {
     this.logger = logger;
     this.clock = clock;
     this.listeners = new Set();
-    this.snapshot = { phase: 'loading', session: null, error: null, providerRuntime: null };
+    this.snapshot = {
+      phase: 'loading', session: null, error: null, providerRuntime: null, combatResult: null,
+    };
     this.disposed = false;
     this.observedAt = this.clock();
     this.lastHandObservation = null;
@@ -161,6 +163,7 @@ export class GamingController {
     const instance = before.state.zones.hand.find((card) => card.instance_id === cardInstanceId);
     const card = instance ? before.definition.cards[instance.definition_id] : null;
     try {
+      this.#publish({ combatResult: null });
       const selected = await this.#dispatch(COMMAND_TYPES.CHOOSE_ACTION, { card_instance_id: cardInstanceId });
       this.experience.cardsSelected += 1;
       this.logger.info('gaming.card.selected', {
@@ -236,6 +239,23 @@ export class GamingController {
     });
   }
 
+  #combatResult(pending, session) {
+    const events = session.events || [];
+    const resolution = events.find((event) => event.type === 'challenge_resolved');
+    const enemyDamage = events.find((event) => event.type === 'damage_dealt' && event.target === 'enemy');
+    const retaliation = events.find((event) => event.type === 'damage_dealt' && event.target === 'player');
+    const card = session.definition.cards[pending.card_definition_id];
+    const outcome = card?.outcomes?.find((candidate) => candidate.id === resolution?.outcome);
+    const multiplier = outcome?.multiplier ?? 1;
+    return {
+      cardTitle: card?.title || 'Attack',
+      damage: enemyDamage?.amount ?? 0,
+      retaliation: retaliation?.amount ?? 0,
+      effectiveness: multiplier >= 1 ? 'Full power' : multiplier > 0 ? 'Reduced power' : 'Blocked',
+      winner: events.find((event) => event.type === 'game_ended')?.winner || null,
+    };
+  }
+
   async #runPendingChallenge() {
     let pending = this.snapshot.session?.state?.pending_action;
     if (!pending) return;
@@ -293,10 +313,19 @@ export class GamingController {
     });
     const result = await runtime.start(prepared, {});
     if (this.disposed) return;
+    if (result.status === 'completed') {
+      const card = this.snapshot.session.definition.cards[pending.card_definition_id];
+      this.#publish({
+        combatResult: {
+          cardTitle: card?.title || 'Attack', resolving: true,
+        },
+      });
+    }
     const session = await this.#dispatch(COMMAND_TYPES.SUBMIT_CHALLENGE_RESULT, { challenge_id: pending.id, result });
     const durationMs = result.metrics?.durationMs ?? Math.max(0, this.clock() - challengeStartedAt);
     if (result.status === 'completed') {
       this.#logChallengeCompleted(pending, result, session, durationMs);
+      this.#publish({ combatResult: this.#combatResult(pending, session) });
     } else {
       this.#logChallengeAborted(pending, session, {
         reason: result.metrics?.reason || result.status,

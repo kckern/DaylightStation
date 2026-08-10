@@ -20,6 +20,7 @@ describe('CardBattleView', () => {
     const cards = screen.getAllByRole('button', { name: /damage/i });
     expect(cards).toHaveLength(session.state.zones.hand.length);
     expect(cards.every((card) => !card.disabled)).toBe(true);
+    expect(document.querySelectorAll('[data-card-identicon]')).toHaveLength(cards.length);
     fireEvent.click(cards[0]);
     expect(onChoose).toHaveBeenCalledWith(session.state.zones.hand[0].instance_id);
     expect(screen.getByText('Tap a card')).toBeTruthy();
@@ -36,5 +37,35 @@ describe('CardBattleView', () => {
     expect(screen.getByText(/No card is affordable/)).toBeTruthy();
     expect(screen.getByText('Nothing playable')).toBeTruthy();
     expect(screen.getAllByRole('button', { name: /damage/i }).every((card) => card.disabled)).toBe(true);
+  });
+
+  it('shows attack effectiveness and retaliation before the next card choice', () => {
+    const session = makeSession();
+    render(
+      <CardBattleView
+        session={session}
+        combatResult={{ cardTitle: 'Heavy Strike', damage: 6, retaliation: 2, effectiveness: 'Full power' }}
+        onChoose={vi.fn()}
+        onAbort={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Heavy Strike')).toBeTruthy();
+    expect(screen.getByText('Full power')).toBeTruthy();
+    expect(screen.getByText(/struck back for 2/)).toBeTruthy();
+    expect(screen.queryByText('Choose a card.')).toBeNull();
+  });
+
+  it('does not flash the card prompt while an attack result is being persisted', () => {
+    const session = makeSession();
+    render(
+      <CardBattleView
+        session={session}
+        combatResult={{ cardTitle: 'Steady Strike', resolving: true }}
+        onChoose={vi.fn()}
+        onAbort={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Resolving attack…')).toBeTruthy();
+    expect(screen.queryByText('Choose a card.')).toBeNull();
   });
 });
