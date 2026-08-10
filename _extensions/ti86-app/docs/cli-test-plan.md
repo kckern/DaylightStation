@@ -17,7 +17,7 @@ There is one startup destination: `ENTER CODE`.
 | --- | --- |
 | no prescription | empty six-digit editor |
 | unresolved `DSENTRY` | code editor plus plain connect/retry status |
-| one unfinished `DSSTUDY` | Enter Code plus contextual Resume |
+| one unfinished `DSSTUDY` | empty Enter Code; the same six-digit code resumes |
 | queued completed result for entered code | reopen Result/QR; never restart study |
 
 Profile picker, Subject, Catalog, lesson menu, notes, examples, My Progress,
@@ -45,12 +45,14 @@ tutor, and native-tool screens must not appear or be reachable.
 | Case ID | Setup / route | Required assertions |
 | --- | --- | --- |
 | `cold-enter-code` | fresh v1 bundle -> `ASCHL` | first screen is `ENTER CODE`; inactive routes absent |
+| `code-gated-controls` | press F1/F4/ENTER before six digits, then fill digit six | early keys are inert; only digit six exposes OPEN; CLR and RESUME are absent |
+| `code-exit-key` | press F5 from Enter Code | far-right EXIT returns directly to TI-OS |
 | `unknown-code-relay` | enter code absent locally | `DSENTRY/SCE1` retains exact zero-padded code, device, request; recovery asks for relay |
 | `resolved-code-prescription` | preinstall exact artifact + `DSSTUDY` | entered code opens prescribed learner/topic and first authored card |
 | `again-two-card-spacing` | rate first card AGAIN | it returns only after two intervening presentations |
 | `hard-four-card-spacing` | rate first card HARD | it returns only after four intervening presentations |
 | `f2-blank` | inspect/press F2 on front and back | slot has no pixels and key produces no state change |
-| `power-safe-resume` | pause after a committed rating; relaunch | opens Enter Code with Resume; exact next card/count resumes |
+| `power-safe-resume` | pause after a committed rating; relaunch and re-enter code | exact next card/count resumes; no Resume shortcut appears |
 | `study-quiz-result-qr` | complete study and prescribed quiz | summary has F5 QUIZ; result exists before success; Version-5/M QR renders |
 | `completed-code-result` | return to code entry and re-enter completed code | Result reopens; study/quiz do not restart |
 | `inactive-routes-absent` | exhaust all shell keys/routes | no v0 learner screen or dispatch is reachable |

@@ -177,13 +177,14 @@ Every cold or warm launch opens `ENTER CODE`. Profile and Catalog screens are
 not normal v1 routes.
 
 - Decimal keys fill six positions and visibly preserve zeroes.
-- Backspace/cancel edits without altering canonical study state.
-- `ENTER` on a locally resolved code opens its current local state.
+- F1 is blank until all six positions are filled, then becomes `OPEN`.
+- `ENTER` and F1 are inert before six digits; either opens the completed code.
+- F2-F4 are blank and inert. F5 is `EXIT` at the far right and returns directly
+  to TI-OS without altering canonical study state.
 - A new code creates a durable resolution request and directs the learner to
   connect the relay once.
-- Startup may show a contextual `RESUME` action when one unfinished local
-  prescription exists, but the screen title and primary task remain
-  `ENTER CODE`.
+- There is no zero-digit Resume route. Resuming unfinished work requires
+  re-entering its six-digit code, which opens its exact local state.
 - If the code has a locally queued completed result, entering it reopens
   Result/QR and never restarts study or quiz.
 
@@ -328,9 +329,8 @@ cooldown exception. Do not render a fake wait or invent card presentations,
 exposures, or telemetry for the skipped ordinal positions.
 
 `EXIT` safely pauses after committing the current stable state. Relaunch returns
-to Enter Code and offers contextual Resume. Resumption must reproduce the exact
-next eligible card and must not double-count the last visible exposure or
-rating.
+to Enter Code; re-entering the same six-digit code must reproduce the exact next
+eligible card and must not double-count the last visible exposure or rating.
 
 ## 11. Study summary, quiz, and local completion
 
@@ -475,7 +475,7 @@ download transaction itself.
 4. `AGAIN` returning after two intervening presentations;
 5. `HARD` returning after four intervening presentations;
 6. F2 remaining visually and behaviorally blank on card front and back;
-7. power-safe pause, relaunch to Enter Code, and contextual resume;
+7. power-safe pause, relaunch to Enter Code, and six-digit-code resume;
 8. study completion -> quiz -> durable result -> Version-5/M QR;
 9. re-entering a locally completed code reopening Result; and
 10. no profile, Subject, Catalog, lesson-menu, notes, examples, tutor, progress,

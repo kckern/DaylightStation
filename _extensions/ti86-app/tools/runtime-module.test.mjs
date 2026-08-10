@@ -69,7 +69,7 @@ describe('TI-86 reviewed runtime-module boundary', () => {
     expect(SHELL_SOURCE).toMatch(/start:[\s\S]{0,800}call sync_commit_staged[\s\S]{0,800}jp show_code/);
     expect(SHELL_SOURCE).toMatch(/show_home:\s+show_catalog:\s+jp show_code/);
     expect(SHELL_SOURCE).toMatch(
-      /shell_code_open:[\s\S]{0,320}shell_resume_available[\s\S]{0,160}call shell_code_refresh\s+jp launch_standard_runtime/,
+      /shell_code_open:\s+ld a,\(shell_code_length\)\s+cp 6\s+jp nz,wait_key/,
     );
     expect(SHELL_SOURCE).toContain('publish_study_entry:');
     expect(SHELL_SOURCE).toContain('dsentry_name:   defb 0x0C,7,"DSENTRY",0');
