@@ -1,4 +1,4 @@
-import { sampleDistractors } from './distractors.mjs';
+import { sampleDistractors, seededShuffle } from './distractors.mjs';
 
 const GENERATED_ITEM_TYPES = new Set(['multiple_choice', 'region_click', 'asset_choice']);
 const METADATA_FIELDS = ['subject', 'unit', 'readalong'];
@@ -29,7 +29,9 @@ export function generateQuestionBank({ recipe, entities }) {
       count: recipe.distractorCount ?? 3,
       seed: id,
     });
-    const values = [answer, ...distractors];
+    // Stable per-item shuffling prevents an answer-position pattern while
+    // preserving byte-identical banks across builds and deployments.
+    const values = seededShuffle([answer, ...distractors], `${id}:choices`);
 
     if (recipe.itemType === 'multiple_choice') {
       return { id, type: 'multiple_choice', prompt, choices: values, answer };

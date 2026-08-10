@@ -80,8 +80,7 @@ scenarios:
     steps:
       - { key: F1, capture: final-card-back }
       - { key: F5, capture: summary, expect_text: [STUDY SUMMARY, QUIZ] }
-      - { key: F5, capture: quiz-prompt, expect_text: [QUIZ, MATH] }
-      - { key: F5, capture: quiz-answers, expect_text: [A, B] }
+      - { key: F5, capture: quiz-question, expect_text: [QUIZ, MATH, A, B] }
       - { key: F1, capture: queued-result, settle_frames: 300, expect_text: [RESULT, SCORE, Result saved offline.] }
       - { key: F1, capture: result-qr, settle_frames: 300, expect_symbols: QR V5/M }
 

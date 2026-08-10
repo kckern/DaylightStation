@@ -23,6 +23,7 @@ describe('generateQuestionBank', () => {
     expect(bank.items[0]).toMatchObject({ id: 'rates:values:A', prompt: 'Value of Alpha?', answer: '10' });
     expect(bank.items[0].choices).toHaveLength(4);
     expect(validateQuestionBank(bank).ok).toBe(true);
+    expect(new Set(bank.items.map((item) => item.choices.indexOf(item.answer))).size).toBeGreaterThan(1);
   });
 
   it('projects arbitrary prompt-image fields from recipe data', () => {
@@ -35,7 +36,7 @@ describe('generateQuestionBank', () => {
       entities,
     });
     expect(bank.items[0].promptImage).toEqual({ kind: 'symbol', code: 'A' });
-    expect(bank.items[0].choices[0]).toEqual({ value: 'A', label: 'Alpha' });
+    expect(bank.items[0].choices).toContainEqual({ value: 'A', label: 'Alpha' });
     expect(validateQuestionBank(bank).ok).toBe(true);
   });
 

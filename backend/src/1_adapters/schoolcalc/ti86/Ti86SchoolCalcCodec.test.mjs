@@ -481,7 +481,7 @@ describe('Ti86SchoolCalcCodec', () => {
     expect(first.byteDigest).toBe('ed289e1d86dc70e9eb6c92e9113564a536c0c45fe069ef6757e386df69333567');
   });
 
-  it('paginates assessment prompts into no more than three compact rows', () => {
+  it('paginates assessment prompts into no more than two compact rows', () => {
     const codec = new Ti86SchoolCalcCodec();
     const assessmentBundle = structuredClone(bundle);
     assessmentBundle.lesson.modules[0].bank.items[0].prompt = [
@@ -494,9 +494,26 @@ describe('Ti86SchoolCalcCodec', () => {
     for (const page of item.promptPages) {
       const lines = page.split('\n');
       expect(lines.length).toBeGreaterThan(0);
-      expect(lines.length).toBeLessThanOrEqual(3);
+      expect(lines.length).toBeLessThanOrEqual(2);
       expect(lines.every((line) => line.length <= 23)).toBe(true);
     }
+  });
+
+  it('rejects an Adaptive Study quiz prompt that would split from its choices', () => {
+    const codec = new Ti86SchoolCalcCodec();
+    const adaptive = structuredClone(bundle);
+    adaptive.lesson.modules.unshift({
+      moduleId: 'study', type: 'flashcards', bankId: 'study',
+      bank: { id: 'study', title: 'Study', items: [{
+        id: 'card-1', type: 'multiple_choice', prompt: 'Front',
+        choices: ['Back', 'Other'], answer: 'Back',
+      }] },
+    });
+    adaptive.lesson.modules[1].bank.items[0].prompt = 'This question is deliberately too long to share one calculator screen with every visible answer choice.';
+    expect(codec.supports(adaptive).reasons).toContain(
+      'Adaptive Study quiz item 0 prompt exceeds the two-line TI-86 question budget',
+    );
+    expect(() => codec.compile(adaptive)).toThrow(/two-line TI-86 question budget/);
   });
 
   it('projects reader content into complete bounded pages without truncation', () => {

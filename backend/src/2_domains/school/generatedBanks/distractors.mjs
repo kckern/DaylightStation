@@ -20,10 +20,16 @@ export function mulberry32(seed) {
 
 export function sampleDistractors({ pool, exclude, count, seed }) {
   const candidates = [...new Set(pool)].filter((value) => value !== exclude);
+  return seededShuffle(candidates, seed).slice(0, Math.min(count, candidates.length));
+}
+
+/** Deterministically shuffle authored values without making builds non-reproducible. */
+export function seededShuffle(values, seed) {
+  const shuffled = [...values];
   const random = mulberry32(hashSeed(seed));
-  for (let index = candidates.length - 1; index > 0; index -= 1) {
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
     const swap = Math.floor(random() * (index + 1));
-    [candidates[index], candidates[swap]] = [candidates[swap], candidates[index]];
+    [shuffled[index], shuffled[swap]] = [shuffled[swap], shuffled[index]];
   }
-  return candidates.slice(0, Math.min(count, candidates.length));
+  return shuffled;
 }

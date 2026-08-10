@@ -1499,9 +1499,6 @@ adaptive_render_quiz:
         call adaptive_open_item
         jp c,adaptive_error
         call adaptive_render_header
-        ld a,(scstate_record + AD_FACE)
-        or a
-        jp nz,adaptive_render_choices
         ld de,(adaptive_item_offset)
         ld hl,adaptive_key_prompt_pages
         call sc_map_find_literal
@@ -1509,10 +1506,12 @@ adaptive_render_quiz:
         ld (adaptive_pages_offset),de
         call adaptive_read_array_count
         jp c,adaptive_error
+        cp 1
+        jp nz,adaptive_error
         ld (adaptive_page_count),a
-        ld a,(scstate_record + SCSTATE_SCROLL_OFFSET)
-        ld l,a
-        ld h,0
+        ; Adaptive-v1 quiz prompts are bounded to two compact rows. Render the
+        ; first (and only) prompt page together with every answer choice.
+        ld hl,0
         ld de,(adaptive_pages_offset)
         call sc_array_item
         jp c,adaptive_error
@@ -1524,58 +1523,11 @@ adaptive_render_quiz:
         ; record-reader buffer before drawing the authored quiz prompt.
         ld hl,_plotSScreen + 256
         ld b,2
-        ld c,12
+        ld c,10
         ld d,122
-        ld e,42
+        ld e,21
         call ui_draw_wrapped_text
-        call adaptive_clear_rail
-        ld hl,adaptive_label_answers
-        ld b,104
-        ld c,57
-        call ui_draw_text
-        call ui_mode_set
-adaptive_quiz_prompt_wait:
-        call sc_input_wait
-        cp SC_SCAN_EXIT
-        ret z
-        cp SC_SCAN_UP
-        jp z,adaptive_quiz_page_previous
-        cp SC_SCAN_DOWN
-        jp z,adaptive_quiz_page_next
-        cp SC_SCAN_RIGHT
-        jr z,adaptive_quiz_show_choices
-        cp SC_SCAN_ENTER
-        jr z,adaptive_quiz_show_choices
-        cp SC_SCAN_F5
-        jr nz,adaptive_quiz_prompt_wait
-adaptive_quiz_show_choices:
-        ld a,1
-        ld (scstate_record + AD_FACE),a
-        call adaptive_save
-        jp c,adaptive_error
-        jp adaptive_render_quiz
-
-adaptive_quiz_page_previous:
-        ld a,(scstate_record + SCSTATE_SCROLL_OFFSET)
-        or a
-        jr z,adaptive_quiz_prompt_wait
-        dec a
-        ld (scstate_record + SCSTATE_SCROLL_OFFSET),a
-        call adaptive_save
-        jp c,adaptive_error
-        jp adaptive_render_quiz
-adaptive_quiz_page_next:
-        ld a,(scstate_record + SCSTATE_SCROLL_OFFSET)
-        inc a
-        ld b,a
-        ld a,(adaptive_page_count)
-        cp b
-        jr z,adaptive_quiz_show_choices
-        ld a,b
-        ld (scstate_record + SCSTATE_SCROLL_OFFSET),a
-        call adaptive_save
-        jp c,adaptive_error
-        jp adaptive_render_quiz
+        jp adaptive_render_choices
 
 adaptive_render_choices:
         call ui_mode_set
@@ -1594,7 +1546,7 @@ adaptive_render_choices:
         ld (adaptive_choice_count),a
         xor a
         ld (adaptive_scan_index),a
-        ld a,12
+        ld a,24
         ld (adaptive_render_y),a
 adaptive_choice_render_loop:
         ld a,(adaptive_scan_index)
@@ -1627,7 +1579,7 @@ adaptive_choice_render_loop:
         inc a
         ld (adaptive_scan_index),a
         ld a,(adaptive_render_y)
-        add a,8
+        add a,6
         ld (adaptive_render_y),a
         jr adaptive_choice_render_loop
 adaptive_choices_rendered:
@@ -1636,10 +1588,6 @@ adaptive_choice_wait:
         call sc_input_wait
         cp SC_SCAN_EXIT
         ret z
-        cp SC_SCAN_LEFT
-        jr z,adaptive_quiz_back_prompt
-        cp SC_SCAN_UP
-        jr z,adaptive_quiz_back_prompt
         cp SC_SCAN_F1
         ld b,1
         jr z,adaptive_choice_selected
@@ -1661,13 +1609,6 @@ adaptive_choice_selected:
         jr c,adaptive_choice_wait
         ld a,b
         jp adaptive_commit_quiz_choice
-adaptive_quiz_back_prompt:
-        xor a
-        ld (scstate_record + AD_FACE),a
-        call adaptive_save
-        jp c,adaptive_error
-        jp adaptive_render_quiz
-
 adaptive_commit_quiz_choice:
         ld b,a
         ld a,(scstate_record + AD_CURRENT_QUIZ)

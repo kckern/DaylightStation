@@ -56,7 +56,15 @@ wait_key:
         jp nz,wait_key
         call shell_code_refresh
         call shell_code_refresh_f1
-        jp wait_key
+        ; Digit six is sufficient confirmation for an exact local
+        ; prescription. Unknown codes remain editable/confirmable and do not
+        ; create a relay request until the learner presses OPEN or ENTER.
+        call shell_code_matches_study
+        jp c,wait_key
+        ld a,4
+        ld (shell_code_status),a
+        call shell_code_refresh
+        jp launch_standard_runtime
 wait_key_regular:
         ld a,b
         cp SC_SCAN_EXIT
