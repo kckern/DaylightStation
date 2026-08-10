@@ -236,21 +236,32 @@ async function journeySnapshot(root) {
 async function playMove({ page, root, move, timeoutMs }) {
   const before = await journeySnapshot(root);
   const button = page.locator(`.journey-move[data-move-id=${JSON.stringify(move.id)}]`);
+  if (await button.count() !== 1) throw new Error(`move locator for ${move.id} was not unique`);
+  const prepareResponsePromise = page.waitForResponse((response) => (
+    response.request().method() === 'POST'
+    && new URL(response.url()).pathname.endsWith('/challenges/prepare')
+  ), { timeout: timeoutMs });
+  const deadline = Date.now() + timeoutMs;
   let prepareResponse = null;
-  for (let attempt = 0; attempt < 3 && !prepareResponse; attempt += 1) {
-    const responsePromise = page.waitForResponse((response) => (
-      response.request().method() === 'POST'
-      && new URL(response.url()).pathname.endsWith('/challenges/prepare')
-    ), { timeout: Math.min(timeoutMs, 5_000) });
-    await button.click();
+  while (!prepareResponse && Date.now() < deadline) {
+    const remaining = Math.max(1, deadline - Date.now());
     try {
-      prepareResponse = await responsePromise;
+      await button.click({ timeout: Math.min(250, remaining) });
     } catch (error) {
-      if (attempt === 2) throw error;
-      await page.waitForTimeout(500);
+      // An accepted click removes the move while the prepare response is still
+      // in flight. Retry only actionability timeouts and preserve real errors.
+      if (error?.name !== 'TimeoutError') throw error;
     }
+    prepareResponse = await Promise.race([
+      prepareResponsePromise,
+      page.waitForTimeout(Math.min(100, Math.max(1, deadline - Date.now()))).then(() => null),
+    ]);
   }
-  if (!prepareResponse.ok()) throw new Error(`${move.title} preparation returned HTTP ${prepareResponse.status()}`);
+  prepareResponse ||= await prepareResponsePromise;
+  if (!prepareResponse.ok()) {
+    const body = await prepareResponse.text();
+    throw new Error(`${move.title} preparation returned HTTP ${prepareResponse.status()}: ${body}`);
+  }
   const prepared = await prepareResponse.json();
   if (!Array.isArray(prepared?.prompt?.expected_midi) || prepared.prompt.expected_midi.length < 2) {
     throw new Error(`${move.title} did not materialize playable MIDI notes`);
