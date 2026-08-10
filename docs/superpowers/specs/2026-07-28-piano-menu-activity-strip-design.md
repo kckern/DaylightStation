@@ -29,6 +29,19 @@ on overflow. Each card:
 
 **Empty state:** no players with course history → the strip renders nothing.
 
+**Loading state:** the strip reserves its own silhouette instead of collapsing
+— an unreserved strip pushed the tile grid down when the fetch landed. The
+kiosk remembers the shape of the last strip it drew (the course count of each
+card, in order) in `localStorage`, so the skeleton is available on the first
+paint and is the exact geometry the data will fill. A device that has never
+shown the strip reserves a modest default; a device whose last visit was empty
+reserves nothing. Poster boxes carry a min-width equal to a standard poster at
+the frame height, so an undecoded image never collapses its box either.
+
+Strip data goes through the shared stale-while-revalidate list cache, so a warm
+kiosk paints the previous strip immediately and repaints only when the server
+disagrees.
+
 **Future room (explicit non-goals now):** the card layout reserves a trailing
 slot where trophy-case / completion-certificate badges can later sit; the data
 to power them (per-lecture `completedAt`, 100% courses) already exists.
@@ -93,4 +106,5 @@ Backing use case `GetRecentCourseActivity`:
   with no course history; cache hit on unchanged mtimes; recomputes on change.
 - Frontend: ordering by recency; dimming past 7 idle days; tap navigates to
   the course route; empty state renders nothing; ring percent matches
-  completed/total.
+  completed/total; the loading skeleton reserves the remembered shape (and
+  nothing when the last visit was empty) and the rendered shape is recorded.
