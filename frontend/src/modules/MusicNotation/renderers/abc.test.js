@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { midiToAbc, generateAbc } from './abc.js';
+import { midiToAbc, generateAbc, generateScaleAbc } from './abc.js';
 
 describe('midiToAbc', () => {
   it('middle C is "C" in C major', () => {
@@ -33,5 +33,16 @@ describe('generateAbc', () => {
   it('applies 8va for very high notes', () => {
     const abc = generateAbc(new Map([[96, {}]]), 'C');
     expect(abc).toContain('8va');
+  });
+});
+
+describe('generateScaleAbc', () => {
+  it.each([
+    ['C', [60, 62, 64, 65, 67, 69, 71, 72], 'C D E F G A B c'],
+    ['G', [67, 69, 71, 72, 74, 76, 78, 79], 'G A B c d e f g'],
+    ['F', [65, 67, 69, 70, 72, 74, 76, 77], 'F G A B c d e f'],
+    ['D', [62, 64, 66, 67, 69, 71, 73, 74], 'D E F G A B c d'],
+  ])('engraves the exact MIDI octave for %s major', (key, midi, melody) => {
+    expect(generateScaleAbc(midi, key)).toBe(`X:1\nL:1/4\nK:${key}\n${melody} |]`);
   });
 });
