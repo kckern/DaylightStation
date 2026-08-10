@@ -387,7 +387,7 @@ function validateStudyPrescription(value) {
       || !Number.isInteger(value.artifactByteLength) || value.artifactByteLength < 1 || value.artifactByteLength > 0xffff
       || !/^[0-9a-f]{64}$/.test(value.artifactDigest || '')
       || !Number.isInteger(value.requiredClientVersion) || value.requiredClientVersion < 1 || value.requiredClientVersion > 255
-      || !Number.isInteger(value.cardCount) || value.cardCount < 1 || value.cardCount > 255
+      || !Number.isInteger(value.cardCount) || value.cardCount < 1 || value.cardCount > 12
       || !Number.isInteger(value.itemCount) || value.itemCount < 1 || value.itemCount > value.cardCount
       || !Number.isInteger(value.maxExposuresPerCard) || value.maxExposuresPerCard < 1 || value.maxExposuresPerCard > 4
       || !Number.isInteger(value.passingPercent) || value.passingPercent < 0 || value.passingPercent > 100

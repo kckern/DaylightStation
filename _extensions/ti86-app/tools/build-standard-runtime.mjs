@@ -25,7 +25,7 @@ import {
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const EXTENSION = path.resolve(HERE, '..');
 const SOURCE_DIRECTORY = path.join(EXTENSION, 'src');
-const SOURCE = path.join(SOURCE_DIRECTORY, 'runtime-standard.asm');
+const SOURCE = path.join(SOURCE_DIRECTORY, 'runtime-adaptive.asm');
 const GENERATED_UI = path.join(SOURCE_DIRECTORY, 'generated', 'ui-standard-runtime-assets.inc');
 const OUTPUT = path.join(EXTENSION, 'dist', 'SCLEARN.86p');
 const definition = TI86_RUNTIME_MODULES.standardLearning;
@@ -56,13 +56,13 @@ try {
   const file = createTi86AsmProgram({
     name: definition.programName,
     code,
-    comment: 'SchoolCalc reviewed learning runtime 0.1',
+    comment: 'SchoolCalc Adaptive Study runtime 1.0',
   });
   const inspected = inspectTi86RuntimeProgram(file, definition);
   mkdirSync(path.dirname(OUTPUT), { recursive: true });
   writeFileSync(OUTPUT, file);
   process.stdout.write(`[ti86] built ${OUTPUT} (${file.length} bytes; code ${code.length} bytes; SCX1 ABI ${inspected.abiVersion})\n`);
-  process.stdout.write('[ti86] advertised learning capabilities: none (reader, examples, assessments, and queue commit await emulator/fleet recovery gates)\n');
+  process.stdout.write('[ti86] adaptive study: SCSP-bound cards, cooldown scheduler, A-E quiz, durable continuation\n');
 } finally {
   rmSync(buildDirectory, { recursive: true, force: true });
 }

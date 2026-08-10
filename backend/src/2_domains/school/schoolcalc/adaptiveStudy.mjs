@@ -13,6 +13,10 @@ export function curateAdaptiveStudy({ unit, bank } = {}) {
   }
   const { cardCount, maxExposuresPerCard } = descriptor.study;
   const { itemCount } = descriptor.quiz;
+  if (!Number.isInteger(cardCount) || cardCount < 1 || cardCount > 12
+      || !Number.isInteger(itemCount) || itemCount < 1 || itemCount > cardCount) {
+    throw new Error('Adaptive Study policy exceeds the 48-byte TI-86 continuation budget');
+  }
   if (bank.items.length < cardCount) {
     throw new Error(`Adaptive Study bank '${bank.id}' has ${bank.items.length} items; ${cardCount} required`);
   }

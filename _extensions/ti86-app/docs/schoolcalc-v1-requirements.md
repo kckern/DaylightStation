@@ -193,9 +193,10 @@ is not part of the default installation. Adaptive Study uses these records:
 | TI variable / magic | Ownership and purpose |
 | --- | --- |
 | `DSENTRY` / `SCE1` | Durable calculator-owned resolution claim containing exactly the bound `deviceId`, fresh `requestId`, and six-character code plus envelope/version integrity fields. |
-| `DSSTUDY` / `SCSP` | Canonical device-bound study prescription and continuation state used by `SCLEARN`. |
+| `DSSTUDY` / `SCSP` | Canonical immutable, device-bound study prescription used by `SCLEARN`. |
 | `DSSTDNEW` / `SCSP` | Relay-written staged prescription. It is never executable/canonical until validated and committed with its artifact. |
 | `DSSYNC` | Commit acknowledgement/manifest written last; authorizes the staged artifact and prescription transaction. |
+| alternating local slots / `SCL1` | Calculator-owned 45-byte adaptive continuation created on first launch; only one unfinished study session is retained. |
 | existing result queue | One or more immutable adaptive-study result records awaiting QR/cable acknowledgement. |
 
 `DSENTRY` is retained across interruption and all non-success resolution
@@ -203,10 +204,11 @@ outcomes. It is cleared only after the calculator validates an exact
 acknowledgement of the same device ID, request ID, code, prescription identity,
 and artifact identity.
 
-`DSSTUDY` contains enough immutable identity and progress to reject a mismatched
-artifact, result, learner, device, or code. Continuation writes use the existing
-copy-on-write/alternating-slot durability rules. The rating/exposure update is
-committed before the next card becomes visible.
+`DSSTUDY` contains enough immutable identity to reject a mismatched artifact,
+result, learner, device, or code. The `SCL1` continuation uses the existing
+copy-on-write/alternating-slot durability rules and need not be preseeded by the
+installer. The rating/exposure update is committed before the next card becomes
+visible.
 
 ## 9. One-time relay resolution and commit ordering
 

@@ -325,8 +325,8 @@ function validateSchoolCalc(raw, unit, errors) {
   const cardCount = raw.study?.cardCount;
   const maxExposuresPerCard = raw.study?.maxExposuresPerCard;
   const itemCount = raw.quiz?.itemCount;
-  if (!Number.isInteger(cardCount) || cardCount < 1) {
-    errors.push('schoolcalc.study.cardCount must be an integer >= 1');
+  if (!Number.isInteger(cardCount) || cardCount < 1 || cardCount > 12) {
+    errors.push('schoolcalc.study.cardCount must be an integer between 1 and 12');
   }
   if (!Number.isInteger(maxExposuresPerCard)
       || maxExposuresPerCard < 1 || maxExposuresPerCard > 4) {

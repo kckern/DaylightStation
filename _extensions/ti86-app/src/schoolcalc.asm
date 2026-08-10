@@ -92,12 +92,7 @@ shell_f1:
         jp launch_profile_runtime
 
 shell_f2:
-        ld a,(current_screen)
-        cp SCREEN_CODE
-        jp z,wait_key
-        cp SCREEN_RESULT
-        jp z,shell_review_result
-        jp show_catalog
+        jp wait_key
 
 shell_f3:
         ld a,(current_screen)
@@ -119,6 +114,19 @@ shell_f5:
 
 ; A score result is a durable offline record, not a dead-end receipt. OPEN
 ; reopens the same module menu so the learner can immediately retry it.
+move_focus_down:
+move_focus_up:
+        jp wait_key
+activate_current:
+        ld a,(current_screen)
+        cp SCREEN_CODE
+        jp z,shell_code_open
+        jp wait_key
+go_back:
+show_home:
+show_catalog:
+        jp show_code
+if 0
 shell_review_result:
         ld a,5                    ; Catalog MODULE view
         ld (SCL_VIEW_ADDR),a
@@ -210,9 +218,11 @@ show_catalog:
         ; release, so Catalog is an executable browser rather than the old
         ; recovery placeholder. SCCAT owns its own deep durable continuation.
         jp launch_catalog_runtime
+endif
 show_code:
         ld a,SCREEN_CODE
         ld (current_screen),a
+        call shell_detect_resume
         xor a
         ld (shell_code_length),a
         ld (shell_code_status),a
@@ -275,15 +285,65 @@ shell_code_not_digit:
 
 shell_code_open:
         ld a,(shell_code_length)
+        or a
+        jr nz,shell_code_length_present
+        ld a,(shell_resume_available)
+        or a
+        jp nz,launch_standard_runtime
+shell_code_length_present:
+        ld a,(shell_code_length)
         cp 6
         jr z,shell_code_open_ready
         ld a,1
         ld (shell_code_status),a
         jp render
 shell_code_open_ready:
+        call shell_code_matches_study
+        jp nc,launch_standard_runtime
         call publish_study_entry
         jp c,shell_code_unavailable
         jp launch_sync_runtime
+
+shell_detect_resume:
+        xor a
+        ld (shell_resume_available),a
+        ld hl,sync_dsstudy_name
+        ld de,scsp_magic
+        call sc_envelope_open
+        ret c
+        ld a,1
+        ld (shell_resume_available),a
+        or a
+        ret
+
+; Carry clear only when the six entered digits equal canonical SCSP. This
+; reopens paused study or its queued Result without contacting the relay.
+shell_code_matches_study:
+        ld hl,sync_dsstudy_name
+        ld de,scsp_magic
+        call sc_envelope_open
+        ret c
+        ld de,7
+        call sc_record_read_byte
+        ret c
+        add a,11
+        ld e,a
+        ld d,0
+        ld hl,shell_code_digits
+        ld b,6
+shell_code_match_loop:
+        call sc_record_read_byte
+        ret c
+        cp (hl)
+        jr nz,shell_code_match_failed
+        inc de
+        inc hl
+        djnz shell_code_match_loop
+        or a
+        ret
+shell_code_match_failed:
+        scf
+        ret
 
 ; Build the durable calculator-owned DSENTRY/SCE1 claim from the enrolled
 ; device identity and the six visible digits. The request ID is the current
@@ -1671,7 +1731,14 @@ shell_render_softkeys:
         ld a,(current_screen)
         cp SCREEN_CODE
         ld hl,softkey_open
+        jr nz,shell_softkey_f1_not_code
+        ld a,(shell_resume_available)
+        or a
+        ld hl,softkey_open
         jr z,shell_softkey_f1_ready
+        ld hl,softkey_resume
+        jr shell_softkey_f1_ready
+shell_softkey_f1_not_code:
         cp SCREEN_RESULT
         jr nz,shell_softkey_f1_ready
         ld hl,softkey_qr
@@ -1679,15 +1746,7 @@ shell_softkey_f1_ready:
         ld b,5
         ld c,58
         call ui_draw_text
-        ld hl,softkey_catalog
-        ld a,(current_screen)
-        cp SCREEN_CODE
-        ld hl,softkey_back
-        jr z,shell_softkey_f2_ready
-        cp SCREEN_RESULT
-        jr nz,shell_softkey_f2_ready
-        ld hl,softkey_review
-shell_softkey_f2_ready:
+        ld hl,softkey_empty
         ld b,30
         ld c,58
         call ui_draw_text
@@ -1742,6 +1801,7 @@ device_id_length:       defb 0
 device_id_value:        defs 17,0
 shell_code_length:       defb 0
 shell_code_status:       defb 0
+shell_resume_available:  defb 0
 shell_code_entries_left: defb 0
 shell_code_entry_offset: defw 0
 sce1_crc_pointer:       defw 0
@@ -1850,6 +1910,7 @@ softkey_cable:          defb "CABLE",0
 softkey_user:           defb "USER",0
 softkey_code:           defb "CODE",0
 softkey_open:           defb "OPEN",0
+softkey_resume:         defb "RESUME",0
 softkey_back:           defb "BACK",0
 softkey_clear:          defb "CLR",0
 softkey_empty:          defb 0
