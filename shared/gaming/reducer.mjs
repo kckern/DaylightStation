@@ -6,6 +6,7 @@ import {
 } from './contracts.mjs';
 import { assertDefinition } from './definition.mjs';
 import { shuffle } from './rng.mjs';
+import { materializePianoScalePrompt } from '../music/pianoScale.mjs';
 
 const clone = (value) => structuredClone(value);
 const isTactical = (definition) => definition.card_battle.turn_mode === 'tactical';
@@ -91,11 +92,16 @@ function selectOutcome(card, score) {
 }
 
 function resolveChallenge(card, definition, state) {
-  if (!card.challenge.pool) return clone(card.challenge.prompt);
-  const prompts = definition.card_battle.challenge_pools[card.challenge.pool].prompts;
-  const index = state.challenge_cursor % prompts.length;
-  state.challenge_cursor += 1;
-  return clone(prompts[index]);
+  let prompt;
+  if (!card.challenge.pool) {
+    prompt = clone(card.challenge.prompt);
+  } else {
+    const prompts = definition.card_battle.challenge_pools[card.challenge.pool].prompts;
+    const index = state.challenge_cursor % prompts.length;
+    state.challenge_cursor += 1;
+    prompt = clone(prompts[index]);
+  }
+  return card.challenge.kind === 'scale' ? materializePianoScalePrompt(prompt) : prompt;
 }
 
 function deriveYield(state) {

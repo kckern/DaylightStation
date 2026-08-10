@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useSyncExternalStore } from 'react';
 import { AbcRenderer } from '../../../MusicNotation/renderers/AbcRenderer.jsx';
+import { generateScaleAbc } from '../../../MusicNotation/renderers/abc.js';
 import { evaluateChordMatch } from '../../PianoFlashcards/flashcardEngine.js';
 import { advanceScaleProgress } from './scaleProgress.js';
 
 const EMPTY_NOTES = new Map();
 const EMPTY_HISTORY = [];
-const PROVIDER_VERSION = '2-untimed-piano';
+const PROVIDER_VERSION = '3-midi-canonical-piano';
 const SCALE_NOTE_CLASSES = [
   'piano-scale-note--complete',
   'piano-scale-note--next',
@@ -70,6 +71,7 @@ export function createPianoChordProvider({ useNotes, clock = () => Date.now() })
       let firstInputAt = null;
       let notesPlayed = 0;
       let wrongNotes = 0;
+      let wrongInputs = [];
       let restarts = 0;
 
       const publish = (patch) => {
@@ -84,6 +86,7 @@ export function createPianoChordProvider({ useNotes, clock = () => Date.now() })
         timeToFirstInputMs: attemptStartedAt == null || firstInputAt == null ? null : Math.max(0, firstInputAt - attemptStartedAt),
         notesPlayed,
         wrongNotes,
+        wrongInputs,
         restarts,
       });
 
@@ -170,6 +173,13 @@ export function createPianoChordProvider({ useNotes, clock = () => Date.now() })
               };
               if (advanced.wrong) {
                 wrongNotes += 1;
+                if (wrongInputs.length < 3) {
+                  wrongInputs.push({
+                    played: note,
+                    expected: prompt.expected_midi[previousProgress] ?? prompt.expected_midi[0],
+                    progress: previousProgress,
+                  });
+                }
                 if (previousProgress > 0) restarts += 1;
                 if (prompt.max_mistakes && wrongNotes >= prompt.max_mistakes) {
                   publish({ progress, hadWrong, lastInput });
@@ -220,7 +230,7 @@ export function createPianoChordProvider({ useNotes, clock = () => Date.now() })
         const prompt = view.prepared?.prompt;
         const expectedCount = prompt?.expected_midi?.length || 0;
         if (view.prepared?.kind === 'scale') {
-          const abc = `X:1\nL:1/4\nK:${prompt.key_signature || 'C'}\n${prompt.abc} |]`;
+          const abc = generateScaleAbc(prompt.expected_midi, prompt.key_signature || 'C');
           return (
             <section className="piano-challenge piano-scale-challenge">
               <header className="piano-scale-challenge__heading">
@@ -283,6 +293,7 @@ export function createPianoChordProvider({ useNotes, clock = () => Date.now() })
           firstInputAt = null;
           notesPlayed = 0;
           wrongNotes = 0;
+          wrongInputs = [];
           restarts = 0;
           publish({ status: 'running', prepared, armed: false, hadWrong: false, progress: 0, lastInput: null });
           return new Promise((resolve) => { resolveAttempt = resolve; });

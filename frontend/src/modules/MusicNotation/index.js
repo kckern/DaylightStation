@@ -16,7 +16,7 @@ export { SvgStaffRenderer } from './renderers/SvgStaffRenderer.jsx';
 export { MusicXmlRenderer } from './renderers/MusicXmlRenderer.jsx';
 export { ChordStaffRenderer } from './renderers/ChordStaffRenderer.jsx';
 export { renderChordStaff, midiToVexKey } from './renderers/chordStaff.js';
-export { midiToAbc, generateAbc, generateMelodyAbc } from './renderers/abc.js';
+export { midiToAbc, generateAbc, generateScaleAbc, generateMelodyAbc } from './renderers/abc.js';
 
 // Facade
 export { Notation } from './Notation.jsx';
