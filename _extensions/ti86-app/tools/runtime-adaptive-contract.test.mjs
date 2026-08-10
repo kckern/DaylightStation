@@ -108,14 +108,19 @@ describe('SchoolCalc Adaptive Study SCLEARN contract', () => {
     expect(SOURCE).toMatch(/adaptive_center_base_ready:[\s\S]*?sub b/);
   });
 
-  it('maps the five physical function keys explicitly to quiz choices A-E', () => {
-    const choices = SOURCE.match(/adaptive_choice_wait:[\s\S]*?adaptive_quiz_back_prompt:/)?.[0];
+  it('renders the two-line question and A-E choices together, mapped directly to F1-F5', () => {
+    expect(SOURCE).toMatch(
+      /adaptive_render_quiz:[\s\S]*?ld c,10\s+ld d,122\s+ld e,21[\s\S]*?jp adaptive_render_choices/,
+    );
+    expect(SOURCE).toMatch(/adaptive_render_choices:[\s\S]*?ld a,24[\s\S]*?add a,6/);
+    expect(SOURCE).not.toContain('adaptive_quiz_show_choices:');
+    expect(SOURCE).not.toContain('adaptive_quiz_back_prompt:');
+    const choices = SOURCE.match(/adaptive_choice_wait:[\s\S]*?adaptive_commit_quiz_choice:/)?.[0];
     expect(choices).toBeTruthy();
     for (const [key, value] of [['F1', 1], ['F2', 2], ['F3', 3], ['F4', 4], ['F5', 5]]) {
       expect(choices).toMatch(new RegExp(`cp SC_SCAN_${key}\\s+ld b,${value}`));
     }
     expect(choices).not.toContain('sub b');
-    expect(SOURCE).toContain('adaptive_label_answers:      defb "CHOICE",0');
     expect(SOURCE).toMatch(
       /adaptive_render_choice_rail:[\s\S]*?ld b,11[\s\S]*?ld b,37[\s\S]*?ld b,63[\s\S]*?ld b,89[\s\S]*?ld b,115/,
     );

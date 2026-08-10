@@ -9,11 +9,11 @@ import { fileURLToPath } from 'node:url';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const EXTENSION = path.resolve(HERE, '..');
 const JOURNEY_COPY = Object.freeze({
-  '01-enter-code': 'Cold launch: Enter Code', '07-code-ready': 'Six-digit code ready',
-  '08-graphic-card-front': 'Graphic flashcard front', '09-graphic-card-back': 'Graphic flashcard answer',
-  '10-study-summary': 'Study summary', '11-quiz-prompt': 'Prescribed quiz prompt',
-  '12-quiz-choices': 'A–E answer surface', '13-durable-result': 'Result queued before success',
-  '14-result-qr': 'Offline Version-5/M result QR',
+  '01-enter-code': 'Cold launch: Enter Code',
+  '07-graphic-card-front': 'Digit six opens the resolved study', '08-graphic-card-back': 'Graphic flashcard answer',
+  '09-study-summary': 'Study summary', '10-quiz-question': 'Question and choices together',
+  '11-durable-result': 'Result queued before success',
+  '12-result-qr': 'Offline Version-5/M result QR',
 });
 const MISSING_COPY = Object.freeze({
   '01-missing-code-ready': 'Unresolved code',

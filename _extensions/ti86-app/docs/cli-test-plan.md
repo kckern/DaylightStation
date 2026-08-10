@@ -45,10 +45,10 @@ tutor, and native-tool screens must not appear or be reachable.
 | Case ID | Setup / route | Required assertions |
 | --- | --- | --- |
 | `cold-enter-code` | fresh v1 bundle -> `ASCHL` | first screen is `ENTER CODE`; inactive routes absent |
-| `code-gated-controls` | press F1/F4/ENTER before six digits, then fill digit six | early keys are inert; only digit six exposes OPEN; CLR and RESUME are absent |
+| `code-gated-controls` | press F1/F4/ENTER before six digits, then complete an unknown code | early keys are inert; digit six exposes OPEN; CLR and RESUME are absent |
 | `code-exit-key` | press F5 from Enter Code | far-right EXIT returns directly to TI-OS |
 | `unknown-code-relay` | enter code absent locally | `DSENTRY/SCE1` retains exact zero-padded code, device, request; recovery asks for relay |
-| `resolved-code-prescription` | preinstall exact artifact + `DSSTUDY` | entered code opens prescribed learner/topic and first authored card |
+| `resolved-code-prescription` | preinstall exact artifact + `DSSTUDY` | digit six automatically opens the prescribed learner/topic and first authored card |
 | `again-two-card-spacing` | rate first card AGAIN | it returns only after two intervening presentations |
 | `hard-four-card-spacing` | rate first card HARD | it returns only after four intervening presentations |
 | `f2-blank` | inspect/press F2 on front and back | slot has no pixels and key produces no state change |

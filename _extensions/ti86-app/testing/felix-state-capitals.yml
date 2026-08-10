@@ -14,8 +14,7 @@ scenarios:
       - { key: '0', capture: code-4 }
       - { key: '0', capture: code-5 }
       - { key: F1, capture: five-digit-f1, expect_changed: false, expect_text: ENTER 6 DIGITS }
-      - { key: '0', capture: code-ready, expect_text: ['000 000', ENTER TO OPEN] }
-      - { key: F1, capture: opened-card, settle_frames: 300, expect_text: [ADAPTIVE STUDY, ALABAMA, FLIP] }
+      - { key: '1', capture: unknown-code-ready, expect_text: ['000 001', ENTER TO OPEN] }
 
   - id: code-exit-key
     description: Far-right F5 EXIT immediately leaves Enter Code for TI-OS.
@@ -39,8 +38,7 @@ scenarios:
       - { key: '0' }
       - { key: '0' }
       - { key: '0' }
-      - { key: '0', capture: code-ready, expect_text: ['000 000', ENTER TO OPEN] }
-      - { key: ENTER, capture: card-front, settle_frames: 300, expect_text: [ADAPTIVE STUDY, ALABAMA, FLIP] }
+      - { key: '0', capture: card-front, settle_frames: 300, expect_text: [ADAPTIVE STUDY, ALABAMA, FLIP] }
       - { key: F1, capture: card-verso, settle_frames: 18, expect_text: [MONTGOMERY, AGAIN, HARD, KNOW] }
       - { key: F1, capture: card-front-again, settle_frames: 18, expect_text: [ALABAMA, FLIP] }
       - { key: F1, capture: card-verso-again, settle_frames: 18, expect_text: [MONTGOMERY, AGAIN, HARD, KNOW] }
@@ -54,13 +52,12 @@ scenarios:
       - { key: '0' }
       - { key: '0' }
       - { key: '0' }
-      - { key: '0' }
-      - { key: ENTER, settle_frames: 300, expect_text: [ALABAMA, FLIP] }
+      - { key: '0', settle_frames: 300, expect_text: [ALABAMA, FLIP] }
       - { key: F1, settle_frames: 18, expect_text: [MONTGOMERY, KNOW] }
       - { key: F5, capture: next-card, settle_frames: 30, expect_text: [ALASKA, FLIP] }
 
   - id: felix-code-entry
-    description: Code entry updates cleanly, exposes readiness on digit six, and Enter opens Felix's local prescription.
+    description: Code entry updates cleanly and digit six automatically opens Felix's local prescription.
     boot_settle_frames: 300
     settle_frames: 30
     steps:
@@ -69,8 +66,7 @@ scenarios:
       - { key: '0', capture: code-3, expect_text: [CONTINUE ON CALC, ENTER 6 DIGITS] }
       - { key: '0', capture: code-4, expect_text: [CONTINUE ON CALC, ENTER 6 DIGITS] }
       - { key: '0', capture: code-5, expect_text: [CONTINUE ON CALC, ENTER 6 DIGITS] }
-      - { key: '0', capture: code-ready, expect_text: ['000 000', ENTER TO OPEN] }
-      - { key: ENTER, capture: card-01-front, settle_frames: 300, expect_text: [ADAPTIVE STUDY, ALABAMA, FLIP] }
+      - { key: '0', capture: card-01-front, settle_frames: 300, expect_text: [ADAPTIVE STUDY, ALABAMA, FLIP] }
 
   - id: felix-state-capitals
     description: Felix completes the exact code 000000 state-capitals prescription and queues a perfect result.
@@ -82,8 +78,7 @@ scenarios:
       - { key: '0', capture: code-3 }
       - { key: '0', capture: code-4 }
       - { key: '0', capture: code-5 }
-      - { key: '0', capture: code-ready, expect_text: ['000 000', ENTER TO OPEN] }
-      - { key: ENTER, capture: card-01-front, settle_frames: 300, expect_text: [ADAPTIVE STUDY, ALABAMA, FLIP] }
+      - { key: '0', capture: card-01-front, settle_frames: 300, expect_text: [ADAPTIVE STUDY, ALABAMA, FLIP] }
       - { key: F1, capture: card-01-back, expect_text: [MONTGOMERY, AGAIN, HARD, KNOW] }
       - { key: F5, capture: card-02-front, expect_text: ALASKA }
       - { key: F1, capture: card-02-back, expect_text: JUNEAU }
@@ -108,25 +103,15 @@ scenarios:
       - { key: F5, capture: card-12-front, expect_text: IDAHO }
       - { key: F1, capture: card-12-back, expect_text: BOISE }
       - { key: F5, capture: study-summary, settle_frames: 300, expect_text: [STUDY SUMMARY, KNOWN, HARD, AGAIN, UNRESOLVED, QUIZ] }
-      - { key: F5, capture: quiz-01-prompt, expect_text: [QUIZ, GEOGRAPHY] }
-      - { key: F5, capture: quiz-01-choices, expect_text: [MONTGOMERY, A] }
-      - { key: F1, capture: quiz-02-prompt }
-      - { key: F5, capture: quiz-02-choices }
-      - { key: F1, capture: quiz-03-prompt }
-      - { key: F5, capture: quiz-03-choices }
-      - { key: F1, capture: quiz-04-prompt }
-      - { key: F5, capture: quiz-04-choices }
-      - { key: F1, capture: quiz-05-prompt }
-      - { key: F5, capture: quiz-05-choices }
-      - { key: F1, capture: quiz-06-prompt }
-      - { key: F5, capture: quiz-06-choices }
-      - { key: F1, capture: quiz-07-prompt }
-      - { key: F5, capture: quiz-07-choices }
-      - { key: F1, capture: quiz-08-prompt }
-      - { key: F5, capture: quiz-08-choices }
-      - { key: F1, capture: quiz-09-prompt }
-      - { key: F5, capture: quiz-09-choices }
-      - { key: F1, capture: quiz-10-prompt }
-      - { key: F5, capture: quiz-10-choices }
-      - { key: F1, capture: perfect-result, settle_frames: 1200, expect_text: [RESULT, SCORE, 10, RESULT SAVED OFFLINE.] }
+      - { key: F5, capture: quiz-01, expect_text: [QUIZ, GEOGRAPHY, MONTGOMERY, A, B, C, D] }
+      - { key: F2, capture: quiz-02, expect_text: [QUIZ, GEOGRAPHY, JUNEAU] }
+      - { key: F3, capture: quiz-03, expect_text: [QUIZ, GEOGRAPHY, PHOENIX] }
+      - { key: F3, capture: quiz-04, expect_text: [QUIZ, GEOGRAPHY, LITTLE ROCK] }
+      - { key: F4, capture: quiz-05, expect_text: [QUIZ, GEOGRAPHY, SACRAMENTO] }
+      - { key: F4, capture: quiz-06, expect_text: [QUIZ, GEOGRAPHY, DENVER] }
+      - { key: F4, capture: quiz-07, expect_text: [QUIZ, GEOGRAPHY, HARTFORD] }
+      - { key: F2, capture: quiz-08, expect_text: [QUIZ, GEOGRAPHY, DOVER] }
+      - { key: F4, capture: quiz-09, expect_text: [QUIZ, GEOGRAPHY, TALLAHASSEE] }
+      - { key: F2, capture: quiz-10, expect_text: [QUIZ, GEOGRAPHY, ATLANTA] }
+      - { key: F2, capture: perfect-result, settle_frames: 1200, expect_text: [RESULT, SCORE, 10, RESULT SAVED OFFLINE.] }
       - { key: F1, capture: result-qr, settle_frames: 300, expect_symbols: QR V5/M }

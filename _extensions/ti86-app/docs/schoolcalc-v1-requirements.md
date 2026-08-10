@@ -181,6 +181,10 @@ not normal v1 routes.
   cells, instruction text, header, status, and rail MUST NOT be repainted.
 - F1 is blank until all six positions are filled, then becomes `OPEN`.
 - `ENTER` and F1 are inert before six digits; either opens the completed code.
+- On digit six, an exact locally resolved code immediately shows `OPENING...`
+  and launches its current study/result state without another keypress. An
+  unknown code remains completed with `OPEN` available; relay resolution still
+  requires explicit F1 or `ENTER` confirmation.
 - F2-F4 are blank and inert. F5 is `EXIT` at the far right and returns directly
   to TI-OS without altering canonical study state.
 - A new code creates a durable resolution request and directs the learner to
@@ -359,12 +363,18 @@ for each of known, hard, again, and unresolved. Labels without values are not a
 summary. `F5 QUIZ` starts the one prescribed quiz. There is no same-session
 restudy or remediation loop.
 
+Each item is one screen: at most two compact prompt rows followed by all A–E
+choices (normally four) on the same LCD. Content that cannot fit that bounded
+surface is incompatible and must be rejected before issuance. The calculator
+never truncates text and never separates the choices onto a second page.
+
 The quiz:
 
-- labels every prompt and choice screen `QUIZ: <subject>` using the immutable
+- labels every question screen `QUIZ: <subject>` using the immutable
   artifact subject, with the item position retained at right;
 - uses the persisted quiz IDs and order;
 - presents exactly one A-E choice per item;
+- maps visible A–E choices directly to F1–F5;
 - records one four-bit choice value per item;
 - does not ask the relay for hints, alternate items, or grading; and
 - computes local score evidence using the exact prescribed artifact.
