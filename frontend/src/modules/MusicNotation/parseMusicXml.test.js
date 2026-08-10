@@ -70,7 +70,12 @@ describe('tempo extraction', () => {
 </part></score-partwise>`;
 
   it('keeps the FIRST tempo marking (opening tempo), not the last', () => {
-    expect(parseMusicXml(xmlWithTempoChange).tempo).toBe(72);
+    const score = parseMusicXml(xmlWithTempoChange);
+    expect(score.tempo).toBe(72);
+    expect(score.tempoEntries).toEqual([
+      { onsetQuarter: 0, bpm: 72 },
+      { onsetQuarter: 4, bpm: 120 },
+    ]);
   });
 });
 

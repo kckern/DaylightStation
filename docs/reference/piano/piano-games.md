@@ -430,10 +430,12 @@ another source without changing the timing engine.
    `api/v1/proxy/media/stream/:encodedPath` (`.mxl` is decompressed by the
    backend, exactly as in Sheet Music).
 4. `parseMusicXml` creates the shared renderer-independent score model.
-5. `buildHeroChart` groups simultaneous onsets into chord targets and converts
-   quarter-note time to milliseconds using the score's opening tempo.
-6. Live note-on events are judged against the nearest matching target. Chords
-   resolve only when every pitch is struck.
+5. The shared performance target compiler groups simultaneous onsets into chord
+   targets and converts quarter-note time to milliseconds using the complete
+   MusicXML tempo map.
+6. The shared pure performance judge matches live note-on events to the nearest
+   target. Chords resolve only when every pitch is struck; Hero adapts the
+   resulting events into its own points and combo rules.
 
 ### Timing and scoring
 
@@ -453,7 +455,9 @@ becomes a falling target.
 | File | Purpose |
 |------|---------|
 | `PianoHeroGame/PianoHeroGame.jsx` | MusicXML picker, loading, highway, keyboard, and results UI |
-| `PianoHeroGame/heroChart.js` | Pure score-to-chart conversion and hit/miss judging |
+| `performance/performanceTargets.js` | Shared tempo-resolved score-to-target compiler |
+| `performance/performanceJudge.js` | Shared pure target matching used by Hero and Polish |
+| `PianoHeroGame/heroChart.js` | Hero chart metadata and points/combo adapter |
 | `PianoHeroGame/usePianoHeroGame.js` | MIDI subscription and timed run lifecycle |
 | `PianoHeroGame/PianoHeroGame.scss` | Picker, highway, HUD, notes, and results styling |
 

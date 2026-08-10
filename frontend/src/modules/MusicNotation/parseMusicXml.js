@@ -62,7 +62,7 @@ export function extractSections(xmlOrDoc) {
 /**
  * Parse a MusicXML string into a Score model.
  * @param {string} xml
- * @returns {{ divisions:number, tempo:number, timeSig:{beats,beatType}, key:{fifths},
+ * @returns {{ divisions:number, tempo:number, tempoEntries:Array, timeSig:{beats,beatType}, key:{fifths},
  *   parts: Array<{ id, name, staves, clefs, measures: Array<{number, notes: Note[]}>, notes: Note[] }> }}
  */
 export function parseMusicXml(xml) {
@@ -74,7 +74,7 @@ export function parseMusicXml(xml) {
     partNames[sp.getAttribute('id')] = text(sp, 'part-name', sp.getAttribute('id'));
   }
 
-  const score = { divisions: 1, tempo: 100, timeSig: { beats: 4, beatType: 4 }, key: { fifths: 0 }, parts: [] };
+  const score = { divisions: 1, tempo: 100, tempoEntries: [], timeSig: { beats: 4, beatType: 4 }, key: { fifths: 0 }, parts: [] };
   let tempoFound = false; // header shows the OPENING tempo; later markings belong to the tempo map
   score.title = text(doc, 'work work-title', null) || text(doc, 'movement-title', null);
   score.composer = doc.querySelector('identification creator[type="composer"]')?.textContent?.trim()
@@ -108,13 +108,20 @@ export function parseMusicXml(xml) {
         }
         measure.attributes = { clefs: { ...part.clefs }, key: score.key, time: score.timeSig };
       }
-      // Tempo (sound tempo or metronome per-minute) — first marking wins; the
-      // header shows the opening tempo, later markings belong to the tempo map.
-      if (!tempoFound) {
-        const sound = measureEl.querySelector('sound[tempo]');
-        const perMin = measureEl.querySelector('metronome per-minute');
-        if (sound) { score.tempo = Math.round(Number(sound.getAttribute('tempo'))); tempoFound = true; }
-        else if (perMin) { score.tempo = Number(perMin.textContent) || score.tempo; tempoFound = true; }
+      // The header keeps the first tempo while the target compiler receives the
+      // whole map. Read only the first part so duplicated partwise markings do not
+      // create competing entries at the same onset.
+      const sound = measureEl.querySelector('sound[tempo]');
+      const perMin = measureEl.querySelector('metronome per-minute');
+      const markedTempo = sound
+        ? Math.round(Number(sound.getAttribute('tempo')))
+        : (perMin ? Number(perMin.textContent) : null);
+      if (score.parts.length === 0 && Number.isFinite(markedTempo) && markedTempo > 0) {
+        score.tempoEntries.push({ onsetQuarter: measureStartQuarter, bpm: markedTempo });
+      }
+      if (!tempoFound && Number.isFinite(markedTempo) && markedTempo > 0) {
+        score.tempo = markedTempo;
+        tempoFound = true;
       }
 
       // Walk children in document order, tracking a time cursor (in divisions).

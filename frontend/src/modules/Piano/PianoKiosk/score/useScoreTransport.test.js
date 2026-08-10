@@ -106,7 +106,9 @@ describe('useScoreTransport (lookahead scheduler)', () => {
     act(() => result.current.play());
     act(() => vi.advanceTimersByTime(700));
     act(() => result.current.pause());
+    expect(result.current.getPosition()).toBe(700);
     act(() => vi.advanceTimersByTime(5000));
+    expect(result.current.getPosition()).toBe(700);
     expect(fired).toEqual([0, 1]);
     act(() => result.current.play());
     act(() => vi.advanceTimersByTime(320));

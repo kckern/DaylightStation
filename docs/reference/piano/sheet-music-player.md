@@ -337,6 +337,15 @@ notes-and-timing (the same measure wash used elsewhere) and folded into a
 running score; the transport bar's center readout shows the live tally as the
 run progresses (e.g. `82% · m 12/24`).
 
+Polish uses the same renderer-independent performance judge as Piano Hero.
+The score is compiled into exact onset targets after the tempo map, tempo
+multiplier, and active-staff filter are applied. Repeated pitches remain
+separate attacks, simultaneous pitches are judged as a chord, early/late drift
+is measured against the expected onset, and unmatched notes reduce accuracy.
+Polish then aggregates those target results by measure into its existing
+red/yellow/green washes and run summaries; Hero separately adapts them into
+points and combos.
+
 **Tempo tiers.** A run is bucketed by the tempo it was played at, decided the
 instant the run starts: **slow** (under 80%), **medium** (80–99%), **full**
 (exactly 100%), **overclocked** (over 100%). Changing the tempo mid-run voids
@@ -548,6 +557,8 @@ during an active run so the judge and falling highway cannot jump timelines.
 | File | Role |
 |------|------|
 | `SheetMusic.jsx` | routing (grid ↔ viewer), MusicXML fetch + load timing |
+| `Piano/performance/performanceTargets.js` | Shared tempo-resolved target compiler |
+| `Piano/performance/performanceJudge.js` | Shared pure note/chord hit and miss matcher |
 | `ScoreGrid.jsx` / `scoreGroups.js` | score browser grid + `sheetmusic.collections` → tab strip |
 | `scoreTitle.js` | filename → title fallback shared by the grid and the player |
 | `ScorePlayer.jsx` | orchestrator: modes, the Learn state matrix, transport, overlays, telemetry wiring |

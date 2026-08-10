@@ -15,14 +15,17 @@ function clamp(v, lo, hi) {
 }
 
 /**
- * @param {{ expected?: number[], hits?: {note:number, driftMs:number}[] }} measure
- * @param {{ timingToleranceMs?: number, thresholds?: {green?:number, yellow?:number} }} cfg
- * @returns {{ noteScore:number, timingScore:number, combined:number, grade:'green'|'yellow'|'red', silent:boolean, rest:boolean }}
+ * Grade one measure from resolved performance targets. Repeated attacks remain
+ * distinct, chord pitches are counted individually, and unmatched notes reduce
+ * accuracy instead of disappearing from the result.
  */
-export function gradeMeasure(measure, cfg) {
-  const expected = Array.isArray(measure?.expected) ? measure.expected : [];
-  const hits = Array.isArray(measure?.hits) ? measure.hits : [];
-
+export function gradePerformanceMeasure(measure, cfg) {
+  const targets = Array.isArray(measure?.targets) ? measure.targets : [];
+  const unmatched = Array.isArray(measure?.unmatched) ? measure.unmatched : [];
+  const expectedCount = targets.reduce((sum, target) => sum + (target.pitches?.length || 0), 0);
+  const matchedDrifts = targets.flatMap((target) => target.drifts || []);
+  const matchedCount = matchedDrifts.length;
+  const wrongCount = unmatched.length;
   const tol = Number.isFinite(cfg?.timingToleranceMs)
     ? cfg.timingToleranceMs
     : DEFAULTS.timingToleranceMs;
@@ -33,48 +36,29 @@ export function gradeMeasure(measure, cfg) {
     ? cfg.thresholds.yellow
     : DEFAULTS.thresholds.yellow;
 
-  const expectedSet = new Set(expected);
+  const rest = expectedCount === 0;
+  const noteScore = rest
+    ? (wrongCount ? 0 : 1)
+    : clamp(matchedCount / (expectedCount + wrongCount), 0, 1);
+  const timingScore = matchedDrifts.length
+    ? matchedDrifts.reduce((sum, driftMs) => {
+      const drift = Math.abs(Number(driftMs) || 0);
+      return sum + clamp(1 - Math.max(0, drift - tol) / (tol * 4), 0, 1);
+    }, 0) / matchedDrifts.length
+    : (rest && !wrongCount ? 1 : 0);
+  const combined = rest && !wrongCount ? 1 : noteScore * (0.6 + 0.4 * timingScore);
+  const grade = combined >= greenThreshold ? 'green' : combined >= yellowThreshold ? 'yellow' : 'red';
+  const silent = expectedCount > 0 && matchedCount === 0 && wrongCount === 0;
 
-  // noteScore: distinct expected midis present in hits / expected.length
-  let noteScore;
-  if (expected.length === 0) {
-    noteScore = 1; // rest bar — nothing to play is not a failure
-  } else {
-    const hitNotes = new Set(hits.map((h) => h?.note));
-    let matched = 0;
-    for (const midi of expectedSet) {
-      if (hitNotes.has(midi)) matched += 1;
-    }
-    noteScore = matched / expectedSet.size;
-  }
-
-  // timingScore: mean over matched hits of a tolerance-graded drift score.
-  const matchedHits = hits.filter((h) => expectedSet.has(h?.note));
-  let timingScore;
-  if (matchedHits.length === 0) {
-    timingScore = expected.length === 0 ? 1 : 0;
-  } else {
-    const sum = matchedHits.reduce((acc, h) => {
-      const drift = Math.abs(Number(h?.driftMs) || 0);
-      const s = clamp(1 - Math.max(0, drift - tol) / (tol * 4), 0, 1);
-      return acc + s;
-    }, 0);
-    timingScore = sum / matchedHits.length;
-  }
-
-  // combined: notes dominate, timing refines. Rest bar → perfect.
-  const combined = expected.length === 0
-    ? 1
-    : noteScore * (0.6 + 0.4 * timingScore);
-
-  let grade;
-  if (combined >= greenThreshold) grade = 'green';
-  else if (combined >= yellowThreshold) grade = 'yellow';
-  else grade = 'red';
-
-  const silent = expected.length > 0 && hits.length === 0;
-
-  const rest = expected.length === 0;
-
-  return { noteScore, timingScore, combined, grade, silent, rest };
+  return {
+    noteScore,
+    timingScore,
+    combined,
+    grade,
+    silent,
+    rest,
+    expectedCount,
+    matchedCount,
+    wrongCount,
+  };
 }
