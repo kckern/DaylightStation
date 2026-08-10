@@ -14,7 +14,11 @@ AD_PHASE_SUMMARY:      equ 1
 AD_PHASE_QUIZ:         equ 2
 AD_PHASE_RESULT:       equ 3
 
-AD_STATE:              equ SCSTATE_DRAFT_OFFSET
+; z80asm evaluates an EQU immediately, while runtime-state.asm defines the
+; shared offsets later in this translation unit. Keep the reviewed SCL1 ABI
+; offset explicit here so every derived adaptive field lands in draft[0..44]
+; instead of aliasing the envelope magic at scstate_record[0].
+AD_STATE:              equ 47                  ; SCSTATE_DRAFT_OFFSET
 AD_MARKER:             equ AD_STATE + 0
 AD_PHASE:              equ AD_STATE + 1
 AD_CARD_COUNT:         equ AD_STATE + 2
@@ -54,11 +58,11 @@ adaptive_start:
         call _runindicoff
         call sc_input_init
         call adaptive_open_prescription
-        jp c,adaptive_error
+        jp c,adaptive_error_prescription
         call adaptive_load_or_initialize
-        jp c,adaptive_error
+        jp c,adaptive_error_state
         call adaptive_validate_artifact
-        jp c,adaptive_error
+        jp c,adaptive_error_artifact
 adaptive_dispatch:
         ld a,(scstate_record + AD_PHASE)
         cp AD_PHASE_STUDY
@@ -924,48 +928,48 @@ adaptive_draw_graphic:
         ld de,(adaptive_graphic_offset)
         ld (sc_record_cursor),de
         call sc_cursor_read_byte
-        jp c,adaptive_error
+        jp c,adaptive_error_graphic
         cp SC_TAG_BYTES
-        jp nz,adaptive_error
+        jp nz,adaptive_error_graphic
         call sc_cursor_read_word
-        jp c,adaptive_error
+        jp c,adaptive_error_graphic
         ld a,h
         or a
-        jp nz,adaptive_error
+        jp nz,adaptive_error_graphic
         ld a,l
         or a
-        jp z,adaptive_error
+        jp z,adaptive_error_graphic
         cp 161
-        jp nc,adaptive_error
+        jp nc,adaptive_error_graphic
         ld (adaptive_graphic_remaining),a
 adaptive_graphic_command_loop:
         call adaptive_graphic_read_byte
-        jp c,adaptive_error
+        jp c,adaptive_error_graphic
         or a
         jr z,adaptive_graphic_end
         cp 1
         jr z,adaptive_graphic_line
         cp 2
         jr z,adaptive_graphic_label
-        jp adaptive_error
+        jp adaptive_error_graphic
 adaptive_graphic_end:
         ld a,(adaptive_graphic_remaining)
         or a
-        jp nz,adaptive_error
+        jp nz,adaptive_error_graphic
         ret
 
 adaptive_graphic_line:
         call adaptive_graphic_read_x
-        jp c,adaptive_error
+        jp c,adaptive_error_graphic
         ld (adaptive_line_x0),a
         call adaptive_graphic_read_y
-        jp c,adaptive_error
+        jp c,adaptive_error_graphic
         ld (adaptive_line_y0),a
         call adaptive_graphic_read_x
-        jp c,adaptive_error
+        jp c,adaptive_error_graphic
         ld (adaptive_line_x1),a
         call adaptive_graphic_read_y
-        jp c,adaptive_error
+        jp c,adaptive_error_graphic
         ld (adaptive_line_y1),a
         call adaptive_draw_line
         jp adaptive_graphic_command_loop
@@ -975,16 +979,16 @@ adaptive_graphic_label:
         jp c,adaptive_error
         ld (adaptive_label_x),a
         call adaptive_graphic_read_y
-        jp c,adaptive_error
+        jp c,adaptive_error_graphic
         cp 35
-        jp nc,adaptive_error
+        jp nc,adaptive_error_graphic
         ld (adaptive_label_y),a
         call adaptive_graphic_read_byte
-        jp c,adaptive_error
+        jp c,adaptive_error_graphic
         or a
-        jp z,adaptive_error
+        jp z,adaptive_error_graphic
         cp 13
-        jp nc,adaptive_error
+        jp nc,adaptive_error_graphic
         ld (adaptive_label_remaining),a
         ld b,a
         add a,a
@@ -994,15 +998,15 @@ adaptive_graphic_label:
         ld a,(adaptive_label_x)
         add a,c
         cp 124
-        jp nc,adaptive_error
+        jp nc,adaptive_error_graphic
         ld hl,adaptive_graphic_label_text
 adaptive_graphic_label_copy:
         call adaptive_graphic_read_byte
-        jp c,adaptive_error
+        jp c,adaptive_error_graphic
         cp 32
-        jp c,adaptive_error
+        jp c,adaptive_error_graphic
         cp 127
-        jp nc,adaptive_error
+        jp nc,adaptive_error_graphic
         ld (hl),a
         inc hl
         djnz adaptive_graphic_label_copy
@@ -1022,7 +1026,9 @@ adaptive_graphic_read_x:
         cp 4
         jr c,adaptive_graphic_read_invalid
         cp 124
-        ret c
+        jr nc,adaptive_graphic_read_invalid
+        or a
+        ret
 adaptive_graphic_read_invalid:
         scf
         ret
@@ -1033,8 +1039,9 @@ adaptive_graphic_read_y:
         cp 11
         jr c,adaptive_graphic_read_invalid
         cp 39
-        ret c
-        jr adaptive_graphic_read_invalid
+        jr nc,adaptive_graphic_read_invalid
+        or a
+        ret
 
 adaptive_graphic_read_byte:
         ld a,(adaptive_graphic_remaining)
@@ -1203,6 +1210,8 @@ adaptive_summary_next:
         ld (adaptive_scan_index),a
         jr adaptive_summary_scan
 adaptive_summary_ready:
+        call ui_mode_set
+        call ui_select_compact
         ld hl,adaptive_summary_known_text
         ld a,(adaptive_known_count)
         ld c,14
@@ -1279,6 +1288,9 @@ adaptive_render_quiz:
         jp c,adaptive_error
         call ui_mode_set
         call ui_select_compact
+        ; ui_select_compact uses HL for its glyph table. Restore the stable
+        ; record-reader buffer before drawing the authored quiz prompt.
+        ld hl,_plotSScreen + 256
         ld b,2
         ld c,12
         ld d,122
@@ -1334,6 +1346,8 @@ adaptive_quiz_page_next:
         jp adaptive_render_quiz
 
 adaptive_render_choices:
+        call ui_mode_set
+        call ui_select_compact
         ld de,(adaptive_item_offset)
         ld hl,adaptive_key_choices
         call sc_map_find_literal
@@ -1549,6 +1563,8 @@ adaptive_render_result:
         call _clrLCD
         ld hl,adaptive_result_title
         call adaptive_header_text
+        call ui_mode_set
+        call ui_select_compact
         ld hl,adaptive_result_score
         ld b,2
         ld c,18
@@ -1563,7 +1579,10 @@ adaptive_render_result:
         ld b,66
         ld c,18
         call ui_draw_text
-        ld a,(adaptive_quiz_count)
+        ; SCQUEUE executes in the same assembly RAM and may overwrite this
+        ; runtime's static variables. The immutable count is also persisted in
+        ; the adaptive draft, so use that canonical copy after returning.
+        ld a,(scstate_record + AD_QUIZ_COUNT)
         call adaptive_format_byte
         ld hl,adaptive_number
         ld b,78
@@ -1657,7 +1676,9 @@ adaptive_clear_rail:
         call ui_fill_rect
         call ui_mode_clear
         call ui_select_compact
-        ret
+        ; All rail callers immediately draw visible labels. Leave the renderer
+        ; in set mode after clearing the rail's background.
+        jp ui_mode_set
 
 adaptive_render_choice_rail:
         call adaptive_clear_rail
@@ -1747,9 +1768,55 @@ adaptive_format_no_tens:
         ld (hl),a
         ret
 
+adaptive_error_prescription:
+        ld hl,adaptive_error_prescription_title
+        jr adaptive_error_render
+adaptive_error_state:
+        ld a,(scstate_failure)
+        cp 7
+        ld hl,adaptive_error_state_memory_title
+        jr z,adaptive_error_render
+        cp 8
+        jr z,adaptive_error_state_verify
+        cp 9
+        ld hl,adaptive_error_state_length_title
+        jr z,adaptive_error_render
+        ld hl,adaptive_error_state_title
+        jr adaptive_error_render
+adaptive_error_state_verify:
+        ld a,(sc_record_error)
+        cp SC_RECORD_ERROR_NOT_FOUND
+        ld hl,adaptive_error_state_missing_title
+        jr z,adaptive_error_render
+        cp SC_RECORD_ERROR_CRC
+        ld hl,adaptive_error_state_crc_title
+        jr z,adaptive_error_render
+        cp SC_RECORD_ERROR_SIZE
+        ld hl,adaptive_error_state_size_title
+        jr z,adaptive_error_render
+        cp SC_RECORD_ERROR_MAGIC
+        ld hl,adaptive_error_state_magic_title
+        jr z,adaptive_error_render
+        cp SC_RECORD_ERROR_VERSION
+        ld hl,adaptive_error_state_version_title
+        jr z,adaptive_error_render
+        cp SC_RECORD_ERROR_LENGTH
+        ld hl,adaptive_error_state_envelope_title
+        jr z,adaptive_error_render
+        ld hl,adaptive_error_state_verify_title
+        jr adaptive_error_render
+adaptive_error_artifact:
+        ld hl,adaptive_error_artifact_title
+        jr adaptive_error_render
+adaptive_error_graphic:
+        ld hl,adaptive_error_graphic_title
+        jr adaptive_error_render
 adaptive_error:
-        call _clrLCD
         ld hl,adaptive_error_title
+adaptive_error_render:
+        push hl
+        call _clrLCD
+        pop hl
         call adaptive_header_text
         ld hl,adaptive_error_text
         ld b,2
@@ -1844,6 +1911,19 @@ adaptive_title:              defb "ADAPTIVE STUDY",0
 adaptive_summary_title:      defb "STUDY SUMMARY",0
 adaptive_result_title:       defb "RESULT",0
 adaptive_error_title:        defb "STUDY UNAVAILABLE",0
+adaptive_error_prescription_title: defb "PRESCRIPTION INVALID",0
+adaptive_error_state_title:   defb "STATE UNAVAILABLE",0
+adaptive_error_state_memory_title: defb "STATE MEMORY LOW",0
+adaptive_error_state_verify_title: defb "STATE WRITE INVALID",0
+adaptive_error_state_missing_title: defb "STATE WRITE MISSING",0
+adaptive_error_state_crc_title: defb "STATE CHECKSUM BAD",0
+adaptive_error_state_size_title: defb "STATE RECORD SIZE",0
+adaptive_error_state_magic_title: defb "STATE MAGIC BAD",0
+adaptive_error_state_version_title: defb "STATE VERSION BAD",0
+adaptive_error_state_envelope_title: defb "STATE LENGTH BAD",0
+adaptive_error_state_length_title: defb "STATE SIZE INVALID",0
+adaptive_error_artifact_title: defb "ARTIFACT INVALID",0
+adaptive_error_graphic_title:  defb "GRAPHIC INVALID",0
 adaptive_error_text:         defb "Prescription, state, or artifact is invalid. Return to Enter Code and sync again.",0
 adaptive_label_flip:         defb "FLIP",0
 adaptive_label_again:        defb "AGAIN",0

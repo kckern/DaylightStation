@@ -17,7 +17,7 @@ scenarios:
       - { key: '1', capture: digit-3 }
       - { key: '2', capture: digit-4 }
       - { key: '3', capture: digit-5 }
-      - { key: '4', capture: code-ready, expect_text: '001234' }
+      - { key: '4', capture: code-ready, expect_text: '001 234' }
       - { key: F1, capture: relay-resolution, settle_frames: 600, expect_not_text: [PROFILE, SUBJECT, CATALOG] }
 
   - id: resolved-code-prescription
@@ -29,7 +29,7 @@ scenarios:
       - { key: '1', capture: digit-3 }
       - { key: '2', capture: digit-4 }
       - { key: '3', capture: digit-5 }
-      - { key: '4', capture: code-ready, expect_text: '001234' }
+      - { key: '4', capture: code-ready, expect_text: '001 234' }
       - { key: F1, capture: prescribed-card, settle_frames: 300, expect_text: [ADAPTIVE STUDY, FLIP] }
 
   - id: again-two-card-spacing

@@ -319,9 +319,11 @@ scqr_result_key_ok:
         djnz scqr_validate_result_key
         ld a,(scqr_result_kind)
         bit 7,a
-        jr nz,scqr_validate_progress
+        jp nz,scqr_validate_progress
 
         ld a,(hl)
+        cp 4                       ; Adaptive Study packed telemetry result
+        jp z,scqr_validate_adaptive
         cp 1                       ; Z80 v0 emits packed ordered choices
         jp nz,scqr_fail
         inc hl
@@ -378,6 +380,32 @@ scqr_validate_response_score:
         jp c,scqr_fail
         inc hl
         jr scqr_validate_result_end
+
+; Adaptive mode 4: quiz count, six code digits, card count, packed card
+; telemetry, packed choices, then score. SCQUEUE already validates every field
+; before append; QR re-derives the exact end cursor from the two bounded counts
+; and the CRC-protected record length without allocating another parser.
+scqr_validate_adaptive:
+        inc hl
+        ld a,(hl)
+        ld c,a
+        inc hl
+        ld de,6
+        add hl,de
+        ld a,(hl)
+        inc hl
+        inc a
+        srl a
+        ld e,a
+        ld d,0
+        add hl,de
+        ld a,c
+        inc a
+        srl a
+        ld e,a
+        add hl,de
+        inc hl
+        jp scqr_validate_result_end
 
 scqr_validate_progress:
         ld a,(hl)

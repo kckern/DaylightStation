@@ -95,6 +95,30 @@ hardware readiness from a generated binary in `dist/`.
 Useful current commands from the repository root include:
 
 ```sh
+# Build the deterministic resolved geometry lesson used by the journey lane.
+node _extensions/ti86-app/tools/build-adaptive-journey-fixture.mjs
+
+# With the locally preserved ROM and Graph Link sender available:
+node _extensions/ti86-app/tools/ti86-mame-scenario-harness.mjs \
+  --rom _extensions/ticalc-relay/roms/ti86.rom \
+  --bundle _extensions/ti86-app/dist/journey-ti86a-RELEASE \
+  --scenarios _extensions/ti86-app/testing/adaptive-journey.yml \
+  --graph-link _extensions/ticalc-relay/bin/ti86-graph-link \
+  --output _extensions/ti86-app/dist/adaptive-journey
+
+# Compile the digest-bearing emulator PNGs into the styled documentation.
+node _extensions/ti86-app/tools/build-adaptive-journey-doc.mjs \
+  --report _extensions/ti86-app/dist/adaptive-journey/report.json
+```
+
+The checked-in result is
+[`docs/adaptive-study-journey.html`](docs/adaptive-study-journey.html).
+
+The HTML builder accepts only a real MAME scenario report and copies its exact
+PNG frames; it does not silently replace missing emulator evidence with GUI
+mockups.
+
+```sh
 node _extensions/ti86-app/tools/build-schoolcalc-shell.mjs
 node _extensions/ti86-app/tools/build-schoolcalc-launcher.mjs
 node _extensions/ti86-app/tools/build-standard-runtime.mjs

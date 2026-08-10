@@ -153,7 +153,6 @@ async function runScenario(options) {
     const execution = await waitForChild(child, options.scenarioTimeoutMs, () => output);
     if (execution.code !== 0) throw new Error(`MAME exited ${execution.code}: ${tail(output)}`);
     const parsed = parseTi86MameScenarioOutput(output, options.scenario, { requireSchoolCalcBoot: true });
-    assertSemanticFrames(parsed);
     const frameDirectory = path.join(options.output, options.scenario.id);
     mkdirSync(frameDirectory, { recursive: true });
     const frames = [];
@@ -165,6 +164,10 @@ async function runScenario(options) {
       writeFileSync(path.join(frameDirectory, asciiFileName), renderTi86FramebufferAscii(frame.pixels));
       frames.push({ capture: frame.capture, pc: frame.pc, sha256: frame.sha256, fileName, asciiFileName });
     }
+    // Preserve the visual evidence even when a semantic assertion fails. That
+    // makes an emulator failure reviewable instead of discarding the exact LCD
+    // frame that explains it.
+    assertSemanticFrames(parsed);
     return {
       id: options.scenario.id,
       description: options.scenario.description,

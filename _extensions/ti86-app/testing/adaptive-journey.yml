@@ -1,0 +1,20 @@
+schema: schoolcalc.ti86-mame-scenarios/v1
+scenarios:
+  - id: adaptive-v1-journey
+    description: Cold code entry through a graphic card, answer, summary, quiz, durable result, and QR.
+    boot_settle_frames: 300
+    steps:
+      - { key: F2, capture: 01-enter-code, expect_changed: false, expect_text: [CODE, ENTER 6 DIGITS] }
+      - { key: '0', capture: 02-first-digit }
+      - { key: '1', capture: 03-second-digit }
+      - { key: '2', capture: 04-third-digit }
+      - { key: '3', capture: 05-fourth-digit }
+      - { key: '4', capture: 06-fifth-digit }
+      - { key: '5', capture: 07-code-ready, expect_text: '012 345' }
+      - { key: F1, capture: 08-graphic-card-front, settle_frames: 300, expect_text: [ADAPTIVE STUDY, FIND THE DIAMETER] }
+      - { key: F1, capture: 09-graphic-card-back, settle_frames: 300, expect_text: [12 UNITS] }
+      - { key: F5, capture: 10-study-summary, settle_frames: 300, expect_text: [STUDY SUMMARY] }
+      - { key: F5, capture: 11-quiz-prompt, settle_frames: 300, expect_text: [ADAPTIVE STUDY] }
+      - { key: F5, capture: 12-quiz-choices, settle_frames: 300, expect_text: [6 UNITS, 12 UNITS] }
+      - { key: F2, capture: 13-durable-result, settle_frames: 300, expect_text: [RESULT, SCORE] }
+      - { key: F1, capture: 14-result-qr, settle_frames: 300, expect_symbols: QR V5/M }

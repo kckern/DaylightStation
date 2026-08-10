@@ -146,7 +146,7 @@ export function glyphRows(font, character) {
   const code = printableAsciiCode(character, 'glyphRows');
   const offset = (code - UI_ASCII_FIRST) * font.stride;
   const pixelMask = (0xFF << (8 - font.width)) & 0xFF;
-  return [...font.bytes.subarray(offset, offset + font.height)].map((row) => row & pixelMask);
+  return [...font.bitmapBytes.subarray(offset, offset + font.height)].map((row) => row & pixelMask);
 }
 
 export function glyphAdvance(font, character) {
