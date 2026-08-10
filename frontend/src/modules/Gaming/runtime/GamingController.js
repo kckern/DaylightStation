@@ -27,6 +27,7 @@ export class GamingController {
       phase: 'loading', session: null, error: null, providerRuntime: null, combatResult: null,
     };
     this.disposed = false;
+    this.closing = false;
     this.actionInFlight = false;
     this.observedAt = this.clock();
     this.lastHandObservation = null;
@@ -62,7 +63,7 @@ export class GamingController {
       ...this.#sessionFields(session),
       challengeId: pending?.id || pending?.request?.challenge_id || null,
       challengeKind: pending?.request?.kind || null,
-      challengeLabel: pending?.request?.prompt?.label || null,
+      challengeLabel: pending?.prepared?.prompt?.label || pending?.request?.prompt?.label || null,
       cardInstanceId: pending?.card_instance_id || null,
       cardDefinitionId: pending?.card_definition_id || null,
     };
@@ -277,6 +278,24 @@ export class GamingController {
     }
   }
 
+  async close(reason = 'player_closed') {
+    if (this.closing) return;
+    this.closing = true;
+    const session = this.snapshot.session;
+    try {
+      this.snapshot.providerRuntime?.cancel?.(reason);
+      if (session?.status === 'active') {
+        await this.#dispatch(COMMAND_TYPES.ABANDON_SESSION, { reason });
+      }
+    } catch (error) {
+      await this.#recover(error);
+    } finally {
+      this.logger.info('gaming.session.close-requested', {
+        ...this.#sessionFields(), reason,
+      });
+    }
+  }
+
   #logChallengeAborted(pending, session, { reason, durationMs, result = null }) {
     this.experience.challengesAborted += 1;
     this.logger.info('gaming.challenge.aborted', {
@@ -410,6 +429,7 @@ export class GamingController {
       prepareDurationMs: Math.max(0, this.clock() - prepareStartedAt),
       providerId: provider.id,
       providerVersion: prepared?.provider_version || provider.version || null,
+      pedagogyPolicyVersion: prepared?.pedagogy_policy_version || null,
     });
     await this.#dispatch(COMMAND_TYPES.START_CHALLENGE, { challenge_id: pending.id });
     pending = this.snapshot.session.state.pending_action;
@@ -419,9 +439,14 @@ export class GamingController {
       ...this.#challengeFields(pending),
       providerId: provider.id,
       providerVersion: prepared?.provider_version || provider.version || null,
+      pedagogyPolicyVersion: prepared?.pedagogy_policy_version || null,
     });
     const result = await runtime.start(prepared, {});
-    if (this.disposed) return;
+    if (this.disposed || this.closing) {
+      runtime.dispose();
+      this.#publish({ providerRuntime: null });
+      return;
+    }
     if (result.status === 'completed') {
       const card = this.snapshot.session.definition.cards[pending.card_definition_id];
       this.#publish({
@@ -484,7 +509,18 @@ export class GamingController {
       const session = await this.api.getSession(sessionId, this.viewerId);
       this.snapshot.providerRuntime?.dispose?.();
       this.#publish({ phase: 'playing', session, error, providerRuntime: null });
-      this.#observeHandAvailability(session, 'command_recovery');
+      const pending = session.state?.pending_action;
+      let recoveredSession = session;
+      if (pending) {
+        recoveredSession = await this.#dispatch(COMMAND_TYPES.ABORT_PENDING_ACTION, {
+          challenge_id: pending.id,
+          reason: 'provider_or_command_error',
+        });
+        this.#logChallengeAborted(pending, recoveredSession, {
+          reason: 'provider_or_command_error', durationMs: null,
+        });
+      }
+      this.#observeHandAvailability(recoveredSession, 'command_recovery');
     } catch (reloadError) {
       this.#publish({ phase: 'error', error: reloadError });
     }

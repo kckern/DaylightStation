@@ -45,6 +45,13 @@ export class YamlGamingSessionStore {
     return YAML.parse(fs.readFileSync(file, 'utf8'), { uniqueKeys: true });
   }
 
+  list() {
+    return fs.readdirSync(this.sessionsDir)
+      .filter((name) => name.endsWith('.yml'))
+      .map((name) => this.get(name.slice(0, -4)))
+      .filter(Boolean);
+  }
+
   compareAndSwap(session, expectedRevision) {
     const current = this.get(session.session_id);
     if (!current) throw new Error('gaming session not found');

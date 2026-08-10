@@ -115,6 +115,19 @@ describe('gaming card-slice reducer', () => {
     expect(result.state.zones.hand.map((item) => item.instance_id)).toContain(card.instance_id);
   });
 
+  it('authoritatively abandons a session and interrupts any pending challenge', () => {
+    const initial = createInitialState(scaleClashDefinition, { seed: 7, participants: [{ user_id: 'guest' }] });
+    const card = initial.zones.hand[0];
+    const chosen = transition(initial, command('choose_action', 0, { card_instance_id: card.instance_id }, 'choose-abandon'), scaleClashDefinition);
+    const result = transition(chosen.state, command('abandon_session', 1, { reason: 'player_closed' }, 'abandon'), scaleClashDefinition);
+    expect(result.state).toMatchObject({ status: 'abandoned', pending_action: null, winner: null });
+    expect(result.yield).toMatchObject({ type: 'terminal', status: 'abandoned' });
+    expect(result.events).toEqual([
+      expect.objectContaining({ type: 'challenge_interrupted', reason: 'player_closed' }),
+      { type: 'session_abandoned', reason: 'player_closed' },
+    ]);
+  });
+
   it('supports multiple card verbs in one tactical turn and spends focus on the next attack', () => {
     let state = createInitialState(tacticalDefinition, { seed: 7, participants: [{ user_id: 'guest' }] });
     expect(deriveInteraction(state, tacticalDefinition).legal_commands).toHaveLength(5);

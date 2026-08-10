@@ -38,5 +38,11 @@ export function createGamingApi() {
         body: JSON.stringify(attempt),
       });
     },
+    preparePianoChallenge(userId, requestBody) {
+      return request(`/api/v1/piano/users/${encodeURIComponent(userId)}/challenges/prepare`, {
+        method: 'POST',
+        body: JSON.stringify(requestBody),
+      });
+    },
   };
 }

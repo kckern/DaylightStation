@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import {
+  COMMAND_TYPES,
   GAMING_ENGINE_VERSION,
   projectState,
   transition,
@@ -19,12 +20,64 @@ export class GamingServiceError extends Error {
 }
 
 export class GamingSessionService {
-  constructor({ definitionStore, sessionStore, idFactory = () => `game_${crypto.randomUUID()}`, clock = () => new Date(), logger = null }) {
+  constructor({
+    definitionStore,
+    sessionStore,
+    idFactory = () => `game_${crypto.randomUUID()}`,
+    clock = () => new Date(),
+    logger = null,
+    pendingTimeoutMs = 120_000,
+    idleTimeoutMs = 6 * 60 * 60 * 1000,
+  }) {
     this.definitionStore = definitionStore;
     this.sessionStore = sessionStore;
     this.idFactory = idFactory;
     this.clock = clock;
     this.logger = logger;
+    this.pendingTimeoutMs = pendingTimeoutMs;
+    this.idleTimeoutMs = idleTimeoutMs;
+  }
+
+  recoverStaleSessions() {
+    const now = this.clock().getTime();
+    const recovered = [];
+    for (const session of this.sessionStore.list?.() || []) {
+      if (session.status !== 'active') continue;
+      const ageMs = Math.max(0, now - new Date(session.updated_at).getTime());
+      const pending = session.state?.pending_action;
+      let type = null;
+      let payload = null;
+      if (pending) {
+        const authoredTimeout = Number(pending.prepared?.timeout_ms ?? pending.request?.timeout_ms);
+        const timeoutMs = Number.isFinite(authoredTimeout) && authoredTimeout > 0
+          ? authoredTimeout
+          : this.pendingTimeoutMs;
+        if (ageMs <= timeoutMs) continue;
+        type = COMMAND_TYPES.ABORT_PENDING_ACTION;
+        payload = { challenge_id: pending.id, reason: 'stale_challenge_timeout' };
+      } else {
+        if (ageMs <= this.idleTimeoutMs) continue;
+        type = COMMAND_TYPES.ABANDON_SESSION;
+        payload = { reason: 'idle_session_timeout' };
+      }
+      try {
+        this.applyCommand(session.session_id, {
+          command_id: `recovery-${session.revision}-${type}`,
+          session_revision: session.revision,
+          type,
+          payload,
+        });
+        recovered.push({ session_id: session.session_id, type });
+      } catch (error) {
+        this.logger?.warn?.('gaming.session.recovery-skipped', {
+          sessionId: session.session_id,
+          type,
+          code: error.code || null,
+          error: error.message,
+        });
+      }
+    }
+    return recovered;
   }
 
   getDefinition(gameId) {
@@ -107,7 +160,7 @@ export class GamingSessionService {
       events: [...session.events, ...outcome.events.map((event) => ({ revision: session.revision + 1, ...event }))],
       accepted_command_ids: { ...(session.accepted_command_ids || {}), [command.command_id]: fingerprint },
       updated_at: updatedAt,
-      completed_at: outcome.state.status === 'complete' ? updatedAt : session.completed_at,
+      completed_at: outcome.state.status !== 'active' ? updatedAt : session.completed_at,
     };
     this.sessionStore.compareAndSwap(next, session.revision);
     const logFields = {
@@ -155,6 +208,12 @@ export class GamingSessionService {
           playerHealth: next.state.player.health,
           enemyHealth: next.state.enemy.health,
           score: next.state.score ?? null,
+          durationMs: Math.max(0, new Date(updatedAt).getTime() - new Date(session.created_at).getTime()),
+        });
+      } else if (event.type === 'session_abandoned') {
+        this.logger?.info?.('gaming.authority.session.abandoned', {
+          ...logFields,
+          reason: event.reason,
           durationMs: Math.max(0, new Date(updatedAt).getTime() - new Date(session.created_at).getTime()),
         });
       }

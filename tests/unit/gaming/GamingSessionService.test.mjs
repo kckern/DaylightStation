@@ -13,7 +13,7 @@ afterEach(() => {
   for (const dir of scratch.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
 
-function service({ logger = null } = {}) {
+function service({ logger = null, clock = () => new Date('2026-08-09T12:00:00.000Z'), pendingTimeoutMs, idleTimeoutMs } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gaming-service-'));
   scratch.push(root);
   const definitionStore = new YamlGamingDefinitionStore({
@@ -29,43 +29,46 @@ function service({ logger = null } = {}) {
     definitionStore,
     sessionStore,
     idFactory: () => 'game_12345678',
-    clock: () => new Date('2026-08-09T12:00:00.000Z'),
+    clock,
     logger,
+    pendingTimeoutMs,
+    idleTimeoutMs,
   });
 }
 
 describe('GamingSessionService', () => {
-  it('loads the Card Game from YAML and creates scale challenges', () => {
+  it('loads the Card Game from YAML and requests semantic scale challenges', () => {
     const svc = service();
     const loaded = svc.getDefinition('card-game');
     expect(loaded.definition.title).toBe('Riff Raiders');
     expect(Object.values(loaded.definition.cards).every((card) => card.challenge.kind === 'scale')).toBe(true);
     expect(new Set(Object.values(loaded.definition.cards).map((card) => card.type))).toEqual(new Set(['attack', 'guard', 'focus']));
     expect(Object.values(loaded.definition.cards).every((card) => !/major|scale/i.test(card.title))).toBe(true);
-    const prompts = loaded.definition.card_battle.challenge_pools['major-scales'].prompts;
-    expect(prompts.every((prompt) => prompt.abc === undefined && prompt.expected_midi === undefined)).toBe(true);
-    expect(prompts.map((prompt) => prompt.scale.tonic)).toEqual(['C', 'G', 'F', 'D']);
+    expect(loaded.definition.card_battle.challenge_pools).toBeUndefined();
+    expect(JSON.stringify(loaded.definition)).not.toMatch(/expected_midi|\babc\b/i);
     const created = svc.createSession({ game_id: 'card-game', participants: [{ user_id: 'guest' }], seed: 7 });
     const card = created.state.zones.hand[0];
     const chosen = svc.applyCommand(created.session_id, {
       command_id: 'scale-1', session_revision: 0, type: 'choose_action', payload: { card_instance_id: card.instance_id },
     });
     expect(chosen.state.pending_action.request).toMatchObject({ domain: 'piano', kind: 'scale' });
-    expect(chosen.state.pending_action.request.prompt.expected_midi).toHaveLength(8);
-    expect(chosen.state.pending_action.request.prompt.scale).toMatchObject({ mode: 'major', octave: 4 });
-    expect(chosen.state.pending_action.request.context.challenge_pool).toBe('major-scales');
+    expect(chosen.state.pending_action.request).toMatchObject({
+      requirements: { curriculum: 'foundation-major-scales' },
+      timeout_ms: 90000,
+    });
+    expect(chosen.state.pending_action.request.prompt).toBeUndefined();
+    expect(chosen.state.pending_action.request.context.challenge_pool).toBeNull();
+    expect(chosen.state.pending_action.request.context.challenge_sequence).toEqual(expect.any(Number));
     expect(loaded.definition.cards[card.definition_id].challenge.prompt).toBeUndefined();
   });
 
-  it('rejects low-level MIDI or ABC authoring at the game-definition boundary', () => {
+  it('keeps domain-specific challenge requirements opaque to Gaming', () => {
     const definition = structuredClone(service().getDefinition('card-game').definition);
-    definition.card_battle.challenge_pools['major-scales'].prompts[0].expected_midi = [60, 62];
-    expect(validateDefinition(definition)).toMatchObject({
-      valid: false,
-      errors: expect.arrayContaining([
-        'challenge pool major-scales scale prompt must use semantic scale fields, not MIDI or ABC',
-      ]),
-    });
+    definition.cards['quick-cut'].challenge.requirements = {
+      curriculum: 'a-piano-owned-policy',
+      future_piano_constraint: { arbitrary: true },
+    };
+    expect(validateDefinition(definition)).toMatchObject({ valid: true, errors: [] });
   });
 
   it('pins the definition and replays commands authoritatively', () => {
@@ -150,5 +153,23 @@ describe('GamingSessionService', () => {
     svc.applyCommand(created.session_id, command);
     expect(svc.applyCommand(created.session_id, command).duplicate).toBe(true);
     expect(() => svc.applyCommand(created.session_id, { ...command, command_id: 'command-2' })).toThrow(/stale/);
+  });
+
+  it('recovers stale challenges and eventually abandons idle sessions', () => {
+    let now = new Date('2026-08-09T12:00:00.000Z');
+    const svc = service({ clock: () => now, pendingTimeoutMs: 1000, idleTimeoutMs: 5000 });
+    const created = svc.createSession({ game_id: 'scale-clash', participants: [{ user_id: 'guest' }], seed: 7 });
+    const card = created.state.zones.hand[0];
+    svc.applyCommand(created.session_id, {
+      command_id: 'stale-choose', session_revision: 0, type: 'choose_action', payload: { card_instance_id: card.instance_id },
+    });
+
+    now = new Date('2026-08-09T12:00:02.000Z');
+    expect(svc.recoverStaleSessions()).toEqual([{ session_id: created.session_id, type: 'abort_pending_action' }]);
+    expect(svc.getSession(created.session_id).state.pending_action).toBeNull();
+
+    now = new Date('2026-08-09T12:00:08.000Z');
+    expect(svc.recoverStaleSessions()).toEqual([{ session_id: created.session_id, type: 'abandon_session' }]);
+    expect(svc.getSession(created.session_id)).toMatchObject({ status: 'abandoned' });
   });
 });

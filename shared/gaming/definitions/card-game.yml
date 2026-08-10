@@ -46,38 +46,6 @@ card_battle:
         title: Crushing Downbeat
         kind: attack
         amount: 5
-  challenge_pools:
-    major-scales:
-      selection: rotate
-      prompts:
-        - scale:
-            tonic: C
-            octave: 4
-            mode: major
-            direction: ascending
-            octaves: 1
-          max_mistakes: 3
-        - scale:
-            tonic: G
-            octave: 4
-            mode: major
-            direction: ascending
-            octaves: 1
-          max_mistakes: 3
-        - scale:
-            tonic: F
-            octave: 4
-            mode: major
-            direction: ascending
-            octaves: 1
-          max_mistakes: 3
-        - scale:
-            tonic: D
-            octave: 4
-            mode: major
-            direction: ascending
-            octaves: 1
-          max_mistakes: 3
   deck:
     - quick-cut
     - quick-cut
@@ -102,7 +70,9 @@ cards:
     challenge: &scale_challenge
       domain: piano
       kind: scale
-      pool: major-scales
+      requirements:
+        curriculum: foundation-major-scales
+      timeout_ms: 90000
     outcomes: &scale_outcomes
       - id: fluent
         min_score: 1

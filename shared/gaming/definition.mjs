@@ -1,5 +1,4 @@
 import { GAMING_SCHEMA_VERSION } from './contracts.mjs';
-import { scaleSpecErrors } from '../music/pianoScale.mjs';
 
 const SAFE_ID = /^[a-z][a-z0-9-]{0,63}$/;
 
@@ -79,33 +78,22 @@ export function validateDefinition(definition) {
     if (cardType === 'guard' && !(card.block > 0)) errors.push(`card ${cardId} has invalid block`);
     if (cardType === 'focus' && !(card.focus > 0)) errors.push(`card ${cardId} has invalid focus`);
     const challenge = card.challenge;
-    if (challenge?.domain !== 'piano' || !['chord', 'scale'].includes(challenge?.kind)) {
-      errors.push(`card ${cardId} must use a supported piano challenge`);
+    if (typeof challenge?.domain !== 'string' || challenge.domain.trim() === ''
+      || typeof challenge?.kind !== 'string' || challenge.kind.trim() === '') {
+      errors.push(`card ${cardId} must declare a challenge domain and kind`);
     } else if (challenge.pool) {
       const pool = challengePools[challenge.pool];
       if (!pool) errors.push(`card ${cardId} references unknown challenge pool: ${challenge.pool}`);
       for (const prompt of pool?.prompts || []) {
-        if (challenge.kind === 'scale') {
-          if (Object.hasOwn(prompt || {}, 'expected_midi') || Object.hasOwn(prompt || {}, 'abc')) {
-            errors.push(`challenge pool ${challenge.pool} scale prompt must use semantic scale fields, not MIDI or ABC`);
-          }
-          for (const error of scaleSpecErrors(prompt?.scale)) errors.push(`challenge pool ${challenge.pool} ${error}`);
-          if (prompt?.max_mistakes !== undefined && (!Number.isInteger(prompt.max_mistakes) || prompt.max_mistakes < 1)) {
-            errors.push(`challenge pool ${challenge.pool} max_mistakes must be a positive integer`);
-          }
-        } else if (!Array.isArray(prompt?.pitch_classes) || prompt.pitch_classes.length === 0) {
-          errors.push(`challenge pool ${challenge.pool} has an invalid chord prompt`);
-        }
+        if (!prompt || typeof prompt !== 'object' || Array.isArray(prompt)) errors.push(`challenge pool ${challenge.pool} has an invalid prompt`);
       }
-    } else if (challenge.kind === 'chord') {
-      if (!Array.isArray(challenge.prompt?.pitch_classes) || challenge.prompt.pitch_classes.length === 0) {
-        errors.push(`card ${cardId} requires prompt.pitch_classes`);
-      }
-    } else if (challenge.kind === 'scale') {
-      if (Object.hasOwn(challenge.prompt || {}, 'expected_midi') || Object.hasOwn(challenge.prompt || {}, 'abc')) {
-        errors.push(`card ${cardId} scale prompt must use semantic scale fields, not MIDI or ABC`);
-      }
-      for (const error of scaleSpecErrors(challenge.prompt?.scale)) errors.push(`card ${cardId} ${error}`);
+    }
+    if (challenge?.requirements !== undefined
+      && (!challenge.requirements || typeof challenge.requirements !== 'object' || Array.isArray(challenge.requirements))) {
+      errors.push(`card ${cardId} challenge requirements must be an object`);
+    }
+    if (challenge?.timeout_ms !== undefined && (!Number.isInteger(challenge.timeout_ms) || challenge.timeout_ms < 1000)) {
+      errors.push(`card ${cardId} challenge timeout_ms must be at least 1000`);
     }
     const outcomes = card.outcomes;
     if (!Array.isArray(outcomes) || outcomes.length === 0 || outcomes.at(-1)?.min_score !== 0) {

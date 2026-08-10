@@ -4,6 +4,32 @@ Reference for the DaylightStation piano game system — MIDI-driven games layere
 
 ---
 
+## Card Game (Riff Raiders)
+
+Riff Raiders is the YAML-defined tactical card battle at `/piano/games/card-game`.
+The player reads the enemy's announced move, plays an attack, guard, or focus card,
+performs the piano challenge, sees the card's actual combat effectiveness, and ends the
+turn when ready. Scale names are never card choices: cards use game-world labels, while
+the Piano backend selects the exercise after a card is played.
+
+The ownership boundary is strict:
+
+- `shared/gaming/definitions/card-game.yml` contains combat content and a semantic
+  `foundation-major-scales` curriculum request. It contains no MIDI numbers or ABC.
+- `PianoScaleChallengePolicy` chooses C/G/F/D major practice from per-user attempt
+  evidence and materializes the musical prompt.
+- The provider renders the staff directly from `expected_midi` and grades the same array,
+  persists completed/interrupted attempts, and terminates on timeout or MIDI disconnect.
+- The Gaming authority persists every lifecycle boundary, battle outcome, explicit
+  abandonment, and stale-session recovery. Closing the screen does not leave an active
+  session behind.
+
+The engineering pilot is test-ready, but the product decision remains field-gated. A
+supervised pilot must still determine whether players understand the loop, enjoy it, and
+want to replay before this pattern is generalized to more games.
+
+---
+
 ## System Overview
 
 The piano game system lets users play games using a MIDI keyboard. Players press specific notes (displayed as music notation on staves or as falling note bars) to trigger game actions. A shared activation layer detects combo keypresses to launch games, and a config-driven level system controls difficulty progression.

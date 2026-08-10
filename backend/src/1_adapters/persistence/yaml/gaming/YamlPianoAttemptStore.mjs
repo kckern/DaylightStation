@@ -26,4 +26,20 @@ export class YamlPianoAttemptStore {
     fs.writeFileSync(file, YAML.stringify(record), { flag: 'wx' });
     return record;
   }
+
+  listRecent(userId, { limit = 100 } = {}) {
+    if (!SEGMENT_RE.test(String(userId))) return [];
+    const root = path.join(this.usersDir, String(userId), 'apps', 'piano', 'attempts');
+    if (!fs.existsSync(root)) return [];
+    const files = fs.readdirSync(root, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && /^\d{4}-\d{2}-\d{2}$/.test(entry.name))
+      .sort((a, b) => b.name.localeCompare(a.name))
+      .flatMap((day) => fs.readdirSync(path.join(root, day.name))
+        .filter((name) => name.endsWith('.yml'))
+        .map((name) => path.join(root, day.name, name)));
+    return files
+      .map((file) => YAML.parse(fs.readFileSync(file, 'utf8'), { uniqueKeys: true }))
+      .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))
+      .slice(0, Math.max(0, limit));
+  }
 }

@@ -39,6 +39,33 @@ describe('scale staff feedback', () => {
 });
 
 describe('createPianoChordProvider telemetry', () => {
+  it('asks the Piano backend to materialize semantic game requirements', async () => {
+    const api = {
+      preparePianoChallenge: vi.fn(async () => ({
+        prompt: { label: 'F major scale', key_signature: 'F', expected_midi: [65, 67, 69] },
+        timeout_ms: 1234,
+        pedagogy_policy_version: 'policy-v1',
+        selection: { curriculum: 'foundation-major-scales' },
+      })),
+    };
+    const provider = createPianoChordProvider({ useNotes: () => ({ activeNotes: new Map(), noteHistory: [] }) });
+    const runtime = await provider.createRuntime({ userId: 'guest', api, logger: { warn: vi.fn() } });
+    const prepared = await runtime.prepare({
+      challenge_id: 'semantic-1', kind: 'scale',
+      requirements: { curriculum: 'foundation-major-scales' },
+      context: { challenge_sequence: 2 },
+    });
+
+    expect(api.preparePianoChallenge).toHaveBeenCalledWith('guest', expect.objectContaining({
+      challenge_id: 'semantic-1', requirements: { curriculum: 'foundation-major-scales' },
+    }));
+    expect(prepared).toMatchObject({
+      prompt: { label: 'F major scale', expected_midi: [65, 67, 69] },
+      timeout_ms: 1234,
+      pedagogy_policy_version: 'policy-v1',
+    });
+  });
+
   it('returns aggregate scale experience metrics without logging every note', async () => {
     let notes = { activeNotes: new Map(), noteHistory: [] };
     let now = 1000;
@@ -109,5 +136,46 @@ describe('createPianoChordProvider telemetry', () => {
         { played: 65, expected: 60, progress: 0 },
       ],
     });
+  });
+
+  it('terminates and records an attempt when the challenge times out', async () => {
+    vi.useFakeTimers();
+    try {
+      const api = { recordPianoAttempt: vi.fn(async (_userId, attempt) => attempt) };
+      const provider = createPianoChordProvider({ useNotes: () => ({ activeNotes: new Map(), noteHistory: [] }) });
+      const runtime = await provider.createRuntime({ userId: 'guest', api, logger: { warn: vi.fn() } });
+      const prepared = await runtime.prepare({
+        challenge_id: 'timeout-1', kind: 'scale', timeout_ms: 1000,
+        prompt: { label: 'C major', key_signature: 'C', expected_midi: [60] },
+      });
+      const resultPromise = runtime.start(prepared);
+      await vi.advanceTimersByTimeAsync(1000);
+      const result = await resultPromise;
+      expect(result).toMatchObject({ status: 'timeout', score: null, metrics: { reason: 'challenge_timeout', timeoutMs: 1000 } });
+      expect(api.recordPianoAttempt).toHaveBeenCalledWith('guest', expect.objectContaining({ status: 'timeout' }));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('terminates and records an attempt when MIDI disconnects', async () => {
+    let connection = { connected: true, status: 'connected' };
+    const api = { recordPianoAttempt: vi.fn(async (_userId, attempt) => attempt) };
+    const provider = createPianoChordProvider({
+      useNotes: () => ({ activeNotes: new Map(), noteHistory: [] }),
+      useConnection: () => connection,
+    });
+    const runtime = await provider.createRuntime({ userId: 'guest', api, logger: { warn: vi.fn() } });
+    const prepared = await runtime.prepare({
+      challenge_id: 'disconnect-1', kind: 'scale',
+      prompt: { label: 'C major', key_signature: 'C', expected_midi: [60] },
+    });
+    const resultPromise = runtime.start(prepared);
+    const view = render(<runtime.Surface />);
+    connection = { connected: false, status: 'disconnected' };
+    await act(async () => view.rerender(<runtime.Surface />));
+    const result = await resultPromise;
+    expect(result).toMatchObject({ status: 'error', score: null, metrics: { reason: 'midi_disconnected' } });
+    expect(api.recordPianoAttempt).toHaveBeenCalledWith('guest', expect.objectContaining({ status: 'error' }));
   });
 });
