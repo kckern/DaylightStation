@@ -74,7 +74,7 @@ describe('SchoolCalc Adaptive Study SCLEARN contract', () => {
     expect(SOURCE).toMatch(
       /adaptive_flip:[\s\S]*?xor 1[\s\S]*?call adaptive_swap_cached_face[\s\S]*?call adaptive_save[\s\S]*?jp adaptive_card_wait/,
     );
-    expect(SOURCE).toMatch(/adaptive_swap_cached_face:[\s\S]*?ld hl,adaptive_verso_frame[\s\S]*?ld de,VideoRam \+ 144[\s\S]*?ld bc,880[\s\S]*?ex af,af'[\s\S]*?ld \(de\),a[\s\S]*?ld \(hl\),a/);
+    expect(SOURCE).toMatch(/adaptive_swap_cached_face:\s+di[\s\S]*?ld hl,adaptive_verso_frame[\s\S]*?ld de,VideoRam \+ 144[\s\S]*?ld bc,880[\s\S]*?ex af,af'[\s\S]*?ld \(de\),a[\s\S]*?ld \(hl\),a[\s\S]*?ei\s+ret/);
     expect(SOURCE).toContain('adaptive_verso_frame:        defs 880,0');
   });
 

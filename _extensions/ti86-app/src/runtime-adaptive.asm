@@ -855,8 +855,11 @@ adaptive_preload_verso_raster:
 
 ; Exchange the 55-row visible card body with its fully rendered opposite face.
 ; One buffer is sufficient: after the loop, the face just hidden is already
-; cached for the next F1 toggle.
+; cached for the next F1 toggle. The byte exchange uses AF', which TI-OS's
+; interrupt handler may also use, so keep this short copy loop interrupt-atomic
+; rather than allowing a preemption to inject random framebuffer bits.
 adaptive_swap_cached_face:
+        di
         ld hl,adaptive_verso_frame
         ld de,VideoRam + 144
         ld bc,880
@@ -873,6 +876,7 @@ adaptive_swap_cached_face_loop:
         ld a,b
         or c
         jr nz,adaptive_swap_cached_face_loop
+        ei
         ret
 
 adaptive_page_previous:

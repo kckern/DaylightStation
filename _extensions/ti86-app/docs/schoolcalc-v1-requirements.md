@@ -314,7 +314,8 @@ only on the back. `FLIP` is reversible and does not count as another exposure.
 The visible face and its fully rendered opposite face remain resident as a
 two-surface cache. F1 swaps those complete card bodies immediately in either
 direction; content decoding, line layout, vector rendering, and durable writes
-MUST NOT precede the visible swap.
+MUST NOT precede the visible swap. The exchange MUST be interrupt-atomic so
+repeated toggles are pixel-identical and cannot accumulate framebuffer noise.
 
 The initial active queue is authored card order. Showing a card increments its
 exposure count. After its back is shown:
