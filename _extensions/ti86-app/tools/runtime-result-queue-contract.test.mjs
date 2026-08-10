@@ -22,7 +22,7 @@ const EXTENSION = path.resolve(HERE, '..');
 const ROOT = path.resolve(EXTENSION, '..', '..');
 const SOURCE = readFileSync(path.join(EXTENSION, 'src', 'runtime-result-queue.asm'), 'utf8');
 const CORE = readFileSync(path.join(EXTENSION, 'src', 'runtime-queue.asm'), 'utf8');
-const LEARN = readFileSync(path.join(EXTENSION, 'src', 'runtime-standard.asm'), 'utf8');
+const LEARN = readFileSync(path.join(EXTENSION, 'src', 'runtime-adaptive.asm'), 'utf8');
 const CARDS = readFileSync(path.join(EXTENSION, 'src', 'runtime-assessment.asm'), 'utf8');
 
 describe('SCQUEUE response/progress transaction contract', () => {
@@ -55,21 +55,19 @@ describe('SCQUEUE response/progress transaction contract', () => {
     expect(`${SOURCE}\n${CORE}`).not.toMatch(/(?:timestamp|occurredAt|completedAt|receivedAt|recordedAt)/);
   });
 
-  it('stages viewed/completed position before the fixed SCQUEUE OS call', () => {
+  it('persists adaptive telemetry and the completed quiz before the fixed SCQUEUE OS call', () => {
     expect(LEARN).toMatch(
-      /standard_runtime_leave_viewed:\s+ld a,2[\s\S]{0,80}standard_runtime_leave_completed:\s+ld a,3/,
+      /adaptive_rate:[\s\S]*?ld \(hl\),a[\s\S]*?call adaptive_choose_next/,
     );
     expect(LEARN).toMatch(
-      /standard_runtime_stage_progress:\s+ld hl,runtime_state_record \+ RUNTIME_SCL_DRAFT_OFFSET\s+ld \(hl\),a/,
+      /adaptive_commit_quiz_choice:[\s\S]*?ld \(hl\),b[\s\S]*?call adaptive_save/,
     );
     expect(LEARN).toMatch(
-      /standard_runtime_stage_progress:[\s\S]*?RUNTIME_VIEW_LESSON[\s\S]*?STANDARD_FLAG_RESULT_PENDING_HIGH[\s\S]*?call runtime_state_save[\s\S]*?call standard_launch_result_queue/,
+      /adaptive_quiz_complete:[\s\S]*?SCSTATE_FLAG_RESULT_PENDING_HIGH[\s\S]*?call adaptive_save[\s\S]*?call adaptive_launch_queue/,
     );
     expect(LEARN).toMatch(
-      /standard_launch_result_queue:[\s\S]{0,180}standard_scqueue_name[\s\S]{0,180}call _exec_assembly[\s\S]{0,220}STANDARD_FLAG_RESULT_PENDING_HIGH/,
+      /adaptive_launch_queue:[\s\S]{0,180}adaptive_scqueue_name[\s\S]{0,180}call _exec_assembly/,
     );
-    expect(CARDS).toContain('jp z,standard_runtime_leave_viewed');
-    expect(CARDS).toContain('jp z,standard_runtime_leave_completed');
     expect(LEARN).not.toMatch(/sc_map_find_literal[\s\S]{0,120}_exec_assembly/);
   });
 

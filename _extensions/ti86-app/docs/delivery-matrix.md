@@ -18,32 +18,32 @@ an Adaptive Study row complete.
 
 | ID | Requirement | State | Required evidence |
 | --- | --- | --- | --- |
-| AS-01 | Unit opt-in descriptor and mode validation | specified | valid fixture plus missing/invalid mode rejection |
-| AS-02 | `itemCount <= cardCount`, compatible A-E bank items, exposure cap 1-4 | specified | boundary and incompatible-bank tests |
-| AS-03 | Reject actual TI/SCSP/draft/QR encoded-size overflow; never truncate | specified | exact ceiling and ceiling+1 codec tests |
-| AS-04 | Authored-order curation with immutable bank revision and IDs/order | specified | deterministic repository/application test |
-| AS-05 | Persist learner, unit/topic, policy, artifact, and exact prescription | specified | storage round trip and first-write-wins conflict test |
+| AS-01 | Unit opt-in descriptor and mode validation | implemented | valid fixture plus missing/invalid mode rejection |
+| AS-02 | `itemCount <= cardCount`, compatible A-E bank items, exposure cap 1-4 | implemented | boundary and incompatible-bank tests |
+| AS-03 | Reject actual TI/SCSP/draft/QR encoded-size overflow; never truncate | implemented | exact ceiling and ceiling+1 codec tests |
+| AS-04 | Authored-order curation with immutable bank revision and IDs/order | implemented | deterministic repository/application test |
+| AS-05 | Persist learner, unit/topic, policy, artifact, and exact prescription | implemented | storage round trip and first-write-wins conflict test |
 
 ## Agenda and code lifecycle
 
 | ID | Requirement | State | Required evidence |
 | --- | --- | --- | --- |
-| AS-10 | Pure `agenda.mjs` carries descriptor into entry and `section.next` | specified | side-effect/RNG-free domain test |
-| AS-11 | Mutating builder ensures generic work plus one immutable study session | specified | retry/concurrency application test |
-| AS-12 | Six-character opaque code preserves zeroes, is reused for open work, and is never reassigned | specified | collision/history/rebuild tests |
-| AS-13 | Printed eligible task shows `123 456` and “Enter on calculator.” instead of subject-next token | specified | rendered agenda fixture |
-| AS-14 | Dry-run performs zero writes and only projects existing code/eligibility | specified | repository-spy preview test |
-| AS-15 | Accepted pass serves subject; accepted fail closes attempt and next build creates fresh remediation code | specified | end-to-end policy tests |
+| AS-10 | Pure `agenda.mjs` carries descriptor into entry and `section.next` | implemented | side-effect/RNG-free domain test |
+| AS-11 | Mutating builder ensures generic work plus one immutable study session | implemented | retry/concurrency application test |
+| AS-12 | Six-character opaque code preserves zeroes, is reused for open work, and is never reassigned | implemented | collision/history/rebuild tests |
+| AS-13 | Printed eligible task shows `123 456` and “Enter on calculator.” instead of subject-next token | implemented | rendered agenda fixture |
+| AS-14 | Dry-run performs zero writes and only projects existing code/eligibility | implemented | repository-spy preview test |
+| AS-15 | Accepted pass serves subject; accepted fail closes attempt and next build creates fresh remediation code | implemented | end-to-end policy tests |
 
 ## Calculator experience and durable state
 
 | ID | Requirement | State | Required evidence |
 | --- | --- | --- | --- |
-| AS-20 | Cold/warm startup always opens `ENTER CODE` with optional contextual Resume | specified | named MAME cases |
+| AS-20 | Cold/warm startup always opens `ENTER CODE` with optional contextual Resume | partial | named MAME cases |
 | AS-21 | `DSENTRY/SCE1` binds device, request, and code and clears only after exact ACK | specified | codec plus interrupted-sync cases |
-| AS-22 | `DSSTUDY/SCSP` continuation is canonical; `DSSTDNEW` is staging only | specified | copy-on-write and power-cut tests |
+| AS-22 | `DSSTUDY/SCSP` prescription is canonical; `DSSTDNEW` is staging and `SCL1` is continuation | implemented | copy-on-write and power-cut tests |
 | AS-23 | Front/back rails exactly match FLIP/blank/AGAIN/HARD/KNOW; F2 inert | specified | semantic and behavior MAME assertions |
-| AS-24 | AGAIN due after two, HARD after four, KNOW/cap retirement, earliest-due fallback | specified | deterministic scheduler unit/MAME cases |
+| AS-24 | AGAIN due after two, HARD after four, KNOW/cap retirement, earliest-due fallback | implemented | deterministic scheduler unit/MAME cases |
 | AS-25 | Rating persists before next card; EXIT pauses; resume neither loses nor double-counts work | specified | restart at every transition |
 | AS-26 | Compact summary -> one prescribed A-E quiz; no same-session remediation | specified | exact-binary complete path |
 | AS-27 | Result is queued before success; local code reopens Result | specified | queue readback and relaunch case |
@@ -53,20 +53,20 @@ an Adaptive Study row complete.
 
 | ID | Requirement | State | Required evidence |
 | --- | --- | --- | --- |
-| AS-30 | Four-bit final rating/exposure per card and four-bit quiz choice per item | specified | full-value codec round trip |
-| AS-31 | Durable draft <=48 bytes and Version-5/M QR payload <=69 actual bytes | specified | encoder ceiling/overflow tests |
-| AS-32 | `ti86.cli.mjs` decoded result inspection | specified | retained case asserts code, telemetry, answers, score |
-| AS-33 | QR and cable share one importer and canonical identity | partial | existing v0 importer pattern; adaptive mode tests required |
-| AS-34 | First valid result closes; identical redelivery duplicates; different closed-session work conflicts | specified | atomic importer concurrency/replay tests |
-| AS-35 | Backend regrades immutable artifact and rejects inconsistent local evidence | partial | existing v0 regrade pattern; adaptive payload tests required |
+| AS-30 | Four-bit final rating/exposure per card and four-bit quiz choice per item | implemented | full-value codec round trip |
+| AS-31 | Durable draft <=48 bytes and Version-5/M QR payload <=69 actual bytes | implemented | encoder ceiling/overflow tests |
+| AS-32 | `ti86.cli.mjs` decoded result inspection | implemented | retained case asserts code, telemetry, answers, score |
+| AS-33 | QR and cable share one importer and canonical identity | implemented | adaptive importer tests |
+| AS-34 | First valid result closes; identical redelivery duplicates; different closed-session work conflicts | implemented | atomic importer concurrency/replay tests |
+| AS-35 | Backend regrades immutable artifact and rejects inconsistent local evidence | implemented | adaptive payload tests |
 
 ## Relay transaction
 
 | ID | Requirement | State | Required evidence |
 | --- | --- | --- | --- |
-| AS-40 | Resolve code with full learner/work/bank/device reauthorization | specified | API/application authorization matrix |
-| AS-41 | Installed artifact transfers prescription/ACK only | specified | virtual-relay transaction trace |
-| AS-42 | Missing artifact commits artifact -> `DSSTDNEW` -> `DSSYNC` | specified | ordered trace plus power cut at every boundary |
+| AS-40 | Resolve code with full learner/work/bank/device reauthorization | implemented | API/application authorization matrix |
+| AS-41 | Installed artifact transfers prescription/ACK only | implemented | native relay transaction trace |
+| AS-42 | Missing artifact commits artifact -> `DSSTDNEW` -> `DSSYNC` | implemented | ordered native and virtual-relay traces |
 | AS-43 | Unknown/closed/unauthorized/memory/incompatible/interrupted outcomes retain canonical state | specified | virtual-relay and calculator recovery cases |
 | AS-44 | Result queue imported before outbound resolution and exact ACK removes only exact item/request | partial | retained sync/queue primitives; v1 integrated tests required |
 | AS-45 | Protected direct-link and SCF1 infrastructure | partial | host tests exist; TilEm and physical transaction gates remain |
@@ -75,9 +75,9 @@ an Adaptive Study row complete.
 
 | ID | Requirement | State | Required evidence |
 | --- | --- | --- | --- |
-| AS-50 | Default manifest contains `ASCHL`, shell, adaptive `SCLEARN`, `SCQUEUE`, QR, sync, and shared support | specified | manifest contract test |
-| AS-51 | Catalog/profile/tutor/native/general-lesson programs and `DSCODE` omitted | specified | negative manifest assertions |
-| AS-52 | No inactive screen reachable | specified | state/dispatch inspection plus named MAME absence case |
+| AS-50 | Default manifest contains `ASCHL`, shell, adaptive `SCLEARN`, `SCQUEUE`, QR, sync, and shared support | implemented | manifest contract test |
+| AS-51 | Catalog/profile/tutor/native/general-lesson programs and `DSCODE` omitted | implemented | negative manifest assertions |
+| AS-52 | No inactive screen reachable | partial | state/dispatch inspection plus named MAME absence case |
 
 ## Acceptance lanes
 
