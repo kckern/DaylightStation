@@ -126,6 +126,12 @@ describe('GamingController', () => {
     expect(final.revision).toBe(4);
     expect(final.state.pending_action).toBeNull();
     expect(final.state.enemy.health).toBeLessThan(enemyBefore);
+    expect(controller.getSnapshot().combatResult).toMatchObject({
+      cardTitle: expect.any(String),
+      damage: expect.any(Number),
+      retaliation: 2,
+      effectiveness: 'Full power',
+    });
     expect(runtime.dispose).toHaveBeenCalledOnce();
     const experienceEvents = logger.info.mock.calls.map(([event]) => event);
     expect(experienceEvents).toEqual(expect.arrayContaining([
@@ -149,6 +155,58 @@ describe('GamingController', () => {
     }));
   });
 
+  it('keeps tactical card plays in the same turn and resolves announced intent on end turn', async () => {
+    const definition = structuredClone(scaleClashDefinition);
+    definition.card_battle.turn_mode = 'tactical';
+    definition.card_battle.hand_size = 3;
+    definition.card_battle.enemy.intents = [
+      { id: 'swing', title: 'Heavy Swing', kind: 'attack', amount: 4 },
+      { id: 'brace', title: 'Brace', kind: 'defend', amount: 3 },
+    ];
+    const { controller, api, logger } = harness({ definition });
+    await controller.start();
+    const initial = controller.getSnapshot().session;
+    await controller.chooseAction(initial.state.zones.hand[0].instance_id);
+    expect(controller.getSnapshot().session.state).toMatchObject({ turn: 1, cards_played_this_turn: 1 });
+    expect(controller.getSnapshot().session.state.player.health).toBe(initial.state.player.health);
+
+    await controller.endTurn();
+
+    expect(api.applyCommand.mock.calls.at(-1)[1].type).toBe('end_turn');
+    expect(controller.getSnapshot().session.state).toMatchObject({ turn: 2 });
+    expect(controller.getSnapshot().session.state.player.health).toBe(initial.state.player.health - 4);
+    expect(controller.getSnapshot().combatResult).toMatchObject({
+      kind: 'enemy', cardTitle: 'Heavy Swing', enemyAction: 'attack', damage: 4,
+    });
+    expect(logger.info).toHaveBeenCalledWith('gaming.turn.ended', expect.objectContaining({
+      enemyIntentId: 'swing', damage: 4,
+    }));
+    controller.dispose();
+  });
+
+  it('starts a clean rematch from the terminal battle result', async () => {
+    const { controller, api, logger } = harness({ mutateState: (state) => { state.enemy.health = 1; } });
+    await controller.start();
+    const opening = controller.getSnapshot().session;
+    await controller.chooseAction(opening.state.zones.hand[0].instance_id);
+    expect(controller.getSnapshot().session.status).toBe('complete');
+
+    const rematchState = createInitialState(scaleClashDefinition, { seed: 11, participants: [{ user_id: 'guest' }] });
+    api.createSession.mockImplementationOnce(async () => ({
+      session_id: 'game_rematch', game_id: 'scale-clash', status: 'active', revision: 0,
+      definition_hash: 'definition-current', definition: scaleClashDefinition,
+      state: rematchState, interaction: deriveInteraction(rematchState, scaleClashDefinition, 'guest'), events: [],
+    }));
+    await controller.restart('second-wind');
+
+    expect(controller.getSnapshot()).toMatchObject({
+      phase: 'playing', combatResult: null, session: { session_id: 'game_rematch', status: 'active' },
+    });
+    expect(api.createSession).toHaveBeenLastCalledWith(expect.objectContaining({ setup: { upgrade_id: 'second-wind' } }));
+    expect(logger.info).toHaveBeenCalledWith('gaming.session.ready', expect.objectContaining({ rematch: true, upgradeId: 'second-wind' }));
+    controller.dispose();
+  });
+
   it('warns once when cards exist but none are playable', async () => {
     const definition = structuredClone(scaleClashDefinition);
     for (const card of Object.values(definition.cards)) card.cost = 99;
@@ -158,6 +216,25 @@ describe('GamingController', () => {
       reason: 'insufficient_energy', handCount: 3, playableCount: 0, energy: 3,
     }));
     expect(logger.warn.mock.calls.filter(([event]) => event === 'gaming.hand.blocked')).toHaveLength(1);
+    controller.dispose();
+  });
+
+  it('still logs a blocked tactical hand when end turn remains legal', async () => {
+    const definition = structuredClone(scaleClashDefinition);
+    definition.card_battle.turn_mode = 'tactical';
+    definition.card_battle.hand_size = 3;
+    definition.card_battle.enemy.intents = [
+      { id: 'swing', title: 'Swing', kind: 'attack', amount: 4 },
+      { id: 'brace', title: 'Brace', kind: 'defend', amount: 3 },
+    ];
+    const { controller, logger } = harness({
+      definition,
+      mutateState: (state) => { state.player.energy = 0; },
+    });
+    await controller.start();
+    expect(logger.warn).toHaveBeenCalledWith('gaming.hand.blocked', expect.objectContaining({
+      reason: 'insufficient_energy', playableCount: 0, energy: 0,
+    }));
     controller.dispose();
   });
 

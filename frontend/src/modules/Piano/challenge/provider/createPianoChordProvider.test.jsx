@@ -75,4 +75,30 @@ describe('createPianoChordProvider telemetry', () => {
     expect(result.metrics.persistenceDurationMs).toBeGreaterThanOrEqual(0);
     expect(api.recordPianoAttempt).toHaveBeenCalledOnce();
   });
+
+  it('fizzles a scale card after its authored mistake limit', async () => {
+    let notes = { activeNotes: new Map(), noteHistory: [] };
+    let now = 2000;
+    const provider = createPianoChordProvider({ useNotes: () => notes, clock: () => now });
+    const api = { recordPianoAttempt: vi.fn(async () => ({ attempt_id: 'failed-attempt' })) };
+    const runtime = await provider.createRuntime({ userId: 'guest', api, logger: { warn: vi.fn() } });
+    const prepared = await runtime.prepare({
+      challenge_id: 'challenge-fizzle', kind: 'scale',
+      prompt: {
+        label: 'C major', key_signature: 'C', abc: 'C D E', expected_midi: [60, 62, 64], max_mistakes: 3,
+      },
+    });
+    const resultPromise = runtime.start(prepared);
+    const view = render(<runtime.Surface />);
+
+    for (const note of [61, 63, 65]) {
+      now += 100;
+      notes = { ...notes, noteHistory: [...notes.noteHistory, { note, startTime: now }] };
+      await act(async () => view.rerender(<runtime.Surface />));
+    }
+    const result = await resultPromise;
+
+    expect(result).toMatchObject({ status: 'completed', score: 0, attempt_id: 'failed-attempt' });
+    expect(result.metrics).toMatchObject({ failed: true, firstTry: false, wrongNotes: 3 });
+  });
 });

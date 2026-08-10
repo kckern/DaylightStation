@@ -183,6 +183,16 @@ export function createPianoChordProvider({ useNotes, clock = () => Date.now() })
               if (advanced.wrong) {
                 wrongNotes += 1;
                 if (previousProgress > 0) restarts += 1;
+                if (prompt.max_mistakes && wrongNotes >= prompt.max_mistakes) {
+                  publish({ progress, hadWrong, lastInput });
+                  finish(0, {
+                    firstTry: false,
+                    failed: true,
+                    wrongAttemptSeen: true,
+                    notesRequired: prompt.expected_midi.length,
+                  });
+                  return;
+                }
               }
               if (advanced.complete) {
                 const firstTry = !hadWrong;
@@ -234,7 +244,10 @@ export function createPianoChordProvider({ useNotes, clock = () => Date.now() })
           return (
             <section className="piano-challenge piano-scale-challenge">
               <header className="piano-scale-challenge__heading">
-                <span>Play from left to right</span>
+                <span>
+                  Play from left to right
+                  {prompt.max_mistakes ? ` · ${prompt.max_mistakes} misses fizzles the card` : ''}
+                </span>
                 <strong>{prompt.label}</strong>
               </header>
               <div className="piano-scale-challenge__staff" ref={setStaffBox}>
