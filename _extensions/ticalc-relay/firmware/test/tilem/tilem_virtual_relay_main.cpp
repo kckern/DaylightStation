@@ -111,11 +111,11 @@ public:
     std::snprintf(plan.catalogGeneration, sizeof(plan.catalogGeneration), "%s", "sha256:tilem-catalog-v1");
     plan.artifactCount = 1;
     auto& artifact = plan.artifacts[0];
-    std::snprintf(artifact.artifactId, sizeof(artifact.artifactId), "%s", "sc:ti86:7L3CWYLASV");
-    std::snprintf(artifact.variableName, sizeof(artifact.variableName), "%s", "DP7L3CWY");
+    std::snprintf(artifact.artifactId, sizeof(artifact.artifactId), "%s", "sc:ti86:KW3GZAALON");
+    std::snprintf(artifact.variableName, sizeof(artifact.variableName), "%s", "DPKW3GZA");
     artifact.byteLength = static_cast<uint32_t>(artifact_.size());
     std::snprintf(artifact.byteDigest, sizeof(artifact.byteDigest), "%s",
-                  "b1197821d4540e63e217284066a7fd13008a491284f1ac297f7501682b71ef3a");
+                  "7d1bd508ce9a16c3ec77ae338c08f77b9f72f2a393d1a5600455782efaa87a36");
     plan.acknowledgementLength = acknowledgement.length;
     plan.manifestLength = manifest.length;
     plan.learnerRosterLength = roster.length;
@@ -141,7 +141,7 @@ public:
 
   bool fetchArtifact(const schoolcalc_relay::ArtifactDescriptor& artifact,
                      MutableBytes& output) override {
-    if (std::strcmp(artifact.variableName, "DP7L3CWY") != 0
+    if (std::strcmp(artifact.variableName, "DPKW3GZA") != 0
         || artifact.byteLength != artifact_.size()) {
       return fail("artifact fetch used an unexpected descriptor");
     }

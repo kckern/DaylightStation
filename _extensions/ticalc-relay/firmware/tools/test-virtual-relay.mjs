@@ -27,7 +27,7 @@ try {
     }
     const values = Object.fromEntries(readFileSync(report, 'utf8').trim().split('\n').map((line) => line.split('=')));
     if (values.ok !== 'true' || values.state !== 'awaiting_calculator_commit'
-        || values.writes !== 'DP7L3CWY,DSSTDNEW,DSSYNC') {
+        || values.writes !== 'DPKW3GZA,DSSTDNEW,DSSYNC') {
       throw new Error(`virtual relay report was incomplete: ${JSON.stringify(values)}`);
     }
     const artifact = decodeTi86Envelope(readFileSync(path.join(fixture.directory, 'SCP1.bin')), 'SCP1');
@@ -35,6 +35,9 @@ try {
     const acknowledgement = decodeTi86StudyAcknowledgement(readFileSync(path.join(fixture.directory, 'SCSA.bin')));
     if (prescription.sessionCode !== '001234' || prescription.requestId !== 77
         || prescription.artifactId !== artifact.artifactId
+        || prescription.artifactVariableName !== 'DPKW3GZA'
+        || artifact.lesson?.modules?.[0]?.type !== 'flashcards'
+        || artifact.lesson?.modules?.[1]?.type !== 'quiz'
         || acknowledgement.sessionCode !== prescription.sessionCode
         || acknowledgement.prescriptionId !== prescription.prescriptionId
         || acknowledgement.artifactId !== artifact.artifactId) {
