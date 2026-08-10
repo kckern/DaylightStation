@@ -1,4 +1,4 @@
-import { useEffect, useRef, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useSyncExternalStore } from 'react';
 import { AbcRenderer } from '../../../MusicNotation/renderers/AbcRenderer.jsx';
 import { evaluateChordMatch } from '../../PianoFlashcards/flashcardEngine.js';
 import { advanceScaleProgress } from './scaleProgress.js';
@@ -6,6 +6,40 @@ import { advanceScaleProgress } from './scaleProgress.js';
 const EMPTY_NOTES = new Map();
 const EMPTY_HISTORY = [];
 const PROVIDER_VERSION = '2-untimed-piano';
+const SCALE_NOTE_CLASSES = [
+  'piano-scale-note--complete',
+  'piano-scale-note--next',
+  'piano-scale-note--wrong',
+];
+
+function scaleNoteElements(staffNotes) {
+  return (staffNotes || []).flatMap((staff) => (
+    (staff || []).map((note) => note.els || [])
+  ));
+}
+
+export function clearScaleNoteFeedback(staffNotes) {
+  for (const elements of scaleNoteElements(staffNotes)) {
+    for (const element of elements) element.classList?.remove(...SCALE_NOTE_CLASSES);
+  }
+}
+
+/** Apply the scale's progress directly to abcjs's engraved note elements. */
+export function applyScaleNoteFeedback(staffNotes, progress, lastInput = null) {
+  const notes = scaleNoteElements(staffNotes);
+  clearScaleNoteFeedback(staffNotes);
+  notes.forEach((elements, index) => {
+    let className = null;
+    if (index < progress) className = 'piano-scale-note--complete';
+    else if (index === progress) {
+      className = lastInput?.status === 'wrong'
+        ? 'piano-scale-note--wrong'
+        : 'piano-scale-note--next';
+    }
+    if (!className) return;
+    for (const element of elements) element.classList?.add(className);
+  });
+}
 
 function makeAttemptId() {
   return `attempt-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
@@ -28,7 +62,7 @@ export function createPianoChordProvider({ useNotes, clock = () => Date.now() })
     async createRuntime({ userId, api, logger }) {
       const listeners = new Set();
       let snapshot = {
-        status: 'idle', prepared: null, armed: false, hadWrong: false, progress: 0,
+        status: 'idle', prepared: null, armed: false, hadWrong: false, progress: 0, lastInput: null,
       };
       let resolveAttempt = null;
       let settled = false;
@@ -92,7 +126,19 @@ export function createPianoChordProvider({ useNotes, clock = () => Date.now() })
         const activeNotes = notes?.activeNotes || EMPTY_NOTES;
         const noteHistory = notes?.noteHistory || EMPTY_HISTORY;
         const historyCursor = useRef(null);
+        const staffNotesRef = useRef([]);
         const challengeId = view.prepared?.challenge_id;
+
+        const handleScaleRender = useCallback((_tune, staffNotes) => {
+          clearScaleNoteFeedback(staffNotesRef.current);
+          staffNotesRef.current = staffNotes;
+          applyScaleNoteFeedback(staffNotes, snapshot.progress, snapshot.lastInput);
+        }, []);
+
+        useLayoutEffect(() => {
+          applyScaleNoteFeedback(staffNotesRef.current, view.progress, view.lastInput);
+          return () => clearScaleNoteFeedback(staffNotesRef.current);
+        }, [view.progress, view.lastInput]);
 
         useEffect(() => {
           historyCursor.current = noteHistory.length;
@@ -111,19 +157,24 @@ export function createPianoChordProvider({ useNotes, clock = () => Date.now() })
             if (freshNotes.length === 0) return;
             let progress = snapshot.progress;
             let hadWrong = snapshot.hadWrong;
+            let lastInput = snapshot.lastInput;
             for (const note of freshNotes) {
               recordInput();
               const previousProgress = progress;
               const advanced = advanceScaleProgress(prompt.expected_midi, progress, note);
               progress = advanced.progress;
               hadWrong ||= advanced.wrong;
+              lastInput = {
+                note,
+                status: advanced.wrong ? 'wrong' : 'correct',
+              };
               if (advanced.wrong) {
                 wrongNotes += 1;
                 if (previousProgress > 0) restarts += 1;
               }
               if (advanced.complete) {
                 const firstTry = !hadWrong;
-                publish({ progress, hadWrong });
+                publish({ progress, hadWrong, lastInput });
                 finish(firstTry ? 1 : 0.5, {
                   firstTry,
                   wrongAttemptSeen: !firstTry,
@@ -132,7 +183,7 @@ export function createPianoChordProvider({ useNotes, clock = () => Date.now() })
                 return;
               }
             }
-            publish({ progress, hadWrong });
+            publish({ progress, hadWrong, lastInput });
             return;
           }
 
@@ -162,13 +213,26 @@ export function createPianoChordProvider({ useNotes, clock = () => Date.now() })
           const abc = `X:1\nL:1/4\nK:${prompt.key_signature || 'C'}\n${prompt.abc} |]`;
           return (
             <section className="piano-challenge piano-scale-challenge">
-              <div>Play the scale from left to right</div>
-              <strong>{prompt.label}</strong>
+              <header className="piano-scale-challenge__heading">
+                <span>Play from left to right</span>
+                <strong>{prompt.label}</strong>
+              </header>
               <div className="piano-scale-challenge__staff">
-                <AbcRenderer abc={abc} scale={1.35} singleLine />
+                <AbcRenderer abc={abc} scale={1} singleLine fitContent onRender={handleScaleRender} />
               </div>
-              <div>{view.progress} / {expectedCount} notes</div>
-              {view.hadWrong && <div>Start again from the first note</div>}
+              <div
+                className={`piano-scale-challenge__feedback${view.lastInput?.status === 'wrong' ? ' is-wrong' : ''}`}
+                aria-live="polite"
+              >
+                <strong>{view.progress} / {expectedCount}</strong>
+                <span>
+                  {view.lastInput?.status === 'wrong'
+                    ? 'Wrong note — start again at the highlighted note'
+                    : view.progress > 0
+                      ? 'Correct — keep going'
+                      : 'Play the highlighted first note'}
+                </span>
+              </div>
             </section>
           );
         }
@@ -193,11 +257,11 @@ export function createPianoChordProvider({ useNotes, clock = () => Date.now() })
             grading_policy_version: request.kind === 'scale' ? 'untimed-ordered-scale-v1' : 'untimed-chord-first-try-v1',
             provider_version: PROVIDER_VERSION,
           };
-          publish({ status: 'prepared', prepared, armed: false, hadWrong: false, progress: 0 });
+          publish({ status: 'prepared', prepared, armed: false, hadWrong: false, progress: 0, lastInput: null });
           return prepared;
         },
         async restore(prepared) {
-          publish({ status: 'prepared', prepared: structuredClone(prepared), armed: false, hadWrong: false, progress: 0 });
+          publish({ status: 'prepared', prepared: structuredClone(prepared), armed: false, hadWrong: false, progress: 0, lastInput: null });
           return prepared;
         },
         async start(prepared) {
@@ -207,7 +271,7 @@ export function createPianoChordProvider({ useNotes, clock = () => Date.now() })
           notesPlayed = 0;
           wrongNotes = 0;
           restarts = 0;
-          publish({ status: 'running', prepared, armed: false, hadWrong: false, progress: 0 });
+          publish({ status: 'running', prepared, armed: false, hadWrong: false, progress: 0, lastInput: null });
           return new Promise((resolve) => { resolveAttempt = resolve; });
         },
         cancel(reason = 'aborted') {
