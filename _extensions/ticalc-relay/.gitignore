@@ -1,2 +1,5 @@
 firmware/include/config.h
 firmware/.pio/
+.toolchain/
+bin/
+roms/*.rom
