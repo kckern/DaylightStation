@@ -20,9 +20,9 @@ describe('scale staff feedback', () => {
 
     applyScaleNoteFeedback(staffNotes, 2, { status: 'correct' });
 
-    expect(elements[0]).toHaveClass('piano-scale-note--complete');
-    expect(elements[1]).toHaveClass('piano-scale-note--complete');
-    expect(elements[2]).toHaveClass('piano-scale-note--next');
+    expect(elements[0].classList.contains('piano-scale-note--complete')).toBe(true);
+    expect(elements[1].classList.contains('piano-scale-note--complete')).toBe(true);
+    expect(elements[2].classList.contains('piano-scale-note--next')).toBe(true);
     expect(elements[3].classList).toHaveLength(0);
   });
 
@@ -33,7 +33,7 @@ describe('scale staff feedback', () => {
 
     applyScaleNoteFeedback(staffNotes, 0, { status: 'wrong' });
 
-    expect(first).toHaveClass('piano-scale-note--wrong');
+    expect(first.classList.contains('piano-scale-note--wrong')).toBe(true);
     expect(second.classList).toHaveLength(0);
   });
 });
