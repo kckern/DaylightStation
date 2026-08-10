@@ -80,10 +80,11 @@ Catalog/profile/tutor routes.
 
 ## Build and test status
 
-The repository currently contains a mature v0 implementation and retained
-hardware probes. The v1 documentation is the new release target; the delivery
-matrix is authoritative about which v1 slices are specified, implemented, and
-proven. Do not infer v1 readiness from an existing v0 binary in `dist/`.
+The repository contains the Adaptive Study v1 backend, calculator runtime,
+default package, relay transaction, named acceptance scenarios, and semantic
+result inspection. The delivery matrix is authoritative about which slices
+are implemented versus proven on an emulator or physical device. Do not infer
+hardware readiness from a generated binary in `dist/`.
 
 Useful current commands from the repository root include:
 
