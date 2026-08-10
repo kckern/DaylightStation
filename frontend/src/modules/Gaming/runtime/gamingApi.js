@@ -19,6 +19,14 @@ export function createGamingApi() {
     getDefinition(gameId) {
       return request(`/api/v1/gaming/definitions/${encodeURIComponent(gameId)}`);
     },
+    getProgress(gameId, userId) {
+      return request(`/api/v1/gaming/games/${encodeURIComponent(gameId)}/progress?user_id=${encodeURIComponent(userId)}`);
+    },
+    getLeaderboard(gameId, userId, week = null) {
+      const params = new URLSearchParams({ user_id: userId });
+      if (week) params.set('week', week);
+      return request(`/api/v1/gaming/games/${encodeURIComponent(gameId)}/leaderboard?${params}`);
+    },
     createSession(input) {
       return request('/api/v1/gaming/sessions', { method: 'POST', body: JSON.stringify(input) });
     },

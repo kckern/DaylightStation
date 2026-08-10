@@ -1,8 +1,12 @@
+import fs from 'node:fs';
+import YAML from 'yaml';
 import { describe, expect, it, vi } from 'vitest';
 import { createInitialState, deriveInteraction, transition } from '@shared-gaming/index.mjs';
 import { scaleClashDefinition } from '@shared-gaming/fixtures/scaleClash.mjs';
 import { GamingController } from './GamingController.js';
 import { createProviderRegistry } from './providerRegistry.js';
+
+const journeyDefinition = YAML.parse(fs.readFileSync('shared/gaming/definitions/card-game.yml', 'utf8'));
 
 function harness({ resumeStarted = false, definition = scaleClashDefinition, mutateState = null, runtimeResult = null, clock = () => 1000 } = {}) {
   let session = {
@@ -110,6 +114,54 @@ describe('GamingController', () => {
       currentDefinitionHash: 'definition-current',
       reason: 'definition_changed',
     }));
+    controller.dispose();
+  });
+
+  it('abandons a resumed journey when the player deliberately chooses a different partner', async () => {
+    const oldState = createInitialState(journeyDefinition, {
+      seed: 7, participants: [{ user_id: 'kid-1' }], setup: { partner_id: 'bulbasaur' },
+    });
+    const newState = createInitialState(journeyDefinition, {
+      seed: 8, participants: [{ user_id: 'kid-1' }], setup: { partner_id: 'charmander' },
+    });
+    const oldSession = {
+      session_id: 'game_oldjourney', game_id: 'card-game', status: 'active', revision: 0,
+      definition_hash: 'definition-current', definition: journeyDefinition, state: oldState,
+      interaction: deriveInteraction(oldState, journeyDefinition, 'kid-1'), events: [],
+    };
+    const freshSession = {
+      ...oldSession,
+      session_id: 'game_newjourney',
+      state: newState,
+      interaction: deriveInteraction(newState, journeyDefinition, 'kid-1'),
+    };
+    const api = {
+      getSession: vi.fn(async () => structuredClone(oldSession)),
+      getDefinition: vi.fn(async () => ({ definition_hash: 'definition-current', definition: journeyDefinition })),
+      applyCommand: vi.fn(async () => ({ ...oldSession, status: 'abandoned' })),
+      createSession: vi.fn(async () => structuredClone(freshSession)),
+    };
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), child() { return this; } };
+    const controller = new GamingController({
+      api,
+      providerRegistry: createProviderRegistry([]),
+      gameId: 'card-game',
+      participants: [{ user_id: 'kid-1' }],
+      viewerId: 'kid-1',
+      resumeSessionId: 'game_oldjourney',
+      setup: { partner_id: 'charmander' },
+      logger,
+    });
+
+    await controller.start();
+
+    expect(api.applyCommand).toHaveBeenCalledWith('game_oldjourney', expect.objectContaining({
+      type: 'abandon_session', payload: { reason: 'partner_changed' },
+    }), 'kid-1');
+    expect(api.createSession).toHaveBeenCalledWith(expect.objectContaining({
+      setup: { partner_id: 'charmander' },
+    }));
+    expect(controller.getSnapshot().session.state.partner_id).toBe('charmander');
     controller.dispose();
   });
 
