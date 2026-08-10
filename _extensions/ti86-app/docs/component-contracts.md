@@ -1,4 +1,8 @@
-# SchoolCalc component contracts
+# SchoolCalc v0 component contracts (retained reference)
+
+> These contracts preserve reusable component and architecture research. The
+> [SchoolCalc Adaptive Study v1 requirements](./schoolcalc-v1-requirements.md)
+> define the canonical release boundary and supersede v0 learner navigation.
 
 ## Product boundary
 

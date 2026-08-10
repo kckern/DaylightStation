@@ -30,6 +30,11 @@ const MANIFEST_BLOCKER_OTHER = 1 << 15;
 const RESULT_QR_PREFIX = 'sch:r1:';
 const RESULT_KIND = Object.freeze({ responses: 0, progress: 0x80 });
 const RESULT_MODULE_MASK = 0x7f;
+const ADAPTIVE_RESULT_MODE = 4;
+const ADAPTIVE_RESULT_MAX_BYTES = 69;
+const ADAPTIVE_SESSION_CODE = /^[0-9]{6}$/;
+const ADAPTIVE_CARD_RATING = Object.freeze({ again: 1, hard: 2, know: 3 });
+const ADAPTIVE_CARD_RATING_BY_CODE = invertNumericMap(ADAPTIVE_CARD_RATING);
 const PROGRESS_STATUS = Object.freeze({ started: 1, viewed: 2, completed: 3, abandoned: 4 });
 const PROGRESS_VERIFICATION = Object.freeze({ verified: 1, self_reported: 2, pending: 3 });
 const PROGRESS_VERIFICATION_BY_CODE = invertNumericMap(PROGRESS_VERIFICATION);
@@ -252,6 +257,113 @@ export function encodeTi86ResultRecord(result, { qrText = false } = {}) {
 /** Test/tooling helper for the calculator's DSINFO variable. */
 export function encodeTi86DeviceInfo(info) {
   return encodeTi86Envelope('SCI1', { schema: 'school.calc.device-info/v1', ...info });
+}
+
+/** Durable calculator-owned six-digit resolution claim (`DSENTRY`/`SCE1`). */
+export function encodeTi86StudyEntry({ deviceId, requestId, sixDigitCode } = {}) {
+  if (!COMPACT_DEVICE_ID.test(deviceId || '')) throw new Error('SCE1 entry has an invalid deviceId');
+  if (!Number.isSafeInteger(requestId) || requestId < 0 || requestId > 0xff_ffff) {
+    throw new Error('SCE1 entry has an invalid 24-bit requestId');
+  }
+  if (!ADAPTIVE_SESSION_CODE.test(sixDigitCode || '')) {
+    throw new Error('SCE1 entry has an invalid six-digit code');
+  }
+  const body = [];
+  pushShortAscii(body, deviceId, 'deviceId');
+  pushU24(body, requestId);
+  body.push(...Buffer.from(sixDigitCode, 'ascii'));
+  return encodeFixedEnvelope('SCE1', Buffer.from(body));
+}
+
+export function decodeTi86StudyEntry(record) {
+  const reader = new FixedRecordReader(decodeFixedEnvelope(record, 'SCE1'), 'SCE1');
+  const deviceId = reader.shortAscii('deviceId');
+  const requestId = reader.u24('requestId');
+  const sixDigitCode = reader.fixedAscii(6, 'sixDigitCode');
+  reader.done();
+  if (!COMPACT_DEVICE_ID.test(deviceId)) throw new Error('SCE1 entry has an invalid deviceId');
+  if (!ADAPTIVE_SESSION_CODE.test(sixDigitCode)) throw new Error('SCE1 entry has an invalid six-digit code');
+  return Object.freeze({
+    schema: 'school.calc.study-entry/v1', deviceId, requestId, sixDigitCode,
+  });
+}
+
+/** Canonical device-bound Adaptive Study prescription (`DSSTUDY`/`DSSTDNEW`). */
+export function encodeTi86StudyPrescription(prescription) {
+  validateStudyPrescription(prescription);
+  const body = [];
+  pushShortAscii(body, prescription.deviceId, 'SCSP deviceId');
+  pushU24(body, prescription.requestId);
+  body.push(...Buffer.from(prescription.sessionCode, 'ascii'));
+  pushShortAscii(body, prescription.prescriptionId, 'SCSP prescriptionId');
+  pushShortAscii(body, prescription.studySessionId, 'SCSP studySessionId');
+  pushU16(body, prescription.learnerKey);
+  pushShortAscii(body, prescription.artifactId, 'SCSP artifactId');
+  pushShortAscii(body, prescription.artifactVariableName, 'SCSP artifactVariableName');
+  pushU16(body, prescription.artifactByteLength);
+  body.push(...Buffer.from(prescription.artifactDigest, 'hex'));
+  body.push(
+    prescription.requiredClientVersion,
+    prescription.cardCount,
+    prescription.itemCount,
+    prescription.maxExposuresPerCard,
+    prescription.passingPercent,
+  );
+  pushShortAscii(body, prescription.bankRevision, 'SCSP bankRevision');
+  return encodeFixedEnvelope('SCSP', Buffer.from(body));
+}
+
+export function decodeTi86StudyPrescription(record) {
+  const reader = new FixedRecordReader(decodeFixedEnvelope(record, 'SCSP'), 'SCSP');
+  const prescription = {
+    schema: 'school.calc.study-prescription/v1',
+    deviceId: reader.shortAscii('deviceId'),
+    requestId: reader.u24('requestId'),
+    sessionCode: reader.fixedAscii(6, 'sessionCode'),
+    prescriptionId: reader.shortAscii('prescriptionId'),
+    studySessionId: reader.shortAscii('studySessionId'),
+    learnerKey: reader.u16('learnerKey'),
+    artifactId: reader.shortAscii('artifactId'),
+    artifactVariableName: reader.shortAscii('artifactVariableName'),
+    artifactByteLength: reader.u16('artifactByteLength'),
+    artifactDigest: reader.take(32, 'artifactDigest').toString('hex'),
+    requiredClientVersion: reader.u8('requiredClientVersion'),
+    cardCount: reader.u8('cardCount'),
+    itemCount: reader.u8('itemCount'),
+    maxExposuresPerCard: reader.u8('maxExposuresPerCard'),
+    passingPercent: reader.u8('passingPercent'),
+    bankRevision: reader.shortAscii('bankRevision'),
+  };
+  reader.done();
+  validateStudyPrescription(prescription);
+  return Object.freeze(prescription);
+}
+
+function validateStudyPrescription(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)
+      || value.schema !== 'school.calc.study-prescription/v1'
+      || !COMPACT_DEVICE_ID.test(value.deviceId || '')
+      || !Number.isInteger(value.requestId) || value.requestId < 0 || value.requestId > 0xff_ffff
+      || !ADAPTIVE_SESSION_CODE.test(value.sessionCode || '')
+      || !shortAscii(value.prescriptionId) || !shortAscii(value.studySessionId)
+      || !Number.isInteger(value.learnerKey) || value.learnerKey < 1 || value.learnerKey > 0xffff
+      || !shortAscii(value.artifactId) || !/^[A-Z][A-Z0-9]{0,7}$/.test(value.artifactVariableName || '')
+      || !Number.isInteger(value.artifactByteLength) || value.artifactByteLength < 1 || value.artifactByteLength > 0xffff
+      || !/^[0-9a-f]{64}$/.test(value.artifactDigest || '')
+      || !Number.isInteger(value.requiredClientVersion) || value.requiredClientVersion < 1 || value.requiredClientVersion > 255
+      || !Number.isInteger(value.cardCount) || value.cardCount < 1 || value.cardCount > 255
+      || !Number.isInteger(value.itemCount) || value.itemCount < 1 || value.itemCount > value.cardCount
+      || !Number.isInteger(value.maxExposuresPerCard) || value.maxExposuresPerCard < 1 || value.maxExposuresPerCard > 4
+      || !Number.isInteger(value.passingPercent) || value.passingPercent < 0 || value.passingPercent > 100
+      || !shortAscii(value.bankRevision)) {
+    throw new Error('SCSP study prescription is invalid');
+  }
+}
+
+function shortAscii(value) {
+  if (typeof value !== 'string') return false;
+  const bytes = Buffer.from(value, 'ascii');
+  return bytes.length > 0 && bytes.length <= 255 && bytes.toString('ascii') === value;
 }
 
 /** Compact key stored by SCL1 so a committed Catalog generation is bounded. */
@@ -1185,6 +1297,9 @@ export class Ti86SchoolCalcCodec extends ISchoolCalcCodec {
         ? {
           responses: structuredClone(decoded.responses),
           localScore: structuredClone(decoded.localScore),
+          ...(decoded.adaptiveStudy
+            ? { adaptiveStudy: structuredClone(decoded.adaptiveStudy) }
+            : {}),
         }
         : { progress: structuredClone(decoded.progress) }),
       normalizedRecord: JSON.parse(normalizedRecordText),
@@ -1192,6 +1307,10 @@ export class Ti86SchoolCalcCodec extends ISchoolCalcCodec {
       recordDigest: sha256Hex(normalizedRecordText),
     };
   }
+
+  decodeStudyEntry(record) { return decodeTi86StudyEntry(record); }
+
+  encodeStudyPrescription(prescription) { return encodeTi86StudyPrescription(prescription); }
 
   recognizesResult(record) {
     if (typeof record === 'string') return record.startsWith(RESULT_QR_PREFIX);
@@ -2090,6 +2209,39 @@ function validateResult(result) {
     throw new Error(`TI-86 probe result exceeds ${LEARNING_PROBE_MAX_ITEMS} items`);
   }
   validateCompactLocalScore(result.localScore, result.responses.length);
+  if (result.adaptiveStudy !== undefined) validateAdaptiveStudyResult(result);
+}
+
+function validateAdaptiveStudyResult(result) {
+  const study = result.adaptiveStudy;
+  if (!study || typeof study !== 'object' || Array.isArray(study)) {
+    throw new Error('TI-86 adaptive study result must be a mapping');
+  }
+  if (!ADAPTIVE_SESSION_CODE.test(study.sessionCode || '')) {
+    throw new Error('TI-86 adaptive study result has an invalid six-digit sessionCode');
+  }
+  if (!Array.isArray(study.cards) || study.cards.length < 1 || study.cards.length > 255) {
+    throw new Error('TI-86 adaptive study result must contain 1..255 card summaries');
+  }
+  study.cards.forEach((card, index) => {
+    if (!card || typeof card !== 'object' || Array.isArray(card)
+        || !Object.hasOwn(ADAPTIVE_CARD_RATING, card.rating)
+        || !Number.isInteger(card.exposureCount)
+        || card.exposureCount < 1 || card.exposureCount > 4) {
+      throw new Error(`TI-86 adaptive study card ${index} has invalid rating/exposure telemetry`);
+    }
+  });
+  if (!Array.isArray(study.quizChoices) || study.quizChoices.length < 1
+      || study.quizChoices.length > study.cards.length
+      || study.quizChoices.some((choice) => !Number.isInteger(choice) || choice < 1 || choice > 5)) {
+    throw new Error('TI-86 adaptive study result has invalid A-E quiz choices');
+  }
+  if (result.responses.length !== study.quizChoices.length
+      || result.responses.some((response, index) => (
+        response.itemIndex !== index || response.given !== study.quizChoices[index]
+      ))) {
+    throw new Error('TI-86 adaptive study responses must exactly match ordered quizChoices');
+  }
 }
 
 function encodeCompactResultRecord(result) {
@@ -2113,6 +2265,14 @@ function encodeCompactResultRecord(result) {
     body.push(PROGRESS_STATUS[result.progress.status]);
     pushU16(body, result.progress.position);
     pushU16(body, result.progress.total);
+  } else if (result.adaptiveStudy) {
+    const { sessionCode, cards, quizChoices } = result.adaptiveStudy;
+    body.push(ADAPTIVE_RESULT_MODE, quizChoices.length, ...Buffer.from(sessionCode, 'ascii'), cards.length);
+    pushPackedNibbles(body, cards.map(({ rating, exposureCount }) => (
+      (ADAPTIVE_CARD_RATING[rating] << 2) | (exposureCount - 1)
+    )));
+    pushPackedNibbles(body, quizChoices);
+    body.push(result.localScore.correct);
   } else if (hasProbeTelemetry) {
     body.push(3, result.responses.length);
     for (const response of result.responses) {
@@ -2147,6 +2307,9 @@ function encodeCompactResultRecord(result) {
   bytes.writeUInt16LE(body.length, 5);
   Buffer.from(body).copy(bytes, 7);
   bytes.writeUInt16LE(crc16Ccitt(bytes.subarray(0, -2)), bytes.length - 2);
+  if (result.adaptiveStudy && bytes.length > ADAPTIVE_RESULT_MAX_BYTES) {
+    throw new Error(`TI-86 adaptive study result exceeds ${ADAPTIVE_RESULT_MAX_BYTES}-byte QR ceiling`);
+  }
   return bytes;
 }
 
@@ -2223,6 +2386,28 @@ function decodeCompactResultRecord(input) {
       validateCompactProbeTrace(response, index);
       responses.push(response);
     }
+  } else if (mode === ADAPTIVE_RESULT_MODE) {
+    const sessionCode = reader.fixedAscii(6, 'adaptive session code');
+    if (!ADAPTIVE_SESSION_CODE.test(sessionCode)) {
+      throw new Error('SCR1 adaptive result has an invalid six-digit session code');
+    }
+    const cardCount = reader.u8('adaptive card count');
+    const quizCount = count;
+    if (cardCount < 1 || quizCount < 1 || quizCount > cardCount) {
+      throw new Error('SCR1 adaptive result has invalid card/quiz counts');
+    }
+    const cards = readPackedNibbles(reader, cardCount, 'adaptive cards').map((nibble, index) => {
+      const rating = ADAPTIVE_CARD_RATING_BY_CODE[(nibble >>> 2) & 0x03];
+      const exposureCount = (nibble & 0x03) + 1;
+      if (!rating) throw new Error(`SCR1 adaptive card ${index} has an invalid rating`);
+      return { rating, exposureCount };
+    });
+    const quizChoices = readPackedNibbles(reader, quizCount, 'adaptive quiz choices');
+    if (quizChoices.some((choice) => choice < 1 || choice > 5)) {
+      throw new Error('SCR1 adaptive result has an invalid A-E quiz choice');
+    }
+    quizChoices.forEach((given, itemIndex) => responses.push({ itemIndex, given }));
+    common.adaptiveStudy = { sessionCode, cards, quizChoices };
   } else {
     throw new Error(`SCR1 record has unknown response mode ${mode}`);
   }
@@ -2235,7 +2420,26 @@ function decodeCompactResultRecord(input) {
     basis: 'embedded_answer_key',
   };
   validateCompactLocalScore(localScore, count);
-  return { ...common, responses, localScore };
+  const decoded = { ...common, responses, localScore };
+  validateResult(decoded);
+  return decoded;
+}
+
+function pushPackedNibbles(target, values) {
+  for (let index = 0; index < values.length; index += 2) {
+    target.push(((values[index] & 0x0f) << 4) | ((values[index + 1] ?? 0) & 0x0f));
+  }
+}
+
+function readPackedNibbles(reader, count, label) {
+  const values = [];
+  for (let index = 0; index < count; index += 2) {
+    const packed = reader.u8(label);
+    values.push((packed >>> 4) & 0x0f);
+    if (index + 1 < count) values.push(packed & 0x0f);
+    else if ((packed & 0x0f) !== 0) throw new Error(`SCR1 ${label} has non-zero padding`);
+  }
+  return values;
 }
 
 function validateCompactLocalScore(score, responseCount) {

@@ -17,6 +17,8 @@ export {
   decodeTi86ProgressProjection,
   decodeTi86ResultQueueRecord,
   decodeTi86SyncManifest,
+  decodeTi86StudyEntry,
+  decodeTi86StudyPrescription,
   encodeTi86DeliveryRequests,
   encodeTi86DeviceInfo,
   encodeTi86Envelope,
@@ -24,6 +26,8 @@ export {
   encodeTi86InteractionResponse,
   encodeTi86ResultQueue,
   encodeTi86ResultRecord,
+  encodeTi86StudyEntry,
+  encodeTi86StudyPrescription,
   ti86ArtifactVariableName,
   ti86GenerationKey,
 } from './Ti86SchoolCalcCodec.mjs';

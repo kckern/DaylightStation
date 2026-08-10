@@ -9,7 +9,7 @@ import {
 } from '#testlib/school/lifecycleFakes.mjs';
 import {
   rawUnits, rawDocuments, rawManifests, BANK_IDS,
-  MEDIA_UNIT, WORKSHEET_UNIT, OMR_UNIT, MIXED_UNIT, fixtureUnit,
+  MEDIA_UNIT, MEDIA_BANK_ID, WORKSHEET_UNIT, OMR_UNIT, MIXED_UNIT, fixtureUnit,
 } from '#testlib/school/lifecycleFixtures.mjs';
 
 // A program id used only by the launcher-path tests below. Registered with
@@ -21,7 +21,7 @@ let clock, catalog, curriculum, sessions, tokens, assignments, reviewQueue, useC
 
 const build = ({
   assignment = { learnerId: 'kid1', courses: ['math-fractions'] }, units, launchers = new Map(),
-  timezone = null,
+  timezone = null, schoolCalcStudies = null, schoolCalcMode = 'off',
 } = {}) => {
   clock = fakeClock();
   catalog = new FakeCatalog({ units: units ?? rawUnits(), documents: rawDocuments(), manifests: rawManifests() });
@@ -34,6 +34,7 @@ const build = ({
   reviewQueue = new FakeReviewQueue();
   useCase = new BuildAgenda({
     curriculum, assignments, sessions, tokens, launchers, reviewQueue, timezone,
+    schoolCalcStudies, schoolCalcMode,
     clock: clock.now, rng: seededRng(7), newSessionId: sequentialIds(),
     logger: silentLogger,
   });
@@ -118,6 +119,54 @@ describe('sessions', () => {
   it('does not open a session for a locked unit', async () => {
     await useCase.execute({ learnerId: 'kid1' });
     expect(sessions.ids()).toHaveLength(1);
+  });
+});
+
+describe('Adaptive Study handoff', () => {
+  const schoolcalc = {
+    mode: 'adaptive_flashcards',
+    study: { cardCount: 12, maxExposuresPerCard: 4 },
+    quiz: { itemCount: 10 },
+  };
+  const calculatorUnits = () => rawUnits({
+    [MEDIA_UNIT]: { schoolcalc, document: undefined, media: undefined, bank: MEDIA_BANK_ID },
+  });
+
+  it('ensures one calculator session and prints its leading-zero code instead of a subject token', async () => {
+    const calls = [];
+    const study = { studySessionId: 'study_1', code: '001234' };
+    build({
+      units: calculatorUnits(), schoolCalcMode: 'issue',
+      schoolCalcStudies: { ensure: async (input) => { calls.push(input); return study; } },
+    });
+    const result = await useCase.execute({ learnerId: 'kid1' });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ workSessionId: 'ses_1', learnerId: 'kid1' });
+    expect(tokens.ofClass('subject_next')).toEqual([]);
+    expect(result.offers[0]).toMatchObject({
+      token: null, tokenClass: 'schoolcalc_study',
+      calculator: { studySessionId: 'study_1', code: '001234', displayCode: '001 234' },
+    });
+    expect(sectionFor(result, 'math').next.schoolcalc).toEqual(schoolcalc);
+    expect(sectionFor(result, 'math').next.schoolcalcHandoff.displayCode).toBe('001 234');
+    expect(transcript(result.document)).toContain('001 234\nEnter on calculator.');
+    expect(actions(result.document)).toEqual([]);
+  });
+
+  it('preview performs only the read projection and never ensures or mints', async () => {
+    const calls = { preview: 0, ensure: 0 };
+    build({
+      units: calculatorUnits(), schoolCalcMode: 'preview',
+      schoolCalcStudies: {
+        preview: async () => { calls.preview += 1; return null; },
+        ensure: async () => { calls.ensure += 1; throw new Error('must not issue'); },
+      },
+    });
+    const result = await useCase.execute({ learnerId: 'kid1' });
+    expect(calls).toEqual({ preview: 1, ensure: 0 });
+    expect(tokens.ofClass('subject_next')).toEqual([]);
+    expect(result.offers[0].calculator).toEqual({ eligible: true });
+    expect(transcript(result.document)).toContain('Calculator eligible — code issued when printed.');
   });
 });
 

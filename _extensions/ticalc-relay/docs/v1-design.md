@@ -1,5 +1,13 @@
 # SchoolCalc TI relay — locked v1 design
 
+> **Superseded product boundary:** The broad Catalog-first design below is
+> retained architecture research. SchoolCalc Adaptive Study v1 is canonically
+> defined by
+> [`../../ti86-app/docs/schoolcalc-v1-requirements.md`](../../ti86-app/docs/schoolcalc-v1-requirements.md).
+> Reuse its immutable artifacts, result importer, queues, authenticated relay,
+> and crash-safe commits; Catalog/profile/progress/tutor learner routes are
+> inactive in the default release.
+
 Status: approved design; backend and host-testable relay vertical slice
 implemented, calculator shell and physical relay acceptance incomplete.
 Updated 2026-08-02.
