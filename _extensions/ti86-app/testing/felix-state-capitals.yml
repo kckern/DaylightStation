@@ -1,5 +1,30 @@
 schema: schoolcalc.ti86-mame-scenarios/v1
 scenarios:
+  - id: shell-controls
+    description: CLR acknowledges and clears partial input, then RESUME immediately opens the installed prescription.
+    boot_settle_frames: 300
+    settle_frames: 30
+    steps:
+      - { key: '0', capture: code-1 }
+      - { key: '1', capture: code-2 }
+      - { key: '2', capture: code-3 }
+      - { key: F4, capture: code-cleared, expect_text: [CLEARED, CONTINUE ON CALC] }
+      - { key: F1, capture: resumed-card, settle_frames: 300, expect_text: [ADAPTIVE STUDY, ALABAMA, FLIP] }
+
+  - id: emergency-quit
+    description: The calculator-standard 2nd then EXIT gesture immediately abandons SchoolCalc and returns to TI-OS.
+    boot_settle_frames: 300
+    steps:
+      - { key: SECOND, capture: second-armed, settle_frames: 30, expect_changed: false, expect_text: CODE }
+      - { key: EXIT, capture: ti-os, settle_frames: 90, expect_not_text: [SCHOOLCALC, CODE, CONTINUE ON CALC] }
+
+  - id: instant-flip
+    description: The predecoded verso replaces the card body within one frame, before its durable face write completes.
+    boot_settle_frames: 300
+    steps:
+      - { key: ENTER, capture: card-front, settle_frames: 300, expect_text: [ADAPTIVE STUDY, ALABAMA, FLIP] }
+      - { key: F1, capture: card-verso, settle_frames: 18, expect_text: [MONTGOMERY, AGAIN, HARD, KNOW] }
+
   - id: felix-code-entry
     description: Code entry updates cleanly, exposes readiness on digit six, and Enter opens Felix's local prescription.
     boot_settle_frames: 300

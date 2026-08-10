@@ -86,6 +86,10 @@ describe('SchoolCalc production shell build', () => {
     );
     expect(SHELL_SOURCE).toContain('code_ready:              defb "ENTER TO OPEN",0');
     expect(SHELL_SOURCE).toContain('code_opening:            defb "OPENING...",0');
+    expect(SHELL_SOURCE).toMatch(/shell_f4:[\s\S]*?cp SCREEN_CODE[\s\S]*?jp shell_code_clear_entry/);
+    expect(SHELL_SOURCE).toMatch(/shell_code_clear_entry:[\s\S]*?ld \(shell_code_length\),a[\s\S]*?call shell_code_refresh/);
+    expect(SHELL_SOURCE).toMatch(/shell_code_open:[\s\S]*?shell_resume_available[\s\S]*?call shell_code_refresh\s+jp launch_standard_runtime/);
+    expect(SHELL_SOURCE).toContain('code_cleared:            defb "CLEARED",0');
     expect(SHELL_SOURCE).toMatch(/shell_softkey_f1_ready:\s+ld b,2/);
     expect(SHELL_SOURCE).toContain('softkey_open:           defb " OPEN",0');
     expect(SHELL_SOURCE).toContain('softkey_resume:         defb "RESUME",0');

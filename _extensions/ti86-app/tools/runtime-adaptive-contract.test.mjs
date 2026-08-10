@@ -64,6 +64,20 @@ describe('SchoolCalc Adaptive Study SCLEARN contract', () => {
     expect(SOURCE).toMatch(/adaptive_center_lines_ready:[\s\S]*?ld a,33[\s\S]*?adaptive_center_draw_line:[\s\S]*?ld a,64[\s\S]*?call ui_draw_text_count/);
   });
 
+  it('preloads the verso and reveals it before the durable face write', () => {
+    expect(SOURCE).toMatch(
+      /adaptive_render_card:[\s\S]*?call adaptive_render_card_rail[\s\S]*?call z,adaptive_preload_verso/,
+    );
+    expect(SOURCE).toMatch(
+      /adaptive_preload_verso:[\s\S]*?adaptive_key_answer_pages[\s\S]*?adaptive_key_answer_graphic[\s\S]*?adaptive_verso_frame/,
+    );
+    expect(SOURCE).toMatch(
+      /adaptive_flip_to_cached_verso:[\s\S]*?call adaptive_render_cached_verso[\s\S]*?call adaptive_save[\s\S]*?jp adaptive_card_wait/,
+    );
+    expect(SOURCE).toMatch(/adaptive_render_cached_verso:[\s\S]*?ld hl,adaptive_verso_frame[\s\S]*?ld de,VideoRam \+ 144[\s\S]*?ld bc,880[\s\S]*?ldir/);
+    expect(SOURCE).toContain('adaptive_verso_frame:        defs 880,0');
+  });
+
   it('renders bounded vector commands and reserves a centered caption band', () => {
     expect(SOURCE).toContain('adaptive_key_prompt_graphic: defb "promptGraphic",0');
     expect(SOURCE).toContain('adaptive_key_answer_graphic: defb "answerGraphic",0');
