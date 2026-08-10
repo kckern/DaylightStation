@@ -36,6 +36,15 @@ describe('TI-86 mixed terminal screen decoder', () => {
     expect(decoded.text.some(({ y, polarity }) => y === 23 && polarity === 'light-on-dark')).toBe(false);
   });
 
+  it('recognizes the exclusive grouped code face at its shell spacing', () => {
+    const screen = Buffer.alloc(1024);
+    '012345'.split('').forEach((character, index) => {
+      const x = 38 + (index * 8) + (index >= 3 ? 4 : 0);
+      drawGlyph(screen, 'code-7x8', character, x, 26);
+    });
+    expect(renderTi86ScreenHybrid(screen, { stripChrome: false })).toContain('(38,26)+/k:012 345');
+  });
+
   it('keeps every answer in a crowded compact assessment surface ahead of icon heuristics', () => {
     const screen = Buffer.alloc(1024);
     drawText(screen, 'compact-3x5', 'WHICH POKEMON EVOLVES', 2, 11);

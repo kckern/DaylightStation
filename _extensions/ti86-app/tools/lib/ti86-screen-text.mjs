@@ -69,7 +69,7 @@ export function renderTi86ScreenHybrid(pixels, options = {}) {
   // rows: one semantic text line, one legend, and eight 2×8 Braille rows.
   const lines = [
     `T ${text}; S ${symbols}`,
-    'G 2×8→Braille; swept text and chrome removed. + dark-on-light, - light-on-dark; c/r/d = 3×5/4×6/5×7.',
+    'G 2×8→Braille; swept text and chrome removed. + dark-on-light, - light-on-dark; k/c/r/d = code/compact/reader/display.',
     ...decoded.compactBraille.split('\n'),
   ];
   return `${lines.join('\n')}\n`;
@@ -333,7 +333,7 @@ function buildTemplate(font, character) {
     alternatives: [character],
     width: font.width,
     height: font.height + (descender !== 0 ? 1 : 0),
-    advance: glyphAdvance(font, character),
+    advance: font.id === 'code-7x8' ? 8 : glyphAdvance(font, character),
     footprint,
     inkPixels: pixels,
   };
@@ -514,7 +514,7 @@ function indexOf(x, y) { return (y * TI86_SCREEN_WIDTH) + x; }
 function positionKey(font, polarity, x, y) { return `${font}|${polarity}|${x}|${y}`; }
 function polarityMark(polarity) { return polarity === 'dark-on-light' ? '+' : '-'; }
 function fontMark(font) {
-  return font === 'compact-3x5' ? 'c' : font === 'reader-4x6' ? 'r' : 'd';
+  return font === 'code-7x8' ? 'k' : font === 'compact-3x5' ? 'c' : font === 'reader-4x6' ? 'r' : 'd';
 }
 function iconSymbol(id) {
   return {
