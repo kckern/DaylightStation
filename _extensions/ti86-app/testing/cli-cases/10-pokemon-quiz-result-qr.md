@@ -305,10 +305,10 @@ T [none]; S (45,13)+:▦ QR V5/M 37×37
 G 2×8→Braille; swept text and chrome removed. + dark-on-light, - light-on-dark; c/r/d = 3×5/4×6/5×7.
 
 SCHOOLCALC_SCREEN label=wait-300 pc=019A executionWindow=true
-T (42,3)+/c:QR RESULT F1=SCANNED | (5,58)+/c:MARK | (104,58)+/c:LATER; S (45,13)+:▦ QR V5/M 37×37
+T (42,3)+/c:SCAN RESULT | (5,58)+/c:DONE | (104,58)+/c:LATER; S (45,13)+:▦ QR V5/M 37×37
 G 2×8→Braille; swept text and chrome removed. + dark-on-light, - light-on-dark; c/r/d = 3×5/4×6/5×7.
 
 SCHOOLCALC_SCREEN label=final pc=019A executionWindow=true
-T (42,3)+/c:QR RESULT F1=SCANNED | (5,58)+/c:MARK | (104,58)+/c:LATER; S (45,13)+:▦ QR V5/M 37×37
+T (42,3)+/c:SCAN RESULT | (5,58)+/c:DONE | (104,58)+/c:LATER; S (45,13)+:▦ QR V5/M 37×37
 G 2×8→Braille; swept text and chrome removed. + dark-on-light, - light-on-dark; c/r/d = 3×5/4×6/5×7.
 ```

@@ -68,6 +68,10 @@ describe('SchoolCalc Adaptive Study SCLEARN contract', () => {
       expect(choices).toMatch(new RegExp(`cp SC_SCAN_${key}\\s+ld b,${value}`));
     }
     expect(choices).not.toContain('sub b');
+    expect(SOURCE).toContain('adaptive_label_answers:      defb "CHOICE",0');
+    expect(SOURCE).toMatch(
+      /adaptive_render_choice_rail:[\s\S]*?ld b,11[\s\S]*?ld b,37[\s\S]*?ld b,63[\s\S]*?ld b,89[\s\S]*?ld b,115/,
+    );
   });
 
   it('packs canonical mode-4 cards and choices through the crash-safe queue', () => {

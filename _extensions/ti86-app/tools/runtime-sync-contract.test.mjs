@@ -40,6 +40,13 @@ describe('TI-86 cooperative foreground-sync runtime', () => {
     expect(TI86_ASM_EXEC_RAM + inspected.codeByteLength).toBeLessThanOrEqual(TI86_VIDEO_RAM);
   });
 
+  it('uses concise recovery copy while an unavailable study waits for its relay', () => {
+    expect(SOURCE).toContain('sync_ui_checking:           defb "CONNECT RELAY",0');
+    expect(SOURCE).toContain('sync_ui_wait_relay:         defb "WAITING FOR LINK",0');
+    expect(SOURCE).toContain('sync_ui_no_transfer:        defb "EXIT PAUSES SAFELY",0');
+    expect(SOURCE).not.toContain('No data moving');
+  });
+
   it('locks the calculator offer and frame envelope to the relay SCF1 v1 contract', () => {
     expect(asmEqu('SCF_FRAME_HEADER_BYTES')).toBe(cxxConstant('FRAME_HEADER_BYTES'));
     expect(asmEqu('SCF_FRAME_MAX_BYTES')).toBe(
@@ -156,7 +163,7 @@ describe('TI-86 cooperative foreground-sync runtime', () => {
 
   it('makes verified presence, direction, progress, and unplug safety visible', () => {
     for (const text of [
-      'Cable: checking...', 'Cable: connected', 'Relay: verified', 'Sending to relay',
+      'CONNECT RELAY', 'Cable: connected', 'Relay: verified', 'Sending to relay',
       'Server exchange', 'Receiving from relay', 'Keep cable connected', 'Safe to unplug',
       'Cable disconnected', 'Local data preserved',
     ]) {

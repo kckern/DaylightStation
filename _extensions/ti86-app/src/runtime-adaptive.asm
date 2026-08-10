@@ -1298,7 +1298,7 @@ adaptive_render_quiz:
         call ui_draw_wrapped_text
         call adaptive_clear_rail
         ld hl,adaptive_label_answers
-        ld b,102
+        ld b,104
         ld c,57
         call ui_draw_text
         call ui_mode_set
@@ -1683,23 +1683,23 @@ adaptive_clear_rail:
 adaptive_render_choice_rail:
         call adaptive_clear_rail
         ld hl,adaptive_choice_letters
-        ld b,5
+        ld b,11
         ld c,57
         call ui_draw_text
         ld hl,adaptive_choice_letters + 2
-        ld b,31
+        ld b,37
         ld c,57
         call ui_draw_text
         ld hl,adaptive_choice_letters + 4
-        ld b,57
+        ld b,63
         ld c,57
         call ui_draw_text
         ld hl,adaptive_choice_letters + 6
-        ld b,83
+        ld b,89
         ld c,57
         call ui_draw_text
         ld hl,adaptive_choice_letters + 8
-        ld b,109
+        ld b,115
         ld c,57
         call ui_draw_text
         jp ui_mode_set
@@ -1930,7 +1930,7 @@ adaptive_label_again:        defb "AGAIN",0
 adaptive_label_hard:         defb "HARD",0
 adaptive_label_know:         defb "KNOW",0
 adaptive_label_quiz:         defb "QUIZ",0
-adaptive_label_answers:      defb "ANSWERS",0
+adaptive_label_answers:      defb "CHOICE",0
 adaptive_label_qr:           defb "QR",0
 adaptive_label_done:         defb "DONE",0
 adaptive_summary_known_text:      defb "KNOWN",0
