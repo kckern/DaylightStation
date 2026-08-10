@@ -126,6 +126,12 @@ describe('GamingController', () => {
     expect(final.revision).toBe(4);
     expect(final.state.pending_action).toBeNull();
     expect(final.state.enemy.health).toBeLessThan(enemyBefore);
+    expect(controller.getSnapshot().combatResult).toMatchObject({
+      cardTitle: expect.any(String),
+      damage: expect.any(Number),
+      retaliation: 2,
+      effectiveness: 'Full power',
+    });
     expect(runtime.dispose).toHaveBeenCalledOnce();
     const experienceEvents = logger.info.mock.calls.map(([event]) => event);
     expect(experienceEvents).toEqual(expect.arrayContaining([

@@ -40,6 +40,7 @@ export default function GamingRuntime({ gameId = 'scale-clash', participants = [
     <CardBattleView
       session={snapshot.session}
       providerRuntime={snapshot.providerRuntime}
+      combatResult={snapshot.combatResult}
       error={snapshot.error}
       onChoose={(id) => controller.chooseAction(id)}
       onAbort={() => controller.abortChallenge()}
