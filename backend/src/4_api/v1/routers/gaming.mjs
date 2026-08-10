@@ -33,6 +33,9 @@ export function createGamingRouter({ gamingService, logger = null }) {
     if (body.participants !== undefined && !Array.isArray(body.participants)) {
       return res.status(400).json({ error: 'participants_must_be_array' });
     }
+    if (body.setup !== undefined && (!body.setup || typeof body.setup !== 'object' || Array.isArray(body.setup))) {
+      return res.status(400).json({ error: 'setup_must_be_object' });
+    }
     res.status(201).json(gamingService.createSession(body));
   }));
 

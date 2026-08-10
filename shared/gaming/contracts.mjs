@@ -6,10 +6,11 @@
  * will be filled in by later challenge implementations.
  */
 export const GAMING_SCHEMA_VERSION = 1;
-export const GAMING_ENGINE_VERSION = '0.1.0-card-slice';
+export const GAMING_ENGINE_VERSION = '0.2.0-tactical-card-slice';
 
 export const COMMAND_TYPES = Object.freeze({
   CHOOSE_ACTION: 'choose_action',
+  END_TURN: 'end_turn',
   PREPARE_CHALLENGE: 'prepare_challenge',
   START_CHALLENGE: 'start_challenge',
   SUBMIT_CHALLENGE_RESULT: 'submit_challenge_result',

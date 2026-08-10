@@ -1,6 +1,6 @@
 schema_version: 1
 game_id: card-game
-title: Card Game
+title: Riff Raiders
 view_id: card-battle-v1
 ruleset: card-battle-v1
 players:
@@ -8,82 +8,145 @@ players:
   max: 1
 
 card_battle:
-  opening_hand: 3
+  turn_mode: tactical
+  opening_hand: 4
+  hand_size: 4
   player:
-    health: 8
-    max_energy: 2
+    health: 14
+    max_energy: 3
+  upgrades:
+    - id: second-wind
+      title: Second Wind
+      description: Start the next battle with 2 extra health.
+      effect:
+        max_health: 2
+    - id: opening-note
+      title: Opening Note
+      description: Start the next battle with 2 focus.
+      effect:
+        starting_focus: 2
   enemy:
-    id: rival
-    name: Rival
-    health: 12
-    attack: 1
+    id: iron-conductor
+    name: Iron Conductor
+    health: 24
+    intents:
+      - id: baton-strike
+        title: Baton Strike
+        kind: attack
+        amount: 4
+      - id: iron-tempo
+        title: Iron Tempo
+        kind: defend
+        amount: 5
+      - id: crescendo
+        title: Crescendo
+        kind: charge
+        amount: 3
+      - id: downbeat
+        title: Crushing Downbeat
+        kind: attack
+        amount: 5
+  challenge_pools:
+    major-scales:
+      selection: rotate
+      prompts:
+        - label: C major scale
+          key_signature: C
+          abc: C D E F G A B c
+          expected_midi: [60, 62, 64, 65, 67, 69, 71, 72]
+          max_mistakes: 3
+        - label: G major scale
+          key_signature: G
+          abc: G A B c d e ^f g
+          expected_midi: [55, 57, 59, 60, 62, 64, 66, 67]
+          max_mistakes: 3
+        - label: F major scale
+          key_signature: F
+          abc: F G A B c d e f
+          expected_midi: [53, 55, 57, 58, 60, 62, 64, 65]
+          max_mistakes: 3
+        - label: D major scale
+          key_signature: D
+          abc: D E ^F G A B ^c d
+          expected_midi: [50, 52, 54, 55, 57, 59, 61, 62]
+          max_mistakes: 3
   deck:
-    - c-major
-    - g-major
-    - f-major
-    - d-major
-    - c-major
-    - g-major
+    - quick-cut
+    - quick-cut
+    - resonant-blow
+    - resonant-blow
+    - brace
+    - brace
+    - fortify
+    - fortify
+    - tune-up
+    - tune-up
+    - finale
+    - finale
 
 cards:
-  c-major:
-    title: Quick Strike
+  quick-cut:
+    title: Quick Cut
+    type: attack
+    description: A light attack that leaves energy for another card.
     cost: 1
-    damage: 3
-    challenge:
+    damage: 2
+    challenge: &scale_challenge
       domain: piano
       kind: scale
-      prompt:
-        label: C major scale
-        key_signature: C
-        abc: C D E F G A B c
-        expected_midi: [60, 62, 64, 65, 67, 69, 71, 72]
+      pool: major-scales
     outcomes: &scale_outcomes
       - id: fluent
         min_score: 1
         multiplier: 1
       - id: recovered
+        min_score: 0.5
+        multiplier: 0.65
+      - id: fizzled
         min_score: 0
-        multiplier: 0.5
+        multiplier: 0
 
-  g-major:
-    title: Steady Strike
+  resonant-blow:
+    title: Resonant Blow
+    type: attack
+    description: Trade most of your energy for a heavy hit.
+    cost: 2
+    damage: 5
+    challenge: *scale_challenge
+    outcomes: *scale_outcomes
+
+  brace:
+    title: Brace
+    type: guard
+    description: Block the Conductor's announced attack.
     cost: 1
+    block: 4
+    challenge: *scale_challenge
+    outcomes: *scale_outcomes
+
+  fortify:
+    title: Fortify
+    type: guard
+    description: Commit two energy to a stronger defense.
+    cost: 2
+    block: 7
+    challenge: *scale_challenge
+    outcomes: *scale_outcomes
+
+  tune-up:
+    title: Tune Up
+    type: focus
+    description: Add power to your next attack, even next turn.
+    cost: 1
+    focus: 3
+    challenge: *scale_challenge
+    outcomes: *scale_outcomes
+
+  finale:
+    title: Finale
+    type: attack
+    description: Cash in stored focus for a decisive strike.
+    cost: 2
     damage: 4
-    challenge:
-      domain: piano
-      kind: scale
-      prompt:
-        label: G major scale
-        key_signature: G
-        abc: G A B c d e ^f g
-        expected_midi: [55, 57, 59, 60, 62, 64, 66, 67]
-    outcomes: *scale_outcomes
-
-  f-major:
-    title: Heavy Strike
-    cost: 2
-    damage: 6
-    challenge:
-      domain: piano
-      kind: scale
-      prompt:
-        label: F major scale
-        key_signature: F
-        abc: F G A B c d e f
-        expected_midi: [53, 55, 57, 58, 60, 62, 64, 65]
-    outcomes: *scale_outcomes
-
-  d-major:
-    title: Power Strike
-    cost: 2
-    damage: 7
-    challenge:
-      domain: piano
-      kind: scale
-      prompt:
-        label: D major scale
-        key_signature: D
-        abc: D E ^F G A B ^c d
-        expected_midi: [50, 52, 54, 55, 57, 59, 61, 62]
+    challenge: *scale_challenge
     outcomes: *scale_outcomes

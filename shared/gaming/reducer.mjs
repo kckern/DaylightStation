@@ -8,6 +8,7 @@ import { assertDefinition } from './definition.mjs';
 import { shuffle } from './rng.mjs';
 
 const clone = (value) => structuredClone(value);
+const isTactical = (definition) => definition.card_battle.turn_mode === 'tactical';
 
 function instantiateDeck(definition, seed) {
   const counts = new Map();
@@ -33,9 +34,14 @@ function drawCards(state, count) {
   }
 }
 
-export function createInitialState(definition, { seed = 1, participants = [] } = {}) {
+export function createInitialState(definition, { seed = 1, participants = [], setup = {} } = {}) {
   const def = assertDefinition(definition);
   const shuffled = instantiateDeck(def, seed);
+  const enemyConfig = clone(def.card_battle.enemy);
+  const openingIntent = isTactical(def) ? clone(enemyConfig.intents[0]) : null;
+  const upgrade = (def.card_battle.upgrades || []).find((candidate) => candidate.id === setup.upgrade_id) || null;
+  const healthBonus = upgrade?.effect?.max_health || 0;
+  const startingFocus = upgrade?.effect?.starting_focus || 0;
   const state = {
     schema_version: 1,
     ruleset: def.ruleset,
@@ -44,19 +50,29 @@ export function createInitialState(definition, { seed = 1, participants = [] } =
     actor: 'player',
     participants: clone(participants),
     player: {
-      health: def.card_battle.player.health,
-      max_health: def.card_battle.player.health,
+      health: def.card_battle.player.health + healthBonus,
+      max_health: def.card_battle.player.health + healthBonus,
       energy: def.card_battle.player.max_energy,
       max_energy: def.card_battle.player.max_energy,
+      block: 0,
+      focus: startingFocus,
     },
     enemy: {
-      ...clone(def.card_battle.enemy),
+      ...enemyConfig,
       max_health: def.card_battle.enemy.health,
+      block: 0,
+      strength: 0,
+      intent_index: 0,
+      intent: openingIntent,
     },
     zones: { deck: shuffled.items, hand: [], discard: [] },
     pending_action: null,
     winner: null,
     rng_state: shuffled.rngState,
+    challenge_cursor: Number(seed) >>> 0,
+    cards_played_this_turn: 0,
+    score: 0,
+    applied_upgrade: upgrade ? { id: upgrade.id, title: upgrade.title } : null,
   };
   drawCards(state, def.card_battle.opening_hand ?? 3);
   return state;
@@ -72,6 +88,14 @@ function success(state, events) {
 
 function selectOutcome(card, score) {
   return card.outcomes.find((candidate) => score >= candidate.min_score) || card.outcomes.at(-1);
+}
+
+function resolveChallenge(card, definition, state) {
+  if (!card.challenge.pool) return clone(card.challenge.prompt);
+  const prompts = definition.card_battle.challenge_pools[card.challenge.pool].prompts;
+  const index = state.challenge_cursor % prompts.length;
+  state.challenge_cursor += 1;
+  return clone(prompts[index]);
 }
 
 function deriveYield(state) {
@@ -97,6 +121,7 @@ function chooseAction(state, command, definition) {
   if (card.cost > state.player.energy) return failure(state, 'insufficient_energy', 'Not enough energy for this card');
 
   const next = clone(state);
+  const prompt = resolveChallenge(card, definition, next);
   next.pending_action = {
     id: `challenge:${command.command_id}`,
     status: CHALLENGE_STATES.REQUESTED,
@@ -109,8 +134,12 @@ function chooseAction(state, command, definition) {
       domain: card.challenge.domain,
       kind: card.challenge.kind,
       user_id: state.participants[0]?.user_id || state.participants[0]?.id || 'guest',
-      prompt: clone(card.challenge.prompt),
-      context: { action_id: command.command_id, turn: state.turn },
+      prompt,
+      context: {
+        action_id: command.command_id,
+        turn: state.turn,
+        challenge_pool: card.challenge.pool || null,
+      },
     },
   };
   return success(next, [{ type: 'action_pending', action_id: command.command_id, card_instance_id: cardInstanceId }]);
@@ -155,24 +184,54 @@ function applyTerminalResult(state, command, definition) {
 
   const card = definition.cards[pending.card_definition_id];
   const outcome = selectOutcome(card, result.score);
-  const damage = Math.max(0, Math.round(card.damage * (outcome.multiplier ?? 1)));
+  const multiplier = outcome.multiplier ?? 1;
+  next.player.block ??= 0;
+  next.player.focus ??= 0;
+  next.enemy.block ??= 0;
+  next.enemy.strength ??= 0;
   next.player.energy -= pending.reserved_cost;
   const cardIndex = next.zones.hand.findIndex((item) => item.instance_id === pending.card_instance_id);
   const [playedCard] = cardIndex >= 0 ? next.zones.hand.splice(cardIndex, 1) : [];
   if (playedCard) next.zones.discard.push(playedCard);
-  next.enemy.health = Math.max(0, next.enemy.health - damage);
   next.pending_action = null;
+  next.cards_played_this_turn = (next.cards_played_this_turn ?? 0) + 1;
+  next.score = (next.score ?? 0) + Math.round(result.score * 100);
 
   const events = [
     { type: 'challenge_resolved', challenge_id: pending.id, score: result.score, outcome: outcome.id },
-    { type: 'damage_dealt', target: 'enemy', amount: damage },
   ];
+  const cardType = card.type || 'attack';
+  if (cardType === 'guard') {
+    const block = Math.max(0, Math.round(card.block * multiplier));
+    next.player.block += block;
+    events.push({ type: 'block_gained', target: 'player', amount: block });
+  } else if (cardType === 'focus') {
+    const focus = Math.max(0, Math.round(card.focus * multiplier));
+    next.player.focus += focus;
+    events.push({ type: 'focus_gained', target: 'player', amount: focus });
+  } else {
+    const baseDamage = Math.max(0, Math.round(card.damage * multiplier));
+    const focus = next.player.focus;
+    const attemptedDamage = baseDamage + focus;
+    const blocked = Math.min(next.enemy.block, attemptedDamage);
+    const damage = Math.max(0, attemptedDamage - blocked);
+    next.enemy.block -= blocked;
+    next.enemy.health = Math.max(0, next.enemy.health - damage);
+    if (focus > 0) {
+      next.player.focus = 0;
+      events.push({ type: 'focus_spent', amount: focus });
+    }
+    if (blocked > 0) events.push({ type: 'damage_blocked', target: 'enemy', amount: blocked });
+    events.push({ type: 'damage_dealt', target: 'enemy', amount: damage, attempted: attemptedDamage });
+  }
   if (next.enemy.health === 0) {
     next.status = 'complete';
     next.winner = 'player';
     events.push({ type: 'game_ended', winner: 'player' });
     return success(next, events);
   }
+
+  if (isTactical(definition)) return success(next, events);
 
   const retaliation = definition.card_battle.enemy.attack;
   next.player.health = Math.max(0, next.player.health - retaliation);
@@ -188,6 +247,59 @@ function applyTerminalResult(state, command, definition) {
   next.player.energy = next.player.max_energy;
   drawCards(next, 1);
   events.push({ type: 'turn_started', turn: next.turn, actor: 'player' });
+  return success(next, events);
+}
+
+function endTurn(state, definition) {
+  if (!isTactical(definition)) return failure(state, 'unsupported_command', 'This battle does not use tactical turns');
+  if (state.status !== 'active') return failure(state, 'session_terminal', 'The game is already complete');
+  if (state.pending_action) return failure(state, 'action_pending', 'Resolve the pending challenge first');
+
+  const next = clone(state);
+  const intent = next.enemy.intent;
+  const events = [];
+  next.enemy.block = 0;
+  next.player.block = Math.max(0, next.player.block);
+
+  if (intent.kind === 'attack') {
+    const attempted = intent.amount + next.enemy.strength;
+    const blocked = Math.min(next.player.block, attempted);
+    const damage = Math.max(0, attempted - blocked);
+    next.player.block = 0;
+    next.enemy.strength = 0;
+    next.player.health = Math.max(0, next.player.health - damage);
+    events.push({ type: 'enemy_intent_resolved', intent_id: intent.id, kind: intent.kind, title: intent.title, amount: attempted });
+    if (blocked > 0) events.push({ type: 'damage_blocked', target: 'player', amount: blocked });
+    events.push({ type: 'damage_dealt', target: 'player', amount: damage, attempted });
+  } else if (intent.kind === 'defend') {
+    next.player.block = 0;
+    next.enemy.block = intent.amount;
+    events.push({ type: 'enemy_intent_resolved', intent_id: intent.id, kind: intent.kind, title: intent.title, amount: intent.amount });
+    events.push({ type: 'block_gained', target: 'enemy', amount: intent.amount });
+  } else {
+    next.player.block = 0;
+    next.enemy.strength += intent.amount;
+    events.push({ type: 'enemy_intent_resolved', intent_id: intent.id, kind: intent.kind, title: intent.title, amount: intent.amount });
+    events.push({ type: 'focus_gained', target: 'enemy', amount: intent.amount });
+  }
+
+  if (next.player.health === 0) {
+    next.status = 'complete';
+    next.winner = 'enemy';
+    events.push({ type: 'game_ended', winner: 'enemy' });
+    return success(next, events);
+  }
+
+  next.score = (next.score ?? 0) + 25;
+  next.zones.discard.push(...next.zones.hand);
+  next.zones.hand = [];
+  next.turn += 1;
+  next.cards_played_this_turn = 0;
+  next.player.energy = next.player.max_energy;
+  drawCards(next, definition.card_battle.hand_size);
+  next.enemy.intent_index = (next.enemy.intent_index + 1) % definition.card_battle.enemy.intents.length;
+  next.enemy.intent = clone(definition.card_battle.enemy.intents[next.enemy.intent_index]);
+  events.push({ type: 'turn_started', turn: next.turn, actor: 'player', enemy_intent: clone(next.enemy.intent) });
   return success(next, events);
 }
 
@@ -208,6 +320,7 @@ export function transition(state, command, definition) {
   if (!state || typeof state !== 'object') return failure(state, 'invalid_state', 'State is required');
   switch (command.type) {
     case COMMAND_TYPES.CHOOSE_ACTION: return chooseAction(state, command, def);
+    case COMMAND_TYPES.END_TURN: return endTurn(state, def);
     case COMMAND_TYPES.PREPARE_CHALLENGE: return prepareChallenge(state, command);
     case COMMAND_TYPES.START_CHALLENGE: return startChallenge(state, command);
     case COMMAND_TYPES.SUBMIT_CHALLENGE_RESULT: return applyTerminalResult(state, command, def);
@@ -226,6 +339,7 @@ export function deriveInteraction(state, definition, viewerId = null) {
         legalCommands.push({ type: COMMAND_TYPES.CHOOSE_ACTION, payload: { card_instance_id: instance.instance_id } });
       }
     }
+    if (isTactical(def)) legalCommands.push({ type: COMMAND_TYPES.END_TURN, payload: {} });
   }
   return { viewer_id: viewerId, legal_commands: legalCommands, yield: deriveYield(state) };
 }

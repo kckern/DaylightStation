@@ -2,6 +2,15 @@ import { COMMAND_TYPES, deriveInteraction, transition } from '@shared-gaming/ind
 
 const makeCommandId = () => globalThis.crypto?.randomUUID?.() || `cmd-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 const finiteOrNull = (value) => (Number.isFinite(value) ? value : null);
+const freshExperience = () => ({
+  cardsSelected: 0,
+  turnsEnded: 0,
+  challengesStarted: 0,
+  challengesCompleted: 0,
+  challengesAborted: 0,
+  recoveredChallenges: 0,
+  totalChallengeDurationMs: 0,
+});
 
 export class GamingController {
   constructor({ api, providerRegistry, gameId, participants, viewerId = null, resumeSessionId = null, logger, clock = () => Date.now() }) {
@@ -18,18 +27,12 @@ export class GamingController {
       phase: 'loading', session: null, error: null, providerRuntime: null, combatResult: null,
     };
     this.disposed = false;
+    this.actionInFlight = false;
     this.observedAt = this.clock();
     this.lastHandObservation = null;
     this.sessionCompleteLogged = false;
     this.sessionClosedLogged = false;
-    this.experience = {
-      cardsSelected: 0,
-      challengesStarted: 0,
-      challengesCompleted: 0,
-      challengesAborted: 0,
-      recoveredChallenges: 0,
-      totalChallengeDurationMs: 0,
-    };
+    this.experience = freshExperience();
   }
 
   subscribe = (listener) => {
@@ -68,7 +71,8 @@ export class GamingController {
   #observeHandAvailability(session, source) {
     if (!session || session.status !== 'active' || session.state?.pending_action) return;
     const legal = session.interaction?.legal_commands || [];
-    if (legal.length > 0) return;
+    const playable = legal.filter((command) => command.type === COMMAND_TYPES.CHOOSE_ACTION);
+    if (playable.length > 0) return;
     const hand = session.state?.zones?.hand || [];
     const signature = `${session.session_id}:${session.revision}:${hand.map((card) => card.instance_id).join(',')}`;
     if (signature === this.lastHandObservation) return;
@@ -102,6 +106,7 @@ export class GamingController {
       winner: session.state.winner,
       playerHealth: session.state.player.health,
       enemyHealth: session.state.enemy.health,
+      score: session.state.score ?? null,
       observedDurationMs: Math.max(0, this.clock() - this.observedAt),
       ...this.experience,
     });
@@ -159,9 +164,10 @@ export class GamingController {
 
   async chooseAction(cardInstanceId) {
     const before = this.snapshot.session;
-    if (this.snapshot.phase !== 'playing' || before?.state?.pending_action) return;
+    if (this.actionInFlight || this.snapshot.phase !== 'playing' || before?.state?.pending_action) return;
     const instance = before.state.zones.hand.find((card) => card.instance_id === cardInstanceId);
     const card = instance ? before.definition.cards[instance.definition_id] : null;
+    this.actionInFlight = true;
     try {
       this.#publish({ combatResult: null });
       const selected = await this.#dispatch(COMMAND_TYPES.CHOOSE_ACTION, { card_instance_id: cardInstanceId });
@@ -171,16 +177,85 @@ export class GamingController {
         cardInstanceId,
         cardDefinitionId: instance?.definition_id || null,
         cardTitle: card?.title || null,
+        cardType: card?.type || 'attack',
         challengeKind: card?.challenge?.kind || null,
-        challengeLabel: card?.challenge?.prompt?.label || null,
+        challengeLabel: selected.state.pending_action?.request?.prompt?.label || null,
         energyBefore: before.state.player.energy,
         cardCost: card?.cost ?? null,
         baseDamage: card?.damage ?? null,
+        baseBlock: card?.block ?? null,
+        baseFocus: card?.focus ?? null,
         handCount: before.state.zones.hand.length,
       });
       await this.#runPendingChallenge();
     } catch (error) {
       await this.#recover(error);
+    } finally {
+      this.actionInFlight = false;
+    }
+  }
+
+  async restart(upgradeId = null) {
+    if (this.actionInFlight || this.snapshot.session?.status !== 'complete') return;
+    this.actionInFlight = true;
+    try {
+      const session = await this.api.createSession({
+        game_id: this.gameId,
+        participants: this.participants,
+        ...(upgradeId ? { setup: { upgrade_id: upgradeId } } : {}),
+      });
+      if (this.disposed) return;
+      this.observedAt = this.clock();
+      this.lastHandObservation = null;
+      this.sessionCompleteLogged = false;
+      this.experience = freshExperience();
+      this.#publish({ phase: 'playing', session, error: null, providerRuntime: null, combatResult: null });
+      this.logger.info('gaming.session.ready', {
+        ...this.#sessionFields(session),
+        resumed: false,
+        rematch: true,
+        upgradeId,
+        definitionHash: session.definition_hash || null,
+        handCount: session.state.zones.hand.length,
+      });
+      this.#observeHandAvailability(session, 'rematch_ready');
+    } catch (error) {
+      await this.#recover(error);
+    } finally {
+      this.actionInFlight = false;
+    }
+  }
+
+  async endTurn() {
+    const before = this.snapshot.session;
+    if (this.actionInFlight || this.snapshot.phase !== 'playing' || before?.state?.pending_action || before?.status !== 'active') return;
+    const intent = before.state.enemy.intent;
+    this.actionInFlight = true;
+    try {
+      this.#publish({
+        combatResult: {
+          kind: 'enemy', cardTitle: intent?.title || 'Enemy turn', resolving: true,
+        },
+      });
+      const session = await this.#dispatch(COMMAND_TYPES.END_TURN, {});
+      this.experience.turnsEnded += 1;
+      const result = this.#turnResult(session);
+      this.#publish({ combatResult: result });
+      this.logger.info('gaming.turn.ended', {
+        ...this.#sessionFields(session),
+        enemyIntentId: intent?.id || null,
+        enemyIntentKind: intent?.kind || null,
+        damage: result.damage,
+        blocked: result.blocked,
+        playerHealth: session.state.player.health,
+        score: session.state.score ?? null,
+      });
+      this.#observeHandAvailability(session, 'turn_started');
+      this.#logSessionComplete(session);
+    } catch (error) {
+      await this.#recover(error);
+    } finally {
+      this.actionInFlight = false;
     }
   }
 
@@ -217,6 +292,8 @@ export class GamingController {
     const metrics = result.metrics || {};
     const resolution = (session.events || []).find((event) => event.type === 'challenge_resolved');
     const damage = (session.events || []).find((event) => event.type === 'damage_dealt' && event.target === 'enemy');
+    const block = (session.events || []).find((event) => event.type === 'block_gained' && event.target === 'player');
+    const focus = (session.events || []).find((event) => event.type === 'focus_gained' && event.target === 'player');
     this.experience.challengesCompleted += 1;
     this.experience.totalChallengeDurationMs += finiteOrNull(durationMs) || 0;
     if (metrics.firstTry === false || metrics.first_try === false) this.experience.recoveredChallenges += 1;
@@ -225,6 +302,8 @@ export class GamingController {
       score: result.score,
       outcome: resolution?.outcome || null,
       damage: damage?.amount ?? null,
+      block: block?.amount ?? null,
+      focus: focus?.amount ?? null,
       durationMs: finiteOrNull(durationMs),
       timeToFirstInputMs: finiteOrNull(metrics.timeToFirstInputMs),
       persistenceDurationMs: finiteOrNull(metrics.persistenceDurationMs),
@@ -244,14 +323,43 @@ export class GamingController {
     const resolution = events.find((event) => event.type === 'challenge_resolved');
     const enemyDamage = events.find((event) => event.type === 'damage_dealt' && event.target === 'enemy');
     const retaliation = events.find((event) => event.type === 'damage_dealt' && event.target === 'player');
+    const block = events.find((event) => event.type === 'block_gained' && event.target === 'player');
+    const focus = events.find((event) => event.type === 'focus_gained' && event.target === 'player');
+    const absorbed = events.find((event) => event.type === 'damage_blocked' && event.target === 'enemy');
+    const focusSpent = events.find((event) => event.type === 'focus_spent');
     const card = session.definition.cards[pending.card_definition_id];
     const outcome = card?.outcomes?.find((candidate) => candidate.id === resolution?.outcome);
     const multiplier = outcome?.multiplier ?? 1;
     return {
       cardTitle: card?.title || 'Attack',
+      kind: 'card',
+      effectKind: card?.type || 'attack',
       damage: enemyDamage?.amount ?? 0,
+      block: block?.amount ?? 0,
+      focus: focus?.amount ?? 0,
+      absorbed: absorbed?.amount ?? 0,
+      focusSpent: focusSpent?.amount ?? 0,
       retaliation: retaliation?.amount ?? 0,
-      effectiveness: multiplier >= 1 ? 'Full power' : multiplier > 0 ? 'Reduced power' : 'Blocked',
+      effectiveness: multiplier >= 1 ? 'Full power' : multiplier > 0 ? 'Reduced power' : 'Fizzled',
+      winner: events.find((event) => event.type === 'game_ended')?.winner || null,
+    };
+  }
+
+  #turnResult(session) {
+    const events = session.events || [];
+    const intent = events.find((event) => event.type === 'enemy_intent_resolved');
+    const damage = events.find((event) => event.type === 'damage_dealt' && event.target === 'player');
+    const blocked = events.find((event) => event.type === 'damage_blocked' && event.target === 'player');
+    const block = events.find((event) => event.type === 'block_gained' && event.target === 'enemy');
+    const charge = events.find((event) => event.type === 'focus_gained' && event.target === 'enemy');
+    return {
+      kind: 'enemy',
+      cardTitle: intent?.title || 'Enemy turn',
+      enemyAction: intent?.kind || null,
+      damage: damage?.amount ?? 0,
+      blocked: blocked?.amount ?? 0,
+      block: block?.amount ?? 0,
+      focus: charge?.amount ?? 0,
       winner: events.find((event) => event.type === 'game_ended')?.winner || null,
     };
   }
@@ -317,7 +425,7 @@ export class GamingController {
       const card = this.snapshot.session.definition.cards[pending.card_definition_id];
       this.#publish({
         combatResult: {
-          cardTitle: card?.title || 'Attack', resolving: true,
+          kind: 'card', cardTitle: card?.title || 'Attack', resolving: true,
         },
       });
     }

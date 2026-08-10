@@ -33,12 +33,18 @@ export class GamingSessionService {
     return loaded;
   }
 
-  createSession({ game_id: gameId, participants = [], seed = null }) {
+  createSession({ game_id: gameId, participants = [], seed = null, setup = {} }) {
+    if (!setup || typeof setup !== 'object' || Array.isArray(setup)) {
+      throw new GamingServiceError('invalid_setup', 'Session setup must be an object', 400);
+    }
     const loaded = this.getDefinition(gameId);
     const pinned = this.definitionStore.pin(loaded.definition);
+    if (setup?.upgrade_id && !(pinned.definition.card_battle.upgrades || []).some((upgrade) => upgrade.id === setup.upgrade_id)) {
+      throw new GamingServiceError('invalid_upgrade', 'Selected upgrade is unavailable', 400);
+    }
     const createdAt = this.clock().toISOString();
     const actualSeed = Number.isInteger(seed) ? seed >>> 0 : crypto.randomBytes(4).readUInt32LE(0);
-    const state = createInitialState(pinned.definition, { seed: actualSeed, participants });
+    const state = createInitialState(pinned.definition, { seed: actualSeed, participants, setup });
     const session = {
       schema_version: 1,
       session_id: this.idFactory(),
@@ -49,6 +55,7 @@ export class GamingSessionService {
       definition_hash: pinned.hash,
       seed: actualSeed,
       participants: structuredClone(participants),
+      setup: structuredClone(setup),
       state,
       commands: [],
       events: [],
@@ -129,12 +136,25 @@ export class GamingSessionService {
           challengeKind: pendingBefore?.request?.kind || null,
           reason: event.reason || event.status || 'aborted',
         });
+      } else if (event.type === 'enemy_intent_resolved') {
+        const damage = outcome.events.find((candidate) => candidate.type === 'damage_dealt' && candidate.target === 'player');
+        const blocked = outcome.events.find((candidate) => candidate.type === 'damage_blocked' && candidate.target === 'player');
+        this.logger?.info?.('gaming.authority.enemy.intent.resolved', {
+          ...logFields,
+          intentId: event.intent_id,
+          intentKind: event.kind,
+          amount: event.amount,
+          damage: damage?.amount ?? 0,
+          blocked: blocked?.amount ?? 0,
+          playerHealth: next.state.player.health,
+        });
       } else if (event.type === 'game_ended') {
         this.logger?.info?.('gaming.authority.session.completed', {
           ...logFields,
           winner: event.winner,
           playerHealth: next.state.player.health,
           enemyHealth: next.state.enemy.health,
+          score: next.state.score ?? null,
           durationMs: Math.max(0, new Date(updatedAt).getTime() - new Date(session.created_at).getTime()),
         });
       }
