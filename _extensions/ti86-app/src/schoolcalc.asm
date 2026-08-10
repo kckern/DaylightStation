@@ -20,9 +20,9 @@ HOME_ITEMS:     equ 4
 org _asm_exec_ram
 
 start:
-        ; The profile runtime is the first-boot boundary only. Once a learner
-        ; (including Guest) explicitly confirms their identity, keep that
-        ; soft session across launches and begin at their Catalog Subject root.
+        ; Adaptive Study v1 always begins at the six-digit agenda handoff.
+        ; Profile and Catalog code remains linked for reference builds but is
+        ; unreachable from the active learner route.
         call _runindicoff
         call sc_input_init
         call detect_identity
@@ -33,39 +33,18 @@ start:
         ; first visible frame, making the ASCHL launcher take roughly fifteen
         ; seconds.  Sync still rebuilds it immediately before it owns the
         ; cable, where the integrity work is both necessary and honest.
-        ld a,(SCL_FLAGS_HIGH_ADDR)
-        and 0x04                    ; SCSTATE_FLAG_LEARNER_SELECTED_HIGH
-        jp z,launch_profile_runtime
-        ; A cold launch deliberately restarts browsing at Subjects, rather
-        ; than resuming a potentially confusing deep list position. The
-        ; selection itself and any immutable active-work records remain safe.
-        ld a,SCREEN_CATALOG
-        ld (current_screen),a
-        xor a
-        ld (current_focus),a
-        call local_state_save
-        jp launch_catalog_runtime
+        jp show_code
 
 render:
         call _clrLCD
         ld a,(current_screen)
-        or a
-        call z,shell_render_home
-        ld a,(current_screen)
-        cp SCREEN_CATALOG
-        call z,shell_render_catalog
-        ld a,(current_screen)
-        cp SCREEN_LESSON
-        call z,shell_render_lesson
-        ld a,(current_screen)
-        cp SCREEN_SYNC
-        call z,shell_render_sync
-        ld a,(current_screen)
         cp SCREEN_RESULT
-        call z,shell_render_result
-        ld a,(current_screen)
-        cp SCREEN_CODE
-        call z,shell_render_code
+        jr nz,render_code
+        call shell_render_result
+        jr render_rail
+render_code:
+        call shell_render_code
+render_rail:
         call shell_render_softkeys
 
 wait_key:
@@ -115,7 +94,7 @@ shell_f1:
 shell_f2:
         ld a,(current_screen)
         cp SCREEN_CODE
-        jp z,show_home
+        jp z,wait_key
         cp SCREEN_RESULT
         jp z,shell_review_result
         jp show_catalog
@@ -212,10 +191,10 @@ activate_home_other:
 go_back:
         ld a,(current_screen)
         or a
-        jp z,wait_key
+        jp z,show_code
         cp SCREEN_LESSON
-        jp z,show_catalog
-        jp show_home
+        jp z,show_code
+        jp show_code
 
 show_home:
         ld a,SCREEN_HOME
@@ -302,14 +281,109 @@ shell_code_open:
         ld (shell_code_status),a
         jp render
 shell_code_open_ready:
-        ; Never overwrite a frozen assessment/session with an external route.
-        ld a,(SCL_FLAGS_ADDR)
-        and 1
-        jr z,shell_code_resolve
-        ld a,3
-        ld (shell_code_status),a
-        jp render
+        call publish_study_entry
+        jp c,shell_code_unavailable
+        jp launch_sync_runtime
 
+; Build the durable calculator-owned DSENTRY/SCE1 claim from the enrolled
+; device identity and the six visible digits. The request ID is the current
+; durable SCL1 generation (24 low bits); the exact DSENTRY is retained until
+; a later SCSP/DSSYNC commit acknowledges all three identity fields.
+publish_study_entry:
+        ld a,(device_enrolled)
+        or a
+        scf
+        ret z
+        ld hl,dsentry_name
+        rst 0x20
+        rst 0x10
+        call nc,_delvar
+
+        ld hl,sce1_record
+        ld (hl),'S'
+        inc hl
+        ld (hl),'C'
+        inc hl
+        ld (hl),'E'
+        inc hl
+        ld (hl),'1'
+        inc hl
+        ld (hl),1
+        inc hl
+        ld a,(device_id_length)
+        add a,10                  ; id length byte + request(3) + code(6)
+        ld (hl),a
+        inc hl
+        xor a
+        ld (hl),a                 ; body length high byte
+        inc hl
+        ld a,(device_id_length)
+        ld (hl),a
+        inc hl
+        ld de,device_id_value
+        ld b,a
+publish_study_entry_device:
+        ld a,(de)
+        ld (hl),a
+        inc de
+        inc hl
+        djnz publish_study_entry_device
+        ld de,local_generation
+        ld b,3
+publish_study_entry_request:
+        ld a,(de)
+        ld (hl),a
+        inc de
+        inc hl
+        djnz publish_study_entry_request
+        ld de,shell_code_digits
+        ld b,6
+publish_study_entry_code:
+        ld a,(de)
+        ld (hl),a
+        inc de
+        inc hl
+        djnz publish_study_entry_code
+        ld (sce1_crc_pointer),hl
+
+        ld de,sce1_record
+        or a
+        sbc hl,de
+        ld b,h
+        ld c,l
+        push bc
+        ld hl,sce1_record
+        call crc16_ccitt_false
+        pop bc
+        ld hl,(sce1_crc_pointer)
+        ld (hl),e
+        inc hl
+        ld (hl),d
+        ld h,b
+        ld l,c
+        inc hl
+        inc hl
+        ld (sce1_record_length),hl
+
+        ld hl,(sce1_record_length)
+        call _createstrng
+        call _ex_ahl_bde
+        call _ahl_plus_2_pg3
+        call _set_abs_dest
+        xor a
+        ld hl,sce1_record
+        call _set_abs_src
+        xor a
+        ld hl,(sce1_record_length)
+        call _set_mm_bytes
+        call _mm_ldir
+        or a
+        ret
+
+; Retained in source as the superseded v0 continuation-code resolver. Adaptive
+; v1 publishes DSENTRY/SCE1 and lets the relay return an immutable SCSP
+; prescription, so this code is intentionally absent from the installed shell.
+if 0
 shell_code_resolve:
         ld hl,dscode_name
         ld de,scco_magic
@@ -426,6 +500,7 @@ shell_code_copy_indexes:
         ld (current_focus),a
         call local_state_save
         jp launch_standard_runtime
+endif
 
 shell_code_unavailable:
         ld a,2
@@ -484,6 +559,14 @@ launch_qr_runtime:
 ; Learner selection and roster recovery live outside the core shell. SCPROF
 ; receives no content-selected executable name; it may change only the
 ; selected learner key through the shared alternating SCL1 boundary.
+; Adaptive v1 keeps these labels as safe compatibility targets for retained
+; source paths, but omits the inactive Profile/Tutor/Catalog launchers.
+launch_profile_runtime:
+launch_tutor_runtime:
+launch_catalog_runtime:
+launch_catalog_missing:
+        jp show_code
+if 0
 launch_profile_runtime:
         ld hl,scprof_name
         rst 0x20
@@ -544,6 +627,7 @@ launch_catalog_runtime:
 launch_catalog_missing:
         ld a,SCREEN_CATALOG
         jp store_screen
+endif
 
 ; Cooperative foreground sync is a separately reviewed executable because
 ; the shell has neither the memory window nor the authority to own port 7.
@@ -562,13 +646,10 @@ launch_sync_runtime:
         call local_state_load
         call sync_commit_staged
         call publish_device_info
-        ; Only a newly staged tutor response changes the post-sync route.
-        ; Ordinary Catalog/result sync retains the established profile return.
-        ld hl,tutor_stage_name
-        rst 0x20
-        rst 0x10
-        jp nc,launch_tutor_runtime
-        jp launch_profile_runtime
+        ; Adaptive v1 always returns to its code-first landing page. A valid
+        ; SCSP commit exposes Resume there; inactive Profile/Catalog routes
+        ; are never selected by the default shell.
+        jp show_code
 
 ; Set device_enrolled only when DSID is a bounded, checksum-valid identity
 ; document. Keep its compact ID for cross-record transaction validation.
@@ -1216,6 +1297,9 @@ include "crc16-ccitt.asm"
 ; ---------------------------------------------------------------------------
 ; Runtime SchoolCalc design-system composition
 
+; Superseded v0 screen renderers are retained as source research but omitted
+; from the adaptive v1 shell binary.
+if 0
 shell_render_home:
         ld hl,shell_title
         ld de,home_context
@@ -1320,6 +1404,7 @@ shell_sync_presence_ready:
         ld b,2
         ld c,39
         jp ui_draw_text
+endif
 
 shell_render_result:
         ld hl,result_title
@@ -1659,6 +1744,9 @@ shell_code_length:       defb 0
 shell_code_status:       defb 0
 shell_code_entries_left: defb 0
 shell_code_entry_offset: defw 0
+sce1_crc_pointer:       defw 0
+sce1_record_length:     defw 0
+sce1_record:            defs 40,0
 shell_code_digits:       defs 7,0
 shell_code_display:      defs 7,0
 shell_row_text:         defw 0
@@ -1700,6 +1788,7 @@ local_view_codes:       defb 0,1,4,7,6,11
 dsid_name:      defb 0x0C,4,"DSID",0,0,0,0
 dsinfo_name:    defb 0x0C,6,"DSINFO",0,0
 dscode_name:    defb 0x0C,6,"DSCODE",0,0
+dsentry_name:   defb 0x0C,7,"DSENTRY",0
 local0_name:    defb 0x0C,8,"DSLOCAL0"
 local1_name:    defb 0x0C,8,"DSLOCAL1"
 sclearn_name:   defb 0x12,7,"SCLEARN",0

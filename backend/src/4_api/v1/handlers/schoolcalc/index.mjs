@@ -217,10 +217,11 @@ function serializeSyncOutcome(outcome) {
 }
 
 function serializeStudyResolution(study) {
-  const { prescriptionRecord, artifact, ...view } = study;
+  const { prescriptionRecord, commitRecord, artifact, ...view } = study;
   return {
     ...view,
     prescriptionRecord: prescriptionRecord ? encodedRecord(prescriptionRecord) : null,
+    commitRecord: commitRecord ? encodedRecord(commitRecord) : null,
     artifact: artifact ? {
       artifactId: artifact.artifactId, variableName: artifact.variableName,
       byteLength: artifact.byteLength, byteDigest: artifact.byteDigest,

@@ -339,6 +339,42 @@ export function decodeTi86StudyPrescription(record) {
   return Object.freeze(prescription);
 }
 
+/** Final DSSYNC acknowledgement for one staged Adaptive Study transaction. */
+export function encodeTi86StudyAcknowledgement(value) {
+  if (!value || value.schema !== 'school.calc.study-acknowledgement/v1'
+      || !COMPACT_DEVICE_ID.test(value.deviceId || '')
+      || !Number.isInteger(value.requestId) || value.requestId < 0 || value.requestId > 0xff_ffff
+      || !ADAPTIVE_SESSION_CODE.test(value.sessionCode || '')
+      || !shortAscii(value.prescriptionId) || !shortAscii(value.artifactId)
+      || !/^[0-9a-f]{64}$/.test(value.prescriptionDigest || '')) {
+    throw new Error('SCSA study acknowledgement is invalid');
+  }
+  const body = [];
+  pushShortAscii(body, value.deviceId, 'SCSA deviceId');
+  pushU24(body, value.requestId);
+  body.push(...Buffer.from(value.sessionCode, 'ascii'));
+  pushShortAscii(body, value.prescriptionId, 'SCSA prescriptionId');
+  pushShortAscii(body, value.artifactId, 'SCSA artifactId');
+  body.push(...Buffer.from(value.prescriptionDigest, 'hex'));
+  return encodeFixedEnvelope('SCSA', Buffer.from(body));
+}
+
+export function decodeTi86StudyAcknowledgement(record) {
+  const reader = new FixedRecordReader(decodeFixedEnvelope(record, 'SCSA'), 'SCSA');
+  const value = {
+    schema: 'school.calc.study-acknowledgement/v1',
+    deviceId: reader.shortAscii('deviceId'), requestId: reader.u24('requestId'),
+    sessionCode: reader.fixedAscii(6, 'sessionCode'),
+    prescriptionId: reader.shortAscii('prescriptionId'),
+    artifactId: reader.shortAscii('artifactId'),
+    prescriptionDigest: reader.take(32, 'prescriptionDigest').toString('hex'),
+  };
+  reader.done();
+  // The encoder is the single structural validator for this compact record.
+  encodeTi86StudyAcknowledgement(value);
+  return Object.freeze(value);
+}
+
 function validateStudyPrescription(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)
       || value.schema !== 'school.calc.study-prescription/v1'
@@ -1311,6 +1347,8 @@ export class Ti86SchoolCalcCodec extends ISchoolCalcCodec {
   decodeStudyEntry(record) { return decodeTi86StudyEntry(record); }
 
   encodeStudyPrescription(prescription) { return encodeTi86StudyPrescription(prescription); }
+
+  encodeStudyAcknowledgement(value) { return encodeTi86StudyAcknowledgement(value); }
 
   recognizesResult(record) {
     if (typeof record === 'string') return record.startsWith(RESULT_QR_PREFIX);

@@ -86,11 +86,13 @@ READ_LIMIT_DSINST:           equ 6144
 READ_LIMIT_DSQ:              equ 6144
 READ_LIMIT_DSREQ:            equ 2048
 READ_LIMIT_DSTREQ:           equ 512
+READ_LIMIT_DSENTRY:          equ 64
 WRITE_LIMIT_DSUSRNEW:        equ 512
 WRITE_LIMIT_DSCATNEW:        equ 5832
 WRITE_LIMIT_DSACKNEW:        equ 544
 WRITE_LIMIT_DSSYNC:          equ 6144
 WRITE_LIMIT_DSTNEW:          equ 2048
+WRITE_LIMIT_DSSTDNEW:        equ 512
 WRITE_LIMIT_ARTIFACT:        equ 12288
 
 org _asm_exec_ram
@@ -559,6 +561,10 @@ sync_select_read_limit:
         ld hl,sync_ascii_dstreq
         call sync_name_equals
         jr z,sync_read_limit_dstreq
+        ld a,7
+        ld hl,sync_ascii_dsentry
+        call sync_name_equals
+        jr z,sync_read_limit_dsentry
         jp sync_name_not_allowed
 sync_read_limit_dsid:
         ld hl,READ_LIMIT_DSID
@@ -577,6 +583,9 @@ sync_read_limit_dsreq:
         jr sync_store_name_limit
 sync_read_limit_dstreq:
         ld hl,READ_LIMIT_DSTREQ
+        jr sync_store_name_limit
+sync_read_limit_dsentry:
+        ld hl,READ_LIMIT_DSENTRY
 sync_store_name_limit:
         ld (sync_name_limit),hl
         or a
@@ -603,6 +612,10 @@ sync_select_write_limit:
         ld hl,sync_ascii_dstnew
         call sync_name_equals
         jr z,sync_write_limit_interaction
+        ld a,8
+        ld hl,sync_ascii_dsstdnew
+        call sync_name_equals
+        jr z,sync_write_limit_study
         call sync_validate_artifact_name
         jp c,sync_name_not_allowed
         ld hl,WRITE_LIMIT_ARTIFACT
@@ -621,6 +634,9 @@ sync_write_limit_manifest:
         jr sync_store_name_limit
 sync_write_limit_interaction:
         ld hl,WRITE_LIMIT_DSTNEW
+        jr sync_store_name_limit
+sync_write_limit_study:
+        ld hl,WRITE_LIMIT_DSSTDNEW
         jr sync_store_name_limit
 
 sync_validate_artifact_name:
@@ -2237,11 +2253,13 @@ sync_ascii_dsinst:          defb "DSINST"
 sync_ascii_dsq:             defb "DSQ"
 sync_ascii_dsreq:           defb "DSREQ"
 sync_ascii_dstreq:          defb "DSTREQ"
+sync_ascii_dsentry:         defb "DSENTRY"
 sync_ascii_dsusrnew:        defb "DSUSRNEW"
 sync_ascii_dscatnew:        defb "DSCATNEW"
 sync_ascii_dsacknew:        defb "DSACKNEW"
 sync_ascii_dssync:          defb "DSSYNC"
 sync_ascii_dstnew:          defb "DSTNEW"
+sync_ascii_dsstdnew:        defb "DSSTDNEW"
 
 sync_ui_sync:               defb "SchoolCalc",0
 sync_ui_waiting:            defb "Sync",0

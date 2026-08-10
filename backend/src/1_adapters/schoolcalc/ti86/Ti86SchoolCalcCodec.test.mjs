@@ -16,12 +16,14 @@ import {
   decodeTi86SyncManifest,
   decodeTi86StudyEntry,
   decodeTi86StudyPrescription,
+  decodeTi86StudyAcknowledgement,
   crc16Ccitt,
   encodeTi86Envelope,
   encodeTi86DeliveryRequests,
   encodeTi86DeviceInfo,
   encodeTi86StudyEntry,
   encodeTi86StudyPrescription,
+  encodeTi86StudyAcknowledgement,
   encodeTi86ResultQueue,
   encodeTi86ResultRecord,
   encodeTi86InteractionRequest,
@@ -195,6 +197,16 @@ describe('Ti86SchoolCalcCodec', () => {
     expect(decodeTi86StudyPrescription(record)).toEqual(prescription);
     expect(() => encodeTi86StudyPrescription({ ...prescription, itemCount: 13 })).toThrow(/invalid/);
     expect(() => encodeTi86StudyPrescription({ ...prescription, artifactDigest: 'short' })).toThrow(/invalid/);
+  });
+
+  it('round-trips the exact SCSA commit acknowledgement written as DSSYNC', () => {
+    const acknowledgement = {
+      schema: 'school.calc.study-acknowledgement/v1', deviceId: '86A001', requestId: 99,
+      sessionCode: '001234', prescriptionId: 'p-abc123', artifactId: 'sc:ti86:ABC2345678',
+      prescriptionDigest: 'cd'.repeat(32),
+    };
+    expect(decodeTi86StudyAcknowledgement(encodeTi86StudyAcknowledgement(acknowledgement)))
+      .toEqual(acknowledgement);
   });
 
   it('encodes a bounded active learner roster with stable keys and synthetic Guest omitted', () => {
