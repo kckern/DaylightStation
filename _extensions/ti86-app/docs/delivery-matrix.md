@@ -40,14 +40,14 @@ an Adaptive Study row complete.
 | ID | Requirement | State | Required evidence |
 | --- | --- | --- | --- |
 | AS-20 | Cold/warm startup always opens `ENTER CODE` with optional contextual Resume | partial | named MAME cases |
-| AS-21 | `DSENTRY/SCE1` binds device, request, and code and clears only after exact ACK | specified | codec plus interrupted-sync cases |
+| AS-21 | `DSENTRY/SCE1` binds device, request, and code and clears only after exact ACK | partial | codec and commit contract pass; interrupted-sync exact-binary case pending |
 | AS-22 | `DSSTUDY/SCSP` prescription is canonical; `DSSTDNEW` is staging and `SCL1` is continuation | implemented | copy-on-write and power-cut tests |
-| AS-23 | Front/back rails exactly match FLIP/blank/AGAIN/HARD/KNOW; F2 inert | specified | semantic and behavior MAME assertions |
+| AS-23 | Front/back rails exactly match FLIP/blank/AGAIN/HARD/KNOW; F2 inert | partial | assembly contract passes; named MAME case pending |
 | AS-24 | AGAIN due after two, HARD after four, KNOW/cap retirement, earliest-due fallback | implemented | deterministic scheduler unit/MAME cases |
-| AS-25 | Rating persists before next card; EXIT pauses; resume neither loses nor double-counts work | specified | restart at every transition |
-| AS-26 | Compact summary -> one prescribed A-E quiz; no same-session remediation | specified | exact-binary complete path |
-| AS-27 | Result is queued before success; local code reopens Result | specified | queue readback and relaunch case |
-| AS-28 | Only one unfinished continuation; multiple completed results queued | specified | capacity/recovery tests |
+| AS-25 | Rating persists before next card; EXIT pauses; resume neither loses nor double-counts work | partial | save-before-next contract passes; restart matrix pending |
+| AS-26 | Compact summary -> one prescribed A-E quiz; no same-session remediation | partial | runtime contract passes; exact-binary complete path pending |
+| AS-27 | Result is queued before success; local code reopens Result | partial | queue/dispatch contract passes; relaunch case pending |
+| AS-28 | Only one unfinished continuation; multiple completed results queued | partial | bounded continuation and multi-record queue implemented; recovery case pending |
 
 ## Result codec and importer
 
@@ -67,7 +67,7 @@ an Adaptive Study row complete.
 | AS-40 | Resolve code with full learner/work/bank/device reauthorization | implemented | API/application authorization matrix |
 | AS-41 | Installed artifact transfers prescription/ACK only | implemented | native relay transaction trace |
 | AS-42 | Missing artifact commits artifact -> `DSSTDNEW` -> `DSSYNC` | implemented | ordered native and virtual-relay traces |
-| AS-43 | Unknown/closed/unauthorized/memory/incompatible/interrupted outcomes retain canonical state | specified | virtual-relay and calculator recovery cases |
+| AS-43 | Unknown/closed/unauthorized/memory/incompatible/interrupted outcomes retain canonical state | partial | fail-closed relay states implemented; full recovery matrix pending |
 | AS-44 | Result queue imported before outbound resolution and exact ACK removes only exact item/request | partial | retained sync/queue primitives; v1 integrated tests required |
 | AS-45 | Protected direct-link and SCF1 infrastructure | partial | host tests exist; TilEm and physical transaction gates remain |
 
@@ -90,15 +90,10 @@ an Adaptive Study row complete.
 | TilEm peer | actual port-7 download transaction | specified | artifact/prescription/ACK traces pass |
 | physical TI-86 | protected link, keys/LCD, QR, power recovery | specified | hardware gates pass on release bytes |
 
-## Current critical path
+## Remaining proof path
 
-1. Implement and test curriculum opt-in, deterministic curation, study-session
-   persistence, and agenda issuance without changing `agenda.mjs` purity.
-2. Freeze `SCE1`, `SCSP`, and adaptive-result byte layouts from actual budget
-   tests, then add decoded CLI inspection.
-3. Restrict the default package and shell dispatch to the v1 route.
-4. Implement the scheduler, durable continuation, quiz, queue, and QR path in
-   `SCLEARN`/shared runtimes.
-5. Extend combined sync and backend import, then pass virtual-relay/TilEm power
-   cut and idempotency matrices.
-6. Promote stable MAME paths and execute protected physical hardware gates.
+1. Provision the named SCSP/SCP1/SCL1 fixtures and run the promoted MAME cases
+   against an owned TI-86 ROM.
+2. Run the port-7 peer transaction through the pinned TilEm source lane.
+3. Complete relay/calculator power-cut and negative-resolution matrices.
+4. Execute the protected-interface physical TI-86 and QR readability gates.
