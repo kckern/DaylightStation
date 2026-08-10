@@ -592,12 +592,13 @@ static void fullRelayTransactionUsesForegroundVariablePort() {
     { interactionResponse, sizeof(interactionResponse), 0 },
     { acknowledgement, sizeof(acknowledgement), 0 },
     { manifest, sizeof(manifest), 0 }, { transfer, sizeof(transfer), 0 },
+    {}, {}, {},
   };
   SchoolCalcRelaySession session(calculator, api, buffers, &calculator);
   const SessionOutcome result = session.run();
   assert(result.ok && result.ready);
   const std::vector<std::string> expectedReads = {
-    "DSID", "DSINFO", "DSINST", "DSQ", "DSREQ", "DSTREQ",
+    "DSID", "DSINFO", "DSINST", "DSQ", "DSREQ", "DSTREQ", "DSENTRY",
   };
   const std::vector<std::string> expectedWrites = {
     "DSUSRNEW", "DSPRGNEW", "DSACKNEW", "DSSYNC",
@@ -637,6 +638,7 @@ static void foregroundAwarenessFailureStopsBeforeVariableIo() {
     { interactionResponse, sizeof(interactionResponse), 0 },
     { acknowledgement, sizeof(acknowledgement), 0 },
     { manifest, sizeof(manifest), 0 }, { transfer, sizeof(transfer), 0 },
+    {}, {}, {},
   };
   SchoolCalcRelaySession session(calculator, api, buffers, &calculator);
   const SessionOutcome result = session.run();

@@ -266,6 +266,9 @@ static constexpr uint16_t INTERACTION_REQUEST_CAPACITY = schoolcalc_relay::TI86_
 static constexpr uint16_t LEARNER_ROSTER_CAPACITY = schoolcalc_relay::TI86_LEARNER_ROSTER_MAX_BYTES;
 static constexpr uint16_t PROGRESS_PROJECTION_CAPACITY = schoolcalc_relay::TI86_PROGRESS_PROJECTION_MAX_BYTES;
 static constexpr uint16_t INTERACTION_RESPONSE_CAPACITY = schoolcalc_relay::TI86_INTERACTION_RESPONSE_MAX_BYTES;
+static constexpr uint16_t STUDY_ENTRY_CAPACITY = schoolcalc_relay::TI86_STUDY_ENTRY_MAX_BYTES;
+static constexpr uint16_t STUDY_PRESCRIPTION_CAPACITY = schoolcalc_relay::TI86_STUDY_PRESCRIPTION_MAX_BYTES;
+static constexpr uint16_t STUDY_COMMIT_CAPACITY = schoolcalc_relay::TI86_STUDY_COMMIT_MAX_BYTES;
 static constexpr uint16_t ACKNOWLEDGEMENT_CAPACITY = schoolcalc_relay::TI86_ACKNOWLEDGEMENT_MAX_BYTES;
 static constexpr uint16_t MANIFEST_CAPACITY = schoolcalc_relay::TI86_SYNC_MANIFEST_MAX_BYTES;
 static constexpr uint16_t TRANSFER_CAPACITY = schoolcalc_relay::TI86_ARTIFACT_MAX_BYTES;
@@ -274,6 +277,7 @@ static constexpr size_t SYNC_WORKSPACE_BYTES = IDENTITY_CAPACITY + DEVICE_INFO_C
   + DELIVERY_REQUEST_CAPACITY + INTERACTION_REQUEST_CAPACITY
   + LEARNER_ROSTER_CAPACITY + PROGRESS_PROJECTION_CAPACITY
   + INTERACTION_RESPONSE_CAPACITY
+  + STUDY_ENTRY_CAPACITY + STUDY_PRESCRIPTION_CAPACITY + STUDY_COMMIT_CAPACITY
   + ACKNOWLEDGEMENT_CAPACITY
   + MANIFEST_CAPACITY + TRANSFER_CAPACITY;
 static uint8_t* syncWorkspace = nullptr;
@@ -343,6 +347,15 @@ static schoolcalc_relay::SessionBuffers sessionBuffers() {
   cursor += MANIFEST_CAPACITY;
   buffers.transfer.bytes = cursor;
   buffers.transfer.capacity = TRANSFER_CAPACITY;
+  cursor += TRANSFER_CAPACITY;
+  buffers.studyEntry.bytes = cursor;
+  buffers.studyEntry.capacity = STUDY_ENTRY_CAPACITY;
+  cursor += STUDY_ENTRY_CAPACITY;
+  buffers.studyPrescription.bytes = cursor;
+  buffers.studyPrescription.capacity = STUDY_PRESCRIPTION_CAPACITY;
+  cursor += STUDY_PRESCRIPTION_CAPACITY;
+  buffers.studyCommit.bytes = cursor;
+  buffers.studyCommit.capacity = STUDY_COMMIT_CAPACITY;
   return buffers;
 }
 

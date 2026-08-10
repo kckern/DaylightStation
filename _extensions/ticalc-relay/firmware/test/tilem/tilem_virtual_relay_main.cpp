@@ -55,6 +55,7 @@ public:
     load(fixtureDirectory, "DSQ", "SCQ1", resultQueue_);
     load(fixtureDirectory, "DSREQ", "SCD1", deliveryRequests_);
     load(fixtureDirectory, "DSTREQ", "SCTQ", interactionRequest_);
+    load(fixtureDirectory, "DSENTRY", "SCE1", studyEntry_);
     load(fixtureDirectory, "SCA1", acknowledgement_);
     load(fixtureDirectory, "SCM1", manifest_);
     load(fixtureDirectory, "SCU1", roster_);
@@ -62,6 +63,8 @@ public:
     load(fixtureDirectory, "SCTR", interaction_);
     load(fixtureDirectory, "SCC1", catalog_);
     load(fixtureDirectory, "SCP1", artifact_);
+    load(fixtureDirectory, "SCSP", prescription_);
+    load(fixtureDirectory, "SCSA", studyCommit_);
   }
 
   bool ready() const { return error_[0] == '\0'; }
@@ -85,12 +88,18 @@ public:
         || !isExact(request.installedState, installedState_)
         || !isExact(request.resultQueue, resultQueue_)
         || !isExact(request.deliveryRequests, deliveryRequests_)
-        || !isExact(request.interactionRequest, interactionRequest_)) {
+        || !isExact(request.interactionRequest, interactionRequest_)
+        || !isExact(request.studyEntry, studyEntry_)) {
       return fail("sync input differs from the generated semantic fixture");
     }
     if (!copyRecord(acknowledgement_, acknowledgement) || !copyRecord(manifest_, manifest)
         || !copyRecord(roster_, roster) || !copyRecord(progress_, progress)
-        || !copyRecord(interaction_, interaction)) {
+        || !copyRecord(interaction_, interaction)
+        || request.studyPrescriptionOutput == nullptr || request.studyCommitOutput == nullptr
+        || request.studyArtifactOutput == nullptr
+        || !copyRecord(prescription_, *request.studyPrescriptionOutput)
+        || !copyRecord(studyCommit_, *request.studyCommitOutput)
+        || !copyRecord(artifact_, *request.studyArtifactOutput)) {
       return fail("fixture output buffer too small");
     }
     if (waitObserver != nullptr && !waitObserver->serviceNetworkWait(1)) {
@@ -112,6 +121,11 @@ public:
     plan.learnerRosterLength = roster.length;
     plan.progressProjectionLength = progress.length;
     plan.interactionResponseLength = interaction.length;
+    plan.studyResolved = true;
+    plan.studyArtifactIncluded = true;
+    plan.studyPrescriptionLength = request.studyPrescriptionOutput->length;
+    plan.studyCommitLength = request.studyCommitOutput->length;
+    plan.studyArtifact = artifact;
     ++syncCalls;
     return true;
   }
@@ -145,6 +159,7 @@ public:
 private:
   std::vector<uint8_t> identity_, deviceInfo_, installedState_, resultQueue_, deliveryRequests_, interactionRequest_;
   std::vector<uint8_t> acknowledgement_, manifest_, roster_, progress_, interaction_, catalog_, artifact_;
+  std::vector<uint8_t> studyEntry_, prescription_, studyCommit_;
   char error_[160] = {};
 
   void load(const char* directory, const char* name, const char* magic, std::vector<uint8_t>& destination) {
@@ -183,12 +198,16 @@ struct Buffers {
   std::array<uint8_t, 544> acknowledgement{};
   std::array<uint8_t, 6144> manifest{};
   std::array<uint8_t, 12288> transfer{};
+  std::array<uint8_t, 64> studyEntry{};
+  std::array<uint8_t, 512> studyPrescription{};
+  std::array<uint8_t, 256> studyCommit{};
 
   schoolcalc_relay::SessionBuffers view() {
     return {
       bytes(identity), bytes(info), bytes(installed), bytes(queue), bytes(requests),
       bytes(interactionRequest), bytes(roster), bytes(progress), bytes(interactionResponse),
-      bytes(acknowledgement), bytes(manifest), bytes(transfer),
+      bytes(acknowledgement), bytes(manifest), bytes(transfer), bytes(studyEntry),
+      bytes(studyPrescription), bytes(studyCommit),
     };
   }
 
