@@ -43,6 +43,15 @@ describe('SchoolCalc Adaptive Study SCLEARN contract', () => {
     expect(SOURCE.match(/adaptive_card_wait:[\s\S]*?adaptive_flip:/)?.[0]).not.toContain('SC_SCAN_F2');
   });
 
+  it('renders flashcards as bordered, horizontally and vertically centered surfaces', () => {
+    const card = SOURCE.match(/adaptive_render_card:[\s\S]*?adaptive_card_wait:/)?.[0];
+    expect(card).toBeTruthy();
+    expect(card).toMatch(/call adaptive_draw_card_frame\s+call adaptive_draw_centered_page/);
+    expect(SOURCE).toMatch(/adaptive_draw_card_frame:[\s\S]*?ld b,1\s+ld c,9\s+ld d,126\s+ld e,1\s+call ui_fill_rect/);
+    expect(SOURCE).toMatch(/adaptive_draw_card_frame:[\s\S]*?ld b,126\s+ld c,9\s+ld d,1\s+ld e,46\s+jp ui_fill_rect/);
+    expect(SOURCE).toMatch(/adaptive_center_lines_ready:[\s\S]*?ld a,33[\s\S]*?adaptive_center_draw_line:[\s\S]*?ld a,64[\s\S]*?call ui_draw_text_count/);
+  });
+
   it('maps the five physical function keys explicitly to quiz choices A-E', () => {
     const choices = SOURCE.match(/adaptive_choice_wait:[\s\S]*?adaptive_quiz_back_prompt:/)?.[0];
     expect(choices).toBeTruthy();

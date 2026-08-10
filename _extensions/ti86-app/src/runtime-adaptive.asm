@@ -651,11 +651,8 @@ adaptive_card_pages_ready:
         jp c,adaptive_error
         call ui_mode_set
         call ui_select_compact
-        ld b,2
-        ld c,12
-        ld d,122
-        ld e,42
-        call ui_draw_wrapped_text
+        call adaptive_draw_card_frame
+        call adaptive_draw_centered_page
         call adaptive_render_card_rail
 adaptive_card_wait:
         call sc_input_wait
@@ -787,6 +784,106 @@ adaptive_render_card_rail:
         ld c,57
         call ui_draw_text
         jp ui_mode_set
+
+; The card owns x=1..126 and y=9..54. Keep its border separate from both the
+; fixed header and the y=55 softkey divider.
+adaptive_draw_card_frame:
+        ld b,1
+        ld c,9
+        ld d,126
+        ld e,1
+        call ui_fill_rect
+        ld b,1
+        ld c,54
+        ld d,126
+        ld e,1
+        call ui_fill_rect
+        ld b,1
+        ld c,9
+        ld d,1
+        ld e,46
+        call ui_fill_rect
+        ld b,126
+        ld c,9
+        ld d,1
+        ld e,46
+        jp ui_fill_rect
+
+; Pages are authored and projected with explicit line breaks. Compact text
+; advances four pixels per glyph and six per row, so each line and the whole
+; block can be centered exactly without allocating another framebuffer.
+adaptive_draw_centered_page:
+        ld hl,_plotSScreen + 256
+        ld (adaptive_center_pointer),hl
+        ld a,1
+        ld (adaptive_center_line_count),a
+adaptive_center_count_lines:
+        ld a,(hl)
+        or a
+        jr z,adaptive_center_lines_ready
+        cp 10
+        jr nz,adaptive_center_count_next
+        ld a,(adaptive_center_line_count)
+        inc a
+        cp 8
+        jp nc,adaptive_error
+        ld (adaptive_center_line_count),a
+adaptive_center_count_next:
+        inc hl
+        jr adaptive_center_count_lines
+adaptive_center_lines_ready:
+        ; y = 33 - (3 * line count), centering a 6n-1 pixel block in 43px.
+        ld a,(adaptive_center_line_count)
+        ld b,a
+        add a,a
+        add a,b
+        ld b,a
+        ld a,33
+        sub b
+        ld (adaptive_center_y),a
+adaptive_center_next_line:
+        ld hl,(adaptive_center_pointer)
+        xor a
+        ld (adaptive_center_line_length),a
+adaptive_center_measure_line:
+        ld a,(hl)
+        or a
+        jr z,adaptive_center_draw_line
+        cp 10
+        jr z,adaptive_center_draw_line
+        ld a,(adaptive_center_line_length)
+        inc a
+        cp 32
+        jp nc,adaptive_error
+        ld (adaptive_center_line_length),a
+        inc hl
+        jr adaptive_center_measure_line
+adaptive_center_draw_line:
+        ld a,(adaptive_center_line_length)
+        add a,a
+        ld b,a
+        ld a,64
+        sub b
+        ld b,a
+        ld a,(adaptive_center_y)
+        ld c,a
+        ld a,(adaptive_center_line_length)
+        ld e,a
+        ld hl,(adaptive_center_pointer)
+        call ui_draw_text_count
+        ld hl,(adaptive_center_pointer)
+adaptive_center_advance_pointer:
+        ld a,(hl)
+        or a
+        ret z
+        inc hl
+        cp 10
+        jr nz,adaptive_center_advance_pointer
+        ld (adaptive_center_pointer),hl
+        ld a,(adaptive_center_y)
+        add a,6
+        ld (adaptive_center_y),a
+        jr adaptive_center_next_line
 
 ; ---------------------------------------------------------------------------
 ; Summary and quiz
@@ -1428,6 +1525,10 @@ adaptive_best_card:          defb 0
 adaptive_best_due:           defb 0
 adaptive_min_due:            defb 0
 adaptive_render_y:           defb 0
+adaptive_center_pointer:     defw 0
+adaptive_center_line_count:  defb 0
+adaptive_center_line_length: defb 0
+adaptive_center_y:           defb 0
 adaptive_score_correct:      defb 0
 adaptive_known_count:        defb 0
 adaptive_hard_count:         defb 0
