@@ -1,5 +1,18 @@
 schema: schoolcalc.ti86-mame-scenarios/v1
 scenarios:
+  - id: felix-code-entry
+    description: Code entry updates cleanly, exposes readiness on digit six, and Enter opens Felix's local prescription.
+    boot_settle_frames: 300
+    settle_frames: 30
+    steps:
+      - { key: '0', capture: code-1, expect_text: [CONTINUE ON CALC, ENTER 6 DIGITS] }
+      - { key: '0', capture: code-2, expect_text: [CONTINUE ON CALC, ENTER 6 DIGITS] }
+      - { key: '0', capture: code-3, expect_text: [CONTINUE ON CALC, ENTER 6 DIGITS] }
+      - { key: '0', capture: code-4, expect_text: [CONTINUE ON CALC, ENTER 6 DIGITS] }
+      - { key: '0', capture: code-5, expect_text: [CONTINUE ON CALC, ENTER 6 DIGITS] }
+      - { key: '0', capture: code-ready, expect_text: ['000 000', ENTER TO OPEN] }
+      - { key: ENTER, capture: card-01-front, settle_frames: 300, expect_text: [ADAPTIVE STUDY, ALABAMA, FLIP] }
+
   - id: felix-state-capitals
     description: Felix completes the exact code 000000 state-capitals prescription and queues a perfect result.
     boot_settle_frames: 300
@@ -10,8 +23,8 @@ scenarios:
       - { key: '0', capture: code-3 }
       - { key: '0', capture: code-4 }
       - { key: '0', capture: code-5 }
-      - { key: '0', capture: code-ready, expect_text: '000 000' }
-      - { key: F1, capture: card-01-front, settle_frames: 300, expect_text: [ADAPTIVE STUDY, ALABAMA, FLIP] }
+      - { key: '0', capture: code-ready, expect_text: ['000 000', ENTER TO OPEN] }
+      - { key: ENTER, capture: card-01-front, settle_frames: 300, expect_text: [ADAPTIVE STUDY, ALABAMA, FLIP] }
       - { key: F1, capture: card-01-back, expect_text: [MONTGOMERY, AGAIN, HARD, KNOW] }
       - { key: F5, capture: card-02-front, expect_text: ALASKA }
       - { key: F1, capture: card-02-back, expect_text: JUNEAU }

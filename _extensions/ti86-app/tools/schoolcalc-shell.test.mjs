@@ -74,6 +74,18 @@ describe('SchoolCalc production shell build', () => {
     );
     expect(SHELL_SOURCE).toMatch(/ld hl,code_instruction\s+ld b,32\s+ld c,15/);
     expect(SHELL_SOURCE).toMatch(/ld hl,code_prompt\s+ld b,36/);
+    const codeRefresh = SHELL_SOURCE.match(/shell_code_refresh:[\s\S]*?shell_draw_code_status:/)?.[0] ?? '';
+    expect(codeRefresh).toContain('call ui_mode_clear');
+    expect(codeRefresh).toContain('call shell_draw_code_display');
+    expect(codeRefresh).not.toContain('call _clrLCD');
+    expect(SHELL_SOURCE).toMatch(
+      /call shell_code_accept_digit\s+or a\s+jr z,wait_key_regular\s+call shell_code_refresh\s+jp wait_key/,
+    );
+    expect(SHELL_SOURCE).toMatch(
+      /shell_code_open_ready:[\s\S]*?ld \(shell_code_status\),a\s+call shell_code_refresh\s+call shell_code_matches_study/,
+    );
+    expect(SHELL_SOURCE).toContain('code_ready:              defb "ENTER TO OPEN",0');
+    expect(SHELL_SOURCE).toContain('code_opening:            defb "OPENING...",0');
     expect(SHELL_SOURCE).toMatch(/shell_softkey_f1_ready:\s+ld b,2/);
     expect(SHELL_SOURCE).toContain('softkey_open:           defb " OPEN",0');
     expect(SHELL_SOURCE).toContain('softkey_resume:         defb "RESUME",0');

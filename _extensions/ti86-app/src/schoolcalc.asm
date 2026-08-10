@@ -37,14 +37,7 @@ start:
 
 render:
         call _clrLCD
-        ld a,(current_screen)
-        cp SCREEN_RESULT
-        jr nz,render_code
-        call shell_render_result
-        jr render_rail
-render_code:
         call shell_render_code
-render_rail:
         call shell_render_softkeys
 
 wait_key:
@@ -56,7 +49,9 @@ wait_key:
         ld a,b
         call shell_code_accept_digit
         or a
-        jp nz,render
+        jr z,wait_key_regular
+        call shell_code_refresh
+        jp wait_key
 wait_key_regular:
         ld a,b
         cp SC_SCAN_EXIT
@@ -296,8 +291,16 @@ shell_code_length_present:
         jr z,shell_code_open_ready
         ld a,1
         ld (shell_code_status),a
-        jp render
+        call shell_code_refresh
+        jp wait_key
 shell_code_open_ready:
+        ; Acknowledge activation on the LCD before opening an envelope,
+        ; creating DSENTRY, or handing control to a child runtime. These
+        ; operations can take visible time on physical hardware; a pressed
+        ; ENTER/F1 must never look lost.
+        ld a,4
+        ld (shell_code_status),a
+        call shell_code_refresh
         call shell_code_matches_study
         jp nc,launch_standard_runtime
         call publish_study_entry
@@ -565,7 +568,8 @@ endif
 shell_code_unavailable:
         ld a,2
         ld (shell_code_status),a
-        jp render
+        call shell_code_refresh
+        jp wait_key
 show_lesson:
         jp launch_standard_runtime
 show_sync:
@@ -1466,6 +1470,9 @@ shell_sync_presence_ready:
         jp ui_draw_text
 endif
 
+; Retained v0 shell-owned result route. Adaptive v1 renders and resumes Result
+; inside SCLEARN, so this route is intentionally absent from the release.
+if 0
 shell_render_result:
         ld hl,result_title
         ld de,result_context
@@ -1485,6 +1492,7 @@ shell_render_result:
         ld b,2
         ld c,41
         jp ui_draw_text
+endif
 
 shell_render_code:
         ld hl,code_title
@@ -1497,11 +1505,39 @@ shell_render_code:
         ld c,15
         call ui_draw_text
         call shell_draw_code_display
+        jp shell_draw_code_status
+
+; Code entry owns two small mutable regions. Never clear the full LCD for a
+; digit: erase only the six-glyph field and status row, then redraw them over
+; the stable header, instructions, border, and soft-key rail.
+shell_code_refresh:
+        call ui_mode_clear
+        ld b,36
+        ld c,25
+        ld d,56
+        ld e,10
+        call ui_fill_rect
+        ld b,0
+        ld c,39
+        ld d,128
+        ld e,8
+        call ui_fill_rect
+        call ui_mode_set
+        call shell_draw_code_display
+        ; Fall through and redraw the centered status label.
+shell_draw_code_status:
         ld a,(shell_code_status)
         ld hl,code_prompt
         ld b,36
         or a
-        jr z,shell_code_status_ready
+        jr nz,shell_code_status_nonidle
+        ld a,(shell_code_length)
+        cp 6
+        jr nz,shell_code_status_ready
+        ld hl,code_ready
+        ld b,38
+        jr shell_code_status_ready
+shell_code_status_nonidle:
         cp 1
         ld hl,code_short
         ld b,32
@@ -1510,8 +1546,12 @@ shell_render_code:
         ld hl,code_missing
         ld b,24
         jr z,shell_code_status_ready
+        cp 3
         ld hl,code_busy
         ld b,26
+        jr z,shell_code_status_ready
+        ld hl,code_opening
+        ld b,46
 shell_code_status_ready:
         ld c,40
         jp ui_draw_text
@@ -1581,6 +1621,7 @@ shell_code_glyph_index_ready:
 ; Result Queue replaces the answer draft with correct, total, and rounded
 ; percent at local-state offsets 47..49. Format it at render time so scores
 ; remain exact after a cold relaunch and are never guessed from QR output.
+if 0
 shell_build_result_score:
         ld de,shell_result_score
         ld hl,result_score_prefix
@@ -1657,6 +1698,7 @@ shell_result_status:
         ret c
         ld hl,result_mastered_line
         ret
+endif
 
 ; HL = row text and A = zero-based row index.
 shell_draw_home_row:
@@ -1921,9 +1963,11 @@ result_mastered_line:   defb "MASTERED: NEXT",0
 result_line_3:          defb "QR QUEUED / CABLE OFF",0
 code_instruction:        defb "CONTINUE ON CALC",0
 code_prompt:             defb "ENTER 6 DIGITS",0
+code_ready:              defb "ENTER TO OPEN",0
 code_short:              defb "ENTER SIX DIGITS",0
 code_missing:            defb "NOT INSTALLED - SYNC",0
 code_busy:               defb "FINISH CURRENT WORK",0
+code_opening:            defb "OPENING...",0
 catalog_line_1:         defb "Catalog not installed.",0
 catalog_line_2:         defb "Sync package required.",0
 catalog_line_3:         defb "EXIT returns Home.",0
