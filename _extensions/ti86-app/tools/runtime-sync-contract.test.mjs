@@ -78,14 +78,16 @@ describe('TI-86 cooperative foreground-sync runtime', () => {
     expect(asmEqu('READ_LIMIT_DSQ')).toBe(TI86_SCHOOLCALC_LIMITS.queueMaxBytes);
     expect(asmEqu('READ_LIMIT_DSREQ')).toBe(TI86_SCHOOLCALC_LIMITS.deliveryRequestMaxBytes);
     expect(asmEqu('READ_LIMIT_DSTREQ')).toBe(TI86_SCHOOLCALC_LIMITS.interactionRequestMaxBytes);
+    expect(asmEqu('READ_LIMIT_DSENTRY')).toBe(64);
     expect(asmEqu('WRITE_LIMIT_DSCATNEW')).toBe(TI86_SCHOOLCALC_LIMITS.catalogRecordMaxBytes);
     expect(asmEqu('WRITE_LIMIT_DSACKNEW')).toBe(TI86_SCHOOLCALC_LIMITS.acknowledgementMaxBytes);
     expect(asmEqu('WRITE_LIMIT_DSSYNC')).toBe(TI86_SCHOOLCALC_LIMITS.syncManifestMaxBytes);
     expect(asmEqu('WRITE_LIMIT_DSTNEW')).toBe(TI86_SCHOOLCALC_LIMITS.interactionResponseMaxBytes);
+    expect(asmEqu('WRITE_LIMIT_DSSTDNEW')).toBe(512);
     expect(asmEqu('WRITE_LIMIT_ARTIFACT')).toBe(TI86_SCHOOLCALC_LIMITS.lessonMaxBytes);
     for (const name of [
-      'DSID', 'DSINFO', 'DSINST', 'DSQ', 'DSREQ', 'DSTREQ',
-      'DSCATNEW', 'DSACKNEW', 'DSSYNC', 'DSTNEW',
+      'DSID', 'DSINFO', 'DSINST', 'DSQ', 'DSREQ', 'DSTREQ', 'DSENTRY',
+      'DSCATNEW', 'DSACKNEW', 'DSSYNC', 'DSTNEW', 'DSSTDNEW',
     ]) {
       expect(SOURCE).toContain(`defb "${name}"`);
     }

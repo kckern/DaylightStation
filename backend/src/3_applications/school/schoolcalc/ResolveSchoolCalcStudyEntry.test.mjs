@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
-  Ti86SchoolCalcCodec, decodeTi86StudyPrescription, encodeTi86StudyEntry,
+  Ti86SchoolCalcCodec, decodeTi86StudyAcknowledgement, decodeTi86StudyPrescription, encodeTi86StudyEntry,
 } from '#adapters/schoolcalc/ti86/index.mjs';
 import { ResolveSchoolCalcStudyEntry } from './ResolveSchoolCalcStudyEntry.mjs';
 
@@ -47,6 +47,9 @@ describe('ResolveSchoolCalcStudyEntry', () => {
     expect(decodeTi86StudyPrescription(result.prescriptionRecord)).toMatchObject({
       deviceId: '86A001', requestId: 42, sessionCode: '001234', learnerKey: 7,
       artifactId: artifact.artifactId, cardCount: 12, itemCount: 10,
+    });
+    expect(decodeTi86StudyAcknowledgement(result.commitRecord)).toMatchObject({
+      deviceId: '86A001', requestId: 42, sessionCode: '001234', artifactId: artifact.artifactId,
     });
     expect(studies.bindResolution).toHaveBeenCalledWith(expect.objectContaining({
       studySessionId: 'study-one', resolution: expect.objectContaining({ deviceId: '86A001', requestId: 42 }),

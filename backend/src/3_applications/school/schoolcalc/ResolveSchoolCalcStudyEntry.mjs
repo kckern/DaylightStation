@@ -5,7 +5,8 @@ export class ResolveSchoolCalcStudyEntry {
   #studies; #devices; #artifacts; #codec; #clock;
 
   constructor({ studies, devices, artifacts, codec, clock = () => new Date() } = {}) {
-    if (!studies || !devices || !artifacts || !codec?.decodeStudyEntry || !codec?.encodeStudyPrescription) {
+    if (!studies || !devices || !artifacts || !codec?.decodeStudyEntry
+        || !codec?.encodeStudyPrescription || !codec?.encodeStudyAcknowledgement) {
       throw new Error('ResolveSchoolCalcStudyEntry requires studies, devices, artifacts, and codec');
     }
     this.#studies = studies;
@@ -50,6 +51,13 @@ export class ResolveSchoolCalcStudyEntry {
     const prescriptionId = stableRecordDigest(base).slice(0, 24);
     const prescription = { ...base, prescriptionId };
     const recordBytes = this.#codec.encodeStudyPrescription(prescription);
+    const acknowledgement = {
+      schema: 'school.calc.study-acknowledgement/v1',
+      deviceId: entry.deviceId, requestId: entry.requestId, sessionCode: entry.sixDigitCode,
+      prescriptionId, artifactId: artifact.artifactId,
+      prescriptionDigest: stableRecordDigest([...recordBytes]),
+    };
+    const commitRecord = this.#codec.encodeStudyAcknowledgement(acknowledgement);
     const artifactInstalled = device.installedArtifactIds.includes(artifact.artifactId);
     if (!fitsResolution(device.capabilityReport, artifactInstalled ? 0 : artifact.byteLength, recordBytes.length)) {
       return recovery('memory_blocked', 'NOT ENOUGH MEMORY');
@@ -71,6 +79,7 @@ export class ResolveSchoolCalcStudyEntry {
       },
       prescription,
       prescriptionRecord: recordBytes,
+      commitRecord,
       artifact: artifactInstalled ? null : artifact,
       artifactInstalled,
       writeOrder: artifactInstalled
@@ -90,7 +99,7 @@ function fitsResolution(report, artifactBytes, prescriptionBytes) {
 }
 
 function recovery(status, message) {
-  return { status, message, acknowledge: null, prescription: null, prescriptionRecord: null, artifact: null };
+  return { status, message, acknowledge: null, prescription: null, prescriptionRecord: null, commitRecord: null, artifact: null };
 }
 function sameArtifact(actual, pinned) {
   return actual.artifactId === pinned.artifactId && actual.variableName === pinned.variableName
