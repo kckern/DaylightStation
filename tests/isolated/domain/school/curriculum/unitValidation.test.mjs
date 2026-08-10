@@ -64,6 +64,50 @@ describe('validateUnit: shape', () => {
   });
 });
 
+describe('validateUnit: SchoolCalc Adaptive Study opt-in', () => {
+  const descriptor = (over = {}) => ({
+    mode: 'adaptive_flashcards',
+    study: { cardCount: 12, maxExposuresPerCard: 4 },
+    quiz: { itemCount: 10 },
+    ...over,
+  });
+  const schoolcalcUnit = (schoolcalc = descriptor(), over = {}) => valid({
+    document: undefined,
+    bank: 'math-fractions',
+    schoolcalc,
+    ...over,
+  });
+
+  it('normalizes the explicit bank-backed adaptive descriptor', () => {
+    const { errors, unit } = validateUnit(schoolcalcUnit(), refs());
+    expect(errors).toEqual([]);
+    expect(unit.schoolcalc).toEqual(descriptor());
+  });
+
+  it('omits schoolcalc when the unit has not opted in', () => {
+    expect(unitOf(valid())).not.toHaveProperty('schoolcalc');
+  });
+
+  it.each([
+    ['non-object descriptor', 'adaptive_flashcards', /schoolcalc must be an object/],
+    ['unknown mode', descriptor({ mode: 'catalog' }), /schoolcalc.mode/],
+    ['missing study', descriptor({ study: undefined }), /schoolcalc.study/],
+    ['missing quiz', descriptor({ quiz: undefined }), /schoolcalc.quiz/],
+    ['zero cards', descriptor({ study: { cardCount: 0, maxExposuresPerCard: 4 } }), /cardCount/],
+    ['zero quiz items', descriptor({ quiz: { itemCount: 0 } }), /itemCount/],
+    ['quiz larger than study', descriptor({ quiz: { itemCount: 13 } }), /must not exceed/],
+    ['exposure cap below one', descriptor({ study: { cardCount: 12, maxExposuresPerCard: 0 } }), /maxExposuresPerCard/],
+    ['exposure cap above four', descriptor({ study: { cardCount: 12, maxExposuresPerCard: 5 } }), /maxExposuresPerCard/],
+  ])('rejects %s', (_label, schoolcalc, expected) => {
+    expect(errs(schoolcalcUnit(schoolcalc), refs()).join('; ')).toMatch(expected);
+  });
+
+  it('requires a bank-backed unit', () => {
+    expect(errs(valid({ schoolcalc: descriptor() }), refs()))
+      .toContain('schoolcalc requires a bank-backed unit');
+  });
+});
+
 describe('validateUnit: identity', () => {
   it.each(['math-3.4', 'math', '3rs.reading.01', '0-start'])('accepts the unitId %s', (unitId) => {
     expect(errs(valid({ unitId }))).toEqual([]);

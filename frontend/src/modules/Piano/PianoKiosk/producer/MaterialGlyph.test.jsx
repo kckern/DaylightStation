@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
-import { MaterialGlyph, seedFor, glyphColor } from './MaterialGlyph.jsx';
+import { MaterialGlyph } from './MaterialGlyph.jsx';
+import { seedFor, glyphColor } from './materialGlyphModel.js';
 
 // ── seedFor ──────────────────────────────────────────────────────────────────
 

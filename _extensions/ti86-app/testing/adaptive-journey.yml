@@ -1,0 +1,35 @@
+schema: schoolcalc.ti86-mame-scenarios/v1
+scenarios:
+  - id: adaptive-v1-journey
+    description: Cold code entry through a graphic card, answer, summary, quiz, durable result, and QR.
+    boot_settle_frames: 300
+    steps:
+      - { key: F2, capture: 01-enter-code, expect_changed: false, expect_text: [CODE, ENTER 6 DIGITS] }
+      - { key: '0', capture: 02-first-digit }
+      - { key: '1', capture: 03-second-digit }
+      - { key: '2', capture: 04-third-digit }
+      - { key: '3', capture: 05-fourth-digit }
+      - { key: '4', capture: 06-fifth-digit }
+      - { key: '5', capture: 07-code-ready, expect_text: '012 345' }
+      - { key: F1, capture: 08-graphic-card-front, settle_frames: 300, expect_text: [ADAPTIVE STUDY, FIND THE DIAMETER] }
+      - { key: F1, capture: 09-graphic-card-back, settle_frames: 300, expect_text: [12 UNITS] }
+      - { key: F5, capture: 10-study-summary, settle_frames: 300, expect_text: [STUDY SUMMARY, KNOWN, HARD, AGAIN, UNRESOLVED] }
+      - { key: F5, capture: 11-quiz-prompt, settle_frames: 300, expect_text: [QUIZ, MATH] }
+      - { key: F5, capture: 12-quiz-choices, settle_frames: 300, expect_text: [6 UNITS, 12 UNITS] }
+      - { key: F2, capture: 13-durable-result, settle_frames: 300, expect_text: [RESULT, SCORE] }
+      - { key: F1, capture: 14-result-qr, settle_frames: 300, expect_symbols: QR V5/M }
+
+  - id: missing-module-relay
+    description: A code whose immutable study module is not installed enters one-time relay recovery without losing local state.
+    boot_settle_frames: 300
+    steps:
+      - { key: '6', capture: module-digit-1 }
+      - { key: '5', capture: module-digit-2 }
+      - { key: '4', capture: module-digit-3 }
+      - { key: '3', capture: module-digit-4 }
+      - { key: '2', capture: module-digit-5 }
+      - { key: '1', capture: 01-missing-code-ready, expect_text: '654 321' }
+      - { key: F1, capture: 02-connect-relay, settle_frames: 300, expect_text: [CONNECT RELAY, WAITING FOR LINK, EXIT PAUSES SAFELY, LINK], expect_not_text: [PROFILE, SUBJECT, CATALOG] }
+      - { key: F2, capture: 03-link-active, settle_frames: 45, expect_changed: true, expect_text: [WAITING FOR LINK, LINK] }
+      - { key: EXIT, capture: 04-sync-paused, settle_frames: 300, expect_text: [SYNC CANCELLED, LOCAL DATA PRESERVED, ENTER RETURNS] }
+      - { key: ENTER, capture: 05-return-to-code, settle_frames: 300, expect_text: [CODE, ENTER 6 DIGITS] }

@@ -8,6 +8,7 @@ import { scaleClefType } from './wrongNoteGhost.js';
 
 const EMPTY_NOTES = new Map();
 const EMPTY_HISTORY = [];
+const useAlwaysConnected = () => ({ connected: true, status: 'connected' });
 const PROVIDER_VERSION = '3-midi-canonical-piano';
 const SCALE_NOTE_CLASSES = [
   'piano-scale-note--complete',
@@ -49,12 +50,14 @@ function makeAttemptId() {
 }
 
 /**
- * Piano challenge adapter for the generic gaming runtime. Challenge content is
- * definition-owned; this adapter only translates live MIDI into a scored result.
+ * Piano challenge adapter for the generic gaming runtime. Authored legacy prompts
+ * remain supported, while semantic game requests are materialized by Piano's
+ * backend policy. This adapter translates live MIDI into a scored result.
  * The legacy export name remains stable for the existing standalone route.
  */
-export function createPianoChordProvider({ useNotes, clock = () => Date.now() }) {
+export function createPianoChordProvider({ useNotes, useConnection = useAlwaysConnected, clock = () => Date.now() }) {
   if (typeof useNotes !== 'function') throw new Error('createPianoChordProvider requires a useNotes hook');
+  if (typeof useConnection !== 'function') throw new Error('createPianoChordProvider useConnection must be a hook');
   return {
     id: 'piano',
     version: PROVIDER_VERSION,
@@ -75,6 +78,12 @@ export function createPianoChordProvider({ useNotes, clock = () => Date.now() })
       let wrongNotes = 0;
       let wrongInputs = [];
       let restarts = 0;
+      let timeoutHandle = null;
+
+      const clearDeadline = () => {
+        if (timeoutHandle !== null) globalThis.clearTimeout(timeoutHandle);
+        timeoutHandle = null;
+      };
 
       const publish = (patch) => {
         snapshot = { ...snapshot, ...patch };
@@ -97,12 +106,13 @@ export function createPianoChordProvider({ useNotes, clock = () => Date.now() })
         notesPlayed += 1;
       };
 
-      const finish = async (score, metrics) => {
+      const settle = async (status, score, metrics) => {
         if (settled || !resolveAttempt) return;
         settled = true;
-        publish({ status: 'complete' });
+        clearDeadline();
+        publish({ status: status === 'completed' ? 'complete' : status });
         const result = {
-          status: 'completed', score, metrics: timedMetrics(metrics),
+          status, score, metrics: timedMetrics(metrics),
           provider_version: PROVIDER_VERSION,
           attempt_id: makeAttemptId(),
         };
@@ -125,9 +135,12 @@ export function createPianoChordProvider({ useNotes, clock = () => Date.now() })
         resolveAttempt = null;
       };
 
+      const finish = (score, metrics) => settle('completed', score, metrics);
+
       function Surface() {
         const view = useSyncExternalStore(subscribe, () => snapshot, () => snapshot);
         const notes = useNotes();
+        const connection = useConnection();
         const activeNotes = notes?.activeNotes || EMPTY_NOTES;
         const noteHistory = notes?.noteHistory || EMPTY_HISTORY;
         const historyCursor = useRef(null);
@@ -161,6 +174,15 @@ export function createPianoChordProvider({ useNotes, clock = () => Date.now() })
           // fresh note before the processing effect below can consume it.
           // eslint-disable-next-line react-hooks/exhaustive-deps
         }, [challengeId]);
+
+        useEffect(() => {
+          if (view.status === 'running' && connection?.connected === false) {
+            settle('error', null, {
+              reason: 'midi_disconnected',
+              connectionStatus: connection.status || 'disconnected',
+            });
+          }
+        }, [connection?.connected, connection?.status, view.status]);
 
         useEffect(() => {
           if (view.status !== 'running' || !view.prepared) return;
@@ -301,10 +323,21 @@ export function createPianoChordProvider({ useNotes, clock = () => Date.now() })
         Surface,
         ready: Promise.resolve(),
         async prepare(request) {
+          const selected = request.prompt
+            ? { prompt: structuredClone(request.prompt), timeout_ms: request.timeout_ms ?? null }
+            : await api.preparePianoChallenge(userId, {
+              challenge_id: request.challenge_id,
+              kind: request.kind,
+              requirements: request.requirements,
+              context: request.context,
+            });
           const prepared = {
             challenge_id: request.challenge_id,
             kind: request.kind,
-            prompt: structuredClone(request.prompt),
+            prompt: structuredClone(selected.prompt),
+            timeout_ms: selected.timeout_ms ?? request.timeout_ms ?? null,
+            pedagogy_policy_version: selected.pedagogy_policy_version || null,
+            selection: selected.selection ? structuredClone(selected.selection) : null,
             grading_policy_version: request.kind === 'scale' ? 'untimed-ordered-scale-v1' : 'untimed-chord-first-try-v1',
             provider_version: PROVIDER_VERSION,
           };
@@ -316,6 +349,7 @@ export function createPianoChordProvider({ useNotes, clock = () => Date.now() })
           return prepared;
         },
         async start(prepared) {
+          clearDeadline();
           settled = false;
           attemptStartedAt = clock();
           firstInputAt = null;
@@ -324,17 +358,20 @@ export function createPianoChordProvider({ useNotes, clock = () => Date.now() })
           wrongInputs = [];
           restarts = 0;
           publish({ status: 'running', prepared, armed: false, hadWrong: false, progress: 0, lastInput: null });
-          return new Promise((resolve) => { resolveAttempt = resolve; });
+          const promise = new Promise((resolve) => { resolveAttempt = resolve; });
+          const timeoutMs = Number(prepared.timeout_ms);
+          if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+            timeoutHandle = globalThis.setTimeout(() => {
+              settle('timeout', null, { reason: 'challenge_timeout', timeoutMs });
+            }, timeoutMs);
+          }
+          return promise;
         },
         cancel(reason = 'aborted') {
-          if (!settled && resolveAttempt) {
-            settled = true;
-            resolveAttempt({ status: 'aborted', score: null, metrics: timedMetrics({ reason }), provider_version: PROVIDER_VERSION, attempt_id: null });
-            resolveAttempt = null;
-          }
-          publish({ status: 'cancelled' });
+          settle('aborted', null, { reason });
         },
         dispose() {
+          clearDeadline();
           if (!settled && resolveAttempt) {
             resolveAttempt({ status: 'aborted', score: null, metrics: timedMetrics({ reason: 'disposed' }), provider_version: PROVIDER_VERSION, attempt_id: null });
           }

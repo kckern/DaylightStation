@@ -6,9 +6,10 @@
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
+import { GainStrip } from './GainStrip.jsx';
 import {
-  GainStrip, GAIN_LEVELS, snapToGainLevel, gainFromLevel, levelFromGain,
-} from './GainStrip.jsx';
+  GAIN_LEVELS, snapToGainLevel, gainFromLevel, levelFromGain,
+} from './gainStripModel.js';
 
 const RECT = { left: 0, top: 0, width: 220, height: 48, right: 220, bottom: 48, x: 0, y: 0 };
 

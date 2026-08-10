@@ -1,4 +1,5 @@
 import './TransportSheets.scss';
+import { shortestKeyDelta } from './keyModel.js';
 
 // Circle of fifths, clockwise from 12 o'clock (design §5). Also quietly teaches
 // where keys sit relative to each other.
@@ -7,11 +8,6 @@ const CIRCLE = [
   { name: 'E', pc: 4 }, { name: 'B', pc: 11 }, { name: 'F♯', pc: 6 }, { name: 'D♭', pc: 1 },
   { name: 'A♭', pc: 8 }, { name: 'E♭', pc: 3 }, { name: 'B♭', pc: 10 }, { name: 'F', pc: 5 },
 ];
-
-/** Shortest signed semitone step from `fromPc` to `toPc` (−6..+5). */
-export function shortestKeyDelta(fromPc, toPc) {
-  return (((toPc - fromPc) % 12) + 18) % 12 - 6;
-}
 
 /**
  * KeySheet — tap-to-open key picker as a circle of fifths (design §5). Tapping a

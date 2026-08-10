@@ -1,6 +1,6 @@
 /**
  * ChannelStrip — one workspace layer as a DAW-grade, touch-first mixer row
- * (design §7 Mix view). Replaces the shell's interim LayerRow (Task 4.5).
+ * in the Loop view. Replaces the shell's interim LayerRow.
  *
  * Anatomy, left to right:
  *   glyph · identity (roman progression OR title, + role tag) · voice chip
@@ -29,8 +29,10 @@ import { useEffect, useRef, useState } from 'react';
 import { MaterialGlyph } from './MaterialGlyph.jsx';
 import { ChordLane } from './ChordLane.jsx';
 import { LoopRoll } from './LoopRoll.jsx';
-import { GainStrip, levelFromGain, snapToGainLevel } from './GainStrip.jsx';
-import { VoicePicker, voiceName } from './VoicePicker.jsx';
+import { GainStrip } from './GainStrip.jsx';
+import { levelFromGain, snapToGainLevel } from './gainStripModel.js';
+import { VoicePicker } from './VoicePicker.jsx';
+import { voiceName } from './voicePickerModel.js';
 import './ChannelStrip.scss';
 
 const REMOVE_ARM_MS = 3000;

@@ -1,5 +1,10 @@
 # Piano Producer Overhaul — Delivery Status
 
+> **Historical delivery ledger.** This file records the July implementation
+> handoff. The authoritative release state and binary exit criteria now live in
+> [the Producer reference's seven hard release gates](../../reference/piano/producer.md#seven-hard-release-gates).
+> Producer remains intentionally absent from the Piano menu until all seven pass.
+
 **Date:** 2026-07-02
 **Branch:** `feature/piano-producer-overhaul` (HEAD `cebfe47d5` at time of writing)
 **Design:** [`2026-07-01-piano-producer-overhaul-design.md`](./2026-07-01-piano-producer-overhaul-design.md)
@@ -17,7 +22,7 @@ the feature branch.
 
 ---
 
-## Test totals
+## Historical test totals (2026-07-02)
 
 | Suite | Command | Result |
 |---|---|---|
@@ -86,27 +91,35 @@ failures".
 
 ---
 
-## Pending human verification
+## Current outstanding release verification
 
-These need on-device / manual confirmation before the feature is fully signed
-off. They are **not** automatable from the dev workstation:
+The detailed, non-waivable procedure is the reference doc's
+[Gate 7 physical acceptance record](../../reference/piano/producer.md#gate-7-physical-acceptance-record).
+The remaining human/device work is:
 
-- Run the GM capability probe at the piano (`/piano/test/gm-probe`) and set
-  `producer.voiceTiers.onboardGm` in piano.yml accordingly.
-- Check GM synth latency/polyphony on the SM-T590 tablet (`/piano/test/gm-synth`).
-- The manual jam-feel test: pick a chord loop → stack bass (with a bass voice) +
-  a groove → adjust gains/mute/solo → transpose + tap-tempo → play along. On dev
-  server AND the tablet.
-- Record-a-groove feel test (drum pads + pass/take overdub) on the tablet; note
-  the drum-mode double-sound on physical keys (piano+drum unless local control
-  off — CC122 out of scope).
-- Confirm `config.screensaver.deviceId` (yellow-room-tablet) + the manual
-  Turn-off-screen button; note the wake caveat (after blackout, touch is dead —
-  wake via a MIDI note or FKB REST; the connect-screen blackout is the riskiest
-  since no BLE = no MIDI wake, hence the 2-tap confirm).
-- Prefabs/grooves generators must be run for a fresh/other-household tree
-  (content lives in Dropbox media, not git).
-- The worktree needs its own backend/node_modules (was symlinked to main for the
-  e2e run) — a real merge to main moots this.
-- Product decision flagged: songs re-save creates a NEW record (immutable
-  crystallize) rather than update-in-place — decide if update-in-place is wanted.
+- Run `/piano/test/gm-probe` at the piano and explicitly set
+  `producer.voiceTiers.onboardGm` to the audible verdict. The current missing
+  value safely routes through the browser tier, but does not count as a probe.
+- Judge browser-synth first-tap latency and overlapping polyphony on the SM-T590
+  with `/piano/test/gm-synth`.
+- Complete the chord → bass → groove mix, builders, pass/take overdub, drum
+  pads, Loop→Song, save/update/reload, and all stop/panic paths with human
+  audible confirmation in the dev browser and on the tablet.
+- Confirm touch layout plus manual screen-off, MIDI wake, and recovery while the
+  piano connection is unavailable. The physical-key piano+drum behavior in
+  capture drum mode must be visibly disclosed and accepted or fixed.
+- Apply the already rehearsed household-record migration and prefab curation
+  only after explicit mounted-write authorization; then run their clean/certify
+  gates against the actual mounted trees.
+
+## Resolved or superseded July notes
+
+- Starter-content generation is now covered by backup-first curation plus a
+  release certifier that checks ledger/file/manifest parity, playable notes,
+  harmony verdicts, runtime prefab hydration, minimum counts, and build time.
+  The exact mounted input has passed in a disposable staged copy; actual apply
+  remains a release gate.
+- The feature work is on `main`; the temporary worktree `node_modules` concern
+  no longer applies.
+- Song persistence deliberately supports both outcomes: **Update** preserves
+  id and uses optimistic revision checks; **Save As** creates a new record.

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
-import { LoopRoll, loopBars } from './LoopRoll.jsx';
+import { LoopRoll } from './LoopRoll.jsx';
+import { loopBars } from './loopRollModel.js';
 
 describe('loopBars', () => {
   it('uses the declared barSpan when > 0', () => {

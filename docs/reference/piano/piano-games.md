@@ -4,6 +4,55 @@ Reference for the DaylightStation piano game system — MIDI-driven games layere
 
 ---
 
+## Card Game (Scale Stadium)
+
+Scale Stadium is the YAML-defined, Pokémon-themed tactical card battle at
+`/piano/games/card-game`. The opening encounter uses Pikachu and Squirtle's real PokeAPI
+identity, types, base stats, legal move names, and media-library SVGs. The rules remain a
+small original piano game rather than an implementation of the full Pokémon TCG.
+
+The player reads Squirtle's announced move, plays one or more move cards, performs a
+Piano-selected scale, sees the move's resulting power, and ends the turn when ready.
+Electric moves encode Squirtle's weakness, while performance quality applies the final
+multiplier: fluent play gets the full authored effect, a recovered scale gets a reduced
+effect, and three mistakes fizzle the move. Scale names are never card choices: cards use
+real move names, while the Piano backend selects the exercise after a card is played.
+
+The ownership boundary is strict:
+
+- `shared/gaming/definitions/card-game.yml` contains combat content and a semantic
+  `foundation-major-scales` curriculum request. It also pins the curated combatants'
+  Pokédex metadata and media-relative SVG paths; it contains no MIDI numbers or ABC.
+- Pokémon SVGs are loaded through `/api/v1/proxy/media/stream/*`, rooted at the configured
+  media directory, so the game does not copy the 1,025-entry corpus into the frontend.
+- `PianoScaleChallengePolicy` chooses C/G/F/D major practice from per-user attempt
+  evidence and materializes the musical prompt.
+- The provider renders the staff directly from `expected_midi` and grades the same array,
+  persists completed/interrupted attempts, and terminates on timeout or MIDI disconnect.
+- The Gaming authority persists every lifecycle boundary, battle outcome, explicit
+  abandonment, and stale-session recovery. Closing the screen does not leave an active
+  session behind.
+
+### Live readiness check
+
+Run the end-to-end verifier against the deployed PianoKiosk route:
+
+```bash
+npm run piano:card-game:verify
+```
+
+The verifier in `cli/piano-card-game.cli.mjs` rejects stale/non-Pokémon definitions, checks
+the mounted Pikachu and Squirtle YAML plus SVG assets, opens the route at 1280×800, completes
+the server-selected scales through the kiosk WebSocket MIDI contract, and plays until Pikachu
+wins. Use `--headed`, `--json`, or `--screenshot /tmp/scale-stadium.png` when diagnosing a
+deployment.
+
+The engineering pilot is test-ready, but the product decision remains field-gated. A
+supervised pilot must still determine whether players understand the loop, enjoy it, and
+want to replay before this pattern is generalized to more games.
+
+---
+
 ## System Overview
 
 The piano game system lets users play games using a MIDI keyboard. Players press specific notes (displayed as music notation on staves or as falling note bars) to trigger game actions. A shared activation layer detects combo keypresses to launch games, and a config-driven level system controls difficulty progression.

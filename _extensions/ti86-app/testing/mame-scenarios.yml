@@ -1,0 +1,106 @@
+schema: schoolcalc.ti86-mame-scenarios/v1
+# Scenarios after cold-enter-code require the named retained SCSP/SCP1/SCL1
+# fixture to be provisioned by the review lane before --case-id execution.
+scenarios:
+  - id: cold-enter-code
+    description: A cold exact-release launch opens Enter Code directly.
+    boot_settle_frames: 1200
+    steps:
+      - { key: F2, capture: enter-code, expect_changed: false, expect_text: [SCHOOLCALC, CODE, ENTER 6 DIGITS], expect_not_text: [PROFILE, SUBJECT, CATALOG, LESSON] }
+
+  - id: unknown-code-relay
+    description: Unknown code 001234 creates the durable one-time relay request.
+    boot_settle_frames: 1200
+    steps:
+      - { key: '0', capture: digit-1 }
+      - { key: '0', capture: digit-2 }
+      - { key: '1', capture: digit-3 }
+      - { key: '2', capture: digit-4 }
+      - { key: '3', capture: digit-5 }
+      - { key: '4', capture: code-ready, expect_text: '001 234' }
+      - { key: F1, capture: relay-resolution, settle_frames: 600, expect_not_text: [PROFILE, SUBJECT, CATALOG] }
+
+  - id: resolved-code-prescription
+    description: With the resolved-study fixture, code 001234 opens its exact prescription locally.
+    boot_settle_frames: 1200
+    steps:
+      - { key: '0', capture: digit-1 }
+      - { key: '0', capture: digit-2 }
+      - { key: '1', capture: digit-3 }
+      - { key: '2', capture: digit-4 }
+      - { key: '3', capture: digit-5 }
+      - { key: '4', capture: code-ready, expect_text: '001 234' }
+      - { key: F1, capture: prescribed-card, settle_frames: 300, expect_text: [ADAPTIVE STUDY, FLIP] }
+
+  - id: again-two-card-spacing
+    description: AGAIN returns only after two intervening authored cards.
+    boot_settle_frames: 1200
+    steps:
+      - { key: F1, capture: card-1-back, expect_text: [FLIP, AGAIN, HARD, KNOW] }
+      - { key: F3, capture: card-2-front, expect_text: FLIP }
+      - { key: F1, capture: card-2-back }
+      - { key: F5, capture: card-3-front }
+      - { key: F1, capture: card-3-back }
+      - { key: F5, capture: card-1-due, expect_text: FLIP }
+
+  - id: hard-four-card-spacing
+    description: HARD returns only after four intervening authored cards.
+    boot_settle_frames: 1200
+    steps:
+      - { key: F1, capture: card-1-back }
+      - { key: F4, capture: card-2-front }
+      - { key: F1, capture: card-2-back }
+      - { key: F5, capture: card-3-front }
+      - { key: F1, capture: card-3-back }
+      - { key: F5, capture: card-4-front }
+      - { key: F1, capture: card-4-back }
+      - { key: F5, capture: card-5-front }
+      - { key: F1, capture: card-5-back }
+      - { key: F5, capture: card-1-due, expect_text: FLIP }
+
+  - id: f2-blank
+    description: F2 is visually blank and inert on both flashcard faces.
+    boot_settle_frames: 1200
+    steps:
+      - { key: F2, capture: front-f2, expect_changed: false, expect_text: FLIP }
+      - { key: F1, capture: back, expect_text: [FLIP, AGAIN, HARD, KNOW] }
+      - { key: F2, capture: back-f2, expect_changed: false, expect_text: [AGAIN, HARD, KNOW] }
+
+  - id: power-safe-resume
+    description: EXIT pauses after a durable transition and relaunch exposes contextual Resume.
+    boot_settle_frames: 1200
+    steps:
+      - { key: F1, capture: flipped }
+      - { key: EXIT, capture: enter-code-resume, settle_frames: 300, expect_text: [CODE, RESUME] }
+      - { key: F1, capture: resumed-back, settle_frames: 300, expect_text: [AGAIN, HARD, KNOW] }
+
+  - id: study-quiz-result-qr
+    description: Complete study, prescribed quiz, durable result, and Version-5/M QR.
+    boot_settle_frames: 1200
+    steps:
+      - { key: F1, capture: final-card-back }
+      - { key: F5, capture: summary, expect_text: [STUDY SUMMARY, QUIZ] }
+      - { key: F5, capture: quiz-prompt, expect_text: ADAPTIVE STUDY }
+      - { key: F5, capture: quiz-answers, expect_text: [A, B] }
+      - { key: F1, capture: queued-result, settle_frames: 300, expect_text: [RESULT, SCORE, Result saved offline.] }
+      - { key: F1, capture: result-qr, settle_frames: 300, expect_symbols: QR V5/M }
+
+  - id: completed-code-result
+    description: Re-entering a locally completed code reopens Result and cannot restart study.
+    boot_settle_frames: 1200
+    steps:
+      - { key: '0', capture: digit-1 }
+      - { key: '0', capture: digit-2 }
+      - { key: '1', capture: digit-3 }
+      - { key: '2', capture: digit-4 }
+      - { key: '3', capture: digit-5 }
+      - { key: '4', capture: code-ready }
+      - { key: F1, capture: reopened-result, settle_frames: 300, expect_text: [RESULT, SCORE], expect_not_text: [AGAIN, HARD, KNOW] }
+
+  - id: inactive-routes-absent
+    description: Learner-visible profile, Subject, Catalog, and lesson-menu routes are unreachable.
+    boot_settle_frames: 1200
+    steps:
+      - { key: F2, capture: f2, expect_changed: false, expect_not_text: [PROFILE, SUBJECT, CATALOG, LESSON] }
+      - { key: F3, capture: f3, expect_changed: false, expect_not_text: [PROFILE, SUBJECT, CATALOG, LESSON] }
+      - { key: F5, capture: f5, expect_changed: false, expect_not_text: [PROFILE, SUBJECT, CATALOG, LESSON] }

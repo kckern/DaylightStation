@@ -10,6 +10,7 @@ import { YamlLearningContentRepository } from '#adapters/school/catalog/YamlLear
 import { YamlSchoolCalcDeviceRepository } from './YamlSchoolCalcDeviceRepository.mjs';
 import { YamlSchoolCalcProgressRepository } from './YamlSchoolCalcProgressRepository.mjs';
 import { YamlSchoolCalcResultLedger } from './YamlSchoolCalcResultLedger.mjs';
+import { YamlSchoolCalcStudySessionRepository } from './YamlSchoolCalcStudySessionRepository.mjs';
 
 const temporaryDirectories = [];
 
@@ -49,6 +50,42 @@ describe('School mounted content persistence', () => {
 });
 
 describe('SchoolCalc operational persistence', () => {
+  it('permanently indexes study codes, reuses work-session issuance, and closes idempotently', async () => {
+    const directory = await temporaryDirectory();
+    const repository = new YamlSchoolCalcStudySessionRepository({ directory });
+    const study = {
+      schema: 'school.calc.adaptive-study-session/v1', studySessionId: 'study-one',
+      workSessionId: 'session-one', learnerId: 'learner-one', code: '001234',
+      unitId: 'unit-one', subject: 'math', topicId: 'unit-one', status: 'open',
+      createdAt: '2026-08-10T12:00:00.000Z', curation: { bankRevision: 'revision-one' },
+      artifact: { artifactId: 'artifact-one', byteDigest: 'ab'.repeat(32) },
+    };
+    await expect(repository.create(study)).resolves.toMatchObject({ code: '001234' });
+    await expect(repository.create({ ...study, studySessionId: 'different', code: '999999' }))
+      .resolves.toMatchObject({ studySessionId: 'study-one', code: '001234' });
+    await expect(repository.create({
+      ...study, studySessionId: 'study-two', workSessionId: 'session-two', code: '001234',
+    })).rejects.toMatchObject({ code: 'SCHOOLCALC_CODE_ALREADY_ALLOCATED' });
+
+    const resolution = {
+      deviceId: 'DEVICE01', requestId: 3, learnerKey: 1, prescriptionId: 'prescription-one',
+      resolvedAt: '2026-08-10T12:30:00.000Z',
+    };
+    await expect(repository.bindResolution({ studySessionId: 'study-one', resolution }))
+      .resolves.toMatchObject({ status: 'accepted' });
+    await expect(repository.bindResolution({ studySessionId: 'study-one', resolution }))
+      .resolves.toMatchObject({ status: 'duplicate' });
+    await expect(repository.bindResolution({ studySessionId: 'study-one', resolution: {
+      ...resolution, deviceId: 'DEVICE02',
+    } })).resolves.toMatchObject({ status: 'unauthorized' });
+
+    const close = { studySessionId: 'study-one', resultDigest: 'digest-a', outcome: 'passed', closedAt: '2026-08-10T13:00:00.000Z' };
+    await expect(repository.close(close)).resolves.toMatchObject({ status: 'accepted' });
+    await expect(repository.close(close)).resolves.toMatchObject({ status: 'duplicate' });
+    await expect(repository.close({ ...close, resultDigest: 'digest-b' })).resolves.toMatchObject({ status: 'conflict' });
+    await expect(repository.getByCode('001234')).resolves.toMatchObject({ status: 'closed' });
+  });
+
   it('round-trips device aggregates and enforces optimistic revisions', async () => {
     const directory = await temporaryDirectory();
     const repository = new YamlSchoolCalcDeviceRepository({ directory });

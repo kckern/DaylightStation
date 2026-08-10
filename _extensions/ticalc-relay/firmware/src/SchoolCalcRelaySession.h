@@ -18,6 +18,9 @@ static constexpr uint16_t TI86_INTERACTION_RESPONSE_MAX_BYTES = 2048;
 static constexpr uint16_t TI86_ARTIFACT_MAX_BYTES = 12288;
 static constexpr uint16_t TI86_ACKNOWLEDGEMENT_MAX_BYTES = 544;
 static constexpr uint16_t TI86_SYNC_MANIFEST_MAX_BYTES = 6144;
+static constexpr uint16_t TI86_STUDY_ENTRY_MAX_BYTES = 64;
+static constexpr uint16_t TI86_STUDY_PRESCRIPTION_MAX_BYTES = 512;
+static constexpr uint16_t TI86_STUDY_COMMIT_MAX_BYTES = 256;
 static constexpr size_t MAX_DEVICE_ID_BYTES = 16;
 static constexpr size_t MAX_PLATFORM_ID_BYTES = 31;
 static constexpr size_t MAX_ARTIFACT_ID_BYTES = 127;
@@ -56,6 +59,10 @@ struct SyncRequest {
   ByteView resultQueue;
   ByteView deliveryRequests;
   ByteView interactionRequest;
+  ByteView studyEntry;
+  MutableBytes* studyPrescriptionOutput = nullptr;
+  MutableBytes* studyCommitOutput = nullptr;
+  MutableBytes* studyArtifactOutput = nullptr;
   const char* catalogGeneration = nullptr;
 };
 
@@ -77,6 +84,11 @@ struct SyncPlan {
   uint16_t learnerRosterLength = 0;
   uint16_t progressProjectionLength = 0;
   uint16_t interactionResponseLength = 0;
+  bool studyResolved = false;
+  bool studyArtifactIncluded = false;
+  uint16_t studyPrescriptionLength = 0;
+  uint16_t studyCommitLength = 0;
+  ArtifactDescriptor studyArtifact;
 };
 
 /** Optional liveness service used while a concrete network call is blocked. */
@@ -116,6 +128,9 @@ struct SessionBuffers {
   MutableBytes acknowledgement;
   MutableBytes manifest;
   MutableBytes transfer;
+  MutableBytes studyEntry;
+  MutableBytes studyPrescription;
+  MutableBytes studyCommit;
 };
 
 enum class SessionState : uint8_t {
@@ -127,6 +142,8 @@ enum class SessionState : uint8_t {
   StagingProfiles,
   StagingProgress,
   StagingInteraction,
+  StagingStudyArtifact,
+  StagingStudyPrescription,
   StagingCatalog,
   StagingArtifacts,
   StagingAcknowledgements,
@@ -170,6 +187,12 @@ enum class SessionError : uint8_t {
   InteractionRequestTooLarge,
   InvalidInteractionResponseEnvelope,
   InteractionResponseTooLarge,
+  InvalidStudyEntryEnvelope,
+  StudyEntryTooLarge,
+  InvalidStudyPrescriptionEnvelope,
+  StudyPrescriptionTooLarge,
+  InvalidStudyCommitEnvelope,
+  StudyCommitTooLarge,
   CatalogFetch,
   CatalogTooLarge,
   InvalidCatalogEnvelope,

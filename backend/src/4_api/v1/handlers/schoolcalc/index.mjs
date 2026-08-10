@@ -137,6 +137,7 @@ export function schoolCalcSyncHandler({ container, relayIdFromRequest }) {
       resultQueue: optionalEncodedRecord(body.resultQueue, 'resultQueue'),
       requestRecord: optionalEncodedRecord(body.requestRecord, 'requestRecord'),
       interactionRecord: optionalEncodedRecord(body.interactionRecord, 'interactionRecord'),
+      studyEntry: optionalEncodedRecord(body.studyEntry, 'studyEntry'),
       catalogGeneration: body.catalogGeneration ?? null,
     });
     res.json(serializeSyncOutcome(outcome));
@@ -206,11 +207,26 @@ function serializeSyncOutcome(outcome) {
     profiles: outcome.profiles ? serializeLearnerRoster(outcome.profiles) : null,
     progress: outcome.progress ? serializeProgressProjection(outcome.progress) : null,
     interaction: outcome.interaction ? serializeInteraction(outcome.interaction) : null,
+    study: outcome.study ? serializeStudyResolution(outcome.study) : null,
     plan: {
       ...plan,
       acknowledgement: encodedRecord(acknowledgementRecord),
       manifest: encodedRecord(manifestRecord),
     },
+  };
+}
+
+function serializeStudyResolution(study) {
+  const { prescriptionRecord, commitRecord, artifact, ...view } = study;
+  return {
+    ...view,
+    prescriptionRecord: prescriptionRecord ? encodedRecord(prescriptionRecord) : null,
+    commitRecord: commitRecord ? encodedRecord(commitRecord) : null,
+    artifact: artifact ? {
+      artifactId: artifact.artifactId, variableName: artifact.variableName,
+      byteLength: artifact.byteLength, byteDigest: artifact.byteDigest,
+      mediaType: artifact.mediaType, record: encodedRecord(artifact.bytes),
+    } : null,
   };
 }
 

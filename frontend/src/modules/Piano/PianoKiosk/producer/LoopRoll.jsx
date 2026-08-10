@@ -1,4 +1,5 @@
 import { useEffect, useRef, useMemo } from 'react';
+import { loopBars } from './loopRollModel.js';
 
 /**
  * LoopRoll — a compact piano-roll of a loop's notes with a playhead cursor that
@@ -24,18 +25,6 @@ import { useEffect, useRef, useMemo } from 'react';
 const H = 40;              // viewBox height (user units)
 const W = 1000;            // viewBox width (user units; stretched to container)
 const BEATS_PER_BAR = 4;   // producer loops are 4/4 (all bricks are 4/4)
-
-/** Loop length in bars: the declared barSpan if known, else derived from the
- *  latest note end (real bricks don't carry barSpan). Shared with the Roman
- *  chord-highlight math so the cursor and the lit chord agree on the cycle. */
-export function loopBars(notes, ppq, barSpan) {
-  const declared = Math.round(barSpan);
-  if (declared > 0) return declared;
-  if (!Array.isArray(notes) || notes.length === 0 || !(ppq > 0)) return 1;
-  let end = 0;
-  for (const n of notes) end = Math.max(end, n.ticks + (n.durationTicks || 0));
-  return Math.max(1, Math.ceil(end / (BEATS_PER_BAR * ppq)));
-}
 
 export function LoopRoll({ notes, ppq, barSpan = 1, positionRef, isPlaying = false, muted = false }) {
   const cursorRef = useRef(null);

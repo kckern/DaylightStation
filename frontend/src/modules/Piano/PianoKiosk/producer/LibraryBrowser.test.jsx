@@ -2,15 +2,18 @@
  * LibraryBrowser tests (Task 5.1) — the full-screen library surface with
  * consonance guardrails. Pure-ranking behavior lives in libraryRanking.test.js;
  * these cover the SURFACE: cards, facets, guardrail indicator + Show-all lift,
- * honest naming (no keyed spelling on cards), the 120-card cap, and the pick seam.
+ * readable identity, explicit audition, the 120-card cap, and the pick seam.
  *
  * Timelines reuse the hand-built consonance-vocabulary fixtures: I-I-V-I base,
  * roots-only stackable candidate, dim7 wall dissonant against it.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, within, act } from '@testing-library/react';
+import { render, screen, fireEvent, within, waitFor, act } from '@testing-library/react';
 import { facets } from '@shared-music/loopQuery.mjs';
 import { LibraryBrowser } from './LibraryBrowser.jsx';
+
+const useKeepScreenAwake = vi.hoisted(() => vi.fn());
+vi.mock('../usePianoScreensaver.jsx', () => ({ useKeepScreenAwake }));
 
 // ── timeline fixtures (root-relative pc sets) ────────────────────────────────
 const TL_I_V = [[0, 4, 7], [0, 4, 7], [2, 7, 11], [0, 4, 7]];
@@ -85,22 +88,19 @@ describe('LibraryBrowser — cards & honest identity', () => {
     expect(card.querySelector('.roman-progression')).toBeTruthy();
   });
 
-  it('harmonic cards never render a keyed spelling — the abstract Roman IS the identity', async () => {
+  it('harmonic cards render a readable, transposition-honest Roman identity', async () => {
     renderBrowser();
-    // 'C · G' is the vendor's keyed title on a chord-progression brick; the
-    // library is abstract/key-agnostic (transposed at playtime), so it must
-    // survive ONLY as the aria-label, never as visible card text.
     const card = await screen.findByRole('button', { name: 'C · G' });
-    expect(card.querySelector('.piano-loop__name')).toBeNull();
+    expect(card.querySelector('.piano-loop__name')?.textContent).toBe('I · I · V · I progression');
     expect(card.querySelector('.piano-loop__caption')).toBeNull();
     expect(card.querySelector('.roman-progression')).toBeTruthy();
     expect(card.textContent).not.toContain('C · G');
   });
 
-  it('never fabricates a name: untitled melodic card has no name text, only a subdued slug caption', async () => {
+  it('humanizes an untitled melodic source id and keeps the raw id as secondary identity', async () => {
     renderBrowser();
     const card = await screen.findByRole('button', { name: 'nameless-tune' });
-    expect(card.querySelector('.piano-loop__name')).toBeNull();
+    expect(card.querySelector('.piano-loop__name')?.textContent).toBe('nameless tune');
     const caption = card.querySelector('.piano-loop__caption');
     expect(caption?.textContent).toBe('nameless-tune');
     expect(card.querySelector('.piano-loop__staff')).toBeTruthy(); // staff = its identity
@@ -118,6 +118,14 @@ describe('LibraryBrowser — cards & honest identity', () => {
     const { props } = renderBrowser();
     fireEvent.click(await screen.findByRole('button', { name: 'Root Notes' }));
     expect(props.onPick).toHaveBeenCalledWith(FRIEND);
+  });
+
+  it('searches visible title, source identity, tags, and Roman tokens', async () => {
+    renderBrowser();
+    const search = screen.getByRole('searchbox', { name: 'Search loops' });
+    fireEvent.change(search, { target: { value: 'Root Notes' } });
+    expect(await screen.findByRole('button', { name: 'Root Notes' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Basic Rock' })).toBeNull();
   });
 });
 
@@ -219,6 +227,24 @@ describe('LibraryBrowser — facets, stubs, cap', () => {
     expect(screen.getByRole('button', { name: 'Draft Loop' })).toBeInTheDocument();
     fireEvent.click(within(qualityGroup).getByRole('button', { name: 'Best' }));
     expect(screen.queryByRole('button', { name: 'Draft Loop' })).toBeNull();
+  });
+
+  it('Best excludes explicit harmony failures and parse-review entries; All remains an honest escape hatch', async () => {
+    const FAILED = {
+      ...BASE, slug: 'failed-harmony', path: 'chords/failed.musicxml', title: 'Failed Harmony',
+      harmonyVerified: false,
+    };
+    const BROKEN = {
+      ...BASE, slug: 'parse-review', path: 'chords/review.musicxml', title: 'Parse Review',
+      needsReview: true,
+    };
+    renderBrowser({ lib: makeLib([BASE, FAILED, BROKEN]) });
+    expect(screen.queryByRole('button', { name: 'Failed Harmony' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Parse Review' })).toBeNull();
+    const qualityGroup = screen.getByRole('group', { name: 'quality' });
+    fireEvent.click(within(qualityGroup).getByRole('button', { name: 'All' }));
+    expect(screen.getByRole('button', { name: 'Failed Harmony' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Parse Review' })).toBeInTheDocument();
   });
 
   it('grooves stay visible under the Best default (no quality tier) — drums must be addable', async () => {
@@ -341,7 +367,7 @@ describe('LibraryBrowser — facets, stubs, cap', () => {
     expect(onPickPrefab).toHaveBeenCalledWith(expect.objectContaining({ id: 'pop-1-5-6-4' }));
   });
 
-  it("'Prefabs' facet shows all curated stacks (no search box to filter them)", async () => {
+  it("'Prefabs' facet shows curated stacks and keeps search available", async () => {
     // The kiosk has no text input, so prefabs are never text-filtered — every
     // curated stack stays visible under the Prefabs facet.
     renderBrowser({
@@ -354,7 +380,7 @@ describe('LibraryBrowser — facets, stubs, cap', () => {
       onPickPrefab: vi.fn(),
     });
     fireEvent.click(await screen.findByRole('button', { name: 'Prefabs' }));
-    expect(screen.queryByPlaceholderText(/search/i)).toBeNull();
+    expect(screen.getByRole('searchbox', { name: 'Search loops' })).toBeInTheDocument();
     expect(screen.getByText('Pop I–V–vi–IV')).toBeInTheDocument();
     expect(screen.getByText('Lo-fi groove bed')).toBeInTheDocument();
   });
@@ -522,5 +548,34 @@ describe('LibraryBrowser — press-and-hold audition', () => {
     up(card); // tap picked once
     fireEvent.click(card, { detail: 1 }); // browser compatibility click
     expect(props.onPick).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('LibraryBrowser — discoverable audition controls', () => {
+  const makeRouter = () => ({
+    noteOn: vi.fn(), noteOff: vi.fn(), allNotesOff: vi.fn(), configureLayer: vi.fn(), panic: vi.fn(),
+  });
+
+  it('every card exposes Preview independently from its Add action', async () => {
+    const router = makeRouter();
+    const { props } = renderBrowser({ router, bpm: 120, keyShift: 0 });
+    expect(screen.getByRole('button', { name: 'Preview Root Notes' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Preview Root Notes' }));
+    await waitFor(() => expect(router.configureLayer).toHaveBeenCalledWith(15, { program: 0, gain: 1 }));
+    expect(props.onPick).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Stop preview Root Notes' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('Stop preview silences sound and restores the Preview label', async () => {
+    const router = makeRouter();
+    renderBrowser({ router, bpm: 120, keyShift: 0 });
+    expect(useKeepScreenAwake).toHaveBeenLastCalledWith('producer-preview', false);
+    fireEvent.click(screen.getByRole('button', { name: 'Preview Root Notes' }));
+    const stop = await screen.findByRole('button', { name: 'Stop preview Root Notes' });
+    expect(useKeepScreenAwake).toHaveBeenLastCalledWith('producer-preview', true);
+    fireEvent.click(stop);
+    expect(router.allNotesOff).toHaveBeenCalledWith(15);
+    expect(screen.getByRole('button', { name: 'Preview Root Notes' })).toHaveAttribute('aria-pressed', 'false');
+    expect(useKeepScreenAwake).toHaveBeenLastCalledWith('producer-preview', false);
   });
 });

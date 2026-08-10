@@ -38,8 +38,8 @@
  * `meta`, seeded from the workspace at first promotion and never re-seeded —
  * once a song exists, the workspace inherits the song's key/tempo, not the
  * other way around. Section stacks carry NO captured keyShift;
- * toSchedulerInputs applies meta.keyShift uniformly (grooves pinned to
- * transpose 0), the same single-transpose rule as toTransportLayers.
+ * toSchedulerInputs conforms every pitched source from its authored tonic to
+ * meta.keyShift (grooves pinned to transpose 0), exactly as Loop playback does.
  *
  * SECTION NAMES ARE STRUCTURAL LABELS, NOT TITLES: the auto names 'A', 'B',
  * 'C', … are rehearsal-mark structure — the section honestly IS the first /
@@ -62,6 +62,7 @@
 // ── constants (mirror workspaceReducer's global-knob ranges) ─────────────────
 
 import { DRUM_CHANNEL } from './workspaceReducer.js';
+import { transposeToTargetKey } from './keyModel.js';
 
 const BPM_MIN = 40;
 const BPM_MAX = 220;
@@ -72,6 +73,7 @@ export const initialDraftState = null;
 export const ActionTypes = Object.freeze({
   PROMOTE: 'PROMOTE',
   HYDRATE: 'HYDRATE',
+  RESET: 'RESET',
   APPLY_TEMPLATE: 'APPLY_TEMPLATE',
   SLOT_FILL: 'SLOT_FILL',
   OPEN_SECTION: 'OPEN_SECTION',
@@ -286,6 +288,7 @@ export function initialDraft(workspaceState = {}) {
 // ── reducer ──────────────────────────────────────────────────────────────────
 
 export function draftReducer(state, action) {
+  if (action?.type === ActionTypes.RESET) return null;
   // Only PROMOTE, APPLY_TEMPLATE, and HYDRATE may materialize a null draft (the
   // bottom-up door, the top-down door, and loading a saved song); every other
   // verb needs one.
@@ -503,7 +506,7 @@ export function draftReducer(state, action) {
       // empty-state: PROMOTE/APPLY_TEMPLATE seed sections, CLONE_SECTION copies
       // an existing one — none add a blank slot. The new section renders as a
       // dashed "fill me" that the existing fill sheet (Use current jam / Open in
-      // Mix to build) populates, exactly like a template's empty slot.
+      // Loop to build) populates, exactly like a template's empty slot.
       if (state == null) return state;
       const id = nextSectionId(state.sections);
       const section = { id, name: autoLabel(state.sections), lengthBars: 1, stack: [] };
@@ -625,6 +628,7 @@ export const applyTemplate = (template, workspaceState) => (
   { type: ActionTypes.APPLY_TEMPLATE, template, workspaceState }
 );
 export const hydrate = (payload) => ({ type: ActionTypes.HYDRATE, payload });
+export const resetDraft = () => ({ type: ActionTypes.RESET });
 export const slotFill = ({ sectionId, workspaceState, notesById } = {}) => (
   { type: ActionTypes.SLOT_FILL, sectionId, workspaceState, notesById }
 );
@@ -678,8 +682,8 @@ export function resolveSectionStack(draft, sectionId) {
  * Map the whole draft to compileArrangement's inputs:
  * `{ sections: [{ id, lengthBars, stack: schedulerLayers }], arrangement }`.
  * Mirrors toTransportLayers' rules per section:
- * - meta.keyShift is the transpose for every non-groove layer (key is
- *   song-global; sections don't carry their own);
+ * - meta.keyShift is the song-global target tonic; every layer is transposed
+ *   from its own source tonic to that target (sections carry no key);
  * - grooves are pinned to transpose 0 (drum-map pitches are instrument
  *   slots, not notes);
  * - layers with no loaded notes are omitted (take layers fall back to the
@@ -715,7 +719,7 @@ export function toSchedulerInputs(draft, notesById = {}) {
         notes: loaded.notes,
         ppq: loaded.ppq,
         barSpan: loaded.barSpan,
-        transpose: layer.role === 'groove' ? 0 : keyShift,
+        transpose: transposeToTargetKey(layer, keyShift),
         muted: !!layer.muted || (sectionHasSolo && !layer.soloed),
         channel: layer.channel,
         gain: layer.gain,
@@ -752,7 +756,7 @@ export function draftReferencesLayer(draft, layerId) {
  * notes are loaded (configuring a silent channel is harmless; dropping it
  * would leave a stale program when the notes arrive). Grooves report program
  * null (GM drums ignore programs) but still carry gain — channel 9's synth
- * gain is shared, last groove wins, same honesty as the Mix view.
+ * gain is shared, last groove wins, same honesty as the Loop view.
  *
  * @returns {Array<{channel:number, program:number|null, gain:number}>}
  */

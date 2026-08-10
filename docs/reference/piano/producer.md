@@ -1,9 +1,11 @@
 # Piano Producer — Architecture Reference
 
-> **Status:** Implemented on `feature/piano-producer-overhaul`.
+> **Status (2026-08-10):** Release candidate. The direct route is enabled, but
+> the Piano home-menu tile remains intentionally disabled until the mounted
+> schema/prefab writes and the physical SM-T590 audio/WebView check pass.
 > **Design:** [`docs/_wip/plans/2026-07-01-piano-producer-overhaul-design.md`](../../_wip/plans/2026-07-01-piano-producer-overhaul-design.md)
 > **Requirements:** [`docs/_wip/plans/2026-07-01-piano-producer-song-builder-requirements.md`](../../_wip/plans/2026-07-01-piano-producer-song-builder-requirements.md)
-> **Delivery status + human checklist:** [`docs/_wip/plans/2026-07-01-piano-producer-overhaul-STATUS.md`](../../_wip/plans/2026-07-01-piano-producer-overhaul-STATUS.md)
+> **Delivery history:** [`docs/_wip/plans/2026-07-01-piano-producer-overhaul-STATUS.md`](../../_wip/plans/2026-07-01-piano-producer-overhaul-STATUS.md)
 > This is the durable map. The design doc is the frozen intent; this describes
 > what the code actually does. It is a sibling of [README.md](./README.md) (the
 > whole-kiosk map) and [performance.md](./performance.md).
@@ -18,7 +20,7 @@ loop, stack a bass voice and a groove on top, mix them live (gain / mute / solo
 / transpose / tap-tempo), record your own passes over the top, and — only if you
 want to — promote what you're playing into named sections and arrange them into
 a saveable song. Nobody faces a blank page unless they choose one; every
-stage (jam, Crate, song, saved song) is a valid final destination.
+stage (jam, My Loops, song, saved song) is a valid final destination.
 
 ### The two-tree state model
 
@@ -61,9 +63,8 @@ song via the store).
 
 ## 2. Engine layer (`shared/music/`)
 
-Pure functions, no DOM/React/timers, tested with `node --test`
-(`node --test shared/music/` — 204 tests). These are the reusable music
-primitives; the React transport consumes their output.
+Pure functions, no DOM/React/timers. These are the reusable music primitives;
+the React transport consumes their output.
 
 ### Harmonic timelines & enrichment — `harmonicTimeline.mjs`
 
@@ -75,25 +76,28 @@ or declared root). `specificity` grades the densest slot:
 
 Root detection is a single documented, deterministic heuristic (duration-weighted
 pc scoring with a strong-beat bonus and a slot-0 bass anchor for tie-breaks) — no
-probabilistic key-finding. Ambiguity is the **caller's** problem: the enrichment
-CLI flags loops it can't trust rather than guessing.
+probabilistic key-finding. The production library does not trust that heuristic
+to decide playback transposition.
 
-**Enrichment (`cli/loop-enrich.cli.mjs`)** runs the timeline over every harmonic
-loop in the served index and writes flat keys back into each entry:
+**Runtime enrichment (`backend/.../piano/loopManifest.mjs`)** walks the five
+MusicXML brick folders, parses the notes and metadata, joins the conversion
+ledger by output path, recovers the authored tonic from the first analyzed chord
+root plus first Roman degree, and builds the manifest served at
+`GET /api/v1/piano/loop-manifest`:
 
 | Field | Meaning |
 |---|---|
 | `timeline` | array of root-relative pc sets, one per beat (flow-style `- [0, 4, 7]`) |
 | `timelineRoot` | absolute root pitch class 0..11 |
 | `specificity` | `root` \| `fifth` \| `triad` \| `extended` |
-| `rootSource` | `declared` \| `detected` |
 | `needsReview` (+ `needsReviewReason`) | only on parse-fail or engine-throw; excludes the entry from guardrailed browse |
+| `harmonyVerified` | ledger `yes`/`no` propagated as a real boolean; explicit failures are excluded from **Best** |
 
-The library is **canonical-C by construction**, so a declared `canonicalKey` is
-ground truth: its relative-major tonic is passed to the engine as a root override
-and recorded `rootSource: declared` (a heuristic disagreement is a heuristic
-miss, not content ambiguity). The pass is idempotent and backs up `index.yml`
-before writing. Grooves/percussion are skipped (no harmonic content).
+The library is **not uniformly in C**. Each entry keeps `tonicPc`; its timeline is
+normalized relative to that tonic, and playback uses `target tonic - source tonic`.
+Grooves/percussion skip harmonic analysis and never transpose. Missing or corrupt
+material is marked `needsReview`; an analyzer verdict of `no` cannot disappear
+between ledger and UI.
 
 ### Union-consonance guardrail — `consonance.mjs`
 
@@ -240,7 +244,10 @@ The `workspace` tree. Layer shape:
 
 Actions: `ADD_LAYER` (auto-assigns lowest-free channel, grooves get 9),
 `REMOVE_LAYER`, `SET_GAIN`, `TOGGLE_MUTE`, `TOGGLE_SOLO`, `SET_VOICE`, `SET_KEY`,
-`SET_BPM`, `TOGGLE_METRONOME`, `TOGGLE_CARRIED`, `LOAD_STACK`, `CLEAR`. Solo is a
+`SET_BPM`, `SET_LENGTH_BARS`, `TOGGLE_METRONOME`, `TOGGLE_CARRIED`, `LOAD_STACK`,
+`CLEAR`, `RESTORE`, and `SET_EDITING_SECTION`. The shell keeps the last 50
+workspace-and-note snapshots so **Undo restores audible material**, not merely
+the channel-strip row. Solo is a
 selector (`anySolo && !soloed` → effectively muted); channel exhaustion returns
 state unchanged with a `lastError` the UI toasts. **`toTransportLayers`** is the
 seam that projects workspace layers into scheduler inputs (applies the single
@@ -311,7 +318,7 @@ Three bands (`modes/Producer/Producer.jsx` + `Producer.scss`):
 - **Band 1 — TransportBar** (`producer/TransportBar.jsx`): play/stop, bar:beat
   readout, BPM stepper + tap-tempo, key stepper, metronome toggle, record-arm.
   Discrete taps, no drags.
-- **Band 2 — Stage**: `Mix | Song` tabs. Mix shows front-door entry cards when the
+- **Band 2 — Stage**: `Loop | Song` tabs. Loop shows front-door entry cards when the
   workspace is empty, DAW `ChannelStrip`s once it isn't. Song shows the structure
   rail (`SongView`). The library surface is full-bleed.
 - **Band 3 — PianoKeyboard**: always live; the player's own playing goes through
@@ -329,23 +336,30 @@ stack), then locks until stop — switching tabs mid-play is a read, not a mode 
   guardrails are defaults, not prisons). Melodic candidates ranked by `melodyFit`.
   **"Goes with →"** re-anchors the browse with any card as the base. Capped at 120
   cards (simple + honest at ~3.2k entries).
-- **Press-to-peek** (`usePeek.js`) — press-and-hold on a card (150 ms arm) auditions
-  it over the jam (or solo + metronome if stopped), conformed to the current
-  key/tempo; release silences and never adds (a peek is a listen, adding takes a
-  fresh tap). A tiny second playback path on a reserved channel (15 melodic, 9 groove).
+- **Explicit audition** (`usePeek.js`) — every card has a visible Preview/Stop
+  button. It auditions over the jam (or solo + metronome if stopped), conformed
+  to the current key/tempo, and never adds the material. The older 150 ms hold
+  gesture remains only as a backward-compatible shortcut. A tiny second playback
+  path uses reserved channel 15 for pitched material and 9 for grooves.
 - **`ChannelStrip.jsx`** — glyph · identity (roman/contour or title) · voice chip
   (→ `VoicePicker`) · latching M/S · `GainStrip` (segmented tap-to-set, log curve,
   adapted from the `TouchVolumeButtons` pattern) · carry pin · 2-tap remove. Groove
   strips get a disabled "Drums" chip and an "all drums" hint (grooves share channel 9,
   so a gain change affects every groove).
 - **`SongView.jsx`** — the structure rail: slot cards (`Intro ×1 · 8 bars`) with glyph
-  stacks; tap → fill or open-in-Mix; long-press → repeats/bars steppers; active slot
+  stacks; tap → fill or open in Loop; long-press → repeats/bars steppers; active slot
   glows and auto-advances during playback; tapping another queues a scene-launch jump.
   Empty state = the structure-template picker.
 - **`MaterialGlyph.jsx`** — deterministic local SVG identity (FNV-1a hash → symmetric
   identicon grid + seeded HSL). Same material → same picture forever, no network. Seed
   = roman signature (harmonic) / degree contour (melodic) / onset pattern (groove) /
   composite (stack/section/song). Human titles shown when they exist; never fabricated.
+
+The Loop stage also exposes the recovery and orientation verbs that were missing
+from the disabled build: **New**, two-tap **Clear loop**, **Undo**, **Keep to My
+Loops**, and **Add to song / Update section**. “Add a layer” opens one role-first
+sheet (browse Chords/Bass/Drums/Melody, record, build drums, or build chords), so
+the user no longer has to infer which disconnected surface creates which object.
 
 ---
 
@@ -370,12 +384,42 @@ clock). Integration prescription: every injected time must share one monotonic
 - **Drum mode** (`CaptureCard.jsx` + drum-pad overlay): maps the keyboard (physical
   + on-screen pads) to GM drum pieces; output on channel 9.
 - **Take citizenship:** a kept take becomes a first-class workspace layer like any
-  other; "Keep to Crate" persists it (§7). Recorded loops are promoted to real
+  other; **Keep to My Loops** persists it (§7). Recorded loops are promoted to real
   `/producer/loops` records when a song or crate item that references them is saved.
 
 `CaptureCard.jsx` is the UI: count-in dial, cycling bar indicator, three big
 buttons (Undo pass / Clear / Keep), snap toggle, confirmable kind chip. An open
 capture session forces stack mode (it reads the jam cycle length as its geometry).
+The main transport Stop also disarms capture: it drops only the incomplete pass,
+keeps completed passes visible for Keep/Undo/Clear, releases drum monitors, and
+offers Resume against a fresh aligned anchor instead of claiming a silent loop is
+still recording.
+
+### Builders and their audio contract
+
+- `ChordBuilder.jsx` + `chordBuilderModel.js`: 1–16 bars, one diatonic choice per
+  bar, nearest-inversion voice leading, Sustain/Quarter pulse/Syncopated rhythm,
+  per-note dynamics, harmonic timeline, and builder provenance.
+- `DrumSequencer.jsx` + `drumSequencerModel.js`: 1–16 bars, a one-bar-at-a-time
+  16-step GM grid, Rock/House/Funk phrase presets, pickup fills, and accents.
+- Both expose explicit Preview/Stop and feed `useTakePreview.js`, which uses the
+  production `voiceRouter` (not a mock synth side path). Commit adds the same
+  canonical take shape used by recording. Pitched builder output is canonical C;
+  GM drum pitches are never transposed.
+
+### One key model
+
+`producer/keyModel.js` is authoritative for Loop, Preview, Song, save, and reload:
+
+```text
+keyShift = absolute target tonic relative to C
+playback transpose = target tonic - source tonic
+groove transpose = 0
+```
+
+Library entries retain their authored `tonicPc`; captured and builder takes are
+normalized to canonical C. Exhaustive 12×12 tests pin all source/target pairs,
+including non-C save/reload.
 
 ---
 
@@ -399,9 +443,25 @@ extension, so a dot would corrupt the filename (the DataService dotted-filename
 gotcha); the same charset also blocks path traversal. Author comes from the request
 body (the kiosk's current player, trusted per design §6). `GET /{family}` returns a
 **light** listing (identity + kind + author + a small per-family signature); `GET
-/:id` returns the full record. `PATCH` is a shallow curate merge (title/favorite).
+/:id` returns the full record.
 
 Required heavy field per family: `loops → notes`, `crate → layers`, `songs → sections`.
+Creates and updates are normalized through
+`backend/src/3_applications/piano/producerRecords.mjs` to `schemaVersion: 2`; all
+creates, reads, and updates are validated for shape, musical-content hash, and
+referential integrity. Runtime reads never silently repair stored YAML: an invalid
+direct read returns `422 PRODUCER_RECORD_INVALID`, while a light list quarantines
+bad records in `invalidRecords` and preserves healthy cards. The frontend displays
+a persistent repair warning with Retry instead of silently dropping saved work.
+References must point to a loop that is itself schema- and hash-valid; mere file
+existence is not enough. A song or crate item that points at corrupt material is
+quarantined with it.
+Records carry `revision`,
+`contentHash`, timestamps, and a non-empty title. PATCH accepts
+`expectedRevision`; a stale writer receives 409 instead of silently overwriting a
+newer edit, and the response is the full validated record. Loop refs, carried refs,
+section ids, arrangement entries, channels, roles, lengths, and song key/tempo are
+all checked before a write.
 
 ### Frontend store — `useProducerStore.js`
 
@@ -414,12 +474,23 @@ selected — the pool *is* household-shared).
 round-trips losing nothing. The one transform: recorded-take layers can't live
 inside a song record, so `saveSong` **auto-persists each embedded take as a
 `/producer/loops` record first**, then rewrites those layers to `{ kind:'loop',
-loopId }` refs (takes shared across sections dedupe to one loop). `loadSong`
+loopId }` refs (takes shared across sections dedupe by source identity plus stable
+SHA-256 musical-content hash). `loadSong`
 reverses it. The Crate uses the same take→loop rewrite.
 
-> **Product decision flagged:** re-saving a song creates a **new** record
-> (immutable crystallize), not an update-in-place. See the STATUS doc's pending
-> items — decide whether update-in-place is wanted.
+Loading a saved song preserves its id and revision. **Update** patches that
+record with optimistic concurrency; **Save As** deliberately creates a new id.
+New capture/builder takes use `crypto.randomUUID()` where available, with a
+collision-resistant old-WebView fallback; session-resetting `take-1` ids are gone.
+Content hashing uses native Web Crypto where available and an exact-wire-compatible
+`crypto-js` SHA-256 fallback on older Android WebViews.
+
+Saved songs, crate stacks, prefabs, and resume snapshots load **all-or-nothing**.
+Every referenced library layer is fetched and proven to contain playable notes
+before the shell changes the draft or workspace. Missing, corrupt, unresolved,
+or empty material leaves the current work intact and produces a visible
+"Load stopped" explanation; it can no longer become a plausible-looking silent
+layer or partial arrangement.
 
 ### Resume snapshot — `useResumeSnapshot.js`
 
@@ -428,16 +499,26 @@ snapshot to `localStorage` (`piano.producer.snapshot.v1`) every 4 bars. On the
 next visit a quiet "Resume where you left off?" chip appears (within a 24 h
 window); it never auto-applies, and starting anything new clears it. Quota-safe:
 falls back to dropping `notesById`, then skips with a warn (all access try/catch'd).
+When cached notes are absent, resume strictly reloads every library layer before
+applying the snapshot.
 
 ### Prefabs — `usePrefabs.js` + `prefabHydrate.js`
 
 Curated, **read-only** example stacks and songs authored as YAML in the media tree,
 served through the same local-stream route as the loop index
 (`/api/v1/local/stream/midi/prefabs/...`) — no backend change needed. References are
-by library slug, resolved at load time against the live index (`prefabHydrate`), so
-prefabs never embed fat timelines. The only catalog difference from household material
+by exact library path (legacy unique slugs remain supported), resolved at load time
+against the live manifest (`prefabHydrate`), so prefabs never embed fat timelines.
+Resolution fails closed if even one reference is missing; Producer never drops the
+missing layer and plays the survivors as if the starter were healthy.
+The only catalog difference from household material
 is the absence of a Delete button. Structure **templates** (the 5 basics) live in code
 (`producer/structureTemplates.js`) as the SSOT, not in the data prefabs.
+
+Transport playback, generated-take Preview, and library audition each hold the
+Piano screensaver awake for exactly as long as their audible path is active.
+Stopping or unmounting releases both the notes and its named wake-lock hold, so
+an indefinite solo preview cannot black out the kiosk while continuing to sound.
 
 ### Data-tree layout
 
@@ -447,8 +528,8 @@ is the absence of a Delete button. Structure **templates** (the 5 basics) live i
   crate/{id}.yml     # kept stacks/sections: layer refs (library by slug, recorded by id) + voices/gains/lengthBars
   songs/{id}.yml     # crystallized songs: sections, arrangement, meta, carriedLayers
 
-<mediaDir>/midi/loops/index.yml           # curated loop index (enriched in place)
-<mediaDir>/midi/loops/percussion/         # ingested grooves
+<mediaDir>/midi/_workspace/_ledger.jsonl  # conversion source/output + analysis verdicts
+<mediaDir>/midi/{chords,basslines,melodies,ideas,percussion}/  # MusicXML bricks
 <mediaDir>/midi/prefabs/{index.yml,stacks/,songs/}   # curated prefabs
 ```
 
@@ -466,6 +547,17 @@ generators/loaders are committed. To grow or seed a fresh/other-household tree:
 | Seed starter grooves (rock/pop/waltz/latin/brush, channel-9 MIDI) | `cli/make-starter-grooves.mjs` → then run `midi-ingest` |
 | Seed example stacks + songs (prefabs) | `cli/make-piano-prefabs.mjs` (re-reads + asserts every referenced slug exists before reporting success) |
 
+Production lifecycle tools added by the 2026-08 remediation:
+
+| Gate | Command | Write behavior |
+|---|---|---|
+| Audit/migrate household records to v2 and repair stale library paths from the ingest ledger | `npm run piano:producer:migrate -- --root … --ledger … --media-root …` | Dry-run by default; `--apply` makes a sibling timestamped backup, validates the complete graph, then atomically replaces records; rerun with `--require-clean` to make any residual change fail the release gate |
+| Curate starter prefab stacks/songs | `npm run piano:producer:prefabs -- --root …/midi/prefabs --media-root …/midi` | Dry-run by default; `--apply` validates every media ref, backs up the prefab tree, then writes atomically |
+| Certify ledger, manifest, files, playable notes, harmony verdicts, grooves, prefab runtime hydration/refs/counts, and cold manifest-build time | `npm run piano:producer:certify -- --media-root … --ledger … --prefabs …` | Read-only; exits nonzero on any release failure, including empty grooves, structurally invalid prefabs, role/type mismatches, refs to failed/review material, or a cold build over 5 s |
+
+The migrator reports duplicate musical content but does **not** delete it. Cleanup
+is a separate product/data-retention decision, not a migration side effect.
+
 `loop-enrich` backs up `index.yml` before writing and is idempotent (a clean
 recompute clears stale `needsReview` flags). `make-piano-prefabs` and
 `make-starter-grooves` are deterministic (no randomness). On Dropbox CloudStorage a
@@ -478,20 +570,29 @@ read failure may just be an online-only file — materialize and rerun.
 **Recorded loop** (`producer/loops/{id}.yml`)
 ```yaml
 id: <dot-free>
-kind: groove | harmonic | melodic
+schemaVersion: 2
+revision: 1
+contentHash: <sha256>
+kind: groove | chords | bass | idea | melody
 author: <userId | household>
 created: <iso>
+modified: <iso>
+title: <non-empty>
 notes: [{ ticks, durationTicks, midi, velocity }, ...]
 ppq: 480
 lengthBars: <n>
-# harmonic loops also carry timeline/timelineRoot/specificity; grooves carry drumMode
+# pitched loops may carry timeline and builder provenance; grooves carry drumMode
 ```
 
 **Crate item** (`producer/crate/{id}.yml`)
 ```yaml
 id: <dot-free>
+schemaVersion: 2
+revision: 1
+contentHash: <sha256>
 kind: stack | section
 author: <userId>
+title: <non-empty>
 lengthBars: <n>
 layers: [{ source:{kind:'library',entry}|{kind:'loop',loopId}, role, channel, gmProgram, gain, muted, soloed }, ...]
 ```
@@ -499,7 +600,11 @@ layers: [{ source:{kind:'library',entry}|{kind:'loop',loopId}, role, channel, gm
 **Song** (`producer/songs/{id}.yml`)
 ```yaml
 id: <dot-free>
+schemaVersion: 2
+revision: 1
+contentHash: <sha256>
 author: <userId>
+title: <non-empty>
 sections: [{ id, name, lengthBars, stack:[...layers] }, ...]
 carriedLayers: { <layerId>: <layer> }
 arrangement: [{ sectionId, repeats }, ...]
@@ -516,11 +621,78 @@ meta: { title?, author, keyShift, bpm }
 
 | Suite | Command | Count |
 |---|---|---|
-| Engine (pure) | `node --test shared/music/` | 204 |
-| Frontend (vitest, colocated) | `npx vitest run <path> --config vitest.config.mjs` | ~1270 across the Piano sweep |
-| API (jest) | `node --experimental-vm-modules node_modules/.bin/jest tests/isolated/api/piano-producer.test.mjs` | 26 |
-| Flow (Playwright) | `npx playwright test tests/live/flow/piano/ --reporter=line` | 1 |
+| Producer frontend (Vitest) | `cd frontend && npx vitest run src/modules/Piano/PianoKiosk/modes/Producer src/modules/Piano/PianoKiosk/producer --reporter=dot --silent` | 759 |
+| Producer lint | `cd frontend && npx eslint src/modules/Piano/PianoKiosk/modes/Producer src/modules/Piano/PianoKiosk/producer --ext js,jsx --report-unused-disable-directives --max-warnings 0` | 0 errors, 0 warnings |
+| Scheduler (node:test) | `node --test shared/music/loopScheduler.test.mjs` | 27 |
+| Schema + API (Vitest/Supertest) | `npx vitest run tests/isolated/api/piano-producer.test.mjs backend/src/3_applications/piano/{producerRecords,loopManifest}.test.mjs` | 53 |
+| Migration/prefab/catalog tools (node:test) | `node --test cli/piano-producer-migrate.cli.test.mjs cli/piano-producer-prefabs.cli.test.mjs cli/piano-producer-catalog.cli.test.mjs` | 10 |
+| Read-only runtime at 1280×800 | `npm run piano:producer:test:runtime:readonly` | 6 pass, 3 persistence checks intentionally skipped |
+| Production bundle | `npm run build --prefix frontend` | must exit 0 |
 
 `shared/music` stays pure (no React/fetch/`Date.now` in logic paths); every new
-component/hook uses the structured logger (CLAUDE.md → Logging). See the STATUS doc
-for the full task ledger and the on-device verification checklist.
+component/hook uses the structured logger (CLAUDE.md → Logging).
+
+### Seven hard release gates
+
+These are binary product gates, not estimates of code completeness. Producer
+stays out of the Piano menu until every row is **PASS**.
+
+| Gate | End-user promise | Strict exit criterion | 2026-08-10 evidence/status |
+|---|---|---|---|
+| 1. One key model | Changing key never double-transposes, silently changes the source key, or moves drums | One authoritative target-minus-source function is used by Loop, Preview, Song, save, and reload; grooves always return zero; all 144 source/target pairs pass | **PASS** — `keyModel` and exhaustive tests |
+| 2. Stable identity | Saving, reloading, or making two takes cannot accidentally merge different music | New takes have collision-resistant ids; musical content has a stable hash; same-session, reset-session, and save/reload identity tests pass | **PASS** — UUID/fallback ids plus SHA-256 content identity |
+| 3. Trustworthy household data | Every saved loop, stack, and song opens without dangling material or silent loss | Every mounted record is schema v2, graph-valid, revisioned, and hashed; every library ref resolves exactly once; migration has a verified backup; post-apply dry run reports zero changes/errors | **PASS** — all 130 mounted records were migrated backup-first; 63 stale ref occurrences were repaired; `--require-clean` exits zero with `changed: []`, no repairs, and no errors/warnings |
+| 4. Coherent first journey | A first-time player can start, audition without adding, layer, recover, and promote without guessing which screen owns the action | The 1280×800 read-only journey proves direct entry, capture Stop/paused/Resume, visible Preview/Stop, exact chord identity, layer add, guardrail, transport, tempo/key changes, and Add to song; component tests prove New/Clear/Undo and no hidden-gesture dependency | **PASS** — 6 browser checks pass; 3 write checks intentionally skipped |
+| 5. Useful builders | Chord and drum builders produce musical, editable loops instead of disconnected demos | Both support 1–16 bars, explicit Preview/Stop through the production router, dynamics/accents, deterministic commit shape, and add the result to the same Loop workspace | **PASS (automated)** — component/model/router tests pass; audible acceptance belongs to gate 7 |
+| 6. Honest starter catalog | Prefabs and search give a new player enough valid material to finish a loop and song | Ledger count equals manifest and files; every entry has playable notes; harmony failures remain visible; at least 8 grooves, 6 prefab stacks, and 3 prefab songs; every prefab hydrates through the runtime resolver with valid roles, carried refs, sections, repeats, and non-review/harmony-valid material; cold certification stays within budget; certifier exits zero | **PASS** — backup-first curation produced 7 stacks/4 songs and repaired the failed-harmony starter ref; the post-apply plan is empty and the full certifier exits zero in 1.002 s |
+| 7. Ship what was tested | The enabled tile works as one musical journey on the actual kiosk, not merely as independently testable controls | Gates 1–6 pass; bundle and lint pass; the GM probe produces an explicit voice-tier verdict; browser-synth latency/polyphony pass; the dev browser and physical SM-T590 pass every row in the acceptance record below with audible confirmation; stop/panic leaves silence; only then enable and smoke-test the menu tile | **BLOCKED EXTERNALLY** — automated prerequisites pass, but the tablet is unreachable and no explicit onboard-GM verdict exists |
+
+### Gate 7 physical acceptance record
+
+Gate 7 is a release test, not a demo. Record the date, tester, build SHA, device,
+and a short audible observation for every row. A screenshot or DOM assertion
+cannot substitute for listening, and a row cannot be waived because its isolated
+component test passed.
+
+| Journey slice | Strict PASS evidence | Current status |
+|---|---|---|
+| Hardware voice verdict | At the piano, `/piano/test/gm-probe` produces a distinct channel-2 bass voice **and** channel-10 drum map before `producer.voiceTiers.onboardGm` is set `true`; otherwise it is explicitly set `false`. An absent value is safe at runtime—`Producer.jsx` coerces it to `false`—but is not a completed probe. | **PENDING** — mounted config has no explicit verdict; do not change it before listening |
+| Browser synth fitness | On the SM-T590, `/piano/test/gm-synth` unlocks on the first tap, the piano/bass/strings overlap remains glitch-free, the drum bar is distinct, and tap-to-sound latency is acceptable for playing. | **PENDING** — requires the physical tablet and human hearing |
+| Builder audition | Build both a chord loop and drum loop; Preview is audible through the production router, Stop is immediate, repeated Preview/Stop does not stack voices, and committing each result adds the exact auditioned material to Loop. | **PENDING** — automated routing/shape checks pass; audible check remains |
+| Loop jam | In both the dev browser and SM-T590, start from a chord, add a bass with a bass voice and a groove, then exercise gain, mute, solo, transpose, tap tempo, and live piano playing while it loops. Every control must have an immediate, intelligible audible effect with no drum transposition, double transpose, phase jump, or stuck note. | **PENDING** — requires human musical-use evaluation |
+| Capture and overdub | On the tablet, arm against silence and against a running jam; record two passes; verify count-in/alignment, Undo pass, Clear, Keep, and continued looping. Touch drum pads must monitor only drums. If physical piano keys also sound the piano in drum mode, that limitation must be visibly disclosed and judged acceptable before release. | **PENDING** — the physical-key local-control behavior is not yet accepted |
+| Loop → Song journey | Add the current Loop to a song, create/fill sections, change repeats, play the arrangement, jump sections, return to Loop, and update a section. The audible layer identity and mix must survive every transition. | **PENDING** — requires audible device pass |
+| Persistence round trip | Save As creates one song; Update preserves its id and advances its revision; reload restores sections, arrangement, sources, voices, gains, key, tempo, and audible output. A forced stale update must remain a visible conflict, not overwrite. | **PENDING** — gates 3 and 6 now pass; the controlled physical write/reload/conflict check and cleanup remain |
+| Stop, panic, and teardown | Stop during Preview, Loop, Song, count-in, capture, and section transition; leave Producer and re-enter. Each path releases every browser/onboard note immediately, with no delayed or stuck sound. | **PENDING** — requires audible device pass |
+| Kiosk ergonomics and recovery | At 1280×800, all primary controls and confirmations are readable, reachable, and reliably tappable without clipping or accidental gestures. The configured screensaver device, manual screen-off confirmation, MIDI wake, and non-MIDI recovery path all work, including the disconnected-piano case. | **PENDING** — config exists, but behavior still needs on-device confirmation |
+| Menu release smoke test | Only after every earlier gate is PASS: enable the Producer menu item, enter via the tile, complete a short chord→bass→groove→song→save run, exit, and confirm silence. | **LOCKED** — `PianoMenu.jsx` intentionally remains disabled |
+
+### Current mounted certification and release boundary (2026-08-10)
+
+- Household mount: all 70 loops, 53 crate items, and 7 songs are now schema v2;
+  63 stale library-reference occurrences were repaired from unique ledger-backed
+  matches. Duplicate-content groups were reported and preserved. The backup-first
+  apply created a 130-file sibling backup, live and backup counts agree, and
+  `--require-clean` exits zero with `changed: []`, no repairs, no errors/warnings,
+  and `valid: true`.
+- Catalog: ledger 3,231 = manifest 3,231 with exact path-set parity; 1,655 chord progressions, 23 basslines,
+  1,154 melodies, 391 ideas, 8 grooves; 307 explicit harmony failures propagate
+  to the manifest; zero `needsReview`; recent strengthened-certifier builds take
+  0.57–1.34 s against a 5 s budget.
+- The mounted prefab tree now has 7 stacks and 4 songs. The backup-first apply
+  added four stacks and two songs, repaired the exact failed-harmony reference in
+  `lofi-groove-bed`, and preserved the prior six-file tree in a sibling backup.
+  A second curation dry run reports no additions or updates. The complete catalog
+  certifier exits zero with no errors or warnings and a 1.002 s cold build.
+- The entire Producer directory lint scope is zero-warning, the production bundle
+  succeeds, the schema/API suite passes 53/53, the data-tool suite passes 10/10,
+  and the read-only 1280×800 journey passes (6 checks; 3 persistence writes remain
+  intentionally skipped until the controlled physical round trip).
+- Remaining hard stops before changing `PianoMenu.jsx`: complete every Gate 7 row.
+  That includes the explicit GM capability verdict, browser-synth latency/polyphony, full
+  chord+bass+groove mix manipulation, builder audition, capture/overdub, Loop→Song,
+  persistence, stop/panic/teardown, and screensaver/touch recovery checks. Headless
+  state checks are not accepted as a substitute for hearing the audio path. The
+  tablet was rechecked from both the workstation and production container on
+  2026-08-10; neither had an ADB device and the configured tablet endpoint was
+  network-unreachable.

@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { Ti86SchoolCalcCodec } from '../../../backend/src/1_adapters/schoolcalc/ti86/Ti86SchoolCalcCodec.mjs';
+import { TI86_SCHOOLCALC_LIMITS } from '../../../backend/src/1_adapters/schoolcalc/ti86/Ti86SchoolCalcLimits.mjs';
 import {
   SCHOOLCALC_LOCAL_STATE_OFFSETS,
   SCHOOLCALC_LOCAL_STATE_BYTES,
@@ -35,7 +36,7 @@ describe('SCCAT generic Catalog runtime contract', () => {
     expect(inspected).toEqual(expect.objectContaining({
       id: 'catalog-browser', moduleCode: 3, programName: 'SCCAT', capabilities: [],
     }));
-    expect(inspected.codeByteLength).toBeLessThanOrEqual(8 * 1024);
+    expect(inspected.codeByteLength).toBeLessThanOrEqual(TI86_SCHOOLCALC_LIMITS.catalogRuntimeMaxBytes);
   });
 
   it('uses the canonical SCL1 views and fixed offsets shared with the shell', () => {

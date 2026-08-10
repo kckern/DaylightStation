@@ -10,8 +10,9 @@
  * WHAT'S IN THE SNAPSHOT: the whole `workspace` state and the `draft`. Take
  * layers embed their notes IN `workspace.layers[].source`, so recorded material
  * (not yet saved as a loop) survives verbatim. Library layers do NOT need their
- * notes snapshotted — they re-fetch by slug via the shell's ensureLayerNotes —
- * but including `notesById` makes resume instant, so we keep it WHEN IT FITS.
+ * notes snapshotted — the shell strictly preloads every missing library layer
+ * before committing a resume — but including `notesById` makes resume instant,
+ * so we keep it WHEN IT FITS.
  *
  * QUOTA SAFETY (localStorage ~5MB): a stack with many take/library notes can
  * grow the payload. We try the full snapshot (with notesById); if it exceeds

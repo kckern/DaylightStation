@@ -86,11 +86,13 @@ READ_LIMIT_DSINST:           equ 6144
 READ_LIMIT_DSQ:              equ 6144
 READ_LIMIT_DSREQ:            equ 2048
 READ_LIMIT_DSTREQ:           equ 512
+READ_LIMIT_DSENTRY:          equ 64
 WRITE_LIMIT_DSUSRNEW:        equ 512
 WRITE_LIMIT_DSCATNEW:        equ 5832
 WRITE_LIMIT_DSACKNEW:        equ 544
 WRITE_LIMIT_DSSYNC:          equ 6144
 WRITE_LIMIT_DSTNEW:          equ 2048
+WRITE_LIMIT_DSSTDNEW:        equ 512
 WRITE_LIMIT_ARTIFACT:        equ 12288
 
 org _asm_exec_ram
@@ -172,6 +174,8 @@ sync_reset_session:
         ld (sync_direction),a
         ld (sync_items_completed),a
         ld (sync_items_total),a
+        ld (sync_wait_phase),a
+        ld (sync_wait_divider),a
         ld hl,0
         ld (sync_transfer_offset),hl
         ret
@@ -559,6 +563,10 @@ sync_select_read_limit:
         ld hl,sync_ascii_dstreq
         call sync_name_equals
         jr z,sync_read_limit_dstreq
+        ld a,7
+        ld hl,sync_ascii_dsentry
+        call sync_name_equals
+        jr z,sync_read_limit_dsentry
         jp sync_name_not_allowed
 sync_read_limit_dsid:
         ld hl,READ_LIMIT_DSID
@@ -577,6 +585,9 @@ sync_read_limit_dsreq:
         jr sync_store_name_limit
 sync_read_limit_dstreq:
         ld hl,READ_LIMIT_DSTREQ
+        jr sync_store_name_limit
+sync_read_limit_dsentry:
+        ld hl,READ_LIMIT_DSENTRY
 sync_store_name_limit:
         ld (sync_name_limit),hl
         or a
@@ -603,6 +614,10 @@ sync_select_write_limit:
         ld hl,sync_ascii_dstnew
         call sync_name_equals
         jr z,sync_write_limit_interaction
+        ld a,8
+        ld hl,sync_ascii_dsstdnew
+        call sync_name_equals
+        jr z,sync_write_limit_study
         call sync_validate_artifact_name
         jp c,sync_name_not_allowed
         ld hl,WRITE_LIMIT_ARTIFACT
@@ -621,6 +636,9 @@ sync_write_limit_manifest:
         jr sync_store_name_limit
 sync_write_limit_interaction:
         ld hl,WRITE_LIMIT_DSTNEW
+        jr sync_store_name_limit
+sync_write_limit_study:
+        ld hl,WRITE_LIMIT_DSSTDNEW
         jr sync_store_name_limit
 
 sync_validate_artifact_name:
@@ -1813,6 +1831,9 @@ link_cancel_pressed:
 link_cancel_probe_done:
         ld a,0xFF
         out (KEY_PORT),a
+        ld a,(sync_connected)
+        or a
+        call z,sync_wait_activity_tick
         pop hl
         pop de
         pop bc
@@ -1827,6 +1848,20 @@ link_cancel_probe_done:
         ld (sync_failure_kind),a
         scf
         ret
+
+; Advance the indeterminate four-position link meter roughly once per full
+; 16-bit polling window. The motion proves the calculator is responsive while
+; the peer is absent without pretending that transfer progress has begun.
+sync_wait_activity_tick:
+        ld a,(sync_wait_divider)
+        inc a
+        ld (sync_wait_divider),a
+        ret nz
+        ld a,(sync_wait_phase)
+        inc a
+        and 3
+        ld (sync_wait_phase),a
+        jp sync_draw_wait_activity
 
 ; ---------------------------------------------------------------------------
 ; Transport-aware UI and terminal cleanup
@@ -1890,7 +1925,47 @@ sync_render_waiting:
         ld hl,sync_ui_no_transfer
         ld b,3
         ld c,33
-        jp ui_draw_text
+        call ui_draw_text
+        xor a
+        ld (sync_wait_phase),a
+        ld (sync_wait_divider),a
+        jp sync_draw_wait_activity
+
+; Moving block = searching. Once the relay answers, the connected screen and
+; determinate phase bar replace this meter; terminal screens state success or
+; failure explicitly.
+sync_draw_wait_activity:
+        call ui_mode_set
+        ld b,24
+        ld c,45
+        ld d,101
+        ld e,9
+        call ui_fill_rect
+        call ui_mode_clear
+        ld b,25
+        ld c,46
+        ld d,99
+        ld e,7
+        call ui_fill_rect
+        call ui_mode_set
+        call ui_select_compact
+        ld hl,sync_ui_activity
+        ld b,3
+        ld c,47
+        call ui_draw_text
+        ld a,(sync_wait_phase)
+        add a,a
+        add a,a
+        add a,a
+        ld b,a
+        add a,a
+        add a,b
+        add a,27
+        ld b,a
+        ld c,47
+        ld d,20
+        ld e,5
+        jp ui_fill_rect
 
 sync_render_connected:
         ld hl,sync_ui_sync
@@ -2167,6 +2242,8 @@ sync_phase:                 defb 0
 sync_direction:             defb 0
 sync_items_completed:       defb 0
 sync_items_total:           defb 0
+sync_wait_phase:            defb 0
+sync_wait_divider:          defb 0
 sync_complete_code:         defb 0
 sync_chunk_bytes:           defw SCF_CHUNK_BYTES
 sync_chunk_length:          defw 0
@@ -2237,11 +2314,13 @@ sync_ascii_dsinst:          defb "DSINST"
 sync_ascii_dsq:             defb "DSQ"
 sync_ascii_dsreq:           defb "DSREQ"
 sync_ascii_dstreq:          defb "DSTREQ"
+sync_ascii_dsentry:         defb "DSENTRY"
 sync_ascii_dsusrnew:        defb "DSUSRNEW"
 sync_ascii_dscatnew:        defb "DSCATNEW"
 sync_ascii_dsacknew:        defb "DSACKNEW"
 sync_ascii_dssync:          defb "DSSYNC"
 sync_ascii_dstnew:          defb "DSTNEW"
+sync_ascii_dsstdnew:        defb "DSSTDNEW"
 
 sync_ui_sync:               defb "SchoolCalc",0
 sync_ui_waiting:            defb "Sync",0
@@ -2249,9 +2328,10 @@ sync_ui_cable:              defb "CABLE",0
 sync_ui_linked:             defb "LINKED",0
 sync_ui_done:               defb "DONE",0
 sync_ui_stopped:            defb "STOP",0
-sync_ui_checking:           defb "Cable: checking...",0
-sync_ui_wait_relay:         defb "Relay: waiting",0
-sync_ui_no_transfer:        defb "No data moving",0
+sync_ui_checking:           defb "CONNECT RELAY",0
+sync_ui_wait_relay:         defb "WAITING FOR LINK",0
+sync_ui_no_transfer:        defb "EXIT PAUSES SAFELY",0
+sync_ui_activity:           defb "LINK",0
 sync_ui_connected:          defb "Cable: connected",0
 sync_ui_verified:           defb "Relay: verified",0
 sync_ui_negotiated:         defb "Session negotiated",0

@@ -209,6 +209,16 @@ export function agendaDocument({
     if (!next || typeof next !== 'object') return;
     const nextTitle = next.title || next.unitId;
     const label = isNonEmptyString(next.actionLabel) ? `${nextTitle} — ${next.actionLabel}` : nextTitle;
+    if (next.schoolcalcHandoff?.eligible) {
+      blocks.push(text(nextTitle));
+      if (isNonEmptyString(next.schoolcalcHandoff.displayCode)) {
+        blocks.push(text(next.schoolcalcHandoff.displayCode));
+        blocks.push(text('Enter on calculator.'));
+      } else {
+        blocks.push(text('Calculator eligible — code issued when printed.'));
+      }
+      return;
+    }
     const token = tokensBySubject?.[section.subject];
     if (isNonEmptyString(token)) {
       // `icon` names the subject's shelf icon (the nine School-home SVGs);
@@ -220,7 +230,10 @@ export function agendaDocument({
   });
 
   appendNoteLines(blocks, noteLines);
-  blocks.push(text(footer || 'Scan a line above to start. Scan your card any time for a new list.'));
+  const hasCalculator = offered.some((section) => section.next?.schoolcalcHandoff?.eligible);
+  blocks.push(text(footer || (hasCalculator
+    ? 'Enter calculator codes. Scan any other line above to start.'
+    : 'Scan a line above to start. Scan your card any time for a new list.')));
   return receipt(`agenda-${slugify(learnerId, 'learner')}`, blocks, { title });
 }
 

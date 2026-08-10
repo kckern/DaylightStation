@@ -15,6 +15,7 @@ export const COMMAND_TYPES = Object.freeze({
   START_CHALLENGE: 'start_challenge',
   SUBMIT_CHALLENGE_RESULT: 'submit_challenge_result',
   ABORT_PENDING_ACTION: 'abort_pending_action',
+  ABANDON_SESSION: 'abandon_session',
 });
 
 export const CHALLENGE_STATES = Object.freeze({

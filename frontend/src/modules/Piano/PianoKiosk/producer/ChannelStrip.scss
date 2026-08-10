@@ -1,4 +1,4 @@
-// ChannelStrip — DAW-grade touch-first mixer row (design §7 Mix view).
+// ChannelStrip — touch-first mixer row in the Loop view.
 // Also styles GainStrip and the VoicePicker drawer: they only ever render
 // inside a channel strip, so their styles ride along here (same pattern as
 // Producer.scss owning its band components). Dark stage, Roboto Condensed,

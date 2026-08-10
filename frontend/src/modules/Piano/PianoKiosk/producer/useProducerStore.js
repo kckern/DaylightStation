@@ -24,7 +24,8 @@
  * the song). loadSong reverses it — fetch each referenced loop and rebuild the
  * embedded-note take source — so the HYDRATEd draft plays identically. Library
  * layers keep `{ kind:'library', entry }` verbatim (the entry re-fetches notes
- * by slug via the shell's ensureLayerNotes; the store never touches lib).
+ * by path via the shell's all-or-nothing note preloader; the store never
+ * touches the library API).
  *
  * The Crate uses the SAME take→loop rewrite: a kept stack/section with a
  * recorded layer stores loop refs, not inline notes (design §6: "recorded loops
@@ -35,6 +36,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { DaylightAPI } from '../../../../lib/api.mjs';
 import getLogger from '../../../../lib/logging/Logger.js';
 import { usePianoUser } from '../PianoUserContext.jsx';
+import { takeContentHash } from './producerIdentity.js';
 
 const BASE = 'api/v1/piano/producer';
 const FAMILIES = ['loops', 'crate', 'songs'];
@@ -50,6 +52,10 @@ function lightOf(family, rec) {
     kind: rec.kind ?? null,
     author: rec.author ?? null,
     created: rec.created ?? null,
+    modified: rec.modified ?? null,
+    revision: rec.revision ?? 1,
+    schemaVersion: rec.schemaVersion ?? null,
+    contentHash: rec.contentHash ?? null,
   };
   if (rec.title != null) light.title = rec.title;
   if (typeof rec.favorite === 'boolean') light.favorite = rec.favorite;
@@ -71,7 +77,7 @@ function lightOf(family, rec) {
 /** Build a `/producer/loops` POST body from a take-sourced workspace layer.
  * Notes live in the layer's source; kind/specificity/drumMode surface at the
  * top level so the light listing (and the guardrails) can read them. */
-function loopBodyFromLayer(layer, author) {
+async function loopBodyFromLayer(layer, author) {
   const src = layer.source;
   const body = {
     author,
@@ -79,6 +85,7 @@ function loopBodyFromLayer(layer, author) {
     notes: src.notes,
     ppq: src.ppq ?? 480,
     lengthBars: src.lengthBars,
+    sourceTakeId: src.takeId,
   };
   if (src.timeline) {
     body.timeline = src.timeline;
@@ -86,6 +93,8 @@ function loopBodyFromLayer(layer, author) {
     if (src.timeline.specificity != null) body.specificity = src.timeline.specificity;
   }
   if (src.drumMode != null) body.drumMode = !!src.drumMode;
+  if (src.builder != null) body.builder = src.builder;
+  body.contentHash = await takeContentHash(src, body.kind);
   return body;
 }
 
@@ -108,8 +117,11 @@ function takeSourceFromLoop(loop) {
     ppq: loop.ppq ?? 480,
     lengthBars: loop.lengthBars,
     drumMode: !!loop.drumMode,
+    persistedLoopId: loop.id,
+    persistedContentHash: loop.contentHash ?? null,
   };
   if (loop.timeline) src.timeline = loop.timeline;
+  if (loop.builder) src.builder = loop.builder;
   return src;
 }
 
@@ -147,12 +159,22 @@ export function useProducerStore() {
       const results = await Promise.all(FAMILIES.map((f) => DaylightAPI(`${BASE}/${f}`)));
       if (!mountedRef.current) return;
       const next = { loops: [], crate: [], songs: [] };
+      const invalidRecords = [];
       FAMILIES.forEach((f, i) => {
-        next[f] = Array.isArray(results[i]?.items) ? results[i].items : [];
+        if (!Array.isArray(results[i]?.items)) throw new Error(`Invalid ${f} list response`);
+        next[f] = results[i].items;
+        for (const invalid of (Array.isArray(results[i].invalidRecords) ? results[i].invalidRecords : [])) {
+          invalidRecords.push({ family: f, id: invalid.id, errors: invalid.errors });
+        }
       });
       setLists(next);
+      if (invalidRecords.length) {
+        setError(`${invalidRecords.length} saved ${invalidRecords.length === 1 ? 'item is' : 'items are'} unavailable because the data needs repair.`);
+        logger.error('piano.producer.store.invalid-records', { records: invalidRecords });
+      }
       logger.info('piano.producer.store.lists', {
         loops: next.loops.length, crate: next.crate.length, songs: next.songs.length,
+        invalidRecords: invalidRecords.length,
       });
     } catch (err) {
       if (!mountedRef.current) return;
@@ -169,7 +191,8 @@ export function useProducerStore() {
     return () => { mountedRef.current = false; };
   }, [refresh]);
 
-  /** GET :id with a session cache (full records are immutable once created). */
+  /** GET :id with a session cache. Create/update/rename/delete paths keep the
+   * cached record synchronized with the API response. */
   const fetchFull = useCallback(async (family, id) => {
     const key = `${family}:${id}`;
     if (fullCache.current.has(key)) return fullCache.current.get(key);
@@ -183,7 +206,16 @@ export function useProducerStore() {
     const rec = await DaylightAPI(`${BASE}/${family}`, body, 'POST');
     fullCache.current.set(`${family}:${rec.id}`, rec);
     if (mountedRef.current) {
-      setLists((prev) => ({ ...prev, [family]: [...prev[family], lightOf(family, rec)] }));
+      setLists((prev) => {
+        const light = lightOf(family, rec);
+        const exists = prev[family].some((item) => item.id === rec.id);
+        return {
+          ...prev,
+          [family]: exists
+            ? prev[family].map((item) => (item.id === rec.id ? light : item))
+            : [...prev[family], light],
+        };
+      });
     }
     return rec;
   }, []);
@@ -197,11 +229,19 @@ export function useProducerStore() {
     for (const layer of (layers || [])) {
       if (layer?.source?.kind === 'take') {
         const takeId = layer.source.takeId;
-        let loopId = loopIdByTakeId.get(takeId);
+        if (layer.source.persistedLoopId) {
+          out.push({ ...layer, source: { kind: 'loop', loopId: layer.source.persistedLoopId } });
+          continue;
+        }
+        const body = await loopBodyFromLayer(layer, authorRef.current);
+        // Legacy sessions reused `take-1`; contentHash prevents two different
+        // takes with that old id from aliasing inside one crystallization.
+        const persistenceKey = `${takeId}:${body.contentHash}`;
+        let loopId = loopIdByTakeId.get(persistenceKey);
         if (!loopId) {
-          const rec = await create('loops', loopBodyFromLayer(layer, authorRef.current));
+          const rec = await create('loops', body);
           loopId = rec.id;
-          loopIdByTakeId.set(takeId, loopId);
+          loopIdByTakeId.set(persistenceKey, loopId);
           logger.info('piano.producer.store.take-persisted', { takeId, loopId, role: layer.role });
         }
         out.push({ ...layer, source: { kind: 'loop', loopId } });
@@ -213,8 +253,8 @@ export function useProducerStore() {
   }, [create, logger]);
 
   const saveLoop = useCallback(async (take, { title } = {}) => {
-    // A raw keep()/take → loop record (the CaptureCard "Keep to Crate" path).
-    const body = loopBodyFromLayer(
+    // A raw keep()/take → loop record (the CaptureCard "Keep to My Loops" path).
+    const body = await loopBodyFromLayer(
       { source: take, role: take.kind === 'groove' ? 'groove' : (take.kind ?? 'idea') },
       authorRef.current,
     );
@@ -238,7 +278,9 @@ export function useProducerStore() {
     return rec;
   }, [create, persistTakes, logger]);
 
-  const saveSong = useCallback(async (draft, { title } = {}) => {
+  const saveSong = useCallback(async (draft, {
+    title, id = null, revision = null, saveAs = false,
+  } = {}) => {
     if (!draft || !Array.isArray(draft.sections)) throw new Error('saveSong: no draft');
     const loopIdByTakeId = new Map();
     // Rewrite take layers → loop refs across every section + the carried pool.
@@ -253,7 +295,9 @@ export function useProducerStore() {
     }
     // No text input in the kiosk — every save gets a default timestamped name
     // (e.g. "Song 2026-07-12 14:30") unless the draft already carries a title.
-    const finalTitle = title || draft.meta?.title || defaultSongTitle();
+    const finalTitle = title
+      || (saveAs && id && draft.meta?.title ? `${draft.meta.title} copy` : draft.meta?.title)
+      || defaultSongTitle();
     const meta = { ...draft.meta, title: finalTitle };
     const body = {
       author: authorRef.current,
@@ -263,9 +307,25 @@ export function useProducerStore() {
       meta,
     };
     if (meta.title) body.title = meta.title;
-    const rec = await create('songs', body);
+    let rec;
+    if (id && !saveAs) {
+      rec = await DaylightAPI(`${BASE}/songs/${id}`, {
+        ...body,
+        expectedRevision: revision,
+      }, 'PATCH');
+      fullCache.current.set(`songs:${id}`, rec);
+      if (mountedRef.current) {
+        setLists((prev) => ({
+          ...prev,
+          songs: prev.songs.map((item) => (item.id === id ? lightOf('songs', rec) : item)),
+        }));
+      }
+    } else {
+      rec = await create('songs', body);
+    }
     logger.info('piano.producer.store.save-song', {
-      id: rec.id, sections: sections.length, takesPersisted: loopIdByTakeId.size,
+      id: rec.id, mode: id && !saveAs ? 'update' : 'save-as',
+      sections: sections.length, takesPersisted: loopIdByTakeId.size,
     });
     return rec;
   }, [create, persistTakes, logger]);
@@ -282,15 +342,16 @@ export function useProducerStore() {
     // Fetch the referenced loops (deduped) so takes get their notes back.
     const loopById = new Map();
     await Promise.all([...loopIds].map(async (lid) => {
-      try { loopById.set(lid, await fetchFull('loops', lid)); }
-      catch (err) { logger.warn('piano.producer.store.loop-ref-missing', { loopId: lid, error: err.message }); }
+      try {
+        loopById.set(lid, await fetchFull('loops', lid));
+      } catch (err) {
+        logger.error('piano.producer.store.loop-ref-invalid', { owner: 'song', id, loopId: lid, error: err.message });
+        throw new Error('Saved song is incomplete because one of its loops is unavailable.');
+      }
     }));
     const rebuild = (layers) => (layers || []).map((l) => {
       if (l?.source?.kind !== 'loop') return l;
       const loop = loopById.get(l.source.loopId);
-      // A missing loop leaves the ref intact — the layer plays silently rather
-      // than crashing the load (toSchedulerInputs omits notes-less layers).
-      if (!loop) return l;
       return { ...l, source: takeSourceFromLoop(loop) };
     });
     const sections = (rec.sections || []).map((s) => ({ ...s, stack: rebuild(s.stack) }));
@@ -307,7 +368,12 @@ export function useProducerStore() {
     logger.info('piano.producer.store.load-song', {
       id: rec.id, sections: sections.length, loopsResolved: loopById.size,
     });
-    return { id: rec.id, draft };
+    return {
+      id: rec.id,
+      revision: rec.revision ?? 1,
+      title: rec.title ?? rec.meta?.title ?? null,
+      draft,
+    };
   }, [fetchFull, logger]);
 
   /** Raw full-record access (cached) — used by the 'Ours' library facet to
@@ -322,13 +388,17 @@ export function useProducerStore() {
     (layers || []).forEach((l) => { if (l?.source?.kind === 'loop') loopIds.add(l.source.loopId); });
     const loopById = new Map();
     await Promise.all([...loopIds].map(async (lid) => {
-      try { loopById.set(lid, await fetchFull('loops', lid)); }
-      catch (err) { logger.warn('piano.producer.store.loop-ref-missing', { loopId: lid, error: err.message }); }
+      try {
+        loopById.set(lid, await fetchFull('loops', lid));
+      } catch (err) {
+        logger.error('piano.producer.store.loop-ref-invalid', { owner: 'crate', loopId: lid, error: err.message });
+        throw new Error('Saved stack is incomplete because one of its loops is unavailable.');
+      }
     }));
     return (layers || []).map((l) => {
       if (l?.source?.kind !== 'loop') return l;
       const loop = loopById.get(l.source.loopId);
-      return loop ? { ...l, source: takeSourceFromLoop(loop) } : l;
+      return { ...l, source: takeSourceFromLoop(loop) };
     });
   }, [fetchFull, logger]);
 

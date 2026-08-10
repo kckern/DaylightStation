@@ -186,6 +186,8 @@ scstate_require_length:
         ret
 
 scstate_save:
+        xor a
+        ld (scstate_failure),a
         ld hl,(scstate_record + SCSTATE_GENERATION_OFFSET)
         ld de,(scstate_record + SCSTATE_GENERATION_OFFSET + 2)
         inc hl
@@ -197,7 +199,7 @@ scstate_save:
         inc de
         ld a,d
         or e
-        jr z,scstate_save_fail
+        jr z,scstate_save_fail_generation
 scstate_generation_ready:
         ld (scstate_record + SCSTATE_GENERATION_OFFSET),hl
         ld (scstate_record + SCSTATE_GENERATION_OFFSET + 2),de
@@ -228,7 +230,7 @@ scstate_target_ready:
         ld de,SCSTATE_RECORD_BYTES + 32
         or a
         sbc hl,de
-        jr c,scstate_save_fail
+        jr c,scstate_save_fail_memory
 scstate_memory_ready:
         ld hl,(scstate_target_descriptor)
         rst 0x20
@@ -248,13 +250,26 @@ scstate_memory_ready:
         ld hl,(scstate_target_descriptor)
         ld de,scstate_scl1_magic
         call sc_envelope_open
-        jr c,scstate_save_fail
+        jr c,scstate_save_fail_verify
         call scstate_require_length
-        jr c,scstate_save_fail
+        jr c,scstate_save_fail_length
         ld a,(scstate_target_slot)
         ld (scstate_active_slot),a
         or a
         ret
+scstate_save_fail_generation:
+        ld a,6
+        jr scstate_save_failed_with_code
+scstate_save_fail_memory:
+        ld a,7
+        jr scstate_save_failed_with_code
+scstate_save_fail_verify:
+        ld a,8
+        jr scstate_save_failed_with_code
+scstate_save_fail_length:
+        ld a,9
+scstate_save_failed_with_code:
+        ld (scstate_failure),a
 scstate_save_fail:
         scf
         ret

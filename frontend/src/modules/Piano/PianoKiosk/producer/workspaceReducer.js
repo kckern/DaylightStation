@@ -35,6 +35,8 @@
  * reads it.
  */
 
+import { transposeToTargetKey } from './keyModel.js';
+
 export const DRUM_CHANNEL = 9;
 
 const BPM_MIN = 40;
@@ -78,6 +80,7 @@ export const ActionTypes = Object.freeze({
   TOGGLE_METRONOME: 'TOGGLE_METRONOME',
   LOAD_STACK: 'LOAD_STACK',
   CLEAR: 'CLEAR',
+  RESTORE: 'RESTORE',
   SET_EDITING_SECTION: 'SET_EDITING_SECTION',
 });
 
@@ -310,6 +313,13 @@ export function workspaceReducer(state, action) {
       // jam, and a stale tempo is as much leftover as a stale layer.
       return initialWorkspace;
 
+    case ActionTypes.RESTORE:
+      // Component-owned Undo feeds only snapshots previously produced by this
+      // reducer. Clone the shell so a restored state never aliases the stack.
+      return action.snapshot && Array.isArray(action.snapshot.layers)
+        ? { ...action.snapshot, layers: action.snapshot.layers.slice(), lastError: null }
+        : state;
+
     case ActionTypes.SET_EDITING_SECTION:
       return { ...state, editingSectionId: action.id ?? null, lastError: null };
 
@@ -336,6 +346,7 @@ export const loadStack = ({ layers, bpm, keyShift, lengthBars, editingSectionId 
   { type: ActionTypes.LOAD_STACK, layers, bpm, keyShift, lengthBars, editingSectionId }
 );
 export const clearWorkspace = () => ({ type: ActionTypes.CLEAR });
+export const restoreWorkspace = (snapshot) => ({ type: ActionTypes.RESTORE, snapshot });
 export const setEditingSection = (id) => ({ type: ActionTypes.SET_EDITING_SECTION, id });
 
 /**
@@ -412,16 +423,11 @@ export function toTransportLayers(state, loadedNotes = {}) {
         ? { notes: layer.source.notes, ppq: layer.source.ppq, barSpan: layer.source.lengthBars }
         : null);
     if (!loaded?.notes?.length) continue;
-    // Each library brick is in its OWN key; entry.tonicPc is the pc its "I"
-    // sounds. Transpose by (keyShift − tonicPc) so the loop's tonic lands on the
-    // jam key ("I" in key C sounds C), not the brick's stored key. Takes are
-    // already canonical (tonic 0); grooves never transpose.
-    const tonicPc = layer.source?.kind === 'library' ? (layer.source.entry?.tonicPc || 0) : 0;
     out.push({
       notes: loaded.notes,
       ppq: loaded.ppq,
       barSpan: loaded.barSpan,
-      transpose: layer.role === 'groove' ? 0 : (state.keyShift - tonicPc),
+      transpose: transposeToTargetKey(layer, state.keyShift),
       muted: effectiveMuted(state, layer.id),
       channel: layer.channel,
       gain: layer.gain,

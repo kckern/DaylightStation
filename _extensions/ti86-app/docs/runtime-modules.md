@@ -1,5 +1,19 @@
 # SchoolCalc TI-86 runtime modules
 
+## Adaptive Study v1 release boundary
+
+The default v1 installation contains only `SCHLCALC`, adaptive `SCLEARN`,
+`SCQUEUE`, `SCQR`, `SCSYNC`, `DSID`, and the `ASCHL` launcher. `SCLEARN`
+reopens immutable `DSSTUDY/SCSP` plus its pinned `SCP1` artifact and owns one
+45-byte `SCL1` continuation. `SCQUEUE` emits compact adaptive `SCR1`; `SCQR`
+renders it as Version-5/M; `SCSYNC` resolves `DSENTRY/SCE1` by committing an
+optional artifact, then `DSSTDNEW`, then `DSSYNC` last.
+
+The broader registry and call graph below document retained v0 infrastructure.
+`SCCAT`, `SCREQ`, `SCNATIVE`, `SCPROF`, and `SCTUTOR` remain buildable source
+but are omitted from the default installation and unreachable from the active
+learner route.
+
 ## Decision
 
 The TI-86 client uses TI-OS assembly modules to keep the resident shell within

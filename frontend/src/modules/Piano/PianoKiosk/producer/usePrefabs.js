@@ -10,8 +10,8 @@
  * ({ stacks:[…], songs:[…] } with id/title/author/kind + a count); per-item
  * payloads live at `midi/prefabs/{stacks,songs}/{id}.yml` and load on demand.
  * This mirrors useLoopLibrary's index-then-lazy-payload pattern exactly, and
- * the stream route already serves arbitrary media subpaths (loops/index.yml is
- * fetched the same way), so no backend change was needed.
+ * the stream route already serves arbitrary media subpaths, so no backend
+ * change was needed.
  *
  * Slug→entry RESOLUTION is NOT this hook's job: it returns raw payloads via
  * getFull; prefabHydrate.resolvePrefab{Stack,Song} turns their library refs

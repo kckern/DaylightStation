@@ -23,12 +23,18 @@ import {
   decodeTi86InteractionResponse,
   decodeTi86ProgressProjection,
   decodeTi86ResultQueueRecord,
+  decodeTi86StudyAcknowledgement,
+  decodeTi86StudyEntry,
+  decodeTi86StudyPrescription,
   decodeTi86SyncManifest,
   encodeTi86DeliveryRequests,
   encodeTi86DeviceInfo,
   encodeTi86InteractionRequest,
   encodeTi86ResultQueue,
   encodeTi86ResultRecord,
+  encodeTi86StudyAcknowledgement,
+  encodeTi86StudyEntry,
+  encodeTi86StudyPrescription,
 } from '../../../../backend/src/1_adapters/schoolcalc/ti86/Ti86SchoolCalcCodec.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -105,7 +111,7 @@ async function run(options) {
       provisioning: {
         emulator: 'MAME TI-86', transport: 'virtual Graph Link',
         releaseId: release.manifest.releaseId,
-        transferred: ['complete release bundle', 'DSID', 'DSINFO', 'DSINST', 'DSQ', 'DSREQ', 'DSTREQ'],
+        transferred: ['complete release bundle', 'DSID', 'DSINFO', 'DSINST', 'DSQ', 'DSREQ', 'DSTREQ', 'DSENTRY'],
       },
       foregroundProgram: { name: sync.name, codeBytes: sync.code.length },
       keyboard: {
@@ -116,8 +122,8 @@ async function run(options) {
         semanticSession: semanticRelay,
         rawForegroundState: complete.state,
         phaseAcks: Number(complete.phaseAcks),
-        inputs: ['DSID', 'DSINFO', 'DSINST', 'DSQ', 'DSREQ', 'DSTREQ'],
-        writes: ['DSUSRNEW', 'DSPRGNEW', 'DSTNEW', 'DSCATNEW', 'DP7L3CWY', 'DSACKNEW', 'DSSYNC'],
+        inputs: ['DSID', 'DSINFO', 'DSINST', 'DSQ', 'DSREQ', 'DSTREQ', 'DSENTRY'],
+        writes: ['DPKW3GZA', 'DSSTDNEW', 'DSSYNC'],
         calculatorEvents: Number(complete.calculatorEvents),
         relayEvents: Number(complete.relayEvents),
       },
@@ -385,6 +391,15 @@ export function createSemanticFixture(runPath) {
   const codec = new Ti86SchoolCalcCodec();
   const deviceId = '86A001';
   const artifact = codec.compile(semanticLesson());
+  const prescription = {
+    schema: 'school.calc.study-prescription/v1',
+    deviceId, requestId: 77, sessionCode: '001234', prescriptionId: 'virtual-study-1',
+    studySessionId: 'study-virtual', learnerKey: 4, artifactId: artifact.artifactId,
+    artifactVariableName: artifact.variableName, artifactByteLength: artifact.byteLength,
+    artifactDigest: artifact.byteDigest, requiredClientVersion: 1,
+    cardCount: 1, itemCount: 1, maxExposuresPerCard: 4, passingPercent: 80,
+    bankRevision: 'virtual-bank-v1',
+  };
   const records = [
     ['DSID', codec.encodeDeviceIdentity({ deviceId })],
     ['DSINFO', encodeTi86DeviceInfo({
@@ -412,6 +427,7 @@ export function createSemanticFixture(runPath) {
       action: 'choice', sessionId: 'REM_ABC123', clientSequence: 1, lastServerSequence: 1,
       turnId: 'TURN_1', choiceId: 'A',
     })],
+    ['DSENTRY', encodeTi86StudyEntry({ deviceId, requestId: 77, sixDigitCode: '001234' })],
   ];
   const outputs = [
     ['SCA1', codec.encodeAcknowledgements({ deviceId, sequences: [17, 18] })],
@@ -435,6 +451,12 @@ export function createSemanticFixture(runPath) {
       generation: 'sha256:tilem-catalog-v1', catalogs: [{ catalogId: 'main', title: 'Main', subjects: [] }],
     })],
     ['SCP1', artifact.bytes],
+    ['SCSP', encodeTi86StudyPrescription(prescription)],
+    ['SCSA', encodeTi86StudyAcknowledgement({
+      schema: 'school.calc.study-acknowledgement/v1', deviceId, requestId: 77,
+      sessionCode: '001234', prescriptionId: prescription.prescriptionId,
+      artifactId: artifact.artifactId, prescriptionDigest: 'cd'.repeat(32),
+    })],
   ];
   verifySemanticFixture({ codec, deviceId, artifact, records, outputs });
   const directory = path.join(runPath, 'semantic-fixture');
@@ -463,6 +485,12 @@ function semanticLesson() {
     lesson: {
       lessonId: 'compound-growth', title: 'Compound growth', objectives: ['Compare growth'],
       modules: [{
+        moduleId: 'study', type: 'flashcards', bankId: 'finance:compound-check',
+        bank: { id: 'finance:compound-check', title: 'Check', items: [{
+          id: 'q1', type: 'multiple_choice', prompt: 'Which grows?',
+          choices: ['Principal', 'Principal plus interest'], answer: 'Principal plus interest',
+        }] },
+      }, {
         moduleId: 'quiz', type: 'quiz', bankId: 'finance:compound-check', passingPercent: 80,
         bank: { id: 'finance:compound-check', title: 'Check', items: [{
           id: 'q1', type: 'multiple_choice', prompt: 'Which grows?',
@@ -470,7 +498,7 @@ function semanticLesson() {
         }] },
       }],
     },
-    capabilities: ['quiz@1', 'response.choice@1'],
+    capabilities: ['flashcards@1', 'quiz@1', 'response.choice@1'],
   };
 }
 
@@ -502,6 +530,7 @@ function verifySemanticFixture({ codec, deviceId, artifact, records, outputs }) 
       || queuedResults.map((result) => `${result.deviceId}:${result.artifactId}:${result.sequence}:${result.kind}`).join(',')
         !== `86A001:${artifact.artifactId}:17:responses,86A001:${artifact.artifactId}:18:progress`
       || decodeTi86InteractionRequest(byName.get('DSTREQ')).requestId !== 23
+      || decodeTi86StudyEntry(byName.get('DSENTRY')).sixDigitCode !== '001234'
       || codec.decodeDeliveryRequests(byName.get('DSREQ')).requests[0].requestId !== 7) {
     throw new Error('semantic TilEm fixture did not round-trip through the production TI-86 codec');
   }
@@ -511,7 +540,9 @@ function verifySemanticFixture({ codec, deviceId, artifact, records, outputs }) 
       || decodeTi86ProgressProjection(output.get('SCG1')).profiles[0].summary.scorePercent !== 100
       || decodeTi86InteractionResponse(output.get('SCTR')).requestId !== 23
       || decodeTi86Envelope(output.get('SCC1'), 'SCC1').generation !== 'sha256:tilem-catalog-v1'
-      || decodeTi86Envelope(output.get('SCP1'), 'SCP1').artifactId !== artifact.artifactId) {
+      || decodeTi86Envelope(output.get('SCP1'), 'SCP1').artifactId !== artifact.artifactId
+      || decodeTi86StudyPrescription(output.get('SCSP')).sessionCode !== '001234'
+      || decodeTi86StudyAcknowledgement(output.get('SCSA')).requestId !== 77) {
     throw new Error('semantic TilEm responses did not round-trip through the production TI-86 codec');
   }
 }

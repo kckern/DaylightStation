@@ -6,6 +6,7 @@ import {
   ActionTypes,
   promote,
   hydrate,
+  resetDraft,
   applyTemplate,
   slotFill,
   openSection,
@@ -28,7 +29,7 @@ import {
   sectionGlyphSeeds,
 } from './draftReducer.js';
 import { STRUCTURE_TEMPLATES } from './structureTemplates.js';
-import { seedFor } from './MaterialGlyph.jsx';
+import { seedFor } from './materialGlyphModel.js';
 import { compileArrangement } from '@shared-music/arrangementScheduler.mjs';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -120,6 +121,12 @@ describe('initial state', () => {
 
   it('unknown action on null returns null', () => {
     expect(draftReducer(null, { type: 'NOPE' })).toBeNull();
+  });
+
+  it('RESET discards a materialized song and is idempotent on null', () => {
+    const materialized = run(promote({ workspaceState: ws([wsLayer(CHORDS_A, 'chords', 0)]) }));
+    expect(draftReducer(materialized, resetDraft())).toBeNull();
+    expect(draftReducer(null, resetDraft())).toBeNull();
   });
 
   it('every verb except PROMOTE is a no-op on null (draft materializes only by promotion or song load)', () => {
@@ -806,6 +813,13 @@ describe('toSchedulerInputs', () => {
     ]);
   });
 
+  it('uses the same source-tonic-to-target-key rule as Loop playback', () => {
+    const layer = wsLayer(CHORDS_A, 'chords', 0);
+    layer.source.entry.tonicPc = 5;
+    const draft = run(promote({ workspaceState: ws([layer], { keyShift: 2 }), notesById }));
+    expect(toSchedulerInputs(draft, notesById).sections[0].stack[0].transpose).toBe(-3);
+  });
+
   it('omits layers with no loaded notes (they join once notes arrive)', () => {
     const { sections } = toSchedulerInputs(twoSectionDraft(), { [GROOVE]: notesById[GROOVE] });
     expect(sections[0].stack).toHaveLength(1);
@@ -1113,6 +1127,7 @@ describe('action creators', () => {
     const samples = [
       promote({ workspaceState: ws([]) }),
       hydrate({ sections: [], arrangement: [] }),
+      resetDraft(),
       applyTemplate(POP, ws([])),
       slotFill({ sectionId: 'sec-1', workspaceState: ws([]) }),
       openSection('sec-1'),

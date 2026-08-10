@@ -76,6 +76,8 @@ public:
   bool syncCalled = false;
   bool catalogFetchCalled = false;
   bool artifactFetchCalled = false;
+  bool studyResolved = false;
+  bool studyArtifactIncluded = false;
   SyncRequest seenRequest{};
   std::vector<std::string> identifiedDeviceIds;
   std::vector<std::string> syncedDeviceIds;
@@ -88,6 +90,9 @@ public:
   std::vector<uint8_t> learnerRosterBytes = envelope("SCU1");
   std::vector<uint8_t> progressProjectionBytes = envelope("SCG1");
   std::vector<uint8_t> interactionResponseBytes = envelope("SCTR");
+  std::vector<uint8_t> studyPrescriptionBytes = envelope("SCSP");
+  std::vector<uint8_t> studyCommitBytes = envelope("SCSA");
+  std::vector<uint8_t> studyArtifactBytes = envelope("SCP1");
 
   bool identify(ByteView record, DeviceIdentity& identity) override {
     if (!identifyOk) { error = "identity refused"; return false; }
@@ -132,6 +137,25 @@ public:
     plan.learnerRosterLength = learnerRoster.length;
     plan.progressProjectionLength = progressProjection.length;
     plan.interactionResponseLength = interactionResponse.length;
+    if (request.studyEntry.length > 0 && studyResolved) {
+      assert(request.studyPrescriptionOutput != nullptr);
+      assert(request.studyCommitOutput != nullptr);
+      assert(request.studyArtifactOutput != nullptr);
+      fill(*request.studyPrescriptionOutput, studyPrescriptionBytes);
+      fill(*request.studyCommitOutput, studyCommitBytes);
+      plan.studyResolved = true;
+      plan.studyPrescriptionLength = request.studyPrescriptionOutput->length;
+      plan.studyCommitLength = request.studyCommitOutput->length;
+      plan.studyArtifactIncluded = studyArtifactIncluded;
+      if (studyArtifactIncluded) {
+        fill(*request.studyArtifactOutput, studyArtifactBytes);
+        strcpy(plan.studyArtifact.artifactId, "sc:ti86:ABC234DEFG");
+        strcpy(plan.studyArtifact.variableName, "DPABC234");
+        plan.studyArtifact.byteLength = static_cast<uint16_t>(studyArtifactBytes.size());
+        memset(plan.studyArtifact.byteDigest, 'b', 64);
+        plan.studyArtifact.byteDigest[64] = '\0';
+      }
+    }
     return true;
   }
 
@@ -194,6 +218,9 @@ struct Fixture {
   uint8_t acknowledgement[64]{};
   uint8_t manifest[64]{};
   uint8_t transfer[TI86_ARTIFACT_MAX_BYTES]{};
+  uint8_t studyEntry[TI86_STUDY_ENTRY_MAX_BYTES]{};
+  uint8_t studyPrescription[TI86_STUDY_PRESCRIPTION_MAX_BYTES]{};
+  uint8_t studyCommit[TI86_STUDY_COMMIT_MAX_BYTES]{};
   FakeCalculator calculator;
   FakeApi api;
   SessionBuffers buffers;
@@ -211,6 +238,9 @@ struct Fixture {
     { acknowledgement, sizeof(acknowledgement), 0 },
     { manifest, sizeof(manifest), 0 },
     { transfer, sizeof(transfer), 0 },
+    { studyEntry, sizeof(studyEntry), 0 },
+    { studyPrescription, sizeof(studyPrescription), 0 },
+    { studyCommit, sizeof(studyCommit), 0 },
   } {
     calculator.variables["DSID"] = envelope("SCI1", 1);
     calculator.variables["DSINFO"] = envelope("SCI1", 2);
@@ -261,7 +291,7 @@ static void happyPathPublishesManifestLast() {
     sawDownlink = sawDownlink || event.direction == SessionDirection::RelayToCalculator;
     sawAllInputsRead = sawAllInputsRead
       || (event.state == SessionState::ReadingInputs
-          && event.completed == 5 && event.total == 5);
+          && event.completed == 6 && event.total == 6);
     sawArtifactComplete = sawArtifactComplete
       || (event.state == SessionState::StagingArtifacts
           && event.completed == 1 && event.total == 1);
@@ -290,6 +320,33 @@ static void missingOptionalQueuesRemainValid() {
     "DSUSRNEW", "DSPRGNEW", "DSACKNEW", "DSSYNC",
   };
   assert(f.calculator.writes == expected);
+}
+
+static void adaptiveInstalledArtifactStagesPrescriptionThenCommit() {
+  Fixture f;
+  f.calculator.variables["DSENTRY"] = envelope("SCE1", 13);
+  f.api.studyResolved = true;
+  f.api.studyArtifactIncluded = false;
+  SchoolCalcRelaySession session(f.calculator, f.api, f.buffers);
+  const SessionOutcome result = session.run();
+  assert(result.ok && result.ready && result.artifactsStaged == 0);
+  assert(f.api.seenRequest.studyEntry.length > 0);
+  assert(f.calculator.writes == std::vector<std::string>({ "DSSTDNEW", "DSSYNC" }));
+  assert(f.calculator.variables["DSSTDNEW"] == f.api.studyPrescriptionBytes);
+  assert(f.calculator.variables["DSSYNC"] == f.api.studyCommitBytes);
+}
+
+static void adaptiveMissingArtifactStagesArtifactPrescriptionCommit() {
+  Fixture f;
+  f.calculator.variables["DSENTRY"] = envelope("SCE1", 14);
+  f.api.studyResolved = true;
+  f.api.studyArtifactIncluded = true;
+  SchoolCalcRelaySession session(f.calculator, f.api, f.buffers);
+  const SessionOutcome result = session.run();
+  assert(result.ok && result.ready && result.artifactsStaged == 1);
+  assert(f.calculator.writes
+         == std::vector<std::string>({ "DPABC234", "DSSTDNEW", "DSSYNC" }));
+  assert(f.calculator.variables["DPABC234"] == f.api.studyArtifactBytes);
 }
 
 static void malformedQueueNeverReachesNetwork() {
@@ -520,6 +577,8 @@ static void sequentialCalculatorsNeverShareSessionState() {
 void runSchoolCalcRelaySessionTests() {
   happyPathPublishesManifestLast();
   missingOptionalQueuesRemainValid();
+  adaptiveInstalledArtifactStagesPrescriptionThenCommit();
+  adaptiveMissingArtifactStagesArtifactPrescriptionCommit();
   malformedQueueNeverReachesNetwork();
   durableInteractionIsValidatedAndStagedIndependently();
   oversizedQueueNeverReachesNetwork();
