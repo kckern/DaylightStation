@@ -50,25 +50,33 @@ card_battle:
     major-scales:
       selection: rotate
       prompts:
-        - label: C major scale
-          key_signature: C
-          abc: C D E F G A B c
-          expected_midi: [60, 62, 64, 65, 67, 69, 71, 72]
+        - scale:
+            tonic: C
+            octave: 4
+            mode: major
+            direction: ascending
+            octaves: 1
           max_mistakes: 3
-        - label: G major scale
-          key_signature: G
-          abc: G A B c d e ^f g
-          expected_midi: [55, 57, 59, 60, 62, 64, 66, 67]
+        - scale:
+            tonic: G
+            octave: 4
+            mode: major
+            direction: ascending
+            octaves: 1
           max_mistakes: 3
-        - label: F major scale
-          key_signature: F
-          abc: F G A B c d e f
-          expected_midi: [53, 55, 57, 58, 60, 62, 64, 65]
+        - scale:
+            tonic: F
+            octave: 4
+            mode: major
+            direction: ascending
+            octaves: 1
           max_mistakes: 3
-        - label: D major scale
-          key_signature: D
-          abc: D E ^F G A B ^c d
-          expected_midi: [50, 52, 54, 55, 57, 59, 61, 62]
+        - scale:
+            tonic: D
+            octave: 4
+            mode: major
+            direction: ascending
+            octaves: 1
           max_mistakes: 3
   deck:
     - quick-cut

@@ -1,4 +1,5 @@
 import { GAMING_SCHEMA_VERSION } from './contracts.mjs';
+import { scaleSpecErrors } from '../music/pianoScale.mjs';
 
 const SAFE_ID = /^[a-z][a-z0-9-]{0,63}$/;
 
@@ -85,9 +86,10 @@ export function validateDefinition(definition) {
       if (!pool) errors.push(`card ${cardId} references unknown challenge pool: ${challenge.pool}`);
       for (const prompt of pool?.prompts || []) {
         if (challenge.kind === 'scale') {
-          const notes = prompt?.expected_midi;
-          if (!Array.isArray(notes) || notes.length < 2) errors.push(`challenge pool ${challenge.pool} has an invalid scale prompt`);
-          if (typeof prompt?.abc !== 'string' || prompt.abc.trim() === '') errors.push(`challenge pool ${challenge.pool} scale prompt requires abc`);
+          if (Object.hasOwn(prompt || {}, 'expected_midi') || Object.hasOwn(prompt || {}, 'abc')) {
+            errors.push(`challenge pool ${challenge.pool} scale prompt must use semantic scale fields, not MIDI or ABC`);
+          }
+          for (const error of scaleSpecErrors(prompt?.scale)) errors.push(`challenge pool ${challenge.pool} ${error}`);
           if (prompt?.max_mistakes !== undefined && (!Number.isInteger(prompt.max_mistakes) || prompt.max_mistakes < 1)) {
             errors.push(`challenge pool ${challenge.pool} max_mistakes must be a positive integer`);
           }
@@ -100,13 +102,10 @@ export function validateDefinition(definition) {
         errors.push(`card ${cardId} requires prompt.pitch_classes`);
       }
     } else if (challenge.kind === 'scale') {
-      const notes = challenge.prompt?.expected_midi;
-      if (!Array.isArray(notes) || notes.length < 2 || notes.some((note) => !Number.isInteger(note) || note < 0 || note > 127)) {
-        errors.push(`card ${cardId} requires prompt.expected_midi with at least two MIDI notes`);
+      if (Object.hasOwn(challenge.prompt || {}, 'expected_midi') || Object.hasOwn(challenge.prompt || {}, 'abc')) {
+        errors.push(`card ${cardId} scale prompt must use semantic scale fields, not MIDI or ABC`);
       }
-      if (typeof challenge.prompt?.abc !== 'string' || challenge.prompt.abc.trim() === '') {
-        errors.push(`card ${cardId} requires prompt.abc staff notation`);
-      }
+      for (const error of scaleSpecErrors(challenge.prompt?.scale)) errors.push(`card ${cardId} ${error}`);
     }
     const outcomes = card.outcomes;
     if (!Array.isArray(outcomes) || outcomes.length === 0 || outcomes.at(-1)?.min_score !== 0) {
