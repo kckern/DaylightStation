@@ -173,7 +173,9 @@ bool SchoolCalcHttpApi::syncBlocking(const SyncRequest& request, SyncPlan& plan,
       || (request.deliveryRequests.length > 0
           && !encodeRecord(outbound, "requestRecord", request.deliveryRequests))
       || (request.interactionRequest.length > 0
-          && !encodeRecord(outbound, "interactionRecord", request.interactionRequest))) {
+          && !encodeRecord(outbound, "interactionRecord", request.interactionRequest))
+      || (request.studyEntry.length > 0
+          && !encodeRecord(outbound, "studyEntry", request.studyEntry))) {
     return fail("not enough memory to encode sync records");
   }
   if (request.catalogGeneration != nullptr && request.catalogGeneration[0] != '\0') {
@@ -244,11 +246,65 @@ bool SchoolCalcHttpApi::syncBlocking(const SyncRequest& request, SyncPlan& plan,
   } else if (!interaction.isNull()) {
     return fail("sync response contains an unsolicited interaction response");
   }
+  plan.studyResolved = false;
+  plan.studyArtifactIncluded = false;
+  if (request.studyPrescriptionOutput == nullptr || request.studyCommitOutput == nullptr
+      || request.studyArtifactOutput == nullptr) {
+    return fail("sync request is missing adaptive study output buffers");
+  }
+  request.studyPrescriptionOutput->length = 0;
+  request.studyCommitOutput->length = 0;
+  request.studyArtifactOutput->length = 0;
+  JsonObjectConst study = inbound["study"].as<JsonObjectConst>();
+  if (request.studyEntry.length > 0) {
+    if (study.isNull()) return fail("sync response is missing study resolution state");
+    JsonObjectConst prescriptionRecord = study["prescriptionRecord"].as<JsonObjectConst>();
+    JsonObjectConst commitRecord = study["commitRecord"].as<JsonObjectConst>();
+    if (!prescriptionRecord.isNull() || !commitRecord.isNull()) {
+      if (prescriptionRecord.isNull() || commitRecord.isNull()
+          || !decodeRecord("study prescription", prescriptionRecord["encoding"] | nullptr,
+                           prescriptionRecord["data"] | nullptr,
+                           *request.studyPrescriptionOutput)
+          || !decodeRecord("study commit", commitRecord["encoding"] | nullptr,
+                           commitRecord["data"] | nullptr,
+                           *request.studyCommitOutput)) return false;
+      plan.studyResolved = true;
+      JsonObjectConst artifact = study["artifact"].as<JsonObjectConst>();
+      if (!artifact.isNull()) {
+        JsonObjectConst artifactRecord = artifact["record"].as<JsonObjectConst>();
+        const char* artifactId = artifact["artifactId"] | nullptr;
+        const char* variableName = artifact["variableName"] | nullptr;
+        const char* byteDigest = artifact["byteDigest"] | nullptr;
+        if (artifactRecord.isNull() || !artifact["byteLength"].is<unsigned int>()
+            || !copyText(artifactId, plan.studyArtifact.artifactId,
+                         sizeof(plan.studyArtifact.artifactId))
+            || !copyText(variableName, plan.studyArtifact.variableName,
+                         sizeof(plan.studyArtifact.variableName))
+            || !copyText(byteDigest, plan.studyArtifact.byteDigest,
+                         sizeof(plan.studyArtifact.byteDigest))
+            || !validSha256(plan.studyArtifact.byteDigest)
+            || !decodeRecord("study artifact", artifactRecord["encoding"] | nullptr,
+                             artifactRecord["data"] | nullptr,
+                             *request.studyArtifactOutput)) return false;
+        const unsigned long byteLength = artifact["byteLength"].as<unsigned long>();
+        if (byteLength == 0 || byteLength > 0xFFFF
+            || request.studyArtifactOutput->length != byteLength) {
+          return fail("study artifact length is outside the TI variable range");
+        }
+        plan.studyArtifact.byteLength = static_cast<uint16_t>(byteLength);
+        plan.studyArtifactIncluded = true;
+      }
+    }
+  } else if (!study.isNull()) {
+    return fail("sync response contains an unsolicited study resolution");
+  }
   plan.acknowledgementLength = acknowledgement.length;
   plan.manifestLength = manifest.length;
   plan.learnerRosterLength = learnerRoster.length;
   plan.progressProjectionLength = progressProjection.length;
   plan.interactionResponseLength = interactionResponse.length;
+  plan.studyPrescriptionLength = request.studyPrescriptionOutput->length;
+  plan.studyCommitLength = request.studyCommitOutput->length;
 
   plan.artifactCount = 0;
   if (!plan.ready) {

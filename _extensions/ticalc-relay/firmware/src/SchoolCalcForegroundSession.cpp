@@ -18,6 +18,8 @@ static bool mapPhase(SessionState state, PhaseCode& output) {
     case SessionState::StagingProfiles: output = PhaseCode::StagingProfiles; return true;
     case SessionState::StagingProgress: output = PhaseCode::StagingProgress; return true;
     case SessionState::StagingInteraction: output = PhaseCode::StagingInteraction; return true;
+    case SessionState::StagingStudyArtifact: output = PhaseCode::StagingArtifacts; return true;
+    case SessionState::StagingStudyPrescription: output = PhaseCode::StagingAcknowledgements; return true;
     case SessionState::StagingCatalog: output = PhaseCode::StagingCatalog; return true;
     case SessionState::StagingArtifacts: output = PhaseCode::StagingArtifacts; return true;
     case SessionState::StagingAcknowledgements:
