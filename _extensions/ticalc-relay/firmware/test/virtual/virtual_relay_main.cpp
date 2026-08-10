@@ -55,7 +55,7 @@ public:
     inputs_.emplace("DSREQ", readFixture(directory, "DSREQ", "SCD1"));
     inputs_.emplace("DSTREQ", readFixture(directory, "DSTREQ", "SCTQ"));
     inputs_.emplace("DSENTRY", readFixture(directory, "DSENTRY", "SCE1"));
-    expectedWrites_.emplace("DP7L3CWY", readFixture(directory, "SCP1", "SCP1"));
+    expectedWrites_.emplace("DPKW3GZA", readFixture(directory, "SCP1", "SCP1"));
     expectedWrites_.emplace("DSSTDNEW", readFixture(directory, "SCSP", "SCSP"));
     expectedWrites_.emplace("DSSYNC", readFixture(directory, "SCSA", "SCSA"));
   }
@@ -73,7 +73,7 @@ public:
 
   bool write(const char* name, ByteView payload) override {
     static const char* const allowed[] = {
-      "DP7L3CWY", "DSSTDNEW", "DSSYNC",
+      "DPKW3GZA", "DSSTDNEW", "DSSYNC",
     };
     bool permitted = false;
     for (const char* candidate : allowed) if (std::strcmp(name, candidate) == 0) permitted = true;
@@ -148,11 +148,11 @@ public:
     plan.ready = true; plan.catalogChanged = true; plan.artifactCount = 1;
     std::snprintf(plan.catalogGeneration, sizeof(plan.catalogGeneration), "%s", "sha256:tilem-catalog-v1");
     auto& artifact = plan.artifacts[0];
-    std::snprintf(artifact.artifactId, sizeof(artifact.artifactId), "%s", "sc:ti86:7L3CWYLASV");
-    std::snprintf(artifact.variableName, sizeof(artifact.variableName), "%s", "DP7L3CWY");
+    std::snprintf(artifact.artifactId, sizeof(artifact.artifactId), "%s", "sc:ti86:KW3GZAALON");
+    std::snprintf(artifact.variableName, sizeof(artifact.variableName), "%s", "DPKW3GZA");
     artifact.byteLength = static_cast<uint16_t>(artifact_.size());
     std::snprintf(artifact.byteDigest, sizeof(artifact.byteDigest), "%s",
-                  "b1197821d4540e63e217284066a7fd13008a491284f1ac297f7501682b71ef3a");
+                  "7d1bd508ce9a16c3ec77ae338c08f77b9f72f2a393d1a5600455782efaa87a36");
     plan.acknowledgementLength = acknowledgement.length; plan.manifestLength = manifest.length;
     plan.learnerRosterLength = roster.length; plan.progressProjectionLength = progress.length;
     plan.interactionResponseLength = interaction.length;
@@ -174,7 +174,7 @@ public:
   }
 
   bool fetchArtifact(const schoolcalc_relay::ArtifactDescriptor& descriptor, MutableBytes& output) override {
-    if (std::strcmp(descriptor.variableName, "DP7L3CWY") != 0
+    if (std::strcmp(descriptor.variableName, "DPKW3GZA") != 0
         || descriptor.byteLength != artifact_.size() || !copy(artifact_, output)) {
       return fail("artifact request differs from semantic fixture");
     }
@@ -223,7 +223,7 @@ int main(int argc, char* argv[]) {
     schoolcalc_relay::SchoolCalcRelaySession session(calculator, api, buffers.view());
     const auto outcome = session.run();
     const std::vector<std::string> expectedReads = { "DSID", "DSINFO", "DSINST", "DSQ", "DSREQ", "DSTREQ", "DSENTRY" };
-    const std::vector<std::string> expectedWrites = { "DP7L3CWY", "DSSTDNEW", "DSSYNC" };
+    const std::vector<std::string> expectedWrites = { "DPKW3GZA", "DSSTDNEW", "DSSYNC" };
     if (!outcome.ok || outcome.state != schoolcalc_relay::SessionState::AwaitingCalculatorCommit
         || calculator.reads() != expectedReads || calculator.writes() != expectedWrites
         || api.identifyCalls != 1 || api.syncCalls != 1
@@ -234,7 +234,7 @@ int main(int argc, char* argv[]) {
       return 1;
     }
     std::ofstream report(argv[4], std::ios::trunc);
-    report << "ok=true\nstate=awaiting_calculator_commit\nreads=7\nwrites=DP7L3CWY,DSSTDNEW,DSSYNC\n";
+    report << "ok=true\nstate=awaiting_calculator_commit\nreads=7\nwrites=DPKW3GZA,DSSTDNEW,DSSYNC\n";
     std::puts("TICALC_VIRTUAL_RELAY_PASS adaptive_artifact=1 prescription=1 acknowledgement=1");
   } catch (const std::exception& error) {
     std::fprintf(stderr, "TICALC_VIRTUAL_RELAY_FAIL detail=%s\n", error.what()); return 1;

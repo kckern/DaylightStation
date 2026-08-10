@@ -111,7 +111,7 @@ async function run(options) {
       provisioning: {
         emulator: 'MAME TI-86', transport: 'virtual Graph Link',
         releaseId: release.manifest.releaseId,
-        transferred: ['complete release bundle', 'DSID', 'DSINFO', 'DSINST', 'DSQ', 'DSREQ', 'DSTREQ'],
+        transferred: ['complete release bundle', 'DSID', 'DSINFO', 'DSINST', 'DSQ', 'DSREQ', 'DSTREQ', 'DSENTRY'],
       },
       foregroundProgram: { name: sync.name, codeBytes: sync.code.length },
       keyboard: {
@@ -122,8 +122,8 @@ async function run(options) {
         semanticSession: semanticRelay,
         rawForegroundState: complete.state,
         phaseAcks: Number(complete.phaseAcks),
-        inputs: ['DSID', 'DSINFO', 'DSINST', 'DSQ', 'DSREQ', 'DSTREQ'],
-        writes: ['DSUSRNEW', 'DSPRGNEW', 'DSTNEW', 'DSCATNEW', 'DP7L3CWY', 'DSACKNEW', 'DSSYNC'],
+        inputs: ['DSID', 'DSINFO', 'DSINST', 'DSQ', 'DSREQ', 'DSTREQ', 'DSENTRY'],
+        writes: ['DPKW3GZA', 'DSSTDNEW', 'DSSYNC'],
         calculatorEvents: Number(complete.calculatorEvents),
         relayEvents: Number(complete.relayEvents),
       },
@@ -485,6 +485,12 @@ function semanticLesson() {
     lesson: {
       lessonId: 'compound-growth', title: 'Compound growth', objectives: ['Compare growth'],
       modules: [{
+        moduleId: 'study', type: 'flashcards', bankId: 'finance:compound-check',
+        bank: { id: 'finance:compound-check', title: 'Check', items: [{
+          id: 'q1', type: 'multiple_choice', prompt: 'Which grows?',
+          choices: ['Principal', 'Principal plus interest'], answer: 'Principal plus interest',
+        }] },
+      }, {
         moduleId: 'quiz', type: 'quiz', bankId: 'finance:compound-check', passingPercent: 80,
         bank: { id: 'finance:compound-check', title: 'Check', items: [{
           id: 'q1', type: 'multiple_choice', prompt: 'Which grows?',
@@ -492,7 +498,7 @@ function semanticLesson() {
         }] },
       }],
     },
-    capabilities: ['quiz@1', 'response.choice@1'],
+    capabilities: ['flashcards@1', 'quiz@1', 'response.choice@1'],
   };
 }
 
