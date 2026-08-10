@@ -644,9 +644,21 @@ adaptive_module_type_ready:
 ; A item index, module already selected by B (0/1).
 adaptive_open_item:
         ld (adaptive_item_index),a
+        ld a,(adaptive_module_index)
+        cp b
+        jr nz,adaptive_open_item_full
+        ; The immutable artifact was fully CRC/schema/identity validated at
+        ; runtime startup. State saves can relocate variables but cannot edit
+        ; the artifact, so refind its base and reuse the validated module/item
+        ; offsets instead of rescanning the whole bank between every card.
+        call adaptive_reopen_validated_artifact
+        ret c
+        jr adaptive_open_item_array_ready
+adaptive_open_item_full:
         ld a,b
         call adaptive_open_module
         ret c
+adaptive_open_item_array_ready:
         ld a,(adaptive_item_index)
         ld l,a
         ld h,0
@@ -657,6 +669,32 @@ adaptive_open_item:
         or a
         ret
 
+; Rebind the already-validated immutable artifact after TI-OS variable memory
+; may have moved. This deliberately checks the exact retained length but does
+; not repeat the expensive whole-bank CRC and schema walk performed at start.
+adaptive_reopen_validated_artifact:
+        ld hl,adaptive_artifact_name
+        rst 0x20
+        rst 0x10
+        ret c
+        call _ex_ahl_bde
+        call _get_word_ahl
+        ld (sc_record_length),de
+        ld (sc_record_base_addr),hl
+        ld (sc_record_base_page),a
+        ld hl,(adaptive_artifact_length)
+        or a
+        sbc hl,de
+        jp nz,adaptive_invalid
+        push de
+        pop hl
+        dec hl
+        dec hl
+        ld (sc_record_body_end),hl
+        xor a
+        ld (sc_cache_valid),a
+        ret
+
 ; ---------------------------------------------------------------------------
 ; Card interaction
 
@@ -665,7 +703,6 @@ adaptive_render_card:
         ld b,0
         call adaptive_open_item
         jp c,adaptive_error
-        call adaptive_render_header
         ld de,(adaptive_item_offset)
         ld a,(scstate_record + AD_FACE)
         or a
@@ -711,6 +748,17 @@ adaptive_card_graphic_key_ready:
         ld a,1
         ld (adaptive_card_has_graphic),a
 adaptive_card_graphic_ready:
+        ; Build the complete selected face offscreen. Keep the prior/loading
+        ; frame stable until every border, glyph, graphic, and rail pixel is
+        ; ready, then reveal the body with one bounded copy.
+        xor a
+        ld hl,adaptive_verso_frame
+        ld (hl),a
+        ld de,adaptive_verso_frame + 1
+        ld bc,879
+        ldir
+        ld hl,adaptive_verso_frame - 144
+        ld (ui_video_base),hl
         call ui_mode_set
         call ui_select_compact
         call adaptive_draw_card_frame
@@ -719,6 +767,13 @@ adaptive_card_graphic_ready:
         call nz,adaptive_draw_graphic
         call adaptive_draw_centered_page
         call adaptive_render_card_rail
+        ld hl,VideoRam
+        ld (ui_video_base),hl
+        call adaptive_render_header
+        ld hl,adaptive_verso_frame
+        ld de,VideoRam + 144
+        ld bc,880
+        ldir
         call adaptive_preload_opposite_face
         jp c,adaptive_error
 adaptive_card_wait:
@@ -750,9 +805,6 @@ adaptive_card_wait:
         jr adaptive_card_wait
 
 adaptive_flip:
-        ld a,(adaptive_verso_valid)
-        or a
-        jp z,adaptive_error
         ld a,(scstate_record + AD_FACE)
         xor 1
         ld (scstate_record + AD_FACE),a
@@ -781,7 +833,6 @@ adaptive_flip:
 ; never falls through to content parsing or layout.
 adaptive_preload_opposite_face:
         xor a
-        ld (adaptive_verso_valid),a
         ld (adaptive_hidden_scroll),a
         ld a,(adaptive_page_count)
         ld (adaptive_visible_page_count),a
@@ -848,8 +899,6 @@ adaptive_preload_verso_raster:
         ld (ui_video_base),hl
         ld a,(adaptive_visible_page_count)
         ld (adaptive_page_count),a
-        ld a,1
-        ld (adaptive_verso_valid),a
         or a
         ret
 
@@ -2061,7 +2110,6 @@ adaptive_center_line_length: defb 0
 adaptive_center_y:           defb 0
 adaptive_card_has_graphic:   defb 0
 adaptive_graphic_offset:     defw 0
-adaptive_verso_valid:        defb 0
 adaptive_hidden_scroll:      defb 0
 adaptive_hidden_page_count:  defb 0
 adaptive_visible_page_count: defb 0

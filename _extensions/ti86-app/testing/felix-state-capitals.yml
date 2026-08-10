@@ -45,6 +45,20 @@ scenarios:
       - { key: F1, capture: card-front-again, settle_frames: 18, expect_text: [ALABAMA, FLIP] }
       - { key: F1, capture: card-verso-again, settle_frames: 18, expect_text: [MONTGOMERY, AGAIN, HARD, KNOW] }
 
+  - id: rating-next-card-latency
+    description: Rating acknowledgement persists and atomically reveals the next card within thirty post-release frames.
+    boot_settle_frames: 300
+    steps:
+      - { key: '0' }
+      - { key: '0' }
+      - { key: '0' }
+      - { key: '0' }
+      - { key: '0' }
+      - { key: '0' }
+      - { key: ENTER, settle_frames: 300, expect_text: [ALABAMA, FLIP] }
+      - { key: F1, settle_frames: 18, expect_text: [MONTGOMERY, KNOW] }
+      - { key: F5, capture: next-card, settle_frames: 30, expect_text: [ALASKA, FLIP] }
+
   - id: felix-code-entry
     description: Code entry updates cleanly, exposes readiness on digit six, and Enter opens Felix's local prescription.
     boot_settle_frames: 300
