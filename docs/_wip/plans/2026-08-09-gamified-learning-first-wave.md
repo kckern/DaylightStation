@@ -1,166 +1,163 @@
-# Gamified Learning — First-Wave Structural Implementation
+# Gamified Learning — Scale Stadium Practice Journey
 
-**Date:** 2026-08-09
-**Status:** Tactical rescue slice implemented after the initial player-experience gate failed.
-Generalization remains frozen until the revised encounter earns replay willingness.
+**Started:** 2026-08-09
+
+**Journey implementation:** 2026-08-10
+
+**Status:** Implemented; supervised replay-willingness pilot remains open.
+
 **Design context:** `2026-08-09-gamified-learning-framework-design.md`
 
 ## Purpose
 
-This wave builds the load-bearing seams once, while keeping game mechanics deliberately
-narrow. It is a playable single-player card/piano slice, not evidence that a universal
-game DSL is warranted.
+Scale Stadium is a Pokémon-themed replay loop whose primary job is better piano
+practice. Combat, collection, and household competition make practice inviting;
+they do not replace, skip, or weaken the required piano performance.
 
-Launch the original chord fixture at `/gaming` or `/app/gaming`. The YAML-authored Pokémon
-scale pilot is registered as **Scale Stadium** at `/piano/games` and deep-links at
-`/piano/games/card-game`; it uses the kiosk's selected piano user, falling back to `guest`.
+The game is registered at `/piano/games` and deep-links at
+`/piano/games/card-game`. It uses the PianoKiosk player identity, falling back to
+an explicitly unranked `guest` run.
 
-## Implemented structural seams
+## Implemented player loop
 
-| Seam | Current implementation | Why it is load-bearing |
-|---|---|---|
-| Shared engine contract | `shared/gaming/` | Browser and server execute the same command/reducer contract |
-| Read model | `deriveInteraction()` + `projectState()` | Views consume legal commands instead of reimplementing rules |
-| Deterministic state | Seeded RNG and pinned definition hash | Replays and server verification have stable inputs |
-| Challenge recovery | `requested → prepared → started → resolved/aborted` | Prepared work is durable before physical execution begins |
-| Server authority | `GamingSessionService` independently applies every command | Client checkpoints are never trusted as authoritative state |
-| Write safety | Optimistic revision, command idempotency, atomic file replacement | Retries and stale clients do not double-apply an action |
-| Domain ownership | Piano attempt ledger under each user | Gaming references practice evidence without owning it |
-| Provider boundary | Registered provider runtime with `ready/prepare/restore/start/cancel/dispose` | Later domains can plug in without importing into Gaming |
-| App composition | `GamingApp` and `PianoCardGame` register the piano provider | Gaming runtime remains free of Piano imports |
-| YAML game content | `shared/gaming/definitions/card-game.yml` | Combatants, cards, balance, media references, semantic challenge requests, and outcomes remain editable without changing the engine |
-| Resume | Active session id persisted per game/user in local storage | Browser reload resumes rather than silently starting another game |
-| Experience telemetry | Structured client journey events plus authoritative server outcomes | Field monitoring can separate UI abandonment, blocked hands, practice difficulty, persistence failure, and completed play |
+1. The player sees their weekly best, household record, skill mastery, and three
+   mechanically equivalent partners: Bulbasaur, Charmander, or Squirtle.
+2. The chosen partner travels through three encounters: Pidgey, Meowth, and
+   Snorlax. Health resets at each cleared checkpoint.
+3. Every move launches a real Piano-owned challenge. The four move slots always
+   map to scales, root-position chords, arpeggios, and short rhythm patterns.
+4. The first encounter teaches the three foundation moves. Clearing it unlocks
+   the rhythm signature move.
+5. A successful performance resolves the announced enemy intent, saves practice
+   evidence, and updates the live run score. Checkpoints show the next household
+   rival without interrupting active practice.
+6. Defeat retries the same opponent with fresh health while retaining every
+   completed practice attempt. Completing all three encounters produces a
+   versioned score and offers replay or partner change.
 
-## Tactical rescue slice
+Partner type is presentation only. Each partner has the same damage, shield,
+focus, challenge-kind, threshold, and scoring structure.
 
-The revised `card-game` is now an authored Pikachu-versus-Squirtle tactical encounter
-rather than a one-card quiz loop. Its presentation takes cues from collectible card games,
-while the battle remains deliberately smaller than the Pokémon TCG:
+## Piano success contract
 
-- Players see the enemy's next attack, defense, or charge intent before committing cards.
-- A three-energy turn can contain multiple attack, guard, and focus cards before an explicit
-  end-turn action.
-- Guard answers announced attacks; focus persists until and strengthens the next attack.
-- The concrete scale is selected from a rotating challenge pool after the tactical card is
-  chosen, so card selection no longer doubles as scale selection.
-- Fluent, recovered, and fizzled performances produce distinct effects. Electric move
-  outcomes also express Squirtle's weakness. Three authored mistakes fizzle the card
-  instead of allowing an infinite retry loop.
-- Pikachu and Squirtle identity, types, base stats, moves, and SVG references are curated
-  from the PokeAPI corpus under `media/games/pokemon`; assets stream through the existing
-  media proxy rather than being duplicated in the bundle.
-- Enemy turns resolve as explicit events, hands redraw to four cards, and both victory and
-  defeat are reachable.
-- Damage has an immediate combat reaction, terminal results score and summarize the run,
-  and winners choose either extra health or starting focus for a clean rematch.
+The piano result maps directly to hit quality. Pokémon type effectiveness is not
+part of practice success.
 
-This implementation reopens the field test; it does not declare the experience gate passed.
+| Normalized piano score | Battle result | Authored power |
+|---:|---|---:|
+| `0.90–1.00` | Direct hit — bullseye | 125% |
+| `0.75–0.89` | Direct hit | 100% |
+| `0.50–0.74` | Partial hit | 65% |
+| `0.00–0.49` | Miss; practice still counts | 25% |
 
-## Deliberate first-wave constraints
+The low miss damage keeps the journey moving without calling an inaccurate
+performance successful. Timeout and player-aborted attempts resolve as zero-score
+misses and allow the announced enemy action. Provider or infrastructure errors
+refund the move, do not create practice evidence, and make the run unranked.
 
-- Only `card-battle-v1` definitions validate.
-- Untimed root-position chords and ordered one-octave scales execute; timing and fingering
-  are deliberately not graded.
-- `scale-clash` is bundled as a bootable definition; household YAML with the same id
-  overrides it.
-- `card-game` is bundled from YAML, and household
-  `apps/gaming/games/card-game/game.yml` transparently overrides the bundled definition.
-- A challenge found in `started` state after reload is conservatively refunded. The
-  browser cannot prove whether the physical performance completed while it was absent.
-- The first view has no hidden information, so projection currently copies every field.
-- Session history is one YAML file per session. Definition snapshots are content-addressed.
+Ordered journey exercises no longer restart on a wrong note. The player corrects
+the highlighted target and continues, preserving continuity evidence. The legacy
+standalone scale challenge retains its authored mistake-limit behavior.
 
-These are constraints, not accidental omissions. Extension points exist at the boundary
-where the next implementation must supply evidence.
+### Grading
 
-## TODO map
+- Untimed scale/arpeggio: 70% pitch accuracy, 30% continuity.
+- Paced scale/arpeggio/rhythm: 55% pitch accuracy, 30% timing, 15% continuity.
+- Chord: 70% target pitch set, 30% onset simultaneity.
 
-### Field pilot — next
+Piano selects unattempted exercises before revisiting the weakest exercise in a
+skill family. After two performances at or above 85%, it introduces a 60 BPM
+pulse. Two recent paced results above 90% raise tempo by 5 BPM; below 70% lowers
+it by 5 BPM, clamped to 40–120 BPM.
 
-- [x] Author a minimal YAML card set and a short win/loss loop using scale interstitials.
-- [x] Field-test balance, tutorial clarity, and whether the loop actually sustains interest.
-  Initial result: **revise**. See
-  `../audits/2026-08-09-card-game-player-experience-audit.md`.
-- [ ] Choose numeric gates for challenge duration, retry rate, abandonment, and replay
-  willingness before supervised sessions begin.
-- [x] Add structured duration telemetry for prepare, start, first input, result, and
-  persistence, including aggregate wrong-note/restart counts without per-note log spam.
-- [ ] Compare against an equivalent non-game chord-practice baseline.
-- [ ] Decide go/revise/stop before adding another ruleset.
+The foundation curriculum currently contains:
 
-### Challenge providers
+- C, G, F, and D major scales.
+- C, F, and G major/minor root chords.
+- C, G, and F major arpeggios.
+- Three short four-to-six-note patterns.
 
-- [ ] Add device-disconnect and explicit timeout results to the piano runtime.
-- [ ] Add latency/clock-domain calibration before any timed grading.
-- [ ] Build the occurrence aligner only when a timed passage use case is approved.
-- [ ] Add reconciliation for an attempt saved immediately before a session write fails.
-- [ ] Add a durable provider-version compatibility policy.
+## Cross-session progression and competition
 
-### Engine growth — evidence gated
+Completed attempts feed persistent skill stars, encounter badges, partner
+evolution, mastery aura, and personal best. A completed journey plus two-star
+mastery across all four skills evolves that partner; three-star mastery adds the
+aura.
 
-- [ ] Add typed effect/path semantics only after a second game repeats a mechanic.
-- [ ] Add visibility policies to state, events, yields, and legal commands together.
-- [ ] Add behavior manifests only when a real mechanic cannot fit the shared primitive set.
-- [ ] Run track, hidden-grid, and initiative traces before claiming a generalized schema.
-- [ ] Keep purpose-built reducers if those traces do not converge cleanly.
+The server derives a run score from immutable terminal state:
 
-### Persistence and operations
+| Component | Maximum |
+|---|---:|
+| Mean piano challenge score | 8,500 |
+| First-pass rate | 1,000 |
+| Opponents completed | 300 |
+| Skill-family breadth | 200 |
+| **Total** | **10,000** |
 
-- [ ] Partition sessions by date once listing/retention requirements are known.
-- [ ] Add a session index and explicit abandon/complete endpoints.
-- [ ] Bound or compact command/idempotency history for long sessions.
-- [ ] Add cross-process locking if more than one backend process can write the same data tree.
-- [ ] Define engine/definition migration and supported-resume windows before changing the
-  serialized state schema.
-- [ ] Add reconciliation/repair tooling and checkpoint-vs-replay verification.
+A ranked run must clear all three opponents, contain at least six completed
+performances, and have no provider/infrastructure invalidation. Rankings are
+partitioned by journey and score version.
 
-### Product and presentation
+- Weekly standings use the kiosk's local Monday-to-Monday week.
+- Each user contributes only their best run; the attempt count remains visible.
+- Ties go to the earlier completion.
+- The lobby shows personal weekly best, all-time household record, and leader.
+- Checkpoints show the next rival to catch.
+- Guest sessions can play but never appear in saved progress or standings.
 
-- [ ] Replace the temporary `?user=` assignment with the household profile picker.
-- [ ] Add keyboard/focus testing, screen-reader announcements, and reduced-motion variants.
-- [ ] Add authored sound/art manifests after the mechanic survives the field gate.
-- [x] Register the scale pilot in Piano Games while retaining the standalone framework fixture.
+## Structural seams
+
+| Seam | Implementation |
+|---|---|
+| Shared authority | `shared/gaming/pokemonJourney.mjs` reducer and read model |
+| Authored content | `shared/gaming/definitions/card-game.yml` |
+| Definition validation | `shared/gaming/definition.mjs` |
+| Session authority | `backend/src/3_applications/gaming/GamingSessionService.mjs` |
+| Progress and rankings | `GET /api/v1/gaming/games/:gameId/progress` and `/leaderboard` |
+| Piano adaptation | `backend/src/3_applications/piano/PianoScaleChallengePolicy.mjs` |
+| MIDI grading | `frontend/src/modules/Piano/challenge/provider/pianoChallengeGrading.js` |
+| Kiosk runtime | `frontend/src/modules/Gaming/runtime/GamingRuntime.jsx` |
+| Lobby and battle | `PokemonJourneyLobby.jsx` and `PokemonJourneyView.jsx` |
+| Live readiness | `node cli/piano-card-game.cli.mjs` |
+
+The legacy `card-battle-v1` reducer and generic `/gaming` fixture remain supported,
+but `card-game` now pins the purpose-built `pokemon-practice-journey-v1` contract.
+An active session whose definition hash no longer matches is explicitly abandoned
+before a new journey begins.
 
 ## Verification
 
 Focused tests cover:
 
-- Legal-action derivation.
-- Requested/prepared/started challenge boundaries.
-- Successful result commit and interrupted-result refund.
-- Definition pinning and authoritative server replay.
-- Stale-revision rejection and duplicate-command idempotency.
-- Frontend controller/provider orchestration.
-- Reload recovery of an already-started challenge.
-- HTTP definition/session/command routes.
-- Ordered-scale restart/completion semantics and Piano Games registration.
-- Tappable hand rendering, explicit no-card states, and deduplicated blocked/empty-hand logs.
+- All three partners and their isomorphic four-skill move sets.
+- Signature locking and checkpoint unlock.
+- Direct, partial, miss, timeout, provider-error, retry, and retained-evidence behavior.
+- Versioned 10,000-point scoring and ranked-run qualification.
+- Adaptive exercise selection and tempo changes.
+- Pitch/continuity, pitch/timing/continuity, and chord/simultaneity grading.
+- Household best-run deduplication, weekly standings, tie order, rivals, mastery,
+  evolution, and guest exclusion.
+- Lobby, battle, challenge-overlay, and hit-feedback rendering.
+- The 1280×800 lobby and battle layout in Chromium.
 
-## Player-experience telemetry
+The live CLI validates the deployed definition and all six SVGs, opens the real
+PianoKiosk route, selects Bulbasaur, sends MIDI through the kiosk WebSocket
+contract, exercises every skill family, clears all three opponents, and checks
+the final summary for viewport overflow and API/page failures.
 
-Client journey events use the `gaming.*` namespace and always include `gameId`,
-`sessionId`, `userId`, `revision`, and `turn` when a session exists:
+## Remaining field gate
 
-| Event | Monitoring question |
-|---|---|
-| `gaming.session.ready` / `gaming.session.closed` | Did the player start, resume, finish, or abandon? How long were they present? |
-| `gaming.card.selected` | Which scale did they choose, at what cost and turn? |
-| `gaming.challenge.prepared` / `started` | Did setup stall before input became possible? |
-| `gaming.challenge.completed` | How long to first input and completion; how many wrong notes/restarts; first try or recovered; persistence healthy? |
-| `gaming.challenge.aborted` / `abandoned` | Did the player cancel, reload during play, or leave the surface? |
-| `gaming.turn.ended` | Which announced intent resolved, how much damage was blocked, and did the player survive? |
-| `gaming.hand.empty` | Did an authoritative player-choice state contain no cards? |
-| `gaming.hand.blocked` | Were cards present but unplayable, and was energy the reason? |
-| `gaming.session.completed` | Winner, turns, health, elapsed observation time, and aggregate challenge counts |
+The code is ready for supervised play, but the experience claim is not proven
+until children choose to replay it. Measure:
 
-The backend separately emits `gaming.authority.challenge.resolved`,
-`gaming.authority.challenge.aborted`, `gaming.authority.enemy.intent.resolved`, and
-`gaming.authority.session.completed`. This keeps
-authoritative outcomes distinct from browser experience events so dashboards do not
-double-count them. Hand warnings are keyed by session revision and hand contents, preventing
-React rerenders from producing duplicate alerts.
+- Journey completion and voluntary replay rate.
+- Challenge duration and abort/timeout rate per skill family.
+- Direct/partial/miss distribution and tempo movement.
+- Whether players can explain why a hit was direct, partial, or missed.
+- Whether sibling standings motivate another run without encouraging identity
+  swapping or score farming.
+- Piano improvement against an equivalent non-game practice baseline.
 
-The production frontend build passes after restoring the already-declared, lockfile-pinned
-`signalsmith-stretch` dependency to `frontend/node_modules`. The install changed no tracked
-manifest or lockfile content. Existing Sass deprecation and bundle-size warnings remain.
+Keep the purpose-built reducer until a second approved learning game provides
+evidence for a repeated mechanic. Do not generalize this journey into a broader
+DSL based on one successful presentation.
