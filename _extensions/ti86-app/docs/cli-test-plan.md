@@ -52,6 +52,8 @@ tutor, and native-tool screens must not appear or be reachable.
 | `again-two-card-spacing` | rate first card AGAIN | it returns only after two intervening presentations |
 | `hard-four-card-spacing` | rate first card HARD | it returns only after four intervening presentations |
 | `f2-blank` | inspect/press F2 on front and back | slot has no pixels and key produces no state change |
+| `instant-flip-toggle` | press F1 front -> back -> front -> back | each direction swaps the pre-rendered body without a layout or persistence delay |
+| `rating-feedback` | press AGAIN, HARD, and KNOW on separate retained cases | card clears to `LOADING...` before persistence/scheduling; next surface follows |
 | `power-safe-resume` | pause after a committed rating; relaunch and re-enter code | exact next card/count resumes; no Resume shortcut appears |
 | `study-quiz-result-qr` | complete study and prescribed quiz | summary has F5 QUIZ; result exists before success; Version-5/M QR renders |
 | `completed-code-result` | return to code entry and re-enter completed code | Result reopens; study/quiz do not restart |

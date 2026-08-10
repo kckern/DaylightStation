@@ -76,10 +76,13 @@ describe('SchoolCalc production shell build', () => {
     expect(SHELL_SOURCE).toMatch(/ld hl,code_prompt\s+ld b,36/);
     const codeRefresh = SHELL_SOURCE.match(/shell_code_refresh:[\s\S]*?shell_draw_code_status:/)?.[0] ?? '';
     expect(codeRefresh).toContain('call ui_mode_clear');
-    expect(codeRefresh).toContain('call shell_draw_code_display');
+    expect(codeRefresh).not.toContain('call shell_draw_code_display');
     expect(codeRefresh).not.toContain('call _clrLCD');
     expect(SHELL_SOURCE).toMatch(
-      /call shell_code_accept_digit\s+or a\s+jr z,wait_key_regular\s+call shell_code_refresh\s+call shell_code_refresh_f1\s+jp wait_key/,
+      /call shell_code_accept_digit\s+or a\s+jr z,wait_key_regular\s+call shell_code_draw_entered_digit\s+ld a,\(shell_code_length\)\s+cp 6\s+jp nz,wait_key\s+call shell_code_refresh\s+call shell_code_refresh_f1/,
+    );
+    expect(SHELL_SOURCE).toMatch(
+      /shell_code_draw_entered_digit:[\s\S]*?ld hl,shell_code_digit_x[\s\S]*?call ui_fill_rect[\s\S]*?call shell_code_glyph_pointer[\s\S]*?jp ui_draw_bitmap/,
     );
     expect(SHELL_SOURCE).toMatch(
       /shell_code_open_ready:[\s\S]*?ld \(shell_code_status\),a\s+call shell_code_refresh\s+call shell_code_matches_study/,

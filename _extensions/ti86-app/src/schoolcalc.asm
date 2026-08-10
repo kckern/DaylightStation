@@ -50,6 +50,10 @@ wait_key:
         call shell_code_accept_digit
         or a
         jr z,wait_key_regular
+        call shell_code_draw_entered_digit
+        ld a,(shell_code_length)
+        cp 6
+        jp nz,wait_key
         call shell_code_refresh
         call shell_code_refresh_f1
         jp wait_key
@@ -1481,24 +1485,18 @@ shell_render_code:
         call shell_draw_code_display
         jp shell_draw_code_status
 
-; Code entry owns two small mutable regions. Never clear the full LCD for a
-; digit: erase only the six-glyph field and status row, then redraw them over
-; the stable header, instructions, border, and soft-key rail.
+; Status changes own only the centered status row. Digit entry is even more
+; tightly bounded below: it replaces one 7x8 placeholder cell and leaves all
+; five sibling cells, instructions, header, and rail pixels untouched.
 shell_code_refresh:
         call ui_mode_clear
-        ld b,36
-        ld c,25
-        ld d,56
-        ld e,10
-        call ui_fill_rect
         ld b,0
         ld c,39
         ld d,128
         ld e,8
         call ui_fill_rect
         call ui_mode_set
-        call shell_draw_code_display
-        ; Fall through and redraw the centered status label.
+        ; Fall through and redraw only the centered status label.
 shell_draw_code_status:
         ld a,(shell_code_status)
         ld hl,code_prompt
@@ -1526,6 +1524,39 @@ shell_code_status_nonidle:
 shell_code_status_ready:
         ld c,40
         jp ui_draw_text
+
+; Replace only the placeholder at the position accepted by the preceding key
+; event. The six authored x positions include the four-pixel group separator.
+shell_code_draw_entered_digit:
+        ld a,(shell_code_length)
+        dec a
+        ld e,a
+        ld d,0
+        ld hl,shell_code_digit_x
+        add hl,de
+        ld a,(hl)
+        ld (shell_code_font_x),a
+        ld b,a
+        ld c,26
+        ld d,SHELL_CODE_FONT_WIDTH
+        ld e,SHELL_CODE_FONT_HEIGHT
+        call ui_mode_clear
+        call ui_fill_rect
+        ld a,(shell_code_length)
+        dec a
+        ld e,a
+        ld d,0
+        ld hl,shell_code_digits
+        add hl,de
+        ld a,(hl)
+        call shell_code_glyph_pointer
+        ld a,(shell_code_font_x)
+        ld b,a
+        ld c,26
+        ld d,SHELL_CODE_FONT_WIDTH
+        ld e,SHELL_CODE_FONT_HEIGHT
+        call ui_mode_set
+        jp ui_draw_bitmap
 
 ; The first rail slot is intentionally empty until the editor holds exactly
 ; six digits. Repaint only that slot when digit six makes OPEN available.
@@ -1987,6 +2018,8 @@ softkey_empty:          defb 0
 shell_code_digit_keys:
         defb 0x21,'0',0x22,'1',0x1A,'2',0x12,'3',0x23,'4'
         defb 0x1B,'5',0x13,'6',0x24,'7',0x1C,'8',0x14,'9'
+shell_code_digit_x:
+        defb 38,46,54,66,74,82
 shell_result_score:     defs 20,0
 
 UI_RENDER_COPIED_TEXT_LENGTH: equ 0

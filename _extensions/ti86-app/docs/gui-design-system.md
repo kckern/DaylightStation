@@ -19,7 +19,9 @@ Every launch begins on an `ENTER CODE` template. The only normal route is code
 entry/resolution, adaptive StudyCard, study summary, A-E ChoiceQuestion, Result,
 and QR; Sync is entered only to resolve a new code or deliver queued results.
 Enter Code exposes no Resume shortcut: F1 appears as `OPEN` only after digit
-six, F2-F4 remain blank, and F5 is the far-right `EXIT` action.
+six, F2-F4 remain blank, and F5 is the far-right `EXIT` action. Digit input is
+cell-local: one key replaces one 7x8 placeholder without repainting siblings or
+the status rail.
 
 The adaptive card rail is fixed and sparse:
 
@@ -30,7 +32,10 @@ The adaptive card rail is fixed and sparse:
 
 Empty means no pixels and no key behavior. In particular, the general v0
 `F2 BACK` exception does not apply to adaptive cards. `EXIT` is the power-safe
-pause path. After study the summary exposes `F5 QUIZ`; after the result is
+pause path. Both card faces are pre-rendered; F1 swaps their cached bodies in
+either direction before any durable write. Rating keys replace the card with a
+centered `LOADING...` acknowledgement before persistence and scheduling. After
+study the summary exposes `F5 QUIZ`; after the result is
 durably queued, Result exposes QR and return-to-code actions. Re-entering the
 completed local code reopens Result.
 

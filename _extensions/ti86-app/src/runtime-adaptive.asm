@@ -719,9 +719,7 @@ adaptive_card_graphic_ready:
         call nz,adaptive_draw_graphic
         call adaptive_draw_centered_page
         call adaptive_render_card_rail
-        ld a,(scstate_record + AD_FACE)
-        or a
-        call z,adaptive_preload_verso
+        call adaptive_preload_opposite_face
         jp c,adaptive_error
 adaptive_card_wait:
         call sc_input_wait
@@ -752,38 +750,48 @@ adaptive_card_wait:
         jr adaptive_card_wait
 
 adaptive_flip:
-        ld a,(scstate_record + AD_FACE)
+        ld a,(adaptive_verso_valid)
         or a
-        jr z,adaptive_flip_to_cached_verso
+        jp z,adaptive_error
+        ld a,(scstate_record + AD_FACE)
         xor 1
         ld (scstate_record + AD_FACE),a
-        xor a
+        ld a,(scstate_record + SCSTATE_SCROLL_OFFSET)
+        ld b,a
+        ld a,(adaptive_hidden_scroll)
         ld (scstate_record + SCSTATE_SCROLL_OFFSET),a
-        ld (scstate_record + SCSTATE_SCROLL_OFFSET + 1),a
-        call adaptive_save
-        jp c,adaptive_error
-        jp adaptive_render_card
-
-; The verso is decoded while the learner reads the front. Reveal it from RAM
-; before the durable face write, so F1 has immediate visual feedback while a
-; power-safe continuation is still committed before another input is read.
-adaptive_flip_to_cached_verso:
-        ld a,1
-        ld (scstate_record + AD_FACE),a
-        xor a
-        ld (scstate_record + SCSTATE_SCROLL_OFFSET),a
-        ld (scstate_record + SCSTATE_SCROLL_OFFSET + 1),a
-        call adaptive_render_cached_verso
-        jp c,adaptive_error
+        ld a,b
+        ld (adaptive_hidden_scroll),a
+        ld a,(adaptive_page_count)
+        ld b,a
+        ld a,(adaptive_hidden_page_count)
+        ld (adaptive_page_count),a
+        ld a,b
+        ld (adaptive_hidden_page_count),a
+        ; Swap the visible and hidden complete card bodies before persistence.
+        ; The learner sees either direction immediately; the durable write
+        ; completes before another key is accepted.
+        call adaptive_swap_cached_face
         call adaptive_save
         jp c,adaptive_error
         jp adaptive_card_wait
 
-adaptive_preload_verso:
+; Render the face opposite the currently visible one into the hidden frame.
+; This also covers a cold resume on the back face, so the first reverse flip
+; never falls through to content parsing or layout.
+adaptive_preload_opposite_face:
         xor a
         ld (adaptive_verso_valid),a
+        ld (adaptive_hidden_scroll),a
+        ld a,(adaptive_page_count)
+        ld (adaptive_visible_page_count),a
         ld de,(adaptive_item_offset)
+        ld a,(scstate_record + AD_FACE)
+        or a
         ld hl,adaptive_key_answer_pages
+        jr z,adaptive_preload_pages_key_ready
+        ld hl,adaptive_key_prompt_pages
+adaptive_preload_pages_key_ready:
         call sc_map_find_literal
         ret c
         ld (adaptive_pages_offset),de
@@ -791,6 +799,7 @@ adaptive_preload_verso:
         ret c
         or a
         jp z,adaptive_invalid
+        ld (adaptive_hidden_page_count),a
         ld hl,0
         ld de,(adaptive_pages_offset)
         call sc_array_item
@@ -800,7 +809,12 @@ adaptive_preload_verso:
         xor a
         ld (adaptive_card_has_graphic),a
         ld de,(adaptive_item_offset)
+        ld a,(scstate_record + AD_FACE)
+        or a
         ld hl,adaptive_key_answer_graphic
+        jr z,adaptive_preload_graphic_key_ready
+        ld hl,adaptive_key_prompt_graphic
+adaptive_preload_graphic_key_ready:
         call sc_map_find_literal
         jr c,adaptive_preload_verso_raster
         ld (adaptive_graphic_offset),de
@@ -823,28 +837,42 @@ adaptive_preload_verso_raster:
         or a
         call nz,adaptive_draw_graphic
         call adaptive_draw_centered_page
-        ld a,1
+        ld a,(scstate_record + AD_FACE)
+        xor 1
         ld (scstate_record + AD_FACE),a
         call adaptive_render_card_rail
-        xor a
+        ld a,(scstate_record + AD_FACE)
+        xor 1
         ld (scstate_record + AD_FACE),a
         ld hl,VideoRam
         ld (ui_video_base),hl
+        ld a,(adaptive_visible_page_count)
+        ld (adaptive_page_count),a
         ld a,1
         ld (adaptive_verso_valid),a
         or a
         ret
 
-adaptive_render_cached_verso:
-        ld a,(adaptive_verso_valid)
-        or a
-        scf
-        ret z
+; Exchange the 55-row visible card body with its fully rendered opposite face.
+; One buffer is sufficient: after the loop, the face just hidden is already
+; cached for the next F1 toggle.
+adaptive_swap_cached_face:
         ld hl,adaptive_verso_frame
         ld de,VideoRam + 144
         ld bc,880
-        ldir
-        or a
+adaptive_swap_cached_face_loop:
+        ld a,(de)
+        ex af,af'
+        ld a,(hl)
+        ld (de),a
+        ex af,af'
+        ld (hl),a
+        inc hl
+        inc de
+        dec bc
+        ld a,b
+        or c
+        jr nz,adaptive_swap_cached_face_loop
         ret
 
 adaptive_page_previous:
@@ -872,6 +900,9 @@ adaptive_page_next:
 
 ; B rating nibble. Persist final rating and retirement/due before selecting.
 adaptive_rate:
+        push bc
+        call adaptive_render_loading
+        pop bc
         ld a,(scstate_record + AD_CURRENT_CARD)
         push af
         call adaptive_telemetry_address
@@ -915,6 +946,18 @@ adaptive_rate_retire:
         call adaptive_choose_next
         jp c,adaptive_error
         jp adaptive_dispatch
+
+; Rating acknowledgement must beat storage and scheduling latency. Replace the
+; complete card immediately, then keep this stable frame visible until the
+; next card or summary is ready.
+adaptive_render_loading:
+        call _clrLCD
+        call ui_mode_set
+        call ui_select_compact
+        ld hl,adaptive_label_loading
+        ld b,46
+        ld c,29
+        jp ui_draw_text
 
 adaptive_render_card_rail:
         call adaptive_clear_rail
@@ -2015,6 +2058,9 @@ adaptive_center_y:           defb 0
 adaptive_card_has_graphic:   defb 0
 adaptive_graphic_offset:     defw 0
 adaptive_verso_valid:        defb 0
+adaptive_hidden_scroll:      defb 0
+adaptive_hidden_page_count:  defb 0
+adaptive_visible_page_count: defb 0
 adaptive_verso_frame:        defs 880,0
 adaptive_graphic_remaining:  defb 0
 adaptive_line_x0:            defb 0
@@ -2086,6 +2132,7 @@ adaptive_label_flip:         defb "FLIP",0
 adaptive_label_again:        defb "AGAIN",0
 adaptive_label_hard:         defb "HARD",0
 adaptive_label_know:         defb "KNOW",0
+adaptive_label_loading:      defb "LOADING...",0
 adaptive_label_quiz:         defb "QUIZ",0
 adaptive_label_answers:      defb "CHOICE",0
 adaptive_label_qr:           defb "QR",0
