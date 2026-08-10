@@ -14,11 +14,13 @@ const TRANSPORTS = new Set(['qr', 'relay']);
  * invokes the existing grading/progress collaborators.
  */
 export class ImportSchoolCalcResult {
-  #codecs; #devices; #artifacts; #ledger; #grader; #progress; #remediationOffers; #probeEvidence; #clock;
+  #codecs; #devices; #artifacts; #ledger; #grader; #progress; #remediationOffers; #probeEvidence;
+  #studies; #studyOutcomes; #clock;
 
   constructor({
     codecs, devices, artifacts, ledger, grader, progress,
-    remediationOffers = null, probeEvidenceRepository = null, clock = () => new Date(),
+    remediationOffers = null, probeEvidenceRepository = null,
+    studySessions = null, studyOutcomes = null, clock = () => new Date(),
   } = {}) {
     if (!codecs || !devices || !artifacts || !ledger || !grader || !progress) {
       throw new Error('ImportSchoolCalcResult requires codecs, devices, artifacts, ledger, grader, and progress');
@@ -31,6 +33,8 @@ export class ImportSchoolCalcResult {
     this.#progress = progress;
     this.#remediationOffers = remediationOffers;
     this.#probeEvidence = probeEvidenceRepository;
+    this.#studies = studySessions;
+    this.#studyOutcomes = studyOutcomes;
     this.#clock = clock;
   }
 
@@ -51,6 +55,17 @@ export class ImportSchoolCalcResult {
     const artifact = await this.#artifacts.getArtifact(result.artifactId);
     if (!artifact) throw new EntityNotFoundError('SchoolCalc artifact', result.artifactId);
     if (artifact.platformId !== device.platformId) throw new ValidationError('SchoolCalc artifact platform does not match enrolled device');
+
+    const adaptiveSession = result.adaptiveStudy
+      ? await this.#validateAdaptiveResult({ result, device, learnerBinding, artifact })
+      : null;
+    if (adaptiveSession?.status === 'closed') {
+      const duplicate = adaptiveSession.result?.resultDigest === result.recordDigest;
+      return resultView(result, learnerBinding, {
+        status: duplicate ? 'duplicate' : 'conflict', acknowledge: duplicate,
+        receivedAt: readClock(this.#clock),
+      });
+    }
 
     const { submission, assessment } = resolveSubmission({ result, artifact });
     const validated = validateSchoolCalcSubmission(submission);
@@ -159,6 +174,21 @@ export class ImportSchoolCalcResult {
           responses: validated.submission.responses,
         });
       }
+      if (adaptiveSession) {
+        const passingPercent = adaptiveSession.curation.policy.passingPercent;
+        const settled = await this.#studyOutcomes.execute({
+          studySession: adaptiveSession, percent: verifiedScore.score.percent,
+          passingPercent, resultDigest: result.recordDigest, at: receivedAt, transport,
+        });
+        const closed = await this.#studies.close({
+          studySessionId: adaptiveSession.studySessionId, resultDigest: result.recordDigest,
+          outcome: settled.result, closedAt: receivedAt,
+        });
+        if (!['accepted', 'duplicate'].includes(closed.status)) {
+          throw new ValidationError(`SchoolCalc study session closure conflict: ${closed.status}`);
+        }
+        outcome = { ...outcome, study: settled };
+      }
     } else {
       outcome = await this.#progress.saveLatest({
         learnerId: learnerBinding.learnerId,
@@ -192,6 +222,33 @@ export class ImportSchoolCalcResult {
       outcome,
       remediation,
     });
+  }
+
+  async #validateAdaptiveResult({ result, device, learnerBinding, artifact }) {
+    if (!this.#studies || !this.#studyOutcomes) {
+      throw new ValidationError('Adaptive Study result handling is not configured');
+    }
+    const session = await this.#studies.getByCode(result.adaptiveStudy.sessionCode);
+    if (!session) throw new ValidationError('Adaptive Study session code is unknown');
+    if (session.learnerId !== learnerBinding.learnerId
+        || session.artifact.artifactId !== artifact.artifactId
+        || session.resolution?.deviceId !== device.deviceId
+        || session.resolution?.learnerKey !== result.learnerKey) {
+      throw new ValidationError('Adaptive Study result is not authorized for this learner/device/artifact');
+    }
+    const policy = session.curation.policy;
+    if (result.moduleIndex !== 1
+        || result.adaptiveStudy.cards.length !== policy.cardCount
+        || result.adaptiveStudy.quizChoices.length !== policy.itemCount) {
+      throw new ValidationError('Adaptive Study result counts do not match its prescription');
+    }
+    result.adaptiveStudy.cards.forEach((card, index) => {
+      if (card.exposureCount > policy.maxExposuresPerCard
+          || (card.rating !== 'know' && card.exposureCount !== policy.maxExposuresPerCard)) {
+        throw new ValidationError(`Adaptive Study card ${index} has invalid final telemetry`);
+      }
+    });
+    return session;
   }
 }
 

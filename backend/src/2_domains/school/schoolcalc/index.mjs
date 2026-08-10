@@ -11,3 +11,4 @@ export {
   classifySchoolCalcDeliveryClaim,
 } from './delivery.mjs';
 export { SchoolCalcDevice } from './SchoolCalcDevice.mjs';
+export { curateAdaptiveStudy } from './adaptiveStudy.mjs';

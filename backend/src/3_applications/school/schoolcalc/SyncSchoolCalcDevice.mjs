@@ -5,9 +5,9 @@
  * stage fails, replaying this command resumes instead of duplicating work.
  */
 export class SyncSchoolCalcDevice {
-  #profiles; #progress; #observe; #importQueue; #requests; #interactions; #plan;
+  #profiles; #progress; #observe; #importQueue; #requests; #interactions; #studies; #plan;
 
-  constructor({ profiles, progress, observe, importQueue, requests, interactions = null, plan } = {}) {
+  constructor({ profiles, progress, observe, importQueue, requests, interactions = null, studies = null, plan } = {}) {
     if (!profiles || !progress || !observe || !importQueue || !requests || !plan) {
       throw new Error('SyncSchoolCalcDevice requires profiles, progress, observe, importQueue, requests, and plan');
     }
@@ -17,6 +17,7 @@ export class SyncSchoolCalcDevice {
     this.#importQueue = importQueue;
     this.#requests = requests;
     this.#interactions = interactions;
+    this.#studies = studies;
     this.#plan = plan;
   }
 
@@ -28,6 +29,7 @@ export class SyncSchoolCalcDevice {
     resultQueue = null,
     requestRecord = null,
     interactionRecord = null,
+    studyEntry = null,
     catalogGeneration = null,
   } = {}) {
     // Refresh bindings before importing an old offline queue. Retired bindings
@@ -45,6 +47,7 @@ export class SyncSchoolCalcDevice {
     const interaction = interactionRecord === null
       ? null
       : await this.#exchangeInteraction({ deviceId, record: interactionRecord });
+    const study = studyEntry === null ? null : await this.#resolveStudy({ deviceId, record: studyEntry });
     // Query after queue import so the same response can show newly accepted
     // offline assessment evidence. The projection contains every active
     // learner, not whichever profile happened to be selected at attachment.
@@ -69,7 +72,11 @@ export class SyncSchoolCalcDevice {
       progressRecordBytes: byteLength(progress.record),
       interactionResponseBytes: interaction === null ? null : byteLength(interaction.record),
     });
-    return { profiles, progress, observation, results, deliveries, interaction, plan };
+    return {
+      profiles, progress, observation, results, deliveries, interaction,
+      ...(study === null ? {} : { study }),
+      plan,
+    };
   }
 
   async #exchangeInteraction(input) {
@@ -77,6 +84,13 @@ export class SyncSchoolCalcDevice {
       throw new Error('SchoolCalc interaction exchange is not configured');
     }
     return this.#interactions.execute(input);
+  }
+
+  async #resolveStudy(input) {
+    if (!this.#studies || typeof this.#studies.execute !== 'function') {
+      throw new Error('SchoolCalc study resolution is not configured');
+    }
+    return this.#studies.execute(input);
   }
 }
 

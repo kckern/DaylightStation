@@ -190,6 +190,7 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
       elective,
       program: unit.program ?? null,
       cadence: unit.cadence ?? null,
+      schoolcalc: unit.schoolcalc ? structuredClone(unit.schoolcalc) : undefined,
       status,
       sessionId: open?.sessionId ?? null,
       state: open?.state ?? null,

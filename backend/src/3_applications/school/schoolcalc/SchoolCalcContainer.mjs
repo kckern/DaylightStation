@@ -20,6 +20,7 @@ import { ValidateSchoolCalcPublication } from './ValidateSchoolCalcPublication.m
 import { HydrateSchoolCalcActions } from './HydrateSchoolCalcActions.mjs';
 import { ResolveSchoolCalcAction } from './ResolveSchoolCalcAction.mjs';
 import { ResolveSchoolCalcFollowUp } from './ResolveSchoolCalcFollowUp.mjs';
+import { ResolveSchoolCalcStudyEntry } from './ResolveSchoolCalcStudyEntry.mjs';
 
 /** Injection-only application composition. Concrete adapters remain in the bootstrap layer. */
 export class SchoolCalcContainer {
@@ -44,6 +45,9 @@ export class SchoolCalcContainer {
     remediationOffers = null,
     remediationTutor = null,
     probeEvidenceRepository = null,
+    studySessions = null,
+    studyCodec = null,
+    studyOutcomes = null,
     logger = null,
     clock = () => new Date(),
   } = {}) {
@@ -69,6 +73,7 @@ export class SchoolCalcContainer {
       codecs: codecRegistry, devices, artifacts, ledger: resultLedger, grader, progress,
       remediationOffers, clock,
       probeEvidenceRepository,
+      studySessions, studyOutcomes,
     });
 
     this.codecRegistry = codecRegistry;
@@ -107,6 +112,11 @@ export class SchoolCalcContainer {
     this.requestDelivery = new RequestSchoolCalcDelivery({
       devices, codecs: codecRegistry, catalog, buildArtifact, buildInstallSet, clock,
     });
+    this.resolveStudyEntry = studySessions && studyCodec
+      ? new ResolveSchoolCalcStudyEntry({
+        studies: studySessions, devices, artifacts, codec: studyCodec, clock,
+      })
+      : null;
     this.importResult = importResult;
     this.importResultQueue = new ImportSchoolCalcResultQueue({ devices, codecs: codecRegistry, importResult });
     this.planSync = new PlanSchoolCalcSync({ devices, artifacts, ledger: resultLedger, catalog, codecs: codecRegistry });
@@ -117,6 +127,7 @@ export class SchoolCalcContainer {
       importQueue: this.importResultQueue,
       requests: this.requestDelivery,
       interactions: exchangeInteraction,
+      studies: this.resolveStudyEntry,
       plan: this.planSync,
     });
   }

@@ -1,5 +1,16 @@
 # SchoolCalc relay protocol v1
 
+> **Product-scope update:** The transport envelope, TI packet handling, SCF1
+> foreground framing, CRC rules, result queue, acknowledgements, and write-last
+> commit behavior remain infrastructure for SchoolCalc Adaptive Study v1. The
+> canonical product contract is
+> [`../../ti86-app/docs/schoolcalc-v1-requirements.md`](../../ti86-app/docs/schoolcalc-v1-requirements.md).
+> Its `DSENTRY`/`SCE1`, `DSSTUDY`/`SCSP`, `DSSTDNEW`, and compact adaptive-result
+> additions supersede the learner-facing `DSCODE`/Catalog/profile route here.
+> Existing record tables describe the implemented v0 transport baseline until
+> the adaptive codecs are added; they must not be read as the default v1
+> installation manifest.
+
 Status: backend, Silent Link transaction, calculator commit, awareness model,
 foreground codec/adapters, TI-86 client, and calculator-initiated listener
 implemented; exact-Z80 and physical cable transaction still require proof.

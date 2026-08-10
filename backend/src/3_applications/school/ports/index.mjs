@@ -12,6 +12,7 @@ export { ISchoolCohortDirectory } from './ISchoolCohortDirectory.mjs';
 export { IAcademicPeriodSource } from './IAcademicPeriodSource.mjs';
 export { ILearningFollowUpSource } from './ILearningFollowUpSource.mjs';
 export { ISchoolCalcResultLedger } from './ISchoolCalcResultLedger.mjs';
+export { ISchoolCalcStudySessionRepository } from './ISchoolCalcStudySessionRepository.mjs';
 export { ISchoolActionTokenIssuer } from './ISchoolActionTokenIssuer.mjs';
 export { ISchoolLearningActionExecutor } from './ISchoolLearningActionExecutor.mjs';
 export { IRemediationSessionRepository } from './IRemediationSessionRepository.mjs';

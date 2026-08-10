@@ -1,5 +1,11 @@
 # SchoolCalc system architecture
 
+> **v1 boundary:** This is retained v0 architecture research. The canonical
+> release contract is [SchoolCalc Adaptive Study v1](./schoolcalc-v1-requirements.md),
+> whose code-first agenda flow makes Catalog/profile/general-lesson routes
+> inactive. Reuse the backend, immutable-artifact, queue, importer, and relay
+> patterns here only where the v1 contract retains them.
+
 ## Purpose and name
 
 **SchoolCalc** is the calculator-native learning product inside DaylightStation

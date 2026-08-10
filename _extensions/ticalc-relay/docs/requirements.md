@@ -1,5 +1,12 @@
 # TI calculator relay requirements
 
+> **Adaptive Study v1 scope:** Electrical, transport, immutable-artifact,
+> result-uplink, and acknowledgement requirements remain applicable. Catalog,
+> roster/progress, install/remove, and tutor workflows below are retained v0
+> research rather than active learner routes. The canonical code-resolution
+> and staged-prescription contract is
+> [`../../ti86-app/docs/schoolcalc-v1-requirements.md`](../../ti86-app/docs/schoolcalc-v1-requirements.md).
+
 Status: requirements locked, implementation in progress. Updated 2026-08-02.
 
 This document records the agreed boundary between the TI calculator shell,

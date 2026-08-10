@@ -65,7 +65,7 @@ function withAttestedPasses(history, attestations, learnerId) {
 
 export class BuildAgenda {
   #curriculum; #assignments; #sessions; #tokens; #launchers; #timezone; #attestations; #teacherNotes;
-  #clock; #rng; #newSessionId; #ttlMs; #logger; #reviewQueue;
+  #clock; #rng; #newSessionId; #ttlMs; #logger; #reviewQueue; #schoolCalcStudies; #schoolCalcMode;
 
   /**
    * @param {object} deps
@@ -96,6 +96,7 @@ export class BuildAgenda {
     // Repair-wave sources (spec D2/D3), both optional: attestations feed the
     // planner's gate-unlock; teacher notes join the "Notes for you" window.
     attestations = null, teacherNotes = null,
+    schoolCalcStudies = null, schoolCalcMode = 'off',
     logger = console,
   } = {}) {
     if (!curriculum || !assignments || !sessions || !tokens) {
@@ -115,6 +116,11 @@ export class BuildAgenda {
     this.#logger = logger;
     this.#attestations = attestations;
     this.#teacherNotes = teacherNotes;
+    if (!['off', 'issue', 'preview'].includes(schoolCalcMode)) {
+      throw new Error('BuildAgenda schoolCalcMode must be off, issue, or preview');
+    }
+    this.#schoolCalcStudies = schoolCalcStudies;
+    this.#schoolCalcMode = schoolCalcMode;
   }
 
   /**
@@ -170,6 +176,7 @@ export class BuildAgenda {
     const createdSessions = [];
     const tokensBySubject = {};
     const actionLabelBySubject = new Map();
+    const calculatorBySubject = new Map();
 
     for (const section of sections) {
       const entry = section.next;
@@ -178,6 +185,33 @@ export class BuildAgenda {
       // eslint-disable-next-line no-await-in-loop
       const { sessionId, suffix, created } = await this.#offerFor({ entry, unitsById, learnerId, nowIso });
       if (created) createdSessions.push(sessionId);
+
+      if (entry.schoolcalc) {
+        if (!this.#schoolCalcStudies || this.#schoolCalcMode === 'off') {
+          throw new Error(`BuildAgenda: SchoolCalc unit '${entry.unitId}' is enabled but study issuance is not wired`);
+        }
+        const method = this.#schoolCalcMode === 'preview' ? 'preview' : 'ensure';
+        // eslint-disable-next-line no-await-in-loop
+        const study = await this.#schoolCalcStudies[method]?.({
+          workSessionId: sessionId, learnerId,
+          unit: unitsById.get(entry.unitId), descriptor: entry.schoolcalc, at: nowIso,
+        }) ?? null;
+        const calculator = {
+          eligible: true,
+          ...(study?.studySessionId ? { studySessionId: study.studySessionId } : {}),
+          ...(study?.code ? { code: study.code, displayCode: formatStudyCode(study.code) } : {}),
+        };
+        calculatorBySubject.set(section.subject, calculator);
+        actionLabelBySubject.set(section.subject, study?.code
+          ? 'Enter on calculator.'
+          : 'Calculator eligible — code issued when printed.');
+        offers.push({
+          subject: section.subject, unitId: entry.unitId, sessionId,
+          token: null, tokenClass: 'schoolcalc_study', calculator,
+          label: `${entry.title} — ${actionLabelBySubject.get(section.subject)}`,
+        });
+        continue;
+      }
 
       const record = mintToken({
         tokenClass: 'subject_next',
@@ -205,7 +239,17 @@ export class BuildAgenda {
     // document sees only the SUFFIX here — the offer above carries the full
     // label, which is a different consumer's concern (Task 11's resolver).
     const sectionsForDocument = sections.map((section) => (actionLabelBySubject.has(section.subject)
-      ? { ...section, next: { ...section.next, actionLabel: actionLabelBySubject.get(section.subject) } }
+      ? { ...section, next: {
+        ...section.next,
+        actionLabel: actionLabelBySubject.get(section.subject),
+        ...(calculatorBySubject.has(section.subject)
+          ? { schoolcalcHandoff: calculatorBySubject.get(section.subject) }
+          : {}),
+      } }
+      : section));
+
+    const enrichedSections = sections.map((section) => (calculatorBySubject.has(section.subject)
+      ? { ...section, next: { ...section.next, schoolcalcHandoff: calculatorBySubject.get(section.subject) } }
       : section));
 
     const notes = await this.#collectNotes(learnerId, now.getTime());
@@ -213,7 +257,7 @@ export class BuildAgenda {
     return {
       learnerId,
       plan,
-      sections,
+      sections: enrichedSections,
       offers,
       createdSessions,
       document: agendaDocument({
@@ -318,6 +362,11 @@ export class BuildAgenda {
     const move = nextMove(unitsById.get(entry.unitId) ?? {}, state);
     return { sessionId, suffix: move.label, created };
   }
+}
+
+function formatStudyCode(code) {
+  if (!/^[0-9]{6}$/.test(code || '')) throw new Error('BuildAgenda: SchoolCalc code must contain six digits');
+  return `${code.slice(0, 3)} ${code.slice(3)}`;
 }
 
 export default BuildAgenda;

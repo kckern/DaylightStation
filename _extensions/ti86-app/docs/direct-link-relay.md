@@ -1,5 +1,13 @@
 # Direct TI-86 link relay — permanent operational contract
 
+> **Adaptive Study v1 boundary:** The electrical interface, TI packet layer,
+> foreground ownership, retry rules, diagnostics, result idempotency, and
+> write-last commit mechanism in this document are retained. Catalog refresh,
+> install/remove requests, learner rosters, progress projections, and realtime
+> tutor interactions are inactive learner routes in the default v1 release.
+> The canonical resolution transaction is defined by
+> [`schoolcalc-v1-requirements.md`](./schoolcalc-v1-requirements.md).
+
 ## Recommendation
 
 Build the relay directly on the TI-86's **2.5 mm TRS** link port. It is a
@@ -122,6 +130,21 @@ sequence after compaction. If an acknowledgement is lost, replaying `DSQ` is
 safe by design.
 
 ## Bidirectional sync contract
+
+For Adaptive Study v1, combined sync imports queued results and resolves a
+calculator-owned `DSENTRY`/`SCE1` claim. An installed immutable artifact needs
+only the staged `DSSTDNEW`/`SCSP` prescription and final acknowledgement. A
+missing artifact is written and verified first, the staged prescription
+second, and `DSSYNC` last. Only that exact acknowledgement permits the
+calculator to promote `DSSTUDY` and clear the matching entry request.
+
+Unknown, completed, unauthorized, incompatible, memory-blocked, and
+interrupted resolutions retain prior canonical state. A six-digit code is a
+navigation value; the authenticated backend reauthorizes its learner, work,
+bank, artifact, and requesting device at resolution time.
+
+The older Catalog/artifact manifest sequence below documents retained v0
+infrastructure and diagnostics; it is not the v1 learner route.
 
 The calculator is online **while attached to the powered relay and answering
 link requests**. Treat sync as a short transaction on plug/manual request, not

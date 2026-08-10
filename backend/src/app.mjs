@@ -2956,6 +2956,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       donowDatastore: donowModule?.datastore ?? null,
       tokenRegistry: schoolCalc.tokenRegistry ?? null,
       schoolCalcActionResolver: schoolCalc.actionResolver ?? null,
+      schoolCalcStudies: schoolCalc.wired ? schoolCalc.studySessions : null,
       logger: schoolLifecycleLogger
     });
   } catch (err) {
@@ -3441,6 +3442,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     printService: schoolPrintService,
     triggerDispatchService,
   });
+  if (schoolCalc.studyOutcomeExecutor && schoolLifecycle.stores?.sessions) {
+    schoolCalc.studyOutcomeExecutor.bind({ sessions: schoolLifecycle.stores.sessions });
+  }
 
   // NFC taps arriving on a hardware-relay topic (the omr-relay carries an M5
   // Unit NFC alongside the bubble-sheet reader). One tag registry decides who
