@@ -450,10 +450,10 @@
   gap: 10px;
   padding: 12px 18px 16px;
   color: #f7f9ff;
-  background:
-    radial-gradient(circle at 14% 24%, rgb(82 151 102 / 42%) 0 12%, transparent 34%),
-    radial-gradient(circle at 86% 28%, rgb(72 124 188 / 38%) 0 13%, transparent 36%),
-    linear-gradient(145deg, #173d35 0%, #142f4c 48%, #17213f 100%);
+  // Deliberately even: the old green/blue corner glows sat on the wrong sides
+  // and fought the battlefield's territory pools, which are the one place this
+  // screen is allowed to say left-is-theirs / right-is-yours.
+  background: linear-gradient(150deg, #14294a 0%, #122139 52%, #131c30 100%);
 }
 
 .card-battle--pokemon::before {
@@ -504,6 +504,7 @@
 }
 
 .pokemon-battlefield {
+  position: relative;
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(15rem, 1fr) minmax(15rem, 0.86fr) minmax(15rem, 1fr);
@@ -512,23 +513,70 @@
   padding: 2px clamp(8px, 2vw, 24px);
 }
 
+.pokemon-battlefield > * { position: relative; z-index: 1; }
+
 .pokemon-combatant {
+  // Ownership tokens — gold is yours, cold steel is theirs. Every surface on the
+  // card derives from these, so the two sides can never drift back together.
+  --plate: var(--pokemon-yellow);
+  --plate-ink: #3a2c05;
+  --frame: var(--pokemon-yellow);
+  --frame-inner: #a67920;
+
   position: relative;
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
   padding: 9px;
   overflow: hidden;
-  border: 7px solid var(--pokemon-yellow);
+  border: 7px solid var(--frame);
   border-radius: 16px;
   color: #172034;
   background: linear-gradient(145deg, #fffceb, #efe5bd);
-  box-shadow: 0 9px 22px rgb(4 13 31 / 46%), inset 0 0 0 2px #a67920;
+  box-shadow: 0 9px 22px rgb(4 13 31 / 46%), inset 0 0 0 2px var(--frame-inner);
 }
 
-.pokemon-combatant--enemy { transform: rotate(-0.7deg); }
-.pokemon-combatant--player { transform: rotate(0.7deg); }
+// Depth carries the same message as colour: yours is near and lit, theirs is
+// across the table — smaller, cooler, pushed back. Each card also pools its own
+// side's light onto the mat around it; that halo is the territory cue, and it
+// has to sit OUTSIDE the card, since the card itself hides anything behind it.
+.pokemon-combatant--enemy {
+  --plate: #93a8c2;
+  --plate-ink: #0f1c31;
+  --frame: #a2b5cb;
+  --frame-inner: #5d708c;
+
+  transform: rotate(-1deg) scale(0.975);
+  background: linear-gradient(145deg, #f4f7fb, #d2dbe7);
+  box-shadow:
+    0 5px 14px rgb(4 13 31 / 40%),
+    0 0 52px 12px rgb(86 152 250 / 30%),
+    inset 0 0 0 2px var(--frame-inner);
+}
+.pokemon-combatant--player {
+  transform: rotate(1deg) scale(1.015);
+  box-shadow:
+    0 12px 26px rgb(4 13 31 / 52%),
+    0 0 58px 14px rgb(246 190 66 / 26%),
+    0 0 0 3px rgb(245 202 69 / 26%),
+    inset 0 0 0 2px var(--frame-inner);
+}
+
+// Nameplate: the caption this replaces was a 0.67rem whisper in a corner.
+.pokemon-combatant__side {
+  margin: -9px -9px 6px;
+  padding: 5px 12px;
+  border-bottom: 2px solid var(--frame-inner);
+  color: var(--plate-ink);
+  background: var(--plate);
+  font-size: 0.95rem;
+  font-weight: 900;
+  letter-spacing: 0.24em;
+  line-height: 1.15;
+  text-transform: uppercase;
+}
+.pokemon-combatant--player .pokemon-combatant__side { text-align: right; }
 
 .pokemon-combatant__header {
   min-width: 0;
@@ -539,15 +587,8 @@
   padding: 0 5px 6px;
 }
 
-.pokemon-combatant__header > span:first-child { min-width: 0; display: grid; }
-.pokemon-combatant__header small {
-  color: #5c6170;
-  font-size: 0.67rem;
-  font-weight: 800;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-}
 .pokemon-combatant__header strong {
+  min-width: 0;
   overflow: hidden;
   font-size: clamp(1.25rem, 2.2vw, 1.75rem);
   line-height: 1;
@@ -642,11 +683,13 @@
 }
 .pokemon-type > span { font-size: 0.78rem; }
 
+// Both badges sit inside the art window (top corners), so they follow it at any
+// card size instead of being nudged by hand against the card's own top edge.
 .pokemon-combatant__weakness,
 .pokemon-combatant__energy {
   position: absolute;
-  top: 52px;
-  left: 14px;
+  top: 6px;
+  left: 6px;
   z-index: 2;
   display: flex;
   align-items: center;
@@ -660,7 +703,8 @@
   font-weight: 800;
 }
 .pokemon-combatant__weakness b { font-size: 0.8rem; }
-.pokemon-combatant__energy { right: 14px; left: auto; }
+.pokemon-combatant__weakness { background: rgb(235 242 251 / 90%); }
+.pokemon-combatant__energy { right: 6px; left: auto; }
 .pokemon-combatant__energy i {
   width: 18px;
   height: 18px;
@@ -685,30 +729,39 @@
   padding-block: 10px;
   text-align: center;
 }
+// The intent belongs to the opponent, so it wears their steel edge and leans
+// out of their half of the mat toward you.
 .pokemon-battlefield__center .combatant__intent {
   display: grid;
   grid-template-columns: 1fr;
   gap: 2px;
+  margin-right: 6%;
   padding: 9px 12px;
-  border: 1px solid rgb(255 255 255 / 24%);
+  border: 1px solid rgb(162 181 203 / 46%);
   border-left: 5px solid #f06c62;
   border-radius: 10px;
   color: #fff;
-  background: rgb(7 19 44 / 68%);
-  box-shadow: 0 5px 14px rgb(4 13 31 / 24%);
+  background: linear-gradient(100deg, rgb(24 52 104 / 88%), rgb(9 22 48 / 78%));
+  box-shadow: 0 5px 14px rgb(4 13 31 / 34%);
 }
 .pokemon-battlefield__center .combatant__intent--defend { border-left-color: #73b9ee; }
 .pokemon-battlefield__center .combatant__intent--charge { border-left-color: var(--pokemon-yellow); }
 .pokemon-battlefield__center .combatant__intent span { color: #bfcde5; }
 .pokemon-battlefield__center .combatant__intent strong { font-size: 1.15rem; }
 .pokemon-battlefield__center .combatant__intent em { font-size: 0.88rem; }
+// Sits on the join between the two territories: steel on the left half of the
+// chip, gold on the right, so even the divider states which side is whose.
 .pokemon-battlefield__versus {
-  color: var(--pokemon-yellow);
-  font-size: 1.15rem;
+  justify-self: center;
+  padding: 3px 14px;
+  border-radius: 999px;
+  color: #0d1a33;
+  background: linear-gradient(100deg, #a2b5cb 0 50%, var(--pokemon-yellow) 50% 100%);
+  box-shadow: 0 3px 10px rgb(4 13 31 / 45%);
+  font-size: 1.05rem;
   font-style: italic;
   font-weight: 900;
   letter-spacing: 0.16em;
-  text-shadow: 0 2px 0 var(--pokemon-blue-dark);
 }
 .pokemon-battlefield__center .battle-prompt,
 .pokemon-battlefield__center .battle-resolution,
@@ -838,9 +891,8 @@
   .card-battle--pokemon { padding-block: 8px 10px; }
   .card-battle--pokemon .card-hand { height: 10.5rem; }
   .pokemon-combatant { border-width: 5px; padding: 6px; }
+  .pokemon-combatant__side { margin: -6px -6px 4px; padding: 3px 9px; font-size: 0.74rem; }
   .pokemon-combatant__header { padding-bottom: 3px; }
-  .pokemon-combatant__weakness,
-  .pokemon-combatant__energy { top: 43px; }
   .pokemon-move-card { border-width: 4px; }
   .pokemon-move-card .battle-card__description { display: none; }
 }

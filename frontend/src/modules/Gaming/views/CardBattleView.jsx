@@ -38,19 +38,28 @@ function PokemonType({ type }) {
   );
 }
 
+/**
+ * One side of the mat. Whose card this is has to be answerable without reading
+ * anything, so ownership rides on the frame (gold = yours, steel = theirs — the
+ * same rule your hand cards follow) and on a full-width nameplate, not on a
+ * caption. The badges live inside the art window so they track it at any size.
+ */
 function PokemonCombatant({ side, config, state }) {
   const pokemon = config?.pokemon || {};
+  const mine = side === 'player';
   const healthPercent = Math.max(0, Math.min(100, (state.health / state.max_health) * 100));
-  const featuredStat = side === 'player'
+  const featuredStat = mine
     ? ['Speed', pokemon.stats?.speed]
     : ['Defense', pokemon.stats?.defense];
   return (
-    <article className={`pokemon-combatant pokemon-combatant--${side}`} aria-label={`${config.name} active Pokémon`}>
+    <article
+      className={`pokemon-combatant pokemon-combatant--${side}`}
+      data-side={side}
+      aria-label={`${mine ? 'Your' : 'Opponent'} active Pokémon: ${config.name}`}
+    >
+      <p className="pokemon-combatant__side">{mine ? 'You' : 'Opponent'}</p>
       <header className="pokemon-combatant__header">
-        <span>
-          <small>{side === 'player' ? 'Your active Pokémon' : 'Opponent'}</small>
-          <strong>{config.name}</strong>
-        </span>
+        <strong>{config.name}</strong>
         <span className="pokemon-combatant__hp"><b>{state.health}</b> HP</span>
       </header>
       <div className="pokemon-combatant__art">
@@ -58,6 +67,19 @@ function PokemonCombatant({ side, config, state }) {
           ? <img src={pokemonAssetUrl(pokemon.assets.svg)} alt={config.name} draggable="false" />
           : <CardIdenticon seed={`${pokemon.dex || side}:${config.name}`} />}
         <span className="pokemon-combatant__dex">#{pokemon.dex || '????'}</span>
+        {!mine && config.weakness && (
+          <div className="pokemon-combatant__weakness">
+            Weakness <PokemonType type={config.weakness.type} /> <b>×{config.weakness.multiplier}</b>
+          </div>
+        )}
+        {mine && (
+          <div className="pokemon-combatant__energy" aria-label={`${state.energy} of ${state.max_energy} energy`}>
+            <span>Energy</span>
+            {Array.from({ length: state.max_energy }, (_, index) => (
+              <i key={index} className={index < state.energy ? 'is-charged' : ''} aria-hidden="true">⚡</i>
+            ))}
+          </div>
+        )}
       </div>
       <div className="pokemon-combatant__health" style={{ '--health-percent': `${healthPercent}%` }}>
         <progress aria-label={`${config.name} health`} max={state.max_health} value={state.health} />
@@ -69,19 +91,6 @@ function PokemonCombatant({ side, config, state }) {
         </span>
         <span>{pokemon.genus || 'Pokémon'} · {featuredStat[0]} {featuredStat[1] ?? '—'}</span>
       </footer>
-      {side === 'enemy' && config.weakness && (
-        <div className="pokemon-combatant__weakness">
-          Weakness <PokemonType type={config.weakness.type} /> <b>×{config.weakness.multiplier}</b>
-        </div>
-      )}
-      {side === 'player' && (
-        <div className="pokemon-combatant__energy" aria-label={`${state.energy} of ${state.max_energy} energy`}>
-          <span>Energy</span>
-          {Array.from({ length: state.max_energy }, (_, index) => (
-            <i key={index} className={index < state.energy ? 'is-charged' : ''} aria-hidden="true">⚡</i>
-          ))}
-        </div>
-      )}
     </article>
   );
 }
@@ -171,7 +180,7 @@ function BattleStatus({ state, definition, combatResult, error, noPlayableCards,
   );
 }
 
-function EnemyIntent({ intent, strength = 0 }) {
+function EnemyIntent({ intent, strength = 0, enemyName = null }) {
   if (!intent) return null;
   return (
     <div
@@ -179,7 +188,8 @@ function EnemyIntent({ intent, strength = 0 }) {
       data-intent-kind={intent.kind}
       data-intent-amount={intent.amount + (intent.kind === 'attack' ? strength : 0)}
     >
-      <span>Next move</span>
+      {/* Ownerless "Next move" reads as if it could be yours — it is theirs. */}
+      <span>{enemyName ? `${enemyName} will use` : 'Next move'}</span>
       <strong>{intent.title}</strong>
       <em>
         {intent.kind === 'attack' && `${intent.amount + strength} damage`}
@@ -361,7 +371,7 @@ export function CardBattleView({
           <section className="pokemon-battlefield" aria-live="polite">
             <PokemonCombatant side="enemy" config={enemyConfig} state={state.enemy} />
             <div className="pokemon-battlefield__center">
-              <EnemyIntent intent={intent} strength={state.enemy.strength} />
+              <EnemyIntent intent={intent} strength={state.enemy.strength} enemyName={state.enemy.name} />
               <div className="pokemon-battlefield__versus" aria-hidden="true">VS</div>
               <BattleStatus
                 state={state}
