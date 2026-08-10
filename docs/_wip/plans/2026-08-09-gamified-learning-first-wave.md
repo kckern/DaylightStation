@@ -1,7 +1,8 @@
 # Gamified Learning — First-Wave Structural Implementation
 
 **Date:** 2026-08-09
-**Status:** Implemented scaffold; field gameplay and later generalization remain open.
+**Status:** Tactical rescue slice implemented after the initial player-experience gate failed.
+Generalization remains frozen until the revised encounter earns replay willingness.
 **Design context:** `2026-08-09-gamified-learning-framework-design.md`
 
 ## Purpose
@@ -31,6 +32,26 @@ pilot is registered as **Card Game** at `/piano/games` and deep-links at
 | Resume | Active session id persisted per game/user in local storage | Browser reload resumes rather than silently starting another game |
 | Experience telemetry | Structured client journey events plus authoritative server outcomes | Field monitoring can separate UI abandonment, blocked hands, practice difficulty, persistence failure, and completed play |
 
+## Tactical rescue slice
+
+The revised `card-game` is now an authored tactical encounter rather than a one-card quiz
+loop:
+
+- Players see the enemy's next attack, defense, or charge intent before committing cards.
+- A three-energy turn can contain multiple attack, guard, and focus cards before an explicit
+  end-turn action.
+- Guard answers announced attacks; focus persists until and strengthens the next attack.
+- The concrete scale is selected from a rotating challenge pool after the tactical card is
+  chosen, so card selection no longer doubles as scale selection.
+- Fluent, recovered, and fizzled performances produce distinct effects. Three authored
+  mistakes fizzle the card instead of allowing an infinite retry loop.
+- Enemy turns resolve as explicit events, hands redraw to four cards, and both victory and
+  defeat are reachable.
+- Damage has an immediate combat reaction, terminal results score and summarize the run,
+  and winners choose either extra health or starting focus for a clean rematch.
+
+This implementation reopens the field test; it does not declare the experience gate passed.
+
 ## Deliberate first-wave constraints
 
 - Only `card-battle-v1` definitions validate.
@@ -53,7 +74,9 @@ where the next implementation must supply evidence.
 ### Field pilot — next
 
 - [x] Author a minimal YAML card set and a short win/loss loop using scale interstitials.
-- [ ] Field-test balance, tutorial clarity, and whether the loop actually sustains interest.
+- [x] Field-test balance, tutorial clarity, and whether the loop actually sustains interest.
+  Initial result: **revise**. See
+  `../audits/2026-08-09-card-game-player-experience-audit.md`.
 - [ ] Choose numeric gates for challenge duration, retry rate, abandonment, and replay
   willingness before supervised sessions begin.
 - [x] Add structured duration telemetry for prepare, start, first input, result, and
@@ -121,12 +144,14 @@ Client journey events use the `gaming.*` namespace and always include `gameId`,
 | `gaming.challenge.prepared` / `started` | Did setup stall before input became possible? |
 | `gaming.challenge.completed` | How long to first input and completion; how many wrong notes/restarts; first try or recovered; persistence healthy? |
 | `gaming.challenge.aborted` / `abandoned` | Did the player cancel, reload during play, or leave the surface? |
+| `gaming.turn.ended` | Which announced intent resolved, how much damage was blocked, and did the player survive? |
 | `gaming.hand.empty` | Did an authoritative player-choice state contain no cards? |
 | `gaming.hand.blocked` | Were cards present but unplayable, and was energy the reason? |
 | `gaming.session.completed` | Winner, turns, health, elapsed observation time, and aggregate challenge counts |
 
 The backend separately emits `gaming.authority.challenge.resolved`,
-`gaming.authority.challenge.aborted`, and `gaming.authority.session.completed`. This keeps
+`gaming.authority.challenge.aborted`, `gaming.authority.enemy.intent.resolved`, and
+`gaming.authority.session.completed`. This keeps
 authoritative outcomes distinct from browser experience events so dashboards do not
 double-count them. Hand warnings are keyed by session revision and hand contents, preventing
 React rerenders from producing duplicate alerts.
