@@ -2652,6 +2652,87 @@
 }
 .piano-score-tile--builtin { background: transparent; border: none; }
 
+/* ── Engraver's plate: cover art for a score with no scanned poster ──────────
+   A guilloche rosette under a letterpress eyebrow, over a plate number —
+   the vocabulary of a 19th-century engraved edition, which is what these
+   scores are. Ink colour is per-composer (--plate-ink, set inline), so a
+   whole opus reads as one family while each piece keeps its own figure. */
+.score-plate {
+  --plate-paper: #f3ecda;
+  --plate-shade: #e2d8bf;
+  position: relative;
+  display: flex; flex-direction: column; align-items: center;
+  width: 100%; aspect-ratio: 2 / 3;
+  padding: 0.7rem 0.6rem 0.62rem;
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  color: var(--plate-deep);
+  // Laid-paper warmth: a soft radial lift under the medallion, not a flat wash.
+  background:
+    radial-gradient(112% 74% at 50% 34%, var(--plate-paper), var(--plate-shade));
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.13), inset 0 0 0 4px var(--plate-paper),
+    inset 0 0 0 5px rgb(0 0 0 / 0.09);
+}
+
+.score-plate__eyebrow {
+  // Serif tail on purpose: CSS falls back PER GLYPH, so a mono face without an
+  // accented capital still sets "BURGMÜLLER" correctly instead of dropping the
+  // umlaut — half this library's composers have one.
+  font-family: var(--piano-mono, ui-monospace, monospace), Georgia, serif;
+  font-size: 0.54rem; letter-spacing: 0.19em; text-transform: uppercase;
+  color: var(--plate-ink); opacity: 0.82;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+}
+
+.score-plate__rosette {
+  flex: 1 1 auto; width: 100%; min-height: 0;
+  margin: 0.12rem 0 0.3rem;
+  overflow: visible;
+}
+.score-plate__ring,
+.score-plate__star,
+.score-plate__petal { fill: none; stroke: var(--plate-ink); vector-effect: non-scaling-stroke; }
+.score-plate__ring { stroke-width: 0.6; opacity: 0.4; }
+// The star is the figure that distinguishes one étude from the next, so it
+// carries the most ink; the petals sit behind it as a softer ground.
+.score-plate__star { stroke-width: 1.05; opacity: 0.9; stroke-linejoin: round; }
+.score-plate__petal { stroke-width: 0.7; opacity: 0.42; }
+.score-plate__centre { fill: var(--plate-ink); opacity: 0.88; }
+
+.score-plate__foot {
+  display: flex; flex-direction: column; align-items: center; gap: 0.06rem;
+  width: 100%; text-align: center;
+}
+.score-plate__stamp {
+  font-family: var(--piano-mono, ui-monospace, monospace);
+  font-size: 0.56rem; letter-spacing: 0.1em; font-variant-numeric: tabular-nums;
+  color: var(--plate-ink); opacity: 0.75;
+}
+.score-plate__name {
+  font-family: var(--piano-serif, Georgia, serif);
+  font-size: 0.86rem; line-height: 1.12; text-wrap: balance;
+  // Two lines then ellipsis: a long title must never push the rosette around.
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.score-plate__movement {
+  font-family: var(--piano-serif, Georgia, serif);
+  font-size: 0.66rem; font-style: italic; opacity: 0.66;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+}
+
+// Lift on focus/hover the way a card in a rack does — no motion for people who
+// have asked not to see any.
+.piano-video-grid__tile:hover .score-plate,
+.piano-video-grid__tile:focus-visible .score-plate {
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.2), inset 0 0 0 4px var(--plate-paper),
+    inset 0 0 0 5px var(--plate-ink), 0 6px 18px rgb(0 0 0 / 0.34);
+}
+.piano-video-grid__tile .score-plate { transition: box-shadow 160ms ease; }
+@media (prefers-reduced-motion: reduce) {
+  .piano-video-grid__tile .score-plate { transition: none; }
+}
+
 // Full-height flex column: scroll area (flex:1) + optional keyboard row + pinned
 // bottom transport bar. (Old top toolbar / in-body title retired in Task 11.)
 .piano-score-player {

@@ -5,6 +5,7 @@ import { balancedColumns } from '../../tileGridLayout.js';
 import { SkeletonPoster } from '../../Skeleton.jsx';
 import { prefetchOsmd } from '../../../../MusicNotation/renderers/osmdRender.js';
 import { prettyTitle } from './scoreTitle.js';
+import ScorePlate from './ScorePlate.jsx';
 
 // Last-selected tab (by label), so a walk-up user lands where they left off.
 // Same guarded-localStorage discipline as scoreSettings.js.
@@ -80,9 +81,13 @@ export default function ScoreGrid({ groups = [], onSelect }) {
                   onClick={() => onSelect({ ...item, title })}
                   title={title}
                 >
+                  {/* A scanned cover wins; a notation score without one gets an
+                      engraved plate; anything else keeps the plain label. */}
                   {cover
                     ? <img src={cover} alt={title} loading="lazy" decoding="async" />
-                    : <span className="piano-score-tile__label">{title}</span>}
+                    : item.type === 'notation'
+                      ? <ScorePlate title={title} />
+                      : <span className="piano-score-tile__label">{title}</span>}
                 </button>
               </li>
             );
