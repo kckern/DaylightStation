@@ -13,7 +13,7 @@ function makeSession(definition = scaleClashDefinition) {
 }
 
 describe('CardBattleView', () => {
-  it('renders the hand as direct, tappable scale actions', () => {
+  it('renders the hand as direct card actions without leaking challenge metadata', () => {
     const onChoose = vi.fn();
     const session = makeSession();
     render(<CardBattleView session={session} onChoose={onChoose} onAbort={vi.fn()} />);
@@ -23,6 +23,8 @@ describe('CardBattleView', () => {
     fireEvent.click(cards[0]);
     expect(onChoose).toHaveBeenCalledWith(session.state.zones.hand[0].instance_id);
     expect(screen.getByText('Tap a card')).toBeTruthy();
+    expect(screen.getByText('Choose a card.')).toBeTruthy();
+    expect(screen.queryByText(/notes$/i)).toBeNull();
   });
 
   it('makes a no-playable-card state visible instead of silently disabling the hand', () => {

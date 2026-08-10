@@ -3,7 +3,40 @@ import { act, render } from '@testing-library/react';
 
 vi.mock('../../../MusicNotation/renderers/AbcRenderer.jsx', () => ({ AbcRenderer: () => null }));
 
-import { createPianoChordProvider } from './createPianoChordProvider.jsx';
+import {
+  applyScaleNoteFeedback,
+  createPianoChordProvider,
+} from './createPianoChordProvider.jsx';
+
+describe('scale staff feedback', () => {
+  it('marks completed notes green and identifies the next engraved note', () => {
+    const elements = Array.from({ length: 4 }, () => document.createElementNS('http://www.w3.org/2000/svg', 'path'));
+    const staffNotes = [[
+      { els: [elements[0]] },
+      { els: [elements[1]] },
+      { els: [elements[2]] },
+      { els: [elements[3]] },
+    ]];
+
+    applyScaleNoteFeedback(staffNotes, 2, { status: 'correct' });
+
+    expect(elements[0]).toHaveClass('piano-scale-note--complete');
+    expect(elements[1]).toHaveClass('piano-scale-note--complete');
+    expect(elements[2]).toHaveClass('piano-scale-note--next');
+    expect(elements[3].classList).toHaveLength(0);
+  });
+
+  it('moves wrong-note feedback to the note the player must retry', () => {
+    const first = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    const second = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    const staffNotes = [[{ els: [first] }, { els: [second] }]];
+
+    applyScaleNoteFeedback(staffNotes, 0, { status: 'wrong' });
+
+    expect(first).toHaveClass('piano-scale-note--wrong');
+    expect(second.classList).toHaveLength(0);
+  });
+});
 
 describe('createPianoChordProvider telemetry', () => {
   it('returns aggregate scale experience metrics without logging every note', async () => {

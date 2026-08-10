@@ -57,9 +57,12 @@ export function collectStaffNotes(tune) {
  *   counters abcjs left-aligning the music inside a full-width SVG (sparse/empty
  *   chords would otherwise hug the left). For live chord displays; leave off for
  *   scrolling teleprompter drills.
+ * @param {boolean} [fitContent=false] - crop the SVG viewport to the engraved
+ *   content and scale it to the container. Intended for short, fixed exercises
+ *   that should use the whole stage instead of retaining abcjs page whitespace.
  * @param {(tune:object, staffNotes:Array)=>void} [onRender] - post-paint hook
  */
-export function AbcRenderer({ notes, abc, keySignature = 'C', scale = 1.5, className = 'abc-renderer', singleLine = false, pinStaff = false, onRender }) {
+export function AbcRenderer({ notes, abc, keySignature = 'C', scale = 1.5, className = 'abc-renderer', singleLine = false, pinStaff = false, fitContent = false, onRender }) {
   const containerRef = useRef(null);
   const onRenderRef = useRef(onRender);
   onRenderRef.current = onRender;
@@ -109,7 +112,30 @@ export function AbcRenderer({ notes, abc, keySignature = 'C', scale = 1.5, class
       // staff lines themselves — which never move relative to the music — keeps
       // the stave fixed no matter how high or low the current note is. Runs in a
       // layout effect, so it applies before paint (no visible jump).
-      if (pinStaff) {
+      if (fitContent) {
+        const container = containerRef.current;
+        const svg = container.querySelector('svg');
+        if (svg) {
+          // abcjs writes the tune's intrinsic pixel height directly onto its
+          // host. A fit-to-stage exercise owns that host height instead.
+          container.style.height = '100%';
+          svg.style.transform = 'none';
+          const bounds = svg.getBBox();
+          if (bounds.width > 0 && bounds.height > 0) {
+            const padX = Math.max(10, bounds.width * 0.025);
+            const padY = Math.max(12, bounds.height * 0.28);
+            svg.setAttribute('viewBox', [
+              bounds.x - padX,
+              bounds.y - padY,
+              bounds.width + padX * 2,
+              bounds.height + padY * 2,
+            ].join(' '));
+            svg.setAttribute('width', '100%');
+            svg.setAttribute('height', '100%');
+            svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+          }
+        }
+      } else if (pinStaff) {
         const container = containerRef.current;
         const svg = container.querySelector('svg');
         const staffEls = container.querySelectorAll('.abcjs-staff');
@@ -160,7 +186,7 @@ export function AbcRenderer({ notes, abc, keySignature = 'C', scale = 1.5, class
     renderRef.current = render;
     render();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [notesKey, keySignature, scale, singleLine, pinStaff]);
+  }, [notesKey, keySignature, scale, singleLine, pinStaff, fitContent]);
 
   // When the container resizes (e.g. the player sidebar widens once the video's
   // aspect ratio resolves and the JS-sized stack settles), a one-shot mount-time
@@ -168,12 +194,12 @@ export function AbcRenderer({ notes, abc, keySignature = 'C', scale = 1.5, class
   // and the horizontal/vertical pin track the live container size. Only for the
   // pinned live-chord display — the scrolling teleprompter manages its own width.
   useLayoutEffect(() => {
-    if (!pinStaff || !containerRef.current || typeof ResizeObserver === 'undefined') return undefined;
+    if ((!pinStaff && !fitContent) || !containerRef.current || typeof ResizeObserver === 'undefined') return undefined;
     const target = containerRef.current.parentElement || containerRef.current;
     const ro = new ResizeObserver(() => renderRef.current?.());
     ro.observe(target);
     return () => ro.disconnect();
-  }, [pinStaff]);
+  }, [pinStaff, fitContent]);
 
   if (error) {
     return <span style={{ color: 'red', fontSize: '12px' }}>{error}</span>;

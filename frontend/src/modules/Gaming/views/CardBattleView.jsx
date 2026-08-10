@@ -41,7 +41,7 @@ export function CardBattleView({ session, providerRuntime, error, onChoose, onAb
           ? <div className="battle-result">{state.winner === 'player' ? 'Victory!' : 'Defeated'}</div>
           : noPlayableCards
             ? <div className="battle-prompt battle-prompt--blocked"><strong>No card available</strong><span>{blockedReason}</span></div>
-            : <div className="battle-prompt"><strong>Choose a scale.</strong><span>Play it correctly to attack.</span></div>}
+            : <div className="battle-prompt"><strong>Choose a card.</strong><span>The piano challenge begins after you play it.</span></div>}
         {error && <div className="battle-warning">Recovered after: {error.message}</div>}
       </section>
 
@@ -54,7 +54,6 @@ export function CardBattleView({ session, providerRuntime, error, onChoose, onAb
           {state.zones.hand.map((instance) => {
             const card = definition.cards[instance.definition_id];
             const legal = legalIds.has(instance.instance_id);
-            const noteCount = card.challenge.prompt.expected_midi?.length;
             return (
               <button
                 type="button"
@@ -66,8 +65,8 @@ export function CardBattleView({ session, providerRuntime, error, onChoose, onAb
               >
                 <span className="battle-card__meta"><span>{card.cost} energy</span><span>{card.damage} damage</span></span>
                 <strong>{card.title}</strong>
-                <span className="battle-card__detail">{noteCount ? `${noteCount} notes` : card.challenge.prompt.label}</span>
-                <span className="battle-card__action">Play scale</span>
+                <span className="battle-card__detail">Attack card</span>
+                <span className="battle-card__action">Play card</span>
               </button>
             );
           })}

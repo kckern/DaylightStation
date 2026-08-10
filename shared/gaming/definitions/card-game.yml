@@ -13,8 +13,8 @@ card_battle:
     health: 8
     max_energy: 2
   enemy:
-    id: scale-goblin
-    name: Scale Goblin
+    id: rival
+    name: Rival
     health: 12
     attack: 1
   deck:
@@ -27,9 +27,9 @@ card_battle:
 
 cards:
   c-major:
-    title: C Major
+    title: Quick Strike
     cost: 1
-    damage: 4
+    damage: 3
     challenge:
       domain: piano
       kind: scale
@@ -47,7 +47,7 @@ cards:
         multiplier: 0.5
 
   g-major:
-    title: G Major
+    title: Steady Strike
     cost: 1
     damage: 4
     challenge:
@@ -61,9 +61,9 @@ cards:
     outcomes: *scale_outcomes
 
   f-major:
-    title: F Major
-    cost: 1
-    damage: 4
+    title: Heavy Strike
+    cost: 2
+    damage: 6
     challenge:
       domain: piano
       kind: scale
@@ -75,9 +75,9 @@ cards:
     outcomes: *scale_outcomes
 
   d-major:
-    title: D Major
-    cost: 1
-    damage: 4
+    title: Power Strike
+    cost: 2
+    damage: 7
     challenge:
       domain: piano
       kind: scale

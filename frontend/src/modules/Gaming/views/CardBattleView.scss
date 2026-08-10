@@ -132,14 +132,16 @@
   z-index: 20;
   display: grid;
   place-items: center;
-  padding: var(--sp-5, 24px);
+  padding: clamp(0.75rem, 2vw, 1.5rem);
   background: rgba(11, 11, 15, 0.96);
 }
 
 .gaming-challenge-overlay__panel {
-  width: min(60rem, 100%);
-  max-height: 100%;
+  width: min(76rem, 100%);
+  height: 100%;
+  min-height: 0;
   display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
   gap: var(--sp-4, 16px);
   padding: var(--sp-5, 24px);
   overflow: hidden;
@@ -149,19 +151,74 @@
 }
 
 .challenge-loading { min-height: 12rem; display: grid; place-content: center; }
-.piano-challenge { min-height: 0; display: grid; justify-items: center; gap: var(--sp-3, 12px); }
+.piano-challenge { min-height: 0; height: 100%; display: grid; justify-items: center; gap: var(--sp-3, 12px); }
 .piano-challenge__chord { font-size: clamp(4rem, 14vw, 8rem); font-weight: 800; }
-.piano-scale-challenge > strong { font-size: var(--t-display, 2.2rem); }
+.piano-scale-challenge { width: 100%; grid-template-rows: auto minmax(0, 1fr) auto; }
+.piano-scale-challenge__heading { display: grid; justify-items: center; gap: var(--sp-1, 4px); }
+.piano-scale-challenge__heading span { color: var(--piano-stage-muted, #bbbbbb); }
+.piano-scale-challenge__heading strong { font-size: clamp(1.8rem, 4vw, 2.8rem); }
 .piano-scale-challenge__staff {
+  position: relative;
   width: 100%;
-  min-height: 11rem;
-  max-height: 15rem;
+  min-height: 0;
+  height: 100%;
   overflow: hidden;
   border-radius: var(--r-md, 12px);
   color: #171122;
   background: #fff;
 }
-.piano-scale-challenge__staff svg { display: block; max-height: 15rem; margin: auto; }
+.piano-scale-challenge__staff .abc-renderer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+.piano-scale-challenge__staff svg { display: block; width: 100%; height: 100%; margin: 0; overflow: visible; }
+
+.piano-scale-note--complete,
+.piano-scale-note--complete * {
+  fill: var(--piano-accent, #2ec46f) !important;
+  stroke: var(--piano-accent, #2ec46f) !important;
+  filter: drop-shadow(0 0 2px color-mix(in srgb, var(--piano-accent, #2ec46f) 75%, transparent));
+}
+.piano-scale-note--next,
+.piano-scale-note--next * {
+  fill: #7d512a !important;
+  stroke: #7d512a !important;
+  animation: piano-scale-next-note 1s ease-in-out infinite;
+}
+.piano-scale-note--wrong,
+.piano-scale-note--wrong * {
+  fill: var(--piano-danger, #e05a4f) !important;
+  stroke: var(--piano-danger, #e05a4f) !important;
+  animation: piano-scale-wrong-note 360ms ease-out;
+}
+.piano-scale-challenge__feedback {
+  min-width: min(28rem, 100%);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--sp-3, 12px);
+  color: var(--piano-stage-muted, #bbbbbb);
+}
+.piano-scale-challenge__feedback strong {
+  color: var(--piano-fg, #f1f1f4);
+  font-size: 1.25rem;
+  font-variant-numeric: tabular-nums;
+}
+.piano-scale-challenge__feedback.is-wrong span { color: var(--piano-danger, #e05a4f); }
+
+@keyframes piano-scale-next-note {
+  0%, 100% { opacity: 0.58; }
+  50% { opacity: 1; filter: drop-shadow(0 0 3px #7d512a); }
+}
+
+@keyframes piano-scale-wrong-note {
+  0%, 100% { transform: translateX(0); }
+  30% { transform: translateX(-3px); }
+  65% { transform: translateX(3px); }
+}
 .challenge-abort {
   justify-self: center;
   min-height: 2.75rem;
@@ -179,4 +236,11 @@
   .combatant--enemy { min-height: 3.5rem; padding-block: var(--sp-2, 8px); }
   .battle-card { min-height: 7.75rem; }
   .gaming-challenge-overlay__panel { padding: var(--sp-3, 12px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .piano-scale-note--next,
+  .piano-scale-note--next *,
+  .piano-scale-note--wrong,
+  .piano-scale-note--wrong * { animation: none; }
 }

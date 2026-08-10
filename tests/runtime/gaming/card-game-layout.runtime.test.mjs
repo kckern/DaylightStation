@@ -2,7 +2,10 @@ import { expect, test } from '@playwright/test';
 
 test('Card Game hand and scale challenge fit the 1280x800 piano viewport', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto('/gaming?game=card-game', { waitUntil: 'networkidle' });
+  await page.goto('/piano/games/card-game', { waitUntil: 'networkidle' });
+
+  const continueWithoutPiano = page.getByRole('button', { name: 'Continue without piano' });
+  if (await continueWithoutPiano.isVisible()) await continueWithoutPiano.click();
 
   const cards = page.locator('.battle-card');
   await expect(cards).toHaveCount(3);
@@ -28,6 +31,17 @@ test('Card Game hand and scale challenge fit the 1280x800 piano viewport', async
   await expect(staff).toBeVisible();
   const staffBox = await staff.boundingBox();
   expect(staffBox).not.toBeNull();
+  expect(staffBox.width).toBeGreaterThanOrEqual(viewport.width * 0.8);
+  expect(staffBox.height).toBeGreaterThanOrEqual((viewport.height - 60) * 0.45);
   expect(staffBox.x + staffBox.width).toBeLessThanOrEqual(viewport.width);
   expect(staffBox.y + staffBox.height).toBeLessThanOrEqual(viewport.height);
+
+  const staffLines = page.locator('.piano-scale-challenge__staff .abcjs-staff');
+  await expect(staffLines).toBeVisible();
+  const staffLinesBox = await staffLines.boundingBox();
+  expect(staffLinesBox).not.toBeNull();
+  expect(Math.abs((staffLinesBox.x + staffLinesBox.width / 2) - viewport.width / 2)).toBeLessThan(4);
+  expect(Math.abs((staffLinesBox.y + staffLinesBox.height / 2) - (staffBox.y + staffBox.height / 2))).toBeLessThan(4);
+
+  await expect(page.locator('.piano-scale-note--next')).toHaveCount(1);
 });
