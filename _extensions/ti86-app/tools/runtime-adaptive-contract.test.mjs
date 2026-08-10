@@ -64,18 +64,26 @@ describe('SchoolCalc Adaptive Study SCLEARN contract', () => {
     expect(SOURCE).toMatch(/adaptive_center_lines_ready:[\s\S]*?ld a,33[\s\S]*?adaptive_center_draw_line:[\s\S]*?ld a,64[\s\S]*?call ui_draw_text_count/);
   });
 
-  it('preloads the verso and reveals it before the durable face write', () => {
+  it('preloads the opposite face and swaps both directions before the durable face write', () => {
     expect(SOURCE).toMatch(
-      /adaptive_render_card:[\s\S]*?call adaptive_render_card_rail[\s\S]*?call z,adaptive_preload_verso/,
+      /adaptive_render_card:[\s\S]*?call adaptive_render_card_rail[\s\S]*?call adaptive_preload_opposite_face/,
     );
     expect(SOURCE).toMatch(
-      /adaptive_preload_verso:[\s\S]*?adaptive_key_answer_pages[\s\S]*?adaptive_key_answer_graphic[\s\S]*?adaptive_verso_frame/,
+      /adaptive_preload_opposite_face:[\s\S]*?adaptive_key_answer_pages[\s\S]*?adaptive_key_prompt_pages[\s\S]*?adaptive_key_answer_graphic[\s\S]*?adaptive_key_prompt_graphic[\s\S]*?adaptive_verso_frame/,
     );
     expect(SOURCE).toMatch(
-      /adaptive_flip_to_cached_verso:[\s\S]*?call adaptive_render_cached_verso[\s\S]*?call adaptive_save[\s\S]*?jp adaptive_card_wait/,
+      /adaptive_flip:[\s\S]*?xor 1[\s\S]*?call adaptive_swap_cached_face[\s\S]*?call adaptive_save[\s\S]*?jp adaptive_card_wait/,
     );
-    expect(SOURCE).toMatch(/adaptive_render_cached_verso:[\s\S]*?ld hl,adaptive_verso_frame[\s\S]*?ld de,VideoRam \+ 144[\s\S]*?ld bc,880[\s\S]*?ldir/);
+    expect(SOURCE).toMatch(/adaptive_swap_cached_face:[\s\S]*?ld hl,adaptive_verso_frame[\s\S]*?ld de,VideoRam \+ 144[\s\S]*?ld bc,880[\s\S]*?ex af,af'[\s\S]*?ld \(de\),a[\s\S]*?ld \(hl\),a/);
     expect(SOURCE).toContain('adaptive_verso_frame:        defs 880,0');
+  });
+
+  it('clears to immediate loading feedback before rating persistence and scheduling', () => {
+    expect(SOURCE).toMatch(
+      /adaptive_rate:\s+push bc\s+call adaptive_render_loading\s+pop bc[\s\S]*?call adaptive_choose_next/,
+    );
+    expect(SOURCE).toMatch(/adaptive_render_loading:[\s\S]*?call _clrLCD[\s\S]*?adaptive_label_loading/);
+    expect(SOURCE).toContain('adaptive_label_loading:      defb "LOADING...",0');
   });
 
   it('renders bounded vector commands and reserves a centered caption band', () => {

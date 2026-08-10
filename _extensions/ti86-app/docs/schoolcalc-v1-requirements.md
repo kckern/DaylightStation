@@ -177,6 +177,8 @@ Every cold or warm launch opens `ENTER CODE`. Profile and Catalog screens are
 not normal v1 routes.
 
 - Decimal keys fill six positions and visibly preserve zeroes.
+- Each accepted digit replaces only its own 7x8 cursor cell. The other five
+  cells, instruction text, header, status, and rail MUST NOT be repainted.
 - F1 is blank until all six positions are filled, then becomes `OPEN`.
 - `ENTER` and F1 are inert before six digits; either opens the completed code.
 - F2-F4 are blank and inert. F5 is `EXIT` at the far right and returns directly
@@ -309,6 +311,10 @@ The front and back of a card use these exact softkey rails:
 
 F2 is visually blank and has no behavior on both surfaces. A rating is accepted
 only on the back. `FLIP` is reversible and does not count as another exposure.
+The visible face and its fully rendered opposite face remain resident as a
+two-surface cache. F1 swaps those complete card bodies immediately in either
+direction; content decoding, line layout, vector rendering, and durable writes
+MUST NOT precede the visible swap.
 
 The initial active queue is authored card order. Showing a card increments its
 exposure count. After its back is shown:
@@ -320,6 +326,11 @@ exposure count. After its back is shown:
 - `KNOW` records the rating and retires the card; and
 - reaching `maxExposuresPerCard` without `KNOW` retires the card as unresolved
   after recording its last rating.
+
+Pressing `AGAIN`, `HARD`, or `KNOW` MUST immediately clear the card and show a
+centered `LOADING...` acknowledgement before persistence, scheduling, or next
+surface rendering. That stable acknowledgement remains visible until the next
+card or study summary is complete.
 
 Eligibility is measured in intervening presentations, not wall-clock time.
 When several cards are eligible, choose the earliest scheduled due position,

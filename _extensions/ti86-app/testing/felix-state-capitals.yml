@@ -42,6 +42,8 @@ scenarios:
       - { key: '0', capture: code-ready, expect_text: ['000 000', ENTER TO OPEN] }
       - { key: ENTER, capture: card-front, settle_frames: 300, expect_text: [ADAPTIVE STUDY, ALABAMA, FLIP] }
       - { key: F1, capture: card-verso, settle_frames: 18, expect_text: [MONTGOMERY, AGAIN, HARD, KNOW] }
+      - { key: F1, capture: card-front-again, settle_frames: 18, expect_text: [ALABAMA, FLIP] }
+      - { key: F1, capture: card-verso-again, settle_frames: 18, expect_text: [MONTGOMERY, AGAIN, HARD, KNOW] }
 
   - id: felix-code-entry
     description: Code entry updates cleanly, exposes readiness on digit six, and Enter opens Felix's local prescription.
