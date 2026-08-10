@@ -1376,6 +1376,13 @@
 
 // ── Menu activity strip: per-player recent-course cards ─────────────────
 .piano-menu-activity {
+  // Width a standard poster occupies at the fixed frame height — the floor
+  // every poster box reserves before its image decodes, and the exact width
+  // the loading skeleton draws. = image-body height (7.1 − 0.85) × 133/200,
+  // the aspect the ?w=140&h=200 transcode returns. Keep in sync with the
+  // __poster / __thumb heights below.
+  --activity-poster-w: 4.16rem;
+
   display: flex;
   align-items: center;
   // NOT justify-content:center — a centered overflowing flex row clips its
@@ -1441,6 +1448,9 @@
     position: relative;
     display: block;
     height: 7.1rem; // fixed card rhythm — WIDTH follows the image's aspect
+    // …but an undecoded <img> has no width, which would collapse the frame and
+    // then snap it open. Reserve the common (2:3) width up front.
+    min-width: var(--activity-poster-w);
     border-radius: 0.45rem;
     overflow: hidden;
     background: #101014; // the dot band under the image
@@ -1519,6 +1529,26 @@
   }
 
   &__when { font-size: 0.66rem; opacity: 0.6; }
+
+  // Loading silhouette — the same cards/boxes the data will fill, so nothing
+  // shifts when it lands. Descendant selectors (not plain `&__x`) so these beat
+  // `.piano-skeleton`'s own `width: 100%`, which is defined further down.
+  &--skeleton &__skel-avatar {
+    width: 2.4rem;
+    height: 2.4rem;
+    border-radius: 50%;
+  }
+  &--skeleton &__skel-when {
+    width: 2.6rem;
+    height: 0.62rem;
+    border-radius: 0.31rem;
+  }
+  &--skeleton &__skel-poster {
+    width: var(--activity-poster-w);
+    height: 7.1rem;
+    border-radius: 0.45rem;
+    flex: 0 0 auto;
+  }
 }
 
 .piano-game-fullscreen {

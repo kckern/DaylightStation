@@ -4,7 +4,8 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 let response;
 vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: vi.fn(() => Promise.resolve(response)) }));
 import { DaylightAPI } from '../../../lib/api.mjs';
-import PianoMenuActivity, { relativeTime } from './PianoMenuActivity.jsx';
+import PianoMenuActivity, { relativeTime, readShape, writeShape } from './PianoMenuActivity.jsx';
+import { __clearPianoListCache } from './usePianoList.js';
 
 const NOW = Date.parse('2026-07-28T12:00:00Z');
 const course = (over = {}) => ({
@@ -17,7 +18,18 @@ const player = (over = {}) => ({
   courses: [course()], ...over,
 });
 
-beforeEach(() => { DaylightAPI.mockClear(); response = { players: [] }; });
+beforeEach(() => {
+  DaylightAPI.mockClear();
+  response = { players: [] };
+  __clearPianoListCache(); // module-level SWR cache would leak between tests
+  localStorage.clear();
+});
+
+// The loading skeleton reuses the strip's own card/poster classes (that's the
+// point — identical geometry), so "the data landed" has to be asserted against
+// the non-skeleton strip or a test can pass on placeholders.
+const loadedStrip = () => document.querySelector('.piano-menu-activity:not(.piano-menu-activity--skeleton)');
+const loadedCards = () => loadedStrip()?.querySelectorAll('.piano-menu-activity__card') ?? [];
 
 describe('relativeTime', () => {
   it('formats minutes, hours, days', () => {
@@ -40,9 +52,9 @@ describe('PianoMenuActivity', () => {
       ] }),
     ] };
     render(<PianoMenuActivity onOpenCourse={() => {}} />);
-    await waitFor(() => expect(document.querySelectorAll('.piano-menu-activity__card')).toHaveLength(2));
+    await waitFor(() => expect(loadedCards()).toHaveLength(2));
     // learner-two's card: two course thumbnails, each with its percent underneath
-    const cards = document.querySelectorAll('.piano-menu-activity__card');
+    const cards = loadedCards();
     expect(cards[0].querySelectorAll('.piano-menu-activity__course')).toHaveLength(2);
     expect(cards[0].textContent).toContain('23%');
     expect(cards[0].textContent).toContain('1%');
@@ -77,8 +89,8 @@ describe('PianoMenuActivity', () => {
   it('dims players idle beyond 7 days (keyed off newest course)', async () => {
     response = { players: [player({ lastPlayedAt: '2026-07-10T00:00:00Z' })] };
     render(<PianoMenuActivity onOpenCourse={() => {}} />);
-    await waitFor(() => expect(document.querySelector('.piano-menu-activity__card')).toBeTruthy());
-    expect(document.querySelector('.piano-menu-activity__card').className).toContain('is-stale');
+    await waitFor(() => expect(loadedCards()).toHaveLength(1));
+    expect(loadedCards()[0].className).toContain('is-stale');
   });
 
   it('tapping a course thumbnail opens that course', async () => {
@@ -103,7 +115,45 @@ describe('PianoMenuActivity', () => {
 
   it('renders nothing when there are no players or the fetch fails', async () => {
     const { container } = render(<PianoMenuActivity onOpenCourse={() => {}} />);
-    await waitFor(() => expect(DaylightAPI).toHaveBeenCalled());
+    await waitFor(() => expect(container.querySelector('.piano-menu-activity--skeleton')).toBeNull());
     expect(container.firstChild).toBeNull();
+  });
+});
+
+describe('PianoMenuActivity — loading silhouette', () => {
+  it('reserves the last-seen shape while loading, then swaps in the real strip', async () => {
+    // A previous visit ended with a 2-course card and a 1-course card.
+    writeShape([player({ courses: [course(), course()] }), player({ courses: [course()] })]);
+    response = { players: [player({ courses: [course(), course()] }), player({ courses: [course()] })] };
+
+    const { container } = render(<PianoMenuActivity onOpenCourse={() => {}} />);
+    const skeleton = container.querySelector('.piano-menu-activity--skeleton');
+    expect(skeleton).toBeTruthy(); // present on the FIRST paint — no empty gap
+    const skelCards = skeleton.querySelectorAll('.piano-menu-activity__card');
+    expect(skelCards).toHaveLength(2);
+    expect(skelCards[0].querySelectorAll('.piano-menu-activity__skel-poster')).toHaveLength(2);
+    expect(skelCards[1].querySelectorAll('.piano-menu-activity__skel-poster')).toHaveLength(1);
+
+    await waitFor(() => expect(container.querySelector('.piano-menu-activity--skeleton')).toBeNull());
+    expect(loadedCards()).toHaveLength(2);
+  });
+
+  it('reserves nothing when the last visit had no players', () => {
+    writeShape([]);
+    const { container } = render(<PianoMenuActivity onOpenCourse={() => {}} />);
+    expect(container.firstChild).toBeNull();
+  });
+
+  it('records the rendered shape for the next cold load', async () => {
+    response = { players: [player({ courses: [course(), course()] })] };
+    render(<PianoMenuActivity onOpenCourse={() => {}} />);
+    await waitFor(() => expect(loadedCards()).toHaveLength(1));
+    expect(readShape()).toEqual([2]);
+  });
+
+  it('falls back to a modest default shape with nothing remembered', () => {
+    expect(readShape()).toEqual([2, 2, 2]);
+    localStorage.setItem('piano.menu-activity.shape', 'not json');
+    expect(readShape()).toEqual([2, 2, 2]);
   });
 });

@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
-import { DaylightAPI } from '../../../lib/api.mjs';
 import getLogger from '../../../lib/logging/Logger.js';
 import ProfileAvatar from '../../../lib/identity/ProfileAvatar.jsx';
 import { chipPercent, chipIsStale } from './modes/Videos/CourseTile.jsx';
+import usePianoList from './usePianoList.js';
+import Skeleton from './Skeleton.jsx';
+
+const ACTIVITY_PATH = 'api/v1/piano/activity/recent';
 
 let _logger;
 function logger() {
@@ -28,29 +31,87 @@ export function relativeTime(iso, now = Date.now()) {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+// ── Remembered silhouette ───────────────────────────────────────────────────
+// The strip's height and card count are entirely data-driven, so a cold load
+// used to render nothing and then shove the tile grid down when the fetch
+// landed. We remember the shape of the last strip this kiosk drew — the course
+// count of each player card, in order — and reserve exactly that geometry with
+// skeletons while loading. localStorage (not the IndexedDB list cache) because
+// the reservation has to be there on the FIRST paint, before any async read.
+const SHAPE_KEY = 'piano.menu-activity.shape';
+const DEFAULT_SHAPE = [2, 2, 2]; // first visit ever: a plausible, modest row
+const MAX_COURSES = 4;
+
+/** Course-counts of the last strip drawn here, or a modest default. */
+export function readShape() {
+  try {
+    const raw = JSON.parse(globalThis.localStorage?.getItem(SHAPE_KEY));
+    if (Array.isArray(raw) && raw.every((n) => Number.isInteger(n) && n >= 0 && n <= MAX_COURSES)) {
+      return raw; // [] is meaningful: last visit had no players → reserve nothing
+    }
+  } catch { /* unparseable / no storage → default */ }
+  return DEFAULT_SHAPE;
+}
+
+/** Record the shape just rendered so the next cold load reserves it. */
+export function writeShape(players) {
+  try {
+    const shape = players.map((p) => Math.min(MAX_COURSES, (p.courses || []).length));
+    globalThis.localStorage?.setItem(SHAPE_KEY, JSON.stringify(shape));
+  } catch { /* private mode / quota → skeletons just fall back to the default */ }
+}
+
+/**
+ * Loading placeholder: the strip's own silhouette (same container, same card
+ * chrome, same poster boxes) so the real strip swaps in without moving
+ * anything. Reserves nothing when the last visit had no players.
+ */
+export function ActivitySkeleton({ shape }) {
+  if (!shape.length) return null;
+  return (
+    <div className="piano-menu-activity piano-menu-activity--skeleton" aria-hidden="true">
+      {shape.map((courses, i) => (
+        <div className="piano-menu-activity__card" key={i}>
+          <span className="piano-menu-activity__who">
+            <Skeleton className="piano-menu-activity__skel-avatar" />
+            <Skeleton className="piano-menu-activity__skel-when" />
+          </span>
+          {Array.from({ length: courses }, (_, j) => (
+            <Skeleton key={j} className="piano-menu-activity__skel-poster" />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /**
  * Menu course-activity strip (spec 2026-07-28-piano-menu-activity-strip):
  * one card per player with course history — avatar + up to four recent-course
  * poster thumbnails, each with its completion percent underneath (same
  * percent rule as the poster chips). Tap a thumbnail → that course. Players
- * idle past the fresh window dim. Renders nothing while loading, on error,
- * or when empty.
+ * idle past the fresh window dim. Renders its own skeleton silhouette while
+ * loading; renders nothing on error or when empty.
+ *
+ * Data comes through the shared stale-while-revalidate list cache, so a warm
+ * kiosk paints the previous strip immediately and repaints only if the server
+ * disagrees.
  */
 export default function PianoMenuActivity({ onOpenCourse }) {
-  const [players, setPlayers] = useState(null);
+  const { data: players, loading } = usePianoList(
+    ACTIVITY_PATH,
+    (r) => (Array.isArray(r?.players) ? r.players : []),
+  );
+  // Read once, at first paint — a later write must not resize a live skeleton.
+  const [shape] = useState(readShape);
 
+  useEffect(() => { if (players) writeShape(players); }, [players]);
   useEffect(() => {
-    let cancelled = false;
-    DaylightAPI('api/v1/piano/activity/recent')
-      .then((r) => { if (!cancelled) setPlayers(Array.isArray(r?.players) ? r.players : []); })
-      .catch((e) => {
-        if (!cancelled) setPlayers([]);
-        logger().warn('piano.menu-activity.load-failed', { error: e?.message });
-      });
-    return () => { cancelled = true; };
-  }, []);
+    if (loading) logger().debug('piano.menu-activity.reserving', { cards: shape.length, shape });
+  }, [loading, shape]);
 
-  if (!players?.length) return null;
+  if (loading) return <ActivitySkeleton shape={shape} />;
+  if (!players.length) return null;
   return (
     <div className="piano-menu-activity" aria-label="Recent course activity">
       {players.map((u) => {

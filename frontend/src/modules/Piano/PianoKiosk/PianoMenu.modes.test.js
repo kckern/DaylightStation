@@ -3,6 +3,7 @@ import { createElement } from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { PIANO_MODES, PianoMenu } from './PianoMenu.jsx';
+import { __clearPianoListCache } from './usePianoList.js';
 
 // Lightweight stubs so PianoMenu renders without its full context/hardware chain.
 // The tile-grid assertion below only inspects the <ul>, so the tiles' innards and
@@ -82,7 +83,14 @@ describe('PianoMenu (tile grid columns)', () => {
 // 2026-07-28-piano-menu-activity-strip) mounts inside PianoMenu, above the tile
 // wall, without displacing it. Reuses Task 8's DaylightAPI mock pattern.
 describe('PianoMenu (activity strip)', () => {
-  beforeEach(() => { activityResponse = { players: [] }; });
+  // The strip reads through the shared SWR list cache — an earlier render in
+  // this file already cached an empty strip, so clear it (and the remembered
+  // skeleton shape) or this test would assert against that stale entry.
+  beforeEach(() => {
+    activityResponse = { players: [] };
+    __clearPianoListCache();
+    localStorage.clear();
+  });
 
   it('renders the activity strip alongside the tile wall', async () => {
     activityResponse = {
