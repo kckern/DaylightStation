@@ -3,3 +3,4 @@ firmware/.pio/
 .toolchain/
 bin/
 roms/*.rom
+backups/
