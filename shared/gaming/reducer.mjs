@@ -6,6 +6,13 @@ import {
 } from './contracts.mjs';
 import { assertDefinition } from './definition.mjs';
 import { shuffle } from './rng.mjs';
+import {
+  POKEMON_JOURNEY_RULESET,
+  createPokemonJourneyInitialState,
+  derivePokemonJourneyInteraction,
+  derivePokemonJourneyYield,
+  transitionPokemonJourney,
+} from './pokemonJourney.mjs';
 
 const clone = (value) => structuredClone(value);
 const isTactical = (definition) => definition.card_battle.turn_mode === 'tactical';
@@ -36,6 +43,9 @@ function drawCards(state, count) {
 
 export function createInitialState(definition, { seed = 1, participants = [], setup = {} } = {}) {
   const def = assertDefinition(definition);
+  if (def.ruleset === POKEMON_JOURNEY_RULESET) {
+    return createPokemonJourneyInitialState(def, { seed, participants, setup });
+  }
   const shuffled = instantiateDeck(def, seed);
   const enemyConfig = clone(def.card_battle.enemy);
   const openingIntent = isTactical(def) ? clone(enemyConfig.intents[0]) : null;
@@ -104,6 +114,7 @@ function resolveChallenge(card, definition, state) {
 }
 
 function deriveYield(state) {
+  if (state?.ruleset === POKEMON_JOURNEY_RULESET) return derivePokemonJourneyYield(state);
   if (state.status !== 'active') return { type: 'terminal', winner: state.winner, status: state.status };
   if (state.pending_action) {
     return {
@@ -342,6 +353,7 @@ function abandonSession(state, command) {
 export function transition(state, command, definition) {
   const def = assertDefinition(definition);
   if (!state || typeof state !== 'object') return failure(state, 'invalid_state', 'State is required');
+  if (def.ruleset === POKEMON_JOURNEY_RULESET) return transitionPokemonJourney(state, command, def);
   switch (command.type) {
     case COMMAND_TYPES.CHOOSE_ACTION: return chooseAction(state, command, def);
     case COMMAND_TYPES.END_TURN: return endTurn(state, def);
@@ -356,6 +368,7 @@ export function transition(state, command, definition) {
 
 export function deriveInteraction(state, definition, viewerId = null) {
   const def = assertDefinition(definition);
+  if (def.ruleset === POKEMON_JOURNEY_RULESET) return derivePokemonJourneyInteraction(state, def, viewerId);
   const legalCommands = [];
   if (state.status === 'active' && !state.pending_action) {
     for (const instance of state.zones.hand) {

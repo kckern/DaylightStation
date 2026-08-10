@@ -9,7 +9,11 @@ export function CardGame({ currentUser = null, onDeactivate = null }) {
   // the supported guest identity without changing normal kiosk identity.
   const queryUserId = useMemo(() => new URLSearchParams(window.location.search).get('user'), []);
   const userId = queryUserId || currentUser?.user_id || currentUser?.id || 'guest';
-  const participants = useMemo(() => [{ user_id: userId, role: 'player' }], [userId]);
+  const displayName = currentUser?.display_name || currentUser?.name || currentUser?.first_name || userId;
+  const participants = useMemo(
+    () => [{ user_id: userId, display_name: displayName, role: 'player' }],
+    [displayName, userId],
+  );
   const providers = useMemo(
     () => [createPianoChordProvider({ useNotes: usePianoMidiNotes, useConnection: usePianoMidi })],
     [],
