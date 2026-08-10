@@ -125,8 +125,13 @@ export function useScoreTransport({
     setPlaying(false);
   }, []);
 
+  /** Current musical position in the timeline's millisecond domain. */
+  const getPosition = useCallback(() => (
+    intervalRef.current != null ? performance.now() - anchorRef.current : posRef.current
+  ), []);
+
   useEffect(() => () => clearTimer(), []);
-  return { playing, play, pause, seek, stop, lookaheadMs };
+  return { playing, play, pause, seek, stop, getPosition, lookaheadMs };
 }
 
 export default useScoreTransport;

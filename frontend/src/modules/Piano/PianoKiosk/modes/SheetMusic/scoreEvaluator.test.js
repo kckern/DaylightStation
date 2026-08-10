@@ -1,42 +1,46 @@
 import { describe, it, expect } from 'vitest';
-import { gradeMeasure } from './scoreEvaluator.js';
+import { gradePerformanceMeasure } from './scoreEvaluator.js';
 
 const cfg = { timingToleranceMs: 80, thresholds: { green: 0.9, yellow: 0.6 } };
 
-describe('gradeMeasure', () => {
-  it('all notes on time → green, noteScore 1', () => {
-    const g = gradeMeasure({ expected: [60, 64], hits: [{ note: 60, driftMs: 10 }, { note: 64, driftMs: -20 }] }, cfg);
-    expect(g.grade).toBe('green');
-    expect(g.noteScore).toBe(1);
-    expect(g.timingScore).toBeGreaterThan(0.9);
+describe('gradePerformanceMeasure', () => {
+  const target = (pitches, drifts = [], state = drifts.length === pitches.length ? 'hit' : 'missed') => ({
+    pitches, drifts, state,
   });
-  it('missed a note → noteScore 0.5, grade drops', () => {
-    const g = gradeMeasure({ expected: [60, 64], hits: [{ note: 60, driftMs: 5 }] }, cfg);
-    expect(g.noteScore).toBe(0.5);
-    expect(['yellow', 'red']).toContain(g.grade);
+
+  it('counts repeated attacks independently', () => {
+    const g = gradePerformanceMeasure({
+      targets: [target([60], [5]), target([60], [], 'missed')],
+      unmatched: [],
+    }, cfg);
+    expect(g).toMatchObject({ expectedCount: 2, matchedCount: 1, noteScore: 0.5 });
   });
-  it('right notes but very late → timing pulls the grade down', () => {
-    const g = gradeMeasure({ expected: [60], hits: [{ note: 60, driftMs: 400 }] }, cfg);
-    expect(g.noteScore).toBe(1);
-    expect(g.timingScore).toBeLessThan(0.5);
+
+  it('penalizes unmatched notes', () => {
+    const clean = gradePerformanceMeasure({ targets: [target([60], [0])], unmatched: [] }, cfg);
+    const wrong = gradePerformanceMeasure({
+      targets: [target([60], [0])],
+      unmatched: [{ pitch: 61 }],
+    }, cfg);
+    expect(clean.noteScore).toBe(1);
+    expect(wrong).toMatchObject({ wrongCount: 1, noteScore: 0.5 });
   });
-  it('empty measure → red + silent flag', () => {
-    const g = gradeMeasure({ expected: [60], hits: [] }, cfg);
-    expect(g.grade).toBe('red');
-    expect(g.silent).toBe(true);
-    expect(g.noteScore).toBe(0);
+
+  it('uses every chord pitch and its exact signed drift', () => {
+    const g = gradePerformanceMeasure({ targets: [target([60, 64], [-20, 240])], unmatched: [] }, cfg);
+    expect(g).toMatchObject({ expectedCount: 2, matchedCount: 2, noteScore: 1 });
+    expect(g.timingScore).toBeLessThan(1);
   });
-  it('a measure with no expected notes (rest bar) → green, not silent', () => {
-    const g = gradeMeasure({ expected: [], hits: [] }, cfg);
-    expect(g.grade).toBe('green');
-    expect(g.silent).toBe(false);
+
+  it('marks an untouched expected measure silent and red', () => {
+    const g = gradePerformanceMeasure({ targets: [target([60], [], 'missed')], unmatched: [] }, cfg);
+    expect(g).toMatchObject({ grade: 'red', silent: true, rest: false, noteScore: 0 });
   });
-  it('rest flag is true when expected is empty', () => {
-    const g = gradeMeasure({ expected: [], hits: [] }, cfg);
-    expect(g.rest).toBe(true);
-  });
-  it('rest flag is false when expected has notes', () => {
-    const g = gradeMeasure({ expected: [60], hits: [] }, cfg);
-    expect(g.rest).toBe(false);
+
+  it('treats an untouched rest measure as green, but not a wrong note in a rest', () => {
+    expect(gradePerformanceMeasure({ targets: [], unmatched: [] }, cfg))
+      .toMatchObject({ grade: 'green', silent: false, rest: true });
+    expect(gradePerformanceMeasure({ targets: [], unmatched: [{ pitch: 61 }] }, cfg))
+      .toMatchObject({ grade: 'red', silent: false, rest: true, wrongCount: 1 });
   });
 });

@@ -67,7 +67,11 @@ export function useScoreTelemetry({ id, tickMs = 100 }) {
   // into this same session log.
 
   // Full sheet-music event catalog — one path per event so nothing double-logs.
-  const logMeasureGrade = useCallback(({ measure, grade, noteScore, timingScore }) => logger.info('score.polish.measure', { measure, grade, noteScore, timingScore }), [logger]);
+  const logMeasureGrade = useCallback(({
+    measure, grade, noteScore, timingScore, expectedCount, matchedCount, wrongCount,
+  }) => logger.info('score.polish.measure', {
+    measure, grade, noteScore, timingScore, expectedCount, matchedCount, wrongCount,
+  }), [logger]);
   // `score`/`tier`/`mixed` are the tempo-tier outcome (wave-3 H). They are ALWAYS
   // emitted, defaulted rather than omitted: a reader has to be able to tell "this
   // run had no score" from "this build did not report scores". `score` is the

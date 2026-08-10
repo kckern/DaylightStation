@@ -46,6 +46,16 @@ describe('Piano Hero chart', () => {
     const chart = buildHeroChart(score);
     expect(chart.targets.flatMap((target) => target.pitches)).toEqual([60, 64, 67, 72]);
   });
+
+  it('uses the score tempo map for mid-piece changes', () => {
+    const chart = buildHeroChart({
+      ...score,
+      tempoEntries: [{ onsetQuarter: 0, bpm: 120 }, { onsetQuarter: 1, bpm: 60 }],
+    }, { leadInMs: 0 });
+    expect(chart.targets[0].targetTimeMs).toBe(0);
+    expect(chart.targets[1].targetTimeMs).toBe(500);
+    expect(chart.targets[2].targetTimeMs).toBe(1500);
+  });
 });
 
 describe('Piano Hero judging', () => {

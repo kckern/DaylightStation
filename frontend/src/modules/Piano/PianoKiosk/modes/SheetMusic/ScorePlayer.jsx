@@ -9,6 +9,7 @@ import { usePianoPlayback } from '../../PianoPlaybackContext.jsx';
 import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
 import useReloadGuard from '../../useReloadGuard.js';
 import { buildTempoMap, buildStepTimeline, scaleTimeline } from '../../../../MusicNotation/scoreTimeline.js';
+import { buildPerformanceTargets } from '../../../performance/performanceTargets.js';
 import { useScoreTransport } from '../../score/useScoreTransport.js';
 import { tweenScrollTo, cancelScrollTween } from './scrollTween.js';
 import { partsOf, buildPlayTimeline } from './playParts.js';
@@ -290,7 +291,6 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const wrongTimer = useRef(null);
   const stepRef = useRef(0);
   stepRef.current = step;
-  const stepStartRef = useRef(0); // wall time the current step began (Polish drift proxy)
   // What CAUSED the next focus change, so score.focus.set is attributable. An
   // armed endpoint tap, a handle drag, the Learn landing and Drill-worst all
   // commit the same event shape; without this the log cannot tell them apart
@@ -490,9 +490,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
     },
     // VISUAL PLANE — fires at musical due time; allowed to be late (just a late
     // frame). Advances the cursor and lights struck noteheads; no MIDI here.
-    onEvent: (e, dueWall) => {
+    onEvent: (e) => {
       if (e.kind === 'step' || e.type == null) {
-        stepStartRef.current = dueWall; // musical step start (audit T4) — not commit time
         setStep(e.index);
         setStruck(() => new Set()); // new step starts dark; notes light as they sound
         return;
@@ -690,26 +689,34 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
   // ── Polish scoring (at-tempo, per-measure grade) ──────────────────────────────
   // The cursor advances on the silent step timeline (no note_on for your parts);
-  // MIDI hits are graded per measure. Timing drift is proxied by "ms after this
-  // step's beat began" (stepStartRef) — a coarse but honest at-tempo lateness read.
+  // MIDI hits are matched against exact onset targets in the same tempo-scaled
+  // millisecond domain as the transport. Repetitions and chords remain distinct.
   const resolvedScoringCfg = smCfg.scoring;
   const currentMeasure = layout.steps?.[step]?.measure ?? 0;
-  // stepStartRef is stamped in the transport's onEvent (musical due time), not
-  // here — a commit-time stamp would fold render lateness into the drift proxy.
-  const driftForNote = useCallback(() => performance.now() - stepStartRef.current, []);
-  const expectedForMeasure = useCallback((m) => {
-    const meas = layout.measures?.[m];
-    if (!meas) return [];
-    const set = new Set();
-    for (let i = meas.firstStep; i <= meas.lastStep; i++) {
-      for (const midi of expectedMidisAtStep(layout.steps?.[i], activeParts)) set.add(midi);
-    }
-    return [...set];
-  }, [layout.measures, layout.steps, activeParts]);
+  const performanceTargets = useMemo(() => buildPerformanceTargets(
+    (layout.steps || []).flatMap((scoreStep, index) => (scoreStep.notes || []).map((note) => ({
+      ...note,
+      onsetQuarter: scoreStep.onsetQuarter ?? events[index]?.onsetQuarter ?? 0,
+      measureIndex: scoreStep.measure,
+    }))),
+    {
+      tempoMap,
+      timeScale: 1 / tempoMult,
+      isExpected: (note) => !!activeParts[note.staff],
+    },
+  ), [layout.steps, events, tempoMap, tempoMult, activeParts]);
 
   const onMeasureGrade = useCallback((g) => {
     setGrades((prev) => ({ ...prev, [g.measure]: g }));
-    logMeasureGrade({ measure: g.measure, grade: g.grade, noteScore: g.noteScore, timingScore: g.timingScore });
+    logMeasureGrade({
+      measure: g.measure,
+      grade: g.grade,
+      noteScore: g.noteScore,
+      timingScore: g.timingScore,
+      expectedCount: g.expectedCount,
+      matchedCount: g.matchedCount,
+      wrongCount: g.wrongCount,
+    });
   }, [logMeasureGrade]);
   // Open the run summary + log the aggregate, using the shared tally (so the log
   // and the panel headline can't drift). Used by BOTH the silent-stop and the
@@ -762,8 +769,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
     cfg: resolvedScoringCfg,
     subscribe,
     currentMeasure,
-    expectedForMeasure,
-    driftForNote,
+    targets: performanceTargets,
+    positionForNote: transport.getPosition,
     onMeasureGrade,
     onSilentStop,
   });

@@ -11,19 +11,77 @@ function makeSubscribe() {
 const cfg = { silentMeasuresToStop: 2, timingToleranceMs: 80, thresholds: { green: 0.9, yellow: 0.6 } };
 // expectedByMeasure[m] = midis due in measure m
 const EXPECTED = { 0: [60], 1: [64], 2: [67] };
+const TARGETS = Object.entries(EXPECTED).flatMap(([measure, pitches]) => pitches.map((pitch, index) => ({
+  id: `${measure}-${index}`,
+  pitches: [pitch],
+  measureIndex: Number(measure),
+  targetTimeMs: 0,
+})));
 const opts = (over) => ({
   enabled: over.enabled ?? true,
   cfg,
   subscribe: over.subscribe,
   currentMeasure: over.currentMeasure,
   boundary: over.boundary, // undefined → the hook's default (0)
-  expectedForMeasure: (m) => EXPECTED[m] || [],
-  driftForNote: () => 0, // on-time
+  targets: TARGETS,
+  positionForNote: () => 0, // on-time
   onMeasureGrade: over.onMeasureGrade,
   onSilentStop: over.onSilentStop,
 });
 
 describe('useScoreEvaluator', () => {
+  it('preserves repeated attacks instead of collapsing them to a pitch set', () => {
+    const { subscribe, emit } = makeSubscribe();
+    const onMeasureGrade = vi.fn();
+    let atMs = 0;
+    const repeated = [
+      { id: 1, pitches: [60], measureIndex: 0, targetTimeMs: 0 },
+      { id: 2, pitches: [60], measureIndex: 0, targetTimeMs: 1000 },
+    ];
+    const { rerender } = renderHook((p) => useScoreEvaluator({
+      enabled: true,
+      cfg,
+      subscribe,
+      currentMeasure: p.measure,
+      targets: repeated,
+      positionForNote: () => atMs,
+      onMeasureGrade,
+      onSilentStop: vi.fn(),
+    }), { initialProps: { measure: 0 } });
+    act(() => emit(60));
+    atMs = 1500;
+    rerender({ measure: 1 });
+    expect(onMeasureGrade).toHaveBeenCalledWith(expect.objectContaining({
+      expectedCount: 2,
+      matchedCount: 1,
+      noteScore: 0.5,
+    }));
+  });
+
+  it('charges an unmatched note against the measure even when the right note was also played', () => {
+    const { subscribe, emit } = makeSubscribe();
+    const onMeasureGrade = vi.fn();
+    const oneTarget = [{ id: 1, pitches: [60], measureIndex: 0, targetTimeMs: 0 }];
+    const { rerender } = renderHook((p) => useScoreEvaluator({
+      enabled: true,
+      cfg,
+      subscribe,
+      currentMeasure: p.measure,
+      targets: oneTarget,
+      positionForNote: () => 0,
+      onMeasureGrade,
+      onSilentStop: vi.fn(),
+    }), { initialProps: { measure: 0 } });
+    act(() => { emit(60); emit(61); });
+    rerender({ measure: 1 });
+    expect(onMeasureGrade).toHaveBeenCalledWith(expect.objectContaining({
+      expectedCount: 1,
+      matchedCount: 1,
+      wrongCount: 1,
+      noteScore: 0.5,
+    }));
+  });
+
   it('grades a measure when currentMeasure advances', () => {
     const { subscribe, emit } = makeSubscribe();
     const onMeasureGrade = vi.fn();
@@ -127,8 +185,8 @@ describe('useScoreEvaluator', () => {
       cfg: { silentMeasuresToStop: 4 },
       subscribe: (fn) => { fire = fn; return () => {}; },
       currentMeasure: 3,
-      expectedForMeasure: () => [60],
-      driftForNote: () => 0,
+      targets: [{ id: '3-0', pitches: [60], measureIndex: 3, targetTimeMs: 0 }],
+      positionForNote: () => 0,
       onMeasureGrade,
       onSilentStop: vi.fn(),
     }));
@@ -257,7 +315,7 @@ describe('useScoreEvaluator', () => {
     const onMeasureGrade = vi.fn();
     const { result } = renderHook(() => useScoreEvaluator({
       enabled: false, cfg, subscribe, currentMeasure: 2,
-      expectedForMeasure: (m) => EXPECTED[m] || [], driftForNote: () => 0,
+      targets: TARGETS, positionForNote: () => 0,
       onMeasureGrade, onSilentStop: vi.fn(),
     }));
     act(() => result.current.finalize());
