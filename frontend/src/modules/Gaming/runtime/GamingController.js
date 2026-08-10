@@ -311,6 +311,7 @@ export class GamingController {
       notesRequired: metrics.notesRequired ?? metrics.notes_required ?? null,
       notesPlayed: metrics.notesPlayed ?? null,
       wrongNotes: metrics.wrongNotes ?? null,
+      wrongInputs: metrics.wrongInputs ?? null,
       restarts: metrics.restarts ?? null,
       persistenceError: metrics.persistenceError ?? metrics.persistence_error ?? false,
       providerVersion: result.provider_version,

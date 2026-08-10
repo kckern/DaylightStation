@@ -48,7 +48,7 @@ describe('createPianoChordProvider telemetry', () => {
     const runtime = await provider.createRuntime({ userId: 'guest', api, logger });
     const request = {
       challenge_id: 'challenge-1', kind: 'scale',
-      prompt: { label: 'C major', key_signature: 'C', abc: 'C D E', expected_midi: [60, 62, 64] },
+      prompt: { label: 'C major', key_signature: 'C', expected_midi: [60, 62, 64] },
     };
     const prepared = await runtime.prepare(request);
     const resultPromise = runtime.start(prepared);
@@ -85,7 +85,7 @@ describe('createPianoChordProvider telemetry', () => {
     const prepared = await runtime.prepare({
       challenge_id: 'challenge-fizzle', kind: 'scale',
       prompt: {
-        label: 'C major', key_signature: 'C', abc: 'C D E', expected_midi: [60, 62, 64], max_mistakes: 3,
+        label: 'C major', key_signature: 'C', expected_midi: [60, 62, 64], max_mistakes: 3,
       },
     });
     const resultPromise = runtime.start(prepared);
@@ -99,6 +99,15 @@ describe('createPianoChordProvider telemetry', () => {
     const result = await resultPromise;
 
     expect(result).toMatchObject({ status: 'completed', score: 0, attempt_id: 'failed-attempt' });
-    expect(result.metrics).toMatchObject({ failed: true, firstTry: false, wrongNotes: 3 });
+    expect(result.metrics).toMatchObject({
+      failed: true,
+      firstTry: false,
+      wrongNotes: 3,
+      wrongInputs: [
+        { played: 61, expected: 60, progress: 0 },
+        { played: 63, expected: 60, progress: 0 },
+        { played: 65, expected: 60, progress: 0 },
+      ],
+    });
   });
 });

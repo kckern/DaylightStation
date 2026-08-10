@@ -82,6 +82,17 @@ export const midiToAbc = (midiNote, keySignature = null) => {
 };
 
 /**
+ * Generate a single melodic staff directly from the MIDI pitches used for
+ * grading. This deliberately prevents an exercise from authoring one melody
+ * for the player to see and a second, divergent melody for the matcher.
+ */
+export const generateScaleAbc = (midiNotes, keySignature = 'C') => {
+  if (!Array.isArray(midiNotes) || midiNotes.length === 0) return '';
+  const melody = midiNotes.map((note) => midiToAbc(note, keySignature)).join(' ');
+  return `X:1\nL:1/4\nK:${keySignature}\n${melody} |]`;
+};
+
+/**
  * Generate ABC notation for a grand staff with the current notes.
  * Always shows both treble and bass clefs with a closing bar line.
  * @param {Map} activeNotes - Map of MIDI note numbers to note data

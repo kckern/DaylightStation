@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { YamlGamingDefinitionStore } from '../../../backend/src/1_adapters/persistence/yaml/gaming/YamlGamingDefinitionStore.mjs';
 import { YamlGamingSessionStore } from '../../../backend/src/1_adapters/persistence/yaml/gaming/YamlGamingSessionStore.mjs';
 import { GamingSessionService } from '../../../backend/src/3_applications/gaming/GamingSessionService.mjs';
+import { validateDefinition } from '../../../shared/gaming/definition.mjs';
 import { scaleClashDefinition } from '../../../shared/gaming/fixtures/scaleClash.mjs';
 
 const scratch = [];
@@ -41,6 +42,9 @@ describe('GamingSessionService', () => {
     expect(Object.values(loaded.definition.cards).every((card) => card.challenge.kind === 'scale')).toBe(true);
     expect(new Set(Object.values(loaded.definition.cards).map((card) => card.type))).toEqual(new Set(['attack', 'guard', 'focus']));
     expect(Object.values(loaded.definition.cards).every((card) => !/major|scale/i.test(card.title))).toBe(true);
+    const prompts = loaded.definition.card_battle.challenge_pools['major-scales'].prompts;
+    expect(prompts.every((prompt) => prompt.abc === undefined && prompt.expected_midi === undefined)).toBe(true);
+    expect(prompts.map((prompt) => prompt.scale.tonic)).toEqual(['C', 'G', 'F', 'D']);
     const created = svc.createSession({ game_id: 'card-game', participants: [{ user_id: 'guest' }], seed: 7 });
     const card = created.state.zones.hand[0];
     const chosen = svc.applyCommand(created.session_id, {
@@ -48,8 +52,20 @@ describe('GamingSessionService', () => {
     });
     expect(chosen.state.pending_action.request).toMatchObject({ domain: 'piano', kind: 'scale' });
     expect(chosen.state.pending_action.request.prompt.expected_midi).toHaveLength(8);
+    expect(chosen.state.pending_action.request.prompt.scale).toMatchObject({ mode: 'major', octave: 4 });
     expect(chosen.state.pending_action.request.context.challenge_pool).toBe('major-scales');
     expect(loaded.definition.cards[card.definition_id].challenge.prompt).toBeUndefined();
+  });
+
+  it('rejects low-level MIDI or ABC authoring at the game-definition boundary', () => {
+    const definition = structuredClone(service().getDefinition('card-game').definition);
+    definition.card_battle.challenge_pools['major-scales'].prompts[0].expected_midi = [60, 62];
+    expect(validateDefinition(definition)).toMatchObject({
+      valid: false,
+      errors: expect.arrayContaining([
+        'challenge pool major-scales scale prompt must use semantic scale fields, not MIDI or ABC',
+      ]),
+    });
   });
 
   it('pins the definition and replays commands authoritatively', () => {
