@@ -43,6 +43,9 @@ describe('Adaptive Study emulator journey documentation', () => {
       '--report', path.join(directory, 'report.json'), '--output', output]);
     const html = readFileSync(output, 'utf8');
     expect(html).toContain('Exact TI-86 / MAME evidence');
+    expect(html).toContain('MAME PASS');
+    expect(html).toContain('scenario adaptive-v1-journey');
+    expect(html).toContain('passed every configured text, transition, and Version-5/M QR assertion');
     expect(html).toContain('release release123');
     expect(html).toContain('ROM SHA-1 abc123');
     expect(html).toContain('frame SHA-256 frame123');
