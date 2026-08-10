@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { AbcRenderer } from '../../../MusicNotation/renderers/AbcRenderer.jsx';
 import { evaluateChordMatch } from '../../PianoFlashcards/flashcardEngine.js';
 import { advanceScaleProgress } from './scaleProgress.js';
+import { WrongNoteGhost } from './WrongNoteGhost.jsx';
+import { scaleClefType } from './wrongNoteGhost.js';
 
 const EMPTY_NOTES = new Map();
 const EMPTY_HISTORY = [];
@@ -128,11 +130,21 @@ export function createPianoChordProvider({ useNotes, clock = () => Date.now() })
         const historyCursor = useRef(null);
         const staffNotesRef = useRef([]);
         const challengeId = view.prepared?.challenge_id;
+        // The staff box as a callback ref rather than a plain one: the ghost
+        // overlay needs the element during RENDER, and a ref is still null on
+        // the pass that mounts it.
+        const [staffBox, setStaffBox] = useState(null);
+        // Bumped on every abcjs paint. abcjs re-engraves on resize, which
+        // replaces every note element and moves the staff lines, so the ghost
+        // must re-read the geometry — and this render is also what refreshes
+        // the anchor element it is measured against.
+        const [engraving, setEngraving] = useState({ nonce: 0, clefType: null });
 
-        const handleScaleRender = useCallback((_tune, staffNotes) => {
+        const handleScaleRender = useCallback((tune, staffNotes) => {
           clearScaleNoteFeedback(staffNotesRef.current);
           staffNotesRef.current = staffNotes;
           applyScaleNoteFeedback(staffNotes, snapshot.progress, snapshot.lastInput);
+          setEngraving((prev) => ({ nonce: prev.nonce + 1, clefType: scaleClefType(tune) }));
         }, []);
 
         useLayoutEffect(() => {
@@ -211,14 +223,30 @@ export function createPianoChordProvider({ useNotes, clock = () => Date.now() })
         const expectedCount = prompt?.expected_midi?.length || 0;
         if (view.prepared?.kind === 'scale') {
           const abc = `X:1\nL:1/4\nK:${prompt.key_signature || 'C'}\n${prompt.abc} |]`;
+          // The ghost shows only for a wrong note, and only until the next input
+          // resolves it. It hangs off the note the player OWED — which after a
+          // wrong note is wherever the scale restarted, the same element wearing
+          // the red mark — so the two always read as one comparison.
+          const wrongMidi = view.lastInput?.status === 'wrong' ? view.lastInput.note : null;
+          const anchor = wrongMidi == null
+            ? null
+            : (staffNotesRef.current?.[0]?.[view.progress]?.els?.[0] ?? null);
           return (
             <section className="piano-challenge piano-scale-challenge">
               <header className="piano-scale-challenge__heading">
                 <span>Play from left to right</span>
                 <strong>{prompt.label}</strong>
               </header>
-              <div className="piano-scale-challenge__staff">
+              <div className="piano-scale-challenge__staff" ref={setStaffBox}>
                 <AbcRenderer abc={abc} scale={1} singleLine fitContent onRender={handleScaleRender} />
+                <WrongNoteGhost
+                  container={staffBox}
+                  anchor={anchor}
+                  midi={wrongMidi}
+                  clefType={engraving.clefType}
+                  keyName={prompt.key_signature}
+                  engraving={engraving.nonce}
+                />
               </div>
               <div
                 className={`piano-scale-challenge__feedback${view.lastInput?.status === 'wrong' ? ' is-wrong' : ''}`}

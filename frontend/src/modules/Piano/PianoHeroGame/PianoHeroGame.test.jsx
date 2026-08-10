@@ -59,14 +59,31 @@ describe('HeroGame metronome', () => {
     expect(metronomeSpy).toHaveBeenLastCalledWith(expect.objectContaining({ enabled: false }));
   });
 
-  it('opens the shared tempo sheet between runs and retimes the HUD', () => {
+  it('opens the practice-speed ladder between runs and retimes the HUD', () => {
     gamePhase = 'ready';
     render(<HeroGame song={{ title: 'Test Song' }} chart={chart} onChooseSong={vi.fn()} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Tempo' }));
-    expect(screen.getByRole('dialog', { name: 'tempo' })).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: '72' }));
-    expect(screen.getByRole('button', { name: 'Tempo' })).toHaveTextContent('72 BPM');
+    expect(screen.getByRole('dialog', { name: 'Tempo' })).toBeTruthy();
+    // Steps are PERCENT of this song's own tempo, each labelled with the BPM it
+    // produces here — an absolute preset list says nothing against a chart whose
+    // written tempo it was not built for.
+    fireEvent.click(screen.getByRole('button', { name: /^70%/ }));
+    const chip = screen.getByRole('button', { name: 'Tempo' });
+    expect(chip).toHaveTextContent('64 BPM'); // 70% of 92
+    expect(chip).toHaveTextContent('70%');    // and the chip says you are off-tempo
+  });
+
+  it('keeps the tempo chip a reachable control on the ready screen, and out of reach mid-run', () => {
+    gamePhase = 'ready';
+    const { unmount } = render(<HeroGame song={{ title: 'Test Song' }} chart={chart} onChooseSong={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Tempo' })).not.toBeDisabled();
+    unmount();
+
+    gamePhase = 'playing';
+    render(<HeroGame song={{ title: 'Test Song' }} chart={chart} onChooseSong={vi.fn()} />);
+    // Retiming a chart underway would move every note currently in the air.
+    expect(screen.getByRole('button', { name: 'Tempo' })).toBeDisabled();
   });
 });
 

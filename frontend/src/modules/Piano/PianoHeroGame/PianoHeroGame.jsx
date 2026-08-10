@@ -13,7 +13,8 @@ import { balancedGrid } from '../PianoKiosk/tileGridLayout.js';
 import { resolveScoreGroups, groupSlug, groupIndexBySlug } from '../PianoKiosk/modes/SheetMusic/scoreGroups.js';
 import { prettyTitle } from '../PianoKiosk/modes/SheetMusic/scoreTitle.js';
 import useMetronomeClick from '../PianoKiosk/modes/SheetMusic/useMetronomeClick.js';
-import { TempoSheet } from '../PianoKiosk/producer/TempoSheet.jsx';
+import TempoSheet from '../PianoKiosk/transport/TempoSheet.jsx';
+import Icon from '../PianoKiosk/icons/Icon.jsx';
 import { buildHeroChart, clampHeroTempo, heroAccuracy, retimeHeroChart } from './heroChart.js';
 import { heroMetronomePlan } from './heroMetronome.js';
 import { heroThresholdState } from './heroThreshold.js';
@@ -160,9 +161,14 @@ export function HeroGame({ song, chart, gameConfig, onChooseSong, onNoteOn, onNo
   const logger = useMemo(() => getChildLogger({ component: 'piano-hero-game' }), []);
   const { subscribe } = usePianoMidi();
   const [metronomeOn, setMetronomeOn] = useState(() => gameConfig?.metronomeDefault !== false);
-  const [tempoBpm, setTempoBpm] = useState(() => clampHeroTempo(gameConfig?.tempo ?? chart.tempo));
+  // Practice speed is a RATIO of the song's own tempo, not an absolute BPM. A
+  // fixed 72/90/110 preset list means nothing against a chart written at 216:
+  // every preset is "much slower", and none of them is "this song, a bit
+  // easier". Percent is the question a player actually has.
+  const songBpm = clampHeroTempo(gameConfig?.tempo ?? chart.tempo);
+  const [tempoRatio, setTempoRatio] = useState(1);
   const [tempoSheetOpen, setTempoSheetOpen] = useState(false);
-  const activeChart = useMemo(() => retimeHeroChart(chart, tempoBpm), [chart, tempoBpm]);
+  const activeChart = useMemo(() => retimeHeroChart(chart, songBpm * tempoRatio), [chart, songBpm, tempoRatio]);
   const game = usePianoHeroGame({ chart: activeChart, subscribe, config: gameConfig });
   const { activeNotes } = usePianoMidiNotes();
   const range = useMemo(() => computeKeyboardRange([activeChart.startNote, activeChart.endNote]), [activeChart.startNote, activeChart.endNote]);
@@ -194,10 +200,11 @@ export function HeroGame({ song, chart, gameConfig, onChooseSong, onNoteOn, onNo
     });
   };
 
-  const changeTempo = (nextBpm) => {
-    const next = clampHeroTempo(nextBpm);
-    setTempoBpm(next);
-    logger.info('hero.tempo-changed', { from: activeChart.tempo, to: next, scoreTempo: chart.tempo });
+  const changeTempo = (nextRatio) => {
+    setTempoRatio(nextRatio);
+    logger.info('hero.tempo-changed', {
+      from: activeChart.tempo, to: clampHeroTempo(songBpm * nextRatio), ratio: nextRatio, scoreTempo: chart.tempo,
+    });
   };
 
   return (
@@ -213,7 +220,11 @@ export function HeroGame({ song, chart, gameConfig, onChooseSong, onNoteOn, onNo
             disabled={game.phase === 'playing'}
             title={game.phase === 'playing' ? 'Tempo can be changed between runs' : 'Change tempo'}
             onClick={() => setTempoSheetOpen(true)}
-          >{activeChart.tempo} BPM</button>
+          >
+            <Icon name="quarter-note" />
+            {activeChart.tempo} BPM
+            {tempoRatio !== 1 && <span className="piano-hero-game__tempo-pct">{Math.round(tempoRatio * 100)}%</span>}
+          </button>
         </div>
         <button
           type="button"
@@ -276,13 +287,13 @@ export function HeroGame({ song, chart, gameConfig, onChooseSong, onNoteOn, onNo
           </div>
         </div>
       )}
-      {tempoSheetOpen && (
-        <TempoSheet
-          bpm={activeChart.tempo}
-          onBpm={changeTempo}
-          onClose={() => setTempoSheetOpen(false)}
-        />
-      )}
+      <TempoSheet
+        open={tempoSheetOpen}
+        value={tempoRatio}
+        baseBpm={songBpm}
+        onPick={changeTempo}
+        onClose={() => setTempoSheetOpen(false)}
+      />
     </div>
   );
 }

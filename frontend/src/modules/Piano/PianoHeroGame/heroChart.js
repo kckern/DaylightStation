@@ -50,8 +50,13 @@ export function createHeroRun(chart) {
   };
 }
 
+// The ceiling has to clear the fastest written chart times the top practice
+// step, or the picker lies: Super Mario is charted at 216 BPM, and against a
+// 220 ceiling every step above 100% produced the identical speed while the
+// sheet advertised a different BPM for each. 400 covers 175% of the fastest
+// charts we have and still refuses a nonsense tempo from a malformed score.
 export function clampHeroTempo(bpm) {
-  return Math.max(40, Math.min(220, Math.round(Number(bpm) || 90)));
+  return Math.max(40, Math.min(400, Math.round(Number(bpm) || 90)));
 }
 
 /** Rescale a built chart to a new constant BPM while preserving its lead-in. */
