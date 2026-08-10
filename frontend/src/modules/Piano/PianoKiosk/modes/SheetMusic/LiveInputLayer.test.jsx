@@ -224,8 +224,11 @@ describe('LiveInputLayer styling', () => {
     expect(liveBlock()).toMatch(/pointer-events:\s*none/);
   });
 
-  it('colours a match with the kiosk accent green', () => {
-    expect(liveBlock()).toMatch(/is-match\s*\{[^}]*color:\s*var\(--piano-accent[^}]*#2ec46f/);
+  it('styles no match kind — that lives on the engraved note, not here', () => {
+    // The layer stopped emitting `is-match` when correctness became an event
+    // reported on the printed notehead. A rule for it would be dead weight that
+    // reads as though held state still claims correctness.
+    expect(liveBlock()).not.toContain('is-match');
   });
 
   it('recesses a ghost rather than hiding it', () => {
