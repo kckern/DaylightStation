@@ -517,6 +517,24 @@ describe('ScorePlayer — note-highlight ink (wave-2 A)', () => {
     expect(frames).toBeTruthy();
     expect(frames).not.toMatch(/opacity:\s*1\b/);
   });
+
+  it('the pending pulse breathes ink→glowing brown, never toward transparency', () => {
+    const scss = readFileSync(fileURLToPath(new URL('../../../../../Apps/PianoApp.scss', import.meta.url)), 'utf8');
+    const frames = scss.match(/@keyframes piano-note-pending-pulse\s*\{(?:[^{}]|\{[^{}]*\})*\}/s)?.[0];
+    // Fading a notehead out says "this one is not it" (the ghost mark's job), the
+    // exact opposite of "play this now". Both ends must be solid ink.
+    expect(frames).not.toMatch(/opacity/);
+    expect(frames).toMatch(/fill:\s*var\(--nh-color/); // rest = the engraved near-black
+    expect(frames).toContain('#6b4423');              // peak = the struck-note brown
+
+    // The peak GLOWS, so the low-contrast brown reads as brightening rather than
+    // thinning against the white page.
+    const glow = scss.match(/@keyframes piano-note-pending-glow\s*\{(?:[^{}]|\{[^{}]*\})*\}/s)?.[0];
+    expect(glow).toBeTruthy();
+    expect(glow).toMatch(/drop-shadow/);
+    const block = scss.match(/\.piano-note-pending\s*\{(?:[^{}]|\{[^{}]*\})*\}/s)?.[0];
+    expect(block).toMatch(/animation:\s*piano-note-pending-glow/);
+  });
 });
 
 describe('ScorePlayer — keyboard visibility policy (M2)', () => {

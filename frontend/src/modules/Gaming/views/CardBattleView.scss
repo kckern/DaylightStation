@@ -176,17 +176,40 @@
 }
 .piano-scale-challenge__staff svg { display: block; width: 100%; height: 100%; margin: 0; overflow: visible; }
 
+// The note you actually played, drawn beside the one you owed. Faint engraved
+// ink, never a colour: red already names the mistake on the expected notehead,
+// and a second coloured mark would compete with it for the same claim. This one
+// only answers "what did I hit?", so it reads as a pencil trace over the print.
+//
+// Sits in its own overlay in CSS-pixel space (no viewBox), because abcjs scales
+// its SVG to fit the card and a child of that SVG would inherit the scaling the
+// measurements already account for.
+.piano-scale-ghost {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  z-index: 2;
+  pointer-events: none;
+}
+.piano-scale-ghost__note {
+  color: #171122;
+  opacity: 0.32;
+}
+
 .piano-scale-note--complete,
 .piano-scale-note--complete * {
   fill: var(--piano-accent, #2ec46f) !important;
   stroke: var(--piano-accent, #2ec46f) !important;
   filter: drop-shadow(0 0 2px color-mix(in srgb, var(--piano-accent, #2ec46f) 75%, transparent));
 }
-.piano-scale-note--next,
-.piano-scale-note--next * {
-  fill: #7d512a !important;
-  stroke: #7d512a !important;
-  animation: piano-scale-next-note 1s ease-in-out infinite;
+// "Play this one now." Driven through `color`, not fill: abcjs writes
+// fill="currentColor" on the note group and its glyphs inherit it, so one
+// animated property recolours notehead, stem, ledgers and accidental together —
+// and an animation can move it, which an `!important` fill would have blocked.
+.piano-scale-note--next {
+  animation: piano-scale-next-note 1.1s ease-in-out infinite;
 }
 .piano-scale-note--wrong,
 .piano-scale-note--wrong * {
@@ -209,9 +232,14 @@
 }
 .piano-scale-challenge__feedback.is-wrong span { color: var(--piano-danger, #e05a4f); }
 
+// The pulse breathes between the engraved black ink and a GLOWING brown. It
+// never touches opacity: brown is a lower-contrast mark on a white page than
+// black, so fading toward it read as the notehead thinning out — the same faint
+// grey the ghost uses for "this is not the note", saying the exact opposite of
+// "play this now". Both ends are solid ink; the halo carries the peak.
 @keyframes piano-scale-next-note {
-  0%, 100% { opacity: 0.58; }
-  50% { opacity: 1; filter: drop-shadow(0 0 3px #7d512a); }
+  0%, 100% { color: #23262b; filter: none; }
+  50%      { color: #7d512a; filter: drop-shadow(0 0 2.5px #7d512a); }
 }
 
 @keyframes piano-scale-wrong-note {
@@ -243,4 +271,8 @@
   .piano-scale-note--next *,
   .piano-scale-note--wrong,
   .piano-scale-note--wrong * { animation: none; }
+  // Without the pulse the next note would be plain engraved black — the one
+  // mark the exercise cannot do without. Hold it at the peak colour instead of
+  // dropping the signal along with the motion.
+  .piano-scale-note--next { color: #7d512a; }
 }
