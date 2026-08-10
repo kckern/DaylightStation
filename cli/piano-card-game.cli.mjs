@@ -291,8 +291,24 @@ async function playCard({ page, root, card, timeoutMs }) {
     response.request().method() === 'POST'
     && new URL(response.url()).pathname.endsWith('/challenges/prepare')
   ), { timeout: timeoutMs });
-  await button.click();
-  const prepareResponse = await prepareResponsePromise;
+  const deadline = Date.now() + timeoutMs;
+  let prepareResponse = null;
+  while (!prepareResponse && Date.now() < deadline) {
+    const remaining = Math.max(1, deadline - Date.now());
+    try {
+      await button.click({ timeout: Math.min(250, remaining) });
+    } catch (error) {
+      // Once an accepted click creates the pending challenge, the move leaves
+      // the hand before the prepare response arrives. Only retry actionability
+      // timeouts; surface genuine browser errors immediately.
+      if (error?.name !== 'TimeoutError') throw error;
+    }
+    prepareResponse = await Promise.race([
+      prepareResponsePromise,
+      page.waitForTimeout(Math.min(100, Math.max(1, deadline - Date.now()))).then(() => null),
+    ]);
+  }
+  prepareResponse ||= await prepareResponsePromise;
   if (!prepareResponse.ok()) {
     const body = await prepareResponse.text();
     throw new Error(`${card.title} challenge preparation returned HTTP ${prepareResponse.status()}: ${body}`);
@@ -312,7 +328,11 @@ async function playCard({ page, root, card, timeoutMs }) {
 
   const after = await battleSnapshot(root);
   const resolution = page.locator('.battle-resolution__effect');
-  const effectiveness = await resolution.count() === 1 ? (await resolution.innerText()).trim() : null;
+  let effectiveness = null;
+  if (after.status !== 'complete') {
+    await resolution.waitFor({ state: 'visible', timeout: timeoutMs });
+    effectiveness = (await resolution.innerText()).trim();
+  }
   return {
     card: card.title,
     cardType: card.type,
@@ -346,6 +366,29 @@ async function verifyViewport(page) {
       noVerticalOverflow: document.documentElement.scrollHeight <= window.innerHeight,
     };
   });
+}
+
+async function endTurnWhenReady(page, turn, timeoutMs) {
+  const endTurn = page.getByRole('button', { name: 'End turn', exact: true });
+  if (await endTurn.count() !== 1) throw new Error('no playable move and End turn is unavailable');
+
+  // The challenge overlay is cleared in the final controller publish, one
+  // microtask before chooseAction() releases its action-in-flight guard. A
+  // kiosk user naturally clicks after that gap; browser automation can land
+  // inside it. Retry the real button until the optimistic END_TURN transition
+  // advances the battle instead of sleeping for an arbitrary fixed delay.
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const remaining = Math.max(1, deadline - Date.now());
+    await endTurn.click({ timeout: Math.min(1_000, remaining) });
+    const advanced = await page.evaluate((previousTurn) => {
+      const battle = document.querySelector('main.card-battle');
+      return battle?.dataset.battleStatus === 'complete' || Number(battle?.dataset.turn) > previousTurn;
+    }, turn);
+    if (advanced) return;
+    await page.waitForTimeout(Math.min(100, Math.max(1, deadline - Date.now())));
+  }
+  throw new Error(`End turn did not advance battle from turn ${turn}`);
 }
 
 async function verifyBrowser(options, progress) {
@@ -422,14 +465,8 @@ async function verifyBrowser(options, progress) {
       const intentKind = await intent.count() === 1 ? await intent.getAttribute('data-intent-kind') : null;
       const card = selectMove(cards, { energy: state.playerEnergy, intentKind });
       if (!card) {
-        const endTurn = page.getByRole('button', { name: 'End turn', exact: true });
-        if (await endTurn.count() !== 1) throw new Error('no playable move and End turn is unavailable');
         progress(`Turn ${state.turn}: Squirtle uses its announced move`);
-        await endTurn.click();
-        await page.waitForFunction((turn) => {
-          const battle = document.querySelector('main.card-battle');
-          return battle?.dataset.battleStatus === 'complete' || Number(battle?.dataset.turn) > turn;
-        }, state.turn, { timeout: options.timeoutMs });
+        await endTurnWhenReady(page, state.turn, options.timeoutMs);
         continue;
       }
 
@@ -445,15 +482,15 @@ async function verifyBrowser(options, progress) {
     await page.getByText('You win!', { exact: true }).waitFor({ state: 'visible', timeout: options.timeoutMs });
     if (await page.getByRole('button', { name: /Oran Berry/ }).count() !== 1) throw new Error('Oran Berry reward is missing');
     if (await page.getByRole('button', { name: /Light Ball/ }).count() !== 1) throw new Error('Light Ball reward is missing');
+    if (options.screenshot) {
+      await mkdir(dirname(options.screenshot), { recursive: true });
+      await page.screenshot({ path: options.screenshot, fullPage: true });
+    }
     if (!moves.some((move) => move.cardType === 'attack' && move.enemyHealthAfter < move.enemyHealthBefore)) {
       throw new Error('playthrough never dealt attack damage');
     }
     if (!moves.some((move) => move.effectiveness?.includes('Fluent') || move.effectiveness?.includes('Super effective'))) {
       throw new Error('playthrough did not surface a fluent move outcome');
-    }
-    if (options.screenshot) {
-      await mkdir(dirname(options.screenshot), { recursive: true });
-      await page.screenshot({ path: options.screenshot, fullPage: true });
     }
     if (pageErrors.length > 0) throw new Error(`page errors: ${pageErrors.join('; ')}`);
     if (apiFailures.length > 0) throw new Error(`API failures: ${apiFailures.join('; ')}`);
