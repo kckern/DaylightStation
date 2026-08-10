@@ -39,6 +39,10 @@ describe('GamingSessionService', () => {
     const loaded = svc.getDefinition('card-game');
     expect(loaded.definition.title).toBe('Card Game');
     expect(Object.values(loaded.definition.cards).every((card) => card.challenge.kind === 'scale')).toBe(true);
+    expect(Object.values(loaded.definition.cards).map((card) => card.title).sort()).toEqual([
+      'Heavy Strike', 'Power Strike', 'Quick Strike', 'Steady Strike',
+    ]);
+    expect(Object.values(loaded.definition.cards).every((card) => !/major|scale/i.test(card.title))).toBe(true);
     const created = svc.createSession({ game_id: 'card-game', participants: [{ user_id: 'guest' }], seed: 7 });
     const card = created.state.zones.hand[0];
     const chosen = svc.applyCommand(created.session_id, {
