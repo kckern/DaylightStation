@@ -11,7 +11,7 @@ The digest-pinned v1 client contains only:
 | Component | Purpose |
 | --- | --- |
 | `ASCHL.86p` | TI-OS launcher for the shell |
-| `SCHLCALC.86p` | `ENTER CODE` shell, local-code lookup, resume/result dispatch |
+| `SCHLCALC.86p` | six-digit-gated `ENTER CODE` shell and entered-code study/result dispatch |
 | `SCLEARN.86p` | adaptive cards, summary, and one prescribed A-E quiz |
 | `SCQUEUE.86p` | backup-first append and exact acknowledgement removal |
 | `SCQR.86p` | Version-5/M rendering of one immutable queued result |

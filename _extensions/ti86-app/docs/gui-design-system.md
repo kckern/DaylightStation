@@ -18,8 +18,8 @@ content independent of calculator family.
 Every launch begins on an `ENTER CODE` template. The only normal route is code
 entry/resolution, adaptive StudyCard, study summary, A-E ChoiceQuestion, Result,
 and QR; Sync is entered only to resolve a new code or deliver queued results.
-A contextual Resume action may appear on Enter Code without changing that
-startup destination.
+Enter Code exposes no Resume shortcut: F1 appears as `OPEN` only after digit
+six, F2-F4 remain blank, and F5 is the far-right `EXIT` action.
 
 The adaptive card rail is fixed and sparse:
 
@@ -234,9 +234,10 @@ Icons are authored as 7×7 one-bit glyphs in
 - direct choices: A, B, C, D, E;
 - instructional hardware symbols: arrows, back, home, and exit.
 
-A hardware symbol is not automatically an on-screen control. Arrow, ENTER, and
-EXIT glyphs appear in help or a one-time instruction only; persistent softkeys
-must not duplicate buttons already under the learner's fingers.
+A hardware symbol is not automatically an on-screen control. Arrow and ENTER
+glyphs appear in help or a one-time instruction only. The v1 Enter Code rail
+deliberately labels F5 `EXIT`; other persistent rails do not duplicate hardware
+buttons already under the learner's fingers.
 
 ## 2. Physical interaction
 
@@ -462,7 +463,7 @@ blocks while clamping at the beginning/end.
 | Info document | Header, margin, ProseBlocks, rail, optional MARK |
 | Study card (v0 reference) | Info document + card position + FLIP/MARK |
 | Adaptive study card (v1) | Header/card position, fixed border, centered text or vector-canvas/caption split, exact sparse FLIP/AGAIN/HARD/KNOW rail |
-| Enter code (v1) | `ENTER CODE` header, exclusive `code-7x8` six-digit editor, resolution status, optional contextual Resume |
+| Enter code (v1) | `ENTER CODE` header, exclusive `code-7x8` six-digit editor, resolution status, F1 `OPEN` only at six digits, blank F2-F4, far-right F5 `EXIT` |
 | Choice question | Prompt, choices, A–E softkeys |
 | Numeric/text response | Prompt, input component, unit/help actions |
 | Result | ResultSummary, QueueIndicator, QR/SYNC |

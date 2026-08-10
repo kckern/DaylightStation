@@ -79,20 +79,24 @@ describe('SchoolCalc production shell build', () => {
     expect(codeRefresh).toContain('call shell_draw_code_display');
     expect(codeRefresh).not.toContain('call _clrLCD');
     expect(SHELL_SOURCE).toMatch(
-      /call shell_code_accept_digit\s+or a\s+jr z,wait_key_regular\s+call shell_code_refresh\s+jp wait_key/,
+      /call shell_code_accept_digit\s+or a\s+jr z,wait_key_regular\s+call shell_code_refresh\s+call shell_code_refresh_f1\s+jp wait_key/,
     );
     expect(SHELL_SOURCE).toMatch(
       /shell_code_open_ready:[\s\S]*?ld \(shell_code_status\),a\s+call shell_code_refresh\s+call shell_code_matches_study/,
     );
     expect(SHELL_SOURCE).toContain('code_ready:              defb "ENTER TO OPEN",0');
     expect(SHELL_SOURCE).toContain('code_opening:            defb "OPENING...",0');
-    expect(SHELL_SOURCE).toMatch(/shell_f4:[\s\S]*?cp SCREEN_CODE[\s\S]*?jp shell_code_clear_entry/);
-    expect(SHELL_SOURCE).toMatch(/shell_code_clear_entry:[\s\S]*?ld \(shell_code_length\),a[\s\S]*?call shell_code_refresh/);
-    expect(SHELL_SOURCE).toMatch(/shell_code_open:[\s\S]*?shell_resume_available[\s\S]*?call shell_code_refresh\s+jp launch_standard_runtime/);
-    expect(SHELL_SOURCE).toContain('code_cleared:            defb "CLEARED",0');
+    expect(SHELL_SOURCE).toMatch(/shell_f4:\s+jp wait_key/);
+    expect(SHELL_SOURCE).toMatch(/shell_f5:[\s\S]*?cp SCREEN_CODE\s+jp z,sc_input_force_exit/);
+    expect(SHELL_SOURCE).toMatch(/shell_code_open:\s+ld a,\(shell_code_length\)\s+cp 6\s+jp nz,wait_key/);
+    expect(SHELL_SOURCE).not.toContain('shell_resume_available');
+    expect(SHELL_SOURCE).not.toContain('shell_code_clear_entry');
+    expect(SHELL_SOURCE).toMatch(/shell_code_refresh_f1:[\s\S]*?cp 6\s+ret nz[\s\S]*?ld hl,softkey_open/);
     expect(SHELL_SOURCE).toMatch(/shell_softkey_f1_ready:\s+ld b,2/);
     expect(SHELL_SOURCE).toContain('softkey_open:           defb " OPEN",0');
-    expect(SHELL_SOURCE).toContain('softkey_resume:         defb "RESUME",0');
+    expect(SHELL_SOURCE).toContain('softkey_exit:           defb "EXIT",0');
+    expect(SHELL_SOURCE).not.toContain('softkey_resume');
+    expect(SHELL_SOURCE).not.toContain('softkey_clear');
     expect(SHELL_SOURCE).toContain('NO RELAY DETECTED');
     expect(SHELL_SOURCE).toContain('Safe to unplug');
     expect(SHELL_SOURCE).not.toContain('Cable: connected');

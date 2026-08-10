@@ -51,6 +51,7 @@ wait_key:
         or a
         jr z,wait_key_regular
         call shell_code_refresh
+        call shell_code_refresh_f1
         jp wait_key
 wait_key_regular:
         ld a,b
@@ -96,15 +97,12 @@ shell_f3:
         jp show_code
 
 shell_f4:
-        ld a,(current_screen)
-        cp SCREEN_CODE
-        jp nz,show_catalog
-        jp shell_code_clear_entry
+        jp wait_key
 
 shell_f5:
         ld a,(current_screen)
         cp SCREEN_CODE
-        jp z,wait_key
+        jp z,sc_input_force_exit
         jp show_sync
 
 ; A score result is a durable offline record, not a dead-end receipt. OPEN
@@ -217,7 +215,6 @@ endif
 show_code:
         ld a,SCREEN_CODE
         ld (current_screen),a
-        call shell_detect_resume
         xor a
         ld (shell_code_length),a
         ld (shell_code_status),a
@@ -278,41 +275,10 @@ shell_code_not_digit:
         xor a
         ret
 
-; CLR is a local edit, not navigation. Reset the entry, acknowledge it, and
-; repaint only the bounded input region.
-shell_code_clear_entry:
-        xor a
-        ld (shell_code_length),a
-        ld hl,shell_code_digits
-        ld b,7
-shell_code_clear_entry_loop:
-        ld (hl),a
-        inc hl
-        djnz shell_code_clear_entry_loop
-        ld a,5
-        ld (shell_code_status),a
-        call shell_code_refresh
-        jp wait_key
-
 shell_code_open:
         ld a,(shell_code_length)
-        or a
-        jr nz,shell_code_length_present
-        ld a,(shell_resume_available)
-        or a
-        jr z,shell_code_length_present
-        ld a,4
-        ld (shell_code_status),a
-        call shell_code_refresh
-        jp launch_standard_runtime
-shell_code_length_present:
-        ld a,(shell_code_length)
         cp 6
-        jr z,shell_code_open_ready
-        ld a,1
-        ld (shell_code_status),a
-        call shell_code_refresh
-        jp wait_key
+        jp nz,wait_key
 shell_code_open_ready:
         ; Acknowledge activation on the LCD before opening an envelope,
         ; creating DSENTRY, or handing control to a child runtime. These
@@ -326,18 +292,6 @@ shell_code_open_ready:
         call publish_study_entry
         jp c,shell_code_unavailable
         jp launch_sync_runtime
-
-shell_detect_resume:
-        xor a
-        ld (shell_resume_available),a
-        ld hl,sync_dsstudy_name
-        ld de,scsp_magic
-        call sc_envelope_open
-        ret c
-        ld a,1
-        ld (shell_resume_available),a
-        or a
-        ret
 
 ; Carry clear only when the six entered digits equal canonical SCSP. This
 ; reopens paused study or its queued Result without contacting the relay.
@@ -1558,10 +1512,6 @@ shell_draw_code_status:
         ld b,38
         jr shell_code_status_ready
 shell_code_status_nonidle:
-        cp 1
-        ld hl,code_short
-        ld b,32
-        jr z,shell_code_status_ready
         cp 2
         ld hl,code_missing
         ld b,24
@@ -1573,12 +1523,29 @@ shell_code_status_nonidle:
         cp 4
         ld hl,code_opening
         ld b,46
-        jr z,shell_code_status_ready
-        ld hl,code_cleared
-        ld b,50
 shell_code_status_ready:
         ld c,40
         jp ui_draw_text
+
+; The first rail slot is intentionally empty until the editor holds exactly
+; six digits. Repaint only that slot when digit six makes OPEN available.
+shell_code_refresh_f1:
+        call ui_mode_set
+        ld b,0
+        ld c,56
+        ld d,25
+        ld e,8
+        call ui_fill_rect
+        ld a,(shell_code_length)
+        cp 6
+        ret nz
+        call ui_mode_clear
+        call ui_select_compact
+        ld hl,softkey_open
+        ld b,2
+        ld c,58
+        call ui_draw_text
+        jp ui_mode_set
 
 shell_draw_code_display:
         ld hl,shell_code_digits
@@ -1835,13 +1802,12 @@ shell_render_softkeys:
         ld hl,softkey_home
         ld a,(current_screen)
         cp SCREEN_CODE
-        ld hl,softkey_open
         jr nz,shell_softkey_f1_not_code
-        ld a,(shell_resume_available)
-        or a
+        ld hl,softkey_empty
+        ld a,(shell_code_length)
+        cp 6
+        jr nz,shell_softkey_f1_ready
         ld hl,softkey_open
-        jr z,shell_softkey_f1_ready
-        ld hl,softkey_resume
         jr shell_softkey_f1_ready
 shell_softkey_f1_not_code:
         cp SCREEN_RESULT
@@ -1867,7 +1833,7 @@ shell_softkey_f3_ready:
         ld hl,softkey_sync
         ld a,(current_screen)
         cp SCREEN_CODE
-        ld hl,softkey_clear
+        ld hl,softkey_empty
         jr z,shell_softkey_f4_ready
         cp SCREEN_RESULT
         jr nz,shell_softkey_f4_ready
@@ -1879,7 +1845,7 @@ shell_softkey_f4_ready:
         ld hl,softkey_sync
         ld a,(current_screen)
         cp SCREEN_CODE
-        ld hl,softkey_empty
+        ld hl,softkey_exit
         jr z,shell_softkey_f5_ready
         cp SCREEN_RESULT
         jr nz,shell_softkey_f5_ready
@@ -1906,7 +1872,6 @@ device_id_length:       defb 0
 device_id_value:        defs 17,0
 shell_code_length:       defb 0
 shell_code_status:       defb 0
-shell_resume_available:  defb 0
 shell_code_entries_left: defb 0
 shell_code_entry_offset: defw 0
 sce1_crc_pointer:       defw 0
@@ -1988,11 +1953,9 @@ result_line_3:          defb "QR QUEUED / CABLE OFF",0
 code_instruction:        defb "CONTINUE ON CALC",0
 code_prompt:             defb "ENTER 6 DIGITS",0
 code_ready:              defb "ENTER TO OPEN",0
-code_short:              defb "ENTER SIX DIGITS",0
 code_missing:            defb "NOT INSTALLED - SYNC",0
 code_busy:               defb "FINISH CURRENT WORK",0
 code_opening:            defb "OPENING...",0
-code_cleared:            defb "CLEARED",0
 catalog_line_1:         defb "Catalog not installed.",0
 catalog_line_2:         defb "Sync package required.",0
 catalog_line_3:         defb "EXIT returns Home.",0
@@ -2017,8 +1980,7 @@ softkey_cable:          defb "CABLE",0
 softkey_user:           defb "USER",0
 softkey_code:           defb "CODE",0
 softkey_open:           defb " OPEN",0
-softkey_resume:         defb "RESUME",0
-softkey_clear:          defb "CLR",0
+softkey_exit:           defb "EXIT",0
 softkey_empty:          defb 0
 ; Direct-input scan code pairs for the TI-86's physical numeric keypad.
 ; Source groups: Arrow=$FE, KG5=$FD, KG4=$FB, KG3=$F7, KG2=$EF.
