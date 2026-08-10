@@ -99,7 +99,7 @@ shell_f4:
         ld a,(current_screen)
         cp SCREEN_CODE
         jp nz,show_catalog
-        jp show_code
+        jp shell_code_clear_entry
 
 shell_f5:
         ld a,(current_screen)
@@ -278,13 +278,33 @@ shell_code_not_digit:
         xor a
         ret
 
+; CLR is a local edit, not navigation. Reset the entry, acknowledge it, and
+; repaint only the bounded input region.
+shell_code_clear_entry:
+        xor a
+        ld (shell_code_length),a
+        ld hl,shell_code_digits
+        ld b,7
+shell_code_clear_entry_loop:
+        ld (hl),a
+        inc hl
+        djnz shell_code_clear_entry_loop
+        ld a,5
+        ld (shell_code_status),a
+        call shell_code_refresh
+        jp wait_key
+
 shell_code_open:
         ld a,(shell_code_length)
         or a
         jr nz,shell_code_length_present
         ld a,(shell_resume_available)
         or a
-        jp nz,launch_standard_runtime
+        jr z,shell_code_length_present
+        ld a,4
+        ld (shell_code_status),a
+        call shell_code_refresh
+        jp launch_standard_runtime
 shell_code_length_present:
         ld a,(shell_code_length)
         cp 6
@@ -1550,8 +1570,12 @@ shell_code_status_nonidle:
         ld hl,code_busy
         ld b,26
         jr z,shell_code_status_ready
+        cp 4
         ld hl,code_opening
         ld b,46
+        jr z,shell_code_status_ready
+        ld hl,code_cleared
+        ld b,50
 shell_code_status_ready:
         ld c,40
         jp ui_draw_text
@@ -1968,6 +1992,7 @@ code_short:              defb "ENTER SIX DIGITS",0
 code_missing:            defb "NOT INSTALLED - SYNC",0
 code_busy:               defb "FINISH CURRENT WORK",0
 code_opening:            defb "OPENING...",0
+code_cleared:            defb "CLEARED",0
 catalog_line_1:         defb "Catalog not installed.",0
 catalog_line_2:         defb "Sync package required.",0
 catalog_line_3:         defb "EXIT returns Home.",0

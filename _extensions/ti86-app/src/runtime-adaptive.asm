@@ -719,6 +719,10 @@ adaptive_card_graphic_ready:
         call nz,adaptive_draw_graphic
         call adaptive_draw_centered_page
         call adaptive_render_card_rail
+        ld a,(scstate_record + AD_FACE)
+        or a
+        call z,adaptive_preload_verso
+        jp c,adaptive_error
 adaptive_card_wait:
         call sc_input_wait
         cp SC_SCAN_EXIT
@@ -735,7 +739,7 @@ adaptive_card_wait:
         ld a,(scstate_record + AD_FACE)
         or a
         ld a,b
-        jr z,adaptive_card_wait
+        jp z,adaptive_card_wait
         cp SC_SCAN_F3
         ld b,AD_RATING_AGAIN
         jp z,adaptive_rate
@@ -749,6 +753,8 @@ adaptive_card_wait:
 
 adaptive_flip:
         ld a,(scstate_record + AD_FACE)
+        or a
+        jr z,adaptive_flip_to_cached_verso
         xor 1
         ld (scstate_record + AD_FACE),a
         xor a
@@ -758,10 +764,93 @@ adaptive_flip:
         jp c,adaptive_error
         jp adaptive_render_card
 
+; The verso is decoded while the learner reads the front. Reveal it from RAM
+; before the durable face write, so F1 has immediate visual feedback while a
+; power-safe continuation is still committed before another input is read.
+adaptive_flip_to_cached_verso:
+        ld a,1
+        ld (scstate_record + AD_FACE),a
+        xor a
+        ld (scstate_record + SCSTATE_SCROLL_OFFSET),a
+        ld (scstate_record + SCSTATE_SCROLL_OFFSET + 1),a
+        call adaptive_render_cached_verso
+        jp c,adaptive_error
+        call adaptive_save
+        jp c,adaptive_error
+        jp adaptive_card_wait
+
+adaptive_preload_verso:
+        xor a
+        ld (adaptive_verso_valid),a
+        ld de,(adaptive_item_offset)
+        ld hl,adaptive_key_answer_pages
+        call sc_map_find_literal
+        ret c
+        ld (adaptive_pages_offset),de
+        call adaptive_read_array_count
+        ret c
+        or a
+        jp z,adaptive_invalid
+        ld hl,0
+        ld de,(adaptive_pages_offset)
+        call sc_array_item
+        ret c
+        call sc_copy_node_string
+        ret c
+        xor a
+        ld (adaptive_card_has_graphic),a
+        ld de,(adaptive_item_offset)
+        ld hl,adaptive_key_answer_graphic
+        call sc_map_find_literal
+        jr c,adaptive_preload_verso_raster
+        ld (adaptive_graphic_offset),de
+        ld a,1
+        ld (adaptive_card_has_graphic),a
+adaptive_preload_verso_raster:
+        ; Clear and render rows 9..63 offscreen. The physical front remains
+        ; untouched while the learner reads it.
+        xor a
+        ld hl,adaptive_verso_frame
+        ld (hl),a
+        ld de,adaptive_verso_frame + 1
+        ld bc,879
+        ldir
+        ld hl,adaptive_verso_frame - 144
+        ld (ui_video_base),hl
+        call ui_mode_set
+        call adaptive_draw_card_frame
+        ld a,(adaptive_card_has_graphic)
+        or a
+        call nz,adaptive_draw_graphic
+        call adaptive_draw_centered_page
+        ld a,1
+        ld (scstate_record + AD_FACE),a
+        call adaptive_render_card_rail
+        xor a
+        ld (scstate_record + AD_FACE),a
+        ld hl,VideoRam
+        ld (ui_video_base),hl
+        ld a,1
+        ld (adaptive_verso_valid),a
+        or a
+        ret
+
+adaptive_render_cached_verso:
+        ld a,(adaptive_verso_valid)
+        or a
+        scf
+        ret z
+        ld hl,adaptive_verso_frame
+        ld de,VideoRam + 144
+        ld bc,880
+        ldir
+        or a
+        ret
+
 adaptive_page_previous:
         ld a,(scstate_record + SCSTATE_SCROLL_OFFSET)
         or a
-        jr z,adaptive_card_wait
+        jp z,adaptive_card_wait
         dec a
         ld (scstate_record + SCSTATE_SCROLL_OFFSET),a
         call adaptive_save
@@ -774,7 +863,7 @@ adaptive_page_next:
         ld b,a
         ld a,(adaptive_page_count)
         cp b
-        jr z,adaptive_card_wait
+        jp z,adaptive_card_wait
         ld a,b
         ld (scstate_record + SCSTATE_SCROLL_OFFSET),a
         call adaptive_save
@@ -1925,6 +2014,8 @@ adaptive_center_line_length: defb 0
 adaptive_center_y:           defb 0
 adaptive_card_has_graphic:   defb 0
 adaptive_graphic_offset:     defw 0
+adaptive_verso_valid:        defb 0
+adaptive_verso_frame:        defs 880,0
 adaptive_graphic_remaining:  defb 0
 adaptive_line_x0:            defb 0
 adaptive_line_y0:            defb 0
