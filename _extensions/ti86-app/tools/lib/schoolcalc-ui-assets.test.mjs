@@ -4,6 +4,7 @@ import {
   glyphDescenderRow,
   glyphRows,
   loadSchoolCalcUiAssets,
+  renderSchoolCalcFontSubsetAssembly,
   renderSchoolCalcUiAssembly,
   UI_ASCII_GLYPHS,
   UI_ASCII_FIRST,
@@ -59,5 +60,26 @@ describe('SchoolCalc TI-86 UI assets', () => {
     expect(shellAssembly).toContain('ui_font_reader_4x6:');
     expect(shellAssembly).not.toContain('ui_font_display_5x7:');
     expect(shellAssembly).not.toContain('ui_icon_table:');
+  });
+
+  it('emits the code-only face as an exact compact glyph subset', () => {
+    const assets = loadSchoolCalcUiAssets();
+    const font = assets.fonts.get('code-7x8');
+    expect(font.width).toBe(7);
+    expect(font.height).toBe(8);
+    expect(font.characters).toEqual(expect.arrayContaining(['-', '0', '9']));
+
+    const assembly = renderSchoolCalcFontSubsetAssembly(assets, {
+      fontId: 'code-7x8',
+      characters: '-0123456789',
+      label: 'shell_code_font',
+    });
+    expect(assembly).toContain('SHELL_CODE_FONT_WIDTH: equ 7');
+    expect(assembly).toContain('SHELL_CODE_FONT_HEIGHT: equ 8');
+    expect(assembly).toContain('shell_code_font:');
+    expect(assembly.match(/0x[0-9a-f]{2}/g)).toHaveLength(11 * 8);
+    expect(() => renderSchoolCalcFontSubsetAssembly(assets, {
+      fontId: 'code-7x8', characters: '-A',
+    })).toThrow("subset character 'A' is not authored");
   });
 });

@@ -37,6 +37,7 @@ export function loadSchoolCalcUiAssets(extensionDirectory = DEFAULT_EXTENSION) {
       hasDescenders: Object.keys(font.descender_rows ?? {}).length > 0,
       stride: font.height,
       bytes: packAsciiFont(font, typeSpec),
+      bitmapBytes: packAsciiFont(font, typeSpec, { embedAdvance: false }),
     });
   }
   for (const required of ['compact-3x5', 'reader-4x6', 'display-5x7']) {
@@ -60,6 +61,37 @@ export function loadSchoolCalcUiAssets(extensionDirectory = DEFAULT_EXTENSION) {
     iconWidth: iconSpec.icon_width,
     iconHeight: iconSpec.icon_height,
   };
+}
+
+export function renderSchoolCalcFontSubsetAssembly(assets, {
+  fontId,
+  characters,
+  label = `ui_font_${assemblyName(fontId).toLowerCase()}_subset`,
+}) {
+  const font = assets.fonts.get(fontId);
+  if (!font) throw new Error(`unknown SchoolCalc font '${fontId}'`);
+  if (typeof characters !== 'string' || characters.length === 0) {
+    throw new Error('SchoolCalc font subset requires characters');
+  }
+  if (new Set(characters).size !== characters.length) {
+    throw new Error('SchoolCalc font subset repeats a character');
+  }
+  const bytes = Buffer.concat([...characters].map((character) => {
+    if (!font.characters.includes(character)) {
+      throw new Error(`${fontId}: subset character '${character}' is not authored`);
+    }
+    const code = printableAsciiCode(character, 'renderSchoolCalcFontSubsetAssembly');
+    const offset = (code - UI_ASCII_FIRST) * font.stride;
+    return font.bitmapBytes.subarray(offset, offset + font.stride);
+  }));
+  return [
+    `; Compact ${fontId} subset generated from gui/type.yml.`,
+    `${label.toUpperCase()}_WIDTH: equ ${font.width}`,
+    `${label.toUpperCase()}_HEIGHT: equ ${font.height}`,
+    `${label}:`,
+    ...assemblyBytes(bytes),
+    '',
+  ].join('\n');
 }
 
 export function renderSchoolCalcUiAssembly(assets, {
@@ -196,7 +228,7 @@ function validateRows(rows, width, height, spec, label) {
   });
 }
 
-function packAsciiFont(font, spec) {
+function packAsciiFont(font, spec, { embedAdvance = true } = {}) {
   const bytes = Buffer.alloc(UI_ASCII_GLYPHS * font.height);
   for (let code = UI_ASCII_FIRST; code <= UI_ASCII_LAST; code += 1) {
     let character = String.fromCharCode(code);
@@ -204,7 +236,7 @@ function packAsciiFont(font, spec) {
     const sourceCharacter = font.glyphs[character] ? character : '?';
     const rows = font.glyphs[sourceCharacter];
     const packed = packRows(rows, spec, font.height);
-    packed[0] |= (font.glyph_advances?.[sourceCharacter] ?? font.advance_x) & 0x07;
+    if (embedAdvance) packed[0] |= (font.glyph_advances?.[sourceCharacter] ?? font.advance_x) & 0x07;
     const descender = font.descender_rows?.[sourceCharacter];
     if (descender) {
       [...descender].forEach((pixel, x) => {
