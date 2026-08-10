@@ -1,5 +1,5 @@
 /**
- * usePeek — the press-and-hold audition engine (Task 5.2, design §7).
+ * usePeek — the card audition engine.
  *
  * A tiny SECOND playback path, deliberately not a second useProducerTransport:
  * a peek has no bars-swap semantics, no arrangements, no count-in — it is one
@@ -24,14 +24,11 @@
  * honest signal anyway. Groove peeks are unaffected.
  *
  * KEY CONFORMANCE (design §7 "auto-conformed so the audition is honest"):
- * canonical library entries are all in C, and addLayer playback applies
- * exactly ONE transpose — the workspace keyShift (toTransportLayers), with
- * grooves pinned to 0 (percussion never transposes). A base's key IS the
- * workspace keyShift under this single-transpose model, so conforming the
- * peek to the jam = transpose by keyShift for non-grooves, 0 for grooves —
- * the peek then sounds exactly like the entry will once added. Tempo
- * conformance: events are built at the CURRENT workspace bpm, not the
- * entry's.
+ * each library entry declares the pitch class of its authored tonic. Audition
+ * and added-layer playback both apply the authoritative
+ * (target tonic − source tonic) transpose, with grooves pinned to 0. The peek
+ * therefore sounds exactly like the entry will once added. Tempo conformance:
+ * events are built at the CURRENT workspace bpm, not the entry's.
  *
  * VOICE: melodic peeks push the same default program addLayer would give the
  * entry (bass → 33, everything else → 0) plus unity channel gain — a removed
@@ -47,14 +44,14 @@
  * bpm sanitized like the transport. Never throws — this runs in pointer
  * handlers on a kiosk.
  *
- * The 150ms hold-arm delay is the CALLER's job (LibraryBrowser's pointer
- * logic): startPeek starts immediately.
+ * startPeek starts immediately. LibraryBrowser also retains a 150ms hold-arm
+ * delay as a compatibility shortcut; the primary UI is explicit Preview/Stop.
  *
  * @param {object} p
  * @param {object} p.router  voiceRouter instance
  * @param {object} p.lib     useLoopLibrary surface (loadNotes — cached/async)
  * @param {number} p.bpm     current workspace tempo
- * @param {number} [p.keyShift=0]  workspace keyShift (the single transpose)
+ * @param {number} [p.keyShift=0]  workspace target tonic (historical name)
  * @param {boolean} [p.isJamPlaying=false]  main transport state (metronome gate)
  * @param {Array}  [p.layers=[]]  workspace layers (channel-15 collision guard)
  * @returns {{ peekingId: string|null, startPeek: (entry:object)=>void, stopPeek: (onlyId?:string)=>void }}
@@ -65,6 +62,7 @@ import { loopToEvents, layerLengthMs } from '@shared-music/loopScheduler.mjs';
 import { metronomeEvents } from '@shared-music/percussion.mjs';
 import { roleOf } from '@shared-music/layerMatch.mjs';
 import { entryIdentity } from './libraryRanking.js';
+import { transposeToTargetKey } from './keyModel.js';
 
 let _logger;
 function logger() {
@@ -185,7 +183,6 @@ export function usePeek({ router, lib, bpm, keyShift = 0, isJamPlaying = false, 
     } catch (err) {
       logger().error('peek.start-failed', { error: err?.message });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stopPeek]);
 
   /** Build the event cycle and run the rAF loop (refs only — stable). */
@@ -193,9 +190,10 @@ export function usePeek({ router, lib, bpm, keyShift = 0, isJamPlaying = false, 
     const liveBpm = sanitizeBpm(bpmRef.current);
     const shift = Number.isFinite(keyShiftRef.current) ? Math.trunc(keyShiftRef.current) : 0;
     const channel = isGroove ? PEEK_DRUM_CHANNEL : PEEK_CHANNEL;
-    // Key conformance: (keyShift − brick tonic) for non-grooves so the loop's
-    // "I" sounds the jam key, not the brick's stored key; 0 for grooves.
-    const transpose = isGroove ? 0 : (shift - (entry?.tonicPc || 0));
+    const transpose = transposeToTargetKey(
+      { role: isGroove ? 'groove' : roleOf(entry), source: { kind: 'library', entry } },
+      shift,
+    );
     const lengthMs = layerLengthMs(
       { notes: loaded.notes, ppq: loaded.ppq, barSpan: entry.barSpan },
       liveBpm,

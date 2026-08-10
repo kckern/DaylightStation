@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
-import { ChordLane, cumulativeBounds } from './ChordLane.jsx';
+import { ChordLane } from './ChordLane.jsx';
+import { cumulativeBounds } from './chordLaneModel.js';
 
 const bundle = { notes: [{ ticks: 0, durationTicks: 4, midi: 60 }], ppq: 4, barSpan: 4 };
 

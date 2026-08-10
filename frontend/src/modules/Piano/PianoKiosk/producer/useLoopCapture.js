@@ -95,6 +95,7 @@ import { useState, useRef, useCallback, useMemo } from 'react';
 import getLogger from '../../../../lib/logging/Logger.js';
 import { GM_DRUM } from '@shared-music/percussion.mjs';
 import { harmonicTimeline } from '@shared-music/harmonicTimeline.mjs';
+import { mintTakeId } from './producerIdentity.js';
 
 let _logger;
 function logger() {
@@ -180,7 +181,6 @@ export function useLoopCapture({ bpm, timeSig = [4, 4] }) {
   const pendingRef = useRef(new Map());
   /** Completed cycles already rolled into passes. */
   const cyclesRolledRef = useRef(0);
-  const takeSeqRef = useRef(0);
 
   const syncCounts = useCallback(() => {
     setPassCount(passesRef.current.length);
@@ -188,7 +188,7 @@ export function useLoopCapture({ bpm, timeSig = [4, 4] }) {
   }, []);
 
   /** Boundary-close every pending note at cycle end (min 1 tick). */
-  function closePendingAtBoundary() {
+  const closePendingAtBoundary = useCallback(() => {
     const g = geomRef.current;
     for (const p of pendingRef.current.values()) {
       passNotesRef.current.push({
@@ -199,12 +199,12 @@ export function useLoopCapture({ bpm, timeSig = [4, 4] }) {
       });
     }
     pendingRef.current.clear();
-  }
+  }, []);
 
   /** Advance the engine to wallMs: flip counting→cycling at the anchor and
    * roll any crossed cycle boundaries (pass merge). Lazy — called from every
    * injected event. Returns the geometry (or null when not armed). */
-  function advance(wallMs) {
+  const advance = useCallback((wallMs) => {
     const g = geomRef.current;
     if (!g || stateRef.current === 'idle') return null;
     if (wallMs >= g.anchorMs && stateRef.current === 'counting') {
@@ -230,9 +230,9 @@ export function useLoopCapture({ bpm, timeSig = [4, 4] }) {
       cyclesRolledRef.current = cycles;
     }
     return g;
-  }
+  }, [closePendingAtBoundary, syncCounts]);
 
-  const tick = useCallback((wallMs) => { advance(wallMs); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const tick = useCallback((wallMs) => { advance(wallMs); }, [advance]);
 
   const arm = useCallback(({ lengthBars, anchorWallMs, countInBars = 0 }) => {
     const liveBpm = sanitizeBpm(bpmRef.current);
@@ -321,7 +321,7 @@ export function useLoopCapture({ bpm, timeSig = [4, 4] }) {
       });
     }
     pendingRef.current.set(note, { startTick, midi, velocity });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [advance]);
 
   const noteOff = useCallback((note, wallMs) => {
     const g = advance(wallMs);
@@ -340,7 +340,7 @@ export function useLoopCapture({ bpm, timeSig = [4, 4] }) {
       midi: held.midi,
       velocity: held.velocity,
     });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [advance]);
 
   /** Drop the most recent COMPLETED pass (provenance-exact). The in-flight
    * pass is not touched — it merges at its own boundary as usual. */
@@ -411,9 +411,8 @@ export function useLoopCapture({ bpm, timeSig = [4, 4] }) {
       }
     }
 
-    takeSeqRef.current += 1;
     const take = {
-      takeId: `take-${takeSeqRef.current}`,
+      takeId: mintTakeId('take'),
       notes,
       ppq: PPQ,
       lengthBars,
@@ -426,17 +425,14 @@ export function useLoopCapture({ bpm, timeSig = [4, 4] }) {
       passes: passesRef.current.length, snap, lengthBars,
     });
     return take;
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   // Live snapshot of the accumulated take (completed passes only) for the record
   // overlay's live piano-roll (design §8). Cheap flatten; recomputed only when
   // the take note count changes — i.e. a pass merges at the cycle boundary, so
   // your playing "appears" each loop and thickens. In-flight (uncommitted) pass
   // notes aren't included (their ticks aren't laid out until the boundary).
-  const takeNotes = useMemo(
-    () => passesRef.current.flat().map((n) => ({ ...n })),
-    [takeNoteCount],
-  );
+  const takeNotes = passesRef.current.flat().map((n) => ({ ...n }));
 
   return useMemo(() => ({
     state,

@@ -93,7 +93,7 @@ const onCalls = (router, channel) => router.noteOn.mock.calls.filter((c) => c[0]
 // ── behavior ─────────────────────────────────────────────────────────────────
 
 describe('usePeek — melodic peeks on the reserved channel', () => {
-  it('fires the loop on channel 15 with the workspace keyShift as transpose', async () => {
+  it('fires a canonical-C loop on channel 15 in the workspace target key', async () => {
     const { result, router, resolveLoad } = mount({ keyShift: 3 });
     act(() => result.current.startPeek(MELODY));
     expect(result.current.peekingId).toBe(MELODY.path);
@@ -104,6 +104,15 @@ describe('usePeek — melodic peeks on the reserved channel', () => {
     expect(router.noteOn).toHaveBeenCalledWith(PEEK_CHANNEL, 63, 81);
     frameAt(600); // note_off at 500ms
     expect(router.noteOff).toHaveBeenCalledWith(PEEK_CHANNEL, 63);
+  });
+
+  it('subtracts the auditioned brick tonic before landing on the target key', async () => {
+    const { result, router, resolveLoad } = mount({ keyShift: 2 });
+    act(() => result.current.startPeek({ ...MELODY, tonicPc: 5 }));
+    await resolveLoad();
+
+    frameAt(10);
+    expect(router.noteOn).toHaveBeenCalledWith(PEEK_CHANNEL, 57, 81);
   });
 
   it('conforms the peek voice: default program (grand for melody, bass for basslines) + unity channel gain', async () => {

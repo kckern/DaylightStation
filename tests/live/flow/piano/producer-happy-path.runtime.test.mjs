@@ -1,14 +1,17 @@
 /**
- * Piano Producer Happy Path Runtime Test (Task 9.2)
+ * Piano Producer happy-path runtime test.
  *
  * Drives the redesigned Producer end-to-end through the SAME surface a person
  * would touch on the kiosk tablet:
  *
  *   1. /piano/producer → dismiss the ConnectGate ("Continue without piano",
- *      because headless Chromium has no Web MIDI) → land on the Producer Mix
+ *      because headless Chromium has no Web MIDI) → land on the Producer Loop
  *      front doors.
+ *   1b. Record a two-bar drum pass → main transport Stop must pause capture,
+ *      preserve the completed pass, Resume cleanly, and close without adding or
+ *      persisting anything.
  *   2. Browse the library → pick a CHORD-PROGRESSION loop → a ChannelStrip
- *      carrying that loop's roman identity appears in the Mix.
+ *      carrying that loop's roman identity appears in Loop.
  *   3. Add a second compatible layer under the guardrail ("Showing what fits
  *      your jam") → pick a groove → a drums ChannelStrip appears.
  *   4. Press Play → assert isPlaying (button flips to Stop AND the bar:beat
@@ -16,8 +19,8 @@
  *      transpose (BPM/Key labels update). Press Stop.
  *   5. "Add to song" → auto-switch to the Song tab → a section slot appears in
  *      the structure rail.
- *   6. Save the song (test-identifiable title) → success toast. POSTs to the
- *      real household tree (dev backend writes to disk).
+ *   6. Save the song → success toast. Capture the exact POST response identity
+ *      from the real household tree (dev backend writes to disk).
  *   7. FULL RELOAD (proves disk persistence, not optimistic in-memory state) →
  *      open "Songs & Resume" → the saved song is listed → load it → it hydrates
  *      back onto the Song tab with its slot.
@@ -28,13 +31,14 @@
  *  - AudioContext runs but is inaudible; we assert STATE, never sound. The
  *    transport clock is performance.now()/rAF driven (useProducerTransport), so
  *    isPlaying + bar:beat advance WITHOUT any audio output.
- *  - Loop MIDI + prefab/song YAML come from the dev backend's local-stream +
- *    /api/v1/piano/producer routes against the real Dropbox media/household tree.
+ *  - Loop MIDI + prefab/song YAML come from the dev backend's loop-manifest,
+ *    local-stream, and /api/v1/piano/producer routes against the real mounted
+ *    media/household tree.
  *
- * TEST DATA: step 6 writes ONE real household song (title prefixed
- * `e2e-test-song`). afterAll DELETES every song with that prefix via the API,
- * so a clean run leaves no household data behind (and a crashed run self-cleans
- * on the next run).
+ * TEST DATA: when persistence is explicitly enabled, step 6 writes ONE real
+ * household song. The test captures the server-generated id from that exact
+ * POST and afterAll deletes only that id. Read-only mode skips all three
+ * persistence steps and performs no cleanup mutation.
  *
  * Mirrors tests/live/flow/fitness/fitness-happy-path.runtime.test.mjs:
  * serial describe, one shared page, fail-fast health check, waits on selectors
@@ -48,21 +52,24 @@ const BASE_URL = FRONTEND_URL;
 const API_URL = BACKEND_URL;
 const PRODUCER_URL = `${BASE_URL}/piano/producer`;
 
-/** Prefix for the household song this flow creates — afterAll sweeps it. */
-const SONG_TITLE_PREFIX = 'e2e-test-song';
-const SONG_TITLE = `${SONG_TITLE_PREFIX}-producer-flow`;
 const SONGS_API = `${API_URL}/api/v1/piano/producer/songs`;
+// Safe release-check mode exercises the complete non-persistent journey and
+// performs no mounted household writes or cleanup deletes. The full flow stays
+// available when persistence verification is explicitly authorized.
+const READ_ONLY = process.env.PRODUCER_E2E_READ_ONLY === '1';
 
 let sharedPage;
 let sharedContext;
+let createdSongId = null;
+let createdSongTitle = null;
 
-/** Dismiss the ConnectGate (no Web MIDI in headless) and wait for the Mix. */
+/** Dismiss the ConnectGate (no Web MIDI in headless) and wait for Loop. */
 async function enterProducer(page) {
   await page.goto(PRODUCER_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
   // The gate blocks the app until Web MIDI connects OR it's dismissed. Headless
   // Chromium has no Web MIDI, so the only way in is "Continue without piano".
-  const skip = page.locator('.piano-connect-gate__skip');
+  const skip = page.getByRole('button', { name: /continue without piano/i });
   await expect(skip, 'ConnectGate "Continue without piano" should be present in headless').toBeVisible({ timeout: 15000 });
   await skip.click();
 
@@ -89,11 +96,15 @@ test.describe('Piano Producer Happy Path', () => {
     const songsBody = await songsResp.json();
     expect(Array.isArray(songsBody.items), 'producer songs API should return { items: [] }').toBe(true);
 
-    // The loop library index must be servable — the whole Producer hinges on it.
-    const idx = await request.get(`${API_URL}/api/v1/local/stream/midi/loops/index.yml`, { timeout: 10000 });
-    expect(idx.ok(), 'loop library index.yml should be servable').toBe(true);
+    // The generated loop manifest is the library's production contract. The
+    // legacy loops/index.yml probe was stale and could fail while the app was
+    // healthy (the manifest is built directly from the mounted ledger/files).
+    const manifest = await request.get(`${API_URL}/api/v1/piano/loop-manifest`, { timeout: 15000 });
+    expect(manifest.ok(), 'loop-manifest should be servable').toBe(true);
+    const manifestBody = await manifest.json();
+    expect(manifestBody.bricks?.length, 'loop-manifest should contain playable material').toBeGreaterThan(0);
 
-    sharedContext = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
+    sharedContext = await browser.newContext({ viewport: { width: 1280, height: 800 } });
     sharedPage = await sharedContext.newPage();
 
     // Surface page errors to the test log (helps diagnose a blocked step).
@@ -106,20 +117,24 @@ test.describe('Piano Producer Happy Path', () => {
   });
 
   test.afterAll(async ({ request }) => {
-    // Clean up every household song this flow (or a prior crashed run) created.
-    try {
-      const resp = await request.get(SONGS_API, { timeout: 10000 });
-      if (resp.ok()) {
-        const { items = [] } = await resp.json();
-        const stale = items.filter((s) => String(s.title || '').startsWith(SONG_TITLE_PREFIX));
-        for (const s of stale) {
-          const del = await request.delete(`${SONGS_API}/${s.id}`, { timeout: 10000 });
-          console.log(`cleanup: deleted song ${s.id} ("${s.title}") → ${del.status()}`);
-        }
-        if (stale.length === 0) console.log('cleanup: no e2e-test songs to remove');
+    if (READ_ONLY) {
+      console.log('cleanup: skipped in read-only mode (no mounted writes were made)');
+      if (sharedPage) await sharedPage.close();
+      if (sharedContext) await sharedContext.close();
+      return;
+    }
+    // Delete only the record created by this exact run. Never prefix-sweep a
+    // shared household tree: another person's similarly named song is not test
+    // garbage, and cleanup must remain identity-scoped.
+    if (createdSongId) {
+      try {
+        const del = await request.delete(`${SONGS_API}/${createdSongId}`, { timeout: 10000 });
+        console.log(`cleanup: deleted song ${createdSongId} ("${createdSongTitle}") → ${del.status()}`);
+      } catch (err) {
+        console.log(`cleanup: failed to delete song ${createdSongId}:`, err.message);
       }
-    } catch (err) {
-      console.log('cleanup: failed to sweep test songs:', err.message);
+    } else {
+      console.log('cleanup: no song was created by this run');
     }
 
     if (sharedPage) await sharedPage.close();
@@ -127,17 +142,58 @@ test.describe('Piano Producer Happy Path', () => {
   });
 
   // ── STEP 1 ────────────────────────────────────────────────────────────────
-  test('1. dismiss ConnectGate → land on Producer Mix front doors', async () => {
+  test('1. dismiss ConnectGate → land on Producer Loop front doors', async () => {
     await enterProducer(sharedPage);
 
-    // Front-door entry cards render only when the library loaded and the Mix is
-    // empty — this proves the library fetch (index.yml) succeeded.
+    // Front-door entry cards render only when the library loaded and Loop is
+    // empty — this proves the generated loop-manifest fetch succeeded.
     const browseDoor = sharedPage.locator('.piano-producer-mode__door', { hasText: 'Browse the library' });
-    await expect(browseDoor, 'Browse front door should be visible on an empty Mix').toBeVisible({ timeout: 20000 });
+    await expect(browseDoor, 'Browse front door should be visible on an empty Loop').toBeVisible({ timeout: 20000 });
 
     const doorCount = await sharedPage.locator('.piano-producer-mode__door').count();
     console.log(`Producer front doors visible: ${doorCount}`);
     expect(doorCount).toBeGreaterThanOrEqual(3);
+  });
+
+  test('1b. capture Stop → paused take → Resume → Stop → Done (read-only)', async () => {
+    await sharedPage.locator('.piano-producer-mode__door', { hasText: 'Record my own' }).click();
+    const capture = sharedPage.getByRole('dialog', { name: 'capture' });
+    await expect(capture).toBeVisible({ timeout: 5000 });
+
+    await capture.getByRole('button', { name: 'Drums', exact: true }).click();
+    await capture.getByRole('group', { name: 'loop length' })
+      .getByRole('button', { name: '2 bars', exact: true }).click();
+    await capture.getByRole('button', { name: /arm/i }).click();
+
+    const transport = sharedPage.locator('.piano-producer-mode__play');
+    await expect(transport).toHaveText(/Stop/, { timeout: 5000 });
+    await expect(capture.getByLabel('bar dial')).toContainText('1 / 2', { timeout: 5000 });
+
+    // A real pointer click exercises pad monitoring + capture note-on/off. Wait
+    // for the next two-bar boundary so the in-flight contribution becomes one
+    // completed, Keep-able pass.
+    await capture.getByRole('button', { name: 'Kick', exact: true }).click();
+    const passes = capture.locator('.piano-capture-card__passes');
+    await expect(passes).toContainText('1 pass · 1 note', { timeout: 7000 });
+
+    await transport.click();
+    await expect(capture.getByText('Recording paused — completed passes kept', { exact: true }))
+      .toBeVisible({ timeout: 5000 });
+    await expect(capture.getByRole('button', { name: 'Keep', exact: true })).toBeEnabled();
+    await expect(capture.getByRole('button', { name: 'Resume', exact: true })).toBeEnabled();
+
+    await capture.getByRole('button', { name: 'Resume', exact: true }).click();
+    await expect(capture.getByText('Recording — loop rolling', { exact: true }))
+      .toBeVisible({ timeout: 5000 });
+    await expect(transport).toHaveText(/Stop/, { timeout: 5000 });
+    await transport.click();
+    await expect(capture.getByText('Recording paused — completed passes kept', { exact: true }))
+      .toBeVisible({ timeout: 5000 });
+
+    await capture.getByRole('button', { name: 'Done', exact: true }).click();
+    await expect(capture).toBeHidden({ timeout: 5000 });
+    expect(await sharedPage.locator('.piano-channel-strip').count(), 'unkept read-only capture must add no layer').toBe(0);
+    console.log('Capture Stop/paused/Resume teardown passed without persistence');
   });
 
   // ── STEP 2 ────────────────────────────────────────────────────────────────
@@ -160,27 +216,38 @@ test.describe('Piano Producer Happy Path', () => {
     // Capture the EXACT roman identity of the card we're about to pick, so we
     // can prove the resulting strip carries THIS loop — not merely that some
     // roman element rendered (a wrong loop loading would otherwise green-pass).
-    const pickedRoman = (await romanCards.first().locator('.roman-progression').textContent())?.trim();
+    const pickedRoman = (await romanCards.first().locator('.roman-chord').allTextContents())
+      .map((token) => token.trim()).join('|');
     expect(pickedRoman, 'picked card should have a non-empty roman progression').toBeTruthy();
     console.log(`Picking chord loop with roman identity: "${pickedRoman}"`);
 
+    // Audition is a visible, reversible action. Verify the same first card can
+    // enter and leave preview without being added to the workspace.
+    const pickedWrap = romanCards.first().locator('..');
+    const preview = pickedWrap.locator('.piano-loop__preview');
+    await preview.click();
+    await expect(preview, 'Preview should become Stop while auditioning').toHaveAttribute('aria-pressed', 'true', { timeout: 10000 });
+    expect(await sharedPage.locator('.piano-channel-strip').count(), 'preview must not add a layer').toBe(0);
+    await preview.click();
+    await expect(preview, 'Stop should end the audition explicitly').toHaveAttribute('aria-pressed', 'false', { timeout: 5000 });
+
     await romanCards.first().click();
 
-    // Overlay closes; a ChannelStrip appears in the Mix carrying the loop's
+    // Overlay closes; a ChannelStrip appears in Loop carrying the loop's
     // roman identity (notes fetch async — wait on the strip, not networkidle).
     await expect(overlay, 'library overlay should close after picking').toBeHidden({ timeout: 10000 });
     const strip = sharedPage.locator('.piano-channel-strip');
     await expect(strip.first(), 'a ChannelStrip should appear for the picked loop').toBeVisible({ timeout: 15000 });
-    const stripRoman = strip.first().locator('.roman-progression');
+    const stripLane = strip.first().locator('.piano-chord-lane');
     await expect(
-      stripRoman,
+      stripLane,
       'the strip should show the chord loop\'s roman identity',
     ).toBeVisible({ timeout: 5000 });
-    // Cross-check identity: the strip's roman MUST equal the picked card's.
-    await expect(
-      stripRoman,
-      'the strip\'s roman identity must match the picked chord loop',
-    ).toHaveText(pickedRoman, { timeout: 5000 });
+    // Cross-check identity without the keyed chord names that the strip adds
+    // above each Roman token for the current target key.
+    const stripRoman = (await stripLane.locator('.roman-chord').allTextContents())
+      .map((token) => token.trim()).join('|');
+    expect(stripRoman, 'the strip\'s roman identity must match the picked chord loop').toBe(pickedRoman);
 
     // Guard against the zombie-row path (failed note load removes the layer).
     await sharedPage.waitForTimeout(1500);
@@ -191,6 +258,9 @@ test.describe('Piano Producer Happy Path', () => {
   // ── STEP 3 ────────────────────────────────────────────────────────────────
   test('3. add a groove under the guardrail → drums strip appears', async () => {
     await sharedPage.locator('.piano-producer-mode__add-layer').click();
+    const addSheet = sharedPage.getByRole('dialog', { name: 'add a layer' });
+    await expect(addSheet).toBeVisible({ timeout: 5000 });
+    await addSheet.getByRole('button', { name: /drums/i }).click();
 
     const overlay = sharedPage.locator('.piano-producer-mode__overlay[aria-label="loop library"]');
     await expect(overlay).toBeVisible({ timeout: 10000 });
@@ -214,7 +284,7 @@ test.describe('Piano Producer Happy Path', () => {
     const strips = sharedPage.locator('.piano-channel-strip');
     await expect(strips.nth(1), 'a second ChannelStrip should appear for the groove').toBeVisible({ timeout: 15000 });
     await sharedPage.waitForTimeout(1000);
-    expect(await strips.count(), 'the mix should hold two layers').toBe(2);
+    expect(await strips.count(), 'Loop should hold two layers').toBe(2);
 
     // The groove strip identifies as a drums layer (role "groove", voice "Drums").
     const grooveRole = sharedPage.locator('.piano-channel-strip__role', { hasText: /^groove$/ });
@@ -228,7 +298,7 @@ test.describe('Piano Producer Happy Path', () => {
     const pos = sharedPage.locator('.piano-producer-mode__pos');
 
     await expect(play).toHaveText(/Play/, { timeout: 5000 });
-    await expect(pos).toHaveText('1:1');
+    await expect(pos).toContainText('1:1');
 
     await play.click();
 
@@ -238,7 +308,7 @@ test.describe('Piano Producer Happy Path', () => {
     // The rAF transport clock must actually advance the bar:beat readout — this
     // proves the transport is RUNNING, not merely flagged playing.
     await expect
-      .poll(async () => (await pos.textContent())?.trim(), {
+      .poll(async () => (await pos.textContent())?.split('·')[0].trim(), {
         message: 'bar:beat readout should advance past 1:1',
         timeout: 6000,
       })
@@ -246,16 +316,23 @@ test.describe('Piano Producer Happy Path', () => {
     console.log('Transport clock advanced to', (await pos.textContent())?.trim());
 
     // Tempo nudge: the BPM label updates immediately (reducer state).
-    const tempoLabel = sharedPage.locator('[aria-label="tempo"]');
+    const tempoLabel = sharedPage.getByRole('button', { name: 'tempo', exact: true });
     const bpmBefore = (await tempoLabel.textContent())?.trim();
-    await sharedPage.locator('[aria-label="tempo up"]').click();
+    await tempoLabel.click();
+    const tempoSheet = sharedPage.getByRole('dialog', { name: 'tempo' });
+    await expect(tempoSheet).toBeVisible({ timeout: 5000 });
+    await tempoSheet.getByRole('button', { name: 'tempo up' }).click();
     await expect(tempoLabel, 'BPM label should change after tempo up').not.toHaveText(bpmBefore);
     console.log(`BPM: ${bpmBefore} → ${(await tempoLabel.textContent())?.trim()}`);
+    await tempoSheet.getByRole('button', { name: 'Done' }).click();
 
     // Transpose: the Key label updates immediately.
-    const keyLabel = sharedPage.locator('[aria-label="key"]');
+    const keyLabel = sharedPage.getByRole('button', { name: 'key', exact: true });
     const keyBefore = (await keyLabel.textContent())?.trim();
-    await sharedPage.locator('[aria-label="key up"]').click();
+    await keyLabel.click();
+    const keySheet = sharedPage.getByRole('dialog', { name: 'key' });
+    await expect(keySheet).toBeVisible({ timeout: 5000 });
+    await keySheet.getByRole('button', { name: 'key G', exact: true }).click();
     await expect(keyLabel, 'Key label should change after transpose').not.toHaveText(keyBefore);
     console.log(`Key: ${keyBefore} → ${(await keyLabel.textContent())?.trim()}`);
 
@@ -279,11 +356,23 @@ test.describe('Piano Producer Happy Path', () => {
 
   // ── STEP 6 ────────────────────────────────────────────────────────────────
   test('6. Save the song → success toast + persisted to household tree', async ({ request }) => {
-    const titleInput = sharedPage.locator('.piano-song-view__save-title');
-    await expect(titleInput).toBeVisible({ timeout: 5000 });
-    await titleInput.fill(SONG_TITLE);
-
+    test.skip(READ_ONLY, 'read-only mode forbids mounted household writes');
+    // Save uses the kiosk's timestamped default title. Capture the exact POST
+    // response instead of depending on the obsolete pre-remediation title box
+    // or guessing which newly listed record belongs to this test.
+    const saveResponsePromise = sharedPage.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return response.request().method() === 'POST'
+        && url.pathname === '/api/v1/piano/producer/songs';
+    }, { timeout: 10000 });
     await sharedPage.locator('.piano-song-view__save').click();
+    const saveResponse = await saveResponsePromise;
+    expect(saveResponse.ok(), `song POST should succeed (got ${saveResponse.status()})`).toBe(true);
+    const saved = await saveResponse.json();
+    createdSongId = saved.id;
+    createdSongTitle = saved.title;
+    expect(createdSongId, 'song POST should return its generated id').toBeTruthy();
+    expect(createdSongTitle, 'song POST should return its generated title').toBeTruthy();
 
     // Success is surfaced as a transient toast in the Producer shell.
     const toast = sharedPage.locator('.piano-producer-mode__save-toast');
@@ -294,13 +383,15 @@ test.describe('Piano Producer Happy Path', () => {
     // The POST must have hit disk: the API now lists our song.
     const resp = await request.get(SONGS_API, { timeout: 10000 });
     const { items = [] } = await resp.json();
-    const found = items.find((s) => s.title === SONG_TITLE);
-    expect(found, `saved song "${SONG_TITLE}" must appear in the producer songs API`).toBeTruthy();
+    const found = items.find((song) => song.id === createdSongId);
+    expect(found, `saved song ${createdSongId} must appear in the producer songs API`).toBeTruthy();
+    expect(found.title).toBe(createdSongTitle);
     console.log(`Persisted song id: ${found.id}, sections: ${found.sectionCount}`);
   });
 
   // ── STEP 7 ────────────────────────────────────────────────────────────────
   test('7. full reload → open Songs & Resume → load saved song → it hydrates', async () => {
+    test.skip(READ_ONLY, 'read-only mode does not create a song to reload');
     // A hard reload drops all in-memory state — the song list must now come
     // from disk, proving real persistence rather than an optimistic insert.
     await enterProducer(sharedPage);
@@ -310,7 +401,8 @@ test.describe('Piano Producer Happy Path', () => {
     const picker = sharedPage.locator('.piano-song-picker[aria-label="saved songs"]');
     await expect(picker, 'Songs & Resume picker should open').toBeVisible({ timeout: 10000 });
 
-    const songRow = picker.locator('.piano-song-picker__song', { hasText: SONG_TITLE });
+    expect(createdSongTitle, 'step 6 must capture the persisted title').toBeTruthy();
+    const songRow = picker.locator('.piano-song-picker__song', { hasText: createdSongTitle });
     await expect(songRow, 'the saved song should be listed after reload (loaded from disk)').toBeVisible({ timeout: 15000 });
     await songRow.click();
 
@@ -327,6 +419,7 @@ test.describe('Piano Producer Happy Path', () => {
 
   // ── STEP 8 ────────────────────────────────────────────────────────────────
   test('8. play the loaded arrangement → isPlaying', async () => {
+    test.skip(READ_ONLY, 'read-only mode does not create a song to reload');
     const play = sharedPage.locator('.piano-producer-mode__play');
     const pos = sharedPage.locator('.piano-producer-mode__pos');
 
@@ -340,7 +433,7 @@ test.describe('Piano Producer Happy Path', () => {
     await play.click();
     await expect(play, 'arrangement should start playing').toHaveText(/Stop/, { timeout: 5000 });
     await expect
-      .poll(async () => (await pos.textContent())?.trim(), {
+      .poll(async () => (await pos.textContent())?.split('·')[0].trim(), {
         message: 'arrangement bar:beat should advance',
         timeout: 6000,
       })

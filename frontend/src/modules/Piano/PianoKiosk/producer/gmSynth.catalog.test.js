@@ -23,7 +23,6 @@ const publicDir = join(here, '..', '..', '..', '..', '..', 'public', 'webaudiofo
 const require = createRequire(import.meta.url);
 const distPath = require.resolve('webaudiofont'); // package main = npm/dist/WebAudioFontPlayer.js
 const source = readFileSync(distPath, 'utf8');
-// eslint-disable-next-line no-new-func
 const WebAudioFontPlayer = new Function(`${source}\n;return WebAudioFontPlayer;`)();
 const loader = new WebAudioFontPlayer().loader;
 

@@ -1,15 +1,15 @@
 /**
- * Producer — the three-band, workspace-driven jam shell (Task 4.4, design §7).
+ * Producer — the three-band, workspace-driven jam shell.
  *
  * Band 1: TransportBar (play/stop · bar:beat · BPM/tap · key · click · record)
- * Band 2: Stage — Mix | Song tabs. Mix = front-door entry cards when the
+ * Band 2: Stage — Loop | Song tabs. Loop = front-door entry cards when the
  *         workspace is empty, DAW-style ChannelStrips once it isn't (glyph,
  *         voice chip → VoicePicker, M/S, carry pin, GainStrip, 2-tap remove),
  *         plus the promote door ("Add to song" / "Update section").
- *         Song = the structure rail (SongView, Task 7.2): template picker,
+ *         Song = the structure rail (SongView): template picker,
  *         slot fill, section sheets, scene-launch jumps.
  *         The library surface is full-bleed (LibraryBrowser — consonance
- *         guardrails, facets, "goes with →" pivot; Task 5.1).
+ *         guardrails, facets, "goes with →" pivot).
  * Band 3: PianoKeyboard, always live — the person's OWN playing goes through
  *         the untouched pressNote/releaseNote path; loop playback is a
  *         separate path entirely (workspaceReducer → toTransportLayers →
@@ -20,7 +20,7 @@
  * arrangement plays the SONG, anything else plays the jam stack — and the
  * chosen mode is then locked (`lockedMode`) until stop. Switching tabs
  * mid-play must NOT flip the transport's mode (a mode flip is a hard content
- * restart); browsing the Mix while the song plays is a read, not a command.
+ * restart); browsing the Loop tab while the song plays is a read, not a command.
  * Exception: an open CAPTURE SESSION forces stack mode (the capture card's
  * geometry reads transport.lengthMs as the jam cycle; you record against the
  * workspace) — closing it restores whatever mode was armed/locked.
@@ -37,11 +37,11 @@
  * DRAFT ↔ WORKSPACE SEAMS: "Add to song" PROMOTEs the live jam (first promote
  * materializes the draft and auto-switches to the Song tab); opening a section
  * LOAD_STACKs its resolved stack WITH draft.meta.bpm/keyShift (section stacks
- * carry no key/tempo) and tags editingSectionId — the Mix badge then offers
+ * carry no key/tempo) and tags editingSectionId — the Loop badge then offers
  * Update (re-promote into that section) / Discard (clears ONLY the badge; the
  * workspace keeps the stack for further jamming — clearing sound out from
- * under someone is never the answer). Crystallize/persistence is Task 8.x
- * (SongView renders a disabled Save stub).
+ * under someone is never the answer). Song and loop persistence use the
+ * versioned Producer record API.
  *
  * "Every surface earns its pixels": while the overlay is open the transport
  * and keyboard bands unmount; a now-playing pill floats if the jam is looping.
@@ -62,21 +62,24 @@ import PianoEmpty from '../../PianoEmpty.jsx';
 import { SkeletonList } from '../../Skeleton.jsx';
 import { useLoopLibrary } from '../../useLoopLibrary.js';
 import { roleOf } from '@shared-music/layerMatch.mjs';
-import { detectKey } from '../../../../MusicNotation/index.js';
 import { detectChords } from '../Lessons/theory/theoryEngine.js';
 import { romanAnalysis, bestTonic } from '@shared-music/romanAnalysis.mjs';
 import {
   workspaceReducer, initialWorkspace, toTransportLayers, takeToSource,
   addLayer, removeLayer, toggleMute, toggleSolo, setGain, setVoice,
   toggleCarried, nudgeKey, setBpm, setLengthBars, toggleMetronome, loadStack, setEditingSection,
+  clearWorkspace, restoreWorkspace,
 } from '../../producer/workspaceReducer.js';
 import {
   draftReducer, promote, hydrate, applyTemplate, slotFill,
   resolveSectionStack, toSchedulerInputs, sectionProgramMap, draftReferencesLayer,
+  resetDraft,
 } from '../../producer/draftReducer.js';
 import { useProducerStore } from '../../producer/useProducerStore.js';
 import { usePrefabs } from '../../producer/usePrefabs.js';
-import { resolvePrefabStack, resolvePrefabSong } from '../../producer/prefabHydrate.js';
+import {
+  PREFAB_INCOMPLETE_CODE, resolvePrefabStack, resolvePrefabSong,
+} from '../../producer/prefabHydrate.js';
 import { useResumeSnapshot } from '../../producer/useResumeSnapshot.js';
 import { SongView } from '../../producer/SongView.jsx';
 import { SongPicker } from '../../producer/SongPicker.jsx';
@@ -94,11 +97,39 @@ import { LoopMeter } from '../../producer/LoopMeter.jsx';
 import { AddLayerSheet } from '../../producer/AddLayerSheet.jsx';
 import { DrumSequencer } from '../../producer/DrumSequencer.jsx';
 import { ChordBuilder } from '../../producer/ChordBuilder.jsx';
+import { targetKeyPc } from '../../producer/keyModel.js';
+import { useTakePreview } from '../../producer/useTakePreview.js';
 import './Producer.scss';
 
 const NOTE_NAMES = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
-/** detectKey() names → pitch class, for shifting the label by keyShift. */
-const KEY_PC = { C: 0, G: 7, D: 2, A: 9, E: 4, B: 11, 'F#': 6, F: 5, Bb: 10, Eb: 3, Ab: 8, Db: 1, Gb: 6 };
+const LIBRARY_LOOP_UNPLAYABLE_CODE = 'PRODUCER_LIBRARY_LOOP_UNPLAYABLE';
+const SAVED_LOOP_UNPLAYABLE_CODE = 'PRODUCER_SAVED_LOOP_UNPLAYABLE';
+
+function libraryLoadError(entry) {
+  const error = new Error(`Library loop is unavailable or has no playable notes: ${entry?.path ?? entry?.slug ?? 'unknown'}`);
+  error.code = LIBRARY_LOOP_UNPLAYABLE_CODE;
+  return error;
+}
+
+function savedLoopError(layer) {
+  const error = new Error(`Saved loop has no playable notes: ${layer?.id ?? 'unknown'}`);
+  error.code = SAVED_LOOP_UNPLAYABLE_CODE;
+  return error;
+}
+
+function resolvedDraftLayers(draft) {
+  return (draft?.sections || []).flatMap((section) => (section.stack || [])
+    .map((entry) => (entry?.carriedRef != null ? draft.carriedLayers?.[entry.carriedRef] : entry))
+    .filter(Boolean));
+}
+
+function userLoadMessage(error, { prefab = false } = {}) {
+  if (error?.code === PREFAB_INCOMPLETE_CODE) return 'Load stopped — this starter is incomplete.';
+  if (error?.code === LIBRARY_LOOP_UNPLAYABLE_CODE) return 'Load stopped — a library loop is missing or unreadable.';
+  if (error?.code === SAVED_LOOP_UNPLAYABLE_CODE) return 'Load stopped — a saved loop is missing or damaged.';
+  if (error?.message?.includes('incomplete')) return 'Load stopped — a saved loop is missing or damaged.';
+  return prefab ? "Couldn't load that starter." : 'Load failed — try again.';
+}
 
 export function Producer() {
   const logger = useMemo(() => getLogger().child({ component: 'piano-producer' }), []);
@@ -110,8 +141,27 @@ export function Producer() {
   const lib = useLoopLibrary();
 
   // ── workspace state ─────────────────────────────────────────────────────────
-  const [state, dispatch] = useReducer(workspaceReducer, initialWorkspace);
+  const [state, reduceWorkspace] = useReducer(workspaceReducer, initialWorkspace);
   const stateRef = useRef(state); stateRef.current = state;
+  const undoStackRef = useRef([]);
+  const [undoCount, setUndoCount] = useState(0);
+  const dispatch = useCallback((action) => {
+    const before = stateRef.current;
+    const after = workspaceReducer(before, action);
+    if (after === before) return;
+    if (action.type !== 'RESTORE') {
+      undoStackRef.current = [...undoStackRef.current.slice(-49), {
+        workspace: before,
+        // Undo must restore sound as well as strips. A removed library layer's
+        // note payload is intentionally pruned from the live cache below.
+        notesById: notesByIdRef.current,
+      }];
+      setUndoCount(undoStackRef.current.length);
+    }
+    // Keep sequential dispatches in one event honest before React re-renders.
+    stateRef.current = after;
+    reduceWorkspace(action);
+  }, []);
   /** layerId → { notes, ppq, barSpan } — loaded lazily per pick; pruned on remove. */
   const [notesById, setNotesById] = useState({});
   const notesByIdRef = useRef(notesById); notesByIdRef.current = notesById;
@@ -119,6 +169,9 @@ export function Producer() {
   // ── draft (song) state — materializes on first PROMOTE / template ──────────
   const [draft, draftDispatch] = useReducer(draftReducer, null);
   const draftRef = useRef(draft); draftRef.current = draft;
+  /** Persisted identity of the user song being edited. Prefabs/resume/new
+   * drafts deliberately have none, so their first save is always a create. */
+  const [savedSong, setSavedSong] = useState(null);
   /** Sticky playback mode: 'stack' | 'song' while playing, null when idle
    * (see the header — tab switches must not flip a playing transport). */
   const [lockedMode, setLockedMode] = useState(null);
@@ -130,6 +183,9 @@ export function Producer() {
   const [addSheet, setAddSheet] = useState(false); // the unified Add Layer sheet (§8)
   const [builder, setBuilder] = useState(null); // null | 'drums' | 'chords' (§9)
   const [showRoman, setShowRoman] = useState(false);
+  const [clearArmed, setClearArmed] = useState(false);
+  const [newProjectArmed, setNewProjectArmed] = useState(false);
+  const [fillFromLoopsSectionId, setFillFromLoopsSectionId] = useState(null);
   // Capture session (Task 6.2): the card overlays the STAGE band only.
   const [captureOpen, setCaptureOpen] = useState(false);
   // Count-in lives HERE (not in the card) because the transport's play() reads
@@ -161,7 +217,7 @@ export function Producer() {
   useEffect(() => {
     logger.info('piano.producer.mounted', {});
     return () => logger.info('piano.producer.unmounted', {});
-  }, [logger]);
+  }, [logger, dispatch]);
 
   // ── sound: tiers → router (one per mount; onboard tier only on flag change) ─
   const midiRef = useRef(midi); midiRef.current = midi;
@@ -350,7 +406,18 @@ export function Producer() {
     onBlock: handleBlock,
   });
   const transportRef = useRef(transport); transportRef.current = transport;
-  useKeepScreenAwake('producer', transport.isPlaying);
+  const builderPreview = useTakePreview({
+    router,
+    bpm: state.bpm,
+    keyShift: state.keyShift,
+    layers: state.layers,
+    onAudioGesture: ensureAudio,
+  });
+  // A generated-take preview is audible even while the main transport is
+  // stopped. Treat every active sound path as a performance so the kiosk
+  // cannot black out mid-audition. Library peeks own a sibling hold inside
+  // LibraryBrowser because that hook and its state live there.
+  useKeepScreenAwake('producer', transport.isPlaying || builderPreview.isPreviewing);
 
   // ── resume net (Task 8.2): sample the bar ~2Hz while playing as the snapshot
   // throttle clock (positionRef is a ref — no per-frame renders), and snapshot
@@ -484,7 +551,7 @@ export function Producer() {
     }));
     if (editing) dispatch(setEditingSection(null));
     if (isFirst) setTab('song');
-  }, [logger]);
+  }, [logger, dispatch]);
 
   /** Discard the editing badge ONLY — the workspace keeps the loaded stack
    * (documented design call: the person may want to keep jamming on it;
@@ -492,7 +559,7 @@ export function Producer() {
   const handleDiscardEditing = useCallback(() => {
     logger.info('piano.producer.editing-discard', { sectionId: stateRef.current.editingSectionId });
     dispatch(setEditingSection(null));
-  }, [logger]);
+  }, [logger, dispatch]);
 
   const handleApplyTemplate = useCallback((template) => {
     logger.info('piano.producer.template-apply', { template: template?.id });
@@ -507,51 +574,122 @@ export function Producer() {
     draftDispatch(slotFill({ sectionId, workspaceState: wsState, notesById: notesByIdRef.current }));
   }, [logger]);
 
-  /** Restore notes for section layers whose lazy-loaded notes were pruned
-   * (e.g. the layer was removed from the workspace since). Keyed by layer id.
-   * The landing guard extends handlePick's: notes land while the layer lives
-   * in the WORKSPACE **or** is still referenced by the DRAFT — a section
-   * layer removed from the workspace mid-fetch must not lose its notes (the
-   * song would play that section silently, forever). */
-  const ensureLayerNotes = useCallback((layers) => {
-    for (const l of layers) {
-      if (l.source?.kind !== 'library' || notesByIdRef.current[l.id]) continue;
-      const entry = l.source.entry;
-      lib.loadNotes(entry).then((notes) => {
-        if (!notes?.notes?.length) return;
-        if (!stateRef.current.layers.some((x) => x.id === l.id)
-          && !draftReferencesLayer(draftRef.current, l.id)) return;
-        setNotesById((prev) => (prev[l.id]
-          ? prev
-          : { ...prev, [l.id]: { notes: notes.notes, ppq: notes.ppq, barSpan: entry.barSpan } }));
-      }).catch(() => {
-        logger.warn('piano.producer.section-notes-load-failed', { id: l.id });
-      });
+  const handleUndoWorkspace = useCallback(() => {
+    const previous = undoStackRef.current.pop();
+    if (!previous) return;
+    stateRef.current = previous.workspace;
+    notesByIdRef.current = previous.notesById;
+    setNotesById(previous.notesById);
+    reduceWorkspace(restoreWorkspace(previous.workspace));
+    setUndoCount(undoStackRef.current.length);
+    setClearArmed(false);
+    logger.info('piano.producer.undo', { layers: previous.workspace.layers.length });
+  }, [logger]);
+
+  const handleClearLoop = useCallback(() => {
+    if (!clearArmed) { setClearArmed(true); return; }
+    dispatch(clearWorkspace());
+    setClearArmed(false);
+    logger.info('piano.producer.clear-loop');
+  }, [clearArmed, dispatch, logger]);
+
+  const handleNewProject = useCallback(() => {
+    transportRef.current.stop?.();
+    stateRef.current = initialWorkspace;
+    reduceWorkspace(clearWorkspace());
+    draftDispatch(resetDraft());
+    setNotesById({});
+    undoStackRef.current = [];
+    setUndoCount(0);
+    setSavedSong(null);
+    setClearArmed(false);
+    setNewProjectArmed(false);
+    setFillFromLoopsSectionId(null);
+    setTab('mix');
+    resume.clear();
+    logger.info('piano.producer.new-project');
+  }, [logger, resume]);
+
+  /** Resolve every library layer before committing a saved/prefab load.
+   * Loading a partial stack or song is a false success: it can remove the
+   * harmony, bass, or groove while leaving a plausible-looking UI. This is an
+   * all-or-nothing boundary; takes already carry their notes in `source`. */
+  const preloadLayerNotes = useCallback(async (layers, seedNotes = notesByIdRef.current) => {
+    const base = seedNotes && typeof seedNotes === 'object' ? seedNotes : {};
+    const pending = new Map();
+    for (const layer of layers) {
+      if (layer?.source?.kind === 'take') {
+        if (!layer.source.notes?.length) throw savedLoopError(layer);
+        continue;
+      }
+      if (layer?.source?.kind !== 'library') throw savedLoopError(layer);
+      if (base[layer.id]?.notes?.length) continue;
+      pending.set(layer.id, layer);
     }
-  }, [lib, logger]);
+    const loaded = {};
+    await Promise.all([...pending.values()].map(async (layer) => {
+      let notes;
+      try { notes = await lib.loadNotes(layer.source.entry); } catch { throw libraryLoadError(layer.source.entry); }
+      if (!notes?.notes?.length) throw libraryLoadError(layer.source.entry);
+      loaded[layer.id] = {
+        notes: notes.notes,
+        ppq: notes.ppq,
+        barSpan: layer.source.entry.barSpan,
+      };
+    }));
+    const next = Object.keys(loaded).length ? { ...base, ...loaded } : base;
+    notesByIdRef.current = next;
+    setNotesById(next);
+    return next;
+  }, [lib]);
+
+  /** Fill an empty Song slot directly from a kept stack or section. */
+  const handleFillFromMyLoops = useCallback(async (item) => {
+    const sectionId = fillFromLoopsSectionId;
+    if (!sectionId) return;
+    try {
+      const { layers } = await store.loadCrateStack(item.id);
+      const loadedNotes = await preloadLayerNotes(layers);
+      draftDispatch(slotFill({
+        sectionId,
+        workspaceState: { ...stateRef.current, layers },
+        notesById: loadedNotes,
+      }));
+      setFillFromLoopsSectionId(null);
+      logger.info('piano.producer.slot-fill-my-loops', { sectionId, crateId: item.id, layers: layers.length });
+    } catch (err) {
+      logger.error('piano.producer.slot-fill-my-loops-failed', { sectionId, crateId: item.id, error: err?.message });
+      showToast(userLoadMessage(err));
+    }
+  }, [fillFromLoopsSectionId, store, preloadLayerNotes, logger, showToast]);
 
   /** Open a section for editing: LOAD_STACK its resolved stack WITH the
    * song's key/tempo (the resolveSectionStack doc seam — stacks carry
-   * neither), tag editingSectionId, land in Mix. Works for EMPTY template
-   * sections too ("Open in Mix to build" clears the stage). */
-  const handleOpenSection = useCallback((sectionId) => {
+   * neither), tag editingSectionId, land in Loop. Works for EMPTY template
+   * sections too ("Open in Loop to build" clears the stage). */
+  const handleOpenSection = useCallback(async (sectionId) => {
     const d = draftRef.current;
     const stack = resolveSectionStack(d, sectionId);
     if (!stack) return;
     const section = d?.sections?.find((s) => s.id === sectionId);
-    logger.info('piano.producer.section-open', { sectionId, layers: stack.length });
-    dispatch(loadStack({
-      layers: stack,
-      bpm: d.meta.bpm,
-      keyShift: d.meta.keyShift,
-      // Editing a section adopts its structural length so the loop meter and
-      // playback match the section you're editing (design §4).
-      lengthBars: Number.isFinite(section?.lengthBars) ? section.lengthBars : undefined,
-      editingSectionId: sectionId,
-    }));
-    ensureLayerNotes(stack);
-    setTab('mix');
-  }, [ensureLayerNotes, logger]);
+    try {
+      await preloadLayerNotes(stack);
+      logger.info('piano.producer.section-open', { sectionId, layers: stack.length });
+      dispatch(loadStack({
+        layers: stack,
+        bpm: d.meta.bpm,
+        keyShift: d.meta.keyShift,
+        // Editing a section adopts its structural length so the loop meter and
+        // playback match the section you're editing (design §4).
+        lengthBars: Number.isFinite(section?.lengthBars) ? section.lengthBars : undefined,
+        editingSectionId: sectionId,
+      }));
+      setTab('mix');
+    } catch (err) {
+      logger.error('piano.producer.section-open-failed', { sectionId, error: err?.message });
+      showToast(userLoadMessage(err));
+    }
+  }, [preloadLayerNotes, logger, showToast, dispatch]);
 
   /** Scene launch: queue the jump, and show the chip only if the transport
    * accepted it (it no-ops unless playing the arrangement). */
@@ -564,19 +702,28 @@ export function Producer() {
   // ── persistence flows (Task 8.2): save / load / keep / resume ──────────────
   /** Crystallize + persist the current draft as a song (auto-persists embedded
    * takes as loops first). Optional inline title. */
-  const handleSaveSong = useCallback(async (title) => {
+  const handleSaveSong = useCallback(async (mode = 'update', title) => {
     const d = draftRef.current;
     if (!d || !d.sections?.length) return;
     try {
-      const rec = await store.saveSong(d, { title: title || undefined });
-      logger.info('piano.producer.save-song', { id: rec.id, sections: d.sections.length });
+      const update = mode === 'update' && savedSong?.source === 'user';
+      const rec = await store.saveSong(d, {
+        title: title || undefined,
+        id: update ? savedSong.id : null,
+        revision: update ? savedSong.revision : null,
+        saveAs: mode === 'save-as',
+      });
+      setSavedSong({ id: rec.id, revision: rec.revision ?? 1, title: rec.title ?? null, source: 'user' });
+      logger.info('piano.producer.save-song', {
+        id: rec.id, mode: update ? 'update' : 'save-as', sections: d.sections.length,
+      });
       showToast(`Saved “${rec.title || 'song'}”`);
       resume.clear();
     } catch (err) {
       logger.error('piano.producer.save-song-failed', { error: err?.message });
       showToast('Save failed — try again');
     }
-  }, [store, resume, showToast, logger]);
+  }, [store, savedSong, resume, showToast, logger]);
 
   /** Load a song → resolve refs → HYDRATE the draft → re-fetch the library
    * layers' notes → land on the Song tab. `source` selects where the record
@@ -587,47 +734,61 @@ export function Producer() {
   const loadSongBySource = useCallback(async (id, source) => {
     try {
       let loaded;
+      let stored = null;
       if (source === 'prefab') {
         const payload = await prefabs.getFull('songs', id);
         ({ draft: loaded } = resolvePrefabSong(payload, lib.loops || []));
       } else {
-        ({ draft: loaded } = await store.loadSong(id));
+        stored = await store.loadSong(id);
+        ({ draft: loaded } = stored);
       }
+      // Library layers (across sections, carried refs expanded) must all load
+      // before the draft changes; take layers carry notes in their sources.
+      const layers = resolvedDraftLayers(loaded);
+      await preloadLayerNotes(layers);
       draftDispatch(hydrate(loaded));
-      // Library layers (across sections, carried refs expanded) re-fetch notes;
-      // take layers carry theirs embedded from the resolved loop records.
-      const layers = (loaded.sections || []).flatMap((s) => (s.stack || [])
-        .map((e) => (e && e.carriedRef != null ? loaded.carriedLayers?.[e.carriedRef] : e))
-        .filter(Boolean));
-      ensureLayerNotes(layers);
+      setSavedSong(source === 'prefab' ? null : {
+        id: stored.id,
+        revision: stored.revision ?? 1,
+        title: stored.title ?? loaded.meta?.title ?? null,
+        source: 'user',
+      });
       setSongPicker(false);
       setTab('song');
       resume.clear();
       logger.info('piano.producer.load-song', { id, source, sections: loaded.sections?.length ?? 0 });
     } catch (err) {
       logger.error('piano.producer.load-song-failed', { id, source, error: err?.message });
-      showToast('Load failed — try again');
+      showToast(userLoadMessage(err, { prefab: source === 'prefab' }));
     }
-  }, [store, prefabs, lib, ensureLayerNotes, resume, showToast, logger]);
+  }, [store, prefabs, lib, preloadLayerNotes, resume, showToast, logger]);
 
   const handleLoadSong = useCallback((id) => loadSongBySource(id, 'user'), [loadSongBySource]);
   const handleLoadExample = useCallback((id) => loadSongBySource(id, 'prefab'), [loadSongBySource]);
 
   /** Apply the resume snapshot: restore the workspace stack + draft + notes.
    * A user act — the chip is only a prompt, never auto-applied. */
-  const handleApplyResume = useCallback(() => {
-    const data = resume.applyResume();
+  const handleApplyResume = useCallback(async () => {
+    const data = resume.resumeData;
     if (!data) return;
     const ws = data.workspace || {};
-    dispatch(loadStack({ layers: ws.layers || [], bpm: ws.bpm, keyShift: ws.keyShift }));
-    if (data.draft) draftDispatch(hydrate(data.draft));
-    if (data.notesById && typeof data.notesById === 'object') setNotesById(data.notesById);
-    // Library layers whose notes weren't in the snapshot re-fetch by slug.
-    ensureLayerNotes(ws.layers || []);
-    resume.clear();
-    setSongPicker(false);
-    logger.info('piano.producer.resume-apply', { layers: (ws.layers || []).length });
-  }, [resume, ensureLayerNotes, logger]);
+    try {
+      await preloadLayerNotes([
+        ...(ws.layers || []),
+        ...resolvedDraftLayers(data.draft),
+      ], data.notesById);
+      resume.applyResume();
+      dispatch(loadStack({ layers: ws.layers || [], bpm: ws.bpm, keyShift: ws.keyShift }));
+      if (data.draft) draftDispatch(hydrate(data.draft));
+      setSavedSong(null);
+      resume.clear();
+      setSongPicker(false);
+      logger.info('piano.producer.resume-apply', { layers: (ws.layers || []).length });
+    } catch (err) {
+      logger.error('piano.producer.resume-apply-failed', { error: err?.message });
+      showToast(userLoadMessage(err));
+    }
+  }, [resume, preloadLayerNotes, logger, showToast, dispatch]);
 
   /** Keep the whole workspace stack to the Crate (recorded takes persist as
    * loops first, then the stack stores refs — design §6). */
@@ -635,7 +796,10 @@ export function Producer() {
     const layers = stateRef.current.layers;
     if (!layers.length) return;
     try {
-      await store.saveCrateItem('stack', { layers });
+      await store.saveCrateItem('stack', {
+        layers,
+        lengthBars: stateRef.current.lengthBars ?? transportRef.current.loopBars,
+      });
       logger.info('piano.producer.keep-stack', { layers: layers.length });
       showToast('Saved to My Loops');
     } catch (err) {
@@ -649,7 +813,8 @@ export function Producer() {
     const stack = resolveSectionStack(draftRef.current, sectionId);
     if (!stack || !stack.length) return;
     try {
-      await store.saveCrateItem('section', { layers: stack });
+      const section = draftRef.current?.sections?.find((item) => item.id === sectionId);
+      await store.saveCrateItem('section', { layers: stack, lengthBars: section?.lengthBars });
       logger.info('piano.producer.keep-section', { sectionId, layers: stack.length });
       showToast('Saved to My Loops');
     } catch (err) {
@@ -690,14 +855,14 @@ export function Producer() {
       } else {
         ({ layers } = await store.loadCrateStack(item.id));
       }
+      await preloadLayerNotes(layers);
       dispatch(loadStack({ layers, bpm: stateRef.current.bpm, keyShift: stateRef.current.keyShift }));
-      ensureLayerNotes(layers);
       logger.info('piano.producer.stack-pick', { source, id: item.id, layers: layers.length });
     } catch (err) {
       logger.error('piano.producer.stack-pick-failed', { source, id: item.id, error: err?.message });
-      setLoadError(source === 'prefab' ? "Couldn't load that prefab." : "Couldn't load that from My Loops.");
+      setLoadError(userLoadMessage(err, { prefab: source === 'prefab' }));
     }
-  }, [store, prefabs, lib, ensureAudio, ensureLayerNotes, logger]);
+  }, [store, prefabs, lib, ensureAudio, preloadLayerNotes, logger, dispatch]);
 
   /** Arm the destructive stack load: an existing jam gets a "Replace?" confirm
    * (holding the source); an empty workspace loads immediately. */
@@ -725,6 +890,7 @@ export function Producer() {
           source: {
             kind: 'take', takeId: rec.id, notes: rec.notes, ppq: rec.ppq ?? 480,
             lengthBars: rec.lengthBars, timeline: rec.timeline ?? null, drumMode: !!rec.drumMode,
+            persistedLoopId: rec.id, persistedContentHash: rec.contentHash ?? null,
           },
           role: rec.kind === 'groove' ? 'groove' : (rec.kind || 'idea'),
         }));
@@ -736,7 +902,7 @@ export function Producer() {
       return;
     }
     armStackLoad(item, 'user');
-  }, [store, ensureAudio, armStackLoad, logger]);
+  }, [store, ensureAudio, armStackLoad, logger, dispatch]);
 
   /** 'Prefabs' library facet pick: load a curated stack (same confirm gate). */
   const handlePickPrefab = useCallback((item) => {
@@ -759,7 +925,7 @@ export function Producer() {
    * click on for metronome sessions and restores it on close). */
   const handleSetMetronome = useCallback((on) => {
     if (stateRef.current.metronome !== on) dispatch(toggleMetronome());
-  }, []);
+  }, [dispatch]);
 
   /** Confirmed take → workspace layer (channel assigned per kind by the
    * reducer: groove → 9, melodic/harmonic → lowest free). takeToSource
@@ -778,13 +944,14 @@ export function Producer() {
       source: takeToSource(take, keyShift),
       role: take.kind === 'groove' ? 'groove' : take.kind,
     }));
-  }, [logger]);
+  }, [logger, dispatch]);
 
   /** Add a builder's output (drum sequencer / chord builder) as a layer. The
    * notes are already CANONICAL — drums are GM drum-map slots (never transposed)
    * and chords are C-rooted (Roman I = C) — so the source is added directly;
    * toTransportLayers applies the jam keyShift on playback (design §9). */
   const handleBuilderCommit = useCallback((take) => {
+    builderPreview.stopPreview();
     ensureAudio();
     logger.info('piano.producer.builder-commit', {
       kind: take.kind, notes: take.notes.length, lengthBars: take.lengthBars,
@@ -793,10 +960,11 @@ export function Producer() {
       source: {
         kind: 'take', takeId: take.takeId, notes: take.notes, ppq: take.ppq ?? 480,
         lengthBars: take.lengthBars, timeline: take.timeline ?? null, drumMode: !!take.drumMode,
+        builder: take.builder ?? null,
       },
       role: take.kind === 'groove' ? 'groove' : take.kind,
     }));
-  }, [logger]);
+  }, [builderPreview, ensureAudio, logger, dispatch]);
 
   const openOverlay = useCallback((role, door) => {
     // door is one of the four entry cards; the "+ Add layer" path passes null.
@@ -839,7 +1007,7 @@ export function Producer() {
         [entry.path]: { notes: notes.notes, ppq: notes.ppq, barSpan: entry.barSpan },
       }));
     }
-  }, [ensureAudio, lib, logger]);
+  }, [ensureAudio, lib, logger, dispatch]);
 
   const handleRemove = useCallback((id) => {
     dispatch(removeLayer(id));
@@ -853,18 +1021,18 @@ export function Producer() {
       delete rest[id];
       return rest;
     });
-  }, []);
+  }, [dispatch]);
 
-  const handleToggleMute = useCallback((id) => dispatch(toggleMute(id)), []);
-  const handleToggleSolo = useCallback((id) => dispatch(toggleSolo(id)), []);
+  const handleToggleMute = useCallback((id) => dispatch(toggleMute(id)), [dispatch]);
+  const handleToggleSolo = useCallback((id) => dispatch(toggleSolo(id)), [dispatch]);
   const handleToggleCarried = useCallback((id) => {
     logger.info('piano.producer.carry-toggle', { id });
     dispatch(toggleCarried(id));
-  }, [logger]);
+  }, [logger, dispatch]);
   const handleSetGain = useCallback((id, gain) => {
     logger.sampled('piano.producer.gain-set', { id, gain }, { maxPerMinute: 20, aggregate: true });
     dispatch(setGain(id, gain));
-  }, [logger]);
+  }, [logger, dispatch]);
   // Voice select is a user gesture — a fine moment to unlock audio, so the
   // newly picked program is audible immediately (the configureLayer diff
   // effect pushes it to the router as the reducer state lands).
@@ -872,24 +1040,15 @@ export function Producer() {
     logger.info('piano.producer.voice-set', { id, program });
     ensureAudio();
     dispatch(setVoice(id, program));
-  }, [ensureAudio, logger]);
+  }, [ensureAudio, logger, dispatch]);
 
   // ── display derivations ─────────────────────────────────────────────────────
   const splitNote = useMemo(() => Math.floor((kb.startNote + kb.endNote) / 2), [kb.startNote, kb.endNote]);
 
-  const baseLayer = state.layers[0] ?? null;
-  const detectedKey = useMemo(() => {
-    const loaded = baseLayer ? notesById[baseLayer.id] : null;
-    if (!loaded?.notes?.length) return 'C';
-    return detectKey(loaded.notes.map((n) => n.midi % 12));
-  }, [baseLayer, notesById]);
   // Pitch class Roman `I` sounds at in the current jam — the tonic behind the
   // "Key X" label (design §7). ChordLanes key their concrete chord names to it,
   // so the names always agree with the displayed key.
-  const keyPc = useMemo(
-    () => ((((KEY_PC[detectedKey] ?? 0) + state.keyShift) % 12) + 12) % 12,
-    [detectedKey, state.keyShift],
-  );
+  const keyPc = targetKeyPc(state.keyShift);
   const keyLabel = NOTE_NAMES[keyPc];
 
   // Left-hand roman chord readout (ported behavior): detect below the split.
@@ -942,6 +1101,15 @@ export function Producer() {
     <section className="piano-mode piano-producer-mode">
       {lib.loading && <SkeletonList rows={6} />}
       {lib.error && <PianoEmpty message={`Couldn't load the loop library: ${lib.error}`} />}
+      {store.error && (
+        <div className="piano-producer-mode__data-error" role="alert">
+          <span>Saved work unavailable: {store.error}</span>
+          <button type="button" onClick={store.refresh}>Retry</button>
+        </div>
+      )}
+      {saveToast && (
+        <p className="piano-producer-mode__save-toast" role="status">{saveToast}</p>
+      )}
 
       {lib.loops && !surfaceOpen && (
         <>
@@ -951,9 +1119,6 @@ export function Producer() {
               <button type="button" className="piano-chip is-on" onClick={handleApplyResume}>Resume</button>
               <button type="button" className="piano-chip" aria-label="dismiss resume" onClick={resume.dismiss}>✕</button>
             </div>
-          )}
-          {saveToast && (
-            <p className="piano-producer-mode__save-toast" role="status">{saveToast}</p>
           )}
           <TransportBar
             isPlaying={transport.isPlaying}
@@ -1004,12 +1169,46 @@ export function Producer() {
               <span className="piano-producer-mode__breadcrumb" aria-label="location">{breadcrumb}</span>
               <button
                 type="button"
+                className="piano-chip piano-producer-mode__new"
+                onClick={() => setNewProjectArmed(true)}
+              >New</button>
+              <button
+                type="button"
                 className={`piano-chip piano-producer-mode__roman-toggle${showRoman ? ' is-on' : ''}`}
                 aria-label="roman"
                 aria-pressed={showRoman}
                 onClick={() => setShowRoman((v) => !v)}
               >Roman</button>
             </div>
+
+            {newProjectArmed && (
+              <div className="piano-producer-mode__replace-confirm" role="alertdialog" aria-label="new project">
+                <span className="piano-producer-mode__replace-label">
+                  Start a new project? The current Loop and Song will be cleared.
+                </span>
+                <button type="button" className="piano-producer-mode__replace-go" onClick={handleNewProject}>
+                  Start new
+                </button>
+                <button type="button" onClick={() => setNewProjectArmed(false)}>Cancel</button>
+              </div>
+            )}
+
+            {fillFromLoopsSectionId && (
+              <div className="piano-producer-mode__my-loops-picker" role="dialog" aria-label="choose from My Loops">
+                <strong>Fill from My Loops</strong>
+                {store.crate.length === 0 ? (
+                  <p>No saved stacks or sections yet.</p>
+                ) : (
+                  store.crate.map((item) => (
+                    <button key={item.id} type="button" onClick={() => handleFillFromMyLoops(item)}>
+                      {item.title || (item.kind === 'section' ? 'Saved section' : 'Saved stack')}
+                      <span>{item.layerCount ?? 0} layers</span>
+                    </button>
+                  ))
+                )}
+                <button type="button" onClick={() => setFillFromLoopsSectionId(null)}>Cancel</button>
+              </div>
+            )}
 
             {tab === 'mix' && loadError && (
               <p className="piano-producer-mode__toast" role="alert">{loadError}</p>
@@ -1047,7 +1246,15 @@ export function Producer() {
 
             {tab === 'mix' && (
               state.layers.length === 0 ? (
-                <div className="piano-producer-mode__doors">
+                <>
+                  {undoCount > 0 && (
+                    <button
+                      type="button"
+                      className="piano-producer-mode__undo piano-producer-mode__undo--empty"
+                      onClick={handleUndoWorkspace}
+                    >Undo last change</button>
+                  )}
+                  <div className="piano-producer-mode__doors">
                   <button type="button" className="piano-producer-mode__door" onClick={() => openOverlay(null, 'browse')}>
                     <span className="piano-producer-mode__door-title">Browse the library</span>
                     <span className="piano-producer-mode__door-blurb">Loops, grooves & ideas to start from</span>
@@ -1070,7 +1277,8 @@ export function Producer() {
                       {resume.hasResume ? 'Pick up where you left off, or load a saved song' : 'Load a saved song'}
                     </span>
                   </button>
-                </div>
+                  </div>
+                </>
               ) : (
                 <div className="piano-producer-mode__mix">
                   {/* The bounded loop made visible (design §4): one segment per
@@ -1119,6 +1327,20 @@ export function Producer() {
                   <div className="piano-producer-mode__mix-actions">
                     <button
                       type="button"
+                      className="piano-producer-mode__undo"
+                      disabled={undoCount === 0}
+                      onClick={handleUndoWorkspace}
+                    >Undo</button>
+                    <button
+                      type="button"
+                      className={`piano-producer-mode__clear${clearArmed ? ' is-armed' : ''}`}
+                      onClick={handleClearLoop}
+                    >{clearArmed ? 'Confirm clear' : 'Clear loop'}</button>
+                    {clearArmed && (
+                      <button type="button" onClick={() => setClearArmed(false)}>Cancel clear</button>
+                    )}
+                    <button
+                      type="button"
                       className="piano-producer-mode__add-layer"
                       onClick={() => setAddSheet(true)}
                     >+ Add layer</button>
@@ -1156,8 +1378,11 @@ export function Producer() {
                 pendingBlockIndex={pendingTarget}
                 onQueueJump={handleQueueJump}
                 onSaveSong={handleSaveSong}
+                savedSong={savedSong}
                 onOpenSongPicker={() => setSongPicker(true)}
                 onKeepSection={handleKeepSection}
+                hasMyLoops={store.crate.length > 0}
+                onFromMyLoops={setFillFromLoopsSectionId}
               />
             )}
           </div>
@@ -1197,7 +1422,10 @@ export function Producer() {
             <DrumSequencer
               lengthBars={transport.loopBars || state.lengthBars || 2}
               onCommit={handleBuilderCommit}
-              onClose={() => setBuilder(null)}
+              onPreview={builderPreview.previewTake}
+              onStopPreview={builderPreview.stopPreview}
+              isPreviewing={builderPreview.isPreviewing}
+              onClose={() => { builderPreview.stopPreview(); setBuilder(null); }}
             />
           )}
           {builder === 'chords' && (
@@ -1205,7 +1433,10 @@ export function Producer() {
               keyPc={keyPc}
               lengthBars={transport.loopBars || state.lengthBars || 4}
               onCommit={handleBuilderCommit}
-              onClose={() => setBuilder(null)}
+              onPreview={builderPreview.previewTake}
+              onStopPreview={builderPreview.stopPreview}
+              isPreviewing={builderPreview.isPreviewing}
+              onClose={() => { builderPreview.stopPreview(); setBuilder(null); }}
             />
           )}
           </div>
@@ -1235,7 +1466,8 @@ export function Producer() {
           isPlaying={transport.isPlaying}
           positionRef={transport.positionRef}
           pillMaterials={pillMaterials}
-          // Press-and-hold audition (Task 5.2): the peek rides the SAME
+          // Explicit card audition (with hold as a compatibility shortcut)
+          // rides the SAME
           // router on reserved channels while the jam keeps looping, and
           // conforms to the live key/tempo. ensureAudio unlocks the gmSynth
           // in the card's pointer-down gesture context.

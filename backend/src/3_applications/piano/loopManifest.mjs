@@ -1,7 +1,8 @@
 // Walk the five brick folders under media/midi, parse each MusicXML brick's
-// metadata + notes, bake a root-0 harmonic timeline (bricks are canonical-C),
-// and cache the result by folder mtime. Consumed by the /loop-manifest endpoint
-// and, downstream, by useLoopLibrary → libraryRanking (grid-based gate).
+// metadata + notes, bake a tonic-relative harmonic timeline, and cache the
+// result by folder mtime. Bricks retain their authored tonic; they are not
+// assumed to be canonical C. Consumed by the /loop-manifest endpoint and,
+// downstream, by useLoopLibrary → libraryRanking (grid-based gate).
 
 import path from 'path';
 import { listFiles, readFile, getStats } from '#system/utils/FileIO.mjs';
@@ -52,7 +53,7 @@ export function computeTonicPc(harmonyKey, roman) {
   return (((firstRoot - deg) % 12) + 12) % 12;
 }
 
-/** Read the conversion ledger → Map(outputPath → { harmonyKey, roman }). */
+/** Read the conversion ledger → analysis metadata keyed by output path. */
 function readLedger(midiDir) {
   const map = new Map();
   const raw = readFile(path.join(midiDir, '_workspace', '_ledger.jsonl'));
@@ -61,7 +62,11 @@ function readLedger(midiDir) {
     if (!line.trim()) continue;
     try {
       const j = JSON.parse(line);
-      if (j.output) map.set(j.output, { harmonyKey: j.harmonyKey, roman: j.derivedRoman });
+      if (j.output) map.set(j.output, {
+        harmonyKey: j.harmonyKey,
+        roman: j.derivedRoman,
+        harmonyVerified: j.harmonyVerified,
+      });
     } catch { /* skip malformed row */ }
   }
   return map;
@@ -127,17 +132,31 @@ export function buildBrickEntry(relPath, xml, ledgerRow = null) {
     reverb: meta.reverb || '',
     roman: meta['derived-signature'] ? meta['derived-signature'].split('-').filter(Boolean) : [],
   };
+  // This field is a safety verdict, not decorative enrichment: the frontend's
+  // default Best view excludes explicit analyzer failures. Omit unknown/blank
+  // verdicts so legacy material remains browseable while "no" is never
+  // laundered into curated content.
+  if (ledgerRow?.harmonyVerified === 'yes' || ledgerRow?.harmonyVerified === true) entry.harmonyVerified = true;
+  if (ledgerRow?.harmonyVerified === 'no' || ledgerRow?.harmonyVerified === false) entry.harmonyVerified = false;
+  let parsed;
+  try {
+    parsed = musicXmlToNotes(xml);
+    if (!parsed.notes.length) {
+      entry.needsReview = true;
+      entry.needsReviewReason = 'parse-fail';
+      return entry;
+    }
+  } catch (err) {
+    entry.needsReview = true;
+    entry.needsReviewReason = `engine-throw: ${err.message}`;
+    return entry;
+  }
   if (SKIP_HARMONY.has(type)) {
     entry.feel = meta['canonical-name'] || ''; // grooves have no harmonic content
     return entry;
   }
   try {
-    const { ppq, notes, timeSig } = musicXmlToNotes(xml);
-    if (!notes.length) {
-      entry.needsReview = true;
-      entry.needsReviewReason = 'parse-fail';
-      return entry;
-    }
+    const { ppq, notes, timeSig } = parsed;
     const tl = harmonicTimeline(notes, ppq, { rootOverride: tonicPc, timeSig });
     entry.timeline = tl.slots;
     entry.timelineRoot = tl.root; // the brick's tonic pc (key-conformed grid)

@@ -1,5 +1,5 @@
 /**
- * SongView — the structure rail (design §7 Song view, Task 7.2).
+ * SongView — the Song-tab structure rail.
  *
  * One slot card per ARRANGEMENT ENTRY (`Verse ×2 · 8 bars`), horizontally
  * scrolling in play order. A section referenced by several entries renders as
@@ -10,7 +10,7 @@
  * IDLE (song not playing): tapping a slot opens its sheet —
  *   - empty slot → fill menu: "Use current jam" (SLOT_FILL; disabled when the
  *     workspace is empty), "Open in Loop to build" (LOAD_STACK empty +
- *     editingSectionId via the shell), "From My Loops" (disabled stub, Task 8.2);
+ *     editingSectionId via the shell), or an exact saved stack from My Loops;
  *   - filled slot → actions: Edit in Loop, repeats ±, bars ±, inline rename,
  *     Clone (CLONE_SECTION + ADD_ENTRY right after this slot), Delete (2-tap
  *     confirm — removes THIS slot; the section itself is deleted only when no
@@ -40,12 +40,14 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import getLogger from '../../../../lib/logging/Logger.js';
-import { MaterialGlyph, seedFor } from './MaterialGlyph.jsx';
+import { MaterialGlyph } from './MaterialGlyph.jsx';
+import { seedFor } from './materialGlyphModel.js';
 import { STRUCTURE_TEMPLATES } from './structureTemplates.js';
 import {
   setRepeats, moveEntry, removeEntry, setSectionLength,
   deleteSection, cloneSection, addEntry, addSection, sectionGlyphSeeds,
 } from './draftReducer.js';
+import { coerceRepeats, entryStartBlock } from './songViewModel.js';
 import './SongView.scss';
 
 let _logger;
@@ -59,34 +61,6 @@ const HOLD_MS = 500;
 /** Delete confirm window (same feel as ChannelStrip's remove). */
 const DELETE_ARM_MS = 3000;
 
-/** Repeat coercion IDENTICAL to arrangementScheduler's (floor, min 1). */
-function coerceRepeats(repeats) {
-  const n = Math.floor(Number(repeats));
-  return Number.isFinite(n) && n >= 1 ? n : 1;
-}
-
-/**
- * First compiled BLOCK index of arrangement entry `entryIdx`: the prefix sum
- * of earlier entries' repeats (compileArrangement emits one block per entry ×
- * repeat, zero-length blocks included, so indices line up 1:1).
- */
-export function entryStartBlock(arrangement, entryIdx) {
-  let sum = 0;
-  for (let i = 0; i < entryIdx; i += 1) sum += coerceRepeats(arrangement[i]?.repeats);
-  return sum;
-}
-
-/** Inverse: which arrangement entry a compiled block index falls in (−1 when
- * out of range). */
-export function entryIndexOfBlock(arrangement, blockIndex) {
-  if (!Number.isInteger(blockIndex) || blockIndex < 0) return -1;
-  let sum = 0;
-  for (let i = 0; i < arrangement.length; i += 1) {
-    sum += coerceRepeats(arrangement[i]?.repeats);
-    if (blockIndex < sum) return i;
-  }
-  return -1;
-}
 
 /** Mirror of draftReducer's private nextSectionId (max sec-N suffix + 1) so
  * Clone can dispatch ADD_ENTRY for the id CLONE_SECTION is about to mint.
@@ -109,15 +83,17 @@ function nextSectionIdOf(sections) {
  * @param {() => void} props.onStartFromJam - PROMOTE via the shell (empty state)
  * @param {(template:object) => void} props.onApplyTemplate
  * @param {(sectionId:string) => void} props.onUseJam - SLOT_FILL via the shell
- * @param {(sectionId:string) => void} props.onOpenSection - LOAD_STACK + Mix tab via the shell
+ * @param {(sectionId:string) => void} props.onOpenSection - LOAD_STACK + Loop tab via the shell
  * @param {boolean} [props.isSongPlaying] - transport is playing THE ARRANGEMENT
  * @param {number} [props.activeBlockIndex] - from the transport's onBlock (−1 idle)
  * @param {number|null} [props.pendingBlockIndex] - queued jump target block
  * @param {(blockIndex:number, mode:'repeat'|'bar') => void} [props.onQueueJump]
- * @param {() => void} [props.onSaveSong] - crystallize + persist (Task 8.2) under a
- *   default timestamped name; absent → the footer keeps the disabled "coming soon" stub
+ * @param {(mode:'update'|'save-as') => void} [props.onSaveSong] - persist the draft
+ * @param {{id:string,title?:string}|null} [props.savedSong] - enables explicit Update vs Save As
  * @param {() => void} [props.onOpenSongPicker] - open the saved-song picker
  * @param {(sectionId:string) => void} [props.onKeepSection] - keep a section to the Crate
+ * @param {boolean} [props.hasMyLoops] - at least one saved stack/section can fill a slot
+ * @param {(sectionId:string) => void} [props.onFromMyLoops] - open the saved-material picker
  */
 export function SongView({
   draft,
@@ -132,8 +108,11 @@ export function SongView({
   pendingBlockIndex = null,
   onQueueJump,
   onSaveSong,
+  savedSong = null,
   onOpenSongPicker,
   onKeepSection,
+  hasMyLoops = false,
+  onFromMyLoops,
 }) {
   const [openIdx, setOpenIdx] = useState(null); // arrangement entry whose sheet is open
   const [deleteArmed, setDeleteArmed] = useState(false);
@@ -183,7 +162,7 @@ export function SongView({
           type="button"
           className="piano-song-view__from-jam"
           disabled={!hasJamLayers}
-          title={hasJamLayers ? undefined : 'Stack some layers in Mix first'}
+          title={hasJamLayers ? undefined : 'Stack some layers in Loop first'}
           onClick={onStartFromJam}
         >
           Start from your jam
@@ -368,14 +347,19 @@ export function SongView({
           <button
             type="button"
             disabled={!hasJamLayers}
-            title={hasJamLayers ? undefined : 'Stack some layers in Mix first'}
+            title={hasJamLayers ? undefined : 'Stack some layers in Loop first'}
             onClick={() => { onUseJam(openSection.id); setOpenIdx(null); }}
           >Use current jam</button>
           <button
             type="button"
             onClick={() => { onOpenSection(openSection.id); setOpenIdx(null); }}
           >Open in Loop to build</button>
-          <button type="button" disabled title="My Loops arrives in a later phase">From My Loops</button>
+          <button
+            type="button"
+            disabled={!hasMyLoops || !onFromMyLoops}
+            title={hasMyLoops ? undefined : 'Save a stack or section to My Loops first'}
+            onClick={() => { onFromMyLoops?.(openSection.id); setOpenIdx(null); }}
+          >From My Loops</button>
         </div>
       )}
 
@@ -443,23 +427,26 @@ export function SongView({
       )}
 
       <div className="piano-song-view__footer">
-        {onSaveSong ? (
+        {onSaveSong && (
           <>
             <button
               type="button"
               className="piano-song-view__save"
-              onClick={() => onSaveSong()}
-            >Save song</button>
+              onClick={() => onSaveSong(savedSong ? 'update' : 'save-as')}
+            >{savedSong ? 'Update song' : 'Save song'}</button>
+            {savedSong && (
+              <button
+                type="button"
+                className="piano-song-view__save-as"
+                onClick={() => onSaveSong('save-as')}
+              >Save as new</button>
+            )}
             {onOpenSongPicker && (
               <button type="button" className="piano-song-view__load" onClick={onOpenSongPicker}>
                 Load
               </button>
             )}
           </>
-        ) : (
-          <button type="button" disabled title="Saving arrives with persistence (Task 8.x)">
-            Save song — coming soon
-          </button>
         )}
       </div>
     </div>
