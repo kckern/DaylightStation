@@ -24,6 +24,7 @@ import {
 } from './lib/ti86-program.mjs';
 import {
   loadSchoolCalcUiAssets,
+  renderSchoolCalcFontSubsetAssembly,
   renderSchoolCalcUiAssembly,
 } from './lib/schoolcalc-ui-assets.mjs';
 import {
@@ -53,10 +54,17 @@ mkdirSync(path.dirname(GENERATED), { recursive: true });
 writeFileSync(GENERATED, renderAssemblyData({
   record, freeBytesOffset, runtimeModuleMaskOffset, localStateRecord,
 }));
-writeFileSync(GENERATED_UI, renderSchoolCalcUiAssembly(uiAssets, {
-  fontIds: ['compact-3x5'],
-  iconIds: [],
-}));
+writeFileSync(GENERATED_UI, [
+  renderSchoolCalcUiAssembly(uiAssets, {
+    fontIds: ['compact-3x5'],
+    iconIds: [],
+  }),
+  renderSchoolCalcFontSubsetAssembly(uiAssets, {
+    fontId: 'code-7x8',
+    characters: '-0123456789',
+    label: 'shell_code_font',
+  }),
+].join('\n'));
 
 const buildDirectory = mkdtempSync(path.join(tmpdir(), 'schoolcalc-z80-'));
 const rawBinary = path.join(buildDirectory, 'schoolcalc.bin');
@@ -86,7 +94,7 @@ try {
   console.log(`[ti86] DSINFO ${record.length} bytes; live freeBytes patch @ ${freeBytesOffset}`);
   console.log(`[ti86] DSINFO installed-runtime mask patch @ ${runtimeModuleMaskOffset}`);
   console.log(`[ti86] SCL1 ${localStateRecord.length} bytes; alternating DSLOCAL0/DSLOCAL1`);
-  console.log('[ti86] linked UI profile: compact 3px font; core renderer');
+  console.log('[ti86] linked UI profile: compact 3px chrome + dedicated 7x8 code digits');
   console.log('[ti86] installed SCX1 discovery: enabled; runtime capabilities remain fail-closed');
 } finally {
   rmSync(buildDirectory, { recursive: true, force: true });

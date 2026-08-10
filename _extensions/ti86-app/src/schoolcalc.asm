@@ -1496,15 +1496,7 @@ shell_render_code:
         ld b,2
         ld c,15
         call ui_draw_text
-        ld hl,code_prefix
-        ld b,20
-        ld c,27
-        call ui_draw_text
-        call shell_build_code_display
-        ld hl,shell_code_display
-        ld b,48
-        ld c,27
-        call ui_draw_text
+        call shell_draw_code_display
         ld a,(shell_code_status)
         ld hl,code_prompt
         or a
@@ -1521,22 +1513,63 @@ shell_code_status_ready:
         ld c,40
         jp ui_draw_text
 
-shell_build_code_display:
+shell_draw_code_display:
         ld hl,shell_code_digits
-        ld de,shell_code_display
-        ld b,6
-shell_build_code_loop:
+        ld (shell_code_font_pointer),hl
+        ld a,38
+        ld (shell_code_font_x),a
+        ld a,6
+        ld (shell_code_font_remaining),a
+shell_draw_code_loop:
+        ld hl,(shell_code_font_pointer)
         ld a,(hl)
         or a
-        jr nz,shell_build_code_char
+        jr nz,shell_draw_code_char
         ld a,'-'
-shell_build_code_char:
-        ld (de),a
+shell_draw_code_char:
+        call shell_code_glyph_pointer
+        ld a,(shell_code_font_x)
+        ld b,a
+        ld c,26
+        ld d,SHELL_CODE_FONT_WIDTH
+        ld e,SHELL_CODE_FONT_HEIGHT
+        call ui_draw_bitmap
+        ld hl,(shell_code_font_pointer)
         inc hl
-        inc de
-        djnz shell_build_code_loop
-        xor a
-        ld (de),a
+        ld (shell_code_font_pointer),hl
+        ld a,(shell_code_font_x)
+        add a,8
+        ld b,a
+        ld a,(shell_code_font_remaining)
+        dec a
+        ld (shell_code_font_remaining),a
+        jr z,shell_draw_code_done
+        cp 3
+        jr nz,shell_draw_code_store_x
+        inc b
+        inc b
+        inc b
+        inc b
+shell_draw_code_store_x:
+        ld a,b
+        ld (shell_code_font_x),a
+        jr shell_draw_code_loop
+shell_draw_code_done:
+        ret
+
+; A = dash or digit. The compact table order is -0123456789.
+shell_code_glyph_pointer:
+        cp '-'
+        jr z,shell_code_glyph_index_ready
+        sub '0' - 1
+shell_code_glyph_index_ready:
+        ld l,a
+        ld h,0
+        add hl,hl
+        add hl,hl
+        add hl,hl
+        ld de,shell_code_font
+        add hl,de
         ret
 
 ; Result Queue replaces the answer draft with correct, total, and rounded
@@ -1808,7 +1841,9 @@ sce1_crc_pointer:       defw 0
 sce1_record_length:     defw 0
 sce1_record:            defs 40,0
 shell_code_digits:       defs 7,0
-shell_code_display:      defs 7,0
+shell_code_font_pointer: defw 0
+shell_code_font_x:       defb 0
+shell_code_font_remaining:defb 0
 shell_row_text:         defw 0
 shell_row_index:        defb 0
 shell_row_y:            defb 0
@@ -1879,7 +1914,6 @@ result_review_line:     defb "REVIEW: RETRY QUIZ",0
 result_mastered_line:   defb "MASTERED: NEXT",0
 result_line_3:          defb "QR QUEUED / CABLE OFF",0
 code_instruction:        defb "CONTINUE ON CALC",0
-code_prefix:             defb "CODE:",0
 code_prompt:             defb "ENTER 6 DIGITS",0
 code_short:              defb "ENTER SIX DIGITS",0
 code_missing:            defb "NOT INSTALLED - SYNC",0
