@@ -50,6 +50,12 @@ const LIVING_KEYS = [
   'Touch', 'TouchEvent', 'TouchList', 'TreeWalker', 'UIEvent', 'URL', 'URLSearchParams',
   'WebSocket', 'Window', 'XMLDocument', 'XMLHttpRequest',
   'XMLHttpRequestEventTarget', 'XMLSerializer',
+  // SVG interfaces. Without these, jest-dom's element check has nothing to
+  // compare against and any assertion on an SVG node dies with a bare
+  // "Right-hand side of 'instanceof' is not an object" — which reads like a
+  // broken test rather than a missing global. This codebase engraves notation,
+  // so SVG elements are asserted on constantly.
+  'SVGElement', 'SVGSVGElement', 'SVGGraphicsElement',
 ];
 const OTHER_KEYS = [
   'EventSource', 'CSS', 'Headers', 'IntersectionObserver', 'ResizeObserver',
