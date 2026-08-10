@@ -1,4 +1,5 @@
 import { bankContentRev } from '../bankRev.mjs';
+import { adaptiveGraphicReason } from './adaptiveGraphic.mjs';
 
 const isObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
@@ -59,6 +60,8 @@ function incompatibleItemReason(item, priorIds) {
   if (typeof item.answer !== 'string' || !item.choices.includes(item.answer)) {
     return 'answer must equal one authored choice';
   }
+  const graphicReason = adaptiveGraphicReason(item.schoolcalc, { path: 'schoolcalc' });
+  if (graphicReason) return graphicReason;
   return null;
 }
 

@@ -115,6 +115,12 @@ The display form is always two groups of three decimal digits, for example
 `012 345`. The canonical value is a six-character string; leading zeroes are
 significant.
 
+On the calculator, the editable six-digit value MUST use the dedicated
+`code-7x8` numeral face. That face is exclusive to this startup handoff: it is
+not used for headers, cards, quiz choices, scores, or status copy. The linked
+shell table contains only dash and decimal glyphs, preserving the 9 KiB shell
+ceiling. A visible gap separates digits three and four.
+
 - Allocate exactly one cryptographically opaque code for each calculator
   study session.
 - Never assign a code to different work, even after its session closes.
@@ -253,6 +259,37 @@ authentication. Relay HTTP authentication and the protected TI electrical/link
 layers remain as previously specified.
 
 ## 10. Adaptive study interaction
+
+Each flashcard is a stable one-pixel framed surface between the header and
+softkey rail. Text-only faces center every prewrapped line horizontally and
+center the complete line block vertically; paging never changes the border or
+rail geometry.
+
+An item MAY author target-neutral vector art on either face:
+
+```yaml
+schoolcalc:
+  promptGraphic:
+    primitives:
+      - { type: line, x1: 10, y1: 90, x2: 50, y2: 10 }
+      - { type: line, x1: 50, y1: 10, x2: 90, y2: 90 }
+      - { type: line, x1: 90, y1: 90, x2: 10, y2: 90 }
+      - { type: label, x: 47, y: 45, text: x }
+  answerGraphic:
+    primitives:
+      - { type: circle, cx: 50, cy: 50, radius: 35 }
+```
+
+Coordinates are integer percentages in the inclusive range 0-100, independent
+of calculator pixels. Supported semantic primitives are `line`, `polyline`
+(2-16 points), `rect`, `circle`, `point`, and a 1-12 printable-ASCII-character
+`label`. A face contains 1-24 primitives. Rectangles and circles MUST remain
+inside normalized bounds. The TI-86 adapter expands semantic shapes into line
+and label bytecode, maps them to the upper card canvas, and rejects a face that
+exceeds 160 actual encoded bytes or whose label escapes that canvas. It never
+clips or drops a primitive. Graphic faces reserve the lower card band for a
+horizontally centered, at-most-two-line prompt/answer caption. Text-only faces
+retain full-card centering.
 
 The front and back of a card use these exact softkey rails:
 

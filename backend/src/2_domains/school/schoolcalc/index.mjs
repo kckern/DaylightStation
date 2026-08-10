@@ -12,3 +12,4 @@ export {
 } from './delivery.mjs';
 export { SchoolCalcDevice } from './SchoolCalcDevice.mjs';
 export { curateAdaptiveStudy } from './adaptiveStudy.mjs';
+export { adaptiveGraphicReason } from './adaptiveGraphic.mjs';

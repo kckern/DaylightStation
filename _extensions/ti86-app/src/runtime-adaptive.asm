@@ -649,9 +649,27 @@ adaptive_card_pages_ready:
         jp c,adaptive_error
         call sc_copy_node_string
         jp c,adaptive_error
+        xor a
+        ld (adaptive_card_has_graphic),a
+        ld de,(adaptive_item_offset)
+        ld a,(scstate_record + AD_FACE)
+        or a
+        ld hl,adaptive_key_prompt_graphic
+        jr z,adaptive_card_graphic_key_ready
+        ld hl,adaptive_key_answer_graphic
+adaptive_card_graphic_key_ready:
+        call sc_map_find_literal
+        jr c,adaptive_card_graphic_ready
+        ld (adaptive_graphic_offset),de
+        ld a,1
+        ld (adaptive_card_has_graphic),a
+adaptive_card_graphic_ready:
         call ui_mode_set
         call ui_select_compact
         call adaptive_draw_card_frame
+        ld a,(adaptive_card_has_graphic)
+        or a
+        call nz,adaptive_draw_graphic
         call adaptive_draw_centered_page
         call adaptive_render_card_rail
 adaptive_card_wait:
@@ -825,6 +843,14 @@ adaptive_center_count_lines:
         jr nz,adaptive_center_count_next
         ld a,(adaptive_center_line_count)
         inc a
+        ld b,a
+        ld a,(adaptive_card_has_graphic)
+        or a
+        ld a,b
+        jr z,adaptive_center_check_text_lines
+        cp 3
+        jp nc,adaptive_error
+adaptive_center_check_text_lines:
         cp 8
         jp nc,adaptive_error
         ld (adaptive_center_line_count),a
@@ -838,7 +864,12 @@ adaptive_center_lines_ready:
         add a,a
         add a,b
         ld b,a
+        ld a,(adaptive_card_has_graphic)
+        or a
         ld a,33
+        jr z,adaptive_center_base_ready
+        ld a,47
+adaptive_center_base_ready:
         sub b
         ld (adaptive_center_y),a
 adaptive_center_next_line:
@@ -884,6 +915,241 @@ adaptive_center_advance_pointer:
         add a,6
         ld (adaptive_center_y),a
         jr adaptive_center_next_line
+
+; Graphics are compact bytecode projected to absolute pixels in the card's
+; upper canvas. Semantic rectangles, circles, polylines, and points have
+; already been expanded into line commands by the backend; the calculator
+; therefore needs only a bounded line primitive and short labels.
+adaptive_draw_graphic:
+        ld de,(adaptive_graphic_offset)
+        ld (sc_record_cursor),de
+        call sc_cursor_read_byte
+        jp c,adaptive_error
+        cp SC_TAG_BYTES
+        jp nz,adaptive_error
+        call sc_cursor_read_word
+        jp c,adaptive_error
+        ld a,h
+        or a
+        jp nz,adaptive_error
+        ld a,l
+        or a
+        jp z,adaptive_error
+        cp 161
+        jp nc,adaptive_error
+        ld (adaptive_graphic_remaining),a
+adaptive_graphic_command_loop:
+        call adaptive_graphic_read_byte
+        jp c,adaptive_error
+        or a
+        jr z,adaptive_graphic_end
+        cp 1
+        jr z,adaptive_graphic_line
+        cp 2
+        jr z,adaptive_graphic_label
+        jp adaptive_error
+adaptive_graphic_end:
+        ld a,(adaptive_graphic_remaining)
+        or a
+        jp nz,adaptive_error
+        ret
+
+adaptive_graphic_line:
+        call adaptive_graphic_read_x
+        jp c,adaptive_error
+        ld (adaptive_line_x0),a
+        call adaptive_graphic_read_y
+        jp c,adaptive_error
+        ld (adaptive_line_y0),a
+        call adaptive_graphic_read_x
+        jp c,adaptive_error
+        ld (adaptive_line_x1),a
+        call adaptive_graphic_read_y
+        jp c,adaptive_error
+        ld (adaptive_line_y1),a
+        call adaptive_draw_line
+        jp adaptive_graphic_command_loop
+
+adaptive_graphic_label:
+        call adaptive_graphic_read_x
+        jp c,adaptive_error
+        ld (adaptive_label_x),a
+        call adaptive_graphic_read_y
+        jp c,adaptive_error
+        cp 35
+        jp nc,adaptive_error
+        ld (adaptive_label_y),a
+        call adaptive_graphic_read_byte
+        jp c,adaptive_error
+        or a
+        jp z,adaptive_error
+        cp 13
+        jp nc,adaptive_error
+        ld (adaptive_label_remaining),a
+        ld b,a
+        add a,a
+        add a,a
+        dec a
+        ld c,a
+        ld a,(adaptive_label_x)
+        add a,c
+        cp 124
+        jp nc,adaptive_error
+        ld hl,adaptive_graphic_label_text
+adaptive_graphic_label_copy:
+        call adaptive_graphic_read_byte
+        jp c,adaptive_error
+        cp 32
+        jp c,adaptive_error
+        cp 127
+        jp nc,adaptive_error
+        ld (hl),a
+        inc hl
+        djnz adaptive_graphic_label_copy
+        xor a
+        ld (hl),a
+        ld hl,adaptive_graphic_label_text
+        ld a,(adaptive_label_x)
+        ld b,a
+        ld a,(adaptive_label_y)
+        ld c,a
+        call ui_draw_text
+        jp adaptive_graphic_command_loop
+
+adaptive_graphic_read_x:
+        call adaptive_graphic_read_byte
+        ret c
+        cp 4
+        jr c,adaptive_graphic_read_invalid
+        cp 124
+        ret c
+adaptive_graphic_read_invalid:
+        scf
+        ret
+
+adaptive_graphic_read_y:
+        call adaptive_graphic_read_byte
+        ret c
+        cp 11
+        jr c,adaptive_graphic_read_invalid
+        cp 39
+        ret c
+        jr adaptive_graphic_read_invalid
+
+adaptive_graphic_read_byte:
+        ld a,(adaptive_graphic_remaining)
+        or a
+        jr z,adaptive_graphic_read_invalid
+        dec a
+        ld (adaptive_graphic_remaining),a
+        jp sc_cursor_read_byte
+
+; Integer midpoint-error line drawing. Coordinates have already been bounded
+; to the diagram canvas, so one-byte deltas and error accumulators are exact.
+adaptive_draw_line:
+        ld a,(adaptive_line_x0)
+        ld b,a
+        ld a,(adaptive_line_x1)
+        sub b
+        ld c,1
+        jr nc,adaptive_line_dx_ready
+        neg
+        ld c,0xFF
+adaptive_line_dx_ready:
+        ld (adaptive_line_dx),a
+        ld a,c
+        ld (adaptive_line_sx),a
+        ld a,(adaptive_line_y0)
+        ld b,a
+        ld a,(adaptive_line_y1)
+        sub b
+        ld c,1
+        jr nc,adaptive_line_dy_ready
+        neg
+        ld c,0xFF
+adaptive_line_dy_ready:
+        ld (adaptive_line_dy),a
+        ld a,c
+        ld (adaptive_line_sy),a
+        ld a,(adaptive_line_dx)
+        ld b,a
+        ld a,(adaptive_line_dy)
+        cp b
+        jr nc,adaptive_line_y_major
+        ld a,b
+        srl a
+        ld (adaptive_line_error),a
+adaptive_line_x_loop:
+        call adaptive_line_plot
+        ret z
+        ld a,(adaptive_line_x0)
+        ld b,a
+        ld a,(adaptive_line_sx)
+        add a,b
+        ld (adaptive_line_x0),a
+        ld a,(adaptive_line_error)
+        ld b,a
+        ld a,(adaptive_line_dy)
+        ld c,a
+        ld a,b
+        sub c
+        jr nc,adaptive_line_x_store_error
+        ld b,a
+        ld a,(adaptive_line_y0)
+        ld c,a
+        ld a,(adaptive_line_sy)
+        add a,c
+        ld (adaptive_line_y0),a
+        ld a,(adaptive_line_dx)
+        add a,b
+adaptive_line_x_store_error:
+        ld (adaptive_line_error),a
+        jr adaptive_line_x_loop
+
+adaptive_line_y_major:
+        ld a,(adaptive_line_dy)
+        srl a
+        ld (adaptive_line_error),a
+adaptive_line_y_loop:
+        call adaptive_line_plot
+        ret z
+        ld a,(adaptive_line_y0)
+        ld b,a
+        ld a,(adaptive_line_sy)
+        add a,b
+        ld (adaptive_line_y0),a
+        ld a,(adaptive_line_error)
+        ld b,a
+        ld a,(adaptive_line_dx)
+        ld c,a
+        ld a,b
+        sub c
+        jr nc,adaptive_line_y_store_error
+        ld b,a
+        ld a,(adaptive_line_x0)
+        ld c,a
+        ld a,(adaptive_line_sx)
+        add a,c
+        ld (adaptive_line_x0),a
+        ld a,(adaptive_line_dy)
+        add a,b
+adaptive_line_y_store_error:
+        ld (adaptive_line_error),a
+        jr adaptive_line_y_loop
+
+; Plot current x/y and return Z only when the endpoint was just drawn.
+adaptive_line_plot:
+        ld a,(adaptive_line_x0)
+        ld b,a
+        ld a,(adaptive_line_y0)
+        ld c,a
+        call ui_plot_pixel
+        ld a,(adaptive_line_x1)
+        cp b
+        ret nz
+        ld a,(adaptive_line_y1)
+        cp c
+        ret
 
 ; ---------------------------------------------------------------------------
 ; Summary and quiz
@@ -1529,6 +1795,22 @@ adaptive_center_pointer:     defw 0
 adaptive_center_line_count:  defb 0
 adaptive_center_line_length: defb 0
 adaptive_center_y:           defb 0
+adaptive_card_has_graphic:   defb 0
+adaptive_graphic_offset:     defw 0
+adaptive_graphic_remaining:  defb 0
+adaptive_line_x0:            defb 0
+adaptive_line_y0:            defb 0
+adaptive_line_x1:            defb 0
+adaptive_line_y1:            defb 0
+adaptive_line_dx:            defb 0
+adaptive_line_dy:            defb 0
+adaptive_line_sx:            defb 0
+adaptive_line_sy:            defb 0
+adaptive_line_error:         defb 0
+adaptive_label_x:            defb 0
+adaptive_label_y:            defb 0
+adaptive_label_remaining:    defb 0
+adaptive_graphic_label_text: defs 13,0
 adaptive_score_correct:      defb 0
 adaptive_known_count:        defb 0
 adaptive_hard_count:         defb 0
@@ -1551,6 +1833,8 @@ adaptive_key_bank:           defb "bank",0
 adaptive_key_items:          defb "items",0
 adaptive_key_prompt_pages:   defb "promptPages",0
 adaptive_key_answer_pages:   defb "answerPages",0
+adaptive_key_prompt_graphic: defb "promptGraphic",0
+adaptive_key_answer_graphic: defb "answerGraphic",0
 adaptive_key_choices:        defb "choices",0
 adaptive_key_correct_choice: defb "correctChoice",0
 adaptive_type_flashcards:    defb "flashcards",0

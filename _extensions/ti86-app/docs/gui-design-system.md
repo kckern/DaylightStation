@@ -34,6 +34,14 @@ pause path. After study the summary exposes `F5 QUIZ`; after the result is
 durably queued, Result exposes QR and return-to-code actions. Re-entering the
 completed local code reopens Result.
 
+The adaptive card body is always bounded by a one-pixel frame at x=1..126 and
+y=9..54. Text-only pages are centered by measured line width and total block
+height. A graphic page divides the interior into an upper vector canvas and a
+lower two-line caption band; the border, header, and rail never move. Vector
+art is authored in normalized coordinates and compiled to bounded monochrome
+line/label commands, so geometry diagrams remain editable content rather than
+full-screen bitmap payloads.
+
 The v1 QR template renders a Version-5/M symbol whose actual encoded payload is
 at most 69 bytes. It does not treat optical display as acknowledgement. Plain
 recovery text is mandatory for unknown, closed, unauthorized, incompatible,
@@ -162,6 +170,7 @@ SchoolCalc uses a custom bitmap family from
 
 | Face | Glyph and advance | Use |
 | --- | --- | --- |
+| `code-7x8` | 7×8, digit-only linked subset | Six-digit Enter Code value exclusively |
 | `compact-3x5` | 3×5 on 4×6 | Uppercase header chrome, dense lists, badges, F-key labels |
 | `reader-4x6` | Up to 4×6, proportional 2–5 px advance on 7 px lines | Mixed-case notes, cards, explanations, and prompts |
 | `display-5x7` | 5×7 on 6×8 | Short answers, scores, and critical emphasis |
@@ -178,10 +187,12 @@ advances while wide glyphs such as `m` keep the full 5 pixels. Its `g`, `j`,
 scanline as a descender; other lines retain that pixel as breathing room.
 
 Full-screen bitmaps are golden references, not the production storage format.
-Generated font tables use one byte per visible glyph row (5, 6, or 7 bytes per
+Generated general font tables use one byte per visible glyph row (5, 6, or 7 bytes per
 glyph), not a padded eight-byte cell. The unused low three bits of the first
 row carry glyph advance; the reader's unused low nibble in its sixth row packs
 the optional descender. Both features therefore add no per-glyph storage.
+The code face is emitted separately as eleven exact eight-byte bitmaps (dash
+and digits 0-9), so unused ASCII glyphs cannot consume the shell budget.
 
 ### Context headers
 
@@ -438,8 +449,8 @@ blocks while clamping at the beginning/end.
 | Lesson | Header, module BrowseList, INFO/MARK |
 | Info document | Header, margin, ProseBlocks, rail, optional MARK |
 | Study card (v0 reference) | Info document + card position + FLIP/MARK |
-| Adaptive study card (v1) | Header/card position, prompt or answer body, exact sparse FLIP/AGAIN/HARD/KNOW rail |
-| Enter code (v1) | `ENTER CODE` header, six-digit editor, resolution status, optional contextual Resume |
+| Adaptive study card (v1) | Header/card position, fixed border, centered text or vector-canvas/caption split, exact sparse FLIP/AGAIN/HARD/KNOW rail |
+| Enter code (v1) | `ENTER CODE` header, exclusive `code-7x8` six-digit editor, resolution status, optional contextual Resume |
 | Choice question | Prompt, choices, A–E softkeys |
 | Numeric/text response | Prompt, input component, unit/help actions |
 | Result | ResultSummary, QueueIndicator, QR/SYNC |

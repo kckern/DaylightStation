@@ -46,10 +46,19 @@ describe('SchoolCalc Adaptive Study SCLEARN contract', () => {
   it('renders flashcards as bordered, horizontally and vertically centered surfaces', () => {
     const card = SOURCE.match(/adaptive_render_card:[\s\S]*?adaptive_card_wait:/)?.[0];
     expect(card).toBeTruthy();
-    expect(card).toMatch(/call adaptive_draw_card_frame\s+call adaptive_draw_centered_page/);
+    expect(card).toMatch(/call adaptive_draw_card_frame[\s\S]*?call adaptive_draw_centered_page/);
     expect(SOURCE).toMatch(/adaptive_draw_card_frame:[\s\S]*?ld b,1\s+ld c,9\s+ld d,126\s+ld e,1\s+call ui_fill_rect/);
     expect(SOURCE).toMatch(/adaptive_draw_card_frame:[\s\S]*?ld b,126\s+ld c,9\s+ld d,1\s+ld e,46\s+jp ui_fill_rect/);
     expect(SOURCE).toMatch(/adaptive_center_lines_ready:[\s\S]*?ld a,33[\s\S]*?adaptive_center_draw_line:[\s\S]*?ld a,64[\s\S]*?call ui_draw_text_count/);
+  });
+
+  it('renders bounded vector commands and reserves a centered caption band', () => {
+    expect(SOURCE).toContain('adaptive_key_prompt_graphic: defb "promptGraphic",0');
+    expect(SOURCE).toContain('adaptive_key_answer_graphic: defb "answerGraphic",0');
+    expect(SOURCE).toMatch(/adaptive_draw_graphic:[\s\S]*?cp SC_TAG_BYTES[\s\S]*?cp 161[\s\S]*?adaptive_graphic_command_loop:/);
+    expect(SOURCE).toMatch(/adaptive_graphic_command_loop:[\s\S]*?cp 1[\s\S]*?adaptive_graphic_line[\s\S]*?cp 2[\s\S]*?adaptive_graphic_label/);
+    expect(SOURCE).toMatch(/adaptive_draw_line:[\s\S]*?adaptive_line_x_loop:[\s\S]*?call adaptive_line_plot[\s\S]*?adaptive_line_y_loop:[\s\S]*?call adaptive_line_plot/);
+    expect(SOURCE).toMatch(/adaptive_center_base_ready:[\s\S]*?sub b/);
   });
 
   it('maps the five physical function keys explicitly to quiz choices A-E', () => {
