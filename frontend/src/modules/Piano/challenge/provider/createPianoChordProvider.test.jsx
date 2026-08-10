@@ -103,6 +103,64 @@ describe('createPianoChordProvider telemetry', () => {
     expect(api.recordPianoAttempt).toHaveBeenCalledOnce();
   });
 
+  it('lets journey players correct a wrong ordered note without restarting the exercise', async () => {
+    let notes = { activeNotes: new Map(), noteHistory: [] };
+    let now = 3000;
+    const provider = createPianoChordProvider({ useNotes: () => notes, clock: () => now });
+    const api = { recordPianoAttempt: vi.fn(async (_userId, attempt) => attempt) };
+    const runtime = await provider.createRuntime({ userId: 'kid-1', api, logger: { warn: vi.fn() } });
+    const prepared = await runtime.prepare({
+      challenge_id: 'journey-correction', kind: 'arpeggio',
+      prompt: { exercise_id: 'arp-c', label: 'C arpeggio', expected_midi: [60, 64, 67], key_signature: 'C' },
+    });
+    const resultPromise = runtime.start(prepared);
+    const view = render(<runtime.Surface />);
+
+    for (const note of [61, 60, 64, 67]) {
+      now += 100;
+      notes = { ...notes, noteHistory: [...notes.noteHistory, { note, startTime: now }] };
+      await act(async () => view.rerender(<runtime.Surface />));
+    }
+    const result = await resultPromise;
+    expect(result).toMatchObject({
+      status: 'completed',
+      metrics: { firstTry: false, wrongNotes: 1, restarts: 0, notesRequired: 3 },
+    });
+    expect(result.score).toBeGreaterThanOrEqual(0.5);
+    expect(result.score).toBeLessThan(0.75);
+  });
+
+  it('grades a journey chord from pitch-set accuracy and onset simultaneity', async () => {
+    let notes = { activeNotes: new Map(), noteHistory: [] };
+    let now = 4000;
+    const provider = createPianoChordProvider({ useNotes: () => notes, clock: () => now });
+    const api = { recordPianoAttempt: vi.fn(async (_userId, attempt) => attempt) };
+    const runtime = await provider.createRuntime({ userId: 'kid-1', api, logger: { warn: vi.fn() } });
+    const prepared = await runtime.prepare({
+      challenge_id: 'journey-chord', kind: 'chord',
+      prompt: {
+        exercise_id: 'chord-c-major', label: 'C major chord', root: 0,
+        pitch_classes: [0, 4, 7], expected_midi: [60, 64, 67],
+      },
+    });
+    const resultPromise = runtime.start(prepared);
+    const view = render(<runtime.Surface />);
+    notes = {
+      ...notes,
+      activeNotes: new Map([
+        [60, { velocity: 90, timestamp: now }],
+        [64, { velocity: 90, timestamp: now + 30 }],
+        [67, { velocity: 90, timestamp: now + 60 }],
+      ]),
+    };
+    await act(async () => view.rerender(<runtime.Surface />));
+    const result = await resultPromise;
+    expect(result.score).toBeCloseTo(0.928);
+    expect(result.metrics).toMatchObject({
+      firstTry: true, pitchSetAccuracy: 1, onsetSpanMs: 60, simultaneity: 0.76,
+    });
+  });
+
   it('fizzles a scale card after its authored mistake limit', async () => {
     let notes = { activeNotes: new Map(), noteHistory: [] };
     let now = 2000;

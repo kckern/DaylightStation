@@ -13,13 +13,14 @@ const freshExperience = () => ({
 });
 
 export class GamingController {
-  constructor({ api, providerRegistry, gameId, participants, viewerId = null, resumeSessionId = null, logger, clock = () => Date.now() }) {
+  constructor({ api, providerRegistry, gameId, participants, viewerId = null, resumeSessionId = null, setup = {}, logger, clock = () => Date.now() }) {
     this.api = api;
     this.providerRegistry = providerRegistry;
     this.gameId = gameId;
     this.participants = participants;
     this.viewerId = viewerId;
     this.resumeSessionId = resumeSessionId;
+    this.setup = setup;
     this.logger = logger;
     this.clock = clock;
     this.listeners = new Set();
@@ -71,6 +72,7 @@ export class GamingController {
 
   #observeHandAvailability(session, source) {
     if (!session || session.status !== 'active' || session.state?.pending_action) return;
+    if (session.definition?.ruleset === 'pokemon-practice-journey-v1' && session.state?.phase !== 'battle') return;
     const legal = session.interaction?.legal_commands || [];
     const playable = legal.filter((command) => command.type === COMMAND_TYPES.CHOOSE_ACTION);
     if (playable.length > 0) return;
@@ -125,17 +127,37 @@ export class GamingController {
           const sameGame = candidate.status === 'active' && candidate.game_id === this.gameId;
           const currentHash = currentDefinition.definition_hash || null;
           const definitionMatches = candidate.definition_hash && candidate.definition_hash === currentHash;
-          if (sameGame && definitionMatches) {
+          const selectedPartner = this.setup?.partner_id || null;
+          const resumedPartner = candidate.state?.partner_id || candidate.setup?.partner_id || null;
+          const setupMatches = !selectedPartner || selectedPartner === resumedPartner;
+          if (sameGame && definitionMatches && setupMatches) {
             session = candidate;
-          } else if (sameGame && !definitionMatches) {
+          } else if (sameGame && (!definitionMatches || !setupMatches)) {
+            const reason = !definitionMatches ? 'definition_changed' : 'partner_changed';
             this.logger.warn('gaming.session.resume-invalidated', {
               gameId: this.gameId,
               sessionId: this.resumeSessionId,
               userId: this.viewerId,
               pinnedDefinitionHash: candidate.definition_hash || null,
               currentDefinitionHash: currentHash,
-              reason: 'definition_changed',
+              selectedPartner,
+              resumedPartner,
+              reason,
             });
+            if (typeof this.api.applyCommand === 'function') {
+              try {
+                await this.api.applyCommand(candidate.session_id, {
+                  command_id: makeCommandId(),
+                  session_revision: candidate.revision,
+                  type: COMMAND_TYPES.ABANDON_SESSION,
+                  payload: { reason: !definitionMatches ? 'definition_replaced' : 'partner_changed' },
+                }, this.viewerId);
+              } catch (error) {
+                this.logger.warn('gaming.session.superseded-abandon-failed', {
+                  gameId: this.gameId, sessionId: candidate.session_id, error: error.message,
+                });
+              }
+            }
           }
         } catch (error) {
           this.logger.warn('gaming.session.resume-missed', {
@@ -146,7 +168,11 @@ export class GamingController {
           });
         }
       }
-      session ||= await this.api.createSession({ game_id: this.gameId, participants: this.participants });
+      session ||= await this.api.createSession({
+        game_id: this.gameId,
+        participants: this.participants,
+        ...(Object.keys(this.setup).length > 0 ? { setup: this.setup } : {}),
+      });
       if (this.disposed) return;
       this.#publish({ phase: 'playing', session, error: null });
       this.logger.info('gaming.session.ready', {
@@ -200,10 +226,14 @@ export class GamingController {
     if (this.actionInFlight || this.snapshot.session?.status !== 'complete') return;
     this.actionInFlight = true;
     try {
+      const journey = this.snapshot.session?.definition?.ruleset === 'pokemon-practice-journey-v1';
+      const setup = journey
+        ? { partner_id: upgradeId || this.snapshot.session.state.partner_id }
+        : (upgradeId ? { upgrade_id: upgradeId } : null);
       const session = await this.api.createSession({
         game_id: this.gameId,
         participants: this.participants,
-        ...(upgradeId ? { setup: { upgrade_id: upgradeId } } : {}),
+        ...(setup ? { setup } : {}),
       });
       if (this.disposed) return;
       this.observedAt = this.clock();
@@ -215,11 +245,40 @@ export class GamingController {
         ...this.#sessionFields(session),
         resumed: false,
         rematch: true,
-        upgradeId,
+        upgradeId: journey ? null : upgradeId,
+        partnerId: journey ? setup.partner_id : null,
         definitionHash: session.definition_hash || null,
         handCount: session.state.zones.hand.length,
       });
       this.#observeHandAvailability(session, 'rematch_ready');
+    } catch (error) {
+      await this.#recover(error);
+    } finally {
+      this.actionInFlight = false;
+    }
+  }
+
+  async continueEncounter() {
+    if (this.actionInFlight || this.snapshot.session?.state?.phase !== 'checkpoint') return;
+    this.actionInFlight = true;
+    try {
+      const session = await this.#dispatch(COMMAND_TYPES.CONTINUE_ENCOUNTER, {});
+      this.#publish({ combatResult: null });
+      this.logger.info('gaming.journey.encounter-continued', this.#sessionFields(session));
+    } catch (error) {
+      await this.#recover(error);
+    } finally {
+      this.actionInFlight = false;
+    }
+  }
+
+  async retryEncounter() {
+    if (this.actionInFlight || this.snapshot.session?.state?.phase !== 'defeated') return;
+    this.actionInFlight = true;
+    try {
+      const session = await this.#dispatch(COMMAND_TYPES.RETRY_ENCOUNTER, {});
+      this.#publish({ combatResult: null });
+      this.logger.info('gaming.journey.encounter-retried', this.#sessionFields(session));
     } catch (error) {
       await this.#recover(error);
     } finally {
@@ -350,6 +409,8 @@ export class GamingController {
     const card = session.definition.cards[pending.card_definition_id];
     const outcome = card?.outcomes?.find((candidate) => candidate.id === resolution?.outcome);
     const multiplier = outcome?.multiplier ?? 1;
+    const resultLabel = outcome?.label || (multiplier >= 1 ? 'Full power' : multiplier > 0 ? 'Reduced power' : 'Fizzled');
+    const isPracticeJourney = session.definition?.ruleset === 'pokemon-practice-journey-v1';
     return {
       cardTitle: card?.title || 'Attack',
       kind: 'card',
@@ -360,7 +421,10 @@ export class GamingController {
       absorbed: absorbed?.amount ?? 0,
       focusSpent: focusSpent?.amount ?? 0,
       retaliation: retaliation?.amount ?? 0,
-      effectiveness: outcome?.label || (multiplier >= 1 ? 'Full power' : multiplier > 0 ? 'Reduced power' : 'Fizzled'),
+      ...(isPracticeJourney
+        ? { hitFeedback: resultLabel }
+        : { effectiveness: resultLabel }),
+      hitResult: outcome?.id || null,
       winner: events.find((event) => event.type === 'game_ended')?.winner || null,
     };
   }
@@ -447,7 +511,9 @@ export class GamingController {
       this.#publish({ providerRuntime: null });
       return;
     }
-    if (result.status === 'completed') {
+    const journeyResolution = this.snapshot.session.definition.ruleset === 'pokemon-practice-journey-v1'
+      && result.status !== 'error';
+    if (result.status === 'completed' || journeyResolution) {
       const card = this.snapshot.session.definition.cards[pending.card_definition_id];
       this.#publish({
         combatResult: {
@@ -466,6 +532,7 @@ export class GamingController {
         durationMs,
         result,
       });
+      if (journeyResolution) this.#publish({ combatResult: this.#combatResult(pending, session) });
     }
     runtime.dispose();
     this.#publish({ providerRuntime: null });
