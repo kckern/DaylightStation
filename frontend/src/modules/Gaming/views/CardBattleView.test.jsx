@@ -12,6 +12,31 @@ function makeSession(definition = scaleClashDefinition) {
   };
 }
 
+/** Scale Stadium's authored shape: two named Pokémon, one per side of the mat. */
+function makePokemonDefinition() {
+  const definition = structuredClone(scaleClashDefinition);
+  definition.title = 'Scale Stadium';
+  definition.presentation = { theme: 'pokemon-tcg', data_source: 'PokeAPI' };
+  definition.card_battle.player = {
+    ...definition.card_battle.player,
+    name: 'Pikachu',
+    pokemon: {
+      dex: '0025', name: 'Pikachu', genus: 'Mouse Pokémon', types: ['electric'],
+      stats: { hp: 35, speed: 90 }, assets: { svg: 'games/pokemon/svg/0025-pikachu-gen1.svg' },
+    },
+  };
+  definition.card_battle.enemy = {
+    ...definition.card_battle.enemy,
+    name: 'Squirtle',
+    weakness: { type: 'electric', multiplier: 1.5 },
+    pokemon: {
+      dex: '0007', name: 'Squirtle', genus: 'Tiny Turtle Pokémon', types: ['water'],
+      stats: { hp: 44, defense: 65 }, assets: { svg: 'games/pokemon/svg/0007-squirtle-gen1.svg' },
+    },
+  };
+  return definition;
+}
+
 describe('CardBattleView', () => {
   it('renders the hand as direct card actions without leaking challenge metadata', () => {
     const onChoose = vi.fn();
@@ -58,10 +83,14 @@ describe('CardBattleView', () => {
     const battle = container.querySelector('.card-battle--pokemon');
     expect(battle).toBeTruthy();
     expect(battle.dataset).toMatchObject({
-      gameTheme: 'pokemon-tcg', battleStatus: 'active', turn: '1', winner: '',
+      gameTheme: 'pokemon-tcg', battleStatus: 'active', turn: '1',
     });
+    // Read the attribute directly: jsdom's DOMStringMap does not enumerate
+    // empty-valued entries, so an in-progress battle's `winner: ''` can never
+    // be matched through `dataset`.
+    expect(battle.getAttribute('data-winner')).toBe('');
     const moveCards = [...container.querySelectorAll('[data-card-instance-id]')];
-    expect(moveCards).toHaveLength(4);
+    expect(moveCards).toHaveLength(definition.card_battle.opening_hand);
     expect(moveCards.every((card) => (
       card.dataset.cardTitle
       && card.dataset.cardType
@@ -69,8 +98,8 @@ describe('CardBattleView', () => {
       && Number.isFinite(Number(card.dataset.cardEffect))
     ))).toBe(true);
     expect(screen.getByText('Move deck')).toBeTruthy();
-    expect(screen.getByLabelText('Pikachu active Pokémon')).toBeTruthy();
-    expect(screen.getByLabelText('Squirtle active Pokémon')).toBeTruthy();
+    expect(screen.getByLabelText('Your active Pokémon: Pikachu')).toBeTruthy();
+    expect(screen.getByLabelText('Opponent active Pokémon: Squirtle')).toBeTruthy();
     expect(screen.getByText('Mouse Pokémon · Speed 90')).toBeTruthy();
     expect(screen.getByText('Tiny Turtle Pokémon · Defense 65')).toBeTruthy();
     expect(screen.getByAltText('Pikachu').getAttribute('src')).toBe(
@@ -79,6 +108,35 @@ describe('CardBattleView', () => {
     expect(screen.getByAltText('Squirtle').getAttribute('src')).toBe(
       '/api/v1/proxy/media/stream/games%2Fpokemon%2Fsvg%2F0007-squirtle-gen1.svg',
     );
+  });
+
+  // Two identically framed cards side by side is the whole confusion this
+  // guards against: whose card is whose must be answerable from the markup
+  // (and therefore from the styling that hangs off it), not from a caption.
+  it('marks each side of the mat as yours or the opponent\'s', () => {
+    const session = makeSession(makePokemonDefinition());
+    session.state.enemy.intent = { kind: 'attack', title: 'Water Gun', amount: 8 };
+    const { container } = render(
+      <CardBattleView session={session} onChoose={vi.fn()} onAbort={vi.fn()} />,
+    );
+
+    const combatants = [...container.querySelectorAll('.pokemon-combatant')];
+    expect(combatants.map((el) => el.dataset.side)).toEqual(['enemy', 'player']);
+    expect(combatants.map((el) => el.className.includes('pokemon-combatant--enemy'))).toEqual([true, false]);
+
+    // A nameplate on each card, not a corner caption.
+    const plates = [...container.querySelectorAll('.pokemon-combatant__side')].map((el) => el.textContent);
+    expect(plates).toEqual(['Opponent', 'You']);
+
+    // The energy meter belongs to you, the weakness to them — and both ride
+    // inside their own card's art window.
+    expect(container.querySelector('.pokemon-combatant--player .pokemon-combatant__art .pokemon-combatant__energy')).toBeTruthy();
+    expect(container.querySelector('.pokemon-combatant--enemy .pokemon-combatant__art .pokemon-combatant__weakness')).toBeTruthy();
+    expect(container.querySelector('.pokemon-combatant--player .pokemon-combatant__weakness')).toBeNull();
+    expect(container.querySelector('.pokemon-combatant--enemy .pokemon-combatant__energy')).toBeNull();
+
+    // The announced move is the opponent's, and says so.
+    expect(screen.getByText('Squirtle will use')).toBeTruthy();
   });
 
   it('makes a no-playable-card state visible instead of silently disabling the hand', () => {
