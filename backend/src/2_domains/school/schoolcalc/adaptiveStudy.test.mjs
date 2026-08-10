@@ -61,4 +61,28 @@ describe('curateAdaptiveStudy', () => {
       bank: bank(items),
     })).toThrow(/48-byte/);
   });
+
+  it('pins valid vector art and rejects malformed or out-of-bounds graphics', () => {
+    const source = bank();
+    source.items[0].schoolcalc = {
+      promptGraphic: { primitives: [
+        { type: 'line', x1: 10, y1: 90, x2: 50, y2: 10 },
+        { type: 'line', x1: 50, y1: 10, x2: 90, y2: 90 },
+        { type: 'line', x1: 90, y1: 90, x2: 10, y2: 90 },
+        { type: 'label', x: 47, y: 45, text: 'x' },
+      ] },
+    };
+    const curated = curateAdaptiveStudy({ unit: unit(), bank: source });
+    expect(curated.bankRevision).toBe(bankContentRev(source));
+
+    const invalid = structuredClone(source);
+    invalid.items[0].schoolcalc.promptGraphic.primitives[0].x1 = -1;
+    expect(() => curateAdaptiveStudy({ unit: unit(), bank: invalid })).toThrow(/coordinates.*0\.\.100/);
+
+    const overflowingCircle = structuredClone(source);
+    overflowingCircle.items[0].schoolcalc.promptGraphic.primitives = [
+      { type: 'circle', cx: 10, cy: 10, radius: 20 },
+    ];
+    expect(() => curateAdaptiveStudy({ unit: unit(), bank: overflowingCircle })).toThrow(/circle must remain inside/);
+  });
 });

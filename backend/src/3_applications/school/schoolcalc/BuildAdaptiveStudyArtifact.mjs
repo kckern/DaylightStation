@@ -28,6 +28,7 @@ export class BuildAdaptiveStudyArtifact {
 }
 
 function adaptiveBundle({ unit, bank, curation, cards, quiz }) {
+  const hasGraphics = cards.some((item) => item.schoolcalc?.promptGraphic || item.schoolcalc?.answerGraphic);
   return {
     schema: 'school.learning-lesson/v1',
     address: `adaptive/${unit.subject}/${unit.unitId}/${curation.bankRevision}/study`,
@@ -51,7 +52,10 @@ function adaptiveBundle({ unit, bank, curation, cards, quiz }) {
         bank: { id: bank.id, title: bank.title ?? unit.title, items: quiz },
       }],
     },
-    capabilities: ['flashcards@1', 'quiz@1', 'response.choice@1'],
+    capabilities: [
+      'flashcards@1', 'quiz@1', 'response.choice@1',
+      ...(hasGraphics ? ['graphics.vector@1'] : []),
+    ],
   };
 }
 

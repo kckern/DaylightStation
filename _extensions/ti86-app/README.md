@@ -23,6 +23,12 @@ resolved once through the relay into an immutable artifact and device-bound
 study prescription. The learner can then study, pause/resume, take the
 prescribed A-E quiz, queue the result, and display its QR offline.
 
+The startup value uses a dedicated 7×8 numeral face found nowhere else in the
+UI. Adaptive cards have a fixed border and true line/block centering. Bank
+items may also carry normalized vector diagrams (lines, polylines, rectangles,
+circles, points, and short labels); the backend compiles them to bounded TI-86
+commands and rejects overflow without truncation.
+
 The default installation contains:
 
 - `ASCHL`: TI-OS launcher;

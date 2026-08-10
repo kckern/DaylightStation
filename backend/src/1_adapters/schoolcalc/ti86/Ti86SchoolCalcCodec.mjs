@@ -1,6 +1,9 @@
 import { createHash } from 'node:crypto';
 import { ISchoolCalcCodec } from '#apps/school/ports/ISchoolCalcCodec.mjs';
-import { validateSchoolCalcDeliveryRequest } from '#domains/school/schoolcalc/index.mjs';
+import {
+  adaptiveGraphicReason,
+  validateSchoolCalcDeliveryRequest,
+} from '#domains/school/schoolcalc/index.mjs';
 import { TI86_SCHOOLCALC_LIMITS } from './Ti86SchoolCalcLimits.mjs';
 import { Ti86NativeToolMapper } from './Ti86NativeToolMapper.mjs';
 import { encodeTi86SchoolActionQr } from './Ti86SchoolActionQr.mjs';
@@ -102,6 +105,10 @@ const ASSESSMENT_MAX_ITEMS = 48;
 const LEARNING_PROBE_MAX_ITEMS = 12;
 const ASSESSMENT_MAX_CHOICES = 5;
 const ASSESSMENT_CHOICE_MAX_CHARS = 23;
+const GRAPHIC_CAPTION_COLUMNS = 29;
+const GRAPHIC_CAPTION_LINES = 2;
+const GRAPHIC_MAX_BYTES = 160;
+const GRAPHIC_COMMAND = Object.freeze({ end: 0, line: 1, label: 2 });
 // Catalog navigation should speak in learner-facing activities even when an
 // authored pack intentionally omits a cosmetic module title. These defaults
 // are adapter presentation, not subject knowledge or domain behavior.
@@ -128,6 +135,7 @@ export const TI86_SCHOOLCALC_CODEC_CAPABILITIES = Object.freeze([
   'examples@1',
   'flashcards@1',
   'graph@1',
+  'graphics.vector@1',
   'matrix@1',
   'learning-probe@1',
   'native-program@1',
@@ -2009,6 +2017,18 @@ function ti86ProjectionReasons(modules, nativeToolMapper) {
         }
         const promptReason = ti86TextReason(item.prompt, `${itemAt} prompt`);
         if (promptReason) reasons.push(promptReason);
+        const graphicReason = adaptiveGraphicReason(item.schoolcalc, { path: `${itemAt} schoolcalc` });
+        if (graphicReason) reasons.push(graphicReason);
+        else {
+          for (const face of ['promptGraphic', 'answerGraphic']) {
+            if (item.schoolcalc?.[face] === undefined) continue;
+            try {
+              compileTi86Graphic(item.schoolcalc[face], `${itemAt} ${face}`);
+            } catch (error) {
+              reasons.push(error.message);
+            }
+          }
+        }
         if (!Array.isArray(item.choices)
             || item.choices.length < 2
             || item.choices.length > ASSESSMENT_MAX_CHOICES) {
@@ -2130,6 +2150,15 @@ function paginateAssessmentPrompt(raw) {
   });
 }
 
+function paginateGraphicCaption(raw) {
+  return paginateText(raw, {
+    columns: GRAPHIC_CAPTION_COLUMNS,
+    linesPerPage: GRAPHIC_CAPTION_LINES,
+    maxBytes: (GRAPHIC_CAPTION_COLUMNS * GRAPHIC_CAPTION_LINES) + 1,
+    label: 'TI-86 graphic caption paginator',
+  });
+}
+
 function paginateText(raw, {
   columns,
   linesPerPage,
@@ -2168,13 +2197,19 @@ function paginateText(raw, {
 }
 
 function projectQuestionItem(item, { revealAnswers, includeAnswerKey, includeFeedback = false }) {
+  const promptGraphic = item.schoolcalc?.promptGraphic;
+  const answerGraphic = item.schoolcalc?.answerGraphic;
   const projected = {
     id: item.id,
     type: item.type,
-    promptPages: paginateAssessmentPrompt(item.prompt),
+    promptPages: promptGraphic ? paginateGraphicCaption(item.prompt) : paginateAssessmentPrompt(item.prompt),
     choices: structuredClone(item.choices),
   };
-  if (revealAnswers) projected.answerPages = paginateReaderText(item.answer);
+  if (promptGraphic) projected.promptGraphic = compileTi86Graphic(promptGraphic, `item '${item.id}' promptGraphic`);
+  if (revealAnswers) {
+    projected.answerPages = answerGraphic ? paginateGraphicCaption(item.answer) : paginateReaderText(item.answer);
+    if (answerGraphic) projected.answerGraphic = compileTi86Graphic(answerGraphic, `item '${item.id}' answerGraphic`);
+  }
   if (includeFeedback) projected.feedbackPages = paginateReaderText(item.feedback.explanation);
   if (includeAnswerKey) {
     const answerIndex = item.choices.findIndex((choice) => choice === item.answer);
@@ -2184,6 +2219,68 @@ function projectQuestionItem(item, { revealAnswers, includeAnswerKey, includeFee
     projected.correctChoice = answerIndex + 1;
   }
   return projected;
+}
+
+/** Compile normalized semantic primitives into bounded absolute LCD commands. */
+function compileTi86Graphic(graphic, at) {
+  const bytes = [];
+  const emitLine = (from, to) => {
+    bytes.push(GRAPHIC_COMMAND.line, projectGraphicX(from.x), projectGraphicY(from.y),
+      projectGraphicX(to.x), projectGraphicY(to.y));
+  };
+  for (const primitive of graphic.primitives) {
+    if (primitive.type === 'line') {
+      emitLine({ x: primitive.x1, y: primitive.y1 }, { x: primitive.x2, y: primitive.y2 });
+    } else if (primitive.type === 'polyline') {
+      for (let index = 1; index < primitive.points.length; index += 1) {
+        emitLine(primitive.points[index - 1], primitive.points[index]);
+      }
+    } else if (primitive.type === 'rect') {
+      const x2 = primitive.x + primitive.width;
+      const y2 = primitive.y + primitive.height;
+      const points = [
+        { x: primitive.x, y: primitive.y }, { x: x2, y: primitive.y },
+        { x: x2, y: y2 }, { x: primitive.x, y: y2 },
+      ];
+      for (let index = 0; index < points.length; index += 1) {
+        emitLine(points[index], points[(index + 1) % points.length]);
+      }
+    } else if (primitive.type === 'circle') {
+      const points = Array.from({ length: 12 }, (_, index) => {
+        const angle = (index * Math.PI * 2) / 12;
+        return {
+          x: Math.round(primitive.cx + (Math.cos(angle) * primitive.radius)),
+          y: Math.round(primitive.cy + (Math.sin(angle) * primitive.radius)),
+        };
+      });
+      for (let index = 0; index < points.length; index += 1) {
+        emitLine(points[index], points[(index + 1) % points.length]);
+      }
+    } else if (primitive.type === 'point') {
+      emitLine(primitive, primitive);
+    } else if (primitive.type === 'label') {
+      const x = projectGraphicX(primitive.x);
+      const y = projectGraphicY(primitive.y);
+      if (x + (primitive.text.length * 4) - 1 > 123 || y + 4 > 38) {
+        throw new Error(`${at} label '${primitive.text}' exceeds the diagram canvas`);
+      }
+      bytes.push(GRAPHIC_COMMAND.label, x, y, primitive.text.length,
+        ...Buffer.from(primitive.text, 'ascii'));
+    }
+    if (bytes.length + 1 > GRAPHIC_MAX_BYTES) {
+      throw new Error(`${at} encodes to more than ${GRAPHIC_MAX_BYTES} bytes`);
+    }
+  }
+  bytes.push(GRAPHIC_COMMAND.end);
+  return Buffer.from(bytes);
+}
+
+function projectGraphicX(value) {
+  return 4 + Math.round((value * 119) / 100);
+}
+
+function projectGraphicY(value) {
+  return 11 + Math.round((value * 27) / 100);
 }
 
 function validateResult(result) {
