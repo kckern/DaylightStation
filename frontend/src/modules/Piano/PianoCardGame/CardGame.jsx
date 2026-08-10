@@ -1,14 +1,17 @@
 import { useMemo } from 'react';
 import GamingRuntime from '../../Gaming/runtime/GamingRuntime.jsx';
 import { createPianoChordProvider } from '../challenge/provider/createPianoChordProvider.jsx';
-import { usePianoMidiNotes } from '../PianoKiosk/PianoMidiContext.jsx';
+import { usePianoMidi, usePianoMidiNotes } from '../PianoKiosk/PianoMidiContext.jsx';
 
-/** Thin Piano Games composition adapter; game content and rules come from YAML. */
+/** Scale Stadium composition adapter; Pokémon content/rules stay in YAML and Piano owns challenge grading. */
 export function CardGame({ currentUser = null, onDeactivate = null }) {
-  const userId = currentUser?.user_id || currentUser?.id || 'guest';
+  // The explicit user query mirrors GamingApp, letting readiness checks use
+  // the supported guest identity without changing normal kiosk identity.
+  const queryUserId = useMemo(() => new URLSearchParams(window.location.search).get('user'), []);
+  const userId = queryUserId || currentUser?.user_id || currentUser?.id || 'guest';
   const participants = useMemo(() => [{ user_id: userId, role: 'player' }], [userId]);
   const providers = useMemo(
-    () => [createPianoChordProvider({ useNotes: usePianoMidiNotes })],
+    () => [createPianoChordProvider({ useNotes: usePianoMidiNotes, useConnection: usePianoMidi })],
     [],
   );
   return (

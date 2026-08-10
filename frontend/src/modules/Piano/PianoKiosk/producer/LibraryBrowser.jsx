@@ -1,34 +1,25 @@
 /**
- * LibraryBrowser — the real full-screen library surface with consonance
- * guardrails (Task 5.1, design §4/§4b/§7). Replaces the interim LibraryOverlay
+ * LibraryBrowser — the full-screen library surface with consonance guardrails.
+ * Replaces the interim LibraryOverlay
  * at the exact same seam: Producer imports ONE component with the same props.
  *
  * Behavior map:
  * - Pinned top bar: search + facet chips — store (Library / Ours / Prefabs),
  *   kind (All/Chords/Melody/Bass/Ideas/Grooves), quality (Best/All, defaults
- *   to Best), genre (top 8 + overflow), feel (groove kind only). 'Ours' and
- *   'Prefabs' are STUB facets rendering honest empty states (Tasks 8.2 / 9.1
- *   fill them).
+ *   to Best), genre (top 8 + overflow), feel (groove kind only). 'Ours' shows
+ *   household loops/stacks and 'Prefabs' shows curated read-only stacks.
  * - Guardrails: when the browse is anchored to a base with a harmonic
  *   timeline, the grid shows buildCompatibleSet's guardrailed results
  *   ("Showing what fits your jam · N"). "Show all" lifts the gate for honest
  *   browsing — non-stackable cards get a small ⚠ but adding them is ALLOWED
  *   (guardrails are defaults, not prisons; design §4b).
- * - Cards: MaterialGlyph + kind identity — RomanProgression (harmonic), staff
- *   thumb (melodic), feel/bpm chips (grooves — they carry NO timeline, so no
- *   fake onset rows). Library entries are ABSTRACT, key-agnostic classes (in C,
- *   transposed at playtime), so a keyed chord SPELLING is an instantiation:
- *   entry.title (a concrete chord spelling for harmonic AND ~40% of melodic
- *   bricks) is NEVER rendered on a card — it survives only as the aria-label.
- *   The glyph + Roman/staff/feel IS the identity (requirements §3.1). An
- *   untitled melodic card falls back to a subdued slug caption (a source id).
- * - Tap card = onPick(entry). Press-AND-HOLD (150ms arm) = peek audition
- *   (design §7): the entry sounds over the jam if it's playing, solo +
- *   metronome if not, conformed to the current key/tempo (usePeek). Release
- *   silences it and NEVER adds — a peek is a listen, adding takes a fresh
- *   tap. Scroll safety mirrors GainStrip (touch-action pan-y + >12px drift
- *   cancels the arm), but the commit points differ: peek starts on the HOLD
- *   TIMER, tap commits on pointer-up.
+ * - Cards show readable, transposition-honest identity. Harmonic entries use
+ *   Roman numerals; line/rhythm entries use a title or humanized source id.
+ *   Glyph/staff/feel support identity instead of forcing users to distinguish
+ *   thousands of anonymous pictures.
+ * - Tap card = onPick(entry). Every card also has an explicit Preview/Stop
+ *   control: audition must be discoverable on a kiosk, never hidden behind a
+ *   press-and-hold gesture. Preview is conformed to current key/tempo.
  * - Perf: the compatible set is built on open + base change (memo),
  *   NEVER per keystroke — search/facets filter the already-built set. Render
  *   is capped at 120 cards with a "refine to see more" footer instead of
@@ -46,7 +37,7 @@
  * @param {boolean} [props.isPlaying] - shows the floating now-playing pill
  * @param {{current:{bar:number,beat:number}}} [props.positionRef]
  * @param {Array<object>} [props.pillMaterials] - materials for the pill's glyph stack
- * @param {object} [props.router] - voiceRouter for the press-and-hold peek (no router → taps only)
+ * @param {object} [props.router] - voiceRouter for explicit audition (no router → no preview)
  * @param {number} [props.bpm] - workspace tempo the peek conforms to
  * @param {number} [props.keyShift] - workspace keyShift the peek conforms to
  * @param {() => void} [props.onAudioGesture] - audio unlock, called on card
@@ -72,6 +63,7 @@ import { RomanProgression } from '../../components/roman/RomanProgression.jsx';
 import { MaterialGlyph } from './MaterialGlyph.jsx';
 import { buildCompatibleSet, rankCompatible, timelineOf, entryIdentity } from './libraryRanking.js';
 import { usePeek } from './usePeek.js';
+import { useKeepScreenAwake } from '../usePianoScreensaver.jsx';
 
 const STORES = [
   { key: 'curated', label: 'Library' },
@@ -103,9 +95,8 @@ const QUALITIES = [
 ];
 /** How often the pill readout syncs from positionRef (≤4Hz — no per-frame state). */
 const PILL_READOUT_MS = 250;
-/** Press-and-hold arm delay: shorter reads as a laggy tap, longer feels dead. */
+/** Backward-compatible shortcut; Preview is the primary discoverable control. */
 const HOLD_MS = 150;
-/** Drift beyond this during the arm window = the gesture is a scroll (GainStrip's rule). */
 const MOVE_CANCEL_PX = 12;
 
 /**
@@ -127,7 +118,7 @@ function MelodicStaffThumb({ entry, lib }) {
       setPitches(first8);
     }).catch(() => {});
     return () => { cancelled = true; };
-  }, [entry, lib]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [entry, lib]);
   return <SvgStaffRenderer targetPitches={pitches} />;
 }
 
@@ -167,31 +158,23 @@ function NowPlayingPill({ positionRef, pillMaterials, onClose }) {
 /**
  * One library card: glyph-forward identity + kind display.
  *
- * Pointer choreography (Task 5.2 press-to-peek):
- * - pointer-down arms a HOLD_MS timer (and captures the pointer);
- * - >MOVE_CANCEL_PX drift before it fires = scroll → cancel, neither tap nor peek;
- * - up before it fires = TAP → onPick (commit on up, GainStrip's scroll-safe rule);
- * - timer fires = PEEK starts (onPeekStart; the card pulses via is-peeking);
- * - up/cancel/leave after that = onPeekStop, and the pick is SUPPRESSED — a
- *   hold was a listen, not an add; adding takes a fresh tap (design §7).
- * - onClick handles ONLY keyboard activation (detail === 0): the pointer flow
- *   owns taps, and the guard swallows the browser's post-tap ghost click.
+ * Audition is a sibling control rather than a nested button: the main card is
+ * an unambiguous Add action, while Preview toggles only sound.
  */
 function LoopCard({ result, warn, lib, onPick, isPeeking, onPeekStart, onPeekStop, onAudioGesture }) {
   const { entry, reasons = [] } = result;
   const isGroove = entry.type === 'groove';
   const hasRoman = !!entry.roman?.length;
-  const label = entry.title || entry.slug; // accessible name only — never rendered as a title
+  const label = entry.title || entry.slug;
+  const visibleName = hasRoman
+    ? `${entry.roman.join(' · ')} progression`
+    : (entry.title || String(entry.slug || entry.type || 'Loop').replace(/[-_]+/g, ' '));
 
-  const holdRef = useRef(null); // { pointerId, x, y, timer, peeking } | null
-
+  const holdRef = useRef(null);
   const clearHold = () => {
     if (holdRef.current) clearTimeout(holdRef.current.timer);
     holdRef.current = null;
   };
-
-  // A card unmounting mid-gesture (grid re-filter) must not leak its timer or
-  // leave a peek sounding with no releasing pointer handler left to stop it.
   useEffect(() => () => {
     const hold = holdRef.current;
     holdRef.current = null;
@@ -200,36 +183,35 @@ function LoopCard({ result, warn, lib, onPick, isPeeking, onPeekStart, onPeekSto
     if (hold.peeking) onPeekStop(entry);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handlePointerDown = (e) => {
-    if (holdRef.current) return; // one gesture per card at a time
-    if (typeof e.preventDefault === 'function') {
-      e.preventDefault(); // interaction isolation (GainStrip's pattern)
-      try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* jsdom / old WebView */ }
-    }
-    onAudioGesture?.(); // unlock audio HERE — the hold timer is not a gesture context
-    const hold = { pointerId: e.pointerId, x: e.clientX, y: e.clientY, peeking: false, timer: 0 };
+  const handlePointerDown = (event) => {
+    if (holdRef.current) return;
+    event.preventDefault?.();
+    try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* old WebView/jsdom */ }
+    onAudioGesture?.();
+    const hold = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      peeking: false,
+      timer: 0,
+    };
     hold.timer = setTimeout(() => {
       hold.peeking = true;
       onPeekStart(entry);
     }, HOLD_MS);
     holdRef.current = hold;
   };
-
-  const handlePointerMove = (e) => {
+  const handlePointerMove = (event) => {
     const hold = holdRef.current;
-    if (!hold || hold.pointerId !== e.pointerId || hold.peeking) return;
-    if (Math.hypot(e.clientX - hold.x, e.clientY - hold.y) > MOVE_CANCEL_PX) clearHold(); // scroll
+    if (!hold || hold.pointerId !== event.pointerId || hold.peeking) return;
+    if (Math.hypot(event.clientX - hold.x, event.clientY - hold.y) > MOVE_CANCEL_PX) clearHold();
   };
-
-  const handlePointerUp = (e) => {
+  const handlePointerUp = (event) => {
     const hold = holdRef.current;
-    if (!hold || hold.pointerId !== e.pointerId) return;
+    if (!hold || hold.pointerId !== event.pointerId) return;
     clearHold();
-    if (hold.peeking) onPeekStop(entry); // hold-release = silence, NEVER add
-    else onPick(result); // quick tap = add
+    if (hold.peeking) onPeekStop(entry); else onPick(result);
   };
-
-  /** pointercancel (browser claimed the scroll) or pointerleave mid-hold. */
   const handlePointerHalt = () => {
     const hold = holdRef.current;
     if (!hold) return;
@@ -237,8 +219,13 @@ function LoopCard({ result, warn, lib, onPick, isPeeking, onPeekStart, onPeekSto
     if (hold.peeking) onPeekStop(entry);
   };
 
+  const togglePreview = () => {
+    onAudioGesture?.();
+    if (isPeeking) onPeekStop(entry); else onPeekStart(entry);
+  };
+
   return (
-    <li>
+    <li className="piano-loop-wrap">
       <button
         type="button"
         className={`piano-loop${isPeeking ? ' is-peeking' : ''}`}
@@ -248,7 +235,7 @@ function LoopCard({ result, warn, lib, onPick, isPeeking, onPeekStart, onPeekSto
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerHalt}
         onPointerLeave={handlePointerHalt}
-        onClick={(e) => { if (e.detail === 0 && !holdRef.current) onPick(result); }}
+        onClick={(event) => { if (event.detail === 0 && !holdRef.current) onPick(result); }}
       >
         <span className="piano-loop__head">
           <MaterialGlyph material={entry} size={44} />
@@ -256,6 +243,7 @@ function LoopCard({ result, warn, lib, onPick, isPeeking, onPeekStart, onPeekSto
             <span className="piano-loop__warn" role="img" aria-label="may clash" title="May clash with your jam">⚠</span>
           )}
         </span>
+        <span className="piano-loop__name">{visibleName}</span>
         {hasRoman && <RomanProgression roman={entry.roman} />}
         {!hasRoman && !isGroove && (
           <span className="piano-loop__staff"><MelodicStaffThumb entry={entry} lib={lib} /></span>
@@ -266,14 +254,8 @@ function LoopCard({ result, warn, lib, onPick, isPeeking, onPeekStart, onPeekSto
             {entry.bpm ? <span className="piano-loop__chip">{entry.bpm} bpm</span> : null}
           </span>
         )}
-        {/* entry.title is a KEYED chord SPELLING (concrete chord names) — true
-            even for melodies (~40% carry their progression as the title, e.g.
-            "G Am · F C") — and the library is abstract/key-agnostic (transposed
-            at playtime), so title is NEVER rendered as visible card text; it
-            survives only as the aria-label above. The identity IS the glyph +
-            Roman (harmonic) / staff (melodic) / feel (groove). A melodic card
-            with no title at all falls back to a subdued slug caption (a source
-            id, never a keyed spelling). */}
+        {/* Keep the raw source id available as secondary identity for untitled
+            line material; the readable name above remains primary. */}
         {!hasRoman && !isGroove && !entry.title && (
           <span className="piano-loop__caption">{entry.slug}</span>
         )}
@@ -281,6 +263,13 @@ function LoopCard({ result, warn, lib, onPick, isPeeking, onPeekStart, onPeekSto
         {entry.quality === 'best' && <span className="piano-loop__tag">best</span>}
         {entry.tags?.[0] && <span className="piano-loop__tag">{entry.tags[0]}</span>}
       </button>
+      <button
+        type="button"
+        className="piano-loop__preview"
+        aria-label={`${isPeeking ? 'Stop preview' : 'Preview'} ${label}`}
+        aria-pressed={isPeeking}
+        onClick={togglePreview}
+      >{isPeeking ? '■ Stop' : '▶ Preview'}</button>
     </li>
   );
 }
@@ -309,22 +298,23 @@ export function LibraryBrowser({
   const [genre, setGenre] = useState(null);
   const [feel, setFeel] = useState(null);
   const [quality, setQuality] = useState('best');
-  // No text input in the kiosk — the library filters by facet only, never text.
-  const text = '';
+  const [text, setText] = useState('');
   const [genresExpanded, setGenresExpanded] = useState(false);
   const [gateLifted, setGateLifted] = useState(false);
 
-  // Press-and-hold audition engine (Task 5.2). isPlaying doubles as the
+  // Explicit Preview/Stop audition engine. isPlaying doubles as the
   // "jam is looping underneath" signal: peeks ride over the stack when true,
   // solo + metronome when false.
   const { peekingId, startPeek, stopPeek } = usePeek({
     router, lib, bpm, keyShift, isJamPlaying: isPlaying, layers,
   });
-  // Identity-scoped stop (multi-touch belt-and-braces): a stale card's
-  // release must only stop ITS OWN peek, never a newer one.
+  // A solo audition can loop indefinitely while the transport is stopped.
+  // Keep the physical kiosk awake until explicit Stop/unmount silences it.
+  useKeepScreenAwake('producer-preview', peekingId != null);
+  // Identity-scoped stop: stopping one card must not kill a newer preview.
   const handlePeekStop = useCallback((entry) => stopPeek(entryIdentity(entry)), [stopPeek]);
 
-  const entries = lib.loops || [];
+  const entries = useMemo(() => lib.loops || [], [lib.loops]);
   const workspaceBase = useMemo(
     () => layers.find((l) => l.source?.kind === 'library')?.source.entry ?? null,
     [layers],
@@ -342,7 +332,7 @@ export function LibraryBrowser({
       entries: entries.length,
     });
     // Open-context snapshot only — later entry changes log via pick.
-  }, [logger]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [logger, workspaceBase?.slug, gateActive, entries.length]);
 
   // ── compatible set: rebuilt on base change ONLY, never per keystroke ──
   const compatible = useMemo(() => buildCompatibleSet({ entries, baseEntry: base }), [entries, base]);
@@ -383,9 +373,11 @@ export function LibraryBrowser({
       // tier: curating an 8–23-item category just makes material un-addable
       // (the groove/idea/bassline bugs), and bass especially is small and
       // always wanted. See QUALITY_CURATED_TYPES.
+      if (quality && (entry.harmonyVerified === false || entry.needsReview)) return false;
       if (quality && QUALITY_CURATED_TYPES.has(entry.type) && (entry.quality || '') !== quality) return false;
       if (q) {
-        const hay = [entry.title, entry.slug, entry.artist, ...(entry.tags || [])].filter(Boolean).join(' ').toLowerCase();
+        const hay = [entry.title, entry.slug, entry.artist, ...(entry.tags || []), ...(entry.roman || [])]
+          .filter(Boolean).join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -433,7 +425,7 @@ export function LibraryBrowser({
   }, [logger, gateLifted]);
 
   const clearFilters = useCallback(() => {
-    setKind(null); setGenre(null); setFeel(null); setQuality('best');
+    setKind(null); setGenre(null); setFeel(null); setQuality('best'); setText('');
   }, []);
 
   // 'Prefabs' cards: curated STACKS only (songs live in the SongPicker —
@@ -471,6 +463,14 @@ export function LibraryBrowser({
       </div>
 
       <div className="piano-producer-mode__facets">
+        <input
+          type="search"
+          className="piano-producer-mode__search"
+          aria-label="Search loops"
+          placeholder="Search titles, tags, or creators"
+          value={text}
+          onChange={(event) => setText(event.target.value)}
+        />
         <div className="piano-producer-mode__roles" role="group" aria-label="store">
           {STORES.map((s) => (
             <button

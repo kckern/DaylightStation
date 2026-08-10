@@ -131,6 +131,7 @@ function cryptoRng(crypto) {
  * @param {object} [deps.logger]
  * @param {object} [deps.tokenRegistry] shared School token registry
  * @param {object} [deps.schoolCalcActionResolver] device-bound lesson-action resolver
+ * @param {object} [deps.schoolCalcStudies] Adaptive Study issuance service
  * @returns {Promise<{
  *   wired: boolean, reason: string|null,
  *   handlesCode: (code: string) => boolean,
@@ -145,7 +146,7 @@ export async function createSchoolLifecycle({
   thermalPrinterRegistry = null, playbackAdapter = null,
   languageStudyService = null,
   donow = null, donowSurfaces = null, donowDatastore = null,
-  tokenRegistry = null, schoolCalcActionResolver = null,
+  tokenRegistry = null, schoolCalcActionResolver = null, schoolCalcStudies = null,
   clock = () => new Date(), rng = null, logger = console,
 } = {}) {
   const cfg = configService.getHouseholdAppConfig?.(householdId, 'school') || {};
@@ -434,6 +435,8 @@ export async function createSchoolLifecycle({
     // Read-only: the "Notes for you" section (spec R7) reads a learner's
     // resolved review items, never writes one.
     reviewQueue: stores.reviewQueue, logger,
+    schoolCalcStudies,
+    schoolCalcMode: schoolCalcStudies ? 'issue' : 'off',
   });
   const resolveSubjectNext = new ResolveSubjectNext({
     attestations,
@@ -463,6 +466,8 @@ export async function createSchoolLifecycle({
     // Same real, read-only review queue as `buildAgenda` — a preview showing
     // no notes when the real print would have some is a preview that lies.
     reviewQueue: stores.reviewQueue,
+    schoolCalcStudies,
+    schoolCalcMode: schoolCalcStudies ? 'preview' : 'off',
     logger: logger.child ? logger.child({ preview: true }) : logger,
   });
   // The rendering-layer PNG renderer, same optional-dependency posture as the

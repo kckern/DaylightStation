@@ -22,7 +22,7 @@ describe('AddLayerSheet', () => {
     expect(p.onRecord).toHaveBeenCalledTimes(1);
   });
 
-  it('build buttons are disabled until wired (Coming soon)', () => {
+  it('build buttons fail closed when a host omits their handlers', () => {
     render(<AddLayerSheet {...base()} />);
     expect(screen.getByRole('button', { name: /build a drum loop/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /build chords/i })).toBeDisabled();

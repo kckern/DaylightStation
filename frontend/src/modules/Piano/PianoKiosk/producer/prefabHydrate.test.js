@@ -6,7 +6,9 @@
  * hand-authored prefab compiles through the REAL pipeline without throwing.
  */
 import { describe, it, expect } from 'vitest';
-import { resolveEntry, resolvePrefabStack, resolvePrefabSong } from './prefabHydrate.js';
+import {
+  PREFAB_INCOMPLETE_CODE, resolveEntry, resolvePrefabStack, resolvePrefabSong,
+} from './prefabHydrate.js';
 import { draftReducer, hydrate, toSchedulerInputs } from './draftReducer.js';
 import { compileArrangement } from '@shared-music/arrangementScheduler.mjs';
 
@@ -72,11 +74,20 @@ describe('resolvePrefabStack', () => {
     expect(layers.find((l) => l.role === 'bass').gmProgram).toBe(33);
   });
 
-  it('drops unresolved refs and reports them (never crashes)', () => {
+  it('rejects an incomplete stack instead of silently dropping a layer', () => {
     const bad = { id: 'x', layers: [{ slug: 'ghost', path: 'no/where.mid', role: 'chords' }, ...payload.layers] };
-    const { layers, unresolved } = resolvePrefabStack(bad, IDX);
-    expect(layers).toHaveLength(3);
-    expect(unresolved).toContain('no/where.mid');
+    expect(() => resolvePrefabStack(bad, IDX)).toThrow(expect.objectContaining({
+      code: PREFAB_INCOMPLETE_CODE,
+      unresolved: ['no/where.mid'],
+    }));
+  });
+
+  it('rejects a role that contradicts the resolved library material', () => {
+    const bad = { id: 'x', layers: [{ path: 'perc/rock-groove.mid', role: 'chords' }] };
+    expect(() => resolvePrefabStack(bad, IDX)).toThrow(expect.objectContaining({
+      code: PREFAB_INCOMPLETE_CODE,
+      unresolved: ['role:chords:perc/rock-groove.mid'],
+    }));
   });
 });
 
@@ -152,7 +163,7 @@ describe('resolvePrefabSong', () => {
     expect(compiled.totalMs).toBeGreaterThan(0);
   });
 
-  it('degrades gracefully when a section ref is unresolved', () => {
+  it('rejects an incomplete song instead of playing only its surviving layers', () => {
     const bad = {
       ...payload,
       sections: [
@@ -160,11 +171,26 @@ describe('resolvePrefabSong', () => {
       ],
       arrangement: [{ section: 'sec-1', repeats: 1 }],
     };
-    const { draft, unresolved } = resolvePrefabSong(bad, IDX);
-    expect(unresolved).toContain('no/where.mid');
-    // section survives with just the carried groove placeholder
-    expect(draft.sections[0].stack.some((e) => e.carriedRef)).toBe(true);
-    const hydrated = draftReducer(null, hydrate(draft));
-    expect(hydrated.sections).toHaveLength(1);
+    expect(() => resolvePrefabSong(bad, IDX)).toThrow(expect.objectContaining({
+      code: PREFAB_INCOMPLETE_CODE,
+      unresolved: ['no/where.mid'],
+    }));
+  });
+
+  it('rejects dangling carried references and invalid arrangement repeats', () => {
+    const bad = {
+      ...payload,
+      carried: {},
+      sections: [{ id: 'a', name: 'A', lengthBars: 4, layers: [{ carried: 'ghost' }] }],
+      arrangement: [{ section: 'a', repeats: 0 }],
+    };
+    expect(() => resolvePrefabSong(bad, IDX)).toThrow(expect.objectContaining({
+      code: PREFAB_INCOMPLETE_CODE,
+      unresolved: expect.arrayContaining([
+        'section:a:carried:ghost',
+        'section:a:empty',
+        'arrangement[0]:repeats',
+      ]),
+    }));
   });
 });

@@ -28,7 +28,8 @@ vi.mock('../../PianoConfig.jsx', () => ({
     },
   }),
 }));
-vi.mock('../../usePianoScreensaver.jsx', () => ({ useKeepScreenAwake: () => {} }));
+const useKeepScreenAwake = vi.hoisted(() => vi.fn());
+vi.mock('../../usePianoScreensaver.jsx', () => ({ useKeepScreenAwake }));
 vi.mock('../../../components/PianoKeyboard.jsx', () => ({ PianoKeyboard: () => <div data-testid="keyboard" /> }));
 
 // ── sound-engine mocks (wiring focus) ─────────────────────────────────────────
@@ -89,6 +90,15 @@ const storeMock = vi.hoisted(() => ({
 vi.mock('../../producer/useProducerStore.js', () => ({
   useProducerStore: () => storeMock,
   default: () => storeMock,
+}));
+
+const prefabsMock = vi.hoisted(() => ({
+  stacks: [], songs: [], loading: false, error: null,
+  getFull: vi.fn(() => Promise.reject(new Error('missing prefab fixture'))),
+}));
+vi.mock('../../producer/usePrefabs.js', () => ({
+  usePrefabs: () => prefabsMock,
+  default: () => prefabsMock,
 }));
 
 const resumeMock = vi.hoisted(() => ({
@@ -219,6 +229,19 @@ const EMPTY_MUSICXML = musicXml([]);
 
 beforeEach(() => {
   vi.clearAllMocks();
+  storeMock.songs = [];
+  storeMock.crate = [];
+  storeMock.loops = [];
+  storeMock.error = null;
+  storeMock.loadSong.mockResolvedValue({ id: 'song1', draft: { sections: [], arrangement: [], carriedLayers: {}, meta: {} } });
+  storeMock.loadCrateStack.mockResolvedValue({ id: 'c1', layers: [] });
+  prefabsMock.stacks = [];
+  prefabsMock.songs = [];
+  prefabsMock.error = null;
+  prefabsMock.getFull.mockRejectedValue(new Error('missing prefab fixture'));
+  resumeMock.hasResume = false;
+  resumeMock.resumeData = null;
+  resumeMock.applyResume = vi.fn(() => resumeMock.resumeData);
   transportMock.isPlaying = false;
   transportMock.pendingJumpRef.current = null;
   transportArgs.last = null;
@@ -235,8 +258,8 @@ beforeEach(() => {
   });
   // ensureAudio path: createGmSynth is mocked, but the shell still constructs
   // a real-looking AudioContext first.
-  global.window.AudioContext = class { close() { return Promise.resolve(); } };
-  global.fetch = vi.fn((url) => {
+  globalThis.window.AudioContext = class { close() { return Promise.resolve(); } };
+  globalThis.fetch = vi.fn((url) => {
     if (url.includes('/loop-manifest')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ bricks: BRICKS }) });
     if (url.includes('broken-melody')) return Promise.resolve({ text: () => Promise.resolve(EMPTY_MUSICXML) });
     return Promise.resolve({ text: () => Promise.resolve(musicXml([[62, 0, 2], [65, 2, 2]])) });
@@ -289,6 +312,14 @@ function removeLayer(idx = 0) {
 }
 
 describe('Producer shell (three bands)', () => {
+  it('shows a persistent repair warning and retry for unavailable saved work', async () => {
+    storeMock.error = '1 saved item is unavailable because the data needs repair.';
+    render(<Producer />);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/saved work unavailable/i);
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(storeMock.refresh).toHaveBeenCalledTimes(1);
+  });
+
   it('renders the four front-door entry cards when the workspace is empty', async () => {
     render(<Producer />);
     expect(await screen.findByRole('button', { name: /browse the library/i })).toBeEnabled();
@@ -302,6 +333,29 @@ describe('Producer shell (three bands)', () => {
     render(<Producer />);
     expect(await screen.findByRole('button', { name: /play/i })).toBeDisabled();
     expect(screen.getByTestId('keyboard')).toBeInTheDocument();
+  });
+
+  it('Undo restores a removed library layer with its audible note payload', async () => {
+    render(<Producer />);
+    await addDmLayer();
+    await waitFor(() => expect(transportArgs.last.layers[0]?.notes.length).toBeGreaterThan(0));
+    removeLayer(0);
+    expect(document.querySelectorAll('.piano-channel-strip')).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Undo last change' }));
+    expect(document.querySelectorAll('.piano-channel-strip')).toHaveLength(1);
+    expect(transportArgs.last.layers[0]?.notes.length).toBeGreaterThan(0);
+  });
+
+  it('Clear loop is a guarded two-tap action and Undo restores it', async () => {
+    render(<Producer />);
+    await addDmLayer();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear loop' }));
+    expect(document.querySelectorAll('.piano-channel-strip')).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm clear' }));
+    expect(document.querySelectorAll('.piano-channel-strip')).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Undo last change' }));
+    expect(document.querySelectorAll('.piano-channel-strip')).toHaveLength(1);
+    expect(transportArgs.last.layers[0]?.notes.length).toBeGreaterThan(0);
   });
 
   it('opening the library hides the transport bar and keyboard bands (full-bleed)', async () => {
@@ -427,9 +481,30 @@ describe('Producer shell (three bands)', () => {
     fireEvent.click(screen.getByRole('button', { name: /\+ add layer/i }));
     fireEvent.click(await screen.findByRole('button', { name: /build a drum loop/i }));
     await screen.findByRole('dialog', { name: 'build a drum loop' });
-    fireEvent.click(screen.getByLabelText('Kick step 1'));
+    fireEvent.click(screen.getByLabelText('Kick bar 1 step 1'));
     fireEvent.click(screen.getByRole('button', { name: 'Add drum loop' }));
     await waitFor(() => expect(document.querySelectorAll('.piano-channel-strip').length).toBe(2));
+  });
+
+  it('holds the kiosk awake for builder Preview even while transport is stopped', async () => {
+    vi.stubGlobal('requestAnimationFrame', () => 1);
+    vi.stubGlobal('cancelAnimationFrame', () => {});
+    try {
+      render(<Producer />);
+      await addDmLayer();
+      fireEvent.click(screen.getByRole('button', { name: /\+ add layer/i }));
+      fireEvent.click(await screen.findByRole('button', { name: /build a drum loop/i }));
+      fireEvent.click(screen.getByLabelText('Kick bar 1 step 1'));
+
+      expect(useKeepScreenAwake).toHaveBeenLastCalledWith('producer', false);
+      fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+      await waitFor(() => expect(useKeepScreenAwake).toHaveBeenLastCalledWith('producer', true));
+
+      fireEvent.click(screen.getByRole('button', { name: 'Stop preview' }));
+      await waitFor(() => expect(useKeepScreenAwake).toHaveBeenLastCalledWith('producer', false));
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('Add Layer → Build chords → commit adds a chords layer (§9)', async () => {
@@ -456,13 +531,12 @@ describe('Producer shell (three bands)', () => {
     expect(screen.getByRole('button', { name: /play/i })).toBeDisabled();
   });
 
-  it('groove cards show a feel chip — no keyed name text, no drum-pitches-on-a-treble-staff thumb', async () => {
+  it('groove cards show readable identity + feel, without a misleading treble staff', async () => {
     render(<Producer />);
     await openLibrary();
     const card = await screen.findByRole('button', { name: 'Basic Rock' });
-    // Identity is the feel chip, not the vendor title (aria-label only).
     expect(card.querySelector('.piano-loop__chip')?.textContent).toBe('rock');
-    expect(card.textContent).not.toContain('Basic Rock');
+    expect(card.querySelector('.piano-loop__name')?.textContent).toBe('Basic Rock');
     expect(card.querySelector('.piano-loop__staff')).toBeNull();
     expect(card.querySelector('svg.action-staff, .piano-loop__staff svg')).toBeNull();
   });
@@ -695,7 +769,7 @@ describe('Song builder wiring (Task 7.2)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'A slot 1' }));
     fireEvent.click(screen.getByRole('button', { name: 'Edit in Loop' }));
     // Landed in Mix: strip present, badge up, promote door relabeled.
-    expect(screen.getByRole('button', { name: /browse|add layer/i })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: /browse|add layer/i })).toBeInTheDocument());
     expect(screen.getByRole('status').textContent).toContain('Editing section A');
     expect(screen.getByRole('button', { name: 'Update section' })).toBeInTheDocument();
     await waitFor(() => expect(transportArgs.last.layers[0]?.transpose).toBe(1));
@@ -707,13 +781,13 @@ describe('Song builder wiring (Task 7.2)', () => {
     await jamAndPromote();
     fireEvent.click(screen.getByRole('button', { name: 'A slot 1' }));
     fireEvent.click(screen.getByRole('button', { name: 'Edit in Loop' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Update' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Update' }));
     await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
     // Re-open and discard: badge clears, the strip (workspace stack) survives.
     fireEvent.click(screen.getByRole('tab', { name: 'Song' }));
     fireEvent.click(screen.getByRole('button', { name: 'A slot 1' }));
     fireEvent.click(screen.getByRole('button', { name: 'Edit in Loop' }));
-    expect(screen.getByRole('status')).toBeInTheDocument();
+    expect(await screen.findByRole('status')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
     expect(screen.queryByRole('status')).toBeNull();
     expect(document.querySelectorAll('.piano-channel-strip').length).toBe(1);
@@ -803,12 +877,12 @@ describe('Song builder wiring (Task 7.2)', () => {
     await waitFor(() => expect(routerMock.configureLayer).toHaveBeenCalledWith(0, { program: 0, gain: 1 }));
   });
 
-  it('a section layer removed from the workspace MID-FETCH still lands its notes (draft-aware landing guard)', async () => {
+  it('does not open a section partially while its library notes are still loading', async () => {
     // Gate the Dm loop's MIDI fetch so the test controls when notes land.
     let releaseDm;
     const dmGate = new Promise((res) => { releaseDm = res; });
-    const baseFetch = global.fetch;
-    global.fetch = vi.fn((url) => {
+    const baseFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn((url) => {
       if (String(url).includes('dm-c-f-gm')) {
         return dmGate.then(() => ({ text: () => Promise.resolve(musicXml([[62, 0, 2], [65, 2, 2]])) }));
       }
@@ -819,14 +893,16 @@ describe('Song builder wiring (Task 7.2)', () => {
     expect(transportArgs.last.layers).toHaveLength(0);
     fireEvent.click(screen.getByRole('button', { name: 'Add to song' }));
     await screen.findByRole('button', { name: 'A slot 1' });
-    // Open the section — ensureLayerNotes starts a (gated) fetch…
+    // Open the section — the strict preloader waits on the gated fetch.
     fireEvent.click(screen.getByRole('button', { name: 'A slot 1' }));
     fireEvent.click(screen.getByRole('button', { name: 'Edit in Loop' }));
-    // …then remove the layer from the WORKSPACE before the fetch resolves.
+    expect(screen.queryByRole('button', { name: 'more' })).toBeNull();
+    // The section lands only after every library layer is playable.
+    await act(async () => { releaseDm(); });
+    await screen.findByRole('button', { name: 'more' });
+    // Removing it from the workspace must still preserve the draft's notes.
     removeLayer(0);
     await waitFor(() => expect(document.querySelectorAll('.piano-channel-strip').length).toBe(0));
-    // The landing must still be accepted: the DRAFT references the layer.
-    await act(async () => { releaseDm(); });
     fireEvent.click(screen.getByRole('tab', { name: 'Song' }));
     await waitFor(() => {
       const arr = transportArgs.last.arrangement;
@@ -867,6 +943,37 @@ describe('Song builder wiring (Task 7.2)', () => {
     ));
     expect(screen.getByRole('button', { name: 'Verse slot 2' }).textContent).toContain('×2 · 8 bars');
   });
+
+  it('fills an empty template slot from an explicitly chosen My Loops stack', async () => {
+    const keptLayer = {
+      id: 'kept-take', role: 'melody', channel: 0, gmProgram: 0, gain: 1,
+      muted: false, soloed: false, carried: false,
+      source: { kind: 'take', takeId: 'kept-take', notes: [{ ticks: 0, durationTicks: 480, midi: 64 }], ppq: 480, lengthBars: 2 },
+    };
+    storeMock.crate = [{ id: 'crate-kept', kind: 'stack', title: 'Sunday sketch', layerCount: 1 }];
+    storeMock.loadCrateStack.mockResolvedValue({ id: 'crate-kept', layers: [keptLayer] });
+    render(<Producer />);
+    fireEvent.click(await screen.findByRole('tab', { name: 'Song' }));
+    fireEvent.click(screen.getByRole('button', { name: /pop/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Verse slot 2' }));
+    fireEvent.click(screen.getByRole('button', { name: 'From My Loops' }));
+    fireEvent.click(screen.getByRole('button', { name: /Sunday sketch/i }));
+    await waitFor(() => expect(storeMock.loadCrateStack).toHaveBeenCalledWith('crate-kept'));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Verse slot 2' }).textContent).not.toContain('fill me'));
+  });
+
+  it('New is guarded and clears both the Loop workspace and Song draft', async () => {
+    render(<Producer />);
+    await jamAndPromote();
+    expect(screen.getByRole('button', { name: 'A slot 1' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'New' }));
+    expect(screen.getByRole('alertdialog', { name: 'new project' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'A slot 1' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Start new' }));
+    expect(screen.queryByRole('button', { name: 'A slot 1' })).toBeNull();
+    expect(document.querySelectorAll('.piano-channel-strip')).toHaveLength(0);
+    expect(resumeMock.clear).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('Producer persistence wiring (Task 8.2)', () => {
@@ -897,11 +1004,35 @@ describe('Producer persistence wiring (Task 8.2)', () => {
 
   it('the resume chip applies the snapshot when one is available', async () => {
     resumeMock.hasResume = true;
-    resumeMock.applyResume = vi.fn(() => ({ workspace: { layers: [], bpm: 100, keyShift: 0 }, draft: null }));
+    resumeMock.resumeData = { workspace: { layers: [], bpm: 100, keyShift: 0 }, draft: null };
+    resumeMock.applyResume = vi.fn(() => resumeMock.resumeData);
     render(<Producer />);
     fireEvent.click(await screen.findByRole('button', { name: 'Resume' }));
-    expect(resumeMock.applyResume).toHaveBeenCalled();
+    await waitFor(() => expect(resumeMock.applyResume).toHaveBeenCalled());
     resumeMock.hasResume = false; // restore for other tests
+  });
+
+  it('refuses a resume when a draft-only library layer is unreadable', async () => {
+    const broken = BRICKS[4];
+    const layer = {
+      id: broken.path, role: 'melody', channel: 0, gmProgram: 0, gain: 1,
+      muted: false, soloed: false, carried: false,
+      source: { kind: 'library', entry: broken },
+    };
+    resumeMock.hasResume = true;
+    resumeMock.resumeData = {
+      workspace: { layers: [], bpm: 100, keyShift: 0 },
+      notesById: {},
+      draft: {
+        sections: [{ id: 'a', name: 'A', lengthBars: 4, stack: [layer] }],
+        arrangement: [{ sectionId: 'a', repeats: 1 }],
+        carriedLayers: {}, meta: { bpm: 100, keyShift: 0 },
+      },
+    };
+    render(<Producer />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Resume' }));
+    expect(await screen.findByText('Load stopped — a library loop is missing or unreadable.')).toBeInTheDocument();
+    expect(resumeMock.applyResume).not.toHaveBeenCalled();
   });
 
   it("'Ours' kept stack loads immediately when the workspace is empty", async () => {
@@ -914,6 +1045,68 @@ describe('Producer persistence wiring (Task 8.2)', () => {
     expect(screen.queryByRole('alertdialog', { name: 'replace jam' })).toBeNull();
     await waitFor(() => expect(storeMock.loadCrateStack).toHaveBeenCalledWith('c1'));
     storeMock.crate = [];
+  });
+
+  it('refuses a partial saved stack when one library layer has no playable notes', async () => {
+    const layer = (entry, channel) => ({
+      id: entry.path, role: entry.type === 'melody' ? 'melody' : 'chords', channel,
+      gmProgram: 0, gain: 1, muted: false, soloed: false, carried: false,
+      source: { kind: 'library', entry },
+    });
+    storeMock.crate = [{ id: 'broken-stack', kind: 'stack', title: 'Broken stack', layerCount: 2 }];
+    storeMock.loadCrateStack.mockResolvedValue({
+      id: 'broken-stack',
+      layers: [layer(BRICKS[0], 0), layer(BRICKS[4], 1)],
+    });
+    render(<Producer />);
+    await openLibrary();
+    fireEvent.click(screen.getByRole('button', { name: 'Ours' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Broken stack' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Load stopped — a library loop is missing or unreadable.');
+    expect(document.querySelectorAll('.piano-channel-strip')).toHaveLength(0);
+  });
+
+  it('keeps the picker open and explains when a saved song cannot load every library layer', async () => {
+    const broken = BRICKS[4];
+    const layer = {
+      id: broken.path, role: 'melody', channel: 0, gmProgram: 0, gain: 1,
+      muted: false, soloed: false, carried: false,
+      source: { kind: 'library', entry: broken },
+    };
+    storeMock.songs = [{ id: 'broken-song', title: 'Broken song', sectionCount: 1 }];
+    storeMock.loadSong.mockResolvedValue({
+      id: 'broken-song', revision: 1, title: 'Broken song',
+      draft: {
+        sections: [{ id: 'a', name: 'A', lengthBars: 4, stack: [layer] }],
+        arrangement: [{ sectionId: 'a', repeats: 1 }],
+        carriedLayers: {},
+        meta: { title: 'Broken song', bpm: 100, keyShift: 0 },
+      },
+    });
+    render(<Producer />);
+    fireEvent.click(await screen.findByRole('button', { name: /songs & resume/i }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Broken song' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Load stopped — a library loop is missing or unreadable.');
+    expect(screen.getByRole('dialog', { name: 'saved songs' })).toBeInTheDocument();
+  });
+
+  it('rejects an incomplete starter song instead of silently dropping its missing layer', async () => {
+    prefabsMock.songs = [{ id: 'bad-example', title: 'Bad example', sectionCount: 1 }];
+    prefabsMock.getFull.mockResolvedValue({
+      id: 'bad-example', title: 'Bad example', author: 'curated',
+      meta: { bpm: 100, keyShift: 0 },
+      carried: {},
+      sections: [{
+        id: 'a', name: 'A', lengthBars: 4,
+        layers: [{ path: 'chords/missing.musicxml', role: 'chords' }],
+      }],
+      arrangement: [{ section: 'a', repeats: 1 }],
+    });
+    render(<Producer />);
+    fireEvent.click(await screen.findByRole('button', { name: /songs & resume/i }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Bad example' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Load stopped — this starter is incomplete.');
+    expect(screen.getByRole('dialog', { name: 'saved songs' })).toBeInTheDocument();
   });
 
   it("'Ours' kept stack arms a replace confirm over a non-empty jam, then loads on confirm", async () => {

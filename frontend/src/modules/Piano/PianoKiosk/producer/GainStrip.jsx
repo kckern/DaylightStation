@@ -1,6 +1,6 @@
 /**
  * GainStrip — segmented tap-to-set layer gain for the Producer's channel
- * strips (design §7 Mix view).
+ * strips in the Loop view.
  *
  * Pattern source: the fitness player's TouchVolumeButtons
  * (frontend/src/modules/Fitness/player/panels/TouchVolumeButtons.jsx). The
@@ -38,33 +38,9 @@
  * pre-set a level before unmuting, like on a hardware desk.
  */
 import { useRef } from 'react';
-
-export const GAIN_LEVELS = Object.freeze([0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]);
-
-// Log curve anchors (see header): midpoint segment (level 50) → 10% gain.
-const MID_LEVEL = 50;
-const MID_GAIN = 0.1;
-const EXPONENT_PER_LEVEL = Math.log10(MID_GAIN) / (MID_LEVEL - 100); // = 0.02
-
-/** Nearest segment level (0..100 in tens) for a raw strip percent. */
-export const snapToGainLevel = (percent) => {
-  if (!Number.isFinite(percent)) return 0;
-  return GAIN_LEVELS.reduce((closest, level) => (
-    Math.abs(level - percent) < Math.abs(closest - percent) ? level : closest
-  ), GAIN_LEVELS[0]);
-};
-
-/** Segment level → layer gain 0..1 (log curve; level ≤ 0 → exactly 0). */
-export const gainFromLevel = (level) => {
-  if (!Number.isFinite(level) || level <= 0) return 0;
-  return Math.min(1, Math.max(0, 10 ** ((level - 100) * EXPONENT_PER_LEVEL)));
-};
-
-/** Layer gain 0..1 → level 0..100 (inverse curve; gain ≤ 0 → 0). */
-export const levelFromGain = (gain) => {
-  if (!Number.isFinite(gain) || gain <= 0) return 0;
-  return Math.min(100, Math.max(0, Math.round(100 + Math.log10(gain) / EXPONENT_PER_LEVEL)));
-};
+import {
+  GAIN_LEVELS, gainFromLevel, levelFromGain, snapToGainLevel,
+} from './gainStripModel.js';
 
 const MOVE_CANCEL_PX = 12; // beyond this the gesture is a scroll, not a tap
 const MUTE_ZONE_PERCENT = 7.5; // far-left dead zone = level 0 (silence)

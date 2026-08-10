@@ -1,80 +1,85 @@
-# SchoolCalc packaging
+# SchoolCalc Adaptive Study v1 packaging
 
-SchoolCalc's generic hierarchy is `catalog → subject → course → unit → lesson`.
-One `SchoolCalcDevice.catalogId` is assigned and installed per calculator
-snapshot; the calculator opens directly at its Subject list rather than
-rendering a Catalog selector. Other published Catalogs remain available to
-other device assignments and non-calculator School surfaces.
-A lesson contains standard learning modules such as lecture notes, examples,
-problems, flashcards, and quizzes, plus explicitly registered specialized tools.
+This document refines the release boundary in
+[`schoolcalc-v1-requirements.md`](./schoolcalc-v1-requirements.md). It describes
+the default installation, not every SchoolCalc program retained in source.
 
-The SchoolCalc application resolves one lesson into a neutral lesson bundle. A
-calculator adapter compiles the bundle into an immutable delivery
-artifact for its platform:
+## Default client manifest
 
-```text
-Catalog path + lesson modules
-              │
-       SchoolCalc lesson bundle
-          ┌───┴──────────┐
-          ▼              ▼
-   TI-86 adapter     TI-89 adapter (future)
-   compact SCP1      family-appropriate format
-```
+The digest-pinned v1 client contains only:
 
-The TI-86 client has a stable shell (`SCHLCALC.86p`) plus nine fixed, reviewed
-runtime programs: `SCLEARN.86p`, `SCQR.86p`, `SCCAT.86p`, `SCREQ.86p`,
-`SCQUEUE.86p`, `SCSYNC.86p`, `SCNATIVE.86p`, `SCPROF.86p`, and
-`SCTUTOR.86p`. The shell and first eight runtimes ship in `SCHOOLCALC.86g`;
-the tutor ships in required `SCTUTOR.86g` because one TI-86 group section is
-limited to 65,535 bytes. One digest manifest pins the complete ten-program
-client release.
-Downloaded lesson variables are never executable. Adding a lesson therefore
-does not require a client release unless the content needs a capability that
-its installed reviewed code does not support. See
-[`runtime-modules.md`](./runtime-modules.md).
+| Component | Purpose |
+| --- | --- |
+| `ASCHL.86p` | TI-OS launcher for the shell |
+| `SCHLCALC.86p` | `ENTER CODE` shell, local-code lookup, resume/result dispatch |
+| `SCLEARN.86p` | adaptive cards, summary, and one prescribed A-E quiz |
+| `SCQUEUE.86p` | backup-first append and exact acknowledgement removal |
+| `SCQR.86p` | Version-5/M rendering of one immutable queued result |
+| `SCSYNC.86p` | combined result upload and one-time code resolution |
+| shared records/state/assets | input, UI, CRC, commit, fonts, and required initial durable variables |
 
-The production shell selects only Catalog/install snapshots committed by
-`SCL1`, validates their complete `SCC1`/`SCM1`/`SCP1` envelopes, and traverses
-typed fields through an offset reader. The current runtime proves this boundary
-by rendering authored Catalog and lesson labels without embedding lesson bytes
-in `SCHLCALC.86p`. `SCLEARN` then derives the selected `DPxxxxxx` locator from
-the durable artifact key, revalidates the SCP1 identity, and pages authored
-lecture-note/example content, flashcards, and multiple-choice assessments with
-copy-on-write SCL1 continuation. `SCCAT` walks the complete generic hierarchy,
-and `SCREQ` commits install/remove intent through DSREQB→DSREQ. Completed
-assessments and reportable progress are handed to `SCQUEUE`, which appends the
-exact SCR1 through DSQB→DSQ before success. `SCQR` later reads that immutable
-queue record and renders it without mutating queue state; its F1 receipt is
-stored only in private, non-relayed `DSQOUT`.
-`SCSYNC` owns the bounded port-7/SCF1 exchange and returns staged records to
-the shell's existing fail-closed commit path; it is code-release support, not
-downloaded lesson content.
+The release builder MUST enumerate program/variable names, byte lengths, and
+digests and MUST fail if a required capability is absent or an inactive route
+is included. Independent `.86p`/String transfers are preferred so a failed
+packet can be retried without accepting a partially installed monolithic group.
 
-For `SCI1`, `SCC1`, and `SCP1`, the adapter's typed-document string table is
-deterministic: each unique UTF-8 string is stored as `u16 payloadLength`, its
-payload, then one physical NUL. The length remains authoritative for decoder
-validation; the NUL is an independent bounded copy stop for the Z80 renderer.
-Both the host decoder and the calculator reader reject a malformed table rather
-than continuing into the value tree.
+## Content and prescription
 
-When an author supplies `shortTitle`, the generic Catalog uses it only for a
-narrow one-line breadcrumb; lists and non-constrained surfaces retain the full
-`title`. That is an authored display contract, not a subject-specific adapter
-rule or silent clipping policy.
-`SCNATIVE` reopens an authored `tool` module and semantically validates its
-closed TI-86 plan before displaying a locked, no-mutation status. Actual
-native settings capture/apply/restore and TI-OS launch remain release-gated.
-`SCPROF` promotes device-bound learner/progress projections and renders the
-picker/My Progress. `SCTUTOR` retains one exact `SCTQ`, validates matching
-staged `SCTR`, and renders adaptive A–E turns with disconnect-safe retry.
+The backend curates one session from a bank-backed unit in authored order and
+persists the exact bank revision, IDs/order, learner/topic, and policy. The
+calculator receives:
 
-Every compiled artifact has an adapter-generated immutable `artifactId` and
-contains the source `lessonId`. Results carry both, allowing the backend to
-interpret work completed offline against the exact downloaded artifact while
-still recording ordinary School attempts for the canonical lesson modules.
+1. one immutable non-executable artifact containing the selected cards, quiz
+   items, choice labels, and local answer evidence; and
+2. one `SCSP` device-bound prescription identifying exactly how that artifact
+   is used for the agenda study session.
 
-Executable runtime modules are not delivery artifacts or install-set members.
-They use fixed program names from a closed TI-86 build registry, an SCX1 ABI
-header, and a digest-pinned client-release manifest. The Catalog and lesson
-compiler cannot select, rename, or transport them.
+Artifact identity is content-addressed/first-write-wins. The prescription is
+session-specific and is not inferred from a locally browsable Catalog. A bank
+revision change creates different future artifacts; it never changes an open
+session.
+
+If the artifact is already installed, resolution transfers only `DSSTDNEW` and
+the exact acknowledgement transaction. If missing, the relay writes/verifies
+the artifact, then `DSSTDNEW`, then `DSSYNC` last. A staged prescription is not
+selectable before that commit.
+
+## Size gates
+
+The builder and codec validate actual encoded bytes and reject rather than
+truncate:
+
+- every visible TI-86 string/layout bound;
+- executable and free-RAM safety windows;
+- artifact and staged-replacement memory requirements;
+- the complete `SCSP` prescription/continuation representation;
+- the 48-byte durable adaptive-result draft ceiling; and
+- the 69-byte final Version-5/M result-QR ceiling.
+
+## Inactive source
+
+The following are omitted from the default v1 manifest even if their sources
+and standalone builders remain:
+
+- `SCCAT`, Catalog snapshots, and install/remove navigation;
+- `SCREQ` delivery-choice UI;
+- `SCPROF`, rosters, Guest mode, and progress projections;
+- `SCTUTOR` and realtime interaction records;
+- `SCNATIVE` and native-tool handoff;
+- notes, examples, general lesson menus, and `DSCODE`/`SCCO`.
+
+No active component may load, dispatch, or require these variables/programs.
+A research/diagnostic bundle must have a different manifest identity and must
+not be labeled the Adaptive Study v1 default release.
+
+## Packaging acceptance
+
+Automated contract tests inspect the emitted directory and manifest to prove:
+
+- all active components are present once and digest-pinned;
+- every inactive component above is absent;
+- cold launch has all state needed to show `ENTER CODE`;
+- a resolved fixture has all state needed to study, quiz, queue, and render QR
+  with no relay; and
+- removing every retained v0-only artifact from the fixture does not break an
+  active v1 route.

@@ -27,7 +27,10 @@ function sanitizeChannel(channel) {
  * Gain is capped at 1 (attenuation only, no boost). Gain ≤ 0 means silent:
  * the layer emits NO events at all (neither ons nor offs).
  *
- * @param {Array<{ticks:number,durationTicks:number,midi:number}>} notes
+ * A finite per-note `velocity` wins over the layer fallback, preserving played
+ * dynamics and builder accents. Legacy notes without one keep `opts.velocity`.
+ *
+ * @param {Array<{ticks:number,durationTicks:number,midi:number,velocity?:number}>} notes
  * @param {{ppq:number, bpm:number, transpose?:number, velocity?:number, cycleStartMs?:number, channel?:number, gain?:number}} opts
  */
 export function loopToEvents(notes, opts) {
@@ -37,12 +40,13 @@ export function loopToEvents(notes, opts) {
   // would silently mute the layer, so only finite numbers count as intent.
   const g = typeof gain === 'number' && Number.isFinite(gain) ? Math.min(1, gain) : 1;
   if (g <= 0) return []; // silent layer: skip ons AND offs entirely
-  const onVelocity = Math.max(1, Math.min(127, Math.round(velocity * g)));
   const events = [];
   for (const n of notes) {
     const onMs = cycleStartMs + ticksToMs(n.ticks, ppq, bpm);
     const offMs = onMs + ticksToMs(n.durationTicks, ppq, bpm);
     const note = n.midi + transpose;
+    const baseVelocity = Number.isFinite(n.velocity) ? n.velocity : velocity;
+    const onVelocity = Math.max(1, Math.min(127, Math.round(baseVelocity * g)));
     events.push({ t: onMs, type: 'note_on', note, velocity: onVelocity, channel: ch });
     events.push({ t: offMs, type: 'note_off', note, velocity: 0, channel: ch });
   }

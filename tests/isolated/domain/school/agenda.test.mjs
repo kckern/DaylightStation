@@ -83,6 +83,18 @@ describe('planDailyAgenda', () => {
     expect(sections[0].lockedRemedy).toBe('Finish “Unit One” first');
   });
 
+  it('carries the validated SchoolCalc descriptor through section.next without side effects', () => {
+    const schoolcalc = {
+      mode: 'adaptive_flashcards',
+      study: { cardCount: 12, maxExposuresPerCard: 4 },
+      quiz: { itemCount: 10 },
+    };
+    const input = entry({ schoolcalc });
+    const { sections } = planDailyAgenda(args({ plan: plan([input]) }));
+    expect(sections[0].next.schoolcalc).toEqual(schoolcalc);
+    expect(sections[0].next.schoolcalc).toBe(schoolcalc);
+  });
+
   it('progress: single course → Unit N of M; complete → Course complete; multi-course → x of y done', () => {
     const single = planDailyAgenda(args({ plan: plan([
       entry({ unitId: 'u1', status: 'completed' }), entry({ unitId: 'u2', sequence: 2 }),

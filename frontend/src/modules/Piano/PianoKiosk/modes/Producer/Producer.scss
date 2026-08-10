@@ -245,10 +245,48 @@
     font-size: 0.92rem;
   }
 
+  &__data-error {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    width: 100%;
+    min-height: 3rem;
+    padding: 0.55rem 0.75rem;
+    border: 1px solid var(--piano-danger, #e05a4f);
+    border-radius: 8px;
+    background: var(--piano-surface, #241618);
+    color: var(--piano-danger, #f7a29a);
+    font-size: 0.92rem;
+
+    button {
+      min-width: 5rem;
+      min-height: 2.5rem;
+      border: 1px solid currentColor;
+      border-radius: 999px;
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      font-weight: 700;
+    }
+  }
+
   &__mix-actions {
     display: flex;
     gap: 0.6rem;
     flex-wrap: wrap;
+  }
+
+  &__undo--empty {
+    min-height: 2.75rem;
+    margin: 0 0 0.65rem;
+    padding: 0.45rem 1rem;
+    border: 1px solid var(--piano-accent, #2ec46f);
+    border-radius: 999px;
+    background: var(--piano-surface, #15151d);
+    color: var(--piano-accent-text, #cfe);
+    font: 600 0.95rem 'Roboto Condensed', sans-serif;
+    cursor: pointer;
   }
 
   // The promote door: current jam -> song section ("Add to song" /
@@ -265,7 +303,7 @@
     &:hover { background: var(--piano-surface-2, #1f3329); }
   }
 
-  // Keep the whole workspace stack to the Crate (Task 8.2).
+  // Keep the whole workspace stack to My Loops.
   &__keep-stack {
     min-height: 3rem;
     padding: 0.5rem 1.2rem;
@@ -339,7 +377,7 @@
     color: var(--piano-muted, #bbc);
   }
 
-  // Editing badge: a section is loaded in the Mix (editingSectionId set).
+  // Editing badge: a section is loaded in Loop (editingSectionId set).
   &__editing {
     display: flex;
     align-items: center;
@@ -612,7 +650,7 @@
     &:hover { background: var(--piano-stage-panel, #18241c); }
   }
 
-  // Press-and-hold audition (Task 5.2): the peeked card pulses while it
+  // Audition: the previewed card pulses while it
   // sounds. Subtle box-shadow breath, not a transform — the grid must not
   // reflow under the held finger.
   &.is-peeking {
@@ -632,6 +670,31 @@
   }
 }
 
+.piano-loop-wrap {
+  position: relative;
+  .piano-loop { height: 100%; }
+}
+
+.piano-loop__preview {
+  position: absolute;
+  right: 0.45rem;
+  bottom: 0.35rem;
+  z-index: 2;
+  min-width: 5.8rem;
+  min-height: 2.65rem;
+  padding: 0.35rem 0.65rem;
+  border: 1px solid var(--piano-border, #3a3a48);
+  border-radius: 7px;
+  background: var(--piano-stage-panel, #191922);
+  color: var(--piano-accent-text, #9de4b8);
+  font: 0.82rem 'Roboto Condensed', sans-serif;
+  cursor: pointer;
+  &[aria-pressed='true'] {
+    border-color: var(--piano-accent, #2ec46f);
+    background: var(--piano-surface-2, #183124);
+  }
+}
+
 @keyframes piano-rec-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(224, 90, 79, 0.5); }
   50% { box-shadow: 0 0 0 6px rgba(224, 90, 79, 0.12); }
@@ -646,6 +709,28 @@
 // styles (plus GainStrip + VoicePicker) live in producer/ChannelStrip.scss.
 
 .piano-producer-mode__list li { position: relative; }
+
+.piano-producer-mode__my-loops-picker {
+  margin: 0.6rem;
+  padding: 0.8rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  border: 1px solid var(--piano-accent, #2ec46f);
+  border-radius: 9px;
+  background: var(--piano-stage-panel, #14141b);
+  > strong, > p { flex-basis: 100%; margin: 0; }
+  > button {
+    min-height: 3rem;
+    padding: 0.45rem 0.8rem;
+    border: 1px solid var(--piano-border, #3a3a48);
+    border-radius: 7px;
+    background: var(--piano-surface, #1a1a22);
+    color: var(--piano-fg, #eee);
+    > span { display: block; color: var(--piano-muted, #aab); font-size: 0.75rem; }
+  }
+}
 
 // Focus outlines for all interactive Producer elements.
 .piano-loop:focus-visible,

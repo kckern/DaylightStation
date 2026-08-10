@@ -11,8 +11,8 @@ This wave builds the load-bearing seams once, while keeping game mechanics delib
 narrow. It is a playable single-player card/piano slice, not evidence that a universal
 game DSL is warranted.
 
-Launch the original chord fixture at `/gaming` or `/app/gaming`. The YAML-authored scale
-pilot is registered as **Card Game** at `/piano/games` and deep-links at
+Launch the original chord fixture at `/gaming` or `/app/gaming`. The YAML-authored Pokémon
+scale pilot is registered as **Scale Stadium** at `/piano/games` and deep-links at
 `/piano/games/card-game`; it uses the kiosk's selected piano user, falling back to `guest`.
 
 ## Implemented structural seams
@@ -28,14 +28,15 @@ pilot is registered as **Card Game** at `/piano/games` and deep-links at
 | Domain ownership | Piano attempt ledger under each user | Gaming references practice evidence without owning it |
 | Provider boundary | Registered provider runtime with `ready/prepare/restore/start/cancel/dispose` | Later domains can plug in without importing into Gaming |
 | App composition | `GamingApp` and `PianoCardGame` register the piano provider | Gaming runtime remains free of Piano imports |
-| YAML game content | `shared/gaming/definitions/card-game.yml` | Cards, balance, scale pitches, ABC notation, and outcomes remain editable without game-specific React |
+| YAML game content | `shared/gaming/definitions/card-game.yml` | Combatants, cards, balance, media references, semantic challenge requests, and outcomes remain editable without changing the engine |
 | Resume | Active session id persisted per game/user in local storage | Browser reload resumes rather than silently starting another game |
 | Experience telemetry | Structured client journey events plus authoritative server outcomes | Field monitoring can separate UI abandonment, blocked hands, practice difficulty, persistence failure, and completed play |
 
 ## Tactical rescue slice
 
-The revised `card-game` is now an authored tactical encounter rather than a one-card quiz
-loop:
+The revised `card-game` is now an authored Pikachu-versus-Squirtle tactical encounter
+rather than a one-card quiz loop. Its presentation takes cues from collectible card games,
+while the battle remains deliberately smaller than the Pokémon TCG:
 
 - Players see the enemy's next attack, defense, or charge intent before committing cards.
 - A three-energy turn can contain multiple attack, guard, and focus cards before an explicit
@@ -43,8 +44,12 @@ loop:
 - Guard answers announced attacks; focus persists until and strengthens the next attack.
 - The concrete scale is selected from a rotating challenge pool after the tactical card is
   chosen, so card selection no longer doubles as scale selection.
-- Fluent, recovered, and fizzled performances produce distinct effects. Three authored
-  mistakes fizzle the card instead of allowing an infinite retry loop.
+- Fluent, recovered, and fizzled performances produce distinct effects. Electric move
+  outcomes also express Squirtle's weakness. Three authored mistakes fizzle the card
+  instead of allowing an infinite retry loop.
+- Pikachu and Squirtle identity, types, base stats, moves, and SVG references are curated
+  from the PokeAPI corpus under `media/games/pokemon`; assets stream through the existing
+  media proxy rather than being duplicated in the bundle.
 - Enemy turns resolve as explicit events, hands redraw to four cards, and both victory and
   defeat are reachable.
 - Damage has an immediate combat reaction, terminal results score and summarize the run,

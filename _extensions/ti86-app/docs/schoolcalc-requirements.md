@@ -1,8 +1,11 @@
-# SchoolCalc product requirements
+# SchoolCalc v0 product requirements (superseded reference)
 
-> **Status:** v0 greenfield requirements. This is the canonical scope and
-> boundary document for SchoolCalc. Detailed protocol, GUI, packaging, and
-> native-handoff documents refine this contract; they do not override it.
+> **Status:** Superseded by the canonical
+> [SchoolCalc Adaptive Study v1 requirements](./schoolcalc-v1-requirements.md).
+> This document preserves v0 component, content-pack, Catalog, native-tool, and
+> architecture research. Its broad learner routes and release boundary are not
+> requirements for v1. Where the documents conflict, the v1 specification
+> governs.
 
 ## 1. Product definition
 

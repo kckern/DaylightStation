@@ -54,6 +54,7 @@ const RESOLVABLE_REFS = Object.freeze({
   media: 'manifestIds',
 });
 const REFERENCE_FIELDS = [...Object.keys(RESOLVABLE_REFS), 'review'];
+const SCHOOLCALC_MODE = 'adaptive_flashcards';
 
 /**
  * `print/<id>@<rev>` — a `document` field pointing at a PUBLISHED print-
@@ -151,6 +152,7 @@ export function validateUnit(raw, sets = {}) {
   const passing = validatePassing(raw.passing, errors);
   const reward = validateReward(raw.reward, errors);
   const retry = validateRetry(raw.retry, errors);
+  const schoolcalc = validateSchoolCalc(raw.schoolcalc, raw, errors);
 
   const references = {};
   for (const [field, setName] of Object.entries(RESOLVABLE_REFS)) {
@@ -289,8 +291,57 @@ export function validateUnit(raw, sets = {}) {
       program,
       cadence,
       launch,
+      ...(schoolcalc ? { schoolcalc } : {}),
       provenance: raw.provenance,
     },
+  };
+}
+
+/**
+ * Explicit calculator opt-in. This is intentionally pure and limited to the
+ * authored policy shape; bank contents and encoded TI-86 byte ceilings are
+ * validated later by the application/adapter once the referenced bank is
+ * available. Returning a fresh object prevents planner consumers from
+ * retaining a mutable authoring object.
+ */
+function validateSchoolCalc(raw, unit, errors) {
+  if (!isPresent(raw)) return undefined;
+  if (!isPlainObject(raw)) {
+    errors.push('schoolcalc must be an object');
+    return undefined;
+  }
+  if (raw.mode !== SCHOOLCALC_MODE) {
+    errors.push(`schoolcalc.mode must be ${SCHOOLCALC_MODE}`);
+  }
+  if (!isPresent(unit.bank)) {
+    errors.push('schoolcalc requires a bank-backed unit');
+  }
+  if (!isPlainObject(raw.study)) {
+    errors.push('schoolcalc.study must be an object');
+  }
+  if (!isPlainObject(raw.quiz)) {
+    errors.push('schoolcalc.quiz must be an object');
+  }
+  const cardCount = raw.study?.cardCount;
+  const maxExposuresPerCard = raw.study?.maxExposuresPerCard;
+  const itemCount = raw.quiz?.itemCount;
+  if (!Number.isInteger(cardCount) || cardCount < 1 || cardCount > 12) {
+    errors.push('schoolcalc.study.cardCount must be an integer between 1 and 12');
+  }
+  if (!Number.isInteger(maxExposuresPerCard)
+      || maxExposuresPerCard < 1 || maxExposuresPerCard > 4) {
+    errors.push('schoolcalc.study.maxExposuresPerCard must be an integer between 1 and 4');
+  }
+  if (!Number.isInteger(itemCount) || itemCount < 1) {
+    errors.push('schoolcalc.quiz.itemCount must be an integer >= 1');
+  } else if (Number.isInteger(cardCount) && itemCount > cardCount) {
+    errors.push('schoolcalc.quiz.itemCount must not exceed schoolcalc.study.cardCount');
+  }
+  if (errors.length > 0) return undefined;
+  return {
+    mode: SCHOOLCALC_MODE,
+    study: { cardCount, maxExposuresPerCard },
+    quiz: { itemCount },
   };
 }
 

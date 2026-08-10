@@ -14,11 +14,13 @@ static constexpr const char* VAR_INSTALLED_STATE = "DSINST";
 static constexpr const char* VAR_RESULT_QUEUE = "DSQ";
 static constexpr const char* VAR_DELIVERY_REQUESTS = "DSREQ";
 static constexpr const char* VAR_INTERACTION_REQUEST = "DSTREQ";
+static constexpr const char* VAR_STUDY_ENTRY = "DSENTRY";
 // Staging names are deliberately distinct from the shell's canonical state.
 // TI silent-link writes overwrite duplicate names automatically.
 static constexpr const char* VAR_LEARNER_ROSTER_STAGE = "DSUSRNEW";
 static constexpr const char* VAR_PROGRESS_STAGE = "DSPRGNEW";
 static constexpr const char* VAR_INTERACTION_STAGE = "DSTNEW";
+static constexpr const char* VAR_STUDY_STAGE = "DSSTDNEW";
 static constexpr const char* VAR_CATALOG_STAGE = "DSCATNEW";
 static constexpr const char* VAR_ACK_STAGE = "DSACKNEW";
 static constexpr const char* VAR_SYNC_MANIFEST = "DSSYNC";
@@ -48,6 +50,9 @@ SessionOutcome SchoolCalcRelaySession::run(const char* catalogGeneration) {
   resetLength(buffers_.resultQueue);
   resetLength(buffers_.deliveryRequests);
   resetLength(buffers_.interactionRequest);
+  resetLength(buffers_.studyEntry);
+  resetLength(buffers_.studyPrescription);
+  resetLength(buffers_.studyCommit);
   resetLength(buffers_.learnerRoster);
   resetLength(buffers_.progressProjection);
   resetLength(buffers_.interactionResponse);
@@ -73,27 +78,31 @@ SessionOutcome SchoolCalcRelaySession::run(const char* catalogGeneration) {
     return outcome(false);
   }
 
-  if (!transition(SessionState::ReadingInputs, 0, 5)) return outcome(false);
+  if (!transition(SessionState::ReadingInputs, 0, 6)) return outcome(false);
   if (!readRequired(VAR_DEVICE_INFO, buffers_.deviceInfo, "SCI1",
                     SessionError::DeviceInfoMissing,
                     SessionError::InvalidDeviceInfoEnvelope)) return outcome(false);
-  if (!transition(SessionState::ReadingInputs, 1, 5)) return outcome(false);
+  if (!transition(SessionState::ReadingInputs, 1, 6)) return outcome(false);
   if (!readOptional(VAR_INSTALLED_STATE, buffers_.installedState, "SCM1",
                     SessionError::InvalidInstalledStateEnvelope,
                     SessionError::InstalledStateTooLarge)) return outcome(false);
-  if (!transition(SessionState::ReadingInputs, 2, 5)) return outcome(false);
+  if (!transition(SessionState::ReadingInputs, 2, 6)) return outcome(false);
   if (!readOptional(VAR_RESULT_QUEUE, buffers_.resultQueue, "SCQ1",
                     SessionError::InvalidResultQueueEnvelope,
                     SessionError::ResultQueueTooLarge)) return outcome(false);
-  if (!transition(SessionState::ReadingInputs, 3, 5)) return outcome(false);
+  if (!transition(SessionState::ReadingInputs, 3, 6)) return outcome(false);
   if (!readOptional(VAR_DELIVERY_REQUESTS, buffers_.deliveryRequests, "SCD1",
                     SessionError::InvalidDeliveryRequestEnvelope,
                     SessionError::DeliveryRequestTooLarge)) return outcome(false);
-  if (!transition(SessionState::ReadingInputs, 4, 5)) return outcome(false);
+  if (!transition(SessionState::ReadingInputs, 4, 6)) return outcome(false);
   if (!readOptional(VAR_INTERACTION_REQUEST, buffers_.interactionRequest, "SCTQ",
                     SessionError::InvalidInteractionRequestEnvelope,
                     SessionError::InteractionRequestTooLarge)) return outcome(false);
-  if (!transition(SessionState::ReadingInputs, 5, 5)) return outcome(false);
+  if (!transition(SessionState::ReadingInputs, 5, 6)) return outcome(false);
+  if (!readOptional(VAR_STUDY_ENTRY, buffers_.studyEntry, "SCE1",
+                    SessionError::InvalidStudyEntryEnvelope,
+                    SessionError::StudyEntryTooLarge)) return outcome(false);
+  if (!transition(SessionState::ReadingInputs, 6, 6)) return outcome(false);
   if (buffers_.installedState.length > TI86_SYNC_MANIFEST_MAX_BYTES) {
     fail(SessionError::InstalledStateTooLarge, "DSINST exceeds the TI-86 6144-byte state limit");
     return outcome(false);
@@ -107,6 +116,10 @@ SessionOutcome SchoolCalcRelaySession::run(const char* catalogGeneration) {
          "DSTREQ exceeds the TI-86 512-byte interaction-request limit");
     return outcome(false);
   }
+  if (buffers_.studyEntry.length > TI86_STUDY_ENTRY_MAX_BYTES) {
+    fail(SessionError::StudyEntryTooLarge, "DSENTRY exceeds the TI-86 64-byte entry limit");
+    return outcome(false);
+  }
 
   if (!transition(SessionState::Synchronizing, 0, 1)) return outcome(false);
   SyncPlan plan{};
@@ -117,6 +130,10 @@ SessionOutcome SchoolCalcRelaySession::run(const char* catalogGeneration) {
   request.resultQueue = view(buffers_.resultQueue);
   request.deliveryRequests = view(buffers_.deliveryRequests);
   request.interactionRequest = view(buffers_.interactionRequest);
+  request.studyEntry = view(buffers_.studyEntry);
+  request.studyPrescriptionOutput = &buffers_.studyPrescription;
+  request.studyCommitOutput = &buffers_.studyCommit;
+  request.studyArtifactOutput = &buffers_.transfer;
   request.catalogGeneration = catalogGeneration;
   if (!api_.sync(request, plan, buffers_.acknowledgement, buffers_.manifest,
                  buffers_.learnerRoster, buffers_.progressProjection,
@@ -130,6 +147,14 @@ SessionOutcome SchoolCalcRelaySession::run(const char* catalogGeneration) {
       || plan.learnerRosterLength != buffers_.learnerRoster.length
       || plan.progressProjectionLength != buffers_.progressProjection.length
       || plan.interactionResponseLength != buffers_.interactionResponse.length
+      || plan.studyPrescriptionLength != buffers_.studyPrescription.length
+      || plan.studyCommitLength != buffers_.studyCommit.length
+      || (buffers_.studyEntry.length == 0 && plan.studyResolved)
+      || (plan.studyResolved
+          && (buffers_.studyPrescription.length == 0 || buffers_.studyCommit.length == 0))
+      || (!plan.studyResolved
+          && (buffers_.studyPrescription.length != 0 || buffers_.studyCommit.length != 0
+              || plan.studyArtifactIncluded))
       || (buffers_.interactionRequest.length == 0) != (buffers_.interactionResponse.length == 0)
       || !boundedText(plan.catalogGeneration, MAX_GENERATION_BYTES)) {
     fail(SessionError::InvalidPlan, "API returned an invalid sync plan");
@@ -169,7 +194,59 @@ SessionOutcome SchoolCalcRelaySession::run(const char* catalogGeneration) {
                          SessionError::InvalidInteractionResponseEnvelope)) {
     return outcome(false);
   }
+  if (buffers_.studyPrescription.length > TI86_STUDY_PRESCRIPTION_MAX_BYTES) {
+    fail(SessionError::StudyPrescriptionTooLarge,
+         "SCSP exceeds the TI-86 512-byte study-prescription limit");
+    return outcome(false);
+  }
+  if (plan.studyResolved
+      && !validateRecord(view(buffers_.studyPrescription), "SCSP",
+                         SessionError::InvalidStudyPrescriptionEnvelope)) return outcome(false);
+  if (buffers_.studyCommit.length > TI86_STUDY_COMMIT_MAX_BYTES) {
+    fail(SessionError::StudyCommitTooLarge,
+         "SCSA exceeds the TI-86 256-byte study-commit limit");
+    return outcome(false);
+  }
+  if (plan.studyResolved
+      && !validateRecord(view(buffers_.studyCommit), "SCSA",
+                         SessionError::InvalidStudyCommitEnvelope)) return outcome(false);
   if (!transition(SessionState::Synchronizing, 1, 1)) return outcome(false);
+
+  // Adaptive resolution is an independent artifact -> prescription -> commit
+  // transaction. DSSYNC/SCSA is written last and the shell clears DSENTRY
+  // only after it validates the same device/request/code identities.
+  if (plan.studyResolved) {
+    if (plan.studyArtifactIncluded) {
+      const ArtifactDescriptor& artifact = plan.studyArtifact;
+      uint8_t ignored[12];
+      if (buffers_.transfer.length != artifact.byteLength
+          || artifact.byteLength == 0 || artifact.byteLength > TI86_ARTIFACT_MAX_BYTES
+          || !boundedText(artifact.artifactId, MAX_ARTIFACT_ID_BYTES)
+          || !validArtifactLocator(artifact) || strlen(artifact.byteDigest) != 64
+          || schoolcalc_wire::encodePaddedVariableHeader(
+               static_cast<uint16_t>(artifact.byteLength + 2),
+               schoolcalc_wire::TYPE_STRING, artifact.variableName, ignored)
+             != DecodeStatus::Ok
+          || !validateRecord(view(buffers_.transfer), "SCP1",
+                             SessionError::InvalidArtifactEnvelope)) {
+        fail(SessionError::InvalidArtifactDescriptor,
+             "study response contains invalid artifact metadata or bytes");
+        return outcome(false);
+      }
+      if (!transition(SessionState::StagingStudyArtifact, 0, 1)
+          || !writeRecord(artifact.variableName, view(buffers_.transfer))
+          || !transition(SessionState::StagingStudyArtifact, 1, 1)) return outcome(false);
+      artifactsStaged_ = 1;
+    }
+    if (!transition(SessionState::StagingStudyPrescription, 0, 1)
+        || !writeRecord(VAR_STUDY_STAGE, view(buffers_.studyPrescription))
+        || !transition(SessionState::StagingStudyPrescription, 1, 1)) return outcome(false);
+    if (!transition(SessionState::PublishingManifest, 0, 1)
+        || !writeRecord(VAR_SYNC_MANIFEST, view(buffers_.studyCommit))
+        || !transition(SessionState::PublishingManifest, 1, 1)) return outcome(false);
+    if (!transition(SessionState::AwaitingCalculatorCommit, 1, 1)) return outcome(false);
+    return outcome(true, true);
+  }
 
   // The roster is a replaceable, device-bound projection rather than part of
   // the content transaction. Stage it under a non-canonical name; SCUSER can
@@ -286,6 +363,8 @@ bool SchoolCalcRelaySession::transition(SessionState state, uint8_t itemsComplet
   } else if (state == SessionState::StagingProfiles
              || state == SessionState::StagingProgress
              || state == SessionState::StagingInteraction
+             || state == SessionState::StagingStudyArtifact
+             || state == SessionState::StagingStudyPrescription
              || state == SessionState::StagingCatalog
              || state == SessionState::StagingArtifacts
              || state == SessionState::StagingAcknowledgements
@@ -371,6 +450,8 @@ const char* sessionStateText(SessionState state) {
     case SessionState::StagingProfiles: return "staging_profiles";
     case SessionState::StagingProgress: return "staging_progress";
     case SessionState::StagingInteraction: return "staging_interaction";
+    case SessionState::StagingStudyArtifact: return "staging_study_artifact";
+    case SessionState::StagingStudyPrescription: return "staging_study_prescription";
     case SessionState::StagingCatalog: return "staging_catalog";
     case SessionState::StagingArtifacts: return "staging_artifacts";
     case SessionState::StagingAcknowledgements: return "staging_acknowledgements";
@@ -420,6 +501,12 @@ const char* sessionErrorText(SessionError error) {
     case SessionError::InteractionRequestTooLarge: return "SCTQ exceeds the TI-86 interaction-request limit";
     case SessionError::InvalidInteractionResponseEnvelope: return "SCTR interaction response is invalid";
     case SessionError::InteractionResponseTooLarge: return "SCTR exceeds the TI-86 interaction-response limit";
+    case SessionError::InvalidStudyEntryEnvelope: return "SCE1 study entry is invalid";
+    case SessionError::StudyEntryTooLarge: return "SCE1 exceeds the TI-86 study-entry limit";
+    case SessionError::InvalidStudyPrescriptionEnvelope: return "SCSP study prescription is invalid";
+    case SessionError::StudyPrescriptionTooLarge: return "SCSP exceeds the TI-86 study-prescription limit";
+    case SessionError::InvalidStudyCommitEnvelope: return "SCSA study commit is invalid";
+    case SessionError::StudyCommitTooLarge: return "SCSA exceeds the TI-86 study-commit limit";
     case SessionError::CatalogFetch: return "Catalog download failed";
     case SessionError::CatalogTooLarge: return "SCC1 Catalog exceeds the TI-86 storage limit";
     case SessionError::InvalidCatalogEnvelope: return "SCC1 Catalog is invalid";

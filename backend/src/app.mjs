@@ -250,6 +250,7 @@ import { GamingSessionService } from './3_applications/gaming/GamingSessionServi
 import { YamlGamingDefinitionStore } from './1_adapters/persistence/yaml/gaming/YamlGamingDefinitionStore.mjs';
 import { YamlGamingSessionStore } from './1_adapters/persistence/yaml/gaming/YamlGamingSessionStore.mjs';
 import { YamlPianoAttemptStore } from './1_adapters/persistence/yaml/gaming/YamlPianoAttemptStore.mjs';
+import { PianoScaleChallengePolicy } from './3_applications/piano/PianoScaleChallengePolicy.mjs';
 import { scaleClashDefinition } from '#shared/gaming/fixtures/scaleClash.mjs';
 import { createWikipediaRouter } from './4_api/v1/routers/wikipedia.mjs';
 import { WikipediaAdapter } from './1_adapters/reference/WikipediaAdapter.mjs';
@@ -1658,12 +1659,17 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const gamingSessionStore = new YamlGamingSessionStore({
     sessionsDir: configService.getHouseholdPath('history/gaming/sessions'),
   });
+  const gamingService = new GamingSessionService({
+    definitionStore: gamingDefinitionStore,
+    sessionStore: gamingSessionStore,
+    logger: rootLogger.child({ module: 'gaming' }),
+  });
+  gamingService.recoverStaleSessions();
+  const gamingRecoveryTimer = setInterval(() => gamingService.recoverStaleSessions(), 30_000);
+  gamingRecoveryTimer.unref?.();
+  server?.once?.('close', () => clearInterval(gamingRecoveryTimer));
   v1Routers.gaming = createGamingRouter({
-    gamingService: new GamingSessionService({
-      definitionStore: gamingDefinitionStore,
-      sessionStore: gamingSessionStore,
-      logger: rootLogger.child({ module: 'gaming' }),
-    }),
+    gamingService,
     logger: rootLogger.child({ module: 'gaming-api' }),
   });
 
@@ -2213,11 +2219,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     plexClient: pianoPlexClient,
     logger: rootLogger.child({ module: 'piano-api' })
   });
+  const pianoAttemptStore = new YamlPianoAttemptStore({
+    usersDir: join(configService.getDataDir(), 'users'),
+  });
   v1Routers.piano = createPianoRouter({
     pianoContainer,
-    pianoAttemptStore: new YamlPianoAttemptStore({
-      usersDir: join(configService.getDataDir(), 'users'),
-    }),
+    pianoAttemptStore,
+    pianoChallengePolicy: new PianoScaleChallengePolicy({ attemptStore: pianoAttemptStore }),
     logger: rootLogger.child({ module: 'piano-api' })
   });
 
@@ -2948,6 +2956,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       donowDatastore: donowModule?.datastore ?? null,
       tokenRegistry: schoolCalc.tokenRegistry ?? null,
       schoolCalcActionResolver: schoolCalc.actionResolver ?? null,
+      schoolCalcStudies: schoolCalc.wired ? schoolCalc.studySessions : null,
       logger: schoolLifecycleLogger
     });
   } catch (err) {
@@ -3433,6 +3442,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     printService: schoolPrintService,
     triggerDispatchService,
   });
+  if (schoolCalc.studyOutcomeExecutor && schoolLifecycle.stores?.sessions) {
+    schoolCalc.studyOutcomeExecutor.bind({ sessions: schoolLifecycle.stores.sessions });
+  }
 
   // NFC taps arriving on a hardware-relay topic (the omr-relay carries an M5
   // Unit NFC alongside the bubble-sheet reader). One tag registry decides who

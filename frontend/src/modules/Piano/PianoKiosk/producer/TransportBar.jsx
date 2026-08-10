@@ -21,7 +21,7 @@
  * @param {{current: {bar:number, beat:number}}} [props.positionRef] - transport positionRef
  * @param {number} props.bpm
  * @param {(bpm:number) => void} props.onBpm - steppers/tap emit the RAW next value; the reducer clamps 40..220
- * @param {string} props.keyLabel        - current key name (detected + shifted)
+ * @param {string} props.keyLabel        - current target-key name
  * @param {(delta:number) => void} props.onKeyNudge
  * @param {boolean} props.metronome
  * @param {() => void} props.onToggleMetronome

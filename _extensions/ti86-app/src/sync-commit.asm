@@ -37,6 +37,10 @@ sync_commit_staged:
         ld a,(device_enrolled)
         or a
         ret z
+        call sync_commit_adaptive
+        jr c,sync_commit_rejected
+        or a
+        ret nz
         call sync_validate_manifest
         jr nc,sync_commit_manifest_ready
         ; No DSSYNC is the ordinary steady state after a successful cleanup.
@@ -95,6 +99,269 @@ sync_commit_rejected:
         ld a,SC_SYNC_REJECTED
         ld (sync_status),a
         ret
+
+; Adaptive v1 uses DSSYNC/SCSA as a small exact transaction seal, independent
+; of the retained Catalog/SCM1 machinery below. Return A=1 after commit, A=0
+; when DSSYNC is not SCSA, and carry for an invalid detected transaction.
+sync_commit_adaptive:
+        ld hl,dssync_name
+        ld de,scsa_magic
+        call sc_envelope_open
+        jp c,sync_adaptive_not_present
+        ld hl,256
+        ld de,(sc_record_length)
+        or a
+        sbc hl,de
+        jp c,sync_validation_fail
+        ld de,7
+        call sync_adaptive_device
+        ret c
+        ld hl,sync_adaptive_request
+        ld b,3
+        call sync_adaptive_copy_bytes
+        ret c
+        ld hl,sync_adaptive_code
+        ld b,6
+        call sync_adaptive_copy_bytes
+        ret c
+        ld hl,sync_adaptive_prescription
+        ld c,32
+        call sync_adaptive_copy_short
+        ret c
+        ld hl,sync_adaptive_artifact_id
+        ld c,31
+        call sync_adaptive_copy_short
+        ret c
+        ld hl,32
+        add hl,de
+        jp c,sync_validation_fail
+        ex de,hl
+        call sync_adaptive_at_body_end
+        ret c
+
+        ld hl,sync_dsentry_name
+        ld de,sce1_magic
+        call sc_envelope_open
+        ret c
+        ld de,7
+        call sync_adaptive_device
+        ret c
+        ld hl,sync_adaptive_request
+        ld b,3
+        call sync_adaptive_compare_bytes
+        ret c
+        ld hl,sync_adaptive_code
+        ld b,6
+        call sync_adaptive_compare_bytes
+        ret c
+        call sync_adaptive_at_body_end
+        ret c
+
+        ld hl,sync_dsstdnew_name
+        ld de,scsp_magic
+        call sc_envelope_open
+        ret c
+        ld hl,512
+        ld de,(sc_record_length)
+        or a
+        sbc hl,de
+        jp c,sync_validation_fail
+        ld de,7
+        call sync_adaptive_device
+        ret c
+        ld hl,sync_adaptive_request
+        ld b,3
+        call sync_adaptive_compare_bytes
+        ret c
+        ld hl,sync_adaptive_code
+        ld b,6
+        call sync_adaptive_compare_bytes
+        ret c
+        ld hl,sync_adaptive_prescription
+        call sync_adaptive_compare_short
+        ret c
+        call sync_adaptive_skip_short       ; studySessionId
+        ret c
+        inc de
+        inc de                              ; learnerKey
+        ld hl,sync_adaptive_artifact_id
+        call sync_adaptive_compare_short
+        ret c
+        call sc_record_read_byte
+        ret c
+        cp 8
+        jp nz,sync_validation_fail
+        inc de
+        ld hl,sync_adaptive_artifact_name + 2
+        ld b,8
+        call sync_adaptive_copy_bytes
+        ret c
+        call sc_record_read_byte
+        ret c
+        ld (sync_expected_length),a
+        inc de
+        call sc_record_read_byte
+        ret c
+        ld (sync_expected_length + 1),a
+        inc de
+        ld hl,37                            ; digest + client/policy bytes
+        add hl,de
+        jp c,sync_validation_fail
+        ex de,hl
+        call sync_adaptive_skip_short       ; bankRevision
+        ret c
+        call sync_adaptive_at_body_end
+        ret c
+
+        ld hl,sync_adaptive_artifact_name
+        ld de,scp1_magic
+        call sc_record_open
+        ret c
+        ld hl,(sc_record_length)
+        ld de,(sync_expected_length)
+        or a
+        sbc hl,de
+        jp nz,sync_validation_fail
+        ld de,(sc_record_root_offset)
+        ld hl,field_schema
+        call sc_map_find_literal
+        ret c
+        ld hl,package_schema
+        call sc_node_string_equals_literal
+        ret c
+        or a
+        jp z,sync_validation_fail
+        ld de,(sc_record_root_offset)
+        ld hl,field_artifact_id
+        call sc_map_find_literal
+        ret c
+        ld hl,sync_adaptive_artifact_id
+        call sc_node_string_equals_literal
+        ret c
+        or a
+        jp z,sync_validation_fail
+
+        ld hl,sync_dsstdnew_name
+        ld de,sync_dsstudy_name
+        ld bc,scsp_magic
+        call sync_copy_record
+        ret c
+        ld hl,sync_dsentry_name
+        call sync_delete_if_present
+        ld hl,sync_dsstdnew_name
+        call sync_delete_if_present
+        ld hl,dssync_name                  ; final marker removed last
+        call sync_delete_if_present
+        ld a,SC_SYNC_COMMITTED
+        ld (sync_status),a
+        ld a,1
+        or a
+        ret
+
+sync_adaptive_not_present:
+        xor a
+        ret
+
+sync_adaptive_device:
+        call sc_record_read_byte
+        ret c
+        ld b,a
+        ld a,(device_id_length)
+        cp b
+        jp nz,sync_validation_fail
+        inc de
+        ld hl,device_id_value
+        jp sync_adaptive_compare_bytes
+
+sync_adaptive_copy_bytes:
+        ld a,b
+        or a
+        ret z
+sync_adaptive_copy_loop:
+        call sc_record_read_byte
+        ret c
+        ld (hl),a
+        inc hl
+        inc de
+        djnz sync_adaptive_copy_loop
+        xor a
+        ret
+
+sync_adaptive_compare_bytes:
+        ld a,b
+        or a
+        ret z
+sync_adaptive_compare_loop:
+        call sc_record_read_byte
+        ret c
+        cp (hl)
+        jp nz,sync_validation_fail
+        inc hl
+        inc de
+        djnz sync_adaptive_compare_loop
+        xor a
+        ret
+
+sync_adaptive_copy_short:
+        call sc_record_read_byte
+        ret c
+        or a
+        jp z,sync_validation_fail
+        cp c
+        jp nc,sync_validation_fail
+        ld b,a
+        inc de
+        call sync_adaptive_copy_bytes
+        ret c
+        xor a
+        ld (hl),a
+        ret
+
+sync_adaptive_compare_short:
+        call sc_record_read_byte
+        ret c
+        ld b,a
+        or a
+        jp z,sync_validation_fail
+        inc de
+        push de
+        ld c,0
+sync_adaptive_literal_length:
+        ld a,(hl)
+        or a
+        jr z,sync_adaptive_literal_ready
+        inc hl
+        inc c
+        jr sync_adaptive_literal_length
+sync_adaptive_literal_ready:
+        pop de
+        ld a,b
+        cp c
+        jp nz,sync_validation_fail
+        ld b,0
+        or a
+        sbc hl,bc
+        ld b,c
+        jp sync_adaptive_compare_bytes
+
+sync_adaptive_skip_short:
+        call sc_record_read_byte
+        ret c
+        ld l,a
+        ld h,0
+        inc de
+        add hl,de
+        jp c,sync_validation_fail
+        ex de,hl
+        or a
+        ret
+
+sync_adaptive_at_body_end:
+        ld hl,(sc_record_body_end)
+        or a
+        sbc hl,de
+        ret z
+        jp sync_validation_fail
 
 ; Validate fixed SCM1 layout and every artifact in its complete installed set.
 ; No calculator variable is changed on this path.
@@ -1045,12 +1312,19 @@ sync_queue_match:             defb 0
 sync_queue_delete:            defb 0
 sync_queue_record_start:      defw 0
 sync_queue_record_end:        defw 0
+sync_adaptive_request:        defs 3,0
+sync_adaptive_code:           defs 7,0
+sync_adaptive_prescription:   defs 33,0
+sync_adaptive_artifact_id:    defs 32,0
 
 scm1_magic:            defb "SCM1"
 sca1_magic:            defb "SCA1"
 scq1_magic:            defb "SCQ1"
 scc1_magic:            defb "SCC1"
 scp1_magic:            defb "SCP1"
+sce1_magic:            defb "SCE1"
+scsp_magic:            defb "SCSP"
+scsa_magic:            defb "SCSA"
 field_artifact_id:     defb "artifactId",0
 field_generation_key: defb "generationKey",0
 package_schema:        defb "school.calc.ti86-package/v2",0
@@ -1067,4 +1341,8 @@ dscat1_name:      defb 0x0C,6,"DSCAT1",0,0
 dsinst0_name:     defb 0x0C,7,"DSINST0",0
 dsinst1_name:     defb 0x0C,7,"DSINST1",0
 dsinst_name:      defb 0x0C,6,"DSINST",0,0
+sync_dsentry_name:     defb 0x0C,7,"DSENTRY",0
+sync_dsstdnew_name:    defb 0x0C,8,"DSSTDNEW"
+sync_dsstudy_name:     defb 0x0C,7,"DSSTUDY",0
 sync_artifact_name: defb 0x0C,8,0,0,0,0,0,0,0,0
+sync_adaptive_artifact_name: defb 0x0C,8,0,0,0,0,0,0,0,0

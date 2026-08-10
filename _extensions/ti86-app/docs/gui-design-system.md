@@ -4,6 +4,61 @@ SchoolCalc is a portable learning product with device-specific shells. This
 document defines the TI-86 realization while keeping pedagogical concepts and
 content independent of calculator family.
 
+> **Adaptive Study v1 release profile:** The foundations, framebuffer,
+> typography, shell regions, input boundary, choice controls, result/QR views,
+> sync states, and durability rules in this document are retained
+> infrastructure. The canonical v1 learner flow and exact card rails are in
+> [`schoolcalc-v1-requirements.md`](./schoolcalc-v1-requirements.md).
+> Catalog, Home, lesson, reader, profile, progress, tutor, and native-handoff
+> templates below are retained design research and are inactive in the default
+> v1 installation.
+
+## Adaptive Study v1 profile
+
+Every launch begins on an `ENTER CODE` template. The only normal route is code
+entry/resolution, adaptive StudyCard, study summary, A-E ChoiceQuestion, Result,
+and QR; Sync is entered only to resolve a new code or deliver queued results.
+A contextual Resume action may appear on Enter Code without changing that
+startup destination.
+
+The adaptive card rail is fixed and sparse:
+
+| Surface | F1 | F2 | F3 | F4 | F5 |
+| --- | --- | --- | --- | --- | --- |
+| front | `FLIP` | blank | blank | blank | blank |
+| back | `FLIP` | blank | `AGAIN` | `HARD` | `KNOW` |
+
+Empty means no pixels and no key behavior. In particular, the general v0
+`F2 BACK` exception does not apply to adaptive cards. `EXIT` is the power-safe
+pause path. After study the summary exposes `F5 QUIZ`; after the result is
+durably queued, Result exposes QR and return-to-code actions. Re-entering the
+completed local code reopens Result.
+
+The study summary is four aligned label/value rows—`KNOWN`, `HARD`, `AGAIN`,
+and `UNRESOLVED`—and every row includes its numeric count. Quiz screens replace
+the study title with `QUIZ: <subject>` from the immutable artifact while keeping
+the current item position at the right edge.
+
+The adaptive card body is always bounded by a one-pixel frame at x=1..126 and
+y=9..54. Text-only pages are centered by measured line width and total block
+height. A graphic page divides the interior into an upper vector canvas and a
+lower two-line caption band; the border, header, and rail never move. Vector
+art is authored in normalized coordinates and compiled to bounded monochrome
+line/label commands, so geometry diagrams remain editable content rather than
+full-screen bitmap payloads.
+
+The v1 QR template renders a Version-5/M symbol whose actual encoded payload is
+at most 69 bytes. It does not treat optical display as acknowledgement. Plain
+recovery text is mandatory for unknown, closed, unauthorized, incompatible,
+memory-blocked, and interrupted code resolutions.
+
+Before relay verification, Sync uses a bordered four-position moving `LINK`
+meter. It is explicitly indeterminate: motion means the calculator is still
+polling, not that content bytes have arrived. A verified handshake replaces it
+with the existing direction/phase view and determinate item bar. Terminal
+headers use `DONE` for success and `STOP` for blocked, cancelled, disconnected,
+or protocol-failure states, with safe-unplug guidance in the body.
+
 ## Taxonomy
 
 ```text
@@ -81,7 +136,10 @@ course or subject.
 
 ### Resource budget
 
-A factory-reset TI-86 reports 98,224 bytes of user RAM. SchoolCalc targets:
+A factory-reset TI-86 reports 98,224 bytes of user RAM. The table preserves
+reviewed per-component ceilings; rows for Catalog, delivery requests, native,
+profile, and tutor runtimes are inactive v0/future budgets and do not imply
+inclusion in the Adaptive Study v1 package:
 
 | Allocation | Target |
 | --- | ---: |
@@ -104,11 +162,12 @@ A factory-reset TI-86 reports 98,224 bytes of user RAM. SchoolCalc targets:
 
 The ordinary executable begins at `$D748`; the live LCD begins at `$FC00`.
 Keeping each executable within its reviewed window leaves clear working room
-before the display. The standard client is a build-pinned ten-program release:
-`SCHLCALC`, `SCLEARN`, `SCQR`, `SCCAT`, `SCREQ`, `SCQUEUE`, `SCSYNC`, and
-`SCNATIVE`, plus `SCPROF` and `SCTUTOR`; the first nine ship in the core group
-and the tutor ships in a second group due the TI-86 group-section limit. Each TI variable
-is also charged conservative storage overhead. A content
+before the display. The retained v0 client was a build-pinned ten-program
+release (`SCHLCALC`, `SCLEARN`, `SCQR`, `SCCAT`, `SCREQ`, `SCQUEUE`, `SCSYNC`,
+`SCNATIVE`, `SCPROF`, and `SCTUTOR`). The Adaptive Study v1 default manifest is
+the smaller shell/learn/queue/QR/sync boundary in
+[`schoolcalc-packaging.md`](./schoolcalc-packaging.md). Each TI variable is also
+charged conservative storage overhead. A content
 artifact targets 8 KB and has a 12 KB hard ceiling so an update can be installed
 without first destroying the usable old copy. Optional reviewed runtimes reduce
 lesson capacity and are admitted from actual reported free RAM, never from an
@@ -123,6 +182,7 @@ SchoolCalc uses a custom bitmap family from
 
 | Face | Glyph and advance | Use |
 | --- | --- | --- |
+| `code-7x8` | 7×8, digit-only linked subset | Six-digit Enter Code value exclusively |
 | `compact-3x5` | 3×5 on 4×6 | Uppercase header chrome, dense lists, badges, F-key labels |
 | `reader-4x6` | Up to 4×6, proportional 2–5 px advance on 7 px lines | Mixed-case notes, cards, explanations, and prompts |
 | `display-5x7` | 5×7 on 6×8 | Short answers, scores, and critical emphasis |
@@ -139,10 +199,12 @@ advances while wide glyphs such as `m` keep the full 5 pixels. Its `g`, `j`,
 scanline as a descender; other lines retain that pixel as breathing room.
 
 Full-screen bitmaps are golden references, not the production storage format.
-Generated font tables use one byte per visible glyph row (5, 6, or 7 bytes per
+Generated general font tables use one byte per visible glyph row (5, 6, or 7 bytes per
 glyph), not a padded eight-byte cell. The unused low three bits of the first
 row carry glyph advance; the reader's unused low nibble in its sixth row packs
 the optional descender. Both features therefore add no per-glyph storage.
+The code face is emitted separately as eleven exact eight-byte bitmaps (dash
+and digits 0-9), so unused ASCII glyphs cannot consume the shell budget.
 
 ### Context headers
 
@@ -398,7 +460,9 @@ blocks while clamping at the beginning/end.
 | Catalog | learner-scoped Header (subject left, active learner right), BrowseList, availability markers, rail, OPEN/BACK/USER/SYNC |
 | Lesson | Header, module BrowseList, INFO/MARK |
 | Info document | Header, margin, ProseBlocks, rail, optional MARK |
-| Study card | Info document + card position + FLIP/MARK |
+| Study card (v0 reference) | Info document + card position + FLIP/MARK |
+| Adaptive study card (v1) | Header/card position, fixed border, centered text or vector-canvas/caption split, exact sparse FLIP/AGAIN/HARD/KNOW rail |
+| Enter code (v1) | `ENTER CODE` header, exclusive `code-7x8` six-digit editor, resolution status, optional contextual Resume |
 | Choice question | Prompt, choices, A–E softkeys |
 | Numeric/text response | Prompt, input component, unit/help actions |
 | Result | ResultSummary, QueueIndicator, QR/SYNC |

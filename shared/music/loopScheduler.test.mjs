@@ -69,6 +69,16 @@ describe('loopToEvents', () => {
     assert.equal(loud.find((e) => e.type === 'note_on').velocity, 127);
   });
 
+  it('preserves per-note dynamics while retaining the layer velocity fallback', () => {
+    const dynamic = loopToEvents([
+      { ticks: 0, durationTicks: 120, midi: 60, velocity: 110 },
+      { ticks: 120, durationTicks: 120, midi: 62, velocity: 70 },
+      { ticks: 240, durationTicks: 120, midi: 64 },
+    ], { ppq: 480, bpm: 120, velocity: 90, gain: 0.5 });
+    const ons = dynamic.filter((event) => event.type === 'note_on');
+    assert.deepEqual(ons.map((event) => event.velocity), [55, 35, 45]);
+  });
+
   it('leaves note_off velocity at 0 regardless of gain', () => {
     const ev = loopToEvents(notes, { ppq: 480, bpm: 120, gain: 0.5 });
     assert.equal(ev.find((e) => e.type === 'note_off').velocity, 0);

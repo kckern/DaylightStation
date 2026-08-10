@@ -1,13 +1,16 @@
 #!/usr/bin/env node
-/** Hermetic production-session coverage for the semantic Catalog/quiz/progress fixture. */
+/** Hermetic production-session coverage for the Adaptive Study relay transaction. */
 import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { createSemanticFixture } from './test-tilem-wire-relay.mjs';
-import { commitTi86StagedSync, inspectTi86CommittedSync } from '../../../ti86-app/tools/lib/ti86-sync-commit.mjs';
-import { acknowledgeTi86DeliveryQueueBatch } from '../../../ti86-app/tools/lib/ti86-delivery-queue.mjs';
+import {
+  decodeTi86Envelope,
+  decodeTi86StudyAcknowledgement,
+  decodeTi86StudyPrescription,
+} from '../../../../backend/src/1_adapters/schoolcalc/ti86/Ti86SchoolCalcCodec.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIRMWARE = path.resolve(HERE, '..');
@@ -24,22 +27,28 @@ try {
     }
     const values = Object.fromEntries(readFileSync(report, 'utf8').trim().split('\n').map((line) => line.split('=')));
     if (values.ok !== 'true' || values.state !== 'awaiting_calculator_commit'
-        || values.writes !== 'DSUSRNEW,DSPRGNEW,DSTNEW,DSCATNEW,DP7L3CWY,DSACKNEW,DSSYNC') {
+        || values.writes !== 'DPKW3GZA,DSSTDNEW,DSSYNC') {
       throw new Error(`virtual relay report was incomplete: ${JSON.stringify(values)}`);
     }
-    const variables = stagedCalculatorVariables(fixture.directory);
-    const commit = commitTi86StagedSync(variables);
-    const committed = inspectTi86CommittedSync(variables);
-    const delivery = acknowledgeTi86DeliveryQueueBatch(readFileSync(path.join(fixture.directory, 'DSREQ.bin')),
-      readFileSync(path.join(fixture.directory, 'SCM1.bin')));
-    if (!commit.committed || variables.has('DSQ') || delivery !== null
-        || committed.installed?.value.installedArtifacts[0]?.variableName !== 'DP7L3CWY') {
-      throw new Error('calculator commit model did not atomically promote the staged semantic transaction');
+    const artifact = decodeTi86Envelope(readFileSync(path.join(fixture.directory, 'SCP1.bin')), 'SCP1');
+    const prescription = decodeTi86StudyPrescription(readFileSync(path.join(fixture.directory, 'SCSP.bin')));
+    const acknowledgement = decodeTi86StudyAcknowledgement(readFileSync(path.join(fixture.directory, 'SCSA.bin')));
+    if (prescription.sessionCode !== '001234' || prescription.requestId !== 77
+        || prescription.artifactId !== artifact.artifactId
+        || prescription.artifactVariableName !== 'DPKW3GZA'
+        || artifact.lesson?.modules?.[0]?.type !== 'flashcards'
+        || artifact.lesson?.modules?.[1]?.type !== 'quiz'
+        || acknowledgement.sessionCode !== prescription.sessionCode
+        || acknowledgement.prescriptionId !== prescription.prescriptionId
+        || acknowledgement.artifactId !== artifact.artifactId) {
+      throw new Error('adaptive transaction records do not identify the same immutable session and artifact');
     }
     process.stdout.write(`${JSON.stringify({
-      schema: 'school.calc.virtual-relay/v1', flows: ['catalog-download', 'quiz-upload', 'reportable-progress'],
+      schema: 'school.calc.virtual-relay/v1',
+      flows: ['adaptive-artifact-download', 'adaptive-prescription', 'adaptive-commit'],
       state: values.state, writes: values.writes.split(','),
-      calculatorCommit: { queueRetired: !variables.has('DSQ'), deliveryRequestRetired: delivery === null },
+      study: { sessionCode: prescription.sessionCode, requestId: prescription.requestId,
+        artifactId: prescription.artifactId },
     })}\n`);
   } finally {
     rmSync(workspace, { recursive: true, force: true });
@@ -59,12 +68,4 @@ function build(workspace) {
   ], { encoding: 'utf8' });
   if (compile.status !== 0) throw new Error(`could not compile virtual relay: ${(compile.stderr || compile.stdout).trim()}`);
   return output;
-}
-
-function stagedCalculatorVariables(directory) {
-  const read = (name) => readFileSync(path.join(directory, `${name}.bin`));
-  return new Map([
-    ['DSID', read('DSID')], ['DSQ', read('DSQ')], ['DSREQ', read('DSREQ')],
-    ['DSCATNEW', read('SCC1')], ['DP7L3CWY', read('SCP1')], ['DSACKNEW', read('SCA1')], ['DSSYNC', read('SCM1')],
-  ]);
 }

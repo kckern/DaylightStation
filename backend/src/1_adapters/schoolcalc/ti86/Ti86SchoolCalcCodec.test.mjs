@@ -14,9 +14,16 @@ import {
   decodeTi86LearnerRoster,
   decodeTi86ProgressProjection,
   decodeTi86SyncManifest,
+  decodeTi86StudyEntry,
+  decodeTi86StudyPrescription,
+  decodeTi86StudyAcknowledgement,
+  crc16Ccitt,
   encodeTi86Envelope,
   encodeTi86DeliveryRequests,
   encodeTi86DeviceInfo,
+  encodeTi86StudyEntry,
+  encodeTi86StudyPrescription,
+  encodeTi86StudyAcknowledgement,
   encodeTi86ResultQueue,
   encodeTi86ResultRecord,
   encodeTi86InteractionRequest,
@@ -158,6 +165,49 @@ describe('Ti86SchoolCalcCodec', () => {
       .toThrow('TI-86 Catalog projection is invalid');
     expect(() => codec.encodeCatalog({ ...catalog, catalogs: [...catalog.catalogs, catalog.catalogs[0]] }))
       .toThrow('TI-86 Catalog projection is invalid');
+  });
+
+  it('round-trips the durable SCE1 entry claim with leading zeroes intact', () => {
+    const record = encodeTi86StudyEntry({
+      deviceId: '86A001', requestId: 0x12_3456, sixDigitCode: '001234',
+    });
+    expect(record.toString('ascii', 0, 4)).toBe('SCE1');
+    expect(decodeTi86StudyEntry(record)).toEqual({
+      schema: 'school.calc.study-entry/v1',
+      deviceId: '86A001', requestId: 0x12_3456, sixDigitCode: '001234',
+    });
+    expect(() => encodeTi86StudyEntry({
+      deviceId: '86A001', requestId: 1, sixDigitCode: '12345',
+    })).toThrow(/six-digit code/);
+    expect(() => decodeTi86StudyEntry(Buffer.from(record).fill(0, record.length - 2)))
+      .toThrow(/checksum failed/);
+  });
+
+  it('round-trips an exact device-bound SCSP prescription', () => {
+    const prescription = {
+      schema: 'school.calc.study-prescription/v1', deviceId: '86A001', requestId: 99,
+      sessionCode: '001234', prescriptionId: 'p-abc123', studySessionId: 'study-one',
+      learnerKey: 7, artifactId: 'sc:ti86:abc', artifactVariableName: 'DPABC123',
+      artifactByteLength: 2048, artifactDigest: 'ab'.repeat(32), requiredClientVersion: 1,
+      cardCount: 12, itemCount: 10, maxExposuresPerCard: 4, passingPercent: 80,
+      bankRevision: '0123456789ab',
+    };
+    const record = encodeTi86StudyPrescription(prescription);
+    expect(record.subarray(0, 4).toString('ascii')).toBe('SCSP');
+    expect(decodeTi86StudyPrescription(record)).toEqual(prescription);
+    expect(() => encodeTi86StudyPrescription({ ...prescription, itemCount: 13 })).toThrow(/invalid/);
+    expect(() => encodeTi86StudyPrescription({ ...prescription, cardCount: 13 })).toThrow(/invalid/);
+    expect(() => encodeTi86StudyPrescription({ ...prescription, artifactDigest: 'short' })).toThrow(/invalid/);
+  });
+
+  it('round-trips the exact SCSA commit acknowledgement written as DSSYNC', () => {
+    const acknowledgement = {
+      schema: 'school.calc.study-acknowledgement/v1', deviceId: '86A001', requestId: 99,
+      sessionCode: '001234', prescriptionId: 'p-abc123', artifactId: 'sc:ti86:ABC2345678',
+      prescriptionDigest: 'cd'.repeat(32),
+    };
+    expect(decodeTi86StudyAcknowledgement(encodeTi86StudyAcknowledgement(acknowledgement)))
+      .toEqual(acknowledgement);
   });
 
   it('encodes a bounded active learner roster with stable keys and synthetic Guest omitted', () => {
@@ -660,6 +710,78 @@ describe('Ti86SchoolCalcCodec', () => {
       responses: [{ itemIndex: 0, given: 2 }],
       localScore: { correct: 1, total: 1, percent: 100 },
     });
+  });
+
+  it('round-trips the compact adaptive study result within the Version-5/M ceiling', () => {
+    const codec = new Ti86SchoolCalcCodec();
+    const quizChoices = [1, 3, 5, 2, 4, 1, 2, 3, 4, 5];
+    const result = {
+      schema: 'school.calc.result/v1', kind: 'responses',
+      deviceId: 'DEVICE1234567890', sequence: 0x12_3456, learnerKey: 42,
+      artifactId: 'sc:ti86:ABC234DEFG', moduleIndex: 0,
+      responses: quizChoices.map((given, itemIndex) => ({ itemIndex, given })),
+      localScore: { correct: 8, total: 10, percent: 80, basis: 'embedded_answer_key' },
+      adaptiveStudy: {
+        sessionCode: '012345',
+        cards: [
+          { rating: 'again', exposureCount: 4 }, { rating: 'know', exposureCount: 1 },
+          { rating: 'hard', exposureCount: 4 }, { rating: 'know', exposureCount: 2 },
+          { rating: 'again', exposureCount: 4 }, { rating: 'know', exposureCount: 1 },
+          { rating: 'hard', exposureCount: 4 }, { rating: 'know', exposureCount: 3 },
+          { rating: 'again', exposureCount: 4 }, { rating: 'know', exposureCount: 1 },
+          { rating: 'hard', exposureCount: 4 }, { rating: 'know', exposureCount: 2 },
+        ],
+        quizChoices,
+      },
+    };
+    const bytes = encodeTi86ResultRecord(result);
+    expect(bytes).toHaveLength(63);
+    expect(bytes.length).toBeLessThanOrEqual(69);
+    expect(codec.decodeResult(bytes)).toMatchObject(result);
+    expect(codec.decodeResult(encodeTi86ResultRecord(result, { qrText: true })))
+      .toEqual(codec.decodeResult(bytes));
+  });
+
+  it('rejects noncanonical or inconsistent adaptive study telemetry', () => {
+    const base = {
+      schema: 'school.calc.result/v1', kind: 'responses',
+      deviceId: '86A001', sequence: 21, learnerKey: 4,
+      artifactId: 'sc:ti86:ABC234DEFG', moduleIndex: 0,
+      responses: [{ itemIndex: 0, given: 2 }],
+      localScore: { correct: 1, total: 1, percent: 100, basis: 'embedded_answer_key' },
+      adaptiveStudy: {
+        sessionCode: '001234', cards: [{ rating: 'know', exposureCount: 1 }], quizChoices: [2],
+      },
+    };
+    expect(() => encodeTi86ResultRecord({
+      ...base, adaptiveStudy: { ...base.adaptiveStudy, sessionCode: '1234' },
+    })).toThrow(/six-digit sessionCode/);
+    expect(() => encodeTi86ResultRecord({
+      ...base, adaptiveStudy: { ...base.adaptiveStudy, cards: [{ rating: 'easy', exposureCount: 1 }] },
+    })).toThrow(/rating\/exposure/);
+    expect(() => encodeTi86ResultRecord({
+      ...base, adaptiveStudy: { ...base.adaptiveStudy, quizChoices: [5] },
+    })).toThrow(/exactly match/);
+
+    const odd = encodeTi86ResultRecord({
+      ...base,
+      adaptiveStudy: {
+        sessionCode: '001234',
+        cards: [
+          { rating: 'know', exposureCount: 1 },
+          { rating: 'hard', exposureCount: 4 },
+          { rating: 'again', exposureCount: 4 },
+        ],
+        quizChoices: [2],
+      },
+    });
+    // Last card is the high nibble of byte 39 for this six-byte device fixture;
+    // poison its canonical low padding and repair the envelope checksum.
+    const poisoned = Buffer.from(odd);
+    const adaptiveCardTail = poisoned.length - 2 - 1 - 1 - 1;
+    poisoned[adaptiveCardTail] |= 0x01;
+    poisoned.writeUInt16LE(crc16Ccitt(poisoned.subarray(0, -2)), poisoned.length - 2);
+    expect(() => new Ti86SchoolCalcCodec().decodeResult(poisoned)).toThrow(/non-zero padding/);
   });
 
   it('round-trips compact probe attempts while scoring only the first response', () => {

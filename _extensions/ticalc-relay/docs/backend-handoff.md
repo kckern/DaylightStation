@@ -1,5 +1,14 @@
 # Backend handoff: School content to calculator artifacts
 
+> **Adaptive Study v1 scope:** Keep the DDD placement, codec registry,
+> immutable artifact repository, authenticated relay boundary, and idempotent
+> result importer described here. The canonical v1 application flow adds
+> agenda-issued study sessions, code resolution, and device-bound
+> prescriptions as specified in
+> [`../../ti86-app/docs/schoolcalc-v1-requirements.md`](../../ti86-app/docs/schoolcalc-v1-requirements.md).
+> Catalog/profile/progress/tutor use cases remain source/reference material and
+> are not the default learner release.
+
 Status: backend vertical slice implemented; the TI-86 application release now
 has owned-ROM/virtual-Graph-Link acceptance evidence, while physical
 shell/relay acceptance remains. Updated 2026-08-03.

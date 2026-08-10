@@ -2,6 +2,12 @@ import express from 'express';
 import { shortId } from '#domains/core/utils/id.mjs';
 import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/index.mjs';
 import { musicXmlToNotes } from '#shared/music/musicXmlToNotes.mjs';
+import {
+  PRODUCER_ID_RE,
+  PRODUCER_SCHEMA_VERSION,
+  normalizeProducerRecord,
+  validateProducerRecord,
+} from '#apps/piano/producerRecords.mjs';
 
 /**
  * Piano kiosk API.
@@ -61,7 +67,7 @@ import { musicXmlToNotes } from '#shared/music/musicXmlToNotes.mjs';
  *   Menu activity strip:
  *   GET    /activity/recent                  → { players: [...] }  (per-player most-recent lesson-course progress)
  */
-export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, logger = console }) {
+export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pianoChallengePolicy = null, logger = console }) {
   if (!pianoContainer) throw new Error('createPianoRouter: pianoContainer required');
   const router = express.Router();
   const ds = pianoContainer.studioDatastore;
@@ -112,6 +118,32 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, lo
     });
     logger.info?.('piano.attempt.saved', { userId: req.params.userId, attemptId: attempt.attempt_id, status: attempt.status });
     res.status(201).json(attempt);
+  }));
+
+  router.post('/users/:userId/challenges/prepare', asyncHandler((req, res) => {
+    if (!pianoChallengePolicy) return res.status(501).json({ error: 'Challenge policy unavailable' });
+    if (!ds.isKnownUser(req.params.userId) && req.params.userId !== 'guest') {
+      return res.status(400).json({ error: 'Invalid user' });
+    }
+    const body = req.body || {};
+    if (typeof body.challenge_id !== 'string' || typeof body.kind !== 'string') {
+      return res.status(400).json({ error: 'Invalid challenge request' });
+    }
+    const prepared = pianoChallengePolicy.prepare({
+      userId: req.params.userId,
+      challengeId: body.challenge_id,
+      kind: body.kind,
+      requirements: body.requirements,
+      context: body.context,
+    });
+    logger.info?.('piano.challenge.prepared', {
+      userId: req.params.userId,
+      challengeId: body.challenge_id,
+      kind: body.kind,
+      policyVersion: prepared.pedagogy_policy_version,
+      challengeLabel: prepared.prompt?.label || null,
+    });
+    res.json(prepared);
   }));
 
   // Loop-library manifest: walk the five MusicXML brick folders, bake per-beat
@@ -243,7 +275,6 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, lo
   // Ids MUST be dot-free ([a-z0-9-]): FileIO/DataService append `.yml` by inspecting
   // the trailing extension, so a dot in the id would corrupt the filename (MEMORY.md).
   // The same charset also blocks `/`, `\`, `..` and uppercase → no path traversal.
-  const PRODUCER_ID_RE = /^[a-z0-9-]{1,64}$/;
   // Required top-level payload field per family (the "heavy" note/layer/section data).
   const PRODUCER_REQUIRED = { loops: 'notes', crate: 'layers', songs: 'sections' };
 
@@ -255,6 +286,10 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, lo
       kind: data.kind ?? null,
       author: data.author ?? null,
       created: data.created ?? null,
+      modified: data.modified ?? null,
+      revision: data.revision,
+      schemaVersion: data.schemaVersion,
+      contentHash: data.contentHash,
     };
     if (data.title != null) light.title = data.title;
     if (typeof data.favorite === 'boolean') light.favorite = data.favorite;
@@ -273,6 +308,33 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, lo
     return light;
   };
 
+  // Stored records are not repaired on read. Silent normalization made an old
+  // or corrupt YAML file look healthy to the client even though the next save,
+  // reload, or referenced-loop lookup could fail. Migration is an explicit,
+  // backup-first operation; runtime reads therefore fail closed and identify
+  // every bad record without hiding the healthy remainder of a household list.
+  const hasValidStoredLoop = (loopId) => {
+    const loop = ds.getProducer('loops', loopId);
+    return !!loop
+      && loop.id === loopId
+      && validateProducerRecord('loops', loop).length === 0;
+  };
+
+  const inspectStoredProducer = (family, id, raw) => {
+    const errors = raw && typeof raw === 'object'
+      ? validateProducerRecord(family, raw, {
+        hasLoop: hasValidStoredLoop,
+      })
+      : ['record must be an object'];
+    if (raw?.id !== id) errors.unshift(`id must match filename: ${id}`);
+    return { data: raw, errors };
+  };
+
+  const reportStoredProducerError = (family, id, errors) => {
+    logger.error?.('piano.producer.stored-invalid', { family, id, errors });
+    return { id, errors };
+  };
+
   // Register the CRUD quintet per family in a loop. Because only the three known
   // families get routes, an unknown family (/producer/bogus) falls through to 404.
   for (const family of ['loops', 'crate', 'songs']) {
@@ -281,15 +343,31 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, lo
 
     // GET /producer/{family} → light listing (household pool, no author filter).
     router.get(`/producer/${family}`, asyncHandler((req, res) => {
-      const items = ds.listProducer(family).map(({ id, data }) => producerLight(family, id, data));
-      res.json({ items });
+      const items = [];
+      const invalidRecords = [];
+      for (const { id, data: raw } of ds.listProducer(family)) {
+        const { data, errors } = inspectStoredProducer(family, id, raw);
+        if (errors.length) invalidRecords.push(reportStoredProducerError(family, id, errors));
+        else items.push(producerLight(family, id, data));
+      }
+      res.json({ items, invalidRecords });
     }));
 
     // GET /producer/{family}/:id → full record.
     router.get(`/producer/${family}/:id`, (req, res) => {
       if (!PRODUCER_ID_RE.test(req.params.id)) return bad(res, 'Invalid id');
-      const data = ds.getProducer(family, req.params.id);
-      if (!data) return res.status(404).json({ error: `${family} record not found` });
+      const raw = ds.getProducer(family, req.params.id);
+      if (!raw) return res.status(404).json({ error: `${family} record not found` });
+      const { data, errors } = inspectStoredProducer(family, req.params.id, raw);
+      if (errors.length) {
+        reportStoredProducerError(family, req.params.id, errors);
+        return res.status(422).json({
+          error: 'Stored Producer record is invalid',
+          code: 'PRODUCER_RECORD_INVALID',
+          id: req.params.id,
+          errors,
+        });
+      }
       res.json(data);
     });
 
@@ -304,12 +382,28 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, lo
       // shortId() draws from a mixed-case charset; producer ids must be dot-free
       // AND match [a-z0-9-], so lowercase it (collision-safe at 10 chars).
       const id = shortId().toLowerCase();
-      const data = {
+      let data = normalizeProducerRecord(family, {
         ...payload,
         id,
         author,
         created: new Date().toISOString(),
-      };
+      }, { id });
+      const errors = validateProducerRecord(family, data, {
+        hasLoop: hasValidStoredLoop,
+      });
+      if (errors.length) return bad(res, errors.join('; '));
+      // Re-saving one captured take or one unchanged crate item is idempotent.
+      // Songs are intentionally excluded: Save As must always mint a record.
+      if (data.dedupeKey && family !== 'songs') {
+        const existing = ds.listProducer(family).find(({ id: candidateId, data: candidate }) => {
+          const inspected = inspectStoredProducer(family, candidateId, candidate);
+          return inspected.errors.length === 0 && candidate.dedupeKey === data.dedupeKey;
+        });
+        if (existing) {
+          res.set('X-Producer-Deduped', 'true');
+          return res.status(200).json(existing.data);
+        }
+      }
       ds.saveProducer(family, id, data);
       logger.info?.('piano.producer.save', { family, id, author });
       res.status(201).json(data);
@@ -318,16 +412,45 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, lo
     // PATCH /producer/{family}/:id → partial curate (title/favorite + shallow merge).
     router.patch(`/producer/${family}/:id`, asyncHandler((req, res) => {
       if (!PRODUCER_ID_RE.test(req.params.id)) return bad(res, 'Invalid id');
-      const data = ds.getProducer(family, req.params.id);
-      if (!data) return res.status(404).json({ error: `${family} record not found` });
+      const current = ds.getProducer(family, req.params.id);
+      if (!current) return res.status(404).json({ error: `${family} record not found` });
+      const currentErrors = inspectStoredProducer(family, req.params.id, current).errors;
+      if (currentErrors.length) {
+        reportStoredProducerError(family, req.params.id, currentErrors);
+        return res.status(422).json({
+          error: 'Stored Producer record is invalid',
+          code: 'PRODUCER_RECORD_INVALID',
+          id: req.params.id,
+          errors: currentErrors,
+        });
+      }
       const patch = (req.body && typeof req.body === 'object') ? req.body : {};
+      const currentRevision = Number.isInteger(current.revision) ? current.revision : 1;
+      if (patch.expectedRevision != null && patch.expectedRevision !== currentRevision) {
+        return res.status(409).json({ error: 'revision conflict', current: currentRevision });
+      }
       // Never let a patch rewrite identity/provenance.
-      const { id: _id, author: _author, created: _created, ...mergeable } = patch;
-      Object.assign(data, mergeable);
-      if (typeof patch.title === 'string' && patch.title.trim()) data.title = patch.title.trim();
-      if (typeof patch.favorite === 'boolean') data.favorite = patch.favorite;
+      const {
+        id: _id, author: _author, created: _created, schemaVersion: _schemaVersion,
+        revision: _revision, modified: _modified, contentHash: _contentHash,
+        dedupeKey: _dedupeKey, expectedRevision: _expectedRevision, ...mergeable
+      } = patch;
+      const now = new Date().toISOString();
+      const data = normalizeProducerRecord(family, {
+        ...current,
+        ...mergeable,
+        title: typeof patch.title === 'string' && patch.title.trim() ? patch.title.trim() : current.title,
+        favorite: typeof patch.favorite === 'boolean' ? patch.favorite : current.favorite,
+        schemaVersion: PRODUCER_SCHEMA_VERSION,
+        revision: currentRevision + 1,
+        modified: now,
+      }, { id: req.params.id, now });
+      const errors = validateProducerRecord(family, data, {
+        hasLoop: hasValidStoredLoop,
+      });
+      if (errors.length) return bad(res, errors.join('; '));
       ds.saveProducer(family, req.params.id, data);
-      res.json({ id: req.params.id, title: data.title ?? null, favorite: !!data.favorite });
+      res.json(data);
     }));
 
     // DELETE /producer/{family}/:id → { ok, id }.

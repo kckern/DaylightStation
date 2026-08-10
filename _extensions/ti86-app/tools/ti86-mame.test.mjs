@@ -30,6 +30,9 @@ describe('TI-86 MAME safety gate', () => {
       ON: { port: ':ON', mask: 0x01 },
       UP: { port: ':BIT3', mask: 0x01 },
       F1: { port: ':BIT4', mask: 0x40 },
+      '0': { port: ':BIT0', mask: 0x10 },
+      '1': { port: ':BIT1', mask: 0x10 },
+      '9': { port: ':BIT3', mask: 0x04 },
     });
     expect(normalizeMameTi86Key(' exit ')).toBe('EXIT');
     expect(() => normalizeMameTi86Key('ESC')).toThrow(/unsupported/);

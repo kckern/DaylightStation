@@ -77,6 +77,25 @@ describe('TI-86 Z80 staged-sync contract', () => {
     expect(ASM).toContain('No DSSYNC is the ordinary steady state');
     expect(ASM).toMatch(/call sync_validate_manifest[\s\S]*cp SC_RECORD_ERROR_NOT_FOUND[\s\S]*ret z/);
   });
+
+  it('commits an exact adaptive prescription transaction and acknowledges last', () => {
+    expect(ASM).toContain('call sync_commit_adaptive');
+    expect(ASM).toContain('ld hl,sync_dsentry_name');
+    expect(ASM).toContain('ld hl,sync_dsstdnew_name');
+    expect(ASM).toContain('ld de,sync_dsstudy_name');
+    expect(ASM).toContain('ld de,scsa_magic');
+    expect(ASM).toContain('ld de,sce1_magic');
+    expect(ASM).toContain('ld de,scsp_magic');
+    const adaptive = ASM.match(/sync_commit_adaptive:[\s\S]*?sync_adaptive_not_present:/)?.[0];
+    expect(adaptive).toBeTruthy();
+    expect(adaptive.indexOf('ld hl,sync_dsentry_name')).toBeLessThan(
+      adaptive.lastIndexOf('ld hl,dssync_name'),
+    );
+    expect(adaptive.indexOf('ld hl,sync_dsstdnew_name')).toBeLessThan(
+      adaptive.lastIndexOf('ld hl,dssync_name'),
+    );
+    expect(adaptive).toMatch(/ld hl,sync_dsstdnew_name[\s\S]*ld de,sync_dsstudy_name[\s\S]*call sync_copy_record/);
+  });
 });
 
 function readEquate(name) {

@@ -169,6 +169,18 @@ before making the cable connection.
 
 ## Build and flash
 
+For owned-ROM capture and the MAME virtual Graph Link lane, build the macOS
+host utility and its pinned tilibs dependencies under this extension:
+
+```sh
+_extensions/ticalc-relay/tools/build-ti86-graph-link.sh
+```
+
+The checked-in patch avoids sending a zero-byte DBUS packet when a transfer is
+an exact multiple of libticalcs' progress block size. Without it, MAME artifact
+installs can hang after the final full chunk. The build needs the Homebrew
+`glib`, `libusb`, `libarchive`, `pkg-config`, and autotools packages.
+
 ```sh
 cd _extensions/ticalc-relay/firmware
 node tools/gen-config.mjs <data-dir>/household/config/ticalc-relay.yml

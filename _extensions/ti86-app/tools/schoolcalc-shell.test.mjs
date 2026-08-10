@@ -69,6 +69,14 @@ describe('SchoolCalc production shell build', () => {
     expect(bootPath).toContain('call sync_commit_staged');
     expect(SHELL_SOURCE).not.toContain('include "content-hydration.asm"');
     expect(SHELL_SOURCE).toContain('include "generated/ui-shell-assets.inc"');
+    expect(SHELL_SOURCE).toMatch(
+      /shell_code_glyph_pointer:\s+cp '-'\s+jr nz,shell_code_glyph_digit\s+xor a\s+jr shell_code_glyph_index_ready/,
+    );
+    expect(SHELL_SOURCE).toMatch(/ld hl,code_instruction\s+ld b,32\s+ld c,15/);
+    expect(SHELL_SOURCE).toMatch(/ld hl,code_prompt\s+ld b,36/);
+    expect(SHELL_SOURCE).toMatch(/shell_softkey_f1_ready:\s+ld b,2/);
+    expect(SHELL_SOURCE).toContain('softkey_open:           defb " OPEN",0');
+    expect(SHELL_SOURCE).toContain('softkey_resume:         defb "RESUME",0');
     expect(SHELL_SOURCE).toContain('NO RELAY DETECTED');
     expect(SHELL_SOURCE).toContain('Safe to unplug');
     expect(SHELL_SOURCE).not.toContain('Cable: connected');

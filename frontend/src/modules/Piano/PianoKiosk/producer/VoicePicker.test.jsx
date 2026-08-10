@@ -5,9 +5,10 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { VoicePicker } from './VoicePicker.jsx';
 import {
-  VoicePicker, voiceName, BASE_VOICES, FRIENDLY_VOICE_NAMES, GM_FAMILY_SECTIONS,
-} from './VoicePicker.jsx';
+  voiceName, BASE_VOICES, FRIENDLY_VOICE_NAMES, GM_FAMILY_SECTIONS,
+} from './voicePickerModel.js';
 import { GM_PROGRAMS } from './presetManifest.js';
 
 const FRIENDLY = [

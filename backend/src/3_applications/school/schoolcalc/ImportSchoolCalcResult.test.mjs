@@ -87,6 +87,8 @@ function harness({
   clock = () => new Date('2026-08-01T15:00:00.000Z'),
   remediationOffers = null,
   probeEvidenceRepository = null,
+  studySessions = null,
+  studyOutcomes = null,
 } = {}) {
   const codec = { platformId: 'future' };
   const ledger = new MemoryLedger();
@@ -111,12 +113,79 @@ function harness({
     progress,
     remediationOffers,
     probeEvidenceRepository,
+    studySessions,
+    studyOutcomes,
     clock,
   });
   return { importer, grader, progress, ledger };
 }
 
 describe('ImportSchoolCalcResult', () => {
+  it('validates adaptive telemetry, settles ordinary work, and closes the code on first acceptance', async () => {
+    const quizArtifact = artifact({
+      interpretation: {
+        schema: 'school.calc.artifact-interpretation/v1',
+        bundle: { lesson: {
+          lessonId: 'adaptive-linear',
+          modules: [
+            { moduleId: 'adaptive-study', type: 'flashcards', bank: bank() },
+            { moduleId: 'adaptive-quiz', type: 'quiz', bank: bank() },
+          ],
+        } },
+      },
+    });
+    const session = {
+      studySessionId: 'study-one', workSessionId: 'work-one', learnerId: 'learner-a', status: 'open',
+      artifact: { artifactId: quizArtifact.artifactId },
+      resolution: { deviceId: 'DEVICE01', learnerKey: 4 },
+      curation: { policy: { cardCount: 1, itemCount: 1, maxExposuresPerCard: 4, passingPercent: 80 } },
+    };
+    const studySessions = {
+      getByCode: vi.fn(async () => session),
+      close: vi.fn(async () => ({ status: 'accepted' })),
+    };
+    const studyOutcomes = { execute: vi.fn(async () => ({ status: 'settled', result: 'passed', percent: 100 })) };
+    const { importer } = harness({ storedArtifact: quizArtifact, studySessions, studyOutcomes });
+    const adaptive = result({
+      moduleIndex: 1,
+      adaptiveStudy: {
+        sessionCode: '001234', cards: [{ rating: 'know', exposureCount: 1 }], quizChoices: [2],
+      },
+    });
+    await expect(importer.execute({ record: adaptive, transport: 'qr' })).resolves.toMatchObject({
+      status: 'accepted', outcome: { study: { result: 'passed' } },
+    });
+    expect(studyOutcomes.execute).toHaveBeenCalledWith(expect.objectContaining({
+      studySession: session, percent: 100, passingPercent: 80,
+    }));
+    expect(studySessions.close).toHaveBeenCalledWith(expect.objectContaining({
+      studySessionId: 'study-one', resultDigest: 'digest-a', outcome: 'passed',
+    }));
+  });
+
+  it('rejects unresolved final cards below their authored exposure cap', async () => {
+    const quizArtifact = artifact({ interpretation: {
+      schema: 'school.calc.artifact-interpretation/v1',
+      bundle: { lesson: { lessonId: 'adaptive', modules: [
+        { moduleId: 'study', type: 'flashcards', bank: bank() },
+        { moduleId: 'quiz', type: 'quiz', bank: bank() },
+      ] } },
+    } });
+    const studySessions = { getByCode: async () => ({
+      studySessionId: 'study-one', learnerId: 'learner-a', status: 'open',
+      artifact: { artifactId: quizArtifact.artifactId }, resolution: { deviceId: 'DEVICE01', learnerKey: 4 },
+      curation: { policy: { cardCount: 1, itemCount: 1, maxExposuresPerCard: 4, passingPercent: 80 } },
+    }) };
+    const { importer, ledger } = harness({
+      storedArtifact: quizArtifact, studySessions, studyOutcomes: { execute: vi.fn() },
+    });
+    await expect(importer.execute({ record: result({
+      moduleIndex: 1,
+      adaptiveStudy: { sessionCode: '001234', cards: [{ rating: 'hard', exposureCount: 3 }], quizChoices: [2] },
+    }), transport: 'relay' })).rejects.toThrow(/invalid final telemetry/);
+    expect(ledger.entries.size).toBe(0);
+  });
+
   it('imports QR and cable through one idempotency identity and grades the exact artifact snapshot', async () => {
     const { importer, grader, ledger } = harness();
     const first = await importer.execute({ record: result(), transport: 'qr' });

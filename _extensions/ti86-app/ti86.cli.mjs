@@ -37,6 +37,10 @@ import {
 } from './tools/lib/ti86-screen-text.mjs';
 import { parseTi86StringFile } from './tools/inspect-ti86-string.mjs';
 import { decodeTi86OutputReceipt } from './tools/lib/ti86-output-receipt.mjs';
+import {
+  formatTi86AdaptiveResultInspection,
+  inspectTi86AdaptiveResultQueue,
+} from './tools/lib/ti86-adaptive-result.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_ROM = '/private/tmp/schoolcalc-ti86a.rom';
@@ -65,6 +69,10 @@ const ALPHA = Object.freeze({
 
 try {
   const options = parseArgs(process.argv.slice(2));
+  if (options.inspectResultFile) {
+    process.stdout.write(`${inspectAdaptiveResultFile(options.inspectResultFile)}\n`);
+    process.exit(0);
+  }
   if (options.detach) {
     process.stdout.write(detach(options));
     process.exit(0);
@@ -99,14 +107,15 @@ async function run(options) {
   }
   writeFileSync(path.join(romDirectory, descriptor.filename), rom);
   const readyFile = path.join(runPath, 'release-ready');
-  const receiptGateFile = path.join(runPath, 'receipt-read');
+  const diagnosticGateFile = path.join(runPath, 'diagnostics-read');
   const receiptFile = path.join(runPath, 'DSQOUT.86s');
+  const resultQueueFile = path.join(runPath, 'DSQ.86s');
   const luaPath = path.join(runPath, 'console.lua');
   const actions = buildActions(options, manifest);
   writeFileSync(luaPath, buildLua({
     readyFile, actions, holdFrames: options.holdFrames, settleFrames: options.settleFrames,
     screens: options.screens, debugMemory: options.debugMemory,
-    receiptGateFile: options.debugReceipt ? receiptGateFile : null,
+    diagnosticGateFile: options.debugReceipt || options.debugResult ? diagnosticGateFile : null,
   }));
 
   const priorPtys = new Set(listPtys());
@@ -148,15 +157,26 @@ async function run(options) {
     const receipt = options.debugReceipt
       ? await collectOutputReceipt({
         output: () => output, command: options.graphLink, device: pty,
-        receiptFile, receiptGateFile, timeoutMs: options.scenarioTimeoutMs,
+        receiptFile, timeoutMs: options.scenarioTimeoutMs,
       })
       : null;
+    const adaptiveResult = options.debugResult
+      ? await collectAdaptiveResult({
+        output: () => output, command: options.graphLink, device: pty,
+        resultQueueFile, timeoutMs: options.scenarioTimeoutMs,
+      })
+      : null;
+    if (options.debugReceipt || options.debugResult) writeFileSync(diagnosticGateFile, 'verified\n');
     const completion = await waitForExit(mame, options.scenarioTimeoutMs);
     if (completion.code !== 0) throw new Error(`MAME exited ${completion.code}: ${tail(output)}`);
     if (!output.includes('SCHOOLCALC_CLI_PASS')) throw new Error(`emulator console did not complete: ${tail(output)}`);
     const screens = parseCapturedScreens(output);
     if (screens.length === 0) throw new Error('emulator console emitted no LCD screen');
-    const diagnostics = [parseMemoryDiagnostic(output), receipt && formatReceiptDiagnostic(receipt)].filter(Boolean);
+    const diagnostics = [
+      parseMemoryDiagnostic(output),
+      receipt && formatReceiptDiagnostic(receipt),
+      adaptiveResult && formatTi86AdaptiveResultInspection(adaptiveResult),
+    ].filter(Boolean);
     return `${screens.map((screen) => formatScreen(screen, options.screen)).join('\n\n')}${diagnostics.length ? `\n\n${diagnostics.join('\n')}` : ''}\n`;
   } finally {
     if (mame.exitCode == null && mame.signalCode == null) mame.kill('SIGTERM');
@@ -226,14 +246,14 @@ function textActions(character) {
   throw new Error(`--text cannot enter '${character}' on the TI-86 v0 console`);
 }
 
-function buildLua({ readyFile, actions, holdFrames, settleFrames, screens, debugMemory, receiptGateFile }) {
+function buildLua({ readyFile, actions, holdFrames, settleFrames, screens, debugMemory, diagnosticGateFile }) {
   const actionRows = actions.map((action) => action.kind === 'wait'
     ? `{ kind='wait', frames=${action.frames}, label=${lua(action.label)} }`
     : `{ kind='key', key=${lua(action.key)}, label=${lua(action.label)}, port=${lua(KEYS[action.key][0])}, mask=0x${KEYS[action.key][1].toString(16)} }`);
   return `local READY_FILE=${lua(readyFile)}\n`
     + `local HOLD=${holdFrames}\nlocal SETTLE=${settleFrames}\nlocal SCREENS=${screens === 'each' ? 'true' : 'false'}\n`
     + `local DEBUG_ADDRESS=${debugMemory?.address ?? -1}\nlocal DEBUG_LENGTH=${debugMemory?.length ?? 0}\n`
-    + `local RECEIPT_GATE=${receiptGateFile ? lua(receiptGateFile) : "''"}\n`
+    + `local DIAGNOSTIC_GATE=${diagnosticGateFile ? lua(diagnosticGateFile) : "''"}\n`
     + `local actions={${actionRows.join(',')}}\n`
     + `local cpu=manager.machine.devices[':maincpu']\nlocal memory=cpu and cpu.spaces['program'] or nil\nlocal pc=cpu and (cpu.state['PC'] or cpu.state['rPC']) or nil\nlocal ports=manager.machine.ioport.ports\n`
     + `local frame,index,phase,deadline,field=0,0,'wait-release',0,nil\nlocal shell_hit,shell_entry=false,0\n`
@@ -244,9 +264,9 @@ function buildLua({ readyFile, actions, holdFrames, settleFrames, screens, debug
     + `local function ready() local f=io.open(READY_FILE,'rb'); if not f then return false end; f:close(); return true end\n`
     + `local function debug_memory()\n`
     + ` if DEBUG_LENGTH<=0 then return end; local bytes={} for offset=0,DEBUG_LENGTH-1 do bytes[#bytes+1]=string.format('%02X',memory:read_u8(DEBUG_ADDRESS+offset)) end; print(string.format('SCHOOLCALC_MEMORY address=%04X bytes=%s',DEBUG_ADDRESS,table.concat(bytes,'')))\nend\n`
-    + `local function receipt_read() local f=io.open(RECEIPT_GATE,'rb'); if not f then return false end; f:close(); return true end\n`
+    + `local function diagnostics_read() local f=io.open(DIAGNOSTIC_GATE,'rb'); if not f then return false end; f:close(); return true end\n`
     + `local function next_action()\n`
-    + ` index=index+1; if index>#actions then capture('final'); debug_memory(); if RECEIPT_GATE~='' then print('SCHOOLCALC_RECEIPT_READY'); phase='wait-receipt'; return end; print('SCHOOLCALC_CLI_PASS'); manager.machine:exit(); return end\n`
+    + ` index=index+1; if index>#actions then capture('final'); debug_memory(); if DIAGNOSTIC_GATE~='' then print('SCHOOLCALC_DIAGNOSTICS_READY'); phase='wait-diagnostics'; return end; print('SCHOOLCALC_CLI_PASS'); manager.machine:exit(); return end\n`
     + ` local action=actions[index]; if action.kind=='wait' then deadline=frame+action.frames; phase='wait-action'; return end\n`
     + ` field=ports[action.port] and ports[action.port]:field(action.mask) or nil; if not field then print('SCHOOLCALC_CLI_FAIL missing-key-'..action.key); manager.machine:exit(); return end\n`
     + ` field:set_value(1); deadline=frame+HOLD; phase='release'\nend\n`
@@ -259,7 +279,7 @@ function buildLua({ readyFile, actions, holdFrames, settleFrames, screens, debug
     + ` elseif phase=='release' and frame>=deadline then field:clear_value(); field=nil; deadline=frame+SETTLE; phase='settle'\n`
     + ` elseif phase=='settle' and frame>=deadline then if SCREENS then capture(actions[index].label) end; next_action()\n`
     + ` elseif phase=='wait-action' and frame>=deadline then if SCREENS then capture(actions[index].label) end; next_action()\n`
-    + ` elseif phase=='wait-receipt' and receipt_read() then print('SCHOOLCALC_CLI_PASS'); manager.machine:exit() end\n`
+    + ` elseif phase=='wait-diagnostics' and diagnostics_read() then print('SCHOOLCALC_CLI_PASS'); manager.machine:exit() end\n`
     + `end,'schoolcalc_cli')\n`;
 }
 
@@ -270,7 +290,7 @@ function parseArgs(argv) {
     const token = argv[index];
     if (token === '--help' || token === '-h') usage();
     if (token === '--screens' || token === '--screen' || token === '--case-id' || token === '--debug-memory') { values.set(token, argv[++index]); continue; }
-    if (token === '--detach' || token === '--debug-receipt') { values.set(token, true); continue; }
+    if (token === '--detach' || token === '--debug-receipt' || token === '--debug-result') { values.set(token, true); continue; }
     if (token === '--key') { inputs.push({ kind: 'key', value: argv[++index] }); continue; }
     if (token === '--keys') {
       for (const key of String(argv[++index]).split(/[\s,]+/).filter(Boolean)) inputs.push({ kind: 'key', value: key });
@@ -278,7 +298,7 @@ function parseArgs(argv) {
     }
     if (token === '--text') { inputs.push({ kind: 'text', value: argv[++index] }); continue; }
     if (token === '--wait') { inputs.push({ kind: 'wait', frames: integer(argv[++index], '--wait') }); continue; }
-    if (token === '--rom' || token === '--bundle' || token === '--load' || token === '--transfer' || token === '--mame' || token === '--graph-link' || token === '--output' || token === '--hold-frames' || token === '--settle-frames') { values.set(token, argv[++index]); continue; }
+    if (token === '--rom' || token === '--bundle' || token === '--load' || token === '--transfer' || token === '--mame' || token === '--graph-link' || token === '--output' || token === '--hold-frames' || token === '--settle-frames' || token === '--inspect-result-file') { values.set(token, argv[++index]); continue; }
     throw new Error(`unknown option '${token}'`);
   }
   const screens = values.get('--screens') ?? 'final';
@@ -286,6 +306,12 @@ function parseArgs(argv) {
   const screen = values.get('--screen') ?? 'hybrid';
   if (!['hybrid', 'text', 'braille', 'pixels'].includes(screen)) {
     throw new Error('--screen must be hybrid, text, braille, or pixels');
+  }
+  const inspectResultFile = values.get('--inspect-result-file')
+    ? path.resolve(values.get('--inspect-result-file')) : null;
+  if (inspectResultFile) {
+    if (!existsSync(inspectResultFile)) throw new Error(`result file not found: ${inspectResultFile}`);
+    return { inspectResultFile };
   }
   const rom = path.resolve(values.get('--rom') ?? DEFAULT_ROM);
   const bundle = values.get('--bundle') && path.resolve(values.get('--bundle'));
@@ -308,6 +334,7 @@ function parseArgs(argv) {
     detach: values.get('--detach') === true,
     debugMemory,
     debugReceipt: values.get('--debug-receipt') === true,
+    debugResult: values.get('--debug-result') === true,
     load: values.get('--load') ?? null,
     mame: values.get('--mame') ?? 'mame',
     graphLink: path.resolve(values.get('--graph-link') ?? DEFAULT_GRAPH_LINK),
@@ -318,6 +345,18 @@ function parseArgs(argv) {
     transferTimeoutMs: 240_000,
     scenarioTimeoutMs: 360_000,
   };
+}
+
+function inspectAdaptiveResultFile(file) {
+  const bytes = readFileSync(file);
+  if (bytes.subarray(0, 8).toString('ascii') === '**TI86**') {
+    const parsed = parseTi86StringFile(bytes);
+    if (parsed.name !== 'DSQ') throw new Error(`result transfer contains ${parsed.name}, expected DSQ`);
+    return formatTi86AdaptiveResultInspection(
+      inspectTi86AdaptiveResultQueue(parsed.variableData.subarray(2)),
+    );
+  }
+  return formatTi86AdaptiveResultInspection(inspectTi86AdaptiveResultQueue(bytes));
 }
 
 // A complete virtual Graph Link transfer is deliberately paced; it can outlive
@@ -406,16 +445,24 @@ function transferRelease(command, files, device, timeoutMs) {
   });
 }
 
-async function collectOutputReceipt({ output, command, device, receiptFile, receiptGateFile, timeoutMs }) {
-  await waitForOutput(output, /SCHOOLCALC_RECEIPT_READY/, timeoutMs, 'calculator did not reach QR receipt collection');
+async function collectOutputReceipt({ output, command, device, receiptFile, timeoutMs }) {
+  await waitForOutput(output, /SCHOOLCALC_DIAGNOSTICS_READY/, timeoutMs, 'calculator did not reach diagnostic collection');
   const receive = await receiveVariable(command, 'DSQOUT', receiptFile, device, 60_000);
   if (receive.code !== 0) throw new Error(`DSQOUT receipt read failed: ${receive.output}`);
   const parsed = parseTi86StringFile(readFileSync(receiptFile));
   if (parsed.name !== 'DSQOUT') throw new Error(`receipt transfer returned ${parsed.name}, expected DSQOUT`);
   const receipt = decodeTi86OutputReceipt(parsed.variableData.subarray(2));
   if (receipt.reportedIndexes.length === 0) throw new Error('F1 MARK returned DSQOUT without a marked result index');
-  writeFileSync(receiptGateFile, 'verified\n');
   return receipt;
+}
+
+async function collectAdaptiveResult({ output, command, device, resultQueueFile, timeoutMs }) {
+  await waitForOutput(output, /SCHOOLCALC_DIAGNOSTICS_READY/, timeoutMs, 'calculator did not reach result collection');
+  const receive = await receiveVariable(command, 'DSQ', resultQueueFile, device, 60_000);
+  if (receive.code !== 0) throw new Error(`DSQ result read failed: ${receive.output}`);
+  const parsed = parseTi86StringFile(readFileSync(resultQueueFile));
+  if (parsed.name !== 'DSQ') throw new Error(`result transfer returned ${parsed.name}, expected DSQ`);
+  return inspectTi86AdaptiveResultQueue(parsed.variableData.subarray(2));
 }
 
 function receiveVariable(command, name, file, device, timeoutMs) {
@@ -513,6 +560,8 @@ function usage(message = null) {
     + `  --screen hybrid           hybrid (default), text, braille, or exact pixels\n`
     + `  --debug-memory CAFA:32    Append a bounded final emulator-memory diagnostic\n`
     + `  --debug-receipt            Retrieve and validate F1 MARK's private DSQOUT/SCO1 receipt\n`
+    + `  --debug-result             Retrieve DSQ and decode the newest adaptive study result\n`
+    + `  --inspect-result-file PATH Decode a retained raw DSQ record or DSQ.86s without MAME\n`
     + `  --case-id NAME            Write an input + output review-case artifact\n`
     + `  --output PATH             Save the transcript (useful for long emulator runs)\n`
     + `  --detach                  Continue a long exact run in the background (requires --output)\n`

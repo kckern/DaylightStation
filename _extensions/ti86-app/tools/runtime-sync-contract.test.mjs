@@ -40,6 +40,20 @@ describe('TI-86 cooperative foreground-sync runtime', () => {
     expect(TI86_ASM_EXEC_RAM + inspected.codeByteLength).toBeLessThanOrEqual(TI86_VIDEO_RAM);
   });
 
+  it('uses concise recovery copy while an unavailable study waits for its relay', () => {
+    expect(SOURCE).toContain('sync_ui_checking:           defb "CONNECT RELAY",0');
+    expect(SOURCE).toContain('sync_ui_wait_relay:         defb "WAITING FOR LINK",0');
+    expect(SOURCE).toContain('sync_ui_no_transfer:        defb "EXIT PAUSES SAFELY",0');
+    expect(SOURCE).not.toContain('No data moving');
+  });
+
+  it('animates an indeterminate link meter while polling for an absent relay', () => {
+    expect(SOURCE).toMatch(/link_cancel_probe:[\s\S]*?sync_connected[\s\S]*?call z,sync_wait_activity_tick/);
+    expect(SOURCE).toMatch(/sync_wait_activity_tick:[\s\S]*?sync_wait_divider[\s\S]*?and 3[\s\S]*?jp sync_draw_wait_activity/);
+    expect(SOURCE).toMatch(/sync_draw_wait_activity:[\s\S]*?ld b,24[\s\S]*?ld d,101[\s\S]*?sync_wait_phase[\s\S]*?ld d,20/);
+    expect(SOURCE).toContain('sync_ui_activity:           defb "LINK",0');
+  });
+
   it('locks the calculator offer and frame envelope to the relay SCF1 v1 contract', () => {
     expect(asmEqu('SCF_FRAME_HEADER_BYTES')).toBe(cxxConstant('FRAME_HEADER_BYTES'));
     expect(asmEqu('SCF_FRAME_MAX_BYTES')).toBe(
@@ -78,14 +92,16 @@ describe('TI-86 cooperative foreground-sync runtime', () => {
     expect(asmEqu('READ_LIMIT_DSQ')).toBe(TI86_SCHOOLCALC_LIMITS.queueMaxBytes);
     expect(asmEqu('READ_LIMIT_DSREQ')).toBe(TI86_SCHOOLCALC_LIMITS.deliveryRequestMaxBytes);
     expect(asmEqu('READ_LIMIT_DSTREQ')).toBe(TI86_SCHOOLCALC_LIMITS.interactionRequestMaxBytes);
+    expect(asmEqu('READ_LIMIT_DSENTRY')).toBe(64);
     expect(asmEqu('WRITE_LIMIT_DSCATNEW')).toBe(TI86_SCHOOLCALC_LIMITS.catalogRecordMaxBytes);
     expect(asmEqu('WRITE_LIMIT_DSACKNEW')).toBe(TI86_SCHOOLCALC_LIMITS.acknowledgementMaxBytes);
     expect(asmEqu('WRITE_LIMIT_DSSYNC')).toBe(TI86_SCHOOLCALC_LIMITS.syncManifestMaxBytes);
     expect(asmEqu('WRITE_LIMIT_DSTNEW')).toBe(TI86_SCHOOLCALC_LIMITS.interactionResponseMaxBytes);
+    expect(asmEqu('WRITE_LIMIT_DSSTDNEW')).toBe(512);
     expect(asmEqu('WRITE_LIMIT_ARTIFACT')).toBe(TI86_SCHOOLCALC_LIMITS.lessonMaxBytes);
     for (const name of [
-      'DSID', 'DSINFO', 'DSINST', 'DSQ', 'DSREQ', 'DSTREQ',
-      'DSCATNEW', 'DSACKNEW', 'DSSYNC', 'DSTNEW',
+      'DSID', 'DSINFO', 'DSINST', 'DSQ', 'DSREQ', 'DSTREQ', 'DSENTRY',
+      'DSCATNEW', 'DSACKNEW', 'DSSYNC', 'DSTNEW', 'DSSTDNEW',
     ]) {
       expect(SOURCE).toContain(`defb "${name}"`);
     }
@@ -154,7 +170,7 @@ describe('TI-86 cooperative foreground-sync runtime', () => {
 
   it('makes verified presence, direction, progress, and unplug safety visible', () => {
     for (const text of [
-      'Cable: checking...', 'Cable: connected', 'Relay: verified', 'Sending to relay',
+      'CONNECT RELAY', 'Cable: connected', 'Relay: verified', 'Sending to relay',
       'Server exchange', 'Receiving from relay', 'Keep cable connected', 'Safe to unplug',
       'Cable disconnected', 'Local data preserved',
     ]) {

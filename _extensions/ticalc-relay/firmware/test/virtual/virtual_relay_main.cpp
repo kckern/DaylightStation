@@ -54,13 +54,10 @@ public:
     inputs_.emplace("DSQ", readFixture(directory, "DSQ", "SCQ1"));
     inputs_.emplace("DSREQ", readFixture(directory, "DSREQ", "SCD1"));
     inputs_.emplace("DSTREQ", readFixture(directory, "DSTREQ", "SCTQ"));
-    expectedWrites_.emplace("DSUSRNEW", readFixture(directory, "SCU1", "SCU1"));
-    expectedWrites_.emplace("DSPRGNEW", readFixture(directory, "SCG1", "SCG1"));
-    expectedWrites_.emplace("DSTNEW", readFixture(directory, "SCTR", "SCTR"));
-    expectedWrites_.emplace("DSCATNEW", readFixture(directory, "SCC1", "SCC1"));
-    expectedWrites_.emplace("DP7L3CWY", readFixture(directory, "SCP1", "SCP1"));
-    expectedWrites_.emplace("DSACKNEW", readFixture(directory, "SCA1", "SCA1"));
-    expectedWrites_.emplace("DSSYNC", readFixture(directory, "SCM1", "SCM1"));
+    inputs_.emplace("DSENTRY", readFixture(directory, "DSENTRY", "SCE1"));
+    expectedWrites_.emplace("DPKW3GZA", readFixture(directory, "SCP1", "SCP1"));
+    expectedWrites_.emplace("DSSTDNEW", readFixture(directory, "SCSP", "SCSP"));
+    expectedWrites_.emplace("DSSYNC", readFixture(directory, "SCSA", "SCSA"));
   }
 
   schoolcalc_relay::VariableReadStatus read(const char* name, MutableBytes& output) override {
@@ -76,7 +73,7 @@ public:
 
   bool write(const char* name, ByteView payload) override {
     static const char* const allowed[] = {
-      "DSUSRNEW", "DSPRGNEW", "DSTNEW", "DSCATNEW", "DP7L3CWY", "DSACKNEW", "DSSYNC",
+      "DPKW3GZA", "DSSTDNEW", "DSSYNC",
     };
     bool permitted = false;
     for (const char* candidate : allowed) if (std::strcmp(name, candidate) == 0) permitted = true;
@@ -116,7 +113,10 @@ public:
       progress_(readFixture(directory, "SCG1", "SCG1")),
       interaction_(readFixture(directory, "SCTR", "SCTR")),
       catalog_(readFixture(directory, "SCC1", "SCC1")),
-      artifact_(readFixture(directory, "SCP1", "SCP1")) {}
+      artifact_(readFixture(directory, "SCP1", "SCP1")),
+      entry_(readFixture(directory, "DSENTRY", "SCE1")),
+      prescription_(readFixture(directory, "SCSP", "SCSP")),
+      studyCommit_(readFixture(directory, "SCSA", "SCSA")) {}
 
   bool identify(ByteView value, schoolcalc_relay::DeviceIdentity& identity) override {
     if (!exact(value, identity_)) return fail("identity differs from semantic fixture");
@@ -134,22 +134,33 @@ public:
         || !exact(request.deviceInfo, info_) || !exact(request.installedState, installed_)
         || !exact(request.resultQueue, queue_) || !exact(request.deliveryRequests, requests_)
         || !exact(request.interactionRequest, interactionRequest_)
+        || !exact(request.studyEntry, entry_)
         || !copy(acknowledgement_, acknowledgement) || !copy(manifest_, manifest)
-        || !copy(roster_, roster) || !copy(progress_, progress) || !copy(interaction_, interaction)) {
+        || !copy(roster_, roster) || !copy(progress_, progress) || !copy(interaction_, interaction)
+        || request.studyPrescriptionOutput == nullptr || request.studyCommitOutput == nullptr
+        || request.studyArtifactOutput == nullptr
+        || !copy(prescription_, *request.studyPrescriptionOutput)
+        || !copy(studyCommit_, *request.studyCommitOutput)
+        || !copy(artifact_, *request.studyArtifactOutput)) {
       return fail("sync input or output differs from semantic fixture");
     }
     plan = schoolcalc_relay::SyncPlan{};
     plan.ready = true; plan.catalogChanged = true; plan.artifactCount = 1;
     std::snprintf(plan.catalogGeneration, sizeof(plan.catalogGeneration), "%s", "sha256:tilem-catalog-v1");
     auto& artifact = plan.artifacts[0];
-    std::snprintf(artifact.artifactId, sizeof(artifact.artifactId), "%s", "sc:ti86:7L3CWYLASV");
-    std::snprintf(artifact.variableName, sizeof(artifact.variableName), "%s", "DP7L3CWY");
+    std::snprintf(artifact.artifactId, sizeof(artifact.artifactId), "%s", "sc:ti86:KW3GZAALON");
+    std::snprintf(artifact.variableName, sizeof(artifact.variableName), "%s", "DPKW3GZA");
     artifact.byteLength = static_cast<uint16_t>(artifact_.size());
     std::snprintf(artifact.byteDigest, sizeof(artifact.byteDigest), "%s",
-                  "b1197821d4540e63e217284066a7fd13008a491284f1ac297f7501682b71ef3a");
+                  "7d1bd508ce9a16c3ec77ae338c08f77b9f72f2a393d1a5600455782efaa87a36");
     plan.acknowledgementLength = acknowledgement.length; plan.manifestLength = manifest.length;
     plan.learnerRosterLength = roster.length; plan.progressProjectionLength = progress.length;
     plan.interactionResponseLength = interaction.length;
+    plan.studyResolved = true;
+    plan.studyArtifactIncluded = true;
+    plan.studyPrescriptionLength = request.studyPrescriptionOutput->length;
+    plan.studyCommitLength = request.studyCommitOutput->length;
+    plan.studyArtifact = artifact;
     ++syncCalls;
     return true;
   }
@@ -163,7 +174,7 @@ public:
   }
 
   bool fetchArtifact(const schoolcalc_relay::ArtifactDescriptor& descriptor, MutableBytes& output) override {
-    if (std::strcmp(descriptor.variableName, "DP7L3CWY") != 0
+    if (std::strcmp(descriptor.variableName, "DPKW3GZA") != 0
         || descriptor.byteLength != artifact_.size() || !copy(artifact_, output)) {
       return fail("artifact request differs from semantic fixture");
     }
@@ -176,6 +187,7 @@ public:
 private:
   std::vector<uint8_t> identity_, info_, installed_, queue_, requests_, interactionRequest_;
   std::vector<uint8_t> acknowledgement_, manifest_, roster_, progress_, interaction_, catalog_, artifact_;
+  std::vector<uint8_t> entry_, prescription_, studyCommit_;
   std::string error_ = "none";
   bool fail(const char* text) { error_ = text; return false; }
 };
@@ -187,6 +199,8 @@ struct Buffers {
   std::array<uint8_t, 512> roster{}; std::array<uint8_t, 4096> progress{};
   std::array<uint8_t, 2048> interactionResponse{}; std::array<uint8_t, 544> acknowledgement{};
   std::array<uint8_t, 6144> manifest{}; std::array<uint8_t, 12288> transfer{};
+  std::array<uint8_t, 64> studyEntry{}; std::array<uint8_t, 512> studyPrescription{};
+  std::array<uint8_t, 256> studyCommit{};
   template <size_t N> static MutableBytes mutableBytes(std::array<uint8_t, N>& value) {
     return { value.data(), static_cast<uint16_t>(value.size()), 0 };
   }
@@ -194,6 +208,7 @@ struct Buffers {
     mutableBytes(identity), mutableBytes(info), mutableBytes(installed), mutableBytes(queue),
     mutableBytes(requests), mutableBytes(interactionRequest), mutableBytes(roster), mutableBytes(progress),
     mutableBytes(interactionResponse), mutableBytes(acknowledgement), mutableBytes(manifest), mutableBytes(transfer),
+    mutableBytes(studyEntry), mutableBytes(studyPrescription), mutableBytes(studyCommit),
   }; }
 };
 
@@ -207,20 +222,20 @@ int main(int argc, char* argv[]) {
     VirtualCalculator calculator(argv[2]); FixtureApi api(argv[2]); Buffers buffers;
     schoolcalc_relay::SchoolCalcRelaySession session(calculator, api, buffers.view());
     const auto outcome = session.run();
-    const std::vector<std::string> expectedReads = { "DSID", "DSINFO", "DSINST", "DSQ", "DSREQ", "DSTREQ" };
-    const std::vector<std::string> expectedWrites = { "DSUSRNEW", "DSPRGNEW", "DSTNEW", "DSCATNEW", "DP7L3CWY", "DSACKNEW", "DSSYNC" };
+    const std::vector<std::string> expectedReads = { "DSID", "DSINFO", "DSINST", "DSQ", "DSREQ", "DSTREQ", "DSENTRY" };
+    const std::vector<std::string> expectedWrites = { "DPKW3GZA", "DSSTDNEW", "DSSYNC" };
     if (!outcome.ok || outcome.state != schoolcalc_relay::SessionState::AwaitingCalculatorCommit
         || calculator.reads() != expectedReads || calculator.writes() != expectedWrites
         || api.identifyCalls != 1 || api.syncCalls != 1
-        || api.catalogCalls != 1 || api.artifactCalls != 1) {
+        || api.catalogCalls != 0 || api.artifactCalls != 0) {
       std::fprintf(stderr, "TICALC_VIRTUAL_RELAY_FAIL state=%s error=%s api=%s\n",
                    schoolcalc_relay::sessionStateText(outcome.state),
                    schoolcalc_relay::sessionErrorText(outcome.error), api.lastError());
       return 1;
     }
     std::ofstream report(argv[4], std::ios::trunc);
-    report << "ok=true\nstate=awaiting_calculator_commit\nreads=6\nwrites=DSUSRNEW,DSPRGNEW,DSTNEW,DSCATNEW,DP7L3CWY,DSACKNEW,DSSYNC\n";
-    std::puts("TICALC_VIRTUAL_RELAY_PASS catalog=1 quiz=1 progress=1");
+    report << "ok=true\nstate=awaiting_calculator_commit\nreads=7\nwrites=DPKW3GZA,DSSTDNEW,DSSYNC\n";
+    std::puts("TICALC_VIRTUAL_RELAY_PASS adaptive_artifact=1 prescription=1 acknowledgement=1");
   } catch (const std::exception& error) {
     std::fprintf(stderr, "TICALC_VIRTUAL_RELAY_FAIL detail=%s\n", error.what()); return 1;
   }

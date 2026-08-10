@@ -15,8 +15,12 @@ import {
   YamlSchoolCalcDeviceRepository,
   YamlSchoolCalcProgressRepository,
   YamlSchoolCalcResultLedger,
+  YamlSchoolCalcStudySessionRepository,
 } from '#adapters/schoolcalc/persistence/index.mjs';
 import { Ti86SchoolCalcCodec } from '#adapters/schoolcalc/ti86/index.mjs';
+import { EnsureSchoolCalcStudySession } from '#apps/school/schoolcalc/EnsureSchoolCalcStudySession.mjs';
+import { BuildAdaptiveStudyArtifact } from '#apps/school/schoolcalc/BuildAdaptiveStudyArtifact.mjs';
+import { SchoolCalcStudyOutcomeExecutor } from '#apps/school/schoolcalc/SchoolCalcStudyOutcomeExecutor.mjs';
 import { HmacSchoolActionTokenIssuer } from '#adapters/school/actions/HmacSchoolActionTokenIssuer.mjs';
 import { SchoolLearningActionExecutor } from '#adapters/school/actions/SchoolLearningActionExecutor.mjs';
 import { YamlTokenRegistry } from '#adapters/persistence/yaml/YamlTokenRegistry.mjs';
@@ -69,6 +73,17 @@ export function createSchoolCalc({
   const artifacts = new FsSchoolCalcArtifactRepository({ directory: path.join(stateRoot, 'artifacts') });
   const resultLedger = new YamlSchoolCalcResultLedger({ directory: path.join(stateRoot, 'results') });
   const progress = new YamlSchoolCalcProgressRepository({ directory: path.join(stateRoot, 'progress') });
+  const studies = new YamlSchoolCalcStudySessionRepository({ directory: path.join(stateRoot, 'studies') });
+  const ti86Codec = new Ti86SchoolCalcCodec();
+  const adaptiveArtifacts = new BuildAdaptiveStudyArtifact({ codec: ti86Codec, artifacts });
+  const studyOutcomeExecutor = new SchoolCalcStudyOutcomeExecutor();
+  const studySessions = new EnsureSchoolCalcStudySession({
+    studies,
+    banks: { getBank: (id) => schoolService.getBank(id) },
+    artifacts: adaptiveArtifacts,
+    newStudySessionId: () => `study_${Buffer.from(requireEntropy(randomBytesFactory, 8, 'study ID')).toString('hex')}`,
+    newCode: () => Buffer.from(requireEntropy(randomBytesFactory, 3, 'study code')).readUIntBE(0, 3) % 1_000_000,
+  });
   const {
     catalogs, content, lessonBundles, moduleRegistry, accessPolicy: catalogAccess,
   } = schoolCatalog;
@@ -84,7 +99,7 @@ export function createSchoolCalc({
   if (!actionTokens) logger?.warn?.('schoolcalc.actions.unwired', {
     reason: "household auth 'schoolcalc.action_token_key' is not configured",
   });
-  const codecs = [new Ti86SchoolCalcCodec()];
+  const codecs = [ti86Codec];
   const container = new SchoolCalcContainer({
     codecs,
     catalogs,
@@ -105,6 +120,9 @@ export function createSchoolCalc({
     remediationOffers,
     remediationTutor,
     probeEvidenceRepository,
+    studySessions: studies,
+    studyCodec: ti86Codec,
+    studyOutcomes: studyOutcomeExecutor,
     logger,
     clock,
   });
@@ -125,6 +143,8 @@ export function createSchoolCalc({
       actionTokens,
       actionExecutor,
       actionResolver: container.resolveAction,
+      studySessions: null,
+      studyOutcomeExecutor,
       diagnostics: diagnostics({
         contentRoot, catalogDirectories, documentDirectories, bankDirectories, actionDirectories,
         stateRoot, credentials, actionTokens,
@@ -148,6 +168,8 @@ export function createSchoolCalc({
     actionTokens,
     actionExecutor,
     actionResolver: container.resolveAction,
+    studySessions,
+    studyOutcomeExecutor,
     authenticateIngress,
     diagnostics: diagnostics({
       contentRoot, catalogDirectories, documentDirectories, bankDirectories, actionDirectories,
@@ -260,15 +282,22 @@ function resolveFromData(dataDirectory, value) {
 }
 
 function createCompactDeviceId(randomBytesFactory) {
-  const entropy = randomBytesFactory(6);
-  if (!Buffer.isBuffer(entropy) && !(entropy instanceof Uint8Array)) {
-    throw new Error('SchoolCalc device ID entropy source must return bytes');
-  }
-  if (entropy.byteLength !== 6) throw new Error('SchoolCalc device ID entropy source returned the wrong byte count');
+  const entropy = requireEntropy(randomBytesFactory, 6, 'device ID');
   // Identity names the enrolled SchoolCalc device, not its current calculator
   // family. Platform remains a separate aggregate field so a future adapter
   // does not inherit a TI-86-shaped identity policy from composition.
   return `SC${Buffer.from(entropy).toString('hex').toUpperCase()}`;
+}
+
+function requireEntropy(randomBytesFactory, byteLength, purpose) {
+  const entropy = randomBytesFactory(byteLength);
+  if (!Buffer.isBuffer(entropy) && !(entropy instanceof Uint8Array)) {
+    throw new Error(`SchoolCalc ${purpose} entropy source must return bytes`);
+  }
+  if (entropy.byteLength !== byteLength) {
+    throw new Error(`SchoolCalc ${purpose} entropy source returned the wrong byte count`);
+  }
+  return entropy;
 }
 
 function credentialDigest(token) { return createHash('sha256').update(token, 'utf8').digest(); }
@@ -307,6 +336,8 @@ function inert(reason) {
     actionTokens: null,
     actionExecutor: null,
     actionResolver: null,
+    studySessions: null,
+    studyOutcomeExecutor: null,
     diagnostics: Object.freeze({ platforms: [], relayIds: [], actionTokensConfigured: false }),
   });
 }
