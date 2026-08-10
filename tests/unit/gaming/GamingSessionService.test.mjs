@@ -37,11 +37,9 @@ describe('GamingSessionService', () => {
   it('loads the Card Game from YAML and creates scale challenges', () => {
     const svc = service();
     const loaded = svc.getDefinition('card-game');
-    expect(loaded.definition.title).toBe('Card Game');
+    expect(loaded.definition.title).toBe('Riff Raiders');
     expect(Object.values(loaded.definition.cards).every((card) => card.challenge.kind === 'scale')).toBe(true);
-    expect(Object.values(loaded.definition.cards).map((card) => card.title).sort()).toEqual([
-      'Heavy Strike', 'Power Strike', 'Quick Strike', 'Steady Strike',
-    ]);
+    expect(new Set(Object.values(loaded.definition.cards).map((card) => card.type))).toEqual(new Set(['attack', 'guard', 'focus']));
     expect(Object.values(loaded.definition.cards).every((card) => !/major|scale/i.test(card.title))).toBe(true);
     const created = svc.createSession({ game_id: 'card-game', participants: [{ user_id: 'guest' }], seed: 7 });
     const card = created.state.zones.hand[0];
@@ -50,6 +48,8 @@ describe('GamingSessionService', () => {
     });
     expect(chosen.state.pending_action.request).toMatchObject({ domain: 'piano', kind: 'scale' });
     expect(chosen.state.pending_action.request.prompt.expected_midi).toHaveLength(8);
+    expect(chosen.state.pending_action.request.context.challenge_pool).toBe('major-scales');
+    expect(loaded.definition.cards[card.definition_id].challenge.prompt).toBeUndefined();
   });
 
   it('pins the definition and replays commands authoritatively', () => {
@@ -93,6 +93,35 @@ describe('GamingSessionService', () => {
       score: 1,
       outcome: 'strong',
     }));
+  });
+
+  it('logs tactical enemy intent outcomes authoritatively', () => {
+    const logger = { info: vi.fn() };
+    const svc = service({ logger });
+    const created = svc.createSession({ game_id: 'card-game', participants: [{ user_id: 'guest' }], seed: 7 });
+    svc.applyCommand(created.session_id, {
+      command_id: 'end-turn-1', session_revision: 0, type: 'end_turn', payload: {},
+    });
+    expect(logger.info).toHaveBeenCalledWith('gaming.authority.enemy.intent.resolved', expect.objectContaining({
+      sessionId: created.session_id,
+      intentId: 'baton-strike',
+      intentKind: 'attack',
+      amount: 4,
+      damage: 4,
+      blocked: 0,
+    }));
+  });
+
+  it('applies only authored rematch upgrades', () => {
+    const svc = service();
+    const upgraded = svc.createSession({
+      game_id: 'card-game', participants: [{ user_id: 'guest' }], seed: 7, setup: { upgrade_id: 'second-wind' },
+    });
+    expect(upgraded.state.player).toMatchObject({ health: 16, max_health: 16 });
+    expect(upgraded.state.applied_upgrade).toEqual({ id: 'second-wind', title: 'Second Wind' });
+    expect(() => svc.createSession({
+      game_id: 'card-game', participants: [], setup: { upgrade_id: 'god-mode' },
+    })).toThrow(/unavailable/);
   });
 
   it('deduplicates a retry and rejects stale new commands', () => {

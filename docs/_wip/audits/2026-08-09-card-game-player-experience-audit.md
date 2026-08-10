@@ -3,6 +3,10 @@
 **Date:** 2026-08-09  
 **Verdict:** Stop shipping this as a game. The framework is serviceable; the current player loop is not.
 
+**Implementation update:** The tactical rescue described below was implemented on 2026-08-09.
+The original verdict remains the baseline until players demonstrate that the revised encounter
+meets the release gate.
+
 ## Executive finding
 
 The card game is an untimed scale drill with a hand of buttons in front of it. The card

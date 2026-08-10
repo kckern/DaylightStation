@@ -24,7 +24,7 @@ describe('CardBattleView', () => {
     fireEvent.click(cards[0]);
     expect(onChoose).toHaveBeenCalledWith(session.state.zones.hand[0].instance_id);
     expect(screen.getByText('Tap a card')).toBeTruthy();
-    expect(screen.getByText('Choose a card.')).toBeTruthy();
+    expect(screen.getByText('Play your hand.')).toBeTruthy();
     expect(screen.queryByText(/notes$/i)).toBeNull();
   });
 
@@ -33,7 +33,7 @@ describe('CardBattleView', () => {
     for (const card of Object.values(definition.cards)) card.cost = 99;
     const session = makeSession(definition);
     render(<CardBattleView session={session} onChoose={vi.fn()} onAbort={vi.fn()} />);
-    expect(screen.getByText('No card available')).toBeTruthy();
+    expect(screen.getByText('No playable card')).toBeTruthy();
     expect(screen.getByText(/No card is affordable/)).toBeTruthy();
     expect(screen.getByText('Nothing playable')).toBeTruthy();
     expect(screen.getAllByRole('button', { name: /damage/i }).every((card) => card.disabled)).toBe(true);
@@ -44,7 +44,7 @@ describe('CardBattleView', () => {
     render(
       <CardBattleView
         session={session}
-        combatResult={{ cardTitle: 'Heavy Strike', damage: 6, retaliation: 2, effectiveness: 'Full power' }}
+        combatResult={{ kind: 'card', effectKind: 'attack', cardTitle: 'Heavy Strike', damage: 6, retaliation: 2, effectiveness: 'Full power' }}
         onChoose={vi.fn()}
         onAbort={vi.fn()}
       />,
@@ -60,12 +60,75 @@ describe('CardBattleView', () => {
     render(
       <CardBattleView
         session={session}
-        combatResult={{ cardTitle: 'Steady Strike', resolving: true }}
+        combatResult={{ kind: 'card', cardTitle: 'Steady Strike', resolving: true }}
         onChoose={vi.fn()}
         onAbort={vi.fn()}
       />,
     );
-    expect(screen.getByText('Resolving attack…')).toBeTruthy();
+    expect(screen.getByText('Resolving…')).toBeTruthy();
     expect(screen.queryByText('Choose a card.')).toBeNull();
+  });
+
+  it('shows enemy intent and exposes an explicit tactical end-turn action', () => {
+    const definition = structuredClone(scaleClashDefinition);
+    definition.card_battle.turn_mode = 'tactical';
+    definition.card_battle.hand_size = 3;
+    definition.card_battle.enemy.intents = [
+      { id: 'swing', title: 'Heavy Swing', kind: 'attack', amount: 4 },
+      { id: 'brace', title: 'Brace', kind: 'defend', amount: 3 },
+    ];
+    const onEndTurn = vi.fn();
+    render(
+      <CardBattleView
+        session={makeSession(definition)}
+        onChoose={vi.fn()}
+        onEndTurn={onEndTurn}
+        onAbort={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Next move')).toBeTruthy();
+    expect(screen.getByText('Heavy Swing')).toBeTruthy();
+    expect(screen.getByText('4 damage')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'End turn' }));
+    expect(onEndTurn).toHaveBeenCalledOnce();
+  });
+
+  it('ends with a battle summary and a rematch action', () => {
+    const session = makeSession();
+    session.status = 'complete';
+    session.state.status = 'complete';
+    session.state.winner = 'player';
+    session.state.turn = 4;
+    session.state.player.health = 6;
+    const onRestart = vi.fn();
+    render(
+      <CardBattleView
+        session={session}
+        onChoose={vi.fn()}
+        onRestart={onRestart}
+        onAbort={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Victory')).toBeTruthy();
+    expect(screen.getByText('0 score · 4 turns · 6 health left')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Play again' }));
+    expect(onRestart).toHaveBeenCalledOnce();
+  });
+
+  it('lets a winner carry one authored reward into the next battle', () => {
+    const definition = structuredClone(scaleClashDefinition);
+    definition.card_battle.upgrades = [{
+      id: 'second-wind', title: 'Second Wind', description: 'Start with extra health.', effect: { max_health: 2 },
+    }];
+    const session = makeSession(definition);
+    session.status = 'complete';
+    session.state.status = 'complete';
+    session.state.winner = 'player';
+    const onRestart = vi.fn();
+    render(
+      <CardBattleView session={session} onChoose={vi.fn()} onRestart={onRestart} onAbort={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Second Wind/ }));
+    expect(onRestart).toHaveBeenCalledWith('second-wind');
   });
 });
