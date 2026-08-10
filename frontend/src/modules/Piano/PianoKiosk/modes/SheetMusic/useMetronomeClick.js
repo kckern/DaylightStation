@@ -7,15 +7,31 @@ import { createClickScheduler } from './clickScheduler.js';
  * click stays locked under main-thread jank. bpm changes retune the period
  * live WITHOUT restarting (phase is kept).
  */
-export function useMetronomeClick({ enabled, bpm, createScheduler = createClickScheduler }) {
+export function useMetronomeClick({
+  enabled,
+  bpm,
+  startDelayMs,
+  beatsPerBar,
+  firstBeatIndex,
+  createScheduler = createClickScheduler,
+}) {
   const schedRef = useRef(null);
   const bpmRef = useRef(bpm); bpmRef.current = bpm;
+  const startOptionsRef = useRef(null);
+  startOptionsRef.current = Number.isFinite(startDelayMs) || Number.isFinite(beatsPerBar)
+    ? {
+        ...(Number.isFinite(startDelayMs) ? { firstBeatDelayS: Math.max(0, startDelayMs) / 1000 } : {}),
+        ...(Number.isFinite(beatsPerBar) ? { beatsPerBar } : {}),
+        ...(Number.isFinite(firstBeatIndex) ? { firstBeatIndex } : {}),
+      }
+    : null;
 
   useEffect(() => {
     if (!enabled || !(bpmRef.current > 0)) return undefined;
     const s = createScheduler();
     schedRef.current = s;
-    s.start(bpmRef.current);
+    if (startOptionsRef.current) s.start(bpmRef.current, startOptionsRef.current);
+    else s.start(bpmRef.current);
     return () => { s.stop(); schedRef.current = null; };
   }, [enabled, createScheduler]);
 

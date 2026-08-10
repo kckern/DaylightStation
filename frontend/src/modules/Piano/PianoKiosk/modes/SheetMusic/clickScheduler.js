@@ -19,25 +19,35 @@ export function createClickScheduler({
   let timer = null;
   let nextBeat = 0;   // AudioContext-clock time of the next unscheduled beat
   let periodS = 0.5;
+  let beatsPerBar = 0;
+  let beatIndex = 0;
 
   const tick = () => {
     const ac = getCtx();
     if (!ac) return;
     const horizon = ac.currentTime + lookaheadS;
     while (nextBeat < horizon) {
-      scheduleBlip(ac, nextBeat);
+      scheduleBlip(ac, nextBeat, { accent: beatsPerBar > 0 && beatIndex === 0 });
       nextBeat += periodS;
+      if (beatsPerBar > 0) beatIndex = (beatIndex + 1) % beatsPerBar;
     }
   };
 
   return {
-    start(bpm) {
+    start(bpm, options = {}) {
       if (!(bpm > 0)) return; // guard: bpm<=0 → negative period → tick loops forever
       const ac = getCtx();
       if (!ac) return; // no WebAudio (jsdom) — silent no-op, same as playClick
       if (ac.state === 'suspended') ac.resume();
       periodS = 60 / bpm;
-      nextBeat = ac.currentTime + 0.08; // first click essentially immediately
+      const delay = Number.isFinite(options.firstBeatDelayS) ? Math.max(0, options.firstBeatDelayS) : 0.08;
+      beatsPerBar = Number.isFinite(options.beatsPerBar) && options.beatsPerBar > 0
+        ? Math.round(options.beatsPerBar)
+        : 0;
+      beatIndex = beatsPerBar > 0
+        ? ((Math.round(options.firstBeatIndex || 0) % beatsPerBar) + beatsPerBar) % beatsPerBar
+        : 0;
+      nextBeat = ac.currentTime + delay;
       tick();
       timer = setInterval(tick, tickMs);
     },

@@ -61,7 +61,7 @@
     position: relative;
     z-index: 4;
     display: grid;
-    grid-template-columns: 120px 1fr 180px;
+    grid-template-columns: 120px 1fr 132px 180px;
     align-items: center;
     gap: 18px;
     padding: 0 22px;
@@ -78,9 +78,50 @@
   }
   &__title { display: flex; flex-direction: column; text-align: center; }
   &__title strong { font-size: 21px; }
-  &__title span, &__score span { color: rgba(255,255,255,.55); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+  &__score span { color: rgba(255,255,255,.55); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+  &__tempo {
+    align-self: center;
+    margin-top: 2px;
+    padding: 2px 9px;
+    border: 0;
+    border-radius: 999px;
+    color: rgba(255,255,255,.62);
+    background: transparent;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+
+    &:not(:disabled) { background: rgba(255,255,255,.08); }
+    &:not(:disabled):active { transform: scale(.96); background: rgba(23,216,196,.18); }
+    &:disabled { opacity: .62; }
+  }
   &__score { display: flex; flex-direction: column; align-items: flex-end; }
   &__score strong { color: #38f0cf; font-size: 26px; font-variant-numeric: tabular-nums; }
+  &__metronome {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    min-height: 42px;
+    padding: 0 12px;
+    border: 1px solid rgba(255,255,255,.18);
+    border-radius: 12px;
+    color: rgba(255,255,255,.62);
+    background: rgba(255,255,255,.06);
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: .02em;
+
+    span { font-size: 22px; line-height: 1; }
+    &.is-on {
+      color: #dffef8;
+      border-color: rgba(56,240,207,.7);
+      background: rgba(23,216,196,.16);
+      box-shadow: 0 0 15px rgba(23,216,196,.18), inset 0 1px rgba(255,255,255,.1);
+    }
+    &:active { transform: scale(.97); }
+  }
   &__progress { position: absolute; inset: auto 0 0; height: 3px; background: rgba(255,255,255,.08); }
   &__progress span { display: block; height: 100%; background: #17d8c4; box-shadow: 0 0 12px #17d8c4; }
   &__keyboard { position: relative; z-index: 3; min-height: 0; }

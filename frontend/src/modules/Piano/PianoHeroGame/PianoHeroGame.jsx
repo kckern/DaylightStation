@@ -12,7 +12,10 @@ import usePianoList from '../PianoKiosk/usePianoList.js';
 import { balancedGrid } from '../PianoKiosk/tileGridLayout.js';
 import { resolveScoreGroups, groupSlug, groupIndexBySlug } from '../PianoKiosk/modes/SheetMusic/scoreGroups.js';
 import { prettyTitle } from '../PianoKiosk/modes/SheetMusic/scoreTitle.js';
-import { buildHeroChart, heroAccuracy } from './heroChart.js';
+import useMetronomeClick from '../PianoKiosk/modes/SheetMusic/useMetronomeClick.js';
+import { TempoSheet } from '../PianoKiosk/producer/TempoSheet.jsx';
+import { buildHeroChart, clampHeroTempo, heroAccuracy, retimeHeroChart } from './heroChart.js';
+import { heroMetronomePlan } from './heroMetronome.js';
 import { usePianoHeroGame } from './usePianoHeroGame.js';
 import './PianoHeroGame.scss';
 
@@ -127,18 +130,49 @@ function HeroHighway({ chart, targets, elapsedMs, fallDurationMs }) {
   );
 }
 
-function HeroGame({ song, chart, gameConfig, onChooseSong, onNoteOn, onNoteOff }) {
+export function HeroGame({ song, chart, gameConfig, onChooseSong, onNoteOn, onNoteOff }) {
+  const logger = useMemo(() => getChildLogger({ component: 'piano-hero-game' }), []);
   const { subscribe } = usePianoMidi();
-  const game = usePianoHeroGame({ chart, subscribe, config: gameConfig });
+  const [metronomeOn, setMetronomeOn] = useState(() => gameConfig?.metronomeDefault !== false);
+  const [tempoBpm, setTempoBpm] = useState(() => clampHeroTempo(gameConfig?.tempo ?? chart.tempo));
+  const [tempoSheetOpen, setTempoSheetOpen] = useState(false);
+  const activeChart = useMemo(() => retimeHeroChart(chart, tempoBpm), [chart, tempoBpm]);
+  const game = usePianoHeroGame({ chart: activeChart, subscribe, config: gameConfig });
   const { activeNotes } = usePianoMidiNotes();
-  const range = useMemo(() => computeKeyboardRange([chart.startNote, chart.endNote]), [chart.startNote, chart.endNote]);
+  const range = useMemo(() => computeKeyboardRange([activeChart.startNote, activeChart.endNote]), [activeChart.startNote, activeChart.endNote]);
   const imminent = useMemo(() => new Set(game.run.targets
     .filter((target) => target.state === 'pending' && Math.abs(target.targetTimeMs - game.elapsedMs) <= 500)
     .flatMap((target) => target.pitches)), [game.run.targets, game.elapsedMs]);
-  const countdown = game.phase === 'playing' && game.elapsedMs < chart.leadInMs
-    ? Math.ceil((chart.leadInMs - game.elapsedMs) / 1000)
+  const countdown = game.phase === 'playing' && game.elapsedMs < activeChart.leadInMs
+    ? Math.ceil((activeChart.leadInMs - game.elapsedMs) / 1000)
     : null;
-  const progress = chart.durationMs > 0 ? Math.min(100, (game.elapsedMs / chart.durationMs) * 100) : 0;
+  const progress = activeChart.durationMs > 0 ? Math.min(100, (game.elapsedMs / activeChart.durationMs) * 100) : 0;
+  const metronomePlan = heroMetronomePlan({
+    elapsedMs: game.elapsedMs,
+    leadInMs: activeChart.leadInMs,
+    bpm: activeChart.tempo,
+    beatsPerBar: activeChart.timeSig?.beats,
+  });
+  useMetronomeClick({
+    enabled: metronomeOn && game.phase === 'playing',
+    bpm: activeChart.tempo,
+    startDelayMs: metronomePlan.startDelayMs,
+    beatsPerBar: activeChart.timeSig?.beats,
+    firstBeatIndex: metronomePlan.firstBeatIndex,
+  });
+
+  const toggleMetronome = () => {
+    setMetronomeOn((on) => {
+      logger.info('hero.metronome-toggled', { enabled: !on, bpm: activeChart.tempo });
+      return !on;
+    });
+  };
+
+  const changeTempo = (nextBpm) => {
+    const next = clampHeroTempo(nextBpm);
+    setTempoBpm(next);
+    logger.info('hero.tempo-changed', { from: activeChart.tempo, to: next, scoreTempo: chart.tempo });
+  };
 
   return (
     <div className="piano-hero-game">
@@ -146,8 +180,25 @@ function HeroGame({ song, chart, gameConfig, onChooseSong, onNoteOn, onNoteOff }
         <button type="button" className="piano-hero-game__songs" onClick={onChooseSong}>Songs</button>
         <div className="piano-hero-game__title">
           <strong>{song.title}</strong>
-          <span>{chart.tempo} BPM</span>
+          <button
+            type="button"
+            className="piano-hero-game__tempo"
+            aria-label="Tempo"
+            disabled={game.phase === 'playing'}
+            title={game.phase === 'playing' ? 'Tempo can be changed between runs' : 'Change tempo'}
+            onClick={() => setTempoSheetOpen(true)}
+          >{activeChart.tempo} BPM</button>
         </div>
+        <button
+          type="button"
+          className={`piano-hero-game__metronome${metronomeOn ? ' is-on' : ''}`}
+          aria-label="Metronome"
+          aria-pressed={metronomeOn}
+          onClick={toggleMetronome}
+        >
+          <span aria-hidden="true">♩</span>
+          Click {metronomeOn ? 'on' : 'off'}
+        </button>
         <div className="piano-hero-game__score">
           <strong>{game.run.score.points.toLocaleString()}</strong>
           <span>{game.run.score.combo > 1 ? `${game.run.score.combo} note streak` : 'Score'}</span>
@@ -155,7 +206,7 @@ function HeroGame({ song, chart, gameConfig, onChooseSong, onNoteOn, onNoteOff }
         <div className="piano-hero-game__progress"><span style={{ width: `${progress}%` }} /></div>
       </header>
 
-      <HeroHighway chart={chart} targets={game.run.targets} elapsedMs={game.elapsedMs} fallDurationMs={game.timing.fallDurationMs} />
+      <HeroHighway chart={activeChart} targets={game.run.targets} elapsedMs={game.elapsedMs} fallDurationMs={game.timing.fallDurationMs} />
 
       <div className="piano-hero-game__keyboard">
         <PianoKeyboard
@@ -171,7 +222,7 @@ function HeroGame({ song, chart, gameConfig, onChooseSong, onNoteOn, onNoteOff }
       {game.phase === 'ready' && (
         <div className="piano-hero-overlay">
           <h2>{song.title}</h2>
-          <p>{chart.targets.length} note events · {chart.tempo} BPM</p>
+          <p>{activeChart.targets.length} note events · {activeChart.tempo} BPM</p>
           <button type="button" onClick={game.start}>Play</button>
         </div>
       )}
@@ -191,6 +242,13 @@ function HeroGame({ song, chart, gameConfig, onChooseSong, onNoteOn, onNoteOff }
             <button type="button" className="is-secondary" onClick={onChooseSong}>Choose a song</button>
           </div>
         </div>
+      )}
+      {tempoSheetOpen && (
+        <TempoSheet
+          bpm={activeChart.tempo}
+          onBpm={changeTempo}
+          onClose={() => setTempoSheetOpen(false)}
+        />
       )}
     </div>
   );

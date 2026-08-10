@@ -526,7 +526,14 @@ title. The selected collection is the single game-owned URL segment after
 another game id. During play, completed targets burst and vanish; expired targets pulse
 bright red before fading so success and failure cannot be confused at a
 glance. Reduced-motion clients keep the same semantic distinction with a
-short dissolve and a persistent red miss state.
+short dissolve and a persistent red miss state. An audio-clock metronome is on
+by default during Hero play and can be toggled in the HUD; its beat grid is
+phase-aligned to the score lead-in and uses the MusicXML time signature to
+accent each measure's downbeat. A household may default it off with
+`games.hero.metronomeDefault: false`. The HUD BPM opens the shared Producer
+`TempoSheet` between runs; choosing a BPM rescales Hero target onsets and note
+durations while preserving the fixed lead-in. Tempo is intentionally locked
+during an active run so the judge and falling highway cannot jump timelines.
 
 | File | Role |
 |------|------|

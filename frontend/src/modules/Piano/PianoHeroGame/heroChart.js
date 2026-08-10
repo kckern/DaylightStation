@@ -57,6 +57,7 @@ export function buildHeroChart(score, options = {}) {
   return {
     targets,
     tempo: score?.tempo || 90,
+    timeSig: score?.timeSig || { beats: 4, beatType: 4 },
     leadInMs: cfg.leadInMs,
     fallDurationMs: cfg.fallDurationMs,
     startNote: pitches.length ? Math.min(...pitches) : 60,
@@ -76,6 +77,30 @@ export function createHeroRun(chart) {
       result: null,
     })),
     score: { points: 0, combo: 0, maxCombo: 0, perfect: 0, good: 0, misses: 0, wrong: 0 },
+  };
+}
+
+export function clampHeroTempo(bpm) {
+  return Math.max(40, Math.min(220, Math.round(Number(bpm) || 90)));
+}
+
+/** Rescale a built chart to a new constant BPM while preserving its lead-in. */
+export function retimeHeroChart(chart, bpm) {
+  if (!chart) return chart;
+  const nextTempo = clampHeroTempo(bpm);
+  const sourceTempo = clampHeroTempo(chart.tempo);
+  if (nextTempo === sourceTempo) return chart;
+  const leadInMs = Number(chart.leadInMs) || 0;
+  const ratio = sourceTempo / nextTempo;
+  return {
+    ...chart,
+    tempo: nextTempo,
+    targets: chart.targets.map((target) => ({
+      ...target,
+      targetTimeMs: leadInMs + (target.targetTimeMs - leadInMs) * ratio,
+      durationMs: target.durationMs * ratio,
+    })),
+    durationMs: leadInMs + (chart.durationMs - leadInMs) * ratio,
   };
 }
 
@@ -150,4 +175,4 @@ export function heroAccuracy(run) {
   return Math.round(((run.score.perfect + run.score.good) / resolved) * 100);
 }
 
-export default { buildHeroChart, createHeroRun, applyHeroPress, advanceHeroRun, heroAccuracy };
+export default { buildHeroChart, createHeroRun, applyHeroPress, advanceHeroRun, heroAccuracy, clampHeroTempo, retimeHeroChart };
