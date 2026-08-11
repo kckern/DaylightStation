@@ -56,6 +56,7 @@ tutor, and native-tool screens must not appear or be reachable.
 | `rating-feedback` | press AGAIN, HARD, and KNOW on separate retained cases | card clears to `LOADING...` before persistence/scheduling; next surface follows |
 | `power-safe-resume` | pause after a committed rating; relaunch and re-enter code | exact next card/count resumes; no Resume shortcut appears |
 | `study-quiz-result-qr` | complete study and prescribed quiz | summary has F5 QUIZ; result exists before success; Version-5/M QR renders |
+| `quiz-exit-restudy` | press EXIT from an in-progress quiz | partial choices clear; study restarts at card one; next quiz/result reports incremented attemptCount |
 | `completed-code-result` | return to code entry and re-enter completed code | Result reopens; study/quiz do not restart |
 | `inactive-routes-absent` | exhaust all shell keys/routes | no v0 learner screen or dispatch is reachable |
 
@@ -70,6 +71,7 @@ and emit deterministic semantic fields:
 
 ```text
 sessionCode: 012345
+attemptCount: 2
 cards: 0=AGAIN/3,1=KNOW/1,2=HARD/4,...
 quizChoices: A,C,E,B,...
 score: 8/10

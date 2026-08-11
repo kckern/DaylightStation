@@ -360,8 +360,10 @@ eligible card and must not double-count the last visible exposure or rating.
 
 After every card retires, show a compact summary with an explicit numeric count
 for each of known, hard, again, and unresolved. Labels without values are not a
-summary. `F5 QUIZ` starts the one prescribed quiz. There is no same-session
-restudy or remediation loop.
+summary. `F5 QUIZ` starts the prescribed quiz and durably increments its
+attempt count. `EXIT` from any quiz item abandons the partial quiz choices,
+returns to the first card of the same immutable study prescription, and leaves
+that attempt counted. Completing study again permits another quiz attempt.
 
 Each item is one screen: at most two compact prompt rows followed by all A–E
 choices (normally four) on the same LCD. Content that cannot fit that bounded
@@ -391,6 +393,7 @@ by the same importer as other SchoolCalc results. Its logical content includes:
 
 - version/mode and integrity fields;
 - six-character session code;
+- quiz attempt count from 1-127, including abandoned attempts;
 - one four-bit card summary per prescribed card, packing the final rating and
   the exposure count 1-4;
 - one four-bit A-E quiz choice per prescribed quiz item; and
@@ -522,7 +525,7 @@ than inferring correctness from LCD pixels.
 - profile selection, Guest mode, or learner switching;
 - notes, worked examples, generic lesson menus, progress trees, realtime
   tutoring, native calculator handoff, or optional keyboard interaction;
-- same-session remediation or a second quiz attempt;
+- more than 127 same-session quiz attempts;
 - cross-session mastery adaptation; and
 - compatibility with the v0 `DSCODE`/`SCCO` continuation-code wire format.
 

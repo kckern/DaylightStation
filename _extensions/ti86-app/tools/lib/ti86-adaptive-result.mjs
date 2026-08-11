@@ -27,6 +27,7 @@ export function inspectTi86AdaptiveResultQueue(queueRecord, { index = -1 } = {})
     learnerKey: result.learnerKey,
     artifactId: result.artifactId,
     sessionCode: result.adaptiveStudy.sessionCode,
+    attemptCount: result.adaptiveStudy.attemptCount,
     cards: Object.freeze(result.adaptiveStudy.cards.map((card, cardIndex) => Object.freeze({
       index: cardIndex,
       rating: card.rating,
@@ -50,6 +51,7 @@ export function formatTi86AdaptiveResultInspection(inspection) {
     + ` index=${inspection.index} recordCount=${inspection.recordCount}`
     + ` deviceId=${inspection.deviceId} sequence=${inspection.sequence} learnerKey=${inspection.learnerKey}`
     + ` artifactId=${inspection.artifactId} sessionCode=${inspection.sessionCode}`
+    + ` attemptCount=${inspection.attemptCount}`
     + ` cards=${cards} quizChoices=${inspection.quizChoices.join(',')}`
     + ` score=${inspection.score.correct}/${inspection.score.total}`
     + ` percent=${inspection.score.percent} recordBytes=${inspection.recordBytes}`;
