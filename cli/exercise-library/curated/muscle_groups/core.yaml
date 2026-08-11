@@ -1,0 +1,9 @@
+id: 64098725-57eb-4786-b0e7-01143799a091
+name: "Core"
+slug: "core"
+description: "The core is the muscular cylinder of the trunk between the ribcage and the pelvis. The rectus abdominis flexes the spine, the obliques rotate and side-bend it, and the transverse abdominis compresses the abdomen to brace the lumbar spine. Together they transfer force between the upper and lower body and keep the trunk rigid under load."
+muscles:
+- abs
+- obliques
+- abs-lower
+- transverse-abdominis
