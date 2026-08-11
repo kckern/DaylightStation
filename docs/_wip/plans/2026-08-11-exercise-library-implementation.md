@@ -206,7 +206,7 @@ describe('buildExerciseIndex', () => {
 
   it('resolves the demo image uuid to an asset path', () => {
     const index = buildExerciseIndex(FIXTURE);
-    expect(index.exercises['push-up'].gif).toBe('assets/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa.gif');
+    expect(index.exercises['push-up'].image).toBe('assets/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa.gif');
   });
 
   it('derives group membership from muscle records, not exercise hints', () => {
@@ -255,9 +255,18 @@ Expected: FAIL — `Cannot find module './exerciseLibraryIndex.lib.mjs'`.
   record's `group`. Keep the group only if a `muscle_groups/<group>.yaml` exists. Ignore the
   exercise's own `target_groups` for membership (hint only).
 - Every unresolvable reference (unknown group, unknown muscle, unknown equipment, missing
-  asset) appends `{ kind, group|muscle|equipment|slug }` to `index.warnings` — never throws.
+  asset) is recorded in `index.warnings` — **once per distinct defect, not once per
+  reference.** A missing group referenced by 400 exercises is ONE entry carrying a `count`
+  and an example referrer; per-reference rows would bloat the very manifest this module
+  exists to keep small. Every warning uses the same skeleton, so a consumer can read "what
+  was missing" generically: `{ kind, subject, referrer, referencedBy, count }`. The builder
+  **never throws** — a corpus full of defects still yields a usable index.
+- **Keyed maps must be `Object.create(null)`.** Slugs are third-party scraped strings; a
+  record named `constructor` or `__proto__` against a plain object literal either throws or
+  silently vanishes, breaking the never-throw contract.
 - Emit `{ exercises, muscles, muscleGroups, equipment, byGroup, byMuscle, byEquipment,
-  warnings, builtAt, version }`.
+  warnings, builtAt, version, assetsResolved }`. `assetsResolved` tells the adapter whether
+  image paths are authoritative or guessed from a missing `assets/` dir.
 - `builtAt` is passed in, not read from a clock inside the function — keeps it testable.
 
 **Step 5: Run the test to verify it passes**
@@ -352,7 +361,7 @@ import { makeExercise, exerciseMatchesFilter } from './entities.mjs';
 describe('makeExercise', () => {
   it('normalizes a raw index record', () => {
     const ex = makeExercise({
-      slug: 'push-up', name: 'Push-Up', gif: 'assets/a.gif',
+      slug: 'push-up', name: 'Push-Up', image: 'assets/a.gif',
       targetMuscles: ['pectorals'], equipment: ['body-weight'],
       groups: ['chest'], instructions: ['Step one.'],
     });
@@ -444,7 +453,7 @@ it('serves exercises from the prebuilt manifest', …)
 it('never touches the corpus directory', …)   // pass a non-existent mediaDir; still works
 it('returns an empty corpus and warns when the manifest is missing', …)
 it('filters by group / muscle / equipment / q via the domain', …)
-it('resolves a gif path to a media URL', …)
+it('resolves an image path to a media URL', …)
 it('returns null for an unknown slug rather than throwing', …)
 ```
 
