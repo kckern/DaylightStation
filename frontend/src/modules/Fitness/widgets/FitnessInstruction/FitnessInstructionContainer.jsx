@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import getLogger from '@/lib/logging/Logger.js';
+import WorkoutRunner from './WorkoutRunner.jsx';
 import './FitnessInstructionContainer.scss';
 
 /**
@@ -8,12 +9,12 @@ import './FitnessInstructionContainer.scss';
  * Three states, in the order the user walks them:
  *   browse — filter the exercise corpus and pick exercises
  *   build  — assemble the picked exercises into a workout
- *   run    — the guided set-by-set player
+ *   run    — the guided set-by-set player (WorkoutRunner)
  *
- * This is the shell only. The browse / build / run UIs land in later tasks and
- * slot into the placeholders below; nothing here fetches, and the state it
- * carries (selectedExercises / workout) is deliberately empty until those
- * screens populate it.
+ * Browse and build are still placeholders; run is live. Nothing here fetches —
+ * the browse API that will supply the corpus is being built in parallel, so the
+ * runner's step list and slug->display lookup are read off whatever the builder
+ * handed to `startRun` and are simply empty until that screen exists.
  */
 
 // The only legal moves out of each state. Anything else is a caller bug, so it
@@ -116,6 +117,31 @@ export default function FitnessInstructionContainer({ onMount } = {}) {
     setSelectedExercises([]);
   }, [transition]);
 
+  // The runner consumes a FLAT, already-ordered step list — `expandWorkout`
+  // (backend/src/2_domains/fitness/workout/workout.mjs) owns that ordering and
+  // its docblock is explicit that the player must not re-derive it, so nothing
+  // is flattened here. Until the run API lands, a workout that carries no
+  // `steps` runs as an empty plan.
+  const runSteps = useMemo(
+    () => (Array.isArray(workout?.steps) ? workout.steps : []),
+    [workout]
+  );
+
+  // slug -> { name, image } for the runner. The corpus records the builder
+  // passed through already carry those fields, so index them rather than
+  // fetching; an unindexed slug renders from the slug itself.
+  const exerciseLookup = useMemo(() => {
+    const source = Array.isArray(workout?.exercises)
+      ? workout.exercises
+      : selectedExercises;
+    const map = {};
+    (Array.isArray(source) ? source : []).forEach((entry) => {
+      const slug = typeof entry?.slug === 'string' ? entry.slug.trim() : '';
+      if (slug) map[slug] = { name: entry.name ?? null, image: entry.image ?? null };
+    });
+    return map;
+  }, [workout, selectedExercises]);
+
   // build → browse. Backing out of the builder discards the draft.
   const cancelBuild = useCallback(() => {
     if (!transition('browse')) return;
@@ -159,15 +185,18 @@ export default function FitnessInstructionContainer({ onMount } = {}) {
       )}
 
       {view === 'run' && (
-        <section className="fitness-instruction__state" data-testid="fitness-instruction-run">
-          <h2 className="fitness-instruction__placeholder-title">Run — placeholder</h2>
-          <p className="fitness-instruction__placeholder-note">
-            The set-by-set runner is not built yet. Nothing is being played.
-          </p>
-          <PlaceholderAction
-            testId="fitness-instruction-run-exit"
-            label="End run (placeholder)"
-            onActivate={endRun}
+        <section
+          className="fitness-instruction__state fitness-instruction__state--run"
+          data-testid="fitness-instruction-run"
+        >
+          {/* The runner owns the `fitness-instruction-run-exit` target — a run
+              is ended from inside the player (finished or abandoned), not from
+              chrome around it. */}
+          <WorkoutRunner
+            steps={runSteps}
+            exercises={exerciseLookup}
+            title={workout?.title ?? null}
+            onExit={endRun}
           />
         </section>
       )}

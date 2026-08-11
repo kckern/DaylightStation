@@ -20,6 +20,17 @@
     text-align: center;
   }
 
+  // Run is a full-bleed player, not a centred placeholder card: it must fill the
+  // shell and establish the containing block for WorkoutRunner's `inset: 0`.
+  &__state--run {
+    position: relative;
+    flex: 1 1 auto;
+    align-self: stretch;
+    width: 100%;
+    min-height: 0;
+    padding: 0;
+  }
+
   &__placeholder-title {
     margin: 0;
     font-size: 1.5rem;
