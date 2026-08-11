@@ -91,8 +91,13 @@ not for redistribution.
 ## Decision 1 — Move the data out from under `apps/fitness`
 
 ```
-media/apps/fitness/library/   →   media/library/exercise/
+media/apps/fitness/library/   →   media/library/exercise/     ✅ DONE 2026-08-11
 ```
+
+Verified after the move: 5,351 files, per-directory counts unchanged
+(`assets` 1309, `equipment` 29, `exercises` 3860, `hevy_videos` 66,
+`muscle_groups` 11, `muscles` 49). `media/apps/fitness/` now holds only
+`_trash`, `households`, `sessions`, `ux`.
 
 Everything under `media/apps/<app>/` is app-private by convention — that is where
 `gameshow`, `jeopardy`, and `school` media live. A corpus that two apps read should not
