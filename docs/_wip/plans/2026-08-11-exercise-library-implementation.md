@@ -689,8 +689,16 @@ load, next-up strip, one large Done target.
 
 **Audio — read this before writing `RestTimer`.** The garage Firefox kiosk ships
 `media.autoplay.default=1`, which blocks audible autoplay until a user gesture. Route every cue
-through the **existing shared unlock-on-gesture audio element** (`installCueAudioUnlock`); do
-not create a fresh `Audio` object. Browse and Build both begin with taps, so a gesture always
+through the **existing shared unlock-on-gesture audio element**:
+
+```
+frontend/src/modules/Fitness/player/hooks/audioCuePlayer.js:53
+  export function installCueAudioUnlock(target = window)
+```
+
+Already used by `FitnessPlayer.jsx`; see `audioCuePlayer.test.js` for its contract. Do not
+create a fresh `Audio` object — a new element has not been unlocked by the gesture and stays
+muted. Browse and Build both begin with taps, so a gesture always
 precedes Run — preserve that ordering and cues work without touching the browser profile.
 
 Test with fake timers: the rest timer counts down and auto-advances; Done mid-rest skips ahead;
