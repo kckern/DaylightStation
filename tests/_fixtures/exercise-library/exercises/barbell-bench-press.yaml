@@ -1,0 +1,15 @@
+id: 22222222-2222-2222-2222-222222222222
+name: Barbell Bench Press
+slug: barbell-bench-press
+image: bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb
+description: A barbell pressing movement performed lying on a bench.
+target_groups:
+  - chest
+target_muscles:
+  - pectorals
+equipment:
+  - barbell
+instructions:
+  - Lie back on the bench with your feet flat on the floor.
+  - Unrack the bar and lower it under control to mid-chest.
+  - Press the bar back to lockout over the shoulders.

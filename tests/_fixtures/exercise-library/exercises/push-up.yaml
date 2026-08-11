@@ -1,0 +1,15 @@
+id: 11111111-1111-1111-1111-111111111111
+name: Push-Up
+slug: push-up
+image: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+description: A bodyweight pressing movement.
+target_groups:
+  - chest
+target_muscles:
+  - pectorals
+equipment:
+  - body-weight
+instructions:
+  - Start in a plank position with hands under the shoulders.
+  - Lower your chest toward the floor with elbows tracking back.
+  - Press back to the start.

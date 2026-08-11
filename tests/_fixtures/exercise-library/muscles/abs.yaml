@@ -1,0 +1,10 @@
+id: 55555555-5555-5555-5555-555555555555
+name: Abs
+slug: abs
+group: core
+image: dddddddd-dddd-dddd-dddd-dddddddddddd
+description: The abdominal muscles of the trunk.
+full_description: |
+  A longer anatomy essay about the abdominal wall, used as School reader content.
+  Note: this record declares group "core", which has no muscle_groups entry in the
+  corpus — a real defect the index builder must tolerate.
