@@ -262,6 +262,15 @@
   .battle-card__stats small { display: none; }
 }
 
+// OPAQUE, deliberately — not a 96% scrim. The kiosk keep-alive presents a frame
+// every vsync, and the WebView redraws the scene each time; a translucent
+// full-viewport overlay means every one of those frames also blends the entire
+// battlefield beneath it (rotated cards, 50px+ box-shadow glows, gradients).
+// Measured on the SM-T590: ANY challenge overlay — including the plain-text
+// chord panel with zero animations, zero long tasks and zero React renders —
+// pinned the kiosk at ~38fps, while the identical battlefield WITHOUT the
+// overlay held 59.9. An opaque cover lets the compositor occlusion-cull the
+// scene beneath, and the visibility rule below stops painting it entirely.
 .gaming-challenge-overlay {
   position: absolute;
   inset: 0;
@@ -269,7 +278,16 @@
   display: grid;
   place-items: center;
   padding: clamp(0.75rem, 2vw, 1.5rem);
-  background: rgba(11, 11, 15, 0.96);
+  background: rgb(11 11 15);
+}
+
+// While the modal challenge is up, the battlefield beneath it must cost
+// nothing: it is fully covered (opaque overlay, aria-modal dialog), so take it
+// out of the paint tree rather than repainting it under the cover every frame.
+// Layout is preserved, and the hit/heal animations only fire after the overlay
+// unmounts, so nothing visible is lost.
+.card-battle:has(> .gaming-challenge-overlay) > :not(.gaming-challenge-overlay) {
+  visibility: hidden;
 }
 
 .gaming-challenge-overlay__panel {
@@ -838,7 +856,7 @@
 .pokemon-move-card__power > span { padding: 3px 4px; border-radius: 4px; background: rgb(37 75 145 / 11%); }
 
 .card-battle--pokemon .gaming-challenge-overlay {
-  background: rgb(7 18 42 / 97%);
+  background: rgb(7 18 42); // opaque — same per-frame repaint reasoning as the base overlay
 }
 .card-battle--pokemon .gaming-challenge-overlay__panel {
   grid-template-rows: auto minmax(0, 1fr) auto;
