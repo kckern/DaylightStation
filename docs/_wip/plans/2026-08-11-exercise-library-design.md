@@ -1,7 +1,8 @@
 # Exercise Library — shared corpus, two projections
 
 **Date:** 2026-08-11
-**Status:** Design validated, not implemented
+**Status:** In implementation on `feat/exercise-library`. Corpus moved, index builder and
+shared domain done; CLI, adapter, API, UI, and School source outstanding.
 
 ## Problem
 
@@ -20,7 +21,7 @@ Neither app owns the corpus. That is the central design constraint.
 
 ## The corpus
 
-Currently at `media/apps/fitness/library/`.
+At `media/library/exercise/` (moved there 2026-08-11 from `media/apps/fitness/library/`).
 
 | Subfolder | Count | Contents |
 |---|---|---|
@@ -28,7 +29,7 @@ Currently at `media/apps/fitness/library/`.
 | `assets/` | 1,309 | UUID-named `.gif` demo loops |
 | `hevy_videos/` | 66 | `.mp4` clips named `Exercise-Name_BodyPart.mp4` |
 | `equipment/` | 29 | one YAML per equipment type |
-| `muscles/` | 24 | YAML + matching PNG per muscle |
+| `muscles/` | 49 | 25 YAML + 24 PNG — `cardio` has no plate |
 | `muscle_groups/` | 11 | one YAML per group |
 
 ### Record shapes
