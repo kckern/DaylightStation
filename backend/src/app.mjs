@@ -2717,6 +2717,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     identityRelay,
     workoutRepository,
     saveWorkout,
+    exerciseLibrary,
     logger: rootLogger.child({ module: 'fitness-api' })
   });
 

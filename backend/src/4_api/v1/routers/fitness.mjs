@@ -38,6 +38,9 @@
  * - GET  /api/fitness/workouts/:id - Get one full workout
  * - POST /api/fitness/workouts - Create or update a workout (400 names unknown slugs)
  * - DELETE /api/fitness/workouts/:id - Delete a workout
+ * - GET  /api/fitness/exercises - Browse the exercise corpus (facets: group, muscle, equipment, q)
+ * - GET  /api/fitness/exercises/taxonomy - Facet rails: groups, muscles, equipment
+ * - GET  /api/fitness/exercises/:slug - One full exercise, 404 if unknown
  */
 import express from 'express';
 import { writeBinary, deleteFile } from '#system/utils/FileIO.mjs';
@@ -79,6 +82,7 @@ const COMMIT_PENDING_MAX_AGE_MS = 120000; // 2 min
  * @param {Object} [config.querySessions] - QuerySessions use case (defaults to one wired from sessionService)
  * @param {Object} [config.workoutRepository] - YamlWorkoutRepository for the /workouts routes
  * @param {Object} [config.saveWorkout] - SaveWorkout use case (validates slugs before persisting)
+ * @param {Object} [config.browseExerciseLibrary] - BrowseExerciseLibrary use case (the /exercises routes)
  * @param {Object} config.logger - Logger instance
  * @returns {express.Router}
  */
@@ -128,6 +132,9 @@ export function createFitnessRouter(config) {
     // absent, the /workouts routes report 503 rather than half-working.
     workoutRepository = null,
     saveWorkout = null,
+    // Browse (read side of the exercise corpus). Wraps the ONE library instance the
+    // composition root loaded; absent, the /exercises routes report 503.
+    browseExerciseLibrary = null,
     logger = console
   } = config;
 
@@ -1394,6 +1401,62 @@ export function createFitnessRouter(config) {
       return res.status(404).json({ error: 'not found' });
     }
     return res.json({ ok: true, id: req.params.id });
+  }));
+
+  // -------------------- Exercises (the corpus Browse reads) --------------------
+  // Read-only and household-agnostic: the corpus is a reference work, identical for
+  // everyone, served from one in-memory copy loaded at boot.
+
+  /**
+   * GET /api/fitness/exercises - Browse.
+   *
+   * Facets: `group`, `muscle`, `equipment` (slugs) and `q` (free text over name and
+   * slug). OR within a facet, AND across facets — `?group=chest&group=back` is either
+   * group, `?group=chest&equipment=barbell` is both.
+   *
+   * The query VALUES are handed to the use case exactly as Express's `qs` parsed them.
+   * Coercing a repeated key to a string here (`String(req.query.group)` → 'chest,back')
+   * matches nothing, and dropping a non-scalar as "unfiltered" answers with the whole
+   * 1,296-record corpus. Both fail silently, which is why neither happens here.
+   *
+   * Returns summaries, not bodies — see PROJECTION in the use case.
+   */
+  router.get('/exercises', asyncHandler(async (req, res) => {
+    if (!browseExerciseLibrary) return res.status(503).json({ error: 'exercise library unavailable' });
+    return res.json(browseExerciseLibrary.listExercises(
+      browseExerciseLibrary.filterFromQuery(req.query),
+    ));
+  }));
+
+  /**
+   * GET /api/fitness/exercises/taxonomy - Every facet value the rails can offer.
+   *
+   * MUST stay above /exercises/:slug — Express matches in declaration order, and below
+   * it this path would be read as a request for an exercise slugged "taxonomy" and 404.
+   */
+  router.get('/exercises/taxonomy', asyncHandler(async (req, res) => {
+    if (!browseExerciseLibrary) return res.status(503).json({ error: 'exercise library unavailable' });
+    return res.json(browseExerciseLibrary.taxonomy());
+  }));
+
+  /**
+   * GET /api/fitness/exercises/:slug - One exercise, in full.
+   *
+   * The 404 carries the library status: a deep link into an unbuilt corpus is a 404 for
+   * every slug, and "not found" alone would send someone hunting for a missing exercise
+   * instead of running the indexer.
+   */
+  router.get('/exercises/:slug', asyncHandler(async (req, res) => {
+    if (!browseExerciseLibrary) return res.status(503).json({ error: 'exercise library unavailable' });
+    const exercise = browseExerciseLibrary.getExercise(req.params.slug);
+    if (!exercise) {
+      return res.status(404).json({
+        error: 'not found',
+        slug: req.params.slug,
+        library: browseExerciseLibrary.libraryStatus(),
+      });
+    }
+    return res.json({ exercise });
   }));
 
   // Shared error middleware: expected errors (mapped by err.name/err.status) →

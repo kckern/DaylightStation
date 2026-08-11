@@ -19,6 +19,7 @@ import { FitnessSuggestionService } from '#apps/fitness/suggestions/FitnessSugge
 import { MemorableStrategy } from '#apps/fitness/suggestions/MemorableStrategy.mjs';
 import { NextUpStrategy } from '#apps/fitness/suggestions/NextUpStrategy.mjs';
 import { ResumeStrategy } from '#apps/fitness/suggestions/ResumeStrategy.mjs';
+import { BrowseExerciseLibrary } from '#apps/fitness/usecases/BrowseExerciseLibrary.mjs';
 import { GenerateSessionTimelapse } from '#apps/fitness/usecases/GenerateSessionTimelapse.mjs';
 import { QuerySessions } from '#apps/fitness/usecases/QuerySessions.mjs';
 import { RecapSweep } from '#apps/fitness/usecases/RecapSweep.mjs';
@@ -70,6 +71,9 @@ export function createFitnessApiRouter(config) {
     // composed by the time they arrive.
     workoutRepository = null,
     saveWorkout = null,
+    // The one loaded exercise-library instance (app.mjs). Shared by the write path's
+    // slug guard and the browse read path — never constructed twice.
+    exerciseLibrary = null,
     logger = console
   } = config;
 
@@ -196,6 +200,13 @@ export function createFitnessApiRouter(config) {
     logger
   });
 
+  // Browse: the read side of the exercise corpus. Wraps the SAME library instance
+  // app.mjs already loaded for SaveWorkout — constructing a second repository here
+  // would re-parse the 2.8 MB manifest and hold the corpus twice for no gain.
+  const browseExerciseLibrary = exerciseLibrary
+    ? new BrowseExerciseLibrary({ exerciseLibrary, logger })
+    : null;
+
   // Filesystem access the router used to do inline now lives behind these
   // injected providers (keeps the API layer free of fs/path).
   const menuMusicProvider = () => {
@@ -256,6 +267,7 @@ export function createFitnessApiRouter(config) {
     voiceMemoDebugStore,
     workoutRepository,
     saveWorkout,
+    browseExerciseLibrary,
     logger
   });
 
