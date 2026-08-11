@@ -454,6 +454,16 @@ else. It must never list or read the `exercises/` directory. If the manifest is 
 logs a warning and serves an empty corpus — a missing index degrades the feature, it never
 blocks boot.
 
+**Second critical constraint — restore the null prototype on load.** The index builder keys
+its maps with `Object.create(null)` because corpus slugs are third-party strings and a slug
+named `constructor` or `__proto__` against a plain object either throws or vanishes. **That
+protection does not survive serialization**: parsing the manifest hands back
+`Object.prototype`-backed objects, so a bare `manifest.byMuscle[slug]` in this adapter
+re-opens the exact bug the builder fixed. On load, rebuild every keyed map
+(`exercises`, `muscles`, `muscleGroups`, `equipment`, `byGroup`, `byMuscle`, `byEquipment`)
+with `Object.create(null)`, or read them only through `Object.hasOwn`-guarded accessors.
+Write a test with a hostile slug that proves it.
+
 **Step 1: Write the failing test**
 
 Point the repository at a small manifest fixture written into a temp dir by the test. Cover:
