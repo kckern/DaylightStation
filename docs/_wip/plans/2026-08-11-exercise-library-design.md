@@ -78,9 +78,36 @@ Exercise records carry `target_groups: [core]`, but `muscle_groups/` contains no
 entry — its 11 groups are back, cardio, chest, deltoids, forearms, hips, lower-legs, neck,
 shoulders, upper-arms, upper-legs. Meanwhile `muscles/abs.yaml` declares `group: core`.
 
-**Resolution:** the adapter derives group membership from the *muscle* records and treats
-the exercise-level `target_groups` as a hint. Any group that fails to resolve is logged
-once at index-build time, never per request.
+**Resolution (code):** the adapter derives group membership from the *muscle* records and
+treats the exercise-level `target_groups` as a hint. Any group that fails to resolve is
+logged once at index-build time, never per request.
+
+**Resolution (data) — done 2026-08-11.** The first full parse showed the defect was far
+larger than the `core` mismatch alone. Of 1,296 exercises, **190 (15%) resolved to no muscle
+group at all** and would have been unreachable in a group-based browse UI:
+
+| Cause | Count |
+|---|---|
+| Only resolvable muscle was `abs`, blocked by the missing `core` group | 157 |
+| No `target_muscles` at all (conditioning work) | 26 |
+| Every target muscle dangling | 7 |
+
+Two root causes, both scrape gaps rather than design problems:
+
+1. **No abdominal group existed.** The 11 scraped groups covered no part of the trunk, yet
+   `muscles/abs.yaml` declares `group: core` and the Hevy filenames use `_Waist`.
+2. **13 muscles were referenced but never scraped** — including by the *muscle-group records
+   themselves* (`back` lists `lower-traps`, `lower-back`, `teres-major`; `neck` lists both
+   SCM entries). That made the corpus self-documenting: each missing muscle's correct group
+   is readable from whichever group claims it.
+
+Fixed by patching the corpus — `muscle_groups/core.yaml`, 13 muscle records, and
+`target_groups`/`target_muscles: [cardio]` on the 26 conditioning exercises. **Result: 0
+orphans**, and the `unknown-group` / `unknown-muscle` warning kinds vanished from the build.
+
+The authored records are preserved in-repo at `cli/exercise-library/curated/`, because the
+corpus itself is not version controlled. See that README for the provenance caveat on the
+hand-written anatomy essays.
 
 ### Provenance
 
