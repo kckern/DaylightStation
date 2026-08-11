@@ -2,6 +2,7 @@ import { GAMING_SCHEMA_VERSION } from './contracts.mjs';
 
 const SAFE_ID = /^[a-z][a-z0-9-]{0,63}$/;
 const JOURNEY_ID = 'pokemon-practice-journey-v1';
+const POKEMON_ASSET_FACING = new Set(['left', 'right', 'front']);
 
 function validateJourneyDefinition(definition, errors) {
   const journey = definition.journey;
@@ -20,6 +21,7 @@ function validateJourneyDefinition(definition, errors) {
   for (const partner of journey.partners || []) {
     if (!SAFE_ID.test(String(partner?.id || ''))) errors.push('journey partner id is invalid');
     if (typeof partner?.name !== 'string' || partner.name.trim() === '') errors.push(`journey partner ${partner?.id || '?'} requires a name`);
+    if (!POKEMON_ASSET_FACING.has(partner?.asset_facing)) errors.push(`journey partner ${partner?.id || '?'} asset_facing is invalid`);
     if (!Array.isArray(partner?.move_ids) || partner.move_ids.length !== 4) {
       errors.push(`journey partner ${partner?.id || '?'} must declare four moves`);
     }
@@ -29,6 +31,7 @@ function validateJourneyDefinition(definition, errors) {
   }
   for (const opponent of journey.opponents || []) {
     if (!SAFE_ID.test(String(opponent?.id || ''))) errors.push('journey opponent id is invalid');
+    if (!POKEMON_ASSET_FACING.has(opponent?.asset_facing)) errors.push(`journey opponent ${opponent?.id || '?'} asset_facing is invalid`);
     if (!(opponent?.health > 0)) errors.push(`journey opponent ${opponent?.id || '?'} health must be positive`);
     if (!Array.isArray(opponent?.intents) || opponent.intents.length < 2) {
       errors.push(`journey opponent ${opponent?.id || '?'} must contain at least two intents`);

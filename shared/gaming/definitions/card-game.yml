@@ -24,6 +24,7 @@ journey:
       genus: Seed Pokémon
       dex: "0001"
       asset: games/pokemon/svg/0001-bulbasaur-gen1.svg
+      asset_facing: right
       evolution:
         id: ivysaur
         name: Ivysaur
@@ -36,6 +37,7 @@ journey:
       genus: Lizard Pokémon
       dex: "0004"
       asset: games/pokemon/svg/0004-charmander-gen1.svg
+      asset_facing: left
       evolution:
         id: charmeleon
         name: Charmeleon
@@ -48,6 +50,7 @@ journey:
       genus: Tiny Turtle Pokémon
       dex: "0007"
       asset: games/pokemon/svg/0007-squirtle-gen1.svg
+      asset_facing: right
       evolution:
         id: wartortle
         name: Wartortle
@@ -61,6 +64,7 @@ journey:
       genus: Tiny Bird Pokémon
       dex: "0016"
       asset: games/pokemon/svg/0016-pidgey-gen1.svg
+      asset_facing: left
       health: 90
       intents:
         - { id: gust, title: Gust, kind: attack, amount: 15 }
@@ -72,6 +76,7 @@ journey:
       genus: Scratch Cat Pokémon
       dex: "0052"
       asset: games/pokemon/svg/0052-meowth-gen1.svg
+      asset_facing: right
       health: 105
       intents:
         - { id: scratch, title: Scratch, kind: attack, amount: 17 }
@@ -83,6 +88,7 @@ journey:
       genus: Sleeping Pokémon
       dex: "0143"
       asset: games/pokemon/svg/0143-snorlax-gen1.svg
+      asset_facing: front
       health: 120
       intents:
         - { id: tackle, title: Tackle, kind: attack, amount: 19 }

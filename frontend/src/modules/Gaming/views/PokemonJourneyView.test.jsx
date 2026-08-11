@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { createInitialState, deriveInteraction, transition } from '@shared-gaming/index.mjs';
 import { PokemonJourneyLobby } from './PokemonJourneyLobby.jsx';
-import { PokemonJourneyView } from './PokemonJourneyView.jsx';
+import { pokemonFigureFlipped, PokemonJourneyView } from './PokemonJourneyView.jsx';
 
 vi.mock('./journeySfx.js', () => ({ playJourneySfx: vi.fn() }));
 
@@ -25,6 +25,15 @@ const baseProps = {
 };
 
 describe('Pokémon journey kiosk views', () => {
+  it('faces asymmetric battle art inward without flipping frontal Pokémon', () => {
+    expect(definition.journey.partners.map((pokemon) => (
+      pokemonFigureFlipped('partner', pokemon.asset_facing)
+    ))).toEqual([false, true, false]);
+    expect(definition.journey.opponents.map((pokemon) => (
+      pokemonFigureFlipped('opponent', pokemon.asset_facing)
+    ))).toEqual([false, true, false]);
+  });
+
   it('starts with partner choice, persistent mastery, and household records', () => {
     const onSelect = vi.fn();
     render(

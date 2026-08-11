@@ -13,9 +13,18 @@ function HealthBar({ name, value, max }) {
   );
 }
 
+export function pokemonFigureFlipped(side, assetFacing) {
+  return (side === 'partner' && assetFacing === 'left')
+    || (side === 'opponent' && assetFacing === 'right');
+}
+
 function PokemonFigure({ subject, side, state }) {
+  const flipped = pokemonFigureFlipped(side, subject.asset_facing);
   return (
-    <article className={`journey-figure journey-figure--${side} journey-figure--${subject.type}`}>
+    <article
+      className={`journey-figure journey-figure--${side} journey-figure--${subject.type}${flipped ? ' is-flipped' : ''}`}
+      data-asset-facing={subject.asset_facing}
+    >
       <span className="journey-figure__label">{side === 'partner' ? 'Your partner' : 'Opponent'} · #{subject.dex}</span>
       <div className="journey-figure__art">
         <span className="journey-figure__halo" aria-hidden="true" />
