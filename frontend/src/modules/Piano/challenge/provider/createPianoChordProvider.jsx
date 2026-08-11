@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExter
 import { AbcRenderer } from '../../../MusicNotation/renderers/AbcRenderer.jsx';
 import { generateScaleAbc } from '../../../MusicNotation/renderers/abc.js';
 import { evaluateChordMatch } from '../../PianoFlashcards/flashcardEngine.js';
+import { PianoKeyboard } from '../../components/PianoKeyboard.jsx';
 import { advanceScaleProgress } from './scaleProgress.js';
 import { WrongNoteGhost } from './WrongNoteGhost.jsx';
 import { scaleClefType } from './wrongNoteGhost.js';
@@ -10,7 +11,7 @@ import { gradeChordPerformance, gradeOrderedPerformance, timingQuality } from '.
 const EMPTY_NOTES = new Map();
 const EMPTY_HISTORY = [];
 const useAlwaysConnected = () => ({ connected: true, status: 'connected' });
-const PROVIDER_VERSION = '4-adaptive-mixed-piano';
+const PROVIDER_VERSION = '5-virtual-keyboard-fallback';
 const SCALE_NOTE_CLASSES = [
   'piano-scale-note--complete',
   'piano-scale-note--next',
@@ -173,8 +174,17 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
         const view = useSyncExternalStore(subscribe, () => snapshot, () => snapshot);
         const notes = useNotes();
         const connection = useConnection();
-        const activeNotes = notes?.activeNotes || EMPTY_NOTES;
-        const noteHistory = notes?.noteHistory || EMPTY_HISTORY;
+        const [virtualActiveNotes, setVirtualActiveNotes] = useState(EMPTY_NOTES);
+        const [virtualNoteHistory, setVirtualNoteHistory] = useState(EMPTY_HISTORY);
+        const virtualActiveNotesRef = useRef(EMPTY_NOTES);
+        const usingVirtualKeyboard = connection?.connected === false;
+        const inputSource = usingVirtualKeyboard ? 'virtual' : 'midi';
+        const activeNotes = usingVirtualKeyboard
+          ? virtualActiveNotes
+          : notes?.activeNotes || EMPTY_NOTES;
+        const noteHistory = usingVirtualKeyboard
+          ? virtualNoteHistory
+          : notes?.noteHistory || EMPTY_HISTORY;
         const liveChordCard = view.prepared?.kind === 'chord'
           ? { root: view.prepared.prompt.root, pitchClasses: new Set(view.prepared.prompt.pitch_classes || []) }
           : null;
@@ -191,6 +201,27 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
         // must re-read the geometry — and this render is also what refreshes
         // the anchor element it is measured against.
         const [engraving, setEngraving] = useState({ nonce: 0, clefType: null });
+
+        const handleVirtualNoteOn = useCallback((note, velocity = 90) => {
+          if (virtualActiveNotesRef.current.has(note)) return;
+          const timestamp = clock();
+          const next = new Map(virtualActiveNotesRef.current);
+          next.set(note, { velocity, timestamp });
+          virtualActiveNotesRef.current = next;
+          setVirtualActiveNotes(next);
+          setVirtualNoteHistory((history) => [
+            ...history,
+            { note, velocity, timestamp, startTime: timestamp },
+          ]);
+        }, []);
+
+        const handleVirtualNoteOff = useCallback((note) => {
+          if (!virtualActiveNotesRef.current.has(note)) return;
+          const next = new Map(virtualActiveNotesRef.current);
+          next.delete(note);
+          virtualActiveNotesRef.current = next;
+          setVirtualActiveNotes(next);
+        }, []);
 
         const handleScaleRender = useCallback((tune, staffNotes) => {
           clearScaleNoteFeedback(staffNotesRef.current);
@@ -265,19 +296,11 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
 
         useEffect(() => {
           historyCursor.current = noteHistory.length;
-          // Baseline once per challenge; adding noteHistory would erase every
-          // fresh note before the processing effect below can consume it.
+          // Baseline once per challenge or input-source switch. Depending on
+          // noteHistory itself would erase every fresh note before the
+          // processing effect below can consume it.
           // eslint-disable-next-line react-hooks/exhaustive-deps
-        }, [challengeId]);
-
-        useEffect(() => {
-          if (view.status === 'running' && connection?.connected === false) {
-            settle('error', null, {
-              reason: 'midi_disconnected',
-              connectionStatus: connection.status || 'disconnected',
-            });
-          }
-        }, [connection?.connected, connection?.status, view.status]);
+        }, [challengeId, inputSource]);
 
         useEffect(() => {
           if (view.status !== 'running' || !view.prepared) return;
@@ -365,6 +388,24 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
 
         const prompt = view.prepared?.prompt;
         const expectedCount = prompt?.expected_midi?.length || 0;
+        const expectedMidi = (prompt?.expected_midi || []).filter(Number.isFinite);
+        const lowestExpected = expectedMidi.length > 0 ? Math.min(...expectedMidi) : 60;
+        const highestExpected = expectedMidi.length > 0 ? Math.max(...expectedMidi) : 72;
+        const keyboardStart = Math.max(21, lowestExpected - 5);
+        const keyboardEnd = Math.min(108, Math.max(highestExpected + 5, keyboardStart + 19));
+        const virtualKeyboard = usingVirtualKeyboard ? (
+          <div className="piano-challenge__virtual-input" role="group" aria-label="On-screen piano keyboard">
+            <span>No piano connected — tap the keys below.</span>
+            <PianoKeyboard
+              activeNotes={virtualActiveNotes}
+              startNote={keyboardStart}
+              endNote={keyboardEnd}
+              showLabels
+              onNoteOn={handleVirtualNoteOn}
+              onNoteOff={handleVirtualNoteOff}
+            />
+          </div>
+        ) : null;
         if (['scale', 'arpeggio', 'timed-pattern'].includes(view.prepared?.kind)) {
           const abc = generateScaleAbc(prompt.expected_midi, prompt.key_signature || 'C');
           // The ghost shows only for a wrong note, and only until the next input
@@ -376,7 +417,7 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
             ? null
             : (staffNotesRef.current?.[0]?.[view.progress]?.els?.[0] ?? null);
           return (
-            <section className="piano-challenge piano-scale-challenge">
+            <section className={`piano-challenge piano-scale-challenge${usingVirtualKeyboard ? ' has-virtual-keyboard' : ''}`}>
               <header className="piano-scale-challenge__heading">
                 <span>
                   {prompt.tempo_bpm ? `Play with the pulse · ${prompt.tempo_bpm} BPM` : 'Play from left to right'}
@@ -410,12 +451,13 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
                       : 'Play the highlighted first note'}
                 </span>
               </div>
+              {virtualKeyboard}
             </section>
           );
         }
         return (
           <section
-            className="piano-challenge"
+            className={`piano-challenge${usingVirtualKeyboard ? ' has-virtual-keyboard' : ''}`}
             ref={handleChordCommit}
             data-challenge-status={view.status}
             data-chord-armed={view.armed ? 'true' : 'false'}
@@ -424,8 +466,11 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
           >
             <div>Play this chord</div>
             <div className="piano-challenge__chord">{prompt?.label || '…'}</div>
-            <div>{view.status === 'running' ? 'Listening to the piano' : 'Getting ready'}</div>
+            <div>{view.status === 'running'
+              ? usingVirtualKeyboard ? 'Listening to the on-screen keys' : 'Listening to the piano'
+              : 'Getting ready'}</div>
             {view.hadWrong && <div>Release and try again</div>}
+            {virtualKeyboard}
           </section>
         );
       }

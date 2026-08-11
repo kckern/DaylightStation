@@ -290,6 +290,22 @@
 .piano-challenge { min-height: 0; height: 100%; display: grid; justify-items: center; gap: var(--sp-3, 12px); }
 .piano-challenge__chord { font-size: clamp(4rem, 14vw, 8rem); font-weight: 800; }
 .piano-scale-challenge { width: 100%; grid-template-rows: auto minmax(0, 1fr) auto; }
+.piano-scale-challenge.has-virtual-keyboard { grid-template-rows: auto minmax(5rem, 1fr) auto auto; }
+.piano-challenge__virtual-input {
+  width: 100%;
+  height: clamp(6.5rem, 18vh, 9.5rem);
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: var(--sp-2, 8px);
+}
+.piano-challenge__virtual-input > span {
+  color: var(--piano-stage-muted, #bbbbbb);
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-align: center;
+}
+.piano-challenge__virtual-input .piano-keyboard { border-radius: var(--r-sm, 8px); }
 .piano-scale-challenge__heading { display: grid; justify-items: center; gap: var(--sp-1, 4px); }
 .piano-scale-challenge__heading span { color: var(--piano-stage-muted, #bbbbbb); }
 .piano-scale-challenge__heading strong { font-size: clamp(1.8rem, 4vw, 2.8rem); }

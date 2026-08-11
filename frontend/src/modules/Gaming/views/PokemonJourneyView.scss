@@ -155,7 +155,7 @@
 .journey-figure__art { position: relative; min-height: 0; display: grid; place-items: center; }
 .journey-figure__halo { position: absolute; width: 72%; aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle, rgb(255 255 255 / 62%), rgb(255 255 255 / 7%) 55%, transparent 72%); }
 .journey-figure img { position: relative; width: 86%; height: 100%; min-height: 0; object-fit: contain; filter: drop-shadow(0 13px 7px rgb(0 8 22 / 35%)); }
-.journey-figure--partner img { transform: scaleX(-1); }
+.journey-figure.is-flipped img { transform: scaleX(-1); }
 .journey-health { display: grid; gap: 4px; padding: 8px 10px; border: 2px solid rgb(255 255 255 / 22%); border-radius: 11px; background: rgb(5 20 48 / 82%); box-shadow: 0 6px 14px rgb(0 7 20 / 28%); }
 .journey-health > span { display: flex; justify-content: space-between; gap: 10px; font-size: 0.875rem; }
 .journey-health em { color: #d0def2; font-style: normal; font-variant-numeric: tabular-nums; }
