@@ -1,5 +1,6 @@
 import { shuffle, buildNotePool } from '../noteUtils.js';
 import { spellNoteName, rootQualityOf } from '../../MusicNotation/model/spelling.js';
+import { matchHeldSet } from '../performance/heldSet.js';
 
 /**
  * Generate random pitches for a flashcard.
@@ -166,27 +167,7 @@ export function chordMissReason(activeNotes, card) {
  * @returns {'idle'|'correct'|'wrong'|'partial'}
  */
 export function evaluateChordMatch(activeNotes, card) {
-  if (!activeNotes || activeNotes.size === 0 || !card?.pitchClasses?.size) {
-    return 'idle';
-  }
-
-  const heldClasses = new Set();
-  let bass = Infinity;
-  for (const [note] of activeNotes) {
-    heldClasses.add(((note % 12) + 12) % 12);
-    if (note < bass) bass = note;
-  }
-
-  for (const pc of heldClasses) {
-    if (!card.pitchClasses.has(pc)) return 'wrong';
-  }
-
-  const complete = [...card.pitchClasses].every(pc => heldClasses.has(pc));
-  if (complete) {
-    return ((bass % 12) + 12) % 12 === card.root ? 'correct' : 'wrong';
-  }
-
-  return 'partial';
+  return matchHeldSet(activeNotes, card);
 }
 
 /**
