@@ -164,18 +164,48 @@ School already walks a pluggable materials-source registry. `GetMaterialCatalog`
 resolved category; `MediaAlbumSource`, `MediaSeriesSource`, and `MediaLabelSource` are the
 existing implementors, composed in `app.mjs`.
 
-`ExerciseLibrarySource` joins that list and projects:
+### ⚠️ CORRECTED 2026-08-11 — the original projection was wrong
 
-| Corpus concept | School concept | Rendered by |
+The first version of this section claimed muscle essays could be served as `lecture_notes`
+**units** from a materials source. **That is not possible**, and the error was a conflation of
+two disjoint School subsystems:
+
+| | Materials pipeline | Learning-catalog pipeline |
 |---|---|---|
-| Muscle group | collection | subject shelf |
-| Muscle | work | work listing |
-| Muscle `full_description` | `lecture_notes` unit | `LearningContentReader` |
-| Exercises targeting a muscle | `examples` units (GIF + instructions) | `LearningContentReader` |
-| Equipment | second collection | subject shelf |
+| Registry | `materials.sources` (pluggable) | `catalogs` (single repository) |
+| Chain | `GetMaterialUnits` → `MaterialDetail` → `SchoolMaterialPlayer` | `LearningCatalogBrowser` → `startLearning` → `LearningContentReader` |
+| A "unit" is | **a Plex content id** — `SchoolMaterialPlayer.jsx:73`: `unit.id IS the plex:<key> content id` | n/a |
+| Prose lives in | nowhere; there is no unit `type` and no prose field | `module.document.blocks[]`, a validated `school.learning-document/v1` |
 
-`resolveCategory` files the whole shelf under `reference`. **No change to `SchoolApp.jsx`.**
-Quizzes over the content follow through the existing question-bank machinery.
+`lecture_notes` is a **module** type (`2_domains/school/catalog/moduleValidation.mjs:11`), and
+`LearningContentReader` takes a `module`, never a `unit`. A materials source emitting prose
+units would route into the shared Player with a non-Plex content id and fail to resolve.
+
+**What survives:** the materials registry really is pluggable, and a source can add muscle-group
+and equipment **collections** with zero frontend change. What does not survive is rendering the
+anatomy prose through it.
+
+### Revised approach — prose goes through the pipeline built for prose
+
+Project the corpus into the **learning catalog** as `lecture_notes` modules carrying
+`school.learning-document/v1` documents, which `LearningContentReader` already renders. Muscle
+groups become lessons; each muscle's `fullDescription` becomes the document; exercises targeting
+that muscle become `examples`.
+
+This keeps the design's real claim — **no change to `SchoolApp.jsx`** — because that component
+already dispatches `lecture_notes` at line 259. It costs more than "one new file": the corpus
+needs a catalog repository, and `GetLearningCatalog` takes a single `catalogs` repository rather
+than a registry, so composition work is required.
+
+**Rejected alternative:** teaching the materials pipeline about non-playable units. It is a
+smaller diff, but it pushes a "unit that is not media" concept into a pipeline whose progress
+writes assume `plexId: unitId` — risking corruption in a subsystem the children use daily, to
+avoid backend work in one that is additive.
+
+**Note for whoever writes the category test:** `resolveCategory` returns `reference` for an
+omitted or misspelled category as well as a correct one, and only warns
+(`school.materials.category-unknown`). Asserting `category === 'reference'` alone passes against
+a mis-filed config; assert the absence of that warning too.
 
 ## The Fitness module
 
