@@ -531,6 +531,12 @@ arrays, so an endpoint that forwards `req.query` to a scalar-only filter would s
 the entire 1,287-record corpus instead of a filtered set — no throw, no log. Add an endpoint
 test that passes a repeated query key and asserts the result is actually narrowed.
 
+**Forward `req.query` values through untouched.** The domain already handles scalars and lists;
+coercing on the way in breaks it. `String(req.query.group)` turns `['chest','back']` into the
+string `'chest,back'`, which matches no group at all — failing closed instead of open, but
+still wrong and still silent. Don't normalize, don't stringify, don't default. A malformed
+term is already handled: the domain matches nothing rather than everything.
+
 TDD as above: use-case test first with a stub repository, then the implementation, then wire
 the routes. Follow the existing `asyncHandler` pattern in the router. **Add the new endpoints
 to the docblock at the top of `fitness.mjs`** — it is a maintained index of every route.
