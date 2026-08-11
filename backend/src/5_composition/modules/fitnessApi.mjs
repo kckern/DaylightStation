@@ -65,6 +65,11 @@ export function createFitnessApiRouter(config) {
     releaseEmergencyLockdown = null,
     getLockdownState = null,
     identityRelay = null,
+    // Workout persistence + its save-time slug guard, both built in app.mjs and passed
+    // straight through — this module composes fitness services, and these are already
+    // composed by the time they arrive.
+    workoutRepository = null,
+    saveWorkout = null,
     logger = console
   } = config;
 
@@ -249,6 +254,8 @@ export function createFitnessApiRouter(config) {
     identityRelay,
     menuMusicProvider,
     voiceMemoDebugStore,
+    workoutRepository,
+    saveWorkout,
     logger
   });
 

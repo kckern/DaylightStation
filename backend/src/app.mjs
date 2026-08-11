@@ -173,6 +173,10 @@ import { TriggerEmergencyLockdown } from '#apps/fitness/usecases/TriggerEmergenc
 import { ReleaseEmergencyLockdown } from '#apps/fitness/usecases/ReleaseEmergencyLockdown.mjs';
 import { GetLockdownState } from '#apps/fitness/usecases/GetLockdownState.mjs';
 import { createIdentityRelay } from '#apps/fitness/identityRelay.mjs';
+// Workout persistence (Build authors, Run performs) + the corpus index it validates against
+import { YamlWorkoutRepository } from '#adapters/fitness/YamlWorkoutRepository.mjs';
+import { YamlExerciseLibraryRepository } from '#adapters/reference/exercise-library/index.mjs';
+import { SaveWorkout } from '#apps/fitness/usecases/SaveWorkout.mjs';
 
 // Scheduling domain + orchestrator
 import { SchedulerService } from '#domains/scheduling/services/SchedulerService.mjs';
@@ -2671,6 +2675,27 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: emergencyLogger,
   });
 
+  // Workout persistence: household-scoped files under apps/fitness/workouts/, plus the
+  // SaveWorkout use case that guards them. SaveWorkout is the only place holding BOTH an
+  // authored plan and the corpus index, so it is the only place that can refuse a workout
+  // referencing an exercise that does not exist — which otherwise fails at Run time, in
+  // front of someone mid-session. The library reads the manifest `exercise-library build`
+  // writes offline; a missing manifest degrades to an empty corpus, so saves fail loudly
+  // instead of persisting plans nothing can run.
+  const exerciseLibrary = new YamlExerciseLibraryRepository({
+    indexPath: join(configService.getDataDir(), 'household', 'apps', 'fitness', 'exercise-index.yml'),
+    logger: rootLogger.child({ module: 'exercise-library' })
+  }).load();
+  const workoutRepository = new YamlWorkoutRepository({
+    configService,
+    logger: rootLogger.child({ module: 'fitness-workouts' })
+  });
+  const saveWorkout = new SaveWorkout({
+    workoutRepository,
+    exerciseLibrary,
+    logger: rootLogger.child({ module: 'fitness-workouts' })
+  });
+
   // Fitness domain router
   // Note: contentRegistry passed for /show endpoint - playlist thumbnail enrichment is household-specific
   v1Routers.fitness = createFitnessApiRouter({
@@ -2690,6 +2715,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     releaseEmergencyLockdown,
     getLockdownState,
     identityRelay,
+    workoutRepository,
+    saveWorkout,
     logger: rootLogger.child({ module: 'fitness-api' })
   });
 
