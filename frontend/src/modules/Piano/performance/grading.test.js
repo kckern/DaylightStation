@@ -3,7 +3,8 @@ import {
   gradeChordPerformance,
   gradeOrderedPerformance,
   timingQuality,
-} from './pianoChallengeGrading.js';
+  gradeBand,
+} from './grading.js';
 
 describe('piano challenge grading', () => {
   it('grades an untimed scale or arpeggio from pitch accuracy and continuity', () => {
@@ -29,5 +30,34 @@ describe('piano challenge grading', () => {
     const chord = gradeChordPerformance({ targetNotes: 3, wrongAttempts: 1, onsetSpanMs: 125 });
     expect(chord).toMatchObject({ pitchSetAccuracy: 0.75, simultaneity: 0.5 });
     expect(chord.score).toBeCloseTo(0.675);
+  });
+});
+
+describe('declared weights', () => {
+  it('defaults reproduce the untimed constants exactly', () => {
+    const a = gradeOrderedPerformance({ expectedCount: 8, wrongNotes: 2, paced: false });
+    const b = gradeOrderedPerformance({ expectedCount: 8, wrongNotes: 2, paced: false, weights: null });
+    expect(b).toEqual(a);
+  });
+
+  it('custom weights change what the drill is about', () => {
+    // All weight on continuity: two wrongs out of eight → continuity 0.75, score 0.75.
+    const r = gradeOrderedPerformance({
+      expectedCount: 8, wrongNotes: 2, paced: false,
+      weights: { pitch: 0, timing: 0, continuity: 1 },
+    });
+    expect(r.score).toBeCloseTo(0.75, 5);
+  });
+});
+
+describe('gradeBand', () => {
+  it('maps a score to green/yellow/red on the polish thresholds', () => {
+    expect(gradeBand(0.95)).toBe('green');
+    expect(gradeBand(0.9)).toBe('green');
+    expect(gradeBand(0.7)).toBe('yellow');
+    expect(gradeBand(0.59)).toBe('red');
+  });
+  it('accepts custom thresholds', () => {
+    expect(gradeBand(0.7, { green: 0.65, yellow: 0.4 })).toBe('green');
   });
 });
