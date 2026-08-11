@@ -1,5 +1,5 @@
 import React from 'react';
-import { tallyGrades } from './gradeTally.js';
+import { tallyGrades } from '../../../performance/spans.js';
 
 const OVERALL_LABEL = { green: 'Nicely done', yellow: 'Getting there', red: 'Keep at it' };
 // tallyGrades reports overall: null when nothing was graded. Say so plainly —
