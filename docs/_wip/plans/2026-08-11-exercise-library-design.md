@@ -211,9 +211,26 @@ profile-level pref change.
    hang the backend outright. **The adapter must load a prebuilt index manifest**, generated
    once by a CLI command and refreshed deliberately — it must never walk the tree per boot.
 
-2. **True corpus size is unknown.** `du` reported 652 K, but that counts only hydrated
-   blocks and therefore undercounts the GIFs, PNGs, and MP4s badly. Measure the real byte
-   size before deciding what ships inside the container versus what streams.
+2. **Corpus size — MEASURED 2026-08-11.** **437 MB across 5,352 files**, read off the
+   homeserver where the tree is local. The dev machine's cloud mount reported `652 K`, an
+   undercount of roughly 670×, because `du` there counts only hydrated blocks.
+
+   | Slice | Files | Size |
+   |---|---|---|
+   | YAML — everything the index build reads | 1,363 | **2.5 MB** |
+   | Images + video — must stream | 3,988 | ~434 MB |
+
+   By directory: `assets/` 282M, `exercises/` 124M (the PNG stills), `hevy_videos/` 28M,
+   `muscles/` 4.6M, `equipment/` and `muscle_groups/` under 350K combined.
+
+   **Consequence:** 99.4% of the corpus is media. Only the generated index manifest belongs
+   in the container image; every image and video streams from the media tree. It also means
+   local development never needs the full corpus — hydrating the 2.5 MB of YAML is enough to
+   build the index.
+
+   **Method note:** measure on the homeserver, never the dev machine. `du` on a cloud mount
+   reports hydrated blocks rather than real size, and forcing full hydration to find out ran
+   for over an hour and reached 31% before being abandoned for a single `ssh`.
 
 3. **Provenance.** Third-party scraped content (see above). Household use only.
 

@@ -73,19 +73,25 @@ grep -rn "apps/fitness/library\|fitness/library" --include="*.mjs" --include="*.
 
 Expected: no output. If anything appears, stop and reconcile it before moving.
 
-**Step 2: Measure the true size before moving**
+**Step 2: Size — ALREADY MEASURED, do not re-measure**
 
-The corpus sits on a cloud-synced tree where files may be online-only placeholders, so `du`
-undercounts. Force materialization and measure:
+`437 MB across 5,352 files`; YAML is only `2.5 MB` of it (1,363 files) and media is the other
+~434 MB. Full breakdown in the design doc's Risks section (risk 2).
+
+**Never measure a cloud-mounted tree with local `du`** — it reports hydrated blocks, not real
+size, and was wrong here by ~670x. Measure on the homeserver, where the same Dropbox tree is
+local:
 
 ```bash
-find "{mediaDir}/library/exercise" -type f -exec cat {} + > /dev/null
-du -sh "{mediaDir}/apps/fitness/library"
+ssh homeserver.local 'du -sh <basePath>/media/apps/fitness/library'
 ```
 
-Record the real number in the design doc's Risks section (risk 2). This decides what ships in
-the container versus what streams. **This may take a long time** on a cold cloud tree — run it
-in the background and continue with Task 2 meanwhile.
+**For local development, hydrate ONLY the YAML** — the 434 MB of images and video are never
+needed to build the index, and pulling them down takes hours:
+
+```bash
+find "{mediaDir}/library/exercise" \( -name "*.yaml" -o -name "*.yml" \) -exec cat {} + > /dev/null
+```
 
 **Step 3: Move**
 
