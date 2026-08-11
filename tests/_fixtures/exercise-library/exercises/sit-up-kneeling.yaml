@@ -1,0 +1,23 @@
+# Exercises the "orphan muscle" path: `abs` is the ONLY target muscle, and abs
+# declares group `core`, which has no muscle_groups record. This exercise must
+# therefore land in byMuscle.abs with an empty `groups` and appear in NO group
+# bucket — the exact shape Task 3's validate command reports on.
+#
+# The slug also carries the paren-normalization case: the corpus ships videos
+# named `...-(kneeling)_Waist.mp4` whose slugs drop the parentheses
+# (real example: assisted-chest-dip-(kneeling) -> assisted-chest-dip-kneeling).
+id: 66666666-6666-6666-6666-666666666666
+name: Kneeling Sit-Up
+slug: sit-up-kneeling
+image: eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee
+description: A trunk flexion movement performed from a kneeling start.
+target_groups:
+  - core
+target_muscles:
+  - abs
+equipment:
+  - body-weight
+instructions:
+  - Kneel and brace your midsection.
+  - Curl your ribcage toward your pelvis.
+  - Return under control.

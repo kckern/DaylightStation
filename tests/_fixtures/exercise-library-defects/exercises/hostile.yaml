@@ -1,0 +1,11 @@
+id: e0000000-0000-0000-0000-000000000001
+name: Hostile
+slug: hostile
+description: References every prototype-polluting slug at once.
+target_muscles:
+  - constructor
+  - __proto__
+equipment:
+  - toString
+instructions:
+  - Do the thing.
