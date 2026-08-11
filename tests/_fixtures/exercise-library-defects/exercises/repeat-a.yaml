@@ -1,0 +1,7 @@
+id: e0000000-0000-0000-0000-000000000005
+name: Repeat A
+slug: repeat-a
+description: Names the same missing muscle twice.
+target_muscles:
+  - ghost-muscle
+  - ghost-muscle

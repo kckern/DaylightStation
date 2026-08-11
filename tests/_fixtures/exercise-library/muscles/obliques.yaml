@@ -1,0 +1,10 @@
+# Shares its image uuid with an exercise so the extension-preference rule is
+# observable: same uuid, .gif for the exercise, .png for the muscle plate.
+id: 77777777-7777-7777-7777-777777777777
+name: Obliques
+slug: obliques
+group: chest
+image: ffffffff-ffff-ffff-ffff-ffffffffffff
+description: The lateral trunk muscles.
+full_description: |
+  A longer anatomy essay about the obliques.
