@@ -20,11 +20,20 @@
 // - Output is camelCase only; downstream layers never see the corpus snake_case.
 // - Every map keyed by a corpus slug has a NULL PROTOTYPE. Slugs are untrusted
 //   input, and the corpus is free to contain `constructor` or `__proto__`.
+//
+// !! THE NULL-PROTOTYPE CONTRACT DOES NOT SURVIVE SERIALIZATION !!
+// `JSON.parse` (and js-yaml's loader) hand back ordinary `Object.prototype`-backed
+// objects. A consumer that reads the emitted manifest and does
+// `manifest.byMuscle[slug]` is exposed to exactly the prototype collision this
+// module defends against: `byMuscle['constructor']` will return an inherited
+// function rather than undefined. The adapter that loads this manifest MUST
+// restore null prototypes (or use `Map`/`Object.hasOwn`) on the slug-keyed maps:
+// exercises, muscles, muscleGroups, equipment, byGroup, byMuscle, byEquipment.
 
 import path from 'path';
 import {
   dirExists,
-  listEntries,
+  listFiles,
   loadYamlSafe,
 } from '#system/utils/FileIO.mjs';
 
@@ -42,15 +51,27 @@ const COLLECTIONS = {
 const ASSETS_DIR = 'assets';
 const VIDEO_DIR = 'hevy_videos';
 
-// Exercise demos are animated GIFs; muscle plates are PNGs. Verified against the
-// live corpus by filename census: 1285 .gif (≈ one per exercise) and 24 .png
-// (exactly one per muscle record). Used to disambiguate when one uuid has files
-// under several extensions, and as the shape of the guess when assets/ is absent.
+// Exercise demos are animated GIFs; muscle plates are PNGs. Filename census of
+// the live corpus: 1285 .gif against 1296 exercise records, and 24 .png against
+// 25 muscle records — so neither is a clean 1:1 and some records have no asset
+// (`muscles/cardio.yaml` has no plate). Used to disambiguate when one uuid has
+// files under several extensions, and as the shape of the guess when assets/ is
+// absent. Records with no asset resolve to `image: null`, which is a legitimate
+// content gap rather than a defect, so it is not warned about on its own; a
+// record naming an image uuid that is missing DOES warn (`missing-asset`).
 const PREFERRED_EXT = { exercise: '.gif', muscle: '.png' };
 
 const YAML_RE = /\.ya?ml$/i;
 const STILL_RE = /^(.+)_(\d+)\.png$/i;
 const VIDEO_RE = /\.mp4$/i;
+
+// Warning kinds whose `subject` is a FIELD NAME rather than a record-unique
+// identifier. Aggregating these across records would collapse, say, 412
+// exercises with a broken `instructions` into a single entry naming only the
+// first — leaving `validate` unable to enumerate the affected records. So these
+// get one entry per record; every other kind has a record-unique subject and
+// aggregates normally.
+const PER_RECORD_KINDS = new Set(['non-scalar-field', 'empty-field']);
 
 /**
  * Warning collector. Every warning is the SAME five-key skeleton, in the same
@@ -61,14 +82,15 @@ const VIDEO_RE = /\.mp4$/i;
  *
  * - `subject`      the offending identifier (a slug, uuid, filename or field name)
  * - `referrer`     which kind of record held the bad reference, or null
- * - `referencedBy` slug of the FIRST record that referenced it, or null
+ * - `referencedBy` the first record (slug) or file that raised it, or null
  * - `count`        how many DISTINCT records hit this same defect
  *
  * Warnings are deduplicated by (kind, subject, referrer). In the live corpus one
  * defect — the missing `muscle_groups/core.yaml` — is referenced by hundreds of
  * exercises; one entry per reference would bury the manifest in noise that says
  * nothing the first entry didn't. `count` tracks distinct referencing records, so
- * a record naming `core` twice still counts once.
+ * a record naming `core` twice still counts once. Kinds in PER_RECORD_KINDS opt
+ * out of that collapse — see the note there.
  */
 function createWarningSink() {
   const list = [];
@@ -77,7 +99,9 @@ function createWarningSink() {
   return {
     list,
     add(kind, subject, referrer = null, referencedBy = null) {
-      const key = `${kind}::${subject}::${referrer}`;
+      const key = PER_RECORD_KINDS.has(kind)
+        ? `${kind}::${subject}::${referrer}::${referencedBy}`
+        : `${kind}::${subject}::${referrer}`;
       const existing = byKey.get(key);
       if (existing) {
         existing.refs.add(referencedBy);
@@ -92,15 +116,22 @@ function createWarningSink() {
 }
 
 /**
- * One sorted, stat-free directory listing.
+ * One sorted listing of the REGULAR FILES in a directory.
  *
- * Deliberately `listEntries` (a bare readdirSync) rather than `listFiles`, which
- * stats every entry — measured at ~385 ms for the 1,321-entry assets directory on
- * the cloud mount. We only ever need names. Non-file entries would be misread as
- * files, which is acceptable: none of these directories contain subdirectories.
+ * `listFiles` reads dirents, so the is-it-a-file test rides along on the single
+ * scandir call. That matters twice over: a bare readdir would let a *directory*
+ * named `uuid.gif` register as a resolved asset (making a non-null `image` path
+ * mean "maybe a directory" and puncturing the guarantee that non-null == real
+ * file), and a stat-per-entry listing costs ~10x more. Measured on the cloud
+ * mount, warm cache: 1,321-entry assets dir 9.4ms stat-per-entry vs 0.9ms
+ * dirents vs 0.7ms bare readdir — dirents buy the correctness for ~nothing.
+ *
+ * The extra `.`-prefix filter drops dotfiles that `listFiles` keeps: the corpus
+ * carries 27 AppleDouble `._*` siblings across these directories, and `._x.gif`
+ * would otherwise register a bogus asset id `._x`.
  */
 function sortedEntries(dirPath) {
-  return listEntries(dirPath)
+  return listFiles(dirPath)
     .filter((name) => !name.startsWith('.'))
     .sort();
 }
@@ -135,13 +166,16 @@ function toStringArray(value, field, referrer, slug, warnings) {
 }
 
 /**
- * Read one collection directory into a slug-keyed Map of raw records, plus the
- * directory's non-YAML entries (the corpus interleaves images with records:
- * `3-4-sit-up.yaml`, `3-4-sit-up_1.png`, `muscles/abs.png`).
+ * Read one collection directory into a slug-keyed Map of raw records.
+ *
+ * The corpus interleaves images with records (`3-4-sit-up.yaml`,
+ * `3-4-sit-up_1.png`, `muscles/abs.png`), so non-YAML entries are skipped. Only
+ * the exercises collection has any use for them, so only it asks for them back
+ * via `collectOtherFiles`.
  *
  * Missing directories are tolerated: empty result plus a warning.
  */
-function readCollection(corpusDir, { dir, referrer }, warnings) {
+function readCollection(corpusDir, { dir, referrer }, warnings, collectOtherFiles = false) {
   const dirPath = path.join(corpusDir, dir);
   const records = new Map();
   const otherFiles = [];
@@ -153,7 +187,7 @@ function readCollection(corpusDir, { dir, referrer }, warnings) {
 
   for (const filename of sortedEntries(dirPath)) {
     if (!YAML_RE.test(filename)) {
-      otherFiles.push(filename);
+      if (collectOtherFiles) otherFiles.push(filename);
       continue;
     }
 
@@ -233,20 +267,32 @@ function resolveAsset(imageId, assetIndex, kind, ownerSlug, warnings) {
 }
 
 /**
- * Map `Exercise-Name_BodyPart.mp4` onto an exercise slug.
+ * Candidate exercise slugs for a `Exercise-Name_BodyPart.mp4` video filename.
  *
- * Verified against the live corpus: lowercasing and dropping parentheses matches
- * 49 of the 66 videos (e.g. `Assisted-Chest-Dip-(kneeling)_Chest.mp4` ->
- * `assisted-chest-dip-kneeling`). The other 17 have no exercise record at all —
- * the video set and the corpus only partially overlap — and are reported as
- * `unmatched-video` rather than guessed at.
+ * The corpus is genuinely inconsistent about parentheticals, so no single rule
+ * wins. Measured against the live corpus (66 videos, 1296 records):
+ *
+ *   unwrap — keep the text, drop the brackets:
+ *     `Assisted-Chest-Dip-(kneeling)` -> `assisted-chest-dip-kneeling`   49 hits
+ *   drop   — remove the parenthetical entirely:
+ *     `Barbell-Romanian-Deadlift-(female)` -> `barbell-romanian-deadlift` 51 hits
+ *   unwrap, then drop as a fallback:                                     52 hits
+ *
+ * Trying both loses nothing and gains three records the old unwrap-only rule
+ * discarded. The remaining 14 have no record under either rule (e.g. `v-up`,
+ * `wheel-rollout`) and are reported as `unmatched-video` rather than guessed at.
+ *
+ * @returns {[string, string]} the exact (unwrap) candidate, then the fallback.
  */
-function videoSlug(filename) {
-  return filename
+function videoSlugCandidates(filename) {
+  const base = filename
     .replace(VIDEO_RE, '')
     .replace(/_[^_]*$/, '')   // trailing _BodyPart, which may itself be hyphenated
-    .replace(/[()]/g, '')
     .toLowerCase();
+  return [
+    base.replace(/[()]/g, ''),
+    base.replace(/-?\([^)]*\)/g, '').replace(/-+$/, ''),
+  ];
 }
 
 /** Append `exerciseSlug` to a null-prototype bucket map, creating it on first use. */
@@ -282,7 +328,7 @@ export function buildExerciseIndex(corpusDir, { builtAt = null } = {}) {
   const groupsRead = readCollection(corpusDir, COLLECTIONS.muscleGroups, warnings);
   const musclesRead = readCollection(corpusDir, COLLECTIONS.muscles, warnings);
   const equipmentRead = readCollection(corpusDir, COLLECTIONS.equipment, warnings);
-  const exercisesRead = readCollection(corpusDir, COLLECTIONS.exercises, warnings);
+  const exercisesRead = readCollection(corpusDir, COLLECTIONS.exercises, warnings, true);
   const assetIndex = readAssetIndex(corpusDir, warnings);
 
   // --- muscle groups -------------------------------------------------------
@@ -353,27 +399,56 @@ export function buildExerciseIndex(corpusDir, { builtAt = null } = {}) {
     const match = STILL_RE.exec(filename);
     if (!match) continue;
     const slug = match[1];
+    // Naming drift between 2,564 stills and 1,296 records would otherwise be
+    // invisible, so an orphan still is reported rather than dropped.
+    if (!exercisesRead.records.has(slug)) {
+      warnings.add('unmatched-still', filename, 'exercise-still');
+      continue;
+    }
     if (!stillsBySlug.has(slug)) stillsBySlug.set(slug, []);
     stillsBySlug.get(slug).push(`${COLLECTIONS.exercises.dir}/${filename}`);
   }
 
+  // Two passes so an exact (unwrap) match always beats a fallback (drop) match
+  // for the same slug, regardless of filename sort order.
   const videoBySlug = new Map();
   const videoDirPath = path.join(corpusDir, VIDEO_DIR);
-  const unmatchedVideos = [];
   if (!dirExists(videoDirPath)) {
     warnings.add('missing-directory', VIDEO_DIR);
   } else {
-    for (const filename of sortedEntries(videoDirPath)) {
-      if (!VIDEO_RE.test(filename)) continue;
-      const slug = videoSlug(filename);
-      if (!exercisesRead.records.has(slug) || videoBySlug.has(slug)) {
-        unmatchedVideos.push(filename);
+    const videoFiles = sortedEntries(videoDirPath).filter((f) => VIDEO_RE.test(f));
+    const claimedBy = new Map();
+    const pending = [];
+
+    for (const filename of videoFiles) {
+      const [exact, fallback] = videoSlugCandidates(filename);
+      if (exercisesRead.records.has(exact)) {
+        if (claimedBy.has(exact)) {
+          warnings.add('duplicate-video', filename, 'hevy-video', claimedBy.get(exact));
+          continue;
+        }
+        claimedBy.set(exact, exact);
+        videoBySlug.set(exact, `${VIDEO_DIR}/${filename}`);
+      } else {
+        pending.push([filename, fallback]);
+      }
+    }
+
+    for (const [filename, fallback] of pending) {
+      if (!exercisesRead.records.has(fallback)) {
+        warnings.add('unmatched-video', filename, 'hevy-video');
         continue;
       }
-      videoBySlug.set(slug, `${VIDEO_DIR}/${filename}`);
+      // Distinguished from `unmatched-video`: the record exists and already has
+      // a video, so triage should not go hunting for a missing exercise.
+      if (claimedBy.has(fallback)) {
+        warnings.add('duplicate-video', filename, 'hevy-video', claimedBy.get(fallback));
+        continue;
+      }
+      claimedBy.set(fallback, fallback);
+      videoBySlug.set(fallback, `${VIDEO_DIR}/${filename}`);
     }
   }
-  for (const filename of unmatchedVideos) warnings.add('unmatched-video', filename, 'hevy-video');
 
   // --- exercises + inverted indexes ---------------------------------------
   const exercises = Object.create(null);

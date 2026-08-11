@@ -29,9 +29,10 @@ describe('buildExerciseIndex', () => {
     });
 
     it('defaults a missing equipment id to null, like every other record', () => {
-      const index = buildExerciseIndex(FIXTURE);
-      expect(index.equipment.barbell.id).toBe('barbell');
-      expect(index.muscleGroups.chest.name).toBe('Chest');
+      // no-id.yaml has no `id` field at all — the case the default exists for.
+      expect(buildExerciseIndex(DEFECTS).equipment['no-id'].id).toBeNull();
+      // An id that IS present is preserved verbatim.
+      expect(buildExerciseIndex(FIXTURE).equipment.barbell.id).toBe('barbell');
     });
 
     it('is deterministic across rebuilds', () => {
@@ -74,6 +75,27 @@ describe('buildExerciseIndex', () => {
       }));
     });
 
+    it('never resolves a non-file entry as an asset', () => {
+      // assets/dddd….png is a DIRECTORY named exactly like the file abs wants.
+      // A non-null image path must always mean a real file, or I1's guarantee
+      // ("null means unresolved") degrades to "resolved, or maybe a directory".
+      const index = buildExerciseIndex(FIXTURE);
+      expect(index.muscles.abs.image).toBeNull();
+      expect(index.warnings).toContainEqual(expect.objectContaining({
+        kind: 'missing-asset',
+        subject: 'dddddddd-dddd-dddd-dddd-dddddddddddd',
+        referencedBy: 'abs',
+      }));
+    });
+
+    it('prefers the extension each record type is expected to use', () => {
+      // One uuid, both .gif and .png present in assets/.
+      const index = buildExerciseIndex(FIXTURE);
+      const uuid = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
+      expect(index.exercises['sit-up-kneeling'].image).toBe(`assets/${uuid}.gif`);
+      expect(index.muscles.obliques.image).toBe(`assets/${uuid}.png`);
+    });
+
     it('reports assetsResolved so the adapter knows if paths are authoritative', () => {
       expect(buildExerciseIndex(FIXTURE).assetsResolved).toBe(true);
       expect(buildExerciseIndex(DEFECTS).assetsResolved).toBe(false);
@@ -110,6 +132,15 @@ describe('buildExerciseIndex', () => {
       }
     });
 
+    it('preserves declaredGroup only when the group failed to resolve', () => {
+      const index = buildExerciseIndex(FIXTURE);
+      expect(index.muscles.abs.group).toBeNull();
+      expect(index.muscles.abs.declaredGroup).toBe('core');
+      // Resolved: the field is absent entirely, so no consumer has to diff two.
+      expect(index.muscles.pectorals.group).toBe('chest');
+      expect('declaredGroup' in index.muscles.pectorals).toBe(false);
+    });
+
     it('indexes by muscle and by equipment', () => {
       const index = buildExerciseIndex(FIXTURE);
       expect(index.byMuscle.pectorals).toEqual(['barbell-bench-press', 'push-up']);
@@ -118,13 +149,32 @@ describe('buildExerciseIndex', () => {
   });
 
   describe('media beyond the demo asset', () => {
-    it('matches hevy videos to exercise slugs, normalizing parentheses', () => {
+    it('matches a video whose slug needs the brackets unwrapped', () => {
+      // `Sit-up-(kneeling)_Waist.mp4` -> `sit-up-kneeling`
       const index = buildExerciseIndex(FIXTURE);
-      expect(index.exercises['push-up'].video).toBe('hevy_videos/Push-Up_Chest.mp4');
-      // `Sit-up-(kneeling)_Waist.mp4` -> slug `sit-up-kneeling`
       expect(index.exercises['sit-up-kneeling'].video)
         .toBe('hevy_videos/Sit-up-(kneeling)_Waist.mp4');
-      expect(index.exercises['barbell-bench-press'].video).toBeNull();
+    });
+
+    it('falls back to dropping the parenthetical when unwrapping finds nothing', () => {
+      // `Barbell-Bench-Press-(female)_Chest.mp4` has no `...-female` record, so
+      // it must fall back to `barbell-bench-press`. Mirrors the real corpus's
+      // Barbell-Romanian-Deadlift-(female), which the unwrap-only rule lost.
+      const index = buildExerciseIndex(FIXTURE);
+      expect(index.exercises['barbell-bench-press'].video)
+        .toBe('hevy_videos/Barbell-Bench-Press-(female)_Chest.mp4');
+    });
+
+    it('lets an exact match beat a fallback match for the same slug', () => {
+      // Push-Up_Chest.mp4 matches `push-up` exactly; Push-Up-(wide-grip) only
+      // reaches it via the fallback, so it must lose regardless of sort order.
+      const index = buildExerciseIndex(FIXTURE);
+      expect(index.exercises['push-up'].video).toBe('hevy_videos/Push-Up_Chest.mp4');
+      expect(index.warnings).toContainEqual(expect.objectContaining({
+        kind: 'duplicate-video',
+        subject: 'Push-Up-(wide-grip)_Chest.mp4',
+        referencedBy: 'push-up',
+      }));
     });
 
     it('warns about videos with no matching exercise', () => {
@@ -133,6 +183,9 @@ describe('buildExerciseIndex', () => {
         kind: 'unmatched-video',
         subject: 'Unknown-Movement_Waist.mp4',
       }));
+      // A losing duplicate must NOT be reported as unmatched — the record exists.
+      const unmatched = index.warnings.filter((w) => w.kind === 'unmatched-video');
+      expect(unmatched.map((w) => w.subject)).toEqual(['Unknown-Movement_Waist.mp4']);
     });
 
     it('indexes the per-exercise stills', () => {
@@ -140,6 +193,13 @@ describe('buildExerciseIndex', () => {
       expect(index.exercises['push-up'].stills)
         .toEqual(['exercises/push-up_1.png', 'exercises/push-up_2.png']);
       expect(index.exercises['barbell-bench-press'].stills).toEqual([]);
+    });
+
+    it('warns about a still with no matching exercise', () => {
+      const index = buildExerciseIndex(FIXTURE);
+      expect(index.warnings).toContainEqual(expect.objectContaining({
+        kind: 'unmatched-still', subject: 'ghost-move_1.png',
+      }));
     });
   });
 
@@ -213,7 +273,7 @@ describe('buildExerciseIndex', () => {
       }
     });
 
-    it('counts distinct referencing records, not repeated references', () => {
+    it('separates entries by referrer', () => {
       // `core` is referenced by muscle abs (group:) and by sit-up-kneeling's
       // target_groups hint — different referrers, so two entries of count 1.
       const index = buildExerciseIndex(FIXTURE);
@@ -222,6 +282,31 @@ describe('buildExerciseIndex', () => {
       );
       expect(core.map((w) => w.referrer).sort()).toEqual(['exercise', 'muscle']);
       for (const w of core) expect(w.count).toBe(1);
+    });
+
+    it('collapses one shared defect to a single entry counting distinct records', () => {
+      // repeat-a names `ghost-muscle` TWICE, repeat-b names it once: three
+      // references from two records. Aggregation must yield ONE entry (not
+      // three) with count 2 (not 3), naming the first record it saw.
+      const index = buildExerciseIndex(DEFECTS);
+      const ghost = index.warnings.filter(
+        (w) => w.kind === 'unknown-muscle' && w.subject === 'ghost-muscle' && w.referrer === 'exercise'
+      );
+      expect(ghost).toHaveLength(1);
+      expect(ghost[0].count).toBe(2);
+      expect(ghost[0].referencedBy).toBe('repeat-a');
+    });
+
+    it('does not collapse field-level defects across records', () => {
+      // `subject` here is a field NAME shared by every record, so collapsing
+      // would leave validate unable to enumerate which records are broken.
+      const index = buildExerciseIndex(DEFECTS);
+      const empties = index.warnings.filter(
+        (w) => w.kind === 'empty-field' && w.subject === 'instructions'
+      );
+      expect(empties.map((w) => w.referencedBy).sort())
+        .toEqual(['bad-scalars', 'bad-scalars-two']);
+      for (const w of empties) expect(w.count).toBe(1);
     });
   });
 });

@@ -9,7 +9,9 @@
 id: 66666666-6666-6666-6666-666666666666
 name: Kneeling Sit-Up
 slug: sit-up-kneeling
-image: eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee
+# Shares this uuid with muscles/obliques.yaml, which has BOTH a .gif and a .png
+# in assets/. This record must resolve to the .gif, the muscle to the .png.
+image: ffffffff-ffff-ffff-ffff-ffffffffffff
 description: A trunk flexion movement performed from a kneeling start.
 target_groups:
   - core
