@@ -34,6 +34,10 @@
  * - GET  /api/fitness/cycle-races - List cycle-game races (by date, course/win-condition, or dates)
  * - GET  /api/fitness/cycle-races/ladder - Get the current week's cycle-game ladder
  * - GET  /api/fitness/cycle-races/personal-bests - Get a user's personal best for a course
+ * - GET  /api/fitness/workouts - List household workout summaries
+ * - GET  /api/fitness/workouts/:id - Get one full workout
+ * - POST /api/fitness/workouts - Create or update a workout (400 names unknown slugs)
+ * - DELETE /api/fitness/workouts/:id - Delete a workout
  */
 import express from 'express';
 import { writeBinary, deleteFile } from '#system/utils/FileIO.mjs';
@@ -73,6 +77,8 @@ const COMMIT_PENDING_MAX_AGE_MS = 120000; // 2 min
  * @param {Object} [config.sessionLockService] - SessionLockService (constructed at composition root)
  * @param {Object} [config.simulationService] - FitnessSimulationService (constructed at composition root)
  * @param {Object} [config.querySessions] - QuerySessions use case (defaults to one wired from sessionService)
+ * @param {Object} [config.workoutRepository] - YamlWorkoutRepository for the /workouts routes
+ * @param {Object} [config.saveWorkout] - SaveWorkout use case (validates slugs before persisting)
  * @param {Object} config.logger - Logger instance
  * @returns {express.Router}
  */
@@ -118,6 +124,10 @@ export function createFitnessRouter(config) {
     // composition root) so this router keeps no filesystem access of its own.
     menuMusicProvider = null,
     voiceMemoDebugStore = null,
+    // Workout persistence (Build/Run). Both are constructed at the composition root;
+    // absent, the /workouts routes report 503 rather than half-working.
+    workoutRepository = null,
+    saveWorkout = null,
     logger = console
   } = config;
 
@@ -1321,6 +1331,69 @@ export function createFitnessRouter(config) {
     const householdId = req.query.household || defaultHouseholdId;
     const { status, body } = await manageAccess.remove(householdId, req.body || {});
     return res.status(status).json(body);
+  }));
+
+  // -------------------- Workouts (Build authors, Run performs) --------------------
+  // Household-scoped, not per-user: the garage screen is shared equipment, so a workout
+  // one person builds must be runnable by whoever walks in next. The record's `author`
+  // field carries the credit instead of the file path.
+
+  /**
+   * GET /api/fitness/workouts - Summaries for the Build picker.
+   * Summaries, not bodies: a picker needs a title, an author and how much work it is,
+   * and shipping every set and rep of every workout to draw a list is the whole shelf
+   * on the wire for one screen.
+   */
+  router.get('/workouts', asyncHandler(async (req, res) => {
+    if (!workoutRepository) return res.status(503).json({ error: 'workouts unavailable' });
+    const householdId = req.query.household || defaultHouseholdId;
+    return res.json({ workouts: workoutRepository.list(householdId) });
+  }));
+
+  /**
+   * GET /api/fitness/workouts/:id - One full workout, for Build to edit and Run to walk.
+   */
+  router.get('/workouts/:id', asyncHandler(async (req, res) => {
+    if (!workoutRepository) return res.status(503).json({ error: 'workouts unavailable' });
+    const householdId = req.query.household || defaultHouseholdId;
+    const workout = workoutRepository.get(req.params.id, householdId);
+    if (!workout) return res.status(404).json({ error: 'not found' });
+    return res.json({ workout });
+  }));
+
+  /**
+   * POST /api/fitness/workouts - Create or update. Body is the workout, or { workout }.
+   *
+   * A payload carrying an id updates that workout; without one, an id is generated. The
+   * 400 path names EVERY unknown exercise slug: a workout pointing at an exercise that
+   * does not exist would fail at Run time, in front of someone mid-session, so it is
+   * refused here where the person who typed it can still fix it — all of them at once.
+   */
+  router.post('/workouts', asyncHandler(async (req, res) => {
+    if (!saveWorkout) return res.status(503).json({ error: 'workouts unavailable' });
+    const householdId = req.query.household || defaultHouseholdId;
+    const body = req.body || {};
+    const result = saveWorkout.execute({ workout: body.workout ?? body, householdId });
+    if (!result.ok) {
+      return res.status(400).json({ error: result.error, unknownSlugs: result.unknownSlugs });
+    }
+    return res.status(result.created ? 201 : 200).json({
+      id: result.id, created: result.created, createdAt: result.createdAt, updatedAt: result.updatedAt,
+    });
+  }));
+
+  /**
+   * DELETE /api/fitness/workouts/:id - 404 on an unknown id rather than a silent 204:
+   * the caller's picker is then known to be stale, instead of reporting success for a
+   * workout that was never there.
+   */
+  router.delete('/workouts/:id', asyncHandler(async (req, res) => {
+    if (!workoutRepository) return res.status(503).json({ error: 'workouts unavailable' });
+    const householdId = req.query.household || defaultHouseholdId;
+    if (!workoutRepository.delete(req.params.id, householdId)) {
+      return res.status(404).json({ error: 'not found' });
+    }
+    return res.json({ ok: true, id: req.params.id });
   }));
 
   // Shared error middleware: expected errors (mapped by err.name/err.status) →
