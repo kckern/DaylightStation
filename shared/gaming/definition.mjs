@@ -1,6 +1,70 @@
 import { GAMING_SCHEMA_VERSION } from './contracts.mjs';
 
 const SAFE_ID = /^[a-z][a-z0-9-]{0,63}$/;
+const JOURNEY_ID = 'pokemon-practice-journey-v1';
+const POKEMON_ASSET_FACING = new Set(['left', 'right', 'front']);
+
+function validateJourneyDefinition(definition, errors) {
+  const journey = definition.journey;
+  if (!journey || typeof journey !== 'object') {
+    errors.push('journey is required');
+    return;
+  }
+  if (!Number.isInteger(journey.version) || journey.version < 1) errors.push('journey.version must be a positive integer');
+  if (!Number.isInteger(journey.score_version) || journey.score_version < 1) errors.push('journey.score_version must be a positive integer');
+  if (!(journey.player_health > 0)) errors.push('journey.player_health must be positive');
+  if (!Array.isArray(journey.partners) || journey.partners.length !== 3) errors.push('journey.partners must contain exactly three partners');
+  if (!Array.isArray(journey.opponents) || journey.opponents.length !== 3) errors.push('journey.opponents must contain exactly three opponents');
+
+  const cards = definition.cards;
+  if (!cards || typeof cards !== 'object' || Array.isArray(cards)) errors.push('cards must be an object');
+  for (const partner of journey.partners || []) {
+    if (!SAFE_ID.test(String(partner?.id || ''))) errors.push('journey partner id is invalid');
+    if (typeof partner?.name !== 'string' || partner.name.trim() === '') errors.push(`journey partner ${partner?.id || '?'} requires a name`);
+    if (!POKEMON_ASSET_FACING.has(partner?.asset_facing)) errors.push(`journey partner ${partner?.id || '?'} asset_facing is invalid`);
+    if (!Array.isArray(partner?.move_ids) || partner.move_ids.length !== 4) {
+      errors.push(`journey partner ${partner?.id || '?'} must declare four moves`);
+    }
+    for (const moveId of partner?.move_ids || []) {
+      if (!cards?.[moveId]) errors.push(`journey partner ${partner?.id || '?'} references unknown move: ${moveId}`);
+    }
+  }
+  for (const opponent of journey.opponents || []) {
+    if (!SAFE_ID.test(String(opponent?.id || ''))) errors.push('journey opponent id is invalid');
+    if (!POKEMON_ASSET_FACING.has(opponent?.asset_facing)) errors.push(`journey opponent ${opponent?.id || '?'} asset_facing is invalid`);
+    if (!(opponent?.health > 0)) errors.push(`journey opponent ${opponent?.id || '?'} health must be positive`);
+    if (!Array.isArray(opponent?.intents) || opponent.intents.length < 2) {
+      errors.push(`journey opponent ${opponent?.id || '?'} must contain at least two intents`);
+    }
+    for (const intent of opponent?.intents || []) {
+      if (!SAFE_ID.test(String(intent?.id || ''))) errors.push(`journey opponent ${opponent?.id || '?'} intent id is invalid`);
+      if (!['attack', 'defend', 'charge'].includes(intent?.kind)) errors.push(`journey intent ${intent?.id || '?'} kind is invalid`);
+      if (!(intent?.amount > 0)) errors.push(`journey intent ${intent?.id || '?'} amount must be positive`);
+    }
+  }
+  const referencedMoves = new Set((journey.partners || []).flatMap((partner) => partner.move_ids || []));
+  for (const moveId of referencedMoves) {
+    const move = cards?.[moveId];
+    if (!move) continue;
+    if (!(move.damage >= 0)) errors.push(`journey move ${moveId} damage must be non-negative`);
+    if (move.block !== undefined && !(move.block > 0)) errors.push(`journey move ${moveId} block must be positive`);
+    if (move.focus !== undefined && !(move.focus > 0)) errors.push(`journey move ${moveId} focus must be positive`);
+    if (typeof move.challenge?.domain !== 'string' || typeof move.challenge?.kind !== 'string') {
+      errors.push(`journey move ${moveId} must declare a challenge domain and kind`);
+    } else if (!['scale', 'chord', 'arpeggio', 'timed-pattern'].includes(move.challenge.kind)) {
+      errors.push(`journey move ${moveId} has unsupported practice kind: ${move.challenge.kind}`);
+    }
+    if (!Array.isArray(move.outcomes) || move.outcomes.length !== 4 || move.outcomes.at(-1)?.min_score !== 0) {
+      errors.push(`journey move ${moveId} must define four outcomes ending at min_score 0`);
+    } else {
+      for (let index = 0; index < move.outcomes.length; index += 1) {
+        const threshold = move.outcomes[index]?.min_score;
+        if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1) errors.push(`journey move ${moveId} has invalid outcome threshold`);
+        if (index > 0 && threshold >= move.outcomes[index - 1].min_score) errors.push(`journey move ${moveId} outcomes must be strictly descending`);
+      }
+    }
+  }
+}
 
 export function canonicalize(value) {
   if (Array.isArray(value)) return value.map(canonicalize);
@@ -21,8 +85,14 @@ export function validateDefinition(definition) {
   }
   if (definition.schema_version !== GAMING_SCHEMA_VERSION) errors.push(`schema_version must be ${GAMING_SCHEMA_VERSION}`);
   if (!SAFE_ID.test(String(definition.game_id || ''))) errors.push('game_id is invalid');
-  if (definition.view_id !== 'card-battle-v1') errors.push('first-wave view_id must be card-battle-v1');
-  if (definition.ruleset !== 'card-battle-v1') errors.push('first-wave ruleset must be card-battle-v1');
+  const legacyCardBattle = definition.view_id === 'card-battle-v1' && definition.ruleset === 'card-battle-v1';
+  const pokemonJourney = definition.view_id === JOURNEY_ID && definition.ruleset === JOURNEY_ID;
+  if (!legacyCardBattle && !pokemonJourney) errors.push('view_id and ruleset must name a supported matching game contract');
+  if (pokemonJourney) {
+    validateJourneyDefinition(definition, errors);
+    return { valid: errors.length === 0, errors };
+  }
+  if (!legacyCardBattle) return { valid: errors.length === 0, errors };
 
   const battle = definition.card_battle;
   if (!battle || typeof battle !== 'object') errors.push('card_battle is required');

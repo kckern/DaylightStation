@@ -177,13 +177,20 @@ Every cold or warm launch opens `ENTER CODE`. Profile and Catalog screens are
 not normal v1 routes.
 
 - Decimal keys fill six positions and visibly preserve zeroes.
-- Backspace/cancel edits without altering canonical study state.
-- `ENTER` on a locally resolved code opens its current local state.
+- Each accepted digit replaces only its own 7x8 cursor cell. The other five
+  cells, instruction text, header, status, and rail MUST NOT be repainted.
+- F1 is blank until all six positions are filled, then becomes `OPEN`.
+- `ENTER` and F1 are inert before six digits; either opens the completed code.
+- On digit six, an exact locally resolved code immediately shows `OPENING...`
+  and launches its current study/result state without another keypress. An
+  unknown code remains completed with `OPEN` available; relay resolution still
+  requires explicit F1 or `ENTER` confirmation.
+- F2-F4 are blank and inert. F5 is `EXIT` at the far right and returns directly
+  to TI-OS without altering canonical study state.
 - A new code creates a durable resolution request and directs the learner to
   connect the relay once.
-- Startup may show a contextual `RESUME` action when one unfinished local
-  prescription exists, but the screen title and primary task remain
-  `ENTER CODE`.
+- There is no zero-digit Resume route. Resuming unfinished work requires
+  re-entering its six-digit code, which opens its exact local state.
 - If the code has a locally queued completed result, entering it reopens
   Result/QR and never restarts study or quiz.
 
@@ -308,6 +315,11 @@ The front and back of a card use these exact softkey rails:
 
 F2 is visually blank and has no behavior on both surfaces. A rating is accepted
 only on the back. `FLIP` is reversible and does not count as another exposure.
+The visible face and its fully rendered opposite face remain resident as a
+two-surface cache. F1 swaps those complete card bodies immediately in either
+direction; content decoding, line layout, vector rendering, and durable writes
+MUST NOT precede the visible swap. The exchange MUST be interrupt-atomic so
+repeated toggles are pixel-identical and cannot accumulate framebuffer noise.
 
 The initial active queue is authored card order. Showing a card increments its
 exposure count. After its back is shown:
@@ -320,6 +332,19 @@ exposure count. After its back is shown:
 - reaching `maxExposuresPerCard` without `KNOW` retires the card as unresolved
   after recording its last rating.
 
+Pressing `AGAIN`, `HARD`, or `KNOW` MUST immediately clear the card and show a
+centered `LOADING...` acknowledgement before persistence, scheduling, or next
+surface rendering. That stable acknowledgement remains visible until the next
+card or study summary is complete.
+
+The immutable artifact is fully CRC-, schema-, and identity-validated once at
+runtime startup. Between cards, the runtime may refind its relocated TI-OS
+address, require the exact validated length, and reuse its module/item offsets;
+it MUST NOT repeat the whole-bank validation scan on every rating transition.
+The next selected face is composed completely in the hidden framebuffer while
+`LOADING...` remains stable, then revealed with one bounded copy. Learners MUST
+NOT see a partially drawn border, prompt, graphic, or rail.
+
 Eligibility is measured in intervening presentations, not wall-clock time.
 When several cards are eligible, choose the earliest scheduled due position,
 breaking ties by authored order. If every active card is cooling down, advance
@@ -328,9 +353,8 @@ cooldown exception. Do not render a fake wait or invent card presentations,
 exposures, or telemetry for the skipped ordinal positions.
 
 `EXIT` safely pauses after committing the current stable state. Relaunch returns
-to Enter Code and offers contextual Resume. Resumption must reproduce the exact
-next eligible card and must not double-count the last visible exposure or
-rating.
+to Enter Code; re-entering the same six-digit code must reproduce the exact next
+eligible card and must not double-count the last visible exposure or rating.
 
 ## 11. Study summary, quiz, and local completion
 
@@ -339,12 +363,18 @@ for each of known, hard, again, and unresolved. Labels without values are not a
 summary. `F5 QUIZ` starts the one prescribed quiz. There is no same-session
 restudy or remediation loop.
 
+Each item is one screen: at most two compact prompt rows followed by all A–E
+choices (normally four) on the same LCD. Content that cannot fit that bounded
+surface is incompatible and must be rejected before issuance. The calculator
+never truncates text and never separates the choices onto a second page.
+
 The quiz:
 
-- labels every prompt and choice screen `QUIZ: <subject>` using the immutable
+- labels every question screen `QUIZ: <subject>` using the immutable
   artifact subject, with the item position retained at right;
 - uses the persisted quiz IDs and order;
 - presents exactly one A-E choice per item;
+- maps visible A–E choices directly to F1–F5;
 - records one four-bit choice value per item;
 - does not ask the relay for hints, alternate items, or grading; and
 - computes local score evidence using the exact prescribed artifact.
@@ -475,7 +505,7 @@ download transaction itself.
 4. `AGAIN` returning after two intervening presentations;
 5. `HARD` returning after four intervening presentations;
 6. F2 remaining visually and behaviorally blank on card front and back;
-7. power-safe pause, relaunch to Enter Code, and contextual resume;
+7. power-safe pause, relaunch to Enter Code, and six-digit-code resume;
 8. study completion -> quiz -> durable result -> Version-5/M QR;
 9. re-entering a locally completed code reopening Result; and
 10. no profile, Subject, Catalog, lesson-menu, notes, examples, tutor, progress,

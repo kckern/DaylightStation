@@ -2,12 +2,58 @@ import crypto from 'node:crypto';
 import {
   COMMAND_TYPES,
   GAMING_ENGINE_VERSION,
+  POKEMON_JOURNEY_RULESET,
   projectState,
   transition,
   validateCommandEnvelope,
   createInitialState,
   canonicalStringify,
 } from '#shared/gaming/index.mjs';
+
+const clone = (value) => structuredClone(value);
+const participantId = (session) => session.participants?.[0]?.user_id || session.participants?.[0]?.id || 'guest';
+const participantName = (session) => session.participants?.[0]?.display_name
+  || session.participants?.[0]?.name
+  || participantId(session);
+
+function isoWeekKey(date) {
+  const local = new Date(date);
+  local.setHours(12, 0, 0, 0);
+  const thursday = new Date(local);
+  thursday.setDate(local.getDate() + 3 - ((local.getDay() + 6) % 7));
+  const firstThursday = new Date(thursday.getFullYear(), 0, 4, 12);
+  const week = 1 + Math.round(((thursday - firstThursday) / 86_400_000 - 3 + ((firstThursday.getDay() + 6) % 7)) / 7);
+  return `${thursday.getFullYear()}-W${String(week).padStart(2, '0')}`;
+}
+
+function currentLocalWeek(clock, requestedKey = null) {
+  let anchor = clock();
+  if (requestedKey) {
+    const match = /^(\d{4})-W(\d{2})$/.exec(requestedKey);
+    if (!match) throw new GamingServiceError('invalid_week', 'week must use YYYY-Www', 400);
+    const year = Number(match[1]);
+    const week = Number(match[2]);
+    if (week < 1 || week > 53) throw new GamingServiceError('invalid_week', 'week must use YYYY-Www', 400);
+    const januaryFourth = new Date(year, 0, 4, 12);
+    const monday = new Date(januaryFourth);
+    monday.setDate(januaryFourth.getDate() - ((januaryFourth.getDay() + 6) % 7) + (week - 1) * 7);
+    if (isoWeekKey(monday) !== requestedKey) throw new GamingServiceError('invalid_week', 'week is not a valid ISO week', 400);
+    anchor = monday;
+  }
+  const start = new Date(anchor);
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+  const end = new Date(start);
+  end.setDate(start.getDate() + 7);
+  return { key: isoWeekKey(start), start, end };
+}
+
+function betterRun(left, right) {
+  if (!left) return right;
+  if (!right) return left;
+  if (right.score !== left.score) return right.score > left.score ? right : left;
+  return String(right.completed_at).localeCompare(String(left.completed_at)) < 0 ? right : left;
+}
 
 export class GamingServiceError extends Error {
   constructor(code, message, status = 400, details = null) {
@@ -92,8 +138,14 @@ export class GamingSessionService {
     }
     const loaded = this.getDefinition(gameId);
     const pinned = this.definitionStore.pin(loaded.definition);
-    if (setup?.upgrade_id && !(pinned.definition.card_battle.upgrades || []).some((upgrade) => upgrade.id === setup.upgrade_id)) {
+    if (setup?.upgrade_id && !(pinned.definition.card_battle?.upgrades || []).some((upgrade) => upgrade.id === setup.upgrade_id)) {
       throw new GamingServiceError('invalid_upgrade', 'Selected upgrade is unavailable', 400);
+    }
+    if (pinned.definition.ruleset === POKEMON_JOURNEY_RULESET) {
+      const partnerId = setup.partner_id;
+      if (!(pinned.definition.journey.partners || []).some((partner) => partner.id === partnerId)) {
+        throw new GamingServiceError('invalid_partner', 'Choose an available Pokémon partner', 400);
+      }
     }
     const createdAt = this.clock().toISOString();
     const actualSeed = Number.isInteger(seed) ? seed >>> 0 : crypto.randomBytes(4).readUInt32LE(0);
@@ -128,6 +180,138 @@ export class GamingSessionService {
     const definition = this.definitionStore.getPinned(session.definition_hash);
     if (!definition) throw new GamingServiceError('definition_snapshot_missing', 'Pinned game definition is unavailable', 500);
     return this.#response(session, definition, viewerId);
+  }
+
+  getProgress(gameId, userId) {
+    if (!userId) throw new GamingServiceError('user_id_required', 'user_id is required', 400);
+    const loaded = this.getDefinition(gameId);
+    const definition = loaded.definition;
+    if (definition.ruleset !== POKEMON_JOURNEY_RULESET) {
+      throw new GamingServiceError('progress_unsupported', 'This game does not expose journey progress', 404);
+    }
+    const scoreVersion = definition.journey.score_version;
+    const journeyVersion = definition.journey.version;
+    const sessions = (this.sessionStore.list?.() || []).filter((session) => (
+      session.game_id === gameId && participantId(session) === userId
+    ));
+    if (userId === 'guest') {
+      return {
+        game_id: gameId, user_id: userId, persistent: false,
+        score_version: scoreVersion, journey_version: journeyVersion,
+        badges: [], skill_stars: {}, partners: {}, journeys_completed: 0, personal_best: null,
+      };
+    }
+    const attempts = sessions.flatMap((session) => session.state?.practice_attempts || []);
+    const kinds = ['scale', 'chord', 'arpeggio', 'timed-pattern'];
+    const skillStars = Object.fromEntries(kinds.map((kind) => {
+      const scores = attempts.filter((attempt) => attempt.kind === kind && attempt.status === 'completed').map((attempt) => attempt.score);
+      let stars = 0;
+      if (scores.some((score) => score >= 0.6)) stars = 1;
+      if (scores.filter((score) => score >= 0.8).length >= 2) stars = 2;
+      if (scores.filter((score) => score >= 0.9).length >= 3) stars = 3;
+      return [kind, { stars, attempts: scores.length, best_score: scores.length ? Math.max(...scores) : null }];
+    }));
+    const completedRuns = sessions.filter((session) => session.status === 'complete' && session.state?.journey_summary);
+    const rankedRuns = completedRuns.filter((session) => (
+      session.state.journey_summary.qualified
+      && session.state.journey_summary.score_version === scoreVersion
+      && session.state.journey_summary.journey_version === journeyVersion
+    ));
+    const personalBest = rankedRuns.reduce((best, session) => betterRun(best, {
+      session_id: session.session_id,
+      score: session.state.journey_summary.score,
+      partner_id: session.state.partner_id,
+      completed_at: session.completed_at,
+    }), null);
+    const badges = [...new Set(sessions.flatMap((session) => session.state?.completed_encounters || []))];
+    const allTwoStars = kinds.every((kind) => skillStars[kind].stars >= 2);
+    const allThreeStars = kinds.every((kind) => skillStars[kind].stars >= 3);
+    const partners = Object.fromEntries(definition.journey.partners.map((partner) => {
+      const completions = completedRuns.filter((session) => session.state.partner_id === partner.id).length;
+      return [partner.id, {
+        journeys_completed: completions,
+        evolved: completions > 0 && allTwoStars,
+        evolution: completions > 0 && allTwoStars ? clone(partner.evolution) : null,
+        mastery_aura: completions > 0 && allThreeStars,
+      }];
+    }));
+    return {
+      game_id: gameId,
+      user_id: userId,
+      persistent: true,
+      score_version: scoreVersion,
+      journey_version: journeyVersion,
+      badges,
+      skill_stars: skillStars,
+      partners,
+      journeys_completed: completedRuns.length,
+      personal_best: personalBest,
+    };
+  }
+
+  getLeaderboard(gameId, userId, requestedWeek = null) {
+    const loaded = this.getDefinition(gameId);
+    const definition = loaded.definition;
+    if (definition.ruleset !== POKEMON_JOURNEY_RULESET) {
+      throw new GamingServiceError('leaderboard_unsupported', 'This game does not expose standings', 404);
+    }
+    const week = currentLocalWeek(this.clock, requestedWeek);
+    const scoreVersion = definition.journey.score_version;
+    const journeyVersion = definition.journey.version;
+    const qualifying = (this.sessionStore.list?.() || []).filter((session) => {
+      const summary = session.state?.journey_summary;
+      return session.game_id === gameId
+        && participantId(session) !== 'guest'
+        && session.status === 'complete'
+        && summary?.qualified
+        && summary.score_version === scoreVersion
+        && summary.journey_version === journeyVersion;
+    }).map((session) => ({
+      user_id: participantId(session),
+      display_name: participantName(session),
+      session_id: session.session_id,
+      score: session.state.journey_summary.score,
+      partner_id: session.state.partner_id,
+      completed_at: session.completed_at,
+    }));
+    const inWeek = qualifying.filter((run) => {
+      const completed = new Date(run.completed_at);
+      return completed >= week.start && completed < week.end;
+    });
+    const buildStandings = (runs) => {
+      const byUser = new Map();
+      const counts = new Map();
+      for (const run of runs) {
+        counts.set(run.user_id, (counts.get(run.user_id) || 0) + 1);
+        byUser.set(run.user_id, betterRun(byUser.get(run.user_id), run));
+      }
+      return [...byUser.values()]
+        .sort((a, b) => b.score - a.score || String(a.completed_at).localeCompare(String(b.completed_at)))
+        .map((run, index) => ({ ...run, rank: index + 1, attempt_count: counts.get(run.user_id) }));
+    };
+    const standings = buildStandings(inWeek);
+    const allTimeStandings = buildStandings(qualifying);
+    const viewerIndex = standings.findIndex((entry) => entry.user_id === userId);
+    const viewerAllTime = allTimeStandings.find((entry) => entry.user_id === userId) || null;
+    let rival = null;
+    if (viewerIndex > 0) rival = standings[viewerIndex - 1];
+    else if (viewerIndex < 0 && standings.length > 0) rival = standings.at(-1);
+    else if (viewerIndex === 0 && allTimeStandings[0]?.score > standings[0].score) rival = allTimeStandings[0];
+    return {
+      game_id: gameId,
+      score_version: scoreVersion,
+      journey_version: journeyVersion,
+      week: {
+        key: week.key,
+        starts_at: week.start.toISOString(),
+        ends_at: week.end.toISOString(),
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      },
+      standings,
+      alltime: allTimeStandings[0] || null,
+      viewer_personal_best: viewerAllTime,
+      rival,
+    };
   }
 
   applyCommand(sessionId, command, viewerId = null) {

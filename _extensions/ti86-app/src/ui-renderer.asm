@@ -691,7 +691,7 @@ ui_plot_pixel:
         add hl,hl
         add hl,hl
         add hl,hl
-        ld de,VideoRam
+        ld de,(ui_video_base)
         add hl,de
         ld a,b
         rrca
@@ -727,6 +727,9 @@ ui_plot_clear:
         ret
 
 ui_bit_masks:          defb 0x80,0x40,0x20,0x10,0x08,0x04,0x02,0x01
+; Defaults to the physical LCD. Adaptive Study temporarily redirects drawing
+; to its offscreen verso buffer, then restores this pointer before input.
+ui_video_base:         defw VideoRam
 ui_ellipsis_text:      defb "...",0
 ui_draw_mode:          defb 0
 ui_font_base:          defw 0

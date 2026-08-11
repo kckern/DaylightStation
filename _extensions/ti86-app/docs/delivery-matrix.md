@@ -39,7 +39,7 @@ an Adaptive Study row complete.
 
 | ID | Requirement | State | Required evidence |
 | --- | --- | --- | --- |
-| AS-20 | Cold/warm startup always opens `ENTER CODE` with optional contextual Resume | partial | named MAME cases |
+| AS-20 | Cold/warm startup opens `ENTER CODE`; OPEN is six-digit gated, F2-F4 blank, and F5 EXIT | partial | named MAME cases |
 | AS-21 | `DSENTRY/SCE1` binds device, request, and code and clears only after exact ACK | partial | codec and commit contract pass; interrupted-sync exact-binary case pending |
 | AS-22 | `DSSTUDY/SCSP` prescription is canonical; `DSSTDNEW` is staging and `SCL1` is continuation | implemented | copy-on-write and power-cut tests |
 | AS-23 | Front/back rails exactly match FLIP/blank/AGAIN/HARD/KNOW; F2 inert | partial | assembly contract passes; named MAME case pending |

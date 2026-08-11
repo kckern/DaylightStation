@@ -10,14 +10,12 @@ scenarios:
       - { key: '2', capture: 04-third-digit }
       - { key: '3', capture: 05-fourth-digit }
       - { key: '4', capture: 06-fifth-digit }
-      - { key: '5', capture: 07-code-ready, expect_text: '012 345' }
-      - { key: F1, capture: 08-graphic-card-front, settle_frames: 300, expect_text: [ADAPTIVE STUDY, FIND THE DIAMETER] }
-      - { key: F1, capture: 09-graphic-card-back, settle_frames: 300, expect_text: [12 UNITS] }
-      - { key: F5, capture: 10-study-summary, settle_frames: 300, expect_text: [STUDY SUMMARY, KNOWN, HARD, AGAIN, UNRESOLVED] }
-      - { key: F5, capture: 11-quiz-prompt, settle_frames: 300, expect_text: [QUIZ, MATH] }
-      - { key: F5, capture: 12-quiz-choices, settle_frames: 300, expect_text: [6 UNITS, 12 UNITS] }
-      - { key: F2, capture: 13-durable-result, settle_frames: 300, expect_text: [RESULT, SCORE] }
-      - { key: F1, capture: 14-result-qr, settle_frames: 300, expect_symbols: QR V5/M }
+      - { key: '5', capture: 07-graphic-card-front, settle_frames: 300, expect_text: [ADAPTIVE STUDY, FIND THE DIAMETER] }
+      - { key: F1, capture: 08-graphic-card-back, settle_frames: 300, expect_text: [12 UNITS] }
+      - { key: F5, capture: 09-study-summary, settle_frames: 300, expect_text: [STUDY SUMMARY, KNOWN, HARD, AGAIN, UNRESOLVED] }
+      - { key: F5, capture: 10-quiz-question, settle_frames: 300, expect_text: [QUIZ, MATH, 6 UNITS, 12 UNITS] }
+      - { key: F2, capture: 11-durable-result, settle_frames: 300, expect_text: [RESULT, SCORE] }
+      - { key: F1, capture: 12-result-qr, settle_frames: 300, expect_symbols: QR V5/M }
 
   - id: missing-module-relay
     description: A code whose immutable study module is not installed enters one-time relay recovery without losing local state.
