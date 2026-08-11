@@ -521,6 +521,16 @@ GET /api/fitness/exercises/taxonomy                        → { groups, muscles
 GET /api/fitness/exercises/:slug                           → one exercise, 404 if unknown
 ```
 
+**Filter terms are multi-value.** `group`, `muscle`, and `equipment` each accept a scalar or a
+list, with **OR within a facet and AND across facets** — `?group=chest&group=back` matches an
+exercise in either, while `?group=chest&equipment=barbell` requires both. An empty list imposes
+no constraint. The domain implements this; the endpoint just forwards.
+
+This is not optional polish. Express's default `qs` parser turns repeated query keys into
+arrays, so an endpoint that forwards `req.query` to a scalar-only filter would silently return
+the entire 1,287-record corpus instead of a filtered set — no throw, no log. Add an endpoint
+test that passes a repeated query key and asserts the result is actually narrowed.
+
 TDD as above: use-case test first with a stub repository, then the implementation, then wire
 the routes. Follow the existing `asyncHandler` pattern in the router. **Add the new endpoints
 to the docblock at the top of `fitness.mjs`** — it is a maintained index of every route.
