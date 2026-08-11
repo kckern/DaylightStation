@@ -52,6 +52,11 @@ describe('makeExercise', () => {
     expect(ex.targetMuscles).toEqual(['pectorals']);
   });
 
+  it('promotes a bare scalar into a one-element list', () => {
+    const ex = makeExercise({ slug: 'x', groups: 'chest' });
+    expect(ex.groups).toEqual(['chest']);
+  });
+
   it('tolerates a missing record without throwing', () => {
     const ex = makeExercise();
     expect(ex.slug).toBe('');
@@ -108,9 +113,13 @@ describe('exerciseMatchesFilter', () => {
     expect(exerciseMatchesFilter(ex, { q: '  Push-Up  ' })).toBe(true);
   });
 
-  it('matches the slug too, so a record with no name is still findable', () => {
-    const unnamed = makeExercise({ slug: 'barbell-squat' });
-    expect(exerciseMatchesFilter(unnamed, { q: 'squat' })).toBe(true);
+  it('collapses separators rather than deleting them, so a word boundary still binds', () => {
+    expect(exerciseMatchesFilter(ex, { q: 'pushup' })).toBe(false);
+  });
+
+  it('matches the slug too, so a record findable by slug is not hidden by its name', () => {
+    const squat = makeExercise({ slug: 'barbell-back-squat', name: 'Back Squat' });
+    expect(exerciseMatchesFilter(squat, { q: 'barbell' })).toBe(true);
   });
 
   it('does not search description or instructions', () => {
@@ -124,6 +133,44 @@ describe('exerciseMatchesFilter', () => {
   it('compares slug terms case-insensitively', () => {
     expect(exerciseMatchesFilter(ex, { group: 'Chest' })).toBe(true);
     expect(exerciseMatchesFilter(ex, { equipment: ' body-weight ' })).toBe(true);
+  });
+
+  // A list term is what Express's qs parser hands back for `?group=chest&group=back`
+  // or `?group[]=chest`. It must never read as "no constraint" — that would serve the
+  // whole corpus in place of a filtered set.
+  it('accepts a one-element list exactly as it accepts the bare scalar', () => {
+    expect(exerciseMatchesFilter(ex, { group: ['chest'] })).toBe(true);
+    expect(exerciseMatchesFilter(ex, { group: ['back'] })).toBe(false);
+  });
+
+  it('ORs the members within one facet', () => {
+    expect(exerciseMatchesFilter(ex, { group: ['back', 'chest'] })).toBe(true);
+    expect(exerciseMatchesFilter(ex, { group: ['back', 'legs'] })).toBe(false);
+  });
+
+  it('still ANDs across facets when the terms are lists', () => {
+    expect(exerciseMatchesFilter(ex, { group: ['chest'], equipment: ['body-weight'] })).toBe(true);
+    expect(exerciseMatchesFilter(ex, { group: ['chest'], equipment: ['barbell'] })).toBe(false);
+  });
+
+  it('treats an empty or all-blank list as no constraint', () => {
+    expect(exerciseMatchesFilter(ex, { group: [] })).toBe(true);
+    expect(exerciseMatchesFilter(ex, { group: ['', '  '] })).toBe(true);
+  });
+
+  it('drops blank members from an otherwise usable list', () => {
+    expect(exerciseMatchesFilter(ex, { group: ['', 'chest'] })).toBe(true);
+    expect(exerciseMatchesFilter(ex, { group: ['', 'back'] })).toBe(false);
+  });
+
+  it('matches nothing — never everything — when a term is malformed', () => {
+    expect(exerciseMatchesFilter(ex, { group: { 0: 'chest' } })).toBe(false);
+    expect(exerciseMatchesFilter(ex, { group: [['chest']] })).toBe(false);
+  });
+
+  it('applies list semantics to every facet, not just group', () => {
+    expect(exerciseMatchesFilter(ex, { muscle: ['lats', 'pectorals'] })).toBe(true);
+    expect(exerciseMatchesFilter(ex, { equipment: ['barbell', 'dumbbell'] })).toBe(false);
   });
 });
 

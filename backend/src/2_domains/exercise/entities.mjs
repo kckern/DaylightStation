@@ -16,8 +16,11 @@
 // CONTRACTS
 // ---------
 // - Pure. No I/O, no clock, no randomness, no logging.
-// - Never throws on bad input. A defective record still yields a usable object;
-//   the index builder already reported the defect as data in `warnings`.
+// - The FACTORIES never throw on bad input. A defective record still yields a usable
+//   object; the index builder already reported the defect as data in `warnings`.
+//   `exerciseMatchesFilter` is not covered by that: it states a precondition on its
+//   `exercise` argument and throws when handed something that violates it. See its
+//   JSDoc for why a throw beats a defensive read there.
 // - Every normalized object is FROZEN, arrays included. The adapter loads the
 //   manifest once and serves the same objects to every request in both apps; a
 //   consumer that sorts an exercise's `groups` in place would corrupt the corpus
@@ -61,15 +64,42 @@ function foldForSearch(value) {
     .trim();
 }
 
-/** A filter term is a slug to compare case-insensitively; blank means "no constraint". */
-function toTerm(value) {
-  const text = toText(value);
-  return text === null ? null : text.toLowerCase();
+/**
+ * Normalize one filter facet into the set of slugs that satisfy it.
+ *
+ * @returns {string[]|null} `null` when the facet imposes no constraint; otherwise the
+ *   accepted slugs, lowercased. An EMPTY array is meaningful: it constrains, and
+ *   nothing satisfies it.
+ *
+ * A facet may be a bare scalar (`group: 'chest'`) or a list (`group: ['chest','back']`)
+ * because Express's `qs` parser turns `?group=chest&group=back` and `?group[]=chest`
+ * into arrays. Both forms must behave the same, and a single-element list must never
+ * read as "no constraint" — that would serve the whole 1,287-record corpus in place of
+ * a filtered set, with no error anywhere to show for it.
+ *
+ * Absent, blank, and empty-list all mean "nothing selected" and impose no constraint,
+ * so a cleared search box behaves as if it were never touched. A member that is not a
+ * scalar (`?group[x]=y`, a nested array) is uninterpretable, and the safe reading of an
+ * uninterpretable request is that nothing matches it — never that everything does.
+ */
+const MATCHES_NOTHING = Object.freeze([]);
+
+function toTerms(value) {
+  if (value == null) return null;
+  const members = Array.isArray(value) ? value : [value];
+  const terms = [];
+  for (const member of members) {
+    if (member == null) continue;
+    if (typeof member === 'object') return MATCHES_NOTHING;
+    const term = String(member).trim().toLowerCase();
+    if (term !== '') terms.push(term);
+  }
+  return terms.length === 0 ? null : terms;
 }
 
-/** True when `list` contains `term`, comparing slugs case-insensitively. */
-function listHas(list, term) {
-  return list.some((entry) => entry.toLowerCase() === term);
+/** True when `list` holds any of `terms`, comparing slugs case-insensitively. */
+function listHasAny(list, terms) {
+  return list.some((entry) => terms.includes(entry.toLowerCase()));
 }
 
 /**
@@ -150,17 +180,24 @@ export function makeEquipment(raw = {}) {
 /**
  * Does one exercise satisfy a browse filter?
  *
- * @param {object} exercise A normalized exercise from {@link makeExercise}.
+ * @param {object} exercise PRECONDITION: an exercise whose `groups`, `targetMuscles`
+ *   and `equipment` are arrays — anything from {@link makeExercise}, or a raw record
+ *   straight out of `buildExerciseIndex`, which always emits those three as arrays.
+ *   A partial object hand-built by a caller throws a TypeError here. That is
+ *   deliberate: reading missing fields defensively would turn a programming error
+ *   into a plausible-looking wrong answer served to a user.
  * @param {object} [filter]
- * @param {string} [filter.group]     Muscle-group slug, matched against DERIVED `groups`.
- * @param {string} [filter.muscle]    Muscle slug, matched against `targetMuscles`.
- * @param {string} [filter.equipment] Equipment slug, matched against `equipment`.
- * @param {string} [filter.q]         Free text, matched against name and slug only.
+ * @param {string|string[]} [filter.group]     Muscle-group slug(s), matched against DERIVED `groups`.
+ * @param {string|string[]} [filter.muscle]    Muscle slug(s), matched against `targetMuscles`.
+ * @param {string|string[]} [filter.equipment] Equipment slug(s), matched against `equipment`.
+ * @param {string} [filter.q]                  Free text, matched against name and slug only.
  * @returns {boolean}
  *
- * Every supplied term is ANDed. A term that is absent, null or blank imposes no
- * constraint, so an empty filter matches everything and a search box that has been
- * cleared behaves as if it were never touched.
+ * Standard faceted-search semantics: OR within a facet, AND across facets. So
+ * `{ group: ['chest','back'] }` accepts an exercise in either group, while
+ * `{ group: ['chest'], equipment: ['barbell'] }` demands both. A facet that is absent,
+ * blank or an empty list imposes no constraint, so an empty filter matches everything
+ * and a cleared search box behaves as if it were never touched.
  *
  * `q` deliberately does NOT search `description` or `instructions`. Instruction text
  * is prose ("lower until your thighs are parallel..."), so including it would make
@@ -169,14 +206,14 @@ export function makeEquipment(raw = {}) {
 export function exerciseMatchesFilter(exercise, filter = {}) {
   if (!exercise) return false;
 
-  const group = toTerm(filter?.group);
-  if (group !== null && !listHas(exercise.groups, group)) return false;
+  const groups = toTerms(filter?.group);
+  if (groups !== null && !listHasAny(exercise.groups, groups)) return false;
 
-  const muscle = toTerm(filter?.muscle);
-  if (muscle !== null && !listHas(exercise.targetMuscles, muscle)) return false;
+  const muscles = toTerms(filter?.muscle);
+  if (muscles !== null && !listHasAny(exercise.targetMuscles, muscles)) return false;
 
-  const equipment = toTerm(filter?.equipment);
-  if (equipment !== null && !listHas(exercise.equipment, equipment)) return false;
+  const equipment = toTerms(filter?.equipment);
+  if (equipment !== null && !listHasAny(exercise.equipment, equipment)) return false;
 
   const q = foldForSearch(filter?.q);
   if (q !== '') {
