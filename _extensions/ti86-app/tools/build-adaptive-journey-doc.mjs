@@ -12,8 +12,12 @@ const JOURNEY_COPY = Object.freeze({
   '01-enter-code': 'Cold launch: Enter Code',
   '07-graphic-card-front': 'Digit six opens the resolved study', '08-graphic-card-back': 'Graphic flashcard answer',
   '09-study-summary': 'Study summary', '10-quiz-question': 'Question and choices together',
-  '11-durable-result': 'Result queued before success',
-  '12-result-qr': 'Offline Version-5/M result QR',
+  '11-restudy-after-quiz-exit': 'EXIT returns to study and counts the quiz attempt',
+  '12-restudy-answer': 'Restudy remains fully interactive',
+  '13-second-study-summary': 'Second study completion',
+  '14-second-quiz-attempt': 'Second counted quiz attempt',
+  '15-durable-result': 'Result queued before success',
+  '16-result-qr': 'Offline Version-5/M result QR',
 });
 const MISSING_COPY = Object.freeze({
   '01-missing-code-ready': 'Unresolved code',
