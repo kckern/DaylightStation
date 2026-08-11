@@ -2855,16 +2855,25 @@
   // instead, and its ceiling stays below full strength so a pending note is
   // never mistaken for one already struck.
   .piano-note-pending {
-    // The pulse travels black ink → glowing brown → black ink. The GLOW is what
-    // makes the far end read as gaining light: brown is a lower-contrast mark on
-    // a white page than black, so a bare colour pulse looks like the notehead is
-    // fading toward transparent — the opposite of "play this one now". The halo
-    // puts the energy back at the peak, so the note brightens rather than thins.
-    animation: piano-note-pending-glow 1.1s ease-in-out infinite;
+    // The pulse travels black ink → brown → black ink. Brown is a lower-contrast
+    // mark on a white page than black, so the hue alone would read as the
+    // notehead fading toward transparent — the opposite of "play this one now".
+    // The peak therefore gains INK MASS: the glyph puts on a hair of brown
+    // stroke, so it thickens rather than thins.
+    //
+    // That replaces an animated drop-shadow halo, which said the same thing far
+    // more expensively. Filters animate on the PAINT path, never the compositor,
+    // so a breathing halo re-rasterised a blur every single frame — the same
+    // defect that pinned Scale Stadium's scale drills to a flat 37fps on the
+    // kiosk tablet with zero JS on the main thread. Stroke-width is an ordinary
+    // paint over a glyph-sized region: no convolution, no expanded filter box.
     path, rect, ellipse, text {
       fill: var(--nh-color, #23262b);
       animation: piano-note-pending-pulse 1.1s ease-in-out infinite;
     }
+    // `text` is deliberately absent here: outlining a glyph reads as a heavier
+    // typeface, not as a brighter note.
+    path, rect, ellipse { stroke: #6b4423; stroke-width: 0; }
   }
   // Held right now, and written here: the PRINTED note turns green. Declared last
   // so it wins over lit/hit/pending on a note carrying several of these classes —
@@ -2872,9 +2881,9 @@
   // page can say about a notehead, so it outranks the rest.
   .piano-note-match {
     path, rect, ellipse, text { fill: var(--piano-accent, #2ec46f) !important; animation: none !important; }
-    // Kills the pending glow animation too, not just the fill pulse: a running
-    // animation on `filter` outranks a plain declaration, so without this the
-    // brown halo would keep breathing under the green "you got it" one.
+    // Belt and braces at the group level too, not just on the fill pulse: a
+    // running animation outranks a plain declaration, so this guarantees
+    // nothing keeps breathing underneath the green "you got it".
     animation: none !important;
     filter: drop-shadow(0 0 2.5px var(--piano-accent, #2ec46f));
   }
@@ -2884,17 +2893,14 @@
 // strength — it previews the reward rather than fading toward absence. It never
 // touches opacity: pulsing toward transparent collided head-on with the ghost
 // mark, so the page said "play this next" and "this is not the note" in the same
-// faint grey. Both ends are solid ink; only the hue and the halo move.
+// faint grey. Both ends are solid ink; the hue and the ink mass move together,
+// so the brown end lands heavier than the black one instead of lighter.
+//
+// Strictly no `filter` here. An animated drop-shadow re-rasterises a blur on
+// every frame; the stroke does the same "gaining energy" job as a plain paint.
 @keyframes piano-note-pending-pulse {
-  0%, 100% { fill: var(--nh-color, #23262b); }
-  50%      { fill: #6b4423; }
-}
-// The halo, in lockstep with the colour: nothing at the black end (a plain
-// engraved note), a brown glow at the brown end. Same colour and radius as the
-// struck-note glow, so pending previews exactly the mark it is asking for.
-@keyframes piano-note-pending-glow {
-  0%, 100% { filter: drop-shadow(0 0 0 rgba(107, 68, 35, 0)); }
-  50%      { filter: drop-shadow(0 0 2.5px rgba(107, 68, 35, 0.95)); }
+  0%, 100% { fill: var(--nh-color, #23262b); stroke-width: 0; }
+  50%      { fill: #6b4423; stroke-width: 1.1px; }
 }
 
 // Deselected staff (wave-3 A) — dimmed NATIVELY: fade OSMD's own per-staff
