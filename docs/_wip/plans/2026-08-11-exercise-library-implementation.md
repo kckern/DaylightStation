@@ -516,9 +516,9 @@ git commit -m "feat(exercise): manifest-backed exercise library repository"
 Endpoints:
 
 ```
-GET /api/fitness/exercises?group=&muscle=&equipment=&q=   → { exercises: [...] }
-GET /api/fitness/exercises/taxonomy                        → { groups, muscles, equipment }
-GET /api/fitness/exercises/:slug                           → one exercise, 404 if unknown
+GET /api/v1/fitness/exercises?group=&muscle=&equipment=&q=   → { exercises: [...] }
+GET /api/v1/fitness/exercises/taxonomy                        → { groups, muscles, equipment }
+GET /api/v1/fitness/exercises/:slug                           → one exercise, 404 if unknown
 ```
 
 **Filter terms are multi-value.** `group`, `muscle`, and `equipment` each accept a scalar or a
@@ -644,10 +644,10 @@ Persist to `{dataDir}/household/apps/fitness/workouts/{id}.yml` — household-sc
 `author` field, per the design decision. Write with `saveYamlToPathAtomic`.
 
 ```
-GET    /api/fitness/workouts        → summaries
-GET    /api/fitness/workouts/:id    → one workout, 404 if unknown
-POST   /api/fitness/workouts        → create/update, returns { id }
-DELETE /api/fitness/workouts/:id
+GET    /api/v1/fitness/workouts        → summaries
+GET    /api/v1/fitness/workouts/:id    → one workout, 404 if unknown
+POST   /api/v1/fitness/workouts        → create/update, returns { id }
+DELETE /api/v1/fitness/workouts/:id
 ```
 
 Validate on write: reject an unknown exercise slug with a 400 naming the slug. A workout that
@@ -667,7 +667,7 @@ references an exercise missing from the index must not be silently persisted.
 and per-exercise sets / reps-or-seconds / load / rest. Reorder by drag. The group label derives
 from its size — 1 = "Sets", 2 = "Superset", 3+ = "Circuit" — it is not user-entered.
 
-Save posts to `POST /api/fitness/workouts` and transitions to `run`.
+Save posts to `POST /api/v1/fitness/workouts` and transitions to `run`.
 
 Log `workout-saved` at `info` with `{ groupCount, exerciseCount }`.
 
