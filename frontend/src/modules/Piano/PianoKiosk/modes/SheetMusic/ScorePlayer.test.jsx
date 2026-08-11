@@ -518,7 +518,7 @@ describe('ScorePlayer — note-highlight ink (wave-2 A)', () => {
     expect(frames).not.toMatch(/opacity:\s*1\b/);
   });
 
-  it('the pending pulse breathes ink→glowing brown, never toward transparency', () => {
+  it('the pending pulse breathes ink→brown and gains mass, never toward transparency', () => {
     const scss = readFileSync(fileURLToPath(new URL('../../../../../Apps/PianoApp.scss', import.meta.url)), 'utf8');
     const frames = scss.match(/@keyframes piano-note-pending-pulse\s*\{(?:[^{}]|\{[^{}]*\})*\}/s)?.[0];
     // Fading a notehead out says "this one is not it" (the ghost mark's job), the
@@ -527,13 +527,25 @@ describe('ScorePlayer — note-highlight ink (wave-2 A)', () => {
     expect(frames).toMatch(/fill:\s*var\(--nh-color/); // rest = the engraved near-black
     expect(frames).toContain('#6b4423');              // peak = the struck-note brown
 
-    // The peak GLOWS, so the low-contrast brown reads as brightening rather than
-    // thinning against the white page.
-    const glow = scss.match(/@keyframes piano-note-pending-glow\s*\{(?:[^{}]|\{[^{}]*\})*\}/s)?.[0];
-    expect(glow).toBeTruthy();
-    expect(glow).toMatch(/drop-shadow/);
+    // Brown is a lower-contrast mark on a white page than black, so the peak has
+    // to gain INK MASS or the pulse reads as the notehead thinning out. The
+    // stroke carries what the drop-shadow halo used to.
     const block = scss.match(/\.piano-note-pending\s*\{(?:[^{}]|\{[^{}]*\})*\}/s)?.[0];
-    expect(block).toMatch(/animation:\s*piano-note-pending-glow/);
+    expect(block).toBeTruthy();
+    expect(frames).toMatch(/stroke-width:\s*0\b/);    // rest = bare glyph
+    expect(frames).toMatch(/stroke-width:\s*1\.1px/); // peak = thickened
+    expect(block).toMatch(/stroke:\s*#6b4423/);
+
+    // PERFORMANCE GUARD — do not reintroduce an animated filter here. `filter`
+    // animates on the paint path, never the compositor, so a breathing halo
+    // re-rasterises a blur on every frame. That exact pattern pinned the kiosk
+    // tablet to a flat 37fps with zero JS on the main thread.
+    // Comments are stripped first so the guard reads declarations, not the prose
+    // explaining why the declaration is forbidden.
+    const declarations = (css) => css.replace(/\/\/[^\n]*/g, '');
+    expect(declarations(frames)).not.toMatch(/filter/);
+    expect(declarations(block)).not.toMatch(/filter/);
+    expect(scss).not.toMatch(/@keyframes piano-note-pending-glow/);
   });
 });
 
