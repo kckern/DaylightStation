@@ -71,6 +71,8 @@ sc_input_poll:
         jp z,sc_input_contrast_up
         cp SC_SCAN_DOWN
         jp z,sc_input_contrast_down
+        cp SC_SCAN_EXIT
+        jp z,sc_input_force_exit
         jr sc_input_event_ready
 
 sc_input_poll_raw:

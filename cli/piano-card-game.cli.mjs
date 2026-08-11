@@ -2,28 +2,22 @@
 /**
  * Scale Stadium live readiness verifier.
  *
- * This is deliberately an end-to-end player, not a screenshot smoke test. It
- * verifies the deployed Pokémon definition and mounted corpus, opens the real
- * PianoKiosk route, feeds server-selected scales through the kiosk WebSocket
- * MIDI contract, and plays until Pikachu wins.
- *
- * Usage:
- *   node cli/piano-card-game.cli.mjs
- *   node cli/piano-card-game.cli.mjs --url https://daylightlocal.kckern.net/piano/games/card-game
- *   node cli/piano-card-game.cli.mjs --headed --screenshot /tmp/scale-stadium.png
- *   node cli/piano-card-game.cli.mjs --json
+ * Verifies the deployed journey contract and Pokémon SVGs, then uses the real
+ * PianoKiosk MIDI bridge to complete all three encounters with all four piano
+ * skill families represented in the run.
  */
 
 import { mkdir } from 'node:fs/promises';
 import { dirname, resolve as resolvePath } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
-import YAML from 'yaml';
 
 export const DEFAULT_URL = 'https://daylightlocal.kckern.net/piano/games/card-game';
 const DEFAULT_USER = 'guest';
-const EXPECTED_PLAYER_MOVES = ['thunder-shock', 'spark', 'agility', 'light-screen', 'charge', 'iron-tail'];
-const EXPECTED_ENEMY_MOVES = ['water-gun', 'withdraw', 'tail-whip', 'aqua-tail'];
+const EXPECTED_PARTNERS = ['bulbasaur', 'charmander', 'squirtle'];
+const EXPECTED_OPPONENTS = ['pidgey', 'meowth', 'snorlax'];
+const EXPECTED_SKILLS = ['scale', 'chord', 'arpeggio', 'timed-pattern'];
+const EXPECTED_HITS = ['bullseye', 'direct-hit', 'partial-hit', 'miss'];
 
 function requiredValue(argv, index, option) {
   const value = argv[index + 1];
@@ -76,53 +70,41 @@ function sameArray(left, right) {
     && left.every((value, index) => value === right[index]);
 }
 
-/** Validate the deployment contract before browser automation begins. */
+/** Validate the deployed journey before browser automation begins. */
 export function inspectDefinitionPayload(payload) {
   const errors = [];
   const definition = payload?.definition;
   recordExpectation(errors, payload?.game_id === 'card-game', 'definition response must identify card-game');
   recordExpectation(errors, definition?.game_id === 'card-game', 'definition.game_id must be card-game');
   recordExpectation(errors, definition?.title === 'Scale Stadium', 'live title must be Scale Stadium');
-  recordExpectation(errors, definition?.presentation?.theme === 'pokemon-tcg', 'live theme must be pokemon-tcg');
+  recordExpectation(errors, definition?.ruleset === 'pokemon-practice-journey-v1', 'live ruleset must be pokemon-practice-journey-v1');
+  recordExpectation(errors, definition?.view_id === 'pokemon-practice-journey-v1', 'live view must be pokemon-practice-journey-v1');
+  recordExpectation(errors, definition?.presentation?.theme === 'pokemon-stadium', 'live theme must be pokemon-stadium');
   recordExpectation(errors, definition?.presentation?.data_source === 'PokeAPI', 'live data source must be PokeAPI');
-
-  const player = definition?.card_battle?.player;
-  const enemy = definition?.card_battle?.enemy;
-  const pikachu = player?.pokemon;
-  const squirtle = enemy?.pokemon;
-  recordExpectation(errors, player?.name === 'Pikachu', 'player must be Pikachu');
-  recordExpectation(errors, player?.health === 35, 'Pikachu must use corpus HP 35');
-  recordExpectation(errors, pikachu?.id === 25 && pikachu?.dex === '0025', 'Pikachu must use Pokédex #0025');
-  recordExpectation(errors, sameArray(pikachu?.types, ['electric']), 'Pikachu must use the Electric type');
-  recordExpectation(errors, pikachu?.stats?.speed === 90, 'Pikachu must use corpus Speed 90');
-  recordExpectation(errors, pikachu?.assets?.svg === 'games/pokemon/svg/0025-pikachu-gen1.svg', 'Pikachu SVG path must match the corpus');
-  recordExpectation(errors, enemy?.name === 'Squirtle', 'enemy must be Squirtle');
-  recordExpectation(errors, enemy?.health === 44, 'Squirtle must use corpus HP 44');
-  recordExpectation(errors, squirtle?.id === 7 && squirtle?.dex === '0007', 'Squirtle must use Pokédex #0007');
-  recordExpectation(errors, sameArray(squirtle?.types, ['water']), 'Squirtle must use the Water type');
-  recordExpectation(errors, squirtle?.stats?.defense === 65, 'Squirtle must use corpus Defense 65');
-  recordExpectation(errors, squirtle?.assets?.svg === 'games/pokemon/svg/0007-squirtle-gen1.svg', 'Squirtle SVG path must match the corpus');
-  recordExpectation(errors, enemy?.weakness?.type === 'electric' && enemy?.weakness?.multiplier === 1.5, 'Squirtle must have the authored Electric ×1.5 weakness');
+  recordExpectation(errors, sameArray(definition?.journey?.partners?.map((entry) => entry.id), EXPECTED_PARTNERS), 'journey must offer the three authored partners');
+  recordExpectation(errors, sameArray(definition?.journey?.opponents?.map((entry) => entry.id), EXPECTED_OPPONENTS), 'journey must contain Pidgey, Meowth, and Snorlax');
 
   const cards = definition?.cards || {};
-  for (const move of EXPECTED_PLAYER_MOVES) {
-    const card = cards[move];
-    recordExpectation(errors, Boolean(card), `move card ${move} must exist`);
-    recordExpectation(errors, card?.challenge?.domain === 'piano' && card?.challenge?.kind === 'scale', `${move} must require a piano scale`);
-    recordExpectation(errors, card?.challenge?.requirements?.curriculum === 'foundation-major-scales', `${move} must use the foundation major-scale curriculum`);
+  for (const partner of definition?.journey?.partners || []) {
+    const moves = (partner.move_ids || []).map((moveId) => cards[moveId]);
+    recordExpectation(errors, sameArray(moves.map((move) => move?.challenge?.kind), EXPECTED_SKILLS), `${partner.name} must map one move to each piano skill`);
+    for (const [index, move] of moves.entries()) {
+      recordExpectation(errors, move?.challenge?.domain === 'piano', `${partner.name} move ${index + 1} must use Piano`);
+      recordExpectation(errors, move?.challenge?.requirements?.curriculum === 'pokemon-journey-foundations', `${partner.name} move ${index + 1} must use the journey curriculum`);
+      recordExpectation(errors, sameArray(move?.outcomes?.map((outcome) => outcome.id), EXPECTED_HITS), `${partner.name} move ${index + 1} must grade bullseye/direct/partial/miss`);
+    }
   }
-  recordExpectation(errors, cards['thunder-shock']?.outcomes?.[0]?.multiplier === 1.5, 'fluent Thunder Shock must receive 150% power');
-  recordExpectation(errors, cards['thunder-shock']?.outcomes?.[1]?.multiplier === 0.75, 'recovered Thunder Shock must receive 75% power');
 
+  const combatants = [
+    ...(definition?.journey?.partners || []).map((pokemon) => ({ role: 'partner', pokemon })),
+    ...(definition?.journey?.opponents || []).map((pokemon) => ({ role: 'opponent', pokemon })),
+  ];
   return {
     valid: errors.length === 0,
     errors,
     hash: payload?.definition_hash || null,
     definition,
-    combatants: [
-      { role: 'player', config: player, pokemon: pikachu, expectedMoves: EXPECTED_PLAYER_MOVES },
-      { role: 'enemy', config: enemy, pokemon: squirtle, expectedMoves: EXPECTED_ENEMY_MOVES },
-    ],
+    combatants,
   };
 }
 
@@ -140,44 +122,14 @@ async function checkedFetch(url, { timeoutMs, expectedType = null } = {}) {
   return response;
 }
 
-function corpusMoves(record) {
-  return [...(record?.moves?.level_up || []), ...(record?.moves?.other || [])]
-    .map((entry) => entry?.move)
-    .filter(Boolean);
-}
-
 async function verifyCorpusAssets(origin, combatants, timeoutMs) {
   const verified = [];
-  for (const { role, config, pokemon, expectedMoves } of combatants) {
-    if (!pokemon?.source_file || !pokemon?.assets?.svg) throw new Error(`${role} Pokémon lacks corpus paths`);
-    const sourceResponse = await checkedFetch(mediaUrl(origin, pokemon.source_file), { timeoutMs });
-    const source = YAML.parse(await sourceResponse.text());
-    if (source?.id !== pokemon.id || source?.dex !== pokemon.dex || source?.name !== pokemon.name) {
-      throw new Error(`${pokemon.name} definition does not match ${pokemon.source_file}`);
-    }
-    if (!sameArray(source.types, pokemon.types)) throw new Error(`${pokemon.name} types do not match the corpus`);
-    for (const [stat, value] of Object.entries(pokemon.stats || {})) {
-      if (source?.stats?.[stat] !== value) throw new Error(`${pokemon.name} ${stat} does not match the corpus`);
-    }
-    if (!(source.abilities || []).some((ability) => ability.name === pokemon.ability)) {
-      throw new Error(`${pokemon.name} ability ${pokemon.ability} is absent from the corpus`);
-    }
-    const moves = new Set(corpusMoves(source));
-    for (const move of expectedMoves) {
-      if (!moves.has(move)) throw new Error(`${pokemon.name} move ${move} is absent from the corpus`);
-    }
-    const svgResponse = await checkedFetch(mediaUrl(origin, pokemon.assets.svg), { timeoutMs, expectedType: 'image/svg+xml' });
-    const svg = await svgResponse.text();
+  for (const { role, pokemon } of combatants) {
+    if (!pokemon?.asset) throw new Error(`${pokemon?.name || role} lacks a corpus SVG path`);
+    const response = await checkedFetch(mediaUrl(origin, pokemon.asset), { timeoutMs, expectedType: 'image/svg+xml' });
+    const svg = await response.text();
     if (!/<svg(?:\s|>)/i.test(svg)) throw new Error(`${pokemon.name} asset is not SVG markup`);
-    verified.push({
-      role,
-      name: config.name,
-      id: pokemon.id,
-      dex: pokemon.dex,
-      source: pokemon.source_file,
-      svg: pokemon.assets.svg,
-      moves: expectedMoves,
-    });
+    verified.push({ role, name: pokemon.name, dex: pokemon.dex, svg: pokemon.asset });
   }
   return verified;
 }
@@ -217,76 +169,74 @@ function installMidiBridge() {
   }
   for (const name of ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED']) ReadinessWebSocket[name] = NativeWebSocket[name];
   window.WebSocket = ReadinessWebSocket;
-  window.localStorage.removeItem('gaming:card-game:guest:active-session');
+  for (let index = window.localStorage.length - 1; index >= 0; index -= 1) {
+    const key = window.localStorage.key(index);
+    if (key?.startsWith('gaming:card-game:') && key.endsWith(':active-session')) window.localStorage.removeItem(key);
+  }
 
+  const pause = (duration) => new Promise((resolve) => window.setTimeout(resolve, duration));
   window.__scaleStadiumReadiness = {
-    async playScale(notes) {
+    async playPrompt(kind, prompt) {
       if (!bridgeSocket) throw new Error('Piano bridge socket was not created');
-      for (const note of notes) {
-        bridgeSocket.emit({ type: 'note.on', note, velocity: 96 });
-        await new Promise((resolve) => window.setTimeout(resolve, 18));
-        bridgeSocket.emit({ type: 'note.off', note, velocity: 0 });
-        await new Promise((resolve) => window.setTimeout(resolve, 12));
+      const notes = prompt.expected_midi;
+      if (kind === 'chord') {
+        for (const note of notes) {
+          bridgeSocket.emit({ type: 'note.on', note, velocity: 96 });
+          await pause(150);
+        }
+        return;
       }
+      if (prompt.tempo_bpm) await pause(Math.max(0, prompt.lead_in_ms || 0));
+      const beatMs = prompt.tempo_bpm ? 60_000 / prompt.tempo_bpm : 35;
+      const offsets = prompt.target_offsets_ms || notes.map((_, index) => index * beatMs);
+      for (let index = 0; index < notes.length; index += 1) {
+        if (index > 0) await pause(Math.max(18, offsets[index] - offsets[index - 1]));
+        bridgeSocket.emit({ type: 'note.on', note: notes[index], velocity: 96 });
+        await pause(18);
+        bridgeSocket.emit({ type: 'note.off', note: notes[index], velocity: 0 });
+      }
+    },
+    releaseNotes(notes) {
+      for (const note of notes) bridgeSocket.emit({ type: 'note.off', note, velocity: 0 });
     },
   };
 }
 
-function expectedAttackPower(card) {
-  const weakness = card.moveType === 'electric' ? 1.5 : 1;
-  return card.effect * weakness;
+/** Prefer unseen piano skills, then the strongest available move. */
+export function selectMove(moves, { usedKinds = new Set() } = {}) {
+  const unseen = moves.filter((move) => !usedKinds.has(move.kind));
+  const candidates = unseen.length > 0 ? unseen : moves;
+  return [...candidates].sort((left, right) => right.damage - left.damage || left.title.localeCompare(right.title))[0] || null;
 }
 
-export function selectMove(cards, { energy, intentKind }) {
-  const affordable = cards.filter((card) => card.cost <= energy);
-  const attacks = affordable.filter((card) => card.type === 'attack');
-  const charge = affordable.find((card) => card.title === 'Charge');
-  if (charge && attacks.some((card) => card.cost <= energy - charge.cost)) return charge;
-  if (attacks.length > 0) {
-    return [...attacks].sort((left, right) => (
-      expectedAttackPower(right) - expectedAttackPower(left)
-      || left.cost - right.cost
-      || left.title.localeCompare(right.title)
-    ))[0];
-  }
-  if (intentKind === 'attack') {
-    const guards = affordable.filter((card) => card.type === 'guard');
-    if (guards.length > 0) return [...guards].sort((left, right) => right.effect - left.effect)[0];
-  }
-  return affordable.find((card) => card.type === 'focus') || null;
-}
-
-async function cardSnapshot(page) {
-  return page.locator('.battle-card[data-card-instance-id]:not([disabled])').evaluateAll((buttons) => (
+async function moveSnapshot(page) {
+  return page.locator('.journey-move[data-move-id]:not([disabled])').evaluateAll((buttons) => (
     buttons.map((button) => ({
-      id: button.dataset.cardInstanceId,
-      title: button.dataset.cardTitle,
-      type: button.dataset.cardType,
-      cost: Number(button.dataset.cardCost),
-      effect: Number(button.dataset.cardEffect),
-      moveType: button.dataset.moveType,
+      id: button.dataset.moveId,
+      title: button.querySelector('strong')?.textContent?.trim() || button.dataset.moveId,
+      kind: button.dataset.skillKind,
+      damage: Number(button.dataset.damage),
     }))
   ));
 }
 
-async function battleSnapshot(root) {
-  const values = await root.evaluate((node) => ({
+async function journeySnapshot(root) {
+  return root.evaluate((node) => ({
     status: node.dataset.battleStatus,
-    winner: node.dataset.winner || null,
+    phase: node.dataset.journeyPhase,
+    encounter: node.dataset.encounter,
+    partner: node.dataset.partner,
     turn: Number(node.dataset.turn),
     playerHealth: Number(node.dataset.playerHealth),
-    playerEnergy: Number(node.dataset.playerEnergy),
     enemyHealth: Number(node.dataset.enemyHealth),
-    theme: node.dataset.gameTheme,
+    score: Number(node.dataset.score),
   }));
-  return values;
 }
 
-async function playCard({ page, root, card, timeoutMs }) {
-  const before = await battleSnapshot(root);
-  const selector = `.battle-card[data-card-instance-id=${JSON.stringify(card.id)}]`;
-  const button = page.locator(selector);
-  if (await button.count() !== 1) throw new Error(`card locator for ${card.id} was not unique`);
+async function playMove({ page, root, move, timeoutMs }) {
+  const before = await journeySnapshot(root);
+  const button = page.locator(`.journey-move[data-move-id=${JSON.stringify(move.id)}]`);
+  if (await button.count() !== 1) throw new Error(`move locator for ${move.id} was not unique`);
   const prepareResponsePromise = page.waitForResponse((response) => (
     response.request().method() === 'POST'
     && new URL(response.url()).pathname.endsWith('/challenges/prepare')
@@ -298,9 +248,8 @@ async function playCard({ page, root, card, timeoutMs }) {
     try {
       await button.click({ timeout: Math.min(250, remaining) });
     } catch (error) {
-      // Once an accepted click creates the pending challenge, the move leaves
-      // the hand before the prepare response arrives. Only retry actionability
-      // timeouts; surface genuine browser errors immediately.
+      // An accepted click removes the move while the prepare response is still
+      // in flight. Retry only actionability timeouts and preserve real errors.
       if (error?.name !== 'TimeoutError') throw error;
     }
     prepareResponse = await Promise.race([
@@ -311,84 +260,69 @@ async function playCard({ page, root, card, timeoutMs }) {
   prepareResponse ||= await prepareResponsePromise;
   if (!prepareResponse.ok()) {
     const body = await prepareResponse.text();
-    throw new Error(`${card.title} challenge preparation returned HTTP ${prepareResponse.status()}: ${body}`);
+    throw new Error(`${move.title} preparation returned HTTP ${prepareResponse.status()}: ${body}`);
   }
   const prepared = await prepareResponse.json();
-  const expectedMidi = prepared?.prompt?.expected_midi;
-  if (!Array.isArray(expectedMidi) || expectedMidi.length < 2 || expectedMidi.some((note) => !Number.isInteger(note))) {
-    throw new Error(`${card.title} challenge did not return a concrete MIDI scale`);
+  if (!Array.isArray(prepared?.prompt?.expected_midi) || prepared.prompt.expected_midi.length < 2) {
+    throw new Error(`${move.title} did not materialize playable MIDI notes`);
   }
-
-  const overlay = page.locator('.gaming-challenge-overlay');
-  await overlay.waitFor({ state: 'visible', timeout: timeoutMs });
-  await page.locator('.piano-scale-note--next').waitFor({ state: 'visible', timeout: timeoutMs });
-  const challengeTitle = (await page.locator('.piano-scale-challenge__heading strong').innerText()).trim();
-  await page.evaluate((notes) => window.__scaleStadiumReadiness.playScale(notes), expectedMidi);
-  await overlay.waitFor({ state: 'hidden', timeout: timeoutMs });
-
-  const after = await battleSnapshot(root);
-  const resolution = page.locator('.battle-resolution__effect');
-  let effectiveness = null;
-  if (after.status !== 'complete') {
-    await resolution.waitFor({ state: 'visible', timeout: timeoutMs });
-    effectiveness = (await resolution.innerText()).trim();
+  const panel = page.locator('.journey-practice');
+  await panel.waitFor({ state: 'visible', timeout: timeoutMs });
+  const challengeTitle = (await page.locator('.piano-scale-challenge__heading strong, .piano-challenge__chord').innerText()).trim();
+  if (move.kind === 'chord') {
+    // A chord attempt intentionally begins only after the provider has seen an
+    // empty keyboard. This mirrors the player's natural read-then-play beat and
+    // proves a chord held before the prompt cannot auto-complete the challenge.
+    await page.locator('.piano-challenge[data-chord-armed="true"]').waitFor({
+      state: 'visible', timeout: timeoutMs,
+    });
   }
+  await page.evaluate(({ kind, prompt }) => window.__scaleStadiumReadiness.playPrompt(kind, prompt), {
+    kind: move.kind, prompt: prepared.prompt,
+  });
+  try {
+    await panel.waitFor({ state: 'hidden', timeout: timeoutMs });
+  } catch (error) {
+    const chordSurface = page.locator('.piano-challenge');
+    const diagnostic = move.kind === 'chord' && await chordSurface.count() > 0
+      ? await chordSurface.evaluate((node) => ({ ...node.dataset }))
+      : null;
+    throw new Error(`${error.message}${diagnostic ? `; chord diagnostic ${JSON.stringify(diagnostic)}` : ''}`);
+  } finally {
+    if (move.kind === 'chord') {
+      await page.evaluate((notes) => window.__scaleStadiumReadiness.releaseNotes(notes), prepared.prompt.expected_midi);
+    }
+  }
+  // The authoritative result hides the panel just before chooseAction's
+  // in-flight guard clears; allow that final promise microtask to settle.
+  await page.waitForTimeout(100);
+  const after = await journeySnapshot(root);
+  const feedback = page.locator('.journey-hit strong');
   return {
-    card: card.title,
-    cardType: card.type,
-    scale: challengeTitle,
-    expectedMidi,
+    move: move.title,
+    kind: move.kind,
+    challenge: challengeTitle,
+    encounter: before.encounter,
     enemyHealthBefore: before.enemyHealth,
     enemyHealthAfter: after.enemyHealth,
-    effectiveness,
-    turn: before.turn,
+    hit: await feedback.count() === 1 ? (await feedback.innerText()).trim() : null,
   };
 }
 
-async function verifyViewport(page) {
-  return page.evaluate(() => {
-    const root = document.querySelector('main.card-battle--pokemon');
-    const cards = [...document.querySelectorAll('.battle-card')];
-    const boxes = cards.map((card) => {
-      const box = card.getBoundingClientRect();
-      return { left: box.left, top: box.top, right: box.right, bottom: box.bottom, width: box.width, height: box.height };
-    });
-    const withinViewport = boxes.every((box) => (
-      box.left >= 0 && box.top >= 0 && box.right <= window.innerWidth && box.bottom <= window.innerHeight
-    ));
+async function verifyViewport(page, selector) {
+  return page.evaluate((rootSelector) => {
+    const root = document.querySelector(rootSelector);
+    const boxes = [...(root?.querySelectorAll('button') || [])].map((button) => button.getBoundingClientRect());
     return {
       rootPresent: Boolean(root),
       width: window.innerWidth,
       height: window.innerHeight,
-      cardCount: boxes.length,
-      withinViewport,
+      buttonCount: boxes.length,
+      withinViewport: boxes.every((box) => box.left >= 0 && box.top >= 0 && box.right <= window.innerWidth && box.bottom <= window.innerHeight),
       noHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth,
       noVerticalOverflow: document.documentElement.scrollHeight <= window.innerHeight,
     };
-  });
-}
-
-async function endTurnWhenReady(page, turn, timeoutMs) {
-  const endTurn = page.getByRole('button', { name: 'End turn', exact: true });
-  if (await endTurn.count() !== 1) throw new Error('no playable move and End turn is unavailable');
-
-  // The challenge overlay is cleared in the final controller publish, one
-  // microtask before chooseAction() releases its action-in-flight guard. A
-  // kiosk user naturally clicks after that gap; browser automation can land
-  // inside it. Retry the real button until the optimistic END_TURN transition
-  // advances the battle instead of sleeping for an arbitrary fixed delay.
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const remaining = Math.max(1, deadline - Date.now());
-    await endTurn.click({ timeout: Math.min(1_000, remaining) });
-    const advanced = await page.evaluate((previousTurn) => {
-      const battle = document.querySelector('main.card-battle');
-      return battle?.dataset.battleStatus === 'complete' || Number(battle?.dataset.turn) > previousTurn;
-    }, turn);
-    if (advanced) return;
-    await page.waitForTimeout(Math.min(100, Math.max(1, deadline - Date.now())));
-  }
-  throw new Error(`End turn did not advance battle from turn ${turn}`);
+  }, selector);
 }
 
 async function verifyBrowser(options, progress) {
@@ -403,15 +337,13 @@ async function verifyBrowser(options, progress) {
   });
   const page = await context.newPage();
   const pageErrors = [];
-  const consoleErrors = [];
   const apiFailures = [];
   let tracking = true;
   const target = new URL(options.url);
   target.searchParams.set('user', options.user);
-
-  page.on('pageerror', (error) => pageErrors.push(error.message));
-  page.on('console', (message) => {
-    if (message.type() === 'error') consoleErrors.push(message.text());
+  page.on('pageerror', (error) => {
+    pageErrors.push(error.message);
+    progress(`Page error: ${error.message}`);
   });
   page.on('response', (response) => {
     if (!tracking) return;
@@ -420,77 +352,78 @@ async function verifyBrowser(options, progress) {
       apiFailures.push(`${response.request().method()} ${url.pathname} -> ${response.status()}`);
     }
   });
-  page.on('requestfailed', (request) => {
-    if (!tracking) return;
-    const url = new URL(request.url());
-    if (url.origin === target.origin && url.pathname.startsWith('/api/')) {
-      apiFailures.push(`${request.method()} ${url.pathname} -> ${request.failure()?.errorText || 'request failed'}`);
-    }
-  });
 
   await page.addInitScript(installMidiBridge);
   const moves = [];
+  const usedKinds = new Set();
   let viewport = null;
   let final = null;
   try {
     progress(`Opening ${target.href}`);
     const response = await page.goto(target.href, { waitUntil: 'networkidle', timeout: options.timeoutMs });
     if (!response?.ok()) throw new Error(`game route returned HTTP ${response?.status() ?? 'unknown'}`);
-    const root = page.locator('main.card-battle--pokemon');
-    await root.waitFor({ state: 'visible', timeout: options.timeoutMs });
-    if (await root.getAttribute('aria-label') !== 'Scale Stadium') throw new Error('browser did not render Scale Stadium');
-    if (await root.getAttribute('data-game-theme') !== 'pokemon-tcg') throw new Error('browser did not render the Pokémon TCG theme');
-    if (await page.getByLabel('Pikachu active Pokémon').count() !== 1) throw new Error('Pikachu active card is missing');
-    if (await page.getByLabel('Squirtle active Pokémon').count() !== 1) throw new Error('Squirtle active card is missing');
-    await page.waitForFunction(() => ['Pikachu', 'Squirtle'].every((name) => {
-      const image = document.querySelector(`img[alt="${name}"]`);
-      return image?.complete && image.naturalWidth > 0 && image.naturalHeight > 0;
-    }), null, { timeout: options.timeoutMs });
-
-    viewport = await verifyViewport(page);
-    if (viewport.cardCount !== 4) throw new Error(`opening hand rendered ${viewport.cardCount} cards instead of 4`);
+    const lobby = page.locator('main.journey-lobby');
+    await lobby.waitFor({ state: 'visible', timeout: options.timeoutMs });
+    viewport = await verifyViewport(page, 'main.journey-lobby');
     if (!viewport.withinViewport || !viewport.noHorizontalOverflow || !viewport.noVerticalOverflow) {
-      throw new Error('battle does not fit the 1280×800 PianoKiosk viewport');
+      throw new Error('partner lobby does not fit the 1280×800 PianoKiosk viewport');
     }
+    await page.waitForFunction(() => ['Bulbasaur', 'Charmander', 'Squirtle'].every((name) => {
+      const image = document.querySelector(`.journey-starter img[src*="${name.toLowerCase()}"]`);
+      return image?.complete && image.naturalWidth > 0;
+    }), null, { timeout: options.timeoutMs });
+    await page.getByRole('button', { name: /Bulbasaur/ }).click();
 
-    while (true) {
-      const state = await battleSnapshot(root);
-      if (state.status === 'complete') {
+    const root = page.locator('main.journey-battle');
+    await root.waitFor({ state: 'visible', timeout: options.timeoutMs });
+    while (moves.length < options.maxTurns) {
+      const state = await journeySnapshot(root);
+      if (state.phase === 'complete') {
         final = state;
         break;
       }
-      if (state.turn > options.maxTurns) throw new Error(`battle exceeded ${options.maxTurns} turns`);
-      const cards = await cardSnapshot(page);
-      const intent = page.locator('[data-intent-kind]');
-      const intentKind = await intent.count() === 1 ? await intent.getAttribute('data-intent-kind') : null;
-      const card = selectMove(cards, { energy: state.playerEnergy, intentKind });
-      if (!card) {
-        progress(`Turn ${state.turn}: Squirtle uses its announced move`);
-        await endTurnWhenReady(page, state.turn, options.timeoutMs);
+      if (state.phase === 'checkpoint') {
+        progress(`Cleared ${state.encounter}; continuing the journey`);
+        let continued = false;
+        for (let attempt = 0; attempt < 3 && !continued; attempt += 1) {
+          await page.waitForTimeout(attempt === 0 ? 300 : 500);
+          await page.getByRole('button', { name: /^Continue to/ }).click();
+          try {
+            await page.waitForFunction(
+              (encounter) => document.querySelector('main.journey-battle')?.dataset.encounter !== encounter,
+              state.encounter,
+              { timeout: Math.min(options.timeoutMs, 5_000) },
+            );
+            continued = true;
+          } catch (error) {
+            if (attempt === 2) throw error;
+          }
+        }
         continue;
       }
-
-      progress(`Turn ${state.turn}: Pikachu uses ${card.title}`);
-      const move = await playCard({ page, root, card, timeoutMs: options.timeoutMs });
-      moves.push(move);
-      if (card.type === 'attack' && move.enemyHealthAfter < move.enemyHealthBefore) {
-        progress(`  ${move.scale}: ${move.enemyHealthBefore} → ${move.enemyHealthAfter} HP`);
-      }
+      if (state.phase === 'defeated') throw new Error(`practice run was defeated by ${state.encounter}`);
+      const available = await moveSnapshot(page);
+      const selected = selectMove(available, { usedKinds });
+      if (!selected) throw new Error('battle offered no playable piano move');
+      progress(`${state.encounter}: ${selected.title} (${selected.kind})`);
+      const played = await playMove({ page, root, move: selected, timeoutMs: options.timeoutMs });
+      moves.push(played);
+      usedKinds.add(selected.kind);
     }
 
-    if (final?.winner !== 'player') throw new Error(`battle ended with winner ${final?.winner || 'unknown'}`);
-    await page.getByText('You win!', { exact: true }).waitFor({ state: 'visible', timeout: options.timeoutMs });
-    if (await page.getByRole('button', { name: /Oran Berry/ }).count() !== 1) throw new Error('Oran Berry reward is missing');
-    if (await page.getByRole('button', { name: /Light Ball/ }).count() !== 1) throw new Error('Light Ball reward is missing');
+    if (!final) throw new Error(`journey exceeded ${options.maxTurns} piano performances`);
+    if (final.status !== 'complete') throw new Error(`journey ended with status ${final.status}`);
+    for (const kind of EXPECTED_SKILLS) {
+      if (!usedKinds.has(kind)) throw new Error(`playthrough did not exercise ${kind}`);
+    }
+    await page.getByText('Journey complete!', { exact: true }).waitFor({ state: 'visible', timeout: options.timeoutMs });
+    const battleViewport = await verifyViewport(page, 'main.journey-battle');
+    if (!battleViewport.withinViewport || !battleViewport.noHorizontalOverflow || !battleViewport.noVerticalOverflow) {
+      throw new Error('journey summary does not fit the 1280×800 PianoKiosk viewport');
+    }
     if (options.screenshot) {
       await mkdir(dirname(options.screenshot), { recursive: true });
       await page.screenshot({ path: options.screenshot, fullPage: true });
-    }
-    if (!moves.some((move) => move.cardType === 'attack' && move.enemyHealthAfter < move.enemyHealthBefore)) {
-      throw new Error('playthrough never dealt attack damage');
-    }
-    if (!moves.some((move) => move.effectiveness?.includes('Fluent') || move.effectiveness?.includes('Super effective'))) {
-      throw new Error('playthrough did not surface a fluent move outcome');
     }
     if (pageErrors.length > 0) throw new Error(`page errors: ${pageErrors.join('; ')}`);
     if (apiFailures.length > 0) throw new Error(`API failures: ${apiFailures.join('; ')}`);
@@ -499,8 +432,8 @@ async function verifyBrowser(options, progress) {
       viewport,
       final,
       moves,
+      skillFamilies: [...usedKinds],
       challengeCount: moves.length,
-      consoleErrors,
       pageErrors,
       apiFailures,
       screenshot: options.screenshot,
@@ -530,7 +463,7 @@ export async function verifyPianoCardGame(options, { onProgress = () => {} } = {
   };
   try {
     const origin = new URL(options.url).origin;
-    onProgress('Checking the live card-game definition');
+    onProgress('Checking the live card-game journey definition');
     const definitionResponse = await checkedFetch(new URL('/api/v1/gaming/definitions/card-game', origin), {
       timeoutMs: options.timeoutMs,
       expectedType: 'application/json',
@@ -545,9 +478,9 @@ export async function verifyPianoCardGame(options, { onProgress = () => {} } = {
     };
     if (!inspected.valid) throw new Error(`live definition is not Scale Stadium: ${inspected.errors.join('; ')}`);
 
-    onProgress('Checking mounted Pokémon YAML and SVG assets');
+    onProgress('Checking mounted Pokémon SVG assets');
     report.assets = await verifyCorpusAssets(origin, inspected.combatants, options.timeoutMs);
-    onProgress('Playing a complete MIDI-powered battle');
+    onProgress('Playing the complete MIDI-powered journey');
     report.browser = await verifyBrowser(options, onProgress);
     report.valid = true;
   } catch (error) {
@@ -563,10 +496,10 @@ const USAGE = `Scale Stadium live readiness verifier
 
 Options:
   --url <url>          Game route (default ${DEFAULT_URL})
-  --user <id>          Isolated attempt identity (default ${DEFAULT_USER})
+  --user <id>          Practice identity (default ${DEFAULT_USER})
   --timeout <seconds>  Per-operation timeout (default 30)
-  --max-turns <count>  Fail if the battle runs longer (default 12)
-  --screenshot <path>  Save the victory screen (also captures failures)
+  --max-turns <count>  Maximum piano performances (default 12)
+  --screenshot <path>  Save the journey summary (also captures failures)
   --headed             Show Chromium while the verifier plays
   --json               Machine-readable report on stdout
   -h, --help           Show this help
@@ -590,8 +523,8 @@ async function main() {
   if (options.json) process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
   else if (report.valid) {
     process.stdout.write(`✓ Scale Stadium is ready at ${report.url}\n`);
-    process.stdout.write(`  ${report.assets.map((asset) => `${asset.name} #${asset.dex}`).join(' vs ')}\n`);
-    process.stdout.write(`  Won in ${report.browser.final.turn} turns with ${report.browser.challengeCount} completed scales; ${report.browser.final.playerHealth} HP remained.\n`);
+    process.stdout.write(`  Verified ${report.assets.length} Pokémon assets and ${report.browser.skillFamilies.length} piano skill families.\n`);
+    process.stdout.write(`  Completed three encounters in ${report.browser.challengeCount} performances with score ${report.browser.final.score}.\n`);
     if (report.browser.screenshot) process.stdout.write(`  Screenshot: ${report.browser.screenshot}\n`);
   } else {
     process.stderr.write(`✗ Scale Stadium readiness failed\n  ${report.errors.join('\n  ')}\n`);

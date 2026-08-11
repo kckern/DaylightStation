@@ -21,9 +21,9 @@ describe('Adaptive Study emulator journey documentation', () => {
     expect(scenario.id).toBe('adaptive-v1-journey');
     expect(scenario.steps.map(({ capture }) => capture)).toEqual([
       '01-enter-code', '02-first-digit', '03-second-digit', '04-third-digit',
-      '05-fourth-digit', '06-fifth-digit', '07-code-ready', '08-graphic-card-front',
-      '09-graphic-card-back', '10-study-summary', '11-quiz-prompt',
-      '12-quiz-choices', '13-durable-result', '14-result-qr',
+      '05-fourth-digit', '06-fifth-digit', '07-graphic-card-front',
+      '08-graphic-card-back', '09-study-summary', '10-quiz-question',
+      '11-durable-result', '12-result-qr',
     ]);
     expect(scenario.steps.at(-1).expectSymbols).toEqual(['QR V5/M']);
     const missingScenario = normalizeTi86MameScenario(specification.scenarios[1]);

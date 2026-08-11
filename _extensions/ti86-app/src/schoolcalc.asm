@@ -37,14 +37,7 @@ start:
 
 render:
         call _clrLCD
-        ld a,(current_screen)
-        cp SCREEN_RESULT
-        jr nz,render_code
-        call shell_render_result
-        jr render_rail
-render_code:
         call shell_render_code
-render_rail:
         call shell_render_softkeys
 
 wait_key:
@@ -56,7 +49,22 @@ wait_key:
         ld a,b
         call shell_code_accept_digit
         or a
-        jp nz,render
+        jr z,wait_key_regular
+        call shell_code_draw_entered_digit
+        ld a,(shell_code_length)
+        cp 6
+        jp nz,wait_key
+        call shell_code_refresh
+        call shell_code_refresh_f1
+        ; Digit six is sufficient confirmation for an exact local
+        ; prescription. Unknown codes remain editable/confirmable and do not
+        ; create a relay request until the learner presses OPEN or ENTER.
+        call shell_code_matches_study
+        jp c,wait_key
+        ld a,4
+        ld (shell_code_status),a
+        call shell_code_refresh
+        jp launch_standard_runtime
 wait_key_regular:
         ld a,b
         cp SC_SCAN_EXIT
@@ -101,15 +109,12 @@ shell_f3:
         jp show_code
 
 shell_f4:
-        ld a,(current_screen)
-        cp SCREEN_CODE
-        jp nz,show_catalog
-        jp show_code
+        jp wait_key
 
 shell_f5:
         ld a,(current_screen)
         cp SCREEN_CODE
-        jp z,wait_key
+        jp z,sc_input_force_exit
         jp show_sync
 
 ; A score result is a durable offline record, not a dead-end receipt. OPEN
@@ -222,7 +227,6 @@ endif
 show_code:
         ld a,SCREEN_CODE
         ld (current_screen),a
-        call shell_detect_resume
         xor a
         ld (shell_code_length),a
         ld (shell_code_status),a
@@ -285,36 +289,21 @@ shell_code_not_digit:
 
 shell_code_open:
         ld a,(shell_code_length)
-        or a
-        jr nz,shell_code_length_present
-        ld a,(shell_resume_available)
-        or a
-        jp nz,launch_standard_runtime
-shell_code_length_present:
-        ld a,(shell_code_length)
         cp 6
-        jr z,shell_code_open_ready
-        ld a,1
-        ld (shell_code_status),a
-        jp render
+        jp nz,wait_key
 shell_code_open_ready:
+        ; Acknowledge activation on the LCD before opening an envelope,
+        ; creating DSENTRY, or handing control to a child runtime. These
+        ; operations can take visible time on physical hardware; a pressed
+        ; ENTER/F1 must never look lost.
+        ld a,4
+        ld (shell_code_status),a
+        call shell_code_refresh
         call shell_code_matches_study
         jp nc,launch_standard_runtime
         call publish_study_entry
         jp c,shell_code_unavailable
         jp launch_sync_runtime
-
-shell_detect_resume:
-        xor a
-        ld (shell_resume_available),a
-        ld hl,sync_dsstudy_name
-        ld de,scsp_magic
-        call sc_envelope_open
-        ret c
-        ld a,1
-        ld (shell_resume_available),a
-        or a
-        ret
 
 ; Carry clear only when the six entered digits equal canonical SCSP. This
 ; reopens paused study or its queued Result without contacting the relay.
@@ -565,7 +554,8 @@ endif
 shell_code_unavailable:
         ld a,2
         ld (shell_code_status),a
-        jp render
+        call shell_code_refresh
+        jp wait_key
 show_lesson:
         jp launch_standard_runtime
 show_sync:
@@ -1466,6 +1456,9 @@ shell_sync_presence_ready:
         jp ui_draw_text
 endif
 
+; Retained v0 shell-owned result route. Adaptive v1 renders and resumes Result
+; inside SCLEARN, so this route is intentionally absent from the release.
+if 0
 shell_render_result:
         ld hl,result_title
         ld de,result_context
@@ -1485,6 +1478,7 @@ shell_render_result:
         ld b,2
         ld c,41
         jp ui_draw_text
+endif
 
 shell_render_code:
         ld hl,code_title
@@ -1497,24 +1491,100 @@ shell_render_code:
         ld c,15
         call ui_draw_text
         call shell_draw_code_display
+        jp shell_draw_code_status
+
+; Status changes own only the centered status row. Digit entry is even more
+; tightly bounded below: it replaces one 7x8 placeholder cell and leaves all
+; five sibling cells, instructions, header, and rail pixels untouched.
+shell_code_refresh:
+        call ui_mode_clear
+        ld b,0
+        ld c,39
+        ld d,128
+        ld e,8
+        call ui_fill_rect
+        call ui_mode_set
+        ; Fall through and redraw only the centered status label.
+shell_draw_code_status:
         ld a,(shell_code_status)
         ld hl,code_prompt
         ld b,36
         or a
-        jr z,shell_code_status_ready
-        cp 1
-        ld hl,code_short
-        ld b,32
-        jr z,shell_code_status_ready
+        jr nz,shell_code_status_nonidle
+        ld a,(shell_code_length)
+        cp 6
+        jr nz,shell_code_status_ready
+        ld hl,code_ready
+        ld b,38
+        jr shell_code_status_ready
+shell_code_status_nonidle:
         cp 2
         ld hl,code_missing
         ld b,24
         jr z,shell_code_status_ready
+        cp 3
         ld hl,code_busy
         ld b,26
+        jr z,shell_code_status_ready
+        cp 4
+        ld hl,code_opening
+        ld b,46
 shell_code_status_ready:
         ld c,40
         jp ui_draw_text
+
+; Replace only the placeholder at the position accepted by the preceding key
+; event. The six authored x positions include the four-pixel group separator.
+shell_code_draw_entered_digit:
+        ld a,(shell_code_length)
+        dec a
+        ld e,a
+        ld d,0
+        ld hl,shell_code_digit_x
+        add hl,de
+        ld a,(hl)
+        ld (shell_code_font_x),a
+        ld b,a
+        ld c,26
+        ld d,SHELL_CODE_FONT_WIDTH
+        ld e,SHELL_CODE_FONT_HEIGHT
+        call ui_mode_clear
+        call ui_fill_rect
+        ld a,(shell_code_length)
+        dec a
+        ld e,a
+        ld d,0
+        ld hl,shell_code_digits
+        add hl,de
+        ld a,(hl)
+        call shell_code_glyph_pointer
+        ld a,(shell_code_font_x)
+        ld b,a
+        ld c,26
+        ld d,SHELL_CODE_FONT_WIDTH
+        ld e,SHELL_CODE_FONT_HEIGHT
+        call ui_mode_set
+        jp ui_draw_bitmap
+
+; The first rail slot is intentionally empty until the editor holds exactly
+; six digits. Repaint only that slot when digit six makes OPEN available.
+shell_code_refresh_f1:
+        call ui_mode_set
+        ld b,0
+        ld c,56
+        ld d,25
+        ld e,8
+        call ui_fill_rect
+        ld a,(shell_code_length)
+        cp 6
+        ret nz
+        call ui_mode_clear
+        call ui_select_compact
+        ld hl,softkey_open
+        ld b,2
+        ld c,58
+        call ui_draw_text
+        jp ui_mode_set
 
 shell_draw_code_display:
         ld hl,shell_code_digits
@@ -1581,6 +1651,7 @@ shell_code_glyph_index_ready:
 ; Result Queue replaces the answer draft with correct, total, and rounded
 ; percent at local-state offsets 47..49. Format it at render time so scores
 ; remain exact after a cold relaunch and are never guessed from QR output.
+if 0
 shell_build_result_score:
         ld de,shell_result_score
         ld hl,result_score_prefix
@@ -1657,6 +1728,7 @@ shell_result_status:
         ret c
         ld hl,result_mastered_line
         ret
+endif
 
 ; HL = row text and A = zero-based row index.
 shell_draw_home_row:
@@ -1769,13 +1841,12 @@ shell_render_softkeys:
         ld hl,softkey_home
         ld a,(current_screen)
         cp SCREEN_CODE
-        ld hl,softkey_open
         jr nz,shell_softkey_f1_not_code
-        ld a,(shell_resume_available)
-        or a
+        ld hl,softkey_empty
+        ld a,(shell_code_length)
+        cp 6
+        jr nz,shell_softkey_f1_ready
         ld hl,softkey_open
-        jr z,shell_softkey_f1_ready
-        ld hl,softkey_resume
         jr shell_softkey_f1_ready
 shell_softkey_f1_not_code:
         cp SCREEN_RESULT
@@ -1801,7 +1872,7 @@ shell_softkey_f3_ready:
         ld hl,softkey_sync
         ld a,(current_screen)
         cp SCREEN_CODE
-        ld hl,softkey_clear
+        ld hl,softkey_empty
         jr z,shell_softkey_f4_ready
         cp SCREEN_RESULT
         jr nz,shell_softkey_f4_ready
@@ -1813,7 +1884,7 @@ shell_softkey_f4_ready:
         ld hl,softkey_sync
         ld a,(current_screen)
         cp SCREEN_CODE
-        ld hl,softkey_empty
+        ld hl,softkey_exit
         jr z,shell_softkey_f5_ready
         cp SCREEN_RESULT
         jr nz,shell_softkey_f5_ready
@@ -1840,7 +1911,6 @@ device_id_length:       defb 0
 device_id_value:        defs 17,0
 shell_code_length:       defb 0
 shell_code_status:       defb 0
-shell_resume_available:  defb 0
 shell_code_entries_left: defb 0
 shell_code_entry_offset: defw 0
 sce1_crc_pointer:       defw 0
@@ -1921,9 +1991,10 @@ result_mastered_line:   defb "MASTERED: NEXT",0
 result_line_3:          defb "QR QUEUED / CABLE OFF",0
 code_instruction:        defb "CONTINUE ON CALC",0
 code_prompt:             defb "ENTER 6 DIGITS",0
-code_short:              defb "ENTER SIX DIGITS",0
+code_ready:              defb "ENTER TO OPEN",0
 code_missing:            defb "NOT INSTALLED - SYNC",0
 code_busy:               defb "FINISH CURRENT WORK",0
+code_opening:            defb "OPENING...",0
 catalog_line_1:         defb "Catalog not installed.",0
 catalog_line_2:         defb "Sync package required.",0
 catalog_line_3:         defb "EXIT returns Home.",0
@@ -1948,14 +2019,15 @@ softkey_cable:          defb "CABLE",0
 softkey_user:           defb "USER",0
 softkey_code:           defb "CODE",0
 softkey_open:           defb " OPEN",0
-softkey_resume:         defb "RESUME",0
-softkey_clear:          defb "CLR",0
+softkey_exit:           defb "EXIT",0
 softkey_empty:          defb 0
 ; Direct-input scan code pairs for the TI-86's physical numeric keypad.
 ; Source groups: Arrow=$FE, KG5=$FD, KG4=$FB, KG3=$F7, KG2=$EF.
 shell_code_digit_keys:
         defb 0x21,'0',0x22,'1',0x1A,'2',0x12,'3',0x23,'4'
         defb 0x1B,'5',0x13,'6',0x24,'7',0x1C,'8',0x14,'9'
+shell_code_digit_x:
+        defb 38,46,54,66,74,82
 shell_result_score:     defs 20,0
 
 UI_RENDER_COPIED_TEXT_LENGTH: equ 0

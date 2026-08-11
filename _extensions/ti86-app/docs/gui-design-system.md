@@ -18,8 +18,11 @@ content independent of calculator family.
 Every launch begins on an `ENTER CODE` template. The only normal route is code
 entry/resolution, adaptive StudyCard, study summary, A-E ChoiceQuestion, Result,
 and QR; Sync is entered only to resolve a new code or deliver queued results.
-A contextual Resume action may appear on Enter Code without changing that
-startup destination.
+Enter Code exposes no Resume shortcut: F1 appears as `OPEN` only after digit
+six, F2-F4 remain blank, and F5 is the far-right `EXIT` action. Digit input is
+cell-local: one key replaces one 7x8 placeholder without repainting siblings or
+the status rail. Digit six auto-opens an exact local prescription; unknown
+codes remain on the completed editor for explicit OPEN/ENTER confirmation.
 
 The adaptive card rail is fixed and sparse:
 
@@ -30,7 +33,10 @@ The adaptive card rail is fixed and sparse:
 
 Empty means no pixels and no key behavior. In particular, the general v0
 `F2 BACK` exception does not apply to adaptive cards. `EXIT` is the power-safe
-pause path. After study the summary exposes `F5 QUIZ`; after the result is
+pause path. Both card faces are pre-rendered; F1 swaps their cached bodies in
+either direction before any durable write. Rating keys replace the card with a
+centered `LOADING...` acknowledgement before persistence and scheduling. After
+study the summary exposes `F5 QUIZ`; after the result is
 durably queued, Result exposes QR and return-to-code actions. Re-entering the
 completed local code reopens Result.
 
@@ -216,13 +222,11 @@ Lesson. The root keeps `SUBJECTS` with the learner name. Generic words such as
 `MODULES` and `QUIZ` describe the interaction only; they must not be the sole
 answer to “what am I studying?”
 
-An inline multiple-choice prompt owns exactly three compact rows at y=11,17,23.
-It is followed by four blank pixel rows, then a four-row choice region at
-y=32,38,44,50. Each 3×5 answer row retains its one-pixel vertical gap. A
-five-choice prompt may use two answer columns only when every label fits its
-own half-width without clipping. Otherwise the runner uses its explicit
-multi-page fallback rather than collapsing the spacing or making an answer
-ambiguous.
+An Adaptive Study multiple-choice prompt owns exactly two compact rows at
+y=10,16. Its A–E choices remain on that same screen at y=24,30,36,42,48, each
+with a one-pixel vertical gap. Adaptive content validation rejects a prompt or
+choice that cannot fit this surface; the calculator never splits a question
+from its answers or silently clips authored content.
 
 ### Iconography
 
@@ -234,9 +238,10 @@ Icons are authored as 7×7 one-bit glyphs in
 - direct choices: A, B, C, D, E;
 - instructional hardware symbols: arrows, back, home, and exit.
 
-A hardware symbol is not automatically an on-screen control. Arrow, ENTER, and
-EXIT glyphs appear in help or a one-time instruction only; persistent softkeys
-must not duplicate buttons already under the learner's fingers.
+A hardware symbol is not automatically an on-screen control. Arrow and ENTER
+glyphs appear in help or a one-time instruction only. The v1 Enter Code rail
+deliberately labels F5 `EXIT`; other persistent rails do not duplicate hardware
+buttons already under the learner's fingers.
 
 ## 2. Physical interaction
 
@@ -265,14 +270,11 @@ block. The Subject root shows F5 `OFF` when no relay is detected, while deeper
 Catalog lists use the same `NEXT`/`END` cue and page action instead of an
 irrelevant transport affordance.
 
-Quiz question and answer form one interaction. A normal compact question
-renders up to three visible prompt rows, a deliberate gap, then its `A)`–`D)`
-choice rows directly beneath it, with F1–F4 mapped to the same letters in the
-rail. A fifth short answer may share a two-column row; typing a number is not a
-hidden alternate response path. Only a genuinely tall prompt uses F5 `MORE`
-and then `ANS` at its final page. Its answer view reserves the bottom body line
-for `LEFT: Q`, returning to the final prompt page without discarding the answer
-draft.
+Quiz question and answer form one interaction. Adaptive Study renders up to
+two prompt rows and all four normal answer rows directly beneath them, with
+F1–F4 mapped to A–D in the rail; the bounded fifth row maps to F5 when present.
+There is no prompt/answer page flip and typing a number is not a hidden
+alternate response path.
 
 ## 3. Shell layout
 
@@ -462,7 +464,7 @@ blocks while clamping at the beginning/end.
 | Info document | Header, margin, ProseBlocks, rail, optional MARK |
 | Study card (v0 reference) | Info document + card position + FLIP/MARK |
 | Adaptive study card (v1) | Header/card position, fixed border, centered text or vector-canvas/caption split, exact sparse FLIP/AGAIN/HARD/KNOW rail |
-| Enter code (v1) | `ENTER CODE` header, exclusive `code-7x8` six-digit editor, resolution status, optional contextual Resume |
+| Enter code (v1) | `ENTER CODE` header, exclusive `code-7x8` editor, local-code auto-open on digit six, explicit `OPEN` for unknown completed codes, blank F2-F4, far-right F5 `EXIT` |
 | Choice question | Prompt, choices, A–E softkeys |
 | Numeric/text response | Prompt, input component, unit/help actions |
 | Result | ResultSummary, QueueIndicator, QR/SYNC |

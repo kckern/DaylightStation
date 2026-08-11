@@ -27,6 +27,18 @@ export function createGamingRouter({ gamingService, logger = null }) {
     res.json({ game_id: req.params.gameId, definition_hash: loaded.hash, definition: loaded.definition });
   }));
 
+  router.get('/games/:gameId/progress', handle((req, res) => {
+    res.json(gamingService.getProgress(req.params.gameId, req.query.user_id || null));
+  }));
+
+  router.get('/games/:gameId/leaderboard', handle((req, res) => {
+    res.json(gamingService.getLeaderboard(
+      req.params.gameId,
+      req.query.user_id || null,
+      req.query.week || null,
+    ));
+  }));
+
   router.post('/sessions', handle((req, res) => {
     const body = req.body || {};
     if (typeof body.game_id !== 'string') return res.status(400).json({ error: 'game_id_required' });

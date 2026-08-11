@@ -98,7 +98,9 @@ const READER_PAGE_MAX_BYTES = (READER_PAGE_COLUMNS * READER_PAGE_LINES)
 // therefore paginate independently from reader prose; a long question remains
 // complete, but advances through explicit prompt pages before answers appear.
 const ASSESSMENT_PROMPT_PAGE_COLUMNS = 23;
-const ASSESSMENT_PROMPT_PAGE_LINES = 3;
+// The Adaptive Study quiz keeps the question and all A-E choices on one LCD:
+// two compact prompt rows above five possible single-line choices.
+const ASSESSMENT_PROMPT_PAGE_LINES = 2;
 const ASSESSMENT_PROMPT_PAGE_MAX_BYTES = (ASSESSMENT_PROMPT_PAGE_COLUMNS * ASSESSMENT_PROMPT_PAGE_LINES)
   + (ASSESSMENT_PROMPT_PAGE_LINES - 1);
 const ASSESSMENT_MAX_ITEMS = 48;
@@ -1279,6 +1281,12 @@ export class Ti86SchoolCalcCodec extends ISchoolCalcCodec {
         else if (Buffer.byteLength(subjectTitle, 'ascii') > 18) {
           reasons.push('Adaptive Study quiz subject exceeds the 18-glyph TI-86 header budget');
         }
+        bundle.lesson.modules[1].bank?.items?.forEach((item, itemIndex) => {
+          if (typeof item?.prompt === 'string'
+              && paginateAssessmentPrompt(item.prompt).length !== 1) {
+            reasons.push(`Adaptive Study quiz item ${itemIndex} prompt exceeds the two-line TI-86 question budget`);
+          }
+        });
       }
     }
     return { compatible: reasons.length === 0, reasons: [...new Set(reasons)] };

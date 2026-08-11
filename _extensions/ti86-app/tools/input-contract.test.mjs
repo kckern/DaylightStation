@@ -41,6 +41,7 @@ describe('TI-86 input safety boundary', () => {
     expect(input).toContain('sc_input_arm_second:');
     expect(input).toContain('sc_input_contrast_up:');
     expect(input).toContain('sc_input_contrast_down:');
+    expect(input).toMatch(/cp SC_SCAN_DOWN\s+jp z,sc_input_contrast_down\s+cp SC_SCAN_EXIT\s+jp z,sc_input_force_exit/);
     expect(input).toContain('out (SC_CONTRAST_PORT),a');
     expect(input).toContain('jr sc_input_wait');
     expect(input).toContain('cp SC_SCAN_CLEAR');

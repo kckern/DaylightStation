@@ -56,4 +56,61 @@ describe('PianoScaleChallengePolicy', () => {
     expect(() => prepare(policy, { kind: 'rhythm' })).toThrow(/Unsupported piano challenge kind/);
     expect(() => prepare(policy, { requirements: { curriculum: 'imaginary' } })).toThrow(/Unknown piano curriculum/);
   });
+
+  it.each([
+    ['scale', 8],
+    ['chord', 3],
+    ['arpeggio', 4],
+    ['timed-pattern', 4],
+  ])('materializes the journey %s family from the adaptive curriculum', (kind, noteCount) => {
+    const result = prepare(new PianoScaleChallengePolicy(), {
+      kind,
+      requirements: { curriculum: 'pokemon-journey-foundations' },
+    });
+    expect(result).toMatchObject({
+      kind,
+      pedagogy_policy_version: 'adaptive-piano-journey-v1',
+      selection: { curriculum: 'pokemon-journey-foundations', paced: false, tempo_bpm: null },
+    });
+    expect(result.prompt.expected_midi).toHaveLength(noteCount);
+    expect(result.prompt.max_mistakes).toBeUndefined();
+  });
+
+  it('introduces a 60 BPM pulse after two strong performances', () => {
+    const attemptStore = {
+      listRecent: () => [
+        { kind: 'timed-pattern', status: 'completed', score: 0.9, prompt: { exercise_id: 'pattern-c-step' } },
+        { kind: 'timed-pattern', status: 'completed', score: 0.86, prompt: { exercise_id: 'pattern-g-turn' } },
+      ],
+    };
+    const result = prepare(new PianoScaleChallengePolicy({ attemptStore }), {
+      kind: 'timed-pattern',
+      requirements: { curriculum: 'pokemon-journey-foundations' },
+    });
+    expect(result.selection).toMatchObject({ paced: true, tempo_bpm: 60 });
+    expect(result.prompt).toMatchObject({ tempo_bpm: 60, lead_in_ms: 2000 });
+    expect(result.prompt.target_offsets_ms).toEqual(expect.arrayContaining([0, 1000]));
+  });
+
+  it('adjusts paced work in five-BPM steps toward the 70–90% practice band', () => {
+    const fasterAttempts = [
+      { kind: 'scale', status: 'completed', score: 0.96, prompt: { tempo_bpm: 70 } },
+      { kind: 'scale', status: 'completed', score: 0.94, prompt: { tempo_bpm: 65 } },
+    ];
+    const faster = prepare(new PianoScaleChallengePolicy({ attemptStore: { listRecent: () => fasterAttempts } }), {
+      kind: 'scale', requirements: { curriculum: 'pokemon-journey-foundations' },
+    });
+    expect(faster.selection.tempo_bpm).toBe(75);
+
+    const slowerAttempts = [
+      { kind: 'scale', status: 'completed', score: 0.62, prompt: { tempo_bpm: 55 } },
+      { kind: 'scale', status: 'completed', score: 0.66, prompt: { tempo_bpm: 55 } },
+      { kind: 'scale', status: 'completed', score: 0.9, prompt: {} },
+      { kind: 'scale', status: 'completed', score: 0.88, prompt: {} },
+    ];
+    const slower = prepare(new PianoScaleChallengePolicy({ attemptStore: { listRecent: () => slowerAttempts } }), {
+      kind: 'scale', requirements: { curriculum: 'pokemon-journey-foundations' },
+    });
+    expect(slower.selection.tempo_bpm).toBe(50);
+  });
 });

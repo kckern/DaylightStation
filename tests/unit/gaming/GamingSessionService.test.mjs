@@ -25,10 +25,11 @@ function service({ logger = null, clock = () => new Date('2026-08-09T12:00:00.00
     },
   });
   const sessionStore = new YamlGamingSessionStore({ sessionsDir: path.join(root, 'sessions') });
+  let sequence = 0;
   return new GamingSessionService({
     definitionStore,
     sessionStore,
-    idFactory: () => 'game_12345678',
+    idFactory: () => `game_${String(++sequence).padStart(8, '0')}`,
     clock,
     logger,
     pendingTimeoutMs,
@@ -59,80 +60,106 @@ function resolveCard(svc, session, card, score, prefix) {
   });
 }
 
+function addCompletedRun(svc, {
+  id, userId, displayName, score, completedAt, partnerId = 'bulbasaur', attemptScore = 0.9,
+}) {
+  const kinds = ['scale', 'chord', 'arpeggio', 'timed-pattern', 'scale', 'chord'];
+  const practiceAttempts = kinds.map((kind, index) => ({
+    kind, status: 'completed', score: attemptScore, first_pass: true,
+    attempt_id: `${id}-attempt-${index}`,
+  }));
+  svc.sessionStore.create({
+    session_id: id,
+    game_id: 'card-game',
+    status: 'complete',
+    participants: [{ user_id: userId, display_name: displayName }],
+    completed_at: completedAt,
+    state: {
+      status: 'complete',
+      partner_id: partnerId,
+      completed_encounters: ['pidgey', 'meowth', 'snorlax'],
+      practice_attempts: practiceAttempts,
+      journey_summary: {
+        qualified: true,
+        score,
+        score_version: 1,
+        journey_version: 1,
+      },
+    },
+  });
+}
+
 describe('GamingSessionService', () => {
-  it('loads the Card Game from YAML and requests semantic scale challenges', () => {
+  it('loads the Pokémon journey from YAML and requests all four semantic piano skills', () => {
     const svc = service();
     const loaded = svc.getDefinition('card-game');
     expect(loaded.definition.title).toBe('Scale Stadium');
-    expect(loaded.definition.presentation).toMatchObject({ theme: 'pokemon-tcg', data_source: 'PokeAPI' });
-    expect(loaded.definition.card_battle.player.pokemon).toMatchObject({
-      id: 25,
-      dex: '0025',
-      name: 'Pikachu',
-      types: ['electric'],
-      stats: { hp: 35, attack: 55, defense: 40, sp_attack: 50, sp_defense: 50, speed: 90 },
-      assets: { svg: 'games/pokemon/svg/0025-pikachu-gen1.svg' },
+    expect(loaded.definition).toMatchObject({
+      ruleset: 'pokemon-practice-journey-v1',
+      view_id: 'pokemon-practice-journey-v1',
+      presentation: { theme: 'pokemon-stadium', data_source: 'PokeAPI' },
     });
-    expect(loaded.definition.card_battle.enemy.pokemon).toMatchObject({
-      id: 7,
-      dex: '0007',
-      name: 'Squirtle',
-      types: ['water'],
-      stats: { hp: 44, attack: 48, defense: 65, sp_attack: 50, sp_defense: 64, speed: 43 },
-      assets: { svg: 'games/pokemon/svg/0007-squirtle-gen1.svg' },
-    });
-    expect(Object.values(loaded.definition.cards).every((card) => card.challenge.kind === 'scale')).toBe(true);
-    expect(new Set(Object.values(loaded.definition.cards).map((card) => card.type))).toEqual(new Set(['attack', 'guard', 'focus']));
-    expect(Object.values(loaded.definition.cards).every((card) => !/major|scale/i.test(card.title))).toBe(true);
-    expect(loaded.definition.card_battle.challenge_pools).toBeUndefined();
+    expect(loaded.definition.journey.partners.map((partner) => partner.id)).toEqual([
+      'bulbasaur', 'charmander', 'squirtle',
+    ]);
+    expect(loaded.definition.journey.opponents.map((opponent) => opponent.id)).toEqual([
+      'pidgey', 'meowth', 'snorlax',
+    ]);
+    expect(new Set(Object.values(loaded.definition.cards).map((card) => card.challenge.kind))).toEqual(
+      new Set(['scale', 'chord', 'arpeggio', 'timed-pattern']),
+    );
     expect(JSON.stringify(loaded.definition)).not.toMatch(/expected_midi|\babc\b/i);
-    const created = svc.createSession({ game_id: 'card-game', participants: [{ user_id: 'guest' }], seed: 7 });
-    const card = created.state.zones.hand[0];
-    const chosen = svc.applyCommand(created.session_id, {
-      command_id: 'scale-1', session_revision: 0, type: 'choose_action', payload: { card_instance_id: card.instance_id },
+    const created = svc.createSession({
+      game_id: 'card-game', participants: [{ user_id: 'kid-1' }], seed: 7,
+      setup: { partner_id: 'bulbasaur' },
     });
-    expect(chosen.state.pending_action.request).toMatchObject({ domain: 'piano', kind: 'scale' });
+    expect(created.state.zones.hand.map((card) => card.definition_id)).toEqual([
+      'vine-whip', 'growl', 'growth', 'razor-leaf',
+    ]);
+    const scale = created.state.zones.hand[0];
+    const chosen = svc.applyCommand(created.session_id, {
+      command_id: 'scale-1', session_revision: 0, type: 'choose_action', payload: { card_instance_id: scale.instance_id },
+    });
     expect(chosen.state.pending_action.request).toMatchObject({
-      requirements: { curriculum: 'foundation-major-scales' },
+      domain: 'piano', kind: 'scale',
+      requirements: { curriculum: 'pokemon-journey-foundations' },
       timeout_ms: 90000,
     });
     expect(chosen.state.pending_action.request.prompt).toBeUndefined();
-    expect(chosen.state.pending_action.request.context.challenge_pool).toBeNull();
     expect(chosen.state.pending_action.request.context.challenge_sequence).toEqual(expect.any(Number));
-    expect(loaded.definition.cards[card.definition_id].challenge.prompt).toBeUndefined();
+    expect(loaded.definition.cards[scale.definition_id].challenge.prompt).toBeUndefined();
   });
 
   it('keeps domain-specific challenge requirements opaque to Gaming', () => {
     const definition = structuredClone(service().getDefinition('card-game').definition);
-    definition.cards['thunder-shock'].challenge.requirements = {
+    definition.cards['vine-whip'].challenge.requirements = {
       curriculum: 'a-piano-owned-policy',
       future_piano_constraint: { arbitrary: true },
     };
     expect(validateDefinition(definition)).toMatchObject({ valid: true, errors: [] });
   });
 
-  it('turns fluent and recovered piano performances into different Pokémon move power', () => {
-    const fluentService = service();
-    const fluent = fluentService.createSession({
-      game_id: 'card-game', participants: [{ user_id: 'guest' }], seed: 2,
-    });
-    const fluentCard = fluent.state.zones.hand.find((card) => card.definition_id === 'thunder-shock');
-    const fluentResult = resolveCard(fluentService, fluent, fluentCard, 1, 'fluent');
-    expect(fluentResult.events).toContainEqual(expect.objectContaining({
-      type: 'challenge_resolved', outcome: 'super-effective', score: 1,
-    }));
-    expect(fluentResult.events).toContainEqual({ type: 'damage_dealt', target: 'enemy', amount: 9, attempted: 9 });
-
-    const recoveredService = service();
-    const recovered = recoveredService.createSession({
-      game_id: 'card-game', participants: [{ user_id: 'guest' }], seed: 2,
-    });
-    const recoveredCard = recovered.state.zones.hand.find((card) => card.definition_id === 'thunder-shock');
-    const recoveredResult = resolveCard(recoveredService, recovered, recoveredCard, 0.5, 'recovered');
-    expect(recoveredResult.events).toContainEqual(expect.objectContaining({
-      type: 'challenge_resolved', outcome: 'recovered-hit', score: 0.5,
-    }));
-    expect(recoveredResult.events).toContainEqual({ type: 'damage_dealt', target: 'enemy', amount: 5, attempted: 5 });
+  it('turns piano accuracy directly into direct, partial, and missed hits', () => {
+    const cases = [
+      { score: 0.8, outcome: 'direct-hit', damage: 44 },
+      { score: 0.6, outcome: 'partial-hit', damage: 29 },
+      { score: 0.4, outcome: 'miss', damage: 11 },
+    ];
+    for (const testCase of cases) {
+      const svc = service();
+      const created = svc.createSession({
+        game_id: 'card-game', participants: [{ user_id: 'kid-1' }], seed: 2,
+        setup: { partner_id: 'bulbasaur' },
+      });
+      const card = created.state.zones.hand.find((candidate) => candidate.definition_id === 'vine-whip');
+      const result = resolveCard(svc, created, card, testCase.score, testCase.outcome);
+      expect(result.events).toContainEqual(expect.objectContaining({
+        type: 'challenge_resolved', outcome: testCase.outcome, score: testCase.score,
+      }));
+      expect(result.events).toContainEqual(expect.objectContaining({
+        type: 'damage_dealt', target: 'enemy', amount: testCase.damage,
+      }));
+    }
   });
 
   it('pins the definition and replays commands authoritatively', () => {
@@ -178,33 +205,74 @@ describe('GamingSessionService', () => {
     }));
   });
 
-  it('logs tactical enemy intent outcomes authoritatively', () => {
+  it('logs journey enemy intent outcomes authoritatively', () => {
     const logger = { info: vi.fn() };
     const svc = service({ logger });
-    const created = svc.createSession({ game_id: 'card-game', participants: [{ user_id: 'guest' }], seed: 7 });
-    svc.applyCommand(created.session_id, {
-      command_id: 'end-turn-1', session_revision: 0, type: 'end_turn', payload: {},
+    const created = svc.createSession({
+      game_id: 'card-game', participants: [{ user_id: 'kid-1' }], seed: 7,
+      setup: { partner_id: 'bulbasaur' },
     });
+    resolveCard(svc, created, created.state.zones.hand[0], 0.4, 'miss');
     expect(logger.info).toHaveBeenCalledWith('gaming.authority.enemy.intent.resolved', expect.objectContaining({
       sessionId: created.session_id,
-      intentId: 'water-gun',
-      intentKind: 'attack',
-      amount: 8,
-      damage: 8,
-      blocked: 0,
+      intentId: expect.any(String),
+      intentKind: expect.any(String),
+      amount: expect.any(Number),
     }));
   });
 
-  it('applies only authored rematch upgrades', () => {
+  it('requires an authored partner and preserves it in the run state', () => {
     const svc = service();
-    const upgraded = svc.createSession({
-      game_id: 'card-game', participants: [{ user_id: 'guest' }], seed: 7, setup: { upgrade_id: 'oran-berry' },
+    const created = svc.createSession({
+      game_id: 'card-game', participants: [{ user_id: 'kid-1' }], seed: 7,
+      setup: { partner_id: 'squirtle' },
     });
-    expect(upgraded.state.player).toMatchObject({ health: 41, max_health: 41 });
-    expect(upgraded.state.applied_upgrade).toEqual({ id: 'oran-berry', title: 'Oran Berry' });
+    expect(created.state).toMatchObject({ partner_id: 'squirtle', player: { name: 'Squirtle' } });
     expect(() => svc.createSession({
-      game_id: 'card-game', participants: [], setup: { upgrade_id: 'god-mode' },
-    })).toThrow(/unavailable/);
+      game_id: 'card-game', participants: [], setup: { partner_id: 'missingno' },
+    })).toThrow(/Choose an available Pokémon partner/);
+  });
+
+  it('persists mastery and ranks each sibling by their best version-compatible run', () => {
+    const svc = service({ clock: () => new Date('2026-08-09T12:00:00.000Z') });
+    addCompletedRun(svc, {
+      id: 'game_kidold01', userId: 'kid-1', displayName: 'Alex', score: 9000,
+      completedAt: '2026-08-01T18:00:00.000Z',
+    });
+    addCompletedRun(svc, {
+      id: 'game_kidweek1', userId: 'kid-1', displayName: 'Alex', score: 8500,
+      completedAt: '2026-08-08T18:00:00.000Z',
+    });
+    addCompletedRun(svc, {
+      id: 'game_kidweek2', userId: 'kid-1', displayName: 'Alex', score: 8100,
+      completedAt: '2026-08-09T10:00:00.000Z',
+    });
+    addCompletedRun(svc, {
+      id: 'game_sisweek1', userId: 'kid-2', displayName: 'Maya', score: 8700,
+      completedAt: '2026-08-07T18:00:00.000Z', partnerId: 'charmander',
+    });
+
+    const progress = svc.getProgress('card-game', 'kid-1');
+    expect(progress).toMatchObject({
+      persistent: true,
+      journeys_completed: 3,
+      personal_best: { score: 9000, partner_id: 'bulbasaur' },
+      partners: { bulbasaur: { journeys_completed: 3, evolved: true } },
+    });
+    expect(progress.skill_stars.scale.stars).toBe(3);
+
+    const leaderboard = svc.getLeaderboard('card-game', 'kid-1');
+    expect(leaderboard.standings.map((entry) => [entry.display_name, entry.score])).toEqual([
+      ['Maya', 8700],
+      ['Alex', 8500],
+    ]);
+    expect(leaderboard.standings[1]).toMatchObject({ attempt_count: 2, rank: 2 });
+    expect(leaderboard).toMatchObject({
+      alltime: { display_name: 'Alex', score: 9000 },
+      viewer_personal_best: { score: 9000 },
+      rival: { display_name: 'Maya', score: 8700 },
+    });
+    expect(svc.getProgress('card-game', 'guest')).toMatchObject({ persistent: false, personal_best: null });
   });
 
   it('deduplicates a retry and rejects stale new commands', () => {

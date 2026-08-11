@@ -42,7 +42,9 @@ describe('piano-card-game readiness CLI', () => {
       definition,
     });
     expect(result.valid, result.errors.join('\n')).toBe(true);
-    expect(result.combatants.map((entry) => entry.pokemon.name)).toEqual(['Pikachu', 'Squirtle']);
+    expect(result.combatants.map((entry) => entry.pokemon.name)).toEqual([
+      'Bulbasaur', 'Charmander', 'Squirtle', 'Pidgey', 'Meowth', 'Snorlax',
+    ]);
   });
 
   it('fails stale Riff Raiders deployments before browser automation', () => {
@@ -53,19 +55,18 @@ describe('piano-card-game readiness CLI', () => {
     });
     expect(result.valid).toBe(false);
     expect(result.errors).toContain('live title must be Scale Stadium');
-    expect(result.errors).toContain('live theme must be pokemon-tcg');
+    expect(result.errors).toContain('live theme must be pokemon-stadium');
   });
 
-  it('chooses piano moves with damage, weakness, and announced intent in mind', () => {
-    const cards = [
-      { id: 'charge', title: 'Charge', type: 'focus', cost: 1, effect: 5, moveType: 'electric' },
-      { id: 'spark', title: 'Spark', type: 'attack', cost: 2, effect: 10, moveType: 'electric' },
-      { id: 'tail', title: 'Iron Tail', type: 'attack', cost: 3, effect: 17, moveType: 'steel' },
-      { id: 'screen', title: 'Light Screen', type: 'guard', cost: 2, effect: 12, moveType: 'psychic' },
+  it('covers unseen piano skills before repeating the strongest move', () => {
+    const moves = [
+      { id: 'scale', title: 'Vine Whip', kind: 'scale', damage: 44 },
+      { id: 'chord', title: 'Growl', kind: 'chord', damage: 28 },
+      { id: 'arp', title: 'Growth', kind: 'arpeggio', damage: 32 },
+      { id: 'rhythm', title: 'Razor Leaf', kind: 'timed-pattern', damage: 58 },
     ];
-    expect(selectMove(cards, { energy: 3, intentKind: 'attack' }).title).toBe('Charge');
-    expect(selectMove(cards.filter((card) => card.type !== 'focus'), { energy: 2, intentKind: 'attack' }).title).toBe('Spark');
-    expect(selectMove(cards.filter((card) => card.type === 'guard'), { energy: 2, intentKind: 'attack' }).title).toBe('Light Screen');
-    expect(selectMove(cards.filter((card) => card.type === 'guard'), { energy: 2, intentKind: 'defend' })).toBeNull();
+    expect(selectMove(moves, { usedKinds: new Set(['scale', 'chord']) }).title).toBe('Razor Leaf');
+    expect(selectMove(moves, { usedKinds: new Set(['scale', 'chord', 'arpeggio', 'timed-pattern']) }).title).toBe('Razor Leaf');
+    expect(selectMove([], { usedKinds: new Set() })).toBeNull();
   });
 });

@@ -1,223 +1,250 @@
 schema_version: 1
 game_id: card-game
 title: Scale Stadium
-view_id: card-battle-v1
-ruleset: card-battle-v1
+view_id: pokemon-practice-journey-v1
+ruleset: pokemon-practice-journey-v1
 players:
   min: 1
   max: 1
 
-# The combatants below are a curated vertical slice of the PokeAPI corpus at
-# media/games/pokemon. Game balance is authored here; identity, Pokédex stats,
-# types, legal move names, and SVG paths come from the matching per-Pokémon YAML.
 presentation:
-  theme: pokemon-tcg
+  theme: pokemon-stadium
   data_source: PokeAPI
+  sounds:
+    enabled: true
 
-card_battle:
-  turn_mode: tactical
-  opening_hand: 4
-  hand_size: 4
-  player:
-    name: Pikachu
-    health: 35
-    max_energy: 3
-    pokemon:
-      id: 25
-      dex: "0025"
-      slug: pikachu
-      name: Pikachu
-      genus: Mouse Pokémon
-      generation: 1
-      region: Kanto
-      types: [electric]
-      ability: static
-      stats:
-        hp: 35
-        attack: 55
-        defense: 40
-        sp_attack: 50
-        sp_defense: 50
-        speed: 90
-      assets:
-        svg: games/pokemon/svg/0025-pikachu-gen1.svg
-      source_file: games/pokemon/data/0025-pikachu-gen1.yml
-  upgrades:
-    - id: oran-berry
-      title: Oran Berry
-      description: Start the rematch with 6 extra HP.
-      effect:
-        max_health: 6
-    - id: light-ball
-      title: Light Ball
-      description: Start the rematch with 4 attack focus.
-      effect:
-        starting_focus: 4
-  enemy:
-    id: squirtle
-    name: Squirtle
-    health: 44
-    weakness:
-      type: electric
-      multiplier: 1.5
-    pokemon:
-      id: 7
-      dex: "0007"
-      slug: squirtle
+journey:
+  version: 1
+  score_version: 1
+  player_health: 100
+  partners:
+    - id: bulbasaur
+      name: Bulbasaur
+      type: grass
+      genus: Seed Pokémon
+      dex: "0001"
+      asset: games/pokemon/svg/0001-bulbasaur-gen1.svg
+      asset_facing: right
+      evolution:
+        id: ivysaur
+        name: Ivysaur
+        dex: "0002"
+        asset: games/pokemon/svg/0002-ivysaur-gen1.svg
+      move_ids: [vine-whip, growl, growth, razor-leaf]
+    - id: charmander
+      name: Charmander
+      type: fire
+      genus: Lizard Pokémon
+      dex: "0004"
+      asset: games/pokemon/svg/0004-charmander-gen1.svg
+      asset_facing: left
+      evolution:
+        id: charmeleon
+        name: Charmeleon
+        dex: "0005"
+        asset: games/pokemon/svg/0005-charmeleon-gen1.svg
+      move_ids: [ember, smokescreen, dragon-dance, fire-fang]
+    - id: squirtle
       name: Squirtle
+      type: water
       genus: Tiny Turtle Pokémon
-      generation: 1
-      region: Kanto
-      types: [water]
-      ability: torrent
-      stats:
-        hp: 44
-        attack: 48
-        defense: 65
-        sp_attack: 50
-        sp_defense: 64
-        speed: 43
-      assets:
-        svg: games/pokemon/svg/0007-squirtle-gen1.svg
-      source_file: games/pokemon/data/0007-squirtle-gen1.yml
-    intents:
-      - id: water-gun
-        title: Water Gun
-        kind: attack
-        amount: 8
-      - id: withdraw
-        title: Withdraw
-        kind: defend
-        amount: 8
-      - id: tail-whip
-        title: Tail Whip
-        kind: charge
-        amount: 4
-      - id: aqua-tail
-        title: Aqua Tail
-        kind: attack
-        amount: 10
-  deck:
-    - thunder-shock
-    - thunder-shock
-    - spark
-    - spark
-    - agility
-    - agility
-    - light-screen
-    - light-screen
-    - charge
-    - charge
-    - iron-tail
-    - iron-tail
+      dex: "0007"
+      asset: games/pokemon/svg/0007-squirtle-gen1.svg
+      asset_facing: right
+      evolution:
+        id: wartortle
+        name: Wartortle
+        dex: "0008"
+        asset: games/pokemon/svg/0008-wartortle-gen1.svg
+      move_ids: [water-gun, withdraw, work-up, aqua-tail]
+  opponents:
+    - id: pidgey
+      name: Pidgey
+      type: normal
+      genus: Tiny Bird Pokémon
+      dex: "0016"
+      asset: games/pokemon/svg/0016-pidgey-gen1.svg
+      asset_facing: left
+      health: 90
+      intents:
+        - { id: gust, title: Gust, kind: attack, amount: 15 }
+        - { id: sand-attack, title: Sand Attack, kind: defend, amount: 9 }
+        - { id: quick-attack, title: Quick Attack, kind: attack, amount: 17 }
+    - id: meowth
+      name: Meowth
+      type: normal
+      genus: Scratch Cat Pokémon
+      dex: "0052"
+      asset: games/pokemon/svg/0052-meowth-gen1.svg
+      asset_facing: right
+      health: 105
+      intents:
+        - { id: scratch, title: Scratch, kind: attack, amount: 17 }
+        - { id: hone-claws, title: Hone Claws, kind: charge, amount: 5 }
+        - { id: pay-day, title: Pay Day, kind: attack, amount: 19 }
+    - id: snorlax
+      name: Snorlax
+      type: normal
+      genus: Sleeping Pokémon
+      dex: "0143"
+      asset: games/pokemon/svg/0143-snorlax-gen1.svg
+      asset_facing: front
+      health: 120
+      intents:
+        - { id: tackle, title: Tackle, kind: attack, amount: 19 }
+        - { id: amnesia, title: Amnesia, kind: defend, amount: 12 }
+        - { id: belly-drum, title: Belly Drum, kind: charge, amount: 6 }
+        - { id: body-slam, title: Body Slam, kind: attack, amount: 22 }
 
 cards:
-  thunder-shock:
-    title: Thunder Shock
+  vine-whip:
+    title: Vine Whip
     type: attack
-    move_type: electric
-    description: A quick Electric attack. Squirtle is weak to it.
-    cost: 1
-    damage: 6
+    move_type: grass
+    practice_label: Scale attack
+    description: Play an adaptive scale to lash the opponent.
+    cost: 0
+    damage: 44
     challenge: &scale_challenge
       domain: piano
       kind: scale
-      requirements:
-        curriculum: foundation-major-scales
+      requirements: { curriculum: pokemon-journey-foundations }
       timeout_ms: 90000
-    outcomes: &electric_outcomes
-      - id: super-effective
-        min_score: 1
-        multiplier: 1.5
-        label: Super effective! Fluent scale · 150% power
-        power_label: 150% fluent
-      - id: recovered-hit
-        min_score: 0.5
-        multiplier: 0.75
-        label: Recovered scale · 75% power
-        power_label: 75% recovered
-      - id: missed
-        min_score: 0
-        multiplier: 0
-        label: The move fizzled
-        power_label: Miss after 3 mistakes
-
-  spark:
-    title: Spark
-    type: attack
-    move_type: electric
-    description: Spend 2 energy for a stronger super-effective hit.
-    cost: 2
-    damage: 10
-    challenge: *scale_challenge
-    outcomes: *electric_outcomes
-
-  agility:
-    title: Agility
+    outcomes: &journey_outcomes
+      - { id: bullseye, min_score: 0.9, multiplier: 1.25, label: Direct hit · bullseye, power_label: Direct 125% }
+      - { id: direct-hit, min_score: 0.75, multiplier: 1, label: Direct hit, power_label: Direct 100% }
+      - { id: partial-hit, min_score: 0.5, multiplier: 0.65, label: Partial hit, power_label: Partial 65% }
+      - { id: miss, min_score: 0, multiplier: 0.25, label: Miss · practice still counts, power_label: Miss 25% }
+  growl:
+    title: Growl
     type: guard
-    move_type: psychic
-    description: Move with the melody and dodge Squirtle's next attack.
-    cost: 1
-    block: 7
-    challenge: *scale_challenge
-    outcomes: &support_outcomes
-      - id: fluent
-        min_score: 1
-        multiplier: 1
-        label: Fluent scale · full effect
-        power_label: 100% fluent
-      - id: recovered
-        min_score: 0.5
-        multiplier: 0.65
-        label: Recovered scale · 65% effect
-        power_label: 65% recovered
-      - id: fizzled
-        min_score: 0
-        multiplier: 0
-        label: The move fizzled
-        power_label: Miss after 3 mistakes
-
-  light-screen:
-    title: Light Screen
-    type: guard
-    move_type: psychic
-    description: A powerful barrier for Squirtle's announced attack.
-    cost: 2
-    block: 12
-    challenge: *scale_challenge
-    outcomes: *support_outcomes
-
-  charge:
-    title: Charge
+    move_type: normal
+    practice_label: Chord guard
+    description: Voice a clean chord to attack and build a shield.
+    cost: 0
+    damage: 28
+    block: 16
+    challenge: &chord_challenge
+      domain: piano
+      kind: chord
+      requirements: { curriculum: pokemon-journey-foundations }
+      timeout_ms: 90000
+    outcomes: *journey_outcomes
+  growth:
+    title: Growth
     type: focus
-    move_type: electric
-    description: Store 5 power for Pikachu's next attack—even next turn.
-    cost: 1
-    focus: 5
-    challenge: *scale_challenge
-    outcomes: *support_outcomes
-
-  iron-tail:
-    title: Iron Tail
+    move_type: grass
+    practice_label: Arpeggio focus
+    description: Shape an arpeggio and store power for the next move.
+    cost: 0
+    damage: 32
+    focus: 14
+    challenge: &arpeggio_challenge
+      domain: piano
+      kind: arpeggio
+      requirements: { curriculum: pokemon-journey-foundations }
+      timeout_ms: 90000
+    outcomes: *journey_outcomes
+  razor-leaf:
+    title: Razor Leaf
     type: attack
-    move_type: steel
-    description: A 3-energy finishing move; stored focus makes it stronger.
-    cost: 3
-    damage: 17
+    move_type: grass
+    practice_label: Rhythm signature
+    description: Lock a short note pattern to the beat for a big hit.
+    signature: true
+    cost: 0
+    damage: 58
+    challenge: &timed_challenge
+      domain: piano
+      kind: timed-pattern
+      requirements: { curriculum: pokemon-journey-foundations }
+      timeout_ms: 90000
+    outcomes: *journey_outcomes
+
+  ember:
+    title: Ember
+    type: attack
+    move_type: fire
+    practice_label: Scale attack
+    description: Play an adaptive scale to spark a bright attack.
+    cost: 0
+    damage: 44
     challenge: *scale_challenge
-    outcomes: &neutral_outcomes
-      - id: fluent
-        min_score: 1
-        multiplier: 1
-        label: Fluent scale · full power
-        power_label: 100% fluent
-      - id: recovered
-        min_score: 0.5
-        multiplier: 0.65
-        label: Recovered scale · 65% power
-        power_label: 65% recovered
-      - id: fizzled
-        min_score: 0
-        multiplier: 0
-        label: The move fizzled
-        power_label: Miss after 3 mistakes
+    outcomes: *journey_outcomes
+  smokescreen:
+    title: Smokescreen
+    type: guard
+    move_type: normal
+    practice_label: Chord guard
+    description: Voice a clean chord to attack and build a shield.
+    cost: 0
+    damage: 28
+    block: 16
+    challenge: *chord_challenge
+    outcomes: *journey_outcomes
+  dragon-dance:
+    title: Dragon Dance
+    type: focus
+    move_type: fire
+    practice_label: Arpeggio focus
+    description: Shape an arpeggio and store power for the next move.
+    cost: 0
+    damage: 32
+    focus: 14
+    challenge: *arpeggio_challenge
+    outcomes: *journey_outcomes
+  fire-fang:
+    title: Fire Fang
+    type: attack
+    move_type: fire
+    practice_label: Rhythm signature
+    description: Lock a short note pattern to the beat for a big hit.
+    signature: true
+    cost: 0
+    damage: 58
+    challenge: *timed_challenge
+    outcomes: *journey_outcomes
+
+  water-gun:
+    title: Water Gun
+    type: attack
+    move_type: water
+    practice_label: Scale attack
+    description: Play an adaptive scale to launch a focused attack.
+    cost: 0
+    damage: 44
+    challenge: *scale_challenge
+    outcomes: *journey_outcomes
+  withdraw:
+    title: Withdraw
+    type: guard
+    move_type: water
+    practice_label: Chord guard
+    description: Voice a clean chord to attack and build a shield.
+    cost: 0
+    damage: 28
+    block: 16
+    challenge: *chord_challenge
+    outcomes: *journey_outcomes
+  work-up:
+    title: Work Up
+    type: focus
+    move_type: normal
+    practice_label: Arpeggio focus
+    description: Shape an arpeggio and store power for the next move.
+    cost: 0
+    damage: 32
+    focus: 14
+    challenge: *arpeggio_challenge
+    outcomes: *journey_outcomes
+  aqua-tail:
+    title: Aqua Tail
+    type: attack
+    move_type: water
+    practice_label: Rhythm signature
+    description: Lock a short note pattern to the beat for a big hit.
+    signature: true
+    cost: 0
+    damage: 58
+    challenge: *timed_challenge
+    outcomes: *journey_outcomes
