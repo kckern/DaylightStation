@@ -113,6 +113,8 @@
     "schoolcalc:validate": "node cli/schoolcalc-catalog.cli.mjs validate",
     "school:certify": "node cli/school-certify.cli.mjs",
     "school:docs": "node cli/school-docs.cli.mjs",
+    "exercise:index": "node cli/exercise-library.cli.mjs build",
+    "exercise:validate": "node cli/exercise-library.cli.mjs validate",
     "schoolcalc:gui:lint": "node _extensions/ti86-app/tools/lint-gui.mjs",
     "schoolcalc:gui:render": "node _extensions/ti86-app/tools/render-gui.mjs",
     "piano:producer:migrate": "node cli/piano-producer-migrate.cli.mjs",
