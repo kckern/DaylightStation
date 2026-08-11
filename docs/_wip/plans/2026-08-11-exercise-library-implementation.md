@@ -306,6 +306,10 @@ Commands:
 - `validate` — build in memory, print warnings, exit non-zero if any exercise resolves to zero
   groups.
 
+**Warning field names:** every warning uses the uniform skeleton
+`{ kind, subject, referrer, referencedBy, count }`. The offending identifier is always
+`subject` — never a per-kind key like `group` or `muscle`. Read `warning.subject`.
+
 **Step 2: Add the npm scripts**
 
 In `package.json` → `scripts`, beside the other domain CLIs:
