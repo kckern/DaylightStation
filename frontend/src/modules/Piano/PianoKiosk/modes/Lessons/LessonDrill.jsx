@@ -8,6 +8,8 @@ import LiveKeyboard from '../../LiveKeyboard.jsx';
 import { AbcRenderer, generateMelodyAbc, expandDrill, handMidiSequence } from '../../../../MusicNotation/index.js';
 import { computeTargetScrollLeft } from './lessonScroll.js';
 import { SkeletonStage } from '../../Skeleton.jsx';
+import { createDrillRun, applyDrillPress, drillProgress } from '../../../performance/drillRun.js';
+import { drillSpans } from './drillSpans.js';
 
 /** Render a drill's tempo object as text, whatever shape it takes. */
 function tempoText(tempo) {
@@ -56,6 +58,9 @@ export default function LessonDrill({ collection, drillId }) {
   const expanded = useMemo(() => (drill ? expandDrill(drill) : null), [drill]);
   const abc = useMemo(() => (expanded ? generateMelodyAbc(expanded, expanded.key || 'C') : null), [expanded]);
   const rhSeq = useMemo(() => (expanded ? handMidiSequence(expanded.hands?.right) : []), [expanded]);
+  const spans = useMemo(() => (expanded ? drillSpans(expanded) : []), [expanded]);
+  const runRef = useRef(null);
+  const [summary, setSummary] = useState(null);
   const tempo = tempoText(drill?.tempo);
 
   // Follow state. The right-hand sequence is the target list; `step` is the index
@@ -72,8 +77,14 @@ export default function LessonDrill({ collection, drillId }) {
   const dragRef = useRef({ active: false, startX: 0, startScroll: 0, pointerId: null });
   useEffect(() => () => clearTimeout(snapBackTimer.current), []);
 
-  // Reset progress whenever the engraved exercise changes.
-  useEffect(() => { setStep(0); setWrong(false); }, [abc]);
+  // Reset progress whenever the engraved exercise changes; the run is the
+  // matcher's single source of truth and `step` is derived display state.
+  useEffect(() => {
+    runRef.current = spans.length ? createDrillRun(spans) : null;
+    setStep(0);
+    setWrong(false);
+    setSummary(null);
+  }, [abc, spans]);
 
   // Paint the right-hand (treble = staff 0) noteheads: played behind the cursor,
   // current note green (or red while flashing a wrong note), and scroll it in.
@@ -177,18 +188,31 @@ export default function LessonDrill({ collection, drillId }) {
   }, []);
   useEffect(() => () => clearTimeout(wrongTimer.current), []);
 
-  // Follow mode: advance on the correct right-hand note, flash on a plausible
-  // wrong one (within two octaves). Mirrors the Sheet Music ScorePlayer.
+  // Follow mode: the drill run advances on the correct right-hand note, counts a
+  // plausible wrong one (within two octaves) against the current cell, and hands
+  // back a graded summary on the last note. Mirrors the Sheet Music ScorePlayer.
   useEffect(() => {
     if (!rhSeq.length) return undefined;
     return subscribe((evt) => {
       if (evt.type !== 'note_on' || !evt.velocity) return;
-      const target = rhSeq[stepRef.current];
-      if (target == null) return;
-      if (evt.note === target) setStep((s) => Math.min(rhSeq.length, s + 1));
-      else if (Math.abs(evt.note - target) <= 24) flashWrong();
+      const run = runRef.current;
+      if (!run) return;
+      const { run: next, event } = applyDrillPress(run, evt.note);
+      runRef.current = next;
+      if (event.type === 'wrong') flashWrong();
+      else if (event.type === 'advance' || event.type === 'span_complete') setStep(drillProgress(next));
+      else if (event.type === 'complete') {
+        setStep(drillProgress(next));
+        setSummary(event.summary);
+        logger.info('piano.drill-complete', {
+          collection, id: drillId,
+          score: event.summary.score,
+          tally: event.summary.tally,
+          worst: event.summary.worst,
+        });
+      }
     });
-  }, [rhSeq, subscribe, flashWrong]);
+  }, [rhSeq, spans, subscribe, flashWrong, logger, collection, drillId]);
 
   if (drill === undefined) return <div className="piano-mode piano-mode--lessons"><SkeletonStage /></div>;
   if (drill === null) return <div className="piano-mode piano-mode--lessons"><p className="piano-mode__placeholder">This drill could not be loaded.</p></div>;
@@ -218,9 +242,27 @@ export default function LessonDrill({ collection, drillId }) {
         <span className="lesson-drill__progress">
           {done ? 'Complete' : `${Math.min(step + 1, rhSeq.length)} / ${rhSeq.length}`}
         </span>
-        <button type="button" className="lesson-drill__reset" onClick={() => setStep(0)} aria-label="Restart drill">⟲ Restart</button>
+        <button
+          type="button"
+          className="lesson-drill__reset"
+          onClick={() => {
+            runRef.current = spans.length ? createDrillRun(spans) : null;
+            setStep(0);
+            setSummary(null);
+          }}
+          aria-label="Restart drill"
+        >⟲ Restart</button>
         <span className="lesson-drill__hint">Right hand leads — play the green note</span>
       </div>
+
+      {summary && summary.score != null && (
+        <p className="lesson-drill__result">
+          Score {summary.score}
+          {summary.worst
+            ? ` — trouble at climb ${summary.worst.inMeasure + 1}–${summary.worst.outMeasure + 1}`
+            : ' — clean run'}
+        </p>
+      )}
 
       <dl className="lesson-drill__facts">
         {drill.meter && (<><dt>Meter</dt><dd>{drill.meter}</dd></>)}
