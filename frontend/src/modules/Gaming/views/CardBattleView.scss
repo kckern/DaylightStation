@@ -338,6 +338,13 @@
 .piano-scale-note--complete * {
   fill: var(--piano-accent, #2ec46f) !important;
   stroke: var(--piano-accent, #2ec46f) !important;
+}
+// The halo is rasterised once per filtered element, so it goes on the classed
+// node ONLY — never the `*` above. abcjs nests notehead, stem, ledger and
+// accidental, so inheriting the filter downward gave every glyph its own blur
+// region: a dozen redundant rasterisations per note, stacking up as the scale
+// fills in. That is why the frame cost climbed the further a scale progressed.
+.piano-scale-note--complete {
   filter: drop-shadow(0 0 2px color-mix(in srgb, var(--piano-accent, #2ec46f) 75%, transparent));
 }
 // "Play this one now." Driven through `color`, not fill: abcjs writes
@@ -368,14 +375,21 @@
 }
 .piano-scale-challenge__feedback.is-wrong span { color: var(--piano-danger, #e05a4f); }
 
-// The pulse breathes between the engraved black ink and a GLOWING brown. It
+// The pulse breathes between the engraved black ink and a warm brown. It
 // never touches opacity: brown is a lower-contrast mark on a white page than
 // black, so fading toward it read as the notehead thinning out — the same faint
 // grey the ghost uses for "this is not the note", saying the exact opposite of
-// "play this now". Both ends are solid ink; the halo carries the peak.
+// "play this now". Both ends are solid ink.
+//
+// COLOUR ONLY — deliberately no filter here. Animating a drop-shadow (or
+// animating colour beneath one) re-rasterises the blur on every single frame,
+// a paint the kiosk tablet cannot afford. Measured on the Galaxy Tab A: scale
+// challenges sat pinned at 37fps with ZERO long tasks and zero React renders,
+// while chord/timed-pattern challenges on the same screen held 45-60. The ink
+// shift alone still reads clearly as "play this one now".
 @keyframes piano-scale-next-note {
-  0%, 100% { color: #23262b; filter: none; }
-  50%      { color: #7d512a; filter: drop-shadow(0 0 2.5px #7d512a); }
+  0%, 100% { color: #23262b; }
+  50%      { color: #7d512a; }
 }
 
 @keyframes piano-scale-wrong-note {
