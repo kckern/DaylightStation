@@ -20,13 +20,23 @@
  */
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import dotenv from 'dotenv';
 import { parseArgv } from './_argv.mjs';
 import { EXIT_OK, EXIT_FAIL, EXIT_USAGE, printJson, printError } from './_output.mjs';
 import { getConfigService } from './_bootstrap.mjs';
-import { buildExerciseIndex } from './exerciseLibraryIndex.lib.mjs';
+import { buildExerciseIndex, PER_RECORD_KINDS } from './exerciseLibraryIndex.lib.mjs';
 import { saveYamlToPathAtomic } from '#system/utils/FileIO.mjs';
 
 const ENTRYPOINT = fileURLToPath(import.meta.url);
+
+// `_bootstrap.mjs` reads DAYLIGHT_BASE_PATH from the environment but never loads
+// the repo's .env, so without this an `npm run exercise:index` dies on "not set"
+// before it reads a single record. Resolved from import.meta.url rather than
+// cwd — the same reason backend/index.js does it that way — so the npm script
+// works from any directory. dotenv does not overwrite variables that are already
+// set, so a real environment (Docker, CI) still wins over the file, and CLI
+// flags still win over both.
+dotenv.config({ path: path.join(path.dirname(ENTRYPOINT), '..', '.env'), quiet: true });
 
 /** Corpus root, relative to the media directory. */
 const CORPUS_SUBPATH = ['library', 'exercise'];
@@ -37,19 +47,6 @@ const VALUE_FLAGS = new Set(['corpus-dir', 'out']);
 const BOOLEAN_FLAGS = new Set(['json']);
 const ALLOWED_FLAGS = new Set([...VALUE_FLAGS, ...BOOLEAN_FLAGS]);
 const COMMANDS = new Set(['build', 'validate']);
-
-/**
- * Warning kinds whose `subject` is a FIELD NAME rather than a record-unique
- * identifier, so the builder emits one entry PER RECORD instead of aggregating.
- *
- * !! MIRRORS `PER_RECORD_KINDS` in exerciseLibraryIndex.lib.mjs !!
- * The lib does not export it (it is internal to its warning sink), and this
- * command is not the place to widen that module's public surface. The two lists
- * must stay in step: a kind added there and missed here would be reported as
- * "N distinct subjects" when it is really "N separate records", which is exactly
- * the confusion this constant exists to prevent.
- */
-const PER_RECORD_KINDS = new Set(['non-scalar-field', 'empty-field']);
 
 const HELP = `exercise-library — build and validate the exercise-reference index manifest
 

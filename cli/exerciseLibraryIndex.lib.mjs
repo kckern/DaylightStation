@@ -65,13 +65,20 @@ const YAML_RE = /\.ya?ml$/i;
 const STILL_RE = /^(.+)_(\d+)\.png$/i;
 const VIDEO_RE = /\.mp4$/i;
 
-// Warning kinds whose `subject` is a FIELD NAME rather than a record-unique
-// identifier. Aggregating these across records would collapse, say, 412
-// exercises with a broken `instructions` into a single entry naming only the
-// first — leaving `validate` unable to enumerate the affected records. So these
-// get one entry per record; every other kind has a record-unique subject and
-// aggregates normally.
-const PER_RECORD_KINDS = new Set(['non-scalar-field', 'empty-field']);
+/**
+ * Warning kinds whose `subject` is a FIELD NAME rather than a record-unique
+ * identifier. Aggregating these across records would collapse, say, 412
+ * exercises with a broken `instructions` into a single entry naming only the
+ * first — leaving `validate` unable to enumerate the affected records. So these
+ * get one entry per record; every other kind has a record-unique subject and
+ * aggregates normally.
+ *
+ * Exported because a warning REPORT has to count these differently from every
+ * other kind — "412 separate records" rather than "412 distinct defects" — and
+ * a reporter carrying its own copy of the list would silently misreport the
+ * corpus the moment the two drifted.
+ */
+export const PER_RECORD_KINDS = new Set(['non-scalar-field', 'empty-field']);
 
 /**
  * Warning collector. Every warning is the SAME five-key skeleton, in the same
