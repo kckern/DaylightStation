@@ -570,6 +570,29 @@ export class SessionService {
   }
 
   /**
+   * Record a finished strength run on an existing session.
+   *
+   * Loads with `decodeTimeline: false` and saves straight back, the same way
+   * `addParticipant`/`addSnapshot` do: the timeline is already in stored (run-length
+   * encoded) form on disk, and re-running it through the storage encoder on a write that
+   * has nothing to do with heart rate would re-encode encoded strings.
+   *
+   * @param {string} sessionId
+   * @param {Object} run Run block from `makeStrengthRun` (2_domains/fitness/workout)
+   * @param {string} householdId
+   * @returns {Promise<Session>} The saved session
+   */
+  async recordStrengthRun(sessionId, run, householdId) {
+    const session = await this.getSession(sessionId, householdId, { decodeTimeline: false });
+    if (!session) {
+      throw new EntityNotFoundError('Session', sessionId);
+    }
+    session.addStrengthRun(run);
+    await this.sessionStore.save(session, this.resolveHouseholdId(householdId));
+    return session;
+  }
+
+  /**
    * Add a snapshot to session
    * @param {string} sessionId - Session ID
    * @param {Object} capture - Capture info { filename, path, timestamp, size }

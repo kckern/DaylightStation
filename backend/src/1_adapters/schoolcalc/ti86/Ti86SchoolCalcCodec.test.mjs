@@ -740,6 +740,7 @@ describe('Ti86SchoolCalcCodec', () => {
       localScore: { correct: 8, total: 10, percent: 80, basis: 'embedded_answer_key' },
       adaptiveStudy: {
         sessionCode: '012345',
+        attemptCount: 3,
         cards: [
           { rating: 'again', exposureCount: 4 }, { rating: 'know', exposureCount: 1 },
           { rating: 'hard', exposureCount: 4 }, { rating: 'know', exposureCount: 2 },
@@ -752,7 +753,7 @@ describe('Ti86SchoolCalcCodec', () => {
       },
     };
     const bytes = encodeTi86ResultRecord(result);
-    expect(bytes).toHaveLength(63);
+    expect(bytes).toHaveLength(64);
     expect(bytes.length).toBeLessThanOrEqual(69);
     expect(codec.decodeResult(bytes)).toMatchObject(result);
     expect(codec.decodeResult(encodeTi86ResultRecord(result, { qrText: true })))
@@ -767,12 +768,16 @@ describe('Ti86SchoolCalcCodec', () => {
       responses: [{ itemIndex: 0, given: 2 }],
       localScore: { correct: 1, total: 1, percent: 100, basis: 'embedded_answer_key' },
       adaptiveStudy: {
-        sessionCode: '001234', cards: [{ rating: 'know', exposureCount: 1 }], quizChoices: [2],
+        sessionCode: '001234', attemptCount: 1,
+        cards: [{ rating: 'know', exposureCount: 1 }], quizChoices: [2],
       },
     };
     expect(() => encodeTi86ResultRecord({
       ...base, adaptiveStudy: { ...base.adaptiveStudy, sessionCode: '1234' },
     })).toThrow(/six-digit sessionCode/);
+    expect(() => encodeTi86ResultRecord({
+      ...base, adaptiveStudy: { ...base.adaptiveStudy, attemptCount: 0 },
+    })).toThrow(/attemptCount/);
     expect(() => encodeTi86ResultRecord({
       ...base, adaptiveStudy: { ...base.adaptiveStudy, cards: [{ rating: 'easy', exposureCount: 1 }] },
     })).toThrow(/rating\/exposure/);
@@ -784,6 +789,7 @@ describe('Ti86SchoolCalcCodec', () => {
       ...base,
       adaptiveStudy: {
         sessionCode: '001234',
+        attemptCount: 2,
         cards: [
           { rating: 'know', exposureCount: 1 },
           { rating: 'hard', exposureCount: 4 },

@@ -1,0 +1,6 @@
+id: e0000000-0000-0000-0000-000000000007
+name: Bad Scalars Two
+slug: bad-scalars-two
+description: A second record with the same field-level defect.
+instructions:
+  step: also-not-a-sequence

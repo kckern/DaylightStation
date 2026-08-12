@@ -671,7 +671,22 @@ export function createProxyRouter(config) {
         'wav': 'audio/wav',
         'ogg': 'audio/ogg',
         'flac': 'audio/flac',
-        'webm': 'video/webm'
+        'webm': 'video/webm',
+        // Images: this route serves the whole media tree, which holds image
+        // corpora (e.g. media/library/exercise: ~1300 demo GIFs + 2500 PNG
+        // stills) alongside audio and video. Without these entries an image
+        // fell through to application/octet-stream, and because the response
+        // also sets X-Content-Type-Options: nosniff, the browser refuses to
+        // render it in an <img> — so every such image silently failed to paint.
+        'gif': 'image/gif',
+        'png': 'image/png',
+        'jpg': 'image/jpeg',
+        'jpeg': 'image/jpeg',
+        'webp': 'image/webp',
+        'avif': 'image/avif'
+        // Deliberately NOT svg: an SVG is script-capable, and serving one as
+        // image/svg+xml from this origin would make any file written into the
+        // media tree an XSS vector. SVGs keep falling through to octet-stream.
       };
       const mimeType = mimeTypes[ext] || 'application/octet-stream';
 

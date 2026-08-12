@@ -126,9 +126,23 @@ describe('SchoolCalc Adaptive Study SCLEARN contract', () => {
     );
   });
 
+  it('uses EXIT to abandon the quiz, count the attempt, and restart study durably', () => {
+    expect(SOURCE).toMatch(
+      /adaptive_summary_wait:[\s\S]*?and AD_ATTEMPT_MASK[\s\S]*?add a,AD_ATTEMPT_STEP[\s\S]*?call adaptive_save/,
+    );
+    expect(SOURCE).toMatch(/adaptive_choice_wait:[\s\S]*?cp SC_SCAN_EXIT\s+jp z,adaptive_quiz_restart_study/);
+    expect(SOURCE).toMatch(
+      /adaptive_quiz_restart_study:[\s\S]*?AD_PHASE_STUDY[\s\S]*?AD_ATTEMPT_MASK[\s\S]*?ld b,36[\s\S]*?adaptive_quiz_restart_due_loop:[\s\S]*?call adaptive_choose_next[\s\S]*?jp adaptive_dispatch/,
+    );
+    expect(SOURCE).toMatch(
+      /adaptive_render_result:[\s\S]*?adaptive_result_attempts[\s\S]*?and AD_ATTEMPT_MASK[\s\S]*?call adaptive_format_byte/,
+    );
+  });
+
   it('packs canonical mode-4 cards and choices through the crash-safe queue', () => {
     expect(QUEUE).toContain('QUEUE_DRAFT_ADAPTIVE:   equ 9');
     expect(QUEUE).toMatch(/queue_build_adaptive:[\s\S]*ld \(hl\),4[\s\S]*queue_adaptive_card_loop:[\s\S]*and 0x0F[\s\S]*queue_adaptive_choice_loop:/);
+    expect(QUEUE).toMatch(/RUNTIME_SCL_DRAFT_OFFSET \+ 8[\s\S]*?and 0xFE[\s\S]*?rrca[\s\S]*?ld \(hl\),a/);
     expect(QUEUE).toMatch(/queue_sequence_advanced:[\s\S]*cp QUEUE_DRAFT_ADAPTIVE[\s\S]*queue_advance_adaptive:/);
   });
 });

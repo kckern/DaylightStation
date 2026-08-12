@@ -7,6 +7,8 @@ frontend/build
 backend/node_modules
 *.yml
 !docker-compose.test.yml
+!shared/gaming/fixtures/default-assets.yml
+!shared/gaming/fixtures/adventure-hill-scene.yml
 !tests/_fixtures/**/*.yml
 !tests/fixtures/**/*.yml
 !tests/unit/suite/config/fixtures/**/*.yml

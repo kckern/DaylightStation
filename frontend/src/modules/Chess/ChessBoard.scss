@@ -1,0 +1,179 @@
+/**
+ * The shared board.
+ *
+ * Every colour is a token so a host restyles by setting custom properties, never
+ * by out-specifying these selectors. Defaults are the instrument's materials —
+ * ivory key, walnut case, brass hardware, and the red felt under the hammers,
+ * which is spent only on check because that is the board's one alarm.
+ */
+
+.chess-board-frame {
+  --cb-size: min(58vw, 62vh);
+  --cb-light: #efe4cd;
+  --cb-dark: #55392b;
+  --cb-frame: #3b2619;
+  --cb-accent: #c9a227;
+  --cb-accent-glow: #f0cc55;
+  --cb-hint: #4e8878;
+  --cb-danger: #9b2c2c;
+  --cb-label: #cbbfa8;
+
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-rows: auto auto;
+  gap: 0.35rem;
+  align-items: center;
+  justify-items: center;
+  font-family: 'Roboto Condensed', sans-serif;
+}
+
+.chess-board {
+  grid-column: 2;
+  grid-row: 1;
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  width: var(--cb-size);
+  aspect-ratio: 1;
+  border: 3px solid var(--cb-frame);
+  border-radius: 3px;
+  box-shadow: 0 1.5rem 3rem rgb(0 0 0 / 45%);
+  overflow: hidden;
+}
+
+.chess-board__rank-axis {
+  grid-column: 1;
+  grid-row: 1;
+  display: grid;
+  grid-template-rows: repeat(8, 1fr);
+  height: var(--cb-size);
+  padding-inline-end: 0.5rem;
+}
+
+.chess-board__file-axis {
+  grid-column: 2;
+  grid-row: 2;
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  width: var(--cb-size);
+  padding-block-start: 0.35rem;
+}
+
+.chess-board__axis-label {
+  display: grid;
+  place-items: center;
+  font-size: clamp(0.7rem, 1.1vw, 0.95rem);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--cb-label) 45%, transparent);
+  transition: color 120ms ease;
+}
+
+.chess-board__axis-label--live { color: var(--cb-accent-glow); }
+
+.chess-board__square {
+  position: relative;
+  display: grid;
+  place-items: center;
+  border: 0;
+  padding: 0;
+  background: var(--cb-dark);
+  cursor: default;
+  transition: box-shadow 120ms ease;
+}
+
+.chess-board__square--light { background: var(--cb-light); }
+.chess-board__square--dark { background: var(--cb-dark); }
+.chess-board__square:not(:disabled) { cursor: pointer; }
+
+.chess-board__square:focus-visible {
+  outline: 3px solid var(--cb-accent-glow);
+  outline-offset: -3px;
+  z-index: 1;
+}
+
+.chess-board__square-label {
+  position: absolute;
+  inset-block-end: 4%;
+  inset-inline-end: 6%;
+  font-size: clamp(0.5rem, 0.85vw, 0.8rem);
+  font-weight: 700;
+  pointer-events: none;
+  opacity: 0.22;
+  transition: opacity 120ms ease;
+}
+
+.chess-board__square--light .chess-board__square-label { color: var(--cb-frame); }
+.chess-board__square--dark .chess-board__square-label { color: var(--cb-light); }
+
+.chess-board__last-move,
+.chess-board__square--last-move {
+  box-shadow: inset 0 0 0 3px color-mix(in srgb, var(--cb-accent) 35%, transparent);
+}
+
+.chess-board__square--marked {
+  box-shadow: inset 0 0 0 100vmax color-mix(in srgb, var(--cb-accent) 18%, transparent);
+}
+
+.chess-board__square--destination .chess-board__dot {
+  width: 22%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--cb-hint);
+  opacity: 0.75;
+}
+
+.chess-board__square--destination:has(.chess-board__piece) {
+  box-shadow: inset 0 0 0 5px var(--cb-hint);
+}
+
+.chess-board__square--selected {
+  box-shadow: inset 0 0 0 4px var(--cb-accent);
+}
+
+/* The chord cursor: the held chord throws a crosshair down its file and across
+   its rank, so the player sees the two coordinates their hands are naming. */
+.chess-board__square--cursor-line {
+  box-shadow: inset 0 0 0 100vmax color-mix(in srgb, var(--cb-accent) 10%, transparent);
+}
+
+.chess-board__square--cursor {
+  box-shadow:
+    inset 0 0 0 100vmax color-mix(in srgb, var(--cb-accent) 22%, transparent),
+    inset 0 0 0 4px var(--cb-accent-glow);
+  animation: chess-board-ignite 420ms ease-out;
+}
+
+.chess-board__square--cursor .chess-board__square-label { opacity: 0.95; }
+
+.chess-board__square--check {
+  box-shadow: inset 0 0 0 100vmax color-mix(in srgb, var(--cb-danger) 45%, transparent);
+}
+
+.chess-board__piece {
+  width: 88%;
+  height: 88%;
+  object-fit: contain;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 3px rgb(0 0 0 / 35%));
+}
+
+@keyframes chess-board-ignite {
+  from {
+    box-shadow:
+      inset 0 0 0 100vmax color-mix(in srgb, var(--cb-accent-glow) 55%, transparent),
+      inset 0 0 0 4px var(--cb-accent-glow);
+  }
+  to {
+    box-shadow:
+      inset 0 0 0 100vmax color-mix(in srgb, var(--cb-accent) 22%, transparent),
+      inset 0 0 0 4px var(--cb-accent-glow);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chess-board__square--cursor { animation: none; }
+  .chess-board__square,
+  .chess-board__axis-label,
+  .chess-board__square-label { transition: none; }
+}

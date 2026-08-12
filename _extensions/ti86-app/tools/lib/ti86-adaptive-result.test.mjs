@@ -18,6 +18,7 @@ function adaptiveRecord({ sequence = 7, sessionCode = '012345' } = {}) {
     localScore: { correct: 2, total: 3, percent: 67, basis: 'embedded_answer_key' },
     adaptiveStudy: {
       sessionCode,
+      attemptCount: 2,
       cards: [
         { rating: 'again', exposureCount: 4 },
         { rating: 'know', exposureCount: 1 },
@@ -36,7 +37,7 @@ describe('TI-86 adaptive result queue inspection', () => {
     });
     const inspected = inspectTi86AdaptiveResultQueue(queue);
     expect(inspected).toMatchObject({
-      index: 1, recordCount: 2, sessionCode: '012345', sequence: 8,
+      index: 1, recordCount: 2, sessionCode: '012345', attemptCount: 2, sequence: 8,
       cards: [
         { index: 0, rating: 'again', exposureCount: 4 },
         { index: 1, rating: 'know', exposureCount: 1 },
@@ -46,7 +47,7 @@ describe('TI-86 adaptive result queue inspection', () => {
       score: { correct: 2, total: 3, percent: 67 },
     });
     expect(formatTi86AdaptiveResultInspection(inspected)).toContain(
-      'sessionCode=012345 cards=0:AGAIN/4,1:KNOW/1,2:HARD/4 quizChoices=A,C,E score=2/3',
+      'sessionCode=012345 attemptCount=2 cards=0:AGAIN/4,1:KNOW/1,2:HARD/4 quizChoices=A,C,E score=2/3',
     );
   });
 

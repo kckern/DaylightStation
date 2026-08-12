@@ -173,6 +173,10 @@ import { TriggerEmergencyLockdown } from '#apps/fitness/usecases/TriggerEmergenc
 import { ReleaseEmergencyLockdown } from '#apps/fitness/usecases/ReleaseEmergencyLockdown.mjs';
 import { GetLockdownState } from '#apps/fitness/usecases/GetLockdownState.mjs';
 import { createIdentityRelay } from '#apps/fitness/identityRelay.mjs';
+// Workout persistence (Build authors, Run performs) + the corpus index it validates against
+import { YamlWorkoutRepository } from '#adapters/fitness/YamlWorkoutRepository.mjs';
+import { YamlExerciseLibraryRepository } from '#adapters/reference/exercise-library/index.mjs';
+import { SaveWorkout } from '#apps/fitness/usecases/SaveWorkout.mjs';
 
 // Scheduling domain + orchestrator
 import { SchedulerService } from '#domains/scheduling/services/SchedulerService.mjs';
@@ -248,6 +252,7 @@ import { createGameshowRouter } from './4_api/v1/routers/gameshow.mjs';
 import { createGamingRouter } from './4_api/v1/routers/gaming.mjs';
 import { GamingSessionService } from './3_applications/gaming/GamingSessionService.mjs';
 import { YamlGamingDefinitionStore } from './1_adapters/persistence/yaml/gaming/YamlGamingDefinitionStore.mjs';
+import { YamlGamingAssetCatalog } from './1_adapters/persistence/yaml/gaming/YamlGamingAssetCatalog.mjs';
 import { YamlGamingSessionStore } from './1_adapters/persistence/yaml/gaming/YamlGamingSessionStore.mjs';
 import { YamlPianoAttemptStore } from './1_adapters/persistence/yaml/gaming/YamlPianoAttemptStore.mjs';
 import { PianoScaleChallengePolicy } from './3_applications/piano/PianoScaleChallengePolicy.mjs';
@@ -1662,7 +1667,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const gamingService = new GamingSessionService({
     definitionStore: gamingDefinitionStore,
     sessionStore: gamingSessionStore,
+    economyService: economyApi.economyService,
     logger: rootLogger.child({ module: 'gaming' }),
+  });
+  const gamingAssetCatalog = new YamlGamingAssetCatalog({
+    catalogsDir: join(mediaBasePath, 'games/_common/catalog'),
+    assetRoot: join(mediaBasePath, 'games/_common'),
   });
   gamingService.recoverStaleSessions();
   const gamingRecoveryTimer = setInterval(() => gamingService.recoverStaleSessions(), 30_000);
@@ -1670,6 +1680,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   server?.once?.('close', () => clearInterval(gamingRecoveryTimer));
   v1Routers.gaming = createGamingRouter({
     gamingService,
+    assetCatalog: gamingAssetCatalog,
     logger: rootLogger.child({ module: 'gaming-api' }),
   });
 
@@ -2348,6 +2359,17 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     learnerDirectory: schoolLearnerDirectory,
     evidenceIdFactory: createLearningReflectionEvidenceId,
   });
+  // The shared exercise-reference corpus (~1,296 exercises, 38 muscle essays, 29
+  // equipment records). TWO products read it: Fitness (browse/build/run, plus
+  // SaveWorkout's existence check) and School (the anatomy shelf, which projects
+  // the muscle essays into learning-catalog lessons). It is constructed HERE,
+  // ahead of both, because it parses a ~2.8 MB manifest once and serves everything
+  // from memory — a second instance would double that for no benefit. A missing
+  // manifest degrades to an empty corpus rather than failing boot.
+  const exerciseLibrary = new YamlExerciseLibraryRepository({
+    indexPath: join(configService.getDataDir(), 'household', 'apps', 'fitness', 'exercise-index.yml'),
+    logger: rootLogger.child({ module: 'exercise-library' })
+  }).load();
   // The authored Catalog is a School capability shared by web, print, and
   // calculator surfaces. It is composed before—and independently of—the
   // optional SchoolCalc device product.
@@ -2355,6 +2377,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     configService,
     householdId,
     learnerDirectory: schoolLearnerDirectory,
+    exerciseLibrary,
     logger: rootLogger.child({ module: 'school-catalog' }),
   });
   const openCatalogLearningSession = schoolCatalog.query
@@ -2671,6 +2694,27 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: emergencyLogger,
   });
 
+  // Workout persistence: household-scoped files under apps/fitness/workouts/, plus the
+  // SaveWorkout use case that guards them. SaveWorkout is the only place holding BOTH an
+  // authored plan and the corpus index, so it is the only place that can refuse a workout
+  // referencing an exercise that does not exist — which otherwise fails at Run time, in
+  // front of someone mid-session. The library reads the manifest `exercise-library build`
+  // writes offline; a missing manifest degrades to an empty corpus, so saves fail loudly
+  // instead of persisting plans nothing can run.
+  // NOTE: `exerciseLibrary` itself is constructed far earlier (just above
+  // createSchoolCatalog), because School's anatomy shelf projects the same corpus
+  // and must share this one instance — it parses a ~2.8 MB manifest and holds the
+  // whole corpus in memory.
+  const workoutRepository = new YamlWorkoutRepository({
+    configService,
+    logger: rootLogger.child({ module: 'fitness-workouts' })
+  });
+  const saveWorkout = new SaveWorkout({
+    workoutRepository,
+    exerciseLibrary,
+    logger: rootLogger.child({ module: 'fitness-workouts' })
+  });
+
   // Fitness domain router
   // Note: contentRegistry passed for /show endpoint - playlist thumbnail enrichment is household-specific
   v1Routers.fitness = createFitnessApiRouter({
@@ -2690,6 +2734,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     releaseEmergencyLockdown,
     getLockdownState,
     identityRelay,
+    workoutRepository,
+    saveWorkout,
+    exerciseLibrary,
     logger: rootLogger.child({ module: 'fitness-api' })
   });
 

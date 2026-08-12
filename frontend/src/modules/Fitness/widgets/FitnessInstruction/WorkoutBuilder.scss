@@ -1,0 +1,227 @@
+@use './exerciseTokens' as ex;
+
+// Build — the middle screen, styled from the same tokens as Browse so the three states
+// read as one surface (see _exerciseTokens.scss for why the partial exists).
+//
+// Layout is a fixed header + an optional tray over ONE scrolling region (the groups).
+// Only the group list scrolls: Save / Start / Back must stay under the thumb without
+// scrolling back up, exactly as the filter rails do on Browse.
+
+.workout-builder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 24px 22px;
+  background: radial-gradient(120% 90% at 50% 0%, #14112a 0%, ex.$ex-bg 70%);
+  color: ex.$ex-text;
+  font-family: ex.$ex-display;
+  overflow: hidden;
+
+  &__header {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  &__heading {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  &__title-label {
+    font-size: ex.$ex-micro;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: ex.$ex-muted;
+  }
+
+  &__title {
+    width: 100%;
+    height: ex.$ex-action-h;
+    padding: 0 20px;
+    font-family: inherit;
+    font-size: 2.2rem;
+    font-weight: 700;
+    color: ex.$ex-text;
+    background: ex.$ex-panel;
+    border: 2px solid ex.$ex-border;
+    border-radius: 14px;
+
+    &:focus {
+      outline: none;
+      border-color: ex.$ex-accent;
+    }
+  }
+
+  &__summary {
+    font-size: ex.$ex-micro;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: ex.$ex-muted;
+    font-variant-numeric: tabular-nums;
+  }
+
+  // ── Tray: picks that are not in the plan ──────────────────────────────────
+  &__tray {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  &__tray-label {
+    font-size: ex.$ex-micro;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: ex.$ex-muted;
+  }
+
+  &__tray-items {
+    display: flex;
+    gap: 10px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scrollbar-width: none;
+
+    &::-webkit-scrollbar { display: none; }
+  }
+
+  // ── Groups ────────────────────────────────────────────────────────────────
+  &__groups {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 4px 4px 12px;
+  }
+
+  // ── Notices ───────────────────────────────────────────────────────────────
+  &__notice {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 18px 22px;
+    border: 2px dashed ex.$ex-border;
+    border-radius: 16px;
+  }
+
+  &__notice-title {
+    font-size: 2rem;
+    font-weight: 700;
+  }
+
+  &__notice-body {
+    margin: 0;
+    font-size: ex.$ex-body;
+    color: ex.$ex-muted;
+  }
+
+  // A rejected save is the operator-actionable failure on this screen, so it takes the
+  // same amber the unbuilt-library notice uses on Browse rather than blending in grey.
+  &__notice--error {
+    border-style: solid;
+    border-color: ex.$ex-warn;
+    color: ex.$ex-warn;
+
+    .workout-builder__notice-body { color: ex.$ex-warn; }
+  }
+
+  &__notice--ok {
+    border-style: solid;
+    border-color: ex.$ex-go;
+    color: ex.$ex-go;
+
+    .workout-builder__notice-body { color: ex.$ex-go; }
+  }
+
+  &__unknown {
+    margin: 0;
+    padding-left: 1.4em;
+    font-size: ex.$ex-body;
+    font-weight: 700;
+  }
+
+  // ── Tap targets ───────────────────────────────────────────────────────────
+  &__tap {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-height: ex.$ex-action-h;
+    min-width: 200px;
+    padding: 12px 26px;
+    border-radius: 14px;
+    cursor: pointer;
+    user-select: none;
+    touch-action: manipulation;
+
+    &:focus-visible {
+      outline: 3px solid ex.$ex-accent;
+      outline-offset: 4px;
+    }
+
+    &:active { transform: scale(0.985); }
+  }
+
+  &__tap--primary {
+    background: linear-gradient(180deg, #1c8f5e 0%, #126b45 100%);
+    border: 2px solid ex.$ex-go;
+    box-shadow: 0 0 24px rgba(93, 255, 155, 0.18);
+    color: ex.$ex-text;
+  }
+
+  &__tap--ghost {
+    background: transparent;
+    border: 2px solid ex.$ex-border;
+    color: ex.$ex-muted;
+  }
+
+  // Disabled is dimmed, never hidden: a control that vanishes moves everything beside
+  // it out from under the finger that was aiming at it.
+  &__tap--off {
+    opacity: 0.4;
+    cursor: default;
+
+    &:active { transform: none; }
+  }
+
+  &__tap-label {
+    font-size: 1.8rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 26ch;
+  }
+
+  &__tap-sub {
+    font-size: ex.$ex-micro;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    opacity: 0.85;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+// Narrow / portrait panels: stack the header rather than crushing the title field.
+@media (max-width: 900px) {
+  .workout-builder__header { flex-wrap: wrap; }
+  .workout-builder__heading { flex-basis: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workout-builder__tap:active { transform: none; }
+}

@@ -10,9 +10,15 @@ import { AssignedLearningCatalogAccessPolicy } from '#adapters/school/config/Ass
 import { GetLearningCatalog } from '#apps/school/GetLearningCatalog.mjs';
 import { BuildLearningLesson } from '#apps/school/catalog/BuildLearningLesson.mjs';
 import { createCoreLearningModuleRegistry } from '#apps/school/catalog/LearningModuleRegistry.mjs';
+import { ExerciseLibraryCatalogSource } from '#apps/school/sources/ExerciseLibraryCatalogSource.mjs';
+import {
+  CompositeLearningCatalogRepository,
+  CompositeLearningContentRepository,
+} from '#apps/school/sources/CompositeLearningRepositories.mjs';
 
 export function createSchoolCatalog({
   configService, householdId = null, learnerDirectory = null, logger = null,
+  exerciseLibrary = null,
 } = {}) {
   if (typeof configService?.getHouseholdAppConfig !== 'function'
       || typeof configService?.getDataDir !== 'function') {
@@ -31,10 +37,24 @@ export function createSchoolCatalog({
       config.content?.question_bank_directories, [path.join(contentRoot, 'question-banks')], 'catalog.content.question_bank_directories');
     const actionDirectories = resolveDirectoryList(dataDirectory,
       config.content?.action_directories, [path.join(contentRoot, 'actions')], 'catalog.content.action_directories');
-    const catalogs = new YamlLearningCatalogRepository({ directories: catalogDirectories });
-    const content = new YamlLearningContentRepository({
+    const authoredCatalogs = new YamlLearningCatalogRepository({ directories: catalogDirectories });
+    const authoredContent = new YamlLearningContentRepository({
       documentDirectories, bankDirectories: questionBankDirectories, actionDirectories,
     });
+
+    // Generated shelves join the authored ones behind the same two ports, because
+    // GetLearningCatalog/BuildLearningLesson each take ONE repository rather than a
+    // registry. Authored content is listed FIRST so a hand-authored catalog or
+    // document always overrides a generated one — an author can correct the
+    // projection with a YAML file instead of a code change.
+    const generated = createGeneratedSources({ exerciseLibrary, config, logger });
+    const catalogs = generated.length
+      ? new CompositeLearningCatalogRepository({ sources: [authoredCatalogs, ...generated], logger })
+      : authoredCatalogs;
+    const content = generated.length
+      ? new CompositeLearningContentRepository({ sources: [authoredContent, ...generated], logger })
+      : authoredContent;
+
     const moduleRegistry = createCoreLearningModuleRegistry();
     const lessonBundles = new BuildLearningLesson({ catalogs, content, modules: moduleRegistry });
     const accessPolicy = new AssignedLearningCatalogAccessPolicy({
@@ -52,11 +72,37 @@ export function createSchoolCatalog({
         documentDirectories: Object.freeze(documentDirectories),
         questionBankDirectories: Object.freeze(questionBankDirectories),
         actionDirectories: Object.freeze(actionDirectories),
+        generatedSources: Object.freeze(generated.map((source) => source.catalogId)),
       }),
     });
   } catch (error) {
     logger?.error?.('school.catalog.wiring-failed', { error: error.message });
     return inert(error.message);
+  }
+}
+
+/**
+ * Corpus-backed catalog sources, per `catalog.exercise_library` in school.yml.
+ *
+ * Opt-in: absent config publishes nothing. Construction failure is logged and
+ * skipped rather than allowed to fail the whole catalog wiring — a broken
+ * generated shelf must never cost the household its authored curriculum.
+ */
+function createGeneratedSources({ exerciseLibrary, config, logger }) {
+  const settings = config.exercise_library ?? null;
+  if (!exerciseLibrary || !settings || settings.enabled === false) return [];
+  try {
+    return [new ExerciseLibraryCatalogSource({
+      exerciseLibrary,
+      logger,
+      ...(settings.catalog_id ? { catalogId: settings.catalog_id } : {}),
+      ...(settings.title ? { title: settings.title } : {}),
+      ...(Number.isInteger(settings.max_examples_per_muscle)
+        ? { maxExamples: settings.max_examples_per_muscle } : {}),
+    })];
+  } catch (error) {
+    logger?.error?.('school.catalog.exercise-library.wiring-failed', { error: error.message });
+    return [];
   }
 }
 

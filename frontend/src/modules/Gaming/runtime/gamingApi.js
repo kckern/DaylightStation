@@ -16,11 +16,17 @@ async function request(url, options = {}) {
 
 export function createGamingApi() {
   return {
+    getAssetPack(packId) {
+      return request(`/api/v1/gaming/assets/${encodeURIComponent(packId)}`);
+    },
     getDefinition(gameId) {
       return request(`/api/v1/gaming/definitions/${encodeURIComponent(gameId)}`);
     },
     getProgress(gameId, userId) {
       return request(`/api/v1/gaming/games/${encodeURIComponent(gameId)}/progress?user_id=${encodeURIComponent(userId)}`);
+    },
+    getActiveSession(gameId, userId) {
+      return request(`/api/v1/gaming/games/${encodeURIComponent(gameId)}/active-session?user_id=${encodeURIComponent(userId)}`);
     },
     getLeaderboard(gameId, userId, week = null) {
       const params = new URLSearchParams({ user_id: userId });

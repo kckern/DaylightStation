@@ -1,0 +1,287 @@
+// Guided workout runner — a garage-gym TV surface.
+//
+// Constraints that drive every number below: the athlete is several feet back,
+// sweaty, often mid-rep, and reaching with a whole hand rather than a fingertip.
+// So — one hero image, a short stack of glanceable facts, and two tap targets
+// big enough to hit without looking. Nothing hover-only, nothing small.
+//
+// Tokens are local on purpose. The neighbouring CycleGame widget has its own
+// `_cgTokens.scss`, but that file is explicitly the "cycle-game design tokens"
+// (arcade synthwave); importing it here would mean a palette change in the race
+// screen silently restyles the workout runner. Roboto Condensed IS shared canon
+// (see feedback_roboto_condensed_is_canon) — emphasis comes from size, color and
+// motion, never a second typeface.
+
+$wr-bg: #0a0a14;
+$wr-panel: #12101f;
+$wr-border: #2a2440;
+$wr-text: #f3f0ff;
+$wr-muted: #a79fc4;
+$wr-accent: #21e6ff;
+$wr-go: #5dff9b;
+$wr-display: 'Roboto Condensed', system-ui, sans-serif;
+
+// 10-foot type floor. Nothing in this component renders below $wr-micro.
+$wr-micro: 1.1rem;
+$wr-label: 1.4rem;
+
+.workout-runner {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 28px 24px;
+  background: radial-gradient(120% 90% at 50% 0%, #14112a 0%, $wr-bg 70%);
+  color: $wr-text;
+  font-family: $wr-display;
+  overflow: hidden;
+
+  &--empty,
+  &--done {
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+    text-align: center;
+  }
+
+  &__bar {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    flex: 0 0 auto;
+  }
+
+  &__progress,
+  &__title {
+    font-size: $wr-micro;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: $wr-muted;
+  }
+
+  &__title {
+    font-weight: 700;
+    color: $wr-text;
+  }
+
+  // The stage takes every pixel the header and footer do not — the demo image
+  // is the thing being read from across the room.
+  &__stage {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__work {
+    display: flex;
+    align-items: center;
+    gap: 40px;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+  }
+
+  &__demo {
+    flex: 1 1 55%;
+    min-width: 0;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: $wr-panel;
+    border: 2px solid $wr-border;
+    border-radius: 18px;
+    overflow: hidden;
+  }
+
+  &__demo-img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+
+  &__demo-fallback {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    font-size: clamp(4rem, 14vh, 10rem);
+    font-weight: 700;
+    color: rgba(167, 159, 196, 0.35);
+  }
+
+  &__facts {
+    flex: 1 1 45%;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  &__eyebrow {
+    font-size: $wr-label;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: $wr-accent;
+  }
+
+  &__name {
+    margin: 0;
+    font-size: clamp(2.4rem, 6vh, 4.4rem);
+    font-weight: 700;
+    line-height: 1.05;
+  }
+
+  // "Set 2 of 4" — the single number most likely to be checked mid-rep.
+  &__set {
+    font-size: clamp(2rem, 5vh, 3.4rem);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: $wr-go;
+  }
+
+  &__target {
+    font-size: clamp(1.8rem, 4vh, 3rem);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__load {
+    font-size: $wr-label;
+    letter-spacing: 0.08em;
+    color: $wr-muted;
+  }
+
+  &__next {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    padding: 10px 16px;
+    background: rgba(18, 16, 31, 0.8);
+    border: 1px solid $wr-border;
+    border-radius: 12px;
+  }
+
+  &__next-label {
+    font-size: $wr-micro;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: $wr-muted;
+  }
+
+  &__next-value {
+    font-size: 1.6rem;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__controls {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: stretch;
+    gap: 16px;
+  }
+
+  // Tap targets. 128px minimum height is a deliberate whole-hand target — the
+  // athlete is not aiming, and a mis-tap on Done costs a set.
+  &__tap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-height: 128px;
+    padding: 16px 32px;
+    border-radius: 16px;
+    cursor: pointer;
+    user-select: none;
+    // No hover styling: there is no pointer to hover with on this screen.
+    touch-action: manipulation;
+
+    &:focus-visible {
+      outline: 3px solid $wr-accent;
+      outline-offset: 4px;
+    }
+
+    &:active {
+      transform: scale(0.985);
+    }
+  }
+
+  &__tap--primary {
+    flex: 1 1 auto;
+    background: linear-gradient(180deg, #1c8f5e 0%, #126b45 100%);
+    border: 2px solid $wr-go;
+    box-shadow: 0 0 32px rgba(93, 255, 155, 0.22);
+  }
+
+  &__tap--ghost {
+    flex: 0 0 auto;
+    min-width: 220px;
+    background: transparent;
+    border: 2px solid $wr-border;
+    color: $wr-muted;
+  }
+
+  &__tap-label {
+    font-size: clamp(2rem, 4.5vh, 3rem);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  &__tap-sub {
+    font-size: $wr-micro;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    opacity: 0.85;
+  }
+
+  &__headline {
+    font-size: clamp(2.6rem, 7vh, 5rem);
+    font-weight: 700;
+  }
+
+  &__note {
+    margin: 0;
+    font-size: $wr-label;
+    color: $wr-muted;
+  }
+
+  &__complete {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+}
+
+// Portrait / narrow panels (a dev window, or the module rendered in a column):
+// stack the demo over the facts rather than shrinking both below the type floor.
+@media (max-aspect-ratio: 1/1) {
+  .workout-runner__work {
+    flex-direction: column;
+    gap: 20px;
+  }
+  .workout-runner__demo,
+  .workout-runner__facts {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+  .workout-runner__facts {
+    align-items: center;
+    text-align: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workout-runner__tap:active { transform: none; }
+}
