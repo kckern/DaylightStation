@@ -78,3 +78,54 @@ describe('/api/v1/chess/config', () => {
     expect(configService.writeUserLayer).not.toHaveBeenCalled();
   });
 });
+
+describe('user id validation (path traversal)', () => {
+  // `user` becomes a path segment under data/users/<user>/ — a traversal string
+  // here is a read/write primitive anywhere on disk. Every route must 400 it
+  // before the config service (and therefore the filesystem) is touched.
+  const TRAVERSAL = '../../../../tmp';
+
+  it('rejects a traversal user on GET /config without reading anything', async () => {
+    const configService = stubConfig({ read: vi.fn(async () => CONFIG) });
+    const res = await request(appWith({ engine: {}, configService }))
+      .get('/api/v1/chess/config').query({ user: TRAVERSAL });
+    expect(res.status).toBe(400);
+    expect(configService.read).not.toHaveBeenCalled();
+  });
+
+  it('rejects a traversal user on PUT /config without writing anything', async () => {
+    const configService = stubConfig({ read: vi.fn(async () => CONFIG) });
+    const res = await request(appWith({ engine: {}, configService }))
+      .put('/api/v1/chess/config').query({ user: TRAVERSAL }).send({ default_rung: 'steady' });
+    expect(res.status).toBe(400);
+    expect(configService.writeUserLayer).not.toHaveBeenCalled();
+    expect(configService.read).not.toHaveBeenCalled();
+  });
+
+  it('rejects a traversal user on POST /move before reading config or moving', async () => {
+    const chooseMove = vi.fn();
+    const configService = stubConfig({ read: vi.fn(async () => CONFIG) });
+    const res = await request(appWith({ engine: { chooseMove }, configService }))
+      .post('/api/v1/chess/move').query({ user: TRAVERSAL })
+      .send({ fen: START, rung: 'learner', gameId: 'g1' });
+    expect(res.status).toBe(400);
+    expect(configService.read).not.toHaveBeenCalled();
+    expect(chooseMove).not.toHaveBeenCalled();
+  });
+
+  it('rejects a slash-bearing user even without dot-dot', async () => {
+    const configService = stubConfig({ read: vi.fn(async () => CONFIG) });
+    const res = await request(appWith({ engine: {}, configService }))
+      .get('/api/v1/chess/config').query({ user: 'felix/evil' });
+    expect(res.status).toBe(400);
+    expect(configService.read).not.toHaveBeenCalled();
+  });
+
+  it('still serves a plain user id', async () => {
+    const configService = stubConfig({ read: vi.fn(async () => CONFIG) });
+    const res = await request(appWith({ engine: {}, configService }))
+      .get('/api/v1/chess/config').query({ user: 'felix' });
+    expect(res.status).toBe(200);
+    expect(configService.read).toHaveBeenCalledWith('felix');
+  });
+});

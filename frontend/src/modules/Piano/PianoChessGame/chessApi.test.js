@@ -27,6 +27,23 @@ describe('requestOpponentMove', () => {
     DaylightAPI.mockRejectedValue(new Error('offline'));
     expect(await requestOpponentMove({ fen: 'x', rung: 'learner', gameId: 'g1' })).toBeNull();
   });
+
+  it('resolves null when the transport never settles, so the local fallback engages', async () => {
+    // The kiosk tablet drops WiFi; a stalled fetch must not leave the player on
+    // "thinking" forever. The API client owns the deadline.
+    vi.useFakeTimers();
+    try {
+      DaylightAPI.mockReturnValue(new Promise(() => {})); // never settles
+      const pending = requestOpponentMove({ fen: 'x', rung: 'learner', gameId: 'g1' });
+      await vi.advanceTimersByTimeAsync(10_000);
+      // Race against an already-settled sentinel: if `pending` is still hanging,
+      // the sentinel wins and the assertion fails fast instead of timing out.
+      const result = await Promise.race([pending, Promise.resolve('still-hanging')]);
+      expect(result).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('fetchChessConfig', () => {
