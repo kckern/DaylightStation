@@ -46,10 +46,13 @@ export function createGamingApi() {
         body: JSON.stringify({ command, viewer_id: viewerId }),
       });
     },
-    recordPianoAttempt(userId, attempt) {
+    // `keepalive` lets an abandoned attempt finish writing even if the surface
+    // is unmounting with the page.
+    recordPianoAttempt(userId, attempt, { keepalive = false } = {}) {
       return request(`/api/v1/piano/users/${encodeURIComponent(userId)}/attempts`, {
         method: 'POST',
         body: JSON.stringify(attempt),
+        keepalive,
       });
     },
     preparePianoChallenge(userId, requestBody) {

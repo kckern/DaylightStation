@@ -161,6 +161,105 @@ describe('createPianoChordProvider telemetry', () => {
     });
   });
 
+  it('ignores keys pressed between prepare and start rather than grading them as the performance', async () => {
+    let notes = { activeNotes: new Map(), noteHistory: [] };
+    let now = 8000;
+    const provider = createPianoChordProvider({ useNotes: () => notes, clock: () => now });
+    const api = { recordPianoAttempt: vi.fn(async (_userId, attempt) => attempt) };
+    const logger = { warn: vi.fn(), info: vi.fn() };
+    const runtime = await provider.createRuntime({ userId: 'kid-1', api, logger });
+    // The surface stays mounted across a journey's encounters, so the history
+    // cursor baselines when the NEXT challenge is prepared — everything the
+    // player touches while the card animates is still pending at start().
+    const view = render(<runtime.Surface />);
+    const prepared = await runtime.prepare({
+      challenge_id: 'pre-start', kind: 'timed-pattern',
+      prompt: {
+        exercise_id: 'pattern-c-step', label: 'C step pattern', key_signature: 'C',
+        expected_midi: [60, 62, 64, 65], tempo_bpm: 60,
+      },
+    });
+    await act(async () => view.rerender(<runtime.Surface />));
+
+    notes = {
+      ...notes,
+      noteHistory: [60, 62, 64, 65].map((note, index) => ({ note, startTime: now + index })),
+    };
+    await act(async () => view.rerender(<runtime.Surface />));
+
+    now += 500;
+    const resultPromise = runtime.start(prepared);
+    await act(async () => view.rerender(<runtime.Surface />));
+
+    // Nothing was played since the attempt began, so the challenge is still open.
+    const progressText = () => view.container.querySelector('.piano-scale-challenge__feedback strong').textContent;
+    expect(progressText()).toBe('0 / 4');
+    expect(logger.warn).toHaveBeenCalledWith(
+      'piano.challenge.pre-start-input-ignored',
+      expect.objectContaining({ challengeId: 'pre-start', ignored: 4 }),
+    );
+
+    for (const note of [60, 62, 64, 65]) {
+      now += 1000;
+      notes = { ...notes, noteHistory: [...notes.noteHistory, { note, startTime: now }] };
+      await act(async () => view.rerender(<runtime.Surface />));
+    }
+    const result = await resultPromise;
+
+    expect(result.metrics).toMatchObject({ notesPlayed: 4, staleInputsIgnored: 4 });
+    expect(result.metrics.durationMs).toBeGreaterThanOrEqual(4000);
+  });
+
+  it('records an abandoned attempt when the runtime is disposed mid-challenge', async () => {
+    let notes = { activeNotes: new Map(), noteHistory: [] };
+    let now = 9000;
+    const provider = createPianoChordProvider({ useNotes: () => notes, clock: () => now });
+    const api = { recordPianoAttempt: vi.fn(async (_userId, attempt) => ({ ...attempt, attempt_id: 'saved-abandon' })) };
+    const logger = { warn: vi.fn(), info: vi.fn() };
+    const runtime = await provider.createRuntime({ userId: 'kid-1', api, logger });
+    const prepared = await runtime.prepare({
+      challenge_id: 'abandon-1', kind: 'scale',
+      prompt: { exercise_id: 'scale-c-major', label: 'C major scale', key_signature: 'C', expected_midi: [60, 62, 64] },
+    });
+    const resultPromise = runtime.start(prepared);
+    const view = render(<runtime.Surface />);
+
+    now += 200;
+    notes = { ...notes, noteHistory: [{ note: 60, startTime: now }] };
+    await act(async () => view.rerender(<runtime.Surface />));
+
+    now += 300;
+    await act(async () => { runtime.dispose(); });
+
+    await expect(resultPromise).resolves.toMatchObject({ status: 'aborted', score: null });
+    expect(api.recordPianoAttempt).toHaveBeenCalledWith('kid-1', expect.objectContaining({
+      status: 'aborted',
+      challenge_id: 'abandon-1',
+      kind: 'scale',
+      prompt: expect.objectContaining({ exercise_id: 'scale-c-major' }),
+      metrics: expect.objectContaining({ reason: 'disposed', notesPlayed: 1, durationMs: 500 }),
+    }), expect.objectContaining({ keepalive: true }));
+    expect(logger.info).toHaveBeenCalledWith(
+      'piano.challenge.abandoned',
+      expect.objectContaining({ challengeId: 'abandon-1', attemptId: 'saved-abandon', notesPlayed: 1 }),
+    );
+  });
+
+  it('does not record an attempt for a challenge that was disposed before it started', async () => {
+    const api = { recordPianoAttempt: vi.fn(async (_userId, attempt) => attempt) };
+    const provider = createPianoChordProvider({ useNotes: () => ({ activeNotes: new Map(), noteHistory: [] }) });
+    const runtime = await provider.createRuntime({ userId: 'kid-1', api, logger: { warn: vi.fn(), info: vi.fn() } });
+    await runtime.prepare({
+      challenge_id: 'never-started', kind: 'scale',
+      prompt: { label: 'C major', key_signature: 'C', expected_midi: [60] },
+    });
+
+    runtime.dispose();
+    await Promise.resolve();
+
+    expect(api.recordPianoAttempt).not.toHaveBeenCalled();
+  });
+
   it('fizzles a scale card after its authored mistake limit', async () => {
     let notes = { activeNotes: new Map(), noteHistory: [] };
     let now = 2000;
@@ -210,7 +309,11 @@ describe('createPianoChordProvider telemetry', () => {
       await vi.advanceTimersByTimeAsync(1000);
       const result = await resultPromise;
       expect(result).toMatchObject({ status: 'timeout', score: null, metrics: { reason: 'challenge_timeout', timeoutMs: 1000 } });
-      expect(api.recordPianoAttempt).toHaveBeenCalledWith('guest', expect.objectContaining({ status: 'timeout' }));
+      expect(api.recordPianoAttempt).toHaveBeenCalledWith(
+        'guest',
+        expect.objectContaining({ status: 'timeout' }),
+        { keepalive: false },
+      );
     } finally {
       vi.useRealTimers();
     }
@@ -241,7 +344,11 @@ describe('createPianoChordProvider telemetry', () => {
       status: 'completed', score: 1,
       metrics: { firstTry: true, notesPlayed: 1, notesRequired: 1 },
     });
-    expect(api.recordPianoAttempt).toHaveBeenCalledWith('guest', expect.objectContaining({ status: 'completed' }));
+    expect(api.recordPianoAttempt).toHaveBeenCalledWith(
+      'guest',
+      expect.objectContaining({ status: 'completed' }),
+      { keepalive: false },
+    );
   });
 
   it('continues an in-progress scale on the on-screen keyboard after MIDI disconnects', async () => {
