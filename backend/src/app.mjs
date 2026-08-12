@@ -252,6 +252,7 @@ import { createGameshowRouter } from './4_api/v1/routers/gameshow.mjs';
 import { createGamingRouter } from './4_api/v1/routers/gaming.mjs';
 import { GamingSessionService } from './3_applications/gaming/GamingSessionService.mjs';
 import { YamlGamingDefinitionStore } from './1_adapters/persistence/yaml/gaming/YamlGamingDefinitionStore.mjs';
+import { YamlGamingAssetCatalog } from './1_adapters/persistence/yaml/gaming/YamlGamingAssetCatalog.mjs';
 import { YamlGamingSessionStore } from './1_adapters/persistence/yaml/gaming/YamlGamingSessionStore.mjs';
 import { YamlPianoAttemptStore } from './1_adapters/persistence/yaml/gaming/YamlPianoAttemptStore.mjs';
 import { PianoScaleChallengePolicy } from './3_applications/piano/PianoScaleChallengePolicy.mjs';
@@ -1669,12 +1670,17 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     economyService: economyApi.economyService,
     logger: rootLogger.child({ module: 'gaming' }),
   });
+  const gamingAssetCatalog = new YamlGamingAssetCatalog({
+    catalogsDir: join(mediaBasePath, 'games/_common/catalog'),
+    assetRoot: join(mediaBasePath, 'games/_common'),
+  });
   gamingService.recoverStaleSessions();
   const gamingRecoveryTimer = setInterval(() => gamingService.recoverStaleSessions(), 30_000);
   gamingRecoveryTimer.unref?.();
   server?.once?.('close', () => clearInterval(gamingRecoveryTimer));
   v1Routers.gaming = createGamingRouter({
     gamingService,
+    assetCatalog: gamingAssetCatalog,
     logger: rootLogger.child({ module: 'gaming-api' }),
   });
 
