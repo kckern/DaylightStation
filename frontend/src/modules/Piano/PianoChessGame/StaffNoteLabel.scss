@@ -11,7 +11,11 @@
   width: 100%;
   height: 100%;
   min-height: 0;
-  padding: 1px 0;
+  padding: 0;
+  /* The renderer centres its notation inside the box and stretches its lines to
+     fill it; without room below the bottom line a low note or its ledger is cut
+     off by the card's own overflow clip. */
+  justify-content: stretch;
   border-radius: var(--r-sm, 8px);
 
   /* SvgStaffRenderer's own box fills the card; without a definite height here

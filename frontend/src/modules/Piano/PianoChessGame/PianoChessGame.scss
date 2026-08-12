@@ -15,6 +15,12 @@
 
   /* The old walnut/brass/ivory names survive only as aliases so one edit
      retints the whole screen; nothing here invents a colour any more. */
+  /* Rim strips: the space outside the board that the frame still occupies.
+     Named because the board's size AND its centring are both computed from
+     them. */
+  --pc-axis: 2.5rem;
+  --pc-axis-w: 2.75rem;
+
   --pc-case: var(--piano-bg, #16161b);
   --pc-case-lift: var(--piano-surface, #1f1f26);
   --pc-ivory: var(--piano-fg, #f1f1f4);
@@ -234,7 +240,30 @@
 /* Board frame is content-sized (see --cb-size below); centre it within its
    flexible column rather than letting default grid stretch pin it to the
    column's left edge. */
-.piano-chess .chess-board-frame { justify-self: center; }
+/* THE BOARD is centred, not the frame. The frame is the board plus its rim
+   strips, and the rank strip hangs off the left — so centring the frame puts
+   the board half a strip to the right of centre, which is exactly the drift
+   that reads as broken. An equal margin on the other side makes the frame's
+   outer box symmetric about the board, so the thing the player looks at is the
+   thing that is centred. */
+.piano-chess .chess-board-frame {
+  justify-self: center;
+  /* Exactly the strip, so the frame's margin box is symmetric about the board.
+     The frame's own column gap is zeroed rather than added into the sum: one
+     number to keep in step instead of two, and the strip already carries its
+     breathing room as inside padding. */
+  gap: 0;
+  margin-inline-end: var(--pc-axis-w);
+}
+
+/* The compensation above is only exact if the strip really is that wide, so the
+   strip is TOLD its width rather than being left to size itself off its labels.
+   Otherwise the board drifts by whatever the longest rank label happens to
+   measure — 'maj7' and a staff card are not the same width. */
+.piano-chess .chess-board__rank-axis {
+  box-sizing: border-box;
+  width: var(--pc-axis-w);
+}
 
 .piano-chess__rail {
   display: flex;
@@ -414,8 +443,8 @@
      the budget on their own axis. Named rather than folded into a constant
      because the reading vocabulary makes them much bigger. */
   --cb-size: min(
-    calc(100cqw - 2 * var(--pc-rail, 15.5rem) - 3rem - var(--pc-axis-w, 1.5rem)),
-    calc(100cqh - var(--pc-axis, 2.5rem))
+    calc(100cqw - 2 * var(--pc-rail, 15.5rem) - 3rem - 2 * var(--pc-axis-w)),
+    calc(100cqh - var(--pc-axis))
   );
   --cb-light: var(--pc-ivory);
   --cb-dark: #9e7070;
@@ -457,6 +486,9 @@
 .piano-chess__move-san { color: var(--piano-muted, #9a9aa6); font-size: 0.8rem; }
 .piano-chess__move--empty { grid-template-columns: 1fr; color: var(--piano-muted, #9a9aa6); }
 
+/* Sits at the foot of the chord rail. A dash for "nothing yet" reads as
+   unfinished when it is the whole row, so the label and the pieces share one
+   line and the row is quiet until there is something in it. */
 .piano-chess__captured {
   display: flex;
   flex-direction: column;
@@ -467,6 +499,7 @@
 
 .piano-chess__captured-pieces {
   font-size: 1.25rem;
+  line-height: 1;
   line-height: 1.1;
   color: var(--pc-ivory);
 }
@@ -532,6 +565,8 @@
    flex item forced ChordReadout out to the far right while the plaque's
    pill floated centred inside its own oversized box. Scoped to .piano-chess
    so TheoryPanel's card usage is untouched. */
+.piano-chess__rail--chords .piano-chord-name { width: 100%; }
+
 .piano-chess .piano-chord-name {
   width: auto;
   height: auto;
@@ -593,11 +628,16 @@
 /* ---- the chord rail: a mirror of the hands ------------------------------- */
 
 /* Paper for the live staff. `.action-staff` supplies the cream card the other
-   games' staves sit on; only the sizing is local. */
+   games' staves sit on; only the sizing is local.
+
+   It takes the rail's leftover height rather than a fixed 9rem: the rail is as
+   tall as the board, and a short card left two thirds of the column as empty
+   charcoal. A taller staff is also simply a better staff — more room between
+   the lines is more legible, which is the entire job of this rail. */
 .piano-chess__staff-card.action-staff {
   width: 100%;
-  height: 9rem;
-  min-height: 0;
+  flex: 1;
+  min-height: 8rem;
   padding: 0.25rem;
   border-radius: var(--r-md, 12px);
 }
@@ -612,11 +652,14 @@
   overflow: hidden;
 }
 
+/* Sits with the rest of the rail rather than being flung to the bottom by an
+   auto margin — that left a hand's-height of dead charcoal in the middle of the
+   one rail the player reads when they are stuck. */
 .piano-chess__rail-actions {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
-  margin-block-start: auto;
+  margin-block-start: 0.25rem;
 }
 
 /* ---- staff rim labels (the reading vocabulary) --------------------------- */
@@ -653,20 +696,29 @@
    yields the room rather than the labels being squeezed past legibility — a
    staff you cannot read is the one thing this vocabulary cannot afford. */
 .piano-chess--reading {
-  --pc-axis: 4.5rem;
-  --pc-axis-w: 4rem;
+  /* A staff card needs to be taller than it is wide before a notehead and its
+     ledger line both fit — the side-scroller's staves run about 2:3, and
+     anything squarer clips the note against the card edge. */
+  --pc-axis: 6.5rem;
+  --pc-axis-w: 5rem;
 }
 
 /* Each rim cell is a card, so the strips get a definite size instead of being
-   sized by whatever the SVG's intrinsic ratio works out to. */
+   sized by whatever the SVG's intrinsic ratio works out to.
+   `minmax(0, 1fr)` rather than `1fr`: a bare 1fr is minmax(AUTO, 1fr), so the
+   cards' own content min-size wins and eight of them grow the strip past the
+   board it is supposed to line up with — the bottom rank ends up below the
+   board's last rank and clipped by the stage. */
 .piano-chess--reading .chess-board__rank-axis {
   width: var(--pc-axis-w);
+  grid-template-rows: repeat(8, minmax(0, 1fr));
   padding-inline-end: 0.35rem;
   gap: 0.2rem;
 }
 
 .piano-chess--reading .chess-board__file-axis {
   height: calc(var(--pc-axis) - 0.5rem);
+  grid-template-columns: repeat(8, minmax(0, 1fr));
   padding-block-start: 0.35rem;
   gap: 0.2rem;
 }

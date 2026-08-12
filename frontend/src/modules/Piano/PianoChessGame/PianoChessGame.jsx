@@ -87,7 +87,7 @@ function logger() {
  * square, the prompt names that square's own chord, so the instruction is the
  * literal next thing to play rather than a rule to apply.
  */
-export function promptFor(state, rejection, hoveredChord = null) {
+export function promptFor(state, rejection, hoveredChord = null, reading = false) {
   if (state.status?.game_over) {
     if (state.status.outcome === 'checkmate') {
       return state.status.winner === state.playerColor ? 'Checkmate. You win.' : 'Checkmate. Your opponent wins.';
@@ -97,9 +97,14 @@ export function promptFor(state, rejection, hoveredChord = null) {
   if (rejection) return REJECTION_MESSAGES[rejection.reason] ?? 'Try another chord.';
   if (!isPlayerTurn(state)) return 'Your opponent is thinking.';
   if (state.status?.check) return 'You are in check. Play a chord to answer it.';
-  if (state.origin) return 'Now play the chord of the square to move to.';
-  return hoveredChord
-    ? `Play ${hoveredChord} again to pick that piece up.`
+  if (state.origin) {
+    return reading
+      ? 'Now play the two notes of the square to move to.'
+      : 'Now play the chord of the square to move to.';
+  }
+  if (hoveredChord) return `Play ${hoveredChord} again to pick that piece up.`;
+  return reading
+    ? "Play a piece's two notes twice to pick it up."
     : "Play a piece's chord twice to pick it up.";
 }
 
@@ -537,7 +542,7 @@ export function PianoChessGame({
   const pickupChord = !game.origin && cursor && playableSources(game).includes(cursor)
     ? cursorChord?.symbol ?? null
     : null;
-  const prompt = promptFor(game, game.rejection, pickupChord);
+  const prompt = promptFor(game, game.rejection, pickupChord, reading);
   const turnLabel = game.status?.turn === 'w' ? 'White' : 'Black';
 
   return (
