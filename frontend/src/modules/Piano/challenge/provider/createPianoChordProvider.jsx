@@ -200,7 +200,7 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
         });
       };
 
-      function Surface() {
+      function Surface({ compact = false, headerContext = null } = {}) {
         const view = useSyncExternalStore(subscribe, () => snapshot, () => snapshot);
         const notes = useNotes();
         const connection = useConnection();
@@ -465,7 +465,8 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
             <section className={`piano-challenge piano-scale-challenge${usingVirtualKeyboard ? ' has-virtual-keyboard' : ''}`}>
               <header className="piano-scale-challenge__heading">
                 <span>
-                  {prompt.tempo_bpm ? `Play with the pulse · ${prompt.tempo_bpm} BPM` : 'Play from left to right'}
+                  {headerContext ? `${headerContext}${prompt.tempo_bpm ? ` · ${prompt.tempo_bpm} BPM` : ''}`
+                    : prompt.tempo_bpm ? `Play with the pulse · ${prompt.tempo_bpm} BPM` : 'Play from left to right'}
                   {prompt.max_mistakes ? ` · ${prompt.max_mistakes} misses ends this legacy challenge` : ''}
                 </span>
                 <strong>{prompt.label}</strong>
@@ -509,7 +510,7 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
             data-active-notes={[...activeNotes.keys()].join(',')}
             data-chord-match={liveChordMatch}
           >
-            <div>Play this chord</div>
+            <div>{compact && headerContext ? headerContext : 'Play this chord'}</div>
             <div className="piano-challenge__chord">{prompt?.label || '…'}</div>
             <div>{view.status === 'running'
               ? usingVirtualKeyboard ? 'Listening to the on-screen keys' : 'Listening to the piano'

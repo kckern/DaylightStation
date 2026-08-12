@@ -1992,7 +1992,9 @@ describe('ScorePlayer — Polish tempo tiers (wave-3 H)', () => {
   });
 
   it('an overclocked completed run earns the 1.25 multiplier (spec 6)', async () => {
-    // Two measures, mean combined 0.9 → base 90 → overclocked stores round(90 × 1.25) = 113.
+    // Two measures graded by the shared service, then the overclocked ×1.25.
+    // The exact number moves with the grading policy (POLICY_VERSION in
+    // scoreEvaluator): under polish's old multiplicative maths this was 113.
     // m0 is a five-note chord with only FOUR played (noteScore 0.8, timing perfect);
     // m1 is a single note played clean (1.0). The multiplier itself is pinned in
     // polishTiers.test.js — what this proves is that the RUN's tier reaches it.
@@ -2025,8 +2027,8 @@ describe('ScorePlayer — Polish tempo tiers (wave-3 H)', () => {
     play(72);                                  // …and m1's note just before its onset
     act(() => vi.advanceTimersByTime(50));     // → final step + onDone
 
-    expect(h.recordTierBest).toHaveBeenCalledWith({ bucket: 'both', tier: 'overclocked', score: 113 });
-    expect(document.querySelector('.piano-score-run-score__value').textContent).toBe('113');
+    expect(h.recordTierBest).toHaveBeenCalledWith({ bucket: 'both', tier: 'overclocked', score: 116 });
+    expect(document.querySelector('.piano-score-run-score__value').textContent).toBe('116');
     expect(document.querySelector('.piano-score-run-score__tier').textContent).toBe('overclocked');
   });
 

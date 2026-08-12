@@ -1,7 +1,30 @@
 import { useEffect, useRef, useState } from 'react';
+import {
+  IconBolt,
+  IconCheck,
+  IconClock,
+  IconLock,
+  IconLogout,
+  IconMusic,
+  IconPokeball,
+  IconShield,
+  IconSparkles,
+  IconSword,
+  IconTrophy,
+  IconVolume,
+  IconVolumeOff,
+  IconWaveSine,
+} from '@tabler/icons-react';
 import './PokemonJourneyView.scss';
 import { hitClass, pokemonAssetUrl, SKILL_LABELS } from './pokemonJourneyModel.js';
 import { playJourneySfx } from './journeySfx.js';
+
+const SKILL_ICONS = {
+  scale: IconWaveSine,
+  chord: IconMusic,
+  arpeggio: IconSparkles,
+  'timed-pattern': IconClock,
+};
 
 function HealthBar({ name, value, max }) {
   const percent = Math.max(0, Math.min(100, (value / max) * 100));
@@ -13,6 +36,8 @@ function HealthBar({ name, value, max }) {
   );
 }
 
+// Kept exported as the small, testable asset-orientation rule.
+// eslint-disable-next-line react-refresh/only-export-components
 export function pokemonFigureFlipped(side, assetFacing) {
   return (side === 'partner' && assetFacing === 'left')
     || (side === 'opponent' && assetFacing === 'right');
@@ -24,8 +49,8 @@ function PokemonFigure({ subject, side, state }) {
     <article
       className={`journey-figure journey-figure--${side} journey-figure--${subject.type}${flipped ? ' is-flipped' : ''}`}
       data-asset-facing={subject.asset_facing}
+      data-side={side}
     >
-      <span className="journey-figure__label">{side === 'partner' ? 'Your partner' : 'Opponent'} · #{subject.dex}</span>
       <div className="journey-figure__art">
         <span className="journey-figure__halo" aria-hidden="true" />
         <img src={pokemonAssetUrl(subject.asset)} alt={subject.name} draggable="false" />
@@ -59,7 +84,12 @@ function JourneyPath({ opponents, state }) {
         const active = state.campaign_stage === 'route' && index === state.current_encounter && state.status === 'active';
         return (
           <li key={opponent?.id || `route-${index}`} className={`${done ? 'is-done' : ''}${active ? ' is-active' : ''}`}>
-            <span>{done ? '✓' : index + 1}</span><b>{done || active ? opponent?.name || 'Gym route' : '???'}</b>
+            <span aria-hidden="true">
+              {done ? <IconCheck /> : active && opponent?.asset
+                ? <img src={pokemonAssetUrl(opponent.asset)} alt="" />
+                : <IconPokeball />}
+            </span>
+            <b>{active ? `Battle ${index + 1}` : done ? opponent?.name : `Stop ${index + 1}`}</b>
           </li>
         );
       })}
@@ -85,11 +115,12 @@ function HitFeedback({ result }) {
 }
 
 function MoveButton({ move, instance, legal, locked, onChoose, shortcut }) {
-  const effects = [
-    move.damage ? `${move.damage} ATK` : null,
-    move.block ? `+${move.block} SHIELD` : null,
-    move.focus ? `+${move.focus} NEXT` : null,
-  ].filter(Boolean);
+  const SkillIcon = SKILL_ICONS[move.challenge.kind] || IconMusic;
+  const actionLabel = [
+    move.damage ? `${move.damage} damage` : null,
+    move.block ? `${move.block} shield` : null,
+    move.focus ? `${move.focus} next-move power` : null,
+  ].filter(Boolean).join(', ');
   return (
     <button
       type="button"
@@ -99,19 +130,25 @@ function MoveButton({ move, instance, legal, locked, onChoose, shortcut }) {
       data-move-id={instance.definition_id}
       data-skill-kind={move.challenge.kind}
       data-damage={move.damage || 0}
+      aria-label={`${move.title}. ${SKILL_LABELS[move.challenge.kind]}. Play ${shortcut}. ${actionLabel}${locked ? '. Locked' : ''}`}
     >
-      <span className="journey-move__kind">{SKILL_LABELS[move.challenge.kind]} · {shortcut}</span>
-      <strong>{move.title}</strong>
-      <span className="journey-move__effects">{effects.map((effect) => <b key={effect}>{effect}</b>)}</span>
-      <small>{locked ? 'Locked' : move.signature ? 'Signature' : 'Ready'}</small>
-      <i aria-hidden="true">{locked ? '🔒' : move.type === 'guard' ? '◈' : move.type === 'focus' ? '✦' : '➜'}</i>
+      <span className="journey-move__skill" aria-hidden="true"><SkillIcon /></span>
+      <span className="journey-move__name"><strong>{move.title}</strong><small>{SKILL_LABELS[move.challenge.kind]}</small></span>
+      <kbd>{shortcut}</kbd>
+      <span className="journey-move__effects" aria-hidden="true">
+        {move.damage > 0 && <b><IconSword /><strong>{move.damage}</strong><small>damage</small></b>}
+        {move.block > 0 && <b><IconShield /><strong>{move.block}</strong><small>shield</small></b>}
+        {move.focus > 0 && <b><IconBolt /><strong>{move.focus}</strong><small>power</small></b>}
+      </span>
+      {locked && <span className="journey-move__locked"><IconLock /> Win the first battle</span>}
     </button>
   );
 }
 
-function PracticePanel({ providerRuntime, move, partner, onAbort, onSaveExit }) {
+function PracticePanel({ providerRuntime, move, onAbort, onSaveExit }) {
   const panelRef = useRef(null);
   const ChallengeSurface = providerRuntime?.Surface || null;
+  const SkillIcon = SKILL_ICONS[move.challenge.kind] || IconMusic;
   useEffect(() => {
     panelRef.current?.focus();
     const onKeyDown = (event) => {
@@ -130,13 +167,14 @@ function PracticePanel({ providerRuntime, move, partner, onAbort, onSaveExit }) 
   return (
     <section className="journey-practice" role="dialog" aria-modal="true" aria-label={`${move.title} piano challenge`}>
       <div className="journey-practice__panel" tabIndex={-1} ref={panelRef}>
-        <header>
-          <span>{partner.name} used <b>{move.title}</b></span>
-          <strong>{SKILL_LABELS[move.challenge.kind]} power this move</strong>
-          <small>Accuracy decides direct hit, partial hit, or miss.</small>
-        </header>
         <div className="journey-practice__surface">
-          {ChallengeSurface ? <ChallengeSurface /> : <div className="challenge-loading">Preparing your next exercise…</div>}
+          {ChallengeSurface ? <ChallengeSurface compact headerContext={`${move.title} · ${SKILL_LABELS[move.challenge.kind]}`} /> : (
+            <div className="journey-practice__loading">
+              <span aria-hidden="true"><SkillIcon /></span>
+              <strong>{move.title}</strong>
+              <small>Preparing {SKILL_LABELS[move.challenge.kind]}…</small>
+            </div>
+          )}
         </div>
         <footer><button type="button" onClick={onAbort}>Stop attempt</button><button type="button" onClick={onSaveExit}>Save &amp; Exit</button></footer>
       </div>
@@ -169,9 +207,11 @@ function PartnerSelection({ state, definition, progress, onSelect }) {
 
 function RosterStrip({ state, definition }) {
   const subjects = [...(definition.journey.partners || []), ...(state.route_plan || [])];
+  const owned = (state.roster || []).filter((entry) => entry.owned);
+  if (owned.length <= 1) return null;
   return (
     <div className="journey-roster" aria-label="Partner roster">
-      {(state.roster || []).filter((entry) => entry.owned).map((entry) => {
+      {owned.map((entry) => {
         const subject = subjects.find((candidate) => candidate.id === entry.partner_id);
         if (!subject) return null;
         const active = entry.partner_id === state.partner_id;
@@ -281,7 +321,7 @@ export function PokemonJourneyView({
     if (state.phase === 'checkpoint') playJourneySfx.play?.('encounter.win', { onceKey: `${session.session_id}:win:${state.completed_encounters.length}` });
     if (state.phase === 'defeated') playJourneySfx('defeat');
     if (state.phase === 'gym-entry') playJourneySfx.play?.('gym.intro', { onceKey: `${session.session_id}:gym-intro` });
-  }, [state.phase]);
+  }, [session.session_id, state.completed_encounters.length, state.phase]);
 
   return (
     <main
@@ -297,11 +337,11 @@ export function PokemonJourneyView({
       data-score={state.score}
     >
       <header className="journey-topbar">
-        <div><small>Piano League</small><h1>{definition.title}</h1></div>
+        <div className="journey-battle__round"><IconPokeball /><span><small>{state.campaign_stage === 'gym' ? 'Gym challenge' : 'Stadium journey'}</small><strong>Battle {(state.current_encounter || 0) + 1}</strong></span></div>
         <JourneyPath opponents={state.route_plan || definition.journey.opponents} state={state} />
-        <div className="journey-live-score"><small>Run score</small><strong>{state.score.toLocaleString()}</strong></div>
-        <button type="button" className="journey-sound" onClick={() => setSoundSettings(playJourneySfx.setMuted?.(!soundSettings.muted) || { muted: !soundSettings.muted })} aria-label={soundSettings.muted ? 'Unmute sound' : 'Mute sound'}>{soundSettings.muted ? 'Sound off' : 'Sound on'}</button>
-        {onSaveExit && <button type="button" className="journey-save-exit" onClick={onSaveExit}>Save &amp; Exit</button>}
+        <div className="journey-live-score"><IconTrophy /><span><small>Score</small><strong>{state.score.toLocaleString()}</strong></span></div>
+        <button type="button" className="journey-sound" onClick={() => setSoundSettings(playJourneySfx.setMuted?.(!soundSettings.muted) || { muted: !soundSettings.muted })} aria-label={soundSettings.muted ? 'Unmute sound' : 'Mute sound'}>{soundSettings.muted ? <IconVolumeOff /> : <IconVolume />}</button>
+        {onSaveExit && <button type="button" className="journey-save-exit" onClick={onSaveExit}><IconLogout /><span>Save &amp; Exit</span></button>}
       </header>
 
       <section className="journey-arena">
@@ -310,14 +350,13 @@ export function PokemonJourneyView({
           {state.phase === 'battle' && (
             <>
               <div className={`journey-intent journey-intent--${state.enemy.intent.kind}`}>
-                <small>{enemy.name} is preparing</small>
+                <i aria-hidden="true">{state.enemy.intent.kind === 'attack' ? <IconSword /> : state.enemy.intent.kind === 'defend' ? <IconShield /> : <IconBolt />}</i>
                 <strong>{state.enemy.intent.title}</strong>
                 <span>{state.enemy.intent.kind === 'attack'
                   ? `${state.enemy.intent.amount + state.enemy.strength} damage`
                   : state.enemy.intent.kind === 'defend' ? `${state.enemy.intent.amount} shield` : `+${state.enemy.intent.amount} power`}</span>
               </div>
               <HitFeedback result={combatResult} />
-              {!combatResult && <div className="journey-coach"><strong>Choose a piano move</strong><span>Play accurately. Types do not change your score.</span></div>}
               <RosterStrip state={state} definition={definition} />
               {error && <div className="journey-error">Recovered safely: {error.message}</div>}
             </>
@@ -364,7 +403,7 @@ export function PokemonJourneyView({
       )}
 
       {state.pending_action && (
-        <PracticePanel providerRuntime={providerRuntime} move={pendingMove} partner={partner} onAbort={onAbort} onSaveExit={onSaveExit} />
+        <PracticePanel providerRuntime={providerRuntime} move={pendingMove} onAbort={onAbort} onSaveExit={onSaveExit} />
       )}
     </main>
   );
