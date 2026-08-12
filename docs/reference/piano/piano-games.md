@@ -33,6 +33,21 @@ The ownership boundary is strict:
   abandonment, and stale-session recovery. Closing the screen does not leave an active
   session behind.
 
+### Practice evidence
+
+Every attempt is written to the piano ledger at
+`data/users/{userId}/apps/piano/attempts/{YYYY-MM-DD}/{attempt_id}.yml`, carrying the full
+prompt, the dimensional metrics, and both policy versions — so a record stays readable after
+the grading rules move on. Records are write-once. An attempt that ends by teardown rather
+than by playing (the player closes the kiosk mid-exercise) is recorded as `aborted` with
+`metrics.reason: disposed`; the adaptive policy scores only completed attempts, so abandoned
+evidence is diagnostic without skewing what gets served next.
+
+Only input stamped after the attempt starts is graded. A key struck during the prepare→start
+gap is counted in `metrics.staleInputsIgnored` and logged as
+`piano.challenge.pre-start-input-ignored` — a nonzero count means the player was noodling
+over the card animation, not that they played badly.
+
 ### Live readiness check
 
 Run the end-to-end verifier against the deployed PianoKiosk route:
