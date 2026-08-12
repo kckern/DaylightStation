@@ -31,7 +31,7 @@ vi.mock('./chessApi.js', () => ({
 
 import { PianoChessGame } from './PianoChessGame.jsx';
 import {
-  fetchChessConfig, requestOpponentMove, saveChessConfig, saveGameRecord,
+  archiveGame, fetchChessConfig, requestOpponentMove, saveChessConfig, saveGameRecord,
 } from './chessApi.js';
 import { DEFAULT_CHORD_SCHEME, squareToChord } from './chordAddress.js';
 import { DOUBLE_WINDOW_MS } from './chordSelection.js';
@@ -549,6 +549,67 @@ describe('destination labels answer the pick-up', () => {
 // session that motivated this task switched kiosk users mid-game and kept
 // playing under the new identity — the fix locks whoever started until the
 // game ends, mirrored in the rail so the screen says whose game this is.
+describe('the game is archived once, on the way out', () => {
+  const notesFor = (square) => squareToChord(square, DEFAULT_CHORD_SCHEME)
+    .pitch_classes.map((pc) => 60 + pc);
+  const holdNotes = (notes) => mockUsePianoMidiNotes.mockReturnValue({
+    activeNotes: new Map(notes.map((n) => [n, { velocity: 80 }])),
+    noteHistory: [],
+  });
+  // `difficulty` is one of the mount-effect's dependencies, so changing it
+  // reproduces exactly what the config load used to do to that effect.
+  const makeElement = (difficulty = 'learner') => (
+    <PianoChessGame currentUser="milo" difficulty={difficulty} gameConfig={{ shuffle_each_turn: false }} />
+  );
+  const playChord = async (rerender, notes, difficulty) => {
+    holdNotes(notes);
+    rerender(makeElement(difficulty));
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    holdNotes([]);
+    rerender(makeElement(difficulty));
+    await act(async () => { await vi.advanceTimersByTimeAsync(120); });
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mockUsePianoMidi.mockReturnValue({ connected: true, status: 'connected' });
+    fetchChessConfig.mockReset();
+    fetchChessConfig.mockResolvedValue(null);
+    archiveGame.mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    mockUsePianoMidi.mockReturnValue({ connected: false, status: 'disconnected' });
+    mockUsePianoMidiNotes.mockReturnValue({ activeNotes: new Map(), noteHistory: [] });
+  });
+
+  it('archives a played game once, and only when the game is left', async () => {
+    // The archive used to live in the cleanup of an effect that DEPENDED on
+    // difficulty and shuffle_each_turn. When the config resolved and flipped
+    // one, that effect tore down and re-ran: the game was archived MID-PLAY and
+    // the "already archived" guard then suppressed the real archive at the end.
+    // In the logs it read as the component remounting on every entry, which it
+    // never did. An unmount effect must have no dependencies.
+    const { rerender, unmount } = render(makeElement());
+    await playChord(rerender, notesFor('e2'));
+    await playChord(rerender, notesFor('e2')); // the double lifts the pawn
+    await playChord(rerender, notesFor('e4')); // and this drops it — one move played
+
+    // Now disturb a dependency of the mount effect, mid-game.
+    rerender(makeElement('sharp'));
+    await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+    expect(archiveGame, 'a settings change is not the end of a game').not.toHaveBeenCalled();
+
+    unmount();
+    expect(archiveGame).toHaveBeenCalledTimes(1);
+    const [record] = archiveGame.mock.calls[0];
+    expect(record.move_count, 'the move played must be in the archive').toBeGreaterThanOrEqual(1);
+    expect(record.completed).toBe(false);
+    expect(record.ended_by).toBe('left');
+  });
+});
+
 describe('the player is locked for the whole game', () => {
   const notesFor = (square) => squareToChord(square, DEFAULT_CHORD_SCHEME)
     .pitch_classes.map((pc) => 60 + pc);

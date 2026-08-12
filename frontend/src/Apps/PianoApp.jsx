@@ -263,7 +263,7 @@ function PianoShell() {
   const navigate = useNavigate();
   const location = useLocation();
   const logger = useMemo(() => getLogger().child({ component: 'piano-app' }), []);
-  const { playing, videoActive } = usePianoPlayback();
+  const { playing, videoActive, playerLocks = [] } = usePianoPlayback();
   const { users, currentUser, setCurrentUser } = usePianoUser();
   const [whoOpen, setWhoOpen] = useState(false);
 
@@ -284,7 +284,14 @@ function PianoShell() {
   useIdleGap(activeNotes, noteHistory.length, config.whoIsPlayingMinutes, () => {
     // Suppress mid-performance too: Listen mode performs via timestamped MIDI
     // with no activeNotes churn, so the idle-gap could otherwise fire mid-piece.
-    if (videoActive || playing) return;
+    //
+    // And suppress it while any activity holds the player lock. A game credits
+    // its result to whoever started it, and a child thinking for two minutes
+    // about a move is EXACTLY the idle gap this prompt watches for — so without
+    // this, the one moment the prompt is most likely to fire is the middle of a
+    // game, and answering it hands the game to somebody else. The chrome chip
+    // was already locked; this was the other door into the same picker.
+    if (videoActive || playing || playerLocks.length > 0) return;
     logger.info('piano.who-is-playing.prompt', { pianoId });
     setWhoOpen(true);
   });
@@ -344,7 +351,7 @@ function PianoShell() {
       <PianoBreadcrumbProvider>
         <div className="piano-app">
           <ProfilePicker
-            open={whoOpen}
+            open={whoOpen && playerLocks.length === 0}
             users={users}
             onPick={(id) => { setCurrentUser(id); setWhoOpen(false); }}
             onDismiss={() => { setCurrentUser('guest'); setWhoOpen(false); }}

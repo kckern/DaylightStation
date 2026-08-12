@@ -1,0 +1,69 @@
+/**
+ * The opponent's face on the state rail. House tokens only — this is a card in
+ * the kiosk's style, not an illustration with a frame of its own.
+ */
+.chess-opponent {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0;
+  min-width: 0;
+}
+
+.chess-opponent__face {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 2.6rem;
+  height: 2.6rem;
+  border: 1px solid var(--piano-border, #34343f);
+  border-radius: var(--r-md, 12px);
+  background: var(--piano-surface, #1f1f26);
+  overflow: hidden;
+}
+
+.chess-opponent__identicon {
+  width: 68%;
+  height: 68%;
+  fill: var(--piano-accent-text, #5fe39a);
+}
+
+.chess-opponent__art {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.chess-opponent__name {
+  min-width: 0;
+  font-size: var(--t-body, 1rem);
+  color: var(--piano-fg, #f1f1f4);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chess-opponent--lg {
+  .chess-opponent__face { width: 3.6rem; height: 3.6rem; }
+  .chess-opponent__name { font-size: var(--t-h, 1.25rem); }
+}
+
+/* How close this player is to the next character. Shown as counted games, not
+   as a percentage: "3 of 5 wins" is something a child can act on, and it also
+   makes it visible that some games did not count. */
+.chess-ladder-progress {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: var(--t-cap, 0.85rem);
+  color: var(--piano-muted, #9a9aa6);
+}
+
+.chess-ladder-progress__value {
+  color: var(--piano-accent-text, #5fe39a);
+}
+
+.chess-ladder-progress--top .chess-ladder-progress__value {
+  color: var(--piano-warn, #e0a83a);
+}

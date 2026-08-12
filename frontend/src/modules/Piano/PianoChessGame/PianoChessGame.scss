@@ -67,23 +67,7 @@
   color: var(--pc-brass-glow);
 }
 
-.piano-chess__turn {
-  margin: 0;
-  display: flex;
-  align-items: baseline;
-  gap: 1rem;
-  font-size: var(--t-body, 1rem);
-  color: var(--piano-muted);
-}
 
-.piano-chess__difficulty {
-  padding: 0.1rem 0.55rem;
-  border: 1px solid var(--piano-accent, #2ec46f);
-  border-radius: var(--r-sm, 8px);
-  font-size: 0.8rem;
-  letter-spacing: 0.2em;
-  color: var(--pc-brass);
-}
 
 .piano-chess__settings-btn {
   align-self: flex-start;
@@ -203,11 +187,6 @@
 
 /* The shared kiosk context rail sits to the RIGHT of the board here, so its
    divider has to change sides. */
-.piano-chess .psc-rail {
-  padding: 0 0 0.75rem;
-  border-right: none;
-  border-bottom: 1px solid var(--piano-border, #34343f);
-}
 
 /* ---- stage -------------------------------------------------------------- */
 
@@ -346,12 +325,6 @@
   color: var(--piano-accent, #2ec46f);
 }
 
-.piano-chess__rail-title {
-  margin: 0;
-  font-size: var(--t-cap, 0.85rem);
-  font-weight: 500;
-  color: var(--piano-muted);
-}
 
 .piano-chess__slot-label {
   font-size: var(--t-cap, 0.85rem);
@@ -458,33 +431,10 @@
 
 /* ---- move log ----------------------------------------------------------- */
 
-.piano-chess__rail--log { justify-content: flex-start; padding-block-start: 0.5rem; }
 
-.piano-chess__moves {
-  flex: 1;
-  min-height: 0;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-}
 
-.piano-chess__move {
-  display: grid;
-  grid-template-columns: 1.5rem 1fr auto;
-  gap: 0.4rem;
-  align-items: baseline;
-  font-size: 0.9rem;
-  color: var(--pc-ivory-dim);
-}
 
-.piano-chess__move-index { color: var(--piano-muted, #9a9aa6); font-size: 0.75rem; }
-.piano-chess__move-chords { color: var(--pc-brass); font-weight: 700; }
 .piano-chess__move-san { color: var(--piano-muted, #9a9aa6); font-size: 0.8rem; }
-.piano-chess__move--empty { grid-template-columns: 1fr; color: var(--piano-muted, #9a9aa6); }
 
 /* Sits at the foot of the chord rail. A dash for "nothing yet" reads as
    unfinished when it is the whole row, so the label and the pieces share one
@@ -551,12 +501,6 @@
   opacity: 0.9;
 }
 
-.piano-chess__instrument-readouts {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.75rem;
-}
 
 /* ChordNamePanel ships its own Studio-card styling (a full-height,
    full-width plaque meant to fill a slot). Here it rides beside
@@ -565,8 +509,6 @@
    flex item forced ChordReadout out to the far right while the plaque's
    pill floated centred inside its own oversized box. Scoped to .piano-chess
    so TheoryPanel's card usage is untouched. */
-.piano-chess__rail--chords .piano-chord-name { width: 100%; }
-
 .piano-chess .piano-chord-name {
   width: auto;
   height: auto;
@@ -721,4 +663,94 @@
   grid-template-columns: repeat(8, minmax(0, 1fr));
   padding-block-start: 0.35rem;
   gap: 0.2rem;
+}
+
+
+/* ---- the chord plaque, as a card in this column ------------------------- */
+
+/* It shipped as a content-sized pill floating in a 15.5rem column, wearing
+   Studio's gradient and its own invented radius, under an eyebrow that
+   repeated the rail heading directly above it. */
+.piano-chess .piano-chord-name {
+  width: 100%;
+  height: auto;
+}
+
+.piano-chess .piano-chord-name__plaque {
+  width: 100%;
+  max-width: none;
+  min-height: 3.4rem;
+  padding: 0.5rem 0.85rem;
+  gap: 0;
+  border: 1px solid var(--piano-border);
+  border-radius: var(--r-md);
+  background: var(--piano-surface);
+  box-shadow: none;
+}
+
+/* The rail heading is the label; a second one inside disagreed with it. */
+.piano-chess .piano-chord-name__eyebrow { display: none; }
+
+.piano-chess .piano-chord-name__value { font-size: var(--t-h); font-weight: 700; }
+
+/* Silence, not a dash — with the height still reserved so nothing reflows when
+   a chord arrives. */
+.piano-chess .piano-chord-name__plaque.is-empty .piano-chord-name__value { visibility: hidden; }
+
+/* ---- rail rhythm --------------------------------------------------------- */
+
+/* Facts pin to the top, the stuck-child cluster (in-hand, heard, prompt)
+   centres in what is left, and the actions pin to the bottom. The rail stops
+   being a clump with a void under it. */
+.piano-chess__hand { margin-block-start: auto; }
+.piano-chess__rail-actions { margin-block-start: auto; }
+
+.piano-chess__hand-empty {
+  align-self: center;
+  font-size: var(--t-body);
+  color: var(--piano-muted);
+}
+
+.piano-chess__captured { margin-block-start: auto; }
+
+.piano-chess__captured-none {
+  margin: 0;
+  font-size: var(--t-cap);
+  color: var(--piano-muted);
+}
+
+/* ---- on the type and colour scales, not one-offs ------------------------- */
+
+.piano-chess__fact-value,
+.piano-chess__prompt { font-size: var(--t-body); }
+
+/* The prompt is THE instruction — it reads as body text, not as an aside. */
+.piano-chess__prompt { color: var(--piano-fg); }
+
+.piano-chess__hand-piece { font-size: var(--t-display); }
+.piano-chess__hand-from,
+.piano-chess__hand-escape,
+.piano-chess__cancel-hint,
+.piano-chess__redeal { font-size: var(--t-cap); }
+
+.piano-chess__summary-value,
+.piano-chess__captured-pieces { font-size: var(--t-h); }
+
+.piano-chess__hand { background: var(--piano-surface); }
+.piano-chess__hand--holding {
+  background: color-mix(in srgb, var(--piano-accent) 14%, var(--piano-surface));
+}
+.piano-chess__hand-piece--black { color: var(--piano-bg); }
+
+/* Every slot label sits on the same left edge; only the piece in hand centres. */
+.piano-chess__hand > .piano-chess__slot-label { justify-self: start; }
+
+
+/* The live staff is a card, not a page. Given the whole rail it became a tall
+   cream void with a small engraving adrift in the middle of it — the engraver
+   sizes its staff off the WIDTH, so extra height buys nothing but emptiness.
+   Capped to what the notation actually needs; the captured row takes the rest. */
+.piano-chess__staff-card.action-staff {
+  flex: 0 1 auto;
+  max-height: 16rem;
 }

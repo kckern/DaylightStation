@@ -202,6 +202,42 @@ teaching, and it is invisible in a PGN.
 
 Guests are archived too, with a null player: the history is about what happened on the instrument.
 
+## The opponent ladder
+
+Twenty-one characters, one per engine skill level — a blundering buffoon at 0, unbeatable at 20.
+They are met in order and each one has to be earned, because "Skill Level 7" is not something a
+child wants to defeat.
+
+Three rules, and each exists to protect something:
+
+- **No demotion.** Once a character is beaten they stay beaten. A ladder that can take a rung back
+  turns a bad afternoon into lost ground, and the point is to make a child want to sit down again.
+- **No skipping ahead.** Already-beaten characters can be replayed — that is practice — but only
+  the next one up can be promoted against. This is enforced where the engine strength is chosen,
+  not in the picker, because a picker can be bypassed with a crafted request.
+- **Help-heavy games do not count.** A game where the engine was asked for the best move was partly
+  played by the engine; promoting on it would certify a skill nobody has. One orienting hint is
+  allowed. Every game is still remembered — it simply earns nothing.
+
+Promotion is by recent form: win five of your last seven counted games. A lifetime tally would let
+"has beaten them nine times since March" stand in for how the child is playing today.
+
+| What | Where |
+|------|-------|
+| The policy — window, wins required, help allowances, the roster | Household `config/chess.yml` under `ladder:` |
+| A player's progress — how far they have climbed, recent results | Per-user `apps/chess/ladder.yml` |
+
+The server owns the writes. If the kiosk decided its own promotions, a reloaded tab or a closed lid
+mid-write would lose a rung a child had earned — the one piece of state here they would genuinely
+mind losing. A guest climbs nothing and always faces the bottom of the roster, and the screen says
+so rather than showing a progress bar that resets on reload.
+
+The roster is data. Each character is a name and a face, the face defaulting to an identicon
+generated from the name — the same generator the card game uses, so a name wears one face across
+this house's games. Replacing the roster in YAML re-themes the whole ladder without touching the
+promotion arithmetic, which is how a Pokémon roster gets in: weakest creature at 0, legendaries at
+the top.
+
 ## Not yet built
 
 - **Inversions as distinct squares.** Graded by difficulty so a beginner is never addressed in

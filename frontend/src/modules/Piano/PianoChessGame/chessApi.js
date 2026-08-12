@@ -112,6 +112,16 @@ export async function archiveGame(record) {
  * Returns whether the beacon was accepted for delivery, so the caller can fall
  * back to a normal request when it was not (queue full, or no beacon support).
  */
+/** Where this player stands on the opponent ladder. */
+export async function fetchLadder(userId) {
+  try {
+    return await DaylightAPI(withUser('api/v1/chess/ladder', userId));
+  } catch (error) {
+    logger().warn('chess.ladder.fetch-error', { error: error.message });
+    return null;
+  }
+}
+
 export function beaconArchive(record) {
   try {
     if (typeof navigator === 'undefined' || typeof navigator.sendBeacon !== 'function') return false;
@@ -124,5 +134,6 @@ export function beaconArchive(record) {
 }
 
 export default {
-  requestOpponentMove, fetchChessConfig, saveChessConfig, saveGameRecord, archiveGame, beaconArchive,
+  requestOpponentMove, fetchChessConfig, saveChessConfig, saveGameRecord, archiveGame,
+  beaconArchive, fetchLadder,
 };

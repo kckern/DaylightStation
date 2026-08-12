@@ -366,19 +366,26 @@ export function PianoChessGame({
       shuffle_each_turn: shuffleEachTurn, seed: gameSeed,
     });
     if (game.schemeRejected) logger().warn('scheme-rejected', game.schemeRejected);
-    return () => {
-      logger().info('unmounted');
-      // A game walked away from is archived too. It is the case the history
-      // exists for as much as any finished game: a position a child abandoned
-      // says more about where they are than one they saw through, and it is
-      // unrecoverable the moment this component goes.
-      if (archivedRef.current) return;
-      const archive = buildGameArchive({ ...archiveInputsRef.current, endedAt: Date.now(), endedBy: 'left' });
-      if (!archive) return; // no moves played — not a game
-      archivedRef.current = true;
-      archiveGame(archive);
-    };
   }, [difficulty, game.schemeRejected, gameSeed, playerColor, scheme.id, shuffleEachTurn]);
+
+  /**
+   * The archive, on the way out — and ONLY on the way out.
+   *
+   * This was originally the cleanup of the effect above, which has dependencies:
+   * when the config resolved and flipped shuffle_each_turn, that effect tore
+   * down and re-ran, so the game was archived MID-GAME and `archivedRef` was set
+   * — meaning the real end-of-game archive was then skipped. In the logs it also
+   * looked like the component was remounting on every entry, which it never was.
+   * An unmount effect must have no dependencies; everything it needs is a ref.
+   */
+  useEffect(() => () => {
+    logger().info('unmounted');
+    if (archivedRef.current || !archiveInputsRef.current) return;
+    const archive = buildGameArchive({ ...archiveInputsRef.current, endedAt: Date.now(), endedBy: 'left' });
+    if (!archive) return; // no moves played — not a game
+    archivedRef.current = true;
+    archiveGame(archive);
+  }, []);
 
   const handleSquare = useCallback((square) => {
     const { state, event } = applySquare(gameRef.current, square);
@@ -588,7 +595,11 @@ export function PianoChessGame({
     ? cursorChord?.symbol ?? null
     : null;
   const prompt = promptFor(game, game.rejection, pickupChord, reading);
-  const turnLabel = game.status?.turn === 'w' ? 'White' : 'Black';
+  const turnColour = game.status?.turn === 'w' ? 'White' : 'Black';
+  const turnLabel = game.status?.turn === playerColor ? `Yours (${turnColour})` : `Theirs (${turnColour})`;
+  const displayName = (typeof currentUser === 'object' && currentUser?.id === lockedUser && currentUser.name)
+    ? currentUser.name
+    : (lockedUser || 'Guest');
 
   return (
     <div className={`piano-chess${reading ? ' piano-chess--reading' : ''}`}>
@@ -600,7 +611,11 @@ export function PianoChessGame({
         <aside className="piano-chess__rail piano-chess__rail--state">
           <dl className="piano-chess__facts">
             {[
-              ['Player', lockedUser || 'Guest'],
+              // The kiosk chip above says "Milo"; printing the raw slug beside
+              // it made the same person look like two.
+              ['Player', displayName],
+              // Story 2 asks whose turn it is, not which colour is to move —
+              // the colour is a fact about the board, the answer is about them.
               ['Turn', game.status?.game_over ? 'Game over' : turnLabel],
               ['Level', rung?.label ?? (rungId.charAt(0).toUpperCase() + rungId.slice(1))],
             ].map(([label, value]) => (
@@ -622,18 +637,18 @@ export function PianoChessGame({
             <h2 className="piano-chess__slot-label">In hand</h2>
             {game.origin && heldPiece ? (
               <>
-                <span className={`piano-chess__hand-piece piano-chess__hand-piece--${heldPiece === heldPiece.toUpperCase() ? 'white' : 'black'}`}>
-                  {PIECE_GLYPHS[heldPiece.toLowerCase()] ?? '?'}
+                {/* fenToPosition yields colour+type as two characters ("wp",
+                    "bn"), so the glyph is the SECOND one. Indexing the table
+                    with the whole string matched nothing and drew a literal
+                    question mark where the piece should be. */}
+                <span className={`piano-chess__hand-piece piano-chess__hand-piece--${heldPiece[0] === 'w' ? 'white' : 'black'}`}>
+                  {PIECE_GLYPHS[heldPiece[1]] ?? PIECE_GLYPHS[heldPiece.toLowerCase()] ?? '?'}
                 </span>
                 <span className="piano-chess__hand-from">from {game.origin}</span>
                 <span className="piano-chess__hand-escape">Play an octave to put it back</span>
               </>
             ) : (
-              <>
-                <span className="piano-chess__hand-piece piano-chess__hand-piece--empty">—</span>
-                <span className="piano-chess__hand-from">Nothing picked up</span>
-                <span className="piano-chess__hand-escape">&nbsp;</span>
-              </>
+              <span className="piano-chess__hand-empty">Empty</span>
             )}
           </section>
 
@@ -641,11 +656,16 @@ export function PianoChessGame({
               every note and shook the whole row. */}
           <ChordReadout
             heldNotes={heldNotes}
-            chord={cursorChord}
+            /* In the reading vocabulary the address IS the notation, so the
+               spelled-out letters ("C/B") are the wrong vocabulary to put on
+               screen — the square's own name is the answer, and the staff on
+               the other rail shows what was played. */
+            chord={reading ? null : cursorChord}
             square={cursor}
             connected={connected}
             settling={heldNotes.length >= minNotes && candidates.length > 0 && !cursor}
             minNotes={minNotes}
+            isReading={reading}
           />
 
           <p className="piano-chess__prompt" role="status">{prompt}</p>
@@ -679,7 +699,10 @@ export function PianoChessGame({
                 disabled={!game.origin}
               >
                 Put it back
-                <span className="piano-chess__cancel-hint">play an octave, or press Esc</span>
+                {/* The octave is spelled out inside the in-hand block, where a
+                    stuck player is already looking. Repeating it here said the
+                    same sentence twice on one narrow rail. */}
+                <span className="piano-chess__cancel-hint">or press Esc</span>
               </button>
             )}
             {chessConfig && (
@@ -732,11 +755,17 @@ export function PianoChessGame({
             <CurrentChordStaff activeNotes={activeNotes} />
           </div>
           <div className="piano-chess__captured">
-            {['w', 'b'].map((color) => (
+            {/* A dash for every row is a non-answer taking up the foot of the
+                rail. Nothing taken yet is one quiet line; once there is
+                something to report, only the side that has taken anything
+                speaks. */}
+            {!captured.w.length && !captured.b.length ? (
+              <p className="piano-chess__captured-none">No pieces taken yet</p>
+            ) : ['w', 'b'].filter((color) => captured[color].length).map((color) => (
               <div key={color} className="piano-chess__captured-row">
                 <span className="piano-chess__slot-label">{color === 'w' ? 'White took' : 'Black took'}</span>
                 <span className="piano-chess__captured-pieces">
-                  {captured[color].map((piece) => PIECE_GLYPHS[piece]).join('') || '—'}
+                  {captured[color].map((piece) => PIECE_GLYPHS[piece]).join('')}
                 </span>
               </div>
             ))}

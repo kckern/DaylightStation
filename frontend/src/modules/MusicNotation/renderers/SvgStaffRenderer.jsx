@@ -48,6 +48,12 @@ function FlatShape() {
  * @param {Map|null} activeNotes - currently pressed notes (shown as ghosts)
  * @param {boolean} matched - whether the player is currently matching
  */
+/**
+ * Width-to-height ratio a host box must have for the noteheads to sit on the
+ * staff lines. See the geometry note inside the component.
+ */
+export const STAFF_ASPECT = 100 / 112;
+
 export function SvgStaffRenderer({ targetPitches = [], activeNotes = null, matched = false }) {
   const validPitches = targetPitches.filter((p) => p != null);
 
@@ -73,7 +79,16 @@ export function SvgStaffRenderer({ targetPitches = [], activeNotes = null, match
     return ghosts;
   }, [activeNotes, targetSet]);
 
-  // Staff geometry.
+  /**
+   * Staff geometry.
+   *
+   * NOTE the two SVGs below scale differently: the lines stretch to fill the box
+   * (`preserveAspectRatio="none"`) while the notation scales uniformly and
+   * centres (`xMidYMid meet`). They therefore only agree when the host box has
+   * the same aspect ratio as this viewBox — 100 x viewBoxH. In a box that is
+   * wider or taller than that, the noteheads drift off the lines they are
+   * supposed to sit on. Hosts should constrain themselves to STAFF_ASPECT.
+   */
   const lineSpacing = 14;
   const topPad = lineSpacing * 2;
   const bottomLineY = topPad + lineSpacing * 4;
@@ -124,6 +139,11 @@ export function SvgStaffRenderer({ targetPitches = [], activeNotes = null, match
           fontSize="200"
           fill="rgba(0,0,0,0.5)"
           fontFamily="serif"
+          /* Stated rather than inherited: a container with a bold or italic
+             font makes the browser SYNTHESISE those on the clef glyph, which
+             smears an engraved shape into a faux-bold blob. */
+          fontWeight="normal"
+          fontStyle="normal"
           transform={clefTransform}
           opacity={clefReady ? 1 : 0}
         >
