@@ -1,8 +1,23 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import * as sass from 'sass';
+import { fileURLToPath } from 'url';
 import { INITIAL_FEN, applyMove, describePosition } from '@shared-gaming/chess/index.mjs';
 import ChessBoard from './ChessBoard.jsx';
 import { pieceSource } from './pieceAssets.js';
+
+// jsdom never computes CSS, so nothing above this line can tell us whether two
+// channels actually render together on one square — a class-name assertion would
+// stay green even while box-shadow silently overwrote itself. This block compiles
+// the real stylesheet and inspects the generated declarations instead.
+const scssPath = fileURLToPath(new URL('./ChessBoard.scss', import.meta.url));
+const compiledCss = sass.compile(scssPath).css;
+
+function ruleBody(selector) {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = compiledCss.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`));
+  return match ? match[1] : null;
+}
 
 describe('piece artwork', () => {
   it('resolves every piece to a bundled source', () => {
@@ -227,5 +242,44 @@ describe('four channels', () => {
   it('no longer outlines movable pieces, because that is a hint now', () => {
     const { container } = render(<ChessBoard fen={START} />);
     expect(container.querySelectorAll('.chess-board__square--source')).toHaveLength(0);
+  });
+});
+
+describe('channels compose instead of overwriting (compiled CSS)', () => {
+  // jsdom cannot compute box-shadow or ::before/::after, so these assertions run
+  // against the actual compiled stylesheet, not the DOM. They guard the specific
+  // way box-shadow silently discards competing declarations: a class-name test
+  // would stay green even while one channel erased another's shadow.
+
+  it('sets box-shadow exactly once on the square, composed from --sq-* layers', () => {
+    const body = ruleBody('.chess-board__square');
+    expect(body).not.toBeNull();
+    const boxShadowDeclarations = body.match(/box-shadow\s*:/g) || [];
+    expect(boxShadowDeclarations).toHaveLength(1);
+    for (const layer of ['--sq-light', '--sq-light-ring', '--sq-mark', '--sq-alarm']) {
+      expect(body).toContain(`var(${layer}`);
+    }
+  });
+
+  it('has each light/marks/alarm channel rule set a --sq-* layer, never box-shadow directly', () => {
+    for (const selector of [
+      '.chess-board__square--candidate',
+      '.chess-board__square--cursor',
+      '.chess-board__square--check',
+      '.chess-board__square--destination:has(.chess-board__piece)',
+    ]) {
+      const body = ruleBody(selector);
+      expect(body, `${selector} rule should exist`).not.toBeNull();
+      expect(body, `${selector} must not set box-shadow directly — it would silently replace every other channel's shadow`).not.toMatch(/box-shadow\s*:/);
+      expect(body, `${selector} must set a --sq-* layer`).toMatch(/--sq-(light|light-ring|mark|alarm)\s*:/);
+    }
+  });
+
+  it('puts the best-move ring and the hint dot on different pseudo-elements so both can render', () => {
+    expect(ruleBody('.chess-board__square--hint::after')).not.toBeNull();
+    expect(ruleBody('.chess-board__square--best::before')).not.toBeNull();
+    // A same-pseudo-element collision would silently drop the hint dot (last
+    // declaration wins), so also assert best never reclaims ::after.
+    expect(compiledCss).not.toMatch(/\.chess-board__square--best::after\s*\{/);
   });
 });
