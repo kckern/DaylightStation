@@ -470,6 +470,70 @@ describe('hover before commit', () => {
   });
 });
 
+// The labels are the answer to the pick-up: the board must name the chord that
+// reaches each eligible square the moment a piece is lifted, and say nothing
+// before that. Config can turn them off; nothing about them is ever charged.
+describe('destination labels answer the pick-up', () => {
+  const notesFor = (square) => squareToChord(square, DEFAULT_CHORD_SCHEME)
+    .pitch_classes.map((pc) => 60 + pc);
+  const holdNotes = (notes) => mockUsePianoMidiNotes.mockReturnValue({
+    activeNotes: new Map(notes.map((n) => [n, { velocity: 80 }])),
+    noteHistory: [],
+  });
+  const makeElement = () => <PianoChessGame gameConfig={{ shuffle_each_turn: false }} />;
+  const playChord = async (rerender, notes) => {
+    holdNotes(notes);
+    rerender(makeElement());
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    holdNotes([]);
+    rerender(makeElement());
+    await act(async () => { await vi.advanceTimersByTimeAsync(120); });
+  };
+  const badgeMap = (container) => Object.fromEntries(
+    [...container.querySelectorAll('.chess-board__badge')]
+      .map((el) => [el.closest('[data-square]').dataset.square, el.textContent]),
+  );
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mockUsePianoMidi.mockReturnValue({ connected: true, status: 'connected' });
+    fetchChessConfig.mockReset();
+    fetchChessConfig.mockResolvedValue(null);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    mockUsePianoMidi.mockReturnValue({ connected: false, status: 'disconnected' });
+    mockUsePianoMidiNotes.mockReturnValue({ activeNotes: new Map(), noteHistory: [] });
+  });
+
+  it('shows no badges while nothing is held', async () => {
+    const { container, rerender } = render(makeElement());
+    await playChord(rerender, notesFor('e2')); // hover only — not a pick-up
+    expect(container.querySelectorAll('.chess-board__badge')).toHaveLength(0);
+  });
+
+  it('prints the addressing chord on every square the lifted pawn can reach', async () => {
+    const { container, rerender } = render(makeElement());
+    await playChord(rerender, notesFor('e2'));
+    await playChord(rerender, notesFor('e2')); // the double lifts the pawn
+    expect(badgeMap(container)).toEqual({
+      e3: squareToChord('e3', DEFAULT_CHORD_SCHEME).symbol,
+      e4: squareToChord('e4', DEFAULT_CHORD_SCHEME).symbol,
+    });
+  });
+
+  it('stays dark when the config turns the labels off — pick-up and all', async () => {
+    fetchChessConfig.mockResolvedValue({ feedback: { show_destination_labels: false } });
+    const { container, rerender } = render(makeElement());
+    await playChord(rerender, notesFor('e2'));
+    await playChord(rerender, notesFor('e2'));
+    // The piece really is in hand; only the labels are silenced.
+    expect(container.querySelectorAll('.chess-board__square--held')).toHaveLength(1);
+    expect(container.querySelectorAll('.chess-board__badge')).toHaveLength(0);
+  });
+});
+
 // The record effect is wiring, not arithmetic — buildGameRecord is unit-tested
 // in chessGameRecord.test.js. What only a component render can prove is that a
 // finished game posts exactly once, to the signed-in player, with the tallies.

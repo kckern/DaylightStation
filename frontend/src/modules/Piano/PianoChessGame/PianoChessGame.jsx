@@ -16,6 +16,7 @@ import { cuesFromConfig } from './chessCues.js';
 import ChessSettingsPanel from './ChessSettingsPanel.jsx';
 import { CHORD_QUALITIES, DEFAULT_CHORD_SCHEME, squareToChord } from './chordAddress.js';
 import { candidateSquares } from './chordCandidates.js';
+import { destinationBadges } from './chessBadges.js';
 import { recognizeGesture } from './chordGestures.js';
 import { buildGameRecord } from './chessGameRecord.js';
 import { advanceCursor, createCursorState } from './chordCursor.js';
@@ -453,6 +454,11 @@ export function PianoChessGame({
   const hintTargets = help.legal
     ? (game.origin ? destinationsFor(game, game.origin) : playableSources(game))
     : [];
+  // The answer to the pick-up: each eligible square wears the chord that
+  // reaches it. Not help and never charged — the double-play that lifted the
+  // piece WAS the request. Config can silence it for players who want the
+  // intersection drill back.
+  const squareLabels = cues.showDestinationLabels ? destinationBadges(game, liveScheme) : {};
   const cursorChord = cursor ? squareToChord(cursor, liveScheme) : null;
   // Only while a piece is held and the cursor names a different square. Capture
   // targets get a ghost too — most previews the player cares about are captures.
@@ -475,6 +481,7 @@ export function PianoChessGame({
           rankLabels={rankLabels}
           selected={game.origin}
           heldSquare={game.origin}
+          squareLabels={squareLabels}
           candidates={candidates}
           hintTargets={hintTargets}
           bestMove={help.best}
