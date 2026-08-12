@@ -270,3 +270,4 @@ logging, so a backend outage degrades gracefully rather than breaking the surfac
 | Composer (notation editor — spec, not yet built) | [composer.md](./composer.md) |
 | Performance + jank | [performance.md](./performance.md) |
 | Performance assessment (grading, matching, spans) | [performance-assessment.md](./performance-assessment.md) |
+| Exercise bank (performable items, seeds and instances) | [exercise-bank.md](./exercise-bank.md) |

@@ -95,9 +95,14 @@ performed — staves merge into one pitch set per onset.
 
 The service consumes expected-performance material; it never authors it. Scores
 arrive via the target compiler, drills via seed expansion, card-game challenges
-via the backend's adaptive policy. A canonical exercise bank (stable
-`collection/id` references shared across surfaces) is the planned composition
-counterpart; until it exists, each producer owns its own content.
+via the backend's adaptive policy.
+
+The canonical counterpart is the [exercise bank](exercise-bank.md) at
+`data/content/music/` — stable `collection/id` references shared across
+surfaces, stored as seeds that expand into instances. It currently holds 35
+seeds yielding 1,992 performable instances (Hanon 1–30, plus notes, intervals,
+triads, sevenths, and modes). Surfaces are not yet wired to it, so each producer
+still owns its own content in the meantime.
 
 ## Not yet provided
 
@@ -106,4 +111,4 @@ counterpart; until it exists, each producer owns its own content.
   per-drill scores or progress to show until runs are saved.
 - **Abandoned runs are not scored**, though the untimed runner can finalize a
   partial run — surfacing that is a product decision, not a service gap.
-- **Exercise bank** — see Producers above.
+- **Exercise bank content exists but nothing reads it.** The bank at `data/content/music/` is not yet mounted or served; wiring it is the next step (`singalong` shows the pattern: `path.join(contentPath, ...)` in `app.mjs`).
