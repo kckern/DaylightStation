@@ -1,17 +1,17 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { AbcRenderer } from '../../../MusicNotation/renderers/AbcRenderer.jsx';
 import { generateScaleAbc } from '../../../MusicNotation/renderers/abc.js';
-import { evaluateChordMatch } from '../../PianoFlashcards/flashcardEngine.js';
+import { matchHeldSet } from '../../performance/heldSet.js';
 import { PianoKeyboard } from '../../components/PianoKeyboard.jsx';
 import { advanceScaleProgress } from './scaleProgress.js';
 import { WrongNoteGhost } from './WrongNoteGhost.jsx';
 import { scaleClefType } from './wrongNoteGhost.js';
-import { gradeChordPerformance, gradeOrderedPerformance, timingQuality } from './pianoChallengeGrading.js';
+import { gradeChordPerformance, gradeOrderedPerformance, timingQuality } from '../../performance/grading.js';
 
 const EMPTY_NOTES = new Map();
 const EMPTY_HISTORY = [];
 const useAlwaysConnected = () => ({ connected: true, status: 'connected' });
-const PROVIDER_VERSION = '5-virtual-keyboard-fallback';
+const PROVIDER_VERSION = '6-shared-performance-grading';
 const SCALE_NOTE_CLASSES = [
   'piano-scale-note--complete',
   'piano-scale-note--next',
@@ -188,7 +188,7 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
         const liveChordCard = view.prepared?.kind === 'chord'
           ? { root: view.prepared.prompt.root, pitchClasses: new Set(view.prepared.prompt.pitch_classes || []) }
           : null;
-        const liveChordMatch = evaluateChordMatch(activeNotes, liveChordCard);
+        const liveChordMatch = matchHeldSet(activeNotes, liveChordCard);
         const historyCursor = useRef(null);
         const staffNotesRef = useRef([]);
         const challengeId = view.prepared?.challenge_id;
