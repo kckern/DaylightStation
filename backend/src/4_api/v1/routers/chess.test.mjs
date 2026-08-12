@@ -14,10 +14,10 @@ const CONFIG = {
 };
 const silentLogger = { info() {}, warn() {}, error() {}, debug() {} };
 
-function appWith({ engine, configService }) {
+function appWith({ engine, configService, recordStore }) {
   const app = express();
   app.use(express.json());
-  app.use('/api/v1/chess', createChessRouter({ engine, configService, logger: silentLogger }));
+  app.use('/api/v1/chess', createChessRouter({ engine, configService, recordStore, logger: silentLogger }));
   return app;
 }
 
@@ -127,5 +127,33 @@ describe('user id validation (path traversal)', () => {
       .get('/api/v1/chess/config').query({ user: 'felix' });
     expect(res.status).toBe(200);
     expect(configService.read).toHaveBeenCalledWith('felix');
+  });
+});
+
+describe('POST /api/v1/chess/games', () => {
+  it('stores a record for a real user', async () => {
+    const writes = [];
+    const app = appWith({ engine: {}, configService: stubConfig(), recordStore: { save: (u, r) => writes.push([u, r]) } });
+    const res = await request(app).post('/api/v1/chess/games?user=felix')
+      .send({ result: 'win', moves: 24, hints: 3, best_moves: 1, rung: 'steady', duration_ms: 60000 });
+    expect(res.status).toBe(201);
+    expect(writes[0][0]).toBe('felix');
+    expect(writes[0][1]).toMatchObject({ result: 'win', moves: 24 });
+  });
+
+  it('refuses without a user, so nothing is filed anonymously', async () => {
+    const writes = [];
+    const app = appWith({ engine: {}, configService: stubConfig(), recordStore: { save: (u, r) => writes.push([u, r]) } });
+    const res = await request(app).post('/api/v1/chess/games').send({ result: 'win', moves: 24 });
+    expect(res.status).toBe(400);
+    expect(writes).toHaveLength(0);
+  });
+
+  it('rejects a traversal in the user segment', async () => {
+    const writes = [];
+    const app = appWith({ engine: {}, configService: stubConfig(), recordStore: { save: (u, r) => writes.push([u, r]) } });
+    const res = await request(app).post('/api/v1/chess/games?user=../../../../tmp').send({ result: 'win' });
+    expect(res.status).toBe(400);
+    expect(writes).toHaveLength(0);
   });
 });

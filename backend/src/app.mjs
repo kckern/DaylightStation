@@ -1700,6 +1700,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       writeUserConfig: (userId, data) => dataService.user.write('apps/chess/config', data, userId),
       logger: rootLogger.child({ module: 'chess-config' }),
     }),
+    recordStore: {
+      save: (userId, record) => dataService.user.write(
+        `apps/chess/games/${new Date().toISOString().slice(0, 10)}-${Date.now()}`,
+        { ...record, user_id: userId, created_at: new Date().toISOString() },
+        userId,
+      ),
+    },
     logger: rootLogger.child({ module: 'chess-api' }),
   });
 

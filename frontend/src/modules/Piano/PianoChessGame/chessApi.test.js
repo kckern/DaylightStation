@@ -3,7 +3,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: vi.fn() }));
 
 import { DaylightAPI } from '../../../lib/api.mjs';
-import { fetchChessConfig, requestOpponentMove, saveChessConfig } from './chessApi.js';
+import { fetchChessConfig, requestOpponentMove, saveChessConfig, saveGameRecord } from './chessApi.js';
 
 beforeEach(() => { vi.clearAllMocks(); });
 
@@ -64,5 +64,19 @@ describe('saveChessConfig', () => {
     DaylightAPI.mockResolvedValue({ default_rung: 'steady' });
     await saveChessConfig('felix', { default_rung: 'steady' });
     expect(DaylightAPI).toHaveBeenCalledWith('api/v1/chess/config?user=felix', { default_rung: 'steady' }, 'PUT');
+  });
+});
+
+describe('saveGameRecord', () => {
+  it('POSTs the record for the user', async () => {
+    DaylightAPI.mockResolvedValue({ saved: true });
+    const record = { result: 'win', moves: 24, hints: 3, best_moves: 1, rung: 'steady', duration_ms: 60000 };
+    await saveGameRecord('felix', record);
+    expect(DaylightAPI).toHaveBeenCalledWith('api/v1/chess/games?user=felix', record, 'POST');
+  });
+
+  it('returns null when the request fails rather than throwing', async () => {
+    DaylightAPI.mockRejectedValue(new Error('offline'));
+    expect(await saveGameRecord('felix', { result: 'win' })).toBeNull();
   });
 });
