@@ -146,8 +146,14 @@ export function materialize(seed, axes = {}) {
     }
   } else if (axes.root !== undefined) {
     const pitchClass = rootPitchClass(valueId(axes.root));
+    // Transpose from the seed's declared key, not from its lowest note. A ii-V-I
+    // in C bottoms out on D, so anchoring on the lowest note would read the
+    // phrase as being in D and shift it ten semitones to "reach" C. Material
+    // that starts on its own tonic is unaffected, which is why this only shows
+    // up on phrases that do not.
+    const fromPitchClass = rootPitchClass(seed.key) ?? (((anchor % 12) + 12) % 12);
     if (pitchClass !== null) {
-      const shift = (pitchClass - (((anchor % 12) + 12) % 12) + 12) % 12;
+      const shift = (pitchClass - fromPitchClass + 12) % 12;
       events = events.map((e) => ({ ...e, notes: e.notes.map((n) => ({ ...n, midi: n.midi + shift })) }));
     }
   }
