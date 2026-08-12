@@ -40,6 +40,15 @@ describe('ChordNamePanel — sticky decay', () => {
     expect(screen.queryByText('C major')).toBeNull();
   });
 
+  it('wears the default "Chord" eyebrow, or a caller-supplied label', () => {
+    const { rerender } = render(<ChordNamePanel midiNotes={[C, E, G]} />);
+    expect(screen.getByText('Chord')).toBeInTheDocument();
+
+    rerender(<ChordNamePanel midiNotes={[C, E, G]} label="Playing" />);
+    expect(screen.getByText('Playing')).toBeInTheDocument();
+    expect(screen.queryByText('Chord')).toBeNull();
+  });
+
   it('does not flash a transient partial chord that is replaced mid-roll', () => {
     // Roll into C major: a bare C+G interval (reads as C5) briefly, then the full triad.
     const { rerender } = render(<ChordNamePanel midiNotes={[]} settleMs={80} />);

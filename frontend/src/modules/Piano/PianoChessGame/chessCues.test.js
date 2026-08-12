@@ -2,58 +2,25 @@ import { describe, expect, it } from 'vitest';
 import { cuesFromConfig } from './chessCues.js';
 
 describe('cuesFromConfig', () => {
-  it('turns both legality cues off for hint_level off', () => {
-    expect(cuesFromConfig({ feedback: { hint_level: 'off' } })).toEqual({
-      highlightSources: false,
-      highlightTargets: false,
-      gateOnMistake: false,
-      flashRejected: true,
-      toast: true,
-    });
-  });
-
-  it('gates the cues on a mistake for hint_level after-mistake', () => {
-    expect(cuesFromConfig({ feedback: { hint_level: 'after-mistake' } })).toEqual({
-      highlightSources: true,
-      highlightTargets: true,
-      gateOnMistake: true,
-      flashRejected: true,
-      toast: true,
-    });
-  });
-
-  it('shows the cues ungated for hint_level always', () => {
-    expect(cuesFromConfig({ feedback: { hint_level: 'always' } })).toEqual({
-      highlightSources: true,
-      highlightTargets: true,
-      gateOnMistake: false,
-      flashRejected: true,
-      toast: true,
-    });
-  });
-
-  it('defaults to after-mistake when hint_level is missing', () => {
-    expect(cuesFromConfig({})).toMatchObject({
-      highlightSources: true,
-      highlightTargets: true,
-      gateOnMistake: true,
-    });
-    expect(cuesFromConfig(null)).toMatchObject({ gateOnMistake: true });
-  });
-
-  it('defaults to after-mistake when hint_level is unknown', () => {
-    expect(cuesFromConfig({ feedback: { hint_level: 'sometimes' } })).toMatchObject({
-      highlightSources: true,
-      highlightTargets: true,
-      gateOnMistake: true,
-    });
-  });
-
   it('translates snake_case refusal loudness, treating only explicit false as off', () => {
-    expect(cuesFromConfig({ feedback: { flash_rejected: false, toast: false } })).toMatchObject({
+    expect(cuesFromConfig({ feedback: { flash_rejected: false, toast: false } })).toEqual({
       flashRejected: false,
       toast: false,
     });
-    expect(cuesFromConfig({ feedback: {} })).toMatchObject({ flashRejected: true, toast: true });
+    expect(cuesFromConfig({ feedback: {} })).toEqual({ flashRejected: true, toast: true });
+  });
+
+  it('defaults both cues on when the config is missing entirely', () => {
+    expect(cuesFromConfig(null)).toEqual({ flashRejected: true, toast: true });
+    expect(cuesFromConfig({})).toEqual({ flashRejected: true, toast: true });
+  });
+
+  it('ignores a stale hint_level — legality marks are a gesture channel, not config', () => {
+    // toEqual (not toMatchObject) on purpose: a resurrected highlightSources /
+    // gateOnMistake key is exactly the regression this pins down.
+    expect(cuesFromConfig({ feedback: { hint_level: 'always' } })).toEqual({
+      flashRejected: true,
+      toast: true,
+    });
   });
 });

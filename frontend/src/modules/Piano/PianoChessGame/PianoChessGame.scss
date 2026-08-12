@@ -23,11 +23,17 @@
   position: absolute;
   inset: 0;
   display: grid;
-  /* Stage, then keyboard. There is no header row: the kiosk breadcrumb rail
-     above already names where we are, and the context rail carries the way out. */
+  /* Two zones: the game (stage), then the instrument. There is no header row:
+     the kiosk breadcrumb rail above already names where we are, and the
+     context rail carries the way out. */
   grid-template-rows: 1fr auto;
   gap: 0.75rem;
   padding: 1rem 1.25rem 0;
+  /* A size container so every descendant measures the DESIGN box in cq units,
+     never the physical screen: PianoDesignScale scales the whole canvas, so vh
+     and vw lie here (that gap once ran the board off a 1080p screen). Both
+     axes are definite (absolute, inset 0), so `size` containment is safe. */
+  container-type: size;
   background:
     radial-gradient(120% 90% at 50% 0%, var(--pc-case-lift) 0%, var(--pc-case) 62%);
   color: var(--pc-ivory);
@@ -103,7 +109,7 @@
   inset-inline: 0;
   z-index: 6;
   justify-self: center;
-  width: min(34rem, 80vw);
+  width: min(34rem, 80cqw);
   margin-inline: auto;
   padding: 1rem 1.4rem 1.3rem;
   border: 1px solid rgb(201 162 39 / 45%);
@@ -206,14 +212,15 @@
 
 /* ---- stage -------------------------------------------------------------- */
 
-/* The board is sized off the viewport, so the rails must be what flexes. Without
-   the min-height:0 / min-width:0 pair the board wins the grid and shoves the
-   rails — and every prompt and refusal message on them — off screen. */
+/* Board, then the one surviving rail. The rail is what flexes: without the
+   min-height:0 / min-width:0 pair the board wins the grid and shoves the rail
+   — and every prompt and refusal message on it — off screen. */
 .piano-chess__stage {
   display: grid;
-  grid-template-columns: minmax(10rem, 1fr) auto minmax(10rem, 1fr);
+  grid-template-columns: auto minmax(12rem, 1fr);
+  justify-content: center;
   align-items: center;
-  gap: 1.5rem;
+  gap: 2rem;
   min-height: 0;
   overflow: hidden;
   /* The board sizes itself in cq units off this box — the space actually left
@@ -242,37 +249,11 @@
   color: rgb(203 191 168 / 60%);
 }
 
-.piano-chess__slot {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-}
-
 .piano-chess__slot-label {
   font-size: 0.7rem;
   letter-spacing: 0.26em;
   text-transform: uppercase;
   color: rgb(203 191 168 / 55%);
-}
-
-/* The chord readout is the loudest type on screen — it is what the player is
-   actually doing, and it has to be readable from across a room. */
-.piano-chess__chord {
-  font-size: clamp(1.8rem, 3.4vw, 3rem);
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: -0.01em;
-  color: rgb(203 191 168 / 35%);
-  font-variant-numeric: tabular-nums;
-}
-
-.piano-chess__chord--set {
-  color: var(--pc-ivory);
-}
-
-.piano-chess__chord--live {
-  color: var(--pc-brass-glow);
-  text-shadow: 0 0 1.5rem rgb(240 204 85 / 35%);
 }
 
 .piano-chess__prompt {
@@ -393,7 +374,7 @@
   z-index: 5;
   justify-self: center;
   width: fit-content;
-  max-width: min(28rem, 70vw);
+  max-width: min(28rem, 70cqw);
   margin-inline: auto;
   padding: 0.6rem 1.4rem;
   border: 1px solid rgb(155 44 44 / 55%);
@@ -416,11 +397,28 @@
   .piano-chess__toast { animation: none; }
 }
 
-/* ---- keyboard ----------------------------------------------------------- */
+/* ---- the instrument zone ------------------------------------------------- */
 
-.piano-chess__keys {
-  height: clamp(4.5rem, 11vh, 7rem);
+/* The read-outs ride above the keys, where the player's eyes already are when
+   they are wondering why nothing happened. Heights are in cq units against the
+   design box (see the container on .piano-chess) — NEVER vh, which measures
+   the physical screen and once ran the board off the bottom of it. */
+.piano-chess__instrument {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
   opacity: 0.9;
+}
+
+.piano-chess__instrument-readouts {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 1.5rem;
+}
+
+.piano-chess__instrument .piano-keyboard {
+  height: clamp(4.5rem, 12cqh, 7rem);
 }
 
 /* The read-out rides above the keys, where the player's eyes already are when

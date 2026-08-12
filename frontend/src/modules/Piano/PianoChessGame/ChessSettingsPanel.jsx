@@ -1,25 +1,18 @@
 /**
  * Settings, in the game, in the player's hands.
  *
- * Hint level is one three-way control over the two legality cues, because "how
- * much does the board show me" is one question to a player and two booleans to
- * the code. Refusal loudness (flash, toast) is a different question and stays
- * in YAML.
+ * There is no hint control here: help is asked for at the keys (semitone
+ * clusters), not configured, so "no help up front" is the board's resting
+ * state rather than a setting anyone can leave on. Refusal loudness (flash,
+ * toast) is a different question and stays in YAML.
  *
  * Every control is a discrete tap target — this runs on a kiosk, and a slider
  * on a touchscreen is a guess, not a choice.
  */
-const HINT_LEVELS = [
-  { id: 'off', label: 'Off' },
-  { id: 'after-mistake', label: 'After a mistake' },
-  { id: 'always', label: 'Always' },
-];
-
 const DELAY_CHOICES_MS = [300, 700, 1200];
 
 export default function ChessSettingsPanel({ config, rungId, onChange, onClose }) {
   const rungs = Array.isArray(config?.rungs) ? config.rungs : [];
-  const hint = config?.feedback?.hint_level ?? 'after-mistake';
   const shuffle = config?.shuffle_each_turn !== false;
   const delayMs = config?.opponent_delay_ms ?? 700;
 
@@ -41,21 +34,6 @@ export default function ChessSettingsPanel({ config, rungId, onChange, onClose }
             onClick={() => onChange({ default_rung: rung.id })}
           >
             {rung.label}
-          </button>
-        ))}
-      </div>
-
-      <h3 className="chess-settings__group">Show legal moves</h3>
-      <div className="chess-settings__row">
-        {HINT_LEVELS.map((level) => (
-          <button
-            key={level.id}
-            type="button"
-            className={`chess-settings__opt${level.id === hint ? ' is-active' : ''}`}
-            aria-pressed={level.id === hint}
-            onClick={() => onChange({ feedback: { hint_level: level.id } })}
-          >
-            {level.label}
           </button>
         ))}
       </div>
