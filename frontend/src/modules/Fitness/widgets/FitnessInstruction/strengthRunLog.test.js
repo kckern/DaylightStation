@@ -279,13 +279,17 @@ describe('logStrengthRun — the whole job', () => {
     expect(api).not.toHaveBeenCalled();
   });
 
-  it('reports no_session with words a person can act on', async () => {
-    const api = vi.fn();
+  it('opens a session for a sessionless run instead of refusing it', async () => {
+    // A strength workout is frequently done with no fitness session open; the
+    // strength route mints one and flags openSession so the backend creates it
+    // (see resolveRunSession). The old no_session refusal is retired.
+    const api = vi.fn(async () => ({ ok: true }));
     const res = await run(api, { session: null });
-    expect(res.ok).toBe(false);
-    expect(res.reason).toBe('no_session');
-    expect(res.message).toBe(failureNotice({ reason: 'no_session' }));
-    expect(res.message).toMatch(/session/i);
+    expect(res.ok).toBe(true);
+    expect(res.sessionId).toBeTruthy();
+    const [path, body] = api.mock.calls[0];
+    expect(body.openSession).toBe(true);      // the "open this if it doesn't exist" flag
+    expect(path).toContain(res.sessionId);    // minted id addresses the POST
   });
 
   it('reports a failed POST as a failure, never as ok', async () => {
