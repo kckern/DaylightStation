@@ -245,6 +245,20 @@ describe('four channels', () => {
   });
 });
 
+describe('the piece in hand', () => {
+  it('marks the held square and only that square', () => {
+    const { container } = render(<ChessBoard fen={START} heldSquare="e2" />);
+    const held = container.querySelectorAll('.chess-board__square--held');
+    expect(held).toHaveLength(1);
+    expect(held[0].closest('[data-square]').dataset.square).toBe('e2');
+  });
+
+  it('marks nothing when no piece is in hand', () => {
+    const { container } = render(<ChessBoard fen={START} heldSquare={null} />);
+    expect(container.querySelectorAll('.chess-board__square--held')).toHaveLength(0);
+  });
+});
+
 describe('channels compose instead of overwriting (compiled CSS)', () => {
   // jsdom cannot compute box-shadow or ::before/::after, so these assertions run
   // against the actual compiled stylesheet, not the DOM. They guard the specific
@@ -281,5 +295,15 @@ describe('channels compose instead of overwriting (compiled CSS)', () => {
     // A same-pseudo-element collision would silently drop the hint dot (last
     // declaration wins), so also assert best never reclaims ::after.
     expect(compiledCss).not.toMatch(/\.chess-board__square--best::after\s*\{/);
+  });
+
+  it('keeps the held-square ants off --best\'s ::before, since a held piece can also be the suggested move', () => {
+    // PianoChessGame passes both heldSquare={game.origin} and bestMove={help.best}
+    // to the same board — the engine can suggest moving the piece already in hand.
+    // --best already owns ::before on the square, so the ants must live elsewhere
+    // or one of the two rules silently loses.
+    expect(ruleBody('.chess-board__square--best::before')).not.toBeNull();
+    expect(compiledCss).not.toMatch(/\.chess-board__square--held::before\s*\{/);
+    expect(ruleBody('.chess-board__held-ants')).not.toBeNull();
   });
 });
