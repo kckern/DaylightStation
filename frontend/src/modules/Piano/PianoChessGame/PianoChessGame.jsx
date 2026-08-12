@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { DIFFICULTIES, chooseMove } from '@shared-gaming/chess/opponent.mjs';
+import { chooseMove } from '@shared-gaming/chess/opponent.mjs';
 import { fenToPosition } from '@shared-gaming/chess/position.mjs';
 import getLogger from '../../../lib/logging/Logger.js';
 import ChessBoard from '../../Chess/ChessBoard.jsx';
@@ -8,7 +8,9 @@ import ChordReadout from './ChordReadout.jsx';
 import { isPersistentUser } from '../PianoKiosk/pianoUser.js';
 import { usePianoMidi, usePianoMidiNotes } from '../PianoKiosk/PianoMidiContext.jsx';
 import PianoContextRail from '../PianoKiosk/modes/Videos/PianoContextRail.jsx';
-import { requestOpponentMove } from './chessApi.js';
+import { fetchChessConfig, requestOpponentMove, saveChessConfig } from './chessApi.js';
+import { cuesFromConfig } from './chessCues.js';
+import ChessSettingsPanel from './ChessSettingsPanel.jsx';
 import { CHORD_QUALITIES, DEFAULT_CHORD_SCHEME, squareToChord } from './chordAddress.js';
 import { advanceCursor, createCursorState } from './chordCursor.js';
 import {
@@ -72,22 +74,55 @@ export function PianoChessGame({
   playerColor = gameConfig?.player_color ?? 'w',
   difficulty = gameConfig?.difficulty ?? 'learner',
   scheme = DEFAULT_CHORD_SCHEME,
-  shuffleEachTurn = gameConfig?.shuffle_each_turn ?? true,
+  shuffleEachTurn: shuffleEachTurnProp = gameConfig?.shuffle_each_turn ?? true,
   seed = null,
   feedback = null,
 }) {
-  const cues = { ...DEFAULT_FEEDBACK, ...(gameConfig?.feedback ?? {}), ...(feedback ?? {}) };
-
   // currentUser may arrive as the resolved profile object or the bare id. Guests
   // (and the no-user case) must never hit the per-user chess endpoints.
   const userSlug = typeof currentUser === 'string' ? currentUser : currentUser?.id ?? null;
   const userId = isPersistentUser(userSlug) ? userSlug : null;
 
-  // Config-driven rung/delay land in Task 7; until then these are the defaults
-  // the server and local engine both understand.
-  const chessConfig = null;
-  const rungId = 'learner';
-  const opponentDelayMs = OPPONENT_DELAY_MS;
+  // The merged household+user chess config is the single source for the rung
+  // ladder, the cue flags, the opponent delay, and the shuffle preference. The
+  // old gameConfig.feedback path is gone on purpose: two config sources for one
+  // preference is exactly the drift the chess.yml pair exists to prevent.
+  const [chessConfig, setChessConfig] = useState(null);
+  const [rungId, setRungId] = useState('learner');
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchChessConfig(userId).then((loaded) => {
+      if (cancelled || !loaded) return;
+      setChessConfig(loaded);
+      setRungId(loaded.default_rung || 'learner');
+      logger().info('config-loaded', { default_rung: loaded.default_rung, rungs: loaded.rungs?.length });
+    });
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  // Apply immediately, persist to the player's own override layer. Guests get
+  // the immediate effect only — userId is null, and the per-user endpoint
+  // would (rightly) refuse them.
+  const applySetting = useCallback((patch) => {
+    setChessConfig((prev) => ({
+      ...(prev || {}),
+      ...patch,
+      feedback: { ...(prev?.feedback || {}), ...(patch.feedback || {}) },
+    }));
+    if (patch.default_rung) setRungId(patch.default_rung);
+    if (userId) saveChessConfig(userId, patch);
+    logger().info('setting-applied', { patch, persisted: !!userId });
+  }, [userId]);
+
+  // The `feedback` prop survives ONLY as a test seam — production callers must
+  // let the chess config speak for itself.
+  const cues = { ...DEFAULT_FEEDBACK, ...cuesFromConfig(chessConfig), ...(feedback ?? {}) };
+  const opponentDelayMs = chessConfig?.opponent_delay_ms ?? OPPONENT_DELAY_MS;
+  // Shuffle takes effect on the NEXT game: createChessGameState captures it at
+  // construction, so a mid-game change never re-deals the board mid-read.
+  const shuffleEachTurn = chessConfig?.shuffle_each_turn ?? shuffleEachTurnProp;
   const rung = chessConfig?.rungs?.find((entry) => entry.id === rungId);
   // Maps the active rung to a bundled difficulty the same way the server adapter
   // would, so a dropped request doesn't quietly change who the player is facing.
@@ -248,14 +283,17 @@ export function PianoChessGame({
   const fileLabels = liveScheme.roots;
   const rankLabels = liveScheme.qualities.map((quality) => CHORD_QUALITIES[quality]?.label || 'maj');
 
-  // Legality is shown only once the player has actually got it wrong. Outlining
+  // Legality is gated by the player's hint level. `after-mistake` (the default,
+  // gateOnMistake) shows the cues only once a chord has been refused — outlining
   // every movable piece up front answers the question before it is asked, which
-  // is the whole exercise; after a refusal it is help, not a spoiler. The hints
-  // stand until the next move lands, then the board goes quiet again.
-  const destinations = showLegality && cues.highlightTargets && game.origin
+  // is the whole exercise; after a refusal it is help, not a spoiler. `always`
+  // drops the gate; `off` clears the cue flags entirely. Gated hints stand until
+  // the next move lands, then the board goes quiet again.
+  const legalityVisible = !cues.gateOnMistake || showLegality;
+  const destinations = legalityVisible && cues.highlightTargets && game.origin
     ? destinationsFor(game, game.origin)
     : [];
-  const sources = showLegality && cues.highlightSources && !game.origin
+  const sources = legalityVisible && cues.highlightSources && !game.origin
     ? playableSources(game)
     : [];
   const originChord = game.origin ? squareToChord(game.origin, liveScheme) : null;
@@ -333,8 +371,20 @@ export function PianoChessGame({
           />
           <p className="piano-chess__turn">
             {game.status?.game_over ? 'Game over' : `${turnLabel} to move`}
-            <span className="piano-chess__difficulty">{DIFFICULTIES[difficulty]?.label ?? difficulty}</span>
+            {/* The active rung, straight from the config ladder — the bundled
+                engine's old label table would go stale the moment rungs moved. */}
+            <span className="piano-chess__difficulty">{rung?.label ?? rungId}</span>
           </p>
+          {chessConfig && (
+            <button
+              type="button"
+              className="piano-chess__settings-btn"
+              onClick={() => setSettingsOpen((open) => !open)}
+              aria-expanded={settingsOpen}
+            >
+              Settings
+            </button>
+          )}
           {shuffleEachTurn && (
             <p className={`piano-chess__redeal${justDealt ? ' piano-chess__redeal--fresh' : ''}`} role="status">
               {justDealt ? 'New chord map — read the edges' : 'Chords move every turn'}
@@ -366,6 +416,15 @@ export function PianoChessGame({
 
       {toast && (
         <output className="piano-chess__toast" key={toast.seq}>{toast.text}</output>
+      )}
+
+      {settingsOpen && chessConfig && (
+        <ChessSettingsPanel
+          config={chessConfig}
+          rungId={rungId}
+          onChange={applySetting}
+          onClose={() => setSettingsOpen(false)}
+        />
       )}
 
       <footer className="piano-chess__keys">
