@@ -142,3 +142,24 @@ describe('ChessBoard', () => {
     expect(onSelect).toHaveBeenCalledWith('e2');
   });
 });
+
+describe('ghost preview', () => {
+  it('renders a translucent piece on the previewed destination', () => {
+    const { container } = render(
+      <ChessBoard
+        fen="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+        ghost={{ square: 'e4', piece: 'wP' }}
+      />,
+    );
+    const ghost = container.querySelector('.chess-board__piece--ghost');
+    expect(ghost).not.toBeNull();
+    expect(ghost.closest('[data-square]')?.dataset.square).toBe('e4');
+  });
+
+  it('renders no ghost when there is nothing to preview', () => {
+    const { container } = render(
+      <ChessBoard fen="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" ghost={null} />,
+    );
+    expect(container.querySelector('.chess-board__piece--ghost')).toBeNull();
+  });
+});
