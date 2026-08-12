@@ -110,7 +110,15 @@ chooseMove({ fen, rung, gameId }) -> { from, to, promotion?, san, engine, thinki
 ```
 
 - The worker (`stockfishWorker.mjs`) loads the wasm once, speaks UCI, and returns
-  `bestmove`. `ucinewgame` is issued when `gameId` changes.
+  `bestmove`. `ucinewgame` is issued when `gameId` changes, and the game id changes on
+  restart as well as on mount — otherwise "Play again" hands the engine a fresh board
+  with the previous game still in its table.
+- Replies are correlated by request id. A timed-out search is **stopped** before the next
+  one is sent, and a `bestmove` whose id no longer matches is discarded. Without both,
+  one timeout permanently shifts every later reply onto the previous request's position.
+- The engine's `promotion` is honoured. The board's `commitMove` force-queens today; the
+  server can and occasionally will underpromote, and playing a different move than the
+  engine chose while logging the engine's SAN is a lie in the record.
 - Searches are **serialized**: one at a time, queued. A household has one board; a queue
   is simpler than a pool and makes latency predictable.
 - Every search carries a timeout of `movetime_ms + 1500`. The margin covers worker
@@ -134,9 +142,10 @@ rather than shipping an image whose chess silently runs on the fallback.
 
 `backend/src/4_api/v1/routers/chess.mjs`:
 
-- `POST /move` — body `{ fen, rung, gameId }`. The FEN is validated with the existing
-  `validateFen` from `shared/gaming/chess/engine.mjs` before it reaches the engine.
-  Returns the move plus which engine produced it.
+- `POST /move` — body `{ fen, rung, gameId }`. The FEN is validated with `isValidFen`
+  from `shared/gaming/chess/engine.mjs` (a boolean; chess.js's own `validateFen` is
+  module-private there) before it reaches the engine. Returns the move plus which engine
+  produced it.
 - `GET /config?user=<id>` — the merged config (global under user).
 - `PUT /config?user=<id>` — writes the **user layer only**. The global file is never
   written from the game.
@@ -203,9 +212,10 @@ loudly the board answers a *mistake*, not what it volunteers up front.
 ### In-game settings panel
 
 A panel on the chess screen, opened from the right rail, offering: difficulty rung, hint
-level, chord map shuffle, and opponent delay. It is reachable by touch and by piano, per
-the kiosk's existing input rules, and every control is a discrete tap target — no
-sliders.
+level, chord map shuffle, and opponent delay. Touch-driven, with every control a discrete
+tap target — no sliders. It is deliberately **not** piano-driven: the chord vocabulary is
+spent addressing squares, and overloading it to also mean "menu" is how a player loses
+the ability to trust what a chord does.
 
 Hint level is one three-way control over the two *legality* cues, because "how much does
 the board show me about legal moves" is one question to a player and two booleans to the
@@ -219,9 +229,13 @@ code:
 
 `flash_rejected` and `toast` are not part of this control. They answer a different
 question — how loudly a refusal is announced — and stay on, configurable only from YAML.
-The panel therefore writes `feedback.hint_level` to the user layer, and the resolver
-projects that onto the two booleans plus the gating rule; the YAML booleans remain the
-underlying truth so an advanced user can still set them directly.
+
+`hint_level` is the **only** representation of this setting. There is no parallel pair of
+`highlight_sources`/`highlight_targets` keys in `chess.yml`: two spellings of one
+preference is how configs start lying. The component's existing cue flags
+(`highlightSources`, `highlightTargets`, `flashRejected`, `toast` — camelCase, from
+`DEFAULT_FEEDBACK`) are derived from the YAML at the boundary, so the snake_case file and
+the camelCase component never have to agree by coincidence.
 
 Changing a setting applies to the game in progress and writes the user's override layer.
 Difficulty changes take effect on the opponent's next move; they never restart the game.
@@ -229,11 +243,24 @@ Difficulty changes take effect on the opponent's next move; they never restart t
 ### Piano feedback
 
 **The keyboard strip becomes the instrument's read-out.** It already renders held notes.
-It gains: the chord it hears named (`Fmaj7`), and the square that names (`e4`), or an
-explicit "not a square on this board" when the held set does not resolve. This is the
-single highest-value change in the design, because it converts every silent non-response
-into a legible one — the player can see whether the game misheard them or they aimed at
-the wrong square.
+It gains: the chord it hears named, and the square that names (`e4`), or an explicit "not
+a square on this board" when the held set does not resolve. This is the single
+highest-value change in the design, because it converts every silent non-response into a
+legible one — the player can see whether the game misheard them or they aimed at the
+wrong square.
+
+Two constraints on it, both learned from the code it replaces:
+
+- **It moves the existing read-out; it does not add a second one.** The left rail already
+  shows chord / "N notes held" / "Listening" / "Piano not connected"
+  (`piano-chess__midi`). That block moves to the keyboard strip, where the player's eyes
+  already are. Two read-outs disagreeing by a frame is worse than the ambiguity we set
+  out to fix.
+- **It needs a resolving state.** The cursor's square is only known *after* the 140ms
+  settle window, so a read-out that branches on "has a square, else not a square" would
+  call every correct chord unrecognised for the whole settle. While the held set is
+  changing or settling it says so, and only claims "not a square" once a stable set has
+  failed to resolve.
 
 **A ghost piece previews the destination.** While a chord is held and a piece is
 selected, the target square shows a translucent copy of the piece, with a ring that
