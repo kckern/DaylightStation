@@ -35,6 +35,11 @@ const GAME_ICONS = {
   chess: 'game-chess',
 };
 
+// Built but not released. The tile is greyed out so the picker still shows what
+// is coming without letting anyone in; the route itself stays open, so
+// /piano/games/card-game reaches it for anyone testing.
+const UNRELEASED_GAMES = new Set(['card-game']);
+
 /**
  * Relative destination for a game-owned URL segment.
  *
@@ -88,6 +93,7 @@ function GamePicker() {
             <PianoTile
               icon={GAME_ICONS[id] || 'game'}
               label={GAME_LABELS[id] ?? id}
+              disabled={UNRELEASED_GAMES.has(id)}
               onClick={() => {
                 logger.info('piano.game-enter', { game: id });
                 navigate(id);

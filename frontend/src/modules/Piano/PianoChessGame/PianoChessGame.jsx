@@ -4,6 +4,7 @@ import getLogger from '../../../lib/logging/Logger.js';
 import ChessBoard from '../../Chess/ChessBoard.jsx';
 import { PianoKeyboard } from '../components/PianoKeyboard.jsx';
 import { usePianoMidi, usePianoMidiNotes } from '../PianoKiosk/PianoMidiContext.jsx';
+import PianoContextRail from '../PianoKiosk/modes/Videos/PianoContextRail.jsx';
 import { CHORD_QUALITIES, DEFAULT_CHORD_SCHEME, squareToChord } from './chordAddress.js';
 import { advanceCursor, createCursorState } from './chordCursor.js';
 import {
@@ -188,13 +189,32 @@ export function PianoChessGame({
     return () => clearTimeout(timer);
   }, [difficulty, game.status, playerColor]);
 
+  // A refusal turns the legality cues on; the next completed move turns them off.
+  const [showLegality, setShowLegality] = useState(false);
+  const rejectionSeq = game.rejection?.seq ?? null;
+  const moveCount = game.history.length;
+  useEffect(() => {
+    if (rejectionSeq != null) setShowLegality(true);
+  }, [rejectionSeq]);
+  useEffect(() => {
+    setShowLegality(false);
+  }, [moveCount]);
+
   // The board takes plain strings; translating chords into them is this layer's
   // job, which is why ChessBoard never learns what a chord is.
   const fileLabels = liveScheme.roots;
   const rankLabels = liveScheme.qualities.map((quality) => CHORD_QUALITIES[quality]?.label || 'maj');
 
-  const destinations = cues.highlightTargets && game.origin ? destinationsFor(game, game.origin) : [];
-  const sources = cues.highlightSources && !game.origin ? playableSources(game) : [];
+  // Legality is shown only once the player has actually got it wrong. Outlining
+  // every movable piece up front answers the question before it is asked, which
+  // is the whole exercise; after a refusal it is help, not a spoiler. The hints
+  // stand until the next move lands, then the board goes quiet again.
+  const destinations = showLegality && cues.highlightTargets && game.origin
+    ? destinationsFor(game, game.origin)
+    : [];
+  const sources = showLegality && cues.highlightSources && !game.origin
+    ? playableSources(game)
+    : [];
   const originChord = game.origin ? squareToChord(game.origin, liveScheme) : null;
   const cursorChord = cursor ? squareToChord(cursor, liveScheme) : null;
   const captured = capturedPieces(game.history);
@@ -203,22 +223,6 @@ export function PianoChessGame({
 
   return (
     <div className="piano-chess">
-      <header className="piano-chess__header">
-        <h1 className="piano-chess__wordmark">Piano<span>Chess</span></h1>
-        {shuffleEachTurn && (
-          <p className={`piano-chess__redeal${justDealt ? ' piano-chess__redeal--fresh' : ''}`} role="status">
-            {justDealt ? 'New chord map — read the edges' : 'Chords move every turn'}
-          </p>
-        )}
-        <p className="piano-chess__turn">
-          {game.status?.game_over ? 'Game over' : `${turnLabel} to move`}
-          <span className="piano-chess__difficulty">{DIFFICULTIES[difficulty]?.label ?? difficulty}</span>
-        </p>
-        {onDeactivate && (
-          <button type="button" className="piano-chess__exit" onClick={onDeactivate}>Leave</button>
-        )}
-      </header>
-
       <div className="piano-chess__stage">
         <aside className="piano-chess__rail piano-chess__rail--move">
           <h2 className="piano-chess__rail-title">This move</h2>
@@ -279,6 +283,22 @@ export function PianoChessGame({
         />
 
         <aside className="piano-chess__rail piano-chess__rail--log">
+          {/* The kiosk's standard context rail, same as Videos. It carries the
+              way back now that the header (and its Leave button) is gone — the
+              breadcrumb rail above already says where we are. */}
+          <PianoContextRail
+            program="Piano Chess"
+            ancestors={onDeactivate ? [{ label: 'Games', onClick: onDeactivate }] : []}
+          />
+          <p className="piano-chess__turn">
+            {game.status?.game_over ? 'Game over' : `${turnLabel} to move`}
+            <span className="piano-chess__difficulty">{DIFFICULTIES[difficulty]?.label ?? difficulty}</span>
+          </p>
+          {shuffleEachTurn && (
+            <p className={`piano-chess__redeal${justDealt ? ' piano-chess__redeal--fresh' : ''}`} role="status">
+              {justDealt ? 'New chord map — read the edges' : 'Chords move every turn'}
+            </p>
+          )}
           <h2 className="piano-chess__rail-title">Moves</h2>
           <ol className="piano-chess__moves">
             {game.history.map((entry, index) => (
