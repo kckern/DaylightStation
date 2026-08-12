@@ -39,6 +39,16 @@ $ex-body:      1.6rem;
 $ex-chip-h:    72px;
 $ex-action-h:  96px;
 
-// Card grid. 300px min column keeps a demo GIF legible from the far side of the
-// garage; below ~280px the limbs in the animation stop reading.
-$ex-card-min:  300px;
+// Card grid. Both numbers are a VERTICAL budget decision, measured in Chromium
+// at 1920x1080 where the module panel is a fixed 744px box that does not scroll
+// and the grid gets ~412px of it.
+//
+// $ex-thumb-h drives card height directly (thumb + name ≈ 228px), so ~1.8 rows
+// of cards are visible with the next row peeking — the peek is the only cue
+// that the grid scrolls. A taller thumb reads better at ten feet but drops the
+// grid to a single row, which reads as "that is all there is".
+//
+// $ex-card-min is the narrower of the two levers: at 260px the ~1250px grid
+// fits 4 columns instead of 3, so the same 412px shows 7 exercises instead of 3.
+$ex-card-min:  260px;
+$ex-thumb-h:   180px;

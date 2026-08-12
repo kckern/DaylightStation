@@ -278,7 +278,6 @@ describe('ExerciseBrowser — initial load', () => {
     const view = await mountBrowser();
     expect(view.getByTestId('exercise-group-upper-legs').textContent).toBe('Upper Legs');
     expect(view.getByTestId('exercise-equipment-barbell').textContent).toBe('Barbell');
-    expect(view.getByTestId('exercise-muscle-lats').textContent).toBe('Lats');
   });
 
   it('logs the fetch at info with the result count', async () => {
@@ -351,20 +350,13 @@ describe('ExerciseBrowser — filtering', () => {
     await waitFor(() => expect(renderedSlugs(view.container)).toEqual(['barbell-bench-press']));
   });
 
-  it('filters by muscle', async () => {
+  it('filters by muscle, once a group has opened the rail', async () => {
     const view = await mountBrowser();
-    fireEvent.pointerDown(view.getByTestId('exercise-muscle-lats'));
-    await waitFor(() => expect(lastListRequest()).toBe('api/v1/fitness/exercises?muscle=lats'));
-    await waitFor(() => expect(renderedSlugs(view.container)).toEqual(['barbell-row', 'pull-up']));
-  });
-
-  it('narrows the muscle rail to the selected groups', async () => {
-    const view = await mountBrowser();
-    expect(view.queryByTestId('exercise-muscle-quads')).toBeTruthy();
     fireEvent.pointerDown(view.getByTestId('exercise-group-back'));
-    await waitFor(() => expect(view.queryByTestId('exercise-muscle-quads')).toBeNull());
-    expect(view.queryByTestId('exercise-muscle-lats')).toBeTruthy();
-    expect(view.queryByTestId('exercise-muscle-upper-back')).toBeTruthy();
+    fireEvent.pointerDown(await view.findByTestId('exercise-muscle-lats'));
+    await waitFor(() => expect(lastListRequest())
+      .toBe('api/v1/fitness/exercises?group=back&muscle=lats'));
+    await waitFor(() => expect(renderedSlugs(view.container)).toEqual(['barbell-row', 'pull-up']));
   });
 
   it('searches, debounced, via the q param', async () => {
@@ -405,6 +397,83 @@ describe('ExerciseBrowser — filtering', () => {
     const changes = logsFor('info', 'filter-change');
     expect(changes).toHaveLength(1);
     expect(changes[0].data).toMatchObject({ reason: 'toggle:groups', groups: ['chest'], active: 1 });
+  });
+});
+
+describe('ExerciseBrowser — vertical budget', () => {
+  // The panel is a fixed-height box with `overflow-y: hidden`, so every pixel a
+  // filter rail takes is taken from the grid and there is no page scroll to get
+  // it back. Measured in Chromium at 1920x1080, an unbounded wrapping rail left
+  // the grid 88px of a 744px container — 11.8%, a strip of clipped card tops.
+  //
+  // jsdom has no layout engine and CANNOT see that. These assert the structural
+  // facts the fix rests on; the measured proof is the Playwright test in
+  // tests/live/flow/fitness/exercise-browser-layout.runtime.test.mjs.
+
+  it('renders no muscle chips at all in the default unfiltered state', async () => {
+    const view = await mountBrowser();
+    // 38 in production. Wrapped, that alone was ~1,225px of content.
+    expect(view.container.querySelectorAll('[data-testid^="exercise-muscle-"]')).toHaveLength(0);
+    expect(view.getByTestId('exercise-browser-muscle-hint').textContent).toBe('Pick a group first');
+  });
+
+  it('opens the muscle rail to the picked group only', async () => {
+    const view = await mountBrowser();
+    fireEvent.pointerDown(view.getByTestId('exercise-group-back'));
+    await view.findByTestId('exercise-muscle-lats');
+    expect(view.queryByTestId('exercise-browser-muscle-hint')).toBeNull();
+    expect(Array.from(view.container.querySelectorAll('[data-testid^="exercise-muscle-"]'))
+      .map((el) => el.getAttribute('data-testid'))).toEqual([
+      'exercise-muscle-lats',
+      'exercise-muscle-upper-back'
+    ]);
+  });
+
+  it('pins a muscle that is filtering even with no group selected', async () => {
+    // The detail sheet can push a muscle in without a group. A filter you
+    // cannot see is a filter you cannot switch off.
+    const view = await mountBrowser();
+    fireEvent.pointerDown(view.getByTestId('exercise-card-cable-pulldown'));
+    fireEvent.pointerDown(await view.findByTestId('exercise-detail-muscle-upper-back'));
+    await waitFor(() => expect(lastListRequest()).toBe('api/v1/fitness/exercises?muscle=upper-back'));
+
+    const chip = view.getByTestId('exercise-muscle-upper-back');
+    expect(chip.getAttribute('data-active')).toBe('true');
+    expect(view.queryByTestId('exercise-browser-muscle-hint')).toBeNull();
+    // Only the pinned one — the rail did not fall back to all 38.
+    expect(view.container.querySelectorAll('[data-testid^="exercise-muscle-"]')).toHaveLength(1);
+  });
+
+  it('holds every secondary facet in a single non-wrapping row container', async () => {
+    const view = await mountBrowser();
+    ['exercise-browser-muscles', 'exercise-browser-equipment'].forEach((testId) => {
+      const facet = view.getByTestId(testId);
+      const rows = facet.querySelectorAll('.exercise-browser__facet-chips');
+      expect(rows).toHaveLength(1);
+      expect(rows[0].className).toContain('exercise-browser__facet-chips--row');
+    });
+    // Every chip is a direct child of that one row — no sub-grouping that would
+    // reintroduce stacked rows.
+    const equipment = view.getByTestId('exercise-browser-equipment');
+    const row = equipment.querySelector('.exercise-browser__facet-chips--row');
+    const chips = equipment.querySelectorAll('[data-testid^="exercise-equipment-"]');
+    expect(chips).toHaveLength(TAXONOMY.equipment.length);
+    chips.forEach((chip) => expect(chip.parentElement).toBe(row));
+  });
+
+  it('renders nothing below the grid — Show more is a cell inside it', async () => {
+    server.corpus = Array.from({ length: 100 }, (_, i) => ({
+      slug: `e-${i}`, name: `E ${i}`, image: `media/g-${i}.gif`,
+      groups: ['chest'], targetMuscles: ['pectorals'], equipment: ['barbell']
+    }));
+    const view = await mountBrowser();
+    const grid = view.getByTestId('exercise-browser-grid');
+    const more = view.getByTestId('exercise-browser-more');
+    // As a sibling BELOW the grid this control cost ~100px of permanent chrome.
+    expect(more.parentElement).toBe(grid);
+    // And the grid is the last thing in the panel, so nothing competes with it
+    // for the remaining height.
+    expect(view.getByTestId('exercise-browser').lastElementChild).toBe(grid);
   });
 });
 

@@ -95,6 +95,11 @@
 
   // The reading column is the only scrolling region — instructions run to nine
   // steps on some records and must not push the demo off screen.
+  //
+  // `text-align: left` is an override, not a default: the shell this renders in
+  // (`.fitness-instruction__state`) centres its text, which is right for a
+  // placeholder card and wrong for four lines of prose per step — centred
+  // paragraphs give the eye no fixed left edge to return to.
   &__info {
     flex: 1 1 52%;
     min-width: 0;
@@ -103,6 +108,7 @@
     gap: 14px;
     overflow-y: auto;
     padding-right: 6px;
+    text-align: left;
   }
 
   &__facets {
