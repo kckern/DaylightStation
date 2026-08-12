@@ -28,11 +28,19 @@ vi.mock('../../../lib/logging/singleton.js', () => {
 
 const { useTetrisGame } = await import('./useTetrisGame.js');
 
+// STABLE identity, hoisted out of the render callback on purpose. `activeNotes`
+// is a dependency of useStaffMatching's effect (useStaffMatching.js:311), and
+// that effect calls setMatchedActions(new Set()) whenever matching is disabled
+// (:234). Passing `new Map()` inline means a fresh Map per render → effect
+// re-runs → setState → re-render → forever, which exhausts the heap rather than
+// failing an assertion.
+const NO_NOTES = new Map();
+
 beforeEach(() => { childContexts.length = 0; });
 
 describe('useTetrisGame session logging', () => {
   it('creates its game logger with a session-logged piano-tetris context', () => {
-    renderHook(() => useTetrisGame(new Map(), null));
+    renderHook(() => useTetrisGame(NO_NOTES, null));
 
     const gameCtx = childContexts.find((c) => c?.component === 'piano-tetris');
     expect(gameCtx, 'no piano-tetris logger was created').toBeTruthy();
@@ -41,7 +49,7 @@ describe('useTetrisGame session logging', () => {
   });
 
   it('leaves the shared staff matcher untagged', () => {
-    renderHook(() => useTetrisGame(new Map(), null));
+    renderHook(() => useTetrisGame(NO_NOTES, null));
 
     // useStaffMatching is shared with the other piano games (the side-scroller
     // drives jump/duck through it), so tagging it would file those games' input
