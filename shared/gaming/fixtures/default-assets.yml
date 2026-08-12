@@ -71,6 +71,7 @@ assets:
     license_scope: core-commercial
     kind: tile-sheet
     tags: [terrain, path, dirt, variation, overlay, topdown]
+    forbidden_colors: ['#e4a672']
     geometry: { layout: grid, cell: [16, 16], grid: [3, 1] }
     defaults: { anchor: top-left }
     frames:
@@ -121,11 +122,12 @@ assets:
 
   terrain.water-detail:
     source: assets/default/environment/effects/water-overlays.png
-    source_sha256: 5bad6581d61c4282d0dce779d4a49ca09cbccd52aa02aac91fff2da1b8a95e8d
+    source_sha256: e29557ad1e75e0ff538f09018c260c826b6f4ff9f5742f6d64fde1a3e5c93eda
     status: approved
     license_scope: core-commercial
     kind: tile-sheet
     tags: [terrain, water, ripple, variation, overlay, topdown]
+    forbidden_colors: ['#0095e9', '#006da8']
     geometry: { layout: grid, cell: [16, 16], grid: [4, 2] }
     defaults: { anchor: top-left }
     frames:
@@ -143,15 +145,15 @@ assets:
     geometry: { layout: grid, cell: [16, 16], grid: [7, 8] }
     defaults: { anchor: top-left }
     frames:
-      soil.corner.nw: { cell: [0, 0] }
-      soil.edge.north: { cell: [1, 0] }
-      soil.corner.ne: { cell: [2, 0] }
-      soil.edge.west: { cell: [0, 1] }
-      soil.center: { cell: [1, 1] }
-      soil.edge.east: { cell: [2, 1] }
-      soil.corner.sw: { cell: [0, 2] }
-      soil.edge.south: { cell: [1, 2] }
-      soil.corner.se: { cell: [2, 2] }
+      soil.corner.nw: { cell: [1, 0] }
+      soil.edge.north: { cell: [2, 0] }
+      soil.corner.ne: { cell: [3, 0] }
+      soil.edge.west: { cell: [1, 1] }
+      soil.center: { cell: [2, 1] }
+      soil.edge.east: { cell: [3, 1] }
+      soil.corner.sw: { cell: [1, 2] }
+      soil.edge.south: { cell: [2, 2] }
+      soil.corner.se: { cell: [3, 2] }
     autotile:
       topology: cardinal-4
       positive:
@@ -207,7 +209,7 @@ assets:
     geometry: { layout: grid, cell: [16, 16], grid: [7, 8] }
     defaults: { anchor: top-left }
     frames:
-      soil.center: { cell: [1, 1] }
+      soil.center: { cell: [2, 1] }
     autotile:
       topology: cardinal-4
       positive:
@@ -287,18 +289,18 @@ assets:
     license_scope: core-commercial
     kind: sprite-sheet
     tags: [prop, rock, shrub, grass, log, topdown]
+    forbidden_colors: ['#006da8']
     geometry: { layout: grid, cell: [16, 16], grid: [9, 26] }
     defaults: { anchor: bottom-center }
     frames:
       grass.tuft-a: { cell: [1, 2] }
       grass.tuft-b: { cell: [2, 2] }
-      rock.small: { cell: [4, 4] }
-      rock.land-a: { cell: [4, 6] }
-      rock.land-b: { cell: [5, 6] }
+      rock.land-a: { cell: [3, 6] }
+      rock.land-b: { cell: [4, 6] }
       rock.land-c: { cell: [6, 6] }
       shrub.round: { cell: [6, 9] }
       shrub.leafy: { cell: [7, 9] }
-      shrub.low: { cell: [8, 9] }
+      shrub.low: { cell: [5, 9] }
       log.mossy: { cell: [0, 7] }
       stump: { cell: [0, 9] }
 
@@ -408,11 +410,12 @@ assets:
 
   prop.water-rock:
     source: assets/default/environment/effects/water-overlays.png
-    source_sha256: 5bad6581d61c4282d0dce779d4a49ca09cbccd52aa02aac91fff2da1b8a95e8d
+    source_sha256: e29557ad1e75e0ff538f09018c260c826b6f4ff9f5742f6d64fde1a3e5c93eda
     status: approved
     license_scope: core-commercial
     kind: sprite-sheet
     tags: [prop, water, rock, ripple, shoreline, animated, overlay, topdown]
+    forbidden_colors: ['#0095e9', '#006da8', '#00cdf9', '#00a5d7', '#0cf1ff', '#0b9eca']
     geometry: { layout: grid, cell: [16, 16], grid: [4, 2] }
     defaults: { anchor: bottom-center }
     frames:
@@ -474,16 +477,17 @@ assets:
     frames: { default: { rect: [0, 0, 144, 128] } }
 
   structure.wood-bridge:
-    source: assets/default/environment/tiles/bridge/bridge-wood-1.png
-    source_sha256: 7c43879ef1456cb92240766e986efc1589c42efad1d2dacf25b97f5ae84fa2f7
+    source: assets/default/environment/effects/wood-bridge-overlay.png
+    source_sha256: 5519514518702db68c8726d5dabf50a40c850751a4a7a30082fb8a3962c41cdd
     status: approved
     license_scope: core-commercial
     kind: sprite-sheet
-    tags: [structure, bridge, wood, crossing, topdown]
+    tags: [structure, bridge, wood, crossing, overlay, topdown]
+    forbidden_colors: ['#006da8']
     geometry: { layout: grid, cell: [48, 64], grid: [2, 1] }
     defaults: { anchor: top-left }
     frames:
-      vertical: { cell: [0, 0], content_bounds: [1, 10, 45, 50] }
+      vertical: { cell: [0, 0], content_bounds: [1, 10, 45, 49] }
       horizontal: { cell: [1, 0], content_bounds: [4, 0, 39, 48] }
 
   structure.wood-crossing:
@@ -502,19 +506,20 @@ assets:
 
   structure.wood-deck-tiles:
     source: assets/default/environment/effects/wooden-deck-overlay.png
-    source_sha256: 7b562028b796595a2fc0092f54e2b555d5624f2f82e320962c41dffc7569f1b0
+    source_sha256: 8cdcd9ac2ff11c42ad9e882502781fcf2dd627b525bbceb087219e811732dd31
     status: approved
     license_scope: core-commercial
     kind: tile-sheet
-    tags: [structure, dock, wood, water, fishing, topdown]
+    tags: [structure, dock, wood, water, fishing, overlay, topdown]
+    forbidden_colors: ['#0095e9', '#006da8']
     geometry: { layout: grid, cell: [16, 16], grid: [5, 6] }
     defaults: { anchor: top-left }
     frames:
       top.left: { cell: [2, 0] }
-      top.middle: { cell: [3, 0] }
+      top.middle: { cell: [3, 0], opaque_overlay: true }
       top.right: { cell: [4, 0] }
       bottom.left: { cell: [2, 1] }
-      bottom.middle: { cell: [3, 1] }
+      bottom.middle: { cell: [3, 1], opaque_overlay: true }
       bottom.right: { cell: [4, 1] }
 
   structure.fisherman-house-red:

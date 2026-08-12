@@ -7,6 +7,12 @@ ground: terrain.grass-middle#grass.middle
 world_scale: 2
 depth_sort: y
 fail_on_clipping: true
+review_regions:
+  - { id: garden-fence, rect: [20, 170, 230, 170], scale: 3 }
+  - { id: house-bridge, rect: [250, 220, 280, 240], scale: 2 }
+  - { id: dock-shore, rect: [540, 370, 250, 240], scale: 2 }
+  - { id: shoreline, rect: [650, 190, 246, 440], scale: 2 }
+  - { id: crossroads, rect: [0, 390, 650, 250], scale: 2 }
 
 terrain:
   grid: { cell: [16, 16] }
@@ -52,16 +58,9 @@ terrain:
         - [24, 10, 4, 2]
         - [21, 11, 7, 3]
         - [19, 13, 9, 3]  # recessed dock cove
-        - [22, 16, 6, 2]
-        - [24, 18, 4, 2]
+        - [20, 16, 8, 2]  # water continues beneath the projecting half of the pier
+        - [22, 18, 6, 2]
       z: 5
-
-    # The garden is an actual cultivated surface, not loose flower props.
-    - terrain: homestead-garden
-      asset: terrain.garden-soil
-      polarity: positive
-      rects: [[2, 6, 4, 3]]
-      z: 3
 
 placements:
   # The homestead is the one architectural landmark; the dock is secondary.
@@ -71,6 +70,21 @@ placements:
   # A reviewed deck-tile prefab runs directly from the path into the pond.
   - { prefab: fishing.dock-east, at: [576, 448], z: 15, depth_sort: false }
 
+  # Two center tiles carry the worn path through the garden's southeast gate.
+  - { asset: terrain.adventure-atlas#path.center, at: [120, 280], z: 6, depth_sort: false }
+  - { asset: terrain.adventure-atlas#path.center, at: [152, 280], z: 6, depth_sort: false }
+
+  # The bed follows the fence's measured visible bounds exactly: x=54..181,
+  # y=216..279. A grid-aligned region would visibly leak past the fence.
+  - { asset: terrain.garden-soil#soil.center, at: [54, 216], z: 3, depth_sort: false }
+  - { asset: terrain.garden-soil#soil.center, at: [86, 216], z: 3, depth_sort: false }
+  - { asset: terrain.garden-soil#soil.center, at: [118, 216], z: 3, depth_sort: false }
+  - { asset: terrain.garden-soil#soil.center, at: [150, 216], z: 3, depth_sort: false }
+  - { asset: terrain.garden-soil#soil.center, at: [54, 248], z: 3, depth_sort: false }
+  - { asset: terrain.garden-soil#soil.center, at: [86, 248], z: 3, depth_sort: false }
+  - { asset: terrain.garden-soil#soil.center, at: [118, 248], z: 3, depth_sort: false }
+  - { asset: terrain.garden-soil#soil.center, at: [150, 248], z: 3, depth_sort: false }
+
   # Complete five-cell garden boundary with a two-cell south gate.
   - { asset: prop.wood-fence#horizontal.start, at: [32, 188], z: 20, depth_sort: true }
   - { asset: prop.wood-fence#horizontal.middle, at: [64, 188], z: 20, depth_sort: true }
@@ -79,27 +93,26 @@ placements:
   - { asset: prop.wood-fence#horizontal.end, at: [160, 188], z: 20, depth_sort: true }
   - { asset: prop.wood-fence#vertical.middle, at: [32, 220], z: 20, depth_sort: true }
   - { asset: prop.wood-fence#vertical.middle, at: [32, 252], z: 20, depth_sort: true }
-  - { asset: prop.wood-fence#vertical.middle, at: [176, 220], z: 20, depth_sort: true }
-  - { asset: prop.wood-fence#vertical.middle, at: [176, 252], z: 20, depth_sort: true }
-  - { asset: prop.wood-fence#horizontal.bottom.start, at: [32, 284], z: 20, depth_sort: true }
-  - { asset: prop.wood-fence#horizontal.bottom.end, at: [64, 284], z: 20, depth_sort: true }
-  - { asset: prop.wood-fence#horizontal.bottom.start, at: [144, 284], z: 20, depth_sort: true }
-  - { asset: prop.wood-fence#horizontal.bottom.end, at: [176, 284], z: 20, depth_sort: true }
+  - { asset: prop.wood-fence#vertical.middle, at: [172, 220], z: 20, depth_sort: true }
+  - { asset: prop.wood-fence#vertical.middle, at: [172, 252], z: 20, depth_sort: true }
+  - { asset: prop.wood-fence#horizontal.bottom.start, at: [32, 280], z: 20, depth_sort: true }
+  - { asset: prop.wood-fence#horizontal.bottom.middle, at: [64, 280], z: 20, depth_sort: true }
+  - { asset: prop.wood-fence#horizontal.bottom.end, at: [96, 280], z: 20, depth_sort: true }
 
   # Two dense crop beds vary by species and stage; the center is a work aisle.
   - { asset: crop.tomato#young, at: [72, 228], z: 18, depth_sort: true }
   - { asset: crop.tomato#mature, at: [96, 228], z: 18, depth_sort: true }
-  - { asset: crop.carrot#young, at: [152, 228], z: 18, depth_sort: true }
-  - { asset: crop.carrot#mature, at: [176, 228], z: 18, depth_sort: true }
+  - { asset: crop.carrot#young, at: [144, 228], z: 18, depth_sort: true }
+  - { asset: crop.carrot#mature, at: [168, 228], z: 18, depth_sort: true }
   - { asset: crop.tomato#mature, at: [72, 258], z: 18, depth_sort: true }
   - { asset: crop.tomato#ripe, at: [96, 258], z: 18, depth_sort: true }
-  - { asset: crop.carrot#mature, at: [152, 258], z: 18, depth_sort: true }
-  - { asset: crop.carrot#ripe, at: [176, 258], z: 18, depth_sort: true }
+  - { asset: crop.carrot#mature, at: [144, 258], z: 18, depth_sort: true }
+  - { asset: crop.carrot#ripe, at: [168, 258], z: 18, depth_sort: true }
   - { asset: crop.tomato#sprout, at: [72, 284], z: 18, depth_sort: true }
-  - { asset: crop.carrot#sprout, at: [176, 284], z: 18, depth_sort: true }
+  - { asset: crop.carrot#sprout, at: [168, 284], z: 18, depth_sort: true }
 
   # Lake details are sparse and activity-driven: dock, fisher, moored boat.
-  - { asset: prop.boat#default, at: [724, 532], z: 18, depth_sort: true }
+  - { asset: prop.boat#default, at: [738, 532], z: 18, depth_sort: true }
   - { asset: prop.cattails#still, at: [704, 288], z: 16 }
   - { asset: prop.cattails#sway.1, at: [728, 302], z: 16 }
   - { asset: prop.cattails#sway.2, at: [750, 292], z: 16 }
@@ -160,7 +173,7 @@ placements:
     depth_sort: true
     shadow: { size: [11, 4], offset: [0, 1], opacity: 0.35 }
   - asset: npc.farmer-bob#idle.down.0
-    at: [136, 314]
+    at: [152, 314]
     z: 20
     depth_sort: true
     shadow: { size: [13, 4], offset: [0, 1], opacity: 0.35 }

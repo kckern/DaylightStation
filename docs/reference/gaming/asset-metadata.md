@@ -245,6 +245,17 @@ Cardinal masks use stable `n/e/s/w` order; `isolated` names a cell with no cardi
 
 Opaque-backed effects must not be placed over tinted or translucent terrain. Derive an exact color-keyed transparent overlay atlas with the CLI, retain its YAML recipe, and pin the generated file's hash like any other runtime asset.
 
+Assets tagged `overlay` are rejected when a named frame is fully opaque. A genuinely solid interior tile may opt in with `opaque_overlay: true`; this exception must be frame-local. `forbidden_colors` provides a second hard gate for reviewed source-background colors that must not survive derivation:
+
+```yaml
+tags: [structure, dock, overlay]
+forbidden_colors: ['#0095e9', '#006da8']
+frames:
+  top.middle: { cell: [3, 0], opaque_overlay: true }
+```
+
+Use measured visible-alpha bounds when adjoining assemblies. Nominal 16×16 cells do not guarantee that a fence rail, bridge landing, hull, or dock plank reaches the cell boundary.
+
 ## Placement language
 
 Scenes and prefabs use these terms consistently:
