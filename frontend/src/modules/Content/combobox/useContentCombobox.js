@@ -152,9 +152,12 @@ async function fetchSiblingsData(contentId) {
  * @param {(id: string, item?: object) => void} args.onChange
  * @param {string} [args.searchParams] - extra query params for search endpoints
  * @param {boolean} [args.appResults] - merge app-registry matches ahead of content results
+ * @param {string} [args.logApp] - which app owns these log events. The combobox is
+ *   shared, so without this every host's search funnel files itself under 'admin'
+ *   and is invisible to an `app:<host>` log query (2026-08-12 session review).
  */
-export function useContentCombobox({ value, onChange, searchParams = '', appResults = false, selectContainers = false, allowFreeform = true }) {
-  const log = useMemo(() => getChildLogger({ component: 'useContentCombobox', app: 'admin', sessionLog: true }), []);
+export function useContentCombobox({ value, onChange, searchParams = '', appResults = false, selectContainers = false, allowFreeform = true, logApp = 'admin' }) {
+  const log = useMemo(() => getChildLogger({ component: 'useContentCombobox', app: logApp, sessionLog: true }), [logApp]);
   const [state, dispatch] = useReducer(reducer, value ?? '', initialState);
 
   // Latest-value refs so async continuations never read a stale closure.

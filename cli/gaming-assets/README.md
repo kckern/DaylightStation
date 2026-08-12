@@ -195,6 +195,8 @@ npm run gaming:assets -- derive-fence-catalog --root /path/to/_common \
 
 Raw vendor files are never modified.
 
+Fence derivation recipes may set `top_corner_row_offset` when a vendor sheet stores the north corners below a decorative cap row. The default is `0`; use `1` only after measuring the source block. `top_extension_rows` and `end_extension_rows` repair transparent seam pixels but do not change which source cell supplies a corner. Always inspect the regenerated `connector-qa` matrix: an enclosure corner must be one continuous L-shaped mass, never two capped runs touching diagonally.
+
 Inspect and render reusable prefab classes without a frontend:
 
 ```bash

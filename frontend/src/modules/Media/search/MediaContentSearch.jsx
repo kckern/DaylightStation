@@ -1,11 +1,18 @@
 // frontend/src/modules/Media/search/MediaContentSearch.jsx
 // The dock's content picker: the shared ContentCombobox wired as a TRANSIENT
-// selector. It never persists a value (always value=""); selecting an item —
-// whether typed-and-picked or drilled show→season→episode — hands the id to
-// useContentDispatch, which routes it to local playback or a cast target based
-// on the active view. Containers DRILL (selectContainers={false}); only leaves
-// dispatch. A scope <select> (from SearchProvider) narrows the search sources
-// via ContentCombobox's searchParams passthrough.
+// selector. It never persists a value (always value=""); selecting an item
+// hands the id to useContentDispatch, which routes it to the full browse view,
+// local playback, or a cast target based on the active view.
+//
+// Containers SELECT (selectContainers), they do not drill in the popover:
+// picking "Tuttle Twins" opens the show on the canvas, where BrowseView has
+// breadcrumbs, back, per-row Play Now, and survives a blur. In-popover
+// drilling looked equivalent but threw the whole traversal away on close —
+// on 2026-08-12 a user drilled show→season twice in 20s and still had to
+// leave for Plex Web to find an episode id.
+//
+// A scope <select> (from SearchProvider) narrows the search sources via
+// ContentCombobox's searchParams passthrough.
 import React, { useCallback, useMemo } from 'react';
 import { IconAlertTriangle } from '@tabler/icons-react';
 import { ContentCombobox } from '../../Content/combobox/ContentCombobox.jsx';
@@ -23,7 +30,7 @@ export function MediaContentSearch() {
   const handleChange = useCallback((id, item) => {
     if (!id) return; // clear/empty commits are no-ops for a transient picker
     log.info('select', { contentId: id, title: item?.title ?? null, type: item?.type ?? null });
-    // `route` is 'peek' | 'cast' | 'local' — without it, a selection that went
+    // `route` is 'peek' | 'cast' | 'browse' | 'local' — without it, a selection that went
     // to the wrong surface is invisible in the logs. It records the routing
     // INTENT, not the outcome: the cast dispatch is async and unawaited, so a
     // dispatch that later fails (or is swallowed by the dedupe window) still
@@ -63,8 +70,9 @@ export function MediaContentSearch() {
             value=""
             onChange={handleChange}
             placeholder="Search media…"
-            selectContainers={false}
+            selectContainers
             searchParams={currentScope?.params ?? ''}
+            logApp="media"
             appResults
             allowFreeform={false}
           />
