@@ -43,15 +43,13 @@ describe('PianoChessGame chrome', () => {
     expect(container.querySelector('.piano-chess__wordmark')).toBeNull();
   });
 
-  it('carries the way back in the shared context rail instead of a Leave button', () => {
-    const onDeactivate = vi.fn();
-    const { container } = render(<PianoChessGame onDeactivate={onDeactivate} />);
-    const rail = container.querySelector('.psc-rail');
-    expect(rail).not.toBeNull();
-    expect(rail.textContent).toContain('Games');
-    expect(rail.textContent).toContain('Piano Chess');
-    screen.getByText('▸ Games').click();
-    expect(onDeactivate).toHaveBeenCalled();
+  it('does not repeat the kiosk breadcrumb inside the game', () => {
+    // The kiosk header already names Games / Piano Chess and carries the way
+    // back. A second copy on the rail said the same thing twice and cost the
+    // state rail its top third.
+    const { container } = render(<PianoChessGame onDeactivate={vi.fn()} />);
+    expect(container.querySelector('.psc-rail')).toBeNull();
+    expect(container.textContent).not.toContain('Piano Chess');
   });
 });
 

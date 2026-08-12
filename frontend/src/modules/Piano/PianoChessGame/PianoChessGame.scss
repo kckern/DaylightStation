@@ -1,24 +1,30 @@
 /**
  * Piano Chess.
  *
- * The palette is the instrument's own bill of materials — ivory key, walnut
- * case, brass hardware, and the red felt under the hammers, which is reserved
- * for check because that is the only place the board needs to sound an alarm.
- * Type stays Roboto Condensed throughout (house face); emphasis is bought with
- * weight, tracking, and brass rather than with a second family.
+ * No palette of its own. The kiosk has a house style — charcoal page, raised
+ * surfaces, hairline borders, one green accent, a type scale and a radius scale
+ * — and this screen is one of its rooms, not a themed exception. The board's own
+ * squares are the only colour the game brings, because those have to read as a
+ * chessboard rather than as UI.
  */
 
 .piano-chess {
-  --pc-case: #17110e;
-  --pc-case-lift: #221913;
-  --pc-ivory: #efe4cd;
-  --pc-ivory-dim: #cbbfa8;
-  --pc-walnut: #55392b;
-  --pc-walnut-deep: #3b2619;
-  --pc-brass: #c9a227;
-  --pc-brass-glow: #f0cc55;
-  --pc-felt: #9b2c2c;
-  --pc-verdigris: #4e8878;
+  /* Board squares. Everything else comes from the house tokens. */
+  --pc-light: #e8ddc8;
+  --pc-dark: #9e7070;
+
+  /* The old walnut/brass/ivory names survive only as aliases so one edit
+     retints the whole screen; nothing here invents a colour any more. */
+  --pc-case: var(--piano-bg, #16161b);
+  --pc-case-lift: var(--piano-surface, #1f1f26);
+  --pc-ivory: var(--piano-fg, #f1f1f4);
+  --pc-ivory-dim: var(--piano-muted, #9a9aa6);
+  --pc-brass: var(--piano-accent-text, #5fe39a);
+  --pc-brass-glow: var(--piano-accent, #2ec46f);
+  --pc-felt: var(--piano-danger, #e05a4f);
+  --pc-verdigris: var(--piano-warn, #e0a83a);
+  --pc-walnut: var(--pc-dark);
+  --pc-walnut-deep: var(--pc-dark);
 
   position: absolute;
   inset: 0;
@@ -34,10 +40,9 @@
      and vw lie here (that gap once ran the board off a 1080p screen). Both
      axes are definite (absolute, inset 0), so `size` containment is safe. */
   container-type: size;
-  background:
-    radial-gradient(120% 90% at 50% 0%, var(--pc-case-lift) 0%, var(--pc-case) 62%);
-  color: var(--pc-ivory);
-  font-family: 'Roboto Condensed', sans-serif;
+  background: var(--piano-bg, #16161b);
+  color: var(--piano-fg, #f1f1f4);
+  /* Inherited from the kiosk shell — a game does not pick its own face. */
   overflow: hidden;
 }
 
@@ -48,9 +53,7 @@
 .piano-chess__redeal {
   margin: 0;
   font-size: 0.8rem;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: rgb(203 191 168 / 40%);
+  color: var(--piano-muted);
   transition: color 300ms ease;
 }
 
@@ -63,16 +66,14 @@
   display: flex;
   align-items: baseline;
   gap: 1rem;
-  font-size: 1.05rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--pc-ivory-dim);
+  font-size: var(--t-body, 1rem);
+  color: var(--piano-muted);
 }
 
 .piano-chess__difficulty {
   padding: 0.1rem 0.55rem;
-  border: 1px solid rgb(201 162 39 / 45%);
-  border-radius: 2px;
+  border: 1px solid var(--piano-accent, #2ec46f);
+  border-radius: var(--r-sm, 8px);
   font-size: 0.8rem;
   letter-spacing: 0.2em;
   color: var(--pc-brass);
@@ -81,14 +82,12 @@
 .piano-chess__settings-btn {
   align-self: flex-start;
   padding: 0.3rem 0.7rem;
-  border: 1px solid rgb(239 228 205 / 22%);
-  border-radius: 2px;
+  border: 1px solid var(--piano-border, #34343f);
+  border-radius: var(--r-sm, 8px);
   background: none;
   color: var(--pc-ivory-dim);
   font: inherit;
-  font-size: 0.75rem;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
+  font-size: var(--t-cap, 0.85rem);
   cursor: pointer;
 
   &:hover,
@@ -112,8 +111,8 @@
   width: min(34rem, 80cqw);
   margin-inline: auto;
   padding: 1rem 1.4rem 1.3rem;
-  border: 1px solid rgb(201 162 39 / 45%);
-  border-radius: 3px;
+  border: 1px solid var(--piano-accent, #2ec46f);
+  border-radius: var(--r-md, 12px);
   background: rgb(23 17 14 / 96%);
   box-shadow: 0 1rem 3rem rgb(0 0 0 / 60%);
   display: flex;
@@ -126,28 +125,24 @@
   align-items: baseline;
   justify-content: space-between;
   padding-block-end: 0.4rem;
-  border-block-end: 1px solid rgb(239 228 205 / 12%);
+  border-block-end: 1px solid var(--piano-border, #34343f);
 }
 
 .chess-settings__title {
   margin: 0;
   font-size: 1rem;
   font-weight: 700;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
   color: var(--pc-ivory);
 }
 
 .chess-settings__close {
   padding: 0.35rem 0.9rem;
   border: 1px solid var(--pc-brass);
-  border-radius: 2px;
+  border-radius: var(--r-sm, 8px);
   background: none;
   color: var(--pc-brass);
   font: inherit;
   font-size: 0.8rem;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
   cursor: pointer;
 
   &:hover,
@@ -158,9 +153,7 @@
   margin: 0.5rem 0 0;
   font-size: 0.7rem;
   font-weight: 400;
-  letter-spacing: 0.3em;
-  text-transform: uppercase;
-  color: rgb(203 191 168 / 60%);
+  color: var(--piano-muted, #9a9aa6);
 }
 
 .chess-settings__row {
@@ -177,8 +170,8 @@
   /* Kiosk-sized: a fingertip, not a pointer, is what lands here. */
   min-height: 2.6rem;
   padding: 0.4rem 0.85rem;
-  border: 1px solid rgb(239 228 205 / 22%);
-  border-radius: 2px;
+  border: 1px solid var(--piano-border, #34343f);
+  border-radius: var(--r-sm, 8px);
   background: none;
   color: var(--pc-ivory-dim);
   font: inherit;
@@ -187,11 +180,11 @@
   cursor: pointer;
 
   &:hover,
-  &:focus-visible { border-color: rgb(201 162 39 / 60%); color: var(--pc-ivory); }
+  &:focus-visible { border-color: var(--piano-accent, #2ec46f); color: var(--pc-ivory); }
 
   &.is-active {
     border-color: var(--pc-brass);
-    background: rgb(201 162 39 / 12%);
+    background: var(--piano-accent, #2ec46f);
     color: var(--pc-brass-glow);
   }
 }
@@ -199,7 +192,7 @@
 .chess-settings__note {
   font-size: 0.65rem;
   letter-spacing: 0.08em;
-  color: rgb(203 191 168 / 45%);
+  color: var(--piano-muted, #9a9aa6);
 }
 
 /* The shared kiosk context rail sits to the RIGHT of the board here, so its
@@ -207,7 +200,7 @@
 .piano-chess .psc-rail {
   padding: 0 0 0.75rem;
   border-right: none;
-  border-bottom: 1px solid rgb(239 228 205 / 12%);
+  border-bottom: 1px solid var(--piano-border, #34343f);
 }
 
 /* ---- stage -------------------------------------------------------------- */
@@ -293,15 +286,15 @@
   gap: 0.1rem;
   min-height: 8.5rem;
   padding: 0.5rem 0.4rem 0.6rem;
-  border: 1px solid rgb(239 228 205 / 12%);
-  border-radius: 3px;
+  border: 1px solid var(--piano-border, #34343f);
+  border-radius: var(--r-md, 12px);
   background: rgb(0 0 0 / 18%);
   text-align: center;
 }
 
 .piano-chess__hand--holding {
-  border-color: rgb(201 162 39 / 55%);
-  background: rgb(201 162 39 / 8%);
+  border-color: var(--piano-accent, #2ec46f);
+  background: color-mix(in srgb, var(--piano-accent) 14%, transparent);
 }
 
 .piano-chess__hand-piece {
@@ -310,36 +303,30 @@
   color: var(--pc-ivory);
 }
 
-.piano-chess__hand-piece--black { color: #2c211c; text-shadow: 0 0 1px rgb(239 228 205 / 70%); }
-.piano-chess__hand-piece--empty { color: rgb(203 191 168 / 22%); font-size: 2.4rem; }
+.piano-chess__hand-piece--black { color: #14141a; text-shadow: 0 0 2px var(--piano-fg); }
+.piano-chess__hand-piece--empty { color: var(--piano-muted, #9a9aa6); font-size: 2.4rem; }
 
 .piano-chess__hand-from {
-  font-size: 0.85rem;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--pc-ivory-dim);
+  font-size: var(--t-cap, 0.85rem);
+  color: var(--piano-muted);
 }
 
 .piano-chess__hand-escape {
   font-size: 0.75rem;
   line-height: 1.2;
-  color: rgb(201 162 39 / 85%);
+  color: var(--piano-accent, #2ec46f);
 }
 
 .piano-chess__rail-title {
   margin: 0;
-  font-size: 0.75rem;
-  font-weight: 400;
-  letter-spacing: 0.3em;
-  text-transform: uppercase;
-  color: rgb(203 191 168 / 60%);
+  font-size: var(--t-cap, 0.85rem);
+  font-weight: 500;
+  color: var(--piano-muted);
 }
 
 .piano-chess__slot-label {
-  font-size: 0.7rem;
-  letter-spacing: 0.26em;
-  text-transform: uppercase;
-  color: rgb(203 191 168 / 55%);
+  font-size: var(--t-cap, 0.85rem);
+  color: var(--piano-muted);
 }
 
 .piano-chess__prompt {
@@ -357,7 +344,7 @@
   gap: 0.35rem;
   margin: 0.4rem 0 0;
   padding-block-start: 0.6rem;
-  border-block-start: 1px solid rgb(239 228 205 / 12%);
+  border-block-start: 1px solid var(--piano-border, #34343f);
 }
 
 .piano-chess__summary-row {
@@ -381,14 +368,12 @@
   align-items: flex-start;
   margin-block-start: 0.75rem;
   padding: 0.45rem 0.8rem;
-  border: 1px solid rgb(239 228 205 / 22%);
-  border-radius: 2px;
+  border: 1px solid var(--piano-border, #34343f);
+  border-radius: var(--r-sm, 8px);
   background: none;
   color: var(--pc-ivory-dim);
   font: inherit;
   text-align: start;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
   cursor: pointer;
 
   &:disabled { opacity: 0.35; cursor: default; }
@@ -404,7 +389,7 @@
   font-size: 0.65rem;
   letter-spacing: 0.08em;
   text-transform: none;
-  color: rgb(203 191 168 / 45%);
+  color: var(--piano-muted, #9a9aa6);
 }
 
 /* ---- board -------------------------------------------------------------- */
@@ -425,9 +410,12 @@
      rails are the same width by construction, so whatever this leaves is
      centred, and changing --pc-rail can never knock the board off centre or
      overlap it. */
+  /* The frame is the board PLUS its two rim strips, so both strips come out of
+     the budget on their own axis. Named rather than folded into a constant
+     because the reading vocabulary makes them much bigger. */
   --cb-size: min(
-    calc(100cqw - 2 * var(--pc-rail, 15.5rem) - 3rem),
-    calc(100cqh - 2.5rem)
+    calc(100cqw - 2 * var(--pc-rail, 15.5rem) - 3rem - var(--pc-axis-w, 1.5rem)),
+    calc(100cqh - var(--pc-axis, 2.5rem))
   );
   --cb-light: var(--pc-ivory);
   --cb-dark: #9e7070;
@@ -464,17 +452,17 @@
   color: var(--pc-ivory-dim);
 }
 
-.piano-chess__move-index { color: rgb(203 191 168 / 40%); font-size: 0.75rem; }
+.piano-chess__move-index { color: var(--piano-muted, #9a9aa6); font-size: 0.75rem; }
 .piano-chess__move-chords { color: var(--pc-brass); font-weight: 700; }
-.piano-chess__move-san { color: rgb(203 191 168 / 55%); font-size: 0.8rem; }
-.piano-chess__move--empty { grid-template-columns: 1fr; color: rgb(203 191 168 / 40%); }
+.piano-chess__move-san { color: var(--piano-muted, #9a9aa6); font-size: 0.8rem; }
+.piano-chess__move--empty { grid-template-columns: 1fr; color: var(--piano-muted, #9a9aa6); }
 
 .piano-chess__captured {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
   padding-block-start: 0.6rem;
-  border-block-start: 1px solid rgb(239 228 205 / 12%);
+  border-block-start: 1px solid var(--piano-border, #34343f);
 }
 
 .piano-chess__captured-pieces {
@@ -498,7 +486,7 @@
   margin-inline: auto;
   padding: 0.6rem 1.4rem;
   border: 1px solid rgb(155 44 44 / 55%);
-  border-radius: 3px;
+  border-radius: var(--r-md, 12px);
   background: rgb(35 18 14 / 94%);
   box-shadow: 0 1rem 2.5rem rgb(0 0 0 / 55%);
   color: var(--pc-ivory);
@@ -584,7 +572,7 @@
   gap: 0.1rem;
   min-height: 3.4rem;
   padding: 0.4rem 0.5rem;
-  border-inline-start: 2px solid rgb(239 228 205 / 18%);
+  border-inline-start: 2px solid var(--piano-border, #34343f);
   font-size: 0.9rem;
   letter-spacing: 0.04em;
   color: var(--pc-ivory-dim);
@@ -599,10 +587,20 @@
 }
 
 .chess-readout--unmapped .chess-readout__chord { color: var(--pc-felt); }
-.chess-readout--offline { color: rgb(203 191 168 / 45%); }
+.chess-readout--offline { color: var(--piano-muted, #9a9aa6); }
 
 
 /* ---- the chord rail: a mirror of the hands ------------------------------- */
+
+/* Paper for the live staff. `.action-staff` supplies the cream card the other
+   games' staves sit on; only the sizing is local. */
+.piano-chess__staff-card.action-staff {
+  width: 100%;
+  height: 9rem;
+  min-height: 0;
+  padding: 0.25rem;
+  border-radius: var(--r-md, 12px);
+}
 
 /* Both read-outs are full-width cards here, stacked — the opposite of the old
    bottom strip, where they competed for one narrow row. */
@@ -639,10 +637,36 @@
 
 .chess-staff-label__line,
 .chess-staff-label__ledger {
-  stroke: rgb(203 191 168 / 45%);
+  stroke: var(--piano-muted, #9a9aa6);
   stroke-width: 0.8;
 }
 
 .chess-staff-label__head {
   fill: var(--pc-brass-glow);
+}
+
+
+/* ---- the reading vocabulary ---------------------------------------------- */
+
+/* The rim stops being two lines of text and becomes sixteen little staves, each
+   needing enough height to show a clef, five lines and a ledger. The board
+   yields the room rather than the labels being squeezed past legibility — a
+   staff you cannot read is the one thing this vocabulary cannot afford. */
+.piano-chess--reading {
+  --pc-axis: 4.5rem;
+  --pc-axis-w: 4rem;
+}
+
+/* Each rim cell is a card, so the strips get a definite size instead of being
+   sized by whatever the SVG's intrinsic ratio works out to. */
+.piano-chess--reading .chess-board__rank-axis {
+  width: var(--pc-axis-w);
+  padding-inline-end: 0.35rem;
+  gap: 0.2rem;
+}
+
+.piano-chess--reading .chess-board__file-axis {
+  height: calc(var(--pc-axis) - 0.5rem);
+  padding-block-start: 0.35rem;
+  gap: 0.2rem;
 }
