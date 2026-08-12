@@ -320,6 +320,207 @@ describe('StravaHarvester', () => {
       expect(matches).toHaveLength(0);
     });
 
+    /**
+     * Regression for 2026-07-25: this path (harvest → applyHomeSessionEnrichment
+     * and matchBacklog) carried NO plausibility guards at all, so a 5.3 km
+     * outdoor run was stamped onto a 3h15m garage session it fell inside —
+     * writing homeSessionId, homeCoins and homeMedia onto the activity.
+     */
+    it('should NOT match an outdoor GPS activity to a garage session', async () => {
+      const dateDir = path.join(tmpDir, '2026-07-25');
+      fs.mkdirSync(dateDir, { recursive: true });
+
+      const sessionData = {
+        sessionId: '20260725132556',
+        session: {
+          id: '20260725132556',
+          date: '2026-07-25',
+          start: '2026-07-25 13:25:56.135',
+          end: '2026-07-25 16:41:15.601',
+          duration_seconds: 11719,
+        },
+        timezone: 'America/Los_Angeles',
+        participants: {
+          user_1: { display_name: 'User_1', hr_device: '40475', is_primary: true },
+          user_2: { display_name: 'User_2', hr_device: '28676', is_primary: true },
+        },
+        summary: { media: [{ contentId: 'plex:665664' }] },
+        treasureBox: { totalCoins: 4179 },
+        timeline: {
+          interval_seconds: 5,
+          tick_count: 2346,
+          encoding: 'rle',
+          // 30 live ticks of drive-by strap inside the run's window.
+          series: {
+            'user_1:hr': JSON.stringify([[null, 1770], [150, 30], [null, 546]]),
+          },
+          events: [],
+        },
+      };
+
+      const { saveYaml } = await import('#system/utils/FileIO.mjs');
+      saveYaml(path.join(dateDir, '20260725132556'), sessionData);
+
+      const activity = {
+        id: 19465331355,
+        start_date: '2026-07-25T22:41:28Z', // 15:41:28 PT
+        moving_time: 2428,
+        elapsed_time: 2555,
+        distance: 5268.4,
+        trainer: false,
+        start_latlng: [47.409796, -122.168995],
+        type: 'Run',
+      };
+
+      harvester = new StravaHarvester({
+        stravaClient: mockStravaClient,
+        lifelogStore: mockLifelogStore,
+        getUserAuth: mockConfigService.getUserAuth,
+        getUserDir: mockConfigService.getUserDir,
+        clientId: mockConfigService.getSecret('STRAVA_CLIENT_ID'),
+        redirectUri: mockConfigService.getSecret('STRAVA_URL'),
+        mediaDir: mockConfigService.getMediaDir(),
+        fitnessHistoryDir: tmpDir,
+        timezone: 'America/Los_Angeles',
+        logger: mockLogger,
+      });
+
+      const matches = await harvester.matchHomeSessions('user_1', [activity]);
+      expect(matches).toHaveLength(0);
+    });
+
+    it('should NOT match when the participant only drifted through range', async () => {
+      const dateDir = path.join(tmpDir, '2026-07-25');
+      fs.mkdirSync(dateDir, { recursive: true });
+
+      const sessionData = {
+        sessionId: '20260725132556',
+        session: {
+          id: '20260725132556',
+          date: '2026-07-25',
+          start: '2026-07-25 13:25:56.135',
+          end: '2026-07-25 16:41:15.601',
+          duration_seconds: 11719,
+        },
+        timezone: 'America/Los_Angeles',
+        participants: {
+          user_1: { display_name: 'User_1', hr_device: '40475', is_primary: true },
+        },
+        summary: { media: [{ contentId: 'plex:665664' }] },
+        treasureBox: { totalCoins: 4179 },
+        timeline: {
+          interval_seconds: 5,
+          tick_count: 2346,
+          encoding: 'rle',
+          series: {
+            'user_1:hr': JSON.stringify([[null, 1770], [150, 30], [null, 546]]),
+          },
+          events: [],
+        },
+      };
+
+      const { saveYaml } = await import('#system/utils/FileIO.mjs');
+      saveYaml(path.join(dateDir, '20260725132556'), sessionData);
+
+      // matchBacklog rebuilds activities from summary rows: no latlng, no
+      // trainer flag, and distance omitted for indoor work. Presence is the
+      // only guard left with anything to say.
+      const activity = {
+        id: 19465331355,
+        start_date: '2026-07-25T22:41:28Z',
+        moving_time: 2428,
+        type: 'Run',
+      };
+
+      harvester = new StravaHarvester({
+        stravaClient: mockStravaClient,
+        lifelogStore: mockLifelogStore,
+        getUserAuth: mockConfigService.getUserAuth,
+        getUserDir: mockConfigService.getUserDir,
+        clientId: mockConfigService.getSecret('STRAVA_CLIENT_ID'),
+        redirectUri: mockConfigService.getSecret('STRAVA_URL'),
+        mediaDir: mockConfigService.getMediaDir(),
+        fitnessHistoryDir: tmpDir,
+        timezone: 'America/Los_Angeles',
+        logger: mockLogger,
+      });
+
+      const matches = await harvester.matchHomeSessions('user_1', [activity]);
+      expect(matches).toHaveLength(0);
+    });
+
+    it('matchBacklog carries distance through so the venue guard can see it', async () => {
+      // matchBacklog rebuilds activities from summary rows. If it drops
+      // `distance`, an outdoor activity looks venue-less on the scheduled path
+      // and only presence stands between it and a garage session — which is no
+      // help when the athlete's strap WAS recording the whole time.
+      const dateDir = path.join(tmpDir, '2026-07-25');
+      fs.mkdirSync(dateDir, { recursive: true });
+
+      const sessionData = {
+        sessionId: '20260725132556',
+        session: {
+          id: '20260725132556',
+          date: '2026-07-25',
+          start: '2026-07-25 15:41:00',
+          end: '2026-07-25 16:25:00',
+          duration_seconds: 2640,
+        },
+        timezone: 'America/Los_Angeles',
+        participants: {
+          user_1: { display_name: 'User_1', hr_device: '40475', is_primary: true },
+        },
+        summary: { media: [{ contentId: 'plex:665664' }] },
+        treasureBox: { totalCoins: 100 },
+        // Full HR coverage: presence alone would wave this through.
+        timeline: {
+          interval_seconds: 5,
+          tick_count: 528,
+          encoding: 'rle',
+          series: { 'user_1:hr': JSON.stringify([[140, 528]]) },
+          events: [],
+        },
+      };
+
+      const { saveYaml } = await import('#system/utils/FileIO.mjs');
+      saveYaml(path.join(dateDir, '20260725132556'), sessionData);
+
+      mockLifelogStore.load.mockResolvedValue({
+        '2026-07-25': [{
+          id: 19465331355,
+          startTime: '03:41 pm',
+          minutes: 40.47,
+          type: 'Run',
+          distance: 5268.4,
+        }],
+      });
+
+      harvester = new StravaHarvester({
+        stravaClient: mockStravaClient,
+        lifelogStore: mockLifelogStore,
+        getUserAuth: mockConfigService.getUserAuth,
+        getUserDir: mockConfigService.getUserDir,
+        clientId: mockConfigService.getSecret('STRAVA_CLIENT_ID'),
+        redirectUri: mockConfigService.getSecret('STRAVA_URL'),
+        mediaDir: mockConfigService.getMediaDir(),
+        fitnessHistoryDir: tmpDir,
+        timezone: 'America/Los_Angeles',
+        logger: mockLogger,
+      });
+
+      await harvester.matchBacklog('user_1', 3650);
+
+      // Nothing should have been stamped onto the summary entry.
+      const saved = mockLifelogStore.save.mock.calls
+        .map(([, , data]) => data)
+        .filter(Boolean);
+      for (const data of saved) {
+        for (const entry of data['2026-07-25'] || []) {
+          expect(entry.homeSessionId).toBeUndefined();
+        }
+      }
+    });
+
     it('should NOT match when times do not overlap within 5 min buffer', async () => {
       const dateDir = path.join(tmpDir, '2026-02-15');
       fs.mkdirSync(dateDir, { recursive: true });
