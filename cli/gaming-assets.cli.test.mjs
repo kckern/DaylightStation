@@ -102,6 +102,17 @@ describe('gaming asset audit tooling', () => {
     assert.equal(forbiddenColor.valid, false);
     assert.ok(forbiddenColor.errors.some((error) => error.includes('frame ground contains forbidden color #ff0000')));
     delete manifest.assets['terrain.single'].forbidden_colors;
+    const blank = createCanvas(16, 16);
+    await writeFile(path.join(root, 'blank.png'), blank.toBuffer('image/png'));
+    manifest.assets['overlay.empty'] = {
+      source: 'blank.png', status: 'approved', license_scope: 'core-commercial', kind: 'effect-sheet', tags: ['overlay'],
+      geometry: { layout: 'grid', cell: [16, 16], grid: [1, 1] }, frames: { empty: { cell: [0, 0] } },
+    };
+    await writeFile(manifestPath, YAML.stringify(manifest));
+    const emptyOverlay = await validateManifest({ root, manifestPath });
+    assert.equal(emptyOverlay.valid, false);
+    assert.ok(emptyOverlay.errors.some((error) => error.includes('overlay frame empty is empty')));
+    delete manifest.assets['overlay.empty'];
     manifest.assets['npc.hero'].frames['walk.1'].content_bounds = [1, 0, 15, 16];
     await writeFile(manifestPath, YAML.stringify(manifest));
     const badBounds = await validateManifest({ root, manifestPath });

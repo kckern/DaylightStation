@@ -112,7 +112,7 @@ placements:
   - { asset: crop.carrot#sprout, at: [168, 284], z: 18, depth_sort: true }
 
   # Lake details are sparse and activity-driven: dock, fisher, moored boat.
-  - { asset: prop.boat#default, at: [738, 532], z: 18, depth_sort: true }
+  - { asset: prop.boat#default, at: [732, 532], z: 18, depth_sort: true }
   - { asset: prop.cattails#still, at: [704, 288], z: 16 }
   - { asset: prop.cattails#sway.1, at: [728, 302], z: 16 }
   - { asset: prop.cattails#sway.2, at: [750, 292], z: 16 }

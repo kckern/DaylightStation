@@ -15,6 +15,7 @@ import {
   failureNotice,
   ensureWorkoutOnShelf,
   resolveRunSession,
+  mintSessionId,
   postStrengthRun,
   logStrengthRun,
   strengthPath
@@ -34,23 +35,13 @@ const PLAN = {
 const WORK = (groupIndex, slug) => ({ kind: 'work', groupIndex, slug, setNumber: 1, totalSets: 3 });
 const REST = (groupIndex) => ({ kind: 'rest', groupIndex, seconds: 60 });
 
-/** A session that already has one open. */
-const liveSession = (sessionId = 'fs_20260811120000') => ({
-  sessionId,
-  ensureStarted: vi.fn(),
-  saveNow: vi.fn()
-});
+/** A session the fitness app already has open. */
+const liveSession = (sessionId = 'fs_20260811120000') => ({ sessionId });
 
-/** A session with nothing open, which opens on `ensureStarted({force:true})`. */
-const dormantSession = (opensTo = 'fs_20260811130000') => {
-  const s = {
-    sessionId: null,
-    saveNow: vi.fn(async () => { s.saved = true; }),
-    saved: false,
-    ensureStarted: vi.fn((opts) => { s.startedWith = opts; s.sessionId = opensTo; })
-  };
-  return s;
-};
+/** The fitness app with no session running — the ordinary strapless-strength case. */
+const dormantSession = () => ({ sessionId: null });
+
+const RUN_START = new Date(2026, 7, 11, 12, 30, 0); // local time, as session ids are
 
 describe('completedWorkSteps', () => {
   it('keeps the finished work steps and drops rest', () => {
@@ -131,33 +122,27 @@ describe('ensureWorkoutOnShelf', () => {
   });
 });
 
-describe('resolveRunSession — adopt, else open', () => {
-  it('adopts a live session and never starts a second one', async () => {
-    const session = liveSession('fs_20260811120000');
-    expect(await resolveRunSession(session))
-      .toEqual({ sessionId: 'fs_20260811120000', opened: false });
-    expect(session.ensureStarted).not.toHaveBeenCalled();
-    expect(session.saveNow).not.toHaveBeenCalled();
+describe('resolveRunSession — adopt, else ask the server to open one', () => {
+  it('adopts a live session, and does NOT ask for one to be opened', () => {
+    // The flag matters: an id the fitness app is holding really should exist, and a
+    // 404 on it is a bug that has to stay visible rather than being papered over
+    // with a freshly created record.
+    expect(resolveRunSession(liveSession('fs_20260811120000'), RUN_START))
+      .toEqual({ sessionId: 'fs_20260811120000', openSession: false });
   });
 
-  it('opens one when there is none, and waits for it to be written', async () => {
-    const session = dormantSession('fs_20260811130000');
-    const res = await resolveRunSession(session);
-    expect(res).toEqual({ sessionId: 'fs_20260811130000', opened: true });
-    expect(session.startedWith).toEqual({ force: true, reason: 'strength_run' });
-    // Without this await the run posts against a session the server has never been
-    // told about and the route 404s it.
-    expect(session.saveNow).toHaveBeenCalled();
+  it('mints the id the run would have had and asks for it to be opened', () => {
+    expect(resolveRunSession(dormantSession(), RUN_START))
+      .toEqual({ sessionId: '20260811123000', openSession: true });
   });
 
-  it('reports no session rather than throwing when there is no fitness app', async () => {
-    expect(await resolveRunSession(null)).toEqual({ sessionId: null, opened: false });
-    expect(await resolveRunSession({})).toEqual({ sessionId: null, opened: false });
+  it('does the same when there is no fitness app at all', () => {
+    expect(resolveRunSession(null, RUN_START))
+      .toEqual({ sessionId: '20260811123000', openSession: true });
   });
 
-  it('reports no session when the session refuses to open', async () => {
-    const session = { sessionId: null, ensureStarted: () => {} };
-    expect(await resolveRunSession(session)).toEqual({ sessionId: null, opened: false });
+  it('mints ids the server can sanitise to 14 digits', () => {
+    expect(mintSessionId(RUN_START)).toMatch(/^\d{14}$/);
   });
 });
 
@@ -185,6 +170,17 @@ describe('postStrengthRun', () => {
       },
       'POST'
     );
+  });
+
+  it('only sends openSession when it was actually asked for', async () => {
+    const api = vi.fn(async () => ({ ok: true }));
+    await postStrengthRun(args(api));
+    expect(api.mock.calls[0][1]).not.toHaveProperty('openSession');
+
+    api.mockClear();
+    await postStrengthRun(args(api, { openSession: true, startedAt: '2026-08-11T12:00:00.000Z' }));
+    expect(api.mock.calls[0][1].openSession).toBe(true);
+    expect(api.mock.calls[0][1].startedAt).toBe('2026-08-11T12:00:00.000Z');
   });
 
   it('retries a dropped request and succeeds on the second attempt', async () => {
@@ -220,6 +216,7 @@ describe('logStrengthRun — the whole job', () => {
     workout: PLAN,
     completedSteps: [WORK(0, 'back-squat'), REST(0), WORK(0, 'back-squat')],
     session: liveSession(),
+    startedAt: RUN_START,
     api,
     sleep: async () => {},
     now: () => new Date('2026-08-11T12:34:56.000Z'),
@@ -242,13 +239,26 @@ describe('logStrengthRun — the whole job', () => {
     expect(body.completedAt).toBe('2026-08-11T12:34:56.000Z');
   });
 
-  it('opens a session when there is none, and says so', async () => {
-    const api = vi.fn(async () => ({ ok: true }));
-    const session = dormantSession();
-    const res = await run(api, { session });
+  it('asks the server to open a session when the app has none', async () => {
+    const api = vi.fn(async () => ({ ok: true, openedSession: true }));
+    const res = await run(api, { session: dormantSession() });
     expect(res.ok).toBe(true);
     expect(res.openedSession).toBe(true);
-    expect(session.ensureStarted).toHaveBeenCalled();
+
+    const [path, body] = api.mock.calls[0];
+    expect(path).toBe(strengthPath('20260811123000'));
+    expect(body.openSession).toBe(true);
+    // The session starts when the RUN started, not when the last set was cleared —
+    // otherwise the record collapses the whole workout to an instant.
+    expect(body.startedAt).toBe(RUN_START.toISOString());
+  });
+
+  it('joins a live session instead of forking a second record', async () => {
+    const api = vi.fn(async () => ({ ok: true }));
+    const res = await run(api, { session: liveSession('fs_20260811090000') });
+    expect(res.ok).toBe(true);
+    expect(res.sessionId).toBe('fs_20260811090000');
+    expect(api.mock.calls[0][1]).not.toHaveProperty('openSession');
   });
 
   it('saves an unsaved plan first, then files against it', async () => {

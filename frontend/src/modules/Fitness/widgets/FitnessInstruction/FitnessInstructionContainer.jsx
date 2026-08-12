@@ -116,9 +116,15 @@ export default function FitnessInstructionContainer({ onMount, logRun = logStren
     setWorkout({ exercises: picked });
   }, [transition]);
 
+  // When the run began. A session opened FOR this run starts here rather than at
+  // the moment the last set was cleared, so the record covers the workout instead
+  // of collapsing it to an instant.
+  const runStartedAtRef = useRef(null);
+
   // build → run. The builder hands over the workout it assembled.
   const startRun = useCallback((builtWorkout = null) => {
     if (!transition('run')) return;
+    runStartedAtRef.current = new Date();
     if (builtWorkout) setWorkout(builtWorkout);
   }, [transition]);
 
@@ -155,7 +161,8 @@ export default function FitnessInstructionContainer({ onMount, logRun = logStren
       result = await logRun({
         workout: plan,
         completedSteps,
-        session: fitnessSessionRef.current
+        session: fitnessSessionRef.current,
+        startedAt: runStartedAtRef.current
       });
     } catch (err) {
       // logStrengthRun is written not to throw; if it ever does, the person still

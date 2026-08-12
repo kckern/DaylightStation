@@ -122,13 +122,13 @@ assets:
 
   terrain.water-detail:
     source: assets/default/environment/effects/water-overlays.png
-    source_sha256: e29557ad1e75e0ff538f09018c260c826b6f4ff9f5742f6d64fde1a3e5c93eda
+    source_sha256: a7a2aabb20843a766bf4bfd2282be0614a484be92766112c82e69b2430368685
     status: approved
     license_scope: core-commercial
     kind: tile-sheet
     tags: [terrain, water, ripple, variation, overlay, topdown]
-    forbidden_colors: ['#0095e9', '#006da8']
-    geometry: { layout: grid, cell: [16, 16], grid: [4, 2] }
+    forbidden_colors: ['#0095e9']
+    geometry: { layout: grid, cell: [16, 16], grid: [3, 1] }
     defaults: { anchor: top-left }
     frames:
       ripple.a: { cell: [0, 0] }
@@ -409,20 +409,20 @@ assets:
       sway: { frames: [still, sway.1, sway.2, sway.1], fps: 4, loop: loop }
 
   prop.water-rock:
-    source: assets/default/environment/effects/water-overlays.png
-    source_sha256: e29557ad1e75e0ff538f09018c260c826b6f4ff9f5742f6d64fde1a3e5c93eda
+    source: assets/default/environment/effects/water-rock-overlay.png
+    source_sha256: d8bbe38ae726c006196e3187d085bfe52c43e0b0e5de56b0f419db2b31f519ad
     status: approved
     license_scope: core-commercial
     kind: sprite-sheet
     tags: [prop, water, rock, ripple, shoreline, animated, overlay, topdown]
     forbidden_colors: ['#0095e9', '#006da8', '#00cdf9', '#00a5d7', '#0cf1ff', '#0b9eca']
-    geometry: { layout: grid, cell: [16, 16], grid: [4, 2] }
+    geometry: { layout: grid, cell: [16, 16], grid: [4, 1] }
     defaults: { anchor: bottom-center }
     frames:
-      still: { cell: [0, 1] }
-      ripple.1: { cell: [1, 1] }
-      ripple.2: { cell: [2, 1] }
-      ripple.3: { cell: [3, 1] }
+      still: { cell: [0, 0] }
+      ripple.1: { cell: [1, 0] }
+      ripple.2: { cell: [2, 0] }
+      ripple.3: { cell: [3, 0] }
     clips:
       ripple: { frames: [still, ripple.1, ripple.2, ripple.3], fps: 4, loop: loop }
 
