@@ -1,5 +1,5 @@
 import { useMemo, useCallback, useRef, useEffect } from 'react';
-import { Routes, Route, useNavigate, useParams } from 'react-router-dom';
+import { Routes, Route, useLocation, useNavigate, useParams } from 'react-router-dom';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { usePianoKioskConfig } from '../../PianoConfig.jsx';
 import { usePianoCoursePlayable } from './usePianoCoursePlayable.js';
@@ -14,6 +14,7 @@ import { isSubcourseShow } from './subcourses.js';
 import SubcourseNavigator from './SubcourseNavigator.jsx';
 import { SkeletonStage } from '../../Skeleton.jsx';
 import { resolveCoursePolicy, nextLectureAfter } from './coursePolicy.js';
+import { pianoLearningApi } from '../Exercises/pianoLearningApi.js';
 
 const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
 
@@ -123,6 +124,7 @@ export function CourseDetailRoute() {
 export function LecturePlayerRoute({ PlayerComponent = PianoVideoPlayer }) {
   const { courseId, lectureId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { config } = usePianoKioskConfig();
   const { currentUser } = usePianoUser();
   // Keep the whole response so we can read the show/source title + per-user fields.
@@ -138,6 +140,8 @@ export function LecturePlayerRoute({ PlayerComponent = PianoVideoPlayer }) {
   // end-of-lecture behavior.
   const policy = useMemo(() => resolveCoursePolicy(config.videos, currentUser), [config, currentUser]);
   const nextLecture = useMemo(() => nextLectureAfter(lectures, lectureId), [lectures, lectureId]);
+  const checkpoint = lecture?.piano?.checkpoint ?? null;
+  const checkpointPending = Boolean(checkpoint && !lecture?.checkpointStatus?.passed);
 
   // The shared Player reacts to `ended` too — its own end-of-content listener
   // is registered at element-creation time, BEFORE PianoVideoPlayer's, so in
@@ -159,7 +163,33 @@ export function LecturePlayerRoute({ PlayerComponent = PianoVideoPlayer }) {
     navigate('..', { relative: 'path' });
   }, [navigate]);
 
-  const handleAutoAdvance = useCallback(() => {
+  const handleAutoAdvance = useCallback(async () => {
+    if (checkpointPending && checkpoint?.exercise_id) {
+      advancingRef.current = true;
+      const markerIndex = location.pathname.indexOf('/videos/');
+      const pianoBase = markerIndex >= 0 ? location.pathname.slice(0, markerIndex) : '/piano';
+      const returnPath = nextLecture
+        ? `${pianoBase}/videos/${encodeURIComponent(courseId)}/${encodeURIComponent(lectureContentId(nextLecture))}`
+        : `${pianoBase}/videos/${encodeURIComponent(courseId)}`;
+      const query = new URLSearchParams({
+        intent: 'challenge',
+        return: returnPath,
+        requirement: JSON.stringify(checkpoint),
+      });
+      getLogger().child({ component: 'piano-videos' }).info('piano.video.checkpoint-open', {
+        courseId, lectureId, exerciseId: checkpoint.exercise_id,
+      });
+      if (currentUser && currentUser !== 'guest') {
+        await pianoLearningApi.rememberCheckpoint(currentUser, lectureContentId(lecture), {
+          title: lecture.label || lecture.title,
+          courseTitle: source,
+          returnTo: returnPath,
+          requirement: checkpoint,
+        });
+      }
+      navigate(`${pianoBase}/exercises/run/${encodeURIComponent(checkpoint.exercise_id)}?${query}`, { replace: true });
+      return;
+    }
     if (!nextLecture) {
       getLogger().child({ component: 'piano-videos' }).info('piano.video.auto-advance-end-of-course', { courseId });
       navigate('..', { relative: 'path' });
@@ -173,7 +203,7 @@ export function LecturePlayerRoute({ PlayerComponent = PianoVideoPlayer }) {
     // instead of pushing keeps that a no-op history-wise, so the natural path
     // nets exactly one new history entry instead of a spurious extra one.
     navigate(`../${nextId}`, { relative: 'path', replace: true });
-  }, [nextLecture, navigate, lectureId, courseId]);
+  }, [checkpoint, checkpointPending, courseId, currentUser, lecture, lectureId, location.pathname, navigate, nextLecture, source]);
 
   // Keep the tablet screen awake only while the lecture is ACTIVELY PLAYING
   // (passive playback produces no MIDI/touch that would otherwise reset the
@@ -201,7 +231,7 @@ export function LecturePlayerRoute({ PlayerComponent = PianoVideoPlayer }) {
       isSequential={isSequential}
       engagementTimeoutSeconds={config.videos?.engagement_timeout_seconds ?? 90}
       engagementGateEnabled={policy.engagementGate}
-      onAutoAdvance={policy.autoAdvance ? handleAutoAdvance : null}
+      onAutoAdvance={checkpointPending || policy.autoAdvance ? handleAutoAdvance : null}
     />
   );
 }

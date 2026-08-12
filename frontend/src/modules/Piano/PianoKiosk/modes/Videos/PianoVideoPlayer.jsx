@@ -125,6 +125,14 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
   usePianoWatchLog({ mediaEl, contentId, title, resumeSeconds, userId: currentUser, engagedRef });
   useReloadGuard(isPlaying);
 
+  // Player's clear callback is registered before this component's ended
+  // listener. When a completion coordinator exists, suppress only that natural
+  // end clear so the route can choose checkpoint, next lesson, or course end.
+  const handlePlayerClear = useCallback(() => {
+    if (mediaEl?.ended && onAutoAdvanceRef.current) return;
+    onBack();
+  }, [mediaEl, onBack]);
+
   // Memoize the heavy Player element so high-frequency re-renders (timeupdate
   // ticks, MIDI play-along notes) DON'T recreate it — recreating it remounted
   // the video, which caused the per-keypress skips, the restart loop, and audio
@@ -140,10 +148,10 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
             playhead and auto-exit seconds later when `ended` fires (the
             re-watch "jumpscare"). Passing our value for BOTH the completed and
             in-progress cases means there's only ever one source of truth. */}
-        <Player ref={playerRef} play={{ contentId, shader: 'focused', seconds: resumeSeconds, resume: false }} clear={onBack} />
+        <Player ref={playerRef} play={{ contentId, shader: 'focused', seconds: resumeSeconds, resume: false }} clear={handlePlayerClear} />
       </Suspense>
     </PlayerBoundary>
-  ), [contentId, onBack, resumeSeconds]);
+  ), [contentId, handlePlayerClear, onBack, resumeSeconds]);
 
   // Fullscreen is entered from the chrome strip's button; a tap never enters it.
   // While fullscreen the strip is offscreen, so taps summon the transport
@@ -273,7 +281,7 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
   if (!contentId) {
     return (
       <div className="piano-mode__placeholder">
-        This lecture can't be played. <button type="button" onClick={onBack}>Back</button>
+        This lecture cannot be played. <button type="button" onClick={onBack}>Back</button>
       </div>
     );
   }
@@ -282,7 +290,7 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
     getLogger().child({ component: 'piano-video-player' }).warn('piano.video.mount-timeout', { contentId });
     return (
       <div className="piano-mode__placeholder">
-        This video didn't start. <button type="button" onClick={onBack}>Back to course</button>
+        This video did not start. <button type="button" onClick={onBack}>Back to course</button>
       </div>
     );
   }

@@ -233,6 +233,57 @@ provenance:
 is a course). Ordering within a book and difficulty across the bank are
 different things, and both are kept.
 
+## Learning programs and the Exercises workspace
+
+The bank is content; a learning program is policy over stable bank-instance
+ids. `shared/music/learningPrograms.mjs` currently projects the authored Hanon
+collection into a 30-step program without copying its notes. Each step names the
+canonical two-octave, up-and-down C instance and a versioned pass requirement:
+complete and clean, at the declared starting tempo, with at least 0.8 placement.
+Passing a step unlocks the next; faster clean passes are retained as mastery
+milestones rather than extra steps.
+
+`/piano/exercises` is the learner-facing home for both jobs:
+
+- **Continue** resumes the first unfinished teacher-required program, learner
+  enrollment, or video-lesson checkpoint.
+- **My programs** shows ordered progress and makes the Hanon sequence an
+  explicit opt-in instead of hiding it in the catalog.
+- **Browse** exposes the complete authored catalog with URL-addressable filters
+  for collection, form, level, mode, hands, and the selected learner's progress.
+- **Practice** is wait-for-correct and can never open a gate. **Pass challenge**
+  uses the requirement's tempo/rubric and writes portable assessment evidence.
+
+Learner enrollments and pending video checkpoints live under
+`users/<id>/apps/piano/learning.yml`. Teacher assignments live under the
+household piano app with an append-only assignment history and use the existing
+teacher PIN gate. Progress itself is not duplicated there: it is projected from
+the attempt ledger, so a qualifying performance in Exercises or a game counts
+against the same requirement.
+
+### Video exit checkpoints
+
+An episode in the Plex curriculum index may declare `piano.checkpoint` using the
+same requirement shape as a program step:
+
+```yaml
+checkpoint:
+  exercise_id: drills/hanon/001@root=C,direction=up-then-down,span_octaves=2
+  mode: cued
+  rubric:
+    id: lesson-exit-v1
+    version: '1'
+    criteria: { completeness: 1, cleanliness: 1, placement: 0.8 }
+  gates: { pace: { target_bpm: 60 } }
+  required_passes: 1
+```
+
+The lesson counts as complete only after it is watched and that requirement has
+qualifying evidence. At natural video end the kiosk opens the exact exercise as
+a Pass challenge, remembers it on the learner's Exercises dashboard, and
+returns to the next lesson (or course) after a pass. Sequential course gates use
+the combined watched-plus-checkpoint result.
+
 ## Serving
 
 Mounted read-only on the piano router (`YamlExerciseBank` reads seeds;
@@ -242,10 +293,15 @@ request and never stored.
 | Route | Returns |
 |---|---|
 | `GET /api/v1/piano/bank` | collections and totals |
+| `GET /api/v1/piano/bank/catalog` | authored seed cards, facets, default instance ids, and valid variant counts |
 | `GET /api/v1/piano/bank/search?…` | filtered instances plus facet counts |
 | `GET /api/v1/piano/bank/<path>` | a category index, or a seed — categories nest to any depth |
 | `GET /api/v1/piano/bank/<seed>/instances` | instance ids; `?expand=true` materializes, `?limit=` caps |
 | `GET /api/v1/piano/bank/<seed>/instance?<axes>` | one instance, built from axis values |
+| `GET /api/v1/piano/programs` | available learning programs projected over bank ids |
+| `GET /api/v1/piano/users/<user>/learning` | per-user programs, next action, catalog progress, and pending checkpoints |
+| `PUT/DELETE /api/v1/piano/users/<user>/enrollments/<program>` | learner opt-in/opt-out; required programs cannot be removed |
+| `GET/PUT /api/v1/piano/users/<user>/program-assignments` | teacher-controlled ordered requirements |
 
 Listing returns ids by default because a 504-instance seed is cheap to name and
 expensive to build. Expansion is opt-in and capped.

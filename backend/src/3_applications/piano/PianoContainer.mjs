@@ -24,13 +24,14 @@ export class PianoContainer {
   #composerSongStore;
   #configService;
   #plexClient;
+  #learningService;
   #logger;
 
   #getCourseProgress;
   #getPlayableUnits;
   #getRecentCourseActivity;
 
-  constructor({ studioDatastore, fitnessPlayableService = null, userVideoProgressStore = null, composerSongStore = null, configService, plexClient = null, logger = console } = {}) {
+  constructor({ studioDatastore, fitnessPlayableService = null, userVideoProgressStore = null, composerSongStore = null, configService, plexClient = null, learningService = null, logger = console } = {}) {
     if (!studioDatastore) throw new Error('PianoContainer: studioDatastore required');
     if (!configService) throw new Error('PianoContainer: configService required');
     this.#studioDatastore = studioDatastore;
@@ -39,6 +40,7 @@ export class PianoContainer {
     this.#composerSongStore = composerSongStore;
     this.#configService = configService;
     this.#plexClient = plexClient;
+    this.#learningService = learningService;
     this.#logger = logger;
   }
 
@@ -75,6 +77,7 @@ export class PianoContainer {
         fitnessPlayableService: this.#fitnessPlayableService,
         userVideoProgressStore: this.#userVideoProgressStore,
         configService: this.#configService,
+        learningService: this.#learningService,
         logger: this.#logger,
       });
     }

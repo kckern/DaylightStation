@@ -218,23 +218,26 @@ The canonical counterpart is the [exercise bank](exercise-bank.md) at
 surfaces, stored as seeds that expand into instances. It currently holds 58
 seeds yielding 2,760 performable instances (Hanon 1–30, plus notes, intervals,
 triads, sevenths, modes, arpeggios, blues/jazz/rock runs, beginner drills and
-chord progressions), served
-read-only at `/api/v1/piano/bank`. No surface reads it yet, so each producer
-still owns its own content meanwhile.
+chord progressions), served read-only at `/api/v1/piano/bank` and browsed in
+`/piano/exercises`. `BankChallengePolicy` also materializes exact bank
+requirements for games and lesson checkpoints. Sheet Music remains a separate
+score-range producer.
 
-## Not yet provided
+## Persistence and remaining boundaries
 
-- **Drill results are not persisted.** A completed drill run logs its summary
-  (`piano.drill-complete`) and discards it, so the Exercises surface has no
-  per-item scores or progress to show until runs are saved. The rubric's vector
-  needs this too: the attempts endpoint validates a scalar 0-1, and a vector
-  cannot be reconstructed from scalars after the fact.
+- **Exercise and game results are persisted.** Completed runs store `purpose`
+  (`practice` or `challenge`), the criterion vector, gates, diagnostics, rubric
+  version, verdict, and stable bank-instance id in the piano attempt ledger.
+  Practice is visible history but is intentionally ineligible for advancement.
+  The learning service re-evaluates stored evidence against the current named
+  requirement instead of trusting a surface-specific “complete” flag.
 - **Learn has a second cursor matcher.** `useFollowTracker` implements
   wait-for-correct advance independently of `drillRun` — same all-notes-at-a-step
   rule, same two-octave plausibility window, written twice. Unifying them is the
   cheapest step toward the matcher taxonomy above.
 - **Abandoned runs are not scored**, though the untimed runner can finalize a
   partial run — surfacing that is a product decision, not a service gap.
-- **No surface consumes the bank yet.** It is served at `/api/v1/piano/bank`
-  (see [exercise-bank.md](exercise-bank.md)), but Sheet Music, lessons, and the
-  card game still each own their content. Migrating them is the next step.
+- **Sheet Music does not consume bank instances.** Exercises, exact game
+  challenges, and video exit checkpoints now do. Sheet Music still produces
+  expectations from engraved score ranges, which is a deliberate separate
+  content source rather than a missing bank migration.
