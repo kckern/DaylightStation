@@ -191,9 +191,88 @@ describe('LogStrengthRun', () => {
 
   it('refuses an unknown session rather than fabricating one', async () => {
     const result = await useCase.execute({
-      sessionId: '20260811999999', workoutId: WORKOUT.id, completedSteps: workSteps(2), householdId: HH,
+      sessionId: '20260811123456', workoutId: WORKOUT.id, completedSteps: workSteps(2), householdId: HH,
     });
     expect(result).toMatchObject({ ok: false, reason: 'unknown_session' });
+    expect(store.saved.has(`${HH}:20260811123456`)).toBe(false);
+  });
+
+  // ── openSession: the strapless-strength case ──────────────────────────────
+  // A strength workout is routinely done with no session running, and the browser
+  // physically cannot create one (PersistenceManager rejects an empty roster, a
+  // sub-60s duration, <3 ticks and a session with no HR series; /save_session is
+  // whitelisted to the kiosk on top of that). Without this, "no session" means the
+  // most ordinary strength scenario is the one that is never recorded.
+  describe('openSession', () => {
+    const NEW_ID = '20260811160000';
+
+    it('opens the named session and files the run onto it', async () => {
+      const result = await useCase.execute({
+        sessionId: NEW_ID,
+        workoutId: WORKOUT.id,
+        completedSteps: workSteps(3),
+        householdId: HH,
+        openSession: true,
+        startedAt: '2026-08-11T16:00:00.000Z',
+        completedAt: '2026-08-11T16:40:00.000Z',
+      });
+
+      expect(result).toMatchObject({ ok: true, openedSession: true });
+      const doc = store.saved.get(`${HH}:${NEW_ID}`);
+      expect(doc).toBeTruthy();
+      expect(doc.strength.runs).toHaveLength(1);
+      expect(doc.strength.runs[0].setsCompleted).toBe(3);
+      // Planned still comes from the STORED workout, never the report: three of the
+      // bench press's four prescribed sets were done, so the record reads 3 of 4.
+      expect(doc.strength.runs[0].setsPlanned).toBe(4);
+    });
+
+    it('spans the workout rather than collapsing it to an instant', async () => {
+      await useCase.execute({
+        sessionId: NEW_ID,
+        workoutId: WORKOUT.id,
+        completedSteps: workSteps(2),
+        householdId: HH,
+        openSession: true,
+        startedAt: '2026-08-11T16:00:00.000Z',
+        completedAt: '2026-08-11T16:40:00.000Z',
+      });
+      const doc = store.saved.get(`${HH}:${NEW_ID}`);
+      expect(doc.startTime).toBe(Date.parse('2026-08-11T16:00:00.000Z'));
+      expect(doc.endTime).toBe(Date.parse('2026-08-11T16:40:00.000Z'));
+      expect(doc.durationMs).toBe(40 * 60 * 1000);
+    });
+
+    it('attributes to nobody rather than guessing, when nobody was identified', async () => {
+      await useCase.execute({
+        sessionId: NEW_ID, workoutId: WORKOUT.id, completedSteps: workSteps(2),
+        householdId: HH, openSession: true,
+      });
+      const doc = store.saved.get(`${HH}:${NEW_ID}`);
+      // The block omits the key entirely rather than claiming an empty crowd —
+      // and it must not have invented a name from anywhere else.
+      expect(doc.strength.runs[0]).not.toHaveProperty('participants');
+    });
+
+    it('joins an EXISTING session instead of reopening it', async () => {
+      const result = await useCase.execute({
+        sessionId: SESSION_ID, workoutId: WORKOUT.id, completedSteps: workSteps(2),
+        householdId: HH, openSession: true,
+      });
+      expect(result).toMatchObject({ ok: true, openedSession: false });
+      // The live session's own participants still own the attribution, and its
+      // lifecycle — not this use case — decides when it ends.
+      expect(stored().strength.runs[0].participants).toEqual(['test-user']);
+      expect(stored().finalized).not.toBe(true);
+    });
+
+    it('still refuses an id it cannot make a session out of', async () => {
+      const result = await useCase.execute({
+        sessionId: 'not-a-session', workoutId: WORKOUT.id, completedSteps: workSteps(2),
+        householdId: HH, openSession: true,
+      });
+      expect(result).toMatchObject({ ok: false, reason: 'unknown_session' });
+    });
   });
 
   it('writes nothing when no set was completed', async () => {

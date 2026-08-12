@@ -2779,36 +2779,6 @@ export class FitnessSession {
     return this._persistenceManager?.whenLastSaveSettled?.() || Promise.resolve();
   }
 
-  /**
-   * Persist NOW and resolve once that write has settled.
-   *
-   * Autosave is a 15-second timer, which is fine for a session nobody is waiting
-   * on. It is not fine for a caller that needs the session record to EXIST on the
-   * server before its own request can reference it — a strength run posts to
-   * `/sessions/:id/strength`, and that route 404s a session the server has never
-   * been told about. Without this, a run finished inside the first 15 seconds of a
-   * freshly opened session races the timer and loses.
-   *
-   * Resolves (never rejects) whether the write succeeded or failed: the caller
-   * finds out from its own request, and a rejection here would be a second,
-   * redundant failure path for the same fact.
-   *
-   * @returns {Promise<void>}
-   */
-  async saveNow() {
-    if (!this.sessionId) return;
-    try {
-      this._maybeAutosave(true);
-    } catch (err) {
-      getLogger().warn('fitness.session.save_now_failed', {
-        sessionId: this.sessionId,
-        error: err?.message || String(err)
-      });
-      return;
-    }
-    await this.whenFinalPersistSettled();
-  }
-
   // NOTE: ~140 lines of _persistSession implementation were extracted to
   // PersistenceManager.js as part of Phase 5 refactoring.
   // See: /docs/postmortem-entityid-migration-fitnessapp.md #13

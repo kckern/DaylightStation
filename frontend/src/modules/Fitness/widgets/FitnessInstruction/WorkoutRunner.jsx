@@ -189,6 +189,28 @@ export default function WorkoutRunner({
    * Whichever lands first advances; the loser is a no-op rather than a queued
    * jump.
    */
+  /**
+   * Close the run out: show the completion panel and report what was performed.
+   *
+   * Reached two ways — clearing the last step, and stopping early with sets
+   * already done. Both are the same event as far as the record is concerned:
+   * work happened and it has to be filed. The REPORT is `completedRef`, never the
+   * plan, so stopping at two of six files two.
+   */
+  const finish = useCallback((reason) => {
+    if (finishedRef.current) return;
+    finishedRef.current = true;
+    setFinished(true);
+    logger.info('run-complete', {
+      title,
+      reason,
+      totalSteps: plan.length,
+      workSteps: plan.filter((s) => s?.kind === 'work').length,
+      completedSteps: completedRef.current.length
+    });
+    onCompleteRef.current?.(completedRef.current);
+  }, [logger, plan, title]);
+
   const advanceFrom = useCallback((fromIndex, reason) => {
     if (finishedRef.current) return;
     if (fromIndex !== cursorRef.current) {
@@ -202,17 +224,7 @@ export default function WorkoutRunner({
 
     const next = fromIndex + 1;
     if (next >= plan.length) {
-      finishedRef.current = true;
-      setFinished(true);
-      logger.info('run-complete', {
-        title,
-        totalSteps: plan.length,
-        workSteps: plan.filter((s) => s?.kind === 'work').length,
-        completedSteps: completedRef.current.length
-      });
-      // The steps FINISHED, never the plan — a run abandoned at two of four sets
-      // has to read as two. See strengthRunLog.js.
-      onCompleteRef.current?.(completedRef.current);
+      finish('last-step');
       return;
     }
     cursorRef.current = next;
@@ -226,10 +238,23 @@ export default function WorkoutRunner({
     });
   }, [logger, plan, title]);
 
+  /**
+   * Leave the runner.
+   *
+   * "End run" with sets already done does NOT leave — it finishes the run early,
+   * which lands on the completion panel and files what was performed. Bailing at
+   * two of six is an ordinary way to end a workout, and dropping straight back to
+   * Browse would throw those two sets away with nothing on screen to say so. With
+   * nothing done there is nothing to file, so it leaves immediately.
+   */
   const exit = useCallback((reason) => {
+    if (!finishedRef.current && completedRef.current.length > 0) {
+      finish(reason);
+      return;
+    }
     logger.info('run-exit', { reason, cursor: cursorRef.current, totalSteps: plan.length });
     onExitRef.current?.();
-  }, [logger, plan.length]);
+  }, [finish, logger, plan.length]);
 
   const step = plan[cursor] ?? null;
   const nextStep = plan[cursor + 1] ?? null;

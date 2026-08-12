@@ -377,6 +377,41 @@ describe('WorkoutRunner', () => {
         expect(reported).toHaveLength(steps.filter((s) => s.kind === 'work').length);
       });
 
+      // ── The one place performed and planned actually diverge ────────────────
+      // Bailing at two of six is an ordinary way to end a workout. Ending the run
+      // has to file those two, and it has to file TWO — a report derived from the
+      // plan would file six sets nobody did, which is the "plan as performance"
+      // failure the whole strength block exists to prevent.
+      it('stopping early files the sets already done, and only those', () => {
+        const steps = expandWorkout(SUPERSET); // 6 work steps, no rest
+        expect(steps.filter((s) => s.kind === 'work')).toHaveLength(6);
+
+        const onComplete = vi.fn();
+        const onExit = vi.fn();
+        const q = renderRunner({ steps, onComplete, onExit });
+        fireEvent.pointerDown(q.getByTestId('workout-runner-done'));
+        fireEvent.pointerDown(q.getByTestId('workout-runner-done'));
+        fireEvent.pointerDown(q.getByTestId('fitness-instruction-run-exit'));
+
+        expect(onComplete).toHaveBeenCalledTimes(1);
+        expect(onComplete.mock.calls[0][0]).toHaveLength(2);
+        expect(onComplete.mock.calls[0][0].map((s) => s.slug))
+          .toEqual([steps[0].slug, steps[1].slug]);
+        // And the athlete sees the outcome instead of being dropped back to
+        // Browse with two unrecorded sets behind them.
+        expect(q.getByTestId('workout-runner-complete').textContent).toContain('2 sets done');
+        expect(onExit).not.toHaveBeenCalled();
+      });
+
+      it('leaves immediately when nothing was done — there is nothing to file', () => {
+        const onComplete = vi.fn();
+        const onExit = vi.fn();
+        const q = renderRunner({ steps: expandWorkout(SUPERSET), onComplete, onExit });
+        fireEvent.pointerDown(q.getByTestId('fitness-instruction-run-exit'));
+        expect(onExit).toHaveBeenCalledTimes(1);
+        expect(onComplete).not.toHaveBeenCalled();
+      });
+
       it('counts the sets DONE on screen, which is not the same as the sets planned', () => {
         // STRAIGHT prescribes 3 sets. Walk two of them and end the run: the panel
         // must say 2. Reading the plan here is the "planned as performed" bug the
@@ -570,16 +605,27 @@ describe('WorkoutRunner', () => {
       expect(done).toHaveLength(1);
       // `completedSteps` is what was PERFORMED and `workSteps` what was planned;
       // a full walk makes them agree, and the wiring tests below drive them apart.
-      expect(done[0].data).toEqual({ title: 'Leg Day', totalSteps: 5, workSteps: 3, completedSteps: 3 });
+      expect(done[0].data)
+        .toEqual({ title: 'Leg Day', reason: 'last-step', totalSteps: 5, workSteps: 3, completedSteps: 3 });
     });
 
     it('logs run-exit with the step the athlete abandoned on', () => {
+      // Nothing done, so there is nothing to file and the exit is a real exit.
       const q = renderRunner({ steps: expandWorkout(SUPERSET), onExit: () => {} });
-      fireEvent.pointerDown(q.getByTestId('workout-runner-done'));
       fireEvent.pointerDown(q.getByTestId('fitness-instruction-run-exit'));
       const exits = logsFor('info', 'run-exit');
       expect(exits).toHaveLength(1);
-      expect(exits[0].data).toEqual({ reason: 'abandoned', cursor: 1, totalSteps: 6 });
+      expect(exits[0].data).toEqual({ reason: 'abandoned', cursor: 0, totalSteps: 6 });
+    });
+
+    it('logs an early stop as a completion, with the reason it ended', () => {
+      const q = renderRunner({ steps: expandWorkout(SUPERSET), onExit: () => {} });
+      fireEvent.pointerDown(q.getByTestId('workout-runner-done'));
+      fireEvent.pointerDown(q.getByTestId('fitness-instruction-run-exit'));
+      const done = logsFor('info', 'run-complete');
+      expect(done).toHaveLength(1);
+      expect(done[0].data).toMatchObject({ reason: 'abandoned', completedSteps: 1, workSteps: 6 });
+      expect(logsFor('info', 'run-exit')).toEqual([]);
     });
 
     it('logs the retry as its own event', () => {

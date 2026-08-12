@@ -192,27 +192,21 @@ GET    /api/v1/fitness/workouts/:id/run                          expand a saved 
 POST   /api/v1/fitness/sessions/:sessionId/strength              log a completed run
 ```
 
+The strength route's body is
+`{ workoutId, completedSteps, completedAt?, startedAt?, openSession?, household? }`. See
+[Session logging](#session-logging) for `openSession`.
+
 Every browse response carries `library: { available, builtAt, counts }`, plus a `hint` naming
 `npm run exercise:index` when the manifest is missing — because a browse screen showing "no
 exercises" is otherwise indistinguishable from a broken one.
 
 ## Session logging
 
-> **⚠️ NOT WIRED CLIENT-SIDE (2026-08-11).** The backend is complete and reachable — route,
-> `LogStrengthRun`, repository, `recordStrengthRun`, all tested. **But the runner never calls
-> it.** `WorkoutRunner` accepts an `onComplete` prop that `FitnessInstructionContainer` does not
-> pass, and nothing in the module holds a `sessionId` to attribute a run to. Until that is
-> wired, a completed strength run leaves no trace, and session detail, recaps, the longitudinal
-> widget, and Strava reconciliation will never see one.
->
-> Caught by `tests/live/flow/fitness/exercise-library.runtime.test.mjs`, which is **deliberately
-> red on this assertion.** Leave it red until the client side lands. It also needs a product
-> decision, not only wiring: the module has no session context today, so where a strength run's
-> session comes from has to be answered first.
+Wired end to end as of 2026-08-11 and covered by
+`tests/live/flow/fitness/exercise-library.runtime.test.mjs` (test 6), which walks the real
+journey in a browser and asserts the finished run reaches a session record.
 
-The design below describes the backend, which behaves as written.
-
-A completed run appends to `strength.runs[]` on the **existing** fitness session record, so it
+A completed run appends to `strength.runs[]` on the fitness session record, so it
 lands in the same history as cycle work and the reporting stack picks it up unchanged.
 
 Runs **append** rather than replace — bail-at-two-sets-then-restart is ordinary, and replacing
@@ -224,6 +218,55 @@ Attribution uses the session's own `participants` block via `getPresentParticipa
 **Never `getRoster()`** — it is expensive, has caused real performance bugs, and must never be
 memoized. Presence is membership in that block, *not* an `hr_device`: strength work is routinely
 strapless, so filtering on the strap would attribute the common case to nobody.
+
+### Which session — adopt, else open
+
+`FitnessInstructionContainer` reads `fitnessSessionInstance` off the fitness context (via
+`useOptionalFitnessContext`, so the module still renders outside a provider) and hands it to
+`strengthRunLog.js`, which resolves the session in two steps:
+
+1. **A live session is adopted.** A lift between intervals belongs to the ride, not to a second
+   record. The POST carries no `openSession` flag, so an id the app is holding that the server
+   does not know still 404s — that is a real bug and has to stay visible.
+2. **Otherwise the server opens one.** The client mints the id the run would have had
+   (`formatSessionId`, `YYYYMMDDHHmmss` local) and posts `openSession: true`.
+
+**Why the server and not the browser.** A strength workout with no session is the *ordinary*
+case — `FitnessSession` only starts from sensor traffic and strength work is strapless — and the
+browser cannot create the record even if it tried:
+
+| Gate | Why a strength-only session fails it |
+|---|---|
+| `PersistenceManager.validateSessionPayload` | empty roster, under 60s, under 3 ticks, no non-zero HR series — all four |
+| `POST /save_session` | `session_write_whitelist` admits only the garage kiosk (Firefox) |
+
+Those gates are correct; they keep sensor flap out of history. They just mean the client can only
+*ask*. `openSession` is opt-in for exactly that reason: posting an id you believe exists and
+having it silently created would hide a bug, so the flag distinguishes a **claim** from a
+**request**. A session opened this way starts at the run's `startedAt`, ends at `completedAt`,
+and carries no participants — nobody was identified, and guessing would be worse.
+
+Two devices can therefore produce two records for one workout (the kiosk's session plus one
+opened from a tablet). That is a `POST /sessions/merge`, and a mergeable duplicate beats a
+workout that was never recorded.
+
+### An unsaved plan is saved first
+
+`setsPlanned` comes from the *stored* workout, so an unsaved plan is unloggable. Rather than lose
+the run, `ensureWorkoutOnShelf` saves it and files against the new id. A plan that already has an
+id is never duplicated.
+
+### The person is told, every time
+
+The completion panel carries the recording state — `Recording to your session…` → `Recorded to
+your session.` — and a failure replaces it with a red **NOT RECORDED** block naming the reason,
+plus a **Try again** target that re-files the same sets. Someone who did four sets and reads only
+"Nice work" would assume it counted, so a failed filing never renders as a plain completion.
+
+**Stopping early is a completion, not a discard.** "End run" with sets already done lands on the
+completion panel and files what was performed (two of six files two) instead of dropping back to
+Browse with the work thrown away. With nothing done there is nothing to file, so it exits
+immediately.
 
 ## School projection
 
