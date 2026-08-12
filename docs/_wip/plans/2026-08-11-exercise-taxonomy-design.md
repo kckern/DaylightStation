@@ -196,6 +196,89 @@ sometimes be wrong, and being wrong quietly is worse than being wrong visibly.
 An ordered collection (Hanon 1–30) keeps its order regardless. Sequence within a
 method book and difficulty across the bank are different claims.
 
+## Skill matching
+
+Level sorts exercises. Matching a player to one needs more: asset difficulty and
+player ability have to be **the same coordinate**, or selection is guesswork.
+
+### Derived level is a prior, not a fact
+
+The formula gives an estimate before anyone has played the thing. Observed
+outcomes correct it, so an exercise everyone fails becomes harder than the
+formula claimed and the bank calibrates itself. This is what makes it safe to
+ship weights that have not been tuned: a wrong prior heals instead of persisting.
+
+An authored override still wins, because sometimes the disagreement is the
+formula's fault and sometimes it is the population's.
+
+### Skill is a vector
+
+Grading already produces one. `grading.js` returns `pitchAccuracy`,
+`timingAccuracy`, and `continuity` (plus simultaneity for chords), weighted
+differently per mode — `untimed: {pitch 0.70, timing 0, continuity 0.30}` against
+`paced: {pitch 0.55, timing 0.30, continuity 0.15}`. The 0-to-1 score is a
+projection of that vector, and the projection discards exactly what teaching
+needs.
+
+So a player's skill is tracked per dimension:
+
+```yaml
+skill:
+  pitch: 4.1
+  timing: 2.3          # the weak one
+  continuity: 3.8
+  simultaneity: 3.0
+```
+
+The point is not precision. It is being able to say *your notes are ahead of your
+rhythm*, and then to pick something that works the rhythm.
+
+### Demand is a vector too, derived from Shape
+
+| Dimension | Loaded by |
+|---|---|
+| pitch | accidentals, span, position shifts |
+| timing | target tempo, rhythm variety, `metronome` and `cued` modes |
+| continuity | event count, length of the run |
+| simultaneity | `max_simultaneity`, hand independence |
+
+Demand and skill are then comparable component by component.
+
+### The matching rule
+
+Find exercises whose demand on the player's **weakest** dimension sits just above
+their current estimate, leaving the other dimensions at or below it. One new
+difficulty at a time: a scale they already know, now with a metronome, is a
+timing exercise and nothing else.
+
+Aim for a success band rather than a level. Too easy teaches nothing and too hard
+discourages; the band is a tuning knob, and it should be a stated number that can
+be moved rather than an emergent property of the formula.
+
+### The mode ladder is progression for free
+
+Because level is `(asset × mode)`, a passed exercise is not finished. Passed
+`free`, offer `metronome`. Passed that, offer `cued`. No new content is authored,
+and the failure says which dimension is not ready.
+
+### Cold start
+
+A new player starts at the floor and climbs. No placement test, no inherited
+estimate. It is slow for a strong player and kind to a beginner, which is the
+right way round for a household instrument that a child walks up to unprompted.
+
+### Prerequisites
+
+Two, both real blockers rather than polish:
+
+1. **Drill results must be persisted.** `performance-assessment.md` records that a
+   completed drill logs `piano.drill-complete` and discards it. Matching cannot
+   run on a surface whose outcomes are thrown away.
+2. **The dimensional grade must be persisted, not just the score.** The attempts
+   endpoint validates a scalar `score` in 0..1. A vector skill model cannot be
+   reconstructed from scalars after the fact, so the full grade object has to be
+   stored from the first attempt onward.
+
 ## Worked example
 
 An existing asset, restated. Nothing in `hands` changes; the surrounding
@@ -252,6 +335,15 @@ advance:
 ## Open questions
 
 - **Weights for the level formula.** Needs real assets to calibrate against.
+  Less urgent than it looks: derived level is a prior that observed outcomes
+  correct, so a wrong weight decays instead of persisting.
+- **The success band.** What pass rate matching should aim for is a stated number
+  to be tuned against real players, not derived here.
+- **Stale skill.** A child who has not played for three months is not the player
+  the estimate describes. Whether estimates decay, and how fast, is undecided.
+- **How many attempts before the prior yields.** An asset needs some number of
+  observations before population data should outweigh the formula. The threshold
+  is unset.
 - **Per-hand grading.** `performance-assessment.md` records that per-voice
   attribution is not performed; staves merge into one pitch set per onset. A
   two-handed asset therefore cannot yet be graded per hand, which limits what
