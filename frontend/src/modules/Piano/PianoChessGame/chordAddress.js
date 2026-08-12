@@ -40,6 +40,7 @@ export const CHORD_QUALITIES = Object.freeze({
   major7: { label: 'maj7', name: 'major 7th', intervals: [0, 4, 7, 11] },
   minor7: { label: 'm7', name: 'minor 7th', intervals: [0, 3, 7, 10] },
   add2: { label: 'add2', name: 'added 2nd', intervals: [0, 2, 4, 7] },
+  minor6: { label: 'm6', name: 'minor 6th', intervals: [0, 3, 7, 9] },
 });
 
 /**
@@ -65,7 +66,7 @@ export const CHORD_QUALITIES = Object.freeze({
 export const DEFAULT_CHORD_SCHEME = Object.freeze({
   id: 'letters-by-difficulty-v1',
   roots: Object.freeze(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'Bb']),
-  qualities: Object.freeze(['major', 'minor', 'sus4', 'add2', 'seventh', 'add6', 'major7', 'diminished']),
+  qualities: Object.freeze(['major', 'minor', 'sus4', 'minor6', 'seventh', 'add6', 'major7', 'diminished']),
 });
 
 export function rootPitchClass(root) {
