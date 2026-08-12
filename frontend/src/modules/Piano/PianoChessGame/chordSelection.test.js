@@ -93,3 +93,47 @@ describe('an unrecognised chord', () => {
       .toEqual({ type: 'hover', square: null });
   });
 });
+
+describe('the swallow is scoped to the square it was armed for', () => {
+  it('a legato move straight onto a different square is not swallowed', () => {
+    // The origin square's own release already happened, ordinarily.
+    const afterOriginRelease = ev(createSelection(), 'commit', 'e4', 1100);
+    const pick = ev(afterOriginRelease.selection, 'preview', 'e4', 1400);
+    expect(pick.action).toEqual({ type: 'pickup', square: 'e4' });
+
+    // True legato: the fingers move straight from the second e4 press into the
+    // d4 shape without ever releasing to zero notes, so e4's own release commit
+    // never arrives on its own -- only a later commit for d4 does.
+    const shift = ev(pick.selection, 'preview', 'd4', 1450, { holdingPiece: true });
+    expect(shift.action).toEqual({ type: 'none' });
+
+    const drop = ev(shift.selection, 'commit', 'd4', 1550, { holdingPiece: true, isEligible: true });
+    expect(drop.action).toEqual({ type: 'drop', square: 'd4' });
+  });
+
+  it('the ordinary sequence still swallows exactly one release, no more', () => {
+    const afterOriginRelease = ev(createSelection(), 'commit', 'e4', 1100);
+    const pick = ev(afterOriginRelease.selection, 'preview', 'e4', 1400);
+    expect(pick.action).toEqual({ type: 'pickup', square: 'e4' });
+
+    const release = ev(pick.selection, 'commit', 'e4', 1600, { holdingPiece: true });
+    expect(release.action).toEqual({ type: 'swallowed' });
+
+    // The swallow does not linger: the very next event is handled normally,
+    // not swallowed again.
+    const next = ev(release.selection, 'commit', 'e4', 1700, { holdingPiece: true, isEligible: false });
+    expect(next.action).not.toEqual({ type: 'swallowed' });
+  });
+
+  it('an escape following a pick-up is not eaten', () => {
+    const afterOriginRelease = ev(createSelection(), 'commit', 'e4', 1100);
+    const pick = ev(afterOriginRelease.selection, 'preview', 'e4', 1400);
+    expect(pick.action).toEqual({ type: 'pickup', square: 'e4' });
+
+    // The octave "cancel" gesture surfaces here as a commit naming no square.
+    // It must not be eaten just because a pick-up is still waiting on its own
+    // release.
+    const escape = ev(pick.selection, 'commit', null, 1450, { holdingPiece: true });
+    expect(escape.action).not.toEqual({ type: 'swallowed' });
+  });
+});
