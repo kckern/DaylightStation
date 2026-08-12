@@ -11,7 +11,18 @@ import { gradeChordPerformance, gradeOrderedPerformance, timingQuality } from '.
 const EMPTY_NOTES = new Map();
 const EMPTY_HISTORY = [];
 const useAlwaysConnected = () => ({ connected: true, status: 'connected' });
-const PROVIDER_VERSION = '6-shared-performance-grading';
+const PROVIDER_VERSION = '7-pre-start-input-guard';
+// A key struck between prepare() and start() — while the card animates and the
+// authority round-trips — is noodling, not this attempt's performance. The
+// history cursor baselines at prepare, so those note-ons are still pending when
+// the attempt opens and would otherwise be graded instantly (a four-note pattern
+// "played" in 1ms, timed against targets it never aimed at).
+//
+// Only timestamps within this window of the start are treated as pre-start
+// input. Every note transport stamps Date.now(), so anything older cannot be
+// from our clock at all; those are graded rather than risk a clock-domain change
+// silently deafening the surface.
+const PRE_START_WINDOW_MS = 5 * 60_000;
 const SCALE_NOTE_CLASSES = [
   'piano-scale-note--complete',
   'piano-scale-note--next',
@@ -85,6 +96,7 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
       let timingQualities = [];
       let timeoutHandle = null;
       let chordReleasedSinceStart = false;
+      let staleInputsIgnored = 0;
 
       const clearDeadline = () => {
         if (timeoutHandle !== null) globalThis.clearTimeout(timeoutHandle);
@@ -105,11 +117,44 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
         wrongNotes,
         wrongInputs,
         restarts,
+        staleInputsIgnored,
       });
 
       const recordInput = () => {
         if (firstInputAt == null) firstInputAt = clock();
         notesPlayed += 1;
+      };
+
+      /** True for a note-on stamped before this attempt opened. See PRE_START_WINDOW_MS. */
+      const isPreStartInput = (entry) => {
+        if (attemptStartedAt == null || !Number.isFinite(entry?.startTime)) return false;
+        const age = attemptStartedAt - entry.startTime;
+        return age > 0 && age <= PRE_START_WINDOW_MS;
+      };
+
+      /**
+       * Write the attempt to the piano ledger. Mutates `result` with the stored
+       * id and persistence timings, and never throws — a lost network call must
+       * not swallow the player's turn.
+       */
+      const persistAttempt = async (result, prepared, { keepalive = false } = {}) => {
+        const persistenceStartedAt = clock();
+        try {
+          const saved = await api.recordPianoAttempt(userId, {
+            ...result,
+            challenge_id: prepared.challenge_id,
+            kind: prepared.kind,
+            grading_policy_version: prepared.grading_policy_version,
+            prompt: prepared.prompt,
+          }, { keepalive });
+          result.attempt_id = saved.attempt_id;
+        } catch (error) {
+          logger?.warn?.('piano-challenge-attempt-save-failed', { error: error.message });
+          result.attempt_id = null;
+          result.metrics = { ...result.metrics, persistenceError: true };
+        }
+        result.metrics.persistenceDurationMs = Math.max(0, clock() - persistenceStartedAt);
+        return result;
       };
 
       const settle = async (status, score, metrics) => {
@@ -122,22 +167,7 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
           provider_version: PROVIDER_VERSION,
           attempt_id: makeAttemptId(),
         };
-        const persistenceStartedAt = clock();
-        try {
-          const saved = await api.recordPianoAttempt(userId, {
-            ...result,
-            challenge_id: snapshot.prepared.challenge_id,
-            kind: snapshot.prepared.kind,
-            grading_policy_version: snapshot.prepared.grading_policy_version,
-            prompt: snapshot.prepared.prompt,
-          });
-          result.attempt_id = saved.attempt_id;
-        } catch (error) {
-          logger.warn('piano-challenge-attempt-save-failed', { error: error.message });
-          result.attempt_id = null;
-          result.metrics = { ...result.metrics, persistenceError: true };
-        }
-        result.metrics.persistenceDurationMs = Math.max(0, clock() - persistenceStartedAt);
+        await persistAttempt(result, snapshot.prepared);
         resolveAttempt(result);
         resolveAttempt = null;
       };
@@ -307,8 +337,23 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
           const { kind, prompt } = view.prepared;
           if (['scale', 'arpeggio', 'timed-pattern'].includes(kind)) {
             if (historyCursor.current === null) historyCursor.current = noteHistory.length;
-            const freshNotes = noteHistory.slice(historyCursor.current);
+            const pending = noteHistory.slice(historyCursor.current);
             historyCursor.current = noteHistory.length;
+            if (pending.length === 0) return;
+            const freshNotes = pending.filter((entry) => !isPreStartInput(entry));
+            if (freshNotes.length < pending.length) {
+              const ignored = pending.filter(isPreStartInput);
+              staleInputsIgnored += ignored.length;
+              logger?.warn?.('piano.challenge.pre-start-input-ignored', {
+                challengeId: view.prepared.challenge_id,
+                kind,
+                exerciseId: prompt.exercise_id || null,
+                ignored: ignored.length,
+                oldestAgeMs: Math.round(Math.max(...ignored.map((entry) => attemptStartedAt - entry.startTime))),
+                notes: ignored.map((entry) => entry.note),
+                staleInputsIgnored,
+              });
+            }
             if (freshNotes.length === 0) return;
             let progress = snapshot.progress;
             let hadWrong = snapshot.hadWrong;
@@ -519,6 +564,7 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
           restarts = 0;
           timingQualities = [];
           chordReleasedSinceStart = false;
+          staleInputsIgnored = 0;
           publish({ status: 'running', prepared, armed: false, hadWrong: false, progress: 0, lastInput: null });
           const promise = new Promise((resolve) => { resolveAttempt = resolve; });
           const timeoutMs = Number(prepared.timeout_ms);
@@ -535,7 +581,39 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
         dispose() {
           clearDeadline();
           if (!settled && resolveAttempt) {
-            resolveAttempt({ status: 'aborted', score: null, metrics: timedMetrics({ reason: 'disposed' }), provider_version: PROVIDER_VERSION, attempt_id: null });
+            const prepared = snapshot.prepared;
+            const started = attemptStartedAt != null;
+            const result = {
+              status: 'aborted',
+              score: null,
+              metrics: timedMetrics({ reason: 'disposed' }),
+              provider_version: PROVIDER_VERSION,
+              attempt_id: started && prepared ? makeAttemptId() : null,
+            };
+            // The runtime is being torn down, so resolve the caller immediately
+            // and let the ledger write finish on its own. `keepalive` keeps the
+            // request alive if the surface is going away with the page — an
+            // abandoned attempt is the evidence that a player walked away
+            // mid-exercise, which is exactly what the practice record loses today.
+            if (started && prepared) {
+              persistAttempt({ ...result }, prepared, { keepalive: true }).then((saved) => {
+                logger?.info?.('piano.challenge.abandoned', {
+                  challengeId: prepared.challenge_id,
+                  kind: prepared.kind,
+                  exerciseId: prepared.prompt?.exercise_id || null,
+                  label: prepared.prompt?.label || null,
+                  progress: snapshot.progress,
+                  notesRequired: prepared.prompt?.expected_midi?.length ?? null,
+                  notesPlayed: saved.metrics.notesPlayed,
+                  wrongNotes: saved.metrics.wrongNotes,
+                  staleInputsIgnored: saved.metrics.staleInputsIgnored,
+                  durationMs: saved.metrics.durationMs,
+                  attemptId: saved.attempt_id,
+                  persisted: Boolean(saved.attempt_id),
+                });
+              });
+            }
+            resolveAttempt(result);
           }
           settled = true;
           resolveAttempt = null;
