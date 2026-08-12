@@ -4,6 +4,7 @@ import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/in
 import { splatPath } from '#api/utils/wildcard.mjs';
 import { musicXmlToNotes } from '#shared/music/musicXmlToNotes.mjs';
 import { countInstances, expandSeed, instanceId, instanceIds, materializeById, searchBank } from '#shared/music/exerciseBank.mjs';
+import { validateAssessment } from '#shared/music/assessmentRecord.mjs';
 import {
   PRODUCER_ID_RE,
   PRODUCER_SCHEMA_VERSION,
@@ -114,19 +115,29 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pi
       return res.status(400).json({ error: 'Invalid user' });
     }
     const body = req.body || {};
-    const validStatus = ['completed', 'aborted', 'timeout', 'error'].includes(body.status);
-    const validScore = body.status === 'completed'
-      ? Number.isFinite(body.score) && body.score >= 0 && body.score <= 1
-      : body.score == null;
-    if (!validStatus || !validScore || typeof body.challenge_id !== 'string') {
-      return res.status(400).json({ error: 'Invalid attempt result' });
+    // The record keeps the criterion vector, not just the scalar it projects to:
+    // a score cannot be un-projected, so storing only the score makes every
+    // later question about a past run unanswerable. Shape lives in shared/ so
+    // the writer and the validator cannot drift.
+    const assessment = validateAssessment(body);
+    if (!assessment.valid || typeof body.challenge_id !== 'string') {
+      return res.status(400).json({
+        error: 'Invalid attempt result',
+        details: assessment.errors.length ? assessment.errors : ['challenge_id is required'],
+      });
     }
     const attempt = pianoAttemptStore.save(req.params.userId, {
       ...body,
       attempt_id: body.attempt_id || shortId(),
       trust_source: 'client-midi',
     });
-    logger.info?.('piano.attempt.saved', { userId: req.params.userId, attemptId: attempt.attempt_id, status: attempt.status });
+    logger.info?.('piano.attempt.saved', {
+      userId: req.params.userId,
+      attemptId: attempt.attempt_id,
+      status: attempt.status,
+      rubric: attempt.rubric?.id ?? null,
+      criteria: attempt.criteria ? Object.keys(attempt.criteria) : null,
+    });
     res.status(201).json(attempt);
   }));
 

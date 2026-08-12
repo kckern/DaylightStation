@@ -62,7 +62,7 @@ import PianoEmpty from '../../PianoEmpty.jsx';
 import { SkeletonList } from '../../Skeleton.jsx';
 import { useLoopLibrary } from '../../useLoopLibrary.js';
 import { roleOf } from '@shared-music/layerMatch.mjs';
-import { detectChords } from '../Lessons/theory/theoryEngine.js';
+import { detectChords } from '../../../theory/theoryEngine.js';
 import { romanAnalysis, bestTonic } from '@shared-music/romanAnalysis.mjs';
 import {
   workspaceReducer, initialWorkspace, toTransportLayers, takeToSource,
