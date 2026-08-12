@@ -217,7 +217,11 @@
    — and every prompt and refusal message on it — off screen. */
 .piano-chess__stage {
   display: grid;
-  grid-template-columns: auto minmax(12rem, 1fr);
+  /* Two children only (board frame, rail) since the left rail was removed.
+     The board's column is the flexible one so the board centres in the room
+     left of the rail; the rail gets a bounded, sensible width instead of
+     soaking up every leftover pixel (which read as dead space to its right). */
+  grid-template-columns: 1fr minmax(15rem, 18rem);
   justify-content: center;
   align-items: center;
   gap: 2rem;
@@ -230,6 +234,11 @@
 }
 
 .piano-chess__stage > * { min-width: 0; }
+
+/* Board frame is content-sized (see --cb-size below); centre it within its
+   flexible column rather than letting default grid stretch pin it to the
+   column's left edge. */
+.piano-chess .chess-board-frame { justify-self: center; }
 
 .piano-chess__rail {
   display: flex;
@@ -333,7 +342,12 @@
      reports the real screen while the board only ever gets the design box. On a
      1920x1080 desktop that gap ran the board 200px past the stage and off the
      bottom of the screen. The 2.5rem is the file-axis strip below the board. */
-  --cb-size: min(46cqw, calc(100cqh - 2.5rem));
+  /* cqw is against .piano-chess__stage's full width (both columns), not just
+     the board's own 1fr column, so this has to be re-tuned whenever the
+     column split changes. With the rail now bounded to ~15-18rem instead of
+     eating all leftover space, the board's column is wider than before —
+     46cqw left it visibly gapped inside that room, so it goes up. */
+  --cb-size: min(56cqw, calc(100cqh - 2.5rem));
   --cb-light: var(--pc-ivory);
   --cb-dark: #9e7070;
   --cb-frame: var(--pc-walnut-deep);
@@ -437,9 +451,40 @@
 
 .piano-chess__instrument-readouts {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: center;
-  gap: 1.5rem;
+  gap: 0.75rem;
+}
+
+/* ChordNamePanel ships its own Studio-card styling (a full-height,
+   full-width plaque meant to fill a slot). Here it rides beside
+   ChordReadout in a single narrow row, so it needs to size to its own
+   content like its sibling does, not claim the whole row — a `width:100%`
+   flex item forced ChordReadout out to the far right while the plaque's
+   pill floated centred inside its own oversized box. Scoped to .piano-chess
+   so TheoryPanel's card usage is untouched. */
+.piano-chess .piano-chord-name {
+  width: auto;
+  height: auto;
+}
+
+.piano-chess .piano-chord-name__plaque {
+  min-height: 0;
+  max-width: none;
+  width: auto;
+  gap: 0.15rem;
+  padding: 0.25rem 0.85rem;
+  border-radius: 0.35rem;
+}
+
+.piano-chess .piano-chord-name__eyebrow {
+  font-size: 0.65rem;
+}
+
+/* No vw: matched to .chess-readout__chord's size instead of the Studio
+   card's viewport-relative clamp. */
+.piano-chess .piano-chord-name__value {
+  font-size: 1.15rem;
 }
 
 .piano-chess__instrument .piano-keyboard {
