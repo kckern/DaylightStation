@@ -48,8 +48,8 @@ describe('Games mode', () => {
   it('renders a picker tile per registered game with friendly labels (index route)', () => {
     renderGames();
     // 'card-game' is the registry id; every player-facing surface (tile,
-    // breadcrumb, battle header) calls it Scale Stadium.
-    for (const label of ['Scale Stadium', 'Space Invaders', 'Tetris', 'Flashcards', 'Piano Hero', 'Side Scroller']) {
+    // breadcrumb, battle header) calls it Battle Stadium.
+    for (const label of ['Battle Stadium', 'Space Invaders', 'Tetris', 'Flashcards', 'Piano Hero', 'Side Scroller']) {
       expect(screen.getByText(label)).toBeTruthy();
     }
   });
