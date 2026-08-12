@@ -250,17 +250,19 @@ import { ComposerSongStore } from './3_applications/piano/ComposerSongStore.mjs'
 import { createFeedbackRouter } from './4_api/v1/routers/feedback.mjs';
 import { createGameshowRouter } from './4_api/v1/routers/gameshow.mjs';
 import { createGamingRouter } from './4_api/v1/routers/gaming.mjs';
+import { createPresentationRouter } from './4_api/v1/routers/presentation.mjs';
 import { GamingSessionService } from './3_applications/gaming/GamingSessionService.mjs';
 import { YamlGamingDefinitionStore } from './1_adapters/persistence/yaml/gaming/YamlGamingDefinitionStore.mjs';
 import { YamlGamingAssetCatalog } from './1_adapters/persistence/yaml/gaming/YamlGamingAssetCatalog.mjs';
+import { YamlPresentationCatalog } from './1_adapters/persistence/yaml/presentation/YamlPresentationCatalog.mjs';
 import { YamlGamingSessionStore } from './1_adapters/persistence/yaml/gaming/YamlGamingSessionStore.mjs';
 import { YamlPianoAttemptStore } from './1_adapters/persistence/yaml/gaming/YamlPianoAttemptStore.mjs';
 import { YamlPianoLearningStore } from './1_adapters/persistence/yaml/piano/YamlPianoLearningStore.mjs';
 import { YamlExerciseBank } from './1_adapters/piano/YamlExerciseBank.mjs';
 import { PianoScaleChallengePolicy } from './3_applications/piano/PianoScaleChallengePolicy.mjs';
 import { BankChallengePolicy } from './3_applications/piano/BankChallengePolicy.mjs';
-import { scaleClashDefinition } from '#shared/gaming/fixtures/scaleClash.mjs';
 import { PianoLearningService } from './3_applications/piano/PianoLearningService.mjs';
+import { scaleClashDefinition } from '#shared/gaming/definitions/scaleClash.mjs';
 import { createWikipediaRouter } from './4_api/v1/routers/wikipedia.mjs';
 import { createChessRouter } from './4_api/v1/routers/chess.mjs';
 import { createStockfishEngine } from './1_adapters/chess/StockfishEngineAdapter.mjs';
@@ -707,6 +709,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     config: configService.getHouseholdAppConfig(householdId, 'vehicles')
       || configService.reloadHouseholdAppConfig?.(householdId, 'vehicles')
       || {},
+    // Threaded, not read from a config singleton inside the relay — day keys and
+    // trip filenames must follow the household's zone, not UTC or DEFAULT_TIMEZONE.
+    timezone: configService.getHouseholdTimezone(householdId),
     logger: rootLogger.child({ module: 'obd-relay' }),
   });
 
@@ -1681,6 +1686,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     catalogsDir: join(mediaBasePath, 'games/_common/catalog'),
     assetRoot: join(mediaBasePath, 'games/_common'),
   });
+  const presentationCatalog = new YamlPresentationCatalog({
+    catalogsDir: join(mediaBasePath, 'games/_common/catalog'),
+    assetRoot: join(mediaBasePath, 'games/_common'),
+  });
   gamingService.recoverStaleSessions();
   const gamingRecoveryTimer = setInterval(() => gamingService.recoverStaleSessions(), 30_000);
   gamingRecoveryTimer.unref?.();
@@ -1689,6 +1698,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     gamingService,
     assetCatalog: gamingAssetCatalog,
     logger: rootLogger.child({ module: 'gaming-api' }),
+  });
+  v1Routers.presentation = createPresentationRouter({
+    catalog: presentationCatalog,
+    logger: rootLogger.child({ module: 'presentation-api' }),
   });
 
   // Chess: server-side Stockfish behind a worker thread + household/user config layers.

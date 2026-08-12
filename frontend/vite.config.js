@@ -72,6 +72,7 @@ export default defineConfig(({ command, mode }) => {
         '@shared-contracts': path.resolve(__dirname, '../shared/contracts'),
         '@shared-music': path.resolve(__dirname, '../shared/music'),
         '@shared-gaming': path.resolve(__dirname, '../shared/gaming'),
+        '@shared-presentation': path.resolve(__dirname, '../shared/presentation'),
       }
     },
     server: {

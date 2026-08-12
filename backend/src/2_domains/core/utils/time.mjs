@@ -62,6 +62,50 @@ export function formatLocalTimestamp(date, timezone = DEFAULT_TIMEZONE) {
 }
 
 /**
+ * The zone's UTC offset, in minutes, at a given instant (DST-aware).
+ * @param {Date} date - Instant to measure at (offsets shift across DST)
+ * @param {string} [timezone=DEFAULT_TIMEZONE] - IANA timezone
+ * @returns {number} Minutes east of UTC (e.g. -420 for PDT)
+ */
+function offsetMinutes(date, timezone = DEFAULT_TIMEZONE) {
+  const parts = getFormatter(timezone).formatToParts(date);
+  const m = Object.fromEntries(parts.map(p => [p.type, p.value]));
+  const wallAsUtc = Date.UTC(+m.year, +m.month - 1, +m.day, +m.hour, +m.minute, +m.second);
+  // Drop sub-second precision from the instant: wallAsUtc has none, and the
+  // difference of the two is the offset only once both share a resolution.
+  return Math.round((wallAsUtc - Math.floor(date.getTime() / 1000) * 1000) / 60000);
+}
+
+/**
+ * Format a date as ISO-8601 with an explicit UTC offset, in the given zone.
+ *
+ * Unlike `toISOString()` (always Z) this keeps the reading anchored to the wall
+ * clock a human would have seen, while staying unambiguous for machines —
+ * the format to persist when a record's local day matters.
+ *
+ * @param {Date} date - Date to format (required)
+ * @param {string} [timezone=DEFAULT_TIMEZONE] - IANA timezone
+ * @returns {string} e.g. 2026-08-11T17:30:00-07:00
+ */
+export function formatIsoLocal(date, timezone = DEFAULT_TIMEZONE) {
+  if (!date || !(date instanceof Date) || isNaN(date.getTime())) {
+    throw new Error('formatIsoLocal requires a valid Date parameter');
+  }
+
+  try {
+    const [day, clock] = formatLocalTimestamp(date, timezone).split(' ');
+    const total = offsetMinutes(date, timezone);
+    const sign = total < 0 ? '-' : '+';
+    const abs = Math.abs(total);
+    const hh = String(Math.floor(abs / 60)).padStart(2, '0');
+    const mm = String(abs % 60).padStart(2, '0');
+    return `${day}T${clock}${sign}${hh}:${mm}`;
+  } catch {
+    return date.toISOString();
+  }
+}
+
+/**
  * Parse a value to a Date object
  * @param {any} value - Value to parse
  * @returns {Date|null}
@@ -111,6 +155,7 @@ export function getHourInTimezone(date, timezone = DEFAULT_TIMEZONE) {
 
 export const TimeUtils = {
   formatLocalTimestamp,
+  formatIsoLocal,
   parseToDate,
   getDateInTimezone,
   getHourInTimezone,

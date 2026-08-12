@@ -14,7 +14,7 @@
 // image directory.
 export const DEFAULT_THEME = {
   player: {
-    src: '/api/v1/gaming/assets/side-scroller/player.megaman/image',
+    src: '/api/v1/presentation/catalogs/side-scroller/assets/player.megaman/image',
     grid: { cols: 5, rows: 6 },
     displaySize: 144,
     // pose → [col, row] (0-indexed); nested array = animation cycle

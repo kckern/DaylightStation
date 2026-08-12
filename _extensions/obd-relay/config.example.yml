@@ -19,11 +19,16 @@ backend:
   ws_path: /ws
 
 # Backend persistence root (relative to data dir). Snapshots/events append to
-# <dir>/<vehicle-id>/<YYYY-MM-DD>.yml; reassembled trips write
-# <dir>/<vehicle-id>/trips/<trip-id>.yml. Omit for the default below.
+# <dir>/<vehicle-id>/<YYYY-MM-DD>.yml, keyed by the HOUSEHOLD-LOCAL day (from
+# system.yml `timezone`, not UTC); reassembled trips write
+# <dir>/<vehicle-id>/trips/<YYYY-MM>/<YYYY-MM-DD>_<HHMM>_<trip-id>.yml.
+# Omit for the defaults below.
 persistence:
   dir: household/history/automotive
   snapshot_min_s: 60                 # persist at most one live snapshot per minute
+  min_trip_samples: 10               # below this, no trip file (still acked, so the
+                                     # device clears flash); a `trip-dropped` record
+                                     # goes to the day log. 0 = keep every trip.
 
 vehicles:
   family-car:

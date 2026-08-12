@@ -1,6 +1,0 @@
-canvas: [64, 16]
-transparent_colors: ['#006da8', '#00cdf9', '#00a5d7', '#0cf1ff', '#0b9eca']
-layers:
-  - source: assets/default/environment/props/outdoor-decor-animations/water-decor-animations/water-rocks/rock-3-water-anim.png
-    rect: [0, 0, 64, 16]
-    at: [0, 0]

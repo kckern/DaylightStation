@@ -1,6 +1,0 @@
-canvas: [96, 64]
-transparent_colors: ['#006da8']
-layers:
-  - source: assets/default/environment/tiles/bridge/bridge-wood-1.png
-    rect: [0, 0, 96, 64]
-    at: [0, 0]

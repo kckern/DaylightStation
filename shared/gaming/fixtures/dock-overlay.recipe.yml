@@ -1,6 +1,0 @@
-canvas: [80, 96]
-transparent_colors: ['#0095e9', '#006da8']
-layers:
-  - source: assets/default/environment/tiles/wooden-deck-tiles.png
-    rect: [0, 0, 80, 96]
-    at: [0, 0]

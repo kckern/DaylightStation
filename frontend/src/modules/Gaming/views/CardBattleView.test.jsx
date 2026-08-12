@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { createInitialState, deriveInteraction, transition } from '@shared-gaming/index.mjs';
-import { scaleClashDefinition } from '@shared-gaming/fixtures/scaleClash.mjs';
+import { scaleClashDefinition } from '@shared-gaming/definitions/scaleClash.mjs';
 import { CardBattleView } from './CardBattleView.jsx';
 
 function makeSession(definition = scaleClashDefinition) {
