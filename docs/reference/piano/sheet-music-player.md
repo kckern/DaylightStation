@@ -337,6 +337,20 @@ notes-and-timing (the same measure wash used elsewhere) and folded into a
 running score; the transport bar's center readout shows the live tally as the
 run progresses (e.g. `82% · m 12/24`).
 
+Polish grades through the shared performance service as of
+`polish-shared-grading-v1` (`scoreEvaluator.js`). It previously computed the same
+dimensions under its own names and combined them multiplicatively, so a polish
+score and a lesson-drill score could not be compared even though both claimed to
+mean "how well did that go". Adopting the service moved the numbers, which is
+why results carry that policy version — records written under the old maths stay
+distinguishable. Ordered grading also counts *missed* notes now: a drill advances
+only on the correct note and so cannot leave one unplayed, but a timed score can
+be played straight past, and a note never struck has to cost something. Polish's
+forgiving timing curve moved into the service as `timingQualityFromDrift` — 80ms
+free, falling to zero by 400ms — so polish and beat-relative grading are one
+formula with different numbers rather than two implementations.
+See [performance-assessment.md](./performance-assessment.md).
+
 Polish uses the same renderer-independent performance judge as Piano Hero.
 The score is compiled into exact onset targets after the tempo map, tempo
 multiplier, and active-staff filter are applied. Repeated pitches remain
@@ -353,6 +367,13 @@ that run's tier — the summary labels it "mixed tempo" and it competes for no
 best, though the live grading still shows. **Overclocked runs earn extra
 credit**: the displayed/stored score is the base score scaled up, and can
 exceed 100 — that's the reward for playing faster than written.
+
+> The multiplier is under review. The
+> [rubric design](../../_wip/plans/2026-08-12-assessment-rubric-design.md)
+> argues speed should be a **gate** against the item's target tempo rather than a
+> score multiplier: weighting speed teaches a child to rush, and a multiplier
+> makes scores incomparable across runs, which is the one thing tier bests
+> depend on. Nothing has changed here yet.
 
 At the end of a run, the summary shows this run's score and tier alongside
 the four tier bests **for the current hands bucket**, so a right-hand-only
