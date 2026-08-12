@@ -19,16 +19,19 @@
 // signature doesn't already imply (in-key notes are clean; out-of-key get a
 // sharp/flat/natural). This is why we can't reuse midiToAbc, which omits the
 // accidental for in-key notes and leans on the ABC `K:` header instead.
-import { Renderer, Stave, StaveNote, GhostNote, Voice, Formatter, StaveConnector, Accidental, Annotation } from 'vexflow';
+import { Renderer, Stave, StaveNote, GhostNote, Voice, Formatter, StaveConnector, Accidental, Annotation, Beam } from 'vexflow';
 import { KEY_SIGNATURES } from '../model/keySignature.js';
 import { splitByHand, getOttavaInfo } from '../model/handSplit.js';
 import { COLUMN_CAPACITY } from '../model/noteFlow.js';
 import { spellPitchClass } from '../model/spelling.js';
 
-// Every column is engraved with the same notehead. The flow shows ORDER, never
-// duration — nothing here has measured how long a key was held, so nothing here
-// should imply it. A quarter note is the most neutral-looking option that still
-// carries a stem for readability.
+// A column with no duration of its own — every column of a single-chord display, and
+// the newest column of a flow before its gap is known — draws as a quarter. It is the
+// most neutral of the three glyphs and still carries a stem for readability.
+//
+// The three durations the flow can ask for ('8', 'q', 'h') are RELATIVE, decided in
+// model/noteFlow.js against a moving baseline. Nothing here means a metrical eighth:
+// there is still no meter, no barline, and no tempo on this staff.
 const NOTE_DURATION = 'q';
 
 const PAD = 8;          // stave's x offset inside the drawing canvas
@@ -180,13 +183,13 @@ function keyAlterFor(letter, keySig) {
  * keyboard, where the second F♯ would read as a different note than the first. Each
  * column here is self-contained: if the key doesn't imply the alteration, it shows.
  */
-function chordNote(midis, clef, keySig, spelling) {
+function chordNote(midis, clef, keySig, spelling, duration = NOTE_DURATION) {
   if (!midis.length) return null;
   // auto_stem: high chords stem DOWN and low chords stem UP (stems point toward the
   // staff), so the stem doesn't add to a tall chord's overhang and the noteheads
   // stay within the frame's headroom instead of clipping.
   const keys = midis.map((m) => midiToVexKey(m, keySig, spelling));
-  const note = new StaveNote({ keys, duration: NOTE_DURATION, clef, auto_stem: true });
+  const note = new StaveNote({ keys, duration, clef, auto_stem: true });
   keys.forEach((key, i) => {
     const [written] = key.split('/');
     const letter = written[0];
@@ -206,15 +209,15 @@ function chordNote(midis, clef, keySig, spelling) {
  * Ottava is decided PER COLUMN, so one low bass note gets its own 8vb without
  * dragging the rest of the phrase down an octave with it.
  */
-function columnNotes(midis, keySig, spelling) {
+function columnNotes(midis, keySig, spelling, duration = NOTE_DURATION) {
   const { bassNotes, trebleNotes } = splitByHand(midis);
   const trebleOtt = getOttavaInfo(trebleNotes, true);
   const bassOtt = getOttavaInfo(bassNotes, false);
   const dispTreble = trebleOtt.octaves ? trebleNotes.map((n) => n - trebleOtt.octaves * 12) : trebleNotes;
   const dispBass = bassOtt.octaves ? bassNotes.map((n) => n + bassOtt.octaves * 12) : bassNotes;
 
-  const tNote = chordNote(dispTreble, 'treble', keySig, spelling);
-  const bNote = chordNote(dispBass, 'bass', keySig, spelling);
+  const tNote = chordNote(dispTreble, 'treble', keySig, spelling, duration);
+  const bNote = chordNote(dispBass, 'bass', keySig, spelling, duration);
   // Best-effort 8va/8vb markers (don't fail the render if the Annotation enum shape
   // ever shifts between VexFlow versions).
   try {
@@ -250,7 +253,12 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
   const allColumns = (columns ?? (notes && notes.size ? [[...notes.keys()]] : []))
     .map((col) => (Array.isArray(col) ? { midis: col, spelling: null } : col))
     .filter((col) => col?.midis?.length)
-    .map((col) => ({ midis: [...col.midis].sort((a, b) => a - b), spelling: col.spelling ?? null }));
+    .map((col) => ({
+      midis: [...col.midis].sort((a, b) => a - b),
+      spelling: col.spelling ?? null,
+      // '8' | 'q' | 'h', or absent for callers that don't carry rhythm at all.
+      duration: col.duration ?? NOTE_DURATION,
+    }));
 
   const ks = KEY_SIGNATURES[keySignature] ? keySignature : 'C';
 
@@ -314,12 +322,20 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
     : 1);
   const flow = allColumns.slice(-slots);
 
+  // A slot's duration belongs to the COLUMN, not to a staff: treble, bass, and the
+  // ghost standing in for whichever staff the column doesn't touch all take the same
+  // one. Per-staff durations would give the two voices different tick totals and the
+  // staves would drift out of vertical alignment column by column.
+  const durations = Array.from({ length: slots }, (_, i) =>
+    (i < flow.length ? flow[i].duration : NOTE_DURATION));
+
   const slotNotes = Array.from({ length: slots }, (_, i) =>
-    i < flow.length ? columnNotes(flow[i].midis, ks, flow[i].spelling) : { tNote: null, bNote: null }
+    i < flow.length
+      ? columnNotes(flow[i].midis, ks, flow[i].spelling, durations[i])
+      : { tNote: null, bNote: null }
   );
-  const ghost = () => new GhostNote({ duration: NOTE_DURATION });
-  const trebleTickables = slotNotes.map((s) => s.tNote ?? ghost());
-  const bassTickables = slotNotes.map((s) => s.bNote ?? ghost());
+  const trebleTickables = slotNotes.map((s, i) => s.tNote ?? new GhostNote({ duration: durations[i] }));
+  const bassTickables = slotNotes.map((s, i) => s.bNote ?? new GhostNote({ duration: durations[i] }));
 
   const makeVoice = (tickables) =>
     new Voice({ num_beats: slots, beat_value: 4 }).setStrict(false).addTickables(tickables);
@@ -329,9 +345,60 @@ export function renderChordStaff(host, { columns, notes, keySignature = 'C', asp
   // joinVoices puts both staves on shared tick contexts, so a column's treble and
   // bass noteheads share one x — the vertical alignment a grand staff needs.
   new Formatter().joinVoices([tVoice]).joinVoices([bVoice]).format([tVoice, bVoice], noteAreaW);
-  [...trebleTickables, ...bassTickables].forEach((t) => t.setXShift(NOTE_INSET));
+
+  // SNAP TO THE SLOT GRID. The formatter spaces by ticks, so once durations vary,
+  // rewriting one column's duration would move every column to its right — and a
+  // column's duration IS rewritten, retroactively, the moment the next one is struck.
+  // Notes would visibly jump sideways while you play, which is exactly what the fixed
+  // frame and the full-capacity layout exist to prevent.
+  //
+  // So the formatter decides widths and we decide positions: each slot is pinned to a
+  // uniform grid. getAbsoluteX() is tickContext.getX() + the stave's note start, so
+  // shifting by (target − tickContext.getX()) lands slot i at the same offset whatever
+  // its duration. Both staves take the same shift and stay aligned.
+  const slotW = noteAreaW / slots;
+  [trebleTickables, bassTickables].forEach((list) => list.forEach((t, i) => {
+    const tc = t.getTickContext?.();
+    t.setXShift(tc ? NOTE_INSET + i * slotW - tc.getX() : NOTE_INSET);
+  }));
+
+  // Beams, built after the snap so they span the grid positions the notes actually
+  // take, and before the draw so the notes suppress their own flags. A group is two or
+  // more consecutive eighth columns on ONE staff; a slower column, or a slot this
+  // staff doesn't play, breaks the run. Decorative — a beam failure must not cost the
+  // staff, the same bargain the ottava markers make.
+  // A run also BREAKS where the stem direction changes, and the beam is built with
+  // auto_stem OFF so it keeps the direction each note already chose. Letting Beam pick
+  // a majority direction for the group is what the ink sweep caught clipping: it flips
+  // stems away from the staff on a low bass run, and the beam — drawn at the stem tips,
+  // which are lengthened to meet it — then lands up to 11 units below the fixed frame.
+  // auto_stem's "stems point toward the staff" is the rule the frame was measured
+  // against, so the beam has to live within it rather than overrule it.
+  const beamRuns = (staffNotes) => {
+    const runs = [];
+    let group = [];
+    const flush = () => { if (group.length >= 2) runs.push(group); group = []; };
+    for (let i = 0; i <= slots; i += 1) {
+      const note = i < slots && durations[i] === '8' ? staffNotes[i] : null;
+      if (!note) { flush(); continue; }
+      const last = group[group.length - 1];
+      if (last && last.getStemDirection() !== note.getStemDirection()) flush();
+      group.push(note);
+    }
+    flush();
+    return runs;
+  };
+  let beams = [];
+  try {
+    beams = [
+      ...beamRuns(slotNotes.map((s) => s.tNote)),
+      ...beamRuns(slotNotes.map((s) => s.bNote)),
+    ].map((group) => new Beam(group, false));
+  } catch { beams = []; }
+
   tVoice.draw(ctx, treble);
   bVoice.draw(ctx, bass);
+  try { beams.forEach((b) => b.setContext(ctx).draw()); } catch { /* decorative */ }
 
   // Make the SVG fluid: a viewBox lets the browser scale the engraving to fit its
   // container and center it (xMidYMid meet), preserving aspect ratio. Replaces the
