@@ -91,17 +91,6 @@ export function PianoChessGame({
   const [rungId, setRungId] = useState('learner');
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    fetchChessConfig(userId).then((loaded) => {
-      if (cancelled || !loaded) return;
-      setChessConfig(loaded);
-      setRungId(loaded.default_rung || 'learner');
-      logger().info('config-loaded', { default_rung: loaded.default_rung, rungs: loaded.rungs?.length });
-    });
-    return () => { cancelled = true; };
-  }, [userId]);
-
   // Apply immediately, persist to the player's own override layer. Guests get
   // the immediate effect only — userId is null, and the per-user endpoint
   // would (rightly) refuse them.
@@ -156,6 +145,34 @@ export function PianoChessGame({
   const cursorRef = useRef(createCursorState());
   const gameRef = useRef(game);
   gameRef.current = game;
+
+  // Below the game state on purpose: this effect may recreate it. The initial
+  // game is built in the useState initializer — always before this fetch can
+  // resolve — so it captured the prop fallback for shuffle_each_turn, and
+  // commitMove re-deals from that CAPTURED value while the rail notice reads
+  // the loaded one. If the player has not touched the game yet, re-deal it
+  // under the loaded preference so the saved setting is real from the first
+  // move; once a chord or move has landed the board must not rearrange under
+  // them, and the captured value stands until the next game.
+  useEffect(() => {
+    let cancelled = false;
+    fetchChessConfig(userId).then((loaded) => {
+      if (cancelled || !loaded) return;
+      setChessConfig(loaded);
+      setRungId(loaded.default_rung || 'learner');
+      const loadedShuffle = loaded.shuffle_each_turn;
+      if (typeof loadedShuffle === 'boolean') {
+        setGame((current) => {
+          const untouched = current.history.length === 0 && !current.origin;
+          if (!untouched || current.shuffleEachTurn === loadedShuffle) return current;
+          return createChessGameState({ playerColor, scheme, seed: gameSeed, shuffleEachTurn: loadedShuffle });
+        });
+      }
+      logger().info('config-loaded', { default_rung: loaded.default_rung, rungs: loaded.rungs?.length });
+    });
+    return () => { cancelled = true; };
+    // playerColor, scheme, and gameSeed are mount-stable (props + one-shot state).
+  }, [userId, playerColor, scheme, gameSeed]);
 
   const heldNotes = useMemo(() => [...activeNotes.keys()].sort((a, b) => a - b), [activeNotes]);
   const heldKey = heldNotes.join(',');
@@ -372,8 +389,12 @@ export function PianoChessGame({
           <p className="piano-chess__turn">
             {game.status?.game_over ? 'Game over' : `${turnLabel} to move`}
             {/* The active rung, straight from the config ladder — the bundled
-                engine's old label table would go stale the moment rungs moved. */}
-            <span className="piano-chess__difficulty">{rung?.label ?? rungId}</span>
+                engine's old label table would go stale the moment rungs moved.
+                Before the config resolves (or if a saved rung id has left the
+                ladder) the id is capitalized rather than shown raw. */}
+            <span className="piano-chess__difficulty">
+              {rung?.label ?? (rungId.charAt(0).toUpperCase() + rungId.slice(1))}
+            </span>
           </p>
           {chessConfig && (
             <button

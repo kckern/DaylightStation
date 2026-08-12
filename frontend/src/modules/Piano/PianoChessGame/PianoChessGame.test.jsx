@@ -28,6 +28,7 @@ vi.mock('./chessApi.js', () => ({
 
 import { PianoChessGame } from './PianoChessGame.jsx';
 import { fetchChessConfig, requestOpponentMove, saveChessConfig } from './chessApi.js';
+import { DEFAULT_CHORD_SCHEME } from './chordAddress.js';
 
 const sourceOutlines = (container) => container.querySelectorAll('.chess-board__square--source').length;
 
@@ -207,6 +208,31 @@ describe('PianoChessGame settings wiring', () => {
     expect(railBadge(container)).toBe('Learner');
     expect(saveChessConfig).not.toHaveBeenCalled();
     expect(fetchChessConfig).toHaveBeenCalledWith(null);
+  });
+
+  it('honours a saved shuffle_each_turn:false from the first game — the initial deal is not shuffled', async () => {
+    // The game state is created in a useState initializer, before the config
+    // can possibly resolve — so without the config-load re-deal, the first
+    // game's state captures the prop fallback (shuffle on) and the board
+    // silently re-deals every turn while the notice (driven by the loaded
+    // config) hides. The base scheme's ordered roots on the file axis are the
+    // observable proof of which value is actually in force: shuffled deals are
+    // seed-permuted and do not match.
+    fetchChessConfig.mockResolvedValue({ ...SERVED_CONFIG, shuffle_each_turn: false });
+    const { container } = render(<PianoChessGame seed={1} />);
+    // The re-deal notice disappearing proves the config has been applied...
+    await waitFor(() => expect(container.querySelector('.piano-chess__redeal')).toBeNull());
+    // ...and the file axis must then be the unshuffled base scheme — the deal
+    // in force, not just the label.
+    const fileAxis = [...container.querySelectorAll('.chess-board__file-axis .chess-board__axis-label')]
+      .map((el) => el.textContent);
+    expect(fileAxis).toEqual([...DEFAULT_CHORD_SCHEME.roots]);
+  });
+
+  it('shows a human label, never the raw rung id, before the config resolves', () => {
+    fetchChessConfig.mockImplementation(async () => null);
+    const { container } = render(<PianoChessGame />);
+    expect(railBadge(container)).toBe('Learner');
   });
 
   it('shows the legality cues without any refusal when the config says always', async () => {
