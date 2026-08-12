@@ -192,18 +192,27 @@ export function PianoChessGame({
   // being played — a hint only as strong as a beginner's opponent is not a hint.
   const [help, setHelp] = useState({ legal: false, best: null });
   const [helpUsed, setHelpUsed] = useState({ hints: 0, bestMoves: 0 });
+  // One best-move request at a time: `help.best` is still null while the server
+  // thinks, so without this gate a re-gesture mid-flight would queue a second
+  // request (and, worse, a second charge).
+  const bestPendingRef = useRef(false);
   useEffect(() => {
     if (gesture === 'hint' && !help.legal) {
       setHelp((prev) => ({ ...prev, legal: true }));
       setHelpUsed((prev) => ({ ...prev, hints: prev.hints + 1 }));
       logger().info('help-requested', { kind: 'legal' });
     }
-    if (gesture === 'best' && !help.best) {
-      requestOpponentMove({ fen: game.game.fen, rung: 'ruthless', gameId, userId }).then((move) => {
-        if (move) setHelp((prev) => ({ ...prev, best: { from: move.from, to: move.to } }));
-      });
-      setHelpUsed((prev) => ({ ...prev, bestMoves: prev.bestMoves + 1 }));
+    if (gesture === 'best' && !help.best && !bestPendingRef.current) {
+      bestPendingRef.current = true;
       logger().info('help-requested', { kind: 'best' });
+      requestOpponentMove({ fen: game.game.fen, rung: 'ruthless', gameId, userId }).then((move) => {
+        bestPendingRef.current = false;
+        // Charged only when a move actually arrives: the record holds facts,
+        // and "1 best move" the player never received is not one.
+        if (!move) return;
+        setHelp((prev) => ({ ...prev, best: { from: move.from, to: move.to } }));
+        setHelpUsed((prev) => ({ ...prev, bestMoves: prev.bestMoves + 1 }));
+      });
     }
     // The gesture alone triggers; everything else is read at the moment it fires.
     // eslint-disable-next-line react-hooks/exhaustive-deps

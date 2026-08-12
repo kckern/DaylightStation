@@ -297,6 +297,28 @@ describe('PianoChessGame chord read-out wiring', () => {
   });
 });
 
+// Narrowing is the light channel's whole job, and ChessBoard's own tests only
+// prove prop-to-class. This is the one place that proves held notes actually
+// REACH the board as candidates — without it, passing `candidates={[]}` to the
+// board would leave every suite green.
+describe('narrowing on the board', () => {
+  beforeEach(() => {
+    mockUsePianoMidi.mockReturnValue({ connected: true, status: 'connected' });
+  });
+
+  afterEach(() => {
+    mockUsePianoMidi.mockReturnValue({ connected: false, status: 'disconnected' });
+    mockUsePianoMidiNotes.mockReturnValue({ activeNotes: new Map(), noteHistory: [] });
+  });
+
+  it('a held partial chord lights the squares it could still become', () => {
+    // C and E: two notes, not adjacent semitones — it narrows, triggers nothing.
+    mockUsePianoMidiNotes.mockReturnValue({ activeNotes: new Map([[60, {}], [64, {}]]), noteHistory: [] });
+    const { container } = render(<PianoChessGame />);
+    expect(container.querySelectorAll('.chess-board__square--candidate').length).toBeGreaterThan(0);
+  });
+});
+
 // The hint gestures are the ONLY way marks reach the board, so the wiring from
 // a held cluster to the marks channel is what these exercise. The recogniser
 // itself is unit-tested in chordGestures.test.js; here the question is whether
@@ -330,6 +352,20 @@ describe('hint gestures', () => {
     const { container } = render(<PianoChessGame />);
     expect(requestOpponentMove).toHaveBeenCalledWith(expect.objectContaining({ rung: 'ruthless' }));
     await waitFor(() => expect(container.querySelectorAll('.chess-board__square--best')).toHaveLength(2));
+  });
+
+  it('does not queue a second charge while a best-move request is in flight', async () => {
+    let resolveMove;
+    requestOpponentMove.mockImplementation(() => new Promise((resolve) => { resolveMove = resolve; }));
+    holdNotes(BEST_CLUSTER);
+    const { rerender } = render(<PianoChessGame />);
+    // Release and mash the cluster again before the server has answered.
+    holdNotes(new Map());
+    rerender(<PianoChessGame />);
+    holdNotes(BEST_CLUSTER);
+    rerender(<PianoChessGame />);
+    expect(requestOpponentMove).toHaveBeenCalledTimes(1);
+    await act(async () => { resolveMove({ from: 'g1', to: 'f3', san: 'Nf3', engine: 'stockfish' }); });
   });
 
   it('a released gesture is never chord input — no refusal appears, and the marks persist', async () => {
@@ -366,6 +402,7 @@ describe('the game record', () => {
     vi.useFakeTimers();
     mockUsePianoMidi.mockReturnValue({ connected: true, status: 'connected' });
     saveGameRecord.mockClear();
+    requestOpponentMove.mockReset();
   });
 
   afterEach(() => {
@@ -374,7 +411,10 @@ describe('the game record', () => {
     mockUsePianoMidiNotes.mockReturnValue({ activeNotes: new Map(), noteHistory: [] });
   });
 
-  it('posts one record for the signed-in player when the game ends', async () => {
+  it('posts one record per game, and "Play again" starts the tallies over', async () => {
+    // The best-move ask in game 2 fails: a hint that never arrived is not a
+    // fact the record may claim.
+    requestOpponentMove.mockResolvedValue(null);
     // A FRESH element per render: reusing one element object makes React bail
     // out on identical props, so the changed note mock would never be re-read.
     const makeElement = () => (
@@ -395,6 +435,8 @@ describe('the game record', () => {
       await act(async () => { await vi.advanceTimersByTimeAsync(100); });
     };
 
+    // Game 1: ask for a legal-move hint, then deliver the mate.
+    await play([60, 61, 62]); // hint cluster — charges one hint
     await play(notesFor('f1')); // lift the rook
     await play(notesFor('f8')); // land it — checkmate
 
@@ -403,8 +445,25 @@ describe('the game record', () => {
       result: 'win',
       outcome: 'checkmate',
       moves: 1,
-      hints: 0,
+      hints: 1,
       best_moves: 0,
     }));
+
+    // Play again must reset the once-only guard AND the tallies — without it
+    // the second game never records, and help would carry over between games.
+    fireEvent.click(screen.getByRole('button', { name: /play again/i }));
+
+    // Game 2: ask for the best move, but the server never produces one.
+    await play([60, 61, 62, 63]); // best cluster — request fails, no charge
+    await play(notesFor('f1'));
+    await play(notesFor('f8'));
+
+    expect(saveGameRecord).toHaveBeenCalledTimes(2);
+    expect(saveGameRecord.mock.calls[1][1]).toMatchObject({
+      result: 'win',
+      moves: 1,
+      hints: 0,
+      best_moves: 0,
+    });
   });
 });
