@@ -85,7 +85,7 @@ describe('help validity: seams the per-task tests could not see', () => {
     rerender(<PianoChessGame playerColor="b" seed={1} />);
     // Opponent's reply lands (position advances; help is cleared).
     await act(async () => { await vi.advanceTimersByTimeAsync(800); });
-    expect(container.querySelectorAll('.piano-chess__move-san').length).toBe(1);
+    expect(container.querySelectorAll('.chess-board__square--last-move').length).toBe(2);
     // NOW the stale best-move answer arrives — computed for the pre-reply position.
     await act(async () => { resolveBest({ from: 'g1', to: 'f3', san: 'Nf3', engine: 'stockfish' }); });
     expect(container.querySelectorAll('.chess-board__square--best')).toHaveLength(0);

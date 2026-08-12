@@ -5,6 +5,7 @@ import getLogger from '../../../lib/logging/Logger.js';
 import ChessBoard from '../../Chess/ChessBoard.jsx';
 import { PianoKeyboard } from '../components/PianoKeyboard.jsx';
 import ChordNamePanel from '../components/ChordNamePanel.jsx';
+import CurrentChordStaff from '../components/CurrentChordStaff.jsx';
 import ChordReadout from './ChordReadout.jsx';
 import { isPersistentUser } from '../PianoKiosk/pianoUser.js';
 import { usePianoMidi, usePianoMidiNotes } from '../PianoKiosk/PianoMidiContext.jsx';
@@ -15,6 +16,8 @@ import {
 import { cuesFromConfig } from './chessCues.js';
 import ChessSettingsPanel from './ChessSettingsPanel.jsx';
 import { CHORD_QUALITIES, DEFAULT_CHORD_SCHEME, squareToChord } from './chordAddress.js';
+import { DEFAULT_STAFF_SCHEME, isStaffScheme } from './staffAddress.js';
+import StaffNoteLabel from './StaffNoteLabel.jsx';
 import { candidateSquares } from './chordCandidates.js';
 import { destinationBadges } from './chessBadges.js';
 import { recognizeGesture } from './chordGestures.js';
@@ -49,6 +52,24 @@ export const DEFAULT_FEEDBACK = Object.freeze({
 });
 const OPPONENT_DELAY_MS = 700;
 const PIECE_GLYPHS = { p: '♟', n: '♞', b: '♝', r: '♜', q: '♛', k: '♚' };
+
+/**
+ * The addressing vocabulary, chosen by config rather than by code.
+ *
+ * `staff` is the reading level: a rank is a note on the bass staff, a file a
+ * note on the treble staff, and a square is the two played together. It exists
+ * for players who read both clefs long before they can spell a chord — which is
+ * most beginners, for years — and it is the same 64 squares, so nothing else in
+ * the game changes.
+ */
+export function schemeForAddressing(addressing, fallback = DEFAULT_CHORD_SCHEME) {
+  if (addressing === 'staff') return DEFAULT_STAFF_SCHEME;
+  if (addressing === 'chords') return fallback === DEFAULT_STAFF_SCHEME ? DEFAULT_CHORD_SCHEME : fallback;
+  return fallback;
+}
+
+/** A chord takes three notes to name a square; a staff address takes two. */
+export const minNotesFor = (scheme) => (isStaffScheme(scheme) ? 2 : 3);
 
 let cachedLogger;
 function logger() {
@@ -193,15 +214,20 @@ export function PianoChessGame({
       setChessConfig(loaded);
       setRungId(loaded.default_rung || 'learner');
       const loadedShuffle = loaded.shuffle_each_turn;
-      if (typeof loadedShuffle === 'boolean') {
-        setGame((current) => {
-          const untouched = current.history.length === 0 && !current.origin;
-          if (!untouched || current.shuffleEachTurn === loadedShuffle) return current;
-          return createChessGameState({
-            fen: fen ?? undefined, playerColor, scheme, seed: gameSeed, shuffleEachTurn: loadedShuffle,
-          });
+      // The addressing vocabulary is a per-player setting, so it can only be
+      // known once that player's config layer has resolved — after the game was
+      // built. Same rule as the shuffle: adopt it while the game is untouched,
+      // never rearrange the board under a player mid-move.
+      const loadedScheme = schemeForAddressing(loaded.addressing, scheme);
+      setGame((current) => {
+        const untouched = current.history.length === 0 && !current.origin;
+        const nextShuffle = typeof loadedShuffle === 'boolean' ? loadedShuffle : current.shuffleEachTurn;
+        if (!untouched) return current;
+        if (current.shuffleEachTurn === nextShuffle && current.scheme?.id === loadedScheme.id) return current;
+        return createChessGameState({
+          fen: fen ?? undefined, playerColor, scheme: loadedScheme, seed: gameSeed, shuffleEachTurn: nextShuffle,
         });
-      }
+      });
       logger().info('config-loaded', { default_rung: loaded.default_rung, rungs: loaded.rungs?.length });
     });
     return () => { cancelled = true; };
@@ -467,8 +493,17 @@ export function PianoChessGame({
 
   // The board takes plain strings; translating chords into them is this layer's
   // job, which is why ChessBoard never learns what a chord is.
-  const fileLabels = liveScheme.roots;
-  const rankLabels = liveScheme.qualities.map((quality) => CHORD_QUALITIES[quality]?.label || 'maj');
+  const reading = isStaffScheme(liveScheme);
+  const minNotes = minNotesFor(liveScheme);
+  // In the reading vocabulary the rim IS the lesson: a note drawn on the staff
+  // the player reads it from. ChessBoard renders labels as children, so a node
+  // costs it nothing to accept.
+  const fileLabels = reading
+    ? liveScheme.roots.map((midi) => <StaffNoteLabel key={midi} midi={midi} clef="treble" />)
+    : liveScheme.roots;
+  const rankLabels = reading
+    ? liveScheme.qualities.map((midi) => <StaffNoteLabel key={midi} midi={midi} clef="bass" />)
+    : liveScheme.qualities.map((quality) => CHORD_QUALITIES[quality]?.label || 'maj');
 
   // The marks channel is empty until a gesture asks. "Show legal moves" means
   // the destinations of the piece being held — or, when none is held yet,
@@ -502,6 +537,119 @@ export function PianoChessGame({
   return (
     <div className="piano-chess">
       <div className="piano-chess__stage">
+        {/* THE STATE RAIL — what the game is currently thinking. Every row here
+            holds its place whether or not it has something to say: a read-out
+            that resizes as fingers land drags the eye and, worse, moves the
+            board. Fixed rows, fixed rail width, board centred regardless. */}
+        <aside className="piano-chess__rail piano-chess__rail--state">
+          <PianoContextRail
+            program="Piano Chess"
+            ancestors={onDeactivate ? [{ label: 'Games', onClick: onDeactivate }] : []}
+          />
+
+          <dl className="piano-chess__facts">
+            {[
+              ['Player', lockedUser || 'Guest'],
+              ['Turn', game.status?.game_over ? 'Game over' : turnLabel],
+              ['Level', rung?.label ?? (rungId.charAt(0).toUpperCase() + rungId.slice(1))],
+            ].map(([label, value]) => (
+              <div key={label} className="piano-chess__fact">
+                <dt className="piano-chess__slot-label">{label}</dt>
+                <dd className="piano-chess__fact-value">{value}</dd>
+              </div>
+            ))}
+          </dl>
+
+          {/* IN HAND. A mark on a distant square is not enough to keep "I am
+              mid-move, holding my knight" in a child's head while they pluck
+              through chords hunting a destination. This space is reserved for
+              that one question and used for nothing else, so its emptiness is
+              also an answer. The way to put the piece back sits inside the same
+              block — the escape has to be legible exactly where the player is
+              looking when they feel stuck. */}
+          <section className={`piano-chess__hand${game.origin ? ' piano-chess__hand--holding' : ''}`}>
+            <h2 className="piano-chess__slot-label">In hand</h2>
+            {game.origin && heldPiece ? (
+              <>
+                <span className={`piano-chess__hand-piece piano-chess__hand-piece--${heldPiece === heldPiece.toUpperCase() ? 'white' : 'black'}`}>
+                  {PIECE_GLYPHS[heldPiece.toLowerCase()] ?? '?'}
+                </span>
+                <span className="piano-chess__hand-from">from {game.origin}</span>
+                <span className="piano-chess__hand-escape">Play an octave to put it back</span>
+              </>
+            ) : (
+              <>
+                <span className="piano-chess__hand-piece piano-chess__hand-piece--empty">—</span>
+                <span className="piano-chess__hand-from">Nothing picked up</span>
+                <span className="piano-chess__hand-escape">&nbsp;</span>
+              </>
+            )}
+          </section>
+
+          {/* HEARD. Moved off the bottom strip, where it re-centred itself on
+              every note and shook the whole row. */}
+          <ChordReadout
+            heldNotes={heldNotes}
+            chord={cursorChord}
+            square={cursor}
+            connected={connected}
+            settling={heldNotes.length >= minNotes && candidates.length > 0 && !cursor}
+            minNotes={minNotes}
+          />
+
+          <p className="piano-chess__prompt" role="status">{prompt}</p>
+
+          {game.status?.game_over && finishedRecord && (
+            <dl className="piano-chess__summary">
+              {[
+                ['Moves', finishedRecord.moves],
+                ['Hints', finishedRecord.hints],
+                ['Best moves', finishedRecord.best_moves],
+              ].map(([label, value]) => (
+                <div key={label} className="piano-chess__summary-row">
+                  <dt className="piano-chess__slot-label">{label}</dt>
+                  <dd className="piano-chess__summary-value">{value}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+
+          <div className="piano-chess__rail-actions">
+            {game.status?.game_over ? (
+              <button type="button" className="piano-chess__cancel" onClick={restart}>
+                Play again
+                <span className="piano-chess__cancel-hint">play an octave to start over</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="piano-chess__cancel"
+                onClick={cancelSelection}
+                disabled={!game.origin}
+              >
+                Put it back
+                <span className="piano-chess__cancel-hint">play an octave, or press Esc</span>
+              </button>
+            )}
+            {chessConfig && (
+              <button
+                type="button"
+                className="piano-chess__settings-btn"
+                onClick={() => setSettingsOpen((open) => !open)}
+                aria-expanded={settingsOpen}
+              >
+                Settings
+              </button>
+            )}
+          </div>
+
+          {shuffleEachTurn && (
+            <p className={`piano-chess__redeal${justDealt ? ' piano-chess__redeal--fresh' : ''}`} role="status">
+              {justDealt ? 'New chord map — read the edges' : 'Chords move every turn'}
+            </p>
+          )}
+        </aside>
+
         <ChessBoard
           fen={game.game.fen}
           status={game.status}
@@ -521,91 +669,13 @@ export function PianoChessGame({
           ghost={ghost}
         />
 
-        <aside className="piano-chess__rail piano-chess__rail--log">
-          {/* The kiosk's standard context rail, same as Videos. It carries the
-              way back now that the header (and its Leave button) is gone — the
-              breadcrumb rail above already says where we are. */}
-          <PianoContextRail
-            program="Piano Chess"
-            ancestors={onDeactivate ? [{ label: 'Games', onClick: onDeactivate }] : []}
-          />
-          {/* Whoever started the game, latched at mount — a kiosk user switch
-              mid-game must not change whose config plays or whose record
-              gets written, and the screen has to say so. */}
-          <p className="piano-chess__locked-user">Playing as {lockedUser || 'Guest'}</p>
-          <p className="piano-chess__turn">
-            {game.status?.game_over ? 'Game over' : `${turnLabel} to move`}
-            {/* The active rung, straight from the config ladder — the bundled
-                engine's old label table would go stale the moment rungs moved.
-                Before the config resolves (or if a saved rung id has left the
-                ladder) the id is capitalized rather than shown raw. */}
-            <span className="piano-chess__difficulty">
-              {rung?.label ?? (rungId.charAt(0).toUpperCase() + rungId.slice(1))}
-            </span>
-          </p>
-          <p className="piano-chess__prompt" role="status">{prompt}</p>
-
-          {/* The spec's promise: the end screen reads the game back as facts.
-              These are fields of the SAME object the record effect saved —
-              never a second formatting of the state — so the screen and the
-              stored record cannot disagree. */}
-          {game.status?.game_over && finishedRecord && (
-            <dl className="piano-chess__summary">
-              {[
-                ['Moves', finishedRecord.moves],
-                ['Hints', finishedRecord.hints],
-                ['Best moves', finishedRecord.best_moves],
-              ].map(([label, value]) => (
-                <div key={label} className="piano-chess__summary-row">
-                  <dt className="piano-chess__slot-label">{label}</dt>
-                  <dd className="piano-chess__summary-value">{value}</dd>
-                </div>
-              ))}
-            </dl>
-          )}
-
-          {game.status?.game_over ? (
-            <button type="button" className="piano-chess__cancel" onClick={restart}>
-              Play again
-              <span className="piano-chess__cancel-hint">play an octave to start over</span>
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="piano-chess__cancel"
-              onClick={cancelSelection}
-              disabled={!game.origin}
-            >
-              Put it back
-              <span className="piano-chess__cancel-hint">play an octave, or press Esc</span>
-            </button>
-          )}
-          {chessConfig && (
-            <button
-              type="button"
-              className="piano-chess__settings-btn"
-              onClick={() => setSettingsOpen((open) => !open)}
-              aria-expanded={settingsOpen}
-            >
-              Settings
-            </button>
-          )}
-          {shuffleEachTurn && (
-            <p className={`piano-chess__redeal${justDealt ? ' piano-chess__redeal--fresh' : ''}`} role="status">
-              {justDealt ? 'New chord map — read the edges' : 'Chords move every turn'}
-            </p>
-          )}
-          <h2 className="piano-chess__rail-title">Moves</h2>
-          <ol className="piano-chess__moves">
-            {game.history.map((entry, index) => (
-              <li key={`${entry.san}-${index}`} className="piano-chess__move">
-                <span className="piano-chess__move-index">{Math.floor(index / 2) + 1}</span>
-                <span className="piano-chess__move-chords">{entry.chords.join(' → ')}</span>
-                <span className="piano-chess__move-san">{entry.san}</span>
-              </li>
-            ))}
-            {!game.history.length && <li className="piano-chess__move piano-chess__move--empty">No moves yet.</li>}
-          </ol>
+        {/* THE CHORD RAIL — a mirror of the hands, in both vocabularies at once:
+            the name for the speller, the notation for the reader. It reports;
+            it does not teach theory, which is why there is no circle here. */}
+        <aside className="piano-chess__rail piano-chess__rail--chords">
+          <h2 className="piano-chess__slot-label">Playing</h2>
+          <ChordNamePanel midiNotes={heldNotes} />
+          <CurrentChordStaff activeNotes={activeNotes} />
           <div className="piano-chess__captured">
             {['w', 'b'].map((color) => (
               <div key={color} className="piano-chess__captured-row">
@@ -632,22 +702,10 @@ export function PianoChessGame({
         />
       )}
 
-      {/* The instrument zone: what is being played (plaque), what the game
-          heard and where it points (read-out), and the keys themselves.
-          `settling` needs no resolved-flag bookkeeping any more — narrowing
-          answers instantly: zero candidates means no square can contain these
-          notes, so only a still-narrowing chord reads as "settling". */}
+      {/* The instrument zone is the instrument, and nothing else: which keys are
+          down. Everything that used to ride up here answers a question that
+          belongs beside the other answers of its kind, on one of the rails. */}
       <footer className="piano-chess__instrument">
-        <div className="piano-chess__instrument-readouts">
-          <ChordNamePanel midiNotes={heldNotes} label="Playing" />
-          <ChordReadout
-            heldNotes={heldNotes}
-            chord={cursorChord}
-            square={cursor}
-            connected={connected}
-            settling={heldNotes.length >= 3 && candidates.length > 0 && !cursor}
-          />
-        </div>
         <PianoKeyboard activeNotes={activeNotes} startNote={36} endNote={84} showLabels />
       </footer>
     </div>

@@ -108,7 +108,7 @@ export const INTERVALS_BY_LABEL = Object.freeze({
   aug: [0, 4, 8],
   maj7: [0, 4, 7, 11],
   m7: [0, 3, 7, 10],
-  add2: [0, 2, 4, 7],
+  add9: [0, 4, 7, 14],
   m6: [0, 3, 7, 9],
 });
 

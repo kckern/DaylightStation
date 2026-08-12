@@ -152,9 +152,32 @@ places: naming what is played is a chord-rail story (8, 9), and the verdict — 
 it, refused it, ignored it — is a state-rail story (10, 18, 19). Splitting them puts each answer
 beside the other answers of its kind, and leaves the instrument zone showing the instrument.
 
+## The two vocabularies
+
+`addressing` picks which skill the board asks for. It is a household default with the usual
+per-user override, and the in-game settings panel offers it as a pair of tap targets.
+
+| `addressing` | A square is | Notes to play |
+|--------------|-------------|---------------|
+| `chords` | file = root, rank = quality | Three, spelled as a chord |
+| `staff` | file = a note on the treble staff, rank = a note on the bass staff | Two — one on each staff, left hand picks the row, right hand the column |
+
+Under `staff` the rim stops printing text and draws the note itself, on the staff it is read from.
+The octave matters, which is the whole point of reading: C4 and C5 are different lines. Everything
+else in the game is unchanged — narrowing, hover, pick-up, badges, the record — because it is a
+different vocabulary for the same 64 squares, not a different game.
+
+One consequence is worth stating because it is not obvious. A square in this vocabulary can *be* an
+octave: the bass and treble staves both carry a C, so C2-with-C4 is a legitimate square. The square
+wins, and the escape stays reachable because a player escapes with two notes in one hand — both on
+the same staff, which is never an address.
+
+Narrowing is better in this vocabulary than in the other: one note lights a whole rank or a whole
+file, so the player watches the row and the column meet.
+
 ## Not yet built
 
-- **The reader's vocabulary.** Bass-clef ranks and treble-clef files are specified but unbuilt; the
-  reader currently has to spell chords like everyone else, which is the wrong game for them.
 - **Inversions as distinct squares.** Graded by difficulty so a beginner is never addressed in
   slash chords.
+- **The opponent ladder** — 21 personas over the engine's skill levels, promotion by recent form,
+  per-user progress. Captured in `docs/_wip/plans/2026-08-12-piano-chess-opponent-ladder.md`.

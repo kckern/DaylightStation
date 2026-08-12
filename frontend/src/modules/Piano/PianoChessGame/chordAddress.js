@@ -1,5 +1,9 @@
 import { shuffle } from '@shared-gaming/rng.mjs';
 import { FILES, RANKS, isSquare } from '@shared-gaming/chess/index.mjs';
+import {
+  isStaffScheme, squareToStaffAddress, staffToSquare,
+  identifyStaffAddress, validateStaffScheme,
+} from './staffAddress.js';
 
 /**
  * Chord addressing: every square on the board is one chord.
@@ -92,6 +96,7 @@ export function chordSymbol(root, quality) {
 }
 
 export function validateChordScheme(scheme, { qualities: table = CHORD_QUALITIES } = {}) {
+  if (isStaffScheme(scheme)) return validateStaffScheme(scheme);
   const errors = [];
   const roots = scheme?.roots;
   const qualities = scheme?.qualities;
@@ -166,6 +171,7 @@ export function shuffleChordScheme(scheme = DEFAULT_CHORD_SCHEME, seed = 0) {
 
 /** Square -> the chord that addresses it. */
 export function squareToChord(square, scheme = DEFAULT_CHORD_SCHEME) {
+  if (isStaffScheme(scheme)) return squareToStaffAddress(square, scheme);
   if (!isSquare(square)) return null;
   const root = scheme.roots[FILES.indexOf(square[0])];
   const quality = scheme.qualities[RANKS.indexOf(square[1])];
@@ -182,6 +188,7 @@ export function squareToChord(square, scheme = DEFAULT_CHORD_SCHEME) {
 
 /** Chord -> the square it addresses, or null when the chord is off-scheme. */
 export function chordToSquare(root, quality, scheme = DEFAULT_CHORD_SCHEME) {
+  if (isStaffScheme(scheme)) return staffToSquare(root, quality, scheme);
   const file = scheme.roots.findIndex((candidate) => rootPitchClass(candidate) === rootPitchClass(root));
   const rank = scheme.qualities.indexOf(quality);
   if (file < 0 || rank < 0) return null;
@@ -210,6 +217,10 @@ export function chordBoard(scheme = DEFAULT_CHORD_SCHEME) {
  * changes how the game must be played, not just how it is scored.
  */
 export function findChordCollisions(scheme = DEFAULT_CHORD_SCHEME) {
+  // A staff scheme addresses every square with a distinct PAIR of notes drawn
+  // from two disjoint sets, so ambiguity is structurally impossible rather than
+  // something to search for.
+  if (isStaffScheme(scheme)) return [];
   const bySignature = new Map();
   for (const [square, chord] of Object.entries(chordBoard(scheme))) {
     if (!chord?.pitch_classes) continue;
@@ -231,6 +242,7 @@ export function findChordCollisions(scheme = DEFAULT_CHORD_SCHEME) {
  * is also the musically correct habit to be teaching.
  */
 export function identifyChord(midiNotes, scheme = DEFAULT_CHORD_SCHEME) {
+  if (isStaffScheme(scheme)) return identifyStaffAddress(midiNotes, scheme);
   const notes = (Array.isArray(midiNotes) ? midiNotes : []).filter(Number.isFinite);
   if (!notes.length) return { square: null, candidates: [], pitch_classes: [] };
   const played = [...new Set(notes.map((note) => ((note % 12) + 12) % 12))].sort((a, b) => a - b);

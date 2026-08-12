@@ -16,6 +16,7 @@ export default function ChessSettingsPanel({ config, rungId, onChange, onClose }
   const shuffle = config?.shuffle_each_turn !== false;
   const delayMs = config?.opponent_delay_ms ?? 700;
   const labelsOn = config?.feedback?.show_destination_labels !== false;
+  const addressing = config?.addressing === 'staff' ? 'staff' : 'chords';
 
   return (
     <section className="chess-settings" aria-label="Chess settings">
@@ -35,6 +36,28 @@ export default function ChessSettingsPanel({ config, rungId, onChange, onClose }
             onClick={() => onChange({ default_rung: rung.id })}
           >
             {rung.label}
+          </button>
+        ))}
+      </div>
+
+      {/* The addressing vocabulary — which skill the board asks for. Reading
+          both clefs comes years before spelling chords, so this is the setting
+          that decides whether a given child can play at all. Takes effect on
+          the next game, like the chord map, and for the same reason. */}
+      <h3 className="chess-settings__group">Squares are</h3>
+      <div className="chess-settings__row">
+        {[
+          { id: 'chords', label: 'Chords' },
+          { id: 'staff', label: 'Notes on a staff' },
+        ].map((opt) => (
+          <button
+            key={opt.id}
+            type="button"
+            className={`chess-settings__opt${addressing === opt.id ? ' is-active' : ''}`}
+            aria-pressed={addressing === opt.id}
+            onClick={() => onChange({ addressing: opt.id })}
+          >
+            {opt.label}
           </button>
         ))}
       </div>
