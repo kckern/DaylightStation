@@ -23,7 +23,9 @@
   position: absolute;
   inset: 0;
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  /* Stage, then keyboard. There is no header row: the kiosk breadcrumb rail
+     above already names where we are, and the context rail carries the way out. */
+  grid-template-rows: 1fr auto;
   gap: 0.75rem;
   padding: 1rem 1.25rem 0;
   background:
@@ -33,30 +35,10 @@
   overflow: hidden;
 }
 
-/* ---- header ------------------------------------------------------------- */
-
-.piano-chess__header {
-  display: flex;
-  align-items: baseline;
-  gap: 1.25rem;
-}
-
-.piano-chess__wordmark {
-  margin: 0;
-  font-size: 1.5rem;
-  font-weight: 700;
-  margin-inline-end: auto;
-  letter-spacing: 0.32em;
-  text-transform: uppercase;
-  color: var(--pc-ivory);
-
-  span {
-    color: var(--pc-brass);
-  }
-}
+/* ---- status (in the right context rail) --------------------------------- */
 
 /* The re-deal notice. Loud for a beat, then a standing reminder — the player
-   needs to know the map moved without the header shouting every turn. */
+   needs to know the map moved without it shouting every turn. */
 .piano-chess__redeal {
   margin: 0;
   font-size: 0.8rem;
@@ -90,22 +72,12 @@
   color: var(--pc-brass);
 }
 
-.piano-chess__exit {
-  padding: 0.3rem 0.9rem;
-  border: 1px solid rgb(239 228 205 / 25%);
-  border-radius: 2px;
-  background: none;
-  color: var(--pc-ivory-dim);
-  font: inherit;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  cursor: pointer;
-
-  &:hover,
-  &:focus-visible {
-    border-color: var(--pc-brass);
-    color: var(--pc-brass);
-  }
+/* The shared kiosk context rail sits to the RIGHT of the board here, so its
+   divider has to change sides. */
+.piano-chess .psc-rail {
+  padding: 0 0 0.75rem;
+  border-right: none;
+  border-bottom: 1px solid rgb(239 228 205 / 12%);
 }
 
 /* ---- stage -------------------------------------------------------------- */
@@ -258,7 +230,7 @@
      bottom of the screen. The 2.5rem is the file-axis strip below the board. */
   --cb-size: min(46cqw, calc(100cqh - 2.5rem));
   --cb-light: var(--pc-ivory);
-  --cb-dark: var(--pc-walnut);
+  --cb-dark: #9e7070;
   --cb-frame: var(--pc-walnut-deep);
   --cb-accent: var(--pc-brass);
   --cb-accent-glow: var(--pc-brass-glow);
