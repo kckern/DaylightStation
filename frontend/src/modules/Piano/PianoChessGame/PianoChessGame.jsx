@@ -57,7 +57,16 @@ function logger() {
 }
 
 /** The prompt under the board: what the player should do next, in their terms. */
-export function promptFor(state, rejection) {
+/**
+ * The one sentence on screen that teaches the grammar. It has to name the
+ * DOUBLE: a player who plays a piece's chord once gets a hover — the square
+ * lights, the read-out agrees, and nothing happens — and if the prompt says
+ * "play the chord of the piece you want to move" they have followed it exactly
+ * and been answered with silence. When the cursor is already resting on a
+ * square, the prompt names that square's own chord, so the instruction is the
+ * literal next thing to play rather than a rule to apply.
+ */
+export function promptFor(state, rejection, hoveredChord = null) {
   if (state.status?.game_over) {
     if (state.status.outcome === 'checkmate') {
       return state.status.winner === state.playerColor ? 'Checkmate. You win.' : 'Checkmate. Your opponent wins.';
@@ -67,7 +76,10 @@ export function promptFor(state, rejection) {
   if (rejection) return REJECTION_MESSAGES[rejection.reason] ?? 'Try another chord.';
   if (!isPlayerTurn(state)) return 'Your opponent is thinking.';
   if (state.status?.check) return 'You are in check. Play a chord to answer it.';
-  return state.origin ? 'Now play the square to move to.' : 'Play the chord of the piece you want to move.';
+  if (state.origin) return 'Now play the chord of the square to move to.';
+  return hoveredChord
+    ? `Play ${hoveredChord} again to pick that piece up.`
+    : "Play a piece's chord twice to pick it up.";
 }
 
 export function PianoChessGame({
@@ -478,7 +490,13 @@ export function PianoChessGame({
     ? { square: cursor, piece: heldPiece }
     : null;
   const captured = capturedPieces(game.history);
-  const prompt = promptFor(game, game.rejection);
+  // Only offered when the hovered square really does hold a piece this player
+  // can move — naming the double on an empty square would be an instruction
+  // that fails when followed.
+  const pickupChord = !game.origin && cursor && playableSources(game).includes(cursor)
+    ? cursorChord?.symbol ?? null
+    : null;
+  const prompt = promptFor(game, game.rejection, pickupChord);
   const turnLabel = game.status?.turn === 'w' ? 'White' : 'Black';
 
   return (

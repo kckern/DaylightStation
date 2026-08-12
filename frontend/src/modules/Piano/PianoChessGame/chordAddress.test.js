@@ -5,6 +5,7 @@ import {
   findChordCollisions, identifyChord, moveToChordPair, shuffleChordScheme,
   squareToChord, validateChordScheme,
 } from './chordAddress.js';
+import { identifyChord as nameChord } from '../theory/chordNaming.js';
 
 describe('chord addressing', () => {
   it('accepts the default scheme', () => {
@@ -128,24 +129,37 @@ describe('chord addressing', () => {
 
   it('renders a move as the two chords that perform it', () => {
     const pair = moveToChordPair('e2', 'e4');
-    expect(pair.notation).toBe('Em -> Em6');
+    expect(pair.notation).toBe('Em -> Eadd9');
     expect(pair.from.square).toBe('e2');
     expect(pair.to.square).toBe('e4');
     expect(moveToChordPair('e2', 'zz')).toBe(null);
   });
 
-  it('no longer offers add2, and the replacement collides with nothing', () => {
+  it('offers add9 rather than add2, and the board still collides with nothing', () => {
+    // "add2" is not a name this household uses, and it disagreed with the chord
+    // plaque beside it, which has always called {0,2,4,7} add9. Same pitch classes,
+    // so the board's collision arithmetic is untouched by the rename.
     expect(DEFAULT_CHORD_SCHEME.qualities).not.toContain('add2');
-    expect(DEFAULT_CHORD_SCHEME.qualities).toContain('minor6');
+    expect(DEFAULT_CHORD_SCHEME.qualities).not.toContain('minor6');
+    expect(DEFAULT_CHORD_SCHEME.qualities).toContain('add9');
     expect(findChordCollisions(DEFAULT_CHORD_SCHEME)).toEqual([]);
     expect(validateChordScheme(DEFAULT_CHORD_SCHEME).valid).toBe(true);
   });
 
-  it('names the replacement the same way the chord plaque would', () => {
+  it('cannot use sus2, which is why add9 is the fourth rank', () => {
+    // C-sus2 and G-sus4 are the same three notes, so the two can never share a
+    // board. This pins the reason, so a future edit that swaps add9 for sus2
+    // fails here with the explanation rather than shipping an ambiguous board.
+    const withSus2 = { ...DEFAULT_CHORD_SCHEME, qualities: ['major', 'minor', 'sus4', 'sus2', 'seventh', 'add6', 'major7', 'diminished'] };
+    expect(findChordCollisions(withSus2).length).toBeGreaterThan(0);
+  });
+
+  it('names the fourth rank the same way the chord plaque would', () => {
     // The plaque uses theory/chordNaming.js; the axis uses this table. They must agree
     // on what the chord IS, even though one abbreviates and one spells out.
-    const notes = [60, 63, 67, 69]; // C E-flat G A
-    expect(identifyChord(notes, DEFAULT_CHORD_SCHEME).square).toBeTruthy();
+    const notes = [60, 62, 64, 67]; // C D E G
+    expect(identifyChord(notes, DEFAULT_CHORD_SCHEME).square).toBe('c4');
+    expect(nameChord(notes).displayName).toMatch(/add9/);
   });
 });
 
