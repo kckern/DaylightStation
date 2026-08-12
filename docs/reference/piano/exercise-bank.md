@@ -23,20 +23,35 @@ licensing coherent per folder.
 
 ```
 data/content/music/
-  index.yml                 # collection manifest, with seed and instance totals
-  hanon/
-    index.yml               # source, license, ordering
-    001.yml … 030.yml       # 30 seeds -> 360 instances
-  notes/single.yml          #  1 seed  ->  72
-  intervals/all.yml         #  1 seed  -> 288
-  triads/all.yml            #  1 seed  -> 288
-  sevenths/all.yml          #  1 seed  -> 480
-  scales/modes.yml          #  1 seed  -> 720   (10 modes, incl. pentatonic and blues)
-  drills/                   #  7 seeds ->  84   beginner five-finger patterns
-  progressions/             #  3 seeds ->  36   I-V-vi-IV, three voicings
+  index.yml                    # collection manifest, with seed and instance totals
+  hanon/                       # 30 seeds ->  360   the method book, CC0
+    index.yml
+    001.yml … 030.yml
+  my-music-workshop/           # 10 seeds ->  120   that course's sequence
+    play-cde.yml …                                   beginner drills
+    pop-1564-{fifths,triads,octaves}.yml             I-V-vi-IV voicings
+  theory/                      #  6 seeds -> 2136   common-practice, ours
+    notes.yml                  #              72
+    intervals.yml              #             288
+    chords-triads.yml          #             288
+    chords-sevenths.yml        #             480
+    arpeggios.yml              #             288
+    scales.yml                 #             720   10 modes, incl. pentatonic and blues
 ```
 
-45 seeds, 2,328 instances.
+46 seeds, 2,616 instances, in three collections.
+
+**There is no `chords/` folder, and no `sevenths/` one either.** Triads and
+sevenths are two *seeds*, not two collections: they differ only in their quality
+list, which is an axis inside the file, and the folder they share is the one
+thing about them that will not change — where they came from. They stay separate
+seeds for a narrower reason: the inversion axis genuinely differs, since rotating
+a three-note chord three times returns root position an octave up rather than a
+third inversion.
+
+Form is a facet, not a folder. `?form=chord` returns 768 instances drawn from
+both chord seeds, and moving the files between collections does not change that
+number.
 
 The bank lives in the Dropbox-synced data directory, not in the git repository
 (`data/` is gitignored). This document is the tracked artefact; the content it
@@ -116,7 +131,7 @@ axes. Axes are transformations, not labels, and each has defined semantics:
 | `mode` | mode names | respell against the named mode |
 
 ```yaml
-# triads/all.yml — 288 instances from this one file
+# theory/chords-triads.yml — 288 instances from this one file
 expansion:
   axes:
     root:      { values: all }                       # 12
@@ -135,7 +150,7 @@ deterministic from the seed id and the axis values, in the order the axes are
 declared:
 
 ```
-triads/all@root=D,quality=minor,inversion=1st,staff=bass
+theory/chords-triads@root=D,quality=minor,inversion=1st,staff=bass
 hanon/001@root=C,direction=up-then-down
 ```
 
@@ -170,11 +185,12 @@ The families that motivated seeding, and what one file each yields:
 
 | Seed | Axes | Instances |
 |---|---|---|
-| `notes/single.yml` | pitch (36) × staff (2) | 72 |
-| `intervals/all.yml` | root (12) × quality (12) × staff (2) | 288 |
-| `triads/all.yml` | root (12) × quality (4) × inversion (3) × staff (2) | 288 |
-| `sevenths/all.yml` | root (12) × quality (5) × inversion (4) × staff (2) | 480 |
-| `scales/modes.yml` | root (12) × mode (7) × direction (3) × octaves (2) | 504 |
+| `theory/notes.yml` | pitch (36) × staff (2) | 72 |
+| `theory/intervals.yml` | root (12) × quality (12) × staff (2) | 288 |
+| `theory/chords-triads.yml` | root (12) × quality (4) × inversion (3) × staff (2) | 288 |
+| `theory/chords-sevenths.yml` | root (12) × quality (5) × inversion (4) × staff (2) | 480 |
+| `theory/arpeggios.yml` | root (12) × quality (4) × direction (3) × staff (2) | 288 |
+| `theory/scales.yml` | root (12) × mode (10) × direction (3) × octaves (2) | 720 |
 
 For these, `ordering` is `any` on chord material — the notes are struck
 together, so order is not a claim the assessment can make — and `strict` on
@@ -238,8 +254,8 @@ An absent bank answers `503`, not an empty `200` — "no content installed" and
 guess which it received.
 
 ```
-GET /api/v1/piano/bank/triads/all/instance?root=D&quality=minor&inversion=1st&staff=bass
-{ "id": "triads/all@root=D,quality=minor,inversion=1st,staff=bass",
+GET /api/v1/piano/bank/theory/chords-triads/instance?root=D&quality=minor&inversion=1st&staff=bass
+{ "id": "theory/chords-triads@root=D,quality=minor,inversion=1st,staff=bass",
   "events": [{ "notes": [{ "midi": 65 }, { "midi": 69 }, { "midi": 74 }] }],
   "staff": "bass", "ordering": "any", "supports": ["free", "cued"] }
 ```
