@@ -513,6 +513,7 @@ becomes a falling target.
 | `PianoHeroGame/PianoHeroGame.jsx` | MusicXML picker, loading, highway, keyboard, and results UI |
 | `performance/performanceTargets.js` | Shared tempo-resolved score-to-target compiler |
 | `performance/performanceJudge.js` | Shared pure target matching used by Hero and Polish |
+| [performance-assessment.md](./performance-assessment.md) | Overview of the shared performance service (grading, matching, spans) |
 | `PianoHeroGame/heroChart.js` | Hero chart metadata and points/combo adapter |
 | `PianoHeroGame/usePianoHeroGame.js` | MIDI subscription and timed run lifecycle |
 | `PianoHeroGame/PianoHeroGame.scss` | Picker, highway, HUD, notes, and results styling |

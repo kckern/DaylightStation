@@ -559,6 +559,7 @@ during an active run so the judge and falling highway cannot jump timelines.
 | `SheetMusic.jsx` | routing (grid ↔ viewer), MusicXML fetch + load timing |
 | `Piano/performance/performanceTargets.js` | Shared tempo-resolved target compiler |
 | `Piano/performance/performanceJudge.js` | Shared pure note/chord hit and miss matcher |
+| [performance-assessment.md](./performance-assessment.md) | Overview of the shared performance service (grading, matching, spans) |
 | `ScoreGrid.jsx` / `scoreGroups.js` | score browser grid + `sheetmusic.collections` → tab strip |
 | `scoreTitle.js` | filename → title fallback shared by the grid and the player |
 | `ScorePlayer.jsx` | orchestrator: modes, the Learn state matrix, transport, overlays, telemetry wiring |
