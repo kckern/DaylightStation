@@ -261,6 +261,7 @@ import { BankChallengePolicy } from './3_applications/piano/BankChallengePolicy.
 import { scaleClashDefinition } from '#shared/gaming/fixtures/scaleClash.mjs';
 import { createWikipediaRouter } from './4_api/v1/routers/wikipedia.mjs';
 import { createChessRouter } from './4_api/v1/routers/chess.mjs';
+import { buildGameRecordFilename } from './4_api/v1/routers/lib/chessGameFilename.mjs';
 import { createStockfishEngine } from './1_adapters/chess/StockfishEngineAdapter.mjs';
 import { createChessConfigService } from './3_applications/chess/ChessConfigService.mjs';
 import { WikipediaAdapter } from './1_adapters/reference/WikipediaAdapter.mjs';
@@ -1702,7 +1703,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     }),
     recordStore: {
       save: (userId, record) => dataService.user.write(
-        `apps/chess/games/${new Date().toISOString().slice(0, 10)}-${Date.now()}`,
+        `apps/chess/games/${buildGameRecordFilename()}`,
         { ...record, user_id: userId, created_at: new Date().toISOString() },
         userId,
       ),
