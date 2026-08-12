@@ -19,6 +19,7 @@ import { candidateSquares } from './chordCandidates.js';
 import { recognizeGesture } from './chordGestures.js';
 import { buildGameRecord } from './chessGameRecord.js';
 import { advanceCursor, createCursorState } from './chordCursor.js';
+import { applyEvent, createSelection } from './chordSelection.js';
 import {
   REJECTION_MESSAGES, applySquare, capturedPieces, clearSelection, commitMove,
   createChessGameState, destinationsFor, isPlayerTurn, playableSources,
@@ -146,6 +147,9 @@ export function PianoChessGame({
   const liveScheme = game.scheme;
   const [cursor, setCursor] = useState(null);
   const cursorRef = useRef(createCursorState());
+  // Naming a square and committing to it are different acts: the selection
+  // machine decides which. One chord hovers, the same square twice picks up.
+  const selectionRef = useRef(createSelection());
   // True from the first tick where the held set reads as a help gesture until
   // the hands are fully off the keys. See the cursor tick for why: a staggered
   // release must not let the gesture's residue land as an unrecognised chord.
@@ -258,6 +262,9 @@ export function PianoChessGame({
   // fires and would wipe a gesture armed on the very first render.
   const moveCount = game.history.length;
   useEffect(() => {
+    // The board changed underneath the selection: a hover from before the
+    // opponent moved must not combine with one after it into a pick-up.
+    selectionRef.current = createSelection();
     if (moveCount === 0) return; // fresh board: restart() already reset help
     setHelp({ legal: false, best: null });
   }, [moveCount]);
@@ -316,6 +323,7 @@ export function PianoChessGame({
     setHelp({ legal: false, best: null });
     setHelpUsed({ hints: 0, bestMoves: 0 });
     setFinishedRecord(null);
+    selectionRef.current = createSelection();
     // A best-move ask still in flight belongs to the finished game. Its answer
     // is already doomed by the game-id check; clearing the gate here means the
     // new game may ask again immediately instead of waiting it out.
@@ -371,9 +379,25 @@ export function PianoChessGame({
         if (gameRef.current.status?.game_over) restart();
         else cancelSelection();
       }
-      if (event.type === 'commit') {
-        setCursor(null);
-        if (!wasGesture && !(latched && !event.square)) handleSquare(event.square);
+      if (event.type === 'commit') setCursor(null);
+      // Both cursor events feed the selection machine: the pick-up fires on
+      // recognition — while the fingers are still down — and everything else
+      // on release. The gesture latch stays exactly as it was: it solves a
+      // different problem (a staggered cluster release landing as a false
+      // refusal), and both guards are needed.
+      if (event.type === 'preview' || event.type === 'commit') {
+        if (wasGesture || (latched && !event.square)) return;
+        const current = gameRef.current;
+        const holdingPiece = Boolean(current.origin);
+        const isEligible = holdingPiece && destinationsFor(current, current.origin).includes(event.square);
+        const { selection, action } = applyEvent(selectionRef.current, {
+          type: event.type, square: event.square, at: Date.now(), holdingPiece, isEligible,
+        });
+        selectionRef.current = selection;
+        if (action.type === 'hover') setCursor(action.square);
+        if (action.type === 'pickup' || action.type === 'drop') handleSquare(action.square);
+        if (action.type === 'refuse') handleSquare(null);
+        // 'none' and 'swallowed' change nothing, deliberately.
       }
     };
     tick();
@@ -450,6 +474,7 @@ export function PianoChessGame({
           fileLabels={fileLabels}
           rankLabels={rankLabels}
           selected={game.origin}
+          heldSquare={game.origin}
           candidates={candidates}
           hintTargets={hintTargets}
           bestMove={help.best}

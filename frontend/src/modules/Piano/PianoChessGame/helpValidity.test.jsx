@@ -140,7 +140,8 @@ describe('help validity: seams the per-task tests could not see', () => {
     };
 
     await play([60, 61, 62]); // one hint, asked on the player's turn — a real charge
-    await play(notesFor('f1')); // lift the rook
+    await play(notesFor('f1')); // name the rook — hovers
+    await play(notesFor('f1')); // name it again — lifts it (one chord only hovers now)
     await play(notesFor('f8')); // land it — checkmate
 
     expect(saveGameRecord).toHaveBeenCalledTimes(1);
