@@ -52,6 +52,20 @@ describe('ChessBoard', () => {
     expect(labels).toHaveLength(16);
   });
 
+  it('renders the minor-rank label lowercase, because case is the chord notation', () => {
+    // Uppercasing 'm' (minor) turns it into 'M' (major) — a label that says one
+    // thing and means another. The board must print labels as stored, not upcase them.
+    const { container } = render(
+      <ChessBoard
+        fen={INITIAL_FEN}
+        rankLabels={['maj', 'm', 'sus4', 'add2', '7', '6', 'maj7', 'dim']}
+      />,
+    );
+    const labels = [...container.querySelectorAll('.chess-board__axis-label')].map((el) => el.textContent);
+    expect(labels).toContain('m');
+    expect(labels).not.toContain('M');
+  });
+
   it('keeps labels on the rim and out of the cells', () => {
     // A name in all 64 cells is noise the player has to read past.
     const { container } = render(
@@ -88,12 +102,11 @@ describe('ChessBoard', () => {
     expect(container.querySelector('[data-square="e1"]').className).toContain('--check');
   });
 
-  it('throws a crosshair down the cursor file and rank', () => {
+  it('marks only the resolved cursor square, not its file or rank', () => {
     const { container } = render(<ChessBoard fen={INITIAL_FEN} cursorSquare="c1" />);
     expect(container.querySelector('[data-square="c1"]').className).toContain('--cursor');
-    expect(container.querySelector('[data-square="c5"]').className).toContain('--cursor-line');
-    expect(container.querySelector('[data-square="f1"]').className).toContain('--cursor-line');
-    expect(container.querySelector('[data-square="f5"]').className).not.toContain('--cursor-line');
+    expect(container.querySelector('[data-square="c5"]').className).not.toContain('--cursor');
+    expect(container.querySelector('[data-square="f1"]').className).not.toContain('--cursor');
   });
 
   it('slides a moved piece from where it came', () => {
@@ -180,5 +193,39 @@ describe('ghost preview', () => {
       <ChessBoard fen="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" ghost={null} />,
     );
     expect(container.querySelector('.chess-board__piece--ghost')).toBeNull();
+  });
+});
+
+const START = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+const sq = (container, name) => container.querySelector(`[data-square="${name}"]`);
+
+describe('four channels', () => {
+  it('lights candidates and marks the resolved cursor more strongly', () => {
+    const { container } = render(<ChessBoard fen={START} candidates={['e4', 'e5', 'd4']} cursorSquare="e4" />);
+    expect(sq(container, 'e5').className).toContain('chess-board__square--candidate');
+    expect(sq(container, 'e4').className).toContain('chess-board__square--cursor');
+  });
+
+  it('draws no crosshair lines across the file and rank', () => {
+    const { container } = render(<ChessBoard fen={START} cursorSquare="e4" />);
+    expect(container.querySelectorAll('.chess-board__square--cursor-line')).toHaveLength(0);
+  });
+
+  it('shows hint marks only when hint targets are given', () => {
+    const { container: quiet } = render(<ChessBoard fen={START} />);
+    expect(quiet.querySelectorAll('.chess-board__square--hint')).toHaveLength(0);
+    const { container: asked } = render(<ChessBoard fen={START} hintTargets={['e4', 'e3']} />);
+    expect(asked.querySelectorAll('.chess-board__square--hint')).toHaveLength(2);
+  });
+
+  it('rings both ends of the best move', () => {
+    const { container } = render(<ChessBoard fen={START} bestMove={{ from: 'g1', to: 'f3' }} />);
+    expect(sq(container, 'g1').className).toContain('chess-board__square--best');
+    expect(sq(container, 'f3').className).toContain('chess-board__square--best');
+  });
+
+  it('no longer outlines movable pieces, because that is a hint now', () => {
+    const { container } = render(<ChessBoard fen={START} />);
+    expect(container.querySelectorAll('.chess-board__square--source')).toHaveLength(0);
   });
 });

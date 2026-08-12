@@ -35,19 +35,23 @@ function screenCell(square, orientation) {
 
 function Square({
   square, piece, isLight, isSelected, isDestination, isLastMove,
-  isCursor, isOnCursorLine, isCheck, isMarked, isSource, isRejected, onSelect,
+  isCursor, isCandidate, isCheck, isHint, isBest, isRejected, onSelect,
   ghostPiece,
 }) {
   const classes = [
     'chess-board__square',
     isLight ? 'chess-board__square--light' : 'chess-board__square--dark',
-    isOnCursorLine && 'chess-board__square--cursor-line',
-    isLastMove && 'chess-board__square--last-move',
-    isMarked && 'chess-board__square--marked',
-    isSource && 'chess-board__square--source',
-    isDestination && 'chess-board__square--destination',
-    isSelected && 'chess-board__square--selected',
+    // channel 1 — light: what the hands are doing now
+    isCandidate && 'chess-board__square--candidate',
     isCursor && 'chess-board__square--cursor',
+    // channel 2 — outline: committed state
+    isSelected && 'chess-board__square--selected',
+    isLastMove && 'chess-board__square--last-move',
+    // channel 3 — marks: only what was asked for
+    isDestination && 'chess-board__square--destination',
+    isHint && 'chess-board__square--hint',
+    isBest && 'chess-board__square--best',
+    // channel 4 — colour: alarms
     isCheck && 'chess-board__square--check',
     isRejected && 'chess-board__square--rejected',
   ].filter(Boolean).join(' ');
@@ -88,8 +92,9 @@ export function ChessBoard({
   destinations = [],
   lastMove = null,
   cursorSquare = null,
-  markedSquares = [],
-  sourceSquares = [],
+  candidates = [],
+  hintTargets = [],
+  bestMove = null,
   rejectedSquare = null,
   rejectedKey = null,
   ghost = null,
@@ -134,8 +139,8 @@ export function ChessBoard({
 
   const checkedKing = findCheckedKing(position, status);
   const destinationSet = useMemo(() => new Set(destinations), [destinations]);
-  const markedSet = useMemo(() => new Set(markedSquares), [markedSquares]);
-  const sourceSet = useMemo(() => new Set(sourceSquares), [sourceSquares]);
+  const candidateSet = useMemo(() => new Set(candidates), [candidates]);
+  const hintSet = useMemo(() => new Set(hintTargets), [hintTargets]);
 
   const files = orientation === 'black' ? [...FILES].reverse() : [...FILES];
   const ranks = orientation === 'black' ? [...RANKS] : [...RANKS].reverse();
@@ -169,11 +174,11 @@ export function ChessBoard({
             isLight={squareColor(square) === 'light'}
             isSelected={selected === square}
             isDestination={destinationSet.has(square)}
-            isMarked={markedSet.has(square)}
-            isSource={sourceSet.has(square)}
+            isCandidate={candidateSet.has(square)}
+            isHint={hintSet.has(square)}
+            isBest={bestMove?.from === square || bestMove?.to === square}
             isLastMove={lastMove?.from === square || lastMove?.to === square}
             isCursor={cursorSquare === square}
-            isOnCursorLine={Boolean(cursorSquare) && (cursorSquare[0] === square[0] || cursorSquare[1] === square[1])}
             isCheck={checkedKing === square}
             isRejected={rejectedSquare === square}
             ghostPiece={ghost?.square === square ? ghost.piece : null}
