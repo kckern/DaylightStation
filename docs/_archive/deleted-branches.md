@@ -214,3 +214,4 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-08-06 | school-design-wave9 | 042e78cf0 | Wave 9 design-audit remediation (top-10 + teardown + M9 verdicts), merged to main |
 | 2026-08-07 | school-prod-hardening | 41e91cf02 | Wave 10 production hardening (2 blockers + punch list + debt ledger, SDD 20 tasks + M10 READY), merged to main |
 | 2026-08-07 | school-material-cache | 445a2f958 | Disk snapshot + stale-while-revalidate for school material cache (redeploy cold path 26-42s -> 0.44s) |
+| 2026-08-11 | sheetmusic-learn-hand-deadlock | 177328f3f | Sheet-music wave 3 + performance assessment service (graded Hanon drills, drillRun, provider flip) |
