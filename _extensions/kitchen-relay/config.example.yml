@@ -35,7 +35,11 @@ scales:
     label: "Kitchen food scale"
     device:
       board: m5-atom-lite            # ESP32-PICO-D4; button GPIO39, RGB GPIO27
-      mac: "14:08:08:53:94:84"       # relay hardware MAC (informational)
+      # Relay board's WiFi/STA MAC. INFORMATIONAL — the firmware never reads it,
+      # so a wrong value is silent until you try to find the board by MAC in the
+      # router's lease table and it isn't there. Read the truth off GET /status
+      # (or the gateway) rather than trusting this field.
+      mac: "aa:bb:cc:dd:ee:ff"
     ble:
       match_name: "SENSSUN FOOD"     # scan target (KitchenIQ 50797 OEM name)
       service_uuid: "0000ffb0-0000-1000-8000-00805f9b34fb"

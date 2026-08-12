@@ -1,6 +1,0 @@
-canvas: [48, 16]
-transparent_colors: ['#0095e9']
-layers:
-  - source: assets/default/environment/tiles/water/water-decoration.png
-    rect: [0, 0, 48, 16]
-    at: [0, 0]

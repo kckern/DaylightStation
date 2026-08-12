@@ -1,5 +1,7 @@
 # Gaming Presentation Framework Roadmap
 
+> Implementation update (2026-08-12): Presentation V2 now lives in `shared/presentation` with strict catalog/scene validation, a deterministic top-down compiler, Node and browser Canvas executors, a neutral backend API, semantic host contracts, an explicit v1 migration adapter, and an 11-scene canonical acceptance suite. Top-down authoring now includes deterministic terrain shapes/routes, placement-referenced route anchors, material/plane/biome/boundary-filtered composition zones, constrained placement groups, visible-bounds avoidance, and semantic-role QA. The suite is protected by an independently stored 102-PNG approved baseline; normal QA fails with pixel diffs and cannot approve its own output. See [Presentation Framework V2](../reference/gaming/presentation-framework-v2.md). Side-scroller, fixed-grid, and text modes have explicit adapter contracts but are not yet compiled by the top-down implementation.
+
 ## Implemented foundation (2026-08-11)
 
 - `sprites/` remains the immutable vendor archive; the normalized runtime tree is `assets/`.
@@ -49,17 +51,63 @@ The inventory currently contains 294 explicit issues: one hidden-path exclusion 
 
 The remaining sections preserve the broader design and next implementation waves.
 
+### Terrain/topology sweep (2026-08-11)
+
+`$DAYLIGHT_BASE_PATH/media/games/_common/catalog/terrain-metadata-sweep.yml` records the preparation backlog for every canonical PNG beneath a `tiles/` path plus known off-tree topology systems. The CLI verifies measured dimensions and fail-closed coverage:
+
+```bash
+npm run gaming:assets -- terrain-sweep \
+  --root "$DAYLIGHT_BASE_PATH/media/games/_common" \
+  --manifest "$DAYLIGHT_BASE_PATH/media/games/_common/catalog/terrain-metadata-sweep.yml"
+```
+
+Current result: 1,291 canonical PNGs scanned; all 113 PNGs beneath `tiles/` accounted for; 66 tile-path sheets plus 15 off-tree sheets assigned to 37 topology/join families; 47 tile-path PNGs explicitly excluded as non-topology material; zero unreviewed tile sheets. Thirty-six families are cataloged and QA-renderable. The two unattributed legacy cave sheets have a final hash-pinned quarantine disposition and remain unavailable at runtime.
+
+Completed capability work:
+
+1. Normalized 61 cardinal/compound-corner assets, including synchronized eight-phase water pages.
+2. Generated corrected connector atlases for eleven fence variants and cataloged bridges/decks with measured visible-alpha ports.
+3. Added ordered height-band metadata for sixteen cliff/wall systems and component metadata for pavement, volcano, and interior-wall atlases.
+4. Added exhaustive topology, connector, height, component, and scene-assembly QA; catalog promotion is tied to checked sweep evidence.
+
+### Ten-scene framework proof (2026-08-11)
+
+`$DAYLIGHT_BASE_PATH/media/games/_common/catalog/showcase/scenes.yml` is the reproducible acceptance suite. It renders ten 640×384 scenes covering default village, lakeside, desert, dungeon, volcano, shroom, Halloween, free-pack coast, cave, and stone courtyard themes. Each scene contains at least three targeted review regions; the Halloween scene contains four.
+
+The suite currently proves:
+
+- 10 required themes and 31 targeted join/scale review regions;
+- 3,314 concrete draws with zero viewport clipping and zero catalog warnings;
+- 31 compound inside corners selected from metadata rather than direct frame placement;
+- 156 exact connector-port joins;
+- 18 terrain regions, 7 connector regions, 5 height regions, and 5 component regions;
+- corrected 32×32 desert humanoid/mummy geometry, exact alpha bounds, and ground anchors;
+- consolidated full-scene and close-up montages for human visual review;
+- SHA-256 pins for all 93 generated PNG artifacts in the suite report.
+
+The unit gates separately render all 61 autotile assets, 32 connector families, 16 height systems, and all three mixed component atlases. The scene-set gate enforces minimum scene/theme coverage, warning-free validation, review-region coverage, no clipping, subsystem use, inside-corner resolution, and connector counts.
+
+```bash
+npm run gaming:assets -- scene-qa-set \
+  --root "$DAYLIGHT_BASE_PATH/media/games/_common" \
+  --manifest "$DAYLIGHT_BASE_PATH/media/games/_common/catalog/showcase/scenes.yml" \
+  --out-dir "$DAYLIGHT_BASE_PATH/media/games/_common/previews/qa/showcase"
+```
+
 ## Outcome
 
 Create a reusable, YAML-authored presentation framework for DaylightStation games. It will compose pixel-art environments, boards, characters, NPCs, items, effects, and UI-adjacent scenery while leaving each game's rules, input, and state machine independent.
 
 The framework must be CLI-first: asset authoring, validation, visual inspection, animation previews, scenario simulation, and screenshot regression testing must work without first integrating work into `frontend/src/`.
 
-Initial source assets live at:
+Canonical runtime assets live at:
 
 ```text
-media/games/_common/sprites/
+media/games/_common/assets/
 ```
+
+The original `sprites/` import is retained only as immutable provenance while
+cataloged runtime paths, derived atlases, and QA evidence use `assets/`.
 
 The first pack is the privately held Cute Fantasy collection. Its included licenses permit project use and modification but prohibit redistribution/resale. Keep its asset files and license texts in private media storage, not Git or a public package.
 
@@ -979,6 +1027,12 @@ gaming-assets organize-apply --root <common-dir> --plan <migration.yml> --apply
 - Contact sheets make the approved asset set explorable by category.
 - The catalog validator rejects unapproved assets, unknown provenance, stale hashes, illegal references, duplicate IDs, and source paths outside the raw root.
 - The current legacy manifest is preserved for comparison but is not loaded anywhere.
+
+### Pixel-density gate learned from the showcase
+
+The renderer must treat source density, object footprint, and display magnification as independent values. Asset metadata now uses integer `pixel_density`; scenes use `world_scale`. Production scene fixtures require explicit density and enforce one pixel scale so a large structure cannot be silently shrunk to `scale: 1` beside 2× terrain. Genuine high-density sources are reduced with nearest-neighbour sampling before world magnification, while native-density structures retain their full authored footprint.
+
+Scene QA emits a per-asset `resolution_audit`. Promotion requires zero non-uniform draws, exact measured sheet geometry, and close-up review of representative actors, structures, animals, and terrain together. The initial free coastal fixture exposed both failure modes: ad hoc half-scale placements and an oak sheet incorrectly declared as two 48×48 cells instead of its measured three 32×48 cells.
 
 ## Non-goals for the first pass
 
