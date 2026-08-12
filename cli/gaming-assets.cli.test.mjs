@@ -295,6 +295,13 @@ describe('gaming asset audit tooling', () => {
     const changedQaOut = path.join(root, 'out', 'qa-set-changed');
     await assert.rejects(renderSceneQaSet({ root, manifestPath: qaSetManifest, outDir: changedQaOut }), /visual regression failed/);
     assert.ok((await readFile(path.join(changedQaOut, 'diffs', 'test-scene', 'scene.png'))).length > 0);
+    const candidateQaOut = path.join(root, 'out', 'qa-set-candidate');
+    const candidateQa = await renderSceneQaSet({ root, manifestPath: qaSetManifest, outDir: candidateQaOut, candidate: true });
+    assert.equal(candidateQa.valid, true);
+    assert.equal(candidateQa.approval_candidate, true);
+    assert.equal(candidateQa.visual_regression.candidate, true);
+    await approveSceneQaBaseline({ manifestPath: qaSetManifest, reportPath: path.join(candidateQaOut, 'report.yml'), artifactsDir: path.join(root, 'approved-artifacts') });
+    assert.equal((await renderSceneQaSet({ root, manifestPath: qaSetManifest, outDir: path.join(root, 'out', 'qa-set-candidate-approved') })).visual_regression.valid, true);
     const topologyQa = await renderTerrainTopologyQa({ root, catalogPath: catalog, assetId: 'terrain.test', out: topologyQaOut, scale: 2 });
     const topologyQaSet = await renderTerrainTopologyQaSet({ root, catalogPath: catalog, outDir: topologyQaSetOut, scale: 2 });
     const renderedScene = await loadImage(sceneOut); const renderedCanvas = createCanvas(96, 64); const renderedContext = renderedCanvas.getContext('2d');

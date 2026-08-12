@@ -260,9 +260,22 @@ The same measurement populates exact `content_bounds` and checks each frame agai
 
 Generated v2 style profiles also carry production composition limits. `scene-qa-set` enforces placement-sector use, visible placement coverage, walkable connectivity, and repeated-placement dominance for every scene, then records the suite envelope in `report.yml`. Terrain fills, interface tiles, connectors, heights, and component tiling remain topology evidence and do not inflate subject coverage.
 
-V2 scenes may replace long literal cell/coordinate dumps with deterministic `rounded-rect`, `ellipse`, `blob`, and `route` terrain shapes plus seeded semantic placement groups. Zones filter materials, surfaces, planes, biomes, boundaries, and adjacent materials; groups choose balanced candidates using `center`, `cluster`, `scatter`, or `grid` layout. The compiler fails closed on clipping, forbidden surfaces, visual/structural overlap, or an unfulfillable count. Routes may terminate at a named placement so roads remain attached to landmarks. QA also records role diversity/dominance and can require `minimum_semantic_scenes`.
+V2 scenes may replace long literal cell/coordinate dumps with deterministic `rounded-rect`, `ellipse`, `blob`, and `route` terrain shapes plus seeded semantic placement groups. `exclude` performs boolean subtraction for islands, lakes, moats, and clearings; declared `continues` edges may clip a semantic shape at the viewport without hand-authoring its boundary cells. Zones filter materials, surfaces, planes, biomes, boundaries, and adjacent materials; groups choose balanced candidates using `center`, `cluster`, `scatter`, or `grid` layout. The compiler fails closed on clipping, forbidden surfaces, visual/structural overlap, or an unfulfillable count. Routes may terminate at a named placement so roads remain attached to landmarks. QA also records role diversity/dominance and can require `minimum_semantic_scenes`.
+
+Assets/prefabs declare `world.allowed_surfaces`; bridges and docks may set `world.provides_surface: solid`, and component profiles may replace the effective surface for pools or hazards. Color materials render as explicit fill commands. Bordered components can use a distinct `interior` frame, and fill variants are selected deterministically without immediate horizontal or vertical wallpaper repetition.
 
 The canonical mounted v2 suite additionally requires an approved visual baseline. Its baseline manifest lives with the mounted YAML catalog and its reviewed PNGs live under the mounted preview baseline tree; neither belongs in Git fixtures.
+
+For an intentional visual revision, render a fully gated review candidate before explicit promotion:
+
+```bash
+node cli/gaming-assets.cli.mjs scene-qa-set --root /path/to/_common \
+  --manifest /path/to/_common/catalog/showcase-v2/scenes.yml \
+  --out-dir /path/to/reviewed-qa \
+  --candidate true
+```
+
+Candidate mode bypasses only comparison with the old approved pixels. It does not bypass validation, deterministic compilation, composition limits, clipping checks, or artifact hashing. Pass its valid `report.yml` to `scene-qa-approve`, then rerun ordinary `scene-qa-set` to prove the new baseline matches.
 
 The validator implements the shared [asset metadata standard](../../docs/reference/gaming/asset-metadata.md):
 
