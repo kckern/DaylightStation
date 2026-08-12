@@ -534,6 +534,53 @@ describe('destination labels answer the pick-up', () => {
   });
 });
 
+// A game holds one player's config and writes one player's record. The
+// session that motivated this task switched kiosk users mid-game and kept
+// playing under the new identity — the fix locks whoever started until the
+// game ends, mirrored in the rail so the screen says whose game this is.
+describe('the player is locked for the whole game', () => {
+  const notesFor = (square) => squareToChord(square, DEFAULT_CHORD_SCHEME)
+    .pitch_classes.map((pc) => 60 + pc);
+  const holdNotes = (notes) => mockUsePianoMidiNotes.mockReturnValue({
+    activeNotes: new Map(notes.map((n) => [n, { velocity: 80 }])),
+    noteHistory: [],
+  });
+  const makeElement = (user) => (
+    <PianoChessGame currentUser={user} gameConfig={{ shuffle_each_turn: false }} />
+  );
+  const playChord = async (rerender, user, notes) => {
+    holdNotes(notes);
+    rerender(makeElement(user));
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    holdNotes([]);
+    rerender(makeElement(user));
+    await act(async () => { await vi.advanceTimersByTimeAsync(120); });
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mockUsePianoMidi.mockReturnValue({ connected: true, status: 'connected' });
+    fetchChessConfig.mockResolvedValue(null);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    mockUsePianoMidi.mockReturnValue({ connected: false, status: 'disconnected' });
+    mockUsePianoMidiNotes.mockReturnValue({ activeNotes: new Map(), noteHistory: [] });
+  });
+
+  it('keeps the starting player for the whole game, ignoring a mid-game switch', async () => {
+    const { rerender, container } = render(makeElement('felix'));
+    await playChord(rerender, 'felix', notesFor('e2'));
+    rerender(makeElement('milo'));
+    await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+    const lockedUser = container.querySelector('.piano-chess__locked-user');
+    expect(lockedUser).not.toBeNull();
+    expect(lockedUser.textContent).toContain('felix');
+    expect(lockedUser.textContent).not.toContain('milo');
+  });
+});
+
 // The record effect is wiring, not arithmetic — buildGameRecord is unit-tested
 // in chessGameRecord.test.js. What only a component render can prove is that a
 // finished game posts exactly once, to the signed-in player, with the tallies.

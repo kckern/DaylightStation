@@ -89,6 +89,14 @@ export function PianoChessGame({
   const userSlug = typeof currentUser === 'string' ? currentUser : currentUser?.id ?? null;
   const userId = isPersistentUser(userSlug) ? userSlug : null;
 
+  // The game holds this player's config and writes their record. Switching
+  // the kiosk user mid-game would file one player's moves under another's
+  // name, so the game keeps whoever started it until it ends. isPersistentUser
+  // has already gated a guest to null above, so a locked guest still means "no
+  // per-user writes" downstream — the lock preserves that, it doesn't bypass it.
+  const lockedUserRef = useRef(userId);
+  const lockedUser = lockedUserRef.current;
+
   // The merged household+user chess config is the single source for the rung
   // ladder, the cue flags, the opponent delay, and the shuffle preference. The
   // old gameConfig.feedback path is gone on purpose: two config sources for one
@@ -107,9 +115,9 @@ export function PianoChessGame({
       feedback: { ...(prev?.feedback || {}), ...(patch.feedback || {}) },
     }));
     if (patch.default_rung) setRungId(patch.default_rung);
-    if (userId) saveChessConfig(userId, patch);
-    logger().info('setting-applied', { patch, persisted: !!userId });
-  }, [userId]);
+    if (lockedUser) saveChessConfig(lockedUser, patch);
+    logger().info('setting-applied', { patch, persisted: !!lockedUser });
+  }, [lockedUser]);
 
   // The `feedback` prop survives ONLY as a test seam — production callers must
   // let the chess config speak for itself.
@@ -168,7 +176,7 @@ export function PianoChessGame({
   // them, and the captured value stands until the next game.
   useEffect(() => {
     let cancelled = false;
-    fetchChessConfig(userId).then((loaded) => {
+    fetchChessConfig(lockedUser).then((loaded) => {
       if (cancelled || !loaded) return;
       setChessConfig(loaded);
       setRungId(loaded.default_rung || 'learner');
@@ -186,7 +194,7 @@ export function PianoChessGame({
     });
     return () => { cancelled = true; };
     // fen, playerColor, scheme, and gameSeed are mount-stable (props + one-shot state).
-  }, [userId, fen, playerColor, scheme, gameSeed]);
+  }, [lockedUser, fen, playerColor, scheme, gameSeed]);
 
   const heldNotes = useMemo(() => [...activeNotes.keys()].sort((a, b) => a - b), [activeNotes]);
   const heldKey = heldNotes.join(',');
@@ -233,7 +241,7 @@ export function PianoChessGame({
       const askedFen = gameRef.current.game.fen;
       const askedGameId = gameIdRef.current;
       logger().info('help-requested', { kind: 'best' });
-      requestOpponentMove({ fen: askedFen, rung: 'ruthless', gameId: askedGameId, userId }).then((move) => {
+      requestOpponentMove({ fen: askedFen, rung: 'ruthless', gameId: askedGameId, userId: lockedUser }).then((move) => {
         bestPendingRef.current = false;
         // Charged only when a move actually arrives: the record holds facts,
         // and "1 best move" the player never received is not one.
@@ -320,6 +328,9 @@ export function PianoChessGame({
       fen: fen ?? undefined, playerColor, scheme, seed: gameSeed + 1, shuffleEachTurn,
     }));
     setGameId(`chess-${Date.now()}`);
+    // A new game re-latches to whoever is at the kiosk NOW — the previous
+    // lock belonged to the game that just ended, not to this one.
+    lockedUserRef.current = userId;
     setToast(null);
     setHelp({ legal: false, best: null });
     setHelpUsed({ hints: 0, bestMoves: 0 });
@@ -332,7 +343,7 @@ export function PianoChessGame({
     recordedRef.current = false;
     startedAtRef.current = Date.now();
     logger().info('restarted');
-  }, [fen, gameSeed, playerColor, scheme, shuffleEachTurn]);
+  }, [fen, gameSeed, playerColor, scheme, shuffleEachTurn, userId]);
 
   const cancelSelection = useCallback(() => {
     setGame((current) => (current.origin ? clearSelection(current) : current));
@@ -414,7 +425,7 @@ export function PianoChessGame({
     let cancelled = false;
     const timer = setTimeout(async () => {
       const fen = gameRef.current.game.fen;
-      const served = await requestOpponentMove({ fen, rung: rungId, gameId, userId });
+      const served = await requestOpponentMove({ fen, rung: rungId, gameId, userId: lockedUser });
       const reply = served
         || chooseMove(fen, { difficulty: localFallbackDifficulty, seed: gameRef.current.history.length });
       if (cancelled || !reply) return;
@@ -423,7 +434,7 @@ export function PianoChessGame({
       logger().info('opponent-replied', { san: reply.san, engine: served ? served.engine : 'local' });
     }, opponentDelayMs);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [game.status, playerColor, rungId, gameId, opponentDelayMs, userId, localFallbackDifficulty]);
+  }, [game.status, playerColor, rungId, gameId, opponentDelayMs, lockedUser, localFallbackDifficulty]);
 
   // One record per finished game, posted only for a signed-in player — guests
   // never reach the per-user endpoints. Ref-guarded, not state-guarded: the
@@ -436,8 +447,8 @@ export function PianoChessGame({
       startedAt: startedAtRef.current, endedAt: Date.now(),
     });
     setFinishedRecord(record);
-    if (record && userId) saveGameRecord(userId, record);
-    logger().info('game-recorded', { ...(record || {}), persisted: !!(record && userId) });
+    if (record && lockedUser) saveGameRecord(lockedUser, record);
+    logger().info('game-recorded', { ...(record || {}), persisted: !!(record && lockedUser) });
     // Everything but the game-over flag is read at the moment the game ends.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game.status?.game_over]);
@@ -500,6 +511,10 @@ export function PianoChessGame({
             program="Piano Chess"
             ancestors={onDeactivate ? [{ label: 'Games', onClick: onDeactivate }] : []}
           />
+          {/* Whoever started the game, latched at mount — a kiosk user switch
+              mid-game must not change whose config plays or whose record
+              gets written, and the screen has to say so. */}
+          <p className="piano-chess__locked-user">Playing as {lockedUser || 'Guest'}</p>
           <p className="piano-chess__turn">
             {game.status?.game_over ? 'Game over' : `${turnLabel} to move`}
             {/* The active rung, straight from the config ladder — the bundled
