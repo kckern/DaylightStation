@@ -10,9 +10,6 @@ import { chordBoard } from './chordAddress.js';
  *
  * Subset, not equality, is the whole point: equality only ever answers at the
  * end, and the player needs to see the board reacting on the way there.
- *
- * Among all candidates, keep only the most specific (smallest pitch class count).
- * This prevents supersets from dimming the board as the user plays toward a full chord.
  */
 export function candidateSquares(heldNotes, scheme) {
   const held = [...new Set((heldNotes || [])
@@ -20,21 +17,12 @@ export function candidateSquares(heldNotes, scheme) {
     .map((note) => ((note % 12) + 12) % 12))];
   if (held.length === 0) return [];
   const board = chordBoard(scheme);
-
-  const candidates = Object.entries(board)
+  return Object.entries(board)
     .filter(([, chord]) => {
       const classes = chord?.pitch_classes;
       return Array.isArray(classes) && held.every((pc) => classes.includes(pc));
     })
-    .map(([square, chord]) => ({ square, classes: chord.pitch_classes }));
-
-  if (candidates.length === 0) return [];
-
-  // Keep only the candidates with the smallest pitch class count (most specific)
-  const minSize = Math.min(...candidates.map((c) => c.classes.length));
-  return candidates
-    .filter((c) => c.classes.length === minSize)
-    .map((c) => c.square)
+    .map(([square]) => square)
     .sort();
 }
 

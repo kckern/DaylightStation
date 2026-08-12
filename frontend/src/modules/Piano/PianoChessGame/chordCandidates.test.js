@@ -23,9 +23,10 @@ describe('candidateSquares', () => {
     expect(two.every((sq) => one.includes(sq))).toBe(true); // strictly a subset
   });
 
-  it('resolves a complete chord to exactly one square', () => {
+  it('leaves the triad and its extensions lit, all rooted on the same file', () => {
     const lit = candidateSquares([60, 64, 67], S); // C major triad
-    expect(lit).toHaveLength(1);
+    expect(lit).toEqual(['c1', 'c4', 'c5', 'c6', 'c7']);
+    expect(new Set(lit.map((sq) => sq[0]))).toEqual(new Set(['c']));
   });
 
   it('is octave- and order-free', () => {
@@ -34,5 +35,23 @@ describe('candidateSquares', () => {
 
   it('lights nothing when no square can contain what is held', () => {
     expect(candidateSquares([60, 61, 62], S)).toEqual([]); // a semitone cluster
+  });
+
+  it('maintains monotonicity: adding notes never lights new squares', () => {
+    // Test several starting notes to verify the monotonicity invariant
+    const starts = [60, 61, 64, 67];
+    for (const start of starts) {
+      const one = candidateSquares([start], S);
+      const two = candidateSquares([start, start + 4], S);
+      const three = candidateSquares([start, start + 4, start + 7], S);
+
+      // Each step should be a subset of the previous
+      expect(two.every((sq) => one.includes(sq))).toBe(true);
+      expect(three.every((sq) => two.includes(sq))).toBe(true);
+
+      // Sizes should monotonically decrease or stay equal
+      expect(two.length).toBeLessThanOrEqual(one.length);
+      expect(three.length).toBeLessThanOrEqual(two.length);
+    }
   });
 });
