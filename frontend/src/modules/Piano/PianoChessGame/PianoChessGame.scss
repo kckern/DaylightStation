@@ -263,6 +263,31 @@
   color: var(--pc-ivory-dim);
 }
 
+/* The end-of-game tallies: the record read back as facts, in the same label
+   voice as the captured-material rows below it. */
+.piano-chess__summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0.4rem 0 0;
+  padding-block-start: 0.6rem;
+  border-block-start: 1px solid rgb(239 228 205 / 12%);
+}
+
+.piano-chess__summary-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.piano-chess__summary-value {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--pc-brass);
+}
+
 .piano-chess__cancel {
   display: flex;
   flex-direction: column;
