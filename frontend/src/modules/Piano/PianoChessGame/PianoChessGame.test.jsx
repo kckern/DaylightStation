@@ -24,11 +24,14 @@ vi.mock('./chessApi.js', () => ({
   requestOpponentMove: vi.fn(),
   fetchChessConfig: vi.fn(async () => null),
   saveChessConfig: vi.fn(async () => null),
+  saveGameRecord: vi.fn(async () => null),
 }));
 
 import { PianoChessGame } from './PianoChessGame.jsx';
-import { fetchChessConfig, requestOpponentMove, saveChessConfig } from './chessApi.js';
-import { DEFAULT_CHORD_SCHEME } from './chordAddress.js';
+import {
+  fetchChessConfig, requestOpponentMove, saveChessConfig, saveGameRecord,
+} from './chessApi.js';
+import { DEFAULT_CHORD_SCHEME, squareToChord } from './chordAddress.js';
 
 const sourceOutlines = (container) => container.querySelectorAll('.chess-board__square--source').length;
 
@@ -51,16 +54,32 @@ describe('PianoChessGame chrome', () => {
   });
 });
 
-describe('PianoChessGame legality cues', () => {
-  it('does not outline the movable pieces before the player has got anything wrong', () => {
+describe('help is asked for, never volunteered', () => {
+  it('shows no hint marks on a fresh board', () => {
     const { container } = render(<PianoChessGame />);
     expect(container.querySelectorAll('.chess-board__square').length).toBe(64);
+    expect(container.querySelectorAll('.chess-board__square--hint')).toHaveLength(0);
     expect(sourceOutlines(container)).toBe(0);
   });
 
-  it('stays quiet even with the source cue explicitly enabled — the cue is gated on a refusal, not on config', () => {
-    const { container } = render(<PianoChessGame feedback={{ highlightSources: true }} />);
+  it('stays quiet even when the old force-on seam is used — the auto-reveal is gone, not reconfigured', () => {
+    // `feedback` was the test seam that forced legality cues on. After this task
+    // it can no longer produce a mark, because marks are a gesture channel.
+    const { container } = render(<PianoChessGame feedback={{ highlightSources: true, highlightTargets: true }} />);
+    expect(container.querySelectorAll('.chess-board__square--hint')).toHaveLength(0);
     expect(sourceOutlines(container)).toBe(0);
+  });
+});
+
+describe('the instrument zone', () => {
+  it('names what was played even when it is not a square', () => {
+    const { container } = render(<PianoChessGame />);
+    expect(container.querySelector('.piano-chord-name')).not.toBeNull();
+  });
+
+  it('keeps no left rail', () => {
+    const { container } = render(<PianoChessGame />);
+    expect(container.querySelector('.piano-chess__rail--move')).toBeNull();
   });
 });
 
@@ -173,7 +192,7 @@ describe('PianoChessGame settings wiring', () => {
     ],
     opponent_delay_ms: 700,
     shuffle_each_turn: true,
-    feedback: { hint_level: 'after-mistake', flash_rejected: true, toast: true },
+    feedback: { flash_rejected: true, toast: true },
   };
   const railBadge = (container) => container.querySelector('.piano-chess__difficulty').textContent;
 
@@ -235,20 +254,22 @@ describe('PianoChessGame settings wiring', () => {
     expect(railBadge(container)).toBe('Learner');
   });
 
-  it('shows the legality cues without any refusal when the config says always', async () => {
+  it('ignores a stale hint_level in a saved override — it selects behaviour that no longer exists', async () => {
     fetchChessConfig.mockResolvedValue({
       ...SERVED_CONFIG,
       feedback: { ...SERVED_CONFIG.feedback, hint_level: 'always' },
     });
     const { container } = render(<PianoChessGame />);
-    await waitFor(() => expect(sourceOutlines(container)).toBeGreaterThan(0));
+    await waitFor(() => expect(railBadge(container)).toBe('Steady'));
+    expect(sourceOutlines(container)).toBe(0);
+    expect(container.querySelectorAll('.chess-board__square--hint')).toHaveLength(0);
   });
 });
 
 // The read-out's own unit tests (ChordReadout.test.jsx) inject `settling` by
 // hand, so they cannot catch a break in *this* component's wiring of it. Only
-// an end-to-end render — a real held chord, ticking through the real 140ms
-// settle window — can prove `cursorResolved` actually reaches the read-out.
+// an end-to-end render — a real held set reaching the real narrowing — can
+// prove the candidate count actually drives the read-out's verdict.
 describe('PianoChessGame chord read-out wiring', () => {
   // [60, 61, 62] is three adjacent semitones — no root/quality pair in the
   // default scheme (major, minor, sus4, add2, seventh, add6, major7,
@@ -273,5 +294,117 @@ describe('PianoChessGame chord read-out wiring', () => {
     // 140ms settle window plus headroom for a couple of 25ms ticks either side.
     await act(async () => { await vi.advanceTimersByTimeAsync(400); });
     expect(screen.getByText(/not a square/i)).toBeTruthy();
+  });
+});
+
+// The hint gestures are the ONLY way marks reach the board, so the wiring from
+// a held cluster to the marks channel is what these exercise. The recogniser
+// itself is unit-tested in chordGestures.test.js; here the question is whether
+// the component arms the help state, asks the server at full strength, and
+// never mistakes a gesture for chord input.
+describe('hint gestures', () => {
+  const HINT_CLUSTER = new Map([[60, {}], [61, {}], [62, {}]]);
+  const BEST_CLUSTER = new Map([[60, {}], [61, {}], [62, {}], [63, {}]]);
+  const holdNotes = (notes) => mockUsePianoMidiNotes.mockReturnValue({ activeNotes: notes, noteHistory: [] });
+
+  beforeEach(() => {
+    mockUsePianoMidi.mockReturnValue({ connected: true, status: 'connected' });
+    requestOpponentMove.mockReset();
+  });
+
+  afterEach(() => {
+    mockUsePianoMidi.mockReturnValue({ connected: false, status: 'disconnected' });
+    mockUsePianoMidiNotes.mockReturnValue({ activeNotes: new Map(), noteHistory: [] });
+  });
+
+  it('a held three-semitone cluster marks the movable pieces', () => {
+    holdNotes(HINT_CLUSTER);
+    const { container } = render(<PianoChessGame />);
+    // No piece is held yet, so "show legal moves" means "which pieces can move".
+    expect(container.querySelectorAll('.chess-board__square--hint').length).toBeGreaterThan(0);
+  });
+
+  it('a four-semitone cluster asks the server at full strength and rings the best move', async () => {
+    requestOpponentMove.mockResolvedValueOnce({ from: 'g1', to: 'f3', san: 'Nf3', engine: 'stockfish' });
+    holdNotes(BEST_CLUSTER);
+    const { container } = render(<PianoChessGame />);
+    expect(requestOpponentMove).toHaveBeenCalledWith(expect.objectContaining({ rung: 'ruthless' }));
+    await waitFor(() => expect(container.querySelectorAll('.chess-board__square--best')).toHaveLength(2));
+  });
+
+  it('a released gesture is never chord input — no refusal appears, and the marks persist', async () => {
+    vi.useFakeTimers();
+    try {
+      holdNotes(HINT_CLUSTER);
+      const { container, rerender } = render(<PianoChessGame />);
+      // Past the settle window, so the cursor has read the cluster...
+      await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+      // ...and now the hands come off. A cluster is a request, not a chord, so
+      // its release must not reach the game as an unrecognised-chord refusal.
+      holdNotes(new Map());
+      rerender(<PianoChessGame />);
+      await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+      // The refusal would surface twice (toast + prompt line), so query them all.
+      expect(screen.queryAllByText(/not on the board/i)).toHaveLength(0);
+      expect(container.querySelectorAll('.chess-board__square--hint').length).toBeGreaterThan(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+// The record effect is wiring, not arithmetic — buildGameRecord is unit-tested
+// in chessGameRecord.test.js. What only a component render can prove is that a
+// finished game posts exactly once, to the signed-in player, with the tallies.
+describe('the game record', () => {
+  // White: Kg6, Rf1. Black: Kh8. Rf1-f8 is mate — one player move ends the game.
+  const MATE_IN_ONE_FEN = '7k/8/6K1/8/8/8/8/5R2 w - - 0 1';
+  const notesFor = (square) => squareToChord(square, DEFAULT_CHORD_SCHEME)
+    .pitch_classes.map((pc) => 60 + pc);
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mockUsePianoMidi.mockReturnValue({ connected: true, status: 'connected' });
+    saveGameRecord.mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    mockUsePianoMidi.mockReturnValue({ connected: false, status: 'disconnected' });
+    mockUsePianoMidiNotes.mockReturnValue({ activeNotes: new Map(), noteHistory: [] });
+  });
+
+  it('posts one record for the signed-in player when the game ends', async () => {
+    // A FRESH element per render: reusing one element object makes React bail
+    // out on identical props, so the changed note mock would never be re-read.
+    const makeElement = () => (
+      <PianoChessGame fen={MATE_IN_ONE_FEN} currentUser="kckern" gameConfig={{ shuffle_each_turn: false }} />
+    );
+    const { rerender } = render(makeElement());
+
+    const play = async (notes) => {
+      mockUsePianoMidiNotes.mockReturnValue({
+        activeNotes: new Map(notes.map((note) => [note, { velocity: 80 }])),
+        noteHistory: [],
+      });
+      rerender(makeElement());
+      // Hold through the 140ms settle window, then release cleanly.
+      await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+      mockUsePianoMidiNotes.mockReturnValue({ activeNotes: new Map(), noteHistory: [] });
+      rerender(makeElement());
+      await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+    };
+
+    await play(notesFor('f1')); // lift the rook
+    await play(notesFor('f8')); // land it — checkmate
+
+    expect(saveGameRecord).toHaveBeenCalledTimes(1);
+    expect(saveGameRecord).toHaveBeenCalledWith('kckern', expect.objectContaining({
+      result: 'win',
+      outcome: 'checkmate',
+      moves: 1,
+      hints: 0,
+      best_moves: 0,
+    }));
   });
 });

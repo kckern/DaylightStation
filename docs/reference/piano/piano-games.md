@@ -610,29 +610,81 @@ The shipped ladder:
 `default_rung` names the rung a game starts on. An unknown rung id resolves to the
 middle of the ladder rather than failing.
 
-### Feedback and hint levels
+### The two-zone screen
 
-`feedback.hint_level` is one three-way answer to "how much does the board show me":
+The screen is two zones. The **game zone** holds the board and one rail: the shared
+context rail (the way back), whose turn it is, the active rung, the prompt line, the
+cancel / play-again button, the move log, and captured material. The **instrument
+zone** sits below: a chord-name plaque (eyebrow "Playing") that names whatever is
+sounding even when it is not a square, the chess read-out saying what the game heard
+and which square it points to, and the keyboard itself with note labels. The plaque
+lingers half a second after release — a move commits on release, so it confirms what
+was just played. Nothing on the screen sizes itself off viewport units: the kiosk is
+laid out at a fixed design size and scaled, so everything measures its own container.
 
-| Level | Behaviour |
-|-------|-----------|
-| `off` | The legality cues never appear |
-| `after-mistake` (default) | Legal sources/targets appear only after a chord is refused, until the next move lands |
-| `always` | The cues show whenever applicable |
+### The board's four channels
 
-`feedback.flash_rejected` and `feedback.toast` control refusal loudness (the red flash
-on the refused square, the sentence saying what was wrong) and live in YAML only. The
-YAML is snake_case; the translation to the component's camelCase cue flags happens in
-one place (`PianoChessGame/chessCues.js`) and nowhere else.
+Each visual channel answers one question, so they coexist without competing:
+
+| Channel | Question | Used for |
+|---------|----------|----------|
+| Light (square brightness) | What are my hands doing now? | Candidate squares glow faintly; the resolved square is bright; the ghost piece previews the landing |
+| Outline (border) | Where am I in this move? | Solid = the piece picked up; dashed = the last move |
+| Marks (dots, rings) | What did I ask to see? | Legal-move marks and the best-move ring — empty until a gesture asks |
+| Colour (wash) | Is something wrong? | Check; the refused-square flash |
+
+### Narrowing
+
+A square is a candidate while its chord's pitch classes contain every pitch class
+currently held. One note lights a scatter (a note is the root of one chord and the
+third of another); each added note contracts the set. A completed triad leaves the
+triad plus its extensions on the same file — the single bright square comes from the
+settle-window cursor, not from the candidate set reaching one. An empty candidate set
+means no square can contain these notes, and the read-out says "not a square" at once
+instead of waiting out the settle window.
+
+### Hint gestures
+
+Help is asked for at the keys and never volunteered — there is no hint setting, and a
+refusal flashes and explains but reveals nothing. A gesture is a shape no chord on the
+board can be: a run of adjacent semitones (the same trick as the octave for
+"take it back"; a two-note semitone pair is a legitimate partial chord and triggers
+nothing).
+
+- **Three adjacent semitones** — show legal moves: the destinations of the piece being
+  held, or which pieces can move when none is held.
+- **Four adjacent semitones** — ring the best move on its origin and destination. The
+  server is asked at full strength (`ruthless`) regardless of the rung being played — a
+  hint only as strong as a beginner's opponent is not a hint.
+
+A recognised cluster is never chord input: narrowing is suppressed while it is down,
+and its release neither commits a move nor draws a refusal. The gesture is
+tap-and-release; the marks persist until the player's next move completes, so the tally
+counts moves-with-help, not presses.
+
+### The game record
+
+Each finished game posts one record to `POST /api/v1/chess/games?user={id}`, stored
+under the player's own data. It holds facts, never a score: result, outcome, move
+count, hints used, best moves used, the rung, and duration. Guests are not recorded —
+they never reach the per-user endpoints.
+
+### Refusal loudness
+
+`feedback.flash_rejected` and `feedback.toast` control how loudly a refusal is
+announced (the red flash on the refused square, the sentence saying what was wrong) and
+live in YAML only. The YAML is snake_case; the translation to the component's camelCase
+cue flags happens in one place and nowhere else. A stale `hint_level` in a saved
+override is ignored — it selects behaviour that no longer exists.
 
 ### In-game settings
 
-The Settings button on the right rail opens a panel of discrete tap targets (no
-sliders): the rung ladder, the hint level, the chord-map shuffle, and the opponent delay
-(300/700/1200 ms). Every tap applies immediately and, for a signed-in player, saves a
-sparse patch to their own override layer. The shuffle toggle takes effect on the next
-game — the chord map is dealt when a game is created, and a mid-game re-deal would
-rearrange the board under the player.
+The Settings button on the rail opens a panel of discrete tap targets (no sliders): the
+rung ladder, the chord-map shuffle, and the opponent delay (300/700/1200 ms). Every tap
+applies immediately and, for a signed-in player, saves a sparse patch to their own
+override layer. The shuffle toggle takes effect on the next game — the chord map is
+dealt when a game is created, and a mid-game re-deal would rearrange the board under
+the player.
 
 ---
 
