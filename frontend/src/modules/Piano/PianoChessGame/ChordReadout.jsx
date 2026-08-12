@@ -35,6 +35,7 @@ export function readingFor({ heldNotes = [], chord = null, square = null, connec
 
 export default function ChordReadout({
   heldNotes = [], chord = null, square = null, connected = true, settling = false, minNotes = 3,
+  isReading = false,
 }) {
   const reading = useMemo(
     () => readingFor({ heldNotes, chord, square, connected, settling, minNotes }),
@@ -49,13 +50,20 @@ export default function ChordReadout({
 
   return (
     <div className={`chess-readout chess-readout--${state}`} aria-live="polite">
-      <span className="chess-readout__chord">{symbol ?? (held > 0 ? `${held} note${held === 1 ? '' : 's'}` : '—')}</span>
+      <span className="piano-chess__slot-label">Heard</span>
+      {/* The reading vocabulary has no letters to print — the notation is the
+          address. What is worth saying there is how much of it has landed. */}
+      {!isReading && (
+        <span className="chess-readout__chord">{symbol ?? (held > 0 ? `${held} note${held === 1 ? '' : 's'}` : '—')}</span>
+      )}
       <span className="chess-readout__says">
         {state === 'offline' && 'Piano not connected'}
-        {state === 'idle' && 'Listening'}
-        {state === 'partial' && `Keep holding — a square is ${minNotes === 2 ? 'a note on each staff' : 'three notes'}`}
+        {/* "Listening" described the machine. The label above now poses the
+            question, so this answers it. */}
+        {state === 'idle' && 'Nothing yet'}
+        {state === 'partial' && (isReading ? 'One more — a note on each staff' : 'Keep holding — a square is three notes')}
         {state === 'settling' && 'Reading…'}
-        {state === 'unmapped' && 'Not a square on this board'}
+        {state === 'unmapped' && (isReading ? 'Those two notes are not a square' : 'Not a square on this board')}
         {state === 'square' && 'names'}
       </span>
       {state === 'square' && <span className="chess-readout__square">{shown.square}</span>}

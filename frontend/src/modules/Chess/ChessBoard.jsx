@@ -39,7 +39,7 @@ function screenCell(square, orientation) {
 function Square({
   square, piece, isLight, isSelected, isDestination, isLastMove,
   isCursor, isCandidate, isCheck, isHint, isBest, isHeld, isRejected, onSelect,
-  ghostPiece, label,
+  ghostPiece, label, isMuted,
 }) {
   const classes = [
     'chess-board__square',
@@ -47,6 +47,12 @@ function Square({
     // channel 1 — light: what the hands are doing now
     isCandidate && 'chess-board__square--candidate',
     isCursor && 'chess-board__square--cursor',
+    // The other side of the same channel: while a chord is being spelled, the
+    // squares it CANNOT be recede. Tinting the few was near-invisible against
+    // the board's own colours; withdrawing the many is unmissable, and in the
+    // reading vocabulary — where one note lights a whole rank or file — it is
+    // what makes the row and the column visibly meet.
+    isMuted && 'chess-board__square--muted',
     // channel 2 — outline: committed state
     isSelected && 'chess-board__square--selected',
     isLastMove && 'chess-board__square--last-move',
@@ -158,6 +164,29 @@ export function ChessBoard({
   const candidateSet = useMemo(() => new Set(candidates), [candidates]);
   const hintSet = useMemo(() => new Set(hintTargets), [hintTargets]);
 
+  /**
+   * Which rim labels are live.
+   *
+   * The candidates, not just the resolved cursor: in the reading vocabulary one
+   * note narrows to a whole rank or file, and lighting its label is what shows
+   * the player that half the address has landed — the row and the column
+   * visibly meeting is the whole lesson. The cursor is included so the labels
+   * stay lit once the address resolves.
+   */
+  const liveFiles = useMemo(() => {
+    const set = new Set([...candidateSet].map((square) => square[0]));
+    if (cursorSquare) set.add(cursorSquare[0]);
+    // Every file lit is the same as none lit — it says nothing, and it makes
+    // the rim flicker on the first note of every chord.
+    return set.size === FILES.length ? new Set(cursorSquare ? [cursorSquare[0]] : []) : set;
+  }, [candidateSet, cursorSquare]);
+
+  const liveRanks = useMemo(() => {
+    const set = new Set([...candidateSet].map((square) => square[1]));
+    if (cursorSquare) set.add(cursorSquare[1]);
+    return set.size === RANKS.length ? new Set(cursorSquare ? [cursorSquare[1]] : []) : set;
+  }, [candidateSet, cursorSquare]);
+
   const files = orientation === 'black' ? [...FILES].reverse() : [...FILES];
   const ranks = orientation === 'black' ? [...RANKS] : [...RANKS].reverse();
 
@@ -172,7 +201,7 @@ export function ChessBoard({
         {ranks.map((rank) => (
           <span
             key={rank}
-            className={`chess-board__axis-label${cursorSquare?.[1] === rank ? ' chess-board__axis-label--live' : ''}`}
+            className={`chess-board__axis-label${liveRanks.has(rank) ? ' chess-board__axis-label--live' : ''}`}
           >
             {rankLabel(rank)}
           </span>
@@ -191,6 +220,7 @@ export function ChessBoard({
             isSelected={selected === square}
             isDestination={destinationSet.has(square)}
             isCandidate={candidateSet.has(square)}
+            isMuted={candidateSet.size > 0 && !candidateSet.has(square)}
             isHint={hintSet.has(square)}
             isBest={bestMove?.from === square || bestMove?.to === square}
             isHeld={heldSquare === square}
@@ -209,7 +239,7 @@ export function ChessBoard({
         {files.map((file) => (
           <span
             key={file}
-            className={`chess-board__axis-label${cursorSquare?.[0] === file ? ' chess-board__axis-label--live' : ''}`}
+            className={`chess-board__axis-label${liveFiles.has(file) ? ' chess-board__axis-label--live' : ''}`}
           >
             {fileLabel(file)}
           </span>

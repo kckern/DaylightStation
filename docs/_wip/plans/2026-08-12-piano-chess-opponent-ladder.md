@@ -1,7 +1,9 @@
 # Piano Chess — the opponent ladder (21 personas)
 
 **Date:** 2026-08-12
-**Status:** Captured from a live conversation, not yet designed or built.
+**Status:** SUPERSEDED — built 2026-08-12. The shipped behaviour is documented in
+`docs/reference/piano/chess.md`; this file is kept only for the open questions it recorded and how
+they were answered (see below).
 **Depends on:** the game record (already shipped), the config pair (already shipped).
 
 ## What was asked for
@@ -42,7 +44,18 @@ This follows the split the app already uses, and the user confirmed it explicitl
 Per-user overrides of the policy stay possible through the existing merge, so one child can be put
 on an easier promotion rule without changing the house.
 
-## Open questions for the design session
+## How the open questions were answered
+
+1. **Does a loss demote?** No. Once beaten, a character stays beaten.
+2. **Is the current opponent chosen or assigned?** Beaten characters may be replayed for practice;
+   nobody may be faced above the one currently being climbed.
+3. **What counts as a game?** Not unfinished ones, and not ones leant on for help — best-move
+   requests disqualify outright, hints beyond one do too.
+4. **Reconciling with the `rungs` list?** The ladder supplies the engine skill directly; the named
+   rungs remain for play outside the ladder.
+5. **Where does the persona appear?** On the state rail, replacing the raw level.
+
+## Original open questions (for the record)
 
 1. **Does a loss demote?** A sliding window implicitly does — falling below the threshold could take
    the next opponent away again. That may be motivating or crushing; it needs a decision, not a
