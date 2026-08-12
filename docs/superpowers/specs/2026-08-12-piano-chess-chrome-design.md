@@ -220,9 +220,26 @@ broken code.
 best-move request, the per-game record and end screen, the `ChordNamePanel` reuse, the label fix and
 the validator check, and the removal of the `hint_level` control and key.
 
-**Out:** the chord vocabulary itself. Inversions as distinct squares — "major", "major first
-inversion", "major second inversion" — graded by difficulty and calibrated per user, is the next
-spec. It is now substantially cheaper than first thought: `chordNaming.js` already computes
-inversion from the bass and already resolves the sus2/sus4 ambiguity that blocks an inversion-free
-board, so that work extends the existing namer rather than building bass-aware matching from
-nothing.
+**Out:** the addressing vocabulary itself. That is the next spec, and it now has two levels to
+design, one below the current board and one above it.
+
+**Below — a reading level, for players who cannot yet spell chords.** The rank axis is a bass-clef
+note and the file axis is a treble-clef note, so a square is addressed by playing two notes, one in
+each hand, read off notation drawn on the rim rather than named in text. A beginner who can read
+both clefs can play chess before they can spell a single chord. Notes toward that design:
+
+- The axes stop being text and start being notation. `components/ActionStaff.jsx` — what
+  PianoFlashcards already uses — is the reusable piece.
+- Addressing stops being pitch-class matching. A square is an ordered pair (bass note, treble note),
+  so which note is *lower* is the whole point, exactly as it is for the inversion work.
+- Two-note addressing does not collide with the hint gestures, which need three or four adjacent
+  semitones. The octave escape must be re-checked, though: two notes an octave apart are a
+  legitimate (bass, treble) pair as well as the take-it-back gesture.
+
+**Above — inversions as distinct squares**, graded by difficulty and calibrated per user. Cheaper
+than first thought: `chordNaming.js` already computes inversion from the bass and already resolves
+the sus2/sus4 ambiguity that blocks an inversion-free board, so that work extends the existing namer
+rather than building bass-aware matching from nothing.
+
+Together these make the vocabulary a ladder — read two notes, spell triads, spell inversions — which
+is the axis the per-user calibration should move along.
