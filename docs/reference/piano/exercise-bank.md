@@ -15,43 +15,44 @@ yields 288 instances. Five simple-family seeds yield over 1,600. Materialising
 those as files would be the same content pasted hundreds of times, and every
 correction would have to be pasted again.
 
-**Folders are provenance, never taxonomy.** The taxonomy is facets; a filesystem
-is a hierarchy, so encoding facets in paths would turn every recalibration into a
-file move. Level changes, form is derived, tradition is a judgement — none are
-safe in a path. Where something came from does not change, and it keeps
-licensing coherent per folder.
+**Folders are taxonomy: what a thing is.** The tree is for a person browsing on
+disk, so it is organised the way a musician would organise it — notes,
+intervals, chords, arpeggios, scales, runs, drills, progressions. Categories nest
+to any depth, so a method book is a category under the family it belongs to
+(`drills/hanon`) rather than a peer of every musical form.
+
+Provenance does not disappear; it lives in the file, where it always did
+(`provenance.source`, `provenance.inspired_by`, `provenance.tradition`). The cost
+of this choice is worth stating: `form` is *derived*, so if a recomputation ever
+disagrees with the folder, the folder is the stale thing and the file has to
+move. That is a real maintenance edge, accepted because browsing by what
+something is beats browsing by where it came from.
+
+The categories are exclusive by how many notes sound at once — one (`notes`), two
+(`intervals`), three or more (`chords`) — and then by what the material is.
+Triads and sevenths are two *seeds* inside `chords/`, not two categories: they
+differ only in their quality list, which is an axis. They stay separate seeds
+because their inversion axes differ, since rotating a three-note chord three
+times returns root position an octave up rather than a third inversion.
 
 ```
 data/content/music/
-  index.yml                    # collection manifest, with seed and instance totals
-  hanon/                       # 30 seeds ->  360   the method book, CC0
-    index.yml
-    001.yml … 030.yml
-  my-music-workshop/           # 10 seeds ->  120   that course's sequence
-    play-cde.yml …                                   beginner drills
-    pop-1564-{fifths,triads,octaves}.yml             I-V-vi-IV voicings
-  theory/                      #  6 seeds -> 2136   common-practice, ours
-    notes.yml                  #              72
-    intervals.yml              #             288
-    chords-triads.yml          #             288
-    chords-sevenths.yml        #             480
-    arpeggios.yml              #             288
-    scales.yml                 #             720   10 modes, incl. pentatonic and blues
+  index.yml                     # manifest, with seed and instance totals
+  notes/single.yml              #  1 seed  ->   72   one note
+  intervals/all.yml             #  1 seed  ->  288   two notes
+  chords/                       #  2 seeds ->  768   three or more
+    triads.yml                  #              288
+    sevenths.yml                #              480
+  arpeggios/all.yml             #  1 seed  ->  288   chord tones in sequence
+  scales/modes.yml              #  1 seed  ->  720   10 modes, incl. pentatonic and blues
+  runs/                         # 12 seeds ->  144   blues, jazz and rock vocabulary
+  drills/
+    hanon/001.yml … 030.yml     # 30 seeds ->  360   the method book, CC0
+    five-finger/                #  7 seeds ->   84   first patterns, one hand
+  progressions/                 #  3 seeds ->   36   I-V-vi-IV, three voicings
 ```
 
-46 seeds, 2,616 instances, in three collections.
-
-**There is no `chords/` folder, and no `sevenths/` one either.** Triads and
-sevenths are two *seeds*, not two collections: they differ only in their quality
-list, which is an axis inside the file, and the folder they share is the one
-thing about them that will not change — where they came from. They stay separate
-seeds for a narrower reason: the inversion axis genuinely differs, since rotating
-a three-note chord three times returns root position an octave up rather than a
-third inversion.
-
-Form is a facet, not a folder. `?form=chord` returns 768 instances drawn from
-both chord seeds, and moving the files between collections does not change that
-number.
+58 seeds, 2,760 instances.
 
 The bank lives in the Dropbox-synced data directory, not in the git repository
 (`data/` is gitignored). This document is the tracked artefact; the content it
@@ -131,7 +132,7 @@ axes. Axes are transformations, not labels, and each has defined semantics:
 | `mode` | mode names | respell against the named mode |
 
 ```yaml
-# theory/chords-triads.yml — 288 instances from this one file
+# chords/triads.yml — 288 instances from this one file
 expansion:
   axes:
     root:      { values: all }                       # 12
@@ -150,7 +151,7 @@ deterministic from the seed id and the axis values, in the order the axes are
 declared:
 
 ```
-theory/chords-triads@root=D,quality=minor,inversion=1st,staff=bass
+chords/triads@root=D,quality=minor,inversion=1st,staff=bass
 hanon/001@root=C,direction=up-then-down
 ```
 
@@ -185,12 +186,12 @@ The families that motivated seeding, and what one file each yields:
 
 | Seed | Axes | Instances |
 |---|---|---|
-| `theory/notes.yml` | pitch (36) × staff (2) | 72 |
-| `theory/intervals.yml` | root (12) × quality (12) × staff (2) | 288 |
-| `theory/chords-triads.yml` | root (12) × quality (4) × inversion (3) × staff (2) | 288 |
-| `theory/chords-sevenths.yml` | root (12) × quality (5) × inversion (4) × staff (2) | 480 |
-| `theory/arpeggios.yml` | root (12) × quality (4) × direction (3) × staff (2) | 288 |
-| `theory/scales.yml` | root (12) × mode (10) × direction (3) × octaves (2) | 720 |
+| `notes/single.yml` | pitch (36) × staff (2) | 72 |
+| `intervals/all.yml` | root (12) × quality (12) × staff (2) | 288 |
+| `chords/triads.yml` | root (12) × quality (4) × inversion (3) × staff (2) | 288 |
+| `chords/sevenths.yml` | root (12) × quality (5) × inversion (4) × staff (2) | 480 |
+| `arpeggios/all.yml` | root (12) × quality (4) × direction (3) × staff (2) | 288 |
+| `scales/modes.yml` | root (12) × mode (10) × direction (3) × octaves (2) | 720 |
 
 For these, `ordering` is `any` on chord material — the notes are struck
 together, so order is not a claim the assessment can make — and `strict` on
@@ -241,10 +242,10 @@ request and never stored.
 | Route | Returns |
 |---|---|
 | `GET /api/v1/piano/bank` | collections and totals |
-| `GET /api/v1/piano/bank/:collection` | collection index plus the seeds on disk |
-| `GET /api/v1/piano/bank/:collection/:id` | one seed, with its instance count |
-| `GET /api/v1/piano/bank/:collection/:id/instances` | instance ids; `?expand=true` materializes, `?limit=` caps |
-| `GET /api/v1/piano/bank/:collection/:id/instance?<axes>` | one instance, built from axis values |
+| `GET /api/v1/piano/bank/search?…` | filtered instances plus facet counts |
+| `GET /api/v1/piano/bank/<path>` | a category index, or a seed — categories nest to any depth |
+| `GET /api/v1/piano/bank/<seed>/instances` | instance ids; `?expand=true` materializes, `?limit=` caps |
+| `GET /api/v1/piano/bank/<seed>/instance?<axes>` | one instance, built from axis values |
 
 Listing returns ids by default because a 504-instance seed is cheap to name and
 expensive to build. Expansion is opt-in and capped.
@@ -254,8 +255,8 @@ An absent bank answers `503`, not an empty `200` — "no content installed" and
 guess which it received.
 
 ```
-GET /api/v1/piano/bank/theory/chords-triads/instance?root=D&quality=minor&inversion=1st&staff=bass
-{ "id": "theory/chords-triads@root=D,quality=minor,inversion=1st,staff=bass",
+GET /api/v1/piano/bank/chords/triads/instance?root=D&quality=minor&inversion=1st&staff=bass
+{ "id": "chords/triads@root=D,quality=minor,inversion=1st,staff=bass",
   "events": [{ "notes": [{ "midi": 65 }, { "midi": 69 }, { "midi": 74 }] }],
   "staff": "bass", "ordering": "any", "supports": ["free", "cued"] }
 ```

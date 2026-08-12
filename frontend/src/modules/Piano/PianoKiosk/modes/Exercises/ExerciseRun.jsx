@@ -52,10 +52,11 @@ export default function ExerciseRun({ instanceId, onExit }) {
   useEffect(() => {
     if (!instanceId) { setInstance(null); return undefined; }
     let alive = true;
+    // The seed id IS its path in the bank, at whatever depth — `chords/triads`
+    // or `drills/hanon/001` — so it goes through whole.
     const [seedId, axes] = instanceId.split('@');
-    const [collection, id] = seedId.split('/');
-    const query = axes ? `?${axes.split(',').map((p) => p.replace('=', '=')).join('&')}` : '';
-    DaylightAPI(`api/v1/piano/bank/${collection}/${id}/instance${query}`)
+    const query = axes ? `?${axes.split(',').join('&')}` : '';
+    DaylightAPI(`api/v1/piano/bank/${seedId}/instance${query}`)
       .then((data) => { if (alive) setInstance(data); })
       .catch((error) => { if (alive) { setInstance(null); logger.warn('piano.exercise-load-failed', { instanceId, error: error.message }); } });
     return () => { alive = false; };

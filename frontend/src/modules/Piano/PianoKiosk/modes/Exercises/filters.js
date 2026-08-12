@@ -31,6 +31,7 @@ export const FORM_OPTIONS = Object.freeze([
   { id: 'scale', label: 'Scales' },
   { id: 'figure', label: 'Figures' },
   { id: 'progression', label: 'Progressions' },
+  { id: 'sequence', label: 'Runs & licks' },
 ]);
 
 export const HAND_OPTIONS = Object.freeze([

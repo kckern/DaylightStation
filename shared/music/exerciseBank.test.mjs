@@ -126,6 +126,31 @@ describe('melodic materialization', () => {
     assert.equal(midis(instance).length, 8);
   });
 
+  it('transposes from the declared key, not from the lowest note', () => {
+    // A ii-V-I in C bottoms out on D. Anchoring on the lowest note would read
+    // it as being in D and shift it ten semitones to "reach" C.
+    const phrase = {
+      id: 'runs/ii-v-i',
+      key: 'C',
+      ordering: 'strict',
+      events: [62, 65, 69, 72, 71, 69, 67, 65, 64].map((midi) => ({ notes: [{ midi, hand: 'right' }] })),
+      expansion: { axes: { root: { values: 'all' } } },
+    };
+    assert.deepEqual(midis(materialize(phrase, { root: 'C' })), [62, 65, 69, 72, 71, 69, 67, 65, 64]);
+    // Into F, everything moves up a fourth and the shape is preserved.
+    assert.deepEqual(midis(materialize(phrase, { root: 'F' })), [67, 70, 74, 77, 76, 74, 72, 70, 69]);
+  });
+
+  it('falls back to the lowest note when a seed declares no key', () => {
+    const keyless = {
+      id: 'x/keyless',
+      ordering: 'strict',
+      events: [60, 64, 67].map((midi) => ({ notes: [{ midi, hand: 'right' }] })),
+      expansion: { axes: { root: { values: 'all' } } },
+    };
+    assert.deepEqual(midis(materialize(keyless, { root: 'D' })), [62, 66, 69]);
+  });
+
   it('reverses for descending', () => {
     const up = materialize(scaleSeed, { root: 'C', direction: 'up', span_octaves: 1 });
     const down = materialize(scaleSeed, { root: 'C', direction: 'down', span_octaves: 1 });
