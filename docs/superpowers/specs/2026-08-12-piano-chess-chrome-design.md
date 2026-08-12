@@ -89,9 +89,19 @@ A square is a **candidate** while its chord's pitch-class set contains every pit
 held. Formally: `candidate(square) ⟺ heldPitchClasses ⊆ chordPitchClasses(square)`.
 
 One note down usually lights a scatter across several files and ranks, because a note can be the
-root of one chord and the third of another. The set contracts with each note added. When exactly one
-candidate remains it becomes the bright cursor square. When the set is empty, nothing is lit and the
-read-out says so at once, rather than waiting out the settle window before admitting it.
+root of one chord and the third of another. The set contracts with each note added, and it only ever
+contracts: adding a note must never light a square that was dark. That monotonicity is the property
+the whole idea rests on, and it is asserted by test.
+
+**A completed triad does not leave exactly one candidate**, and it should not. C-E-G is contained by
+C major *and* by C's extensions — add2, seventh, add6, major7 — so five squares stay lit, all on the
+same file. That reads correctly on the board: the file you are rooted on is live, you are at the
+major rank, and adding one more note would take you to one of the others. The **cursor** — the
+single bright square — comes from the addresser's own resolution of what you are playing now, not
+from the candidate set having shrunk to one.
+
+When the candidate set is empty, nothing is lit and the read-out says so at once, rather than
+waiting out the settle window before admitting it.
 
 This is a live, per-note computation and it replaces the settle-gated ambiguity that made a valid
 chord read as unrecognised for 140ms.
