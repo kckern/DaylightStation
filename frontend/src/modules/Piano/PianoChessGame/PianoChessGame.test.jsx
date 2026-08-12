@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 // vi.hoisted so the mock functions exist before the vi.mock factory below runs
 // (vi.mock calls are hoisted above imports). Most describes never touch these —
@@ -15,13 +15,19 @@ vi.mock('../PianoKiosk/PianoMidiContext.jsx', () => ({
   usePianoMidiNotes: () => mockUsePianoMidiNotes(),
 }));
 
-// The opponent effect goes through this client, not fetch directly, so mocking
-// it is what lets the tests below drive the server-success / server-failure /
-// unmount-cancellation paths without a network.
-vi.mock('./chessApi.js', () => ({ requestOpponentMove: vi.fn() }));
+// The opponent effect and the settings wiring both go through this client, not
+// fetch directly, so mocking it is what lets the tests below drive the
+// server-success / server-failure / unmount-cancellation / config paths
+// without a network. fetchChessConfig must return a promise even at rest —
+// the mount effect calls .then() on it unconditionally.
+vi.mock('./chessApi.js', () => ({
+  requestOpponentMove: vi.fn(),
+  fetchChessConfig: vi.fn(async () => null),
+  saveChessConfig: vi.fn(async () => null),
+}));
 
 import { PianoChessGame } from './PianoChessGame.jsx';
-import { requestOpponentMove } from './chessApi.js';
+import { fetchChessConfig, requestOpponentMove, saveChessConfig } from './chessApi.js';
 
 const sourceOutlines = (container) => container.querySelectorAll('.chess-board__square--source').length;
 
@@ -148,6 +154,68 @@ describe('PianoChessGame opponent effect', () => {
       gameId: expect.stringMatching(/^chess-\d+$/),
       userId: null,
     }));
+  });
+});
+
+// The settings wiring is where Task 7's promises are kept: the config loads on
+// mount, the active rung drives the rail badge, a tapped setting applies
+// immediately, and only a persistent user's tap reaches the save endpoint.
+// Component-level because the seam under test IS the wiring between the panel,
+// the config state, and the API client.
+describe('PianoChessGame settings wiring', () => {
+  const SERVED_CONFIG = {
+    default_rung: 'steady',
+    rungs: [
+      { id: 'first-moves', label: 'First moves', skill: 0, movetime_ms: 100 },
+      { id: 'learner', label: 'Learner', skill: 3, movetime_ms: 200 },
+      { id: 'steady', label: 'Steady', skill: 8, movetime_ms: 300 },
+    ],
+    opponent_delay_ms: 700,
+    shuffle_each_turn: true,
+    feedback: { hint_level: 'after-mistake', flash_rejected: true, toast: true },
+  };
+  const railBadge = (container) => container.querySelector('.piano-chess__difficulty').textContent;
+
+  beforeEach(() => {
+    fetchChessConfig.mockResolvedValue(SERVED_CONFIG);
+    saveChessConfig.mockClear();
+  });
+
+  afterEach(() => {
+    fetchChessConfig.mockImplementation(async () => null);
+  });
+
+  it('loads the config on mount and shows the active rung in the rail badge', async () => {
+    const { container } = render(<PianoChessGame />);
+    await waitFor(() => expect(railBadge(container)).toBe('Steady'));
+    expect(fetchChessConfig).toHaveBeenCalledWith(null);
+  });
+
+  it('applies a tapped rung immediately and saves it to the player\'s own layer', async () => {
+    const { container } = render(<PianoChessGame currentUser="kckern" />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Settings' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Learner' }));
+    expect(railBadge(container)).toBe('Learner');
+    expect(saveChessConfig).toHaveBeenCalledWith('kckern', { default_rung: 'learner' });
+    expect(fetchChessConfig).toHaveBeenCalledWith('kckern');
+  });
+
+  it('never saves for a guest, though the change still applies for the session', async () => {
+    const { container } = render(<PianoChessGame currentUser="guest" />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Settings' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Learner' }));
+    expect(railBadge(container)).toBe('Learner');
+    expect(saveChessConfig).not.toHaveBeenCalled();
+    expect(fetchChessConfig).toHaveBeenCalledWith(null);
+  });
+
+  it('shows the legality cues without any refusal when the config says always', async () => {
+    fetchChessConfig.mockResolvedValue({
+      ...SERVED_CONFIG,
+      feedback: { ...SERVED_CONFIG.feedback, hint_level: 'always' },
+    });
+    const { container } = render(<PianoChessGame />);
+    await waitFor(() => expect(sourceOutlines(container)).toBeGreaterThan(0));
   });
 });
 
