@@ -9,6 +9,7 @@ backend/node_modules
 !docker-compose.test.yml
 !shared/gaming/fixtures/default-assets.yml
 !shared/gaming/fixtures/adventure-hill-scene.yml
+!shared/gaming/fixtures/*.recipe.yml
 !tests/_fixtures/**/*.yml
 !tests/fixtures/**/*.yml
 !tests/unit/suite/config/fixtures/**/*.yml
