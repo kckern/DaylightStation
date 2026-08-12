@@ -176,6 +176,13 @@
   z-index: 1;
 }
 
+/* The move you are aiming at, before you let go. Committing on release should
+   feel aimed rather than hoped-for. */
+.chess-board__piece--ghost {
+  opacity: 0.38;
+  filter: none;
+}
+
 @keyframes chess-board-ignite {
   from {
     box-shadow:

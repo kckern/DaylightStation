@@ -1,6 +1,6 @@
 # Piano Games Architecture
 
-Reference for the DaylightStation piano game system — MIDI-driven games layered on the piano visualizer. The kiosk Games picker includes Piano Hero, Space Invaders, Tetris, Flashcards, Side Scroller, and the YAML-driven Card Game.
+Reference for the DaylightStation piano game system — MIDI-driven games layered on the piano visualizer. The kiosk Games picker includes Piano Hero, Space Invaders, Tetris, Flashcards, Side Scroller, Piano Chess, and the YAML-driven Card Game.
 
 ---
 
@@ -558,6 +558,81 @@ becomes a falling target.
 | `PianoHeroGame/heroChart.js` | Hero chart metadata and points/combo adapter |
 | `PianoHeroGame/usePianoHeroGame.js` | MIDI subscription and timed run lifecycle |
 | `PianoHeroGame/PianoHeroGame.scss` | Picker, highway, HUD, notes, and results styling |
+
+---
+
+## Piano Chess
+
+Chess played by chords: every square is a chord (file = root, rank = quality), and a move
+is the two chords that perform it, played in order. Nothing is pointer-driven — the
+instrument is the controller.
+
+### Opponent: server engine with a local fallback
+
+The opponent is served by the backend — a Stockfish WASM engine behind
+`POST /api/v1/chess/move` — with the bundled heuristic engine as a local fallback. Every
+request carries the position, the active rung, and a per-game id; on any transport or
+engine failure the client falls back to the bundled engine so the game never blocks on
+the network. The reply is delayed by `opponent_delay_ms` so it reads as a reply, not a
+flicker.
+
+### The config pair
+
+Configuration is two layers merged server-side, household defaults under a per-user
+override:
+
+| Layer | File |
+|-------|------|
+| Household defaults | `data/household/config/chess.yml` |
+| Per-user override | `data/users/{userId}/apps/chess/config.yml` |
+
+`GET /api/v1/chess/config?user={id}` serves the merge; `PUT` the same path writes a
+sparse patch into the user's own layer only. Guests never reach the per-user endpoints —
+their changes apply for the session and evaporate. Scalar keys and the `rungs` ladder
+replace wholesale (a half-merged ladder is never what anyone means); only the `feedback`
+block merges key-by-key.
+
+### The ladder
+
+`rungs` is an ordered list of opponent strengths. Each rung sets either `skill`
+(Stockfish Skill Level 0–20 — the engine plays full strength then intentionally errs,
+more at low values) or `elo` (UCI_LimitStrength targeting a rating), plus `movetime_ms`.
+The shipped ladder:
+
+| Rung | Strength |
+|------|----------|
+| `first-moves` | skill 0 |
+| `learner` | skill 3 |
+| `steady` | skill 8 |
+| `sharp` | skill 14 |
+| `ruthless` | elo 1800 |
+
+`default_rung` names the rung a game starts on. An unknown rung id resolves to the
+middle of the ladder rather than failing.
+
+### Feedback and hint levels
+
+`feedback.hint_level` is one three-way answer to "how much does the board show me":
+
+| Level | Behaviour |
+|-------|-----------|
+| `off` | The legality cues never appear |
+| `after-mistake` (default) | Legal sources/targets appear only after a chord is refused, until the next move lands |
+| `always` | The cues show whenever applicable |
+
+`feedback.flash_rejected` and `feedback.toast` control refusal loudness (the red flash
+on the refused square, the sentence saying what was wrong) and live in YAML only. The
+YAML is snake_case; the translation to the component's camelCase cue flags happens in
+one place (`PianoChessGame/chessCues.js`) and nowhere else.
+
+### In-game settings
+
+The Settings button on the right rail opens a panel of discrete tap targets (no
+sliders): the rung ladder, the hint level, the chord-map shuffle, and the opponent delay
+(300/700/1200 ms). Every tap applies immediately and, for a signed-in player, saves a
+sparse patch to their own override layer. The shuffle toggle takes effect on the next
+game — the chord map is dealt when a game is created, and a mid-game re-deal would
+rearrange the board under the player.
 
 ---
 

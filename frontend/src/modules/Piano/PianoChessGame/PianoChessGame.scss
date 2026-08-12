@@ -72,6 +72,130 @@
   color: var(--pc-brass);
 }
 
+.piano-chess__settings-btn {
+  align-self: flex-start;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid rgb(239 228 205 / 22%);
+  border-radius: 2px;
+  background: none;
+  color: var(--pc-ivory-dim);
+  font: inherit;
+  font-size: 0.75rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  cursor: pointer;
+
+  &:hover,
+  &:focus-visible,
+  &[aria-expanded='true'] {
+    border-color: var(--pc-brass);
+    color: var(--pc-brass);
+  }
+}
+
+/* ---- settings panel ------------------------------------------------------ */
+
+/* Sits over the board like the toast does: settings are a pause in the game,
+   not a different room. Every control is a discrete tap target. */
+.chess-settings {
+  position: absolute;
+  inset-block-start: 12%;
+  inset-inline: 0;
+  z-index: 6;
+  justify-self: center;
+  width: min(34rem, 80vw);
+  margin-inline: auto;
+  padding: 1rem 1.4rem 1.3rem;
+  border: 1px solid rgb(201 162 39 / 45%);
+  border-radius: 3px;
+  background: rgb(23 17 14 / 96%);
+  box-shadow: 0 1rem 3rem rgb(0 0 0 / 60%);
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.chess-settings__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-block-end: 0.4rem;
+  border-block-end: 1px solid rgb(239 228 205 / 12%);
+}
+
+.chess-settings__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--pc-ivory);
+}
+
+.chess-settings__close {
+  padding: 0.35rem 0.9rem;
+  border: 1px solid var(--pc-brass);
+  border-radius: 2px;
+  background: none;
+  color: var(--pc-brass);
+  font: inherit;
+  font-size: 0.8rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  cursor: pointer;
+
+  &:hover,
+  &:focus-visible { color: var(--pc-brass-glow); border-color: var(--pc-brass-glow); }
+}
+
+.chess-settings__group {
+  margin: 0.5rem 0 0;
+  font-size: 0.7rem;
+  font-weight: 400;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: rgb(203 191 168 / 60%);
+}
+
+.chess-settings__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.chess-settings__opt {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  align-items: flex-start;
+  /* Kiosk-sized: a fingertip, not a pointer, is what lands here. */
+  min-height: 2.6rem;
+  padding: 0.4rem 0.85rem;
+  border: 1px solid rgb(239 228 205 / 22%);
+  border-radius: 2px;
+  background: none;
+  color: var(--pc-ivory-dim);
+  font: inherit;
+  font-size: 0.9rem;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+
+  &:hover,
+  &:focus-visible { border-color: rgb(201 162 39 / 60%); color: var(--pc-ivory); }
+
+  &.is-active {
+    border-color: var(--pc-brass);
+    background: rgb(201 162 39 / 12%);
+    color: var(--pc-brass-glow);
+  }
+}
+
+.chess-settings__note {
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  color: rgb(203 191 168 / 45%);
+}
+
 /* The shared kiosk context rail sits to the RIGHT of the board here, so its
    divider has to change sides. */
 .piano-chess .psc-rail {
@@ -156,31 +280,6 @@
   font-size: 0.95rem;
   line-height: 1.35;
   color: var(--pc-ivory-dim);
-}
-
-/* Live MIDI readout — the answer to "is the piano even talking to this?" */
-.piano-chess__midi {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  margin-block-start: 0.5rem;
-  font-size: 0.8rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: rgb(203 191 168 / 45%);
-}
-
-.piano-chess__midi-dot {
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: 50%;
-  background: var(--pc-felt);
-}
-
-.piano-chess__midi--live {
-  color: var(--pc-verdigris);
-
-  .piano-chess__midi-dot { background: var(--pc-verdigris); }
 }
 
 .piano-chess__cancel {
@@ -323,3 +422,26 @@
   height: clamp(4.5rem, 11vh, 7rem);
   opacity: 0.9;
 }
+
+/* The read-out rides above the keys, where the player's eyes already are when
+   they are wondering why nothing happened. */
+.chess-readout {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.6rem;
+  padding-block-end: 0.35rem;
+  font-size: 0.95rem;
+  letter-spacing: 0.06em;
+  color: var(--pc-ivory-dim);
+}
+
+.chess-readout__chord,
+.chess-readout__square {
+  font-weight: 700;
+  font-size: 1.15rem;
+  color: var(--pc-brass);
+}
+
+.chess-readout--unmapped .chess-readout__chord { color: var(--pc-felt); }
+.chess-readout--offline { color: rgb(203 191 168 / 45%); }
