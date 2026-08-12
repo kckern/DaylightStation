@@ -28,7 +28,7 @@ export const PIANO_MODES = [
   { id: 'composer', label: 'Composer', blurb: 'Write & arrange music', icon: 'quill' },
   { id: 'playalong', label: 'Playalong', blurb: 'Backing tracks to play over', icon: 'playalong' },
   { id: 'singalong', label: 'Karaoke', blurb: 'Grab the mic — sing along', icon: 'singalong' },
-  { id: 'lessons', label: 'Training', blurb: 'Technique drills', icon: 'metronome' },
+  { id: 'exercises', label: 'Exercises', blurb: 'Drills, scales & chords', icon: 'metronome' },
   { id: 'games', label: 'Games', blurb: 'Play note-driven games', icon: 'game' },
   { id: 'producer', label: 'Producer', blurb: 'Coming soon', icon: 'producer', disabled: true },
 ];

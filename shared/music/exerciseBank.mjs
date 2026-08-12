@@ -186,6 +186,9 @@ export function materialize(seed, axes = {}) {
   const pitches = events.flatMap((e) => e.notes.map((n) => n.midi));
   if (pitches.some((midi) => !Number.isFinite(midi) || midi < 21 || midi > 108)) return null;
 
+  const instanceShape = shapeOf(events);
+  const blackKeys = countBlackKeys(events);
+
   return {
     id: instanceId(seed.id, axes),
     seed_id: seed.id,
@@ -201,8 +204,102 @@ export function materialize(seed, axes = {}) {
     supports: seed.supports ?? ['free'],
     ...(seed.voicing ? { voicing: seed.voicing } : {}),
     events,
-    shape: shapeOf(events),
+    shape: instanceShape,
+    // An instance's level is its own: F-sharp major in second inversion is not
+    // C major in root position, so it cannot inherit the seed's number.
+    level: seed.level ?? levelsFor(instanceShape, {
+      supports: seed.supports ?? ['free'],
+      tempo: seed.tempo ?? null,
+      blackKeys,
+      positionShifts: seed.derived?.shape?.position_shifts ?? 0,
+    }),
+    form: seed.derived?.form ?? null,
+    collection: String(seed.id ?? '').split('/')[0] || null,
+    tags: seed.tags ?? [],
   };
+}
+
+export const MODES = Object.freeze(['free', 'metronome', 'cued']);
+
+/**
+ * Difficulty on a 1–10 scale, derived from what an item demands.
+ *
+ * A prior, not a verdict: it exists so a brand-new seed arrives with a sane
+ * level and so levels stay comparable across collections. Observed pass rates
+ * are meant to correct it, and an authored `level` overrides it outright.
+ *
+ * The weights are a first cut and deliberately legible — every term is a thing
+ * you can point at on the page. They should be tuned against real attempt data
+ * rather than argued about in the abstract.
+ */
+export function deriveLevel(shape, { mode = 'free', tempo = null, blackKeys = 0, positionShifts = 0 } = {}) {
+  if (!shape) return null;
+  let level = 1;
+
+  // Length: how much there is to hold in your head at once.
+  const events = shape.events ?? 1;
+  if (events > 24) level += 2;
+  else if (events > 12) level += 1.5;
+  else if (events > 6) level += 1;
+  else if (events > 2) level += 0.5;
+
+  // Simultaneity: fingers that must land together.
+  const together = shape.max_simultaneity ?? 1;
+  if (together >= 4) level += 1.5;
+  else if (together === 3) level += 1;
+  else if (together === 2) level += 0.5;
+
+  // Hands, and whether they are doing the same thing.
+  if (shape.hands === 'both') level += shape.hand_independence === 'independent' ? 2 : 1;
+
+  // Reach.
+  const span = shape.span_semitones ?? 0;
+  if (span > 24) level += 1.5;
+  else if (span > 12) level += 1;
+  else if (span > 5) level += 0.5;
+
+  // Black keys and thumb-unders.
+  if (blackKeys >= 3) level += 1;
+  else if (blackKeys >= 1) level += 0.5;
+  if (positionShifts > 0) level += Math.min(1, positionShifts * 0.5);
+
+  // Strictness costs more than anything else in the list, because it is the one
+  // demand a player cannot work around by going slowly.
+  if (mode === 'metronome') level += 1;
+  else if (mode === 'cued') level += 2;
+
+  const targetBpm = tempo?.target_bpm ?? null;
+  if (mode !== 'free' && Number.isFinite(targetBpm)) {
+    if (targetBpm > 140) level += 1;
+    else if (targetBpm > 100) level += 0.5;
+  }
+
+  return Math.max(1, Math.min(10, Math.round(level)));
+}
+
+const BLACK_KEYS = new Set([1, 3, 6, 8, 10]);
+
+/**
+ * Distinct black keys the hand has to find.
+ *
+ * Counted as physical keys rather than as notated accidentals. Relative to its
+ * own root, every major triad has no accidentals whatever key it is in — but
+ * F-sharp major is three black keys and C major is none, and that difference is
+ * the one a player actually feels.
+ */
+export function countBlackKeys(events) {
+  const pitchClasses = new Set(
+    events.flatMap((e) => e.notes.map((n) => ((n.midi % 12) + 12) % 12)),
+  );
+  return [...pitchClasses].filter((pc) => BLACK_KEYS.has(pc)).length;
+}
+
+/** Level for each mode an item supports — level is (item x mode), never item alone. */
+export function levelsFor(shape, { supports = ['free'], tempo = null, blackKeys = 0, positionShifts = 0 } = {}) {
+  return Object.fromEntries(
+    supports.filter((mode) => MODES.includes(mode))
+      .map((mode) => [mode, deriveLevel(shape, { mode, tempo, blackKeys, positionShifts })]),
+  );
 }
 
 /** Shape is measured from the instance's own notes, never inherited from the seed. */
@@ -233,6 +330,56 @@ export function expandSeed(seed, { limit = Infinity } = {}) {
 /** Ids only — cheap enough to list a 504-instance seed without building events. */
 export function instanceIds(seed) {
   return axisCombinations(seed).map((axes) => instanceId(seed.id, axes));
+}
+
+/**
+ * Search the bank by what an item demands.
+ *
+ * Filters on the instance rather than the seed, because the seed is an average
+ * of things that differ: a triad seed spans levels 3 to 6 depending on key and
+ * inversion, and "give me something at level 3" has to mean the C major one, not
+ * the whole seed.
+ *
+ * `facets` counts the full match set before paging, so the browser can show how
+ * much exists at each level without asking again.
+ */
+export function searchBank(seeds, {
+  mode = 'free',
+  levelMin = 1,
+  levelMax = 10,
+  form = null,
+  collection = null,
+  hands = null,
+  tags = null,
+  limit = 100,
+  offset = 0,
+} = {}) {
+  const matches = [];
+  const facets = { level: {}, form: {}, collection: {} };
+
+  for (const seed of seeds) {
+    if (collection && !String(seed.id ?? '').startsWith(`${collection}/`)) continue;
+    if (form && seed.derived?.form !== form) continue;
+    // An item that cannot be played the asked-for way is not a match at any level.
+    if (mode && !(seed.supports ?? ['free']).includes(mode)) continue;
+
+    for (const axes of axisCombinations(seed)) {
+      const instance = materialize(seed, axes);
+      if (!instance) continue;
+      const level = instance.level?.[mode];
+      if (!Number.isFinite(level) || level < levelMin || level > levelMax) continue;
+      if (hands && instance.shape.hands !== hands) continue;
+      if (tags?.length && !tags.every((tag) => (instance.tags ?? []).includes(tag))) continue;
+
+      facets.level[level] = (facets.level[level] ?? 0) + 1;
+      if (instance.form) facets.form[instance.form] = (facets.form[instance.form] ?? 0) + 1;
+      if (instance.collection) facets.collection[instance.collection] = (facets.collection[instance.collection] ?? 0) + 1;
+      matches.push(instance);
+    }
+  }
+
+  matches.sort((a, b) => (a.level[mode] - b.level[mode]) || a.id.localeCompare(b.id));
+  return { total: matches.length, facets, instances: matches.slice(offset, offset + limit) };
 }
 
 /** Rebuilds one instance from an id, resolving axis ids back to their values. */

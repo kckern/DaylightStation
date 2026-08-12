@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
-  axisCombinations, axisValues, countInstances, expandSeed, instanceId, instanceIds,
-  materialize, materializeById, parseInstanceId, shapeOf,
+  axisCombinations, axisValues, countBlackKeys, countInstances, deriveLevel, expandSeed,
+  instanceId, instanceIds, levelsFor, materialize, materializeById, parseInstanceId, shapeOf,
 } from './exerciseBank.mjs';
 
 const TRIADS = [
@@ -204,6 +204,58 @@ describe('expansion', () => {
   it('returns null rather than throwing on an empty seed', () => {
     assert.equal(materialize({ id: 'x', events: [] }, {}), null);
     assert.equal(materialize(null, {}), null);
+  });
+});
+
+describe('level', () => {
+  const shape = (over = {}) => ({ events: 1, notes: 1, max_simultaneity: 1, hands: 'right', span_semitones: 0, ...over });
+
+  it('puts a single note on the floor', () => {
+    assert.equal(deriveLevel(shape()), 1);
+  });
+
+  it('never leaves the 1-10 scale', () => {
+    const hardest = shape({ events: 64, max_simultaneity: 5, hands: 'both', hand_independence: 'independent', span_semitones: 48 });
+    const level = deriveLevel(hardest, { mode: 'cued', tempo: { target_bpm: 200 }, blackKeys: 5, positionShifts: 4 });
+    assert.ok(level <= 10 && level >= 1, `got ${level}`);
+    assert.equal(deriveLevel(shape(), { mode: 'free' }), 1, 'and the floor holds');
+  });
+
+  it('charges more for strictness than for anything else', () => {
+    const base = shape({ events: 8 });
+    assert.ok(deriveLevel(base, { mode: 'cued' }) > deriveLevel(base, { mode: 'metronome' }));
+    assert.ok(deriveLevel(base, { mode: 'metronome' }) > deriveLevel(base, { mode: 'free' }));
+  });
+
+  it('charges for hands, and more when they disagree', () => {
+    const one = deriveLevel(shape({ events: 8 }));
+    const parallel = deriveLevel(shape({ events: 8, hands: 'both', hand_independence: 'parallel' }));
+    const independent = deriveLevel(shape({ events: 8, hands: 'both', hand_independence: 'independent' }));
+    assert.ok(independent > parallel && parallel > one);
+  });
+
+  it('counts black keys as physical keys, not notated accidentals', () => {
+    // Every major triad has no accidentals against its own root, but F-sharp
+    // major is three black keys and C major is none.
+    assert.equal(countBlackKeys([{ notes: [{ midi: 60 }, { midi: 64 }, { midi: 67 }] }]), 0, 'C major');
+    assert.equal(countBlackKeys([{ notes: [{ midi: 66 }, { midi: 70 }, { midi: 73 }] }]), 3, 'F# major');
+    // Doubling a black key does not make it a second black key to find.
+    assert.equal(countBlackKeys([{ notes: [{ midi: 66 }, { midi: 78 }] }]), 1);
+  });
+
+  it('gives a level per supported mode, never one for the item alone', () => {
+    const levels = levelsFor(shape({ events: 8 }), { supports: ['free', 'metronome', 'cued'] });
+    assert.deepEqual(Object.keys(levels), ['free', 'metronome', 'cued']);
+    assert.ok(levels.cued > levels.free);
+    // A mode the item does not support gets no level.
+    assert.deepEqual(Object.keys(levelsFor(shape(), { supports: ['free'] })), ['free']);
+    assert.deepEqual(levelsFor(shape(), { supports: ['nonsense'] }), {});
+  });
+
+  it('levels an instance from its own notes, not its seed', () => {
+    const easy = materialize(triadSeed, { root: 'C', quality: TRIADS[0], inversion: 'root' });
+    const hard = materialize(triadSeed, { root: 'F#', quality: TRIADS[0], inversion: 'root' });
+    assert.ok(hard.level.free > easy.level.free, 'F# major is three black keys; C major is none');
   });
 });
 
