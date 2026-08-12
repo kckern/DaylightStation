@@ -4,14 +4,20 @@ import { fenToPosition } from '@shared-gaming/chess/position.mjs';
 import getLogger from '../../../lib/logging/Logger.js';
 import ChessBoard from '../../Chess/ChessBoard.jsx';
 import { PianoKeyboard } from '../components/PianoKeyboard.jsx';
+import ChordNamePanel from '../components/ChordNamePanel.jsx';
 import ChordReadout from './ChordReadout.jsx';
 import { isPersistentUser } from '../PianoKiosk/pianoUser.js';
 import { usePianoMidi, usePianoMidiNotes } from '../PianoKiosk/PianoMidiContext.jsx';
 import PianoContextRail from '../PianoKiosk/modes/Videos/PianoContextRail.jsx';
-import { fetchChessConfig, requestOpponentMove, saveChessConfig } from './chessApi.js';
+import {
+  fetchChessConfig, requestOpponentMove, saveChessConfig, saveGameRecord,
+} from './chessApi.js';
 import { cuesFromConfig } from './chessCues.js';
 import ChessSettingsPanel from './ChessSettingsPanel.jsx';
 import { CHORD_QUALITIES, DEFAULT_CHORD_SCHEME, squareToChord } from './chordAddress.js';
+import { candidateSquares } from './chordCandidates.js';
+import { recognizeGesture } from './chordGestures.js';
+import { buildGameRecord } from './chessGameRecord.js';
 import { advanceCursor, createCursorState } from './chordCursor.js';
 import {
   REJECTION_MESSAGES, applySquare, capturedPieces, clearSelection, commitMove,
@@ -31,18 +37,13 @@ const CURSOR_TICK_MS = 25;
 const TOAST_MS = 2600;
 
 /**
- * How loudly the board answers a mistake.
- *
- * Parameterised because the right amount of ceremony depends on who is playing:
- * a beginner wants the legal pieces outlined before they choose, while someone
- * who knows the board finds that noisy and only wants to be told when they are
- * wrong. All four can be turned off independently.
+ * How loudly the board answers a mistake. Refusal loudness ONLY: legality
+ * marks are not feedback but a gesture channel — they appear when the player
+ * asks at the keys, never because a config said so.
  */
 export const DEFAULT_FEEDBACK = Object.freeze({
   flashRejected: true,   // the refused square shakes and flares red
   toast: true,           // a sentence saying what was wrong
-  highlightSources: true,// outline the pieces that can move, before choosing
-  highlightTargets: true,// dot the squares the held piece can reach
 });
 const OPPONENT_DELAY_MS = 700;
 const PIECE_GLYPHS = { p: '♟', n: '♞', b: '♝', r: '♜', q: '♛', k: '♚' };
@@ -77,6 +78,9 @@ export function PianoChessGame({
   shuffleEachTurn: shuffleEachTurnProp = gameConfig?.shuffle_each_turn ?? true,
   seed = null,
   feedback = null,
+  // Starting position override. A test seam like `seed`: the game-record test
+  // needs a mate-in-one board, and production callers never pass it.
+  fen = null,
 }) {
   // currentUser may arrive as the resolved profile object or the bare id. Guests
   // (and the no-user case) must never hit the per-user chess endpoints.
@@ -128,21 +132,24 @@ export function PianoChessGame({
   const { activeNotes } = usePianoMidiNotes();
   const { connected } = usePianoMidi();
   const [game, setGame] = useState(() => createChessGameState({
-    playerColor, scheme, seed: gameSeed, shuffleEachTurn,
+    fen: fen ?? undefined, playerColor, scheme, seed: gameSeed, shuffleEachTurn,
   }));
   // The server engine keeps per-game state keyed on this id, so it has to change
   // on restart — reusing it would let "Play again" find the finished game.
   const [gameId, setGameId] = useState(() => `chess-${Date.now()}`);
+  // Mirrored in a ref so an async answer can ask "is this still the same game?"
+  // without stale-closure risk — see the best-move validity check below.
+  const gameIdRef = useRef(gameId);
+  gameIdRef.current = gameId;
   // The map is re-dealt every turn, so everything that reads chords — the
   // cursor, the rim, the move log — has to follow state, not the prop.
   const liveScheme = game.scheme;
   const [cursor, setCursor] = useState(null);
-  // Whether the cursor has reported for the chord currently held. A `preview`
-  // event fires with `square: null` when a settled chord doesn't map to a
-  // square, so `cursor` alone can't tell "still settling" from "settled and
-  // unmapped" — both read as null. This flag carries that distinction.
-  const [cursorResolved, setCursorResolved] = useState(false);
   const cursorRef = useRef(createCursorState());
+  // True from the first tick where the held set reads as a help gesture until
+  // the hands are fully off the keys. See the cursor tick for why: a staggered
+  // release must not let the gesture's residue land as an unrecognised chord.
+  const gestureLatchRef = useRef(false);
   const gameRef = useRef(game);
   gameRef.current = game;
 
@@ -165,17 +172,95 @@ export function PianoChessGame({
         setGame((current) => {
           const untouched = current.history.length === 0 && !current.origin;
           if (!untouched || current.shuffleEachTurn === loadedShuffle) return current;
-          return createChessGameState({ playerColor, scheme, seed: gameSeed, shuffleEachTurn: loadedShuffle });
+          return createChessGameState({
+            fen: fen ?? undefined, playerColor, scheme, seed: gameSeed, shuffleEachTurn: loadedShuffle,
+          });
         });
       }
       logger().info('config-loaded', { default_rung: loaded.default_rung, rungs: loaded.rungs?.length });
     });
     return () => { cancelled = true; };
-    // playerColor, scheme, and gameSeed are mount-stable (props + one-shot state).
-  }, [userId, playerColor, scheme, gameSeed]);
+    // fen, playerColor, scheme, and gameSeed are mount-stable (props + one-shot state).
+  }, [userId, fen, playerColor, scheme, gameSeed]);
 
   const heldNotes = useMemo(() => [...activeNotes.keys()].sort((a, b) => a - b), [activeNotes]);
   const heldKey = heldNotes.join(',');
+
+  // Gesture recognition runs before square matching, and a recognised cluster
+  // is never chord input: while it is physically down, narrowing is suppressed.
+  const gesture = recognizeGesture(heldNotes);
+  const candidates = useMemo(
+    () => (gesture ? [] : candidateSquares(heldNotes, liveScheme)),
+    [gesture, heldNotes, liveScheme],
+  );
+
+  // Help is per-move, not per-press: mashing the cluster cannot inflate the
+  // tally, and the marks clear themselves when the move they helped with
+  // completes. `best` asks the server at full strength regardless of the rung
+  // being played — a hint only as strong as a beginner's opponent is not a hint.
+  const [help, setHelp] = useState({ legal: false, best: null });
+  const [helpUsed, setHelpUsed] = useState({ hints: 0, bestMoves: 0 });
+  // One best-move request at a time: `help.best` is still null while the server
+  // thinks, so without this gate a re-gesture mid-flight would queue a second
+  // request (and, worse, a second charge).
+  const bestPendingRef = useRef(false);
+  // Help is only valid for the position it was asked about. A hint gestured on
+  // the opponent's turn can show nothing (playableSources is empty) and would
+  // be wiped by their reply before the turn returns, so charging it would put
+  // an untruth in the record. A best-move ANSWER is checked the same way on
+  // arrival rather than at gesture time: the request may leave whenever the
+  // player asks, but the answer is drawn — and charged — only if the position
+  // it was computed for is still on the board, in the same game, with the
+  // player on move. Anything else is an answer about a board that no longer
+  // exists, and drawing it would be a lie.
+  useEffect(() => {
+    if (gesture === 'hint' && !help.legal) {
+      if (!isPlayerTurn(gameRef.current)) {
+        logger().info('help-ignored', { kind: 'legal', reason: 'not_player_turn' });
+        return;
+      }
+      setHelp((prev) => ({ ...prev, legal: true }));
+      setHelpUsed((prev) => ({ ...prev, hints: prev.hints + 1 }));
+      logger().info('help-requested', { kind: 'legal' });
+    }
+    if (gesture === 'best' && !help.best && !bestPendingRef.current) {
+      bestPendingRef.current = true;
+      const askedFen = gameRef.current.game.fen;
+      const askedGameId = gameIdRef.current;
+      logger().info('help-requested', { kind: 'best' });
+      requestOpponentMove({ fen: askedFen, rung: 'ruthless', gameId: askedGameId, userId }).then((move) => {
+        bestPendingRef.current = false;
+        // Charged only when a move actually arrives: the record holds facts,
+        // and "1 best move" the player never received is not one.
+        if (!move) return;
+        const live = gameRef.current;
+        const stillValid = gameIdRef.current === askedGameId
+          && live.game.fen === askedFen
+          && isPlayerTurn(live);
+        if (!stillValid) {
+          logger().info('help-answer-stale', {
+            kind: 'best',
+            asked_fen: askedFen,
+            live_fen: live.game.fen,
+            same_game: gameIdRef.current === askedGameId,
+            player_turn: isPlayerTurn(live),
+          });
+          return;
+        }
+        setHelp((prev) => ({ ...prev, best: { from: move.from, to: move.to } }));
+        setHelpUsed((prev) => ({ ...prev, bestMoves: prev.bestMoves + 1 }));
+      });
+    }
+    // The gesture alone triggers; everything else is read at the moment it fires.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gesture]);
+  // The marks clear when a move lands — not on mount, where this effect also
+  // fires and would wipe a gesture armed on the very first render.
+  const moveCount = game.history.length;
+  useEffect(() => {
+    if (moveCount === 0) return; // fresh board: restart() already reset help
+    setHelp({ legal: false, best: null });
+  }, [moveCount]);
 
   // A board that silently rearranges itself is a board the player will misread.
   // The re-deal announces itself, then gets out of the way.
@@ -214,12 +299,31 @@ export function PianoChessGame({
     return () => clearTimeout(timer);
   }, [cues.toast, rejection]);
 
+  // One record per finished game; "Play again" starts the bookkeeping over.
+  const recordedRef = useRef(false);
+  const startedAtRef = useRef(Date.now());
+  // The record that just got saved (or would have, for a guest), held so the
+  // end screen can read the SAME numbers back. One source: the rail's tallies
+  // and the stored record can never disagree, because they are one object.
+  const [finishedRecord, setFinishedRecord] = useState(null);
+
   const restart = useCallback(() => {
-    setGame(createChessGameState({ playerColor, scheme, seed: gameSeed + 1, shuffleEachTurn }));
+    setGame(createChessGameState({
+      fen: fen ?? undefined, playerColor, scheme, seed: gameSeed + 1, shuffleEachTurn,
+    }));
     setGameId(`chess-${Date.now()}`);
     setToast(null);
+    setHelp({ legal: false, best: null });
+    setHelpUsed({ hints: 0, bestMoves: 0 });
+    setFinishedRecord(null);
+    // A best-move ask still in flight belongs to the finished game. Its answer
+    // is already doomed by the game-id check; clearing the gate here means the
+    // new game may ask again immediately instead of waiting it out.
+    bestPendingRef.current = false;
+    recordedRef.current = false;
+    startedAtRef.current = Date.now();
     logger().info('restarted');
-  }, [gameSeed, playerColor, scheme, shuffleEachTurn]);
+  }, [fen, gameSeed, playerColor, scheme, shuffleEachTurn]);
 
   const cancelSelection = useCallback(() => {
     setGame((current) => (current.origin ? clearSelection(current) : current));
@@ -239,11 +343,29 @@ export function PianoChessGame({
   useEffect(() => {
     if (!heldNotes.length && !cursorRef.current.held.length) return undefined;
     const tick = () => {
+      // Read before advancing: on the release tick the live set is already
+      // empty, and the question is what WAS down. A recognised cluster is a
+      // request for help, never chord input — its release must not land as an
+      // unrecognised-chord refusal, nor be scolded for a quick tap.
+      const wasGesture = !!recognizeGesture(cursorRef.current.held);
+      // A human does not lift three fingers at once, so the LAST pre-release
+      // set is often only the tail of the gesture — two notes, not a cluster.
+      // The latch remembers that a gesture was held at ANY point since the
+      // hands went down, and stands until they are fully off the keys. While
+      // it stands, a null-square commit (the gesture's own residue) and a
+      // too-quick scold are swallowed; a commit that names a real square still
+      // plays, so a gesture flowing straight into a chord without a full
+      // release behaves as chord input.
+      if (wasGesture) gestureLatchRef.current = true;
       const { state, event } = advanceCursor(cursorRef.current, heldNotes, Date.now(), { scheme: liveScheme });
       cursorRef.current = state;
+      const latched = gestureLatchRef.current;
+      if (!state.held.length) gestureLatchRef.current = false;
       if (!event) return;
-      if (event.type === 'preview') { setCursor(event.square); setCursorResolved(true); }
-      if (event.type === 'too_quick') setToast({ text: 'Hold the chord a moment longer.', seq: `quick-${Date.now()}` });
+      if (event.type === 'preview') setCursor(event.square);
+      if (event.type === 'too_quick' && !wasGesture && !latched) {
+        setToast({ text: 'Hold the chord a moment longer.', seq: `quick-${Date.now()}` });
+      }
       if (event.type === 'escape') {
         setCursor(null);
         if (gameRef.current.status?.game_over) restart();
@@ -251,19 +373,13 @@ export function PianoChessGame({
       }
       if (event.type === 'commit') {
         setCursor(null);
-        handleSquare(event.square);
+        if (!wasGesture && !(latched && !event.square)) handleSquare(event.square);
       }
     };
     tick();
     const timer = setInterval(tick, CURSOR_TICK_MS);
     return () => clearInterval(timer);
   }, [cancelSelection, handleSquare, heldKey, heldNotes, liveScheme, restart]);
-
-  // Hands off the keys means the next chord starts unresolved again, so the
-  // read-out doesn't carry a stale "settled" verdict into a fresh chord.
-  useEffect(() => {
-    if (heldNotes.length === 0) setCursorResolved(false);
-  }, [heldNotes.length]);
 
   // The opponent answers on a delay so its move reads as a reply, not a flicker.
   // The server is the strong opponent; the bundled engine is what keeps the game
@@ -284,36 +400,35 @@ export function PianoChessGame({
     return () => { cancelled = true; clearTimeout(timer); };
   }, [game.status, playerColor, rungId, gameId, opponentDelayMs, userId, localFallbackDifficulty]);
 
-  // A refusal turns the legality cues on; the next completed move turns them off.
-  const [showLegality, setShowLegality] = useState(false);
-  const rejectionSeq = game.rejection?.seq ?? null;
-  const moveCount = game.history.length;
+  // One record per finished game, posted only for a signed-in player — guests
+  // never reach the per-user endpoints. Ref-guarded, not state-guarded: the
+  // effect re-runs whenever unrelated state renders while game_over holds.
   useEffect(() => {
-    if (rejectionSeq != null) setShowLegality(true);
-  }, [rejectionSeq]);
-  useEffect(() => {
-    setShowLegality(false);
-  }, [moveCount]);
+    if (!game.status?.game_over || recordedRef.current) return;
+    recordedRef.current = true;
+    const record = buildGameRecord({
+      game, rungId, hints: helpUsed.hints, bestMoves: helpUsed.bestMoves,
+      startedAt: startedAtRef.current, endedAt: Date.now(),
+    });
+    setFinishedRecord(record);
+    if (record && userId) saveGameRecord(userId, record);
+    logger().info('game-recorded', { ...(record || {}), persisted: !!(record && userId) });
+    // Everything but the game-over flag is read at the moment the game ends.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game.status?.game_over]);
 
   // The board takes plain strings; translating chords into them is this layer's
   // job, which is why ChessBoard never learns what a chord is.
   const fileLabels = liveScheme.roots;
   const rankLabels = liveScheme.qualities.map((quality) => CHORD_QUALITIES[quality]?.label || 'maj');
 
-  // Legality is gated by the player's hint level. `after-mistake` (the default,
-  // gateOnMistake) shows the cues only once a chord has been refused — outlining
-  // every movable piece up front answers the question before it is asked, which
-  // is the whole exercise; after a refusal it is help, not a spoiler. `always`
-  // drops the gate; `off` clears the cue flags entirely. Gated hints stand until
-  // the next move lands, then the board goes quiet again.
-  const legalityVisible = !cues.gateOnMistake || showLegality;
-  const destinations = legalityVisible && cues.highlightTargets && game.origin
-    ? destinationsFor(game, game.origin)
+  // The marks channel is empty until a gesture asks. "Show legal moves" means
+  // the destinations of the piece being held — or, when none is held yet,
+  // which pieces can move at all. The marks stand until the move they helped
+  // with completes (see the history-length effect above).
+  const hintTargets = help.legal
+    ? (game.origin ? destinationsFor(game, game.origin) : playableSources(game))
     : [];
-  const sources = legalityVisible && cues.highlightSources && !game.origin
-    ? playableSources(game)
-    : [];
-  const originChord = game.origin ? squareToChord(game.origin, liveScheme) : null;
   const cursorChord = cursor ? squareToChord(cursor, liveScheme) : null;
   // Only while a piece is held and the cursor names a different square. Capture
   // targets get a ghost too — most previews the player cares about are captures.
@@ -328,40 +443,6 @@ export function PianoChessGame({
   return (
     <div className="piano-chess">
       <div className="piano-chess__stage">
-        <aside className="piano-chess__rail piano-chess__rail--move">
-          <h2 className="piano-chess__rail-title">This move</h2>
-          <div className="piano-chess__slot">
-            <span className="piano-chess__slot-label">From</span>
-            <span className={`piano-chess__chord${originChord ? ' piano-chess__chord--set' : ''}`}>
-              {originChord?.symbol ?? '—'}
-            </span>
-          </div>
-          <div className="piano-chess__slot">
-            <span className="piano-chess__slot-label">To</span>
-            <span className={`piano-chess__chord${cursorChord && game.origin ? ' piano-chess__chord--live' : ''}`}>
-              {game.origin ? (cursorChord?.symbol ?? '—') : '—'}
-            </span>
-          </div>
-          <p className="piano-chess__prompt" role="status">{prompt}</p>
-
-          {game.status?.game_over ? (
-            <button type="button" className="piano-chess__cancel" onClick={restart}>
-              Play again
-              <span className="piano-chess__cancel-hint">play an octave to start over</span>
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="piano-chess__cancel"
-              onClick={cancelSelection}
-              disabled={!game.origin}
-            >
-              Put it back
-              <span className="piano-chess__cancel-hint">play an octave, or press Esc</span>
-            </button>
-          )}
-        </aside>
-
         <ChessBoard
           fen={game.game.fen}
           status={game.status}
@@ -369,8 +450,9 @@ export function PianoChessGame({
           fileLabels={fileLabels}
           rankLabels={rankLabels}
           selected={game.origin}
-          destinations={destinations}
-          sourceSquares={sources}
+          candidates={candidates}
+          hintTargets={hintTargets}
+          bestMove={help.best}
           rejectedSquare={cues.flashRejected ? game.rejection?.square ?? null : null}
           rejectedKey={game.rejection?.seq ?? null}
           lastMove={game.lastMove}
@@ -396,6 +478,43 @@ export function PianoChessGame({
               {rung?.label ?? (rungId.charAt(0).toUpperCase() + rungId.slice(1))}
             </span>
           </p>
+          <p className="piano-chess__prompt" role="status">{prompt}</p>
+
+          {/* The spec's promise: the end screen reads the game back as facts.
+              These are fields of the SAME object the record effect saved —
+              never a second formatting of the state — so the screen and the
+              stored record cannot disagree. */}
+          {game.status?.game_over && finishedRecord && (
+            <dl className="piano-chess__summary">
+              {[
+                ['Moves', finishedRecord.moves],
+                ['Hints', finishedRecord.hints],
+                ['Best moves', finishedRecord.best_moves],
+              ].map(([label, value]) => (
+                <div key={label} className="piano-chess__summary-row">
+                  <dt className="piano-chess__slot-label">{label}</dt>
+                  <dd className="piano-chess__summary-value">{value}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+
+          {game.status?.game_over ? (
+            <button type="button" className="piano-chess__cancel" onClick={restart}>
+              Play again
+              <span className="piano-chess__cancel-hint">play an octave to start over</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="piano-chess__cancel"
+              onClick={cancelSelection}
+              disabled={!game.origin}
+            >
+              Put it back
+              <span className="piano-chess__cancel-hint">play an octave, or press Esc</span>
+            </button>
+          )}
           {chessConfig && (
             <button
               type="button"
@@ -448,15 +567,23 @@ export function PianoChessGame({
         />
       )}
 
-      <footer className="piano-chess__keys">
-        <ChordReadout
-          heldNotes={heldNotes}
-          chord={cursorChord}
-          square={cursor}
-          connected={connected}
-          settling={heldNotes.length >= 3 && !cursorResolved}
-        />
-        <PianoKeyboard activeNotes={activeNotes} startNote={36} endNote={84} />
+      {/* The instrument zone: what is being played (plaque), what the game
+          heard and where it points (read-out), and the keys themselves.
+          `settling` needs no resolved-flag bookkeeping any more — narrowing
+          answers instantly: zero candidates means no square can contain these
+          notes, so only a still-narrowing chord reads as "settling". */}
+      <footer className="piano-chess__instrument">
+        <div className="piano-chess__instrument-readouts">
+          <ChordNamePanel midiNotes={heldNotes} label="Playing" />
+          <ChordReadout
+            heldNotes={heldNotes}
+            chord={cursorChord}
+            square={cursor}
+            connected={connected}
+            settling={heldNotes.length >= 3 && candidates.length > 0 && !cursor}
+          />
+        </div>
+        <PianoKeyboard activeNotes={activeNotes} startNote={36} endNote={84} showLabels />
       </footer>
     </div>
   );

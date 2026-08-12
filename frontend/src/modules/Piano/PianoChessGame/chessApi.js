@@ -70,4 +70,13 @@ export async function saveChessConfig(userId, patch) {
   }
 }
 
-export default { requestOpponentMove, fetchChessConfig, saveChessConfig };
+export async function saveGameRecord(userId, record) {
+  try {
+    return await DaylightAPI(withUser('api/v1/chess/games', userId), record, 'POST');
+  } catch (error) {
+    logger().warn('chess.game.save-error', { error: error.message });
+    return null;
+  }
+}
+
+export default { requestOpponentMove, fetchChessConfig, saveChessConfig, saveGameRecord };
