@@ -22,11 +22,13 @@ export class GetPlayableUnits {
   #userVideoProgressStore;
   #configService;
   #logger;
+  #learningService;
 
-  constructor({ fitnessPlayableService, userVideoProgressStore = null, configService, logger = console } = {}) {
+  constructor({ fitnessPlayableService, userVideoProgressStore = null, configService, learningService = null, logger = console } = {}) {
     this.#fitnessPlayableService = fitnessPlayableService;
     this.#userVideoProgressStore = userVideoProgressStore;
     this.#configService = configService;
+    this.#learningService = learningService;
     this.#logger = logger;
   }
 
@@ -95,6 +97,23 @@ export class GetPlayableUnits {
     // store — known users only; guest/anonymous get the course with no progress.
     if (userId && !isGuest && this.#userVideoProgressStore) {
       playable.items = this.#userVideoProgressStore.enrich(playable.items, userId);
+    }
+
+    // Lesson checkpoints use the same requirement/evidence projection as the
+    // Exercises dashboard. The media adapter only carries the declaration;
+    // this use case adds the per-learner answer.
+    if (Array.isArray(playable.items)) {
+      const checkpoints = playable.items.map((item) => item?.piano?.checkpoint).filter(Boolean);
+      const statuses = this.#learningService?.requirementStatuses?.(userId ?? 'guest', checkpoints) ?? [];
+      let checkpointIndex = 0;
+      playable.items = playable.items.map((item) => {
+        const checkpoint = item?.piano?.checkpoint;
+        if (!checkpoint) return item;
+        const status = statuses[checkpointIndex++]
+          ?? this.#learningService?.requirementStatus?.(userId ?? 'guest', checkpoint)
+          ?? { passed: false, passes: 0, required_passes: 1 };
+        return { ...item, checkpointStatus: status };
+      });
     }
 
     const pianoConfig = this.#configService.getHouseholdAppConfig(null, 'piano') || {};

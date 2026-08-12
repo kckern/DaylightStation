@@ -29,6 +29,47 @@ const SCALE_NOTE_CLASSES = [
   'piano-scale-note--wrong',
 ];
 
+function assessmentFor(prepared, status, score, metrics) {
+  if (status !== 'completed' || !Number.isFinite(score) || !prepared?.prompt?.exercise_id) return {};
+  const criteria = {
+    completeness: metrics.failed ? 0 : 1,
+    cleanliness: Number.isFinite(metrics.pitchSetAccuracy)
+      ? metrics.pitchSetAccuracy
+      : Number.isFinite(metrics.pitchAccuracy) ? metrics.pitchAccuracy : score,
+    ...(Number.isFinite(metrics.timingAccuracy) ? { placement: metrics.timingAccuracy } : {}),
+  };
+  const targetBpm = prepared.requirement?.gates?.pace?.target_bpm;
+  const actualBpm = Number.isFinite(metrics.tempoBpm) ? metrics.tempoBpm : null;
+  const gates = Number.isFinite(targetBpm) ? {
+    pace: { passed: Number.isFinite(actualBpm) && actualBpm >= targetBpm, actual: actualBpm, target: targetBpm },
+  } : undefined;
+  const thresholds = prepared.requirement?.rubric?.criteria ?? {};
+  const thresholdEntries = Object.entries(thresholds);
+  const criteriaPassed = thresholdEntries.length
+    ? thresholdEntries.every(([name, threshold]) => (
+      Number.isFinite(criteria[name]) && criteria[name] >= threshold
+    ))
+    : score >= 0.6;
+  const passed = criteriaPassed && (!gates || Object.values(gates).every((gate) => gate.passed));
+  const diagnosticEntries = {
+    achieved_bpm: actualBpm,
+    wrong_notes: metrics.wrongNotes,
+    onset_spread_ms: metrics.onsetSpanMs,
+    duration_ms: metrics.durationMs,
+  };
+  return {
+    purpose: 'challenge',
+    criteria,
+    ...(gates ? { gates } : {}),
+    diagnostics: Object.fromEntries(Object.entries(diagnosticEntries).filter(([, value]) => Number.isFinite(value))),
+    rubric: {
+      id: prepared.requirement?.rubric?.id ?? prepared.grading_policy_version,
+      version: String(prepared.requirement?.rubric?.version ?? '1'),
+    },
+    verdict: { score, passed },
+  };
+}
+
 function scaleNoteElements(staffNotes) {
   return (staffNotes || []).flatMap((staff) => (
     (staff || []).map((note) => note.els || [])
@@ -162,10 +203,13 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
         settled = true;
         clearDeadline();
         publish({ status: status === 'completed' ? 'complete' : status });
+        const finalMetrics = timedMetrics(metrics);
         const result = {
-          status, score, metrics: timedMetrics(metrics),
+          status, score, metrics: finalMetrics,
           provider_version: PROVIDER_VERSION,
           attempt_id: makeAttemptId(),
+          context: snapshot.prepared?.context ?? null,
+          ...assessmentFor(snapshot.prepared, status, score, finalMetrics),
         };
         await persistAttempt(result, snapshot.prepared);
         resolveAttempt(result);
@@ -546,6 +590,8 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
                 ? 'paced-pitch-timing-continuity-v1'
                 : 'untimed-pitch-continuity-v1',
             provider_version: PROVIDER_VERSION,
+            requirement: selected.requirement ? structuredClone(selected.requirement) : null,
+            context: request.context ? structuredClone(request.context) : null,
           };
           publish({ status: 'prepared', prepared, armed: false, hadWrong: false, progress: 0, lastInput: null });
           return prepared;

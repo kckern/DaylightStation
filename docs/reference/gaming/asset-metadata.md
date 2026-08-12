@@ -1,5 +1,7 @@
 # Gaming Asset Metadata Standard
 
+> This document describes the v1 audit/catalog vocabulary. Production scene rendering now uses the strict [Presentation Framework V2](presentation-framework-v2.md); v1 remains available only for source audit, derivation recipes, migration input, and regression fixtures.
+
 ## Purpose
 
 This standard defines the YAML vocabulary for private game-art assets: single images, sprite sheets, tilesets, animations, prefabs, and scene placement. It is renderer-neutral and is used by audit tooling, backend asset resolution, CLI previews, and browser renderers.
@@ -16,6 +18,36 @@ It describes visuals only. Gameplay rules, collision authority, scoring, interac
 - All source-image geometry is in native image pixels. Scene placement is in the scene's declared virtual coordinate system.
 - Use named frames and clips in all new scene/prefab YAML. Numeric cell references are permitted only inside the asset's own manifest.
 - Never infer runtime animation or tile meaning from filename, image dimension, or frame order.
+
+## Pixel density and world scale
+
+Source resolution, world footprint, and display magnification are separate facts. Do not use a placement `scale` override to make a large source sprite fit a scene.
+
+```yaml
+assets:
+  structure.house:
+    pixel_density: 1          # source pixels per logical art pixel
+    geometry: { layout: freeform }
+    frames: { default: { rect: [0, 0, 96, 128] } }
+
+# Production scene
+world_scale: 2                # display pixels per logical art pixel
+require_explicit_pixel_density: true
+enforce_uniform_pixel_scale: true
+placements:
+  - { asset: structure.house, at: [408, 250] }
+```
+
+`pixel_density: 1` means the source is native-resolution art. `pixel_density: 2` means two source pixels represent one logical art pixel; the renderer first reduces the crop with nearest-neighbour sampling, then applies `world_scale`. The rendered dimensions are therefore:
+
+```text
+rendered width  = source frame width  / pixel_density × world_scale
+rendered height = source frame height / pixel_density × world_scale
+```
+
+`pixel_density` must be an integer from 1 through 8, and grid cells or freeform frame sizes must divide evenly by it. It defaults to `1` for compatibility, but production scenes should require it explicitly. A large 96×128 house from a native 16-pixel pack is normally still density `1`: it occupies six by eight source tiles and must be magnified exactly like the terrain. Density describes source sampling, not object size.
+
+With `enforce_uniform_pixel_scale: true`, every concrete draw must use the scene's `world_scale`; a placement or prefab that sneaks in `scale: 1` fails. Use a separately reviewed asset/frame or a typed prefab size variant when an object genuinely needs a different world footprint. `resolution_audit` in every scene report records the density and pixel scale of every drawn asset, normalization counts, and any non-uniform draws.
 
 ## File shape
 
@@ -177,6 +209,20 @@ Clip rules:
 - `once` holds its final frame until its host changes state or removes the clip.
 - Clips are visual timing only. They do not emit gameplay events, trigger sounds, or advance game state.
 
+Topology animation is declared on `autotile`, not as an unrelated sprite clip. A normalized atlas stores identical topology pages at a fixed cell offset:
+
+```yaml
+autotile:
+  animation:
+    mode: grid-offset
+    frames: 8
+    fps: 6
+    loop: loop
+    phase_stride: [4, 0]
+```
+
+Mask and compound-corner selection happens first; the phase offset is then applied to every resolved base and overlay frame. This keeps an entire lake synchronized and prevents an animated shoreline phase from using a different topology.
+
 ## Tile semantics
 
 Tiles use named frames, with optional visual metadata that supports map authoring:
@@ -224,7 +270,7 @@ terrain:
 
 `continues` may contain `north`, `east`, `south`, or `west`. The region must actually touch every named viewport edge. The renderer supplies the off-screen neighbour for mask selection, so a road or river crossing the viewport does not receive a visually closed end cap.
 
-Scenes may tile one reviewed frame beneath all regions with `ground: terrain.grass#middle`. `ground`, terrain, structures, and actors still share one declared `world_scale`; per-placement scale overrides are reserved for reviewed exceptions.
+Scenes may tile one reviewed frame beneath all regions with `ground: terrain.grass#middle`. `ground`, terrain, structures, and actors share one declared `world_scale`. Production scenes should enforce it; object sizing belongs in reviewed asset metadata or prefab variants rather than per-placement scale overrides.
 
 Catalogs declare the mappings explicitly:
 
@@ -240,17 +286,30 @@ autotile:
     esw: sand.edge.north
     es: sand.corner.nw
   inner_corners:
-    nw: water.inner.nw
-    ne: water.inner.ne
-    se: water.inner.se
-    sw: water.inner.sw
+    positive: { nw: water.inner.nw, ne: water.inner.ne, se: water.inner.se, sw: water.inner.sw }
+    negative: { nw: island.inner.nw, ne: island.inner.ne, se: island.inner.se, sw: island.inner.sw }
+  inner_corner_mode: composite
 ```
 
 Every mask that an authored region may produce must be declared, or `fallback` may be used only while a pack remains in curation.
 
-Cardinal masks select the outside edge or corner. `cardinal-4+diagonal-corners` then checks the four diagonals: when two adjoining cardinal neighbours exist but their shared diagonal does not, `inner_corners` replaces the otherwise square center/edge tile with reviewed concave-corner art. Rendering fails when an authored inside corner has no exact mapping; a center tile is never accepted as a visual fallback.
+Cardinal masks select the outside edge or corner. `cardinal-4+diagonal-corners` then checks the four diagonals. In legacy `replace` mode, `inner_corners` must contain every exact compound key. In `composite` mode, each polarity provides four transparent quadrant overlays; the renderer layers every missing corner over the selected base, so all fifteen non-empty compound combinations are representable. Missing overlays still fail closed.
 
 Inner-corner metadata is not sufficient when the source silhouette is wrong for the pack's authored scale. Review every concave frame at the intended `world_scale`: a quarter of a larger island can be topologically correct yet pinch a route nearly closed. Keep any corrected corner set reproducible as a derived atlas recipe, preserve the original edge colors, and pin the derived hash. Recipe layers may use `size: [width, height]` for nearest-neighbour reduction when a source corner needs a smaller visual radius.
+
+### Terrain capability sweep
+
+Before promoting terrain art into a runtime catalog, record it in `$DAYLIGHT_BASE_PATH/media/games/_common/catalog/terrain-metadata-sweep.yml` and run `gaming-assets terrain-sweep`. The sweep uses a deliberately smaller readiness vocabulary than the runtime catalog:
+
+- `metadata-only`: the raw sheet appears to contain scale-correct outer and inner corners; it still needs named frames, mask maps, and topology QA.
+- `derived-required`: required joins are missing, oversized, or packed as variable-size stamps; create a reproducible derivative before approval.
+- `schema-required`: the source expresses height, temporal pages, or mixed systems that the current flat terrain schema cannot represent honestly.
+- `partial`: one variant or static layer is cataloged, but sibling palettes, compact corners, or animated pages remain unfinished.
+- `deferred`: provenance or duplication must be resolved before curation.
+- `cataloged`: named runtime metadata, hashes, and required QA evidence exist; the sweep verifies catalog entries and source provenance.
+- `quarantined`: investigation is complete but provenance is insufficient; hash-pinned entries remain `deferred` and `runtime_available: false`.
+
+The sweep is exhaustive for canonical `tiles/` paths and explicitly adds known topology sheets outside that directory. It is not permission to infer frame coordinates automatically: dimensions and grids are measured facts, while corner polarity, visual radius, wall height, ports, collision, and animation stride remain reviewed semantics.
 
 Production scenes should set `forbid_direct_autotile_frames: true`. With this gate, a placement cannot name any center, edge, outer-corner, or inner-corner frame used by an asset's autotile maps; the material must be authored as a terrain region. Other decorative frames from the same atlas remain valid placements.
 
@@ -301,6 +360,72 @@ The scene renderer transforms each port through anchor, scale, mirror, and rotat
 An asset with `requires_all_ports: true` makes every port on every ID-bearing placement mandatory. Each must occur in exactly one scene connection. This is appropriate for structural sets such as fences: it rejects dangling continuation shafts, reused joins, and a corner frame incorrectly substituted for a capped endpoint.
 
 Ports prove coordinate continuity, not silhouette quality. If a turn requires two straight sprites to overlap, derive a single junction frame and put both outgoing ports on that frame. A fence corner should therefore be one authored L-shaped sprite rather than a horizontal post plus a vertical post occupying the same pixels. Keep exact review crops for every junction orientation used by a production scene.
+
+Derived junctions must compose the minimum necessary source pixels. If the horizontal corner cell already owns the post cap, do not overlay a complete vertical segment: doing so can replace the cap with a shaft or create a false spike above it. Extend only the missing seam pixels, then inspect both the isolated junction and its connection to the following segment.
+
+Connector families additionally declare a canonical branch map:
+
+```yaml
+connector:
+  topology: connector-graph
+  pieces:
+    ns: vertical.middle
+    ew: horizontal.middle
+    es: corner.nw
+```
+
+The key is ordered `n/e/s/w`; each referenced frame must expose the corresponding named ports. Unsupported T or cross masks are omitted and fail resolution rather than being assembled from overlapping posts.
+
+### Height bands and mixed atlases
+
+Cliffs and walls preserve depth as ordered three-part bands:
+
+```yaml
+height:
+  topology: cliff-height
+  rise_cells: 4
+  bands:
+    lip: [lip.left, lip.middle, lip.right]
+    face.upper: [face.upper.left, face.upper.middle, face.upper.right]
+    face.lower: [face.lower.left, face.lower.middle, face.lower.right]
+    foot: [foot.left, foot.middle, foot.right]
+  transitions:
+    north: [lip, face.upper, face.lower, foot]
+```
+
+Mixed sheets use `components` to name independently consumable subsystems such as fills, borders, stairs, doorways, hazards, and decorations. This is an index, not a universal autotile: a host requests a component or combines it with a dedicated `autotile`, `height`, or `connector` asset.
+
+### Semantic assembly arrays
+
+Scenes use the same `cells` and `[x, y, width, height]` `rects` vocabulary for structural systems. The renderer selects concrete frames from catalog metadata:
+
+```yaml
+connectors:
+  - id: garden-fence
+    asset: connector.default.wood
+    origin: [32, 64]
+    rects: [[0, 0, 6, 1], [0, 3, 6, 1], [0, 1, 1, 2], [5, 1, 1, 2]]
+    z: 12
+
+heights:
+  - id: south-ridge
+    asset: height.default.grass-cliff-1
+    direction: north
+    origin: [320, 288]
+    width: 10
+    z: 6
+
+components:
+  - id: courtyard-floor
+    asset: components.default.pavement
+    component: floor
+    rects: [[0, 0, 20, 12]]
+    z: 0
+```
+
+Connector cells derive a canonical neighbor mask, select the corresponding named piece, and synthesize exact port-to-port connections. Unsupported branches and misaligned ports fail rendering. Height regions expand the catalog's ordered transition bands and choose left, middle, and right frames from the authored width. Component fills deterministically vary approved frames; a border component with an `outline` map selects `nw/n/ne/w/e/sw/s/se` from region geometry and omits interior cells. One-cell-thick ambiguous outlines fail rather than layering arbitrary corners.
+
+These arrays describe visual assembly only. Collision, traversal, hazards, and interaction remain separate gameplay metadata.
 
 ## Placement language
 

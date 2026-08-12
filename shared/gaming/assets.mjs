@@ -10,6 +10,31 @@ function isIntegerPair(value) {
   return Array.isArray(value) && value.length === 2 && value.every(Number.isInteger);
 }
 
+function mergeTemplate(base, override) {
+  if (!base || typeof base !== 'object' || Array.isArray(base)) return structuredClone(override);
+  const merged = structuredClone(base);
+  for (const [key, value] of Object.entries(override ?? {})) {
+    if (key === 'extends') continue;
+    merged[key] = value && typeof value === 'object' && !Array.isArray(value) && merged[key] && typeof merged[key] === 'object' && !Array.isArray(merged[key])
+      ? mergeTemplate(merged[key], value)
+      : structuredClone(value);
+  }
+  return merged;
+}
+
+/** Expand finite YAML asset templates without mutating the authored catalog. */
+export function materializeAssetCatalog(catalog) {
+  const templates = catalog?.asset_templates ?? {};
+  const assets = {};
+  for (const [id, asset] of Object.entries(catalog?.assets ?? {})) {
+    if (!asset?.extends) { assets[id] = structuredClone(asset); continue; }
+    const template = templates[asset.extends];
+    if (!template) throw new Error(`asset ${id}: unknown template ${asset.extends}`);
+    assets[id] = mergeTemplate(template, asset);
+  }
+  return { ...catalog, assets };
+}
+
 function resolvePrefabParameters(prefab, supplied = {}) {
   if (!supplied || typeof supplied !== 'object' || Array.isArray(supplied)) throw new Error('prefab params must be an object');
   const definitions = prefab.parameters ?? {};
@@ -27,6 +52,7 @@ function resolvePrefabParameters(prefab, supplied = {}) {
 
 /** Resolve one prefab's finite parameter/select/condition vocabulary to concrete layers. */
 export function resolvePrefabLayers(catalog, prefabId, supplied = {}) {
+  catalog = materializeAssetCatalog(catalog);
   const prefab = catalog?.prefabs?.[prefabId];
   if (!prefab) throw new Error(`unknown prefab: ${prefabId}`);
   const params = resolvePrefabParameters(prefab, supplied);
@@ -51,6 +77,7 @@ export function resolvePrefabLayers(catalog, prefabId, supplied = {}) {
 
 /** Validate reusable prefab composition independently of filesystem access. */
 export function validatePrefabCatalog(catalog) {
+  try { catalog = materializeAssetCatalog(catalog); } catch (error) { return [error.message]; }
   const errors = [];
   const prefabs = catalog?.prefabs ?? {};
   if (!prefabs || typeof prefabs !== 'object' || Array.isArray(prefabs)) return ['prefabs must be an object'];
@@ -113,6 +140,7 @@ export function validatePrefabCatalog(catalog) {
 /** Validates the runtime-safe subset of the YAML asset metadata standard. */
 export function validateAssetCatalog(catalog) {
   const errors = [];
+  try { catalog = materializeAssetCatalog(catalog); } catch (error) { return { valid: false, errors: [error.message] }; }
   if (catalog?.schema_version !== 1) errors.push('schema_version must be 1');
   if (!ASSET_ID.test(String(catalog?.pack?.id || ''))) errors.push('pack.id is invalid');
   const assets = catalog?.assets;
@@ -124,17 +152,20 @@ export function validateAssetCatalog(catalog) {
     if (!APPROVED_LICENSE_SCOPES.has(asset?.license_scope)) errors.push(`${prefix}: approved license_scope is unknown or unsupported`);
     if (!Array.isArray(asset?.tags) || !asset.tags.length || asset.tags.some((tag) => !ASSET_ID.test(String(tag)))) errors.push(`${prefix}: approved asset needs valid tags`);
     if (!['image', 'sprite-sheet', 'tile-sheet', 'ui-sheet', 'effect-sheet'].includes(asset?.kind)) errors.push(`${prefix}: invalid kind`);
+    if (asset?.pixel_density !== undefined && (!Number.isInteger(asset.pixel_density) || asset.pixel_density < 1 || asset.pixel_density > 8)) errors.push(`${prefix}: pixel_density must be an integer from 1 to 8`);
     if (asset?.requires_all_ports !== undefined && typeof asset.requires_all_ports !== 'boolean') errors.push(`${prefix}: requires_all_ports must be boolean`);
     if (!asset?.source || String(asset.source).startsWith('/') || String(asset.source).includes('..')) errors.push(`${prefix}: source must be a relative canonical path`);
     if (!/^[a-f0-9]{64}$/.test(String(asset?.source_sha256 || ''))) errors.push(`${prefix}: source_sha256 must be a sha256`);
     const geometry = asset?.geometry;
     if (!['grid', 'freeform'].includes(geometry?.layout)) { errors.push(`${prefix}: geometry.layout is required`); continue; }
     if (geometry.layout === 'grid' && (!isPair(geometry.cell, { positive: true }) || !isPair(geometry.grid, { positive: true }))) errors.push(`${prefix}: grid geometry needs cell and grid`);
+    if (geometry.layout === 'grid' && Number.isInteger(asset.pixel_density) && geometry.cell?.some((value) => value % asset.pixel_density !== 0)) errors.push(`${prefix}: grid cell must be divisible by pixel_density`);
     for (const [frameId, frame] of Object.entries(asset?.frames ?? {})) {
       if (!ASSET_ID.test(frameId)) errors.push(`${prefix}: invalid frame id ${frameId}`);
       if (Boolean(frame?.cell) === Boolean(frame?.rect)) errors.push(`${prefix}: frame ${frameId} needs exactly one source shape`);
       if (frame?.cell && (geometry.layout !== 'grid' || !isPair(frame.cell))) errors.push(`${prefix}: frame ${frameId} has invalid cell`);
       if (frame?.rect && (geometry.layout !== 'freeform' || !Array.isArray(frame.rect) || frame.rect.length !== 4 || frame.rect.some((part) => !Number.isInteger(part) || part < 0))) errors.push(`${prefix}: frame ${frameId} has invalid rect`);
+      if (frame?.rect && Number.isInteger(asset.pixel_density) && frame.rect.slice(2).some((value) => value % asset.pixel_density !== 0)) errors.push(`${prefix}: frame ${frameId} size must be divisible by pixel_density`);
       if (typeof frame?.anchor === 'string' && !FRAME_ANCHORS.has(frame.anchor)) errors.push(`${prefix}: frame ${frameId} has invalid anchor`);
       if (frame?.allow_edge_contact !== undefined && typeof frame.allow_edge_contact !== 'boolean') errors.push(`${prefix}: frame ${frameId} allow_edge_contact must be boolean`);
     }
@@ -145,7 +176,7 @@ export function validateAssetCatalog(catalog) {
         if (polarity === 'positive' && (!mapping || typeof mapping !== 'object')) errors.push(`${prefix}: autotile needs a positive mapping`);
         if (mapping && typeof mapping === 'object') {
           for (const [mask, frameId] of Object.entries(mapping)) {
-            if (mask !== 'fallback' && !/^(?:n)?(?:e)?(?:s)?(?:w)?$/.test(mask)) errors.push(`${prefix}: autotile ${polarity} mask is invalid: ${mask}`);
+            if (!['fallback', 'isolated'].includes(mask) && !/^(?:n)?(?:e)?(?:s)?(?:w)?$/.test(mask)) errors.push(`${prefix}: autotile ${polarity} mask is invalid: ${mask}`);
             if (!ASSET_ID.test(String(frameId)) || !asset.frames?.[frameId]) errors.push(`${prefix}: autotile ${polarity} references unknown frame: ${frameId}`);
           }
         }
@@ -153,9 +184,66 @@ export function validateAssetCatalog(catalog) {
       if (asset.autotile?.topology === 'cardinal-4+diagonal-corners') {
         const innerCorners = asset.autotile?.inner_corners;
         if (!innerCorners || typeof innerCorners !== 'object' || Array.isArray(innerCorners)) errors.push(`${prefix}: diagonal-corner autotile needs inner_corners`);
-        else for (const [key, frameId] of Object.entries(innerCorners)) {
-          if (!/^(?:nw|ne|se|sw)(?:-(?:nw|ne|se|sw))*$/.test(key)) errors.push(`${prefix}: inside-corner key is invalid: ${key}`);
-          if (!ASSET_ID.test(String(frameId)) || !asset.frames?.[frameId]) errors.push(`${prefix}: inside-corner key references unknown frame: ${frameId}`);
+        const mode = asset.autotile?.inner_corner_mode ?? 'replace';
+        if (!['replace', 'composite'].includes(mode)) errors.push(`${prefix}: inner_corner_mode must be replace or composite`);
+        const maps = innerCorners && (innerCorners.positive || innerCorners.negative)
+          ? Object.entries({ positive: innerCorners.positive, negative: innerCorners.negative }).filter(([, map]) => map !== undefined)
+          : [['shared', innerCorners]];
+        for (const [polarity, map] of maps) {
+          if (!map || typeof map !== 'object' || Array.isArray(map)) { errors.push(`${prefix}: inside-corner ${polarity} map is invalid`); continue; }
+          for (const [key, frameId] of Object.entries(map)) {
+            if (!/^(?:nw|ne|se|sw)(?:-(?:nw|ne|se|sw))*$/.test(key)) errors.push(`${prefix}: inside-corner key is invalid: ${key}`);
+            if (mode === 'composite' && key.includes('-')) errors.push(`${prefix}: composite inside-corner maps use single corner keys, not ${key}`);
+            if (!ASSET_ID.test(String(frameId)) || !asset.frames?.[frameId]) errors.push(`${prefix}: inside-corner key references unknown frame: ${frameId}`);
+          }
+        }
+      }
+      if (asset.autotile?.animation !== undefined) {
+        const animation = asset.autotile.animation;
+        if (animation?.mode !== 'grid-offset') errors.push(`${prefix}: autotile animation mode must be grid-offset`);
+        if (!Number.isInteger(animation?.frames) || animation.frames < 2) errors.push(`${prefix}: autotile animation frames must be at least 2`);
+        if (!Number.isFinite(animation?.fps) || animation.fps <= 0) errors.push(`${prefix}: autotile animation fps must be positive`);
+        if (!isIntegerPair(animation?.phase_stride) || animation.phase_stride.some((value) => value < 0) || animation.phase_stride.every((value) => value === 0)) errors.push(`${prefix}: autotile animation phase_stride must be a non-zero non-negative cell pair`);
+        if (animation?.loop !== undefined && !['loop', 'once', 'ping-pong'].includes(animation.loop)) errors.push(`${prefix}: autotile animation loop is invalid`);
+      }
+    }
+    if (asset?.connector !== undefined) {
+      if (asset.connector?.topology !== 'connector-graph') errors.push(`${prefix}: connector topology must be connector-graph`);
+      if (!asset.connector?.pieces || typeof asset.connector.pieces !== 'object' || Array.isArray(asset.connector.pieces)) errors.push(`${prefix}: connector needs a pieces map`);
+      for (const [mask, descriptor] of Object.entries(asset.connector?.pieces ?? {})) {
+        if (!/^(?:n)?(?:e)?(?:s)?(?:w)?$/.test(mask) && mask !== 'isolated') errors.push(`${prefix}: connector mask is invalid: ${mask}`);
+        const frameId = typeof descriptor === 'string' ? descriptor : descriptor?.frame;
+        if (!ASSET_ID.test(String(frameId)) || !asset.frames?.[frameId]) errors.push(`${prefix}: connector mask ${mask} references unknown frame`);
+        if (descriptor?.rotation !== undefined && ![0, 90, 180, 270].includes(descriptor.rotation)) errors.push(`${prefix}: connector mask ${mask} rotation is invalid`);
+        const requiredPorts = (mask === 'isolated' ? [] : mask.split(''));
+        const portNames = { n: 'north', e: 'east', s: 'south', w: 'west' };
+        for (const direction of requiredPorts) if (!asset.frames?.[frameId]?.ports?.[portNames[direction]]) errors.push(`${prefix}: connector mask ${mask} frame ${frameId} lacks ${portNames[direction]} port`);
+      }
+    }
+    if (asset?.height !== undefined) {
+      if (asset.height?.topology !== 'cliff-height') errors.push(`${prefix}: height topology must be cliff-height`);
+      if (!Number.isInteger(asset.height?.rise_cells) || asset.height.rise_cells < 1) errors.push(`${prefix}: height rise_cells must be positive`);
+      if (!asset.height?.bands || typeof asset.height.bands !== 'object' || Array.isArray(asset.height.bands)) errors.push(`${prefix}: height needs a bands map`);
+      for (const [band, frameIds] of Object.entries(asset.height?.bands ?? {})) {
+        if (!ASSET_ID.test(band) || !Array.isArray(frameIds) || frameIds.length !== 3) errors.push(`${prefix}: height band ${band} must contain left/middle/right frames`);
+        else for (const frameId of frameIds) if (!ASSET_ID.test(String(frameId)) || !asset.frames?.[frameId]) errors.push(`${prefix}: height band ${band} references unknown frame ${frameId}`);
+      }
+      if (!asset.height?.transitions || typeof asset.height.transitions !== 'object' || Array.isArray(asset.height.transitions)) errors.push(`${prefix}: height needs transitions`);
+      for (const [direction, bands] of Object.entries(asset.height?.transitions ?? {})) {
+        if (!['north', 'east', 'south', 'west'].includes(direction) || !Array.isArray(bands) || !bands.length) errors.push(`${prefix}: height transition ${direction} is invalid`);
+        else for (const band of bands) if (!asset.height.bands?.[band]) errors.push(`${prefix}: height transition ${direction} references unknown band ${band}`);
+      }
+    }
+    if (asset?.components !== undefined) {
+      if (!asset.components || typeof asset.components !== 'object' || Array.isArray(asset.components)) errors.push(`${prefix}: components must be a map`);
+      for (const [componentId, component] of Object.entries(asset.components ?? {})) {
+        if (!ASSET_ID.test(componentId) || !['fill', 'border', 'stair', 'doorway', 'hazard', 'transition', 'decoration'].includes(component?.role) || !Array.isArray(component?.frames) || !component.frames.length) errors.push(`${prefix}: component ${componentId} is invalid`);
+        else {
+          for (const frameId of component.frames) if (!ASSET_ID.test(String(frameId)) || !asset.frames?.[frameId]) errors.push(`${prefix}: component ${componentId} references unknown frame ${frameId}`);
+          if (component.outline !== undefined) {
+            const keys = ['nw', 'n', 'ne', 'w', 'e', 'sw', 's', 'se'];
+            if (component.role !== 'border' || !component.outline || typeof component.outline !== 'object' || Array.isArray(component.outline) || keys.some((key) => !asset.frames?.[component.outline[key]])) errors.push(`${prefix}: component ${componentId} outline must map nw/n/ne/w/e/sw/s/se to frames`);
+          }
         }
       }
     }
@@ -166,9 +254,26 @@ export function validateAssetCatalog(catalog) {
 
 /** Returns an approved descriptor only; candidates and deferred assets never reach a renderer. */
 export function resolveApprovedAsset(catalog, id) {
+  catalog = materializeAssetCatalog(catalog);
   if (!ASSET_ID.test(String(id || ''))) return null;
   const asset = catalog?.assets?.[id];
   return asset?.status === 'approved' ? { id, ...asset } : null;
+}
+
+/** Resolve one reviewed connector piece from canonical n/e/s/w branches. */
+export function resolveConnectorFrame(asset, directions) {
+  const ordered = ['n', 'e', 's', 'w'];
+  if (!Array.isArray(directions) || directions.some((direction) => !ordered.includes(direction))) throw new Error('connector directions must contain n/e/s/w');
+  const mask = ordered.filter((direction) => directions.includes(direction)).join('') || 'isolated';
+  const descriptor = asset?.connector?.pieces?.[mask];
+  if (!descriptor) throw new Error(`connector mapping has no piece for mask: ${mask}`);
+  return { mask, ...(typeof descriptor === 'string' ? { frame: descriptor } : descriptor) };
+}
+
+export function resolveHeightTransition(asset, direction) {
+  const bands = asset?.height?.transitions?.[direction];
+  if (!bands) throw new Error(`height mapping has no transition for direction: ${direction}`);
+  return { direction, rise_cells: asset.height.rise_cells, bands: bands.map((band) => ({ id: band, frames: asset.height.bands[band] })) };
 }
 
 /** Stable clockwise neighbour key for terrain auto-tiles: n/e/s/w. */
@@ -194,7 +299,7 @@ export function terrainInnerCornerKeys(cells, [x, y]) {
 }
 
 /** Resolve a reviewed terrain-frame mapping; missing masks must be explicit. */
-export function resolveTerrainFrame({ cells, at, frames, polarity = 'positive' }) {
+export function resolveTerrainFrame({ cells, at, frames, polarity = 'positive', phase = 0 }) {
   if (!['positive', 'negative'].includes(polarity)) throw new Error(`terrain polarity must be positive or negative: ${polarity}`);
   const mask = terrainNeighbourMask(cells, at);
   // A flat map is retained for older curated packs. New packs provide a map for
@@ -202,11 +307,25 @@ export function resolveTerrainFrame({ cells, at, frames, polarity = 'positive' }
   const mapping = frames?.[polarity] ?? frames;
   const frame = mapping?.[mask] ?? mapping?.fallback;
   if (!frame) throw new Error(`terrain mapping has no frame for neighbour mask: ${mask}`);
+  const animation = frames?.animation;
+  if (!Number.isInteger(phase) || phase < 0) throw new Error(`terrain animation phase must be a non-negative integer: ${phase}`);
+  const normalizedPhase = animation ? phase % animation.frames : 0;
+  const frameOffset = animation ? animation.phase_stride.map((value) => value * normalizedPhase) : [0, 0];
   const innerCorners = terrainInnerCornerKeys(cells, at);
-  if (!innerCorners.length) return { mask, frame, inner_corners: [] };
+  if (!innerCorners.length) return { mask, frame, overlays: [], layers: [frame], inner_corners: [], phase: normalizedPhase, frame_offset: frameOffset };
   if (!frames?.inner_corners) throw new Error(`terrain mapping creates unsupported inside corner: ${innerCorners.join('-')}`);
+  const cornerMap = frames.inner_corners[polarity] ?? frames.inner_corners;
+  if (!cornerMap || typeof cornerMap !== 'object') throw new Error(`terrain mapping has no ${polarity} inside-corner map`);
+  if ((frames.inner_corner_mode ?? 'replace') === 'composite') {
+    const overlays = innerCorners.map((corner) => {
+      const overlay = cornerMap[corner];
+      if (!overlay) throw new Error(`terrain mapping has no frame for inside-corner key: ${corner}`);
+      return overlay;
+    });
+    return { mask, frame, overlays, layers: [frame, ...overlays], inner_corners: innerCorners, phase: normalizedPhase, frame_offset: frameOffset };
+  }
   const innerKey = innerCorners.join('-');
-  const innerFrame = frames.inner_corners[innerKey];
+  const innerFrame = cornerMap[innerKey];
   if (!innerFrame) throw new Error(`terrain mapping has no frame for inside-corner key: ${innerKey}`);
-  return { mask, frame: innerFrame, inner_corners: innerCorners };
+  return { mask, frame: innerFrame, overlays: [], layers: [innerFrame], inner_corners: innerCorners, phase: normalizedPhase, frame_offset: frameOffset };
 }

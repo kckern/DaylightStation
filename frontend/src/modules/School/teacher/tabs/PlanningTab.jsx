@@ -10,6 +10,7 @@ import PeriodsTimeline from '../panels/PeriodsTimeline.jsx';
 import CurriculumBrowser from '../panels/CurriculumBrowser.jsx';
 import MilestonesPanel from '../panels/MilestonesPanel.jsx';
 import EnrichmentPanel from '../panels/EnrichmentPanel.jsx';
+import PianoProgramsPanel from '../panels/PianoProgramsPanel.jsx';
 
 export default function PlanningTab({ learnerId, kids = [] }) {
   const learnerName = kids.find((k) => k.id === learnerId)?.name ?? null;
@@ -18,6 +19,7 @@ export default function PlanningTab({ learnerId, kids = [] }) {
       {learnerId ? (
         <>
           <AssignmentsView learnerId={learnerId} learnerName={learnerName} />
+          <PianoProgramsPanel learnerId={learnerId} />
           <MilestonesPanel learnerId={learnerId} />
         </>
       ) : (
