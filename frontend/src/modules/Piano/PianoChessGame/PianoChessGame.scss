@@ -624,10 +624,16 @@
 /* ---- staff rim labels (the reading vocabulary) --------------------------- */
 
 .chess-staff-label {
+  /* Sized off the axis strip, NEVER off the square. At width:100% the SVG's
+     intrinsic ratio made each label as tall as a square was wide, which grew
+     the rim by ~90px and drove the board down through the keyboard. The strip
+     is a fixed 2.5rem in the board's own size calculation, so the label has to
+     fit inside it whatever the board's scale. */
   display: block;
-  width: 100%;
-  height: auto;
+  width: auto;
+  height: 2rem;
   max-height: 100%;
+  margin: 0 auto;
   overflow: visible;
 }
 

@@ -13,7 +13,10 @@
  * live chord map off the board's own rim (the map is seeded per game and can
  * re-deal, so it must be read, never assumed), plays the chord of a movable
  * White piece twice to pick it up, reads a destination badge, plays that
- * chord once, and asserts the move landed in the move list.
+ * chord once, and asserts the move landed ON THE BOARD — the piece is gone from
+ * the square it left and both ends wear the last-move outline. The chrome no
+ * longer keeps a move list, and reading one would have been the weaker check
+ * anyway: a list can be written by code that never moved a piece.
  *
  * Any failure exits non-zero naming the step that failed.
  */
@@ -331,8 +334,8 @@ export async function verifyPianoChess(options, { onProgress = () => {} } = {}) 
     });
 
     const source = await step('pick-piece', 'choose a movable White piece', async () => {
-      const emptyLog = await countSelector(page, '.piano-chess__move--empty');
-      if (emptyLog !== 1) throw new Error('the move list is not empty — the game is not fresh');
+      const played = await countSelector(page, '.chess-board__square--last-move');
+      if (played !== 0) throw new Error('the board already shows a last move — the game is not fresh');
       const picked = pickSource(INITIAL_FEN);
       const holder = await page.locator(`.chess-board__square[data-square="${picked.from}"]`)
         .getAttribute('aria-label');
@@ -373,13 +376,20 @@ export async function verifyPianoChess(options, { onProgress = () => {} } = {}) 
       await bridge.playChord(chordMidiNotes(badge.symbol));
     });
 
-    report.move = await step('move-list', 'the move appears in the move list', async () => {
-      await waitForPage(page, 'move-list',
-        'the move list is still empty — the move never happened',
-        async () => await countSelector(page, '.piano-chess__move:not(.piano-chess__move--empty)') >= 1,
+    report.move = await step('board', 'the piece actually moved on the board', async () => {
+      await waitForPage(page, 'board',
+        `no last-move outline appeared — ${source.from} to ${badge.square} never happened`,
+        async () => await countSelector(page, '.chess-board__square--last-move') >= 2,
         5_000);
-      const text = (await page.locator('.piano-chess__move').first().innerText()).replace(/\s+/g, ' ').trim();
-      return { entry: text };
+      const outlined = await page.locator('.chess-board__square--last-move')
+        .evaluateAll((nodes) => nodes.map((node) => node.dataset.square).sort());
+      if (!outlined.includes(source.from) || !outlined.includes(badge.square)) {
+        throw new Error(`the outlined move is ${outlined.join('-')}, not ${source.from}-${badge.square}`);
+      }
+      // The piece has to be GONE from where it started, not merely marked.
+      const vacated = await page.locator(`.chess-board__square[data-square="${source.from}"] .chess-board__piece`).count();
+      if (vacated !== 0) throw new Error(`${source.from} still holds a piece — the board was marked but nothing moved`);
+      return { entry: `${source.symbol} -> ${badge.symbol} ${badge.square}`, outlined };
     });
 
     report.valid = true;
