@@ -41,15 +41,23 @@ import './WorkoutBuilder.scss';
  * keyboard for free, and they need no drop-target hit-testing to stay correct while the
  * list is moving. A plan is a handful of groups, so "two taps" is the whole cost.
  *
- * WHAT RUN RECEIVES (the loose end)
- * ---------------------------------
- * `onStartRun` is handed the authored plan plus the corpus display records — NOT a
- * flat step list. Expansion belongs to the domain module, which the frontend cannot
- * import (no alias resolves `backend/src`, and a second copy is precisely the
- * duplicated-ordering bug that module exists to prevent), and no endpoint expands a
- * workout yet. WorkoutRunner already flagged this: until the run path supplies `steps`,
- * Run renders its empty-plan screen. That stays a missing SERVER route, not a
- * re-implementation here.
+ * WHAT RUN RECEIVES (and why Start is a round trip)
+ * -------------------------------------------------
+ * `onStartRun` is handed a FLAT, already-ordered step list fetched from the server, plus
+ * the corpus display records the runner labels those steps with. Nothing is flattened
+ * here: expansion belongs to `expandWorkout` in the domain module, which the frontend
+ * cannot import (no alias resolves `backend/src`) and must not copy — a second
+ * implementation is precisely the duplicated-ordering bug that module exists to prevent.
+ * So Start POSTs the authored plan to `POST /workouts/run` and waits for the expansion.
+ *
+ * The DRAFT endpoint, not `GET /workouts/:id/run`: Start is its own target beside Save,
+ * so the plan in hand normally has no id, and even after a save the person may have kept
+ * editing. The plan they are about to perform is the one on this screen. Nothing is
+ * persisted by starting a run.
+ *
+ * A failed round trip HOLDS on this screen with an error rather than moving to a runner
+ * that would show its empty-plan screen — a blank run in the middle of a session is
+ * worse than a Start button that says why it did not work and can be tapped again.
  *
  * INTERACTION
  * -----------
@@ -58,6 +66,13 @@ import './WorkoutBuilder.scss';
  */
 
 export const WORKOUTS_PATH = 'api/v1/fitness/workouts';
+
+/**
+ * Where a plan is turned into a run. The server expands the authored groups into the
+ * runner's ordered step list and joins each slug against the exercise corpus; see the
+ * round-trip note in the docblock above.
+ */
+export const RUN_PATH = 'api/v1/fitness/workouts/run';
 
 /** Authoring defaults. Straight sets of 10 with a minute's rest is the common case. */
 export const DEFAULT_SETS = 3;
@@ -246,6 +261,33 @@ export function parseSaveError(err) {
   return { message, unknownSlugs: [], issues: [] };
 }
 
+/**
+ * Turn the server's `slug -> { name, image }` lookup into the display records the
+ * container indexes for the runner.
+ *
+ * `fallbacks` are the plan's own member rows, carrying the name and image Browse showed
+ * when the exercise was picked. They fill in any slug the corpus no longer resolves (the
+ * server reports those in `missingSlugs`): the corpus can be rebuilt between picking an
+ * exercise and running it, and showing the name the user chose beats showing a humanised
+ * slug. The server's answer always wins where it has one.
+ */
+export function toDisplayList(lookup, fallbacks = []) {
+  const out = [];
+  const seen = new Set();
+  const entries = lookup && typeof lookup === 'object' ? Object.entries(lookup) : [];
+  entries.forEach(([slug, record]) => {
+    if (!slug || seen.has(slug)) return;
+    seen.add(slug);
+    out.push({ slug, name: record?.name ?? null, image: record?.image ?? null });
+  });
+  (Array.isArray(fallbacks) ? fallbacks : []).forEach((member) => {
+    if (!member?.slug || seen.has(member.slug)) return;
+    seen.add(member.slug);
+    out.push({ slug: member.slug, name: member.name ?? null, image: member.image ?? null });
+  });
+  return out;
+}
+
 /** Enter/Space keep every pointer target reachable from a keyboard. */
 function activationKey(event) {
   return event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar';
@@ -299,6 +341,10 @@ export default function WorkoutBuilder({ exercises = [], onStartRun = null, onCa
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
   const [savedAt, setSavedAt] = useState(null);
+  // Start is a server round trip (expansion + corpus join), so it has the same
+  // in-flight/failed states Save does.
+  const [starting, setStarting] = useState(false);
+  const [runError, setRunError] = useState(null);
 
   // Mirrors state for handlers that LOG the transition they make. Reading state inside a
   // setState updater is unsafe (React may invoke updaters twice), so handlers compute the
@@ -310,6 +356,7 @@ export default function WorkoutBuilder({ exercises = [], onStartRun = null, onCa
   const savedIdRef = useRef(savedId);
   savedIdRef.current = savedId;
   const savingRef = useRef(false);
+  const startingRef = useRef(false);
 
   const onStartRunRef = useRef(onStartRun);
   onStartRunRef.current = onStartRun;
@@ -478,26 +525,53 @@ export default function WorkoutBuilder({ exercises = [], onStartRun = null, onCa
     }
   }, [logger]);
 
-  const startRun = useCallback(() => {
+  const startRun = useCallback(async () => {
+    if (startingRef.current) return;
     const current = groupsRef.current;
     const payload = toPayload({ id: savedIdRef.current, title: titleRef.current, groups: current });
-    // Display records for the runner's slug -> { name, image } lookup, in plan order.
-    const display = [];
-    const seen = new Set();
-    current.forEach((g) => g.exercises.forEach((m) => {
-      if (seen.has(m.slug)) return;
-      seen.add(m.slug);
-      display.push({ slug: m.slug, name: m.name, image: m.image });
-    }));
-    logger.info('start-run', {
+    // The plan's own member rows, as the display fallback for a slug the corpus no longer
+    // resolves. In plan order, deduped by `toDisplayList`.
+    const members = [];
+    current.forEach((g) => g.exercises.forEach((m) => members.push({
+      slug: m.slug, name: m.name, image: m.image
+    })));
+
+    startingRef.current = true;
+    setStarting(true);
+    setRunError(null);
+    logger.info('start-run-request', {
       id: payload.id ?? null,
       groups: payload.groups.length,
-      workSteps: totalWorkSteps(current),
-      // No expansion endpoint yet — Run will show its empty-plan screen. Logged so the
-      // gap is visible in the field rather than looking like a builder bug.
-      hasSteps: false
+      workSteps: totalWorkSteps(current)
     });
-    onStartRunRef.current?.({ ...payload, exercises: display });
+
+    try {
+      // The server expands and joins — see the round-trip note in the docblock.
+      const res = await DaylightAPI(RUN_PATH, payload, 'POST');
+      const steps = Array.isArray(res?.steps) ? res.steps : [];
+      const missingSlugs = Array.isArray(res?.missingSlugs) ? res.missingSlugs : [];
+      logger.info('start-run', {
+        id: payload.id ?? null,
+        groups: payload.groups.length,
+        workSteps: totalWorkSteps(current),
+        steps: steps.length,
+        hasSteps: steps.length > 0,
+        missingSlugs
+      });
+      onStartRunRef.current?.({
+        ...payload,
+        steps,
+        exercises: toDisplayList(res?.exercises, members)
+      });
+    } catch (err) {
+      // Hold here rather than moving to a runner with nothing in it.
+      const parsed = parseSaveError(err);
+      setRunError(parsed);
+      logger.error('start-run-failed', { id: payload.id ?? null, error: parsed.message });
+    } finally {
+      startingRef.current = false;
+      setStarting(false);
+    }
   }, [logger]);
 
   const cancel = useCallback(() => {
@@ -540,9 +614,10 @@ export default function WorkoutBuilder({ exercises = [], onStartRun = null, onCa
         />
         <TapTarget
           testId="fitness-instruction-to-run"
-          label="Start workout"
+          label={starting ? 'Starting…' : 'Start workout'}
           sub={`${workSteps} ${workSteps === 1 ? 'set' : 'sets'}`}
           variant="primary"
+          disabled={starting}
           onActivate={startRun}
         />
         <TapTarget
@@ -567,6 +642,13 @@ export default function WorkoutBuilder({ exercises = [], onStartRun = null, onCa
           ) : (
             <p className="workout-builder__notice-body">{saveError.message}</p>
           )}
+        </section>
+      )}
+
+      {runError && (
+        <section className="workout-builder__notice workout-builder__notice--error" data-testid="workout-builder-run-error">
+          <div className="workout-builder__notice-title">Could not start the workout</div>
+          <p className="workout-builder__notice-body">{runError.message}</p>
         </section>
       )}
 

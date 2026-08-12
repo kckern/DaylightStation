@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/react';
 import WorkoutBuilder, {
   WORKOUTS_PATH,
+  RUN_PATH,
+  toDisplayList,
   clamp,
   makeGroup,
   effectivePasses,
@@ -65,11 +67,38 @@ const server = {
   requests: [],
   /** Set to a message to make POST fail without a JSON body (503, socket drop, …). */
   hardFail: null,
+  /** Same, for the run endpoint only — a save can succeed while Start cannot. */
+  runFail: null,
   nextId: 1
+};
+
+/** Display records the corpus would return, keyed by slug. Not every slug has one. */
+const CORPUS_DISPLAY = {
+  'push-up': { name: 'Push Up', image: 'media/library/exercise/assets/pushup.gif' },
+  'barbell-row': { name: 'Barbell Row', image: 'media/library/exercise/assets/row.gif' },
+  'barbell-squat': { name: 'Barbell Squat', image: 'media/library/exercise/assets/squat.gif' },
+  plank: { name: 'Plank', image: 'media/library/exercise/assets/plank.gif' }
 };
 
 const apiHandler = vi.fn(async (path, data, method) => {
   server.requests.push({ path, data, method });
+
+  // POST /workouts/run — the expansion + corpus join. The REAL `expandWorkout` is used
+  // here (see the import note above), so the step list this fake serves is the one the
+  // live server would, and a builder that mangles the payload shows up as wrong steps.
+  if (path === RUN_PATH && method === 'POST') {
+    if (server.runFail) throw new Error(server.runFail);
+    const steps = expandWorkout(data);
+    const exercises = {};
+    const missingSlugs = [];
+    steps.forEach((step) => [step.slug, step.afterSlug, step.nextSlug].forEach((slug) => {
+      if (!slug || exercises[slug] || missingSlugs.includes(slug)) return;
+      if (CORPUS_DISPLAY[slug]) exercises[slug] = { ...CORPUS_DISPLAY[slug] };
+      else missingSlugs.push(slug);
+    }));
+    return { ok: true, workout: { id: data.id ?? null, title: data.title ?? null }, steps, exercises, missingSlugs };
+  }
+
   if (path !== WORKOUTS_PATH || method !== 'POST') throw new Error(`unexpected ${method} ${path}`);
   if (server.hardFail) throw new Error(server.hardFail);
 
@@ -140,9 +169,17 @@ beforeEach(() => {
   server.saved = new Map();
   server.requests = [];
   server.hardFail = null;
+  server.runFail = null;
   server.nextId = 1;
   apiHandler.mockClear();
 });
+
+/** Tap Start and wait for the handover — Start is a server round trip now. */
+const startRun = async (view, onStartRun) => {
+  tap(view, 'fitness-instruction-to-run');
+  await waitFor(() => expect(onStartRun).toHaveBeenCalled());
+  return onStartRun.mock.calls[0][0];
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 describe('plan helpers', () => {
@@ -642,17 +679,63 @@ describe('WorkoutBuilder — saving', () => {
   });
 });
 
+describe('toDisplayList', () => {
+  it('turns the server lookup into display records', () => {
+    expect(toDisplayList({ 'push-up': { name: 'Push Up', image: 'a.gif' } }))
+      .toEqual([{ slug: 'push-up', name: 'Push Up', image: 'a.gif' }]);
+  });
+
+  it('appends a fallback only for a slug the server did not resolve', () => {
+    const lookup = { 'push-up': { name: 'Push Up', image: 'a.gif' } };
+    const fallbacks = [
+      { slug: 'push-up', name: 'STALE', image: 'stale.gif' },
+      { slug: 'ghost', name: 'Ghost Press', image: 'g.gif' }
+    ];
+    expect(toDisplayList(lookup, fallbacks)).toEqual([
+      { slug: 'push-up', name: 'Push Up', image: 'a.gif' },
+      { slug: 'ghost', name: 'Ghost Press', image: 'g.gif' }
+    ]);
+  });
+
+  it('degrades to the fallbacks when the server sent no lookup at all', () => {
+    expect(toDisplayList(null, [{ slug: 'ghost' }]))
+      .toEqual([{ slug: 'ghost', name: null, image: null }]);
+    expect(toDisplayList(undefined)).toEqual([]);
+  });
+});
+
 describe('WorkoutBuilder — handing the plan to Run', () => {
-  it('gives the runner the plan and the display records it needs, in plan order', () => {
+  it('gives the runner the SERVER-expanded step list, not the authored groups', async () => {
     const onStartRun = vi.fn();
     const view = mount({ onStartRun });
-    tap(view, 'workout-group-0-merge');
-    tap(view, 'fitness-instruction-to-run');
+    tap(view, 'workout-group-0-merge'); // push-up + barbell-row become a 3-round superset
+    const handed = await startRun(view, onStartRun);
 
-    expect(onStartRun).toHaveBeenCalledTimes(1);
-    const handed = onStartRun.mock.calls[0][0];
+    // The authored plan still travels (Run logs it against the workout), but what the
+    // runner walks is `steps` — flat, ordered, and produced by the domain server-side.
     expect(handed.groups[0]).toMatchObject({ rounds: 3 });
-    expect(handed.groups[0].exercises.map((e) => e.slug)).toEqual(['push-up', 'barbell-row']);
+    expect(lastPost()).toMatchObject({ path: RUN_PATH, method: 'POST' });
+    const work = handed.steps.filter((s) => s.kind === 'work');
+    expect(work.map((s) => s.slug)).toEqual([
+      'push-up', 'barbell-row',
+      'push-up', 'barbell-row',
+      'push-up', 'barbell-row',
+      'barbell-squat', 'barbell-squat', 'barbell-squat'
+    ]);
+    // The one thing a client-side copy of the expansion would get wrong: a superset
+    // ALTERNATES, it does not block.
+    expect(work.slice(0, 6).every((s) => s.groupKind === 'superset')).toBe(true);
+    // The default 60s rest is authored, so rest steps are interleaved and the trailing
+    // one is dropped: 9 work + 8 rest.
+    expect(handed.steps).toHaveLength(17);
+    expect(handed.steps.at(-1).kind).toBe('work');
+  });
+
+  it('gives the runner the display records the server joined against the corpus', async () => {
+    const onStartRun = vi.fn();
+    const view = mount({ onStartRun });
+    const handed = await startRun(view, onStartRun);
+
     expect(handed.exercises).toEqual([
       { slug: 'push-up', name: 'Push Up', image: 'media/library/exercise/assets/pushup.gif' },
       { slug: 'barbell-row', name: 'Barbell Row', image: 'media/library/exercise/assets/row.gif' },
@@ -660,20 +743,75 @@ describe('WorkoutBuilder — handing the plan to Run', () => {
     ]);
   });
 
+  it('falls back to the picked record for a slug the corpus no longer knows', async () => {
+    const onStartRun = vi.fn();
+    const view = render(<WorkoutBuilder onStartRun={onStartRun} exercises={[
+      PUSH,
+      { slug: 'retired-machine-fly', name: 'Machine Fly', image: 'media/library/exercise/assets/fly.gif' }
+    ]} />);
+    const handed = await startRun(view, onStartRun);
+
+    expect(handed.steps.some((s) => s.slug === 'retired-machine-fly')).toBe(true);
+    expect(handed.exercises).toContainEqual({
+      slug: 'retired-machine-fly', name: 'Machine Fly', image: 'media/library/exercise/assets/fly.gif'
+    });
+    expect(logsFor('info', 'start-run')[0].data.missingSlugs).toEqual(['retired-machine-fly']);
+  });
+
+  it('starts an UNSAVED plan — Start does not require Save', async () => {
+    const onStartRun = vi.fn();
+    const view = mount({ onStartRun });
+    const handed = await startRun(view, onStartRun);
+
+    expect(handed.id).toBeUndefined();
+    expect(handed.steps.filter((s) => s.kind === 'work')).toHaveLength(9);
+    // Nothing was written to the shelf on the way.
+    expect(server.requests.every((r) => r.path === RUN_PATH)).toBe(true);
+    expect(server.saved.size).toBe(0);
+  });
+
   it('carries the saved id across so Run knows which workout it is walking', async () => {
     const onStartRun = vi.fn();
     const view = mount({ onStartRun });
     tap(view, 'workout-builder-save');
     await view.findByTestId('workout-builder-saved');
-    tap(view, 'fitness-instruction-to-run');
-    expect(onStartRun.mock.calls[0][0].id).toBe('workout-1');
+    const handed = await startRun(view, onStartRun);
+    expect(handed.id).toBe('workout-1');
+    expect(lastPost().data.id).toBe('workout-1');
   });
 
-  it('logs the handover, including that no expanded step list exists yet', () => {
-    const view = mount({ onStartRun: vi.fn() });
-    tap(view, 'fitness-instruction-to-run');
+  it('logs the handover with the step count it actually received', async () => {
+    const onStartRun = vi.fn();
+    const view = mount({ onStartRun });
+    await startRun(view, onStartRun);
     expect(logsFor('info', 'start-run')[0].data)
-      .toMatchObject({ groups: 3, workSteps: 9, hasSteps: false });
+      .toMatchObject({ groups: 3, workSteps: 9, steps: 17, hasSteps: true });
+  });
+
+  it('holds on the builder with an error when the expansion cannot be fetched', async () => {
+    server.runFail = 'HTTP 503: Service Unavailable - workouts unavailable';
+    const onStartRun = vi.fn();
+    const view = mount({ onStartRun });
+    tap(view, 'fitness-instruction-to-run');
+
+    await view.findByTestId('workout-builder-run-error');
+    // Moving to a runner with nothing in it would show "Nothing to run" mid-session.
+    expect(onStartRun).not.toHaveBeenCalled();
+    expect(view.getByTestId('workout-builder-run-error').textContent).toContain('Service Unavailable');
+    expect(logsFor('error', 'start-run-failed')).toHaveLength(1);
+
+    // And it is retryable: the next tap goes through.
+    server.runFail = null;
+    await startRun(view, onStartRun);
+  });
+
+  it('does not fire a second run request while one is in flight', async () => {
+    const onStartRun = vi.fn();
+    const view = mount({ onStartRun });
+    tap(view, 'fitness-instruction-to-run');
+    tap(view, 'fitness-instruction-to-run');
+    await waitFor(() => expect(onStartRun).toHaveBeenCalled());
+    expect(server.requests.filter((r) => r.path === RUN_PATH)).toHaveLength(1);
   });
 
   it('backs out to Browse', () => {
@@ -698,13 +836,13 @@ describe('WorkoutBuilder — touchscreen interaction contract', () => {
       .toEqual(['push-up', 'barbell-row', 'barbell-squat']);
   });
 
-  it('activates on Enter and on Space', () => {
+  it('activates on Enter and on Space', async () => {
     const onStartRun = vi.fn();
     const onCancel = vi.fn();
     const view = mount({ onStartRun, onCancel });
     fireEvent.keyDown(view.getByTestId('fitness-instruction-to-run'), { key: 'Enter' });
     fireEvent.keyDown(view.getByTestId('fitness-instruction-build-back'), { key: ' ' });
-    expect(onStartRun).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(onStartRun).toHaveBeenCalledTimes(1));
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
 

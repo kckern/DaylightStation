@@ -38,6 +38,8 @@
  * - GET  /api/fitness/workouts - List household workout summaries
  * - GET  /api/fitness/workouts/:id - Get one full workout
  * - POST /api/fitness/workouts - Create or update a workout (400 names unknown slugs)
+ * - GET  /api/fitness/workouts/:id/run - Expanded steps + slug->display lookup for Run
+ * - POST /api/fitness/workouts/run - The same, for an unsaved draft in the body
  * - DELETE /api/fitness/workouts/:id - Delete a workout
  * - GET  /api/fitness/exercises - Browse the exercise corpus (facets: group, muscle, equipment, q)
  * - GET  /api/fitness/exercises/taxonomy - Facet rails: groups, muscles, equipment
@@ -85,6 +87,7 @@ const COMMIT_PENDING_MAX_AGE_MS = 120000; // 2 min
  * @param {Object} [config.saveWorkout] - SaveWorkout use case (validates slugs before persisting)
  * @param {Object} [config.logStrengthRun] - LogStrengthRun use case (writes the session's strength block)
  * @param {Object} [config.browseExerciseLibrary] - BrowseExerciseLibrary use case (the /exercises routes)
+ * @param {Object} [config.prepareWorkoutRun] - PrepareWorkoutRun use case (the run routes)
  * @param {Object} config.logger - Logger instance
  * @returns {express.Router}
  */
@@ -141,6 +144,10 @@ export function createFitnessRouter(config) {
     // Browse (read side of the exercise corpus). Wraps the ONE library instance the
     // composition root loaded; absent, the /exercises routes report 503.
     browseExerciseLibrary = null,
+    // Build -> Run: expands an authored workout into the runner's flat step list and
+    // joins it against the corpus. Needs BOTH the workout repository and the library, so
+    // it is constructed at the composition root; absent, the run routes report 503.
+    prepareWorkoutRun = null,
     logger = console
   } = config;
 
@@ -1432,6 +1439,55 @@ export function createFitnessRouter(config) {
     return res.status(result.created ? 201 : 200).json({
       id: result.id, created: result.created, createdAt: result.createdAt, updatedAt: result.updatedAt,
     });
+  }));
+
+  /**
+   * GET /api/fitness/workouts/:id/run - Everything Run needs for a SAVED workout.
+   *
+   * `{ workout: {id, title}, steps, exercises, missingSlugs }` — the flat ordered step
+   * list `expandWorkout` produces, plus the slug -> { name, image } lookup joined against
+   * the corpus server-side. The client renders it; it never re-derives the ordering (see
+   * PrepareWorkoutRun, and the domain module's own docblock).
+   *
+   * A GET on the workout's own path because that is what it is: a derived READ of one
+   * stored workout, idempotent, deep-linkable, and reachable from the picker without
+   * passing through Build.
+   */
+  router.get('/workouts/:id/run', asyncHandler(async (req, res) => {
+    if (!prepareWorkoutRun) return res.status(503).json({ error: 'workouts unavailable' });
+    const householdId = req.query.household || defaultHouseholdId;
+    const result = prepareWorkoutRun.execute({ workoutId: req.params.id, householdId });
+    if (!result.ok) {
+      return res.status(result.reason === 'unknown_workout' ? 404 : 400)
+        .json({ error: result.error, reason: result.reason });
+    }
+    return res.json(result);
+  }));
+
+  /**
+   * POST /api/fitness/workouts/run - The same payload for an UNSAVED draft.
+   *
+   * Body is the authored workout, or `{ workout }`. Build's "Start workout" is its own
+   * target beside "Save", so a plan assembled at the rack normally has no id yet; making
+   * Run depend on a save would either break that gesture or force an implicit save that
+   * litters the shared shelf with plans nobody chose to keep. Nothing is persisted here.
+   *
+   * A POST rather than a GET because the workout travels in the body — and because this
+   * one is not addressable: there is no resource to name.
+   *
+   * Unknown slugs are NOT rejected here (that is `POST /workouts`'s job, at authoring
+   * time). A slug the corpus has since dropped degrades: the step still runs, the lookup
+   * carries no entry, and the slug is named in `missingSlugs`.
+   */
+  router.post('/workouts/run', asyncHandler(async (req, res) => {
+    if (!prepareWorkoutRun) return res.status(503).json({ error: 'workouts unavailable' });
+    const householdId = req.query.household || defaultHouseholdId;
+    const body = req.body || {};
+    const result = prepareWorkoutRun.execute({ workout: body.workout ?? body, householdId });
+    if (!result.ok) {
+      return res.status(400).json({ error: result.error, reason: result.reason });
+    }
+    return res.json(result);
   }));
 
   /**

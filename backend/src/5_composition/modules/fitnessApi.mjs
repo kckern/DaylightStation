@@ -22,6 +22,7 @@ import { ResumeStrategy } from '#apps/fitness/suggestions/ResumeStrategy.mjs';
 import { BrowseExerciseLibrary } from '#apps/fitness/usecases/BrowseExerciseLibrary.mjs';
 import { GenerateSessionTimelapse } from '#apps/fitness/usecases/GenerateSessionTimelapse.mjs';
 import { LogStrengthRun } from '#apps/fitness/usecases/LogStrengthRun.mjs';
+import { PrepareWorkoutRun } from '#apps/fitness/usecases/PrepareWorkoutRun.mjs';
 import { QuerySessions } from '#apps/fitness/usecases/QuerySessions.mjs';
 import { RecapSweep } from '#apps/fitness/usecases/RecapSweep.mjs';
 import { TrashRetentionSweep } from '#apps/fitness/usecases/TrashRetentionSweep.mjs';
@@ -222,6 +223,16 @@ export function createFitnessApiRouter(config) {
     })
     : null;
 
+  // Build -> Run. The runner consumes a FLAT ordered step list joined against the corpus,
+  // and only this layer can produce one: the domain owns the ordering but has no corpus
+  // access, the repository has no corpus access either, and the frontend cannot import
+  // the domain at all. Needs BOTH the shelf and the SAME library instance the browse and
+  // save paths use — absent either, the run routes report 503 rather than serving a plan
+  // with no exercise names on it.
+  const prepareWorkoutRun = workoutRepository && exerciseLibrary
+    ? new PrepareWorkoutRun({ workoutRepository, exerciseLibrary, logger })
+    : null;
+
   // Filesystem access the router used to do inline now lives behind these
   // injected providers (keeps the API layer free of fs/path).
   const menuMusicProvider = () => {
@@ -284,6 +295,7 @@ export function createFitnessApiRouter(config) {
     saveWorkout,
     logStrengthRun,
     browseExerciseLibrary,
+    prepareWorkoutRun,
     logger
   });
 
