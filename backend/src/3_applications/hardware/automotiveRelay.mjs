@@ -10,40 +10,69 @@
 //      so any app/display can subscribe live. `trip` messages arrive chunked
 //      (`seq`/`final`) and are reassembled per (vehicle, trip_id).
 //
-//   2) PERSIST (bus-side): snapshots (throttled), events, and trip summaries
-//      append to {dataDir}/{persistence.dir}/{id}/{YYYY-MM-DD}.yml; each
-//      reassembled trip writes {.../}{id}/trips/{trip_id}.yml in full. After a
-//      trip persists, the device gets {"type":"trip-ack"} via sendToClient so
-//      it deletes its buffered copy — the ack MUST only follow a durable write.
+//   2) PERSIST (bus-side): snapshots (throttled) and events append to
+//      {dataDir}/{persistence.dir}/{id}/{YYYY-MM-DD}.yml, keyed by the
+//      HOUSEHOLD-LOCAL day — a UTC key filed every evening drive under
+//      tomorrow and split trips that crossed 00:00Z. Each reassembled trip
+//      writes {.../}{id}/trips/{YYYY-MM}/{YYYY-MM-DD}_{HHMM}_{trip_id}.yml.
+//      After a trip persists, the device gets {"type":"trip-ack"} via
+//      sendToClient so it deletes its buffered copy — the ack MUST only follow
+//      a durable write, and is also sent for trips dropped below the sample
+//      floor (otherwise the device retries the same blip forever).
 //
-// Trip timestamps: trips that started away from home carry boot-relative times
-// (`time_approx`). When the upload happens in the same power session
-// (upload_boot_ms ≥ ended_boot_ms), wall-clock start/end are rebased from
-// upload_epoch_ms; otherwise times stay boot-relative and time_approx remains.
+// Trip file format: samples are keyed objects, one per line, and a reading that
+// was never taken is an ABSENT KEY rather than a sentinel. The firmware reports
+// `rpm: 0` / `coolant_c: 0` when no ECU session exists, `fuel_pct: -1` for no
+// reading, and `lat/lon: 0` before GNSS lock — persisting those verbatim reads
+// as "engine idling at the Gulf of Guinea". `meta` carries a derived summary
+// (duration, distance, max speed, gps fix rate, ecu) so a trip list or monthly
+// rollup never has to parse the sample block.
+//
+// Trip timestamps: trips that started away from home carry boot-relative times.
+// When the upload happens in the same power session (upload_boot_ms ≥
+// ended_boot_ms), wall-clock start/end are rebased from upload_epoch_ms;
+// otherwise times stay unrecoverable and `time_source: boot-relative`.
 //
 // Config-driven from the household SSOT (config/vehicles.yml), passed as
 // `config`. Design: docs/_wip/plans/2026-07-14-obd-relay-design.md
 import { promises as fs } from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
+import { formatIsoLocal, formatLocalTimestamp, getDateInTimezone } from '#domains/core/utils/time.mjs';
+import { DEFAULT_TIMEZONE } from '#domains/core/utils/timezone.mjs';
 
 const RELAY_SOURCE = 'obd-relay';
 const DEFAULT_TOPIC = 'automotive';
 const DEFAULT_DIR = 'household/history/automotive'; // relative to dataDir
 const DEFAULT_SNAPSHOT_MIN_S = 60;
+const DEFAULT_MIN_TRIP_SAMPLES = 0; // opt-in; 0 keeps every trip
 const CHUNK_TTL_MS = 10 * 60 * 1000; // drop stale partial trip reassemblies
+const DEFAULT_SCHEMA = 't,lat,lon,speed_kph,rpm,coolant_c,fuel_pct,batt_v';
+
+/** Units for every field the firmware can report, emitted per trip for the keys present. */
+const UNITS = {
+  t: 's', lat: 'deg', lon: 'deg', speed_kph: 'km/h',
+  rpm: 'rpm', coolant_c: 'C', fuel_pct: '%', batt_v: 'V',
+};
+
+/** Fields that only carry meaning when an engine-bus session was established. */
+const ECU_FIELDS = ['rpm', 'coolant_c', 'fuel_pct'];
 
 /**
  * @param {object}   deps
  * @param {object}   deps.eventBus  IEventBus (WebSocketEventBus) — needs
  *                                  onClientMessage + subscribe + broadcast + sendToClient
  * @param {string}   deps.dataDir   resolved data dir (configService.getDataDir())
- * @param {object}   [deps.config]  parsed config/vehicles.yml — { persistence:{dir,snapshot_min_s}, vehicles:{<id>:{topic}} }
+ * @param {object}   [deps.config]  parsed config/vehicles.yml — { persistence:{dir,snapshot_min_s,min_trip_samples}, vehicles:{<id>:{topic}} }
+ * @param {string}   [deps.timezone] IANA zone for day keys + trip filenames
+ *                                  (configService.getHouseholdTimezone())
  * @param {object}   [deps.logger]  structured logger
  * @param {() => number} [deps.now] clock (injectable for tests)
- * @returns {{ dispose: () => void }}
+ * @returns {{ dispose: () => void, flush: () => Promise<void> }}
  */
-export function createAutomotiveRelay({ eventBus, dataDir, config = {}, logger = console, now = Date.now }) {
+export function createAutomotiveRelay({
+  eventBus, dataDir, config = {}, timezone = DEFAULT_TIMEZONE, logger = console, now = Date.now,
+}) {
   if (!eventBus?.onClientMessage || !eventBus?.broadcast) {
     throw new Error('createAutomotiveRelay: eventBus with onClientMessage + broadcast required');
   }
@@ -53,6 +82,9 @@ export function createAutomotiveRelay({ eventBus, dataDir, config = {}, logger =
   const snapshotMinMs = (Number(config?.persistence?.snapshot_min_s) > 0
     ? Number(config.persistence.snapshot_min_s)
     : DEFAULT_SNAPSHOT_MIN_S) * 1000;
+  const minTripSamples = Number(config?.persistence?.min_trip_samples) > 0
+    ? Number(config.persistence.min_trip_samples)
+    : DEFAULT_MIN_TRIP_SAMPLES;
   const historyRoot = path.join(dataDir, ...persistDir.split('/'));
   const topicForId = (id) => vehicleDefs[id]?.topic || DEFAULT_TOPIC;
 
@@ -71,7 +103,8 @@ export function createAutomotiveRelay({ eventBus, dataDir, config = {}, logger =
   const ingest = (clientId, message) => {
     if (!message || message.source !== RELAY_SOURCE) return;
     const id = typeof message.id === 'string' && message.id ? message.id : 'unknown';
-    const ts = new Date(now()).toISOString();
+    const at = now();
+    const ts = formatIsoLocal(new Date(at), timezone);
     const topic = topicForId(id);
 
     if (message.type === 'hello') {
@@ -84,20 +117,15 @@ export function createAutomotiveRelay({ eventBus, dataDir, config = {}, logger =
       const snapshot = {
         id,
         kind: 'snapshot',
-        battery_v: numOrNull(message.battery_v),
-        fuel_pct: numOrNull(message.fuel_pct),
-        coolant_c: numOrNull(message.coolant_c),
-        rpm: numOrNull(message.rpm),
-        speed_kph: numOrNull(message.speed_kph),
+        ...normalizeSnapshotReadings(message),
         dtc: Array.isArray(message.dtc) ? message.dtc : [],
-        gps: message.gps && typeof message.gps === 'object' ? message.gps : null,
         ts,
       };
       eventBus.broadcast(topic, snapshot);
       const last = lastSnapshotPersist.get(id) || 0;
-      if (now() - last >= snapshotMinMs) {
-        lastSnapshotPersist.set(id, now());
-        enqueue('snapshot', id, () => appendRecord(historyRoot, id, snapshot));
+      if (at - last >= snapshotMinMs) {
+        lastSnapshotPersist.set(id, at);
+        enqueue('snapshot', id, () => appendRecord(historyRoot, id, snapshot, at, timezone));
       }
       return;
     }
@@ -105,56 +133,76 @@ export function createAutomotiveRelay({ eventBus, dataDir, config = {}, logger =
     if (message.type === 'event') {
       const record = { id, kind: 'event', event: String(message.event || 'unknown'), ts };
       eventBus.broadcast(topic, record);
-      enqueue('event', id, () => appendRecord(historyRoot, id, record));
+      enqueue('event', id, () => appendRecord(historyRoot, id, record, at, timezone));
       return;
     }
 
     if (message.type === 'trip') {
-      handleTripChunk(clientId, id, topic, message, ts);
+      handleTripChunk(clientId, id, topic, message, at, ts);
       return;
     }
   };
 
-  const handleTripChunk = (clientId, id, topic, message, ts) => {
+  const handleTripChunk = (clientId, id, topic, message, at, ts) => {
     const tripId = typeof message.trip_id === 'string' && message.trip_id ? message.trip_id : null;
     if (!tripId) { logger.warn?.('automotive.trip.missing_id', { clientId, id }); return; }
     const key = `${id}:${tripId}`;
 
     // expire stale partials (device rebooted mid-upload and restarted at seq 0)
     for (const [k, v] of pendingTrips) {
-      if (now() - v.touchedAt > CHUNK_TTL_MS) pendingTrips.delete(k);
+      if (at - v.touchedAt > CHUNK_TTL_MS) pendingTrips.delete(k);
     }
 
-    const pending = pendingTrips.get(key) || { samples: [], touchedAt: now() };
+    const pending = pendingTrips.get(key) || { samples: [], touchedAt: at };
     if (Array.isArray(message.samples)) pending.samples.push(...message.samples);
-    pending.touchedAt = now();
+    pending.touchedAt = at;
     pendingTrips.set(key, pending);
 
     if (!message.final) return;
     pendingTrips.delete(key);
 
     const meta = message.meta && typeof message.meta === 'object' ? message.meta : {};
-    const trip = buildTripRecord(id, tripId, meta, pending.samples, ts);
+    const trip = buildTripRecord(id, tripId, meta, pending.samples, at, ts, timezone);
+    const count = trip.samples.length;
+
+    // A trip too short to mean anything (ignition blip, failed ECU handshake)
+    // gets no file — but MUST still be acked, or the device re-uploads it every
+    // time it reaches home WiFi. The day log keeps a breadcrumb.
+    if (count < minTripSamples) {
+      enqueue('trip-dropped', id, async () => {
+        await appendRecord(historyRoot, id, {
+          id, kind: 'trip-dropped', trip_id: tripId, ts, samples: count, reason: 'below-sample-floor',
+        }, at, timezone);
+        eventBus.sendToClient?.(clientId, { type: 'trip-ack', trip_id: tripId });
+        logger.info?.('automotive.trip.dropped', { id, tripId, samples: count, floor: minTripSamples });
+      });
+      return;
+    }
 
     // Persist FULL trip, then summary to the day log, then ack the device.
     enqueue('trip', id, async () => {
-      await writeTrip(historyRoot, id, tripId, trip);
+      const relPath = await writeTrip(historyRoot, id, tripId, trip, timezone);
       await appendRecord(historyRoot, id, {
         id, kind: 'trip', trip_id: tripId, ts,
-        started: trip.meta.started ?? null,
-        ended: trip.meta.ended ?? null,
-        time_approx: trip.meta.time_approx,
-        samples: trip.samples.length,
-      });
+        file: relPath,
+        started: trip.meta.started,
+        ended: trip.meta.ended,
+        time_source: trip.meta.time_source,
+        duration_s: trip.meta.duration_s,
+        distance_km: trip.meta.distance_km,
+        max_speed_kph: trip.meta.max_speed_kph,
+        ecu: trip.meta.ecu,
+        samples: count,
+      }, at, timezone);
       const acked = eventBus.sendToClient?.(clientId, { type: 'trip-ack', trip_id: tripId });
-      logger.info?.('automotive.trip.persisted', { id, tripId, samples: trip.samples.length, acked: Boolean(acked) });
+      logger.info?.('automotive.trip.persisted', { id, tripId, samples: count, file: relPath, acked: Boolean(acked) });
     });
     eventBus.broadcast(topic, { id, kind: 'trip', trip_id: tripId, meta: trip.meta, ts });
   };
 
   const offClientMessage = eventBus.onClientMessage(ingest);
 
-  logger.info?.('automotive.relay.ready', { historyRoot, snapshotMinMs });
+  logger.info?.('automotive.relay.ready', { historyRoot, snapshotMinMs, minTripSamples, timezone });
   return {
     dispose: () => { try { offClientMessage?.(); } catch { /* noop */ } },
     /** test hook: resolves when all enqueued writes have settled */
@@ -165,53 +213,243 @@ export function createAutomotiveRelay({ eventBus, dataDir, config = {}, logger =
 const numOrNull = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
 
 /**
- * Rebase boot-relative trip times to wall clock when the upload happened in the
- * same power session; otherwise leave boot-relative and keep time_approx.
+ * The reading fields of a snapshot, with the firmware's unambiguous sentinels
+ * mapped to null: `fuel_pct: -1` (PID unsupported / no session) and a (0,0) GPS
+ * "fix". `rpm`/`coolant_c` zeros are left alone — a parked car really does read
+ * zero, and a lone snapshot carries no trip-wide context to prove otherwise.
+ *
+ * Exported so the history migration (cli/automotive/lib.mjs) normalizes legacy
+ * records by the same rule; a day log must not mix both conventions.
  */
-function buildTripRecord(id, tripId, meta, samples, ts) {
+export function normalizeSnapshotReadings(source) {
+  return {
+    battery_v: reading(source.battery_v, 'batt_v'),
+    fuel_pct: reading(source.fuel_pct, 'fuel_pct'),
+    coolant_c: numOrNull(source.coolant_c),
+    rpm: numOrNull(source.rpm),
+    speed_kph: numOrNull(source.speed_kph),
+    gps: fixOrNull(source.gps),
+  };
+}
+
+/** A single reading, with the firmware's per-field "no reading" sentinel mapped to null. */
+function reading(value, field) {
+  const n = numOrNull(value);
+  if (n === null) return null;
+  if (field === 'fuel_pct' && n < 0) return null;   // -1 = PID unsupported / no session
+  if (field === 'batt_v' && n <= 0) return null;
+  return n;
+}
+
+/**
+ * Did the engine bus actually answer for this row?
+ *
+ * The all-sentinel signature — rpm 0, coolant 0, fuel below zero — is what the
+ * firmware emits with no session. Any single real value breaks it: a car idling
+ * at a light reports rpm 0 but still reports a warm coolant and a fuel level.
+ */
+function hasEcuReading(rpm, coolant, fuel) {
+  return (rpm !== null && rpm > 0)
+    || (coolant !== null && coolant !== 0)
+    || (fuel !== null && fuel >= 0);
+}
+
+/** A GPS fix, or null when the device reported the pre-lock (0,0) placeholder. */
+function fixOrNull(gps) {
+  if (!gps || typeof gps !== 'object') return null;
+  const lat = numOrNull(gps.lat);
+  const lon = numOrNull(gps.lon);
+  if (lat === null || lon === null) return null;
+  if (lat === 0 && lon === 0) return null;                 // null island, not Kent
+  if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+  return { lat, lon };
+}
+
+/**
+ * Rebase boot-relative trip times to wall clock when the upload happened in the
+ * same power session; otherwise leave them unrecoverable.
+ * @returns {{startedMs: number|null, endedMs: number|null, source: string}}
+ */
+function resolveTripClock(meta, samples) {
   const startedEpoch = Number(meta.started_epoch_ms) || 0;
   const uploadEpoch = Number(meta.upload_epoch_ms) || 0;
   const uploadBoot = Number(meta.upload_boot_ms) || 0;
   const endedBoot = Number(meta.ended_boot_ms) || 0;
   const firstBoot = samples.length ? Number(samples[0]?.[0]) || 0 : 0;
 
-  let started = startedEpoch > 0 ? startedEpoch : null;
-  let ended = null;
-  let timeApprox = Boolean(meta.time_approx) && !started;
+  if (startedEpoch > 0) {
+    const spanMs = samples.length > 1
+      ? (Number(samples[samples.length - 1]?.[0]) || 0) - firstBoot
+      : 0;
+    return { startedMs: startedEpoch, endedMs: startedEpoch + Math.max(0, spanMs), source: 'device' };
+  }
 
   const sameSession = uploadEpoch > 0 && uploadBoot > 0 && uploadBoot >= endedBoot;
   if (sameSession) {
     const bootToWall = (bootMs) => uploadEpoch - (uploadBoot - bootMs);
-    if (!started && firstBoot > 0) { started = bootToWall(firstBoot); timeApprox = false; }
-    if (endedBoot > 0) ended = bootToWall(endedBoot);
+    return {
+      startedMs: firstBoot > 0 ? bootToWall(firstBoot) : null,
+      endedMs: endedBoot > 0 ? bootToWall(endedBoot) : null,
+      source: 'rebased',
+    };
   }
+
+  return { startedMs: null, endedMs: null, source: 'boot-relative' };
+}
+
+/** Great-circle distance between two fixes, in km. */
+function haversineKm(a, b) {
+  const R = 6371.0088;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLon = toRad(b.lon - a.lon);
+  const s = Math.sin(dLat / 2) ** 2
+    + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(s));
+}
+
+/**
+ * Turn positional device rows into keyed samples + a derived summary.
+ *
+ * `t` is rebased to seconds from the first sample: the raw value is
+ * boot-relative milliseconds, meaningless on its own and different for every
+ * trip. Sampling is irregular (observed gaps of 1s and 5s in the same trip), so
+ * `t` still has to be carried per row — it cannot be implied by row position.
+ */
+export function buildTripRecord(id, tripId, meta, rawSamples, at, ts, timezone) {
+  const cols = (typeof meta.schema === 'string' && meta.schema ? meta.schema : DEFAULT_SCHEMA).split(',');
+  const col = (row, name) => {
+    const i = cols.indexOf(name);
+    return i === -1 ? null : numOrNull(row[i]);
+  };
+
+  // An ECU session either happened for this trip or it didn't — decide once,
+  // across the whole trip, rather than guessing per row. A parked car really
+  // does read rpm 0, so a single zero proves nothing; an entire trip of zeros
+  // with fuel pinned at -1 proves the bus never answered.
+  const ecu = rawSamples.some((row) =>
+    hasEcuReading(col(row, 'rpm'), col(row, 'coolant_c'), col(row, 'fuel_pct')));
+
+  const t0 = rawSamples.length ? Number(rawSamples[0]?.[0]) || 0 : 0;
+  let fixCount = 0;
+  let distanceKm = 0;
+  let maxSpeed = null;
+  let prevFix = null;
+  let lastT = 0;
+
+  const samples = rawSamples.map((row) => {
+    const sample = {};
+    const tRaw = Number(row[0]) || 0;
+    lastT = round((tRaw - t0) / 1000, 3);
+    sample.t = lastT;
+
+    const fix = fixOrNull({ lat: col(row, 'lat'), lon: col(row, 'lon') });
+    if (fix) {
+      fixCount += 1;
+      sample.lat = fix.lat;
+      sample.lon = fix.lon;
+      if (prevFix) distanceKm += haversineKm(prevFix, fix);
+      prevFix = fix;
+    }
+
+    // Speed comes from GNSS or the ECU; with neither, a reported 0 is noise.
+    const speed = col(row, 'speed_kph');
+    if (speed !== null && (fix || ecu)) {
+      sample.speed_kph = speed;
+      if (maxSpeed === null || speed > maxSpeed) maxSpeed = speed;
+    }
+
+    // The bus drops in and out mid-trip, so trip-level `ecu` is not enough: a
+    // row reading rpm 0 AND coolant 0 AND fuel -1 is a gap in the session, not
+    // an engine stalled at 0 C. A genuine idle (stopped at a light) still
+    // reports real coolant and fuel, so it keeps its fields.
+    if (ecu && hasEcuReading(col(row, 'rpm'), col(row, 'coolant_c'), col(row, 'fuel_pct'))) {
+      for (const field of ECU_FIELDS) {
+        const v = reading(col(row, field), field);
+        if (v !== null) sample[field] = v;
+      }
+    }
+
+    const batt = reading(col(row, 'batt_v'), 'batt_v');
+    if (batt !== null) sample.batt_v = batt;
+
+    return sample;
+  });
+
+  const { startedMs, endedMs, source } = resolveTripClock(meta, rawSamples);
+  const present = new Set(samples.flatMap((s) => Object.keys(s)));
 
   return {
     meta: {
       vehicle: id,
-      trip_id: tripId,
-      started,               // epoch ms | null (unrecoverable clock)
-      ended,                 // epoch ms | null
-      time_approx: timeApprox,
+      trip_id: tripId,                                    // device id, kept for ack correlation
+      started: startedMs ? formatIsoLocal(new Date(startedMs), timezone) : null,
+      ended: endedMs ? formatIsoLocal(new Date(endedMs), timezone) : null,
+      time_source: source,                                // device | rebased | boot-relative
+      duration_s: lastT,
       samples: samples.length,
-      schema: typeof meta.schema === 'string' ? meta.schema : '',
+      distance_km: round(distanceKm, 3),
+      max_speed_kph: maxSpeed,
+      gps_fix_pct: samples.length ? Math.round((fixCount / samples.length) * 100) : 0,
+      ecu,
+      dtc: Array.isArray(meta.dtc) ? meta.dtc : [],
       received: ts,
     },
-    samples,                 // positional rows per meta.schema (boot-relative t)
+    units: Object.fromEntries(Object.entries(UNITS).filter(([k]) => present.has(k))),
+    samples,
   };
 }
 
-/** Write one full trip as its own YAML file. */
-async function writeTrip(historyRoot, id, tripId, trip) {
-  const dir = path.join(historyRoot, id, 'trips');
-  await fs.mkdir(dir, { recursive: true });
-  const file = path.join(dir, `${sanitize(tripId)}.yml`);
-  await fs.writeFile(file, yaml.dump(trip, { noRefs: true }), 'utf8');
+const round = (n, places) => Number(n.toFixed(places));
+
+/**
+ * Where a trip file lives, relative to the vehicle's trips/ dir: sharded by
+ * month and named for its local start time.
+ *
+ * The device's own trip id is `esp_random()-millis()` — collision-free but
+ * unsortable and meaningless, so it becomes a suffix rather than the whole
+ * name. Trips whose clock is unrecoverable are prefixed `unknown_` and dated by
+ * arrival, so they sort together instead of silently interleaving with real
+ * timestamps.
+ *
+ * Exported for the history migration (cli/automotive.cli.mjs), which must place
+ * converted files exactly where the relay would have.
+ *
+ * @returns {string} e.g. 2026-08/2026-08-11_1730_abc1.yml
+ */
+export function tripRelPath(trip, timezone) {
+  const stamp = trip.meta.started
+    ? new Date(trip.meta.started)
+    : new Date(trip.meta.received);
+  const [day, clock] = formatLocalTimestamp(stamp, timezone).split(' ');
+  const hhmm = clock.slice(0, 5).replace(':', '');
+  const prefix = trip.meta.started ? '' : 'unknown_';
+  return path.join(day.slice(0, 7), `${prefix}${day}_${hhmm}_${sanitize(trip.meta.trip_id)}.yml`);
 }
 
-/** Append one record to the vehicle's append-only day log (read-modify-write). */
-async function appendRecord(historyRoot, id, record) {
-  const day = new Date().toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
+/** Serialize a trip: flowLevel 2 keeps one sample per line — diff-friendly, and
+ *  a grepped line stays readable on its own. Exported for the migration. */
+export const dumpTrip = (trip) => yaml.dump(trip, { noRefs: true, flowLevel: 2, lineWidth: -1 });
+
+/**
+ * Write one full trip.
+ * @returns {Promise<string>} path relative to the vehicle's trips/ dir
+ */
+async function writeTrip(historyRoot, id, tripId, trip, timezone) {
+  const relPath = tripRelPath(trip, timezone);
+  const file = path.join(historyRoot, sanitize(id), 'trips', relPath);
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.writeFile(file, dumpTrip(trip), 'utf8');
+  return relPath;
+}
+
+/**
+ * Append one record to the vehicle's append-only day log (read-modify-write).
+ * Keyed by the household-local day so an evening drive files under the day it
+ * was actually driven.
+ */
+async function appendRecord(historyRoot, id, record, at, timezone) {
+  const day = getDateInTimezone(new Date(at), timezone);
   const dir = path.join(historyRoot, sanitize(id));
   const file = path.join(dir, `${day}.yml`);
   await fs.mkdir(dir, { recursive: true });
@@ -224,7 +462,7 @@ async function appendRecord(historyRoot, id, record) {
 
   const { id: _omit, ...rest } = record;
   list.push(rest);
-  await fs.writeFile(file, yaml.dump(list, { noRefs: true }), 'utf8');
+  await fs.writeFile(file, yaml.dump(list, { noRefs: true, lineWidth: -1 }), 'utf8');
 }
 
 const sanitize = (s) => String(s).replace(/[^a-zA-Z0-9_-]/g, '_');

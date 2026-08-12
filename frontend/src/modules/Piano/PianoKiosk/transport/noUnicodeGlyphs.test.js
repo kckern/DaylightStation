@@ -24,7 +24,6 @@ const GRANDFATHERED = new Set([
   'producer/TempoSheet.jsx',
   'modes/Producer/Producer.jsx', // Producer mode shell; wraps producer/ (later wave) and
   // clones producer/SongPicker.jsx's dismiss-resume chip verbatim (✕) — same unmigrated feature.
-  'modes/Lessons/LessonDrill.jsx',
   'modes/Studio/StudioRecordings.jsx',
   'modes/Videos/PianoContextRail.jsx',
   'modes/Videos/RepertoireBrowser.jsx',

@@ -4,6 +4,8 @@ import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/in
 import { splatPath } from '#api/utils/wildcard.mjs';
 import { musicXmlToNotes } from '#shared/music/musicXmlToNotes.mjs';
 import { countInstances, expandSeed, instanceId, instanceIds, materializeById, searchBank } from '#shared/music/exerciseBank.mjs';
+import { validateAssessment } from '#shared/music/assessmentRecord.mjs';
+import { buildExerciseCatalog } from '#shared/music/exerciseCatalog.mjs';
 import {
   PRODUCER_ID_RE,
   PRODUCER_SCHEMA_VERSION,
@@ -77,7 +79,7 @@ import {
  *   Menu activity strip:
  *   GET    /activity/recent                  → { players: [...] }  (per-player most-recent lesson-course progress)
  */
-export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pianoChallengePolicy = null, exerciseBank = null, logger = console }) {
+export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pianoChallengePolicy = null, pianoLearningService = null, exerciseBank = null, logger = console }) {
   if (!pianoContainer) throw new Error('createPianoRouter: pianoContainer required');
   const router = express.Router();
   const ds = pianoContainer.studioDatastore;
@@ -108,25 +110,51 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pi
 
   // Challenge-provider attempt ledger. Gaming stores only the returned id and
   // immutable result snapshot; piano owns the durable practice evidence.
+  router.get('/users/:userId/attempts', asyncHandler((req, res) => {
+    if (!pianoAttemptStore) return res.status(501).json({ error: 'Attempt store unavailable' });
+    if (!ds.isKnownUser(req.params.userId) && req.params.userId !== 'guest') {
+      return res.status(400).json({ error: 'Invalid user' });
+    }
+    if (req.params.userId === 'guest') return res.json({ attempts: [] });
+    const limit = Math.min(Math.max(Number(req.query.limit) || 500, 1), 5000);
+    const attempts = pianoAttemptStore.list(req.params.userId, {
+      limit,
+      exerciseId: typeof req.query.exercise_id === 'string' ? req.query.exercise_id : null,
+      purpose: typeof req.query.purpose === 'string' ? req.query.purpose : null,
+      context: typeof req.query.context === 'string' ? req.query.context : null,
+    });
+    res.json({ attempts });
+  }));
+
   router.post('/users/:userId/attempts', asyncHandler((req, res) => {
     if (!pianoAttemptStore) return res.status(501).json({ error: 'Attempt store unavailable' });
     if (!ds.isKnownUser(req.params.userId) && req.params.userId !== 'guest') {
       return res.status(400).json({ error: 'Invalid user' });
     }
     const body = req.body || {};
-    const validStatus = ['completed', 'aborted', 'timeout', 'error'].includes(body.status);
-    const validScore = body.status === 'completed'
-      ? Number.isFinite(body.score) && body.score >= 0 && body.score <= 1
-      : body.score == null;
-    if (!validStatus || !validScore || typeof body.challenge_id !== 'string') {
-      return res.status(400).json({ error: 'Invalid attempt result' });
+    // The record keeps the criterion vector, not just the scalar it projects to:
+    // a score cannot be un-projected, so storing only the score makes every
+    // later question about a past run unanswerable. Shape lives in shared/ so
+    // the writer and the validator cannot drift.
+    const assessment = validateAssessment(body);
+    if (!assessment.valid || typeof body.challenge_id !== 'string') {
+      return res.status(400).json({
+        error: 'Invalid attempt result',
+        details: assessment.errors.length ? assessment.errors : ['challenge_id is required'],
+      });
     }
     const attempt = pianoAttemptStore.save(req.params.userId, {
       ...body,
       attempt_id: body.attempt_id || shortId(),
       trust_source: 'client-midi',
     });
-    logger.info?.('piano.attempt.saved', { userId: req.params.userId, attemptId: attempt.attempt_id, status: attempt.status });
+    logger.info?.('piano.attempt.saved', {
+      userId: req.params.userId,
+      attemptId: attempt.attempt_id,
+      status: attempt.status,
+      rubric: attempt.rubric?.id ?? null,
+      criteria: attempt.criteria ? Object.keys(attempt.criteria) : null,
+    });
     res.status(201).json(attempt);
   }));
 
@@ -154,6 +182,71 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pi
       challengeLabel: prepared.prompt?.label || null,
     });
     res.json(prepared);
+  }));
+
+  // Learning programs are policy over the bank, not another copy of its notes.
+  router.get('/programs', asyncHandler((_req, res) => {
+    if (!pianoLearningService) return res.status(501).json({ error: 'Piano learning unavailable' });
+    res.json({ programs: pianoLearningService.programs() });
+  }));
+
+  router.get('/programs/:programId', asyncHandler((req, res) => {
+    if (!pianoLearningService) return res.status(501).json({ error: 'Piano learning unavailable' });
+    const program = pianoLearningService.program(req.params.programId);
+    if (!program) return res.status(404).json({ error: 'Piano program not found' });
+    res.json(program);
+  }));
+
+  router.get('/users/:userId/learning', asyncHandler((req, res) => {
+    if (!pianoLearningService) return res.status(501).json({ error: 'Piano learning unavailable' });
+    if (!ds.isKnownUser(req.params.userId) && req.params.userId !== 'guest') return res.status(400).json({ error: 'Invalid user' });
+    res.json(pianoLearningService.summary(req.params.userId));
+  }));
+
+  router.put('/users/:userId/enrollments/:programId', asyncHandler((req, res) => {
+    if (!pianoLearningService) return res.status(501).json({ error: 'Piano learning unavailable' });
+    if (req.params.userId === 'guest') return res.status(403).json({ error: 'Choose a learner to save a program.' });
+    if (!ds.isKnownUser(req.params.userId)) return res.status(400).json({ error: 'Invalid user' });
+    res.json({ enrollments: pianoLearningService.enroll(req.params.userId, req.params.programId) });
+  }));
+
+  router.put('/users/:userId/pending-checkpoints/:contentId', asyncHandler((req, res) => {
+    if (!pianoLearningService) return res.status(501).json({ error: 'Piano learning unavailable' });
+    if (req.params.userId === 'guest') return res.status(403).json({ error: 'Guest checkpoints are not saved.' });
+    if (!ds.isKnownUser(req.params.userId)) return res.status(400).json({ error: 'Invalid user' });
+    res.json({ pending_checkpoints: pianoLearningService.rememberCheckpoint(req.params.userId, {
+      contentId: req.params.contentId,
+      title: req.body?.title,
+      courseTitle: req.body?.courseTitle,
+      returnTo: req.body?.returnTo,
+      requirement: req.body?.requirement,
+    }) });
+  }));
+
+  router.delete('/users/:userId/enrollments/:programId', asyncHandler((req, res) => {
+    if (!pianoLearningService) return res.status(501).json({ error: 'Piano learning unavailable' });
+    if (req.params.userId === 'guest') return res.status(403).json({ error: 'Choose a learner to change programs.' });
+    if (!ds.isKnownUser(req.params.userId)) return res.status(400).json({ error: 'Invalid user' });
+    res.json({ enrollments: pianoLearningService.unenroll(req.params.userId, req.params.programId) });
+  }));
+
+  router.get('/users/:userId/program-assignments', asyncHandler((req, res) => {
+    if (!pianoLearningService) return res.status(501).json({ error: 'Piano learning unavailable' });
+    if (!ds.isKnownUser(req.params.userId)) return res.status(400).json({ error: 'Invalid user' });
+    res.json(pianoLearningService.assignment(req.params.userId));
+  }));
+
+  router.put('/users/:userId/program-assignments', asyncHandler((req, res) => {
+    if (!pianoLearningService) return res.status(501).json({ error: 'Piano learning unavailable' });
+    if (!ds.isKnownUser(req.params.userId)) return res.status(400).json({ error: 'Invalid user' });
+    const body = req.body ?? {};
+    res.json(pianoLearningService.putAssignment({
+      learnerId: req.params.userId,
+      programs: body.programs,
+      assignedBy: body.assignedBy,
+      pin: body.pin,
+      baseUpdatedAt: body.baseUpdatedAt,
+    }));
   }));
 
   // Loop-library manifest: walk the five MusicXML brick folders, bake per-beat
@@ -610,6 +703,11 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pi
   }));
 
   // Search must be declared before the catch-all or "search" reads as a path.
+  router.get('/bank/catalog', asyncHandler((_req, res) => {
+    if (!bankReady(res)) return;
+    res.json(buildExerciseCatalog(exerciseBank));
+  }));
+
   router.get('/bank/search', asyncHandler((req, res) => {
     if (!bankReady(res)) return;
     const q = req.query;

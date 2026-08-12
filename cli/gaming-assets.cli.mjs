@@ -6,19 +6,36 @@ import {
   buildOrganizationPlan,
   applyOrganizationPlan,
   verifyOrganizationPlan,
+  auditTerrainMetadataSweep,
   parseFrames,
   parsePair,
   renderAnimation,
   renderContactSheet,
   renderFrameGrid,
+  measureFrameGrid,
   renderLayout,
   renderScene,
+  renderLegacyScene,
   renderSceneQa,
+  renderSceneQaSet,
+  approveSceneQaBaseline,
+  renderTerrainTopologyQa,
+  renderTerrainTopologyQaSet,
+  renderConnectorQa,
+  renderConnectorQaSet,
+  renderHeightQa,
+  renderHeightQaSet,
+  renderComponentQa,
   explainPrefab,
   renderPrefabPreview,
   deriveAtlas,
+  deriveBlobAutotile,
+  deriveBlobAutotileSet,
+  deriveBlobAutotileCatalog,
+  deriveFenceConnectorCatalog,
   validateManifest,
   writeYaml,
+  migratePresentationCatalog,
 } from './gaming-assets/lib.mjs';
 
 const HELP = `gaming-assets — audit and preview private game-art catalogs
@@ -31,16 +48,33 @@ Commands:
   organize-plan  --root <common-dir> --out <plan.yml> [--source sprites] [--target assets]
   organize-apply --root <common-dir> --plan <plan.yml>
   organize-verify --root <common-dir> --plan <plan.yml>
+  terrain-sweep --root <common-dir> --manifest <sweep.yml>
   validate   --root <common-dir> --manifest <pack.yml>
   sheet      --root <common-dir> --out <sheet.png> [--source sprites] [--catalog <pack.yml>] [--columns 6] [--limit 60] [--scale 3]
   frames     --root <common-dir> --source <relative.png> --cell 16x16 --out <grid.png> [--scale 4]
+  measure    --root <common-dir> --source <relative.png> --cell 16x16
   animate    --root <common-dir> --source <relative.png> --cell 16x16 --frames 0,0;1,0 --out <clip.gif> [--fps 8] [--scale 4]
   render     --root <common-dir> --manifest <layout.yml> --out <layout.png>
   scene      --root <common-dir> --catalog <pack.yml> --manifest <scene.yml> --out <scene.png>
+  scene-legacy --root <common-dir> --catalog <v1-pack.yml> --manifest <v1-scene.yml> --out <scene.png>
   scene-qa   --root <common-dir> --catalog <pack.yml> --manifest <scene.yml> --out-dir <directory>
+  scene-qa-set --root <common-dir> --manifest <set.yml> --out-dir <directory>
+  scene-qa-approve --root <common-dir> --manifest <set.yml> --report <report.yml> --artifacts-dir <directory>
+  topology-qa --root <common-dir> --catalog <pack.yml> --asset <asset-id> --out <matrix.png> [--scale 4]
+  topology-qa-set --root <common-dir> --catalog <pack.yml> --out-dir <directory> [--scale 4]
+  connector-qa --root <common-dir> --catalog <pack.yml> --asset <asset-id> --out <matrix.png> [--scale 3]
+  connector-qa-set --root <common-dir> --catalog <pack.yml> --out-dir <directory> [--scale 3]
+  height-qa --root <common-dir> --catalog <pack.yml> --asset <asset-id> --out <matrix.png> [--scale 4]
+  height-qa-set --root <common-dir> --catalog <pack.yml> --out-dir <directory> [--scale 4]
+  component-qa --root <common-dir> --catalog <pack.yml> --asset <asset-id> --out <matrix.png> [--scale 3]
   prefab-explain --root <common-dir> --catalog <pack.yml> --id <prefab> [--params size=large,garden=false]
   prefab-render --root <common-dir> --catalog <pack.yml> --id <prefab> --out <png> [--params size=large] [--viewport 320x240] [--scale 1]
   derive     --root <common-dir> --recipe <recipe.yml> --out <atlas.png>
+  derive-blob --root <common-dir> --recipe <recipe.yml> --out <atlas.png>
+  derive-blob-set --root <common-dir> --manifest <derivations.yml>
+  derive-blob-catalog --root <common-dir> --manifest <derivations.yml> --catalog-out <catalog.yml>
+  derive-fence-catalog --root <common-dir> --manifest <derivations.yml> --catalog-out <catalog.yml>
+  migrate-v2 --root <common-dir> --catalog <v1-pack.yml> --scenes <v1-scenes-dir> --out-dir <v2-directory>
 
 All source paths are relative to --root. The commands never alter raw source images.
 Set DAYLIGHT_BASE_PATH to omit --root; it defaults to $DAYLIGHT_BASE_PATH/media/games/_common.
@@ -129,6 +163,9 @@ export async function main(argv = process.argv.slice(2), { env = process.env, st
         report = await verifyOrganizationPlan({ root, planPath: required(parsed.flags, 'plan') });
         break;
       }
+      case 'terrain-sweep':
+        report = await auditTerrainMetadataSweep({ root, manifestPath: required(parsed.flags, 'manifest') });
+        break;
       case 'validate':
         report = await validateManifest({ root, manifestPath: required(parsed.flags, 'manifest') });
         break;
@@ -145,6 +182,11 @@ export async function main(argv = process.argv.slice(2), { env = process.env, st
           out: required(parsed.flags, 'out'), scale: integer(parsed.flags, 'scale', 4),
         });
         break;
+      case 'measure':
+        report = await measureFrameGrid({
+          root, source: required(parsed.flags, 'source'), cell: parsePair(required(parsed.flags, 'cell'), '--cell'),
+        });
+        break;
       case 'animate':
         report = await renderAnimation({
           root, source: required(parsed.flags, 'source'), cell: parsePair(required(parsed.flags, 'cell'), '--cell'),
@@ -158,8 +200,44 @@ export async function main(argv = process.argv.slice(2), { env = process.env, st
       case 'scene':
         report = await renderScene({ root, catalogPath: required(parsed.flags, 'catalog'), manifestPath: required(parsed.flags, 'manifest'), out: required(parsed.flags, 'out') });
         break;
+      case 'scene-legacy':
+        report = await renderLegacyScene({ root, catalogPath: required(parsed.flags, 'catalog'), manifestPath: required(parsed.flags, 'manifest'), out: required(parsed.flags, 'out') });
+        break;
       case 'scene-qa':
         report = await renderSceneQa({ root, catalogPath: required(parsed.flags, 'catalog'), manifestPath: required(parsed.flags, 'manifest'), outDir: required(parsed.flags, 'out-dir') });
+        break;
+      case 'scene-qa-set':
+        report = await renderSceneQaSet({ root, manifestPath: required(parsed.flags, 'manifest'), outDir: required(parsed.flags, 'out-dir') });
+        break;
+      case 'scene-qa-approve':
+        report = await approveSceneQaBaseline({ manifestPath: required(parsed.flags, 'manifest'), reportPath: required(parsed.flags, 'report'), artifactsDir: required(parsed.flags, 'artifacts-dir') });
+        break;
+      case 'topology-qa':
+        report = await renderTerrainTopologyQa({
+          root, catalogPath: required(parsed.flags, 'catalog'), assetId: required(parsed.flags, 'asset'),
+          out: required(parsed.flags, 'out'), scale: integer(parsed.flags, 'scale', 4),
+        });
+        break;
+      case 'topology-qa-set':
+        report = await renderTerrainTopologyQaSet({
+          root, catalogPath: required(parsed.flags, 'catalog'), outDir: required(parsed.flags, 'out-dir'),
+          scale: integer(parsed.flags, 'scale', 4),
+        });
+        break;
+      case 'connector-qa':
+        report = await renderConnectorQa({ root, catalogPath: required(parsed.flags, 'catalog'), assetId: required(parsed.flags, 'asset'), out: required(parsed.flags, 'out'), scale: integer(parsed.flags, 'scale', 3) });
+        break;
+      case 'connector-qa-set':
+        report = await renderConnectorQaSet({ root, catalogPath: required(parsed.flags, 'catalog'), outDir: required(parsed.flags, 'out-dir'), scale: integer(parsed.flags, 'scale', 3) });
+        break;
+      case 'height-qa':
+        report = await renderHeightQa({ root, catalogPath: required(parsed.flags, 'catalog'), assetId: required(parsed.flags, 'asset'), out: required(parsed.flags, 'out'), scale: integer(parsed.flags, 'scale', 4) });
+        break;
+      case 'height-qa-set':
+        report = await renderHeightQaSet({ root, catalogPath: required(parsed.flags, 'catalog'), outDir: required(parsed.flags, 'out-dir'), scale: integer(parsed.flags, 'scale', 4) });
+        break;
+      case 'component-qa':
+        report = await renderComponentQa({ root, catalogPath: required(parsed.flags, 'catalog'), assetId: required(parsed.flags, 'asset'), out: required(parsed.flags, 'out'), scale: integer(parsed.flags, 'scale', 3) });
         break;
       case 'prefab-explain':
         report = await explainPrefab({ catalogPath: required(parsed.flags, 'catalog'), id: required(parsed.flags, 'id'), params: params(parsed.flags.params) });
@@ -172,6 +250,23 @@ export async function main(argv = process.argv.slice(2), { env = process.env, st
         break;
       case 'derive':
         report = await deriveAtlas({ root, recipePath: required(parsed.flags, 'recipe'), out: required(parsed.flags, 'out') });
+        break;
+      case 'derive-blob':
+        report = await deriveBlobAutotile({ root, recipePath: required(parsed.flags, 'recipe'), out: required(parsed.flags, 'out') });
+        break;
+      case 'derive-blob-set':
+        report = await deriveBlobAutotileSet({ root, manifestPath: required(parsed.flags, 'manifest') });
+        break;
+      case 'derive-blob-catalog':
+        report = await deriveBlobAutotileCatalog({
+          root, manifestPath: required(parsed.flags, 'manifest'), catalogOut: required(parsed.flags, 'catalog-out'),
+        });
+        break;
+      case 'derive-fence-catalog':
+        report = await deriveFenceConnectorCatalog({ root, manifestPath: required(parsed.flags, 'manifest'), catalogOut: required(parsed.flags, 'catalog-out') });
+        break;
+      case 'migrate-v2':
+        report = await migratePresentationCatalog({ root, catalogPath: required(parsed.flags, 'catalog'), scenesDir: required(parsed.flags, 'scenes'), outDir: required(parsed.flags, 'out-dir') });
         break;
       default:
         stderr.write(`ERROR: unknown command: ${parsed.command}\n`); stdout.write(HELP); return 2;

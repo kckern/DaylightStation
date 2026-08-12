@@ -28,6 +28,16 @@ describe('LessonList', () => {
     fireEvent.click(screen.getByText('Y').closest('button'));
     expect(onPlay).toHaveBeenCalledWith(expect.objectContaining({ plex: '102' }));
   });
+  it('shows a due checkpoint instead of a completion check and keeps the next lesson locked', () => {
+    const checkpoint = { exercise_id: 'drills/hanon/001' };
+    const { container } = render(<LessonList onPlay={vi.fn()} lessons={[
+      ep(101, 'Watched lesson', { userWatched: true, piano: { checkpoint }, checkpointStatus: { passed: false } }),
+      ep(102, 'Next lesson', { userWatched: false }),
+    ]} />);
+    expect(screen.getByText('Exercise checkpoint due')).toBeInTheDocument();
+    expect(container.querySelector('.piano-episode__check')).toBeNull();
+    expect(screen.getByText('Next lesson').closest('button')).toBeDisabled();
+  });
   it('renders part section headers while gating across the whole list', () => {
     const lessons = [
       { plex: 'a', title: 'One', userWatched: true, piano: { part: 1 } },

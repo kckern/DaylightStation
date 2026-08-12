@@ -46,8 +46,22 @@ The ownership boundary is strict:
   media-relative SVG paths; it contains no MIDI numbers or ABC.
 - Pokémon SVGs are loaded through `/api/v1/proxy/media/stream/*`, rooted at the configured
   media directory, so the game does not copy the 1,025-entry corpus into the frontend.
-- `PianoScaleChallengePolicy` chooses C/G/F/D major practice from per-user attempt
-  evidence and materializes the musical prompt.
+- `BankChallengePolicy` chooses the exercise from the
+  [exercise bank](./exercise-bank.md) and materializes the musical prompt. It
+  replaced `PianoScaleChallengePolicy`, whose whole curriculum was nineteen
+  hardcoded items — four major scales, six chords, three arpeggios, three
+  patterns — which was also the game's ceiling. Selection is now a query: the
+  challenge kind maps to bank forms (`chord` to chords, `timed-pattern` to
+  figures *and* runs), bounded by a level estimated from attempt history, so a
+  kind draws from hundreds of levelled instances rather than an array index. The
+  old policy remains as the fallback for a kiosk with no content mount.
+- The adaptive behaviour is unchanged and deliberate: fewest attempts first, then
+  weakest average, rotating through the equally-stale head so a session does not
+  serve the same exercise twice running. An empty level band widens rather than
+  fails — no material is a worse answer than slightly-easy material.
+- A chord prompt carries its pitch-class set and expected bass, not just an
+  ordered `expected_midi`: held-set material is judged on what is down at once,
+  and a sequence array cannot express that.
 - The provider renders the staff directly from `expected_midi` and grades the same array,
   persists completed/interrupted attempts, and terminates on timeout or MIDI disconnect.
 - The Gaming authority persists every lifecycle boundary, route/gym draw, health,
@@ -67,6 +81,13 @@ the grading rules move on. Records are write-once. An attempt that ends by teard
 than by playing (the player closes the kiosk mid-exercise) is recorded as `aborted` with
 `metrics.reason: disposed`; the adaptive policy scores only completed attempts, so abandoned
 evidence is diagnostic without skewing what gets served next.
+
+Completed bank-backed game attempts also carry the same assessment evidence as
+the Exercises runner: `purpose: challenge`, stable `prompt.exercise_id`,
+criterion vector, optional pace gate, diagnostics, rubric version, and verdict.
+That makes a game a presentation of an exercise, not a separate progress silo.
+A qualifying card-game or activity performance can therefore satisfy a Hanon
+step, a teacher-assigned track, or a video exit checkpoint; free practice cannot.
 
 Only input stamped after the attempt starts is graded. A key struck during the prepare→start
 gap is counted in `metrics.staleInputsIgnored` and logged as

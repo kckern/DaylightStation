@@ -42,4 +42,12 @@ export class YamlPianoAttemptStore {
       .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))
       .slice(0, Math.max(0, limit));
   }
+
+  list(userId, { limit = 1000, exerciseId = null, purpose = null, context = null } = {}) {
+    return this.listRecent(userId, { limit: Math.max(limit, 1000) })
+      .filter((attempt) => !exerciseId || (attempt.prompt?.exercise_id ?? attempt.exercise_id) === exerciseId)
+      .filter((attempt) => !purpose || (attempt.purpose ?? (attempt.challenge_id ? 'challenge' : 'practice')) === purpose)
+      .filter((attempt) => !context || attempt.context?.surface === context)
+      .slice(0, Math.max(0, limit));
+  }
 }

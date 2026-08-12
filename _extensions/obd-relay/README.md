@@ -220,7 +220,65 @@ Backend dispatch: `backend/src/3_applications/hardware/automotiveRelay.mjs`
 (wired in `app.mjs`), mirroring `foodScaleRelay.mjs`. Persists:
 
 - snapshots/events → `household/history/automotive/<vehicle-id>/<YYYY-MM-DD>.yml`
-- trips → `household/history/automotive/<vehicle-id>/trips/<trip-id>.yml`
+- trips → `household/history/automotive/<vehicle-id>/trips/<YYYY-MM>/<YYYY-MM-DD>_<HHMM>_<trip-id>.yml`
+
+Both are keyed by the **household-local day** (`system.yml` → `timezone`),
+threaded in from `configService.getHouseholdTimezone()`. A UTC key filed every
+evening drive under tomorrow and split any drive that crossed 00:00Z.
+
+### History file format
+
+The device's own trip id is `esp_random()-millis()` — collision-free but
+unsortable — so it becomes a filename *suffix* under a month shard. Trips whose
+clock is unrecoverable get an `unknown_` prefix and are dated by arrival, so
+they sort together instead of interleaving with real timestamps.
+
+Samples are keyed objects, one per line. **A reading that was never taken is an
+absent key, never a sentinel** — the firmware emits `rpm`/`coolant_c` 0 for "no
+ECU session", `fuel_pct` -1 for "no reading", and `lat`/`lon` 0 before GNSS
+lock, all of which read as plausible data if persisted verbatim (`rpm: 0` looks
+like idling; `(0,0)` plots in the Gulf of Guinea).
+
+```yaml
+meta:
+  vehicle: family-car
+  trip_id: 3d6d2738-4b0d          # device id, kept for trip-ack correlation
+  started: '2026-07-31T17:20:47-07:00'
+  ended: '2026-07-31T17:37:56-07:00'
+  time_source: device             # device | rebased | boot-relative
+  duration_s: 1029
+  samples: 206
+  distance_km: 7.45               # haversine over fixed samples
+  max_speed_kph: 73
+  gps_fix_pct: 69
+  ecu: true                       # did the engine bus ever answer?
+  dtc: []
+  received: '2026-07-31T17:37:59-07:00'
+units: {t: s, lat: deg, lon: deg, speed_kph: km/h, rpm: rpm, coolant_c: C, fuel_pct: '%', batt_v: V}
+samples:
+  - {t: 0, speed_kph: 0, rpm: 1509, coolant_c: 38, fuel_pct: 43, batt_v: 14.7}
+  - {t: 6, speed_kph: 0, batt_v: 14.6}     # bus dropped out for this sample
+```
+
+- `t` is **seconds from trip start**, not the raw boot-relative ms. Sampling is
+  irregular (1s and 5s gaps observed in the same trip), so `t` is carried per
+  row rather than implied by position.
+- `meta` carries a derived summary so a trip list or monthly rollup never parses
+  the sample block.
+- The bus drops in and out *within* a trip, so `ecu` is trip-level while each
+  row is checked separately: rpm 0 **and** coolant 0 **and** fuel < 0 is a gap
+  in the session, not an engine stalled at 0 °C. A genuine idle at a stoplight
+  still reports warm coolant and a fuel level, so it keeps its fields.
+- `persistence.min_trip_samples` suppresses ignition-blip trips. They are still
+  `trip-ack`'d (or the device re-uploads them forever) and leave a
+  `trip-dropped` breadcrumb in the day log.
+
+Migrating history written before this format:
+
+```bash
+node cli/automotive.cli.mjs migrate            # dry run, prints the plan
+node cli/automotive.cli.mjs migrate --apply
+```
 
 ## Build & flash
 
@@ -249,7 +307,8 @@ Until the hardware arrives, the `bench-esp32` env builds the transport layer
 node tools/simulate-device.mjs --host localhost --port 3112 --id family-car
 ```
 
-Unit tests: `tests/unit/suite/applications/hardware/automotiveRelay.test.mjs`.
+Unit tests: `tests/unit/suite/applications/hardware/automotiveRelay.test.mjs`
+(relay + file format) and `cli/automotive.cli.test.mjs` (history migration).
 
 ## Bring-up checklist (day the hardware arrives)
 

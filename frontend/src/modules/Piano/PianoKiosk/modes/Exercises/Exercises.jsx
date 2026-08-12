@@ -1,223 +1,411 @@
-import { useCallback, useMemo, useState } from 'react';
-import { Routes, Route, useNavigate, useParams } from 'react-router-dom';
-import getLogger from '../../../../../lib/logging/Logger.js';
-import usePianoList from '../../usePianoList.js';
+import { useEffect, useMemo, useState } from 'react';
+import { Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { usePianoUser } from '../../PianoUserContext.jsx';
+import { isPersistentUser } from '../../pianoUser.js';
 import PianoEmpty from '../../PianoEmpty.jsx';
-import { SkeletonGrid } from '../../Skeleton.jsx';
+import { SkeletonGrid, SkeletonStage } from '../../Skeleton.jsx';
 import ExerciseRun from './ExerciseRun.jsx';
-import { buildSearchPath, describeInstance, groupByLevel } from './exerciseQuery.js';
-import {
-  DEFAULT_FILTERS, FORM_OPTIONS, HAND_OPTIONS, LEVEL_BANDS, MODE_OPTIONS, TRADITION_OPTIONS,
-} from './filters.js';
+import ExerciseNotation from './ExerciseNotation.jsx';
+import { describeInstance } from './exerciseQuery.js';
+import { FORM_OPTIONS, HAND_OPTIONS, LEVEL_BANDS, MODE_OPTIONS } from './filters.js';
+import { pianoLearningApi } from './pianoLearningApi.js';
+import { useExerciseWorkspace } from './useExerciseWorkspace.js';
 import './Exercises.scss';
 
-/**
- * Exercises — browses the exercise bank.
- *
- * The bank stores seeds and computes instances, so what is browsed here is not
- * a list of files: it is a query. Levels are the spine of it, because a player
- * needs "something I can nearly do", not "everything that exists".
- *
- * Replaces the old Lessons mode, which could only ever show the one Hanon
- * collection it was hard-wired to.
- */
 export function Exercises() {
   return (
     <Routes>
-      <Route index element={<ExerciseBrowser />} />
+      <Route index element={<ExerciseDashboard />} />
+      <Route path="browse" element={<ExerciseCatalog />} />
+      <Route path="program/:programId" element={<ExerciseProgram />} />
+      <Route path="item/*" element={<ExerciseDetail />} />
       <Route path="run/*" element={<ExerciseRunRoute />} />
     </Routes>
   );
 }
 
-function ExerciseRunRoute() {
-  const navigate = useNavigate();
-  const params = useParams();
-  // The instance id contains slashes and an @, so it rides in a splat.
-  const instanceId = params['*'] ? decodeURIComponent(params['*']) : null;
-  return <ExerciseRun instanceId={instanceId} onExit={() => navigate('..', { relative: 'path' })} />;
+function useExercisesBase() {
+  const { pathname } = useLocation();
+  const marker = '/exercises';
+  const index = pathname.indexOf(marker);
+  return index >= 0 ? pathname.slice(0, index + marker.length) : '/piano/exercises';
 }
 
-function ExerciseBrowser() {
-  const logger = useMemo(() => getLogger().child({ component: 'piano-exercises' }), []);
+function PageHeader({ eyebrow = 'Practice room', title, subtitle, onBack, action = null }) {
+  return (
+    <header className="piano-exercises__page-head">
+      <div>
+        {onBack && <button type="button" className="piano-exercises__back" onClick={onBack}>Back</button>}
+        <span className="piano-exercises__eyebrow">{eyebrow}</span>
+        <h1>{title}</h1>
+        {subtitle && <p>{subtitle}</p>}
+      </div>
+      {action}
+    </header>
+  );
+}
+
+function ExerciseDashboard() {
   const navigate = useNavigate();
-  const [filters, setFilters] = useState(DEFAULT_FILTERS);
+  const base = useExercisesBase();
+  const { currentUser, currentProfile } = usePianoUser();
+  const { catalog, learning, loading, error, refresh } = useExerciseWorkspace(currentUser || 'guest');
+  const [busy, setBusy] = useState(null);
+  if (loading) return <SkeletonStage />;
+  if (error || !catalog || !learning) return <PianoEmpty title="Exercises unavailable" hint={error} />;
 
-  const path = useMemo(() => buildSearchPath(filters), [filters]);
-  const { data, error } = usePianoList(path, (r) => r ?? null);
-
-  const set = useCallback((patch) => {
-    setFilters((current) => {
-      const next = { ...current, ...patch };
-      logger.debug('piano.exercises.filter', next);
-      return next;
-    });
-  }, [logger]);
-
-  const bands = useMemo(() => groupByLevel(data?.instances ?? [], filters.mode), [data, filters.mode]);
-  const facets = data?.facets ?? { level: {}, form: {}, collection: {}, tradition: {} };
-  const total = data?.total ?? 0;
-
-  if (error) return <PianoEmpty title="Exercises unavailable" hint={String(error.message || error)} />;
+  const active = learning.programs ?? [];
+  const featured = (learning.available_programs ?? []).filter((program) => program.featured && !program.active);
+  const next = learning.next_up;
+  const continueNext = () => {
+    if (next?.type === 'video-checkpoint') {
+      const query = new URLSearchParams({
+        intent: 'challenge',
+        requirement: JSON.stringify(next.requirement),
+        ...(next.return_to ? { return: next.return_to } : {}),
+      });
+      navigate(`${base}/run/${encodeURIComponent(next.requirement.exercise_id)}?${query}`);
+      return;
+    }
+    if (next) navigate(`${base}/program/${encodeURIComponent(next.program_id)}`);
+  };
+  const enroll = async (programId) => {
+    if (!isPersistentUser(currentUser)) return;
+    setBusy(programId);
+    const result = await pianoLearningApi.enroll(currentUser, programId);
+    setBusy(null);
+    if (result.ok) refresh();
+  };
 
   return (
-    <section className="piano-exercises">
-      <header className="piano-exercises__head">
-        <h1 className="piano-exercises__title">Exercises</h1>
-        <p className="piano-exercises__count">
-          {data ? `${total} to choose from` : 'Counting…'}
-        </p>
-      </header>
+    <section className="piano-exercises piano-exercises--home">
+      <PageHeader
+        title={`${currentProfile?.name ?? 'Guest'}’s practice`}
+        subtitle="Continue a learning track or explore the exercise library."
+        action={<button type="button" className="piano-exercises__quiet-action" onClick={() => navigate(`${base}/browse`)}>Browse library</button>}
+      />
 
-      <div className="piano-exercises__filters">
-        <FilterRow label="How strict">
-          {MODE_OPTIONS.map((option) => (
-            <Chip
-              key={option.id}
-              active={filters.mode === option.id}
-              onClick={() => set({ mode: option.id })}
-              title={option.blurb}
-            >
-              {option.label}
-            </Chip>
-          ))}
-        </FilterRow>
-
-        <FilterRow label="Level">
-          {LEVEL_BANDS.map((band) => {
-            // A band with nothing in it is shown but not offered — knowing it is
-            // empty is more useful than it silently vanishing.
-            const count = countInBand(facets.level, band);
-            return (
-              <Chip
-                key={band.id}
-                active={filters.levelMin === band.min && filters.levelMax === band.max}
-                disabled={band.id !== 'any' && count === 0}
-                onClick={() => set({ levelMin: band.min, levelMax: band.max })}
-              >
-                {band.label}
-                {band.id !== 'any' && <span className="piano-exercises__chip-count">{count}</span>}
-              </Chip>
-            );
-          })}
-        </FilterRow>
-
-        <FilterRow label="Kind">
-          {FORM_OPTIONS.map((option) => (
-            <Chip
-              key={option.id ?? 'all'}
-              active={filters.form === option.id}
-              disabled={Boolean(option.id) && !facets.form[option.id]}
-              onClick={() => set({ form: option.id })}
-            >
-              {option.label}
-              {option.id && <span className="piano-exercises__chip-count">{facets.form[option.id] ?? 0}</span>}
-            </Chip>
-          ))}
-        </FilterRow>
-
-        <FilterRow label="Style">
-          {TRADITION_OPTIONS.map((option) => (
-            <Chip
-              key={option.id ?? 'any'}
-              active={filters.tradition === option.id}
-              disabled={Boolean(option.id) && !facets.tradition?.[option.id]}
-              onClick={() => set({ tradition: option.id })}
-            >
-              {option.label}
-              {option.id && <span className="piano-exercises__chip-count">{facets.tradition?.[option.id] ?? 0}</span>}
-            </Chip>
-          ))}
-        </FilterRow>
-
-        <FilterRow label="Hands">
-          {HAND_OPTIONS.map((option) => (
-            <Chip
-              key={option.id ?? 'any'}
-              active={filters.hands === option.id}
-              onClick={() => set({ hands: option.id })}
-            >
-              {option.label}
-            </Chip>
-          ))}
-        </FilterRow>
-      </div>
-
-      {!data && <SkeletonGrid />}
-
-      {data && total === 0 && (
-        <PianoEmpty
-          title="Nothing at that level"
-          hint="Try a wider level band, or a less strict mode."
-        />
+      {next ? (
+        <section className="piano-exercises__next" aria-labelledby="exercise-next-title">
+          <span className="piano-exercises__section-kicker">Next up</span>
+          <div className="piano-exercises__next-copy">
+            <h2 id="exercise-next-title">{next.type === 'video-checkpoint' ? next.title : next.step.title}</h2>
+            <p>{next.type === 'video-checkpoint' ? `${next.course_title ?? 'Video lesson'} · Exercise checkpoint` : `${next.program_title} · Step ${next.step.order}`}</p>
+          </div>
+          <button type="button" onClick={continueNext}>Continue</button>
+        </section>
+      ) : (
+        <section className="piano-exercises__next piano-exercises__next--empty">
+          <span className="piano-exercises__section-kicker">Choose a program</span>
+          <div className="piano-exercises__next-copy">
+            <h2>Build a practice path</h2>
+            <p>Programs remember where you are and put one useful task first.</p>
+          </div>
+          <button type="button" onClick={() => navigate(`${base}/browse`)}>Explore</button>
+        </section>
       )}
 
-      {data && bands.map(({ level, items }) => (
-        <div key={level} className="piano-exercises__band">
-          <h2 className="piano-exercises__band-title">
-            Level {level}
-            <span className="piano-exercises__band-count">{items.length}</span>
-          </h2>
-          <ul className="piano-exercises__grid">
-            {items.map((instance) => (
-              <li key={instance.id}>
-                <button
-                  type="button"
-                  className="piano-exercises__card"
-                  onClick={() => {
-                    logger.info('piano.exercise-open', { id: instance.id, level, mode: filters.mode });
-                    navigate(`run/${encodeURIComponent(instance.id)}?mode=${filters.mode}`);
-                  }}
-                >
-                  <span className="piano-exercises__card-title">{instance.title}</span>
-                  <span className="piano-exercises__card-detail">{describeInstance(instance)}</span>
-                  <span className="piano-exercises__card-meta">
-                    <span>{instance.shape.events} note{instance.shape.events === 1 ? '' : 's'}</span>
-                    <span>{instance.staff}</span>
-                    <span>{instance.shape.hands}</span>
-                  </span>
-                </button>
-              </li>
+      {active.length > 0 && (
+        <section className="piano-exercises__section">
+          <div className="piano-exercises__section-head"><div><span>In progress</span><h2>My programs</h2></div></div>
+          <div className="piano-exercises__program-grid">
+            {active.map((program) => (
+              <button key={program.id} type="button" className="piano-exercises__program-card" onClick={() => navigate(`${base}/program/${encodeURIComponent(program.id)}`)}>
+                <span className="piano-exercises__program-kind">{program.required ? 'Required' : 'My program'}</span>
+                <strong>{program.title}</strong>
+                <span>{program.current_step ? `Next: ${program.current_step.title}` : 'Program complete'}</span>
+                <Progress value={program.percent} label={`${program.passed_steps} of ${program.total_steps}`} />
+              </button>
             ))}
-          </ul>
-        </div>
+          </div>
+        </section>
+      )}
+
+      {featured.map((program) => (
+        <section className="piano-exercises__feature" key={program.id}>
+          <div>
+            <span className="piano-exercises__section-kicker">Featured program</span>
+            <h2>{program.title}</h2>
+            <p>{program.description}</p>
+            <span>{program.steps} progressive exercises</span>
+          </div>
+          <div className="piano-exercises__feature-actions">
+            <button type="button" className="piano-exercises__quiet-action" onClick={() => navigate(`${base}/program/${encodeURIComponent(program.id)}`)}>View program</button>
+            {isPersistentUser(currentUser) ? (
+              <button type="button" disabled={busy === program.id} onClick={() => enroll(program.id)}>{busy === program.id ? 'Starting…' : 'Start program'}</button>
+            ) : <span>Choose a learner to save progress</span>}
+          </div>
+        </section>
       ))}
 
-      {data && total > (data.instances?.length ?? 0) && (
-        <p className="piano-exercises__more">
-          Showing {data.instances.length} of {total}. Narrow the level or kind to see the rest.
-        </p>
-      )}
+      <section className="piano-exercises__section piano-exercises__browse-callout">
+        <div className="piano-exercises__section-head">
+          <div><span>Reference library</span><h2>Browse exercises</h2></div>
+          <button type="button" className="piano-exercises__text-action" onClick={() => navigate(`${base}/browse`)}>See all {catalog.totals.seeds}</button>
+        </div>
+        <p>{catalog.totals.seeds} authored exercises with {catalog.totals.variants} playable key, hand, and direction variants.</p>
+        <div className="piano-exercises__category-row">
+          {catalog.categories.filter((category) => !category.parent).map((category) => (
+            <button key={category.id} type="button" onClick={() => navigate(`${base}/browse?collection=${encodeURIComponent(category.id)}`)}>
+              <strong>{category.title}</strong><span>{category.subtitle}</span>
+            </button>
+          ))}
+        </div>
+      </section>
     </section>
   );
 }
 
-function countInBand(levelFacets, band) {
-  let total = 0;
-  for (let level = band.min; level <= band.max; level += 1) total += levelFacets[level] ?? 0;
-  return total;
-}
+function ExerciseCatalog() {
+  const navigate = useNavigate();
+  const base = useExercisesBase();
+  const { currentUser } = usePianoUser();
+  const { catalog, learning, loading, error } = useExerciseWorkspace(currentUser || 'guest');
+  const [params, setParams] = useSearchParams();
+  const storageKey = `piano:exercise-filters:${currentUser || 'guest'}`;
 
-function FilterRow({ label, children }) {
+  useEffect(() => {
+    if ([...params.keys()].length) return;
+    try {
+      const saved = localStorage.getItem(storageKey);
+      if (saved) setParams(new URLSearchParams(saved), { replace: true });
+    } catch { /* private mode */ }
+  }, [params, setParams, storageKey]);
+  useEffect(() => {
+    try { localStorage.setItem(storageKey, params.toString()); } catch { /* private mode */ }
+  }, [params, storageKey]);
+
+  if (loading) return <SkeletonGrid />;
+  if (error || !catalog) return <PianoEmpty title="Exercise library unavailable" hint={error} />;
+  const set = (name, value) => {
+    const next = new URLSearchParams(params);
+    if (value == null || value === '') next.delete(name); else next.set(name, String(value));
+    setParams(next);
+  };
+  const level = LEVEL_BANDS.find((band) => band.id === params.get('level')) ?? LEVEL_BANDS[0];
+  const progress = learning?.catalog_progress ?? {};
+  const programSteps = (learning?.programs ?? []).flatMap((program) => program.steps.map((step) => ({ program, step, seedId: step.seed_id ?? step.requirement.exercise_id.split('@')[0] })));
+  const items = catalog.seeds.filter((seed) => {
+    const collection = params.get('collection');
+    if (collection && seed.category !== collection && !seed.category.startsWith(`${collection}/`)) return false;
+    if (params.get('form') && seed.form !== params.get('form')) return false;
+    if (params.get('mode') && !seed.supports.includes(params.get('mode'))) return false;
+    if (params.get('hands') && !seed.hands.includes(params.get('hands'))) return false;
+    if (seed.level_max < level.min || seed.level_min > level.max) return false;
+    const state = params.get('progress');
+    if (state === 'ready' && !programSteps.some((entry) => entry.seedId === seed.id && entry.step.state === 'current')) return false;
+    if (state === 'my-programs' && !programSteps.some((entry) => entry.seedId === seed.id)) return false;
+    if (state === 'assigned' && !programSteps.some((entry) => entry.seedId === seed.id && entry.program.required)) return false;
+    if (state === 'not-tried' && progress[seed.id]) return false;
+    if (state === 'needs-work' && (!progress[seed.id] || progress[seed.id].passed)) return false;
+    if (state === 'passed' && !progress[seed.id]?.passed) return false;
+    return true;
+  });
+
   return (
-    <div className="piano-exercises__filter-row">
-      <span className="piano-exercises__filter-label">{label}</span>
-      <div className="piano-exercises__chips">{children}</div>
-    </div>
+    <section className="piano-exercises piano-exercises--catalog">
+      <PageHeader eyebrow="Exercise library" title="Browse by musical idea" subtitle={`${catalog.totals.seeds} authored exercises · ${catalog.totals.variants} playable variants`} onBack={() => navigate(base)} />
+      <div className="piano-exercises__catalog-layout">
+        <aside className="piano-exercises__filter-panel">
+          <SelectFilter label="Collection" value={params.get('collection') ?? ''} onChange={(value) => set('collection', value)} options={[
+            { id: '', label: 'All collections' }, ...catalog.categories.map((category) => ({ id: category.id, label: category.title })),
+          ]} />
+          <SelectFilter label="Kind" value={params.get('form') ?? ''} onChange={(value) => set('form', value)} options={FORM_OPTIONS.map((option) => ({ id: option.id ?? '', label: option.label }))} />
+          <SelectFilter label="Level" value={level.id} onChange={(value) => set('level', value === 'any' ? null : value)} options={LEVEL_BANDS.map((band) => ({ id: band.id, label: band.label }))} />
+          <SelectFilter label="Mode" value={params.get('mode') ?? ''} onChange={(value) => set('mode', value)} options={[{ id: '', label: 'Any mode' }, ...MODE_OPTIONS]} />
+          <SelectFilter label="Hands" value={params.get('hands') ?? ''} onChange={(value) => set('hands', value)} options={HAND_OPTIONS.map((option) => ({ id: option.id ?? '', label: option.label }))} />
+          <SelectFilter label="My progress" value={params.get('progress') ?? ''} onChange={(value) => set('progress', value)} options={[
+            { id: '', label: 'All exercises' }, { id: 'ready', label: 'Ready now' }, { id: 'my-programs', label: 'My programs' }, { id: 'assigned', label: 'Assigned' }, { id: 'not-tried', label: 'Not tried' }, { id: 'needs-work', label: 'Needs work' }, { id: 'passed', label: 'Passed' },
+          ]} />
+          <button type="button" className="piano-exercises__reset" onClick={() => setParams({})}>Clear filters</button>
+        </aside>
+        <main>
+          <p className="piano-exercises__result-count">{items.length} exercise{items.length === 1 ? '' : 's'}</p>
+          {items.length ? (
+            <ul className="piano-exercises__seed-grid">
+              {items.map((seed) => (
+                <li key={seed.id}>
+                  <button type="button" className="piano-exercises__seed-card" onClick={() => navigate(`${base}/item/${seed.id}`)}>
+                    <span className="piano-exercises__seed-kind">{seed.form ?? 'exercise'} · Level {seed.level_min === seed.level_max ? seed.level_min : `${seed.level_min}–${seed.level_max}`}</span>
+                    <strong>{seed.title}</strong>
+                    <span>{seed.subtitle ?? seed.focus ?? seed.category}</span>
+                    <span className="piano-exercises__seed-meta">{seed.variants} variant{seed.variants === 1 ? '' : 's'} · {seed.hands.join(' / ')}</span>
+                    {progress[seed.id] && <span className={`piano-exercises__status-tag${progress[seed.id].passed ? ' is-passed' : ''}`}>{progress[seed.id].passed ? 'Passed' : 'Practiced'}</span>}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : <PianoEmpty title="No authored exercises match" hint="Try a wider level or another collection." />}
+        </main>
+      </div>
+    </section>
   );
 }
 
-function Chip({ active, disabled, onClick, title, children }) {
+function ExerciseProgram() {
+  const { programId } = useParams();
+  const navigate = useNavigate();
+  const base = useExercisesBase();
+  const { currentUser } = usePianoUser();
+  const { learning, loading, error, refresh } = useExerciseWorkspace(currentUser || 'guest');
+  const [raw, setRaw] = useState(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    pianoLearningApi.program(programId).then((result) => { if (alive && result.ok) setRaw(result.data); });
+    return () => { alive = false; };
+  }, [programId]);
+  if (loading || !raw) return <SkeletonStage />;
+  if (error) return <PianoEmpty title="Program unavailable" hint={error} />;
+  const active = learning.programs?.find((program) => program.id === programId);
+  const program = active ?? {
+    ...raw, passed_steps: 0, total_steps: raw.steps.length, percent: 0,
+    steps: raw.steps.map((step, index) => ({ ...step, state: index === 0 ? 'current' : 'upcoming', unlocked: index === 0, passed: false })),
+  };
+  const changeEnrollment = async () => {
+    if (!isPersistentUser(currentUser)) return;
+    setBusy(true);
+    const response = active ? await pianoLearningApi.unenroll(currentUser, programId) : await pianoLearningApi.enroll(currentUser, programId);
+    setBusy(false);
+    if (response.ok) refresh();
+  };
   return (
-    <button
-      type="button"
-      className={`piano-exercises__chip${active ? ' piano-exercises__chip--active' : ''}`}
-      onClick={onClick}
-      disabled={disabled}
-      title={title}
-    >
-      {children}
-    </button>
+    <section className="piano-exercises piano-exercises--program">
+      <PageHeader
+        eyebrow={active?.required ? 'Required program' : 'Learning program'}
+        title={program.title}
+        subtitle={program.description ?? program.subtitle}
+        onBack={() => navigate(base)}
+        action={isPersistentUser(currentUser) && !active?.required ? (
+          <button type="button" className="piano-exercises__quiet-action" disabled={busy} onClick={changeEnrollment}>
+            {active ? 'Leave program' : 'Start program'}
+          </button>
+        ) : null}
+      />
+      <div className="piano-exercises__program-summary">
+        <Progress value={program.percent} label={`${program.passed_steps} of ${program.total_steps} passed`} />
+        <p>A passing run unlocks the next number. Higher tempo milestones remain visible as mastery goals.</p>
+      </div>
+      <ol className="piano-exercises__steps">
+        {program.steps.map((step) => (
+          <li key={step.id} className={`piano-exercises__step is-${step.state}`}>
+            <span className="piano-exercises__step-number">{step.order}</span>
+            <div className="piano-exercises__step-copy">
+              <span>{step.state === 'current' ? 'Next exercise' : step.mastered ? 'Mastered' : step.passed ? 'Passed' : 'Upcoming'}</span>
+              <strong>{step.title}</strong>
+              <p>{step.subtitle}</p>
+              {step.passed && <small>{step.mastery_bpm ? `Best mastery milestone: ${step.mastery_bpm} BPM` : 'Ready for tempo mastery'}</small>}
+            </div>
+            <div className="piano-exercises__step-actions">
+              <button
+                type="button"
+                className="piano-exercises__quiet-action"
+                disabled={!step.unlocked}
+                onClick={() => navigate(`${base}/run/${encodeURIComponent(step.requirement.exercise_id)}?intent=practice&program=${encodeURIComponent(program.id)}&step=${encodeURIComponent(step.id)}`)}
+              >
+                {step.unlocked ? 'Practice' : 'Locked'}
+              </button>
+              {step.state === 'current' && active && isPersistentUser(currentUser) && (
+                <button type="button" onClick={() => navigate(`${base}/run/${encodeURIComponent(step.requirement.exercise_id)}?intent=challenge&program=${encodeURIComponent(program.id)}&step=${encodeURIComponent(step.id)}`)}>Pass at {step.requirement.gates?.pace?.target_bpm ?? 'your pace'} BPM</button>
+              )}
+            </div>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+function ExerciseDetail() {
+  const params = useParams();
+  const seedId = params['*'] ? decodeURIComponent(params['*']) : null;
+  const navigate = useNavigate();
+  const base = useExercisesBase();
+  const { currentUser } = usePianoUser();
+  const { learning } = useExerciseWorkspace(currentUser || 'guest');
+  const [state, setState] = useState({ seed: null, instances: null, error: null });
+  const [selection, setSelection] = useState({});
+  useEffect(() => {
+    let alive = true;
+    Promise.all([pianoLearningApi.seed(seedId), pianoLearningApi.instances(seedId)]).then(([seed, instances]) => {
+      if (!alive) return;
+      if (!seed.ok || !instances.ok) setState({ seed: null, instances: [], error: 'This exercise could not be loaded.' });
+      else {
+        setState({ seed: seed.data, instances: instances.data.instances, error: null });
+        setSelection(instances.data.instances[0]?.axes ?? {});
+      }
+    });
+    return () => { alive = false; };
+  }, [seedId]);
+  if (state.error) return <PianoEmpty title="Exercise unavailable" hint={state.error} />;
+  if (!state.seed || !state.instances) return <SkeletonStage />;
+  const axes = Object.keys(state.instances[0]?.axes ?? {});
+  const selected = state.instances.find((instance) => axes.every((axis) => String(instance.axes[axis]) === String(selection[axis]))) ?? state.instances[0];
+  const activeStep = learning?.programs?.flatMap((program) => program.steps.map((step) => ({ program, step })))
+    .find(({ step }) => step.requirement.exercise_id === selected?.id && step.state === 'current');
+  return (
+    <section className="piano-exercises piano-exercises--detail">
+      <PageHeader eyebrow={state.seed.derived?.form ?? 'Exercise'} title={state.seed.title} subtitle={state.seed.subtitle ?? state.seed.focus} onBack={() => navigate(-1)} />
+      <div className="piano-exercises__detail-grid">
+        <div className="piano-exercises__notation-card"><ExerciseNotation instance={selected} /></div>
+        <aside className="piano-exercises__variant-panel">
+          <dl>
+            <div><dt>Focus</dt><dd>{state.seed.focus ?? 'Technique and control'}</dd></div>
+            <div><dt>Meter</dt><dd>{selected.meter ?? 'Free'}</dd></div>
+            <div><dt>Staff</dt><dd>{selected.staff}</dd></div>
+            {selected.tempo && <div><dt>Tempo</dt><dd>{selected.tempo.start_bpm}–{selected.tempo.target_bpm} BPM</dd></div>}
+          </dl>
+          {axes.map((axis) => {
+            const values = [...new Set(state.instances.map((instance) => String(instance.axes[axis])))];
+            return <SelectFilter key={axis} label={axis.replace(/_/g, ' ')} value={String(selection[axis])} onChange={(value) => setSelection((current) => ({ ...current, [axis]: value }))} options={values.map((value) => ({ id: value, label: value.replace(/-/g, ' ') }))} />;
+          })}
+          <p className="piano-exercises__variant-description">{describeInstance(selected)}</p>
+          <div className="piano-exercises__detail-actions">
+            <button type="button" className="piano-exercises__quiet-action" onClick={() => navigate(`${base}/run/${encodeURIComponent(selected.id)}?intent=practice`)}>Practice</button>
+            {activeStep && isPersistentUser(currentUser) && <button type="button" onClick={() => navigate(`${base}/run/${encodeURIComponent(selected.id)}?intent=challenge&program=${encodeURIComponent(activeStep.program.id)}&step=${encodeURIComponent(activeStep.step.id)}`)}>Pass challenge</button>}
+          </div>
+        </aside>
+      </div>
+    </section>
+  );
+}
+
+function ExerciseRunRoute() {
+  const navigate = useNavigate();
+  const base = useExercisesBase();
+  const params = useParams();
+  const [query] = useSearchParams();
+  const instanceId = params['*'] ? decodeURIComponent(params['*']) : null;
+  const returnTo = query.get('return');
+  const requirementText = query.get('requirement');
+  const requirementOverride = useMemo(() => {
+    try { return requirementText ? JSON.parse(requirementText) : null; } catch { return null; }
+  }, [requirementText]);
+  return (
+    <ExerciseRun
+      instanceId={instanceId}
+      intent={query.get('intent') === 'challenge' ? 'challenge' : 'practice'}
+      programId={query.get('program')}
+      stepId={query.get('step')}
+      requirementOverride={requirementOverride}
+      onExit={() => navigate(-1)}
+      onPassed={() => returnTo ? navigate(returnTo) : query.get('program') ? navigate(`${base}/program/${encodeURIComponent(query.get('program'))}`) : navigate(base)}
+    />
+  );
+}
+
+function Progress({ value, label }) {
+  return <div className="piano-exercises__progress"><div><span style={{ width: `${Math.max(0, Math.min(100, value ?? 0))}%` }} /></div><small>{label}</small></div>;
+}
+
+function SelectFilter({ label, value, onChange, options }) {
+  return (
+    <label className="piano-exercises__select">
+      <span>{label}</span>
+      <select value={value} onChange={(event) => onChange(event.target.value)}>
+        {options.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+      </select>
+    </label>
   );
 }
 

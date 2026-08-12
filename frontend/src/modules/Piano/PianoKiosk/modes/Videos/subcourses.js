@@ -74,8 +74,13 @@ export function partitionSeasons(items, parents, referenceUnitIds = []) {
 
 export function progressOf(items) {
   const list = items || [];
-  const watched = list.filter((it) => lectureUserStatus(it).watched).length;
+  const watched = list.filter((it) => lessonComplete(it)).length;
   return { watched, total: list.length };
+}
+
+export function lessonComplete(item) {
+  if (!lectureUserStatus(item).watched) return false;
+  return !item?.piano?.checkpoint || item?.checkpointStatus?.passed === true;
 }
 
 export function courseGate(sortedLessons) {
@@ -85,7 +90,7 @@ export function courseGate(sortedLessons) {
   for (const ep of sortedLessons || []) {
     const k = keyOf(ep);
     if (gateClosed) { lockedIds.add(k); continue; }
-    if (!lectureUserStatus(ep).watched) { currentId = k; gateClosed = true; }
+    if (!lessonComplete(ep)) { currentId = k; gateClosed = true; }
   }
   return { lockedIds, currentId };
 }
@@ -149,7 +154,7 @@ export function continueTarget(seasons) {
   for (const s of (seasons || []).filter((x) => laneOf(x) === 'lessons')) {
     for (const c of s.courses) {
       const ordered = [...c.lessons].sort((a, b) => (Number(a?.itemIndex) || 0) - (Number(b?.itemIndex) || 0));
-      const next = ordered.find((ep) => !lectureUserStatus(ep).watched);
+      const next = ordered.find((ep) => !lessonComplete(ep));
       if (next) return { seasonId: s.id, floor: c.floor, lesson: next };
     }
   }

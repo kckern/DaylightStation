@@ -159,7 +159,7 @@ own data source; the chrome and the live keyboard are the only things they share
 | **Producer** | A beat-and-loop launcher: keys below a split fire drum one-shots, keys above play melodically over a looping bed. | Local audio kits |
 | **Games** | A full-screen picker and host for note-driven games. | The MIDI stream + game engines |
 | **Composers** | A study reference for the masters. *(Planned.)* | — |
-| **Lessons** | Content-driven technique-drill browser. A drill stores a short seed figure + a transpose rule; the kiosk expands it to the full exercise (the figure climbing the scale and back), engraves it, and runs a MIDI follow-along — the right hand drives a cursor that lights the current notehead green and advances as you play it, with the next key lit on a live keyboard. | A media folder of drill collections (`media/docs/piano-lessons/{collection}/`), e.g. the bundled Hanon set |
+| **Exercises** | Learning workspace and full [exercise-bank](./exercise-bank.md) catalog. Its home resumes the selected learner's next required/enrolled program step or video exit checkpoint; Hanon is a visible 30-step opt-in program with sequential gates and mastery tempos. Browse has URL-addressable musical and per-user progress filters. Detail and run views use real `MusicNotation` engraving, separate wait-for-correct Practice from criterion-bearing Pass challenges, and project progress from the shared attempt ledger. Teacher assignments use the existing PIN-gated Planning console. Replaced the hard-wired Lessons mode; `/piano/lessons` redirects. | Bank content at `data/content/music/`; learning state under per-user and household piano YAML |
 
 Games deserve their own note: they plug in through a registry and can be launched either
 by tapping a tile or by playing a configured chord combination on the keys, so a player can
@@ -258,7 +258,7 @@ logging, so a backend outage degrades gracefully rather than breaking the surfac
 | MIDI pipeline | `frontend/src/modules/Piano/PianoKiosk/{useWebMidiBLE,PianoMidiContext,usePianoBridgeNotes,midiDecode}.js[x]` · `noteHistory.js` |
 | MIDI architecture, compromises & risks | [midi-architecture.md](./midi-architecture.md) |
 | Sound + device profiles | `frontend/src/modules/Piano/PianoKiosk/{PianoSoundContext,usePianoVoiceBridge,instrumentSpec}.js[x]` · `devices/` |
-| Modes | `frontend/src/modules/Piano/PianoKiosk/modes/{Videos,Music,SheetMusic,Studio,Producer,Games,Lessons,Composers}/` |
+| Modes | `frontend/src/modules/Piano/PianoKiosk/modes/{Videos,Music,SheetMusic,Studio,Producer,Games,Exercises,Composers}/` |
 | Games | `frontend/src/modules/Piano/gameRegistry.js` · `frontend/src/modules/Piano/Piano*Game*/` |
 | Shared components | `frontend/src/modules/Piano/components/` · `PianoKiosk/icons/` |
 | Transport primitives | `frontend/src/modules/Piano/PianoKiosk/transport/` |
