@@ -47,8 +47,15 @@ vi.mock('@/lib/logging/Logger.js', () => {
 // `fitness-instruction-to-build` target) still renders, and no response lands
 // outside act() to muddy these assertions. ExerciseBrowser.test.jsx covers what
 // happens when the data arrives.
+//
+// The ONE exception is the run endpoint: build -> run is a server round trip now
+// (the server expands the plan into the runner's ordered step list), so hanging
+// that request would hang the state machine this suite exists to test. The tray
+// here is empty, so the expanded plan is legitimately empty too.
 vi.mock('@/lib/api.mjs', () => ({
-  DaylightAPI: () => new Promise(() => {}),
+  DaylightAPI: (path) => (String(path).endsWith('/workouts/run')
+    ? Promise.resolve({ ok: true, workout: { id: null, title: null }, steps: [], exercises: {}, missingSlugs: [] })
+    : new Promise(() => {})),
   DaylightAPIText: () => new Promise(() => {}),
   DaylightMediaPath: (p) => `https://kiosk.test/${String(p).replace(/^\/|\/$/g, '')}`,
   DaylightImagePath: (k) => `https://kiosk.test/api/v1/static/img/${k}`,
@@ -62,6 +69,16 @@ vi.mock('@/lib/api.mjs', () => ({
 
 const logsFor = (bucket, event) =>
   logCalls[bucket].filter((l) => l.component === 'fitness-instruction' && l.event === event);
+
+/**
+ * Tap Start and wait for the run screen. Start is a round trip (the server expands the
+ * plan), so the transition lands a tick later — a synchronous assertion would read the
+ * builder still on screen.
+ */
+const startRun = async (q) => {
+  fireEvent.pointerDown(q.getByTestId('fitness-instruction-to-run'));
+  await q.findByTestId('fitness-instruction-run');
+};
 
 // Assert exactly one state is on screen — a transition that lands anywhere else
 // (or renders two panels at once) fails here, not just on the panel it expected.
@@ -111,17 +128,17 @@ describe('FitnessInstructionContainer', () => {
     expect(q.getByTestId('workout-builder-empty')).toBeTruthy();
   });
 
-  it('build -> run when the built workout is started', () => {
+  it('build -> run when the built workout is started', async () => {
     const q = render(<FitnessInstructionContainer />);
     fireEvent.pointerDown(q.getByTestId('fitness-instruction-to-build'));
-    fireEvent.pointerDown(q.getByTestId('fitness-instruction-to-run'));
+    await startRun(q);
     expectOnlyState(q, 'run');
   });
 
-  it('run -> browse when the run ends', () => {
+  it('run -> browse when the run ends', async () => {
     const q = render(<FitnessInstructionContainer />);
     fireEvent.pointerDown(q.getByTestId('fitness-instruction-to-build'));
-    fireEvent.pointerDown(q.getByTestId('fitness-instruction-to-run'));
+    await startRun(q);
     fireEvent.pointerDown(q.getByTestId('fitness-instruction-run-exit'));
     expectOnlyState(q, 'browse');
   });
@@ -133,10 +150,10 @@ describe('FitnessInstructionContainer', () => {
     expectOnlyState(q, 'browse');
   });
 
-  it('logs each transition at debug with { from, to }', () => {
+  it('logs each transition at debug with { from, to }', async () => {
     const q = render(<FitnessInstructionContainer />);
     fireEvent.pointerDown(q.getByTestId('fitness-instruction-to-build'));
-    fireEvent.pointerDown(q.getByTestId('fitness-instruction-to-run'));
+    await startRun(q);
     fireEvent.pointerDown(q.getByTestId('fitness-instruction-run-exit'));
     const transitions = logsFor('debug', 'state-transition').map((l) => l.data);
     expect(transitions).toEqual([
@@ -166,7 +183,7 @@ describe('FitnessInstructionContainer', () => {
     expectOnlyState(q, 'build');
   });
 
-  it('exposes only the legal moves out of each state', () => {
+  it('exposes only the legal moves out of each state', async () => {
     const q = render(<FitnessInstructionContainer />);
     // browse: build only
     expect(q.queryByTestId('fitness-instruction-to-build')).toBeTruthy();
@@ -176,7 +193,7 @@ describe('FitnessInstructionContainer', () => {
     expect(q.queryByTestId('fitness-instruction-to-run')).toBeTruthy();
     expect(q.queryByTestId('fitness-instruction-build-back')).toBeTruthy();
     // run: exit only
-    fireEvent.pointerDown(q.getByTestId('fitness-instruction-to-run'));
+    await startRun(q);
     expect(q.queryByTestId('fitness-instruction-run-exit')).toBeTruthy();
     expect(q.queryByTestId('fitness-instruction-to-build')).toBeNull();
   });

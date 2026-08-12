@@ -14,12 +14,12 @@ import './FitnessInstructionContainer.scss';
  *   run    — the guided set-by-set player (WorkoutRunner)
  *
  * All three are live. Nothing HERE fetches: ExerciseBrowser owns the corpus
- * requests, WorkoutBuilder owns the save, and the runner's step list and
- * slug->display lookup are read off whatever the builder handed to `startRun`.
- * The builder hands over the AUTHORED plan (groups) plus display records, not a
- * flat step list — expansion is the domain's job and no endpoint serves it yet,
- * so a run still renders the empty-plan screen. See the docblocks in
- * WorkoutBuilder.jsx and WorkoutRunner.jsx.
+ * requests, WorkoutBuilder owns the save AND the run expansion, and the runner's
+ * step list and slug->display lookup are read off whatever the builder handed to
+ * `startRun`. The builder gets the flat ordered step list from the server
+ * (`POST /workouts/run`), because expansion is the domain's job and the frontend
+ * must not hold a second copy of it. See the docblocks in WorkoutBuilder.jsx and
+ * WorkoutRunner.jsx.
  */
 
 // The only legal moves out of each state. Anything else is a caller bug, so it
@@ -97,8 +97,9 @@ export default function FitnessInstructionContainer({ onMount } = {}) {
   // The runner consumes a FLAT, already-ordered step list — `expandWorkout`
   // (backend/src/2_domains/fitness/workout/workout.mjs) owns that ordering and
   // its docblock is explicit that the player must not re-derive it, so nothing
-  // is flattened here. Until the run API lands, a workout that carries no
-  // `steps` runs as an empty plan.
+  // is flattened here. The builder fetches it from the run endpoint before it
+  // hands the plan over; a workout that still carries no `steps` (an empty plan)
+  // runs as the empty-plan screen.
   const runSteps = useMemo(
     () => (Array.isArray(workout?.steps) ? workout.steps : []),
     [workout]
