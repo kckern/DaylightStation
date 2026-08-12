@@ -159,7 +159,7 @@ own data source; the chrome and the live keyboard are the only things they share
 | **Producer** | A beat-and-loop launcher: keys below a split fire drum one-shots, keys above play melodically over a looping bed. | Local audio kits |
 | **Games** | A full-screen picker and host for note-driven games. | The MIDI stream + game engines |
 | **Composers** | A study reference for the masters. *(Planned.)* | — |
-| **Lessons** | Content-driven technique-drill browser. A drill stores a short seed figure + a transpose rule; the kiosk expands it to the full exercise (the figure climbing the scale and back), engraves it, and runs a MIDI follow-along — the right hand drives a cursor that lights the current notehead green and advances as you play it, with the next key lit on a live keyboard. | A media folder of drill collections (`media/docs/piano-lessons/{collection}/`), e.g. the bundled Hanon set |
+| **Exercises** | Browser for the [exercise bank](./exercise-bank.md), filtered by level. The bank stores seeds and computes instances, so what is browsed is a query rather than a file list: filter chips carry live counts, level bands are named rather than numbered, and an item runs against the cursor matcher (ordered material) or the held-set matcher (chords). Replaced the Lessons mode, which could only ever show the one Hanon collection it was hard-wired to; `/piano/lessons` redirects. | The bank at `data/content/music/` |
 
 Games deserve their own note: they plug in through a registry and can be launched either
 by tapping a tile or by playing a configured chord combination on the keys, so a player can
@@ -258,7 +258,7 @@ logging, so a backend outage degrades gracefully rather than breaking the surfac
 | MIDI pipeline | `frontend/src/modules/Piano/PianoKiosk/{useWebMidiBLE,PianoMidiContext,usePianoBridgeNotes,midiDecode}.js[x]` · `noteHistory.js` |
 | MIDI architecture, compromises & risks | [midi-architecture.md](./midi-architecture.md) |
 | Sound + device profiles | `frontend/src/modules/Piano/PianoKiosk/{PianoSoundContext,usePianoVoiceBridge,instrumentSpec}.js[x]` · `devices/` |
-| Modes | `frontend/src/modules/Piano/PianoKiosk/modes/{Videos,Music,SheetMusic,Studio,Producer,Games,Lessons,Composers}/` |
+| Modes | `frontend/src/modules/Piano/PianoKiosk/modes/{Videos,Music,SheetMusic,Studio,Producer,Games,Exercises,Composers}/` |
 | Games | `frontend/src/modules/Piano/gameRegistry.js` · `frontend/src/modules/Piano/Piano*Game*/` |
 | Shared components | `frontend/src/modules/Piano/components/` · `PianoKiosk/icons/` |
 | Transport primitives | `frontend/src/modules/Piano/PianoKiosk/transport/` |

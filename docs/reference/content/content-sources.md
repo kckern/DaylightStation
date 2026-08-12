@@ -22,6 +22,14 @@ Driver: filesystem (knows how to read local files)
 
 Code is written against **drivers**. Configuration defines **source instances**.
 
+**Not everything under `data/content/` is a content source.** The piano
+[exercise bank](../piano/exercise-bank.md) lives at `data/content/music/` but is
+read by its own adapter (`YamlExerciseBank`) and served on the piano router at
+`/api/v1/piano/bank` — it is never registered as a source instance and does not
+appear through the content API. The distinction is real rather than historical:
+a bank seed expands into instances that are computed on request and never exist
+as files, which is not a shape the filesystem driver's item model can express.
+
 A single driver can return items of different content formats. The filesystem driver serving MP4 files returns `video` format; serving YAML+audio directories with `content_format: singalong` returns `singalong` format. The driver inspects the content structure and reports the appropriate format.
 
 ---
