@@ -197,6 +197,8 @@ Raw vendor files are never modified.
 
 Fence derivation recipes may set `top_corner_row_offset` when a vendor sheet stores the north corners below a decorative cap row. The default is `0`; use `1` only after measuring the source block. `top_extension_rows` and `end_extension_rows` repair transparent seam pixels but do not change which source cell supplies a corner. Always inspect the regenerated `connector-qa` matrix: an enclosure corner must be one continuous L-shaped mass, never two capped runs touching diagonally.
 
+Blob recipes normally read a contiguous 3×3 source block. `outer_stride: [x, y]` records sheets whose left/center/right or top/middle/bottom source cells are separated by intervening columns or rows; the default is `[1, 1]`. `color_map` records exact `#rrggbb` palette substitutions in the derived atlas, useful for normalizing a biome-inappropriate fringe while keeping the raw vendor sheet immutable. Both settings are derivation evidence and require a regenerated topology matrix.
+
 Inspect and render reusable prefab classes without a frontend:
 
 ```bash

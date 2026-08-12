@@ -2123,6 +2123,24 @@ async function buildBlobRecipe({ root, recipe }) {
       ctx.drawImage(image, sx, sy, sw, sh, index * cellWidth + rule.at[0] * halfWidth, cellHeight * 9 + rule.at[1] * halfHeight, halfWidth, halfHeight);
     }
   }
+  const colorMap = recipe.color_map ?? {};
+  if (!colorMap || typeof colorMap !== 'object' || Array.isArray(colorMap)
+    || Object.entries(colorMap).some(([from, to]) => !/^#[0-9a-f]{6}$/i.test(from) || !/^#[0-9a-f]{6}$/i.test(to))) {
+    throw new Error('blob recipe color_map must map #rrggbb colors to #rrggbb colors');
+  }
+  if (Object.keys(colorMap).length) {
+    const replacements = new Map(Object.entries(colorMap).map(([from, to]) => [from.slice(1).toLowerCase(), to.slice(1).toLowerCase()]));
+    const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    for (let index = 0; index < pixels.data.length; index += 4) {
+      if (pixels.data[index + 3] === 0) continue;
+      const key = [pixels.data[index], pixels.data[index + 1], pixels.data[index + 2]].map((value) => value.toString(16).padStart(2, '0')).join('');
+      const replacement = replacements.get(key); if (!replacement) continue;
+      pixels.data[index] = Number.parseInt(replacement.slice(0, 2), 16);
+      pixels.data[index + 1] = Number.parseInt(replacement.slice(2, 4), 16);
+      pixels.data[index + 2] = Number.parseInt(replacement.slice(4, 6), 16);
+    }
+    ctx.putImageData(pixels, 0, 0);
+  }
   const hasInnerCorners = topology === 'cardinal-4+diagonal-corners';
   const positiveFrames = [
     ...BLOB_CARDINAL_MASKS.map((mask, index) => [`base.${mask}`, { cell: [index % 4, Math.floor(index / 4)] }]),
