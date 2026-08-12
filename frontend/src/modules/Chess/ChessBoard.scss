@@ -181,6 +181,28 @@
   border: 3px solid var(--cb-hint); border-radius: 50%;
 }
 
+/* The chord that reaches this square, printed by a host through `squareLabels`.
+   The corner is the one placement that never covers the piece, which matters
+   most on a capture. Sized off the board token — a square is --cb-size/8, so
+   this is 26% of a square's side — rather than cqmin, which would need
+   container-type on all 64 cells and a WebView new enough to resolve it.
+   z-index 2 on purpose: the piece paints at z-index 1, and an auto-stacked
+   badge would vanish under the very occupant it is labelling. */
+.chess-board__badge {
+  position: absolute;
+  top: 3%;
+  right: 3%;
+  z-index: 2;
+  padding: 0.1em 0.3em;
+  border-radius: 2px;
+  background: var(--cb-hint);
+  color: var(--cb-light);
+  font-size: calc(var(--cb-size) / 8 * 0.26);
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+}
+
 /* Channel 4 — colour. Alarms, and nothing else. */
 .chess-board__square--check {
   --sq-alarm: inset 0 0 0 100vmax color-mix(in srgb, var(--cb-danger) 45%, transparent);

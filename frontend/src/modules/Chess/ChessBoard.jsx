@@ -12,6 +12,9 @@ import './ChessBoard.scss';
  * host supplies its own `fileLabels`/`rankLabels` — which is how the piano kiosk
  * gets a rim of chord names without this component ever learning what a chord
  * is. Labels stay on the rim: a name in all 64 cells is noise to read past.
+ * `squareLabels` is the deliberate exception — a SPARSE map a host may put on
+ * the handful of squares that matter right now (the piano labels the held
+ * piece's destinations). It defaults to empty and renders nothing.
  *
  * Colour comes entirely from CSS custom properties, so a host restyles the board
  * by setting tokens rather than by overriding selectors.
@@ -36,7 +39,7 @@ function screenCell(square, orientation) {
 function Square({
   square, piece, isLight, isSelected, isDestination, isLastMove,
   isCursor, isCandidate, isCheck, isHint, isBest, isHeld, isRejected, onSelect,
-  ghostPiece,
+  ghostPiece, label,
 }) {
   const classes = [
     'chess-board__square',
@@ -75,6 +78,11 @@ function Square({
       {piece && (
         <img className="chess-board__piece" src={pieceSource(piece)} alt="" draggable="false" />
       )}
+      {/* After the piece, and lifted above its z-index in CSS: on a capture
+          square the badge must ride the corner, not vanish under the artwork. */}
+      {label && (
+        <span className="chess-board__badge" aria-hidden="true">{label}</span>
+      )}
       {ghostPiece && (
         <img
           className="chess-board__piece chess-board__piece--ghost"
@@ -102,6 +110,7 @@ export function ChessBoard({
   hintTargets = [],
   bestMove = null,
   heldSquare = null,
+  squareLabels = {},
   rejectedSquare = null,
   rejectedKey = null,
   ghost = null,
@@ -190,6 +199,7 @@ export function ChessBoard({
             isCheck={checkedKing === square}
             isRejected={rejectedSquare === square}
             ghostPiece={ghost?.square === square ? ghost.piece : null}
+            label={squareLabels[square] ?? null}
             onSelect={onSelect}
           />
         ))}
