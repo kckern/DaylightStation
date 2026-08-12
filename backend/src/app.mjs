@@ -260,6 +260,9 @@ import { PianoScaleChallengePolicy } from './3_applications/piano/PianoScaleChal
 import { BankChallengePolicy } from './3_applications/piano/BankChallengePolicy.mjs';
 import { scaleClashDefinition } from '#shared/gaming/fixtures/scaleClash.mjs';
 import { createWikipediaRouter } from './4_api/v1/routers/wikipedia.mjs';
+import { createChessRouter } from './4_api/v1/routers/chess.mjs';
+import { createStockfishEngine } from './1_adapters/chess/StockfishEngineAdapter.mjs';
+import { createChessConfigService } from './3_applications/chess/ChessConfigService.mjs';
 import { WikipediaAdapter } from './1_adapters/reference/WikipediaAdapter.mjs';
 import { GameShowService } from './3_applications/gameshow/GameShowService.mjs';
 import { GameShowSessionStore } from './3_applications/gameshow/GameShowSessionStore.mjs';
@@ -1684,6 +1687,20 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     gamingService,
     assetCatalog: gamingAssetCatalog,
     logger: rootLogger.child({ module: 'gaming-api' }),
+  });
+
+  // Chess: server-side Stockfish behind a worker thread + household/user config layers.
+  const chessEngine = createStockfishEngine({ logger: rootLogger.child({ module: 'chess-engine' }) });
+  server?.once?.('close', () => chessEngine.dispose());
+  v1Routers.chess = createChessRouter({
+    engine: chessEngine,
+    configService: createChessConfigService({
+      readHouseholdConfig: () => configService.getHouseholdAppConfig(null, 'chess'),
+      readUserConfig: (userId) => dataService.user.read('apps/chess/config', userId) || {},
+      writeUserConfig: (userId, data) => dataService.user.write('apps/chess/config', data, userId),
+      logger: rootLogger.child({ module: 'chess-config' }),
+    }),
+    logger: rootLogger.child({ module: 'chess-api' }),
   });
 
   // Self-hosted Wikipedia (kiwix-backed, plain-text) proxy. URL from services.yml;

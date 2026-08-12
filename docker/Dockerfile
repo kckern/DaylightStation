@@ -28,9 +28,27 @@ COPY frontend/package*.json ./frontend/
 COPY backend/package*.json ./backend/
 
 # Layer 6: Install all npm dependencies in one layer
+#
+# The stockfish package ships every build variant of the engine (~251MB);
+# chess only needs the single-threaded lite build (~7MB). This image is
+# single-stage, so the prune MUST be chained onto this SAME RUN as the
+# install — a prune in a later RUN only writes whiteouts over an already
+# committed layer and the 251MB stays in the image forever. The `test -f`
+# guards fail the build (rather than silently ship chess on the fallback
+# engine) if the lite-single files are missing. Note: the package's
+# postinstall leaves `bin/stockfish.js`/`.wasm` as symlinks pointing at the
+# full build; `find -type f` does not remove symlinks, so they end up
+# dangling once the full build is deleted. That's fine as long as callers
+# always request `'lite-single'` explicitly (never call `require('stockfish')()`
+# with no argument), which is what the worker does.
 RUN npm ci --include=dev --legacy-peer-deps \
     && cd frontend && npm ci --legacy-peer-deps \
-    && cd ../backend && npm ci --legacy-peer-deps
+    && cd ../backend && npm ci --legacy-peer-deps \
+    && SF=/usr/src/app/node_modules/stockfish/bin \
+    && test -f "$SF/stockfish-18-lite-single.js" \
+    && test -f "$SF/stockfish-18-lite-single.wasm" \
+    && find "$SF" -type f ! -name 'stockfish-18-lite-single.*' -delete \
+    && du -sh "$SF"
 
 # Layer 7: Copy application source (uses .dockerignore)
 COPY --chown=node:node shared/ ./shared/

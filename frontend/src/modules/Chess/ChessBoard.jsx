@@ -36,6 +36,7 @@ function screenCell(square, orientation) {
 function Square({
   square, piece, isLight, isSelected, isDestination, isLastMove,
   isCursor, isOnCursorLine, isCheck, isMarked, isSource, isRejected, onSelect,
+  ghostPiece,
 }) {
   const classes = [
     'chess-board__square',
@@ -64,6 +65,15 @@ function Square({
       {piece && (
         <img className="chess-board__piece" src={pieceSource(piece)} alt="" draggable="false" />
       )}
+      {ghostPiece && (
+        <img
+          className="chess-board__piece chess-board__piece--ghost"
+          src={pieceSource(ghostPiece)}
+          alt=""
+          aria-hidden="true"
+          draggable="false"
+        />
+      )}
     </button>
   );
 }
@@ -82,6 +92,7 @@ export function ChessBoard({
   sourceSquares = [],
   rejectedSquare = null,
   rejectedKey = null,
+  ghost = null,
   onSelect = null,
   className = '',
 }) {
@@ -165,6 +176,7 @@ export function ChessBoard({
             isOnCursorLine={Boolean(cursorSquare) && (cursorSquare[0] === square[0] || cursorSquare[1] === square[1])}
             isCheck={checkedKing === square}
             isRejected={rejectedSquare === square}
+            ghostPiece={ghost?.square === square ? ghost.piece : null}
             onSelect={onSelect}
           />
         ))}

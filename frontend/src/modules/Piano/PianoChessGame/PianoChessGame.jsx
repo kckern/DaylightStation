@@ -1,10 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { DIFFICULTIES, chooseMove } from '@shared-gaming/chess/opponent.mjs';
+import { chooseMove } from '@shared-gaming/chess/opponent.mjs';
+import { fenToPosition } from '@shared-gaming/chess/position.mjs';
 import getLogger from '../../../lib/logging/Logger.js';
 import ChessBoard from '../../Chess/ChessBoard.jsx';
 import { PianoKeyboard } from '../components/PianoKeyboard.jsx';
+import ChordReadout from './ChordReadout.jsx';
+import { isPersistentUser } from '../PianoKiosk/pianoUser.js';
 import { usePianoMidi, usePianoMidiNotes } from '../PianoKiosk/PianoMidiContext.jsx';
 import PianoContextRail from '../PianoKiosk/modes/Videos/PianoContextRail.jsx';
+import { fetchChessConfig, requestOpponentMove, saveChessConfig } from './chessApi.js';
+import { cuesFromConfig } from './chessCues.js';
+import ChessSettingsPanel from './ChessSettingsPanel.jsx';
 import { CHORD_QUALITIES, DEFAULT_CHORD_SCHEME, squareToChord } from './chordAddress.js';
 import { advanceCursor, createCursorState } from './chordCursor.js';
 import {
@@ -64,14 +70,54 @@ export function promptFor(state, rejection) {
 export function PianoChessGame({
   onDeactivate = null,
   gameConfig = null,
+  currentUser = null,
   playerColor = gameConfig?.player_color ?? 'w',
   difficulty = gameConfig?.difficulty ?? 'learner',
   scheme = DEFAULT_CHORD_SCHEME,
-  shuffleEachTurn = gameConfig?.shuffle_each_turn ?? true,
+  shuffleEachTurn: shuffleEachTurnProp = gameConfig?.shuffle_each_turn ?? true,
   seed = null,
   feedback = null,
 }) {
-  const cues = { ...DEFAULT_FEEDBACK, ...(gameConfig?.feedback ?? {}), ...(feedback ?? {}) };
+  // currentUser may arrive as the resolved profile object or the bare id. Guests
+  // (and the no-user case) must never hit the per-user chess endpoints.
+  const userSlug = typeof currentUser === 'string' ? currentUser : currentUser?.id ?? null;
+  const userId = isPersistentUser(userSlug) ? userSlug : null;
+
+  // The merged household+user chess config is the single source for the rung
+  // ladder, the cue flags, the opponent delay, and the shuffle preference. The
+  // old gameConfig.feedback path is gone on purpose: two config sources for one
+  // preference is exactly the drift the chess.yml pair exists to prevent.
+  const [chessConfig, setChessConfig] = useState(null);
+  const [rungId, setRungId] = useState('learner');
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // Apply immediately, persist to the player's own override layer. Guests get
+  // the immediate effect only — userId is null, and the per-user endpoint
+  // would (rightly) refuse them.
+  const applySetting = useCallback((patch) => {
+    setChessConfig((prev) => ({
+      ...(prev || {}),
+      ...patch,
+      feedback: { ...(prev?.feedback || {}), ...(patch.feedback || {}) },
+    }));
+    if (patch.default_rung) setRungId(patch.default_rung);
+    if (userId) saveChessConfig(userId, patch);
+    logger().info('setting-applied', { patch, persisted: !!userId });
+  }, [userId]);
+
+  // The `feedback` prop survives ONLY as a test seam — production callers must
+  // let the chess config speak for itself.
+  const cues = { ...DEFAULT_FEEDBACK, ...cuesFromConfig(chessConfig), ...(feedback ?? {}) };
+  const opponentDelayMs = chessConfig?.opponent_delay_ms ?? OPPONENT_DELAY_MS;
+  // Shuffle takes effect on the NEXT game: createChessGameState captures it at
+  // construction, so a mid-game change never re-deals the board mid-read.
+  const shuffleEachTurn = chessConfig?.shuffle_each_turn ?? shuffleEachTurnProp;
+  const rung = chessConfig?.rungs?.find((entry) => entry.id === rungId);
+  // Maps the active rung to a bundled difficulty the same way the server adapter
+  // would, so a dropped request doesn't quietly change who the player is facing.
+  const localFallbackDifficulty = Number.isFinite(rung?.elo) ? 'steady'
+    : (rung?.skill ?? 3) <= 2 ? 'beginner'
+      : (rung?.skill ?? 3) <= 10 ? 'learner' : 'steady';
 
   // A fixed seed would deal the same opening map in every game ever played, so
   // the one position a player sees most often would be the one they memorise —
@@ -80,17 +126,53 @@ export function PianoChessGame({
     Number.isFinite(seed) ? Number(seed) >>> 0 : (Math.floor(Math.random() * 0xffffffff) >>> 0)
   ));
   const { activeNotes } = usePianoMidiNotes();
-  const { connected, status: midiStatus } = usePianoMidi();
+  const { connected } = usePianoMidi();
   const [game, setGame] = useState(() => createChessGameState({
     playerColor, scheme, seed: gameSeed, shuffleEachTurn,
   }));
+  // The server engine keeps per-game state keyed on this id, so it has to change
+  // on restart — reusing it would let "Play again" find the finished game.
+  const [gameId, setGameId] = useState(() => `chess-${Date.now()}`);
   // The map is re-dealt every turn, so everything that reads chords — the
   // cursor, the rim, the move log — has to follow state, not the prop.
   const liveScheme = game.scheme;
   const [cursor, setCursor] = useState(null);
+  // Whether the cursor has reported for the chord currently held. A `preview`
+  // event fires with `square: null` when a settled chord doesn't map to a
+  // square, so `cursor` alone can't tell "still settling" from "settled and
+  // unmapped" — both read as null. This flag carries that distinction.
+  const [cursorResolved, setCursorResolved] = useState(false);
   const cursorRef = useRef(createCursorState());
   const gameRef = useRef(game);
   gameRef.current = game;
+
+  // Below the game state on purpose: this effect may recreate it. The initial
+  // game is built in the useState initializer — always before this fetch can
+  // resolve — so it captured the prop fallback for shuffle_each_turn, and
+  // commitMove re-deals from that CAPTURED value while the rail notice reads
+  // the loaded one. If the player has not touched the game yet, re-deal it
+  // under the loaded preference so the saved setting is real from the first
+  // move; once a chord or move has landed the board must not rearrange under
+  // them, and the captured value stands until the next game.
+  useEffect(() => {
+    let cancelled = false;
+    fetchChessConfig(userId).then((loaded) => {
+      if (cancelled || !loaded) return;
+      setChessConfig(loaded);
+      setRungId(loaded.default_rung || 'learner');
+      const loadedShuffle = loaded.shuffle_each_turn;
+      if (typeof loadedShuffle === 'boolean') {
+        setGame((current) => {
+          const untouched = current.history.length === 0 && !current.origin;
+          if (!untouched || current.shuffleEachTurn === loadedShuffle) return current;
+          return createChessGameState({ playerColor, scheme, seed: gameSeed, shuffleEachTurn: loadedShuffle });
+        });
+      }
+      logger().info('config-loaded', { default_rung: loaded.default_rung, rungs: loaded.rungs?.length });
+    });
+    return () => { cancelled = true; };
+    // playerColor, scheme, and gameSeed are mount-stable (props + one-shot state).
+  }, [userId, playerColor, scheme, gameSeed]);
 
   const heldNotes = useMemo(() => [...activeNotes.keys()].sort((a, b) => a - b), [activeNotes]);
   const heldKey = heldNotes.join(',');
@@ -134,6 +216,7 @@ export function PianoChessGame({
 
   const restart = useCallback(() => {
     setGame(createChessGameState({ playerColor, scheme, seed: gameSeed + 1, shuffleEachTurn }));
+    setGameId(`chess-${Date.now()}`);
     setToast(null);
     logger().info('restarted');
   }, [gameSeed, playerColor, scheme, shuffleEachTurn]);
@@ -159,7 +242,7 @@ export function PianoChessGame({
       const { state, event } = advanceCursor(cursorRef.current, heldNotes, Date.now(), { scheme: liveScheme });
       cursorRef.current = state;
       if (!event) return;
-      if (event.type === 'preview') setCursor(event.square);
+      if (event.type === 'preview') { setCursor(event.square); setCursorResolved(true); }
       if (event.type === 'too_quick') setToast({ text: 'Hold the chord a moment longer.', seq: `quick-${Date.now()}` });
       if (event.type === 'escape') {
         setCursor(null);
@@ -176,18 +259,30 @@ export function PianoChessGame({
     return () => clearInterval(timer);
   }, [cancelSelection, handleSquare, heldKey, heldNotes, liveScheme, restart]);
 
+  // Hands off the keys means the next chord starts unresolved again, so the
+  // read-out doesn't carry a stale "settled" verdict into a fresh chord.
+  useEffect(() => {
+    if (heldNotes.length === 0) setCursorResolved(false);
+  }, [heldNotes.length]);
+
   // The opponent answers on a delay so its move reads as a reply, not a flicker.
+  // The server is the strong opponent; the bundled engine is what keeps the game
+  // playable when it cannot be reached.
   useEffect(() => {
     if (game.status?.game_over || game.status?.turn === playerColor) return undefined;
-    const timer = setTimeout(() => {
-      const reply = chooseMove(gameRef.current.game.fen, { difficulty, seed: gameRef.current.history.length });
-      if (!reply) return;
-      const { state } = commitMove(gameRef.current, reply.from, reply.to);
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const fen = gameRef.current.game.fen;
+      const served = await requestOpponentMove({ fen, rung: rungId, gameId, userId });
+      const reply = served
+        || chooseMove(fen, { difficulty: localFallbackDifficulty, seed: gameRef.current.history.length });
+      if (cancelled || !reply) return;
+      const { state } = commitMove(gameRef.current, reply.from, reply.to, reply.promotion);
       setGame(state);
-      logger().info('opponent-replied', { san: reply.san, difficulty });
-    }, OPPONENT_DELAY_MS);
-    return () => clearTimeout(timer);
-  }, [difficulty, game.status, playerColor]);
+      logger().info('opponent-replied', { san: reply.san, engine: served ? served.engine : 'local' });
+    }, opponentDelayMs);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [game.status, playerColor, rungId, gameId, opponentDelayMs, userId, localFallbackDifficulty]);
 
   // A refusal turns the legality cues on; the next completed move turns them off.
   const [showLegality, setShowLegality] = useState(false);
@@ -205,18 +300,27 @@ export function PianoChessGame({
   const fileLabels = liveScheme.roots;
   const rankLabels = liveScheme.qualities.map((quality) => CHORD_QUALITIES[quality]?.label || 'maj');
 
-  // Legality is shown only once the player has actually got it wrong. Outlining
+  // Legality is gated by the player's hint level. `after-mistake` (the default,
+  // gateOnMistake) shows the cues only once a chord has been refused — outlining
   // every movable piece up front answers the question before it is asked, which
-  // is the whole exercise; after a refusal it is help, not a spoiler. The hints
-  // stand until the next move lands, then the board goes quiet again.
-  const destinations = showLegality && cues.highlightTargets && game.origin
+  // is the whole exercise; after a refusal it is help, not a spoiler. `always`
+  // drops the gate; `off` clears the cue flags entirely. Gated hints stand until
+  // the next move lands, then the board goes quiet again.
+  const legalityVisible = !cues.gateOnMistake || showLegality;
+  const destinations = legalityVisible && cues.highlightTargets && game.origin
     ? destinationsFor(game, game.origin)
     : [];
-  const sources = showLegality && cues.highlightSources && !game.origin
+  const sources = legalityVisible && cues.highlightSources && !game.origin
     ? playableSources(game)
     : [];
   const originChord = game.origin ? squareToChord(game.origin, liveScheme) : null;
   const cursorChord = cursor ? squareToChord(cursor, liveScheme) : null;
+  // Only while a piece is held and the cursor names a different square. Capture
+  // targets get a ghost too — most previews the player cares about are captures.
+  const heldPiece = game.origin ? fenToPosition(game.game.fen)?.[game.origin] : null;
+  const ghost = heldPiece && cursor && cursor !== game.origin
+    ? { square: cursor, piece: heldPiece }
+    : null;
   const captured = capturedPieces(game.history);
   const prompt = promptFor(game, game.rejection);
   const turnLabel = game.status?.turn === 'w' ? 'White' : 'Black';
@@ -239,15 +343,6 @@ export function PianoChessGame({
             </span>
           </div>
           <p className="piano-chess__prompt" role="status">{prompt}</p>
-
-          {/* What the piano is actually sending. Without this, a chord that does
-              nothing is indistinguishable from a piano that is not connected. */}
-          <div className={`piano-chess__midi${connected ? ' piano-chess__midi--live' : ''}`}>
-            <span className="piano-chess__midi-dot" aria-hidden="true" />
-            <span className="piano-chess__midi-text">
-              {connected ? (cursorChord?.symbol ?? (heldNotes.length ? `${heldNotes.length} notes held` : 'Listening')) : `Piano ${midiStatus || 'not connected'}`}
-            </span>
-          </div>
 
           {game.status?.game_over ? (
             <button type="button" className="piano-chess__cancel" onClick={restart}>
@@ -280,6 +375,7 @@ export function PianoChessGame({
           rejectedKey={game.rejection?.seq ?? null}
           lastMove={game.lastMove}
           cursorSquare={cursor}
+          ghost={ghost}
         />
 
         <aside className="piano-chess__rail piano-chess__rail--log">
@@ -292,8 +388,24 @@ export function PianoChessGame({
           />
           <p className="piano-chess__turn">
             {game.status?.game_over ? 'Game over' : `${turnLabel} to move`}
-            <span className="piano-chess__difficulty">{DIFFICULTIES[difficulty]?.label ?? difficulty}</span>
+            {/* The active rung, straight from the config ladder — the bundled
+                engine's old label table would go stale the moment rungs moved.
+                Before the config resolves (or if a saved rung id has left the
+                ladder) the id is capitalized rather than shown raw. */}
+            <span className="piano-chess__difficulty">
+              {rung?.label ?? (rungId.charAt(0).toUpperCase() + rungId.slice(1))}
+            </span>
           </p>
+          {chessConfig && (
+            <button
+              type="button"
+              className="piano-chess__settings-btn"
+              onClick={() => setSettingsOpen((open) => !open)}
+              aria-expanded={settingsOpen}
+            >
+              Settings
+            </button>
+          )}
           {shuffleEachTurn && (
             <p className={`piano-chess__redeal${justDealt ? ' piano-chess__redeal--fresh' : ''}`} role="status">
               {justDealt ? 'New chord map — read the edges' : 'Chords move every turn'}
@@ -327,7 +439,23 @@ export function PianoChessGame({
         <output className="piano-chess__toast" key={toast.seq}>{toast.text}</output>
       )}
 
+      {settingsOpen && chessConfig && (
+        <ChessSettingsPanel
+          config={chessConfig}
+          rungId={rungId}
+          onChange={applySetting}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
+
       <footer className="piano-chess__keys">
+        <ChordReadout
+          heldNotes={heldNotes}
+          chord={cursorChord}
+          square={cursor}
+          connected={connected}
+          settling={heldNotes.length >= 3 && !cursorResolved}
+        />
         <PianoKeyboard activeNotes={activeNotes} startNote={36} endNote={84} />
       </footer>
     </div>
