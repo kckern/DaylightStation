@@ -101,8 +101,8 @@ The canonical counterpart is the [exercise bank](exercise-bank.md) at
 `data/content/music/` — stable `collection/id` references shared across
 surfaces, stored as seeds that expand into instances. It currently holds 35
 seeds yielding 1,992 performable instances (Hanon 1–30, plus notes, intervals,
-triads, sevenths, and modes). Surfaces are not yet wired to it, so each producer
-still owns its own content in the meantime.
+triads, sevenths, and modes), served read-only at `/api/v1/piano/bank`. No
+surface reads it yet, so each producer still owns its own content meanwhile.
 
 ## Not yet provided
 
@@ -111,4 +111,6 @@ still owns its own content in the meantime.
   per-drill scores or progress to show until runs are saved.
 - **Abandoned runs are not scored**, though the untimed runner can finalize a
   partial run — surfacing that is a product decision, not a service gap.
-- **Exercise bank content exists but nothing reads it.** The bank at `data/content/music/` is not yet mounted or served; wiring it is the next step (`singalong` shows the pattern: `path.join(contentPath, ...)` in `app.mjs`).
+- **No surface consumes the bank yet.** It is served at `/api/v1/piano/bank`
+  (see [exercise-bank.md](exercise-bank.md)), but Sheet Music, lessons, and the
+  card game still each own their content. Migrating them is the next step.
