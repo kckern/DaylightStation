@@ -48,6 +48,16 @@ describe('declared weights', () => {
     });
     expect(r.score).toBeCloseTo(0.75, 5);
   });
+
+  it('a partial weights object merges over the defaults instead of dropping the rest', () => {
+    // Untimed defaults: { pitch: 0.70, timing: 0, continuity: 0.30 }. Overriding just
+    // pitch must still apply the default timing/continuity, not NaN them away.
+    const full = gradeOrderedPerformance({ expectedCount: 8, wrongNotes: 2, paced: false });
+    const partial = gradeOrderedPerformance({
+      expectedCount: 8, wrongNotes: 2, paced: false, weights: { pitch: 0.70 },
+    });
+    expect(partial).toEqual(full);
+  });
 });
 
 describe('gradeBand', () => {
@@ -59,5 +69,10 @@ describe('gradeBand', () => {
   });
   it('accepts custom thresholds', () => {
     expect(gradeBand(0.7, { green: 0.65, yellow: 0.4 })).toBe('green');
+  });
+  it('a partial thresholds object merges over the defaults instead of dropping yellow', () => {
+    // Only overriding green must still use the default yellow (0.6), not undefined.
+    expect(gradeBand(0.7, { green: 0.95 })).toBe('yellow');
+    expect(gradeBand(0.5, { green: 0.95 })).toBe('red');
   });
 });

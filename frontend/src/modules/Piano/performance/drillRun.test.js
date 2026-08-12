@@ -56,4 +56,15 @@ describe('drillRun', () => {
     expect(Object.keys(summary.grades)).toEqual(['0']);
     expect(summary.score).toBe(100);
   });
+
+  it('ignores presses against a degenerate (empty) span instead of stalling forever', () => {
+    // A zero-length span is a legal-shaped input to this public API even though the
+    // drillSpans consumer filters such cells out before construction: expectedMidi[0]
+    // is undefined, so any press must be ignored rather than mismatch-into-wrong.
+    const run = createDrillRun([{ id: 0, expectedMidi: [] }]);
+    const { run: next, event } = applyDrillPress(run, 60);
+    expect(event).toEqual({ type: 'ignored' });
+    expect(next).toBe(run);
+    expect(next.spans[0].wrongNotes).toBe(0);
+  });
 });
