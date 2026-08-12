@@ -9,7 +9,7 @@ import CurrentChordStaff from '../components/CurrentChordStaff.jsx';
 import ChordReadout from './ChordReadout.jsx';
 import { isPersistentUser } from '../PianoKiosk/pianoUser.js';
 import { usePianoMidi, usePianoMidiNotes } from '../PianoKiosk/PianoMidiContext.jsx';
-import PianoContextRail from '../PianoKiosk/modes/Videos/PianoContextRail.jsx';
+import { usePlayerLock } from '../PianoKiosk/PianoPlaybackContext.jsx';
 import {
   fetchChessConfig, requestOpponentMove, saveChessConfig, saveGameRecord,
 } from './chessApi.js';
@@ -129,6 +129,12 @@ export function PianoChessGame({
   // per-user writes" downstream — the lock preserves that, it doesn't bypass it.
   const lockedUserRef = useRef(userId);
   const lockedUser = lockedUserRef.current;
+
+  // Latching the player internally is not enough: the kiosk chip still offered
+  // the switch, so a child could pick themselves mid-game, see the header change
+  // to their name, and go on playing someone else's board on someone else's
+  // settings. The chip is held shut for as long as the game is open.
+  usePlayerLock(true, 'Finish the game to switch players');
 
   // The merged household+user chess config is the single source for the rung
   // ladder, the cue flags, the opponent delay, and the shuffle preference. The
@@ -535,18 +541,13 @@ export function PianoChessGame({
   const turnLabel = game.status?.turn === 'w' ? 'White' : 'Black';
 
   return (
-    <div className="piano-chess">
+    <div className={`piano-chess${reading ? ' piano-chess--reading' : ''}`}>
       <div className="piano-chess__stage">
         {/* THE STATE RAIL — what the game is currently thinking. Every row here
             holds its place whether or not it has something to say: a read-out
             that resizes as fingers land drags the eye and, worse, moves the
             board. Fixed rows, fixed rail width, board centred regardless. */}
         <aside className="piano-chess__rail piano-chess__rail--state">
-          <PianoContextRail
-            program="Piano Chess"
-            ancestors={onDeactivate ? [{ label: 'Games', onClick: onDeactivate }] : []}
-          />
-
           <dl className="piano-chess__facts">
             {[
               ['Player', lockedUser || 'Guest'],
@@ -675,7 +676,11 @@ export function PianoChessGame({
         <aside className="piano-chess__rail piano-chess__rail--chords">
           <h2 className="piano-chess__slot-label">Playing</h2>
           <ChordNamePanel midiNotes={heldNotes} />
-          <CurrentChordStaff activeNotes={activeNotes} />
+          {/* Notation is ink, so it needs paper. Same card the other games put
+              their staves on, rather than staff lines floating on charcoal. */}
+          <div className="piano-chess__staff-card action-staff">
+            <CurrentChordStaff activeNotes={activeNotes} />
+          </div>
           <div className="piano-chess__captured">
             {['w', 'b'].map((color) => (
               <div key={color} className="piano-chess__captured-row">

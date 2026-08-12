@@ -90,7 +90,7 @@ describe('PianoUserChip', () => {
   it('locks switching while a video lecture is open', () => {
     playback.videoActive = true;
     renderChip();
-    const chip = screen.getByLabelText('Player locked during lesson');
+    const chip = screen.getByLabelText('Finish the lesson to switch players');
     expect(chip.disabled).toBe(true);
     expect(screen.getByTestId('lock-icon')).toBeTruthy();
     // Clicking the locked chip must NOT open the picker.

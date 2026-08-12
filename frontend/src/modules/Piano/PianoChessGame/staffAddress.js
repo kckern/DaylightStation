@@ -15,12 +15,33 @@ import { FILES, RANKS, isSquare } from '@shared-gaming/chess/index.mjs';
  *
  * Both sets are one diatonic octave of naturals, which is exactly what a first
  * reading method covers and keeps every square inside a comfortable two-hand span.
+ *
+ * Sequential by default, because a scale is the thing being learnt. The existing
+ * `shuffle_each_turn` config re-deals both axes exactly as it does for chords —
+ * the scheme is two arrays either way — which turns the board into a sight-
+ * reading drill rather than a memorised layout.
  */
 
-/** Treble staff, C4 to C5 — the files, left to right. */
+/** Treble staff, middle C to the C above — the files, left to right. */
 const TREBLE = Object.freeze([60, 62, 64, 65, 67, 69, 71, 72]);
-/** Bass staff, C2 to C3 — the ranks, 1 (White's home) at the bottom. */
-const BASS = Object.freeze([36, 38, 40, 41, 43, 45, 47, 48]);
+/**
+ * Bass staff, the ranks, 1 (White's home) at the bottom.
+ *
+ * Runs down from the B under middle C to the B an octave below it, so the two
+ * axes are contiguous: the board spans B2 to C5 without a gap, and no note in
+ * the player's reach belongs to neither axis. Like the files, it starts and
+ * ends on the same letter — see `axisIndex` for how a played B is resolved.
+ */
+const BASS = Object.freeze([47, 48, 50, 52, 53, 55, 57, 59]);
+
+/**
+ * Middle C is the split, and it belongs to the treble.
+ *
+ * Everything at or above it selects a FILE; everything below it selects a RANK.
+ * One boundary, stated once, so a player never has to wonder which hand a note
+ * counted as — and it is the boundary they already know from reading.
+ */
+export const SPLIT_MIDI = 60;
 
 export const DEFAULT_STAFF_SCHEME = Object.freeze({
   id: 'grand-staff-naturals-v1',
@@ -84,6 +105,31 @@ export function staffToSquare(treble, bass, scheme = DEFAULT_STAFF_SCHEME) {
 }
 
 /**
+ * Which slot on an axis does this note name?
+ *
+ * By LETTER, not by exact pitch: a player reaching for the D column should get
+ * it whether they play the D on the staff or the D an octave up, and being
+ * marked wrong for the octave teaches nothing about the board.
+ *
+ * The one place the octave does decide is the letter that appears twice. Each
+ * axis spans a full octave, so it starts and ends on C — the first column is
+ * middle C and the last is the C above it. A played C is therefore genuinely
+ * ambiguous, and the only honest tiebreak is which of the two the player was
+ * actually nearer to.
+ */
+export function axisIndex(midi, axis) {
+  const pc = ((midi % 12) + 12) % 12;
+  const matches = axis
+    .map((note, index) => ({ note, index }))
+    .filter((entry) => ((entry.note % 12) + 12) % 12 === pc);
+  if (!matches.length) return -1;
+  if (matches.length === 1) return matches[0].index;
+  return matches.reduce((best, entry) => (
+    Math.abs(entry.note - midi) < Math.abs(best.note - midi) ? entry : best
+  )).index;
+}
+
+/**
  * Which square did those keys mean?
  *
  * Exact notes, not pitch classes: the octave is the whole point of reading, and
@@ -97,16 +143,17 @@ export function staffToSquare(treble, bass, scheme = DEFAULT_STAFF_SCHEME) {
  */
 export function identifyStaffAddress(midiNotes, scheme = DEFAULT_STAFF_SCHEME) {
   const notes = [...new Set((Array.isArray(midiNotes) ? midiNotes : []).filter(Number.isFinite))];
-  if (!notes.length) return { square: null, candidates: [], pitch_classes: [] };
-  const trebles = notes.filter((note) => scheme.roots.includes(note));
-  const basses = notes.filter((note) => scheme.qualities.includes(note));
   const pitch_classes = [...new Set(notes.map((n) => ((n % 12) + 12) % 12))].sort((a, b) => a - b);
-  // Exactly one of each, and nothing else sounding.
-  if (trebles.length !== 1 || basses.length !== 1 || notes.length !== 2) {
-    return { square: null, candidates: [], pitch_classes };
-  }
-  const square = staffToSquare(trebles[0], basses[0], scheme);
-  if (!square) return { square: null, candidates: [], pitch_classes };
+  if (notes.length !== 2) return { square: null, candidates: [], pitch_classes };
+
+  const above = notes.filter((note) => note >= SPLIT_MIDI);
+  const below = notes.filter((note) => note < SPLIT_MIDI);
+  if (above.length !== 1 || below.length !== 1) return { square: null, candidates: [], pitch_classes };
+
+  const file = axisIndex(above[0], scheme.roots);
+  const rank = axisIndex(below[0], scheme.qualities);
+  if (file < 0 || rank < 0) return { square: null, candidates: [], pitch_classes };
+  const square = `${FILES[file]}${RANKS[rank]}`;
   return {
     square,
     candidates: [{ square, symbol: squareToStaffAddress(square, scheme).symbol, root_in_bass: true }],
@@ -125,13 +172,15 @@ export function identifyStaffAddress(midiNotes, scheme = DEFAULT_STAFF_SCHEME) {
 export function staffCandidateSquares(heldNotes, scheme = DEFAULT_STAFF_SCHEME) {
   const notes = [...new Set((heldNotes || []).filter(Number.isFinite))];
   if (!notes.length) return [];
-  const trebles = notes.filter((note) => scheme.roots.includes(note));
-  const basses = notes.filter((note) => scheme.qualities.includes(note));
-  // Anything sounding that is not on either staff means the read is already lost.
-  if (trebles.length + basses.length !== notes.length) return [];
-  if (trebles.length > 1 || basses.length > 1) return [];
-  const files = trebles.length ? [FILES[scheme.roots.indexOf(trebles[0])]] : FILES;
-  const ranks = basses.length ? [RANKS[scheme.qualities.indexOf(basses[0])]] : RANKS;
+  const above = notes.filter((note) => note >= SPLIT_MIDI);
+  const below = notes.filter((note) => note < SPLIT_MIDI);
+  if (above.length > 1 || below.length > 1) return [];
+  const fileIndex = above.length ? axisIndex(above[0], scheme.roots) : null;
+  const rankIndex = below.length ? axisIndex(below[0], scheme.qualities) : null;
+  // A note that is not one of the eight letters is not on the way to a square.
+  if (fileIndex === -1 || rankIndex === -1) return [];
+  const files = fileIndex === null ? FILES : [FILES[fileIndex]];
+  const ranks = rankIndex === null ? RANKS : [RANKS[rankIndex]];
   const squares = [];
   for (const file of files) for (const rank of ranks) squares.push(`${file}${rank}`);
   return squares.sort();
@@ -164,6 +213,6 @@ export function validateStaffScheme(scheme) {
 }
 
 export default {
-  DEFAULT_STAFF_SCHEME, isStaffScheme, squareToStaffAddress, staffToSquare,
-  identifyStaffAddress, staffCandidateSquares, validateStaffScheme, noteLetter, noteName,
+  DEFAULT_STAFF_SCHEME, SPLIT_MIDI, isStaffScheme, squareToStaffAddress, staffToSquare,
+  identifyStaffAddress, staffCandidateSquares, validateStaffScheme, axisIndex, noteLetter, noteName,
 };
