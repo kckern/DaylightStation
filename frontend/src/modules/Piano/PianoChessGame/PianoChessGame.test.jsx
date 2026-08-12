@@ -98,8 +98,15 @@ describe('PianoChessGame opponent effect', () => {
     expect(moveSans(container)[0]).not.toBe('');
   });
 
-  it('does not update state after unmount once a stale request resolves', async () => {
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  it('does not run the reply after unmount once a stale request resolves', async () => {
+    // React 18 dropped the "state update on an unmounted component" console
+    // warning, so a console.error spy can't tell a working `cancelled` guard
+    // from a broken one — both look silent. `setGame` and the `opponent-replied`
+    // log sit on consecutive lines in the effect, both gated by the same
+    // `if (cancelled || !reply) return;`, and the logger's console transport
+    // for 'info' goes through console.log (see Logger.js `devOutput`), so
+    // spying there is a proxy for "did the post-unmount branch actually run."
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     let resolveMove;
     requestOpponentMove.mockImplementationOnce(() => new Promise((resolve) => { resolveMove = resolve; }));
 
@@ -109,15 +116,16 @@ describe('PianoChessGame opponent effect', () => {
 
     unmount();
 
-    // Resolve the in-flight request only after the component is gone. If the
-    // effect's cleanup didn't set its `cancelled` flag, this would drive a
-    // setState on an unmounted component — surfaced here as a console.error.
+    // Resolve the in-flight request only after the component is gone.
     await act(async () => {
       resolveMove({ from: 'e2', to: 'e4', san: 'e4', engine: 'stockfish' });
       await Promise.resolve();
     });
 
-    expect(errorSpy).not.toHaveBeenCalled();
+    const repliedAfterUnmount = logSpy.mock.calls.some(
+      ([message]) => typeof message === 'string' && message.includes('opponent-replied'),
+    );
+    expect(repliedAfterUnmount).toBe(false);
   });
 
   it('threads the active rung, a per-game id, and no userId for a guest', async () => {
