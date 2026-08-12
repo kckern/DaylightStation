@@ -101,6 +101,16 @@ describe('FitnessInstructionContainer', () => {
     expectOnlyState(q, 'build');
   });
 
+  it('mounts the real builder in build, not a placeholder', () => {
+    // The browse mock never resolves, so the tray it hands over is empty — the builder
+    // still has to render (and still has to offer the two exits), which is what the
+    // state machine tests below then drive.
+    const q = render(<FitnessInstructionContainer />);
+    fireEvent.pointerDown(q.getByTestId('fitness-instruction-to-build'));
+    expect(q.getByTestId('workout-builder')).toBeTruthy();
+    expect(q.getByTestId('workout-builder-empty')).toBeTruthy();
+  });
+
   it('build -> run when the built workout is started', () => {
     const q = render(<FitnessInstructionContainer />);
     fireEvent.pointerDown(q.getByTestId('fitness-instruction-to-build'));

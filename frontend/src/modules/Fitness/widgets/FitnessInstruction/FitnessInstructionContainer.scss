@@ -1,5 +1,5 @@
-// Exercise Library shell. Deliberately plain: build is still a placeholder
-// screen, and browse / run bring their own styling.
+// Exercise Library shell. Deliberately plain: all three states bring their own
+// full-bleed styling, and this only has to give them a containing block.
 .fitness-instruction {
   position: relative;
   width: 100%;
@@ -20,10 +20,11 @@
     text-align: center;
   }
 
-  // Browse and run are full-bleed screens, not centred placeholder cards: they
-  // must fill the shell and establish the containing block for the child's
-  // `inset: 0` (ExerciseBrowser / WorkoutRunner).
+  // Every state is a full-bleed screen: it must fill the shell and establish the
+  // containing block for the child's `inset: 0` (ExerciseBrowser, WorkoutBuilder,
+  // WorkoutRunner).
   &__state--browse,
+  &__state--build,
   &__state--run {
     position: relative;
     flex: 1 1 auto;
@@ -31,37 +32,5 @@
     width: 100%;
     min-height: 0;
     padding: 0;
-  }
-
-  &__placeholder-title {
-    margin: 0;
-    font-size: 1.5rem;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    opacity: 0.75;
-  }
-
-  &__placeholder-note {
-    margin: 0;
-    max-width: 44ch;
-    font-size: 1rem;
-    opacity: 0.6;
-  }
-
-  // Touch target sized for the TV; dashed border marks it as scaffolding.
-  &__action {
-    min-width: 260px;
-    padding: 14px 28px;
-    border: 2px dashed rgba(255, 255, 255, 0.35);
-    border-radius: 10px;
-    font-size: 1rem;
-    cursor: pointer;
-    user-select: none;
-
-    &:focus-visible {
-      outline: 2px solid #38bdf8;
-      outline-offset: 3px;
-    }
   }
 }

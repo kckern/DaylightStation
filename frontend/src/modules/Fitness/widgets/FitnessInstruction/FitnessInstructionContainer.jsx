@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import getLogger from '@/lib/logging/Logger.js';
 import WorkoutRunner from './WorkoutRunner.jsx';
 import ExerciseBrowser from './ExerciseBrowser.jsx';
+import WorkoutBuilder from './WorkoutBuilder.jsx';
 import './FitnessInstructionContainer.scss';
 
 /**
@@ -12,10 +13,13 @@ import './FitnessInstructionContainer.scss';
  *   build  — assemble the picked exercises into a workout
  *   run    — the guided set-by-set player (WorkoutRunner)
  *
- * Browse and run are live; build is still a placeholder. Nothing HERE fetches —
- * ExerciseBrowser owns the corpus requests, and the runner's step list and
- * slug->display lookup are read off whatever the builder handed to `startRun`,
- * so they stay empty until the build screen exists.
+ * All three are live. Nothing HERE fetches: ExerciseBrowser owns the corpus
+ * requests, WorkoutBuilder owns the save, and the runner's step list and
+ * slug->display lookup are read off whatever the builder handed to `startRun`.
+ * The builder hands over the AUTHORED plan (groups) plus display records, not a
+ * flat step list — expansion is the domain's job and no endpoint serves it yet,
+ * so a run still renders the empty-plan screen. See the docblocks in
+ * WorkoutBuilder.jsx and WorkoutRunner.jsx.
  */
 
 // The only legal moves out of each state. Anything else is a caller bug, so it
@@ -27,34 +31,6 @@ const ALLOWED_TRANSITIONS = {
 };
 
 const INITIAL_STATE = 'browse';
-
-/**
- * Placeholder tap target. onPointerDown (not onClick) — see the note at the top
- * of FitnessApp.jsx: this app runs on a large touchscreen TV and onClick's
- * pointerup + capture delay is perceptible. Keyboard access (Enter/Space) is
- * kept for focusable elements.
- */
-function PlaceholderAction({ testId, label, onActivate }) {
-  const onKeyDown = useCallback((e) => {
-    if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
-      e.preventDefault();
-      onActivate();
-    }
-  }, [onActivate]);
-
-  return (
-    <div
-      className="fitness-instruction__action"
-      data-testid={testId}
-      role="button"
-      tabIndex={0}
-      onPointerDown={() => onActivate()}
-      onKeyDown={onKeyDown}
-    >
-      {label}
-    </div>
-  );
-}
 
 export default function FitnessInstructionContainer({ onMount } = {}) {
   const logger = useMemo(() => getLogger().child({ component: 'fitness-instruction' }), []);
@@ -165,20 +141,17 @@ export default function FitnessInstructionContainer({ onMount } = {}) {
       )}
 
       {view === 'build' && (
-        <section className="fitness-instruction__state" data-testid="fitness-instruction-build">
-          <h2 className="fitness-instruction__placeholder-title">Build — placeholder</h2>
-          <p className="fitness-instruction__placeholder-note">
-            The workout builder is not built yet. Selected exercises: {selectedExercises.length}.
-          </p>
-          <PlaceholderAction
-            testId="fitness-instruction-to-run"
-            label="Run this workout (placeholder)"
-            onActivate={startRun}
-          />
-          <PlaceholderAction
-            testId="fitness-instruction-build-back"
-            label="Back to browse (placeholder)"
-            onActivate={cancelBuild}
+        <section
+          className="fitness-instruction__state fitness-instruction__state--build"
+          data-testid="fitness-instruction-build"
+        >
+          {/* The builder owns both `fitness-instruction-to-run` and
+              `fitness-instruction-build-back` — the move to run carries the plan
+              it assembled, so those targets have to live where the plan does. */}
+          <WorkoutBuilder
+            exercises={selectedExercises}
+            onStartRun={startRun}
+            onCancel={cancelBuild}
           />
         </section>
       )}
