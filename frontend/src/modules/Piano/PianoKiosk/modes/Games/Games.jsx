@@ -18,6 +18,7 @@ const GAME_LABELS = {
   flashcards: 'Flashcards',
   hero: 'Piano Hero',
   'side-scroller': 'Side Scroller',
+  chess: 'Piano Chess',
 };
 
 // Per-game tile icons (currentColor SVGs in ../../icons/svg).
@@ -28,6 +29,7 @@ const GAME_ICONS = {
   flashcards: 'game-flashcards',
   hero: 'game-hero',
   'side-scroller': 'game-side-scroller',
+  chess: 'game-chess',
 };
 
 /**

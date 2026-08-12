@@ -26,6 +26,7 @@ import EmptyState from './EmptyState.jsx';
 const SUBJECT_PROGRAMS = {
   writing: [{ id: 'typing', label: 'Typing', hint: 'Learn to touch-type', section: 'typing' }],
   history: [{ id: 'geography', label: 'Geography', hint: 'States, capitals, and flags', section: 'geography' }],
+  arts: [{ id: 'chess', label: 'Chess', hint: 'Learn the game, one unit at a time', section: 'chess' }],
 };
 
 export default function SubjectPage({ subjectId, shelf, guestOnly, onLaunch, notice, onOpen, initialMaterialPath = [], onMaterialNav, catalogLoading = false }) {
