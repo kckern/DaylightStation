@@ -9,7 +9,7 @@ import { safeSegment } from './lib/emulatorPaths.mjs';
  * One request per move — there is nothing to stream until a live eval bar
  * exists, and adding one later does not disturb this contract.
  */
-export function createChessRouter({ engine, configService, logger = null }) {
+export function createChessRouter({ engine, configService, recordStore = null, logger = null }) {
   const router = express.Router();
 
   /**
@@ -54,6 +54,22 @@ export function createChessRouter({ engine, configService, logger = null }) {
     if (!userId) return res.status(400).json({ error: 'user_required' });
     await configService.writeUserLayer(userId, req.body || {});
     return res.json(await configService.read(userId));
+  }));
+
+  router.post('/games', asyncHandler(async (req, res) => {
+    const userId = resolveUser(req, res);
+    if (userId === undefined) return undefined; // resolveUser already answered
+    if (!userId) return res.status(400).json({ error: 'user_required' });
+    // dataService.user.write (behind recordStore.save) returns false rather than
+    // throwing on a write failure (e.g. EACCES). This is the one record this task
+    // exists to make truthful — never answer 201 for a save that didn't happen.
+    const saved = await recordStore.save(userId, req.body || {});
+    if (!saved) {
+      logger?.warn?.('chess.game.record-failed', { userId, result: req.body?.result, moves: req.body?.moves });
+      return res.status(500).json({ error: 'save_failed' });
+    }
+    logger?.info?.('chess.game.recorded', { userId, result: req.body?.result, moves: req.body?.moves });
+    return res.status(201).json({ saved: true });
   }));
 
   return router;

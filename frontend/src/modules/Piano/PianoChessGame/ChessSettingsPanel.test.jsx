@@ -11,7 +11,7 @@ const CONFIG = {
   ],
   opponent_delay_ms: 700,
   shuffle_each_turn: true,
-  feedback: { hint_level: 'after-mistake' },
+  feedback: { flash_rejected: true, toast: true },
 };
 
 describe('ChessSettingsPanel', () => {
@@ -34,11 +34,11 @@ describe('ChessSettingsPanel', () => {
     expect(onChange).toHaveBeenCalledWith({ default_rung: 'steady' });
   });
 
-  it('emits a nested patch when the hint level changes', () => {
-    const onChange = vi.fn();
-    render(<ChessSettingsPanel config={CONFIG} rungId="learner" onChange={onChange} onClose={() => {}} />);
-    fireEvent.click(screen.getByRole('button', { name: /always/i }));
-    expect(onChange).toHaveBeenCalledWith({ feedback: { hint_level: 'always' } });
+  it('offers no hint-level control — help is a gesture at the keys, not a setting', () => {
+    render(<ChessSettingsPanel config={CONFIG} rungId="learner" onChange={() => {}} onClose={() => {}} />);
+    expect(screen.queryByText('Show legal moves')).toBeNull();
+    expect(screen.queryByRole('button', { name: /always/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /after a mistake/i })).toBeNull();
   });
 
   it('offers the shuffle and opponent-delay controls too', () => {
