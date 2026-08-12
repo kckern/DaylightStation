@@ -12,7 +12,7 @@ import { SkeletonStage } from '../../Skeleton.jsx';
 
 // Friendly labels for the registry ids.
 const GAME_LABELS = {
-  'card-game': 'Scale Stadium',
+  'card-game': 'Card Game',
   'space-invaders': 'Space Invaders',
   tetris: 'Tetris',
   flashcards: 'Flashcards',
@@ -108,7 +108,8 @@ function GameHost() {
   const { config } = usePianoKioskConfig();
   // Optional like PianoUserChip — games fall back to no user (default levels)
   // when mounted outside the kiosk's PianoUserProvider.
-  const currentUser = useContext(PianoUserContext)?.currentUser ?? null;
+  const pianoUser = useContext(PianoUserContext);
+  const currentUser = pianoUser?.currentProfile ?? pianoUser?.currentUser ?? null;
   const entry = getGameEntry(gameId);
 
   // Current location in the header breadcrumb (Games › this game). The breadcrumb

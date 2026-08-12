@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { getChildLogger } from '../../../lib/logging/singleton.js';
 import { CardBattleView } from '../views/CardBattleView.jsx';
-import { PokemonJourneyLobby } from '../views/PokemonJourneyLobby.jsx';
+import { PokemonJourneyHub } from '../views/PokemonJourneyHub.jsx';
 import { PokemonJourneyView } from '../views/PokemonJourneyView.jsx';
 import { createGamingApi } from './gamingApi.js';
 import { GamingController } from './GamingController.js';
@@ -15,13 +15,17 @@ function SessionRuntime({
   providers,
   setup,
   bootstrapMeta,
+  resumeSessionId: requestedResumeSessionId = null,
   onClose,
   onChangePartner,
 }) {
   const viewerId = participants[0]?.user_id || participants[0]?.id || 'guest';
   const api = useMemo(() => createGamingApi(), []);
   const storageKey = `gaming:${gameId}:${viewerId}:active-session`;
-  const resumeSessionId = useMemo(() => window.localStorage.getItem(storageKey), [storageKey]);
+  const resumeSessionId = useMemo(
+    () => requestedResumeSessionId || window.localStorage.getItem(storageKey),
+    [requestedResumeSessionId, storageKey],
+  );
   const controller = useMemo(() => new GamingController({
     api,
     providerRegistry: createProviderRegistry(providers),
@@ -85,10 +89,13 @@ function SessionRuntime({
         onChoose={(id) => controller.chooseAction(id)}
         onContinue={() => controller.continueEncounter()}
         onRetry={() => controller.retryEncounter()}
+        onSelectRecruit={(id) => controller.selectRecruit(id)}
+        onSelectPartner={(id) => controller.selectPartner(id)}
+        onStartGym={() => controller.startGym()}
         onRestart={(partnerId) => controller.restart(partnerId)}
         onChangePartner={onChangePartner}
         onAbort={() => controller.abortChallenge()}
-        onClose={() => controller.close().finally(() => onClose?.())}
+        onSaveExit={() => controller.suspend().finally(() => onClose?.())}
       />
     );
   }
@@ -110,8 +117,8 @@ function SessionRuntime({
 export default function GamingRuntime({ gameId = 'scale-clash', participants = [], providers = [], onClose = null }) {
   const viewerId = participants[0]?.user_id || participants[0]?.id || 'guest';
   const api = useMemo(() => createGamingApi(), []);
-  const [bootstrap, setBootstrap] = useState({ phase: 'loading', definition: null, progress: null, leaderboard: null, error: null });
-  const [partnerId, setPartnerId] = useState(null);
+  const [bootstrap, setBootstrap] = useState({ phase: 'loading', definition: null, progress: null, leaderboard: null, activeSession: null, error: null });
+  const [launch, setLaunch] = useState(null);
 
   useEffect(() => {
     let live = true;
@@ -120,34 +127,41 @@ export default function GamingRuntime({ gameId = 'scale-clash', participants = [
         const loaded = await api.getDefinition(gameId);
         let progress = null;
         let leaderboard = null;
+        let activeSession = null;
         if (loaded.definition?.view_id === JOURNEY_VIEW) {
+          const active = await api.getActiveSession(gameId, viewerId);
           [progress, leaderboard] = await Promise.all([
             api.getProgress(gameId, viewerId),
             api.getLeaderboard(gameId, viewerId),
           ]);
+          activeSession = active.active_session || null;
         }
-        if (live) setBootstrap({ phase: 'ready', definition: loaded.definition, progress, leaderboard, error: null });
+        if (live) setBootstrap({ phase: 'ready', definition: loaded.definition, progress, leaderboard, activeSession, error: null });
       } catch (error) {
-        if (live) setBootstrap({ phase: 'error', definition: null, progress: null, leaderboard: null, error });
+        if (live) setBootstrap({ phase: 'error', definition: null, progress: null, leaderboard: null, activeSession: null, error });
       }
     })();
     return () => { live = false; };
   }, [api, gameId, viewerId]);
 
   const isJourney = bootstrap.definition?.view_id === JOURNEY_VIEW;
-  const setup = useMemo(() => (partnerId ? { partner_id: partnerId } : {}), [partnerId]);
-  if (bootstrap.phase === 'loading') return <main className="gaming-shell gaming-loading">Opening Scale Stadium…</main>;
+  const setup = useMemo(() => (launch?.partnerId ? { partner_id: launch.partnerId } : {}), [launch]);
+  if (bootstrap.phase === 'loading') return <main className="gaming-shell gaming-loading">Opening Card Game…</main>;
   if (bootstrap.phase === 'error') {
     return <main className="gaming-shell gaming-error"><h1>Game unavailable</h1><p>{bootstrap.error?.message}</p></main>;
   }
-  if (isJourney && !partnerId) {
+  if (isJourney && !launch) {
     return (
-      <PokemonJourneyLobby
+      <PokemonJourneyHub
         definition={bootstrap.definition}
         progress={bootstrap.progress}
         leaderboard={bootstrap.leaderboard}
         userId={viewerId}
-        onSelect={setPartnerId}
+        onStart={(partnerId) => setLaunch({ partnerId, resumeSessionId: null })}
+        onResume={() => {
+          const active = bootstrap.activeSession;
+          if (active) setLaunch({ partnerId: active.state?.partner_id, resumeSessionId: active.session_id });
+        }}
         onClose={onClose}
       />
     );
@@ -158,9 +172,10 @@ export default function GamingRuntime({ gameId = 'scale-clash', participants = [
       participants={participants}
       providers={providers}
       setup={setup}
+      resumeSessionId={launch?.resumeSessionId || null}
       bootstrapMeta={{ progress: bootstrap.progress, leaderboard: bootstrap.leaderboard }}
-      onChangePartner={isJourney ? () => setPartnerId(null) : null}
-      onClose={onClose}
+      onChangePartner={isJourney ? () => setLaunch(null) : null}
+      onClose={isJourney ? () => setLaunch(null) : onClose}
     />
   );
 }

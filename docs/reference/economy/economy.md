@@ -66,6 +66,20 @@ overrides (most-specific-wins). See the committed example
 **Config is cached at backend startup** — edits require a dev-server restart
 before they take effect.
 
+Card Game's daily-research award uses this configurable catalog entry:
+
+```yaml
+earn:
+  piano-card-game-daily:
+    reward: 2
+    per: completion
+    daily_cap: 2
+```
+
+The Gaming service calls it once when a non-guest user's daily research first becomes
+complete. Its `daily:{local-date}` reference makes retries idempotent; a missing economy
+catalog leaves the campaign reward visible but skips the wallet mutation.
+
 ## API (`/api/v1/economy`)
 
 | Method / Path | Body | Returns |
@@ -87,6 +101,9 @@ balance, existing session), `EntityNotFoundError` → 404 (unknown user).
   first time `UserVideoProgressStore` stamps `completedAt`. An economy failure
   never breaks progress recording. (Assumes `/log` `userId` is piano-kiosk-only —
   see the design doc's "Known assumptions".)
+- **Earn (Card Game):** the Gaming session service fires `piano-card-game-daily`
+  after the first qualifying battle/featured-skill completion of the local day. Guest
+  play and repeated session commands never pay durable coins.
 - **Spend (arcade):** `frontend/.../EmulatorGame/coinMeteredGate.js` opens a spend
   session and drains coins as the timer runs, surfacing the balance in the
   EmulatorConsole overlay (`session.coins`) and its `depleted` state

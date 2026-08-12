@@ -4,34 +4,50 @@ Reference for the DaylightStation piano game system — MIDI-driven games layere
 
 ---
 
-## Card Game (Scale Stadium)
+## Card Game
 
-Scale Stadium is the YAML-defined, Pokémon-themed tactical card battle at
-`/piano/games/card-game`. The opening encounter uses Pikachu and Squirtle's real PokeAPI
-identity, types, base stats, legal move names, and media-library SVGs. The rules remain a
-small original piano game rather than an implementation of the full Pokémon TCG.
+Card Game is the YAML-defined, Pokémon-themed tactical card battle at
+`/piano/games/card-game`. It is a persistent one-screen campaign with separate Home,
+Pokédex, Trainer, campaign-decision, and focused battle surfaces. A seeded route draws one
+unique opponent from each of five authored difficulty tiers, preferring unseen Pokémon.
+The complete route and four-opponent themed gym are pinned in session state, so resume and
+retry never redraw them; replay starts a new seed.
 
-The player reads Squirtle's announced move, plays one or more move cards, performs a
-Piano-selected scale, sees the move's resulting power, and ends the turn when ready.
-Electric moves encode Squirtle's weakness, while performance quality applies the final
-multiplier: fluent play gets the full authored effect, a recovered scale gets a reduced
-effect, and three mistakes fizzle the move. Scale names are never card choices: cards use
-real move names, while the Piano backend selects the exercise after a card is played.
+The player chooses an owned partner, sees the opponent's intent, and commits one of three
+compact piano move cards. A fourth move unlocks after the first route battle and a charged,
+one-use fifth finisher appears in the gym. Performance quality determines a direct,
+partial, or missed effect. Recruitment follows route battles two and four, then a gym-entry
+decision heals the roster before the four-part gym challenge. Future route identities stay
+concealed until their encounters begin.
+
+Minor post-battle rewards are consolidated into one research report. Catch, badge,
+evolution/mastery, and trainer-unlock ceremonies are persisted before presentation and
+queued one at a time. Save & Exit suspends the active session and refunds an in-progress
+piano challenge instead of abandoning campaign progress.
+
+Longitudinal progress is rebuilt from authoritative session history: Pokédex states,
+partner bonds, best scores in four skill families, trainer XP/level, badges, daily research,
+weekly stamps/tickets, streak/rest tokens, and applied milestones. Guest sessions can
+demonstrate the full battle flow but are excluded from durable campaign rewards.
 
 The ownership boundary is strict:
 
 - `shared/gaming/definitions/card-game.yml` contains combat content and a semantic
-  `foundation-major-scales` curriculum request. It also pins the curated combatants'
-  Pokédex metadata and media-relative SVG paths; it contains no MIDI numbers or ABC.
+  curriculum request. It pins tier pools, the gym roster, Pokédex metadata, and
+  media-relative SVG paths; it contains no MIDI numbers or ABC.
 - Pokémon SVGs are loaded through `/api/v1/proxy/media/stream/*`, rooted at the configured
   media directory, so the game does not copy the 1,025-entry corpus into the frontend.
 - `PianoScaleChallengePolicy` chooses C/G/F/D major practice from per-user attempt
   evidence and materializes the musical prompt.
 - The provider renders the staff directly from `expected_midi` and grades the same array,
   persists completed/interrupted attempts, and terminates on timeout or MIDI disconnect.
-- The Gaming authority persists every lifecycle boundary, battle outcome, explicit
-  abandonment, and stale-session recovery. Closing the screen does not leave an active
-  session behind.
+- The Gaming authority persists every lifecycle boundary, route/gym draw, health,
+  recruitment choice, finisher use, queued ceremony, suspension, explicit abandonment,
+  and stale-session recovery.
+- `shared/gaming/campaignProgress.mjs` folds completed, abandoned, and active sessions into
+  the public campaign projection without making presentation state authoritative.
+- `journeySfx.js` owns the semantic Web Audio cue catalog. Views emit stable event IDs;
+  sounds never participate in reducer decisions.
 
 ### Live readiness check
 
@@ -41,11 +57,12 @@ Run the end-to-end verifier against the deployed PianoKiosk route:
 npm run piano:card-game:verify
 ```
 
-The verifier in `cli/piano-card-game.cli.mjs` rejects stale/non-Pokémon definitions, checks
-the mounted Pikachu and Squirtle YAML plus SVG assets, opens the route at 1280×800, completes
-the server-selected scales through the kiosk WebSocket MIDI contract, and plays until Pikachu
-wins. Use `--headed`, `--json`, or `--screenshot /tmp/scale-stadium.png` when diagnosing a
-deployment.
+The verifier in `cli/piano-card-game.cli.mjs` rejects stale definitions, validates all five
+tier pools and four gym assets, opens the route at 1280×800, completes server-selected
+Scale, Chord, Arpeggio, and Rhythm prompts through the kiosk MIDI bridge, and plays the
+campaign through its queued decisions and ceremonies. It also verifies the Home, partner,
+and battle surfaces do not scroll or place controls outside the viewport. Use `--headed`,
+`--json`, or `--screenshot /tmp/card-game.png` when diagnosing a deployment.
 
 The engineering pilot is test-ready, but the product decision remains field-gated. A
 supervised pilot must still determine whether players understand the loop, enjoy it, and

@@ -1666,6 +1666,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const gamingService = new GamingSessionService({
     definitionStore: gamingDefinitionStore,
     sessionStore: gamingSessionStore,
+    economyService: economyApi.economyService,
     logger: rootLogger.child({ module: 'gaming' }),
   });
   gamingService.recoverStaleSessions();
