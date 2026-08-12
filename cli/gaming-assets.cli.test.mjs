@@ -15,6 +15,7 @@ import {
   renderFrameGrid,
   renderLayout,
   renderScene,
+  renderSceneQa,
   explainPrefab,
   renderPrefabPreview,
   validateManifest,
@@ -95,6 +96,12 @@ describe('gaming asset audit tooling', () => {
     assert.equal(opaqueOverlay.valid, false);
     assert.ok(opaqueOverlay.errors.some((error) => error.includes('overlay frame ground must contain transparency')));
     manifest.assets['terrain.single'].tags.pop();
+    manifest.assets['terrain.single'].forbidden_colors = ['#ff0000'];
+    await writeFile(manifestPath, YAML.stringify(manifest));
+    const forbiddenColor = await validateManifest({ root, manifestPath });
+    assert.equal(forbiddenColor.valid, false);
+    assert.ok(forbiddenColor.errors.some((error) => error.includes('frame ground contains forbidden color #ff0000')));
+    delete manifest.assets['terrain.single'].forbidden_colors;
     manifest.assets['npc.hero'].frames['walk.1'].content_bounds = [1, 0, 15, 16];
     await writeFile(manifestPath, YAML.stringify(manifest));
     const badBounds = await validateManifest({ root, manifestPath });
@@ -133,6 +140,7 @@ describe('gaming asset audit tooling', () => {
     const scene = path.join(root, 'scene.yml');
     const sceneOut = path.join(root, 'out', 'scene.png');
     const prefabOut = path.join(root, 'out', 'prefab.png');
+    const qaOut = path.join(root, 'out', 'qa');
     const derivedRecipe = path.join(root, 'derived.yml');
     const derivedOut = path.join(root, 'out', 'derived.png');
     await renderContactSheet({ root, out: sheet, columns: 1, scale: 1 });
@@ -144,11 +152,12 @@ describe('gaming asset audit tooling', () => {
       viewport: [64, 32], background: '#000000',
       sprites: [{ source, cell: [16, 16], frame: [1, 0], at: [16, 0], scale: 2 }],
     }));
-    await writeFile(scene, YAML.stringify({ viewport: [64, 32], background: '#000', terrain: { grid: { cell: [16, 16], scale: 2 }, regions: [{ terrain: 'water', asset: 'terrain.test', polarity: 'positive', origin: [0, 0], rects: [[0, 0, 2, 1]], continues: ['west', 'east'] }, { terrain: 'sand', asset: 'terrain.test', polarity: 'negative', origin: [0, 0], cells: [[0, 0]] }] }, placements: [{ prefab: 'marker', at: [32, 0] }] }));
+    await writeFile(scene, YAML.stringify({ viewport: [64, 32], background: '#000', review_regions: [{ id: 'join', rect: [16, 0, 32, 16], scale: 2 }], terrain: { grid: { cell: [16, 16], scale: 2 }, regions: [{ terrain: 'water', asset: 'terrain.test', polarity: 'positive', origin: [0, 0], rects: [[0, 0, 2, 1]], continues: ['west', 'east'] }, { terrain: 'sand', asset: 'terrain.test', polarity: 'negative', origin: [0, 0], cells: [[0, 0]] }] }, placements: [{ prefab: 'marker', at: [32, 0] }] }));
     const catalog = path.join(root, 'catalog.yml');
     await writeFile(catalog, YAML.stringify({ schema_version: 1, pack: { id: 'test' }, assets: { 'terrain.test': { status: 'approved', source, tags: ['terrain'], geometry: { layout: 'grid', cell: [16, 16], grid: [2, 1] }, defaults: { anchor: 'top-left' }, frames: { ground: { cell: [0, 0] }, through: { cell: [1, 0] } }, autotile: { topology: 'cardinal-4', positive: { ew: 'through', fallback: 'ground' }, negative: { fallback: 'ground' } } } }, prefabs: { marker: { layers: [{ asset: 'terrain.test#ground', offset: [0, 0], scale: 1 }] } } }));
     await renderLayout({ root, manifestPath: layout, out: rendered });
     await renderScene({ root, catalogPath: catalog, manifestPath: scene, out: sceneOut });
+    const qa = await renderSceneQa({ root, catalogPath: catalog, manifestPath: scene, outDir: qaOut });
     const renderedScene = await loadImage(sceneOut); const renderedCanvas = createCanvas(64, 32); const renderedContext = renderedCanvas.getContext('2d');
     renderedContext.drawImage(renderedScene, 0, 0);
     assert.deepEqual([...renderedContext.getImageData(48, 8, 1, 1).data], [0, 255, 0, 255], 'continued route uses the through frame at the viewport edge');
@@ -164,6 +173,8 @@ describe('gaming asset audit tooling', () => {
     assert.deepEqual((await readFile(rendered)).subarray(1, 4).toString(), 'PNG');
     assert.deepEqual((await readFile(sceneOut)).subarray(1, 4).toString(), 'PNG');
     assert.deepEqual((await readFile(prefabOut)).subarray(1, 4).toString(), 'PNG');
+    assert.deepEqual(Object.keys(qa.outputs).sort(), ['full', 'quadrant-ne', 'quadrant-nw', 'quadrant-se', 'quadrant-sw', 'review-join', 'thumbnail']);
+    for (const file of Object.values(qa.outputs)) assert.deepEqual((await readFile(file)).subarray(1, 4).toString(), 'PNG');
     const derivedImage = await loadImage(derivedOut); const derivedCanvas = createCanvas(32, 16); const derivedContext = derivedCanvas.getContext('2d');
     derivedContext.drawImage(derivedImage, 0, 0);
     assert.equal(derivedContext.getImageData(8, 8, 1, 1).data[3], 0, 'configured source color becomes transparent');

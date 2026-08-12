@@ -390,6 +390,9 @@ export async function validateManifest({ root, manifestPath }) {
       grid = [columns, rows];
     }
     if (asset.defaults?.anchor && !validAnchor(asset.defaults.anchor)) errors.push(`${prefix}: invalid default anchor`);
+    const forbiddenColors = asset.forbidden_colors ?? [];
+    if (!Array.isArray(forbiddenColors) || forbiddenColors.some((color) => !/^#[0-9a-f]{6}$/i.test(color))) errors.push(`${prefix}: forbidden_colors must contain #rrggbb values`);
+    const forbiddenRgb = new Set(forbiddenColors.map((color) => color.slice(1).toLowerCase()));
     const frames = asset.frames;
     if (!frames || typeof frames !== 'object' || Array.isArray(frames) || !Object.keys(frames).length) { errors.push(`${prefix}: approved asset needs named frames`); continue; }
     let decodedImage = null;
@@ -400,6 +403,7 @@ export async function validateManifest({ root, manifestPath }) {
       if (hasCell && (geometry.layout !== 'grid' || !validFrame(frame.cell, grid))) errors.push(`${prefix}: frame ${frameName} has invalid grid cell`);
       if (hasRect && (geometry.layout !== 'freeform' || !Array.isArray(frame.rect) || frame.rect.length !== 4 || frame.rect.some((part) => !Number.isInteger(part) || part < 0) || frame.rect[2] < 1 || frame.rect[3] < 1 || frame.rect[0] + frame.rect[2] > facts.image.width || frame.rect[1] + frame.rect[3] > facts.image.height)) errors.push(`${prefix}: frame ${frameName} has invalid source rect`);
       if (frame?.anchor && !validAnchor(frame.anchor)) errors.push(`${prefix}: frame ${frameName} has invalid anchor`);
+      if (frame?.opaque_overlay !== undefined && typeof frame.opaque_overlay !== 'boolean') errors.push(`${prefix}: frame ${frameName} opaque_overlay must be boolean`);
       const frameShapeValid = (hasCell && geometry.layout === 'grid' && validFrame(frame.cell, grid))
         || (hasRect && geometry.layout === 'freeform' && frame.rect.length === 4 && frame.rect.every(Number.isInteger) && frame.rect[2] > 0 && frame.rect[3] > 0 && frame.rect[0] + frame.rect[2] <= facts.image.width && frame.rect[1] + frame.rect[3] <= facts.image.height);
       if (frameShapeValid && frame.anchor?.point) {
@@ -437,7 +441,22 @@ export async function validateManifest({ root, manifestPath }) {
         const pixels = sampleContext.getImageData(0, 0, sw, sh).data;
         let hasTransparency = false;
         for (let index = 3; index < pixels.length; index += 4) if (pixels[index] < 255) { hasTransparency = true; break; }
-        if (!hasTransparency) errors.push(`${prefix}: overlay frame ${frameName} must contain transparency`);
+        if (!hasTransparency && frame.opaque_overlay !== true) errors.push(`${prefix}: overlay frame ${frameName} must contain transparency or explicitly set opaque_overlay`);
+      }
+      if (frameShapeValid && forbiddenRgb.size) {
+        const { createCanvas, loadImage } = await import('canvas');
+        decodedImage ??= await loadImage(file);
+        const [sx, sy, sw, sh] = frameRect(asset, frame, facts);
+        const sample = createCanvas(sw, sh); const sampleContext = sample.getContext('2d');
+        sampleContext.drawImage(decodedImage, sx, sy, sw, sh, 0, 0, sw, sh);
+        const pixels = sampleContext.getImageData(0, 0, sw, sh).data;
+        let found = null;
+        for (let index = 0; index < pixels.length; index += 4) {
+          if (!pixels[index + 3]) continue;
+          const rgb = [pixels[index], pixels[index + 1], pixels[index + 2]].map((value) => value.toString(16).padStart(2, '0')).join('');
+          if (forbiddenRgb.has(rgb)) { found = `#${rgb}`; break; }
+        }
+        if (found) errors.push(`${prefix}: frame ${frameName} contains forbidden color ${found}`);
       }
     }
     for (const [clipName, clip] of Object.entries(asset.clips ?? {})) {
@@ -838,6 +857,38 @@ export async function renderScene({ root, catalogPath, manifestPath = null, scen
 }
 
 /** Explain the concrete layers selected by a prefab's typed parameters. */
+/** Render a production-review bundle: full scene, thumbnail, and 2x quadrants. */
+export async function renderSceneQa({ root, catalogPath, manifestPath, outDir }) {
+  await mkdir(outDir, { recursive: true });
+  const full = path.join(outDir, 'scene.png');
+  const report = await renderScene({ root, catalogPath, manifestPath, out: full });
+  const { loadImage } = await import('canvas');
+  const source = await loadImage(full);
+  const outputs = { full };
+  const renderCrop = async (name, sx, sy, sw, sh, dw, dh) => {
+    const file = path.join(outDir, `${name}.png`);
+    const { canvas, ctx } = await createPixelCanvas(dw, dh);
+    ctx.drawImage(source, sx, sy, sw, sh, 0, 0, dw, dh);
+    await writeFile(file, canvas.toBuffer('image/png'));
+    outputs[name] = file;
+  };
+  const halfWidth = Math.floor(source.width / 2); const halfHeight = Math.floor(source.height / 2);
+  await renderCrop('thumbnail', 0, 0, source.width, source.height, Math.ceil(source.width / 2), Math.ceil(source.height / 2));
+  await renderCrop('quadrant-nw', 0, 0, halfWidth, halfHeight, halfWidth * 2, halfHeight * 2);
+  await renderCrop('quadrant-ne', halfWidth, 0, source.width - halfWidth, halfHeight, (source.width - halfWidth) * 2, halfHeight * 2);
+  await renderCrop('quadrant-sw', 0, halfHeight, halfWidth, source.height - halfHeight, halfWidth * 2, (source.height - halfHeight) * 2);
+  await renderCrop('quadrant-se', halfWidth, halfHeight, source.width - halfWidth, source.height - halfHeight, (source.width - halfWidth) * 2, (source.height - halfHeight) * 2);
+  const scene = YAML.parse(await readFile(manifestPath, 'utf8')) ?? {};
+  if (scene.review_regions !== undefined && !Array.isArray(scene.review_regions)) throw new Error('scene review_regions must be an array');
+  for (const [index, region] of (scene.review_regions ?? []).entries()) {
+    if (!validId(region?.id) || !Array.isArray(region.rect) || region.rect.length !== 4 || region.rect.some((value) => !Number.isInteger(value) || value < 0) || region.rect[2] < 1 || region.rect[3] < 1) throw new Error(`scene review region ${index} needs id and [x, y, width, height] rect`);
+    const [sx, sy, sw, sh] = region.rect; const scale = region.scale ?? 2;
+    if (!Number.isInteger(scale) || scale < 1 || sx + sw > source.width || sy + sh > source.height) throw new Error(`scene review region ${region.id} exceeds viewport or has invalid scale`);
+    await renderCrop(`review-${region.id}`, sx, sy, sw, sh, sw * scale, sh * scale);
+  }
+  return { ...report, out_dir: outDir, outputs };
+}
+
 export async function explainPrefab({ catalogPath, id, params = {} }) {
   const catalog = YAML.parse(await readFile(catalogPath, 'utf8')) ?? {};
   const validation = validatePrefabCatalog(catalog);

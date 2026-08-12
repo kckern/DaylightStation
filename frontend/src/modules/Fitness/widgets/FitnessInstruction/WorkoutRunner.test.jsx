@@ -347,6 +347,99 @@ describe('WorkoutRunner', () => {
       expect(q.getByTestId('workout-runner-complete').textContent).toContain('3 sets done');
     });
 
+    // ── What the run REPORTS ────────────────────────────────────────────────
+    // The report is what reaches the session record, so it has to be the sets
+    // performed and nothing else. A report built from the plan (or from the whole
+    // walked step list) would file rest as work and would file sets nobody did.
+    describe('the completion report', () => {
+      it('hands back the finished work steps, with rest excluded', () => {
+        const steps = expandWorkout(STRAIGHT);
+        const onComplete = vi.fn();
+        const q = renderRunner({ steps, onComplete });
+        walkToEnd(q);
+
+        const [reported] = onComplete.mock.calls[0];
+        expect(reported.map((s) => s.kind)).toEqual(['work', 'work', 'work']);
+        expect(reported.map((s) => s.slug)).toEqual(['back-squat', 'back-squat', 'back-squat']);
+        expect(reported.every((s) => Number.isInteger(s.groupIndex))).toBe(true);
+        // Every reported step must be one the runner actually walked.
+        reported.forEach((s) => expect(steps).toContain(s));
+      });
+
+      it('reports only the sets performed when the athlete skipped rest but did every set', () => {
+        // Skipping rest is not skipping work: a run walked entirely through the
+        // Done/Skip target still performed every work step.
+        const steps = expandWorkout(SUPERSET);
+        const onComplete = vi.fn();
+        const q = renderRunner({ steps, onComplete });
+        walkToEnd(q);
+        const [reported] = onComplete.mock.calls[0];
+        expect(reported).toHaveLength(steps.filter((s) => s.kind === 'work').length);
+      });
+
+      it('counts the sets DONE on screen, which is not the same as the sets planned', () => {
+        // STRAIGHT prescribes 3 sets. Walk two of them and end the run: the panel
+        // must say 2. Reading the plan here is the "planned as performed" bug the
+        // whole strength block exists to avoid.
+        const steps = expandWorkout(STRAIGHT);
+        const shortened = steps.slice(0, 3); // work, rest, work
+        const onComplete = vi.fn();
+        const q = renderRunner({ steps: shortened, onComplete });
+        walkToEnd(q);
+
+        expect(q.getByTestId('workout-runner-complete').textContent).toContain('2 sets done');
+        expect(onComplete.mock.calls[0][0]).toHaveLength(2);
+      });
+    });
+
+    // ── What the screen says about RECORDING ────────────────────────────────
+    describe('the recording notice', () => {
+      it('says it is recording while the report is in flight', () => {
+        const q = renderRunner({ steps: expandWorkout(STRAIGHT), logStatus: 'pending' });
+        walkToEnd(q);
+        expect(q.getByTestId('workout-runner-log').getAttribute('data-log-status')).toBe('pending');
+        expect(q.getByTestId('workout-runner-log').textContent).toMatch(/recording/i);
+      });
+
+      it('confirms the sets reached the session', () => {
+        const q = renderRunner({ steps: expandWorkout(STRAIGHT), logStatus: 'ok' });
+        walkToEnd(q);
+        expect(q.getByTestId('workout-runner-log').textContent).toMatch(/recorded to your session/i);
+        expect(q.queryByTestId('workout-runner-log-retry')).toBeNull();
+      });
+
+      it('says NOT RECORDED, in the reason\'s own words, and offers a retry', () => {
+        const onRetryLog = vi.fn();
+        const q = renderRunner({
+          steps: expandWorkout(STRAIGHT),
+          logStatus: 'failed',
+          logMessage: 'No workout session could be opened.',
+          onRetryLog
+        });
+        walkToEnd(q);
+
+        const panel = q.getByTestId('workout-runner-log');
+        expect(panel.getAttribute('data-log-status')).toBe('failed');
+        expect(panel.textContent).toContain('Not recorded');
+        expect(q.getByTestId('workout-runner-log-error').textContent)
+          .toBe('No workout session could be opened.');
+        // Loud enough for a screen reader too — this is the one thing on the
+        // completion screen a person must not miss.
+        expect(panel.getAttribute('role')).toBe('alert');
+
+        fireEvent.pointerDown(q.getByTestId('workout-runner-log-retry'));
+        expect(onRetryLog).toHaveBeenCalledTimes(1);
+        // The retry re-files the SAME performed sets, not a fresh empty report.
+        expect(onRetryLog.mock.calls[0][0]).toHaveLength(3);
+      });
+
+      it('never shows a bare "nice work" when the recording failed', () => {
+        const q = renderRunner({ steps: expandWorkout(STRAIGHT), logStatus: 'failed', onRetryLog: () => {} });
+        walkToEnd(q);
+        expect(q.getByTestId('workout-runner-complete').textContent).toMatch(/not recorded/i);
+      });
+    });
+
     it('exits from the completion screen', () => {
       const onExit = vi.fn();
       const q = renderRunner({ steps: expandWorkout(STRAIGHT), onExit });
@@ -475,7 +568,9 @@ describe('WorkoutRunner', () => {
       walkToEnd(q);
       const done = logsFor('info', 'run-complete');
       expect(done).toHaveLength(1);
-      expect(done[0].data).toEqual({ title: 'Leg Day', totalSteps: 5, workSteps: 3 });
+      // `completedSteps` is what was PERFORMED and `workSteps` what was planned;
+      // a full walk makes them agree, and the wiring tests below drive them apart.
+      expect(done[0].data).toEqual({ title: 'Leg Day', totalSteps: 5, workSteps: 3, completedSteps: 3 });
     });
 
     it('logs run-exit with the step the athlete abandoned on', () => {
@@ -485,6 +580,13 @@ describe('WorkoutRunner', () => {
       const exits = logsFor('info', 'run-exit');
       expect(exits).toHaveLength(1);
       expect(exits[0].data).toEqual({ reason: 'abandoned', cursor: 1, totalSteps: 6 });
+    });
+
+    it('logs the retry as its own event', () => {
+      const q = renderRunner({ steps: expandWorkout(STRAIGHT), logStatus: 'failed', onRetryLog: () => {} });
+      walkToEnd(q);
+      fireEvent.pointerDown(q.getByTestId('workout-runner-log-retry'));
+      expect(logsFor('info', 'run-log-retry')).toHaveLength(1);
     });
 
     it('uses the logging framework, never console.*', () => {

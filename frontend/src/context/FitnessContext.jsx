@@ -119,6 +119,19 @@ export const useFitnessContext = () => {
   return context;
 };
 
+/**
+ * The context WITHOUT the must-be-inside-a-provider assertion — `null` when there
+ * is no provider above.
+ *
+ * `useFitnessContext` throwing is the right default: a widget that needs live HR
+ * is broken outside the provider and should say so loudly. But a widget that only
+ * wants the session in order to ATTRIBUTE something (the Exercise Library logging
+ * a finished strength run) has a defined answer for "there is no fitness app
+ * around me" — it degrades — and that same shape is what lets it be rendered
+ * standalone in a unit test. Use this only where the absence is genuinely handled.
+ */
+export const useOptionalFitnessContext = () => useContext(FitnessContext);
+
 // Custom hook for fitness playlist management
 export const useFitnessPlaylist = () => {
   const context = useFitnessContext();
