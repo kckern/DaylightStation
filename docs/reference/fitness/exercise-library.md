@@ -198,6 +198,20 @@ exercises" is otherwise indistinguishable from a broken one.
 
 ## Session logging
 
+> **⚠️ NOT WIRED CLIENT-SIDE (2026-08-11).** The backend is complete and reachable — route,
+> `LogStrengthRun`, repository, `recordStrengthRun`, all tested. **But the runner never calls
+> it.** `WorkoutRunner` accepts an `onComplete` prop that `FitnessInstructionContainer` does not
+> pass, and nothing in the module holds a `sessionId` to attribute a run to. Until that is
+> wired, a completed strength run leaves no trace, and session detail, recaps, the longitudinal
+> widget, and Strava reconciliation will never see one.
+>
+> Caught by `tests/live/flow/fitness/exercise-library.runtime.test.mjs`, which is **deliberately
+> red on this assertion.** Leave it red until the client side lands. It also needs a product
+> decision, not only wiring: the module has no session context today, so where a strength run's
+> session comes from has to be answered first.
+
+The design below describes the backend, which behaves as written.
+
 A completed run appends to `strength.runs[]` on the **existing** fitness session record, so it
 lands in the same history as cycle work and the reporting stack picks it up unchanged.
 
