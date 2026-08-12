@@ -1,7 +1,7 @@
 # Performance Assessment Service — Design (v2)
 
 **Date:** 2026-08-11
-**Status:** Revised after adversarial review; supersedes v1 in place.
+**Status:** Implemented — see docs/reference/piano/performance-assessment.md and docs/superpowers/plans/2026-08-11-performance-assessment-adoption.md.
 
 ## What changed from v1
 
