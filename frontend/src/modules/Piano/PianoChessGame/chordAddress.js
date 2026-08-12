@@ -86,7 +86,7 @@ export function chordSymbol(root, quality) {
   return definition ? `${root}${definition.label}` : null;
 }
 
-export function validateChordScheme(scheme) {
+export function validateChordScheme(scheme, { qualities: table = CHORD_QUALITIES } = {}) {
   const errors = [];
   const roots = scheme?.roots;
   const qualities = scheme?.qualities;
@@ -101,10 +101,38 @@ export function validateChordScheme(scheme) {
   }
   const seen = new Set();
   for (const quality of qualities || []) {
-    if (!CHORD_QUALITIES[quality]) errors.push(`unknown quality: ${quality}`);
+    if (!table[quality]) errors.push(`unknown quality: ${quality}`);
     else if (seen.has(quality)) errors.push(`qualities repeat: ${quality}`);
     else seen.add(quality);
   }
+
+  // Gesture safety. Hints are asked for with runs of adjacent semitones, which
+  // works only while no square can contain such a run. That is a property of
+  // the vocabulary, not a law — so a scheme that breaks it is rejected here
+  // rather than silently disabling help.
+  for (const quality of qualities || []) {
+    const intervals = table[quality]?.intervals;
+    if (!Array.isArray(intervals)) continue;
+    const classes = intervals.map((i) => ((i % 12) + 12) % 12);
+    for (const size of [3, 4]) {
+      for (let start = 0; start < 12; start += 1) {
+        const run = Array.from({ length: size }, (_, i) => (start + i) % 12);
+        if (run.every((pc) => classes.includes(pc))) {
+          errors.push(`quality ${quality} contains a ${size}-semitone run, which collides with the hint gesture`);
+        }
+      }
+    }
+  }
+
+  // Label ambiguity. Two ranks that read the same to a musician are worse than
+  // two ranks that ARE the same: the board looks legible and lies.
+  const labels = new Map();
+  for (const quality of qualities || []) {
+    const label = (table[quality]?.label || 'maj').toLowerCase();
+    if (labels.has(label)) errors.push(`qualities ${labels.get(label)} and ${quality} share the label "${label}"`);
+    else labels.set(label, quality);
+  }
+
   return { valid: errors.length === 0, errors };
 }
 
