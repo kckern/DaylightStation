@@ -7,7 +7,7 @@ import { SkeletonGrid } from '../../Skeleton.jsx';
 import ExerciseRun from './ExerciseRun.jsx';
 import { buildSearchPath, describeInstance, groupByLevel } from './exerciseQuery.js';
 import {
-  DEFAULT_FILTERS, FORM_OPTIONS, HAND_OPTIONS, LEVEL_BANDS, MODE_OPTIONS,
+  DEFAULT_FILTERS, FORM_OPTIONS, HAND_OPTIONS, LEVEL_BANDS, MODE_OPTIONS, TRADITION_OPTIONS,
 } from './filters.js';
 import './Exercises.scss';
 
@@ -55,7 +55,7 @@ function ExerciseBrowser() {
   }, [logger]);
 
   const bands = useMemo(() => groupByLevel(data?.instances ?? [], filters.mode), [data, filters.mode]);
-  const facets = data?.facets ?? { level: {}, form: {}, collection: {} };
+  const facets = data?.facets ?? { level: {}, form: {}, collection: {}, tradition: {} };
   const total = data?.total ?? 0;
 
   if (error) return <PianoEmpty title="Exercises unavailable" hint={String(error.message || error)} />;
@@ -112,6 +112,20 @@ function ExerciseBrowser() {
             >
               {option.label}
               {option.id && <span className="piano-exercises__chip-count">{facets.form[option.id] ?? 0}</span>}
+            </Chip>
+          ))}
+        </FilterRow>
+
+        <FilterRow label="Style">
+          {TRADITION_OPTIONS.map((option) => (
+            <Chip
+              key={option.id ?? 'any'}
+              active={filters.tradition === option.id}
+              disabled={Boolean(option.id) && !facets.tradition?.[option.id]}
+              onClick={() => set({ tradition: option.id })}
+            >
+              {option.label}
+              {option.id && <span className="piano-exercises__chip-count">{facets.tradition?.[option.id] ?? 0}</span>}
             </Chip>
           ))}
         </FilterRow>

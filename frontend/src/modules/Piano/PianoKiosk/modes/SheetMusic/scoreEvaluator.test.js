@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { gradePerformanceMeasure } from './scoreEvaluator.js';
+import { gradePerformanceMeasure, POLICY_VERSION } from './scoreEvaluator.js';
 
 const cfg = { timingToleranceMs: 80, thresholds: { green: 0.9, yellow: 0.6 } };
 
@@ -42,5 +42,44 @@ describe('gradePerformanceMeasure', () => {
       .toMatchObject({ grade: 'green', silent: false, rest: true });
     expect(gradePerformanceMeasure({ targets: [], unmatched: [{ pitch: 61 }] }, cfg))
       .toMatchObject({ grade: 'red', silent: false, rest: true, wrongCount: 1 });
+  });
+});
+
+describe('polish grades through the shared performance service', () => {
+  const measure = (targets, unmatched = []) => ({ targets, unmatched });
+  const onTime = (pitches) => ({ pitches, drifts: pitches.map(() => 0) });
+
+  it('stamps the grading policy, so old records stay distinguishable', () => {
+    const result = gradePerformanceMeasure(measure([onTime([60, 64])]));
+    expect(result.policyVersion).toBe(POLICY_VERSION);
+  });
+
+  it('penalises a note never struck, which a drill cannot produce', () => {
+    // Two notes expected, one played on time, none wrong: the missing note has
+    // to cost something even though nothing incorrect happened.
+    const played = gradePerformanceMeasure(measure([{ pitches: [60, 64], drifts: [0] }]));
+    const complete = gradePerformanceMeasure(measure([onTime([60, 64])]));
+    expect(played.combined).toBeLessThan(complete.combined);
+    expect(played.noteScore).toBeLessThan(1);
+  });
+
+  it('reports continuity, a dimension the old evaluator never produced', () => {
+    expect(gradePerformanceMeasure(measure([onTime([60])])).continuity).toBe(1);
+    expect(gradePerformanceMeasure(measure([onTime([60])], [61])).continuity).toBeLessThan(1);
+  });
+
+  it('treats drift inside the tolerance as on time, and far drift as late', () => {
+    const tight = gradePerformanceMeasure(measure([{ pitches: [60], drifts: [40] }]));
+    const loose = gradePerformanceMeasure(measure([{ pitches: [60], drifts: [400] }]));
+    expect(tight.timingScore).toBe(1);
+    expect(loose.timingScore).toBe(0);
+    expect(tight.combined).toBeGreaterThan(loose.combined);
+  });
+
+  it('still passes a bar of rests kept silent', () => {
+    const silentRest = gradePerformanceMeasure(measure([]));
+    expect(silentRest.rest).toBe(true);
+    expect(silentRest.grade).toBe('green');
+    expect(gradePerformanceMeasure(measure([], [60])).grade).toBe('red');
   });
 });

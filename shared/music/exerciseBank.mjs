@@ -221,6 +221,7 @@ export function materialize(seed, axes = {}) {
     }),
     form: seed.derived?.form ?? null,
     collection: String(seed.id ?? '').split('/')[0] || null,
+    tradition: seed.provenance?.tradition ?? null,
     tags: seed.tags ?? [],
   };
 }
@@ -355,17 +356,22 @@ export function searchBank(seeds, {
   levelMax = 10,
   form = null,
   collection = null,
+  tradition = null,
   hands = null,
   tags = null,
   limit = 100,
   offset = 0,
 } = {}) {
   const matches = [];
-  const facets = { level: {}, form: {}, collection: {} };
+  const facets = { level: {}, form: {}, collection: {}, tradition: {} };
 
+  // `form` accepts one value or several: a kind can legitimately draw from more
+  // than one form, and a caller should not have to search twice to say so.
+  const forms = form ? (Array.isArray(form) ? form : [form]) : null;
   for (const seed of seeds) {
     if (collection && !String(seed.id ?? '').startsWith(`${collection}/`)) continue;
-    if (form && seed.derived?.form !== form) continue;
+    if (forms && !forms.includes(seed.derived?.form)) continue;
+    if (tradition && seed.provenance?.tradition !== tradition) continue;
     // An item that cannot be played the asked-for way is not a match at any level.
     if (mode && !(seed.supports ?? ['free']).includes(mode)) continue;
 
@@ -380,6 +386,7 @@ export function searchBank(seeds, {
       facets.level[level] = (facets.level[level] ?? 0) + 1;
       if (instance.form) facets.form[instance.form] = (facets.form[instance.form] ?? 0) + 1;
       if (instance.collection) facets.collection[instance.collection] = (facets.collection[instance.collection] ?? 0) + 1;
+      if (instance.tradition) facets.tradition[instance.tradition] = (facets.tradition[instance.tradition] ?? 0) + 1;
       matches.push(instance);
     }
   }

@@ -16,12 +16,19 @@ import { searchBank } from '#shared/music/exerciseBank.mjs';
 
 const POLICY_VERSION = 'exercise-bank-v1';
 
-/** Card-game challenge kinds, mapped onto the bank's derived forms. */
-const KIND_TO_FORM = Object.freeze({
-  scale: 'scale',
-  chord: 'chord',
-  arpeggio: 'arpeggio',
-  'timed-pattern': 'figure',
+/**
+ * Card-game challenge kinds, mapped onto the bank's derived forms.
+ *
+ * One kind can draw from several forms. A run and a five-finger figure are both
+ * "play this pattern in time" as far as the game is concerned, so the bank's
+ * `sequence` material — the blues, jazz and rock vocabulary — reaches the table
+ * through timed-pattern rather than needing a new kind in the game's schema.
+ */
+const KIND_TO_FORMS = Object.freeze({
+  scale: ['scale'],
+  chord: ['chord'],
+  arpeggio: ['arpeggio'],
+  'timed-pattern': ['figure', 'sequence'],
 });
 
 /** Where a player with no history starts, and how far a band reaches. */
@@ -74,8 +81,8 @@ export class BankChallengePolicy {
   }
 
   prepare({ userId, challengeId, kind, requirements = {}, context = {} }) {
-    const form = KIND_TO_FORM[kind];
-    if (!form) throw new Error(`Unsupported piano challenge kind: ${kind}`);
+    const forms = KIND_TO_FORMS[kind];
+    if (!forms) throw new Error(`Unsupported piano challenge kind: ${kind}`);
 
     const recent = this.attemptStore?.listRecent?.(userId, { limit: 200 }) || [];
     const level = Number.isFinite(requirements.level) ? requirements.level : estimateLevel(recent);
@@ -87,7 +94,7 @@ export class BankChallengePolicy {
     for (let widen = 0; widen <= 9 && !found.instances.length; widen += 1) {
       found = searchBank(this.#bank.allSeeds(), {
         mode,
-        form,
+        form: forms,
         levelMin: Math.max(1, level - BAND - widen),
         levelMax: Math.min(10, level + BAND + widen),
         limit: 200,
@@ -114,6 +121,10 @@ export class BankChallengePolicy {
         staff: instance.staff,
         level: instance.level?.[mode] ?? null,
         mode,
+        // Held-set material is matched on pitch classes and its bass, not on a
+        // sequence, so a chord prompt has to carry both or the provider has
+        // nothing to compare against.
+        ...(instance.ordering === 'any' ? chordTarget(instance) : {}),
       },
       timeout_ms: this.timeoutMs,
       pedagogy_policy_version: POLICY_VERSION,
@@ -127,6 +138,20 @@ export class BankChallengePolicy {
       },
     };
   }
+}
+
+/** Pitch-class target for chord material, in the shape the provider reads. */
+export function chordTarget(instance) {
+  const midis = instance.events.flatMap((e) => e.notes.map((n) => n.midi));
+  if (!midis.length) return {};
+  const pc = (midi) => ((midi % 12) + 12) % 12;
+  return {
+    // The lowest sounding note: the root in root position, the bass in an
+    // inversion — which is exactly what a bass-must-be-root check wants.
+    root: pc(Math.min(...midis)),
+    pitch_classes: [...new Set(midis.map(pc))].sort((a, b) => a - b),
+    allow_inversions: instance.voicing === 'inversions_ok',
+  };
 }
 
 /**
