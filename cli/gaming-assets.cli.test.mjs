@@ -30,6 +30,7 @@ import {
   deriveAtlas,
   deriveBlobAutotile,
   deriveBlobAutotileCatalog,
+  deriveFenceConnectorCatalog,
   loadAssetCatalog,
 } from './gaming-assets/lib.mjs';
 
@@ -218,6 +219,39 @@ describe('gaming asset audit tooling', () => {
     assert.equal(result.copied, 1);
     assert.deepEqual(await readFile(path.join(root, 'assets/default/npcs/hero.png')), await readFile(path.join(root, source)));
     assert.deepEqual(await verifyOrganizationPlan({ root, planPath }), { valid: true, files: 1, matched: 1, errors: [] });
+  });
+
+  it('derives fence corners from an explicitly declared top source row', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'gaming-fence-'));
+    const sourcePath = path.join(root, 'assets', 'source.png');
+    await mkdir(path.dirname(sourcePath), { recursive: true });
+    const source = createCanvas(64, 64); const context = source.getContext('2d');
+    for (let y = 0; y < 4; y += 1) for (let x = 0; x < 4; x += 1) {
+      context.fillStyle = `rgb(${x * 50}, ${y * 60}, 20)`;
+      context.fillRect(x * 16, y * 16, 16, 16);
+    }
+    await writeFile(sourcePath, source.toBuffer('image/png'));
+    const manifestPath = path.join(root, 'fences.yml'); const catalogOut = path.join(root, 'catalog.yml');
+    await writeFile(manifestPath, YAML.stringify({
+      schema_version: 1,
+      kind: 'fence-connector-derivation-set',
+      catalog: { pack: { id: 'fences' } },
+      jobs: {
+        wall: {
+          source: 'assets/source.png', out: 'assets/derived.png', base: [0, 0],
+          top_corner_row_offset: 1, top_extension_rows: 0, end_extension_rows: 0,
+          license_scope: 'test',
+        },
+      },
+    }));
+    const report = await deriveFenceConnectorCatalog({ root, manifestPath, catalogOut });
+    assert.equal(report.valid, true);
+    const derived = await loadImage(path.join(root, 'assets', 'derived.png'));
+    const sample = createCanvas(64, 48); const sampleContext = sample.getContext('2d'); sampleContext.drawImage(derived, 0, 0);
+    assert.deepEqual([...sampleContext.getImageData(8, 8, 1, 1).data], [50, 60, 20, 255]);
+    assert.deepEqual([...sampleContext.getImageData(24, 8, 1, 1).data], [150, 60, 20, 255]);
+    const invalid = YAML.parse(await readFile(manifestPath, 'utf8')); invalid.jobs.wall.top_corner_row_offset = 4; await writeFile(manifestPath, YAML.stringify(invalid));
+    await assert.rejects(deriveFenceConnectorCatalog({ root, manifestPath, catalogOut }), /top_corner_row_offset is invalid/);
   });
 
   it('writes contact-sheet PNG, frame GIF, and assembly PNG from source data', async () => {

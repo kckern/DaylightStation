@@ -84,6 +84,7 @@ function optionTopIn(viewport, option) {
  * @param {boolean} [props.selectContainers] - rows select containers; chevron ActionIcon browses
  * @param {string} [props.searchParams] - passthrough to the hook's search endpoints
  * @param {boolean} [props.appResults] - passthrough: merge app-registry matches
+ * @param {string} [props.logApp] - app name stamped on this combobox's log events
  * @param {(args: {onStartEdit: () => void, value: string, resolvedTitle: ?string}) => JSX} [props.renderValue]
  *   - when provided, rendered INSTEAD of the TextInput while in DISPLAY mode
  *     (lets callers keep rich display cards; clicking must call onStartEdit)
@@ -97,15 +98,16 @@ export function ContentCombobox({
   appResults = false,
   renderValue = null,
   allowFreeform = true,
+  logApp = 'admin',
 }) {
-  const log = useMemo(() => getChildLogger({ component: 'ContentCombobox', app: 'admin', sessionLog: true }), []);
+  const log = useMemo(() => getChildLogger({ component: 'ContentCombobox', app: logApp, sessionLog: true }), [logApp]);
   const {
     state, dispatch,
     handleInput, activeScope, clearScope,
     openWithSiblings, drill, goUp, goToCrumb, paginate,
     handleClose, select, commit,
     resolvedTitle, isSearching, pendingSources, sourceErrors, truncatedAt,
-  } = useContentCombobox({ value, onChange, searchParams, appResults, selectContainers, allowFreeform });
+  } = useContentCombobox({ value, onChange, searchParams, appResults, selectContainers, allowFreeform, logApp });
 
   const mode = state.mode;
   const isBrowse = mode === Modes.BROWSE;

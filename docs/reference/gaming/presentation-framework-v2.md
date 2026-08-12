@@ -106,6 +106,8 @@ Terrain interfaces own boundary selection. A scene names materials only; it cann
 
 Connector, height, and component profiles provide the same indirection for fences, walls, bridges, cliffs, floors, and borders. Compound prefabs own a footprint, boundary policy, collision policy, and declared slots in addition to their layers and finite parameters. V2 forbids layer and placement `scale`, `z`, `depth_sort`, and hand-authored shadows.
 
+Connector derivation is measured metadata, not a universal source-layout assumption. Recipes may declare `top_corner_row_offset` when a sheet places top corners below a cap row; seam-extension metadata repairs transparent edge pixels separately. Connector QA must prove each corner is a continuous two-axis piece before a derived atlas is approved.
+
 ## Scene vocabulary
 
 All authored coordinates are logical. `pixel_scale` controls only final viewport magnification.

@@ -35,6 +35,15 @@ export function DispatchProvider({ children }) {
   const [state, dispatch] = useReducer(reduceDispatch, initialDispatchState);
   const lastAttemptRef = useRef(null);
   const dedupCacheRef = useRef(new Map());
+  // Identical dispatches still IN FLIGHT, keyed the same way as the dedupe
+  // cache. The 5s window (C9.8) assumes a dispatch resolves quickly, but a
+  // cold LG OLED holds the power step for up to 80s — on 2026-08-12 a user
+  // tapped cast three times during one such wait and the window had long
+  // since lapsed, so a second full backend dispatch went out and only the
+  // BACKEND caught the third. An in-flight duplicate is a duplicate however
+  // long it has been running. Kept in a ref, not reducer state, so
+  // dispatchToTarget's identity stays stable.
+  const inFlightRef = useRef(new Map());
   // The controller object is stable for the provider's lifetime — no
   // ref-mirroring needed to use it inside async callbacks.
   const localCtx = useContext(LocalSessionContext);
@@ -54,16 +63,20 @@ export function DispatchProvider({ children }) {
     if (!Array.isArray(targetIds) || targetIds.length === 0) return [];
 
     const key = buildDedupKey({ targetIds, play, queue, mode, snapshot });
+    const inFlight = inFlightRef.current.get(key);
     const cached = dedupCacheRef.current.get(key);
-    if (!bypassDedupe && cached && Date.now() - cached.ts < TIMING.DISPATCH_DEDUPE_WINDOW_MS) {
+    const withinWindow = cached && Date.now() - cached.ts < TIMING.DISPATCH_DEDUPE_WINDOW_MS;
+    if (!bypassDedupe && (inFlight?.size || withinWindow)) {
+      const firstDispatchIds = inFlight?.size ? [...inFlight] : cached.dispatchIds;
       mediaLog.dispatchDeduplicated({
         targetIds,
         contentId: play ?? queue ?? 'adopt',
         mode: mode ?? 'transfer',
+        reason: inFlight?.size ? 'in-flight' : 'window',
         windowMs: TIMING.DISPATCH_DEDUPE_WINDOW_MS,
-        firstDispatchIds: cached.dispatchIds,
+        firstDispatchIds,
       });
-      return cached.dispatchIds;
+      return firstDispatchIds;
     }
 
     const isAdopt = !!snapshot;
@@ -74,9 +87,18 @@ export function DispatchProvider({ children }) {
     const dispatchIds = [];
     lastAttemptRef.current = { targetIds, play, queue, mode, shader, volume, shuffle, snapshot, title };
 
+    const settle = (dispatchId) => {
+      const set = inFlightRef.current.get(key);
+      if (!set) return;
+      set.delete(dispatchId);
+      if (set.size === 0) inFlightRef.current.delete(key);
+    };
+    inFlightRef.current.set(key, new Set());
+
     for (const deviceId of targetIds) {
       const dispatchId = uuid();
       dispatchIds.push(dispatchId);
+      inFlightRef.current.get(key)?.add(dispatchId);
       dispatch({ type: 'INITIATED', dispatchId, deviceId, contentId, title: contentTitle, mode: mode ?? 'transfer' });
       mediaLog.dispatchInitiated({ dispatchId, deviceId, contentId, mode });
 
@@ -85,6 +107,7 @@ export function DispatchProvider({ children }) {
         : DaylightAPI(buildDispatchUrl({ deviceId, play, queue, dispatchId, shader, volume, shuffle }));
       httpPromise
         .then((res) => {
+          settle(dispatchId);
           if (res?.ok) {
             dispatch({ type: 'SUCCEEDED', dispatchId, totalElapsedMs: res.totalElapsedMs ?? null });
             mediaLog.dispatchSucceeded({ dispatchId, totalElapsedMs: res.totalElapsedMs });
@@ -105,6 +128,7 @@ export function DispatchProvider({ children }) {
           }
         })
         .catch((err) => {
+          settle(dispatchId);
           dedupCacheRef.current.delete(key);
           dispatch({ type: 'FAILED', dispatchId, error: err?.message ?? 'network-error', failedStep: null });
           mediaLog.dispatchFailed({ dispatchId, error: err?.message });
