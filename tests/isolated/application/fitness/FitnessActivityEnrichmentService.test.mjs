@@ -50,7 +50,7 @@ const buildSession = (overrides = {}) => ({
     end: '2026-05-04 13:40:00',
     duration_seconds: 2400,
   },
-  participants: { 'test-user': { hr_device: '40475' } },
+  participants: { 'test-user': { hr_device: '10000' } },
   summary: { media: [] },
   ...overrides,
 });
@@ -223,6 +223,176 @@ describe('FitnessActivityEnrichmentService._findMatchingSession sport guard', ()
     const result = service._findMatchingSession(activity);
     expect(result).not.toBeNull();
     expect(result.data.sessionId).toBe('long-session');
+  });
+});
+
+/**
+ * Regression: on 2026-07-25 a 5.3 km outdoor GPS Run (activity 19465331355)
+ * bound to a 3h15m garage session because the run fell entirely inside the
+ * session's window. The 2026-05-06 sport guard did not fire — it requires the
+ * session to have no media, and the garage session had twelve episodes — and
+ * the overlap-fraction check scored 1.0 for the same reason. The athlete's own
+ * strap had drifted through ANT+ range for 3.5 minutes of the 3h15m.
+ */
+describe('FitnessActivityEnrichmentService._findMatchingSession venue + presence guards', () => {
+  let service;
+  let logger;
+
+  /** RLE series: nulls, then a live block, padded out. */
+  const hrSeries = ({ total, atTick, ticks, hr }) => JSON.stringify([
+    [null, atTick],
+    [hr, ticks],
+    [null, Math.max(0, total - atTick - ticks)],
+  ]);
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    dirExists.mockReturnValue(true);
+    logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+    service = new FitnessActivityEnrichmentService({
+      activityGateway: {},
+      jobStore: { findById: () => null, update: () => {}, create: () => {}, findActionable: () => [] },
+      authStore: {},
+      configService: {
+        getTimezone: () => 'America/Los_Angeles',
+        getHeadOfHousehold: () => 'test-user',
+        getAppConfig: () => ({}),
+      },
+      selectionConfig: {},
+      resolveDisplayName: (userId) => userId,
+      fitnessHistoryDir: '/tmp/fake-history',
+      logger,
+    });
+  });
+
+  const outdoorRun = () => buildActivity({
+    id: 19465331355,
+    type: 'Run',
+    start_date: '2026-07-25T22:41:28Z', // 15:41:28 PT
+    elapsed_time: 2555,
+    moving_time: 2428,
+    distance: 5268.4,
+    trainer: false,
+    start_latlng: [47.409796, -122.168995],
+  });
+
+  const garageSession = (overrides = {}) => buildSession({
+    sessionId: '20260725132556',
+    session: {
+      start: '2026-07-25 13:25:56.135',
+      end: '2026-07-25 16:41:15.601',
+      duration_seconds: 11719,
+    },
+    participants: {
+      'kid-one': { hr_device: '10001' },
+      'kid-two': { hr_device: '10002' },
+      'test-user': { hr_device: '10000' },
+    },
+    summary: {
+      media: Array.from({ length: 12 }, (_, i) => ({ contentId: `plex:${665664 + i}` })),
+    },
+    timeline: {
+      interval_seconds: 5,
+      tick_count: 2346,
+      encoding: 'rle',
+      // 30 live ticks (2.5 min) inside the run window — the drive-by strap.
+      series: { 'test-user:hr': hrSeries({ total: 2346, atTick: 1770, ticks: 30, hr: 150 }) },
+    },
+    ...overrides,
+  });
+
+  test('rejects an outdoor GPS run against a garage session that has media', () => {
+    listYamlFiles.mockReturnValue(['20260725132556']);
+    loadYamlSafe.mockReturnValue(garageSession());
+
+    expect(service._findMatchingSession(outdoorRun())).toBeNull();
+  });
+
+  test('rejects a session the athlete is not a participant of', () => {
+    listYamlFiles.mockReturnValue(['20260725132556']);
+    loadYamlSafe.mockReturnValue(garageSession({
+      participants: { 'kid-one': { hr_device: '10001' }, 'kid-two': { hr_device: '10002' } },
+    }));
+
+    // Indoor activity so the venue guard is not what rejects it.
+    const activity = buildActivity({
+      id: 5,
+      type: 'Ride',
+      distance: 0,
+      trainer: true,
+      start_date: '2026-07-25T22:41:28Z',
+      elapsed_time: 2400,
+      moving_time: 2400,
+    });
+
+    expect(service._findMatchingSession(activity)).toBeNull();
+  });
+
+  test('rejects drive-by strap presence even when the venue signal is absent', () => {
+    listYamlFiles.mockReturnValue(['20260725132556']);
+    loadYamlSafe.mockReturnValue(garageSession());
+
+    // Strip every venue signal: only the presence floor can catch this.
+    const activity = buildActivity({
+      id: 6,
+      type: 'Run',
+      start_date: '2026-07-25T22:41:28Z',
+      elapsed_time: 2555,
+      moving_time: 2428,
+      distance: 0,
+      start_latlng: [],
+    });
+
+    expect(service._findMatchingSession(activity)).toBeNull();
+  });
+
+  test('still matches when the athlete was on the equipment the whole time', () => {
+    listYamlFiles.mockReturnValue(['20260704135839']);
+    loadYamlSafe.mockReturnValue(buildSession({
+      sessionId: '20260704135839',
+      session: {
+        start: '2026-07-04 13:58:39.958',
+        end: '2026-07-04 15:00:09.958',
+        duration_seconds: 3690,
+      },
+      participants: { 'test-user': { hr_device: '10000' }, 'kid-one': { hr_device: '10002' } },
+      summary: { media: [{ contentId: 'plex:1', primary: true }] },
+      timeline: {
+        interval_seconds: 5,
+        tick_count: 739,
+        encoding: 'rle',
+        series: { 'test-user:hr': hrSeries({ total: 739, atTick: 5, ticks: 244, hr: 128 }) },
+      },
+    }));
+
+    const activity = buildActivity({
+      id: 19181501121,
+      type: 'Ride',
+      start_date: '2026-07-04T20:59:25Z',
+      elapsed_time: 1200,
+      moving_time: 1200,
+      distance: 0,
+      trainer: true,
+      start_latlng: [],
+    });
+
+    const result = service._findMatchingSession(activity);
+    expect(result).not.toBeNull();
+    expect(result.data.sessionId).toBe('20260704135839');
+  });
+
+  test('keeps an already-linked activity matched regardless of the guards', () => {
+    // The fast path must stay ahead of the guards so stored links keep working.
+    listYamlFiles.mockReturnValue(['20260725132556']);
+    loadYamlSafe.mockReturnValue(garageSession({
+      participants: {
+        'test-user': { hr_device: '10000', strava: { activityId: 19465331355 } },
+      },
+    }));
+
+    const result = service._findMatchingSession(outdoorRun());
+    expect(result).not.toBeNull();
+    expect(result.data.sessionId).toBe('20260725132556');
   });
 });
 
