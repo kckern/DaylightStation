@@ -2352,6 +2352,17 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     learnerDirectory: schoolLearnerDirectory,
     evidenceIdFactory: createLearningReflectionEvidenceId,
   });
+  // The shared exercise-reference corpus (~1,296 exercises, 38 muscle essays, 29
+  // equipment records). TWO products read it: Fitness (browse/build/run, plus
+  // SaveWorkout's existence check) and School (the anatomy shelf, which projects
+  // the muscle essays into learning-catalog lessons). It is constructed HERE,
+  // ahead of both, because it parses a ~2.8 MB manifest once and serves everything
+  // from memory — a second instance would double that for no benefit. A missing
+  // manifest degrades to an empty corpus rather than failing boot.
+  const exerciseLibrary = new YamlExerciseLibraryRepository({
+    indexPath: join(configService.getDataDir(), 'household', 'apps', 'fitness', 'exercise-index.yml'),
+    logger: rootLogger.child({ module: 'exercise-library' })
+  }).load();
   // The authored Catalog is a School capability shared by web, print, and
   // calculator surfaces. It is composed before—and independently of—the
   // optional SchoolCalc device product.
@@ -2359,6 +2370,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     configService,
     householdId,
     learnerDirectory: schoolLearnerDirectory,
+    exerciseLibrary,
     logger: rootLogger.child({ module: 'school-catalog' }),
   });
   const openCatalogLearningSession = schoolCatalog.query
@@ -2682,10 +2694,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // front of someone mid-session. The library reads the manifest `exercise-library build`
   // writes offline; a missing manifest degrades to an empty corpus, so saves fail loudly
   // instead of persisting plans nothing can run.
-  const exerciseLibrary = new YamlExerciseLibraryRepository({
-    indexPath: join(configService.getDataDir(), 'household', 'apps', 'fitness', 'exercise-index.yml'),
-    logger: rootLogger.child({ module: 'exercise-library' })
-  }).load();
+  // NOTE: `exerciseLibrary` itself is constructed far earlier (just above
+  // createSchoolCatalog), because School's anatomy shelf projects the same corpus
+  // and must share this one instance — it parses a ~2.8 MB manifest and holds the
+  // whole corpus in memory.
   const workoutRepository = new YamlWorkoutRepository({
     configService,
     logger: rootLogger.child({ module: 'fitness-workouts' })
