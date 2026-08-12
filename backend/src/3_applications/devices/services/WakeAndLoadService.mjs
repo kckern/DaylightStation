@@ -113,9 +113,13 @@ export class WakeAndLoadService {
   async #executeInner(deviceId, query = {}, options = {}) {
     const startTime = Date.now();
     const topic = `homeline:${deviceId}`;
-    const dispatchId = typeof options.dispatchId === 'string' && options.dispatchId.length > 0
-      ? options.dispatchId
-      : randomUUID();
+    // A caller that supplies its own dispatchId can correlate the whole cast
+    // in its own logs; one that doesn't gets a server-minted id and is
+    // invisible from the client side. Record WHICH, so "the app logged the
+    // steps but never logged initiating them" is answerable from one line
+    // instead of a code audit (2026-08-12 session review).
+    const clientSuppliedDispatchId = typeof options.dispatchId === 'string' && options.dispatchId.length > 0;
+    const dispatchId = clientSuppliedDispatchId ? options.dispatchId : randomUUID();
     const adoptSnapshot = options.adoptSnapshot ?? null;
     const isAdopt = !!adoptSnapshot;
     const device = this.#deviceService.get(deviceId);
@@ -155,7 +159,12 @@ export class WakeAndLoadService {
     const canPowerOn = device.hasCapability('deviceControl');
 
     this.#emitProgress(topic, dispatchId, 'power', 'running');
-    this.#logger.info?.('wake-and-load.power.start', { deviceId, dispatchId, canPowerOn });
+    this.#logger.info?.('wake-and-load.power.start', {
+      deviceId,
+      dispatchId,
+      canPowerOn,
+      dispatchIdSource: clientSuppliedDispatchId ? 'client' : 'server',
+    });
 
     const powerResult = canPowerOn
       ? await device.powerOn()
