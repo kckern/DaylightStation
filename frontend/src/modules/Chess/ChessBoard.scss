@@ -66,7 +66,6 @@
   font-size: clamp(0.7rem, 1.1vw, 0.95rem);
   font-weight: 700;
   letter-spacing: 0.1em;
-  text-transform: uppercase;
   color: color-mix(in srgb, var(--cb-label) 45%, transparent);
   transition: color 120ms ease;
 }
@@ -94,15 +93,20 @@
   z-index: 1;
 }
 
-.chess-board__last-move,
-.chess-board__square--last-move {
-  box-shadow: inset 0 0 0 3px color-mix(in srgb, var(--cb-accent) 35%, transparent);
+/* Channel 1 — light. What the hands are doing, right now. Candidates glow
+   faintly and narrow; the resolved square is unmistakable. */
+.chess-board__square--candidate { box-shadow: inset 0 0 0 100vmax color-mix(in srgb, var(--cb-accent-glow) 13%, transparent); }
+.chess-board__square--cursor {
+  box-shadow:
+    inset 0 0 0 100vmax color-mix(in srgb, var(--cb-accent-glow) 34%, transparent),
+    inset 0 0 0 3px var(--cb-accent-glow);
 }
 
-.chess-board__square--marked {
-  box-shadow: inset 0 0 0 100vmax color-mix(in srgb, var(--cb-accent) 18%, transparent);
-}
+/* Channel 2 — outline. Where you are in the move. */
+.chess-board__square--selected { outline: 3px solid var(--cb-accent); outline-offset: -3px; }
+.chess-board__square--last-move { outline: 2px dashed color-mix(in srgb, var(--cb-accent) 42%, transparent); outline-offset: -2px; }
 
+/* Channel 3 — marks. Only ever present because the player asked. */
 .chess-board__square--destination .chess-board__dot {
   width: 22%;
   aspect-ratio: 1;
@@ -115,23 +119,16 @@
   box-shadow: inset 0 0 0 5px var(--cb-hint);
 }
 
-.chess-board__square--selected {
-  box-shadow: inset 0 0 0 4px var(--cb-accent);
+.chess-board__square--hint::after {
+  content: ''; position: absolute; inset: 34%;
+  border-radius: 50%; background: var(--cb-hint);
+}
+.chess-board__square--best::after {
+  content: ''; position: absolute; inset: 12%;
+  border: 3px solid var(--cb-hint); border-radius: 50%;
 }
 
-/* The chord cursor: the held chord throws a crosshair down its file and across
-   its rank, so the player sees the two coordinates their hands are naming. */
-.chess-board__square--cursor-line {
-  box-shadow: inset 0 0 0 100vmax color-mix(in srgb, var(--cb-accent) 10%, transparent);
-}
-
-.chess-board__square--cursor {
-  box-shadow:
-    inset 0 0 0 100vmax color-mix(in srgb, var(--cb-accent) 22%, transparent),
-    inset 0 0 0 4px var(--cb-accent-glow);
-  animation: chess-board-ignite 420ms ease-out;
-}
-
+/* Channel 4 — colour. Alarms, and nothing else. */
 .chess-board__square--check {
   box-shadow: inset 0 0 0 100vmax color-mix(in srgb, var(--cb-danger) 45%, transparent);
 }
@@ -150,16 +147,6 @@
   55% { transform: translateX(-4%); }
   75% { transform: translateX(2%); }
   100% { box-shadow: inset 0 0 0 100vmax transparent; transform: translateX(0); }
-}
-
-/* Pieces the player could pick up. Quiet — a hint, not an instruction. */
-.chess-board__square--source::after {
-  content: '';
-  position: absolute;
-  inset: 6%;
-  border: 2px solid color-mix(in srgb, var(--cb-hint) 60%, transparent);
-  border-radius: 2px;
-  pointer-events: none;
 }
 
 .chess-board__piece {
@@ -183,21 +170,7 @@
   filter: none;
 }
 
-@keyframes chess-board-ignite {
-  from {
-    box-shadow:
-      inset 0 0 0 100vmax color-mix(in srgb, var(--cb-accent-glow) 55%, transparent),
-      inset 0 0 0 4px var(--cb-accent-glow);
-  }
-  to {
-    box-shadow:
-      inset 0 0 0 100vmax color-mix(in srgb, var(--cb-accent) 22%, transparent),
-      inset 0 0 0 4px var(--cb-accent-glow);
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .chess-board__square--cursor { animation: none; }
   .chess-board__square,
   .chess-board__axis-label { transition: none; }
 }
