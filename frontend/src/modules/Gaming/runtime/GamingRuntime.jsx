@@ -26,6 +26,11 @@ function SessionRuntime({
     () => requestedResumeSessionId || window.localStorage.getItem(storageKey),
     [requestedResumeSessionId, storageKey],
   );
+  // `sessionLog` routes every gaming.* event to media/logs/gaming/*.jsonl, so a
+  // session that misbehaved can be read back whole instead of being chased
+  // through container logs. Built once: a fresh sessionLog child opens a new
+  // session file, so this must not be recreated per render.
+  const logger = useMemo(() => getChildLogger({ app: 'gaming', game: gameId, sessionLog: true }), [gameId]);
   const controller = useMemo(() => new GamingController({
     api,
     providerRegistry: createProviderRegistry(providers),
@@ -34,8 +39,8 @@ function SessionRuntime({
     viewerId,
     resumeSessionId,
     setup,
-    logger: getChildLogger({ app: 'gaming', game: gameId }),
-  }), [api, gameId, participants, providers, resumeSessionId, setup, viewerId]);
+    logger,
+  }), [api, gameId, logger, participants, providers, resumeSessionId, setup, viewerId]);
   const snapshot = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const [meta, setMeta] = useState(bootstrapMeta);
 
@@ -47,11 +52,9 @@ function SessionRuntime({
       ]);
       setMeta({ progress, leaderboard });
     } catch (error) {
-      getChildLogger({ app: 'gaming', game: gameId }).warn('gaming.journey.meta-refresh-failed', {
-        userId: viewerId, error: error.message,
-      });
+      logger.warn('gaming.journey.meta-refresh-failed', { userId: viewerId, error: error.message });
     }
-  }, [api, gameId, viewerId]);
+  }, [api, gameId, logger, viewerId]);
 
   useEffect(() => {
     controller.start();
