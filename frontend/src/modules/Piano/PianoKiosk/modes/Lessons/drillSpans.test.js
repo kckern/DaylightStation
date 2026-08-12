@@ -22,4 +22,18 @@ describe('drillSpans', () => {
     expect(drillSpans(null)).toEqual([]);
     expect(drillSpans({ hands: { right: [{ role: 'ascending' }] } })).toEqual([]);
   });
+
+  it('drops rest entries from a mixed cell and drops an all-rest cell entirely', () => {
+    const expanded = {
+      hands: {
+        right: [
+          { role: 'ascending', notes: [{ midi: 48 }, { rest: true }, { midi: 52 }] },
+          { role: 'ascending', notes: [{ rest: true }, { rest: true }] },
+        ],
+      },
+    };
+    expect(drillSpans(expanded)).toEqual([
+      { id: 0, expectedMidi: [48, 52] },
+    ]);
+  });
 });

@@ -6,7 +6,12 @@
 export function drillSpans(expanded) {
   const cells = expanded?.hands?.right || [];
   return cells
-    .map((cell, i) => ({ id: i, expectedMidi: (cell.notes || []).map((n) => n.midi) }))
+    .map((cell, i) => ({
+      id: i,
+      expectedMidi: (cell.notes || [])
+        .filter((n) => !n?.rest && n?.midi != null)
+        .map((n) => n.midi),
+    }))
     .filter((span) => span.expectedMidi.length > 0);
 }
 
