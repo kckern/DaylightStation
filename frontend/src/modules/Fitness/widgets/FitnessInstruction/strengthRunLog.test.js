@@ -292,6 +292,15 @@ describe('logStrengthRun — the whole job', () => {
     expect(path).toContain(res.sessionId);    // minted id addresses the POST
   });
 
+  it('reports a session the server would not open, in words a person can act on', async () => {
+    const api = vi.fn(async () => { throw httpError(404, 'Not Found', { reason: 'unknown_session', error: 'nope' }); });
+    const res = await run(api, { session: null });
+    expect(res.ok).toBe(false);
+    expect(res.reason).toBe('unknown_session');
+    expect(res.message).toBe(failureNotice({ reason: 'unknown_session' }));
+    expect(res.message).toMatch(/session/i);
+  });
+
   it('reports a failed POST as a failure, never as ok', async () => {
     const api = vi.fn(async () => { throw new Error('Failed to fetch'); });
     const res = await run(api);
