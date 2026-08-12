@@ -16,3 +16,13 @@ export {
   groupKind,
   expandWorkout,
 } from './workout.mjs';
+
+/**
+ * What a finished run leaves behind: the strength block that hangs off the existing
+ * fitness session record, so a workout shows up in history beside the cycle rides.
+ */
+export {
+  presentParticipantIds,
+  makeStrengthRun,
+  appendStrengthRun,
+} from './strengthLog.mjs';

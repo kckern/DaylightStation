@@ -13,6 +13,7 @@
  * - DELETE /api/fitness/session_lock - Release session lock
  * - GET  /api/fitness/session_lock/:sessionId - Check lock status
  * - POST /api/fitness/save_session - Save session data
+ * - POST /api/fitness/sessions/:sessionId/strength - Log a finished strength run onto a session
  * - POST /api/fitness/save_screenshot - Save session screenshot
  * - POST /api/fitness/voice_memo - Transcribe voice memo
  * - POST /api/fitness/debug/voice-memo - Debug: save raw audio to data/_debug/
@@ -82,6 +83,7 @@ const COMMIT_PENDING_MAX_AGE_MS = 120000; // 2 min
  * @param {Object} [config.querySessions] - QuerySessions use case (defaults to one wired from sessionService)
  * @param {Object} [config.workoutRepository] - YamlWorkoutRepository for the /workouts routes
  * @param {Object} [config.saveWorkout] - SaveWorkout use case (validates slugs before persisting)
+ * @param {Object} [config.logStrengthRun] - LogStrengthRun use case (writes the session's strength block)
  * @param {Object} [config.browseExerciseLibrary] - BrowseExerciseLibrary use case (the /exercises routes)
  * @param {Object} config.logger - Logger instance
  * @returns {express.Router}
@@ -132,6 +134,10 @@ export function createFitnessRouter(config) {
     // absent, the /workouts routes report 503 rather than half-working.
     workoutRepository = null,
     saveWorkout = null,
+    // Logging a finished run into the session record. Constructed at the composition
+    // root (this layer may not reach into 3_applications to build one); absent, the
+    // strength route reports 503 rather than half-working.
+    logStrengthRun = null,
     // Browse (read side of the exercise corpus). Wraps the ONE library instance the
     // composition root loaded; absent, the /exercises routes report 503.
     browseExerciseLibrary = null,
@@ -717,6 +723,45 @@ export function createFitnessRouter(config) {
       return res.status(400).json({ error: err.message || 'Failed to save session' });
     }
   });
+
+  /**
+   * POST /api/fitness/sessions/:sessionId/strength - Log a finished strength run.
+   *
+   * The run lands on the SAME session record a cycle ride does, so session detail,
+   * recaps and the longitudinal widget pick it up with no new plumbing.
+   *
+   * Body: { workoutId, completedSteps: [{groupIndex, slug}, ...], completedAt?, household? }
+   *
+   * `completedSteps` are the WORK steps the runner actually finished — a subset of what
+   * `expandWorkout` handed it. Planned counts come from the stored workout, never from
+   * the client, so a plan can never be filed as performance.
+   *
+   * 404s an unknown session or workout; 422s a run with nothing completed (a definite
+   * answer, so a client does not retry an empty run forever).
+   */
+  router.post('/sessions/:sessionId/strength', asyncHandler(async (req, res) => {
+    if (!logStrengthRun) return res.status(503).json({ ok: false, error: 'strength logging unavailable' });
+
+    const { sessionId } = req.params;
+    const { workoutId, completedSteps, completedAt, household } = req.body || {};
+
+    const result = await logStrengthRun.execute({
+      sessionId,
+      workoutId,
+      completedSteps,
+      completedAt,
+      householdId: household || defaultHouseholdId,
+    });
+
+    if (!result.ok) {
+      const status = result.reason === 'unknown_session' || result.reason === 'unknown_workout'
+        ? 404
+        : (result.reason === 'nothing_completed' ? 422 : 400);
+      return res.status(status).json({ ok: false, error: result.error, reason: result.reason });
+    }
+
+    return res.json({ ok: true, sessionId: result.sessionId, strength: result.strength });
+  }));
 
   /**
    * POST /api/fitness/save_screenshot - Save session screenshot

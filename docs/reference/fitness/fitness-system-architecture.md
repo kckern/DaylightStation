@@ -424,6 +424,19 @@ treasureBox:
   buckets: { green: 450, yellow: 620, orange: 500, red: 277 }
 media:
   - { title: "30 Min HIIT", plex_id: 12345, duration_seconds: 1800 }
+strength:                          # Present ONLY when a workout was run in this session
+  runs:
+    - workoutId: full-body-friday-k3f9
+      title: Full Body Friday
+      completedAt: "2026-08-11T17:00:00.000Z"
+      participants: [user_2]       # Stable ids from the session's participants block
+      setsCompleted: 5             # What was PERFORMED
+      setsPlanned: 8               # What was PRESCRIBED — carried beside, never instead
+      groups:                      # Only the groups actually reached
+        - index: 0
+          kind: sets               # sets | superset | circuit (derived from group size)
+          exercises:
+            - { slug: barbell-bench-press, setsCompleted: 2, setsPlanned: 4, reps: 8, load: "135 lb" }
 
 # V2 (legacy) — root-level fields, normalized to v3 on read
 startTime: 1739664182000
@@ -431,6 +444,13 @@ endTime: 1739666718000
 durationMs: 2536000
 roster: [{ name: "user_2", isPrimary: true, hrDeviceId: "90001" }]
 ```
+
+A strength run is appended (never replaced) by
+`POST /api/v1/fitness/sessions/:sessionId/strength`, whose body carries the workout id and
+the WORK steps the runner finished. Planned counts come from the stored workout, so a plan
+can never be filed as performance. Bailing and restarting therefore reads as two runs, and
+the day's total is the sum. Shape pinned by
+`tests/unit/domains/fitness/sessionStoredShape.char.test.mjs`.
 
 **Storage paths:**
 - Session YAML: `household/history/fitness/{YYYY-MM-DD}/{sessionId}.yml`
