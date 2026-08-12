@@ -120,6 +120,10 @@
   gap: 1.5rem;
   min-height: 0;
   overflow: hidden;
+  /* The board sizes itself in cq units off this box — the space actually left
+     between the header and the keyboard. Safe as a size container: both axes
+     are already definite (the 1fr row of .piano-chess, full canvas width). */
+  container-type: size;
 }
 
 .piano-chess__stage > * { min-width: 0; }
@@ -246,8 +250,13 @@
    School board and this one stay the same component with different clothes. */
 .piano-chess .chess-board-frame {
   /* Height-first: the header, keyboard and axes all take a cut, so the board
-     has to fit what is left rather than claim a share of the width. */
-  --cb-size: min(46vw, 62vh);
+     has to fit what is left rather than claim a share of the width.
+     Measured against the STAGE, never the viewport: PianoDesignScale lays the
+     kiosk out at a fixed design size and scales the whole canvas to fit, so vh
+     reports the real screen while the board only ever gets the design box. On a
+     1920x1080 desktop that gap ran the board 200px past the stage and off the
+     bottom of the screen. The 2.5rem is the file-axis strip below the board. */
+  --cb-size: min(46cqw, calc(100cqh - 2.5rem));
   --cb-light: var(--pc-ivory);
   --cb-dark: var(--pc-walnut);
   --cb-frame: var(--pc-walnut-deep);
