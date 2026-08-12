@@ -60,7 +60,16 @@ function createInitialGameState() {
  * @returns {Object} game state and controls
  */
 export function useTetrisGame(activeNotes, tetrisConfig) {
-  const logger = useMemo(() => getChildLogger({ component: 'piano-tetris' }), []);
+  // `app` + `sessionLog` are what the backend sessionFile transport gates on
+  // (sessionFile.mjs:59-60) to file events under media/logs/{app}/. Without both,
+  // tetris.* reached the container console and nowhere else — so every restart
+  // erased the record, and the difficulty ramp could only be tuned against
+  // whatever happened to still be in `docker logs`. Same pattern as the composer
+  // and sheet-music mode loggers.
+  const logger = useMemo(
+    () => getChildLogger({ component: 'piano-tetris', app: 'piano-tetris', sessionLog: true }),
+    [],
+  );
 
   const [gameState, setGameState] = useState(createInitialGameState);
   const gameStateRef = useRef(gameState);
