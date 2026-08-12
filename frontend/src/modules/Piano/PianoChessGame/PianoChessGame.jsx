@@ -11,7 +11,7 @@ import { isPersistentUser } from '../PianoKiosk/pianoUser.js';
 import { usePianoMidi, usePianoMidiNotes } from '../PianoKiosk/PianoMidiContext.jsx';
 import { usePlayerLock } from '../PianoKiosk/PianoPlaybackContext.jsx';
 import {
-  fetchChessConfig, requestOpponentMove, saveChessConfig, saveGameRecord,
+  archiveGame, beaconArchive, fetchChessConfig, requestOpponentMove, saveChessConfig, saveGameRecord,
 } from './chessApi.js';
 import { cuesFromConfig } from './chessCues.js';
 import ChessSettingsPanel from './ChessSettingsPanel.jsx';
@@ -22,6 +22,7 @@ import { candidateSquares } from './chordCandidates.js';
 import { destinationBadges } from './chessBadges.js';
 import { recognizeGesture } from './chordGestures.js';
 import { buildGameRecord } from './chessGameRecord.js';
+import { buildGameArchive } from './chessGameArchive.js';
 import { advanceCursor, createCursorState } from './chordCursor.js';
 import { applyEvent, createSelection } from './chordSelection.js';
 import {
@@ -134,6 +135,12 @@ export function PianoChessGame({
   // per-user writes" downstream — the lock preserves that, it doesn't bypass it.
   const lockedUserRef = useRef(userId);
   const lockedUser = lockedUserRef.current;
+  // The archive is written from a mount-once cleanup, which sees whatever the
+  // refs hold at that moment — so everything it needs lives in a ref, not in a
+  // closed-over render value.
+  const archivedRef = useRef(false);
+  const archiveInputsRef = useRef(null);
+  const addressingRef = useRef('chords');
 
   // Latching the player internally is not enough: the kiosk chip still offered
   // the switch, so a child could pick themselves mid-game, see the header change
@@ -245,6 +252,22 @@ export function PianoChessGame({
     // fen, playerColor, scheme, and gameSeed are mount-stable (props + one-shot state).
   }, [lockedUser, fen, playerColor, scheme, gameSeed]);
 
+  // Leaving the PAGE, as opposed to leaving the component. A tab close, a kiosk
+  // reload after a deploy, or the screen going to sleep never runs a React
+  // cleanup, and those are the ordinary ways a game ends on this instrument —
+  // so without this the archive quietly only ever holds in-app exits.
+  useEffect(() => {
+    const flush = () => {
+      if (archivedRef.current || !archiveInputsRef.current) return;
+      const archive = buildGameArchive({ ...archiveInputsRef.current, endedAt: Date.now(), endedBy: 'left' });
+      if (!archive) return;
+      archivedRef.current = true;
+      if (!beaconArchive(archive)) archiveGame(archive);
+    };
+    window.addEventListener('pagehide', flush);
+    return () => window.removeEventListener('pagehide', flush);
+  }, []);
+
   const heldNotes = useMemo(() => [...activeNotes.keys()].sort((a, b) => a - b), [activeNotes]);
   const heldKey = heldNotes.join(',');
 
@@ -343,7 +366,18 @@ export function PianoChessGame({
       shuffle_each_turn: shuffleEachTurn, seed: gameSeed,
     });
     if (game.schemeRejected) logger().warn('scheme-rejected', game.schemeRejected);
-    return () => logger().info('unmounted');
+    return () => {
+      logger().info('unmounted');
+      // A game walked away from is archived too. It is the case the history
+      // exists for as much as any finished game: a position a child abandoned
+      // says more about where they are than one they saw through, and it is
+      // unrecoverable the moment this component goes.
+      if (archivedRef.current) return;
+      const archive = buildGameArchive({ ...archiveInputsRef.current, endedAt: Date.now(), endedBy: 'left' });
+      if (!archive) return; // no moves played — not a game
+      archivedRef.current = true;
+      archiveGame(archive);
+    };
   }, [difficulty, game.schemeRejected, gameSeed, playerColor, scheme.id, shuffleEachTurn]);
 
   const handleSquare = useCallback((square) => {
@@ -498,6 +532,12 @@ export function PianoChessGame({
     setFinishedRecord(record);
     if (record && lockedUser) saveGameRecord(lockedUser, record);
     logger().info('game-recorded', { ...(record || {}), persisted: !!(record && lockedUser) });
+    archivedRef.current = true;
+    archiveGame(buildGameArchive({
+      game, gameId, userId: lockedUser, rungId, addressing: addressingRef.current,
+      hints: helpUsed.hints, bestMoves: helpUsed.bestMoves,
+      startedAt: startedAtRef.current, endedAt: Date.now(), endedBy: 'game_over',
+    }));
     // Everything but the game-over flag is read at the moment the game ends.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game.status?.game_over]);
@@ -536,6 +576,11 @@ export function PianoChessGame({
     ? { square: cursor, piece: heldPiece }
     : null;
   const captured = capturedPieces(game.history);
+  addressingRef.current = reading ? 'staff' : 'chords';
+  archiveInputsRef.current = {
+    game, gameId, userId: lockedUser, rungId, addressing: addressingRef.current,
+    hints: helpUsed.hints, bestMoves: helpUsed.bestMoves, startedAt: startedAtRef.current,
+  };
   // Only offered when the hovered square really does hold a piece this player
   // can move — naming the double on an empty square would be an instruction
   // that fails when followed.
