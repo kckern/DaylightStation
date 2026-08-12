@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_CHORD_SCHEME, squareToChord } from '@shared-gaming/chess/index.mjs';
+import { DEFAULT_CHORD_SCHEME, squareToChord } from './chordAddress.js';
 import {
-  applySquare, capturedPieces, commitMove, createChessGameState, destinationsFor, isPlayerTurn, pieceAt,
+  applySquare, capturedPieces, clearSelection, commitMove, createChessGameState, destinationsFor, isPlayerTurn, pieceAt, playableSources,
 } from './chessGameState.js';
 import { advanceCursor, createCursorState } from './chordCursor.js';
 
@@ -47,6 +47,39 @@ describe('piano chess move flow', () => {
     const selected = applySquare(state, 'e2').state;
     expect(applySquare(selected, 'e5').event.reason).toBe('illegal_destination');
     expect(selected.rejection).toBe(null);
+  });
+
+  it('gives every refusal its own sequence number', () => {
+    // Playing the same wrong chord twice must read as two refusals, or the
+    // second one changes nothing and the board stays silent.
+    const state = createChessGameState();
+    const first = applySquare(state, 'e5');
+    const second = applySquare(first.state, 'e5');
+    expect(first.event.type).toBe('rejected');
+    expect(second.state.rejection.seq).toBe(first.state.rejection.seq + 1);
+    expect(second.state.rejection.square).toBe('e5');
+    expect(second.event.seq).toBe(second.state.rejection.seq);
+  });
+
+  it('names every piece the player could pick up', () => {
+    const state = createChessGameState();
+    // Eight pawns and two knights have a legal move from the start.
+    expect(playableSources(state)).toHaveLength(10);
+    expect(playableSources(state)).toContain('e2');
+    expect(playableSources(state)).toContain('g1');
+    expect(playableSources(state)).not.toContain('e1');
+    expect(playableSources(state)).not.toContain('e7');
+
+    // Nothing is offered while the opponent is to move.
+    expect(playableSources(play(state, 'e2', 'e4'))).toEqual([]);
+  });
+
+  it('puts a selected piece back down', () => {
+    const selected = applySquare(createChessGameState(), 'e2').state;
+    expect(selected.origin).toBe('e2');
+    expect(clearSelection(selected).origin).toBe(null);
+    // Cancelling with nothing selected must be harmless.
+    expect(clearSelection(createChessGameState()).origin).toBe(null);
   });
 
   it('lets the player change their mind', () => {
@@ -100,19 +133,52 @@ describe('the chord map re-deals each turn', () => {
     expect(selected.scheme.roots).toEqual(state.scheme.roots);
   });
 
-  it('deals a new map once the move lands', () => {
+  it('re-deals the same chords onto different squares', () => {
     const state = createChessGameState({ seed: 4 });
-    const moved = play(state, 'e2', 'e4');
-    expect(moved.scheme.id).not.toBe(state.scheme.id);
-    // Same chords, different squares.
-    expect([...moved.scheme.roots].sort()).toEqual([...state.scheme.roots].sort());
-    expect([...moved.scheme.qualities].sort()).toEqual([...state.scheme.qualities].sort());
+    // One full round: the player moves, the opponent answers, a new map is dealt.
+    const next = commitMove(play(state, 'e2', 'e4'), 'e7', 'e5').state;
+    expect(next.scheme.id).not.toBe(state.scheme.id);
+    // Same chords, different squares — the vocabulary never changes.
+    expect([...next.scheme.roots].sort()).toEqual([...state.scheme.roots].sort());
+    expect([...next.scheme.qualities].sort()).toEqual([...state.scheme.qualities].sort());
   });
 
-  it('deals again after the opponent replies', () => {
-    const afterPlayer = play(createChessGameState({ seed: 4 }), 'e2', 'e4');
+  it('holds the map through the opponent reply, then deals for the next turn', () => {
+    const start = createChessGameState({ seed: 4 });
+    const afterPlayer = play(start, 'e2', 'e4');
+    // Still the player's map: they may already be reading the rim for next turn,
+    // and a chord held across the reply must resolve against what they read.
+    expect(afterPlayer.scheme.id).toBe(start.scheme.id);
+
     const afterOpponent = commitMove(afterPlayer, 'e7', 'e5').state;
-    expect(afterOpponent.scheme.id).not.toBe(afterPlayer.scheme.id);
+    expect(afterOpponent.scheme.id).not.toBe(start.scheme.id);
+  });
+
+  it('deals once per round, not once per ply', () => {
+    let state = createChessGameState({ seed: 4 });
+    const seen = [state.scheme.id];
+    for (const [from, to] of [['e2', 'e4'], ['e7', 'e5'], ['g1', 'f3'], ['b8', 'c6']]) {
+      state = commitMove(state, from, to).state;
+      seen.push(state.scheme.id);
+    }
+    // Five snapshots across two full rounds: three distinct maps, not five.
+    expect(new Set(seen).size).toBe(3);
+  });
+
+  it('deals for Black on Black turns', () => {
+    const start = createChessGameState({ seed: 4, playerColor: 'b' });
+    // White opens: the map must not move before Black has had a turn at all.
+    const afterWhite = commitMove(start, 'e2', 'e4').state;
+    expect(afterWhite.scheme.id).toBe(start.scheme.id);
+
+    // Black's own move does not end their turn — White is now thinking, and a
+    // chord Black holds across that reply must resolve against the rim they read.
+    const afterBlack = commitMove(afterWhite, 'e7', 'e5').state;
+    expect(afterBlack.scheme.id).toBe(start.scheme.id);
+
+    // White's reply starts Black's next turn, and only now is a new map dealt.
+    const afterReply = commitMove(afterBlack, 'g1', 'f3').state;
+    expect(afterReply.scheme.id).not.toBe(start.scheme.id);
   });
 
   it('records each move under the map it was played on', () => {
@@ -168,6 +234,64 @@ describe('chord cursor', () => {
     ({ state } = tick(state, [60, 64], 200));
     expect(state.preview).toBe(null);
     expect(tick(state, [], 260).event).toBe(null);
+  });
+
+  it('reads an octave as take-it-back, not as a chord', () => {
+    // C3 + C4: one pitch class, so it can never collide with a square.
+    let { state } = tick(createCursorState(), [48, 60], 0);
+    const settled = tick(state, [48, 60], 200);
+    expect(settled.event.type).toBe('preview');
+    expect(settled.event.square).toBe(null);
+    expect(settled.state.preview.escape).toBe(true);
+
+    const released = tick(settled.state, [], 260);
+    expect(released.event).toEqual({ type: 'escape' });
+  });
+
+  it('does not let a lazy release turn a played chord into a cancel', () => {
+    // A doubled-root voicing (C3 E3 G3 C4) is how a child actually plays C major.
+    // Lifting the inner fingers first leaves C3+C4 — an octave — held for longer
+    // than the settle window. That must not overwrite the chord already read.
+    let { state } = tick(createCursorState(), [48, 52, 55, 60], 0);
+    ({ state } = tick(state, [48, 52, 55, 60], 200));
+    expect(state.preview.square).toBe('c1');
+
+    ({ state } = tick(state, [48, 60], 220));
+    ({ state } = tick(state, [48, 60], 400));
+    expect(state.preview.escape, 'the leftover octave must not arm an escape').toBeUndefined();
+    expect(state.preview.square).toBe('c1');
+
+    expect(tick(state, [], 460).event).toEqual(expect.objectContaining({ type: 'commit', square: 'c1' }));
+  });
+
+  it('still escapes when an octave is played from a clean start', () => {
+    let { state } = tick(createCursorState(), [48, 60], 0);
+    ({ state } = tick(state, [48, 60], 200));
+    expect(state.preview.escape).toBe(true);
+    expect(tick(state, [], 260).event).toEqual({ type: 'escape' });
+  });
+
+  it('says so when a chord is tapped too quickly to read', () => {
+    // Pressed and released inside the settle window: previously total silence,
+    // which a child cannot tell apart from a broken piano.
+    let { state } = tick(createCursorState(), [60, 64, 67], 0);
+    ({ state } = tick(state, [60, 64, 67], 40));
+    expect(tick(state, [], 60).event).toEqual({ type: 'too_quick' });
+  });
+
+  it('stays silent for a stray single note', () => {
+    // One key is not an attempt at a chord, so it earns no complaint.
+    let { state } = tick(createCursorState(), [60], 0);
+    ({ state } = tick(state, [60], 40));
+    expect(tick(state, [], 60).event).toBe(null);
+  });
+
+  it('does not mistake a wide chord for an octave', () => {
+    // C3 + E4 + G4 spans more than an octave but is still C major.
+    let { state } = tick(createCursorState(), [48, 64, 67], 0);
+    ({ state } = tick(state, [48, 64, 67], 200));
+    expect(state.preview.escape).toBeUndefined();
+    expect(state.preview.square).toBe('c1');
   });
 
   it('lets the player correct the chord while still holding it', () => {

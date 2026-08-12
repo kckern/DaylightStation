@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { describeGame, createGame, legalDestinations, playMove, squareToChord } from '@shared-gaming/chess/index.mjs';
+import { describeGame, createGame, legalDestinations, playMove } from '@shared-gaming/chess/index.mjs';
 import { chooseMove } from '@shared-gaming/chess/opponent.mjs';
 import ChessBoard from '../../Chess/ChessBoard.jsx';
 import { CHESS_UNITS, LESSON_KINDS, curriculumProgress, findLesson, lessonStatus } from './chessCurriculum.js';
@@ -131,7 +131,7 @@ function LessonBoard({ lesson, onBack }) {
         )}
         <p className="chess-lessons__outcome" role="status">{outcome}</p>
         <dl className="chess-lessons__facts">
-          <div><dt>Chord address</dt><dd>{selected ? squareToChord(selected)?.symbol ?? '—' : '—'}</dd></div>
+          <div><dt>Selected</dt><dd>{selected ?? '—'}</dd></div>
           <div><dt>Moves played</dt><dd>{game.moves.length}</dd></div>
         </dl>
         <button

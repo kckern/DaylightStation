@@ -110,13 +110,19 @@
 
 /* ---- stage -------------------------------------------------------------- */
 
+/* The board is sized off the viewport, so the rails must be what flexes. Without
+   the min-height:0 / min-width:0 pair the board wins the grid and shoves the
+   rails — and every prompt and refusal message on them — off screen. */
 .piano-chess__stage {
   display: grid;
-  grid-template-columns: minmax(11rem, 1fr) auto minmax(11rem, 1fr);
+  grid-template-columns: minmax(10rem, 1fr) auto minmax(10rem, 1fr);
   align-items: center;
   gap: 1.5rem;
   min-height: 0;
+  overflow: hidden;
 }
+
+.piano-chess__stage > * { min-width: 0; }
 
 .piano-chess__rail {
   display: flex;
@@ -176,13 +182,62 @@
   color: var(--pc-ivory-dim);
 }
 
-.piano-chess__hearing {
-  margin: 0;
-  font-size: 0.85rem;
-  letter-spacing: 0.1em;
-  color: rgb(201 162 39 / 80%);
+/* Live MIDI readout — the answer to "is the piano even talking to this?" */
+.piano-chess__midi {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-block-start: 0.5rem;
+  font-size: 0.8rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgb(203 191 168 / 45%);
+}
 
-  strong { font-weight: 700; }
+.piano-chess__midi-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--pc-felt);
+}
+
+.piano-chess__midi--live {
+  color: var(--pc-verdigris);
+
+  .piano-chess__midi-dot { background: var(--pc-verdigris); }
+}
+
+.piano-chess__cancel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  align-items: flex-start;
+  margin-block-start: 0.75rem;
+  padding: 0.45rem 0.8rem;
+  border: 1px solid rgb(239 228 205 / 22%);
+  border-radius: 2px;
+  background: none;
+  color: var(--pc-ivory-dim);
+  font: inherit;
+  text-align: start;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+
+  &:disabled { opacity: 0.35; cursor: default; }
+
+  &:not(:disabled):hover,
+  &:not(:disabled):focus-visible {
+    border-color: var(--pc-brass);
+    color: var(--pc-brass);
+  }
+}
+
+.piano-chess__cancel-hint {
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  text-transform: none;
+  color: rgb(203 191 168 / 45%);
 }
 
 /* ---- board -------------------------------------------------------------- */
@@ -190,7 +245,9 @@
 /* The board itself lives in modules/Chess. Piano only tunes its tokens, so the
    School board and this one stay the same component with different clothes. */
 .piano-chess .chess-board-frame {
-  --cb-size: min(56vw, 60vh);
+  /* Height-first: the header, keyboard and axes all take a cut, so the board
+     has to fit what is left rather than claim a share of the width. */
+  --cb-size: min(46vw, 62vh);
   --cb-light: var(--pc-ivory);
   --cb-dark: var(--pc-walnut);
   --cb-frame: var(--pc-walnut-deep);
@@ -243,6 +300,40 @@
   font-size: 1.25rem;
   line-height: 1.1;
   color: var(--pc-ivory);
+}
+
+/* ---- refusal toast ------------------------------------------------------ */
+
+/* Sits over the board rather than in a rail: a refusal has to appear where the
+   player is already looking, or it may as well not have been said. */
+.piano-chess__toast {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-start: 22%;
+  z-index: 5;
+  justify-self: center;
+  width: fit-content;
+  max-width: min(28rem, 70vw);
+  margin-inline: auto;
+  padding: 0.6rem 1.4rem;
+  border: 1px solid rgb(155 44 44 / 55%);
+  border-radius: 3px;
+  background: rgb(35 18 14 / 94%);
+  box-shadow: 0 1rem 2.5rem rgb(0 0 0 / 55%);
+  color: var(--pc-ivory);
+  font-size: 1.1rem;
+  letter-spacing: 0.04em;
+  text-align: center;
+  animation: piano-chess-toast 220ms ease-out;
+}
+
+@keyframes piano-chess-toast {
+  from { opacity: 0; transform: translateY(-0.5rem); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .piano-chess__toast { animation: none; }
 }
 
 /* ---- keyboard ----------------------------------------------------------- */

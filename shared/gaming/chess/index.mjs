@@ -1,9 +1,14 @@
 /**
- * Chess core: rules, render projection, artwork, and chord addressing.
+ * Chess core: rules, render projection, and artwork.
  *
- * Deliberately not wired into the game reducer. The core answers questions about
- * positions and moves; whatever gates a move — a practice rep, a lesson step, an
- * engine opponent, a mouse — is a layer above this one.
+ * Squares and moves, nothing else. It knows no music, no MIDI, no chords, and no
+ * input device — those live with whatever is driving the board, so the piano
+ * kiosk, a mouse, and an engine match can all share this without any of them
+ * leaking into it.
+ *
+ * Deliberately not wired into the game reducer either. The core answers
+ * questions about positions and moves; whatever gates a move — a practice rep, a
+ * lesson step, an opponent — is a layer above this one.
  *
  * Exports are explicit because `isPieceCode` has a home in both `pieces` (where
  * it guards artwork lookups) and `position` (where it guards the board map);
@@ -54,19 +59,3 @@ export {
   resolvePieceTheme,
   toPieceCode,
 } from './pieces.mjs';
-
-export {
-  CHORD_QUALITIES,
-  DEFAULT_CHORD_SCHEME,
-  chordBoard,
-  chordPitchClasses,
-  chordSymbol,
-  chordToSquare,
-  findChordCollisions,
-  identifyChord,
-  moveToChordPair,
-  rootPitchClass,
-  shuffleChordScheme,
-  squareToChord,
-  validateChordScheme,
-} from './chordAddress.mjs';

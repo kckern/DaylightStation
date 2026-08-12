@@ -1,7 +1,6 @@
-import { memo, useMemo } from 'react';
+import { memo, useEffect, useMemo, useRef } from 'react';
 import {
-  CHORD_QUALITIES, DEFAULT_CHORD_SCHEME, FILES, RANKS,
-  fenToPosition, orderedSquares, squareColor, squareToChord,
+  FILES, RANKS, diffPositions, fenToPosition, orderedSquares, squareColor,
 } from '@shared-gaming/chess/index.mjs';
 import { pieceSource } from './pieceAssets.js';
 import './ChessBoard.scss';
@@ -9,19 +8,16 @@ import './ChessBoard.scss';
 /**
  * The board, shared by every surface that shows one.
  *
- * Two coordinate systems, one board. `notation="algebraic"` labels the rim a-h
- * and 1-8 for teaching and mouse play; `notation="chord"` labels it with the
- * chord that addresses each file and rank, which is what the piano kiosk needs
- * because there the player finds a square by playing it.
+ * It knows squares, not what a square means. The rim reads a-h and 1-8 unless a
+ * host supplies its own `fileLabels`/`rankLabels` — which is how the piano kiosk
+ * gets a rim of chord names without this component ever learning what a chord
+ * is. Labels stay on the rim: a name in all 64 cells is noise to read past.
  *
  * Colour comes entirely from CSS custom properties, so a host restyles the board
  * by setting tokens rather than by overriding selectors.
  */
 
-/** Major's chord symbol is the empty string; an axis needs something to print. */
-function qualityLabel(quality) {
-  return CHORD_QUALITIES[quality]?.label || 'maj';
-}
+const MOVE_DURATION_MS = 240;
 
 /** The king in check, so the board can mark it. */
 function findCheckedKing(position, status) {
@@ -30,9 +26,16 @@ function findCheckedKing(position, status) {
   return Object.keys(position).find((square) => position[square] === king) ?? null;
 }
 
+/** Column/row a square occupies on screen, which depends on which way the board faces. */
+function screenCell(square, orientation) {
+  const file = FILES.indexOf(square[0]);
+  const rank = RANKS.indexOf(square[1]);
+  return orientation === 'black' ? [7 - file, rank] : [file, 7 - rank];
+}
+
 function Square({
   square, piece, isLight, isSelected, isDestination, isLastMove,
-  isCursor, isOnCursorLine, isCheck, isMarked, label, onSelect,
+  isCursor, isOnCursorLine, isCheck, isMarked, isSource, isRejected, onSelect,
 }) {
   const classes = [
     'chess-board__square',
@@ -40,10 +43,12 @@ function Square({
     isOnCursorLine && 'chess-board__square--cursor-line',
     isLastMove && 'chess-board__square--last-move',
     isMarked && 'chess-board__square--marked',
+    isSource && 'chess-board__square--source',
     isDestination && 'chess-board__square--destination',
     isSelected && 'chess-board__square--selected',
     isCursor && 'chess-board__square--cursor',
     isCheck && 'chess-board__square--check',
+    isRejected && 'chess-board__square--rejected',
   ].filter(Boolean).join(' ');
 
   return (
@@ -59,7 +64,6 @@ function Square({
       {piece && (
         <img className="chess-board__piece" src={pieceSource(piece)} alt="" draggable="false" />
       )}
-      {label && <span className="chess-board__square-label" aria-hidden="true">{label}</span>}
     </button>
   );
 }
@@ -68,34 +72,67 @@ export function ChessBoard({
   fen,
   status = null,
   orientation = 'white',
-  notation = 'algebraic',
-  scheme = DEFAULT_CHORD_SCHEME,
+  fileLabels = FILES,
+  rankLabels = RANKS,
   selected = null,
   destinations = [],
   lastMove = null,
   cursorSquare = null,
   markedSquares = [],
+  sourceSquares = [],
+  rejectedSquare = null,
+  rejectedKey = null,
   onSelect = null,
   className = '',
 }) {
   const position = useMemo(() => fenToPosition(fen) || {}, [fen]);
   const squares = useMemo(() => orderedSquares(orientation), [orientation]);
-  const byChord = notation === 'chord';
 
-  const squareLabels = useMemo(() => {
-    if (!byChord) return {};
-    return Object.fromEntries(squares.map((square) => [square, squareToChord(square, scheme)?.symbol]));
-  }, [byChord, scheme, squares]);
+  const boardRef = useRef(null);
+  const previousPosition = useRef(position);
+
+  /**
+   * Pieces slide rather than teleport.
+   *
+   * Driven off a diff of two positions, not off the move that caused it, so the
+   * player's move and the opponent's reply animate through the same path — and
+   * so do undo, a reload, and a spectator arriving mid-game, none of which have
+   * a move object to work from.
+   */
+  useEffect(() => {
+    const operations = diffPositions(previousPosition.current, position);
+    previousPosition.current = position;
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) return;
+
+    for (const operation of operations) {
+      if (operation.type !== 'move') continue;
+      const element = boardRef.current?.querySelector(`[data-square="${operation.to}"] .chess-board__piece`);
+      if (!element?.animate) continue;
+      const [fromColumn, fromRow] = screenCell(operation.from, orientation);
+      const [toColumn, toRow] = screenCell(operation.to, orientation);
+      element.animate(
+        [
+          // The piece is square-sized, so a whole percent is a whole square.
+          { transform: `translate(${(fromColumn - toColumn) * 100}%, ${(fromRow - toRow) * 100}%)` },
+          { transform: 'translate(0, 0)' },
+        ],
+        { duration: MOVE_DURATION_MS, easing: 'cubic-bezier(0.33, 0.9, 0.36, 1)' },
+      );
+    }
+  }, [orientation, position]);
 
   const checkedKing = findCheckedKing(position, status);
   const destinationSet = useMemo(() => new Set(destinations), [destinations]);
   const markedSet = useMemo(() => new Set(markedSquares), [markedSquares]);
+  const sourceSet = useMemo(() => new Set(sourceSquares), [sourceSquares]);
 
   const files = orientation === 'black' ? [...FILES].reverse() : [...FILES];
   const ranks = orientation === 'black' ? [...RANKS] : [...RANKS].reverse();
 
-  const fileLabel = (file) => (byChord ? scheme.roots[FILES.indexOf(file)] : file);
-  const rankLabel = (rank) => (byChord ? qualityLabel(scheme.qualities[RANKS.indexOf(rank)]) : rank);
+  // Labels are indexed by file/rank position, so a host hands over eight of each
+  // and never has to know which way the board is currently facing.
+  const fileLabel = (file) => fileLabels[FILES.indexOf(file)] ?? file;
+  const rankLabel = (rank) => rankLabels[RANKS.indexOf(rank)] ?? rank;
 
   return (
     <div className={`chess-board-frame${className ? ` ${className}` : ''}`}>
@@ -110,21 +147,24 @@ export function ChessBoard({
         ))}
       </div>
 
-      <div className="chess-board" role="grid" aria-label="Chess board">
+      <div className="chess-board" role="grid" aria-label="Chess board" ref={boardRef}>
         {squares.map((square) => (
           <Square
-            key={square}
+            // The rejection key is part of the identity of a refused square, so
+            // repeating the same mistake remounts it and replays the flash.
+            key={rejectedSquare === square ? `${square}:${rejectedKey}` : square}
             square={square}
             piece={position[square]}
-            label={squareLabels[square]}
             isLight={squareColor(square) === 'light'}
             isSelected={selected === square}
             isDestination={destinationSet.has(square)}
             isMarked={markedSet.has(square)}
+            isSource={sourceSet.has(square)}
             isLastMove={lastMove?.from === square || lastMove?.to === square}
             isCursor={cursorSquare === square}
             isOnCursorLine={Boolean(cursorSquare) && (cursorSquare[0] === square[0] || cursorSquare[1] === square[1])}
             isCheck={checkedKing === square}
+            isRejected={rejectedSquare === square}
             onSelect={onSelect}
           />
         ))}

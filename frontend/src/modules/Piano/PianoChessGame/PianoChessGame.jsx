@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { DEFAULT_CHORD_SCHEME, squareToChord } from '@shared-gaming/chess/index.mjs';
 import { DIFFICULTIES, chooseMove } from '@shared-gaming/chess/opponent.mjs';
 import getLogger from '../../../lib/logging/Logger.js';
 import ChessBoard from '../../Chess/ChessBoard.jsx';
 import { PianoKeyboard } from '../components/PianoKeyboard.jsx';
-import { usePianoMidiNotes } from '../PianoKiosk/PianoMidiContext.jsx';
+import { usePianoMidi, usePianoMidiNotes } from '../PianoKiosk/PianoMidiContext.jsx';
+import { CHORD_QUALITIES, DEFAULT_CHORD_SCHEME, squareToChord } from './chordAddress.js';
 import { advanceCursor, createCursorState } from './chordCursor.js';
 import {
-  REJECTION_MESSAGES, applySquare, capturedPieces, commitMove,
-  createChessGameState, destinationsFor, isPlayerTurn,
+  REJECTION_MESSAGES, applySquare, capturedPieces, clearSelection, commitMove,
+  createChessGameState, destinationsFor, isPlayerTurn, playableSources,
 } from './chessGameState.js';
 import './PianoChessGame.scss';
 
@@ -21,6 +21,22 @@ import './PianoChessGame.scss';
  */
 
 const CURSOR_TICK_MS = 25;
+const TOAST_MS = 2600;
+
+/**
+ * How loudly the board answers a mistake.
+ *
+ * Parameterised because the right amount of ceremony depends on who is playing:
+ * a beginner wants the legal pieces outlined before they choose, while someone
+ * who knows the board finds that noisy and only wants to be told when they are
+ * wrong. All four can be turned off independently.
+ */
+export const DEFAULT_FEEDBACK = Object.freeze({
+  flashRejected: true,   // the refused square shakes and flares red
+  toast: true,           // a sentence saying what was wrong
+  highlightSources: true,// outline the pieces that can move, before choosing
+  highlightTargets: true,// dot the squares the held piece can reach
+});
 const OPPONENT_DELAY_MS = 700;
 const PIECE_GLYPHS = { p: '♟', n: '♞', b: '♝', r: '♜', q: '♛', k: '♚' };
 
@@ -46,14 +62,27 @@ export function promptFor(state, rejection) {
 
 export function PianoChessGame({
   onDeactivate = null,
-  playerColor = 'w',
-  difficulty = 'learner',
+  gameConfig = null,
+  playerColor = gameConfig?.player_color ?? 'w',
+  difficulty = gameConfig?.difficulty ?? 'learner',
   scheme = DEFAULT_CHORD_SCHEME,
-  shuffleEachTurn = true,
-  seed = 1,
+  shuffleEachTurn = gameConfig?.shuffle_each_turn ?? true,
+  seed = null,
+  feedback = null,
 }) {
+  const cues = { ...DEFAULT_FEEDBACK, ...(gameConfig?.feedback ?? {}), ...(feedback ?? {}) };
+
+  // A fixed seed would deal the same opening map in every game ever played, so
+  // the one position a player sees most often would be the one they memorise —
+  // precisely what re-dealing exists to prevent. Drawn once per mount.
+  const [gameSeed] = useState(() => (
+    Number.isFinite(seed) ? Number(seed) >>> 0 : (Math.floor(Math.random() * 0xffffffff) >>> 0)
+  ));
   const { activeNotes } = usePianoMidiNotes();
-  const [game, setGame] = useState(() => createChessGameState({ playerColor, scheme, seed, shuffleEachTurn }));
+  const { connected, status: midiStatus } = usePianoMidi();
+  const [game, setGame] = useState(() => createChessGameState({
+    playerColor, scheme, seed: gameSeed, shuffleEachTurn,
+  }));
   // The map is re-dealt every turn, so everything that reads chords — the
   // cursor, the rim, the move log — has to follow state, not the prop.
   const liveScheme = game.scheme;
@@ -76,9 +105,13 @@ export function PianoChessGame({
   }, [liveScheme.id, shuffleEachTurn]);
 
   useEffect(() => {
-    logger().info('mounted', { player_color: playerColor, difficulty, scheme: scheme.id, shuffle_each_turn: shuffleEachTurn });
+    logger().info('mounted', {
+      player_color: playerColor, difficulty, scheme: scheme.id,
+      shuffle_each_turn: shuffleEachTurn, seed: gameSeed,
+    });
+    if (game.schemeRejected) logger().warn('scheme-rejected', game.schemeRejected);
     return () => logger().info('unmounted');
-  }, [difficulty, playerColor, scheme.id, shuffleEachTurn]);
+  }, [difficulty, game.schemeRejected, gameSeed, playerColor, scheme.id, shuffleEachTurn]);
 
   const handleSquare = useCallback((square) => {
     const { state, event } = applySquare(gameRef.current, square);
@@ -89,6 +122,34 @@ export function PianoChessGame({
     } else logger().debug(`chord-${event.type}`, { square });
   }, []);
 
+  const [toast, setToast] = useState(null);
+  const rejection = game.rejection;
+  useEffect(() => {
+    if (!rejection || !cues.toast) return undefined;
+    setToast({ text: REJECTION_MESSAGES[rejection.reason] ?? 'Try another chord.', seq: rejection.seq });
+    const timer = setTimeout(() => setToast(null), TOAST_MS);
+    return () => clearTimeout(timer);
+  }, [cues.toast, rejection]);
+
+  const restart = useCallback(() => {
+    setGame(createChessGameState({ playerColor, scheme, seed: gameSeed + 1, shuffleEachTurn }));
+    setToast(null);
+    logger().info('restarted');
+  }, [gameSeed, playerColor, scheme, shuffleEachTurn]);
+
+  const cancelSelection = useCallback(() => {
+    setGame((current) => (current.origin ? clearSelection(current) : current));
+    logger().debug('selection-cancelled');
+  }, []);
+
+  // A keyboard Escape does the same thing, so the game is recoverable from a
+  // desk as well as from the bench.
+  useEffect(() => {
+    const onKey = (event) => { if (event.key === 'Escape') cancelSelection(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [cancelSelection]);
+
   // The cursor has to be driven by a clock, not only by note events: the settle
   // window elapses in silence, after the last key is already down.
   useEffect(() => {
@@ -98,6 +159,12 @@ export function PianoChessGame({
       cursorRef.current = state;
       if (!event) return;
       if (event.type === 'preview') setCursor(event.square);
+      if (event.type === 'too_quick') setToast({ text: 'Hold the chord a moment longer.', seq: `quick-${Date.now()}` });
+      if (event.type === 'escape') {
+        setCursor(null);
+        if (gameRef.current.status?.game_over) restart();
+        else cancelSelection();
+      }
       if (event.type === 'commit') {
         setCursor(null);
         handleSquare(event.square);
@@ -106,7 +173,7 @@ export function PianoChessGame({
     tick();
     const timer = setInterval(tick, CURSOR_TICK_MS);
     return () => clearInterval(timer);
-  }, [handleSquare, heldKey, heldNotes, liveScheme]);
+  }, [cancelSelection, handleSquare, heldKey, heldNotes, liveScheme, restart]);
 
   // The opponent answers on a delay so its move reads as a reply, not a flicker.
   useEffect(() => {
@@ -121,7 +188,13 @@ export function PianoChessGame({
     return () => clearTimeout(timer);
   }, [difficulty, game.status, playerColor]);
 
-  const destinations = game.origin ? destinationsFor(game, game.origin) : [];
+  // The board takes plain strings; translating chords into them is this layer's
+  // job, which is why ChessBoard never learns what a chord is.
+  const fileLabels = liveScheme.roots;
+  const rankLabels = liveScheme.qualities.map((quality) => CHORD_QUALITIES[quality]?.label || 'maj');
+
+  const destinations = cues.highlightTargets && game.origin ? destinationsFor(game, game.origin) : [];
+  const sources = cues.highlightSources && !game.origin ? playableSources(game) : [];
   const originChord = game.origin ? squareToChord(game.origin, liveScheme) : null;
   const cursorChord = cursor ? squareToChord(cursor, liveScheme) : null;
   const captured = capturedPieces(game.history);
@@ -162,10 +235,31 @@ export function PianoChessGame({
             </span>
           </div>
           <p className="piano-chess__prompt" role="status">{prompt}</p>
-          {cursorChord && (
-            <p className="piano-chess__hearing">
-              Hearing <strong>{cursorChord.symbol}</strong>
-            </p>
+
+          {/* What the piano is actually sending. Without this, a chord that does
+              nothing is indistinguishable from a piano that is not connected. */}
+          <div className={`piano-chess__midi${connected ? ' piano-chess__midi--live' : ''}`}>
+            <span className="piano-chess__midi-dot" aria-hidden="true" />
+            <span className="piano-chess__midi-text">
+              {connected ? (cursorChord?.symbol ?? (heldNotes.length ? `${heldNotes.length} notes held` : 'Listening')) : `Piano ${midiStatus || 'not connected'}`}
+            </span>
+          </div>
+
+          {game.status?.game_over ? (
+            <button type="button" className="piano-chess__cancel" onClick={restart}>
+              Play again
+              <span className="piano-chess__cancel-hint">play an octave to start over</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="piano-chess__cancel"
+              onClick={cancelSelection}
+              disabled={!game.origin}
+            >
+              Put it back
+              <span className="piano-chess__cancel-hint">play an octave, or press Esc</span>
+            </button>
           )}
         </aside>
 
@@ -173,10 +267,13 @@ export function PianoChessGame({
           fen={game.game.fen}
           status={game.status}
           orientation={playerColor === 'b' ? 'black' : 'white'}
-          notation="chord"
-          scheme={liveScheme}
+          fileLabels={fileLabels}
+          rankLabels={rankLabels}
           selected={game.origin}
           destinations={destinations}
+          sourceSquares={sources}
+          rejectedSquare={cues.flashRejected ? game.rejection?.square ?? null : null}
+          rejectedKey={game.rejection?.seq ?? null}
           lastMove={game.lastMove}
           cursorSquare={cursor}
         />
@@ -205,6 +302,10 @@ export function PianoChessGame({
           </div>
         </aside>
       </div>
+
+      {toast && (
+        <output className="piano-chess__toast" key={toast.seq}>{toast.text}</output>
+      )}
 
       <footer className="piano-chess__keys">
         <PianoKeyboard activeNotes={activeNotes} startNote={36} endNote={84} />

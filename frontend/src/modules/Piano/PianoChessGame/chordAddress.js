@@ -1,8 +1,14 @@
-import { shuffle } from '../rng.mjs';
-import { FILES, RANKS, isSquare } from './position.mjs';
+import { shuffle } from '@shared-gaming/rng.mjs';
+import { FILES, RANKS, isSquare } from '@shared-gaming/chess/index.mjs';
 
 /**
  * Chord addressing: every square on the board is one chord.
+ *
+ * This lives at the piano layer on purpose. The chess core in shared/gaming
+ * knows nothing about music, MIDI, or chords — it deals in squares and moves —
+ * and everything that translates an instrument into those squares belongs here,
+ * where the instrument is. Swapping the piano for a gamepad should not require
+ * touching a single line of chess.
  *
  * The board is 8x8 and a chord is (root, quality), so the two grids line up
  * exactly — 8 roots across the files, 8 qualities up the ranks, 64 squares, 64
@@ -49,8 +55,12 @@ export const CHORD_QUALITIES = Object.freeze({
  *     augmented rank is ambiguous no matter how the roots are chosen.
  *   - sus2 and sus4 are inversions of each other: C-sus2 and G-sus4 are the same
  *     three notes. At most one of the pair can appear.
+ *   - add6 and minor7 are likewise one chord: C6 and Am7 are both C-E-G-A. Eight
+ *     distinct roots must contain a minor-third pair (only six pitch classes can
+ *     avoid one), so this pair always collides too.
  *
- * `findChordCollisions` enforces this for any custom scheme.
+ * `findChordCollisions` is what `createChessGameState` checks a custom scheme
+ * against before accepting it.
  */
 export const DEFAULT_CHORD_SCHEME = Object.freeze({
   id: 'letters-by-difficulty-v1',
