@@ -137,11 +137,19 @@ export function PianoChessGame({
   // The server engine keeps per-game state keyed on this id, so it has to change
   // on restart — reusing it would let "Play again" find the finished game.
   const [gameId, setGameId] = useState(() => `chess-${Date.now()}`);
+  // Mirrored in a ref so an async answer can ask "is this still the same game?"
+  // without stale-closure risk — see the best-move validity check below.
+  const gameIdRef = useRef(gameId);
+  gameIdRef.current = gameId;
   // The map is re-dealt every turn, so everything that reads chords — the
   // cursor, the rim, the move log — has to follow state, not the prop.
   const liveScheme = game.scheme;
   const [cursor, setCursor] = useState(null);
   const cursorRef = useRef(createCursorState());
+  // True from the first tick where the held set reads as a help gesture until
+  // the hands are fully off the keys. See the cursor tick for why: a staggered
+  // release must not let the gesture's residue land as an unrecognised chord.
+  const gestureLatchRef = useRef(false);
   const gameRef = useRef(game);
   gameRef.current = game;
 
@@ -196,20 +204,49 @@ export function PianoChessGame({
   // thinks, so without this gate a re-gesture mid-flight would queue a second
   // request (and, worse, a second charge).
   const bestPendingRef = useRef(false);
+  // Help is only valid for the position it was asked about. A hint gestured on
+  // the opponent's turn can show nothing (playableSources is empty) and would
+  // be wiped by their reply before the turn returns, so charging it would put
+  // an untruth in the record. A best-move ANSWER is checked the same way on
+  // arrival rather than at gesture time: the request may leave whenever the
+  // player asks, but the answer is drawn — and charged — only if the position
+  // it was computed for is still on the board, in the same game, with the
+  // player on move. Anything else is an answer about a board that no longer
+  // exists, and drawing it would be a lie.
   useEffect(() => {
     if (gesture === 'hint' && !help.legal) {
+      if (!isPlayerTurn(gameRef.current)) {
+        logger().info('help-ignored', { kind: 'legal', reason: 'not_player_turn' });
+        return;
+      }
       setHelp((prev) => ({ ...prev, legal: true }));
       setHelpUsed((prev) => ({ ...prev, hints: prev.hints + 1 }));
       logger().info('help-requested', { kind: 'legal' });
     }
     if (gesture === 'best' && !help.best && !bestPendingRef.current) {
       bestPendingRef.current = true;
+      const askedFen = gameRef.current.game.fen;
+      const askedGameId = gameIdRef.current;
       logger().info('help-requested', { kind: 'best' });
-      requestOpponentMove({ fen: game.game.fen, rung: 'ruthless', gameId, userId }).then((move) => {
+      requestOpponentMove({ fen: askedFen, rung: 'ruthless', gameId: askedGameId, userId }).then((move) => {
         bestPendingRef.current = false;
         // Charged only when a move actually arrives: the record holds facts,
         // and "1 best move" the player never received is not one.
         if (!move) return;
+        const live = gameRef.current;
+        const stillValid = gameIdRef.current === askedGameId
+          && live.game.fen === askedFen
+          && isPlayerTurn(live);
+        if (!stillValid) {
+          logger().info('help-answer-stale', {
+            kind: 'best',
+            asked_fen: askedFen,
+            live_fen: live.game.fen,
+            same_game: gameIdRef.current === askedGameId,
+            player_turn: isPlayerTurn(live),
+          });
+          return;
+        }
         setHelp((prev) => ({ ...prev, best: { from: move.from, to: move.to } }));
         setHelpUsed((prev) => ({ ...prev, bestMoves: prev.bestMoves + 1 }));
       });
@@ -265,6 +302,10 @@ export function PianoChessGame({
   // One record per finished game; "Play again" starts the bookkeeping over.
   const recordedRef = useRef(false);
   const startedAtRef = useRef(Date.now());
+  // The record that just got saved (or would have, for a guest), held so the
+  // end screen can read the SAME numbers back. One source: the rail's tallies
+  // and the stored record can never disagree, because they are one object.
+  const [finishedRecord, setFinishedRecord] = useState(null);
 
   const restart = useCallback(() => {
     setGame(createChessGameState({
@@ -274,6 +315,11 @@ export function PianoChessGame({
     setToast(null);
     setHelp({ legal: false, best: null });
     setHelpUsed({ hints: 0, bestMoves: 0 });
+    setFinishedRecord(null);
+    // A best-move ask still in flight belongs to the finished game. Its answer
+    // is already doomed by the game-id check; clearing the gate here means the
+    // new game may ask again immediately instead of waiting it out.
+    bestPendingRef.current = false;
     recordedRef.current = false;
     startedAtRef.current = Date.now();
     logger().info('restarted');
@@ -302,11 +348,22 @@ export function PianoChessGame({
       // request for help, never chord input — its release must not land as an
       // unrecognised-chord refusal, nor be scolded for a quick tap.
       const wasGesture = !!recognizeGesture(cursorRef.current.held);
+      // A human does not lift three fingers at once, so the LAST pre-release
+      // set is often only the tail of the gesture — two notes, not a cluster.
+      // The latch remembers that a gesture was held at ANY point since the
+      // hands went down, and stands until they are fully off the keys. While
+      // it stands, a null-square commit (the gesture's own residue) and a
+      // too-quick scold are swallowed; a commit that names a real square still
+      // plays, so a gesture flowing straight into a chord without a full
+      // release behaves as chord input.
+      if (wasGesture) gestureLatchRef.current = true;
       const { state, event } = advanceCursor(cursorRef.current, heldNotes, Date.now(), { scheme: liveScheme });
       cursorRef.current = state;
+      const latched = gestureLatchRef.current;
+      if (!state.held.length) gestureLatchRef.current = false;
       if (!event) return;
       if (event.type === 'preview') setCursor(event.square);
-      if (event.type === 'too_quick' && !wasGesture) {
+      if (event.type === 'too_quick' && !wasGesture && !latched) {
         setToast({ text: 'Hold the chord a moment longer.', seq: `quick-${Date.now()}` });
       }
       if (event.type === 'escape') {
@@ -316,7 +373,7 @@ export function PianoChessGame({
       }
       if (event.type === 'commit') {
         setCursor(null);
-        if (!wasGesture) handleSquare(event.square);
+        if (!wasGesture && !(latched && !event.square)) handleSquare(event.square);
       }
     };
     tick();
@@ -353,6 +410,7 @@ export function PianoChessGame({
       game, rungId, hints: helpUsed.hints, bestMoves: helpUsed.bestMoves,
       startedAt: startedAtRef.current, endedAt: Date.now(),
     });
+    setFinishedRecord(record);
     if (record && userId) saveGameRecord(userId, record);
     logger().info('game-recorded', { ...(record || {}), persisted: !!(record && userId) });
     // Everything but the game-over flag is read at the moment the game ends.
@@ -421,6 +479,25 @@ export function PianoChessGame({
             </span>
           </p>
           <p className="piano-chess__prompt" role="status">{prompt}</p>
+
+          {/* The spec's promise: the end screen reads the game back as facts.
+              These are fields of the SAME object the record effect saved —
+              never a second formatting of the state — so the screen and the
+              stored record cannot disagree. */}
+          {game.status?.game_over && finishedRecord && (
+            <dl className="piano-chess__summary">
+              {[
+                ['Moves', finishedRecord.moves],
+                ['Hints', finishedRecord.hints],
+                ['Best moves', finishedRecord.best_moves],
+              ].map(([label, value]) => (
+                <div key={label} className="piano-chess__summary-row">
+                  <dt className="piano-chess__slot-label">{label}</dt>
+                  <dd className="piano-chess__summary-value">{value}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
 
           {game.status?.game_over ? (
             <button type="button" className="piano-chess__cancel" onClick={restart}>
