@@ -26,8 +26,12 @@ function fromUci(fen, uci) {
  */
 export function engineOptionsForRung(rung, logger) {
   const movetimeMs = Number(rung?.movetime_ms) > 0 ? Number(rung.movetime_ms) : 200;
-  const hasElo = Number.isFinite(Number(rung?.elo));
-  const hasSkill = Number.isFinite(Number(rung?.skill));
+  // `!= null` excludes null/undefined before the Number() coercion — Number(null)
+  // is 0, which is finite, so a YAML rung with an empty `elo:`/`skill:` key would
+  // otherwise read as "elo 0" (clamped to the 1320 floor with a misleading
+  // elo-clamped warning) instead of "no elo specified".
+  const hasElo = rung?.elo != null && Number.isFinite(Number(rung.elo));
+  const hasSkill = rung?.skill != null && Number.isFinite(Number(rung.skill));
   if (hasElo && hasSkill) {
     logger?.warn?.('chess.rung.skill-and-elo', { rung: rung.id, honoured: 'elo' });
   }
@@ -76,6 +80,15 @@ export function createStockfishEngine({
           workerUsable = false;
           logger?.warn?.('chess.engine.boot-failed', { message: msg.message });
           for (const entry of waiting.values()) entry.resolve(null);
+          // Without this, `worker` stays non-null and ensureWorker()'s
+          // `if (worker || !workerUsable) return worker;` hands back the same
+          // dead-but-alive handle forever: every later search posts into it,
+          // waits out the full movetime_ms + timeoutMarginMs, and only then
+          // falls back — the exact permanent per-move latency tax the 'exit'
+          // handler above already exists to avoid — plus an orphaned thread
+          // for the life of the process.
+          worker?.terminate?.();
+          worker = null;
         }
       });
       worker.on('error', (error) => {
