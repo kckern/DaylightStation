@@ -20,6 +20,15 @@ partial, or missed effect. Recruitment follows route battles two and four, then 
 decision heals the roster before the four-part gym challenge. Future route identities stay
 concealed until their encounters begin.
 
+The presentation is character-first rather than dashboard-first. Home is anchored by the
+current partner and next gym, with daily/weekly progress reduced to compact supporting
+cards. Partner selection uses large Pokémon art. Battle keeps both combatants and health
+visible, represents the route with icons, and limits each move card to its name, skill,
+keyboard shortcut, and numeric effects. Primary labels are sized for the kiosk viewport;
+secondary metadata never carries the action by itself. The battle surface owns move/skill
+context, while the piano provider owns the exercise name and tempo, so an active challenge
+has one two-line heading instead of stacked duplicate instructions.
+
 Minor post-battle rewards are consolidated into one research report. Catch, badge,
 evolution/mastery, and trainer-unlock ceremonies are persisted before presentation and
 queued one at a time. Save & Exit suspends the active session and refunds an in-progress
