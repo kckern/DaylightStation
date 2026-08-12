@@ -31,8 +31,12 @@ data/content/music/
   intervals/all.yml         #  1 seed  -> 288
   triads/all.yml            #  1 seed  -> 288
   sevenths/all.yml          #  1 seed  -> 480
-  scales/modes.yml          #  1 seed  -> 504
+  scales/modes.yml          #  1 seed  -> 720   (10 modes, incl. pentatonic and blues)
+  drills/                   #  7 seeds ->  84   beginner five-finger patterns
+  progressions/             #  3 seeds ->  36   I-V-vi-IV, three voicings
 ```
+
+45 seeds, 2,328 instances.
 
 The bank lives in the Dropbox-synced data directory, not in the git repository
 (`data/` is gitignored). This document is the tracked artefact; the content it
@@ -172,10 +176,27 @@ The families that motivated seeding, and what one file each yields:
 | `sevenths/all.yml` | root (12) × quality (5) × inversion (4) × staff (2) | 480 |
 | `scales/modes.yml` | root (12) × mode (7) × direction (3) × octaves (2) | 504 |
 
-1,632 performable items from five authored files. With Hanon's 30 seeds at 12
-keys each, the bank currently stands at **35 seeds yielding 1,992 instances**. For these, `ordering` is
-`any` on chord material — the notes are struck together, so order is not a
-claim the assessment can make — and `strict` on scales.
+For these, `ordering` is `any` on chord material — the notes are struck
+together, so order is not a claim the assessment can make — and `strict` on
+scales and drills.
+
+## Provenance for course-derived material
+
+Some seeds take their *curriculum* from a commercial course while their note
+content is common-practice theory. A five-finger pattern and a I-V-vi-IV
+progression are facts about music, not authored expression; the lesson sequence
+that arranges them is somebody's work and is credited as such.
+
+```yaml
+provenance:
+  tradition: pedagogy
+  collection: progressions
+  inspired_by: { course: 'My Music Workshop', note: 'lesson sequence; note content is common-practice theory' }
+  source: { file: null, license: null }
+```
+
+`inspired_by` credits without claiming, and `source.license: null` states plainly
+that no licence is held — better than asserting one that is not ours.
 
 ## Collection index
 
