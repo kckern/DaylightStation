@@ -116,6 +116,45 @@
 .chess-board__square--selected { outline: 3px solid var(--cb-accent); outline-offset: -3px; }
 .chess-board__square--last-move { outline: 2px dashed color-mix(in srgb, var(--cb-accent) 42%, transparent); outline-offset: -2px; }
 
+/* The piece in hand. An animated variant of the outline channel, not a fifth
+   visual language: a solid outline still means "last move"; the crawl means
+   "this one is in the air". background-position is animated deliberately —
+   an animated filter is a documented paint-cost trap on the kiosk's 2018
+   tablet.
+   This is a real child element (`.chess-board__held-ants`), not
+   `.chess-board__square--held::before` — `--best` already claims `::before`
+   on the square, and a held piece can also be the engine's suggested move
+   (PianoChessGame passes both `heldSquare` and `bestMove` to the same
+   board). An element has one `::before`; two rules fighting over it was
+   found and fixed on this board once already. */
+.chess-board__held-ants {
+  position: absolute;
+  inset: 3px;
+  pointer-events: none;
+  border-radius: 2px;
+  background:
+    repeating-linear-gradient(90deg, var(--cb-accent-glow) 0 7px, transparent 7px 14px) top / 100% 2px no-repeat,
+    repeating-linear-gradient(90deg, var(--cb-accent-glow) 0 7px, transparent 7px 14px) bottom / 100% 2px no-repeat,
+    repeating-linear-gradient(0deg, var(--cb-accent-glow) 0 7px, transparent 7px 14px) left / 2px 100% no-repeat,
+    repeating-linear-gradient(0deg, var(--cb-accent-glow) 0 7px, transparent 7px 14px) right / 2px 100% no-repeat;
+  animation: chess-board-ants 0.55s linear infinite;
+}
+
+@keyframes chess-board-ants {
+  to {
+    background-position: top 0 left 14px, bottom 0 left 14px, left 0 top 14px, right 0 top 14px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chess-board__held-ants {
+    animation: none;
+    background: none;
+    outline: 3px solid var(--cb-accent-glow);
+    outline-offset: -3px;
+  }
+}
+
 /* Channel 3 — marks. Only ever present because the player asked. */
 .chess-board__square--destination .chess-board__dot {
   width: 22%;
@@ -140,6 +179,28 @@
 .chess-board__square--best::before {
   content: ''; position: absolute; inset: 12%;
   border: 3px solid var(--cb-hint); border-radius: 50%;
+}
+
+/* The chord that reaches this square, printed by a host through `squareLabels`.
+   The corner is the one placement that never covers the piece, which matters
+   most on a capture. Sized off the board token — a square is --cb-size/8, so
+   this is 26% of a square's side — rather than cqmin, which would need
+   container-type on all 64 cells and a WebView new enough to resolve it.
+   z-index 2 on purpose: the piece paints at z-index 1, and an auto-stacked
+   badge would vanish under the very occupant it is labelling. */
+.chess-board__badge {
+  position: absolute;
+  top: 3%;
+  right: 3%;
+  z-index: 2;
+  padding: 0.1em 0.3em;
+  border-radius: 2px;
+  background: var(--cb-hint);
+  color: var(--cb-light);
+  font-size: calc(var(--cb-size) / 8 * 0.26);
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
 }
 
 /* Channel 4 — colour. Alarms, and nothing else. */

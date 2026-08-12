@@ -12,6 +12,9 @@ import './ChessBoard.scss';
  * host supplies its own `fileLabels`/`rankLabels` — which is how the piano kiosk
  * gets a rim of chord names without this component ever learning what a chord
  * is. Labels stay on the rim: a name in all 64 cells is noise to read past.
+ * `squareLabels` is the deliberate exception — a SPARSE map a host may put on
+ * the handful of squares that matter right now (the piano labels the held
+ * piece's destinations). It defaults to empty and renders nothing.
  *
  * Colour comes entirely from CSS custom properties, so a host restyles the board
  * by setting tokens rather than by overriding selectors.
@@ -35,8 +38,8 @@ function screenCell(square, orientation) {
 
 function Square({
   square, piece, isLight, isSelected, isDestination, isLastMove,
-  isCursor, isCandidate, isCheck, isHint, isBest, isRejected, onSelect,
-  ghostPiece,
+  isCursor, isCandidate, isCheck, isHint, isBest, isHeld, isRejected, onSelect,
+  ghostPiece, label,
 }) {
   const classes = [
     'chess-board__square',
@@ -47,6 +50,7 @@ function Square({
     // channel 2 — outline: committed state
     isSelected && 'chess-board__square--selected',
     isLastMove && 'chess-board__square--last-move',
+    isHeld && 'chess-board__square--held',
     // channel 3 — marks: only what was asked for
     isDestination && 'chess-board__square--destination',
     isHint && 'chess-board__square--hint',
@@ -66,8 +70,18 @@ function Square({
       disabled={!onSelect}
     >
       {isDestination && !piece && <span className="chess-board__dot" aria-hidden="true" />}
+      {/* A child element, not the square's ::before — --best already owns that
+          pseudo-element, and the piece in hand can also be the engine's
+          suggested move. Two rules on one pseudo-element would silently drop
+          one of them. */}
+      {isHeld && <span className="chess-board__held-ants" aria-hidden="true" />}
       {piece && (
         <img className="chess-board__piece" src={pieceSource(piece)} alt="" draggable="false" />
+      )}
+      {/* After the piece, and lifted above its z-index in CSS: on a capture
+          square the badge must ride the corner, not vanish under the artwork. */}
+      {label && (
+        <span className="chess-board__badge" aria-hidden="true">{label}</span>
       )}
       {ghostPiece && (
         <img
@@ -95,6 +109,8 @@ export function ChessBoard({
   candidates = [],
   hintTargets = [],
   bestMove = null,
+  heldSquare = null,
+  squareLabels = {},
   rejectedSquare = null,
   rejectedKey = null,
   ghost = null,
@@ -177,11 +193,13 @@ export function ChessBoard({
             isCandidate={candidateSet.has(square)}
             isHint={hintSet.has(square)}
             isBest={bestMove?.from === square || bestMove?.to === square}
+            isHeld={heldSquare === square}
             isLastMove={lastMove?.from === square || lastMove?.to === square}
             isCursor={cursorSquare === square}
             isCheck={checkedKing === square}
             isRejected={rejectedSquare === square}
             ghostPiece={ghost?.square === square ? ghost.piece : null}
+            label={squareLabels[square] ?? null}
             onSelect={onSelect}
           />
         ))}
