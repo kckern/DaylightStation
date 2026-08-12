@@ -21,6 +21,7 @@ import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { listYamlFiles, ensureDir, loadYamlSafe, saveYaml, deleteFile } from '#system/utils/FileIO.mjs';
+import { evaluateActivitySessionMatch } from '#domains/fitness/services/activitySessionMatch.mjs';
 
 const md5 = (string) => crypto.createHash('md5').update(string).digest('hex');
 
@@ -703,6 +704,9 @@ export class StravaHarvester extends IHarvester {
             .filter(Boolean)
             .join(', ') || null,
           filePath,
+          // Raw YAML kept so the shared match guards can read the timeline
+          // series and distance provenance, not just the time envelope.
+          data,
         });
       }
     }
@@ -718,8 +722,6 @@ export class StravaHarvester extends IHarvester {
    * @returns {Array<{ activityId, sessionId, session, activity }>} Matched pairs
    */
   #findMatches(username, activities) {
-    const BUFFER_MS = 5 * 60 * 1000; // 5 minutes
-
     // Collect unique dates from activities
     const dates = [...new Set(activities.map(a =>
       moment(a.start_date).tz(this.#timezone).format('YYYY-MM-DD')
@@ -733,27 +735,36 @@ export class StravaHarvester extends IHarvester {
     for (const activity of activities) {
       if (!activity?.id || !activity?.start_date) continue;
 
-      const actStart = moment(activity.start_date).tz(this.#timezone);
-      const actEnd = actStart.clone().add(activity.moving_time || 0, 'seconds');
-
-      // Expand window by buffer
-      const actStartBuffered = actStart.clone().subtract(BUFFER_MS, 'ms');
-      const actEndBuffered = actEnd.clone().add(BUFFER_MS, 'ms');
-
       let bestMatch = null;
       let bestOverlap = 0;
 
       for (const session of homeSessions) {
-        // Check participant
-        if (!session.participants.includes(username)) continue;
+        // Membership, venue, overlap and presence guards — the same domain
+        // policy the webhook path uses, so the two cannot drift apart again.
+        // This path had no guards at all until the 2026-07-25 incident.
+        const verdict = evaluateActivitySessionMatch({
+          activity,
+          session: session.data,
+          username,
+          tz: this.#timezone,
+        });
 
-        // Check time overlap with buffer
-        const overlapStart = moment.max(actStartBuffered, session.start);
-        const overlapEnd = moment.min(actEndBuffered, session.end);
-        const overlapMs = overlapEnd.diff(overlapStart);
+        if (!verdict.ok) {
+          this.#logger.debug?.('strava.homeMatch.rejected', {
+            username,
+            activityId: activity.id,
+            sessionId: session.sessionId,
+            reason: verdict.reason,
+            venue: verdict.venue,
+            overlapFraction: verdict.overlapFraction,
+            presenceMeasured: verdict.presenceMeasured,
+            presenceSeconds: verdict.presenceSeconds,
+          });
+          continue;
+        }
 
-        if (overlapMs > 0 && overlapMs > bestOverlap) {
-          bestOverlap = overlapMs;
+        if (verdict.overlapMs > bestOverlap) {
+          bestOverlap = verdict.overlapMs;
           bestMatch = session;
         }
       }
@@ -888,6 +899,9 @@ export class StravaHarvester extends IHarvester {
           type: entry.type,
           suffer_score: entry.suffer_score,
           device_name: entry.device_name,
+          // Distance is the only venue signal a summary row carries (no
+          // start_latlng, no trainer flag) — the guards need it.
+          distance: entry.distance,
         });
       }
     }
