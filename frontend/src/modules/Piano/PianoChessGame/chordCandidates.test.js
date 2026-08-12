@@ -25,11 +25,11 @@ describe('candidateSquares', () => {
 
   it('leaves the triad and its extensions lit, all rooted on the same file', () => {
     const lit = candidateSquares([60, 64, 67], S); // C major triad: pitch classes {0, 4, 7}
-    // Every rank on file c whose chord is a superset of {0, 4, 7}: c1 major {0,4,7} itself,
-    // c5 seventh {0,4,7,10}, c6 add6 {0,4,7,9}, c7 major7 {0,4,7,11}. c4 is minor6
-    // {0,3,7,9} now (was add2 {0,2,4,7}, which did contain 4) — minor6 has no major
-    // third, so it can no longer hold a C major triad and drops out of the list.
-    expect(lit).toEqual(['c1', 'c5', 'c6', 'c7']);
+    // Every rank on file c whose chord is a superset of {0, 4, 7}: c1 major {0,4,7}
+    // itself, c4 add9 {0,2,4,7}, c5 seventh {0,4,7,10}, c6 add6 {0,4,7,9}, c7 major7
+    // {0,4,7,11}. Only c2 (minor) and c3 (sus4) lack the major third, and c8 (dim)
+    // lacks both it and the perfect fifth.
+    expect(lit).toEqual(['c1', 'c4', 'c5', 'c6', 'c7']);
     expect(new Set(lit.map((sq) => sq[0]))).toEqual(new Set(['c']));
   });
 
