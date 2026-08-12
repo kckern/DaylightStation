@@ -175,7 +175,7 @@ describe('gaming asset audit tooling', () => {
     await renderContactSheet({ root, out: sheet, columns: 1, scale: 1 });
     await renderAnimation({ root, source, cell: [16, 16], frames: [[0, 0], [1, 0]], out: gif, scale: 2 });
     await renderFrameGrid({ root, source, cell: [16, 16], out: frames, scale: 2 });
-    await writeFile(derivedRecipe, YAML.stringify({ canvas: [32, 16], transparent_colors: ['#ff0000'], layers: [{ source, rect: [0, 0, 32, 16], at: [0, 0] }] }));
+    await writeFile(derivedRecipe, YAML.stringify({ canvas: [32, 16], transparent_colors: ['#ff0000'], layers: [{ source, rect: [0, 0, 32, 16], at: [0, 0] }, { source, rect: [16, 0, 16, 16], at: [4, 4], size: [8, 8] }] }));
     await deriveAtlas({ root, recipePath: derivedRecipe, out: derivedOut });
     await writeFile(layout, YAML.stringify({
       viewport: [64, 32], background: '#000000',
@@ -226,7 +226,8 @@ describe('gaming asset audit tooling', () => {
     for (const file of Object.values(qa.outputs)) assert.deepEqual((await readFile(file)).subarray(1, 4).toString(), 'PNG');
     const derivedImage = await loadImage(derivedOut); const derivedCanvas = createCanvas(32, 16); const derivedContext = derivedCanvas.getContext('2d');
     derivedContext.drawImage(derivedImage, 0, 0);
-    assert.equal(derivedContext.getImageData(8, 8, 1, 1).data[3], 0, 'configured source color becomes transparent');
+    assert.equal(derivedContext.getImageData(2, 8, 1, 1).data[3], 0, 'configured source color becomes transparent');
     assert.equal(derivedContext.getImageData(24, 8, 1, 1).data[3], 255, 'other source colors remain opaque');
+    assert.deepEqual([...derivedContext.getImageData(6, 6, 1, 1).data], [0, 255, 0, 255], 'optional layer size uses nearest-neighbour pixel scaling');
   });
 });

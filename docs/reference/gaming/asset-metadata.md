@@ -250,6 +250,8 @@ Every mask that an authored region may produce must be declared, or `fallback` m
 
 Cardinal masks select the outside edge or corner. `cardinal-4+diagonal-corners` then checks the four diagonals: when two adjoining cardinal neighbours exist but their shared diagonal does not, `inner_corners` replaces the otherwise square center/edge tile with reviewed concave-corner art. Rendering fails when an authored inside corner has no exact mapping; a center tile is never accepted as a visual fallback.
 
+Inner-corner metadata is not sufficient when the source silhouette is wrong for the pack's authored scale. Review every concave frame at the intended `world_scale`: a quarter of a larger island can be topologically correct yet pinch a route nearly closed. Keep any corrected corner set reproducible as a derived atlas recipe, preserve the original edge colors, and pin the derived hash. Recipe layers may use `size: [width, height]` for nearest-neighbour reduction when a source corner needs a smaller visual radius.
+
 Production scenes should set `forbid_direct_autotile_frames: true`. With this gate, a placement cannot name any center, edge, outer-corner, or inner-corner frame used by an asset's autotile maps; the material must be authored as a terrain region. Other decorative frames from the same atlas remain valid placements.
 
 Production scenes should also set `fail_on_frame_edge_contact: true`. A non-tile sprite whose visible alpha touches any source-frame edge is rejected because the renderer cannot prove it was not cropped from a larger sprite. Structural port-based assets are exempt—their edge contact is required for connection—and a reviewed exceptional frame may set `allow_edge_contact: true` explicitly.
@@ -297,6 +299,8 @@ placements:
 The scene renderer transforms each port through anchor, scale, mirror, and rotation rules and rejects the render unless both world-space points coincide exactly. IDs and ports describe visual assembly only; they are not gameplay entity IDs or collision sockets.
 
 An asset with `requires_all_ports: true` makes every port on every ID-bearing placement mandatory. Each must occur in exactly one scene connection. This is appropriate for structural sets such as fences: it rejects dangling continuation shafts, reused joins, and a corner frame incorrectly substituted for a capped endpoint.
+
+Ports prove coordinate continuity, not silhouette quality. If a turn requires two straight sprites to overlap, derive a single junction frame and put both outgoing ports on that frame. A fence corner should therefore be one authored L-shaped sprite rather than a horizontal post plus a vertical post occupying the same pixels. Keep exact review crops for every junction orientation used by a production scene.
 
 ## Placement language
 

@@ -274,9 +274,11 @@ describe('ExerciseBrowser — initial load', () => {
     expect(view.getByTestId('exercise-browser-count').textContent).toBe('Showing 8 of 8');
   });
 
-  it('renders the taxonomy rails', async () => {
+  it('renders taxonomy as touch-first category tabs with one option rail', async () => {
     const view = await mountBrowser();
     expect(view.getByTestId('exercise-group-upper-legs').textContent).toBe('Upper Legs');
+    expect(view.queryByTestId('exercise-browser-search')).toBeNull();
+    fireEvent.pointerDown(view.getByTestId('exercise-browser-tab-equipment'));
     expect(view.getByTestId('exercise-equipment-barbell').textContent).toBe('Barbell');
   });
 
@@ -332,6 +334,7 @@ describe('ExerciseBrowser — filtering', () => {
 
   it('filters by equipment on its own', async () => {
     const view = await mountBrowser();
+    fireEvent.pointerDown(view.getByTestId('exercise-browser-tab-equipment'));
     fireEvent.pointerDown(view.getByTestId('exercise-equipment-barbell'));
     await waitFor(() => expect(lastListRequest()).toBe('api/v1/fitness/exercises?equipment=barbell'));
     await waitFor(() => expect(renderedSlugs(view.container))
@@ -342,6 +345,7 @@ describe('ExerciseBrowser — filtering', () => {
     const view = await mountBrowser();
     fireEvent.pointerDown(view.getByTestId('exercise-group-chest'));
     await waitFor(() => expect(renderedSlugs(view.container)).toHaveLength(4));
+    fireEvent.pointerDown(view.getByTestId('exercise-browser-tab-equipment'));
     fireEvent.pointerDown(view.getByTestId('exercise-equipment-barbell'));
 
     await waitFor(() => expect(lastListRequest())
@@ -353,41 +357,36 @@ describe('ExerciseBrowser — filtering', () => {
   it('filters by muscle, once a group has opened the rail', async () => {
     const view = await mountBrowser();
     fireEvent.pointerDown(view.getByTestId('exercise-group-back'));
+    fireEvent.pointerDown(view.getByTestId('exercise-browser-tab-muscles'));
     fireEvent.pointerDown(await view.findByTestId('exercise-muscle-lats'));
     await waitFor(() => expect(lastListRequest())
       .toBe('api/v1/fitness/exercises?group=back&muscle=lats'));
     await waitFor(() => expect(renderedSlugs(view.container)).toEqual(['barbell-row', 'pull-up']));
   });
 
-  it('searches, debounced, via the q param', async () => {
+  it('shows selected counts on category tabs and preserves filters while switching', async () => {
     const view = await mountBrowser();
-    fireEvent.change(view.getByTestId('exercise-browser-search'), { target: { value: 'push' } });
-    await waitFor(() => expect(lastListRequest()).toBe('api/v1/fitness/exercises?q=push'));
-    await waitFor(() => expect(renderedSlugs(view.container)).toEqual(['archer-push-up', 'push-up']));
-  });
-
-  it('combines search with a facet', async () => {
-    const view = await mountBrowser();
+    fireEvent.pointerDown(view.getByTestId('exercise-group-chest'));
+    await waitFor(() => expect(renderedSlugs(view.container)).toHaveLength(4));
+    expect(view.getByTestId('exercise-browser-tab-groups').textContent).toContain('1');
+    fireEvent.pointerDown(view.getByTestId('exercise-browser-tab-equipment'));
     fireEvent.pointerDown(view.getByTestId('exercise-equipment-body-weight'));
-    await waitFor(() => expect(renderedSlugs(view.container)).toHaveLength(3));
-    fireEvent.change(view.getByTestId('exercise-browser-search'), { target: { value: 'push' } });
     await waitFor(() => expect(lastListRequest())
-      .toBe('api/v1/fitness/exercises?equipment=body-weight&q=push'));
+      .toBe('api/v1/fitness/exercises?group=chest&equipment=body-weight'));
     await waitFor(() => expect(renderedSlugs(view.container)).toEqual(['archer-push-up', 'push-up']));
+    expect(view.getByTestId('exercise-browser-tab-equipment').textContent).toContain('1');
   });
 
-  it('shows the empty state when nothing matches, and clears back to the full corpus', async () => {
+  it('clears every category back to the full corpus', async () => {
     const view = await mountBrowser();
-    fireEvent.change(view.getByTestId('exercise-browser-search'), { target: { value: 'zzzzz' } });
-    await view.findByTestId('exercise-browser-empty');
-    expect(view.queryByTestId('exercise-browser-grid')).toBeNull();
-    // Not the library notice — the index is fine, the filter is just narrow.
-    expect(view.queryByTestId('exercise-browser-unavailable')).toBeNull();
-
+    fireEvent.pointerDown(view.getByTestId('exercise-group-chest'));
+    await waitFor(() => expect(renderedSlugs(view.container)).toHaveLength(4));
+    fireEvent.pointerDown(view.getByTestId('exercise-browser-tab-equipment'));
+    fireEvent.pointerDown(view.getByTestId('exercise-equipment-barbell'));
+    await waitFor(() => expect(renderedSlugs(view.container)).toEqual(['barbell-bench-press']));
     fireEvent.pointerDown(view.getByTestId('exercise-browser-clear'));
-    await view.findByTestId('exercise-browser-grid');
-    expect(renderedSlugs(view.container)).toHaveLength(8);
-    expect(view.getByTestId('exercise-browser-search').value).toBe('');
+    await waitFor(() => expect(renderedSlugs(view.container)).toHaveLength(8));
+    expect(view.queryByTestId('exercise-browser-clear')).toBeNull();
   });
 
   it('logs each filter change at info', async () => {
@@ -414,12 +413,15 @@ describe('ExerciseBrowser — vertical budget', () => {
     const view = await mountBrowser();
     // 38 in production. Wrapped, that alone was ~1,225px of content.
     expect(view.container.querySelectorAll('[data-testid^="exercise-muscle-"]')).toHaveLength(0);
-    expect(view.getByTestId('exercise-browser-muscle-hint').textContent).toBe('Pick a group first');
+    fireEvent.pointerDown(view.getByTestId('exercise-browser-tab-muscles'));
+    expect(view.getByTestId('exercise-browser-muscle-hint').textContent)
+      .toBe('Pick a body area first, then refine by muscle');
   });
 
   it('opens the muscle rail to the picked group only', async () => {
     const view = await mountBrowser();
     fireEvent.pointerDown(view.getByTestId('exercise-group-back'));
+    fireEvent.pointerDown(view.getByTestId('exercise-browser-tab-muscles'));
     await view.findByTestId('exercise-muscle-lats');
     expect(view.queryByTestId('exercise-browser-muscle-hint')).toBeNull();
     expect(Array.from(view.container.querySelectorAll('[data-testid^="exercise-muscle-"]'))
@@ -444,19 +446,12 @@ describe('ExerciseBrowser — vertical budget', () => {
     expect(view.container.querySelectorAll('[data-testid^="exercise-muscle-"]')).toHaveLength(1);
   });
 
-  it('holds every secondary facet in a single non-wrapping row container', async () => {
+  it('shows exactly one non-wrapping option rail at a time', async () => {
     const view = await mountBrowser();
-    ['exercise-browser-muscles', 'exercise-browser-equipment'].forEach((testId) => {
-      const facet = view.getByTestId(testId);
-      const rows = facet.querySelectorAll('.exercise-browser__facet-chips');
-      expect(rows).toHaveLength(1);
-      expect(rows[0].className).toContain('exercise-browser__facet-chips--row');
-    });
-    // Every chip is a direct child of that one row — no sub-grouping that would
-    // reintroduce stacked rows.
-    const equipment = view.getByTestId('exercise-browser-equipment');
-    const row = equipment.querySelector('.exercise-browser__facet-chips--row');
-    const chips = equipment.querySelectorAll('[data-testid^="exercise-equipment-"]');
+    expect(view.container.querySelectorAll('.exercise-browser__option-rail')).toHaveLength(1);
+    fireEvent.pointerDown(view.getByTestId('exercise-browser-tab-equipment'));
+    const row = view.getByTestId('exercise-browser-equipment');
+    const chips = row.querySelectorAll('[data-testid^="exercise-equipment-"]');
     expect(chips).toHaveLength(TAXONOMY.equipment.length);
     chips.forEach((chip) => expect(chip.parentElement).toBe(row));
   });
@@ -617,6 +612,7 @@ describe('ExerciseBrowser — detail', () => {
     // gesture produced.
     await waitFor(() => expect(lastListRequest()).toBe('api/v1/fitness/exercises?muscle=upper-back'));
     await waitFor(() => expect(view.queryByTestId('exercise-detail')).toBeNull());
+    fireEvent.pointerDown(view.getByTestId('exercise-browser-tab-groups'));
     expect(view.getByTestId('exercise-group-back').getAttribute('data-active')).toBe('false');
   });
 });

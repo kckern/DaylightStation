@@ -130,13 +130,20 @@ constraint" returns the entire corpus silently. A malformed term matches nothing
 > and only surfaced when the app was opened in a browser — every unit test passed against a
 > module nothing could navigate to.
 
-**Browse.** Group rail, muscle/equipment chips, search, card grid.
+**Browse.** A no-keyboard, touch-first filter deck sits above the card grid. `Body area`,
+`Muscle`, and `Equipment` are large category tabs; only the active category's choices occupy
+the option rail, and selected-count badges keep filters in the other categories visible. Muscle
+choices remain contextual to the selected body area. The browse UI intentionally has no search
+field because the garage kiosk has no keyboard; the API retains `q` for non-kiosk consumers.
 
 Rendering 1,296 looping GIFs would be ~282 MB and would take the kiosk down, so three layers
 bound three different quantities: a **60-card DOM window** grown per "Show more"; an
 **IntersectionObserver** so no `<img>` mounts until visible; and — deliberately **not** one-shot —
 the observer *drops* an image when its card scrolls away, so resident memory tracks the viewport
 (~10–14 MB) instead of growing with scroll depth. Filtering, not scrolling, is the real control.
+The compact deck and five-column card sizing are calibrated to show two complete card rows plus a
+clear next-row scroll cue in the kiosk's 768px module panel without shrinking recurring touch
+targets below 60px.
 
 **Build.** Each tray pick seeds a straight-sets group. Group *size* derives its meaning — 1 =
 sets, 2 = superset, 3+ = circuit — shown, never chosen from a dropdown.

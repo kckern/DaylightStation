@@ -148,9 +148,10 @@ layers:
   - source: assets/desert/tiles/desert-water-tiles-1.png
     rect: [48, 0, 48, 48]
     at: [0, 0]
+    size: [48, 48] # optional nearest-neighbour destination size
 ```
 
-Color keys are strict `#rrggbb` values, not fuzzy tolerances. Catalog the generated PNG with its own pinned SHA-256 and retain the recipe beside the reviewed fixture so the derivative can be reproduced byte-for-byte.
+Color keys are strict `#rrggbb` values, not fuzzy tolerances. A layer's optional `size` resamples its source rectangle with nearest-neighbour scaling, which is useful for scale-correct pixel-art join silhouettes. Catalog the generated PNG with its own pinned SHA-256 and retain the recipe beside the reviewed fixture so the derivative can be reproduced byte-for-byte.
 
 ```bash
 npm run gaming:assets -- derive --root /path/to/_common \

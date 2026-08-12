@@ -1,0 +1,20 @@
+canvas: [256, 160]
+layers:
+  # Preserve the complete reviewed source atlas.
+  - { source: assets/default/environment/tiles/grass/grass-tiles-1.png, rect: [0, 0, 256, 160], at: [0, 0] }
+
+  # The raw inner-corner cells are quarters of a 32 px grass island. At a
+  # 16 px terrain grid that radius pinches T-junctions nearly closed. Rebase
+  # each cell on dirt and reduce a 10 px source curve to a compact 6 px corner,
+  # including the source's soil transition so the curve never ends as a square.
+  - { source: assets/default/environment/tiles/grass/grass-tiles-1.png, rect: [16, 96, 16, 16], at: [16, 144] }
+  - { source: assets/default/environment/tiles/grass/grass-tiles-1.png, rect: [16, 144, 10, 10], at: [16, 144], size: [6, 6] }
+
+  - { source: assets/default/environment/tiles/grass/grass-tiles-1.png, rect: [16, 96, 16, 16], at: [0, 144] }
+  - { source: assets/default/environment/tiles/grass/grass-tiles-1.png, rect: [6, 144, 10, 10], at: [10, 144], size: [6, 6] }
+
+  - { source: assets/default/environment/tiles/grass/grass-tiles-1.png, rect: [16, 96, 16, 16], at: [0, 128] }
+  - { source: assets/default/environment/tiles/grass/grass-tiles-1.png, rect: [6, 134, 10, 10], at: [10, 138], size: [6, 6] }
+
+  - { source: assets/default/environment/tiles/grass/grass-tiles-1.png, rect: [16, 96, 16, 16], at: [16, 128] }
+  - { source: assets/default/environment/tiles/grass/grass-tiles-1.png, rect: [16, 134, 10, 10], at: [16, 138], size: [6, 6] }

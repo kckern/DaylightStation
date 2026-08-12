@@ -1017,10 +1017,13 @@ export async function deriveAtlas({ root, recipePath, out }) {
   const { canvas, ctx } = await createPixelCanvas(...recipe.canvas);
   for (const [index, layer] of recipe.layers.entries()) {
     if (!validCoordinate(layer?.at) || !Array.isArray(layer?.rect) || layer.rect.length !== 4) throw new Error(`recipe layer ${index} needs at and rect`);
+    if (layer.size !== undefined && !validPair(layer.size)) throw new Error(`recipe layer ${index} size must be [width, height]`);
     const file = resolveUnder(root, layer.source); const image = await loadImage(file);
     const [sx, sy, sw, sh] = layer.rect;
     if (![sx, sy, sw, sh].every(Number.isInteger) || sw < 1 || sh < 1 || sx < 0 || sy < 0 || sx + sw > image.width || sy + sh > image.height) throw new Error(`recipe layer ${index} rect exceeds source`);
-    ctx.drawImage(image, sx, sy, sw, sh, layer.at[0], layer.at[1], sw, sh);
+    const [dw, dh] = layer.size ?? [sw, sh];
+    if (layer.at[0] + dw > canvas.width || layer.at[1] + dh > canvas.height) throw new Error(`recipe layer ${index} exceeds canvas`);
+    ctx.drawImage(image, sx, sy, sw, sh, layer.at[0], layer.at[1], dw, dh);
   }
   const transparentColors = recipe.transparent_colors ?? [];
   if (!Array.isArray(transparentColors) || transparentColors.some((color) => !/^#[0-9a-f]{6}$/i.test(color))) throw new Error('recipe transparent_colors must contain #rrggbb values');

@@ -34,21 +34,22 @@ $ex-micro:     1.1rem;
 $ex-label:     1.4rem;
 $ex-body:      1.6rem;
 
-// Whole-hand tap targets. 72px is the floor for a chip (a row of them is scanned
-// and stabbed at speed); 96px for anything whose mis-tap costs the user a screen.
-$ex-chip-h:    72px;
-$ex-action-h:  96px;
+// Whole-hand tap targets. The redesigned browse deck keeps every repeating
+// choice at 60px (well above the 48px accessibility floor) and reserves 84px
+// for the primary action. This returns almost a full card row to the 768px kiosk
+// without making a sweaty-hand target fiddly.
+$ex-chip-h:    60px;
+$ex-action-h:  84px;
 
 // Card grid. Both numbers are a VERTICAL budget decision, measured in Chromium
 // at 1920x1080 where the module panel is a fixed 744px box that does not scroll
 // and the grid gets ~412px of it.
 //
-// $ex-thumb-h drives card height directly (thumb + name ≈ 228px), so ~1.8 rows
-// of cards are visible with the next row peeking — the peek is the only cue
-// that the grid scrolls. A taller thumb reads better at ten feet but drops the
-// grid to a single row, which reads as "that is all there is".
+// $ex-thumb-h drives card height directly (thumb + name ≈ 198px), so the
+// actual 768px kiosk panel shows two full rows plus a clear next-row scroll cue.
 //
-// $ex-card-min is the narrower of the two levers: at 260px the ~1250px grid
-// fits 4 columns instead of 3, so the same 412px shows 7 exercises instead of 3.
-$ex-card-min:  260px;
-$ex-thumb-h:   180px;
+// $ex-card-min lets the ~1250px content area fit five columns. The illustrations
+// remain large enough to read at distance while browse density rises from roughly
+// seven immediately visible choices to ten-plus.
+$ex-card-min:  210px;
+$ex-thumb-h:   140px;

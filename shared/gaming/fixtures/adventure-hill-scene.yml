@@ -11,8 +11,16 @@ fail_on_frame_edge_contact: true
 forbid_direct_autotile_frames: true
 review_regions:
   - { id: garden-fence, rect: [20, 170, 230, 170], scale: 3 }
+  - { id: fence-northwest-junction, rect: [20, 170, 70, 90], scale: 5 }
+  - { id: fence-northeast-junction, rect: [180, 170, 70, 100], scale: 5 }
+  - { id: fence-southwest-junction, rect: [20, 250, 80, 80], scale: 5 }
   - { id: house-bridge, rect: [250, 220, 280, 240], scale: 2 }
+  - { id: house-path-cliff-join, rect: [230, 260, 100, 100], scale: 4 }
   - { id: dock-shore, rect: [540, 370, 250, 240], scale: 2 }
+  - { id: dock-north-landing, rect: [560, 425, 150, 90], scale: 4 }
+  - { id: dock-south-landing, rect: [560, 475, 150, 100], scale: 4 }
+  - { id: mature-tree-base, rect: [160, 135, 90, 80], scale: 5 }
+  - { id: south-bank-tree-base, rect: [510, 525, 90, 110], scale: 4 }
   - { id: shoreline, rect: [650, 190, 246, 440], scale: 2 }
   - { id: crossroads, rect: [0, 390, 650, 250], scale: 2 }
 
@@ -43,12 +51,13 @@ terrain:
       rects:
         - [8, 7, 5, 3]    # compact homestead yard beneath the door
         - [4, 9, 4, 1]    # worn one-tile garden-to-homestead connection
+        - [7, 10, 3, 1]   # underpainted beneath the bluff to suppress a path/rock grass seam
         - [10, 8, 3, 9]   # bluff crossing and approach
         - [9, 12, 3, 3]   # subtle westward bend
         - [9, 14, 5, 2]   # crossroads widens only at the decision point
         - [0, 14, 10, 2]  # two-cell west woods exit
         - [10, 15, 3, 5]  # bridge-width south road exit; no unsupported concave bites
-        - [13, 14, 7, 2]  # direct, full-width dock approach
+        - [13, 14, 5, 2]  # path terminates exactly where the over-water dock begins
       z: 6
 
     # Organic bluff silhouette around one consistent bridge crossing.
@@ -81,7 +90,8 @@ terrain:
         - [22, 10, 6, 1]
         - [21, 11, 7, 1]
         - [20, 12, 8, 1]
-        - [19, 13, 9, 7]  # straight dock bank, continuing beyond the south edge
+        - [19, 13, 9, 1]  # bank reaches the north side of the dock
+        - [18, 14, 10, 6] # water continues beneath the dock; bank resumes at its west edge
       z: 5
 
     # The cultivated bed uses its own measured origin inside the fence. It is
@@ -102,23 +112,23 @@ placements:
   # A reviewed deck-tile prefab runs directly from the path into the pond.
   - { prefab: fishing.dock-east, at: [576, 448], z: 15, depth_sort: false }
 
-  # Six-cell north boundary. Its side runs begin at y=216 because the north
-  # frames' visible posts end at y=215 (the source cells carry transparent
-  # padding). The west run meets the south rail at y=280; the east run ends in
-  # a deliberately overlapped cap, leaving the southeast gate unobstructed.
-  - { id: garden.nw, asset: prop.wood-fence#horizontal.start, at: [32, 188], z: 20, depth_sort: true }
+  # Six-cell north boundary. Purpose-built derived junction frames own each
+  # turn, while all straight runs remain on the 32 px world grid. This avoids
+  # overlapping two source posts to fake a corner. The east run ends in a cap,
+  # leaving the southeast gate unobstructed.
+  - { id: garden.nw, asset: prop.wood-fence-junctions#corner.nw, at: [32, 188], z: 20, depth_sort: true }
   - { id: garden.north-1, asset: prop.wood-fence#horizontal.middle, at: [64, 188], z: 20, depth_sort: true }
   - { id: garden.north-2, asset: prop.wood-fence#horizontal.middle, at: [96, 188], z: 20, depth_sort: true }
   - { id: garden.north-3, asset: prop.wood-fence#horizontal.middle, at: [128, 188], z: 20, depth_sort: true }
   - { id: garden.north-4, asset: prop.wood-fence#horizontal.middle, at: [160, 188], z: 20, depth_sort: true }
-  - { id: garden.ne, asset: prop.wood-fence#horizontal.end, at: [192, 188], z: 20, depth_sort: true }
-  - { id: garden.west-1, asset: prop.wood-fence#vertical.middle, at: [32, 216], z: 20, depth_sort: true }
-  - { id: garden.west-2, asset: prop.wood-fence#vertical.middle, at: [32, 248], z: 20, depth_sort: true }
-  - { id: garden.east-1, asset: prop.wood-fence#vertical.middle, at: [192, 216], z: 20, depth_sort: true }
-  - { id: garden.east-cap, asset: prop.wood-fence#vertical.end, at: [192, 242], z: 21, depth_sort: true }
-  - { id: garden.sw, asset: prop.wood-fence#horizontal.bottom.start, at: [32, 280], z: 20, depth_sort: true }
-  - { id: garden.south-1, asset: prop.wood-fence#horizontal.bottom.middle, at: [64, 280], z: 20, depth_sort: true }
-  - { id: garden.south-cap, asset: prop.wood-fence#horizontal.cap-east, at: [96, 280], z: 20, depth_sort: true }
+  - { id: garden.ne, asset: prop.wood-fence-junctions#corner.ne, at: [192, 188], z: 20, depth_sort: true }
+  - { id: garden.west-1, asset: prop.wood-fence#vertical.middle, at: [32, 220], z: 20, depth_sort: true }
+  - { id: garden.west-2, asset: prop.wood-fence#vertical.middle, at: [32, 252], z: 20, depth_sort: true }
+  - { id: garden.east-1, asset: prop.wood-fence#vertical.middle, at: [192, 220], z: 20, depth_sort: true }
+  - { id: garden.east-cap, asset: prop.wood-fence#vertical.end, at: [192, 246], z: 21, depth_sort: true }
+  - { id: garden.sw, asset: prop.wood-fence-junctions#corner.sw, at: [32, 284], z: 20, depth_sort: true }
+  - { id: garden.south-1, asset: prop.wood-fence#horizontal.bottom.middle, at: [64, 284], z: 20, depth_sort: true }
+  - { id: garden.south-cap, asset: prop.wood-fence#horizontal.cap-east, at: [96, 284], z: 20, depth_sort: true }
 
   # Two dense crop beds vary by species and stage; the center is a work aisle.
   - { asset: crop.tomato#young, at: [72, 228], z: 18, depth_sort: true }
@@ -142,17 +152,17 @@ placements:
 
   # Woodland masses frame the destinations and break the bluff face naturally.
   - { asset: prop.big-oak-tree#tree.a, at: [58, 164], z: 20, depth_sort: true }
-  - { asset: prop.big-oak-tree#tree.b, at: [214, 168], z: 20, depth_sort: true }
+  - { asset: prop.big-oak-tree#tree.a, at: [214, 168], z: 20, depth_sort: true, flip_x: true }
   - { asset: prop.small-oak-tree#tree.a, at: [142, 104], z: 20, depth_sort: true }
-  - { asset: prop.big-oak-tree#tree.b, at: [180, 598], z: 20, depth_sort: true }
-  - { asset: prop.big-oak-tree#tree.b, at: [96, 424], z: 20, depth_sort: true }
-  - { asset: prop.big-oak-tree#tree.b, at: [560, 420], z: 20, depth_sort: true }
+  - { asset: prop.big-oak-tree#tree.a, at: [180, 598], z: 20, depth_sort: true, flip_x: true }
+  - { asset: prop.big-oak-tree#tree.a, at: [96, 452], z: 20, depth_sort: true, flip_x: true }
+  - { asset: prop.big-oak-tree#tree.a, at: [560, 420], z: 20, depth_sort: true, flip_x: true }
   - { asset: prop.big-oak-tree#tree.a, at: [690, 196], z: 20, depth_sort: true }
-  - { asset: prop.big-oak-tree#tree.b, at: [758, 236], z: 20, depth_sort: true }
+  - { asset: prop.big-oak-tree#tree.a, at: [758, 236], z: 20, depth_sort: true, flip_x: true }
   - { asset: prop.outdoor-decor#shrub.leafy, at: [790, 246], z: 20, depth_sort: true }
   - { asset: prop.outdoor-decor#shrub.low, at: [806, 256], z: 20, depth_sort: true }
-  - { asset: prop.big-oak-tree#tree.b, at: [472, 620], z: 20, depth_sort: true }
-  - { asset: prop.small-oak-tree#tree.b, at: [628, 602], z: 20, depth_sort: true }
+  - { asset: prop.big-oak-tree#tree.a, at: [472, 620], z: 20, depth_sort: true, flip_x: true }
+  - { asset: prop.small-oak-tree#tree.a, at: [548, 598], z: 20, depth_sort: true, flip_x: true }
 
   # Ground texture is concentrated beneath canopy and near moist shoreline.
   - { asset: terrain.adventure-atlas#grass.patch-c, at: [32, 96], z: 2 }
@@ -199,7 +209,7 @@ placements:
     depth_sort: true
     shadow: { size: [13, 4], offset: [0, 1], opacity: 0.35 }
   - asset: npc.fisherman-fin#idle.down
-    at: [634, 480]
+    at: [634, 496]
     z: 20
     depth_sort: true
     shadow: { size: [11, 4], offset: [0, 1], opacity: 0.35 }
