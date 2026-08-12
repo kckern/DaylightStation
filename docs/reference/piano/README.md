@@ -269,3 +269,4 @@ logging, so a backend outage degrades gracefully rather than breaking the surfac
 | Sheet music player | [sheet-music-player.md](./sheet-music-player.md) |
 | Composer (notation editor — spec, not yet built) | [composer.md](./composer.md) |
 | Performance + jank | [performance.md](./performance.md) |
+| Performance assessment (grading, matching, spans) | [performance-assessment.md](./performance-assessment.md) |

@@ -25,7 +25,9 @@ is down at once, and by default the lowest note must be the chord root
 
 Grading is dimensional — pitch accuracy, timing, continuity, simultaneity — with
 weights an exercise may declare to say what it is about; defaults reproduce the
-long-standing constants. Scores band to green/yellow/red on shared thresholds.
+long-standing constants. Scores band to green/yellow/red on the same 0.9/0.6
+thresholds polish uses (drills via a shared helper; polish's evaluator bands
+inline today).
 
 Assessment aggregates over spans: measures in a score, transposition cells in a
 drill, one span for a bare exercise. A run tallies to an overall grade and
