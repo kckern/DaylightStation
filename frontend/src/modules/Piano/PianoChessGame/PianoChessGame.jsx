@@ -3,8 +3,10 @@ import { DIFFICULTIES, chooseMove } from '@shared-gaming/chess/opponent.mjs';
 import getLogger from '../../../lib/logging/Logger.js';
 import ChessBoard from '../../Chess/ChessBoard.jsx';
 import { PianoKeyboard } from '../components/PianoKeyboard.jsx';
+import { isPersistentUser } from '../PianoKiosk/pianoUser.js';
 import { usePianoMidi, usePianoMidiNotes } from '../PianoKiosk/PianoMidiContext.jsx';
 import PianoContextRail from '../PianoKiosk/modes/Videos/PianoContextRail.jsx';
+import { requestOpponentMove } from './chessApi.js';
 import { CHORD_QUALITIES, DEFAULT_CHORD_SCHEME, squareToChord } from './chordAddress.js';
 import { advanceCursor, createCursorState } from './chordCursor.js';
 import {
@@ -64,6 +66,7 @@ export function promptFor(state, rejection) {
 export function PianoChessGame({
   onDeactivate = null,
   gameConfig = null,
+  currentUser = null,
   playerColor = gameConfig?.player_color ?? 'w',
   difficulty = gameConfig?.difficulty ?? 'learner',
   scheme = DEFAULT_CHORD_SCHEME,
@@ -72,6 +75,23 @@ export function PianoChessGame({
   feedback = null,
 }) {
   const cues = { ...DEFAULT_FEEDBACK, ...(gameConfig?.feedback ?? {}), ...(feedback ?? {}) };
+
+  // currentUser may arrive as the resolved profile object or the bare id. Guests
+  // (and the no-user case) must never hit the per-user chess endpoints.
+  const userSlug = typeof currentUser === 'string' ? currentUser : currentUser?.id ?? null;
+  const userId = isPersistentUser(userSlug) ? userSlug : null;
+
+  // Config-driven rung/delay land in Task 7; until then these are the defaults
+  // the server and local engine both understand.
+  const chessConfig = null;
+  const rungId = 'learner';
+  const opponentDelayMs = OPPONENT_DELAY_MS;
+  const rung = chessConfig?.rungs?.find((entry) => entry.id === rungId);
+  // Maps the active rung to a bundled difficulty the same way the server adapter
+  // would, so a dropped request doesn't quietly change who the player is facing.
+  const localFallbackDifficulty = Number.isFinite(rung?.elo) ? 'steady'
+    : (rung?.skill ?? 3) <= 2 ? 'beginner'
+      : (rung?.skill ?? 3) <= 10 ? 'learner' : 'steady';
 
   // A fixed seed would deal the same opening map in every game ever played, so
   // the one position a player sees most often would be the one they memorise —
@@ -84,6 +104,9 @@ export function PianoChessGame({
   const [game, setGame] = useState(() => createChessGameState({
     playerColor, scheme, seed: gameSeed, shuffleEachTurn,
   }));
+  // The server engine keeps per-game state keyed on this id, so it has to change
+  // on restart — reusing it would let "Play again" find the finished game.
+  const [gameId, setGameId] = useState(() => `chess-${Date.now()}`);
   // The map is re-dealt every turn, so everything that reads chords — the
   // cursor, the rim, the move log — has to follow state, not the prop.
   const liveScheme = game.scheme;
@@ -134,6 +157,7 @@ export function PianoChessGame({
 
   const restart = useCallback(() => {
     setGame(createChessGameState({ playerColor, scheme, seed: gameSeed + 1, shuffleEachTurn }));
+    setGameId(`chess-${Date.now()}`);
     setToast(null);
     logger().info('restarted');
   }, [gameSeed, playerColor, scheme, shuffleEachTurn]);
@@ -177,17 +201,23 @@ export function PianoChessGame({
   }, [cancelSelection, handleSquare, heldKey, heldNotes, liveScheme, restart]);
 
   // The opponent answers on a delay so its move reads as a reply, not a flicker.
+  // The server is the strong opponent; the bundled engine is what keeps the game
+  // playable when it cannot be reached.
   useEffect(() => {
     if (game.status?.game_over || game.status?.turn === playerColor) return undefined;
-    const timer = setTimeout(() => {
-      const reply = chooseMove(gameRef.current.game.fen, { difficulty, seed: gameRef.current.history.length });
-      if (!reply) return;
-      const { state } = commitMove(gameRef.current, reply.from, reply.to);
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const fen = gameRef.current.game.fen;
+      const served = await requestOpponentMove({ fen, rung: rungId, gameId, userId });
+      const reply = served
+        || chooseMove(fen, { difficulty: localFallbackDifficulty, seed: gameRef.current.history.length });
+      if (cancelled || !reply) return;
+      const { state } = commitMove(gameRef.current, reply.from, reply.to, reply.promotion);
       setGame(state);
-      logger().info('opponent-replied', { san: reply.san, difficulty });
-    }, OPPONENT_DELAY_MS);
-    return () => clearTimeout(timer);
-  }, [difficulty, game.status, playerColor]);
+      logger().info('opponent-replied', { san: reply.san, engine: served ? served.engine : 'local' });
+    }, opponentDelayMs);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [game.status, playerColor, rungId, gameId, opponentDelayMs, userId, localFallbackDifficulty]);
 
   // A refusal turns the legality cues on; the next completed move turns them off.
   const [showLegality, setShowLegality] = useState(false);
