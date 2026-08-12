@@ -1,0 +1,6 @@
+canvas: [48, 16]
+transparent_colors: ['#e4a672']
+layers:
+  - source: assets/default/environment/tiles/grass/path-decoration.png
+    rect: [0, 0, 48, 16]
+    at: [0, 0]

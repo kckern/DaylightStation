@@ -13,26 +13,33 @@
  *
  * THE SESSION QUESTION
  * --------------------
- * A strength workout can be started with no fitness session open at all — the
- * Exercise Library is reachable straight from the Fitness Apps menu, and a session
- * normally begins only when sensor traffic crosses `FitnessSession`'s pre-session
- * buffer. Strength work is routinely strapless, so "no session" is not an edge
+ * A strength workout is frequently done with NO fitness session open. The Exercise
+ * Library is reachable straight from the Fitness Apps menu, and a session normally
+ * begins only when sensor traffic crosses `FitnessSession`'s pre-session buffer —
+ * strength work is routinely strapless, so nothing crosses it. That is not an edge
  * case here, it is the ordinary case.
  *
- * The answer is ADOPT, ELSE OPEN:
+ * The answer is ADOPT, ELSE ASK THE SERVER TO OPEN ONE:
  *
  *   1. If the fitness app already has a live session, the run joins it. A lift
  *      between intervals belongs to the ride, not to a second record.
- *   2. If it does not, we OPEN one — `ensureStarted({ force: true })`, the same
- *      seam the resume/decline prompts use. Someone who just finished four sets is
- *      exercising; that is what a session is. Refusing to open one would mean the
- *      most common strength scenario is the one that never gets recorded.
+ *   2. If it does not, we mint the id the run would have had and post it with
+ *      `openSession: true`, which is the strength route's explicit "open this if it
+ *      does not exist" request.
  *
- * We do NOT invent a session id and post it at the server hoping it sticks.
- * `LogStrengthRun` deliberately 404s an unknown session, and it is right to: a
- * fabricated record is one no HR data, media or recap will ever join to. So the
- * session is opened through the app's own lifecycle, and `saveNow()` is awaited so
- * the record is on the server before the run references it.
+ * WHY THE SERVER AND NOT `ensureStarted({ force: true })`. The browser cannot
+ * produce this record, and that was measured rather than assumed:
+ * `PersistenceManager.validateSessionPayload` refuses any session with an empty
+ * roster, under 60 seconds, under 3 timeline ticks, or with no non-zero HR series,
+ * and a strength-only session fails all four by construction. `POST /save_session`
+ * is additionally gated on `session_write_whitelist` (Firefox, i.e. the garage
+ * kiosk alone). Those gates are correct — they are what keeps sensor flap out of
+ * history — but they mean a client-opened strength session would be silently
+ * dropped on the floor every single time.
+ *
+ * The distinction the server draws is between a CLAIM and a REQUEST: posting an id
+ * you believe exists still 404s, because that is a bug worth seeing. `openSession`
+ * says "I know it does not exist; open it".
  *
  * WHAT HAPPENS WHEN IT STILL CANNOT BE FILED
  * ------------------------------------------
@@ -43,6 +50,7 @@
  */
 
 import { DaylightAPI } from '@/lib/api.mjs';
+import { formatSessionId } from '@/hooks/fitness/types.js';
 
 /** Where a finished run is filed. `fs_20260811…` sanitises to 14 digits server-side. */
 export const strengthPath = (sessionId) =>
@@ -117,9 +125,8 @@ export function isRetryable({ status, reason }) {
 export function failureNotice({ reason, message }) {
   switch (reason) {
     case 'no_session':
-      return 'No workout session could be opened, so there is nothing to file these sets against.';
     case 'unknown_session':
-      return 'The workout session has not been saved yet, so these sets could not be attached to it.';
+      return 'No workout session could be opened, so these sets have nothing to attach to.';
     case 'unknown_workout':
       return 'This workout is not on the shelf, so the sets you did could not be measured against a plan.';
     case 'nothing_completed':
@@ -162,35 +169,27 @@ export async function ensureWorkoutOnShelf(workout, { api = DaylightAPI } = {}) 
 }
 
 /**
- * Adopt the live session, else open one. See the docblock at the top of the file.
+ * The id a session started at `date` would carry — `YYYYMMDDHHmmss`, local time.
  *
- * `saveNow()` is awaited on a session we just opened because the strength route
- * 404s a session the server has never seen, and a run finished in the first
- * seconds of a session would otherwise race the 15-second autosave and lose.
- *
- * Never throws — a session that refuses to open reports `{ sessionId: null }` and
- * the caller shows the notice.
+ * `formatSessionId` is `FitnessSession`'s own generator, imported rather than
+ * re-implemented: the id is what the server derives the history DATE FOLDER from,
+ * so a second implementation drifting by a timezone would file workouts under the
+ * wrong day.
  */
-export async function resolveRunSession(session) {
+export const mintSessionId = (date = new Date()) => formatSessionId(date);
+
+/**
+ * Adopt the live session, else name the one to open. See the docblock at the top.
+ *
+ * Synchronous and total: there is always an id, and `openSession` is what tells the
+ * server which of the two cases it is looking at. Adopting a live session never
+ * carries the flag — an id the fitness app is holding really should exist, and a
+ * 404 on it is a bug that must stay visible.
+ */
+export function resolveRunSession(session, startedAt = new Date()) {
   const live = typeof session?.sessionId === 'string' && session.sessionId ? session.sessionId : null;
-  if (live) return { sessionId: live, opened: false };
-
-  if (typeof session?.ensureStarted !== 'function') return { sessionId: null, opened: false };
-
-  try {
-    session.ensureStarted({ force: true, reason: 'strength_run' });
-  } catch (_) {
-    return { sessionId: null, opened: false };
-  }
-
-  const opened = typeof session.sessionId === 'string' && session.sessionId ? session.sessionId : null;
-  if (!opened) return { sessionId: null, opened: false };
-
-  try {
-    await session.saveNow?.();
-  } catch (_) { /* the POST below is the authority on whether the record exists */ }
-
-  return { sessionId: opened, opened: true };
+  if (live) return { sessionId: live, openSession: false };
+  return { sessionId: mintSessionId(startedAt), openSession: true };
 }
 
 /**
@@ -206,6 +205,8 @@ export async function postStrengthRun({
   workoutId,
   completedSteps,
   completedAt = null,
+  startedAt = null,
+  openSession = false,
   api = DaylightAPI,
   attempts = 3,
   backoffMs = [800, 2500],
@@ -219,9 +220,17 @@ export async function postStrengthRun({
       const res = await api(strengthPath(sessionId), {
         workoutId,
         completedSteps,
-        ...(completedAt ? { completedAt } : {})
+        ...(completedAt ? { completedAt } : {}),
+        ...(startedAt ? { startedAt } : {}),
+        ...(openSession ? { openSession: true } : {})
       }, 'POST');
-      return { ok: true, attempt: i + 1, sessionId, strength: res?.strength ?? null };
+      return {
+        ok: true,
+        attempt: i + 1,
+        sessionId,
+        openedSession: res?.openedSession === true,
+        strength: res?.strength ?? null
+      };
     } catch (err) {
       last = parseApiFailure(err);
     }
@@ -243,6 +252,7 @@ export async function logStrengthRun({
   workout,
   completedSteps,
   session,
+  startedAt = null,
   api = DaylightAPI,
   now = () => new Date(),
   ...postOptions
@@ -257,16 +267,17 @@ export async function logStrengthRun({
     return { ok: false, reason: shelf.reason, message: failureNotice(shelf), workoutId: null };
   }
 
-  const { sessionId, opened } = await resolveRunSession(session);
-  if (!sessionId) {
-    return { ok: false, reason: 'no_session', message: failureNotice({ reason: 'no_session' }) };
-  }
+  const began = startedAt instanceof Date ? startedAt : new Date(startedAt ?? now());
+  const start = Number.isFinite(began.getTime()) ? began : now();
+  const { sessionId, openSession } = resolveRunSession(session, start);
 
   const posted = await postStrengthRun({
     sessionId,
     workoutId: shelf.workoutId,
     completedSteps: steps,
     completedAt: now().toISOString(),
+    startedAt: start.toISOString(),
+    openSession,
     api,
     ...postOptions
   });
@@ -276,7 +287,7 @@ export async function logStrengthRun({
       ok: true,
       sessionId,
       workoutId: shelf.workoutId,
-      openedSession: opened,
+      openedSession: posted.openedSession,
       savedWorkout: shelf.saved,
       sets: steps.length
     };
@@ -286,7 +297,6 @@ export async function logStrengthRun({
     ok: false,
     sessionId,
     workoutId: shelf.workoutId,
-    openedSession: opened,
     reason: posted.reason,
     message: failureNotice(posted)
   };

@@ -439,8 +439,12 @@ export async function validateManifest({ root, manifestPath }) {
         const sample = createCanvas(sw, sh); const sampleContext = sample.getContext('2d');
         sampleContext.drawImage(decodedImage, sx, sy, sw, sh, 0, 0, sw, sh);
         const pixels = sampleContext.getImageData(0, 0, sw, sh).data;
-        let hasTransparency = false;
-        for (let index = 3; index < pixels.length; index += 4) if (pixels[index] < 255) { hasTransparency = true; break; }
+        let hasTransparency = false; let hasVisiblePixel = false;
+        for (let index = 3; index < pixels.length; index += 4) {
+          if (pixels[index] < 255) hasTransparency = true;
+          if (pixels[index] > 0) hasVisiblePixel = true;
+        }
+        if (!hasVisiblePixel) errors.push(`${prefix}: overlay frame ${frameName} is empty`);
         if (!hasTransparency && frame.opaque_overlay !== true) errors.push(`${prefix}: overlay frame ${frameName} must contain transparency or explicitly set opaque_overlay`);
       }
       if (frameShapeValid && forbiddenRgb.size) {
