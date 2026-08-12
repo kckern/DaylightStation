@@ -1,10 +1,12 @@
 import { useEffect, useRef, useCallback } from 'react';
 import {
-  applyPerformancePress,
-  closePerformanceMeasure,
-  createPerformanceRun,
-} from '../../../performance/performanceJudge.js';
-import { gradePerformanceMeasure } from './scoreEvaluator.js';
+  applyAssessmentPress,
+  closeAssessmentSpan,
+  createAssessmentSession,
+  gradeAssessmentSpan,
+  replaceAssessmentTargets,
+} from '../../../performance/assessmentSession.js';
+import { POLICY_VERSION } from './scoreEvaluator.js';
 
 const timingPolicy = (cfg = {}) => {
   const tolerance = Number.isFinite(cfg.timingToleranceMs) ? cfg.timingToleranceMs : 80;
@@ -40,7 +42,9 @@ export function useScoreEvaluator({
   const positionForNoteRef = useRef(positionForNote);
   const onMeasureGradeRef = useRef(onMeasureGrade);
   const onSilentStopRef = useRef(onSilentStop);
-  const runRef = useRef(createPerformanceRun(targets));
+  const runRef = useRef(createAssessmentSession({
+    matcher: 'timed', expectation: { targets }, policy: timingPolicy(cfg),
+  }));
   const targetIdsRef = useRef(targets.map((target) => target.id).join(','));
 
   enabledRef.current = enabled;
@@ -63,35 +67,22 @@ export function useScoreEvaluator({
   // performance state by stable target id while replacing score-derived metadata.
   useEffect(() => {
     const nextIds = targets.map((target) => target.id).join(',');
-    const previous = new Map(runRef.current.targets.map((target) => [target.id, target]));
-    runRef.current = {
-      ...runRef.current,
-      targets: targets.map((target) => {
-        const old = previous.get(target.id);
-        return old ? {
-          ...target,
-          state: old.state,
-          hitPitches: old.hitPitches,
-          drifts: old.drifts,
-          resolvedAt: old.resolvedAt,
-          result: old.result,
-        } : createPerformanceRun([target]).targets[0];
-      }),
-    };
+    runRef.current = replaceAssessmentTargets(runRef.current, targets);
     if (nextIds !== targetIdsRef.current) gradedRef.current.clear();
     targetIdsRef.current = nextIds;
   }, [targets]);
 
   const gradeOne = useCallback((measure, atMs) => {
     if (gradedRef.current.has(measure)) return null;
-    const closed = closePerformanceMeasure(runRef.current, measure, atMs);
-    runRef.current = closed.run;
-    const measureTargets = runRef.current.targets.filter((target) => target.measureIndex === measure);
-    const unmatched = (runRef.current.unmatched || []).filter((event) => event.measureIndex === measure);
+    const closed = closeAssessmentSpan(runRef.current, measure, atMs);
+    runRef.current = closed.session;
+    const measureTargets = runRef.current.run.targets.filter((target) => target.measureIndex === measure);
+    const unmatched = (runRef.current.run.unmatched || []).filter((event) => event.measureIndex === measure);
     if (!measureTargets.length && !unmatched.length) return null;
     const graded = {
       measure,
-      ...gradePerformanceMeasure({ targets: measureTargets, unmatched }, cfgRef.current || {}),
+      ...gradeAssessmentSpan(runRef.current, measure, cfgRef.current || {}),
+      policyVersion: POLICY_VERSION,
     };
     gradedRef.current.add(measure);
     onMeasureGradeRef.current?.(graded);
@@ -114,14 +105,14 @@ export function useScoreEvaluator({
       if (!evt || evt.type !== 'note_on' || !evt.velocity) return;
       playedRef.current = true;
       const atMs = positionForNoteRef.current?.() ?? 0;
-      const judged = applyPerformancePress(
+      runRef.current = { ...runRef.current, policy: timingPolicy(cfgRef.current) };
+      const judged = applyAssessmentPress(
         runRef.current,
         evt.note,
         atMs,
-        timingPolicy(cfgRef.current),
         { measureIndex: currentMeasureRef.current },
       );
-      runRef.current = judged.run;
+      runRef.current = judged.session;
     });
   }, [enabled, subscribe]);
 
@@ -150,7 +141,9 @@ export function useScoreEvaluator({
       // A loop starts a fresh pass over its targets. Normal forward progress keeps
       // prior target resolutions intact until the run summary is produced.
       if (wrapped) {
-        runRef.current = createPerformanceRun(targets);
+        runRef.current = createAssessmentSession({
+          matcher: 'timed', expectation: { targets }, policy: timingPolicy(cfgRef.current),
+        });
         gradedRef.current.clear();
       }
     }
@@ -159,7 +152,9 @@ export function useScoreEvaluator({
 
   useEffect(() => {
     if (enabled) return undefined;
-    runRef.current = createPerformanceRun(targets);
+    runRef.current = createAssessmentSession({
+      matcher: 'timed', expectation: { targets }, policy: timingPolicy(cfgRef.current),
+    });
     prevMeasureRef.current = null;
     prevBoundaryRef.current = boundary;
     silentRunRef.current = 0;
@@ -172,7 +167,7 @@ export function useScoreEvaluator({
   }, [enabled, boundary, targets]);
 
   useEffect(() => () => {
-    runRef.current = createPerformanceRun([]);
+    runRef.current = createAssessmentSession({ matcher: 'timed', expectation: { targets: [] } });
     gradedRef.current.clear();
   }, []);
 

@@ -59,7 +59,7 @@ function inferredWorld(id, asset) {
   if (tags.has('player') || tags.has('npc') || tags.has('actor') || tags.has('creature') || tags.has('enemy')) { renderLayer = 'actor'; footprint = [Math.max(4, width * 0.35), Math.max(3, height * 0.12)]; shadowProfile = 'soft-small'; }
   if (tags.has('structure') || tags.has('house') || tags.has('tree')) { renderLayer = 'structure'; footprint = [Math.max(6, width * (tags.has('tree') ? 0.22 : 0.65)), Math.max(4, height * (tags.has('tree') ? 0.1 : 0.16))]; shadowProfile = tags.has('tree') ? 'soft-medium' : undefined; }
   if (tags.has('overlay') || tags.has('dock') || tags.has('bridge')) { renderLayer = 'ground'; footprint = [Math.max(4, width), Math.max(4, height)]; shadowProfile = undefined; }
-  return { footprint: { size: footprint.map((value) => Math.round(value * 100) / 100) }, scale_class: inferredScaleClass(id, asset), allowed_materials: ['*'], allowed_planes: ['ground'], allowed_biomes: ['*'], boundary_policy: 'allow', render_layer: renderLayer, collision: renderLayer === 'structure' || renderLayer === 'actor' ? 'solid' : 'passable', ...(shadowProfile ? { shadow_profile: shadowProfile } : {}) };
+  return { footprint: { size: footprint.map((value) => Math.round(value * 100) / 100) }, scale_class: inferredScaleClass(id, asset), allowed_materials: ['*'], allowed_surfaces: ['solid'], allowed_planes: ['ground'], allowed_biomes: ['*'], boundary_policy: 'allow', render_layer: renderLayer, collision: renderLayer === 'structure' || renderLayer === 'actor' ? 'solid' : 'passable', ...(shadowProfile ? { shadow_profile: shadowProfile } : {}) };
 }
 
 function convertPrefab(prefab) {
@@ -69,8 +69,8 @@ function convertPrefab(prefab) {
     void scale; void z; void depthSort; void shadow;
     return clean;
   };
-  const world = { footprint: { size: [16, 16] }, allowed_materials: ['*'], allowed_planes: ['ground'], allowed_biomes: ['*'], boundary_policy: 'allow', collision: 'passable', slots: [], ...(prefab.world ?? {}) };
-  world.allowed_materials ??= ['*']; world.allowed_planes ??= ['ground']; world.allowed_biomes ??= ['*']; world.collision ??= 'passable'; world.slots ??= [];
+  const world = { footprint: { size: [16, 16] }, allowed_materials: ['*'], allowed_surfaces: ['solid'], allowed_planes: ['ground'], allowed_biomes: ['*'], boundary_policy: 'allow', collision: 'passable', slots: [], ...(prefab.world ?? {}) };
+  world.allowed_materials ??= ['*']; world.allowed_surfaces ??= ['solid']; world.allowed_planes ??= ['ground']; world.allowed_biomes ??= ['*']; world.collision ??= 'passable'; world.slots ??= [];
   return { ...prefab, layers: (prefab.layers ?? []).map(convertLayer), world };
 }
 
@@ -205,7 +205,7 @@ export function migratePresentationV1(v1Catalog, namedScenes) {
     license_scopes: source.license_scopes, assets, materials, terrain_interfaces: terrainInterfaces,
     connector_profiles: Object.fromEntries(Object.entries(assets).filter(([, asset]) => asset.connector).map(([id]) => [id, { asset: id, render_layer: 'ground' }])),
     height_interfaces: Object.fromEntries(Object.entries(assets).filter(([, asset]) => asset.height).map(([id]) => [id, { asset: id, render_layer: 'ground' }])),
-    component_profiles: Object.fromEntries(Object.entries(assets).flatMap(([id, asset]) => Object.keys(asset.components ?? {}).map((component) => [`${id}.${component}`, { asset: id, component, render_layer: 'ground' }]))),
+    component_profiles: Object.fromEntries(Object.entries(assets).flatMap(([id, asset]) => Object.keys(asset.components ?? {}).map((component) => [`${id}.${component}`, { asset: id, component, allowed_surfaces: ['solid'], render_layer: 'ground' }]))),
     prefabs: Object.fromEntries(Object.entries(source.prefabs ?? {}).map(([id, prefab]) => [id, convertPrefab(prefab)])),
   };
   return { catalog, scenes: convertedScenes.map((entry) => entry.scene), report: { source_schema_version: v1Catalog.schema_version, assets: Object.keys(assets).length, materials: Object.keys(materials).length, interfaces: Object.keys(terrainInterfaces).length, scenes: convertedScenes.length, unresolved: [] } };

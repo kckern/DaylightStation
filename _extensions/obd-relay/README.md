@@ -216,6 +216,42 @@ answered. Run it with the ignition on before believing anything below.
 `/diagnostics` omits unsupported readings rather than reporting a fake `0`, and
 lists them under `unsupported` so absence is visible rather than implied.
 
+### The LED (`/led`, fw 0.2.0)
+
+**Unresolved — needs one measurement on the device.** Nothing in this firmware
+or in FreematicsPlus ever drives the LED: the library defines `PIN_LED 4`
+(`FreematicsPlus.h:44`) and never references it again, and `main.cpp` contains
+no `pinMode`/`digitalWrite` of its own. So a lit LED is either **(a)** a
+hardwired power indicator, which no firmware can touch, or **(b)** an
+uninitialised pin floating at the lit level. Source cannot distinguish them.
+
+`/led` settles it without spending an OTA per guess — polarity is also unknown,
+so both levels are exposed rather than one being baked in:
+
+```bash
+curl "http://10.0.0.35/led?mode=low"    # then look at the car
+curl "http://10.0.0.35/led?mode=high"   # if low did nothing
+curl "http://10.0.0.35/led?mode=float"  # restore the as-shipped default
+curl "http://10.0.0.35/led"             # read current mode (also on /status)
+```
+
+If **neither** level changes anything, it is case (a): hardwired, and the only
+remaining options are physical (tape, or desolder).
+
+Getting the build onto the device is the hard part — see
+`tools/ota-when-online.mjs`, which sits on `/status` until the car turns up and
+then inhibits standby, uploads, and verifies the version changed:
+
+```bash
+cd firmware && pio run -e freematics-oneplus-b && cd ..
+node tools/ota-when-online.mjs          # leave it running; catches the window
+```
+
+The mode persists in NVS and is re-applied at the very top of `setup()`, ahead
+of the standby fast path. That ordering matters: the device deep-sleeps between
+engine-off checks, so a RAM-only setting would revert on every wake and the LED
+would blink back on once a minute for the whole park.
+
 Backend dispatch: `backend/src/3_applications/hardware/automotiveRelay.mjs`
 (wired in `app.mjs`), mirroring `foodScaleRelay.mjs`. Persists:
 

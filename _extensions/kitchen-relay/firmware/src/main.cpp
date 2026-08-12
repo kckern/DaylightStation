@@ -31,7 +31,46 @@
 #include <NimBLEDevice.h>
 #include <FastLED.h>
 #include <Preferences.h>
+#include <esp_task_wdt.h>
+#include <esp_system.h>
 #include "config.h"
+
+// ---- post-mortem --------------------------------------------------------
+// This board went dark 2026-07-31 and stayed dark 12 days, and afterwards there
+// was NOTHING to read: the log ring below is RAM-only, so the power-cycle that
+// revived it also erased the evidence. Two candidates -- lost power vs. a wedged
+// loop() -- and no way to tell them apart, because a human pulling the plug on a
+// hung board produces the same POWERON reset as a board that was unplugged all
+// along.
+//
+// The task watchdog is what separates them. With it, a wedge is no longer
+// terminal: the board reboots itself and the next boot reports TASK_WDT. If it
+// instead sits dark until someone walks over, that was power. The reset reason
+// is only diagnostic BECAUSE the WDT supplies the other outcome.
+//
+// The counters live in NVS so they survive the reboot they describe.
+#define WDT_TIMEOUT_S 30           // generous: loop() does BLE work and short delays
+static Preferences g_prefs;
+static uint32_t    g_bootCount = 0;
+static esp_reset_reason_t g_resetReason = ESP_RST_UNKNOWN;
+static uint32_t    g_wifiDrops = 0;    // WiFi (not WS) link losses since boot
+
+/** Human-readable esp_reset_reason. BROWNOUT is the one that fingers a bad supply. */
+static const char* resetReasonStr(esp_reset_reason_t r) {
+  switch (r) {
+    case ESP_RST_POWERON:  return "POWERON";    // plug pulled, or a human power-cycling a wedge
+    case ESP_RST_EXT:      return "EXT";
+    case ESP_RST_SW:       return "SW";         // our own /reboot endpoint
+    case ESP_RST_PANIC:    return "PANIC";      // crash — check recent_logs before it
+    case ESP_RST_INT_WDT:  return "INT_WDT";
+    case ESP_RST_TASK_WDT: return "TASK_WDT";   // loop() wedged; the WDT saved it
+    case ESP_RST_WDT:      return "WDT";
+    case ESP_RST_DEEPSLEEP:return "DEEPSLEEP";
+    case ESP_RST_BROWNOUT: return "BROWNOUT";   // supply sagged — suspect the USB brick
+    case ESP_RST_SDIO:     return "SDIO";
+    default:               return "UNKNOWN";
+  }
+}
 
 // ---- onboard RGB status LED (SK6812 on GPIO27) --------------------------
 #define LED_PIN     27
@@ -254,6 +293,37 @@ static bool txReading(int grams, bool stable, uint8_t unit, uint32_t capturedMs)
   doc["ts"]     = capturedMs;
   uint32_t delayed = millis() - capturedMs;
   if (delayed > 1000) doc["delayed_ms"] = delayed;   // present only if it waited
+  String out; serializeJson(doc, out);
+  return webSocket.sendTXT(out);
+}
+
+/**
+ * Liveness frame. The backend's relay watchdog
+ * (3_applications/hardware/relayWatchdog.mjs) can only see frames, and until now
+ * this board sent NONE when idle -- the scale stops advertising when it is
+ * switched off, so a healthy board looked exactly like a dead one. That forced
+ * the watchdog to a coarse 12 h threshold and kept the other relays out of it
+ * entirely. A hello every 60 s makes "no frames" mean "no board".
+ *
+ * It carries the post-mortem too, so a reboot is reported to the backend the
+ * moment it reconnects rather than waiting for someone to curl /status.
+ *
+ * NEVER queued: a hello is only true at the instant it is sent, and a flushed
+ * one would tell the watchdog the board was alive minutes ago.
+ */
+static bool txHello() {
+  if (!wsConnected) return false;
+  JsonDocument doc;
+  doc["source"]     = RELAY_SOURCE;
+  doc["type"]       = "hello";
+  doc["id"]         = SCALE_ID;
+  doc["uptime_s"]   = (uint32_t)(millis() / 1000);
+  doc["boot_count"] = g_bootCount;
+  doc["last_reset"] = resetReasonStr(g_resetReason);
+  doc["free_heap"]  = ESP.getFreeHeap();
+  doc["min_heap"]   = ESP.getMinFreeHeap();
+  doc["rssi"]       = WiFi.status() == WL_CONNECTED ? WiFi.RSSI() : 0;
+  doc["ts"]         = millis();
   String out; serializeJson(doc, out);
   return webSocket.sendTXT(out);
 }
@@ -761,10 +831,26 @@ static void handleStatus() {
   doc["identity"]["scale_id"] = SCALE_ID;
   doc["identity"]["barcode_id"] = BARCODE_ID;
 
+  // Post-mortem of the PREVIOUS life. `last_reset` is the whole point: TASK_WDT
+  // means loop() wedged and the watchdog recovered it, BROWNOUT means the supply
+  // sagged, POWERON means the plug (or a human power-cycling a hang).
+  JsonObject boot = doc["boot"].to<JsonObject>();
+  boot["count"] = g_bootCount;
+  boot["last_reset"] = resetReasonStr(g_resetReason);
+  boot["wdt_s"] = WDT_TIMEOUT_S;
+
+  // Heap: a leak is the most likely wedge mechanism, and it was invisible before
+  // this. `min_free` is the low-water mark — the number that matters, since the
+  // current value recovers between allocations right up until it doesn't.
+  JsonObject heap = doc["heap"].to<JsonObject>();
+  heap["free"] = ESP.getFreeHeap();
+  heap["min_free"] = ESP.getMinFreeHeap();
+
   JsonObject wifi = doc["wifi"].to<JsonObject>();
   wifi["connected"] = WiFi.status() == WL_CONNECTED;
   wifi["ip"] = WiFi.localIP().toString();
   wifi["rssi"] = WiFi.status() == WL_CONNECTED ? WiFi.RSSI() : 0;
+  wifi["drops"] = g_wifiDrops;
 
   JsonObject ws = doc["websocket"].to<JsonObject>();
   ws["connected"] = wsConnected;
@@ -894,7 +980,18 @@ static void serviceButton() {
 void setup() {
   Serial.begin(115200);
   delay(200);
-  relayLogLine("[kitchen-relay] boot");
+
+  // Post-mortem FIRST, before anything can crash: read why the last life ended
+  // and bump the boot counter. Both go out on the wire at WS connect and sit in
+  // /status, so the answer survives even if nobody looks for days.
+  g_resetReason = esp_reset_reason();
+  g_prefs.begin("kitchen-relay", false);
+  g_bootCount = g_prefs.getUInt("boots", 0) + 1;
+  g_prefs.putUInt("boots", g_bootCount);
+  g_prefs.putUChar("last_reset", (uint8_t)g_resetReason);
+  g_prefs.end();
+  relayLogf("[kitchen-relay] boot #%u (last reset: %s)",
+            (unsigned)g_bootCount, resetReasonStr(g_resetReason));
 
   FastLED.addLeds<SK6812, LED_PIN, GRB>(led, 1);
   FastLED.setBrightness(60);
@@ -1054,19 +1151,53 @@ void setup() {
   relayLogLine("[http] status server listening on :80");
 
   startScan();
+
+  // Arm the task watchdog LAST. setup() blocks up to 20 s waiting for WiFi and
+  // must not be watched, or a slow AP would reboot the board before it ever
+  // reached loop(). panic=true so a wedge becomes a logged TASK_WDT reset
+  // instead of a board that hangs silently until someone walks to the kitchen.
+  if (esp_task_wdt_init(WDT_TIMEOUT_S, true) == ESP_OK && esp_task_wdt_add(NULL) == ESP_OK) {
+    relayLogf("[wdt] armed (%ds)", WDT_TIMEOUT_S);
+  } else {
+    relayLogLine("[wdt] arm FAILED — a wedge will hang, not reboot");
+  }
 }
 
 void loop() {
+  // Feed first: everything below can block, and a fed-late watchdog reboots a
+  // board that was merely busy.
+  esp_task_wdt_reset();
+
   webSocket.loop();
   http.handleClient();
   serviceButton();
 
-  // Wi-Fi self-heal
+  // Wi-Fi self-heal. The link here is marginal (rssi ~-78 measured 2026-08-12),
+  // so count the drops: a board that reconnects ten times an hour is a different
+  // problem from one that never drops, and /status is where that shows up.
   static uint32_t lastWifiTry = 0;
-  if (WiFi.status() != WL_CONNECTED && millis() - lastWifiTry > 10000) {
+  static bool wifiWasUp = true;
+  bool wifiUp = WiFi.status() == WL_CONNECTED;
+  if (wifiWasUp && !wifiUp) {
+    g_wifiDrops++;
+    relayLogf("[wifi] disconnected (drop #%u)", (unsigned)g_wifiDrops);
+  } else if (!wifiWasUp && wifiUp) {
+    relayLogf("[wifi] reconnected %s rssi=%d", WiFi.localIP().toString().c_str(), (int)WiFi.RSSI());
+  }
+  wifiWasUp = wifiUp;
+  if (!wifiUp && millis() - lastWifiTry > 10000) {
     lastWifiTry = millis();
     WiFi.disconnect(); WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   }
+
+  // Liveness heartbeat: first one immediately on a fresh WS link (so a reboot is
+  // reported at once), then every 60 s.
+  static uint32_t lastHelloMs = 0;
+  static bool wsWasUp = false;
+  if (wsConnected && (!wsWasUp || millis() - lastHelloMs > 60000)) {
+    if (txHello()) lastHelloMs = millis();
+  }
+  wsWasUp = wsConnected;
 
   // BLE connect / reconnect
   if (g_doConnect) {

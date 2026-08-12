@@ -196,6 +196,63 @@ because NimBLE-Arduino 1.4.x needs Arduino core 2.x — newer platforms pull cor
 > *or* closing `/dev/cu.usbserial-*` toggles DTR and resets the ESP32, which
 > wipes the in-RAM log ring. Use `/status` over HTTP — that is what it exists for.
 
+## Is it alive? (staleness alert)
+
+The board sat dark from **2026-07-31 19:43 to 2026-08-12** — twelve days — and
+nobody noticed, because nothing watches it. The relays are pass-throughs: the
+~0.5 Hz heartbeat is broadcast on the bus and dropped (`foodScaleRelay.mjs`,
+"the raw ~4 Hz stream stays ephemeral on the bus"), no `lastSeen` is kept, and
+`docker logs` resets at container start. A dead board is visible only as history
+that stopped being written.
+
+`backend/src/3_applications/hardware/relayWatchdog.mjs` closes that gap: it
+watches `onClientMessage` for frames carrying `source: kitchen-relay`, and if
+none arrive for **12 h** it sends one high-urgency `system` notification (which
+routes to Telegram — see `DEFAULT_PREFERENCES` in
+`5_composition/modules/notifications.mjs`). It alerts **once per outage** and
+re-arms when frames resume. Wired in `app.mjs` as the scheduler job
+`hardware:relay-watchdog` (`*/30 * * * *`).
+
+### The hello frame (flash required)
+
+The firmware now sends `{"source":"kitchen-relay","type":"hello",…}` on every WS
+connect and then every 60 s. Both relay handlers ignore it (`barcodeRelay` wants
+`type === 'scan'`, `foodScaleRelay` wants `scale`/`button`), so it exists purely
+so that **"no frames" means "no board"** — before it, the board sent nothing at
+all while its BLE scale was switched off, and a healthy relay was
+indistinguishable from a dead one. It is never queued: a flushed hello would
+claim the board was alive minutes after it died.
+
+It also carries the post-mortem (`boot_count`, `last_reset`, `free_heap`,
+`min_heap`, `rssi`). The watchdog logs `relay_watchdog.boot` when the boot
+counter moves — once per reboot, not once per heartbeat.
+
+> **Until this build is actually flashed, the 12 h threshold stands.** Tightening
+> it to ~1 h is the payoff for the flash, and doing it early would cry wolf every
+> evening the scale is put away. Same reason the OBD relay (gone for days) and
+> the OMR relay (used a few times a term) stay unwatched: once they send hellos
+> too, they can opt in.
+
+### Post-mortem: why did it die?
+
+`GET /status` now answers this, under `boot`:
+
+| Field | Meaning |
+|---|---|
+| `boot.count` | NVS counter, survives reboots |
+| `boot.last_reset` | `TASK_WDT` = loop() wedged and the watchdog recovered it · `BROWNOUT` = the supply sagged, suspect the USB brick · `PANIC` = crash, read `recent_logs` · `POWERON` = the plug (or a human power-cycling a hang) · `SW` = our own `/reboot` |
+| `heap.min_free` | low-water mark — a leak is the most likely wedge mechanism, and it was invisible before |
+| `wifi.drops` | link losses since boot; this board sits at rssi ~-78 |
+
+A **task watchdog** (30 s, `panic=true`) is armed at the end of `setup()` — after
+the WiFi wait, which blocks up to 20 s and must not be watched. This is what
+makes `last_reset` diagnostic at all: without it, a wedge and an unplugging both
+read `POWERON`, because in both cases a human supplied the reset.
+
+> **The scheduler does not run outside production.** In dev the job registers and
+> then logs `scheduler.disabled_non_production`; set `ENABLE_CRON=true` to
+> exercise it locally.
+
 ## Status LED
 
 Event-only lighting: the LED stays dark during idle/connection monitoring and

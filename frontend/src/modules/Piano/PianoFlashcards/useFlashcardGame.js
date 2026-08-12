@@ -8,6 +8,7 @@ import {
   chordMissReason,
   resolveStartLevel,
 } from './flashcardEngine.js';
+import { evaluateAssessment } from '../performance/assessmentSession.js';
 
 const CARD_ADVANCE_DELAY_MS = 400;
 const COMPLETE_DISPLAY_MS = 5000;
@@ -232,6 +233,19 @@ export function useFlashcardGame(activeNotes, flashcardsConfig, currentUser = nu
     if (recent.length === 0) return 0;
     return Math.round((recent.filter(a => a.hit).length / recent.length) * 100);
   }, [state.attempts]);
+  const assessment = useMemo(() => {
+    const completed = state.attempts.length;
+    const firstTry = state.attempts.filter((attempt) => attempt.hit).length;
+    const criteria = {
+      completeness: completed > 0 ? 1 : 0,
+      cleanliness: completed > 0 ? firstTry / completed : 0,
+    };
+    return evaluateAssessment({
+      criteria,
+      rubric: { id: 'flashcards-v1', version: '1' },
+      diagnostics: { cards_completed: completed, first_try_cards: firstTry },
+    });
+  }, [state.attempts]);
 
   return {
     phase: state.phase,
@@ -243,6 +257,7 @@ export function useFlashcardGame(activeNotes, flashcardsConfig, currentUser = nu
     cardStatus: state.cardStatus,
     attempts: state.attempts,
     accuracy,
+    assessment,
     startGame,
     deactivate,
     selectLevel,
