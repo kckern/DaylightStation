@@ -25,6 +25,8 @@ vi.mock('./chessApi.js', () => ({
   fetchChessConfig: vi.fn(async () => null),
   saveChessConfig: vi.fn(async () => null),
   saveGameRecord: vi.fn(async () => null),
+  archiveGame: vi.fn(async () => null),
+  beaconArchive: vi.fn(() => true),
 }));
 
 import { PianoChessGame } from './PianoChessGame.jsx';

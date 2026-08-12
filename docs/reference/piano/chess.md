@@ -175,6 +175,33 @@ the same staff, which is never an address.
 Narrowing is better in this vocabulary than in the other: one note lights a whole rank or a whole
 file, so the player watches the row and the column meet.
 
+## The game history
+
+Every game played on this piano is archived under
+`data/household/history/gaming/pianochess/YYYY-MM-DD/`, one file per game, named for the player.
+This is separate from the player's own scorecard (`apps/chess/games/`), which only exists for games
+that finished, and it answers a different question: *how is this child actually doing, over months?*
+
+Three properties make it worth keeping.
+
+**It records unfinished games.** Walking away is data — a position a child gave up on says more
+about where they are than one they saw through. `completed: false` with `ended_by: left` is the
+interesting record, not a defective one. Because a kiosk game usually ends by the tab closing or
+the screen sleeping, and neither runs any in-app teardown, the archive is written on `pagehide` via
+a beacon; leaving inside the app writes it the ordinary way.
+
+**It is replayable.** The starting position plus every move in SAN and from/to is a complete game,
+so the engine can read it back later and say where it went wrong. Nothing downstream — blunder
+analysis, accuracy, progress curves — is possible without the moves, and they cannot be recovered
+after the fact.
+
+**It keeps the music.** Every move stores the two addresses that performed it, alongside the
+vocabulary they are in, because `C/B` and `Cm` mean entirely different things. Which chords a child
+can spell under time pressure, or which notes they can read, is what the piano is actually
+teaching, and it is invisible in a PGN.
+
+Guests are archived too, with a null player: the history is about what happened on the instrument.
+
 ## Not yet built
 
 - **Inversions as distinct squares.** Graded by difficulty so a beginner is never addressed in

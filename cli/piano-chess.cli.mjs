@@ -403,6 +403,13 @@ export async function verifyPianoChess(options, { onProgress = () => {} } = {}) 
       await page.screenshot({ path: options.screenshot, fullPage: true }).catch(() => {});
       report.screenshot = options.screenshot;
     }
+    // Leave the PAGE before killing the browser. Closing a Chromium context
+    // outright skips the document teardown, so anything the app does on its way
+    // out — here, beaconing the game to the household archive — never happens,
+    // and the harness would report a clean run while silently exercising none of
+    // it. Navigating away is also what the kiosk actually does.
+    await page?.goto('about:blank', { waitUntil: 'domcontentloaded', timeout: 10_000 }).catch(() => {});
+    await new Promise((resolve) => { setTimeout(resolve, 800); });
     await browser?.close().catch(() => {});
     await bridge.close().catch(() => {});
   }

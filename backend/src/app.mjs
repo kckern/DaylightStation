@@ -1724,6 +1724,23 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         userId,
       ),
     },
+    // The household archive: one file per game, under the day it was played,
+    // named for the player. Household rather than per-user because it is the
+    // instrument's history — the basis for comparing progress across the
+    // children who share this piano, and the corpus the engine reads back when
+    // asked where a game went wrong.
+    archiveStore: {
+      save: (record, userSegment) => {
+        const day = /^\d{4}-\d{2}-\d{2}$/.test(record.played_on || '')
+          ? record.played_on
+          : new Date().toISOString().slice(0, 10);
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+        return dataService.household.write(
+          `history/gaming/pianochess/${day}/${userSegment}-${stamp}`,
+          { ...record, archived_at: new Date().toISOString() },
+        );
+      },
+    },
     logger: rootLogger.child({ module: 'chess-api' }),
   });
 

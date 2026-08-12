@@ -77,6 +77,10 @@ export function createChessGameState({
 
   const base = {
     game,
+    // The position the game began from, kept so the archive can be replayed by
+    // the engine later. Derived at creation because nothing downstream can
+    // recover it once moves have been played onto it.
+    initialFen: game.fen,
     baseScheme: safeScheme,
     schemeRejected,
     seed: Number(seed) >>> 0,
