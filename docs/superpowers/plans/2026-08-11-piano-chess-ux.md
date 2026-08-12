@@ -1113,7 +1113,7 @@ git commit -m "feat(chess): play against the server engine, fall back locally"
 - Consumes: the component's existing `heldNotes`, `cursorChord` (`{ symbol }` or null, from `squareToChord`) and `cursor` (square string or null). It does **not** call `identifyChord` — that returns `{ square, candidates, pitch_classes }` (`chordAddress.js:200`), not a display symbol, and is scheme-scoped.
 - Produces: `<ChordReadout heldNotes={number[]} chord={{symbol}|null} square={string|null} connected={boolean} settling={boolean} />`.
 
-**This replaces the existing read-out, it does not add a second one.** `PianoChessGame.jsx:245-250`
+**This replaces the existing read-out, it does not add a second one.** `PianoChessGame.jsx:243-250`
 already renders `piano-chess__midi` in the left rail with the same four states. Delete that
 block when mounting this, and move its `.piano-chess__midi*` styles or drop them.
 
@@ -1666,6 +1666,23 @@ git commit -m "feat(chess): in-game settings panel writing the user config layer
 ```
 
 ---
+
+## Known residuals
+
+Both were found in review, judged not worth the complexity they would cost, and are
+recorded here so they are not rediscovered as bugs:
+
+- **A truly hung engine burns one extra move.** If a search's `bestmove` never arrives at
+  all (rather than arriving late), the armed `drainNext` swallows the *next* search's
+  legitimate reply, and every move after that eats the full timeout before falling back.
+  An engine that stops answering is already terminal, so the fix is a worker restart, not
+  adapter surgery. If you see a sustained stream of `chess.engine.timeout` after a single
+  hang, restart the container rather than debugging the queue.
+- **Chord-to-chord morphing can flash a stale square.** `cursorResolved` resets only when
+  the hands leave the keys, so sliding from one chord straight into another without fully
+  releasing may show the previous square, or a premature "not a square", for about one
+  settle window. Fixing it means teaching the component about held-set identity, which it
+  currently and correctly delegates to `chordCursor`.
 
 ## Deployment
 
