@@ -1,8 +1,10 @@
 # Exercise Library — shared corpus, two projections
 
 **Date:** 2026-08-11
-**Status:** In implementation on `feat/exercise-library`. Corpus moved, index builder and
-shared domain done; CLI, adapter, API, UI, and School source outstanding.
+**Status:** IMPLEMENTED on `feat/exercise-library`. Superseded as a reference by
+`docs/reference/fitness/exercise-library.md` — this document is kept for the decision history,
+including the two design errors it records (the School units-vs-modules conflation, and the
+corpus-size estimate). Outstanding: garage-kiosk verification, then merge and deploy.
 
 ## Problem
 
