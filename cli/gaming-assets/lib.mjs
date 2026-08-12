@@ -2049,16 +2049,18 @@ async function buildBlobRecipe({ root, recipe }) {
   const { loadImage } = await import('canvas'); const file = resolveUnder(root, recipe.source); const image = await loadImage(file);
   const [cellWidth, cellHeight] = recipe.cell; const halfWidth = cellWidth / 2; const halfHeight = cellHeight / 2;
   const [outerX, outerY] = recipe.outer_origin;
+  const outerStride = recipe.outer_stride ?? [1, 1];
+  if (!validPair(outerStride)) throw new Error('blob recipe outer_stride must be positive cell steps');
   const sourceCell = (cellX, cellY, quadrantX, quadrantY) => [
     cellX * cellWidth + quadrantX * halfWidth,
     cellY * cellHeight + quadrantY * halfHeight,
     halfWidth, halfHeight,
   ];
-  if ((outerX + 3) * cellWidth > image.width || (outerY + 3) * cellHeight > image.height) throw new Error('blob recipe outer 3x3 exceeds source');
+  if ((outerX + outerStride[0] * 2 + 1) * cellWidth > image.width || (outerY + outerStride[1] * 2 + 1) * cellHeight > image.height) throw new Error('blob recipe outer 3x3 exceeds source');
   const negativeOuter = recipe.negative_outer_origin;
   if (negativeOuter !== undefined && !validCoordinate(negativeOuter)) throw new Error('negative_outer_origin must be cell coordinates');
   const hasNegative = recipe.negative !== false && (inner.layout === 'two-by-two' || negativeOuter !== undefined);
-  if (negativeOuter && ((negativeOuter[0] + 3) * cellWidth > image.width || (negativeOuter[1] + 3) * cellHeight > image.height)) throw new Error('blob recipe negative outer 3x3 exceeds source');
+  if (negativeOuter && ((negativeOuter[0] + outerStride[0] * 2 + 1) * cellWidth > image.width || (negativeOuter[1] + outerStride[1] * 2 + 1) * cellHeight > image.height)) throw new Error('blob recipe negative outer 3x3 exceeds source');
   const { canvas, ctx } = await createPixelCanvas(cellWidth * 4, cellHeight * (hasNegative ? 10 : 5));
   const quadrantRules = [
     { id: 'nw', at: [0, 0], directions: ['n', 'w'], both: [1, 1, 0, 0], first: [0, 1, 0, 0], second: [1, 0, 0, 0], neither: [0, 0, 0, 0] },
@@ -2071,7 +2073,7 @@ async function buildBlobRecipe({ root, recipe }) {
     for (const rule of quadrantRules) {
       const first = directions.includes(rule.directions[0]); const second = directions.includes(rule.directions[1]);
       const selection = first && second ? rule.both : first ? rule.first : second ? rule.second : rule.neither;
-      const [sx, sy, sw, sh] = sourceCell(origin[0] + selection[0], origin[1] + selection[1], selection[2], selection[3]);
+      const [sx, sy, sw, sh] = sourceCell(origin[0] + selection[0] * outerStride[0], origin[1] + selection[1] * outerStride[1], selection[2], selection[3]);
       ctx.drawImage(image, sx, sy, sw, sh, destinationX + rule.at[0] * halfWidth, destinationY + rule.at[1] * halfHeight, halfWidth, halfHeight);
     }
   });
@@ -2082,8 +2084,8 @@ async function buildBlobRecipe({ root, recipe }) {
       se: [inner.origin[0], inner.origin[1], 1, 1], sw: [inner.origin[0] + 1, inner.origin[1], 0, 1],
     }
     : {
-      nw: [outerX, outerY, 0, 0], ne: [outerX + 2, outerY, 1, 0],
-      se: [outerX + 2, outerY + 2, 1, 1], sw: [outerX, outerY + 2, 0, 1],
+      nw: [outerX, outerY, 0, 0], ne: [outerX + 2 * outerStride[0], outerY, 1, 0],
+      se: [outerX + 2 * outerStride[0], outerY + 2 * outerStride[1], 1, 1], sw: [outerX, outerY + 2 * outerStride[1], 0, 1],
     };
   for (const [index, corner] of ['nw', 'ne', 'se', 'sw'].entries()) {
     const selection = innerSelections[corner]; const [sx, sy, sw, sh] = sourceCell(...selection);
@@ -2112,8 +2114,8 @@ async function buildBlobRecipe({ root, recipe }) {
     }
     const inverseOrigin = negativeOuter ?? [outerX, outerY];
     const negativeInnerSelections = {
-      nw: [inverseOrigin[0], inverseOrigin[1], 0, 0], ne: [inverseOrigin[0] + 2, inverseOrigin[1], 1, 0],
-      se: [inverseOrigin[0] + 2, inverseOrigin[1] + 2, 1, 1], sw: [inverseOrigin[0], inverseOrigin[1] + 2, 0, 1],
+      nw: [inverseOrigin[0], inverseOrigin[1], 0, 0], ne: [inverseOrigin[0] + 2 * outerStride[0], inverseOrigin[1], 1, 0],
+      se: [inverseOrigin[0] + 2 * outerStride[0], inverseOrigin[1] + 2 * outerStride[1], 1, 1], sw: [inverseOrigin[0], inverseOrigin[1] + 2 * outerStride[1], 0, 1],
     };
     for (const [index, corner] of ['nw', 'ne', 'se', 'sw'].entries()) {
       const [sx, sy, sw, sh] = sourceCell(...negativeInnerSelections[corner]);
