@@ -99,10 +99,11 @@ via the backend's adaptive policy.
 
 The canonical counterpart is the [exercise bank](exercise-bank.md) at
 `data/content/music/` — stable `collection/id` references shared across
-surfaces, stored as seeds that expand into instances. It currently holds 35
-seeds yielding 1,992 performable instances (Hanon 1–30, plus notes, intervals,
-triads, sevenths, and modes), served read-only at `/api/v1/piano/bank`. No
-surface reads it yet, so each producer still owns its own content meanwhile.
+surfaces, stored as seeds that expand into instances. It currently holds 45
+seeds yielding 2,328 performable instances (Hanon 1–30, plus notes, intervals,
+triads, sevenths, modes, beginner drills, and chord progressions), served
+read-only at `/api/v1/piano/bank`. No surface reads it yet, so each producer
+still owns its own content meanwhile.
 
 ## Not yet provided
 
