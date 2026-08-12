@@ -257,6 +257,7 @@ import { YamlGamingSessionStore } from './1_adapters/persistence/yaml/gaming/Yam
 import { YamlPianoAttemptStore } from './1_adapters/persistence/yaml/gaming/YamlPianoAttemptStore.mjs';
 import { YamlExerciseBank } from './1_adapters/piano/YamlExerciseBank.mjs';
 import { PianoScaleChallengePolicy } from './3_applications/piano/PianoScaleChallengePolicy.mjs';
+import { BankChallengePolicy } from './3_applications/piano/BankChallengePolicy.mjs';
 import { scaleClashDefinition } from '#shared/gaming/fixtures/scaleClash.mjs';
 import { createWikipediaRouter } from './4_api/v1/routers/wikipedia.mjs';
 import { WikipediaAdapter } from './1_adapters/reference/WikipediaAdapter.mjs';
@@ -2239,7 +2240,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   v1Routers.piano = createPianoRouter({
     pianoContainer,
     pianoAttemptStore,
-    pianoChallengePolicy: new PianoScaleChallengePolicy({ attemptStore: pianoAttemptStore }),
+    // Challenges come from the exercise bank when it is installed, and fall back
+    // to the hardcoded curriculum when it is not — a kiosk with no content mount
+    // should still be able to play.
+    pianoChallengePolicy: exerciseBank.available()
+      ? new BankChallengePolicy({ exerciseBank, attemptStore: pianoAttemptStore })
+      : new PianoScaleChallengePolicy({ attemptStore: pianoAttemptStore }),
     exerciseBank,
     logger: rootLogger.child({ module: 'piano-api' })
   });

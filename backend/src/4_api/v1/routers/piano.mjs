@@ -2,7 +2,7 @@ import express from 'express';
 import { shortId } from '#domains/core/utils/id.mjs';
 import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/index.mjs';
 import { musicXmlToNotes } from '#shared/music/musicXmlToNotes.mjs';
-import { countInstances, expandSeed, instanceId, instanceIds, materializeById } from '#shared/music/exerciseBank.mjs';
+import { countInstances, expandSeed, instanceId, instanceIds, materializeById, searchBank } from '#shared/music/exerciseBank.mjs';
 import {
   PRODUCER_ID_RE,
   PRODUCER_SCHEMA_VERSION,
@@ -605,6 +605,25 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pi
     const index = exerciseBank.getIndex();
     // The manifest is generated; the directory is the truth if they disagree.
     res.json(index || { collections: exerciseBank.listCollections().map((id) => ({ id })) });
+  }));
+
+  // Search must be declared before /bank/:collection or "search" reads as one.
+  router.get('/bank/search', asyncHandler((req, res) => {
+    if (!bankReady(res)) return;
+    const q = req.query;
+    const number = (value, fallback) => (Number.isFinite(Number(value)) ? Number(value) : fallback);
+    const result = searchBank(exerciseBank.allSeeds(), {
+      mode: typeof q.mode === 'string' ? q.mode : 'free',
+      levelMin: number(q.level_min, 1),
+      levelMax: number(q.level_max, 10),
+      form: typeof q.form === 'string' ? q.form : null,
+      collection: typeof q.collection === 'string' ? q.collection : null,
+      hands: typeof q.hands === 'string' ? q.hands : null,
+      tags: typeof q.tags === 'string' ? q.tags.split(',').filter(Boolean) : null,
+      limit: Math.min(number(q.limit, 100), 500),
+      offset: Math.max(number(q.offset, 0), 0),
+    });
+    res.json(result);
   }));
 
   router.get('/bank/:collection', asyncHandler((req, res) => {

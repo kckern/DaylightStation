@@ -69,6 +69,15 @@ export class YamlExerciseBank {
       .sort();
   }
 
+  /** Every seed in the bank, for search. Small enough to read whole (tens of files). */
+  allSeeds() {
+    return this.listCollections().flatMap((collection) => (
+      this.listSeeds(collection)
+        .map((id) => this.getSeed(collection, id))
+        .filter(Boolean)
+    ));
+  }
+
   getSeed(collection, id) {
     // loadYaml appends the extension, so resolve on the bare id and check the file.
     const stem = this.#resolve(collection, id);
