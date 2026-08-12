@@ -128,10 +128,24 @@ describe('chord addressing', () => {
 
   it('renders a move as the two chords that perform it', () => {
     const pair = moveToChordPair('e2', 'e4');
-    expect(pair.notation).toBe('Em -> Eadd2');
+    expect(pair.notation).toBe('Em -> Em6');
     expect(pair.from.square).toBe('e2');
     expect(pair.to.square).toBe('e4');
     expect(moveToChordPair('e2', 'zz')).toBe(null);
+  });
+
+  it('no longer offers add2, and the replacement collides with nothing', () => {
+    expect(DEFAULT_CHORD_SCHEME.qualities).not.toContain('add2');
+    expect(DEFAULT_CHORD_SCHEME.qualities).toContain('minor6');
+    expect(findChordCollisions(DEFAULT_CHORD_SCHEME)).toEqual([]);
+    expect(validateChordScheme(DEFAULT_CHORD_SCHEME).valid).toBe(true);
+  });
+
+  it('names the replacement the same way the chord plaque would', () => {
+    // The plaque uses theory/chordNaming.js; the axis uses this table. They must agree
+    // on what the chord IS, even though one abbreviates and one spells out.
+    const notes = [60, 63, 67, 69]; // C E-flat G A
+    expect(identifyChord(notes, DEFAULT_CHORD_SCHEME).square).toBeTruthy();
   });
 });
 

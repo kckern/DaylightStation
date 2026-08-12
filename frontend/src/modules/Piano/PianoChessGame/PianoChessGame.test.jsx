@@ -273,7 +273,7 @@ describe('PianoChessGame settings wiring', () => {
 // prove the candidate count actually drives the read-out's verdict.
 describe('PianoChessGame chord read-out wiring', () => {
   // [60, 61, 62] is three adjacent semitones — no root/quality pair in the
-  // default scheme (major, minor, sus4, add2, seventh, add6, major7,
+  // default scheme (major, minor, sus4, minor6, seventh, add6, major7,
   // diminished) produces a pitch-class cluster that tight, so it settles to a
   // definite "no square" rather than a lucky match.
   const UNMAPPABLE_CHORD = new Map([[60, {}], [61, {}], [62, {}]]);

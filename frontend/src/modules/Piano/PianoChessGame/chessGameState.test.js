@@ -5,7 +5,7 @@ import {
 } from './chessGameState.js';
 import { advanceCursor, createCursorState } from './chordCursor.js';
 
-// e2 is the E-minor square, e4 the E-add2 square, under the default scheme.
+// e2 is the E-minor square, e4 the E-minor6 square, under the default scheme.
 const play = (state, ...squares) => squares.reduce((current, square) => applySquare(current, square).state, state);
 
 // The chord map is seeded and re-deals, so a test that needs "a piece the
@@ -46,7 +46,8 @@ describe('piano chess move flow', () => {
 
   it('records each move as the two chords that performed it', () => {
     const state = play(createChessGameState({ shuffleEachTurn: false }), 'e2', 'e4');
-    expect(state.history[0].chords).toEqual(['Em', 'Eadd2']);
+    // e4's quality is minor6 (rank index 3), label 'm6' — add2 no longer sits on the board.
+    expect(state.history[0].chords).toEqual(['Em', 'Em6']);
     expect(state.history[0].san).toBe('e4');
   });
 
