@@ -1,10 +1,11 @@
 import { buildTempoMap } from '../../MusicNotation/scoreTimeline.js';
 import { buildPerformanceTargets } from '../performance/performanceTargets.js';
 import {
-  advancePerformanceRun,
-  applyPerformancePress,
-  createPerformanceRun,
-} from '../performance/performanceJudge.js';
+  advanceAssessment,
+  applyAssessmentPress,
+  createAssessmentSession,
+  finalizeAssessment,
+} from '../performance/assessmentSession.js';
 
 export const HERO_DEFAULTS = {
   leadInMs: 3000,
@@ -43,12 +44,20 @@ export function buildHeroChart(score, options = {}) {
 }
 
 export function createHeroRun(chart) {
-  const performance = createPerformanceRun(chart?.targets || []);
+  const assessment = createAssessmentSession({
+    matcher: 'timed',
+    expectation: { targets: chart?.targets || [] },
+    policy: HERO_DEFAULTS,
+    grading: { rubric: { id: 'piano-hero-v1', version: '1' } },
+  });
   return {
-    ...performance,
+    ...assessment.run,
+    assessment,
     score: { points: 0, combo: 0, maxCombo: 0, perfect: 0, good: 0, misses: 0, wrong: 0 },
   };
 }
+
+const projectHeroRun = (assessment, score) => ({ ...assessment.run, assessment, score });
 
 // The ceiling has to clear the fastest written chart times the top practice
 // step, or the picker lies: Super Mario is charted at 216 BPM, and against a
@@ -85,40 +94,35 @@ export function applyHeroPress(run, pitch, elapsedMs, options = {}) {
   if (!Number.isFinite(cfg.perfectWindowMs)) cfg.perfectWindowMs = HERO_DEFAULTS.perfectWindowMs;
   if (!Number.isFinite(cfg.goodWindowMs)) cfg.goodWindowMs = HERO_DEFAULTS.goodWindowMs;
   if (!Number.isFinite(cfg.missWindowMs)) cfg.missWindowMs = HERO_DEFAULTS.missWindowMs;
-  const judged = applyPerformancePress(run, pitch, elapsedMs, cfg);
-  const next = judged.run;
+  const current = { ...run.assessment, policy: cfg };
+  const judged = applyAssessmentPress(current, pitch, elapsedMs);
   if (judged.event.type === 'unmatched_note') {
-    return { ...next, score: { ...run.score, combo: 0, wrong: run.score.wrong + 1 } };
+    return projectHeroRun(judged.session, { ...run.score, combo: 0, wrong: run.score.wrong + 1 });
   }
-  if (judged.event.type === 'target_partial') return { ...next, score: run.score };
+  if (judged.event.type === 'target_partial') return projectHeroRun(judged.session, run.score);
 
   const result = judged.event.result;
   const combo = run.score.combo + 1;
   const multiplier = Math.min(2, 1 + Math.floor(combo / 10) * 0.25);
   const base = result === 'perfect' ? 1000 : 600;
-  return {
-    ...next,
-    score: {
+  return projectHeroRun(judged.session, {
       ...run.score,
       points: run.score.points + Math.round(base * multiplier),
       combo,
       maxCombo: Math.max(run.score.maxCombo, combo),
       [result]: run.score[result] + 1,
-    },
-  };
+  });
 }
 
 /** Resolve targets whose timing window has passed. */
 export function advanceHeroRun(run, elapsedMs, options = {}) {
   const cfg = { ...HERO_DEFAULTS, ...options };
   if (!Number.isFinite(cfg.missWindowMs)) cfg.missWindowMs = HERO_DEFAULTS.missWindowMs;
-  const advanced = advancePerformanceRun(run, elapsedMs, cfg);
+  const current = { ...run.assessment, policy: cfg };
+  const advanced = advanceAssessment(current, elapsedMs);
   const misses = advanced.events.length;
   if (!misses) return run;
-  return {
-    ...advanced.run,
-    score: { ...run.score, combo: 0, misses: run.score.misses + misses },
-  };
+  return projectHeroRun(advanced.session, { ...run.score, combo: 0, misses: run.score.misses + misses });
 }
 
 export function heroAccuracy(run) {
@@ -127,4 +131,17 @@ export function heroAccuracy(run) {
   return Math.round(((run.score.perfect + run.score.good) / resolved) * 100);
 }
 
-export default { buildHeroChart, createHeroRun, applyHeroPress, advanceHeroRun, heroAccuracy, clampHeroTempo, retimeHeroChart };
+/** Portable musical assessment; Hero's points/combo remain a separate projection. */
+export function heroAssessment(run, options = {}) {
+  if (!run?.assessment) return null;
+  return finalizeAssessment(run.assessment, {
+    ...options,
+    diagnostics: {
+      perfect_targets: run.score?.perfect ?? 0,
+      good_targets: run.score?.good ?? 0,
+      ...options.diagnostics,
+    },
+  });
+}
+
+export default { buildHeroChart, createHeroRun, applyHeroPress, advanceHeroRun, heroAccuracy, heroAssessment, clampHeroTempo, retimeHeroChart };

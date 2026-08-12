@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { AbcRenderer } from '../../../MusicNotation/renderers/AbcRenderer.jsx';
 import { generateScaleAbc } from '../../../MusicNotation/renderers/abc.js';
-import { matchHeldSet } from '../../performance/heldSet.js';
 import { PianoKeyboard } from '../../components/PianoKeyboard.jsx';
-import { advanceScaleProgress } from './scaleProgress.js';
 import { WrongNoteGhost } from './WrongNoteGhost.jsx';
 import { scaleClefType } from './wrongNoteGhost.js';
-import { gradeChordPerformance, gradeOrderedPerformance, timingQuality } from '../../performance/grading.js';
+import {
+  advanceOrderedCursor,
+  classifyHeldNotes,
+  evaluateAssessment,
+  gradeAssessmentObservation,
+  timingQualityForBeat,
+} from '../../performance/assessmentSession.js';
 
 const EMPTY_NOTES = new Map();
 const EMPTY_HISTORY = [];
@@ -38,35 +42,21 @@ function assessmentFor(prepared, status, score, metrics) {
       : Number.isFinite(metrics.pitchAccuracy) ? metrics.pitchAccuracy : score,
     ...(Number.isFinite(metrics.timingAccuracy) ? { placement: metrics.timingAccuracy } : {}),
   };
-  const targetBpm = prepared.requirement?.gates?.pace?.target_bpm;
   const actualBpm = Number.isFinite(metrics.tempoBpm) ? metrics.tempoBpm : null;
-  const gates = Number.isFinite(targetBpm) ? {
-    pace: { passed: Number.isFinite(actualBpm) && actualBpm >= targetBpm, actual: actualBpm, target: targetBpm },
-  } : undefined;
-  const thresholds = prepared.requirement?.rubric?.criteria ?? {};
-  const thresholdEntries = Object.entries(thresholds);
-  const criteriaPassed = thresholdEntries.length
-    ? thresholdEntries.every(([name, threshold]) => (
-      Number.isFinite(criteria[name]) && criteria[name] >= threshold
-    ))
-    : score >= 0.6;
-  const passed = criteriaPassed && (!gates || Object.values(gates).every((gate) => gate.passed));
-  const diagnosticEntries = {
-    achieved_bpm: actualBpm,
-    wrong_notes: metrics.wrongNotes,
-    onset_spread_ms: metrics.onsetSpanMs,
-    duration_ms: metrics.durationMs,
-  };
   return {
     purpose: 'challenge',
-    criteria,
-    ...(gates ? { gates } : {}),
-    diagnostics: Object.fromEntries(Object.entries(diagnosticEntries).filter(([, value]) => Number.isFinite(value))),
-    rubric: {
-      id: prepared.requirement?.rubric?.id ?? prepared.grading_policy_version,
-      version: String(prepared.requirement?.rubric?.version ?? '1'),
-    },
-    verdict: { score, passed },
+    ...evaluateAssessment({
+      criteria,
+      score,
+      requirement: prepared.requirement,
+      achievedBpm: actualBpm,
+      diagnostics: {
+        wrong_notes: metrics.wrongNotes,
+        onset_spread_ms: metrics.onsetSpanMs,
+        duration_ms: metrics.durationMs,
+      },
+      rubric: { id: prepared.grading_policy_version, version: '1' },
+    }),
   };
 }
 
@@ -230,9 +220,10 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
         }
         const timestamps = [...heldNotes.values()].map((value) => value.timestamp).filter(Number.isFinite);
         const onsetSpanMs = timestamps.length > 1 ? Math.max(...timestamps) - Math.min(...timestamps) : 0;
-        const grading = gradeChordPerformance({
-          targetNotes: prompt.pitch_classes.length,
-          wrongAttempts: wrongNotes,
+        const grading = gradeAssessmentObservation({
+          matcher: 'held',
+          expectedCount: prompt.pitch_classes.length,
+          wrongNotes,
           onsetSpanMs,
         });
         finish(grading.score, {
@@ -262,7 +253,9 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
         const liveChordCard = view.prepared?.kind === 'chord'
           ? { root: view.prepared.prompt.root, pitchClasses: new Set(view.prepared.prompt.pitch_classes || []) }
           : null;
-        const liveChordMatch = matchHeldSet(activeNotes, liveChordCard);
+        const liveChordMatch = classifyHeldNotes(activeNotes, liveChordCard, {
+          equivalence: 'pitch-class', bassMustBeRoot: true,
+        });
         const historyCursor = useRef(null);
         const staffNotesRef = useRef([]);
         const challengeId = view.prepared?.challenge_id;
@@ -407,11 +400,9 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
               recordInput();
               const previousProgress = progress;
               const legacyRestart = kind === 'scale' && Boolean(prompt.max_mistakes);
-              const advanced = legacyRestart
-                ? advanceScaleProgress(prompt.expected_midi, progress, note)
-                : note === prompt.expected_midi[progress]
-                  ? { progress: progress + 1, wrong: false, complete: progress + 1 === prompt.expected_midi.length }
-                  : { progress, wrong: true, complete: false };
+              const advanced = advanceOrderedCursor(prompt.expected_midi, progress, note, {
+                restartOnWrong: legacyRestart,
+              });
               progress = advanced.progress;
               hadWrong ||= advanced.wrong;
               lastInput = {
@@ -443,7 +434,7 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
                 const beatMs = 60_000 / prompt.tempo_bpm;
                 const offset = prompt.target_offsets_ms?.[previousProgress] ?? previousProgress * beatMs;
                 const targetAt = attemptStartedAt + (prompt.lead_in_ms || 0) + offset;
-                const quality = timingQuality(entry.startTime, targetAt, beatMs);
+                const quality = timingQualityForBeat(entry.startTime, targetAt, beatMs);
                 if (quality !== null) timingQualities.push(quality);
               }
               if (advanced.complete) {
@@ -451,7 +442,8 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
                 publish({ progress, hadWrong, lastInput });
                 const grading = legacyRestart
                   ? { score: firstTry ? 1 : 0.5, pitchAccuracy: firstTry ? 1 : 0.5, timingAccuracy: null, continuity: firstTry ? 1 : 0.5 }
-                  : gradeOrderedPerformance({
+                  : gradeAssessmentObservation({
+                    matcher: 'cursor',
                     expectedCount: prompt.expected_midi.length,
                     wrongNotes,
                     timingQualities,

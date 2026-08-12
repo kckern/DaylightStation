@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { getChildLogger } from '../../../lib/logging/singleton.js';
 import { shuffle, buildNotePool } from '../noteUtils.js';
+import { classifyHeldNotes } from '../performance/assessmentSession.js';
 
 // ─── Constants ──────────────────────────────────────────────────
 
@@ -184,10 +185,13 @@ function pickChordCluster(pool, used, count) {
  * @returns {boolean}
  */
 export function isActionMatched(activeNotes, targetPitches) {
-  for (const pitch of targetPitches) {
-    if (!activeNotes.has(pitch)) return false;
-  }
-  return true;
+  // An empty action remains vacuously matched for the public helper's existing
+  // contract. The hook itself skips empty actions before asking.
+  if (!targetPitches?.length) return true;
+  return classifyHeldNotes(activeNotes, { pitches: targetPitches }, {
+    equivalence: 'midi',
+    allowExtras: true,
+  }) === 'correct';
 }
 
 // ─── React Hook ─────────────────────────────────────────────────

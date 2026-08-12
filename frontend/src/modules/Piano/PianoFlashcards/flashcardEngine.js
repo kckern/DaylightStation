@@ -1,6 +1,6 @@
 import { shuffle, buildNotePool } from '../noteUtils.js';
 import { spellNoteName, rootQualityOf } from '../../MusicNotation/model/spelling.js';
-import { matchHeldSet } from '../performance/heldSet.js';
+import { classifyHeldNotes } from '../performance/assessmentSession.js';
 
 /**
  * Generate random pitches for a flashcard.
@@ -29,32 +29,12 @@ export function generateCardPitches(noteRange, complexity = 'single', whiteKeysO
  * @returns {'idle'|'correct'|'wrong'|'partial'}
  */
 export function evaluateMatch(activeNotes, targetPitches) {
-  if (!activeNotes || activeNotes.size === 0 || !targetPitches?.length) {
-    return 'idle';
-  }
-
-  const targetSet = new Set(targetPitches);
-  let correctCount = 0;
-  let hasWrong = false;
-
-  for (const [note] of activeNotes) {
-    if (targetSet.has(note)) correctCount++;
-    else hasWrong = true;
-  }
-
-  if (correctCount === targetPitches.length) {
-    return 'correct';
-  }
-
-  if (hasWrong) {
-    return 'wrong';
-  }
-
-  if (correctCount > 0) {
-    return 'partial';
-  }
-
-  return 'idle';
+  return classifyHeldNotes(activeNotes, { pitches: targetPitches }, {
+    equivalence: 'midi',
+    // Note-reading cards historically accept the requested pitches inside a
+    // larger held set. Chord-spelling cards below deliberately do not.
+    allowExtras: true,
+  });
 }
 
 // ─── Chord-spelling cards ───────────────────────────────────────
@@ -167,7 +147,10 @@ export function chordMissReason(activeNotes, card) {
  * @returns {'idle'|'correct'|'wrong'|'partial'}
  */
 export function evaluateChordMatch(activeNotes, card) {
-  return matchHeldSet(activeNotes, card);
+  return classifyHeldNotes(activeNotes, card, {
+    equivalence: 'pitch-class',
+    bassMustBeRoot: true,
+  });
 }
 
 /**

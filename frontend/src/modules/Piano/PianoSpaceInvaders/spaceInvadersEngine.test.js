@@ -12,6 +12,7 @@ import {
   cleanupResolvedNotes,
   evaluateLevel,
   TOTAL_HEALTH,
+  assessSpaceInvaders,
 } from './spaceInvadersEngine.js';
 
 // ─── createInitialState ─────────────────────────────────────────
@@ -151,6 +152,14 @@ describe('applyScore', () => {
     expect(result.points).toBeGreaterThan(100); // multiplied
     expect(result.perfects).toBe(1);
   });
+
+  it('preserves wrong-note observations across later successful hits', () => {
+    const score = {
+      points: 0, combo: 0, maxCombo: 0, perfects: 0, goods: 0, misses: 0, wrong: 2,
+    };
+    const config = { perfect_points: 100, good_points: 50, combo_multiplier: 0.1 };
+    expect(applyScore(score, 'perfect', config).wrong).toBe(2);
+  });
 });
 
 // ─── evaluateLevel ──────────────────────────────────────────────
@@ -176,5 +185,17 @@ describe('evaluateLevel', () => {
   it('returns null when game is still in progress', () => {
     const score = { points: 500, misses: 2 };
     expect(evaluateLevel(score, levelConfig, TOTAL_HEALTH)).toBeNull();
+  });
+});
+
+describe('common assessment projection', () => {
+  it('keeps points separate from musical completeness, cleanliness, and placement', () => {
+    const assessment = assessSpaceInvaders({
+      points: 9999, perfects: 3, goods: 1, misses: 1, wrong: 1,
+    });
+    expect(assessment.rubric.id).toBe('space-invaders-v1');
+    expect(assessment.criteria.completeness).toBe(0.8);
+    expect(assessment.criteria.cleanliness).toBe(0.8);
+    expect(assessment.criteria.placement).toBe(0.9);
   });
 });

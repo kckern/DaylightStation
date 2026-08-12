@@ -15,6 +15,11 @@
  *   destroyedKeys: Map<pitch, { destroyedAt, cooldownMs }>,
  * }
  */
+import {
+  applyAssessmentPress,
+  createAssessmentSession,
+  evaluateAssessment,
+} from '../performance/assessmentSession.js';
 
 const DEFAULT_FALL_DURATION_MS = 2500; // Default; overridable per level via fall_duration_ms
 export const TOTAL_HEALTH = 28; // Mega Man life meter notch count
@@ -26,7 +31,7 @@ export function createInitialState() {
     phase: 'IDLE',
     levelIndex: 0,
     fallingNotes: [],
-    score: { points: 0, combo: 0, maxCombo: 0, perfects: 0, goods: 0, misses: 0 },
+    score: { points: 0, combo: 0, maxCombo: 0, perfects: 0, goods: 0, misses: 0, wrong: 0 },
     health: TOTAL_HEALTH,
     wrongStreak: 0,
     countdown: null,
@@ -44,7 +49,7 @@ export function resetForLevel(state, levelIndex) {
     phase: 'PLAYING',
     levelIndex,
     fallingNotes: [],
-    score: { points: 0, combo: 0, maxCombo: 0, perfects: 0, goods: 0, misses: 0 },
+    score: { points: 0, combo: 0, maxCombo: 0, perfects: 0, goods: 0, misses: 0, wrong: 0 },
     health: TOTAL_HEALTH,
     wrongStreak: 0,
     countdown: null,
@@ -221,72 +226,63 @@ export function maybeSpawnNote(state, level, now) {
  * @returns {{ state, result }} where result is 'perfect'|'good'|null
  */
 export function processHit(state, pitch, now, timingConfig, mode = 'hero') {
-  const { perfect_ms, good_ms } = timingConfig;
-
-  let bestIdx = -1;
-  let bestDelta = Infinity;
-
-  for (let i = 0; i < state.fallingNotes.length; i++) {
-    const fg = state.fallingNotes[i];
-    if (fg.state !== 'falling') continue;
-    if (!fg.pitches.includes(pitch)) continue;
-    if (fg.hitPitches.has(pitch)) continue;
-
-    if (mode === 'invaders') {
-      // Invaders mode: any visible falling note is hittable — pick the closest to bottom
-      const delta = Math.abs(now - fg.targetTime);
-      if (delta < bestDelta) {
-        bestIdx = i;
-        bestDelta = delta;
-      }
-    } else {
-      // Hero mode: must be within timing window
-      const delta = Math.abs(now - fg.targetTime);
-      if (delta <= good_ms && delta < bestDelta) {
-        bestIdx = i;
-        bestDelta = delta;
-      }
-    }
-  }
-
-  if (bestIdx === -1) {
-    return { state, result: null };
-  }
-
-  const fg = state.fallingNotes[bestIdx];
-  const delta = Math.abs(now - fg.targetTime);
-
-  // Invaders: always perfect. Hero: timing-based quality.
-  const hitQuality = mode === 'invaders'
-    ? 'perfect'
-    : delta <= perfect_ms ? 'perfect' : 'good';
-
-  const updatedHitPitches = new Set(fg.hitPitches);
-  updatedHitPitches.add(pitch);
-
-  const allHit = fg.pitches.every(p => updatedHitPitches.has(p));
-
-  const updatedNote = {
-    ...fg,
-    hitPitches: updatedHitPitches,
-    state: allHit ? 'hit' : 'falling',
-    hitResult: allHit ? hitQuality : fg.hitResult,
-    resolvedTime: allHit ? now : fg.resolvedTime,
-  };
-
+  const judged = judgeFallingPress(state.fallingNotes, pitch, now, timingConfig, mode);
+  if (!judged) return { state, result: null };
   const updatedNotes = [...state.fallingNotes];
-  updatedNotes[bestIdx] = updatedNote;
+  updatedNotes[judged.index] = judged.note;
+  return { state: { ...state, fallingNotes: updatedNotes }, result: judged.result };
+}
 
-  if (!allHit) {
-    return {
-      state: { ...state, fallingNotes: updatedNotes },
-      result: null,
-    };
-  }
-
+/** Adapt falling-note state to the common timed matcher, then project it back. */
+function judgeFallingPress(fallingNotes, pitch, now, timingConfig = {}, mode = 'hero', { visibleTarget = false } = {}) {
+  const candidates = fallingNotes
+    .map((note, index) => ({ note, index }))
+    .filter(({ note }) => note.state === 'falling');
+  if (!candidates.length) return null;
+  const targets = candidates.map(({ note }) => ({
+    id: note.id,
+    pitches: note.pitches,
+    targetTimeMs: note.targetTime,
+    state: 'pending',
+    hitPitches: [...note.hitPitches],
+    drifts: [...(note.hitDrifts || [])],
+    resolvedAt: note.resolvedTime ?? null,
+    result: note.hitResult,
+  }));
+  const openWindow = mode === 'invaders' || visibleTarget ? Infinity : timingConfig.good_ms;
+  const session = createAssessmentSession({
+    matcher: 'timed', expectation: { targets }, policy: {
+      perfectWindowMs: mode === 'invaders' ? Infinity : timingConfig.perfect_ms,
+      goodWindowMs: openWindow,
+      matchWindowMs: openWindow,
+      missWindowMs: timingConfig.miss_threshold_ms,
+    },
+  });
+  session.run = { targets, unmatched: [] };
+  const judged = applyAssessmentPress(session, pitch, now);
+  if (judged.event.type === 'unmatched_note') return null;
+  const target = judged.session.run.targets.find((entry) => entry.id === judged.event.targetId);
+  const candidate = candidates.find(({ note }) => note.id === judged.event.targetId);
+  if (!target || !candidate) return null;
+  const complete = judged.event.type === 'target_hit';
+  const projectedResult = complete
+    ? mode === 'invaders' || Math.abs(now - candidate.note.targetTime) <= timingConfig.perfect_ms
+      ? 'perfect'
+      : 'good'
+    : null;
   return {
-    state: { ...state, fallingNotes: updatedNotes },
-    result: hitQuality,
+    index: candidate.index,
+    // Space Invaders awards points from the final laser's timing, while the
+    // common target retains every chord pitch drift for musical assessment.
+    result: projectedResult,
+    note: {
+      ...candidate.note,
+      hitPitches: new Set(target.hitPitches),
+      hitDrifts: target.drifts,
+      state: complete ? 'hit' : 'falling',
+      hitResult: complete ? projectedResult : candidate.note.hitResult,
+      resolvedTime: complete ? now : candidate.note.resolvedTime,
+    },
   };
 }
 
@@ -302,12 +298,12 @@ export function applyScore(score, hitQuality, scoringConfig) {
   const earnedPoints = Math.round(basePoints * multiplier);
 
   return {
+    ...score,
     points: score.points + earnedPoints,
     combo: newCombo,
     maxCombo: Math.max(score.maxCombo, newCombo),
     perfects: score.perfects + (hitQuality === 'perfect' ? 1 : 0),
     goods: score.goods + (hitQuality === 'good' ? 1 : 0),
-    misses: score.misses,
   };
 }
 
@@ -480,30 +476,16 @@ export function checkLaserCollisions(state, now, fallDuration, laserTravelMs, mo
 
       // Collision: laser has reached or passed the note's position
       if (laserTopPercent <= noteTopPercent + 5) {
-        // Hit detected
-        const delta = Math.abs(now - note.targetTime);
-        const hitQuality = mode === 'invaders'
-          ? 'perfect'
-          : delta <= (timingConfig.perfect_ms ?? 100) ? 'perfect' : 'good';
-
-        const updatedHitPitches = new Set(note.hitPitches);
-        updatedHitPitches.add(laser.pitch);
-        const allHit = note.pitches.every(p => updatedHitPitches.has(p));
-
-        updatedNotes[ni] = {
-          ...note,
-          hitPitches: updatedHitPitches,
-          state: allHit ? 'hit' : 'falling',
-          hitResult: allHit ? hitQuality : note.hitResult,
-          resolvedTime: allHit ? now : note.resolvedTime,
-        };
+        const judged = judgeFallingPress([note], laser.pitch, now, timingConfig, mode, { visibleTarget: true });
+        if (!judged) continue;
+        updatedNotes[ni] = judged.note;
 
         // Deactivate the laser
         updatedLasers[li] = { ...laser, active: false, deactivatedAt: now };
         changed = true;
 
-        if (allHit) {
-          hits.push({ pitch: laser.pitch, hitResult: hitQuality });
+        if (judged.result) {
+          hits.push({ pitch: laser.pitch, hitResult: judged.result });
         }
         break; // Each laser hits at most one note
       }
@@ -541,6 +523,27 @@ export function processDestroyedKeys(state, now) {
     state: { ...state, destroyedKeys: remaining },
     rebuilt,
   };
+}
+
+/** Portable level assessment; points/health remain Space Invaders projections. */
+export function assessSpaceInvaders(score) {
+  const hits = (score?.perfects || 0) + (score?.goods || 0);
+  const resolved = hits + (score?.misses || 0);
+  const criteria = {
+    completeness: resolved > 0 ? hits / resolved : 0,
+    cleanliness: hits + (score?.wrong || 0) > 0 ? hits / (hits + (score?.wrong || 0)) : 0,
+    placement: hits > 0 ? ((score?.perfects || 0) + 0.6 * (score?.goods || 0)) / hits : 0,
+  };
+  return evaluateAssessment({
+    criteria,
+    rubric: { id: 'space-invaders-v1', version: '1' },
+    diagnostics: {
+      perfect_targets: score?.perfects || 0,
+      good_targets: score?.goods || 0,
+      missed_targets: score?.misses || 0,
+      wrong_notes: score?.wrong || 0,
+    },
+  });
 }
 
 // ─── Constants ──────────────────────────────────────────────────

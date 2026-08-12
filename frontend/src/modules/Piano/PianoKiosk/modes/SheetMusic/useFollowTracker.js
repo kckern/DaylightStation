@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
-import { expectedMidisAtStep, isStepSatisfied } from './activeParts.js';
+import { expectedMidisAtStep } from './activeParts.js';
 import { nextPlayableStep } from './focusRange.js';
+import { classifyCursorStep } from '../../../performance/assessmentSession.js';
 
 /**
  * useFollowTracker — full-hand Follow tracking. Advances the cursor only once
@@ -78,10 +79,11 @@ export function useFollowTracker({ enabled, steps, activeParts, step, subscribe,
       const stepObj = stepsRef.current?.[stepRef.current];
       if (!stepObj) return; // end of piece / empty — no throw, no advance
       const expected = expectedMidisAtStep(stepObj, activePartsRef.current || {});
-      if (expected.has(evt.note)) {
-        struckRef.current.add(evt.note);
+      const judged = classifyCursorStep(expected, struckRef.current, evt.note, { plausibilityWindow: 24 });
+      struckRef.current = judged.struck;
+      if (judged.status === 'hit' || judged.status === 'complete') {
         onHitRef.current?.(evt.note);
-        if (isStepSatisfied(expected, struckRef.current)) {
+        if (judged.complete) {
           // With a focus range active, wrap back to its in-point after the
           // out-point (loop the section); otherwise advance linearly, skipping
           // any step these hands have nothing to play at. Reaching the final
@@ -100,10 +102,7 @@ export function useFollowTracker({ enabled, steps, activeParts, step, subscribe,
         }
         return;
       }
-      // Plausible wrong note: within 2 octaves of anything expected here.
-      for (const m of expected) {
-        if (Math.abs(evt.note - m) <= 24) { onWrongRef.current?.(evt.note); return; }
-      }
+      if (judged.status === 'wrong') onWrongRef.current?.(evt.note);
     });
   }, [enabled, subscribe]);
 }
