@@ -254,6 +254,13 @@ milestones rather than extra steps.
 - **Practice** is wait-for-correct and can never open a gate. **Pass challenge**
   uses the requirement's tempo/rubric and writes portable assessment evidence.
 
+`ExerciseRun.jsx` selects the common assessment matcher from the authored
+material and run intent: cursor for self-paced strict sequences, held-set for
+order-free chords, and timed for paced challenges. All three finish through the
+same rubric/gate evaluator in `performance/assessmentSession.js`; only the
+notation cursor, feedback text, and practice/challenge navigation remain local
+to the Exercises workspace.
+
 Learner enrollments and pending video checkpoints live under
 `users/<id>/apps/piano/learning.yml`. Teacher assignments live under the
 household piano app with an append-only assignment history and use the existing

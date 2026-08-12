@@ -1,4 +1,7 @@
-import { gradeBand, gradeOrderedPerformance, timingQualityFromDrift } from '../../../performance/grading.js';
+import {
+  createAssessmentSession,
+  gradeAssessmentSpan,
+} from '../../../performance/assessmentSession.js';
 
 /**
  * Per-measure scoring for Sheet Music "Polish" mode.
@@ -38,63 +41,19 @@ const DEFAULTS = {
  * accuracy instead of disappearing from the result.
  */
 export function gradePerformanceMeasure(measure, cfg) {
-  const targets = Array.isArray(measure?.targets) ? measure.targets : [];
-  const unmatched = Array.isArray(measure?.unmatched) ? measure.unmatched : [];
-  const expectedCount = targets.reduce((sum, target) => sum + (target.pitches?.length || 0), 0);
-  const matchedDrifts = targets.flatMap((target) => target.drifts || []);
-  const matchedCount = matchedDrifts.length;
-  const wrongCount = unmatched.length;
-
-  const toleranceMs = Number.isFinite(cfg?.timingToleranceMs) ? cfg.timingToleranceMs : DEFAULTS.timingToleranceMs;
-  const windowMs = Number.isFinite(cfg?.timingWindowMs) ? cfg.timingWindowMs : DEFAULTS.timingWindowMs;
-  const thresholds = { ...DEFAULTS.thresholds, ...(cfg?.thresholds || {}) };
-
-  const rest = expectedCount === 0;
-  // A bar of rests is passed by staying silent through it, which no accuracy
-  // model expresses — so it is answered before the graders are asked.
-  if (rest) {
-    const clean = wrongCount === 0;
-    return {
-      noteScore: clean ? 1 : 0,
-      timingScore: clean ? 1 : 0,
-      combined: clean ? 1 : 0,
-      grade: gradeBand(clean ? 1 : 0, thresholds),
-      silent: false,
-      rest: true,
-      expectedCount: 0,
-      matchedCount: 0,
-      wrongCount,
-      policyVersion: POLICY_VERSION,
-    };
-  }
-
-  const graded = gradeOrderedPerformance({
-    expectedCount,
-    wrongNotes: wrongCount,
-    // A timed score can be played straight past, so notes go unstruck here in a
-    // way a drill cannot manage.
-    missedNotes: Math.max(0, expectedCount - matchedCount),
-    timingQualities: matchedDrifts
-      .map((drift) => timingQualityFromDrift(drift, { toleranceMs, windowMs }))
-      .filter((value) => value !== null),
-    paced: true,
-    weights: cfg?.weights,
-  });
-
+  const targets = (Array.isArray(measure?.targets) ? measure.targets : [])
+    .map((target, index) => ({ id: target.id ?? index, measureIndex: 0, ...target }));
+  const unmatched = (Array.isArray(measure?.unmatched) ? measure.unmatched : [])
+    .map((event) => ({ measureIndex: 0, ...event }));
+  const session = createAssessmentSession({ matcher: 'timed', expectation: { targets } });
+  session.run = { targets, unmatched };
   return {
-    // The old field names are kept: they are what the overlay and the practice
-    // record already read, and renaming them would be a second change riding on
-    // this one.
-    noteScore: graded.pitchAccuracy,
-    timingScore: graded.timingAccuracy ?? 0,
-    combined: graded.score,
-    grade: gradeBand(graded.score, thresholds),
-    silent: matchedCount === 0 && wrongCount === 0,
-    rest: false,
-    expectedCount,
-    matchedCount,
-    wrongCount,
-    continuity: graded.continuity,
+    ...gradeAssessmentSpan(session, 0, {
+      timingToleranceMs: Number.isFinite(cfg?.timingToleranceMs) ? cfg.timingToleranceMs : DEFAULTS.timingToleranceMs,
+      timingWindowMs: Number.isFinite(cfg?.timingWindowMs) ? cfg.timingWindowMs : DEFAULTS.timingWindowMs,
+      thresholds: { ...DEFAULTS.thresholds, ...(cfg?.thresholds || {}) },
+      weights: cfg?.weights,
+    }),
     policyVersion: POLICY_VERSION,
   };
 }

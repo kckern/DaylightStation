@@ -25,7 +25,10 @@ import usePracticeRecord from './usePracticeRecord.js';
 import { bucketOf } from './practiceKey.js';
 import { pickLearnRange } from './learnRange.js';
 import { resolveSheetMusicConfig } from './sheetMusicConfig.js';
-import { tallyGrades, worstSpan } from '../../../performance/spans.js';
+import {
+  findWorstAssessmentSpan,
+  tallyAssessmentGrades,
+} from '../../../performance/assessmentSession.js';
 import { tierOf, runScore, displayScore } from './polishTiers.js';
 import { loadScoreSettings, saveScoreSettings } from './scoreSettings.js';
 import { isRisingEdge } from './pedalEdge.js';
@@ -743,7 +746,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     const base = runScore(all);              // 0-100 mean over the non-rest measures
     const run = { grades: all, tier, mixed, base, completed, score: displayScore(base, tier) };
     setSummaryRun(run);
-    const t = tallyGrades(all);
+    const t = tallyAssessmentGrades(all);
     logRunSummary({
       greens: t.green, yellows: t.yellow, reds: t.red, overall: t.overall,
       // The tier outcome ships on EVERY path that opens the panel — completion,
@@ -1665,7 +1668,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // trouble span and drop into Learn to work it slowly (audit J6). Switch mode
   // FIRST (learn↔polish keeps focus per J3), then set the range so it survives.
   const onDrillWorst = useCallback(() => {
-    const span = worstSpan(gradesRef.current);
+    const span = findWorstAssessmentSpan(gradesRef.current);
     if (!span) return;
     setSummaryOpen(false);
     onMode('learn');
@@ -1675,7 +1678,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     logger.info('score.drill.worst', span);
   }, [onMode, logger]);
   // The Drill button only makes sense when there's a trouble span to drill.
-  const drillable = useMemo(() => worstSpan(grades) != null, [grades]);
+  const drillable = useMemo(() => findWorstAssessmentSpan(grades) != null, [grades]);
 
   // ── Polish tempo tiers: live readout + summary props (wave-3 H) ──────────────
   // The bar's score prefix. Derived from `grades`, so it moves on a per-MEASURE

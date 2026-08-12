@@ -7,6 +7,7 @@
 // See lessonTypes.js for the catalog these primitives back.
 
 import { Chord, Scale, Interval, Note, Progression } from 'tonal';
+import { classifyHeldNotes } from '../performance/assessmentSession.js';
 
 /** MIDI note number → scientific name, e.g. 60 → "C4". */
 export const midiToName = (midi) => Note.fromMidi(midi);
@@ -32,7 +33,10 @@ export function expectedChordChroma(symbol) {
 export function gradeChord(symbol, midiNotes) {
   const want = expectedChordChroma(symbol);
   const got = new Set(midiNotes.map(midiToChroma));
-  const correct = want.size === got.size && [...want].every((c) => got.has(c));
+  const activeNotes = new Map(midiNotes.map((midi) => [midi, {}]));
+  const correct = classifyHeldNotes(activeNotes, { pitchClasses: want }, {
+    equivalence: 'pitch-class', bassMustBeRoot: false,
+  }) === 'correct';
   return {
     correct,
     expected: [...want],
@@ -49,7 +53,9 @@ export function gradeInterval(refMidi, intervalName, playedMidi) {
   const expectedSemitones = Interval.semitones(intervalName);
   const playedSemitones = playedMidi - refMidi;
   return {
-    correct: playedSemitones === expectedSemitones,
+    correct: classifyHeldNotes(new Map([[playedMidi, {}]]), {
+      pitches: [refMidi + expectedSemitones],
+    }, { equivalence: 'midi', allowExtras: false }) === 'correct',
     expectedSemitones,
     playedSemitones,
   };
@@ -68,7 +74,13 @@ export function gradeScaleStep(name, index, playedMidi) {
   const chromas = scaleChromas(name);
   if (chromas.length === 0) return { correct: false, expected: null, index };
   const expected = chromas[index % chromas.length];
-  return { correct: midiToChroma(playedMidi) === expected, expected, index };
+  return {
+    correct: classifyHeldNotes(new Map([[playedMidi, {}]]), {
+      root: expected, pitchClasses: new Set([expected]),
+    }, { equivalence: 'pitch-class', bassMustBeRoot: false }) === 'correct',
+    expected,
+    index,
+  };
 }
 
 /**

@@ -5,6 +5,7 @@ import {
   buildHeroChart,
   createHeroRun,
   heroAccuracy,
+  heroAssessment,
   retimeHeroChart,
 } from './heroChart.js';
 
@@ -100,5 +101,15 @@ describe('Piano Hero judging', () => {
     const run = applyHeroPress(createHeroRun(chart), 64, 800);
     expect(run.targets[1].state).toBe('pending');
     expect(run.score.wrong).toBe(1);
+  });
+
+  it('projects the game run through the common musical assessment', () => {
+    let run = createHeroRun(chart);
+    run = applyHeroPress(run, 60, 0);
+    run = advanceHeroRun(run, 2000);
+    const assessment = heroAssessment(run, { achievedBpm: 120 });
+    expect(assessment.rubric.id).toBe('piano-hero-v1');
+    expect(assessment.criteria).toMatchObject({ completeness: 0.25, cleanliness: 1 });
+    expect(assessment.criteria.placement).toBe(1);
   });
 });

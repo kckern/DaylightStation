@@ -62,8 +62,10 @@ The ownership boundary is strict:
 - A chord prompt carries its pitch-class set and expected bass, not just an
   ordered `expected_midi`: held-set material is judged on what is down at once,
   and a sequence array cannot express that.
-- The provider renders the staff directly from `expected_midi` and grades the same array,
-  persists completed/interrupted attempts, and terminates on timeout or MIDI disconnect.
+- The provider renders the staff from the prepared prompt and sends held chords,
+  ordered sequences, timing observations, and the prepared requirement through
+  `performance/assessmentSession.js`. It persists completed/interrupted attempts
+  and terminates on timeout or MIDI disconnect.
 - The Gaming authority persists every lifecycle boundary, route/gym draw, health,
   recruitment choice, finisher use, queued ceremony, suspension, explicit abandonment,
   and stale-session recovery.
@@ -119,38 +121,48 @@ want to replay before this pattern is generalized to more games.
 
 The piano game system lets users play games using a MIDI keyboard. Players press specific notes (displayed as music notation on staves or as falling note bars) to trigger game actions. A shared activation layer detects combo keypresses to launch games, and a config-driven level system controls difficulty progression.
 
+### Shared judgement and grading
+
+Musical assessment is not a game-engine responsibility. Games call the same
+parameterized [performance assessment service](./performance-assessment.md) as
+Exercises and Sheet Music, then project its events and result into their own
+mechanics:
+
+| Game | Shared service use | Game-owned behavior | Advancement evidence |
+|---|---|---|---|
+| Piano Hero | timed target matching, misses, timing criteria, portable run result | points, combo, highway effects | in memory by default |
+| Space Invaders | timed target matching and common level criteria | lasers, health, points, combo | in memory by default |
+| Flashcards | exact-MIDI and pitch-class held matching; common session result | card score, level ladder, rolling accuracy | in memory by default |
+| Battle Stadium | held chords or ordered cursor, timing dimensions, rubric and pace gate | move strength, damage, campaign flow | bank-backed challenges persist to the piano ledger |
+| Tetris | exact-MIDI held command recognition | movement, rotations, line score, repeat timing | none |
+| Side Scroller | reuses Tetris's shared held-command hook | running/jumping and game score | none |
+| Piano Chess | none; chord addresses are controller input, not a performance expectation | square selection and chess state | none |
+
+Hero points, Space Invaders health, Flashcard points, card-game damage, and
+Tetris/Side Scroller scores remain deliberately local projections. Only the
+common musical criteria, gates, diagnostics, rubric identity, and verdict are
+portable. Ordinary game sessions never unlock a curriculum implicitly; a game
+must be launched with a persistent user and a stable bank requirement before
+its result is eligible evidence.
+
 ### High-Level Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     MIDI INPUT                              │
-│  ┌───────────┐                                              │
-│  │ USB MIDI   │──── useMidiSubscription() ──┐               │
-│  │ Keyboard   │     activeNotes: Map        │               │
-│  └───────────┘                              │               │
-└─────────────────────────────────────────────┼───────────────┘
-                                              │
-┌─────────────────────────────────────────────┼───────────────┐
-│                  PIANO VISUALIZER            │               │
-│  usePianoConfig() → gamesConfig             │               │
-│  useSessionTracking() → sessionDuration     │               │
-│  useInactivityTimer() → countdown/close     │               │
-│                                              ▼               │
-│  ┌──────────────────────────────────────────────┐           │
-│  │ useGameActivation(activeNotes, gamesConfig)  │           │
-│  │  - Combo detection (e.g. G1+G7)              │           │
-│  │  - URL auto-activate (/office/piano/:gameId) │           │
-│  │  - Dev shortcut (backtick key)               │           │
-│  └──────────────┬───────────────────────────────┘           │
-│                 │ activeGameId                               │
-│                 ▼                                            │
-│  ┌───────────────────────────────────┐                      │
-│  │ if rhythm     → RhythmOverlay     │  (waterfall layout)  │
-│  │ if tetris     → PianoTetris       │  (replace layout)    │
-│  │ if flashcards → PianoFlashcards   │  (replace layout)    │
-│  │ else          → NoteWaterfall     │                      │
-│  └───────────────────────────────────┘                      │
-└─────────────────────────────────────────────────────────────┘
+PianoMidiContext ── activeNotes + noteHistory ──▶ Games route
+                                                     │
+                                      /piano/games/:gameId
+                                                     │
+                                                     ▼
+                                                GameHost
+                                                     │
+                                      gameRegistry lazy entry
+                                                     │
+                                                     ▼
+       Battle Stadium | Space Invaders | Tetris | Flashcards
+       Piano Hero | Side Scroller | Piano Chess
+                                                     │
+                                                     ▼
+                                    assessmentSession as needed
 ```
 
 ---
@@ -159,20 +171,23 @@ The piano game system lets users play games using a MIDI keyboard. Players press
 
 **Hook:** `useGameActivation.js`
 
-All games (including rhythm) use `useGameActivation` for activation. Games are activated by holding a chord of MIDI notes simultaneously within a time window.
+The kiosk's primary `/piano/games` flow uses routed tiles and `GameHost`.
+`useGameActivation` remains for the standalone `PianoVisualizer` screen widget,
+where a configured held chord or `initialGame` can activate a registry entry.
+Activation chords are controller input and intentionally bypass assessment.
 
 | Mechanism | Details |
 |-----------|---------|
 | Combo detection | All notes in `activation.notes` held within `window_ms` |
 | Toggle | Same combo re-pressed while active → deactivate |
 | Cooldown | 2-second cooldown prevents rapid re-triggering |
-| URL activation | `/office/piano/:gameId` auto-activates on mount |
+| Initial activation | the embedding screen may pass an `initialGame` id |
 | Dev shortcut | Backtick key cycles through games (localhost only) |
 
 **Config (piano.yml):**
 ```yaml
 games:
-  rhythm:
+  space-invaders:
     activation:
       notes: [30, 102]    # F#1 + F#7
       window_ms: 300
@@ -184,12 +199,6 @@ games:
     activation:
       notes: [29, 101]    # F1 + F7
       window_ms: 300
-```
-
-**Route setup (main.jsx):**
-```
-/office/piano/:gameId  →  OfficeApp(initialGame) → PianoVisualizer → useGameActivation
-/office/piano          →  same, no auto-activate
 ```
 
 ---
@@ -204,14 +213,13 @@ PianoVisualizer is a pure layout composition component. It does not contain game
 - `usePianoConfig()` — loads device/app config, fires HA scripts on open/close
 - `useMidiSubscription()` — MIDI input (activeNotes, noteHistory, sustainPedal)
 - `useGameActivation()` — detects combo presses, returns `activeGameId`
-- `useRhythmGame()` — rhythm game state (only active when rhythm is selected)
 - `useInactivityTimer()` — grace period + countdown → auto-close
 - `useSessionTracking()` — session duration timer
 
 **Rendering modes:**
 - **No game active:** Waterfall visualization + chord staff + keyboard + session timer
-- **Rhythm game:** Waterfall + falling notes + health meter + RhythmOverlay + keyboard
-- **Fullscreen game (tetris/flashcards):** Lazy-loaded via `gameRegistry.js` LazyComponent, rendered in a fullscreen overlay. Receives `activeNotes`, `gameConfig`, and `onDeactivate` props.
+- **Registry game active:** Lazy-loaded `replace` component rendered fullscreen;
+  receives `activeNotes`, `noteHistory`, `gameConfig`, and `onDeactivate`.
 
 ---
 
@@ -223,17 +231,18 @@ Maps game IDs to their component loaders, layout modes, and lazy React component
 
 ```js
 {
-  rhythm:     { component, hook, layout: 'waterfall' },
-  tetris:     { component, hook, layout: 'replace', LazyComponent },
-  flashcards: { component, hook, layout: 'replace', LazyComponent },
+  'card-game':     { layout: 'replace', LazyComponent },
+  'space-invaders':{ layout: 'replace', LazyComponent },
+  tetris:          { layout: 'replace', LazyComponent },
+  flashcards:      { layout: 'replace', LazyComponent },
+  hero:            { layout: 'replace', LazyComponent },
+  'side-scroller': { layout: 'replace', LazyComponent },
+  chess:           { layout: 'replace', LazyComponent },
 }
 ```
 
-**Layout modes:**
-- `waterfall` — game overlays on top of the existing waterfall view (rhythm)
-- `replace` — game takes over the entire PianoVisualizer viewport (tetris, flashcards)
-
-**Fullscreen games** (layout: `replace`) have a `LazyComponent` entry — a `React.lazy()` wrapper used by the kiosk game host to render them inside a `<Suspense>` boundary.
+Every current game uses `replace` and has a `LazyComponent` entry used by the
+kiosk host and standalone visualizer inside a Suspense boundary.
 
 **Config prop naming:** All fullscreen games receive their config as `gameConfig` (not game-specific names like `tetrisConfig`). PianoVisualizer passes `gamesConfig[activeGameId]` as the `gameConfig` prop.
 
@@ -302,6 +311,11 @@ PianoTetris uses `useAutoGameLifecycle` for mount auto-start and auto-deactivate
 **Hook:** `useStaffMatching.js`
 
 Each action has target pitches. When the player holds all target pitches simultaneously, the action fires.
+
+`useStaffMatching` delegates the exact-MIDI held-set decision to
+`performance/assessmentSession.js`; Side Scroller reuses the same hook. The
+hook still owns command semantics such as hold-to-repeat and single-fire. These
+matches are controller actions, not Flashcards and not graded attempts.
 
 - **Immediate fire** on first match
 - **Hold-to-repeat** for movement/rotation: 200ms initial delay, then 100ms repeat
@@ -391,6 +405,19 @@ Two-layer SVG approach for full-width staff lines:
 
 ---
 
+## Side Scroller
+
+Side Scroller is a separate game engine, not a Flashcard wrapper. Its
+`useSideScrollerGame.js` hook reuses Tetris's `useStaffMatching` command layer,
+which in turn delegates exact-MIDI held-set recognition to
+`performance/assessmentSession.js`. The shared layer answers only whether the
+authored command notes are currently held; Side Scroller retains its own target
+rotation, action lifecycle, physics, obstacles, score, sounds, and level
+progression. Ordinary play produces no assessment verdict or curriculum
+evidence.
+
+---
+
 ## Piano Flashcards
 
 Untimed note-reading trainer with two card types: **staff cards** (notes shown on a staff; player presses the matching MIDI keys) and **chord-spelling cards** (card shows a chord symbol like `Dm` or `G7`; player plays the notes that spell it). Progressive difficulty mirrors the Tetris level structure.
@@ -440,6 +467,7 @@ IDLE ──[startGame()]──▶ PLAYING ──[level 8 threshold]──▶ COM
 - `cardStatus` — `null | 'hit' | 'miss'`
 - `attempts` — `[{ hit: boolean }]` rolling history
 - `accuracy` — percentage from last 20 attempts
+- `assessment` — common completeness/cleanliness result for the current session
 - `startGame()`, `deactivate()`
 
 ### Per-User Start Level & Level Picker
@@ -460,6 +488,11 @@ games:
 ```
 
 ### Match Evaluation
+
+Both card types delegate judgement to the held matcher in
+`performance/assessmentSession.js`; the card engine supplies different
+equivalence and bass policies while retaining its existing score and rearm
+lifecycle.
 
 Staff cards (`evaluateMatch` — exact pitches):
 
@@ -544,9 +577,10 @@ another source without changing the timing engine.
 5. The shared performance target compiler groups simultaneous onsets into chord
    targets and converts quarter-note time to milliseconds using the complete
    MusicXML tempo map.
-6. The shared pure performance judge matches live note-on events to the nearest
-   target. Chords resolve only when every pitch is struck; Hero adapts the
-   resulting events into its own points and combo rules.
+6. A timed `assessmentSession` instance matches live note-on events to the
+   nearest target. Chords resolve only when every pitch is struck; Hero adapts
+   the same events into its own points and combo rules and exposes the portable
+   musical result separately.
 
 The white strike line is active feedback, not only a boundary marker. While the
 metronome is enabled it gives a brief score-aligned pulse on every click (with a
@@ -574,7 +608,8 @@ becomes a falling target.
 |------|---------|
 | `PianoHeroGame/PianoHeroGame.jsx` | MusicXML picker, loading, highway, keyboard, and results UI |
 | `performance/performanceTargets.js` | Shared tempo-resolved score-to-target compiler |
-| `performance/performanceJudge.js` | Shared pure target matching used by Hero and Polish |
+| `performance/assessmentSession.js` | Public parameterized matcher, observation, criteria, and verdict service shared with Polish and the other assessment consumers |
+| `performance/performanceJudge.js` | Internal timed target-matching primitive |
 | [performance-assessment.md](./performance-assessment.md) | Overview of the shared performance service (grading, matching, spans) |
 | `PianoHeroGame/heroChart.js` | Hero chart metadata and points/combo adapter |
 | `PianoHeroGame/usePianoHeroGame.js` | MIDI subscription and timed run lifecycle |
@@ -709,17 +744,20 @@ the player.
 
 ---
 
-## Rhythm Game
+## Space Invaders
 
-Falling-note accuracy game with two modes: "invaders" (any visible note is hittable, timing doesn't matter) and "hero" (timing windows determine hit quality). Health meter provides life-based difficulty gating.
+Falling-note game with two level policies: `invaders` (any visible matching
+target is hittable) and `hero` (timing windows determine hit quality). A health
+meter and miss limits drive the game progression, while the common assessment
+result separately reports completeness, cleanliness, and placement.
 
 ### Component Tree
 
 ```
-PianoVisualizer
-├── NoteWaterfall          (displays falling notes when rhythm game is active)
+SpaceInvadersGame
+├── Falling-note field     (targets and fired lasers)
 ├── Life meter             (Mega Man-style health bar, 28 notches)
-├── RhythmOverlay          (countdown, level complete/failed, victory screens)
+├── SpaceInvadersOverlay   (countdown, level complete/failed, victory screens)
 └── PianoKeyboard          (visual keyboard with target/wrong note highlighting)
 ```
 
@@ -727,10 +765,10 @@ PianoVisualizer
 
 | File | Purpose |
 |------|---------|
-| `useRhythmGame.js` | Game state machine: spawning, hit detection, scoring, level progression |
-| `rhythmEngine.js` | Pure functions: state factory, note generation, hit detection, scoring, level eval |
-| `components/RhythmOverlay.jsx` | Overlay UI: countdown 3-2-1-GO, level banners, victory screen |
-| `components/RhythmOverlay.scss` | Overlay styles |
+| `PianoSpaceInvaders/SpaceInvadersGame.jsx` | Fullscreen game surface |
+| `PianoSpaceInvaders/useSpaceInvadersGame.js` | Game state machine: spawning, lasers, health, scoring, and level progression |
+| `PianoSpaceInvaders/spaceInvadersEngine.js` | Pure game engine plus adapters to the common timed assessment service |
+| `PianoSpaceInvaders/components/SpaceInvadersOverlay.jsx` | Countdown, level banners, failure, and victory UI |
 
 ### Game State Machine
 
@@ -750,9 +788,9 @@ IDLE ──[startGame()]──▶ STARTING ──[3-2-1-GO]──▶ PLAYING
 - `max_misses` exceeded → retry same level (3s banner)
 - `health` depleted → exit game entirely (3s banner)
 
-### Rhythm Engine
+### Space Invaders Engine
 
-**File:** `rhythmEngine.js` — all pure functions.
+**File:** `PianoSpaceInvaders/spaceInvadersEngine.js` — pure game functions.
 
 | Function | Purpose |
 |----------|---------|
@@ -762,19 +800,20 @@ IDLE ──[startGame()]──▶ STARTING ──[3-2-1-GO]──▶ PLAYING
 | `generatePitches(level, lastPitches)` | Generate note/chord for current level |
 | `getFallDuration(level)` | Get fall duration (ms) for a level |
 | `maybeSpawnNote(state, level, now)` | Spawn a new falling note if timing allows |
-| `processHit(state, pitch, now, timingConfig, mode)` | Evaluate hit quality (invaders vs hero) |
+| `processHit(state, pitch, now, timingConfig, mode)` | Adapt a falling target through the common timed matcher |
 | `applyScore(score, hitQuality, scoringConfig)` | Compute points with combo multiplier |
 | `processMisses(state, now, missThresholdMs)` | Tag missed notes, reset combo |
 | `cleanupResolvedNotes(state, now)` | Remove old hit/missed notes from display |
 | `evaluateLevel(score, levelConfig, health)` | Check for advance/fail conditions |
+| `assessSpaceInvaders(score)` | Produce the common musical criteria/verdict without replacing game points or health |
 
 ### Config Structure
 
-All rhythm config lives under `games.rhythm` in `piano.yml`:
+Space Invaders config lives under `games.space-invaders` in `piano.yml`:
 
 ```yaml
 games:
-  rhythm:
+  space-invaders:
     activation:
       notes: [30, 102]
       window_ms: 300
@@ -834,12 +873,13 @@ games:
 | `buildNotePool(noteRange, whiteKeysOnly)` | `([number, number], boolean) → number[]` | Build array of MIDI notes in range, optionally white-only |
 | `computeKeyboardRange(noteRange)` | `([number, number] \| null) → { startNote, endNote }` | Compute display range with 1/3 padding, 2-octave minimum, clamped to [21, 108] |
 
-### rhythmEngine.js
+### spaceInvadersEngine.js
 
 | Export | Used By |
 |--------|---------|
 | `isActivationComboHeld()` | useGameActivation |
-| `createInitialState()`, `resetForLevel()`, etc. | useRhythmGame |
+| `createInitialState()`, `resetForLevel()`, etc. | useSpaceInvadersGame |
+| timed judgement and `assessSpaceInvaders()` | common assessment service / Space Invaders projection |
 
 ### Other Shared Files
 
@@ -897,40 +937,24 @@ Used by `PianoTetris` and `PianoFlashcards` to avoid duplicating mount/exit logi
 MIDI Keyboard
   │
   ▼
-useMidiSubscription → activeNotes: Map<note, {velocity, timestamp}>
+PianoMidiContext / useMidiSubscription
+  ├── activeNotes: Map<note, {velocity, timestamp}>
+  └── noteHistory: timestamped note-on/off entries
   │
-  ├──▶ usePianoConfig → gamesConfig
+  ▼
+GameHost or standalone PianoVisualizer
   │
-  ├──▶ useGameActivation → activeGameId ('rhythm' | 'tetris' | 'flashcards' | null)
+  ▼
+gameRegistry LazyComponent + gameConfig
   │
-  ├──▶ useRhythmGame (when rhythm active)
-  │      ├──▶ rhythmEngine (pure functions: spawning, hit detection, scoring)
-  │      └── returns game state (fallingNotes, score, health, level)
+  ├──▶ Hero / Space Invaders / Flashcards / Battle Stadium
+  │      ├── assessmentSession → musical events + portable result
+  │      └── local game engine → points, combo, health, damage, effects
   │
-  ├──▶ useInactivityTimer → inactivityState, countdownProgress
+  ├──▶ Tetris / Side Scroller
+  │      ├── shared held classifier → command match only
+  │      └── local game engine → movement, physics, score, levels
   │
-  ├──▶ useSessionTracking → sessionDuration
-  │
-  ├──▶ PianoVisualizer (layout composition)
-  │      ├── NoteWaterfall (note history + optional falling notes)
-  │      ├── PianoKeyboard (visual reference + targets + wrong notes)
-  │      ├── RhythmOverlay (countdown / level banners / victory)
-  │      ├── CurrentChordStaff (when no game active)
-  │      └── Life meter (when rhythm game active)
-  │
-  ├──▶ PianoTetris (fullscreen, lazy-loaded via gameRegistry)
-  │      ├── useTetrisGame → game state
-  │      ├── useAutoGameLifecycle → auto-start/deactivate
-  │      ├── useStaffMatching → matchedActions
-  │      ├── ActionStaff ×6 (targets + ghost notes from activeNotes)
-  │      ├── TetrisBoard (board + currentPiece + ghostPiece)
-  │      ├── TetrisOverlay (countdown / game over)
-  │      └── PianoKeyboard (visual reference)
-  │
-  └──▶ PianoFlashcards (fullscreen, lazy-loaded via gameRegistry)
-         ├── useFlashcardGame → game state
-         ├── useAutoGameLifecycle → auto-start/deactivate
-         ├── ActionStaff ×1 (large centered target card)
-         ├── AttemptHistory (rolling dots + accuracy %)
-         └── PianoKeyboard (highlighted targets)
+  └──▶ Piano Chess
+         └── chord-address interpreter → square command (not assessment)
 ```

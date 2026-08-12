@@ -337,8 +337,9 @@ notes-and-timing (the same measure wash used elsewhere) and folded into a
 running score; the transport bar's center readout shows the live tally as the
 run progresses (e.g. `82% · m 12/24`).
 
-Polish grades through the shared performance service as of
-`polish-shared-grading-v1` (`scoreEvaluator.js`). It previously computed the same
+Polish grades through the parameterized `assessmentSession.js` service as of
+`polish-shared-grading-v1` (`scoreEvaluator.js` is now a compatibility
+projection). It previously computed the same
 dimensions under its own names and combined them multiplicatively, so a polish
 score and a lesson-drill score could not be compared even though both claimed to
 mean "how well did that go". Adopting the service moved the numbers, which is
@@ -351,7 +352,8 @@ free, falling to zero by 400ms — so polish and beat-relative grading are one
 formula with different numbers rather than two implementations.
 See [performance-assessment.md](./performance-assessment.md).
 
-Polish uses the same renderer-independent performance judge as Piano Hero.
+Polish and Piano Hero now own separate instances of the same parameterized,
+renderer-independent assessment session.
 The score is compiled into exact onset targets after the tempo map, tempo
 multiplier, and active-staff filter are applied. Repeated pitches remain
 separate attacks, simultaneous pitches are judged as a chord, early/late drift
@@ -579,7 +581,8 @@ during an active run so the judge and falling highway cannot jump timelines.
 |------|------|
 | `SheetMusic.jsx` | routing (grid ↔ viewer), MusicXML fetch + load timing |
 | `Piano/performance/performanceTargets.js` | Shared tempo-resolved target compiler |
-| `Piano/performance/performanceJudge.js` | Shared pure note/chord hit and miss matcher |
+| `Piano/performance/assessmentSession.js` | Public parameterized matching, observation, rubric, verdict, and span-aggregation API shared by Learn, Polish, Hero, Exercises, games, and flashcards |
+| `Piano/performance/performanceJudge.js` | Internal timed note/chord matching primitive used by the assessment session |
 | [performance-assessment.md](./performance-assessment.md) | Overview of the shared performance service (grading, matching, spans) |
 | `ScoreGrid.jsx` / `scoreGroups.js` | score browser grid + `sheetmusic.collections` → tab strip |
 | `scoreTitle.js` | filename → title fallback shared by the grid and the player |
@@ -609,8 +612,8 @@ during an active run so the judge and falling highway cannot jump timelines.
 | `clickScheduler.js` | look-ahead scheduling for the metronome click |
 | `RunSummary.jsx` | Polish end-of-run summary, extended with run score/tier + tier-best strip |
 | `activeParts.js` / `focusRange.js` | staff-responsibility model / practice-range math, including the next step the active hands actually play |
-| `useFollowTracker.js` | Learn matching + advancement (range-aware, skips steps the active hands are silent at) |
-| `useScoreEvaluator.js` / `scoreEvaluator.js` | Polish per-measure grading hook / math |
+| `useFollowTracker.js` | Learn lifecycle + advancement using the shared cursor-step classifier (range-aware, skips steps the active hands are silent at) |
+| `useScoreEvaluator.js` / `scoreEvaluator.js` | Polish lifecycle and compatibility projection over a shared timed assessment session |
 | `useMetronomeClick.js` / `click.js` | click scheduler / WebAudio blip |
 | `pedalEdge.js` | Perform pedal rising-edge |
 | `sheetMusicConfig.js` | `sheetmusic:` config resolver (modes, pedals, scoring, hand preference) |
