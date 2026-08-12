@@ -9,9 +9,9 @@
 
 .chess-board-frame {
   --cb-size: min(58vw, 62vh);
-  --cb-light: #efe4cd;
-  --cb-dark: #55392b;
-  --cb-frame: #3b2619;
+  --cb-light: #f0dfc0;
+  --cb-dark: #b07d54;
+  --cb-frame: #6b4632;
   --cb-accent: #c9a227;
   --cb-accent-glow: #f0cc55;
   --cb-hint: #4e8878;
@@ -32,8 +32,10 @@
   grid-row: 1;
   display: grid;
   grid-template-columns: repeat(8, 1fr);
+  grid-template-rows: repeat(8, 1fr);
+  box-sizing: border-box;
   width: var(--cb-size);
-  aspect-ratio: 1;
+  height: var(--cb-size);
   border: 3px solid var(--cb-frame);
   border-radius: 3px;
   box-shadow: 0 1.5rem 3rem rgb(0 0 0 / 45%);
@@ -92,20 +94,6 @@
   z-index: 1;
 }
 
-.chess-board__square-label {
-  position: absolute;
-  inset-block-end: 4%;
-  inset-inline-end: 6%;
-  font-size: clamp(0.5rem, 0.85vw, 0.8rem);
-  font-weight: 700;
-  pointer-events: none;
-  opacity: 0.22;
-  transition: opacity 120ms ease;
-}
-
-.chess-board__square--light .chess-board__square-label { color: var(--cb-frame); }
-.chess-board__square--dark .chess-board__square-label { color: var(--cb-light); }
-
 .chess-board__last-move,
 .chess-board__square--last-move {
   box-shadow: inset 0 0 0 3px color-mix(in srgb, var(--cb-accent) 35%, transparent);
@@ -144,18 +132,48 @@
   animation: chess-board-ignite 420ms ease-out;
 }
 
-.chess-board__square--cursor .chess-board__square-label { opacity: 0.95; }
-
 .chess-board__square--check {
   box-shadow: inset 0 0 0 100vmax color-mix(in srgb, var(--cb-danger) 45%, transparent);
 }
 
+/* A refused square says no in the place the player was looking — a message in a
+   side rail is not where their attention is. */
+.chess-board__square--rejected {
+  animation: chess-board-refuse 620ms ease-out;
+  z-index: 2;
+}
+
+@keyframes chess-board-refuse {
+  0% { box-shadow: inset 0 0 0 100vmax color-mix(in srgb, var(--cb-danger) 78%, transparent); transform: translateX(0); }
+  15% { transform: translateX(-7%); }
+  35% { transform: translateX(6%); }
+  55% { transform: translateX(-4%); }
+  75% { transform: translateX(2%); }
+  100% { box-shadow: inset 0 0 0 100vmax transparent; transform: translateX(0); }
+}
+
+/* Pieces the player could pick up. Quiet — a hint, not an instruction. */
+.chess-board__square--source::after {
+  content: '';
+  position: absolute;
+  inset: 6%;
+  border: 2px solid color-mix(in srgb, var(--cb-hint) 60%, transparent);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
 .chess-board__piece {
-  width: 88%;
-  height: 88%;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 6%;
+  box-sizing: border-box;
   object-fit: contain;
   pointer-events: none;
-  filter: drop-shadow(0 2px 3px rgb(0 0 0 / 35%));
+  filter: drop-shadow(0 2px 3px rgb(0 0 0 / 30%));
+  /* A moving piece rides above the squares it crosses. */
+  z-index: 1;
 }
 
 @keyframes chess-board-ignite {
@@ -174,6 +192,5 @@
 @media (prefers-reduced-motion: reduce) {
   .chess-board__square--cursor { animation: none; }
   .chess-board__square,
-  .chess-board__axis-label,
-  .chess-board__square-label { transition: none; }
+  .chess-board__axis-label { transition: none; }
 }

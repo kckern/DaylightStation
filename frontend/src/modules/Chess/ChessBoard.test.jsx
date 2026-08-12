@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { INITIAL_FEN, describePosition } from '@shared-gaming/chess/index.mjs';
+import { INITIAL_FEN, applyMove, describePosition } from '@shared-gaming/chess/index.mjs';
 import ChessBoard from './ChessBoard.jsx';
 import { pieceSource } from './pieceAssets.js';
 
@@ -35,15 +35,31 @@ describe('ChessBoard', () => {
     const labels = [...container.querySelectorAll('.chess-board__axis-label')].map((el) => el.textContent);
     expect(labels).toContain('a');
     expect(labels).toContain('8');
-    expect(container.querySelectorAll('.chess-board__square-label')).toHaveLength(0);
   });
 
-  it('labels the rim with chords when asked, and names every square', () => {
-    const { container } = render(<ChessBoard fen={INITIAL_FEN} notation="chord" />);
+  it('takes whatever labels a host supplies without knowing what they mean', () => {
+    // The piano passes chord names; the board just prints eight of each.
+    const { container } = render(
+      <ChessBoard
+        fen={INITIAL_FEN}
+        fileLabels={['A', 'B', 'C', 'D', 'E', 'F', 'G', 'Bb']}
+        rankLabels={['maj', 'm', 'sus4', 'add2', '7', '6', 'maj7', 'dim']}
+      />,
+    );
     const labels = [...container.querySelectorAll('.chess-board__axis-label')].map((el) => el.textContent);
     expect(labels).toContain('Bb');
     expect(labels).toContain('sus4');
-    expect(container.querySelectorAll('.chess-board__square-label')).toHaveLength(64);
+    expect(labels).toHaveLength(16);
+  });
+
+  it('keeps labels on the rim and out of the cells', () => {
+    // A name in all 64 cells is noise the player has to read past.
+    const { container } = render(
+      <ChessBoard fen={INITIAL_FEN} fileLabels={['A', 'B', 'C', 'D', 'E', 'F', 'G', 'Bb']} />,
+    );
+    const squares = [...container.querySelectorAll('.chess-board__square')];
+    expect(squares).toHaveLength(64);
+    for (const square of squares) expect(square.textContent).toBe('');
   });
 
   it('flips for Black without changing the position', () => {
@@ -73,11 +89,47 @@ describe('ChessBoard', () => {
   });
 
   it('throws a crosshair down the cursor file and rank', () => {
-    const { container } = render(<ChessBoard fen={INITIAL_FEN} notation="chord" cursorSquare="c1" />);
+    const { container } = render(<ChessBoard fen={INITIAL_FEN} cursorSquare="c1" />);
     expect(container.querySelector('[data-square="c1"]').className).toContain('--cursor');
     expect(container.querySelector('[data-square="c5"]').className).toContain('--cursor-line');
     expect(container.querySelector('[data-square="f1"]').className).toContain('--cursor-line');
     expect(container.querySelector('[data-square="f5"]').className).not.toContain('--cursor-line');
+  });
+
+  it('slides a moved piece from where it came', () => {
+    // jsdom has no WAAPI, so stub animate() and read back the keyframes.
+    const calls = [];
+    const original = window.Element.prototype.animate;
+    window.Element.prototype.animate = function animate(frames, options) { calls.push({ frames, options }); return { finished: Promise.resolve() }; };
+    try {
+      const { rerender } = render(<ChessBoard fen={INITIAL_FEN} />);
+      expect(calls).toHaveLength(0);
+
+      rerender(<ChessBoard fen={applyMove(INITIAL_FEN, 'e4').fen} />);
+      expect(calls).toHaveLength(1);
+      // e2 -> e4 is two ranks up the board and no sideways travel.
+      expect(calls[0].frames[0].transform).toBe('translate(0%, 200%)');
+      expect(calls[0].frames[1].transform).toBe('translate(0, 0)');
+      expect(calls[0].options.duration).toBeGreaterThan(0);
+    } finally {
+      window.Element.prototype.animate = original;
+    }
+  });
+
+  it('animates the opponent the same way it animates the player', () => {
+    const calls = [];
+    const original = window.Element.prototype.animate;
+    window.Element.prototype.animate = function animate(frames) { calls.push(frames); return { finished: Promise.resolve() }; };
+    try {
+      const afterWhite = applyMove(INITIAL_FEN, 'e4').fen;
+      const { rerender } = render(<ChessBoard fen={afterWhite} />);
+      // Black's reply is a diff like any other — no move object involved.
+      rerender(<ChessBoard fen={applyMove(afterWhite, 'e5').fen} />);
+      expect(calls).toHaveLength(1);
+      expect(calls[0][0].transform).toBe('translate(0%, -200%)');
+    } finally {
+      window.Element.prototype.animate = original;
+    }
   });
 
   it('is inert until a host supplies a click handler', () => {
