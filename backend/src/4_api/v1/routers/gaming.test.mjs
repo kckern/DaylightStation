@@ -18,6 +18,7 @@ describe('gaming API router', () => {
     const service = {
       getDefinition: vi.fn(() => ({ hash: 'hash', definition: { game_id: 'scale-clash' } })),
       getProgress: vi.fn(() => ({ user_id: 'kid-1', personal_best: { score: 9000 } })),
+      getActiveSession: vi.fn(() => ({ user_id: 'kid-1', active_session: { session_id: 'game_12345678' } })),
       getLeaderboard: vi.fn(() => ({ standings: [{ user_id: 'kid-1', score: 9000 }] })),
       createSession: vi.fn(() => ({ session_id: 'game_12345678', revision: 0 })),
       getSession: vi.fn(() => ({ session_id: 'game_12345678', revision: 0 })),
@@ -28,6 +29,9 @@ describe('gaming API router', () => {
     expect(invoke(router, 'get', '/games/:gameId/progress', {
       params: { gameId: 'card-game' }, query: { user_id: 'kid-1' },
     }).body).toMatchObject({ user_id: 'kid-1' });
+    expect(invoke(router, 'get', '/games/:gameId/active-session', {
+      params: { gameId: 'card-game' }, query: { user_id: 'kid-1' },
+    }).body).toMatchObject({ active_session: { session_id: 'game_12345678' } });
     expect(invoke(router, 'get', '/games/:gameId/leaderboard', {
       params: { gameId: 'card-game' }, query: { user_id: 'kid-1', week: '2026-W33' },
     }).body).toMatchObject({ standings: [{ user_id: 'kid-1', score: 9000 }] });
@@ -39,6 +43,7 @@ describe('gaming API router', () => {
     }).statusCode).toBe(200);
     expect(service.applyCommand).toHaveBeenCalledOnce();
     expect(service.getProgress).toHaveBeenCalledWith('card-game', 'kid-1');
+    expect(service.getActiveSession).toHaveBeenCalledWith('card-game', 'kid-1');
     expect(service.getLeaderboard).toHaveBeenCalledWith('card-game', 'kid-1', '2026-W33');
   });
 });

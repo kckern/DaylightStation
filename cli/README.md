@@ -4,7 +4,7 @@ Single-binary CLI exposing DaylightStation skills and services as composable she
 
 See `docs/superpowers/specs/2026-05-02-dscli-design.md` for the full design.
 
-## Scale Stadium readiness
+## Card Game readiness
 
 `piano-card-game.cli.mjs` is the live acceptance harness for the Pokémon piano card game. It
 validates the deployed definition and corpus assets, then plays a complete battle through the
@@ -12,7 +12,7 @@ same MIDI bridge frames used by the PianoKiosk:
 
 ```bash
 npm run piano:card-game:verify
-node cli/piano-card-game.cli.mjs --headed --screenshot /tmp/scale-stadium.png
+node cli/piano-card-game.cli.mjs --headed --screenshot /tmp/card-game.png
 ```
 
 ## Usage

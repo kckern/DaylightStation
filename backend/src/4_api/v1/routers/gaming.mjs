@@ -31,6 +31,10 @@ export function createGamingRouter({ gamingService, logger = null }) {
     res.json(gamingService.getProgress(req.params.gameId, req.query.user_id || null));
   }));
 
+  router.get('/games/:gameId/active-session', handle((req, res) => {
+    res.json(gamingService.getActiveSession(req.params.gameId, req.query.user_id || null));
+  }));
+
   router.get('/games/:gameId/leaderboard', handle((req, res) => {
     res.json(gamingService.getLeaderboard(
       req.params.gameId,

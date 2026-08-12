@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import {
   COMMAND_TYPES,
+  buildPokemonCampaignProgress,
   GAMING_ENGINE_VERSION,
   POKEMON_JOURNEY_RULESET,
   projectState,
@@ -72,6 +73,7 @@ export class GamingSessionService {
     idFactory = () => `game_${crypto.randomUUID()}`,
     clock = () => new Date(),
     logger = null,
+    economyService = null,
     pendingTimeoutMs = 120_000,
     idleTimeoutMs = 6 * 60 * 60 * 1000,
   }) {
@@ -80,6 +82,7 @@ export class GamingSessionService {
     this.idFactory = idFactory;
     this.clock = clock;
     this.logger = logger;
+    this.economyService = economyService;
     this.pendingTimeoutMs = pendingTimeoutMs;
     this.idleTimeoutMs = idleTimeoutMs;
   }
@@ -138,6 +141,7 @@ export class GamingSessionService {
     }
     const loaded = this.getDefinition(gameId);
     const pinned = this.definitionStore.pin(loaded.definition);
+    let resolvedSetup = structuredClone(setup);
     if (setup?.upgrade_id && !(pinned.definition.card_battle?.upgrades || []).some((upgrade) => upgrade.id === setup.upgrade_id)) {
       throw new GamingServiceError('invalid_upgrade', 'Selected upgrade is unavailable', 400);
     }
@@ -146,10 +150,19 @@ export class GamingSessionService {
       if (!(pinned.definition.journey.partners || []).some((partner) => partner.id === partnerId)) {
         throw new GamingServiceError('invalid_partner', 'Choose an available Pokémon partner', 400);
       }
+      const userId = participants[0]?.user_id || participants[0]?.id || 'guest';
+      if (userId !== 'guest') {
+        const progress = this.getProgress(gameId, userId);
+        resolvedSetup = {
+          ...resolvedSetup,
+          unseen_ids: progress.pokedex.entries.filter((entry) => entry.status === 'unknown').map((entry) => entry.id),
+          caught_ids: progress.pokedex.entries.filter((entry) => entry.caught).map((entry) => entry.id),
+        };
+      }
     }
     const createdAt = this.clock().toISOString();
     const actualSeed = Number.isInteger(seed) ? seed >>> 0 : crypto.randomBytes(4).readUInt32LE(0);
-    const state = createInitialState(pinned.definition, { seed: actualSeed, participants, setup });
+    const state = createInitialState(pinned.definition, { seed: actualSeed, participants, setup: resolvedSetup });
     const session = {
       schema_version: 1,
       session_id: this.idFactory(),
@@ -160,7 +173,7 @@ export class GamingSessionService {
       definition_hash: pinned.hash,
       seed: actualSeed,
       participants: structuredClone(participants),
-      setup: structuredClone(setup),
+      setup: structuredClone(resolvedSetup),
       state,
       commands: [],
       events: [],
@@ -182,6 +195,21 @@ export class GamingSessionService {
     return this.#response(session, definition, viewerId);
   }
 
+  getActiveSession(gameId, userId) {
+    if (!userId) throw new GamingServiceError('user_id_required', 'user_id is required', 400);
+    const loaded = this.getDefinition(gameId);
+    const active = (this.sessionStore.list?.() || [])
+      .filter((session) => session.game_id === gameId
+        && participantId(session) === userId
+        && session.status === 'active'
+        && session.definition_hash === loaded.hash)
+      .sort((left, right) => String(right.updated_at).localeCompare(String(left.updated_at)))[0] || null;
+    if (!active) return { game_id: gameId, user_id: userId, active_session: null };
+    const definition = this.definitionStore.getPinned(active.definition_hash);
+    if (!definition) throw new GamingServiceError('definition_snapshot_missing', 'Pinned game definition is unavailable', 500);
+    return { game_id: gameId, user_id: userId, active_session: this.#response(active, definition, userId) };
+  }
+
   getProgress(gameId, userId) {
     if (!userId) throw new GamingServiceError('user_id_required', 'user_id is required', 400);
     const loaded = this.getDefinition(gameId);
@@ -189,64 +217,19 @@ export class GamingSessionService {
     if (definition.ruleset !== POKEMON_JOURNEY_RULESET) {
       throw new GamingServiceError('progress_unsupported', 'This game does not expose journey progress', 404);
     }
-    const scoreVersion = definition.journey.score_version;
-    const journeyVersion = definition.journey.version;
     const sessions = (this.sessionStore.list?.() || []).filter((session) => (
       session.game_id === gameId && participantId(session) === userId
     ));
-    if (userId === 'guest') {
-      return {
-        game_id: gameId, user_id: userId, persistent: false,
-        score_version: scoreVersion, journey_version: journeyVersion,
-        badges: [], skill_stars: {}, partners: {}, journeys_completed: 0, personal_best: null,
-      };
-    }
-    const attempts = sessions.flatMap((session) => session.state?.practice_attempts || []);
-    const kinds = ['scale', 'chord', 'arpeggio', 'timed-pattern'];
-    const skillStars = Object.fromEntries(kinds.map((kind) => {
-      const scores = attempts.filter((attempt) => attempt.kind === kind && attempt.status === 'completed').map((attempt) => attempt.score);
-      let stars = 0;
-      if (scores.some((score) => score >= 0.6)) stars = 1;
-      if (scores.filter((score) => score >= 0.8).length >= 2) stars = 2;
-      if (scores.filter((score) => score >= 0.9).length >= 3) stars = 3;
-      return [kind, { stars, attempts: scores.length, best_score: scores.length ? Math.max(...scores) : null }];
-    }));
-    const completedRuns = sessions.filter((session) => session.status === 'complete' && session.state?.journey_summary);
-    const rankedRuns = completedRuns.filter((session) => (
-      session.state.journey_summary.qualified
-      && session.state.journey_summary.score_version === scoreVersion
-      && session.state.journey_summary.journey_version === journeyVersion
-    ));
-    const personalBest = rankedRuns.reduce((best, session) => betterRun(best, {
-      session_id: session.session_id,
-      score: session.state.journey_summary.score,
-      partner_id: session.state.partner_id,
-      completed_at: session.completed_at,
-    }), null);
-    const badges = [...new Set(sessions.flatMap((session) => session.state?.completed_encounters || []))];
-    const allTwoStars = kinds.every((kind) => skillStars[kind].stars >= 2);
-    const allThreeStars = kinds.every((kind) => skillStars[kind].stars >= 3);
-    const partners = Object.fromEntries(definition.journey.partners.map((partner) => {
-      const completions = completedRuns.filter((session) => session.state.partner_id === partner.id).length;
-      return [partner.id, {
-        journeys_completed: completions,
-        evolved: completions > 0 && allTwoStars,
-        evolution: completions > 0 && allTwoStars ? clone(partner.evolution) : null,
-        mastery_aura: completions > 0 && allThreeStars,
-      }];
-    }));
-    return {
-      game_id: gameId,
-      user_id: userId,
-      persistent: true,
-      score_version: scoreVersion,
-      journey_version: journeyVersion,
-      badges,
-      skill_stars: skillStars,
-      partners,
-      journeys_completed: completedRuns.length,
-      personal_best: personalBest,
-    };
+    const activeSession = sessions
+      .filter((session) => session.status === 'active' && session.definition_hash === loaded.hash)
+      .sort((left, right) => String(right.updated_at).localeCompare(String(left.updated_at)))[0] || null;
+    return buildPokemonCampaignProgress({
+      definition,
+      sessions,
+      userId,
+      now: this.clock(),
+      activeSession,
+    });
   }
 
   getLeaderboard(gameId, userId, requestedWeek = null) {
@@ -331,6 +314,9 @@ export class GamingSessionService {
     const definition = this.definitionStore.getPinned(session.definition_hash);
     if (!definition) throw new GamingServiceError('definition_snapshot_missing', 'Pinned game definition is unavailable', 500);
 
+    const progressBefore = definition.ruleset === POKEMON_JOURNEY_RULESET && participantId(session) !== 'guest'
+      ? this.getProgress(session.game_id, participantId(session))
+      : null;
     const pendingBefore = session.state.pending_action;
     const outcome = transition(session.state, command, definition);
     if (outcome.error) throw new GamingServiceError(outcome.error.code, outcome.error.message, 422, outcome.error.details);
@@ -341,12 +327,28 @@ export class GamingSessionService {
       status: outcome.state.status,
       state: outcome.state,
       commands: [...session.commands, structuredClone(command)],
-      events: [...session.events, ...outcome.events.map((event) => ({ revision: session.revision + 1, ...event }))],
+      events: [...session.events, ...outcome.events.map((event) => ({
+        revision: session.revision + 1,
+        occurred_at: updatedAt,
+        ...event,
+      }))],
       accepted_command_ids: { ...(session.accepted_command_ids || {}), [command.command_id]: fingerprint },
       updated_at: updatedAt,
       completed_at: outcome.state.status !== 'active' ? updatedAt : session.completed_at,
     };
     this.sessionStore.compareAndSwap(next, session.revision);
+    if (progressBefore && this.economyService) {
+      const progressAfter = this.getProgress(next.game_id, participantId(next));
+      if (!progressBefore.daily?.completed && progressAfter.daily?.completed) {
+        Promise.resolve(this.economyService.earn(participantId(next), {
+          action: 'piano-card-game-daily',
+          source: 'card-game',
+          ref: `daily:${progressAfter.daily.date}`,
+        })).catch((error) => this.logger?.warn?.('gaming.daily.coin-award-failed', {
+          userId: participantId(next), date: progressAfter.daily.date, error: error.message,
+        }));
+      }
+    }
     const logFields = {
       sessionId,
       gameId: session.game_id,
@@ -413,6 +415,7 @@ export class GamingSessionService {
       status: session.status,
       revision: session.revision,
       definition_hash: session.definition_hash,
+      setup: clone(session.setup || {}),
       definition,
       ...projected,
       events,

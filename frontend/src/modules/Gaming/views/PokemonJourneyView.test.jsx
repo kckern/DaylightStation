@@ -61,7 +61,7 @@ describe('Pokémon journey kiosk views', () => {
     expect(onSelect).toHaveBeenCalledWith('bulbasaur');
   });
 
-  it('presents four piano skills and reports direct, partial, or missed hits', () => {
+  it('presents three opening piano moves and reports direct, partial, or missed hits', () => {
     const { rerender } = render(
       <PokemonJourneyView
         {...baseProps}
@@ -72,10 +72,10 @@ describe('Pokémon journey kiosk views', () => {
         }}
       />,
     );
-    expect(screen.getAllByRole('button').filter((button) => button.dataset.moveId)).toHaveLength(4);
+    expect(screen.getAllByRole('button').filter((button) => button.dataset.moveId)).toHaveLength(3);
     expect(screen.getByText('Direct hit!')).toBeTruthy();
     expect(screen.getByText('44 damage')).toBeTruthy();
-    expect(screen.getByRole('button', { name: /Razor Leaf/ }).disabled).toBe(true);
+    expect(screen.queryByRole('button', { name: /Razor Leaf/ })).toBeNull();
     expect(screen.queryByText(/super effective/i)).toBeNull();
 
     rerender(

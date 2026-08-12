@@ -30,7 +30,7 @@ describe('CardBattleView', () => {
 
   it('renders the Pokémon theme from authored Pokédex metadata and proxied SVGs', () => {
     const definition = structuredClone(scaleClashDefinition);
-    definition.title = 'Scale Stadium';
+    definition.title = 'Card Game';
     definition.presentation = { theme: 'pokemon-tcg', data_source: 'PokeAPI' };
     definition.card_battle.player = {
       ...definition.card_battle.player,

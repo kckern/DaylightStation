@@ -17,7 +17,7 @@ export function PokemonJourneyLobby({ definition, progress, leaderboard, userId,
   return (
     <main className="gaming-shell pokemon-journey journey-lobby" aria-label="Choose a Pokémon partner">
       <header className="journey-topbar">
-        <div><small>Piano League</small><h1>Scale Stadium</h1></div>
+        <div><small>Piano League</small><h1>{definition.title}</h1></div>
         <RecordStrip leaderboard={leaderboard} userId={userId} />
         {onClose && <button type="button" className="journey-close" onClick={onClose} aria-label="Close game">×</button>}
       </header>
