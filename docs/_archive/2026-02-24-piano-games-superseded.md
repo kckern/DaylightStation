@@ -1,3 +1,11 @@
+> **Superseded.** Current reference:
+> [`docs/reference/piano/piano-games.md`](../reference/piano/piano-games.md).
+>
+> Archived 2026-08-12. This copy stopped at Tetris; the kiosk has since added
+> Piano Hero, Space Invaders, Flashcards, Side Scroller, Piano Chess and the
+> YAML-driven Card Game. Two files with the same title is how one of them goes
+> quietly wrong, so this one is parked rather than maintained.
+
 # Piano Games Architecture
 
 Reference for the DaylightStation piano game system — MIDI-driven games layered on the piano visualizer. Currently supports Tetris (block-stacking controlled by musical note matching).
