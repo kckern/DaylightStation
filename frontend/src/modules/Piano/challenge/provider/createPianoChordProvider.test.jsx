@@ -39,6 +39,31 @@ describe('scale staff feedback', () => {
 });
 
 describe('createPianoChordProvider telemetry', () => {
+  it('uses the battle context as the single compact challenge heading', async () => {
+    const provider = createPianoChordProvider({ useNotes: () => ({ activeNotes: new Map(), noteHistory: [] }) });
+    const runtime = await provider.createRuntime({
+      userId: 'guest',
+      api: { recordPianoAttempt: vi.fn(async (_userId, attempt) => attempt) },
+      logger: { warn: vi.fn() },
+    });
+    const prepared = await runtime.prepare({
+      challenge_id: 'compact-heading', kind: 'scale',
+      prompt: {
+        label: 'C major scale', key_signature: 'C', expected_midi: [60, 62], tempo_bpm: 80,
+      },
+    });
+    const resultPromise = runtime.start(prepared);
+    render(<runtime.Surface compact headerContext="Vine Whip · Scales" />);
+
+    expect(screen.getByText('Vine Whip · Scales · 80 BPM')).toBeTruthy();
+    expect(screen.getByText('C major scale')).toBeTruthy();
+    expect(screen.queryByText(/Play with the pulse/)).toBeNull();
+    await act(async () => {
+      runtime.cancel('test-complete');
+      await resultPromise;
+    });
+  });
+
   it('asks the Piano backend to materialize semantic game requirements', async () => {
     const api = {
       preparePianoChallenge: vi.fn(async () => ({

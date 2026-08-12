@@ -1,0 +1,280 @@
+/**
+ * Exercises — browsing the bank.
+ *
+ * The filter rail is the interface here, not decoration: with a few thousand
+ * instances behind it, choosing well is the whole task. Chips carry their own
+ * counts so a player can see where the material is before committing to a
+ * filter, and an empty band stays visible-but-dead rather than disappearing.
+ */
+
+.piano-exercises {
+  --ex-ink: #e9e4d8;
+  --ex-ink-dim: #9d968a;
+  --ex-line: rgb(233 228 216 / 14%);
+  --ex-accent: #c9a227;
+
+  padding: 1rem clamp(0.75rem, 3vw, 2rem) 3rem;
+  color: var(--ex-ink);
+  font-family: 'Roboto Condensed', sans-serif;
+  overflow-y: auto;
+  height: 100%;
+}
+
+.piano-exercises__head {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  margin-block-end: 0.75rem;
+}
+
+.piano-exercises__title {
+  margin: 0;
+  font-size: clamp(1.4rem, 3vw, 2rem);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.piano-exercises__count {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--ex-ink-dim);
+}
+
+/* ---- filters ------------------------------------------------------------ */
+
+.piano-exercises__filters {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding-block: 0.75rem;
+  border-block: 1px solid var(--ex-line);
+  margin-block-end: 1.25rem;
+}
+
+.piano-exercises__filter-row {
+  display: grid;
+  grid-template-columns: 6.5rem 1fr;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.piano-exercises__filter-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ex-ink-dim);
+  text-align: end;
+}
+
+.piano-exercises__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.piano-exercises__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--ex-line);
+  border-radius: 999px;
+  background: none;
+  color: var(--ex-ink-dim);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease;
+
+  &:hover:not(:disabled) { color: var(--ex-ink); border-color: var(--ex-accent); }
+  &:disabled { opacity: 0.3; cursor: default; }
+}
+
+.piano-exercises__chip--active {
+  border-color: var(--ex-accent);
+  color: #1a1410;
+  background: var(--ex-accent);
+  font-weight: 700;
+}
+
+/* The count is the point of the chip — it says whether the filter is worth it. */
+.piano-exercises__chip-count {
+  font-size: 0.7rem;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- results ------------------------------------------------------------ */
+
+.piano-exercises__band { margin-block-end: 1.5rem; }
+
+.piano-exercises__band-title {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0 0 0.5rem;
+  font-size: 0.8rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ex-accent);
+}
+
+.piano-exercises__band-count {
+  color: var(--ex-ink-dim);
+  letter-spacing: 0.05em;
+  font-variant-numeric: tabular-nums;
+}
+
+.piano-exercises__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.piano-exercises__card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  width: 100%;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid var(--ex-line);
+  border-radius: 3px;
+  background: rgb(255 255 255 / 3%);
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+
+  &:hover, &:focus-visible { border-color: var(--ex-accent); }
+}
+
+.piano-exercises__card-title {
+  font-size: 0.8rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ex-ink-dim);
+}
+
+.piano-exercises__card-detail {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--ex-ink);
+}
+
+.piano-exercises__card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-block-start: 0.2rem;
+  font-size: 0.72rem;
+  color: var(--ex-ink-dim);
+}
+
+.piano-exercises__more {
+  margin: 1rem 0 0;
+  font-size: 0.85rem;
+  color: var(--ex-ink-dim);
+}
+
+/* ---- running one -------------------------------------------------------- */
+
+.piano-exercise-run {
+  display: grid;
+  grid-template-rows: auto 1fr auto auto;
+  gap: 1rem;
+  height: 100%;
+  padding: 1rem clamp(0.75rem, 3vw, 2rem) 0;
+  color: #e9e4d8;
+  font-family: 'Roboto Condensed', sans-serif;
+}
+
+.piano-exercise-run__head {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+}
+
+.piano-exercise-run__back {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #9d968a;
+  font: inherit;
+  cursor: pointer;
+
+  &:hover, &:focus-visible { color: #c9a227; }
+}
+
+.piano-exercise-run__title {
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.piano-exercise-run__staff {
+  margin-inline-start: auto;
+  font-size: 0.75rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #9d968a;
+}
+
+/* The note list is the score: big enough to read from the bench. */
+.piano-exercise-run__notes {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.piano-exercise-run__note {
+  padding: 0.35rem 0.7rem;
+  border: 1px solid rgb(233 228 216 / 14%);
+  border-radius: 3px;
+  font-size: clamp(1rem, 2vw, 1.5rem);
+  font-weight: 700;
+  color: #9d968a;
+  font-variant-numeric: tabular-nums;
+}
+
+.piano-exercise-run__note--done { color: #4e8878; border-color: rgb(78 136 120 / 45%); }
+
+.piano-exercise-run__note--next {
+  color: #1a1410;
+  background: #c9a227;
+  border-color: #c9a227;
+}
+
+.piano-exercise-run__status {
+  margin: 0;
+  font-size: 1rem;
+  color: #cbbfa8;
+}
+
+.piano-exercise-run__again {
+  justify-self: start;
+  padding: 0.4rem 1.1rem;
+  border: 1px solid #c9a227;
+  border-radius: 2px;
+  background: none;
+  color: #c9a227;
+  font: inherit;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.piano-exercise-run__keys { height: clamp(4rem, 10vh, 6.5rem); }
+
+@media (prefers-reduced-motion: reduce) {
+  .piano-exercises__chip, .piano-exercises__card { transition: none; }
+}

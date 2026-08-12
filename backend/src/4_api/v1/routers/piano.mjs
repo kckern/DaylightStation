@@ -1,7 +1,9 @@
 import express from 'express';
 import { shortId } from '#domains/core/utils/id.mjs';
 import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/index.mjs';
+import { splatPath } from '#api/utils/wildcard.mjs';
 import { musicXmlToNotes } from '#shared/music/musicXmlToNotes.mjs';
+import { countInstances, expandSeed, instanceId, instanceIds, materializeById, searchBank } from '#shared/music/exerciseBank.mjs';
 import {
   PRODUCER_ID_RE,
   PRODUCER_SCHEMA_VERSION,
@@ -64,10 +66,18 @@ import {
  *   GET    /lessons/:collection              → index
  *   GET    /lessons/:collection/:id          → drill module
  *
+ *   Exercise bank (content, read-only; seeds stored, instances computed).
+ *   Categories nest, so <path> is any depth — `chords`, `drills/hanon`:
+ *   GET    /bank                                 → categories + totals
+ *   GET    /bank/search?level_min&level_max&mode&form&hands&collection&tags
+ *   GET    /bank/<path>                          → a category index, or a seed
+ *   GET    /bank/<seed>/instances                → instance ids (?limit, ?expand=true)
+ *   GET    /bank/<seed>/instance?<axes>          → one materialized instance
+ *
  *   Menu activity strip:
  *   GET    /activity/recent                  → { players: [...] }  (per-player most-recent lesson-course progress)
  */
-export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pianoChallengePolicy = null, logger = console }) {
+export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pianoChallengePolicy = null, exerciseBank = null, logger = console }) {
   if (!pianoContainer) throw new Error('createPianoRouter: pianoContainer required');
   const router = express.Router();
   const ds = pianoContainer.studioDatastore;
@@ -572,6 +582,104 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pi
 
   // ── Lesson drills (content, read-only) ──────────────────────────────────────
   const safeDrillId = (id) => /^[A-Za-z0-9_-]{1,64}$/.test(id);
+
+  /**
+   * Exercise bank (read-only). The bank stores seeds; instances are computed,
+   * never stored, so `/instances` and `/instance` expand on demand rather than
+   * reading anything extra off disk.
+   *
+   *   GET /bank                                   → collections + totals
+   *   GET /bank/:collection                       → collection index
+   *   GET /bank/:collection/:id                   → one seed
+   *   GET /bank/:collection/:id/instances         → instance ids (?limit&expand)
+   *   GET /bank/:collection/:id/instance?<axes>   → one materialized instance
+   */
+  const bankReady = (res) => {
+    if (!exerciseBank?.available()) {
+      res.status(503).json({ error: 'Exercise bank unavailable' });
+      return false;
+    }
+    return true;
+  };
+
+  router.get('/bank', asyncHandler((_req, res) => {
+    if (!bankReady(res)) return;
+    const index = exerciseBank.getIndex();
+    // The manifest is generated; the directory is the truth if they disagree.
+    res.json(index || { categories: exerciseBank.listCategories() });
+  }));
+
+  // Search must be declared before the catch-all or "search" reads as a path.
+  router.get('/bank/search', asyncHandler((req, res) => {
+    if (!bankReady(res)) return;
+    const q = req.query;
+    const number = (value, fallback) => (Number.isFinite(Number(value)) ? Number(value) : fallback);
+    res.json(searchBank(exerciseBank.allSeeds(), {
+      mode: typeof q.mode === 'string' ? q.mode : 'free',
+      levelMin: number(q.level_min, 1),
+      levelMax: number(q.level_max, 10),
+      form: typeof q.form === 'string' ? q.form : null,
+      collection: typeof q.collection === 'string' ? q.collection : null,
+      tradition: typeof q.tradition === 'string' ? q.tradition : null,
+      hands: typeof q.hands === 'string' ? q.hands : null,
+      tags: typeof q.tags === 'string' ? q.tags.split(',').filter(Boolean) : null,
+      limit: Math.min(number(q.limit, 100), 500),
+      offset: Math.max(number(q.offset, 0), 0),
+    }));
+  }));
+
+  /**
+   * One catch-all for the tree, because categories nest to any depth and a
+   * fixed :collection/:id could not address `drills/hanon/001`. The trailing
+   * segment decides what is being asked for.
+   */
+  router.get('/bank/*splat', asyncHandler((req, res) => {
+    if (!bankReady(res)) return;
+    // Express 5 hands a named wildcard back as an array of segments.
+    const segments = splatPath(req).split('/').filter(Boolean);
+    if (!segments.length || segments.some((s) => s === '..' || s.startsWith('_'))) {
+      return res.status(400).json({ error: 'Invalid bank path' });
+    }
+
+    const last = segments.at(-1);
+    const head = segments.slice(0, -1).join('/');
+
+    // …/instance?<axes> and …/instances both address the seed before them.
+    if ((last === 'instance' || last === 'instances') && head) {
+      const seed = exerciseBank.getSeed(head);
+      if (!seed) return res.status(404).json({ error: 'Seed not found' });
+
+      if (last === 'instances') {
+        const limit = Math.min(Number(req.query.limit) || 500, 2000);
+        if (req.query.expand === 'true') {
+          return res.json({ seed_id: seed.id, total: countInstances(seed), instances: expandSeed(seed, { limit }) });
+        }
+        const ids = instanceIds(seed);
+        return res.json({ seed_id: seed.id, total: ids.length, instance_ids: ids.slice(0, limit) });
+      }
+
+      const axes = Object.fromEntries(
+        Object.entries(req.query).filter(([key]) => key !== 'limit' && key !== 'expand'),
+      );
+      const instance = materializeById(seed, instanceId(seed.id, axes));
+      if (!instance) return res.status(400).json({ error: 'No such instance of this seed', axes });
+      return res.json(instance);
+    }
+
+    const target = segments.join('/');
+    const seed = exerciseBank.getSeed(target);
+    if (seed) return res.json({ ...seed, instances: countInstances(seed) });
+
+    const category = exerciseBank.getCategory(target);
+    if (category) {
+      return res.json({
+        ...category,
+        seeds: exerciseBank.listSeeds(target),
+        categories: exerciseBank.listCategories(target),
+      });
+    }
+    return res.status(404).json({ error: 'Not found in the bank', path: target });
+  }));
 
   router.get('/lessons/:collection', asyncHandler((req, res) => {
     if (!safeSegment(req.params.collection)) return res.status(400).json({ error: 'Invalid collection' });

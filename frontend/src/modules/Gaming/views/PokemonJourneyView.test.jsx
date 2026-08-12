@@ -52,7 +52,8 @@ describe('Pokémon journey kiosk views', () => {
         onSelect={onSelect}
       />,
     );
-    expect(screen.getByText('Choose your practice partner')).toBeTruthy();
+    expect(screen.getByText('Choose your partner')).toBeTruthy();
+    expect(screen.getByText('Pick your favorite—every partner trains all four piano skills.')).toBeTruthy();
     expect(screen.getByText('8,123')).toBeTruthy();
     expect(screen.getByText('9,234')).toBeTruthy();
     expect(screen.getByText('Big Sis')).toBeTruthy();
@@ -100,7 +101,12 @@ describe('Pokémon journey kiosk views', () => {
       command_id: 'choose-scale', session_revision: 0, type: 'choose_action',
       payload: { card_instance_id: scale.instance_id },
     }, definition).state;
-    const Surface = () => <div>Live piano staff</div>;
+    const Surface = ({ compact, headerContext }) => (
+      <div data-testid="challenge-surface" data-compact={compact ? 'true' : 'false'}>
+        <strong>{headerContext}</strong>
+        <span>Live piano staff</span>
+      </div>
+    );
     render(
       <PokemonJourneyView
         {...baseProps}
@@ -109,7 +115,9 @@ describe('Pokémon journey kiosk views', () => {
       />,
     );
     expect(screen.getByRole('dialog', { name: 'Vine Whip piano challenge' })).toBeTruthy();
-    expect(screen.getByText('Accuracy decides direct hit, partial hit, or miss.')).toBeTruthy();
+    expect(screen.queryByText('Accuracy decides direct hit, partial hit, or miss.')).toBeNull();
+    expect(screen.getByTestId('challenge-surface').dataset.compact).toBe('true');
+    expect(screen.getByText('Vine Whip · Scales')).toBeTruthy();
     expect(screen.getByText('Live piano staff')).toBeTruthy();
     expect(screen.getByAltText('Bulbasaur')).toBeTruthy();
     expect(screen.getByAltText('Pidgey')).toBeTruthy();
