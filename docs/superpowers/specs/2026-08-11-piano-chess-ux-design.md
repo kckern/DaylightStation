@@ -183,10 +183,9 @@ rungs:
 opponent_delay_ms: 700
 shuffle_each_turn: true
 feedback:
+  hint_level: after-mistake   # off | after-mistake | always
   flash_rejected: true
   toast: true
-  highlight_sources: true
-  highlight_targets: true
 ```
 
 A rung sets **either `skill` or `elo`, never both.** They are different mechanisms and
@@ -205,9 +204,10 @@ never what anyone means).
 An unknown `default_rung` resolves to the middle rung and logs a warning; it must not
 throw, because a typo in YAML should not take the game down.
 
-The existing `feedback` cues keep their current meaning, with one change already shipped:
-`highlight_sources` and `highlight_targets` are gated on a refusal, so they describe how
-loudly the board answers a *mistake*, not what it volunteers up front.
+The refusal cues (`flash_rejected`, `toast`) keep their current meaning. The legality
+cues are no longer configured as a pair of booleans — see `hint_level` below, which
+absorbed them along with the gating behaviour already shipped, where the board answers a
+*mistake* rather than volunteering legality up front.
 
 ### In-game settings panel
 
@@ -221,7 +221,7 @@ Hint level is one three-way control over the two *legality* cues, because "how m
 the board show me about legal moves" is one question to a player and two booleans to the
 code:
 
-| Hint level | `highlight_sources` / `highlight_targets` |
+| Hint level | Effect on the board's legality cues |
 |---|---|
 | Off | never shown |
 | After a mistake (default) | shown once a chord is refused, hidden again when the next move lands |
@@ -263,9 +263,11 @@ Two constraints on it, both learned from the code it replaces:
   failed to resolve.
 
 **A ghost piece previews the destination.** While a chord is held and a piece is
-selected, the target square shows a translucent copy of the piece, with a ring that
-completes over the settle window. Commit-on-release then reads as aiming rather than
-hoping.
+selected, the target square shows a translucent copy of the piece — including when that
+square is occupied, since a capture is the preview a player most wants. Commit-on-release
+then reads as aiming rather than hoping. No progress ring: the read-out already says when
+a chord is still settling, and a second timing indicator on the board would compete with
+the piece it is trying to make legible.
 
 Both are driven by state the component already computes (`cursorChord`, `cursor`,
 `game.origin`); neither needs new engine or network work.
@@ -274,7 +276,10 @@ Both are driven by state the component already computes (`cursorChord`, `cursor`
 
 - **Adapter:** worker boots and answers a known position; `bestmove` parsing; timeout
   falls back to the homegrown engine and says so; two concurrent requests serialize
-  rather than interleave; `ucinewgame` is issued when `gameId` changes.
+  rather than interleave; the rung maps to the right homegrown level when falling back.
+  (`ucinewgame`-on-`gameId`-change is verified by reading the worker, not by a test —
+  asserting it would mean reaching inside the worker's UCI stream for no behavioural
+  gain.)
 - **Config:** global-only resolves; user override wins per key; unknown rung falls back
   to the middle rung and warns; `PUT` writes only the user file.
 - **API:** invalid FEN is rejected before reaching the engine; a move response names its

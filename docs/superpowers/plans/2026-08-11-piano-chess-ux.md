@@ -161,15 +161,18 @@ const require = createRequire(import.meta.url);
 const initEngine = require('stockfish');
 
 let engine = null;
-let pending = null; // { id } of the search the main thread is still waiting on
+let pending = null;   // { id } of the search the main thread is still waiting on
+let drainNext = false; // swallow exactly one bestmove: the abandoned search's tail
 
 function handleLine(raw) {
   const line = String(raw);
   if (!line.startsWith('bestmove')) return;
   const uci = line.split(/\s+/)[1] || '';
-  // A bestmove with no live request is the tail of an abandoned search. Dropping
-  // it is the whole defence against one timeout shifting every later reply onto
-  // the previous position.
+  // UCI does not tag a bestmove with the search that produced it, so "match the
+  // id" cannot be done by inspection — an abandoned search's reply would simply
+  // be attributed to whatever is pending when it lands. The abandon path arms
+  // this flag instead, and the first bestmove after it is consumed silently.
+  if (drainNext) { drainNext = false; return; }
   if (!pending) return;
   const { id } = pending;
   pending = null;
@@ -192,8 +195,14 @@ parentPort.on('message', (msg) => {
   // engine to stop, so its late bestmove is dropped by handleLine above and the
   // next search starts from a quiet engine.
   if (msg.type === 'abandon') {
-    if (pending?.id === msg.id) pending = null;
-    engine.sendCommand('stop');
+    // Only arm the drain if this search has NOT already replied. If pending is
+    // null or holds a different id, its bestmove is already out and arming here
+    // would swallow the next legitimate reply instead.
+    if (pending?.id === msg.id) {
+      pending = null;
+      drainNext = true;
+      engine.sendCommand('stop');
+    }
     return;
   }
   if (msg.type !== 'search') return;
@@ -314,6 +323,14 @@ export function createStockfishEngine({
         worker?.terminate?.();
         worker = null;
       });
+      // A worker can exit without ever emitting 'error'. Without this the handle
+      // stays non-null, every later search posts into a dead port and waits out
+      // the full timeout before falling back — a permanent per-move latency tax
+      // whose only symptom is a stream of chess.engine.timeout warnings.
+      worker.on('exit', () => {
+        for (const entry of waiting.values()) entry.resolve(null);
+        worker = null;
+      });
       worker.unref?.();
     } catch (error) {
       workerUsable = false;
@@ -389,7 +406,7 @@ export default { createStockfishEngine, engineOptionsForRung };
 - [ ] **Step 6: Run the tests to verify they pass**
 
 Run: `npx vitest run backend/src/1_adapters/chess/StockfishEngineAdapter.test.mjs`
-Expected: PASS (5 tests).
+Expected: PASS (8 tests: 5 adapter + 3 fallbackDifficultyFor).
 
 - [ ] **Step 7: Commit**
 
@@ -587,7 +604,7 @@ export default { createChessConfigService, mergeChessConfig, resolveRung };
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `npx vitest run backend/src/3_applications/chess/ChessConfigService.test.mjs`
-Expected: PASS (7 tests).
+Expected: PASS (9 tests).
 
 - [ ] **Step 5: Create the household config file**
 
@@ -862,7 +879,7 @@ git commit -m "feat(chess): /api/v1/chess move and config endpoints"
 - Modify: `frontend/src/modules/Piano/PianoChessGame/PianoChessGame.jsx` (the opponent effect, currently ~line 179-189, and the `DIFFICULTIES` import on line 2)
 
 **Interfaces:**
-- Consumes: `POST /api/v1/chess/move` and `GET /api/v1/chess/config` from Task 3.
+- Consumes: `POST /api/v1/chess/move` and `GET /api/v1/chess/config` from Task 3, through `DaylightAPI(path, data, method)` from `frontend/src/lib/api.mjs` — the kiosk helper that applies the base URL and the `ds_token` header. Hand-rolled `fetch` bypasses both. Note its signature quirk: a GET with a non-empty `data` object is auto-promoted to POST, so pass no data for reads and an explicit `'PUT'` for writes.
 - Produces: `fetchChessConfig(userId)` resolving the merged config; `requestOpponentMove({ fen, rung, gameId, userId })` resolving `{ from, to, san, engine } | null`; `saveChessConfig(userId, patch)`.
 
 - [ ] **Step 1: Write the failing test**
@@ -871,45 +888,54 @@ Create `frontend/src/modules/Piano/PianoChessGame/chessApi.test.js`:
 
 ```javascript
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+
+vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: vi.fn() }));
+
+import { DaylightAPI } from '../../../lib/api.mjs';
 import { fetchChessConfig, requestOpponentMove, saveChessConfig } from './chessApi.js';
 
-beforeEach(() => { globalThis.fetch = vi.fn(); });
+beforeEach(() => { vi.clearAllMocks(); });
 
 describe('requestOpponentMove', () => {
   it('posts the position and returns the move', async () => {
-    globalThis.fetch.mockResolvedValue({ ok: true, json: async () => ({ from: 'e7', to: 'e5', san: 'e5', engine: 'stockfish' }) });
+    DaylightAPI.mockResolvedValue({ from: 'e7', to: 'e5', san: 'e5', engine: 'stockfish' });
     const move = await requestOpponentMove({ fen: 'x', rung: 'learner', gameId: 'g1', userId: 'felix' });
     expect(move).toMatchObject({ from: 'e7', to: 'e5' });
-    const [url, init] = globalThis.fetch.mock.calls[0];
-    expect(url).toContain('/api/v1/chess/move');
-    expect(JSON.parse(init.body)).toMatchObject({ fen: 'x', rung: 'learner', gameId: 'g1' });
+    const [path, data, method] = DaylightAPI.mock.calls[0];
+    expect(path).toBe('api/v1/chess/move?user=felix');
+    expect(data).toMatchObject({ fen: 'x', rung: 'learner', gameId: 'g1' });
+    expect(method).toBe('POST');
   });
 
   it('returns null when the server says the game is over', async () => {
-    globalThis.fetch.mockResolvedValue({ ok: true, json: async () => ({ move: null }) });
+    DaylightAPI.mockResolvedValue({ move: null });
     expect(await requestOpponentMove({ fen: 'x', rung: 'learner', gameId: 'g1' })).toBeNull();
   });
 
   it('returns null when the request fails so the caller can fall back locally', async () => {
-    globalThis.fetch.mockRejectedValue(new Error('offline'));
+    DaylightAPI.mockRejectedValue(new Error('offline'));
     expect(await requestOpponentMove({ fen: 'x', rung: 'learner', gameId: 'g1' })).toBeNull();
   });
 });
 
 describe('fetchChessConfig', () => {
+  it('reads without a data object, so the helper does not promote it to POST', async () => {
+    DaylightAPI.mockResolvedValue({ default_rung: 'learner' });
+    await fetchChessConfig('felix');
+    expect(DaylightAPI).toHaveBeenCalledWith('api/v1/chess/config?user=felix');
+  });
+
   it('returns null on failure rather than throwing into render', async () => {
-    globalThis.fetch.mockResolvedValue({ ok: false, status: 500, json: async () => ({}) });
+    DaylightAPI.mockRejectedValue(new Error('boom'));
     expect(await fetchChessConfig('felix')).toBeNull();
   });
 });
 
 describe('saveChessConfig', () => {
   it('PUTs the patch for the user', async () => {
-    globalThis.fetch.mockResolvedValue({ ok: true, json: async () => ({ default_rung: 'steady' }) });
+    DaylightAPI.mockResolvedValue({ default_rung: 'steady' });
     await saveChessConfig('felix', { default_rung: 'steady' });
-    const [url, init] = globalThis.fetch.mock.calls[0];
-    expect(url).toContain('user=felix');
-    expect(init.method).toBe('PUT');
+    expect(DaylightAPI).toHaveBeenCalledWith('api/v1/chess/config?user=felix', { default_rung: 'steady' }, 'PUT');
   });
 });
 ```
@@ -924,6 +950,7 @@ Expected: FAIL — cannot resolve `./chessApi.js`.
 Create `frontend/src/modules/Piano/PianoChessGame/chessApi.js`:
 
 ```javascript
+import { DaylightAPI } from '../../../lib/api.mjs';
 import getLogger from '../../../lib/logging/Logger.js';
 
 let cachedLogger;
@@ -932,18 +959,12 @@ function logger() {
   return cachedLogger;
 }
 
-const withUser = (path, userId) => (userId ? `${path}${path.includes('?') ? '&' : '?'}user=${encodeURIComponent(userId)}` : path);
+const withUser = (path, userId) => (userId ? `${path}?user=${encodeURIComponent(userId)}` : path);
 
 /** Resolves null on any failure: the caller falls back to the local engine. */
 export async function requestOpponentMove({ fen, rung, gameId, userId = null }) {
   try {
-    const res = await fetch(withUser('/api/v1/chess/move', userId), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fen, rung, gameId }),
-    });
-    if (!res.ok) { logger().warn('chess.move.request-failed', { status: res.status }); return null; }
-    const body = await res.json();
+    const body = await DaylightAPI(withUser('api/v1/chess/move', userId), { fen, rung, gameId }, 'POST');
     return body && body.from ? body : null;
   } catch (error) {
     logger().warn('chess.move.request-error', { error: error.message });
@@ -953,9 +974,8 @@ export async function requestOpponentMove({ fen, rung, gameId, userId = null }) 
 
 export async function fetchChessConfig(userId = null) {
   try {
-    const res = await fetch(withUser('/api/v1/chess/config', userId));
-    if (!res.ok) { logger().warn('chess.config.fetch-failed', { status: res.status }); return null; }
-    return await res.json();
+    // No data object: DaylightAPI promotes a GET with a body to POST.
+    return await DaylightAPI(withUser('api/v1/chess/config', userId));
   } catch (error) {
     logger().warn('chess.config.fetch-error', { error: error.message });
     return null;
@@ -964,13 +984,7 @@ export async function fetchChessConfig(userId = null) {
 
 export async function saveChessConfig(userId, patch) {
   try {
-    const res = await fetch(withUser('/api/v1/chess/config', userId), {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(patch),
-    });
-    if (!res.ok) { logger().warn('chess.config.save-failed', { status: res.status }); return null; }
-    return await res.json();
+    return await DaylightAPI(withUser('api/v1/chess/config', userId), patch, 'PUT');
   } catch (error) {
     logger().warn('chess.config.save-error', { error: error.message });
     return null;
@@ -983,7 +997,7 @@ export default { requestOpponentMove, fetchChessConfig, saveChessConfig };
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `npx vitest run frontend/src/modules/Piano/PianoChessGame/chessApi.test.js`
-Expected: PASS (5 tests).
+Expected: PASS (6 tests).
 
 - [ ] **Step 5: Use it in the opponent effect**
 
@@ -1061,8 +1075,10 @@ Add a test to `chessGameState.test.js` that an underpromotion is honoured:
 
 ```javascript
 it('honours an explicit underpromotion instead of always queening', () => {
-  // White pawn on e7, black king tucked away; e8=N is legal.
-  const state = createChessGameState({ fen: '4k3/4P3/8/8/8/8/8/4K3 w - - 0 1' });
+  // Black king on h8, off the promotion file — with it on e8 the pawn has no
+  // move at all and this test throws instead of failing. Verified: this FEN
+  // offers e8=N, e8=B, e8=R+, e8=Q+.
+  const state = createChessGameState({ fen: '7k/4P3/8/8/8/8/8/4K3 w - - 0 1' });
   const { state: next } = commitMove(state, 'e7', 'e8', 'n');
   expect(next.history.at(-1).san).toContain('=N');
 });
@@ -1195,7 +1211,7 @@ export default function ChordReadout({
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `npx vitest run frontend/src/modules/Piano/PianoChessGame/ChordReadout.test.jsx`
-Expected: PASS (4 tests).
+Expected: PASS (5 tests).
 
 - [ ] **Step 5: Mount it above the keyboard and style it**
 
@@ -1208,14 +1224,32 @@ In `PianoChessGame.jsx`, put the readout inside the keyboard footer, above the k
     chord={cursorChord}
     square={cursor}
     connected={connected}
-    settling={heldNotes.length >= 3 && !cursor}
+    settling={heldNotes.length >= 3 && !cursorResolved}
   />
   <PianoKeyboard activeNotes={activeNotes} startNote={36} endNote={84} />
 </footer>
 ```
 
-Then delete the `piano-chess__midi` block from the left rail (`PianoChessGame.jsx:241-246`),
+Then delete the `piano-chess__midi` block from the left rail (`PianoChessGame.jsx:243-250`),
 which this supersedes.
+
+**`settling` cannot be derived from `cursor` alone.** `advanceCursor` fires
+`{ type: 'preview', square: null }` when a stable held set fails to resolve
+(`chordCursor.js:95-100`), and the game's handler does `setCursor(event.square)` — so an
+unmapped chord leaves `cursor === null`, which is indistinguishable from "still
+settling". Deriving `settling` from `!cursor` would pin the strip on "Reading…" forever
+for exactly the case it exists to name. Track whether the cursor has *reported* instead:
+
+```javascript
+const [cursorResolved, setCursorResolved] = useState(false);
+// in the cursor tick, alongside the existing preview handling:
+if (event.type === 'preview') { setCursor(event.square); setCursorResolved(true); }
+// and when the hands leave the keys, so the next chord starts unresolved again:
+useEffect(() => { if (heldNotes.length === 0) setCursorResolved(false); }, [heldNotes.length]);
+```
+
+Add a test that a settled-but-unmapped chord does reach the "not a square" state, since
+the component's own unit tests inject `settling` by hand and cannot catch this wiring.
 
 Add to `PianoChessGame.scss`:
 
@@ -1396,6 +1430,8 @@ const CONFIG = {
     { id: 'learner', label: 'Learner', skill: 3, movetime_ms: 200 },
     { id: 'steady', label: 'Steady', skill: 8, movetime_ms: 300 },
   ],
+  opponent_delay_ms: 700,
+  shuffle_each_turn: true,
   feedback: { hint_level: 'after-mistake' },
 };
 
@@ -1424,6 +1460,23 @@ describe('ChessSettingsPanel', () => {
     render(<ChessSettingsPanel config={CONFIG} rungId="learner" onChange={onChange} onClose={() => {}} />);
     fireEvent.click(screen.getByRole('button', { name: /always/i }));
     expect(onChange).toHaveBeenCalledWith({ feedback: { hint_level: 'always' } });
+  });
+
+  it('offers the shuffle and opponent-delay controls too', () => {
+    render(<ChessSettingsPanel config={CONFIG} rungId="learner" onChange={() => {}} onClose={() => {}} />);
+    expect(screen.getByRole('button', { name: /shuffle/i })).toBeTruthy();
+    for (const label of ['300', '700', '1200']) {
+      expect(screen.getByRole('button', { name: new RegExp(label) })).toBeTruthy();
+    }
+  });
+
+  it('emits patches for shuffle and delay in config shape', () => {
+    const onChange = vi.fn();
+    render(<ChessSettingsPanel config={CONFIG} rungId="learner" onChange={onChange} onClose={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: /shuffle/i }));
+    expect(onChange).toHaveBeenCalledWith({ shuffle_each_turn: false });
+    fireEvent.click(screen.getByRole('button', { name: /1200/ }));
+    expect(onChange).toHaveBeenCalledWith({ opponent_delay_ms: 1200 });
   });
 
   it('uses no sliders — every control is a discrete tap target', () => {
@@ -1505,7 +1558,7 @@ export default function ChessSettingsPanel({ config, rungId, onChange, onClose }
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `npx vitest run frontend/src/modules/Piano/PianoChessGame/ChessSettingsPanel.test.jsx`
-Expected: PASS (5 tests).
+Expected: PASS (7 tests).
 
 - [ ] **Step 5: Wire it into the game**
 
@@ -1571,9 +1624,23 @@ Derive `opponentDelayMs` from `chessConfig?.opponent_delay_ms ?? 700`, and
 `gameConfig` prop when the config has not loaded), so the panel's shuffle control is not
 decorative.
 
-The panel needs **four** controls, per the spec: rung, hint level, shuffle (on/off), and
-opponent delay (discrete choices — 300 / 700 / 1200 ms — never a slider). Extend the
-component and its test beyond the two shown above.
+All four controls are covered by the Step 1 tests: rung, hint level, shuffle (on/off) and
+opponent delay (discrete choices — 300 / 700 / 1200 ms, never a slider). Build the
+shuffle and delay rows the same way as the two shown, emitting `{ shuffle_each_turn }`
+and `{ opponent_delay_ms }`.
+
+The shuffle toggle only takes effect on the next game: `createChessGameState` captures
+`shuffleEachTurn` at construction, so a mid-game change cannot re-deal the board the
+player is currently reading. Label it accordingly ("next game") rather than letting it
+look inert.
+
+**`cuesFromConfig` replaces the existing cue spread — it does not join it.** The
+component currently computes
+`cues = { ...DEFAULT_FEEDBACK, ...(gameConfig?.feedback ?? {}), ...(feedback ?? {}) }`.
+After this task the chess config is the only source: `cues = { ...DEFAULT_FEEDBACK, ...cuesFromConfig(chessConfig) }`,
+with the `feedback` prop kept solely as a test seam (tests pass it directly) and
+`gameConfig?.feedback` dropped. Two config sources for one preference is the drift this
+whole section exists to prevent.
 
 Also update the rail's difficulty label: it currently renders
 `DIFFICULTIES[difficulty]?.label` from the homegrown ladder (`PianoChessGame.jsx:295`),
