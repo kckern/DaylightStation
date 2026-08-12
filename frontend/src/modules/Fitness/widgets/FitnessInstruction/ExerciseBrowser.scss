@@ -1,22 +1,19 @@
 @use './exerciseTokens' as ex;
 
-// Browse — the corpus grid on a garage-gym TV.
-//
-// Layout is a fixed header + filter rails over ONE scrolling region (the grid).
-// Only the grid scrolls: the rails must stay reachable without scrolling back up,
-// because a sweaty hand flicking a long page overshoots constantly.
-//
-// Nothing here is hover-dependent. Selection is shown with fill and border, both
-// visible from across the room; :focus-visible is kept for keyboard use.
-
+// Touch-first corpus browser for the garage TV. Header and filters stay fixed;
+// the card grid is the only vertical scrolling region. Only one filter category
+// is expanded at once, keeping all taxonomy sizes inside the same height budget.
 .exercise-browser {
   position: absolute;
   inset: 0;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 18px 24px 22px;
-  background: radial-gradient(120% 90% at 50% 0%, #14112a 0%, ex.$ex-bg 70%);
+  gap: 10px;
+  padding: 16px 20px 18px;
+  background:
+    radial-gradient(80% 60% at 20% -10%, rgba(33, 230, 255, 0.09), transparent 62%),
+    radial-gradient(75% 70% at 100% 0%, rgba(93, 255, 155, 0.055), transparent 58%),
+    ex.$ex-bg;
   color: ex.$ex-text;
   font-family: ex.$ex-display;
   overflow: hidden;
@@ -25,145 +22,193 @@
     flex: 0 0 auto;
     display: flex;
     align-items: center;
-    gap: 18px;
+    gap: 20px;
   }
 
   &__heading {
+    width: 220px;
+    min-width: 0;
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    min-width: 0;
+    gap: 3px;
   }
 
   &__title {
     margin: 0;
-    font-size: 2.6rem;
-    font-weight: 700;
+    font-size: 2.45rem;
+    font-weight: 750;
     line-height: 1;
   }
 
   &__count {
     font-size: ex.$ex-micro;
-    letter-spacing: 0.2em;
+    letter-spacing: 0.18em;
     text-transform: uppercase;
     color: ex.$ex-muted;
     font-variant-numeric: tabular-nums;
   }
 
-  &__search {
+  &__header-prompt {
     flex: 1 1 auto;
     min-width: 0;
-    height: ex.$ex-action-h;
-    padding: 0 24px;
-    font-family: inherit;
-    font-size: ex.$ex-body;
-    color: ex.$ex-text;
-    background: ex.$ex-panel;
-    border: 2px solid ex.$ex-border;
-    border-radius: 14px;
-
-    &::placeholder { color: ex.$ex-muted; }
-
-    &:focus {
-      outline: none;
-      border-color: ex.$ex-accent;
-    }
-  }
-
-  // ── Facet rails ───────────────────────────────────────────────────────────
-  // The group rail scrolls sideways rather than wrapping: 12 groups in one row
-  // keeps the primary cut a single flick, and a wrapping rail would push the
-  // grid below the fold at some viewport widths.
-  &__rail {
-    flex: 0 0 auto;
+    min-height: 56px;
     display: flex;
-    gap: 10px;
-    overflow-x: auto;
-    padding-bottom: 4px;
-    scrollbar-width: none;
-
-    &::-webkit-scrollbar { display: none; }
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+    padding-left: 20px;
+    border-left: 2px solid rgba(33, 230, 255, 0.35);
   }
 
-  // Secondary facets. Every rule here exists to keep this block at ONE chip row
-  // tall. It previously wrapped freely (`max-height: 26vh` — a viewport unit
-  // inside a fixed-height 744px panel, so it never bit) and grew to 1,225px of
-  // content, leaving the grid an 88px sliver with no page scroll to rescue it.
-  // Whatever the filters take here is taken from the grid.
-  &__facets {
-    flex: 0 0 auto;
-    display: flex;
-    align-items: center;
-    gap: 16px;
-  }
-
-  &__facet {
-    flex: 1 1 0;
-    min-width: 0;
-    display: flex;
-    align-items: center; // label sits BESIDE the row, not above it
-    gap: 12px;
-  }
-
-  &__facet-label {
-    flex: 0 0 auto;
-    font-size: ex.$ex-micro;
-    letter-spacing: 0.24em;
+  &__header-prompt-kicker {
+    font-size: 0.95rem;
+    font-weight: 700;
+    letter-spacing: 0.22em;
     text-transform: uppercase;
+    color: ex.$ex-accent;
+  }
+
+  &__header-prompt-copy {
+    font-size: 1.35rem;
     color: ex.$ex-muted;
   }
 
-  &__facet-chips {
+  // ── Filter deck ───────────────────────────────────────────────────────────
+  &__filter-deck {
+    flex: 0 0 auto;
+    min-width: 0;
     display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px;
+    border: 1px solid rgba(93, 83, 139, 0.38);
+    border-radius: 16px;
+    background: rgba(18, 16, 31, 0.86);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+  }
+
+  &__facet-tabs {
+    min-height: 46px;
+    display: flex;
+    align-items: center;
     gap: 8px;
   }
 
-  // One row, scrolled sideways — the same shape as the group rail above.
-  // `nowrap` is the whole fix; without it the rail reclaims the grid.
-  &__facet-chips--row {
-    flex: 1 1 auto;
-    min-width: 0;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: none;
-
-    &::-webkit-scrollbar { display: none; }
-  }
-
-  &__facet-hint {
-    align-items: center;
-    min-height: ex.$ex-chip-h;
-    font-size: ex.$ex-label;
-    color: ex.$ex-muted;
-    opacity: 0.7;
-  }
-
-  &__chip {
+  &__facet-tab {
+    min-width: 158px;
+    height: 46px;
     display: inline-flex;
     align-items: center;
-    min-height: ex.$ex-chip-h;
-    padding: 0 22px;
-    border-radius: 999px;
-    background: ex.$ex-panel;
-    border: 2px solid ex.$ex-border;
-    color: ex.$ex-text;
-    font-size: ex.$ex-label;
+    justify-content: center;
+    gap: 10px;
+    padding: 0 18px;
+    border: 1px solid #2e2844;
+    border-radius: 11px;
+    background: rgba(18, 16, 31, 0.72);
+    color: ex.$ex-muted;
+    font-size: 1.25rem;
     font-weight: 700;
-    letter-spacing: 0.04em;
-    white-space: nowrap;
+    letter-spacing: 0.035em;
     cursor: pointer;
     user-select: none;
     touch-action: manipulation;
 
     &--on {
-      background: rgba(33, 230, 255, 0.16);
-      border-color: ex.$ex-accent;
-      color: ex.$ex-accent;
+      color: ex.$ex-text;
+      border-color: rgba(33, 230, 255, 0.42);
+      background: linear-gradient(180deg, rgba(33, 230, 255, 0.15), rgba(33, 230, 255, 0.07));
+      box-shadow: inset 0 -2px 0 ex.$ex-accent;
     }
 
     &:focus-visible {
       outline: 3px solid ex.$ex-accent;
-      outline-offset: 3px;
+      outline-offset: 2px;
+    }
+
+    &:active { transform: scale(0.98); }
+  }
+
+  &__facet-badge {
+    min-width: 25px;
+    height: 25px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 7px;
+    border-radius: 999px;
+    background: ex.$ex-accent;
+    color: #061014;
+    font-size: 0.95rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__filter-guide {
+    margin-left: auto;
+    padding: 0 12px;
+    font-size: 1.05rem;
+    letter-spacing: 0.08em;
+    color: ex.$ex-muted;
+    white-space: nowrap;
+  }
+
+  &__option-rail {
+    min-width: 0;
+    min-height: ex.$ex-chip-h;
+    display: flex;
+    align-items: stretch;
+    gap: 8px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    scroll-snap-type: x proximity;
+    border-radius: 12px;
+
+    &::-webkit-scrollbar { display: none; }
+  }
+
+  &__facet-hint {
+    width: 100%;
+    min-height: ex.$ex-chip-h;
+    display: flex;
+    align-items: center;
+    padding: 0 18px;
+    border: 1px dashed ex.$ex-border;
+    border-radius: 11px;
+    font-size: 1.25rem;
+    color: ex.$ex-muted;
+    opacity: 0.8;
+  }
+
+  &__chip {
+    flex: 0 0 auto;
+    min-height: ex.$ex-chip-h;
+    display: inline-flex;
+    align-items: center;
+    padding: 0 18px;
+    border: 1px solid #393153;
+    border-radius: 11px;
+    background: ex.$ex-panel-2;
+    color: ex.$ex-text;
+    font-size: ex.$ex-label;
+    font-weight: 700;
+    letter-spacing: 0.035em;
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+    touch-action: manipulation;
+    scroll-snap-align: start;
+
+    &--on {
+      background: linear-gradient(180deg, rgba(33, 230, 255, 0.2), rgba(33, 230, 255, 0.11));
+      border-color: ex.$ex-accent;
+      color: ex.$ex-accent;
+      box-shadow: inset 0 0 0 1px rgba(33, 230, 255, 0.25);
+    }
+
+    &:focus-visible {
+      outline: 3px solid ex.$ex-accent;
+      outline-offset: 2px;
     }
 
     &:active { transform: scale(0.97); }
@@ -176,26 +221,25 @@
     overflow-y: auto;
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(ex.$ex-card-min, 1fr));
-    // `max-content`, NOT the `auto` default. This grid has a DEFINITE block size
-    // (it is the flex child that absorbs the panel's remaining height), and with
-    // `auto` rows Chromium sized all 20 rows to fit that box: every card
-    // measured 0px tall and the grid rendered as a stack of hairlines. Measured
-    // in Chromium at 1920x1080 — card clientHeight 0 with `auto`, 202 with
-    // `max-content`. Rows must size to their content and let the grid scroll.
+    // A definite-height grid must size rows to content. `auto` collapses every
+    // one of the 60 mounted rows to a hairline in Chromium.
     grid-auto-rows: max-content;
-    gap: 16px;
+    gap: 12px;
     align-content: start;
-    padding: 4px 4px 12px;
+    padding: 2px 4px 12px;
+    scrollbar-color: #3c3458 transparent;
+    scrollbar-width: thin;
   }
 
   &__card {
     position: relative;
     display: flex;
     flex-direction: column;
-    background: ex.$ex-panel;
-    border: 2px solid ex.$ex-border;
-    border-radius: 16px;
     overflow: hidden;
+    border: 1px solid #332b4b;
+    border-radius: 14px;
+    background: ex.$ex-panel;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
     cursor: pointer;
     user-select: none;
     touch-action: manipulation;
@@ -208,22 +252,17 @@
     &:active { transform: scale(0.99); }
   }
 
-  // Fixed HEIGHT, not a fixed ratio. Both stop the grid reflowing as GIFs
-  // stream in and out (a card whose height follows a lazily-mounted <img> makes
-  // the page jump under the finger), but a ratio ties card height to column
-  // width, so a wider panel silently produces taller cards and fewer visible
-  // rows. Height is the scarce axis here — the panel is a fixed 744px box that
-  // does not scroll — so it is the one that gets pinned. The corpus GIFs are
-  // square, and `object-fit: contain` letterboxes them either way.
+  // A fixed height prevents lazy GIF mount/unmount from moving the card under
+  // the user's finger and keeps density stable across panel widths.
   &__thumb {
+    width: 100%;
     height: ex.$ex-thumb-h;
     flex: 0 0 auto;
-    width: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: ex.$ex-panel-2;
     overflow: hidden;
+    background: ex.$ex-panel-2;
   }
 
   &__gif {
@@ -233,34 +272,35 @@
   }
 
   &__thumb-placeholder {
-    font-size: 4rem;
+    font-size: 3.6rem;
     font-weight: 700;
     color: rgba(167, 159, 196, 0.3);
   }
 
   &__card-name {
-    padding: 12px 68px 14px 16px; // right gutter clears the + target
-    font-size: ex.$ex-label;
+    min-height: 56px;
+    display: flex;
+    align-items: center;
+    padding: 8px 66px 9px 14px;
+    font-size: 1.2rem;
     font-weight: 700;
-    line-height: 1.15;
+    line-height: 1.12;
   }
 
-  // The + is its own 72px target inside the card. Big enough that adding never
-  // becomes "open the sheet by accident".
   &__add {
     position: absolute;
-    right: 10px;
-    bottom: 10px;
+    right: 7px;
+    bottom: 6px;
     width: ex.$ex-chip-h;
     height: ex.$ex-chip-h;
     display: flex;
     align-items: center;
     justify-content: center;
+    border: 1px solid #41375e;
     border-radius: 50%;
-    background: rgba(10, 10, 20, 0.85);
-    border: 2px solid ex.$ex-border;
+    background: rgba(10, 10, 20, 0.9);
     color: ex.$ex-text;
-    font-size: 2.4rem;
+    font-size: 2rem;
     font-weight: 700;
     line-height: 1;
 
@@ -272,11 +312,11 @@
 
     &:focus-visible {
       outline: 3px solid ex.$ex-accent;
-      outline-offset: 3px;
+      outline-offset: 2px;
     }
   }
 
-  // ── Notices (loading / empty / error / library-not-built) ─────────────────
+  // ── Notices ───────────────────────────────────────────────────────────────
   &__notice {
     flex: 1 1 auto;
     display: flex;
@@ -284,10 +324,10 @@
     align-items: center;
     justify-content: center;
     gap: 10px;
-    text-align: center;
     padding: 24px;
     border: 2px dashed ex.$ex-border;
     border-radius: 16px;
+    text-align: center;
   }
 
   &__notice-title {
@@ -296,14 +336,12 @@
   }
 
   &__notice-body {
-    margin: 0;
     max-width: 60ch;
-    font-size: ex.$ex-body;
+    margin: 0;
     color: ex.$ex-muted;
+    font-size: ex.$ex-body;
   }
 
-  // The unbuilt-index notice is amber, not grey: it is the one zero-results
-  // state that is an operator problem rather than a filter that is too narrow.
   &__notice--warn {
     border-color: ex.$ex-warn;
     color: ex.$ex-warn;
@@ -311,92 +349,92 @@
     .exercise-browser__notice-body { color: ex.$ex-warn; }
   }
 
-  // ── Tap targets ───────────────────────────────────────────────────────────
+  // ── Shared tap targets ────────────────────────────────────────────────────
   &__tap {
     flex: 0 0 auto;
+    min-width: 220px;
+    min-height: ex.$ex-action-h;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: 2px;
-    min-height: ex.$ex-action-h;
-    min-width: 220px;
-    padding: 12px 28px;
-    border-radius: 14px;
+    padding: 10px 26px;
+    border-radius: 13px;
     cursor: pointer;
     user-select: none;
     touch-action: manipulation;
 
     &:focus-visible {
       outline: 3px solid ex.$ex-accent;
-      outline-offset: 4px;
+      outline-offset: 3px;
     }
 
     &:active { transform: scale(0.985); }
   }
 
   &__tap--primary {
-    background: linear-gradient(180deg, #1c8f5e 0%, #126b45 100%);
     border: 2px solid ex.$ex-go;
-    box-shadow: 0 0 24px rgba(93, 255, 155, 0.18);
+    background: linear-gradient(180deg, #1c8f5e 0%, #126b45 100%);
+    box-shadow: 0 0 24px rgba(93, 255, 155, 0.16);
     color: ex.$ex-text;
   }
 
   &__tap--ghost {
-    background: transparent;
     border: 2px solid ex.$ex-border;
+    background: transparent;
     color: ex.$ex-muted;
   }
 
-  // Chip-height action for controls that sit inside a filter rail row.
   &__tap--compact {
-    min-height: ex.$ex-chip-h;
     min-width: 0;
-    padding: 0 24px;
-    border-radius: 999px;
+    min-height: 46px;
+    padding: 0 18px;
+    border: 1px solid ex.$ex-border;
+    border-radius: 11px;
     background: transparent;
-    border: 2px solid ex.$ex-border;
     color: ex.$ex-muted;
 
-    .exercise-browser__tap-label { font-size: ex.$ex-label; }
+    .exercise-browser__tap-label { font-size: 1.1rem; }
   }
 
-  // "Show more" as a grid cell: same footprint as a card, so it costs the page
-  // nothing until the user has scrolled to it.
+  // Show more is a grid cell, so it costs no permanent vertical space.
   &__tap--tile {
     min-width: 0;
     height: 100%;
-    background: transparent;
     border: 2px dashed ex.$ex-border;
+    background: transparent;
     color: ex.$ex-muted;
   }
 
   &__tap-label {
-    font-size: 1.8rem;
+    font-size: 1.65rem;
     font-weight: 700;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.055em;
     text-transform: uppercase;
   }
 
   &__tap-sub {
     font-size: ex.$ex-micro;
-    letter-spacing: 0.18em;
+    letter-spacing: 0.16em;
     text-transform: uppercase;
     opacity: 0.85;
     font-variant-numeric: tabular-nums;
   }
 }
 
-// Narrow / portrait panels (a dev window, or the module in a column): stack the
-// header rather than crushing the search box below a usable width.
 @media (max-width: 900px) {
   .exercise-browser__header { flex-wrap: wrap; }
-  .exercise-browser__search { order: 3; flex-basis: 100%; }
-  .exercise-browser__facets { flex-direction: column; }
+  .exercise-browser__header-prompt { display: none; }
+  .exercise-browser__heading { flex: 1 1 auto; }
+  .exercise-browser__facet-tabs { overflow-x: auto; }
+  .exercise-browser__facet-tab { min-width: 132px; }
+  .exercise-browser__filter-guide { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .exercise-browser__chip:active,
+  .exercise-browser__facet-tab:active,
   .exercise-browser__card:active,
   .exercise-browser__tap:active { transform: none; }
 }

@@ -58,10 +58,13 @@ export const TAXONOMY_PATH = 'api/v1/fitness/exercises/taxonomy';
 export const PAGE_SIZE = 60;
 /** How far outside the viewport a card starts loading its GIF. Layer 2/3. */
 export const CARD_ROOT_MARGIN = '400px 0px';
-/** Typing settles before a request goes out. */
-export const SEARCH_DEBOUNCE_MS = 200;
-
 export const EMPTY_FILTERS = Object.freeze({ groups: [], muscles: [], equipment: [], q: '' });
+
+const FACETS = Object.freeze([
+  { id: 'groups', label: 'Body area' },
+  { id: 'muscles', label: 'Muscle' },
+  { id: 'equipment', label: 'Equipment' }
+]);
 
 /**
  * Build the list-endpoint path for a filter set.
@@ -169,6 +172,43 @@ Chip.propTypes = {
   label: PropTypes.string.isRequired,
   active: PropTypes.bool,
   onToggle: PropTypes.func.isRequired
+};
+
+/** One of the three large category selectors above the contextual option rail. */
+function FacetTab({ id, label, active, selected, onActivate }) {
+  const onKeyDown = useCallback((e) => {
+    if (!activationKey(e)) return;
+    e.preventDefault();
+    onActivate();
+  }, [onActivate]);
+
+  return (
+    <div
+      className={`exercise-browser__facet-tab${active ? ' exercise-browser__facet-tab--on' : ''}`}
+      data-testid={`exercise-browser-tab-${id}`}
+      data-active={active ? 'true' : 'false'}
+      role="tab"
+      aria-selected={active}
+      tabIndex={active ? 0 : -1}
+      onPointerDown={onActivate}
+      onKeyDown={onKeyDown}
+    >
+      <span>{label}</span>
+      {selected > 0 && (
+        <span className="exercise-browser__facet-badge" aria-label={`${selected} selected`}>
+          {selected}
+        </span>
+      )}
+    </div>
+  );
+}
+
+FacetTab.propTypes = {
+  id: PropTypes.string.isRequired,
+  label: PropTypes.string.isRequired,
+  active: PropTypes.bool,
+  selected: PropTypes.number,
+  onActivate: PropTypes.func.isRequired
 };
 
 /** A big tap target (build, show more, clear). */
@@ -293,8 +333,7 @@ export default function ExerciseBrowser({ onStartBuild = null }) {
   const logger = useMemo(() => getLogger().child({ component: 'exercise-browser' }), []);
 
   const [filters, setFilters] = useState(EMPTY_FILTERS);
-  // Raw input value; `filters.q` is the debounced copy that reaches the API.
-  const [searchInput, setSearchInput] = useState('');
+  const [activeFacet, setActiveFacet] = useState('groups');
 
   const [taxonomy, setTaxonomy] = useState({ groups: [], muscles: [], equipment: [] });
   const [exercises, setExercises] = useState([]);
@@ -321,16 +360,8 @@ export default function ExerciseBrowser({ onStartBuild = null }) {
   const onStartBuildRef = useRef(onStartBuild);
   onStartBuildRef.current = onStartBuild;
 
-  // Debounce the search box into the filter set.
-  useEffect(() => {
-    const handle = setTimeout(() => {
-      setFilters((prev) => (prev.q === searchInput.trim() ? prev : { ...prev, q: searchInput.trim() }));
-    }, SEARCH_DEBOUNCE_MS);
-    return () => clearTimeout(handle);
-  }, [searchInput]);
-
-  // Facet rails. A failure here costs the chips, not the grid — search and the
-  // already-loaded results keep working, so it is a warn and not an error state.
+  // Facet rails. A failure here costs the chips, not the already-loaded grid,
+  // so it is a warn and not an error state.
   useEffect(() => {
     let cancelled = false;
     DaylightAPI(TAXONOMY_PATH)
@@ -415,7 +446,6 @@ export default function ExerciseBrowser({ onStartBuild = null }) {
   }, [applyFilters]);
 
   const clearFilters = useCallback(() => {
-    setSearchInput('');
     applyFilters(EMPTY_FILTERS, 'clear');
   }, [applyFilters]);
 
@@ -427,8 +457,8 @@ export default function ExerciseBrowser({ onStartBuild = null }) {
    * the chip is making.
    */
   const filterFromDetail = useCallback((facet, value) => {
-    setSearchInput('');
     applyFilters({ ...EMPTY_FILTERS, [facet]: [value] }, `detail:${facet}`);
+    if (FACETS.some((item) => item.id === facet)) setActiveFacet(facet);
     setOpenSlug(null);
   }, [applyFilters]);
 
@@ -497,6 +527,22 @@ export default function ExerciseBrowser({ onStartBuild = null }) {
 
   const filterCount = activeFilterCount(filters);
   const libraryMissing = library ? library.available === false : false;
+  const facetOptions = activeFacet === 'groups'
+    ? taxonomy.groups
+    : activeFacet === 'muscles'
+      ? muscleOptions
+      : taxonomy.equipment;
+  const activeFacetMeta = FACETS.find((facet) => facet.id === activeFacet) || FACETS[0];
+  const optionTestId = activeFacet === 'groups'
+    ? 'exercise-browser-groups'
+    : activeFacet === 'muscles'
+      ? 'exercise-browser-muscles'
+      : 'exercise-browser-equipment';
+  const optionPrefix = activeFacet === 'groups'
+    ? 'group'
+    : activeFacet === 'muscles'
+      ? 'muscle'
+      : 'equipment';
 
   return (
     <div className="exercise-browser" data-testid="exercise-browser">
@@ -510,15 +556,10 @@ export default function ExerciseBrowser({ onStartBuild = null }) {
           </span>
         </div>
 
-        <input
-          className="exercise-browser__search"
-          data-testid="exercise-browser-search"
-          type="search"
-          value={searchInput}
-          placeholder="Search exercises"
-          aria-label="Search exercises"
-          onChange={(e) => setSearchInput(e.target.value)}
-        />
+        <div className="exercise-browser__header-prompt" aria-hidden="true">
+          <span className="exercise-browser__header-prompt-kicker">Touch to explore</span>
+          <span className="exercise-browser__header-prompt-copy">Filter by body, muscle, or gear</span>
+        </div>
 
         {/* Carries the container's transition test id: browse -> build is this
             one target, and the container owns the state machine behind it. */}
@@ -546,73 +587,58 @@ export default function ExerciseBrowser({ onStartBuild = null }) {
         </section>
       ) : (
         <>
-          <nav className="exercise-browser__rail" data-testid="exercise-browser-groups" aria-label="Muscle groups">
-            {taxonomy.groups.map((group) => (
-              <Chip
-                key={group.slug}
-                testId={`exercise-group-${group.slug}`}
-                label={group.name || group.slug}
-                active={filters.groups.includes(group.slug)}
-                onToggle={() => toggleFacet('groups', group.slug)}
-              />
-            ))}
-          </nav>
+          <section className="exercise-browser__filter-deck" aria-label="Exercise filters">
+            <div className="exercise-browser__facet-tabs" role="tablist" aria-label="Filter category">
+              {FACETS.map((facet) => (
+                <FacetTab
+                  key={facet.id}
+                  id={facet.id}
+                  label={facet.label}
+                  active={activeFacet === facet.id}
+                  selected={filters[facet.id].length}
+                  onActivate={() => setActiveFacet(facet.id)}
+                />
+              ))}
 
-          {/* Both secondary rails are ONE row that scrolls sideways, never a
-              wrapping block. A rail that takes "whatever it needs" takes it
-              from the grid, and the panel does not scroll. */}
-          <div className="exercise-browser__facets">
-            <div className="exercise-browser__facet" data-testid="exercise-browser-muscles">
-              <span className="exercise-browser__facet-label">Muscle</span>
-              {muscleOptions.length > 0 ? (
-                <div className="exercise-browser__facet-chips exercise-browser__facet-chips--row">
-                  {muscleOptions.map((muscle) => (
-                    <Chip
-                      key={muscle.slug}
-                      testId={`exercise-muscle-${muscle.slug}`}
-                      label={muscle.name || muscle.slug}
-                      active={filters.muscles.includes(muscle.slug)}
-                      onToggle={() => toggleFacet('muscles', muscle.slug)}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <div
-                  className="exercise-browser__facet-chips exercise-browser__facet-chips--row exercise-browser__facet-hint"
-                  data-testid="exercise-browser-muscle-hint"
-                >
-                  Pick a group first
-                </div>
+              <div className="exercise-browser__filter-guide">
+                {filterCount > 0
+                  ? `${filterCount} ${filterCount === 1 ? 'filter' : 'filters'} active`
+                  : 'Choose one or more'}
+              </div>
+
+              {filterCount > 0 && (
+                <TapTarget
+                  testId="exercise-browser-clear"
+                  label="Clear all"
+                  variant="compact"
+                  onActivate={clearFilters}
+                />
               )}
             </div>
 
-            <div className="exercise-browser__facet" data-testid="exercise-browser-equipment">
-              <span className="exercise-browser__facet-label">Equipment</span>
-              <div className="exercise-browser__facet-chips exercise-browser__facet-chips--row">
-                {taxonomy.equipment.map((item) => (
+            <div
+              className="exercise-browser__option-rail"
+              data-testid={optionTestId}
+              role="tabpanel"
+              aria-label={`${activeFacetMeta.label} choices`}
+            >
+              {activeFacet === 'muscles' && facetOptions.length === 0 ? (
+                <div className="exercise-browser__facet-hint" data-testid="exercise-browser-muscle-hint">
+                  Pick a body area first, then refine by muscle
+                </div>
+              ) : (
+                facetOptions.map((option) => (
                   <Chip
-                    key={item.slug}
-                    testId={`exercise-equipment-${item.slug}`}
-                    label={item.name || item.slug}
-                    active={filters.equipment.includes(item.slug)}
-                    onToggle={() => toggleFacet('equipment', item.slug)}
+                    key={option.slug}
+                    testId={`exercise-${optionPrefix}-${option.slug}`}
+                    label={option.name || option.slug}
+                    active={filters[activeFacet].includes(option.slug)}
+                    onToggle={() => toggleFacet(activeFacet, option.slug)}
                   />
-                ))}
-              </div>
+                ))
+              )}
             </div>
-
-            {/* Chip-sized, not action-sized: it lives IN the rail row, and a
-                96px action target here would push the whole block past the one
-                row it is budgeted and take the difference out of the grid. */}
-            {filterCount > 0 && (
-              <TapTarget
-                testId="exercise-browser-clear"
-                label="Clear"
-                variant="compact"
-                onActivate={clearFilters}
-              />
-            )}
-          </div>
+          </section>
 
           {error ? (
             <section className="exercise-browser__notice" data-testid="exercise-browser-error">
@@ -626,7 +652,7 @@ export default function ExerciseBrowser({ onStartBuild = null }) {
           ) : exercises.length === 0 ? (
             <section className="exercise-browser__notice" data-testid="exercise-browser-empty">
               <div className="exercise-browser__notice-title">No exercises match these filters</div>
-              <p className="exercise-browser__notice-body">Drop a filter to widen the search.</p>
+              <p className="exercise-browser__notice-body">Drop a filter to see more choices.</p>
             </section>
           ) : (
             <div className="exercise-browser__grid" data-testid="exercise-browser-grid">

@@ -5,7 +5,7 @@
  * ---------------
  * The browse screen renders inside `.fitness-module-container`, a FIXED-height
  * box with `overflow-y: hidden`. There is no page scroll, so every pixel the
- * filter rails take is taken from the exercise grid permanently.
+ * filter deck takes is taken from the exercise grid permanently.
  *
  * The first cut of this screen shipped with 123 passing jsdom tests and was
  * still unusable: the muscle rail (38 chips) and the equipment rail (29) wrapped
@@ -15,8 +15,8 @@
  *
  * jsdom has no layout engine and cannot see that class of bug. This can. It is
  * the only test in the suite that measures rendered geometry, so keep it cheap
- * and keep it about geometry: the structural invariants behind the fix (rails
- * bounded to one row, Show more inside the grid) are asserted in
+ * and keep it about geometry: the structural invariants behind the fix (one
+ * bounded option rail, Show more inside the grid) are asserted in
  * frontend/src/modules/Fitness/widgets/FitnessInstruction/ExerciseBrowser.test.jsx.
  *
  * THE BUDGET
@@ -38,17 +38,16 @@ async function measure(page) {
   return page.evaluate(() => {
     const grid = document.querySelector('.exercise-browser__grid');
     const container = document.querySelector('.fitness-module-container');
-    const rails = document.querySelector('.exercise-browser__facets');
+    const deck = document.querySelector('.exercise-browser__filter-deck');
+    const optionRail = document.querySelector('.exercise-browser__option-rail');
     if (!grid || !container) return null;
     const h = (el) => (el ? el.clientHeight : 0);
     return {
       container: h(container),
       grid: h(grid),
-      groupRail: h(document.querySelector('.exercise-browser__rail')),
-      secondaryRails: h(rails),
-      // A rail taller than its own content box means it is wrapping (or
-      // clipping) rather than scrolling sideways in one row.
-      secondaryRailsScrollHeight: rails ? rails.scrollHeight : 0,
+      filterDeck: h(deck),
+      optionRail: h(optionRail),
+      optionRailScrollHeight: optionRail ? optionRail.scrollHeight : 0,
       cards: document.querySelectorAll('[data-testid^="exercise-card-"]').length,
       // Card height is its own trap: with the grid's default `grid-auto-rows:
       // auto` and a definite container height, Chromium sized every row to fit
@@ -92,7 +91,7 @@ test.describe('Exercise Browser layout', () => {
     expect(
       m.share,
       `grid ${m.grid}px of container ${m.container}px = ${(m.share * 100).toFixed(1)}%; ` +
-      `secondary rails took ${m.secondaryRails}px`
+      `filter deck took ${m.filterDeck}px`
     ).toBeGreaterThanOrEqual(MIN_GRID_SHARE);
 
     // Tall enough for a full card row, not a row of clipped tops.
@@ -106,12 +105,12 @@ test.describe('Exercise Browser layout', () => {
     // makes the lazy-loading window meaningful in the first place.
     expect(m.gridScrollHeight).toBeGreaterThan(m.grid * 2);
 
-    // The rails are bounded to one chip row (72px) plus their own padding.
-    expect(m.secondaryRails, 'secondary rails must stay a single row').toBeLessThan(120);
+    // Category tabs plus one 60px option rail stay inside a fixed compact deck.
+    expect(m.filterDeck, 'filter deck must stay compact').toBeLessThan(135);
 
     // And they scroll sideways rather than growing: content height must not
     // exceed the row they are allotted.
-    expect(m.secondaryRailsScrollHeight).toBeLessThanOrEqual(m.secondaryRails + 2);
+    expect(m.optionRailScrollHeight).toBeLessThanOrEqual(m.optionRail + 2);
 
     // The default state opens with the muscle rail closed — 38 chips is what
     // blew the budget in the first place.
@@ -135,6 +134,15 @@ test.describe('Exercise Browser layout', () => {
     await page.mouse.down();
     await page.mouse.up();
 
+    const muscleTab = page.locator('[data-testid="exercise-browser-tab-muscles"]');
+    const muscleTabBox = await muscleTab.boundingBox();
+    await page.mouse.move(
+      muscleTabBox.x + muscleTabBox.width / 2,
+      muscleTabBox.y + muscleTabBox.height / 2,
+    );
+    await page.mouse.down();
+    await page.mouse.up();
+
     await page.waitForSelector('[data-testid^="exercise-muscle-"]', { timeout: 15000 });
     await page.waitForTimeout(1000);
 
@@ -143,7 +151,7 @@ test.describe('Exercise Browser layout', () => {
 
     expect(after.muscleChips).toBeGreaterThan(0);
     // The rail opened, so it must have opened INTO the row it already had.
-    expect(after.secondaryRails).toBeLessThan(120);
+    expect(after.filterDeck).toBeLessThan(135);
     expect(after.share).toBeGreaterThanOrEqual(MIN_GRID_SHARE);
     expect(after.grid).toBeGreaterThanOrEqual(before.grid - 8);
   });

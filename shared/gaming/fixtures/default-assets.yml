@@ -14,12 +14,12 @@ assets:
     tiles: { grass.middle: { frame: grass.middle, tags: [terrain, grass], connects: grass } }
 
   terrain.adventure-atlas:
-    source: assets/default/environment/tiles/grass/grass-tiles-1.png
-    source_sha256: d709de78b68aaf528b556b99db17b49e4114f764ec0f73c755585301c36f68e0
+    source: assets/default/environment/effects/adventure-atlas-qa.png
+    source_sha256: 580b662ffbf8ae19f0d2f580ce8825e2b7970b5560ae9798a62942ab4a0f88b3
     status: approved
     license_scope: core-commercial
     kind: tile-sheet
-    tags: [terrain, grass, path, cliff, topdown]
+    tags: [terrain, grass, path, cliff, derived, compact-inner-corners, topdown]
     geometry: { layout: grid, cell: [16, 16], grid: [16, 10] }
     defaults: { anchor: top-left }
     frames:
@@ -286,7 +286,6 @@ assets:
     geometry: { layout: grid, cell: [64, 80], grid: [3, 1] }
     frames:
       tree.a: { cell: [1, 0], anchor: { point: [32, 72] }, content_bounds: [11, 9, 41, 63] }
-      tree.b: { cell: [2, 0], anchor: { point: [32, 58] }, content_bounds: [11, 9, 41, 49] }
 
   prop.small-oak-tree:
     source: assets/default/environment/foliage/small-oak-tree.png
@@ -298,7 +297,6 @@ assets:
     geometry: { layout: grid, cell: [32, 64], grid: [3, 1] }
     frames:
       tree.a: { cell: [1, 0], anchor: { point: [16, 52] }, content_bounds: [10, 32, 12, 20] }
-      tree.b: { cell: [2, 0], anchor: { point: [16, 44] }, content_bounds: [10, 32, 11, 12] }
 
   prop.outdoor-decor:
     source: assets/default/environment/props/outdoor-decor.png
@@ -353,6 +351,22 @@ assets:
       vertical.start: { cell: [0, 0], ports: { south: [8, 14] } }
       vertical.middle: { cell: [0, 1], ports: { north: [8, 0], south: [8, 16] } }
       vertical.end: { cell: [0, 3], ports: { north: [8, 3] } }
+
+  prop.wood-fence-junctions:
+    source: assets/default/environment/effects/fence-junctions.png
+    source_sha256: 4f7a1b1c399b74e1f57542e374dda5361814dc0b64ab2be3380e9c9a935356c0
+    status: approved
+    license_scope: core-commercial
+    kind: sprite-sheet
+    tags: [prop, fence, boundary, wood, junction, derived, topdown]
+    requires_all_ports: true
+    geometry: { layout: grid, cell: [16, 16], grid: [4, 1] }
+    defaults: { anchor: top-left }
+    frames:
+      corner.nw: { cell: [0, 0], ports: { east: [16, 8], south: [8, 16] } }
+      corner.ne: { cell: [1, 0], ports: { west: [0, 8], south: [8, 16] } }
+      corner.sw: { cell: [2, 0], ports: { north: [8, 0], east: [16, 8] } }
+      corner.se: { cell: [3, 0], ports: { west: [0, 8], north: [8, 0] } }
 
   prop.flowers:
     source: assets/default/environment/props/flowers.png
@@ -639,13 +653,13 @@ prefabs:
   grove.small-oaks:
     layers:
       - { asset: prop.small-oak-tree#tree.a, at: [0, 0], z: 0 }
-      - { asset: prop.small-oak-tree#tree.b, at: [28, 4], z: 1 }
+      - { asset: prop.small-oak-tree#tree.a, at: [28, 4], z: 1, flip_x: true }
       - { asset: prop.small-oak-tree#tree.a, at: [56, -2], z: 2 }
 
   grove.big-oaks:
     layers:
       - { asset: prop.big-oak-tree#tree.a, at: [0, 0], z: 0 }
-      - { asset: prop.big-oak-tree#tree.b, at: [52, 6], z: 1 }
+      - { asset: prop.big-oak-tree#tree.a, at: [52, 6], z: 1, flip_x: true }
       - { asset: prop.big-oak-tree#tree.a, at: [104, -4], z: 2 }
 
   landmark.hill-house:

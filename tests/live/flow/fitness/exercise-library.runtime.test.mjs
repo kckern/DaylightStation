@@ -285,10 +285,11 @@ test.describe('Exercise Library: browse → build → run', () => {
     expect(firstName.length, 'the first card should carry a real exercise name').toBeGreaterThan(0);
 
     expect(await page.locator('[data-testid^="exercise-group-"]').count(), 'group chips').toBe(CORPUS.groups);
+    await testId('exercise-browser-tab-equipment').click();
     expect(await page.locator('[data-testid^="exercise-equipment-"]').count(), 'equipment chips').toBe(CORPUS.equipment);
 
-    // The muscle rail is gated on a group: all 38 at once is both unreadable and
-    // the worst case for vertical space, so the default state is a hint.
+    // The muscle category is gated on a body area: all 38 at once is unreadable.
+    await testId('exercise-browser-tab-muscles').click();
     await expect(testId('exercise-browser-muscle-hint')).toBeVisible();
     expect(
       await page.locator('[data-testid^="exercise-muscle-"]').count(),
@@ -320,6 +321,7 @@ test.describe('Exercise Library: browse → build → run', () => {
     await waitForTotal(CORPUS.chest, 'group=chest (back toggled off)');
 
     // Two values across DIFFERENT facets must AND.
+    await testId('exercise-browser-tab-equipment').click();
     await testId('exercise-equipment-barbell').click();
     await waitForTotal(CORPUS.chestAndBarbell, 'group=chest&equipment=barbell');
     expect(
@@ -327,8 +329,9 @@ test.describe('Exercise Library: browse → build → run', () => {
       'chest AND barbell must be narrower than chest alone',
     ).toBeLessThan(CORPUS.chest);
 
-    // The muscle rail unlocks once a group is picked, and shows only that group's
+    // The muscle category unlocks once a group is picked, and shows only that group's
     // muscles — a muscle outside the selected groups could only ever AND to zero.
+    await testId('exercise-browser-tab-muscles').click();
     const muscleChips = await page.locator('[data-testid^="exercise-muscle-"]').count();
     expect(muscleChips, 'picking a group should unlock its muscle chips').toBeGreaterThan(0);
     expect(muscleChips, 'the muscle rail should show one group\'s muscles, not all 38')
@@ -338,16 +341,9 @@ test.describe('Exercise Library: browse → build → run', () => {
     await testId('exercise-browser-clear').click();
     await waitForTotal(CORPUS.total, 'filters cleared');
 
-    // Search is a facet too, debounced into the query.
-    await testId('exercise-browser-search').fill('push up');
-    await waitForTotal(CORPUS.pushUp, 'q=push up');
-
-    await testId('exercise-browser-search').fill('');
-    await waitForTotal(CORPUS.total, 'search cleared');
-
     console.log(
       `Filters verified: chest=${CORPUS.chest}, chest|back=${CORPUS.chestOrBack}, ` +
-      `chest&barbell=${CORPUS.chestAndBarbell}, q="push up"=${CORPUS.pushUp}`,
+      `chest&barbell=${CORPUS.chestAndBarbell}`,
     );
   });
 
@@ -364,6 +360,7 @@ test.describe('Exercise Library: browse → build → run', () => {
 
     await testId('exercise-group-chest').click();
     await waitForTotal(CORPUS.chest, 'group=chest');
+    await testId('exercise-browser-tab-equipment').click();
     await testId('exercise-equipment-barbell').click();
     await waitForTotal(CORPUS.chestAndBarbell, 'group=chest&equipment=barbell');
 
@@ -373,7 +370,7 @@ test.describe('Exercise Library: browse → build → run', () => {
       const add = card.querySelector('[data-testid^="exercise-add-"]');
       const thumb = card.querySelector('.exercise-browser__thumb');
       const grid = document.querySelector('.exercise-browser__grid');
-      const facets = document.querySelector('.exercise-browser__facets');
+      const facets = document.querySelector('.exercise-browser__filter-deck');
       const rect = add?.getBoundingClientRect();
       const hit = rect
         ? document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
@@ -431,6 +428,7 @@ test.describe('Exercise Library: browse → build → run', () => {
     // Filtered down to a workable set — this is how the screen is meant to be used.
     await testId('exercise-group-chest').click();
     await waitForTotal(CORPUS.chest, 'group=chest');
+    await testId('exercise-browser-tab-equipment').click();
     await testId('exercise-equipment-barbell').click();
     await waitForTotal(CORPUS.chestAndBarbell, 'group=chest&equipment=barbell');
 
