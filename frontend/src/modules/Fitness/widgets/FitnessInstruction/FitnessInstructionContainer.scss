@@ -1,5 +1,5 @@
-// Exercise Library shell. Deliberately plain: these are placeholder screens,
-// and the browse / build / run tasks bring their own styling.
+// Exercise Library shell. Deliberately plain: build is still a placeholder
+// screen, and browse / run bring their own styling.
 .fitness-instruction {
   position: relative;
   width: 100%;
@@ -20,8 +20,10 @@
     text-align: center;
   }
 
-  // Run is a full-bleed player, not a centred placeholder card: it must fill the
-  // shell and establish the containing block for WorkoutRunner's `inset: 0`.
+  // Browse and run are full-bleed screens, not centred placeholder cards: they
+  // must fill the shell and establish the containing block for the child's
+  // `inset: 0` (ExerciseBrowser / WorkoutRunner).
+  &__state--browse,
   &__state--run {
     position: relative;
     flex: 1 1 auto;
