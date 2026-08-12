@@ -58,7 +58,7 @@ Commands:
   scene      --root <common-dir> --catalog <pack.yml> --manifest <scene.yml> --out <scene.png>
   scene-legacy --root <common-dir> --catalog <v1-pack.yml> --manifest <v1-scene.yml> --out <scene.png>
   scene-qa   --root <common-dir> --catalog <pack.yml> --manifest <scene.yml> --out-dir <directory>
-  scene-qa-set --root <common-dir> --manifest <set.yml> --out-dir <directory>
+  scene-qa-set --root <common-dir> --manifest <set.yml> --out-dir <directory> [--candidate true]
   scene-qa-approve --root <common-dir> --manifest <set.yml> --report <report.yml> --artifacts-dir <directory>
   topology-qa --root <common-dir> --catalog <pack.yml> --asset <asset-id> --out <matrix.png> [--scale 4]
   topology-qa-set --root <common-dir> --catalog <pack.yml> --out-dir <directory> [--scale 4]
@@ -111,6 +111,12 @@ function integer(flags, name, fallback) {
   const value = flags[name] === undefined ? fallback : Number(flags[name]);
   if (!Number.isInteger(value) || value < 1) throw new Error(`--${name} must be a positive integer`);
   return value;
+}
+
+function boolean(flags, name, fallback = false) {
+  if (flags[name] === undefined) return fallback;
+  if (!['true', 'false'].includes(flags[name])) throw new Error(`--${name} must be true or false`);
+  return flags[name] === 'true';
 }
 
 function params(value) {
@@ -207,7 +213,7 @@ export async function main(argv = process.argv.slice(2), { env = process.env, st
         report = await renderSceneQa({ root, catalogPath: required(parsed.flags, 'catalog'), manifestPath: required(parsed.flags, 'manifest'), outDir: required(parsed.flags, 'out-dir') });
         break;
       case 'scene-qa-set':
-        report = await renderSceneQaSet({ root, manifestPath: required(parsed.flags, 'manifest'), outDir: required(parsed.flags, 'out-dir') });
+        report = await renderSceneQaSet({ root, manifestPath: required(parsed.flags, 'manifest'), outDir: required(parsed.flags, 'out-dir'), candidate: boolean(parsed.flags, 'candidate') });
         break;
       case 'scene-qa-approve':
         report = await approveSceneQaBaseline({ manifestPath: required(parsed.flags, 'manifest'), reportPath: required(parsed.flags, 'report'), artifactsDir: required(parsed.flags, 'artifacts-dir') });

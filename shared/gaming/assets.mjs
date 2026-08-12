@@ -242,7 +242,8 @@ export function validateAssetCatalog(catalog) {
           for (const frameId of component.frames) if (!ASSET_ID.test(String(frameId)) || !asset.frames?.[frameId]) errors.push(`${prefix}: component ${componentId} references unknown frame ${frameId}`);
           if (component.outline !== undefined) {
             const keys = ['nw', 'n', 'ne', 'w', 'e', 'sw', 's', 'se'];
-            if (component.role !== 'border' || !component.outline || typeof component.outline !== 'object' || Array.isArray(component.outline) || keys.some((key) => !asset.frames?.[component.outline[key]])) errors.push(`${prefix}: component ${componentId} outline must map nw/n/ne/w/e/sw/s/se to frames`);
+            if (!['border', 'hazard'].includes(component.role) || !component.outline || typeof component.outline !== 'object' || Array.isArray(component.outline) || keys.some((key) => !asset.frames?.[component.outline[key]])) errors.push(`${prefix}: component ${componentId} outline must map nw/n/ne/w/e/sw/s/se to frames for a border or hazard`);
+            if (component.interior !== undefined && !asset.frames?.[component.interior]) errors.push(`${prefix}: component ${componentId} interior references unknown frame`);
           }
         }
       }

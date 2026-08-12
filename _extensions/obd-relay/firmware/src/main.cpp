@@ -28,6 +28,7 @@
 #include <LittleFS.h>
 #include <time.h>
 #include <esp_sleep.h>
+#include <Preferences.h>
 #include <Update.h>
 #include "config.h"
 
@@ -77,7 +78,7 @@ static COBD obd;   // co-processor UART OBD link
 static GPS_DATA* gpsData = nullptr;
 #endif
 
-static const char* FW_VERSION = "0.1.0";
+static const char* FW_VERSION = "0.2.0";   // 0.2.0: /led (persisted LED control)
 static const char* TRIP_DIR = "/trips";
 
 // ---- one telemetry sample (positional order == wire order) ---------------
@@ -196,6 +197,52 @@ static Sample g_liveSample = {};
 static bool g_haveLiveSample = false;
 static bool g_gpsReady = false;
 #endif
+
+// ---- LED -------------------------------------------------------------------
+// NOTHING in this firmware or in FreematicsPlus ever drives PIN_LED: the
+// library defines it (FreematicsPlus.h) and never references it again, and this
+// file contains no pinMode/digitalWrite of its own. So a lit LED is one of two
+// things, and source alone cannot tell them apart:
+//
+//   (a) a hardwired power indicator — no firmware can touch it, and this
+//       endpoint will have no visible effect at either level;
+//   (b) an uninitialised pin floating at the lit level — driving it explicitly
+//       turns it off, at whichever polarity the board wired.
+//
+// Polarity is likewise unknown, so this exposes both rather than baking in a
+// guess and costing a second OTA to correct it:
+//
+//   GET /led              → current mode
+//   GET /led?mode=low     → drive LOW
+//   GET /led?mode=high    → drive HIGH
+//   GET /led?mode=float   → release to INPUT (the as-shipped default)
+//
+// The mode persists in NVS and is re-applied at the very top of setup(), before
+// the standby fast path can return to sleep — the device deep-sleeps between
+// engine-off checks, so a RAM-only setting would revert on every wake and the
+// LED would blink back on once a minute for the life of the park.
+#ifndef PIN_LED
+#define PIN_LED 4
+#endif
+#define LED_MODE_FLOAT 0
+#define LED_MODE_LOW   1
+#define LED_MODE_HIGH  2
+
+static Preferences g_prefs;
+static uint8_t g_ledMode = LED_MODE_FLOAT;
+
+static const char* ledModeName(uint8_t m) {
+  return m == LED_MODE_LOW ? "low" : m == LED_MODE_HIGH ? "high" : "float";
+}
+
+static void ledApply() {
+  if (g_ledMode == LED_MODE_FLOAT) {
+    pinMode(PIN_LED, INPUT);            // release — back to the boot default
+    return;
+  }
+  pinMode(PIN_LED, OUTPUT);
+  digitalWrite(PIN_LED, g_ledMode == LED_MODE_HIGH ? HIGH : LOW);
+}
 
 // ---- state ----------------------------------------------------------------
 static WebSocketsClient webSocket;
@@ -1037,6 +1084,7 @@ static void handleStatus() {
   doc["time_synced"] = timeSynced;
   doc["ota"] = g_otaActive ? "in-progress" : "ready";   // POST firmware to /update
   doc["epoch_ms"] = epochMs();
+  doc["led_mode"] = ledModeName(g_ledMode);             // float | low | high — see /led
 
   JsonObject wifi = doc["wifi"].to<JsonObject>();
   wifi["connected"] = WiFi.status() == WL_CONNECTED;
@@ -1138,6 +1186,13 @@ void setup() {
   relayLogf("[obd-relay] boot fw=%s vehicle=%s%s", FW_VERSION, VEHICLE_ID,
             g_wokeFromStandby ? " (standby wake)" : "");
 
+  // Before anything else, and specifically before the standby fast path below
+  // can return to deep sleep: a wake that goes straight back to sleep must not
+  // leave the LED lit for the second it is awake.
+  g_prefs.begin("obd-relay", false);
+  g_ledMode = g_prefs.getUChar("led_mode", LED_MODE_FLOAT);
+  ledApply();
+
   g_fsMounted = LittleFS.begin(true);          // true = format on first/corrupt mount
   if (!g_fsMounted) {
     // A virgin or corrupted partition fails the first mount; format explicitly
@@ -1228,6 +1283,34 @@ void setup() {
   http.on("/trips", handleTrips);      // manifest of buffered payloads
   http.on("/trip", handleTrip);        // one payload, push-identical shape
   http.on("/update", HTTP_POST, handleUpdateResult, handleUpdateUpload);  // OTA
+  // Settle whether the LED is software-controllable at all, and at which
+  // polarity, without spending an OTA per guess. Persisted — see the LED block.
+  http.on("/led", [](){
+    if (http.hasArg("mode")) {
+      String m = http.arg("mode");
+      uint8_t next = m == "low"  ? LED_MODE_LOW
+                   : m == "high" ? LED_MODE_HIGH
+                   : m == "float" ? LED_MODE_FLOAT
+                   : 0xFF;
+      if (next == 0xFF) {
+        http.send(400, "application/json", "{\"error\":\"mode must be low|high|float\"}");
+        return;
+      }
+      g_ledMode = next;
+      g_prefs.putUChar("led_mode", g_ledMode);
+      ledApply();
+      relayLogf("[led] mode=%s (persisted)", ledModeName(g_ledMode));
+    }
+    JsonDocument d;
+    d["mode"] = ledModeName(g_ledMode);
+    d["pin"] = PIN_LED;
+    d["persisted"] = true;
+    // Neither this firmware nor FreematicsPlus drives this pin otherwise, so if
+    // BOTH levels leave the LED lit it is hardwired and no firmware can help.
+    d["note"] = "try low and high; if neither changes it, the LED is hardwired";
+    String out; serializeJson(d, out);
+    http.send(200, "application/json", out);
+  });
 #ifdef USE_FREEMATICS
   http.on("/obd/probe", handleObdProbe);    // walk protocols, find what links
   http.on("/pids", handlePids);              // which PIDs this car answers
