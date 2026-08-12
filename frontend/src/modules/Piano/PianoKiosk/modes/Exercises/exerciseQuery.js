@@ -17,6 +17,7 @@ export function buildSearchPath(filters = {}, { limit = 120, offset = 0 } = {}) 
   if (f.levelMax < 10) params.set('level_max', String(f.levelMax));
   if (f.collection) params.set('collection', f.collection);
   if (f.form) params.set('form', f.form);
+  if (f.tradition) params.set('tradition', f.tradition);
   if (f.hands) params.set('hands', f.hands);
   if (f.tags?.length) params.set('tags', f.tags.join(','));
   params.set('limit', String(limit));

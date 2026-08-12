@@ -46,7 +46,19 @@ Grading is dimensional — pitch accuracy, timing, continuity, simultaneity — 
 weights an exercise may declare to say what it is about; defaults reproduce the
 long-standing constants, and partial weight or threshold objects merge over
 those defaults. Scores band to green/yellow/red on the same 0.9/0.6 thresholds
-polish uses (drills via a shared helper; polish's evaluator bands inline today).
+through `gradeBand`.
+
+Ordered grading also counts **missed** notes. The untimed runner advances only
+on the correct note, so a drill cannot leave one unplayed and passes none; a
+timed score can be played straight past, and a note never struck has to cost
+something. With none missed the maths reduces exactly to what it was.
+
+Sheet Music polish grades through this service as of
+`polish-shared-grading-v1`. It previously combined the same dimensions
+multiplicatively under its own names, so a polish score and a drill score could
+not be compared even though both claimed to mean "how well did that go".
+Adopting the service moved the numbers, which is why results carry that policy
+version — records written under the old maths stay distinguishable.
 
 Assessment aggregates over spans: measures in a score, transposition cells in a
 drill, one span for a bare exercise. A run tallies to an overall grade and
@@ -57,7 +69,7 @@ drill next.
 
 | Surface | Runner | Matching | Grading | Aggregation |
 |---|---|---|---|---|
-| Sheet Music polish | timed | — | own evaluator (same accuracy shape) | service (`spans`) |
+| Sheet Music polish | timed | — | service (`grading`) | service (`spans`) |
 | Sheet Music learn | timed targets, own follow tracker | — | per-measure practice records | — |
 | Piano Hero | timed | — | judge results directly | — |
 | Battle Stadium (card game) | own `advanceScaleProgress` | service (`heldSet`) | service (`grading`) | — |
@@ -71,10 +83,11 @@ Deliberate non-unifications, so they are not "fixed" by accident:
   graders; the advance primitives are intentionally separate.
 - **The card-game verifier lifecycle** (arm-after-release, commit-path
   hardening against batched MIDI snapshots) is battle-tested and stays its own.
-- **Timing math differs by design, for now.** The timed runner uses fixed
-  windows; challenge grading uses beat-relative quality. Unifying them is a
-  grading-policy version change, not a refactor — attempts are stamped with a
-  provider/policy version so historical records stay attributable.
+- **Timing curves differ by intent, and now share an implementation.**
+  `timingQualityFromDrift` takes a free tolerance and a falloff window: polish is
+  gentle (80ms free, zero at 400ms) because a bar being learned should not read
+  red for being slightly late, while beat-relative grading is tight. Different
+  numbers, one formula.
 
 ## Live state
 

@@ -620,6 +620,7 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pi
       levelMax: number(q.level_max, 10),
       form: typeof q.form === 'string' ? q.form : null,
       collection: typeof q.collection === 'string' ? q.collection : null,
+      tradition: typeof q.tradition === 'string' ? q.tradition : null,
       hands: typeof q.hands === 'string' ? q.hands : null,
       tags: typeof q.tags === 'string' ? q.tags.split(',').filter(Boolean) : null,
       limit: Math.min(number(q.limit, 100), 500),

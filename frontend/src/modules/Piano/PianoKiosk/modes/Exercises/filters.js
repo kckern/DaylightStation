@@ -11,6 +11,7 @@ export const DEFAULT_FILTERS = Object.freeze({
   levelMax: 10,
   collection: null,
   form: null,
+  tradition: null,
   hands: null,
   tags: null,
 });
@@ -32,6 +33,20 @@ export const FORM_OPTIONS = Object.freeze([
   { id: 'figure', label: 'Figures' },
   { id: 'progression', label: 'Progressions' },
   { id: 'sequence', label: 'Runs & licks' },
+]);
+
+/**
+ * Where the material comes from musically.
+ *
+ * The one axis a player is likely to browse by intent rather than by
+ * difficulty — someone who wants to sound bluesy is not looking for a level.
+ */
+export const TRADITION_OPTIONS = Object.freeze([
+  { id: null, label: 'Any style' },
+  { id: 'pedagogy', label: 'Technique' },
+  { id: 'blues', label: 'Blues' },
+  { id: 'jazz', label: 'Jazz' },
+  { id: 'rock', label: 'Rock' },
 ]);
 
 export const HAND_OPTIONS = Object.freeze([
