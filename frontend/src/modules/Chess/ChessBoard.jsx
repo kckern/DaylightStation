@@ -35,7 +35,7 @@ function screenCell(square, orientation) {
 
 function Square({
   square, piece, isLight, isSelected, isDestination, isLastMove,
-  isCursor, isCandidate, isCheck, isHint, isBest, isRejected, onSelect,
+  isCursor, isCandidate, isCheck, isHint, isBest, isHeld, isRejected, onSelect,
   ghostPiece,
 }) {
   const classes = [
@@ -47,6 +47,7 @@ function Square({
     // channel 2 — outline: committed state
     isSelected && 'chess-board__square--selected',
     isLastMove && 'chess-board__square--last-move',
+    isHeld && 'chess-board__square--held',
     // channel 3 — marks: only what was asked for
     isDestination && 'chess-board__square--destination',
     isHint && 'chess-board__square--hint',
@@ -66,6 +67,11 @@ function Square({
       disabled={!onSelect}
     >
       {isDestination && !piece && <span className="chess-board__dot" aria-hidden="true" />}
+      {/* A child element, not the square's ::before — --best already owns that
+          pseudo-element, and the piece in hand can also be the engine's
+          suggested move. Two rules on one pseudo-element would silently drop
+          one of them. */}
+      {isHeld && <span className="chess-board__held-ants" aria-hidden="true" />}
       {piece && (
         <img className="chess-board__piece" src={pieceSource(piece)} alt="" draggable="false" />
       )}
@@ -95,6 +101,7 @@ export function ChessBoard({
   candidates = [],
   hintTargets = [],
   bestMove = null,
+  heldSquare = null,
   rejectedSquare = null,
   rejectedKey = null,
   ghost = null,
@@ -177,6 +184,7 @@ export function ChessBoard({
             isCandidate={candidateSet.has(square)}
             isHint={hintSet.has(square)}
             isBest={bestMove?.from === square || bestMove?.to === square}
+            isHeld={heldSquare === square}
             isLastMove={lastMove?.from === square || lastMove?.to === square}
             isCursor={cursorSquare === square}
             isCheck={checkedKing === square}
