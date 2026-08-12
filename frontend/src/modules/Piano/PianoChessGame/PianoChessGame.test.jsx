@@ -95,7 +95,13 @@ describe('the instrument zone', () => {
 // initial position, and the human is Black.
 describe('PianoChessGame opponent effect', () => {
   const OPPONENT_DELAY_MS = 700;
-  const moveSans = (container) => [...container.querySelectorAll('.piano-chess__move-san')].map((el) => el.textContent);
+  // The move log was removed from the chrome, so a move is observed where it
+  // actually shows: on the board. The last-move outline names both squares, and
+  // reading it proves the position advanced rather than that a list was written.
+  const moveSans = (container) => [...container.querySelectorAll('.chess-board__square--last-move')]
+    .map((el) => el.getAttribute('data-square'))
+    .filter(Boolean)
+    .sort();
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -114,7 +120,8 @@ describe('PianoChessGame opponent effect', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(OPPONENT_DELAY_MS); });
 
     expect(requestOpponentMove).toHaveBeenCalledTimes(1);
-    expect(moveSans(container)).toEqual(['e4']);
+    // Both ends of the served reply 1.e4 are outlined: it came from e2 and landed on e4.
+    expect(moveSans(container)).toEqual(['e2', 'e4']);
   });
 
   it('falls back to the bundled engine so a move still lands when the server has none', async () => {
@@ -130,8 +137,10 @@ describe('PianoChessGame opponent effect', () => {
     expect(requestOpponentMove).toHaveBeenCalledTimes(1);
     // The server produced nothing, yet a move landed — the only path that can
     // commit one here is the bundled `chooseMove` fallback.
-    expect(moveSans(container).length).toBe(1);
-    expect(moveSans(container)[0]).not.toBe('');
+    // A move landed from somewhere to somewhere — which move is the bundled
+    // engine's business, but it must have moved.
+    expect(moveSans(container).length).toBe(2);
+    expect(moveSans(container)[0]).not.toBe(moveSans(container)[1]);
   });
 
   it('does not run the reply after unmount once a stale request resolves', async () => {
@@ -195,7 +204,9 @@ describe('PianoChessGame settings wiring', () => {
     shuffle_each_turn: true,
     feedback: { flash_rejected: true, toast: true },
   };
-  const railBadge = (container) => container.querySelector('.piano-chess__difficulty').textContent;
+  const railBadge = (container) => [...container.querySelectorAll('.piano-chess__fact')]
+    .find((row) => row.querySelector('dt')?.textContent === 'Level')
+    ?.querySelector('dd').textContent;
 
   beforeEach(() => {
     fetchChessConfig.mockResolvedValue(SERVED_CONFIG);
@@ -574,7 +585,8 @@ describe('the player is locked for the whole game', () => {
     await playChord(rerender, 'felix', notesFor('e2'));
     rerender(makeElement('milo'));
     await act(async () => { await vi.advanceTimersByTimeAsync(50); });
-    const lockedUser = container.querySelector('.piano-chess__locked-user');
+    const lockedUser = [...container.querySelectorAll('.piano-chess__fact')]
+      .find((row) => row.querySelector('dt')?.textContent === 'Player');
     expect(lockedUser).not.toBeNull();
     expect(lockedUser.textContent).toContain('felix');
     expect(lockedUser.textContent).not.toContain('milo');
