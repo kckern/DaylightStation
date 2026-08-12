@@ -158,31 +158,6 @@
   color: var(--pc-ivory-dim);
 }
 
-/* Live MIDI readout — the answer to "is the piano even talking to this?" */
-.piano-chess__midi {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  margin-block-start: 0.5rem;
-  font-size: 0.8rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: rgb(203 191 168 / 45%);
-}
-
-.piano-chess__midi-dot {
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: 50%;
-  background: var(--pc-felt);
-}
-
-.piano-chess__midi--live {
-  color: var(--pc-verdigris);
-
-  .piano-chess__midi-dot { background: var(--pc-verdigris); }
-}
-
 .piano-chess__cancel {
   display: flex;
   flex-direction: column;
@@ -323,3 +298,26 @@
   height: clamp(4.5rem, 11vh, 7rem);
   opacity: 0.9;
 }
+
+/* The read-out rides above the keys, where the player's eyes already are when
+   they are wondering why nothing happened. */
+.chess-readout {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.6rem;
+  padding-block-end: 0.35rem;
+  font-size: 0.95rem;
+  letter-spacing: 0.06em;
+  color: var(--pc-ivory-dim);
+}
+
+.chess-readout__chord,
+.chess-readout__square {
+  font-weight: 700;
+  font-size: 1.15rem;
+  color: var(--pc-brass);
+}
+
+.chess-readout--unmapped .chess-readout__chord { color: var(--pc-felt); }
+.chess-readout--offline { color: rgb(203 191 168 / 45%); }

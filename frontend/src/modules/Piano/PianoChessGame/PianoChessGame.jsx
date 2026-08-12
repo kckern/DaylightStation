@@ -3,6 +3,7 @@ import { DIFFICULTIES, chooseMove } from '@shared-gaming/chess/opponent.mjs';
 import getLogger from '../../../lib/logging/Logger.js';
 import ChessBoard from '../../Chess/ChessBoard.jsx';
 import { PianoKeyboard } from '../components/PianoKeyboard.jsx';
+import ChordReadout from './ChordReadout.jsx';
 import { isPersistentUser } from '../PianoKiosk/pianoUser.js';
 import { usePianoMidi, usePianoMidiNotes } from '../PianoKiosk/PianoMidiContext.jsx';
 import PianoContextRail from '../PianoKiosk/modes/Videos/PianoContextRail.jsx';
@@ -100,7 +101,7 @@ export function PianoChessGame({
     Number.isFinite(seed) ? Number(seed) >>> 0 : (Math.floor(Math.random() * 0xffffffff) >>> 0)
   ));
   const { activeNotes } = usePianoMidiNotes();
-  const { connected, status: midiStatus } = usePianoMidi();
+  const { connected } = usePianoMidi();
   const [game, setGame] = useState(() => createChessGameState({
     playerColor, scheme, seed: gameSeed, shuffleEachTurn,
   }));
@@ -111,6 +112,11 @@ export function PianoChessGame({
   // cursor, the rim, the move log — has to follow state, not the prop.
   const liveScheme = game.scheme;
   const [cursor, setCursor] = useState(null);
+  // Whether the cursor has reported for the chord currently held. A `preview`
+  // event fires with `square: null` when a settled chord doesn't map to a
+  // square, so `cursor` alone can't tell "still settling" from "settled and
+  // unmapped" — both read as null. This flag carries that distinction.
+  const [cursorResolved, setCursorResolved] = useState(false);
   const cursorRef = useRef(createCursorState());
   const gameRef = useRef(game);
   gameRef.current = game;
@@ -183,7 +189,7 @@ export function PianoChessGame({
       const { state, event } = advanceCursor(cursorRef.current, heldNotes, Date.now(), { scheme: liveScheme });
       cursorRef.current = state;
       if (!event) return;
-      if (event.type === 'preview') setCursor(event.square);
+      if (event.type === 'preview') { setCursor(event.square); setCursorResolved(true); }
       if (event.type === 'too_quick') setToast({ text: 'Hold the chord a moment longer.', seq: `quick-${Date.now()}` });
       if (event.type === 'escape') {
         setCursor(null);
@@ -199,6 +205,12 @@ export function PianoChessGame({
     const timer = setInterval(tick, CURSOR_TICK_MS);
     return () => clearInterval(timer);
   }, [cancelSelection, handleSquare, heldKey, heldNotes, liveScheme, restart]);
+
+  // Hands off the keys means the next chord starts unresolved again, so the
+  // read-out doesn't carry a stale "settled" verdict into a fresh chord.
+  useEffect(() => {
+    if (heldNotes.length === 0) setCursorResolved(false);
+  }, [heldNotes.length]);
 
   // The opponent answers on a delay so its move reads as a reply, not a flicker.
   // The server is the strong opponent; the bundled engine is what keeps the game
@@ -269,15 +281,6 @@ export function PianoChessGame({
             </span>
           </div>
           <p className="piano-chess__prompt" role="status">{prompt}</p>
-
-          {/* What the piano is actually sending. Without this, a chord that does
-              nothing is indistinguishable from a piano that is not connected. */}
-          <div className={`piano-chess__midi${connected ? ' piano-chess__midi--live' : ''}`}>
-            <span className="piano-chess__midi-dot" aria-hidden="true" />
-            <span className="piano-chess__midi-text">
-              {connected ? (cursorChord?.symbol ?? (heldNotes.length ? `${heldNotes.length} notes held` : 'Listening')) : `Piano ${midiStatus || 'not connected'}`}
-            </span>
-          </div>
 
           {game.status?.game_over ? (
             <button type="button" className="piano-chess__cancel" onClick={restart}>
@@ -358,6 +361,13 @@ export function PianoChessGame({
       )}
 
       <footer className="piano-chess__keys">
+        <ChordReadout
+          heldNotes={heldNotes}
+          chord={cursorChord}
+          square={cursor}
+          connected={connected}
+          settling={heldNotes.length >= 3 && !cursorResolved}
+        />
         <PianoKeyboard activeNotes={activeNotes} startNote={36} endNote={84} />
       </footer>
     </div>

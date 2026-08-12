@@ -1,9 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 
+// vi.hoisted so the mock functions exist before the vi.mock factory below runs
+// (vi.mock calls are hoisted above imports). Most describes never touch these —
+// they get the defaults below — but the cursor-resolution wiring test needs a
+// connected piano holding a real chord, so the mocks have to be overridable.
+const { mockUsePianoMidi, mockUsePianoMidiNotes } = vi.hoisted(() => ({
+  mockUsePianoMidi: vi.fn(() => ({ connected: false, status: 'disconnected' })),
+  mockUsePianoMidiNotes: vi.fn(() => ({ activeNotes: new Map(), noteHistory: [] })),
+}));
+
 vi.mock('../PianoKiosk/PianoMidiContext.jsx', () => ({
-  usePianoMidi: () => ({ connected: false, status: 'disconnected' }),
-  usePianoMidiNotes: () => ({ activeNotes: new Map(), noteHistory: [] }),
+  usePianoMidi: () => mockUsePianoMidi(),
+  usePianoMidiNotes: () => mockUsePianoMidiNotes(),
 }));
 
 // The opponent effect goes through this client, not fetch directly, so mocking
@@ -139,5 +148,36 @@ describe('PianoChessGame opponent effect', () => {
       gameId: expect.stringMatching(/^chess-\d+$/),
       userId: null,
     }));
+  });
+});
+
+// The read-out's own unit tests (ChordReadout.test.jsx) inject `settling` by
+// hand, so they cannot catch a break in *this* component's wiring of it. Only
+// an end-to-end render — a real held chord, ticking through the real 140ms
+// settle window — can prove `cursorResolved` actually reaches the read-out.
+describe('PianoChessGame chord read-out wiring', () => {
+  // [60, 61, 62] is three adjacent semitones — no root/quality pair in the
+  // default scheme (major, minor, sus4, add2, seventh, add6, major7,
+  // diminished) produces a pitch-class cluster that tight, so it settles to a
+  // definite "no square" rather than a lucky match.
+  const UNMAPPABLE_CHORD = new Map([[60, {}], [61, {}], [62, {}]]);
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mockUsePianoMidi.mockReturnValue({ connected: true, status: 'connected' });
+    mockUsePianoMidiNotes.mockReturnValue({ activeNotes: UNMAPPABLE_CHORD, noteHistory: [] });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    mockUsePianoMidi.mockReturnValue({ connected: false, status: 'disconnected' });
+    mockUsePianoMidiNotes.mockReturnValue({ activeNotes: new Map(), noteHistory: [] });
+  });
+
+  it('reaches "not a square" once a held chord settles and fails to map to any square', async () => {
+    render(<PianoChessGame />);
+    // 140ms settle window plus headroom for a couple of 25ms ticks either side.
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    expect(screen.getByText(/not a square/i)).toBeTruthy();
   });
 });
