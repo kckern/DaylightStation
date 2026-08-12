@@ -156,6 +156,25 @@ describe('ghost preview', () => {
     expect(ghost.closest('[data-square]')?.dataset.square).toBe('e4');
   });
 
+  it('renders the ghost alongside the real piece on an occupied destination', () => {
+    // A capture is the preview a player most wants: the ghost must not displace
+    // or be suppressed by the piece already standing on the square.
+    // FEN after 1.e4 e5 — rank-5 field "4p3" puts a black pawn on e5.
+    const fen = 'rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2';
+    const { container } = render(<ChessBoard fen={fen} ghost={{ square: 'e5', piece: 'wP' }} />);
+
+    const square = container.querySelector('[data-square="e5"]');
+    const images = [...square.querySelectorAll('img.chess-board__piece')];
+    expect(images).toHaveLength(2);
+
+    const ghost = square.querySelector('.chess-board__piece--ghost');
+    expect(ghost).not.toBeNull();
+    expect(ghost.getAttribute('src')).toBe(pieceSource('wP'));
+
+    const occupant = images.find((img) => !img.classList.contains('chess-board__piece--ghost'));
+    expect(occupant.getAttribute('src')).toBe(pieceSource('bP'));
+  });
+
   it('renders no ghost when there is nothing to preview', () => {
     const { container } = render(
       <ChessBoard fen="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" ghost={null} />,
