@@ -1,157 +1,186 @@
 # Relative rhythm on the live chord staff
 
 **Date:** 2026-08-12
-**Status:** Design, validated in conversation. Not implemented.
-**Touches:** `frontend/src/modules/MusicNotation/model/noteFlow.js`,
+**Status:** Implemented on `feature/chord-staff-rhythm`. Not yet verified on the kiosk.
+**Code:** `frontend/src/modules/MusicNotation/model/noteFlow.js`,
 `frontend/src/modules/MusicNotation/renderers/chordStaff.js`,
 `frontend/src/modules/MusicNotation/renderers/ChordStaffRenderer.jsx`,
-`frontend/src/modules/Piano/components/CurrentChordStaff.jsx`
+`frontend/src/modules/Piano/components/CurrentChordStaff.jsx`,
+`tests/_infrastructure/harnesses/chord-staff-ink-sweep.mjs`
 
 ---
 
 ## Problem
 
-`CurrentChordStaff` currently shows **order and nothing else**. Every column is
-engraved as a quarter note, horizontal position carries sequence rather than time,
-and note-offs are ignored. The one timing judgement it makes is a 45ms simultaneity
-window for stacking a struck chord into one column.
+`CurrentChordStaff` showed **order and nothing else**. Every column was engraved as a
+quarter note, horizontal position carried sequence rather than time, and note-offs
+were ignored. The one timing judgement it made was a 45ms simultaneity window.
 
-Two things are wrong with that in practice.
+**1. The window was too tight.** Two hands striking "together" spread further than
+45ms, so real chords splintered into two or three columns marching rightward.
 
-**1. The simultaneity window is too tight.** Two hands striking "together" spread
-further than 45ms, so real chords splinter into two or three columns marching
-rightward instead of one stack under one stem.
+**2. There was no shape.** A fast arpeggio resolving onto a held chord drew
+identically to eight evenly-spaced notes.
 
-**2. There is no shape.** A fast arpeggio resolving onto a held chord draws
-identically to eight evenly-spaced notes. The display can carry a coarse sense of
-relative pace without claiming to have measured tempo.
-
-### Explicitly still out of scope
+### Still out of scope
 
 No metronome. No BPM. No time signature, barlines, or measures. No quantisation to a
-grid. Nothing absolute — every rhythmic mark is relative to how the player has been
-playing in the last few seconds.
+grid. Every rhythmic mark is a ratio against how the player has been playing over the
+last few seconds — play a passage twice as fast and it engraves identically.
 
 ---
 
 ## Design
 
-### 1. Two simultaneity windows
+### 1. Simultaneity: time AND key-down overlap
 
-A single wide window cannot work: a run at 120ms/note is *faster* than any chord
-tolerance worth having, so one wide window swallows runs into a single stacked
-column and the rhythm feature never fires.
+A batch of onsets joins the open column when **both** hold:
 
-The wide tolerance is specifically for **the two hands landing not-quite-together**.
-So the window depends on where the incoming onset sits relative to the open column:
+- it lands within `SIMULTANEITY_MS` (90) of the moment that column **opened** —
+  measured from the start, so a slow roll can't daisy-chain into one stack a note at
+  a time; and
+- **every note already in that column is still held down.**
 
-| Case | Window |
-|------|--------|
-| Onset is plausibly the *other hand* | `CROSS_HAND_SIMULTANEITY_MS = 250` |
-| Onset is in the same region as the column | `SIMULTANEITY_MS = 60` (was 45) |
+The overlap test is what separates a chord from a run without guessing from pitch.
+`activeNotes` already tracks key-down state (`useMidiSubscription.js:64-65`, plus a
+stale-note sweeper at `:101-109`), so this needed no new plumbing.
 
-**Other-hand test** (pure, in `noteFlow.js`) — an onset counts as the other hand when
-both hold:
+**A register-based rule was tried first and abandoned.** It used a wide (~250ms)
+window when an onset looked like "the other hand" — more than 12 semitones from every
+column note and on the far side of C4 — and a tight window otherwise. It failed in
+both directions:
 
-- its distance to *every* note already in the open column is more than 12 semitones, and
-- it falls on the opposite side of C4 (MIDI 60) from the column's pitch centroid.
+- *It missed its own motivating case.* An ordinary close-voiced two-hand C major
+  (LH 48/52/55, RH 60/64/67) has nearest notes 5 semitones apart, so it never
+  qualified for the wide window and splintered exactly as before.
+- *It broke something that already worked.* A wide arpeggio crossing middle C
+  (C2→E3→G4→C6 at 100ms/note) **did** qualify, and collapsed to `[C2], [E3+G4+C6]` —
+  a regression against the display's core promise that you can see an arpeggio go up.
 
-`splitByHand` in `model/handSplit.js` is **not** reusable here: it classifies a whole
-set at once and is context-dependent, so it gives no stable per-onset boundary.
+Both cases are now regression tests in `noteFlow.test.js`.
 
-As today, the window is measured from the column's **start**, not from the last note
-added, so a slow roll cannot daisy-chain itself into one stack a note at a time.
+**`SIMULTANEITY_MS = 90` is reasoned, not measured.** It is above a plausible
+two-hand spread including the piano → Jamcorder → backend → WS transport jitter the
+timestamps carry (they are stamped on receipt, not at the keybed) and below the
+~120-150ms per note of a fast run. A capture of real onsets off the kiosk would
+settle it; the constant is flagged UNVERIFIED in the source.
 
-**Known limitation:** a two-hand chord where the right hand *also* rolls across more
-than 60ms will split the right hand into a second column. Accepted.
+### 2. Duration: three glyphs, decided retroactively
 
-### 2. Duration classification
-
-Three glyphs only: **eighth, quarter, half**.
-
-A column's duration is set **retroactively by the gap to the next onset**
-(inter-onset interval), not by how long the key was held. Note-offs stay ignored.
-
-When column N+1 opens, column N's IOI is fixed and classified against a rolling
-baseline:
+Eighth, quarter, half. A column's duration is fixed by the gap to the **next** onset
+(inter-onset interval), not by how long the key was held. When column N+1 opens:
 
 ```
-baseline = clamp(median(recentIois), 180, 1200)   // ms
+baseline = clamp(median(recentIois), 300, 800)   // ms; 500 when nothing measured yet
 
 IOI <  0.6 × baseline  →  eighth
-IOI >  1.7 × baseline  →  half
+IOI >  1.5 × baseline  →  half
 otherwise              →  quarter
 ```
 
-**The newest column has no IOI yet.** It draws as a **quarter provisionally**, and
-promotes itself to a **half** once its own age crosses `1.7 × baseline` — the same
-rule, applied to age instead of IOI. That is the held-note case, and it is why the
-component needs a faster tick (below).
+The IOI is judged against the baseline **as it stood before that gap joined the
+history** — "how you have been playing", excluding the note being judged.
 
-### 3. Baseline memory outlives the visible staff
+**The duration is STORED on the column, not re-derived.** This is the difference
+between a display that revises history and one that doesn't. The baseline moves with
+every strike, so a derived duration would re-classify notes already on the staff:
+play at 400ms, break into a 150ms run, and partway through the run the median flips
+and every eighth already drawn reverts to a quarter with its beam dissolving —
+glyphs changing under the player's hands a second after the notes were struck.
 
-`flow` gains one field: `recentIois`, a plain array capped at **16** entries and
-cleared by `clearIfIdle` along with the columns.
+**Both ends of the clamp do real work.**
 
-This matters. `COLUMN_CAPACITY` is 8, so baseline memory drawn only from visible
-columns gives at most 7 IOIs — a fast run fills the staff, the baseline converges to
-the run's own rate, and the run stops reading as eighths halfway through itself.
+- The **floor (300ms)** is what makes a fast run readable. A purely relative baseline
+  is self-defeating on a uniform passage: twelve notes at 120ms drive the median to
+  120, the eighth threshold to 72ms, and the run classifies as ordinary quarters —
+  the exact case the feature exists to draw. Flooring at 300 means anything under
+  180ms reads as an eighth in any context. Above the floor the ratio does relative
+  work as intended.
+- The **ceiling (800ms)** keeps halves reachable. A half needs a gap past
+  `SLOW_RATIO × baseline`, but a gap of `IDLE_CLEAR_MS` wipes the staff first. At the
+  ceiling the threshold is 1200ms — a 400ms margin under the 1600ms clear. Without
+  the ceiling, anyone playing slower than ~64 onsets/min would never see a half.
 
-Durations are otherwise **derived, not stored**: a new pure
-`flowDurations(flow, now) → Array<'8'|'q'|'h'>` computes them on demand.
+`DEFAULT_BASELINE_MS = 500` covers the first column of every phrase, since
+`recentIois` clears with the flow. Without it the median of nothing is `NaN`, every
+comparison is false, and a struck-and-held chord never promotes.
 
-**Accepted property:** any adaptive baseline normalizes sustained tempo. Play fast
-for ten seconds and everything reverts to quarters. An eighth marks a *burst against
-recent context*, not absolute speed. This follows directly from "no fixed BPM."
+**Accepted property:** an adaptive baseline normalizes sustained tempo above the
+floor. An eighth marks a burst against recent context, not absolute speed.
 
-### 4. Duration belongs to the column, not to a staff
+### 3. Baseline memory outlives the staff
 
-Treble and bass at slot N always receive the same duration, and the `GhostNote`
-filling an untouched staff mirrors it. That is what keeps the two voices
-tick-aligned — per-staff durations would let the two staves drift apart column by
-column.
+`flow.recentIois` holds the last `IOI_MEMORY` (16) gaps and does **not** scroll with
+the columns. `COLUMN_CAPACITY` is 8, so a baseline drawn only from visible columns
+would see at most 7 gaps and be entirely rewritten by a single run. It clears with the
+flow on idle reset.
 
-`Voice` moves to soft / non-strict mode: mixed durations with no meter will not
-satisfy a strict tick count.
+### 4. The provisional newest column
 
-### 5. Retroactive rewrite vs. the typewriter grid
+The newest column has no gap yet. It draws as a **quarter**, and promotes to a
+**half** once it has been held past the same threshold a closed column would clear.
+That promotion is the only thing on the staff that moves with the clock, and it rides
+an 80ms tick in `CurrentChordStaff` (`PROVISIONAL_TICK_MS`). The old 250ms idle sweep
+could not carry it — `clearIfIdle` returns the *same object* when there is nothing to
+clear, so the sweep triggers no re-render at all.
 
-The sharpest constraint. VexFlow's formatter spaces by ticks, so rewriting column 2
-from quarter to eighth drags columns 3–8 leftward — notes visibly jumping while you
-play, destroying the current guarantee that "slot 1 sits at the same x whether it is
-alone or the first of eight."
+### 5. The idle clear holds off for held keys
 
-**Fix: post-format snap.** Format once as today over the full `COLUMN_CAPACITY`
-slots, then override each tickable's `x_shift` onto a uniform slot grid computed from
-`noteAreaW`. Both staves snap to the same grid, so column alignment survives and
-glyphs can change without anything moving.
+`clearIfIdle` now takes the key-down surface and won't wipe while a key is down —
+otherwise sitting on a final chord erases it 1.6s in, half note and all.
+`HELD_CLEAR_MS` (6000) caps the reprieve so a lost note-off can't freeze the staff.
 
-This is the main implementation unknown — verify the VexFlow 4 API behaves as
-expected post-format (see Risks).
+### 6. Duration belongs to the column
 
-### 6. Beaming
+Treble, bass, and the `GhostNote` standing in for whichever staff a column doesn't
+touch all take the same duration. Per-staff durations would give the two voices
+different tick totals and drift the staves apart column by column.
 
-Built **after** the snap, since beams need final x positions. A group is 2+
-consecutive eighth columns on the same staff, broken by any non-eighth column or by a
-ghost on that staff.
+### 7. The post-format snap
 
-**Caveat:** `Beam` forces a single stem direction across its group, overriding the
-`auto_stem` that currently keeps stems pointing toward the staff. On extreme chords
-this can push stems into the frame's headroom.
+VexFlow's formatter spaces by ticks, so once durations vary, rewriting one column's
+duration moves every column to its right — and a duration **is** rewritten
+retroactively the moment the next column is struck. Notes would twitch sideways while
+you play.
 
-### 7. Live re-render
+So the formatter decides widths and we decide positions: after `format()`, each
+tickable is shifted onto a uniform slot grid. `getAbsoluteX()` is
+`tickContext.getX() + stave.getNoteStartX() + padding`, so shifting by
+`(target − tickContext.getX())` pins slot *i* to the same offset whatever its
+duration. Both staves take the same shift.
 
-- `notesKey` in `ChordStaffRenderer` gains the duration string, so a duration-only
-  change still triggers a re-render.
-- The provisional-quarter → half promotion needs its own tick at
-  `PROVISIONAL_TICK_MS = 80`, replacing reliance on the 250ms idle sweep. At 250ms the
-  promotion is visibly late.
+This was expected to be the risky part and wasn't: the pre-rhythm renderer already
+did a post-format `setXShift`, and VexFlow 4.2.5 threads `x_shift` through noteheads,
+modifiers, stems, and `Beam`'s `getStemX()`.
 
-### 8. Compatibility
+**A pre-existing 0.73-unit treble/bass offset** (the bass clef's note-start sits a
+hair right of the treble's) is unchanged by any of this — verified against the
+original renderer. The test asserts it stays constant across durations rather than
+asserting a zero it never had.
 
-`ChordStaffRenderer` also serves a single-chord form (`notes` prop) used by
-`ChordCard.jsx` and `Notation.jsx`. That path has no flow and no IOIs — it keeps
-drawing quarters, unchanged.
+### 8. Beaming
+
+Two or more consecutive eighth columns on one staff, built after the snap (so beams
+span the real positions) and before the draw (so the notes suppress their own flags).
+A slower column, or a slot that staff doesn't play, breaks the run. Beams are
+decorative and wrapped — a beam failure must not cost the staff, the same bargain the
+ottava markers make.
+
+**A run also breaks where the stem direction changes, and the beam is built with
+auto_stem OFF.** The first version used `Beam(notes, true)`, letting VexFlow pick one
+majority direction for the group. The ink sweep caught it: on a low bass run that
+flips stems away from the staff, and the beam — drawn at the stem tips, which are
+lengthened to meet it — landed **10.9 units below the fixed frame, clipping in 336 of
+151,944 renders**. `auto_stem`'s "stems point toward the staff" is the rule the frame
+was measured against, so the beam has to live inside it rather than overrule it. With
+the fix the sweep is back to 0 clipped and the ink extremes are *identical* to the
+pre-rhythm baseline (top 30.5, bottom 249.2, left −6) — the new glyphs cost the frame
+nothing.
+
+### 9. Compatibility
+
+The single-chord form (`notes` prop) used by `ChordCard.jsx` and `Notation.jsx` has no
+flow and no gaps; columns without a duration default to quarters, so it is unchanged.
 
 ---
 
@@ -159,59 +188,44 @@ drawing quarters, unchanged.
 
 | Name | Value | Notes |
 |------|-------|-------|
-| `SIMULTANEITY_MS` | 60 | same-region window (was 45) |
-| `CROSS_HAND_SIMULTANEITY_MS` | 250 | opposite-hand window |
+| `SIMULTANEITY_MS` | 90 | was 45; reasoned, not measured |
 | `FAST_RATIO` | 0.6 | below this × baseline → eighth |
-| `SLOW_RATIO` | 1.7 | above this × baseline → half; also the provisional promotion threshold |
-| `IOI_MEMORY` | 16 | `recentIois` cap |
-| `BASELINE_CLAMP` | 180–1200ms | keeps one wild gap from wrecking the scale |
-| `PROVISIONAL_TICK_MS` | 80 | promotion tick |
+| `SLOW_RATIO` | 1.5 | above this × baseline → half; also the promotion threshold |
+| `IOI_MEMORY` | 16 | outlives the 8 visible columns |
+| `BASELINE_MIN_MS` | 300 | floor — makes fast runs readable |
+| `BASELINE_MAX_MS` | 800 | ceiling — keeps halves under the idle clear |
+| `DEFAULT_BASELINE_MS` | 500 | first column of a phrase |
+| `PROVISIONAL_TICK_MS` | 80 | in `CurrentChordStaff` |
+| `HELD_CLEAR_MS` | 6000 | stuck-note backstop |
 | `COLUMN_CAPACITY` | 8 | unchanged |
 | `IDLE_CLEAR_MS` | 1600 | unchanged |
 
 ---
 
-## Testing
+## Verification
 
-**`model/noteFlow.test.js`** (pure, extends the existing suite):
+- **`noteFlow.test.js`** — 44 tests. Both abandoned-heuristic regressions, the
+  overlap test, ratio boundaries, the clamp at both ends, baseline memory surviving
+  scroll-off, the held-key hold-off and its backstop, the provisional promotion, and
+  a test that a closed column's duration never changes.
+- **`chordStaff.test.js`** — 40 tests, 15 new. Mixed durations render; slot x is
+  identical across duration configurations (the typewriter guarantee); slot 1 sits at
+  the same x alone or first of four; beam groups form and break correctly; a lone
+  eighth gets a flag; the frame is unmoved by duration; and three tests pin the
+  clipping regression above by checking path coordinates against the viewBox (jsdom
+  has no `getBBox`, so ink itself can only be measured by the sweep).
+- **Ink sweep** (`chord-staff-ink-sweep.mjs`) — extended with a duration dimension
+  (all-quarters, all-eighths, all-halves, alternating), since the sweep previously
+  drew no flag, no hollow notehead, and no beam. 151,944 renders, 0 clipped. This is
+  what found the beam bug; the unextended sweep passed clean on the broken code.
+- **Full frontend suite** — 8,373 passing. The 16 failures (MediaApp, PianoApp,
+  Agent runtime, the stray `lib/tempTest*.js`) reproduce identically with these
+  changes stashed, so they are pre-existing and unrelated.
 
-- cross-hand onset at 200ms merges; same-region onset at 200ms opens a new column
-- same-region onset at 40ms merges
-- window measured from column start — a 3-note roll at 50ms intervals does not
-  daisy-chain into one column
-- classification at the ratio boundaries, and the clamp
-- `recentIois` caps at 16 and is cleared by `clearIfIdle`
-- baseline survives columns scrolling off the staff
-- provisional column reports quarter, then half once aged past threshold
+## Open
 
-**`renderers/chordStaff.test.js`**:
-
-- mixed-duration flow renders without throwing (soft voice)
-- slot x positions are identical before and after a column's duration is rewritten
-  (the typewriter guarantee)
-- beam groups form across consecutive eighths and break on a quarter
-
----
-
-## Risks
-
-1. **`x_shift` snap** — the whole typewriter guarantee rests on overriding positions
-   after `Formatter.format()`. Spike this first; if VexFlow 4 fights it, the fallback
-   is hand-placing tickables and dropping the formatter for note x entirely.
-2. **Beam vs. `auto_stem`** — forced stem direction may clip tall chords. May need a
-   per-group majority-direction rule, or to drop beams and ship flags alone.
-3. **Baseline normalizes sustained tempo** — accepted, documented above, but it will
-   read as a bug to anyone who hasn't been told.
-4. **Cross-hand test is a heuristic** — an octave-plus leap within one hand across
-   C4 will be misread as the other hand and merged. Rare in practice.
-
----
-
-## Sequencing
-
-1. `noteFlow.js` — two windows, `recentIois`, `flowDurations`. Fully testable with no
-   rendering.
-2. Spike the `x_shift` snap in `chordStaff.js` against a fixed mixed-duration flow.
-3. Wire durations through `chordStaff.js` → `ChordStaffRenderer` → `CurrentChordStaff`,
-   including the 80ms promotion tick.
-4. Beams last — the most likely piece to be cut.
+1. **`SIMULTANEITY_MS` is unmeasured.** Capture real two-hand onsets off the kiosk
+   and re-tune. The transport stamps on WS receipt, so some of the observed spread is
+   jitter rather than the player.
+2. **Not verified on the kiosk.** Everything here is unit tests and a headless ink
+   sweep. Nobody has played a piano into it.

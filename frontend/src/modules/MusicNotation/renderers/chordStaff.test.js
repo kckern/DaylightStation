@@ -248,3 +248,177 @@ describe('renderChordStaff — VexFlow grand staff', () => {
     expect(new Set(boxes).size).toBe(1);
   });
 });
+
+describe('renderChordStaff — relative rhythm', () => {
+  const render = (columns, aspect = 3) => {
+    const host = document.createElement('div');
+    renderChordStaff(host, { columns, keySignature: 'C', aspect });
+    return host;
+  };
+  // x of each drawn notehead, read off the path's opening moveto.
+  const headXs = (host, selector = '.vf-stavenote') =>
+    [...host.querySelectorAll(selector)].map((g) => {
+      const d = g.querySelector('.vf-notehead path')?.getAttribute('d') ?? '';
+      const m = d.match(/^M([-\d.]+)/);
+      return m ? Math.round(Number(m[1]) * 100) / 100 : null;
+    });
+  const beams = (host) => host.querySelectorAll('.vf-beam').length;
+  const paths = (host) => host.querySelectorAll('.vf-stavenote path').length;
+
+  it('renders a mixed-duration flow without throwing', () => {
+    const host = render([
+      { midis: [60], duration: '8' },
+      { midis: [64], duration: 'q' },
+      { midis: [67], duration: 'h' },
+    ]);
+    expect(host.querySelectorAll('.vf-stavenote').length).toBe(3);
+  });
+
+  it('keeps every slot at the SAME x whatever the durations are', () => {
+    // The typewriter guarantee, and the reason for the post-format snap. A column's
+    // duration is rewritten retroactively the moment the next one is struck; if the
+    // formatter's tick spacing were left to place the notes, that rewrite would drag
+    // every column to its right and the staff would twitch under the player's hands.
+    const midis = [[60], [64], [67], [72]];
+    const asQuarters = midis.map((m) => ({ midis: m, duration: 'q' }));
+    const mixed = [
+      { midis: [60], duration: '8' },
+      { midis: [64], duration: '8' },
+      { midis: [67], duration: 'h' },
+      { midis: [72], duration: 'q' },
+    ];
+    expect(headXs(render(mixed))).toEqual(headXs(render(asQuarters)));
+  });
+
+  it('places slot 1 at the same x whether it is alone or the first of four', () => {
+    const alone = headXs(render([{ midis: [60], duration: '8' }]));
+    const first = headXs(render([
+      { midis: [60], duration: '8' },
+      { midis: [64], duration: 'h' },
+      { midis: [67], duration: '8' },
+    ]));
+    expect(first[0]).toBe(alone[0]);
+  });
+
+  it('keeps the two staves aligned at a shared column, whatever the duration', () => {
+    // Treble and bass take the same duration and the same snap, so a two-hand column
+    // draws as one vertical stack. Per-staff durations would give the voices different
+    // tick totals and drift the staves apart column by column.
+    //
+    // The residual 0.73 is the bass clef's note-start sitting a hair right of the
+    // treble's; it predates this and is identical on the pre-rhythm renderer. What
+    // matters is that it is CONSTANT — rhythm must not widen it.
+    const deltaFor = (duration) => {
+      const xs = headXs(render([{ midis: [48, 72], duration }]));
+      expect(xs).toHaveLength(2);
+      return xs[1] - xs[0];
+    };
+    const deltas = ['8', 'q', 'h'].map(deltaFor);
+    expect(new Set(deltas).size).toBe(1);
+    expect(Math.abs(deltas[0])).toBeLessThan(1);
+  });
+
+  it('beams a run of consecutive eighths', () => {
+    expect(beams(render([
+      { midis: [60], duration: '8' },
+      { midis: [62], duration: '8' },
+      { midis: [64], duration: '8' },
+    ]))).toBe(1);
+  });
+
+  it('breaks the beam on a column that is not an eighth', () => {
+    expect(beams(render([
+      { midis: [60], duration: '8' },
+      { midis: [62], duration: '8' },
+      { midis: [64], duration: 'q' },
+      { midis: [65], duration: '8' },
+      { midis: [67], duration: '8' },
+    ]))).toBe(2);
+  });
+
+  it('does not beam a lone eighth', () => {
+    expect(beams(render([
+      { midis: [60], duration: '8' },
+      { midis: [64], duration: 'q' },
+    ]))).toBe(0);
+  });
+
+  it('breaks the beam across a slot this staff does not play', () => {
+    // Left hand, right hand, left hand: the treble has a hole in the middle, so its
+    // two eighths are not consecutive and must not be joined over the gap.
+    expect(beams(render([
+      { midis: [72], duration: '8' },
+      { midis: [40], duration: '8' },
+      { midis: [74], duration: '8' },
+    ]))).toBe(0);
+  });
+
+  it('gives a lone eighth a flag (it is drawn as an eighth, not a quarter)', () => {
+    const eighth = render([{ midis: [60], duration: '8' }]);
+    const quarter = render([{ midis: [60], duration: 'q' }]);
+    expect(paths(eighth)).toBeGreaterThan(paths(quarter));
+  });
+
+  it('defaults a column with no duration to a quarter', () => {
+    expect(headXs(render([{ midis: [60] }]))).toEqual(headXs(render([{ midis: [60], duration: 'q' }])));
+    expect(paths(render([{ midis: [60] }]))).toBe(paths(render([{ midis: [60], duration: 'q' }])));
+  });
+
+  it('leaves the single-chord form (the flashcard face) on quarters', () => {
+    const host = document.createElement('div');
+    renderChordStaff(host, { notes: new Map([[60, {}], [64, {}]]), keySignature: 'C', aspect: 1.7 });
+    const asQuarter = document.createElement('div');
+    renderChordStaff(asQuarter, { notes: new Map([[60, {}], [64, {}]]), keySignature: 'C', aspect: 1.7 });
+    expect(host.querySelectorAll('.vf-beam').length).toBe(0);
+    expect(paths(host)).toBe(paths(asQuarter));
+  });
+
+  it('holds the fixed frame across durations (rhythm cannot move the staff)', () => {
+    const box = (duration) => render([{ midis: [60], duration }])
+      .querySelector('svg').getAttribute('viewBox');
+    expect(new Set(['8', 'q', 'h'].map(box)).size).toBe(1);
+  });
+});
+
+describe('renderChordStaff — beams stay inside the fixed frame', () => {
+  // jsdom has no getBBox, so ink can't be measured the way the sweep does
+  // (tests/_infrastructure/harnesses/chord-staff-ink-sweep.mjs). Path coordinates can
+  // be, and that is enough to hold the specific regression the sweep found: letting
+  // Beam pick a majority stem direction flipped stems away from the staff on a low
+  // bass run and dropped the beam ~11 units below the frame.
+  const coordsOutsideFrame = (host) => {
+    const svg = host.querySelector('svg');
+    const [, vy, , vh] = svg.getAttribute('viewBox').split(' ').map(Number);
+    const bad = [];
+    for (const p of svg.querySelectorAll('path')) {
+      const nums = (p.getAttribute('d') ?? '').match(/-?\d+(\.\d+)?/g)?.map(Number) ?? [];
+      for (let i = 1; i < nums.length; i += 2) {
+        if (nums[i] < vy || nums[i] > vy + vh) bad.push(nums[i]);
+      }
+    }
+    return bad;
+  };
+  const renderFlow = (midis, duration, aspect) => {
+    const host = document.createElement('div');
+    renderChordStaff(host, {
+      columns: Array.from({ length: 8 }, (_, i) => ({ midis: midis.map((m) => m + i), duration })),
+      keySignature: 'C',
+      aspect,
+    });
+    return host;
+  };
+
+  it('keeps a low two-hand run of eighths inside the frame', () => {
+    // The exact shape the sweep reported clipping at 268.9 against a 258 frame floor.
+    expect(coordsOutsideFrame(renderFlow([35, 47, 75, 78, 82], '8', 2.6666666666666665))).toEqual([]);
+  });
+
+  it('keeps a low bass triad run of eighths inside the frame', () => {
+    expect(coordsOutsideFrame(renderFlow([21, 25, 28], '8', 2.6666666666666665))).toEqual([]);
+  });
+
+  it('holds for quarters and halves too', () => {
+    expect(coordsOutsideFrame(renderFlow([35, 47, 75, 78, 82], 'q', 3.5))).toEqual([]);
+    expect(coordsOutsideFrame(renderFlow([35, 47, 75, 78, 82], 'h', 3.5))).toEqual([]);
+  });
+});
