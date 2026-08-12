@@ -255,6 +255,7 @@ import { YamlGamingDefinitionStore } from './1_adapters/persistence/yaml/gaming/
 import { YamlGamingAssetCatalog } from './1_adapters/persistence/yaml/gaming/YamlGamingAssetCatalog.mjs';
 import { YamlGamingSessionStore } from './1_adapters/persistence/yaml/gaming/YamlGamingSessionStore.mjs';
 import { YamlPianoAttemptStore } from './1_adapters/persistence/yaml/gaming/YamlPianoAttemptStore.mjs';
+import { YamlExerciseBank } from './1_adapters/piano/YamlExerciseBank.mjs';
 import { PianoScaleChallengePolicy } from './3_applications/piano/PianoScaleChallengePolicy.mjs';
 import { scaleClashDefinition } from '#shared/gaming/fixtures/scaleClash.mjs';
 import { createWikipediaRouter } from './4_api/v1/routers/wikipedia.mjs';
@@ -2233,10 +2234,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const pianoAttemptStore = new YamlPianoAttemptStore({
     usersDir: join(configService.getDataDir(), 'users'),
   });
+  // Exercise bank: seeds at data/content/music/, instances computed on demand.
+  const exerciseBank = new YamlExerciseBank({ contentDir: contentPath });
   v1Routers.piano = createPianoRouter({
     pianoContainer,
     pianoAttemptStore,
     pianoChallengePolicy: new PianoScaleChallengePolicy({ attemptStore: pianoAttemptStore }),
+    exerciseBank,
     logger: rootLogger.child({ module: 'piano-api' })
   });
 

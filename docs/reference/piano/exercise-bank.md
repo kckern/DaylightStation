@@ -90,6 +90,11 @@ and reading an unfamiliar clef is a real difficulty that shows up as pitch
 errors. Single-hand material can therefore be expanded across both clefs and be
 genuinely two different exercises.
 
+Staff is **notational only and never moves a pitch**. The same notes read in
+another clef are the same notes. Moving register is what the `octave` axis is
+for, and keeping them separate stops a note's pitch depending on the clef it
+happens to be written in.
+
 ### `expansion.axes` — the cross product
 
 Each axis is an enumerable list. An instance is one point in the product of all
@@ -101,9 +106,9 @@ axes. Axes are transformations, not labels, and each has defined semantics:
 | `quality` | chord or interval qualities | rebuild the event from the named quality |
 | `inversion` | `root`, `1st`, `2nd`, `3rd` | rotate the chord, lowest note up an octave, n times |
 | `octave` | integers | shift every pitch by 12n |
-| `staff` | `treble`, `bass` | re-notate; shift register to sit on the staff |
+| `staff` | `treble`, `bass` | re-notate only — the pitches do not move |
 | `direction` | `up`, `down`, `up-then-down` | order melodic material |
-| `span_octaves` | integers | repeat the figure across n octaves |
+| `span_octaves` | integers | repeat across n octaves; a join note shared by two blocks is struck once |
 | `mode` | mode names | respell against the named mode |
 
 ```yaml
@@ -189,6 +194,34 @@ provenance:
 `ordered: true` means the collection's own sequence is a real claim (Hanon 1–30
 is a course). Ordering within a book and difficulty across the bank are
 different things, and both are kept.
+
+## Serving
+
+Mounted read-only on the piano router (`YamlExerciseBank` reads seeds;
+`shared/music/exerciseBank.mjs` expands them). Instances are computed per
+request and never stored.
+
+| Route | Returns |
+|---|---|
+| `GET /api/v1/piano/bank` | collections and totals |
+| `GET /api/v1/piano/bank/:collection` | collection index plus the seeds on disk |
+| `GET /api/v1/piano/bank/:collection/:id` | one seed, with its instance count |
+| `GET /api/v1/piano/bank/:collection/:id/instances` | instance ids; `?expand=true` materializes, `?limit=` caps |
+| `GET /api/v1/piano/bank/:collection/:id/instance?<axes>` | one instance, built from axis values |
+
+Listing returns ids by default because a 504-instance seed is cheap to name and
+expensive to build. Expansion is opt-in and capped.
+
+An absent bank answers `503`, not an empty `200` — "no content installed" and
+"this collection is empty" are different facts and a surface should not have to
+guess which it received.
+
+```
+GET /api/v1/piano/bank/triads/all/instance?root=D&quality=minor&inversion=1st&staff=bass
+{ "id": "triads/all@root=D,quality=minor,inversion=1st,staff=bass",
+  "events": [{ "notes": [{ "midi": 65 }, { "midi": 69 }, { "midi": 74 }] }],
+  "staff": "bass", "ordering": "any", "supports": ["free", "cued"] }
+```
 
 ## What this does not do
 

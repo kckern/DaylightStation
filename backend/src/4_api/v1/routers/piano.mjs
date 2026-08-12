@@ -2,6 +2,7 @@ import express from 'express';
 import { shortId } from '#domains/core/utils/id.mjs';
 import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/index.mjs';
 import { musicXmlToNotes } from '#shared/music/musicXmlToNotes.mjs';
+import { countInstances, expandSeed, instanceId, instanceIds, materializeById } from '#shared/music/exerciseBank.mjs';
 import {
   PRODUCER_ID_RE,
   PRODUCER_SCHEMA_VERSION,
@@ -64,10 +65,17 @@ import {
  *   GET    /lessons/:collection              → index
  *   GET    /lessons/:collection/:id          → drill module
  *
+ *   Exercise bank (content, read-only; seeds stored, instances computed):
+ *   GET    /bank                                 → collections + totals
+ *   GET    /bank/:collection                     → collection index + seed ids
+ *   GET    /bank/:collection/:id                 → one seed
+ *   GET    /bank/:collection/:id/instances       → instance ids (?limit, ?expand=true)
+ *   GET    /bank/:collection/:id/instance?<axes> → one materialized instance
+ *
  *   Menu activity strip:
  *   GET    /activity/recent                  → { players: [...] }  (per-player most-recent lesson-course progress)
  */
-export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pianoChallengePolicy = null, logger = console }) {
+export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pianoChallengePolicy = null, exerciseBank = null, logger = console }) {
   if (!pianoContainer) throw new Error('createPianoRouter: pianoContainer required');
   const router = express.Router();
   const ds = pianoContainer.studioDatastore;
@@ -572,6 +580,81 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pi
 
   // ── Lesson drills (content, read-only) ──────────────────────────────────────
   const safeDrillId = (id) => /^[A-Za-z0-9_-]{1,64}$/.test(id);
+
+  /**
+   * Exercise bank (read-only). The bank stores seeds; instances are computed,
+   * never stored, so `/instances` and `/instance` expand on demand rather than
+   * reading anything extra off disk.
+   *
+   *   GET /bank                                   → collections + totals
+   *   GET /bank/:collection                       → collection index
+   *   GET /bank/:collection/:id                   → one seed
+   *   GET /bank/:collection/:id/instances         → instance ids (?limit&expand)
+   *   GET /bank/:collection/:id/instance?<axes>   → one materialized instance
+   */
+  const bankReady = (res) => {
+    if (!exerciseBank?.available()) {
+      res.status(503).json({ error: 'Exercise bank unavailable' });
+      return false;
+    }
+    return true;
+  };
+
+  router.get('/bank', asyncHandler((_req, res) => {
+    if (!bankReady(res)) return;
+    const index = exerciseBank.getIndex();
+    // The manifest is generated; the directory is the truth if they disagree.
+    res.json(index || { collections: exerciseBank.listCollections().map((id) => ({ id })) });
+  }));
+
+  router.get('/bank/:collection', asyncHandler((req, res) => {
+    if (!bankReady(res)) return;
+    const { collection } = req.params;
+    if (!safeSegment(collection)) return res.status(400).json({ error: 'Invalid collection' });
+    const index = exerciseBank.getCollection(collection);
+    if (!index) return res.status(404).json({ error: 'Collection not found' });
+    res.json({ ...index, seeds: exerciseBank.listSeeds(collection) });
+  }));
+
+  router.get('/bank/:collection/:id', asyncHandler((req, res) => {
+    if (!bankReady(res)) return;
+    const { collection, id } = req.params;
+    if (!safeSegment(collection) || !safeSegment(id)) return res.status(400).json({ error: 'Invalid seed reference' });
+    const seed = exerciseBank.getSeed(collection, id);
+    if (!seed) return res.status(404).json({ error: 'Seed not found' });
+    res.json({ ...seed, instances: countInstances(seed) });
+  }));
+
+  router.get('/bank/:collection/:id/instances', asyncHandler((req, res) => {
+    if (!bankReady(res)) return;
+    const { collection, id } = req.params;
+    if (!safeSegment(collection) || !safeSegment(id)) return res.status(400).json({ error: 'Invalid seed reference' });
+    const seed = exerciseBank.getSeed(collection, id);
+    if (!seed) return res.status(404).json({ error: 'Seed not found' });
+
+    // Ids are cheap; full instances are not, so expanding is opt-in and capped.
+    const limit = Math.min(Number(req.query.limit) || 500, 2000);
+    if (req.query.expand === 'true') {
+      return res.json({ seed_id: seed.id, total: countInstances(seed), instances: expandSeed(seed, { limit }) });
+    }
+    const ids = instanceIds(seed);
+    res.json({ seed_id: seed.id, total: ids.length, instance_ids: ids.slice(0, limit) });
+  }));
+
+  router.get('/bank/:collection/:id/instance', asyncHandler((req, res) => {
+    if (!bankReady(res)) return;
+    const { collection, id } = req.params;
+    if (!safeSegment(collection) || !safeSegment(id)) return res.status(400).json({ error: 'Invalid seed reference' });
+    const seed = exerciseBank.getSeed(collection, id);
+    if (!seed) return res.status(404).json({ error: 'Seed not found' });
+
+    const axes = Object.fromEntries(
+      Object.entries(req.query).filter(([key]) => key !== 'limit' && key !== 'expand'),
+    );
+    const instance = materializeById(seed, instanceId(seed.id, axes));
+    if (!instance) return res.status(400).json({ error: 'No such instance of this seed', axes });
+    res.json(instance);
+  }));
 
   router.get('/lessons/:collection', asyncHandler((req, res) => {
     if (!safeSegment(req.params.collection)) return res.status(400).json({ error: 'Invalid collection' });
