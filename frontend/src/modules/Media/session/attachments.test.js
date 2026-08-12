@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createIdleSessionSnapshot } from '@shared-contracts/media/shapes.mjs';
 import { createSessionStore } from './sessionStore.js';
-import { attachPersistence, attachRecents, attachLogging } from './attachments.js';
+import { attachPersistence, attachRecents, attachLogging, attachSlowStartWatchdog } from './attachments.js';
 import mediaLog from '../logging/mediaLog.js';
 
 vi.mock('../logging/mediaLog.js', () => {
@@ -111,5 +111,70 @@ describe('attachLogging', () => {
     expect(mediaLog.playbackStarted).toHaveBeenCalledWith(expect.objectContaining({
       sessionId: 's1', contentId: 'p:1',
     }));
+  });
+});
+
+describe('attachSlowStartWatchdog', () => {
+  // The mediaLog stub is a module-level Proxy shared by every test in this
+  // file — reset it so "was not called" means "not called by THIS test".
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  const loadItem = (store) => store.dispatch({
+    type: 'LOAD_ITEM',
+    item: { contentId: 'plex:665667', title: 'Spooky, Stinky Subsidies' },
+  });
+
+  it('a load stuck past the threshold stops claiming to be starting', () => {
+    const store = makeStore();
+    attachSlowStartWatchdog(store);
+    loadItem(store);
+    expect(store.getSnapshot().state).toBe('loading');
+
+    vi.advanceTimersByTime(14_999);
+    expect(store.getSnapshot().state).toBe('loading');
+
+    vi.advanceTimersByTime(2);
+    expect(store.getSnapshot().state).toBe('stalled');
+    expect(mediaLog.playbackStalled).toHaveBeenCalledWith(
+      expect.objectContaining({ phase: 'startup', contentId: 'plex:665667' })
+    );
+  });
+
+  it('does NOT advance — a slow server must not skip the episode', () => {
+    const store = makeStore();
+    attachSlowStartWatchdog(store);
+    loadItem(store);
+    vi.advanceTimersByTime(20_000);
+    expect(store.getSnapshot().currentItem?.contentId).toBe('plex:665667');
+    expect(mediaLog.playbackStallAutoAdvanced).not.toHaveBeenCalled();
+  });
+
+  it('playback starting in time cancels the watchdog', () => {
+    const store = makeStore();
+    attachSlowStartWatchdog(store);
+    loadItem(store);
+    store.dispatch({ type: 'PLAYER_STATE', playerState: 'playing' });
+    vi.advanceTimersByTime(60_000);
+    expect(store.getSnapshot().state).toBe('playing');
+    expect(mediaLog.playbackStalled).not.toHaveBeenCalled();
+  });
+
+  it('re-arms for each new load', () => {
+    const store = makeStore();
+    attachSlowStartWatchdog(store);
+    loadItem(store);
+    store.dispatch({ type: 'PLAYER_STATE', playerState: 'playing' });
+    store.dispatch({ type: 'LOAD_ITEM', item: { contentId: 'plex:665668', title: 'Wrestling with Socialism' } });
+    vi.advanceTimersByTime(15_001);
+    expect(store.getSnapshot().state).toBe('stalled');
+  });
+
+  it('detaching stops the pending timer', () => {
+    const store = makeStore();
+    const detach = attachSlowStartWatchdog(store);
+    loadItem(store);
+    detach();
+    vi.advanceTimersByTime(60_000);
+    expect(store.getSnapshot().state).toBe('loading');
   });
 });
