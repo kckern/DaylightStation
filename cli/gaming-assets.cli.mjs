@@ -13,6 +13,7 @@ import {
   renderFrameGrid,
   renderLayout,
   renderScene,
+  renderSceneQa,
   explainPrefab,
   renderPrefabPreview,
   deriveAtlas,
@@ -36,6 +37,7 @@ Commands:
   animate    --root <common-dir> --source <relative.png> --cell 16x16 --frames 0,0;1,0 --out <clip.gif> [--fps 8] [--scale 4]
   render     --root <common-dir> --manifest <layout.yml> --out <layout.png>
   scene      --root <common-dir> --catalog <pack.yml> --manifest <scene.yml> --out <scene.png>
+  scene-qa   --root <common-dir> --catalog <pack.yml> --manifest <scene.yml> --out-dir <directory>
   prefab-explain --root <common-dir> --catalog <pack.yml> --id <prefab> [--params size=large,garden=false]
   prefab-render --root <common-dir> --catalog <pack.yml> --id <prefab> --out <png> [--params size=large] [--viewport 320x240] [--scale 1]
   derive     --root <common-dir> --recipe <recipe.yml> --out <atlas.png>
@@ -155,6 +157,9 @@ export async function main(argv = process.argv.slice(2), { env = process.env, st
         break;
       case 'scene':
         report = await renderScene({ root, catalogPath: required(parsed.flags, 'catalog'), manifestPath: required(parsed.flags, 'manifest'), out: required(parsed.flags, 'out') });
+        break;
+      case 'scene-qa':
+        report = await renderSceneQa({ root, catalogPath: required(parsed.flags, 'catalog'), manifestPath: required(parsed.flags, 'manifest'), outDir: required(parsed.flags, 'out-dir') });
         break;
       case 'prefab-explain':
         report = await explainPrefab({ catalogPath: required(parsed.flags, 'catalog'), id: required(parsed.flags, 'id'), params: params(parsed.flags.params) });

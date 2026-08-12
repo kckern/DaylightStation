@@ -262,6 +262,50 @@ $wr-label: 1.4rem;
     align-items: center;
     gap: 12px;
   }
+
+  // "Did it count?" — the second question the completion screen has to answer.
+  // A failure is styled to be unmissable from across the garage, because the
+  // alternative is somebody walking away believing four sets were recorded.
+  &__log {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    max-width: 34ch;
+    padding: 10px 18px;
+    border: 2px solid transparent;
+    border-radius: 10px;
+    font-size: $wr-label;
+    line-height: 1.25;
+    text-align: center;
+    color: $wr-muted;
+
+    &--pending { color: $wr-accent; }
+
+    &--ok {
+      color: $wr-go;
+      border-color: rgba(93, 255, 155, 0.35);
+    }
+
+    &--failed {
+      color: #ffd9d9;
+      background: rgba(120, 16, 32, 0.45);
+      border-color: #ff5a6e;
+    }
+  }
+
+  &__log-title {
+    font-size: clamp(1.7rem, 3.2vh, 2.4rem);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #ff8894;
+  }
+
+  &__log-body {
+    font-size: $wr-label;
+    color: #ffd9d9;
+  }
 }
 
 // Portrait / narrow panels (a dev window, or the module rendered in a column):

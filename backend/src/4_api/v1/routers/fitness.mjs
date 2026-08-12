@@ -737,11 +737,17 @@ export function createFitnessRouter(config) {
    * The run lands on the SAME session record a cycle ride does, so session detail,
    * recaps and the longitudinal widget pick it up with no new plumbing.
    *
-   * Body: { workoutId, completedSteps: [{groupIndex, slug}, ...], completedAt?, household? }
+   * Body: { workoutId, completedSteps: [{groupIndex, slug}, ...], completedAt?, household?,
+   *         openSession?, startedAt? }
    *
    * `completedSteps` are the WORK steps the runner actually finished — a subset of what
    * `expandWorkout` handed it. Planned counts come from the stored workout, never from
    * the client, so a plan can never be filed as performance.
+   *
+   * `openSession: true` asks for `sessionId` to be OPENED if it does not exist — the case
+   * where a strength workout was done with no fitness session running at all. It is opt-in
+   * because posting an id the client believes already exists, and having it silently
+   * created, would hide a real bug. See the header of LogStrengthRun.
    *
    * 404s an unknown session or workout; 422s a run with nothing completed (a definite
    * answer, so a client does not retry an empty run forever).
@@ -750,13 +756,15 @@ export function createFitnessRouter(config) {
     if (!logStrengthRun) return res.status(503).json({ ok: false, error: 'strength logging unavailable' });
 
     const { sessionId } = req.params;
-    const { workoutId, completedSteps, completedAt, household } = req.body || {};
+    const { workoutId, completedSteps, completedAt, household, openSession, startedAt } = req.body || {};
 
     const result = await logStrengthRun.execute({
       sessionId,
       workoutId,
       completedSteps,
       completedAt,
+      openSession: openSession === true,
+      startedAt,
       householdId: household || defaultHouseholdId,
     });
 
@@ -767,7 +775,12 @@ export function createFitnessRouter(config) {
       return res.status(status).json({ ok: false, error: result.error, reason: result.reason });
     }
 
-    return res.json({ ok: true, sessionId: result.sessionId, strength: result.strength });
+    return res.json({
+      ok: true,
+      sessionId: result.sessionId,
+      openedSession: result.openedSession === true,
+      strength: result.strength,
+    });
   }));
 
   /**

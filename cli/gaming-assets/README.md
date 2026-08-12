@@ -102,6 +102,16 @@ npm run gaming:assets -- scene --catalog /path/to/desert.yml \
   --manifest /path/to/scene.yml --out /tmp/desert.png
 ```
 
+Before publishing, generate the production-review bundle. It renders the same scene once, then writes a half-size thumbnail and four nearest-neighbor 2× quadrants so joins, baked backgrounds, anchors, and one-pixel seams cannot hide in a whole-scene glance:
+
+```bash
+npm run gaming:assets -- scene-qa --catalog /path/to/desert.yml \
+  --manifest /path/to/scene.yml --root /path/to/_common \
+  --out-dir /tmp/desert-scene-qa
+```
+
+Scenes may add `review_regions` with a stable `id`, `[x, y, width, height]` rectangle, and integer `scale`. `scene-qa` emits those targeted assembly crops alongside the automatic quadrants; production fixtures should name every high-risk join such as a shoreline, bridge landing, fenced bed, or dock.
+
 The independently reviewed adventure-scene fixture is reproducible without a frontend:
 
 ```bash

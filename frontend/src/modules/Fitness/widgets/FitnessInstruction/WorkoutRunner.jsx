@@ -128,7 +128,10 @@ export default function WorkoutRunner({
   exercises = {},
   title = null,
   onExit = null,
-  onComplete = null
+  onComplete = null,
+  logStatus = 'idle',
+  logMessage = null,
+  onRetryLog = null
 }) {
   const logger = useMemo(() => getLogger().child({ component: 'workout-runner' }), []);
 
@@ -145,6 +148,16 @@ export default function WorkoutRunner({
   onExitRef.current = onExit;
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
+  const onRetryLogRef = useRef(onRetryLog);
+  onRetryLogRef.current = onRetryLog;
+
+  // The WORK steps actually finished, in the order they were finished — the report
+  // the session record is built from. Accumulated as the athlete advances rather
+  // than reconstructed from `cursor` at the end, because those are different
+  // claims: the cursor says how far the screen got, this says what was performed.
+  // A ref, not state: nothing renders from it, and a re-render per set would
+  // remount the rest timer.
+  const completedRef = useRef([]);
 
   // Arm the shared cue-audio element on the first gesture inside this screen.
   // Browse and Build both begin with taps so it is normally already unlocked
@@ -182,6 +195,11 @@ export default function WorkoutRunner({
       logger.debug('step-advance-ignored', { fromIndex, cursor: cursorRef.current, reason });
       return;
     }
+    // Moving off a work step means that set was performed. Rest carries no work,
+    // and a skipped rest is still rest.
+    const done = plan[fromIndex];
+    if (done && done.kind !== 'rest') completedRef.current.push(done);
+
     const next = fromIndex + 1;
     if (next >= plan.length) {
       finishedRef.current = true;
@@ -189,9 +207,12 @@ export default function WorkoutRunner({
       logger.info('run-complete', {
         title,
         totalSteps: plan.length,
-        workSteps: plan.filter((s) => s?.kind === 'work').length
+        workSteps: plan.filter((s) => s?.kind === 'work').length,
+        completedSteps: completedRef.current.length
       });
-      onCompleteRef.current?.();
+      // The steps FINISHED, never the plan — a run abandoned at two of four sets
+      // has to read as two. See strengthRunLog.js.
+      onCompleteRef.current?.(completedRef.current);
       return;
     }
     cursorRef.current = next;
@@ -238,20 +259,58 @@ export default function WorkoutRunner({
   }
 
   if (finished) {
-    const workSteps = plan.filter((s) => s?.kind === 'work').length;
+    const doneSets = completedRef.current.length;
+    const failed = logStatus === 'failed';
     return (
       <div className="workout-runner workout-runner--done" data-testid="workout-runner" data-phase="complete">
         <div className="workout-runner__complete" data-testid="workout-runner-complete">
           <div className="workout-runner__eyebrow">Workout complete</div>
           <div className="workout-runner__headline">{title || 'Nice work'}</div>
           <div className="workout-runner__note">
-            {workSteps} {workSteps === 1 ? 'set' : 'sets'} done.
+            {doneSets} {doneSets === 1 ? 'set' : 'sets'} done.
+          </div>
+
+          {/* Whether the work was RECORDED is a separate fact from whether it was
+              done, and the screen has to say which. Someone who finished four sets
+              and reads only "Nice work" will assume it counted; if it did not, the
+              only place they can find out is here. */}
+          <div
+            className={`workout-runner__log workout-runner__log--${logStatus}`}
+            data-testid="workout-runner-log"
+            data-log-status={logStatus}
+            role={failed ? 'alert' : 'status'}
+          >
+            {logStatus === 'pending' && 'Recording to your session…'}
+            {logStatus === 'ok' && 'Recorded to your session.'}
+            {failed && (
+              <>
+                <span className="workout-runner__log-title">Not recorded</span>
+                <span className="workout-runner__log-body" data-testid="workout-runner-log-error">
+                  {logMessage || 'The sets you did could not be recorded.'}
+                </span>
+              </>
+            )}
+            {logStatus === 'idle' && 'Not recorded yet.'}
           </div>
         </div>
+
+        {failed && onRetryLog && (
+          <TapTarget
+            testId="workout-runner-log-retry"
+            label="Try again"
+            sub="Record these sets"
+            variant="primary"
+            onActivate={() => {
+              logger.info('run-log-retry', { title, completedSteps: completedRef.current.length });
+              onRetryLogRef.current?.(completedRef.current);
+            }}
+          />
+        )}
+
         <TapTarget
           testId="fitness-instruction-run-exit"
           label="Finish"
-          variant="primary"
+          variant={failed ? 'ghost' : 'primary'}
           onActivate={() => exit('complete')}
         />
       </div>
@@ -364,5 +423,12 @@ WorkoutRunner.propTypes = {
   exercises: PropTypes.object,
   title: PropTypes.string,
   onExit: PropTypes.func,
-  onComplete: PropTypes.func
+  /** Called once with the finished WORK steps when the last step is cleared. */
+  onComplete: PropTypes.func,
+  /** idle | pending | ok | failed — whether the run reached the session record. */
+  logStatus: PropTypes.oneOf(['idle', 'pending', 'ok', 'failed']),
+  /** Plain-language reason shown when `logStatus` is 'failed'. */
+  logMessage: PropTypes.string,
+  /** Re-attempt the recording; the retry target only renders when this is set. */
+  onRetryLog: PropTypes.func
 };
