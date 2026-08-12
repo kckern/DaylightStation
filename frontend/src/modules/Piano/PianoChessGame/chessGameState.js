@@ -17,7 +17,12 @@ import {
  * without a keyboard or a DOM.
  */
 
-/** Auto-queen. Under-promotion needs a third chord, which is not worth the cost yet. */
+/**
+ * Default promotion piece for the chord flow: auto-queen. Under-promotion via
+ * chords needs a third chord, which is not worth the cost yet — but callers that
+ * already know the piece (the server engine's chosen move) can pass it through
+ * commitMove's fourth argument instead of always queening.
+ */
 const PROMOTION_PIECE = 'q';
 
 /**
@@ -171,8 +176,8 @@ export function clearSelection(state) {
 }
 
 /** Plays a legal move. Shared by the chord flow and by the opponent's reply. */
-export function commitMove(state, from, to) {
-  const result = playMove(state.game, { from, to, promotion: PROMOTION_PIECE });
+export function commitMove(state, from, to, promotion = PROMOTION_PIECE) {
+  const result = playMove(state.game, { from, to, promotion });
   if (result.error) return reject(state, 'illegal_destination', to);
   const status = describeGame(result.game);
   const entry = {

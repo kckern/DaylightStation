@@ -122,6 +122,15 @@ describe('piano chess move flow', () => {
     expect(state.status.winner).toBe('b');
     expect(applySquare(state, 'e2').event.reason).toBe('game_over');
   });
+
+  it('honours an explicit underpromotion instead of always queening', () => {
+    // Black king on h8, off the promotion file — with it on e8 the pawn has no
+    // move at all and this test throws instead of failing. Verified: this FEN
+    // offers e8=N, e8=B, e8=R+, e8=Q+.
+    const state = createChessGameState({ fen: '7k/4P3/8/8/8/8/8/4K3 w - - 0 1' });
+    const { state: next } = commitMove(state, 'e7', 'e8', 'n');
+    expect(next.history.at(-1).san).toContain('=N');
+  });
 });
 
 describe('the chord map re-deals each turn', () => {
