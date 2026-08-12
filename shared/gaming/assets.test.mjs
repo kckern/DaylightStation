@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { resolveApprovedAsset, resolvePrefabLayers, resolveTerrainFrame, terrainNeighbourMask, validateAssetCatalog } from './assets.mjs';
+import { resolveApprovedAsset, resolvePrefabLayers, resolveTerrainFrame, terrainInnerCornerKeys, terrainNeighbourMask, validateAssetCatalog } from './assets.mjs';
 
 const catalog = {
   schema_version: 1, pack: { id: 'default' }, assets: {
@@ -41,11 +41,15 @@ describe('gaming asset catalog', () => {
     assert.equal(terrainNeighbourMask(cells, [1, 1]), 'ne');
     assert.equal(terrainNeighbourMask(new Set(['3,3']), [3, 3]), 'isolated');
     assert.deepEqual(resolveTerrainFrame({ cells, at: [1, 1], frames: { positive: { ne: 'shore.outer.south-west' }, negative: { ne: 'sand.outer.south-west' } } }), {
-      mask: 'ne', frame: 'shore.outer.south-west',
+      mask: 'ne', frame: 'shore.outer.south-west', inner_corners: [],
     });
     assert.equal(resolveTerrainFrame({ cells, at: [1, 1], frames: { positive: { ne: 'water' }, negative: { ne: 'sand' } }, polarity: 'negative' }).frame, 'sand');
     assert.equal(resolveTerrainFrame({ cells: new Set(['3,3']), at: [3, 3], frames: { positive: { isolated: 'rock' } } }).frame, 'rock');
     assert.throws(() => resolveTerrainFrame({ cells, at: [1, 1], frames: {} }), /no frame/);
+    const concave = new Set(['1,1', '1,0', '0,1', '2,1', '1,2', '2,0', '2,2', '0,2']);
+    assert.deepEqual(terrainInnerCornerKeys(concave, [1, 1]), ['nw']);
+    assert.equal(resolveTerrainFrame({ cells: concave, at: [1, 1], frames: { positive: { nesw: 'center' }, inner_corners: { nw: 'inner.nw' } } }).frame, 'inner.nw');
+    assert.throws(() => resolveTerrainFrame({ cells: concave, at: [1, 1], frames: { positive: { nesw: 'center' } } }), /unsupported inside corner/);
   });
 
   it('resolves typed prefab defaults and finite variants', () => {

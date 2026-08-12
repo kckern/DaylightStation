@@ -7,12 +7,31 @@ ground: terrain.grass-middle#grass.middle
 world_scale: 2
 depth_sort: y
 fail_on_clipping: true
+fail_on_frame_edge_contact: true
+forbid_direct_autotile_frames: true
 review_regions:
   - { id: garden-fence, rect: [20, 170, 230, 170], scale: 3 }
   - { id: house-bridge, rect: [250, 220, 280, 240], scale: 2 }
   - { id: dock-shore, rect: [540, 370, 250, 240], scale: 2 }
   - { id: shoreline, rect: [650, 190, 246, 440], scale: 2 }
   - { id: crossroads, rect: [0, 390, 650, 250], scale: 2 }
+
+# Structural joins are checked in native connector space before the scene is
+# written. A fence piece that is visually near its neighbour but not actually
+# connected makes scene-qa fail.
+connections:
+  - { from: [garden.nw, east], to: [garden.north-1, west] }
+  - { from: [garden.north-1, east], to: [garden.north-2, west] }
+  - { from: [garden.north-2, east], to: [garden.north-3, west] }
+  - { from: [garden.north-3, east], to: [garden.north-4, west] }
+  - { from: [garden.north-4, east], to: [garden.ne, west] }
+  - { from: [garden.nw, south], to: [garden.west-1, north] }
+  - { from: [garden.west-1, south], to: [garden.west-2, north] }
+  - { from: [garden.west-2, south], to: [garden.sw, north] }
+  - { from: [garden.ne, south], to: [garden.east-1, north] }
+  - { from: [garden.east-1, south], to: [garden.east-cap, north] }
+  - { from: [garden.sw, east], to: [garden.south-1, west] }
+  - { from: [garden.south-1, east], to: [garden.south-cap, west] }
 
 terrain:
   grid: { cell: [16, 16] }
@@ -53,14 +72,27 @@ terrain:
       opacity: 0.78
       continues: [east, south]
       rects:
-        - [25, 7, 3, 2]
-        - [23, 8, 5, 2]
-        - [24, 10, 4, 2]
-        - [21, 11, 7, 3]
-        - [19, 13, 9, 3]  # recessed dock cove
-        - [20, 16, 8, 2]  # water continues beneath the projecting half of the pier
-        - [22, 18, 6, 2]
+        # One-cell shoreline steps form a deliberate northwest-facing bank.
+        # Starts never reverse direction, so the contour cannot form an
+        # unsupported concave notch or a two-cell block jump.
+        - [25, 7, 3, 1]
+        - [24, 8, 4, 1]
+        - [23, 9, 5, 1]
+        - [22, 10, 6, 1]
+        - [21, 11, 7, 1]
+        - [20, 12, 8, 1]
+        - [19, 13, 9, 7]  # straight dock bank, continuing beyond the south edge
       z: 5
+
+    # The cultivated bed uses its own measured origin inside the fence. It is
+    # still semantic terrain, so all four soil corners and edges are selected
+    # from the reviewed farmland set rather than painted as raw center tiles.
+    - terrain: garden-bed
+      asset: terrain.farmland
+      polarity: positive
+      origin: [54, 216]
+      rects: [[0, 0, 4, 2]]
+      z: 3
 
 placements:
   # The homestead is the one architectural landmark; the dock is secondary.
@@ -70,34 +102,23 @@ placements:
   # A reviewed deck-tile prefab runs directly from the path into the pond.
   - { prefab: fishing.dock-east, at: [576, 448], z: 15, depth_sort: false }
 
-  # Two center tiles carry the worn path through the garden's southeast gate.
-  - { asset: terrain.adventure-atlas#path.center, at: [120, 280], z: 6, depth_sort: false }
-  - { asset: terrain.adventure-atlas#path.center, at: [152, 280], z: 6, depth_sort: false }
-
-  # The bed follows the fence's measured visible bounds exactly: x=54..181,
-  # y=216..279. A grid-aligned region would visibly leak past the fence.
-  - { asset: terrain.garden-soil#soil.center, at: [54, 216], z: 3, depth_sort: false }
-  - { asset: terrain.garden-soil#soil.center, at: [86, 216], z: 3, depth_sort: false }
-  - { asset: terrain.garden-soil#soil.center, at: [118, 216], z: 3, depth_sort: false }
-  - { asset: terrain.garden-soil#soil.center, at: [150, 216], z: 3, depth_sort: false }
-  - { asset: terrain.garden-soil#soil.center, at: [54, 248], z: 3, depth_sort: false }
-  - { asset: terrain.garden-soil#soil.center, at: [86, 248], z: 3, depth_sort: false }
-  - { asset: terrain.garden-soil#soil.center, at: [118, 248], z: 3, depth_sort: false }
-  - { asset: terrain.garden-soil#soil.center, at: [150, 248], z: 3, depth_sort: false }
-
-  # Complete five-cell garden boundary with a two-cell south gate.
-  - { asset: prop.wood-fence#horizontal.start, at: [32, 188], z: 20, depth_sort: true }
-  - { asset: prop.wood-fence#horizontal.middle, at: [64, 188], z: 20, depth_sort: true }
-  - { asset: prop.wood-fence#horizontal.middle, at: [96, 188], z: 20, depth_sort: true }
-  - { asset: prop.wood-fence#horizontal.middle, at: [128, 188], z: 20, depth_sort: true }
-  - { asset: prop.wood-fence#horizontal.end, at: [160, 188], z: 20, depth_sort: true }
-  - { asset: prop.wood-fence#vertical.middle, at: [32, 220], z: 20, depth_sort: true }
-  - { asset: prop.wood-fence#vertical.middle, at: [32, 252], z: 20, depth_sort: true }
-  - { asset: prop.wood-fence#vertical.middle, at: [172, 220], z: 20, depth_sort: true }
-  - { asset: prop.wood-fence#vertical.middle, at: [172, 252], z: 20, depth_sort: true }
-  - { asset: prop.wood-fence#horizontal.bottom.start, at: [32, 280], z: 20, depth_sort: true }
-  - { asset: prop.wood-fence#horizontal.bottom.middle, at: [64, 280], z: 20, depth_sort: true }
-  - { asset: prop.wood-fence#horizontal.bottom.end, at: [96, 280], z: 20, depth_sort: true }
+  # Six-cell north boundary. Its side runs begin at y=216 because the north
+  # frames' visible posts end at y=215 (the source cells carry transparent
+  # padding). The west run meets the south rail at y=280; the east run ends in
+  # a deliberately overlapped cap, leaving the southeast gate unobstructed.
+  - { id: garden.nw, asset: prop.wood-fence#horizontal.start, at: [32, 188], z: 20, depth_sort: true }
+  - { id: garden.north-1, asset: prop.wood-fence#horizontal.middle, at: [64, 188], z: 20, depth_sort: true }
+  - { id: garden.north-2, asset: prop.wood-fence#horizontal.middle, at: [96, 188], z: 20, depth_sort: true }
+  - { id: garden.north-3, asset: prop.wood-fence#horizontal.middle, at: [128, 188], z: 20, depth_sort: true }
+  - { id: garden.north-4, asset: prop.wood-fence#horizontal.middle, at: [160, 188], z: 20, depth_sort: true }
+  - { id: garden.ne, asset: prop.wood-fence#horizontal.end, at: [192, 188], z: 20, depth_sort: true }
+  - { id: garden.west-1, asset: prop.wood-fence#vertical.middle, at: [32, 216], z: 20, depth_sort: true }
+  - { id: garden.west-2, asset: prop.wood-fence#vertical.middle, at: [32, 248], z: 20, depth_sort: true }
+  - { id: garden.east-1, asset: prop.wood-fence#vertical.middle, at: [192, 216], z: 20, depth_sort: true }
+  - { id: garden.east-cap, asset: prop.wood-fence#vertical.end, at: [192, 242], z: 21, depth_sort: true }
+  - { id: garden.sw, asset: prop.wood-fence#horizontal.bottom.start, at: [32, 280], z: 20, depth_sort: true }
+  - { id: garden.south-1, asset: prop.wood-fence#horizontal.bottom.middle, at: [64, 280], z: 20, depth_sort: true }
+  - { id: garden.south-cap, asset: prop.wood-fence#horizontal.cap-east, at: [96, 280], z: 20, depth_sort: true }
 
   # Two dense crop beds vary by species and stage; the center is a work aisle.
   - { asset: crop.tomato#young, at: [72, 228], z: 18, depth_sort: true }
@@ -156,7 +177,7 @@ placements:
   - { asset: terrain.path-detail#pebbles.c, at: [552, 464], z: 7 }
 
   # Purposeful obstacles: crossing rocks, lakeside reeds, and reward grove.
-  - { asset: prop.outdoor-decor#rock.land-a, at: [194, 410], z: 20, depth_sort: true }
+  - { asset: prop.outdoor-decor#rock.land-b, at: [194, 410], z: 20, depth_sort: true, flip_x: true }
   - { asset: prop.outdoor-decor#rock.land-b, at: [216, 414], z: 20, depth_sort: true }
   - { asset: prop.outdoor-decor#rock.land-c, at: [232, 406], z: 20, depth_sort: true }
   - { asset: prop.outdoor-decor#grass.tuft-b, at: [178, 410], z: 19, depth_sort: true }
@@ -164,7 +185,7 @@ placements:
   - { asset: prop.outdoor-decor#shrub.leafy, at: [610, 416], z: 20, depth_sort: true }
   - { asset: prop.outdoor-decor#shrub.low, at: [628, 414], z: 20, depth_sort: true }
   - { asset: prop.outdoor-decor#rock.land-c, at: [646, 416], z: 20, depth_sort: true }
-  - { asset: prop.outdoor-decor#log.mossy, at: [146, 574], z: 20, depth_sort: true }
+  - { asset: prop.fallen-log#plain, at: [146, 574], z: 20, depth_sort: true }
 
   # Activity owners and one optional reward make the route choices legible.
   - asset: npc.miner-mike#idle.down

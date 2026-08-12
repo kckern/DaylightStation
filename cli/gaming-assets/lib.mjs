@@ -376,6 +376,7 @@ export async function validateManifest({ root, manifestPath }) {
     if (asset.license_scope === 'unknown') errors.push(`${prefix}: approved asset cannot use unknown license_scope`);
     if (!Array.isArray(asset.tags) || !asset.tags.length || asset.tags.some((tag) => !validId(tag))) errors.push(`${prefix}: approved asset needs valid tags`);
     if (!['image', 'sprite-sheet', 'tile-sheet', 'ui-sheet', 'effect-sheet'].includes(asset.kind)) errors.push(`${prefix}: approved asset needs a supported kind`);
+    if (asset.requires_all_ports !== undefined && typeof asset.requires_all_ports !== 'boolean') errors.push(`${prefix}: requires_all_ports must be boolean`);
     const geometry = asset.geometry;
     if (!geometry || !['grid', 'freeform'].includes(geometry.layout)) { errors.push(`${prefix}: approved asset needs geometry.layout grid or freeform`); continue; }
     let grid;
@@ -404,11 +405,22 @@ export async function validateManifest({ root, manifestPath }) {
       if (hasRect && (geometry.layout !== 'freeform' || !Array.isArray(frame.rect) || frame.rect.length !== 4 || frame.rect.some((part) => !Number.isInteger(part) || part < 0) || frame.rect[2] < 1 || frame.rect[3] < 1 || frame.rect[0] + frame.rect[2] > facts.image.width || frame.rect[1] + frame.rect[3] > facts.image.height)) errors.push(`${prefix}: frame ${frameName} has invalid source rect`);
       if (frame?.anchor && !validAnchor(frame.anchor)) errors.push(`${prefix}: frame ${frameName} has invalid anchor`);
       if (frame?.opaque_overlay !== undefined && typeof frame.opaque_overlay !== 'boolean') errors.push(`${prefix}: frame ${frameName} opaque_overlay must be boolean`);
+      if (frame?.allow_edge_contact !== undefined && typeof frame.allow_edge_contact !== 'boolean') errors.push(`${prefix}: frame ${frameName} allow_edge_contact must be boolean`);
       const frameShapeValid = (hasCell && geometry.layout === 'grid' && validFrame(frame.cell, grid))
         || (hasRect && geometry.layout === 'freeform' && frame.rect.length === 4 && frame.rect.every(Number.isInteger) && frame.rect[2] > 0 && frame.rect[3] > 0 && frame.rect[0] + frame.rect[2] <= facts.image.width && frame.rect[1] + frame.rect[3] <= facts.image.height);
       if (frameShapeValid && frame.anchor?.point) {
         const [, , frameWidth, frameHeight] = frameRect(asset, frame, facts);
         if (frame.anchor.point[0] > frameWidth || frame.anchor.point[1] > frameHeight) errors.push(`${prefix}: frame ${frameName} custom anchor exceeds frame bounds`);
+      }
+      if (frame.ports !== undefined) {
+        if (!frameShapeValid || !frame.ports || typeof frame.ports !== 'object' || Array.isArray(frame.ports)) {
+          errors.push(`${prefix}: frame ${frameName} ports must be a named point map`);
+        } else {
+          const [, , frameWidth, frameHeight] = frameRect(asset, frame, facts);
+          for (const [portName, point] of Object.entries(frame.ports)) {
+            if (!validId(portName) || !Array.isArray(point) || point.length !== 2 || point.some((value) => !Number.isInteger(value)) || point[0] < 0 || point[1] < 0 || point[0] > frameWidth || point[1] > frameHeight) errors.push(`${prefix}: frame ${frameName} port ${portName} must be a named point inside or on the frame boundary`);
+          }
+        }
       }
       if (frame.content_bounds !== undefined) {
         const bounds = frame.content_bounds;
@@ -432,6 +444,18 @@ export async function validateManifest({ root, manifestPath }) {
           }
         }
       } else if (asset.tags.includes('actor')) warnings.push(`${prefix}: frame ${frameName} content_bounds is missing for actor scale review`);
+      if (asset.tags.includes('ground-contact')) {
+        const anchor = frame.anchor ?? asset.defaults?.anchor;
+        if (!Array.isArray(frame.content_bounds) || !Array.isArray(anchor?.point)) {
+          errors.push(`${prefix}: ground-contact frame ${frameName} needs content_bounds and a custom anchor point`);
+        } else if (frame.content_bounds[1] + frame.content_bounds[3] !== anchor.point[1]) {
+          errors.push(`${prefix}: ground-contact frame ${frameName} anchor must equal the visible-alpha bottom`);
+        } else if (frameShapeValid) {
+          const [, , frameWidth, frameHeight] = frameRect(asset, frame, facts);
+          const [boundsX, boundsY, boundsWidth, boundsHeight] = frame.content_bounds;
+          if (boundsX === 0 || boundsY === 0 || boundsX + boundsWidth === frameWidth || boundsY + boundsHeight === frameHeight) errors.push(`${prefix}: ground-contact frame ${frameName} visible alpha must be enclosed by transparent frame padding`);
+        }
+      }
       if (frameShapeValid && asset.tags.includes('overlay')) {
         const { createCanvas, loadImage } = await import('canvas');
         decodedImage ??= await loadImage(file);
@@ -478,7 +502,7 @@ export async function validateManifest({ root, manifestPath }) {
       const mappings = asset.autotile?.positive || asset.autotile?.negative
         ? { positive: asset.autotile?.positive, negative: asset.autotile?.negative }
         : { positive: asset.autotile?.frames };
-      if (asset.autotile?.topology !== undefined && asset.autotile.topology !== 'cardinal-4') errors.push(`${prefix}: autotile topology must be cardinal-4`);
+      if (asset.autotile?.topology !== undefined && !['cardinal-4', 'cardinal-4+diagonal-corners'].includes(asset.autotile.topology)) errors.push(`${prefix}: autotile topology must be cardinal-4 or cardinal-4+diagonal-corners`);
       if (!mappings.positive || typeof mappings.positive !== 'object') errors.push(`${prefix}: autotile needs a positive frame map`);
       for (const [polarity, mapping] of Object.entries(mappings)) {
         if (mapping === undefined) continue;
@@ -492,6 +516,14 @@ export async function validateManifest({ root, manifestPath }) {
         if (!frames?.[frameName] || !Array.isArray(variants) || variants.length < 2) { errors.push(`${prefix}: autotile variation ${frameName} needs at least two variants for a named frame`); continue; }
         for (const variant of variants) {
           if (!variant || typeof variant !== 'object' || Array.isArray(variant) || (variant.frame !== undefined && !frames?.[variant.frame]) || (variant.flip_x !== undefined && typeof variant.flip_x !== 'boolean')) errors.push(`${prefix}: autotile variation ${frameName} is invalid`);
+        }
+      }
+      if (asset.autotile?.topology === 'cardinal-4+diagonal-corners') {
+        const innerCorners = asset.autotile.inner_corners;
+        if (!innerCorners || typeof innerCorners !== 'object' || Array.isArray(innerCorners)) errors.push(`${prefix}: diagonal-corner autotile needs an inner_corners frame map`);
+        else for (const [key, frameName] of Object.entries(innerCorners)) {
+          if (!/^(?:nw|ne|se|sw)(?:-(?:nw|ne|se|sw))*$/.test(key)) errors.push(`${prefix}: inside-corner key ${key} is invalid`);
+          if (!validId(frameName) || !frames?.[frameName]) errors.push(`${prefix}: inside-corner key ${key} references unknown frame`);
         }
       }
     }
@@ -677,9 +709,10 @@ function resolveCatalogFrame(catalog, reference, frameName = 'default') {
   const [assetId, inlineFrame] = String(reference).split('#');
   const asset = catalog.assets?.[assetId];
   if (!asset || asset.status !== 'approved') throw new Error(`scene references unavailable asset: ${assetId}`);
-  const frame = asset.frames?.[inlineFrame ?? frameName];
-  if (!frame) throw new Error(`asset ${assetId} has no frame: ${inlineFrame ?? frameName}`);
-  return { asset, frame };
+  const resolvedFrameName = inlineFrame ?? frameName;
+  const frame = asset.frames?.[resolvedFrameName];
+  if (!frame) throw new Error(`asset ${assetId} has no frame: ${resolvedFrameName}`);
+  return { asset, frame, frameName: resolvedFrameName };
 }
 
 function anchorOffset(anchor, width, height, scale = 1) {
@@ -703,10 +736,12 @@ export async function renderScene({ root, catalogPath, manifestPath = null, scen
   if (!validPair(scene.viewport)) throw new Error('scene viewport must be [width, height]');
   const worldScale = scene.world_scale ?? 1;
   if (!Number.isFinite(worldScale) || worldScale <= 0) throw new Error('scene world_scale must be positive');
+  if (scene.fail_on_frame_edge_contact !== undefined && typeof scene.fail_on_frame_edge_contact !== 'boolean') throw new Error('scene fail_on_frame_edge_contact must be boolean');
+  if (scene.forbid_direct_autotile_frames !== undefined && typeof scene.forbid_direct_autotile_frames !== 'boolean') throw new Error('scene forbid_direct_autotile_frames must be boolean');
   const { createCanvas, loadImage } = await import('canvas');
   const [width, height] = scene.viewport; const { canvas, ctx } = await createPixelCanvas(width, height);
   ctx.fillStyle = scene.background ?? '#000000'; ctx.fillRect(0, 0, width, height);
-  const imageCache = new Map(); const alphaCache = new Map(); const drawPlan = []; const clipping = [];
+  const imageCache = new Map(); const alphaCache = new Map(); const drawPlan = []; const clipping = []; const frameEdgeContacts = []; const connectionPoints = new Map(); const terrainAudit = []; let insideCornersResolved = 0; let groundContactSprites = 0;
   const imageFor = async (file) => {
     if (!imageCache.has(file)) imageCache.set(file, await loadImage(file));
     return imageCache.get(file);
@@ -725,7 +760,8 @@ export async function renderScene({ root, catalogPath, manifestPath = null, scen
     alphaCache.set(key, bounds); return bounds;
   };
   const draw = async (entry) => {
-    assertKnownFields(entry, new Set(['asset', 'frame', 'at', 'offset', 'scale', 'z', 'depth_sort', 'flip_x', 'rotation', 'opacity', 'shadow', 'order', 'provenance']), 'scene draw');
+    assertKnownFields(entry, new Set(['id', 'asset', 'frame', 'at', 'offset', 'scale', 'z', 'depth_sort', 'flip_x', 'rotation', 'opacity', 'shadow', 'order', 'provenance']), 'scene draw');
+    if (entry.id !== undefined && !validId(entry.id)) throw new Error(`scene draw id is invalid: ${entry.id}`);
     if (!validCoordinate(entry.at)) throw new Error(`scene draw needs non-negative integer at: ${entry.asset}`);
     if (entry.offset !== undefined && (!Array.isArray(entry.offset) || entry.offset.length !== 2 || entry.offset.some((value) => !Number.isInteger(value)))) throw new Error(`scene draw offset must be an integer pair: ${entry.asset}`);
     if (entry.opacity !== undefined && (!Number.isFinite(entry.opacity) || entry.opacity < 0 || entry.opacity > 1)) throw new Error(`scene draw opacity must be between 0 and 1: ${entry.asset}`);
@@ -733,7 +769,16 @@ export async function renderScene({ root, catalogPath, manifestPath = null, scen
     const rotation = entry.rotation ?? 0;
     if (![0, 90, 180, 270].includes(rotation)) throw new Error(`scene draw rotation must be 0, 90, 180, or 270: ${entry.asset}`);
     if (rotation && entry.flip_x) throw new Error(`scene draw cannot combine rotation and flip_x: ${entry.asset}`);
-    const { asset, frame } = resolveCatalogFrame(catalog, entry.asset, entry.frame);
+    const { asset, frame, frameName } = resolveCatalogFrame(catalog, entry.asset, entry.frame);
+    if (scene.forbid_direct_autotile_frames && entry.provenance === 'placement' && asset.autotile) {
+      const mappedFrames = new Set([
+        ...Object.values(asset.autotile.positive ?? asset.autotile.frames ?? {}),
+        ...Object.values(asset.autotile.negative ?? {}),
+        ...Object.values(asset.autotile.inner_corners ?? {}),
+      ]);
+      if (mappedFrames.has(frameName)) throw new Error(`scene placement must author autotile frame through a terrain region: ${entry.asset}`);
+    }
+    if (asset.tags?.includes('ground-contact')) groundContactSprites += 1;
     const file = resolveUnder(root, asset.source); const facts = await imageFacts(file);
     const [sx, sy, sw, sh] = frameRect(asset, frame, facts);
     const image = await imageFor(file); const scale = entry.scale ?? worldScale;
@@ -741,7 +786,21 @@ export async function renderScene({ root, catalogPath, manifestPath = null, scen
     const [ax, ay] = anchorOffset(frame.anchor ?? asset.defaults?.anchor, sw * scale, sh * scale, scale);
     const [offsetX, offsetY] = entry.offset ?? [0, 0]; const [x, y] = entry.at;
     const dx = x + offsetX - ax; const dy = y + offsetY - ay; const dw = sw * scale; const dh = sh * scale;
+    if (entry.id !== undefined) {
+      if (connectionPoints.has(entry.id)) throw new Error(`scene draw id is duplicated: ${entry.id}`);
+      const ports = new Map();
+      for (const [portName, point] of Object.entries(frame.ports ?? {})) {
+        const localX = (entry.flip_x ? sw - point[0] : point[0]) * scale - ax;
+        const localY = point[1] * scale - ay;
+        const radians = rotation * Math.PI / 180; const cosine = Math.cos(radians); const sine = Math.sin(radians);
+        ports.set(portName, [x + offsetX + localX * cosine - localY * sine, y + offsetY + localX * sine + localY * cosine]);
+      }
+      connectionPoints.set(entry.id, { ports, requiresAll: frame.requires_all_ports ?? asset.requires_all_ports ?? false });
+    }
     const nativeAlpha = alphaBounds(image, sx, sy, sw, sh, `${file}:${sx},${sy},${sw},${sh}`);
+    if (nativeAlpha && asset.kind !== 'tile-sheet' && asset.requires_all_ports !== true && frame.allow_edge_contact !== true) {
+      if (nativeAlpha.x === 0 || nativeAlpha.y === 0 || nativeAlpha.x + nativeAlpha.width === sw || nativeAlpha.y + nativeAlpha.height === sh) frameEdgeContacts.push({ asset: entry.asset, at: entry.at, alpha_bounds: nativeAlpha, frame: [sw, sh] });
+    }
     let visibleBounds = null;
     if (nativeAlpha) {
       const visibleX = entry.flip_x ? sw - nativeAlpha.x - nativeAlpha.width : nativeAlpha.x;
@@ -768,7 +827,7 @@ export async function renderScene({ root, catalogPath, manifestPath = null, scen
     else if (entry.flip_x) { ctx.translate(dx + dw, dy); ctx.scale(-1, 1); ctx.drawImage(image, sx, sy, sw, sh, 0, 0, dw, dh); }
     else ctx.drawImage(image, sx, sy, sw, sh, dx, dy, dw, dh);
     ctx.restore();
-    drawPlan.push({ asset: entry.asset, at: entry.at, z: entry.z ?? 0, source_rect: [sx, sy, sw, sh], alpha_bounds: nativeAlpha, visible_bounds: visibleBounds, provenance: entry.provenance ?? null });
+    drawPlan.push({ id: entry.id ?? null, asset: entry.asset, at: entry.at, z: entry.z ?? 0, source_rect: [sx, sy, sw, sh], alpha_bounds: nativeAlpha, visible_bounds: visibleBounds, provenance: entry.provenance ?? null });
   };
   const terrainEntries = [];
   if (scene.ground !== undefined) {
@@ -813,15 +872,28 @@ export async function renderScene({ root, catalogPath, manifestPath = null, scen
       if (continues.includes('north') && pixelY === 0) { cells.add(`${cellX},${cellY - 1}`); touched.add('north'); }
       if (continues.includes('south') && pixelY + cell[1] * scale === height) { cells.add(`${cellX},${cellY + 1}`); touched.add('south'); }
     }
+    // When material continues through two adjacent viewport edges, the
+    // off-screen diagonal exists too. Without it the last visible cell is
+    // falsely classified as an inside corner.
+    if (continues.includes('north') && continues.includes('west')) cells.add('-1,-1');
+    if (continues.includes('north') && continues.includes('east')) cells.add(`${width / (cell[0] * scale)},-1`);
+    if (continues.includes('south') && continues.includes('west')) cells.add(`-1,${height / (cell[1] * scale)}`);
+    if (continues.includes('south') && continues.includes('east')) cells.add(`${width / (cell[0] * scale)},${height / (cell[1] * scale)}`);
     const missedContinuations = continues.filter((direction) => !touched.has(direction));
     if (missedContinuations.length) throw new Error(`terrain region does not touch requested continuation edges ${missedContinuations.join(', ')}: ${region.asset}`);
+    const regionAudit = { region: region.terrain ?? region.asset, asset: region.asset, cells: uniqueCells.length, masks: {}, frames: {}, inside_corners_resolved: 0 };
     for (const at of uniqueCells) {
       const resolved = resolveTerrainFrame({ cells, at, frames, polarity });
+      insideCornersResolved += resolved.inner_corners?.length ?? 0;
+      regionAudit.inside_corners_resolved += resolved.inner_corners?.length ?? 0;
+      regionAudit.masks[resolved.mask] = (regionAudit.masks[resolved.mask] ?? 0) + 1;
+      regionAudit.frames[resolved.frame] = (regionAudit.frames[resolved.frame] ?? 0) + 1;
       const variants = asset.autotile?.variations?.[resolved.frame];
       const variantIndex = variants ? Math.abs(at[0] * 73856093 + at[1] * 19349663) % variants.length : 0;
       const variant = variants?.[variantIndex] ?? {};
       terrainEntries.push({ asset: region.asset, frame: variant.frame ?? resolved.frame, flip_x: variant.flip_x, opacity: region.opacity, at: [origin[0] + at[0] * cell[0] * scale, origin[1] + at[1] * cell[1] * scale], scale, z: region.z ?? 0, depth_sort: false, provenance: `terrain:${region.terrain ?? region.asset}` });
     }
+    terrainAudit.push(regionAudit);
   }
   const concreteEntries = [...terrainEntries, ...(scene.tiles ?? [])];
   const expandPrefab = (placement, stack = []) => {
@@ -845,7 +917,7 @@ export async function renderScene({ root, catalogPath, manifestPath = null, scen
     }
   };
   for (const placement of scene.placements ?? []) {
-    assertKnownFields(placement, new Set(['asset', 'frame', 'prefab', 'params', 'at', 'offset', 'scale', 'z', 'depth_sort', 'flip_x', 'rotation', 'opacity', 'shadow']), 'scene placement');
+    assertKnownFields(placement, new Set(['id', 'asset', 'frame', 'prefab', 'params', 'at', 'offset', 'scale', 'z', 'depth_sort', 'flip_x', 'rotation', 'opacity', 'shadow']), 'scene placement');
     if (placement.prefab) expandPrefab(placement);
     else concreteEntries.push({ ...placement, provenance: 'placement' });
   }
@@ -855,9 +927,33 @@ export async function renderScene({ root, catalogPath, manifestPath = null, scen
     return (a.z ?? 0) + aDepth - ((b.z ?? 0) + bDepth) || a.order - b.order;
   });
   for (const entry of ordered) await draw(entry);
+  if (scene.connections !== undefined && !Array.isArray(scene.connections)) throw new Error('scene connections must be an array');
+  const usedConnectionPorts = new Map();
+  for (const [index, connection] of (scene.connections ?? []).entries()) {
+    assertKnownFields(connection, new Set(['from', 'to']), `scene connection ${index}`);
+    const resolveEndpoint = (endpoint, side) => {
+      if (!Array.isArray(endpoint) || endpoint.length !== 2 || endpoint.some((value) => typeof value !== 'string')) throw new Error(`scene connection ${index} ${side} must be [placement-id, port-id]`);
+      const [placementId, portId] = endpoint; const connectionEntry = connectionPoints.get(placementId);
+      if (!connectionEntry) throw new Error(`scene connection ${index} references unknown placement id ${placementId}`);
+      const point = connectionEntry.ports.get(portId);
+      if (!point) throw new Error(`scene connection ${index} references unknown port ${placementId}.${portId}`);
+      const endpointId = `${placementId}.${portId}`;
+      usedConnectionPorts.set(endpointId, (usedConnectionPorts.get(endpointId) ?? 0) + 1);
+      return point;
+    };
+    const from = resolveEndpoint(connection.from, 'from'); const to = resolveEndpoint(connection.to, 'to');
+    if (Math.abs(from[0] - to[0]) > 0.0001 || Math.abs(from[1] - to[1]) > 0.0001) throw new Error(`scene connection ${index} is misaligned: ${connection.from.join('.')} at ${from.join(',')} != ${connection.to.join('.')} at ${to.join(',')}`);
+  }
+  for (const [placementId, connectionEntry] of connectionPoints) if (connectionEntry.requiresAll) {
+    for (const portId of connectionEntry.ports.keys()) {
+      const uses = usedConnectionPorts.get(`${placementId}.${portId}`) ?? 0;
+      if (uses !== 1) throw new Error(`scene required port ${placementId}.${portId} must be connected exactly once; found ${uses}`);
+    }
+  }
   if (clipping.length && scene.fail_on_clipping !== false) throw new Error(`scene has ${clipping.length} visibly clipped draws: ${clipping.slice(0, 5).map((item) => item.asset).join(', ')}`);
+  if (frameEdgeContacts.length && scene.fail_on_frame_edge_contact === true) throw new Error(`scene has ${frameEdgeContacts.length} non-structural frames touching source edges: ${frameEdgeContacts.slice(0, 5).map((item) => item.asset).join(', ')}`);
   await ensureParent(out); await writeFile(out, canvas.toBuffer('image/png'));
-  return { out, width, height, tiles: terrainEntries.length + (scene.tiles?.length ?? 0), placements: scene.placements?.length ?? 0, draws: drawPlan.length, clipping, trace: scene.trace ? drawPlan : undefined };
+  return { out, width, height, tiles: terrainEntries.length + (scene.tiles?.length ?? 0), placements: scene.placements?.length ?? 0, draws: drawPlan.length, inside_corners_resolved: insideCornersResolved, terrain_audit: terrainAudit, ground_contact_sprites: groundContactSprites, connections: scene.connections?.length ?? 0, connected_ports: usedConnectionPorts.size, frame_edge_contacts: frameEdgeContacts, clipping, trace: scene.trace ? drawPlan : undefined };
 }
 
 /** Explain the concrete layers selected by a prefab's typed parameters. */
