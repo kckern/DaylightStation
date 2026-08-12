@@ -16,6 +16,9 @@ async function request(url, options = {}) {
 
 export function createGamingApi() {
   return {
+    getAssetPack(packId) {
+      return request(`/api/v1/gaming/assets/${encodeURIComponent(packId)}`);
+    },
     getDefinition(gameId) {
       return request(`/api/v1/gaming/definitions/${encodeURIComponent(gameId)}`);
     },

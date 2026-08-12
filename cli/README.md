@@ -148,6 +148,20 @@ The full `concierge ask` (streaming agent invocation from the shell) is intentio
 
 ## Existing CLI tools
 
+### `cli/gaming-assets.cli.mjs`
+
+Private game-art audit and preview tool for `media/games/_common`. It inventories PNG source facts and hashes, validates curated YAML manifests, renders categorized contact-sheet PNGs, creates frame-animation GIFs, and renders small YAML composition previews without starting the frontend.
+
+```bash
+npm run gaming:assets -- inventory --out /tmp/gaming-inventory.yml
+npm run gaming:assets -- sheet --out /tmp/gaming-sheet.png --source sprites/Cute_Fantasy/Tiles
+npm run gaming:assets -- frames --source assets/default/actors/npcs/premade/farmer-bob.png --cell 16x32 --out /tmp/farmer-grid.png
+npm run gaming:assets -- organize-plan --source sprites --target assets --out /tmp/gaming-organization.yml
+npm run gaming:assets -- validate --manifest /path/to/pack.yml
+```
+
+`sprites/` is retained as raw vendor provenance; `organize-apply` creates a collision-checked canonical `assets/` tree rather than renaming it. See [gaming-assets/README.md](gaming-assets/README.md) for the catalog format, animation, composition-preview, migration, and safety details.
+
 `cli/buxfer.cli.mjs` is the original Buxfer-direct CLI; it stays as-is for now and will eventually be folded into `dscli finance --direct`.
 
 ### `cli/fitness.cli.mjs`
