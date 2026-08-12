@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { SQUARES } from '@shared-gaming/chess/index.mjs';
 import {
-  DEFAULT_CHORD_SCHEME, chordBoard, chordPitchClasses, chordToSquare,
+  CHORD_QUALITIES, DEFAULT_CHORD_SCHEME, chordBoard, chordPitchClasses, chordToSquare,
   findChordCollisions, identifyChord, moveToChordPair, shuffleChordScheme,
   squareToChord, validateChordScheme,
 } from './chordAddress.js';
@@ -132,5 +132,32 @@ describe('chord addressing', () => {
     expect(pair.from.square).toBe('e2');
     expect(pair.to.square).toBe('e4');
     expect(moveToChordPair('e2', 'zz')).toBe(null);
+  });
+});
+
+describe('validateChordScheme — gesture and label safety', () => {
+  it('accepts the default scheme', () => {
+    expect(validateChordScheme(DEFAULT_CHORD_SCHEME).valid).toBe(true);
+  });
+
+  it('rejects a scheme whose chord could swallow a gesture shape', () => {
+    // A hypothetical cluster quality would make the hint gesture unusable.
+    const scheme = {
+      ...DEFAULT_CHORD_SCHEME,
+      qualities: ['major', 'minor', 'sus4', 'add2', 'seventh', 'add6', 'major7', 'clusterTest'],
+    };
+    const result = validateChordScheme(scheme, {
+      qualities: { ...CHORD_QUALITIES, clusterTest: { label: 'cl', name: 'cluster', intervals: [0, 1, 2] } },
+    });
+    expect(result.valid).toBe(false);
+    expect(result.errors.join(' ')).toMatch(/gesture/i);
+  });
+
+  it('rejects a scheme whose rank labels read as the same thing', () => {
+    const result = validateChordScheme(DEFAULT_CHORD_SCHEME, {
+      qualities: { ...CHORD_QUALITIES, minor: { label: 'maj', name: 'minor', intervals: [0, 3, 7] } },
+    });
+    expect(result.valid).toBe(false);
+    expect(result.errors.join(' ')).toMatch(/label/i);
   });
 });
