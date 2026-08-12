@@ -50,6 +50,7 @@
     "rss-parser": "^3.13.0",
     "scripture-guide": "^1.0.87",
     "smartquotes": "^2.3.2",
+    "stockfish": "^18.0.8",
     "string-similarity": "^4.0.4",
     "svg-to-pdfkit": "^0.1.8",
     "uuid": "^14.0.1",
