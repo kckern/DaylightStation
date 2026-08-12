@@ -1,0 +1,171 @@
+# Lakeside Crossroads: one connected overworld composition.
+# The player arrives from the homestead, descends the bluff, and chooses the
+# west woods, south road, or the fisherman's house and dock to the east.
+viewport: [896, 640]
+background: '#3e8948'
+ground: terrain.grass-middle#grass.middle
+world_scale: 2
+depth_sort: y
+fail_on_clipping: true
+
+terrain:
+  grid: { cell: [16, 16] }
+  regions:
+    - terrain: village-trail
+      asset: terrain.adventure-atlas
+      polarity: positive
+      continues: [west, south]
+      rects:
+        - [8, 7, 5, 3]    # compact homestead yard beneath the door
+        - [4, 9, 4, 1]    # worn one-tile garden-to-homestead connection
+        - [10, 8, 3, 9]   # bluff crossing and approach
+        - [9, 12, 3, 3]   # subtle westward bend
+        - [9, 14, 5, 2]   # crossroads widens only at the decision point
+        - [0, 14, 10, 2]  # two-cell west woods exit
+        - [10, 15, 3, 5]  # bridge-width south road exit; no unsupported concave bites
+        - [13, 14, 7, 2]  # direct, full-width dock approach
+      z: 6
+
+    # Organic bluff silhouette around one consistent bridge crossing.
+    - terrain: west-bluff
+      asset: terrain.earthen-cliff
+      polarity: positive
+      continues: [west]
+      rects: [[0, 10, 10, 2]]
+      z: 10
+    - terrain: east-bluff
+      asset: terrain.earthen-cliff
+      polarity: positive
+      rects: [[13, 10, 9, 2]]
+      z: 10
+
+    # A lake bay continues beyond the east and south edges; it is scenery, not
+    # an isolated blue capsule. The dock occupies the eroded western inlet.
+    - terrain: east-lake
+      asset: terrain.grass-water
+      polarity: positive
+      opacity: 0.78
+      continues: [east, south]
+      rects:
+        - [25, 7, 3, 2]
+        - [23, 8, 5, 2]
+        - [24, 10, 4, 2]
+        - [21, 11, 7, 3]
+        - [19, 13, 9, 3]  # recessed dock cove
+        - [22, 16, 6, 2]
+        - [24, 18, 4, 2]
+      z: 5
+
+    # The garden is an actual cultivated surface, not loose flower props.
+    - terrain: homestead-garden
+      asset: terrain.garden-soil
+      polarity: positive
+      rects: [[2, 6, 4, 3]]
+      z: 3
+
+placements:
+  # The homestead is the one architectural landmark; the dock is secondary.
+  - { asset: structure.wood-house-1-red, at: [320, 288], z: 20, depth_sort: true }
+  - { asset: structure.wood-bridge#vertical, at: [320, 296], z: 15, depth_sort: false }
+
+  # A reviewed deck-tile prefab runs directly from the path into the pond.
+  - { prefab: fishing.dock-east, at: [576, 448], z: 15, depth_sort: false }
+
+  # Complete five-cell garden boundary with a two-cell south gate.
+  - { asset: prop.wood-fence#horizontal.start, at: [32, 188], z: 20, depth_sort: true }
+  - { asset: prop.wood-fence#horizontal.middle, at: [64, 188], z: 20, depth_sort: true }
+  - { asset: prop.wood-fence#horizontal.middle, at: [96, 188], z: 20, depth_sort: true }
+  - { asset: prop.wood-fence#horizontal.middle, at: [128, 188], z: 20, depth_sort: true }
+  - { asset: prop.wood-fence#horizontal.end, at: [160, 188], z: 20, depth_sort: true }
+  - { asset: prop.wood-fence#vertical.middle, at: [32, 220], z: 20, depth_sort: true }
+  - { asset: prop.wood-fence#vertical.middle, at: [32, 252], z: 20, depth_sort: true }
+  - { asset: prop.wood-fence#vertical.middle, at: [176, 220], z: 20, depth_sort: true }
+  - { asset: prop.wood-fence#vertical.middle, at: [176, 252], z: 20, depth_sort: true }
+  - { asset: prop.wood-fence#horizontal.bottom.start, at: [32, 284], z: 20, depth_sort: true }
+  - { asset: prop.wood-fence#horizontal.bottom.end, at: [64, 284], z: 20, depth_sort: true }
+  - { asset: prop.wood-fence#horizontal.bottom.start, at: [144, 284], z: 20, depth_sort: true }
+  - { asset: prop.wood-fence#horizontal.bottom.end, at: [176, 284], z: 20, depth_sort: true }
+
+  # Two dense crop beds vary by species and stage; the center is a work aisle.
+  - { asset: crop.tomato#young, at: [72, 228], z: 18, depth_sort: true }
+  - { asset: crop.tomato#mature, at: [96, 228], z: 18, depth_sort: true }
+  - { asset: crop.carrot#young, at: [152, 228], z: 18, depth_sort: true }
+  - { asset: crop.carrot#mature, at: [176, 228], z: 18, depth_sort: true }
+  - { asset: crop.tomato#mature, at: [72, 258], z: 18, depth_sort: true }
+  - { asset: crop.tomato#ripe, at: [96, 258], z: 18, depth_sort: true }
+  - { asset: crop.carrot#mature, at: [152, 258], z: 18, depth_sort: true }
+  - { asset: crop.carrot#ripe, at: [176, 258], z: 18, depth_sort: true }
+  - { asset: crop.tomato#sprout, at: [72, 284], z: 18, depth_sort: true }
+  - { asset: crop.carrot#sprout, at: [176, 284], z: 18, depth_sort: true }
+
+  # Lake details are sparse and activity-driven: dock, fisher, moored boat.
+  - { asset: prop.boat#default, at: [724, 532], z: 18, depth_sort: true }
+  - { asset: prop.cattails#still, at: [704, 288], z: 16 }
+  - { asset: prop.cattails#sway.1, at: [728, 302], z: 16 }
+  - { asset: prop.cattails#sway.2, at: [750, 292], z: 16 }
+  - { asset: prop.outdoor-decor#grass.tuft-a, at: [684, 306], z: 16, depth_sort: true }
+  - { asset: prop.water-rock#still, at: [718, 566], z: 16, depth_sort: true }
+
+  # Woodland masses frame the destinations and break the bluff face naturally.
+  - { asset: prop.big-oak-tree#tree.a, at: [58, 164], z: 20, depth_sort: true }
+  - { asset: prop.big-oak-tree#tree.b, at: [214, 168], z: 20, depth_sort: true }
+  - { asset: prop.small-oak-tree#tree.a, at: [142, 104], z: 20, depth_sort: true }
+  - { asset: prop.big-oak-tree#tree.b, at: [180, 598], z: 20, depth_sort: true }
+  - { asset: prop.big-oak-tree#tree.b, at: [96, 424], z: 20, depth_sort: true }
+  - { asset: prop.big-oak-tree#tree.b, at: [560, 420], z: 20, depth_sort: true }
+  - { asset: prop.big-oak-tree#tree.a, at: [690, 196], z: 20, depth_sort: true }
+  - { asset: prop.big-oak-tree#tree.b, at: [758, 236], z: 20, depth_sort: true }
+  - { asset: prop.outdoor-decor#shrub.leafy, at: [790, 246], z: 20, depth_sort: true }
+  - { asset: prop.outdoor-decor#shrub.low, at: [806, 256], z: 20, depth_sort: true }
+  - { asset: prop.big-oak-tree#tree.b, at: [472, 620], z: 20, depth_sort: true }
+  - { asset: prop.small-oak-tree#tree.b, at: [628, 602], z: 20, depth_sort: true }
+
+  # Ground texture is concentrated beneath canopy and near moist shoreline.
+  - { asset: terrain.adventure-atlas#grass.patch-c, at: [32, 96], z: 2 }
+  - { asset: terrain.adventure-atlas#grass.patch-a, at: [96, 128], z: 2 }
+  - { asset: terrain.adventure-atlas#grass.patch-b, at: [192, 96], z: 2 }
+  - { asset: terrain.adventure-atlas#grass.patch-c, at: [224, 160], z: 2 }
+  - { asset: terrain.adventure-atlas#grass.patch-b, at: [192, 352], z: 2 }
+  - { asset: terrain.adventure-atlas#grass.patch-c, at: [256, 576], z: 2 }
+  - { asset: terrain.adventure-atlas#grass.patch-a, at: [608, 96], z: 2 }
+  - { asset: terrain.adventure-atlas#grass.patch-c, at: [704, 128], z: 2 }
+  - { asset: terrain.adventure-atlas#grass.patch-a, at: [640, 288], z: 2 }
+  - { asset: terrain.adventure-atlas#grass.patch-b, at: [800, 256], z: 2 }
+  - { asset: terrain.adventure-atlas#grass.patch-c, at: [832, 384], z: 2 }
+  - { asset: terrain.adventure-atlas#grass.patch-b, at: [768, 576], z: 2 }
+
+  # Tracks form directional sequences through the crossroads.
+  - { asset: terrain.path-detail#pebbles.a, at: [256, 256], z: 7 }
+  - { asset: terrain.path-detail#pebbles.c, at: [336, 414], z: 7 }
+  - { asset: terrain.path-detail#pebbles.a, at: [232, 464], z: 7 }
+  - { asset: terrain.path-detail#pebbles.b, at: [336, 480], z: 7 }
+  - { asset: terrain.path-detail#pebbles.a, at: [344, 558], z: 7 }
+  - { asset: terrain.path-detail#pebbles.c, at: [552, 464], z: 7 }
+
+  # Purposeful obstacles: crossing rocks, lakeside reeds, and reward grove.
+  - { asset: prop.outdoor-decor#rock.land-a, at: [194, 410], z: 20, depth_sort: true }
+  - { asset: prop.outdoor-decor#rock.land-b, at: [216, 414], z: 20, depth_sort: true }
+  - { asset: prop.outdoor-decor#rock.land-c, at: [232, 406], z: 20, depth_sort: true }
+  - { asset: prop.outdoor-decor#grass.tuft-b, at: [178, 410], z: 19, depth_sort: true }
+  - { asset: prop.outdoor-decor#grass.tuft-a, at: [246, 412], z: 19, depth_sort: true }
+  - { asset: prop.outdoor-decor#shrub.leafy, at: [610, 416], z: 20, depth_sort: true }
+  - { asset: prop.outdoor-decor#shrub.low, at: [628, 414], z: 20, depth_sort: true }
+  - { asset: prop.outdoor-decor#rock.land-c, at: [646, 416], z: 20, depth_sort: true }
+  - { asset: prop.outdoor-decor#log.mossy, at: [146, 574], z: 20, depth_sort: true }
+
+  # Activity owners and one optional reward make the route choices legible.
+  - asset: npc.miner-mike#idle.down
+    at: [368, 466]
+    z: 20
+    depth_sort: true
+    shadow: { size: [11, 4], offset: [0, 1], opacity: 0.35 }
+  - asset: npc.farmer-bob#idle.down.0
+    at: [136, 314]
+    z: 20
+    depth_sort: true
+    shadow: { size: [13, 4], offset: [0, 1], opacity: 0.35 }
+  - asset: npc.fisherman-fin#idle.down
+    at: [634, 480]
+    z: 20
+    depth_sort: true
+    shadow: { size: [11, 4], offset: [0, 1], opacity: 0.35 }

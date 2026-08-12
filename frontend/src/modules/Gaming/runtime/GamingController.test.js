@@ -220,6 +220,18 @@ describe('GamingController', () => {
     controller.dispose();
   });
 
+  it('saves an active session without making it terminal', async () => {
+    const { controller, api } = harness();
+    await controller.start();
+    await controller.suspend();
+    expect(api.applyCommand).toHaveBeenCalledOnce();
+    expect(api.applyCommand.mock.calls[0][1]).toMatchObject({
+      type: 'suspend_session', payload: { reason: 'player_saved' },
+    });
+    expect(controller.getSnapshot().session).toMatchObject({ status: 'active', state: { pending_action: null } });
+    controller.dispose();
+  });
+
   it('refunds a pending card when provider preparation fails', async () => {
     const { controller, api, runtime } = harness();
     runtime.prepare.mockRejectedValueOnce(new Error('piano unavailable'));

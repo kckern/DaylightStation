@@ -1,6 +1,6 @@
 import express from 'express';
 
-export function createGamingRouter({ gamingService, logger = null }) {
+export function createGamingRouter({ gamingService, assetCatalog = null, logger = null }) {
   if (!gamingService) throw new Error('createGamingRouter: gamingService required');
   const router = express.Router();
 
@@ -22,6 +22,30 @@ export function createGamingRouter({ gamingService, logger = null }) {
     }
   };
 
+  router.get('/assets/:packId', handle((req, res) => {
+    if (!assetCatalog) return res.status(404).json({ error: 'asset_catalog_unavailable' });
+    const catalog = assetCatalog.get(req.params.packId);
+    if (!catalog) return res.status(404).json({ error: 'asset_pack_not_found' });
+    const assets = Object.fromEntries(Object.entries(catalog.assets)
+      .filter(([, asset]) => asset.status === 'approved')
+      .map(([id, asset]) => {
+        const { source, source_sha256: sourceSha256, provenance, distribution, ...publicAsset } = asset;
+        void source; void sourceSha256; void provenance; void distribution;
+        return [id, { ...publicAsset, image_url: `/api/v1/gaming/assets/${encodeURIComponent(req.params.packId)}/${encodeURIComponent(id)}/image` }];
+      }));
+    res.json({ schema_version: catalog.schema_version, pack: catalog.pack, assets });
+  }));
+
+  router.get('/assets/:packId/:assetId/image', handle((req, res) => {
+    if (!assetCatalog) return res.status(404).json({ error: 'asset_catalog_unavailable' });
+    const asset = assetCatalog.getAsset(req.params.packId, req.params.assetId);
+    if (!asset) return res.status(404).json({ error: 'asset_not_found' });
+    const etag = `"${asset.source_sha256}"`;
+    res.set({ ETag: etag, 'Cache-Control': 'private, max-age=31536000, immutable' });
+    if (req.headers?.['if-none-match'] === etag) return res.status(304).end();
+    res.type('png').sendFile(asset.file);
+  }));
+
   router.get('/definitions/:gameId', handle((req, res) => {
     const loaded = gamingService.getDefinition(req.params.gameId);
     res.json({ game_id: req.params.gameId, definition_hash: loaded.hash, definition: loaded.definition });
@@ -29,6 +53,10 @@ export function createGamingRouter({ gamingService, logger = null }) {
 
   router.get('/games/:gameId/progress', handle((req, res) => {
     res.json(gamingService.getProgress(req.params.gameId, req.query.user_id || null));
+  }));
+
+  router.get('/games/:gameId/active-session', handle((req, res) => {
+    res.json(gamingService.getActiveSession(req.params.gameId, req.query.user_id || null));
   }));
 
   router.get('/games/:gameId/leaderboard', handle((req, res) => {

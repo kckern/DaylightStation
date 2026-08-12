@@ -14,8 +14,12 @@ scenarios:
       - { key: F1, capture: 08-graphic-card-back, settle_frames: 300, expect_text: [12 UNITS] }
       - { key: F5, capture: 09-study-summary, settle_frames: 300, expect_text: [STUDY SUMMARY, KNOWN, HARD, AGAIN, UNRESOLVED] }
       - { key: F5, capture: 10-quiz-question, settle_frames: 300, expect_text: [QUIZ, MATH, 6 UNITS, 12 UNITS] }
-      - { key: F2, capture: 11-durable-result, settle_frames: 300, expect_text: [RESULT, SCORE] }
-      - { key: F1, capture: 12-result-qr, settle_frames: 300, expect_symbols: QR V5/M }
+      - { key: EXIT, capture: 11-restudy-after-quiz-exit, settle_frames: 300, expect_text: [ADAPTIVE STUDY, FIND THE DIAMETER] }
+      - { key: F1, capture: 12-restudy-answer, settle_frames: 300, expect_text: [12 UNITS] }
+      - { key: F5, capture: 13-second-study-summary, settle_frames: 300, expect_text: [STUDY SUMMARY, KNOWN, HARD, AGAIN, UNRESOLVED] }
+      - { key: F5, capture: 14-second-quiz-attempt, settle_frames: 300, expect_text: [QUIZ, MATH, 6 UNITS, 12 UNITS] }
+      - { key: F2, capture: 15-durable-result, settle_frames: 300, expect_text: [RESULT, SCORE] }
+      - { key: F1, capture: 16-result-qr, settle_frames: 300, expect_symbols: QR V5/M }
 
   - id: missing-module-relay
     description: A code whose immutable study module is not installed enters one-time relay recovery without losing local state.

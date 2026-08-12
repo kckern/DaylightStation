@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Scale Stadium live readiness verifier.
+ * Card Game live readiness verifier.
  *
  * Verifies the deployed journey contract and Pokémon SVGs, then uses the real
  * PianoKiosk MIDI bridge to complete all three encounters with all four piano
@@ -39,7 +39,7 @@ export function parseArgs(argv) {
     json: false,
     screenshot: null,
     timeoutMs: 30_000,
-    maxTurns: 12,
+    maxTurns: 30,
     help: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
@@ -76,13 +76,16 @@ export function inspectDefinitionPayload(payload) {
   const definition = payload?.definition;
   recordExpectation(errors, payload?.game_id === 'card-game', 'definition response must identify card-game');
   recordExpectation(errors, definition?.game_id === 'card-game', 'definition.game_id must be card-game');
-  recordExpectation(errors, definition?.title === 'Scale Stadium', 'live title must be Scale Stadium');
+  recordExpectation(errors, definition?.title === 'Card Game', 'live title must be Card Game');
   recordExpectation(errors, definition?.ruleset === 'pokemon-practice-journey-v1', 'live ruleset must be pokemon-practice-journey-v1');
   recordExpectation(errors, definition?.view_id === 'pokemon-practice-journey-v1', 'live view must be pokemon-practice-journey-v1');
   recordExpectation(errors, definition?.presentation?.theme === 'pokemon-stadium', 'live theme must be pokemon-stadium');
   recordExpectation(errors, definition?.presentation?.data_source === 'PokeAPI', 'live data source must be PokeAPI');
   recordExpectation(errors, sameArray(definition?.journey?.partners?.map((entry) => entry.id), EXPECTED_PARTNERS), 'journey must offer the three authored partners');
   recordExpectation(errors, sameArray(definition?.journey?.opponents?.map((entry) => entry.id), EXPECTED_OPPONENTS), 'journey must contain Pidgey, Meowth, and Snorlax');
+  recordExpectation(errors, definition?.journey?.opponent_tiers?.length === 5, 'journey must define five escalating opponent tiers');
+  recordExpectation(errors, definition?.journey?.opponent_tiers?.every((tier) => tier.pool?.length >= 2), 'every route tier must offer at least two authored opponents');
+  recordExpectation(errors, definition?.journey?.gym?.opponents?.length === 4, 'gym must contain four themed opponents');
 
   const cards = definition?.cards || {};
   for (const partner of definition?.journey?.partners || []) {
@@ -97,7 +100,8 @@ export function inspectDefinitionPayload(payload) {
 
   const combatants = [
     ...(definition?.journey?.partners || []).map((pokemon) => ({ role: 'partner', pokemon })),
-    ...(definition?.journey?.opponents || []).map((pokemon) => ({ role: 'opponent', pokemon })),
+    ...(definition?.journey?.opponent_tiers || []).flatMap((tier) => tier.pool || []).map((pokemon) => ({ role: 'route opponent', pokemon })),
+    ...(definition?.journey?.gym?.opponents || []).map((pokemon) => ({ role: 'gym opponent', pokemon })),
   ];
   return {
     valid: errors.length === 0,
@@ -362,17 +366,28 @@ async function verifyBrowser(options, progress) {
     progress(`Opening ${target.href}`);
     const response = await page.goto(target.href, { waitUntil: 'networkidle', timeout: options.timeoutMs });
     if (!response?.ok()) throw new Error(`game route returned HTTP ${response?.status() ?? 'unknown'}`);
-    const lobby = page.locator('main.journey-lobby');
-    await lobby.waitFor({ state: 'visible', timeout: options.timeoutMs });
-    viewport = await verifyViewport(page, 'main.journey-lobby');
+    const hub = page.locator('main.journey-hub');
+    await hub.waitFor({ state: 'visible', timeout: options.timeoutMs });
+    viewport = await verifyViewport(page, 'main.journey-hub');
     if (!viewport.withinViewport || !viewport.noHorizontalOverflow || !viewport.noVerticalOverflow) {
-      throw new Error('partner lobby does not fit the 1280×800 PianoKiosk viewport');
+      throw new Error('home dashboard does not fit the 1280×800 PianoKiosk viewport');
     }
-    await page.waitForFunction(() => ['Bulbasaur', 'Charmander', 'Squirtle'].every((name) => {
-      const image = document.querySelector(`.journey-starter img[src*="${name.toLowerCase()}"]`);
-      return image?.complete && image.naturalWidth > 0;
-    }), null, { timeout: options.timeoutMs });
-    await page.getByRole('button', { name: /Bulbasaur/ }).click();
+    const launchButton = page.getByRole('button', { name: /Resume campaign|Start chapter|Replay chapter/ });
+    const resuming = /Resume campaign/i.test((await launchButton.innerText()).trim());
+    await launchButton.click();
+    if (!resuming) {
+      const lobby = page.locator('main.journey-lobby');
+      await lobby.waitFor({ state: 'visible', timeout: options.timeoutMs });
+      const lobbyViewport = await verifyViewport(page, 'main.journey-lobby');
+      if (!lobbyViewport.withinViewport || !lobbyViewport.noHorizontalOverflow || !lobbyViewport.noVerticalOverflow) {
+        throw new Error('partner lobby does not fit the 1280×800 PianoKiosk viewport');
+      }
+      await page.waitForFunction(() => ['Bulbasaur', 'Charmander', 'Squirtle'].every((name) => {
+        const image = document.querySelector(`.journey-starter img[src*="${name.toLowerCase()}"]`);
+        return image?.complete && image.naturalWidth > 0;
+      }), null, { timeout: options.timeoutMs });
+      await page.getByRole('button', { name: /Bulbasaur/ }).click();
+    }
 
     const root = page.locator('main.journey-battle');
     await root.waitFor({ state: 'visible', timeout: options.timeoutMs });
@@ -387,7 +402,7 @@ async function verifyBrowser(options, progress) {
         let continued = false;
         for (let attempt = 0; attempt < 3 && !continued; attempt += 1) {
           await page.waitForTimeout(attempt === 0 ? 300 : 500);
-          await page.getByRole('button', { name: /^Continue to/ }).click();
+          await page.getByRole('button', { name: /^Continue/ }).click();
           try {
             await page.waitForFunction(
               (encounter) => document.querySelector('main.journey-battle')?.dataset.encounter !== encounter,
@@ -399,6 +414,28 @@ async function verifyBrowser(options, progress) {
             if (attempt === 2) throw error;
           }
         }
+        continue;
+      }
+      if (state.phase === 'recruitment') {
+        await page.getByRole('button', { name: /^Recruit / }).first().click();
+        continue;
+      }
+      if (state.phase === 'gym-entry') {
+        await page.getByRole('button', { name: 'Enter Gym' }).click();
+        continue;
+      }
+      if (state.phase === 'chapter-summary') {
+        await page.getByRole('button', { name: 'See badge' }).click();
+        continue;
+      }
+      if (state.phase === 'ceremony') {
+        const continueButton = page.getByRole('button', { name: /^Continue/ });
+        await continueButton.waitFor({ state: 'visible' });
+        await continueButton.click();
+        continue;
+      }
+      if (state.phase === 'final-report') {
+        await page.getByRole('button', { name: /^Continue/ }).click();
         continue;
       }
       if (state.phase === 'defeated') throw new Error(`practice run was defeated by ${state.encounter}`);
@@ -476,7 +513,7 @@ export async function verifyPianoCardGame(options, { onProgress = () => {} } = {
       theme: inspected.definition?.presentation?.theme || null,
       errors: inspected.errors,
     };
-    if (!inspected.valid) throw new Error(`live definition is not Scale Stadium: ${inspected.errors.join('; ')}`);
+    if (!inspected.valid) throw new Error(`live definition is not Card Game: ${inspected.errors.join('; ')}`);
 
     onProgress('Checking mounted Pokémon SVG assets');
     report.assets = await verifyCorpusAssets(origin, inspected.combatants, options.timeoutMs);
@@ -490,7 +527,7 @@ export async function verifyPianoCardGame(options, { onProgress = () => {} } = {
   return report;
 }
 
-const USAGE = `Scale Stadium live readiness verifier
+const USAGE = `Card Game live readiness verifier
 
   node cli/piano-card-game.cli.mjs [options]
 
@@ -498,7 +535,7 @@ Options:
   --url <url>          Game route (default ${DEFAULT_URL})
   --user <id>          Practice identity (default ${DEFAULT_USER})
   --timeout <seconds>  Per-operation timeout (default 30)
-  --max-turns <count>  Maximum piano performances (default 12)
+  --max-turns <count>  Maximum piano performances (default 30)
   --screenshot <path>  Save the journey summary (also captures failures)
   --headed             Show Chromium while the verifier plays
   --json               Machine-readable report on stdout
@@ -522,12 +559,12 @@ async function main() {
   const report = await verifyPianoCardGame(options, { onProgress: progress });
   if (options.json) process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
   else if (report.valid) {
-    process.stdout.write(`✓ Scale Stadium is ready at ${report.url}\n`);
+    process.stdout.write(`✓ Card Game is ready at ${report.url}\n`);
     process.stdout.write(`  Verified ${report.assets.length} Pokémon assets and ${report.browser.skillFamilies.length} piano skill families.\n`);
-    process.stdout.write(`  Completed three encounters in ${report.browser.challengeCount} performances with score ${report.browser.final.score}.\n`);
+    process.stdout.write(`  Completed the route and gym in ${report.browser.challengeCount} performances with score ${report.browser.final.score}.\n`);
     if (report.browser.screenshot) process.stdout.write(`  Screenshot: ${report.browser.screenshot}\n`);
   } else {
-    process.stderr.write(`✗ Scale Stadium readiness failed\n  ${report.errors.join('\n  ')}\n`);
+    process.stderr.write(`✗ Card Game readiness failed\n  ${report.errors.join('\n  ')}\n`);
   }
   if (!report.valid) process.exitCode = 1;
 }

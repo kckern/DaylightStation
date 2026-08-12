@@ -1,0 +1,92 @@
+// Rest countdown. Read from several feet away by someone who is breathing hard,
+// so: one enormous numeral, everything else subordinate. Roboto Condensed is
+// canon here (see feedback_roboto_condensed_is_canon) — emphasis comes from
+// size, color and motion, never a second typeface.
+
+$rt-text: #f3f0ff;
+$rt-muted: #a79fc4;
+$rt-cool: #21e6ff;
+$rt-hot: #ffb13d;
+$rt-display: 'Roboto Condensed', system-ui, sans-serif;
+
+.rest-timer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  height: 100%;
+  font-family: $rt-display;
+  color: $rt-text;
+  text-align: center;
+
+  &__eyebrow {
+    font-size: 2rem;
+    font-weight: 700;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: $rt-muted;
+  }
+
+  &__count {
+    // Viewport-relative so the numeral fills the TV regardless of panel size,
+    // with a floor that keeps it hero-scale on a small dev window.
+    font-size: clamp(7rem, 26vh, 18rem);
+    font-weight: 700;
+    line-height: 0.9;
+    font-variant-numeric: tabular-nums;
+    color: $rt-cool;
+    text-shadow: 0 0 32px rgba(33, 230, 255, 0.45);
+    animation: rest-timer-punch 220ms ease-out;
+  }
+
+  &__unit {
+    font-size: 1.6rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: $rt-muted;
+  }
+
+  &__after {
+    margin-top: 12px;
+    font-size: 1.4rem; // 10-foot floor; nothing here goes below 1.1rem
+    color: $rt-muted;
+  }
+
+  &__next {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    margin-top: 20px;
+  }
+
+  &__next-label {
+    font-size: 1.1rem;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: $rt-muted;
+  }
+
+  &__next-name {
+    font-size: 2.4rem;
+    font-weight: 700;
+  }
+
+  // Final three seconds — the same beats that get an audio cue also get a
+  // color shift, so a deaf-to-the-room athlete still sees rest ending.
+  &.is-urgent .rest-timer__count {
+    color: $rt-hot;
+    text-shadow: 0 0 40px rgba(255, 177, 61, 0.55);
+  }
+}
+
+@keyframes rest-timer-punch {
+  from { transform: scale(1.14); opacity: 0.55; }
+  to   { transform: scale(1);    opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rest-timer__count { animation: none; }
+}

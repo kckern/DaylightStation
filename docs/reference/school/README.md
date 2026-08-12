@@ -379,9 +379,63 @@ context, bank ID, or mode therefore cannot misfile progress.
 | Catalog/module invariants | `backend/src/2_domains/school/catalog/` |
 | Neutral ports/hydration/session use cases | `backend/src/3_applications/school/ports/`, `catalog/`, `GetLearningCatalog.mjs`, `OpenCatalogLearningSession.mjs` |
 | YAML and assignment-policy adapters | `backend/src/1_adapters/school/catalog/`, `backend/src/1_adapters/school/config/` |
+| Generated catalog sources + composites | `backend/src/3_applications/school/sources/` |
 | Independent wiring | `backend/src/5_composition/modules/schoolCatalog.mjs` |
 | API | `GET /api/v1/school/catalogs`, `GET /api/v1/school/catalogs/:address`, `POST /api/v1/school/sessions` |
 | Web | `frontend/src/modules/School/catalog/` |
+
+#### Generated catalogs (the anatomy shelf)
+
+`GetLearningCatalog` and `BuildLearningLesson` each take ONE catalog repository
+and ONE content repository, not a registry. Additional sources therefore join
+the authored YAML ones behind `CompositeLearningCatalogRepository` /
+`CompositeLearningContentRepository`
+(`backend/src/3_applications/school/sources/`), which merge several sources into
+the same two port shapes. Precedence is **first-wins in the order given, authored
+YAML first** — so a hand-authored catalog or document always overrides a
+generated one of the same id, and the projection can be corrected without a code
+change. A source that throws is logged and skipped, never allowed to blank the
+authored curriculum.
+
+`ExerciseLibraryCatalogSource` is the first such source. It projects the shared
+exercise-reference corpus (see `docs/reference/fitness/`) into an anatomy shelf:
+
+| Corpus | Catalog |
+|---|---|
+| muscle group (12) | unit |
+| muscle (38) | lesson |
+| muscle `fullDescription` | a `lecture_notes` document, one `prose` block per paragraph |
+| exercises targeting the muscle | an `examples` module (prompt + instruction steps) |
+| equipment (29) | one `equipment` course holding a single guide lesson |
+
+```yaml
+catalog:
+  exercise_library:
+    enabled: true
+    catalog_id: anatomy
+    max_examples_per_muscle: 6   # the corpus has up to 197 for biceps
+```
+
+Two constraints shape the projection:
+
+- **Block types are chosen for what the reader renders.**
+  `LearningContentReader` handles `table`, `worked_example` and `formula`, and
+  falls through to `<p>{block.text}</p>` for everything else — so `definition`
+  and `asset` blocks validate but render **blank**. The projection emits `prose`
+  and `heading` only, and omits exercise demo images rather than shipping
+  invisible `asset` blocks. (`assetId` is a `REFERENCE_ID`, which cannot express
+  the corpus's mixed-case, parenthesised, percent-encoded media paths anyway.)
+- **An invalid catalog is worse than no catalog.** `GetLearningCatalog` throws on
+  any invalid catalog, which would blank `/catalogs` for *every* catalog. The
+  source therefore validates its own projection with `validateLearningCatalog`
+  before publishing, and publishes nothing — logging
+  `school.catalog.exercise-library.empty|invalid|failed` — when the corpus is
+  missing, empty, or unreadable. Groups with no muscles are dropped for the same
+  reason (`validateUniqueList` rejects empty lists).
+
+Generated lessons are subject to the same `access` rules as authored ones, and
+the defaults (`guest: none`, `unassigned: hidden`) hide them. Reference shelves
+must be granted explicitly — see `catalog.access` in the household `school.yml`.
 
 ### Cross-surface calculator continuation codes
 

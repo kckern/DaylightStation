@@ -149,7 +149,8 @@ describe('ImportSchoolCalcResult', () => {
     const adaptive = result({
       moduleIndex: 1,
       adaptiveStudy: {
-        sessionCode: '001234', cards: [{ rating: 'know', exposureCount: 1 }], quizChoices: [2],
+        sessionCode: '001234', attemptCount: 2,
+        cards: [{ rating: 'know', exposureCount: 1 }], quizChoices: [2],
       },
     });
     await expect(importer.execute({ record: adaptive, transport: 'qr' })).resolves.toMatchObject({
@@ -181,7 +182,10 @@ describe('ImportSchoolCalcResult', () => {
     });
     await expect(importer.execute({ record: result({
       moduleIndex: 1,
-      adaptiveStudy: { sessionCode: '001234', cards: [{ rating: 'hard', exposureCount: 3 }], quizChoices: [2] },
+      adaptiveStudy: {
+        sessionCode: '001234', attemptCount: 1,
+        cards: [{ rating: 'hard', exposureCount: 3 }], quizChoices: [2],
+      },
     }), transport: 'relay' })).rejects.toThrow(/invalid final telemetry/);
     expect(ledger.entries.size).toBe(0);
   });
