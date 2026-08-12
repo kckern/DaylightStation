@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DIFFICULTIES, chooseMove } from '@shared-gaming/chess/opponent.mjs';
+import { fenToPosition } from '@shared-gaming/chess/position.mjs';
 import getLogger from '../../../lib/logging/Logger.js';
 import ChessBoard from '../../Chess/ChessBoard.jsx';
 import { PianoKeyboard } from '../components/PianoKeyboard.jsx';
@@ -259,6 +260,12 @@ export function PianoChessGame({
     : [];
   const originChord = game.origin ? squareToChord(game.origin, liveScheme) : null;
   const cursorChord = cursor ? squareToChord(cursor, liveScheme) : null;
+  // Only while a piece is held and the cursor names a different square. Capture
+  // targets get a ghost too — most previews the player cares about are captures.
+  const heldPiece = game.origin ? fenToPosition(game.game.fen)?.[game.origin] : null;
+  const ghost = heldPiece && cursor && cursor !== game.origin
+    ? { square: cursor, piece: heldPiece }
+    : null;
   const captured = capturedPieces(game.history);
   const prompt = promptFor(game, game.rejection);
   const turnLabel = game.status?.turn === 'w' ? 'White' : 'Black';
@@ -313,6 +320,7 @@ export function PianoChessGame({
           rejectedKey={game.rejection?.seq ?? null}
           lastMove={game.lastMove}
           cursorSquare={cursor}
+          ghost={ghost}
         />
 
         <aside className="piano-chess__rail piano-chess__rail--log">
