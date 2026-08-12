@@ -9,6 +9,7 @@
 
 import { ValidationError } from '#domains/core/errors/index.mjs';
 import { SessionId } from '../value-objects/SessionId.mjs';
+import { appendStrengthRun } from '../workout/strengthLog.mjs';
 
 export class Session {
   constructor({
@@ -33,7 +34,8 @@ export class Session {
     strava_notes = null, // Manually-entered Strava notes pulled back via reconciliation
     finalized = false,
     provisional = false, // Real but sub-5-min, not-yet-finalized session (resumable; hidden from history; GC'd if never matured). See PersistenceManager Stage 3.
-    timelapse = null // Session time-lapse recap status/record
+    timelapse = null, // Session time-lapse recap status/record
+    strength = null // Strength runs performed in this session: { runs: [...] }. Absent on a session with no strength work.
   }) {
     // Normalize sessionId to SessionId value object
     this.sessionId = sessionId instanceof SessionId ? sessionId : new SessionId(sessionId);
@@ -58,6 +60,26 @@ export class Session {
     this.finalized = !!finalized;
     this.provisional = !!provisional;
     this.timelapse = timelapse;
+    this.strength = strength;
+  }
+
+  /**
+   * Record a finished strength run on this session.
+   *
+   * A garage session is one visit, and a visit can contain a ride, a bailed workout and a
+   * restart of it. The aggregate root owns the accumulation so no caller can overwrite
+   * sets somebody actually performed — see `appendStrengthRun` for the append/replace rule.
+   *
+   * @param {Object} run A run block from `makeStrengthRun` (2_domains/fitness/workout).
+   */
+  addStrengthRun(run) {
+    if (!run || typeof run !== 'object') return;
+    this.strength = appendStrengthRun(this.strength, run);
+  }
+
+  /** Strength runs recorded on this session, oldest first. */
+  getStrengthRuns() {
+    return Array.isArray(this.strength?.runs) ? this.strength.runs : [];
   }
 
   /**
@@ -346,6 +368,12 @@ export class Session {
 
     // Time-lapse recap record
     if (this.timelapse) result.timelapse = this.timelapse;
+
+    // Strength runs — present ONLY when a workout was actually run. A cycle ride must
+    // serialize byte-identically to how it always has (see
+    // tests/unit/domains/fitness/sessionStoredShape.char.test.mjs), so an empty block is
+    // never written.
+    if (this.strength?.runs?.length > 0) result.strength = this.strength;
 
     return result;
   }

@@ -21,6 +21,7 @@ import { NextUpStrategy } from '#apps/fitness/suggestions/NextUpStrategy.mjs';
 import { ResumeStrategy } from '#apps/fitness/suggestions/ResumeStrategy.mjs';
 import { BrowseExerciseLibrary } from '#apps/fitness/usecases/BrowseExerciseLibrary.mjs';
 import { GenerateSessionTimelapse } from '#apps/fitness/usecases/GenerateSessionTimelapse.mjs';
+import { LogStrengthRun } from '#apps/fitness/usecases/LogStrengthRun.mjs';
 import { QuerySessions } from '#apps/fitness/usecases/QuerySessions.mjs';
 import { RecapSweep } from '#apps/fitness/usecases/RecapSweep.mjs';
 import { TrashRetentionSweep } from '#apps/fitness/usecases/TrashRetentionSweep.mjs';
@@ -207,6 +208,20 @@ export function createFitnessApiRouter(config) {
     ? new BrowseExerciseLibrary({ exerciseLibrary, logger })
     : null;
 
+  // A finished strength run is written onto the SAME session record a cycle ride uses,
+  // so session detail, recaps, the longitudinal widget and Strava reconciliation pick it
+  // up with no new plumbing. This is the one place holding BOTH the authored plan (the
+  // repository, which supplies the prescribed counts) and the session (which supplies the
+  // identity the run is attributed to). Absent a workout repository there is no plan to
+  // reduce a run against, so the route reports 503 rather than logging half a record.
+  const logStrengthRun = workoutRepository
+    ? new LogStrengthRun({
+      sessionService: fitnessServices.sessionService,
+      workoutRepository,
+      logger
+    })
+    : null;
+
   // Filesystem access the router used to do inline now lives behind these
   // injected providers (keeps the API layer free of fs/path).
   const menuMusicProvider = () => {
@@ -267,6 +282,7 @@ export function createFitnessApiRouter(config) {
     voiceMemoDebugStore,
     workoutRepository,
     saveWorkout,
+    logStrengthRun,
     browseExerciseLibrary,
     logger
   });
