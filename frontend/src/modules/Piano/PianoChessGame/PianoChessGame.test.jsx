@@ -32,6 +32,7 @@ import {
   fetchChessConfig, requestOpponentMove, saveChessConfig, saveGameRecord,
 } from './chessApi.js';
 import { DEFAULT_CHORD_SCHEME, squareToChord } from './chordAddress.js';
+import { DOUBLE_WINDOW_MS } from './chordSelection.js';
 
 const sourceOutlines = (container) => container.querySelectorAll('.chess-board__square--source').length;
 
@@ -272,7 +273,7 @@ describe('PianoChessGame settings wiring', () => {
 // prove the candidate count actually drives the read-out's verdict.
 describe('PianoChessGame chord read-out wiring', () => {
   // [60, 61, 62] is three adjacent semitones — no root/quality pair in the
-  // default scheme (major, minor, sus4, add2, seventh, add6, major7,
+  // default scheme (major, minor, sus4, minor6, seventh, add6, major7,
   // diminished) produces a pitch-class cluster that tight, so it settles to a
   // definite "no square" rather than a lucky match.
   const UNMAPPABLE_CHORD = new Map([[60, {}], [61, {}], [62, {}]]);
@@ -389,6 +390,197 @@ describe('hint gestures', () => {
   });
 });
 
+// The selection model the session logs demanded: one chord HOVERS, the same
+// square played twice inside the window picks the piece up, and a held piece
+// drops with a single chord. Driven through the mocked MIDI context with fake
+// timers, the same way helpValidity.test.jsx drives held notes.
+//
+// The square is e2 — a White pawn with legal moves (e3, e4) from the opening
+// position, so a wrongly-committed single chord observably selects it. Its
+// notes come from the board itself via squareToChord, never hard-coded, and
+// shuffle_each_turn is off so DEFAULT_CHORD_SCHEME is the deal actually in
+// force (a shuffled deal would re-address every square under the test).
+describe('hover before commit', () => {
+  const notesFor = (square) => squareToChord(square, DEFAULT_CHORD_SCHEME)
+    .pitch_classes.map((pc) => 60 + pc);
+  const holdNotes = (notes) => mockUsePianoMidiNotes.mockReturnValue({
+    activeNotes: new Map(notes.map((n) => [n, { velocity: 80 }])),
+    noteHistory: [],
+  });
+  // A FRESH element per render: reusing one element object makes React bail
+  // out on identical props, so the changed note mock would never be re-read.
+  const makeElement = () => <PianoChessGame gameConfig={{ shuffle_each_turn: false }} />;
+
+  /** Play one chord: hold past the 140ms settle, then release. */
+  const playChord = async (rerender, notes) => {
+    holdNotes(notes);
+    rerender(makeElement());
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    holdNotes([]);
+    rerender(makeElement());
+    await act(async () => { await vi.advanceTimersByTimeAsync(120); });
+  };
+
+  // `game.origin` is what the board renders as --selected today; Task 3 adds
+  // the dedicated held treatment on top of the same prop.
+  const heldSquares = (container) => container.querySelectorAll('.chess-board__square--selected');
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mockUsePianoMidi.mockReturnValue({ connected: true, status: 'connected' });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    mockUsePianoMidi.mockReturnValue({ connected: false, status: 'disconnected' });
+    mockUsePianoMidiNotes.mockReturnValue({ activeNotes: new Map(), noteHistory: [] });
+  });
+
+  it('does not pick a piece up on a single chord', async () => {
+    const { container, rerender } = render(makeElement());
+    await playChord(rerender, notesFor('e2'));
+    expect(heldSquares(container)).toHaveLength(0);
+  });
+
+  it('picks it up when the same square is played twice inside the window', async () => {
+    const { container, rerender } = render(makeElement());
+    await playChord(rerender, notesFor('e2'));
+    // ~120ms since the first release: the second recognition lands well inside
+    // the window, while the fingers are still down — the release is swallowed.
+    await playChord(rerender, notesFor('e2'));
+    expect(heldSquares(container)).toHaveLength(1);
+  });
+
+  it('does not pick up when the second play falls outside the window', async () => {
+    const { container, rerender } = render(makeElement());
+    await playChord(rerender, notesFor('e2'));
+    await act(async () => { await vi.advanceTimersByTimeAsync(DOUBLE_WINDOW_MS + 200); });
+    await playChord(rerender, notesFor('e2'));
+    expect(heldSquares(container)).toHaveLength(0);
+  });
+
+  it('never refuses while exploring with a piece in hand', async () => {
+    const { container, rerender } = render(makeElement());
+    await playChord(rerender, notesFor('e2'));
+    await playChord(rerender, notesFor('e2')); // now holding the e2 pawn
+    await playChord(rerender, notesFor('d5')); // empty square the pawn cannot reach
+    expect(container.querySelectorAll('.chess-board__square--rejected')).toHaveLength(0);
+    // Exploring costs nothing: the piece is still in hand after the wander.
+    expect(heldSquares(container)).toHaveLength(1);
+  });
+});
+
+// The labels are the answer to the pick-up: the board must name the chord that
+// reaches each eligible square the moment a piece is lifted, and say nothing
+// before that. Config can turn them off; nothing about them is ever charged.
+describe('destination labels answer the pick-up', () => {
+  const notesFor = (square) => squareToChord(square, DEFAULT_CHORD_SCHEME)
+    .pitch_classes.map((pc) => 60 + pc);
+  const holdNotes = (notes) => mockUsePianoMidiNotes.mockReturnValue({
+    activeNotes: new Map(notes.map((n) => [n, { velocity: 80 }])),
+    noteHistory: [],
+  });
+  const makeElement = () => <PianoChessGame gameConfig={{ shuffle_each_turn: false }} />;
+  const playChord = async (rerender, notes) => {
+    holdNotes(notes);
+    rerender(makeElement());
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    holdNotes([]);
+    rerender(makeElement());
+    await act(async () => { await vi.advanceTimersByTimeAsync(120); });
+  };
+  const badgeMap = (container) => Object.fromEntries(
+    [...container.querySelectorAll('.chess-board__badge')]
+      .map((el) => [el.closest('[data-square]').dataset.square, el.textContent]),
+  );
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mockUsePianoMidi.mockReturnValue({ connected: true, status: 'connected' });
+    fetchChessConfig.mockReset();
+    fetchChessConfig.mockResolvedValue(null);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    mockUsePianoMidi.mockReturnValue({ connected: false, status: 'disconnected' });
+    mockUsePianoMidiNotes.mockReturnValue({ activeNotes: new Map(), noteHistory: [] });
+  });
+
+  it('shows no badges while nothing is held', async () => {
+    const { container, rerender } = render(makeElement());
+    await playChord(rerender, notesFor('e2')); // hover only — not a pick-up
+    expect(container.querySelectorAll('.chess-board__badge')).toHaveLength(0);
+  });
+
+  it('prints the addressing chord on every square the lifted pawn can reach', async () => {
+    const { container, rerender } = render(makeElement());
+    await playChord(rerender, notesFor('e2'));
+    await playChord(rerender, notesFor('e2')); // the double lifts the pawn
+    expect(badgeMap(container)).toEqual({
+      e3: squareToChord('e3', DEFAULT_CHORD_SCHEME).symbol,
+      e4: squareToChord('e4', DEFAULT_CHORD_SCHEME).symbol,
+    });
+  });
+
+  it('stays dark when the config turns the labels off — pick-up and all', async () => {
+    fetchChessConfig.mockResolvedValue({ feedback: { show_destination_labels: false } });
+    const { container, rerender } = render(makeElement());
+    await playChord(rerender, notesFor('e2'));
+    await playChord(rerender, notesFor('e2'));
+    // The piece really is in hand; only the labels are silenced.
+    expect(container.querySelectorAll('.chess-board__square--held')).toHaveLength(1);
+    expect(container.querySelectorAll('.chess-board__badge')).toHaveLength(0);
+  });
+});
+
+// A game holds one player's config and writes one player's record. The
+// session that motivated this task switched kiosk users mid-game and kept
+// playing under the new identity — the fix locks whoever started until the
+// game ends, mirrored in the rail so the screen says whose game this is.
+describe('the player is locked for the whole game', () => {
+  const notesFor = (square) => squareToChord(square, DEFAULT_CHORD_SCHEME)
+    .pitch_classes.map((pc) => 60 + pc);
+  const holdNotes = (notes) => mockUsePianoMidiNotes.mockReturnValue({
+    activeNotes: new Map(notes.map((n) => [n, { velocity: 80 }])),
+    noteHistory: [],
+  });
+  const makeElement = (user) => (
+    <PianoChessGame currentUser={user} gameConfig={{ shuffle_each_turn: false }} />
+  );
+  const playChord = async (rerender, user, notes) => {
+    holdNotes(notes);
+    rerender(makeElement(user));
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    holdNotes([]);
+    rerender(makeElement(user));
+    await act(async () => { await vi.advanceTimersByTimeAsync(120); });
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mockUsePianoMidi.mockReturnValue({ connected: true, status: 'connected' });
+    fetchChessConfig.mockResolvedValue(null);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    mockUsePianoMidi.mockReturnValue({ connected: false, status: 'disconnected' });
+    mockUsePianoMidiNotes.mockReturnValue({ activeNotes: new Map(), noteHistory: [] });
+  });
+
+  it('keeps the starting player for the whole game, ignoring a mid-game switch', async () => {
+    const { rerender, container } = render(makeElement('felix'));
+    await playChord(rerender, 'felix', notesFor('e2'));
+    rerender(makeElement('milo'));
+    await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+    const lockedUser = container.querySelector('.piano-chess__locked-user');
+    expect(lockedUser).not.toBeNull();
+    expect(lockedUser.textContent).toContain('felix');
+    expect(lockedUser.textContent).not.toContain('milo');
+  });
+});
+
 // The record effect is wiring, not arithmetic — buildGameRecord is unit-tested
 // in chessGameRecord.test.js. What only a component render can prove is that a
 // finished game posts exactly once, to the signed-in player, with the tallies.
@@ -435,9 +627,11 @@ describe('the game record', () => {
       await act(async () => { await vi.advanceTimersByTimeAsync(100); });
     };
 
-    // Game 1: ask for a legal-move hint, then deliver the mate.
+    // Game 1: ask for a legal-move hint, then deliver the mate. Lifting takes
+    // the same square twice now — one chord hovers, the repeat picks up.
     await play([60, 61, 62]); // hint cluster — charges one hint
-    await play(notesFor('f1')); // lift the rook
+    await play(notesFor('f1')); // name the rook — hovers
+    await play(notesFor('f1')); // name it again — lifts it
     await play(notesFor('f8')); // land it — checkmate
 
     expect(saveGameRecord).toHaveBeenCalledTimes(1);
@@ -455,7 +649,8 @@ describe('the game record', () => {
 
     // Game 2: ask for the best move, but the server never produces one.
     await play([60, 61, 62, 63]); // best cluster — request fails, no charge
-    await play(notesFor('f1'));
+    await play(notesFor('f1')); // hover
+    await play(notesFor('f1')); // lift
     await play(notesFor('f8'));
 
     expect(saveGameRecord).toHaveBeenCalledTimes(2);

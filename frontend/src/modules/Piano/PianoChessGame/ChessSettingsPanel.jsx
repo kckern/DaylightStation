@@ -15,6 +15,7 @@ export default function ChessSettingsPanel({ config, rungId, onChange, onClose }
   const rungs = Array.isArray(config?.rungs) ? config.rungs : [];
   const shuffle = config?.shuffle_each_turn !== false;
   const delayMs = config?.opponent_delay_ms ?? 700;
+  const labelsOn = config?.feedback?.show_destination_labels !== false;
 
   return (
     <section className="chess-settings" aria-label="Chess settings">
@@ -51,6 +52,24 @@ export default function ChessSettingsPanel({ config, rungId, onChange, onClose }
           Shuffle chords each turn
           <span className="chess-settings__note">next game</span>
         </button>
+      </div>
+
+      <h3 className="chess-settings__group">Name the squares</h3>
+      <div className="chess-settings__row">
+        {/* Not a hint control: the labels appear only after the player picks a
+            piece up, and that double-play was the request. This just chooses
+            whether the board answers it. */}
+        {[{ id: true, label: 'Show chords' }, { id: false, label: 'Hide chords' }].map((opt) => (
+          <button
+            key={String(opt.id)}
+            type="button"
+            className={`chess-settings__opt${labelsOn === opt.id ? ' is-active' : ''}`}
+            aria-pressed={labelsOn === opt.id}
+            onClick={() => onChange({ feedback: { show_destination_labels: opt.id } })}
+          >
+            {opt.label}
+          </button>
+        ))}
       </div>
 
       <h3 className="chess-settings__group">Opponent replies after</h3>

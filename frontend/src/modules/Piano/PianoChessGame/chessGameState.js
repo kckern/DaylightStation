@@ -151,10 +151,6 @@ export function applySquare(state, square) {
     };
   }
 
-  if (square === state.origin) {
-    return { state: { ...state, origin: null, rejection: null }, event: { type: 'deselected', square } };
-  }
-
   if (destinationsFor(state, state.origin).includes(square)) {
     return commitMove(state, state.origin, square);
   }

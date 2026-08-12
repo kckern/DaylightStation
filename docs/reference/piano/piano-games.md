@@ -685,9 +685,41 @@ Each visual channel answers one question, so they coexist without competing:
 | Channel | Question | Used for |
 |---------|----------|----------|
 | Light (square brightness) | What are my hands doing now? | Candidate squares glow faintly; the resolved square is bright; the ghost piece previews the landing |
-| Outline (border) | Where am I in this move? | Solid = the piece picked up; dashed = the last move |
-| Marks (dots, rings) | What did I ask to see? | Legal-move marks and the best-move ring — empty until a gesture asks |
+| Outline (border) | Where am I in this move? | Marching ants = the piece in hand; dashed = the last move |
+| Marks (dots, rings, badges) | What can this move do? | Destination dots and chord badges while a piece is held; legal-move marks and the best-move ring when a gesture asks |
 | Colour (wash) | Is something wrong? | Check; the refused-square flash |
+
+### Hover, pick up, drop
+
+Naming a square and committing to it are different acts. One played chord **hovers** —
+it lights the square, previews a ghost piece, and commits nothing, so a player can try
+a chord and see where it lands. The **same square played twice** within a short window
+picks the piece up; the pick-up fires on recognition, while the fingers are still down,
+and that chord's own release is swallowed so it cannot double as a drop. **Dropping**
+takes only one play, because a held piece can reach only a handful of lit, labelled
+squares and intent is already declared. An octave (or Esc) puts the piece back.
+
+The square whose piece is in the air wears an animated marching-ants border — a child
+element, not the square's `::before`, which the best-move ring already owns (the piece
+in hand can also be the engine's suggestion). While a piece is held, exploring is never
+punished: a chord for an unreachable square hovers silently rather than flashing a
+refusal.
+
+### Destination labels
+
+The moment a piece is picked up, every square it can legally reach prints the chord
+that addresses it in a corner badge — the answer to the question the pick-up just
+asked. Without them the player must read a root off one rim, a quality off the other,
+and intersect them mentally while holding a piece; in a real session that produced
+zero completed moves. The corner placement (with a stacking level above the piece
+artwork) keeps the badge clear of the occupant on capture squares, and the badge sizes
+itself off the board's own size token, never the viewport.
+
+The labels are **not help and are never charged to the game record**: the deliberate
+double-play that lifted the piece was the request. The record counts only the two
+gestures that ask for more — legal-move marks and the best move. Config can turn the
+labels off (`feedback.show_destination_labels: false`; absent means on) for players
+who want the rim-intersection drill back.
 
 ### Narrowing
 
@@ -728,15 +760,18 @@ they never reach the per-user endpoints.
 ### Refusal loudness
 
 `feedback.flash_rejected` and `feedback.toast` control how loudly a refusal is
-announced (the red flash on the refused square, the sentence saying what was wrong) and
-live in YAML only. The YAML is snake_case; the translation to the component's camelCase
-cue flags happens in one place and nowhere else. A stale `hint_level` in a saved
-override is ignored — it selects behaviour that no longer exists.
+announced (the red flash on the refused square, the sentence saying what was wrong);
+`feedback.show_destination_labels` controls the chord badges on a held piece's
+reachable squares. All live in YAML only, default on, and turn off only on explicit
+`false`. The YAML is snake_case; the translation to the component's camelCase cue
+flags happens in one place and nowhere else. A stale `hint_level` in a saved override
+is ignored — it selects behaviour that no longer exists.
 
 ### In-game settings
 
 The Settings button on the rail opens a panel of discrete tap targets (no sliders): the
-rung ladder, the chord-map shuffle, and the opponent delay (300/700/1200 ms). Every tap
+rung ladder, the chord-map shuffle, the destination-label toggle (Show chords / Hide
+chords), and the opponent delay (300/700/1200 ms). Every tap
 applies immediately and, for a signed-in player, saves a sparse patch to their own
 override layer. The shuffle toggle takes effect on the next game — the chord map is
 dealt when a game is created, and a mid-game re-deal would rearrange the board under

@@ -245,6 +245,70 @@ describe('four channels', () => {
   });
 });
 
+describe('the piece in hand', () => {
+  it('marks the held square and only that square', () => {
+    const { container } = render(<ChessBoard fen={START} heldSquare="e2" />);
+    const held = container.querySelectorAll('.chess-board__square--held');
+    expect(held).toHaveLength(1);
+    expect(held[0].closest('[data-square]').dataset.square).toBe('e2');
+  });
+
+  it('marks nothing when no piece is in hand', () => {
+    const { container } = render(<ChessBoard fen={START} heldSquare={null} />);
+    expect(container.querySelectorAll('.chess-board__square--held')).toHaveLength(0);
+  });
+});
+
+describe('destination labels', () => {
+  it('prints the chord on a labelled square without hiding the piece', () => {
+    const { container } = render(<ChessBoard fen={START} squareLabels={{ e4: 'Fm7' }} />);
+    const badge = container.querySelector('.chess-board__badge');
+    expect(badge.textContent).toBe('Fm7');
+    expect(badge.closest('[data-square]').dataset.square).toBe('e4');
+  });
+
+  it('prints nothing when there are no labels', () => {
+    const { container } = render(<ChessBoard fen={START} squareLabels={{}} />);
+    expect(container.querySelectorAll('.chess-board__badge')).toHaveLength(0);
+  });
+
+  it('stays inert for hosts that pass no labels at all', () => {
+    // ChessLessons renders this board with none of the piano props; the default
+    // must be an empty map, not a crash or a stray badge.
+    const { container } = render(<ChessBoard fen={START} />);
+    expect(container.querySelectorAll('.chess-board__badge')).toHaveLength(0);
+  });
+
+  it('labels a capture square, where a piece is already standing', () => {
+    // Black pawn on e5; the label must coexist with it.
+    const fen = 'rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2';
+    const { container } = render(<ChessBoard fen={fen} squareLabels={{ e5: 'Bb' }} />);
+    const square = container.querySelector('[data-square="e5"]');
+    expect(square.querySelector('.chess-board__badge').textContent).toBe('Bb');
+    expect(square.querySelector('.chess-board__piece')).not.toBeNull();
+  });
+
+  it('stacks the badge above the piece, which paints at z-index 1 (compiled CSS)', () => {
+    // The corner placement only helps if the badge is actually visible there:
+    // .chess-board__piece sets z-index: 1, so a badge with z-index auto would
+    // paint UNDER the occupant of a capture square no matter its DOM order.
+    const body = ruleBody('.chess-board__badge');
+    expect(body).not.toBeNull();
+    const z = body.match(/z-index\s*:\s*(\d+)/);
+    expect(z, 'badge must set a z-index above the piece\'s 1').not.toBeNull();
+    expect(Number(z[1])).toBeGreaterThan(1);
+  });
+
+  it('sizes the badge off the board token, never the viewport (compiled CSS)', () => {
+    // The kiosk lays out at a fixed design size and scales the canvas, so
+    // viewport units measure the wrong box.
+    const body = ruleBody('.chess-board__badge');
+    expect(body).not.toBeNull();
+    expect(body).not.toMatch(/\d(vw|vh|vmin|vmax)\b/);
+    expect(body).toContain('var(--cb-size');
+  });
+});
+
 describe('channels compose instead of overwriting (compiled CSS)', () => {
   // jsdom cannot compute box-shadow or ::before/::after, so these assertions run
   // against the actual compiled stylesheet, not the DOM. They guard the specific
@@ -281,5 +345,15 @@ describe('channels compose instead of overwriting (compiled CSS)', () => {
     // A same-pseudo-element collision would silently drop the hint dot (last
     // declaration wins), so also assert best never reclaims ::after.
     expect(compiledCss).not.toMatch(/\.chess-board__square--best::after\s*\{/);
+  });
+
+  it('keeps the held-square ants off --best\'s ::before, since a held piece can also be the suggested move', () => {
+    // PianoChessGame passes both heldSquare={game.origin} and bestMove={help.best}
+    // to the same board — the engine can suggest moving the piece already in hand.
+    // --best already owns ::before on the square, so the ants must live elsewhere
+    // or one of the two rules silently loses.
+    expect(ruleBody('.chess-board__square--best::before')).not.toBeNull();
+    expect(compiledCss).not.toMatch(/\.chess-board__square--held::before\s*\{/);
+    expect(ruleBody('.chess-board__held-ants')).not.toBeNull();
   });
 });

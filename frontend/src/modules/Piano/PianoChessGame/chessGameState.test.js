@@ -1,12 +1,25 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_CHORD_SCHEME, squareToChord } from './chordAddress.js';
+import { DEFAULT_CHORD_SCHEME, chordBoard, squareToChord } from './chordAddress.js';
 import {
   applySquare, capturedPieces, clearSelection, commitMove, createChessGameState, destinationsFor, isPlayerTurn, pieceAt, playableSources,
 } from './chessGameState.js';
 import { advanceCursor, createCursorState } from './chordCursor.js';
 
-// e2 is the E-minor square, e4 the E-add2 square, under the default scheme.
+// e2 is the E-minor square, e4 the E-add9 square, under the default scheme.
 const play = (state, ...squares) => squares.reduce((current, square) => applySquare(current, square).state, state);
+
+// The chord map is seeded and re-deals, so a test that needs "a piece the
+// player can pick up" has to ask the board rather than assume e2 — walk the
+// dealt map (not the file/rank grid) and hand back the first square holding
+// the player's own piece with somewhere legal to go.
+function firstMovableSquare(state) {
+  const board = chordBoard(state.scheme);
+  for (const square of Object.keys(board)) {
+    const piece = pieceAt(state.game.fen, square);
+    if (piece && piece[0] === state.playerColor && destinationsFor(state, square).length) return square;
+  }
+  return null;
+}
 
 describe('piano chess move flow', () => {
   it('starts with White to move and nothing selected', () => {
@@ -33,7 +46,8 @@ describe('piano chess move flow', () => {
 
   it('records each move as the two chords that performed it', () => {
     const state = play(createChessGameState({ shuffleEachTurn: false }), 'e2', 'e4');
-    expect(state.history[0].chords).toEqual(['Em', 'Eadd2']);
+    // e4's quality is add9 (rank index 3) — the name the chord plaque uses for {0,2,4,7}.
+    expect(state.history[0].chords).toEqual(['Em', 'Eadd9']);
     expect(state.history[0].san).toBe('e4');
   });
 
@@ -84,10 +98,23 @@ describe('piano chess move flow', () => {
 
   it('lets the player change their mind', () => {
     const selected = applySquare(createChessGameState(), 'e2').state;
-    expect(applySquare(selected, 'e2').event.type).toBe('deselected');
     const reselected = applySquare(selected, 'd2');
     expect(reselected.event.type).toBe('selected');
     expect(reselected.state.origin).toBe('d2');
+  });
+
+  it('does not put the piece back when its own square is played again', () => {
+    // The double-play IS the pick-up gesture now (Tasks 1-2): a repeat of the
+    // held square must not also read as "put it back", or picking up and
+    // releasing looks identical to doing nothing at all. Put-it-back is the
+    // octave escape instead.
+    const start = createChessGameState({ playerColor: 'w', scheme: DEFAULT_CHORD_SCHEME, seed: 7, shuffleEachTurn: false });
+    const square = firstMovableSquare(start);
+    expect(square).not.toBe(null);
+    const held = applySquare(start, square).state;
+    const again = applySquare(held, square);
+    expect(again.state.origin).toBe(square);       // still in hand
+    expect(again.event.type).not.toBe('deselected');
   });
 
   it('refuses input when it is not the playerturn', () => {

@@ -16,9 +16,11 @@ import { cuesFromConfig } from './chessCues.js';
 import ChessSettingsPanel from './ChessSettingsPanel.jsx';
 import { CHORD_QUALITIES, DEFAULT_CHORD_SCHEME, squareToChord } from './chordAddress.js';
 import { candidateSquares } from './chordCandidates.js';
+import { destinationBadges } from './chessBadges.js';
 import { recognizeGesture } from './chordGestures.js';
 import { buildGameRecord } from './chessGameRecord.js';
 import { advanceCursor, createCursorState } from './chordCursor.js';
+import { applyEvent, createSelection } from './chordSelection.js';
 import {
   REJECTION_MESSAGES, applySquare, capturedPieces, clearSelection, commitMove,
   createChessGameState, destinationsFor, isPlayerTurn, playableSources,
@@ -55,7 +57,16 @@ function logger() {
 }
 
 /** The prompt under the board: what the player should do next, in their terms. */
-export function promptFor(state, rejection) {
+/**
+ * The one sentence on screen that teaches the grammar. It has to name the
+ * DOUBLE: a player who plays a piece's chord once gets a hover — the square
+ * lights, the read-out agrees, and nothing happens — and if the prompt says
+ * "play the chord of the piece you want to move" they have followed it exactly
+ * and been answered with silence. When the cursor is already resting on a
+ * square, the prompt names that square's own chord, so the instruction is the
+ * literal next thing to play rather than a rule to apply.
+ */
+export function promptFor(state, rejection, hoveredChord = null) {
   if (state.status?.game_over) {
     if (state.status.outcome === 'checkmate') {
       return state.status.winner === state.playerColor ? 'Checkmate. You win.' : 'Checkmate. Your opponent wins.';
@@ -65,7 +76,10 @@ export function promptFor(state, rejection) {
   if (rejection) return REJECTION_MESSAGES[rejection.reason] ?? 'Try another chord.';
   if (!isPlayerTurn(state)) return 'Your opponent is thinking.';
   if (state.status?.check) return 'You are in check. Play a chord to answer it.';
-  return state.origin ? 'Now play the square to move to.' : 'Play the chord of the piece you want to move.';
+  if (state.origin) return 'Now play the chord of the square to move to.';
+  return hoveredChord
+    ? `Play ${hoveredChord} again to pick that piece up.`
+    : "Play a piece's chord twice to pick it up.";
 }
 
 export function PianoChessGame({
@@ -87,6 +101,14 @@ export function PianoChessGame({
   const userSlug = typeof currentUser === 'string' ? currentUser : currentUser?.id ?? null;
   const userId = isPersistentUser(userSlug) ? userSlug : null;
 
+  // The game holds this player's config and writes their record. Switching
+  // the kiosk user mid-game would file one player's moves under another's
+  // name, so the game keeps whoever started it until it ends. isPersistentUser
+  // has already gated a guest to null above, so a locked guest still means "no
+  // per-user writes" downstream — the lock preserves that, it doesn't bypass it.
+  const lockedUserRef = useRef(userId);
+  const lockedUser = lockedUserRef.current;
+
   // The merged household+user chess config is the single source for the rung
   // ladder, the cue flags, the opponent delay, and the shuffle preference. The
   // old gameConfig.feedback path is gone on purpose: two config sources for one
@@ -105,9 +127,9 @@ export function PianoChessGame({
       feedback: { ...(prev?.feedback || {}), ...(patch.feedback || {}) },
     }));
     if (patch.default_rung) setRungId(patch.default_rung);
-    if (userId) saveChessConfig(userId, patch);
-    logger().info('setting-applied', { patch, persisted: !!userId });
-  }, [userId]);
+    if (lockedUser) saveChessConfig(lockedUser, patch);
+    logger().info('setting-applied', { patch, persisted: !!lockedUser });
+  }, [lockedUser]);
 
   // The `feedback` prop survives ONLY as a test seam — production callers must
   // let the chess config speak for itself.
@@ -146,6 +168,9 @@ export function PianoChessGame({
   const liveScheme = game.scheme;
   const [cursor, setCursor] = useState(null);
   const cursorRef = useRef(createCursorState());
+  // Naming a square and committing to it are different acts: the selection
+  // machine decides which. One chord hovers, the same square twice picks up.
+  const selectionRef = useRef(createSelection());
   // True from the first tick where the held set reads as a help gesture until
   // the hands are fully off the keys. See the cursor tick for why: a staggered
   // release must not let the gesture's residue land as an unrecognised chord.
@@ -163,7 +188,7 @@ export function PianoChessGame({
   // them, and the captured value stands until the next game.
   useEffect(() => {
     let cancelled = false;
-    fetchChessConfig(userId).then((loaded) => {
+    fetchChessConfig(lockedUser).then((loaded) => {
       if (cancelled || !loaded) return;
       setChessConfig(loaded);
       setRungId(loaded.default_rung || 'learner');
@@ -181,7 +206,7 @@ export function PianoChessGame({
     });
     return () => { cancelled = true; };
     // fen, playerColor, scheme, and gameSeed are mount-stable (props + one-shot state).
-  }, [userId, fen, playerColor, scheme, gameSeed]);
+  }, [lockedUser, fen, playerColor, scheme, gameSeed]);
 
   const heldNotes = useMemo(() => [...activeNotes.keys()].sort((a, b) => a - b), [activeNotes]);
   const heldKey = heldNotes.join(',');
@@ -228,7 +253,7 @@ export function PianoChessGame({
       const askedFen = gameRef.current.game.fen;
       const askedGameId = gameIdRef.current;
       logger().info('help-requested', { kind: 'best' });
-      requestOpponentMove({ fen: askedFen, rung: 'ruthless', gameId: askedGameId, userId }).then((move) => {
+      requestOpponentMove({ fen: askedFen, rung: 'ruthless', gameId: askedGameId, userId: lockedUser }).then((move) => {
         bestPendingRef.current = false;
         // Charged only when a move actually arrives: the record holds facts,
         // and "1 best move" the player never received is not one.
@@ -258,6 +283,9 @@ export function PianoChessGame({
   // fires and would wipe a gesture armed on the very first render.
   const moveCount = game.history.length;
   useEffect(() => {
+    // The board changed underneath the selection: a hover from before the
+    // opponent moved must not combine with one after it into a pick-up.
+    selectionRef.current = createSelection();
     if (moveCount === 0) return; // fresh board: restart() already reset help
     setHelp({ legal: false, best: null });
   }, [moveCount]);
@@ -312,10 +340,14 @@ export function PianoChessGame({
       fen: fen ?? undefined, playerColor, scheme, seed: gameSeed + 1, shuffleEachTurn,
     }));
     setGameId(`chess-${Date.now()}`);
+    // A new game re-latches to whoever is at the kiosk NOW — the previous
+    // lock belonged to the game that just ended, not to this one.
+    lockedUserRef.current = userId;
     setToast(null);
     setHelp({ legal: false, best: null });
     setHelpUsed({ hints: 0, bestMoves: 0 });
     setFinishedRecord(null);
+    selectionRef.current = createSelection();
     // A best-move ask still in flight belongs to the finished game. Its answer
     // is already doomed by the game-id check; clearing the gate here means the
     // new game may ask again immediately instead of waiting it out.
@@ -323,7 +355,7 @@ export function PianoChessGame({
     recordedRef.current = false;
     startedAtRef.current = Date.now();
     logger().info('restarted');
-  }, [fen, gameSeed, playerColor, scheme, shuffleEachTurn]);
+  }, [fen, gameSeed, playerColor, scheme, shuffleEachTurn, userId]);
 
   const cancelSelection = useCallback(() => {
     setGame((current) => (current.origin ? clearSelection(current) : current));
@@ -371,9 +403,25 @@ export function PianoChessGame({
         if (gameRef.current.status?.game_over) restart();
         else cancelSelection();
       }
-      if (event.type === 'commit') {
-        setCursor(null);
-        if (!wasGesture && !(latched && !event.square)) handleSquare(event.square);
+      if (event.type === 'commit') setCursor(null);
+      // Both cursor events feed the selection machine: the pick-up fires on
+      // recognition — while the fingers are still down — and everything else
+      // on release. The gesture latch stays exactly as it was: it solves a
+      // different problem (a staggered cluster release landing as a false
+      // refusal), and both guards are needed.
+      if (event.type === 'preview' || event.type === 'commit') {
+        if (wasGesture || (latched && !event.square)) return;
+        const current = gameRef.current;
+        const holdingPiece = Boolean(current.origin);
+        const isEligible = holdingPiece && destinationsFor(current, current.origin).includes(event.square);
+        const { selection, action } = applyEvent(selectionRef.current, {
+          type: event.type, square: event.square, at: Date.now(), holdingPiece, isEligible,
+        });
+        selectionRef.current = selection;
+        if (action.type === 'hover') setCursor(action.square);
+        if (action.type === 'pickup' || action.type === 'drop') handleSquare(action.square);
+        if (action.type === 'refuse') handleSquare(null);
+        // 'none' and 'swallowed' change nothing, deliberately.
       }
     };
     tick();
@@ -389,7 +437,7 @@ export function PianoChessGame({
     let cancelled = false;
     const timer = setTimeout(async () => {
       const fen = gameRef.current.game.fen;
-      const served = await requestOpponentMove({ fen, rung: rungId, gameId, userId });
+      const served = await requestOpponentMove({ fen, rung: rungId, gameId, userId: lockedUser });
       const reply = served
         || chooseMove(fen, { difficulty: localFallbackDifficulty, seed: gameRef.current.history.length });
       if (cancelled || !reply) return;
@@ -398,7 +446,7 @@ export function PianoChessGame({
       logger().info('opponent-replied', { san: reply.san, engine: served ? served.engine : 'local' });
     }, opponentDelayMs);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [game.status, playerColor, rungId, gameId, opponentDelayMs, userId, localFallbackDifficulty]);
+  }, [game.status, playerColor, rungId, gameId, opponentDelayMs, lockedUser, localFallbackDifficulty]);
 
   // One record per finished game, posted only for a signed-in player — guests
   // never reach the per-user endpoints. Ref-guarded, not state-guarded: the
@@ -411,8 +459,8 @@ export function PianoChessGame({
       startedAt: startedAtRef.current, endedAt: Date.now(),
     });
     setFinishedRecord(record);
-    if (record && userId) saveGameRecord(userId, record);
-    logger().info('game-recorded', { ...(record || {}), persisted: !!(record && userId) });
+    if (record && lockedUser) saveGameRecord(lockedUser, record);
+    logger().info('game-recorded', { ...(record || {}), persisted: !!(record && lockedUser) });
     // Everything but the game-over flag is read at the moment the game ends.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game.status?.game_over]);
@@ -429,6 +477,11 @@ export function PianoChessGame({
   const hintTargets = help.legal
     ? (game.origin ? destinationsFor(game, game.origin) : playableSources(game))
     : [];
+  // The answer to the pick-up: each eligible square wears the chord that
+  // reaches it. Not help and never charged — the double-play that lifted the
+  // piece WAS the request. Config can silence it for players who want the
+  // intersection drill back.
+  const squareLabels = cues.showDestinationLabels ? destinationBadges(game, liveScheme) : {};
   const cursorChord = cursor ? squareToChord(cursor, liveScheme) : null;
   // Only while a piece is held and the cursor names a different square. Capture
   // targets get a ghost too — most previews the player cares about are captures.
@@ -437,7 +490,13 @@ export function PianoChessGame({
     ? { square: cursor, piece: heldPiece }
     : null;
   const captured = capturedPieces(game.history);
-  const prompt = promptFor(game, game.rejection);
+  // Only offered when the hovered square really does hold a piece this player
+  // can move — naming the double on an empty square would be an instruction
+  // that fails when followed.
+  const pickupChord = !game.origin && cursor && playableSources(game).includes(cursor)
+    ? cursorChord?.symbol ?? null
+    : null;
+  const prompt = promptFor(game, game.rejection, pickupChord);
   const turnLabel = game.status?.turn === 'w' ? 'White' : 'Black';
 
   return (
@@ -450,6 +509,8 @@ export function PianoChessGame({
           fileLabels={fileLabels}
           rankLabels={rankLabels}
           selected={game.origin}
+          heldSquare={game.origin}
+          squareLabels={squareLabels}
           candidates={candidates}
           hintTargets={hintTargets}
           bestMove={help.best}
@@ -468,6 +529,10 @@ export function PianoChessGame({
             program="Piano Chess"
             ancestors={onDeactivate ? [{ label: 'Games', onClick: onDeactivate }] : []}
           />
+          {/* Whoever started the game, latched at mount — a kiosk user switch
+              mid-game must not change whose config plays or whose record
+              gets written, and the screen has to say so. */}
+          <p className="piano-chess__locked-user">Playing as {lockedUser || 'Guest'}</p>
           <p className="piano-chess__turn">
             {game.status?.game_over ? 'Game over' : `${turnLabel} to move`}
             {/* The active rung, straight from the config ladder — the bundled
