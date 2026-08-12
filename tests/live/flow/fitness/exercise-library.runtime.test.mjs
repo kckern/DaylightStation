@@ -43,8 +43,14 @@
  * CLEANUP
  * -------
  * Saving is part of the journey, so this test writes to the household workout
- * shelf. Everything it creates is deleted in `afterAll`, which then asserts no
- * test workout survived. Nothing is written to session history.
+ * shelf. Completing a run ALSO writes to session history — the runner opens a
+ * session to attribute the strength block to. Both are deleted in `afterAll`,
+ * which then asserts neither survived.
+ *
+ * That second cleanup is not optional. A leaked session is a workout that never
+ * happened, and it is indistinguishable from a real one to session detail,
+ * recaps, the longitudinal widget, and Strava reconciliation. An earlier run of
+ * this test left one in real household history.
  */
 
 import { test, expect } from '@playwright/test';
@@ -87,6 +93,13 @@ let page;
 
 /** Workout ids this run created, deleted in afterAll. */
 const createdWorkoutIds = new Set();
+
+/**
+ * Session ids this run caused to be opened, deleted in afterAll. Completing a
+ * run posts to /sessions/:id/strength; that id is the session the runner opened
+ * for attribution, and it lands in real household history if left behind.
+ */
+const createdSessionIds = new Set();
 
 /** Every fitness API request the page made, in order. */
 let apiCalls = [];
@@ -199,6 +212,8 @@ test.describe('Exercise Library: browse → build → run', () => {
       const url = req.url();
       if (url.includes('/api/v1/fitness/')) {
         apiCalls.push({ method: req.method(), path: url.replace(BASE_URL, '') });
+        const strength = url.match(/\/sessions\/([^/]+)\/strength/);
+        if (strength) createdSessionIds.add(decodeURIComponent(strength[1]));
       }
     });
   });
@@ -226,6 +241,17 @@ test.describe('Exercise Library: browse → build → run', () => {
     const { workouts: remaining = [] } = await finalRes.json();
     const stillThere = remaining.filter((w) => String(w.id || '').startsWith(TEST_ID_PREFIX));
     expect(stillThere.map((w) => w.id), 'cleanup must leave no test workouts on the shelf').toEqual([]);
+
+    // Sessions the runner opened to attribute strength runs to. Left behind,
+    // each one reads as a real workout in history — see the CLEANUP docblock.
+    const survivingSessions = [];
+    for (const sessionId of createdSessionIds) {
+      const res = await fetch(`${API_URL}/api/v1/fitness/sessions/${sessionId}`, { method: 'DELETE' });
+      console.log(`cleanup: DELETE session ${sessionId} → ${res.status}`);
+      const check = await fetch(`${API_URL}/api/v1/fitness/sessions/${sessionId}`);
+      if (check.status !== 404) survivingSessions.push(`${sessionId} (GET → ${check.status})`);
+    }
+    expect(survivingSessions, 'cleanup must leave no test sessions in history').toEqual([]);
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
