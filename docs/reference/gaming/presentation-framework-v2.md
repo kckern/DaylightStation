@@ -108,6 +108,8 @@ Connector, height, and component profiles provide the same indirection for fence
 
 Connector derivation is measured metadata, not a universal source-layout assumption. Recipes may declare `top_corner_row_offset` when a sheet places top corners below a cap row; seam-extension metadata repairs transparent edge pixels separately. Connector QA must prove each corner is a continuous two-axis piece before a derived atlas is approved.
 
+Terrain derivation likewise supports measured `outer_stride` for non-contiguous 3×3 source blocks and exact `color_map` substitutions for palette normalization. This keeps all-cardinal interface geometry and biome palette decisions reproducible without modifying vendor art; topology QA remains mandatory after either operation.
+
 ## Scene vocabulary
 
 All authored coordinates are logical. `pixel_scale` controls only final viewport magnification.

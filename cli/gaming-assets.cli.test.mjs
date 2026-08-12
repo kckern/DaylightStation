@@ -254,6 +254,26 @@ describe('gaming asset audit tooling', () => {
     await assert.rejects(deriveFenceConnectorCatalog({ root, manifestPath, catalogOut }), /top_corner_row_offset is invalid/);
   });
 
+  it('derives spaced blob source blocks and applies explicit palette normalization', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'gaming-blob-stride-'));
+    const sourcePath = path.join(root, 'assets', 'source.png'); await mkdir(path.dirname(sourcePath), { recursive: true });
+    const source = createCanvas(80, 48); const context = source.getContext('2d');
+    context.fillStyle = '#ff0000'; context.fillRect(0, 0, 16, 16);
+    context.fillStyle = '#00ff00'; context.fillRect(32, 0, 16, 16);
+    context.fillStyle = '#0000ff'; context.fillRect(64, 0, 16, 16);
+    await writeFile(sourcePath, source.toBuffer('image/png'));
+    const recipePath = path.join(root, 'blob.yml'); const out = path.join(root, 'derived.png');
+    await writeFile(recipePath, YAML.stringify({
+      source: 'assets/source.png', cell: [16, 16], outer_origin: [0, 0], outer_stride: [2, 1],
+      inner: { layout: 'inverse-outer' }, negative: false, color_map: { '#ff0000': '#112233' },
+    }));
+    await deriveBlobAutotile({ root, recipePath, out });
+    const derived = await loadImage(out); const sample = createCanvas(64, 80); const sampleContext = sample.getContext('2d'); sampleContext.drawImage(derived, 0, 0);
+    assert.deepEqual([...sampleContext.getImageData(0, 0, 1, 1).data], [17, 34, 51, 255]);
+    const invalid = YAML.parse(await readFile(recipePath, 'utf8')); invalid.outer_stride = [0, 1]; await writeFile(recipePath, YAML.stringify(invalid));
+    await assert.rejects(deriveBlobAutotile({ root, recipePath, out }), /outer_stride must be positive cell steps/);
+  });
+
   it('writes contact-sheet PNG, frame GIF, and assembly PNG from source data', async () => {
     const { root, source } = await fixture();
     const sheet = path.join(root, 'out', 'sheet.png');
