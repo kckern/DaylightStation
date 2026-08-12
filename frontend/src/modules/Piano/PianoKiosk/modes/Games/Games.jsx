@@ -10,9 +10,12 @@ import PianoTile from '../../PianoTile.jsx';
 import { balancedColumns } from '../../tileGridLayout.js';
 import { SkeletonStage } from '../../Skeleton.jsx';
 
-// Friendly labels for the registry ids.
+// Friendly labels for the registry ids. 'card-game' keeps its registry id but
+// every player-facing surface calls it Scale Stadium (the mat rename, 451bbfc72);
+// the campaign rewrite of this registry landed in parallel and reverted the
+// label by accident — restored at the origin merge.
 const GAME_LABELS = {
-  'card-game': 'Card Game',
+  'card-game': 'Scale Stadium',
   'space-invaders': 'Space Invaders',
   tetris: 'Tetris',
   flashcards: 'Flashcards',
