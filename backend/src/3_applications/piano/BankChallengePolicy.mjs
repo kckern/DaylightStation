@@ -1,4 +1,5 @@
-import { searchBank } from '#shared/music/exerciseBank.mjs';
+import { materializeById, parseInstanceId, searchBank } from '#shared/music/exerciseBank.mjs';
+import { normalizeRequirement } from '#shared/music/learningPrograms.mjs';
 
 /**
  * Challenge selection from the exercise bank.
@@ -85,6 +86,20 @@ export class BankChallengePolicy {
     if (!forms) throw new Error(`Unsupported piano challenge kind: ${kind}`);
 
     const recent = this.attemptStore?.listRecent?.(userId, { limit: 200 }) || [];
+    const exact = normalizeRequirement(requirements);
+    if (exact) {
+      const parsed = parseInstanceId(exact.exercise_id);
+      const seed = parsed ? this.#bank.getSeed(parsed.seedId) : null;
+      const instance = seed ? materializeById(seed, exact.exercise_id) : null;
+      if (!instance) throw new Error(`Unknown exercise instance: ${exact.exercise_id}`);
+      if (!forms.includes(instance.form)) throw new Error(`Exercise form ${instance.form} cannot serve challenge kind ${kind}`);
+      if (!instance.supports.includes(exact.mode)) throw new Error(`Exercise does not support mode: ${exact.mode}`);
+      return preparedChallenge({
+        challengeId, kind, instance, mode: exact.mode, timeoutMs: this.timeoutMs,
+        selection: { curriculum: requirements.program_id ?? requirements.curriculum ?? 'exact-requirement', exact: true },
+        requirement: exact,
+      });
+    }
     const level = Number.isFinite(requirements.level) ? requirements.level : estimateLevel(recent);
     const mode = requirements.mode || 'free';
 
@@ -95,6 +110,7 @@ export class BankChallengePolicy {
       found = searchBank(this.#bank.allSeeds(), {
         mode,
         form: forms,
+        collection: typeof requirements.collection === 'string' ? requirements.collection : null,
         levelMin: Math.max(1, level - BAND - widen),
         levelMax: Math.min(10, level + BAND + widen),
         limit: 200,
@@ -110,24 +126,8 @@ export class BankChallengePolicy {
     const chosen = tied[((sequence % tied.length) + tied.length) % tied.length];
     const instance = chosen.instance;
 
-    return {
-      challenge_id: challengeId,
-      kind,
-      prompt: {
-        exercise_id: instance.id,
-        label: promptLabel(instance),
-        expected_midi: instance.events.flatMap((e) => e.notes.map((n) => n.midi)),
-        ordering: instance.ordering,
-        staff: instance.staff,
-        level: instance.level?.[mode] ?? null,
-        mode,
-        // Held-set material is matched on pitch classes and its bass, not on a
-        // sequence, so a chord prompt has to carry both or the provider has
-        // nothing to compare against.
-        ...(instance.ordering === 'any' ? chordTarget(instance) : {}),
-      },
-      timeout_ms: this.timeoutMs,
-      pedagogy_policy_version: POLICY_VERSION,
+    return preparedChallenge({
+      challengeId, kind, instance, mode, timeoutMs: this.timeoutMs,
       selection: {
         curriculum: 'exercise-bank',
         level,
@@ -136,8 +136,32 @@ export class BankChallengePolicy {
         prior_attempts: chosen.attempts,
         prior_average: chosen.average,
       },
-    };
+    });
   }
+}
+
+function preparedChallenge({ challengeId, kind, instance, mode, timeoutMs, selection, requirement = null }) {
+  return {
+    challenge_id: challengeId,
+    kind,
+    prompt: {
+      exercise_id: instance.id,
+      label: promptLabel(instance),
+      expected_midi: instance.events.flatMap((event) => event.notes.map((note) => note.midi)),
+      expected_events: instance.events,
+      ordering: instance.ordering,
+      staff: instance.staff,
+      key_signature: instance.key,
+      level: instance.level?.[mode] ?? null,
+      mode,
+      ...(instance.ordering === 'any' ? chordTarget(instance) : {}),
+      ...(requirement?.gates?.pace?.target_bpm ? { tempo_bpm: requirement.gates.pace.target_bpm } : {}),
+    },
+    ...(requirement ? { requirement } : {}),
+    timeout_ms: timeoutMs,
+    pedagogy_policy_version: POLICY_VERSION,
+    selection,
+  };
 }
 
 /** Pitch-class target for chord material, in the shape the provider reads. */

@@ -82,6 +82,13 @@ than by playing (the player closes the kiosk mid-exercise) is recorded as `abort
 `metrics.reason: disposed`; the adaptive policy scores only completed attempts, so abandoned
 evidence is diagnostic without skewing what gets served next.
 
+Completed bank-backed game attempts also carry the same assessment evidence as
+the Exercises runner: `purpose: challenge`, stable `prompt.exercise_id`,
+criterion vector, optional pace gate, diagnostics, rubric version, and verdict.
+That makes a game a presentation of an exercise, not a separate progress silo.
+A qualifying card-game or activity performance can therefore satisfy a Hanon
+step, a teacher-assigned track, or a video exit checkpoint; free practice cannot.
+
 Only input stamped after the attempt starts is graded. A key struck during the prepare→start
 gap is counted in `metrics.staleInputsIgnored` and logged as
 `piano.challenge.pre-start-input-ignored` — a nonzero count means the player was noodling

@@ -86,6 +86,21 @@ describe('diagnostics', () => {
   });
 });
 
+describe('portable advancement evidence', () => {
+  it('accepts an explicit purpose and a verdict tied to the stored score', () => {
+    const result = validateAssessment(completed({
+      purpose: 'challenge', verdict: { score: 0.8, passed: true },
+    }));
+    assert.equal(result.valid, true, result.errors.join('; '));
+  });
+
+  it('rejects invented purposes and verdicts that disagree with the score', () => {
+    assert.equal(validateAssessment(completed({ purpose: 'homework' })).valid, false);
+    assert.equal(validateAssessment(completed({ verdict: { score: 0.7, passed: true } })).valid, false);
+    assert.equal(validateAssessment({ status: 'aborted', verdict: { score: 0, passed: false } }).valid, false);
+  });
+});
+
 describe('re-projection — the reason the vector is kept', () => {
   const vector = { completeness: 1, cleanliness: 0.5, placement: 0.5 };
 

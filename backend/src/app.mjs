@@ -255,10 +255,12 @@ import { YamlGamingDefinitionStore } from './1_adapters/persistence/yaml/gaming/
 import { YamlGamingAssetCatalog } from './1_adapters/persistence/yaml/gaming/YamlGamingAssetCatalog.mjs';
 import { YamlGamingSessionStore } from './1_adapters/persistence/yaml/gaming/YamlGamingSessionStore.mjs';
 import { YamlPianoAttemptStore } from './1_adapters/persistence/yaml/gaming/YamlPianoAttemptStore.mjs';
+import { YamlPianoLearningStore } from './1_adapters/persistence/yaml/piano/YamlPianoLearningStore.mjs';
 import { YamlExerciseBank } from './1_adapters/piano/YamlExerciseBank.mjs';
 import { PianoScaleChallengePolicy } from './3_applications/piano/PianoScaleChallengePolicy.mjs';
 import { BankChallengePolicy } from './3_applications/piano/BankChallengePolicy.mjs';
 import { scaleClashDefinition } from '#shared/gaming/fixtures/scaleClash.mjs';
+import { PianoLearningService } from './3_applications/piano/PianoLearningService.mjs';
 import { createWikipediaRouter } from './4_api/v1/routers/wikipedia.mjs';
 import { createChessRouter } from './4_api/v1/routers/chess.mjs';
 import { createStockfishEngine } from './1_adapters/chess/StockfishEngineAdapter.mjs';
@@ -2240,6 +2242,31 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       return rewritten;
     },
   } : null;
+  // Piano program assignments are edited from the existing Teacher console, so
+  // they use that console's one authorization predicate rather than inventing a
+  // second grown-up/PIN interpretation in the piano bounded context.
+  const { makeTeacherGate } = await import('#apps/school/TeacherGate.mjs');
+  const schoolTeacherGate = makeTeacherGate({
+    configService, userService, householdId,
+    logger: rootLogger.child({ module: 'school-teacher-gate' }),
+  });
+  const pianoAttemptStore = new YamlPianoAttemptStore({
+    usersDir: join(configService.getDataDir(), 'users'),
+  });
+  // Exercise bank: seeds at data/content/music/, instances computed on demand.
+  const exerciseBank = new YamlExerciseBank({ contentDir: contentPath });
+  const pianoLearningStore = new YamlPianoLearningStore({
+    usersDir: join(configService.getDataDir(), 'users'),
+    assignmentsDir: configService.getHouseholdPath('apps/piano/program-assignments'),
+  });
+  const pianoLearningService = new PianoLearningService({
+    exerciseBank,
+    attemptStore: pianoAttemptStore,
+    learningStore: pianoLearningStore,
+    studioDatastore: pianoStudioDatastore,
+    teacherGate: schoolTeacherGate,
+    logger: rootLogger.child({ module: 'piano-learning' }),
+  });
   const pianoContainer = new PianoContainer({
     studioDatastore: pianoStudioDatastore,
     fitnessPlayableService,
@@ -2247,16 +2274,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     composerSongStore,
     configService,
     plexClient: pianoPlexClient,
+    learningService: pianoLearningService,
     logger: rootLogger.child({ module: 'piano-api' })
   });
-  const pianoAttemptStore = new YamlPianoAttemptStore({
-    usersDir: join(configService.getDataDir(), 'users'),
-  });
-  // Exercise bank: seeds at data/content/music/, instances computed on demand.
-  const exerciseBank = new YamlExerciseBank({ contentDir: contentPath });
   v1Routers.piano = createPianoRouter({
     pianoContainer,
     pianoAttemptStore,
+    pianoLearningService,
     // Challenges come from the exercise bank when it is installed, and fall back
     // to the hardcoded curriculum when it is not — a kiosk with no content mount
     // should still be able to play.
@@ -2291,11 +2315,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // The console write predicate for SchoolService's own teacher writes
   // (quiz-request dismissal). Built through the same factory the lifecycle
   // composition uses — one copy of the accessor text, no drift.
-  const { makeTeacherGate } = await import('#apps/school/TeacherGate.mjs');
-  const schoolTeacherGate = makeTeacherGate({
-    configService, userService, householdId,
-    logger: rootLogger.child({ module: 'school-teacher-gate' }),
-  });
   // Wave-3 planning domains: stores + gated writes (teacher-console W3-1..4).
   const { SetAcademicPeriods } = await import('#apps/school/usecases/SetAcademicPeriods.mjs');
   const { SetPassOverride } = await import('#apps/school/usecases/SetPassOverride.mjs');

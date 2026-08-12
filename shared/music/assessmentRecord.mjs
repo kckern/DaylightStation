@@ -44,6 +44,9 @@ export function validateAssessment(body = {}) {
   const completed = body.status === 'completed';
 
   if (!ATTEMPT_STATUSES.includes(body.status)) errors.push(`status must be one of: ${ATTEMPT_STATUSES.join(', ')}`);
+  if (body.purpose !== undefined && !['practice', 'challenge'].includes(body.purpose)) {
+    errors.push('purpose must be practice or challenge');
+  }
 
   // The scalar keeps its old contract exactly, so existing writers stay valid.
   if (completed) {
@@ -101,6 +104,18 @@ export function validateAssessment(body = {}) {
     } else {
       for (const [name, value] of Object.entries(body.diagnostics)) {
         if (!Number.isFinite(value)) errors.push(`diagnostic ${name} must be a number`);
+      }
+    }
+  }
+
+  if (body.verdict !== undefined) {
+    if (!completed || !body.verdict || typeof body.verdict !== 'object' || Array.isArray(body.verdict)) {
+      errors.push('verdict must be an object on a completed attempt');
+    } else {
+      if (!isUnit(body.verdict.score)) errors.push('verdict.score must be a number from 0 to 1');
+      if (typeof body.verdict.passed !== 'boolean') errors.push('verdict.passed must be boolean');
+      if (isUnit(body.score) && isUnit(body.verdict.score) && body.score !== body.verdict.score) {
+        errors.push('verdict.score must equal score');
       }
     }
   }

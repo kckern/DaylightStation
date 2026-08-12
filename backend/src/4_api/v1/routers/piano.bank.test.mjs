@@ -54,6 +54,16 @@ describe('exercise bank API', () => {
     expect(response.body.totals).toEqual({ seeds: 1, instances: 48 });
   });
 
+  it('serves a catalog projection for the learner-facing browser', async () => {
+    const response = await get(stubBank(), '/bank/catalog');
+    expect(response.status).toBe(200);
+    expect(response.body.totals).toMatchObject({ seeds: 1, variants: 48 });
+    expect(response.body.seeds[0]).toMatchObject({
+      id: 'chords/triads', title: 'Triads', variants: 48,
+      default_instance_id: 'chords/triads@root=C,quality=major,inversion=root',
+    });
+  });
+
   it('serves a collection with the seeds actually on disk', async () => {
     const response = await get(stubBank(), '/bank/chords');
     expect(response.status).toBe(200);

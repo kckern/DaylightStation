@@ -27,6 +27,7 @@ export default function LessonList({ lessons, sections = null, onPlay, sequentia
     const img = item.image || item.thumbnail;
     const locked = lockedIds.has(k);
     const current = k === currentId;
+    const checkpointPending = st.watched && item?.piano?.checkpoint && !item?.checkpointStatus?.passed;
     const dur = fmt(item.duration);
     return (
       <li key={k}>
@@ -36,11 +37,11 @@ export default function LessonList({ lessons, sections = null, onPlay, sequentia
           <div className="piano-episode__thumb">
             {img && <img src={img} alt="" loading="eager" decoding="async" />}
             {locked && <span className="piano-episode__lock" aria-label="Later"><LockIcon /></span>}
-            {!locked && st.watched && <span className="piano-episode__check" aria-label="Completed"><span className="piano-episode__check-mark">✓</span></span>}
+            {!locked && st.watched && !checkpointPending && <span className="piano-episode__check" aria-label="Completed"><span className="piano-episode__check-mark">✓</span></span>}
             {!locked && !st.watched && st.percent > 0 && <span className="piano-episode__bar"><span style={{ width: `${st.percent}%` }} /></span>}
             {dur && <span className="piano-episode__duration">{dur}</span>}
           </div>
-          <div className="piano-episode__label"><span className="piano-episode__title">{item.label || item.title}</span></div>
+          <div className="piano-episode__label"><span className="piano-episode__title">{item.label || item.title}</span>{checkpointPending && <small>Exercise checkpoint due</small>}</div>
           {current && <span className="psc-play"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>Play</span>}
         </button>
       </li>
