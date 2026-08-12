@@ -124,6 +124,7 @@ export function validateAssetCatalog(catalog) {
     if (!APPROVED_LICENSE_SCOPES.has(asset?.license_scope)) errors.push(`${prefix}: approved license_scope is unknown or unsupported`);
     if (!Array.isArray(asset?.tags) || !asset.tags.length || asset.tags.some((tag) => !ASSET_ID.test(String(tag)))) errors.push(`${prefix}: approved asset needs valid tags`);
     if (!['image', 'sprite-sheet', 'tile-sheet', 'ui-sheet', 'effect-sheet'].includes(asset?.kind)) errors.push(`${prefix}: invalid kind`);
+    if (asset?.requires_all_ports !== undefined && typeof asset.requires_all_ports !== 'boolean') errors.push(`${prefix}: requires_all_ports must be boolean`);
     if (!asset?.source || String(asset.source).startsWith('/') || String(asset.source).includes('..')) errors.push(`${prefix}: source must be a relative canonical path`);
     if (!/^[a-f0-9]{64}$/.test(String(asset?.source_sha256 || ''))) errors.push(`${prefix}: source_sha256 must be a sha256`);
     const geometry = asset?.geometry;
@@ -135,9 +136,10 @@ export function validateAssetCatalog(catalog) {
       if (frame?.cell && (geometry.layout !== 'grid' || !isPair(frame.cell))) errors.push(`${prefix}: frame ${frameId} has invalid cell`);
       if (frame?.rect && (geometry.layout !== 'freeform' || !Array.isArray(frame.rect) || frame.rect.length !== 4 || frame.rect.some((part) => !Number.isInteger(part) || part < 0))) errors.push(`${prefix}: frame ${frameId} has invalid rect`);
       if (typeof frame?.anchor === 'string' && !FRAME_ANCHORS.has(frame.anchor)) errors.push(`${prefix}: frame ${frameId} has invalid anchor`);
+      if (frame?.allow_edge_contact !== undefined && typeof frame.allow_edge_contact !== 'boolean') errors.push(`${prefix}: frame ${frameId} allow_edge_contact must be boolean`);
     }
     if (asset?.autotile !== undefined) {
-      if (asset.kind !== 'tile-sheet' || asset.autotile?.topology !== 'cardinal-4') errors.push(`${prefix}: autotile requires tile-sheet cardinal-4 topology`);
+      if (asset.kind !== 'tile-sheet' || !['cardinal-4', 'cardinal-4+diagonal-corners'].includes(asset.autotile?.topology)) errors.push(`${prefix}: autotile requires a supported tile-sheet topology`);
       for (const polarity of ['positive', 'negative']) {
         const mapping = asset.autotile?.[polarity];
         if (polarity === 'positive' && (!mapping || typeof mapping !== 'object')) errors.push(`${prefix}: autotile needs a positive mapping`);
@@ -146,6 +148,14 @@ export function validateAssetCatalog(catalog) {
             if (mask !== 'fallback' && !/^(?:n)?(?:e)?(?:s)?(?:w)?$/.test(mask)) errors.push(`${prefix}: autotile ${polarity} mask is invalid: ${mask}`);
             if (!ASSET_ID.test(String(frameId)) || !asset.frames?.[frameId]) errors.push(`${prefix}: autotile ${polarity} references unknown frame: ${frameId}`);
           }
+        }
+      }
+      if (asset.autotile?.topology === 'cardinal-4+diagonal-corners') {
+        const innerCorners = asset.autotile?.inner_corners;
+        if (!innerCorners || typeof innerCorners !== 'object' || Array.isArray(innerCorners)) errors.push(`${prefix}: diagonal-corner autotile needs inner_corners`);
+        else for (const [key, frameId] of Object.entries(innerCorners)) {
+          if (!/^(?:nw|ne|se|sw)(?:-(?:nw|ne|se|sw))*$/.test(key)) errors.push(`${prefix}: inside-corner key is invalid: ${key}`);
+          if (!ASSET_ID.test(String(frameId)) || !asset.frames?.[frameId]) errors.push(`${prefix}: inside-corner key references unknown frame: ${frameId}`);
         }
       }
     }
@@ -167,6 +177,22 @@ export function terrainNeighbourMask(cells, [x, y]) {
   return `${has(x, y - 1) ? 'n' : ''}${has(x + 1, y) ? 'e' : ''}${has(x, y + 1) ? 's' : ''}${has(x - 1, y) ? 'w' : ''}` || 'isolated';
 }
 
+/** Missing diagonals that require an inside-corner tile.
+ * A diagonal matters only when both adjoining cardinal cells are present. */
+export function terrainInnerCornerKeys(cells, [x, y]) {
+  const has = (offsetX, offsetY) => cells.has(`${x + offsetX},${y + offsetY}`);
+  const cardinalCount = [[0, -1], [1, 0], [0, 1], [-1, 0]].filter(([offsetX, offsetY]) => has(offsetX, offsetY)).length;
+  // With only two adjacent neighbours this cell is itself the convex outer
+  // corner. Concave detail begins at a three-way or four-way material join.
+  if (cardinalCount < 3) return [];
+  return [
+    ['nw', [0, -1], [-1, 0], [-1, -1]],
+    ['ne', [0, -1], [1, 0], [1, -1]],
+    ['se', [0, 1], [1, 0], [1, 1]],
+    ['sw', [0, 1], [-1, 0], [-1, 1]],
+  ].filter(([, first, second, diagonal]) => has(...first) && has(...second) && !has(...diagonal)).map(([key]) => key);
+}
+
 /** Resolve a reviewed terrain-frame mapping; missing masks must be explicit. */
 export function resolveTerrainFrame({ cells, at, frames, polarity = 'positive' }) {
   if (!['positive', 'negative'].includes(polarity)) throw new Error(`terrain polarity must be positive or negative: ${polarity}`);
@@ -176,5 +202,11 @@ export function resolveTerrainFrame({ cells, at, frames, polarity = 'positive' }
   const mapping = frames?.[polarity] ?? frames;
   const frame = mapping?.[mask] ?? mapping?.fallback;
   if (!frame) throw new Error(`terrain mapping has no frame for neighbour mask: ${mask}`);
-  return { mask, frame };
+  const innerCorners = terrainInnerCornerKeys(cells, at);
+  if (!innerCorners.length) return { mask, frame, inner_corners: [] };
+  if (!frames?.inner_corners) throw new Error(`terrain mapping creates unsupported inside corner: ${innerCorners.join('-')}`);
+  const innerKey = innerCorners.join('-');
+  const innerFrame = frames.inner_corners[innerKey];
+  if (!innerFrame) throw new Error(`terrain mapping has no frame for inside-corner key: ${innerKey}`);
+  return { mask, frame: innerFrame, inner_corners: innerCorners };
 }

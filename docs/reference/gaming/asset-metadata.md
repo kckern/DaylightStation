@@ -114,6 +114,8 @@ Exactly one of `cell` or `rect` is allowed:
 - A frame inherits the asset default anchor/tags unless explicitly overridden.
 - `content_bounds` is `[x, y, width, height]` inside the frame and must exactly match its non-transparent pixels. It makes padded animation cells auditable and gives scale review a visible size rather than a misleading crop size.
 
+Frames tagged through an asset with `ground-contact` must use both exact `content_bounds` and a custom point anchor whose y coordinate equals the visible-alpha bottom. Visible alpha must also retain transparent padding on all four sides of the source frame. These are the hard checks for trees, actors, boats, and other silhouettes whose feet, trunk, or hull must reach their authored ground point without being truncated by a source-cell or viewport boundary.
+
 Frame IDs are local to their asset. A consuming scene refers to `npc.farmer-bob#idle.down.0` only for inspection/debugging; normal gameplay-facing YAML should refer to a named clip.
 
 ## Anchors and offsets
@@ -228,7 +230,7 @@ Catalogs declare the mappings explicitly:
 
 ```yaml
 autotile:
-  topology: cardinal-4
+  topology: cardinal-4+diagonal-corners
   positive:
     nesw: water.center
     esw: water.edge.north
@@ -237,9 +239,20 @@ autotile:
     nesw: sand.center
     esw: sand.edge.north
     es: sand.corner.nw
+  inner_corners:
+    nw: water.inner.nw
+    ne: water.inner.ne
+    se: water.inner.se
+    sw: water.inner.sw
 ```
 
 Every mask that an authored region may produce must be declared, or `fallback` may be used only while a pack remains in curation.
+
+Cardinal masks select the outside edge or corner. `cardinal-4+diagonal-corners` then checks the four diagonals: when two adjoining cardinal neighbours exist but their shared diagonal does not, `inner_corners` replaces the otherwise square center/edge tile with reviewed concave-corner art. Rendering fails when an authored inside corner has no exact mapping; a center tile is never accepted as a visual fallback.
+
+Production scenes should set `forbid_direct_autotile_frames: true`. With this gate, a placement cannot name any center, edge, outer-corner, or inner-corner frame used by an asset's autotile maps; the material must be authored as a terrain region. Other decorative frames from the same atlas remain valid placements.
+
+Production scenes should also set `fail_on_frame_edge_contact: true`. A non-tile sprite whose visible alpha touches any source-frame edge is rejected because the renderer cannot prove it was not cropped from a larger sprite. Structural port-based assets are exempt—their edge contact is required for connection—and a reviewed exceptional frame may set `allow_edge_contact: true` explicitly.
 
 Cardinal masks use stable `n/e/s/w` order; `isolated` names a cell with no cardinal neighbours. Thin routes may explicitly map `n`, `e`, `s`, `w`, `ns`, and `ew`, but those mappings are asset capabilities—not permission to author concave shapes when the reviewed sheet has no inner-corner art.
 
@@ -255,6 +268,35 @@ frames:
 ```
 
 Use measured visible-alpha bounds when adjoining assemblies. Nominal 16×16 cells do not guarantee that a fence rail, bridge landing, hull, or dock plank reaches the cell boundary.
+
+### Ports and checked assembly connections
+
+Frames that form structural assemblies may name native-pixel connection ports. A port may sit on the frame boundary or inside transparent padding when that point represents the measured end of visible art:
+
+```yaml
+frames:
+  horizontal.start:
+    cell: [1, 0]
+    ports: { east: [16, 8], south: [8, 14] }
+  vertical.middle:
+    cell: [0, 1]
+    ports: { north: [8, 0], south: [8, 16] }
+```
+
+High-risk scene assemblies give their concrete placements stable IDs and declare every required join:
+
+```yaml
+connections:
+  - { from: [garden.nw, east], to: [garden.north-1, west] }
+
+placements:
+  - { id: garden.nw, asset: prop.wood-fence#horizontal.start, at: [32, 188] }
+  - { id: garden.north-1, asset: prop.wood-fence#horizontal.middle, at: [64, 188] }
+```
+
+The scene renderer transforms each port through anchor, scale, mirror, and rotation rules and rejects the render unless both world-space points coincide exactly. IDs and ports describe visual assembly only; they are not gameplay entity IDs or collision sockets.
+
+An asset with `requires_all_ports: true` makes every port on every ID-bearing placement mandatory. Each must occur in exactly one scene connection. This is appropriate for structural sets such as fences: it rejects dangling continuation shafts, reused joins, and a corner frame incorrectly substituted for a capped endpoint.
 
 ## Placement language
 
@@ -282,6 +324,7 @@ Scenes and prefabs use these terms consistently:
 | `scale` | Positive uniform visual multiplier; use `size: [width, height]` only when deliberate non-uniform sizing is required. |
 | `z` | Stable, explicit draw ordering number. |
 | `flip_x` | Horizontal visual mirror. Do not use it to mean logical facing. |
+| `id` | Optional scene-local identifier used by checked visual `connections`. |
 
 `depth_sort: true` uses the placement anchor as the ground point within its numeric `z` band. It is appropriate for actors, trees, and props, but not for terrain. `shadow` is a small destination-space contact ellipse drawn beneath the sprite; it must not be used to compensate for a wrong anchor. Scenes fail on visible-alpha viewport clipping by default and may opt out only with `fail_on_clipping: false` for an intentional crop.
 

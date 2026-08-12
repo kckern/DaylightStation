@@ -32,6 +32,10 @@ assets:
       path.corner.sw: { cell: [0, 7] }
       path.edge.south: { cell: [1, 7] }
       path.corner.se: { cell: [2, 7] }
+      path.inner.nw: { cell: [1, 9] }
+      path.inner.ne: { cell: [0, 9] }
+      path.inner.se: { cell: [0, 8] }
+      path.inner.sw: { cell: [1, 8] }
       cliff.top-left: { cell: [8, 2] }
       cliff.top: { cell: [9, 2] }
       cliff.top-right: { cell: [10, 2] }
@@ -45,7 +49,7 @@ assets:
       grass.patch-b: { cell: [6, 9] }
       grass.patch-c: { cell: [7, 9] }
     autotile:
-      topology: cardinal-4
+      topology: cardinal-4+diagonal-corners
       positive:
         isolated: path.center
         n: path.edge.south
@@ -63,6 +67,11 @@ assets:
         ne: path.corner.sw
         new: path.edge.south
         nw: path.corner.se
+      inner_corners:
+        nw: path.inner.nw
+        ne: path.inner.ne
+        se: path.inner.se
+        sw: path.inner.sw
 
   terrain.path-detail:
     source: assets/default/environment/effects/path-overlays.png
@@ -102,8 +111,12 @@ assets:
       island.corner.ne: { cell: [1, 3] }
       island.corner.sw: { cell: [0, 4] }
       island.corner.se: { cell: [1, 4] }
+      water.inner.nw: { cell: [1, 4] }
+      water.inner.ne: { cell: [0, 4] }
+      water.inner.se: { cell: [0, 3] }
+      water.inner.sw: { cell: [1, 3] }
     autotile:
-      topology: cardinal-4
+      topology: cardinal-4+diagonal-corners
       positive:
         es: water.corner.nw
         esw: water.edge.north
@@ -119,6 +132,11 @@ assets:
         sw: island.corner.ne
         ne: island.corner.sw
         nw: island.corner.se
+      inner_corners:
+        nw: water.inner.nw
+        ne: water.inner.ne
+        se: water.inner.se
+        sw: water.inner.sw
 
   terrain.water-detail:
     source: assets/default/environment/effects/water-overlays.png
@@ -264,7 +282,7 @@ assets:
     status: approved
     license_scope: core-commercial
     kind: sprite-sheet
-    tags: [prop, foliage, tree]
+    tags: [prop, foliage, tree, ground-contact]
     geometry: { layout: grid, cell: [64, 80], grid: [3, 1] }
     frames:
       tree.a: { cell: [1, 0], anchor: { point: [32, 72] }, content_bounds: [11, 9, 41, 63] }
@@ -276,7 +294,7 @@ assets:
     status: approved
     license_scope: core-commercial
     kind: sprite-sheet
-    tags: [prop, foliage, tree, topdown]
+    tags: [prop, foliage, tree, topdown, ground-contact]
     geometry: { layout: grid, cell: [32, 64], grid: [3, 1] }
     frames:
       tree.a: { cell: [1, 0], anchor: { point: [16, 52] }, content_bounds: [10, 32, 12, 20] }
@@ -300,9 +318,19 @@ assets:
       rock.land-c: { cell: [6, 6] }
       shrub.round: { cell: [6, 9] }
       shrub.leafy: { cell: [7, 9] }
-      shrub.low: { cell: [5, 9] }
-      log.mossy: { cell: [0, 7] }
+      shrub.low: { cell: [6, 9] }
       stump: { cell: [0, 9] }
+
+  prop.fallen-log:
+    source: assets/default/environment/props/outdoor-decor.png
+    source_sha256: a8701a589560c54d1b99507e0fa3f62318ab0bdb630b9d3e906cbd91349e2f3a
+    status: approved
+    license_scope: core-commercial
+    kind: image
+    tags: [prop, log, wood, obstacle, ground-contact, topdown]
+    geometry: { layout: freeform }
+    frames:
+      plain: { rect: [64, 112, 32, 16], anchor: { point: [16, 14] }, content_bounds: [4, 3, 25, 11] }
 
   prop.wood-fence:
     source: assets/default/environment/props/fences.png
@@ -311,18 +339,20 @@ assets:
     license_scope: core-commercial
     kind: sprite-sheet
     tags: [prop, fence, boundary, wood, topdown]
+    requires_all_ports: true
     geometry: { layout: grid, cell: [16, 16], grid: [4, 4] }
     defaults: { anchor: top-left }
     frames:
-      horizontal.start: { cell: [1, 0] }
-      horizontal.middle: { cell: [2, 0] }
-      horizontal.end: { cell: [3, 0] }
-      horizontal.bottom.start: { cell: [1, 3] }
-      horizontal.bottom.middle: { cell: [2, 3] }
-      horizontal.bottom.end: { cell: [3, 3] }
-      vertical.start: { cell: [0, 0] }
-      vertical.middle: { cell: [0, 1] }
-      vertical.end: { cell: [0, 3] }
+      horizontal.start: { cell: [1, 0], ports: { east: [16, 8], south: [8, 14] } }
+      horizontal.middle: { cell: [2, 0], ports: { west: [0, 8], east: [16, 8] } }
+      horizontal.end: { cell: [3, 0], ports: { west: [0, 8], south: [8, 14] } }
+      horizontal.cap-east: { cell: [3, 0], ports: { west: [0, 8] } }
+      horizontal.bottom.start: { cell: [1, 3], ports: { north: [8, 0], east: [16, 8] } }
+      horizontal.bottom.middle: { cell: [2, 3], ports: { west: [0, 8], east: [16, 8] } }
+      horizontal.bottom.end: { cell: [3, 3], ports: { west: [0, 8], north: [8, 0] } }
+      vertical.start: { cell: [0, 0], ports: { south: [8, 14] } }
+      vertical.middle: { cell: [0, 1], ports: { north: [8, 0], south: [8, 16] } }
+      vertical.end: { cell: [0, 3], ports: { north: [8, 3] } }
 
   prop.flowers:
     source: assets/default/environment/props/flowers.png
@@ -341,34 +371,32 @@ assets:
       blue: { cell: [4, 1] }
 
   crop.tomato:
-    source: assets/default/environment/crops/crops.png
-    source_sha256: 7b0d6335b1dbe6c276528eba75bc4eb3ffa9fb5d4a69bfa3828df7a426aadff6
+    source: assets/default/environment/effects/crop-overlays.png
+    source_sha256: e0f5c43a192153f872603d410c0b798e04c05a8dbe4c8697fae964e2e3664400
     status: approved
     license_scope: core-commercial
     kind: sprite-sheet
-    tags: [prop, crop, tomato, garden, growth-stage, topdown]
-    geometry: { layout: grid, cell: [16, 16], grid: [7, 43] }
-    defaults: { anchor: bottom-center }
+    tags: [prop, crop, tomato, garden, growth-stage, overlay, padded-frame, topdown]
+    geometry: { layout: grid, cell: [18, 18], grid: [4, 2] }
     frames:
-      sprout: { cell: [2, 2] }
-      young: { cell: [3, 2] }
-      mature: { cell: [4, 2] }
-      ripe: { cell: [5, 2] }
+      sprout: { cell: [0, 0], anchor: { point: [9, 17] }, content_bounds: [7, 8, 5, 3] }
+      young: { cell: [1, 0], anchor: { point: [9, 17] }, content_bounds: [3, 3, 10, 9] }
+      mature: { cell: [2, 0], anchor: { point: [9, 17] }, content_bounds: [5, 1, 11, 12] }
+      ripe: { cell: [3, 0], anchor: { point: [9, 17] }, content_bounds: [5, 1, 11, 12] }
 
   crop.carrot:
-    source: assets/default/environment/crops/crops.png
-    source_sha256: 7b0d6335b1dbe6c276528eba75bc4eb3ffa9fb5d4a69bfa3828df7a426aadff6
+    source: assets/default/environment/effects/crop-overlays.png
+    source_sha256: e0f5c43a192153f872603d410c0b798e04c05a8dbe4c8697fae964e2e3664400
     status: approved
     license_scope: core-commercial
     kind: sprite-sheet
-    tags: [prop, crop, carrot, garden, growth-stage, topdown]
-    geometry: { layout: grid, cell: [16, 16], grid: [7, 43] }
-    defaults: { anchor: bottom-center }
+    tags: [prop, crop, carrot, garden, growth-stage, overlay, padded-frame, topdown]
+    geometry: { layout: grid, cell: [18, 18], grid: [4, 2] }
     frames:
-      sprout: { cell: [2, 4] }
-      young: { cell: [3, 4] }
-      mature: { cell: [4, 4] }
-      ripe: { cell: [5, 4] }
+      sprout: { cell: [0, 1], anchor: { point: [9, 17] }, content_bounds: [6, 8, 5, 4] }
+      young: { cell: [1, 1], anchor: { point: [9, 17] }, content_bounds: [5, 5, 7, 7] }
+      mature: { cell: [2, 1], anchor: { point: [9, 17] }, content_bounds: [5, 2, 7, 10] }
+      ripe: { cell: [3, 1], anchor: { point: [9, 17] }, content_bounds: [3, 1, 10, 12] }
 
   prop.well:
     source: assets/default/environment/props/well.png
@@ -387,24 +415,25 @@ assets:
     status: approved
     license_scope: core-commercial
     kind: image
-    tags: [prop, boat, water, fishing, topdown]
+    tags: [prop, boat, water, fishing, ground-contact, topdown]
     geometry: { layout: freeform }
     frames:
       default: { rect: [0, 0, 48, 48], anchor: { point: [24, 45] }, content_bounds: [2, 14, 40, 31] }
 
   prop.cattails:
-    source: assets/default/environment/props/outdoor-decor-animations/water-decor-animations/water-plants/cattail-1-anim.png
-    source_sha256: 0ae83464131594c62555f51a0207d1267d73b971a582ec9c83053687997dff96
+    source: assets/default/environment/effects/cattail-overlays.png
+    source_sha256: 04b435125e0d110bc0c96610d8fb9c0c4dee743c2e957d8cd252e3bc3668c815
     status: approved
     license_scope: core-commercial
     kind: sprite-sheet
-    tags: [prop, water, reeds, cattails, shoreline, topdown]
-    geometry: { layout: grid, cell: [16, 16], grid: [8, 1] }
+    tags: [prop, water, reeds, cattails, shoreline, overlay, topdown]
+    forbidden_colors: ['#006da8', '#00cdf9', '#00a5d7', '#0cf1ff', '#0b9eca']
+    geometry: { layout: grid, cell: [18, 18], grid: [3, 1] }
     defaults: { anchor: top-left }
     frames:
-      still: { cell: [0, 0] }
-      sway.1: { cell: [1, 0] }
-      sway.2: { cell: [2, 0] }
+      still: { cell: [0, 0], anchor: { point: [1, 1] }, content_bounds: [1, 1, 16, 14] }
+      sway.1: { cell: [1, 0], anchor: { point: [1, 1] }, content_bounds: [1, 1, 16, 14] }
+      sway.2: { cell: [2, 0], anchor: { point: [1, 1] }, content_bounds: [1, 1, 16, 14] }
     clips:
       sway: { frames: [still, sway.1, sway.2, sway.1], fps: 4, loop: loop }
 
@@ -539,7 +568,7 @@ assets:
     status: approved
     license_scope: core-commercial
     kind: sprite-sheet
-    tags: [actor, npc, humanoid, farmer]
+    tags: [actor, npc, humanoid, farmer, ground-contact]
     geometry: { layout: grid, cell: [64, 64], grid: [6, 13] }
     frames:
       idle.down.0: { cell: [0, 0], anchor: { point: [32, 41] }, content_bounds: [23, 19, 17, 22], tags: [idle, down] }
@@ -555,7 +584,7 @@ assets:
     status: approved
     license_scope: core-commercial
     kind: sprite-sheet
-    tags: [actor, npc, humanoid, miner, encounter, topdown]
+    tags: [actor, npc, humanoid, miner, encounter, ground-contact, topdown]
     geometry: { layout: grid, cell: [64, 64], grid: [6, 10] }
     frames:
       idle.down: { cell: [0, 0], anchor: { point: [32, 41] }, content_bounds: [25, 21, 13, 20], tags: [idle, down] }
@@ -566,7 +595,7 @@ assets:
     status: approved
     license_scope: core-commercial
     kind: sprite-sheet
-    tags: [actor, npc, humanoid, lumberjack, encounter, topdown]
+    tags: [actor, npc, humanoid, lumberjack, encounter, ground-contact, topdown]
     geometry: { layout: grid, cell: [64, 64], grid: [6, 10] }
     frames:
       idle.down: { cell: [0, 0], anchor: { point: [32, 41] }, content_bounds: [25, 21, 13, 20], tags: [idle, down] }
@@ -577,7 +606,7 @@ assets:
     status: approved
     license_scope: core-commercial
     kind: sprite-sheet
-    tags: [actor, npc, humanoid, fisherman, encounter, topdown]
+    tags: [actor, npc, humanoid, fisherman, encounter, ground-contact, topdown]
     geometry: { layout: grid, cell: [64, 64], grid: [9, 13] }
     frames:
       idle.down: { cell: [0, 0], anchor: { point: [32, 41] }, content_bounds: [25, 22, 13, 19], tags: [idle, down] }

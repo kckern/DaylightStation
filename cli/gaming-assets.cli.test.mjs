@@ -90,6 +90,24 @@ describe('gaming asset audit tooling', () => {
     const manifestPath = path.join(root, 'pack.yml');
     await writeFile(manifestPath, YAML.stringify(manifest));
     assert.equal((await validateManifest({ root, manifestPath })).valid, true);
+    manifest.assets['npc.hero'].tags.push('ground-contact');
+    await writeFile(manifestPath, YAML.stringify(manifest));
+    const badGroundContact = await validateManifest({ root, manifestPath });
+    assert.equal(badGroundContact.valid, false);
+    assert.ok(badGroundContact.errors.some((error) => error.includes('needs content_bounds and a custom anchor point')));
+    for (const frame of Object.values(manifest.assets['npc.hero'].frames)) frame.anchor = { point: [8, 16] };
+    await writeFile(manifestPath, YAML.stringify(manifest));
+    const unpaddedGroundContact = await validateManifest({ root, manifestPath });
+    assert.equal(unpaddedGroundContact.valid, false);
+    assert.ok(unpaddedGroundContact.errors.some((error) => error.includes('visible alpha must be enclosed by transparent frame padding')));
+    for (const frame of Object.values(manifest.assets['npc.hero'].frames)) delete frame.anchor;
+    manifest.assets['npc.hero'].tags.pop();
+    manifest.assets['terrain.single'].frames.ground.ports = { east: [17, 8] };
+    await writeFile(manifestPath, YAML.stringify(manifest));
+    const badPort = await validateManifest({ root, manifestPath });
+    assert.equal(badPort.valid, false);
+    assert.ok(badPort.errors.some((error) => error.includes('port east must be a named point inside or on the frame boundary')));
+    delete manifest.assets['terrain.single'].frames.ground.ports;
     manifest.assets['terrain.single'].tags.push('overlay');
     await writeFile(manifestPath, YAML.stringify(manifest));
     const opaqueOverlay = await validateManifest({ root, manifestPath });
@@ -163,9 +181,9 @@ describe('gaming asset audit tooling', () => {
       viewport: [64, 32], background: '#000000',
       sprites: [{ source, cell: [16, 16], frame: [1, 0], at: [16, 0], scale: 2 }],
     }));
-    await writeFile(scene, YAML.stringify({ viewport: [64, 32], background: '#000', review_regions: [{ id: 'join', rect: [16, 0, 32, 16], scale: 2 }], terrain: { grid: { cell: [16, 16], scale: 2 }, regions: [{ terrain: 'water', asset: 'terrain.test', polarity: 'positive', origin: [0, 0], rects: [[0, 0, 2, 1]], continues: ['west', 'east'] }, { terrain: 'sand', asset: 'terrain.test', polarity: 'negative', origin: [0, 0], cells: [[0, 0]] }] }, placements: [{ prefab: 'marker', at: [32, 0] }] }));
+    await writeFile(scene, YAML.stringify({ viewport: [64, 32], background: '#000', review_regions: [{ id: 'join', rect: [16, 0, 32, 16], scale: 2 }], connections: [{ from: ['join.left', 'east'], to: ['join.right', 'west'] }], terrain: { grid: { cell: [16, 16], scale: 2 }, regions: [{ terrain: 'water', asset: 'terrain.test', polarity: 'positive', origin: [0, 0], rects: [[0, 0, 2, 1]], continues: ['west', 'east'] }, { terrain: 'sand', asset: 'terrain.test', polarity: 'negative', origin: [0, 0], cells: [[0, 0]] }] }, placements: [{ prefab: 'marker', at: [32, 0] }, { id: 'join.left', asset: 'terrain.test#ground', at: [0, 16], scale: 1 }, { id: 'join.right', asset: 'terrain.test#through', at: [16, 16], scale: 1 }] }));
     const catalog = path.join(root, 'catalog.yml');
-    await writeFile(catalog, YAML.stringify({ schema_version: 1, pack: { id: 'test' }, assets: { 'terrain.test': { status: 'approved', source, tags: ['terrain'], geometry: { layout: 'grid', cell: [16, 16], grid: [2, 1] }, defaults: { anchor: 'top-left' }, frames: { ground: { cell: [0, 0] }, through: { cell: [1, 0] } }, autotile: { topology: 'cardinal-4', positive: { ew: 'through', fallback: 'ground' }, negative: { fallback: 'ground' } } } }, prefabs: { marker: { layers: [{ asset: 'terrain.test#ground', offset: [0, 0], scale: 1 }] } } }));
+    await writeFile(catalog, YAML.stringify({ schema_version: 1, pack: { id: 'test' }, assets: { 'terrain.test': { status: 'approved', source, tags: ['terrain'], requires_all_ports: true, geometry: { layout: 'grid', cell: [16, 16], grid: [2, 1] }, defaults: { anchor: 'top-left' }, frames: { ground: { cell: [0, 0], ports: { east: [16, 8] } }, through: { cell: [1, 0], ports: { west: [0, 8] } } }, autotile: { topology: 'cardinal-4', positive: { ew: 'through', fallback: 'ground' }, negative: { fallback: 'ground' } } } }, prefabs: { marker: { layers: [{ asset: 'terrain.test#ground', offset: [0, 0], scale: 1 }] } } }));
     await renderLayout({ root, manifestPath: layout, out: rendered });
     await renderScene({ root, catalogPath: catalog, manifestPath: scene, out: sceneOut });
     const qa = await renderSceneQa({ root, catalogPath: catalog, manifestPath: scene, outDir: qaOut });
@@ -175,6 +193,26 @@ describe('gaming asset audit tooling', () => {
     await assert.rejects(
       renderScene({ root, catalogPath: catalog, sceneData: { viewport: [64, 32], placements: [{ asset: 'terrain.test#ground', at: [60, 0], scale: 1 }] }, out: path.join(root, 'out', 'clipped.png') }),
       /visibly clipped draws/,
+    );
+    await assert.rejects(
+      renderScene({ root, catalogPath: catalog, sceneData: { viewport: [64, 32], connections: [{ from: ['left', 'east'], to: ['right', 'west'] }], placements: [{ id: 'left', asset: 'terrain.test#ground', at: [0, 0] }, { id: 'right', asset: 'terrain.test#through', at: [17, 0] }] }, out: path.join(root, 'out', 'bad-join.png') }),
+      /scene connection 0 is misaligned/,
+    );
+    await assert.rejects(
+      renderScene({ root, catalogPath: catalog, sceneData: { viewport: [64, 32], placements: [{ id: 'unconnected', asset: 'terrain.test#ground', at: [0, 0] }] }, out: path.join(root, 'out', 'unconnected.png') }),
+      /required port unconnected.east must be connected exactly once; found 0/,
+    );
+    await assert.rejects(
+      renderScene({ root, catalogPath: catalog, sceneData: { viewport: [64, 32], forbid_direct_autotile_frames: true, placements: [{ asset: 'terrain.test#ground', at: [0, 0] }] }, out: path.join(root, 'out', 'raw-autotile.png') }),
+      /must author autotile frame through a terrain region/,
+    );
+    const edgeCatalog = YAML.parse(await readFile(catalog, 'utf8'));
+    edgeCatalog.assets['terrain.test'].kind = 'sprite-sheet';
+    delete edgeCatalog.assets['terrain.test'].requires_all_ports;
+    await writeFile(catalog, YAML.stringify(edgeCatalog));
+    await assert.rejects(
+      renderScene({ root, catalogPath: catalog, sceneData: { viewport: [64, 32], fail_on_frame_edge_contact: true, placements: [{ asset: 'terrain.test#ground', at: [0, 0] }] }, out: path.join(root, 'out', 'source-edge.png') }),
+      /non-structural frames touching source edges/,
     );
     assert.equal((await explainPrefab({ catalogPath: catalog, id: 'marker' })).layers[0].asset, 'terrain.test#ground');
     await renderPrefabPreview({ root, catalogPath: catalog, id: 'marker', out: prefabOut, viewport: [64, 64], scale: 1 });

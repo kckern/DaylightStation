@@ -110,7 +110,9 @@ npm run gaming:assets -- scene-qa --catalog /path/to/desert.yml \
   --out-dir /tmp/desert-scene-qa
 ```
 
-Scenes may add `review_regions` with a stable `id`, `[x, y, width, height]` rectangle, and integer `scale`. `scene-qa` emits those targeted assembly crops alongside the automatic quadrants; production fixtures should name every high-risk join such as a shoreline, bridge landing, fenced bed, or dock.
+The report includes `inside_corners_resolved`. This is the number of concave path/shoreline corners selected through diagonal metadata; unsupported inside corners abort rendering and therefore can never be counted as resolved.
+
+Scenes may add `review_regions` with a stable `id`, `[x, y, width, height]` rectangle, and integer `scale`. `scene-qa` emits those targeted assembly crops alongside the automatic quadrants; production fixtures should name every high-risk join such as a shoreline, bridge landing, fenced bed, or dock. Structural pieces may additionally declare frame `ports`, placement `id` values, and scene `connections`; rendering fails when connected ports do not resolve to the same world-space point. `requires_all_ports: true` additionally rejects every unconnected or multiply connected structural port. Assets tagged `ground-contact` fail catalog validation unless each frame's custom anchor lands exactly at its measured visible-alpha bottom and the silhouette retains transparent source-frame padding on every side.
 
 The independently reviewed adventure-scene fixture is reproducible without a frontend:
 
@@ -124,7 +126,7 @@ npm run gaming:assets -- scene \
 
 That scene uses one `world_scale`, content-aware custom ground anchors, a tiled `ground`, viewport-edge `continues` declarations, deterministic terrain variants, y-depth ordering, explicit contact shadows, and visible-alpha clipping enforcement. A render is rejected when visible pixels leave the viewport unless the scene deliberately sets `fail_on_clipping: false`.
 
-`autotile` declares `topology: cardinal-4` and a `positive` map for a lake plus an optional `negative` map for an island. Each map names every reviewed neighbour mask (`n`, `ne`, `nes`, ..., `nesw`) or an explicit `fallback`. A fallback is acceptable only during curation and must not be used as evidence that shoreline corners are reviewed.
+`autotile` declares `topology: cardinal-4` for simple shapes or `cardinal-4+diagonal-corners` for bends and junctions, with a `positive` map for a lake plus an optional `negative` map for an island. Each map names every reviewed neighbour mask (`n`, `ne`, `nes`, ..., `nesw`) or an explicit `fallback`. Diagonal topology additionally requires `inner_corners`; a cell with a missing shared diagonal fails instead of silently rendering a square center tile. A fallback is acceptable only during curation and must not be used as evidence that shoreline corners are reviewed.
 
 Inspect and render reusable prefab classes without a frontend:
 
