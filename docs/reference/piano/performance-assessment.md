@@ -142,6 +142,29 @@ session = advanceAssessment(session, now).session;
 const result = finalizeAssessment(session, { achievedBpm });
 ```
 
+### Public consumer contract
+
+Consumers import from `assessmentSession.js`; they do not import the matcher,
+grading, or span primitives directly. The façade groups its API into three
+layers:
+
+- **Session lifecycle:** `createAssessmentSession`,
+  `replaceAssessmentTargets`, `applyAssessmentPress`, `applyAssessmentHeld`,
+  `advanceAssessment`, `closeAssessmentSpan`, `assessmentProgress`, and
+  `finalizeAssessment` own a complete timed, cursor, or held attempt.
+- **Stateless adapters:** `classifyCursorStep`, `advanceOrderedCursor`,
+  `classifyHeldNotes`, `gradeAssessmentObservation`, and
+  `timingQualityForBeat` let an existing hot loop share the same judgement
+  without surrendering its presentation-specific state machine.
+- **Result and span projection:** `criteriaForAssessment`,
+  `evaluateAssessment`, `gradeAssessmentSpan`, `tallyAssessmentGrades`, and
+  `findWorstAssessmentSpan` produce portable criteria, verdicts, and practice
+  recommendations without introducing game scoring or curriculum side effects.
+
+This boundary is what makes the service shared: consumers may choose different
+policies and projections, but they cannot fork the definitions of a hit, miss,
+criterion, gate, or assessment result.
+
 ## Runners
 
 - **Timed** — matches note attacks against millisecond targets compiled from an
