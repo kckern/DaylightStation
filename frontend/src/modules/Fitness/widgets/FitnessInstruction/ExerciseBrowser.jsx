@@ -470,21 +470,29 @@ export default function ExerciseBrowser({ onStartBuild = null }) {
   const traySlugs = useMemo(() => new Set(tray.map((e) => e.slug)), [tray]);
   const visible = useMemo(() => exercises.slice(0, windowSize), [exercises, windowSize]);
 
-  // Muscle chips narrow to the selected groups' muscles. All 38 at once is an
-  // unreadable wall on a TV, and a muscle outside the selected groups can only
-  // ever AND down to zero — so the rail shows the muscles that can still change
-  // the result set.
+  /**
+   * Muscle chips are gated on a group being picked.
+   *
+   * Muscles are children of groups (38 across 12), so the group rail is the
+   * first cut and this is the second. Rendering all 38 with no group selected
+   * was both unreadable AND the worst case for vertical space — measured in
+   * Chromium at 1920x1080 it wrapped to 1,225px of scroll height inside a
+   * 744px panel and squeezed the grid to 88px (11.8% of the container). The
+   * default state now renders no muscle chips at all; picking a group yields at
+   * most 8, which fits the single row the rail is bounded to.
+   *
+   * A muscle that is already filtering stays on the rail regardless — that
+   * happens when a chip inside the detail sheet pushes a muscle in without a
+   * group, and a filter you cannot see is a filter you cannot switch off.
+   */
   const muscleOptions = useMemo(() => {
     const all = taxonomy.muscles;
-    if (!filters.groups.length) return all;
     const wanted = new Set(filters.groups);
-    const narrowed = all.filter((m) => wanted.has(m?.group));
-    // A selected muscle stays on the rail even if its group was just switched
-    // off, otherwise the user cannot see (or undo) the filter that is running.
-    const missing = filters.muscles
-      .filter((slug) => !narrowed.some((m) => m.slug === slug))
+    const inGroups = filters.groups.length ? all.filter((m) => wanted.has(m?.group)) : [];
+    const pinned = filters.muscles
+      .filter((slug) => !inGroups.some((m) => m.slug === slug))
       .map((slug) => all.find((m) => m.slug === slug) || { slug, name: slug });
-    return [...narrowed, ...missing];
+    return [...inGroups, ...pinned];
   }, [taxonomy.muscles, filters.groups, filters.muscles]);
 
   const filterCount = activeFilterCount(filters);
@@ -550,25 +558,37 @@ export default function ExerciseBrowser({ onStartBuild = null }) {
             ))}
           </nav>
 
+          {/* Both secondary rails are ONE row that scrolls sideways, never a
+              wrapping block. A rail that takes "whatever it needs" takes it
+              from the grid, and the panel does not scroll. */}
           <div className="exercise-browser__facets">
             <div className="exercise-browser__facet" data-testid="exercise-browser-muscles">
               <span className="exercise-browser__facet-label">Muscle</span>
-              <div className="exercise-browser__facet-chips">
-                {muscleOptions.map((muscle) => (
-                  <Chip
-                    key={muscle.slug}
-                    testId={`exercise-muscle-${muscle.slug}`}
-                    label={muscle.name || muscle.slug}
-                    active={filters.muscles.includes(muscle.slug)}
-                    onToggle={() => toggleFacet('muscles', muscle.slug)}
-                  />
-                ))}
-              </div>
+              {muscleOptions.length > 0 ? (
+                <div className="exercise-browser__facet-chips exercise-browser__facet-chips--row">
+                  {muscleOptions.map((muscle) => (
+                    <Chip
+                      key={muscle.slug}
+                      testId={`exercise-muscle-${muscle.slug}`}
+                      label={muscle.name || muscle.slug}
+                      active={filters.muscles.includes(muscle.slug)}
+                      onToggle={() => toggleFacet('muscles', muscle.slug)}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div
+                  className="exercise-browser__facet-chips exercise-browser__facet-chips--row exercise-browser__facet-hint"
+                  data-testid="exercise-browser-muscle-hint"
+                >
+                  Pick a group first
+                </div>
+              )}
             </div>
 
             <div className="exercise-browser__facet" data-testid="exercise-browser-equipment">
               <span className="exercise-browser__facet-label">Equipment</span>
-              <div className="exercise-browser__facet-chips">
+              <div className="exercise-browser__facet-chips exercise-browser__facet-chips--row">
                 {taxonomy.equipment.map((item) => (
                   <Chip
                     key={item.slug}
@@ -581,11 +601,14 @@ export default function ExerciseBrowser({ onStartBuild = null }) {
               </div>
             </div>
 
+            {/* Chip-sized, not action-sized: it lives IN the rail row, and a
+                96px action target here would push the whole block past the one
+                row it is budgeted and take the difference out of the grid. */}
             {filterCount > 0 && (
               <TapTarget
                 testId="exercise-browser-clear"
-                label="Clear filters"
-                variant="ghost"
+                label="Clear"
+                variant="compact"
                 onActivate={clearFilters}
               />
             )}
@@ -606,29 +629,31 @@ export default function ExerciseBrowser({ onStartBuild = null }) {
               <p className="exercise-browser__notice-body">Drop a filter to widen the search.</p>
             </section>
           ) : (
-            <>
-              <div className="exercise-browser__grid" data-testid="exercise-browser-grid">
-                {visible.map((exercise) => (
-                  <ExerciseCard
-                    key={exercise.slug}
-                    exercise={exercise}
-                    inTray={traySlugs.has(exercise.slug)}
-                    onOpen={openDetail}
-                    onAdd={toggleTray}
-                  />
-                ))}
-              </div>
+            <div className="exercise-browser__grid" data-testid="exercise-browser-grid">
+              {visible.map((exercise) => (
+                <ExerciseCard
+                  key={exercise.slug}
+                  exercise={exercise}
+                  inTray={traySlugs.has(exercise.slug)}
+                  onOpen={openDetail}
+                  onAdd={toggleTray}
+                />
+              ))}
 
+              {/* A grid CELL, not a bar under the grid. As chrome it cost ~100px
+                  of permanent vertical space to a control nobody needs until
+                  they have scrolled to the end of the page — which is exactly
+                  where it now sits. */}
               {exercises.length > visible.length && (
                 <TapTarget
                   testId="exercise-browser-more"
                   label="Show more"
                   sub={`${exercises.length - visible.length} more`}
-                  variant="ghost"
+                  variant="tile"
                   onActivate={showMore}
                 />
               )}
-            </>
+            </div>
           )}
         </>
       )}

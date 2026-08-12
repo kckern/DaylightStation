@@ -85,24 +85,28 @@
     &::-webkit-scrollbar { display: none; }
   }
 
+  // Secondary facets. Every rule here exists to keep this block at ONE chip row
+  // tall. It previously wrapped freely (`max-height: 26vh` — a viewport unit
+  // inside a fixed-height 744px panel, so it never bit) and grew to 1,225px of
+  // content, leaving the grid an 88px sliver with no page scroll to rescue it.
+  // Whatever the filters take here is taken from the grid.
   &__facets {
     flex: 0 0 auto;
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     gap: 16px;
-    max-height: 26vh;
-    overflow-y: auto;
   }
 
   &__facet {
     flex: 1 1 0;
     min-width: 0;
     display: flex;
-    flex-direction: column;
-    gap: 6px;
+    align-items: center; // label sits BESIDE the row, not above it
+    gap: 12px;
   }
 
   &__facet-label {
+    flex: 0 0 auto;
     font-size: ex.$ex-micro;
     letter-spacing: 0.24em;
     text-transform: uppercase;
@@ -111,8 +115,27 @@
 
   &__facet-chips {
     display: flex;
-    flex-wrap: wrap;
     gap: 8px;
+  }
+
+  // One row, scrolled sideways — the same shape as the group rail above.
+  // `nowrap` is the whole fix; without it the rail reclaims the grid.
+  &__facet-chips--row {
+    flex: 1 1 auto;
+    min-width: 0;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+
+    &::-webkit-scrollbar { display: none; }
+  }
+
+  &__facet-hint {
+    align-items: center;
+    min-height: ex.$ex-chip-h;
+    font-size: ex.$ex-label;
+    color: ex.$ex-muted;
+    opacity: 0.7;
   }
 
   &__chip {
@@ -153,6 +176,13 @@
     overflow-y: auto;
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(ex.$ex-card-min, 1fr));
+    // `max-content`, NOT the `auto` default. This grid has a DEFINITE block size
+    // (it is the flex child that absorbs the panel's remaining height), and with
+    // `auto` rows Chromium sized all 20 rows to fit that box: every card
+    // measured 0px tall and the grid rendered as a stack of hairlines. Measured
+    // in Chromium at 1920x1080 — card clientHeight 0 with `auto`, 202 with
+    // `max-content`. Rows must size to their content and let the grid scroll.
+    grid-auto-rows: max-content;
     gap: 16px;
     align-content: start;
     padding: 4px 4px 12px;
@@ -178,11 +208,16 @@
     &:active { transform: scale(0.99); }
   }
 
-  // Fixed-ratio thumb so the grid does not reflow as GIFs stream in and out —
-  // a card whose height depends on a lazily-mounted <img> makes the whole page
-  // jump under the finger.
+  // Fixed HEIGHT, not a fixed ratio. Both stop the grid reflowing as GIFs
+  // stream in and out (a card whose height follows a lazily-mounted <img> makes
+  // the page jump under the finger), but a ratio ties card height to column
+  // width, so a wider panel silently produces taller cards and fewer visible
+  // rows. Height is the scarce axis here — the panel is a fixed 744px box that
+  // does not scroll — so it is the one that gets pinned. The corpus GIFs are
+  // square, and `object-fit: contain` letterboxes them either way.
   &__thumb {
-    aspect-ratio: 4 / 3;
+    height: ex.$ex-thumb-h;
+    flex: 0 0 auto;
     width: 100%;
     display: flex;
     align-items: center;
@@ -310,6 +345,29 @@
   &__tap--ghost {
     background: transparent;
     border: 2px solid ex.$ex-border;
+    color: ex.$ex-muted;
+  }
+
+  // Chip-height action for controls that sit inside a filter rail row.
+  &__tap--compact {
+    min-height: ex.$ex-chip-h;
+    min-width: 0;
+    padding: 0 24px;
+    border-radius: 999px;
+    background: transparent;
+    border: 2px solid ex.$ex-border;
+    color: ex.$ex-muted;
+
+    .exercise-browser__tap-label { font-size: ex.$ex-label; }
+  }
+
+  // "Show more" as a grid cell: same footprint as a card, so it costs the page
+  // nothing until the user has scrolled to it.
+  &__tap--tile {
+    min-width: 0;
+    height: 100%;
+    background: transparent;
+    border: 2px dashed ex.$ex-border;
     color: ex.$ex-muted;
   }
 
