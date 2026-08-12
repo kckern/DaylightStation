@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import getLogger from '@/lib/logging/Logger.js';
 import WorkoutRunner from './WorkoutRunner.jsx';
+import ExerciseBrowser from './ExerciseBrowser.jsx';
 import './FitnessInstructionContainer.scss';
 
 /**
@@ -11,10 +12,10 @@ import './FitnessInstructionContainer.scss';
  *   build  — assemble the picked exercises into a workout
  *   run    — the guided set-by-set player (WorkoutRunner)
  *
- * Browse and build are still placeholders; run is live. Nothing here fetches —
- * the browse API that will supply the corpus is being built in parallel, so the
- * runner's step list and slug->display lookup are read off whatever the builder
- * handed to `startRun` and are simply empty until that screen exists.
+ * Browse and run are live; build is still a placeholder. Nothing HERE fetches —
+ * ExerciseBrowser owns the corpus requests, and the runner's step list and
+ * slug->display lookup are read off whatever the builder handed to `startRun`,
+ * so they stay empty until the build screen exists.
  */
 
 // The only legal moves out of each state. Anything else is a caller bug, so it
@@ -152,16 +153,14 @@ export default function FitnessInstructionContainer({ onMount } = {}) {
   return (
     <div className="fitness-instruction" data-testid="fitness-instruction" data-state={view}>
       {view === 'browse' && (
-        <section className="fitness-instruction__state" data-testid="fitness-instruction-browse">
-          <h2 className="fitness-instruction__placeholder-title">Browse — placeholder</h2>
-          <p className="fitness-instruction__placeholder-note">
-            The exercise browser is not built yet. No exercises are loaded.
-          </p>
-          <PlaceholderAction
-            testId="fitness-instruction-to-build"
-            label="Start a workout (placeholder)"
-            onActivate={startBuild}
-          />
+        <section
+          className="fitness-instruction__state fitness-instruction__state--browse"
+          data-testid="fitness-instruction-browse"
+        >
+          {/* The browser owns the `fitness-instruction-to-build` target — the
+              move to build carries the tray it collected, so the button has to
+              live where the tray does. */}
+          <ExerciseBrowser onStartBuild={startBuild} />
         </section>
       )}
 

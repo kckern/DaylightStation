@@ -40,6 +40,26 @@ vi.mock('@/lib/logging/Logger.js', () => {
   };
 });
 
+// The browse state now mounts the real ExerciseBrowser, which fetches the corpus
+// and the taxonomy on mount. This suite is about the container's STATE MACHINE,
+// not about corpus data, so the API is pinned to a request that never settles:
+// the browser stays in its loading state, its header (which owns the
+// `fitness-instruction-to-build` target) still renders, and no response lands
+// outside act() to muddy these assertions. ExerciseBrowser.test.jsx covers what
+// happens when the data arrives.
+vi.mock('@/lib/api.mjs', () => ({
+  DaylightAPI: () => new Promise(() => {}),
+  DaylightAPIText: () => new Promise(() => {}),
+  DaylightMediaPath: (p) => `https://kiosk.test/${String(p).replace(/^\/|\/$/g, '')}`,
+  DaylightImagePath: (k) => `https://kiosk.test/api/v1/static/img/${k}`,
+  DaylightStatusCheck: async () => 200,
+  DaylightHostPath: () => 'https://kiosk.test',
+  ContentDisplayUrl: () => '',
+  normalizeImageUrl: (u) => u,
+  DaylightWebsocketSubscribe: () => () => {},
+  DaylightWebsocketUnsubscribe: () => () => {}
+}));
+
 const logsFor = (bucket, event) =>
   logCalls[bucket].filter((l) => l.component === 'fitness-instruction' && l.event === event);
 
