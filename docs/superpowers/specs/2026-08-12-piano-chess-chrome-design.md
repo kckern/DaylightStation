@@ -243,3 +243,22 @@ rather than building bass-aware matching from nothing.
 
 Together these make the vocabulary a ladder — read two notes, spell triads, spell inversions — which
 is the axis the per-user calibration should move along.
+
+**The calibration is already assigned.** Milo plays the reading level: bass clef on the left for the
+ranks, treble clef along the bottom for the files. Felix plays chord spelling, which is the board as
+it stands today. That lives in each player's own `users/{id}/apps/chess/config.yml`, the override
+layer the chess config already reads.
+
+**Bass-sensitive matching is the switch that unlocks the whole ladder**, and it turns out to unlock
+far more than inversions. Computed against the eight roots:
+
+| Vocabulary | Matching on the pitch-class set | Matching on set + bass |
+|---|---|---|
+| `M M/2 M/3 m m/2 m/3 M7 m7` | 32 duplicate squares — every inversion is its root position | none |
+| `M m aug dim sus2 sus4 6 m7` | 16 duplicates — Caug=Eaug, Asus4=Dsus2, Am7=C6 | none |
+
+Every collision constraint documented above — the symmetric augmented triad, the sus2/sus4 pair, the
+add6/minor7 pair — is an artifact of matching sets alone. Reading the bass retires all of them at
+once, which means the eight ranks can finally be chosen for what they teach rather than for what
+does not collide. The cost is that the player must control which note is lowest, which is precisely
+why it belongs at the top of a per-user ladder rather than on by default.
