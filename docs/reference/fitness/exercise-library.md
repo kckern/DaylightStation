@@ -113,6 +113,23 @@ constraint" returns the entire corpus silently. A malformed term matches nothing
 `frontend/src/modules/Fitness/widgets/FitnessInstruction/`, registered as `fitness:instruction`
 (legacy id `fitness_instruction`). Three states.
 
+> **Registration is not enough to make it reachable.** The Fitness Apps menu is an explicit
+> allowlist in the household `fitness.yml`, not a render of the widget registry — a module can
+> be registered, imported, and fully tested while being invisible in the UI. It needs an entry:
+>
+> ```yaml
+> app_menus:
+>   - name: Fitness Apps
+>     id: app_menu1
+>     items:
+>       - name: Exercise Library
+>         id: fitness_instruction
+> ```
+>
+> That config is cached at startup, so a backend restart is required. This was missed initially
+> and only surfaced when the app was opened in a browser — every unit test passed against a
+> module nothing could navigate to.
+
 **Browse.** Group rail, muscle/equipment chips, search, card grid.
 
 Rendering 1,296 looping GIFs would be ~282 MB and would take the kiosk down, so three layers
