@@ -37,21 +37,40 @@ describe('candidateSquares', () => {
     expect(candidateSquares([60, 61, 62], S)).toEqual([]); // a semitone cluster
   });
 
-  it('maintains monotonicity: adding notes never lights new squares', () => {
-    // Test several starting notes to verify the monotonicity invariant
-    const starts = [60, 61, 64, 67];
-    for (const start of starts) {
-      const one = candidateSquares([start], S);
-      const two = candidateSquares([start, start + 4], S);
-      const three = candidateSquares([start, start + 4, start + 7], S);
+  it('maintains monotonicity: candidates form nested subsets as notes are added', () => {
+    // Property test: for any sequence of held-note prefixes, each step's candidate
+    // set must be a subset of the previous step's. Tests varied interval shapes to
+    // ensure the invariant holds across different harmonic contexts.
 
-      // Each step should be a subset of the previous
-      expect(two.every((sq) => one.includes(sq))).toBe(true);
-      expect(three.every((sq) => two.includes(sq))).toBe(true);
+    const testShapes = [
+      // Major triad (root-position): 0, 4, 7 semitones
+      { name: 'major triad', intervals: [0, 4, 7], bases: [60, 64, 67] },
+      // Seventh chord: 0, 4, 7, 10 semitones
+      { name: 'seventh chord', intervals: [0, 4, 7, 10], bases: [60, 64, 67, 70] },
+      // Major second + perfect fourth: 0, 2, 5 semitones (critical case from reviewer)
+      { name: 'second+fourth', intervals: [0, 2, 5], bases: [60, 62, 65] },
+      // Tritone + major third: 0, 6, 10 semitones (wide intervals)
+      { name: 'tritone+third', intervals: [0, 6, 10], bases: [60, 66, 70] },
+      // Dense seconds and fourths: 0, 2, 5, 7 semitones
+      { name: 'complex cluster', intervals: [0, 2, 5, 7], bases: [60, 62, 65, 67] },
+    ];
 
-      // Sizes should monotonically decrease or stay equal
-      expect(two.length).toBeLessThanOrEqual(one.length);
-      expect(three.length).toBeLessThanOrEqual(two.length);
+    for (const shape of testShapes) {
+      // Build prefixes of this shape and test monotonicity at every step
+      for (let prefixLen = 1; prefixLen < shape.bases.length; prefixLen++) {
+        const prefix = shape.bases.slice(0, prefixLen);
+        const extended = shape.bases.slice(0, prefixLen + 1);
+
+        const candidatesAtPrefix = candidateSquares(prefix, S);
+        const candidatesAtExtended = candidateSquares(extended, S);
+
+        // The invariant: extending the note set must not light new squares
+        const newSquares = candidatesAtExtended.filter((sq) => !candidatesAtPrefix.includes(sq));
+        expect(newSquares, `${shape.name} at prefix [${prefix}]: new squares lit: ${newSquares}`).toEqual([]);
+
+        // Also check size decreases or stays equal
+        expect(candidatesAtExtended.length).toBeLessThanOrEqual(candidatesAtPrefix.length);
+      }
     }
   });
 });
