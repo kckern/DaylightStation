@@ -33,6 +33,11 @@ export async function drawScenePlanToCanvas(canvas, catalog, plan, {
   context.fillStyle = plan.background; context.fillRect(0, 0, canvas.width, canvas.height);
   const images = await loadPlanImages(catalog, plan, resolveAssetUrl); const normalizedFrames = new Map();
   for (const command of plan.commands) {
+    if (command.type === 'fill') {
+      context.save(); context.globalAlpha = command.opacity; context.fillStyle = command.color;
+      context.fillRect(command.at[0] * scale, command.at[1] * scale, command.size[0] * scale, command.size[1] * scale); context.restore();
+      continue;
+    }
     if (command.type === 'shadow') {
       context.save(); context.globalAlpha = command.opacity; context.fillStyle = command.color; context.beginPath();
       context.ellipse(command.at[0] * scale, command.at[1] * scale, command.size[0] * scale / 2, command.size[1] * scale / 2, 0, 0, Math.PI * 2); context.fill(); context.restore();

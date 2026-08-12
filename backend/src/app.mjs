@@ -166,6 +166,7 @@ import { ApplyScanToComposition } from '#apps/nutribot/usecases/ApplyScanToCompo
 import { validateScanConfig } from '#apps/nutribot/lib/validateScanConfig.mjs';
 import { normalizeScaleNutribotConfig } from '#apps/nutribot/lib/scaleNutribotConfig.mjs';
 import { createBarcodeRelay } from '#apps/hardware/barcodeRelay.mjs';
+import { createRelayWatchdog } from '#apps/hardware/relayWatchdog.mjs';
 import { createFingerprintProfileWriter } from '#apps/fitness/fingerprintProfileWriter.mjs';
 import { YamlUserProfileDatastore } from '#adapters/persistence/yaml/YamlUserProfileDatastore.mjs';
 import { YamlEmergencyLockDatastore } from '#adapters/persistence/yaml/YamlEmergencyLockDatastore.mjs';
@@ -3983,6 +3984,74 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       } catch (err) {
         rootLogger.warn('school.teacher-nudge.failed', { error: err.message });
       }
+    });
+  }
+
+  // Relay staleness watchdog — the hardware relays are pass-throughs that keep
+  // no liveness state, so a dead ESP board is invisible except as history that
+  // stopped being written. The kitchen relay sat dark 2026-07-31 → 2026-08-12
+  // (12 days) and only surfaced because someone went looking. This turns that
+  // into a same-day Telegram alert.
+  //
+  // ONLY the kitchen board is watched, deliberately. This detects "no frames
+  // from <source>", not "board offline" — no relay sends a hello or keepalive
+  // on connect, so an idle board is indistinguishable from a dead one. That is
+  // tolerable for the kitchen relay, whose scale rests connected on the shelf
+  // and heartbeats at 0.5 Hz. It is NOT tolerable for the OBD relay (in a car,
+  // legitimately absent for days) or the OMR relay (used a few times a term),
+  // which would page constantly. Add them only once the firmware sends a
+  // heartbeat frame that means "I am alive" independent of its peripherals.
+  //
+  // 12h threshold: long enough to sleep through a quiet kitchen overnight with
+  // the scale switched off, short enough that a real death is same-day news.
+  //
+  // TIGHTEN THIS TO ~1h ONCE THE BOARD RUNS THE HELLO-FRAME FIRMWARE (a 60s
+  // liveness heartbeat, added 2026-08-12 but NOT yet flashed). Until that build
+  // is actually on the board, silence still just means "the scale is switched
+  // off" and a short threshold would cry wolf every evening. The hello frame
+  // also carries the board's post-mortem, which the watchdog logs as
+  // `relay_watchdog.boot` whenever the NVS boot counter moves — that is where a
+  // TASK_WDT (loop wedged, watchdog recovered it) or BROWNOUT (bad supply)
+  // reset shows up.
+  if (agentsServices.scheduler && notificationStack?.notificationService) {
+    const relayWatchdog = createRelayWatchdog({
+      eventBus,
+      sources: {
+        // The unified kitchen board and the legacy per-board sources it may
+        // still emit if an older firmware is flashed (see foodScaleRelay's
+        // INGEST_SOURCES) — any of the three proves the board is alive.
+        'kitchen-relay': { label: 'Kitchen relay', thresholdMs: 12 * 3600_000 },
+        'food-scale-relay': { label: 'Kitchen relay (legacy scale source)', thresholdMs: 12 * 3600_000 },
+      },
+      logger: rootLogger.child({ module: 'relay-watchdog' }),
+      onStale: ({ label, silentMs, lastSeenAt }) => {
+        const hours = Math.round(silentMs / 3600_000);
+        // Resolve the board's status page from devices.yml rather than hardcoding
+        // an IP here — the whole point of that entry is being the one place the
+        // address lives. Read at send time so a config reload is picked up.
+        let statusHint = '';
+        try {
+          const dev = configService.getDeviceConfig?.('kitchen-relay');
+          const host = dev?.host || dev?.mdns;
+          if (host) statusHint = ` Status: http://${host}${dev.port && dev.port !== 80 ? `:${dev.port}` : ''}${dev.endpoints?.status || '/status'}`;
+        } catch { /* a missing device entry must not block the alert */ }
+        notificationStack.notificationService.send({
+          title: 'Relay has gone quiet',
+          body: `${label} has sent nothing for ${hours}h (last frame ${new Date(lastSeenAt).toLocaleString()}). `
+            + `Check that it has power.${statusHint}`,
+          category: 'system',
+          // HIGH is what routes this off the dashboard and onto a phone; see
+          // DEFAULT_PREFERENCES in 5_composition/modules/notifications.mjs.
+          urgency: 'high',
+          dedupeKey: `relay-stale:${label}:${lastSeenAt}`,
+        }).catch((err) => rootLogger.warn('relay-watchdog.notify-failed', { error: err.message }));
+      },
+      onRecover: ({ label, silentMs }) => {
+        rootLogger.info('relay-watchdog.recovered', { label, silentMs });
+      },
+    });
+    agentsServices.scheduler.registerTask('hardware:relay-watchdog', '*/30 * * * *', async () => {
+      relayWatchdog.check();
     });
   }
 

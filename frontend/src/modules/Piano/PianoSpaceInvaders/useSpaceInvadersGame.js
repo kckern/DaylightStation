@@ -16,6 +16,7 @@ import {
   checkLaserCollisions,
   processDestroyedKeys,
   TOTAL_HEALTH,
+  assessSpaceInvaders,
 } from './spaceInvadersEngine.js';
 
 const TICK_INTERVAL = 16; // ~60fps
@@ -243,7 +244,12 @@ export function useSpaceInvadersGame(activeNotes, noteHistory, gameConfig) {
           if (newHealth <= TOTAL_HEALTH * 0.25 && newHealth > 0) {
             logger.warn('space-invaders.health-warning', { health: newHealth, totalHealth: TOTAL_HEALTH, threshold: '25%' });
           }
-          return { ...next, health: newHealth, wrongStreak: streak };
+          return {
+            ...next,
+            health: newHealth,
+            wrongStreak: streak,
+            score: { ...next.score, wrong: (next.score.wrong || 0) + 1 },
+          };
         });
       } else {
         // Correct column — spawn laser, hit will be resolved by collision in tick loop
@@ -335,6 +341,7 @@ export function useSpaceInvadersGame(activeNotes, noteHistory, gameConfig) {
         missesAllowed: currentLevel.max_misses,
       }
     : null;
+  const assessment = useMemo(() => assessSpaceInvaders(gameState.score), [gameState.score]);
 
   return {
     gameState: gameState.phase,
@@ -345,6 +352,7 @@ export function useSpaceInvadersGame(activeNotes, noteHistory, gameConfig) {
     health: gameState.health,
     countdown: gameState.countdown,
     levelProgress,
+    assessment,
     fallDuration: getFallDuration(currentLevel),
     wrongNotes,
     lasers: gameState.lasers,

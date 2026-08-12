@@ -6,12 +6,14 @@ import { usePianoUser } from '../../PianoUserContext.jsx';
 import { isPersistentUser } from '../../pianoUser.js';
 import PianoEmpty from '../../PianoEmpty.jsx';
 import { SkeletonStage } from '../../Skeleton.jsx';
-import { createDrillRun, applyDrillPress, drillProgress } from '../../../performance/drillRun.js';
-import { matchHeldSet } from '../../../performance/heldSet.js';
 import {
-  advancePerformanceRun, applyPerformancePress, createPerformanceRun,
-} from '../../../performance/performanceJudge.js';
-import { timingQualityFromDrift } from '../../../performance/grading.js';
+  advanceAssessment,
+  applyAssessmentHeld,
+  applyAssessmentPress,
+  assessmentProgress,
+  createAssessmentSession,
+  finalizeAssessment,
+} from '../../../performance/assessmentSession.js';
 import ExerciseNotation from './ExerciseNotation.jsx';
 import { pianoLearningApi } from './pianoLearningApi.js';
 import './Exercises.scss';
@@ -33,9 +35,14 @@ function eventIndexOf(instance, step) {
 }
 
 function buildRun(instance) {
-  return createDrillRun(instance.events.map((event, index) => ({
-    id: `event-${index}`, expectedMidi: event.notes.map((note) => note.midi),
-  })));
+  return createAssessmentSession({
+    matcher: 'cursor',
+    expectation: {
+      spans: instance.events.map((event, index) => ({
+        id: `event-${index}`, expectedMidi: event.notes.map((note) => note.midi),
+      })),
+    },
+  });
 }
 
 function defaultRequirement(instance) {
@@ -67,49 +74,12 @@ function timedTargets(instance, startAt, bpm) {
   });
 }
 
-function assessTimed(run, requirement, bpm) {
-  const expected = run.targets.reduce((sum, target) => sum + target.pitches.length, 0);
-  const matched = run.targets.reduce((sum, target) => sum + target.hitPitches.length, 0);
-  const inserted = run.unmatched.length;
-  const drifts = run.targets.flatMap((target) => target.drifts);
-  const criteria = {
-    completeness: expected ? matched / expected : 0,
-    cleanliness: matched + inserted ? matched / (matched + inserted) : 0,
-    placement: drifts.length
-      ? drifts.map((drift) => timingQualityFromDrift(drift, { toleranceMs: 80, windowMs: 320 }))
-        .reduce((sum, value) => sum + value, 0) / drifts.length
-      : 0,
-  };
-  return finishAssessment({ criteria, requirement, bpm, diagnostics: { missed_notes: expected - matched, wrong_notes: inserted } });
-}
-
-function assessUntimed({ expected, wrong, requirement, bpm = null }) {
-  return finishAssessment({
-    criteria: { completeness: 1, cleanliness: expected / Math.max(1, expected + wrong) },
+function assess(session, requirement, bpm = null) {
+  return finalizeAssessment(session, {
     requirement,
-    bpm,
-    diagnostics: { missed_notes: 0, wrong_notes: wrong },
+    achievedBpm: bpm,
+    rubric: { id: 'exercise-pass-v1', version: '1' },
   });
-}
-
-function finishAssessment({ criteria, requirement, bpm, diagnostics }) {
-  const enabled = Object.keys(requirement.rubric?.criteria ?? criteria);
-  const values = enabled.map((name) => criteria[name]).filter(Number.isFinite);
-  const score = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
-  const criteriaPassed = Object.entries(requirement.rubric?.criteria ?? {}).every(([name, threshold]) => (
-    Number.isFinite(criteria[name]) && criteria[name] >= threshold
-  ));
-  const target = Number(requirement.gates?.pace?.target_bpm);
-  const gates = Number.isFinite(target) ? { pace: { passed: Number.isFinite(bpm) && bpm >= target, actual: bpm, target } } : undefined;
-  const passed = criteriaPassed && (!gates || gates.pace.passed);
-  return {
-    score,
-    criteria,
-    ...(gates ? { gates } : {}),
-    diagnostics: { ...diagnostics, ...(Number.isFinite(bpm) ? { achieved_bpm: bpm } : {}) },
-    rubric: { id: requirement.rubric?.id ?? 'exercise-pass-v1', version: String(requirement.rubric?.version ?? '1') },
-    verdict: { score, passed },
-  };
 }
 
 export default function ExerciseRun({ instanceId, intent = 'practice', programId = null, stepId = null, requirementOverride = null, onExit, onPassed }) {
@@ -121,12 +91,12 @@ export default function ExerciseRun({ instanceId, intent = 'practice', programId
   const [requirement, setRequirement] = useState(null);
   const [phase, setPhase] = useState('ready');
   const [progress, setProgress] = useState(0);
-  const [wrong, setWrong] = useState(0);
   const [lastWrong, setLastWrong] = useState(false);
   const [result, setResult] = useState(null);
   const [countdown, setCountdown] = useState(null);
   const runRef = useRef(null);
   const timedRef = useRef(null);
+  const heldRef = useRef(null);
   const startAtRef = useRef(null);
   const persistedRef = useRef(false);
   const previous = useRef([]);
@@ -157,11 +127,21 @@ export default function ExerciseRun({ instanceId, intent = 'practice', programId
     if (!instance) return;
     runRef.current = instance.ordering === 'strict' ? buildRun(instance) : null;
     timedRef.current = null;
+    heldRef.current = instance.ordering === 'any' ? createAssessmentSession({
+      matcher: 'held',
+      expectation: {
+        root: ((Math.min(...instance.events[0].notes.map((note) => note.midi)) % 12) + 12) % 12,
+        pitchClasses: new Set(instance.events[0].notes.map((note) => ((note.midi % 12) + 12) % 12)),
+      },
+      policy: {
+        equivalence: 'pitch-class',
+        bassMustBeRoot: instance.voicing !== 'inversions_ok',
+      },
+    }) : null;
     startAtRef.current = null;
     persistedRef.current = false;
     setPhase('ready');
     setProgress(0);
-    setWrong(0);
     setLastWrong(false);
     setResult(null);
     setCountdown(null);
@@ -211,7 +191,12 @@ export default function ExerciseRun({ instanceId, intent = 'practice', programId
     if (instance.ordering === 'strict' && Number.isFinite(bpm)) {
       const starts = Date.now() + 2000;
       startAtRef.current = starts;
-      timedRef.current = createPerformanceRun(timedTargets(instance, starts, bpm));
+      timedRef.current = createAssessmentSession({
+        matcher: 'timed',
+        expectation: { targets: timedTargets(instance, starts, bpm) },
+        policy: TIMING_POLICY,
+        requirement,
+      });
       setCountdown(2);
       setPhase('countdown');
     } else {
@@ -227,15 +212,14 @@ export default function ExerciseRun({ instanceId, intent = 'practice', programId
       setCountdown(remaining || null);
       if (now >= startAtRef.current && phase === 'countdown') setPhase('running');
       if (now < startAtRef.current) return;
-      const advanced = advancePerformanceRun(timedRef.current, now, TIMING_POLICY);
-      timedRef.current = advanced.run;
-      const firstPending = advanced.run.targets.findIndex((target) => target.state === 'pending');
-      setProgress(firstPending < 0 ? advanced.run.targets.length : firstPending);
-      const last = advanced.run.targets.at(-1);
+      const advanced = advanceAssessment(timedRef.current, now);
+      timedRef.current = advanced.session;
+      setProgress(assessmentProgress(advanced.session));
+      const last = advanced.session.run.targets.at(-1);
       if (last && now > last.targetTimeMs + TIMING_POLICY.missWindowMs) {
         globalThis.clearInterval(timer);
         const bpm = Number(requirement.gates?.pace?.target_bpm ?? instance.tempo?.start_bpm);
-        finish(assessTimed(advanced.run, requirement, bpm));
+        finish(assess(advanced.session, requirement, bpm));
       }
     }, 50);
     return () => globalThis.clearInterval(timer);
@@ -246,44 +230,35 @@ export default function ExerciseRun({ instanceId, intent = 'practice', programId
 
   useEffect(() => {
     if (!instance || phase !== 'running' || instance.ordering !== 'any') return;
-    const midis = instance.events[0].notes.map((note) => note.midi);
-    const target = {
-      root: ((Math.min(...midis) % 12) + 12) % 12,
-      pitchClasses: new Set(midis.map((midi) => ((midi % 12) + 12) % 12)),
-    };
-    const verdict = matchHeldSet(activeNotes, target, { bassMustBeRoot: instance.voicing !== 'inversions_ok' });
-    if (verdict === 'correct') {
-      const assessment = assessUntimed({ expected: midis.length, wrong, requirement });
+    const observed = applyAssessmentHeld(heldRef.current, activeNotes, Date.now());
+    heldRef.current = observed.session;
+    if (observed.event.status === 'correct') {
+      const assessment = assess(observed.session, requirement);
       finish(challenge ? assessment : { ...assessment, verdict: { ...assessment.verdict, passed: false } });
-    } else if (verdict === 'wrong') {
-      setWrong((value) => value + 1);
+    } else if (observed.event.status === 'wrong') {
       setLastWrong(true);
     }
-  }, [activeNotes, challenge, finish, heldKey, instance, phase, requirement, wrong]);
+  }, [activeNotes, challenge, finish, heldKey, instance, phase, requirement]);
 
   const pressPractice = useCallback((midi) => {
     const run = runRef.current;
     if (!run || phase !== 'running') return;
-    const applied = applyDrillPress(run, midi);
-    runRef.current = applied.run;
+    const applied = applyAssessmentPress(run, midi);
+    runRef.current = applied.session;
     setLastWrong(applied.event?.type === 'wrong');
-    if (applied.event?.type === 'wrong') setWrong((value) => value + 1);
-    setProgress(drillProgress(applied.run));
+    setProgress(assessmentProgress(applied.session));
     if (applied.event?.type === 'complete') {
-      const expected = instance.events.reduce((sum, event) => sum + event.notes.length, 0);
-      const assessment = assessUntimed({ expected, wrong: applied.run.spans.reduce((sum, span) => sum + span.wrongNotes, 0), requirement });
+      const assessment = assess(applied.session, requirement);
       finish(challenge ? assessment : { ...assessment, verdict: { ...assessment.verdict, passed: false } });
     }
-  }, [challenge, finish, instance, phase, requirement]);
+  }, [challenge, finish, phase, requirement]);
 
   const pressChallenge = useCallback((midi) => {
     if (!timedRef.current || phase !== 'running') return;
-    const judged = applyPerformancePress(timedRef.current, midi, Date.now(), TIMING_POLICY, { measureIndex: 0 });
-    timedRef.current = judged.run;
+    const judged = applyAssessmentPress(timedRef.current, midi, Date.now(), { measureIndex: 0 });
+    timedRef.current = judged.session;
     setLastWrong(judged.event?.type === 'unmatched_note');
-    if (judged.event?.type === 'unmatched_note') setWrong((value) => value + 1);
-    const firstPending = judged.run.targets.findIndex((target) => target.state === 'pending');
-    setProgress(firstPending < 0 ? judged.run.targets.length : firstPending);
+    setProgress(assessmentProgress(judged.session));
   }, [phase]);
 
   useEffect(() => {

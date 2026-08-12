@@ -91,6 +91,7 @@ assets:
     world:
       footprint: { size: [8, 4] }
       allowed_materials: [material.grass]
+      allowed_surfaces: [solid]
       allowed_planes: [ground]
       allowed_biomes: [temperate]
       boundary_policy: forbid
@@ -130,7 +131,7 @@ placements:
   - { id: home, prefab: settlement.house, params: { size: small }, at: [220, 88] }
 ```
 
-The compiler produces complete material and elevation grids, rejects overlapping terrain authorship, enforces footprints and material constraints, detects solid-object overlaps, generates catalog-owned shadows, and sorts world objects by render pass and ground-contact Y. Actors and structures share the same world-depth pass, so a tree or house does not sit permanently above every character.
+The compiler produces complete material, effective-surface, and elevation grids; rejects overlapping terrain authorship; enforces footprints and material/surface constraints; detects solid-object overlaps; generates catalog-owned shadows; and sorts world objects by render pass and ground-contact Y. Every asset and prefab declares `world.allowed_surfaces`. Bridges and docks may declare `world.provides_surface: solid`, while hazards or pools may provide `liquid`; later placement and navigation checks use that effective surface rather than guessing from pixels. Actors and structures share the same world-depth pass, so a tree or house does not sit permanently above every character.
 
 The style profile also owns the production composition grammar. QA measures occupied screen sectors and visible logical-grid coverage from authored placement content only, so repeated terrain fills and tiled floors cannot make an empty room pass. It also measures the largest connected walkable component after excluding liquid/void materials and solid footprints, plus the dominance of the most repeated placement frame. These limits are pack-wide rather than scene-specific.
 
@@ -152,9 +153,15 @@ terrain:
       material: material.water
       shapes:
         - { kind: blob, center: [17, 6], radius: [2, 5], roughness: 0.45, seed: 29 }
+      exclude:
+        shapes:
+          - { kind: ellipse, center: [17, 6], radius: [1, 2] }
+      continues: [east]
 ```
 
-`rounded-rect`, `ellipse`, `blob`, and `route` expand to ordinary material cells before topology resolution, so edge and inner-corner metadata remains the sole authority for sprite selection. Route placement references resolve to the named placement's ground-contact grid cell, keeping roads attached when a landmark moves.
+`rounded-rect`, `ellipse`, `blob`, and `route` expand to ordinary material cells before topology resolution, so edge and inner-corner metadata remains the sole authority for sprite selection. `exclude` subtracts cells, rectangles, or shapes, which supports islands, lakes, moats, clearings, and cave-water inversions without enumerating coordinates. A shape may cross the east or south viewport edge only when its region declares that side in `continues`; the compiler clips the off-screen portion while still requiring the in-view material to touch the declared edge. Route placement references resolve to the named placement's ground-contact grid cell, keeping roads attached when a landmark moves.
+
+Color-backed materials are emitted as explicit renderer-neutral fill commands; the scene clear color is never accepted as terrain. Component profiles may provide a replacement logical surface, may define a separate `interior` frame for bordered pools, and choose fill variants deterministically while avoiding immediate north/west repetition. Render layers remain catalog metadata: base floors belong below connector and structure layers rather than relying on scene command order.
 
 Reusable placement groups distribute authored candidates inside semantic zones:
 
@@ -223,13 +230,18 @@ A production suite sets `baseline` to a relative `presentation-artifact-baseline
 `scene-qa-set` cannot update the baseline. On any missing, unexpected, or changed artifact it records the regression in `report.yml`, emits a red pixel-diff PNG under the QA output's `diffs/` directory, and fails. The only promotion path is an explicit reviewed command:
 
 ```bash
+node cli/gaming-assets.cli.mjs scene-qa-set --root /path/to/_common \
+  --manifest /path/to/_common/catalog/showcase-v2/scenes.yml \
+  --out-dir /path/to/reviewed-qa \
+  --candidate true
+
 node cli/gaming-assets.cli.mjs scene-qa-approve --root /path/to/_common \
   --manifest /path/to/_common/catalog/showcase-v2/scenes.yml \
   --report /path/to/reviewed-qa/report.yml \
   --artifacts-dir /path/to/_common/previews/baselines/showcase-v2
 ```
 
-Approval accepts only a valid completed report, re-hashes every source PNG before copying, and writes portable relative paths. Catalog YAML and approved pixels remain in mounted media; Git contains the framework and adversarial approval/regression tests only.
+Candidate mode still runs every catalog, compilation, composition, clipping, determinism, and artifact-hash gate; it only marks the intentional visual delta as reviewable instead of comparing it with the old baseline. Approval accepts only a valid completed report, re-hashes every source PNG before copying, and writes portable relative paths. A normal non-candidate run must then match the promoted baseline exactly. Catalog YAML and approved pixels remain in mounted media; Git contains the framework and adversarial approval/regression tests only.
 
 Terrain QA counts diagonal concavities only when the compiler actually selects their reviewed inner-corner layers. A cell with four matching cardinal neighbors is not automatically interior: missing diagonals are resolved before the fill fast-path. Connector counts similarly represent unique graph adjacencies, not merely the number of connector tiles drawn.
 

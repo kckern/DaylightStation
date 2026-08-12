@@ -19,6 +19,7 @@ const ANCHORS = new Set(['top-left', 'top-center', 'top-right', 'center-left', '
 const LAYERS = new Set(['terrain', 'below', 'ground', 'actor', 'structure', 'overhead', 'air', 'ui']);
 const BOUNDARY_POLICIES = new Set(['forbid', 'allow', 'require']);
 const COMPOSITION_ROLE_COUNT = 6;
+const SURFACES = new Set(['solid', 'liquid', 'void']);
 
 export function isPair(value, { positive = false, numeric = false } = {}) {
   return Array.isArray(value) && value.length === 2 && value.every((part) =>
@@ -50,6 +51,7 @@ function validateWorldMetadata(asset, prefix, errors) {
   if (!isPair(world.footprint?.size, { positive: true, numeric: true })) errors.push(`${prefix}: world.footprint.size must be a positive logical pair`);
   if (world.footprint?.offset !== undefined && (!Array.isArray(world.footprint.offset) || world.footprint.offset.length !== 2 || world.footprint.offset.some((value) => !Number.isFinite(value)))) errors.push(`${prefix}: world.footprint.offset must be a logical pair`);
   if (!Array.isArray(world.allowed_materials) || !world.allowed_materials.length || world.allowed_materials.some((id) => id !== '*' && !PRESENTATION_ID.test(String(id)))) errors.push(`${prefix}: world.allowed_materials must contain material ids or *`);
+  if (!Array.isArray(world.allowed_surfaces) || !world.allowed_surfaces.length || world.allowed_surfaces.some((surface) => !SURFACES.has(surface))) errors.push(`${prefix}: world.allowed_surfaces must contain solid, liquid, or void`);
   if (!Array.isArray(world.allowed_planes) || !world.allowed_planes.length || world.allowed_planes.some((id) => !PRESENTATION_ID.test(String(id)))) errors.push(`${prefix}: world.allowed_planes must contain plane ids`);
   if (!Array.isArray(world.allowed_biomes) || !world.allowed_biomes.length || world.allowed_biomes.some((id) => id !== '*' && !PRESENTATION_ID.test(String(id)))) errors.push(`${prefix}: world.allowed_biomes must contain biome ids or *`);
   if (!BOUNDARY_POLICIES.has(world.boundary_policy)) errors.push(`${prefix}: world.boundary_policy must be forbid, allow, or require`);
@@ -57,6 +59,7 @@ function validateWorldMetadata(asset, prefix, errors) {
   if (world.sort_offset !== undefined && !Number.isFinite(world.sort_offset)) errors.push(`${prefix}: world.sort_offset must be numeric`);
   if (world.visual_scale !== undefined) errors.push(`${prefix}: world.visual_scale is forbidden; normalize source geometry and pixel_density instead`);
   if (!['solid', 'passable'].includes(world.collision)) errors.push(`${prefix}: world.collision must be solid or passable`);
+  if (world.provides_surface !== undefined && !SURFACES.has(world.provides_surface)) errors.push(`${prefix}: world.provides_surface must be solid, liquid, or void`);
   if (!PRESENTATION_ID.test(String(world.scale_class ?? ''))) errors.push(`${prefix}: world.scale_class is required`);
   if (world.shadow_profile !== undefined && !PRESENTATION_ID.test(String(world.shadow_profile))) errors.push(`${prefix}: world.shadow_profile is invalid`);
 }
@@ -151,7 +154,7 @@ export function validatePresentationCatalog(catalog) {
     if (!PRESENTATION_ID.test(String(material?.style_profile ?? '')) || !styleProfiles?.[material.style_profile]) errors.push(`${prefix}: unknown style_profile`);
     if (!PRESENTATION_ID.test(String(material?.plane ?? ''))) errors.push(`${prefix}: plane is required`);
     if (!PRESENTATION_ID.test(String(material?.biome ?? ''))) errors.push(`${prefix}: biome is required`);
-    if (!['solid', 'liquid', 'void'].includes(material?.surface)) errors.push(`${prefix}: surface must be solid, liquid, or void`);
+    if (!SURFACES.has(material?.surface)) errors.push(`${prefix}: surface must be solid, liquid, or void`);
     if (material?.fill?.asset) checkReference(catalog, `${material.fill.asset}#${material.fill.frame ?? 'default'}`, prefix, errors);
     else if (!/^#[a-f0-9]{6}$/i.test(String(material?.fill?.color ?? ''))) errors.push(`${prefix}: fill needs an asset/frame or color`);
   }
@@ -172,6 +175,8 @@ export function validatePresentationCatalog(catalog) {
       if (!PRESENTATION_ID.test(id)) errors.push(`${prefix}: invalid id`);
       checkReference(catalog, entry?.asset, prefix, errors);
       if (!assets?.[assetReference(entry?.asset).asset]?.[capability]) errors.push(`${prefix}: asset lacks ${capability} metadata`);
+      if (field === 'component_profiles' && (!Array.isArray(entry?.allowed_surfaces) || !entry.allowed_surfaces.length || entry.allowed_surfaces.some((surface) => !SURFACES.has(surface)))) errors.push(`${prefix}: allowed_surfaces must contain solid, liquid, or void`);
+      if (field === 'component_profiles' && entry?.provides_surface !== undefined && !SURFACES.has(entry.provides_surface)) errors.push(`${prefix}: provides_surface must be solid, liquid, or void`);
     }
   }
 
@@ -180,10 +185,12 @@ export function validatePresentationCatalog(catalog) {
     if (!PRESENTATION_ID.test(id)) errors.push(`${prefix}: invalid id`);
     if (!isPair(prefab?.world?.footprint?.size, { positive: true, numeric: true })) errors.push(`${prefix}: world.footprint.size is required`);
     if (!Array.isArray(prefab?.world?.allowed_materials) || !prefab.world.allowed_materials.length || prefab.world.allowed_materials.some((entry) => entry !== '*' && !PRESENTATION_ID.test(String(entry)))) errors.push(`${prefix}: world.allowed_materials must contain material ids or *`);
+    if (!Array.isArray(prefab?.world?.allowed_surfaces) || !prefab.world.allowed_surfaces.length || prefab.world.allowed_surfaces.some((surface) => !SURFACES.has(surface))) errors.push(`${prefix}: world.allowed_surfaces must contain solid, liquid, or void`);
     if (!Array.isArray(prefab?.world?.allowed_planes) || !prefab.world.allowed_planes.length || prefab.world.allowed_planes.some((entry) => !PRESENTATION_ID.test(String(entry)))) errors.push(`${prefix}: world.allowed_planes must contain plane ids`);
     if (!Array.isArray(prefab?.world?.allowed_biomes) || !prefab.world.allowed_biomes.length || prefab.world.allowed_biomes.some((entry) => entry !== '*' && !PRESENTATION_ID.test(String(entry)))) errors.push(`${prefix}: world.allowed_biomes must contain biome ids or *`);
     if (!BOUNDARY_POLICIES.has(prefab?.world?.boundary_policy)) errors.push(`${prefix}: world.boundary_policy is invalid`);
     if (!['solid', 'passable'].includes(prefab?.world?.collision)) errors.push(`${prefix}: world.collision must be solid or passable`);
+    if (prefab?.world?.provides_surface !== undefined && !SURFACES.has(prefab.world.provides_surface)) errors.push(`${prefix}: world.provides_surface must be solid, liquid, or void`);
     if (!Array.isArray(prefab?.world?.slots)) errors.push(`${prefix}: world.slots must be an array`);
     if (!Array.isArray(prefab?.layers) || !prefab.layers.length) errors.push(`${prefix}: layers must be a non-empty array`);
     const inspect = (layer, layerPrefix) => {

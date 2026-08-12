@@ -874,7 +874,8 @@ export async function validateManifest({ root, manifestPath }) {
           for (const frameName of component.frames) if (!frames?.[frameName]) errors.push(`${prefix}: component ${componentId} references unknown frame ${frameName}`);
           if (component.outline !== undefined) {
             const keys = ['nw', 'n', 'ne', 'w', 'e', 'sw', 's', 'se'];
-            if (component.role !== 'border' || !component.outline || typeof component.outline !== 'object' || Array.isArray(component.outline) || keys.some((key) => !frames?.[component.outline[key]])) errors.push(`${prefix}: component ${componentId} outline must map nw/n/ne/w/e/sw/s/se to frames`);
+            if (!['border', 'hazard'].includes(component.role) || !component.outline || typeof component.outline !== 'object' || Array.isArray(component.outline) || keys.some((key) => !frames?.[component.outline[key]])) errors.push(`${prefix}: component ${componentId} outline must map nw/n/ne/w/e/sw/s/se to frames for a border or hazard`);
+            if (component.interior !== undefined && !frames?.[component.interior]) errors.push(`${prefix}: component ${componentId} interior references unknown frame`);
           }
         }
       }
@@ -1449,6 +1450,11 @@ async function renderPresentationPlan({ root, catalog, plan, out }) {
     return { image: images.get(file), facts: fileFacts };
   };
   for (const command of plan.commands) {
+    if (command.type === 'fill') {
+      ctx.save(); ctx.globalAlpha = command.opacity; ctx.fillStyle = command.color;
+      ctx.fillRect(command.at[0] * scale, command.at[1] * scale, command.size[0] * scale, command.size[1] * scale); ctx.restore();
+      continue;
+    }
     if (command.type === 'shadow') {
       ctx.save(); ctx.globalAlpha = command.opacity; ctx.fillStyle = command.color;
       ctx.beginPath(); ctx.ellipse(command.at[0] * scale, command.at[1] * scale, command.size[0] * scale / 2, command.size[1] * scale / 2, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
@@ -1640,7 +1646,8 @@ export async function approveSceneQaBaseline({ manifestPath, reportPath, artifac
 }
 
 /** Render and gate a named collection of semantic scenes as one regression suite. */
-export async function renderSceneQaSet({ root, manifestPath, outDir }) {
+export async function renderSceneQaSet({ root, manifestPath, outDir, candidate = false }) {
+  if (typeof candidate !== 'boolean') throw new Error('scene QA set candidate must be boolean');
   const suitePath = path.resolve(manifestPath);
   const suite = YAML.parse(await readFile(suitePath, 'utf8'), { uniqueKeys: true }) ?? {};
   const presentationV2 = suite.schema_version === 2 && suite.kind === 'presentation-scene-qa-set';
@@ -1758,8 +1765,10 @@ export async function renderSceneQaSet({ root, manifestPath, outDir }) {
   if (summary.connections < (requirements.minimum_connections ?? 0)) throw new Error(`scene QA set requires at least ${requirements.minimum_connections} connections; found ${summary.connections}`);
   const artifactFiles = [...new Set([montagePath, reviewMontagePath, ...reports.flatMap((report) => Object.values(report.outputs))])];
   const artifactHashes = Object.fromEntries(await Promise.all(artifactFiles.map(async (file) => [posixRelative(outDir, file), await sha256File(file)])));
-  const visualRegression = await compareApprovedArtifacts({ suitePath, suite, outDir, artifactHashes });
-  const result = { ...summary, valid: visualRegression?.valid ?? true, review_regions: reviewEntries.length, artifact_count: artifactFiles.length, artifact_sha256: artifactHashes, visual_regression: visualRegression, out_dir: outDir, montage: montagePath, review_montage: reviewMontagePath, reports };
+  const visualRegression = candidate
+    ? { valid: true, candidate: true, baseline: suite.baseline ? path.resolve(suiteDir, suite.baseline) : null }
+    : await compareApprovedArtifacts({ suitePath, suite, outDir, artifactHashes });
+  const result = { ...summary, valid: visualRegression?.valid ?? true, approval_candidate: candidate, review_regions: reviewEntries.length, artifact_count: artifactFiles.length, artifact_sha256: artifactHashes, visual_regression: visualRegression, out_dir: outDir, montage: montagePath, review_montage: reviewMontagePath, reports };
   await writeYaml(path.join(outDir, 'report.yml'), result);
   if (visualRegression && !visualRegression.valid) throw new Error(`scene QA visual regression failed: ${visualRegression.changed.length} changed, ${visualRegression.missing.length} missing, ${visualRegression.unexpected.length} unexpected artifacts; inspect ${path.join(outDir, 'diffs')}`);
   return result;
@@ -2263,7 +2272,9 @@ async function renderFenceConnectorRecipe({ root, job, out }) {
   const { canvas, ctx } = await createPixelCanvas(cell[0] * 4, cell[1] * 3);
   const drawCell = (sourceCell, destinationCell) => ctx.drawImage(image, sourceCell[0] * cell[0], sourceCell[1] * cell[1], cell[0], cell[1], destinationCell[0] * cell[0], destinationCell[1] * cell[1], cell[0], cell[1]);
   const [baseX, baseY] = job.base;
-  [[baseX + 1, baseY], [baseX + 3, baseY], [baseX + 1, baseY + 3], [baseX + 3, baseY + 3]].forEach((sourceCell, index) => drawCell(sourceCell, [index, 0]));
+  const topCornerRowOffset = job.top_corner_row_offset ?? 0;
+  if (!Number.isInteger(topCornerRowOffset) || topCornerRowOffset < 0 || topCornerRowOffset > 3) throw new Error('top_corner_row_offset is invalid');
+  [[baseX + 1, baseY + topCornerRowOffset], [baseX + 3, baseY + topCornerRowOffset], [baseX + 1, baseY + 3], [baseX + 3, baseY + 3]].forEach((sourceCell, index) => drawCell(sourceCell, [index, 0]));
   const extensionRows = job.top_extension_rows ?? 2;
   if (!Number.isInteger(extensionRows) || extensionRows < 0 || extensionRows > cell[1]) throw new Error('top_extension_rows is invalid');
   if (extensionRows) for (const destinationX of [0, 1]) ctx.drawImage(

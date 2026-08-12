@@ -42,6 +42,10 @@ describe('useFlashcardGame — chord levels', () => {
     act(() => hook.rerender({ notes: makeNotes(...voicing(hook.result.current.currentCard)) }));
     expect(hook.result.current.cardStatus).toBe('hit');
     expect(hook.result.current.score).toBe(10);
+    expect(hook.result.current.assessment).toMatchObject({
+      criteria: { completeness: 1, cleanliness: 1 },
+      rubric: { id: 'flashcards-v1' },
+    });
   });
 
   it('flags a complete chord over the wrong bass as a miss', () => {
@@ -51,6 +55,7 @@ describe('useFlashcardGame — chord levels', () => {
     const third = card.quality === 'major' ? 52 : 51;
     act(() => hook.rerender({ notes: makeNotes(third - 12, 60, 67) }));
     expect(hook.result.current.cardStatus).toBe('miss');
+    expect(hook.result.current.assessment.criteria.completeness).toBe(0);
   });
 
   it('does NOT judge a new card against notes still held from the previous hit', () => {

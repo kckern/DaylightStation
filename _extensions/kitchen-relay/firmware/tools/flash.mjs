@@ -19,7 +19,13 @@ const firmwareDir = path.join(__dirname, '..');
 const argv = process.argv.slice(2);
 const portIdx = argv.indexOf('--port');
 let port = portIdx !== -1 ? argv[portIdx + 1] : null;
-const rest = argv.filter((a, i) => a !== '--port' && i !== portIdx + 1);
+// Drop the `--port <dev>` pair, but ONLY when it is actually present. This used
+// to be `filter((a, i) => a !== '--port' && i !== portIdx + 1)`, and with no
+// --port flag portIdx is -1, so `portIdx + 1` is 0 and it silently ate argv[0] —
+// the scales.yml path. Every invocation in the README (none of which pass
+// --port) then ran `gen-config.mjs <scale-id>` with the id in the path slot and
+// died on ENOENT. Fixed 2026-08-12, first time the documented path was run.
+const rest = portIdx === -1 ? argv : argv.filter((_, i) => i !== portIdx && i !== portIdx + 1);
 const src = rest[0] || process.env.DAYLIGHT_SCALES_CONFIG;
 const scaleId = rest[1] || '';
 
