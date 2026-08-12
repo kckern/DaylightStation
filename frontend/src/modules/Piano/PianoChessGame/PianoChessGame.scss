@@ -1,0 +1,253 @@
+/**
+ * Piano Chess.
+ *
+ * The palette is the instrument's own bill of materials — ivory key, walnut
+ * case, brass hardware, and the red felt under the hammers, which is reserved
+ * for check because that is the only place the board needs to sound an alarm.
+ * Type stays Roboto Condensed throughout (house face); emphasis is bought with
+ * weight, tracking, and brass rather than with a second family.
+ */
+
+.piano-chess {
+  --pc-case: #17110e;
+  --pc-case-lift: #221913;
+  --pc-ivory: #efe4cd;
+  --pc-ivory-dim: #cbbfa8;
+  --pc-walnut: #55392b;
+  --pc-walnut-deep: #3b2619;
+  --pc-brass: #c9a227;
+  --pc-brass-glow: #f0cc55;
+  --pc-felt: #9b2c2c;
+  --pc-verdigris: #4e8878;
+
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem 0;
+  background:
+    radial-gradient(120% 90% at 50% 0%, var(--pc-case-lift) 0%, var(--pc-case) 62%);
+  color: var(--pc-ivory);
+  font-family: 'Roboto Condensed', sans-serif;
+  overflow: hidden;
+}
+
+/* ---- header ------------------------------------------------------------- */
+
+.piano-chess__header {
+  display: flex;
+  align-items: baseline;
+  gap: 1.25rem;
+}
+
+.piano-chess__wordmark {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-inline-end: auto;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--pc-ivory);
+
+  span {
+    color: var(--pc-brass);
+  }
+}
+
+/* The re-deal notice. Loud for a beat, then a standing reminder — the player
+   needs to know the map moved without the header shouting every turn. */
+.piano-chess__redeal {
+  margin: 0;
+  font-size: 0.8rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgb(203 191 168 / 40%);
+  transition: color 300ms ease;
+}
+
+.piano-chess__redeal--fresh {
+  color: var(--pc-brass-glow);
+}
+
+.piano-chess__turn {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  font-size: 1.05rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--pc-ivory-dim);
+}
+
+.piano-chess__difficulty {
+  padding: 0.1rem 0.55rem;
+  border: 1px solid rgb(201 162 39 / 45%);
+  border-radius: 2px;
+  font-size: 0.8rem;
+  letter-spacing: 0.2em;
+  color: var(--pc-brass);
+}
+
+.piano-chess__exit {
+  padding: 0.3rem 0.9rem;
+  border: 1px solid rgb(239 228 205 / 25%);
+  border-radius: 2px;
+  background: none;
+  color: var(--pc-ivory-dim);
+  font: inherit;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  cursor: pointer;
+
+  &:hover,
+  &:focus-visible {
+    border-color: var(--pc-brass);
+    color: var(--pc-brass);
+  }
+}
+
+/* ---- stage -------------------------------------------------------------- */
+
+.piano-chess__stage {
+  display: grid;
+  grid-template-columns: minmax(11rem, 1fr) auto minmax(11rem, 1fr);
+  align-items: center;
+  gap: 1.5rem;
+  min-height: 0;
+}
+
+.piano-chess__rail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-width: 0;
+  align-self: stretch;
+  justify-content: center;
+}
+
+.piano-chess__rail-title {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 400;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: rgb(203 191 168 / 60%);
+}
+
+.piano-chess__slot {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.piano-chess__slot-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: rgb(203 191 168 / 55%);
+}
+
+/* The chord readout is the loudest type on screen — it is what the player is
+   actually doing, and it has to be readable from across a room. */
+.piano-chess__chord {
+  font-size: clamp(1.8rem, 3.4vw, 3rem);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  color: rgb(203 191 168 / 35%);
+  font-variant-numeric: tabular-nums;
+}
+
+.piano-chess__chord--set {
+  color: var(--pc-ivory);
+}
+
+.piano-chess__chord--live {
+  color: var(--pc-brass-glow);
+  text-shadow: 0 0 1.5rem rgb(240 204 85 / 35%);
+}
+
+.piano-chess__prompt {
+  margin: 0.4rem 0 0;
+  font-size: 0.95rem;
+  line-height: 1.35;
+  color: var(--pc-ivory-dim);
+}
+
+.piano-chess__hearing {
+  margin: 0;
+  font-size: 0.85rem;
+  letter-spacing: 0.1em;
+  color: rgb(201 162 39 / 80%);
+
+  strong { font-weight: 700; }
+}
+
+/* ---- board -------------------------------------------------------------- */
+
+/* The board itself lives in modules/Chess. Piano only tunes its tokens, so the
+   School board and this one stay the same component with different clothes. */
+.piano-chess .chess-board-frame {
+  --cb-size: min(56vw, 60vh);
+  --cb-light: var(--pc-ivory);
+  --cb-dark: var(--pc-walnut);
+  --cb-frame: var(--pc-walnut-deep);
+  --cb-accent: var(--pc-brass);
+  --cb-accent-glow: var(--pc-brass-glow);
+  --cb-hint: var(--pc-verdigris);
+  --cb-danger: var(--pc-felt);
+  --cb-label: var(--pc-ivory-dim);
+}
+
+/* ---- move log ----------------------------------------------------------- */
+
+.piano-chess__rail--log { justify-content: flex-start; padding-block-start: 0.5rem; }
+
+.piano-chess__moves {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.piano-chess__move {
+  display: grid;
+  grid-template-columns: 1.5rem 1fr auto;
+  gap: 0.4rem;
+  align-items: baseline;
+  font-size: 0.9rem;
+  color: var(--pc-ivory-dim);
+}
+
+.piano-chess__move-index { color: rgb(203 191 168 / 40%); font-size: 0.75rem; }
+.piano-chess__move-chords { color: var(--pc-brass); font-weight: 700; }
+.piano-chess__move-san { color: rgb(203 191 168 / 55%); font-size: 0.8rem; }
+.piano-chess__move--empty { grid-template-columns: 1fr; color: rgb(203 191 168 / 40%); }
+
+.piano-chess__captured {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding-block-start: 0.6rem;
+  border-block-start: 1px solid rgb(239 228 205 / 12%);
+}
+
+.piano-chess__captured-pieces {
+  font-size: 1.25rem;
+  line-height: 1.1;
+  color: var(--pc-ivory);
+}
+
+/* ---- keyboard ----------------------------------------------------------- */
+
+.piano-chess__keys {
+  height: clamp(4.5rem, 11vh, 7rem);
+  opacity: 0.9;
+}
