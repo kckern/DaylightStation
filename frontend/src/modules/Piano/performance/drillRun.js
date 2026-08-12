@@ -40,6 +40,7 @@ export function applyDrillPress(run, note) {
   if (run.complete || !run.spans.length) return { run, event: { type: 'ignored' } };
   const span = run.spans[run.spanIndex];
   const target = span.expectedMidi[span.progress];
+  if (target == null) return { run, event: { type: 'ignored' } };
 
   if (note === target) {
     const spans = [...run.spans];

@@ -17,7 +17,7 @@ export function gradeOrderedPerformance({ expectedCount, wrongNotes = 0, timingQ
   const timing = timingQualities.length > 0
     ? timingQualities.reduce((total, value) => total + value, 0) / timingQualities.length
     : (paced ? 0 : null);
-  const w = weights || (paced ? ORDERED_WEIGHTS.paced : ORDERED_WEIGHTS.untimed);
+  const w = { ...(paced ? ORDERED_WEIGHTS.paced : ORDERED_WEIGHTS.untimed), ...(weights || {}) };
   const score = w.pitch * pitchAccuracy + w.timing * (timing ?? 0) + w.continuity * continuity;
   return {
     score: clamp01(score),
@@ -39,8 +39,9 @@ export function gradeChordPerformance({ targetNotes, wrongAttempts = 0, onsetSpa
 }
 
 /** Map a 0–1 score to the polish red/yellow/green bands. */
-export function gradeBand(score, thresholds = { green: 0.9, yellow: 0.6 }) {
-  return score >= thresholds.green ? 'green' : score >= thresholds.yellow ? 'yellow' : 'red';
+export function gradeBand(score, thresholds) {
+  const t = { green: 0.9, yellow: 0.6, ...(thresholds || {}) };
+  return score >= t.green ? 'green' : score >= t.yellow ? 'yellow' : 'red';
 }
 
 export default { gradeOrderedPerformance, gradeChordPerformance, timingQuality, gradeBand };
