@@ -86,6 +86,7 @@
      both be visible on the same square at once — box-shadow itself is set exactly
      once, here, composed from whichever layers the square's classes populate. */
   box-shadow:
+    var(--sq-mute, 0 0 #0000),
     var(--sq-light, 0 0 #0000),
     var(--sq-light-ring, 0 0 #0000),
     var(--sq-mark, 0 0 #0000),
@@ -106,15 +107,99 @@
    faintly and narrow; the resolved square is unmistakable. Each rule sets a
    --sq-* layer, not box-shadow itself, so this composes with the other channels
    instead of replacing them. */
-.chess-board__square--candidate { --sq-light: inset 0 0 0 100vmax color-mix(in srgb, var(--cb-accent-glow) 13%, transparent); }
+/* OUTLINES, NOT WASHES. A coloured film over a square fights the board's own
+   colours, tints the pieces standing on it, and at any strength that reads
+   clearly it looks like a highlighter has been dragged across the game. An
+   inset ring says the same thing at the square's edge and leaves the square
+   itself — and the piece — alone.
+   The three ring weights are the three degrees of certainty: still possible,
+   resolved, and asked-for. */
+.chess-board__square--candidate {
+  --sq-light-ring: inset 0 0 0 2px color-mix(in srgb, var(--cb-accent-glow) 60%, transparent);
+}
+
+/* Out of play for what is currently being spelled. Pulled back with a dark
+   scrim rather than an opacity change: opacity on a grid of 64 buttons is a
+   compositing layer each, which the 2018 tablet cannot afford. */
+.chess-board__square--muted {
+  --sq-mute: inset 0 0 0 100vmax rgb(10 8 12 / 46%);
+}
+/* The one square the chord actually names: the same ring, drawn heavier and at
+   full strength, plus a whisper of fill so it still reads from across the room
+   without becoming a colour swatch. */
 .chess-board__square--cursor {
-  --sq-light: inset 0 0 0 100vmax color-mix(in srgb, var(--cb-accent-glow) 34%, transparent);
-  --sq-light-ring: inset 0 0 0 3px var(--cb-accent-glow);
+  --sq-light: inset 0 0 0 100vmax color-mix(in srgb, var(--cb-accent-glow) 10%, transparent);
+  --sq-light-ring:
+    inset 0 0 0 4px var(--cb-accent-glow),
+    inset 0 0 0 6px color-mix(in srgb, var(--cb-accent-glow) 30%, transparent);
 }
 
 /* Channel 2 — outline. Where you are in the move. */
 .chess-board__square--selected { outline: 3px solid var(--cb-accent); outline-offset: -3px; }
 .chess-board__square--last-move { outline: 2px dashed color-mix(in srgb, var(--cb-accent) 42%, transparent); outline-offset: -2px; }
+
+/* The piece in hand. An animated variant of the outline channel, not a fifth
+   visual language: a solid outline still means "last move"; the crawl means
+   "this one is in the air". background-position is animated deliberately —
+   an animated filter is a documented paint-cost trap on the kiosk's 2018
+   tablet.
+   This is a real child element (`.chess-board__held-ants`), not
+   `.chess-board__square--held::before` — `--best` already claims `::before`
+   on the square, and a held piece can also be the engine's suggested move
+   (PianoChessGame passes both `heldSquare` and `bestMove` to the same
+   board). An element has one `::before`; two rules fighting over it was
+   found and fixed on this board once already. */
+.chess-board__held-ants {
+  /* One dash + one gap. The animation travels EXACTLY this far, which is what
+     makes the loop seamless — travel any other distance and the pattern lands
+     out of phase and visibly snaps back at the end of every cycle. */
+  --cb-ant-period: 14px;
+
+  position: absolute;
+  inset: 3px;
+  pointer-events: none;
+  border-radius: 2px;
+
+  /* TILED, not a single painted band. With `no-repeat` the one band slides off
+     its edge and leaves a growing gap behind it, then jumps home — which reads
+     as the border being yanked back rather than crawling. Repeating the tile
+     means there is always another dash arriving. */
+  background-image:
+    repeating-linear-gradient(90deg, var(--cb-accent-glow) 0 7px, transparent 7px 14px),
+    repeating-linear-gradient(90deg, var(--cb-accent-glow) 0 7px, transparent 7px 14px),
+    repeating-linear-gradient(0deg, var(--cb-accent-glow) 0 7px, transparent 7px 14px),
+    repeating-linear-gradient(0deg, var(--cb-accent-glow) 0 7px, transparent 7px 14px);
+  background-repeat: repeat-x, repeat-x, repeat-y, repeat-y;
+  background-size: 100% 2px, 100% 2px, 2px 100%, 2px 100%;
+  /* Numeric on both ends of the animation. Keyword positions (`top`, `left`)
+     do not interpolate to a numeric offset, so the browser jumps between them
+     instead of tweening — the other half of the jerk. */
+  background-position: 0 0, 0 100%, 0 0, 100% 0;
+  animation: chess-board-ants 0.6s linear infinite;
+}
+
+/* Around the perimeter, not four independent stripes: top travels right,
+   bottom left, right down, left up. That circulation is what makes it read as
+   one thread going round the square. */
+@keyframes chess-board-ants {
+  from { background-position: 0 0, 0 100%, 0 0, 100% 0; }
+  to {
+    background-position:
+      var(--cb-ant-period) 0,
+      calc(-1 * var(--cb-ant-period)) 100%,
+      0 calc(-1 * var(--cb-ant-period)),
+      100% var(--cb-ant-period);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chess-board__held-ants {
+    animation: none;
+    background: none;
+    outline: 3px solid var(--cb-accent-glow);
+    outline-offset: -3px;
+  }
+}
 
 /* Channel 3 — marks. Only ever present because the player asked. */
 .chess-board__square--destination .chess-board__dot {
@@ -133,13 +218,52 @@
    very likely to be among the destinations the player just asked to see. They
    live on different pseudo-elements (::after / ::before) so both can render on
    the same square at once. */
-.chess-board__square--hint::after {
-  content: ''; position: absolute; inset: 34%;
-  border-radius: 50%; background: var(--cb-hint);
+/* HINT LEVEL 1 — "where can this go". Its own ring, in the help colour rather
+   than the hands colour, so asked-for help never reads as something the player
+   found themselves. A dot alone disappears under a piece — exactly the case a
+   child needs it for (can I take that?) — so the ring carries it there. */
+.chess-board__square--hint {
+  --sq-mark: inset 0 0 0 3px var(--cb-hint);
 }
+
+.chess-board__square--hint::after {
+  content: ''; position: absolute; inset: 36%;
+  border-radius: 50%; background: var(--cb-hint);
+  opacity: 0.9;
+}
+
+/* Under a piece the dot would be hidden anyway — the wash carries it there. */
+.chess-board__square--hint:has(.chess-board__piece)::after { content: none; }
+
+/* HINT LEVEL 2 — the engine's answer. A ring rather than a wash, because it
+   names TWO squares (from and to) and has to be legible on top of level 1's
+   wash when a player asks for both. */
 .chess-board__square--best::before {
-  content: ''; position: absolute; inset: 12%;
-  border: 3px solid var(--cb-hint); border-radius: 50%;
+  content: ''; position: absolute; inset: 10%;
+  border: 4px solid var(--cb-accent-glow); border-radius: 50%;
+  box-shadow: 0 0 0 2px rgb(0 0 0 / 35%), inset 0 0 0 2px rgb(0 0 0 / 35%);
+}
+
+/* The chord that reaches this square, printed by a host through `squareLabels`.
+   The corner is the one placement that never covers the piece, which matters
+   most on a capture. Sized off the board token — a square is --cb-size/8, so
+   this is 26% of a square's side — rather than cqmin, which would need
+   container-type on all 64 cells and a WebView new enough to resolve it.
+   z-index 2 on purpose: the piece paints at z-index 1, and an auto-stacked
+   badge would vanish under the very occupant it is labelling. */
+.chess-board__badge {
+  position: absolute;
+  top: 3%;
+  right: 3%;
+  z-index: 2;
+  padding: 0.1em 0.3em;
+  border-radius: 2px;
+  background: var(--cb-hint);
+  color: var(--cb-light);
+  font-size: calc(var(--cb-size) / 8 * 0.26);
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
 }
 
 /* Channel 4 — colour. Alarms, and nothing else. */

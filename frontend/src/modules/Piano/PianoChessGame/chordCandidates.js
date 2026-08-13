@@ -1,4 +1,5 @@
 import { chordBoard } from './chordAddress.js';
+import { isStaffScheme, staffCandidateSquares } from './staffAddress.js';
 
 /**
  * Which squares are still possible given what is held.
@@ -12,6 +13,10 @@ import { chordBoard } from './chordAddress.js';
  * end, and the player needs to see the board reacting on the way there.
  */
 export function candidateSquares(heldNotes, scheme) {
+  // In the reading vocabulary a note lights a whole rank or a whole file, and
+  // the octave is meaningful — so the pitch-class subset rule below is simply
+  // the wrong question to ask.
+  if (isStaffScheme(scheme)) return staffCandidateSquares(heldNotes, scheme);
   const held = [...new Set((heldNotes || [])
     .filter(Number.isFinite)
     .map((note) => ((note % 12) + 12) % 12))];

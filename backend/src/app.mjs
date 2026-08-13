@@ -270,6 +270,7 @@ import { createChessRouter } from './4_api/v1/routers/chess.mjs';
 import { buildGameRecordFilename } from './4_api/v1/routers/lib/chessGameFilename.mjs';
 import { createStockfishEngine } from './1_adapters/chess/StockfishEngineAdapter.mjs';
 import { createChessConfigService } from './3_applications/chess/ChessConfigService.mjs';
+import { createChessLadderService } from './3_applications/chess/ChessLadderService.mjs';
 import { WikipediaAdapter } from './1_adapters/reference/WikipediaAdapter.mjs';
 import { GameShowService } from './3_applications/gameshow/GameShowService.mjs';
 import { GameShowSessionStore } from './3_applications/gameshow/GameShowSessionStore.mjs';
@@ -1725,6 +1726,36 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         userId,
       ),
     },
+    // The household archive: one file per game, under the day it was played,
+    // named for the player. Household rather than per-user because it is the
+    // instrument's history — the basis for comparing progress across the
+    // children who share this piano, and the corpus the engine reads back when
+    // asked where a game went wrong.
+    archiveStore: {
+      save: (record, userSegment) => {
+        const day = /^\d{4}-\d{2}-\d{2}$/.test(record.played_on || '')
+          ? record.played_on
+          : new Date().toISOString().slice(0, 10);
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+        return dataService.household.write(
+          `history/gaming/pianochess/${day}/${userSegment}-${stamp}`,
+          { ...record, archived_at: new Date().toISOString() },
+        );
+      },
+    },
+    ladderService: createChessLadderService({
+      readConfig: async (userId) => {
+        const household = configService.getHouseholdAppConfig(null, 'chess') || {};
+        const user = userId ? (dataService.user.read('apps/chess/config', userId) || {}) : {};
+        // Only the ladder block is merged here; the full config merge (rungs,
+        // feedback, scalars) is ChessConfigService's job and this must not
+        // become a second, subtly different copy of it.
+        return { ...household, ladder: { ...(household.ladder || {}), ...(user.ladder || {}) } };
+      },
+      readProgress: (userId) => dataService.user.read('apps/chess/ladder', userId) || null,
+      writeProgress: (userId, progress) => dataService.user.write('apps/chess/ladder', progress, userId),
+      logger: rootLogger.child({ module: 'chess-ladder' }),
+    }),
     logger: rootLogger.child({ module: 'chess-api' }),
   });
 

@@ -1,4 +1,5 @@
 import { identifyChord } from './chordAddress.js';
+import { isStaffScheme } from './staffAddress.js';
 
 /**
  * Turning hands into squares.
@@ -18,6 +19,12 @@ export const DEFAULT_SETTLE_MS = 140;
 
 /** Chords need three notes; two is an interval and one is a note. */
 export const MIN_CHORD_NOTES = 3;
+
+/**
+ * How many notes it takes to name a square, which depends on the vocabulary:
+ * a chord needs three, a staff address is exactly two — one note on each staff.
+ */
+export const minNotesFor = (scheme) => (isStaffScheme(scheme) ? 2 : MIN_CHORD_NOTES);
 
 /**
  * The take-it-back gesture: any note and the same note an octave away.
@@ -50,12 +57,13 @@ const sameNotes = (a, b) => a.length === b.length && a.every((note, index) => no
  */
 export function advanceCursor(state, notes, now, { settleMs = DEFAULT_SETTLE_MS, scheme = undefined } = {}) {
   const held = [...notes].sort((a, b) => a - b);
+  const minNotes = minNotesFor(scheme);
 
   // Release: everything is up, so whatever was previewed is the player's answer.
   if (!held.length) {
     // A chord tapped and let go inside the settle window was never read. Saying
     // so beats the silence a child cannot tell apart from a broken piano.
-    if (!state.preview && state.held.length >= MIN_CHORD_NOTES) {
+    if (!state.preview && state.held.length >= minNotes) {
       return { state: createCursorState(), event: { type: 'too_quick' } };
     }
     if (state.preview) {
@@ -84,15 +92,21 @@ export function advanceCursor(state, notes, now, { settleMs = DEFAULT_SETTLE_MS,
   // finger by finger leaves the root octave sounding — so without this guard,
   // the most ordinary way a child plays and releases C major would overwrite the
   // chord just recognised and cancel their move instead of playing it.
-  if (isOctave(held)) {
+  // An address is checked first, because in the reading vocabulary a square can
+  // BE an octave: the bass and treble staves both carry a C, so C2-with-C4 is a
+  // legitimate square. The escape stays reachable because it is played within
+  // one hand — two notes on the same staff, which is never an address.
+  const addressed = held.length >= minNotes ? identifyChord(held, scheme) : null;
+
+  if (isOctave(held) && !addressed?.square) {
     if (state.preview) return { state: { ...state, held, stableSince }, event: null };
     const preview = { escape: true, square: null };
     return { state: { ...state, held, stableSince, preview }, event: { type: 'preview', square: null, chord: preview } };
   }
 
-  if (held.length < MIN_CHORD_NOTES) return { state: { ...state, held, stableSince }, event: null };
+  if (!addressed) return { state: { ...state, held, stableSince }, event: null };
 
-  const match = identifyChord(held, scheme);
+  const match = addressed;
   if (state.preview?.square === match.square && state.preview?.square) {
     return { state: { ...state, held, stableSince }, event: null };
   }

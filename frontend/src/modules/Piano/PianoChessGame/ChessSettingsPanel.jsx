@@ -15,6 +15,8 @@ export default function ChessSettingsPanel({ config, rungId, onChange, onClose }
   const rungs = Array.isArray(config?.rungs) ? config.rungs : [];
   const shuffle = config?.shuffle_each_turn !== false;
   const delayMs = config?.opponent_delay_ms ?? 700;
+  const labelsOn = config?.feedback?.show_destination_labels !== false;
+  const addressing = config?.addressing === 'staff' ? 'staff' : 'chords';
 
   return (
     <section className="chess-settings" aria-label="Chess settings">
@@ -38,6 +40,28 @@ export default function ChessSettingsPanel({ config, rungId, onChange, onClose }
         ))}
       </div>
 
+      {/* The addressing vocabulary — which skill the board asks for. Reading
+          both clefs comes years before spelling chords, so this is the setting
+          that decides whether a given child can play at all. Takes effect on
+          the next game, like the chord map, and for the same reason. */}
+      <h3 className="chess-settings__group">Squares are</h3>
+      <div className="chess-settings__row">
+        {[
+          { id: 'chords', label: 'Chords' },
+          { id: 'staff', label: 'Notes on a staff' },
+        ].map((opt) => (
+          <button
+            key={opt.id}
+            type="button"
+            className={`chess-settings__opt${addressing === opt.id ? ' is-active' : ''}`}
+            aria-pressed={addressing === opt.id}
+            onClick={() => onChange({ addressing: opt.id })}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
       <h3 className="chess-settings__group">Chord map</h3>
       <div className="chess-settings__row">
         {/* Takes effect next game: the map is dealt when the game is created,
@@ -51,6 +75,24 @@ export default function ChessSettingsPanel({ config, rungId, onChange, onClose }
           Shuffle chords each turn
           <span className="chess-settings__note">next game</span>
         </button>
+      </div>
+
+      <h3 className="chess-settings__group">Name the squares</h3>
+      <div className="chess-settings__row">
+        {/* Not a hint control: the labels appear only after the player picks a
+            piece up, and that double-play was the request. This just chooses
+            whether the board answers it. */}
+        {[{ id: true, label: 'Show chords' }, { id: false, label: 'Hide chords' }].map((opt) => (
+          <button
+            key={String(opt.id)}
+            type="button"
+            className={`chess-settings__opt${labelsOn === opt.id ? ' is-active' : ''}`}
+            aria-pressed={labelsOn === opt.id}
+            onClick={() => onChange({ feedback: { show_destination_labels: opt.id } })}
+          >
+            {opt.label}
+          </button>
+        ))}
       </div>
 
       <h3 className="chess-settings__group">Opponent replies after</h3>

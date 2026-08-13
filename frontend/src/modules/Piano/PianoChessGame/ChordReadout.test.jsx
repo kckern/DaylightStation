@@ -3,9 +3,9 @@ import { render, screen } from '@testing-library/react';
 import ChordReadout from './ChordReadout.jsx';
 
 describe('ChordReadout', () => {
-  it('says it is listening when no keys are down', () => {
+  it('says it has heard nothing when no keys are down', () => {
     render(<ChordReadout heldNotes={[]} chord={null} square={null} connected />);
-    expect(screen.getByText(/listening/i)).toBeTruthy();
+    expect(screen.getByText(/nothing yet/i)).toBeTruthy();
   });
 
   it('names the chord and the square it addresses', () => {
