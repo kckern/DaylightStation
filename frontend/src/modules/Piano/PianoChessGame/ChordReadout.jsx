@@ -61,11 +61,11 @@ export default function ChordReadout({
           <span className="chess-readout__chord">{symbol ?? (held > 0 ? `${held} note${held === 1 ? '' : 's'}` : '—')}</span>
         )}
         <span className="chess-readout__says">
-          {state === 'offline' && 'Piano not connected'}
-          {state === 'idle' && 'Nothing yet'}
-          {state === 'partial' && (isReading ? 'One more — a note on each staff' : 'Keep holding — a square is three notes')}
-          {state === 'settling' && 'Reading…'}
-          {state === 'unmapped' && (isReading ? 'Those two notes are not a square' : 'Not a square on this board')}
+          {state === 'offline' && 'piano not connected'}
+          {state === 'idle' && 'nothing yet'}
+          {state === 'partial' && (isReading ? 'one more, other staff' : 'keep holding — three notes')}
+          {state === 'settling' && 'reading…'}
+          {state === 'unmapped' && 'is not a square'}
           {state === 'square' && 'names'}
         </span>
         {state === 'square' && <span className="chess-readout__square">{shown.square}</span>}

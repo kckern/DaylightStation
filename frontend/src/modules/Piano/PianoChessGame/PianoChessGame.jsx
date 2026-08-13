@@ -3,6 +3,7 @@ import { chooseMove } from '@shared-gaming/chess/opponent.mjs';
 import { fenToPosition } from '@shared-gaming/chess/position.mjs';
 import getLogger from '../../../lib/logging/Logger.js';
 import ChessBoard from '../../Chess/ChessBoard.jsx';
+import { pieceSource } from '../../Chess/pieceAssets.js';
 import { PianoKeyboard } from '../components/PianoKeyboard.jsx';
 import ChordNamePanel from '../components/ChordNamePanel.jsx';
 import CurrentChordStaff from '../components/CurrentChordStaff.jsx';
@@ -28,7 +29,7 @@ import { recognizeGesture } from './chordGestures.js';
 import { buildGameRecord } from './chessGameRecord.js';
 import { buildGameArchive } from './chessGameArchive.js';
 import { advanceCursor, createCursorState } from './chordCursor.js';
-import { applyEvent, createSelection } from './chordSelection.js';
+import { applyEvent, createSelection, DOUBLE_WINDOW_MS } from './chordSelection.js';
 import {
   REJECTION_MESSAGES, applySquare, capturedPieces, clearSelection, commitMove,
   createChessGameState, destinationsFor, isPlayerTurn, playableSources,
@@ -545,10 +546,29 @@ export function PianoChessGame({
         const current = gameRef.current;
         const holdingPiece = Boolean(current.origin);
         const isEligible = holdingPiece && destinationsFor(current, current.origin).includes(event.square);
-        const { selection, action } = applyEvent(selectionRef.current, {
-          type: event.type, square: event.square, at: Date.now(), holdingPiece, isEligible,
+        const at = Date.now();
+        const previous = selectionRef.current;
+        const { selection, action } = applyEvent(previous, {
+          type: event.type, square: event.square, at, holdingPiece, isEligible,
         });
         selectionRef.current = selection;
+        // The double-play is the one interaction that fails INVISIBLY: a player
+        // repeating a chord and getting nothing cannot tell whether they were
+        // too slow, too fast, or heard as a different square. Log the interval
+        // so the next report is answerable from the logs instead of guessed at.
+        if (event.type === 'preview' && !holdingPiece && event.square) {
+          const sameSquare = previous.lastSquare === event.square;
+          const elapsed = sameSquare ? at - previous.lastAt : null;
+          if (action.type === 'pickup') {
+            logger().info('pickup', { square: event.square, sinceFirstMs: elapsed });
+          } else if (sameSquare) {
+            logger().info('pickup-window-missed', {
+              square: event.square, sinceFirstMs: elapsed, windowMs: DOUBLE_WINDOW_MS,
+            });
+          } else if (previous.lastSquare) {
+            logger().debug('pickup-reset', { was: previous.lastSquare, now: event.square });
+          }
+        }
         if (action.type === 'hover') setCursor(action.square);
         if (action.type === 'pickup' || action.type === 'drop') handleSquare(action.square);
         if (action.type === 'refuse') handleSquare(null);
@@ -692,9 +712,13 @@ export function PianoChessGame({
             <h2 className="piano-chess__slot-label">In hand</h2>
             <div className="piano-chess__hand-slot">
               {game.origin && heldPiece ? (
-                <span className={`piano-chess__hand-piece piano-chess__hand-piece--${heldPiece[0] === 'w' ? 'white' : 'black'}`}>
-                  {PIECE_GLYPHS[heldPiece[1]] ?? PIECE_GLYPHS[heldPiece.toLowerCase()] ?? '?'}
-                </span>
+                /* The SAME artwork the board draws, not a character from a font.
+                   fenToPosition yields "wP" — colour plus an UPPERCASE type — so
+                   every glyph-table lookup missed and drew a literal "?"; and a
+                   unicode chess glyph renders as tofu in the kiosk WebView
+                   anyway. A player who picks up their pawn should see their
+                   pawn. */
+                <img className="piano-chess__hand-piece" src={pieceSource(heldPiece)} alt="" draggable="false" />
               ) : null}
             </div>
             <span className="piano-chess__hand-from">
