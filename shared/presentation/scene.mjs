@@ -217,6 +217,11 @@ export function validateTopDownScene(scene, catalog = null) {
       const spanSides = ['north', 'south'].includes(region.direction) ? ['west', 'east'] : ['north', 'south'];
       if (!Array.isArray(region.continues) || region.continues.some((side) => !spanSides.includes(side))) errors.push(`${prefix}: continues must use only span sides ${spanSides.join(' or ')}`);
     }
+    if (catalog) {
+      const profile = catalog.height_interfaces?.[region.profile]; const asset = catalog.assets?.[assetReference(profile?.asset).asset];
+      const sceneBiome = catalog.materials?.[scene.terrain.base]?.biome;
+      if (sceneBiome && asset?.world?.allowed_biomes && !asset.world.allowed_biomes.includes('*') && !asset.world.allowed_biomes.includes(sceneBiome)) errors.push(`${prefix}: profile ${region.profile} is forbidden in ${sceneBiome} biome`);
+    }
   }
   if (scene?.composition !== undefined) {
     const composition = scene.composition;
@@ -441,7 +446,7 @@ export function compileTopDownScene(authoredCatalog, scene) {
     }
   }
 
-  const commands = []; const diagnostics = { boundaries: {}, terrain_frames: {}, footprints: [], shadows: 0, overlaps: [], warnings: [], inside_corners_resolved: 0, connections: 0 };
+  const commands = []; const diagnostics = { boundaries: {}, terrain_frames: {}, footprints: [], landings: [], crossings: [], attachments: [], shadows: 0, overlaps: [], warnings: [], inside_corners_resolved: 0, connections: 0 };
   const base = catalog.materials[scene.terrain.base];
   for (let y = 0; y < rows; y += 1) for (let x = 0; x < columns; x += 1) {
     if (base.fill.asset) commands.push(commandForFrame(catalog, `${base.fill.asset}#${base.fill.frame ?? 'default'}`, [x * cell[0], y * cell[1]], { render_layer: 'terrain', sort_y: -1, provenance: `material:${scene.terrain.base}` }));
@@ -481,6 +486,12 @@ export function compileTopDownScene(authoredCatalog, scene) {
       }
       const profiles = compatibleInterfaces(catalog, region.material, outsideMaterials); const profile = profiles[0];
       const asset = catalog.assets[assetReference(profile.asset).asset];
+      if (profiles.some((matched) => matched.underlay === 'inside-fill')) {
+        if (profiles.some((matched) => matched.underlay !== 'inside-fill')) throw new Error(`material boundary ${region.material} mixes inside-fill underlay with opaque interfaces`);
+        const material = catalog.materials[region.material];
+        if (material.fill.asset) commands.push(commandForFrame(catalog, `${material.fill.asset}#${material.fill.frame ?? 'default'}`, [x * cell[0], y * cell[1]], { render_layer: 'terrain', sort_y: -1, provenance: `interface-underlay:${region.material}` }));
+        else commands.push(commandForColor(material.fill.color, [x * cell[0], y * cell[1]], cell, `interface-underlay:${region.material}`));
+      }
       const resolved = resolveTerrainFrame({ cells: continued, at: [x, y], frames: asset.autotile, polarity: profile.polarity });
       diagnostics.inside_corners_resolved += resolved.inner_corners.length;
       for (const matched of profiles) diagnostics.boundaries[matched.id] = (diagnostics.boundaries[matched.id] ?? 0) + 1;
@@ -577,8 +588,11 @@ export function compileTopDownScene(authoredCatalog, scene) {
   const structuralVisualBounds = commands.filter((command) => /^(connector|height|component):/.test(command.provenance ?? '')).map((command) => {
     const asset = catalog.assets[command.asset]; return logicalVisibleBounds(asset, asset.frames[command.frame], command.at, command);
   });
+  const heightVisualBounds = commands.filter((command) => command.provenance?.startsWith('height:')).map((command) => {
+    const asset = catalog.assets[command.asset]; return logicalVisibleBounds(asset, asset.frames[command.frame], command.at, command);
+  });
   const boundsOverlap = (left, right) => left[0] < right[0] + right[2] && left[0] + left[2] > right[0] && left[1] < right[1] + right[3] && left[1] + left[3] > right[1];
-  const validateFootprint = ({ id, world, at, collisionGroup }) => {
+  const validateFootprint = ({ id, world, at, collisionGroup, landings = world.landings, crossings = world.crossings }) => {
     const footprint = footprintCells(world, at, cell, columns, rows);
     if (!footprint.cells.length || footprint.bounds[0] < 0 || footprint.bounds[1] < 0 || footprint.bounds[0] + footprint.bounds[2] > width || footprint.bounds[1] + footprint.bounds[3] > height) throw new Error(`placement ${id}: footprint leaves viewport`);
     const occupiedMaterials = new Set(footprint.cells.map(([x, y]) => materialGrid[y][x])); const allowed = world.allowed_materials ?? ['*'];
@@ -592,6 +606,30 @@ export function compileTopDownScene(authoredCatalog, scene) {
     const touchedBoundary = footprint.cells.some(([x, y]) => [[x, y - 1], [x + 1, y], [x, y + 1], [x - 1, y]].some(([nx, ny]) => nx >= 0 && ny >= 0 && nx < columns && ny < rows && materialGrid[ny][nx] !== materialGrid[y][x]));
     if (world.boundary_policy === 'forbid' && touchedBoundary) throw new Error(`placement ${id}: footprint crosses a material boundary`);
     if (world.boundary_policy === 'require' && !touchedBoundary) throw new Error(`placement ${id}: requires a material boundary`);
+    const landingMaterials = new Map();
+    for (const [index, landing] of (landings ?? []).entries()) {
+      const point = [at[0] + landing.offset[0], at[1] + landing.offset[1]];
+      const [x, y] = point.map((value, axis) => Math.floor(value / cell[axis]));
+      if (x < 0 || y < 0 || x >= columns || y >= rows) throw new Error(`placement ${id}: landing ${index} leaves viewport`);
+      const surface = providedSurfaces.get(`${x},${y}`) ?? catalog.materials[materialGrid[y][x]].surface;
+      if (surface !== landing.surface) throw new Error(`placement ${id}: landing ${index} requires ${landing.surface} surface but found ${surface} at ${x},${y}`);
+      const material = materialGrid[y][x];
+      if (landing.material_group) {
+        const expected = landingMaterials.get(landing.material_group);
+        if (expected !== undefined && material !== expected) throw new Error(`placement ${id}: landing ${index} material ${material} does not match ${landing.material_group} bank material ${expected}`);
+        landingMaterials.set(landing.material_group, material);
+      }
+      diagnostics.landings.push({ placement: id, index, point, cell: [x, y], surface, material, material_group: landing.material_group });
+    }
+    for (const [index, crossing] of (crossings ?? []).entries()) {
+      const point = [at[0] + crossing.offset[0], at[1] + crossing.offset[1]];
+      const [x, y] = point.map((value, axis) => Math.floor(value / cell[axis]));
+      if (x < 0 || y < 0 || x >= columns || y >= rows) throw new Error(`placement ${id}: crossing ${index} leaves viewport`);
+      const material = materialGrid[y][x]; const bankMaterial = landingMaterials.get(crossing.different_from_group);
+      if (bankMaterial === undefined) throw new Error(`placement ${id}: crossing ${index} references unresolved landing group ${crossing.different_from_group}`);
+      if (material === bankMaterial) throw new Error(`placement ${id}: crossing ${index} must traverse material different from ${crossing.different_from_group} banks`);
+      diagnostics.crossings.push({ placement: id, index, point, cell: [x, y], material, different_from_group: crossing.different_from_group, bank_material: bankMaterial });
+    }
     if (world.collision === 'solid') for (const existing of collisionBounds) {
       const overlaps = footprint.bounds[0] < existing.bounds[0] + existing.bounds[2] && footprint.bounds[0] + footprint.bounds[2] > existing.bounds[0] && footprint.bounds[1] < existing.bounds[1] + existing.bounds[3] && footprint.bounds[1] + footprint.bounds[3] > existing.bounds[1];
       if (overlaps && existing.group !== collisionGroup) throw new Error(`solid placement overlap: ${id} and ${existing.id}`);
@@ -619,7 +657,17 @@ export function compileTopDownScene(authoredCatalog, scene) {
     const role = placement.role ?? inheritedRole ?? inferredCompositionRole(asset); const provenance = inheritedProvenance ?? placement.id ?? assetId;
     const visible = logicalVisibleBounds(asset, asset.frames[frameId], at, placement);
     if (visible[0] < -0.0001 || visible[1] < -0.0001 || visible[0] + visible[2] > width + 0.0001 || visible[1] + visible[3] > height + 0.0001) throw new Error(`placement ${placement.id ?? assetId}: visible content leaves viewport`);
-    validateFootprint({ id: placement.id ?? `${assetId}#${frameId}`, world: asset.world, at, collisionGroup });
+    if (asset.world.attachment?.system === 'height') {
+      const overlapArea = heightVisualBounds.reduce((total, bounds) => {
+        const overlapWidth = Math.max(0, Math.min(visible[0] + visible[2], bounds[0] + bounds[2]) - Math.max(visible[0], bounds[0]));
+        const overlapHeight = Math.max(0, Math.min(visible[1] + visible[3], bounds[1] + bounds[3]) - Math.max(visible[1], bounds[1]));
+        return total + overlapWidth * overlapHeight;
+      }, 0);
+      const overlapRatio = overlapArea / (visible[2] * visible[3]);
+      if (overlapRatio < asset.world.attachment.minimum_overlap_ratio) throw new Error(`placement ${placement.id ?? assetId}: requires height attachment overlap ${asset.world.attachment.minimum_overlap_ratio} but found ${overlapRatio.toFixed(3)}`);
+      diagnostics.attachments.push({ placement: placement.id ?? assetId, system: 'height', overlap_ratio: overlapRatio });
+    }
+    validateFootprint({ id: placement.id ?? `${assetId}#${frameId}`, world: asset.world, at, collisionGroup, landings: asset.frames[frameId].landings ?? asset.world.landings, crossings: asset.frames[frameId].crossings ?? asset.world.crossings });
     placementVisualBounds.push(visible);
     if (asset.world.shadow_profile) {
       const shadow = catalog.shadow_profiles[asset.world.shadow_profile]; diagnostics.shadows += 1;
@@ -743,7 +791,12 @@ export function compileTopDownScene(authoredCatalog, scene) {
     navigation_connectivity: walkableCells.size ? largestWalkableComponent / walkableCells.size : 0,
   };
 
-  const ordered = commands.map((command, order) => ({ ...command, order })).sort((left, right) => (PASS[left.render_layer] ?? 999) - (PASS[right.render_layer] ?? 999) || left.sort_y - right.sort_y || left.order - right.order).map(({ order, ...command }, index) => ({ ...command, order: index }));
+  const unobscured = commands.filter((command) => {
+    if (!command.provenance?.startsWith('material-detail:')) return true;
+    const x = Math.floor(command.at[0] / cell[0]); const y = Math.floor(command.at[1] / cell[1]);
+    return !occupiedPlacementCells.has(`${x},${y}`);
+  });
+  const ordered = unobscured.map((command, order) => ({ ...command, order })).sort((left, right) => (PASS[left.render_layer] ?? 999) - (PASS[right.render_layer] ?? 999) || left.sort_y - right.sort_y || left.order - right.order).map(({ order, ...command }, index) => ({ ...command, order: index }));
   diagnostics.systems = {
     terrain: ordered.filter((command) => command.provenance?.startsWith('interface:')).length,
     connector: ordered.filter((command) => command.provenance?.startsWith('connector:')).length,

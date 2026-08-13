@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { describe, it } from 'node:test';
-import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createCanvas, loadImage } from 'canvas';
@@ -9,11 +9,13 @@ import YAML from 'yaml';
 import {
   buildInventory,
   auditAssetMetadataCoverage,
+  auditAnimationMetadataCoverage,
   buildOrganizationPlan,
   applyOrganizationPlan,
   verifyOrganizationPlan,
   auditTerrainMetadataSweep,
   renderAnimation,
+  renderAnimationQaSet,
   renderContactSheet,
   renderFrameGrid,
   measureFrameGrid,
@@ -54,6 +56,45 @@ async function fixture() {
 }
 
 describe('gaming asset audit tooling', () => {
+  it('audits and renders anchored four-way control animation instead of accepting a first-frame sprite', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'gaming-animation-qa-'));
+    const assetDir = path.join(root, 'assets', 'default', 'actors', 'player'); await mkdir(assetDir, { recursive: true });
+    const canvas = createCanvas(32, 16); const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#44aaff'; ctx.fillRect(4, 4, 8, 10); ctx.fillStyle = '#88ddff'; ctx.fillRect(20, 4, 8, 10);
+    const source = 'assets/default/actors/player/test-hero.png'; const png = canvas.toBuffer('image/png'); await writeFile(path.join(root, source), png);
+    const frame = (column) => ({ cell: [column, 0], content_bounds: [4, 4, 8, 10], anchor: { point: [8, 14] } });
+    const reference = (flip_x = false) => ({ clip: 'run.right', ...(flip_x ? { flip_x } : {}) });
+    const catalog = {
+      schema_version: 2, kind: 'presentation-catalog', pack: { id: 'animation-test', style_profile: 'pixel16.topdown', logical_cell: [16, 16] },
+      style_profiles: { 'pixel16.topdown': { logical_cell: [16, 16], sampling: 'nearest', base_pixel: 1, scale_classes: { humanoid: { logical_height: [8, 16] } }, composition: { sector_grid: [1, 1], minimum_occupied_sectors: 1, visual_coverage: [0, 1], minimum_navigation_connectivity: 0, maximum_repeat_ratio: 1, minimum_role_diversity: 1, maximum_role_ratio: 1 } } },
+      assets: { 'player.test': {
+        source, source_sha256: crypto.createHash('sha256').update(png).digest('hex'), status: 'approved', pixel_density: 1, style_profile: 'pixel16.topdown', edge_policy: 'isolated', kind: 'sprite-sheet', tags: ['actor', 'player', 'ground-contact'],
+        geometry: { layout: 'grid', cell: [16, 16], grid: [2, 1] }, frames: { 'idle.right': frame(0), 'run.right.0': frame(0), 'run.right.1': frame(1) },
+        clips: { 'idle.right': { frames: ['idle.right'], fps: 1 }, 'run.right': { frames: ['run.right.0', 'run.right.1'], fps: 8 } },
+        animation: { mode: 'state-machine', default_state: 'idle', control: { scheme: 'four-way', idle_state: 'idle', move_state: 'run' }, states: {
+          idle: { motion: 'stationary', facings: { north: 'idle.right', east: 'idle.right', south: 'idle.right', west: { clip: 'idle.right', flip_x: true } } },
+          run: { motion: 'locomotion', facings: { north: reference(), east: reference(), south: reference(), west: reference(true) } },
+        } },
+        world: { footprint: { size: [8, 4] }, scale_class: 'humanoid', allowed_materials: ['*'], allowed_surfaces: ['solid'], allowed_planes: ['ground'], allowed_biomes: ['*'], boundary_policy: 'allow', render_layer: 'actor', collision: 'solid' },
+      } },
+      materials: { ground: { style_profile: 'pixel16.topdown', plane: 'ground', biome: 'test', surface: 'solid', fill: { color: '#225522' } } },
+    };
+    const catalogPath = path.join(root, 'catalog.yml'); await writeFile(catalogPath, YAML.stringify(catalog));
+    const coverage = await auditAnimationMetadataCoverage({ root, catalogPath });
+    assert.equal(coverage.valid, true); assert.equal(coverage.summary.runtime_controlled, 1); assert.equal(coverage.summary.canonical_deferred, 0);
+    const outDir = path.join(root, 'qa'); const qa = await renderAnimationQaSet({ root, catalogPath, outDir, scale: 3 });
+    assert.equal(qa.valid, true); assert.equal(qa.summary.clips, 8);
+    assert.equal(qa.summary.controlled_assets, 1);
+    assert.equal(qa.artifacts.find((entry) => entry.state === 'run' && entry.facing === 'west').flip_x, true);
+    assert.ok((await readFile(path.join(outDir, 'player.test', 'run-west.gif'))).length > 0);
+    assert.ok((await readFile(path.join(outDir, 'player.test', 'control-simulation.gif'))).length > 0);
+
+    delete catalog.assets['player.test'].animation.states.run.facings.west;
+    await writeFile(catalogPath, YAML.stringify(catalog));
+    const incomplete = await auditAnimationMetadataCoverage({ root, catalogPath });
+    assert.equal(incomplete.valid, false); assert.ok(incomplete.errors.some((error) => error.includes('lacks west facing')));
+  });
+
   it('composes relative catalog imports and rejects duplicate IDs', async () => {
     const { root, source } = await fixture();
     const base = path.join(root, 'base.yml'); const bundle = path.join(root, 'bundle.yml');
@@ -148,6 +189,17 @@ describe('gaming asset audit tooling', () => {
     ]);
   });
 
+  it('rejects a raw-sprites inventory before emitting misleading coverage noise', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'gaming-metadata-wrong-source-'));
+    const sprites = path.join(root, 'sprites'); await mkdir(sprites, { recursive: true });
+    await writeFile(path.join(sprites, 'raw.png'), createCanvas(16, 16).toBuffer('image/png'));
+    const inventory = await buildInventory({ root, sourceDir: 'sprites' });
+    const inventoryPath = path.join(root, 'inventory.yml'); await writeFile(inventoryPath, YAML.stringify(inventory));
+    const report = await auditAssetMetadataCoverage({ root, inventoryPath, catalogPath: path.join(root, 'missing-catalog.yml') });
+    assert.equal(report.valid, false);
+    assert.deepEqual(report.errors, ['inventory must be a v1 gaming-assets inventory generated with --source assets']);
+  });
+
   it('validates approved catalog geometry, clips, and a pinned source hash', async () => {
     const { root, source } = await fixture();
     const inventory = await buildInventory({ root });
@@ -183,6 +235,10 @@ describe('gaming asset audit tooling', () => {
     const manifestPath = path.join(root, 'pack.yml');
     await writeFile(manifestPath, YAML.stringify(manifest));
     assert.equal((await validateManifest({ root, manifestPath })).valid, true);
+    manifest.schema_version = 2;
+    await writeFile(manifestPath, YAML.stringify(manifest));
+    assert.equal((await validateManifest({ root, manifestPath })).valid, true, 'schema-v2 presentation catalogs use the same decoded asset audit');
+    manifest.schema_version = 1;
     manifest.assets['npc.hero'].tags.push('ground-contact');
     await writeFile(manifestPath, YAML.stringify(manifest));
     const badGroundContact = await validateManifest({ root, manifestPath });
@@ -342,6 +398,8 @@ describe('gaming asset audit tooling', () => {
     catalog.materials.overlay.fill_mode = 'overlay'; catalog.assets.terrain.autotile.positive = Object.fromEntries(Object.keys(masks).map((mask) => [mask, 'outside']));
     const invisible = await auditPresentationMaterialPixels({ root, catalog }); assert.ok(invisible.errors.some((error) => error.includes('transition band changes only')));
     assert.ok(invisible.errors.some((error) => error.includes('convex turn cuts back only')));
+    delete catalog.terrain_interfaces.shore.transition_band;
+    const mandatoryBand = await auditPresentationMaterialPixels({ root, catalog }); assert.ok(mandatoryBand.errors.some((error) => error.includes('transition band changes only') && error.includes('requires 0.1')));
   });
 
   it('writes contact-sheet PNG, frame GIF, and assembly PNG from source data', async () => {
@@ -421,7 +479,10 @@ describe('gaming asset audit tooling', () => {
       scenes: [{ id: 'test-scene', theme: 'test', manifest: 'scene.yml' }],
     };
     await writeFile(qaSetManifest, YAML.stringify(qaSuite));
+    await mkdir(path.join(qaSetOut, 'orphan-scene'), { recursive: true });
+    await writeFile(path.join(qaSetOut, 'orphan-scene', 'scene.png'), 'stale');
     const qaSet = await renderSceneQaSet({ root, manifestPath: qaSetManifest, outDir: qaSetOut });
+    assert.equal((await readdir(qaSetOut)).includes('orphan-scene'), false, 'regeneration removes stale scene directories');
     qaSuite.baseline = 'approved-artifacts.yml'; qaSuite.requirements.require_approved_artifacts = true; await writeFile(qaSetManifest, YAML.stringify(qaSuite));
     const approval = await approveSceneQaBaseline({ manifestPath: qaSetManifest, reportPath: path.join(qaSetOut, 'report.yml'), artifactsDir: path.join(root, 'approved-artifacts') });
     const approvedQa = await renderSceneQaSet({ root, manifestPath: qaSetManifest, outDir: path.join(root, 'out', 'qa-set-approved') });

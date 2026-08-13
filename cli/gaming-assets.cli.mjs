@@ -8,9 +8,11 @@ import {
   verifyOrganizationPlan,
   auditTerrainMetadataSweep,
   auditAssetMetadataCoverage,
+  auditAnimationMetadataCoverage,
   parseFrames,
   parsePair,
   renderAnimation,
+  renderAnimationQaSet,
   renderContactSheet,
   renderFrameGrid,
   measureFrameGrid,
@@ -51,11 +53,13 @@ Commands:
   organize-verify --root <common-dir> --plan <plan.yml>
   terrain-sweep --root <common-dir> --manifest <sweep.yml>
   metadata-coverage --root <common-dir> --inventory <inventory.yml> --catalog <catalog.yml> [--out <report.yml>]
+  animation-coverage --root <common-dir> --catalog <catalog.yml> [--out <report.yml>]
   validate   --root <common-dir> --manifest <pack.yml>
   sheet      --root <common-dir> --out <sheet.png> [--source sprites] [--catalog <pack.yml>] [--columns 6] [--limit 60] [--scale 3]
   frames     --root <common-dir> --source <relative.png> --cell 16x16 --out <grid.png> [--scale 4]
   measure    --root <common-dir> --source <relative.png> --cell 16x16
   animate    --root <common-dir> --source <relative.png> --cell 16x16 --frames 0,0;1,0 --out <clip.gif> [--fps 8] [--scale 4]
+  animation-qa-set --root <common-dir> --catalog <catalog.yml> --out-dir <directory> [--scale 4]
   render     --root <common-dir> --manifest <layout.yml> --out <layout.png>
   scene      --root <common-dir> --catalog <pack.yml> --manifest <scene.yml> --out <scene.png>
   scene-legacy --root <common-dir> --catalog <v1-pack.yml> --manifest <v1-scene.yml> --out <scene.png>
@@ -178,6 +182,10 @@ export async function main(argv = process.argv.slice(2), { env = process.env, st
         report = await auditAssetMetadataCoverage({ root, inventoryPath: required(parsed.flags, 'inventory'), catalogPath: required(parsed.flags, 'catalog') });
         if (parsed.flags.out) await writeYaml(parsed.flags.out, { schema_version: 1, kind: 'asset-metadata-coverage-report', ...report });
         break;
+      case 'animation-coverage':
+        report = await auditAnimationMetadataCoverage({ root, catalogPath: required(parsed.flags, 'catalog') });
+        if (parsed.flags.out) await writeYaml(parsed.flags.out, { schema_version: 1, kind: 'animation-metadata-coverage-report', ...report });
+        break;
       case 'validate':
         report = await validateManifest({ root, manifestPath: required(parsed.flags, 'manifest') });
         break;
@@ -205,6 +213,9 @@ export async function main(argv = process.argv.slice(2), { env = process.env, st
           frames: parseFrames(required(parsed.flags, 'frames')), out: required(parsed.flags, 'out'),
           fps: integer(parsed.flags, 'fps', 8), scale: integer(parsed.flags, 'scale', 4),
         });
+        break;
+      case 'animation-qa-set':
+        report = await renderAnimationQaSet({ root, catalogPath: required(parsed.flags, 'catalog'), outDir: required(parsed.flags, 'out-dir'), scale: integer(parsed.flags, 'scale', 4) });
         break;
       case 'render':
         report = await renderLayout({ root, manifestPath: required(parsed.flags, 'manifest'), out: required(parsed.flags, 'out') });

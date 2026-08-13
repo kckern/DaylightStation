@@ -208,6 +208,35 @@ Clip rules:
 - `loop` is `loop`, `once`, or `ping-pong`; default is `loop`.
 - `once` holds its final frame until its host changes state or removes the clip.
 - Clips are visual timing only. They do not emit gameplay events, trigger sounds, or advance game state.
+- A clip by itself is not a runtime animation contract. Every actor, every asset tagged `animated`, and every asset with clips declares `animation.mode` so unreviewed sheet cells cannot be mistaken for usable motion.
+
+The animation state machine maps host state and logical cardinal facing to reviewed visual clips. Logical facing uses `north/east/south/west`; clip IDs may retain art-language names such as `run.right`. Mirroring belongs in this catalog mapping, never in a scene or input adapter.
+
+```yaml
+animation:
+  mode: state-machine
+  default_state: idle
+  control: { scheme: four-way, idle_state: idle, move_state: run }
+  states:
+    idle:
+      motion: in-place
+      facings:
+        south: idle.down
+        north: idle.up
+        east: idle.right
+        west: { clip: idle.right, flip_x: true }
+    run:
+      motion: locomotion
+      facings:
+        south: run.down
+        north: run.up
+        east: run.right
+        west: { clip: run.right, flip_x: true }
+```
+
+`mode: static` requires `default_frame` and makes an explicit claim that this catalog asset has no reachable clips. `mode: deferred` requires a reviewed `preview_frame` and a reason; it permits static scene composition while correctly failing animation-readiness QA. `mode: state-machine` requires every clip to be reachable from one state. State motion is `stationary`, `in-place`, `locomotion`, or `airborne`. In-place and locomotion clips require at least two frames. Controlled locomotion requires every facing in its `four-way` or `horizontal` scheme.
+
+`resolveAssetAnimation(asset, { moving, facing })` is the shared host-facing resolver. Keyboard, touch, gamepad, piano, Fitness, and School adapters all produce semantic movement state/cardinal facing and receive `{ clip, flip_x, motion }`; they never know sheet coordinates.
 
 Topology animation is declared on `autotile`, not as an unrelated sprite clip. A normalized atlas stores identical topology pages at a fixed cell offset:
 
@@ -269,6 +298,14 @@ terrain:
 `cells` and `rects` may be combined. Rectangles expand to cells before neighbour masks are calculated and overlapping cells are deduplicated. This keeps broad paths, plazas, lakes, and islands concise while preserving explicit cells for irregular details.
 
 `continues` may contain `north`, `east`, `south`, or `west`. The region must actually touch every named viewport edge. The renderer supplies the off-screen neighbour for mask selection, so a road or river crossing the viewport does not receive a visually closed end cap.
+
+Bridge and dock frames may declare logical `landings` that require a compiled terrain `surface`. Bridge banks can also share a `material_group`, with `crossings` requiring the sampled span material to differ from that group. These fail closed during scene compilation, so a connector cannot silently terminate in water, use mismatched banks, or sit on a single undifferentiated material.
+
+Assets that only make visual sense embedded in a raised structural band, such as dungeon doors and arches, declare `world.attachment: { system: height, minimum_overlap_ratio: <0..1> }`. Scene compilation measures the asset's visible-alpha bounds against compiled height-band art and fails when the required overlap is absent. This prevents a door from validating as an ordinary floor placement while rendering detached from its wall.
+
+An interface atlas whose non-edge pixels are transparent declares `underlay: inside-fill`. The compiler then draws the region material beneath its edge overlay. This keeps a semantic liquid region fully liquid while allowing reusable coping, bank, or rim pixels to be overlaid without replacing half the authored cell with the outside material.
+
+Production QA decodes every terrain interface and requires a visible transition band on north, east, south, and west. The default minimum changed-pixel ratio is `0.1`; `transition_band.minimum_changed_ratio` may make a particular interface stricter. Merely having a complete frame map is insufficient when those frames render as an effectively raw color seam.
 
 Scenes may tile one reviewed frame beneath all regions with `ground: terrain.grass#middle`. `ground`, terrain, structures, and actors share one declared `world_scale`. Production scenes should enforce it; object sizing belongs in reviewed asset metadata or prefab variants rather than per-placement scale overrides.
 
@@ -544,6 +581,7 @@ The CLI and runtime validator must reject:
 - bad grid geometry, non-positive dimensions, invalid anchor, invalid scale, or opacity outside `0..1`;
 - unknown frames referenced by a clip;
 - mixed clip timing styles, invalid timing, or invalid loop mode;
+- missing animation disposition, unreachable clips, one-frame in-place/locomotion clips, incomplete controlled facings, or scene-authored logical mirrors;
 - visual metadata that attempts to declare collision rules, executable expressions, input bindings, scoring, or gameplay transitions.
 
 ## Migration compatibility

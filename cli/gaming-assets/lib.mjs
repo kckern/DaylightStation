@@ -1,9 +1,9 @@
 import crypto from 'node:crypto';
-import { copyFile, mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import YAML from 'yaml';
 import { materializeAssetCatalog, resolveConnectorFrame, resolveHeightTransition, resolvePrefabLayers, resolveTerrainFrame, validatePrefabCatalog } from '../../shared/gaming/assets.mjs';
-import { compileTopDownScene, migratePresentationV1, PRESENTATION_CATALOG_MAP_FIELDS, validatePresentationCatalog, validateTopDownScene } from '../../shared/presentation/index.mjs';
+import { compileTopDownScene, migratePresentationV1, PRESENTATION_CATALOG_MAP_FIELDS, resolveAssetAnimation, validatePresentationCatalog, validateTopDownScene } from '../../shared/presentation/index.mjs';
 
 const IMAGE_EXTENSIONS = new Set(['.png']);
 const PNG_SIGNATURE = '89504e470d0a1a0a';
@@ -634,7 +634,12 @@ export async function auditAssetMetadataCoverage({ root, inventoryPath, catalogP
   let inventory;
   try { inventory = YAML.parse(await readFile(inventoryPath, 'utf8')) ?? {}; }
   catch (error) { return { valid: false, errors: [`cannot parse inventory: ${error.message}`] }; }
-  if (inventory.schema_version !== 1 || inventory.generated_by !== 'gaming-assets inventory' || inventory.source_dir !== 'assets') errors.push('inventory must be a v1 gaming-assets inventory of assets');
+  if (inventory.schema_version !== 1 || inventory.generated_by !== 'gaming-assets inventory' || inventory.source_dir !== 'assets') {
+    return {
+      valid: false,
+      errors: ['inventory must be a v1 gaming-assets inventory generated with --source assets'],
+    };
+  }
   const records = Array.isArray(inventory.assets) ? inventory.assets : [];
   const bySource = new Map(records.map((record) => [record.source, record]));
   if (bySource.size !== records.length) errors.push('inventory contains duplicate source records');
@@ -738,7 +743,7 @@ export async function validateManifest({ root, manifestPath }) {
   }
   try { manifest = materializeAssetCatalog(manifest); }
   catch (error) { return { valid: false, errors: [error.message], warnings, assets: 0 }; }
-  if (manifest.schema_version !== 1) errors.push('schema_version must be 1');
+  if (![1, 2].includes(manifest.schema_version)) errors.push('schema_version must be 1 or 2');
   if (!manifest.pack?.id || typeof manifest.pack.id !== 'string') errors.push('pack.id is required');
   if (!manifest.assets || typeof manifest.assets !== 'object' || Array.isArray(manifest.assets)) {
     errors.push('assets must be an object');
@@ -839,7 +844,8 @@ export async function validateManifest({ root, manifestPath }) {
         } else if (frameShapeValid) {
           const [, , frameWidth, frameHeight] = frameRect(asset, frame, facts);
           const [boundsX, boundsY, boundsWidth, boundsHeight] = frame.content_bounds;
-          if (boundsX === 0 || boundsY === 0 || boundsX + boundsWidth === frameWidth || boundsY + boundsHeight === frameHeight) errors.push(`${prefix}: ground-contact frame ${frameName} visible alpha must be enclosed by transparent frame padding`);
+          const documentedBaseline = boundsY + boundsHeight === frameHeight && frame.edge_contact?.allowed?.includes('south');
+          if (boundsX === 0 || boundsY === 0 || boundsX + boundsWidth === frameWidth || boundsY + boundsHeight === frameHeight && !documentedBaseline) errors.push(`${prefix}: ground-contact frame ${frameName} visible alpha must be enclosed by transparent frame padding (a measured south baseline contact may be explicitly documented)`);
         }
       }
       if (frameShapeValid && asset.tags.includes('overlay')) {
@@ -1149,6 +1155,187 @@ export async function renderAnimation({ root, source, cell, frames, out, fps = 8
   await ensureParent(out);
   await writeFile(out, gif.buffer);
   return { frames: frames.length, fps, out, width: rendered[0].width, height: rendered[0].height };
+}
+
+const SPRITE_PATH_PATTERN = /\/(?:actors?|characters?|creatures?|enemies|npcs?|players?|items?|objects?|props?|effects?|vfx)(?:\/|$)/i;
+const SPRITE_TAGS = new Set(['actor', 'player', 'npc', 'creature', 'enemy', 'item', 'prop', 'object', 'effect', 'animated']);
+
+function isSpriteAsset(asset) {
+  return ['sprite-sheet', 'effect-sheet', 'item-sheet'].includes(asset.kind)
+    || (asset.tags ?? []).some((tag) => SPRITE_TAGS.has(tag));
+}
+
+/** Enumerate animation readiness without confusing measured files with curated motion. */
+export async function auditAnimationMetadataCoverage({ root, catalogPath }) {
+  const catalog = await loadAssetCatalog(catalogPath);
+  const catalogValidation = validatePresentationCatalog(catalog);
+  const runtime = [];
+  const reviewedSources = new Set();
+  for (const [id, asset] of Object.entries(catalog.assets ?? {})) {
+    if (asset.status !== 'approved' || !isSpriteAsset(asset)) continue;
+    reviewedSources.add(asset.source);
+    const mode = asset.animation?.mode ?? 'missing';
+    const states = Object.entries(asset.animation?.states ?? {});
+    const directionalStates = states.filter(([, state]) => state.facings).map(([state]) => state);
+    runtime.push({
+      id, source: asset.source, kind: asset.kind, tags: asset.tags ?? [], mode,
+      frames: Object.keys(asset.frames ?? {}).length, clips: Object.keys(asset.clips ?? {}).length,
+      states: states.map(([state]) => state), directional_states: directionalStates,
+      control_scheme: asset.animation?.control?.scheme ?? null,
+      ready: ['static', 'state-machine'].includes(mode),
+      ...(mode === 'deferred' ? { reason: asset.animation.reason } : {}),
+    });
+  }
+  const canonicalFiles = await walk(resolveUnder(root, 'assets'));
+  const candidates = canonicalFiles
+    .filter((file) => path.extname(file).toLowerCase() === '.png')
+    .map((file) => posixRelative(root, file))
+    .filter((source) => SPRITE_PATH_PATTERN.test(`/${source}`));
+  const deferredSources = candidates.filter((source) => !reviewedSources.has(source));
+  const incomplete = runtime.filter((asset) => !asset.ready);
+  const controlled = runtime.filter((asset) => asset.control_scheme);
+  const animated = runtime.filter((asset) => asset.mode === 'state-machine');
+  const summary = {
+    canonical_sprite_candidates: candidates.length,
+    runtime_sprite_assets: runtime.length,
+    runtime_static: runtime.filter((asset) => asset.mode === 'static').length,
+    runtime_animated: animated.length,
+    runtime_controlled: controlled.length,
+    runtime_deferred_or_missing: incomplete.length,
+    canonical_deferred: deferredSources.length,
+    semantic_source_coverage: candidates.length ? (candidates.length - deferredSources.length) / candidates.length : 1,
+  };
+  return {
+    valid: catalogValidation.valid && incomplete.length === 0 && deferredSources.length === 0,
+    errors: catalogValidation.errors,
+    summary,
+    runtime,
+    deferred_sources: deferredSources,
+  };
+}
+
+function animationReferences(asset) {
+  const references = [];
+  for (const [state, descriptor] of Object.entries(asset.animation?.states ?? {})) {
+    if (descriptor.clip) references.push({ state, facing: null, motion: descriptor.motion, reference: descriptor.clip });
+    for (const [facing, reference] of Object.entries(descriptor.facings ?? {})) references.push({ state, facing, motion: descriptor.motion, reference });
+  }
+  return references;
+}
+
+function animationClipDescriptor(reference) {
+  return typeof reference === 'string' ? { clip: reference, flip_x: false } : { clip: reference.clip, flip_x: reference.flip_x ?? false };
+}
+
+function animationSequence(clip) {
+  const entries = clip.frames.map((entry) => typeof entry === 'string'
+    ? { frame: entry, delayCentisecs: Math.max(1, Math.round(100 / clip.fps)) }
+    : { frame: entry.frame, delayCentisecs: Math.max(1, Math.round(entry.duration_ms / 10)) });
+  if (clip.loop === 'ping-pong' && entries.length > 2) return [...entries, ...entries.slice(1, -1).reverse()];
+  return entries;
+}
+
+async function renderReviewedClip({ root, catalog, assetId, asset, state, facing, reference, outDir, scale }) {
+  const { createCanvas, loadImage } = await import('canvas');
+  const { GifCodec, GifFrame, GifUtil } = await import('gifwrap');
+  const descriptor = animationClipDescriptor(reference); const clip = asset.clips[descriptor.clip];
+  const sequence = animationSequence(clip); const file = resolveUnder(root, asset.source);
+  const facts = await imageFacts(file);
+  if (facts.sha256 !== asset.source_sha256) throw new Error(`${assetId}: source_sha256 does not match ${asset.source}`);
+  const image = await loadImage(file); const density = asset.pixel_density; const decoded = [];
+  for (const entry of sequence) {
+    const frame = asset.frames[entry.frame]; const [sx, sy, sw, sh] = frameRect(asset, frame, facts);
+    if (sx + sw > image.width || sy + sh > image.height) throw new Error(`${assetId}#${entry.frame}: source rectangle exceeds ${image.width}x${image.height}`);
+    const sample = createCanvas(sw, sh); const sampleContext = sample.getContext('2d'); sampleContext.drawImage(image, sx, sy, sw, sh, 0, 0, sw, sh);
+    const pixels = sampleContext.getImageData(0, 0, sw, sh).data; let minX = sw; let minY = sh; let maxX = -1; let maxY = -1;
+    for (let y = 0; y < sh; y += 1) for (let x = 0; x < sw; x += 1) if (pixels[(y * sw + x) * 4 + 3]) { minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); }
+    const bounds = maxX < 0 ? null : [minX, minY, maxX - minX + 1, maxY - minY + 1];
+    if (!bounds || !frame.content_bounds || bounds.some((value, index) => value !== frame.content_bounds[index])) throw new Error(`${assetId}#${entry.frame}: content_bounds do not match decoded alpha ${bounds?.join(',') ?? 'empty'}`);
+    const logicalWidth = sw / density; const logicalHeight = sh / density;
+    const anchor = anchorOffset(frame.anchor ?? asset.defaults?.anchor, logicalWidth, logicalHeight, 1 / density);
+    const visible = { x: bounds[0] / density - anchor[0], y: bounds[1] / density - anchor[1], width: bounds[2] / density, height: bounds[3] / density };
+    const scaleClass = asset.world?.scale_class; const expected = catalog.style_profiles?.[asset.style_profile]?.scale_classes?.[scaleClass]?.logical_height;
+    const measuredHeight = bounds[3] / density;
+    if (!expected || measuredHeight < expected[0] || measuredHeight > expected[1]) throw new Error(`${assetId}#${entry.frame}: logical content height ${measuredHeight} is outside ${scaleClass} range ${expected?.join('-') ?? 'missing'}`);
+    const groundDelta = visible.y + visible.height;
+    if (asset.tags?.includes('ground-contact') && Math.abs(groundDelta) > 0.0001) throw new Error(`${assetId}#${entry.frame}: visible feet/hull miss the fixed ground anchor by ${groundDelta}`);
+    decoded.push({ ...entry, frame, sx, sy, sw, sh, bounds, anchor, visible, logical_height: measuredHeight, expected });
+  }
+  const minX = Math.min(...decoded.map((entry) => entry.visible.x)); const minY = Math.min(...decoded.map((entry) => entry.visible.y));
+  const maxX = Math.max(...decoded.map((entry) => entry.visible.x + entry.visible.width)); const maxY = Math.max(...decoded.map((entry) => entry.visible.y + entry.visible.height));
+  const margin = 2; const logicalWidth = Math.ceil(maxX - minX + margin * 2); const logicalHeight = Math.ceil(maxY - minY + margin * 2);
+  const anchorTarget = [(margin - minX) * scale, (margin - minY) * scale];
+  const canvases = decoded.map((entry) => {
+    const canvas = createCanvas(logicalWidth * scale, logicalHeight * scale); const ctx = canvas.getContext('2d'); ctx.imageSmoothingEnabled = false;
+    const normalized = createCanvas(entry.sw / density, entry.sh / density); const normalizedContext = normalized.getContext('2d'); normalizedContext.imageSmoothingEnabled = false;
+    normalizedContext.drawImage(image, entry.sx, entry.sy, entry.sw, entry.sh, 0, 0, normalized.width, normalized.height);
+    ctx.save(); ctx.translate(anchorTarget[0], anchorTarget[1]); ctx.scale(descriptor.flip_x ? -1 : 1, 1);
+    ctx.drawImage(normalized, -entry.anchor[0] * scale, -entry.anchor[1] * scale, normalized.width * scale, normalized.height * scale); ctx.restore();
+    return canvas;
+  });
+  const gifFrames = canvases.map((canvas, index) => new GifFrame(canvas.width, canvas.height, Buffer.from(canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data), { delayCentisecs: decoded[index].delayCentisecs }));
+  GifUtil.quantizeWu(gifFrames, 256, 5); const gif = await new GifCodec().encodeGif(gifFrames, { loops: clip.loop === 'once' ? 1 : 0 });
+  const name = `${state}${facing ? `-${facing}` : ''}`; const gifPath = path.join(outDir, assetId, `${name}.gif`); await ensureParent(gifPath); await writeFile(gifPath, gif.buffer);
+  const strip = createCanvas(canvases[0].width * canvases.length, canvases[0].height); const stripContext = strip.getContext('2d'); stripContext.imageSmoothingEnabled = false;
+  canvases.forEach((canvas, index) => stripContext.drawImage(canvas, index * canvas.width, 0));
+  const stripPath = path.join(outDir, assetId, `${name}-strip.png`); await writeFile(stripPath, strip.toBuffer('image/png'));
+  return { asset: assetId, state, facing, motion: asset.animation.states[state].motion, clip: descriptor.clip, flip_x: descriptor.flip_x, frames: sequence.length, source_frames: clip.frames.length, logical_canvas: [logicalWidth, logicalHeight], logical_heights: decoded.map((entry) => entry.logical_height), gif: posixRelative(outDir, gifPath), strip: posixRelative(outDir, stripPath) };
+}
+
+async function renderControlSimulation({ root, assetId, asset, outDir, scale }) {
+  const { createCanvas, loadImage } = await import('canvas'); const { GifCodec, GifFrame, GifUtil } = await import('gifwrap');
+  const file = resolveUnder(root, asset.source); const facts = await imageFacts(file); const image = await loadImage(file); const density = asset.pixel_density;
+  if (facts.sha256 !== asset.source_sha256) throw new Error(`${assetId}: source_sha256 does not match ${asset.source}`);
+  const script = [
+    { moving: false, facing: 'south', frames: 4, delta: [0, 0] },
+    { moving: true, facing: 'east', frames: 6, delta: [1, 0] },
+    { moving: false, facing: 'east', frames: 3, delta: [0, 0] },
+    { moving: true, facing: 'north', frames: 6, delta: [0, -1] },
+    { moving: true, facing: 'west', frames: 6, delta: [-1, 0] },
+    { moving: true, facing: 'south', frames: 6, delta: [0, 1] },
+  ];
+  const logicalSize = [96, 80]; const anchor = [40, 48]; const rendered = []; const trace = [];
+  for (const step of script) {
+    const resolved = resolveAssetAnimation(asset, step); const clip = asset.clips[resolved.clip]; const sequence = animationSequence(clip);
+    for (let index = 0; index < step.frames; index += 1) {
+      const sequenceFrame = sequence[index % sequence.length]; const frame = asset.frames[sequenceFrame.frame]; const [sx, sy, sw, sh] = frameRect(asset, frame, facts);
+      const normalized = createCanvas(sw / density, sh / density); const normalizedContext = normalized.getContext('2d'); normalizedContext.imageSmoothingEnabled = false;
+      normalizedContext.drawImage(image, sx, sy, sw, sh, 0, 0, normalized.width, normalized.height);
+      const canvas = createCanvas(logicalSize[0] * scale, logicalSize[1] * scale); const ctx = canvas.getContext('2d'); ctx.imageSmoothingEnabled = false;
+      ctx.fillStyle = '#4f8a52'; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.strokeStyle = '#3f7745'; ctx.lineWidth = 1;
+      for (let x = 0; x <= logicalSize[0]; x += 16) { ctx.beginPath(); ctx.moveTo(x * scale, 0); ctx.lineTo(x * scale, canvas.height); ctx.stroke(); }
+      for (let y = 0; y <= logicalSize[1]; y += 16) { ctx.beginPath(); ctx.moveTo(0, y * scale); ctx.lineTo(canvas.width, y * scale); ctx.stroke(); }
+      const frameAnchor = anchorOffset(frame.anchor ?? asset.defaults?.anchor, normalized.width, normalized.height);
+      ctx.fillStyle = 'rgba(20,25,30,0.35)'; ctx.beginPath(); ctx.ellipse(anchor[0] * scale, anchor[1] * scale, 5 * scale, 2 * scale, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.save(); ctx.translate(anchor[0] * scale, anchor[1] * scale); ctx.scale(resolved.flip_x ? -1 : 1, 1);
+      ctx.drawImage(normalized, -frameAnchor[0] * scale, -frameAnchor[1] * scale, normalized.width * scale, normalized.height * scale); ctx.restore();
+      rendered.push(new GifFrame(canvas.width, canvas.height, Buffer.from(ctx.getImageData(0, 0, canvas.width, canvas.height).data), { delayCentisecs: 12 }));
+      trace.push({ moving: step.moving, facing: step.facing, state: resolved.state, clip: resolved.clip, flip_x: resolved.flip_x, at: [...anchor] });
+      if (step.moving) { anchor[0] += step.delta[0]; anchor[1] += step.delta[1]; }
+    }
+  }
+  GifUtil.quantizeWu(rendered, 256, 5); const gif = await new GifCodec().encodeGif(rendered, { loops: 0 });
+  const out = path.join(outDir, assetId, 'control-simulation.gif'); await ensureParent(out); await writeFile(out, gif.buffer);
+  return { asset: assetId, gif: posixRelative(outDir, out), frames: rendered.length, logical_size: logicalSize, script, trace };
+}
+
+/** Render every reachable reviewed clip at one fixed world anchor. */
+export async function renderAnimationQaSet({ root, catalogPath, outDir, scale = 4 }) {
+  if (!Number.isInteger(scale) || scale < 1) throw new Error('animation QA scale must be a positive integer');
+  const catalog = await loadAssetCatalog(catalogPath); const catalogValidation = validatePresentationCatalog(catalog);
+  const artifacts = []; const controlSimulations = []; const errors = [...catalogValidation.errors]; const deferred = [];
+  for (const [assetId, asset] of Object.entries(catalog.assets ?? {})) {
+    if (asset.status !== 'approved' || !isSpriteAsset(asset)) continue;
+    if (asset.animation?.mode === 'deferred' || !asset.animation) { deferred.push({ asset: assetId, reason: asset.animation?.reason ?? 'missing animation disposition' }); continue; }
+    if (asset.animation.mode !== 'state-machine') continue;
+    for (const entry of animationReferences(asset)) try {
+      artifacts.push(await renderReviewedClip({ root, catalog, assetId, asset, ...entry, outDir, scale }));
+    } catch (error) { errors.push(error.message); }
+    if (asset.animation.control) try { controlSimulations.push(await renderControlSimulation({ root, assetId, asset, outDir, scale })); } catch (error) { errors.push(error.message); }
+  }
+  const report = { schema_version: 1, kind: 'animation-qa-report', valid: errors.length === 0 && deferred.length === 0, catalog: path.resolve(catalogPath), artifacts, control_simulations: controlSimulations, deferred, errors, summary: { animated_assets: new Set(artifacts.map((entry) => entry.asset)).size, controlled_assets: controlSimulations.length, clips: artifacts.length, deferred: deferred.length, errors: errors.length } };
+  await writeYaml(path.join(outDir, 'report.yml'), report);
+  return report;
 }
 
 export async function renderLayout({ root, manifestPath, out }) {
@@ -1559,6 +1746,9 @@ async function renderPresentationPlan({ root, catalog, plan, out }) {
     const asset = catalog.assets[command.asset]; const frame = asset.frames[command.frame];
     const loaded = await imageFor(command.asset, asset);
     const [sx, sy, sw, sh] = frameRect(asset, frame, loaded.facts, command.source_cell_offset);
+    if (sx < 0 || sy < 0 || sw < 1 || sh < 1 || sx + sw > loaded.facts.image.width || sy + sh > loaded.facts.image.height) {
+      throw new Error(`asset ${command.asset}#${command.frame}: source rectangle ${sx},${sy},${sw},${sh} exceeds ${loaded.facts.image.width}x${loaded.facts.image.height} source ${asset.source}`);
+    }
     const alphaKey = `${command.asset}#${command.frame}:${command.source_cell_offset.join(',')}`;
     if (!alphaFrames.has(alphaKey)) {
       const sample = createCanvas(sw, sh); const sampleContext = sample.getContext('2d'); sampleContext.drawImage(loaded.image, sx, sy, sw, sh, 0, 0, sw, sh);
@@ -1651,10 +1841,10 @@ async function renderPresentationPlan({ root, catalog, plan, out }) {
   return { out, width, height, logical_size: plan.logical_size, pixel_scale: scale, draws: plan.commands.length, plan_hash: plan.hash, diagnostics: { ...plan.diagnostics, composition, source_edge_contacts: sourceEdgeContacts, scale_audit: [...scaleAudit.values()] }, clipping };
 }
 
-/** Decode material fills and reviewed interface bands before any scene render.
+/** Decode material fills and every interface band before any scene render.
  * A terrain material marked solid must be an opaque cell; sparse art belongs
- * in an overlay/component layer. Interfaces that opt into transition-band QA
- * must visibly differ from the outside material along every cardinal edge. */
+ * in an overlay/component layer. Every interface must visibly differ from the
+ * outside material along every cardinal edge; metadata may raise the default. */
 export async function auditPresentationMaterialPixels({ root, catalog }) {
   const { createCanvas, loadImage } = await import('canvas');
   const errors = []; const images = new Map(); const facts = new Map(); const samples = new Map();
@@ -1694,7 +1884,7 @@ export async function auditPresentationMaterialPixels({ root, catalog }) {
   }
   const directionMasks = { north: 'esw', east: 'nsw', south: 'new', west: 'nes' }; const transitionBands = {}; const cornerProfiles = {};
   for (const [id, entry] of Object.entries(catalog.terrain_interfaces ?? {})) {
-    if (!entry.transition_band) continue;
+    const minimumChangedRatio = entry.transition_band?.minimum_changed_ratio ?? 0.1;
     const assetId = String(entry.asset).split('#')[0]; const asset = catalog.assets[assetId]; const mapping = asset.autotile[entry.polarity]; const outside = await materialSample(catalog.materials[entry.outside]); const ratios = {};
     for (const [direction, mask] of Object.entries(directionMasks)) {
       const frameId = mapping[mask] ?? mapping.fallback; const inside = await frameSample(`${assetId}#${frameId}`); let changed = 0; let total = 0;
@@ -1704,7 +1894,7 @@ export async function auditPresentationMaterialPixels({ root, catalog }) {
         if (inside[index] !== outside[index] || inside[index + 1] !== outside[index + 1] || inside[index + 2] !== outside[index + 2] || inside[index + 3] !== outside[index + 3]) changed += 1;
       }
       ratios[direction] = changed / total;
-      if (ratios[direction] < entry.transition_band.minimum_changed_ratio) errors.push(`terrain interface ${id}: ${direction} transition band changes only ${ratios[direction].toFixed(3)} of boundary pixels; requires ${entry.transition_band.minimum_changed_ratio}`);
+      if (ratios[direction] < minimumChangedRatio) errors.push(`terrain interface ${id}: ${direction} transition band changes only ${ratios[direction].toFixed(3)} of boundary pixels; requires ${minimumChangedRatio}`);
     }
     transitionBands[id] = ratios;
   }
@@ -1834,7 +2024,7 @@ export async function renderSceneQaSet({ root, manifestPath, outDir, candidate =
   if (!Array.isArray(suite.scenes) || !suite.scenes.length) throw new Error('scene QA set scenes must be a non-empty array');
   const suiteDir = path.dirname(suitePath); const catalogPath = path.resolve(suiteDir, suite.catalog);
   const requirements = suite.requirements ?? {};
-  assertKnownFields(requirements, new Set(['minimum_scenes', 'minimum_semantic_scenes', 'minimum_review_regions_per_scene', 'minimum_inside_corners_resolved', 'minimum_connections', 'minimum_boundary_draws', 'required_themes', 'require_review_regions', 'require_no_clipping', 'require_catalog_warning_free', 'require_deterministic_plan', 'require_approved_artifacts', 'required_systems']), 'scene QA set requirements');
+  assertKnownFields(requirements, new Set(['minimum_scenes', 'minimum_semantic_scenes', 'minimum_review_regions_per_scene', 'minimum_inside_corners_resolved', 'minimum_connections', 'minimum_boundary_draws', 'minimum_validated_landings', 'minimum_validated_crossings', 'required_themes', 'require_review_regions', 'require_no_clipping', 'require_catalog_warning_free', 'require_deterministic_plan', 'require_approved_artifacts', 'required_systems']), 'scene QA set requirements');
   const minimumScenes = requirements.minimum_scenes ?? 1;
   if (!Number.isInteger(minimumScenes) || minimumScenes < 1) throw new Error('scene QA set minimum_scenes must be a positive integer');
   if (suite.scenes.length < minimumScenes) throw new Error(`scene QA set requires at least ${minimumScenes} scenes; found ${suite.scenes.length}`);
@@ -1842,7 +2032,7 @@ export async function renderSceneQaSet({ root, manifestPath, outDir, candidate =
   if (!Number.isInteger(minimumSemanticScenes) || minimumSemanticScenes < 0) throw new Error('scene QA set minimum_semantic_scenes must be a non-negative integer');
   const minimumReviewRegions = requirements.minimum_review_regions_per_scene ?? (requirements.require_review_regions ? 1 : 0);
   if (!Number.isInteger(minimumReviewRegions) || minimumReviewRegions < 0) throw new Error('scene QA set minimum_review_regions_per_scene must be a non-negative integer');
-  for (const field of ['minimum_inside_corners_resolved', 'minimum_connections', 'minimum_boundary_draws']) if (requirements[field] !== undefined && (!Number.isInteger(requirements[field]) || requirements[field] < 0)) throw new Error(`scene QA set ${field} must be a non-negative integer`);
+  for (const field of ['minimum_inside_corners_resolved', 'minimum_connections', 'minimum_boundary_draws', 'minimum_validated_landings', 'minimum_validated_crossings']) if (requirements[field] !== undefined && (!Number.isInteger(requirements[field]) || requirements[field] < 0)) throw new Error(`scene QA set ${field} must be a non-negative integer`);
   for (const field of ['required_themes', 'required_systems']) if (requirements[field] !== undefined && (!Array.isArray(requirements[field]) || requirements[field].some((entry) => typeof entry !== 'string' || !entry.trim()))) throw new Error(`scene QA set ${field} must be an array of names`);
   for (const field of ['require_review_regions', 'require_no_clipping', 'require_catalog_warning_free', 'require_deterministic_plan', 'require_approved_artifacts']) if (requirements[field] !== undefined && typeof requirements[field] !== 'boolean') throw new Error(`scene QA set ${field} must be boolean`);
   if (requirements.require_approved_artifacts && !suite.baseline) throw new Error('scene QA set requires a baseline path when require_approved_artifacts is true');
@@ -1855,6 +2045,9 @@ export async function renderSceneQaSet({ root, manifestPath, outDir, candidate =
   if (materialPixelAudit && !materialPixelAudit.valid) throw new Error(`scene QA set material pixel audit failed: ${materialPixelAudit.errors.join('; ')}`);
   if (requirements.require_catalog_warning_free && validation.warnings.length) throw new Error(`scene QA set catalog has warnings: ${validation.warnings.join('; ')}`);
   const ids = new Set(); const themes = new Set(); const reports = [];
+  // QA output is fully generated. Recreate the bundle so removed or renamed
+  // scenes cannot survive as stale directories beside the current report.
+  await rm(outDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   await mkdir(outDir, { recursive: true });
   for (const [index, entry] of suite.scenes.entries()) {
     assertKnownFields(entry, new Set(['id', 'theme', 'manifest']), `scene QA set scene ${index}`);
@@ -1918,6 +2111,8 @@ export async function renderSceneQaSet({ root, manifestPath, outDir, candidate =
     draws: reports.reduce((sum, report) => sum + report.draws, 0),
     inside_corners_resolved: presentationV2 ? reports.reduce((sum, report) => sum + report.diagnostics.inside_corners_resolved, 0) : reports.reduce((sum, report) => sum + report.inside_corners_resolved, 0),
     connections: presentationV2 ? reports.reduce((sum, report) => sum + report.diagnostics.connections, 0) : reports.reduce((sum, report) => sum + report.connections, 0),
+    validated_landings: presentationV2 ? reports.reduce((sum, report) => sum + report.diagnostics.landings.length, 0) : 0,
+    validated_crossings: presentationV2 ? reports.reduce((sum, report) => sum + report.diagnostics.crossings.length, 0) : 0,
     clipping: reports.reduce((sum, report) => sum + report.clipping.length, 0),
     composition: presentationV2 ? {
       minimum_navigation_connectivity: Math.min(...reports.map((report) => report.diagnostics.composition.navigation_connectivity)),
@@ -1945,6 +2140,8 @@ export async function renderSceneQaSet({ root, manifestPath, outDir, candidate =
   };
   if (summary.inside_corners_resolved < (requirements.minimum_inside_corners_resolved ?? 0)) throw new Error(`scene QA set requires at least ${requirements.minimum_inside_corners_resolved} resolved inside corners; found ${summary.inside_corners_resolved}`);
   if (summary.connections < (requirements.minimum_connections ?? 0)) throw new Error(`scene QA set requires at least ${requirements.minimum_connections} connections; found ${summary.connections}`);
+  if (summary.validated_landings < (requirements.minimum_validated_landings ?? 0)) throw new Error(`scene QA set requires at least ${requirements.minimum_validated_landings} validated landings; found ${summary.validated_landings}`);
+  if (summary.validated_crossings < (requirements.minimum_validated_crossings ?? 0)) throw new Error(`scene QA set requires at least ${requirements.minimum_validated_crossings} validated crossings; found ${summary.validated_crossings}`);
   const artifactFiles = [...new Set([montagePath, reviewMontagePath, ...reports.flatMap((report) => Object.values(report.outputs))])];
   const artifactHashes = Object.fromEntries(await Promise.all(artifactFiles.map(async (file) => [posixRelative(outDir, file), await sha256File(file)])));
   const visualRegression = candidate
@@ -2397,6 +2594,17 @@ async function buildBlobRecipe({ root, recipe }) {
     }
     ctx.putImageData(pixels, 0, 0);
   }
+  const transparentColors = recipe.transparent_colors ?? [];
+  if (!Array.isArray(transparentColors) || transparentColors.some((color) => !/^#[0-9a-f]{6}$/i.test(color))) throw new Error('blob recipe transparent_colors must contain #rrggbb values');
+  if (transparentColors.length) {
+    const keyed = new Set(transparentColors.map((color) => color.slice(1).toLowerCase()));
+    const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    for (let index = 0; index < pixels.data.length; index += 4) {
+      const key = [pixels.data[index], pixels.data[index + 1], pixels.data[index + 2]].map((value) => value.toString(16).padStart(2, '0')).join('');
+      if (keyed.has(key)) pixels.data[index + 3] = 0;
+    }
+    ctx.putImageData(pixels, 0, 0);
+  }
   const hasInnerCorners = topology === 'cardinal-4+diagonal-corners';
   const positiveFrames = [
     ...BLOB_CARDINAL_MASKS.map((mask, index) => [`base.${mask}`, { cell: [index % 4, Math.floor(index / 4)] }]),
@@ -2407,7 +2615,7 @@ async function buildBlobRecipe({ root, recipe }) {
     ...(hasInnerCorners ? ['nw', 'ne', 'se', 'sw'].map((corner, index) => [`negative.inner.${corner}`, { cell: [index, 9] }]) : []),
   ] : [];
   return { canvas, result: {
-    source: recipe.source, cell: recipe.cell, grid: [4, hasNegative ? 10 : 5],
+    source: recipe.source, cell: recipe.cell, grid: [4, hasNegative ? 10 : 5], transparent_colors: transparentColors,
     frames: Object.fromEntries([...positiveFrames, ...negativeFrames]),
     autotile: {
       topology,
