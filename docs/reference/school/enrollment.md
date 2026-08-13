@@ -261,8 +261,7 @@ Precedence, most specific first:
 ```
 session stamp (already written at grading; issue-time on the v2 path)
   → enrollment.passing        (from the syllabus at materialization)
-  → passOverrides.percentFor(unitId)     (global; unchanged)
-  → work.grading.pass_percent            (course-level; currently dead, §3)
+  → work.grading.pass_percent (course-level; currently dead, §3 — wired in wave 3)
   → unit.passing.percent
 ```
 
@@ -271,7 +270,18 @@ syllabus at grade time keeps the snapshot property of §4 and means neither call
 site needs to load a syllabus — they read the assignment record they already
 have.
 
-Whether the global override should outrank a syllabus is an open question (§10).
+**The global per-unit override is retired**, not demoted (§11 Q1). It has never
+been used — `pass-overrides.yml` does not exist in production — and its one
+distinct job, fixing a unit's bar for *everyone*, is already served by editing
+the unit YAML: curriculum lives in the bind-mounted data volume,
+`YamlCurriculumDatastore` holds no cache, and the only School-side cache is a
+5-minute TTL over bank *summaries* (`SchoolService.mjs:26`), not unit
+definitions.
+
+**Retirement and wiring `work.grading.pass_percent` must land in the same wave.**
+Removing the override while the course-level bar is still unconsumed deletes a
+rung and gains nothing — the elements course's authored `80` would still do
+nothing and everything would fall through to `unit.passing.percent`.
 
 ---
 
@@ -314,9 +324,14 @@ The whole school                              [+ Enroll]
 
 The drawer shows the materialized enrollment — module order, optional modules,
 profile, bar — with **Re-materialize** and **Unenroll**, and flags drift from
-its syllabus. Hand-authored enrollments without a `syllabusId` render as
+its syllabus. Re-materialize refuses while any session on that course is open,
+naming them (§11 Q5). Hand-authored enrollments without a `syllabusId` render as
 first-class, flagged as unmanaged rather than treated as broken; `felix.yml` must
 keep working untouched.
+
+Below the grid, a per-learner list shows enrollments plus a separate
+**Standalone** group for `assignments.units[]` — program and course-less units
+that have no syllabus (§11 Q2).
 
 `AssignmentsView` is the immediate hazard: it currently round-trips assignments
 as bare id lists and would drop `enrollment`/`profile` on save. It must preserve
@@ -328,33 +343,75 @@ unknown entry fields before anything else here ships.
 
 | Wave | Contents |
 |---|---|
-| **0** | `AssignmentsView` preserves `profile`/`enrollment`/unknown fields on save. Pure bug fix, independently shippable, blocks everything else. |
-| **1** | Syllabus store + validator; `EnrollLearner` use case calling `createCourseEnrollment`; API behind `TeacherGate` with the `baseUpdatedAt` stale-save guard; matrix cell editor, re-materialize, unenroll. Whole-course syllabi only. |
-| **2** | Scope: the two `planner.mjs` fixes in §5, module subsetting, dangling-front-edge warning. |
-| **3** | `work.profiles` wired into `profileSpec` (§6); per-learner pass bar (§7); `work.grading.pass_percent` consulted. |
-| **4** | Terms and grading windows (§8); then pacing. |
+| **0** | `AssignmentsView` preserves `profile`/`enrollment`/unknown fields on save. Pure bug fix, independently shippable, **blocks everything else** — editing assignments through the console today deletes a hand-authored enrollment. |
+| **1** | Syllabus store + validator; `EnrollLearner` use case calling `createCourseEnrollment`; API behind `TeacherGate` with the `baseUpdatedAt` stale-save guard; matrix cell editor and drawer (re-materialize with the open-session refusal of §4, unenroll); standalone-units group (§11 Q2); report-card multi-enrollment guard (§11 Q4). Whole-course syllabi only. |
+| **2** | Scope: the two `planner.mjs` fixes in §5, module subsetting, dangling-front-edge warning. Plus §11 Q6 — extend `course/v2` `modules[]`, migrate the 17 `course-unit/v1` files, delete them. |
+| **3** | `work.profiles` wired into `profileSpec` (§6); per-learner pass bar (§7); `work.grading.pass_percent` consulted **and** the global override retired, together (§7). |
+| **4** | Terms and grading windows (§8); per-enrollment report cards; then pacing. |
+
+Two placements are deliberate. **Q6 is in wave 2, not filed as cleanup**: per-module
+`lesson_order` is an *input* to materialization ordering, so it belongs with the
+subsetting work rather than after it. **The report-card guard is in wave 1, not
+wave 4**: a second enrollment in one course becomes possible the moment enrolling
+does.
 
 ---
 
-## 11. Open questions
+## 11. Resolved decisions
 
-1. **Global pass-override precedence.** §7 places it below the enrollment. It is
-   arguably a deliberate everyone-statement that should outrank a syllabus
-   default — and it may not deserve to survive at all once the bar is per-learner.
-2. **Standalone units.** `assignments.units[]` belongs to no course and therefore
-   no syllabus. It stays on the assignment record; whether the matrix shows it is
-   undecided.
-3. **Deletion.** No archival story for syllabi, and no defined behavior for an
-   enrollment whose syllabus is deleted. The repo's `_trash` soft-delete
-   convention is the obvious candidate.
-4. **Report cards across enrollments.** `GetReportCard` derives its course set
-   from assignment *history* records. Two enrollments in one course inside one
-   period would yield two grades for one course column; unresolved.
-5. **Re-materialization safety.** §4 argues passed lessons survive because
-   `passedUnits` is keyed on `unitId`. Not yet tested against a mid-run
-   re-shuffle with an open session.
-6. **`school.course-unit/v1`.** Dead files describing modules that `course/v2`
-   now authors. Delete them, or make them the source and drop the duplication.
+These were open in the previous revision. All six are settled; the evidence for
+each is recorded because it is the kind that goes stale.
+
+**Q1 — Global pass-override: retire it.** `pass-overrides.yml` has never existed
+in production, so there is nothing to migrate. Its one distinct job is better
+served by editing the unit YAML (§7). Retirement spans ~29 references across 9
+files, including `SchoolMatrix`'s ⚑ overridden-course flag and one `kind` in the
+audit-trail feed. Must ship with `work.grading.pass_percent` being wired (§7).
+
+**Q2 — Standalone units: unchanged.** `assignments.units[]` holds work belonging
+to no course — live usage is a single entry, felix's `language-daily`, a program
+unit with daily cadence. Programs cannot have a syllabus by construction. They
+stay on the assignment record and appear in the learner's enrollment list as a
+separate *Standalone* group, never in the grid, which is course × learner.
+
+**Q3 — Syllabus deletion: safe by construction.** Because materialization is a
+snapshot (§4), an enrollment is self-contained and `syllabusId` is provenance
+only. Deleting a syllabus breaks nothing at runtime; the enrollment becomes
+*unmanaged* — the same state felix's hand-authored one is already in. Archive
+rather than hard-delete, so the drawer can still name where an enrollment came
+from.
+
+**Q4 — Report cards: keep courseId keying, add a guard.** Per-enrollment rows
+are deferred to wave 4, when terms make `courseGradeFromSessions`' `window`
+real and the frozen `school.report-card/v1` schema can be migrated once rather
+than twice. Meanwhile a period containing sessions from two enrollments of one
+course is *flagged*, so the merge is visible rather than a silent average of two
+unrelated scopes.
+
+**Q5 — Re-materialization: refuse while any session is open.** Blocked until
+open sessions on that course are closed or abandoned, naming them, with
+`markSessionAbandoned` as the escape. Passed work is never at risk regardless —
+`passedUnits` is keyed on `unitId` from session history and is independent of
+the enrollment — but an open session on a lesson leaving the enrollment would
+strand, and this codebase has been bitten by that class of ghost before.
+
+**Q6 — `school.course-unit/v1`: fold into `course/v2`, then delete.** Not
+cleanup. The 17 files carry `sequence`, `required`, `overview_first` and
+per-module `lesson_order`, while `modules[]` accepts only
+`{module, title, media?}` (`workValidation.mjs:171-190`) and
+`progression.lesson_order` is course-*wide*. The elements course sets
+`shuffle_once` course-wide while `units/00-foundations/index.yml` asks for
+`sequence` — so the "start here" overview module is authored to stay in order
+and is being shuffled. No live damage yet (nobody is enrolled in elements).
+Extend `modules[]` with the missing fields, migrate the 17 files, delete them.
+
+### Still genuinely open
+
+- **Terms.** §8 assumes a syllabus may carry one, but no academic-period link is
+  designed. Wave 4.
+- **Pacing.** `self_paced` / `deadline` / `flex` are named in §8 and designed
+  nowhere. Flex ordering has no home in the current model, since order is frozen
+  into `lessonOrder` at materialization.
 
 ---
 
