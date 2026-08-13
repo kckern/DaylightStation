@@ -17,6 +17,14 @@ const SYLLABUS = {
   courseId: 'elements', profile: 'lower', policy: null, passing: 60, term: null,
 };
 
+// A second syllabus for the SAME course, with no profile/passing set — used to
+// prove a re-materialize under a different syllabus fully overwrites the
+// top-level fields rather than leaving stale values from the prior syllabus.
+const SYLLABUS_NO_PROFILE = {
+  schema: 'school.syllabus/v1', syllabusId: 'elements-upper', title: 'Elements — upper',
+  courseId: 'elements', profile: null, policy: null, passing: null, term: null,
+};
+
 // Units ordered so `foundations` is NOT the first module to appear in the
 // array — `createCourseEnrollment` otherwise derives module order from
 // first-appearance, which would make a naive test pass even if the course
@@ -37,7 +45,13 @@ function harness({ assignment = null, open = [] } = {}) {
   return {
     saved,
     useCase: new EnrollLearner({
-      syllabi: { get: async (id) => (id === 'elements-lower' ? SYLLABUS : null) },
+      syllabi: {
+        get: async (id) => {
+          if (id === 'elements-lower') return SYLLABUS;
+          if (id === 'elements-upper') return SYLLABUS_NO_PROFILE;
+          return null;
+        },
+      },
       assignments: {
         get: async () => assignment,
         put: async (record) => { saved.push(record); return record; },
@@ -132,6 +146,32 @@ describe('EnrollLearner', () => {
       learnerId: 'milo', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410', rematerialize: true,
     });
     const entry = hh.saved[0].courses.find((c) => c.courseId === 'elements');
+    expect(entry.elective).toBe(true);
+    expect(entry.enrolledAt).toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  it('re-materializing under a different syllabus overwrites stale top-level profile/passing, but still preserves elective and enrolledAt', async () => {
+    const hh = harness({
+      assignment: {
+        learnerId: 'milo',
+        courses: [{
+          courseId: 'elements',
+          elective: true,
+          enrolledAt: '2026-01-01T00:00:00.000Z',
+          syllabusId: 'elements-lower',
+          profile: 'upper',
+          passing: 80,
+        }],
+        units: [],
+        updatedAt: null,
+      },
+    });
+    await hh.useCase.execute({
+      learnerId: 'milo', syllabusId: 'elements-upper', enrolledBy: 'kckern', pin: '7410', rematerialize: true,
+    });
+    const entry = hh.saved[0].courses.find((c) => c.courseId === 'elements');
+    expect(entry.profile).toBeNull();
+    expect(entry.passing).toBeNull();
     expect(entry.elective).toBe(true);
     expect(entry.enrolledAt).toBe('2026-01-01T00:00:00.000Z');
   });

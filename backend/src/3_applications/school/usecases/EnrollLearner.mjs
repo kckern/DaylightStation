@@ -120,9 +120,9 @@ export class EnrollLearner {
     const entry = {
       ...priorObj,
       courseId,
-      ...(syllabus.profile ? { profile: syllabus.profile } : {}),
+      profile: syllabus.profile ?? null,
       syllabusId: syllabus.syllabusId,
-      ...(syllabus.passing !== null ? { passing: syllabus.passing } : {}),
+      passing: syllabus.passing,
       enrolledAt: priorObj.enrolledAt ?? nowIso,
       enrollment,
     };
