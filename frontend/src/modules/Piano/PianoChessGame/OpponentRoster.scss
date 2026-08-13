@@ -103,11 +103,11 @@
    something needed beside the board every turn. */
 .opponent-roster-modal {
   position: absolute;
-  inset-block: 8%;
+  inset-block: 10%;
   inset-inline: 0;
   z-index: 7;
   justify-self: center;
-  width: min(30rem, 82cqw);
+  width: min(36rem, 88cqw);
   margin-inline: auto;
   padding: 1rem 1.2rem 1.2rem;
   border: 1px solid var(--piano-border);
@@ -133,9 +133,11 @@
   color: var(--piano-fg);
 }
 
+/* Three across: twenty-one characters as a sequence you can take in at once,
+   rather than a column you scroll a fifth of at a time. */
 .opponent-roster-modal__list {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.3rem;
   margin: 0;
   padding: 0;
@@ -146,12 +148,27 @@
 
 .opponent-roster-modal__row {
   display: grid;
-  grid-template-columns: 1.6rem 2.4rem 1fr auto;
+  grid-template-columns: 2rem 1fr;
+  grid-template-areas: 'face name' 'face blurb';
   align-items: center;
-  gap: 0.6rem;
-  padding: 0.3rem 0.4rem;
+  column-gap: 0.4rem;
+  padding: 0.3rem;
+  border: 1px solid transparent;
   border-radius: var(--r-sm);
+  min-width: 0;
 }
+
+.opponent-roster-modal__row .roster-face { grid-area: face; width: 2rem; height: 2rem; }
+.opponent-roster-modal__row .opponent-roster__name { grid-area: name; }
+.opponent-roster-modal__row .opponent-roster__blurb { grid-area: blurb; }
+
+/* The level number and the state word are what a compact grid has no room for;
+   the position in the sequence is the order, and the state is the highlight. */
+.opponent-roster-modal__level,
+.opponent-roster-modal__state { display: none; }
+
+.opponent-roster-modal__row--current { border-color: var(--piano-accent); }
+.opponent-roster-modal__row--beaten { opacity: 0.75; }
 
 .opponent-roster-modal__row--current {
   background: color-mix(in srgb, var(--piano-accent) 14%, transparent);
