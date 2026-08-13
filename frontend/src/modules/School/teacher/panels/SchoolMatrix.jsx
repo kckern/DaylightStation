@@ -14,10 +14,11 @@
  * its enrollment (syllabus, profile, managed vs. hand-authored) for the
  * enrollment editor built on top of this model.
  */
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
 import PanelFrame from './PanelFrame.jsx';
+import EnrollmentDrawer from './EnrollmentDrawer.jsx';
 import { labelize } from '../labelize.js';
 
 /** Pure model: rows per learner, columns per course, plus the flag sets. */
@@ -73,6 +74,7 @@ export default function SchoolMatrix({ kids }) {
   const assignments = usePanelFetch(() => schoolApi.allAssignments(), { panel: 'matrix-assignments' });
   const units = usePanelFetch(() => schoolApi.curriculumUnits(), { panel: 'matrix-units', notFoundAs: 'unavailable' });
   const syllabi = usePanelFetch(() => schoolApi.syllabi(), { panel: 'matrix-syllabi', nullAs: 'empty' });
+  const [open, setOpen] = useState(null); // { learnerId, courseId }
 
   const model = useMemo(() => deriveMatrix({
     assignments: assignments.data?.assignments ?? [],
@@ -103,15 +105,38 @@ export default function SchoolMatrix({ kids }) {
             {model.rows.map((row) => (
               <tr key={row.learnerId}>
                 <th scope="row">{row.name}</th>
-                {model.courseIds.map((id) => (
-                  <td key={id} className={row.assigned.has(id) ? 'is-assigned' : ''}>
-                    {row.assigned.has(id) ? '●' : ''}
-                  </td>
-                ))}
+                {model.courseIds.map((id) => {
+                  const cell = row.cells[id];
+                  return (
+                    <td key={id} className={cell ? 'is-assigned' : ''}>
+                      <button
+                        type="button"
+                        className="teacher-matrix__cell"
+                        onClick={() => setOpen({ learnerId: row.learnerId, courseId: id })}
+                        aria-label={`${row.name}, ${labelize(id)}`}
+                      >
+                        {cell
+                          ? `${cell.syllabusTitle ?? '—'}${cell.profile ? ` · ${cell.profile}` : ''}${cell.managed ? '' : ' ⚑'}`
+                          : ''}
+                      </button>
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>
         </table>
+        {open && (
+          <EnrollmentDrawer
+            learner={kids.find((k) => k.id === open.learnerId) ?? { id: open.learnerId, name: open.learnerId }}
+            courseId={open.courseId}
+            cell={model.rows.find((r) => r.learnerId === open.learnerId)?.cells[open.courseId] ?? null}
+            syllabi={syllabi.data?.syllabi ?? []}
+            baseUpdatedAt={(assignments.data?.assignments ?? []).find((a) => a.learnerId === open.learnerId)?.updatedAt ?? null}
+            onClose={() => setOpen(null)}
+            onChanged={() => { assignments.retry(); }}
+          />
+        )}
         {model.rows.some((r) => r.deadRefs.length > 0) && (
           <div className="teacher-matrix__dead" data-testid="matrix-dead-refs">
             <p>Assignments naming courses the catalog no longer publishes — these subjects are silently missing from the child&rsquo;s day:</p>
