@@ -34,13 +34,31 @@
   object-fit: cover;
 }
 
-.chess-opponent__name {
+.chess-opponent__text {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
-  font-size: var(--t-body, 1rem);
-  color: var(--piano-fg, #f1f1f4);
+}
+
+.chess-opponent__name,
+.chess-opponent__status {
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.chess-opponent__name {
+  font-size: var(--t-body, 1rem);
+  color: var(--piano-fg, #f1f1f4);
+}
+
+/* The status line holds its height whether or not it has something to say, so
+   the panel never jumps as the opponent starts and stops thinking. */
+.chess-opponent__status {
+  min-height: 1.2em;
+  font-size: var(--t-cap, 0.85rem);
+  color: var(--piano-muted, #9a9aa6);
 }
 
 .chess-opponent--lg {

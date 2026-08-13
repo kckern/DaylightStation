@@ -232,11 +232,20 @@ mid-write would lose a rung a child had earned — the one piece of state here t
 mind losing. A guest climbs nothing and always faces the bottom of the roster, and the screen says
 so rather than showing a progress bar that resets on reload.
 
-The roster is data. Each character is a name and a face, the face defaulting to an identicon
-generated from the name — the same generator the card game uses, so a name wears one face across
-this house's games. Replacing the roster in YAML re-themes the whole ladder without touching the
-promotion arithmetic, which is how a Pokémon roster gets in: weakest creature at 0, legendaries at
-the top.
+The roster is data. Each character is a name, a face, and a colour. The face defaults to an
+identicon generated from the name — the same generator the card game uses, so a name wears one face
+across this house's games — and the colour retints the board's dark squares, so arriving at a new
+character looks like arriving somewhere new. Both are derived from the level unless the roster says
+otherwise, which means twenty-one characters exist without twenty-one entries being maintained.
+
+Replacing the roster in YAML re-themes the whole ladder without touching the promotion arithmetic,
+which is how a Pokémon roster gets in: weakest creature at 0, legendaries at the top, artwork and
+board colour per entry.
+
+The character is present while you play. The chord rail shows their face, their name, and what they
+are doing — thinking, what they last played, what they just took off you, and how the game ended.
+Every one of those is read off real game state; none of it is written to fill the line, because a
+status that is sometimes theatre is a status a child stops reading.
 
 ## Not yet built
 

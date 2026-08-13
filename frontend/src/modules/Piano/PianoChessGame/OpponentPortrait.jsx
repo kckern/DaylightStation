@@ -13,7 +13,26 @@ import './OpponentPortrait.scss';
  * simply replaces the identicon. Nothing else about the ladder changes, which
  * is the point of keeping art out of the promotion arithmetic.
  */
-export function OpponentPortrait({ opponent, level, size = 'md' }) {
+/**
+ * What the opponent is doing, in their own terms.
+ *
+ * Every state here is read off real game state — whose turn it is, what they
+ * last played, what they lost doing it. Nothing is invented to fill the line,
+ * because a status that is sometimes theatre is a status a child stops reading.
+ */
+export function opponentStatus({ thinking, lastMove, lastCapture, gameOver, result }) {
+  if (gameOver) {
+    if (result === 'win') return 'Beaten';
+    if (result === 'loss') return 'Won';
+    return 'Drew with you';
+  }
+  if (thinking) return 'Thinking…';
+  if (lastCapture) return `Took your ${lastCapture}`;
+  if (lastMove) return `Played ${lastMove}`;
+  return 'Waiting for you';
+}
+
+export function OpponentPortrait({ opponent, level, size = 'md', status = null }) {
   const name = opponent?.name || `Level ${level ?? 0}`;
   return (
     <figure className={`chess-opponent chess-opponent--${size}`}>
@@ -42,7 +61,10 @@ export function OpponentPortrait({ opponent, level, size = 'md' }) {
           </svg>
         )}
       </div>
-      <figcaption className="chess-opponent__name">{name}</figcaption>
+      <figcaption className="chess-opponent__text">
+        <span className="chess-opponent__name">{name}</span>
+        {status && <span className="chess-opponent__status">{status}</span>}
+      </figcaption>
     </figure>
   );
 }
