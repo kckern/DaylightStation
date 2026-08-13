@@ -1,5 +1,28 @@
-import { describe, it, expect } from 'vitest';
-import { mergeEntries } from './AssignmentsView.jsx';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import AssignmentsView, { mergeEntries } from './AssignmentsView.jsx';
+import { schoolApi } from '../../schoolApi.js';
+
+// Mock the API
+vi.mock('../../schoolApi.js', () => ({
+  schoolApi: {
+    assignments: vi.fn(),
+    curriculumUnits: vi.fn(),
+    putAssignments: vi.fn(),
+  },
+}));
+
+// Mock useTeacherProfile to provide a claimed teacher
+vi.mock('../TeacherProfileContext.jsx', () => ({
+  useTeacherProfile: () => ({
+    currentTeacher: { id: 'kckern', name: 'KC' },
+    pin: 'test-pin-1234',
+    openPicker: vi.fn(),
+    openPinPrompt: vi.fn(),
+    pinPromptOpen: false,
+    pickerOpen: false,
+  }),
+}));
 
 const ENROLLED = {
   courseId: 'young-peoples-atlas-us',
@@ -38,5 +61,79 @@ describe('mergeEntries — a save must never flatten an enrollment', () => {
   it('preserves unknown fields on an object entry it does not understand', () => {
     const odd = { courseId: 'x', elective: true, somethingNew: 42 };
     expect(mergeEntries([odd], ['x'], 'courseId')).toEqual([odd]);
+  });
+});
+
+describe('AssignmentsView — the rendered component preserves enrollments on save', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('round-trips an enrolled course unchanged when saved without edits', async () => {
+    // Set up: learner has one enrolled course + catalog has courses available
+    schoolApi.assignments.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: {
+        courses: [ENROLLED],
+        units: [],
+        updatedAt: '2026-08-13T00:00:00Z',
+      },
+    });
+
+    schoolApi.curriculumUnits.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: {
+        units: [
+          { unitId: 'math-fractions', courseId: 'math-fractions' },
+          { unitId: 'atlas-unit-1', courseId: 'young-peoples-atlas-us' },
+        ],
+      },
+    });
+
+    schoolApi.putAssignments.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: null,
+    });
+
+    render(<AssignmentsView learnerId="felix" learnerName="Felix" />);
+
+    // Wait for data to load
+    await waitFor(() => {
+      expect(schoolApi.assignments).toHaveBeenCalled();
+    });
+
+    // Verify the enrolled course is displayed (not flattened to a string)
+    await waitFor(() => {
+      expect(screen.getByText(/Young peoples atlas us/i)).toBeInTheDocument();
+    });
+
+    // Click Edit
+    const editButton = screen.getByRole('button', { name: /Edit assignments/i });
+    fireEvent.click(editButton);
+
+    // Verify edit mode is active (we see checkboxes)
+    await waitFor(() => {
+      expect(screen.getByRole('checkbox', { name: /Young peoples atlas us/i })).toBeInTheDocument();
+    });
+
+    // Click Save without making any changes
+    const saveButton = screen.getByRole('button', { name: /Save/i });
+    fireEvent.click(saveButton);
+
+    // Wait for the putAssignments call to complete
+    await waitFor(() => {
+      expect(schoolApi.putAssignments).toHaveBeenCalled();
+    });
+
+    // Assert that putAssignments was called with the ENROLLED object intact
+    const callArgs = schoolApi.putAssignments.mock.calls[0][1];
+    expect(callArgs.courses).toHaveLength(1);
+    expect(callArgs.courses[0]).toEqual(ENROLLED);
+    // Specifically verify the deep enrollment block was not flattened
+    expect(callArgs.courses[0].enrollment).toBeDefined();
+    expect(callArgs.courses[0].enrollment.lessonOrder.midwest).toEqual(['atlas-us-p012-midwest']);
   });
 });
