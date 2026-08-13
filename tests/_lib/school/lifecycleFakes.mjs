@@ -299,9 +299,18 @@ export class FakeReceiptRenderer extends IReceiptRenderer {
 
   render(document) {
     this.calls.push(document);
-    const items = document.blocks.map((block) => (block.type === 'scan_action'
-      ? { type: 'barcode', content: block.action, label: block.label }
-      : { type: 'text', content: block.md ?? '' }));
+    const items = document.blocks.flatMap((block) => {
+      if (block.type === 'scan_action') return [{ type: 'barcode', content: block.action, label: block.label }];
+      if (block.type === 'result_summary') return [
+        { type: 'text', content: block.headline },
+        { type: 'text', content: block.title },
+        { type: 'text', content: `Score: ${Math.round(block.percent)}%` },
+        ...(typeof block.passingPercent === 'number'
+          ? [{ type: 'text', content: `passing is ${Math.round(block.passingPercent)}%` }]
+          : []),
+      ];
+      return [{ type: 'text', content: block.md ?? '' }];
+    });
     // The real renderer prints a titled document's standard header first —
     // uppercased, inverted (DocumentEscPosRenderer). Transcripts assert on it.
     if (typeof document.title === 'string' && document.title.trim()) {

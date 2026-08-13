@@ -7,6 +7,7 @@ import {
   applyOrganizationPlan,
   verifyOrganizationPlan,
   auditTerrainMetadataSweep,
+  auditAssetMetadataCoverage,
   parseFrames,
   parsePair,
   renderAnimation,
@@ -49,6 +50,7 @@ Commands:
   organize-apply --root <common-dir> --plan <plan.yml>
   organize-verify --root <common-dir> --plan <plan.yml>
   terrain-sweep --root <common-dir> --manifest <sweep.yml>
+  metadata-coverage --root <common-dir> --inventory <inventory.yml> --catalog <catalog.yml> [--out <report.yml>]
   validate   --root <common-dir> --manifest <pack.yml>
   sheet      --root <common-dir> --out <sheet.png> [--source sprites] [--catalog <pack.yml>] [--columns 6] [--limit 60] [--scale 3]
   frames     --root <common-dir> --source <relative.png> --cell 16x16 --out <grid.png> [--scale 4]
@@ -171,6 +173,10 @@ export async function main(argv = process.argv.slice(2), { env = process.env, st
       }
       case 'terrain-sweep':
         report = await auditTerrainMetadataSweep({ root, manifestPath: required(parsed.flags, 'manifest') });
+        break;
+      case 'metadata-coverage':
+        report = await auditAssetMetadataCoverage({ root, inventoryPath: required(parsed.flags, 'inventory'), catalogPath: required(parsed.flags, 'catalog') });
+        if (parsed.flags.out) await writeYaml(parsed.flags.out, { schema_version: 1, kind: 'asset-metadata-coverage-report', ...report });
         break;
       case 'validate':
         report = await validateManifest({ root, manifestPath: required(parsed.flags, 'manifest') });

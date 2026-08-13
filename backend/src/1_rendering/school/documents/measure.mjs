@@ -481,11 +481,20 @@ function normalizeChoiceResolution(resolved) {
 function measureOmrNode(ctx, block, { widthPt, path }) {
   const { theme, doc } = ctx;
   const availablePt = widthPt - theme.omr.indentPt;
-  const cellWidthPt = availablePt / block.choices;
+  const compact = block.layout === 'compact';
   const resolved = ctx.resolveChoices
     ? ctx.resolveChoices(block.itemId, { choices: block.choices, path })
     : null;
   const { labels, multiSelect, maxSelect } = normalizeChoiceResolution(resolved);
+  let columnCount = block.choices;
+  if (compact) {
+    const maxLabelPt = labels
+      ? Math.max(...labels.map((label) => stringWidth(doc, theme, 'regular', theme.omr.choiceSizePt, String(label))))
+      : availablePt;
+    columnCount = Math.min(5, block.choices);
+    while (columnCount > 2 && maxLabelPt > availablePt / columnCount - theme.omr.compactLabelWidthPt - 2) columnCount -= 1;
+  }
+  const cellWidthPt = availablePt / columnCount;
 
   const cells = [];
   for (let index = 0; index < block.choices; index += 1) {
@@ -495,7 +504,8 @@ function measureOmrNode(ctx, block, { widthPt, path }) {
       label,
       lines: label
         ? wrapRuns(doc, theme, [{ text: label, font: 'regular' }], {
-          widthPt: cellWidthPt, sizePt: theme.omr.choiceSizePt, leadingPt: theme.omr.choiceLeadingPt,
+          widthPt: compact ? cellWidthPt - theme.omr.compactLabelWidthPt - 2 : cellWidthPt,
+          sizePt: theme.omr.choiceSizePt, leadingPt: theme.omr.choiceLeadingPt,
         })
         : [],
     });
@@ -504,6 +514,10 @@ function measureOmrNode(ctx, block, { widthPt, path }) {
   const textLines = labels
     ? Math.max(...cells.map((cell) => cell.lines.length))
     : theme.omr.probeChoiceLines;
+  const compactRows = Math.ceil(block.choices / columnCount);
+  const compactHeight = compact
+    ? compactRows * (textLines * theme.omr.choiceLeadingPt + 5)
+    : theme.omr.rowHeightPt + theme.omr.choiceGapPt + textLines * theme.omr.choiceLeadingPt;
 
   // multi_select's instruction caption (spec §5.3's row-mapped disposition
   // text): "Choose up to N." when the bank item caps the selection,
@@ -525,10 +539,12 @@ function measureOmrNode(ctx, block, { widthPt, path }) {
     cellWidthPt,
     labelled: Boolean(labels),
     multiSelect,
+    layout: compact ? 'compact' : 'row',
+    columnCount,
     instruction,
     widthPt,
     heightPt: (instruction ? instruction.heightPt + theme.omr.instructionGapPt : 0)
-      + theme.omr.rowHeightPt + theme.omr.choiceGapPt + textLines * theme.omr.choiceLeadingPt,
+      + compactHeight,
   };
 }
 
@@ -1101,6 +1117,7 @@ function questionFragment(ctx, block, path) {
     heightPt,
     baseHeightPt: heightPt,
     answerSpace: answerSpaceFor(nodes, heightPt),
+    fillAfter: block.fillAfter === true,
   };
 }
 
@@ -1314,18 +1331,33 @@ export function measureBlocks(blocks, {
  */
 function headerFragment(document, {
   theme, studentName, date, headerConfig = {}, widthPt: widthPtOverride, totalPoints,
+  embeddedCard = null,
 }) {
   const { header } = theme;
   const showName = headerConfig.name !== false;
   const showDate = headerConfig.date !== false;
   const showMetaLine = showName || showDate;
   const instructions = headerConfig.instructions || null;
+  const subtitle = headerConfig.subtitle || null;
+  const reading = headerConfig.reading || null;
   const showScoreBox = Boolean(headerConfig.scoreBox) && totalPoints !== undefined && totalPoints !== null;
+  const showRule = headerConfig.rule !== false;
+  const metaFirst = headerConfig.metaFirst === true;
+  const frame = headerConfig.frame ?? 'none';
+  const framePaddingPt = frame === 'double' ? 7 : 0;
+  const gapBelowPt = metaFirst && frame === 'double' ? 0 : header.gapBelowPt;
+  const metaRowHeightPt = showMetaLine || embeddedCard
+    ? Math.max(showMetaLine ? header.metaLeadingPt : 0, embeddedCard?.heightPt ?? 0)
+    : 0;
   const heightPt = header.titleLeadingPt
     + (instructions ? header.metaLeadingPt : 0)
-    + (showMetaLine ? header.metaLeadingPt : 0)
+    + (subtitle ? theme.styles.body.leadingPt : 0)
+    + (reading ? theme.styles.body.leadingPt : 0)
+    + framePaddingPt * 2
+    + metaRowHeightPt
+    + (metaRowHeightPt && metaFirst ? header.metaTitleGapPt : 0)
     + (showScoreBox ? header.metaLeadingPt : 0)
-    + header.ruleGapPt + header.ruleWidthPt + header.gapBelowPt;
+    + (showRule ? header.ruleGapPt + header.ruleWidthPt : 0) + gapBelowPt;
   // Same furniture-aware width override measureBlocks takes (F2) — the
   // title/name/date rule has to stop at the SAME gutter-narrowed right edge
   // the body text wraps to, or the banner would overrun a guttered page's
@@ -1342,7 +1374,15 @@ function headerFragment(document, {
     showName,
     showDate,
     instructions,
+    subtitle,
+    reading,
     showScoreBox,
+    showRule,
+    metaFirst,
+    frame,
+    framePaddingPt,
+    embeddedCard,
+    metaRowHeightPt,
     totalPoints: showScoreBox ? totalPoints : null,
     widthPt: contentWidthPt,
     heightPt,
@@ -1409,22 +1449,19 @@ function cardHeaderFragment(doc, theme, card, { widthPt: widthPtOverride } = {})
   });
   const digitsWidthPt = digits.length ? cursor - cardTheme.trackingPt : 0;
 
-  const labelText = 'Card';
+  const labelText = 'Student No.';
   const labelWidthPt = stringWidth(doc, theme, 'bold', cardTheme.labelSizePt, labelText);
-  // Em dash introduces "questions", en dash joins the row range — both
-  // printed as plain, unwrapped text at draw time (short, fixed format,
-  // same posture as the header title's own `lineBreak: false`).
-  const metaText = `—  questions ${card.startRow}–${card.endRow}`;
+  const metaText = '';
 
   const firstUse = card.firstUse === true;
-  const instructionText = firstUse
-    ? 'Bubble this number into columns 1–7 of a new card.'
-    : `Use your card ${cardId}.`;
-  const instruction = measureTextLines(doc, theme, [{ text: instructionText, font: 'italic' }], {
-    widthPt, styleKey: 'caption',
-  });
+  const reuseSheet = card.startRow > 1;
+  const reuseText = reuseSheet ? `REUSE THE SAME ANSWER SHEET · ROWS ${card.startRow}–${card.endRow}` : null;
+  const reuseTextWidthPt = reuseText
+    ? stringWidth(doc, theme, 'bold', cardTheme.reuseLabelSizePt, reuseText)
+    : 0;
+  const instruction = null;
 
-  const heightPt = cardTheme.bandHeightPt + cardTheme.instructionGapPt + instruction.heightPt;
+  const heightPt = cardTheme.bandHeightPt + (reuseSheet ? cardTheme.reuseLabelLeadingPt : 0);
 
   const node = {
     kind: 'cardHeader',
@@ -1435,6 +1472,9 @@ function cardHeaderFragment(doc, theme, card, { widthPt: widthPtOverride } = {})
     labelWidthPt,
     metaText,
     firstUse,
+    reuseSheet,
+    reuseText,
+    reuseTextWidthPt,
     instruction,
     widthPt,
     heightPt,
@@ -1476,14 +1516,13 @@ export function measureDocumentFragments(document, {
   // what keeps v1 rendering the unconditional Name/Date banner it always has
   // (see headerFragment's own doc comment).
   const headerConfig = header ?? document.header ?? {};
-  const fragments = [
-    headerFragment(document, {
-      theme, studentName, date, headerConfig, widthPt, totalPoints,
-    }),
-  ];
-  if (card?.cardId !== undefined && card?.cardId !== null) {
-    fragments.push(cardHeaderFragment(doc, theme, card, { widthPt }));
-  }
+  const cardFragment = card?.cardId !== undefined && card?.cardId !== null
+    ? cardHeaderFragment(doc, theme, card, { widthPt })
+    : null;
+  const fragments = [headerFragment(document, {
+    theme, studentName, date, headerConfig, widthPt, totalPoints,
+    embeddedCard: cardFragment?.nodes?.[0] ?? null,
+  })];
   fragments.push(...measureBlocks(document.blocks, {
     doc, theme, texToSvg, resolveAsset, resolveChoices, tokens, italic, widthPt,
   }));

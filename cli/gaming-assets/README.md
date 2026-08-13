@@ -26,11 +26,21 @@ npm run gaming:assets -- validate \
 # Re-run the fail-closed terrain/topology capability sweep.
 npm run gaming:assets -- terrain-sweep \
   --manifest "$DAYLIGHT_BASE_PATH/media/games/_common/catalog/terrain-metadata-sweep.yml"
+
+# Prove every canonical PNG has current measured facts and an explicit
+# runtime-reviewed, derivation-provenance, or deferred disposition.
+npm run gaming:assets -- metadata-coverage \
+  --root "$DAYLIGHT_BASE_PATH/media/games/_common" \
+  --inventory "$DAYLIGHT_BASE_PATH/media/games/_common/catalog/generated/assets-inventory.yml" \
+  --catalog "$DAYLIGHT_BASE_PATH/media/games/_common/catalog/showcase-v2/catalog.yml" \
+  --out "$DAYLIGHT_BASE_PATH/media/games/_common/catalog/generated/asset-metadata-coverage.yml"
 ```
 
 Inventory records every non-hidden file with source-relative path, SHA-256, byte size, detected MIME type, modified time, source pack, nearest readme/license, and license scope. PNG records add dimensions, colour mode, alpha, and candidate square cell sizes. The optional reports directory receives separate `duplicates.yml`, `issues.yml`, and `non-images.yml` reports. Contact sheets label filename, dimensions, candidate cells, and catalog review status. Candidate frame sizes are hints only; authors must explicitly define sheet geometry and named clips.
 
 `terrain-sweep` verifies the curated topology backlog against the canonical tree. Every PNG below a `tiles/` directory must be assigned to a reviewed family or match an explicit non-topology exclusion; a newly added, unclassified tile sheet makes the command fail. It also measures topology sheets found outside `tiles/`, including sewer, autumn, legacy cave, interior-wall, fence, and bridge systems. `cataloged` families name approved, hash-pinned evidence whose provenance points back to measured sources. `quarantined` families name deferred entries and explicitly remain unavailable at runtime.
+
+`metadata-coverage` is the whole-library companion gate. It rechecks every PNG against the generated inventory, verifies dimensions and hashes have not drifted, requires a known license scope, and verifies every runtime catalog source has explicit density, geometry, named frames, world metadata, and a matching source hash. Its dispositions are intentionally honest: `runtime_reviewed` means semantic frames are approved, `derivation_provenance` means a raw source backs a deterministic derived asset, and `deferred_measured` means the source is known but remains unavailable until its frames and meanings are curated. The generated `sources` array retains that evidence and disposition for every canonical file, making the remaining backlog enumerable rather than implicit. One hundred percent disposition coverage must never be reported as one hundred percent semantic readiness; the report exposes both figures.
 
 ## Unit previews
 

@@ -29,7 +29,7 @@ const unitOf = (raw, sets = refs()) => validateUnit(raw, sets).unit;
 describe('SUBJECT_IDS', () => {
   it('is the nine subject shelves, in wall order', () => {
     expect(SUBJECT_IDS).toEqual([
-      'english', 'writing', 'math', 'history', 'scripture', 'science', 'language', 'skills', 'arts',
+      'english', 'writing', 'math', 'civilization', 'scripture', 'science', 'language', 'skills', 'arts',
     ]);
   });
 
@@ -139,7 +139,7 @@ describe('validateUnit: identity', () => {
 });
 
 describe('validateUnit: subject', () => {
-  it.each(['english', 'writing', 'math', 'history', 'scripture', 'science', 'language', 'skills', 'arts'])(
+  it.each(['english', 'writing', 'math', 'civilization', 'scripture', 'science', 'language', 'skills', 'arts'])(
     'accepts the shelf %s',
     (subject) => {
       expect(errs(valid({ subject }))).toEqual([]);
@@ -148,12 +148,12 @@ describe('validateUnit: subject', () => {
 
   it('rejects an unknown subject, naming it', () => {
     expect(errs(valid({ subject: 'geography' })))
-      .toContain('subject must be one of english|writing|math|history|scripture|science|language|skills|arts, got: geography');
+      .toContain('subject must be one of english|writing|math|civilization|scripture|science|language|skills|arts, got: geography');
   });
 
   it('requires a subject', () => {
     expect(errs(valid({ subject: undefined })))
-      .toContain('subject must be one of english|writing|math|history|scripture|science|language|skills|arts, got: undefined');
+      .toContain('subject must be one of english|writing|math|civilization|scripture|science|language|skills|arts, got: undefined');
   });
 });
 

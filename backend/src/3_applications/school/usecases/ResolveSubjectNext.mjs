@@ -81,12 +81,13 @@ export class ResolveSubjectNext {
    *   { kind: 'move', move: object, sessionId: string, state: object, unit: object|null, entry: object }
    * >}
    */
-  async execute({ learnerId, subject } = {}) {
+  async execute({ learnerId, subject, continueToday = false } = {}) {
     const nowIso = this.#clock().toISOString();
-    const [assignment, units, rawHistory] = await Promise.all([
+    const [assignment, units, rawHistory, works] = await Promise.all([
       this.#assignments.get(learnerId),
       this.#curriculum.listUnits(),
       this.#sessions.listForLearner(learnerId),
+      this.#curriculum.listWorks?.() ?? [],
     ]);
     // Same attestation gate-unlock as BuildAgenda: the PLANNER sees the
     // attested unit as passed so its successor unlocks; the daily-serving
@@ -98,7 +99,11 @@ export class ResolveSubjectNext {
     }));
     const history = attested.length ? [...rawHistory, ...attested] : rawHistory;
 
-    const plan = planLearnerWork({ learnerId, assignment, units, sessions: history, now: nowIso });
+    const coursePolicies = Object.fromEntries((works ?? [])
+      .map((work) => [work.work, work.progression]).filter(([, progression]) => progression));
+    const plan = planLearnerWork({
+      learnerId, assignment, units, sessions: history, now: nowIso, coursePolicies,
+    });
     if (plan.errors.length) {
       this.#logger.warn?.('school.subject.plan-errors', { learnerId, subject, errors: plan.errors });
     }
@@ -110,9 +115,11 @@ export class ResolveSubjectNext {
 
     const section = sections.find((s) => s.subject === subject);
     if (!section) return { kind: 'empty' };
-    if (section.servedToday) return { kind: 'served', subjectLabel: subject };
+    if (section.servedToday && !continueToday) return { kind: 'served', subjectLabel: subject };
 
-    const entry = section.next;
+    const entry = section.next ?? (continueToday && section.servedToday
+      ? [...plan.inProgress, ...plan.available].find((candidate) => candidate.subject === subject)
+      : null);
     if (!entry) {
       if (section.lockedRemedy) return { kind: 'locked', remedy: section.lockedRemedy };
       if (section.programUnavailable) return { kind: 'unavailable' };

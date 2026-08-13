@@ -46,7 +46,7 @@ import { planLearnerWork } from '#domains/school/planner.mjs';
 
 export class CloseSessionOutcome {
   #curriculum; #sessions; #tokens; #assignments; #economy; #economyAction; #economyEnabled;
-  #receipts; #grownUps; #teacherGate; #clock; #rng; #logger; #reviewQueue; #passOverrides;
+  #receipts; #grownUps; #teacherGate; #clock; #rng; #logger; #reviewQueue; #passOverrides; #worksheetInstances; #timezone;
 
   /**
    * @param {object} deps
@@ -84,7 +84,7 @@ export class CloseSessionOutcome {
     reviewQueue = null,
     // Optional pass-criteria override store (teacher-console W3-2):
     // `{percentFor(unitId)}` — an override wins over the authored percent.
-    passOverrides = null,
+    passOverrides = null, worksheetInstances = null, timezone = 'UTC',
     logger = console,
   } = {}) {
     if (!curriculum || !sessions || !tokens || !assignments) {
@@ -105,6 +105,8 @@ export class CloseSessionOutcome {
     this.#rng = rng;
     this.#reviewQueue = reviewQueue;
     this.#passOverrides = passOverrides;
+    this.#worksheetInstances = worksheetInstances;
+    this.#timezone = timezone || 'UTC';
     this.#logger = logger;
   }
 
@@ -229,15 +231,70 @@ export class CloseSessionOutcome {
     const unlocked = passed ? await this.#nextUnlocked({ state, unit, nowIso }) : null;
 
     const actions = [];
-    if (retryToken) actions.push({ token: retryToken, label: 'Try again with a fresh sheet' });
+    if (retryToken) actions.push({
+      token: retryToken,
+      label: `Try ${unit?.title ?? 'this lesson'} again`,
+      presentation: 'lesson',
+      eyebrow: 'Try again',
+      title: unit?.title ?? 'Fresh worksheet',
+      description: 'A fresh worksheet for the questions you missed.',
+      icon: unit?.subject ?? null,
+    });
+    let nextSubjectToken = null;
+    if (passed && unlocked && state.learnerId && unit?.subject) {
+      const record = mintToken({
+        tokenClass: 'subject_next',
+        subject: { learnerId: state.learnerId, subject: unit.subject, continueToday: true },
+        at: nowIso,
+        rng: this.#rng,
+      });
+      await this.#tokens.put(record);
+      nextSubjectToken = record.token;
+      actions.push({
+        token: record.token,
+        label: unlocked.title,
+        presentation: 'lesson',
+        eyebrow: 'Next up',
+        title: unlocked.title,
+        description: unlocked.description,
+        icon: unit.subject,
+        taxonomy: unlocked.taxonomy,
+      });
+    }
 
     const notes = await this.#collectNotes(sessionId);
+    const work = (await this.#curriculum.listWorks?.() ?? []).find((candidate) => candidate.work === unit?.courseId);
+    const moduleTitle = work?.modules?.find((module) => module.module === unit?.module)?.title;
+    const taxonomy = {
+      subject: unit?.subject ? unit.subject[0].toUpperCase() + unit.subject.slice(1) : 'School',
+      course: work?.title ?? unit?.courseId ?? 'Independent study',
+      unit: moduleTitle ?? unit?.module ?? unit?.title ?? state.unitId,
+      lesson: unit?.title ?? state.unitId,
+    };
+    const worksheet = await this.#worksheetInstances?.findBySession?.(sessionId) ?? null;
+    const missed = new Set(state.missedItemIds ?? []);
+    const hints = (worksheet?.questions ?? []).flatMap((question, index) => {
+      if (!missed.has(question.itemId)) return [];
+      const row = (worksheet.omr?.rowRange?.start ?? 1) + index;
+      const page = String(question.source?.page ?? '').replace(/^p\.\s*/i, 'page ');
+      const zone = String(question.source?.zone ?? '').replaceAll(/[.-]/g, ' ');
+      return [`Question ${row}: review ${[page, zone].filter(Boolean).join(' · ')}.`];
+    });
     const document = resultDocument({
       sessionId,
       unitTitle: unit?.title ?? state.unitId,
       result: outcome.result,
       percent: state.gradedPercent,
+      correctCount: state.gradedCorrectCount,
+      totalCount: state.gradedTotalCount,
       passingPercent: state.gradedPassingPercent ?? unit?.passing?.percent ?? null,
+      progress: unlocked?.progress ?? null,
+      subjectIcon: unit?.subject ?? null,
+      learnerName: state.learnerId ? state.learnerId[0].toUpperCase() + state.learnerId.slice(1) : null,
+      date: new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: this.#timezone }).format(new Date(nowIso)),
+      studentNo: worksheet?.omr?.cardId ?? null,
+      hints,
+      taxonomy,
       objectives: unit?.objectives ?? [],
       actions,
       reward: reward && reward.amount > 0 ? { amount: reward.amount } : null,
@@ -254,6 +311,7 @@ export class CloseSessionOutcome {
       percent: state.gradedPercent,
       reward,
       unlocked,
+      nextSubjectToken,
       retryToken,
       message: passed ? 'Nice work!' : 'Almost there — try again.',
       document,
@@ -377,19 +435,46 @@ export class CloseSessionOutcome {
    */
   async #nextUnlocked({ state, unit, nowIso }) {
     if (!unit?.courseId) return null;
-    const [assignment, units, history] = await Promise.all([
+    const [assignment, units, history, works] = await Promise.all([
       this.#assignments.get(state.learnerId),
       this.#curriculum.listUnits(),
       this.#sessions.listForLearner(state.learnerId),
+      this.#curriculum.listWorks?.() ?? [],
     ]);
-    const plan = planLearnerWork({ learnerId: state.learnerId, assignment, units, sessions: history, now: nowIso });
+    const coursePolicies = Object.fromEntries((works ?? [])
+      .map((work) => [work.work, work.progression]).filter(([, progression]) => progression));
+    const plan = planLearnerWork({
+      learnerId: state.learnerId, assignment, units, sessions: history, now: nowIso, coursePolicies,
+    });
     const nextId = plan.entries.find((e) => e.unitId === unit.unitId)?.unlocks ?? null;
     if (!nextId) return null;
     const next = plan.entries.find((e) => e.unitId === nextId);
     // Only report it as unlocked if it actually is: a unit still gated by
     // something else must not be promised on a receipt.
     if (!next || next.status === 'locked') return null;
-    return { unitId: next.unitId, title: next.title };
+    const assignmentCourse = assignment?.courses?.find?.((entry) => entry?.courseId === unit.courseId);
+    const optionalModules = new Set(assignmentCourse?.enrollment?.optionalModules ?? []);
+    const moduleEntries = plan.entries.filter((entry) => entry.courseId === unit.courseId && entry.module === unit.module);
+    const requiredEntries = plan.entries.filter((entry) => entry.courseId === unit.courseId
+      && !optionalModules.has(entry.module));
+    const completed = (entries) => entries.filter((entry) => entry.status === 'completed').length;
+    const humanModule = String(unit.module ?? '').replaceAll('-', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+    const progress = moduleEntries.length > 1
+      ? { label: humanModule, completed: completed(moduleEntries), total: moduleEntries.length }
+      : { label: 'Atlas course', completed: completed(requiredEntries), total: requiredEntries.length };
+    const course = (works ?? []).find((work) => work.work === next.courseId);
+    const nextModuleTitle = course?.modules?.find((module) => module.module === next.module)?.title;
+    return {
+      unitId: next.unitId, title: next.title, description: next.description ?? null, progress,
+      taxonomy: {
+        subject: (next.subject ?? unit.subject)
+          ? (next.subject ?? unit.subject)[0].toUpperCase() + (next.subject ?? unit.subject).slice(1)
+          : 'School',
+        course: course?.title ?? next.courseId,
+        unit: nextModuleTitle ?? next.module ?? next.title,
+        lesson: next.title,
+      },
+    };
   }
 
   async #unavailable(sessionId, line) {

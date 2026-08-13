@@ -131,7 +131,7 @@ function drawFooterBand(doc, theme, {
 }) {
   const { footer, furniture } = theme;
   setFont(doc, theme, 'regular', footer.sizePt, 'muted');
-  const textYPt = topPt + Math.max((furniture.footerBandPt - footer.sizePt) / 2, 0);
+  const textYPt = theme.page.heightPt - footer.bottomInsetPt - footer.sizePt;
   doc.text(`Page ${page} of ${pageCount}`, xPt, textYPt, {
     width: widthPt, align: 'center', lineBreak: false,
   });

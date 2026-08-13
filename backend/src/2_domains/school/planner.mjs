@@ -180,6 +180,24 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
   /** The unit a pass here would open up — what the result receipt promises. */
   const unlockedBy = (unit) => {
     const siblings = courseMembers.get(unit.courseId) || [];
+    const policy = coursePolicies?.[unit.courseId];
+    const enrollment = enrollmentByCourse.get(unit.courseId)?.enrollment;
+    if (policy?.mode === 'module_blocks' && unit.module && enrollment) {
+      const inModule = enrollment.lessonOrder?.[unit.module]
+        ?.map((id) => byUnitId.get(id)).filter(Boolean) ?? [];
+      const lessonIndex = inModule.findIndex((entry) => entry.unitId === unit.unitId);
+      if (lessonIndex >= 0 && lessonIndex + 1 < inModule.length) {
+        return inModule[lessonIndex + 1].unitId;
+      }
+      const moduleIndex = enrollment.moduleOrder?.indexOf(unit.module) ?? -1;
+      if (moduleIndex >= 0) {
+        for (let i = moduleIndex + 1; i < enrollment.moduleOrder.length; i += 1) {
+          const nextId = enrollment.lessonOrder?.[enrollment.moduleOrder[i]]?.[0];
+          if (nextId && byUnitId.has(nextId)) return nextId;
+        }
+      }
+      return null;
+    }
     const index = siblings.findIndex((u) => u.unitId === unit.unitId);
     if (index === -1 || index + 1 >= siblings.length) return null;
     return siblings[index + 1].unitId;
@@ -229,6 +247,7 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
     return {
       unitId,
       title: unit.title ?? unitId,
+      description: unit.description ?? null,
       subject: unit.subject ?? null,
       courseId: unit.courseId ?? null,
       sequence: Number.isInteger(unit.sequence) ? unit.sequence : null,

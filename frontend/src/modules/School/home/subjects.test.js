@@ -5,7 +5,7 @@ describe('SUBJECTS', () => {
   it('is the nine agreed paired shelves in grid order', () => {
     expect(SUBJECTS.map((s) => s.id)).toEqual([
       'english', 'writing', 'math',
-      'history', 'scripture', 'science',
+      'civilization', 'scripture', 'science',
       'language', 'skills', 'arts',
     ]);
   });
@@ -15,11 +15,11 @@ describe('groupBySubject', () => {
   const materials = [
     { id: 'm1', label: 'Shakespeare Tales', category: 'course', subject: 'english' },
     { id: 'm2', label: 'I Survived', category: 'listening', subject: null },
-    { id: 'm3', label: 'Atlas', category: 'reference', subject: 'history' },
+    { id: 'm3', label: 'Atlas', category: 'reference', subject: 'civilization' },
     { id: 'm4', label: 'Art Lessons', category: 'course', subject: 'bogus-subject' },
   ];
   const banks = [
-    { id: 'b1', title: 'US State Capitals', subject: 'history' },
+    { id: 'b1', title: 'US State Capitals', subject: 'civilization' },
     { id: 'b2', title: 'Times Tables', subject: 'math' },
     { id: 'b3', title: 'Party Trivia', subject: null },
   ];
@@ -31,13 +31,13 @@ describe('groupBySubject', () => {
 
   it('routes subject-tagged materials and banks to their shelf', () => {
     expect(grouped.bySubject.english.materials.map((m) => m.id)).toEqual(['m1']);
-    expect(grouped.bySubject.history.banks.map((b) => b.id)).toEqual(['b1']);
+    expect(grouped.bySubject.civilization.banks.map((b) => b.id)).toEqual(['b1']);
     expect(grouped.bySubject.math.banks.map((b) => b.id)).toEqual(['b2']);
   });
 
   it('reference-category material goes to the Library even when subject-tagged', () => {
     expect(grouped.library.materials.map((m) => m.id)).toContain('m3');
-    expect(grouped.bySubject.history.materials).toEqual([]);
+    expect(grouped.bySubject.civilization.materials).toEqual([]);
   });
 
   it('untagged or unknown-subject content lands in the Library', () => {

@@ -17,7 +17,7 @@ import { GRADES } from '../grades.mjs';
  * code and not config: a new shelf is a curriculum decision.
  */
 export const SUBJECT_IDS = Object.freeze([
-  'english', 'writing', 'math', 'history', 'scripture', 'science', 'language', 'skills', 'arts',
+  'english', 'writing', 'math', 'civilization', 'scripture', 'science', 'language', 'skills', 'arts',
 ]);
 
 // Dots separate a unit from its course chapter (math-3.4), so the unit id
@@ -109,6 +109,12 @@ export function validateUnit(raw, sets = {}) {
   else if (!UNIT_ID_PATTERN.test(raw.unitId)) errors.push(`unitId must match ${UNIT_ID_PATTERN.source}, got: ${raw.unitId}`);
 
   if (!isNonEmptyString(raw.title)) errors.push('title is required');
+
+  let description;
+  if (isPresent(raw.description)) {
+    if (!isNonEmptyString(raw.description)) errors.push('description must be a non-empty string when present');
+    else description = raw.description;
+  }
 
   if (!SUBJECT_IDS.includes(raw.subject)) {
     errors.push(`subject must be one of ${SUBJECT_IDS.join('|')}, got: ${raw.subject}`);
@@ -289,6 +295,7 @@ export function validateUnit(raw, sets = {}) {
     unit: {
       unitId: raw.unitId,
       title: raw.title,
+      description,
       subject: raw.subject,
       objectives,
       courseId,

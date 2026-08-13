@@ -8,6 +8,7 @@ import { createCanvas, loadImage } from 'canvas';
 import YAML from 'yaml';
 import {
   buildInventory,
+  auditAssetMetadataCoverage,
   buildOrganizationPlan,
   applyOrganizationPlan,
   verifyOrganizationPlan,
@@ -116,6 +117,35 @@ describe('gaming asset audit tooling', () => {
     assert.ok(inventory.issues.some((issue) => issue.reason === 'unexpected_image_extension'));
     assert.ok(inventory.issues.some((issue) => issue.reason === 'hidden_path'));
     assert.equal(inventory.duplicates.length, 1);
+  });
+
+  it('records a current, explicit disposition for every canonical PNG without inflating semantic readiness', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'gaming-metadata-coverage-'));
+    const assetDir = path.join(root, 'assets', 'default'); await mkdir(assetDir, { recursive: true });
+    const source = path.join(assetDir, 'runtime.png'); const deferred = path.join(assetDir, 'deferred.png');
+    await writeFile(source, createCanvas(16, 16).toBuffer('image/png'));
+    await writeFile(deferred, createCanvas(32, 16).toBuffer('image/png'));
+    const inventory = await buildInventory({ root, sourceDir: 'assets' });
+    const inventoryPath = path.join(root, 'inventory.yml'); await writeFile(inventoryPath, YAML.stringify(inventory));
+    const sourceRecord = inventory.assets.find((record) => record.source === 'assets/default/runtime.png');
+    const world = { footprint: { size: [16, 16] }, scale_class: 'terrain', allowed_materials: ['*'], allowed_surfaces: ['solid'], allowed_planes: ['ground'], allowed_biomes: ['*'], boundary_policy: 'allow', render_layer: 'ground', collision: 'passable' };
+    const catalog = {
+      schema_version: 2, kind: 'presentation-catalog', pack: { id: 'coverage-test', style_profile: 'pixel16.topdown', logical_cell: [16, 16] },
+      style_profiles: { 'pixel16.topdown': { logical_cell: [16, 16], sampling: 'nearest', base_pixel: 1, scale_classes: { terrain: { logical_height: [1, 32] } }, composition: { sector_grid: [1, 1], minimum_occupied_sectors: 1, visual_coverage: [0, 1], minimum_navigation_connectivity: 0, maximum_repeat_ratio: 1, minimum_role_diversity: 1, maximum_role_ratio: 1 } } },
+      assets: { 'terrain.runtime': { source: sourceRecord.source, source_sha256: sourceRecord.sha256, status: 'approved', pixel_density: 1, style_profile: 'pixel16.topdown', edge_policy: 'seamless', geometry: { layout: 'grid', cell: [16, 16], grid: [1, 1] }, frames: { default: { cell: [0, 0] } }, world } },
+      materials: { ground: { style_profile: 'pixel16.topdown', plane: 'ground', biome: 'test', surface: 'solid', fill: { asset: 'terrain.runtime', frame: 'default' } } },
+      terrain_interfaces: {}, connector_profiles: {}, height_interfaces: {}, component_profiles: {}, prefabs: {},
+    };
+    const catalogPath = path.join(root, 'catalog.yml'); await writeFile(catalogPath, YAML.stringify(catalog));
+    const report = await auditAssetMetadataCoverage({ root, inventoryPath, catalogPath });
+    assert.equal(report.valid, true);
+    assert.deepEqual(report.dispositions, { runtime_reviewed: 1, derivation_provenance: 0, deferred_measured: 1 });
+    assert.equal(report.semantic_source_coverage, 0.5);
+    assert.equal(report.sources.length, 2);
+    assert.deepEqual(report.sources.map(({ source: id, disposition }) => [id, disposition]), [
+      ['assets/default/deferred.png', 'deferred_measured'],
+      ['assets/default/runtime.png', 'runtime_reviewed'],
+    ]);
   });
 
   it('validates approved catalog geometry, clips, and a pinned source hash', async () => {
