@@ -59,4 +59,48 @@ describe('useContentMode', () => {
     const { result } = renderHook(() => useContentMode(null, CFG));
     expect(result.current).toEqual({ captureDisabled: false, studyUx: false, resolved: true });
   });
+
+  // Regression coverage for a 200-OK response that carries no actual answer.
+  // PlexAdapter.getContainerInfo() swallows internal failures and returns `info: null`,
+  // and the route still responds HTTP 200 with that — so a resolved promise does NOT
+  // mean the labels are known. These must be treated exactly like a network failure.
+
+  it('stays unresolved when the fetch resolves with info: null — must not be treated as no labels', async () => {
+    mockApi.mockResolvedValue({ info: null });
+    const { result } = renderHook(() => useContentMode({ grandparentId: '696065' }, CFG));
+    await waitFor(() => expect(mockApi).toHaveBeenCalled());
+    expect(result.current.resolved).toBe(false);
+    expect(result.current.captureDisabled).toBe(false);
+  });
+
+  it('does not cache an info: null response — a later mount for the same show refetches and can still resolve', async () => {
+    mockApi.mockResolvedValueOnce({ info: null });
+    const { result: r1 } = renderHook(() => useContentMode({ grandparentId: '696065' }, CFG));
+    await waitFor(() => expect(mockApi).toHaveBeenCalledTimes(1));
+    expect(r1.current.resolved).toBe(false);
+
+    mockApi.mockResolvedValueOnce({ info: { labels: ['instructional'] } });
+    const { result: r2 } = renderHook(() => useContentMode({ grandparentId: '696065' }, CFG));
+    await waitFor(() => expect(r2.current.resolved).toBe(true));
+    expect(r2.current.captureDisabled).toBe(true);
+    expect(mockApi).toHaveBeenCalledTimes(2);
+  });
+
+  it('stays unresolved when the response has no info key at all', async () => {
+    mockApi.mockResolvedValue({});
+    const { result } = renderHook(() => useContentMode({ grandparentId: '696065' }, CFG));
+    await waitFor(() => expect(mockApi).toHaveBeenCalled());
+    expect(result.current.resolved).toBe(false);
+  });
+
+  it('resolves and caches a genuinely unlabelled show (info.labels: []) — must not regress into permanent unresolvedness', async () => {
+    mockApi.mockResolvedValue({ info: { labels: [] } });
+    const { result: r1 } = renderHook(() => useContentMode({ grandparentId: '696065' }, CFG));
+    await waitFor(() => expect(r1.current.resolved).toBe(true));
+    expect(r1.current).toEqual({ captureDisabled: false, studyUx: false, resolved: true });
+
+    const { result: r2 } = renderHook(() => useContentMode({ grandparentId: '696065' }, CFG));
+    await waitFor(() => expect(r2.current.resolved).toBe(true));
+    expect(mockApi).toHaveBeenCalledTimes(1);
+  });
 });
