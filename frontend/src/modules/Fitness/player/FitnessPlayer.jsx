@@ -29,6 +29,7 @@ import { shouldBypassGovernance } from './governanceBypass.js';
 import { isKioskEnv } from '@/lib/kioskEnv.js';
 import { useRenderProfiler } from '@/hooks/fitness/useRenderProfiler.js';
 import usePlayerFrameCapture from '@/hooks/fitness/usePlayerFrameCapture.js';
+import useContentMode from '@/hooks/fitness/useContentMode.js';
 import SessionCameraCapture from './SessionCameraCapture.jsx';
 import { getLogger } from '@/lib/logging/Logger.js';
 import { computeCycleDimStyle } from './cycleDimStyle.js';
@@ -197,10 +198,19 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   // Realtime player-frame capture for the session time-lapse (role:'player').
   // Mirrors the webcam capture; reuses the same save_screenshot pipeline.
   const timelapseCfg = (fitnessConfiguration?.fitness || fitnessConfiguration || {})?.timelapse || {};
+
+  // Content mode drives capture suppression and the study UX. `resolved` is false while
+  // labels are still being fetched for items that arrived without them — capture stays
+  // off until then, so an unresolvable item fails safe rather than recording.
+  const contentMode = useContentMode(currentItem, plexConfig);
+  const captureAllowed = timelapseCfg.enabled !== false
+    && contentMode.resolved
+    && !contentMode.captureDisabled;
+
   usePlayerFrameCapture({
     sessionId: fitnessSessionInstance?.sessionId ?? null,
     intervalMs: Number.isFinite(timelapseCfg.capture_interval_ms) ? timelapseCfg.capture_interval_ms : 1000,
-    enabled: timelapseCfg.enabled !== false
+    enabled: captureAllowed
   });
 
   const [mediaElement, setMediaElement] = useState(null);
@@ -1986,7 +1996,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       <SessionCameraCapture
         sessionId={fitnessSessionInstance?.sessionId ?? null}
         intervalMs={Number.isFinite(timelapseCfg.capture_interval_ms) ? timelapseCfg.capture_interval_ms : 1000}
-        enabled={timelapseCfg.enabled !== false}
+        enabled={captureAllowed}
       />
       <UnlockPrompt
         open={unlockPromptOpen}
