@@ -191,4 +191,108 @@ describe('useLoopWindow', () => {
       vi.useRealTimers();
     }
   });
+
+  // A loop belongs to ONE item. Advancing the queue swaps `currentItem` but keeps this
+  // hook instance (and `loopRef`) alive, so a surviving window would drag the NEXT
+  // episode back into the PREVIOUS one's range - and the next item may be an ordinary
+  // workout with no loop control on screen to release it with.
+  describe('release on item change', () => {
+    it('releases the armed loop when the played item changes', () => {
+      const el = makeEl(0);
+      const onSeek = vi.fn();
+      const { result, rerender } = renderHook(
+        ({ itemKey }) => useLoopWindow({ getMediaElement: () => el, onSeek, itemKey }),
+        { initialProps: { itemKey: 'plex:696067' } }
+      );
+
+      act(() => { result.current.armLoop('forward', 10, 100, 1000); });
+      expect(result.current.loop).not.toBeNull();
+
+      // Next item in the queue.
+      rerender({ itemKey: 'plex:696068' });
+      expect(result.current.loop).toBeNull();
+
+      // And the released window must not still be able to drag the new item back. A
+      // non-zero resume position inside the old window is the realistic case.
+      onSeek.mockClear();
+      el.currentTime = 111;
+      act(() => { el.fireTimeUpdate(); });
+      expect(onSeek).not.toHaveBeenCalled();
+    });
+
+    it('does NOT release on an unrelated re-render with the same item', () => {
+      const el = makeEl(0);
+      const { result, rerender } = renderHook(
+        ({ itemKey }) => useLoopWindow({ getMediaElement: () => el, onSeek: vi.fn(), itemKey }),
+        { initialProps: { itemKey: 'plex:696067' } }
+      );
+
+      act(() => { result.current.armLoop('forward', 10, 100, 1000); });
+      rerender({ itemKey: 'plex:696067' });
+      rerender({ itemKey: 'plex:696067' });
+      expect(result.current.loop).not.toBeNull();
+    });
+
+    it('does not release a loop armed on the FIRST item at mount time', () => {
+      const el = makeEl(0);
+      const { result } = renderHook(() =>
+        useLoopWindow({ getMediaElement: () => el, onSeek: vi.fn(), itemKey: 'plex:696067' }));
+      act(() => { result.current.armLoop('forward', 10, 100, 1000); });
+      expect(result.current.loop).not.toBeNull();
+    });
+  });
+
+  // Arming is a "run this now" gesture: the window is chosen while paused, so without
+  // this the loop would sit armed and idle until a separate play tap.
+  describe('arming starts playback', () => {
+    it('calls onPlay when a loop is armed', () => {
+      const el = makeEl(0);
+      const onPlay = vi.fn();
+      const { result } = renderHook(() =>
+        useLoopWindow({ getMediaElement: () => el, onSeek: vi.fn(), onPlay }));
+
+      act(() => { result.current.armLoop('back', 10, 100, 1000); });
+      expect(onPlay).toHaveBeenCalledTimes(1);
+      expect(result.current.loop).not.toBeNull();
+    });
+
+    it('does NOT start playback when the window is degenerate and nothing got armed', () => {
+      const el = makeEl(0);
+      const onPlay = vi.fn();
+      const { result } = renderHook(() =>
+        useLoopWindow({ getMediaElement: () => el, onSeek: vi.fn(), onPlay }));
+
+      // position 0 with a backward window -> computeLoopWindow returns null.
+      act(() => { result.current.armLoop('back', 10, 0, 1000); });
+      expect(result.current.loop).toBeNull();
+      expect(onPlay).not.toHaveBeenCalled();
+    });
+
+    it('tolerates an onPlay that returns undefined, and one whose promise rejects', async () => {
+      const el = makeEl(0);
+      // usePlayerController's `play` returns undefined; a raw media element's play()
+      // returns a promise that can reject. Neither may throw or surface unhandled.
+      const { result: r1 } = renderHook(() =>
+        useLoopWindow({ getMediaElement: () => el, onSeek: vi.fn(), onPlay: () => undefined }));
+      act(() => { r1.current.armLoop('back', 10, 100, 1000); });
+      expect(r1.current.loop).not.toBeNull();
+
+      const { result: r2 } = renderHook(() => useLoopWindow({
+        getMediaElement: () => el,
+        onSeek: vi.fn(),
+        onPlay: () => Promise.reject(new Error('play() interrupted'))
+      }));
+      act(() => { r2.current.armLoop('back', 10, 100, 1000); });
+      expect(r2.current.loop).not.toBeNull();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    it('arms fine with no onPlay supplied at all', () => {
+      const el = makeEl(0);
+      const { result } = renderHook(() =>
+        useLoopWindow({ getMediaElement: () => el, onSeek: vi.fn() }));
+      act(() => { result.current.armLoop('back', 10, 100, 1000); });
+      expect(result.current.loop).not.toBeNull();
+    });
+  });
 });

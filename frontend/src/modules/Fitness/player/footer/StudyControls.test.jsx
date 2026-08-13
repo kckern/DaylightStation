@@ -32,11 +32,47 @@ describe('StudyControls', () => {
     expect(onJog).toHaveBeenCalledWith(5);
   });
 
-  it('shows loop options only while paused', () => {
+  it('shows NEW loop options only while paused', () => {
     const { queryByLabelText, rerender } = render(<StudyControls {...BASE} />);
     expect(queryByLabelText('Loop back 15 seconds')).toBeTruthy();
     rerender(<StudyControls {...BASE} isPaused={false} />);
     expect(queryByLabelText('Loop back 15 seconds')).toBeNull();
+  });
+
+  // A running loop starts playback (armLoop calls onPlay), so `isPaused` goes false the
+  // moment the loop engages. Gating the armed chip on `isPaused` made the loop invisible
+  // and impossible to release except by scrubbing out of its own window.
+  it('keeps the ARMED chip visible while NOT paused, and offers no other options', () => {
+    const { getByLabelText, queryByLabelText } = render(
+      <StudyControls {...BASE} isPaused={false} loop={{ direction: 'back', seconds: 15 }} />
+    );
+    const chip = getByLabelText('Loop back 15 seconds');
+    expect(chip).toBeTruthy();
+    expect(chip.className).toMatch(/is-active/);
+    expect(chip.getAttribute('aria-pressed')).toBe('true');
+    // Unarmed durations are not offered while playing — the anchor position is moving.
+    expect(queryByLabelText('Loop back 20 seconds')).toBeNull();
+    expect(queryByLabelText('Loop forward 15 seconds')).toBeNull();
+  });
+
+  it('releases when the armed chip is tapped DURING playback', () => {
+    const onReleaseLoop = vi.fn();
+    const { getByLabelText } = render(
+      <StudyControls
+        {...BASE}
+        isPaused={false}
+        loop={{ direction: 'forward', seconds: 30 }}
+        onReleaseLoop={onReleaseLoop}
+      />
+    );
+    fireEvent.click(getByLabelText('Loop forward 30 seconds'));
+    expect(onReleaseLoop).toHaveBeenCalled();
+  });
+
+  it('renders nothing loop-related while playing with no loop armed', () => {
+    const { queryByLabelText } = render(<StudyControls {...BASE} isPaused={false} loop={null} />);
+    expect(queryByLabelText('Loop back 15 seconds')).toBeNull();
+    expect(queryByLabelText('Loop forward 30 seconds')).toBeNull();
   });
 
   it('arms a loop with direction and duration', () => {
