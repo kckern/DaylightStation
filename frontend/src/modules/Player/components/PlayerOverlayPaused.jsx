@@ -18,17 +18,13 @@ export function PlayerOverlayPaused({
   suppressForBlackout = false,
   suppressPauseOverlay = false
 }) {
-  // In blackout mode, keep screen completely dark (TV appears off)
-  if (suppressForBlackout) {
-    return null;
-  }
-  // Study mode (instructional content): the paused frame is the thing the viewer
-  // paused to look at, so nothing may cover it. Note this suppresses the SCRIM only —
-  // `pauseOverlayActive` stays true upstream, which keeps PlayerOverlayLoading
-  // suppressed too (see PlayerOverlayLoading.jsx). Stall feedback still surfaces.
-  if (suppressPauseOverlay) {
-    return null;
-  }
+  // NOTE: `suppressForBlackout` / `suppressPauseOverlay` early returns are deliberately
+  // NOT here. This component stays mounted across renders where those flags flip (e.g.
+  // contentMode.studyUx resolving asynchronously, or a queue advance in/out of blackout),
+  // so every hook below must run unconditionally on every render — an early return before
+  // a hook call would change the hook count between renders and crash React ("Rendered
+  // fewer hooks than expected"). The actual suppression happens after all hooks, just
+  // above the JSX return.
   // During a stall the user still needs an explicit "this is paused" affordance.
   // Previously this overlay was suppressed when `stalled` was true; combined with
   // PlayerOverlayLoading suppressing itself when `pauseOverlayActive` is true,
@@ -47,6 +43,13 @@ export function PlayerOverlayPaused({
   const overlayRef = useRef(null);
 
   useEffect(() => {
+    // Preserve pre-existing behaviour: while suppressed (blackout or study-mode scrim
+    // suppression), skip the visibility-diagnostics logging entirely — don't touch
+    // visibilityRef either, so the log fires with a full before/after comparison the
+    // moment suppression lifts, exactly as it did when these were early returns.
+    if (suppressForBlackout || suppressPauseOverlay) {
+      return;
+    }
     if (visibilityRef.current === shouldShowPauseOverlay) {
       return;
     }
@@ -111,7 +114,7 @@ export function PlayerOverlayPaused({
       level: shouldShowPauseOverlay ? (hasGap ? 'warn' : 'info') : 'debug',
       context: overlayContextRef.current
     });
-  }, [playerPositionDisplay, seconds, shouldShowPauseOverlay, stalled, waitingToPlay]);
+  }, [playerPositionDisplay, seconds, shouldShowPauseOverlay, stalled, suppressForBlackout, suppressPauseOverlay, waitingToPlay]);
 
   const blockFullscreenToggle = useCallback((event) => {
     event?.preventDefault?.();
@@ -132,6 +135,18 @@ export function PlayerOverlayPaused({
     });
     togglePauseOverlay?.();
   }, [blockFullscreenToggle, playerPositionDisplay, seconds, stalled, togglePauseOverlay]);
+
+  // In blackout mode, keep screen completely dark (TV appears off).
+  if (suppressForBlackout) {
+    return null;
+  }
+  // Study mode (instructional content): the paused frame is the thing the viewer
+  // paused to look at, so nothing may cover it. Note this suppresses the SCRIM only —
+  // `pauseOverlayActive` stays true upstream, which keeps PlayerOverlayLoading
+  // suppressed too (see PlayerOverlayLoading.jsx). Stall feedback still surfaces.
+  if (suppressPauseOverlay) {
+    return null;
+  }
 
   if (!shouldShowPauseOverlay) {
     return null;
