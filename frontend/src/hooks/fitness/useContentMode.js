@@ -20,6 +20,16 @@ export function __clearContentModeCache() {
 
 const showIdFor = (item) => item?.grandparentId || item?.parentId || item?.id || null;
 
+// Plex lookups are known-flaky in this deployment (requests serialize; timeouts are
+// common). Every UNLABELLED show — the common case — depends on this round-trip, so a
+// single transient failure must not permanently strand a session with capture off and
+// the recap silently missing. Bounded retry with backoff turns a transient blip into a
+// self-healing delay instead of a fleet-wide silent capture failure, WITHOUT weakening
+// the fail-closed contract: `resolved` stays false for the whole retry window, and a
+// failure is never cached at any attempt count.
+const MAX_FETCH_ATTEMPTS = 3;
+const RETRY_DELAYS_MS = [1000, 3000]; // backoff before attempt 2 and attempt 3
+
 /**
  * Resolves the content mode for the currently-playing item.
  *
@@ -45,28 +55,56 @@ export function useContentMode(item, plexConfig) {
       return undefined;
     }
     let cancelled = false;
+    let retryTimer = null;
     setFetchedLabels(null);
-    DaylightAPI(`api/v1/fitness/show/${showId}`)
-      .then((res) => {
-        const labels = res?.info?.labels;
-        if (!Array.isArray(labels)) {
-          // The route responds HTTP 200 even when PlexAdapter.getContainerInfo()
-          // swallowed an internal failure and returned `info: null` — so a 200 does NOT
-          // mean the labels are known. Only a genuine array (including an empty one, for
-          // a real unlabelled show) counts as a resolved answer. Anything else is treated
-          // exactly like a rejected promise: do not cache, stay unresolved.
-          logger().warn('show-label-fetch-empty', { showId });
-          return;
-        }
-        showLabelCache.set(showId, labels);
-        if (!cancelled) setFetchedLabels(labels);
-      })
-      .catch((err) => {
-        // Deliberately NOT cached and NOT resolved: an unresolvable item keeps capture
-        // off rather than defaulting to recording.
-        logger().warn('show-label-fetch-failed', { showId, error: err?.message || String(err) });
-      });
-    return () => { cancelled = true; };
+
+    // Handles both failure shapes identically: a rejected promise, and a 200-OK
+    // response with no actual answer (e.g. PlexAdapter.getContainerInfo() swallowed an
+    // internal failure and returned info: null). Neither is ever cached. Within the
+    // attempt budget, schedule a backoff retry; once exhausted, give up permanently —
+    // `resolved` stays false for the life of this mount, exactly as before retry existed.
+    const handleAttemptFailure = (attempt, causeEvent, causeMeta) => {
+      if (cancelled) return;
+      logger().warn(causeEvent, { ...causeMeta, attempt });
+      if (attempt < MAX_FETCH_ATTEMPTS) {
+        const delayMs = RETRY_DELAYS_MS[attempt - 1];
+        logger().warn('show-label-fetch-retry', { showId, attempt, nextAttempt: attempt + 1, delayMs });
+        retryTimer = setTimeout(() => {
+          retryTimer = null;
+          if (!cancelled) runAttempt(attempt + 1);
+        }, delayMs);
+      } else {
+        logger().warn('show-label-fetch-gave-up', { showId, attempts: attempt });
+      }
+    };
+
+    const runAttempt = (attempt) => {
+      DaylightAPI(`api/v1/fitness/show/${showId}`)
+        .then((res) => {
+          if (cancelled) return;
+          const labels = res?.info?.labels;
+          if (!Array.isArray(labels)) {
+            // Only a genuine array (including an empty one, for a real unlabelled show)
+            // counts as a resolved answer. Anything else is treated exactly like a
+            // rejected promise.
+            handleAttemptFailure(attempt, 'show-label-fetch-empty', { showId });
+            return;
+          }
+          showLabelCache.set(showId, labels);
+          setFetchedLabels(labels);
+        })
+        .catch((err) => {
+          if (cancelled) return;
+          handleAttemptFailure(attempt, 'show-label-fetch-failed', { showId, error: err?.message || String(err) });
+        });
+    };
+
+    runAttempt(1);
+
+    return () => {
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+    };
   }, [needsFetch, showId]);
 
   return useMemo(() => {
