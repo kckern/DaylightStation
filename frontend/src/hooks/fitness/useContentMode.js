@@ -33,7 +33,6 @@ const showIdFor = (item) => item?.grandparentId || item?.parentId || item?.id ||
  */
 export function useContentMode(item, plexConfig) {
   const [fetchedLabels, setFetchedLabels] = useState(null);
-  const [fetchFailed, setFetchFailed] = useState(false);
 
   const inline = hasResolvableLabels(item);
   const showId = showIdFor(item);
@@ -47,10 +46,18 @@ export function useContentMode(item, plexConfig) {
     }
     let cancelled = false;
     setFetchedLabels(null);
-    setFetchFailed(false);
     DaylightAPI(`api/v1/fitness/show/${showId}`)
       .then((res) => {
-        const labels = Array.isArray(res?.info?.labels) ? res.info.labels : [];
+        const labels = res?.info?.labels;
+        if (!Array.isArray(labels)) {
+          // The route responds HTTP 200 even when PlexAdapter.getContainerInfo()
+          // swallowed an internal failure and returned `info: null` — so a 200 does NOT
+          // mean the labels are known. Only a genuine array (including an empty one, for
+          // a real unlabelled show) counts as a resolved answer. Anything else is treated
+          // exactly like a rejected promise: do not cache, stay unresolved.
+          logger().warn('show-label-fetch-empty', { showId });
+          return;
+        }
         showLabelCache.set(showId, labels);
         if (!cancelled) setFetchedLabels(labels);
       })
@@ -58,7 +65,6 @@ export function useContentMode(item, plexConfig) {
         // Deliberately NOT cached and NOT resolved: an unresolvable item keeps capture
         // off rather than defaulting to recording.
         logger().warn('show-label-fetch-failed', { showId, error: err?.message || String(err) });
-        if (!cancelled) setFetchFailed(true);
       });
     return () => { cancelled = true; };
   }, [needsFetch, showId]);
@@ -74,7 +80,7 @@ export function useContentMode(item, plexConfig) {
       return { ...resolveContentMode({ labels: fetchedLabels }, plexConfig), resolved: true };
     }
     return { captureDisabled: false, studyUx: false, resolved: false };
-  }, [item, inline, showId, fetchedLabels, fetchFailed, plexConfig]);
+  }, [item, inline, showId, fetchedLabels, plexConfig]);
 }
 
 export default useContentMode;
