@@ -13,6 +13,7 @@ vi.mock('../../schoolApi.js', () => ({
     periods: vi.fn(),
     putPeriods: vi.fn(),
     curriculumUnits: vi.fn(),
+    syllabi: vi.fn(),
     periodsMeta: vi.fn(),
     attestations: vi.fn(async () => ({ ok: true, status: 200, data: { entries: [] } })),
     passOverrides: vi.fn(),
@@ -53,6 +54,7 @@ beforeEach(() => {
     { unitId: 'math-fractions.01', title: 'What Is a Fraction', subject: 'math', courseId: 'math-fractions', sequence: 1, hasBank: true, passingPercent: 80 },
     { unitId: 'language-daily', title: 'Daily Language', subject: 'language', courseId: null, sequence: null, hasBank: false, passingPercent: null },
   ] }));
+  schoolApi.syllabi.mockResolvedValue(ok({ syllabi: [] }));
   schoolApi.passOverrides.mockResolvedValue(ok({ overrides: { 'math-fractions.01': 65 } }));
   schoolApi.putPassOverride.mockResolvedValue(ok({ unitId: 'math-fractions.01', percent: 60 }));
   schoolApi.milestones.mockResolvedValue(ok({ milestones: [
