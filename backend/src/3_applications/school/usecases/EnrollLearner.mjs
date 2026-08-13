@@ -20,10 +20,11 @@ import { ValidationError } from '#domains/core/errors/index.mjs';
 export class EnrollLearner {
   #syllabi; #assignments; #curriculum; #sessions; #teacherGate; #clock; #rng; #logger;
 
-  constructor({ syllabi, assignments, curriculum, sessions = null, teacherGate = null, clock = () => new Date(), rng = Math.random, logger = console } = {}) {
+  constructor({ syllabi, assignments, curriculum, sessions = null, teacherGate, clock = () => new Date(), rng = Math.random, logger = console } = {}) {
     if (!syllabi) throw new Error('EnrollLearner requires a syllabi store');
     if (!assignments) throw new Error('EnrollLearner requires an assignments store');
     if (!curriculum) throw new Error('EnrollLearner requires curriculum access');
+    if (!teacherGate) throw new Error('EnrollLearner requires a teacherGate');
     this.#syllabi = syllabi;
     this.#assignments = assignments;
     this.#curriculum = curriculum;
@@ -39,6 +40,7 @@ export class EnrollLearner {
    * @param {string} args.learnerId
    * @param {string} args.syllabusId
    * @param {string} args.enrolledBy - a roster id that must pass TeacherGate
+   *   (the gate is a required constructor dependency and is always asserted)
    * @param {string|null} [args.pin]
    * @param {boolean} [args.rematerialize] - re-run the materializer over an
    *   existing entry, re-shuffling any `shuffle_once` ordering
@@ -47,7 +49,7 @@ export class EnrollLearner {
    * @returns {Promise<object>} the stored assignment record
    */
   async execute({ learnerId, syllabusId, enrolledBy = null, pin = null, rematerialize = false, baseUpdatedAt = undefined } = {}) {
-    this.#teacherGate?.assert({ userId: enrolledBy, pin, action: 'enrollment.put', context: { learnerId, syllabusId } });
+    this.#teacherGate.assert({ userId: enrolledBy, pin, action: 'enrollment.put', context: { learnerId, syllabusId } });
 
     if (typeof learnerId !== 'string' || !learnerId.trim()) throw new ValidationError('learnerId is required');
 

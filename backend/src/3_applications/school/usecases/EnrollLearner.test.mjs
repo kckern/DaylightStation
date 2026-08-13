@@ -40,6 +40,12 @@ describe('EnrollLearner', () => {
   let h;
   beforeEach(() => { h = harness(); });
 
+  it('refuses to construct without a teacherGate', () => {
+    expect(() => new EnrollLearner({
+      syllabi: {}, assignments: {}, curriculum: {},
+    })).toThrow(/teacherGate/);
+  });
+
   it('materializes an enrollment onto a new assignment entry', async () => {
     await h.useCase.execute({ learnerId: 'milo', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410' });
     const [record] = h.saved;
