@@ -16,6 +16,7 @@
  */
 import { createCourseEnrollment } from '#domains/school/curriculum/enrollment.mjs';
 import { ValidationError } from '#domains/core/errors/index.mjs';
+import { assertNotStale } from './staleSaveGuard.mjs';
 
 export class EnrollLearner {
   #syllabi; #assignments; #curriculum; #sessions; #teacherGate; #clock; #rng; #logger;
@@ -58,12 +59,7 @@ export class EnrollLearner {
     const { courseId } = syllabus;
 
     const current = await this.#assignments.get(learnerId);
-    if (baseUpdatedAt !== undefined && (current?.updatedAt ?? null) !== baseUpdatedAt) {
-      const err = new ValidationError('Assignments changed since you loaded them — reload and try again.');
-      err.code = 'STALE_SAVE';
-      err.status = 409;
-      throw err;
-    }
+    assertNotStale(current, baseUpdatedAt);
 
     const courses = [...(current?.courses ?? [])];
     const indexOf = courses.findIndex((entry) => (typeof entry === 'string' ? entry : entry?.courseId) === courseId);
