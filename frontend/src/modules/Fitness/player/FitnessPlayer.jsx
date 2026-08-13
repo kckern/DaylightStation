@@ -1868,6 +1868,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
             onProgress={handlePlayerProgress}
             onController={handlePlayerControllerUpdate}
             onMediaRef={() => {/* media element captured internally by Player; use playerRef API */}}
+            suppressPauseOverlay={contentMode.studyUx}
             ref={playerRef}
           />
         </div>
