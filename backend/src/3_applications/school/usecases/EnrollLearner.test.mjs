@@ -1,0 +1,113 @@
+import { describe, expect, it, beforeEach } from 'vitest';
+import { EnrollLearner } from './EnrollLearner.mjs';
+
+const UNITS = [
+  { unitId: 'el.01', courseId: 'elements', module: 'foundations', moduleRole: 'overview', sequence: 1 },
+  { unitId: 'el.02', courseId: 'elements', module: 'period-1', moduleRole: 'lesson', sequence: 2 },
+  { unitId: 'el.03', courseId: 'elements', module: 'period-1', moduleRole: 'lesson', sequence: 3 },
+  { unitId: 'other.01', courseId: 'other-course', module: 'x', moduleRole: 'lesson', sequence: 1 },
+];
+const WORK = {
+  work: 'elements',
+  progression: { mode: 'module_blocks', required_opening_module: 'foundations', one_active_module: true, module_order: 'fixed', lesson_order: 'shuffle_once' },
+};
+const SYLLABUS = {
+  schema: 'school.syllabus/v1', syllabusId: 'elements-lower', title: 'Elements — lower',
+  courseId: 'elements', profile: 'lower', policy: null, passing: 60, term: null,
+};
+
+function harness({ assignment = null, open = [] } = {}) {
+  const saved = [];
+  return {
+    saved,
+    useCase: new EnrollLearner({
+      syllabi: { get: async (id) => (id === 'elements-lower' ? SYLLABUS : null) },
+      assignments: {
+        get: async () => assignment,
+        put: async (record) => { saved.push(record); return record; },
+      },
+      curriculum: { listUnits: async () => UNITS, getWork: async (id) => (id === 'elements' ? WORK : null) },
+      sessions: { listOpenForLearner: async () => open },
+      teacherGate: { assert: () => true },
+      clock: () => new Date('2026-09-08T12:00:00.000Z'),
+      rng: () => 0,
+      logger: { info: () => {}, warn: () => {} },
+    }),
+  };
+}
+
+describe('EnrollLearner', () => {
+  let h;
+  beforeEach(() => { h = harness(); });
+
+  it('materializes an enrollment onto a new assignment entry', async () => {
+    await h.useCase.execute({ learnerId: 'milo', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410' });
+    const [record] = h.saved;
+    expect(record.learnerId).toBe('milo');
+    const entry = record.courses.find((c) => c.courseId === 'elements');
+    expect(entry.profile).toBe('lower');
+    expect(entry.syllabusId).toBe('elements-lower');
+    expect(entry.passing).toBe(60);
+    expect(entry.enrollment.schema).toBe('school.course-enrollment/v1');
+    expect(entry.enrollment.moduleOrder[0]).toBe('foundations');
+  });
+
+  it('scopes materialization to the syllabus course only', async () => {
+    await h.useCase.execute({ learnerId: 'milo', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410' });
+    const entry = h.saved[0].courses.find((c) => c.courseId === 'elements');
+    expect(Object.keys(entry.enrollment.lessonOrder)).not.toContain('x');
+  });
+
+  it('refuses an unknown syllabus by name', async () => {
+    await expect(h.useCase.execute({ learnerId: 'milo', syllabusId: 'ghost', enrolledBy: 'kckern', pin: '7410' }))
+      .rejects.toThrow("unknown syllabus: 'ghost'");
+  });
+
+  it('refuses a second enrollment in the same course without rematerialize', async () => {
+    const hh = harness({ assignment: { learnerId: 'milo', courses: [{ courseId: 'elements' }], units: [], updatedAt: null } });
+    await expect(hh.useCase.execute({ learnerId: 'milo', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410' }))
+      .rejects.toThrow('milo is already enrolled in elements');
+  });
+
+  it('refuses a re-materialize while a session on that course is open', async () => {
+    const hh = harness({
+      assignment: { learnerId: 'milo', courses: [{ courseId: 'elements' }], units: [], updatedAt: null },
+      open: [{ sessionId: 'ws_1', unitId: 'el.02', state: 'issued' }],
+    });
+    await expect(hh.useCase.execute({
+      learnerId: 'milo', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410', rematerialize: true,
+    })).rejects.toThrow(/open session/i);
+  });
+
+  it('ignores an open session on a DIFFERENT course', async () => {
+    const hh = harness({
+      assignment: { learnerId: 'milo', courses: [{ courseId: 'elements' }], units: [], updatedAt: null },
+      open: [{ sessionId: 'ws_2', unitId: 'other.01', state: 'issued' }],
+    });
+    await hh.useCase.execute({
+      learnerId: 'milo', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410', rematerialize: true,
+    });
+    expect(hh.saved).toHaveLength(1);
+  });
+
+  it('refuses a stale save', async () => {
+    const hh = harness({ assignment: { learnerId: 'milo', courses: [], units: [], updatedAt: '2026-09-01T00:00:00.000Z' } });
+    await expect(hh.useCase.execute({
+      learnerId: 'milo', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410', baseUpdatedAt: null,
+    })).rejects.toThrow(/changed since you loaded/);
+  });
+
+  it('preserves other courses and standalone units untouched', async () => {
+    const hh = harness({
+      assignment: {
+        learnerId: 'milo',
+        courses: ['math-fractions'],
+        units: ['language-daily'],
+        updatedAt: null,
+      },
+    });
+    await hh.useCase.execute({ learnerId: 'milo', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410' });
+    expect(hh.saved[0].courses[0]).toBe('math-fractions');
+    expect(hh.saved[0].units).toEqual(['language-daily']);
+  });
+});
