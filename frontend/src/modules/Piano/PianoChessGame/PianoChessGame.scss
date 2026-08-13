@@ -101,10 +101,14 @@
   width: min(34rem, 80cqw);
   margin-inline: auto;
   padding: 1rem 1.4rem 1.3rem;
-  border: 1px solid var(--piano-accent, #2ec46f);
-  border-radius: var(--r-md, 12px);
-  background: rgb(23 17 14 / 96%);
-  box-shadow: 0 1rem 3rem rgb(0 0 0 / 60%);
+  border: 1px solid var(--piano-border);
+  border-radius: var(--r-lg, 16px);
+  /* OPAQUE. A translucent panel over a chessboard leaves the board showing
+     through the controls, which is unreadable and — on this tablet — costs
+     real frames, because a see-through full-width layer defeats occlusion
+     culling. */
+  background: var(--piano-surface);
+  box-shadow: 0 1.5rem 4rem rgb(0 0 0 / 65%);
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
@@ -203,7 +207,15 @@
      allowed to size its column — one long refusal message must not shove the
      board sideways. */
   --pc-rail: 15.5rem;
-  grid-template-columns: var(--pc-rail) minmax(0, 1fr) var(--pc-rail);
+  /* The rails FILL. They were fixed, so whatever the board did not use showed
+     as dead space beside it. Equal fractions with a floor: they take the
+     leftover in equal shares, which is also what keeps the board centred — the
+     centring never depended on the rails being a fixed size, only on their
+     being the SAME size. */
+  grid-template-columns:
+    minmax(var(--pc-rail), 1fr)
+    auto
+    minmax(var(--pc-rail), 1fr);
   align-items: center;
   gap: 0.75rem;
   min-height: 0;
@@ -419,6 +431,7 @@
     calc(100cqw - 2 * var(--pc-rail, 15.5rem) - 2rem - 2 * var(--pc-axis-w)),
     calc(100cqh - var(--pc-axis))
   );
+
   /* The dark squares are the opponent's colour. `--pc-dark` is set inline from
      the character's theme (and falls back to the house rose), so this is the
      one line that makes arriving at a new opponent look like arriving
@@ -473,9 +486,9 @@
   max-width: min(28rem, 70cqw);
   margin-inline: auto;
   padding: 0.6rem 1.4rem;
-  border: 1px solid rgb(155 44 44 / 55%);
+  border: 1px solid color-mix(in srgb, var(--piano-danger) 55%, transparent);
   border-radius: var(--r-md, 12px);
-  background: rgb(35 18 14 / 94%);
+  background: var(--piano-surface);
   box-shadow: 0 1rem 2.5rem rgb(0 0 0 / 55%);
   color: var(--pc-ivory);
   font-size: 1.1rem;
@@ -707,7 +720,9 @@
 /* Facts pin to the top, the stuck-child cluster (in-hand, heard, prompt)
    centres in what is left, and the actions pin to the bottom. The rail stops
    being a clump with a void under it. */
-.piano-chess__hand { margin-block-start: auto; }
+/* Exactly one auto margin in this column. With two, the leftover space was
+   split between them, so any content change re-divided it and moved the blocks
+   above as well as below. The rail now grows downward only. */
 .piano-chess__rail-actions { margin-block-start: auto; }
 
 .piano-chess__hand-empty {
@@ -819,6 +834,15 @@
    heard, and what to do about it. As a bare bordered box nobody could tell what
    it was for. */
 .piano-chess__says {
+  /* Reserved as a WHOLE, not line by line. Per-line minimums were computed off
+     the element's own font-size and landed a few pixels short of a real second
+     line, so the gesture cards still stepped by 9px whenever a one-line message
+     replaced a two-line one. One number for the tallest state the bubble has. */
+  /* Above the TALLEST state, measured (two-line prompt + the read-out's square
+     line = 150px), not guessed. A floor below the tallest state reserves
+     nothing — the box still shrinks for shorter messages, which is the whole
+     defect. */
+  min-height: 9.75rem;
   position: relative;
   padding: 0.6rem 0.75rem;
   border: 1px solid var(--piano-border);
@@ -844,7 +868,9 @@
 .piano-chess__says .chess-readout {
   border-inline-start: 0;
   padding: 0;
-  min-height: 0;
+  /* Reserved, not zeroed: the "square" state adds a third line, and zeroing the
+     minimum here is what let the bubble breathe in and out. */
+  min-height: calc(3 * 1.3em);
   gap: 0.05rem;
 }
 
@@ -852,6 +878,19 @@
   margin: 0.35rem 0 0;
   padding-block-start: 0.35rem;
   border-block-start: 1px solid var(--piano-border);
+  /* TWO LINES, RESERVED. The messages run one or two lines ("Your opponent is
+     thinking." vs "That chord is not on the board. Try another."), and without
+     this the bubble changed height by 30px every time one replaced the other —
+     which moved the gesture cards below it AND, through the flex free-space
+     split, the in-hand socket above it. A refusal must not shift the thing the
+     player is staring at. */
+  line-height: 1.35;
+}
+
+/* Likewise the read-out: its "square" state adds a third line, so the space for
+   it is held whether or not it has landed. */
+.piano-chess__says .chess-readout {
+  min-height: calc(3 * 1.3em);
 }
 
 /* SETTINGS — an icon, not a full-width slab. */

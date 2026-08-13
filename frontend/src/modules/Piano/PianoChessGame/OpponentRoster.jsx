@@ -29,6 +29,45 @@ function Face({ opponent, size = 34 }) {
   );
 }
 
+/**
+ * The whole ladder as a modal, opened by pressing the opponent.
+ *
+ * It lives here rather than in the rail because it is a thing you go and LOOK
+ * at — the sequence, who is behind you, who is coming — not something you need
+ * beside the board every turn. In the rail it crowded the read-outs and still
+ * only had room for three of the twenty.
+ */
+export function OpponentRosterModal({ roster = [], unlockedThrough = 0, onClose }) {
+  if (!roster.length) return null;
+  return (
+    <div className="opponent-roster-modal" role="dialog" aria-label="Opponents" aria-modal="true">
+      <header className="opponent-roster-modal__head">
+        <h2 className="opponent-roster-modal__title">Opponents</h2>
+        <button type="button" className="chess-settings__close" onClick={onClose}>Done</button>
+      </header>
+      <ol className="opponent-roster-modal__list">
+        {roster.map((opponent) => {
+          const state = opponent.level < unlockedThrough ? 'beaten'
+            : opponent.level === unlockedThrough ? 'current' : 'ahead';
+          return (
+            <li key={opponent.level} className={`opponent-roster-modal__row opponent-roster-modal__row--${state}`}>
+              <span className="opponent-roster-modal__level">{opponent.level}</span>
+              <span className={`roster-face roster-face--${state}`}><Face opponent={opponent} /></span>
+              <span className="opponent-roster__wing-text">
+                <span className="opponent-roster__name">{opponent.name}</span>
+                <span className="opponent-roster__blurb">{describeLevel(opponent.level)}</span>
+              </span>
+              <span className="opponent-roster-modal__state">
+                {state === 'beaten' ? 'Beaten' : state === 'current' ? 'Facing now' : ''}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
+
 export function OpponentRoster({ roster = [], unlockedThrough = 0 }) {
   if (!roster.length) return null;
   const beaten = roster.slice(0, unlockedThrough);

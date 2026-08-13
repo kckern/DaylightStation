@@ -16,7 +16,7 @@ import {
 } from './chessApi.js';
 import OpponentPortrait, { opponentStatus } from './OpponentPortrait.jsx';
 import GestureCards from './GestureCards.jsx';
-import OpponentRoster from './OpponentRoster.jsx';
+import { OpponentRosterModal } from './OpponentRoster.jsx';
 import { cuesFromConfig } from './chessCues.js';
 import ChessSettingsPanel from './ChessSettingsPanel.jsx';
 import { CHORD_QUALITIES, DEFAULT_CHORD_SCHEME, squareToChord } from './chordAddress.js';
@@ -448,6 +448,7 @@ export function PianoChessGame({
   // Whether the character is currently taking their turn — the panel says so,
   // and it is read off the same effect that asks the engine, never guessed.
   const [opponentThinking, setOpponentThinking] = useState(false);
+  const [rosterOpen, setRosterOpen] = useState(false);
   const [toast, setToast] = useState(null);
   const rejection = game.rejection;
   useEffect(() => {
@@ -819,7 +820,14 @@ export function PianoChessGame({
           <section className="piano-chess__opponent">
             <h2 className="piano-chess__slot-label">Opponent</h2>
             {opponent ? (
-              <OpponentPortrait opponent={opponent} level={ladderLevel} status={opponentLine} size="lg" />
+              <button
+                type="button"
+                className="piano-chess__opponent-btn"
+                onClick={() => setRosterOpen(true)}
+                aria-label={`${opponent.name} — see all opponents`}
+              >
+                <OpponentPortrait opponent={opponent} level={ladderLevel} status={opponentLine} size="lg" />
+              </button>
             ) : (
               <p className="piano-chess__opponent-rung">
                 <span className="piano-chess__opponent-rung-name">
@@ -845,12 +853,6 @@ export function PianoChessGame({
           <div className="piano-chess__staff-card action-staff">
             <CurrentChordStaff activeNotes={activeNotes} />
           </div>
-          {/* The climb, seen whole — and the natural tenant of the space under
-              the staff, which was empty charcoal. */}
-          {ladder?.roster?.length > 0 && (
-            <OpponentRoster roster={ladder.roster} unlockedThrough={ladder.unlocked_through} />
-          )}
-
           <div className="piano-chess__captured">
             {/* A dash for every row is a non-answer taking up the foot of the
                 rail. Nothing taken yet is one quiet line; once there is
@@ -872,6 +874,14 @@ export function PianoChessGame({
 
       {toast && (
         <output className="piano-chess__toast" key={toast.seq}>{toast.text}</output>
+      )}
+
+      {rosterOpen && ladder?.roster?.length > 0 && (
+        <OpponentRosterModal
+          roster={ladder.roster}
+          unlockedThrough={ladder.unlocked_through}
+          onClose={() => setRosterOpen(false)}
+        />
       )}
 
       {settingsOpen && chessConfig && (
