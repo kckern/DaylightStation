@@ -19,6 +19,7 @@ import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
 import { getLogger } from '../../../lib/logging/Logger.js';
 import { evaluatePlayheadProgress } from '../lib/playheadProgress.js';
 import { getRecoveryLedger } from '../lib/recoveryLedger.js';
+import { shouldArmAutoplay } from './shouldArmAutoplay.js';
 
 // Lazy-init child logger for media controller diagnostics
 let _mcLogger;
@@ -66,7 +67,12 @@ export function useCommonMediaController({
   // Real playback session key (Player.jsx's itemSessionKey, threaded through
   // resilienceBridge.playbackSessionKey) — scopes recovery-ledger accounting.
   // Falls back to assetId below for hosts that don't thread one.
-  recoverySessionKey = null
+  recoverySessionKey = null,
+  // Remount context (Player.jsx's forceSinglePlayerRemount diagnostics, threaded
+  // through resilienceBridge.remountDiagnostics). null on a normal, non-remount
+  // load. Used to decide whether the rebuilt element should arm autoplay — see
+  // shouldArmAutoplay.
+  remountDiagnostics = null
 }) {
   const DEBUG_MEDIA = false;
 
@@ -1014,7 +1020,10 @@ export function useCommonMediaController({
         } catch (_) {}
       }
       
-      mediaEl.autoplay = true;
+      // A resilience remount that was deliberately paused must come back paused —
+      // see shouldArmAutoplay for the failure chain (jolt-ladder remount unconditionally
+      // resumed a paused-during-seek player ~10s later).
+      mediaEl.autoplay = shouldArmAutoplay(remountDiagnostics);
       mediaEl.volume = adjustedVolume * masterVolume;
       
       // Loop logic — set the native HTMLMediaElement.loop attribute when the
@@ -1228,7 +1237,7 @@ export function useCommonMediaController({
       mediaEl.removeEventListener('seeking', handleSeeking);
       mediaEl.removeEventListener('seeked', clearSeeking);
     };
-  }, [onEnd, playbackRate, start, isVideo, meta, type, assetId, onProgress, isStalled, volume, getMediaEl, markProgress, scheduleStallDetection, clearTimers, readStallState, elementKey]);
+  }, [onEnd, playbackRate, start, isVideo, meta, type, assetId, onProgress, isStalled, volume, getMediaEl, markProgress, scheduleStallDetection, clearTimers, readStallState, elementKey, remountDiagnostics]);
 
   useEffect(() => {
     const mediaEl = getMediaEl();
