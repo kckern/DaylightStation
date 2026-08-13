@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { EnrollLearner } from './EnrollLearner.mjs';
+import { UnenrollLearner } from './UnenrollLearner.mjs';
 
 const UNITS = [
   { unitId: 'el.01', courseId: 'elements', module: 'foundations', moduleRole: 'overview', sequence: 1 },
@@ -115,5 +116,49 @@ describe('EnrollLearner', () => {
     await hh.useCase.execute({ learnerId: 'milo', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410' });
     expect(hh.saved[0].courses[0]).toBe('math-fractions');
     expect(hh.saved[0].units).toEqual(['language-daily']);
+  });
+});
+
+function unenrollHarness({ assignment, open = [] } = {}) {
+  const saved = [];
+  return {
+    saved,
+    useCase: new UnenrollLearner({
+      assignments: { get: async () => assignment, put: async (r) => { saved.push(r); return r; } },
+      curriculum: { listUnits: async () => UNITS },
+      sessions: { listOpenForLearner: async () => open },
+      teacherGate: { assert: () => true },
+      clock: () => new Date('2026-09-08T12:00:00.000Z'),
+      logger: { info: () => {}, warn: () => {} },
+    }),
+  };
+}
+
+describe('UnenrollLearner', () => {
+  const enrolled = { learnerId: 'milo', courses: [{ courseId: 'elements' }, 'math-fractions'], units: ['language-daily'], updatedAt: null };
+
+  it('removes the course entry and leaves everything else alone', async () => {
+    const h = unenrollHarness({ assignment: enrolled });
+    await h.useCase.execute({ learnerId: 'milo', courseId: 'elements', removedBy: 'kckern', pin: '7410' });
+    expect(h.saved[0].courses).toEqual(['math-fractions']);
+    expect(h.saved[0].units).toEqual(['language-daily']);
+  });
+
+  it('refuses when the learner is not enrolled in that course', async () => {
+    const h = unenrollHarness({ assignment: { learnerId: 'milo', courses: [], units: [], updatedAt: null } });
+    await expect(h.useCase.execute({ learnerId: 'milo', courseId: 'elements', removedBy: 'kckern', pin: '7410' }))
+      .rejects.toThrow('milo is not enrolled in elements');
+  });
+
+  it('refuses while a session on that course is open', async () => {
+    const h = unenrollHarness({ assignment: enrolled, open: [{ sessionId: 'ws_1', unitId: 'el.02', state: 'issued' }] });
+    await expect(h.useCase.execute({ learnerId: 'milo', courseId: 'elements', removedBy: 'kckern', pin: '7410' }))
+      .rejects.toThrow(/open session/i);
+  });
+
+  it('refuses to construct without a teacherGate', () => {
+    expect(() => new UnenrollLearner({
+      assignments: {}, curriculum: {},
+    })).toThrow(/teacherGate/);
   });
 });
