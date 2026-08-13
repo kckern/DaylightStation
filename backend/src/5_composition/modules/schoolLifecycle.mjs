@@ -669,24 +669,13 @@ export async function createSchoolLifecycle({
     },
   };
 
-  // TODO(enrollment-auth): swap for `teacherGate` to turn on PIN enforcement for
-  // enrollment writes. Deliberately permissive for the enrollment wave — the use
-  // cases already require a gate and assert through it unconditionally, so
-  // enabling enforcement is this one binding, not an audit of the use cases.
-  const PERMISSIVE_ENROLLMENT_GATE = {
-    assert: () => true,
-  };
-  logger.warn?.('school.enrollment.gate-permissive', {
-    detail: 'enrollment writes are not PIN-gated; swap PERMISSIVE_ENROLLMENT_GATE for teacherGate',
-  });
-
   const enrollLearner = new EnrollLearner({
     syllabi: syllabusStore, assignments: stores.assignments, curriculum,
-    sessions: stores.sessions, teacherGate: PERMISSIVE_ENROLLMENT_GATE, clock, logger,
+    sessions: stores.sessions, teacherGate, clock, logger,
   });
   const unenrollLearner = new UnenrollLearner({
     assignments: stores.assignments, curriculum, sessions: stores.sessions,
-    teacherGate: PERMISSIVE_ENROLLMENT_GATE, clock, logger,
+    teacherGate, clock, logger,
   });
 
   const useCases = {
