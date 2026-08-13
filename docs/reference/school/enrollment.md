@@ -1,7 +1,17 @@
 # Enrollment and Syllabi — Design
 
-> **Status:** Sections 1–3 describe `main` as of 2026-08-13 and are verified.
-> Sections 4 onward are **designed, not built.**
+> **Status:** Sections 1–3 describe the pre-enrollment state of `main` as of
+> 2026-08-13 (kept for history — see §2 for what changed). **Waves 0 and 1 are
+> now BUILT**: `AssignmentsView` preserves unknown entry fields on save,
+> `EnrollLearner`/`UnenrollLearner` materialize and remove enrollments through
+> `createCourseEnrollment`, both routes sit behind the real `teacherGate`, and
+> the whole-school matrix + drawer (§9) are live. **There is no console UI for
+> creating or editing a syllabus yet** — `schoolApi.putSyllabus`/
+> `archiveSyllabus` exist and have no caller — so until a syllabus is authored
+> by hand or via a direct API call, the drawer's syllabus picker shows its
+> empty state everywhere. **Waves 2–4 remain designed, not built**: scope
+> subsetting (§5), profile de-hardcoding and the per-learner pass bar (§6–7),
+> and terms/grading windows/pacing (§8).
 >
 > An earlier revision of this document was written against a branch ~174 commits
 > behind `main` and got its central facts wrong — it proposed building an
@@ -78,25 +88,36 @@ modules:
 
 ---
 
-## 2. The gap: nothing can create an enrollment
+## 2. The gap that waves 0–1 closed (history)
 
-**`createCourseEnrollment` has zero production callers.** It is defined, unit
+This section describes `main` **before** waves 0–1 landed; it is kept because
+§§3–9 are written as a delta against it. As of this document's current status
+(see the banner above), the gap it describes is closed for whole-course
+enrollment: `EnrollLearner`/`UnenrollLearner` are `createCourseEnrollment`'s
+production callers, `AssignmentsView` preserves `profile`/`enrollment`/unknown
+fields on save, and the matrix + drawer (§9) are the authoring surface for
+enrolling/re-materializing/unenrolling. What follows is the original framing.
+
+---
+
+**`createCourseEnrollment` had zero production callers.** It was defined, unit
 tested, and invoked by nothing. `felix.yml` above was hand-written — including a
 58-entry `lessonOrder`.
 
-Neither `profile` nor `enrollment` appears anywhere in the teacher console or in
-`SetAssignments`. The console's assignments editor writes bare id lists of
-courses and standalone units; the enrollment shape it would need to preserve is
-invisible to it, which also means **editing assignments through the console
-would drop a hand-authored enrollment on save.**
+Neither `profile` nor `enrollment` appeared anywhere in the teacher console or in
+`SetAssignments`. The console's assignments editor wrote bare id lists of
+courses and standalone units; the enrollment shape it would need to preserve was
+invisible to it, which also meant **editing assignments through the console
+would drop a hand-authored enrollment on save** — the bug wave 0 fixed.
 
-So the runtime is complete and the authoring path is a text editor.
+So the runtime was complete and the authoring path was a text editor.
 
-Four things are genuinely absent:
+Four things were absent (waves 0–1 closed the first; the rest remain open —
+see §10):
 
 | | State |
 |---|---|
-| A way to create or edit an enrollment | None — hand-authored YAML only |
+| A way to create or edit an enrollment | **Closed (wave 1):** `EnrollLearner`/`UnenrollLearner` + the matrix drawer. Still open: a console UI for authoring the *syllabus itself* (see status banner) |
 | Scope: enrolling in *part* of a course | None — see §5, the planner assigns every course unit |
 | Per-learner pass bar | None — `percentFor(unitId)` takes no learner |
 | Terms / dating / pacing | None |
@@ -341,13 +362,13 @@ unknown entry fields before anything else here ships.
 
 ## 10. Sequencing
 
-| Wave | Contents |
-|---|---|
-| **0** | `AssignmentsView` preserves `profile`/`enrollment`/unknown fields on save. Pure bug fix, independently shippable, **blocks everything else** — editing assignments through the console today deletes a hand-authored enrollment. |
-| **1** | Syllabus store + validator; `EnrollLearner` use case calling `createCourseEnrollment`; API behind `TeacherGate` with the `baseUpdatedAt` stale-save guard; matrix cell editor and drawer (re-materialize with the open-session refusal of §4, unenroll); standalone-units group (§11 Q2); report-card multi-enrollment guard (§11 Q4). Whole-course syllabi only. |
-| **2** | Scope: the two `planner.mjs` fixes in §5, module subsetting, dangling-front-edge warning. Plus §11 Q6 — extend `course/v2` `modules[]`, migrate the 17 `course-unit/v1` files, delete them. |
-| **3** | `work.profiles` wired into `profileSpec` (§6); per-learner pass bar (§7); `work.grading.pass_percent` consulted **and** the global override retired, together (§7). |
-| **4** | Terms and grading windows (§8); per-enrollment report cards; then pacing. |
+| Wave | Contents | Status |
+|---|---|---|
+| **0** | `AssignmentsView` preserves `profile`/`enrollment`/unknown fields on save. Pure bug fix, independently shippable, **blocked everything else** — editing assignments through the console used to delete a hand-authored enrollment. | **Built** |
+| **1** | Syllabus store + validator; `EnrollLearner`/`UnenrollLearner` use cases calling `createCourseEnrollment`; API behind `teacherGate` with the `baseUpdatedAt` stale-save guard; matrix cell editor and drawer (re-materialize with the open-session refusal of §4, unenroll); standalone-units group (§11 Q2); report-card multi-enrollment guard (§11 Q4). Whole-course syllabi only. | **Built** — except a console UI for *authoring* a syllabus, which does not exist yet (see status banner); syllabi must be written by hand or via API for the drawer to have anything to offer |
+| **2** | Scope: the two `planner.mjs` fixes in §5, module subsetting, dangling-front-edge warning. Plus §11 Q6 — extend `course/v2` `modules[]`, migrate the 17 `course-unit/v1` files, delete them. | Designed, not built |
+| **3** | `work.profiles` wired into `profileSpec` (§6); per-learner pass bar (§7); `work.grading.pass_percent` consulted **and** the global override retired, together (§7). | Designed, not built |
+| **4** | Terms and grading windows (§8); per-enrollment report cards; then pacing. | Designed, not built |
 
 Two placements are deliberate. **Q6 is in wave 2, not filed as cleanup**: per-module
 `lesson_order` is an *input* to materialization ordering, so it belongs with the
