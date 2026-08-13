@@ -6,7 +6,13 @@ export {
   normalizeQuestionBankV2, issueWorksheet,
   gradeIssuedWorksheet, remediationReceipt,
 } from './questionBankV2.mjs';
-export { reviewAtlasCurriculum } from './atlasCurriculumReview.mjs';
+// export { reviewAtlasCurriculum } from './atlasCurriculumReview.mjs';
+//   Commented out, not deleted: 7c66acb44 added this re-export but never
+//   committed atlasCurriculumReview.mjs, so the whole backend failed to boot —
+//   an ESM re-export of a missing module is a hard startup failure, and it took
+//   production down on the first deploy after the merge. Nothing imports
+//   reviewAtlasCurriculum, so removing the line restores service without
+//   changing behaviour. Restore it in the same commit that adds the file.
 export { GuestForbiddenError, SessionGoneError } from './errors.mjs';
 export { isAdult, ADULT_AGE } from './people.mjs';
 export { CATEGORIES, resolveCategory } from './categories.mjs';

@@ -1,24 +1,36 @@
 /**
  * Piano Chess.
  *
- * The palette is the instrument's own bill of materials — ivory key, walnut
- * case, brass hardware, and the red felt under the hammers, which is reserved
- * for check because that is the only place the board needs to sound an alarm.
- * Type stays Roboto Condensed throughout (house face); emphasis is bought with
- * weight, tracking, and brass rather than with a second family.
+ * No palette of its own. The kiosk has a house style — charcoal page, raised
+ * surfaces, hairline borders, one green accent, a type scale and a radius scale
+ * — and this screen is one of its rooms, not a themed exception. The board's own
+ * squares are the only colour the game brings, because those have to read as a
+ * chessboard rather than as UI.
  */
 
 .piano-chess {
-  --pc-case: #17110e;
-  --pc-case-lift: #221913;
-  --pc-ivory: #efe4cd;
-  --pc-ivory-dim: #cbbfa8;
-  --pc-walnut: #55392b;
-  --pc-walnut-deep: #3b2619;
-  --pc-brass: #c9a227;
-  --pc-brass-glow: #f0cc55;
-  --pc-felt: #9b2c2c;
-  --pc-verdigris: #4e8878;
+  /* Board squares. Everything else comes from the house tokens. */
+  --pc-light: #e8ddc8;
+  --pc-dark: #9e7070;
+
+  /* The old walnut/brass/ivory names survive only as aliases so one edit
+     retints the whole screen; nothing here invents a colour any more. */
+  /* Rim strips: the space outside the board that the frame still occupies.
+     Named because the board's size AND its centring are both computed from
+     them. */
+  --pc-axis: 2.5rem;
+  --pc-axis-w: 2.75rem;
+
+  --pc-case: var(--piano-bg, #16161b);
+  --pc-case-lift: var(--piano-surface, #1f1f26);
+  --pc-ivory: var(--piano-fg, #f1f1f4);
+  --pc-ivory-dim: var(--piano-muted, #9a9aa6);
+  --pc-brass: var(--piano-accent-text, #5fe39a);
+  --pc-brass-glow: var(--piano-accent, #2ec46f);
+  --pc-felt: var(--piano-danger, #e05a4f);
+  --pc-verdigris: var(--piano-warn, #e0a83a);
+  --pc-walnut: var(--pc-dark);
+  --pc-walnut-deep: var(--pc-dark);
 
   position: absolute;
   inset: 0;
@@ -34,10 +46,9 @@
      and vw lie here (that gap once ran the board off a 1080p screen). Both
      axes are definite (absolute, inset 0), so `size` containment is safe. */
   container-type: size;
-  background:
-    radial-gradient(120% 90% at 50% 0%, var(--pc-case-lift) 0%, var(--pc-case) 62%);
-  color: var(--pc-ivory);
-  font-family: 'Roboto Condensed', sans-serif;
+  background: var(--piano-bg, #16161b);
+  color: var(--piano-fg, #f1f1f4);
+  /* Inherited from the kiosk shell — a game does not pick its own face. */
   overflow: hidden;
 }
 
@@ -48,9 +59,7 @@
 .piano-chess__redeal {
   margin: 0;
   font-size: 0.8rem;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: rgb(203 191 168 / 40%);
+  color: var(--piano-muted);
   transition: color 300ms ease;
 }
 
@@ -58,37 +67,17 @@
   color: var(--pc-brass-glow);
 }
 
-.piano-chess__turn {
-  margin: 0;
-  display: flex;
-  align-items: baseline;
-  gap: 1rem;
-  font-size: 1.05rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--pc-ivory-dim);
-}
 
-.piano-chess__difficulty {
-  padding: 0.1rem 0.55rem;
-  border: 1px solid rgb(201 162 39 / 45%);
-  border-radius: 2px;
-  font-size: 0.8rem;
-  letter-spacing: 0.2em;
-  color: var(--pc-brass);
-}
 
 .piano-chess__settings-btn {
   align-self: flex-start;
   padding: 0.3rem 0.7rem;
-  border: 1px solid rgb(239 228 205 / 22%);
-  border-radius: 2px;
+  border: 1px solid var(--piano-border, #34343f);
+  border-radius: var(--r-sm, 8px);
   background: none;
   color: var(--pc-ivory-dim);
   font: inherit;
-  font-size: 0.75rem;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
+  font-size: var(--t-cap, 0.85rem);
   cursor: pointer;
 
   &:hover,
@@ -112,10 +101,14 @@
   width: min(34rem, 80cqw);
   margin-inline: auto;
   padding: 1rem 1.4rem 1.3rem;
-  border: 1px solid rgb(201 162 39 / 45%);
-  border-radius: 3px;
-  background: rgb(23 17 14 / 96%);
-  box-shadow: 0 1rem 3rem rgb(0 0 0 / 60%);
+  border: 1px solid var(--piano-border);
+  border-radius: var(--r-lg, 16px);
+  /* OPAQUE. A translucent panel over a chessboard leaves the board showing
+     through the controls, which is unreadable and — on this tablet — costs
+     real frames, because a see-through full-width layer defeats occlusion
+     culling. */
+  background: var(--piano-surface);
+  box-shadow: 0 1.5rem 4rem rgb(0 0 0 / 65%);
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
@@ -126,28 +119,24 @@
   align-items: baseline;
   justify-content: space-between;
   padding-block-end: 0.4rem;
-  border-block-end: 1px solid rgb(239 228 205 / 12%);
+  border-block-end: 1px solid var(--piano-border, #34343f);
 }
 
 .chess-settings__title {
   margin: 0;
   font-size: 1rem;
   font-weight: 700;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
   color: var(--pc-ivory);
 }
 
 .chess-settings__close {
   padding: 0.35rem 0.9rem;
   border: 1px solid var(--pc-brass);
-  border-radius: 2px;
+  border-radius: var(--r-sm, 8px);
   background: none;
   color: var(--pc-brass);
   font: inherit;
   font-size: 0.8rem;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
   cursor: pointer;
 
   &:hover,
@@ -158,9 +147,7 @@
   margin: 0.5rem 0 0;
   font-size: 0.7rem;
   font-weight: 400;
-  letter-spacing: 0.3em;
-  text-transform: uppercase;
-  color: rgb(203 191 168 / 60%);
+  color: var(--piano-muted, #9a9aa6);
 }
 
 .chess-settings__row {
@@ -177,8 +164,8 @@
   /* Kiosk-sized: a fingertip, not a pointer, is what lands here. */
   min-height: 2.6rem;
   padding: 0.4rem 0.85rem;
-  border: 1px solid rgb(239 228 205 / 22%);
-  border-radius: 2px;
+  border: 1px solid var(--piano-border, #34343f);
+  border-radius: var(--r-sm, 8px);
   background: none;
   color: var(--pc-ivory-dim);
   font: inherit;
@@ -187,11 +174,11 @@
   cursor: pointer;
 
   &:hover,
-  &:focus-visible { border-color: rgb(201 162 39 / 60%); color: var(--pc-ivory); }
+  &:focus-visible { border-color: var(--piano-accent, #2ec46f); color: var(--pc-ivory); }
 
   &.is-active {
     border-color: var(--pc-brass);
-    background: rgb(201 162 39 / 12%);
+    background: var(--piano-accent, #2ec46f);
     color: var(--pc-brass-glow);
   }
 }
@@ -199,16 +186,11 @@
 .chess-settings__note {
   font-size: 0.65rem;
   letter-spacing: 0.08em;
-  color: rgb(203 191 168 / 45%);
+  color: var(--piano-muted, #9a9aa6);
 }
 
 /* The shared kiosk context rail sits to the RIGHT of the board here, so its
    divider has to change sides. */
-.piano-chess .psc-rail {
-  padding: 0 0 0.75rem;
-  border-right: none;
-  border-bottom: 1px solid rgb(239 228 205 / 12%);
-}
 
 /* ---- stage -------------------------------------------------------------- */
 
@@ -217,19 +199,30 @@
    — and every prompt and refusal message on it — off screen. */
 .piano-chess__stage {
   display: grid;
-  /* Two children only (board frame, rail) since the left rail was removed.
-     The board's column is the flexible one so the board centres in the room
-     left of the rail; the rail gets a bounded, sensible width instead of
-     soaking up every leftover pixel (which read as dead space to its right). */
-  grid-template-columns: 1fr minmax(15rem, 18rem);
-  justify-content: center;
+  /* THE BOARD IS CENTRED, UNCONDITIONALLY. Both rails claim the SAME fixed
+     width and the board takes what is left between them, so centring is a
+     property of the layout rather than something that happens to hold at the
+     current content length. A rail fits the width it is given; it never sets
+     it. This is why every rail row below is clipped or wrapped rather than
+     allowed to size its column — one long refusal message must not shove the
+     board sideways. */
+  --pc-rail: 15.5rem;
+  /* The rails FILL. They were fixed, so whatever the board did not use showed
+     as dead space beside it. Equal fractions with a floor: they take the
+     leftover in equal shares, which is also what keeps the board centred — the
+     centring never depended on the rails being a fixed size, only on their
+     being the SAME size. */
+  grid-template-columns:
+    minmax(var(--pc-rail), 1fr)
+    auto
+    minmax(var(--pc-rail), 1fr);
   align-items: center;
-  gap: 2rem;
+  gap: 0.75rem;
   min-height: 0;
   overflow: hidden;
   /* The board sizes itself in cq units off this box — the space actually left
-     between the header and the keyboard. Safe as a size container: both axes
-     are already definite (the 1fr row of .piano-chess, full canvas width). */
+     above the keyboard. Safe as a size container: both axes are already
+     definite (the 1fr row of .piano-chess, full canvas width). */
   container-type: size;
 }
 
@@ -238,31 +231,116 @@
 /* Board frame is content-sized (see --cb-size below); centre it within its
    flexible column rather than letting default grid stretch pin it to the
    column's left edge. */
-.piano-chess .chess-board-frame { justify-self: center; }
+/* THE BOARD is centred, not the frame. The frame is the board plus its rim
+   strips, and the rank strip hangs off the left — so centring the frame puts
+   the board half a strip to the right of centre, which is exactly the drift
+   that reads as broken. An equal margin on the other side makes the frame's
+   outer box symmetric about the board, so the thing the player looks at is the
+   thing that is centred. */
+.piano-chess .chess-board-frame {
+  justify-self: center;
+  /* Exactly the strip, so the frame's margin box is symmetric about the board.
+     The frame's own column gap is zeroed rather than added into the sum: one
+     number to keep in step instead of two, and the strip already carries its
+     breathing room as inside padding. */
+  gap: 0;
+  margin-inline-end: var(--pc-axis-w);
+}
+
+/* The compensation above is only exact if the strip really is that wide, so the
+   strip is TOLD its width rather than being left to size itself off its labels.
+   Otherwise the board drifts by whatever the longest rank label happens to
+   measure — 'maj7' and a staff card are not the same width. */
+.piano-chess .chess-board__rank-axis {
+  box-sizing: border-box;
+  width: var(--pc-axis-w);
+}
 
 .piano-chess__rail {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
+  gap: 0.5rem;
+  /* Fixed width, and nothing inside may exceed it — see the stage grid. */
+  width: var(--pc-rail);
   min-width: 0;
+  max-width: var(--pc-rail);
   align-self: stretch;
-  justify-content: center;
+  justify-content: flex-start;
+  padding-block-start: 0.5rem;
+  overflow: hidden;
 }
 
-.piano-chess__rail-title {
+.piano-chess__rail--chords { justify-content: flex-start; }
+
+/* ---- the state rail: whose game, what is in hand, what was heard --------- */
+
+.piano-chess__facts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
   margin: 0;
-  font-size: 0.75rem;
-  font-weight: 400;
-  letter-spacing: 0.3em;
-  text-transform: uppercase;
-  color: rgb(203 191 168 / 60%);
 }
+
+.piano-chess__fact {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.piano-chess__fact-value {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--pc-ivory);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* IN HAND. A reserved block, the same size whether or not a piece is held, so
+   the rail never reflows at the moment the player most needs it to stay put. */
+.piano-chess__hand {
+  display: grid;
+  grid-template-rows: auto 1fr auto auto;
+  justify-items: center;
+  gap: 0.1rem;
+  min-height: 8.5rem;
+  padding: 0.5rem 0.4rem 0.6rem;
+  border: 1px solid var(--piano-border, #34343f);
+  border-radius: var(--r-md, 12px);
+  background: rgb(0 0 0 / 18%);
+  text-align: center;
+}
+
+.piano-chess__hand--holding {
+  border-color: var(--piano-accent, #2ec46f);
+  background: color-mix(in srgb, var(--piano-accent) 14%, transparent);
+}
+
+.piano-chess__hand-piece {
+  font-size: 3.4rem;
+  line-height: 1;
+  color: var(--pc-ivory);
+}
+
+.piano-chess__hand-piece--black { color: #14141a; text-shadow: 0 0 2px var(--piano-fg); }
+.piano-chess__hand-piece--empty { color: var(--piano-muted, #9a9aa6); font-size: 2.4rem; }
+
+.piano-chess__hand-from {
+  font-size: var(--t-cap, 0.85rem);
+  color: var(--piano-muted);
+}
+
+.piano-chess__hand-escape {
+  font-size: 0.75rem;
+  line-height: 1.2;
+  color: var(--piano-accent, #2ec46f);
+}
+
 
 .piano-chess__slot-label {
-  font-size: 0.7rem;
-  letter-spacing: 0.26em;
-  text-transform: uppercase;
-  color: rgb(203 191 168 / 55%);
+  font-size: var(--t-cap, 0.85rem);
+  color: var(--piano-muted);
 }
 
 .piano-chess__prompt {
@@ -280,7 +358,7 @@
   gap: 0.35rem;
   margin: 0.4rem 0 0;
   padding-block-start: 0.6rem;
-  border-block-start: 1px solid rgb(239 228 205 / 12%);
+  border-block-start: 1px solid var(--piano-border, #34343f);
 }
 
 .piano-chess__summary-row {
@@ -304,14 +382,12 @@
   align-items: flex-start;
   margin-block-start: 0.75rem;
   padding: 0.45rem 0.8rem;
-  border: 1px solid rgb(239 228 205 / 22%);
-  border-radius: 2px;
+  border: 1px solid var(--piano-border, #34343f);
+  border-radius: var(--r-sm, 8px);
   background: none;
   color: var(--pc-ivory-dim);
   font: inherit;
   text-align: start;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
   cursor: pointer;
 
   &:disabled { opacity: 0.35; cursor: default; }
@@ -327,7 +403,7 @@
   font-size: 0.65rem;
   letter-spacing: 0.08em;
   text-transform: none;
-  color: rgb(203 191 168 / 45%);
+  color: var(--piano-muted, #9a9aa6);
 }
 
 /* ---- board -------------------------------------------------------------- */
@@ -342,15 +418,28 @@
      reports the real screen while the board only ever gets the design box. On a
      1920x1080 desktop that gap ran the board 200px past the stage and off the
      bottom of the screen. The 2.5rem is the file-axis strip below the board. */
-  /* cqw is against .piano-chess__stage's full width (both columns), not just
-     the board's own 1fr column, so this has to be re-tuned whenever the
-     column split changes. With the rail now bounded to ~15-18rem instead of
-     eating all leftover space, the board's column is wider than before —
-     46cqw left it visibly gapped inside that room, so it goes up. */
-  --cb-size: min(56cqw, calc(100cqh - 2.5rem));
-  --cb-light: var(--pc-ivory);
-  --cb-dark: #9e7070;
-  --cb-frame: var(--pc-walnut-deep);
+  /* cqw is against .piano-chess__stage's FULL width, both rails included, so
+     the board's own room is what is left after the two fixed rails and the two
+     gaps. Written as that subtraction rather than as a tuned fraction: the
+     rails are the same width by construction, so whatever this leaves is
+     centred, and changing --pc-rail can never knock the board off centre or
+     overlap it. */
+  /* The frame is the board PLUS its two rim strips, so both strips come out of
+     the budget on their own axis. Named rather than folded into a constant
+     because the reading vocabulary makes them much bigger. */
+  --cb-size: min(
+    calc(100cqw - 2 * var(--pc-rail, 15.5rem) - 2rem - 2 * var(--pc-axis-w)),
+    calc(100cqh - var(--pc-axis))
+  );
+
+  /* The dark squares are the opponent's colour. `--pc-dark` is set inline from
+     the character's theme (and falls back to the house rose), so this is the
+     one line that makes arriving at a new opponent look like arriving
+     somewhere new — a literal here would have quietly ignored the theme, which
+     is exactly what it did until the board was looked at. */
+  --cb-light: #e8ddc8;
+  --cb-dark: var(--pc-dark);
+  --cb-frame: color-mix(in srgb, var(--pc-dark) 70%, #000);
   --cb-accent: var(--pc-brass);
   --cb-accent-glow: var(--pc-brass-glow);
   --cb-hint: var(--pc-verdigris);
@@ -360,44 +449,25 @@
 
 /* ---- move log ----------------------------------------------------------- */
 
-.piano-chess__rail--log { justify-content: flex-start; padding-block-start: 0.5rem; }
 
-.piano-chess__moves {
-  flex: 1;
-  min-height: 0;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-}
 
-.piano-chess__move {
-  display: grid;
-  grid-template-columns: 1.5rem 1fr auto;
-  gap: 0.4rem;
-  align-items: baseline;
-  font-size: 0.9rem;
-  color: var(--pc-ivory-dim);
-}
 
-.piano-chess__move-index { color: rgb(203 191 168 / 40%); font-size: 0.75rem; }
-.piano-chess__move-chords { color: var(--pc-brass); font-weight: 700; }
-.piano-chess__move-san { color: rgb(203 191 168 / 55%); font-size: 0.8rem; }
-.piano-chess__move--empty { grid-template-columns: 1fr; color: rgb(203 191 168 / 40%); }
+.piano-chess__move-san { color: var(--piano-muted, #9a9aa6); font-size: 0.8rem; }
 
+/* Sits at the foot of the chord rail. A dash for "nothing yet" reads as
+   unfinished when it is the whole row, so the label and the pieces share one
+   line and the row is quiet until there is something in it. */
 .piano-chess__captured {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
   padding-block-start: 0.6rem;
-  border-block-start: 1px solid rgb(239 228 205 / 12%);
+  border-block-start: 1px solid var(--piano-border, #34343f);
 }
 
 .piano-chess__captured-pieces {
   font-size: 1.25rem;
+  line-height: 1;
   line-height: 1.1;
   color: var(--pc-ivory);
 }
@@ -416,9 +486,9 @@
   max-width: min(28rem, 70cqw);
   margin-inline: auto;
   padding: 0.6rem 1.4rem;
-  border: 1px solid rgb(155 44 44 / 55%);
-  border-radius: 3px;
-  background: rgb(35 18 14 / 94%);
+  border: 1px solid color-mix(in srgb, var(--piano-danger) 55%, transparent);
+  border-radius: var(--r-md, 12px);
+  background: var(--piano-surface);
   box-shadow: 0 1rem 2.5rem rgb(0 0 0 / 55%);
   color: var(--pc-ivory);
   font-size: 1.1rem;
@@ -449,12 +519,6 @@
   opacity: 0.9;
 }
 
-.piano-chess__instrument-readouts {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.75rem;
-}
 
 /* ChordNamePanel ships its own Studio-card styling (a full-height,
    full-width plaque meant to fill a slot). Here it rides beside
@@ -494,14 +558,20 @@
 /* The read-out rides above the keys, where the player's eyes already are when
    they are wondering why nothing happened. */
 .chess-readout {
-  display: flex;
-  align-items: baseline;
-  justify-content: center;
-  gap: 0.6rem;
-  padding-block-end: 0.35rem;
-  font-size: 0.95rem;
-  letter-spacing: 0.06em;
+  /* Fixed three-row block on the state rail. It used to be a centred flex row
+     under the board, where every note changed its width and shook the whole
+     strip sideways. Rows here have a set height and left-aligned content, so a
+     reading changing has no geometric consequence at all. */
+  display: grid;
+  grid-template-rows: auto auto;
+  gap: 0.1rem;
+  min-height: 3.4rem;
+  padding: 0.4rem 0.5rem;
+  border-inline-start: 2px solid var(--piano-border, #34343f);
+  font-size: 0.9rem;
+  letter-spacing: 0.04em;
   color: var(--pc-ivory-dim);
+  overflow: hidden;
 }
 
 .chess-readout__chord,
@@ -512,4 +582,356 @@
 }
 
 .chess-readout--unmapped .chess-readout__chord { color: var(--pc-felt); }
-.chess-readout--offline { color: rgb(203 191 168 / 45%); }
+.chess-readout--offline { color: var(--piano-muted, #9a9aa6); }
+
+
+/* ---- the chord rail: a mirror of the hands ------------------------------- */
+
+/* Paper for the live staff. `.action-staff` supplies the cream card the other
+   games' staves sit on; only the sizing is local.
+
+   It takes the rail's leftover height rather than a fixed 9rem: the rail is as
+   tall as the board, and a short card left two thirds of the column as empty
+   charcoal. A taller staff is also simply a better staff — more room between
+   the lines is more legible, which is the entire job of this rail. */
+.piano-chess__staff-card.action-staff {
+  width: 100%;
+  flex: 1;
+  min-height: 8rem;
+  padding: 0.25rem;
+  border-radius: var(--r-md, 12px);
+}
+
+/* Both read-outs are full-width cards here, stacked — the opposite of the old
+   bottom strip, where they competed for one narrow row. */
+.piano-chess__rail--chords .piano-chord-name { width: 100%; }
+
+.piano-chess__rail--chords .current-chord-staff-wrapper {
+  width: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Sits with the rest of the rail rather than being flung to the bottom by an
+   auto margin — that left a hand's-height of dead charcoal in the middle of the
+   one rail the player reads when they are stuck. */
+.piano-chess__rail-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-block-start: 0.25rem;
+}
+
+/* ---- staff rim labels (the reading vocabulary) --------------------------- */
+
+.chess-staff-label {
+  /* Sized off the axis strip, NEVER off the square. At width:100% the SVG's
+     intrinsic ratio made each label as tall as a square was wide, which grew
+     the rim by ~90px and drove the board down through the keyboard. The strip
+     is a fixed 2.5rem in the board's own size calculation, so the label has to
+     fit inside it whatever the board's scale. */
+  display: block;
+  width: auto;
+  height: 2rem;
+  max-height: 100%;
+  margin: 0 auto;
+  overflow: visible;
+}
+
+.chess-staff-label__line,
+.chess-staff-label__ledger {
+  stroke: var(--piano-muted, #9a9aa6);
+  stroke-width: 0.8;
+}
+
+.chess-staff-label__head {
+  fill: var(--pc-brass-glow);
+}
+
+
+/* ---- the reading vocabulary ---------------------------------------------- */
+
+/* The rim stops being two lines of text and becomes sixteen little staves, each
+   needing enough height to show a clef, five lines and a ledger. The board
+   yields the room rather than the labels being squeezed past legibility — a
+   staff you cannot read is the one thing this vocabulary cannot afford. */
+.piano-chess--reading {
+  /* A staff card needs to be taller than it is wide before a notehead and its
+     ledger line both fit — the side-scroller's staves run about 2:3, and
+     anything squarer clips the note against the card edge. */
+  --pc-axis: 6.5rem;
+  --pc-axis-w: 5rem;
+}
+
+/* Each rim cell is a card, so the strips get a definite size instead of being
+   sized by whatever the SVG's intrinsic ratio works out to.
+   `minmax(0, 1fr)` rather than `1fr`: a bare 1fr is minmax(AUTO, 1fr), so the
+   cards' own content min-size wins and eight of them grow the strip past the
+   board it is supposed to line up with — the bottom rank ends up below the
+   board's last rank and clipped by the stage. */
+.piano-chess--reading .chess-board__rank-axis {
+  width: var(--pc-axis-w);
+  grid-template-rows: repeat(8, minmax(0, 1fr));
+  padding-inline-end: 0.35rem;
+  gap: 0.2rem;
+}
+
+.piano-chess--reading .chess-board__file-axis {
+  height: calc(var(--pc-axis) - 0.5rem);
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  padding-block-start: 0.35rem;
+  gap: 0.2rem;
+}
+
+
+/* ---- the chord plaque, as a card in this column ------------------------- */
+
+/* It shipped as a content-sized pill floating in a 15.5rem column, wearing
+   Studio's gradient and its own invented radius, under an eyebrow that
+   repeated the rail heading directly above it. */
+.piano-chess .piano-chord-name {
+  width: 100%;
+  height: auto;
+}
+
+.piano-chess .piano-chord-name__plaque {
+  width: 100%;
+  max-width: none;
+  min-height: 3.4rem;
+  padding: 0.5rem 0.85rem;
+  gap: 0;
+  border: 1px solid var(--piano-border);
+  border-radius: var(--r-md);
+  background: var(--piano-surface);
+  box-shadow: none;
+}
+
+/* The rail heading is the label; a second one inside disagreed with it. */
+.piano-chess .piano-chord-name__eyebrow { display: none; }
+
+.piano-chess .piano-chord-name__value { font-size: var(--t-h); font-weight: 700; }
+
+/* Silence, not a dash — with the height still reserved so nothing reflows when
+   a chord arrives. */
+.piano-chess .piano-chord-name__plaque.is-empty .piano-chord-name__value { visibility: hidden; }
+
+/* ---- rail rhythm --------------------------------------------------------- */
+
+/* Facts pin to the top, the stuck-child cluster (in-hand, heard, prompt)
+   centres in what is left, and the actions pin to the bottom. The rail stops
+   being a clump with a void under it. */
+/* Exactly one auto margin in this column. With two, the leftover space was
+   split between them, so any content change re-divided it and moved the blocks
+   above as well as below. The rail now grows downward only. */
+.piano-chess__rail-actions { margin-block-start: auto; }
+
+.piano-chess__hand-empty {
+  align-self: center;
+  font-size: var(--t-body);
+  color: var(--piano-muted);
+}
+
+.piano-chess__captured { margin-block-start: auto; }
+
+.piano-chess__captured-none {
+  margin: 0;
+  font-size: var(--t-cap);
+  color: var(--piano-muted);
+}
+
+/* ---- on the type and colour scales, not one-offs ------------------------- */
+
+.piano-chess__fact-value,
+.piano-chess__prompt { font-size: var(--t-body); }
+
+/* The prompt is THE instruction — it reads as body text, not as an aside. */
+.piano-chess__prompt { color: var(--piano-fg); }
+
+.piano-chess__hand-piece { font-size: var(--t-display); }
+.piano-chess__hand-from,
+.piano-chess__hand-escape,
+.piano-chess__cancel-hint,
+.piano-chess__redeal { font-size: var(--t-cap); }
+
+.piano-chess__summary-value,
+.piano-chess__captured-pieces { font-size: var(--t-h); }
+
+.piano-chess__hand { background: var(--piano-surface); }
+.piano-chess__hand--holding {
+  background: color-mix(in srgb, var(--piano-accent) 14%, var(--piano-surface));
+}
+.piano-chess__hand-piece--black { color: var(--piano-bg); }
+
+/* Every slot label sits on the same left edge; only the piece in hand centres. */
+.piano-chess__hand > .piano-chess__slot-label { justify-self: start; }
+
+
+/* The live staff is a card, not a page. Given the whole rail it became a tall
+   cream void with a small engraving adrift in the middle of it — the engraver
+   sizes its staff off the WIDTH, so extra height buys nothing but emptiness.
+   Capped to what the notation actually needs; the captured row takes the rest. */
+.piano-chess__staff-card.action-staff {
+  flex: 0 1 auto;
+  /* The rail now carries the opponent, the ladder and the read-outs, so the
+     staff takes what it needs and no more — at 16rem it pushed the roster off
+     the bottom of the screen. */
+  max-height: 9.5rem;
+}
+
+
+/* ---- the state rail, rebuilt --------------------------------------------- */
+
+/* IN HAND — a socket, not a field. Empty, it still shows that a piece belongs
+   there: an inset well with a dashed lip, which reads as "something goes here"
+   without the word "Empty" having to say it. */
+.piano-chess__hand {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  justify-items: stretch;
+  gap: 0.4rem;
+  min-height: 8.5rem;
+  padding: 0.55rem 0.7rem 0.7rem;
+  border: 1px solid var(--piano-border);
+  border-radius: var(--r-md);
+  background: var(--piano-surface);
+  text-align: start;
+}
+
+.piano-chess__hand-slot {
+  display: grid;
+  place-items: center;
+  min-height: 4.4rem;
+  border: 2px dashed color-mix(in srgb, var(--piano-border) 90%, transparent);
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--piano-bg) 70%, transparent);
+  box-shadow: inset 0 2px 6px rgb(0 0 0 / 45%), inset 0 -1px 0 rgb(255 255 255 / 4%);
+}
+
+.piano-chess__hand--holding {
+  border-color: var(--piano-accent);
+  background: color-mix(in srgb, var(--piano-accent) 12%, var(--piano-surface));
+
+  .piano-chess__hand-slot {
+    border-style: solid;
+    border-color: color-mix(in srgb, var(--piano-accent) 55%, transparent);
+  }
+}
+
+.piano-chess__hand-piece {
+  width: auto;
+  height: 3.2rem;
+  object-fit: contain;
+}
+
+.piano-chess__hand-from {
+  font-size: var(--t-cap);
+  color: var(--piano-muted);
+}
+
+/* THE GAME TALKING BACK. A bubble, with a tail, because it is speech: what it
+   heard, and what to do about it. As a bare bordered box nobody could tell what
+   it was for. */
+.piano-chess__says {
+  /* Reserved as a WHOLE, not line by line. Per-line minimums were computed off
+     the element's own font-size and landed a few pixels short of a real second
+     line, so the gesture cards still stepped by 9px whenever a one-line message
+     replaced a two-line one. One number for the tallest state the bubble has. */
+  /* Above the TALLEST state, measured (two-line prompt + the read-out's square
+     line = 150px), not guessed. A floor below the tallest state reserves
+     nothing — the box still shrinks for shorter messages, which is the whole
+     defect. */
+  min-height: 9.75rem;
+  position: relative;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--piano-border);
+  border-radius: var(--r-md);
+  background: var(--piano-surface-2, var(--piano-surface));
+}
+
+/* The tail, drawn as a rotated square tucked under the top-left corner so it
+   points back at the in-hand tile the message is usually about. */
+.piano-chess__says::before {
+  content: '';
+  position: absolute;
+  inset-block-start: -0.4rem;
+  inset-inline-start: 1.1rem;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-inline-start: 1px solid var(--piano-border);
+  border-block-start: 1px solid var(--piano-border);
+  background: var(--piano-surface-2, var(--piano-surface));
+  transform: rotate(45deg);
+}
+
+.piano-chess__says .chess-readout {
+  border-inline-start: 0;
+  padding: 0;
+  min-height: 0;
+  gap: 0.05rem;
+}
+
+.piano-chess__says .piano-chess__prompt {
+  margin: 0.35rem 0 0;
+  padding-block-start: 0.35rem;
+  border-block-start: 1px solid var(--piano-border);
+  /* TWO LINES, RESERVED. The messages run one or two lines ("Your opponent is
+     thinking." vs "That chord is not on the board. Try another."), and without
+     this the bubble changed height by 30px every time one replaced the other —
+     which moved the gesture cards below it AND, through the flex free-space
+     split, the in-hand socket above it. A refusal must not shift the thing the
+     player is staring at. */
+  line-height: 1.35;
+}
+
+/* Likewise the read-out: its "square" state adds a third line, so the space for
+   it is held whether or not it has landed. */
+.piano-chess__says .chess-readout {
+  min-height: calc(3 * 1.3em);
+}
+
+/* SETTINGS — an icon, not a full-width slab. */
+.piano-chess__settings-btn {
+  display: grid;
+  place-items: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  padding: 0;
+  border: 1px solid var(--piano-border);
+  border-radius: var(--r-pill);
+  background: var(--piano-surface);
+  color: var(--piano-muted);
+}
+
+.piano-chess__rail-actions {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.piano-chess__opponent-rung {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+
+.piano-chess__opponent-rung-name {
+  font-size: var(--t-h);
+  color: var(--piano-fg);
+}
+
+
+/* The read-out's value line: chord, verdict and square on one baseline, with
+   room for two lines held whatever it is saying. Structurally fixed — the
+   square no longer adds a row — and the reservation covers the longest verdict
+   ("Keep holding — a square is three notes") wrapping to two lines. */
+.chess-readout__line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 0.4rem;
+  line-height: 1.3;
+  /* Two lines, and the copy is kept short enough to fit two at the NARROWEST
+     rail — the design canvas is 1280 wide, and a reservation checked only at
+     1920 was a reservation that did not hold on the tablet. */
+  min-height: calc(2 * 1.3em);
+}

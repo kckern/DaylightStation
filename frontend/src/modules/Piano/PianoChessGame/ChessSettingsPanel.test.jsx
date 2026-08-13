@@ -58,6 +58,35 @@ describe('ChessSettingsPanel', () => {
     expect(onChange).toHaveBeenCalledWith({ opponent_delay_ms: 1200 });
   });
 
+  it('offers the destination-label toggle as two discrete tap targets', () => {
+    render(<ChessSettingsPanel config={CONFIG} rungId="learner" onChange={() => {}} onClose={() => {}} />);
+    expect(screen.getByRole('button', { name: 'Show chords' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Hide chords' })).toBeTruthy();
+  });
+
+  it('marks the active label choice, defaulting to on when the key is absent', () => {
+    // CONFIG carries no show_destination_labels — absent means on.
+    render(<ChessSettingsPanel config={CONFIG} rungId="learner" onChange={() => {}} onClose={() => {}} />);
+    expect(screen.getByRole('button', { name: 'Show chords' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Hide chords' }).getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('marks Hide when the config says false', () => {
+    const config = { ...CONFIG, feedback: { ...CONFIG.feedback, show_destination_labels: false } };
+    render(<ChessSettingsPanel config={config} rungId="learner" onChange={() => {}} onClose={() => {}} />);
+    expect(screen.getByRole('button', { name: 'Hide chords' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Show chords' }).getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('emits the label patch in config shape, nested under feedback', () => {
+    const onChange = vi.fn();
+    render(<ChessSettingsPanel config={CONFIG} rungId="learner" onChange={onChange} onClose={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Hide chords' }));
+    expect(onChange).toHaveBeenCalledWith({ feedback: { show_destination_labels: false } });
+    fireEvent.click(screen.getByRole('button', { name: 'Show chords' }));
+    expect(onChange).toHaveBeenCalledWith({ feedback: { show_destination_labels: true } });
+  });
+
   it('uses no sliders — every control is a discrete tap target', () => {
     const { container } = render(<ChessSettingsPanel config={CONFIG} rungId="learner" onChange={() => {}} onClose={() => {}} />);
     expect(container.querySelector('input[type="range"]')).toBeNull();

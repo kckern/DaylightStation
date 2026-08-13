@@ -27,6 +27,9 @@ vi.mock('./chessApi.js', () => ({
   fetchChessConfig: vi.fn(async () => null),
   saveChessConfig: vi.fn(async () => null),
   saveGameRecord: vi.fn(async () => null),
+  archiveGame: vi.fn(async () => null),
+  beaconArchive: vi.fn(() => true),
+  fetchLadder: vi.fn(async () => null),
 }));
 
 import { PianoChessGame } from './PianoChessGame.jsx';
@@ -85,7 +88,7 @@ describe('help validity: seams the per-task tests could not see', () => {
     rerender(<PianoChessGame playerColor="b" seed={1} />);
     // Opponent's reply lands (position advances; help is cleared).
     await act(async () => { await vi.advanceTimersByTimeAsync(800); });
-    expect(container.querySelectorAll('.piano-chess__move-san').length).toBe(1);
+    expect(container.querySelectorAll('.chess-board__square--last-move').length).toBe(2);
     // NOW the stale best-move answer arrives — computed for the pre-reply position.
     await act(async () => { resolveBest({ from: 'g1', to: 'f3', san: 'Nf3', engine: 'stockfish' }); });
     expect(container.querySelectorAll('.chess-board__square--best')).toHaveLength(0);
@@ -140,7 +143,8 @@ describe('help validity: seams the per-task tests could not see', () => {
     };
 
     await play([60, 61, 62]); // one hint, asked on the player's turn — a real charge
-    await play(notesFor('f1')); // lift the rook
+    await play(notesFor('f1')); // name the rook — hovers
+    await play(notesFor('f1')); // name it again — lifts it (one chord only hovers now)
     await play(notesFor('f8')); // land it — checkmate
 
     expect(saveGameRecord).toHaveBeenCalledTimes(1);

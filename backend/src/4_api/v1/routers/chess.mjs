@@ -9,7 +9,9 @@ import { safeSegment } from './lib/emulatorPaths.mjs';
  * One request per move — there is nothing to stream until a live eval bar
  * exists, and adding one later does not disturb this contract.
  */
-export function createChessRouter({ engine, configService, recordStore = null, logger = null }) {
+export function createChessRouter({
+  engine, configService, recordStore = null, archiveStore = null, ladderService = null, logger = null,
+}) {
   const router = express.Router();
 
   /**
@@ -33,10 +35,19 @@ export function createChessRouter({ engine, configService, recordStore = null, l
   router.post('/move', asyncHandler(async (req, res) => {
     const user = resolveUser(req, res);
     if (user === undefined) return undefined;
-    const { fen, rung: rungId, gameId } = req.body || {};
+    const { fen, rung: rungId, level, gameId } = req.body || {};
     if (!isValidFen(fen)) return res.status(400).json({ error: 'invalid_fen' });
     const config = await configService.read(user);
-    const rung = configService.resolveRung(config, rungId || config.default_rung);
+    // A ladder level takes precedence over a named rung when one is asked for.
+    // The service clamps it to what this player has unlocked — the only place
+    // "no skipping ahead" is actually enforced, since anything on the client
+    // can be bypassed with a crafted request.
+    let rung;
+    if (level !== undefined && level !== null && ladderService) {
+      ({ rung } = await ladderService.rungFor(user, level));
+    } else {
+      rung = configService.resolveRung(config, rungId || config.default_rung);
+    }
     const move = await engine.chooseMove({ fen, rung, gameId: gameId || 'default' });
     if (!move) return res.json({ move: null });
     return res.json(move);
@@ -69,7 +80,69 @@ export function createChessRouter({ engine, configService, recordStore = null, l
       return res.status(500).json({ error: 'save_failed' });
     }
     logger?.info?.('chess.game.recorded', { userId, result: req.body?.result, moves: req.body?.moves });
-    return res.status(201).json({ saved: true });
+    // Promotion is decided here, on the server, not by the kiosk: a reloaded tab
+    // mid-write would otherwise lose a rung the child had earned.
+    const ladder = ladderService ? await ladderService.recordGame(userId, req.body || {}) : null;
+    return res.status(201).json({ saved: true, ladder });
+  }));
+
+  /**
+   * The household game archive: every game played on this piano, finished or
+   * not, filed by the day it was played.
+   *
+   * Distinct from POST /games in three ways that matter. It accepts an
+   * unfinished game, because walking away is data. It accepts a guest, because
+   * the archive is about what happened on the instrument rather than about
+   * whose profile it belongs to. And it never fails the caller: a child leaving
+   * the screen must not be held there by a disk error, so a failed write is
+   * logged and answered 202 rather than 500 — the client has already navigated
+   * away and has nothing it could do with the failure.
+   */
+  router.post('/history', asyncHandler(async (req, res) => {
+    if (!archiveStore) return res.status(501).json({ error: 'archive_unavailable' });
+    const record = req.body || {};
+    if (!Array.isArray(record.moves) || record.moves.length === 0) {
+      return res.status(400).json({ error: 'no_moves' });
+    }
+    // The user id lands in a filename, so it gets the same guard as a path
+    // segment even though it is not a directory here.
+    let userSegment = 'guest';
+    if (record.user_id) {
+      try {
+        userSegment = safeSegment(String(record.user_id));
+      } catch {
+        logger?.warn?.('chess.history.unsafe-user-rejected', { user: String(record.user_id) });
+        return res.status(400).json({ error: 'invalid_user' });
+      }
+    }
+    const saved = await archiveStore.save({ ...record, user_id: record.user_id || null }, userSegment);
+    if (!saved) {
+      logger?.warn?.('chess.history.archive-failed', {
+        user: userSegment, moves: record.moves.length, completed: !!record.completed,
+      });
+      return res.status(202).json({ archived: false });
+    }
+    logger?.info?.('chess.history.archived', {
+      user: userSegment,
+      played_on: record.played_on,
+      moves: record.moves.length,
+      completed: !!record.completed,
+      ended_by: record.ended_by,
+      addressing: record.addressing,
+    });
+    return res.status(201).json({ archived: true });
+  }));
+
+  /**
+   * Where this player stands on the ladder: who they may face, who they are
+   * climbing, and how close they are. A guest gets the bottom of the roster and
+   * an honest `persisted: false` rather than a bar that resets on reload.
+   */
+  router.get('/ladder', asyncHandler(async (req, res) => {
+    if (!ladderService) return res.status(501).json({ error: 'ladder_unavailable' });
+    const user = resolveUser(req, res);
+    if (user === undefined) return undefined;
+    return res.json(await ladderService.read(user));
   }));
 
   return router;

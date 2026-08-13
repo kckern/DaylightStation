@@ -79,4 +79,61 @@ export async function saveGameRecord(userId, record) {
   }
 }
 
-export default { requestOpponentMove, fetchChessConfig, saveChessConfig, saveGameRecord };
+/**
+ * Archive the whole game to the household history.
+ *
+ * Separate from `saveGameRecord`, and deliberately: that one is the player's own
+ * scorecard for a finished game, this one is the replayable account of ANY game,
+ * abandoned ones included. Guests are archived too — the household history is
+ * about what happened on this piano, not about whose profile it belongs to, and
+ * the record carries a null user rather than being dropped.
+ *
+ * Fire-and-forget on the way out: a failed archive must never keep a child on a
+ * screen they are trying to leave.
+ */
+export async function archiveGame(record) {
+  try {
+    return await DaylightAPI('api/v1/chess/history', record, 'POST');
+  } catch (error) {
+    logger().warn('chess.game.archive-error', { error: error.message });
+    return null;
+  }
+}
+
+/**
+ * Archive on the way out of the PAGE, not just out of the component.
+ *
+ * A React cleanup runs when the player navigates inside the app. It does not run
+ * when the tab is closed, when the kiosk reloads after a deploy, or when the
+ * screen is put to sleep — which on this instrument is the ordinary way a game
+ * ends. `sendBeacon` is the only request that survives that, because the browser
+ * takes ownership of it as the document goes away.
+ *
+ * Returns whether the beacon was accepted for delivery, so the caller can fall
+ * back to a normal request when it was not (queue full, or no beacon support).
+ */
+/** Where this player stands on the opponent ladder. */
+export async function fetchLadder(userId) {
+  try {
+    return await DaylightAPI(withUser('api/v1/chess/ladder', userId));
+  } catch (error) {
+    logger().warn('chess.ladder.fetch-error', { error: error.message });
+    return null;
+  }
+}
+
+export function beaconArchive(record) {
+  try {
+    if (typeof navigator === 'undefined' || typeof navigator.sendBeacon !== 'function') return false;
+    const blob = new Blob([JSON.stringify(record)], { type: 'application/json' });
+    return navigator.sendBeacon('/api/v1/chess/history', blob);
+  } catch (error) {
+    logger().warn('chess.game.beacon-error', { error: error.message });
+    return false;
+  }
+}
+
+export default {
+  requestOpponentMove, fetchChessConfig, saveChessConfig, saveGameRecord, archiveGame,
+  beaconArchive, fetchLadder,
+};
