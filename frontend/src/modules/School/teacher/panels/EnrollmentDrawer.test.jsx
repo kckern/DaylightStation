@@ -99,7 +99,7 @@ describe('EnrollmentDrawer — enrolled, managed cell', () => {
 
   const CELL = {
     enrolled: true, syllabusId: 'atlas-upper', syllabusTitle: 'Atlas — upper',
-    profile: 'upper', passing: 80, managed: true,
+    profile: 'upper', passing: 80, managed: true, hasEnrollment: true,
   };
 
   it('shows the facts and offers Re-materialize + Unenroll, no hand-authored note', () => {
@@ -164,7 +164,7 @@ describe('EnrollmentDrawer — enrolled, hand-authored (unmanaged) cell', () => 
   beforeEach(() => vi.clearAllMocks());
 
   const CELL = {
-    enrolled: true, syllabusId: null, syllabusTitle: null, profile: 'upper', passing: null, managed: false,
+    enrolled: true, syllabusId: null, syllabusTitle: null, profile: 'upper', passing: null, managed: false, hasEnrollment: true,
   };
 
   it('renders as first-class, not broken: the note, not an error, and still offers Re-materialize/Unenroll', () => {
@@ -185,5 +185,30 @@ describe('EnrollmentDrawer — enrolled, hand-authored (unmanaged) cell', () => 
     // A DOM check, not a text-content check: `teacher-panel__error` is a CSS
     // class, never rendered text, so this must query the element tree.
     expect(container.querySelector('.teacher-panel__error')).toBeNull();
+  });
+});
+
+describe('EnrollmentDrawer — assigned but never materialized (bare-string course)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  // A plain bare-string course entry (most entries in real data): assigned,
+  // so Enroll is not offered, but it carries no `enrollment` block at all —
+  // this must NOT be mistaken for a hand-authored enrollment.
+  const CELL = {
+    enrolled: true, syllabusId: null, syllabusTitle: null, profile: null, passing: null, managed: false, hasEnrollment: false,
+  };
+
+  it('does not show the hand-authored note for a course with no enrollment record', () => {
+    render(
+      <EnrollmentDrawer
+        learner={LEARNER}
+        courseId="history-capitals"
+        cell={CELL}
+        syllabi={SYLLABI}
+        onClose={vi.fn()}
+        onChanged={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText(/written by hand/)).toBeNull();
   });
 });

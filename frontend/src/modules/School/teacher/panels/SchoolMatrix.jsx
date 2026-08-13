@@ -116,7 +116,7 @@ export default function SchoolMatrix({ kids }) {
                         aria-label={`${row.name}, ${labelize(id)}`}
                       >
                         {cell
-                          ? `${cell.syllabusTitle ?? '—'}${cell.profile ? ` · ${cell.profile}` : ''}${cell.managed ? '' : ' ⚑'}`
+                          ? `${cell.syllabusTitle ?? '—'}${cell.profile ? ` · ${cell.profile}` : ''}${(cell.hasEnrollment && !cell.managed) ? ' ⚑' : ''}`
                           : ''}
                       </button>
                     </td>

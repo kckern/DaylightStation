@@ -48,7 +48,7 @@ export default function EnrollmentDrawer({ learner, courseId, cell, syllabi = []
         </dl>
       )}
 
-      {!cell?.managed && cell?.enrolled && (
+      {cell?.hasEnrollment && !cell?.managed && (
         <p className="teacher-drawer__note">
           This enrollment was written by hand. Enrolling from a syllabus below will replace its order.
         </p>
