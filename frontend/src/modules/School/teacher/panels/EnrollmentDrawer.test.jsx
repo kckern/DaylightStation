@@ -168,7 +168,7 @@ describe('EnrollmentDrawer — enrolled, hand-authored (unmanaged) cell', () => 
   };
 
   it('renders as first-class, not broken: the note, not an error, and still offers Re-materialize/Unenroll', () => {
-    render(
+    const { container } = render(
       <EnrollmentDrawer
         learner={LEARNER}
         courseId="history-capitals"
@@ -182,6 +182,8 @@ describe('EnrollmentDrawer — enrolled, hand-authored (unmanaged) cell', () => 
     expect(screen.queryByRole('button', { name: 'Enroll' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Re-materialize' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Unenroll' })).toBeInTheDocument();
-    expect(screen.queryByText(/teacher-panel__error/)).toBeNull();
+    // A DOM check, not a text-content check: `teacher-panel__error` is a CSS
+    // class, never rendered text, so this must query the element tree.
+    expect(container.querySelector('.teacher-panel__error')).toBeNull();
   });
 });
