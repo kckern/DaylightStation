@@ -350,6 +350,49 @@
   color: var(--pc-ivory-dim);
 }
 
+/* THE PICK-UP WINDOW. A rule under the prompt that drains left to right for
+   exactly as long as the repeat will be heard. It sits in the prompt's own
+   measure rather than on the board because it belongs to the SENTENCE — it is
+   that instruction's deadline, and reading the two together is the whole point.
+
+   The track keeps its place whether or not the bar is running, so an arming
+   hover never nudges the rail and, through it, the board.
+
+   Animated with transform only. A width or filter animation here would repaint
+   the rail on every frame of every hover — the tablet cannot afford that, and
+   this runs constantly during ordinary play. */
+.piano-chess__window {
+  height: 2px;
+  margin: 0.35rem 0 0;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--pc-ivory-dim) 22%, transparent);
+  overflow: hidden;
+}
+
+.piano-chess__window-bar {
+  display: block;
+  height: 100%;
+  transform-origin: left center;
+  background: var(--pc-brass);
+  animation: pc-window-drain var(--pc-window-ms, 2500ms) linear forwards;
+}
+
+@keyframes pc-window-drain {
+  from { transform: scaleX(1); }
+  to   { transform: scaleX(0); }
+}
+
+/* Motion is the only channel this cue has, so it cannot simply be removed:
+   with animation suppressed the bar would sit permanently full and promise a
+   deadline that never arrives. It holds at half instead — present, honest that
+   a limit exists, and still. */
+@media (prefers-reduced-motion: reduce) {
+  .piano-chess__window-bar {
+    animation: none;
+    transform: scaleX(0.5);
+  }
+}
+
 /* The end-of-game tallies: the record read back as facts, in the same label
    voice as the captured-material rows below it. */
 .piano-chess__summary {
