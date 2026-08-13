@@ -39,6 +39,16 @@ export class IVehicleHistoryRepository {
   }
 
   /**
+   * Device events from the day logs — wifi-joined, harsh-motion, trip-dropped.
+   * @param {string} vehicleId
+   * @param {{from?: Date, to?: Date, events?: string[]}} [options]
+   * @returns {Promise<Array<object>>}
+   */
+  async listEvents(vehicleId, options) {
+    throw new Error('IVehicleHistoryRepository.listEvents must be implemented');
+  }
+
+  /**
    * The most recent snapshot the device reported — battery, fuel, DTCs.
    * @param {string} vehicleId
    * @returns {Promise<object|null>}

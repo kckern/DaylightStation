@@ -40,9 +40,10 @@ export class ListJourneys {
   async execute({ vehicleId, from = null, to = null, includeShuffles = false, now = new Date() }) {
     const windowFrom = from || daysBefore(now, this.#config.windowDays || DEFAULT_WINDOW_DAYS);
 
-    const [descriptors, places] = await Promise.all([
+    const [descriptors, places, motionEvents] = await Promise.all([
       this.#historyRepository.listTripDescriptors(vehicleId, { from: windowFrom, to, withFixes: true }),
       this.#placeRepository ? this.#placeRepository.listPlaces() : Promise.resolve([]),
+      this.#historyRepository.listEvents(vehicleId, { from: windowFrom, to, events: ['harsh-motion'] }),
     ]);
 
     const journeys = stitchJourneys(descriptors, {
@@ -58,7 +59,7 @@ export class ListJourneys {
       vehicleId, trips: descriptors.length, journeys: journeys.length, hidden,
     });
 
-    return { journeys: visible.map((journey) => present(journey, places)), hidden };
+    return { journeys: visible.map((journey) => present(journey, places, motionEvents)), hidden };
   }
 }
 
@@ -69,7 +70,7 @@ export class ListJourneys {
  * stop" — the interaction that grows the registry — rather than discarding the
  * one piece of information that would make naming possible.
  */
-function present(journey, places) {
+function present(journey, places, motionEvents = []) {
   const origin = describePoint(journey.originFix, places);
   const destination = describePoint(journey.destinationFix, places);
   const stops = journey.stops.map((stop) => ({
@@ -79,9 +80,22 @@ function present(journey, places) {
     duration_s: stop.durationS,
   }));
 
+  // Events that happened while this journey was under way. Attached by time
+  // rather than carried on the trip, because the device emits them live over
+  // the bus and they land in the day log, not in the trip file.
+  const events = journey.startedAt && journey.endedAt
+    ? motionEvents.filter((e) => e.at >= journey.startedAt && e.at <= journey.endedAt)
+    : [];
+
   return {
     ...journey.toJSON(),
     title: buildTitle(origin, stops, destination),
+    harsh_events: events.map((e) => ({
+      at: e.at.toISOString(),
+      g: e.g ?? null,
+      acc: Array.isArray(e.acc) ? e.acc : null,
+      speed_kph: e.speed_kph ?? null,
+    })),
     origin,
     destination,
     stops,

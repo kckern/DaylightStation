@@ -107,6 +107,34 @@ export class YamlVehicleHistoryDatastore extends IVehicleHistoryRepository {
     }
   }
 
+  /**
+   * Device events, newest first.
+   *
+   * The day logs have carried these since the relay was written — wifi-joined,
+   * trip-dropped, and now harsh-motion — and nothing has ever read them. They
+   * are the only record of things that happened BETWEEN trips, which is exactly
+   * where refuelling, code-clearing and rough driving live.
+   */
+  async listEvents(vehicleId, { from = null, to = null, events = null } = {}) {
+    const vehicleDir = this.#vehicleDir(vehicleId);
+    if (!dirExists(vehicleDir)) return [];
+    const wanted = events && events.length ? new Set(events) : null;
+
+    const out = [];
+    for (const name of listFiles(vehicleDir).filter((n) => DAY_FILE.test(n)).sort()) {
+      const day = name.match(DAY_FILE)[1];
+      if (!withinDayWindow(day, from, to)) continue;
+      const records = loadYamlSafe(path.join(vehicleDir, name.replace(/\.yml$/, '')));
+      if (!Array.isArray(records)) continue;
+      for (const record of records) {
+        if (record?.kind !== 'event') continue;
+        if (wanted && !wanted.has(record.event)) continue;
+        out.push({ ...record, at: toDateOrNull(record.ts) });
+      }
+    }
+    return out.sort((a, b) => (b.at?.getTime() || 0) - (a.at?.getTime() || 0));
+  }
+
   async readLatestSnapshot(vehicleId) {
     const vehicleDir = this.#vehicleDir(vehicleId);
     if (!dirExists(vehicleDir)) return null;

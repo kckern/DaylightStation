@@ -143,6 +143,36 @@ describe('YamlVehicleHistoryDatastore', () => {
     expect(snapshot.battery_v).toBe(12.4);
   });
 
+  it('reads device events, newest first', async () => {
+    // The day logs have carried these since the relay was written and nothing
+    // ever read them — they are the only record of what happened BETWEEN trips.
+    writeDay('2026-08-11', [
+      { kind: 'event', event: 'wifi-joined', ts: '2026-08-11T10:00:00-07:00' },
+      { kind: 'event', event: 'harsh-motion', g: 0.42, acc: [0.1, -0.4, 0.9], speed_kph: 48, ts: '2026-08-11T10:05:00-07:00' },
+      { kind: 'trip', trip_id: 't', file: 'x.yml', distance_km: 5, started: null, ended: null },
+    ]);
+
+    const all = await store.listEvents(VEHICLE);
+    expect(all).toHaveLength(2);                       // the trip record is not an event
+    expect(all[0].event).toBe('harsh-motion');         // newest first
+    expect(all[0].g).toBe(0.42);
+    expect(all[0].acc).toEqual([0.1, -0.4, 0.9]);
+  });
+
+  it('filters events by name', async () => {
+    writeDay('2026-08-11', [
+      { kind: 'event', event: 'wifi-joined', ts: '2026-08-11T10:00:00-07:00' },
+      { kind: 'event', event: 'harsh-motion', g: 0.5, ts: '2026-08-11T10:05:00-07:00' },
+    ]);
+    const harsh = await store.listEvents(VEHICLE, { events: ['harsh-motion'] });
+    expect(harsh).toHaveLength(1);
+    expect(harsh[0].g).toBe(0.5);
+  });
+
+  it('returns no events for a vehicle with no history', async () => {
+    expect(await store.listEvents('nobody')).toEqual([]);
+  });
+
   it('refuses to read a trip file outside the trips directory', async () => {
     writeDay('2026-08-12', []);
     fs.writeFileSync(path.join(root, 'secret.yml'), yaml.dump({ meta: {} }), 'utf8');

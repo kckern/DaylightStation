@@ -480,3 +480,8 @@ $tabbar-h: 3.5rem;
   letter-spacing: 0.03em;
   color: $auto-text-dim;
 }
+
+// Harsh-motion count on a journey row. Amber rather than red: it is an
+// observation about the drive, not a fault, and the app has no basis to
+// judge it — dongle orientation is unknown, so it cannot even say braking.
+.auto-journey__harsh { color: $auto-warn; }
