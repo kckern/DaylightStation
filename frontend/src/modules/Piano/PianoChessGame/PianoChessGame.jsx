@@ -244,6 +244,12 @@ export function PianoChessGame({
   // Naming a square and committing to it are different acts: the selection
   // machine decides which. One chord hovers, the same square twice picks up.
   const selectionRef = useRef(createSelection());
+  // The pick-up window, mirrored out of the ref so it can be DRAWN. The double
+  // is the one interaction that fails invisibly — a player repeating a chord
+  // and getting nothing cannot tell whether they were too slow or misheard —
+  // so the deadline has to be visible while it is running, not inferred after
+  // it has passed. Mirrored rather than derived because a ref cannot re-render.
+  const [armed, setArmed] = useState(null);
   // True from the first tick where the held set reads as a help gesture until
   // the hands are fully off the keys. See the cursor tick for why: a staggered
   // release must not let the gesture's residue land as an unrecognised chord.
@@ -552,6 +558,18 @@ export function PianoChessGame({
           type: event.type, square: event.square, at, holdingPiece, isEligible,
         });
         selectionRef.current = selection;
+        // Armed is not a fourth thing to keep in sync — it is exactly the
+        // machine's own memory of "a repeat of this square would be a double",
+        // read straight back out. Identity is held stable so the countdown
+        // animation restarts only on a genuine re-arm, never on a re-render.
+        setArmed((prev) => {
+          const next = selection.lastSquare
+            ? { square: selection.lastSquare, at: selection.lastAt }
+            : null;
+          if (!prev && !next) return prev;
+          if (prev && next && prev.square === next.square && prev.at === next.at) return prev;
+          return next;
+        });
         // The double-play is the one interaction that fails INVISIBLY: a player
         // repeating a chord and getting nothing cannot tell whether they were
         // too slow, too fast, or heard as a different square. Log the interval
@@ -685,6 +703,11 @@ export function PianoChessGame({
     ? cursorChord?.symbol ?? null
     : null;
   const prompt = promptFor(game, game.rejection, pickupChord, reading);
+  // The countdown is drawn only where the prompt is actually asking for a
+  // repeat: same gate as pickupChord, plus the armed square agreeing with the
+  // cursor. A bar running under "play a piece's chord twice" — an instruction
+  // with no deadline attached yet — would be counting down nothing.
+  const pickupDeadline = pickupChord && armed?.square === cursor ? armed.at : null;
   const turnColour = game.status?.turn === 'w' ? 'White' : 'Black';
   const turnLabel = game.status?.turn === playerColor ? `Yours (${turnColour})` : `Theirs (${turnColour})`;
   const displayName = (typeof currentUser === 'object' && currentUser?.id === lockedUser && currentUser.name)
@@ -739,6 +762,24 @@ export function PianoChessGame({
               isReading={reading}
             />
             <p className="piano-chess__prompt" role="status">{prompt}</p>
+            {/* The deadline on that sentence, made visible. Keyed on the arming
+                instant so each fresh hover restarts the run; aria-hidden because
+                the prompt beside it already speaks the instruction, and a bar
+                that announced itself would talk over every hover. */}
+            {pickupDeadline !== null && (
+              <div
+                key={pickupDeadline}
+                /* The key restarts the CSS run; the attribute is that same
+                   instant made observable, so "it re-armed" is a fact a test
+                   can read rather than an animation it has to infer. */
+                data-armed-at={pickupDeadline}
+                className="piano-chess__window"
+                style={{ '--pc-window-ms': `${DOUBLE_WINDOW_MS}ms` }}
+                aria-hidden="true"
+              >
+                <span className="piano-chess__window-bar" />
+              </div>
+            )}
           </div>
 
           {/* WHAT ELSE YOU CAN PLAY. Drawn as keys, because no child can act on

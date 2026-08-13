@@ -11,8 +11,22 @@
  * hand and whether the square is a legal destination.
  */
 
-/** How long after the first release the second chord may be RECOGNISED. */
-export const DOUBLE_WINDOW_MS = 800;
+/**
+ * How long after the first release the second chord may be RECOGNISED.
+ *
+ * Deliberately generous, and not a reaction-time test. The window is charged
+ * for time the player does not control: recognition costs a settle (see
+ * DEFAULT_SETTLE_MS in chordCursor), so the fingers have the window MINUS the
+ * settle to lift and re-press. It also has to cover reading the prompt that
+ * asks for the repeat in the first place — the logged misses that prompted
+ * this value were players pausing to read, at ~2.1s and ~2.9s, not players
+ * fumbling a fast repeat.
+ *
+ * The cost of generosity is bounded: a false double needs the SAME square
+ * played twice with nothing in between, it only lifts a piece (never moves
+ * one), and the escape gesture puts it back.
+ */
+export const DOUBLE_WINDOW_MS = 2500;
 
 export function createSelection() {
   return { lastSquare: null, lastAt: 0, swallowSquare: null };
