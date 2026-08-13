@@ -33,6 +33,7 @@ import useContentMode from '@/hooks/fitness/useContentMode.js';
 import SessionCameraCapture from './SessionCameraCapture.jsx';
 import { getLogger } from '@/lib/logging/Logger.js';
 import { computeCycleDimStyle } from './cycleDimStyle.js';
+import { computeStudyDims } from './studyLayout.js';
 import { useScreenDataRefetch } from '@/screen-framework/data/ScreenDataProvider.jsx';
 
 // Helper function to generate Plex thumbnail URLs for specific timestamps
@@ -199,6 +200,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   // Realtime player-frame capture for the session time-lapse (role:'player').
   // Mirrors the webcam capture; reuses the same save_screenshot pipeline.
   const timelapseCfg = (fitnessConfiguration?.fitness || fitnessConfiguration || {})?.timelapse || {};
+  // Study-mode layout config (footer share, etc). Task 9 reuses this exact binding.
+  const studyCfg = (fitnessConfiguration?.fitness || fitnessConfiguration || {})?.study_mode || {};
 
   // Content mode drives capture suppression and the study UX. `resolved` is false while
   // labels are still being fetched for items that arrived without them — capture stays
@@ -918,6 +921,22 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
         if (!viewportEl) return;
         const { width: totalW, height: totalH } = viewportEl.getBoundingClientRect();
 
+        // Study mode: reserve the footer band FIRST and clamp video height to what
+        // remains, instead of sizing width-first and giving the footer the leftover
+        // (which is how the footer gets stranded to near-nothing on a 16:9 display).
+        // No sidebar is reserved — there's no workout to monitor — and the sub-5%
+        // fullscreen auto-snap below never runs for this branch.
+        if (contentMode.studyUx) {
+          const { videoW: sw, videoH: sh, footerHeight: sf } =
+            computeStudyDims({ totalW, totalH, footerRatio: studyCfg.footer_height_ratio });
+          hasInitializedLayoutRef.current = true;
+          setVideoDims(prev => (prev.width === sw && prev.height === sh
+            && prev.hideFooter === false && prev.footerHeight === sf)
+            ? prev
+            : { width: sw, height: sh, hideFooter: false, footerHeight: sf });
+          return;
+        }
+
         // Effective sidebar width based on sidebar size mode
         let effectiveSidebar = 0;
         if (playerMode === 'fullscreen') {
@@ -989,7 +1008,10 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     return () => {
       ro.disconnect();
     };
-  }, [viewportRef, sidebarSizeMode, playerMode]);
+    // contentMode.studyUx resolves asynchronously (starts false, may flip true once the
+    // show-label lookup returns) — it must be a dep so the layout re-derives on that flip
+    // without waiting for an unrelated resize.
+  }, [viewportRef, sidebarSizeMode, playerMode, contentMode.studyUx, studyCfg.footer_height_ratio]);
 
   // Recompute when stackMode flips (its className may change per-thumb width) to allow exiting when space increases
   useEffect(() => {
@@ -1656,6 +1678,16 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     }
   }, [playerMode]);
 
+  // Study mode never uses fullscreen — the footer must stay reachable. contentMode.studyUx
+  // can flip true mid-session (async label resolution), so this has to be a live effect
+  // rather than a one-time check. It only ever pushes playerMode OUT of fullscreen, and
+  // only when studyUx is true, so it cannot fight a user-initiated toggle back into
+  // fullscreen while studyUx is false, nor loop (setPlayerMode('normal') is a no-op once
+  // playerMode is already 'normal').
+  useEffect(() => {
+    if (contentMode.studyUx && playerMode === 'fullscreen') setPlayerMode('normal');
+  }, [contentMode.studyUx, playerMode]);
+
   // Check if there are previous/next items in the queue
   const currentIndex = currentItem ? queue.findIndex(item => item.id === currentItem?.id) : -1;
   const hasPrev = currentIndex > 0;
@@ -1667,7 +1699,9 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   // Sidebar width for render (mirrors compute logic; may lag first frame until measure)
   const viewportW = viewportRef?.current?.clientWidth || 0;
   let sidebarRenderWidth;
-  if (playerMode === 'fullscreen') sidebarRenderWidth = 0; else sidebarRenderWidth = (sidebarSizeMode === 'large' ? Math.round(viewportW * 0.45) : DEFAULT_SIDEBAR);
+  // Study mode: no sidebar — there's no workout to monitor.
+  if (playerMode === 'fullscreen' || contentMode.studyUx) sidebarRenderWidth = 0;
+  else sidebarRenderWidth = (sidebarSizeMode === 'large' ? Math.round(viewportW * 0.45) : DEFAULT_SIDEBAR);
 
   const toggleFullscreen = useCallback(() => {
     setPlayerMode(m => m === 'fullscreen' ? (lastNonFullscreenRef.current || 'normal') : 'fullscreen');
@@ -1708,6 +1742,10 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   }, []);
 
   const handleVideoContainerPointerDown = useCallback((event) => {
+    // Study mode: taps must never toggle fullscreen — losing the footer mid-scrub is
+    // the exact failure this mode exists to prevent. Suppressing the pause scrim also
+    // removed the shield that used to block paused taps from reaching this handler.
+    if (contentMode.studyUx) return;
     if (typeof event.button === 'number' && event.button !== 0) return;
     // BUG-04 Fix: Ignore events that occurred before this component was mounted
     const eventTime = event.nativeEvent?.timeStamp || performance.now();
@@ -1732,7 +1770,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       button: event.button
     });
     toggleFullscreen();
-  }, [toggleFullscreen, logFitnessEvent, shouldBlockFullscreenToggle]);
+  }, [toggleFullscreen, logFitnessEvent, shouldBlockFullscreenToggle, contentMode.studyUx]);
 
   const handleVideoContainerClickCapture = useCallback((event) => {
     logFitnessEvent('fullscreen-click-capture', {
@@ -1742,6 +1780,10 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   }, [logFitnessEvent]);
 
   const handleRootPointerDownCapture = useCallback((event) => {
+    // Study mode: taps must never toggle fullscreen — losing the footer mid-scrub is
+    // the exact failure this mode exists to prevent. Suppressing the pause scrim also
+    // removed the shield that used to block paused taps from reaching this handler.
+    if (contentMode.studyUx) return;
     if (typeof event.button === 'number' && event.button !== 0) return;
     // BUG-04 Fix: Ignore events that occurred before this component was mounted
     const eventTime = event.nativeEvent?.timeStamp || performance.now();
@@ -1769,7 +1811,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       button: event.button
     });
     toggleFullscreen();
-  }, [toggleFullscreen, logFitnessEvent, shouldBlockFullscreenToggle]);
+  }, [toggleFullscreen, logFitnessEvent, shouldBlockFullscreenToggle, contentMode.studyUx]);
 
   const allowLoadingOverlayFullscreen = Boolean(resilienceState?.waitingToPlay || resilienceState?.stalled);
 
@@ -1901,7 +1943,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   );
 
   // Sidebar slot content
-  const sidebarContent = hasActiveItem ? (
+  // Study mode: no sidebar — there's no workout to monitor.
+  const sidebarContent = (hasActiveItem && !contentMode.studyUx) ? (
     <FitnessSidebar
       playerRef={playerRef}
       videoVolume={videoVolume}
