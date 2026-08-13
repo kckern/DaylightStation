@@ -2,6 +2,11 @@ export { validateQuestionBank, summarizeQuestionBank } from './questionBankValid
 export { gradeAnswer, givenShapeError } from './grading.mjs';
 export { createAttempt, isRegradeCorrection } from './attempt.mjs';
 export { bankContentRev } from './bankRev.mjs';
+export {
+  normalizeQuestionBankV2, issueWorksheet,
+  gradeIssuedWorksheet, remediationReceipt,
+} from './questionBankV2.mjs';
+export { reviewAtlasCurriculum } from './atlasCurriculumReview.mjs';
 export { GuestForbiddenError, SessionGoneError } from './errors.mjs';
 export { isAdult, ADULT_AGE } from './people.mjs';
 export { CATEGORIES, resolveCategory } from './categories.mjs';

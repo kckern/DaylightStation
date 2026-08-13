@@ -56,6 +56,7 @@ function topologyCatalog() {
     component_profiles: {
       floor: { asset: 'component.floor', component: 'fill', allowed_surfaces: ['solid'], render_layer: 'ground' },
       hazard: { asset: 'component.floor', component: 'fill', allowed_surfaces: ['solid'], provides_surface: 'liquid', render_layer: 'ground' },
+      'liquid-detail': { asset: 'component.floor', component: 'fill', allowed_surfaces: ['liquid'], render_layer: 'ground' },
     },
     prefabs: {
       'grove.single': { world: { footprint: { size: [16, 16] }, allowed_materials: ['grass'], allowed_surfaces: ['solid'], allowed_planes: ['ground'], allowed_biomes: ['test'], boundary_policy: 'allow', collision: 'passable', slots: [] }, layers: [{ asset: 'prop.tree', frame: 'a', at: [0, 0] }] },
@@ -68,7 +69,7 @@ test('strict v2 catalog and all mounted showcase scenes compile deterministicall
   const catalog = loadMountedCatalog();
   assert.deepEqual(validatePresentationCatalog(catalog), { valid: true, errors: [] });
   const files = fs.readdirSync(path.join(showcaseRoot, 'scenes')).filter((file) => file.endsWith('.yml')).sort();
-  assert.equal(files.length, 11);
+  assert.equal(files.length, 14);
   for (const file of files) {
     const scene = YAML.parse(fs.readFileSync(path.join(showcaseRoot, 'scenes', file), 'utf8'));
     assert.deepEqual(validateTopDownScene(scene, catalog), { valid: true, errors: [] });
@@ -83,7 +84,7 @@ test('strict v2 catalog and all mounted showcase scenes compile deterministicall
   const semantic = YAML.parse(fs.readFileSync(path.join(showcaseRoot, 'scenes/11-semantic-adventure.yml'), 'utf8'));
   const semanticPlan = compileTopDownScene(catalog, semantic);
   assert.ok(semanticPlan.diagnostics.generated_groups.length >= 5);
-  assert.ok(semanticPlan.diagnostics.inside_corners_resolved >= 10);
+  assert.ok(semanticPlan.diagnostics.inside_corners_resolved >= 4, 'semantic scene retains compound concavity coverage after organic coastline generation');
 });
 
 test('v2 scenes reject per-placement scale, z, depth, and shadow escape hatches', { skip: mountedSkip }, () => {
@@ -118,6 +119,111 @@ test('compiler resolves diagonal-only inner corners and counts connector joins',
   assert.equal(plan.commands.some((command) => command.asset === 'terrain.water' && command.frame === 'inner.nw'), true);
 });
 
+test('overlay materials cannot masquerade as terrain fills', () => {
+  const catalog = topologyCatalog();
+  catalog.materials.overlay = { ...catalog.materials.grass, fill_mode: 'overlay' };
+  const scene = {
+    schema_version: 2, kind: 'top-down-scene', id: 'overlay-fill', catalog: 'topology-test', style_profile: 'pixel16.topdown', logical_size: [48, 48], pixel_scale: 2,
+    grid: { cell: [16, 16] }, terrain: { base: 'overlay', regions: [] }, placements: [],
+  };
+  const result = validateTopDownScene(scene, catalog);
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some((error) => error.includes('base material cannot use overlay fill_mode')));
+  scene.terrain.base = 'grass'; scene.terrain.regions = [{ id: 'sparse', material: 'overlay', cells: [[1, 1]] }];
+  const regionResult = validateTopDownScene(scene, catalog);
+  assert.equal(regionResult.valid, false);
+  assert.ok(regionResult.errors.some((error) => error.includes('material cannot use overlay fill_mode')));
+});
+
+test('catalog materials can seed deterministic surface-aware detail layers', () => {
+  const catalog = topologyCatalog();
+  catalog.component_profiles['liquid-detail'].opacity = 0.5;
+  catalog.materials.water.details = [{ profile: 'liquid-detail', density: 1, interior_only: true, seed: 17 }];
+  assert.deepEqual(validatePresentationCatalog(catalog), { valid: true, errors: [] });
+  const scene = {
+    schema_version: 2, kind: 'top-down-scene', id: 'material-details', catalog: 'topology-test', style_profile: 'pixel16.topdown', logical_size: [48, 48], pixel_scale: 2,
+    grid: { cell: [16, 16] }, terrain: { base: 'water', regions: [] }, placements: [],
+  };
+  const first = compileTopDownScene(catalog, scene); const second = compileTopDownScene(catalog, scene);
+  const details = first.commands.filter((command) => command.provenance === 'material-detail:water:0');
+  assert.equal(details.length, 1);
+  assert.equal(details[0].opacity, 0.5);
+  assert.deepEqual(details, second.commands.filter((command) => command.provenance === 'material-detail:water:0'));
+
+  catalog.materials.water.details[0].density = 0;
+  assert.ok(validatePresentationCatalog(catalog).errors.some((error) => error.includes('density must be greater than 0')));
+  catalog.materials.water.details[0].density = 1;
+  catalog.component_profiles['liquid-detail'].opacity = 2;
+  assert.ok(validatePresentationCatalog(catalog).errors.some((error) => error.includes('opacity must be greater than 0')));
+});
+
+test('authored component profiles can require material-interior cells', () => {
+  const catalog = topologyCatalog();
+  catalog.component_profiles['liquid-detail'].interior_only = true;
+  assert.deepEqual(validatePresentationCatalog(catalog), { valid: true, errors: [] });
+  const scene = {
+    schema_version: 2, kind: 'top-down-scene', id: 'interior-component', catalog: 'topology-test', style_profile: 'pixel16.topdown', logical_size: [48, 48], pixel_scale: 2,
+    grid: { cell: [16, 16] }, terrain: { base: 'water', regions: [] }, components: [{ id: 'ripple', profile: 'liquid-detail', cells: [[1, 1]] }], placements: [],
+  };
+  assert.doesNotThrow(() => compileTopDownScene(catalog, scene));
+  scene.components[0].cells = [[0, 0]];
+  assert.throws(() => compileTopDownScene(catalog, scene), /requires an interior water cell/);
+  catalog.component_profiles['liquid-detail'].interior_only = 'yes';
+  assert.ok(validatePresentationCatalog(catalog).errors.some((error) => error.includes('interior_only must be boolean')));
+});
+
+test('rounded terrain interfaces require matching reviewed outer-corner semantics', () => {
+  const catalog = topologyCatalog();
+  catalog.assets['terrain.water'].autotile.outer_corner_mode = 'native';
+  catalog.assets['terrain.water'].autotile.outer_corner_style = 'rounded';
+  catalog.terrain_interfaces.shore.corner_profile = { style: 'rounded', minimum_cutback_ratio: 0.25 };
+  assert.deepEqual(validatePresentationCatalog(catalog), { valid: true, errors: [] });
+  catalog.assets['terrain.water'].autotile.outer_corner_style = 'square';
+  assert.ok(validatePresentationCatalog(catalog).errors.some((error) => error.includes('asset outer_corner_style must match rounded')));
+});
+
+test('multi-material joins compose topology-compatible target-palette variants by contact wedge', () => {
+  const catalog = topologyCatalog();
+  catalog.assets['terrain.water.field-palette'] = {
+    extends: 'terrain.water',
+    tags: ['terrain', 'palette-normalized'],
+    source: 'assets/water-field-palette.png',
+    source_sha256: '1'.repeat(64),
+  };
+  catalog.materials.path = { ...catalog.materials.grass, fill: { asset: 'terrain.grass', frame: 'fill' } };
+  catalog.assets['terrain.grass'].autotile = { topology: 'cardinal-4', positive: { fallback: 'fill' } };
+  catalog.terrain_interfaces['grass-to-path'] = { inside: 'grass', outside: 'path', asset: 'terrain.grass', polarity: 'positive' };
+  catalog.terrain_interfaces['grass-to-water'] = { inside: 'grass', outside: 'water', asset: 'terrain.grass', polarity: 'positive' };
+  catalog.terrain_interfaces['water-to-path'] = { inside: 'water', outside: 'path', asset: 'terrain.water', polarity: 'positive' };
+  catalog.terrain_interfaces.shore.asset = 'terrain.water.field-palette';
+  const scene = {
+    schema_version: 2, kind: 'top-down-scene', id: 'palette-junction', catalog: 'topology-test', style_profile: 'pixel16.topdown', logical_size: [48, 48], pixel_scale: 2,
+    grid: { cell: [16, 16] }, terrain: { base: 'path', regions: [
+      { id: 'field', material: 'grass', cells: [[0, 1]] },
+      { id: 'pool', material: 'water', cells: [[1, 1]] },
+    ] }, placements: [],
+  };
+  const plan = compileTopDownScene(catalog, scene);
+  const fieldWedge = plan.commands.find((command) => command.provenance === 'interface:shore' && command.at[0] === 16 && command.at[1] === 16);
+  assert.equal(fieldWedge.asset, 'terrain.water.field-palette');
+  assert.deepEqual(fieldWedge.clip_polygon, [[0, 16], [0, 0], [8, 8]]);
+  assert.ok(plan.commands.some((command) => command.provenance === 'interface:water-to-path' && command.at[0] === 16 && command.at[1] === 16 && command.clip_polygon === undefined));
+
+  catalog.assets['terrain.water.field-palette'].autotile = { topology: 'cardinal-4', positive: { fallback: 'base' } };
+  assert.throws(() => compileTopDownScene(catalog, scene), /incompatible interface assets at a multi-material join/);
+});
+
+test('connector cells are structural occupancy for authored placements', () => {
+  const catalog = topologyCatalog();
+  const scene = {
+    schema_version: 2, kind: 'top-down-scene', id: 'connector-occupancy', catalog: 'topology-test', style_profile: 'pixel16.topdown', logical_size: [48, 48], pixel_scale: 2,
+    grid: { cell: [16, 16] }, terrain: { base: 'grass', regions: [] },
+    connectors: [{ id: 'wall', profile: 'fence', cells: [[0, 1], [1, 1], [2, 1]], origin: [0, 0] }],
+    placements: [{ asset: 'prop.tree', frame: 'a', at: [24, 32] }],
+  };
+  assert.throws(() => compileTopDownScene(catalog, scene), /footprint intersects connector wall/);
+});
+
 test('semantic terrain shapes and placement groups compile deterministically without overlap', () => {
   const catalog = topologyCatalog();
   const scene = {
@@ -143,6 +249,20 @@ test('semantic terrain shapes and placement groups compile deterministically wit
   assert.deepEqual(new Set(first.commands.filter((command) => command.provenance?.startsWith('placement:trees.')).map((command) => command.frame)), new Set(['a', 'b']));
 });
 
+test('semantic routes target catalog-declared placement entrances', () => {
+  const catalog = topologyCatalog();
+  catalog.assets['prop.tree'].world = { ...catalog.assets['prop.tree'].world, route_anchor: [16, -16] };
+  const scene = {
+    schema_version: 2, kind: 'top-down-scene', id: 'semantic-entrance', catalog: 'topology-test', style_profile: 'pixel16.topdown', logical_size: [64, 64], pixel_scale: 2,
+    grid: { cell: [16, 16] },
+    terrain: { base: 'grass', regions: [{ id: 'route', material: 'water', shapes: [{ kind: 'route', points: [[0, 0], { placement: 'destination' }], width: 1 }] }] },
+    placements: [{ id: 'destination', asset: 'prop.tree', frame: 'a', at: [32, 48] }],
+  };
+  const plan = compileTopDownScene(catalog, scene);
+  assert.equal(plan.material_grid[2][3], 'water');
+  assert.equal(plan.material_grid[3][2], 'grass');
+});
+
 test('terrain shapes may continue beyond a declared viewport edge without authoring clipped cells', () => {
   const catalog = topologyCatalog();
   const scene = {
@@ -154,6 +274,31 @@ test('terrain shapes may continue beyond a declared viewport edge without author
   assert.equal(plan.material_grid.every((row) => row.length === 4), true);
   const invalid = structuredClone(scene); delete invalid.terrain.regions[0].continues;
   assert.throws(() => compileTopDownScene(catalog, invalid), /exceeds viewport/);
+});
+
+test('semantic blobs can bound adjacent-row edge movement to prevent terrain tongues', () => {
+  const catalog = topologyCatalog();
+  const scene = {
+    schema_version: 2, kind: 'top-down-scene', id: 'smooth-coast', catalog: 'topology-test', style_profile: 'pixel16.topdown', logical_size: [128, 128], pixel_scale: 2,
+    grid: { cell: [16, 16] }, terrain: { base: 'grass', regions: [{ id: 'lake', material: 'water', shapes: [{ kind: 'blob', center: [8, 3], radius: [6, 4], roughness: 1, edge_step: 1, seed: 19 }], continues: ['east'] }] }, placements: [],
+  };
+  const plan = compileTopDownScene(catalog, scene);
+  const leftEdges = plan.material_grid.map((row) => row.indexOf('water')).filter((left) => left >= 0);
+  for (let index = 1; index < leftEdges.length; index += 1) assert.ok(Math.abs(leftEdges[index] - leftEdges[index - 1]) <= 1);
+  const invalid = structuredClone(scene); invalid.terrain.regions[0].shapes[0].edge_step = 0;
+  assert.ok(validateTopDownScene(invalid, catalog).errors.some((error) => error.includes('edge_step')));
+});
+
+test('terrain regions can eliminate one-cell fringe runs with a minimum thickness contract', () => {
+  const catalog = topologyCatalog();
+  const scene = {
+    schema_version: 2, kind: 'top-down-scene', id: 'thick-fringe', catalog: 'topology-test', style_profile: 'pixel16.topdown', logical_size: [80, 80], pixel_scale: 2,
+    grid: { cell: [16, 16] }, terrain: { base: 'grass', regions: [{ id: 'pool', material: 'water', cells: [[2, 2]], minimum_thickness: 2 }] }, placements: [],
+  };
+  const plan = compileTopDownScene(catalog, scene); const water = plan.material_grid.flat().filter((material) => material === 'water');
+  assert.equal(water.length, 4);
+  const invalid = structuredClone(scene); invalid.terrain.regions[0].minimum_thickness = 0;
+  assert.ok(validateTopDownScene(invalid, catalog).errors.some((error) => error.includes('minimum_thickness')));
 });
 
 test('terrain and composition shapes support deterministic boolean exclusions', () => {

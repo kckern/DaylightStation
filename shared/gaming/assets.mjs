@@ -22,16 +22,32 @@ function mergeTemplate(base, override) {
   return merged;
 }
 
-/** Expand finite YAML asset templates without mutating the authored catalog. */
+/** Expand finite YAML asset templates and asset variants without mutating the authored catalog. */
 export function materializeAssetCatalog(catalog) {
   const templates = catalog?.asset_templates ?? {};
+  const authoredAssets = catalog?.assets ?? {};
   const assets = {};
-  for (const [id, asset] of Object.entries(catalog?.assets ?? {})) {
-    if (!asset?.extends) { assets[id] = structuredClone(asset); continue; }
-    const template = templates[asset.extends];
-    if (!template) throw new Error(`asset ${id}: unknown template ${asset.extends}`);
-    assets[id] = mergeTemplate(template, asset);
-  }
+  const resolving = [];
+
+  const resolveAsset = (id) => {
+    if (assets[id]) return assets[id];
+    const asset = authoredAssets[id];
+    if (!asset?.extends) return (assets[id] = structuredClone(asset));
+
+    const cycleStart = resolving.indexOf(id);
+    if (cycleStart >= 0) throw new Error(`asset inheritance cycle: ${[...resolving.slice(cycleStart), id].join(' -> ')}`);
+    resolving.push(id);
+    const extendsAsset = Object.hasOwn(authoredAssets, asset.extends);
+    const base = templates[asset.extends]
+      ?? (extendsAsset ? resolveAsset(asset.extends) : null);
+    resolving.pop();
+    if (!base) throw new Error(`asset ${id}: unknown template or asset ${asset.extends}`);
+    const resolved = mergeTemplate(base, asset);
+    if (extendsAsset) resolved.variant_of = asset.extends;
+    return (assets[id] = resolved);
+  };
+
+  for (const id of Object.keys(authoredAssets)) resolveAsset(id);
   return { ...catalog, assets };
 }
 
@@ -171,6 +187,9 @@ export function validateAssetCatalog(catalog) {
     }
     if (asset?.autotile !== undefined) {
       if (asset.kind !== 'tile-sheet' || !['cardinal-4', 'cardinal-4+diagonal-corners'].includes(asset.autotile?.topology)) errors.push(`${prefix}: autotile requires a supported tile-sheet topology`);
+      if (asset.autotile?.outer_corner_mode !== undefined && !['quarter-composite', 'native'].includes(asset.autotile.outer_corner_mode)) errors.push(`${prefix}: autotile outer_corner_mode must be quarter-composite or native`);
+      if (asset.autotile?.outer_edge_mode !== undefined && !['quarter-composite', 'native'].includes(asset.autotile.outer_edge_mode)) errors.push(`${prefix}: autotile outer_edge_mode must be quarter-composite or native`);
+      if (asset.autotile?.outer_corner_style !== undefined && !['square', 'rounded'].includes(asset.autotile.outer_corner_style)) errors.push(`${prefix}: autotile outer_corner_style must be square or rounded`);
       for (const polarity of ['positive', 'negative']) {
         const mapping = asset.autotile?.[polarity];
         if (polarity === 'positive' && (!mapping || typeof mapping !== 'object')) errors.push(`${prefix}: autotile needs a positive mapping`);

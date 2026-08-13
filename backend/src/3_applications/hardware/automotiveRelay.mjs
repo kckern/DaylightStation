@@ -53,7 +53,22 @@ const DEFAULT_SCHEMA = 't,lat,lon,speed_kph,rpm,coolant_c,fuel_pct,batt_v';
 const UNITS = {
   t: 's', lat: 'deg', lon: 'deg', speed_kph: 'km/h',
   rpm: 'rpm', coolant_c: 'C', fuel_pct: '%', batt_v: 'V',
+  alt_m: 'm', heading: 'deg', hdop: '', sat: '',
 };
+
+/**
+ * GNSS extras and their firmware "no reading" sentinels.
+ *
+ * These ride in the same GPS_DATA struct the firmware already reads; they were
+ * discarded before. Each has its own sentinel because -1 is a legitimate
+ * altitude (below sea level) but not a legitimate satellite count.
+ */
+const GNSS_EXTRAS = [
+  { field: 'alt_m', absent: (v) => v <= -9000 },      // -9999 = no reading
+  { field: 'heading', absent: (v) => v < 0 },          // -1
+  { field: 'hdop', absent: (v) => v < 0 },             // -1
+  { field: 'sat', absent: (v) => v < 0 },              // -1
+];
 
 /** Fields that only carry meaning when an engine-bus session was established. */
 const ECU_FIELDS = ['rpm', 'coolant_c', 'fuel_pct'];
@@ -131,7 +146,16 @@ export function createAutomotiveRelay({
     }
 
     if (message.type === 'event') {
-      const record = { id, kind: 'event', event: String(message.event || 'unknown'), ts };
+      // Most events are a bare name. `harsh-motion` carries a magnitude and raw
+      // axes, and dropping them would leave a breadcrumb that says something
+      // happened without saying what — so known payload fields ride along.
+      const detail = {};
+      if (Number.isFinite(Number(message.g))) detail.g = Number(message.g);
+      if (Array.isArray(message.acc)) detail.acc = message.acc.map(Number).filter(Number.isFinite);
+      if (Number.isFinite(Number(message.speed_kph)) && Number(message.speed_kph) >= 0) {
+        detail.speed_kph = Number(message.speed_kph);
+      }
+      const record = { id, kind: 'event', event: String(message.event || 'unknown'), ...detail, ts };
       eventBus.broadcast(topic, record);
       enqueue('event', id, () => appendRecord(historyRoot, id, record, at, timezone));
       return;
@@ -222,7 +246,7 @@ const numOrNull = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
  * records by the same rule; a day log must not mix both conventions.
  */
 export function normalizeSnapshotReadings(source) {
-  return {
+  const normalized = {
     battery_v: reading(source.battery_v, 'batt_v'),
     fuel_pct: reading(source.fuel_pct, 'fuel_pct'),
     coolant_c: numOrNull(source.coolant_c),
@@ -230,6 +254,38 @@ export function normalizeSnapshotReadings(source) {
     speed_kph: numOrNull(source.speed_kph),
     gps: fixOrNull(source.gps),
   };
+
+  // The slow-moving diagnostic set: ambient/oil temperature, engine load,
+  // distance and time driven with the MIL on, warm-ups and time since codes
+  // were cleared. The firmware only emits PIDs the car actually answered, so
+  // whatever arrives is real — pass it through rather than enumerating a list
+  // that would need editing every time a PID is added to the probe table.
+  //
+  // `time_since_cleared` is the one worth knowing about: a DROP means somebody
+  // cleared the codes, which is precisely what resets the 0x31 distance counter
+  // the odometer accumulates from.
+  if (source.diag && typeof source.diag === 'object') {
+    const diag = {};
+    for (const [key, value] of Object.entries(source.diag)) {
+      const n = numOrNull(value);
+      if (n !== null) diag[key] = n;
+    }
+    if (Object.keys(diag).length) normalized.diag = diag;
+  }
+
+  // Identity, straight from the ECU. Worth persisting because it is the one
+  // field that proves WHICH car produced this history — the device is portable.
+  if (typeof source.vin === 'string' && source.vin.trim()) normalized.vin = source.vin.trim();
+
+  const counters = {
+    distance_since_cleared_km: numOrNull(source.distance_since_cleared_km),
+    odometer_km: numOrNull(source.odometer_km),
+  };
+  for (const [key, value] of Object.entries(counters)) {
+    if (value !== null && value >= 0) normalized[key] = value;
+  }
+
+  return normalized;
 }
 
 /** A single reading, with the firmware's per-field "no reading" sentinel mapped to null. */
@@ -373,6 +429,13 @@ export function buildTripRecord(id, tripId, meta, rawSamples, at, ts, timezone) 
     const batt = reading(col(row, 'batt_v'), 'batt_v');
     if (batt !== null) sample.batt_v = batt;
 
+    // Absent key, never a sentinel — same rule the ECU fields follow. A stored
+    // `sat: -1` would read as a satellite count downstream.
+    for (const { field, absent } of GNSS_EXTRAS) {
+      const value = col(row, field);
+      if (value !== null && !absent(value)) sample[field] = value;
+    }
+
     return sample;
   });
 
@@ -382,6 +445,7 @@ export function buildTripRecord(id, tripId, meta, rawSamples, at, ts, timezone) 
   return {
     meta: {
       vehicle: id,
+      ...odometerCounters(meta),
       trip_id: tripId,                                    // device id, kept for ack correlation
       started: startedMs ? formatIsoLocal(new Date(startedMs), timezone) : null,
       ended: endedMs ? formatIsoLocal(new Date(endedMs), timezone) : null,
@@ -398,6 +462,27 @@ export function buildTripRecord(id, tripId, meta, rawSamples, at, ts, timezone) 
     units: Object.fromEntries(Object.entries(UNITS).filter(([k]) => present.has(k))),
     samples,
   };
+}
+
+/**
+ * The trip's OBD odometer anchors, when the ECU answered for them.
+ *
+ * `distance_*` is PID 0x31 ("distance since codes cleared") and is the mileage
+ * source: standard Mode 01 and wheel-derived, so it neither undercounts like
+ * GPS nor loses the span at the start of a drive that standby slept through.
+ * `odometer_*` is PID 0xA6, the true odometer, which most cars refuse.
+ *
+ * Absent keys rather than zeros, matching the rule the rest of this file
+ * follows: the firmware emits -1 for "no reading", and a persisted 0 would read
+ * as a car that has genuinely travelled nothing since its codes were cleared.
+ */
+function odometerCounters(meta) {
+  const counters = {};
+  for (const key of ['distance_start_km', 'distance_end_km', 'odometer_start_km', 'odometer_end_km']) {
+    const value = numOrNull(meta[key]);
+    if (value !== null && value >= 0) counters[key] = value;
+  }
+  return counters;
 }
 
 const round = (n, places) => Number(n.toFixed(places));

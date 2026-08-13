@@ -104,15 +104,19 @@ calibration against the real car: resting and charging voltage vary by battery,
 alternator and temperature.
 
 **Tradeoff:** at a 60 s check interval, up to ~60 s at the start of a drive goes
-unlogged. A MEMS motion interrupt would remove this and is the proper follow-up.
+unlogged. **This still stands.** A MEMS motion interrupt would remove it, but the
+sensor's INT line is not routed to any GPIO named in the board pin map — see
+[Motion sensor](#motion-sensor--what-it-does-and-the-wake-it-cannot-do). The
+motion *vote* added 2026-08-12 narrows the window without closing it.
 
 ## Messages sent to the bus
 
 ```json
 {"source":"obd-relay","type":"hello","id":"family-car","fw":"0.1.0","ts":123}
-{"source":"obd-relay","type":"snapshot","id":"family-car","battery_v":14.2,"fuel_pct":63,"coolant_c":88,"rpm":840,"speed_kph":0,"dtc":[],"gps":{"lat":0,"lon":0,"sats":9},"ts":123}
-{"source":"obd-relay","type":"trip","id":"family-car","trip_id":"7f3a","seq":0,"final":true,"meta":{"started":123,"ended":456,"samples":840},"samples":[[t,lat,lon,speed,rpm,coolant,fuel,batt]]}
+{"source":"obd-relay","type":"snapshot","id":"family-car","battery_v":14.2,"fuel_pct":63,"coolant_c":88,"rpm":840,"speed_kph":0,"dtc":[],"gps":{"lat":0,"lon":0,"sats":9},"distance_since_cleared_km":4120,"odometer_km":-1,"diag":{"ambient_temp":22,"engine_oil_temp":95,"time_since_cleared":4300},"vin":"...","ts":123}
+{"source":"obd-relay","type":"trip","id":"family-car","trip_id":"7f3a","seq":0,"final":true,"meta":{"started":123,"ended":456,"samples":840,"distance_start_km":4100,"distance_end_km":4120},"samples":[[t,lat,lon,speed,rpm,coolant,fuel,batt,alt,heading,hdop,sat]]}
 {"source":"obd-relay","type":"event","id":"family-car","event":"wifi-joined","ts":123}
+{"source":"obd-relay","type":"event","id":"family-car","event":"harsh-motion","g":0.42,"acc":[0.1,-0.4,0.9],"speed_kph":48,"ts":123}
 ```
 
 Trips may be chunked (`seq`/`final`); the backend reassembles by
@@ -209,12 +213,145 @@ answered. Run it with the ignition on before believing anything below.
 | Want | Reality |
 |---|---|
 | Check-engine / DTCs | **Yes.** Standard Mode 03, reliable on any OBD-II car. Also distance & time with MIL on, warm-ups and distance since codes cleared. |
-| Odometer | **Probably not.** `PID_ODOMETER` (0xA6) is in later J1979 revisions but rarely implemented; usually needs manufacturer-specific requests. Probed anyway — `/pids` will say. |
+| Odometer | **Probably not directly.** `PID_ODOMETER` (0xA6) is in later J1979 revisions but rarely implemented. But see [Mileage](#mileage-via-pid-0x31) — 0x31 gets there another way. |
 | Oil life / oil change | **No.** Not standard OBD-II; manufacturer-specific. Engine oil *temperature* (0x5C) is standard and is probed. |
 | Tyre pressure (TPMS) | **No.** Not on generic OBD-II at all — separate module, manufacturer-specific. |
 
 `/diagnostics` omits unsupported readings rather than reporting a fake `0`, and
 lists them under `unsupported` so absence is visible rather than implied.
+
+### Trip clocks and the `unknown_` prefix (fixed in firmware, unverified)
+
+A trip filed as `unknown_<date>_<time>_<id>.yml` with `time_source:
+boot-relative` had no recoverable wall clock and is dated by **arrival**, not by
+when it happened.
+
+**Measured 2026-08-12: every real drive was `unknown_`, and the only two trips
+with proper timestamps were the car moving 0.012 km and 0.033 km in the garage.**
+That inversion is the tell.
+
+Cause: `epochMs()` returned 0 unless `timeSynced`, a flag documented as "NTP
+succeeded **this power session**" — a plain `static`, so it resets on every
+boot. The device deep-sleeps while parked and re-runs `setup()` on each wake, so
+starting the engine always produced `timeSynced == false`, and `tripOpen()`
+stamped `started_epoch_ms = 0`. Driving away from home means NTP never runs, so
+the whole drive stayed clockless. Meanwhile the ESP32's RTC had been running the
+entire time, still holding a good epoch — the firmware simply refused to read it.
+
+The boot-relative rebase can't rescue these either: it needs `upload_boot_ms >=
+ended_boot_ms`, and a trip that outlives its boot has nothing left to rebase
+against (`millis()` reset). That is why backlogged trips uploaded in one burst
+are all clockless.
+
+Fix: `rtcClockValid` in `RTC_DATA_ATTR` (survives deep sleep) plus a
+plausibility floor, so a clock carried across sleep counts as knowing the time.
+`epochMs()` still returns 0 for a genuinely unknown clock — the caller contract
+is unchanged.
+
+**Caveats.** RTC drift across a long park is **unmeasured**; if the board lacks a
+32.768 kHz crystal the internal RC oscillator can drift noticeably over hours.
+It re-syncs by NTP on every arrival home. And **existing `unknown_` files are not
+retroactively fixable** — the wall time was never captured, so arrival remains
+the only honest date for them.
+
+### Signals added 2026-08-12 (compile-verified, UNVERIFIED on the car)
+
+Four things the hardware was already capable of and the firmware was discarding.
+Flash went 50.9% → 52.0%; RAM unchanged at 16.5%.
+
+**GNSS extras — free, and independent of the ECU link.** `GPS_DATA`
+(`FreematicsBase.h:49`) carries nine fields; the firmware read three. Now
+persisted: `alt_m` (elevation profile), `heading` (direction of travel), and
+`hdop` + `sat` (fix QUALITY — the difference between "no fix" and "a bad fix
+that quietly shortened this trip"). Same struct, same read, previously thrown
+away. The trip schema grew four columns; **8-column files buffered before the
+change still parse**, with the extras left at their absent sentinels.
+
+**Diagnostic PIDs now reach history.** Twelve of the fourteen diag PIDs were
+read once per ECU link and surfaced only on `/pids` and `/diagnostics` — the
+pull plane — so nothing was persisted. `refreshDistanceCounters()` now re-probes
+the whole set on the same one-minute cadence and snapshots carry a `diag` object
+with whatever the car answered: ambient and oil temperature, engine load,
+throttle, barometric, runtime, distance and time driven with the MIL on.
+
+**`time_since_cleared` is the quietly valuable one.** A DROP in it means someone
+cleared the codes — which is exactly the event that zeroes the 0x31 distance
+counter. That turns the backend's rollover-vs-reset *plausibility guess* into a
+*measurement*, on the one ambiguity in the odometer design.
+
+**VIN is persisted on snapshots.** `obd.getVIN()` was already being called and
+stored in `g_vin`; it just never left the device. It is the only field that
+proves WHICH car a given history belongs to, and the device is portable.
+
+### Motion sensor — what it does, and the wake it cannot do
+
+The board's ICM-20948 / ICM-42627 had **zero references in the firmware**. It is
+now initialised and used for two things:
+
+1. **A motion vote at each standby wake.** Voltage alone says "not charging",
+   which is also true for the first seconds of a drive while the alternator
+   catches up. If the accelerometer says the car is *moving*, the device stays up
+   regardless of the rail reading.
+2. **`harsh-motion` events** while awake, above `MEMS_EVENT_G` (0.35 g deviation
+   from rest), rate-limited to one per 3 s.
+
+**The events deliberately do NOT say "hard braking".** Classifying braking vs
+acceleration vs cornering needs to know which way the dongle is pointing, and
+that varies by car and by how far it was pushed into the port. Labelling an axis
+"longitudinal" would be a guess dressed as a measurement, so the raw axes go out
+with the magnitude and classification waits for an orientation calibration that
+does not exist yet. (Gravity gives "down" at rest; "forward" could be derived by
+correlating an axis against OBD speed changes over a few drives.)
+
+> **The wake-on-motion interrupt in the standby section below is still NOT
+> implemented, and cannot be from source alone.** It needs the sensor's INT line
+> routed to an RTC-capable GPIO so `esp_sleep_enable_ext0_wakeup` can arm it
+> during deep sleep. Searched 2026-08-12: there is no `PIN_MEMS_INT` in the board
+> pin map, nothing in the vendored library names one, and no `ext0`/`ext1` wake
+> is used anywhere. While the ESP32 deep-sleeps the sensor is unreachable, so
+> **"up to ~60 s at the start of a drive goes unlogged" still stands.** The motion
+> vote narrows that window; it does not close it. If the INT GPIO is ever
+> identified, arm it at the marked hook in the standby fast path.
+
+### Mileage via PID 0x31
+
+**Implemented in firmware, UNVERIFIED on the car.** Gated on the ECU link like
+everything else here; treat every claim below as a hypothesis until `/pids`
+returns a measured table.
+
+The mileage source is **`PID_DISTANCE` (0x31, "distance since codes cleared")**,
+not the odometer PID. It is standard Mode 01 — the same request class as speed
+and RPM — so if the ECU links at all it will very likely answer, where 0xA6
+likely will not. Being wheel-derived it has neither the GPS undercount nor the
+loss of the drive's opening span that standby sleeps through.
+
+It is a **delta source anchored to one dash reading**, never an absolute
+odometer, because it fails in two ways that both look like "the counter went
+down":
+
+- **16-bit, wraps at 65,536 km.**
+- **Resets to zero when DTCs are cleared** — routine after a shop repair.
+
+The app separates them by a plausibility window and records a reset as an
+*unmeasured span* rather than estimating into it. See
+`backend/src/2_domains/automotive/services/OdometerService.mjs`.
+
+What the firmware now does:
+
+- Caches both counters (`g_distanceKm`, `g_odometerKm`), refreshed on the OBD
+  task every `COUNTER_REFRESH_MS`. **Cached, not read on demand** — every
+  `obd.*` call is a UART round trip that must stay on core 0, and
+  `tripOpen()`/`tripClose()` run on the loop task.
+- Writes `distance_start_km` / `odometer_start_km` into the trip header, and the
+  closing values into the footer as extra CSV fields (`E,<ms>,<dist>,<odo>`).
+  **Old footers still parse** — the reader defaults both to -1, so trips
+  buffered before the update upload unchanged.
+- Emits `distance_since_cleared_km` / `odometer_km` on snapshots.
+- **-1 means "no reading", never 0.** A car that genuinely reports 0 km since a
+  recent code clear is a real answer and must stay distinguishable from silence.
+
+The backend persists these into trip `meta` (absent key when unread, matching
+the rest of the format).
 
 ### The LED (`/led`, fw 0.2.0)
 

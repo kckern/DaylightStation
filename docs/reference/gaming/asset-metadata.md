@@ -277,6 +277,9 @@ Catalogs declare the mappings explicitly:
 ```yaml
 autotile:
   topology: cardinal-4+diagonal-corners
+  outer_corner_mode: native
+  outer_corner_style: rounded
+  outer_edge_mode: native
   positive:
     nesw: water.center
     esw: water.edge.north
@@ -294,6 +297,8 @@ autotile:
 Every mask that an authored region may produce must be declared, or `fallback` may be used only while a pack remains in curation.
 
 Cardinal masks select the outside edge or corner. `cardinal-4+diagonal-corners` then checks the four diagonals. In legacy `replace` mode, `inner_corners` must contain every exact compound key. In `composite` mode, each polarity provides four transparent quadrant overlays; the renderer layers every missing corner over the selected base, so all fifteen non-empty compound combinations are representable. Missing overlays still fail closed.
+
+Outer-corner mechanism and appearance are separate facts. `outer_corner_mode: quarter-composite` reconstructs a turn from four source quadrants; `native` copies the source sheet's full hand-drawn turn cell so detail may cross the quadrant seam. `outer_edge_mode` applies the same distinction to the four cardinal middle cells: `native` retains a continuous bank, curb, or foam run that quadrant reconstruction would otherwise reduce to two repeated corner halves. `outer_corner_style: square|rounded` records the reviewed visual result, not its provenance. A presentation interface that requires a rounded profile also pixel-compares `ne/es/sw/nw` against the center frame and fails if the active interior quadrant has insufficient cutback. A label alone cannot promote a square turn.
 
 Inner-corner metadata is not sufficient when the source silhouette is wrong for the pack's authored scale. Review every concave frame at the intended `world_scale`: a quarter of a larger island can be topologically correct yet pinch a route nearly closed. Keep any corrected corner set reproducible as a derived atlas recipe, preserve the original edge colors, and pin the derived hash. Recipe layers may use `size: [width, height]` for nearest-neighbour reduction when a source corner needs a smaller visual radius.
 
@@ -318,6 +323,12 @@ Production scenes should also set `fail_on_frame_edge_contact: true`. A non-tile
 Cardinal masks use stable `n/e/s/w` order; `isolated` names a cell with no cardinal neighbours. Thin routes may explicitly map `n`, `e`, `s`, `w`, `ns`, and `ew`, but those mappings are asset capabilities—not permission to author concave shapes when the reviewed sheet has no inner-corner art.
 
 Opaque-backed effects must not be placed over tinted or translucent terrain. Derive an exact color-keyed transparent overlay atlas with the CLI, retain its YAML recipe, and pin the generated file's hash like any other runtime asset.
+
+Generic atlas recipes may also declare an exact `color_map` from source `#rrggbb` values to normalized output colors. Palette normalization must remain deterministic and recipe-backed; do not tint individual scene placements.
+
+For terrain interfaces, `color_map` also carries a compatibility invariant: opaque pixels on the receiving-material side must use that material's reviewed palette. Otherwise the interface creates a second, metadata-free boundary outside the topological edge. Keep waterline/shore detail intact while normalizing only the baked receiving fill.
+
+When one topology needs several receiving palettes, define each generated image as an asset variant with `extends: <base-asset-id>`. Asset inheritance recursively deep-merges a finite base descriptor, so geometry, frames, autotile masks, animation, scale, and world policy remain single-source while the variant overrides only tags, source, hash, and derivation provenance. Cycles and unknown bases are validation errors. Do not replace a material's base asset globally when only one interface requires the alternate palette.
 
 Assets tagged `overlay` are rejected when a named frame is fully opaque. A genuinely solid interior tile may opt in with `opaque_overlay: true`; this exception must be frame-local. `forbidden_colors` provides a second hard gate for reviewed source-background colors that must not survive derivation:
 
