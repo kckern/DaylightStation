@@ -21,6 +21,7 @@ import {
   renderLegacyScene,
   renderSceneQa,
   renderSceneQaSet,
+  auditPresentationMaterialPixels,
   approveSceneQaBaseline,
   renderTerrainTopologyQa,
   renderTerrainTopologyQaSet,
@@ -261,17 +262,56 @@ describe('gaming asset audit tooling', () => {
     context.fillStyle = '#ff0000'; context.fillRect(0, 0, 16, 16);
     context.fillStyle = '#00ff00'; context.fillRect(32, 0, 16, 16);
     context.fillStyle = '#0000ff'; context.fillRect(64, 0, 16, 16);
+    context.fillStyle = '#8844cc'; context.fillRect(0, 32, 16, 16);
     await writeFile(sourcePath, source.toBuffer('image/png'));
     const recipePath = path.join(root, 'blob.yml'); const out = path.join(root, 'derived.png');
     await writeFile(recipePath, YAML.stringify({
       source: 'assets/source.png', cell: [16, 16], outer_origin: [0, 0], outer_stride: [2, 1],
+      outer_corner_mode: 'native', outer_corner_style: 'rounded', outer_edge_mode: 'native',
       inner: { layout: 'inverse-outer' }, negative: false, color_map: { '#ff0000': '#112233' },
     }));
     await deriveBlobAutotile({ root, recipePath, out });
     const derived = await loadImage(out); const sample = createCanvas(64, 80); const sampleContext = sample.getContext('2d'); sampleContext.drawImage(derived, 0, 0);
     assert.deepEqual([...sampleContext.getImageData(0, 0, 1, 1).data], [17, 34, 51, 255]);
+    assert.deepEqual([...sampleContext.getImageData(24, 24, 1, 1).data], [136, 68, 204, 255]);
+    const nativeMetadata = await deriveBlobAutotile({ root, recipePath, out });
+    assert.equal(nativeMetadata.autotile.outer_corner_mode, 'native');
+    assert.equal(nativeMetadata.autotile.outer_corner_style, 'rounded');
+    assert.equal(nativeMetadata.autotile.outer_edge_mode, 'native');
+    assert.deepEqual([...sampleContext.getImageData(40, 56, 1, 1).data], [0, 255, 0, 255], 'native cardinal edge preserves the full top-middle source cell');
     const invalid = YAML.parse(await readFile(recipePath, 'utf8')); invalid.outer_stride = [0, 1]; await writeFile(recipePath, YAML.stringify(invalid));
     await assert.rejects(deriveBlobAutotile({ root, recipePath, out }), /outer_stride must be positive cell steps/);
+  });
+
+  it('audits solid fills, sparse overlays, and visible transition bands from decoded pixels', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'gaming-material-pixels-')); await mkdir(path.join(root, 'assets'), { recursive: true });
+    const canvas = createCanvas(128, 16); const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#a04030'; ctx.fillRect(0, 0, 16, 16);
+    ctx.fillStyle = '#55aa55'; ctx.fillRect(16, 0, 8, 16);
+    ctx.fillStyle = '#55aa55'; ctx.fillRect(32, 0, 16, 16);
+    ctx.fillStyle = '#2277cc'; ctx.fillRect(48, 0, 16, 16);
+    for (const [index, [left, top]] of [[4, [8, 0]], [5, [8, 8]], [6, [0, 8]], [7, [0, 0]]]) {
+      ctx.fillStyle = '#55aa55'; ctx.fillRect(index * 16, 0, 16, 16);
+      ctx.fillStyle = '#2277cc'; ctx.fillRect(index * 16 + left + 3, top + 3, 5, 5);
+    }
+    const png = canvas.toBuffer('image/png'); await writeFile(path.join(root, 'assets', 'terrain.png'), png); const sha = crypto.createHash('sha256').update(png).digest('hex');
+    const world = { footprint: { size: [16, 16] }, scale_class: 'terrain', allowed_materials: ['*'], allowed_surfaces: ['solid'], allowed_planes: ['ground'], allowed_biomes: ['*'], boundary_policy: 'allow', render_layer: 'ground', collision: 'passable' };
+    const masks = Object.fromEntries(['isolated', 'n', 'e', 's', 'w', 'ne', 'ns', 'nw', 'es', 'ew', 'sw', 'nes', 'new', 'nsw', 'esw', 'nesw'].map((mask) => [mask, 'edge']));
+    Object.assign(masks, { ne: 'turn.ne', es: 'turn.es', sw: 'turn.sw', nw: 'turn.nw' });
+    const catalog = {
+      pack: { logical_cell: [16, 16] }, assets: { terrain: { source: 'assets/terrain.png', source_sha256: sha, pixel_density: 1, geometry: { layout: 'grid', cell: [16, 16], grid: [8, 1] }, frames: { fill: { cell: [0, 0] }, overlay: { cell: [1, 0] }, outside: { cell: [2, 0] }, edge: { cell: [3, 0] }, 'turn.ne': { cell: [4, 0] }, 'turn.es': { cell: [5, 0] }, 'turn.sw': { cell: [6, 0] }, 'turn.nw': { cell: [7, 0] } }, autotile: { outer_corner_style: 'rounded', positive: masks }, world } },
+      materials: {
+        solid: { fill_mode: 'solid', fill: { asset: 'terrain', frame: 'fill' } },
+        overlay: { fill_mode: 'overlay', fill: { asset: 'terrain', frame: 'overlay' } },
+        outside: { fill_mode: 'solid', fill: { asset: 'terrain', frame: 'outside' } },
+      },
+      terrain_interfaces: { shore: { inside: 'solid', outside: 'outside', asset: 'terrain', polarity: 'positive', transition_band: { minimum_changed_ratio: 0.5 }, corner_profile: { style: 'rounded', minimum_cutback_ratio: 0.5 } } },
+    };
+    const valid = await auditPresentationMaterialPixels({ root, catalog }); assert.equal(valid.valid, true); assert.equal(valid.overlays, 1); assert.equal(valid.transition_bands.shore.north, 1); assert.ok(valid.corner_profiles.shore.ne >= 0.5);
+    catalog.materials.overlay.fill_mode = 'solid'; const invalidFill = await auditPresentationMaterialPixels({ root, catalog }); assert.ok(invalidFill.errors.some((error) => error.includes('solid fill has')));
+    catalog.materials.overlay.fill_mode = 'overlay'; catalog.assets.terrain.autotile.positive = Object.fromEntries(Object.keys(masks).map((mask) => [mask, 'outside']));
+    const invisible = await auditPresentationMaterialPixels({ root, catalog }); assert.ok(invisible.errors.some((error) => error.includes('transition band changes only')));
+    assert.ok(invisible.errors.some((error) => error.includes('convex turn cuts back only')));
   });
 
   it('writes contact-sheet PNG, frame GIF, and assembly PNG from source data', async () => {
@@ -291,6 +331,9 @@ describe('gaming asset audit tooling', () => {
     const topologyQaSetOut = path.join(root, 'out', 'topology-qa-set');
     const derivedRecipe = path.join(root, 'derived.yml');
     const derivedOut = path.join(root, 'out', 'derived.png');
+    const textureRecipe = path.join(root, 'texture-derived.yml');
+    const textureOut = path.join(root, 'out', 'texture-derived.png');
+    const textureSource = path.join(root, 'assets', 'texture.png');
     const blobSource = path.join(root, 'blob-source.png');
     const blobRecipe = path.join(root, 'blob.yml');
     const blobOut = path.join(root, 'out', 'blob.png');
@@ -300,8 +343,15 @@ describe('gaming asset audit tooling', () => {
     await renderAnimation({ root, source, cell: [16, 16], frames: [[0, 0], [1, 0]], out: gif, scale: 2 });
     await renderFrameGrid({ root, source, cell: [16, 16], out: frames, scale: 2 });
     const measurements = await measureFrameGrid({ root, source, cell: [16, 16] });
-    await writeFile(derivedRecipe, YAML.stringify({ canvas: [32, 16], transparent_colors: ['#ff0000'], layers: [{ source, rect: [0, 0, 32, 16], at: [0, 0] }, { source, rect: [16, 0, 16, 16], at: [4, 4], size: [8, 8] }] }));
-    await deriveAtlas({ root, recipePath: derivedRecipe, out: derivedOut });
+    const textureCanvas = createCanvas(2, 2); const textureContext = textureCanvas.getContext('2d'); textureContext.fillStyle = '#22aacc'; textureContext.fillRect(0, 0, 2, 2); textureContext.fillStyle = '#cc44aa'; textureContext.fillRect(1, 0, 1, 1); await mkdir(path.dirname(textureSource), { recursive: true }); await writeFile(textureSource, textureCanvas.toBuffer('image/png'));
+    await writeFile(derivedRecipe, YAML.stringify({ canvas: [32, 16], transparent_colors: ['#ff0000'], color_map: { '#00ff00': '#112233' }, layers: [{ source, rect: [0, 0, 32, 16], at: [0, 0] }, { source, rect: [16, 0, 16, 16], at: [4, 4], size: [8, 8] }] }));
+    const derived = await deriveAtlas({ root, recipePath: derivedRecipe, out: derivedOut });
+    await writeFile(textureRecipe, YAML.stringify({ canvas: [32, 16], color_map: { '#00ff00': '#112233' }, texture_fills: [{ source: 'assets/texture.png', rect: [0, 0, 2, 2], colors: ['#112233'] }], layers: [{ source, rect: [0, 0, 32, 16], at: [0, 0] }] }));
+    const textured = await deriveAtlas({ root, recipePath: textureRecipe, out: textureOut });
+    const paletteImage = await loadImage(textureOut); const paletteSample = createCanvas(32, 16); const paletteContext = paletteSample.getContext('2d'); paletteContext.drawImage(paletteImage, 0, 0);
+    assert.deepEqual([...paletteContext.getImageData(20, 0, 1, 1).data], [34, 170, 204, 255]);
+    assert.deepEqual([...paletteContext.getImageData(21, 0, 1, 1).data], [204, 68, 170, 255]);
+    assert.equal(textured.texture_fills, 1);
     const blobCanvas = createCanvas(48, 80); const blobContext = blobCanvas.getContext('2d');
     blobContext.fillStyle = '#315b36'; blobContext.fillRect(0, 0, 48, 80);
     blobContext.fillStyle = '#d9a066'; blobContext.fillRect(16, 16, 16, 16);
@@ -446,6 +496,6 @@ describe('gaming asset audit tooling', () => {
     derivedContext.drawImage(derivedImage, 0, 0);
     assert.equal(derivedContext.getImageData(2, 8, 1, 1).data[3], 0, 'configured source color becomes transparent');
     assert.equal(derivedContext.getImageData(24, 8, 1, 1).data[3], 255, 'other source colors remain opaque');
-    assert.deepEqual([...derivedContext.getImageData(6, 6, 1, 1).data], [0, 255, 0, 255], 'optional layer size uses nearest-neighbour pixel scaling');
+    assert.deepEqual([...derivedContext.getImageData(6, 6, 1, 1).data], [17, 34, 51, 255], 'optional layer size uses nearest-neighbour pixel scaling before palette mapping');
   });
 });

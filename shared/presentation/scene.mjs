@@ -53,17 +53,32 @@ function expandShape(shape, prefix, anchors = {}) {
       if (!radius || dx * dx + dy * dy <= radius * radius) cells.push([x, y]);
     }
   } else if (kind === 'ellipse' || kind === 'blob') {
-    const allowed = kind === 'blob' ? new Set(['kind', 'center', 'radius', 'roughness', 'seed']) : new Set(['kind', 'center', 'radius']);
+    const allowed = kind === 'blob' ? new Set(['kind', 'center', 'radius', 'roughness', 'seed', 'edge_step']) : new Set(['kind', 'center', 'radius']);
     const unknown = Object.keys(shape).filter((field) => !allowed.has(field)); if (unknown.length) throw new Error(`${prefix}: unsupported fields ${unknown.join(', ')}`);
     if (!isPair(shape.center) || !isPair(shape.radius, { positive: true })) throw new Error(`${prefix}: ${kind} needs non-negative integer center and positive integer radius`);
     const [centerX, centerY] = shape.center; const [radiusX, radiusY] = shape.radius; const roughness = shape.roughness ?? 0.35; const seed = shape.seed ?? 0;
     if (kind === 'blob' && (!Number.isFinite(roughness) || roughness < 0 || roughness > 1 || !Number.isInteger(seed))) throw new Error(`${prefix}: blob roughness must be 0..1 and seed must be an integer`);
+    const edgeStep = shape.edge_step;
+    if (kind === 'blob' && edgeStep !== undefined && (!Number.isInteger(edgeStep) || edgeStep < 1 || edgeStep > 4)) throw new Error(`${prefix}: blob edge_step must be an integer from 1 to 4`);
+    const extents = [];
     for (let y = Math.max(0, centerY - radiusY); y <= centerY + radiusY; y += 1) {
       const vertical = (y - centerY) / radiusY; const baseHalfWidth = radiusX * Math.sqrt(Math.max(0, 1 - vertical * vertical));
       const leftNoise = kind === 'blob' ? (deterministicUnit(seed, 'left', y) - 0.5) * roughness * radiusX : 0; const rightNoise = kind === 'blob' ? (deterministicUnit(seed, 'right', y) - 0.5) * roughness * radiusX : 0;
       const left = Math.max(0, Math.ceil(centerX - Math.max(0, baseHalfWidth + leftNoise))); const right = Math.floor(centerX + Math.max(0, baseHalfWidth + rightNoise));
-      for (let x = left; x <= right; x += 1) cells.push([x, y]);
+      extents.push({ y, left, right: Math.max(left, right) });
     }
+    if (edgeStep !== undefined) {
+      const clampEdge = (value, neighbour) => Math.max(neighbour - edgeStep, Math.min(neighbour + edgeStep, value));
+      for (let index = 1; index < extents.length; index += 1) {
+        extents[index].left = clampEdge(extents[index].left, extents[index - 1].left);
+        extents[index].right = clampEdge(extents[index].right, extents[index - 1].right);
+      }
+      for (let index = extents.length - 2; index >= 0; index -= 1) {
+        extents[index].left = clampEdge(extents[index].left, extents[index + 1].left);
+        extents[index].right = clampEdge(extents[index].right, extents[index + 1].right);
+      }
+    }
+    for (const { y, left, right } of extents) for (let x = left; x <= Math.max(left, right); x += 1) cells.push([x, y]);
   } else if (kind === 'route') {
     const unknown = Object.keys(shape).filter((field) => !['kind', 'points', 'width'].includes(field)); if (unknown.length) throw new Error(`${prefix}: unsupported fields ${unknown.join(', ')}`);
     if (!Array.isArray(shape.points) || shape.points.length < 2) throw new Error(`${prefix}: route needs at least two points`);
@@ -103,9 +118,69 @@ function expandCells(region, prefix, anchors = {}) {
   return [...unique.values()];
 }
 
+function routeAnchorsFor(scene, catalog = null) {
+  const cell = scene?.grid?.cell;
+  if (!isPair(cell, { positive: true })) return {};
+  return Object.fromEntries((scene?.placements ?? [])
+    .filter((placement) => placement.id && isPair(placement.at, { numeric: true }))
+    .map((placement) => {
+      const world = placement.asset
+        ? catalog?.assets?.[placement.asset]?.world
+        : catalog?.prefabs?.[placement.prefab]?.world;
+      const offset = world?.route_anchor ?? [0, 0];
+      return [placement.id, placement.at.map((value, index) => Math.floor((value + offset[index]) / cell[index]))];
+    }));
+}
+
+function enforceMinimumThickness(cells, minimum, columns, rows, prohibited = new Set()) {
+  if (!minimum || minimum <= 1) return cells;
+  const set = new Set(cells.map((at) => at.join(',')));
+  const center = cells.reduce((sum, [x, y]) => [sum[0] + x / cells.length, sum[1] + y / cells.length], [0, 0]);
+  const runs = (axis) => {
+    const groups = new Map();
+    for (const key of set) {
+      const [x, y] = key.split(',').map(Number); const fixed = axis === 'x' ? y : x; const value = axis === 'x' ? x : y;
+      if (!groups.has(fixed)) groups.set(fixed, []); groups.get(fixed).push(value);
+    }
+    const result = [];
+    for (const [fixed, values] of groups) {
+      values.sort((left, right) => left - right); let start = values[0]; let end = start;
+      for (const value of values.slice(1)) {
+        if (value === end + 1) end = value;
+        else { result.push({ axis, fixed, start, end }); start = value; end = value; }
+      }
+      result.push({ axis, fixed, start, end });
+    }
+    return result;
+  };
+  const candidateFor = (run, side) => {
+    const value = side === 'before' ? run.start - 1 : run.end + 1;
+    const [x, y] = run.axis === 'x' ? [value, run.fixed] : [run.fixed, value];
+    if (x < 0 || y < 0 || x >= columns || y >= rows || prohibited.has(`${x},${y}`)) return null;
+    const neighbours = [[x, y - 1], [x + 1, y], [x, y + 1], [x - 1, y]].filter(([nx, ny]) => set.has(`${nx},${ny}`)).length;
+    const distance = Math.abs(x - center[0]) + Math.abs(y - center[1]);
+    return { x, y, neighbours, distance };
+  };
+  for (let pass = 0; pass < minimum * 4; pass += 1) {
+    let changed = false;
+    for (const axis of ['x', 'y']) for (const run of runs(axis)) {
+      for (let length = run.end - run.start + 1; length < minimum; length += 1) {
+        const candidates = [candidateFor(run, 'before'), candidateFor(run, 'after')].filter((entry) => entry && !set.has(`${entry.x},${entry.y}`));
+        if (!candidates.length) throw new Error(`terrain minimum_thickness ${minimum} cannot be satisfied at ${run.axis}:${run.fixed}:${run.start}-${run.end}`);
+        candidates.sort((left, right) => right.neighbours - left.neighbours || left.distance - right.distance || left.y - right.y || left.x - right.x);
+        const selected = candidates[0]; set.add(`${selected.x},${selected.y}`); changed = true;
+        if (run.axis === 'x') { run.start = Math.min(run.start, selected.x); run.end = Math.max(run.end, selected.x); }
+        else { run.start = Math.min(run.start, selected.y); run.end = Math.max(run.end, selected.y); }
+      }
+    }
+    if (!changed) break;
+  }
+  return [...set].map((key) => key.split(',').map(Number));
+}
+
 export function validateTopDownScene(scene, catalog = null) {
   const errors = [];
-  const routeAnchors = Object.fromEntries((scene?.placements ?? []).filter((placement) => placement.id && isPair(placement.at, { numeric: true }) && isPair(scene?.grid?.cell, { positive: true })).map((placement) => [placement.id, placement.at.map((value, index) => Math.floor(value / scene.grid.cell[index]))]));
+  const routeAnchors = routeAnchorsFor(scene, catalog);
   if (scene?.schema_version !== 2) errors.push('schema_version must be 2');
   if (scene?.kind !== 'top-down-scene') errors.push('kind must be top-down-scene');
   if (!PRESENTATION_ID.test(String(scene?.id ?? ''))) errors.push('id is invalid');
@@ -117,9 +192,10 @@ export function validateTopDownScene(scene, catalog = null) {
   unknownFields(scene, SCENE_FIELDS, 'scene', errors);
   if (!PRESENTATION_ID.test(String(scene?.terrain?.base ?? ''))) errors.push('terrain.base material is required');
   for (const [index, region] of (scene?.terrain?.regions ?? []).entries()) {
-    unknownFields(region, new Set(['id', 'material', 'cells', 'rects', 'shapes', 'exclude', 'continues']), `terrain region ${index}`, errors);
+    unknownFields(region, new Set(['id', 'material', 'cells', 'rects', 'shapes', 'exclude', 'continues', 'minimum_thickness']), `terrain region ${index}`, errors);
     if (!PRESENTATION_ID.test(String(region?.id ?? '')) || !PRESENTATION_ID.test(String(region?.material ?? ''))) errors.push(`terrain region ${index}: id and material are required`);
     if (region.continues !== undefined && (!Array.isArray(region.continues) || region.continues.some((side) => !SIDES.includes(side)))) errors.push(`terrain region ${index}: continues contains an invalid side`);
+    if (region.minimum_thickness !== undefined && (!Number.isInteger(region.minimum_thickness) || region.minimum_thickness < 1 || region.minimum_thickness > 4)) errors.push(`terrain region ${index}: minimum_thickness must be an integer from 1 to 4`);
     try { expandCells(region, `terrain region ${region.id ?? index}`, routeAnchors); } catch (error) { errors.push(error.message); }
   }
   for (const [index, placement] of (scene?.placements ?? []).entries()) {
@@ -180,6 +256,8 @@ export function validateTopDownScene(scene, catalog = null) {
     if (scene?.catalog !== catalog?.pack?.id) errors.push(`scene catalog ${scene?.catalog} does not match ${catalog?.pack?.id}`);
     if (!catalog?.style_profiles?.[scene?.style_profile]) errors.push(`scene style_profile is unknown: ${scene?.style_profile}`);
     if (!catalog?.materials?.[scene?.terrain?.base]) errors.push(`scene base material is unknown: ${scene?.terrain?.base}`);
+    else if (catalog.materials[scene.terrain.base].fill_mode === 'overlay') errors.push(`scene base material cannot use overlay fill_mode: ${scene.terrain.base}`);
+    for (const region of scene?.terrain?.regions ?? []) if (catalog.materials?.[region.material]?.fill_mode === 'overlay') errors.push(`terrain region ${region.id}: material cannot use overlay fill_mode: ${region.material}`);
   }
   return { valid: errors.length === 0, errors };
 }
@@ -243,11 +321,43 @@ function interfaceFor(catalog, inside, outside) {
   return { id: matches[0][0], ...matches[0][1] };
 }
 
+function variantRoot(catalog, assetId) {
+  const visited = new Set(); let current = assetId;
+  while (catalog.assets[current]?.variant_of) {
+    if (visited.has(current)) throw new Error(`materialized asset variant cycle at ${current}`);
+    visited.add(current); current = catalog.assets[current].variant_of;
+  }
+  return current;
+}
+
 function compatibleInterfaces(catalog, inside, outsideMaterials) {
   const profiles = [...outsideMaterials].map((outside) => interfaceFor(catalog, inside, outside));
   const signatures = new Set(profiles.map((profile) => `${profile.asset}|${profile.polarity}`));
-  if (signatures.size !== 1) throw new Error(`material boundary ${inside} has incompatible interface assets at a multi-material join: ${profiles.map((profile) => profile.id).join(', ')}`);
+  if (signatures.size === 1) return profiles;
+  const polarities = new Set(profiles.map((profile) => profile.polarity));
+  const assetIds = profiles.map((profile) => assetReference(profile.asset).asset);
+  const roots = new Set(assetIds.map((assetId) => variantRoot(catalog, assetId)));
+  const topology = assetIds.map((assetId) => {
+    const asset = catalog.assets[assetId];
+    return JSON.stringify({ pixel_density: asset.pixel_density, geometry: asset.geometry, frames: asset.frames, autotile: asset.autotile });
+  });
+  if (polarities.size !== 1 || roots.size !== 1 || new Set(topology).size !== 1) throw new Error(`material boundary ${inside} has incompatible interface assets at a multi-material join: ${profiles.map((profile) => profile.id).join(', ')}`);
   return profiles;
+}
+
+function interfaceClip(contact, [width, height]) {
+  const center = [width / 2, height / 2];
+  const clips = {
+    north: [[0, 0], [width, 0], center],
+    east: [[width, 0], [width, height], center],
+    south: [[width, height], [0, height], center],
+    west: [[0, height], [0, 0], center],
+    nw: [[0, 0], [width / 2, 0], center, [0, height / 2]],
+    ne: [[width / 2, 0], [width, 0], [width, height / 2], center],
+    se: [center, [width, height / 2], [width, height], [width / 2, height]],
+    sw: [[0, height / 2], center, [width / 2, height], [0, height]],
+  };
+  return clips[contact];
 }
 
 function commandForFrame(catalog, reference, at, extra = {}) {
@@ -268,6 +378,7 @@ function commandForFrame(catalog, reference, at, extra = {}) {
     logical_size: metrics.logical_size,
     provenance: extra.provenance,
     semantic_role: extra.semantic_role,
+    clip_polygon: extra.clip_polygon,
   };
 }
 
@@ -295,17 +406,21 @@ export function compileTopDownScene(authoredCatalog, scene) {
   if (width % cell[0] || height % cell[1]) throw new Error('logical_size must be divisible by grid.cell');
   const columns = width / cell[0]; const rows = height / cell[1];
   const materialGrid = Array.from({ length: rows }, () => Array(columns).fill(scene.terrain.base));
-  const routeAnchors = Object.fromEntries((scene.placements ?? []).filter((placement) => placement.id).map((placement) => [placement.id, placement.at.map((value, index) => Math.floor(value / cell[index]))]));
+  const routeAnchors = routeAnchorsFor(scene, catalog);
   const regionByCell = new Map();
   const cellsByRegion = new Map();
   for (const region of scene.terrain.regions ?? []) {
     if (!catalog.materials[region.material]) throw new Error(`terrain region ${region.id}: unknown material ${region.material}`);
     const expanded = expandCells(region, `terrain region ${region.id}`, routeAnchors);
-    const cells = expanded.filter(([x, y]) => {
+    let cells = expanded.filter(([x, y]) => {
       const allowedOverflow = (x < columns || region.continues?.includes('east')) && (y < rows || region.continues?.includes('south'));
       if ((x >= columns || y >= rows) && !allowedOverflow) throw new Error(`terrain region ${region.id}: cell ${x},${y} exceeds viewport`);
       return x < columns && y < rows;
     });
+    if (region.minimum_thickness > 1) {
+      const prohibited = new Set(region.exclude ? expandCells(region.exclude, `terrain region ${region.id} exclude`, routeAnchors).map((at) => at.join(',')) : []);
+      cells = enforceMinimumThickness(cells, region.minimum_thickness, columns, rows, prohibited);
+    }
     if (!cells.length) throw new Error(`terrain region ${region.id}: has no cells inside viewport`);
     cellsByRegion.set(region.id, cells);
     for (const [x, y] of cells) {
@@ -336,12 +451,16 @@ export function compileTopDownScene(authoredCatalog, scene) {
     const missed = (region.continues ?? []).filter((side) => !touched.has(side));
     if (missed.length) throw new Error(`terrain region ${region.id}: continues declares untouched edges ${missed.join(', ')}`);
     for (const [x, y] of cells) {
-      const outsideMaterials = new Set([[x, y - 1], [x + 1, y], [x, y + 1], [x - 1, y]].filter(([nx, ny]) => nx >= 0 && ny >= 0 && nx < columns && ny < rows && materialGrid[ny][nx] !== region.material).map(([nx, ny]) => materialGrid[ny][nx]));
+      const contacts = [];
+      for (const [direction, nx, ny] of [['north', x, y - 1], ['east', x + 1, y], ['south', x, y + 1], ['west', x - 1, y]]) {
+        if (nx >= 0 && ny >= 0 && nx < columns && ny < rows && materialGrid[ny][nx] !== region.material) contacts.push({ material: materialGrid[ny][nx], contact: direction });
+      }
       const innerCornerDiagonals = { nw: [-1, -1], ne: [1, -1], se: [1, 1], sw: [-1, 1] };
       for (const corner of terrainInnerCornerKeys(continued, [x, y])) {
         const [offsetX, offsetY] = innerCornerDiagonals[corner]; const [nx, ny] = [x + offsetX, y + offsetY];
-        if (nx >= 0 && ny >= 0 && nx < columns && ny < rows && materialGrid[ny][nx] !== region.material) outsideMaterials.add(materialGrid[ny][nx]);
+        if (nx >= 0 && ny >= 0 && nx < columns && ny < rows && materialGrid[ny][nx] !== region.material) contacts.push({ material: materialGrid[ny][nx], contact: corner });
       }
+      const outsideMaterials = new Set(contacts.map(({ material }) => material));
       if (!outsideMaterials.size) {
         const material = catalog.materials[region.material];
         if (material.fill.asset) commands.push(commandForFrame(catalog, `${material.fill.asset}#${material.fill.frame ?? 'default'}`, [x * cell[0], y * cell[1]], { render_layer: 'terrain', sort_y: -1, provenance: `material:${region.material}` }));
@@ -353,17 +472,33 @@ export function compileTopDownScene(authoredCatalog, scene) {
       const resolved = resolveTerrainFrame({ cells: continued, at: [x, y], frames: asset.autotile, polarity: profile.polarity });
       diagnostics.inside_corners_resolved += resolved.inner_corners.length;
       for (const matched of profiles) diagnostics.boundaries[matched.id] = (diagnostics.boundaries[matched.id] ?? 0) + 1;
-      for (const frame of resolved.layers) {
-        diagnostics.terrain_frames[`${assetReference(profile.asset).asset}#${frame}`] = (diagnostics.terrain_frames[`${assetReference(profile.asset).asset}#${frame}`] ?? 0) + 1;
-        commands.push(commandForFrame(catalog, profile.asset, [x * cell[0], y * cell[1]], { frame, source_cell_offset: resolved.frame_offset, render_layer: 'terrain', sort_y: -1, provenance: `interface:${profile.id}` }));
+      for (const [profileIndex, matched] of profiles.entries()) {
+        const clips = profileIndex === 0 ? [undefined] : contacts.filter(({ material }) => material === matched.outside).map(({ contact }) => interfaceClip(contact, cell));
+        for (const clipPolygon of clips) for (const frame of resolved.layers) {
+          const assetId = assetReference(matched.asset).asset;
+          diagnostics.terrain_frames[`${assetId}#${frame}`] = (diagnostics.terrain_frames[`${assetId}#${frame}`] ?? 0) + 1;
+          commands.push(commandForFrame(catalog, matched.asset, [x * cell[0], y * cell[1]], { frame, source_cell_offset: resolved.frame_offset, clip_polygon: clipPolygon, render_layer: 'terrain', sort_y: -1, provenance: `interface:${matched.id}` }));
+        }
       }
     }
   }
 
+  for (const [materialId, material] of Object.entries(catalog.materials)) for (const [detailIndex, detail] of (material.details ?? []).entries()) {
+    const profile = catalog.component_profiles[detail.profile]; const asset = catalog.assets[assetReference(profile.asset).asset]; const component = asset.components[profile.component];
+    for (let y = 0; y < rows; y += 1) for (let x = 0; x < columns; x += 1) {
+      if (materialGrid[y][x] !== materialId || deterministicUnit(detail.seed ?? 0, materialId, detailIndex, x, y) >= detail.density) continue;
+      if (detail.interior_only && [[x, y - 1], [x + 1, y], [x, y + 1], [x - 1, y]].some(([nx, ny]) => nx < 0 || ny < 0 || nx >= columns || ny >= rows || materialGrid[ny][nx] !== materialId)) continue;
+      const frame = [...component.frames].sort((left, right) => deterministicUnit(detail.seed ?? 0, materialId, detailIndex, x, y, left) - deterministicUnit(detail.seed ?? 0, materialId, detailIndex, x, y, right) || left.localeCompare(right))[0];
+      commands.push(commandForFrame(catalog, profile.asset, [x * cell[0], y * cell[1]], { frame, opacity: profile.opacity, render_layer: profile.render_layer ?? 'ground', provenance: `material-detail:${materialId}:${detailIndex}` }));
+    }
+  }
+
+  const connectorOccupiedBounds = [];
   for (const region of scene.connectors ?? []) {
     const profile = catalog.connector_profiles?.[region.profile]; const assetId = assetReference(profile?.asset).asset; const asset = catalog.assets?.[assetId];
     if (!profile || !asset?.connector) throw new Error(`connector ${region.id}: unknown profile ${region.profile}`);
     const cells = expandCells(region, `connector ${region.id}`); const set = new Set(cells.map((at) => at.join(','))); const origin = region.origin ?? [0, 0];
+    for (const [x, y] of cells) connectorOccupiedBounds.push({ id: region.id, bounds: [origin[0] + x * cell[0], origin[1] + y * cell[1], cell[0], cell[1]] });
     diagnostics.connections += cells.reduce((count, [x, y]) => count + Number(set.has(`${x + 1},${y}`)) + Number(set.has(`${x},${y + 1}`)), 0);
     for (const [x, y] of cells) {
       const directions = [['n', x, y - 1], ['e', x + 1, y], ['s', x, y + 1], ['w', x - 1, y]].filter(([, nx, ny]) => set.has(`${nx},${ny}`)).map(([side]) => side);
@@ -400,6 +535,11 @@ export function compileTopDownScene(authoredCatalog, scene) {
       if (worldX < 0 || worldY < 0 || worldX >= columns || worldY >= rows) throw new Error(`component ${region.id}: cell ${x},${y} leaves viewport`);
       const surface = catalog.materials[materialGrid[worldY][worldX]].surface;
       if (!profile.allowed_surfaces.includes(surface)) throw new Error(`component ${region.id}: ${profile.component} is forbidden on ${surface} surface at ${worldX},${worldY}`);
+      if (profile.interior_only) {
+        const material = materialGrid[worldY][worldX];
+        const touchesBoundary = [[worldX, worldY - 1], [worldX + 1, worldY], [worldX, worldY + 1], [worldX - 1, worldY]].some(([nx, ny]) => nx < 0 || ny < 0 || nx >= columns || ny >= rows || materialGrid[ny][nx] !== material);
+        if (touchesBoundary) throw new Error(`component ${region.id}: ${profile.component} requires an interior ${material} cell at ${worldX},${worldY}`);
+      }
       if (profile.provides_surface) providedSurfaces.set(`${worldX},${worldY}`, profile.provides_surface);
       let frame;
       if (component.outline) {
@@ -414,7 +554,7 @@ export function compileTopDownScene(authoredCatalog, scene) {
         })[0];
       }
       selectedFrames.set(`${x},${y}`, frame);
-      commands.push(commandForFrame(catalog, profile.asset, [origin[0] + x * cell[0], origin[1] + y * cell[1]], { frame, render_layer: profile.render_layer ?? 'ground', provenance: `component:${region.id}` }));
+      commands.push(commandForFrame(catalog, profile.asset, [origin[0] + x * cell[0], origin[1] + y * cell[1]], { frame, opacity: profile.opacity, render_layer: profile.render_layer ?? 'ground', provenance: `component:${region.id}` }));
     }
   }
 
@@ -427,6 +567,8 @@ export function compileTopDownScene(authoredCatalog, scene) {
     const footprint = footprintCells(world, at, cell, columns, rows);
     if (!footprint.cells.length || footprint.bounds[0] < 0 || footprint.bounds[1] < 0 || footprint.bounds[0] + footprint.bounds[2] > width || footprint.bounds[1] + footprint.bounds[3] > height) throw new Error(`placement ${id}: footprint leaves viewport`);
     const occupiedMaterials = new Set(footprint.cells.map(([x, y]) => materialGrid[y][x])); const allowed = world.allowed_materials ?? ['*'];
+    const connector = connectorOccupiedBounds.find((entry) => boundsOverlap(footprint.bounds, entry.bounds));
+    if (connector) throw new Error(`placement ${id}: footprint intersects connector ${connector.id}`);
     if (!allowed.includes('*') && [...occupiedMaterials].some((material) => !allowed.includes(material))) throw new Error(`placement ${id}: footprint uses forbidden material ${[...occupiedMaterials].join(', ')}`);
     const occupiedSurfaces = new Set(footprint.cells.map(([x, y]) => providedSurfaces.get(`${x},${y}`) ?? catalog.materials[materialGrid[y][x]].surface)); const occupiedPlanes = new Set([...occupiedMaterials].map((material) => catalog.materials[material].plane)); const occupiedBiomes = new Set([...occupiedMaterials].map((material) => catalog.materials[material].biome));
     if ([...occupiedSurfaces].some((surface) => !world.allowed_surfaces?.includes(surface))) throw new Error(`placement ${id}: footprint uses forbidden surface ${[...occupiedSurfaces].join(', ')}`);
@@ -494,6 +636,7 @@ export function compileTopDownScene(authoredCatalog, scene) {
         const footprint = footprintCells(world, partAt, cell, columns, rows);
         if (!footprint.cells.length || footprint.bounds[0] < 0 || footprint.bounds[1] < 0 || footprint.bounds[0] + footprint.bounds[2] > width || footprint.bounds[1] + footprint.bounds[3] > height) return false;
         if (footprint.cells.some(([x, y]) => occupiedPlacementCells.has(`${x},${y}`))) return false;
+        if (connectorOccupiedBounds.some((entry) => boundsOverlap(footprint.bounds, entry.bounds))) return false;
         const materials = new Set(footprint.cells.map(([x, y]) => materialGrid[y][x]));
         if (!world.allowed_materials.includes('*') && [...materials].some((material) => !world.allowed_materials.includes(material))) return false;
         const surfaces = new Set(footprint.cells.map(([x, y]) => providedSurfaces.get(`${x},${y}`) ?? catalog.materials[materialGrid[y][x]].surface));
@@ -590,9 +733,10 @@ export function compileTopDownScene(authoredCatalog, scene) {
     terrain: ordered.filter((command) => command.provenance?.startsWith('interface:')).length,
     connector: ordered.filter((command) => command.provenance?.startsWith('connector:')).length,
     height: ordered.filter((command) => command.provenance?.startsWith('height:')).length,
-    component: ordered.filter((command) => command.provenance?.startsWith('component:')).length,
+    component: ordered.filter((command) => /^(component|material-detail):/.test(command.provenance ?? '')).length,
     shadow: diagnostics.shadows,
   };
+  diagnostics.structural_occupancy = { connector_cells: connectorOccupiedBounds.length };
   const roleByPlacement = new Map();
   for (const command of ordered) if (command.provenance?.startsWith('placement:') && command.semantic_role) roleByPlacement.set(command.provenance, command.semantic_role);
   diagnostics.semantic_roles = {};

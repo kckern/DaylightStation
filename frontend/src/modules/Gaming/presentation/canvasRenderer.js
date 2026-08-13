@@ -56,7 +56,13 @@ export async function drawScenePlanToCanvas(canvas, catalog, plan, {
       }
       sourceImage = normalizedFrames.get(key); sourceX = 0; sourceY = 0; sourceWidth = sourceImage.width; sourceHeight = sourceImage.height;
     }
-    context.save(); context.globalAlpha = command.opacity; context.translate(command.at[0] * scale, command.at[1] * scale);
+    context.save();
+    if (command.clip_polygon) {
+      context.beginPath();
+      command.clip_polygon.forEach(([x, y], index) => context[index ? 'lineTo' : 'moveTo']((command.at[0] + x) * scale, (command.at[1] + y) * scale));
+      context.closePath(); context.clip();
+    }
+    context.globalAlpha = command.opacity; context.translate(command.at[0] * scale, command.at[1] * scale);
     context.rotate(command.rotation * Math.PI / 180); context.scale(command.flip_x ? -1 : 1, 1);
     context.drawImage(sourceImage, sourceX, sourceY, sourceWidth, sourceHeight, -ax, -ay, dw, dh); context.restore();
   }

@@ -64,6 +64,7 @@ materials:
     plane: ground
     biome: temperate
     surface: solid
+    fill_mode: solid
     fill: { asset: terrain.grass, frame: middle }
   material.water:
     style_profile: pixel16.topdown
@@ -77,6 +78,7 @@ terrain_interfaces:
     outside: material.grass
     asset: terrain.water
     polarity: positive
+    transition_band: { minimum_changed_ratio: 0.25 }
 assets:
   npc.farmer:
     source: assets/default/actors/farmer.png
@@ -104,11 +106,43 @@ assets:
 
 Terrain interfaces own boundary selection. A scene names materials only; it cannot name a corner or shoreline frame. At a multi-material join, every applicable interface must resolve to the same reviewed asset/polarity or compilation fails as ambiguous. Off-screen continuation is explicit and validated against the edge it claims to touch.
 
+`fill_mode` distinguishes complete terrain from sparse decoration. It defaults to `solid`; QA decodes every solid fill and requires the entire logical cell to be opaque. `overlay` requires both visible and transparent pixels and is forbidden as a scene base or terrain region—overlay art belongs in a component or placement layer above a real material. This prevents a perforated planting or fringe frame from silently masquerading as soil or ground.
+
+Interfaces that declare `transition_band.minimum_changed_ratio` are decoded against their outside material on all four cardinal half-cell bands. QA fails if a selected north/east/south/west edge does not visibly differ enough from the outside fill. Correct topology is necessary but not sufficient: a shoreline whose bank palette disappears into its grass cannot pass as a reviewed transition.
+
+The converse is also required: any opaque landward fill baked into an interface must match the receiving outside material. A full-cell bank color that differs from the field creates an unresolved second boundary even when the waterline mask is correct. Normalize that baked fill with a hash-pinned derivation, or use a genuinely transparent fringe; scenes must not author a compensating terrain halo.
+
+Palette compatibility belongs to the material pair, not to the water material globally. A target-specific interface asset may `extend` the canonical source asset and override its generated PNG, hash, tags, and provenance. The inherited geometry, masks, corner semantics, animation, scale, and world policy cannot drift between variants, while different outside materials can receive different exact palette mappings.
+
+At a multi-material junction, the compiler accepts distinct interface assets only when they share one inherited asset root, identical pixel density/geometry/frames/autotile metadata, and one polarity. It renders the canonical topology once, then clips alternate target-palette variants into deterministic cardinal contact wedges (and corner quadrants for diagonal concavities). Thus a water cell can meet path and grass without choosing one receiving palette for the whole tile. Unrelated assets, divergent topology, or mixed polarity remain hard errors.
+
+Interfaces may additionally declare `corner_profile: { style: rounded, minimum_cutback_ratio: 0.25 }`. The referenced autotile must advertise the same reviewed `outer_corner_style`, and QA decodes all four convex masks. Each turn is compared with the center frame inside the quadrant that would otherwise remain square; insufficient pixel cutback fails the bundle. The derivation recipe separately records whether the turn was quarter-composed or copied from a native full-cell corner, preventing provenance from being confused with appearance.
+
 Connector, height, and component profiles provide the same indirection for fences, walls, bridges, cliffs, floors, and borders. Compound prefabs own a footprint, boundary policy, collision policy, and declared slots in addition to their layers and finite parameters. V2 forbids layer and placement `scale`, `z`, `depth_sort`, and hand-authored shadows.
 
 Connector derivation is measured metadata, not a universal source-layout assumption. Recipes may declare `top_corner_row_offset` when a sheet places top corners below a cap row; seam-extension metadata repairs transparent edge pixels separately. Connector QA must prove each corner is a continuous two-axis piece before a derived atlas is approved.
 
-Terrain derivation likewise supports measured `outer_stride` for non-contiguous 3×3 source blocks and exact `color_map` substitutions for palette normalization. This keeps all-cardinal interface geometry and biome palette decisions reproducible without modifying vendor art; topology QA remains mandatory after either operation.
+Terrain derivation likewise supports measured `outer_stride` for non-contiguous 3×3 source blocks, `outer_corner_mode: native` for sheets whose full-cell hand-drawn turns carry detail across the quadrant seam, and exact `color_map` substitutions for palette normalization. This keeps all-cardinal interface geometry and biome palette decisions reproducible without modifying vendor art; topology and decoded corner-profile QA remain mandatory after any operation.
+
+Materials may declare deterministic visual detail without requiring every scene to enumerate cells:
+
+```yaml
+details:
+  - profile: components.water-ripples
+    density: 0.2
+    seed: 41
+    interior_only: false
+```
+
+Each entry references a decoration-style component profile whose allowed surfaces include the material surface. `density` is a reproducible per-cell selection rate, `seed` changes the stable distribution, and `interior_only: true` limits opaque texture variants to cells surrounded on all four sides by the same material. Outline components are rejected because their topology belongs to terrain interfaces, not material detail.
+
+Component profiles may declare `opacity` in `(0, 1]`. The compiler applies it uniformly to authored component regions and automatic material details, which permits texture atlases to harmonize with a material palette without scene-level draw overrides.
+
+Component profiles may also declare `interior_only: true`. Every authored component cell must then have the same material on all four cardinal sides and may not touch the viewport edge. Use this for ripples, floor speckles, and other full-cell overlays whose pixels must never cross an autotiled interface wedge even though the logical cell still belongs to the source material.
+
+A component role is approved only after its frames assemble into the named object. Grid adjacency is not evidence that thin source fragments form a curb, railing, or enclosure. Profiles whose assembly lacks thickness, caps, posts, or terminations must remain unexposed until corrected art or a reproducible derived assembly exists.
+
+A mixed component atlas may also expose reviewed height bands when the same source sheet contains a curb or face course. Register that asset through `height_interfaces` and let the height compiler select left/middle/right frames across the authored span; raised platforms should not be simulated with shadows or per-scene z offsets.
 
 ## Scene vocabulary
 
@@ -135,7 +169,7 @@ placements:
   - { id: home, prefab: settlement.house, params: { size: small }, at: [220, 88] }
 ```
 
-The compiler produces complete material, effective-surface, and elevation grids; rejects overlapping terrain authorship; enforces footprints and material/surface constraints; detects solid-object overlaps; generates catalog-owned shadows; and sorts world objects by render pass and ground-contact Y. Every asset and prefab declares `world.allowed_surfaces`. Bridges and docks may declare `world.provides_surface: solid`, while hazards or pools may provide `liquid`; later placement and navigation checks use that effective surface rather than guessing from pixels. Actors and structures share the same world-depth pass, so a tree or house does not sit permanently above every character.
+The compiler produces complete material, effective-surface, elevation, and structural-occupancy grids; rejects overlapping terrain authorship; enforces footprints and material/surface constraints; detects solid-object overlaps; generates catalog-owned shadows; and sorts world objects by render pass and ground-contact Y. Connector cells contribute exact world-space occupied rectangles even when a connector uses a half-cell origin; authored placements, generated groups, and nested prefab children may not intersect them. Every asset and prefab declares `world.allowed_surfaces`. Bridges and docks may declare `world.provides_surface: solid`, while hazards or pools may provide `liquid`; later placement and navigation checks use that effective surface rather than guessing from pixels. Actors and structures share the same world-depth pass, so a tree or house does not sit permanently above every character.
 
 The style profile also owns the production composition grammar. QA measures occupied screen sectors and visible logical-grid coverage from authored placement content only, so repeated terrain fills and tiled floors cannot make an empty room pass. It also measures the largest connected walkable component after excluding liquid/void materials and solid footprints, plus the dominance of the most repeated placement frame. These limits are pack-wide rather than scene-specific.
 
@@ -163,7 +197,7 @@ terrain:
       continues: [east]
 ```
 
-`rounded-rect`, `ellipse`, `blob`, and `route` expand to ordinary material cells before topology resolution, so edge and inner-corner metadata remains the sole authority for sprite selection. `exclude` subtracts cells, rectangles, or shapes, which supports islands, lakes, moats, clearings, and cave-water inversions without enumerating coordinates. A shape may cross the east or south viewport edge only when its region declares that side in `continues`; the compiler clips the off-screen portion while still requiring the in-view material to touch the declared edge. Route placement references resolve to the named placement's ground-contact grid cell, keeping roads attached when a landmark moves.
+`rounded-rect`, `ellipse`, `blob`, and `route` expand to ordinary material cells before topology resolution, so edge and inner-corner metadata remains the sole authority for sprite selection. A blob may declare `edge_step: 1..4`; forward and reverse constraint passes bound how far each left/right edge can move between adjacent rows. A terrain region may additionally declare `minimum_thickness: 1..4`; after viewport clipping, deterministic row/column passes grow undersized contiguous runs toward the region center while preserving explicit exclusions. This prevents a one-cell water fringe from selecting opposing shoreline layers that conceal the liquid. `exclude` subtracts cells, rectangles, or shapes, which supports islands, lakes, moats, clearings, and cave-water inversions without enumerating coordinates. A shape may cross the east or south viewport edge only when its region declares that side in `continues`; the compiler clips the off-screen portion while still requiring the in-view material to touch the declared edge. Route placement references resolve to the named placement's ground-contact grid cell, keeping roads attached when a landmark moves.
 
 Color-backed materials are emitted as explicit renderer-neutral fill commands; the scene clear color is never accepted as terrain. Component profiles may provide a replacement logical surface, may define a separate `interior` frame for bordered pools, and choose fill variants deterministically while avoiding immediate north/west repetition. Render layers remain catalog metadata: base floors belong below connector and structure layers rather than relying on scene command order.
 
@@ -225,7 +259,7 @@ node cli/gaming-assets.cli.mjs scene-qa-set --root /path/to/_common \
   --out-dir /tmp/presentation-v2-qa
 ```
 
-Promotion requires all required themes, deterministic plan hashes, zero clipping, zero per-scene scale exceptions, valid pinned source hashes, required terrain/connector/height/component/shadow coverage, style-profile composition compliance, and review crops. Passing these systemic gates means the framework contract is sound; aesthetic scene arrangement remains a separate art-direction review.
+Promotion requires all required themes, deterministic plan hashes, zero clipping, zero per-scene scale exceptions, valid pinned source hashes, opaque solid material fills, visible declared transition bands, connector/placement separation, required terrain/connector/height/component/shadow coverage, style-profile composition compliance, and review crops. Passing these systemic gates means the framework contract is sound; aesthetic scene arrangement remains a separate art-direction review.
 
 ### Approved visual artifacts
 
