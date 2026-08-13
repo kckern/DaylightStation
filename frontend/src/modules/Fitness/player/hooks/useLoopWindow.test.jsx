@@ -62,7 +62,7 @@ describe('useLoopWindow', () => {
     expect(onSeek).toHaveBeenCalledWith(100);
   });
 
-  it('marks its own boundary seek so the loop does not self-release', () => {
+  it('does not release the loop on its own boundary seek', () => {
     const el = makeEl(0);
     const { result } = renderHook(() =>
       useLoopWindow({ getMediaElement: () => el, onSeek: () => {} }));
@@ -71,8 +71,23 @@ describe('useLoopWindow', () => {
     el.currentTime = 111;
     act(() => { el.fireTimeUpdate(); });
 
-    expect(result.current.isBoundarySeek()).toBe(true);
+    // The hook's own re-seek (reaching win.end) must not clear loopRef/loop - only an
+    // explicit releaseLoop() call (or a genuine escape past win.start) does that.
     expect(result.current.loop).not.toBeNull();
+  });
+
+  it('returns a stable object identity across re-renders when loop state is unchanged', () => {
+    const el = makeEl(0);
+    const onSeek = vi.fn();
+    const { result, rerender } = renderHook(() =>
+      useLoopWindow({ getMediaElement: () => el, onSeek }));
+
+    const first = result.current;
+    rerender();
+    // A caller (FitnessPlayer's handleUserSeek) depends on this object's identity in
+    // its own useCallback deps - a fresh literal every render would cascade into every
+    // downstream memoized seek handler re-creating on every render.
+    expect(result.current).toBe(first);
   });
 
   it('releaseLoop clears the window', () => {
@@ -106,7 +121,6 @@ describe('useLoopWindow', () => {
 
     expect(onSeek).not.toHaveBeenCalled();
     expect(result.current.loop).toBeNull();
-    expect(result.current.isBoundarySeek()).toBe(false);
   });
 
   it('does not immediately re-seek a freshly-armed backward loop before playback advances', () => {
@@ -140,7 +154,6 @@ describe('useLoopWindow', () => {
 
     expect(onSeek).toHaveBeenCalledWith(1100);
     expect(el.playCalls).toBe(1);
-    expect(result.current.isBoundarySeek()).toBe(true);
 
     // el.play() (see makeEl above) returns a REJECTED promise here. Let it settle: if the
     // hook's play()?.catch?.(() => {}) guard were missing or dropped, this would surface

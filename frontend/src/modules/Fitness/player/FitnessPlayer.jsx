@@ -845,15 +845,19 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   const loopApi = useLoopWindow({ getMediaElement: loopGetMediaElement, onSeek: handleSeek });
 
   // Release the loop on USER seeks only — the loop's own boundary seek (jumping back to
-  // win.start when playback reaches win.end) must not self-release. isBoundarySeek() is
-  // a sticky, consuming flag with no correlation token, so it MUST be read synchronously
-  // inside this handler, in the same tick as the seek it gates — never from an async
-  // 'seeked' DOM listener (see the isSeeking-clearing listener above for the pattern NOT
-  // to follow here), or a stale/interleaved flag could suppress a genuine release.
-  // Only the footer's seek routes through here; handleSeek itself is also called by the
-  // loop engine and by keyboard/resume call sites, which must stay untouched.
+  // win.start when playback reaches win.end) must not self-release. There is no flag to
+  // check here: the loop's boundary re-seek calls `handleSeek` directly (see the
+  // `onSeek: handleSeek` wiring above) and never goes through this wrapper, so by
+  // construction every call that reaches `handleUserSeek` IS a genuine user seek — an
+  // earlier version gated this on a sticky `isBoundarySeek()` flag, which went stale
+  // after a loop repeated more than once and silently suppressed the next real release.
+  // `releaseLoop()` itself is a no-op when nothing is armed, so this is safe to call
+  // unconditionally for ordinary (non-study) seeks too.
+  // Routed through here: the footer's seek, the jog buttons, and the keyboard
+  // Arrow-seek handlers. `handleSeek` itself stays untouched for the loop engine's own
+  // re-seek and for resume/seekPositions logic, which are not user seeks.
   const handleUserSeek = useCallback((seconds) => {
-    if (!loopApi.isBoundarySeek()) loopApi.releaseLoop();
+    loopApi.releaseLoop();
     handleSeek(seconds);
   }, [loopApi, handleSeek]);
 
@@ -883,7 +887,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       if (thumbnailsCommitRef.current) {
         thumbnailsCommitRef.current(newTime);
       } else {
-        handleSeek(newTime);
+        handleUserSeek(newTime);
       }
     },
     'ArrowRight': (event) => {
@@ -909,10 +913,10 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       if (thumbnailsCommitRef.current) {
         thumbnailsCommitRef.current(newTime);
       } else {
-        handleSeek(newTime);
+        handleUserSeek(newTime);
       }
     }
-  }), [getPlayerTime, getPlayerDuration, handleSeek, logFitnessEvent]);
+  }), [getPlayerTime, getPlayerDuration, handleUserSeek, logFitnessEvent]);
 
   
 
@@ -1741,10 +1745,13 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   // Flips ONLY the wrapped <Player> (scaleX(-1)); the vitals/chart/scrim overlays
   // are siblings and stay upright. Persists across episodes within the session.
   const [videoMirrored, setVideoMirrored] = useState(false);
-  const toggleVideoMirror = useCallback((event) => {
+  // `source` defaults to 'corner-hotspot' so the existing hotspot call sites (which pass
+  // only the PointerEvent) keep reporting as before; StudyControls' mirror button passes
+  // its own source explicitly so telemetry doesn't misattribute it to the hotspot.
+  const toggleVideoMirror = useCallback((event, source = 'corner-hotspot') => {
     if (event && typeof event.button === 'number' && event.button !== 0) return;
     setVideoMirrored((m) => {
-      logFitnessEvent('video-mirror-toggle', { source: 'corner-hotspot', mirrored: !m });
+      logFitnessEvent('video-mirror-toggle', { source, mirrored: !m });
       return !m;
     });
   }, [logFitnessEvent]);
@@ -2015,7 +2022,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
         loopApi.armLoop(direction, secs, getPlayerTime?.() || 0, getPlayerDuration?.() || 0)}
       onReleaseLoop={loopApi.releaseLoop}
       videoMirrored={videoMirrored}
-      onToggleMirror={toggleVideoMirror}
+      onToggleMirror={() => toggleVideoMirror(undefined, 'study-controls')}
     />
   ) : null;
 

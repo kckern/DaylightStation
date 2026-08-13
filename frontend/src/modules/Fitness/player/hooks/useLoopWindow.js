@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import getLogger from '@/lib/logging/Logger.js';
 
 let _logger;
@@ -37,7 +37,14 @@ export function computeLoopWindow(direction, seconds, position, duration) {
  * Subtleties this hook owns:
  *  - Its own boundary seek (reaching `win.end`, jumping back to `win.start`) must NOT
  *    count as a user seek, or the loop would release itself on the first repetition.
- *    Callers check `isBoundarySeek()` before releasing.
+ *    This hook does NOT expose a flag for callers to check - a "was the last seek
+ *    mine" flag is sticky and un-correlated (nothing marks it consumed between the
+ *    loop's own re-seeks), so a caller reading it after the fact can observe a stale
+ *    `true` left over from a previous repetition and wrongly skip releasing on a real
+ *    user seek. Instead the boundary re-seek calls `onSeek` directly and bypasses
+ *    whatever seek wrapper the caller uses for user-initiated seeks entirely - by
+ *    construction, anything that reaches the caller's user-seek wrapper IS a user seek,
+ *    with no flag or timing window required.
  *  - The two directions of leaving the window mean different things and are handled
  *    differently. Reaching `win.end` is the loop's own edge - re-seek and keep looping.
  *    Falling below `win.start` (beyond tolerance) is a deliberate user scrub backward out
@@ -61,7 +68,6 @@ export function computeLoopWindow(direction, seconds, position, duration) {
 export default function useLoopWindow({ getMediaElement, onSeek }) {
   const [loop, setLoop] = useState(null);
   const loopRef = useRef(null);
-  const boundarySeekRef = useRef(false);
   const armPositionRef = useRef(null);
   const hasEnteredRef = useRef(false);
   const [element, setElement] = useState(null);
@@ -99,7 +105,6 @@ export default function useLoopWindow({ getMediaElement, onSeek }) {
       }
 
       if (t >= win.end) {
-        boundarySeekRef.current = true;
         onSeek?.(win.start);
         return;
       }
@@ -112,7 +117,6 @@ export default function useLoopWindow({ getMediaElement, onSeek }) {
     const onEnded = () => {
       const win = loopRef.current;
       if (!win) return;
-      boundarySeekRef.current = true;
       onSeek?.(win.start);
       // play() returns a promise that can reject (autoplay policy, interrupted-by-pause,
       // element torn down mid-call). Swallow it - matches FitnessPlayer.jsx:616's
@@ -143,12 +147,8 @@ export default function useLoopWindow({ getMediaElement, onSeek }) {
     logger().info('loop-armed', next);
   }, []);
 
-  /** True (once) if the most recent seek was the loop's own boundary seek. */
-  const isBoundarySeek = useCallback(() => {
-    const was = boundarySeekRef.current;
-    boundarySeekRef.current = false;
-    return was;
-  }, []);
-
-  return { loop, armLoop, releaseLoop, isBoundarySeek };
+  // Stable identity across renders: callers (FitnessPlayer's handleUserSeek) depend on
+  // this object's identity in their own useCallback deps, so a fresh literal here would
+  // cascade into every downstream memoized seek handler re-creating on every render.
+  return useMemo(() => ({ loop, armLoop, releaseLoop }), [loop, armLoop, releaseLoop]);
 }
