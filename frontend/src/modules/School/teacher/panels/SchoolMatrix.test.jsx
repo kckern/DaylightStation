@@ -13,7 +13,6 @@ describe('deriveMatrix (admin advocacy A4 — the bird\'s-eye view)', () => {
     const m = deriveMatrix({
       kids: KIDS,
       units: UNITS,
-      overrides: [],
       assignments: [
         { learnerId: 'felix', courses: ['math-fractions', { courseId: 'history-capitals', elective: true }] },
         { learnerId: 'milo', courses: ['math-fractions'] },
@@ -28,7 +27,6 @@ describe('deriveMatrix (admin advocacy A4 — the bird\'s-eye view)', () => {
     const m = deriveMatrix({
       kids: KIDS,
       units: UNITS,
-      overrides: [],
       assignments: [{ learnerId: 'felix', courses: ['math-fractions', 'ghost-course'] }],
     });
     expect(m.rows[0].deadRefs).toEqual(['ghost-course']);
@@ -38,20 +36,45 @@ describe('deriveMatrix (admin advocacy A4 — the bird\'s-eye view)', () => {
     const m = deriveMatrix({
       kids: KIDS,
       units: UNITS,
-      overrides: [],
       assignments: [{ learnerId: 'departed-kid', courses: ['math-fractions'] }],
     });
     expect(m.orphanLearners).toEqual(['departed-kid']);
   });
+});
 
-  it('marks a course whose unit carries an active pass-override', () => {
+describe('deriveMatrix — enrollment cells', () => {
+  const SYLLABI = [{ syllabusId: 'atlas-upper', title: 'Atlas — upper', courseId: 'history-capitals' }];
+
+  it('names the syllabus and profile in the cell', () => {
     const m = deriveMatrix({
-      kids: KIDS,
-      units: UNITS,
-      overrides: [{ unitId: 'frac.01', percent: 60 }],
-      assignments: [],
+      kids: KIDS, units: UNITS, syllabi: SYLLABI,
+      assignments: [{
+        learnerId: 'felix',
+        courses: [{ courseId: 'history-capitals', profile: 'upper', syllabusId: 'atlas-upper', enrollment: { schema: 'school.course-enrollment/v1' } }],
+      }],
     });
-    expect(m.overriddenCourses.has('math-fractions')).toBe(true);
-    expect(m.overriddenCourses.has('history-capitals')).toBe(false);
+    const cell = m.rows[0].cells['history-capitals'];
+    expect(cell).toMatchObject({ enrolled: true, syllabusId: 'atlas-upper', syllabusTitle: 'Atlas — upper', profile: 'upper', managed: true });
+  });
+
+  it('marks a hand-authored enrollment as unmanaged rather than broken', () => {
+    const m = deriveMatrix({
+      kids: KIDS, units: UNITS, syllabi: SYLLABI,
+      assignments: [{ learnerId: 'felix', courses: [{ courseId: 'history-capitals', profile: 'upper', enrollment: { schema: 'school.course-enrollment/v1' } }] }],
+    });
+    expect(m.rows[0].cells['history-capitals']).toMatchObject({ enrolled: true, managed: false, profile: 'upper' });
+  });
+
+  it('treats a bare-string course as enrolled with no enrollment record', () => {
+    const m = deriveMatrix({
+      kids: KIDS, units: UNITS, syllabi: [],
+      assignments: [{ learnerId: 'milo', courses: ['math-fractions'] }],
+    });
+    expect(m.rows[1].cells['math-fractions']).toMatchObject({ enrolled: true, managed: false, syllabusId: null });
+  });
+
+  it('leaves an unassigned intersection absent from cells', () => {
+    const m = deriveMatrix({ kids: KIDS, units: UNITS, syllabi: [], assignments: [] });
+    expect(m.rows[0].cells['math-fractions']).toBeUndefined();
   });
 });
