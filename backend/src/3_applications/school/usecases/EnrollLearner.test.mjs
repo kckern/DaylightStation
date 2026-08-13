@@ -17,6 +17,21 @@ const SYLLABUS = {
   courseId: 'elements', profile: 'lower', policy: null, passing: 60, term: null,
 };
 
+// Units ordered so `foundations` is NOT the first module to appear in the
+// array — `createCourseEnrollment` otherwise derives module order from
+// first-appearance, which would make a naive test pass even if the course
+// policy (required_opening_module) never reached the merge at all.
+const UNITS_OPENING_NOT_FIRST = [
+  { unitId: 'el.02', courseId: 'elements', module: 'period-1', moduleRole: 'lesson', sequence: 2 },
+  { unitId: 'el.03', courseId: 'elements', module: 'period-1', moduleRole: 'lesson', sequence: 3 },
+  { unitId: 'el.01', courseId: 'elements', module: 'foundations', moduleRole: 'overview', sequence: 1 },
+];
+
+// `CurriculumAccess.getWork(id)` is keyed `'<subject>/<work>'` — this double
+// intentionally exposes only `listWorks()` (the real contract every other
+// production caller — BuildAgenda, schoolLifecycle — uses to resolve a bare
+// work name). A double that instead faked a `getWork(bareId)` method would
+// hide the bug this fixes.
 function harness({ assignment = null, open = [] } = {}) {
   const saved = [];
   return {
@@ -27,7 +42,7 @@ function harness({ assignment = null, open = [] } = {}) {
         get: async () => assignment,
         put: async (record) => { saved.push(record); return record; },
       },
-      curriculum: { listUnits: async () => UNITS, getWork: async (id) => (id === 'elements' ? WORK : null) },
+      curriculum: { listUnits: async () => UNITS, listWorks: async () => [WORK] },
       sessions: { listOpenForLearner: async () => open },
       teacherGate: { assert: () => true },
       clock: () => new Date('2026-09-08T12:00:00.000Z'),
@@ -102,6 +117,45 @@ describe('EnrollLearner', () => {
     await expect(hh.useCase.execute({
       learnerId: 'milo', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410', baseUpdatedAt: null,
     })).rejects.toThrow(/changed since you loaded/);
+  });
+
+  it('re-materializing preserves elective and the original enrolledAt from the prior entry', async () => {
+    const hh = harness({
+      assignment: {
+        learnerId: 'milo',
+        courses: [{ courseId: 'elements', elective: true, enrolledAt: '2026-01-01T00:00:00.000Z' }],
+        units: [],
+        updatedAt: null,
+      },
+    });
+    await hh.useCase.execute({
+      learnerId: 'milo', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410', rematerialize: true,
+    });
+    const entry = hh.saved[0].courses.find((c) => c.courseId === 'elements');
+    expect(entry.elective).toBe(true);
+    expect(entry.enrolledAt).toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  it('stamps enrolledAt fresh on a brand-new enrollment (no prior entry to preserve)', async () => {
+    await h.useCase.execute({ learnerId: 'milo', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410' });
+    const entry = h.saved[0].courses.find((c) => c.courseId === 'elements');
+    expect(entry.enrolledAt).toBe('2026-09-08T12:00:00.000Z');
+  });
+
+  it('resolves the course policy via listWorks — required_opening_module wins even when it is not first in unit order', async () => {
+    const hh = new EnrollLearner({
+      syllabi: { get: async (id) => (id === 'elements-lower' ? SYLLABUS : null) },
+      assignments: { get: async () => null, put: async (record) => record },
+      curriculum: { listUnits: async () => UNITS_OPENING_NOT_FIRST, listWorks: async () => [WORK] },
+      sessions: { listOpenForLearner: async () => [] },
+      teacherGate: { assert: () => true },
+      clock: () => new Date('2026-09-08T12:00:00.000Z'),
+      rng: () => 0,
+      logger: { info: () => {}, warn: () => {} },
+    });
+    const record = await hh.execute({ learnerId: 'milo', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410' });
+    const entry = record.courses.find((c) => c.courseId === 'elements');
+    expect(entry.enrollment.moduleOrder[0]).toBe('foundations');
   });
 
   it('preserves other courses and standalone units untouched', async () => {

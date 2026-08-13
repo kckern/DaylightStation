@@ -89,7 +89,11 @@ export class EnrollLearner {
       }
     }
 
-    const work = await this.#curriculum.getWork?.(courseId);
+    // `CurriculumAccess.getWork(id)` is keyed `'<subject>/<work>'`; `courseId`
+    // here is the bare work name, so resolve it the same way every other
+    // production caller does (BuildAgenda, schoolLifecycle) — via listWorks().
+    const works = (await this.#curriculum.listWorks?.()) ?? [];
+    const work = works.find((w) => w.work === courseId) ?? null;
     const policy = { ...(work?.progression ?? {}), ...(syllabus.policy ?? {}) };
     const nowIso = this.#clock().toISOString();
 
@@ -102,12 +106,24 @@ export class EnrollLearner {
       rng: this.#rng,
     });
 
+    // A re-materialize overlays the newly computed fields onto whatever the
+    // prior entry held — not a from-scratch object. `elective` is live
+    // planner input (planner.mjs sorts required work ahead of electives), so
+    // discarding it here would silently promote an elective course to
+    // required on the next agenda build. `enrolledAt` is likewise preserved:
+    // it names when the learner was FIRST enrolled, not when they were last
+    // re-materialized. A bare-string prior entry (no object, no fields to
+    // carry forward) contributes nothing here, which is correct.
+    const priorEntry = indexOf !== -1 ? courses[indexOf] : null;
+    const priorObj = (priorEntry && typeof priorEntry === 'object') ? priorEntry : {};
+
     const entry = {
+      ...priorObj,
       courseId,
       ...(syllabus.profile ? { profile: syllabus.profile } : {}),
       syllabusId: syllabus.syllabusId,
       ...(syllabus.passing !== null ? { passing: syllabus.passing } : {}),
-      enrolledAt: nowIso,
+      enrolledAt: priorObj.enrolledAt ?? nowIso,
       enrollment,
     };
     if (indexOf === -1) courses.push(entry); else courses[indexOf] = entry;
