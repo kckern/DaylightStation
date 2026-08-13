@@ -26,9 +26,32 @@ UX, or switch the UX for content that's still fine to record.
 
 Matching is case-insensitive and accepts either a plain label string or a Plex tag object
 (`{ tag: 'Instructional' }`) on the item. A label match on an item's own labels resolves
-synchronously; if the item doesn't carry labels inline, the player looks up the labels
-from the item's show and resolves once that lookup settles (see *Fail-safe resolution*
-below).
+synchronously; if the item doesn't carry labels inline, the player looks them up and
+resolves once that lookup settles (see *Fail-safe resolution* below).
+
+### Where labels actually live
+
+Labels live on the **show**, and Plex does not propagate them down to seasons or episodes.
+Several playback paths — the `/fitness/play/:id` metadata-fetch fallback, the DoNow launch
+handler, the up-next widget — supply nothing but an episode id, and asking the container
+API for an episode id answers with the *episode's* own labels: a real, empty array.
+
+So the lookup **climbs**. It asks for the id it was given and inspects the container type
+in the answer:
+
+- A container that is not an episode or a season is terminal — its labels are the answer,
+  empty or not.
+- An episode or a season carrying labels of its own is also terminal.
+- An episode or a season with **no** labels is not an answer at all. It's the shape Plex
+  returns when the labels live further up, so the lookup follows the parent reference and
+  asks again — episode to season to show, bounded at two hops so a malformed or
+  self-referential parent chain can't loop.
+
+An unlabelled episode or season that can't be climbed out of (no parent, or the hop bound
+exhausted) is treated as a failed lookup, not as "no labels": it stays unresolved, and
+capture stays off. Every id visited on a successful climb is cached against the show-level
+answer, so a sibling episode short-circuits — and so the cache can never serve an
+episode-scoped empty array in place of a show's real labels.
 
 ---
 
@@ -41,6 +64,10 @@ Setting `captureDisabled` for an item turns off every frame-capture surface:
 - The `camera_view` widget: it's dropped from the module menu entirely, and if it's
   already open when an instructional item starts playing, it tears itself down (drops its
   `getUserMedia` stream) rather than keep recording.
+
+Suppression is scoped to the item being played. The player publishes it while it's mounted
+and clears it when it closes, so an instructional item can't leave the `camera_view` widget
+withheld for the rest of the session after the viewer has moved on.
 
 With no camera captures for a session, the recap has nothing to composite and is simply
 **skipped** — not an error state, just nothing to render. A session that mixes
@@ -66,17 +93,26 @@ metronome:
   number of seconds without resuming playback — jogging while paused leaves the player
   paused.
 - **Loop windows.** A loop can be armed, anchored at the current paused position, for a
-  configured duration in either direction; once armed it repeats hands-free, looping past
-  the end of the clip if needed by seeking back and resuming. Any seek the viewer makes
-  outside the loop's own repeat-seeks releases it automatically — there's no separate
-  "release" gesture required, and an already-armed loop can also be released by tapping
-  its chip.
+  configured duration in either direction. Arming starts playback, so the loop runs
+  hands-free straight from the gesture that chose it — including past the end of the clip,
+  by seeking back and resuming.
+
+  New loop durations are offered only while paused, so a window is always anchored to a
+  position the viewer deliberately chose and can see. The **armed** chip is different: it
+  stays on screen while the loop runs, showing which duration is looping, and tapping it
+  releases the loop at any time — paused or playing. Any seek the viewer makes outside the
+  loop's own repeat-seeks also releases it automatically, so no release gesture is ever
+  strictly required.
+
+  A loop belongs to the item it was armed on. Advancing the queue releases it, so an armed
+  window never follows the viewer into the next item.
 - **A visible mirror toggle**, alongside the workout mode's corner-hotspot mirror gesture.
 
 ## Fail-safe: capture stays off until the mode resolves
 
 An item's content mode isn't always known immediately. If the item doesn't carry labels
-inline, the player has to fetch them from the item's show before it can decide. Capture is
+inline, the player has to look them up — climbing to the show if it was handed an episode
+or season id (see *Where labels actually live*) — before it can decide. Capture is
 **fail-closed** for that entire window: `captureDisabled` counts as disabled and
 `studyUx` counts as off until resolution completes, so an item never starts recording on
 the strength of "we haven't checked yet." This applies to ordinary, unlabelled workout
