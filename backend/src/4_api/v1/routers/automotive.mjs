@@ -18,6 +18,7 @@ import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/in
  *   GET  /vehicles/:id                      → overview: odometer, last snapshot, fuel, reminders
  *   GET  /vehicles/:id/journeys             → { journeys, hidden }  ?from=&to=&shuffles=1
  *   GET  /vehicles/:id/trip?file=<relPath>  → full recording: meta, track, samples
+ *   GET  /vehicles/:id/events               → { events }  ?event=harsh-motion
  *   GET  /vehicles/:id/fuel                 → { logs, summary, detected }
  *   POST /vehicles/:id/fuel                 → the created/updated fill-up
  *   GET  /service-types                     → { types } (config-driven vocabulary)
@@ -64,6 +65,18 @@ export function createAutomotiveRouter({ automotiveContainer, logger = console }
       vehicleId: req.params.id,
       file: String(req.query.file || ''),
     }));
+  }));
+
+  // Device events straight from the day logs — wifi-joined, trip-dropped, and
+  // harsh-motion. These record what happened BETWEEN trips, which is where
+  // refuelling, code-clearing and rough driving actually live.
+  router.get('/vehicles/:id/events', asyncHandler(async (req, res) => {
+    const events = await automotiveContainer.historyRepository.listEvents(req.params.id, {
+      from: parseDate(req.query.from),
+      to: parseDate(req.query.to),
+      events: req.query.event ? String(req.query.event).split(',') : null,
+    });
+    res.json({ events: events.map(({ at, ...rest }) => rest) });
   }));
 
   router.get('/vehicles/:id/fuel', asyncHandler(async (req, res) => {

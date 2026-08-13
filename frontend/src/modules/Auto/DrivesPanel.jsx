@@ -161,6 +161,12 @@ function JourneyRow({ journey, onName, onLogFuel, fuelPrompt }) {
             recorder artifacts and get suppressed, so a four-leg journey can
             legitimately have zero stops — and "0 stops" is noise, not news. */}
         {journey.stop_count > 0 && <span>{journey.stop_count} stop{journey.stop_count === 1 ? '' : 's'}</span>}
+        {journey.harsh_events?.length > 0 && (
+          <span className="auto-journey__harsh">
+            {journey.harsh_events.length} harsh
+            {' '}({Math.max(...journey.harsh_events.map((e) => e.g || 0)).toFixed(2)}g)
+          </span>
+        )}
       </div>
 
       {/* One line, not a stack. Both caveats apply to almost every row right
