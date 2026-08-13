@@ -7,6 +7,7 @@
  * codebase has been bitten by before.
  */
 import { ValidationError } from '#domains/core/errors/index.mjs';
+import { assertNotStale } from './staleSaveGuard.mjs';
 
 export class UnenrollLearner {
   #assignments; #curriculum; #sessions; #teacherGate; #clock; #logger;
@@ -52,12 +53,7 @@ export class UnenrollLearner {
     if (typeof courseId !== 'string' || !courseId.trim()) throw new ValidationError('courseId is required');
 
     const current = await this.#assignments.get(learnerId);
-    if (baseUpdatedAt !== undefined && (current?.updatedAt ?? null) !== baseUpdatedAt) {
-      const err = new ValidationError('Assignments changed since you loaded them — reload and try again.');
-      err.code = 'STALE_SAVE';
-      err.status = 409;
-      throw err;
-    }
+    assertNotStale(current, baseUpdatedAt);
 
     const courses = [...(current?.courses ?? [])];
     const indexOf = courses.findIndex((entry) => (typeof entry === 'string' ? entry : entry?.courseId) === courseId);
