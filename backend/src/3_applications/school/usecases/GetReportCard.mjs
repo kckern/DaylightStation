@@ -58,6 +58,31 @@ function withinPeriod(iso, period) {
   return isNonEmptyString(iso) && iso >= period.startsAt && iso < period.endsAt;
 }
 
+/**
+ * Two enrollments in one course inside one period average two unrelated
+ * scopes into one number. Per-enrollment report-card rows are wave-4 work —
+ * they need terms and a real grading window, and the frozen
+ * school.report-card/v1 schema should migrate once, not twice. Until then the
+ * merge is made VISIBLE rather than silent.
+ */
+export function detectMultiEnrollment(history, period) {
+  const byCourse = new Map();
+  (history ?? []).forEach((record) => {
+    if (!withinPeriod(record?.recordedAt, period)) return;
+    (record.courses ?? []).forEach((entry) => {
+      if (!entry || typeof entry !== 'object') return;
+      const { courseId, syllabusId } = entry;
+      if (typeof courseId !== 'string' || typeof syllabusId !== 'string') return;
+      if (!byCourse.has(courseId)) byCourse.set(courseId, new Set());
+      byCourse.get(courseId).add(syllabusId);
+    });
+  });
+  return [...byCourse.entries()]
+    .filter(([, ids]) => ids.size > 1)
+    .map(([courseId, ids]) => ({ courseId, syllabusIds: [...ids].sort() }))
+    .sort((a, b) => a.courseId.localeCompare(b.courseId));
+}
+
 export class GetReportCard {
   #curriculum; #assignments; #sessions; #datastore; #academicPeriods;
   #getMaterialProgressSummary; #getLearningProgress; #reviewQueue; #conceptRegistry; #clock; #logger;
@@ -128,6 +153,9 @@ export class GetReportCard {
     const courseIds = this.#selectPeriodCourses({
       history, currentAssignment, period, periodSessions, unitCourse,
     });
+    const warnings = detectMultiEnrollment(history, period).map((hit) => ({
+      code: 'multiple-enrollments', ...hit,
+    }));
     const courses = courseIds.map((courseId) => this.#courseSection({
       courseId, units, flatSessions, periodSessions, period,
     }));
@@ -154,6 +182,7 @@ export class GetReportCard {
       generatedAt: this.#clock().toISOString(),
       courses,
       unresolvedUnits,
+      warnings,
       materials,
       evidence,
       activeDays,
