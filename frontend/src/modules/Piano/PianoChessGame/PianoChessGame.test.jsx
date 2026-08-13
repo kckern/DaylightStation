@@ -32,7 +32,7 @@ vi.mock('./chessApi.js', () => ({
 
 import { PianoChessGame } from './PianoChessGame.jsx';
 import {
-  archiveGame, fetchChessConfig, requestOpponentMove, saveChessConfig, saveGameRecord,
+  archiveGame, fetchChessConfig, fetchLadder, requestOpponentMove, saveChessConfig, saveGameRecord,
 } from './chessApi.js';
 import { DEFAULT_CHORD_SCHEME, squareToChord } from './chordAddress.js';
 import { DOUBLE_WINDOW_MS } from './chordSelection.js';
@@ -205,9 +205,10 @@ describe('PianoChessGame settings wiring', () => {
     shuffle_each_turn: true,
     feedback: { flash_rejected: true, toast: true },
   };
-  const railBadge = (container) => [...container.querySelectorAll('.piano-chess__fact')]
-    .find((row) => row.querySelector('dt')?.textContent === 'Level')
-    ?.querySelector('dd').textContent;
+  // The strength on the other side of the board is named in the opponent panel
+  // — as a character once the ladder resolves, and as the rung's label before
+  // that (and for a guest, who climbs nothing).
+  const railBadge = (container) => container.querySelector('.piano-chess__opponent-rung-name')?.textContent;
 
   beforeEach(() => {
     fetchChessConfig.mockResolvedValue(SERVED_CONFIG);
@@ -643,15 +644,19 @@ describe('the player is locked for the whole game', () => {
   });
 
   it('keeps the starting player for the whole game, ignoring a mid-game switch', async () => {
-    const { rerender, container } = render(makeElement('felix'));
+    // Shared mocks across this file — clear so the assertion sees only this game.
+    fetchChessConfig.mockClear();
+    fetchLadder.mockClear();
+    const { rerender } = render(makeElement('felix'));
     await playChord(rerender, 'felix', notesFor('e2'));
     rerender(makeElement('milo'));
     await act(async () => { await vi.advanceTimersByTimeAsync(50); });
-    const lockedUser = [...container.querySelectorAll('.piano-chess__fact')]
-      .find((row) => row.querySelector('dt')?.textContent === 'Player');
-    expect(lockedUser).not.toBeNull();
-    expect(lockedUser.textContent).toContain('felix');
-    expect(lockedUser.textContent).not.toContain('milo');
+    // The rail no longer prints the player — the kiosk breadcrumb does, with an
+    // avatar — so the lock is asserted where it actually bites: every per-user
+    // call still belongs to whoever started the game.
+    const users = [...fetchChessConfig.mock.calls, ...fetchLadder.mock.calls].map(([user]) => user);
+    expect(users).toContain('felix');
+    expect(users, 'a mid-game switch must not re-scope the game').not.toContain('milo');
   });
 });
 

@@ -15,6 +15,8 @@ import {
   saveChessConfig, saveGameRecord,
 } from './chessApi.js';
 import OpponentPortrait, { opponentStatus } from './OpponentPortrait.jsx';
+import GestureCards from './GestureCards.jsx';
+import OpponentRoster from './OpponentRoster.jsx';
 import { cuesFromConfig } from './chessCues.js';
 import ChessSettingsPanel from './ChessSettingsPanel.jsx';
 import { CHORD_QUALITIES, DEFAULT_CHORD_SCHEME, squareToChord } from './chordAddress.js';
@@ -57,6 +59,23 @@ const OPPONENT_DELAY_MS = 700;
 const PIECE_GLYPHS = { p: '♟', n: '♞', b: '♝', r: '♜', q: '♛', k: '♚' };
 /** For the opponent's status line — "Took your knight" reads, "Took your n" does not. */
 const PIECE_NAMES = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king' };
+
+/** Inline SVG, never a unicode glyph — the kiosk WebView renders those as tofu. */
+function GearIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
+      <path
+        fill="currentColor"
+        d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm0 6a2 2 0 1 1 0-4 2 2 0 0 1 0 4Z"
+      />
+      <path
+        fill="currentColor"
+        d="m19.4 13-.2-1 1.7-1.3-1.7-3-2 .7-1-.6-.3-2.1h-3.8l-.3 2.1-1 .6-2-.7-1.7 3L8.8 12l-.2 1-1.7 1.3 1.7 3 2-.7 1 .6.3 2.1h3.8l.3-2.1 1-.6 2 .7 1.7-3L19.2 13Z"
+        opacity="0.55"
+      />
+    </svg>
+  );
+}
 
 /**
  * The addressing vocabulary, chosen by config rather than by code.
@@ -664,66 +683,67 @@ export function PianoChessGame({
             that resizes as fingers land drags the eye and, worse, moves the
             board. Fixed rows, fixed rail width, board centred regardless. */}
         <aside className="piano-chess__rail piano-chess__rail--state">
-          <dl className="piano-chess__facts">
-            {[
-              // The kiosk chip above says "Milo"; printing the raw slug beside
-              // it made the same person look like two.
-              ['Player', displayName],
-              // Story 2 asks whose turn it is, not which colour is to move —
-              // the colour is a fact about the board, the answer is about them.
-              ['Turn', game.status?.game_over ? 'Game over' : turnLabel],
-              ['Level', opponent ? `${opponent.name} · ${ladderLevel}` : (rung?.label ?? (rungId.charAt(0).toUpperCase() + rungId.slice(1)))],
-            ].map(([label, value]) => (
-              <div key={label} className="piano-chess__fact">
-                <dt className="piano-chess__slot-label">{label}</dt>
-                <dd className="piano-chess__fact-value">{value}</dd>
-              </div>
-            ))}
-          </dl>
-
-          {/* IN HAND. A mark on a distant square is not enough to keep "I am
-              mid-move, holding my knight" in a child's head while they pluck
-              through chords hunting a destination. This space is reserved for
-              that one question and used for nothing else, so its emptiness is
-              also an answer. The way to put the piece back sits inside the same
-              block — the escape has to be legible exactly where the player is
-              looking when they feel stuck. */}
+          {/* IN HAND. Not a fact table row — a socket, with the piece sitting in
+              it or visibly waiting for one. The way to put it back lives in the
+              same tile, because "Put it back" floating on its own asks "put
+              WHAT back?" every time the socket is empty. */}
           <section className={`piano-chess__hand${game.origin ? ' piano-chess__hand--holding' : ''}`}>
             <h2 className="piano-chess__slot-label">In hand</h2>
-            {game.origin && heldPiece ? (
-              <>
-                {/* fenToPosition yields colour+type as two characters ("wp",
-                    "bn"), so the glyph is the SECOND one. Indexing the table
-                    with the whole string matched nothing and drew a literal
-                    question mark where the piece should be. */}
+            <div className="piano-chess__hand-slot">
+              {game.origin && heldPiece ? (
                 <span className={`piano-chess__hand-piece piano-chess__hand-piece--${heldPiece[0] === 'w' ? 'white' : 'black'}`}>
                   {PIECE_GLYPHS[heldPiece[1]] ?? PIECE_GLYPHS[heldPiece.toLowerCase()] ?? '?'}
                 </span>
-                <span className="piano-chess__hand-from">from {game.origin}</span>
-                <span className="piano-chess__hand-escape">Play an octave to put it back</span>
-              </>
-            ) : (
-              <span className="piano-chess__hand-empty">Empty</span>
-            )}
+              ) : null}
+            </div>
+            <span className="piano-chess__hand-from">
+              {game.origin ? `from ${game.origin}` : 'Nothing picked up'}
+            </span>
           </section>
 
-          {/* HEARD. Moved off the bottom strip, where it re-centred itself on
-              every note and shook the whole row. */}
-          <ChordReadout
-            heldNotes={heldNotes}
-            /* In the reading vocabulary the address IS the notation, so the
-               spelled-out letters ("C/B") are the wrong vocabulary to put on
-               screen — the square's own name is the answer, and the staff on
-               the other rail shows what was played. */
-            chord={reading ? null : cursorChord}
-            square={cursor}
-            connected={connected}
-            settling={heldNotes.length >= minNotes && candidates.length > 0 && !cursor}
-            minNotes={minNotes}
-            isReading={reading}
-          />
+          {/* WHAT THE GAME HEARD, in its own voice. It is the game answering
+              you, so it is shaped like speech rather than like a field. */}
+          <div className="piano-chess__says">
+            <ChordReadout
+              heldNotes={heldNotes}
+              chord={reading ? null : cursorChord}
+              square={cursor}
+              connected={connected}
+              settling={heldNotes.length >= minNotes && candidates.length > 0 && !cursor}
+              minNotes={minNotes}
+              isReading={reading}
+            />
+            <p className="piano-chess__prompt" role="status">{prompt}</p>
+          </div>
 
-          <p className="piano-chess__prompt" role="status">{prompt}</p>
+          {/* WHAT ELSE YOU CAN PLAY. Drawn as keys, because no child can act on
+              "a run of three adjacent semitones". */}
+          <GestureCards
+            gestures={[
+              {
+                id: 'octave',
+                pressed: [0, 12],
+                title: 'Put it back',
+                note: game.origin ? 'the piece in hand' : 'when holding a piece',
+                active: !!game.origin,
+                muted: !game.origin,
+              },
+              {
+                id: 'legal',
+                pressed: [0, 1, 2],
+                title: 'Show moves',
+                note: help.legal ? 'showing' : 'counts as a hint',
+                active: help.legal,
+              },
+              {
+                id: 'best',
+                pressed: [0, 1, 2, 3],
+                title: 'Best move',
+                note: help.best ? 'showing' : 'counts as help',
+                active: !!help.best,
+              },
+            ]}
+          />
 
           {game.status?.game_over && finishedRecord && (
             <dl className="piano-chess__summary">
@@ -741,23 +761,9 @@ export function PianoChessGame({
           )}
 
           <div className="piano-chess__rail-actions">
-            {game.status?.game_over ? (
+            {game.status?.game_over && (
               <button type="button" className="piano-chess__cancel" onClick={restart}>
                 Play again
-                <span className="piano-chess__cancel-hint">play an octave to start over</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="piano-chess__cancel"
-                onClick={cancelSelection}
-                disabled={!game.origin}
-              >
-                Put it back
-                {/* The octave is spelled out inside the in-hand block, where a
-                    stuck player is already looking. Repeating it here said the
-                    same sentence twice on one narrow rail. */}
-                <span className="piano-chess__cancel-hint">or press Esc</span>
               </button>
             )}
             {chessConfig && (
@@ -766,8 +772,10 @@ export function PianoChessGame({
                 className="piano-chess__settings-btn"
                 onClick={() => setSettingsOpen((open) => !open)}
                 aria-expanded={settingsOpen}
+                aria-label="Settings"
+                title="Settings"
               >
-                Settings
+                <GearIcon />
               </button>
             )}
           </div>
@@ -804,20 +812,31 @@ export function PianoChessGame({
         <aside className="piano-chess__rail piano-chess__rail--chords">
           {/* Who you are playing, and what they are doing. Above the chord
               read-outs because it is about the game, not about your hands. */}
-          {opponent && (
-            <section className="piano-chess__opponent">
-              <h2 className="piano-chess__slot-label">Opponent</h2>
+          {/* Who you are playing. The ladder names a character; without one
+              (a guest, or before it resolves) the rail still has to say what
+              strength is on the other side of the board, so it falls back to
+              the rung the settings panel sets. */}
+          <section className="piano-chess__opponent">
+            <h2 className="piano-chess__slot-label">Opponent</h2>
+            {opponent ? (
               <OpponentPortrait opponent={opponent} level={ladderLevel} status={opponentLine} size="lg" />
-              {ladder?.status && !ladder.status.at_top && ladder.persisted && (
-                <p className="chess-ladder-progress">
-                  <span>To beat {opponent.name}</span>
-                  <span className="chess-ladder-progress__value">
-                    {ladder.status.wins} of {ladder.status.needed}
-                  </span>
-                </p>
-              )}
-            </section>
-          )}
+            ) : (
+              <p className="piano-chess__opponent-rung">
+                <span className="piano-chess__opponent-rung-name">
+                  {rung?.label ?? (rungId.charAt(0).toUpperCase() + rungId.slice(1))}
+                </span>
+                <span className="chess-opponent__status">{opponentLine}</span>
+              </p>
+            )}
+            {ladder?.status && !ladder.status.at_top && ladder.persisted && (
+              <p className="chess-ladder-progress">
+                <span>To beat {opponent?.name}</span>
+                <span className="chess-ladder-progress__value">
+                  {ladder.status.wins} of {ladder.status.needed}
+                </span>
+              </p>
+            )}
+          </section>
 
           <h2 className="piano-chess__slot-label">Playing</h2>
           <ChordNamePanel midiNotes={heldNotes} />
@@ -826,6 +845,12 @@ export function PianoChessGame({
           <div className="piano-chess__staff-card action-staff">
             <CurrentChordStaff activeNotes={activeNotes} />
           </div>
+          {/* The climb, seen whole — and the natural tenant of the space under
+              the staff, which was empty charcoal. */}
+          {ladder?.roster?.length > 0 && (
+            <OpponentRoster roster={ladder.roster} unlockedThrough={ladder.unlocked_through} />
+          )}
+
           <div className="piano-chess__captured">
             {/* A dash for every row is a non-answer taking up the foot of the
                 rail. Nothing taken yet is one quiet line; once there is
