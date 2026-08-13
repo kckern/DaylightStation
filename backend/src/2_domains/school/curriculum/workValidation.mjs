@@ -56,6 +56,7 @@ const SCOPES = ['item', 'module', 'work'];
 // When a printable is issued during the work.
 const WHENS = ['study', 'checkpoint', 'remediation'];
 const SCANS = ['omr', 'none'];
+const ORDERING = ['fixed', 'shuffle_once'];
 
 const isStr = (v) => typeof v === 'string' && v.trim().length > 0;
 const isObj = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
@@ -193,6 +194,42 @@ export function validateWork(raw, ctx = {}) {
     errors.push('quiz_root must be a bank id path');
   }
 
+  // Course pacing is authored once; the selected order belongs to each
+  // enrollment.  Keeping the policy here prevents a book course from hiding
+  // learner-specific sequencing in its individual unit files.
+  let progression;
+  if (isPresent(raw.progression)) {
+    if (!isObj(raw.progression)) errors.push('progression must be an object');
+    else {
+      const p = raw.progression;
+      oneOf(p.module_order, ORDERING, 'progression.module_order', errors);
+      oneOf(p.lesson_order, ORDERING, 'progression.lesson_order', errors);
+      if (p.mode !== 'sequential' && p.mode !== 'module_blocks') {
+        errors.push('progression.mode must be sequential|module_blocks');
+      }
+      if (p.mode === 'module_blocks' && p.one_active_module !== true) {
+        errors.push('progression.one_active_module must be true for module_blocks');
+      }
+      if (p.required_opening_module !== undefined && !isStr(p.required_opening_module)) {
+        errors.push('progression.required_opening_module must be a string');
+      }
+      progression = p;
+    }
+  }
+
+  let profiles;
+  if (isPresent(raw.profiles)) {
+    if (!isObj(raw.profiles)) errors.push('profiles must be an object');
+    else profiles = raw.profiles;
+  }
+  let source;
+  if (isPresent(raw.source)) {
+    if (!isObj(raw.source)) errors.push('source must be an object');
+    else if (!isStr(raw.source.title) || !isStr(raw.source.publisher) || !isStr(raw.source.isbn)) {
+      errors.push('source requires title, publisher, and isbn');
+    } else source = raw.source;
+  }
+
   if (errors.length) return { errors };
   return {
     errors,
@@ -208,10 +245,13 @@ export function validateWork(raw, ctx = {}) {
       printables,
       modules,
       levels: raw.levels,
+      progression,
+      profiles,
+      source,
     },
   };
 }
 
 export const WORK_ENUMS = Object.freeze({
-  CATEGORIES, MEDIA, SHAPES, ITEM_SOURCES, ORDERS, GATES, SCOPES, WHENS, SCANS,
+  CATEGORIES, MEDIA, SHAPES, ITEM_SOURCES, ORDERS, GATES, SCOPES, WHENS, SCANS, ORDERING,
 });

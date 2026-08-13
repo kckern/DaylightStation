@@ -199,6 +199,8 @@ Fence derivation recipes may set `top_corner_row_offset` when a vendor sheet sto
 
 Blob recipes normally read a contiguous 3×3 source block. `outer_stride: [x, y]` records sheets whose left/center/right or top/middle/bottom source cells are separated by intervening columns or rows; the default is `[1, 1]`. `color_map` records exact `#rrggbb` palette substitutions in the derived atlas, useful for normalizing a biome-inappropriate fringe while keeping the raw vendor sheet immutable. Both settings are derivation evidence and require a regenerated topology matrix.
 
+Use `outer_corner_mode: native` when the source 3×3 block contains hand-drawn full-cell convex turns whose curve or bank detail crosses the 8×8 quadrant seam; the default `quarter-composite` remains appropriate for genuinely modular sources. Use `outer_edge_mode: native` when its four cardinal middle cells contain continuous hand-drawn banks, curbs, or foam runs that would be lost by joining corner halves. Record the reviewed corner appearance separately as `outer_corner_style: rounded|square`. Presentation interfaces can require `corner_profile.style: rounded` plus a minimum pixel cutback ratio, so QA proves all four turns rather than trusting the label.
+
 Inspect and render reusable prefab classes without a frontend:
 
 ```bash
@@ -209,12 +211,17 @@ npm run gaming:assets -- prefab-render --root /path/to/_common \
   --viewport 320x240 --scale 2 --out /tmp/desert-house-large.png
 ```
 
-Use `derive` only when a source needs a reproducible, explicitly recorded atlas crop; it never modifies source art. An optional exact `transparent_colors` list removes opaque backing colors after all layers are composed, which is useful for water/effect overlays that must work over a tinted terrain render:
+Use `derive` only when a source needs a reproducible, explicitly recorded atlas crop; it never modifies source art. An optional exact `color_map` performs reproducible palette substitution, `texture_fills` replaces selected flat colors with pixels from a measured repeating source rectangle, and `transparent_colors` removes opaque backing colors after all layers are composed. Together they support normalized biome palettes, texture-compatible transition aprons, and overlays that must work over a tinted terrain render:
 
 ```yaml
 # shoreline-derivation.yml
 canvas: [48, 48]
 transparent_colors: ['#0095e9']
+color_map: { '#6b646d': '#464950' }
+texture_fills:
+  - source: assets/default/terrain/cave-floor.png
+    rect: [48, 48, 16, 16]
+    colors: ['#464950']
 layers:
   - source: assets/desert/tiles/desert-water-tiles-1.png
     rect: [48, 0, 48, 48]
@@ -222,7 +229,7 @@ layers:
     size: [48, 48] # optional nearest-neighbour destination size
 ```
 
-Color keys are strict `#rrggbb` values, not fuzzy tolerances. A layer's optional `size` resamples its source rectangle with nearest-neighbour scaling, which is useful for scale-correct pixel-art join silhouettes. Catalog the generated PNG with its own pinned SHA-256 and retain the recipe beside the reviewed fixture so the derivative can be reproduced byte-for-byte.
+Color keys are strict `#rrggbb` values, not fuzzy tolerances. Each texture fill repeats its exact source rectangle at `origin: [0, 0]` unless another non-negative phase is recorded; it replaces only the listed post-`color_map` colors. A layer's optional `size` resamples its source rectangle with nearest-neighbour scaling, which is useful for scale-correct pixel-art join silhouettes. Catalog the generated PNG with its own pinned SHA-256 and retain the recipe beside the reviewed fixture so the derivative can be reproduced byte-for-byte.
 
 ```bash
 npm run gaming:assets -- derive --root /path/to/_common \
@@ -264,9 +271,17 @@ The same measurement populates exact `content_bounds` and checks each frame agai
 
 Generated v2 style profiles also carry production composition limits. `scene-qa-set` enforces placement-sector use, visible placement coverage, walkable connectivity, and repeated-placement dominance for every scene, then records the suite envelope in `report.yml`. Terrain fills, interface tiles, connectors, heights, and component tiling remain topology evidence and do not inflate subject coverage.
 
-V2 scenes may replace long literal cell/coordinate dumps with deterministic `rounded-rect`, `ellipse`, `blob`, and `route` terrain shapes plus seeded semantic placement groups. `exclude` performs boolean subtraction for islands, lakes, moats, and clearings; declared `continues` edges may clip a semantic shape at the viewport without hand-authoring its boundary cells. Zones filter materials, surfaces, planes, biomes, boundaries, and adjacent materials; groups choose balanced candidates using `center`, `cluster`, `scatter`, or `grid` layout. The compiler fails closed on clipping, forbidden surfaces, visual/structural overlap, or an unfulfillable count. Routes may terminate at a named placement so roads remain attached to landmarks. QA also records role diversity/dominance and can require `minimum_semantic_scenes`.
+V2 scenes may replace long literal cell/coordinate dumps with deterministic `rounded-rect`, `ellipse`, `blob`, and `route` terrain shapes plus seeded semantic placement groups. Blobs accept `edge_step: 1..4` to bound left/right boundary movement between adjacent rows. Terrain regions accept `minimum_thickness: 1..4`; post-clip row/column passes grow undersized runs toward the region center without filling explicit exclusions, preventing opposing edge layers from hiding one-cell liquid fringes. `exclude` performs boolean subtraction for islands, lakes, moats, and clearings; declared `continues` edges may clip a semantic shape at the viewport without hand-authoring its boundary cells. Zones filter materials, surfaces, planes, biomes, boundaries, and adjacent materials; groups choose balanced candidates using `center`, `cluster`, `scatter`, or `grid` layout. The compiler fails closed on clipping, forbidden surfaces, visual/structural overlap, or an unfulfillable count. Routes may terminate at a named placement so roads remain attached when a landmark moves. QA also records role diversity/dominance and can require `minimum_semantic_scenes`.
+
+Catalog materials may also carry seeded `details` entries (`profile`, `density`, optional `seed`, optional `interior_only`). These reuse component metadata to distribute ripples, soil marks, debris, and similar surface-specific texture consistently across every scene; catalog validation rejects unknown profiles, incompatible surfaces, invalid densities, and outline components.
+
+Reusable component profiles may set `opacity` from greater than zero through one; the same catalog-level value applies to authored component regions and material-generated details.
+
+When a mixed atlas contains a genuine curb or face course, the same asset may expose `height` bands and be referenced by a height profile. This gives platforms a semantic elevation edge using the standard left/middle/right transition compiler.
 
 Assets/prefabs declare `world.allowed_surfaces`; bridges and docks may set `world.provides_surface: solid`, and component profiles may replace the effective surface for pools or hazards. Color materials render as explicit fill commands. Bordered components can use a distinct `interior` frame, and fill variants are selected deterministically without immediate horizontal or vertical wallpaper repetition.
+
+Materials may declare `fill_mode: solid|overlay` (`solid` by default). The QA set decodes every material fill: solid cells must be fully opaque, while overlays must contain both visible and transparent pixels and cannot be used as terrain bases or regions. Terrain interfaces may declare `transition_band.minimum_changed_ratio`; QA compares each selected cardinal edge against the outside material so a topology-correct but visually invisible shoreline fails before review. Connector tiles also contribute exact world-space structural occupancy, including half-cell origins, so authored placements, generated placements, and nested prefab children cannot sit through a fence or wall.
 
 The canonical mounted v2 suite additionally requires an approved visual baseline. Its baseline manifest lives with the mounted YAML catalog and its reviewed PNGs live under the mounted preview baseline tree; neither belongs in Git fixtures.
 

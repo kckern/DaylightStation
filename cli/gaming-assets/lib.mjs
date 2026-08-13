@@ -918,7 +918,7 @@ export async function renderContactSheet({ root, sourceDir = 'sprites', out, col
   const thumb = 96 * scale;
   const label = 48;
   const rows = Math.ceil(files.length / columns);
-  const { loadImage } = await import('canvas');
+  const { createCanvas, loadImage } = await import('canvas');
   const { canvas, ctx } = await createPixelCanvas(columns * thumb, rows * (thumb + label));
   ctx.fillStyle = '#171923';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -1508,7 +1508,13 @@ async function renderPresentationPlan({ root, catalog, plan, out }) {
       }
       sourceImage = normalizedFrames.get(normalizedKey); sourceX = 0; sourceY = 0; sourceWidth = sourceImage.width; sourceHeight = sourceImage.height;
     }
-    ctx.save(); ctx.globalAlpha = command.opacity;
+    ctx.save();
+    if (command.clip_polygon) {
+      ctx.beginPath();
+      command.clip_polygon.forEach(([x, y], index) => ctx[index ? 'lineTo' : 'moveTo']((command.at[0] + x) * scale, (command.at[1] + y) * scale));
+      ctx.closePath(); ctx.clip();
+    }
+    ctx.globalAlpha = command.opacity;
     ctx.translate(command.at[0] * scale, command.at[1] * scale); ctx.rotate(command.rotation * Math.PI / 180); ctx.scale(command.flip_x ? -1 : 1, 1);
     ctx.drawImage(sourceImage, sourceX, sourceY, sourceWidth, sourceHeight, -ax, -ay, dw, dh); ctx.restore();
   }
@@ -1547,6 +1553,82 @@ async function renderPresentationPlan({ root, catalog, plan, out }) {
   if (compositionFailures.length) throw new Error(`scene ${plan.scene} violates ${plan.style_profile} composition contract: ${compositionFailures.join('; ')}`);
   await ensureParent(out); await writeFile(out, canvas.toBuffer('image/png'));
   return { out, width, height, logical_size: plan.logical_size, pixel_scale: scale, draws: plan.commands.length, plan_hash: plan.hash, diagnostics: { ...plan.diagnostics, composition, source_edge_contacts: sourceEdgeContacts, scale_audit: [...scaleAudit.values()] }, clipping };
+}
+
+/** Decode material fills and reviewed interface bands before any scene render.
+ * A terrain material marked solid must be an opaque cell; sparse art belongs
+ * in an overlay/component layer. Interfaces that opt into transition-band QA
+ * must visibly differ from the outside material along every cardinal edge. */
+export async function auditPresentationMaterialPixels({ root, catalog }) {
+  const { createCanvas, loadImage } = await import('canvas');
+  const errors = []; const images = new Map(); const facts = new Map(); const samples = new Map();
+  const logicalCell = catalog.pack.logical_cell;
+  const imageFor = async (asset) => {
+    const file = resolveUnder(root, asset.source);
+    if (!facts.has(file)) facts.set(file, await imageFacts(file));
+    if (facts.get(file).sha256 !== asset.source_sha256) throw new Error(`asset source_sha256 does not match ${asset.source}`);
+    if (!images.has(file)) images.set(file, await loadImage(file));
+    return { image: images.get(file), facts: facts.get(file) };
+  };
+  const frameSample = async (reference) => {
+    const [assetId, frameId = 'default'] = String(reference).split('#'); const key = `${assetId}#${frameId}`;
+    if (samples.has(key)) return samples.get(key);
+    const asset = catalog.assets[assetId]; const frame = asset?.frames?.[frameId];
+    if (!asset || !frame) throw new Error(`unknown material pixel reference ${key}`);
+    const loaded = await imageFor(asset); const [sx, sy, sw, sh] = frameRect(asset, frame, loaded.facts);
+    const canvas = createCanvas(logicalCell[0], logicalCell[1]); const context = canvas.getContext('2d'); context.imageSmoothingEnabled = false;
+    context.drawImage(loaded.image, sx, sy, sw, sh, 0, 0, logicalCell[0], logicalCell[1]);
+    const sample = context.getImageData(0, 0, logicalCell[0], logicalCell[1]).data; samples.set(key, sample); return sample;
+  };
+  const materialSample = async (material) => {
+    if (material.fill.asset) return frameSample(`${material.fill.asset}#${material.fill.frame ?? 'default'}`);
+    const match = material.fill.color.match(/^#(..)(..)(..)$/); const rgba = [1, 2, 3].map((index) => Number.parseInt(match[index], 16));
+    const sample = new Uint8ClampedArray(logicalCell[0] * logicalCell[1] * 4);
+    for (let index = 0; index < sample.length; index += 4) { sample[index] = rgba[0]; sample[index + 1] = rgba[1]; sample[index + 2] = rgba[2]; sample[index + 3] = 255; }
+    return sample;
+  };
+  let solid = 0; let overlays = 0;
+  for (const [id, material] of Object.entries(catalog.materials)) {
+    const mode = material.fill_mode ?? 'solid'; const pixels = await materialSample(material);
+    let visible = 0; let opaque = 0;
+    for (let index = 3; index < pixels.length; index += 4) { if (pixels[index]) visible += 1; if (pixels[index] === 255) opaque += 1; }
+    const total = pixels.length / 4;
+    if (mode === 'solid') { solid += 1; if (opaque !== total) errors.push(`material ${id}: solid fill has ${total - opaque} transparent or translucent pixels`); }
+    else { overlays += 1; if (!visible || opaque === total) errors.push(`material ${id}: overlay fill must contain both visible and transparent pixels`); }
+  }
+  const directionMasks = { north: 'esw', east: 'nsw', south: 'new', west: 'nes' }; const transitionBands = {}; const cornerProfiles = {};
+  for (const [id, entry] of Object.entries(catalog.terrain_interfaces ?? {})) {
+    if (!entry.transition_band) continue;
+    const assetId = String(entry.asset).split('#')[0]; const asset = catalog.assets[assetId]; const mapping = asset.autotile[entry.polarity]; const outside = await materialSample(catalog.materials[entry.outside]); const ratios = {};
+    for (const [direction, mask] of Object.entries(directionMasks)) {
+      const frameId = mapping[mask] ?? mapping.fallback; const inside = await frameSample(`${assetId}#${frameId}`); let changed = 0; let total = 0;
+      for (let y = 0; y < logicalCell[1]; y += 1) for (let x = 0; x < logicalCell[0]; x += 1) {
+        const inBand = direction === 'north' ? y < logicalCell[1] / 2 : direction === 'south' ? y >= logicalCell[1] / 2 : direction === 'west' ? x < logicalCell[0] / 2 : x >= logicalCell[0] / 2;
+        if (!inBand) continue; total += 1; const index = (y * logicalCell[0] + x) * 4;
+        if (inside[index] !== outside[index] || inside[index + 1] !== outside[index + 1] || inside[index + 2] !== outside[index + 2] || inside[index + 3] !== outside[index + 3]) changed += 1;
+      }
+      ratios[direction] = changed / total;
+      if (ratios[direction] < entry.transition_band.minimum_changed_ratio) errors.push(`terrain interface ${id}: ${direction} transition band changes only ${ratios[direction].toFixed(3)} of boundary pixels; requires ${entry.transition_band.minimum_changed_ratio}`);
+    }
+    transitionBands[id] = ratios;
+  }
+  const convexCorners = { ne: [logicalCell[0] / 2, 0], es: [logicalCell[0] / 2, logicalCell[1] / 2], sw: [0, logicalCell[1] / 2], nw: [0, 0] };
+  for (const [id, entry] of Object.entries(catalog.terrain_interfaces ?? {})) {
+    if (!entry.corner_profile) continue;
+    const assetId = String(entry.asset).split('#')[0]; const asset = catalog.assets[assetId]; const mapping = asset.autotile[entry.polarity];
+    const centerId = mapping.nesw ?? mapping.fallback; const center = await frameSample(`${assetId}#${centerId}`); const ratios = {};
+    for (const [mask, [left, top]] of Object.entries(convexCorners)) {
+      const frameId = mapping[mask] ?? mapping.fallback; const turn = await frameSample(`${assetId}#${frameId}`); let changed = 0; let total = 0;
+      for (let y = top; y < top + logicalCell[1] / 2; y += 1) for (let x = left; x < left + logicalCell[0] / 2; x += 1) {
+        total += 1; const index = (y * logicalCell[0] + x) * 4;
+        if (turn[index] !== center[index] || turn[index + 1] !== center[index + 1] || turn[index + 2] !== center[index + 2] || turn[index + 3] !== center[index + 3]) changed += 1;
+      }
+      ratios[mask] = changed / total;
+      if (ratios[mask] < entry.corner_profile.minimum_cutback_ratio) errors.push(`terrain interface ${id}: ${mask} convex turn cuts back only ${ratios[mask].toFixed(3)} of its interior quadrant; requires ${entry.corner_profile.minimum_cutback_ratio}`);
+    }
+    cornerProfiles[id] = ratios;
+  }
+  return { valid: errors.length === 0, errors, materials: Object.keys(catalog.materials).length, solid, overlays, transition_bands: transitionBands, corner_profiles: cornerProfiles };
 }
 
 /** Render either strict presentation v2 or an explicit legacy v1 scene. */
@@ -1668,10 +1750,13 @@ export async function renderSceneQaSet({ root, manifestPath, outDir, candidate =
   for (const field of ['required_themes', 'required_systems']) if (requirements[field] !== undefined && (!Array.isArray(requirements[field]) || requirements[field].some((entry) => typeof entry !== 'string' || !entry.trim()))) throw new Error(`scene QA set ${field} must be an array of names`);
   for (const field of ['require_review_regions', 'require_no_clipping', 'require_catalog_warning_free', 'require_deterministic_plan', 'require_approved_artifacts']) if (requirements[field] !== undefined && typeof requirements[field] !== 'boolean') throw new Error(`scene QA set ${field} must be boolean`);
   if (requirements.require_approved_artifacts && !suite.baseline) throw new Error('scene QA set requires a baseline path when require_approved_artifacts is true');
+  const presentationCatalog = presentationV2 ? await loadAssetCatalog(catalogPath) : null;
   const validation = presentationV2
-    ? { ...validatePresentationCatalog(await loadAssetCatalog(catalogPath)), warnings: [] }
+    ? { ...validatePresentationCatalog(presentationCatalog), warnings: [] }
     : await validateManifest({ root, manifestPath: catalogPath });
   if (!validation.valid) throw new Error(`scene QA set catalog is invalid: ${validation.errors.join('; ')}`);
+  const materialPixelAudit = presentationV2 ? await auditPresentationMaterialPixels({ root, catalog: presentationCatalog }) : null;
+  if (materialPixelAudit && !materialPixelAudit.valid) throw new Error(`scene QA set material pixel audit failed: ${materialPixelAudit.errors.join('; ')}`);
   if (requirements.require_catalog_warning_free && validation.warnings.length) throw new Error(`scene QA set catalog has warnings: ${validation.warnings.join('; ')}`);
   const ids = new Set(); const themes = new Set(); const reports = [];
   await mkdir(outDir, { recursive: true });
@@ -1759,6 +1844,7 @@ export async function renderSceneQaSet({ root, manifestPath, outDir, candidate =
       non_uniform_scale_draws: reports.reduce((sum, report) => sum + report.resolution_audit.non_uniform_scale_draws, 0),
       normalized_draws: reports.reduce((sum, report) => sum + report.resolution_audit.normalized_draws, 0),
     },
+    material_pixel_audit: materialPixelAudit ?? undefined,
     catalog_warnings: validation.warnings,
   };
   if (summary.inside_corners_resolved < (requirements.minimum_inside_corners_resolved ?? 0)) throw new Error(`scene QA set requires at least ${requirements.minimum_inside_corners_resolved} resolved inside corners; found ${summary.inside_corners_resolved}`);
@@ -2002,7 +2088,7 @@ export async function renderPrefabPreview({ root, catalogPath, id, params = {}, 
 export async function deriveAtlas({ root, recipePath, out }) {
   const recipe = YAML.parse(await readFile(recipePath, 'utf8')) ?? {};
   if (!validPair(recipe.canvas) || !Array.isArray(recipe.layers)) throw new Error('recipe needs canvas and layers');
-  const { loadImage } = await import('canvas');
+  const { createCanvas, loadImage } = await import('canvas');
   const { canvas, ctx } = await createPixelCanvas(...recipe.canvas);
   for (const [index, layer] of recipe.layers.entries()) {
     if (!validCoordinate(layer?.at) || !Array.isArray(layer?.rect) || layer.rect.length !== 4) throw new Error(`recipe layer ${index} needs at and rect`);
@@ -2013,6 +2099,44 @@ export async function deriveAtlas({ root, recipePath, out }) {
     const [dw, dh] = layer.size ?? [sw, sh];
     if (layer.at[0] + dw > canvas.width || layer.at[1] + dh > canvas.height) throw new Error(`recipe layer ${index} exceeds canvas`);
     ctx.drawImage(image, sx, sy, sw, sh, layer.at[0], layer.at[1], dw, dh);
+  }
+  const colorMap = recipe.color_map ?? {};
+  if (!colorMap || typeof colorMap !== 'object' || Array.isArray(colorMap)
+    || Object.entries(colorMap).some(([from, to]) => !/^#[0-9a-f]{6}$/i.test(from) || !/^#[0-9a-f]{6}$/i.test(to))) throw new Error('recipe color_map must map #rrggbb colors to #rrggbb colors');
+  if (Object.keys(colorMap).length) {
+    const replacements = new Map(Object.entries(colorMap).map(([from, to]) => [from.slice(1).toLowerCase(), to.slice(1).toLowerCase()]));
+    const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    for (let index = 0; index < pixels.data.length; index += 4) {
+      if (pixels.data[index + 3] === 0) continue;
+      const key = [pixels.data[index], pixels.data[index + 1], pixels.data[index + 2]].map((value) => value.toString(16).padStart(2, '0')).join('');
+      const replacement = replacements.get(key); if (!replacement) continue;
+      pixels.data[index] = Number.parseInt(replacement.slice(0, 2), 16);
+      pixels.data[index + 1] = Number.parseInt(replacement.slice(2, 4), 16);
+      pixels.data[index + 2] = Number.parseInt(replacement.slice(4, 6), 16);
+    }
+    ctx.putImageData(pixels, 0, 0);
+  }
+  const textureFills = recipe.texture_fills ?? [];
+  if (!Array.isArray(textureFills)) throw new Error('recipe texture_fills must be an array');
+  for (const [fillIndex, fill] of textureFills.entries()) {
+    if (!fill?.source || !Array.isArray(fill.rect) || fill.rect.length !== 4) throw new Error(`recipe texture_fill ${fillIndex} needs source and rect`);
+    if (!Array.isArray(fill.colors) || !fill.colors.length || fill.colors.some((color) => !/^#[0-9a-f]{6}$/i.test(color))) throw new Error(`recipe texture_fill ${fillIndex} colors must contain #rrggbb values`);
+    const origin = fill.origin ?? [0, 0];
+    if (!validCoordinate(origin)) throw new Error(`recipe texture_fill ${fillIndex} origin must be a non-negative pair`);
+    const file = resolveUnder(root, fill.source); const image = await loadImage(file); const [sx, sy, sw, sh] = fill.rect;
+    if (![sx, sy, sw, sh].every(Number.isInteger) || sw < 1 || sh < 1 || sx < 0 || sy < 0 || sx + sw > image.width || sy + sh > image.height) throw new Error(`recipe texture_fill ${fillIndex} rect exceeds source`);
+    const textureCanvas = createCanvas(sw, sh); const textureContext = textureCanvas.getContext('2d'); textureContext.imageSmoothingEnabled = false;
+    textureContext.drawImage(image, sx, sy, sw, sh, 0, 0, sw, sh); const texture = textureContext.getImageData(0, 0, sw, sh).data;
+    const keyed = new Set(fill.colors.map((color) => color.slice(1).toLowerCase())); const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    for (let y = 0; y < canvas.height; y += 1) for (let x = 0; x < canvas.width; x += 1) {
+      const index = (y * canvas.width + x) * 4;
+      if (!pixels.data[index + 3]) continue;
+      const rgb = [pixels.data[index], pixels.data[index + 1], pixels.data[index + 2]].map((value) => value.toString(16).padStart(2, '0')).join('');
+      if (!keyed.has(rgb)) continue;
+      const textureX = ((x - origin[0]) % sw + sw) % sw; const textureY = ((y - origin[1]) % sh + sh) % sh; const textureIndex = (textureY * sw + textureX) * 4;
+      pixels.data.set(texture.subarray(textureIndex, textureIndex + 4), index);
+    }
+    ctx.putImageData(pixels, 0, 0);
   }
   const transparentColors = recipe.transparent_colors ?? [];
   if (!Array.isArray(transparentColors) || transparentColors.some((color) => !/^#[0-9a-f]{6}$/i.test(color))) throw new Error('recipe transparent_colors must contain #rrggbb values');
@@ -2026,7 +2150,7 @@ export async function deriveAtlas({ root, recipePath, out }) {
     ctx.putImageData(pixels, 0, 0);
   }
   await ensureParent(out); await writeFile(out, canvas.toBuffer('image/png'));
-  return { out, canvas: recipe.canvas, layers: recipe.layers.length, transparent_colors: transparentColors };
+  return { out, canvas: recipe.canvas, layers: recipe.layers.length, transparent_colors: transparentColors, color_map: Object.keys(colorMap).length, texture_fills: textureFills.length };
 }
 
 const BLOB_CARDINAL_MASKS = ['isolated', 'n', 'e', 's', 'w', 'ne', 'ns', 'nw', 'es', 'ew', 'sw', 'nes', 'new', 'nsw', 'esw', 'nesw'];
@@ -2051,6 +2175,12 @@ async function buildBlobRecipe({ root, recipe }) {
   const [outerX, outerY] = recipe.outer_origin;
   const outerStride = recipe.outer_stride ?? [1, 1];
   if (!validPair(outerStride)) throw new Error('blob recipe outer_stride must be positive cell steps');
+  const outerCornerMode = recipe.outer_corner_mode ?? 'quarter-composite';
+  if (!['quarter-composite', 'native'].includes(outerCornerMode)) throw new Error('blob recipe outer_corner_mode must be quarter-composite or native');
+  const outerEdgeMode = recipe.outer_edge_mode ?? 'quarter-composite';
+  if (!['quarter-composite', 'native'].includes(outerEdgeMode)) throw new Error('blob recipe outer_edge_mode must be quarter-composite or native');
+  const outerCornerStyle = recipe.outer_corner_style ?? 'square';
+  if (!['square', 'rounded'].includes(outerCornerStyle)) throw new Error('blob recipe outer_corner_style must be square or rounded');
   const sourceCell = (cellX, cellY, quadrantX, quadrantY) => [
     cellX * cellWidth + quadrantX * halfWidth,
     cellY * cellHeight + quadrantY * halfHeight,
@@ -2068,6 +2198,8 @@ async function buildBlobRecipe({ root, recipe }) {
     { id: 'se', at: [1, 1], directions: ['s', 'e'], both: [1, 1, 1, 1], first: [2, 1, 1, 1], second: [1, 2, 1, 1], neither: [2, 2, 1, 1] },
     { id: 'sw', at: [0, 1], directions: ['s', 'w'], both: [1, 1, 0, 1], first: [0, 1, 0, 1], second: [1, 2, 0, 1], neither: [0, 2, 0, 1] },
   ];
+  const nativeOuterCorners = { ne: [0, 2], es: [0, 0], sw: [2, 0], nw: [2, 2] };
+  const nativeOuterEdges = { nes: [0, 1], esw: [1, 0], new: [1, 2], nsw: [2, 1] };
   const drawOuterBases = (origin, rowOffset) => BLOB_CARDINAL_MASKS.forEach((mask, index) => {
     const directions = mask === 'isolated' ? '' : mask; const destinationX = (index % 4) * cellWidth; const destinationY = (rowOffset + Math.floor(index / 4)) * cellHeight;
     for (const rule of quadrantRules) {
@@ -2075,6 +2207,27 @@ async function buildBlobRecipe({ root, recipe }) {
       const selection = first && second ? rule.both : first ? rule.first : second ? rule.second : rule.neither;
       const [sx, sy, sw, sh] = sourceCell(origin[0] + selection[0] * outerStride[0], origin[1] + selection[1] * outerStride[1], selection[2], selection[3]);
       ctx.drawImage(image, sx, sy, sw, sh, destinationX + rule.at[0] * halfWidth, destinationY + rule.at[1] * halfHeight, halfWidth, halfHeight);
+    }
+    // Classic 3x3 sheets often carry hand-drawn full-cell convex turns whose
+    // curves and bank detail cross the quadrant seam. Quarter reconstruction
+    // destroys that information and produces a mathematically correct but
+    // visibly square turn. Opted-in jobs preserve the native turn verbatim.
+    const nativeCorner = nativeOuterCorners[mask];
+    if (outerCornerMode === 'native' && nativeCorner) {
+      ctx.drawImage(image,
+        (origin[0] + nativeCorner[0] * outerStride[0]) * cellWidth,
+        (origin[1] + nativeCorner[1] * outerStride[1]) * cellHeight,
+        cellWidth, cellHeight, destinationX, destinationY, cellWidth, cellHeight);
+    }
+    // The middle cells of a classic 3x3 source often contain a continuous
+    // hand-drawn bank, curb, or foam run. Rebuilding those cells from corner
+    // halves preserves topology but discards the source's cardinal-edge art.
+    const nativeEdge = nativeOuterEdges[mask];
+    if (outerEdgeMode === 'native' && nativeEdge) {
+      ctx.drawImage(image,
+        (origin[0] + nativeEdge[0] * outerStride[0]) * cellWidth,
+        (origin[1] + nativeEdge[1] * outerStride[1]) * cellHeight,
+        cellWidth, cellHeight, destinationX, destinationY, cellWidth, cellHeight);
     }
   });
   drawOuterBases([outerX, outerY], 0);
@@ -2109,6 +2262,13 @@ async function buildBlobRecipe({ root, recipe }) {
           const [cellX, cellY] = rawCellFor[rule.id](first, second);
           const [sx, sy, sw, sh] = sourceCell(cellX, cellY, rule.at[0], rule.at[1]);
           ctx.drawImage(image, sx, sy, sw, sh, destinationX + rule.at[0] * halfWidth, destinationY + rule.at[1] * halfHeight, halfWidth, halfHeight);
+        }
+        const nativeCorner = nativeOuterCorners[mask];
+        if (outerCornerMode === 'native' && nativeCorner) {
+          const nativeInnerCorners = { ne: [0, 1], es: [0, 0], sw: [1, 0], nw: [1, 1] };
+          const sourceCorner = nativeInnerCorners[mask];
+          ctx.drawImage(image, (innerX + sourceCorner[0]) * cellWidth, (innerY + sourceCorner[1]) * cellHeight,
+            cellWidth, cellHeight, destinationX, destinationY, cellWidth, cellHeight);
         }
       }
     }
@@ -2155,6 +2315,9 @@ async function buildBlobRecipe({ root, recipe }) {
     frames: Object.fromEntries([...positiveFrames, ...negativeFrames]),
     autotile: {
       topology,
+      outer_corner_mode: outerCornerMode,
+      outer_corner_style: outerCornerStyle,
+      outer_edge_mode: outerEdgeMode,
       ...(hasInnerCorners ? { inner_corner_mode: 'composite' } : {}),
       positive: Object.fromEntries(BLOB_CARDINAL_MASKS.map((mask) => [mask, `base.${mask}`])),
       ...(hasNegative ? { negative: Object.fromEntries(BLOB_CARDINAL_MASKS.map((mask) => [mask, `negative.base.${mask}`])) } : {}),
@@ -2243,7 +2406,8 @@ function blobCatalogLicense(manifest, id) {
 function blobTemplateId(result) {
   const topology = result.autotile.topology === 'cardinal-4' ? 'cardinal' : 'blob';
   const animation = result.autotile.animation ? `-animated-${result.autotile.animation.frames}` : '';
-  return `${topology}-${result.cell[0]}x${result.cell[1]}-${result.autotile.negative ? 'bipolar' : 'positive'}${animation}`;
+  const edgesAndCorners = `-${result.autotile.outer_edge_mode}-${result.autotile.outer_corner_mode}-${result.autotile.outer_corner_style}`;
+  return `${topology}-${result.cell[0]}x${result.cell[1]}-${result.autotile.negative ? 'bipolar' : 'positive'}${animation}${edgesAndCorners}`;
 }
 
 /** Generate normalized atlases and a compact, hash-pinned runtime catalog. */

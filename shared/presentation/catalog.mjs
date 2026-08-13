@@ -57,6 +57,7 @@ function validateWorldMetadata(asset, prefix, errors) {
   if (!BOUNDARY_POLICIES.has(world.boundary_policy)) errors.push(`${prefix}: world.boundary_policy must be forbid, allow, or require`);
   if (!LAYERS.has(world.render_layer)) errors.push(`${prefix}: world.render_layer is invalid`);
   if (world.sort_offset !== undefined && !Number.isFinite(world.sort_offset)) errors.push(`${prefix}: world.sort_offset must be numeric`);
+  if (world.route_anchor !== undefined && (!Array.isArray(world.route_anchor) || world.route_anchor.length !== 2 || world.route_anchor.some((value) => !Number.isFinite(value)))) errors.push(`${prefix}: world.route_anchor must be a logical offset pair`);
   if (world.visual_scale !== undefined) errors.push(`${prefix}: world.visual_scale is forbidden; normalize source geometry and pixel_density instead`);
   if (!['solid', 'passable'].includes(world.collision)) errors.push(`${prefix}: world.collision must be solid or passable`);
   if (world.provides_surface !== undefined && !SURFACES.has(world.provides_surface)) errors.push(`${prefix}: world.provides_surface must be solid, liquid, or void`);
@@ -155,8 +156,23 @@ export function validatePresentationCatalog(catalog) {
     if (!PRESENTATION_ID.test(String(material?.plane ?? ''))) errors.push(`${prefix}: plane is required`);
     if (!PRESENTATION_ID.test(String(material?.biome ?? ''))) errors.push(`${prefix}: biome is required`);
     if (!SURFACES.has(material?.surface)) errors.push(`${prefix}: surface must be solid, liquid, or void`);
+    if (material?.fill_mode !== undefined && !['solid', 'overlay'].includes(material.fill_mode)) errors.push(`${prefix}: fill_mode must be solid or overlay`);
+    if (material?.fill_mode === 'overlay' && !material?.fill?.asset) errors.push(`${prefix}: overlay fill_mode requires an asset frame`);
     if (material?.fill?.asset) checkReference(catalog, `${material.fill.asset}#${material.fill.frame ?? 'default'}`, prefix, errors);
     else if (!/^#[a-f0-9]{6}$/i.test(String(material?.fill?.color ?? ''))) errors.push(`${prefix}: fill needs an asset/frame or color`);
+    if (material?.details !== undefined && (!Array.isArray(material.details) || !material.details.length)) errors.push(`${prefix}: details must be a non-empty array`);
+    for (const [index, detail] of (material?.details ?? []).entries()) {
+      const detailPrefix = `${prefix} detail ${index}`;
+      const profile = catalog?.component_profiles?.[detail?.profile];
+      if (!PRESENTATION_ID.test(String(detail?.profile ?? '')) || !profile) errors.push(`${detailPrefix}: profile is unknown`);
+      if (!Number.isFinite(detail?.density) || detail.density <= 0 || detail.density > 1) errors.push(`${detailPrefix}: density must be greater than 0 and at most 1`);
+      if (detail?.seed !== undefined && !Number.isInteger(detail.seed)) errors.push(`${detailPrefix}: seed must be an integer`);
+      if (detail?.interior_only !== undefined && typeof detail.interior_only !== 'boolean') errors.push(`${detailPrefix}: interior_only must be boolean`);
+      if (profile && !profile.allowed_surfaces?.includes(material?.surface)) errors.push(`${detailPrefix}: profile does not allow ${material?.surface} surfaces`);
+      const asset = assets?.[assetReference(profile?.asset).asset];
+      const component = asset?.components?.[profile?.component];
+      if (component?.outline) errors.push(`${detailPrefix}: outline components cannot be material details`);
+    }
   }
 
   for (const [id, entry] of Object.entries(catalog?.terrain_interfaces ?? {})) {
@@ -167,6 +183,20 @@ export function validatePresentationCatalog(catalog) {
     const assetId = assetReference(entry?.asset).asset;
     if (!assets?.[assetId]?.autotile) errors.push(`${prefix}: asset needs reviewed autotile metadata`);
     if (!['positive', 'negative'].includes(entry?.polarity)) errors.push(`${prefix}: polarity must be positive or negative`);
+    if (entry?.transition_band !== undefined) {
+      const band = entry.transition_band;
+      if (!band || typeof band !== 'object' || Array.isArray(band)) errors.push(`${prefix}: transition_band must be a map`);
+      else if (!Number.isFinite(band.minimum_changed_ratio) || band.minimum_changed_ratio <= 0 || band.minimum_changed_ratio > 1) errors.push(`${prefix}: transition_band.minimum_changed_ratio must be greater than 0 and at most 1`);
+    }
+    if (entry?.corner_profile !== undefined) {
+      const corner = entry.corner_profile;
+      if (!corner || typeof corner !== 'object' || Array.isArray(corner)) errors.push(`${prefix}: corner_profile must be a map`);
+      else {
+        if (corner.style !== 'rounded') errors.push(`${prefix}: corner_profile.style must be rounded`);
+        if (!Number.isFinite(corner.minimum_cutback_ratio) || corner.minimum_cutback_ratio <= 0 || corner.minimum_cutback_ratio > 1) errors.push(`${prefix}: corner_profile.minimum_cutback_ratio must be greater than 0 and at most 1`);
+        if (assets?.[assetId]?.autotile?.outer_corner_style !== corner.style) errors.push(`${prefix}: asset outer_corner_style must match ${corner.style}`);
+      }
+    }
   }
 
   for (const [field, capability] of [['connector_profiles', 'connector'], ['height_interfaces', 'height'], ['component_profiles', 'components']]) {
@@ -177,6 +207,8 @@ export function validatePresentationCatalog(catalog) {
       if (!assets?.[assetReference(entry?.asset).asset]?.[capability]) errors.push(`${prefix}: asset lacks ${capability} metadata`);
       if (field === 'component_profiles' && (!Array.isArray(entry?.allowed_surfaces) || !entry.allowed_surfaces.length || entry.allowed_surfaces.some((surface) => !SURFACES.has(surface)))) errors.push(`${prefix}: allowed_surfaces must contain solid, liquid, or void`);
       if (field === 'component_profiles' && entry?.provides_surface !== undefined && !SURFACES.has(entry.provides_surface)) errors.push(`${prefix}: provides_surface must be solid, liquid, or void`);
+      if (field === 'component_profiles' && entry?.opacity !== undefined && (!Number.isFinite(entry.opacity) || entry.opacity <= 0 || entry.opacity > 1)) errors.push(`${prefix}: opacity must be greater than 0 and at most 1`);
+      if (field === 'component_profiles' && entry?.interior_only !== undefined && typeof entry.interior_only !== 'boolean') errors.push(`${prefix}: interior_only must be boolean`);
     }
   }
 
@@ -191,6 +223,7 @@ export function validatePresentationCatalog(catalog) {
     if (!BOUNDARY_POLICIES.has(prefab?.world?.boundary_policy)) errors.push(`${prefix}: world.boundary_policy is invalid`);
     if (!['solid', 'passable'].includes(prefab?.world?.collision)) errors.push(`${prefix}: world.collision must be solid or passable`);
     if (prefab?.world?.provides_surface !== undefined && !SURFACES.has(prefab.world.provides_surface)) errors.push(`${prefix}: world.provides_surface must be solid, liquid, or void`);
+    if (prefab?.world?.route_anchor !== undefined && (!Array.isArray(prefab.world.route_anchor) || prefab.world.route_anchor.length !== 2 || prefab.world.route_anchor.some((value) => !Number.isFinite(value)))) errors.push(`${prefix}: world.route_anchor must be a logical offset pair`);
     if (!Array.isArray(prefab?.world?.slots)) errors.push(`${prefix}: world.slots must be an array`);
     if (!Array.isArray(prefab?.layers) || !prefab.layers.length) errors.push(`${prefix}: layers must be a non-empty array`);
     const inspect = (layer, layerPrefix) => {

@@ -152,14 +152,16 @@ export class BuildAgenda {
 
     const now = this.#clock();
     const nowIso = now.toISOString();
-    const [assignment, units, rawHistory] = await Promise.all([
+    const [assignment, units, works, rawHistory] = await Promise.all([
       this.#assignments.get(learnerId),
       this.#curriculum.listUnits(),
+      this.#curriculum.listWorks?.() ?? [],
       this.#sessions.listForLearner(learnerId),
     ]);
     const history = withAttestedPasses(rawHistory, this.#attestations, learnerId);
 
-    const plan = planLearnerWork({ learnerId, assignment, units, sessions: history, now: nowIso });
+    const coursePolicies = Object.fromEntries((works ?? []).map((work) => [work.work, work.progression]).filter(([, p]) => p));
+    const plan = planLearnerWork({ learnerId, assignment, units, sessions: history, now: nowIso, coursePolicies });
     if (plan.errors.length) this.#logger.warn?.('school.agenda.plan-errors', { learnerId, errors: plan.errors });
 
     const programStatuses = await this.#collectProgramStatuses(plan, learnerId);

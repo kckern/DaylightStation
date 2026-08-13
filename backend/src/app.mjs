@@ -159,6 +159,7 @@ import { initManageService } from '#apps/fitness/manageService.mjs';
 import { createFoodScaleRelay } from '#apps/hardware/foodScaleRelay.mjs';
 import { createOmrRelay } from '#apps/hardware/omrRelay.mjs';
 import { createAutomotiveRelay } from '#apps/hardware/automotiveRelay.mjs';
+import { createAutomotiveApi } from '#composition/modules/automotiveApi.mjs';
 import { createQuizScanRecorder } from '#apps/quizzes/quizScanRecorder.mjs';
 import { createScaleNutribotBridge } from '#apps/hardware/ScaleNutribotBridge.mjs';
 import { CompositionStore } from '#apps/nutribot/CompositionStore.mjs';
@@ -2133,6 +2134,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // `economyApi` is created earlier (above the content routers) so its
   // economyService can back the play /log earn-hook; here we only mount the router.
   v1Routers.economy = economyApi.router;
+
+  // Automotive — the vehicle record system (trips, maintenance, fuel, glove
+  // box). Reads the history tree the relay above writes, plus hand-entered
+  // records under household/automotive/. Same `vehicles` config as the relay,
+  // so both agree on where trips live.
+  v1Routers.automotive = createAutomotiveApi({
+    configService,
+    vehiclesConfig: configService.getHouseholdAppConfig(householdId, 'vehicles') || {},
+    logger: rootLogger.child({ module: 'automotive-api' }),
+  }).router;
 
   // Printer router — thermal printer control, multi-printer via optional {/:location} URL segment
   v1Routers.printer = createPrinterRouter({

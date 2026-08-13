@@ -67,6 +67,18 @@ content.
 
 Four item types: `multiple_choice`, `short_answer`, `cloze`, `matching`.
 
+`school.question-bank/v2` is the authored-pool format for printable mastery
+worksheets. A multiple-choice item stores one correct `answer`; a multi-select
+item stores two or more correct `answers`. Both store incorrect options under
+`decoys`, with 8–10 total answers and decoys per pool. A v2 item never authors
+`choices`. At issuance the domain combines the fields, assigns bank-revision-scoped
+option IDs, retains every correct option, and stores the exact visible subset,
+order, A–E mapping, prompt, and source locator in an immutable issued snapshot.
+Reprints reuse that snapshot; remediation may issue only missed item IDs with a
+new subset/order. Grading therefore resolves against the issued snapshot, not
+against mutable bank YAML. Existing v1 banks retain their original schema and
+answer-key behavior.
+
 - **Grading is server-side**, for single-source logic rather than secrecy.
   Banks ship with their answers because flashcards must reveal them; this is
   explicitly not a security boundary.
