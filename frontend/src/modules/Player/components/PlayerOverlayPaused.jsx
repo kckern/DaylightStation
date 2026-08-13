@@ -15,10 +15,18 @@ export function PlayerOverlayPaused({
   waitingToPlay = false,
   togglePauseOverlay,
   playerPositionDisplay,
-  suppressForBlackout = false
+  suppressForBlackout = false,
+  suppressPauseOverlay = false
 }) {
   // In blackout mode, keep screen completely dark (TV appears off)
   if (suppressForBlackout) {
+    return null;
+  }
+  // Study mode (instructional content): the paused frame is the thing the viewer
+  // paused to look at, so nothing may cover it. Note this suppresses the SCRIM only —
+  // `pauseOverlayActive` stays true upstream, which keeps PlayerOverlayLoading
+  // suppressed too (see PlayerOverlayLoading.jsx). Stall feedback still surfaces.
+  if (suppressPauseOverlay) {
     return null;
   }
   // During a stall the user still needs an explicit "this is paused" affordance.
@@ -167,7 +175,8 @@ PlayerOverlayPaused.propTypes = {
   waitingToPlay: PropTypes.bool,
   togglePauseOverlay: PropTypes.func,
   playerPositionDisplay: PropTypes.string,
-  suppressForBlackout: PropTypes.bool
+  suppressForBlackout: PropTypes.bool,
+  suppressPauseOverlay: PropTypes.bool
 };
 
 export default PlayerOverlayPaused;

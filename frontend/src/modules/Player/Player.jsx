@@ -1055,7 +1055,11 @@ const Player = forwardRef(function Player(props, ref) {
         effectiveMetaIsNull={!effectiveMeta}
         suppressForBlackout={suppressOverlaysForBlackout}
       />
-      <PlayerOverlayPaused {...overlayProps} suppressForBlackout={suppressOverlaysForBlackout} />
+      <PlayerOverlayPaused
+        {...overlayProps}
+        suppressForBlackout={suppressOverlaysForBlackout}
+        suppressPauseOverlay={props.suppressPauseOverlay}
+      />
       <PlayerOverlayStateDebug {...overlayProps} />
       <PlayerOverlayAutoplayBlocked
         autoplayBlocked={mediaAccess.autoplayBlocked}
