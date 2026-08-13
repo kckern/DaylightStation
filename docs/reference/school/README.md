@@ -16,6 +16,11 @@
 >
 > **Roadmap (candidate future work, categorized):** [`docs/roadmap/2026-07-21-school-module-roadmap.md`](../../roadmap/2026-07-21-school-module-roadmap.md)
 >
+> **Enrollment, syllabi, and course units (designed, not built):** [`enrollment.md`](./enrollment.md) —
+> replaces the flat assignment record with a dated syllabus (a subset of a
+> course) plus a per-learner enrollment. Its first three sections document
+> curriculum structure that is authored on disk today and read by no code.
+>
 > **Cross-surface educational-technology audit:** [`edtech-research-audit.md`](./edtech-research-audit.md)
 >
 > **Formative learner/three-calculator pilot:** [`school-learning-pilot-protocol.md`](./school-learning-pilot-protocol.md)
@@ -1013,6 +1018,11 @@ answer to "what should a book sticker do in the school room", such a tap is logg
 and does nothing.
 
 ### An assigned course, not a catalog, is what prints
+
+> A replacement for this assignment model is designed in
+> [`enrollment.md`](./enrollment.md): a dated **syllabus** (a subset of a course,
+> with its own level, pass bar and pacing) plus a per-learner **enrollment**
+> carrying only that child's deltas. Everything below is current behavior.
 
 A valid curriculum catalog offers **nothing** on its own. `BuildAgenda` builds
 strictly from what a grown-up has assigned — courses, standalone units, and
