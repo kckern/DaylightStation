@@ -11,6 +11,7 @@ Production catalogs, scenes, recipes, and QA manifests belong under that mounted
 ```bash
 # Generate a source-of-facts inventory (explicit output; no source writes).
 npm run gaming:assets -- inventory \
+  --source assets \
   --out "$DAYLIGHT_BASE_PATH/media/games/_common/catalog/generated/inventory.yml" \
   --reports-dir "$DAYLIGHT_BASE_PATH/media/games/_common/catalog/generated"
 
@@ -34,9 +35,24 @@ npm run gaming:assets -- metadata-coverage \
   --inventory "$DAYLIGHT_BASE_PATH/media/games/_common/catalog/generated/assets-inventory.yml" \
   --catalog "$DAYLIGHT_BASE_PATH/media/games/_common/catalog/showcase-v2/catalog.yml" \
   --out "$DAYLIGHT_BASE_PATH/media/games/_common/catalog/generated/asset-metadata-coverage.yml"
+
+# Enumerate actor/NPC/item/object/effect animation readiness separately from
+# mere PNG measurement or static scene usability.
+npm run gaming:assets -- animation-coverage \
+  --root "$DAYLIGHT_BASE_PATH/media/games/_common" \
+  --catalog "$DAYLIGHT_BASE_PATH/media/games/_common/catalog/showcase-v2/catalog.yml" \
+  --out "$DAYLIGHT_BASE_PATH/media/games/_common/catalog/generated/animation-metadata-coverage.yml"
+
+# Decode and render every reachable clip at a fixed catalog anchor, plus a
+# semantic input simulation for each controlled actor.
+npm run gaming:assets -- animation-qa-set \
+  --root "$DAYLIGHT_BASE_PATH/media/games/_common" \
+  --catalog "$DAYLIGHT_BASE_PATH/media/games/_common/catalog/showcase-v2/catalog.yml" \
+  --out-dir "$DAYLIGHT_BASE_PATH/media/games/_common/previews/qa/animation-v1" \
+  --scale 4
 ```
 
-Inventory records every non-hidden file with source-relative path, SHA-256, byte size, detected MIME type, modified time, source pack, nearest readme/license, and license scope. PNG records add dimensions, colour mode, alpha, and candidate square cell sizes. The optional reports directory receives separate `duplicates.yml`, `issues.yml`, and `non-images.yml` reports. Contact sheets label filename, dimensions, candidate cells, and catalog review status. Candidate frame sizes are hints only; authors must explicitly define sheet geometry and named clips.
+Inventory records every non-hidden file with source-relative path, SHA-256, byte size, detected MIME type, modified time, source pack, nearest readme/license, and license scope. PNG records add dimensions, colour mode, alpha, and candidate square cell sizes. Use `--source assets` for the canonical coverage ledger; the command's `sprites` default is only for auditing the untouched vendor dump. `metadata-coverage` rejects an inventory generated from any source other than `assets`. The optional reports directory receives separate `duplicates.yml`, `issues.yml`, and `non-images.yml` reports. Contact sheets label filename, dimensions, candidate cells, and catalog review status. Candidate frame sizes are hints only; authors must explicitly define sheet geometry and named clips.
 
 `terrain-sweep` verifies the curated topology backlog against the canonical tree. Every PNG below a `tiles/` directory must be assigned to a reviewed family or match an explicit non-topology exclusion; a newly added, unclassified tile sheet makes the command fail. It also measures topology sheets found outside `tiles/`, including sewer, autumn, legacy cave, interior-wall, fence, and bridge systems. `cataloged` families name approved, hash-pinned evidence whose provenance points back to measured sources. `quarantined` families name deferred entries and explicitly remain unavailable at runtime.
 
@@ -62,6 +78,8 @@ npm run gaming:assets -- animate \
 ```
 
 The result is an animated GIF with nearest-neighbour scaling. The tool fails when a requested frame is outside the source sheet.
+
+Raw `animate` is an authoring probe, not acceptance evidence. `animation-qa-set` resolves catalog state/facing mappings, normalizes `pixel_density`, rechecks source hashes and exact alpha bounds, aligns every phase on its ground/custom anchor, enforces scale classes, and emits both GIFs and phase strips. Controlled actors also receive a logical-grid simulation that drives idle, east, north, west, and south movement through the same resolver used by hosts. Its report remains invalid while any runtime sprite is explicitly deferred, even when all currently reviewed animations render without errors.
 
 ## Assembly previews
 
@@ -138,7 +156,7 @@ npm run gaming:assets -- scene-qa-set \
   --out-dir /tmp/showcase-scenes
 ```
 
-A `scene-qa-set` manifest names one relative catalog, each scene's stable ID, theme, and relative manifest, plus fail-closed requirements. It can require a minimum scene count, named themes, review regions per scene, zero clipping, a warning-free catalog, minimum resolved inside corners and checked connections, and coverage of the terrain, connector, height, and component systems. The output contains every normal scene QA bundle, `report.yml`, a labeled full-scene `montage.png`, and a consolidated `review-montage.png` of all authored high-risk crops. The report pins a SHA-256 for every generated PNG so later runs can distinguish intentional visual changes from renderer drift.
+A `scene-qa-set` manifest names one relative catalog, each scene's stable ID, theme, and relative manifest, plus fail-closed requirements. It can require a minimum scene count, named themes, review regions per scene, zero clipping, a warning-free catalog, minimum resolved inside corners, checked connections, validated connector landings and crossing spans, and coverage of the terrain, connector, height, and component systems. The output contains every normal scene QA bundle, `report.yml`, a labeled full-scene `montage.png`, and a consolidated `review-montage.png` of all authored high-risk crops. The report pins a SHA-256 for every generated PNG so later runs can distinguish intentional visual changes from renderer drift.
 
 Production suites should also name an independent approved-artifact manifest and require it:
 
@@ -161,6 +179,8 @@ node cli/gaming-assets.cli.mjs scene-qa-approve \
 Approval re-hashes the completed report's artifacts before copying them and writes a portable relative baseline manifest. Keep this command outside regeneration scripts: review, approval, and comparison are deliberately separate operations.
 
 Scenes may add `review_regions` with a stable `id`, `[x, y, width, height]` rectangle, and integer `scale`. `scene-qa` emits those targeted assembly crops alongside the automatic quadrants; production fixtures should name every high-risk join such as a shoreline, bridge landing, fenced bed, or dock. Structural pieces may additionally declare frame `ports`, placement `id` values, and scene `connections`; rendering fails when connected ports do not resolve to the same world-space point. `requires_all_ports: true` additionally rejects every unconnected or multiply connected structural port. Assets tagged `ground-contact` fail catalog validation unless each frame's custom anchor lands exactly at its measured visible-alpha bottom and the silhouette retains transparent source-frame padding on every side.
+
+Wall-bound assets may declare `world.attachment.system: height` and a `minimum_overlap_ratio`. The scene compiler compares visible-alpha bounds with the compiled height band and rejects detached doors, arches, or similar structural decals before rendering QA.
 
 The independently reviewed adventure-scene fixture is reproducible without a frontend:
 
@@ -291,7 +311,7 @@ When a mixed atlas contains a genuine curb or face course, the same asset may ex
 
 Assets/prefabs declare `world.allowed_surfaces`; bridges and docks may set `world.provides_surface: solid`, and component profiles may replace the effective surface for pools or hazards. Color materials render as explicit fill commands. Bordered components can use a distinct `interior` frame, and fill variants are selected deterministically without immediate horizontal or vertical wallpaper repetition.
 
-Materials may declare `fill_mode: solid|overlay` (`solid` by default). The QA set decodes every material fill: solid cells must be fully opaque, while overlays must contain both visible and transparent pixels and cannot be used as terrain bases or regions. Terrain interfaces may declare `transition_band.minimum_changed_ratio`; QA compares each selected cardinal edge against the outside material so a topology-correct but visually invisible shoreline fails before review. Connector tiles also contribute exact world-space structural occupancy, including half-cell origins, so authored placements, generated placements, and nested prefab children cannot sit through a fence or wall.
+Materials may declare `fill_mode: solid|overlay` (`solid` by default). The QA set decodes every material fill: solid cells must be fully opaque, while overlays must contain both visible and transparent pixels and cannot be used as terrain bases or regions. Every terrain interface is audited against the outside material on all four cardinals with a default minimum changed-pixel ratio of `0.1`; `transition_band.minimum_changed_ratio` may raise that requirement. A topology-correct but visually negligible shoreline therefore fails before review. Connector tiles also contribute exact world-space structural occupancy, including half-cell origins, so authored placements, generated placements, and nested prefab children cannot sit through a fence or wall.
 
 The canonical mounted v2 suite additionally requires an approved visual baseline. Its baseline manifest lives with the mounted YAML catalog and its reviewed PNGs live under the mounted preview baseline tree; neither belongs in Git fixtures.
 
@@ -332,7 +352,11 @@ assets:
       idle.down: { frames: [idle.down.0, idle.down.1], fps: 4 }
 ```
 
-Approved assets must supply a matching source hash, `kind`, geometry, and named frames. `content_bounds` records the exact visible-alpha rectangle inside a padded frame; validation decodes the source and rejects stale values. Custom actor anchors use the reviewed ground-contact point rather than the padded cell edge. Clip frames refer only to named frames. Candidate/deferred/rejected entries may be recorded before their geometry is known, but they cannot become runtime assets later until approved.
+Approved assets in either a schema-v1 asset pack or schema-v2 presentation catalog must supply a matching source hash, `kind`, geometry, and named frames. `content_bounds` records the exact visible-alpha rectangle inside a padded frame; validation decodes the source and rejects stale values. Custom actor anchors use the reviewed ground-contact point rather than the padded cell edge. Clip frames refer only to named frames. Candidate/deferred/rejected entries may be recorded before their geometry is known, but they cannot become runtime assets later until approved.
+
+Rendering also rejects every resolved frame whose source rectangle exceeds the decoded PNG. This check applies after template inheritance and animation offsets, preventing a smaller derived sheet from masquerading as a complete parent atlas and silently producing transparent or corrupted edge/corner tiles.
+
+Ground-contact frames require measured visible bounds and a custom anchor at the visible-alpha bottom. Transparent padding remains mandatory on the top and sides; a sprite may touch the south source baseline only when `edge_contact.allowed` explicitly includes `south` with a review reason.
 
 ## Command safety
 

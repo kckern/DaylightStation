@@ -1,4 +1,5 @@
 import { materializeAssetCatalog } from '../gaming/assets.mjs';
+import { validateAssetAnimation } from './animation.mjs';
 
 export const PRESENTATION_CATALOG_MAP_FIELDS = Object.freeze([
   'license_scopes',
@@ -63,6 +64,32 @@ function validateWorldMetadata(asset, prefix, errors) {
   if (world.provides_surface !== undefined && !SURFACES.has(world.provides_surface)) errors.push(`${prefix}: world.provides_surface must be solid, liquid, or void`);
   if (!PRESENTATION_ID.test(String(world.scale_class ?? ''))) errors.push(`${prefix}: world.scale_class is required`);
   if (world.shadow_profile !== undefined && !PRESENTATION_ID.test(String(world.shadow_profile))) errors.push(`${prefix}: world.shadow_profile is invalid`);
+  if (world.attachment !== undefined) {
+    const attachment = world.attachment;
+    if (!attachment || typeof attachment !== 'object' || Array.isArray(attachment) || attachment.system !== 'height') errors.push(`${prefix}: world.attachment.system must be height`);
+    else if (!Number.isFinite(attachment.minimum_overlap_ratio) || attachment.minimum_overlap_ratio <= 0 || attachment.minimum_overlap_ratio > 1) errors.push(`${prefix}: world.attachment.minimum_overlap_ratio must be greater than 0 and at most 1`);
+  }
+  validateLandings(world.landings, `${prefix}: world.landings`, errors);
+  validateCrossings(world.crossings, world.landings, `${prefix}: world.crossings`, errors);
+}
+
+function validateLandings(landings, prefix, errors) {
+  if (landings === undefined) return;
+  if (!Array.isArray(landings) || !landings.length) { errors.push(`${prefix} must be a non-empty array`); return; }
+  for (const [index, landing] of landings.entries()) {
+    if (!landing || typeof landing !== 'object' || Array.isArray(landing) || !isPair(landing.offset, { numeric: true }) || !SURFACES.has(landing.surface)) errors.push(`${prefix} ${index} needs logical offset and solid, liquid, or void surface`);
+    if (landing?.material_group !== undefined && !PRESENTATION_ID.test(String(landing.material_group))) errors.push(`${prefix} ${index} material_group is invalid`);
+  }
+}
+
+function validateCrossings(crossings, landings, prefix, errors) {
+  if (crossings === undefined) return;
+  if (!Array.isArray(crossings) || !crossings.length) { errors.push(`${prefix} must be a non-empty array`); return; }
+  const groups = new Set((landings ?? []).map((landing) => landing?.material_group).filter(Boolean));
+  for (const [index, crossing] of crossings.entries()) {
+    if (!crossing || typeof crossing !== 'object' || Array.isArray(crossing) || !isPair(crossing.offset, { numeric: true })) errors.push(`${prefix} ${index} needs a logical offset`);
+    if (!PRESENTATION_ID.test(String(crossing?.different_from_group ?? '')) || !groups.has(crossing?.different_from_group)) errors.push(`${prefix} ${index} different_from_group must reference a landing material_group`);
+  }
 }
 
 /** Strict runtime validation for presentation catalog v2. */
@@ -135,7 +162,10 @@ export function validatePresentationCatalog(catalog) {
       if (frame.edge_contact !== undefined) {
         if (!Array.isArray(frame.edge_contact?.allowed) || frame.edge_contact.allowed.some((side) => !['north', 'east', 'south', 'west'].includes(side)) || !String(frame.edge_contact?.reason ?? '').trim()) errors.push(`${prefix}: frame ${frameId} edge_contact needs allowed sides and reason`);
       }
+      validateLandings(frame.landings, `${prefix}: frame ${frameId} landings`, errors);
+      validateCrossings(frame.crossings, frame.landings ?? asset.world?.landings, `${prefix}: frame ${frameId} crossings`, errors);
     }
+    errors.push(...validateAssetAnimation(asset, prefix));
     validateWorldMetadata(asset, prefix, errors);
     const scaleClass = styleProfiles?.[asset.style_profile]?.scale_classes?.[asset.world?.scale_class];
     if (asset.world?.scale_class && !scaleClass) errors.push(`${prefix}: unknown scale_class ${asset.world.scale_class}`);
@@ -183,6 +213,7 @@ export function validatePresentationCatalog(catalog) {
     const assetId = assetReference(entry?.asset).asset;
     if (!assets?.[assetId]?.autotile) errors.push(`${prefix}: asset needs reviewed autotile metadata`);
     if (!['positive', 'negative'].includes(entry?.polarity)) errors.push(`${prefix}: polarity must be positive or negative`);
+    if (entry?.underlay !== undefined && entry.underlay !== 'inside-fill') errors.push(`${prefix}: underlay must be inside-fill`);
     if (entry?.transition_band !== undefined) {
       const band = entry.transition_band;
       if (!band || typeof band !== 'object' || Array.isArray(band)) errors.push(`${prefix}: transition_band must be a map`);
@@ -224,6 +255,8 @@ export function validatePresentationCatalog(catalog) {
     if (!['solid', 'passable'].includes(prefab?.world?.collision)) errors.push(`${prefix}: world.collision must be solid or passable`);
     if (prefab?.world?.provides_surface !== undefined && !SURFACES.has(prefab.world.provides_surface)) errors.push(`${prefix}: world.provides_surface must be solid, liquid, or void`);
     if (prefab?.world?.route_anchor !== undefined && (!Array.isArray(prefab.world.route_anchor) || prefab.world.route_anchor.length !== 2 || prefab.world.route_anchor.some((value) => !Number.isFinite(value)))) errors.push(`${prefix}: world.route_anchor must be a logical offset pair`);
+    validateLandings(prefab?.world?.landings, `${prefix}: world.landings`, errors);
+    validateCrossings(prefab?.world?.crossings, prefab?.world?.landings, `${prefix}: world.crossings`, errors);
     if (!Array.isArray(prefab?.world?.slots)) errors.push(`${prefix}: world.slots must be an array`);
     if (!Array.isArray(prefab?.layers) || !prefab.layers.length) errors.push(`${prefix}: layers must be a non-empty array`);
     const inspect = (layer, layerPrefix) => {

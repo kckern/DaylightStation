@@ -33,7 +33,11 @@ The plan contains logical geometry, stable asset/frame IDs, ordered draw command
 
 Every approved asset declares exact source geometry, named frames, `pixel_density`, `style_profile`, and world metadata. High-density art is reduced to the style profile's logical raster with nearest-neighbor sampling. Neither scenes nor assets may apply a second visual-scale multiplier: larger objects need appropriately sized normalized source geometry, preventing pixel grain from silently changing between actors, trees, and buildings.
 
+World metadata also carries structural contracts. `attachment.system: height` with a measured `minimum_overlap_ratio` makes wall-bound art fail closed unless its visible pixels overlap a compiled height band; this is used for doors and arches so they cannot silently render as detached floor decals.
+
 Each style profile also owns reusable `scale_classes` such as `humanoid`, `creature`, `building`, `building-small`, `foliage`, and `terrain`. An asset declares `world.scale_class`; migration measures visible alpha for every isolated frame, and both catalog validation and Node QA reject normalized content outside the class's logical-height range. These are pack-wide semantic ranges, not scene-specific scale exceptions.
+
+Animated sprites add a second scale/position gate: every reachable clip is decoded at its declared `pixel_density`, aligned on one catalog anchor, and rendered as a strip and GIF. Ground-contact frames must keep the measured feet, trunk, hull, or item base on that anchor through every phase. QA therefore sees source-cell padding changes, scale drift, clipping, and foot skating that a valid static frame cannot reveal.
 
 ```yaml
 schema_version: 2
@@ -260,6 +264,8 @@ node cli/gaming-assets.cli.mjs scene-qa-set --root /path/to/_common \
 ```
 
 Promotion requires all required themes, deterministic plan hashes, zero clipping, zero per-scene scale exceptions, valid pinned source hashes, opaque solid material fills, visible declared transition bands, connector/placement separation, required terrain/connector/height/component/shadow coverage, style-profile composition compliance, and review crops. Passing these systemic gates means the framework contract is sound; aesthetic scene arrangement remains a separate art-direction review.
+
+Static scene promotion is not framework completion. The animation exit gate additionally requires: every canonical actor/NPC/player/creature/item/object/prop/effect candidate has an explicit runtime-reviewed or deferred disposition; no deferred candidates remain for a release advertised as complete; every reachable clip has decoded bounds, timing, scale, and anchor QA; every controlled actor resolves idle and movement for every scheme direction; left/west mirroring is catalog-owned; and control-simulation GIFs prove stationary idle, in-place animation, translated locomotion, and facing changes on the logical grid. Animated terrain remains under synchronized topology animation QA, while sprite/object motion uses the state-machine gate.
 
 ### Approved visual artifacts
 

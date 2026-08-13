@@ -7,9 +7,51 @@ import {
   compileTopDownScene,
   createPresentationAdapterRegistry,
   presentationAction,
+  resolveAssetAnimation,
   validatePresentationCatalog,
   validateTopDownScene,
 } from './index.mjs';
+
+function directionalActor() {
+  const frames = Object.fromEntries(['idle.down', 'idle.up', 'idle.right', 'run.down.0', 'run.down.1', 'run.up.0', 'run.up.1', 'run.right.0', 'run.right.1'].map((id, index) => [id, { cell: [index, 0] }]));
+  return {
+    tags: ['actor', 'player'], frames,
+    clips: {
+      'idle.down': { frames: ['idle.down'], fps: 1 },
+      'idle.up': { frames: ['idle.up'], fps: 1 },
+      'idle.right': { frames: ['idle.right'], fps: 1 },
+      'run.down': { frames: ['run.down.0', 'run.down.1'], fps: 8 },
+      'run.up': { frames: ['run.up.0', 'run.up.1'], fps: 8 },
+      'run.right': { frames: ['run.right.0', 'run.right.1'], fps: 8 },
+    },
+    animation: {
+      mode: 'state-machine', default_state: 'idle',
+      control: { scheme: 'four-way', idle_state: 'idle', move_state: 'run' },
+      states: {
+        idle: { motion: 'stationary', facings: { south: 'idle.down', north: 'idle.up', east: 'idle.right', west: { clip: 'idle.right', flip_x: true } } },
+        run: { motion: 'locomotion', facings: { south: 'run.down', north: 'run.up', east: 'run.right', west: { clip: 'run.right', flip_x: true } } },
+      },
+    },
+  };
+}
+
+test('controlled animation resolves movement and logical left facing without scene-authored flips', () => {
+  const actor = directionalActor();
+  assert.deepEqual(resolveAssetAnimation(actor, { moving: true, facing: 'west' }), {
+    mode: 'clip', state: 'run', facing: 'west', motion: 'locomotion', clip: 'run.right', flip_x: true,
+  });
+  assert.deepEqual(resolveAssetAnimation(actor, { moving: false, facing: 'north' }), {
+    mode: 'clip', state: 'idle', facing: 'north', motion: 'stationary', clip: 'idle.up', flip_x: false,
+  });
+});
+
+test('controlled animation fails closed when a direction or locomotion mapping is missing', () => {
+  const actor = directionalActor();
+  delete actor.animation.states.run.facings.west;
+  assert.throws(() => resolveAssetAnimation(actor, { moving: true, facing: 'west' }), /lacks west facing/);
+  actor.animation.states.run.facings.west = { clip: 'missing', flip_x: true };
+  assert.throws(() => resolveAssetAnimation(actor, { moving: true, facing: 'west' }), /unknown clip missing/);
+});
 
 const gamingRoot = process.env.DAYLIGHT_GAMING_ROOT
   ?? (process.env.DAYLIGHT_BASE_PATH
@@ -124,6 +166,17 @@ test('compiler resolves diagonal-only inner corners and counts connector joins',
   assert.equal(plan.commands.some((command) => command.asset === 'terrain.water' && command.frame === 'inner.nw'), true);
 });
 
+test('terrain interfaces resolve after compound region rects are unioned', () => {
+  const catalog = topologyCatalog();
+  const scene = {
+    schema_version: 2, kind: 'top-down-scene', id: 'compound-union', catalog: 'topology-test', style_profile: 'pixel16.topdown', logical_size: [48, 48], pixel_scale: 2,
+    grid: { cell: [16, 16] }, terrain: { base: 'grass', regions: [{ id: 'pool', material: 'water', rects: [[0, 0, 3, 1], [0, 1, 3, 2]] }] }, placements: [],
+  };
+  const plan = compileTopDownScene(catalog, scene);
+  assert.equal(plan.commands.filter((command) => command.provenance?.startsWith('interface:')).length, 0);
+  assert.equal(plan.commands.filter((command) => command.provenance === 'material:water').length, 9);
+});
+
 test('height interfaces use seamless middle frames at declared viewport continuations', () => {
   const catalog = topologyCatalog();
   const scene = {
@@ -135,6 +188,8 @@ test('height interfaces use seamless middle frames at declared viewport continua
   assert.deepEqual(plan.commands.filter((command) => command.provenance === 'height:ridge').map((command) => command.frame), ['middle', 'middle', 'middle']);
   scene.heights[0].continues = ['north'];
   assert.ok(validateTopDownScene(scene, catalog).errors.some((error) => error.includes('continues must use only span sides west or east')));
+  scene.heights[0].continues = ['west', 'east']; catalog.assets['height.cliff'].world.allowed_biomes = ['dungeon'];
+  assert.ok(validateTopDownScene(scene, catalog).errors.some((error) => error.includes('forbidden in test biome')));
 });
 
 test('overlay materials cannot masquerade as terrain fills', () => {
@@ -231,6 +286,21 @@ test('multi-material joins compose topology-compatible target-palette variants b
   assert.throws(() => compileTopDownScene(catalog, scene), /incompatible interface assets at a multi-material join/);
 });
 
+test('transparent terrain interfaces can request the inside material fill as an underlay', () => {
+  const catalog = topologyCatalog();
+  catalog.terrain_interfaces.shore.underlay = 'inside-fill';
+  assert.deepEqual(validatePresentationCatalog(catalog), { valid: true, errors: [] });
+  const scene = {
+    schema_version: 2, kind: 'top-down-scene', id: 'interface-underlay', catalog: 'topology-test', style_profile: 'pixel16.topdown', logical_size: [32, 16], pixel_scale: 2,
+    grid: { cell: [16, 16] }, terrain: { base: 'grass', regions: [{ id: 'pool', material: 'water', cells: [[0, 0]] }] }, placements: [],
+  };
+  const plan = compileTopDownScene(catalog, scene);
+  assert.ok(plan.commands.some((command) => command.provenance === 'interface-underlay:water'));
+  assert.ok(plan.commands.some((command) => command.provenance === 'interface:shore'));
+  catalog.terrain_interfaces.shore.underlay = 'outside-fill';
+  assert.ok(validatePresentationCatalog(catalog).errors.some((error) => error.includes('underlay must be inside-fill')));
+});
+
 test('connector cells are structural occupancy for authored placements', () => {
   const catalog = topologyCatalog();
   const scene = {
@@ -240,6 +310,28 @@ test('connector cells are structural occupancy for authored placements', () => {
     placements: [{ asset: 'prop.tree', frame: 'a', at: [24, 32] }],
   };
   assert.throws(() => compileTopDownScene(catalog, scene), /footprint intersects connector wall/);
+});
+
+test('bridge and dock landing contracts fail closed against compiled terrain surfaces', () => {
+  const catalog = topologyCatalog();
+  catalog.assets['connector.bridge'] = {
+    ...catalog.assets['connector.fence'],
+    frames: { span: { cell: [0, 0], landings: [{ offset: [0, 8], surface: 'solid', material_group: 'banks' }, { offset: [63, 8], surface: 'solid', material_group: 'banks' }], crossings: [{ offset: [31, 8], different_from_group: 'banks' }] } },
+    world: { ...catalog.assets['connector.fence'].world, footprint: { size: [64, 16], offset: [0, 0] }, allowed_surfaces: ['solid', 'liquid'], provides_surface: 'solid' },
+  };
+  const scene = {
+    schema_version: 2, kind: 'top-down-scene', id: 'landing-contract', catalog: 'topology-test', style_profile: 'pixel16.topdown', logical_size: [64, 32], pixel_scale: 2,
+    grid: { cell: [16, 16] }, terrain: { base: 'grass', regions: [{ id: 'channel', material: 'water', rects: [[1, 0, 2, 2]], continues: ['north', 'south'] }] },
+    placements: [{ asset: 'connector.bridge', frame: 'span', at: [0, 0], role: 'detail' }],
+  };
+  const plan = compileTopDownScene(catalog, scene);
+  assert.equal(plan.diagnostics.landings.length, 2);
+  assert.equal(plan.diagnostics.crossings.length, 1);
+  const invalidCatalog = structuredClone(catalog);
+  invalidCatalog.assets['connector.bridge'].frames.span.landings[1].offset = [31, 8];
+  assert.throws(() => compileTopDownScene(invalidCatalog, scene), /landing 1 requires solid surface but found liquid/);
+  const sameMaterial = structuredClone(scene); sameMaterial.terrain.regions = [];
+  assert.throws(() => compileTopDownScene(catalog, sameMaterial), /crossing 0 must traverse material different from banks/);
 });
 
 test('semantic terrain shapes and placement groups compile deterministically without overlap', () => {
@@ -363,6 +455,18 @@ test('placement metadata enforces material plane and biome rather than merely st
   assert.throws(() => compileTopDownScene(catalog, scene), /forbidden biome test/);
 });
 
+test('height-attached assets fail closed when their visible art is detached from the height band', () => {
+  const catalog = topologyCatalog();
+  catalog.assets['prop.tree'].world = { ...catalog.assets['prop.tree'].world, attachment: { system: 'height', minimum_overlap_ratio: 0.25 } };
+  const scene = {
+    schema_version: 2, kind: 'top-down-scene', id: 'height-attachment', catalog: 'topology-test', style_profile: 'pixel16.topdown', logical_size: [32, 48], pixel_scale: 2,
+    grid: { cell: [16, 16] }, terrain: { base: 'grass', regions: [] }, heights: [{ id: 'wall', direction: 'north', origin: [0, 0], width: 2, profile: 'cliff' }], placements: [{ id: 'door', asset: 'prop.tree', frame: 'a', at: [8, 16] }],
+  };
+  const plan = compileTopDownScene(catalog, scene);
+  assert.equal(plan.diagnostics.attachments[0].system, 'height');
+  assert.throws(() => compileTopDownScene({ ...catalog }, { ...scene, placements: [{ ...scene.placements[0], at: [8, 32] }] }), /requires height attachment overlap/);
+});
+
 test('surface contracts reject actors on liquid and components on the wrong terrain class', () => {
   const catalog = topologyCatalog();
   catalog.assets['prop.tree'].world.allowed_materials = ['*'];
@@ -384,6 +488,18 @@ test('supporting prefabs provide a logical solid surface above liquid terrain', 
   };
   const plan = compileTopDownScene(catalog, scene);
   assert.equal(plan.diagnostics.footprints.find((entry) => entry.placement === 'actor').surfaces[0], 'solid');
+});
+
+test('automatic material details are suppressed beneath authored placement footprints', () => {
+  const catalog = topologyCatalog();
+  catalog.materials.grass.details = [{ profile: 'floor', density: 1, seed: 1 }];
+  const scene = {
+    schema_version: 2, kind: 'top-down-scene', id: 'detail-occlusion', catalog: 'topology-test', style_profile: 'pixel16.topdown', logical_size: [32, 32], pixel_scale: 2,
+    grid: { cell: [16, 16] }, terrain: { base: 'grass', regions: [] }, placements: [{ asset: 'prop.tree', frame: 'a', at: [8, 16] }],
+  };
+  const plan = compileTopDownScene(catalog, scene);
+  assert.equal(plan.commands.some((command) => command.provenance?.startsWith('material-detail:') && command.at[0] === 0 && command.at[1] === 0), false);
+  assert.equal(plan.commands.some((command) => command.provenance?.startsWith('material-detail:') && command.at[0] === 16 && command.at[1] === 0), true);
 });
 
 test('component fill variants avoid immediate wallpaper repetition deterministically', () => {
