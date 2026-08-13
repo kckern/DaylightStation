@@ -221,3 +221,4 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-08-12 | feat/exercise-library | 6c2ea9c8b | Already fully merged (0 commits ahead of main) — shared 1296-exercise corpus |
 | 2026-08-12 | school-household-paths | 1e0be9301 | Already fully merged (0 commits ahead of main) |
 | 2026-08-12 | scrub/apply-to-origin | b79c2271d | Already fully merged (0 commits ahead of main) — PII scrub application |
+| 2026-08-13 | fitness/instructional-content-modes | 952bc69b2 | Plex-label content modes: no_capture_labels suppresses session capture; study_ux_labels swaps in study player UX. Merged to main. |
