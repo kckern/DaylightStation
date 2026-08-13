@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, act, fireEvent, within } from '@testing-library/react';
 import PlanningTab from './PlanningTab.jsx';
 import { TeacherProfileProvider } from '../TeacherProfileContext.jsx';
 import PinPrompt from '../panels/PinPrompt.jsx';
@@ -85,7 +85,8 @@ describe('PlanningTab (wave 3, all live)', () => {
   it('an assignments 404 still offers Edit (empty, never an error)', async () => {
     schoolApi.assignments.mockResolvedValue(fail(404));
     mount(<PlanningTab learnerId="felix" kids={KIDS} />);
-    await waitFor(() => expect(screen.getByText(/Nothing assigned to/)).toBeTruthy());
+    const assignmentsSection = screen.getByRole('heading', { name: 'Assignments' }).closest('section');
+    await waitFor(() => expect(within(assignmentsSection).getByText(/Nothing assigned to/)).toBeTruthy());
     expect(screen.getByRole('button', { name: 'Edit assignments' })).toBeTruthy();
   });
 
@@ -169,5 +170,29 @@ describe('PlanningTab (wave 3, all live)', () => {
     mount(<PlanningTab learnerId="felix" kids={KIDS} />);
     await waitFor(() => expect(screen.getByText('Fall 2026')).toBeTruthy());
     expect(document.querySelectorAll('[data-todo]').length).toBe(0);
+  });
+
+  it('standalone units handles object-form entries with unitId property', async () => {
+    schoolApi.assignments.mockResolvedValue(ok({
+      learnerId: 'felix', courses: ['math-fractions'], units: ['language-daily', { unitId: 'poetry-study' }], assignedBy: 'kckern', updatedAt: '2026-08-01T00:00:00Z',
+    }));
+    mount(<PlanningTab learnerId="felix" kids={KIDS} />);
+    const standaloneSection = screen.getByRole('heading', { name: 'Standalone work' }).closest('section');
+    await waitFor(() => {
+      expect(within(standaloneSection).getByText('Language Daily')).toBeTruthy();
+      expect(within(standaloneSection).getByText('Poetry Study')).toBeTruthy();
+    });
+  });
+
+  it('standalone units shows empty state when learner has courses but no standalone work', async () => {
+    schoolApi.assignments.mockResolvedValue(ok({
+      learnerId: 'felix', courses: ['math-fractions'], units: [], assignedBy: 'kckern', updatedAt: '2026-08-01T00:00:00Z',
+    }));
+    mount(<PlanningTab learnerId="felix" kids={KIDS} />);
+    const standaloneSection = screen.getByRole('heading', { name: 'Standalone work' }).closest('section');
+    await waitFor(() => {
+      expect(within(standaloneSection).getByText('Nothing assigned outside a course.')).toBeTruthy();
+      expect(standaloneSection).toHaveAttribute('data-state', 'empty');
+    });
   });
 });
