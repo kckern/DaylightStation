@@ -66,7 +66,7 @@ describe('validateSyllabus', () => {
 
   it('refuses unknown policy keys and bad ordering values', () => {
     expect(validateSyllabus({ ...VALID, policy: { lesson_order: 'random' } }, SETS).errors)
-      .toContain('policy.lesson_order must be sequence|shuffle_once, got: random');
+      .toContain('policy.lesson_order must be fixed|sequence|shuffle_once, got: random');
     expect(validateSyllabus({ ...VALID, policy: { nope: 1 } }, SETS).errors)
       .toContain('policy has unknown keys: nope');
   });

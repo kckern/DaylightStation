@@ -16,7 +16,12 @@
 export const SYLLABUS_SCHEMA = 'school.syllabus/v1';
 
 const SLUG = /^[a-z0-9][a-z0-9-]*$/;
-const ORDERINGS = ['sequence', 'shuffle_once'];
+// `fixed` (work.progression's own vocabulary, workValidation.mjs) and
+// `sequence` are synonyms here: `createCourseEnrollment` only branches on
+// `shuffle_once`, treating anything else as authored order. Accepting both
+// spellings lets a syllabus override a shuffled course's policy back to a
+// fixed order using the same word the work's own config uses.
+const ORDERINGS = ['fixed', 'sequence', 'shuffle_once'];
 const POLICY_KEYS = ['module_order', 'lesson_order', 'required_opening_module'];
 
 const isText = (v) => typeof v === 'string' && v.trim().length > 0;
