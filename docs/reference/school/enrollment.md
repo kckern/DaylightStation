@@ -1,9 +1,40 @@
 # Enrollment, Syllabi, and Course Units — Design
 
+> ## ⚠ CORRECTION — do not build from this document
+>
+> **Sections 1–3 are wrong.** They were written against a branch ~174 commits
+> behind `main`, and describe a codebase that no longer exists. Verified errors:
+>
+> - **"No code accepts `school.question-bank/v2` or handles `decoys`"** — false.
+>   `questionBankValidation.mjs` accepts v2, and `questionBankV2.mjs` normalizes
+>   decoys **and already does item-level `levels` filtering by profile.** The
+>   "wave 1a" in §12 is a work order for code that exists.
+> - **"`validateUnit` drops `module`/`moduleRole`"** — false. Both are parsed
+>   and kept, with vocabulary `overview|lesson|optional`.
+> - **"There is no enrollment entity"** — false. `school.course-enrollment/v1`
+>   (`2_domains/school/curriculum/enrollment.mjs`) exists, carrying `profile`
+>   (what this doc calls *level*), `moduleOrder`, `optionalModules` and a
+>   persisted once-shuffled `lessonOrder`, and is consumed by `planner.mjs`.
+>
+> **What still holds, re-verified against `main`:** the pass bar is still global
+> (`percentFor(unitId)`, no learner); gating is still computed over the whole
+> course; there is no dated syllabus, no named reusable scope, no cherry-pick
+> deltas, and no teacher editing surface. `school.course-unit/v1` is still read
+> by nothing — but `main` routed around it via lesson-side `module:`, so the
+> course-unit reader proposed in §12 would be a *third* representation of the
+> same grouping.
+>
+> **Also:** `syllabus` is already taken — `1_rendering/school/reports/SyllabusRenderer.mjs`
+> renders a printable whole-course outline.
+>
+> Sections 4–13 must be rewritten as a delta against `school.course-enrollment/v1`
+> rather than as a greenfield model. See §13 for the design questions that were
+> open before this correction; several are now moot.
+
 > **Status:** **Designed, not built.** Nothing in section 4 onward exists yet.
 >
-> Sections 1–3 are different: they describe the system **as it is today**, and
-> are accurate now. They are here because the design is a response to them —
+> Sections 1–3 are ~~different: they describe the system **as it is today**, and
+> are accurate now~~ **superseded by the correction above.** They are here because the design is a response to them —
 > in particular to the fact that a substantial amount of curriculum structure
 > is already authored on disk and read by no code at all.
 >
