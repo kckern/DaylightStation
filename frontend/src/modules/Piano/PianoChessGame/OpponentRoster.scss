@@ -95,3 +95,98 @@
   font-size: var(--t-cap);
   color: var(--piano-muted);
 }
+
+/* ---- the ladder as a modal ---------------------------------------------- */
+
+/* Opaque, house-styled, and sized to show the sequence rather than a sample of
+   it. Opened by pressing the opponent — it is somewhere you go and look, not
+   something needed beside the board every turn. */
+.opponent-roster-modal {
+  position: absolute;
+  inset-block: 8%;
+  inset-inline: 0;
+  z-index: 7;
+  justify-self: center;
+  width: min(30rem, 82cqw);
+  margin-inline: auto;
+  padding: 1rem 1.2rem 1.2rem;
+  border: 1px solid var(--piano-border);
+  border-radius: var(--r-lg, 16px);
+  background: var(--piano-surface);
+  box-shadow: 0 1.5rem 4rem rgb(0 0 0 / 65%);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  overflow: hidden;
+}
+
+.opponent-roster-modal__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.opponent-roster-modal__title {
+  margin: 0;
+  font-size: var(--t-h);
+  color: var(--piano-fg);
+}
+
+.opponent-roster-modal__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.opponent-roster-modal__row {
+  display: grid;
+  grid-template-columns: 1.6rem 2.4rem 1fr auto;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.3rem 0.4rem;
+  border-radius: var(--r-sm);
+}
+
+.opponent-roster-modal__row--current {
+  background: color-mix(in srgb, var(--piano-accent) 14%, transparent);
+}
+
+/* The ones ahead are not dimmed — they are what the climb is for. */
+.opponent-roster-modal__row--ahead .opponent-roster__name { color: var(--piano-fg); }
+
+.opponent-roster-modal__level {
+  font-size: var(--t-cap);
+  color: var(--piano-muted);
+  text-align: end;
+}
+
+.opponent-roster-modal__state {
+  font-size: var(--t-cap);
+  color: var(--piano-accent-text);
+}
+
+/* The opponent panel is a target now. */
+.piano-chess__opponent-btn {
+  display: block;
+  width: 100%;
+  padding: 0.2rem;
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.piano-chess__opponent-btn:hover,
+.piano-chess__opponent-btn:focus-visible {
+  border-color: var(--piano-border);
+  background: color-mix(in srgb, var(--piano-fg) 5%, transparent);
+}
