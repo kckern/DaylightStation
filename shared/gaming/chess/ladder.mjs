@@ -38,11 +38,27 @@ export const TOP_LEVEL = LADDER_SIZE - 1;
  * needs no artwork to be usable. Replaceable wholesale from YAML (see
  * `resolveRoster`), which is how a Pokémon roster gets in.
  */
+/**
+ * Each character tints the board's dark squares, so arriving at a new opponent
+ * LOOKS like arriving somewhere new. Derived from the level rather than hand-
+ * picked twenty-one times: the hue walks away from the friendly clay the board
+ * starts on while the colour deepens and saturates, so the ladder darkens as it
+ * climbs without anyone maintaining a palette. Cosmetic only — nothing about
+ * addressing, promotion or play reads this.
+ */
+export function themeForLevel(level) {
+  const t = Math.min(TOP_LEVEL, Math.max(0, level)) / TOP_LEVEL;
+  const hue = Math.round(10 + t * 260);        // clay -> violet -> deep blue
+  const saturation = Math.round(24 + t * 22);
+  const lightness = Math.round(58 - t * 26);   // and steadily darker
+  return `hsl(${hue} ${saturation}% ${lightness}%)`;
+}
+
 export const DEFAULT_ROSTER = Object.freeze([
   'Pip', 'Dozy', 'Mumble', 'Clover', 'Tumble', 'Waddle', 'Biscuit',
   'Bramble', 'Piper', 'Quill', 'Ferris', 'Sable', 'Vesper', 'Corvin',
   'Talon', 'Grimsby', 'Vandal', 'Marrow', 'Skarn', 'Brutus', 'Malgrave',
-].map((name, level) => Object.freeze({ level, name, art: null })));
+].map((name, level) => Object.freeze({ level, name, art: null, theme: themeForLevel(level) })));
 
 /**
  * Promotion policy. Every number here is a judgement call, which is why they
@@ -83,11 +99,16 @@ export function resolveRoster(config) {
   return Object.freeze(DEFAULT_ROSTER.map((fallback, level) => {
     const entry = raw[level];
     if (entry === undefined || entry === null) return fallback;
-    if (typeof entry === 'string') return Object.freeze({ level, name: entry, art: null });
+    if (typeof entry === 'string') return Object.freeze({ ...fallback, name: entry });
     return Object.freeze({
       level,
       name: typeof entry.name === 'string' && entry.name ? entry.name : fallback.name,
       art: entry.art ?? entry.image ?? null,
+      // A roster may set its own board tint; the derived one is the fallback,
+      // so a Pokemon list gets a themed board for free and can override it.
+      theme: typeof entry.theme === 'string' && entry.theme ? entry.theme : fallback.theme,
+      // Optional per-opponent piece set — a named style the board resolves.
+      pieces: entry.pieces ?? null,
     });
   }));
 }
@@ -206,7 +227,7 @@ export function rungForLevel(level, policy) {
 }
 
 export default {
-  LADDER_SIZE, TOP_LEVEL, DEFAULT_ROSTER, DEFAULT_LADDER_POLICY,
+  LADDER_SIZE, TOP_LEVEL, DEFAULT_ROSTER, DEFAULT_LADDER_POLICY, themeForLevel,
   resolvePolicy, resolveRoster, createLadderProgress, normalizeProgress,
   countsTowardPromotion, promotionStatus, applyGameToProgress, availableOpponents, rungForLevel,
 };

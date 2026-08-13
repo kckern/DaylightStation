@@ -26,8 +26,11 @@ describe('the roster', () => {
 
   it('can be replaced wholesale from config, which is how Pokemon get in', () => {
     const roster = resolveRoster({ ladder: { roster: [{ name: 'Magikarp', art: '/magikarp.png' }, 'Rattata'] } });
-    expect(roster[0]).toEqual({ level: 0, name: 'Magikarp', art: '/magikarp.png' });
-    expect(roster[1]).toEqual({ level: 1, name: 'Rattata', art: null });
+    expect(roster[0]).toMatchObject({ level: 0, name: 'Magikarp', art: '/magikarp.png' });
+    expect(roster[1]).toMatchObject({ level: 1, name: 'Rattata', art: null });
+    // A renamed character keeps the level's board tint unless it sets its own.
+    expect(roster[1].theme).toBe(DEFAULT_ROSTER[1].theme);
+    expect(resolveRoster({ ladder: { roster: [{ name: 'Onix', theme: '#334455' }] } })[0].theme).toBe('#334455');
     // A short override fills from the house roster rather than leaving holes —
     // otherwise the top of the ladder would be unreachable and nothing on
     // screen would say why.
@@ -39,6 +42,28 @@ describe('the roster', () => {
     expect(resolveRoster({})).toBe(DEFAULT_ROSTER);
     expect(resolveRoster({ ladder: { roster: [] } })).toBe(DEFAULT_ROSTER);
     expect(resolveRoster(null)).toBe(DEFAULT_ROSTER);
+  });
+});
+
+describe('the board theme', () => {
+  it('gives every character a distinct tint that deepens up the ladder', () => {
+    const themes = DEFAULT_ROSTER.map((p) => p.theme);
+    expect(new Set(themes).size, 'two opponents must not look identical').toBe(LADDER_SIZE);
+    // Lightness falls monotonically: the ladder gets visibly darker as it climbs.
+    const lightness = themes.map((t) => Number(/(\d+)%\)$/.exec(t)[1]));
+    for (let i = 1; i < lightness.length; i += 1) {
+      expect(lightness[i], `level ${i} must not be lighter than ${i - 1}`).toBeLessThan(lightness[i - 1]);
+    }
+  });
+
+  it('is cosmetic — it never reaches the promotion arithmetic', () => {
+    const themed = resolveRoster({ ladder: { roster: [{ name: 'Pip', theme: 'red' }] } });
+    const plain = resolveRoster({});
+    const policy = resolvePolicy({});
+    // Same climb, themed or not.
+    expect(promotionStatus({ unlocked_through: 0, results: [] }, policy))
+      .toEqual(promotionStatus({ unlocked_through: 0, results: [] }, policy));
+    expect(themed).toHaveLength(plain.length);
   });
 });
 

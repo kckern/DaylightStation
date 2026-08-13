@@ -11,8 +11,10 @@ import { isPersistentUser } from '../PianoKiosk/pianoUser.js';
 import { usePianoMidi, usePianoMidiNotes } from '../PianoKiosk/PianoMidiContext.jsx';
 import { usePlayerLock } from '../PianoKiosk/PianoPlaybackContext.jsx';
 import {
-  archiveGame, beaconArchive, fetchChessConfig, requestOpponentMove, saveChessConfig, saveGameRecord,
+  archiveGame, beaconArchive, fetchChessConfig, fetchLadder, requestOpponentMove,
+  saveChessConfig, saveGameRecord,
 } from './chessApi.js';
+import OpponentPortrait, { opponentStatus } from './OpponentPortrait.jsx';
 import { cuesFromConfig } from './chessCues.js';
 import ChessSettingsPanel from './ChessSettingsPanel.jsx';
 import { CHORD_QUALITIES, DEFAULT_CHORD_SCHEME, squareToChord } from './chordAddress.js';
@@ -53,6 +55,8 @@ export const DEFAULT_FEEDBACK = Object.freeze({
 });
 const OPPONENT_DELAY_MS = 700;
 const PIECE_GLYPHS = { p: '♟', n: '♞', b: '♝', r: '♜', q: '♛', k: '♚' };
+/** For the opponent's status line — "Took your knight" reads, "Took your n" does not. */
+const PIECE_NAMES = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king' };
 
 /**
  * The addressing vocabulary, chosen by config rather than by code.
@@ -153,6 +157,16 @@ export function PianoChessGame({
   // old gameConfig.feedback path is gone on purpose: two config sources for one
   // preference is exactly the drift the chess.yml pair exists to prevent.
   const [chessConfig, setChessConfig] = useState(null);
+  // Where this player stands on the opponent ladder. Null until it resolves (and
+  // for a guest, whose progress is never persisted), in which case the screen
+  // falls back to the named rungs and says nothing it cannot back up.
+  const [ladder, setLadder] = useState(null);
+  // The character being climbed. Falls back to the named rung's label when the
+  // ladder has not resolved, so the rail is never blank and never invents one.
+  // Declared here rather than with the other derived values: the opponent
+  // effect depends on the level, and a const cannot be read before it exists.
+  const opponent = ladder?.current ?? null;
+  const ladderLevel = ladder?.unlocked_through ?? null;
   const [rungId, setRungId] = useState('learner');
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -267,6 +281,22 @@ export function PianoChessGame({
     window.addEventListener('pagehide', flush);
     return () => window.removeEventListener('pagehide', flush);
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchLadder(lockedUser).then((loaded) => {
+      if (cancelled || !loaded) return;
+      setLadder(loaded);
+      logger().info('ladder-loaded', {
+        level: loaded.unlocked_through,
+        opponent: loaded.current?.name,
+        wins: loaded.status?.wins,
+        needed: loaded.status?.needed,
+        persisted: loaded.persisted,
+      });
+    });
+    return () => { cancelled = true; };
+  }, [lockedUser]);
 
   const heldNotes = useMemo(() => [...activeNotes.keys()].sort((a, b) => a - b), [activeNotes]);
   const heldKey = heldNotes.join(',');
@@ -396,6 +426,9 @@ export function PianoChessGame({
     } else logger().debug(`chord-${event.type}`, { square });
   }, []);
 
+  // Whether the character is currently taking their turn — the panel says so,
+  // and it is read off the same effect that asks the engine, never guessed.
+  const [opponentThinking, setOpponentThinking] = useState(false);
   const [toast, setToast] = useState(null);
   const rejection = game.rejection;
   useEffect(() => {
@@ -513,18 +546,25 @@ export function PianoChessGame({
   useEffect(() => {
     if (game.status?.game_over || game.status?.turn === playerColor) return undefined;
     let cancelled = false;
+    setOpponentThinking(true);
     const timer = setTimeout(async () => {
       const fen = gameRef.current.game.fen;
-      const served = await requestOpponentMove({ fen, rung: rungId, gameId, userId: lockedUser });
+      // The ladder's level, when there is one, is the strength this character
+      // plays at — the server clamps it to what the player has actually
+      // unlocked, so this is a request, not an authority.
+      const served = await requestOpponentMove({
+        fen, rung: rungId, level: ladderLevel, gameId, userId: lockedUser,
+      });
       const reply = served
         || chooseMove(fen, { difficulty: localFallbackDifficulty, seed: gameRef.current.history.length });
       if (cancelled || !reply) return;
       const { state } = commitMove(gameRef.current, reply.from, reply.to, reply.promotion);
       setGame(state);
+      setOpponentThinking(false);
       logger().info('opponent-replied', { san: reply.san, engine: served ? served.engine : 'local' });
     }, opponentDelayMs);
-    return () => { cancelled = true; clearTimeout(timer); };
-  }, [game.status, playerColor, rungId, gameId, opponentDelayMs, lockedUser, localFallbackDifficulty]);
+    return () => { cancelled = true; clearTimeout(timer); setOpponentThinking(false); };
+  }, [game.status, playerColor, rungId, ladderLevel, gameId, opponentDelayMs, lockedUser, localFallbackDifficulty]);
 
   // One record per finished game, posted only for a signed-in player — guests
   // never reach the per-user endpoints. Ref-guarded, not state-guarded: the
@@ -583,6 +623,16 @@ export function PianoChessGame({
     ? { square: cursor, piece: heldPiece }
     : null;
   const captured = capturedPieces(game.history);
+  const boardTheme = opponent?.theme ?? null;
+  const opponentLastMove = [...game.history].reverse().find((entry) => entry.color !== playerColor) ?? null;
+  const lastCaptureName = opponentLastMove?.captured ? PIECE_NAMES[opponentLastMove.captured] : null;
+  const opponentLine = opponentStatus({
+    thinking: opponentThinking,
+    lastMove: opponentLastMove?.san ?? null,
+    lastCapture: lastCaptureName,
+    gameOver: !!game.status?.game_over,
+    result: finishedRecord?.result ?? null,
+  });
   addressingRef.current = reading ? 'staff' : 'chords';
   archiveInputsRef.current = {
     game, gameId, userId: lockedUser, rungId, addressing: addressingRef.current,
@@ -602,7 +652,12 @@ export function PianoChessGame({
     : (lockedUser || 'Guest');
 
   return (
-    <div className={`piano-chess${reading ? ' piano-chess--reading' : ''}`}>
+    <div
+      className={`piano-chess${reading ? ' piano-chess--reading' : ''}`}
+      /* Arriving at a new character LOOKS like arriving somewhere new. Purely
+         cosmetic: it retints the dark squares and touches nothing else. */
+      style={boardTheme ? { '--pc-dark': boardTheme } : undefined}
+    >
       <div className="piano-chess__stage">
         {/* THE STATE RAIL — what the game is currently thinking. Every row here
             holds its place whether or not it has something to say: a read-out
@@ -617,7 +672,7 @@ export function PianoChessGame({
               // Story 2 asks whose turn it is, not which colour is to move —
               // the colour is a fact about the board, the answer is about them.
               ['Turn', game.status?.game_over ? 'Game over' : turnLabel],
-              ['Level', rung?.label ?? (rungId.charAt(0).toUpperCase() + rungId.slice(1))],
+              ['Level', opponent ? `${opponent.name} · ${ladderLevel}` : (rung?.label ?? (rungId.charAt(0).toUpperCase() + rungId.slice(1)))],
             ].map(([label, value]) => (
               <div key={label} className="piano-chess__fact">
                 <dt className="piano-chess__slot-label">{label}</dt>
@@ -747,6 +802,23 @@ export function PianoChessGame({
             the name for the speller, the notation for the reader. It reports;
             it does not teach theory, which is why there is no circle here. */}
         <aside className="piano-chess__rail piano-chess__rail--chords">
+          {/* Who you are playing, and what they are doing. Above the chord
+              read-outs because it is about the game, not about your hands. */}
+          {opponent && (
+            <section className="piano-chess__opponent">
+              <h2 className="piano-chess__slot-label">Opponent</h2>
+              <OpponentPortrait opponent={opponent} level={ladderLevel} status={opponentLine} size="lg" />
+              {ladder?.status && !ladder.status.at_top && ladder.persisted && (
+                <p className="chess-ladder-progress">
+                  <span>To beat {opponent.name}</span>
+                  <span className="chess-ladder-progress__value">
+                    {ladder.status.wins} of {ladder.status.needed}
+                  </span>
+                </p>
+              )}
+            </section>
+          )}
+
           <h2 className="piano-chess__slot-label">Playing</h2>
           <ChordNamePanel midiNotes={heldNotes} />
           {/* Notation is ink, so it needs paper. Same card the other games put
