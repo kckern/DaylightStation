@@ -42,6 +42,7 @@ const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 // `listReportCards` from ever surfacing a superseded copy as current.
 const PERIOD_ID_RE = /^[a-z0-9][a-z0-9_-]*$/i;
 const isSafePeriodId = (id) => typeof id === 'string' && PERIOD_ID_RE.test(id);
+const COURSE_V2 = 'school.course/v2';
 
 // saveYamlToPathAtomic (unlike saveYaml) wants a full path — it does not append
 // an extension for you — so every base-style path built with path.join(dir, name)
@@ -94,14 +95,54 @@ export class YamlSchoolDatastore {
     return path.join(this.#schoolDir(), subject, work, 'quizzes');
   }
 
-  #works(subject) {
+  #curriculumWorks(subject) {
+    const root = path.join(this.#schoolDir(), 'curriculum', subject);
     try {
-      return fs.readdirSync(path.join(this.#schoolDir(), subject), { withFileTypes: true })
+      return fs.readdirSync(root, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+        .map((entry) => entry.name);
+    } catch { return []; }
+  }
+
+  #workDir(subject, work) {
+    const curriculumDir = path.join(this.#schoolDir(), 'curriculum', subject, work);
+    if (loadYamlSafe(path.join(curriculumDir, 'index'))?.schema === COURSE_V2) return curriculumDir;
+    return path.join(this.#schoolDir(), subject, work);
+  }
+
+  #courseV2(subject, work) {
+    return loadYamlSafe(path.join(this.#workDir(subject, work), 'index'))?.schema === COURSE_V2;
+  }
+
+  /** Every non-index YAML in a v2 lesson folder is a typed bank artifact. */
+  #v2BankEntries(subject, work) {
+    if (!this.#courseV2(subject, work)) return [];
+    const root = path.join(this.#workDir(subject, work), 'units');
+    const entries = [];
+    let units = [];
+    try { units = fs.readdirSync(root, { withFileTypes: true }); } catch { return entries; }
+    for (const unit of units.filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))) {
+      const lessonsRoot = path.join(root, unit.name, 'lessons');
+      let lessons = [];
+      try { lessons = fs.readdirSync(lessonsRoot, { withFileTypes: true }); } catch { continue; }
+      for (const lesson of lessons.filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))) {
+        const dir = path.join(lessonsRoot, lesson.name);
+        for (const file of listYamlFiles(dir).filter((name) => name !== 'index')) {
+          entries.push({ id: `${subject}/${work}/${lesson.name}/${file}`, file: path.join(dir, file) });
+        }
+      }
+    }
+    return entries;
+  }
+
+  #works(subject) {
+    let legacy = [];
+    try {
+      legacy = fs.readdirSync(path.join(this.#schoolDir(), subject), { withFileTypes: true })
         .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
         .map((e) => e.name);
-    } catch {
-      return [];
-    }
+    } catch { /* empty shelf */ }
+    return [...new Set([...this.#curriculumWorks(subject), ...legacy])];
   }
 
   /**
@@ -115,7 +156,10 @@ export class YamlSchoolDatastore {
     if (!BANK_ID_RE.test(id)) return null;
     const [subject, work, ...rest] = id.split('/');
     if (!SUBJECT_IDS.includes(subject) || !work || rest.length === 0) return null;
-    return path.join(this.#quizzesDir(subject, work), ...rest);
+    const legacy = path.join(this.#quizzesDir(subject, work), ...rest);
+    if (!this.#courseV2(subject, work)) return legacy;
+    const found = this.#v2BankEntries(subject, work).find((entry) => entry.id === id);
+    return found?.file ?? legacy;
   }
 
   #attemptsDir(userId) {
@@ -182,8 +226,10 @@ export class YamlSchoolDatastore {
   }
 
   listBankIds() {
-    return SUBJECT_IDS.flatMap((subject) => this.#works(subject).flatMap((work) => listYamlFiles(this.#quizzesDir(subject, work), { recursive: true })
-      .map((rest) => `${subject}/${work}/${rest}`))).sort();
+    return SUBJECT_IDS.flatMap((subject) => this.#works(subject).flatMap((work) => [
+      ...listYamlFiles(this.#quizzesDir(subject, work), { recursive: true }).map((rest) => `${subject}/${work}/${rest}`),
+      ...this.#v2BankEntries(subject, work).map((entry) => entry.id),
+    ])).sort();
   }
 
   readBankRaw(bankId) {

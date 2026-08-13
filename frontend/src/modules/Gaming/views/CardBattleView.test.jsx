@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { createInitialState, deriveInteraction, transition } from '@shared-gaming/index.mjs';
-import { scaleClashDefinition } from '@shared-gaming/fixtures/scaleClash.mjs';
+import { scaleClashDefinition } from '@shared-gaming/definitions/scaleClash.mjs';
 import { CardBattleView } from './CardBattleView.jsx';
 
 function makeSession(definition = scaleClashDefinition) {
@@ -55,7 +55,7 @@ describe('CardBattleView', () => {
 
   it('renders the Pokémon theme from authored Pokédex metadata and proxied SVGs', () => {
     const definition = structuredClone(scaleClashDefinition);
-    definition.title = 'Scale Stadium';
+    definition.title = 'Card Game';
     definition.presentation = { theme: 'pokemon-tcg', data_source: 'PokeAPI' };
     definition.card_battle.player = {
       ...definition.card_battle.player,

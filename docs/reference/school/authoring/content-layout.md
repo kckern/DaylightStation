@@ -33,6 +33,33 @@ math/algebra/quizzes/functions/domain_and_range.yml
 A kind directory exists only where there is something to put in it. Most shelves
 are empty; that is the normal state, not a gap.
 
+## Hierarchical course packages (v2)
+
+`school.course/v2` is the package layout for courses whose real hierarchy is
+course → instructional unit → lesson → artifact. It coexists with the flat v1
+layout above:
+
+```text
+civilization/atlas/
+├── index.yml
+└── units/
+    └── northeast/
+        ├── index.yml
+        └── lessons/
+            └── maine/
+                ├── index.yml
+                ├── worksheet.yml
+                └── flashcards.yml
+```
+
+The root index carries course policy and bibliography. A unit index owns the
+unit's ordering policy. A lesson index is projected through the existing unit
+catalog port for agenda and progress compatibility. Every other YAML file in a
+lesson folder is a typed gradable artifact; its filename is the final bank-id
+segment (`civilization/atlas/maine/worksheet`, `…/flashcards`). Artifact discovery is
+open-ended rather than limited to a fixed worksheet/quiz list. Existing v1
+`work.yml`, `units/`, and `quizzes/` works continue to load unchanged.
+
 **`scripture/bom/`** is the exception — a generated package with its own internal
 shape (`spine.yml`, `plans.yml`, `renditions.yml`, `coverage.yml`, `maps/`,
 `tools/`) rather than kind directories. See its own `HANDOFF.md`.

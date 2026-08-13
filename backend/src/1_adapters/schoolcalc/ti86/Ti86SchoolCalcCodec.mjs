@@ -2373,6 +2373,9 @@ function validateAdaptiveStudyResult(result) {
   if (!ADAPTIVE_SESSION_CODE.test(study.sessionCode || '')) {
     throw new Error('TI-86 adaptive study result has an invalid six-digit sessionCode');
   }
+  if (!Number.isInteger(study.attemptCount) || study.attemptCount < 1 || study.attemptCount > 127) {
+    throw new Error('TI-86 adaptive study result has an invalid 1..127 attemptCount');
+  }
   if (!Array.isArray(study.cards) || study.cards.length < 1 || study.cards.length > 255) {
     throw new Error('TI-86 adaptive study result must contain 1..255 card summaries');
   }
@@ -2419,8 +2422,11 @@ function encodeCompactResultRecord(result) {
     pushU16(body, result.progress.position);
     pushU16(body, result.progress.total);
   } else if (result.adaptiveStudy) {
-    const { sessionCode, cards, quizChoices } = result.adaptiveStudy;
-    body.push(ADAPTIVE_RESULT_MODE, quizChoices.length, ...Buffer.from(sessionCode, 'ascii'), cards.length);
+    const {
+      sessionCode, attemptCount, cards, quizChoices,
+    } = result.adaptiveStudy;
+    body.push(ADAPTIVE_RESULT_MODE, quizChoices.length,
+      ...Buffer.from(sessionCode, 'ascii'), cards.length, attemptCount);
     pushPackedNibbles(body, cards.map(({ rating, exposureCount }) => (
       (ADAPTIVE_CARD_RATING[rating] << 2) | (exposureCount - 1)
     )));
@@ -2545,8 +2551,10 @@ function decodeCompactResultRecord(input) {
       throw new Error('SCR1 adaptive result has an invalid six-digit session code');
     }
     const cardCount = reader.u8('adaptive card count');
+    const attemptCount = reader.u8('adaptive quiz attempt count');
     const quizCount = count;
-    if (cardCount < 1 || quizCount < 1 || quizCount > cardCount) {
+    if (cardCount < 1 || quizCount < 1 || quizCount > cardCount
+        || attemptCount < 1 || attemptCount > 127) {
       throw new Error('SCR1 adaptive result has invalid card/quiz counts');
     }
     const cards = readPackedNibbles(reader, cardCount, 'adaptive cards').map((nibble, index) => {
@@ -2560,7 +2568,9 @@ function decodeCompactResultRecord(input) {
       throw new Error('SCR1 adaptive result has an invalid A-E quiz choice');
     }
     quizChoices.forEach((given, itemIndex) => responses.push({ itemIndex, given }));
-    common.adaptiveStudy = { sessionCode, cards, quizChoices };
+    common.adaptiveStudy = {
+      sessionCode, attemptCount, cards, quizChoices,
+    };
   } else {
     throw new Error(`SCR1 record has unknown response mode ${mode}`);
   }

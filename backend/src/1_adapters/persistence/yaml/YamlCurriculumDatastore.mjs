@@ -47,6 +47,7 @@ const CURRICULUM_ID_RE = /^[a-z0-9][a-z0-9._-]*$/i;
 
 const KINDS = Object.freeze({ units: 'units', documents: 'documents', manifests: 'manifests' });
 const YAML_FILE_RE = /\.(yml|yaml)$/;
+const COURSE_V2 = 'school.course/v2';
 
 export class YamlCurriculumDatastore extends ICurriculumCatalog {
   #configService;
@@ -69,19 +70,63 @@ export class YamlCurriculumDatastore extends ICurriculumCatalog {
     return path.join(this.#schoolDir(), subject, work, kind);
   }
 
+  #curriculumWorks(subject) {
+    const root = path.join(this.#schoolDir(), 'curriculum', subject);
+    try {
+      return fs.readdirSync(root, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+        .map((entry) => entry.name);
+    } catch { return []; }
+  }
+
+  #workDir(subject, work) {
+    const curriculumDir = path.join(this.#schoolDir(), 'curriculum', subject, work);
+    if (loadYamlSafe(path.join(curriculumDir, 'index'))?.schema === COURSE_V2) return curriculumDir;
+    return path.join(this.#schoolDir(), subject, work);
+  }
+
   /**
    * Work directories on one shelf. A work (Shakespeare Tales, math-fractions) is
    * a self-contained folder holding its own units, documents, manifests and
    * quizzes; a shelf with no works yet simply has no directories to list.
    */
   #works(subject) {
+    let legacy = [];
     try {
-      return fs.readdirSync(path.join(this.#schoolDir(), subject), { withFileTypes: true })
+      legacy = fs.readdirSync(path.join(this.#schoolDir(), subject), { withFileTypes: true })
         .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
         .map((e) => e.name);
-    } catch {
-      return [];
+    } catch { /* empty shelf */ }
+    return [...new Set([...this.#curriculumWorks(subject), ...legacy])];
+  }
+
+  #courseV2(subject, work) {
+    return loadYamlSafe(path.join(this.#workDir(subject, work), 'index'))?.schema === COURSE_V2;
+  }
+
+  /** V2 lesson indexes project into the existing unit port for compatibility. */
+  #v2Lessons(subject, work, errors) {
+    if (!this.#courseV2(subject, work)) return [];
+    const unitsDir = path.join(this.#workDir(subject, work), 'units');
+    const out = [];
+    let units = [];
+    try { units = fs.readdirSync(unitsDir, { withFileTypes: true }); } catch (err) {
+      if (err.code !== 'ENOENT') errors.push(`${subject}/${work}/units: unreadable directory (${err.message})`);
     }
+    for (const unit of units.filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))) {
+      const lessonsDir = path.join(unitsDir, unit.name, 'lessons');
+      let lessons = [];
+      try { lessons = fs.readdirSync(lessonsDir, { withFileTypes: true }); } catch (err) {
+        if (err.code !== 'ENOENT') errors.push(`${subject}/${work}/units/${unit.name}/lessons: unreadable directory (${err.message})`);
+      }
+      for (const lesson of lessons.filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))) {
+        if (!CURRICULUM_ID_RE.test(lesson.name)) {
+          errors.push(`${subject}/${work}/units/${unit.name}/lessons/${lesson.name}: unsafe lesson id`); continue;
+        }
+        out.push({ id: lesson.name, file: 'index.yml', subject, dir: path.join(lessonsDir, lesson.name) });
+      }
+    }
+    return out;
   }
 
   /**
@@ -95,7 +140,16 @@ export class YamlCurriculumDatastore extends ICurriculumCatalog {
     const seen = new Map();
     for (const subject of SUBJECT_IDS) {
       for (const work of this.#works(subject)) {
-        const dir = this.#kindDir(subject, work, kind);
+        if (kind === KINDS.units) {
+          for (const entry of this.#v2Lessons(subject, work, errors)) {
+            const prior = seen.get(entry.id);
+            if (prior) errors.push(`${kind}/${entry.id}: duplicate id in ${prior} and ${subject}/${work}, latter skipped`);
+            else { seen.set(entry.id, `${subject}/${work}`); out.push(entry); }
+          }
+        }
+        const dir = this.#courseV2(subject, work)
+          ? path.join(this.#workDir(subject, work), kind)
+          : this.#kindDir(subject, work, kind);
         const where = `${subject}/${work}/${kind}`;
         let entries;
         try {
@@ -189,7 +243,8 @@ export class YamlCurriculumDatastore extends ICurriculumCatalog {
     const items = [];
     for (const subject of SUBJECT_IDS) {
       for (const work of this.#works(subject)) {
-        const file = path.join(this.#schoolDir(), subject, work, 'work.yml');
+        const v2 = this.#courseV2(subject, work);
+        const file = path.join(this.#workDir(subject, work), v2 ? 'index.yml' : 'work.yml');
         let text;
         try {
           text = await fs.promises.readFile(file, 'utf8'); // eslint-disable-line no-await-in-loop
@@ -215,7 +270,7 @@ export class YamlCurriculumDatastore extends ICurriculumCatalog {
     if (typeof id !== 'string') return null;
     const [subject, work, ...rest] = id.split('/');
     if (rest.length || !SUBJECT_IDS.includes(subject) || !work || !CURRICULUM_ID_RE.test(work)) return null;
-    return loadYamlSafe(path.join(this.#schoolDir(), subject, work, 'work')) ?? null;
+    return loadYamlSafe(path.join(this.#workDir(subject, work), this.#courseV2(subject, work) ? 'index' : 'work')) ?? null;
   }
 
   /** @param {{ batch?: number }} [options] */
@@ -227,7 +282,12 @@ export class YamlCurriculumDatastore extends ICurriculumCatalog {
   /** @param {{ batch?: number }} [options] */
   listManifests(options) { return this.#list(KINDS.manifests, options); }
 
-  getUnit(unitId) { return this.#get(KINDS.units, unitId); }
+  async getUnit(unitId) {
+    const legacy = await this.#get(KINDS.units, unitId);
+    if (legacy) return legacy;
+    const listed = await this.#list(KINDS.units);
+    return listed.items.find((entry) => entry.id === unitId)?.raw ?? null;
+  }
 
   getDocument(id) { return this.#get(KINDS.documents, id); }
 

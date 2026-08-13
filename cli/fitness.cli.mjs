@@ -27,6 +27,7 @@ import * as merge from './lib/fitness/merge.mjs';
 import * as split from './lib/fitness/split.mjs';
 import * as scan from './lib/fitness/scan.mjs';
 import * as reconstruct from './lib/fitness/reconstruct.mjs';
+import * as dropParticipant from './lib/fitness/dropParticipant.mjs';
 
 import * as enrichPlex from './lib/fitness/enrichPlex.mjs';
 import * as backfillMediaMemory from './lib/fitness/backfillMediaMemory.mjs';
@@ -54,6 +55,7 @@ const GROUPS = {
       merge: cmd(merge),
       split: cmd(split),
       reconstruct: cmd(reconstruct),
+      'drop-participant': cmd(dropParticipant),
     },
     aliases: new Set(),
   },

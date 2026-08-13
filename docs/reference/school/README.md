@@ -67,6 +67,18 @@ content.
 
 Four item types: `multiple_choice`, `short_answer`, `cloze`, `matching`.
 
+`school.question-bank/v2` is the authored-pool format for printable mastery
+worksheets. A multiple-choice item stores one correct `answer`; a multi-select
+item stores two or more correct `answers`. Both store incorrect options under
+`decoys`, with 8–10 total answers and decoys per pool. A v2 item never authors
+`choices`. At issuance the domain combines the fields, assigns bank-revision-scoped
+option IDs, retains every correct option, and stores the exact visible subset,
+order, A–E mapping, prompt, and source locator in an immutable issued snapshot.
+Reprints reuse that snapshot; remediation may issue only missed item IDs with a
+new subset/order. Grading therefore resolves against the issued snapshot, not
+against mutable bank YAML. Existing v1 banks retain their original schema and
+answer-key behavior.
+
 - **Grading is server-side**, for single-source logic rather than secrecy.
   Banks ship with their answers because flashcards must reveal them; this is
   explicitly not a security boundary.
@@ -379,9 +391,63 @@ context, bank ID, or mode therefore cannot misfile progress.
 | Catalog/module invariants | `backend/src/2_domains/school/catalog/` |
 | Neutral ports/hydration/session use cases | `backend/src/3_applications/school/ports/`, `catalog/`, `GetLearningCatalog.mjs`, `OpenCatalogLearningSession.mjs` |
 | YAML and assignment-policy adapters | `backend/src/1_adapters/school/catalog/`, `backend/src/1_adapters/school/config/` |
+| Generated catalog sources + composites | `backend/src/3_applications/school/sources/` |
 | Independent wiring | `backend/src/5_composition/modules/schoolCatalog.mjs` |
 | API | `GET /api/v1/school/catalogs`, `GET /api/v1/school/catalogs/:address`, `POST /api/v1/school/sessions` |
 | Web | `frontend/src/modules/School/catalog/` |
+
+#### Generated catalogs (the anatomy shelf)
+
+`GetLearningCatalog` and `BuildLearningLesson` each take ONE catalog repository
+and ONE content repository, not a registry. Additional sources therefore join
+the authored YAML ones behind `CompositeLearningCatalogRepository` /
+`CompositeLearningContentRepository`
+(`backend/src/3_applications/school/sources/`), which merge several sources into
+the same two port shapes. Precedence is **first-wins in the order given, authored
+YAML first** — so a hand-authored catalog or document always overrides a
+generated one of the same id, and the projection can be corrected without a code
+change. A source that throws is logged and skipped, never allowed to blank the
+authored curriculum.
+
+`ExerciseLibraryCatalogSource` is the first such source. It projects the shared
+exercise-reference corpus (see `docs/reference/fitness/`) into an anatomy shelf:
+
+| Corpus | Catalog |
+|---|---|
+| muscle group (12) | unit |
+| muscle (38) | lesson |
+| muscle `fullDescription` | a `lecture_notes` document, one `prose` block per paragraph |
+| exercises targeting the muscle | an `examples` module (prompt + instruction steps) |
+| equipment (29) | one `equipment` course holding a single guide lesson |
+
+```yaml
+catalog:
+  exercise_library:
+    enabled: true
+    catalog_id: anatomy
+    max_examples_per_muscle: 6   # the corpus has up to 197 for biceps
+```
+
+Two constraints shape the projection:
+
+- **Block types are chosen for what the reader renders.**
+  `LearningContentReader` handles `table`, `worked_example` and `formula`, and
+  falls through to `<p>{block.text}</p>` for everything else — so `definition`
+  and `asset` blocks validate but render **blank**. The projection emits `prose`
+  and `heading` only, and omits exercise demo images rather than shipping
+  invisible `asset` blocks. (`assetId` is a `REFERENCE_ID`, which cannot express
+  the corpus's mixed-case, parenthesised, percent-encoded media paths anyway.)
+- **An invalid catalog is worse than no catalog.** `GetLearningCatalog` throws on
+  any invalid catalog, which would blank `/catalogs` for *every* catalog. The
+  source therefore validates its own projection with `validateLearningCatalog`
+  before publishing, and publishes nothing — logging
+  `school.catalog.exercise-library.empty|invalid|failed` — when the corpus is
+  missing, empty, or unreadable. Groups with no muscles are dropped for the same
+  reason (`validateUniqueList` rejects empty lists).
+
+Generated lessons are subject to the same `access` rules as authored ones, and
+the defaults (`guest: none`, `unassigned: hidden`) hide them. Reference shelves
+must be granted explicitly — see `catalog.access` in the household `school.yml`.
 
 ### Cross-surface calculator continuation codes
 
@@ -535,6 +601,35 @@ converges every score toward 100% by resurfacing would corrupt that signal if
 it landed in the same lane as one-pass quizzes. Drill attempts count toward
 "sets attempted" headline stats but are excluded from a student's
 latest-score summary — drill is practice, not an assessment.
+
+### Chess
+
+**Chess is an app tile on the Art & Music shelf**, registered the same way
+Typing and Geography are (`SUBJECT_PROGRAMS` in `home/SubjectPage.jsx`, opening
+a top-level section at `/school/chess`). It is a curriculum, not a game surface:
+eight units from naming a square to beating an opponent, thirty lessons,
+each with a live board.
+
+The honest state is visible in the interface. Every lesson carries a
+`status` derived from whether its teaching steps are written, and an unwritten
+one renders with an **Outline** flag and says so on opening — the board is live
+and explorable, but nothing pretends a lesson exists that does not. That is the
+same discipline as a greyed empty shelf: the shape of the course is a real
+claim, the content is not yet.
+
+Lessons come in three kinds — *watch* (play through a line), *try* (find the
+move), and *play* (a full game against the bundled opponent, at three
+difficulties). The board and the rules are shared with the piano kiosk's Piano
+Chess rather than reimplemented: `frontend/src/modules/Chess/ChessBoard.jsx`
+renders both, and the rules come from `shared/gaming/chess/`. School passes
+algebraic coordinates; the kiosk passes chord names for the same squares.
+
+| What | Where |
+|---|---|
+| Curriculum (units, lessons, kinds) | `frontend/src/modules/School/chess/chessCurriculum.js` |
+| Course shell | `frontend/src/modules/School/chess/ChessLessons.jsx` |
+| Board (shared with the kiosk) | `frontend/src/modules/Chess/ChessBoard.jsx` |
+| Rules and opponent | `shared/gaming/chess/` |
 
 **The Geography topic grid** is an app tile on the **History & Geography**
 subject shelf — the same mechanism the Typing tile uses to sit on Writing &

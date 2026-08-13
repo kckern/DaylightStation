@@ -45,7 +45,7 @@ an Adaptive Study row complete.
 | AS-23 | Front/back rails exactly match FLIP/blank/AGAIN/HARD/KNOW; F2 inert | partial | assembly contract passes; named MAME case pending |
 | AS-24 | AGAIN due after two, HARD after four, KNOW/cap retirement, earliest-due fallback | implemented | deterministic scheduler unit/MAME cases |
 | AS-25 | Rating persists before next card; EXIT pauses; resume neither loses nor double-counts work | partial | save-before-next contract passes; restart matrix pending |
-| AS-26 | Compact summary -> one prescribed A-E quiz; no same-session remediation | partial | runtime contract passes; exact-binary complete path pending |
+| AS-26 | Compact summary -> one-screen A-E quiz; EXIT restarts study and counts the abandoned attempt | partial | runtime contract passes; exact-binary restart path pending |
 | AS-27 | Result is queued before success; local code reopens Result | partial | queue/dispatch contract passes; relaunch case pending |
 | AS-28 | Only one unfinished continuation; multiple completed results queued | partial | bounded continuation and multi-record queue implemented; recovery case pending |
 

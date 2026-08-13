@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 
 // A chord's identity is its display name (captures root, quality, inversion,
 // slash). Empty / unidentified chords have no name.
-const sigOf = (c) => (c && c.displayName ? c.displayName : '');
+const displayNameOf = (c) => (c && c.displayName ? c.displayName : '');
 
 /**
  * useStableChord — buffer/hysteresis for the live chord read-out.
@@ -21,11 +21,17 @@ const sigOf = (c) => (c && c.displayName ? c.displayName : '');
  * `settleMs` is below the "instant" perception threshold, so a deliberately held
  * chord still appears promptly.
  *
+ * Not only chords: `signature` generalises "what counts as the same reading", so
+ * any live read-out driven by the same landing-fingers input can share this one
+ * implementation. A signature of '' means "nothing to show" and starts the
+ * release hold.
+ *
  * @param {object} chord - the raw identifyChord() result (new object each render)
- * @param {{settleMs?:number, holdMs?:number}} [opts]
+ * @param {{settleMs?:number, holdMs?:number, signature?:function}} [opts]
  * @returns {object} the stabilised chord to display
  */
-export function useStableChord(chord, { settleMs = 80, holdMs = 500 } = {}) {
+export function useStableChord(chord, { settleMs = 80, holdMs = 500, signature = displayNameOf } = {}) {
+  const sigOf = signature;
   const [shown, setShown] = useState(chord);
   const latest = useRef(chord);
   const settleTimer = useRef(null);

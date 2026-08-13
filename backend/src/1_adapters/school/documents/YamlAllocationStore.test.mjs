@@ -15,6 +15,7 @@ function fakeIo() {
     io: {
       load: (filePath) => (store.has(filePath) ? structuredClone(store.get(filePath)) : null),
       save: (filePath, content) => { store.set(filePath, structuredClone(content)); },
+      list: () => [...store.keys()].map((filePath) => filePath.match(/([^/]+)\.yml$/)?.[1]).filter(Boolean),
     },
   };
 }
@@ -91,6 +92,31 @@ describe('allocate — explicit cardId', () => {
     await expect(store.allocate({
       cardId: '1234567', request: request({ rowRange: { start: 10, end: 1 } }),
     })).rejects.toThrow(/rowRange/);
+  });
+});
+
+describe('findReusableCard', () => {
+  it('continues a settled learner card at its next untouched row', async () => {
+    const { io } = fakeIo();
+    const store = new YamlAllocationStore({ directory: '/docs', io, now: () => '2026-08-04T00:00:00.000Z' });
+    const first = await store.allocate({
+      cardId: '1234567', request: request({ learnerId: 'milo', rowRange: { start: 1, end: 6 } }),
+    });
+    expect(await store.findReusableCard({ learnerId: 'milo', rowsNeeded: 6 })).toBeNull();
+    await store.updateStatus({ cardId: first.cardId, recordId: first.recordId, status: 'satisfied' });
+    expect(await store.findReusableCard({ learnerId: 'milo', rowsNeeded: 6 })).toEqual({
+      cardId: '1234567', startRow: 7,
+    });
+  });
+
+  it('mints instead when the next worksheet would cross row 50', async () => {
+    const { io } = fakeIo();
+    const store = new YamlAllocationStore({ directory: '/docs', io });
+    const record = await store.allocate({
+      cardId: '1234567', request: request({ learnerId: 'milo', rowRange: { start: 45, end: 50 } }),
+    });
+    await store.updateStatus({ cardId: record.cardId, recordId: record.recordId, status: 'satisfied' });
+    expect(await store.findReusableCard({ learnerId: 'milo', rowsNeeded: 1 })).toBeNull();
   });
 });
 

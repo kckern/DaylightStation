@@ -1,13 +1,24 @@
 import './PokemonJourneyView.scss';
+import {
+  IconDroplet,
+  IconFlame,
+  IconLeaf,
+  IconPokeball,
+  IconSparkles,
+  IconTrophy,
+  IconX,
+} from '@tabler/icons-react';
 import { pokemonAssetUrl, SKILL_LABELS, starText } from './pokemonJourneyModel.js';
+
+const PARTNER_ICONS = { grass: IconLeaf, fire: IconFlame, water: IconDroplet };
 
 function RecordStrip({ leaderboard, userId }) {
   const weekly = leaderboard?.standings?.find((entry) => entry.user_id === userId);
   return (
     <div className="journey-record-strip" aria-label="Household records">
-      <span><small>Your weekly best</small><strong>{weekly?.score?.toLocaleString() || '—'}</strong></span>
-      <span><small>Household record</small><strong>{leaderboard?.alltime?.score?.toLocaleString() || '—'}</strong></span>
-      <span><small>Leader</small><strong>{leaderboard?.alltime?.display_name || 'Be first!'}</strong></span>
+      <span><IconSparkles /><small>Your best</small><strong>{weekly?.score?.toLocaleString() || '—'}</strong></span>
+      <span><IconTrophy /><small>Record</small><strong>{leaderboard?.alltime?.score?.toLocaleString() || '—'}</strong></span>
+      <span><IconPokeball /><small>Leader</small><strong>{leaderboard?.alltime?.display_name || 'Be first!'}</strong></span>
     </div>
   );
 }
@@ -17,21 +28,22 @@ export function PokemonJourneyLobby({ definition, progress, leaderboard, userId,
   return (
     <main className="gaming-shell pokemon-journey journey-lobby" aria-label="Choose a Pokémon partner">
       <header className="journey-topbar">
-        <div><small>Piano League</small><h1>Scale Stadium</h1></div>
+        <div><small>Piano League</small><h1>Battle Stadium</h1></div>
         <RecordStrip leaderboard={leaderboard} userId={userId} />
-        {onClose && <button type="button" className="journey-close" onClick={onClose} aria-label="Close game">×</button>}
+        {onClose && <button type="button" className="journey-close" onClick={onClose} aria-label="Back"><IconX /></button>}
       </header>
 
       <section className="journey-lobby__intro">
-        <span className="journey-kicker">Three battles · four piano skills · one household leaderboard</span>
-        <h2>Choose your practice partner</h2>
-        <p>Every move is powered by what you play. Partner types change the style—not the score.</p>
+        <span className="journey-kicker"><IconPokeball /> New journey</span>
+        <h2>Choose your partner</h2>
+        <p>Pick your favorite—every partner trains all four piano skills.</p>
       </section>
 
       <section className="journey-starters">
         {definition.journey.partners.map((partner) => {
           const partnerProgress = progress?.partners?.[partner.id];
           const display = partnerProgress?.evolved ? partnerProgress.evolution : partner;
+          const TypeIcon = PARTNER_ICONS[partner.type] || IconPokeball;
           return (
             <button
               type="button"
@@ -40,12 +52,12 @@ export function PokemonJourneyLobby({ definition, progress, leaderboard, userId,
               onClick={() => onSelect(partner.id)}
             >
               <span className="journey-starter__status">
-                {partnerProgress?.evolved ? 'Evolved partner' : 'Practice partner'}
+                <TypeIcon /> {partnerProgress?.evolved ? 'Evolved' : partner.type}
               </span>
               <img src={pokemonAssetUrl(display.asset)} alt="" draggable="false" />
               <strong>{display.name}</strong>
               <span>{partner.genus}</span>
-              <small>{partnerProgress?.journeys_completed || 0} journeys complete</small>
+              <small>{partnerProgress?.journeys_completed ? `${partnerProgress.journeys_completed} journeys` : 'Ready to adventure'}</small>
             </button>
           );
         })}

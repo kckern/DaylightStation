@@ -381,8 +381,8 @@ scqr_validate_response_score:
         inc hl
         jr scqr_validate_result_end
 
-; Adaptive mode 4: quiz count, six code digits, card count, packed card
-; telemetry, packed choices, then score. SCQUEUE already validates every field
+; Adaptive mode 4: quiz count, six code digits, card count, attempt count,
+; packed card telemetry, packed choices, then score. SCQUEUE already validates every field
 ; before append; QR re-derives the exact end cursor from the two bounded counts
 ; and the CRC-protected record length without allocating another parser.
 scqr_validate_adaptive:
@@ -393,6 +393,7 @@ scqr_validate_adaptive:
         ld de,6
         add hl,de
         ld a,(hl)
+        inc hl
         inc hl
         inc a
         srl a

@@ -98,12 +98,27 @@ async function main() {
         (midis) => Array.from({ length: 8 }, (_, i) => midis.map((m) => m + i)),
       ];
 
+      // The three RELATIVE durations a column can take (model/noteFlow.js), swept
+      // because each draws different ink: an eighth adds a flag on the stem side, a
+      // half hollows the notehead, and a run of eighths grows a beam BETWEEN stems —
+      // the one mark on this staff that is not contained by a single column. All-8 is
+      // the worst case (eight beamed columns), all-h the widest noteheads.
+      const DURATION_PATTERNS = [
+        () => 'q',
+        () => '8',
+        () => 'h',
+        (i) => (i % 2 ? 'h' : '8'),
+      ];
+
       for (const aspect of ASPECTS) {
         for (const ks of KEYS) {
           for (const midis of cases) {
+          for (const durationAt of DURATION_PATTERNS) {
             const columns = FLOWS[renders % FLOWS.length](midis)
               .map((c) => c.filter((m) => m >= 21 && m <= 108))
-              .filter((c) => c.length);
+              .filter((c) => c.length)
+              .map((c, i) => ({ midis: c, duration: durationAt(i) }));
+            const dur = columns.map((c) => c.duration).join('');
             window.renderChordStaff(host, {
               columns, keySignature: ks, aspect,
             });
@@ -112,9 +127,9 @@ async function main() {
             const [vx, vy, vw, vh] = svg.getAttribute('viewBox').split(' ').map(Number);
             const bb = svg.getBBox();
             const top = bb.y, bottom = bb.y + bb.height, left = bb.x, right = bb.x + bb.width;
-            if (top < inkTop) { inkTop = top; worstTop = { midis, ks, aspect }; }
-            if (bottom > inkBottom) { inkBottom = bottom; worstBottom = { midis, ks, aspect }; }
-            if (left < inkLeft) { inkLeft = left; worstLeft = { midis, ks, aspect }; }
+            if (top < inkTop) { inkTop = top; worstTop = { midis, ks, aspect, dur }; }
+            if (bottom > inkBottom) { inkBottom = bottom; worstBottom = { midis, ks, aspect, dur }; }
+            if (left < inkLeft) { inkLeft = left; worstLeft = { midis, ks, aspect, dur }; }
             // The whole point of the frame: drawn ink must be inside the viewBox.
             over.top = Math.max(over.top, vy - top);
             over.bottom = Math.max(over.bottom, bottom - (vy + vh));
@@ -129,10 +144,11 @@ async function main() {
             const pathological = stress.has(midis.join(','));
             if (pathological) stressClips += (right > vx + vw ? 1 : 0);
             else if (top < vy || bottom > vy + vh || left < vx || right > vx + vw) {
-              if (clips.length < 10) clips.push({ midis, ks, aspect: +aspect.toFixed(2),
+              if (clips.length < 10) clips.push({ midis, ks, aspect: +aspect.toFixed(2), dur,
                 ink: [+left.toFixed(1), +top.toFixed(1), +right.toFixed(1), +bottom.toFixed(1)],
                 frame: [vx, vy, vx + vw, vy + vh] });
             }
+          }
           }
         }
       }

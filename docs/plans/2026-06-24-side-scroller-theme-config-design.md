@@ -34,7 +34,7 @@ games:
     # ...existing gameplay config (levels, health, note_range, …) unchanged
     theme:
       player:
-        src: /api/v1/static/img/sprites/megaman-sprites.png
+        src: /api/v1/gaming/assets/side-scroller/player.megaman/image
         grid:        { cols: 5, rows: 6 }   # → background-size, cell math
         displaySize: 144                     # px (or { width, height })
         frames:                              # pose → [col,row] (0-indexed)

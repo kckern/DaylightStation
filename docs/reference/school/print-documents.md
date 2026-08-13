@@ -43,6 +43,12 @@ question that consumes no row prints no number at all — two numbering systems
 on one page is exactly the sheet-to-card confusion the design exists to
 prevent).
 
+For enrollment-issued work, a settled card is reused at its next untouched row
+until row 50. A lesson that would cross row 50 starts a new card; completed rows
+are not reclaimed. Continuation worksheets say **REUSE THE SAME ANSWER SHEET**
+and print the exact row range so a learner does not consume another physical
+sheet unnecessarily.
+
 ---
 
 ## 2. Authoring: the source document
@@ -111,6 +117,22 @@ different content at an existing `<id>@<rev>` path is refused outright. Prior
 revisions are retained forever — a card printed last month still grades
 against exactly what it printed.
 
+### Enrollment-issued worksheet instances
+
+An agenda or result-receipt QR does not render directly from mutable lesson
+YAML. `IssueDocument` first creates an immutable
+`school.worksheet-instance/v1` record bound to learner, enrollment, lesson,
+profile, bank revision, selected item ids, prompts, evidence locators, visible
+options, correct option identities, A–E letters, document revision, Student
+No., and answer-sheet rows. Reprints resolve that snapshot, so later question
+bank edits cannot change paper already issued or its grading key.
+
+The authored course and banks remain content under
+`content/school/curriculum/`. Published documents, derived banks, and physical
+card allocations live under `content/school/print-documents/`; the
+learner/enrollment-bound worksheet-instance records live in the household
+school application data. These are runtime records, not curriculum source.
+
 **Renders are published-first.** Every render lane that can pin a revision —
 the HTTP route, the tracked-quiz issue path, and the CLI's card mode —
 resolves the published artifact; the raw source only renders when the
@@ -130,11 +152,11 @@ for any action block whose token was minted at issue time.
 
 Two **varieties** exist at the request level:
 
-- **`omr`** — card-backed. The sheet carries a card banner ("Card
-  **1443186** — questions 1–6", with a first-use instruction to bubble the
-  number into columns 1–7 of a fresh card, or a "use your card" reminder on a
-  reprint) and **no on-page bubbles**. The student reads the sheet, marks the
-  physical card.
+- **`omr`** — card-backed. The sheet carries a compact outlined **Student
+  No.** identity box in the same top row as Name and Date. A continuation adds
+  `REUSE THE SAME ANSWER SHEET · ROWS 7–12` above the same number. It prints
+  **no on-page bubbles**: the student reads the sheet and marks the physical
+  answer sheet.
 - **`hand`** — hand-graded. Bubbles print on the page; no card, no
   allocation, nothing tracked.
 
@@ -292,6 +314,15 @@ record — recover with `release-card`. Accepted at household scale.
   only supplies the id; an unpublished id fails with "publish first" rather
   than pinning a phantom rev.
 - `release-card <cardId> [--rows a-b]` — allocation housekeeping.
+
+`node cli/school-atlas-sim.cli.mjs --out <directory>` is the file-only Atlas
+lifecycle proof. It builds Milo's and Felix's real agendas, scans Milo's agenda
+QR, issues and renders the enrollment-bound worksheet, submits a perfect
+simulated card scan, renders the thermal result receipt, scans its next-lesson
+QR, and verifies answer-sheet reuse. It writes PDFs, PNGs, instance YAML, and a
+`proof.yml`; it deliberately constructs no physical printer adapter and keeps
+sessions, worksheet instances, and attempts in memory so the run leaves no
+learner test history.
 
 ## 8. Scan-back: grading and the lifecycle
 

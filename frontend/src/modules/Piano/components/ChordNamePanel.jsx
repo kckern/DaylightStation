@@ -29,8 +29,12 @@ const SETTLE_MS = 80;
  * @param {string} [keySignature='C'] - major key to spell the root and bass against
  * @param {number} [holdMs] - linger after release (default 500ms)
  * @param {number} [settleMs] - onset settle window (default 80ms)
+ * @param {string} [label='Chord'] - the plaque's eyebrow, for hosts where "Chord"
+ *   is not the question (Piano Chess says "Playing")
  */
-export function ChordNamePanel({ midiNotes = [], keySignature = 'C', holdMs = RELEASE_HOLD_MS, settleMs = SETTLE_MS }) {
+export function ChordNamePanel({
+  midiNotes = [], keySignature = 'C', holdMs = RELEASE_HOLD_MS, settleMs = SETTLE_MS, label = 'Chord',
+}) {
   const logger = useMemo(() => getLogger().child({ component: 'chord-name-panel' }), []);
   const chord = useMemo(() => identifyChord(midiNotes, keySignature), [midiNotes, keySignature]);
   const shown = useStableChord(chord, { settleMs, holdMs });
@@ -43,7 +47,7 @@ export function ChordNamePanel({ midiNotes = [], keySignature = 'C', holdMs = RE
   return (
     <div className="piano-chord-name" aria-live="polite">
       <div className={`piano-chord-name__plaque${hasName ? '' : ' is-empty'}${held ? ' is-held' : ''}`}>
-        <span className="piano-chord-name__eyebrow">Chord</span>
+        <span className="piano-chord-name__eyebrow">{label}</span>
         <span className="piano-chord-name__value">{hasName ? shown.displayName : '—'}</span>
       </div>
     </div>

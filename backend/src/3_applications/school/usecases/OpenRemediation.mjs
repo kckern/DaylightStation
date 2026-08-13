@@ -79,6 +79,7 @@ export class OpenRemediation {
     const opened = createEvent({
       type: 'created', at: nowIso, sessionId: newSessionId,
       learnerId: state.learnerId, unitId: state.unitId, remediationOf: sessionId, variant,
+      remediationItemIds: state.missedItemIds,
     });
     if (opened.errors.length) throw new Error(`OpenRemediation: could not open the retry: ${opened.errors.join('; ')}`);
     await this.#sessions.appendEvent(newSessionId, opened.event);

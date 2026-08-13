@@ -365,6 +365,9 @@ export class RecordCardScanOutcome {
         // synthetic id.
         attemptIds: attemptIds.length ? attemptIds : priorAttemptIdsForRecord,
         percent,
+        correctCount: correctRows,
+        totalCount: card.results.length,
+        missedItemIds: card.results.filter((row) => row.status !== 'correct').map((row) => row.itemId),
       });
       if (graded.errors.length) throw new Error(graded.errors.join('; '));
       await this.#sessions.appendEvent(sessionId, graded.event);

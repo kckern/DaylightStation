@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Routes, Route, useNavigate, useLocation, useParams } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate, useLocation, useParams } from 'react-router-dom';
 import useDocumentTitle from '../hooks/useDocumentTitle.js';
 import getLogger from '../lib/logging/Logger.js';
 import { launchAndroidTarget } from '../lib/fkb.js';
@@ -46,7 +46,7 @@ import { Videos } from '../modules/Piano/PianoKiosk/modes/Videos/Videos.jsx';
 import { Music } from '../modules/Piano/PianoKiosk/modes/Music/Music.jsx';
 import { SheetMusic } from '../modules/Piano/PianoKiosk/modes/SheetMusic/SheetMusic.jsx';
 import { Games } from '../modules/Piano/PianoKiosk/modes/Games/Games.jsx';
-import { Lessons } from '../modules/Piano/PianoKiosk/modes/Lessons/Lessons.jsx';
+import { Exercises } from '../modules/Piano/PianoKiosk/modes/Exercises/Exercises.jsx';
 import { Studio } from '../modules/Piano/PianoKiosk/modes/Studio/Studio.jsx';
 import { Producer } from '../modules/Piano/PianoKiosk/modes/Producer/Producer.jsx';
 import { Singalong } from '../modules/Piano/PianoKiosk/modes/Singalong/Singalong.jsx';
@@ -263,7 +263,7 @@ function PianoShell() {
   const navigate = useNavigate();
   const location = useLocation();
   const logger = useMemo(() => getLogger().child({ component: 'piano-app' }), []);
-  const { playing, videoActive } = usePianoPlayback();
+  const { playing, videoActive, playerLocks = [] } = usePianoPlayback();
   const { users, currentUser, setCurrentUser } = usePianoUser();
   const [whoOpen, setWhoOpen] = useState(false);
 
@@ -284,7 +284,14 @@ function PianoShell() {
   useIdleGap(activeNotes, noteHistory.length, config.whoIsPlayingMinutes, () => {
     // Suppress mid-performance too: Listen mode performs via timestamped MIDI
     // with no activeNotes churn, so the idle-gap could otherwise fire mid-piece.
-    if (videoActive || playing) return;
+    //
+    // And suppress it while any activity holds the player lock. A game credits
+    // its result to whoever started it, and a child thinking for two minutes
+    // about a move is EXACTLY the idle gap this prompt watches for — so without
+    // this, the one moment the prompt is most likely to fire is the middle of a
+    // game, and answering it hands the game to somebody else. The chrome chip
+    // was already locked; this was the other door into the same picker.
+    if (videoActive || playing || playerLocks.length > 0) return;
     logger.info('piano.who-is-playing.prompt', { pianoId });
     setWhoOpen(true);
   });
@@ -334,7 +341,7 @@ function PianoShell() {
     onEnter: () => navigate(`${basePath}/studio`),
   });
 
-  const MODE_LABELS = { videos: 'Courses', playalong: 'Playalong', singalong: 'Karaoke', music: 'Music', sheetmusic: 'Sheet Music', games: 'Games', lessons: 'Training', studio: 'Studio', composer: 'Composer', producer: 'Producer' };
+  const MODE_LABELS = { videos: 'Courses', playalong: 'Playalong', singalong: 'Karaoke', music: 'Music', sheetmusic: 'Sheet Music', games: 'Games', exercises: 'Exercises', studio: 'Studio', composer: 'Composer', producer: 'Producer' };
   const modeKey = Object.keys(MODE_LABELS).find((k) => location.pathname.includes(`/${k}`));
   const modeLabel = modeKey ? MODE_LABELS[modeKey] : '';
 
@@ -344,7 +351,7 @@ function PianoShell() {
       <PianoBreadcrumbProvider>
         <div className="piano-app">
           <ProfilePicker
-            open={whoOpen}
+            open={whoOpen && playerLocks.length === 0}
             users={users}
             onPick={(id) => { setCurrentUser(id); setWhoOpen(false); }}
             onDismiss={() => { setCurrentUser('guest'); setWhoOpen(false); }}
@@ -359,7 +366,11 @@ function PianoShell() {
             <Route path="music/*" element={<Music />} />
             <Route path="sheetmusic/*" element={<SheetMusic />} />
             <Route path="games/*" element={<Games />} />
-            <Route path="lessons/*" element={<Lessons />} />
+            <Route path="exercises/*" element={<Exercises />} />
+            {/* The old Training route kept working: bookmarks and the kiosk's
+                own history point at it, and a dead link on a wall-mounted
+                tablet is not something anyone goes and fixes. */}
+            <Route path="lessons/*" element={<Navigate to="../exercises" replace />} />
             <Route path="studio/*" element={<Studio />} />
             <Route path="composer/*" element={<Composer />} />
             <Route path="producer/*" element={<Producer />} />

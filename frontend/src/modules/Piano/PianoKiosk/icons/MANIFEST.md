@@ -51,3 +51,5 @@ All SVGs use `fill="currentColor"` — set color via CSS `color:`.
 - **play-along** uses `keyboard` (Solar has no piano-keyboard glyph).
 - **connection** uses `bluetooth-square` (matches the BLE-MIDI link).
 - **record** is a filled circle (`record`); pairs with **stop** (filled square).
+
+- **game-battle-stadium** is the one glyph NOT from the Solar set: the Battle Stadium pokeball (SVG Repo 420929), recolored to `currentColor` and sized `1em` to sit in the tile grid with the rest.

@@ -10,25 +10,35 @@ import PianoTile from '../../PianoTile.jsx';
 import { balancedColumns } from '../../tileGridLayout.js';
 import { SkeletonStage } from '../../Skeleton.jsx';
 
-// Friendly labels for the registry ids.
+// Friendly labels for the registry ids. 'card-game' keeps its registry id but
+// every player-facing surface calls it Battle Stadium; the campaign rewrite of
+// this registry landed in parallel with the earlier rename and reverted the
+// label by accident — restored (and renamed per 2026-08-11) at the origin merge.
 const GAME_LABELS = {
-  'card-game': 'Scale Stadium',
+  'card-game': 'Battle Stadium',
   'space-invaders': 'Space Invaders',
   tetris: 'Tetris',
   flashcards: 'Flashcards',
   hero: 'Piano Hero',
   'side-scroller': 'Side Scroller',
+  chess: 'Piano Chess',
 };
 
 // Per-game tile icons (currentColor SVGs in ../../icons/svg).
 const GAME_ICONS = {
-  'card-game': 'game',
+  'card-game': 'game-battle-stadium',
   'space-invaders': 'game-space-invaders',
   tetris: 'game-tetris',
   flashcards: 'game-flashcards',
   hero: 'game-hero',
   'side-scroller': 'game-side-scroller',
+  chess: 'game-chess',
 };
+
+// Built but not released. The tile is greyed out so the picker still shows what
+// is coming without letting anyone in; the route itself stays open, so
+// /piano/games/card-game reaches it for anyone testing.
+const UNRELEASED_GAMES = new Set(['card-game']);
 
 /**
  * Relative destination for a game-owned URL segment.
@@ -83,6 +93,7 @@ function GamePicker() {
             <PianoTile
               icon={GAME_ICONS[id] || 'game'}
               label={GAME_LABELS[id] ?? id}
+              disabled={UNRELEASED_GAMES.has(id)}
               onClick={() => {
                 logger.info('piano.game-enter', { game: id });
                 navigate(id);
@@ -108,7 +119,8 @@ function GameHost() {
   const { config } = usePianoKioskConfig();
   // Optional like PianoUserChip — games fall back to no user (default levels)
   // when mounted outside the kiosk's PianoUserProvider.
-  const currentUser = useContext(PianoUserContext)?.currentUser ?? null;
+  const pianoUser = useContext(PianoUserContext);
+  const currentUser = pianoUser?.currentProfile ?? pianoUser?.currentUser ?? null;
   const entry = getGameEntry(gameId);
 
   // Current location in the header breadcrumb (Games › this game). The breadcrumb

@@ -118,7 +118,7 @@ scales:
     label: "Kitchen scale"
     device:                # the relay hardware
       board: m5-atom-lite  # ESP32-PICO-D4; button on GPIO39, RGB LED on GPIO27
-      mac: "14:08:08:53:94:84"
+      mac: "f4:2d:c9:2d:e4:c8"   # corrected 2026-08-12; this doc shipped a wrong MAC
     ble:
       match_name: "SENSSUN FOOD"                       # scan target (preferred)
       service_uuid: "0000ffb0-0000-1000-8000-00805f9b34fb"

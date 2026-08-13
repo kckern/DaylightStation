@@ -117,14 +117,11 @@ describe('furniture — drawFurniture', () => {
     expect(nameCall.str).toMatch(/^Name: _{20}$/);
   });
 
-  it('footer band sits flush with the page bottom-margin line on every page', () => {
+  it('footer sits at the configured printer-safe inset near the page edge', () => {
     const rec = createRecorder();
     drawFurniture(rec.chain, { theme, page: 1, pageCount: 1, title: 'Fixture' });
     const footerCall = textCalls(rec.calls).find((c) => c.str === 'Page 1 of 1');
-    const marginLineYPt = theme.page.heightPt - theme.page.marginPt;
-    const footerTopPt = marginLineYPt - theme.furniture.footerBandPt;
-    expect(footerCall.yPt).toBeGreaterThanOrEqual(Math.round(footerTopPt * 100) / 100);
-    expect(footerCall.yPt).toBeLessThan(Math.round(marginLineYPt * 100) / 100);
+    expect(footerCall.yPt).toBe(theme.page.heightPt - theme.footer.bottomInsetPt - theme.footer.sizePt);
   });
 
   it('fixed (non-duplex) gutter keeps furniture on the same side across pages', () => {

@@ -14,7 +14,7 @@ describe('piano-card-game readiness CLI', () => {
       url: DEFAULT_URL,
       user: 'guest',
       timeoutMs: 30_000,
-      maxTurns: 12,
+      maxTurns: 30,
       headed: false,
       json: false,
     });
@@ -34,7 +34,7 @@ describe('piano-card-game readiness CLI', () => {
     expect(() => parseArgs(['--wat'])).toThrow(/Unknown argument/);
   });
 
-  it('certifies the authored Scale Stadium Pokémon contract', async () => {
+  it('certifies the authored Card Game Pokémon contract', async () => {
     const definition = YAML.parse(await readFile('shared/gaming/definitions/card-game.yml', 'utf8'));
     const result = inspectDefinitionPayload({
       game_id: 'card-game',
@@ -42,9 +42,10 @@ describe('piano-card-game readiness CLI', () => {
       definition,
     });
     expect(result.valid, result.errors.join('\n')).toBe(true);
-    expect(result.combatants.map((entry) => entry.pokemon.name)).toEqual([
-      'Bulbasaur', 'Charmander', 'Squirtle', 'Pidgey', 'Meowth', 'Snorlax',
-    ]);
+    expect(result.combatants.map((entry) => entry.pokemon.name)).toEqual(expect.arrayContaining([
+      'Bulbasaur', 'Charmander', 'Squirtle', 'Pidgey', 'Meowth', 'Snorlax', 'Geodude', 'Onix',
+    ]));
+    expect(result.combatants).toHaveLength(17);
   });
 
   it('fails stale Riff Raiders deployments before browser automation', () => {
@@ -54,7 +55,7 @@ describe('piano-card-game readiness CLI', () => {
       definition: { game_id: 'card-game', title: 'Riff Raiders' },
     });
     expect(result.valid).toBe(false);
-    expect(result.errors).toContain('live title must be Scale Stadium');
+    expect(result.errors).toContain('live title must be Card Game');
     expect(result.errors).toContain('live theme must be pokemon-stadium');
   });
 

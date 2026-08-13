@@ -214,3 +214,10 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-08-06 | school-design-wave9 | 042e78cf0 | Wave 9 design-audit remediation (top-10 + teardown + M9 verdicts), merged to main |
 | 2026-08-07 | school-prod-hardening | 41e91cf02 | Wave 10 production hardening (2 blockers + punch list + debt ledger, SDD 20 tasks + M10 READY), merged to main |
 | 2026-08-07 | school-material-cache | 445a2f958 | Disk snapshot + stale-while-revalidate for school material cache (redeploy cold path 26-42s -> 0.44s) |
+| 2026-08-11 | sheetmusic-learn-hand-deadlock | 177328f3f | Sheet-music wave 3 + performance assessment service (graded Hanon drills, drillRun, provider flip) |
+| 2026-08-12 | piano/chess-ux | 183867873 | Piano Chess UX: server-side Stockfish, config pair, settings panel, chord read-out, ghost preview, CLI (merged to main as 7577397e7) |
+| 2026-08-12 | fix/strava-match-guards | 8a1edb128 | Strava venue/presence guards (stop outdoor activities binding to garage sessions). SQUASH-merged to main as 7b3756109 — NOT a merge commit: the branch predates the 2026-07-29 PII scrub and its fixtures held real names + ANT+ strap IDs, which a merge would have published in main's history. Never pushed to origin. |
+| 2026-08-12 | codex/scale-stadium-release | c06d5860d | Already fully merged (0 commits ahead of main) |
+| 2026-08-12 | feat/exercise-library | 6c2ea9c8b | Already fully merged (0 commits ahead of main) — shared 1296-exercise corpus |
+| 2026-08-12 | school-household-paths | 1e0be9301 | Already fully merged (0 commits ahead of main) |
+| 2026-08-12 | scrub/apply-to-origin | b79c2271d | Already fully merged (0 commits ahead of main) — PII scrub application |

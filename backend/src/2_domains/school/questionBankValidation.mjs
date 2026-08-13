@@ -26,9 +26,10 @@ export function validateQuestionBank(raw) {
   // ~4600 existing files stay valid byte-for-byte — but a future semantic
   // change now has an escape hatch, and an unknown version is refused
   // instead of half-parsed.
-  if (raw.schema !== undefined && raw.schema !== 'school.question-bank/v1') {
-    errors.push(`schema must be school.question-bank/v1 when present, got: ${raw.schema}`);
+  if (raw.schema !== undefined && !['school.question-bank/v1', 'school.question-bank/v2'].includes(raw.schema)) {
+    errors.push(`schema must be school.question-bank/v1|school.question-bank/v2 when present, got: ${raw.schema}`);
   }
+  const isV2 = raw.schema === 'school.question-bank/v2';
   if (!isNonEmptyString(raw.id)) errors.push('id is required');
   if (!isNonEmptyString(raw.title)) errors.push('title is required');
   const audience = raw.audience === undefined || raw.audience === null ? 'assigned' : raw.audience;
@@ -96,6 +97,28 @@ export function validateQuestionBank(raw) {
     else seen.add(item.id);
     if (!ITEM_TYPES.has(item.type)) { errors.push(`${at}: unknown type "${item.type}"`); return; }
     if (!isNonEmptyString(item.prompt)) errors.push(`${at}: prompt is required`);
+    if (isV2 && !['multiple_choice', 'multi_select'].includes(item.type)) {
+      errors.push(`${at}: v2 authored pools support only multiple_choice|multi_select`);
+    }
+    // Book courses retain audit evidence on the static item.  These fields
+    // are deliberately optional so existing banks remain v1-compatible.
+    if (item.source !== undefined) {
+      if (!item.source || typeof item.source !== 'object' || Array.isArray(item.source)
+          || !isNonEmptyString(item.source.page) || !isNonEmptyString(item.source.zone)) {
+        errors.push(`${at}: source requires non-empty page and zone`);
+      }
+    }
+    if (item.levels !== undefined && (!Array.isArray(item.levels) || item.levels.length === 0
+        || !item.levels.every(isNonEmptyString))) errors.push(`${at}: levels must be non-empty strings when present`);
+    if (item.optionPool !== undefined) {
+      if (!Array.isArray(item.optionPool) || item.optionPool.length < 5 || item.optionPool.length > 10
+          || !item.optionPool.every((o) => o && isNonEmptyString(o.id) && isNonEmptyString(o.label)
+            && typeof o.correct === 'boolean')) {
+        errors.push(`${at}: optionPool must contain 5..10 {id,label,correct} options`);
+      } else if (new Set(item.optionPool.map((o) => o.id)).size !== item.optionPool.length) {
+        errors.push(`${at}: optionPool ids must be unique`);
+      }
+    }
     validateItemFeedback(item.feedback, `${at}.feedback`, errors);
     if (item.concepts !== undefined) {
       if (!Array.isArray(item.concepts) || item.concepts.length === 0
@@ -108,7 +131,22 @@ export function validateQuestionBank(raw) {
         });
       }
     }
-    if (item.type === 'multiple_choice') {
+    if (isV2 && ['multiple_choice', 'multi_select'].includes(item.type)) {
+      if (Object.hasOwn(item, 'choices')) errors.push(`${at}: v2 uses answer/answers plus decoys; choices is forbidden`);
+      const correct = item.type === 'multiple_choice' ? [item.answer] : item.answers;
+      if (item.type === 'multiple_choice' && !isNonEmptyString(item.answer)) {
+        errors.push(`${at}: v2 multiple_choice requires a non-empty answer string`);
+      }
+      if (item.type === 'multiple_choice' && Object.hasOwn(item, 'answers')) errors.push(`${at}: multiple_choice must not contain answers`);
+      if (item.type === 'multi_select' && (!Array.isArray(item.answers) || item.answers.length < 2 || !item.answers.every(isNonEmptyString))) {
+        errors.push(`${at}: v2 multi_select requires at least two non-empty answers`);
+      }
+      if (item.type === 'multi_select' && Object.hasOwn(item, 'answer')) errors.push(`${at}: multi_select must not contain answer`);
+      if (!Array.isArray(item.decoys) || !item.decoys.every(isNonEmptyString)) errors.push(`${at}: v2 decoys must be an array of non-empty strings`);
+      const all = [...(Array.isArray(correct) ? correct : []), ...(Array.isArray(item.decoys) ? item.decoys : [])];
+      if (all.length < 8 || all.length > 10) errors.push(`${at}: v2 answer pool must contain 8..10 total answers and decoys`);
+      if (new Set(all).size !== all.length) errors.push(`${at}: v2 answers and decoys must be unique`);
+    } else if (item.type === 'multiple_choice') {
       if (!Array.isArray(item.choices) || item.choices.length < 2) {
         errors.push(`${at}: choices must have >= 2 entries`);
       } else {
@@ -145,7 +183,7 @@ export function validateQuestionBank(raw) {
     // to a card, per §5.3's "≤5 options"), graded exact-set (grading.mjs) —
     // `answers` (plural) is the ANSWER KEY, distinct from single-answer types'
     // `answer`, because more than one choice can be correct at once.
-    if (item.type === 'multi_select') {
+    if (item.type === 'multi_select' && !isV2) {
       if (!Array.isArray(item.choices) || item.choices.length < 2 || item.choices.length > 5) {
         errors.push(`${at}: choices must have between 2 and 5 entries`);
       } else {

@@ -37,6 +37,9 @@ AD_TELEMETRY_RETIRED:  equ 0x10
 AD_RATING_AGAIN:       equ 0x04
 AD_RATING_HARD:        equ 0x08
 AD_RATING_KNOW:        equ 0x0C
+AD_FACE_MASK:          equ 0x01
+AD_ATTEMPT_MASK:       equ 0xFE
+AD_ATTEMPT_STEP:       equ 0x02
 
 org _asm_exec_ram
 
@@ -463,8 +466,10 @@ adaptive_exposure_ready:
         ld a,(scstate_record + AD_ORDINAL)
         inc a
         ld (scstate_record + AD_ORDINAL),a
-        xor a
+        ld a,(scstate_record + AD_FACE)
+        and AD_ATTEMPT_MASK
         ld (scstate_record + AD_FACE),a
+        xor a
         ld (scstate_record + SCSTATE_SCROLL_OFFSET),a
         ld (scstate_record + SCSTATE_SCROLL_OFFSET + 1),a
         jp adaptive_save
@@ -705,6 +710,7 @@ adaptive_render_card:
         jp c,adaptive_error
         ld de,(adaptive_item_offset)
         ld a,(scstate_record + AD_FACE)
+        and AD_FACE_MASK
         or a
         ld hl,adaptive_key_prompt_pages
         jr z,adaptive_card_pages_ready
@@ -737,6 +743,7 @@ adaptive_card_pages_ready:
         ld (adaptive_card_has_graphic),a
         ld de,(adaptive_item_offset)
         ld a,(scstate_record + AD_FACE)
+        and AD_FACE_MASK
         or a
         ld hl,adaptive_key_prompt_graphic
         jr z,adaptive_card_graphic_key_ready
@@ -790,6 +797,7 @@ adaptive_card_wait:
         jp z,adaptive_page_next
         ld b,a
         ld a,(scstate_record + AD_FACE)
+        and AD_FACE_MASK
         or a
         ld a,b
         jp z,adaptive_card_wait
@@ -838,6 +846,7 @@ adaptive_preload_opposite_face:
         ld (adaptive_visible_page_count),a
         ld de,(adaptive_item_offset)
         ld a,(scstate_record + AD_FACE)
+        and AD_FACE_MASK
         or a
         ld hl,adaptive_key_answer_pages
         jr z,adaptive_preload_pages_key_ready
@@ -861,6 +870,7 @@ adaptive_preload_pages_key_ready:
         ld (adaptive_card_has_graphic),a
         ld de,(adaptive_item_offset)
         ld a,(scstate_record + AD_FACE)
+        and AD_FACE_MASK
         or a
         ld hl,adaptive_key_answer_graphic
         jr z,adaptive_preload_graphic_key_ready
@@ -1019,6 +1029,7 @@ adaptive_render_card_rail:
         ld c,57
         call ui_draw_text
         ld a,(scstate_record + AD_FACE)
+        and AD_FACE_MASK
         or a
         jp z,ui_mode_set
         ld hl,adaptive_label_again
@@ -1472,9 +1483,15 @@ adaptive_summary_wait:
         ld (scstate_record + AD_PHASE),a
         xor a
         ld (scstate_record + AD_CURRENT_QUIZ),a
-        ld (scstate_record + AD_FACE),a
         ld (scstate_record + SCSTATE_SCROLL_OFFSET),a
         ld (scstate_record + SCSTATE_SCROLL_OFFSET + 1),a
+        ld a,(scstate_record + AD_FACE)
+        and AD_ATTEMPT_MASK
+        cp AD_ATTEMPT_MASK
+        jr z,adaptive_quiz_attempt_ready
+        add a,AD_ATTEMPT_STEP
+adaptive_quiz_attempt_ready:
+        ld (scstate_record + AD_FACE),a
         call adaptive_save
         jp c,adaptive_error
         jp adaptive_render_quiz
@@ -1587,7 +1604,7 @@ adaptive_choices_rendered:
 adaptive_choice_wait:
         call sc_input_wait
         cp SC_SCAN_EXIT
-        ret z
+        jp z,adaptive_quiz_restart_study
         cp SC_SCAN_F1
         ld b,1
         jr z,adaptive_choice_selected
@@ -1622,12 +1639,60 @@ adaptive_commit_quiz_choice:
         jr z,adaptive_quiz_complete
         ld a,b
         ld (scstate_record + AD_CURRENT_QUIZ),a
-        xor a
+        ld a,(scstate_record + AD_FACE)
+        and AD_ATTEMPT_MASK
         ld (scstate_record + AD_FACE),a
+        xor a
         ld (scstate_record + SCSTATE_SCROLL_OFFSET),a
         call adaptive_save
         jp c,adaptive_error
         jp adaptive_render_quiz
+
+; EXIT abandons the in-progress quiz attempt and starts the authored study
+; prescription again. The attempt bits survive while every card, due slot,
+; and partial quiz choice is reset before the next card is exposed.
+adaptive_quiz_restart_study:
+        call adaptive_render_loading
+        ld a,AD_PHASE_STUDY
+        ld (scstate_record + AD_PHASE),a
+        ld a,0xFF
+        ld (scstate_record + AD_CURRENT_CARD),a
+        xor a
+        ld (scstate_record + AD_ORDINAL),a
+        ld (scstate_record + AD_CURRENT_QUIZ),a
+        ld (scstate_record + SCSTATE_SCROLL_OFFSET),a
+        ld (scstate_record + SCSTATE_SCROLL_OFFSET + 1),a
+        ld a,(scstate_record + AD_FACE)
+        and AD_ATTEMPT_MASK
+        ld (scstate_record + AD_FACE),a
+        ld hl,scstate_record + AD_TELEMETRY
+        ld b,36
+        xor a
+adaptive_quiz_restart_clear:
+        ld (hl),a
+        inc hl
+        djnz adaptive_quiz_restart_clear
+        ld (adaptive_scan_index),a
+adaptive_quiz_restart_due_loop:
+        ld a,(adaptive_scan_index)
+        ld b,a
+        ld a,(adaptive_card_count)
+        cp b
+        jr z,adaptive_quiz_restart_ready
+        ld a,b
+        push af
+        call adaptive_due_address
+        pop af
+        inc a
+        ld (hl),a
+        ld a,(adaptive_scan_index)
+        inc a
+        ld (adaptive_scan_index),a
+        jr adaptive_quiz_restart_due_loop
+adaptive_quiz_restart_ready:
+        call adaptive_choose_next
+        jp c,adaptive_error
+        jp adaptive_dispatch
 
 adaptive_quiz_complete:
         call adaptive_calculate_score
@@ -1764,6 +1829,18 @@ adaptive_render_result:
         ld hl,adaptive_result_queued
         ld b,2
         ld c,32
+        call ui_draw_text
+        ld hl,adaptive_result_attempts
+        ld b,2
+        ld c,43
+        call ui_draw_text
+        ld a,(scstate_record + AD_FACE)
+        and AD_ATTEMPT_MASK
+        rrca
+        call adaptive_format_byte
+        ld hl,adaptive_number
+        ld b,50
+        ld c,43
         call ui_draw_text
         call adaptive_clear_rail
         ld hl,adaptive_label_qr
@@ -2137,6 +2214,7 @@ adaptive_summary_unresolved_text: defb "UNRESOLVED",0
 adaptive_result_score:       defb "SCORE",0
 adaptive_result_of:          defb "OF",0
 adaptive_result_queued:      defb "Result saved offline.",0
+adaptive_result_attempts:    defb "ATTEMPTS",0
 adaptive_choice_letters:     defb "A",0,"B",0,"C",0,"D",0,"E",0
 
 adaptive_dsstudy_name:       defb 0x0C,7,"DSSTUDY",0

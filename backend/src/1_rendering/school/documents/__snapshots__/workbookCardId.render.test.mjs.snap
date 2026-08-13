@@ -3,7 +3,7 @@
 exports[`card header strip — measure (spec §5.2/§5.3) > structural snapshot — first-use instruction present 1`] = `
 {
   "atomic": true,
-  "heightPt": 44,
+  "heightPt": 24,
   "id": "cardHeader",
   "node": {
     "cardId": "4829306",
@@ -19,18 +19,18 @@ exports[`card header strip — measure (spec §5.2/§5.3) > structural snapshot 
     "digitCount": 7,
     "digitXOffsets": [
       0,
-      20.77,
-      41.52,
-      61.41,
-      80.76,
-      101.07,
-      122.41,
+      14.02,
+      28.02,
+      41.39,
+      54.37,
+      68.05,
+      82.48,
     ],
     "firstUse": true,
-    "instructionText": "Bubble this number into columns 1–7 of a new card.",
+    "instructionText": null,
     "kind": "cardHeader",
-    "labelText": "Card",
-    "metaText": "—  questions 1–12",
+    "labelText": "Student No.",
+    "metaText": "",
   },
   "spacingClass": "heading",
 }
@@ -39,7 +39,7 @@ exports[`card header strip — measure (spec §5.2/§5.3) > structural snapshot 
 exports[`card header strip — measure (spec §5.2/§5.3) > structural snapshot — non-first-use reminder 1`] = `
 {
   "atomic": true,
-  "heightPt": 44,
+  "heightPt": 36,
   "id": "cardHeader",
   "node": {
     "cardId": "4829306",
@@ -55,18 +55,18 @@ exports[`card header strip — measure (spec §5.2/§5.3) > structural snapshot 
     "digitCount": 7,
     "digitXOffsets": [
       0,
-      20.77,
-      41.52,
-      61.41,
-      80.76,
-      101.07,
-      122.41,
+      14.02,
+      28.02,
+      41.39,
+      54.37,
+      68.05,
+      82.48,
     ],
     "firstUse": false,
-    "instructionText": "Use your card 4829306.",
+    "instructionText": null,
     "kind": "cardHeader",
-    "labelText": "Card",
-    "metaText": "—  questions 18–30",
+    "labelText": "Student No.",
+    "metaText": "",
   },
   "spacingClass": "heading",
 }

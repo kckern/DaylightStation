@@ -709,7 +709,7 @@ describe('Phase C acceptance sweep (spec §12.3/§12.4/§12.5, plus the Phase-C 
       expect(looseText).toMatch(/2\./);
 
       // The card header strip is the ENVELOPE-only difference: present on the tracked render, absent on the loose one.
-      expect(trackedText).toContain('Bubble this number into columns 1–7 of a new card.');
+      expect(trackedText).not.toContain('Bubble this number');
       expect(looseText).not.toContain('Bubble this number');
     });
   });
@@ -792,11 +792,11 @@ describe('Phase C acceptance sweep (spec §12.3/§12.4/§12.5, plus the Phase-C 
     it('the fresh-card sheet carries the first-use instruction; the continuation sheet carries the "use your card" reminder and offset numbering (3, 4 — never 1, 2)', () => {
       expect(isPdf(firstUseResult.bytes)).toBe(true);
       const firstUseText = pdfText(firstUseResult.bytes);
-      expect(firstUseText).toContain('Bubble this number into columns 1–7 of a new card.');
+      expect(firstUseText).not.toContain('Bubble this number');
       expect(firstUseResult.allocation.rowRange).toEqual({ start: 1, end: 2 });
 
       const continuationText = pdfText(continuationResult.bytes);
-      expect(continuationText).toContain(`Use your card ${cardId}.`);
+      expect(continuationText).not.toContain(`Use Student No. ${cardId}.`);
       expect(continuationText).not.toContain('Bubble this number');
       expect(continuationResult.allocation.rowRange).toEqual({ start: 3, end: 4 });
       expect(continuationText).toMatch(/\b3\./);
@@ -814,7 +814,7 @@ describe('Phase C acceptance sweep (spec §12.3/§12.4/§12.5, plus the Phase-C 
       expect(continuationText).toContain(cardId);
     });
 
-    it('page 1 of the card-continuation sheet matches the committed visual snapshot — I looked at the rasterized page directly: it shows the "Card" label, the seven large tracked digits, the "questions 3-4" meta line, the reminder instruction line, and offset question numbers 3/4 (never 1/2)', async () => {
+    it('page 1 of the card-continuation sheet matches the committed visual snapshot — it shows the "Student No." label, seven tracked digits, no redundant instruction, and offset question numbers 3/4 (never 1/2)', async () => {
       const snapshotPath = path.join(EVIDENCE_DIR, 'card-continuation-student-p01.png');
       const rendered = continuationPages[0];
 

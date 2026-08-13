@@ -1,12 +1,8 @@
 /**
  * Print Design Phase C, Task 4 — the card header strip (spec §5.2/§5.3): the
- * card ID a student bubbles into OMR columns 1-7, printed below the document
+ * student number a student bubbles into OMR rows 1-7, printed below the document
  * header as large letter-spaced digits plus a "questions X-Y" range, and,
- * below that, an instruction/reminder caption line. EVERY card-attached
- * sheet gets one of two lines (spec §5.2): "Bubble this number into columns
- * 1-7 of a new card." on the first sheet issued against a fresh card
- * (`firstUse: true`), or "Use your card <id>." on every subsequent sheet
- * for that same card — never both, never neither.
+ * with no redundant instruction line beneath it.
  *
  * Same posture as `workbookAssessment.render.test.mjs` (Phase B's own
  * "measure + draw" suite, which this one mirrors): not a pixel golden suite
@@ -46,7 +42,17 @@ function measureDoc(document, opts = {}) {
 
 /** Wrapped-line runs never carry a literal space; rejoin them with one to read the words back out. */
 function instructionText(instruction) {
+  if (!instruction) return null;
   return instruction.lines.flatMap((l) => l.runs.map((r) => r.text)).join(' ');
+}
+
+function embeddedCardFragment(fragments) {
+  const node = fragments[0]?.nodes?.[0]?.embeddedCard;
+  if (!node) return null;
+  return {
+    id: 'cardHeader', atomic: true, spacingClass: theme.card.spacingClass,
+    heightPt: node.heightPt, nodes: [node],
+  };
 }
 
 /** Structural summariser, scoped to the fields a card-header fragment/node actually carries. */
@@ -89,32 +95,30 @@ describe('card header strip — measure (spec §5.2/§5.3)', () => {
     expect(withoutCard).toEqual(withNullCard);
   });
 
-  it('a supplied card inserts ONE atomic cardHeader fragment directly after the header, before the body', () => {
+  it('a supplied card embeds one measured card header in the identity row above the title', () => {
     const fragments = measureDoc(bareDoc, { card: { cardId: '4829306', startRow: 18, endRow: 30 } });
-    expect(fragments.map((f) => f.id)).toEqual(['header', 'cardHeader', 'blocks[0]#p0']);
-    const [, cardFragment] = fragments;
+    expect(fragments.map((f) => f.id)).toEqual(['header', 'blocks[0]#p0']);
+    const cardFragment = embeddedCardFragment(fragments);
     expect(cardFragment.atomic).toBe(true);
     const [node] = cardFragment.nodes;
     expect(node.kind).toBe('cardHeader');
     expect(node.cardId).toBe('4829306');
     expect(node.digits).toHaveLength(7);
     expect(node.digits.map((d) => d.ch)).toEqual(['4', '8', '2', '9', '3', '0', '6']);
-    expect(node.metaText).toContain('18');
-    expect(node.metaText).toContain('30');
+    expect(node.metaText).toBe('');
     expect(node.firstUse).toBe(false);
     // spec §5.2's non-first-use reminder: same cardId, but un-spaced (a
-    // reference line, never a bubbling guide) — unlike `node.metaText`'s
-    // dash-joined range, this is the literal digit string.
-    expect(instructionText(node.instruction)).toBe('Use your card 4829306.');
+    // reference line, never a bubbling guide) — this is the literal digit string.
+    expect(node.instruction).toBeNull();
   });
 
-  it('firstUse: false (the default) prints the "use your card" reminder, not the bubbling instruction', () => {
-    const [, cardFragment] = measureDoc(bareDoc, { card: { cardId: '4829306', startRow: 18, endRow: 30, firstUse: false } });
-    expect(instructionText(cardFragment.nodes[0].instruction)).toBe('Use your card 4829306.');
+  it('firstUse: false (the default) prints no redundant instruction', () => {
+    const cardFragment = embeddedCardFragment(measureDoc(bareDoc, { card: { cardId: '4829306', startRow: 18, endRow: 30, firstUse: false } }));
+    expect(cardFragment.nodes[0].instruction).toBeNull();
   });
 
   it('digit x-offsets strictly increase left to right, each spaced by real glyph width + theme.card.trackingPt', () => {
-    const [, cardFragment] = measureDoc(bareDoc, { card: { cardId: '1234567', startRow: 1, endRow: 5 } });
+    const cardFragment = embeddedCardFragment(measureDoc(bareDoc, { card: { cardId: '1234567', startRow: 1, endRow: 5 } }));
     const { digits } = cardFragment.nodes[0];
     for (let i = 1; i < digits.length; i += 1) {
       expect(digits[i].xPt).toBeGreaterThan(digits[i - 1].xPt);
@@ -125,15 +129,12 @@ describe('card header strip — measure (spec §5.2/§5.3)', () => {
     }
   });
 
-  it('firstUse: true swaps in the bubbling instruction instead of the reminder — both lines are ONE line, same field', () => {
+  it('firstUse does not add an instruction line', () => {
     const card = { cardId: '4829306', startRow: 18, endRow: 30 };
-    const [, reminder] = measureDoc(bareDoc, { card });
-    const [, firstUse] = measureDoc(bareDoc, { card: { ...card, firstUse: true } });
-    expect(instructionText(reminder.nodes[0].instruction)).toBe('Use your card 4829306.');
-    expect(instructionText(firstUse.nodes[0].instruction)).toBe('Bubble this number into columns 1–7 of a new card.');
-    // Both variants carry exactly one instruction line, so — for the same
-    // short card/range — their fragment heights match; the difference is
-    // WHICH sentence prints, not whether one prints at all.
+    const reminder = embeddedCardFragment(measureDoc(bareDoc, { card }));
+    const firstUse = embeddedCardFragment(measureDoc(bareDoc, { card: { ...card, firstUse: true } }));
+    expect(reminder.nodes[0].instruction).toBeNull();
+    expect(firstUse.nodes[0].instruction).toBeNull();
     expect(firstUse.heightPt).toBeCloseTo(reminder.heightPt, 5);
   });
 
@@ -148,16 +149,16 @@ describe('card header strip — measure (spec §5.2/§5.3)', () => {
   });
 
   it('structural snapshot — non-first-use reminder', () => {
-    const [, cardFragment] = measureDoc(bareDoc, { card: { cardId: '4829306', startRow: 18, endRow: 30 } });
+    const cardFragment = embeddedCardFragment(measureDoc(bareDoc, { card: { cardId: '4829306', startRow: 18, endRow: 30 } }));
     expect(summarizeCardFragment(cardFragment)).toMatchSnapshot();
   });
 
   it('structural snapshot — first-use instruction present', () => {
-    const [, cardFragment] = measureDoc(bareDoc, {
+    const cardFragment = embeddedCardFragment(measureDoc(bareDoc, {
       card: {
         cardId: '4829306', startRow: 1, endRow: 12, firstUse: true,
       },
-    });
+    }));
     expect(summarizeCardFragment(cardFragment)).toMatchSnapshot();
   });
 });

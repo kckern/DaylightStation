@@ -159,6 +159,7 @@ import { initManageService } from '#apps/fitness/manageService.mjs';
 import { createFoodScaleRelay } from '#apps/hardware/foodScaleRelay.mjs';
 import { createOmrRelay } from '#apps/hardware/omrRelay.mjs';
 import { createAutomotiveRelay } from '#apps/hardware/automotiveRelay.mjs';
+import { createAutomotiveApi } from '#composition/modules/automotiveApi.mjs';
 import { createQuizScanRecorder } from '#apps/quizzes/quizScanRecorder.mjs';
 import { createScaleNutribotBridge } from '#apps/hardware/ScaleNutribotBridge.mjs';
 import { CompositionStore } from '#apps/nutribot/CompositionStore.mjs';
@@ -166,6 +167,7 @@ import { ApplyScanToComposition } from '#apps/nutribot/usecases/ApplyScanToCompo
 import { validateScanConfig } from '#apps/nutribot/lib/validateScanConfig.mjs';
 import { normalizeScaleNutribotConfig } from '#apps/nutribot/lib/scaleNutribotConfig.mjs';
 import { createBarcodeRelay } from '#apps/hardware/barcodeRelay.mjs';
+import { createRelayWatchdog } from '#apps/hardware/relayWatchdog.mjs';
 import { createFingerprintProfileWriter } from '#apps/fitness/fingerprintProfileWriter.mjs';
 import { YamlUserProfileDatastore } from '#adapters/persistence/yaml/YamlUserProfileDatastore.mjs';
 import { YamlEmergencyLockDatastore } from '#adapters/persistence/yaml/YamlEmergencyLockDatastore.mjs';
@@ -173,6 +175,10 @@ import { TriggerEmergencyLockdown } from '#apps/fitness/usecases/TriggerEmergenc
 import { ReleaseEmergencyLockdown } from '#apps/fitness/usecases/ReleaseEmergencyLockdown.mjs';
 import { GetLockdownState } from '#apps/fitness/usecases/GetLockdownState.mjs';
 import { createIdentityRelay } from '#apps/fitness/identityRelay.mjs';
+// Workout persistence (Build authors, Run performs) + the corpus index it validates against
+import { YamlWorkoutRepository } from '#adapters/fitness/YamlWorkoutRepository.mjs';
+import { YamlExerciseLibraryRepository } from '#adapters/reference/exercise-library/index.mjs';
+import { SaveWorkout } from '#apps/fitness/usecases/SaveWorkout.mjs';
 
 // Scheduling domain + orchestrator
 import { SchedulerService } from '#domains/scheduling/services/SchedulerService.mjs';
@@ -246,13 +252,25 @@ import { ComposerSongStore } from './3_applications/piano/ComposerSongStore.mjs'
 import { createFeedbackRouter } from './4_api/v1/routers/feedback.mjs';
 import { createGameshowRouter } from './4_api/v1/routers/gameshow.mjs';
 import { createGamingRouter } from './4_api/v1/routers/gaming.mjs';
+import { createPresentationRouter } from './4_api/v1/routers/presentation.mjs';
 import { GamingSessionService } from './3_applications/gaming/GamingSessionService.mjs';
 import { YamlGamingDefinitionStore } from './1_adapters/persistence/yaml/gaming/YamlGamingDefinitionStore.mjs';
+import { YamlGamingAssetCatalog } from './1_adapters/persistence/yaml/gaming/YamlGamingAssetCatalog.mjs';
+import { YamlPresentationCatalog } from './1_adapters/persistence/yaml/presentation/YamlPresentationCatalog.mjs';
 import { YamlGamingSessionStore } from './1_adapters/persistence/yaml/gaming/YamlGamingSessionStore.mjs';
 import { YamlPianoAttemptStore } from './1_adapters/persistence/yaml/gaming/YamlPianoAttemptStore.mjs';
+import { YamlPianoLearningStore } from './1_adapters/persistence/yaml/piano/YamlPianoLearningStore.mjs';
+import { YamlExerciseBank } from './1_adapters/piano/YamlExerciseBank.mjs';
 import { PianoScaleChallengePolicy } from './3_applications/piano/PianoScaleChallengePolicy.mjs';
-import { scaleClashDefinition } from '#shared/gaming/fixtures/scaleClash.mjs';
+import { BankChallengePolicy } from './3_applications/piano/BankChallengePolicy.mjs';
+import { PianoLearningService } from './3_applications/piano/PianoLearningService.mjs';
+import { scaleClashDefinition } from '#shared/gaming/definitions/scaleClash.mjs';
 import { createWikipediaRouter } from './4_api/v1/routers/wikipedia.mjs';
+import { createChessRouter } from './4_api/v1/routers/chess.mjs';
+import { buildGameRecordFilename } from './4_api/v1/routers/lib/chessGameFilename.mjs';
+import { createStockfishEngine } from './1_adapters/chess/StockfishEngineAdapter.mjs';
+import { createChessConfigService } from './3_applications/chess/ChessConfigService.mjs';
+import { createChessLadderService } from './3_applications/chess/ChessLadderService.mjs';
 import { WikipediaAdapter } from './1_adapters/reference/WikipediaAdapter.mjs';
 import { GameShowService } from './3_applications/gameshow/GameShowService.mjs';
 import { GameShowSessionStore } from './3_applications/gameshow/GameShowSessionStore.mjs';
@@ -695,6 +713,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     config: configService.getHouseholdAppConfig(householdId, 'vehicles')
       || configService.reloadHouseholdAppConfig?.(householdId, 'vehicles')
       || {},
+    // Threaded, not read from a config singleton inside the relay — day keys and
+    // trip filenames must follow the household's zone, not UTC or DEFAULT_TIMEZONE.
+    timezone: configService.getHouseholdTimezone(householdId),
     logger: rootLogger.child({ module: 'obd-relay' }),
   });
 
@@ -1662,7 +1683,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const gamingService = new GamingSessionService({
     definitionStore: gamingDefinitionStore,
     sessionStore: gamingSessionStore,
+    economyService: economyApi.economyService,
     logger: rootLogger.child({ module: 'gaming' }),
+  });
+  const gamingAssetCatalog = new YamlGamingAssetCatalog({
+    catalogsDir: join(mediaBasePath, 'games/_common/catalog'),
+    assetRoot: join(mediaBasePath, 'games/_common'),
+  });
+  const presentationCatalog = new YamlPresentationCatalog({
+    catalogsDir: join(mediaBasePath, 'games/_common/catalog'),
+    assetRoot: join(mediaBasePath, 'games/_common'),
   });
   gamingService.recoverStaleSessions();
   const gamingRecoveryTimer = setInterval(() => gamingService.recoverStaleSessions(), 30_000);
@@ -1670,7 +1700,63 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   server?.once?.('close', () => clearInterval(gamingRecoveryTimer));
   v1Routers.gaming = createGamingRouter({
     gamingService,
+    assetCatalog: gamingAssetCatalog,
     logger: rootLogger.child({ module: 'gaming-api' }),
+  });
+  v1Routers.presentation = createPresentationRouter({
+    catalog: presentationCatalog,
+    logger: rootLogger.child({ module: 'presentation-api' }),
+  });
+
+  // Chess: server-side Stockfish behind a worker thread + household/user config layers.
+  const chessEngine = createStockfishEngine({ logger: rootLogger.child({ module: 'chess-engine' }) });
+  server?.once?.('close', () => chessEngine.dispose());
+  v1Routers.chess = createChessRouter({
+    engine: chessEngine,
+    configService: createChessConfigService({
+      readHouseholdConfig: () => configService.getHouseholdAppConfig(null, 'chess'),
+      readUserConfig: (userId) => dataService.user.read('apps/chess/config', userId) || {},
+      writeUserConfig: (userId, data) => dataService.user.write('apps/chess/config', data, userId),
+      logger: rootLogger.child({ module: 'chess-config' }),
+    }),
+    recordStore: {
+      save: (userId, record) => dataService.user.write(
+        `apps/chess/games/${buildGameRecordFilename()}`,
+        { ...record, user_id: userId, created_at: new Date().toISOString() },
+        userId,
+      ),
+    },
+    // The household archive: one file per game, under the day it was played,
+    // named for the player. Household rather than per-user because it is the
+    // instrument's history — the basis for comparing progress across the
+    // children who share this piano, and the corpus the engine reads back when
+    // asked where a game went wrong.
+    archiveStore: {
+      save: (record, userSegment) => {
+        const day = /^\d{4}-\d{2}-\d{2}$/.test(record.played_on || '')
+          ? record.played_on
+          : new Date().toISOString().slice(0, 10);
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+        return dataService.household.write(
+          `history/gaming/pianochess/${day}/${userSegment}-${stamp}`,
+          { ...record, archived_at: new Date().toISOString() },
+        );
+      },
+    },
+    ladderService: createChessLadderService({
+      readConfig: async (userId) => {
+        const household = configService.getHouseholdAppConfig(null, 'chess') || {};
+        const user = userId ? (dataService.user.read('apps/chess/config', userId) || {}) : {};
+        // Only the ladder block is merged here; the full config merge (rungs,
+        // feedback, scalars) is ChessConfigService's job and this must not
+        // become a second, subtly different copy of it.
+        return { ...household, ladder: { ...(household.ladder || {}), ...(user.ladder || {}) } };
+      },
+      readProgress: (userId) => dataService.user.read('apps/chess/ladder', userId) || null,
+      writeProgress: (userId, progress) => dataService.user.write('apps/chess/ladder', progress, userId),
+      logger: rootLogger.child({ module: 'chess-ladder' }),
+    }),
+    logger: rootLogger.child({ module: 'chess-api' }),
   });
 
   // Self-hosted Wikipedia (kiwix-backed, plain-text) proxy. URL from services.yml;
@@ -2049,6 +2135,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // economyService can back the play /log earn-hook; here we only mount the router.
   v1Routers.economy = economyApi.router;
 
+  // Automotive — the vehicle record system (trips, maintenance, fuel, glove
+  // box). Reads the history tree the relay above writes, plus hand-entered
+  // records under household/automotive/. Same `vehicles` config as the relay,
+  // so both agree on where trips live.
+  v1Routers.automotive = createAutomotiveApi({
+    configService,
+    vehiclesConfig: configService.getHouseholdAppConfig(householdId, 'vehicles') || {},
+    logger: rootLogger.child({ module: 'automotive-api' }),
+  }).router;
+
   // Printer router — thermal printer control, multi-printer via optional {/:location} URL segment
   v1Routers.printer = createPrinterRouter({
     printerRegistry: hardwareAdapters.printerRegistry,
@@ -2210,6 +2306,31 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       return rewritten;
     },
   } : null;
+  // Piano program assignments are edited from the existing Teacher console, so
+  // they use that console's one authorization predicate rather than inventing a
+  // second grown-up/PIN interpretation in the piano bounded context.
+  const { makeTeacherGate } = await import('#apps/school/TeacherGate.mjs');
+  const schoolTeacherGate = makeTeacherGate({
+    configService, userService, householdId,
+    logger: rootLogger.child({ module: 'school-teacher-gate' }),
+  });
+  const pianoAttemptStore = new YamlPianoAttemptStore({
+    usersDir: join(configService.getDataDir(), 'users'),
+  });
+  // Exercise bank: seeds at data/content/music/, instances computed on demand.
+  const exerciseBank = new YamlExerciseBank({ contentDir: contentPath });
+  const pianoLearningStore = new YamlPianoLearningStore({
+    usersDir: join(configService.getDataDir(), 'users'),
+    assignmentsDir: configService.getHouseholdPath('apps/piano/program-assignments'),
+  });
+  const pianoLearningService = new PianoLearningService({
+    exerciseBank,
+    attemptStore: pianoAttemptStore,
+    learningStore: pianoLearningStore,
+    studioDatastore: pianoStudioDatastore,
+    teacherGate: schoolTeacherGate,
+    logger: rootLogger.child({ module: 'piano-learning' }),
+  });
   const pianoContainer = new PianoContainer({
     studioDatastore: pianoStudioDatastore,
     fitnessPlayableService,
@@ -2217,15 +2338,20 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     composerSongStore,
     configService,
     plexClient: pianoPlexClient,
+    learningService: pianoLearningService,
     logger: rootLogger.child({ module: 'piano-api' })
-  });
-  const pianoAttemptStore = new YamlPianoAttemptStore({
-    usersDir: join(configService.getDataDir(), 'users'),
   });
   v1Routers.piano = createPianoRouter({
     pianoContainer,
     pianoAttemptStore,
-    pianoChallengePolicy: new PianoScaleChallengePolicy({ attemptStore: pianoAttemptStore }),
+    pianoLearningService,
+    // Challenges come from the exercise bank when it is installed, and fall back
+    // to the hardcoded curriculum when it is not — a kiosk with no content mount
+    // should still be able to play.
+    pianoChallengePolicy: exerciseBank.available()
+      ? new BankChallengePolicy({ exerciseBank, attemptStore: pianoAttemptStore })
+      : new PianoScaleChallengePolicy({ attemptStore: pianoAttemptStore }),
+    exerciseBank,
     logger: rootLogger.child({ module: 'piano-api' })
   });
 
@@ -2253,11 +2379,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // The console write predicate for SchoolService's own teacher writes
   // (quiz-request dismissal). Built through the same factory the lifecycle
   // composition uses — one copy of the accessor text, no drift.
-  const { makeTeacherGate } = await import('#apps/school/TeacherGate.mjs');
-  const schoolTeacherGate = makeTeacherGate({
-    configService, userService, householdId,
-    logger: rootLogger.child({ module: 'school-teacher-gate' }),
-  });
   // Wave-3 planning domains: stores + gated writes (teacher-console W3-1..4).
   const { SetAcademicPeriods } = await import('#apps/school/usecases/SetAcademicPeriods.mjs');
   const { SetPassOverride } = await import('#apps/school/usecases/SetPassOverride.mjs');
@@ -2348,6 +2469,17 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     learnerDirectory: schoolLearnerDirectory,
     evidenceIdFactory: createLearningReflectionEvidenceId,
   });
+  // The shared exercise-reference corpus (~1,296 exercises, 38 muscle essays, 29
+  // equipment records). TWO products read it: Fitness (browse/build/run, plus
+  // SaveWorkout's existence check) and School (the anatomy shelf, which projects
+  // the muscle essays into learning-catalog lessons). It is constructed HERE,
+  // ahead of both, because it parses a ~2.8 MB manifest once and serves everything
+  // from memory — a second instance would double that for no benefit. A missing
+  // manifest degrades to an empty corpus rather than failing boot.
+  const exerciseLibrary = new YamlExerciseLibraryRepository({
+    indexPath: join(configService.getDataDir(), 'household', 'apps', 'fitness', 'exercise-index.yml'),
+    logger: rootLogger.child({ module: 'exercise-library' })
+  }).load();
   // The authored Catalog is a School capability shared by web, print, and
   // calculator surfaces. It is composed before—and independently of—the
   // optional SchoolCalc device product.
@@ -2355,6 +2487,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     configService,
     householdId,
     learnerDirectory: schoolLearnerDirectory,
+    exerciseLibrary,
     logger: rootLogger.child({ module: 'school-catalog' }),
   });
   const openCatalogLearningSession = schoolCatalog.query
@@ -2671,6 +2804,27 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: emergencyLogger,
   });
 
+  // Workout persistence: household-scoped files under apps/fitness/workouts/, plus the
+  // SaveWorkout use case that guards them. SaveWorkout is the only place holding BOTH an
+  // authored plan and the corpus index, so it is the only place that can refuse a workout
+  // referencing an exercise that does not exist — which otherwise fails at Run time, in
+  // front of someone mid-session. The library reads the manifest `exercise-library build`
+  // writes offline; a missing manifest degrades to an empty corpus, so saves fail loudly
+  // instead of persisting plans nothing can run.
+  // NOTE: `exerciseLibrary` itself is constructed far earlier (just above
+  // createSchoolCatalog), because School's anatomy shelf projects the same corpus
+  // and must share this one instance — it parses a ~2.8 MB manifest and holds the
+  // whole corpus in memory.
+  const workoutRepository = new YamlWorkoutRepository({
+    configService,
+    logger: rootLogger.child({ module: 'fitness-workouts' })
+  });
+  const saveWorkout = new SaveWorkout({
+    workoutRepository,
+    exerciseLibrary,
+    logger: rootLogger.child({ module: 'fitness-workouts' })
+  });
+
   // Fitness domain router
   // Note: contentRegistry passed for /show endpoint - playlist thumbnail enrichment is household-specific
   v1Routers.fitness = createFitnessApiRouter({
@@ -2690,6 +2844,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     releaseEmergencyLockdown,
     getLockdownState,
     identityRelay,
+    workoutRepository,
+    saveWorkout,
+    exerciseLibrary,
     logger: rootLogger.child({ module: 'fitness-api' })
   });
 
@@ -3013,6 +3170,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         config: omrReadersConfig,
         resolveCardScan,
         recordCardScanOutcome,
+        closeSessionOutcome: schoolLifecycle.useCases?.closeSessionOutcome ?? null,
         logger: rootLogger.child({ module: 'school-print-scan' }),
       });
     } catch (err) {
@@ -3869,6 +4027,74 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       } catch (err) {
         rootLogger.warn('school.teacher-nudge.failed', { error: err.message });
       }
+    });
+  }
+
+  // Relay staleness watchdog — the hardware relays are pass-throughs that keep
+  // no liveness state, so a dead ESP board is invisible except as history that
+  // stopped being written. The kitchen relay sat dark 2026-07-31 → 2026-08-12
+  // (12 days) and only surfaced because someone went looking. This turns that
+  // into a same-day Telegram alert.
+  //
+  // ONLY the kitchen board is watched, deliberately. This detects "no frames
+  // from <source>", not "board offline" — no relay sends a hello or keepalive
+  // on connect, so an idle board is indistinguishable from a dead one. That is
+  // tolerable for the kitchen relay, whose scale rests connected on the shelf
+  // and heartbeats at 0.5 Hz. It is NOT tolerable for the OBD relay (in a car,
+  // legitimately absent for days) or the OMR relay (used a few times a term),
+  // which would page constantly. Add them only once the firmware sends a
+  // heartbeat frame that means "I am alive" independent of its peripherals.
+  //
+  // 12h threshold: long enough to sleep through a quiet kitchen overnight with
+  // the scale switched off, short enough that a real death is same-day news.
+  //
+  // TIGHTEN THIS TO ~1h ONCE THE BOARD RUNS THE HELLO-FRAME FIRMWARE (a 60s
+  // liveness heartbeat, added 2026-08-12 but NOT yet flashed). Until that build
+  // is actually on the board, silence still just means "the scale is switched
+  // off" and a short threshold would cry wolf every evening. The hello frame
+  // also carries the board's post-mortem, which the watchdog logs as
+  // `relay_watchdog.boot` whenever the NVS boot counter moves — that is where a
+  // TASK_WDT (loop wedged, watchdog recovered it) or BROWNOUT (bad supply)
+  // reset shows up.
+  if (agentsServices.scheduler && notificationStack?.notificationService) {
+    const relayWatchdog = createRelayWatchdog({
+      eventBus,
+      sources: {
+        // The unified kitchen board and the legacy per-board sources it may
+        // still emit if an older firmware is flashed (see foodScaleRelay's
+        // INGEST_SOURCES) — any of the three proves the board is alive.
+        'kitchen-relay': { label: 'Kitchen relay', thresholdMs: 12 * 3600_000 },
+        'food-scale-relay': { label: 'Kitchen relay (legacy scale source)', thresholdMs: 12 * 3600_000 },
+      },
+      logger: rootLogger.child({ module: 'relay-watchdog' }),
+      onStale: ({ label, silentMs, lastSeenAt }) => {
+        const hours = Math.round(silentMs / 3600_000);
+        // Resolve the board's status page from devices.yml rather than hardcoding
+        // an IP here — the whole point of that entry is being the one place the
+        // address lives. Read at send time so a config reload is picked up.
+        let statusHint = '';
+        try {
+          const dev = configService.getDeviceConfig?.('kitchen-relay');
+          const host = dev?.host || dev?.mdns;
+          if (host) statusHint = ` Status: http://${host}${dev.port && dev.port !== 80 ? `:${dev.port}` : ''}${dev.endpoints?.status || '/status'}`;
+        } catch { /* a missing device entry must not block the alert */ }
+        notificationStack.notificationService.send({
+          title: 'Relay has gone quiet',
+          body: `${label} has sent nothing for ${hours}h (last frame ${new Date(lastSeenAt).toLocaleString()}). `
+            + `Check that it has power.${statusHint}`,
+          category: 'system',
+          // HIGH is what routes this off the dashboard and onto a phone; see
+          // DEFAULT_PREFERENCES in 5_composition/modules/notifications.mjs.
+          urgency: 'high',
+          dedupeKey: `relay-stale:${label}:${lastSeenAt}`,
+        }).catch((err) => rootLogger.warn('relay-watchdog.notify-failed', { error: err.message }));
+      },
+      onRecover: ({ label, silentMs }) => {
+        rootLogger.info('relay-watchdog.recovered', { label, silentMs });
+      },
+    });
+    agentsServices.scheduler.registerTask('hardware:relay-watchdog', '*/30 * * * *', async () => {
+      relayWatchdog.check();
     });
   }
 

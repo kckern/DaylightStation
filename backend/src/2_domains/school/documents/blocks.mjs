@@ -19,6 +19,8 @@ const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
 const isPositiveNumber = (v) => typeof v === 'number' && Number.isFinite(v) && v > 0;
 const isNonEmptyStringArray = (v) => Array.isArray(v) && v.length > 0 && v.every(isNonEmptyString);
 const isShuffleKey = (v) => isNonEmptyString(v) && SHUFFLE_KEY_PATTERN.test(v);
+const validTaxonomy = (value) => value && typeof value === 'object' && !Array.isArray(value)
+  && ['subject', 'course', 'unit', 'lesson'].every((field) => isNonEmptyString(value[field]));
 const keyError = (field) => `${field} must be a non-empty string matching ${SHUFFLE_KEY_PATTERN}`;
 const sourceOnlyError = (field) => `${field} is a source-only field and must not appear in a published document`;
 // The mirror image of sourceOnlyError (Task 3, spec §3): `itemRef` is the
@@ -182,6 +184,7 @@ const VALIDATORS = {
     // (effectively true for a scored quiz item, false otherwise) is applied
     // by the row planner, not here.
     if (raw.omr !== undefined && typeof raw.omr !== 'boolean') push('question omr must be a boolean');
+    if (raw.fillAfter !== undefined && typeof raw.fillAfter !== 'boolean') push('question fillAfter must be a boolean');
     // Bank-select sugar (spec §6.2): `{bankId, select, key, filter?}` REPLACES
     // the itemId/number/blocks shape below — it expands into a seeded list of
     // bank items at publish time (Task 5's job; this is shape-only). `select`
@@ -250,6 +253,9 @@ const VALIDATORS = {
     if (!Number.isInteger(raw.choices) || raw.choices < 2 || raw.choices > 8) {
       push('omr_response choices must be an integer between 2 and 8');
     }
+    if (raw.layout !== undefined && !['row', 'compact'].includes(raw.layout)) {
+      push('omr_response layout must be row|compact when present');
+    }
   },
   media_action: actionValidator('media_action'),
   scan_action(raw, push) {
@@ -259,6 +265,63 @@ const VALIDATORS = {
     // the SHAPE is validated here.
     if (raw.icon !== undefined && !isNonEmptyString(raw.icon)) {
       push('scan_action icon must be a non-empty string when present');
+    }
+    if (raw.presentation !== undefined && !['default', 'lesson'].includes(raw.presentation)) {
+      push('scan_action presentation must be default|lesson when present');
+    }
+    if (raw.eyebrow !== undefined && !isNonEmptyString(raw.eyebrow)) {
+      push('scan_action eyebrow must be a non-empty string when present');
+    }
+    if (raw.description !== undefined && !isNonEmptyString(raw.description)) {
+      push('scan_action description must be a non-empty string when present');
+    }
+    if (raw.meta !== undefined && !isNonEmptyString(raw.meta)) {
+      push('scan_action meta must be a non-empty string when present');
+    }
+    if (raw.taxonomy !== undefined && !validTaxonomy(raw.taxonomy)) {
+      push('scan_action taxonomy requires non-empty subject, course, unit, and lesson strings');
+    }
+    if (raw.hideCode !== undefined && typeof raw.hideCode !== 'boolean') {
+      push('scan_action hideCode must be a boolean when present');
+    }
+  },
+  result_summary(raw, push) {
+    if (!isNonEmptyString(raw.headline)) push('result_summary headline must be a non-empty string');
+    if (!isNonEmptyString(raw.title)) push('result_summary title must be a non-empty string');
+    if (raw.correctCount !== undefined && (!Number.isInteger(raw.correctCount) || raw.correctCount < 0)) {
+      push('result_summary correctCount must be an integer >= 0 when present');
+    }
+    if (raw.totalCount !== undefined && (!Number.isInteger(raw.totalCount) || raw.totalCount < 1)) {
+      push('result_summary totalCount must be an integer >= 1 when present');
+    }
+    if (Number.isInteger(raw.correctCount) && Number.isInteger(raw.totalCount)
+        && raw.correctCount > raw.totalCount) push('result_summary correctCount must not exceed totalCount');
+    if (raw.percent !== undefined && (typeof raw.percent !== 'number' || !Number.isFinite(raw.percent))) {
+      push('result_summary percent must be a finite number when present');
+    }
+    if (raw.passingPercent !== undefined && (typeof raw.passingPercent !== 'number'
+        || !Number.isFinite(raw.passingPercent) || raw.passingPercent < 1 || raw.passingPercent > 100)) {
+      push('result_summary passingPercent must be a number from 1-100 when present');
+    }
+    if (raw.icon !== undefined && !isNonEmptyString(raw.icon)) {
+      push('result_summary icon must be a non-empty string when present');
+    }
+    for (const field of ['learnerName', 'date', 'studentNo']) {
+      if (raw[field] !== undefined && !isNonEmptyString(raw[field])) {
+        push(`result_summary ${field} must be a non-empty string when present`);
+      }
+    }
+    if (raw.taxonomy !== undefined && !validTaxonomy(raw.taxonomy)) {
+      push('result_summary taxonomy requires non-empty subject, course, unit, and lesson strings');
+    }
+    if (raw.progress !== undefined) {
+      const progress = raw.progress;
+      if (!progress || typeof progress !== 'object' || Array.isArray(progress)
+          || !isNonEmptyString(progress.label) || !Number.isInteger(progress.completed)
+          || !Number.isInteger(progress.total) || progress.completed < 0 || progress.total < 1
+          || progress.completed > progress.total) {
+        push('result_summary progress requires label and integers 0 <= completed <= total');
+      }
     }
   },
   passage(raw, push) {

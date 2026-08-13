@@ -8,6 +8,7 @@ import RootApp from './Apps/RootApp.jsx';
 import HomeApp from './Apps/HomeApp.jsx';
 import FinanceApp from './Apps/FinanceApp.jsx';
 import HealthApp from './Apps/HealthApp.jsx';
+import AutoApp from './Apps/AutoApp.jsx';
 import LifeApp from './Apps/LifeApp.jsx';
 import FitnessApp from './Apps/FitnessApp.jsx';
 import FeedApp from './Apps/FeedApp.jsx';
@@ -198,6 +199,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/media" element={<MediaApp />} />
         <Route path="/media/channels/*" element={<LiveStreamApp />} />
         <Route path="/health" element={<HealthApp />} />
+        {/* Vehicle record system — mobile-first; see docs/_wip/plans/2026-08-12-auto-app-design.md */}
+        <Route path="/auto" element={<AutoApp />} />
+        <Route path="/auto/*" element={<AutoApp />} />
         <Route path="/fitness/*" element={<FitnessApp />} />
         <Route path="/piano/*" element={<PianoApp />} />
         <Route path="/gaming/*" element={<React.Suspense fallback={null}><GamingApp /></React.Suspense>} />

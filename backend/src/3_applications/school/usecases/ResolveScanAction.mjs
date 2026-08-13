@@ -217,6 +217,7 @@ export class ResolveScanAction {
     }
     if (unit?.media) return this.#play(sessionId);
     if (unit?.document) return this.#print(sessionId, 'select_unit', sessionState);
+    if (unit?.bank && this.#issue.canIssueBank?.(unit.bank)) return this.#print(sessionId, 'select_unit', sessionState);
     if (unit?.bank) return this.#onScreen(sessionId, unit, 'select_unit', sessionState?.learnerId ?? null);
     return this.#slip({
       status: 'unavailable',
@@ -396,10 +397,9 @@ export class ResolveScanAction {
    */
   async #print(sessionId, tokenClass, sessionState = null) {
     const unit = await this.#curriculum.getUnit(sessionState?.unitId);
-    if (unit && !unit.document && unit.bank) {
+    if (unit && !unit.document && unit.bank && !this.#issue.canIssueBank?.(unit.bank)) {
       return this.#onScreen(sessionId, unit, tokenClass, sessionState?.learnerId ?? null);
     }
-
     const result = await this.#issue.execute({ sessionId });
     // A worksheet came out of the laser: that IS the physical response, and a
     // receipt beside it would be noise. Anything else needs explaining.
@@ -476,7 +476,9 @@ export class ResolveScanAction {
    */
   async #subjectNext(record) {
     const { learnerId, subject } = record.subject ?? {};
-    const r = await this.#subjectResolver.execute({ learnerId, subject });
+    const r = await this.#subjectResolver.execute({
+      learnerId, subject, continueToday: record.subject?.continueToday === true,
+    });
     const nice = (s) => (s ? s[0].toUpperCase() + s.slice(1) : 'That');
 
     if (r.kind === 'served') {
@@ -562,6 +564,9 @@ export class ResolveScanAction {
       return this.#dispatchLaunch({
         sessionId: r.sessionId, learnerId, launch: r.unit.launch, tokenClass: 'subject_next',
       });
+    }
+    if (r.move.kind === 'screen' && this.#issue.canIssueBank?.(r.unit?.bank)) {
+      return this.#print(r.sessionId, 'subject_next', r.state);
     }
     if (r.move.kind === 'screen') return this.#onScreen(r.sessionId, r.unit, 'subject_next', r.state?.learnerId ?? null);
     return this.#slip({

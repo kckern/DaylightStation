@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { AbcRenderer } from '../../../MusicNotation/renderers/AbcRenderer.jsx';
 import { generateScaleAbc } from '../../../MusicNotation/renderers/abc.js';
-import { matchHeldSet } from '../../performance/heldSet.js';
 import { PianoKeyboard } from '../../components/PianoKeyboard.jsx';
-import { advanceScaleProgress } from './scaleProgress.js';
 import { WrongNoteGhost } from './WrongNoteGhost.jsx';
 import { scaleClefType } from './wrongNoteGhost.js';
-import { gradeChordPerformance, gradeOrderedPerformance, timingQuality } from '../../performance/grading.js';
+import {
+  advanceOrderedCursor,
+  classifyHeldNotes,
+  evaluateAssessment,
+  gradeAssessmentObservation,
+  timingQualityForBeat,
+} from '../../performance/assessmentSession.js';
 
 const EMPTY_NOTES = new Map();
 const EMPTY_HISTORY = [];
@@ -28,6 +32,33 @@ const SCALE_NOTE_CLASSES = [
   'piano-scale-note--next',
   'piano-scale-note--wrong',
 ];
+
+function assessmentFor(prepared, status, score, metrics) {
+  if (status !== 'completed' || !Number.isFinite(score) || !prepared?.prompt?.exercise_id) return {};
+  const criteria = {
+    completeness: metrics.failed ? 0 : 1,
+    cleanliness: Number.isFinite(metrics.pitchSetAccuracy)
+      ? metrics.pitchSetAccuracy
+      : Number.isFinite(metrics.pitchAccuracy) ? metrics.pitchAccuracy : score,
+    ...(Number.isFinite(metrics.timingAccuracy) ? { placement: metrics.timingAccuracy } : {}),
+  };
+  const actualBpm = Number.isFinite(metrics.tempoBpm) ? metrics.tempoBpm : null;
+  return {
+    purpose: 'challenge',
+    ...evaluateAssessment({
+      criteria,
+      score,
+      requirement: prepared.requirement,
+      achievedBpm: actualBpm,
+      diagnostics: {
+        wrong_notes: metrics.wrongNotes,
+        onset_spread_ms: metrics.onsetSpanMs,
+        duration_ms: metrics.durationMs,
+      },
+      rubric: { id: prepared.grading_policy_version, version: '1' },
+    }),
+  };
+}
 
 function scaleNoteElements(staffNotes) {
   return (staffNotes || []).flatMap((staff) => (
@@ -162,10 +193,13 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
         settled = true;
         clearDeadline();
         publish({ status: status === 'completed' ? 'complete' : status });
+        const finalMetrics = timedMetrics(metrics);
         const result = {
-          status, score, metrics: timedMetrics(metrics),
+          status, score, metrics: finalMetrics,
           provider_version: PROVIDER_VERSION,
           attempt_id: makeAttemptId(),
+          context: snapshot.prepared?.context ?? null,
+          ...assessmentFor(snapshot.prepared, status, score, finalMetrics),
         };
         await persistAttempt(result, snapshot.prepared);
         resolveAttempt(result);
@@ -186,9 +220,10 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
         }
         const timestamps = [...heldNotes.values()].map((value) => value.timestamp).filter(Number.isFinite);
         const onsetSpanMs = timestamps.length > 1 ? Math.max(...timestamps) - Math.min(...timestamps) : 0;
-        const grading = gradeChordPerformance({
-          targetNotes: prompt.pitch_classes.length,
-          wrongAttempts: wrongNotes,
+        const grading = gradeAssessmentObservation({
+          matcher: 'held',
+          expectedCount: prompt.pitch_classes.length,
+          wrongNotes,
           onsetSpanMs,
         });
         finish(grading.score, {
@@ -200,7 +235,7 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
         });
       };
 
-      function Surface() {
+      function Surface({ compact = false, headerContext = null } = {}) {
         const view = useSyncExternalStore(subscribe, () => snapshot, () => snapshot);
         const notes = useNotes();
         const connection = useConnection();
@@ -218,7 +253,9 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
         const liveChordCard = view.prepared?.kind === 'chord'
           ? { root: view.prepared.prompt.root, pitchClasses: new Set(view.prepared.prompt.pitch_classes || []) }
           : null;
-        const liveChordMatch = matchHeldSet(activeNotes, liveChordCard);
+        const liveChordMatch = classifyHeldNotes(activeNotes, liveChordCard, {
+          equivalence: 'pitch-class', bassMustBeRoot: true,
+        });
         const historyCursor = useRef(null);
         const staffNotesRef = useRef([]);
         const challengeId = view.prepared?.challenge_id;
@@ -363,11 +400,9 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
               recordInput();
               const previousProgress = progress;
               const legacyRestart = kind === 'scale' && Boolean(prompt.max_mistakes);
-              const advanced = legacyRestart
-                ? advanceScaleProgress(prompt.expected_midi, progress, note)
-                : note === prompt.expected_midi[progress]
-                  ? { progress: progress + 1, wrong: false, complete: progress + 1 === prompt.expected_midi.length }
-                  : { progress, wrong: true, complete: false };
+              const advanced = advanceOrderedCursor(prompt.expected_midi, progress, note, {
+                restartOnWrong: legacyRestart,
+              });
               progress = advanced.progress;
               hadWrong ||= advanced.wrong;
               lastInput = {
@@ -399,7 +434,7 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
                 const beatMs = 60_000 / prompt.tempo_bpm;
                 const offset = prompt.target_offsets_ms?.[previousProgress] ?? previousProgress * beatMs;
                 const targetAt = attemptStartedAt + (prompt.lead_in_ms || 0) + offset;
-                const quality = timingQuality(entry.startTime, targetAt, beatMs);
+                const quality = timingQualityForBeat(entry.startTime, targetAt, beatMs);
                 if (quality !== null) timingQualities.push(quality);
               }
               if (advanced.complete) {
@@ -407,7 +442,8 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
                 publish({ progress, hadWrong, lastInput });
                 const grading = legacyRestart
                   ? { score: firstTry ? 1 : 0.5, pitchAccuracy: firstTry ? 1 : 0.5, timingAccuracy: null, continuity: firstTry ? 1 : 0.5 }
-                  : gradeOrderedPerformance({
+                  : gradeAssessmentObservation({
+                    matcher: 'cursor',
                     expectedCount: prompt.expected_midi.length,
                     wrongNotes,
                     timingQualities,
@@ -465,7 +501,8 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
             <section className={`piano-challenge piano-scale-challenge${usingVirtualKeyboard ? ' has-virtual-keyboard' : ''}`}>
               <header className="piano-scale-challenge__heading">
                 <span>
-                  {prompt.tempo_bpm ? `Play with the pulse · ${prompt.tempo_bpm} BPM` : 'Play from left to right'}
+                  {headerContext ? `${headerContext}${prompt.tempo_bpm ? ` · ${prompt.tempo_bpm} BPM` : ''}`
+                    : prompt.tempo_bpm ? `Play with the pulse · ${prompt.tempo_bpm} BPM` : 'Play from left to right'}
                   {prompt.max_mistakes ? ` · ${prompt.max_mistakes} misses ends this legacy challenge` : ''}
                 </span>
                 <strong>{prompt.label}</strong>
@@ -509,7 +546,7 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
             data-active-notes={[...activeNotes.keys()].join(',')}
             data-chord-match={liveChordMatch}
           >
-            <div>Play this chord</div>
+            <div>{compact && headerContext ? headerContext : 'Play this chord'}</div>
             <div className="piano-challenge__chord">{prompt?.label || '…'}</div>
             <div>{view.status === 'running'
               ? usingVirtualKeyboard ? 'Listening to the on-screen keys' : 'Listening to the piano'
@@ -545,6 +582,8 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
                 ? 'paced-pitch-timing-continuity-v1'
                 : 'untimed-pitch-continuity-v1',
             provider_version: PROVIDER_VERSION,
+            requirement: selected.requirement ? structuredClone(selected.requirement) : null,
+            context: request.context ? structuredClone(request.context) : null,
           };
           publish({ status: 'prepared', prepared, armed: false, hadWrong: false, progress: 0, lastInput: null });
           return prepared;

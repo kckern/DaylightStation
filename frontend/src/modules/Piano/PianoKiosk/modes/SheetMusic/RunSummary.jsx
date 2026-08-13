@@ -1,8 +1,8 @@
 import React from 'react';
-import { tallyGrades } from '../../../performance/spans.js';
+import { tallyAssessmentGrades } from '../../../performance/assessmentSession.js';
 
 const OVERALL_LABEL = { green: 'Nicely done', yellow: 'Getting there', red: 'Keep at it' };
-// tallyGrades reports overall: null when nothing was graded. Say so plainly —
+// The shared tally reports overall: null when nothing was graded. Say so plainly —
 // praising a run the user never played teaches them the feedback is noise.
 const NOTHING_LABEL = 'Nothing to grade yet';
 
@@ -56,7 +56,7 @@ export default function RunSummary({
 }) {
   if (!open) return null;
 
-  const counts = tallyGrades(grades);
+  const counts = tallyAssessmentGrades(grades);
   const overall = counts.overall;
 
   return (

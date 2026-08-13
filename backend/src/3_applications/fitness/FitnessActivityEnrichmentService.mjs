@@ -23,6 +23,7 @@ import path from 'path';
 import moment from 'moment-timezone';
 import { loadYamlSafe, listYamlFiles, dirExists, saveYaml } from '#system/utils/FileIO.mjs';
 import { buildActivityDescription } from '#domains/fitness/services/buildActivityDescription.mjs';
+import { evaluateActivitySessionMatch } from '#domains/fitness/services/activitySessionMatch.mjs';
 import { absorbOverlappingSlivers } from './sliverAbsorption.mjs';
 import { buildStravaSessionTimeline } from '../../2_domains/fitness/services/StravaSessionBuilder.mjs';
 import { encodeSingleSeries } from '../../2_domains/fitness/services/TimelineService.mjs';
@@ -31,8 +32,9 @@ const MAX_RETRIES = 3;
 const MAX_TOTAL_ATTEMPTS = 10;            // hard cap before abandoning
 const RETRY_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const COOLDOWN_TTL_MS = 60 * 60 * 1000;  // 1 hour
-const GPS_DISTANCE_THRESHOLD_METERS = 100;  // activities below this are treated as indoor (treadmill, etc.)
-const MIN_OVERLAP_FRACTION = 0.5;           // matched session must overlap ≥50% of activity elapsed_time
+// Match guards (venue, membership, presence, overlap) live in
+// #domains/fitness/services/activitySessionMatch.mjs so this path and the
+// harvester's cannot drift apart again.
 
 export class FitnessActivityEnrichmentService {
   #activityGateway;
@@ -325,15 +327,15 @@ export class FitnessActivityEnrichmentService {
       return null;
     }
 
-    const BUFFER_MS = 5 * 60 * 1000;
     const MIN_SESSION_SECONDS = 120;
 
     const tz = this.#configService?.getTimezone?.() || 'America/Los_Angeles';
+    // The athlete whose activity this is — the guards need to know whose
+    // presence in the session to measure.
+    const matchUsername = this.#configService?.getHeadOfHousehold?.() || 'user_1';
 
     const actStart = moment(activity.start_date).tz(tz);
     const actEnd = actStart.clone().add(activity.elapsed_time || activity.moving_time || 0, 'seconds');
-    const actStartBuffered = actStart.clone().subtract(BUFFER_MS, 'ms');
-    const actEndBuffered = actEnd.clone().add(BUFFER_MS, 'ms');
 
     const dates = this._resolveScanDates(actStart.unix());
     this.#logger.info?.('strava.enrichment.session_scan.start', {
@@ -372,49 +374,32 @@ export class FitnessActivityEnrichmentService {
           }
         }
 
-        // Plausibility guard: an activity with real GPS distance should not
-        // be matched to a session that has zero distance AND no media. That
-        // is almost always a coincidental overlap (e.g. user came home from a
-        // run wearing the HR strap and triggered a treasureBox session).
-        const activityHasGpsDistance = (activity.distance || 0) > GPS_DISTANCE_THRESHOLD_METERS;
-        const sessionIsZeroDistanceNoMedia =
-          ((data.strava?.distance ?? 0) === 0)
-          && (!Array.isArray(data.summary?.media) || data.summary.media.length === 0);
-        if (activityHasGpsDistance && sessionIsZeroDistanceNoMedia) {
-          this.#logger.info?.('strava.enrichment.session_scan.rejected_by_sport_guard', {
+        // Membership, venue, overlap and presence guards — shared with the
+        // harvester. An outdoor activity cannot be a garage session, and a
+        // strap that drifts through range is not a participant who did the
+        // work (see the 2026-07-25 incident in the domain module's header).
+        const verdict = evaluateActivitySessionMatch({
+          activity,
+          session: data,
+          username: matchUsername,
+          tz,
+        });
+
+        if (!verdict.ok) {
+          this.#logger.info?.('strava.enrichment.session_scan.rejected', {
             activityId,
             file: filename,
-            reason: 'outdoor-gps-vs-indoor-empty',
-            activityDistanceMeters: activity.distance,
+            reason: verdict.reason,
+            venue: verdict.venue,
+            overlapFraction: verdict.overlapFraction,
+            presenceMeasured: verdict.presenceMeasured,
+            presenceSeconds: verdict.presenceSeconds,
           });
           continue;
         }
 
-        // Time-based matching
-        const sessionTz = data.timezone || tz;
-        const sessStart = moment.tz(data.session.start, sessionTz);
-        const sessEnd = data.session.end
-          ? moment.tz(data.session.end, sessionTz)
-          : sessStart.clone().add(durationSec, 'seconds');
-
-        const overlapStart = moment.max(actStartBuffered, sessStart);
-        const overlapEnd = moment.min(actEndBuffered, sessEnd);
-        const overlapMs = overlapEnd.diff(overlapStart);
-
-        if (overlapMs > 0 && overlapMs > bestOverlap) {
-          const activityElapsedMs = (activity.elapsed_time || activity.moving_time || 0) * 1000;
-          const overlapFraction = activityElapsedMs > 0 ? overlapMs / activityElapsedMs : 0;
-          if (overlapFraction < MIN_OVERLAP_FRACTION) {
-            this.#logger.info?.('strava.enrichment.session_scan.rejected_by_overlap_fraction', {
-              activityId,
-              file: filename,
-              overlapFraction,
-              overlapMs,
-              activityElapsedMs,
-            });
-            continue;
-          }
-          bestOverlap = overlapMs;
+        if (verdict.overlapMs > bestOverlap) {
+          bestOverlap = verdict.overlapMs;
           bestMatch = { data, filePath, date, filename };
         }
       }

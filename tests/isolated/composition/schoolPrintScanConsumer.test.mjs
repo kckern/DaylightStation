@@ -170,6 +170,28 @@ describe('resolution outcomes', () => {
     }));
   });
 
+  it('closes a fully graded issuing session so the result receipt is printed', async () => {
+    const bus = makeBus();
+    const card = {
+      cardId: '0123456', recordId: 'r1', documentId: 'civilization/atlas/ws-one',
+      rev: 'rev1', variant: 0, learnerId: 'milo', sessionId: 'ses-one',
+      revisionSuperseded: false, results: [], totalPoints: 6, earnedPoints: 6,
+    };
+    const recordCardScanOutcome = {
+      execute: vi.fn(async () => ({ session: { sessionId: 'ses-one', advancedTo: 'graded' } })),
+    };
+    const closeSessionOutcome = { execute: vi.fn(async () => ({ status: 'settled', result: 'passed' })) };
+    createSchoolPrintScanConsumer({
+      eventBus: bus,
+      resolveCardScan: { execute: async () => ({ results: [card] }) },
+      recordCardScanOutcome, closeSessionOutcome, logger: silentLogger(),
+    });
+    bus.broadcast('omr', sheetPayload());
+    await flush();
+    expect(recordCardScanOutcome.execute).toHaveBeenCalledWith({ testId: '0123456', card });
+    expect(closeSessionOutcome.execute).toHaveBeenCalledWith({ sessionId: 'ses-one' });
+  });
+
   it("a dead card with answers warns — the child's work must not vanish below warn", async () => {
     const bus = makeBus();
     const logger = silentLogger();

@@ -1,0 +1,139 @@
+import { DaylightAPI } from '../../../lib/api.mjs';
+import getLogger from '../../../lib/logging/Logger.js';
+
+/**
+ * Thin client for the server-side chess engine.
+ *
+ * Every call resolves rather than throws: the caller (the opponent effect in
+ * PianoChessGame) falls back to the bundled engine on any failure, so the game
+ * must never block on the network. Errors are logged, then swallowed.
+ */
+
+let cachedLogger;
+function logger() {
+  if (!cachedLogger) cachedLogger = getLogger().child({ component: 'chess-api' });
+  return cachedLogger;
+}
+
+const withUser = (path, userId) => (userId ? `${path}?user=${encodeURIComponent(userId)}` : path);
+
+/**
+ * The move request's deadline. The server bounds its own thinking
+ * (movetime + margin); this bounds the transport, which on the kiosk tablet is
+ * known to stall silently when WiFi drops. Past the deadline we resolve null so
+ * the caller's bundled-engine fallback engages instead of "thinking" forever.
+ * A plain setTimeout race rather than AbortSignal.timeout: WebView support for
+ * the latter on the 2018 tablet is uncertain.
+ */
+const MOVE_TIMEOUT_MS = 8000;
+
+/** Resolves null on any failure: the caller falls back to the local engine. */
+export async function requestOpponentMove({ fen, rung, gameId, userId = null }) {
+  const request = DaylightAPI(withUser('api/v1/chess/move', userId), { fen, rung, gameId }, 'POST')
+    .then((body) => (body && body.from ? body : null))
+    .catch((error) => {
+      // Attached up front so a rejection arriving after the timeout has already
+      // won is still handled rather than surfacing as an unhandled rejection.
+      logger().warn('chess.move.request-error', { error: error.message });
+      return null;
+    });
+  let timer;
+  const deadline = new Promise((resolve) => {
+    timer = setTimeout(() => {
+      logger().warn('chess.move.timeout', { gameId, timeoutMs: MOVE_TIMEOUT_MS });
+      resolve(null);
+    }, MOVE_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([request, deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function fetchChessConfig(userId = null) {
+  try {
+    // No data object: DaylightAPI promotes a GET with a body to POST.
+    return await DaylightAPI(withUser('api/v1/chess/config', userId));
+  } catch (error) {
+    logger().warn('chess.config.fetch-error', { error: error.message });
+    return null;
+  }
+}
+
+export async function saveChessConfig(userId, patch) {
+  try {
+    return await DaylightAPI(withUser('api/v1/chess/config', userId), patch, 'PUT');
+  } catch (error) {
+    logger().warn('chess.config.save-error', { error: error.message });
+    return null;
+  }
+}
+
+export async function saveGameRecord(userId, record) {
+  try {
+    return await DaylightAPI(withUser('api/v1/chess/games', userId), record, 'POST');
+  } catch (error) {
+    logger().warn('chess.game.save-error', { error: error.message });
+    return null;
+  }
+}
+
+/**
+ * Archive the whole game to the household history.
+ *
+ * Separate from `saveGameRecord`, and deliberately: that one is the player's own
+ * scorecard for a finished game, this one is the replayable account of ANY game,
+ * abandoned ones included. Guests are archived too — the household history is
+ * about what happened on this piano, not about whose profile it belongs to, and
+ * the record carries a null user rather than being dropped.
+ *
+ * Fire-and-forget on the way out: a failed archive must never keep a child on a
+ * screen they are trying to leave.
+ */
+export async function archiveGame(record) {
+  try {
+    return await DaylightAPI('api/v1/chess/history', record, 'POST');
+  } catch (error) {
+    logger().warn('chess.game.archive-error', { error: error.message });
+    return null;
+  }
+}
+
+/**
+ * Archive on the way out of the PAGE, not just out of the component.
+ *
+ * A React cleanup runs when the player navigates inside the app. It does not run
+ * when the tab is closed, when the kiosk reloads after a deploy, or when the
+ * screen is put to sleep — which on this instrument is the ordinary way a game
+ * ends. `sendBeacon` is the only request that survives that, because the browser
+ * takes ownership of it as the document goes away.
+ *
+ * Returns whether the beacon was accepted for delivery, so the caller can fall
+ * back to a normal request when it was not (queue full, or no beacon support).
+ */
+/** Where this player stands on the opponent ladder. */
+export async function fetchLadder(userId) {
+  try {
+    return await DaylightAPI(withUser('api/v1/chess/ladder', userId));
+  } catch (error) {
+    logger().warn('chess.ladder.fetch-error', { error: error.message });
+    return null;
+  }
+}
+
+export function beaconArchive(record) {
+  try {
+    if (typeof navigator === 'undefined' || typeof navigator.sendBeacon !== 'function') return false;
+    const blob = new Blob([JSON.stringify(record)], { type: 'application/json' });
+    return navigator.sendBeacon('/api/v1/chess/history', blob);
+  } catch (error) {
+    logger().warn('chess.game.beacon-error', { error: error.message });
+    return false;
+  }
+}
+
+export default {
+  requestOpponentMove, fetchChessConfig, saveChessConfig, saveGameRecord, archiveGame,
+  beaconArchive, fetchLadder,
+};

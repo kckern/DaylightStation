@@ -47,6 +47,12 @@ const GAME_REGISTRY = {
     layout: 'replace',
     LazyComponent: lazyWithReload(() => import('./SideScrollerGame/SideScrollerGame')),
   },
+  chess: {
+    component: () => importWithReload(() => import('./PianoChessGame/PianoChessGame')),
+    hook: () => importWithReload(() => import('./PianoChessGame/PianoChessGame')),
+    layout: 'replace',
+    LazyComponent: lazyWithReload(() => import('./PianoChessGame/PianoChessGame')),
+  },
 };
 
 export function getGameEntry(gameId) {

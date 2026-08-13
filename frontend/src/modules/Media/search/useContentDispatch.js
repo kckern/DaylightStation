@@ -5,16 +5,24 @@
 //   2. a cast target configured in the dock's chip → cast there in the chip's
 //      mode — the chip is a promise about where content goes, and the search
 //      bar sits beside it,
-//   3. otherwise → play locally, replacing the queue.
+//   3. a CONTAINER with no device aimed at it → open the full browse view.
+//      Picking "Tuttle Twins" in a search box means "show me the show", not
+//      "queue all 24 episodes"; the seasons/episodes belong on the canvas,
+//      not in a dropdown that dies on blur (2026-08-12 session review).
+//      Note this is deliberately BELOW the two cast branches: with a device
+//      aimed, "cast the album/playlist" is still the right read.
+//   4. otherwise → play locally, replacing the queue.
 // Returns which branch it took so callers can log the destination.
 import { useCallback } from 'react';
 import { useNav } from '../shell/NavProvider.jsx';
 import { useDispatch } from '../cast/DispatchProvider.jsx';
 import { useCastTarget } from '../cast/useCastTarget.js';
 import { useSessionController } from '../controller/useSessionController.js';
+import { isContainer } from '../../Content/combobox/comboboxMachine.js';
+import { contentIdToBrowsePath } from '../browse/browsePath.js';
 
 export function useContentDispatch() {
-  const { view, params } = useNav();
+  const { view, params, push } = useNav();
   const { dispatchToTarget } = useDispatch();
   const { targetIds, mode } = useCastTarget();
   const { queue } = useSessionController('local');
@@ -34,12 +42,16 @@ export function useContentDispatch() {
       dispatchToTarget({ targetIds, play: id, mode, title });
       return 'cast';
     }
+    if (item && isContainer(item)) {
+      push('browse', { path: contentIdToBrowsePath(id), label: title ?? id });
+      return 'browse';
+    }
     queue.playNow(
       { contentId: id, title, thumbnail: item?.thumbnail ?? null },
       { clearRest: true }
     );
     return 'local';
-  }, [view, params, dispatchToTarget, targetIds, mode, queue]);
+  }, [view, params, push, dispatchToTarget, targetIds, mode, queue]);
 }
 
 export default useContentDispatch;

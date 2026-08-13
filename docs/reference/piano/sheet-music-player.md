@@ -337,7 +337,23 @@ notes-and-timing (the same measure wash used elsewhere) and folded into a
 running score; the transport bar's center readout shows the live tally as the
 run progresses (e.g. `82% · m 12/24`).
 
-Polish uses the same renderer-independent performance judge as Piano Hero.
+Polish grades through the parameterized `assessmentSession.js` service as of
+`polish-shared-grading-v1` (`scoreEvaluator.js` is now a compatibility
+projection). It previously computed the same
+dimensions under its own names and combined them multiplicatively, so a polish
+score and a lesson-drill score could not be compared even though both claimed to
+mean "how well did that go". Adopting the service moved the numbers, which is
+why results carry that policy version — records written under the old maths stay
+distinguishable. Ordered grading also counts *missed* notes now: a drill advances
+only on the correct note and so cannot leave one unplayed, but a timed score can
+be played straight past, and a note never struck has to cost something. Polish's
+forgiving timing curve moved into the service as `timingQualityFromDrift` — 80ms
+free, falling to zero by 400ms — so polish and beat-relative grading are one
+formula with different numbers rather than two implementations.
+See [performance-assessment.md](./performance-assessment.md).
+
+Polish and Piano Hero now own separate instances of the same parameterized,
+renderer-independent assessment session.
 The score is compiled into exact onset targets after the tempo map, tempo
 multiplier, and active-staff filter are applied. Repeated pitches remain
 separate attacks, simultaneous pitches are judged as a chord, early/late drift
@@ -353,6 +369,13 @@ that run's tier — the summary labels it "mixed tempo" and it competes for no
 best, though the live grading still shows. **Overclocked runs earn extra
 credit**: the displayed/stored score is the base score scaled up, and can
 exceed 100 — that's the reward for playing faster than written.
+
+> The multiplier is under review. The
+> [rubric design](../../_wip/plans/2026-08-12-assessment-rubric-design.md)
+> argues speed should be a **gate** against the item's target tempo rather than a
+> score multiplier: weighting speed teaches a child to rush, and a multiplier
+> makes scores incomparable across runs, which is the one thing tier bests
+> depend on. Nothing has changed here yet.
 
 At the end of a run, the summary shows this run's score and tier alongside
 the four tier bests **for the current hands bucket**, so a right-hand-only
@@ -558,7 +581,8 @@ during an active run so the judge and falling highway cannot jump timelines.
 |------|------|
 | `SheetMusic.jsx` | routing (grid ↔ viewer), MusicXML fetch + load timing |
 | `Piano/performance/performanceTargets.js` | Shared tempo-resolved target compiler |
-| `Piano/performance/performanceJudge.js` | Shared pure note/chord hit and miss matcher |
+| `Piano/performance/assessmentSession.js` | Public parameterized matching, observation, rubric, verdict, and span-aggregation API shared by Learn, Polish, Hero, Exercises, games, and flashcards |
+| `Piano/performance/performanceJudge.js` | Internal timed note/chord matching primitive used by the assessment session |
 | [performance-assessment.md](./performance-assessment.md) | Overview of the shared performance service (grading, matching, spans) |
 | `ScoreGrid.jsx` / `scoreGroups.js` | score browser grid + `sheetmusic.collections` → tab strip |
 | `scoreTitle.js` | filename → title fallback shared by the grid and the player |
@@ -588,8 +612,8 @@ during an active run so the judge and falling highway cannot jump timelines.
 | `clickScheduler.js` | look-ahead scheduling for the metronome click |
 | `RunSummary.jsx` | Polish end-of-run summary, extended with run score/tier + tier-best strip |
 | `activeParts.js` / `focusRange.js` | staff-responsibility model / practice-range math, including the next step the active hands actually play |
-| `useFollowTracker.js` | Learn matching + advancement (range-aware, skips steps the active hands are silent at) |
-| `useScoreEvaluator.js` / `scoreEvaluator.js` | Polish per-measure grading hook / math |
+| `useFollowTracker.js` | Learn lifecycle + advancement using the shared cursor-step classifier (range-aware, skips steps the active hands are silent at) |
+| `useScoreEvaluator.js` / `scoreEvaluator.js` | Polish lifecycle and compatibility projection over a shared timed assessment session |
 | `useMetronomeClick.js` / `click.js` | click scheduler / WebAudio blip |
 | `pedalEdge.js` | Perform pedal rising-edge |
 | `sheetMusicConfig.js` | `sheetmusic:` config resolver (modes, pedals, scoring, hand preference) |

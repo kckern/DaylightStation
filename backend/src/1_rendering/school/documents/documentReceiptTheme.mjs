@@ -27,6 +27,9 @@ export const documentReceiptTheme = Object.freeze({
     header: 'bold 44px "Roboto Condensed"',
     body: '24px "Roboto Condensed"',
     label: 'bold 26px "Roboto Condensed"',
+    eyebrow: 'bold 20px "Roboto Condensed"',
+    description: 'italic 22px "Roboto Condensed"',
+    summary: 'bold 28px "Roboto Condensed"',
     code: '22px "Roboto Condensed"',
   },
 
@@ -66,6 +69,21 @@ export const documentReceiptTheme = Object.freeze({
     /** Subject shelf icon drawn left of the label (58mm tape, so keep it bold). */
     iconPx: 56,
     iconGap: 12,
+    lessonTextGap: 18,
+    eyebrowLineHeight: 24,
+    descriptionLineHeight: 27,
+  },
+
+  result: {
+    padY: 8,
+    headlineLineHeight: 42,
+    titleLineHeight: 32,
+    boxSize: 31,
+    boxGap: 8,
+    boxLineWidth: 3,
+    progressHeight: 14,
+    progressGap: 5,
+    progressSegments: 10,
   },
 });
 

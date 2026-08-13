@@ -34,7 +34,7 @@ export default function PianoUserChip() {
 }
 
 function PianoUserChipInner({ ctx }) {
-  const { videoActive } = usePianoPlayback();
+  const { videoActive, playerLocks = [] } = usePianoPlayback();
   const screenOff = usePianoScreenOff();
   const [open, setOpen] = useState(false);
   const { users, currentUser, setCurrentUser } = ctx;
@@ -43,7 +43,10 @@ function PianoUserChipInner({ ctx }) {
   // (fetch failed, still loading, dismissed prompt) reads as Guest, never blank.
   const currentProfile = ctx.currentProfile || GUEST_PROFILE;
   const label = currentProfile.group_label || currentProfile.name;
-  const locked = !!videoActive;
+  // A lesson is one reason the player cannot change; a game in progress is
+  // another, and it says so in its own words.
+  const lockReason = videoActive ? 'Finish the lesson to switch players' : playerLocks[0]?.reason;
+  const locked = !!videoActive || playerLocks.length > 0;
 
   return (
     <>
@@ -53,8 +56,8 @@ function PianoUserChipInner({ ctx }) {
         onClick={() => { if (!locked) setOpen(true); }}
         disabled={locked}
         aria-disabled={locked}
-        aria-label={locked ? 'Player locked during lesson' : 'Switch player'}
-        title={locked ? 'Finish the lesson to switch players' : currentProfile.name}
+        aria-label={locked ? (lockReason || 'Player locked') : 'Switch player'}
+        title={locked ? (lockReason || 'Player locked') : currentProfile.name}
       >
         <ProfileAvatar id={currentProfile.id} name={currentProfile.name} />
         <span className="piano-chrome__username">{label}</span>

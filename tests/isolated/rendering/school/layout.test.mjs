@@ -352,6 +352,27 @@ describe('placeFragments — growLastPage (policy: fill)', () => {
     expect(find(result, 0, 'a1').heightPt).toBe(100);
   });
 
+  it('distributes mastery-question remainder as space-around, including above question 1', () => {
+    const result = placeFragments([
+      frag('header', 20),
+      frag('q1', 10, { fillAfter: true }),
+      frag('q2', 10, { fillAfter: true }),
+      frag('q3', 10, { fillAfter: true }),
+    ], { ...page, growLastPage: true });
+    const header = find(result, 0, 'header');
+    const q1 = find(result, 0, 'q1');
+    const q2 = find(result, 0, 'q2');
+    const q3 = find(result, 0, 'q3');
+    const leadingExtra = q1.yPt - (header.yPt + header.heightPt + spacing.body.body);
+    const firstBetweenExtra = q2.yPt - (q1.yPt + 10 + spacing.body.body);
+    const secondBetweenExtra = q3.yPt - (q2.yPt + 10 + spacing.body.body);
+    const trailingExtra = CONTENT_BOTTOM_PT - (q3.yPt + q3.heightPt);
+
+    expect(firstBetweenExtra).toBeCloseTo(leadingExtra * 2);
+    expect(secondBetweenExtra).toBeCloseTo(leadingExtra * 2);
+    expect(trailingExtra).toBeCloseTo(leadingExtra);
+  });
+
   it('grows a non-last page identically whether or not the flag is set — only the LAST page inverts', () => {
     // Page 1: q1(40) + a1(10..40) + filler(94) = 150pt of 160pt usable → 10pt
     // spare, all of it going to a1's headroom (30pt) capped at +10.

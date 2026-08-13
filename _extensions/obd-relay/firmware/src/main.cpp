@@ -28,6 +28,7 @@
 #include <LittleFS.h>
 #include <time.h>
 #include <esp_sleep.h>
+#include <Preferences.h>
 #include <Update.h>
 #include "config.h"
 
@@ -77,7 +78,7 @@ static COBD obd;   // co-processor UART OBD link
 static GPS_DATA* gpsData = nullptr;
 #endif
 
-static const char* FW_VERSION = "0.1.0";
+static const char* FW_VERSION = "0.2.0";   // 0.2.0: /led (persisted LED control)
 static const char* TRIP_DIR = "/trips";
 
 // ---- one telemetry sample (positional order == wire order) ---------------
@@ -87,6 +88,15 @@ struct Sample {
   int16_t speedKph, rpm, coolantC;
   int8_t fuelPct;
   float battV;
+  // GNSS extras. These arrive in the SAME GPS_DATA struct already being read
+  // every sample — they were simply discarded. Altitude gives an elevation
+  // profile, heading gives direction of travel, and hdop/sat give fix QUALITY,
+  // which is the difference between "no fix" and "a bad fix that quietly
+  // corrupted this trip's distance".
+  float altM;        // metres, NAN when unknown
+  int16_t heading;   // degrees 0-359, -1 when unknown
+  int8_t hdop;       // horizontal dilution of precision, -1 when unknown
+  int8_t sat;        // satellites used, -1 when unknown
 };
 
 #ifdef USE_FREEMATICS
@@ -139,6 +149,110 @@ static PidProbe g_diagPids[] = {
 };
 #define HOT_PID_COUNT  (sizeof(g_hotPids)  / sizeof(g_hotPids[0]))
 #define DIAG_PID_COUNT (sizeof(g_diagPids) / sizeof(g_diagPids[0]))
+
+// ---- motion sensor (MEMS) ----------------------------------------------------
+// The board carries an ICM-20948 / ICM-42627 and NOTHING used it before this.
+//
+// ## What this can and cannot do
+//
+// It CANNOT give the motion-interrupt wake the README asks for. That needs the
+// sensor's INT line routed to an RTC-capable GPIO so `esp_sleep_enable_ext0_wakeup`
+// can arm it during deep sleep — and no such pin exists anywhere in the board
+// pin map or the vendored library (searched 2026-08-12: no PIN_MEMS_INT, no
+// ext0/ext1 use). Without that wiring the chip is unreachable while the ESP32
+// sleeps, so the "up to ~60 s of drive start goes unlogged" gap stands.
+//
+// What it DOES give:
+//   1. A motion check at each standby wake, so a car that is moving is believed
+//      immediately rather than waiting on sustained voltage. This narrows the
+//      gap; it does not close it.
+//   2. Driving events while awake — hard braking, hard acceleration, cornering.
+//
+// If the INT GPIO is ever identified, arm it at the marked hook in enterStandby().
+#include "FreematicsMEMS.h"
+
+// Defined further down, next to the ring-buffered log they feed. Forward
+// declared because the motion sensor block sits above them.
+static void relayLogLine(const char* line);
+static void relayLogf(const char* fmt, ...);
+#ifdef USE_FREEMATICS
+struct PidProbe;
+static void probePids(PidProbe* table, size_t count);
+static int pidValue(const PidProbe* table, size_t count, byte pid, int fallback);
+#endif
+
+static MEMS_I2C* g_mems = nullptr;
+static bool g_memsReady = false;
+
+// Acceleration magnitude, in g, beyond which an event is worth recording.
+// Gravity is subtracted, so this is deviation from resting. 0.35 g is firm
+// braking — well above road noise and normal traffic, below emergency stops.
+#ifndef MEMS_EVENT_G
+#define MEMS_EVENT_G 0.35f
+#endif
+// Motion threshold for the standby wake check: deviation from 1 g resting.
+#ifndef MEMS_MOTION_G
+#define MEMS_MOTION_G 0.08f
+#endif
+// Don't emit a second event within this window — one brake application is one
+// event, not forty at the sample rate.
+#define MEMS_EVENT_COOLDOWN_MS 3000UL
+
+static uint32_t g_lastMemsEventMs = 0;
+static uint32_t g_memsEventCount = 0;
+
+/** Bring the motion sensor up. Safe to call when absent — leaves g_memsReady false. */
+static void memsInit() {
+#ifdef USE_FREEMATICS
+  if (g_memsReady) return;
+  g_mems = new ICM_42627;
+  if (g_mems->begin()) { g_memsReady = true; relayLogLine("[mems] ICM-42627 ready"); return; }
+  delete g_mems;
+  g_mems = new ICM_20948_I2C;
+  if (g_mems->begin()) { g_memsReady = true; relayLogLine("[mems] ICM-20948 ready"); return; }
+  delete g_mems;
+  g_mems = nullptr;
+  relayLogLine("[mems] no motion sensor");
+#endif
+}
+
+/**
+ * Is the vehicle moving right now?
+ *
+ * Deviation of total acceleration from 1 g. A parked car reads ~1 g (gravity
+ * alone); any real motion perturbs it. Deliberately crude — this only has to
+ * beat "wait for sustained charging voltage", not classify the motion.
+ */
+static bool memsInMotion() {
+  if (!g_memsReady || !g_mems) return false;
+  float acc[3] = {0, 0, 0};
+  if (!g_mems->read(acc)) return false;
+  const float mag = sqrtf(acc[0] * acc[0] + acc[1] * acc[1] + acc[2] * acc[2]);
+  return fabsf(mag - 1.0f) > MEMS_MOTION_G;
+}
+
+// ---- odometer counters -------------------------------------------------------
+// PID 0x31 ("distance since codes cleared") is the mileage source: standard
+// Mode 01, wheel-derived, so unlike GPS it neither undercounts nor loses the
+// span at the start of a drive that standby sleeps through. 0xA6 (true
+// odometer) is read alongside it and is expected to go unanswered on most cars.
+//
+// These are CACHED rather than read on demand. Every obd.* call is a UART round
+// trip that must stay on obdLinkTask (core 0) — running them on the Arduino
+// loop task starved webSocket.loop() badly enough that the WS client failed
+// every attempt. tripOpen()/tripClose() are called from the loop task (e.g. on
+// WStype_CONNECTED), so they read these values instead of touching the bus.
+//
+// -1 means "no reading", never 0: a car that genuinely reports 0 km since a
+// recent code clear is a real answer, and must not be confused with silence.
+static volatile int32_t g_distanceKm = -1;   // PID 0x31
+static volatile int32_t g_odometerKm = -1;   // PID 0xA6
+static uint32_t g_countersReadMs = 0;
+
+// The counters barely move, but they must be fresh at trip OPEN and CLOSE for
+// the per-trip delta to mean anything. A minute is well inside the shortest
+// useful trip and costs two UART reads.
+#define COUNTER_REFRESH_MS 60000UL
 
 // DTCs (check-engine). Standard Mode 03, the one diagnostic that is reliably
 // available on any OBD-II car.
@@ -196,6 +310,52 @@ static Sample g_liveSample = {};
 static bool g_haveLiveSample = false;
 static bool g_gpsReady = false;
 #endif
+
+// ---- LED -------------------------------------------------------------------
+// NOTHING in this firmware or in FreematicsPlus ever drives PIN_LED: the
+// library defines it (FreematicsPlus.h) and never references it again, and this
+// file contains no pinMode/digitalWrite of its own. So a lit LED is one of two
+// things, and source alone cannot tell them apart:
+//
+//   (a) a hardwired power indicator — no firmware can touch it, and this
+//       endpoint will have no visible effect at either level;
+//   (b) an uninitialised pin floating at the lit level — driving it explicitly
+//       turns it off, at whichever polarity the board wired.
+//
+// Polarity is likewise unknown, so this exposes both rather than baking in a
+// guess and costing a second OTA to correct it:
+//
+//   GET /led              → current mode
+//   GET /led?mode=low     → drive LOW
+//   GET /led?mode=high    → drive HIGH
+//   GET /led?mode=float   → release to INPUT (the as-shipped default)
+//
+// The mode persists in NVS and is re-applied at the very top of setup(), before
+// the standby fast path can return to sleep — the device deep-sleeps between
+// engine-off checks, so a RAM-only setting would revert on every wake and the
+// LED would blink back on once a minute for the life of the park.
+#ifndef PIN_LED
+#define PIN_LED 4
+#endif
+#define LED_MODE_FLOAT 0
+#define LED_MODE_LOW   1
+#define LED_MODE_HIGH  2
+
+static Preferences g_prefs;
+static uint8_t g_ledMode = LED_MODE_FLOAT;
+
+static const char* ledModeName(uint8_t m) {
+  return m == LED_MODE_LOW ? "low" : m == LED_MODE_HIGH ? "high" : "float";
+}
+
+static void ledApply() {
+  if (g_ledMode == LED_MODE_FLOAT) {
+    pinMode(PIN_LED, INPUT);            // release — back to the boot default
+    return;
+  }
+  pinMode(PIN_LED, OUTPUT);
+  digitalWrite(PIN_LED, g_ledMode == LED_MODE_HIGH ? HIGH : LOW);
+}
 
 // ---- state ----------------------------------------------------------------
 static WebSocketsClient webSocket;
@@ -266,6 +426,29 @@ static void relayLogf(const char* fmt, ...) {
 }
 
 static bool timeSynced = false;      // NTP succeeded this power session
+
+// Did the clock EVER get set? Lives in RTC slow memory, so unlike `timeSynced`
+// it survives deep sleep.
+//
+// This distinction is the whole reason drives used to upload without a clock.
+// The device deep-sleeps between engine-off checks and re-runs setup() on every
+// wake, so `timeSynced` is false again the moment you start the car — while the
+// ESP32's RTC has been running the whole time and still holds a good epoch from
+// the last NTP sync. tripOpen() therefore stamped started_epoch_ms = 0 on every
+// drive that began from a parked car, and since driving away from home means
+// NTP never runs, the trip stayed clockless. The boot-relative rebase couldn't
+// save it either: once a buffered trip outlives its boot, millis() has reset
+// and there is nothing left to rebase against.
+//
+// Net effect before this: the only trips with real timestamps were the ones
+// that started while the car sat in the garage on WiFi.
+RTC_DATA_ATTR static bool rtcClockValid = false;
+
+// Sanity floor for a clock read out of RTC memory — comfortably after this
+// firmware was written, so an uninitialised or corrupted RTC reads as invalid
+// rather than as 1970. Belt-and-braces with rtcClockValid: the flag says the
+// clock was set, this says the value is still credible.
+#define CLOCK_PLAUSIBLE_EPOCH_S 1767225600ULL   // 2026-01-01T00:00:00Z
 static File tripFile;
 static String tripId;
 static uint32_t tripStartMs = 0;
@@ -280,8 +463,11 @@ static String uploadingPath;
 static String uploadingTripId;
 
 static uint64_t epochMs() {
-  if (!timeSynced) return 0;
   struct timeval tv; gettimeofday(&tv, nullptr);
+  const bool holdover = rtcClockValid && (uint64_t)tv.tv_sec > CLOCK_PLAUSIBLE_EPOCH_S;
+  // 0 still means "no idea what time it is" — the caller contract is unchanged.
+  // What changed is that a clock carried across deep sleep now counts as knowing.
+  if (!timeSynced && !holdover) return 0;
   return (uint64_t)tv.tv_sec * 1000ULL + tv.tv_usec / 1000ULL;
 }
 
@@ -317,6 +503,45 @@ static bool readSample(Sample& s) {
 // TODO(bring-up step 1): DTC read once per trip (USE_FREEMATICS):
 // obd.readDTC(...) → include in trip meta + next snapshot.
 
+// Refresh the cached distance counters. MUST run on obdLinkTask (core 0) — see
+// the note at g_distanceKm. A PID that does not answer leaves its cache at -1
+// rather than writing a zero, so "this car does not support 0xA6" and "this car
+// has travelled 0 km" stay distinguishable downstream.
+static void refreshDistanceCounters() {
+#ifdef USE_FREEMATICS
+  if (!g_obdReady) return;
+  uint32_t now = millis();
+  if (g_countersReadMs && (now - g_countersReadMs) < COUNTER_REFRESH_MS) return;
+  g_countersReadMs = now;
+
+  // Re-probe the WHOLE slow-moving set, not just the two distance counters.
+  // These were being read once per ECU link and then surfacing only on the HTTP
+  // pull plane (/pids, /diagnostics), which means they evaporated — nothing
+  // reached history. They cost 14 UART round trips once a minute, nowhere near
+  // the 1 Hz sampling path.
+  probePids(g_diagPids, DIAG_PID_COUNT);
+
+  g_distanceKm = (int32_t)pidValue(g_diagPids, DIAG_PID_COUNT, PID_DISTANCE, -1);
+  g_odometerKm = (int32_t)pidValue(g_diagPids, DIAG_PID_COUNT, PID_ODOMETER, -1);
+#endif
+}
+
+/**
+ * Add every diagnostic PID this car actually answered to a JSON object.
+ *
+ * Absent keys for PIDs that did not answer — never a zero. A car reporting 0 °C
+ * ambient and a car that cannot report ambient at all are different facts, and
+ * the whole persistence contract downstream depends on keeping them apart.
+ */
+static void addDiagReadings(JsonObject target) {
+#ifdef USE_FREEMATICS
+  for (size_t i = 0; i < DIAG_PID_COUNT; i++) {
+    if (!g_diagPids[i].ok) continue;
+    target[g_diagPids[i].name] = g_diagPids[i].value;
+  }
+#endif
+}
+
 // ---- trip buffer (LittleFS) ------------------------------------------------
 // File format: line 1 = header JSON; then one CSV line per sample;
 // footer "E,<ms>" on graceful close. Unfooted files are finalized on boot.
@@ -332,7 +557,11 @@ static void tripOpen() {
   h["trip_id"] = tripId;
   h["started_epoch_ms"] = epochMs();          // 0 = clock unknown at start
   h["started_boot_ms"] = tripStartMs;
-  h["schema"] = "t,lat,lon,speed_kph,rpm,coolant_c,fuel_pct,batt_v";
+  h["schema"] = "t,lat,lon,speed_kph,rpm,coolant_c,fuel_pct,batt_v,alt_m,heading,hdop,sat";
+  // Odometer anchors for this trip. Omitted entirely when unread — an absent
+  // key, never a sentinel, matching the rest of the persistence contract.
+  if (g_distanceKm >= 0) h["distance_start_km"] = (int32_t)g_distanceKm;
+  if (g_odometerKm >= 0) h["odometer_start_km"] = (int32_t)g_odometerKm;
   String line; serializeJson(h, line);
   tripFile.println(line);
   tripFile.flush();
@@ -346,7 +575,11 @@ static void tripOpen() {
 // is what makes "pull into the garage, kill the engine" actually work.
 static void tripClose() {
   if (!tripFile) return;
-  tripFile.printf("E,%lu\n", (unsigned long)millis());
+  // Footer carries the closing counters as extra CSV fields. Older files have
+  // the bare "E,<ms>" form and still parse — the upload reader defaults both to
+  // -1, so a pre-upgrade buffered trip uploads unchanged rather than being lost.
+  tripFile.printf("E,%lu,%ld,%ld\n", (unsigned long)millis(),
+                  (long)g_distanceKm, (long)g_odometerKm);
   tripFile.flush();
   tripFile.close();
   relayLogf("[trip] closed %s (%lu samples)", tripId.c_str(), (unsigned long)sampleCount);
@@ -354,8 +587,9 @@ static void tripClose() {
 
 static void tripAppend(const Sample& s) {
   if (!tripFile) return;
-  tripFile.printf("%lu,%.5f,%.5f,%d,%d,%d,%d,%.1f\n",
-    (unsigned long)s.t, s.lat, s.lon, s.speedKph, s.rpm, s.coolantC, s.fuelPct, s.battV);
+  tripFile.printf("%lu,%.5f,%.5f,%d,%d,%d,%d,%.1f,%.1f,%d,%d,%d\n",
+    (unsigned long)s.t, s.lat, s.lon, s.speedKph, s.rpm, s.coolantC, s.fuelPct, s.battV,
+    isnan(s.altM) ? -9999.0f : s.altM, s.heading, s.hdop, s.sat);
   sampleCount++;
   if (sampleCount % 30 == 0) tripFile.flush();  // survive power cuts within ~30s
 }
@@ -404,8 +638,69 @@ static void sendSnapshot() {
   doc["speed_kph"] = lastSample.speedKph;
   JsonObject gps = doc["gps"].to<JsonObject>();
   gps["lat"] = lastSample.lat; gps["lon"] = lastSample.lon;
+  // Live mileage counters, omitted when unread rather than sent as zero.
+  if (g_distanceKm >= 0) doc["distance_since_cleared_km"] = (int32_t)g_distanceKm;
+  if (g_odometerKm >= 0) doc["odometer_km"] = (int32_t)g_odometerKm;
+  // The slow-moving diagnostic set — ambient/oil temperature, engine load,
+  // distance and time driven with the check-engine light on, warm-ups and time
+  // since codes were cleared. Previously read and discarded.
+  //
+  // `time_since_cleared` is the quietly important one: a DROP in it means
+  // somebody cleared the codes, which is exactly the event that resets the 0x31
+  // distance counter. That turns the backend's rollover-vs-reset plausibility
+  // guess into a measurement.
+  {
+    JsonObject diag = doc["diag"].to<JsonObject>();
+    addDiagReadings(diag);
+    if (diag.size() == 0) doc.remove("diag");
+  }
+  if (g_vin[0]) doc["vin"] = g_vin;
   doc["ts"] = epochMs();
   sendJson(doc);
+}
+
+/**
+ * Emit a harsh-motion event.
+ *
+ * ## Why this does NOT say "hard braking"
+ *
+ * Classifying an event as braking, acceleration or cornering requires knowing
+ * which way the device is pointing, and that is unknown: the dongle's
+ * orientation in the OBD-II port varies by car and by how it was pushed in.
+ * Labelling an axis "longitudinal" would be a guess dressed as a measurement,
+ * and a driving-behaviour report built on a guessed axis is worse than none.
+ *
+ * So the raw axes go out with the magnitude and classification is left to
+ * whoever can calibrate orientation later — gravity gives "down" at rest, and
+ * "forward" could be derived by correlating an axis against OBD speed changes
+ * over a few drives. That calibration does not exist yet.
+ */
+static void sampleMotion() {
+  if (!g_memsReady || !g_mems) return;
+  uint32_t now = millis();
+  if (now - g_lastMemsEventMs < MEMS_EVENT_COOLDOWN_MS) return;
+
+  float acc[3] = {0, 0, 0};
+  if (!g_mems->read(acc)) return;
+  const float mag = sqrtf(acc[0] * acc[0] + acc[1] * acc[1] + acc[2] * acc[2]);
+  const float deviation = fabsf(mag - 1.0f);   // gravity removed
+  if (deviation < MEMS_EVENT_G) return;
+
+  g_lastMemsEventMs = now;
+  g_memsEventCount++;
+
+  JsonDocument doc;
+  doc["type"] = "event";
+  doc["event"] = "harsh-motion";
+  doc["g"] = roundf(deviation * 100) / 100.0f;
+  JsonArray axes = doc["acc"].to<JsonArray>();
+  axes.add(roundf(acc[0] * 100) / 100.0f);
+  axes.add(roundf(acc[1] * 100) / 100.0f);
+  axes.add(roundf(acc[2] * 100) / 100.0f);
+  doc["speed_kph"] = g_haveLiveSample ? g_liveSample.speedKph : -1;
+  doc["ts"] = epochMs();
+  sendJson(doc);
+  relayLogf("[mems] harsh motion %.2fg", deviation);
 }
 
 // ---- buffered-trip upload ---------------------------------------------------
@@ -436,6 +731,9 @@ static void uploadNextTrip() {
 
   int seq = 0;
   uint32_t total = 0, endedT = 0;
+  // Closing counters, from the footer. -1 = absent, which is also what a file
+  // written before the footer carried them yields.
+  long distEndKm = -1, odoEndKm = -1;
   JsonDocument doc;
   JsonArray samples;
   auto beginChunk = [&]() {
@@ -446,14 +744,25 @@ static void uploadNextTrip() {
   beginChunk();
   while (f.available()) {
     String line = f.readStringUntil('\n');
-    if (line.startsWith("E,")) break;
+    if (line.startsWith("E,")) {
+      unsigned long endMs = 0;
+      // Matches 1 field on an old footer, 3 on a new one; distEndKm/odoEndKm
+      // keep their -1 in the former case.
+      sscanf(line.c_str(), "E,%lu,%ld,%ld", &endMs, &distEndKm, &odoEndKm);
+      break;
+    }
     Sample s; // parse CSV line
-    if (sscanf(line.c_str(), "%lu,%f,%f,%hd,%hd,%hd,%hhd,%f",
+    float altRaw = -9999.0f; short heading = -1, hdop = -1, sat = -1;
+    // Older buffered files have 8 columns; the GNSS extras stay at their
+    // "unknown" sentinels in that case rather than the row being dropped.
+    int parsed = sscanf(line.c_str(), "%lu,%f,%f,%hd,%hd,%hd,%hhd,%f,%f,%hd,%hd,%hd",
                (unsigned long*)&s.t, &s.lat, &s.lon, &s.speedKph, &s.rpm,
-               &s.coolantC, &s.fuelPct, &s.battV) != 8) continue;
+               &s.coolantC, &s.fuelPct, &s.battV, &altRaw, &heading, &hdop, &sat);
+    if (parsed < 8) continue;
     JsonArray row = samples.add<JsonArray>();
     row.add(s.t); row.add(s.lat); row.add(s.lon); row.add(s.speedKph);
     row.add(s.rpm); row.add(s.coolantC); row.add(s.fuelPct); row.add(s.battV);
+    row.add(altRaw); row.add(heading); row.add(hdop); row.add(sat);
     total++; endedT = s.t;
     if ((int)samples.size() >= TRIP_CHUNK_SAMPLES) { sendJson(doc); seq++; beginChunk(); }
   }
@@ -468,6 +777,14 @@ static void uploadNextTrip() {
   meta["schema"] = header["schema"] | "";
   meta["upload_epoch_ms"] = epochMs();
   meta["upload_boot_ms"] = (uint32_t)millis();   // lets backend rebase boot-ms → wall time
+  // Odometer anchors. Emitted only when the ECU actually answered, so the
+  // backend can tell "no reading" from a real zero.
+  long distStartKm = header["distance_start_km"] | -1;
+  long odoStartKm  = header["odometer_start_km"] | -1;
+  if (distStartKm >= 0) meta["distance_start_km"] = distStartKm;
+  if (distEndKm   >= 0) meta["distance_end_km"]   = distEndKm;
+  if (odoStartKm  >= 0) meta["odometer_start_km"] = odoStartKm;
+  if (odoEndKm    >= 0) meta["odometer_end_km"]   = odoEndKm;
   sendJson(doc);
   uploadingPath = path; uploadingTripId = tid;   // await trip-ack before delete
   g_tripsUploaded++;
@@ -562,6 +879,7 @@ static void sampleVehicle() {
   s.fuelPct  = (int8_t) pidValue(g_hotPids, HOT_PID_COUNT, PID_FUEL_LEVEL, -1);
   s.battV    = g_batteryV;
 
+  s.altM = NAN; s.heading = -1; s.hdop = -1; s.sat = -1;
   if (g_gpsReady && sys.gpsGetData(&gpsData) && gpsData) {
     s.lat = gpsData->lat;
     s.lon = gpsData->lng;                 // NOTE: the struct field is `lng`
@@ -569,6 +887,11 @@ static void sampleVehicle() {
     // GPS-derived speed by ~1.85x and silently corrupt trip distance.
     if (s.speedKph == 0 && gpsData->sat > 3)
       s.speedKph = (int16_t)(gpsData->speed * 1.852f);
+    // Same struct, same read — previously thrown away.
+    s.altM    = gpsData->alt;
+    s.heading = (int16_t)gpsData->heading;
+    s.hdop    = (int8_t)gpsData->hdop;
+    s.sat     = (int8_t)gpsData->sat;
   }
 
   portENTER_CRITICAL(&g_sampleMux);
@@ -673,7 +996,9 @@ static void obdLinkTask(void*) {
         int n = obd.readDTC(g_dtc, MAX_DTC);
         g_dtcCount = n < 0 ? 0 : n;
         relayLogf("[obd] linked — %d DTC(s), vin=%s", g_dtcCount, g_vin[0] ? g_vin : "n/a");
+        g_countersReadMs = 0;               // force a counter read on this link
       }
+      refreshDistanceCounters();
       sampleVehicle();
       vTaskDelay(pdMS_TO_TICKS(1000 / SAMPLE_HZ));
     } else {
@@ -1037,6 +1362,7 @@ static void handleStatus() {
   doc["time_synced"] = timeSynced;
   doc["ota"] = g_otaActive ? "in-progress" : "ready";   // POST firmware to /update
   doc["epoch_ms"] = epochMs();
+  doc["led_mode"] = ledModeName(g_ledMode);             // float | low | high — see /led
 
   JsonObject wifi = doc["wifi"].to<JsonObject>();
   wifi["connected"] = WiFi.status() == WL_CONNECTED;
@@ -1088,6 +1414,8 @@ static void handleStatus() {
   sb["inhibited"] = inh;
   if (inh) sb["inhibit_remaining_s"] = (uint32_t)((g_standbyInhibitUntilMs - millis()) / 1000);
   sb["gps_ready"] = g_gpsReady;
+  sb["mems_ready"] = g_memsReady;
+  sb["mems_events"] = g_memsEventCount;
 #else
   vehicle["build"] = "bench-sim";
 #endif
@@ -1138,6 +1466,13 @@ void setup() {
   relayLogf("[obd-relay] boot fw=%s vehicle=%s%s", FW_VERSION, VEHICLE_ID,
             g_wokeFromStandby ? " (standby wake)" : "");
 
+  // Before anything else, and specifically before the standby fast path below
+  // can return to deep sleep: a wake that goes straight back to sleep must not
+  // leave the LED lit for the second it is awake.
+  g_prefs.begin("obd-relay", false);
+  g_ledMode = g_prefs.getUChar("led_mode", LED_MODE_FLOAT);
+  ledApply();
+
   g_fsMounted = LittleFS.begin(true);          // true = format on first/corrupt mount
   if (!g_fsMounted) {
     // A virgin or corrupted partition fails the first mount; format explicitly
@@ -1163,6 +1498,7 @@ void setup() {
   if (g_sysReady) {
     g_devType = sys.devType;
     relayLogf("[sys] co-processor ready devType=%d", g_devType);
+    memsInit();          // motion sensor: standby wake check + harsh-motion events
     obd.begin(sys.link);
     // Fast path on a standby wake: if the engine is STILL off, go straight back
     // to sleep without ever powering the radio. This is what keeps the duty
@@ -1171,12 +1507,26 @@ void setup() {
     if (g_wokeFromStandby) {
       float v = obd.getVoltage();
       if (v > 0) { g_batteryV = v; g_batteryAgeMs = millis(); }
-      if (v > 0 && v < STANDBY_ENGINE_OFF_V) {
+      // The motion sensor gets a vote before we go back to sleep. Voltage alone
+      // says "not charging", which is true for the first seconds of a drive too
+      // — the alternator takes a moment. If the car is physically MOVING, that
+      // settles it regardless of what the rail reads, and the trip starts now
+      // rather than up to STANDBY_CHECK_S later.
+      //
+      // This NARROWS the drive-start gap; it does not close it. Closing it needs
+      // a wake-on-motion interrupt, which needs the sensor's INT line on an
+      // RTC-capable GPIO — not present in this board's pin map (see memsInit).
+      // If that pin is ever identified, arm esp_sleep_enable_ext0_wakeup here.
+      const bool moving = memsInMotion();
+      if (v > 0 && v < STANDBY_ENGINE_OFF_V && !moving) {
         Serial.printf("[standby] still off (%.2fV) — back to sleep\n", v);
         obd.enterLowPowerMode();
         delay(50);
         esp_sleep_enable_timer_wakeup((uint64_t)STANDBY_CHECK_S * 1000000ULL);
         esp_deep_sleep_start();       // does not return
+      }
+      if (moving && v > 0 && v < STANDBY_ENGINE_OFF_V) {
+        relayLogf("[standby] low volts (%.2fV) but MOVING — staying up", v);
       }
       relayLogf("[standby] woke — %.2fV, engine on", v);
     }
@@ -1228,6 +1578,34 @@ void setup() {
   http.on("/trips", handleTrips);      // manifest of buffered payloads
   http.on("/trip", handleTrip);        // one payload, push-identical shape
   http.on("/update", HTTP_POST, handleUpdateResult, handleUpdateUpload);  // OTA
+  // Settle whether the LED is software-controllable at all, and at which
+  // polarity, without spending an OTA per guess. Persisted — see the LED block.
+  http.on("/led", [](){
+    if (http.hasArg("mode")) {
+      String m = http.arg("mode");
+      uint8_t next = m == "low"  ? LED_MODE_LOW
+                   : m == "high" ? LED_MODE_HIGH
+                   : m == "float" ? LED_MODE_FLOAT
+                   : 0xFF;
+      if (next == 0xFF) {
+        http.send(400, "application/json", "{\"error\":\"mode must be low|high|float\"}");
+        return;
+      }
+      g_ledMode = next;
+      g_prefs.putUChar("led_mode", g_ledMode);
+      ledApply();
+      relayLogf("[led] mode=%s (persisted)", ledModeName(g_ledMode));
+    }
+    JsonDocument d;
+    d["mode"] = ledModeName(g_ledMode);
+    d["pin"] = PIN_LED;
+    d["persisted"] = true;
+    // Neither this firmware nor FreematicsPlus drives this pin otherwise, so if
+    // BOTH levels leave the LED lit it is hardwired and no firmware can help.
+    d["note"] = "try low and high; if neither changes it, the LED is hardwired";
+    String out; serializeJson(d, out);
+    http.send(200, "application/json", out);
+  });
 #ifdef USE_FREEMATICS
   http.on("/obd/probe", handleObdProbe);    // walk protocols, find what links
   http.on("/pids", handlePids);              // which PIDs this car answers
@@ -1312,8 +1690,16 @@ void loop() {
   if (WiFi.status() == WL_CONNECTED && !timeSynced) {
     configTime(0, 0, "pool.ntp.org");
     struct tm tinfo;
-    if (getLocalTime(&tinfo, 50)) { timeSynced = true; Serial.println("[time] NTP synced"); }
+    if (getLocalTime(&tinfo, 50)) {
+      timeSynced = true;
+      rtcClockValid = true;         // survives deep sleep; see epochMs()
+      Serial.println("[time] NTP synced");
+    }
   }
+
+  // Motion runs off the loop task, not obdLinkTask: it is an I2C read, not a
+  // UART round trip to the co-processor, so it does not contend with OBD.
+  sampleMotion();
 
   // sample at SAMPLE_HZ into the live trip
   if (millis() - lastSampleMs >= (uint32_t)(1000 / SAMPLE_HZ)) {

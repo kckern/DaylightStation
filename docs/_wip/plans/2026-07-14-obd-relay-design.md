@@ -4,6 +4,15 @@
 **Status:** validated design; scaffold committed, **hardware ordered, not arrived**
 (Freematics ONE+ Model B). Same pre-hardware posture as scantron-relay.
 
+> **Superseded in part (2026-08-12).** The persistence layout below is the
+> original design. After the first weeks of real trips it changed: day keys are
+> household-local rather than UTC, trip files are month-sharded and named by
+> local start time, and samples are keyed objects with sentinels omitted plus a
+> derived `meta` summary. **The current file format is documented in
+> [`_extensions/obd-relay/README.md`](../../../_extensions/obd-relay/README.md#history-file-format)**
+> — read that, not the "PERSIST" step here. Existing history is converted by
+> `node cli/automotive.cli.mjs migrate`.
+
 ## Goal
 
 Periodically phone home car stats and diagnostics to
