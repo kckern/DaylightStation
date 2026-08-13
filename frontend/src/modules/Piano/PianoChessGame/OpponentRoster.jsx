@@ -20,8 +20,19 @@ function Face({ opponent, size = 34 }) {
   if (opponent?.art) {
     return <img className="roster-face__art" src={opponent.art} alt="" loading="lazy" />;
   }
+  // Each character's identicon wears that character's own colour — the same one
+  // that tints the board when you face them. Twenty-one identical green stamps
+  // told you nothing apart; this makes the roster scannable and ties the face to
+  // the board you will be playing on.
   return (
-    <svg className="roster-face__identicon" viewBox={`0 0 ${GRID_SIZE} ${GRID_SIZE}`} width={size} height={size} aria-hidden="true">
+    <svg
+      className="roster-face__identicon"
+      style={opponent?.theme ? { fill: opponent.theme } : undefined}
+      viewBox={`0 0 ${GRID_SIZE} ${GRID_SIZE}`}
+      width={size}
+      height={size}
+      aria-hidden="true"
+    >
       {cardIdenticonCells(opponent?.name ?? '?').flatMap((row, r) => row.map((on, c) => (
         on ? <rect key={`${c}-${r}`} x={c + 0.08} y={r + 0.08} width="0.84" height="0.84" rx="0.16" /> : null
       )))}
@@ -45,6 +56,14 @@ export function OpponentRosterModal({ roster = [], unlockedThrough = 0, onClose 
         <h2 className="opponent-roster-modal__title">Opponents</h2>
         <button type="button" className="chess-settings__close" onClick={onClose}>Done</button>
       </header>
+      {/* A legend, because three states cannot be inferred from styling alone —
+          and one of them ("you may replay this one") is an invitation a child
+          would otherwise never discover. */}
+      <ul className="opponent-roster-modal__legend">
+        <li><span className="roster-key roster-key--beaten" /> Beaten — play again</li>
+        <li><span className="roster-key roster-key--current" /> Facing now</li>
+        <li><span className="roster-key roster-key--ahead" /> Not yet</li>
+      </ul>
       <ol className="opponent-roster-modal__list">
         {roster.map((opponent) => {
           const state = opponent.level < unlockedThrough ? 'beaten'
@@ -58,7 +77,7 @@ export function OpponentRosterModal({ roster = [], unlockedThrough = 0, onClose 
                 <span className="opponent-roster__blurb">{describeLevel(opponent.level)}</span>
               </span>
               <span className="opponent-roster-modal__state">
-                {state === 'beaten' ? 'Beaten' : state === 'current' ? 'Facing now' : ''}
+                {state === 'beaten' ? 'Play again' : state === 'current' ? 'Facing now' : 'Locked'}
               </span>
             </li>
           );

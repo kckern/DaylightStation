@@ -60,14 +60,18 @@
 
 .opponent-roster__name {
   font-size: var(--t-cap);
+  line-height: 1.15;
   color: var(--piano-fg);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+/* Smaller than the name and tucked under it — it is a footnote to the name,
+   not a second heading. */
 .opponent-roster__blurb {
-  font-size: var(--t-cap);
+  font-size: 0.72rem;
+  line-height: 1.15;
   color: var(--piano-muted);
   white-space: nowrap;
   overflow: hidden;
@@ -103,7 +107,10 @@
    something needed beside the board every turn. */
 .opponent-roster-modal {
   position: absolute;
-  inset-block: 10%;
+  /* Height FITS: it was pinned top and bottom, so a short roster left a slab of
+     empty surface under the last row. */
+  inset-block-start: 7%;
+  max-height: 86%;
   inset-inline: 0;
   z-index: 7;
   justify-self: center;
@@ -207,3 +214,67 @@
   border-color: var(--piano-border);
   background: color-mix(in srgb, var(--piano-fg) 5%, transparent);
 }
+
+
+/* ---- availability -------------------------------------------------------- */
+
+/* Three states, each stated in words as well as styling. The ones ahead are
+   marked as not-yet rather than greyed into the background: a locked character
+   you cannot see is not something to work towards. */
+.opponent-roster-modal__state {
+  grid-area: state;
+  justify-self: start;
+  font-size: 0.68rem;
+}
+
+.opponent-roster-modal__row {
+  grid-template-areas: 'face name' 'face blurb' 'face state';
+  row-gap: 0.05rem;
+}
+
+.opponent-roster-modal__row--beaten {
+  border-color: color-mix(in srgb, var(--piano-accent) 40%, transparent);
+  opacity: 1;
+}
+
+.opponent-roster-modal__row--beaten .opponent-roster-modal__state { color: var(--piano-accent-text); }
+
+.opponent-roster-modal__row--current {
+  border-color: var(--piano-accent);
+  background: color-mix(in srgb, var(--piano-accent) 16%, transparent);
+  box-shadow: 0 0 0 1px var(--piano-accent);
+}
+
+.opponent-roster-modal__row--current .opponent-roster-modal__state { color: var(--piano-accent-text); }
+
+/* Dashed, not dimmed. */
+.opponent-roster-modal__row--ahead {
+  border-style: dashed;
+  border-color: var(--piano-border);
+}
+
+.opponent-roster-modal__row--ahead .opponent-roster-modal__state { color: var(--piano-muted); }
+
+.opponent-roster-modal__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.9rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.72rem;
+  color: var(--piano-muted);
+
+  li { display: flex; align-items: center; gap: 0.3rem; }
+}
+
+.roster-key {
+  width: 0.85rem;
+  height: 0.85rem;
+  border: 1px solid var(--piano-border);
+  border-radius: 3px;
+}
+
+.roster-key--beaten { border-color: color-mix(in srgb, var(--piano-accent) 40%, transparent); }
+.roster-key--current { border-color: var(--piano-accent); background: color-mix(in srgb, var(--piano-accent) 16%, transparent); }
+.roster-key--ahead { border-style: dashed; }

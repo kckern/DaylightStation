@@ -107,12 +107,15 @@
    faintly and narrow; the resolved square is unmistakable. Each rule sets a
    --sq-* layer, not box-shadow itself, so this composes with the other channels
    instead of replacing them. */
-/* A candidate square is one the chord could still land on. The tint stays
-   modest — it is the MUTING of everything else that does the work, because a
-   wash light enough not to fight the pieces is also light enough to miss on a
-   board whose own squares are cream and rose. */
+/* OUTLINES, NOT WASHES. A coloured film over a square fights the board's own
+   colours, tints the pieces standing on it, and at any strength that reads
+   clearly it looks like a highlighter has been dragged across the game. An
+   inset ring says the same thing at the square's edge and leaves the square
+   itself — and the piece — alone.
+   The three ring weights are the three degrees of certainty: still possible,
+   resolved, and asked-for. */
 .chess-board__square--candidate {
-  --sq-light: inset 0 0 0 100vmax color-mix(in srgb, var(--cb-accent-glow) 22%, transparent);
+  --sq-light-ring: inset 0 0 0 2px color-mix(in srgb, var(--cb-accent-glow) 60%, transparent);
 }
 
 /* Out of play for what is currently being spelled. Pulled back with a dark
@@ -121,9 +124,14 @@
 .chess-board__square--muted {
   --sq-mute: inset 0 0 0 100vmax rgb(10 8 12 / 46%);
 }
+/* The one square the chord actually names: the same ring, drawn heavier and at
+   full strength, plus a whisper of fill so it still reads from across the room
+   without becoming a colour swatch. */
 .chess-board__square--cursor {
-  --sq-light: inset 0 0 0 100vmax color-mix(in srgb, var(--cb-accent-glow) 34%, transparent);
-  --sq-light-ring: inset 0 0 0 3px var(--cb-accent-glow);
+  --sq-light: inset 0 0 0 100vmax color-mix(in srgb, var(--cb-accent-glow) 10%, transparent);
+  --sq-light-ring:
+    inset 0 0 0 4px var(--cb-accent-glow),
+    inset 0 0 0 6px color-mix(in srgb, var(--cb-accent-glow) 30%, transparent);
 }
 
 /* Channel 2 — outline. Where you are in the move. */
@@ -210,12 +218,12 @@
    very likely to be among the destinations the player just asked to see. They
    live on different pseudo-elements (::after / ::before) so both can render on
    the same square at once. */
-/* HINT LEVEL 1 — "where can this go". A dot alone is easy to lose against a
-   busy board and disappears entirely under a piece, which is exactly the case a
-   child most needs it for (can I take that?). So the whole square is washed as
-   well, and the dot is only drawn where it can be seen. */
+/* HINT LEVEL 1 — "where can this go". Its own ring, in the help colour rather
+   than the hands colour, so asked-for help never reads as something the player
+   found themselves. A dot alone disappears under a piece — exactly the case a
+   child needs it for (can I take that?) — so the ring carries it there. */
 .chess-board__square--hint {
-  --sq-mark: inset 0 0 0 100vmax color-mix(in srgb, var(--cb-hint) 34%, transparent);
+  --sq-mark: inset 0 0 0 3px var(--cb-hint);
 }
 
 .chess-board__square--hint::after {
