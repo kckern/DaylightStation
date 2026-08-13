@@ -93,6 +93,14 @@ export const schoolApi = {
   quizRequestDismiss: (body) => req('/quiz-requests/dismiss', body),
   // Wave-3 planning domains.
   putAssignments: (learnerId, body) => req(`/lifecycle/assignments/${encodeURIComponent(learnerId)}`, body, 'PUT'),
+  syllabi: () => req('/lifecycle/syllabi'),
+  syllabus: (id) => req(`/lifecycle/syllabi/${encodeURIComponent(id)}`),
+  putSyllabus: (id, body) => req(`/lifecycle/syllabi/${encodeURIComponent(id)}`, body, 'PUT'),
+  archiveSyllabus: (id, body) => req(`/lifecycle/syllabi/${encodeURIComponent(id)}/archive`, body, 'POST'),
+  enroll: (learnerId, body) => req(`/lifecycle/enrollments/${encodeURIComponent(learnerId)}`, body, 'POST'),
+  unenroll: (learnerId, courseId, body) => req(
+    `/lifecycle/enrollments/${encodeURIComponent(learnerId)}/${encodeURIComponent(courseId)}`, body, 'DELETE',
+  ),
   putPeriods: (body) => req('/periods', body, 'PUT'),
   passOverrides: () => req('/pass-overrides'),
   putPassOverride: (unitId, body) => req(`/pass-overrides/${encodeURIComponent(unitId)}`, body, 'PUT'),
