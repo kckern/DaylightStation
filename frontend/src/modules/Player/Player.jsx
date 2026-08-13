@@ -248,6 +248,21 @@ const Player = forwardRef(function Player(props, ref) {
     remountInfoRef.current = remountState;
   }, [remountState]);
 
+  // Fire-time view of playbackMetrics, mirroring remountInfoRef above.
+  //
+  // The remount backoff runs up to REMOUNT_BACKOFF_MAX_MS (45s), and a setTimeout closes
+  // over whatever `forceSinglePlayerRemount` identity existed when it was SCHEDULED — so
+  // the pause state it carried into `wasPaused` was up to 45s stale. Both directions are
+  // live regressions on remote-only surfaces (living-room TV, karaoke): a stale `false`
+  // makes the rebuilt element autoplay over a pause the viewer deliberately made during
+  // the backoff, and a stale `true` rebuilds with autoplay off after the viewer pressed
+  // play, completing "recovery" into a frozen, silently-paused player. Reading through a
+  // ref makes the value current at FIRE time regardless of when the timer was armed.
+  const playbackMetricsRef = useRef(playbackMetrics);
+  useEffect(() => {
+    playbackMetricsRef.current = playbackMetrics;
+  }, [playbackMetrics]);
+
   const clearRemountTimer = useCallback(() => {
     if (remountTimerRef.current) {
       clearTimeout(remountTimerRef.current);
@@ -487,8 +502,10 @@ const Player = forwardRef(function Player(props, ref) {
       timestamp: Date.now(),
       scheduledDelayMs,
       attempt,
-      // Carried so the rebuilt element does not autoplay over a deliberate pause.
-      wasPaused: playbackMetrics?.isPaused === true
+      // Carried so the rebuilt element does not autoplay over a deliberate pause. Read
+      // through the ref, not the render closure: this callback is routinely invoked from
+      // a backoff timer armed up to 45s earlier (see playbackMetricsRef).
+      wasPaused: playbackMetricsRef.current?.isPaused === true
     };
 
     playbackLog('player-remount', {
@@ -503,9 +520,9 @@ const Player = forwardRef(function Player(props, ref) {
       playerType: playerType || null,
       isQueue,
       metaKey,
-      playbackSeconds: playbackMetrics?.seconds ?? null,
-      isPaused: playbackMetrics?.isPaused ?? null,
-      isSeeking: playbackMetrics?.isSeeking ?? null,
+      playbackSeconds: playbackMetricsRef.current?.seconds ?? null,
+      isPaused: playbackMetricsRef.current?.isPaused ?? null,
+      isSeeking: playbackMetricsRef.current?.isSeeking ?? null,
       trigger,
       conditions
     });
@@ -521,7 +538,10 @@ const Player = forwardRef(function Player(props, ref) {
       }
       return { guid: prev.guid, nonce: prev.nonce + 1, context: diagnostics };
     });
-  }, [currentMediaGuid, effectiveMeta, isQueue, playerType, playbackMetrics, resolvedWaitKey, setTargetTimeSeconds]);
+    // playbackMetrics is deliberately NOT a dependency: it is read through
+    // playbackMetricsRef so this callback stays stable and a timer-captured copy still
+    // observes the CURRENT pause state when it fires.
+  }, [currentMediaGuid, effectiveMeta, isQueue, playerType, resolvedWaitKey, setTargetTimeSeconds]);
 
   const scheduleSinglePlayerRemount = useCallback((input = null) => {
     const attempt = (remountInfoRef.current?.nonce ?? 0) + 1;
@@ -536,7 +556,7 @@ const Player = forwardRef(function Player(props, ref) {
       guid: currentMediaGuid,
       playerType: playerType || null,
       isQueue,
-      playbackSeconds: playbackMetrics?.seconds ?? null
+      playbackSeconds: playbackMetricsRef.current?.seconds ?? null
     }, { level: backoffMs > 0 ? 'info' : 'debug' });
 
     if (!Number.isFinite(backoffMs) || backoffMs <= 0) {
@@ -548,7 +568,8 @@ const Player = forwardRef(function Player(props, ref) {
       remountTimerRef.current = null;
       forceSinglePlayerRemount(input, { scheduledDelayMs: backoffMs, attempt });
     }, backoffMs);
-  }, [currentMediaGuid, clearRemountTimer, computeRemountDelayMs, forceSinglePlayerRemount, isQueue, playbackMetrics, playerType, resolvedWaitKey]);
+    // See forceSinglePlayerRemount: playbackMetrics is read via ref, not closed over.
+  }, [currentMediaGuid, clearRemountTimer, computeRemountDelayMs, forceSinglePlayerRemount, isQueue, playerType, resolvedWaitKey]);
 
   const singlePlayerKey = useMemo(() => {
     if (!singlePlayerProps) return 'player-idle';
