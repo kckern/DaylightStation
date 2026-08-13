@@ -188,6 +188,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     participantRoster: contextParticipantRoster,
     registerVideoPlayer,
     setCurrentMedia,
+    setCaptureDisabled,
     trackRecentlyPlayed,
     emitAppEvent,
     fitnessConfiguration
@@ -212,6 +213,14 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     intervalMs: Number.isFinite(timelapseCfg.capture_interval_ms) ? timelapseCfg.capture_interval_ms : 1000,
     enabled: captureAllowed
   });
+
+  // Publish capture suppression so consumers OUTSIDE the player (the module menu, the
+  // camera widget) can honour it. manifest.requires is decorative — it gates nothing —
+  // so this is the actual mechanism. Unresolved content mode publishes as disabled to
+  // preserve the fail-closed privacy invariant while labels are still loading.
+  useEffect(() => {
+    setCaptureDisabled?.(contentMode.resolved ? contentMode.captureDisabled : true);
+  }, [contentMode.resolved, contentMode.captureDisabled, setCaptureDisabled]);
 
   const [mediaElement, setMediaElement] = useState(null);
 
