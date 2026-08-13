@@ -42,7 +42,10 @@ const makeEl = (t = 0) => ({
   removeEventListener(ev) { delete this._handlers[ev]; },
   fire(ev) { this._handlers[ev]?.(); },
   fireTimeUpdate() { this.fire('timeupdate'); },
-  play() { this.playCalls += 1; },
+  // Real <video>/<audio> elements return a promise from play() that can reject
+  // (autoplay policy, interrupted-by-pause, element torn down mid-call). Reject here too
+  // so tests exercise the hook's rejection guard rather than masking it with `undefined`.
+  play() { this.playCalls += 1; return Promise.reject(new Error('play() interrupted')); },
 });
 
 describe('useLoopWindow', () => {
@@ -125,7 +128,7 @@ describe('useLoopWindow', () => {
     expect(onSeek).toHaveBeenCalledWith(242);
   });
 
-  it('seeks back to start and resumes playback when a forward loop hits "ended"', () => {
+  it('seeks back to start and resumes playback when a forward loop hits "ended", without an unhandled rejection', async () => {
     const el = makeEl(1100);
     const onSeek = vi.fn();
     const { result } = renderHook(() =>
@@ -138,6 +141,11 @@ describe('useLoopWindow', () => {
     expect(onSeek).toHaveBeenCalledWith(1100);
     expect(el.playCalls).toBe(1);
     expect(result.current.isBoundarySeek()).toBe(true);
+
+    // el.play() (see makeEl above) returns a REJECTED promise here. Let it settle: if the
+    // hook's play()?.catch?.(() => {}) guard were missing or dropped, this would surface
+    // as an unhandled promise rejection and fail the test run.
+    await new Promise((resolve) => setTimeout(resolve, 0));
   });
 
   it('re-binds the timeupdate listener when the media element is replaced', () => {

@@ -114,7 +114,11 @@ export default function useLoopWindow({ getMediaElement, onSeek }) {
       if (!win) return;
       boundarySeekRef.current = true;
       onSeek?.(win.start);
-      element.play?.();
+      // play() returns a promise that can reject (autoplay policy, interrupted-by-pause,
+      // element torn down mid-call). Swallow it - matches FitnessPlayer.jsx:616's
+      // mediaElement.play().catch(() => {}) convention - so it never surfaces as an
+      // unhandled rejection.
+      element.play?.()?.catch?.(() => {});
     };
 
     element.addEventListener('timeupdate', onTimeUpdate);
