@@ -224,8 +224,21 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   // camera widget) can honour it. manifest.requires is decorative — it gates nothing —
   // so this is the actual mechanism. Unresolved content mode publishes as disabled to
   // preserve the fail-closed privacy invariant while labels are still loading.
+  // The cleanup is load-bearing, not hygiene: this flag is app-wide context state, and
+  // nothing else ever clears it. Without the reset, closing the player after an
+  // Instructional item leaves `captureDisabled` true for the rest of the session — the
+  // camera_view widget stays withheld everywhere until some other player happens to mount
+  // and publish `false`. Suppression is scoped to a playing item, so it ends with the
+  // player.
+  //
+  // The cleanup also runs between dep changes (e.g. `resolved` flipping false -> true),
+  // which is harmless: React batches the cleanup's `false` and the re-run's `true` into a
+  // single commit, so no consumer ever observes a transient `false` and no capture window
+  // opens. In-player capture does not read this flag at all — `usePlayerFrameCapture`
+  // above is gated on `captureAllowed` directly.
   useEffect(() => {
     setCaptureDisabled?.(contentMode.resolved ? contentMode.captureDisabled : true);
+    return () => setCaptureDisabled?.(false);
   }, [contentMode.resolved, contentMode.captureDisabled, setCaptureDisabled]);
 
   const [mediaElement, setMediaElement] = useState(null);
@@ -842,7 +855,20 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   // empty dependency array is correct — its .current is read at call time, not closed
   // over. handleSeek is already its own useCallback, so it's passed straight through.
   const loopGetMediaElement = useCallback(() => playerRef.current?.getMediaElement?.() || null, []);
-  const loopApi = useLoopWindow({ getMediaElement: loopGetMediaElement, onSeek: handleSeek });
+  // A loop belongs to the item it was armed on. Advancing the queue keeps this hook
+  // instance alive, so without an item identity the armed window would follow the viewer
+  // into the next episode and drag it back — resume positions are routinely non-zero, so
+  // the stale window is usually reachable. Primitive on purpose: `currentItem` is a fresh
+  // object on many unrelated re-renders and keying on it would release live loops.
+  // `playPlayback` is usePlayerController's stable useCallback, so passing it straight
+  // through keeps `loopApi` identity stable (handleUserSeek depends on it).
+  const loopItemKey = currentItem?.contentId || currentItem?.id || null;
+  const loopApi = useLoopWindow({
+    getMediaElement: loopGetMediaElement,
+    onSeek: handleSeek,
+    itemKey: loopItemKey,
+    onPlay: playPlayback
+  });
 
   // Release the loop on USER seeks only — the loop's own boundary seek (jumping back to
   // win.start when playback reaches win.end) must not self-release. There is no flag to

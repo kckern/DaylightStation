@@ -6,9 +6,14 @@ import './StudyControls.scss';
  * Study-mode transport: paused jogging, anchored loop windows, and a visible mirror
  * toggle.
  *
- * Loop options appear only while paused, so the window is always anchored to a position
- * the viewer deliberately chose and can see on screen. Icons are inline SVG or plain
- * text — the kiosk WebView renders tofu for many unicode glyphs.
+ * NEW loop options appear only while paused, so a window is always anchored to a position
+ * the viewer deliberately chose and can see on screen. The ARMED chip is different: it
+ * stays rendered while the loop runs, because arming starts playback and a running loop
+ * that showed no control would be both invisible and impossible to get out of except by
+ * scrubbing. It is tappable to release at any time.
+ *
+ * Icons are inline SVG or plain text — the kiosk WebView renders tofu for many unicode
+ * glyphs.
  */
 export default function StudyControls({
   isPaused,
@@ -21,24 +26,31 @@ export default function StudyControls({
   videoMirrored,
   onToggleMirror,
 }) {
-  const loopRow = (direction, label) => (
+  const directionLabel = (direction) => (direction === 'back' ? 'Loop back' : 'Loop fwd');
+
+  // One chip renderer for both surfaces, so the armed chip a viewer taps while the loop
+  // runs is literally the same control (same aria-label, same release behaviour) as the
+  // one they armed while paused.
+  const loopChip = (direction, secs) => {
+    const armed = loop?.direction === direction && loop?.seconds === secs;
+    return (
+      <button
+        key={`${direction}-${secs}`}
+        type="button"
+        className={`study-controls__chip${armed ? ' is-active' : ''}`}
+        aria-label={`Loop ${direction} ${secs} seconds`}
+        aria-pressed={armed}
+        onClick={() => (armed ? onReleaseLoop() : onArmLoop(direction, secs))}
+      >
+        {secs}
+      </button>
+    );
+  };
+
+  const loopRow = (direction) => (
     <div className="study-controls__row" key={direction}>
-      <span className="study-controls__label">{label}</span>
-      {loopDurations.map((secs) => {
-        const armed = loop?.direction === direction && loop?.seconds === secs;
-        return (
-          <button
-            key={`${direction}-${secs}`}
-            type="button"
-            className={`study-controls__chip${armed ? ' is-active' : ''}`}
-            aria-label={`Loop ${direction} ${secs} seconds`}
-            aria-pressed={armed}
-            onClick={() => (armed ? onReleaseLoop() : onArmLoop(direction, secs))}
-          >
-            {secs}
-          </button>
-        );
-      })}
+      <span className="study-controls__label">{directionLabel(direction)}</span>
+      {loopDurations.map((secs) => loopChip(direction, secs))}
     </div>
   );
 
@@ -83,12 +95,20 @@ export default function StudyControls({
         </button>
       </div>
 
-      {isPaused && (
+      {isPaused ? (
         <>
-          {loopRow('back', 'Loop back')}
-          {loopRow('forward', 'Loop fwd')}
+          {loopRow('back')}
+          {loopRow('forward')}
         </>
-      )}
+      ) : loop ? (
+        // Playing with a loop armed: no NEW options (the anchor position is moving), but
+        // the armed duration stays visible and tappable so the viewer can see the loop is
+        // running and release it without scrubbing out of the window.
+        <div className="study-controls__row">
+          <span className="study-controls__label">{directionLabel(loop.direction)}</span>
+          {loopChip(loop.direction, loop.seconds)}
+        </div>
+      ) : null}
     </div>
   );
 }

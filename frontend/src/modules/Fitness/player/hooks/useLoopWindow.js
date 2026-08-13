@@ -64,8 +64,21 @@ export function computeLoopWindow(direction, seconds, position, duration) {
  *  - A resilience remount REPLACES the media element, so a once-bound `timeupdate`
  *    listener would die silently mid-loop. The element is re-resolved on an interval
  *    and the listener re-bound whenever identity changes.
+ *  - A loop belongs to ONE item. Advancing the queue swaps the played item but not this
+ *    hook instance or its `loopRef`, and the live `timeupdate` listener would then drag
+ *    the NEW item back into the OLD item's window — resume positions are routinely
+ *    non-zero, so the window is usually reachable, and the next item may be an ordinary
+ *    workout with no visible loop control to release it with. `itemKey` releases the loop
+ *    when the played item changes.
+ *
+ * @param {string|number|null} [options.itemKey] stable identity of the played item
+ *   (contentId/id). MUST be a primitive: object identity changes on unrelated re-renders
+ *   and would release an armed loop mid-loop.
+ * @param {Function} [options.onPlay] starts playback. Arming a window is a "run this now"
+ *   gesture, so `armLoop` calls this — the loop is chosen while paused and must not sit
+ *   there waiting for a separate play tap.
  */
-export default function useLoopWindow({ getMediaElement, onSeek }) {
+export default function useLoopWindow({ getMediaElement, onSeek, itemKey = null, onPlay }) {
   const [loop, setLoop] = useState(null);
   const loopRef = useRef(null);
   const armPositionRef = useRef(null);
@@ -90,6 +103,18 @@ export default function useLoopWindow({ getMediaElement, onSeek }) {
     loopRef.current = null;
     setLoop(null);
   }, []);
+
+  // Release on item change. Keyed off the PRIMITIVE `itemKey`, and compared against the
+  // last key we acted on rather than relying on effect-run count, so an unrelated
+  // re-render (or a parent handing back an equal-but-new object) cannot mis-fire and
+  // release a loop the viewer is still using. Seeded with the initial key so the mount
+  // run is a no-op.
+  const lastItemKeyRef = useRef(itemKey);
+  useEffect(() => {
+    if (lastItemKeyRef.current === itemKey) return;
+    lastItemKeyRef.current = itemKey;
+    releaseLoop();
+  }, [itemKey, releaseLoop]);
 
   useEffect(() => {
     if (!element) return undefined;
@@ -145,7 +170,13 @@ export default function useLoopWindow({ getMediaElement, onSeek }) {
     hasEnteredRef.current = false;
     setLoop(next);
     logger().info('loop-armed', next);
-  }, []);
+    // Arming starts playback — the window was picked while paused and the design is that
+    // it then repeats hands-free. `onPlay` may return undefined (usePlayerController's
+    // `play` does) or a promise that rejects (autoplay policy, element torn down
+    // mid-call); the optional-chained catch covers both, matching the `onEnded` guard
+    // above.
+    onPlay?.()?.catch?.(() => {});
+  }, [onPlay]);
 
   // Stable identity across renders: callers (FitnessPlayer's handleUserSeek) depend on
   // this object's identity in their own useCallback deps, so a fresh literal here would
