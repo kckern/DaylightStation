@@ -51,22 +51,25 @@ export default function ChordReadout({
   return (
     <div className={`chess-readout chess-readout--${state}`} aria-live="polite">
       <span className="piano-chess__slot-label">Heard</span>
-      {/* The reading vocabulary has no letters to print — the notation is the
-          address. What is worth saying there is how much of it has landed. */}
-      {!isReading && (
-        <span className="chess-readout__chord">{symbol ?? (held > 0 ? `${held} note${held === 1 ? '' : 's'}` : '—')}</span>
-      )}
-      <span className="chess-readout__says">
-        {state === 'offline' && 'Piano not connected'}
-        {/* "Listening" described the machine. The label above now poses the
-            question, so this answers it. */}
-        {state === 'idle' && 'Nothing yet'}
-        {state === 'partial' && (isReading ? 'One more — a note on each staff' : 'Keep holding — a square is three notes')}
-        {state === 'settling' && 'Reading…'}
-        {state === 'unmapped' && (isReading ? 'Those two notes are not a square' : 'Not a square on this board')}
-        {state === 'square' && 'names'}
+      {/* ONE value line, always. These used to be siblings of the label, so the
+          "square" state added a fourth grid row and the whole read-out grew by
+          40px the moment a chord landed — shoving everything below it down at
+          exactly the moment the player was watching. Reading "Am names a4"
+          across one line is also how you would say it aloud. */}
+      <span className="chess-readout__line">
+        {!isReading && (
+          <span className="chess-readout__chord">{symbol ?? (held > 0 ? `${held} note${held === 1 ? '' : 's'}` : '—')}</span>
+        )}
+        <span className="chess-readout__says">
+          {state === 'offline' && 'Piano not connected'}
+          {state === 'idle' && 'Nothing yet'}
+          {state === 'partial' && (isReading ? 'One more — a note on each staff' : 'Keep holding — a square is three notes')}
+          {state === 'settling' && 'Reading…'}
+          {state === 'unmapped' && (isReading ? 'Those two notes are not a square' : 'Not a square on this board')}
+          {state === 'square' && 'names'}
+        </span>
+        {state === 'square' && <span className="chess-readout__square">{shown.square}</span>}
       </span>
-      {state === 'square' && <span className="chess-readout__square">{shown.square}</span>}
     </div>
   );
 }

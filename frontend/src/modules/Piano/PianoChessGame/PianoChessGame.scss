@@ -868,9 +868,7 @@
 .piano-chess__says .chess-readout {
   border-inline-start: 0;
   padding: 0;
-  /* Reserved, not zeroed: the "square" state adds a third line, and zeroing the
-     minimum here is what let the bubble breathe in and out. */
-  min-height: calc(3 * 1.3em);
+  min-height: 0;
   gap: 0.05rem;
 }
 
@@ -921,4 +919,18 @@
 .piano-chess__opponent-rung-name {
   font-size: var(--t-h);
   color: var(--piano-fg);
+}
+
+
+/* The read-out's value line: chord, verdict and square on one baseline, with
+   room for two lines held whatever it is saying. Structurally fixed — the
+   square no longer adds a row — and the reservation covers the longest verdict
+   ("Keep holding — a square is three notes") wrapping to two lines. */
+.chess-readout__line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 0.4rem;
+  line-height: 1.3;
+  min-height: calc(2 * 1.3em);
 }
