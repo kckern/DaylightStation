@@ -54,7 +54,9 @@ describe('deriveMatrix — enrollment cells', () => {
       }],
     });
     const cell = m.rows[0].cells['history-capitals'];
-    expect(cell).toMatchObject({ enrolled: true, syllabusId: 'atlas-upper', syllabusTitle: 'Atlas — upper', profile: 'upper', managed: true });
+    expect(cell).toMatchObject({
+      enrolled: true, syllabusId: 'atlas-upper', syllabusTitle: 'Atlas — upper', profile: 'upper', managed: true, hasEnrollment: true,
+    });
   });
 
   it('marks a hand-authored enrollment as unmanaged rather than broken', () => {
@@ -62,7 +64,36 @@ describe('deriveMatrix — enrollment cells', () => {
       kids: KIDS, units: UNITS, syllabi: SYLLABI,
       assignments: [{ learnerId: 'felix', courses: [{ courseId: 'history-capitals', profile: 'upper', enrollment: { schema: 'school.course-enrollment/v1' } }] }],
     });
-    expect(m.rows[0].cells['history-capitals']).toMatchObject({ enrolled: true, managed: false, profile: 'upper' });
+    expect(m.rows[0].cells['history-capitals']).toMatchObject({
+      enrolled: true, managed: false, profile: 'upper', hasEnrollment: true,
+    });
+  });
+
+  // The unmanaged (⚑) flag must fire ONLY for an entry that genuinely carries
+  // an `enrollment` block without a `syllabusId` — not for every plain
+  // bare-string course, which is most entries in real data. This pins the
+  // three-way distinction: no enrollment at all, an unmanaged enrollment, and
+  // a managed one.
+  it('distinguishes hasEnrollment from managed across the three cell shapes', () => {
+    const m = deriveMatrix({
+      kids: KIDS, units: UNITS, syllabi: SYLLABI,
+      assignments: [{
+        learnerId: 'felix',
+        courses: [
+          'math-fractions',
+          { courseId: 'history-capitals', profile: 'upper', enrollment: { schema: 'school.course-enrollment/v1' } },
+          { courseId: 'pokemon-basics', profile: 'lower', syllabusId: 'atlas-upper', enrollment: { schema: 'school.course-enrollment/v1' } },
+        ],
+      }],
+    });
+    // Bare string: enrolled (assigned), but no enrollment block at all — must
+    // NOT read as unmanaged since it was never materialized in the first place.
+    expect(m.rows[0].cells['math-fractions']).toMatchObject({ hasEnrollment: false, managed: false });
+    // Object with an enrollment block but no syllabusId — the genuine
+    // hand-authored case the ⚑ flag exists for.
+    expect(m.rows[0].cells['history-capitals']).toMatchObject({ hasEnrollment: true, managed: false });
+    // Object with both — fully managed, never flagged.
+    expect(m.rows[0].cells['pokemon-basics']).toMatchObject({ hasEnrollment: true, managed: true });
   });
 
   it('treats a bare-string course as enrolled with no enrollment record', () => {
@@ -70,7 +101,7 @@ describe('deriveMatrix — enrollment cells', () => {
       kids: KIDS, units: UNITS, syllabi: [],
       assignments: [{ learnerId: 'milo', courses: ['math-fractions'] }],
     });
-    expect(m.rows[1].cells['math-fractions']).toMatchObject({ enrolled: true, managed: false, syllabusId: null });
+    expect(m.rows[1].cells['math-fractions']).toMatchObject({ enrolled: true, managed: false, hasEnrollment: false, syllabusId: null });
   });
 
   it('leaves an unassigned intersection absent from cells', () => {
