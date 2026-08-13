@@ -64,6 +64,17 @@ export function describeInstance(instance) {
   return parts.join(' · ') || instance?.title || instance?.id || '';
 }
 
+/** Human-friendly local search across the authored seed card's visible meaning. */
+export function matchesExerciseSearch(seed, query) {
+  const terms = String(query ?? '').trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length) return true;
+  const haystack = [seed?.title, seed?.subtitle, seed?.focus, seed?.form, seed?.category, ...(seed?.tags ?? [])]
+    .filter(Boolean)
+    .join(' ')
+    .toLocaleLowerCase();
+  return terms.every((term) => haystack.includes(term));
+}
+
 const NAMES = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'];
 
 export function noteName(midi) {

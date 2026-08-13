@@ -6,7 +6,7 @@ import PianoEmpty from '../../PianoEmpty.jsx';
 import { SkeletonGrid, SkeletonStage } from '../../Skeleton.jsx';
 import ExerciseRun from './ExerciseRun.jsx';
 import ExerciseNotation from './ExerciseNotation.jsx';
-import { describeInstance } from './exerciseQuery.js';
+import { describeInstance, matchesExerciseSearch } from './exerciseQuery.js';
 import { FORM_OPTIONS, HAND_OPTIONS, LEVEL_BANDS, MODE_OPTIONS } from './filters.js';
 import { pianoLearningApi } from './pianoLearningApi.js';
 import { useExerciseWorkspace } from './useExerciseWorkspace.js';
@@ -186,6 +186,7 @@ function ExerciseCatalog() {
   const progress = learning?.catalog_progress ?? {};
   const programSteps = (learning?.programs ?? []).flatMap((program) => program.steps.map((step) => ({ program, step, seedId: step.seed_id ?? step.requirement.exercise_id.split('@')[0] })));
   const items = catalog.seeds.filter((seed) => {
+    if (!matchesExerciseSearch(seed, params.get('q'))) return false;
     const collection = params.get('collection');
     if (collection && seed.category !== collection && !seed.category.startsWith(`${collection}/`)) return false;
     if (params.get('form') && seed.form !== params.get('form')) return false;
@@ -207,6 +208,10 @@ function ExerciseCatalog() {
       <PageHeader eyebrow="Exercise library" title="Browse by musical idea" subtitle={`${catalog.totals.seeds} authored exercises · ${catalog.totals.variants} playable variants`} onBack={() => navigate(base)} />
       <div className="piano-exercises__catalog-layout">
         <aside className="piano-exercises__filter-panel">
+          <label className="piano-exercises__select piano-exercises__search">
+            <span>Find an exercise</span>
+            <input type="search" value={params.get('q') ?? ''} placeholder="Hanon, triads, blues…" onChange={(event) => set('q', event.target.value)} />
+          </label>
           <SelectFilter label="Collection" value={params.get('collection') ?? ''} onChange={(value) => set('collection', value)} options={[
             { id: '', label: 'All collections' }, ...catalog.categories.map((category) => ({ id: category.id, label: category.title })),
           ]} />
@@ -269,6 +274,11 @@ function ExerciseProgram() {
     setBusy(false);
     if (response.ok) refresh();
   };
+  const currentStep = program.steps.find((step) => step.state === 'current')
+    ?? program.steps.find((step) => step.unlocked && !step.passed)
+    ?? program.steps.at(-1);
+  const practiceStep = (step) => navigate(`${base}/run/${encodeURIComponent(step.requirement.exercise_id)}?intent=practice&program=${encodeURIComponent(program.id)}&step=${encodeURIComponent(step.id)}`);
+  const challengeStep = (step) => navigate(`${base}/run/${encodeURIComponent(step.requirement.exercise_id)}?intent=challenge&program=${encodeURIComponent(program.id)}&step=${encodeURIComponent(step.id)}`);
   return (
     <section className="piano-exercises piano-exercises--program">
       <PageHeader
@@ -284,31 +294,40 @@ function ExerciseProgram() {
       />
       <div className="piano-exercises__program-summary">
         <Progress value={program.percent} label={`${program.passed_steps} of ${program.total_steps} passed`} />
-        <p>A passing run unlocks the next number. Higher tempo milestones remain visible as mastery goals.</p>
+        <p>Pass each exercise to open the next. Return to any completed step whenever you want to sharpen it.</p>
       </div>
-      <ol className="piano-exercises__steps">
+      {currentStep && (
+        <section className="piano-exercises__current-step" aria-labelledby="current-exercise-title">
+          <span className="piano-exercises__current-number">{currentStep.order}</span>
+          <div>
+            <span className="piano-exercises__section-kicker">{currentStep.passed ? 'Program complete' : 'Up next'}</span>
+            <h2 id="current-exercise-title">{currentStep.title}</h2>
+            <p>{currentStep.subtitle}</p>
+          </div>
+          <div className="piano-exercises__current-actions">
+            <button type="button" className="piano-exercises__quiet-action" onClick={() => practiceStep(currentStep)}>Practice</button>
+            {currentStep.state === 'current' && active && isPersistentUser(currentUser) && (
+              <button type="button" onClick={() => challengeStep(currentStep)}>Pass at {currentStep.requirement.gates?.pace?.target_bpm ?? 'your pace'} BPM</button>
+            )}
+          </div>
+        </section>
+      )}
+      <div className="piano-exercises__roadmap-head">
+        <div><span className="piano-exercises__section-kicker">Program roadmap</span><h2>Thirty exercises, one clear path</h2></div>
+        <span>Tap any open step to practice</span>
+      </div>
+      <ol className="piano-exercises__roadmap">
         {program.steps.map((step) => (
-          <li key={step.id} className={`piano-exercises__step is-${step.state}`}>
-            <span className="piano-exercises__step-number">{step.order}</span>
-            <div className="piano-exercises__step-copy">
-              <span>{step.state === 'current' ? 'Next exercise' : step.mastered ? 'Mastered' : step.passed ? 'Passed' : 'Upcoming'}</span>
-              <strong>{step.title}</strong>
-              <p>{step.subtitle}</p>
-              {step.passed && <small>{step.mastery_bpm ? `Best mastery milestone: ${step.mastery_bpm} BPM` : 'Ready for tempo mastery'}</small>}
-            </div>
-            <div className="piano-exercises__step-actions">
-              <button
-                type="button"
-                className="piano-exercises__quiet-action"
-                disabled={!step.unlocked}
-                onClick={() => navigate(`${base}/run/${encodeURIComponent(step.requirement.exercise_id)}?intent=practice&program=${encodeURIComponent(program.id)}&step=${encodeURIComponent(step.id)}`)}
-              >
-                {step.unlocked ? 'Practice' : 'Locked'}
+          <li key={step.id} className={`piano-exercises__roadmap-step is-${step.state}${step.mastered ? ' is-mastered' : ''}`}>
+            {step.unlocked ? (
+              <button type="button" onClick={() => practiceStep(step)} aria-label={`Step ${step.order}: ${step.title}`}>
+                <span>{step.passed ? '✓' : step.order}</span><strong>{step.title}</strong>
               </button>
-              {step.state === 'current' && active && isPersistentUser(currentUser) && (
-                <button type="button" onClick={() => navigate(`${base}/run/${encodeURIComponent(step.requirement.exercise_id)}?intent=challenge&program=${encodeURIComponent(program.id)}&step=${encodeURIComponent(step.id)}`)}>Pass at {step.requirement.gates?.pace?.target_bpm ?? 'your pace'} BPM</button>
-              )}
-            </div>
+            ) : (
+              <div aria-label={`Step ${step.order}: ${step.title}, locked`}>
+                <span>{step.order}</span><strong>{step.title}</strong>
+              </div>
+            )}
           </li>
         ))}
       </ol>

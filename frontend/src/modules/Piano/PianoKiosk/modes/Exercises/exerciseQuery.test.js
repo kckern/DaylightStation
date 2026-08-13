@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildSearchPath, describeInstance, groupByLevel, levelBandLabel, noteName } from './exerciseQuery.js';
+import { buildSearchPath, describeInstance, groupByLevel, levelBandLabel, matchesExerciseSearch, noteName } from './exerciseQuery.js';
 import { DEFAULT_FILTERS, LEVEL_BANDS, bandFor } from './filters.js';
 
 describe('search query', () => {
@@ -29,6 +29,24 @@ describe('search query', () => {
     expect(buildSearchPath({}, { limit: 20, offset: 40 })).toContain('limit=20');
     expect(buildSearchPath({}, { limit: 20, offset: 40 })).toContain('offset=40');
     expect(buildSearchPath({}, { limit: 20 })).not.toContain('offset');
+  });
+});
+
+describe('exercise card search', () => {
+  const seed = { title: 'Hanon Exercise No. 1', subtitle: 'Five-finger position', focus: 'Finger independence', form: 'figure', category: 'drills/hanon', tags: ['technique'] };
+
+  it('matches multiple terms across visible exercise fields', () => {
+    expect(matchesExerciseSearch(seed, 'hanon independence')).toBe(true);
+    expect(matchesExerciseSearch(seed, 'five finger')).toBe(true);
+  });
+
+  it('ignores case and treats a blank query as everything', () => {
+    expect(matchesExerciseSearch(seed, 'TECHNIQUE')).toBe(true);
+    expect(matchesExerciseSearch(seed, '  ')).toBe(true);
+  });
+
+  it('rejects a seed when any search term is absent', () => {
+    expect(matchesExerciseSearch(seed, 'hanon blues')).toBe(false);
   });
 });
 
