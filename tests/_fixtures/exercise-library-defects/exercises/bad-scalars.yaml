@@ -1,0 +1,8 @@
+id: e0000000-0000-0000-0000-000000000002
+name: Bad Scalars
+slug: bad-scalars
+image:
+  uuid: abc
+description: Has a mapping where a scalar image id belongs.
+instructions:
+  step: not-a-sequence

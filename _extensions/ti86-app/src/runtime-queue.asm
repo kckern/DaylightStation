@@ -410,6 +410,16 @@ queue_adaptive_code_loop:
         ld a,(queue_adaptive_card_count)
         ld (hl),a
         inc hl
+        ; AD_FACE low bit is the study-card face; its high seven bits are the
+        ; durable quiz-attempt count. Mode 4 carries the decoded count as one
+        ; byte so cable and QR imports audit abandoned attempts identically.
+        ld a,(runtime_state_record + RUNTIME_SCL_DRAFT_OFFSET + 8)
+        and 0xFE
+        rrca
+        or a
+        jp z,queue_fail
+        ld (hl),a
+        inc hl
         xor a
         ld (queue_adaptive_index),a
 queue_adaptive_card_loop:

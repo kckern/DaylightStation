@@ -30,17 +30,16 @@ function resolveMove(state, moveId, result, prefix = `${moveId}-${state.practice
 }
 
 describe('Pokémon piano practice journey', () => {
-  it('gives every partner the same four piano skill families and locks only the signature move', () => {
+  it('starts every partner with three skill families and unlocks rhythm after battle one', () => {
     for (const partner of definition.journey.partners) {
       const state = createInitialState(definition, {
         seed: 7, participants: [{ user_id: 'kid-1' }], setup: { partner_id: partner.id },
       });
       const kinds = state.zones.hand.map((instance) => definition.cards[instance.definition_id].challenge.kind);
-      expect(kinds).toEqual(['scale', 'chord', 'arpeggio', 'timed-pattern']);
+      expect(kinds).toEqual(['scale', 'chord', 'arpeggio']);
       expect(deriveInteraction(state, definition, 'kid-1').legal_commands).toHaveLength(3);
-      const signature = state.zones.hand.find((instance) => definition.cards[instance.definition_id].signature);
-      expect(transition(state, command('choose_action', { card_instance_id: signature.instance_id }), definition).error)
-        .toMatchObject({ code: 'move_locked' });
+      expect(state.route_plan).toHaveLength(5);
+      expect(new Set(state.route_plan.map((opponent) => opponent.id)).size).toBe(5);
     }
   });
 
@@ -106,6 +105,8 @@ describe('Pokémon piano practice journey', () => {
 
     outcome = transition(outcome.state, command('continue_encounter', {}, 'continue'), definition);
     expect(outcome.state).toMatchObject({ phase: 'battle', current_encounter: 1, player: { health: 100 } });
+    expect(outcome.state.zones.hand.map((move) => definition.cards[move.definition_id].challenge.kind))
+      .toEqual(['scale', 'chord', 'arpeggio', 'timed-pattern']);
     outcome.state.player.health = 1;
     outcome.state.enemy.intent = { id: 'fatal', title: 'Fatal Scratch', kind: 'attack', amount: 999 };
     outcome = resolveMove(outcome.state, 'water-gun', { score: 0.4 }, 'defeat');
@@ -114,6 +115,32 @@ describe('Pokémon piano practice journey', () => {
     outcome = transition(outcome.state, command('retry_encounter', {}, 'retry'), definition);
     expect(outcome.state).toMatchObject({ phase: 'battle', current_encounter: 1, player: { health: 100 } });
     expect(outcome.state.practice_attempts).toHaveLength(attempts);
+  });
+
+  it('offers only new recruitment candidates and skips the decision when both are owned', () => {
+    const atSecondBattle = (caughtIds) => {
+      const state = createInitialState(definition, {
+        seed: 7,
+        participants: [{ user_id: 'kid-1' }],
+        setup: { partner_id: 'bulbasaur', caught_ids: caughtIds },
+      });
+      state.completed_encounters = [state.route_plan[0].id];
+      state.current_encounter = 1;
+      state.enemy = { ...state.enemy, ...state.route_plan[1], health: 1, max_health: state.route_plan[1].health };
+      return state;
+    };
+    const firstId = createInitialState(definition, { seed: 7, setup: { partner_id: 'bulbasaur' } }).route_plan[0].id;
+    const secondId = createInitialState(definition, { seed: 7, setup: { partner_id: 'bulbasaur' } }).route_plan[1].id;
+
+    const single = resolveMove(atSecondBattle([firstId]), 'vine-whip', { score: 0.8 }, 'single-recruit');
+    expect(single.state).toMatchObject({ phase: 'recruitment', recruitment_candidates: [secondId] });
+    expect(deriveInteraction(single.state, definition).legal_commands).toEqual([
+      expect.objectContaining({ type: 'select_recruit', payload: { recruit_id: secondId } }),
+    ]);
+
+    const skipped = resolveMove(atSecondBattle([firstId, secondId]), 'vine-whip', { score: 0.8 }, 'skip-recruit');
+    expect(skipped.state).toMatchObject({ phase: 'checkpoint', recruitment_candidates: [] });
+    expect(skipped.events).toContainEqual({ type: 'recruitment_skipped', reason: 'candidates_already_owned' });
   });
 
   it('computes the ranked 10,000-point run score from piano evidence only', () => {

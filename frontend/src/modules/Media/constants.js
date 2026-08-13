@@ -8,6 +8,7 @@ export const TIMING = {
   ACK_TIMEOUT_MS: 5_000,                // §6.3 — device must ack a command within 5s
   DISPATCH_DEDUPE_WINDOW_MS: 5_000,     // C9.8 — identical dispatch within window is a no-op
   STALL_THRESHOLD_MS: 10_000,           // C9.3 — no progress while unpaused → stalled → advance
+  STARTUP_SLOW_MS: 15_000,              // a load stuck this long stops calling itself 'Starting…'
   TAKEOVER_DRIFT_CHECK_DELAY_MS: 1_500, // settle time before comparing positions post-claim
   TAKEOVER_DRIFT_TOLERANCE_S: 2,        // C7.3 — position tolerance across a transfer
   POSITION_PERSIST_INTERVAL_S: 5,       // §11.3 — durable position cadence while playing

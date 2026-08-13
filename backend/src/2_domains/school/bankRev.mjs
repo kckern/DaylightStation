@@ -28,12 +28,14 @@ function fnv1a64(text) {
 }
 export function bankContentRev(bank) {
   if (!bank || !Array.isArray(bank.items)) return null;
+  const isV2 = bank.schema === 'school.question-bank/v2';
   const substance = bank.items.map((item) => ({
     id: item.id ?? null,
     type: item.type ?? null,
     prompt: item.prompt ?? null,
     answer: item.answer ?? null,
     choices: item.choices ?? null,
+    ...(isV2 ? { answers: item.answers ?? null, decoys: item.decoys ?? null } : {}),
     pairs: item.pairs ?? null,
     accept: item.accept ?? null,
     regions: item.regions ?? null,

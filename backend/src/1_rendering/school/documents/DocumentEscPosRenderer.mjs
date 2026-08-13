@@ -30,7 +30,7 @@
  */
 
 /** Blocks that can go on tape. Anything else is refused BY NAME, never dropped. */
-const SUPPORTED = new Set(['rich_text', 'scan_action', 'media_action']);
+const SUPPORTED = new Set(['rich_text', 'scan_action', 'media_action', 'result_summary']);
 
 export class ReceiptBlockError extends Error {
   constructor(message, blockType) {
@@ -108,8 +108,52 @@ export function createDocumentEscPosRenderer({ width = 32, symbology = 'CODE128'
         continue;
       }
 
+      if (block.type === 'result_summary') {
+        if (block.learnerName || block.date || block.studentNo) {
+          items.push({
+            type: 'text', align: 'center',
+            content: [block.learnerName && `Name: ${block.learnerName}`, block.date && `Date: ${block.date}`, block.studentNo && `Student No. ${block.studentNo}`].filter(Boolean).join(' · '),
+          });
+        }
+        if (block.taxonomy) {
+          items.push({ type: 'text', content: `Subject · ${block.taxonomy.subject}`, align: 'center' });
+          items.push({ type: 'text', content: `Course · ${block.taxonomy.course}`, align: 'center' });
+          items.push({ type: 'text', content: `Unit · ${block.taxonomy.unit}`, align: 'center' });
+        }
+        items.push({ type: 'text', content: block.headline, align: 'center', style: { bold: true }, size: { width: 2, height: 2 } });
+        items.push({ type: 'text', content: block.taxonomy ? `Lesson · ${block.title}` : block.title, align: 'center' });
+        if (Number.isInteger(block.correctCount) && Number.isInteger(block.totalCount)) {
+          items.push({
+            type: 'text', align: 'center',
+            content: Array.from({ length: block.totalCount }, (_, index) => (index < block.correctCount ? '[✓]' : '[×]')).join(' '),
+          });
+          items.push({ type: 'text', content: `${block.correctCount} of ${block.totalCount} correct`, align: 'center', style: { bold: true } });
+        } else if (typeof block.percent === 'number') {
+          items.push({ type: 'text', content: `Score: ${Math.round(block.percent)}%`, align: 'center', style: { bold: true } });
+        }
+        if (typeof block.passingPercent === 'number') {
+          items.push({ type: 'text', content: `Passing is ${Math.round(block.passingPercent)}%`, align: 'center' });
+        }
+        if (block.progress) {
+          items.push({
+            type: 'text', align: 'center',
+            content: `${block.progress.label} · ${block.progress.completed} of ${block.progress.total}`,
+          });
+        }
+        continue;
+      }
+
       const code = tokens?.[block.action] ?? block.action;
-      items.push({ type: 'text', content: block.label, align: 'left' });
+      if (block.presentation === 'lesson') {
+        if (block.eyebrow) items.push({ type: 'text', content: block.eyebrow.toUpperCase(), align: 'left', style: { bold: true } });
+        if (block.taxonomy) {
+          items.push({ type: 'text', content: `Course · ${block.taxonomy.course}`, align: 'left' });
+          items.push({ type: 'text', content: `Unit · ${block.taxonomy.unit}`, align: 'left' });
+        }
+        items.push({ type: 'text', content: block.taxonomy ? `Lesson · ${block.label}` : block.label, align: 'left', style: { bold: true } });
+        if (block.description) items.push({ type: 'text', content: block.description, align: 'left' });
+        if (block.meta) items.push({ type: 'text', content: block.meta, align: 'left' });
+      } else items.push({ type: 'text', content: block.label, align: 'left' });
       // QR (symbology:'QR') is a distinct item type from a linear barcode: the
       // adapter needs a different ESC/POS command family (GS ( k model-2 QR)
       // to draw one, and printing no label of its own either — the text item

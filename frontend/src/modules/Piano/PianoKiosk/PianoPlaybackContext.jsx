@@ -1,8 +1,9 @@
-import { createContext, useContext, useState, useMemo, useCallback } from 'react';
+import { createContext, useContext, useState, useMemo, useCallback, useEffect } from 'react';
 
 const Ctx = createContext({
   playing: false, setPlaying: () => {},
   videoActive: false, setVideoActive: () => {},
+  playerLocks: [], claimPlayerLock: () => () => {},
 });
 
 export function PianoPlaybackProvider({ children }) {
@@ -12,15 +13,40 @@ export function PianoPlaybackProvider({ children }) {
   // Player switching + the "who's playing?" re-prompt gate on this so a user
   // can't be changed (and mis-credited) mid-lesson, even while the video is paused.
   const [videoActive, setVideoActiveState] = useState(false);
+  // Anything else that must not have the player changed underneath it holds a
+  // named lock. A lesson is not the only such thing — a game in progress credits
+  // its result to whoever started it, so switching players mid-game either
+  // mis-credits the record or silently plays on the wrong child's settings. A
+  // list rather than a flag so two claimants cannot release each other's lock.
+  const [playerLocks, setPlayerLocks] = useState([]);
+  const claimPlayerLock = useCallback((reason) => {
+    const token = { reason };
+    setPlayerLocks((locks) => [...locks, token]);
+    return () => setPlayerLocks((locks) => locks.filter((entry) => entry !== token));
+  }, []);
   const setPlaying = useCallback((v) => setPlayingState(!!v), []);
   const setVideoActive = useCallback((v) => setVideoActiveState(!!v), []);
   const value = useMemo(
-    () => ({ playing, setPlaying, videoActive, setVideoActive }),
-    [playing, setPlaying, videoActive, setVideoActive],
+    () => ({ playing, setPlaying, videoActive, setVideoActive, playerLocks, claimPlayerLock }),
+    [playing, setPlaying, videoActive, setVideoActive, playerLocks, claimPlayerLock],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
 export const usePianoPlayback = () => useContext(Ctx);
+
+/**
+ * Hold the player-switch lock for as long as this component is mounted.
+ *
+ * `reason` is what the chip tells the child when they tap it, so it must read
+ * as an instruction they can act on, not as a rule they have broken.
+ */
+export function usePlayerLock(active, reason) {
+  const { claimPlayerLock } = useContext(Ctx);
+  useEffect(() => {
+    if (!active) return undefined;
+    return claimPlayerLock(reason);
+  }, [active, reason, claimPlayerLock]);
+}
 
 export default Ctx;

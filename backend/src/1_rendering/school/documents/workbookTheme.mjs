@@ -186,6 +186,7 @@ export function createWorkbookTheme({ typeScale = 'standard', density = 'normal'
       titleLeadingPt: styles.heading1.leadingPt,
       metaSizePt: styles.label.sizePt,
       metaLeadingPt: styles.label.leadingPt,
+      metaTitleGapPt: density === 'compact' ? 6 : 9,
       ruleGapPt: density === 'compact' ? 5 : 7,
       ruleWidthPt: 0.8,
       gapBelowPt: density === 'compact' ? 7 : 10,
@@ -197,6 +198,7 @@ export function createWorkbookTheme({ typeScale = 'standard', density = 'normal'
     footer: {
       sizePt: styles.caption.sizePt,
       gapAbovePt: density === 'compact' ? 13 : 18,
+      bottomInsetPt: 14,
     },
 
     /**
@@ -277,6 +279,7 @@ export function createWorkbookTheme({ typeScale = 'standard', density = 'normal'
       bubbleStrokeWidthPt: 0.9,
       labelSizePt: styles.label.sizePt,
       labelGapPt: 4,
+      compactLabelWidthPt: 18,
       indentPt: 10,
       choiceSizePt: styles.body.sizePt,
       choiceLeadingPt: styles.body.leadingPt,
@@ -358,13 +361,20 @@ export function createWorkbookTheme({ typeScale = 'standard', density = 'normal'
      * group's "both densities/scales" band-height token.
      */
     card: {
-      digitSizePt: typeScale === 'young' ? 27 : 22,
-      trackingPt: typeScale === 'young' ? 9 : 7,
+      // A routing/reference number, never a second title. Keep it clearly
+      // readable for transcription without letting seven digits dominate
+      // the lesson heading above it.
+      digitSizePt: typeScale === 'young' ? 20 : 16,
+      trackingPt: typeScale === 'young' ? 6 : 4,
       labelSizePt: styles.label.sizePt,
       labelGapPt: density === 'compact' ? 8 : 10,
+      boxPaddingXPt: 9,
+      boxPaddingYPt: 4,
+      reuseLabelSizePt: styles.caption.sizePt,
+      reuseLabelLeadingPt: styles.caption.leadingPt,
       metaSizePt: styles.caption.sizePt,
       metaGapPt: density === 'compact' ? 8 : 10,
-      bandHeightPt: typeScale === 'young' ? 34 : 28,
+      bandHeightPt: Math.max(typeScale === 'young' ? 20 : 16, styles.label.sizePt) + 8,
       instructionGapPt: density === 'compact' ? 2 : 4,
       spacingClass: 'heading',
     },

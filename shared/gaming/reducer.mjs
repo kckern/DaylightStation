@@ -350,6 +350,19 @@ function abandonSession(state, command) {
   return success(next, events);
 }
 
+function suspendSession(state, command) {
+  if (state.status !== 'active') return failure(state, 'session_terminal', 'The game is already terminal');
+  const next = clone(state);
+  const pending = next.pending_action;
+  next.pending_action = null;
+  next.suspended_at = command.payload?.at || null;
+  const events = pending
+    ? [{ type: 'challenge_interrupted', challenge_id: pending.id, status: 'aborted', reason: 'session_suspended', refunded: true }]
+    : [];
+  events.push({ type: 'session_suspended', reason: command.payload?.reason || 'player_saved' });
+  return success(next, events);
+}
+
 export function transition(state, command, definition) {
   const def = assertDefinition(definition);
   if (!state || typeof state !== 'object') return failure(state, 'invalid_state', 'State is required');
@@ -362,6 +375,7 @@ export function transition(state, command, definition) {
     case COMMAND_TYPES.SUBMIT_CHALLENGE_RESULT: return applyTerminalResult(state, command, def);
     case COMMAND_TYPES.ABORT_PENDING_ACTION: return abortPendingAction(state, command);
     case COMMAND_TYPES.ABANDON_SESSION: return abandonSession(state, command);
+    case COMMAND_TYPES.SUSPEND_SESSION: return suspendSession(state, command);
     default: return failure(state, 'unsupported_command', `Unsupported command: ${command.type}`);
   }
 }

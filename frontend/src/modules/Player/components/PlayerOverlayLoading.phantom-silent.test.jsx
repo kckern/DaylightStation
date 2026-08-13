@@ -60,3 +60,64 @@ describe('PlayerOverlayLoading — phantom suppression', () => {
     expect(overlaySummaries.length).toBeGreaterThan(0);
   });
 });
+
+describe('PlayerOverlayLoading — paused suppression', () => {
+  beforeEach(() => {
+    loggerCalls.length = 0;
+    playbackLogCalls.length = 0;
+    vi.useFakeTimers();
+  });
+  afterEach(() => vi.useRealTimers());
+
+  const summaries = () =>
+    [...loggerCalls, ...playbackLogCalls].filter((c) => c.event === 'overlay-summary');
+
+  // 2026-08-12: one pause shipped 135 events to the production log at 1/sec,
+  // each reporting a spinner that the pause overlay was suppressing.
+  it('a paused video with the pause overlay up says nothing', () => {
+    render(
+      <PlayerOverlayLoading
+        shouldRender
+        isVisible
+        pauseOverlayActive
+        isPaused
+        showPauseOverlay
+        status="paused"
+        stalled={false}
+        effectiveMetaIsNull={false}
+      />
+    );
+    act(() => { vi.advanceTimersByTime(180_000); });
+    expect(summaries().length).toBe(0);
+  });
+
+  it('but a STALLED pause still reports — the spinner is really painted then', () => {
+    render(
+      <PlayerOverlayLoading
+        shouldRender
+        isVisible
+        pauseOverlayActive
+        isPaused
+        showPauseOverlay
+        status="stalled"
+        stalled
+        effectiveMetaIsNull={false}
+      />
+    );
+    act(() => { vi.advanceTimersByTime(3000); });
+    expect(summaries().length).toBeGreaterThan(0);
+  });
+
+  it('a recovering start still reports even before anything paints', () => {
+    render(
+      <PlayerOverlayLoading
+        shouldRender
+        isVisible
+        status="recovering"
+        effectiveMetaIsNull={false}
+      />
+    );
+    act(() => { vi.advanceTimersByTime(3000); });
+    expect(summaries().length).toBeGreaterThan(0);
+  });
+});

@@ -30,6 +30,9 @@ export class GamingController {
     this.disposed = false;
     this.closing = false;
     this.actionInFlight = false;
+    this.suspendRequested = false;
+    this.suspendPromise = null;
+    this.resolveSuspend = null;
     this.observedAt = this.clock();
     this.lastHandObservation = null;
     this.sessionCompleteLogged = false;
@@ -259,12 +262,51 @@ export class GamingController {
   }
 
   async continueEncounter() {
-    if (this.actionInFlight || this.snapshot.session?.state?.phase !== 'checkpoint') return;
+    if (this.actionInFlight || !['checkpoint', 'chapter-summary', 'ceremony', 'final-report'].includes(this.snapshot.session?.state?.phase)) return;
     this.actionInFlight = true;
     try {
       const session = await this.#dispatch(COMMAND_TYPES.CONTINUE_ENCOUNTER, {});
       this.#publish({ combatResult: null });
       this.logger.info('gaming.journey.encounter-continued', this.#sessionFields(session));
+    } catch (error) {
+      await this.#recover(error);
+    } finally {
+      this.actionInFlight = false;
+    }
+  }
+
+  async selectRecruit(recruitId) {
+    if (this.actionInFlight || this.snapshot.session?.state?.phase !== 'recruitment') return;
+    this.actionInFlight = true;
+    try {
+      await this.#dispatch(COMMAND_TYPES.SELECT_RECRUIT, { recruit_id: recruitId });
+      this.#publish({ combatResult: null });
+    } catch (error) {
+      await this.#recover(error);
+    } finally {
+      this.actionInFlight = false;
+    }
+  }
+
+  async selectPartner(partnerId) {
+    if (this.actionInFlight || !['partner-selection', 'defeated'].includes(this.snapshot.session?.state?.phase)) return;
+    this.actionInFlight = true;
+    try {
+      await this.#dispatch(COMMAND_TYPES.SELECT_PARTNER, { partner_id: partnerId });
+      this.#publish({ combatResult: null });
+    } catch (error) {
+      await this.#recover(error);
+    } finally {
+      this.actionInFlight = false;
+    }
+  }
+
+  async startGym() {
+    if (this.actionInFlight || this.snapshot.session?.state?.phase !== 'gym-entry') return;
+    this.actionInFlight = true;
+    try {
+      await this.#dispatch(COMMAND_TYPES.START_GYM, {});
+      this.#publish({ combatResult: null });
     } catch (error) {
       await this.#recover(error);
     } finally {
@@ -352,6 +394,26 @@ export class GamingController {
       this.logger.info('gaming.session.close-requested', {
         ...this.#sessionFields(), reason,
       });
+    }
+  }
+
+  async suspend(reason = 'player_saved') {
+    if (this.suspendPromise) return this.suspendPromise;
+    const session = this.snapshot.session;
+    if (!session || session.status !== 'active') return session;
+    if (this.snapshot.providerRuntime) {
+      this.suspendRequested = true;
+      this.suspendPromise = new Promise((resolve) => { this.resolveSuspend = resolve; });
+      this.snapshot.providerRuntime.cancel?.('session_suspended');
+      return this.suspendPromise;
+    }
+    try {
+      const suspended = await this.#dispatch(COMMAND_TYPES.SUSPEND_SESSION, { reason });
+      this.logger.info('gaming.session.suspended', this.#sessionFields(suspended));
+      return suspended;
+    } catch (error) {
+      await this.#recover(error);
+      throw error;
     }
   }
 
@@ -506,6 +568,16 @@ export class GamingController {
       pedagogyPolicyVersion: prepared?.pedagogy_policy_version || null,
     });
     const result = await runtime.start(prepared, {});
+    if (this.suspendRequested) {
+      const session = await this.#dispatch(COMMAND_TYPES.SUSPEND_SESSION, { reason: 'player_saved' });
+      runtime.dispose();
+      this.#publish({ providerRuntime: null, combatResult: null });
+      this.suspendRequested = false;
+      this.resolveSuspend?.(session);
+      this.resolveSuspend = null;
+      this.suspendPromise = null;
+      return;
+    }
     if (this.disposed || this.closing) {
       runtime.dispose();
       this.#publish({ providerRuntime: null });

@@ -21,11 +21,16 @@ export function ChordStaffRenderer({ columns, notes, keySignature = 'C', classNa
   const ref = useRef(null);
   const [aspect, setAspect] = useState(null);
   // Identity of what is drawn — columns are ordered, so this must not be sorted
-  // across them: [[60],[64]] and [[64],[60]] are different pictures.
+  // across them: [[60],[64]] and [[64],[60]] are different pictures. Duration is part
+  // of the identity too: the newest column promotes from a quarter to a half without
+  // any note changing, and that has to repaint.
   const notesKey = columns
     ? columns
-      .map((col) => (Array.isArray(col) ? col : col?.midis ?? []))
-      .map((midis) => [...midis].sort((a, b) => a - b).join('.'))
+      .map((col) => {
+        const midis = Array.isArray(col) ? col : col?.midis ?? [];
+        const duration = Array.isArray(col) ? '' : col?.duration ?? '';
+        return `${[...midis].sort((a, b) => a - b).join('.')}:${duration}`;
+      })
       .join('|')
     : notes ? [...notes.keys()].sort((a, b) => a - b).join(',') : '';
 

@@ -17,7 +17,7 @@ import { GRADES } from '../grades.mjs';
  * code and not config: a new shelf is a curriculum decision.
  */
 export const SUBJECT_IDS = Object.freeze([
-  'english', 'writing', 'math', 'history', 'scripture', 'science', 'language', 'skills', 'arts',
+  'english', 'writing', 'math', 'civilization', 'scripture', 'science', 'language', 'skills', 'arts',
 ]);
 
 // Dots separate a unit from its course chapter (math-3.4), so the unit id
@@ -110,6 +110,12 @@ export function validateUnit(raw, sets = {}) {
 
   if (!isNonEmptyString(raw.title)) errors.push('title is required');
 
+  let description;
+  if (isPresent(raw.description)) {
+    if (!isNonEmptyString(raw.description)) errors.push('description must be a non-empty string when present');
+    else description = raw.description;
+  }
+
   if (!SUBJECT_IDS.includes(raw.subject)) {
     errors.push(`subject must be one of ${SUBJECT_IDS.join('|')}, got: ${raw.subject}`);
   }
@@ -128,6 +134,8 @@ export function validateUnit(raw, sets = {}) {
   // a value to silently drop.
   let courseId;
   let sequence;
+  let module;
+  let moduleRole;
   if (isPresent(raw.courseId)) {
     if (!isNonEmptyString(raw.courseId)) errors.push('courseId must be a non-empty string');
     else courseId = raw.courseId;
@@ -136,6 +144,17 @@ export function validateUnit(raw, sets = {}) {
     else sequence = raw.sequence;
   } else if (isPresent(raw.sequence)) {
     errors.push('sequence is only meaningful inside a course (courseId is missing)');
+  }
+  if (isPresent(raw.module)) {
+    if (!courseId) errors.push('module is only meaningful inside a course');
+    else if (!isNonEmptyString(raw.module)) errors.push('module must be a non-empty string');
+    else module = raw.module;
+  }
+  if (isPresent(raw.moduleRole)) {
+    if (!module) errors.push('moduleRole requires module');
+    else if (!['overview', 'lesson', 'optional'].includes(raw.moduleRole)) {
+      errors.push('moduleRole must be overview|lesson|optional');
+    } else moduleRole = raw.moduleRole;
   }
 
   let grades = [];
@@ -276,10 +295,13 @@ export function validateUnit(raw, sets = {}) {
     unit: {
       unitId: raw.unitId,
       title: raw.title,
+      description,
       subject: raw.subject,
       objectives,
       courseId,
       sequence,
+      module,
+      moduleRole,
       grades,
       passing,
       reward,

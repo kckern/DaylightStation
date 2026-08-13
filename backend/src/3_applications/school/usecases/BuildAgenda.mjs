@@ -152,14 +152,16 @@ export class BuildAgenda {
 
     const now = this.#clock();
     const nowIso = now.toISOString();
-    const [assignment, units, rawHistory] = await Promise.all([
+    const [assignment, units, works, rawHistory] = await Promise.all([
       this.#assignments.get(learnerId),
       this.#curriculum.listUnits(),
+      this.#curriculum.listWorks?.() ?? [],
       this.#sessions.listForLearner(learnerId),
     ]);
     const history = withAttestedPasses(rawHistory, this.#attestations, learnerId);
 
-    const plan = planLearnerWork({ learnerId, assignment, units, sessions: history, now: nowIso });
+    const coursePolicies = Object.fromEntries((works ?? []).map((work) => [work.work, work.progression]).filter(([, p]) => p));
+    const plan = planLearnerWork({ learnerId, assignment, units, sessions: history, now: nowIso, coursePolicies });
     if (plan.errors.length) this.#logger.warn?.('school.agenda.plan-errors', { learnerId, errors: plan.errors });
 
     const programStatuses = await this.#collectProgramStatuses(plan, learnerId);
@@ -238,9 +240,21 @@ export class BuildAgenda {
     // `agendaDocument` composes its own "{title} — {actionLabel}" line, so the
     // document sees only the SUFFIX here — the offer above carries the full
     // label, which is a different consumer's concern (Task 11's resolver).
+    const worksById = new Map((works ?? []).map((work) => [work.work, work]));
     const sectionsForDocument = sections.map((section) => (actionLabelBySubject.has(section.subject)
       ? { ...section, next: {
         ...section.next,
+        taxonomy: (() => {
+          const entry = section.next;
+          const work = worksById.get(entry?.courseId);
+          const moduleTitle = work?.modules?.find((module) => module.module === entry?.module)?.title;
+          return {
+            subject: section.subject[0].toUpperCase() + section.subject.slice(1),
+            course: work?.title ?? entry?.courseId ?? 'Independent study',
+            unit: moduleTitle ?? entry?.module ?? entry?.title,
+            lesson: entry?.title,
+          };
+        })(),
         actionLabel: actionLabelBySubject.get(section.subject),
         ...(calculatorBySubject.has(section.subject)
           ? { schoolcalcHandoff: calculatorBySubject.get(section.subject) }

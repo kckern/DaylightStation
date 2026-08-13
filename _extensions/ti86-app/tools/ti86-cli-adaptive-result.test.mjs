@@ -24,6 +24,7 @@ describe('ti86.cli adaptive result inspection', () => {
         localScore: { correct: 1, total: 2, percent: 50, basis: 'embedded_answer_key' },
         adaptiveStudy: {
           sessionCode: '001234',
+          attemptCount: 2,
           cards: [
             { rating: 'again', exposureCount: 2 },
             { rating: 'hard', exposureCount: 4 },
@@ -39,6 +40,7 @@ describe('ti86.cli adaptive result inspection', () => {
         encoding: 'utf8',
       });
       expect(output).toContain('sessionCode=001234');
+      expect(output).toContain('attemptCount=2');
       expect(output).toContain('cards=0:AGAIN/2,1:HARD/4,2:KNOW/1');
       expect(output).toContain('quizChoices=A,C score=1/2 percent=50');
     } finally {

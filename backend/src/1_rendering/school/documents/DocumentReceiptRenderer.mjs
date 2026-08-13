@@ -45,7 +45,7 @@ const DEFAULT_ICON_DIR = fileURLToPath(
 );
 
 /** Blocks this target can print. Anything else is refused by name. */
-const SUPPORTED = new Set(['rich_text', 'math', 'question', 'media_action', 'scan_action']);
+const SUPPORTED = new Set(['rich_text', 'math', 'question', 'media_action', 'scan_action', 'result_summary']);
 
 export class ReceiptBlockError extends Error {
   constructor(message, blockType) {
@@ -150,19 +150,36 @@ export function createDocumentReceiptRenderer({
 
   function actionOp(ctx, block, tokens, { icon = null } = {}) {
     const code = tokens?.[block.action] ?? block.code ?? block.token ?? block.action;
+    const lesson = block.presentation === 'lesson';
     const iconSpan = icon ? theme.action.iconPx + theme.action.iconGap : 0;
     ctx.font = theme.fonts.label;
     const labelWidth = contentWidth - 2 * theme.action.padding - theme.action.codeAreaPx
-      - theme.action.labelGap - iconSpan;
-    const labelLines = wrapTight(ctx, block.label, labelWidth);
+      - (lesson ? theme.action.lessonTextGap : theme.action.labelGap) - iconSpan;
+    const labelLines = wrapTight(ctx, lesson && block.taxonomy ? `Lesson · ${block.label}` : block.label, labelWidth);
+    ctx.font = theme.fonts.eyebrow;
+    const eyebrowLines = lesson && block.eyebrow ? wrapTight(ctx, block.eyebrow.toUpperCase(), labelWidth) : [];
+    ctx.font = theme.fonts.description;
+    const descriptionLines = lesson && block.description ? wrapTight(ctx, block.description, labelWidth) : [];
+    ctx.font = theme.fonts.code;
+    const metaLines = lesson && block.meta ? wrapTight(ctx, block.meta, labelWidth) : [];
+    const taxonomyLines = lesson && block.taxonomy
+      ? [`Course · ${block.taxonomy.course}`, `Unit · ${block.taxonomy.unit}`]
+        .flatMap((line) => wrapTight(ctx, line, labelWidth))
+      : [];
     ctx.font = theme.fonts.code;
     // The human-readable fallback code CHUNKS in fours past the scheme prefix
     // (design audit: 'sch:8V2QWGT4A / FXHHD4U' wrapped mid-token). A code a
     // person may have to type by hand deserves phone-number ergonomics.
-    const codeLines = wrapTight(ctx, chunkCode(code), theme.action.codeAreaPx);
-    const textHeight = labelLines.length * theme.text.bodyLineHeight;
+    const codeLines = block.hideCode ? [] : wrapTight(ctx, chunkCode(code), theme.action.codeAreaPx);
+    const textHeight = lesson
+      ? eyebrowLines.length * theme.action.eyebrowLineHeight
+        + labelLines.length * theme.text.bodyLineHeight
+        + descriptionLines.length * theme.action.descriptionLineHeight
+        + taxonomyLines.length * theme.text.codeLineHeight
+        + metaLines.length * theme.text.codeLineHeight + 10
+      : labelLines.length * theme.text.bodyLineHeight;
     const iconHeight = icon ? theme.action.iconPx : 0;
-    const codeBlockHeight = theme.action.codeAreaPx + theme.action.codeGap
+    const codeBlockHeight = theme.action.codeAreaPx + (codeLines.length ? theme.action.codeGap : 0)
       + codeLines.length * theme.text.codeLineHeight;
     return {
       kind: 'action',
@@ -170,7 +187,12 @@ export function createDocumentReceiptRenderer({
       action: block.action,
       code,
       icon,
+      lesson,
+      eyebrowLines,
       labelLines,
+      descriptionLines,
+      metaLines,
+      taxonomyLines,
       codeLines,
       heightPx: Math.max(textHeight, iconHeight, codeBlockHeight) + 2 * theme.action.padding,
     };
@@ -209,6 +231,31 @@ export function createDocumentReceiptRenderer({
           await planBlock(ctx, child, { tokens, ops, codes });
         }
         break;
+
+      case 'result_summary': {
+        const hasCounts = Number.isInteger(block.correctCount) && Number.isInteger(block.totalCount);
+        const count = hasCounts ? block.totalCount : 0;
+        const boxesWidth = count * theme.result.boxSize + Math.max(0, count - 1) * theme.result.boxGap;
+        const summaryIcon = block.icon ? await iconPng(block.icon) : null;
+        ctx.font = theme.fonts.code;
+        const taxonomyLines = block.taxonomy
+          ? [
+            `Subject · ${block.taxonomy.subject}`,
+            `Course · ${block.taxonomy.course}`,
+            `Unit · ${block.taxonomy.unit}`,
+          ].flatMap((line) => wrapTight(ctx, line, contentWidth))
+          : [];
+        ops.push({
+          kind: 'result-summary', ...block, summaryIcon, taxonomyLines, boxesWidth,
+          heightPx: theme.result.padY * 2 + theme.result.headlineLineHeight
+            + theme.result.titleLineHeight + (hasCounts ? theme.result.boxSize + 42 : 38)
+            + (block.progress ? 62 : 0) + (summaryIcon ? theme.action.iconPx + 8 : 0)
+            + ((block.learnerName || block.date || block.studentNo) ? 36 : 0)
+            + (typeof block.passingPercent === 'number' ? 27 : 0)
+            + taxonomyLines.length * theme.text.codeLineHeight,
+        });
+        break;
+      }
 
       default: {
         // The icon is fetched FIRST because a file that turns out to be
@@ -314,13 +361,89 @@ export function createDocumentReceiptRenderer({
         drawnMath.push({ widthPx: op.widthPx, heightPx: op.heightPx });
         continue;
       }
+      if (op.kind === 'result-summary') {
+        let sy = op.yPx + theme.result.padY;
+        ctx.textAlign = 'center';
+        if (op.summaryIcon) {
+          // eslint-disable-next-line no-await-in-loop
+          const summaryIcon = await loadImage(op.summaryIcon);
+          ctx.drawImage(summaryIcon, (theme.canvas.width - theme.action.iconPx) / 2, sy, theme.action.iconPx, theme.action.iconPx);
+          sy += theme.action.iconPx + 8;
+        }
+        if (op.learnerName || op.date || op.studentNo) {
+          ctx.font = theme.fonts.code;
+          const identity = [op.learnerName && `Name: ${op.learnerName}`, op.date && `Date: ${op.date}`, op.studentNo && `Student No. ${op.studentNo}`]
+            .filter(Boolean).join('  ·  ');
+          ctx.fillText(identity, theme.canvas.width / 2, sy);
+          sy += 36;
+        }
+        if (op.taxonomyLines.length) {
+          ctx.font = theme.fonts.code;
+          op.taxonomyLines.forEach((line, index) => ctx.fillText(
+            line, theme.canvas.width / 2, sy + index * theme.text.codeLineHeight,
+          ));
+          sy += op.taxonomyLines.length * theme.text.codeLineHeight;
+        }
+        ctx.font = theme.fonts.heading;
+        ctx.fillText(op.headline, theme.canvas.width / 2, sy);
+        sy += theme.result.headlineLineHeight;
+        ctx.font = theme.fonts.body;
+        ctx.fillText(op.taxonomy ? `Lesson · ${op.title}` : op.title, theme.canvas.width / 2, sy);
+        sy += theme.result.titleLineHeight;
+        if (Number.isInteger(op.correctCount) && Number.isInteger(op.totalCount)) {
+          const startX = (theme.canvas.width - op.boxesWidth) / 2;
+          for (let index = 0; index < op.totalCount; index += 1) {
+            const bx = startX + index * (theme.result.boxSize + theme.result.boxGap);
+            ctx.lineWidth = theme.result.boxLineWidth;
+            ctx.strokeRect(bx, sy, theme.result.boxSize, theme.result.boxSize);
+            ctx.font = theme.fonts.eyebrow;
+            ctx.fillText(index < op.correctCount ? '✓' : '×', bx + theme.result.boxSize / 2, sy + 3);
+          }
+          sy += theme.result.boxSize + 8;
+          ctx.font = theme.fonts.label;
+          ctx.fillText(`${op.correctCount} of ${op.totalCount} correct`, theme.canvas.width / 2, sy);
+          sy += 34;
+        } else if (typeof op.percent === 'number') {
+          ctx.font = theme.fonts.label;
+          ctx.fillText(`Score: ${Math.round(op.percent)}%`, theme.canvas.width / 2, sy);
+          sy += 34;
+        }
+        if (typeof op.passingPercent === 'number') {
+          ctx.font = theme.fonts.code;
+          ctx.fillText(`Passing is ${Math.round(op.passingPercent)}%`, theme.canvas.width / 2, sy);
+          sy += 27;
+        }
+        if (op.progress) {
+          ctx.font = theme.fonts.body;
+          ctx.fillText(`${op.progress.label} · ${op.progress.completed} of ${op.progress.total}`, theme.canvas.width / 2, sy);
+          sy += 31;
+          const segments = Math.min(theme.result.progressSegments, op.progress.total);
+          const filled = Math.ceil((op.progress.completed / op.progress.total) * segments);
+          const segmentWidth = (contentWidth - (segments - 1) * theme.result.progressGap) / segments;
+          let px = x;
+          for (let index = 0; index < segments; index += 1) {
+            ctx.lineWidth = 2;
+            ctx.strokeRect(px, sy, segmentWidth, theme.result.progressHeight);
+            if (index < filled) ctx.fillRect(px + 3, sy + 3, segmentWidth - 6, theme.result.progressHeight - 6);
+            px += segmentWidth + theme.result.progressGap;
+          }
+        }
+        ctx.textAlign = 'left';
+        continue;
+      }
 
       const boxHeight = op.heightPx;
       ctx.lineWidth = theme.action.borderWidth;
       ctx.strokeStyle = theme.colors.border;
       ctx.strokeRect(x, op.yPx, contentWidth, boxHeight);
 
-      let labelX = x + theme.action.padding;
+      const codeX = op.lesson
+        ? x + theme.action.padding
+        : x + contentWidth - theme.action.padding - theme.action.codeAreaPx;
+      const codeY = op.yPx + theme.action.padding;
+      let labelX = op.lesson
+        ? codeX + theme.action.codeAreaPx + theme.action.lessonTextGap
+        : x + theme.action.padding;
       if (op.icon) {
         // eslint-disable-next-line no-await-in-loop
         const iconImage = await loadImage(op.icon);
@@ -334,13 +457,34 @@ export function createDocumentReceiptRenderer({
         labelX += theme.action.iconPx + theme.action.iconGap;
       }
 
+      let labelY = op.yPx + theme.action.padding;
+      if (op.lesson) {
+        ctx.font = theme.fonts.eyebrow;
+        op.eyebrowLines.forEach((line, index) => ctx.fillText(
+          line, labelX, labelY + index * theme.action.eyebrowLineHeight,
+        ));
+        labelY += op.eyebrowLines.length * theme.action.eyebrowLineHeight + 3;
+        ctx.font = theme.fonts.code;
+        op.taxonomyLines.forEach((line, index) => ctx.fillText(
+          line, labelX, labelY + index * theme.text.codeLineHeight,
+        ));
+        labelY += op.taxonomyLines.length * theme.text.codeLineHeight + (op.taxonomyLines.length ? 3 : 0);
+      }
       ctx.font = theme.fonts.label;
-      op.labelLines.forEach((line, index) => ctx.fillText(
-        line, labelX, op.yPx + theme.action.padding + index * theme.text.bodyLineHeight,
-      ));
+      op.labelLines.forEach((line, index) => ctx.fillText(line, labelX, labelY + index * theme.text.bodyLineHeight));
+      labelY += op.labelLines.length * theme.text.bodyLineHeight + (op.descriptionLines.length ? 5 : 0);
+      if (op.lesson) {
+        ctx.font = theme.fonts.description;
+        op.descriptionLines.forEach((line, index) => ctx.fillText(
+          line, labelX, labelY + index * theme.action.descriptionLineHeight,
+        ));
+        labelY += op.descriptionLines.length * theme.action.descriptionLineHeight + (op.metaLines.length ? 5 : 0);
+        ctx.font = theme.fonts.code;
+        op.metaLines.forEach((line, index) => ctx.fillText(
+          line, labelX, labelY + index * theme.text.codeLineHeight,
+        ));
+      }
 
-      const codeX = x + contentWidth - theme.action.padding - theme.action.codeAreaPx;
-      const codeY = op.yPx + theme.action.padding;
       ctx.strokeRect(codeX, codeY, theme.action.codeAreaPx, theme.action.codeAreaPx);
 
       if (scanCodes === 'qr') {

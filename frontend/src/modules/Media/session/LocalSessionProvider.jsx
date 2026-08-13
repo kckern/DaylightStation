@@ -7,7 +7,7 @@ import React, { useMemo, useEffect } from 'react';
 import { LocalSessionContext } from './LocalSessionContext.js';
 import { PlayerHostProvider } from './PlayerHostProvider.jsx';
 import { createLocalSessionController } from './LocalSessionController.js';
-import { attachPersistence, attachRecents, attachLogging } from './attachments.js';
+import { attachPersistence, attachRecents, attachLogging, attachSlowStartWatchdog } from './attachments.js';
 import {
   readPersistedSession,
   writePersistedSession,
@@ -59,6 +59,7 @@ export function LocalSessionProvider({ children }) {
       attachPersistence(ctl.store, { write: writePersistedSession }),
       attachRecents(ctl.store),
       attachLogging(ctl.store),
+      attachSlowStartWatchdog(ctl.store),
     ];
     if (persistedSnapshot) {
       mediaLog.sessionResumed({

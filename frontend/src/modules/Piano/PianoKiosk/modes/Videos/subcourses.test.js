@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   isSubcourseShow, floorOf, roomOf, keyOf, splitCoursePrefix,
-  deriveCourseLabel, partitionCourses, partitionSeasons, progressOf, courseGate,
+  deriveCourseLabel, partitionCourses, partitionSeasons, progressOf, courseGate, lessonComplete,
 } from './subcourses.js';
 
 const ep = (parentId, itemIndex, title, extra = {}) => ({
@@ -77,6 +77,12 @@ describe('progressOf', () => {
     const items = [ep(1, 101, 'A', { userWatched: true }), ep(1, 102, 'B', { userWatched: false })];
     expect(progressOf(items)).toEqual({ watched: 1, total: 2 });
   });
+  it('does not complete a watched lesson until its exercise checkpoint passes', () => {
+    const pending = ep(1, 101, 'A', { userWatched: true, piano: { checkpoint: { exercise_id: 'scale-c' } }, checkpointStatus: { passed: false } });
+    expect(lessonComplete(pending)).toBe(false);
+    expect(progressOf([pending])).toEqual({ watched: 0, total: 1 });
+    expect(lessonComplete({ ...pending, checkpointStatus: { passed: true } })).toBe(true);
+  });
 });
 
 describe('courseGate', () => {
@@ -91,6 +97,15 @@ describe('courseGate', () => {
     expect(lockedIds.has('103')).toBe(true);
     expect(lockedIds.has('102')).toBe(false);
     expect(lockedIds.has('101')).toBe(false);
+  });
+  it('holds the next lesson behind a watched but unfinished exercise checkpoint', () => {
+    const lessons = [
+      ep(1, 101, 'A', { userWatched: true, piano: { checkpoint: { exercise_id: 'scale-c' } }, checkpointStatus: { passed: false } }),
+      ep(1, 102, 'B', { userWatched: false }),
+    ];
+    const { lockedIds, currentId } = courseGate(lessons);
+    expect(currentId).toBe('101');
+    expect(lockedIds.has('102')).toBe(true);
   });
 });
 
@@ -384,4 +399,3 @@ describe('filterByFacets', () => {
     expect(result.map((x) => x.id)).toEqual(['1', '3']);
   });
 });
-

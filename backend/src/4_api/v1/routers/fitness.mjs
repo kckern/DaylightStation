@@ -13,6 +13,7 @@
  * - DELETE /api/fitness/session_lock - Release session lock
  * - GET  /api/fitness/session_lock/:sessionId - Check lock status
  * - POST /api/fitness/save_session - Save session data
+ * - POST /api/fitness/sessions/:sessionId/strength - Log a finished strength run onto a session
  * - POST /api/fitness/save_screenshot - Save session screenshot
  * - POST /api/fitness/voice_memo - Transcribe voice memo
  * - POST /api/fitness/debug/voice-memo - Debug: save raw audio to data/_debug/
@@ -34,6 +35,15 @@
  * - GET  /api/fitness/cycle-races - List cycle-game races (by date, course/win-condition, or dates)
  * - GET  /api/fitness/cycle-races/ladder - Get the current week's cycle-game ladder
  * - GET  /api/fitness/cycle-races/personal-bests - Get a user's personal best for a course
+ * - GET  /api/fitness/workouts - List household workout summaries
+ * - GET  /api/fitness/workouts/:id - Get one full workout
+ * - POST /api/fitness/workouts - Create or update a workout (400 names unknown slugs)
+ * - GET  /api/fitness/workouts/:id/run - Expanded steps + slug->display lookup for Run
+ * - POST /api/fitness/workouts/run - The same, for an unsaved draft in the body
+ * - DELETE /api/fitness/workouts/:id - Delete a workout
+ * - GET  /api/fitness/exercises - Browse the exercise corpus (facets: group, muscle, equipment, q)
+ * - GET  /api/fitness/exercises/taxonomy - Facet rails: groups, muscles, equipment
+ * - GET  /api/fitness/exercises/:slug - One full exercise, 404 if unknown
  */
 import express from 'express';
 import { writeBinary, deleteFile } from '#system/utils/FileIO.mjs';
@@ -73,6 +83,11 @@ const COMMIT_PENDING_MAX_AGE_MS = 120000; // 2 min
  * @param {Object} [config.sessionLockService] - SessionLockService (constructed at composition root)
  * @param {Object} [config.simulationService] - FitnessSimulationService (constructed at composition root)
  * @param {Object} [config.querySessions] - QuerySessions use case (defaults to one wired from sessionService)
+ * @param {Object} [config.workoutRepository] - YamlWorkoutRepository for the /workouts routes
+ * @param {Object} [config.saveWorkout] - SaveWorkout use case (validates slugs before persisting)
+ * @param {Object} [config.logStrengthRun] - LogStrengthRun use case (writes the session's strength block)
+ * @param {Object} [config.browseExerciseLibrary] - BrowseExerciseLibrary use case (the /exercises routes)
+ * @param {Object} [config.prepareWorkoutRun] - PrepareWorkoutRun use case (the run routes)
  * @param {Object} config.logger - Logger instance
  * @returns {express.Router}
  */
@@ -118,6 +133,21 @@ export function createFitnessRouter(config) {
     // composition root) so this router keeps no filesystem access of its own.
     menuMusicProvider = null,
     voiceMemoDebugStore = null,
+    // Workout persistence (Build/Run). Both are constructed at the composition root;
+    // absent, the /workouts routes report 503 rather than half-working.
+    workoutRepository = null,
+    saveWorkout = null,
+    // Logging a finished run into the session record. Constructed at the composition
+    // root (this layer may not reach into 3_applications to build one); absent, the
+    // strength route reports 503 rather than half-working.
+    logStrengthRun = null,
+    // Browse (read side of the exercise corpus). Wraps the ONE library instance the
+    // composition root loaded; absent, the /exercises routes report 503.
+    browseExerciseLibrary = null,
+    // Build -> Run: expands an authored workout into the runner's flat step list and
+    // joins it against the corpus. Needs BOTH the workout repository and the library, so
+    // it is constructed at the composition root; absent, the run routes report 503.
+    prepareWorkoutRun = null,
     logger = console
   } = config;
 
@@ -700,6 +730,58 @@ export function createFitnessRouter(config) {
       return res.status(400).json({ error: err.message || 'Failed to save session' });
     }
   });
+
+  /**
+   * POST /api/fitness/sessions/:sessionId/strength - Log a finished strength run.
+   *
+   * The run lands on the SAME session record a cycle ride does, so session detail,
+   * recaps and the longitudinal widget pick it up with no new plumbing.
+   *
+   * Body: { workoutId, completedSteps: [{groupIndex, slug}, ...], completedAt?, household?,
+   *         openSession?, startedAt? }
+   *
+   * `completedSteps` are the WORK steps the runner actually finished — a subset of what
+   * `expandWorkout` handed it. Planned counts come from the stored workout, never from
+   * the client, so a plan can never be filed as performance.
+   *
+   * `openSession: true` asks for `sessionId` to be OPENED if it does not exist — the case
+   * where a strength workout was done with no fitness session running at all. It is opt-in
+   * because posting an id the client believes already exists, and having it silently
+   * created, would hide a real bug. See the header of LogStrengthRun.
+   *
+   * 404s an unknown session or workout; 422s a run with nothing completed (a definite
+   * answer, so a client does not retry an empty run forever).
+   */
+  router.post('/sessions/:sessionId/strength', asyncHandler(async (req, res) => {
+    if (!logStrengthRun) return res.status(503).json({ ok: false, error: 'strength logging unavailable' });
+
+    const { sessionId } = req.params;
+    const { workoutId, completedSteps, completedAt, household, openSession, startedAt } = req.body || {};
+
+    const result = await logStrengthRun.execute({
+      sessionId,
+      workoutId,
+      completedSteps,
+      completedAt,
+      openSession: openSession === true,
+      startedAt,
+      householdId: household || defaultHouseholdId,
+    });
+
+    if (!result.ok) {
+      const status = result.reason === 'unknown_session' || result.reason === 'unknown_workout'
+        ? 404
+        : (result.reason === 'nothing_completed' ? 422 : 400);
+      return res.status(status).json({ ok: false, error: result.error, reason: result.reason });
+    }
+
+    return res.json({
+      ok: true,
+      sessionId: result.sessionId,
+      openedSession: result.openedSession === true,
+      strength: result.strength,
+    });
+  }));
 
   /**
    * POST /api/fitness/save_screenshot - Save session screenshot
@@ -1321,6 +1403,174 @@ export function createFitnessRouter(config) {
     const householdId = req.query.household || defaultHouseholdId;
     const { status, body } = await manageAccess.remove(householdId, req.body || {});
     return res.status(status).json(body);
+  }));
+
+  // -------------------- Workouts (Build authors, Run performs) --------------------
+  // Household-scoped, not per-user: the garage screen is shared equipment, so a workout
+  // one person builds must be runnable by whoever walks in next. The record's `author`
+  // field carries the credit instead of the file path.
+
+  /**
+   * GET /api/fitness/workouts - Summaries for the Build picker.
+   * Summaries, not bodies: a picker needs a title, an author and how much work it is,
+   * and shipping every set and rep of every workout to draw a list is the whole shelf
+   * on the wire for one screen.
+   */
+  router.get('/workouts', asyncHandler(async (req, res) => {
+    if (!workoutRepository) return res.status(503).json({ error: 'workouts unavailable' });
+    const householdId = req.query.household || defaultHouseholdId;
+    return res.json({ workouts: workoutRepository.list(householdId) });
+  }));
+
+  /**
+   * GET /api/fitness/workouts/:id - One full workout, for Build to edit and Run to walk.
+   */
+  router.get('/workouts/:id', asyncHandler(async (req, res) => {
+    if (!workoutRepository) return res.status(503).json({ error: 'workouts unavailable' });
+    const householdId = req.query.household || defaultHouseholdId;
+    const workout = workoutRepository.get(req.params.id, householdId);
+    if (!workout) return res.status(404).json({ error: 'not found' });
+    return res.json({ workout });
+  }));
+
+  /**
+   * POST /api/fitness/workouts - Create or update. Body is the workout, or { workout }.
+   *
+   * A payload carrying an id updates that workout; without one, an id is generated. The
+   * 400 path names EVERY unknown exercise slug: a workout pointing at an exercise that
+   * does not exist would fail at Run time, in front of someone mid-session, so it is
+   * refused here where the person who typed it can still fix it — all of them at once.
+   */
+  router.post('/workouts', asyncHandler(async (req, res) => {
+    if (!saveWorkout) return res.status(503).json({ error: 'workouts unavailable' });
+    const householdId = req.query.household || defaultHouseholdId;
+    const body = req.body || {};
+    const result = saveWorkout.execute({ workout: body.workout ?? body, householdId });
+    if (!result.ok) {
+      return res.status(400).json({ error: result.error, unknownSlugs: result.unknownSlugs });
+    }
+    return res.status(result.created ? 201 : 200).json({
+      id: result.id, created: result.created, createdAt: result.createdAt, updatedAt: result.updatedAt,
+    });
+  }));
+
+  /**
+   * GET /api/fitness/workouts/:id/run - Everything Run needs for a SAVED workout.
+   *
+   * `{ workout: {id, title}, steps, exercises, missingSlugs }` — the flat ordered step
+   * list `expandWorkout` produces, plus the slug -> { name, image } lookup joined against
+   * the corpus server-side. The client renders it; it never re-derives the ordering (see
+   * PrepareWorkoutRun, and the domain module's own docblock).
+   *
+   * A GET on the workout's own path because that is what it is: a derived READ of one
+   * stored workout, idempotent, deep-linkable, and reachable from the picker without
+   * passing through Build.
+   */
+  router.get('/workouts/:id/run', asyncHandler(async (req, res) => {
+    if (!prepareWorkoutRun) return res.status(503).json({ error: 'workouts unavailable' });
+    const householdId = req.query.household || defaultHouseholdId;
+    const result = prepareWorkoutRun.execute({ workoutId: req.params.id, householdId });
+    if (!result.ok) {
+      return res.status(result.reason === 'unknown_workout' ? 404 : 400)
+        .json({ error: result.error, reason: result.reason });
+    }
+    return res.json(result);
+  }));
+
+  /**
+   * POST /api/fitness/workouts/run - The same payload for an UNSAVED draft.
+   *
+   * Body is the authored workout, or `{ workout }`. Build's "Start workout" is its own
+   * target beside "Save", so a plan assembled at the rack normally has no id yet; making
+   * Run depend on a save would either break that gesture or force an implicit save that
+   * litters the shared shelf with plans nobody chose to keep. Nothing is persisted here.
+   *
+   * A POST rather than a GET because the workout travels in the body — and because this
+   * one is not addressable: there is no resource to name.
+   *
+   * Unknown slugs are NOT rejected here (that is `POST /workouts`'s job, at authoring
+   * time). A slug the corpus has since dropped degrades: the step still runs, the lookup
+   * carries no entry, and the slug is named in `missingSlugs`.
+   */
+  router.post('/workouts/run', asyncHandler(async (req, res) => {
+    if (!prepareWorkoutRun) return res.status(503).json({ error: 'workouts unavailable' });
+    const householdId = req.query.household || defaultHouseholdId;
+    const body = req.body || {};
+    const result = prepareWorkoutRun.execute({ workout: body.workout ?? body, householdId });
+    if (!result.ok) {
+      return res.status(400).json({ error: result.error, reason: result.reason });
+    }
+    return res.json(result);
+  }));
+
+  /**
+   * DELETE /api/fitness/workouts/:id - 404 on an unknown id rather than a silent 204:
+   * the caller's picker is then known to be stale, instead of reporting success for a
+   * workout that was never there.
+   */
+  router.delete('/workouts/:id', asyncHandler(async (req, res) => {
+    if (!workoutRepository) return res.status(503).json({ error: 'workouts unavailable' });
+    const householdId = req.query.household || defaultHouseholdId;
+    if (!workoutRepository.delete(req.params.id, householdId)) {
+      return res.status(404).json({ error: 'not found' });
+    }
+    return res.json({ ok: true, id: req.params.id });
+  }));
+
+  // -------------------- Exercises (the corpus Browse reads) --------------------
+  // Read-only and household-agnostic: the corpus is a reference work, identical for
+  // everyone, served from one in-memory copy loaded at boot.
+
+  /**
+   * GET /api/fitness/exercises - Browse.
+   *
+   * Facets: `group`, `muscle`, `equipment` (slugs) and `q` (free text over name and
+   * slug). OR within a facet, AND across facets — `?group=chest&group=back` is either
+   * group, `?group=chest&equipment=barbell` is both.
+   *
+   * The query VALUES are handed to the use case exactly as Express's `qs` parsed them.
+   * Coercing a repeated key to a string here (`String(req.query.group)` → 'chest,back')
+   * matches nothing, and dropping a non-scalar as "unfiltered" answers with the whole
+   * 1,296-record corpus. Both fail silently, which is why neither happens here.
+   *
+   * Returns summaries, not bodies — see PROJECTION in the use case.
+   */
+  router.get('/exercises', asyncHandler(async (req, res) => {
+    if (!browseExerciseLibrary) return res.status(503).json({ error: 'exercise library unavailable' });
+    return res.json(browseExerciseLibrary.listExercises(
+      browseExerciseLibrary.filterFromQuery(req.query),
+    ));
+  }));
+
+  /**
+   * GET /api/fitness/exercises/taxonomy - Every facet value the rails can offer.
+   *
+   * MUST stay above /exercises/:slug — Express matches in declaration order, and below
+   * it this path would be read as a request for an exercise slugged "taxonomy" and 404.
+   */
+  router.get('/exercises/taxonomy', asyncHandler(async (req, res) => {
+    if (!browseExerciseLibrary) return res.status(503).json({ error: 'exercise library unavailable' });
+    return res.json(browseExerciseLibrary.taxonomy());
+  }));
+
+  /**
+   * GET /api/fitness/exercises/:slug - One exercise, in full.
+   *
+   * The 404 carries the library status: a deep link into an unbuilt corpus is a 404 for
+   * every slug, and "not found" alone would send someone hunting for a missing exercise
+   * instead of running the indexer.
+   */
+  router.get('/exercises/:slug', asyncHandler(async (req, res) => {
+    if (!browseExerciseLibrary) return res.status(503).json({ error: 'exercise library unavailable' });
+    const exercise = browseExerciseLibrary.getExercise(req.params.slug);
+    if (!exercise) {
+      return res.status(404).json({
+        error: 'not found',
+        slug: req.params.slug,
+        library: browseExerciseLibrary.libraryStatus(),
+      });
+    }
+    return res.json({ exercise });
   }));
 
   // Shared error middleware: expected errors (mapped by err.name/err.status) →

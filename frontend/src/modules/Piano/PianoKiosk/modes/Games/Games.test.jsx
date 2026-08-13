@@ -48,10 +48,27 @@ describe('Games mode', () => {
   it('renders a picker tile per registered game with friendly labels (index route)', () => {
     renderGames();
     // 'card-game' is the registry id; every player-facing surface (tile,
-    // breadcrumb, battle header) calls it Scale Stadium.
-    for (const label of ['Scale Stadium', 'Space Invaders', 'Tetris', 'Flashcards', 'Piano Hero', 'Side Scroller']) {
+    // breadcrumb, battle header) calls it Battle Stadium.
+    for (const label of ['Battle Stadium', 'Space Invaders', 'Tetris', 'Flashcards', 'Piano Hero', 'Side Scroller']) {
       expect(screen.getByText(label)).toBeTruthy();
     }
+  });
+
+  it('greys out the unreleased Battle Stadium tile while leaving every other game live', () => {
+    renderGames();
+    const tile = screen.getByText('Battle Stadium').closest('button');
+    expect(tile.disabled).toBe(true);
+    expect(tile.className).toContain('is-disabled');
+    for (const label of ['Tetris', 'Piano Chess', 'Flashcards']) {
+      expect(screen.getByText(label).closest('button').disabled).toBe(false);
+    }
+  });
+
+  it('still reaches Battle Stadium by its direct route — the tile is the only thing closed', () => {
+    // /games/card-game mounts GameHost, which never consults the picker.
+    renderGames('/games/card-game');
+    expect(screen.queryByText('Battle Stadium')).toBeNull(); // not the picker
+    expect(document.querySelector('.piano-game-fullscreen')).not.toBeNull();
   });
 
   it('navigates to the game host on tile click (relative nav)', () => {

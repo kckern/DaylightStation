@@ -39,9 +39,13 @@ function readAssignmentList(raw, key) {
   if (!Array.isArray(raw)) return [];
   return raw
     .map((entry) => {
-      if (isNonEmptyString(entry)) return { id: entry.trim(), elective: false };
+      if (isNonEmptyString(entry)) return { id: entry.trim(), elective: false, profile: null, enrollment: null };
       if (isPlainObject(entry) && isNonEmptyString(entry[key])) {
-        return { id: entry[key].trim(), elective: entry.elective === true };
+        return {
+          id: entry[key].trim(), elective: entry.elective === true,
+          profile: isNonEmptyString(entry.profile) ? entry.profile : null,
+          enrollment: isPlainObject(entry.enrollment) ? entry.enrollment : null,
+        };
       }
       return null;
     })
@@ -69,7 +73,7 @@ function bySequence(a, b) {
  *   inProgress: object[], completed: object[], next: object|null, errors: string[],
  * }}
  */
-export function planLearnerWork({ learnerId = null, assignment = null, units = [], sessions = [], now = null } = {}) {
+export function planLearnerWork({ learnerId = null, assignment = null, units = [], sessions = [], now = null, coursePolicies = {} } = {}) {
   const errors = [];
   const catalog = (Array.isArray(units) ? units : []).filter((u) => isPlainObject(u) && isNonEmptyString(u.unitId));
   const byUnitId = new Map(catalog.map((u) => [u.unitId, u]));
@@ -80,7 +84,9 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
 
   /** unitId → elective flag, in the order the agenda should offer them. */
   const wanted = new Map();
-  assignedCourses.forEach(({ id, elective }) => {
+  const enrollmentByCourse = new Map();
+  assignedCourses.forEach(({ id, elective, profile, enrollment }) => {
+    enrollmentByCourse.set(id, { profile, enrollment });
     const members = catalog.filter((u) => u.courseId === id).sort(bySequence);
     if (!members.length) {
       errors.push(`${id}: assigned but no published units belong to it`);
@@ -124,6 +130,45 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
   /** The nearest earlier unit in this unit's course that has not been passed. */
   const blockerFor = (unit) => {
     const siblings = courseMembers.get(unit.courseId) || [];
+    const policy = coursePolicies?.[unit.courseId];
+    const enrollment = enrollmentByCourse.get(unit.courseId)?.enrollment;
+    if (policy?.mode === 'module_blocks' && unit.module) {
+      const opening = policy.required_opening_module;
+      const passedModule = (moduleId) => siblings.filter((u) => u.module === moduleId)
+        .every((u) => passedUnits.has(u.unitId));
+      const optionalModule = enrollment?.optionalModules?.includes(unit.module)
+        || siblings.some((u) => u.module === unit.module && u.moduleRole === 'optional');
+      if (opening && unit.module !== opening && !passedModule(opening)) {
+        return siblings.find((u) => u.module === opening && !passedUnits.has(u.unitId)) ?? null;
+      }
+      // Bonus material unlocks with the opening unit but never participates
+      // in the serial chain of required regional blocks.
+      if (optionalModule) return null;
+      // A shuffled enrollment is still an assigned COURSE order, not a menu
+      // of simultaneously available regions.  Every earlier module must be
+      // completed before the next one opens; an open session additionally
+      // protects the one-active-module rule during a worksheet attempt.
+      const moduleOrder = enrollment?.moduleOrder;
+      if (Array.isArray(moduleOrder)) {
+        const moduleIndex = moduleOrder.indexOf(unit.module);
+        for (let i = moduleIndex - 1; i >= 0; i -= 1) {
+          if (!passedModule(moduleOrder[i])) {
+            return siblings.find((u) => u.module === moduleOrder[i] && !passedUnits.has(u.unitId)) ?? null;
+          }
+        }
+      }
+      const activeModule = siblings.find((u) => u.module && !passedModule(u.module)
+        && siblings.some((x) => x.module === u.module && openByUnit.has(x.unitId)))?.module ?? null;
+      if (policy.one_active_module && activeModule && activeModule !== unit.module) {
+        return siblings.find((u) => u.module === activeModule && !passedUnits.has(u.unitId)) ?? null;
+      }
+      const ordered = enrollment?.lessonOrder?.[unit.module]
+        ? enrollment.lessonOrder[unit.module].map((id) => byUnitId.get(id)).filter(Boolean)
+        : siblings.filter((u) => u.module === unit.module).sort(bySequence);
+      const at = ordered.findIndex((u) => u.unitId === unit.unitId);
+      for (let i = at - 1; i >= 0; i -= 1) if (!passedUnits.has(ordered[i].unitId)) return ordered[i];
+      return null;
+    }
     const index = siblings.findIndex((u) => u.unitId === unit.unitId);
     if (index <= 0) return null;
     for (let i = index - 1; i >= 0; i -= 1) {
@@ -135,6 +180,24 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
   /** The unit a pass here would open up — what the result receipt promises. */
   const unlockedBy = (unit) => {
     const siblings = courseMembers.get(unit.courseId) || [];
+    const policy = coursePolicies?.[unit.courseId];
+    const enrollment = enrollmentByCourse.get(unit.courseId)?.enrollment;
+    if (policy?.mode === 'module_blocks' && unit.module && enrollment) {
+      const inModule = enrollment.lessonOrder?.[unit.module]
+        ?.map((id) => byUnitId.get(id)).filter(Boolean) ?? [];
+      const lessonIndex = inModule.findIndex((entry) => entry.unitId === unit.unitId);
+      if (lessonIndex >= 0 && lessonIndex + 1 < inModule.length) {
+        return inModule[lessonIndex + 1].unitId;
+      }
+      const moduleIndex = enrollment.moduleOrder?.indexOf(unit.module) ?? -1;
+      if (moduleIndex >= 0) {
+        for (let i = moduleIndex + 1; i < enrollment.moduleOrder.length; i += 1) {
+          const nextId = enrollment.lessonOrder?.[enrollment.moduleOrder[i]]?.[0];
+          if (nextId && byUnitId.has(nextId)) return nextId;
+        }
+      }
+      return null;
+    }
     const index = siblings.findIndex((u) => u.unitId === unit.unitId);
     if (index === -1 || index + 1 >= siblings.length) return null;
     return siblings[index + 1].unitId;
@@ -184,9 +247,12 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
     return {
       unitId,
       title: unit.title ?? unitId,
+      description: unit.description ?? null,
       subject: unit.subject ?? null,
       courseId: unit.courseId ?? null,
       sequence: Number.isInteger(unit.sequence) ? unit.sequence : null,
+      module: unit.module ?? null,
+      profile: enrollmentByCourse.get(unit.courseId)?.profile ?? null,
       elective,
       program: unit.program ?? null,
       cadence: unit.cadence ?? null,

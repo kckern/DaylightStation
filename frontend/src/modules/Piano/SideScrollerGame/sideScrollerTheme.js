@@ -9,11 +9,12 @@
  * no-op. See docs/plans/2026-06-24-side-scroller-theme-config-design.md.
  */
 
-// Original appearance, encoded as the fallback theme. Player sprite points at
-// the data-dir static asset (NOT a committed repo copy).
+// Original appearance, encoded as the fallback theme. The legacy source is
+// served through the approved gaming-asset catalog, not the generic static
+// image directory.
 export const DEFAULT_THEME = {
   player: {
-    src: '/api/v1/static/img/sprites/megaman-sprites.png',
+    src: '/api/v1/presentation/catalogs/side-scroller/assets/player.megaman/image',
     grid: { cols: 5, rows: 6 },
     displaySize: 144,
     // pose → [col, row] (0-indexed); nested array = animation cycle

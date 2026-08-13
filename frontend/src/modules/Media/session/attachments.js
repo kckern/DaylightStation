@@ -65,6 +65,53 @@ export function attachRecents(store, { record = recordRecent } = {}) {
   });
 }
 
+/**
+ * A load that never finishes must stop describing itself as a normal start.
+ * After STARTUP_SLOW_MS in 'loading' the session moves to 'stalled', which
+ * every surface already renders as "Having trouble streaming — hang on".
+ *
+ * Deliberately does NOT auto-advance: the mid-playback stall contract (C9.3,
+ * onPlayerStalled) skips to the next item because the current one is proven
+ * broken, but a slow START usually means a busy server. Skipping the episode
+ * the user just picked would be the wrong cure — on 2026-08-12 a Plex
+ * transcode decision blocked 54s and then played fine.
+ */
+export function attachSlowStartWatchdog(store, {
+  timing = TIMING,
+  setTimeoutFn = setTimeout,
+  clearTimeoutFn = clearTimeout,
+} = {}) {
+  let timer = null;
+  let startedAt = null;
+  const clear = () => {
+    if (timer) { clearTimeoutFn(timer); timer = null; }
+    startedAt = null;
+  };
+
+  const detach = store.onTransition((prev, next) => {
+    if (next.state === prev.state) return;
+    clear();
+    if (next.state !== 'loading') return;
+    startedAt = Date.now();
+    timer = setTimeoutFn(() => {
+      const waitedMs = startedAt ? Date.now() - startedAt : timing.STARTUP_SLOW_MS;
+      timer = null;
+      startedAt = null;
+      const snapshot = store.getSnapshot();
+      if (snapshot.state !== 'loading') return;
+      mediaLog.playbackStalled({
+        sessionId: snapshot.sessionId,
+        contentId: snapshot.currentItem?.contentId ?? null,
+        phase: 'startup',
+        waitedMs,
+      });
+      store.dispatch({ type: 'PLAYER_STATE', playerState: 'stalled' });
+    }, timing.STARTUP_SLOW_MS);
+  });
+
+  return () => { detach(); clear(); };
+}
+
 /** Structured log events derived from transitions (taxonomy §10.1). */
 export function attachLogging(store) {
   return store.onTransition((prev, next) => {

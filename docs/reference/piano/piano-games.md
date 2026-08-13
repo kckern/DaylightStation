@@ -1,37 +1,78 @@
 # Piano Games Architecture
 
-Reference for the DaylightStation piano game system — MIDI-driven games layered on the piano visualizer. The kiosk Games picker includes Piano Hero, Space Invaders, Tetris, Flashcards, Side Scroller, and the YAML-driven Card Game.
+Reference for the DaylightStation piano game system — MIDI-driven games layered on the piano visualizer. The kiosk Games picker includes Piano Hero, Space Invaders, Tetris, Flashcards, Side Scroller, Piano Chess, and the YAML-driven Card Game.
 
 ---
 
-## Card Game (Scale Stadium)
+## Card Game
 
-Scale Stadium is the YAML-defined, Pokémon-themed tactical card battle at
-`/piano/games/card-game`. The opening encounter uses Pikachu and Squirtle's real PokeAPI
-identity, types, base stats, legal move names, and media-library SVGs. The rules remain a
-small original piano game rather than an implementation of the full Pokémon TCG.
+Card Game is the YAML-defined, Pokémon-themed tactical card battle at
+`/piano/games/card-game`. It is a persistent one-screen campaign with separate Home,
+Pokédex, Trainer, campaign-decision, and focused battle surfaces. A seeded route draws one
+unique opponent from each of five authored difficulty tiers, preferring unseen Pokémon.
+The complete route and four-opponent themed gym are pinned in session state, so resume and
+retry never redraw them; replay starts a new seed.
 
-The player reads Squirtle's announced move, plays one or more move cards, performs a
-Piano-selected scale, sees the move's resulting power, and ends the turn when ready.
-Electric moves encode Squirtle's weakness, while performance quality applies the final
-multiplier: fluent play gets the full authored effect, a recovered scale gets a reduced
-effect, and three mistakes fizzle the move. Scale names are never card choices: cards use
-real move names, while the Piano backend selects the exercise after a card is played.
+The player chooses an owned partner, sees the opponent's intent, and commits one of three
+compact piano move cards. A fourth move unlocks after the first route battle and a charged,
+one-use fifth finisher appears in the gym. Performance quality determines a direct,
+partial, or missed effect. Recruitment follows route battles two and four, then a gym-entry
+decision heals the roster before the four-part gym challenge. Future route identities stay
+concealed until their encounters begin.
+
+The presentation is character-first rather than dashboard-first. Home is anchored by the
+current partner and next gym, with daily/weekly progress reduced to compact supporting
+cards. Partner selection uses large Pokémon art. Battle keeps both combatants and health
+visible, represents the route with icons, and limits each move card to its name, skill,
+keyboard shortcut, and numeric effects. Primary labels are sized for the kiosk viewport;
+secondary metadata never carries the action by itself. The battle surface owns move/skill
+context, while the piano provider owns the exercise name and tempo, so an active challenge
+has one two-line heading instead of stacked duplicate instructions.
+
+Minor post-battle rewards are consolidated into one research report. Catch, badge,
+evolution/mastery, and trainer-unlock ceremonies are persisted before presentation and
+queued one at a time. Save & Exit suspends the active session and refunds an in-progress
+piano challenge instead of abandoning campaign progress.
+
+Longitudinal progress is rebuilt from authoritative session history: Pokédex states,
+partner bonds, best scores in four skill families, trainer XP/level, badges, daily research,
+weekly stamps/tickets, streak/rest tokens, and applied milestones. Guest sessions can
+demonstrate the full battle flow but are excluded from durable campaign rewards.
 
 The ownership boundary is strict:
 
 - `shared/gaming/definitions/card-game.yml` contains combat content and a semantic
-  `foundation-major-scales` curriculum request. It also pins the curated combatants'
-  Pokédex metadata and media-relative SVG paths; it contains no MIDI numbers or ABC.
+  curriculum request. It pins tier pools, the gym roster, Pokédex metadata, and
+  media-relative SVG paths; it contains no MIDI numbers or ABC.
 - Pokémon SVGs are loaded through `/api/v1/proxy/media/stream/*`, rooted at the configured
   media directory, so the game does not copy the 1,025-entry corpus into the frontend.
-- `PianoScaleChallengePolicy` chooses C/G/F/D major practice from per-user attempt
-  evidence and materializes the musical prompt.
-- The provider renders the staff directly from `expected_midi` and grades the same array,
-  persists completed/interrupted attempts, and terminates on timeout or MIDI disconnect.
-- The Gaming authority persists every lifecycle boundary, battle outcome, explicit
-  abandonment, and stale-session recovery. Closing the screen does not leave an active
-  session behind.
+- `BankChallengePolicy` chooses the exercise from the
+  [exercise bank](./exercise-bank.md) and materializes the musical prompt. It
+  replaced `PianoScaleChallengePolicy`, whose whole curriculum was nineteen
+  hardcoded items — four major scales, six chords, three arpeggios, three
+  patterns — which was also the game's ceiling. Selection is now a query: the
+  challenge kind maps to bank forms (`chord` to chords, `timed-pattern` to
+  figures *and* runs), bounded by a level estimated from attempt history, so a
+  kind draws from hundreds of levelled instances rather than an array index. The
+  old policy remains as the fallback for a kiosk with no content mount.
+- The adaptive behaviour is unchanged and deliberate: fewest attempts first, then
+  weakest average, rotating through the equally-stale head so a session does not
+  serve the same exercise twice running. An empty level band widens rather than
+  fails — no material is a worse answer than slightly-easy material.
+- A chord prompt carries its pitch-class set and expected bass, not just an
+  ordered `expected_midi`: held-set material is judged on what is down at once,
+  and a sequence array cannot express that.
+- The provider renders the staff from the prepared prompt and sends held chords,
+  ordered sequences, timing observations, and the prepared requirement through
+  `performance/assessmentSession.js`. It persists completed/interrupted attempts
+  and terminates on timeout or MIDI disconnect.
+- The Gaming authority persists every lifecycle boundary, route/gym draw, health,
+  recruitment choice, finisher use, queued ceremony, suspension, explicit abandonment,
+  and stale-session recovery.
+- `shared/gaming/campaignProgress.mjs` folds completed, abandoned, and active sessions into
+  the public campaign projection without making presentation state authoritative.
+- `journeySfx.js` owns the semantic Web Audio cue catalog. Views emit stable event IDs;
+  sounds never participate in reducer decisions.
 
 ### Practice evidence
 
@@ -42,6 +83,13 @@ the grading rules move on. Records are write-once. An attempt that ends by teard
 than by playing (the player closes the kiosk mid-exercise) is recorded as `aborted` with
 `metrics.reason: disposed`; the adaptive policy scores only completed attempts, so abandoned
 evidence is diagnostic without skewing what gets served next.
+
+Completed bank-backed game attempts also carry the same assessment evidence as
+the Exercises runner: `purpose: challenge`, stable `prompt.exercise_id`,
+criterion vector, optional pace gate, diagnostics, rubric version, and verdict.
+That makes a game a presentation of an exercise, not a separate progress silo.
+A qualifying card-game or activity performance can therefore satisfy a Hanon
+step, a teacher-assigned track, or a video exit checkpoint; free practice cannot.
 
 Only input stamped after the attempt starts is graded. A key struck during the prepare→start
 gap is counted in `metrics.staleInputsIgnored` and logged as
@@ -56,11 +104,12 @@ Run the end-to-end verifier against the deployed PianoKiosk route:
 npm run piano:card-game:verify
 ```
 
-The verifier in `cli/piano-card-game.cli.mjs` rejects stale/non-Pokémon definitions, checks
-the mounted Pikachu and Squirtle YAML plus SVG assets, opens the route at 1280×800, completes
-the server-selected scales through the kiosk WebSocket MIDI contract, and plays until Pikachu
-wins. Use `--headed`, `--json`, or `--screenshot /tmp/scale-stadium.png` when diagnosing a
-deployment.
+The verifier in `cli/piano-card-game.cli.mjs` rejects stale definitions, validates all five
+tier pools and four gym assets, opens the route at 1280×800, completes server-selected
+Scale, Chord, Arpeggio, and Rhythm prompts through the kiosk MIDI bridge, and plays the
+campaign through its queued decisions and ceremonies. It also verifies the Home, partner,
+and battle surfaces do not scroll or place controls outside the viewport. Use `--headed`,
+`--json`, or `--screenshot /tmp/card-game.png` when diagnosing a deployment.
 
 The engineering pilot is test-ready, but the product decision remains field-gated. A
 supervised pilot must still determine whether players understand the loop, enjoy it, and
@@ -72,38 +121,48 @@ want to replay before this pattern is generalized to more games.
 
 The piano game system lets users play games using a MIDI keyboard. Players press specific notes (displayed as music notation on staves or as falling note bars) to trigger game actions. A shared activation layer detects combo keypresses to launch games, and a config-driven level system controls difficulty progression.
 
+### Shared judgement and grading
+
+Musical assessment is not a game-engine responsibility. Games call the same
+parameterized [performance assessment service](./performance-assessment.md) as
+Exercises and Sheet Music, then project its events and result into their own
+mechanics:
+
+| Game | Shared service use | Game-owned behavior | Advancement evidence |
+|---|---|---|---|
+| Piano Hero | timed target matching, misses, timing criteria, portable run result | points, combo, highway effects | in memory by default |
+| Space Invaders | timed target matching and common level criteria | lasers, health, points, combo | in memory by default |
+| Flashcards | exact-MIDI and pitch-class held matching; common session result | card score, level ladder, rolling accuracy | in memory by default |
+| Battle Stadium | held chords or ordered cursor, timing dimensions, rubric and pace gate | move strength, damage, campaign flow | bank-backed challenges persist to the piano ledger |
+| Tetris | exact-MIDI held command recognition | movement, rotations, line score, repeat timing | none |
+| Side Scroller | reuses Tetris's shared held-command hook | running/jumping and game score | none |
+| Piano Chess | none; chord addresses are controller input, not a performance expectation | square selection and chess state | none |
+
+Hero points, Space Invaders health, Flashcard points, card-game damage, and
+Tetris/Side Scroller scores remain deliberately local projections. Only the
+common musical criteria, gates, diagnostics, rubric identity, and verdict are
+portable. Ordinary game sessions never unlock a curriculum implicitly; a game
+must be launched with a persistent user and a stable bank requirement before
+its result is eligible evidence.
+
 ### High-Level Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     MIDI INPUT                              │
-│  ┌───────────┐                                              │
-│  │ USB MIDI   │──── useMidiSubscription() ──┐               │
-│  │ Keyboard   │     activeNotes: Map        │               │
-│  └───────────┘                              │               │
-└─────────────────────────────────────────────┼───────────────┘
-                                              │
-┌─────────────────────────────────────────────┼───────────────┐
-│                  PIANO VISUALIZER            │               │
-│  usePianoConfig() → gamesConfig             │               │
-│  useSessionTracking() → sessionDuration     │               │
-│  useInactivityTimer() → countdown/close     │               │
-│                                              ▼               │
-│  ┌──────────────────────────────────────────────┐           │
-│  │ useGameActivation(activeNotes, gamesConfig)  │           │
-│  │  - Combo detection (e.g. G1+G7)              │           │
-│  │  - URL auto-activate (/office/piano/:gameId) │           │
-│  │  - Dev shortcut (backtick key)               │           │
-│  └──────────────┬───────────────────────────────┘           │
-│                 │ activeGameId                               │
-│                 ▼                                            │
-│  ┌───────────────────────────────────┐                      │
-│  │ if rhythm     → RhythmOverlay     │  (waterfall layout)  │
-│  │ if tetris     → PianoTetris       │  (replace layout)    │
-│  │ if flashcards → PianoFlashcards   │  (replace layout)    │
-│  │ else          → NoteWaterfall     │                      │
-│  └───────────────────────────────────┘                      │
-└─────────────────────────────────────────────────────────────┘
+PianoMidiContext ── activeNotes + noteHistory ──▶ Games route
+                                                     │
+                                      /piano/games/:gameId
+                                                     │
+                                                     ▼
+                                                GameHost
+                                                     │
+                                      gameRegistry lazy entry
+                                                     │
+                                                     ▼
+       Battle Stadium | Space Invaders | Tetris | Flashcards
+       Piano Hero | Side Scroller | Piano Chess
+                                                     │
+                                                     ▼
+                                    assessmentSession as needed
 ```
 
 ---
@@ -112,20 +171,23 @@ The piano game system lets users play games using a MIDI keyboard. Players press
 
 **Hook:** `useGameActivation.js`
 
-All games (including rhythm) use `useGameActivation` for activation. Games are activated by holding a chord of MIDI notes simultaneously within a time window.
+The kiosk's primary `/piano/games` flow uses routed tiles and `GameHost`.
+`useGameActivation` remains for the standalone `PianoVisualizer` screen widget,
+where a configured held chord or `initialGame` can activate a registry entry.
+Activation chords are controller input and intentionally bypass assessment.
 
 | Mechanism | Details |
 |-----------|---------|
 | Combo detection | All notes in `activation.notes` held within `window_ms` |
 | Toggle | Same combo re-pressed while active → deactivate |
 | Cooldown | 2-second cooldown prevents rapid re-triggering |
-| URL activation | `/office/piano/:gameId` auto-activates on mount |
+| Initial activation | the embedding screen may pass an `initialGame` id |
 | Dev shortcut | Backtick key cycles through games (localhost only) |
 
 **Config (piano.yml):**
 ```yaml
 games:
-  rhythm:
+  space-invaders:
     activation:
       notes: [30, 102]    # F#1 + F#7
       window_ms: 300
@@ -137,12 +199,6 @@ games:
     activation:
       notes: [29, 101]    # F1 + F7
       window_ms: 300
-```
-
-**Route setup (main.jsx):**
-```
-/office/piano/:gameId  →  OfficeApp(initialGame) → PianoVisualizer → useGameActivation
-/office/piano          →  same, no auto-activate
 ```
 
 ---
@@ -157,14 +213,13 @@ PianoVisualizer is a pure layout composition component. It does not contain game
 - `usePianoConfig()` — loads device/app config, fires HA scripts on open/close
 - `useMidiSubscription()` — MIDI input (activeNotes, noteHistory, sustainPedal)
 - `useGameActivation()` — detects combo presses, returns `activeGameId`
-- `useRhythmGame()` — rhythm game state (only active when rhythm is selected)
 - `useInactivityTimer()` — grace period + countdown → auto-close
 - `useSessionTracking()` — session duration timer
 
 **Rendering modes:**
 - **No game active:** Waterfall visualization + chord staff + keyboard + session timer
-- **Rhythm game:** Waterfall + falling notes + health meter + RhythmOverlay + keyboard
-- **Fullscreen game (tetris/flashcards):** Lazy-loaded via `gameRegistry.js` LazyComponent, rendered in a fullscreen overlay. Receives `activeNotes`, `gameConfig`, and `onDeactivate` props.
+- **Registry game active:** Lazy-loaded `replace` component rendered fullscreen;
+  receives `activeNotes`, `noteHistory`, `gameConfig`, and `onDeactivate`.
 
 ---
 
@@ -176,17 +231,18 @@ Maps game IDs to their component loaders, layout modes, and lazy React component
 
 ```js
 {
-  rhythm:     { component, hook, layout: 'waterfall' },
-  tetris:     { component, hook, layout: 'replace', LazyComponent },
-  flashcards: { component, hook, layout: 'replace', LazyComponent },
+  'card-game':     { layout: 'replace', LazyComponent },
+  'space-invaders':{ layout: 'replace', LazyComponent },
+  tetris:          { layout: 'replace', LazyComponent },
+  flashcards:      { layout: 'replace', LazyComponent },
+  hero:            { layout: 'replace', LazyComponent },
+  'side-scroller': { layout: 'replace', LazyComponent },
+  chess:           { layout: 'replace', LazyComponent },
 }
 ```
 
-**Layout modes:**
-- `waterfall` — game overlays on top of the existing waterfall view (rhythm)
-- `replace` — game takes over the entire PianoVisualizer viewport (tetris, flashcards)
-
-**Fullscreen games** (layout: `replace`) have a `LazyComponent` entry — a `React.lazy()` wrapper used by the kiosk game host to render them inside a `<Suspense>` boundary.
+Every current game uses `replace` and has a `LazyComponent` entry used by the
+kiosk host and standalone visualizer inside a Suspense boundary.
 
 **Config prop naming:** All fullscreen games receive their config as `gameConfig` (not game-specific names like `tetrisConfig`). PianoVisualizer passes `gamesConfig[activeGameId]` as the `gameConfig` prop.
 
@@ -255,6 +311,11 @@ PianoTetris uses `useAutoGameLifecycle` for mount auto-start and auto-deactivate
 **Hook:** `useStaffMatching.js`
 
 Each action has target pitches. When the player holds all target pitches simultaneously, the action fires.
+
+`useStaffMatching` delegates the exact-MIDI held-set decision to
+`performance/assessmentSession.js`; Side Scroller reuses the same hook. The
+hook still owns command semantics such as hold-to-repeat and single-fire. These
+matches are controller actions, not Flashcards and not graded attempts.
 
 - **Immediate fire** on first match
 - **Hold-to-repeat** for movement/rotation: 200ms initial delay, then 100ms repeat
@@ -344,6 +405,19 @@ Two-layer SVG approach for full-width staff lines:
 
 ---
 
+## Side Scroller
+
+Side Scroller is a separate game engine, not a Flashcard wrapper. Its
+`useSideScrollerGame.js` hook reuses Tetris's `useStaffMatching` command layer,
+which in turn delegates exact-MIDI held-set recognition to
+`performance/assessmentSession.js`. The shared layer answers only whether the
+authored command notes are currently held; Side Scroller retains its own target
+rotation, action lifecycle, physics, obstacles, score, sounds, and level
+progression. Ordinary play produces no assessment verdict or curriculum
+evidence.
+
+---
+
 ## Piano Flashcards
 
 Untimed note-reading trainer with two card types: **staff cards** (notes shown on a staff; player presses the matching MIDI keys) and **chord-spelling cards** (card shows a chord symbol like `Dm` or `G7`; player plays the notes that spell it). Progressive difficulty mirrors the Tetris level structure.
@@ -393,6 +467,7 @@ IDLE ──[startGame()]──▶ PLAYING ──[level 8 threshold]──▶ COM
 - `cardStatus` — `null | 'hit' | 'miss'`
 - `attempts` — `[{ hit: boolean }]` rolling history
 - `accuracy` — percentage from last 20 attempts
+- `assessment` — common completeness/cleanliness result for the current session
 - `startGame()`, `deactivate()`
 
 ### Per-User Start Level & Level Picker
@@ -413,6 +488,11 @@ games:
 ```
 
 ### Match Evaluation
+
+Both card types delegate judgement to the held matcher in
+`performance/assessmentSession.js`; the card engine supplies different
+equivalence and bass policies while retaining its existing score and rearm
+lifecycle.
 
 Staff cards (`evaluateMatch` — exact pitches):
 
@@ -497,9 +577,10 @@ another source without changing the timing engine.
 5. The shared performance target compiler groups simultaneous onsets into chord
    targets and converts quarter-note time to milliseconds using the complete
    MusicXML tempo map.
-6. The shared pure performance judge matches live note-on events to the nearest
-   target. Chords resolve only when every pitch is struck; Hero adapts the
-   resulting events into its own points and combo rules.
+6. A timed `assessmentSession` instance matches live note-on events to the
+   nearest target. Chords resolve only when every pitch is struck; Hero adapts
+   the same events into its own points and combo rules and exposes the portable
+   musical result separately.
 
 The white strike line is active feedback, not only a boundary marker. While the
 metronome is enabled it gives a brief score-aligned pulse on every click (with a
@@ -527,7 +608,8 @@ becomes a falling target.
 |------|---------|
 | `PianoHeroGame/PianoHeroGame.jsx` | MusicXML picker, loading, highway, keyboard, and results UI |
 | `performance/performanceTargets.js` | Shared tempo-resolved score-to-target compiler |
-| `performance/performanceJudge.js` | Shared pure target matching used by Hero and Polish |
+| `performance/assessmentSession.js` | Public parameterized matcher, observation, criteria, and verdict service shared with Polish and the other assessment consumers |
+| `performance/performanceJudge.js` | Internal timed target-matching primitive |
 | [performance-assessment.md](./performance-assessment.md) | Overview of the shared performance service (grading, matching, spans) |
 | `PianoHeroGame/heroChart.js` | Hero chart metadata and points/combo adapter |
 | `PianoHeroGame/usePianoHeroGame.js` | MIDI subscription and timed run lifecycle |
@@ -535,17 +617,182 @@ becomes a falling target.
 
 ---
 
-## Rhythm Game
+## Piano Chess
 
-Falling-note accuracy game with two modes: "invaders" (any visible note is hittable, timing doesn't matter) and "hero" (timing windows determine hit quality). Health meter provides life-based difficulty gating.
+Chess played by chords: every square is a chord (file = root, rank = quality), and a move
+is the two chords that perform it, played in order. Nothing is pointer-driven — the
+instrument is the controller.
+
+### Opponent: server engine with a local fallback
+
+The opponent is served by the backend — a Stockfish WASM engine behind
+`POST /api/v1/chess/move` — with the bundled heuristic engine as a local fallback. Every
+request carries the position, the active rung, and a per-game id; on any transport or
+engine failure the client falls back to the bundled engine so the game never blocks on
+the network. The reply is delayed by `opponent_delay_ms` so it reads as a reply, not a
+flicker.
+
+### The config pair
+
+Configuration is two layers merged server-side, household defaults under a per-user
+override:
+
+| Layer | File |
+|-------|------|
+| Household defaults | `data/household/config/chess.yml` |
+| Per-user override | `data/users/{userId}/apps/chess/config.yml` |
+
+`GET /api/v1/chess/config?user={id}` serves the merge; `PUT` the same path writes a
+sparse patch into the user's own layer only. Guests never reach the per-user endpoints —
+their changes apply for the session and evaporate. Scalar keys and the `rungs` ladder
+replace wholesale (a half-merged ladder is never what anyone means); only the `feedback`
+block merges key-by-key.
+
+### The ladder
+
+`rungs` is an ordered list of opponent strengths. Each rung sets either `skill`
+(Stockfish Skill Level 0–20 — the engine plays full strength then intentionally errs,
+more at low values) or `elo` (UCI_LimitStrength targeting a rating), plus `movetime_ms`.
+The shipped ladder:
+
+| Rung | Strength |
+|------|----------|
+| `first-moves` | skill 0 |
+| `learner` | skill 3 |
+| `steady` | skill 8 |
+| `sharp` | skill 14 |
+| `ruthless` | elo 1800 |
+
+`default_rung` names the rung a game starts on. An unknown rung id resolves to the
+middle of the ladder rather than failing.
+
+### The two-zone screen
+
+The screen is two zones. The **game zone** holds the board and one rail: the shared
+context rail (the way back), whose turn it is, the active rung, the prompt line, the
+cancel / play-again button, the move log, and captured material. The **instrument
+zone** sits below: a chord-name plaque (eyebrow "Playing") that names whatever is
+sounding even when it is not a square, the chess read-out saying what the game heard
+and which square it points to, and the keyboard itself with note labels. The plaque
+lingers half a second after release — a move commits on release, so it confirms what
+was just played. Nothing on the screen sizes itself off viewport units: the kiosk is
+laid out at a fixed design size and scaled, so everything measures its own container.
+
+### The board's four channels
+
+Each visual channel answers one question, so they coexist without competing:
+
+| Channel | Question | Used for |
+|---------|----------|----------|
+| Light (square brightness) | What are my hands doing now? | Candidate squares glow faintly; the resolved square is bright; the ghost piece previews the landing |
+| Outline (border) | Where am I in this move? | Marching ants = the piece in hand; dashed = the last move |
+| Marks (dots, rings, badges) | What can this move do? | Destination dots and chord badges while a piece is held; legal-move marks and the best-move ring when a gesture asks |
+| Colour (wash) | Is something wrong? | Check; the refused-square flash |
+
+### Hover, pick up, drop
+
+Naming a square and committing to it are different acts. One played chord **hovers** —
+it lights the square, previews a ghost piece, and commits nothing, so a player can try
+a chord and see where it lands. The **same square played twice** within a short window
+picks the piece up; the pick-up fires on recognition, while the fingers are still down,
+and that chord's own release is swallowed so it cannot double as a drop. **Dropping**
+takes only one play, because a held piece can reach only a handful of lit, labelled
+squares and intent is already declared. An octave (or Esc) puts the piece back.
+
+The square whose piece is in the air wears an animated marching-ants border — a child
+element, not the square's `::before`, which the best-move ring already owns (the piece
+in hand can also be the engine's suggestion). While a piece is held, exploring is never
+punished: a chord for an unreachable square hovers silently rather than flashing a
+refusal.
+
+### Destination labels
+
+The moment a piece is picked up, every square it can legally reach prints the chord
+that addresses it in a corner badge — the answer to the question the pick-up just
+asked. Without them the player must read a root off one rim, a quality off the other,
+and intersect them mentally while holding a piece; in a real session that produced
+zero completed moves. The corner placement (with a stacking level above the piece
+artwork) keeps the badge clear of the occupant on capture squares, and the badge sizes
+itself off the board's own size token, never the viewport.
+
+The labels are **not help and are never charged to the game record**: the deliberate
+double-play that lifted the piece was the request. The record counts only the two
+gestures that ask for more — legal-move marks and the best move. Config can turn the
+labels off (`feedback.show_destination_labels: false`; absent means on) for players
+who want the rim-intersection drill back.
+
+### Narrowing
+
+A square is a candidate while its chord's pitch classes contain every pitch class
+currently held. One note lights a scatter (a note is the root of one chord and the
+third of another); each added note contracts the set. A completed triad leaves the
+triad plus its extensions on the same file — the single bright square comes from the
+settle-window cursor, not from the candidate set reaching one. An empty candidate set
+means no square can contain these notes, and the read-out says "not a square" at once
+instead of waiting out the settle window.
+
+### Hint gestures
+
+Help is asked for at the keys and never volunteered — there is no hint setting, and a
+refusal flashes and explains but reveals nothing. A gesture is a shape no chord on the
+board can be: a run of adjacent semitones (the same trick as the octave for
+"take it back"; a two-note semitone pair is a legitimate partial chord and triggers
+nothing).
+
+- **Three adjacent semitones** — show legal moves: the destinations of the piece being
+  held, or which pieces can move when none is held.
+- **Four adjacent semitones** — ring the best move on its origin and destination. The
+  server is asked at full strength (`ruthless`) regardless of the rung being played — a
+  hint only as strong as a beginner's opponent is not a hint.
+
+A recognised cluster is never chord input: narrowing is suppressed while it is down,
+and its release neither commits a move nor draws a refusal. The gesture is
+tap-and-release; the marks persist until the player's next move completes, so the tally
+counts moves-with-help, not presses.
+
+### The game record
+
+Each finished game posts one record to `POST /api/v1/chess/games?user={id}`, stored
+under the player's own data. It holds facts, never a score: result, outcome, move
+count, hints used, best moves used, the rung, and duration. Guests are not recorded —
+they never reach the per-user endpoints.
+
+### Refusal loudness
+
+`feedback.flash_rejected` and `feedback.toast` control how loudly a refusal is
+announced (the red flash on the refused square, the sentence saying what was wrong);
+`feedback.show_destination_labels` controls the chord badges on a held piece's
+reachable squares. All live in YAML only, default on, and turn off only on explicit
+`false`. The YAML is snake_case; the translation to the component's camelCase cue
+flags happens in one place and nowhere else. A stale `hint_level` in a saved override
+is ignored — it selects behaviour that no longer exists.
+
+### In-game settings
+
+The Settings button on the rail opens a panel of discrete tap targets (no sliders): the
+rung ladder, the chord-map shuffle, the destination-label toggle (Show chords / Hide
+chords), and the opponent delay (300/700/1200 ms). Every tap
+applies immediately and, for a signed-in player, saves a sparse patch to their own
+override layer. The shuffle toggle takes effect on the next game — the chord map is
+dealt when a game is created, and a mid-game re-deal would rearrange the board under
+the player.
+
+---
+
+## Space Invaders
+
+Falling-note game with two level policies: `invaders` (any visible matching
+target is hittable) and `hero` (timing windows determine hit quality). A health
+meter and miss limits drive the game progression, while the common assessment
+result separately reports completeness, cleanliness, and placement.
 
 ### Component Tree
 
 ```
-PianoVisualizer
-├── NoteWaterfall          (displays falling notes when rhythm game is active)
+SpaceInvadersGame
+├── Falling-note field     (targets and fired lasers)
 ├── Life meter             (Mega Man-style health bar, 28 notches)
-├── RhythmOverlay          (countdown, level complete/failed, victory screens)
+├── SpaceInvadersOverlay   (countdown, level complete/failed, victory screens)
 └── PianoKeyboard          (visual keyboard with target/wrong note highlighting)
 ```
 
@@ -553,10 +800,10 @@ PianoVisualizer
 
 | File | Purpose |
 |------|---------|
-| `useRhythmGame.js` | Game state machine: spawning, hit detection, scoring, level progression |
-| `rhythmEngine.js` | Pure functions: state factory, note generation, hit detection, scoring, level eval |
-| `components/RhythmOverlay.jsx` | Overlay UI: countdown 3-2-1-GO, level banners, victory screen |
-| `components/RhythmOverlay.scss` | Overlay styles |
+| `PianoSpaceInvaders/SpaceInvadersGame.jsx` | Fullscreen game surface |
+| `PianoSpaceInvaders/useSpaceInvadersGame.js` | Game state machine: spawning, lasers, health, scoring, and level progression |
+| `PianoSpaceInvaders/spaceInvadersEngine.js` | Pure game engine plus adapters to the common timed assessment service |
+| `PianoSpaceInvaders/components/SpaceInvadersOverlay.jsx` | Countdown, level banners, failure, and victory UI |
 
 ### Game State Machine
 
@@ -576,9 +823,9 @@ IDLE ──[startGame()]──▶ STARTING ──[3-2-1-GO]──▶ PLAYING
 - `max_misses` exceeded → retry same level (3s banner)
 - `health` depleted → exit game entirely (3s banner)
 
-### Rhythm Engine
+### Space Invaders Engine
 
-**File:** `rhythmEngine.js` — all pure functions.
+**File:** `PianoSpaceInvaders/spaceInvadersEngine.js` — pure game functions.
 
 | Function | Purpose |
 |----------|---------|
@@ -588,19 +835,20 @@ IDLE ──[startGame()]──▶ STARTING ──[3-2-1-GO]──▶ PLAYING
 | `generatePitches(level, lastPitches)` | Generate note/chord for current level |
 | `getFallDuration(level)` | Get fall duration (ms) for a level |
 | `maybeSpawnNote(state, level, now)` | Spawn a new falling note if timing allows |
-| `processHit(state, pitch, now, timingConfig, mode)` | Evaluate hit quality (invaders vs hero) |
+| `processHit(state, pitch, now, timingConfig, mode)` | Adapt a falling target through the common timed matcher |
 | `applyScore(score, hitQuality, scoringConfig)` | Compute points with combo multiplier |
 | `processMisses(state, now, missThresholdMs)` | Tag missed notes, reset combo |
 | `cleanupResolvedNotes(state, now)` | Remove old hit/missed notes from display |
 | `evaluateLevel(score, levelConfig, health)` | Check for advance/fail conditions |
+| `assessSpaceInvaders(score)` | Produce the common musical criteria/verdict without replacing game points or health |
 
 ### Config Structure
 
-All rhythm config lives under `games.rhythm` in `piano.yml`:
+Space Invaders config lives under `games.space-invaders` in `piano.yml`:
 
 ```yaml
 games:
-  rhythm:
+  space-invaders:
     activation:
       notes: [30, 102]
       window_ms: 300
@@ -660,12 +908,13 @@ games:
 | `buildNotePool(noteRange, whiteKeysOnly)` | `([number, number], boolean) → number[]` | Build array of MIDI notes in range, optionally white-only |
 | `computeKeyboardRange(noteRange)` | `([number, number] \| null) → { startNote, endNote }` | Compute display range with 1/3 padding, 2-octave minimum, clamped to [21, 108] |
 
-### rhythmEngine.js
+### spaceInvadersEngine.js
 
 | Export | Used By |
 |--------|---------|
 | `isActivationComboHeld()` | useGameActivation |
-| `createInitialState()`, `resetForLevel()`, etc. | useRhythmGame |
+| `createInitialState()`, `resetForLevel()`, etc. | useSpaceInvadersGame |
+| timed judgement and `assessSpaceInvaders()` | common assessment service / Space Invaders projection |
 
 ### Other Shared Files
 
@@ -723,40 +972,24 @@ Used by `PianoTetris` and `PianoFlashcards` to avoid duplicating mount/exit logi
 MIDI Keyboard
   │
   ▼
-useMidiSubscription → activeNotes: Map<note, {velocity, timestamp}>
+PianoMidiContext / useMidiSubscription
+  ├── activeNotes: Map<note, {velocity, timestamp}>
+  └── noteHistory: timestamped note-on/off entries
   │
-  ├──▶ usePianoConfig → gamesConfig
+  ▼
+GameHost or standalone PianoVisualizer
   │
-  ├──▶ useGameActivation → activeGameId ('rhythm' | 'tetris' | 'flashcards' | null)
+  ▼
+gameRegistry LazyComponent + gameConfig
   │
-  ├──▶ useRhythmGame (when rhythm active)
-  │      ├──▶ rhythmEngine (pure functions: spawning, hit detection, scoring)
-  │      └── returns game state (fallingNotes, score, health, level)
+  ├──▶ Hero / Space Invaders / Flashcards / Battle Stadium
+  │      ├── assessmentSession → musical events + portable result
+  │      └── local game engine → points, combo, health, damage, effects
   │
-  ├──▶ useInactivityTimer → inactivityState, countdownProgress
+  ├──▶ Tetris / Side Scroller
+  │      ├── shared held classifier → command match only
+  │      └── local game engine → movement, physics, score, levels
   │
-  ├──▶ useSessionTracking → sessionDuration
-  │
-  ├──▶ PianoVisualizer (layout composition)
-  │      ├── NoteWaterfall (note history + optional falling notes)
-  │      ├── PianoKeyboard (visual reference + targets + wrong notes)
-  │      ├── RhythmOverlay (countdown / level banners / victory)
-  │      ├── CurrentChordStaff (when no game active)
-  │      └── Life meter (when rhythm game active)
-  │
-  ├──▶ PianoTetris (fullscreen, lazy-loaded via gameRegistry)
-  │      ├── useTetrisGame → game state
-  │      ├── useAutoGameLifecycle → auto-start/deactivate
-  │      ├── useStaffMatching → matchedActions
-  │      ├── ActionStaff ×6 (targets + ghost notes from activeNotes)
-  │      ├── TetrisBoard (board + currentPiece + ghostPiece)
-  │      ├── TetrisOverlay (countdown / game over)
-  │      └── PianoKeyboard (visual reference)
-  │
-  └──▶ PianoFlashcards (fullscreen, lazy-loaded via gameRegistry)
-         ├── useFlashcardGame → game state
-         ├── useAutoGameLifecycle → auto-start/deactivate
-         ├── ActionStaff ×1 (large centered target card)
-         ├── AttemptHistory (rolling dots + accuracy %)
-         └── PianoKeyboard (highlighted targets)
+  └──▶ Piano Chess
+         └── chord-address interpreter → square command (not assessment)
 ```

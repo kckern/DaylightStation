@@ -1,0 +1,70 @@
+/**
+ * Gesture cards — the moves that are not squares, drawn as the keys you press.
+ * House tokens only.
+ */
+.gesture-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gesture-card {
+  display: grid;
+  grid-template-columns: 4.6rem 1fr;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--piano-border);
+  border-radius: var(--r-md);
+  background: var(--piano-surface);
+}
+
+/* Live right now — the piece is in hand, so putting it back is a real option. */
+.gesture-card--active {
+  border-color: var(--piano-accent);
+  background: color-mix(in srgb, var(--piano-accent) 12%, var(--piano-surface));
+}
+
+/* Available, but nothing to use it on yet. Dimmed, never hidden: a gesture a
+   child cannot see is a gesture they will never learn. */
+.gesture-card--muted { opacity: 0.55; }
+
+.gesture-card__keys {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.gesture-card__key {
+  fill: #efe9df;
+  stroke: rgb(0 0 0 / 45%);
+  stroke-width: 0.6;
+}
+
+.gesture-card__key--black { fill: #23232a; }
+
+/* The keys to press. Accent rather than a colour of its own, because this is
+   the same "do this" voice the rest of the screen uses. */
+.gesture-card__key--on {
+  fill: var(--piano-accent);
+  stroke: color-mix(in srgb, var(--piano-accent) 60%, #000);
+}
+
+.gesture-card__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.gesture-card__title {
+  font-size: var(--t-cap);
+  color: var(--piano-fg);
+}
+
+.gesture-card__note {
+  font-size: var(--t-cap);
+  color: var(--piano-muted);
+}

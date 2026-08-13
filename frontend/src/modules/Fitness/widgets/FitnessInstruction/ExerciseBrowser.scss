@@ -1,0 +1,440 @@
+@use './exerciseTokens' as ex;
+
+// Touch-first corpus browser for the garage TV. Header and filters stay fixed;
+// the card grid is the only vertical scrolling region. Only one filter category
+// is expanded at once, keeping all taxonomy sizes inside the same height budget.
+.exercise-browser {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 20px 18px;
+  background:
+    radial-gradient(80% 60% at 20% -10%, rgba(33, 230, 255, 0.09), transparent 62%),
+    radial-gradient(75% 70% at 100% 0%, rgba(93, 255, 155, 0.055), transparent 58%),
+    ex.$ex-bg;
+  color: ex.$ex-text;
+  font-family: ex.$ex-display;
+  overflow: hidden;
+
+  &__header {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+
+  &__heading {
+    width: 220px;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  &__title {
+    margin: 0;
+    font-size: 2.45rem;
+    font-weight: 750;
+    line-height: 1;
+  }
+
+  &__count {
+    font-size: ex.$ex-micro;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: ex.$ex-muted;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__header-prompt {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 56px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+    padding-left: 20px;
+    border-left: 2px solid rgba(33, 230, 255, 0.35);
+  }
+
+  &__header-prompt-kicker {
+    font-size: 0.95rem;
+    font-weight: 700;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: ex.$ex-accent;
+  }
+
+  &__header-prompt-copy {
+    font-size: 1.35rem;
+    color: ex.$ex-muted;
+  }
+
+  // ── Filter deck ───────────────────────────────────────────────────────────
+  &__filter-deck {
+    flex: 0 0 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px;
+    border: 1px solid rgba(93, 83, 139, 0.38);
+    border-radius: 16px;
+    background: rgba(18, 16, 31, 0.86);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+  }
+
+  &__facet-tabs {
+    min-height: 46px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  &__facet-tab {
+    min-width: 158px;
+    height: 46px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 0 18px;
+    border: 1px solid #2e2844;
+    border-radius: 11px;
+    background: rgba(18, 16, 31, 0.72);
+    color: ex.$ex-muted;
+    font-size: 1.25rem;
+    font-weight: 700;
+    letter-spacing: 0.035em;
+    cursor: pointer;
+    user-select: none;
+    touch-action: manipulation;
+
+    &--on {
+      color: ex.$ex-text;
+      border-color: rgba(33, 230, 255, 0.42);
+      background: linear-gradient(180deg, rgba(33, 230, 255, 0.15), rgba(33, 230, 255, 0.07));
+      box-shadow: inset 0 -2px 0 ex.$ex-accent;
+    }
+
+    &:focus-visible {
+      outline: 3px solid ex.$ex-accent;
+      outline-offset: 2px;
+    }
+
+    &:active { transform: scale(0.98); }
+  }
+
+  &__facet-badge {
+    min-width: 25px;
+    height: 25px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 7px;
+    border-radius: 999px;
+    background: ex.$ex-accent;
+    color: #061014;
+    font-size: 0.95rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__filter-guide {
+    margin-left: auto;
+    padding: 0 12px;
+    font-size: 1.05rem;
+    letter-spacing: 0.08em;
+    color: ex.$ex-muted;
+    white-space: nowrap;
+  }
+
+  &__option-rail {
+    min-width: 0;
+    min-height: ex.$ex-chip-h;
+    display: flex;
+    align-items: stretch;
+    gap: 8px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    scroll-snap-type: x proximity;
+    border-radius: 12px;
+
+    &::-webkit-scrollbar { display: none; }
+  }
+
+  &__facet-hint {
+    width: 100%;
+    min-height: ex.$ex-chip-h;
+    display: flex;
+    align-items: center;
+    padding: 0 18px;
+    border: 1px dashed ex.$ex-border;
+    border-radius: 11px;
+    font-size: 1.25rem;
+    color: ex.$ex-muted;
+    opacity: 0.8;
+  }
+
+  &__chip {
+    flex: 0 0 auto;
+    min-height: ex.$ex-chip-h;
+    display: inline-flex;
+    align-items: center;
+    padding: 0 18px;
+    border: 1px solid #393153;
+    border-radius: 11px;
+    background: ex.$ex-panel-2;
+    color: ex.$ex-text;
+    font-size: ex.$ex-label;
+    font-weight: 700;
+    letter-spacing: 0.035em;
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+    touch-action: manipulation;
+    scroll-snap-align: start;
+
+    &--on {
+      background: linear-gradient(180deg, rgba(33, 230, 255, 0.2), rgba(33, 230, 255, 0.11));
+      border-color: ex.$ex-accent;
+      color: ex.$ex-accent;
+      box-shadow: inset 0 0 0 1px rgba(33, 230, 255, 0.25);
+    }
+
+    &:focus-visible {
+      outline: 3px solid ex.$ex-accent;
+      outline-offset: 2px;
+    }
+
+    &:active { transform: scale(0.97); }
+  }
+
+  // ── Grid ──────────────────────────────────────────────────────────────────
+  &__grid {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(ex.$ex-card-min, 1fr));
+    // A definite-height grid must size rows to content. `auto` collapses every
+    // one of the 60 mounted rows to a hairline in Chromium.
+    grid-auto-rows: max-content;
+    gap: 12px;
+    align-content: start;
+    padding: 2px 4px 12px;
+    scrollbar-color: #3c3458 transparent;
+    scrollbar-width: thin;
+  }
+
+  &__card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid #332b4b;
+    border-radius: 14px;
+    background: ex.$ex-panel;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+    cursor: pointer;
+    user-select: none;
+    touch-action: manipulation;
+
+    &:focus-visible {
+      outline: 3px solid ex.$ex-accent;
+      outline-offset: 3px;
+    }
+
+    &:active { transform: scale(0.99); }
+  }
+
+  // A fixed height prevents lazy GIF mount/unmount from moving the card under
+  // the user's finger and keeps density stable across panel widths.
+  &__thumb {
+    width: 100%;
+    height: ex.$ex-thumb-h;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    background: ex.$ex-panel-2;
+  }
+
+  &__gif {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+
+  &__thumb-placeholder {
+    font-size: 3.6rem;
+    font-weight: 700;
+    color: rgba(167, 159, 196, 0.3);
+  }
+
+  &__card-name {
+    min-height: 56px;
+    display: flex;
+    align-items: center;
+    padding: 8px 66px 9px 14px;
+    font-size: 1.2rem;
+    font-weight: 700;
+    line-height: 1.12;
+  }
+
+  &__add {
+    position: absolute;
+    right: 7px;
+    bottom: 6px;
+    width: ex.$ex-chip-h;
+    height: ex.$ex-chip-h;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #41375e;
+    border-radius: 50%;
+    background: rgba(10, 10, 20, 0.9);
+    color: ex.$ex-text;
+    font-size: 2rem;
+    font-weight: 700;
+    line-height: 1;
+
+    &--on {
+      background: rgba(93, 255, 155, 0.18);
+      border-color: ex.$ex-go;
+      color: ex.$ex-go;
+    }
+
+    &:focus-visible {
+      outline: 3px solid ex.$ex-accent;
+      outline-offset: 2px;
+    }
+  }
+
+  // ── Notices ───────────────────────────────────────────────────────────────
+  &__notice {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 24px;
+    border: 2px dashed ex.$ex-border;
+    border-radius: 16px;
+    text-align: center;
+  }
+
+  &__notice-title {
+    font-size: 2.2rem;
+    font-weight: 700;
+  }
+
+  &__notice-body {
+    max-width: 60ch;
+    margin: 0;
+    color: ex.$ex-muted;
+    font-size: ex.$ex-body;
+  }
+
+  &__notice--warn {
+    border-color: ex.$ex-warn;
+    color: ex.$ex-warn;
+
+    .exercise-browser__notice-body { color: ex.$ex-warn; }
+  }
+
+  // ── Shared tap targets ────────────────────────────────────────────────────
+  &__tap {
+    flex: 0 0 auto;
+    min-width: 220px;
+    min-height: ex.$ex-action-h;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    padding: 10px 26px;
+    border-radius: 13px;
+    cursor: pointer;
+    user-select: none;
+    touch-action: manipulation;
+
+    &:focus-visible {
+      outline: 3px solid ex.$ex-accent;
+      outline-offset: 3px;
+    }
+
+    &:active { transform: scale(0.985); }
+  }
+
+  &__tap--primary {
+    border: 2px solid ex.$ex-go;
+    background: linear-gradient(180deg, #1c8f5e 0%, #126b45 100%);
+    box-shadow: 0 0 24px rgba(93, 255, 155, 0.16);
+    color: ex.$ex-text;
+  }
+
+  &__tap--ghost {
+    border: 2px solid ex.$ex-border;
+    background: transparent;
+    color: ex.$ex-muted;
+  }
+
+  &__tap--compact {
+    min-width: 0;
+    min-height: 46px;
+    padding: 0 18px;
+    border: 1px solid ex.$ex-border;
+    border-radius: 11px;
+    background: transparent;
+    color: ex.$ex-muted;
+
+    .exercise-browser__tap-label { font-size: 1.1rem; }
+  }
+
+  // Show more is a grid cell, so it costs no permanent vertical space.
+  &__tap--tile {
+    min-width: 0;
+    height: 100%;
+    border: 2px dashed ex.$ex-border;
+    background: transparent;
+    color: ex.$ex-muted;
+  }
+
+  &__tap-label {
+    font-size: 1.65rem;
+    font-weight: 700;
+    letter-spacing: 0.055em;
+    text-transform: uppercase;
+  }
+
+  &__tap-sub {
+    font-size: ex.$ex-micro;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    opacity: 0.85;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@media (max-width: 900px) {
+  .exercise-browser__header { flex-wrap: wrap; }
+  .exercise-browser__header-prompt { display: none; }
+  .exercise-browser__heading { flex: 1 1 auto; }
+  .exercise-browser__facet-tabs { overflow-x: auto; }
+  .exercise-browser__facet-tab { min-width: 132px; }
+  .exercise-browser__filter-guide { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .exercise-browser__chip:active,
+  .exercise-browser__facet-tab:active,
+  .exercise-browser__card:active,
+  .exercise-browser__tap:active { transform: none; }
+}

@@ -14,7 +14,9 @@ function validateJourneyDefinition(definition, errors) {
   if (!Number.isInteger(journey.score_version) || journey.score_version < 1) errors.push('journey.score_version must be a positive integer');
   if (!(journey.player_health > 0)) errors.push('journey.player_health must be positive');
   if (!Array.isArray(journey.partners) || journey.partners.length !== 3) errors.push('journey.partners must contain exactly three partners');
-  if (!Array.isArray(journey.opponents) || journey.opponents.length !== 3) errors.push('journey.opponents must contain exactly three opponents');
+  const hasTierPools = Array.isArray(journey.opponent_tiers);
+  if (!hasTierPools && (!Array.isArray(journey.opponents) || journey.opponents.length !== 3)) errors.push('journey.opponents must contain exactly three opponents');
+  if (hasTierPools && journey.opponent_tiers.length !== 5) errors.push('journey.opponent_tiers must contain exactly five tiers');
 
   const cards = definition.cards;
   if (!cards || typeof cards !== 'object' || Array.isArray(cards)) errors.push('cards must be an object');
@@ -29,18 +31,31 @@ function validateJourneyDefinition(definition, errors) {
       if (!cards?.[moveId]) errors.push(`journey partner ${partner?.id || '?'} references unknown move: ${moveId}`);
     }
   }
-  for (const opponent of journey.opponents || []) {
+  const validateOpponent = (opponent, location = 'journey opponent') => {
     if (!SAFE_ID.test(String(opponent?.id || ''))) errors.push('journey opponent id is invalid');
-    if (!POKEMON_ASSET_FACING.has(opponent?.asset_facing)) errors.push(`journey opponent ${opponent?.id || '?'} asset_facing is invalid`);
-    if (!(opponent?.health > 0)) errors.push(`journey opponent ${opponent?.id || '?'} health must be positive`);
+    if (!POKEMON_ASSET_FACING.has(opponent?.asset_facing)) errors.push(`${location} ${opponent?.id || '?'} asset_facing is invalid`);
+    if (!(opponent?.health > 0)) errors.push(`${location} ${opponent?.id || '?'} health must be positive`);
     if (!Array.isArray(opponent?.intents) || opponent.intents.length < 2) {
-      errors.push(`journey opponent ${opponent?.id || '?'} must contain at least two intents`);
+      errors.push(`${location} ${opponent?.id || '?'} must contain at least two intents`);
     }
     for (const intent of opponent?.intents || []) {
       if (!SAFE_ID.test(String(intent?.id || ''))) errors.push(`journey opponent ${opponent?.id || '?'} intent id is invalid`);
       if (!['attack', 'defend', 'charge'].includes(intent?.kind)) errors.push(`journey intent ${intent?.id || '?'} kind is invalid`);
       if (!(intent?.amount > 0)) errors.push(`journey intent ${intent?.id || '?'} amount must be positive`);
     }
+  };
+  for (const opponent of journey.opponents || []) {
+    validateOpponent(opponent);
+  }
+  for (const tier of journey.opponent_tiers || []) {
+    if (!SAFE_ID.test(String(tier?.id || ''))) errors.push('journey opponent tier id is invalid');
+    if (!Array.isArray(tier?.pool) || tier.pool.length < 2) errors.push(`journey opponent tier ${tier?.id || '?'} must contain at least two opponents`);
+    for (const opponent of tier?.pool || []) validateOpponent(opponent, `journey tier ${tier.id} opponent`);
+  }
+  if (journey.gym) {
+    if (!SAFE_ID.test(String(journey.gym.id || ''))) errors.push('journey gym id is invalid');
+    if (!Array.isArray(journey.gym.opponents) || journey.gym.opponents.length !== 4) errors.push('journey gym must contain exactly four opponents');
+    for (const opponent of journey.gym.opponents || []) validateOpponent(opponent, 'journey gym opponent');
   }
   const referencedMoves = new Set((journey.partners || []).flatMap((partner) => partner.move_ids || []));
   for (const moveId of referencedMoves) {

@@ -307,7 +307,8 @@ describe('progression', () => {
     clock.advanceDays(1);
     const second = await useCase.execute({ learnerId: 'kid1' });
     expect(second.offers.map((o) => o.unitId)).toEqual([WORKSHEET_UNIT]);
-    expect(transcript(second.document)).toContain('print your sheet');
+    expect(transcript(second.document)).toContain(fixtureUnit(WORKSHEET_UNIT).title);
+    expect(second.document.blocks.find((block) => block.type === 'scan_action')).toMatchObject({ presentation: 'lesson', hideCode: true });
   });
 
   // Unit 01 is media + bank with NO document. The reducer cannot see units, so
@@ -362,7 +363,7 @@ describe('progression', () => {
     // go null just because the current move is "wait".
     expect(offerFor(second, 'math').token).toBeTruthy();
     expect(offerFor(second, 'math').label).toContain('finish watching');
-    expect(transcript(second.document)).toContain('finish watching');
+    expect(transcript(second.document)).toContain(fixtureUnit(MEDIA_UNIT).title);
   });
 });
 

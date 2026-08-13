@@ -56,10 +56,11 @@ const makeStore = (watched) => ({
   })),
 });
 
-const makeUseCase = (store) => new GetPlayableUnits({
-  fitnessPlayableService,
+const makeUseCase = (store, overrides = {}) => new GetPlayableUnits({
+  fitnessPlayableService: overrides.fitnessPlayableService ?? fitnessPlayableService,
   userVideoProgressStore: store,
   configService,
+  learningService: overrides.learningService ?? null,
   logger: noop,
 });
 
@@ -107,5 +108,25 @@ describe('GetPlayableUnits (characterization)', () => {
     const store = makeStore({ alice: new Set(), bob: new Set() });
     const { result } = await makeUseCase(store).execute({ courseId: 'C', userId: 'alice' });
     expect(result.items[0]).toMatchObject({ parentId: 'u1', parentIndex: 1, parentTitle: 'Unit One', itemIndex: 1 });
+  });
+
+  it('adds per-user checkpoint status with one bulk learning projection', async () => {
+    const checkpoint = { exercise_id: 'drills/hanon/001' };
+    const playableWithCheckpoints = { async getPlayableEpisodes() {
+      const playable = basePlayable();
+      playable.items[0].piano = { checkpoint };
+      playable.items[1].piano = { checkpoint: { exercise_id: 'drills/hanon/002' } };
+      return playable;
+    } };
+    const calls = [];
+    const learningService = { requirementStatuses(userId, requirements) {
+      calls.push({ userId, requirements });
+      return [{ passed: true, passes: 1, required_passes: 1 }, { passed: false, passes: 0, required_passes: 1 }];
+    } };
+    const store = makeStore({ alice: new Set(), bob: new Set() });
+    const { result } = await makeUseCase(store, { fitnessPlayableService: playableWithCheckpoints, learningService })
+      .execute({ courseId: 'C', userId: 'alice' });
+    expect(calls).toEqual([{ userId: 'alice', requirements: [checkpoint, { exercise_id: 'drills/hanon/002' }] }]);
+    expect(result.items.slice(0, 2).map((item) => item.checkpointStatus.passed)).toEqual([true, false]);
   });
 });

@@ -75,8 +75,14 @@ export function PlayerOverlayLoading({
     waitKey: waitKey || null
   }), [overlayLogLabel, waitKey]);
 
+  // Gate on what is actually PAINTED (overlayDisplayActive), not on the
+  // inputs to that decision. Keyed on shouldRender && isVisible, this clock
+  // kept running through a pause — where the pause overlay suppresses this
+  // one — and reported the loading spinner as continuously visible for
+  // nearly three minutes of a paused video on 2026-08-12. A duration that
+  // counts time the element spent returning null is not a duration.
   useEffect(() => {
-    if (shouldRender && isVisible) {
+    if (overlayDisplayActive) {
       if (!visibleSinceRef.current) {
         visibleSinceRef.current = Date.now();
         stallThresholdEmittedRef.current = false;
@@ -85,7 +91,7 @@ export function PlayerOverlayLoading({
       visibleSinceRef.current = null;
       stallThresholdEmittedRef.current = false;
     }
-  }, [isVisible, shouldRender]);
+  }, [overlayDisplayActive]);
 
   // Track last good playhead position when not stalled
   useEffect(() => {
@@ -320,8 +326,14 @@ export function PlayerOverlayLoading({
     // Without this guard, the 1s log interval below leaks ~600 events per workout.
     // See 2026-05-22 fitness audit Bug 3.
     if (effectiveMetaIsNull) return;
-    // Suppress noisy logging during normal healthy playback (overlay hidden, status playing)
-    if (!isVisible && status === 'playing') return;
+    // Suppress noisy logging whenever nothing is painted and playback is in a
+    // steady state. Gated on `isVisible && status === 'playing'` this only
+    // covered healthy playback, so a paused video shipped one event per
+    // second forever — 135 of them during a single pause on 2026-08-12,
+    // drowning the signal in the very log used to diagnose it. Abnormal
+    // states (stalled, recovering, buffering, error) still report.
+    const steadyState = status === 'playing' || status === 'paused';
+    if (!overlayDisplayActive && steadyState) return;
 
     const now = Date.now();
     const timestampLabel = new Date(now).toISOString();
@@ -360,7 +372,7 @@ export function PlayerOverlayLoading({
         context: overlayLogContext
       });
     }
-  }, [effectiveMetaIsNull, isVisible, status, overlayRevealDelayMs, timerSummary, seekSummary, mediaSummary, startupSummary, logLabel, overlayLogContext, sessionInstance, statusLabel, countdownSeconds, intentPositionDisplay, normalizedMediaDetails, isStartupPhase, startupWatchdogState, stalled, waitingToPlay, waitKey, overlayLogLabel]);
+  }, [effectiveMetaIsNull, overlayDisplayActive, isVisible, status, overlayRevealDelayMs, timerSummary, seekSummary, mediaSummary, startupSummary, logLabel, overlayLogContext, sessionInstance, statusLabel, countdownSeconds, intentPositionDisplay, normalizedMediaDetails, isStartupPhase, startupWatchdogState, stalled, waitingToPlay, waitKey, overlayLogLabel]);
 
   // Use a ref to store the latest logOverlaySummary function to avoid timer recreation
   const logOverlaySummaryRef = useRef(logOverlaySummary);

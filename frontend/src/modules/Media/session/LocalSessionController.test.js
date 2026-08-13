@@ -73,6 +73,34 @@ describe('LocalSessionController — transport', () => {
     expect(handle.seek).toHaveBeenCalledWith(30);
   });
 
+  // 2026-08-12: play() claimed 'playing' the instant it was called, so the app
+  // reported playback (and emitted playback.started) 51s before a frame
+  // rendered while the server sat on a transcode decision.
+  it('a cold start reports loading, not playing, until the player really starts', () => {
+    const c = makeController();
+    const handle = { play: vi.fn(), pause: vi.fn(), seek: vi.fn() };
+    c.setPlayerHandle(handle);
+    c.store.dispatch({ type: 'LOAD_ITEM', item: { contentId: 'p:1', format: 'video' } });
+    c.transport.play();
+    expect(handle.play).toHaveBeenCalled();
+    expect(c.getSnapshot().state).toBe('loading');
+
+    // PlayerBridge promotes on the first real progress tick.
+    c.onPlayerStateChange('playing');
+    expect(c.getSnapshot().state).toBe('playing');
+  });
+
+  it('resuming a paused item claims playing immediately — no spinner flicker', () => {
+    const c = makeController();
+    c.setPlayerHandle({ play: vi.fn(), pause: vi.fn(), seek: vi.fn() });
+    c.store.dispatch({ type: 'LOAD_ITEM', item: { contentId: 'p:1', format: 'video' } });
+    c.store.dispatch({ type: 'PLAYER_STATE', playerState: 'playing' });
+    c.transport.pause();
+    expect(c.getSnapshot().state).toBe('paused');
+    c.transport.play();
+    expect(c.getSnapshot().state).toBe('playing');
+  });
+
   it('stop resets to idle and clears the current item', () => {
     const c = makeController();
     c.store.dispatch({ type: 'LOAD_ITEM', item: { contentId: 'p:1', format: 'video' } });

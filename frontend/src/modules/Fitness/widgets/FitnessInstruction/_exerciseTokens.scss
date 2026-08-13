@@ -1,0 +1,55 @@
+// Design tokens shared by the two Browse-side screens (ExerciseBrowser and the
+// ExerciseDetail sheet that opens on top of it).
+//
+// WHY A PARTIAL RATHER THAN LOCAL COPIES (and why WorkoutRunner is not converted)
+// -------------------------------------------------------------------------------
+// WorkoutRunner.scss keeps its tokens local on purpose: it did not want a palette
+// change in the neighbouring CycleGame widget to silently restyle the run screen.
+// That reasoning is about NOT coupling to an unrelated widget — it is not an
+// argument for duplicating a palette between two files that are literally the same
+// screen (the detail sheet renders over the browser; a token drift between them is
+// visible as a seam). So these two share, and neither reaches into `_cgTokens`.
+// The values below deliberately match WorkoutRunner's so the three states of the
+// module read as one surface; they are duplicated rather than imported because
+// importing WorkoutRunner.scss would emit its rules a second time.
+//
+// Every size here is a 10-foot size. The screen is a large TV in a garage gym,
+// read from several feet back and tapped with a whole sweaty hand. Roboto
+// Condensed is canon — emphasis comes from size, colour and motion, never a
+// second typeface.
+
+$ex-bg:        #0a0a14; // deep indigo-black
+$ex-panel:     #12101f;
+$ex-panel-2:   #1a1730;
+$ex-border:    #2a2440; // violet-tinted, not grey
+$ex-text:      #f3f0ff;
+$ex-muted:     #a79fc4;
+$ex-accent:    #21e6ff; // selection / live
+$ex-go:        #5dff9b; // add / confirm
+$ex-warn:      #ffb13d; // library-not-built notice
+$ex-display:   'Roboto Condensed', system-ui, sans-serif;
+
+// Type floor. Nothing on these screens renders below $ex-micro.
+$ex-micro:     1.1rem;
+$ex-label:     1.4rem;
+$ex-body:      1.6rem;
+
+// Whole-hand tap targets. The redesigned browse deck keeps every repeating
+// choice at 60px (well above the 48px accessibility floor) and reserves 84px
+// for the primary action. This returns almost a full card row to the 768px kiosk
+// without making a sweaty-hand target fiddly.
+$ex-chip-h:    60px;
+$ex-action-h:  84px;
+
+// Card grid. Both numbers are a VERTICAL budget decision, measured in Chromium
+// at 1920x1080 where the module panel is a fixed 744px box that does not scroll
+// and the grid gets ~412px of it.
+//
+// $ex-thumb-h drives card height directly (thumb + name ≈ 198px), so the
+// actual 768px kiosk panel shows two full rows plus a clear next-row scroll cue.
+//
+// $ex-card-min lets the ~1250px content area fit five columns. The illustrations
+// remain large enough to read at distance while browse density rises from roughly
+// seven immediately visible choices to ten-plus.
+$ex-card-min:  210px;
+$ex-thumb-h:   140px;

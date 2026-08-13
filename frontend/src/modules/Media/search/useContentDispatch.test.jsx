@@ -2,9 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 
 // ── Mocks: the hook routes across nav view + two dispatch surfaces ──
+const push = vi.fn();
 let navState = { view: 'home', params: {} };
 vi.mock('../shell/NavProvider.jsx', () => ({
-  useNav: () => navState,
+  useNav: () => ({ ...navState, push }),
 }));
 
 const dispatchToTarget = vi.fn();
@@ -33,6 +34,7 @@ import { useContentDispatch } from './useContentDispatch.js';
 beforeEach(() => {
   dispatchToTarget.mockClear();
   playNow.mockClear();
+  push.mockClear();
   navState = { view: 'home', params: {} };
   castTargetState = { targetIds: [], mode: 'transfer' };
 });
@@ -165,6 +167,90 @@ describe('useContentDispatch', () => {
     rerender();
     act(() => { route = result.current('plex:3', { title: 'C' }); });
     expect(route).toBe('peek');
+  });
+
+  // ── Containers open the full browse view (2026-08-12 session review) ──
+  describe('container selections', () => {
+    it('opens a show on the canvas instead of queueing all its episodes', () => {
+      const { result } = renderHook(() => useContentDispatch());
+      let route;
+      act(() => {
+        route = result.current('plex:663508', { title: 'Tuttle Twins', type: 'show' });
+      });
+      expect(push).toHaveBeenCalledWith('browse', { path: 'plex/663508', label: 'Tuttle Twins' });
+      expect(route).toBe('browse');
+      expect(playNow).not.toHaveBeenCalled();
+      expect(dispatchToTarget).not.toHaveBeenCalled();
+    });
+
+    it('recognizes every container marker the combobox emits', () => {
+      const { result } = renderHook(() => useContentDispatch());
+      for (const item of [
+        { title: 'A', itemType: 'container' },
+        { title: 'B', isContainer: true },
+        { title: 'C', type: 'album' },
+        { title: 'D', type: 'playlist' },
+        { title: 'E', metadata: { type: 'artist' } },
+      ]) {
+        push.mockClear();
+        act(() => { result.current('plex:1', item); });
+        expect(push).toHaveBeenCalledTimes(1);
+      }
+      expect(playNow).not.toHaveBeenCalled();
+    });
+
+    it('splits only the FIRST colon so pathy ids survive', () => {
+      const { result } = renderHook(() => useContentDispatch());
+      act(() => {
+        result.current('files:clips/summer.mp4', { title: 'Clips', itemType: 'container' });
+      });
+      expect(push).toHaveBeenCalledWith('browse', expect.objectContaining({ path: 'files/clips/summer.mp4' }));
+    });
+
+    it('falls back to the id when a container has no title', () => {
+      const { result } = renderHook(() => useContentDispatch());
+      act(() => { result.current('plex:9', { itemType: 'container' }); });
+      expect(push).toHaveBeenCalledWith('browse', { path: 'plex/9', label: 'plex:9' });
+    });
+
+    it('a leaf still plays locally', () => {
+      const { result } = renderHook(() => useContentDispatch());
+      act(() => { result.current('plex:665667', { title: 'Episode 8', type: 'episode' }); });
+      expect(push).not.toHaveBeenCalled();
+      expect(playNow).toHaveBeenCalled();
+    });
+
+    it('an aimed cast target still wins — "cast the album" survives', () => {
+      castTargetState = { targetIds: ['speaker-red'], mode: 'transfer' };
+      const { result } = renderHook(() => useContentDispatch());
+      let route;
+      act(() => {
+        route = result.current('plex:5150', { title: 'Van Halen', type: 'album' });
+      });
+      expect(route).toBe('cast');
+      expect(dispatchToTarget).toHaveBeenCalledWith(
+        expect.objectContaining({ targetIds: ['speaker-red'], play: 'plex:5150' })
+      );
+      expect(push).not.toHaveBeenCalled();
+    });
+
+    it('peek still wins over opening a container', () => {
+      navState = { view: 'peek', params: { deviceId: 'shield-tv' } };
+      const { result } = renderHook(() => useContentDispatch());
+      let route;
+      act(() => {
+        route = result.current('plex:663508', { title: 'Tuttle Twins', type: 'show' });
+      });
+      expect(route).toBe('peek');
+      expect(push).not.toHaveBeenCalled();
+    });
+
+    it('a bare id with no item metadata plays locally, not browse', () => {
+      const { result } = renderHook(() => useContentDispatch());
+      act(() => { result.current('plex:1'); });
+      expect(push).not.toHaveBeenCalled();
+      expect(playNow).toHaveBeenCalled();
+    });
   });
 
   it('stays stable across renders when the cast target is unchanged', () => {

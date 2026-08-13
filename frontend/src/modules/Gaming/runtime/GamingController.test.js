@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import YAML from 'yaml';
 import { describe, expect, it, vi } from 'vitest';
 import { createInitialState, deriveInteraction, transition } from '@shared-gaming/index.mjs';
-import { scaleClashDefinition } from '@shared-gaming/fixtures/scaleClash.mjs';
+import { scaleClashDefinition } from '@shared-gaming/definitions/scaleClash.mjs';
 import { GamingController } from './GamingController.js';
 import { createProviderRegistry } from './providerRegistry.js';
 
@@ -217,6 +217,18 @@ describe('GamingController', () => {
     });
     expect(controller.getSnapshot().session.status).toBe('abandoned');
     expect(logger.info).toHaveBeenCalledWith('gaming.session.close-requested', expect.objectContaining({ reason: 'player_closed' }));
+    controller.dispose();
+  });
+
+  it('saves an active session without making it terminal', async () => {
+    const { controller, api } = harness();
+    await controller.start();
+    await controller.suspend();
+    expect(api.applyCommand).toHaveBeenCalledOnce();
+    expect(api.applyCommand.mock.calls[0][1]).toMatchObject({
+      type: 'suspend_session', payload: { reason: 'player_saved' },
+    });
+    expect(controller.getSnapshot().session).toMatchObject({ status: 'active', state: { pending_action: null } });
     controller.dispose();
   });
 

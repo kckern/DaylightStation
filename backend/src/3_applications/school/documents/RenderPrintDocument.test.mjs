@@ -1297,7 +1297,7 @@ describe('RenderPrintDocument — card allocation context (spec §5.3/§5.4, Tas
     expect(stored[0].recordId).toBe(result.allocation.recordId);
   });
 
-  it('prints the card header strip with offset numbering starting at startRow, and the FIRST-USE instruction line for a fresh card', async () => {
+  it('prints the Student No. with offset numbering starting at startRow and no redundant instruction or range', async () => {
     const allocationStore = fakeAllocationStore();
     const useCase = new RenderPrintDocument({ allocationStore });
     const result = await useCase.execute({
@@ -1306,8 +1306,8 @@ describe('RenderPrintDocument — card allocation context (spec §5.3/§5.4, Tas
 
     expect(result.allocation.rowRange).toEqual({ start: 18, end: 20 });
     const text = pdfText(result.bytes);
-    expect(text).toContain('Bubble this number into columns 1–7 of a new card.');
-    expect(text).toMatch(/questions\s*18[\s\S]{0,3}20/);
+    expect(text).not.toContain('Bubble this number');
+    expect(text).not.toContain('questions 18');
     // Offset numbering: printed question numbers start at 18, not 1.
     expect(text).toMatch(/\b18\./);
     expect(text).toMatch(/\b19\./);
@@ -1330,7 +1330,7 @@ describe('RenderPrintDocument — card allocation context (spec §5.3/§5.4, Tas
     expect(second.allocation.cardId).toBe(cardId);
     expect(second.allocation.rowRange).toEqual({ start: 3, end: 4 });
     const text = pdfText(second.bytes);
-    expect(text).toContain(`Use your card ${cardId}.`);
+    expect(text).not.toContain(`Use Student No. ${cardId}.`);
     expect(text).not.toContain('Bubble this number');
   });
 

@@ -230,7 +230,7 @@ describe('the result receipt', () => {
     await graded();
     const { document } = await close.execute({ sessionId: SID });
     const text = document.blocks.map((b) => b.md ?? '').join('\n');
-    expect(text).toContain('90%');
+    expect(document.blocks.find((b) => b.type === 'result_summary')).toMatchObject({ percent: 90 });
     expect(text).toContain('5 coins');
   });
 
@@ -251,7 +251,9 @@ describe('the result receipt', () => {
     const result = await close.execute({ sessionId: SID });
     const next = fixtureUnit(WORKSHEET_UNIT).title;
     expect(result.unlocked).toMatchObject({ unitId: WORKSHEET_UNIT, title: next });
-    expect(result.document.blocks.map((b) => b.md ?? '').join('\n')).toContain(`Next up: ${next}`);
+    expect(result.document.blocks.find((b) => b.type === 'scan_action')).toMatchObject({
+      eyebrow: 'Next up', label: next, presentation: 'lesson', hideCode: true,
+    });
   });
 
   it('promises no next unit at the end of a course', async () => {

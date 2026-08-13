@@ -199,8 +199,17 @@ export function createLocalSessionController({
           if (!first) return;
           moveCurrentTo(first);
         }
+        // Resuming something already rolling is instant — claim 'playing' so
+        // the transport bar doesn't flicker through a spinner. Starting cold
+        // is NOT: the element may still be waiting on a URL, a decision call,
+        // or the server. Claiming 'playing' there is a lie the whole app then
+        // repeats — on 2026-08-12 it emitted playback.started 51s before a
+        // single frame rendered, while Plex sat on the transcode decision.
+        // PlayerBridge promotes us to 'playing' on the first real progress
+        // tick; until then we are honestly 'loading'.
+        const wasRolling = snap().state === 'paused';
         player.play();
-        store.dispatch({ type: 'PLAYER_STATE', playerState: 'playing' });
+        store.dispatch({ type: 'PLAYER_STATE', playerState: wasRolling ? 'playing' : 'loading' });
       },
       pause: () => {
         mediaLog.transportCommand({ action: 'pause', target: 'local' });

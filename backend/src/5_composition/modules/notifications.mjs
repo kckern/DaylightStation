@@ -22,7 +22,11 @@ export const DEFAULT_PREFERENCES = {
   ceremony: { normal: ['telegram', 'push', 'app'], high: ['telegram', 'push', 'app'] },
   drift_alert: { normal: ['telegram', 'app'] },
   goal_update: { normal: ['app'] },
-  system: { normal: ['app'] },
+  // Routine system chatter stays in-app. HIGH is reserved for "something the
+  // house depends on has stopped and nobody would otherwise notice" — a dead
+  // hardware relay is the motivating case, and an in-app card would have gone
+  // unread for the same 12 days the outage did.
+  system: { normal: ['app'], high: ['telegram', 'app'] },
   // The teacher backlog nudge (teacher-console advocacy A1): its entire
   // premise is reaching a parent who is NOT looking at a screen — app-only
   // routing would defeat it.

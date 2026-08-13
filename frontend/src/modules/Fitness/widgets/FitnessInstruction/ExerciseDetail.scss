@@ -1,0 +1,242 @@
+@use './exerciseTokens' as ex;
+
+// Detail — a full-bleed sheet over the browser grid.
+//
+// Full-bleed rather than a centred modal: on a TV a dialog with a visible
+// backdrop invites "tap outside to dismiss", which is a mis-tap waiting to
+// happen when the pointer is a whole hand. There is one way out (Close, or
+// Escape), and it is a 96px target in the top-right corner.
+//
+// Two columns — media left, reading right. The demo is the thing being copied;
+// the instructions are the thing being read while standing still.
+
+.exercise-detail {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 24px 22px;
+  background: ex.$ex-bg;
+  color: ex.$ex-text;
+  font-family: ex.$ex-display;
+  overflow: hidden;
+
+  &__header {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+  }
+
+  &__name {
+    margin: 0;
+    font-size: clamp(2.2rem, 5vh, 3.6rem);
+    font-weight: 700;
+    line-height: 1.05;
+  }
+
+  &__body {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    gap: 28px;
+  }
+
+  &__media {
+    flex: 1 1 48%;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+
+  &__gif,
+  &__video {
+    width: 100%;
+    flex: 1 1 auto;
+    min-height: 0;
+    object-fit: contain;
+    background: ex.$ex-panel;
+    border: 2px solid ex.$ex-border;
+    border-radius: 18px;
+  }
+
+  &__media-fallback {
+    flex: 1 1 auto;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 8rem;
+    font-weight: 700;
+    color: rgba(167, 159, 196, 0.3);
+    background: ex.$ex-panel;
+    border: 2px solid ex.$ex-border;
+    border-radius: 18px;
+  }
+
+  &__stills {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 10px;
+  }
+
+  &__still {
+    height: 90px;
+    width: auto;
+    border-radius: 10px;
+    border: 1px solid ex.$ex-border;
+    background: ex.$ex-panel;
+  }
+
+  // The reading column is the only scrolling region — instructions run to nine
+  // steps on some records and must not push the demo off screen.
+  //
+  // `text-align: left` is an override, not a default: the shell this renders in
+  // (`.fitness-instruction__state`) centres its text, which is right for a
+  // placeholder card and wrong for four lines of prose per step — centred
+  // paragraphs give the eye no fixed left edge to return to.
+  &__info {
+    flex: 1 1 52%;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    overflow-y: auto;
+    padding-right: 6px;
+    text-align: left;
+  }
+
+  &__facets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  &__chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: ex.$ex-chip-h;
+    padding: 0 22px;
+    border-radius: 999px;
+    background: rgba(33, 230, 255, 0.1);
+    border: 2px solid ex.$ex-accent;
+    color: ex.$ex-accent;
+    font-size: ex.$ex-label;
+    font-weight: 700;
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+    touch-action: manipulation;
+
+    &:focus-visible {
+      outline: 3px solid ex.$ex-accent;
+      outline-offset: 3px;
+    }
+
+    &:active { transform: scale(0.97); }
+  }
+
+  &__description {
+    margin: 0;
+    font-size: ex.$ex-body;
+    line-height: 1.35;
+    color: ex.$ex-muted;
+  }
+
+  // Numbered steps. The counter is drawn rather than left to the list marker so
+  // the number is as big and as high-contrast as the step text.
+  &__steps {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    counter-reset: step;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  &__step {
+    counter-increment: step;
+    position: relative;
+    padding-left: 58px;
+    font-size: ex.$ex-body;
+    line-height: 1.3;
+
+    &::before {
+      content: counter(step);
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 42px;
+      height: 42px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      background: ex.$ex-panel-2;
+      border: 2px solid ex.$ex-border;
+      color: ex.$ex-accent;
+      font-size: 1.5rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+  }
+
+  &__notice {
+    margin: 0;
+    font-size: ex.$ex-body;
+    color: ex.$ex-muted;
+  }
+
+  &__tap {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: ex.$ex-action-h;
+    min-width: 220px;
+    padding: 12px 28px;
+    border-radius: 14px;
+    font-size: 1.8rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    cursor: pointer;
+    user-select: none;
+    touch-action: manipulation;
+
+    &:focus-visible {
+      outline: 3px solid ex.$ex-accent;
+      outline-offset: 4px;
+    }
+
+    &:active { transform: scale(0.985); }
+  }
+
+  &__tap--primary {
+    background: linear-gradient(180deg, #1c8f5e 0%, #126b45 100%);
+    border: 2px solid ex.$ex-go;
+    color: ex.$ex-text;
+  }
+
+  &__tap--ghost {
+    background: transparent;
+    border: 2px solid ex.$ex-border;
+    color: ex.$ex-muted;
+  }
+}
+
+@media (max-aspect-ratio: 1/1) {
+  .exercise-detail__body { flex-direction: column; }
+  .exercise-detail__media,
+  .exercise-detail__info { flex: 1 1 auto; width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .exercise-detail__chip:active,
+  .exercise-detail__tap:active { transform: none; }
+}
