@@ -85,7 +85,7 @@ describe('PlanningTab (wave 3, all live)', () => {
   it('an assignments 404 still offers Edit (empty, never an error)', async () => {
     schoolApi.assignments.mockResolvedValue(fail(404));
     mount(<PlanningTab learnerId="felix" kids={KIDS} />);
-    await waitFor(() => expect(screen.getByText(/Nothing assigned/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/Nothing assigned to/)).toBeTruthy());
     expect(screen.getByRole('button', { name: 'Edit assignments' })).toBeTruthy();
   });
 
