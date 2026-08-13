@@ -486,7 +486,9 @@ const Player = forwardRef(function Player(props, ref) {
       remountNonce: currentRemountNonce + 1,
       timestamp: Date.now(),
       scheduledDelayMs,
-      attempt
+      attempt,
+      // Carried so the rebuilt element does not autoplay over a deliberate pause.
+      wasPaused: playbackMetrics?.isPaused === true
     };
 
     playbackLog('player-remount', {
