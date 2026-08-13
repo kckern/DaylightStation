@@ -34,6 +34,7 @@ import SessionCameraCapture from './SessionCameraCapture.jsx';
 import { getLogger } from '@/lib/logging/Logger.js';
 import { computeCycleDimStyle } from './cycleDimStyle.js';
 import { computeStudyDims } from './studyLayout.js';
+import { computeAllowLoadingOverlayFullscreen } from './loadingOverlayFullscreenGate.js';
 import { useScreenDataRefetch } from '@/screen-framework/data/ScreenDataProvider.jsx';
 
 // Helper function to generate Plex thumbnail URLs for specific timestamps
@@ -1813,7 +1814,18 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     toggleFullscreen();
   }, [toggleFullscreen, logFitnessEvent, shouldBlockFullscreenToggle, contentMode.studyUx]);
 
-  const allowLoadingOverlayFullscreen = Boolean(resilienceState?.waitingToPlay || resilienceState?.stalled);
+  // Study mode: a stalled/buffering video must never let a tap fall through to
+  // fullscreen — that is precisely the footer-vanishes failure this mode exists to
+  // prevent, and buffering/stall state is generic Player state that applies to
+  // study content exactly as much as to workouts. Gating the flag itself (rather
+  // than only guarding inside the handler) means the global listener is never even
+  // installed while study mode is active. See loadingOverlayFullscreenGate.js for
+  // the exhaustively-tested pure decision.
+  const allowLoadingOverlayFullscreen = computeAllowLoadingOverlayFullscreen({
+    studyUx: contentMode.studyUx,
+    waitingToPlay: resilienceState?.waitingToPlay,
+    stalled: resilienceState?.stalled
+  });
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -1823,6 +1835,12 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       return undefined;
     }
     const handleGlobalPointerDown = (event) => {
+      // Belt-and-suspenders: allowLoadingOverlayFullscreen already keeps this
+      // listener from being installed in study mode, but guard the handler body
+      // too in case the flag is ever reused for another purpose.
+      if (contentMode.studyUx) {
+        return;
+      }
       if (!contentRef.current) {
         return;
       }
@@ -1863,7 +1881,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     return () => {
       window.removeEventListener('pointerdown', handleGlobalPointerDown, true);
     };
-  }, [allowLoadingOverlayFullscreen, toggleFullscreen, shouldBlockFullscreenToggle, logFitnessEvent]);
+  }, [allowLoadingOverlayFullscreen, toggleFullscreen, shouldBlockFullscreenToggle, logFitnessEvent, contentMode.studyUx]);
 
   const reloadTargetSeconds = Math.max(0, lastKnownTimeRef.current || currentTime || 0);
 
