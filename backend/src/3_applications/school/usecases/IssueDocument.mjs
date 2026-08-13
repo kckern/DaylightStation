@@ -38,6 +38,9 @@ import { mintToken, TOKEN_CLASSES } from '#domains/school/sessions/tokens.mjs';
 import { noticeDocument } from '#domains/school/documents/receipts.mjs';
 import { walkBlocks } from '#domains/school/documents/documentValidation.mjs';
 import { shortId } from '#domains/core/utils/id.mjs';
+import { createWorksheetInstance, worksheetInstanceDocument } from '#domains/school/questionBankV2.mjs';
+import { PublishPrintDocument } from '#apps/school/documents/PublishPrintDocument.mjs';
+import { slugify } from '#domains/school/documents/receipts.mjs';
 
 /** States in which handing over a sheet still means something. */
 const ISSUABLE = new Set(['created', 'media_completed', 'issued', 'reprinted']);
@@ -103,6 +106,7 @@ const FAILURE_COPY = Object.freeze({
 export class IssueDocument {
   #curriculum; #sessions; #tokens; #renderer; #printer; #formMaps; #bankReader;
   #printDocuments; #renderPrintDocument; #allocationStore;
+  #assignments; #worksheetInstances; #publishPrintDocument;
   #clock; #rng; #newArtifactId; #logger;
 
   /**
@@ -137,6 +141,7 @@ export class IssueDocument {
   constructor({
     curriculum, sessions, tokens, renderer, printer, formMaps, bankReader = null,
     printDocuments = null, renderPrintDocument = null, allocationStore = null,
+    assignments = null, worksheetInstances = null, publishPrintDocument = null,
     clock = () => new Date(), rng = Math.random,
     newArtifactId = () => `art_${shortId(8)}`, logger = console,
   } = {}) {
@@ -153,10 +158,24 @@ export class IssueDocument {
     this.#printDocuments = printDocuments;
     this.#renderPrintDocument = renderPrintDocument;
     this.#allocationStore = allocationStore;
+    this.#assignments = assignments;
+    this.#worksheetInstances = worksheetInstances;
+    this.#publishPrintDocument = publishPrintDocument
+      ?? (printDocuments ? new PublishPrintDocument({ repository: printDocuments }) : null);
     this.#clock = clock;
     this.#rng = rng;
     this.#newArtifactId = newArtifactId;
     this.#logger = logger;
+  }
+
+  /** Whether a bank-only unit uses the immutable paper-instance pipeline. */
+  canIssueBank(bankId) {
+    if (!this.#worksheetInstances || !this.#assignments || !this.#publishPrintDocument) return false;
+    const bank = this.#bankReader?.getBank(bankId);
+    // SchoolService returns validated banks without their schema discriminator;
+    // compact-v2's answer(s)+decoys authoring shape remains distinctive.
+    return Array.isArray(bank?.items) && bank.items.length > 0
+      && bank.items.every((item) => Array.isArray(item.decoys));
   }
 
   /**
@@ -191,6 +210,13 @@ export class IssueDocument {
     }
 
     const unit = await this.#curriculum.getUnit(state.unitId);
+
+    // V2 bank-only lessons are printable worksheets. Their authored bank is
+    // sampled once into a learner/enrollment-specific immutable instance;
+    // every render and scan after this point resolves that frozen artifact.
+    if (unit?.bank && !unit.document && this.#worksheetInstances && this.#assignments) {
+      return this.#issueWorksheetInstance({ sessionId, nowIso, state, unit });
+    }
 
     // Tracked quizzes (spec §9): a `print/<id>@<rev>` unit-document reference
     // resolves through the print-document pipeline instead of the legacy
@@ -274,6 +300,104 @@ export class IssueDocument {
       formMap: rendered.formMap ?? null,
       document: null,
       message: reprinting ? 'Printing that again for you.' : 'Printing your sheet.',
+    };
+  }
+
+  async #issueWorksheetInstance({ sessionId, nowIso, state, unit }) {
+    if (!this.#renderPrintDocument || !this.#publishPrintDocument || !this.#allocationStore) {
+      return this.#unavailable(sessionId, 'worksheet-instance-not-configured', 'There is no sheet to print for this one.');
+    }
+    const assignment = await this.#assignments.get(state.learnerId);
+    const course = (assignment?.courses ?? []).find((entry) => (
+      entry.courseId === unit.courseId || entry.enrollment?.lessonOrder
+        && Object.values(entry.enrollment.lessonOrder).flat().includes(unit.unitId)
+    ));
+    const enrollmentId = course?.enrollment?.enrollmentId;
+    const profile = course?.profile ?? course?.enrollment?.profile;
+    if (!enrollmentId || !profile) {
+      return this.#unavailable(sessionId, 'no-enrollment', 'This lesson is not enrolled for this learner.');
+    }
+
+    let instance = await this.#worksheetInstances.findBySession(sessionId);
+    const reprinting = Boolean(instance);
+    if (!instance) {
+      const id = `${slugify(unit.subject ?? 'school')}/${slugify(course.courseId)}/ws-${slugify(sessionId)}`;
+      const bank = this.#bankReader?.getBank(unit.bank);
+      if (!bank) return this.#unavailable(sessionId, 'no-bank', 'There are no questions for this lesson.');
+      instance = createWorksheetInstance({
+        id, sessionId, bank, learnerId: state.learnerId, enrollmentId,
+        lessonId: unit.unitId, profile, seed: `${sessionId}:${state.variant ?? 0}`, issuedAt: nowIso,
+        itemIds: state.remediationOf && state.remediationItemIds?.length ? state.remediationItemIds : null,
+      });
+      const published = await this.#publishPrintDocument.execute({
+        source: worksheetInstanceDocument(instance, {
+          title: unit.title,
+          description: unit.description ?? null,
+          sourceTitle: 'The Young People’s Atlas of the United States',
+          printedPages: unit.provenance?.printed_pages ?? [],
+        }),
+      });
+      instance = { ...instance, documentId: published.id, documentRevision: published.rev };
+    }
+
+    const publishedDocument = await this.#printDocuments.getPublished(instance.documentId, instance.documentRevision);
+    const learnerName = String(instance.learnerId)
+      .split(/[-_\s]+/).filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
+    const issueDate = new Date(instance.issuedAt).toLocaleDateString('en-GB', {
+      timeZone: 'America/Los_Angeles', day: 'numeric', month: 'short', year: 'numeric',
+    });
+    const reusableCard = !reprinting && typeof this.#allocationStore.findReusableCard === 'function'
+      ? await this.#allocationStore.findReusableCard({
+        learnerId: instance.learnerId, rowsNeeded: instance.questions.length, capacity: 50,
+      })
+      : null;
+    let rendered;
+    try {
+      const result = await this.#renderPrintDocument.execute({
+        document: publishedDocument,
+        context: reprinting && instance.omr?.cardId
+          ? { cardId: instance.omr.cardId, startRow: instance.omr.rowRange.start, learnerId: state.learnerId, learnerName, date: issueDate, sessionId }
+          : reusableCard
+            ? { ...reusableCard, learnerId: state.learnerId, learnerName, date: issueDate, sessionId }
+            : { freshCard: true, learnerId: state.learnerId, learnerName, date: issueDate, sessionId },
+      });
+      rendered = { pdf: result.bytes, pageCount: result.pageCount, allocation: result.allocation };
+    } catch (err) {
+      await this.#orphanAllocation(err.details?.allocation, { sessionId, unitId: state.unitId, stage: 'render' });
+      return this.#recordFailure({ sessionId, stage: 'render', reason: err.message, nowIso, state, cause: 'render' });
+    }
+
+    if (!reprinting) {
+      instance = {
+        ...instance,
+        omr: {
+          cardId: rendered.allocation.cardId,
+          recordId: rendered.allocation.recordId,
+          rowRange: rendered.allocation.rowRange,
+          letters: instance.questions.map((question) => ({
+            itemId: question.itemId,
+            options: question.options.map(({ id, label, letter, correct }) => ({ id, label, letter, correct })),
+          })),
+        },
+      };
+      await this.#worksheetInstances.put(instance);
+    }
+
+    try {
+      await this.#printer.printPdf(rendered.pdf, { jobName: `school-${state.unitId}-${instance.id}`, user: state.learnerId });
+    } catch (err) {
+      await this.#orphanAllocation(rendered.allocation, { sessionId, unitId: state.unitId, stage: 'print' });
+      return this.#recordFailure({ sessionId, stage: 'print', reason: err.message, nowIso, state, cause: 'printer' });
+    }
+    const type = reprinting ? 'reprinted' : 'issued';
+    const { errors, event } = createEvent({ type, at: nowIso, sessionId, artifactId: instance.id });
+    if (errors.length) throw new Error(`IssueDocument: could not record worksheet instance: ${errors.join('; ')}`);
+    await this.#sessions.appendEvent(sessionId, event);
+    return {
+      status: type, sessionId, artifactId: instance.id, worksheetInstanceId: instance.id,
+      pageCount: rendered.pageCount, tokens: {}, allocation: rendered.allocation,
+      document: null, message: reprinting ? 'Printing that exact worksheet again.' : 'Printing your worksheet.',
     };
   }
 

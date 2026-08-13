@@ -37,6 +37,18 @@ export function slugify(value, fallback = 'x') {
 
 const text = (md) => ({ type: 'rich_text', md });
 
+/** Shared agenda/result lesson card: one QR, one hierarchy, no repeated token text. */
+function lessonAction({ token, eyebrow, title, description = null, icon = null, meta = null, taxonomy = null } = {}) {
+  return {
+    type: 'scan_action', action: token, label: title,
+    presentation: 'lesson', eyebrow, hideCode: true,
+    ...(isNonEmptyString(description) ? { description } : {}),
+    ...(isNonEmptyString(icon) ? { icon } : {}),
+    ...(isNonEmptyString(meta) ? { meta } : {}),
+    ...(taxonomy ? { taxonomy } : {}),
+  };
+}
+
 /**
  * The printed time, as a person says it: `Mon 27 Jul, 9:05 am`.
  *
@@ -80,9 +92,8 @@ export function formatPrintedAt(iso, timeZone = 'UTC') {
  * seed 0 is not a placeholder — regeneration is byte-identical by construction.
  *
  * `title`, when given, is the STANDARD HEADER: renderers print it as an
- * inverted banner (black band, light text) across the top of the tape. Only
- * the agenda carries one today — the result/notice slips open with their own
- * `# …` headline blocks instead.
+ * inverted banner (black band, light text) across the top of the tape. Agendas
+ * and result slips use one; notices open with their own `# …` headline block.
  */
 const receipt = (id, blocks, { title = null } = {}) => ({
   id, seed: 0, variant: 0, target: ['receipt'], blocks,
@@ -186,21 +197,20 @@ export function agendaDocument({
     const suffix = served
       ? ' — done today'
       : (isNonEmptyString(section.progressLabel) ? ` — ${section.progressLabel}` : '');
-    blocks.push(text(`## ${String(section.subject || '').toUpperCase()}${suffix}`));
-
-    if (typeof section.gradePercent === 'number' && Number.isFinite(section.gradePercent)) {
-      blocks.push(text(`Grade so far: ${Math.round(section.gradePercent)}%`));
+    // Already served today: nothing more to offer for this subject.
+    if (served) {
+      blocks.push(text(`## ${String(section.subject || '').toUpperCase()}${suffix}`));
+      return;
     }
 
-    // Already served today: nothing more to offer for this subject.
-    if (served) return;
-
     if (section.programUnavailable) {
+      blocks.push(text(`## ${String(section.subject || '').toUpperCase()}${suffix}`));
       blocks.push(text('Not answering right now — try it on the Portal.'));
       return;
     }
 
     if (isNonEmptyString(section.lockedRemedy)) {
+      blocks.push(text(`## ${String(section.subject || '').toUpperCase()}${suffix}`));
       blocks.push(text(section.lockedRemedy));
       return;
     }
@@ -210,6 +220,7 @@ export function agendaDocument({
     const nextTitle = next.title || next.unitId;
     const label = isNonEmptyString(next.actionLabel) ? `${nextTitle} — ${next.actionLabel}` : nextTitle;
     if (next.schoolcalcHandoff?.eligible) {
+      blocks.push(text(`## ${String(section.subject || '').toUpperCase()}${suffix}`));
       blocks.push(text(nextTitle));
       if (isNonEmptyString(next.schoolcalcHandoff.displayCode)) {
         blocks.push(text(next.schoolcalcHandoff.displayCode));
@@ -221,19 +232,25 @@ export function agendaDocument({
     }
     const token = tokensBySubject?.[section.subject];
     if (isNonEmptyString(token)) {
-      // `icon` names the subject's shelf icon (the nine School-home SVGs);
-      // raster renderers draw it beside the label, text renderers ignore it.
-      blocks.push({ type: 'scan_action', action: token, label, icon: section.subject });
+      blocks.push(lessonAction({
+        token,
+        eyebrow: `Today · ${section.subject}`,
+        title: nextTitle,
+        description: next.description,
+        icon: section.subject,
+        meta: [section.progressLabel, Number.isFinite(section.gradePercent) ? `Grade ${Math.round(section.gradePercent)}%` : null]
+          .filter(isNonEmptyString).join(' · '),
+        taxonomy: next.taxonomy,
+      }));
     } else {
+      blocks.push(text(`## ${String(section.subject || '').toUpperCase()}${suffix}`));
       blocks.push(text(label));
     }
   });
 
   appendNoteLines(blocks, noteLines);
   const hasCalculator = offered.some((section) => section.next?.schoolcalcHandoff?.eligible);
-  blocks.push(text(footer || (hasCalculator
-    ? 'Enter calculator codes. Scan any other line above to start.'
-    : 'Scan a line above to start. Scan your card any time for a new list.')));
+  if (footer || hasCalculator) blocks.push(text(footer || 'Enter the calculator code to start.'));
   return receipt(`agenda-${slugify(learnerId, 'learner')}`, blocks, { title });
 }
 
@@ -257,22 +274,33 @@ export function agendaDocument({
  */
 export function resultDocument({
   sessionId, unitTitle, result, percent = null, passingPercent = null, objectives = [],
+  correctCount = null, totalCount = null, progress = null,
+  subjectIcon = null,
+  taxonomy = null,
+  learnerName = null, date = null, studentNo = null, hints = [],
   actions = [], reward = null, rewardSkipReason = null, unlockedTitle = null, notes = [],
 } = {}) {
   const passed = result === 'passed';
-  const blocks = [
-    text(passed ? '# Nice work!' : '# Almost there'),
-    text(unitTitle || 'Your work'),
-  ];
-  if (typeof percent === 'number' && Number.isFinite(percent)) {
-    // The bar is printed WITH the score (student-advocacy A4): a child is
-    // told what passing meant, not left to infer it.
-    blocks.push(text(typeof passingPercent === 'number' && Number.isFinite(passingPercent)
-      ? `Score: ${Math.round(percent)}% (passing is ${Math.round(passingPercent)}%)`
-      : `Score: ${Math.round(percent)}%`));
-  }
-  if (!passed && Array.isArray(objectives) && objectives.length) {
-    blocks.push(text('Worth another look:'));
+  const blocks = [{
+    type: 'result_summary',
+    headline: passed ? 'Nice work!' : 'Let’s try that again',
+    title: unitTitle || 'Your work',
+    ...(typeof percent === 'number' && Number.isFinite(percent) ? { percent } : {}),
+    ...(typeof passingPercent === 'number' && Number.isFinite(passingPercent) ? { passingPercent } : {}),
+    ...(Number.isInteger(correctCount) ? { correctCount } : {}),
+    ...(Number.isInteger(totalCount) ? { totalCount } : {}),
+    ...(progress ? { progress } : {}),
+    ...(isNonEmptyString(subjectIcon) ? { icon: subjectIcon } : {}),
+    ...(isNonEmptyString(learnerName) ? { learnerName } : {}),
+    ...(isNonEmptyString(date) ? { date } : {}),
+    ...(isNonEmptyString(studentNo) ? { studentNo } : {}),
+    ...(taxonomy ? { taxonomy } : {}),
+  }];
+  if (!passed && Array.isArray(hints) && hints.some(isNonEmptyString)) {
+    blocks.push(text('## REVIEW BEFORE YOU RETRY'));
+    hints.filter(isNonEmptyString).forEach((hint) => blocks.push(text(`- ${hint}`)));
+  } else if (!passed && Array.isArray(objectives) && objectives.length) {
+    blocks.push(text('## REVIEW BEFORE YOU RETRY'));
     objectives.filter(isNonEmptyString).forEach((o) => blocks.push(text(`- ${o}`)));
   }
   appendNoteLines(blocks, (Array.isArray(notes) ? notes : []).filter(isNonEmptyString));
@@ -284,13 +312,17 @@ export function resultDocument({
   if (passed && rewardSkipReason === 'awaiting_signoff') {
     blocks.push(text('Coins: waiting for a grown-up\'s OK.'));
   }
-  if (passed && isNonEmptyString(unlockedTitle)) {
-    blocks.push(text(`Next up: ${unlockedTitle}`));
-  }
-
   (Array.isArray(actions) ? actions : []).forEach((action) => {
     if (!action || !isNonEmptyString(action.label)) return;
-    if (isNonEmptyString(action.token)) blocks.push({ type: 'scan_action', action: action.token, label: action.label });
+    if (isNonEmptyString(action.token) && action.presentation === 'lesson') {
+      blocks.push(lessonAction({
+        token: action.token, eyebrow: action.eyebrow ?? 'Next up',
+        title: action.title ?? unlockedTitle ?? action.label, description: action.description,
+        icon: action.icon,
+        meta: action.meta,
+        taxonomy: action.taxonomy,
+      }));
+    } else if (isNonEmptyString(action.token)) blocks.push({ type: 'scan_action', action: action.token, label: action.label });
     else blocks.push(text(action.label));
   });
 
@@ -299,7 +331,9 @@ export function resultDocument({
   if (!blocks.some((b) => b.type === 'scan_action')) {
     blocks.push(text('Scan your card to see what is next.'));
   }
-  return receipt(`result-${slugify(sessionId, 'session')}`, blocks);
+  // Keep the session-derived id for persistence and diagnostics, but never
+  // expose it as the renderer's fallback heading on a child's receipt.
+  return receipt(`result-${slugify(sessionId, 'session')}`, blocks, { title: 'Worksheet Result' });
 }
 
 /**

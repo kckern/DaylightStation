@@ -17,7 +17,7 @@ needed.
 | math | Math & Money | `svg/math.svg` | math-finance |
 | science | Science & Nature | `svg/science.svg` | science (atom, stroke-based) |
 | skills | Life & Skills | `svg/skills.svg` | plant-leaf |
-| history | History & Geography | `svg/history.svg` | globe-stand |
+| civilization | Civilization | `svg/civilization.svg` | globe-stand |
 | scripture | Scripture & Gospel | `svg/scripture.svg` | sunlight |
 | arts | Art & Music | `svg/arts.svg` | art-palette |
 | geography | Geography | `svg/geography.svg` | placeholder line-art (globe) — swap later |

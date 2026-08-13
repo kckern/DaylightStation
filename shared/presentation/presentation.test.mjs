@@ -41,6 +41,10 @@ function topologyCatalog() {
         frames: { start: { cell: [0, 0] }, middle: { cell: [1, 0] }, end: { cell: [2, 0] } },
         connector: { topology: 'connector-graph', pieces: { e: 'start', ew: 'middle', w: 'end' } },
       }),
+      'height.cliff': asset({
+        frames: { left: { cell: [0, 0] }, middle: { cell: [1, 0] }, right: { cell: [2, 0] } },
+        height: { topology: 'cliff-height', rise_cells: 1, bands: { lip: ['left', 'middle', 'right'] }, transitions: { north: ['lip'] } },
+      }),
       'component.floor': asset({
         frames: { a: { cell: [0, 0] }, b: { cell: [1, 0] }, c: { cell: [2, 0] } },
         components: { fill: { role: 'fill', frames: ['a', 'b', 'c'] } },
@@ -53,6 +57,7 @@ function topologyCatalog() {
     },
     terrain_interfaces: { shore: { inside: 'water', outside: 'grass', asset: 'terrain.water', polarity: 'positive' } },
     connector_profiles: { fence: { asset: 'connector.fence', render_layer: 'ground' } },
+    height_interfaces: { cliff: { asset: 'height.cliff', render_layer: 'ground' } },
     component_profiles: {
       floor: { asset: 'component.floor', component: 'fill', allowed_surfaces: ['solid'], render_layer: 'ground' },
       hazard: { asset: 'component.floor', component: 'fill', allowed_surfaces: ['solid'], provides_surface: 'liquid', render_layer: 'ground' },
@@ -69,7 +74,7 @@ test('strict v2 catalog and all mounted showcase scenes compile deterministicall
   const catalog = loadMountedCatalog();
   assert.deepEqual(validatePresentationCatalog(catalog), { valid: true, errors: [] });
   const files = fs.readdirSync(path.join(showcaseRoot, 'scenes')).filter((file) => file.endsWith('.yml')).sort();
-  assert.equal(files.length, 14);
+  assert.equal(files.length, 19);
   for (const file of files) {
     const scene = YAML.parse(fs.readFileSync(path.join(showcaseRoot, 'scenes', file), 'utf8'));
     assert.deepEqual(validateTopDownScene(scene, catalog), { valid: true, errors: [] });
@@ -117,6 +122,19 @@ test('compiler resolves diagonal-only inner corners and counts connector joins',
   assert.equal(plan.diagnostics.composition.walkable_cells, 1);
   assert.equal(plan.diagnostics.composition.navigation_connectivity, 1);
   assert.equal(plan.commands.some((command) => command.asset === 'terrain.water' && command.frame === 'inner.nw'), true);
+});
+
+test('height interfaces use seamless middle frames at declared viewport continuations', () => {
+  const catalog = topologyCatalog();
+  const scene = {
+    schema_version: 2, kind: 'top-down-scene', id: 'continued-height', catalog: 'topology-test', style_profile: 'pixel16.topdown', logical_size: [48, 48], pixel_scale: 2,
+    grid: { cell: [16, 16] }, terrain: { base: 'grass', regions: [] },
+    heights: [{ id: 'ridge', profile: 'cliff', direction: 'north', origin: [0, 16], width: 3, continues: ['west', 'east'] }], placements: [],
+  };
+  const plan = compileTopDownScene(catalog, scene);
+  assert.deepEqual(plan.commands.filter((command) => command.provenance === 'height:ridge').map((command) => command.frame), ['middle', 'middle', 'middle']);
+  scene.heights[0].continues = ['north'];
+  assert.ok(validateTopDownScene(scene, catalog).errors.some((error) => error.includes('continues must use only span sides west or east')));
 });
 
 test('overlay materials cannot masquerade as terrain fills', () => {

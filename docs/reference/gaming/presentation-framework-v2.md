@@ -142,7 +142,7 @@ Component profiles may also declare `interior_only: true`. Every authored compon
 
 A component role is approved only after its frames assemble into the named object. Grid adjacency is not evidence that thin source fragments form a curb, railing, or enclosure. Profiles whose assembly lacks thickness, caps, posts, or terminations must remain unexposed until corrected art or a reproducible derived assembly exists.
 
-A mixed component atlas may also expose reviewed height bands when the same source sheet contains a curb or face course. Register that asset through `height_interfaces` and let the height compiler select left/middle/right frames across the authored span; raised platforms should not be simulated with shadows or per-scene z offsets.
+A mixed component atlas may also expose reviewed height bands when the same source sheet contains a curb or face course. Register that asset through `height_interfaces` and let the height compiler select left/middle/right frames across the authored span; raised platforms should not be simulated with shadows or per-scene z offsets. A height spanning through a viewport edge declares `continues: [west, east]` for a north/south transition, or `[north, south]` for an east/west transition. Continued ends select the seamless middle frame instead of a transparent or terminating cap, so a full-width ridge cannot expose the base material at either edge.
 
 ## Scene vocabulary
 

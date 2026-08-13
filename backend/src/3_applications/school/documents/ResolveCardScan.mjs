@@ -398,7 +398,12 @@ export class ResolveCardScan {
     }
 
     const records = await this.#allocationStore.findByCard(testId);
-    const eligible = records.filter((record) => isLiveOrSatisfied(record.status));
+    const live = records.filter((record) => record.status === 'live');
+    // A reused card retains old marks in satisfied rows. While a new worksheet
+    // is live, grade only that live allocation and ignore the settled rows.
+    const eligible = live.length > 0
+      ? live
+      : records.filter((record) => isLiveOrSatisfied(record.status));
     const answeredRows = new Set(Object.keys(answers).map(Number));
 
     // A card the store has NEVER seen, with real answers on it, is almost

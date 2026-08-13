@@ -111,10 +111,14 @@ function overflowError(fragment) {
 }
 
 /** Re-runs the vertical walk after answer spaces have grown. */
-function reflow(pageFragments, contentTopPt, spacing) {
+function reflow(pageFragments, contentTopPt, spacing, leadingFillPt = 0) {
   let cursor = contentTopPt;
   let previousClass = null;
   for (const fragment of pageFragments) {
+    if (fragment.fillAfter === true && leadingFillPt > 0) {
+      cursor += leadingFillPt;
+      leadingFillPt = 0;
+    }
     cursor += gapBetween(spacing, previousClass, fragment.spacingClass);
     fragment.yPt = cursor;
     cursor += fragment.heightPt;
@@ -153,7 +157,23 @@ function distributeAnswerSpace(pageFragments, contentTopPt, contentBottomPt, spa
     growable = stillGrowable;
   }
 
-  reflow(pageFragments, contentTopPt, spacing);
+  // A generated mastery sheet can explicitly ask for balanced question
+  // rhythm. Once real answer spaces have taken their share, distribute any
+  // remaining page height like CSS `space-around`: half a share before the
+  // first marked question, a full share between questions, and half a share
+  // after the last question.
+  let leadingFillPt = 0;
+  if (sparePt > EPSILON) {
+    const flexible = pageFragments.filter((fragment) => fragment.fillAfter === true);
+    if (flexible.length) {
+      const share = sparePt / flexible.length;
+      leadingFillPt = share / 2;
+      flexible.slice(0, -1).forEach((fragment) => { fragment.heightPt += share; });
+      sparePt = 0;
+    }
+  }
+
+  reflow(pageFragments, contentTopPt, spacing, leadingFillPt);
 }
 
 /**

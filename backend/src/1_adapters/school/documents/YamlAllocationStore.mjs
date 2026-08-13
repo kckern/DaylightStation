@@ -210,6 +210,43 @@ export class YamlAllocationStore {
     return out;
   }
 
+  /**
+   * Finds the learner's most recently used settled physical card with enough
+   * untouched rows for another worksheet. Rows are never reclaimed: marks
+   * remain on paper even after an allocation is satisfied or superseded.
+   */
+  async findReusableCard({ learnerId, rowsNeeded, capacity = 50 } = {}) {
+    if (typeof learnerId !== 'string' || !learnerId.trim()) {
+      throw new Error('YamlAllocationStore.findReusableCard requires learnerId');
+    }
+    if (!Number.isInteger(rowsNeeded) || rowsNeeded < 1) {
+      throw new Error('YamlAllocationStore.findReusableCard requires rowsNeeded >= 1');
+    }
+    if (!Number.isInteger(capacity) || capacity < 1) {
+      throw new Error('YamlAllocationStore.findReusableCard requires capacity >= 1');
+    }
+
+    const candidates = [];
+    for (const cardId of this.#io.list(path.join(this.#directory, 'allocations'))) {
+      const records = this.#load(cardId);
+      const learnerRecords = records.filter((record) => record.learnerId === learnerId);
+      if (learnerRecords.length === 0) continue;
+      // Never add a second worksheet while one on this physical card is still awaiting a scan.
+      if (learnerRecords.some((record) => record.status === 'live')) continue;
+      // A Student No. must never be shared between learners.
+      if (records.some((record) => record.learnerId != null && record.learnerId !== learnerId)) continue;
+      const occupiedThrough = Math.max(...records.map((record) => record.rowRange.end));
+      const startRow = occupiedThrough + 1;
+      if (startRow + rowsNeeded - 1 > capacity) continue;
+      const lastUsedAt = learnerRecords.reduce((latest, record) => (
+        record.renderedAt > latest ? record.renderedAt : latest
+      ), '');
+      candidates.push({ cardId, startRow, lastUsedAt });
+    }
+    candidates.sort((a, b) => b.lastUsedAt.localeCompare(a.lastUsedAt) || b.cardId.localeCompare(a.cardId));
+    return candidates.length ? { cardId: candidates[0].cardId, startRow: candidates[0].startRow } : null;
+  }
+
   /** Every card id with any records in the store — the near-miss pool for mis-bubbled-card diagnostics. */
   async listCardIds() {
     return [...this.#io.list(path.join(this.#directory, 'allocations'))];

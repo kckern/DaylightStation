@@ -54,6 +54,7 @@ export const BLOCK_TARGET_SUPPORT = Object.freeze({
   rich_text: Object.freeze(['letter', 'receipt']),
   scan_action: Object.freeze(['letter', 'receipt']),
   media_action: Object.freeze(['letter', 'receipt']),
+  result_summary: Object.freeze(['receipt']),
   math: Object.freeze(['letter']),
   plot: Object.freeze(['letter']),
   geometry: Object.freeze(['letter']),
@@ -186,7 +187,7 @@ export function validateDocumentV2(raw, { allowAnswers = false } = {}) {
   if (!rawHeaderValid) errors.push('header must be a mapping');
   const rawHeader = rawHeaderValid && raw.header ? raw.header : {};
   const header = { ...preset };
-  for (const field of ['name', 'date', 'scoreBox']) {
+  for (const field of ['name', 'date', 'scoreBox', 'metaFirst', 'rule']) {
     if (rawHeader[field] === undefined) continue;
     if (typeof rawHeader[field] !== 'boolean') errors.push(`header.${field} must be a boolean`);
     else header[field] = rawHeader[field];
@@ -194,6 +195,16 @@ export function validateDocumentV2(raw, { allowAnswers = false } = {}) {
   if (rawHeader.instructions !== undefined) {
     if (typeof rawHeader.instructions !== 'string') errors.push('header.instructions must be a string');
     else header.instructions = rawHeader.instructions;
+  }
+  for (const field of ['subtitle', 'reading']) {
+    if (rawHeader[field] !== undefined) {
+      if (typeof rawHeader[field] !== 'string') errors.push(`header.${field} must be a string`);
+      else header[field] = rawHeader[field];
+    }
+  }
+  if (rawHeader.frame !== undefined) {
+    if (!['none', 'double'].includes(rawHeader.frame)) errors.push('header.frame must be none|double when present');
+    else header.frame = rawHeader.frame;
   }
 
   const rawFitValid = raw.fit === undefined || isPlainObject(raw.fit);

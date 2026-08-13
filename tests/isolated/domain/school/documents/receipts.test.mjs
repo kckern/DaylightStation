@@ -9,6 +9,7 @@ const valid = (doc) => {
 };
 
 const actionsOf = (doc) => doc.blocks.filter((b) => b.type === 'scan_action');
+const summaryOf = (doc) => doc.blocks.find((b) => b.type === 'result_summary');
 const textOf = (doc) => doc.blocks.filter((b) => b.type === 'rich_text').map((b) => b.md).join('\n');
 
 describe('slugify', () => {
@@ -47,11 +48,8 @@ describe('agendaDocument', () => {
     });
     expect(doc.blocks.map((b) => b.type)).toEqual([
       'rich_text', // printed at
-      'rich_text', // ## MATH — Unit 2 of 4
-      'rich_text', // Grade so far: 88%
       'scan_action', // math's next, tokened
       'rich_text', // ## LANGUAGE — done today
-      'rich_text', // footer
     ]);
   });
 
@@ -89,23 +87,26 @@ describe('agendaDocument', () => {
   });
 
   it('prints the progress label for a live (not-yet-served) section', () => {
-    const text = textOf(agendaDocument({ learnerId: 'kid1', sections, tokensBySubject }));
-    expect(text).toContain('## MATH — Unit 2 of 4');
+    const action = actionsOf(agendaDocument({ learnerId: 'kid1', sections, tokensBySubject }))[0];
+    expect(action.meta).toContain('Unit 2 of 4');
   });
 
   it('prints the grade only when gradePercent is not null', () => {
-    const withGrade = textOf(agendaDocument({ learnerId: 'kid1', sections, tokensBySubject }));
-    expect(withGrade).toContain('Grade so far: 88%');
+    const withGrade = actionsOf(agendaDocument({ learnerId: 'kid1', sections, tokensBySubject }))[0];
+    expect(withGrade.meta).toContain('Grade 88%');
 
-    const noGrade = textOf(agendaDocument({
+    const noGrade = agendaDocument({
       learnerId: 'kid1', tokensBySubject, sections: [{ subject: 'math', servedToday: false, next: { title: 'Unit Two', token: 'sch:AAAA' } }],
-    }));
-    expect(noGrade).not.toContain('Grade so far');
+    });
+    expect(actionsOf(noGrade)[0]).not.toHaveProperty('meta');
   });
 
-  it('composes a scan_action label as "title — actionLabel", carries the opaque token, and names the subject icon', () => {
+  it('uses the shared QR-left lesson card without exposing or repeating the token', () => {
     const doc = agendaDocument({ learnerId: 'kid1', sections, tokensBySubject });
-    expect(actionsOf(doc)).toEqual([{ type: 'scan_action', action: 'sch:AAAA', label: 'Unit Two — watch it', icon: 'math' }]);
+    expect(actionsOf(doc)[0]).toMatchObject({
+      type: 'scan_action', action: 'sch:AAAA', label: 'Unit Two', icon: 'math',
+      eyebrow: 'Today · math', presentation: 'lesson', hideCode: true,
+    });
   });
 
   it('prints an untokened next as plain text rather than a bare scan action', () => {
@@ -181,11 +182,14 @@ describe('resultDocument', () => {
   const pass = { sessionId: 'ses_a', unitTitle: 'Unit Two', result: 'passed', percent: 83.4 };
 
   it('is a valid receipt-target document', () => {
-    valid(resultDocument(pass));
+    const doc = resultDocument(pass);
+    valid(doc);
+    expect(doc.title).toBe('Worksheet Result');
+    expect(doc.id).toBe('result-ses-a');
   });
 
   it('prints the score rounded', () => {
-    expect(textOf(resultDocument(pass))).toContain('83%');
+    expect(summaryOf(resultDocument(pass)).percent).toBe(83.4);
   });
 
   it('prints coins only when coins were actually awarded', () => {
@@ -195,7 +199,11 @@ describe('resultDocument', () => {
   });
 
   it('names the newly unlocked unit on a pass', () => {
-    expect(textOf(resultDocument({ ...pass, unlockedTitle: 'Unit Three' }))).toContain('Next up: Unit Three');
+    const doc = resultDocument({
+      ...pass, unlockedTitle: 'Unit Three',
+      actions: [{ token: 'sch:NEXT', label: 'Unit Three', presentation: 'lesson', title: 'Unit Three' }],
+    });
+    expect(actionsOf(doc)[0]).toMatchObject({ eyebrow: 'Next up', label: 'Unit Three' });
   });
 
   it('lists objectives to revisit only on a fail', () => {

@@ -12,8 +12,11 @@ const shuffle = (items, rng) => {
   return out;
 };
 
-export function createCourseEnrollment({ courseId, profile, units, policy = {}, rng = Math.random } = {}) {
+export function createCourseEnrollment({ enrollmentId = null, courseId, profile, units, policy = {}, rng = Math.random } = {}) {
   if (typeof courseId !== 'string' || !courseId) throw new Error('courseId is required');
+  if (enrollmentId !== null && (typeof enrollmentId !== 'string' || !enrollmentId)) {
+    throw new Error('enrollmentId must be a non-empty string when provided');
+  }
   const members = (units ?? []).filter((u) => u?.courseId === courseId);
   const modules = [...new Set(members.map((u) => u.module).filter(Boolean))];
   const opening = policy.required_opening_module ?? null;
@@ -34,7 +37,15 @@ export function createCourseEnrollment({ courseId, profile, units, policy = {}, 
       ...(policy.lesson_order === 'shuffle_once' ? shuffle(remainder, rng) : remainder),
     ].map((u) => u.unitId);
   }
-  return { schema: 'school.course-enrollment/v1', courseId, profile: profile ?? null, moduleOrder, optionalModules, lessonOrder };
+  return {
+    schema: 'school.course-enrollment/v1',
+    ...(enrollmentId ? { enrollmentId } : {}),
+    courseId,
+    profile: profile ?? null,
+    moduleOrder,
+    optionalModules,
+    lessonOrder,
+  };
 }
 
 export default createCourseEnrollment;

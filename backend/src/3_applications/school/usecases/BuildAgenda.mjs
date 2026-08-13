@@ -240,9 +240,21 @@ export class BuildAgenda {
     // `agendaDocument` composes its own "{title} — {actionLabel}" line, so the
     // document sees only the SUFFIX here — the offer above carries the full
     // label, which is a different consumer's concern (Task 11's resolver).
+    const worksById = new Map((works ?? []).map((work) => [work.work, work]));
     const sectionsForDocument = sections.map((section) => (actionLabelBySubject.has(section.subject)
       ? { ...section, next: {
         ...section.next,
+        taxonomy: (() => {
+          const entry = section.next;
+          const work = worksById.get(entry?.courseId);
+          const moduleTitle = work?.modules?.find((module) => module.module === entry?.module)?.title;
+          return {
+            subject: section.subject[0].toUpperCase() + section.subject.slice(1),
+            course: work?.title ?? entry?.courseId ?? 'Independent study',
+            unit: moduleTitle ?? entry?.module ?? entry?.title,
+            lesson: entry?.title,
+          };
+        })(),
         actionLabel: actionLabelBySubject.get(section.subject),
         ...(calculatorBySubject.has(section.subject)
           ? { schoolcalcHandoff: calculatorBySubject.get(section.subject) }

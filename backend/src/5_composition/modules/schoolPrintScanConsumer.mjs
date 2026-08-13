@@ -33,7 +33,8 @@ import { decodeQuizSheet, resolveQuizScanTopics } from '#apps/quizzes/quizScanRe
  * @returns {{ dispose: () => void }}
  */
 export function createSchoolPrintScanConsumer({
-  eventBus, config = {}, resolveCardScan, recordCardScanOutcome = null, logger = console,
+  eventBus, config = {}, resolveCardScan, recordCardScanOutcome = null,
+  closeSessionOutcome = null, logger = console,
 }) {
   if (!eventBus?.subscribe) {
     throw new Error('createSchoolPrintScanConsumer: eventBus with subscribe required');
@@ -141,6 +142,11 @@ export function createSchoolPrintScanConsumer({
           // allocation record carries its issuing session. Sequential and
           // per-card so one failure never swallows a cardmate's recording.
           recordCardScanOutcome.execute({ testId, card })
+            .then(async (recorded) => {
+              if (recorded?.session?.advancedTo === 'graded' && closeSessionOutcome && card.sessionId) {
+                await closeSessionOutcome.execute({ sessionId: card.sessionId });
+              }
+            })
             .catch((err) => {
               logger.warn?.('school.print.scan-record-failed', {
                 testId, recordId: card.recordId, error: err.message,

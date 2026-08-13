@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { validateQuestionBank } from './questionBankValidation.mjs';
+import { publishDocument } from './documents/documentSource.mjs';
 import {
   normalizeQuestionBankV2, issueWorksheet,
-  gradeIssuedWorksheet, remediationReceipt,
+  gradeIssuedWorksheet, remediationReceipt, createWorksheetInstance, worksheetInstanceDocument,
 } from './questionBankV2.mjs';
 
 const item = (id, type = 'multiple_choice') => ({
@@ -58,5 +59,22 @@ describe('question-bank/v2', () => {
     expect(remediationReceipt(issued, grade, 'locator_only').items[0]).not.toHaveProperty('answers');
     expect(remediationReceipt(issued, grade, 'show_answer').items[0].answers).toHaveLength(1);
     expect(remediationReceipt(issued, grade, 'teacher_only').items).toEqual([]);
+  });
+
+  it('creates a publishable immutable enrollment-bound OMR instance', () => {
+    const instance = createWorksheetInstance({
+      id: 'civilization/atlas/ws-one', sessionId: 'ses-one', bank,
+      learnerId: 'milo', enrollmentId: 'enr-milo-atlas', lessonId: 'kansas',
+      profile: 'lower', seed: 'one', issuedAt: '2026-08-13T00:00:00.000Z',
+    });
+    expect(Object.isFrozen(instance)).toBe(true);
+    expect(instance).toMatchObject({ learnerId: 'milo', enrollmentId: 'enr-milo-atlas' });
+    const result = publishDocument(worksheetInstanceDocument(instance, { title: 'Kansas' }));
+    expect(result.errors).toBeUndefined();
+    expect(result.published.blocks[0].type).toBe('question');
+    const questions = result.published.blocks.filter((block) => block.type === 'question');
+    expect(questions).toHaveLength(6);
+    expect(questions.every((block) => block.omr && block.blocks.at(-1).layout === 'compact')).toBe(true);
+    expect(result.bank.items).toHaveLength(6);
   });
 });

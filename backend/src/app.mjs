@@ -3139,6 +3139,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         config: omrReadersConfig,
         resolveCardScan,
         recordCardScanOutcome,
+        closeSessionOutcome: schoolLifecycle.useCases?.closeSessionOutcome ?? null,
         logger: rootLogger.child({ module: 'school-print-scan' }),
       });
     } catch (err) {

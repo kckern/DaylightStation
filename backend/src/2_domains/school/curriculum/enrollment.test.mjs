@@ -3,17 +3,18 @@ import { createCourseEnrollment } from './enrollment.mjs';
 import { planLearnerWork } from '../planner.mjs';
 
 const units = [
-  { unitId: 'atlas.01', courseId: 'atlas', module: 'opening', moduleRole: 'overview', sequence: 1, title: 'Opening', subject: 'history' },
-  { unitId: 'atlas.02', courseId: 'atlas', module: 'north', moduleRole: 'overview', sequence: 2, title: 'North', subject: 'history' },
-  { unitId: 'atlas.03', courseId: 'atlas', module: 'north', moduleRole: 'lesson', sequence: 3, title: 'North state', subject: 'history' },
-  { unitId: 'atlas.04', courseId: 'atlas', module: 'south', moduleRole: 'overview', sequence: 4, title: 'South', subject: 'history' },
-  { unitId: 'atlas.05', courseId: 'atlas', module: 'bonus', moduleRole: 'optional', sequence: 5, title: 'Bonus', subject: 'history' },
+  { unitId: 'atlas.01', courseId: 'atlas', module: 'opening', moduleRole: 'overview', sequence: 1, title: 'Opening', subject: 'civilization' },
+  { unitId: 'atlas.02', courseId: 'atlas', module: 'north', moduleRole: 'overview', sequence: 2, title: 'North', subject: 'civilization' },
+  { unitId: 'atlas.03', courseId: 'atlas', module: 'north', moduleRole: 'lesson', sequence: 3, title: 'North state', subject: 'civilization' },
+  { unitId: 'atlas.04', courseId: 'atlas', module: 'south', moduleRole: 'overview', sequence: 4, title: 'South', subject: 'civilization' },
+  { unitId: 'atlas.05', courseId: 'atlas', module: 'bonus', moduleRole: 'optional', sequence: 5, title: 'Bonus', subject: 'civilization' },
 ];
 const policy = { mode: 'module_blocks', required_opening_module: 'opening', one_active_module: true, module_order: 'shuffle_once', lesson_order: 'shuffle_once' };
 
 describe('course enrollment ordering', () => {
   it('keeps required opening first and freezes shuffled module/lesson order', () => {
-    const enrollment = createCourseEnrollment({ courseId: 'atlas', profile: 'upper', units, policy, rng: () => 0 });
+    const enrollment = createCourseEnrollment({ enrollmentId: 'enr-felix-atlas', courseId: 'atlas', profile: 'upper', units, policy, rng: () => 0 });
+    expect(enrollment.enrollmentId).toBe('enr-felix-atlas');
     expect(enrollment.moduleOrder[0]).toBe('opening');
     expect(enrollment.lessonOrder.north[0]).toBe('atlas.02');
     expect(enrollment.moduleOrder).not.toContain('bonus');
@@ -39,5 +40,23 @@ describe('course enrollment ordering', () => {
       assignment: { courses: [{ courseId: 'atlas', profile: 'upper', enrollment }] }, sessions,
     });
     expect(plan.entries.find((x) => x.unitId === 'atlas.05').status).toBe('available');
+  });
+
+  it('reports the next unlock from the frozen enrollment order', () => {
+    const enrollment = {
+      courseId: 'atlas', profile: 'lower', optionalModules: ['bonus'],
+      moduleOrder: ['opening', 'south', 'north'],
+      lessonOrder: {
+        opening: ['atlas.01'], south: ['atlas.04'], north: ['atlas.02', 'atlas.03'], bonus: ['atlas.05'],
+      },
+    };
+    const plan = planLearnerWork({
+      learnerId: 'milo', units, coursePolicies: { atlas: policy },
+      assignment: { courses: [{ courseId: 'atlas', profile: 'lower', enrollment }] }, sessions: [],
+    });
+    expect(plan.entries.find((x) => x.unitId === 'atlas.01').unlocks).toBe('atlas.04');
+    expect(plan.entries.find((x) => x.unitId === 'atlas.04').unlocks).toBe('atlas.02');
+    expect(plan.entries.find((x) => x.unitId === 'atlas.02').unlocks).toBe('atlas.03');
+    expect(plan.entries.find((x) => x.unitId === 'atlas.05').unlocks).toBeNull();
   });
 });

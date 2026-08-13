@@ -424,6 +424,7 @@ heights:
     direction: north
     origin: [320, 288]
     width: 10
+    continues: [west, east]
     z: 6
 
 components:
@@ -434,7 +435,7 @@ components:
     z: 0
 ```
 
-Connector cells derive a canonical neighbor mask, select the corresponding named piece, and synthesize exact port-to-port connections. Unsupported branches and misaligned ports fail rendering. Height regions expand the catalog's ordered transition bands and choose left, middle, and right frames from the authored width. Component fills deterministically vary approved frames; a border component with an `outline` map selects `nw/n/ne/w/e/sw/s/se` from region geometry and omits interior cells. One-cell-thick ambiguous outlines fail rather than layering arbitrary corners.
+Connector cells derive a canonical neighbor mask, select the corresponding named piece, and synthesize exact port-to-port connections. Unsupported branches and misaligned ports fail rendering. Height regions expand the catalog's ordered transition bands and choose left, middle, and right frames from the authored width. Optional `continues` names only the two sides along that span; a continued endpoint uses the seamless middle frame rather than a cap. Component fills deterministically vary approved frames; a border component with an `outline` map selects `nw/n/ne/w/e/sw/s/se` from region geometry and omits interior cells. One-cell-thick ambiguous outlines fail rather than layering arbitrary corners.
 
 These arrays describe visual assembly only. Collision, traversal, hazards, and interaction remain separate gameplay metadata.
 

@@ -206,6 +206,18 @@ export function validateTopDownScene(scene, catalog = null) {
     if (placement?.opacity !== undefined && (!Number.isFinite(placement.opacity) || placement.opacity < 0 || placement.opacity > 1)) errors.push(`placement ${index}: opacity must be between 0 and 1`);
     if (placement?.role !== undefined && !COMPOSITION_ROLES.has(placement.role)) errors.push(`placement ${index}: role is invalid`);
   }
+  for (const [index, region] of (scene?.heights ?? []).entries()) {
+    const prefix = `height ${index}`;
+    unknownFields(region, new Set(['id', 'profile', 'direction', 'origin', 'width', 'from_elevation', 'to_elevation', 'continues']), prefix, errors);
+    if (!PRESENTATION_ID.test(String(region?.id ?? '')) || !PRESENTATION_ID.test(String(region?.profile ?? ''))) errors.push(`${prefix}: id and profile are required`);
+    if (!SIDES.includes(region?.direction)) errors.push(`${prefix}: direction must be north, east, south, or west`);
+    if (!isPair(region?.origin, { numeric: true })) errors.push(`${prefix}: origin must be a non-negative logical pair`);
+    if (!Number.isInteger(region?.width) || region.width < 2) errors.push(`${prefix}: width must be an integer of at least 2 cells`);
+    if (region.continues !== undefined) {
+      const spanSides = ['north', 'south'].includes(region.direction) ? ['west', 'east'] : ['north', 'south'];
+      if (!Array.isArray(region.continues) || region.continues.some((side) => !spanSides.includes(side))) errors.push(`${prefix}: continues must use only span sides ${spanSides.join(' or ')}`);
+    }
+  }
   if (scene?.composition !== undefined) {
     const composition = scene.composition;
     if (!composition || typeof composition !== 'object' || Array.isArray(composition)) errors.push('composition must be a map');
@@ -520,8 +532,11 @@ export function compileTopDownScene(authoredCatalog, scene) {
       const elevated = region.direction === 'north' ? y < originCell[1] : region.direction === 'south' ? y >= originCell[1] : region.direction === 'west' ? x < originCell[0] : x >= originCell[0];
       if (inSpan && elevated) elevationGrid[y][x] = toElevation;
     }
+    const [spanStart, spanEnd] = ['north', 'south'].includes(region.direction) ? ['west', 'east'] : ['north', 'south'];
+    const continues = new Set(region.continues ?? []);
     for (const [bandIndex, band] of transition.bands.entries()) for (let column = 0; column < region.width; column += 1) {
-      commands.push(commandForFrame(catalog, profile.asset, [origin[0] + column * cell[0], origin[1] + bandIndex * cell[1]], { frame: band.frames[column === 0 ? 0 : column === region.width - 1 ? 2 : 1], render_layer: profile.render_layer ?? 'ground', provenance: `height:${region.id}` }));
+      const frameIndex = column === 0 && !continues.has(spanStart) ? 0 : column === region.width - 1 && !continues.has(spanEnd) ? 2 : 1;
+      commands.push(commandForFrame(catalog, profile.asset, [origin[0] + column * cell[0], origin[1] + bandIndex * cell[1]], { frame: band.frames[frameIndex], render_layer: profile.render_layer ?? 'ground', provenance: `height:${region.id}` }));
     }
   }
 

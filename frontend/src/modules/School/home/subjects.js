@@ -21,13 +21,13 @@
 export const SUBJECTS = [
   // Row-major on the 3×3 wall (per household layout):
   //   Row 1 — the three Rs: English & Literature, Writing & Typing, Math & Money.
-  //   Row 2 — History & Geography (left), Scripture & Gospel (dead centre),
+  //   Row 2 — Civilization (left), Scripture & Gospel (dead centre),
   //           Science & Nature (right).
   //   Row 3 — the rest: Language & Culture, Life & Skills, Art & Music.
   { id: 'english', label: 'English & Literature', hint: 'Reading, grammar, and great books' },
   { id: 'writing', label: 'Writing & Typing', hint: 'Put it in your own words' },
   { id: 'math', label: 'Math & Money', hint: 'Numbers, patterns, and money' },
-  { id: 'history', label: 'History & Geography', hint: 'People, places, and the past' },
+  { id: 'civilization', label: 'Civilization', hint: 'History, geography, and social studies' },
   { id: 'scripture', label: 'Scripture & Gospel', hint: 'Scriptures, stories, and faith' },
   { id: 'science', label: 'Science & Nature', hint: 'How the world and nature work' },
   { id: 'language', label: 'Language & Culture', hint: 'Hear it, say it, write it' },

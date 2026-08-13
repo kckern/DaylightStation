@@ -13,6 +13,16 @@ const PNG_COLOR_MODES = new Map([
 const COMMON_CELLS = [8, 16, 24, 32, 48, 64];
 const STATUS = new Set(['candidate', 'approved', 'deferred', 'rejected']);
 const LICENSE_SCOPE_BY_PATH = [
+  ['assets/free/', 'free-noncommercial'],
+  ['assets/dungeons/', 'dungeons-commercial'],
+  ['assets/volcano/', 'volcano-commercial'],
+  ['assets/characters/', 'characters-commercial'],
+  ['assets/desert/', 'desert-commercial'],
+  ['assets/ui/', 'ui-commercial'],
+  ['assets/halloween/', 'halloween-commercial'],
+  ['assets/default/', 'core-commercial'],
+  ['assets/legacy-unclassified/', 'legacy-private-use'],
+  ['assets/side-scroller/', 'legacy-private-use'],
   ['Cute_Fantasy_Free/', 'free-noncommercial'],
   ['Cute_Fantasy_Dungeons/', 'dungeons-commercial'],
   ['Cute_Fantasy_Volcano/', 'volcano-commercial'],
@@ -610,6 +620,92 @@ export async function auditTerrainMetadataSweep({ root, manifestPath }) {
     unreviewed,
     errors,
     warnings,
+  };
+}
+
+/**
+ * Prove that every canonical PNG has current machine facts and an explicit
+ * disposition, while separately reporting the smaller set with reviewed
+ * semantic frame metadata. This deliberately does not pretend that a measured
+ * but deferred sheet is runtime-ready.
+ */
+export async function auditAssetMetadataCoverage({ root, inventoryPath, catalogPath }) {
+  const errors = [];
+  let inventory;
+  try { inventory = YAML.parse(await readFile(inventoryPath, 'utf8')) ?? {}; }
+  catch (error) { return { valid: false, errors: [`cannot parse inventory: ${error.message}`] }; }
+  if (inventory.schema_version !== 1 || inventory.generated_by !== 'gaming-assets inventory' || inventory.source_dir !== 'assets') errors.push('inventory must be a v1 gaming-assets inventory of assets');
+  const records = Array.isArray(inventory.assets) ? inventory.assets : [];
+  const bySource = new Map(records.map((record) => [record.source, record]));
+  if (bySource.size !== records.length) errors.push('inventory contains duplicate source records');
+
+  let catalog;
+  try { catalog = await loadAssetCatalog(catalogPath); }
+  catch (error) { return { valid: false, errors: [...errors, `cannot parse catalog: ${error.message}`] }; }
+  const catalogValidation = validatePresentationCatalog(catalog);
+  if (!catalogValidation.valid) errors.push(...catalogValidation.errors.map((error) => `catalog: ${error}`));
+
+  const direct = new Map(); const provenance = new Set();
+  for (const [id, asset] of Object.entries(catalog.assets ?? {})) {
+    if (typeof asset.source === 'string') {
+      direct.set(asset.source, [...(direct.get(asset.source) ?? []), id]);
+      const record = bySource.get(asset.source);
+      if (!record) errors.push(`catalog asset ${id}: source is absent from inventory: ${asset.source}`);
+      else {
+        if (asset.source_sha256 !== record.sha256) errors.push(`catalog asset ${id}: source hash differs from inventory`);
+        if (!Number.isInteger(asset.pixel_density)) errors.push(`catalog asset ${id}: pixel_density is required`);
+        if (!asset.geometry || !asset.frames || !Object.keys(asset.frames).length || !asset.world) errors.push(`catalog asset ${id}: reviewed geometry, frames, and world metadata are required`);
+      }
+    }
+    if (typeof asset.derived_from === 'string') provenance.add(asset.derived_from);
+  }
+
+  const current = (await walk(resolveUnder(root, 'assets')))
+    .filter((file) => IMAGE_EXTENSIONS.has(path.extname(file).toLowerCase()))
+    .map((file) => posixRelative(root, file)).sort();
+  const currentSet = new Set(current);
+  const missingInventory = current.filter((source) => !bySource.has(source));
+  const staleInventory = [...bySource.keys()].filter((source) => !currentSet.has(source));
+  if (missingInventory.length) errors.push(`${missingInventory.length} canonical PNGs are absent from inventory`);
+  if (staleInventory.length) errors.push(`${staleInventory.length} inventory PNGs no longer exist`);
+
+  const dispositions = { runtime_reviewed: 0, derivation_provenance: 0, deferred_measured: 0 };
+  const unresolved = []; const sources = [];
+  for (const record of records) {
+    let facts;
+    try { facts = await imageFacts(resolveUnder(root, record.source)); }
+    catch { unresolved.push({ source: record.source, reason: 'missing_or_unreadable' }); continue; }
+    if (facts.sha256 !== record.sha256 || facts.image.width !== record.image?.width || facts.image.height !== record.image?.height) {
+      unresolved.push({ source: record.source, reason: 'inventory_drift' }); continue;
+    }
+    if (!record.license_scope || record.license_scope === 'unknown') { unresolved.push({ source: record.source, reason: 'license_scope_unknown' }); continue; }
+    const disposition = direct.has(record.source) ? 'runtime_reviewed' : provenance.has(record.source) ? 'derivation_provenance' : 'deferred_measured';
+    dispositions[disposition] += 1;
+    sources.push({
+      source: record.source,
+      sha256: record.sha256,
+      dimensions: [record.image.width, record.image.height],
+      mode: record.image.mode,
+      has_alpha: record.image.has_alpha,
+      license_scope: record.license_scope,
+      disposition,
+      ...(direct.has(record.source) ? { runtime_assets: [...direct.get(record.source)].sort() } : {}),
+      ...(provenance.has(record.source) ? { derivation_source: true } : {}),
+    });
+  }
+  if (unresolved.length) errors.push(`${unresolved.length} canonical PNGs lack current measured facts or provenance`);
+  return {
+    valid: errors.length === 0,
+    canonical_pngs: current.length,
+    measured_pngs: records.length,
+    disposition_coverage: records.length ? (records.length - unresolved.length) / records.length : 0,
+    semantic_source_coverage: records.length ? dispositions.runtime_reviewed / records.length : 0,
+    dispositions,
+    runtime_assets: Object.keys(catalog.assets ?? {}).length,
+    runtime_unique_sources: direct.size,
+    sources: sources.sort((left, right) => left.source.localeCompare(right.source)),
+    unresolved,
+    errors,
   };
 }
 

@@ -73,10 +73,10 @@ describe('the code a child scans', () => {
 
   it('prints the label BEFORE the code, so the stripes mean something', () => {
     const items = renderer.render(agenda()).items;
-    const label = items.findIndex((i) => i.type === 'text' && i.content === 'Equivalent Fractions — watch or listen');
+    const label = items.findIndex((i) => i.type === 'text' && i.content === 'Equivalent Fractions');
     const barcode = items.findIndex((i) => i.type === 'barcode');
     expect(label).toBeGreaterThan(-1);
-    expect(barcode).toBe(label + 1);
+    expect(barcode).toBeGreaterThan(label);
   });
 
   it('resolves an action naming a token class through the minted map', () => {
@@ -109,11 +109,11 @@ describe('the code a child scans', () => {
 
     // The label text item immediately precedes the code — same convention as
     // a barcode — and appears exactly once (the adapter must not double it).
-    const label = items.findIndex((i) => i.type === 'text' && i.content === 'Equivalent Fractions — watch or listen');
+    const label = items.findIndex((i) => i.type === 'text' && i.content === 'Equivalent Fractions');
     const qrIndex = items.findIndex((i) => i.type === 'qrcode');
     expect(label).toBeGreaterThan(-1);
-    expect(qrIndex).toBe(label + 1);
-    expect(items.filter((i) => i.type === 'text' && i.content === 'Equivalent Fractions — watch or listen')).toHaveLength(1);
+    expect(qrIndex).toBeGreaterThan(label);
+    expect(items.filter((i) => i.type === 'text' && i.content === 'Equivalent Fractions')).toHaveLength(1);
   });
 });
 
@@ -123,7 +123,7 @@ describe('what a child is told', () => {
     expect(text).toContain('TEST LEARNER');
     expect(text).toContain('Printed Mon 27 Jul, 9:00 am');
     expect(text).toContain('Finish “Equivalent Fractions” first');
-    expect(text).toContain('Scan a line above to start.');
+    expect(text).not.toContain('sch:');
   });
 
   it('prints the standard header INVERTED — the black band the canvas renderer draws', () => {
@@ -177,7 +177,7 @@ describe('through the real thermal adapter', () => {
 
       const transcript = printer.lastTranscript();
       expect(transcript).toContain('TEST LEARNER');
-      expect(transcript).toContain('Equivalent Fractions — watch or listen');
+      expect(transcript).toContain('Equivalent Fractions');
       // The token itself lands on its own line, which is what a test asserting
       // "the receipt carried token sch:…" reads.
       expect(transcript).toContain(TOKEN);

@@ -241,7 +241,10 @@ export function createDocumentPdfRenderer({
    * grades the wrong bubble.
    */
   function drawOmrRow(out, node, { xPt, yPt, page, marks, cardBacked = false }) {
-    const { bubbleRadiusPt, bubbleStrokeWidthPt, labelSizePt, labelGapPt, indentPt, rowHeightPt, choiceSizePt, choiceGapPt } = theme.omr;
+    const {
+      bubbleRadiusPt, bubbleStrokeWidthPt, labelSizePt, labelGapPt, indentPt,
+      rowHeightPt, choiceSizePt, choiceLeadingPt, choiceGapPt,
+    } = theme.omr;
     if (!node.labelled) {
       throw new MissingChoicesError(
         'bubble row has no choice text to print', `omr_response(${node.itemId})`, node.itemId,
@@ -256,6 +259,29 @@ export function createDocumentPdfRenderer({
     if (node.instruction) {
       drawLines(out, node.instruction.lines, { xPt, yPt: rowYPt, styleKey: node.instruction.styleKey });
       rowYPt += node.instruction.heightPt + theme.omr.instructionGapPt;
+    }
+
+    if (node.layout === 'compact') {
+      const columns = node.columnCount ?? 2;
+      const rowLeading = Math.max(...node.cells.map((cell) => cell.lines.length), 1)
+        * choiceLeadingPt + 5;
+      node.cells.forEach((cell, index) => {
+        const column = index % columns;
+        const row = Math.floor(index / columns);
+        const cellX = xPt + indentPt + column * node.cellWidthPt;
+        const cellY = rowYPt + row * rowLeading;
+        setFont(out, 'bold', labelSizePt);
+        out.text(`${cell.choice}.`, cellX, cellY, { lineBreak: false });
+        let lineY = cellY;
+        for (const line of cell.lines) {
+          for (const run of line.runs) {
+            setFont(out, run.font, choiceSizePt);
+            out.text(run.text, cellX + theme.omr.compactLabelWidthPt + run.xPt, lineY, { lineBreak: false });
+          }
+          lineY += line.heightPt;
+        }
+      });
+      return;
     }
 
     const centreY = rowYPt + rowHeightPt / 2;
@@ -551,34 +577,89 @@ export function createDocumentPdfRenderer({
    */
   function drawHeader(out, node, { xPt, yPt }) {
     const { titleSizePt, titleLeadingPt, metaSizePt, metaLeadingPt, ruleGapPt, ruleWidthPt, blankFieldPt } = theme.header;
-    setFont(out, 'bold', titleSizePt);
-    out.text(node.title, xPt, yPt, { width: node.widthPt, lineBreak: false });
+    let cursorY = yPt;
 
-    let cursorY = yPt + titleLeadingPt;
+    const drawMetaAt = (metaY) => {
+      if (!(node.showName || node.showDate)) return;
+      const blank = BLANK_RULE.repeat(24);
+      const drawField = (label, value, fieldXPt, width, align = 'left') => {
+        setFont(out, 'bold', metaSizePt, 'muted');
+        const labelWidthPt = out.widthOfString(`${label} `);
+        setFont(out, 'regular', metaSizePt, 'muted');
+        const valueWidthPt = out.widthOfString(value);
+        const startXPt = align === 'right' && width
+          ? fieldXPt + width - labelWidthPt - valueWidthPt
+          : fieldXPt;
+        setFont(out, 'bold', metaSizePt, 'muted');
+        out.text(label, startXPt, metaY, { lineBreak: false });
+        setFont(out, 'regular', metaSizePt, 'muted');
+        out.text(value, startXPt + labelWidthPt, metaY, { lineBreak: false });
+      };
+      if (node.showName) drawField('Name:', node.studentName ?? blank, xPt);
+      if (node.showDate) {
+        drawField('Date:', node.date ?? blank, xPt + node.widthPt - blankFieldPt, blankFieldPt, 'right');
+      }
+    };
+    const drawMeta = () => { drawMetaAt(cursorY); cursorY += metaLeadingPt; };
+
+    if (node.metaFirst || node.embeddedCard) {
+      if (node.embeddedCard) {
+        drawCardHeader(out, node.embeddedCard, { xPt, yPt: cursorY });
+        drawMetaAt(cursorY + Math.max((node.metaRowHeightPt - metaLeadingPt) / 2, 0));
+        cursorY += node.metaRowHeightPt;
+      } else {
+        drawMeta();
+      }
+      if (node.metaRowHeightPt) cursorY += theme.header.metaTitleGapPt;
+    }
+    const frameY = cursorY;
+    const contentX = node.frame === 'double' ? xPt + node.framePaddingPt : xPt;
+    const contentWidth = node.frame === 'double' ? node.widthPt - node.framePaddingPt * 2 : node.widthPt;
+    if (node.frame === 'double') cursorY += node.framePaddingPt;
+    setFont(out, 'bold', titleSizePt);
+    out.text(node.title, contentX, cursorY, { width: contentWidth, align: 'center', lineBreak: false });
+    cursorY += titleLeadingPt;
+
+    for (const value of [node.subtitle, node.reading]) {
+      if (!value) continue;
+      const style = theme.styles.body;
+      if (value === node.reading && value.startsWith('Read:')) {
+        const label = 'Read:';
+        setFont(out, 'bold', style.sizePt, style.ink);
+        const labelWidthPt = out.widthOfString(`${label} `);
+        setFont(out, 'regular', style.sizePt, style.ink);
+        const readingText = value.slice(label.length).trimStart();
+        const readingWidthPt = out.widthOfString(readingText);
+        const readingXPt = contentX + Math.max(0, (contentWidth - labelWidthPt - readingWidthPt) / 2);
+        setFont(out, 'bold', style.sizePt, style.ink);
+        out.text(label, readingXPt, cursorY, { lineBreak: false });
+        setFont(out, 'regular', style.sizePt, style.ink);
+        out.text(readingText, readingXPt + labelWidthPt, cursorY, { lineBreak: false });
+      } else {
+        setFont(out, value === node.subtitle ? 'italic' : 'regular', style.sizePt, style.ink);
+        out.text(value, contentX, cursorY, { width: contentWidth, align: 'center', lineBreak: false });
+      }
+      cursorY += style.leadingPt;
+    }
 
     if (node.instructions) {
       // Same style-fallback chain drawLineNumbers already uses for a theme
       // that may not carry every optional style key.
       const style = theme.styles.caption ?? theme.styles.instruction ?? theme.styles.body;
       setFont(out, style.font, style.sizePt, style.ink);
-      out.text(node.instructions, xPt, cursorY, { width: node.widthPt, lineBreak: false });
+      out.text(node.instructions, contentX, cursorY, { width: contentWidth, lineBreak: false });
       cursorY += metaLeadingPt;
     }
 
-    if (node.showName || node.showDate) {
-      const blank = BLANK_RULE.repeat(24);
-      setFont(out, 'regular', metaSizePt, 'muted');
-      if (node.showName) {
-        out.text(`Name: ${node.studentName ?? blank}`, xPt, cursorY, { lineBreak: false });
-      }
-      // `node.date` (RenderPrintDocument's `context.date`, spec §7) prefills this
-      // field exactly like `studentName` prefills Name above; null/undefined
-      // (every caller before this field existed) keeps the blank ruled line.
-      if (node.showDate) {
-        out.text(`Date: ${node.date ?? blank}`, xPt + node.widthPt - blankFieldPt, cursorY, { width: blankFieldPt, lineBreak: false });
-      }
-      cursorY += metaLeadingPt;
+    if (node.frame === 'double') {
+      cursorY += node.framePaddingPt;
+      const boxHeight = cursorY - frameY;
+      out.save().lineWidth(0.65).strokeColor(theme.ink.rule)
+        .rect(xPt, frameY, node.widthPt, boxHeight).stroke()
+        .rect(xPt + 2.5, frameY + 2.5, node.widthPt - 5, boxHeight - 5).stroke().restore();
     }
+
+    if (!node.metaFirst && !node.embeddedCard) drawMeta();
 
     // Score box (Phase B, spec §13): only when the quiz archetype's
     // `header.scoreBox` is set AND a caller supplied `totalPoints` (Task 5
@@ -591,9 +672,11 @@ export function createDocumentPdfRenderer({
       cursorY += metaLeadingPt;
     }
 
-    const ruleY = cursorY + ruleGapPt;
-    out.save().lineWidth(ruleWidthPt).strokeColor(theme.ink.rule)
-      .moveTo(xPt, ruleY).lineTo(xPt + node.widthPt, ruleY).stroke().restore();
+    if (node.showRule) {
+      const ruleY = cursorY + ruleGapPt;
+      out.save().lineWidth(ruleWidthPt).strokeColor(theme.ink.rule)
+        .moveTo(xPt, ruleY).lineTo(xPt + node.widthPt, ruleY).stroke().restore();
+    }
   }
 
   /**
@@ -606,20 +689,39 @@ export function createDocumentPdfRenderer({
    */
   function drawCardHeader(out, node, { xPt, yPt }) {
     const { card } = theme;
-    const bandCentreY = yPt + card.bandHeightPt / 2;
+    const groupWidthPt = node.labelWidthPt + card.labelGapPt + node.digitsWidthPt;
+    const { boxPaddingXPt, boxPaddingYPt } = card;
+    const boxContentWidthPt = Math.max(groupWidthPt, node.reuseTextWidthPt ?? 0);
+    const boxWidthPt = boxContentWidthPt + boxPaddingXPt * 2;
+    const boxXPt = xPt + (node.widthPt - boxWidthPt) / 2;
+    const groupXPt = xPt + (node.widthPt - groupWidthPt) / 2;
+    const boxHeightPt = node.heightPt;
+    const bandCentreY = yPt + (node.reuseSheet ? card.reuseLabelLeadingPt : 0) + card.bandHeightPt / 2;
+
+    out.save().lineWidth(0.65).strokeColor(theme.ink.rule)
+      .rect(boxXPt, yPt, boxWidthPt, boxHeightPt)
+      .stroke().restore();
+
+    if (node.reuseText) {
+      setFont(out, 'bold', card.reuseLabelSizePt, 'muted');
+      const reuseXPt = xPt + (node.widthPt - node.reuseTextWidthPt) / 2;
+      out.text(node.reuseText, reuseXPt, yPt + boxPaddingYPt, { lineBreak: false });
+    }
 
     setFont(out, 'bold', card.labelSizePt);
-    out.text(node.labelText, xPt, bandCentreY - card.labelSizePt / 2, { lineBreak: false });
+    out.text(node.labelText, groupXPt, bandCentreY - card.labelSizePt / 2, { lineBreak: false });
 
-    const digitsXPt = xPt + node.labelWidthPt + card.labelGapPt;
+    const digitsXPt = groupXPt + node.labelWidthPt + card.labelGapPt;
     setFont(out, 'bold', card.digitSizePt);
     for (const digit of node.digits) {
       out.text(digit.ch, digitsXPt + digit.xPt, bandCentreY - card.digitSizePt / 2, { lineBreak: false });
     }
 
-    const metaXPt = digitsXPt + node.digitsWidthPt + card.metaGapPt;
-    setFont(out, 'regular', card.metaSizePt, 'muted');
-    out.text(node.metaText, metaXPt, bandCentreY - card.metaSizePt / 2, { lineBreak: false });
+    if (node.metaText) {
+      const metaXPt = digitsXPt + node.digitsWidthPt + card.metaGapPt;
+      setFont(out, 'regular', card.metaSizePt, 'muted');
+      out.text(node.metaText, metaXPt, bandCentreY - card.metaSizePt / 2, { lineBreak: false });
+    }
 
     if (node.instruction) {
       drawLines(out, node.instruction.lines, {

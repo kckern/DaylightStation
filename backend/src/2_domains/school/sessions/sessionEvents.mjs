@@ -51,11 +51,15 @@ const RESULTS = ['passed', 'needs_remediation'];
  */
 const SCHEMA = {
   created: {
-    fields: ['learnerId', 'unitId', 'remediationOf', 'variant'],
+    fields: ['learnerId', 'unitId', 'remediationOf', 'variant', 'remediationItemIds'],
     validate: allOf(stringField('learnerId'), stringField('unitId'), (raw, push) => {
       // Both optional: only a remediation session carries them.
       if (raw.remediationOf !== undefined && !isNonEmptyString(raw.remediationOf)) {
         push('remediationOf: must be a non-empty string');
+      }
+      if (raw.remediationItemIds !== undefined && (!Array.isArray(raw.remediationItemIds)
+          || !raw.remediationItemIds.every(isNonEmptyString))) {
+        push('remediationItemIds: must be an array of non-empty strings when present');
       }
       if (raw.variant !== undefined && !(Number.isInteger(raw.variant) && raw.variant >= 0)) {
         push('variant: must be an integer >= 0');
@@ -84,7 +88,7 @@ const SCHEMA = {
     // `passingPercent` (optional) is the bar IN EFFECT at grading time
     // (student-advocacy A4): a later pass-override edit must never move the
     // bar under an already-graded kid, so the close reads this stamp first.
-    fields: ['attemptIds', 'percent', 'passingPercent'],
+    fields: ['attemptIds', 'percent', 'passingPercent', 'correctCount', 'totalCount', 'missedItemIds'],
     validate: (raw, push) => {
       if (raw.passingPercent !== undefined && (typeof raw.passingPercent !== 'number'
           || !Number.isFinite(raw.passingPercent) || raw.passingPercent < 1 || raw.passingPercent > 100)) {
@@ -100,6 +104,18 @@ const SCHEMA = {
       const pct = raw.percent;
       if (typeof pct !== 'number' || !Number.isFinite(pct) || pct < 0 || pct > 100) {
         push('percent: must be a number between 0 and 100');
+      }
+      if (raw.correctCount !== undefined && (!Number.isInteger(raw.correctCount) || raw.correctCount < 0)) {
+        push('correctCount: must be an integer >= 0 when present');
+      }
+      if (raw.totalCount !== undefined && (!Number.isInteger(raw.totalCount) || raw.totalCount < 1)) {
+        push('totalCount: must be an integer >= 1 when present');
+      }
+      if (Number.isInteger(raw.correctCount) && Number.isInteger(raw.totalCount)
+          && raw.correctCount > raw.totalCount) push('correctCount must not exceed totalCount');
+      if (raw.missedItemIds !== undefined && (!Array.isArray(raw.missedItemIds)
+          || !raw.missedItemIds.every(isNonEmptyString))) {
+        push('missedItemIds: must be an array of non-empty strings when present');
       }
     },
   },
@@ -222,11 +238,15 @@ const emptyState = () => ({
   attemptIds: [],
   gradedPercent: null,
   gradedPassingPercent: null,
+  gradedCorrectCount: null,
+  gradedTotalCount: null,
+  missedItemIds: [],
   transport: null,
   mediaDispatch: null,
   outcome: null,
   rewardTxn: null,
   remediationOf: null,
+  remediationItemIds: [],
   // Which equivalent-problem form of the unit this session was opened with
   // (spec §3.3). Derived rather than looked up because the document that gets
   // reprinted has to be the SAME variant the child was handed.
@@ -244,6 +264,7 @@ const APPLY = {
     s.learnerId = e.learnerId ?? null;
     s.unitId = e.unitId ?? null;
     if (e.remediationOf) s.remediationOf = e.remediationOf;
+    if (Array.isArray(e.remediationItemIds)) s.remediationItemIds = [...e.remediationItemIds];
     if (Number.isInteger(e.variant)) s.variant = e.variant;
   },
   issued(s, e) {
@@ -291,6 +312,9 @@ const APPLY = {
     });
     if (typeof e.percent === 'number') s.gradedPercent = e.percent;
     if (typeof e.passingPercent === 'number') s.gradedPassingPercent = e.passingPercent;
+    if (Number.isInteger(e.correctCount)) s.gradedCorrectCount = e.correctCount;
+    if (Number.isInteger(e.totalCount)) s.gradedTotalCount = e.totalCount;
+    if (Array.isArray(e.missedItemIds)) s.missedItemIds = [...e.missedItemIds];
   },
   outcome_recorded(s, e) {
     s.outcome = { outcomeId: e.outcomeId ?? null, result: e.result ?? null, at: e.at };

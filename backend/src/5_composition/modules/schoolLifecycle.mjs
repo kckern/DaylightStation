@@ -42,6 +42,7 @@ import { YamlWorkSessionDatastore } from '#adapters/persistence/yaml/YamlWorkSes
 import { YamlTokenRegistry } from '#adapters/persistence/yaml/YamlTokenRegistry.mjs';
 import { YamlAssignmentStore } from '#adapters/persistence/yaml/YamlAssignmentStore.mjs';
 import { YamlFormMapStore } from '#adapters/persistence/yaml/YamlFormMapStore.mjs';
+import { YamlWorksheetInstanceStore } from '#adapters/persistence/yaml/YamlWorksheetInstanceStore.mjs';
 import { YamlReviewQueue } from '#adapters/persistence/yaml/YamlReviewQueue.mjs';
 import { YamlPrintDocumentRepository } from '#adapters/school/documents/YamlPrintDocumentRepository.mjs';
 import { YamlAllocationStore } from '#adapters/school/documents/YamlAllocationStore.mjs';
@@ -494,6 +495,7 @@ export async function createSchoolLifecycle({
   const printDocumentsRoot = path.join(dataDir, 'content/school/print-documents');
   const printDocuments = new YamlPrintDocumentRepository({ directory: printDocumentsRoot });
   const allocationStore = new YamlAllocationStore({ directory: printDocumentsRoot });
+  const worksheetInstances = new YamlWorksheetInstanceStore({ configService });
   const renderPrintDocument = new RenderPrintDocument({
     repository: printDocuments,
     banks: createYamlBankReader({ dataDir }),
@@ -504,6 +506,7 @@ export async function createSchoolLifecycle({
     curriculum, sessions: stores.sessions, tokens: stores.tokens,
     renderer: documentRenderer, printer: laserPrinter, formMaps: stores.formMaps,
     printDocuments, renderPrintDocument, allocationStore,
+    assignments: stores.assignments, worksheetInstances,
     bankReader, clock, rng: draw, logger,
   });
   const dispatchMedia = playback
@@ -527,6 +530,8 @@ export async function createSchoolLifecycle({
   const closeSessionOutcome = new CloseSessionOutcome({
     curriculum, sessions: stores.sessions, tokens: stores.tokens, assignments: stores.assignments,
     passOverrides,
+    worksheetInstances,
+    timezone,
     // The result receipt is where a FAILED attempt's retry barcode reaches the
     // child's hand. Without this the close-out returned JSON and the loop
     // dead-ended.
@@ -677,7 +682,7 @@ export async function createSchoolLifecycle({
     // wiring (`ResolveCardScan`) reads/writes the identical allocation records
     // rather than a second store pointed at a directory that could drift.
     stores: {
-      ...stores, curriculum, printDocuments, allocationStore,
+      ...stores, curriculum, printDocuments, allocationStore, worksheetInstances,
     },
     // The `RenderPrintDocument` instance the print-document pipeline shares
     // between `issueDocument`'s tracked-quiz path and any other caller (proof

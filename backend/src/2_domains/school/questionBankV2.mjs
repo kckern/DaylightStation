@@ -116,3 +116,66 @@ export function remediationReceipt(snapshot, grade, policy = 'locator_only') {
     })),
   };
 }
+
+/**
+ * The immutable, learner-specific realization of one lesson. This is the
+ * authority an OMR scan grades; the authored bank is only an input used once
+ * while the instance is created.
+ */
+export function createWorksheetInstance({
+  id, sessionId, bank, learnerId, enrollmentId, lessonId, profile, seed,
+  issuedAt, itemIds = null,
+} = {}) {
+  if (![id, sessionId, learnerId, enrollmentId, lessonId, issuedAt].every((v) => typeof v === 'string' && v)) {
+    throw new Error('worksheet instance requires id, sessionId, learnerId, enrollmentId, lessonId and issuedAt');
+  }
+  const worksheet = issueWorksheet({ bank, learnerId, enrollmentId, lessonId, profile, seed, itemIds });
+  return deepFreeze({
+    schema: 'school.worksheet-instance/v1', id, sessionId, issuedAt,
+    learnerId, enrollmentId, lessonId, profile,
+    bankId: worksheet.bankId, bankRevision: worksheet.bankRevision,
+    seed: worksheet.seed, itemIds: worksheet.itemIds, questions: worksheet.items,
+  });
+}
+
+/** Convert an instance into a self-contained publishable OMR document source. */
+export function worksheetInstanceDocument(instance, {
+  title = instance.lessonId, description = null,
+  sourceTitle = null, printedPages = [],
+} = {}) {
+  const numericSeed = [...String(instance.seed || instance.id)]
+    .reduce((value, char) => Math.imul(value ^ char.charCodeAt(0), 16777619) >>> 0, 2166136261);
+  return {
+    schema: 'school.document-source/v1',
+    id: instance.id,
+    seed: numericSeed,
+    variant: 0,
+    target: ['letter'],
+    archetype: 'worksheet',
+    fit: { policy: 'fill', typeScale: 'standard' },
+    title,
+    header: {
+      name: true, date: true, scoreBox: false, metaFirst: true, rule: false, frame: 'double',
+      ...(description ? { subtitle: description } : {}),
+      ...(sourceTitle ? {
+        reading: `Read: ${sourceTitle}, ${printedPages.length === 1 ? 'page' : 'pages'} ${printedPages.join('–')}.`,
+      } : {}),
+    },
+    blocks: [
+      ...instance.questions.map((question, index) => ({
+        type: 'question', itemId: question.itemId, number: index + 1, omr: true, fillAfter: true,
+        blocks: [
+          { type: 'rich_text', md: question.prompt },
+          {
+            type: 'omr_response', itemId: question.itemId,
+            choices: question.options.length, layout: 'compact',
+          },
+        ],
+        choices: question.options.map((option) => option.label),
+        ...(question.type === 'multi_select'
+          ? { answers: question.options.filter((option) => option.correct).map((option) => option.label) }
+          : { answer: question.options.find((option) => option.correct)?.label }),
+      })),
+    ],
+  };
+}
