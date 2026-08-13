@@ -419,9 +419,14 @@
     calc(100cqw - 2 * var(--pc-rail, 15.5rem) - 3rem - 2 * var(--pc-axis-w)),
     calc(100cqh - var(--pc-axis))
   );
-  --cb-light: var(--pc-ivory);
-  --cb-dark: #9e7070;
-  --cb-frame: var(--pc-walnut-deep);
+  /* The dark squares are the opponent's colour. `--pc-dark` is set inline from
+     the character's theme (and falls back to the house rose), so this is the
+     one line that makes arriving at a new opponent look like arriving
+     somewhere new — a literal here would have quietly ignored the theme, which
+     is exactly what it did until the board was looked at. */
+  --cb-light: #e8ddc8;
+  --cb-dark: var(--pc-dark);
+  --cb-frame: color-mix(in srgb, var(--pc-dark) 70%, #000);
   --cb-accent: var(--pc-brass);
   --cb-accent-glow: var(--pc-brass-glow);
   --cb-hint: var(--pc-verdigris);
