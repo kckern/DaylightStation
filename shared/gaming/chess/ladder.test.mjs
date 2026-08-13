@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  DEFAULT_LADDER_POLICY, DEFAULT_ROSTER, LADDER_SIZE, TOP_LEVEL,
+  DEFAULT_LADDER_POLICY, DEFAULT_ROSTER, LADDER_SIZE, TOP_LEVEL, describeLevel,
   applyGameToProgress, availableOpponents, countsTowardPromotion, createLadderProgress,
   normalizeProgress, promotionStatus, resolvePolicy, resolveRoster, rungForLevel,
 } from './ladder.mjs';
@@ -38,6 +38,18 @@ describe('the roster', () => {
     expect(roster[20].name).toBe(DEFAULT_ROSTER[20].name);
   });
 
+  it('picks a named pack, so each child selects a roster instead of copying one', () => {
+    const config = {
+      ladder: {
+        roster_pack: 'pokemon',
+        rosters: { pokemon: [{ name: 'Caterpie', art: '/caterpie.svg' }] },
+      },
+    };
+    expect(resolveRoster(config)[0].name).toBe('Caterpie');
+    // An unknown pack name falls back rather than emptying the ladder.
+    expect(resolveRoster({ ladder: { roster_pack: 'nope', rosters: {} } })).toBe(DEFAULT_ROSTER);
+  });
+
   it('falls back to the house roster when the override is unusable', () => {
     expect(resolveRoster({})).toBe(DEFAULT_ROSTER);
     expect(resolveRoster({ ladder: { roster: [] } })).toBe(DEFAULT_ROSTER);
@@ -64,6 +76,20 @@ describe('the board theme', () => {
     expect(promotionStatus({ unlocked_through: 0, results: [] }, policy))
       .toEqual(promotionStatus({ unlocked_through: 0, results: [] }, policy));
     expect(themed).toHaveLength(plain.length);
+  });
+});
+
+describe('what a character is like', () => {
+  it('describes every rung, so the ones ahead are something to work towards', () => {
+    for (let level = 0; level < LADDER_SIZE; level += 1) {
+      expect(describeLevel(level), `level ${level}`).toBeTruthy();
+    }
+    expect(new Set(Array.from({ length: LADDER_SIZE }, (_, i) => describeLevel(i))).size).toBe(LADDER_SIZE);
+  });
+
+  it('clamps rather than returning nothing off the ends', () => {
+    expect(describeLevel(-3)).toBe(describeLevel(0));
+    expect(describeLevel(99)).toBe(describeLevel(TOP_LEVEL));
   });
 });
 

@@ -76,6 +76,26 @@ export const DEFAULT_LADDER_POLICY = Object.freeze({
   movetime_ms: 400,
 });
 
+/**
+ * What facing this character is like, in words a child can weigh.
+ *
+ * The ladder is 21 rungs of one engine setting, which tells a player nothing.
+ * These say what to expect, so the ones still ahead read as something to work
+ * towards rather than as locked doors.
+ */
+const LEVEL_BLURBS = [
+  'Gives pieces away', 'Barely looks', 'Misses a lot', 'Plays by accident',
+  'Notices captures', 'Defends sometimes', 'Takes what you leave', 'Has a plan, briefly',
+  'Punishes mistakes', 'Sees two moves', 'Steady and patient', 'Sets small traps',
+  'Rarely blunders', 'Sees three moves', 'Attacks properly', 'Hard to surprise',
+  'Sharp and quick', 'Takes no gifts', 'Grinds you down', 'Nearly perfect', 'Does not lose',
+];
+
+export function describeLevel(level) {
+  const index = Math.min(TOP_LEVEL, Math.max(0, Math.floor(Number(level) || 0)));
+  return LEVEL_BLURBS[index];
+}
+
 export function resolvePolicy(config) {
   const ladder = config?.ladder || {};
   const policy = { ...DEFAULT_LADDER_POLICY, ...(ladder.promotion || {}) };
@@ -94,7 +114,12 @@ export function resolvePolicy(config) {
  * unreachable and nothing about the failure would be visible on screen.
  */
 export function resolveRoster(config) {
-  const raw = config?.ladder?.roster;
+  const ladder = config?.ladder || {};
+  // A named pack, so a household defines its rosters once and each child picks
+  // one by name. Duplicating twenty-one entries per user was the alternative,
+  // and it would drift the moment one of them was edited.
+  const pack = ladder.roster_pack && ladder.rosters ? ladder.rosters[ladder.roster_pack] : null;
+  const raw = Array.isArray(pack) && pack.length ? pack : ladder.roster;
   if (!Array.isArray(raw) || raw.length === 0) return DEFAULT_ROSTER;
   return Object.freeze(DEFAULT_ROSTER.map((fallback, level) => {
     const entry = raw[level];
@@ -228,6 +253,6 @@ export function rungForLevel(level, policy) {
 
 export default {
   LADDER_SIZE, TOP_LEVEL, DEFAULT_ROSTER, DEFAULT_LADDER_POLICY, themeForLevel,
-  resolvePolicy, resolveRoster, createLadderProgress, normalizeProgress,
+  resolvePolicy, resolveRoster, createLadderProgress, normalizeProgress, describeLevel,
   countsTowardPromotion, promotionStatus, applyGameToProgress, availableOpponents, rungForLevel,
 };
