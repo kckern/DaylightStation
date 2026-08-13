@@ -159,3 +159,4 @@ __sabotage_*.mjs
 # sheets.yml + scales.yml and is not byte-stable anyway (pdfkit stamps a creation
 # date), so committing it would churn on every regeneration.
 /*.pdf
+docs/_moveme/

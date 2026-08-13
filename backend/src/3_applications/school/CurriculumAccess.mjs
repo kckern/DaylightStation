@@ -196,6 +196,7 @@ export class CurriculumAccess {
       objectives: [...(unit.objectives ?? [])],
       courseId: unit.courseId ?? null,
       sequence: unit.sequence ?? null,
+      module: unit.module ?? null,
       grades: [...(unit.grades ?? [])],
       passingPercent: unit.passing?.percent ?? null,
       hasBank: Boolean(unit.bank),

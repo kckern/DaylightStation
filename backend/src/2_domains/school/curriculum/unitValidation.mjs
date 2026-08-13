@@ -128,6 +128,8 @@ export function validateUnit(raw, sets = {}) {
   // a value to silently drop.
   let courseId;
   let sequence;
+  let module;
+  let moduleRole;
   if (isPresent(raw.courseId)) {
     if (!isNonEmptyString(raw.courseId)) errors.push('courseId must be a non-empty string');
     else courseId = raw.courseId;
@@ -136,6 +138,17 @@ export function validateUnit(raw, sets = {}) {
     else sequence = raw.sequence;
   } else if (isPresent(raw.sequence)) {
     errors.push('sequence is only meaningful inside a course (courseId is missing)');
+  }
+  if (isPresent(raw.module)) {
+    if (!courseId) errors.push('module is only meaningful inside a course');
+    else if (!isNonEmptyString(raw.module)) errors.push('module must be a non-empty string');
+    else module = raw.module;
+  }
+  if (isPresent(raw.moduleRole)) {
+    if (!module) errors.push('moduleRole requires module');
+    else if (!['overview', 'lesson', 'optional'].includes(raw.moduleRole)) {
+      errors.push('moduleRole must be overview|lesson|optional');
+    } else moduleRole = raw.moduleRole;
   }
 
   let grades = [];
@@ -280,6 +293,8 @@ export function validateUnit(raw, sets = {}) {
       objectives,
       courseId,
       sequence,
+      module,
+      moduleRole,
       grades,
       passing,
       reward,

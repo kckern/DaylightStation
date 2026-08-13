@@ -69,6 +69,32 @@ describe('gaming asset catalog', () => {
     assert.equal(resolveApprovedAsset(templated, 'terrain.green').kind, 'tile-sheet');
   });
 
+  it('materializes target-specific asset variants through finite inheritance', () => {
+    const inherited = structuredClone(catalog);
+    inherited.assets['terrain.shore.field-palette'] = {
+      extends: 'terrain.shore',
+      tags: ['terrain', 'shore', 'palette-normalized'],
+      source: 'assets/default/terrain/shore-field-palette.png',
+      source_sha256: 'd'.repeat(64),
+      derived_from: 'assets/default/terrain/shore.png',
+      derivation_job: 'shore-field-palette',
+    };
+    const resolved = materializeAssetCatalog(inherited);
+    const base = resolved.assets['terrain.shore'];
+    const variant = resolved.assets['terrain.shore.field-palette'];
+    assert.deepEqual(variant.geometry, base.geometry);
+    assert.deepEqual(variant.frames, base.frames);
+    assert.deepEqual(variant.autotile, base.autotile);
+    assert.equal(variant.variant_of, 'terrain.shore');
+    assert.equal(variant.source, 'assets/default/terrain/shore-field-palette.png');
+    assert.equal(base.source, 'assets/default/terrain/shore.png');
+    assert.equal(inherited.assets['terrain.shore.field-palette'].geometry, undefined);
+    assert.equal(validateAssetCatalog(inherited).valid, true);
+
+    inherited.assets['terrain.shore'].extends = 'terrain.shore.field-palette';
+    assert.match(validateAssetCatalog(inherited).errors.join('\n'), /asset inheritance cycle: terrain\.shore -> terrain\.shore\.field-palette -> terrain\.shore/);
+  });
+
   it('resolves terrain from deterministic cardinal neighbour masks', () => {
     const cells = new Set(['1,1', '1,0', '2,1']);
     assert.equal(terrainNeighbourMask(cells, [1, 1]), 'ne');
