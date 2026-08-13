@@ -128,6 +128,7 @@ export default function SchoolMatrix({ kids }) {
         </table>
         {open && (
           <EnrollmentDrawer
+            key={`${open.learnerId}:${open.courseId}`}
             learner={kids.find((k) => k.id === open.learnerId) ?? { id: open.learnerId, name: open.learnerId }}
             courseId={open.courseId}
             cell={model.rows.find((r) => r.learnerId === open.learnerId)?.cells[open.courseId] ?? null}
