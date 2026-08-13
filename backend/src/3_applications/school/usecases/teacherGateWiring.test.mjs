@@ -29,7 +29,7 @@ describe('TeacherGate wiring', () => {
 
   it('SetAssignments consults the gate', async () => {
     const gate = passingGate();
-    const store = { get: vi.fn(async () => null), put: vi.fn(async (r) => r) };
+    const store = { put: vi.fn(async (r) => r) };
     const uc = new SetAssignments({ assignments: store, grownUps, teacherGate: gate });
     await uc.execute({ learnerId: 'felix', courses: ['math'], units: [], assignedBy: 'kckern', pin: '4321' });
     expect(gate.assert).toHaveBeenCalledWith({ userId: 'kckern', pin: '4321', action: 'assignments.put', context: { learnerId: 'felix' } });

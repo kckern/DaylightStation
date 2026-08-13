@@ -91,8 +91,9 @@ export class SetAssignments {
         }
       }
     }
-    const current = await this.#assignments.get(learnerId);
-    assertNotStale(current, baseUpdatedAt);
+    if (baseUpdatedAt !== undefined) {
+      assertNotStale(await this.#assignments.get(learnerId), baseUpdatedAt);
+    }
 
     const record = await this.#assignments.put({
       learnerId, courses, units, assignedBy, updatedAt: this.#clock().toISOString(),
