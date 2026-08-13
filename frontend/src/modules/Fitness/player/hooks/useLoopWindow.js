@@ -7,6 +7,11 @@ function logger() {
   return _logger;
 }
 
+// Absorbs float jitter and normal decode drift near the boundary. Also the margin used
+// to distinguish "the user scrubbed before the window" from ordinary rounding noise at
+// win.start.
+const BOUNDARY_TOLERANCE_SEC = 1;
+
 /**
  * Computes a loop window anchored to the paused position.
  *
@@ -29,9 +34,26 @@ export function computeLoopWindow(direction, seconds, position, duration) {
 /**
  * Repeats a fixed window until released.
  *
- * Two subtleties this hook owns:
- *  - Its own boundary seek must NOT count as a user seek, or the loop would release
- *    itself on the first repetition. Callers check `isBoundarySeek()` before releasing.
+ * Subtleties this hook owns:
+ *  - Its own boundary seek (reaching `win.end`, jumping back to `win.start`) must NOT
+ *    count as a user seek, or the loop would release itself on the first repetition.
+ *    Callers check `isBoundarySeek()` before releasing.
+ *  - The two directions of leaving the window mean different things and are handled
+ *    differently. Reaching `win.end` is the loop's own edge - re-seek and keep looping.
+ *    Falling below `win.start` (beyond tolerance) is a deliberate user scrub backward out
+ *    of the window - our own boundary seek always lands exactly on `win.start`, so
+ *    anything further back can only be a manual escape. Release, don't re-seek, and don't
+ *    mark it as our own seek - dragging the user back in would hijack the escape.
+ *  - A freshly-armed loop starts with `currentTime` already sitting exactly at the edge it
+ *    was armed from (a backward loop's `end` equals the pause position passed to
+ *    `armLoop`). Without a latch, the very next `timeupdate` tick would immediately trip
+ *    the "reached end" check with zero playthrough. The check is skipped on ticks where
+ *    `currentTime` hasn't moved from the arm-time snapshot yet; once it moves at all, the
+ *    latch opens for the rest of this armed session.
+ *  - A forward loop clamped at `duration` (see `computeLoopWindow`) never sees a
+ *    `timeupdate` past `win.end` - the media fires `ended` and stops instead. `ended` is
+ *    handled the same as reaching the boundary, and since `ended` leaves the element
+ *    paused, the loop also resumes playback.
  *  - A resilience remount REPLACES the media element, so a once-bound `timeupdate`
  *    listener would die silently mid-loop. The element is re-resolved on an interval
  *    and the listener re-bound whenever identity changes.
@@ -40,6 +62,8 @@ export default function useLoopWindow({ getMediaElement, onSeek }) {
   const [loop, setLoop] = useState(null);
   const loopRef = useRef(null);
   const boundarySeekRef = useRef(false);
+  const armPositionRef = useRef(null);
+  const hasEnteredRef = useRef(false);
   const [element, setElement] = useState(null);
 
   // Track element replacement (resilience remounts swap it out from under us).
@@ -54,19 +78,52 @@ export default function useLoopWindow({ getMediaElement, onSeek }) {
     return () => { cancelled = true; clearInterval(id); };
   }, [getMediaElement]);
 
+  const releaseLoop = useCallback(() => {
+    if (!loopRef.current) return;
+    logger().info('loop-released', loopRef.current);
+    loopRef.current = null;
+    setLoop(null);
+  }, []);
+
   useEffect(() => {
     if (!element) return undefined;
+
     const onTimeUpdate = () => {
       const win = loopRef.current;
       if (!win) return;
-      if (element.currentTime >= win.end || element.currentTime < win.start - 1) {
+      const t = element.currentTime;
+
+      if (!hasEnteredRef.current) {
+        if (t === armPositionRef.current) return;
+        hasEnteredRef.current = true;
+      }
+
+      if (t >= win.end) {
         boundarySeekRef.current = true;
         onSeek?.(win.start);
+        return;
+      }
+
+      if (t < win.start - BOUNDARY_TOLERANCE_SEC) {
+        releaseLoop();
       }
     };
+
+    const onEnded = () => {
+      const win = loopRef.current;
+      if (!win) return;
+      boundarySeekRef.current = true;
+      onSeek?.(win.start);
+      element.play?.();
+    };
+
     element.addEventListener('timeupdate', onTimeUpdate);
-    return () => element.removeEventListener('timeupdate', onTimeUpdate);
-  }, [element, onSeek]);
+    element.addEventListener('ended', onEnded);
+    return () => {
+      element.removeEventListener('timeupdate', onTimeUpdate);
+      element.removeEventListener('ended', onEnded);
+    };
+  }, [element, onSeek, releaseLoop]);
 
   const armLoop = useCallback((direction, seconds, position, duration) => {
     const win = computeLoopWindow(direction, seconds, position, duration);
@@ -76,15 +133,10 @@ export default function useLoopWindow({ getMediaElement, onSeek }) {
     }
     const next = { ...win, direction, seconds };
     loopRef.current = next;
+    armPositionRef.current = position;
+    hasEnteredRef.current = false;
     setLoop(next);
     logger().info('loop-armed', next);
-  }, []);
-
-  const releaseLoop = useCallback(() => {
-    if (!loopRef.current) return;
-    logger().info('loop-released', loopRef.current);
-    loopRef.current = null;
-    setLoop(null);
   }, []);
 
   /** True (once) if the most recent seek was the loop's own boundary seek. */
