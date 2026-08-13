@@ -79,10 +79,18 @@ const FIXTURE_BLOCK = {
   cloze: { type: 'cloze', text: 'The {{1}} is red.', blanks: [{ n: 1 }] },
   short_answer: { type: 'short_answer', prompt: 'Name a color.' },
   essay: { type: 'essay', prompt: 'Describe the color.' },
+  result_summary: {
+    type: 'result_summary',
+    headline: 'Nice work!',
+    title: 'A completed lesson',
+    correctCount: 4,
+    totalCount: 5,
+  },
 };
 
 /** No Letter renderer exists at all (any theme) — see measure.mjs's own comment. */
 const NO_RENDERER_YET = new Set(['plot', 'geometry']);
+const RECEIPT_ONLY = new Set(['result_summary']);
 
 describe('BLOCK_TARGET_SUPPORT matrix — every entry validates and renders under createWorkbookTheme() (F1)', () => {
   const types = Object.keys(BLOCK_TARGET_SUPPORT);
@@ -92,7 +100,9 @@ describe('BLOCK_TARGET_SUPPORT matrix — every entry validates and renders unde
   });
 
   for (const type of types) {
-    const expectation = NO_RENDERER_YET.has(type)
+    const expectation = RECEIPT_ONLY.has(type)
+      ? 'validates for its receipt-only target'
+      : NO_RENDERER_YET.has(type)
       ? 'is refused with UnsupportedBlockError (no Letter renderer yet — not a theme gap)'
       : 'renders a real PDF under createWorkbookTheme()';
 
@@ -101,12 +111,14 @@ describe('BLOCK_TARGET_SUPPORT matrix — every entry validates and renders unde
         schema: DOCUMENT_V2_SCHEMA,
         id: `matrix-${type.replace(/_/g, '-')}`,
         seed: 1,
-        target: ['letter'],
+        target: RECEIPT_ONLY.has(type) ? ['receipt'] : ['letter'],
         archetype: 'worksheet',
         blocks: [FIXTURE_BLOCK[type]],
       };
       const { errors, document } = validateDocumentV2(raw);
       expect(errors, `validation errors for '${type}': ${errors.join('; ')}`).toEqual([]);
+
+      if (RECEIPT_ONLY.has(type)) return;
 
       const renderOptions = type === 'omr_response' ? { bank } : {};
       if (NO_RENDERER_YET.has(type)) {

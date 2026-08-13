@@ -296,6 +296,9 @@ const VALIDATORS = {
     }
     if (Number.isInteger(raw.correctCount) && Number.isInteger(raw.totalCount)
         && raw.correctCount > raw.totalCount) push('result_summary correctCount must not exceed totalCount');
+    if (raw.questionStart !== undefined && (!Number.isInteger(raw.questionStart) || raw.questionStart < 1)) {
+      push('result_summary questionStart must be an integer >= 1 when present');
+    }
     if (raw.percent !== undefined && (typeof raw.percent !== 'number' || !Number.isFinite(raw.percent))) {
       push('result_summary percent must be a finite number when present');
     }
@@ -306,7 +309,7 @@ const VALIDATORS = {
     if (raw.icon !== undefined && !isNonEmptyString(raw.icon)) {
       push('result_summary icon must be a non-empty string when present');
     }
-    for (const field of ['learnerName', 'date', 'studentNo']) {
+    for (const field of ['learnerName', 'date', 'time', 'studentNo']) {
       if (raw[field] !== undefined && !isNonEmptyString(raw[field])) {
         push(`result_summary ${field} must be a non-empty string when present`);
       }
@@ -314,13 +317,17 @@ const VALIDATORS = {
     if (raw.taxonomy !== undefined && !validTaxonomy(raw.taxonomy)) {
       push('result_summary taxonomy requires non-empty subject, course, unit, and lesson strings');
     }
+    if (raw.reviewHints !== undefined && (!Array.isArray(raw.reviewHints)
+        || !raw.reviewHints.length || raw.reviewHints.some((hint) => !isNonEmptyString(hint)))) {
+      push('result_summary reviewHints must be a non-empty array of strings when present');
+    }
     if (raw.progress !== undefined) {
-      const progress = raw.progress;
-      if (!progress || typeof progress !== 'object' || Array.isArray(progress)
-          || !isNonEmptyString(progress.label) || !Number.isInteger(progress.completed)
-          || !Number.isInteger(progress.total) || progress.completed < 0 || progress.total < 1
-          || progress.completed > progress.total) {
-        push('result_summary progress requires label and integers 0 <= completed <= total');
+      const rows = Array.isArray(raw.progress) ? raw.progress : [raw.progress];
+      if (!rows.length || rows.some((progress) => !progress || typeof progress !== 'object'
+          || Array.isArray(progress) || !isNonEmptyString(progress.label)
+          || !Number.isInteger(progress.completed) || !Number.isInteger(progress.total)
+          || progress.completed < 0 || progress.total < 1 || progress.completed > progress.total)) {
+        push('result_summary progress requires one or more rows with a label and integers 0 <= completed <= total');
       }
     }
   },

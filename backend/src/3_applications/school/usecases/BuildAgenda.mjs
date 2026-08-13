@@ -247,13 +247,25 @@ export class BuildAgenda {
         taxonomy: (() => {
           const entry = section.next;
           const work = worksById.get(entry?.courseId);
+          const enrollment = assignment?.courses?.find((course) => course.courseId === entry?.courseId)?.enrollment;
+          const moduleIndex = enrollment?.moduleOrder?.indexOf(entry?.module) ?? -1;
           const moduleTitle = work?.modules?.find((module) => module.module === entry?.module)?.title;
           return {
             subject: section.subject[0].toUpperCase() + section.subject.slice(1),
             course: work?.title ?? entry?.courseId ?? 'Independent study',
-            unit: moduleTitle ?? entry?.module ?? entry?.title,
+            unit: moduleIndex >= 0 ? `Unit ${moduleIndex}: ${moduleTitle}` : (moduleTitle ?? entry?.module ?? entry?.title),
             lesson: entry?.title,
           };
+        })(),
+        progressLabel: (() => {
+          const entry = section.next;
+          const enrollment = assignment?.courses?.find((course) => course.courseId === entry?.courseId)?.enrollment;
+          const moduleIndex = enrollment?.moduleOrder?.indexOf(entry?.module) ?? -1;
+          const lessons = enrollment?.lessonOrder?.[entry?.module] ?? [];
+          const lessonIndex = lessons.indexOf(entry?.unitId);
+          return moduleIndex >= 0 && lessonIndex >= 0
+            ? `Unit ${moduleIndex} · ${lessonIndex + 1}/${lessons.length}`
+            : section.progressLabel;
         })(),
         actionLabel: actionLabelBySubject.get(section.subject),
         ...(calculatorBySubject.has(section.subject)

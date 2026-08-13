@@ -27,6 +27,7 @@ export class ResolveScanAction {
   #tokens; #sessions; #curriculum; #card; #issue; #media; #remediation; #receipts; #clock; #logger;
   #subjectResolver; #portal; #launchers; #donow; #close;
   #learningAction;
+  #replaceLostAnswerSheet;
 
   /**
    * @param {object} deps
@@ -69,6 +70,7 @@ export class ResolveScanAction {
     resolveSubjectNext = null, portal = null, launchers = new Map(),
     donow = null, closeSessionOutcome = null,
     resolveLearningAction = null,
+    replaceLostAnswerSheet = null,
     clock = () => new Date(), logger = console,
   } = {}) {
     if (!tokens || !sessions || !curriculum || !resolvePersonalCard || !issueDocument
@@ -89,6 +91,7 @@ export class ResolveScanAction {
     this.#donow = donow;
     this.#close = closeSessionOutcome;
     this.#learningAction = resolveLearningAction;
+    this.#replaceLostAnswerSheet = replaceLostAnswerSheet;
     this.#clock = clock;
     this.#logger = logger;
   }
@@ -112,7 +115,7 @@ export class ResolveScanAction {
     // Both classes name something other than a session — `identify` a
     // learner, `subject_next` a learner+subject — so neither has a
     // `sessionId` to look up ahead of resolving what the ticket means.
-    const sessionId = ['identify', 'subject_next', 'learning_action'].includes(record?.tokenClass)
+    const sessionId = ['identify', 'subject_next', 'learning_action', 'answer_sheet_lost'].includes(record?.tokenClass)
       ? null : (record?.subject?.sessionId ?? null);
     const sessionState = sessionId ? reduceSession(await this.#sessions.readEvents(sessionId)) : null;
     const resolution = resolveTokenState(record, { sessionState, now: this.#clock().toISOString() });
@@ -153,11 +156,34 @@ export class ResolveScanAction {
         return this.#learningAction
           ? this.#runLearningAction(record, device)
           : this.#unsupported(record.tokenClass, sessionId);
+      case 'answer_sheet_lost':
+        return this.#replaceLost(record);
       default:
         // Unreachable while TOKEN_CLASSES and this switch agree; a class with no
         // case would be the silent scan the whole file exists to prevent.
         return this.#unsupported(record.tokenClass, sessionId);
     }
+  }
+
+  async #replaceLost(record) {
+    if (!this.#replaceLostAnswerSheet) return this.#unsupported(record.tokenClass, null);
+    const result = await this.#replaceLostAnswerSheet.execute({
+      cardId: record.subject.cardId,
+      reportedBy: record.subject.authorizedBy,
+      authorized: true,
+    });
+    if (result.status === 'replaced' || result.status === 'already_settled') {
+      await this.#tokens.revoke?.(record.token, { at: this.#clock().toISOString() });
+    }
+    return {
+      status: result.status,
+      tokenClass: 'answer_sheet_lost',
+      sessionId: null,
+      physical: result.status === 'replaced' ? 'worksheet' : 'none',
+      printed: result.status === 'replaced',
+      message: result.message ?? 'That answer sheet no longer needs replacement.',
+      effect: result,
+    };
   }
 
   #unsupported(tokenClass, sessionId) {

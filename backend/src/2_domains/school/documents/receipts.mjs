@@ -182,7 +182,7 @@ export function agendaDocument({
   const title = learnerName || 'Hello!';
   const blocks = [];
   const printedAt = formatPrintedAt(generatedAt, timeZone);
-  if (printedAt) blocks.push(text(`Printed ${printedAt}`));
+  if (printedAt) blocks.push(text(printedAt));
 
   const noteLines = (Array.isArray(notes) ? notes : []).filter(isNonEmptyString);
   const offered = (Array.isArray(sections) ? sections : []).filter((s) => s && typeof s === 'object');
@@ -238,7 +238,7 @@ export function agendaDocument({
         title: nextTitle,
         description: next.description,
         icon: section.subject,
-        meta: [section.progressLabel, Number.isFinite(section.gradePercent) ? `Grade ${Math.round(section.gradePercent)}%` : null]
+        meta: ['SCAN TO PRINT', next.progressLabel ?? section.progressLabel, Number.isFinite(section.gradePercent) ? `Grade ${Math.round(section.gradePercent)}%` : null]
           .filter(isNonEmptyString).join(' · '),
         taxonomy: next.taxonomy,
       }));
@@ -274,32 +274,35 @@ export function agendaDocument({
  */
 export function resultDocument({
   sessionId, unitTitle, result, percent = null, passingPercent = null, objectives = [],
-  correctCount = null, totalCount = null, progress = null,
+  correctCount = null, totalCount = null, questionStart = null, progress = null,
   subjectIcon = null,
   taxonomy = null,
-  learnerName = null, date = null, studentNo = null, hints = [],
+  learnerName = null, date = null, time = null, studentNo = null, hints = [],
   actions = [], reward = null, rewardSkipReason = null, unlockedTitle = null, notes = [],
 } = {}) {
   const passed = result === 'passed';
   const blocks = [{
     type: 'result_summary',
-    headline: passed ? 'Nice work!' : 'Let’s try that again',
+    headline: passed ? 'PASSED' : 'TRY AGAIN',
     title: unitTitle || 'Your work',
     ...(typeof percent === 'number' && Number.isFinite(percent) ? { percent } : {}),
     ...(typeof passingPercent === 'number' && Number.isFinite(passingPercent) ? { passingPercent } : {}),
     ...(Number.isInteger(correctCount) ? { correctCount } : {}),
     ...(Number.isInteger(totalCount) ? { totalCount } : {}),
+    ...(Number.isInteger(questionStart) ? { questionStart } : {}),
     ...(progress ? { progress } : {}),
     ...(isNonEmptyString(subjectIcon) ? { icon: subjectIcon } : {}),
     ...(isNonEmptyString(learnerName) ? { learnerName } : {}),
     ...(isNonEmptyString(date) ? { date } : {}),
+    ...(isNonEmptyString(time) ? { time } : {}),
     ...(isNonEmptyString(studentNo) ? { studentNo } : {}),
     ...(taxonomy ? { taxonomy } : {}),
+    ...(!passed && Array.isArray(hints) && hints.some(isNonEmptyString)
+      ? { reviewHints: hints.filter(isNonEmptyString) }
+      : {}),
   }];
-  if (!passed && Array.isArray(hints) && hints.some(isNonEmptyString)) {
-    blocks.push(text('## REVIEW BEFORE YOU RETRY'));
-    hints.filter(isNonEmptyString).forEach((hint) => blocks.push(text(`- ${hint}`)));
-  } else if (!passed && Array.isArray(objectives) && objectives.length) {
+  if (!passed && !(Array.isArray(hints) && hints.some(isNonEmptyString))
+      && Array.isArray(objectives) && objectives.length) {
     blocks.push(text('## REVIEW BEFORE YOU RETRY'));
     objectives.filter(isNonEmptyString).forEach((o) => blocks.push(text(`- ${o}`)));
   }
@@ -319,7 +322,7 @@ export function resultDocument({
         token: action.token, eyebrow: action.eyebrow ?? 'Next up',
         title: action.title ?? unlockedTitle ?? action.label, description: action.description,
         icon: action.icon,
-        meta: action.meta,
+        meta: action.meta ?? (passed ? 'Scan to print the next worksheet' : 'Scan to print your retry'),
         taxonomy: action.taxonomy,
       }));
     } else if (isNonEmptyString(action.token)) blocks.push({ type: 'scan_action', action: action.token, label: action.label });

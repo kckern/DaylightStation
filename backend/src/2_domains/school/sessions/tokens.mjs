@@ -21,7 +21,7 @@ export const TOKEN_PREFIX = 'sch:';
 /** Closed set — a new action class is a code change, never config. */
 export const TOKEN_CLASSES = Object.freeze([
   'identify', 'select_unit', 'issue_document', 'media_action', 'remediation', 'recovery',
-  'subject_next', 'learning_action',
+  'subject_next', 'learning_action', 'answer_sheet_lost',
 ]);
 
 /**
@@ -108,6 +108,10 @@ export function createTokenRecord({ token, tokenClass, subject, at, expiresAt = 
       throw new Error(`${caller}: learning_action subject requires a 1..65535 tokenVersion`);
     }
     if (expiresAt != null) throw new Error(`${caller}: a persistent learning_action token never expires`);
+  } else if (tokenClass === 'answer_sheet_lost') {
+    if (!/^\d{7}$/.test(subject.cardId ?? '')) throw new Error(`${caller}: answer_sheet_lost subject requires a 7-digit cardId`);
+    if (!isNonEmptyString(subject.authorizedBy)) throw new Error(`${caller}: answer_sheet_lost subject requires authorizedBy`);
+    if (expiresAt == null) throw new Error(`${caller}: answer_sheet_lost token must expire`);
   } else if (!isNonEmptyString(subject.sessionId)) {
     throw new Error(`${caller}: ${tokenClass} subject requires a sessionId`);
   }
@@ -181,6 +185,11 @@ const SEMANTICS = {
     doneMessage: () => 'That lesson action is no longer available.',
     readyMessage: 'Starting that lesson action.',
   },
+  answer_sheet_lost: {
+    actionable: () => true,
+    doneMessage: () => 'That replacement ticket has already been used.',
+    readyMessage: 'Replacing the lost answer sheet.',
+  },
 };
 
 /**
@@ -213,7 +222,7 @@ export function resolveTokenState(record, { sessionState = null, now } = {}) {
   if (record.expiresAt && isIsoTimestamp(now) && Date.parse(now) > Date.parse(record.expiresAt)) {
     return { status: 'expired', message: 'That ticket is out of date. Scan your card for a new one.' };
   }
-  if (record.tokenClass === 'subject_next' || record.tokenClass === 'learning_action') {
+  if (record.tokenClass === 'subject_next' || record.tokenClass === 'learning_action' || record.tokenClass === 'answer_sheet_lost') {
     // Sessionless, unlike identify it can still expire (checked above) — but it
     // never names a session, so there is no sessionState to require here.
     return { status: 'actionable', message: semantics.readyMessage };

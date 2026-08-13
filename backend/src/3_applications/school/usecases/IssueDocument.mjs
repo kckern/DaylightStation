@@ -55,6 +55,18 @@ const ISSUABLE = new Set(['created', 'media_completed', 'issued', 'reprinted']);
  */
 const PRINT_DOCUMENT_REF = /^print\/([^@]+)@([^@]+)$/;
 
+function normalizeAnswerSheetPolicy(raw) {
+  const reuse = raw?.reuse ?? 'after_scan';
+  const capacity = raw?.capacity ?? 50;
+  if (!['never', 'after_scan', 'school_day', 'until_full'].includes(reuse)) {
+    throw new Error(`IssueDocument: unknown answer-sheet reuse policy "${reuse}"`);
+  }
+  if (!Number.isInteger(capacity) || capacity < 1 || capacity > 50) {
+    throw new Error('IssueDocument: answer-sheet capacity must be an integer from 1 to 50');
+  }
+  return { reuse, capacity };
+}
+
 /** @returns {{id: string, rev: string}|null} */
 function parsePrintDocumentRef(ref) {
   if (typeof ref !== 'string') return null;
@@ -107,6 +119,7 @@ export class IssueDocument {
   #curriculum; #sessions; #tokens; #renderer; #printer; #formMaps; #bankReader;
   #printDocuments; #renderPrintDocument; #allocationStore;
   #assignments; #worksheetInstances; #publishPrintDocument;
+  #answerSheetPolicy;
   #clock; #rng; #newArtifactId; #logger;
 
   /**
@@ -142,6 +155,7 @@ export class IssueDocument {
     curriculum, sessions, tokens, renderer, printer, formMaps, bankReader = null,
     printDocuments = null, renderPrintDocument = null, allocationStore = null,
     assignments = null, worksheetInstances = null, publishPrintDocument = null,
+    answerSheetPolicy = null,
     clock = () => new Date(), rng = Math.random,
     newArtifactId = () => `art_${shortId(8)}`, logger = console,
   } = {}) {
@@ -160,6 +174,7 @@ export class IssueDocument {
     this.#allocationStore = allocationStore;
     this.#assignments = assignments;
     this.#worksheetInstances = worksheetInstances;
+    this.#answerSheetPolicy = normalizeAnswerSheetPolicy(answerSheetPolicy);
     this.#publishPrintDocument = publishPrintDocument
       ?? (printDocuments ? new PublishPrintDocument({ repository: printDocuments }) : null);
     this.#clock = clock;
@@ -349,7 +364,10 @@ export class IssueDocument {
     });
     const reusableCard = !reprinting && typeof this.#allocationStore.findReusableCard === 'function'
       ? await this.#allocationStore.findReusableCard({
-        learnerId: instance.learnerId, rowsNeeded: instance.questions.length, capacity: 50,
+        learnerId: instance.learnerId,
+        rowsNeeded: instance.questions.length,
+        capacity: this.#answerSheetPolicy.capacity,
+        reuse: this.#answerSheetPolicy.reuse,
       })
       : null;
     let rendered;

@@ -187,6 +187,30 @@ describe('subject icons on scan_action blocks', () => {
   });
 });
 
+describe('result score scale', () => {
+  it('renders a 50-question exam as a compact aggregate bar', async () => {
+    const out = await renderer.createCanvas(doc([{
+      type: 'result_summary',
+      headline: 'Exam complete',
+      title: 'Final exam',
+      correctCount: 43,
+      totalCount: 50,
+      passingPercent: 80,
+    }]));
+    expect(out.width).toBe(theme.canvas.width);
+    expect(out.height).toBeLessThan(500);
+  });
+
+  it('keeps the inverted header strictly monochrome', async () => {
+    const out = await renderer.createCanvas({ ...doc([{ type: 'rich_text', md: 'Body.' }]), title: 'Worksheet Result' });
+    const pixels = out.canvas.getContext('2d').getImageData(0, 0, out.width, theme.header.lineHeight).data;
+    for (let i = 0; i < pixels.length; i += 4) {
+      expect(pixels[i]).toBe(pixels[i + 1]);
+      expect(pixels[i + 1]).toBe(pixels[i + 2]);
+    }
+  });
+});
+
 describe("scanCodes: 'qr'", () => {
   const scanDoc = doc([{ type: 'scan_action', action: 'sch:ABCDEFGH23456789', label: 'Scan me' }]);
 

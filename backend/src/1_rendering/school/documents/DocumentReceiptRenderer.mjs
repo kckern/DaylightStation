@@ -119,6 +119,37 @@ export function createDocumentReceiptRenderer({
     return lines;
   }
 
+  function fittedFont(ctx, text, { weight = '', start = 20, min = 14, maxWidth }) {
+    let size = start;
+    do {
+      ctx.font = `${weight ? `${weight} ` : ''}${size}px "${theme.fonts.family}"`;
+      if (ctx.measureText(text).width <= maxWidth) return ctx.font;
+      size -= 1;
+    } while (size >= min);
+    return `${weight ? `${weight} ` : ''}${min}px "${theme.fonts.family}"`;
+  }
+
+  /** Shared two-row Subject/Course → Unit/Lesson taxonomy presentation. */
+  function taxonomyOp(ctx, taxonomy, maxWidth, { icon = null, includeLesson = true } = {}) {
+    if (!taxonomy) return null;
+    const lineHeight = 24;
+    const iconSize = lineHeight * 2;
+    const textWidth = maxWidth - (icon ? iconSize + 10 : 0);
+    const top = `${taxonomy.subject}  ›  ${taxonomy.course}`;
+    const bottom = includeLesson ? `${taxonomy.unit}  ›  ${taxonomy.lesson}` : taxonomy.unit;
+    return {
+      icon,
+      iconSize,
+      textOffset: icon ? iconSize + 10 : 0,
+      top,
+      bottom,
+      topFont: fittedFont(ctx, top, { start: 18, min: 13, maxWidth: textWidth }),
+      bottomFont: fittedFont(ctx, bottom, { weight: 'bold', start: 20, min: 14, maxWidth: textWidth - 12 }),
+      lineHeight,
+      heightPx: lineHeight * 2,
+    };
+  }
+
   function textOps(ctx, text, { font, lineHeight }) {
     ctx.font = font;
     const lines = wrapText(ctx, text, contentWidth);
@@ -151,21 +182,27 @@ export function createDocumentReceiptRenderer({
   function actionOp(ctx, block, tokens, { icon = null } = {}) {
     const code = tokens?.[block.action] ?? block.code ?? block.token ?? block.action;
     const lesson = block.presentation === 'lesson';
-    const iconSpan = icon ? theme.action.iconPx + theme.action.iconGap : 0;
+    const iconSpan = icon && !lesson ? theme.action.iconPx + theme.action.iconGap : 0;
     ctx.font = theme.fonts.label;
     const labelWidth = contentWidth - 2 * theme.action.padding - theme.action.codeAreaPx
       - (lesson ? theme.action.lessonTextGap : theme.action.labelGap) - iconSpan;
-    const labelLines = wrapTight(ctx, lesson && block.taxonomy ? `Lesson · ${block.label}` : block.label, labelWidth);
+    const taxonomy = lesson && block.taxonomy
+      ? taxonomyOp(ctx, block.taxonomy, labelWidth, { icon, includeLesson: false })
+      : null;
+    const labelLines = wrapTight(ctx, block.label, labelWidth);
     ctx.font = theme.fonts.eyebrow;
-    const eyebrowLines = lesson && block.eyebrow ? wrapTight(ctx, block.eyebrow.toUpperCase(), labelWidth) : [];
+    const eyebrow = lesson && block.eyebrow
+      ? block.eyebrow.replace(/\s*·.*$/, '').toUpperCase()
+      : null;
+    const eyebrowLines = eyebrow ? wrapTight(ctx, eyebrow, labelWidth) : [];
     ctx.font = theme.fonts.description;
-    const descriptionLines = lesson && block.description ? wrapTight(ctx, block.description, labelWidth) : [];
-    ctx.font = theme.fonts.code;
-    const metaLines = lesson && block.meta ? wrapTight(ctx, block.meta, labelWidth) : [];
-    const taxonomyLines = lesson && block.taxonomy
-      ? [`Course · ${block.taxonomy.course}`, `Unit · ${block.taxonomy.unit}`]
-        .flatMap((line) => wrapTight(ctx, line, labelWidth))
+    const descriptionIndent = 12;
+    const descriptionLines = lesson && block.description
+      ? wrapTight(ctx, block.description, labelWidth - descriptionIndent)
       : [];
+    ctx.font = theme.fonts.code;
+    const metaParts = lesson && block.meta ? String(block.meta).split(' · ').filter(Boolean) : [];
+    const metaLines = metaParts.length ? ['footer'] : [];
     ctx.font = theme.fonts.code;
     // The human-readable fallback code CHUNKS in fours past the scheme prefix
     // (design audit: 'sch:8V2QWGT4A / FXHHD4U' wrapped mid-token). A code a
@@ -173,9 +210,9 @@ export function createDocumentReceiptRenderer({
     const codeLines = block.hideCode ? [] : wrapTight(ctx, chunkCode(code), theme.action.codeAreaPx);
     const textHeight = lesson
       ? eyebrowLines.length * theme.action.eyebrowLineHeight
+        + (taxonomy?.heightPx ?? 0)
         + labelLines.length * theme.text.bodyLineHeight
         + descriptionLines.length * theme.action.descriptionLineHeight
-        + taxonomyLines.length * theme.text.codeLineHeight
         + metaLines.length * theme.text.codeLineHeight + 10
       : labelLines.length * theme.text.bodyLineHeight;
     const iconHeight = icon ? theme.action.iconPx : 0;
@@ -191,10 +228,13 @@ export function createDocumentReceiptRenderer({
       eyebrowLines,
       labelLines,
       descriptionLines,
+      descriptionIndent,
       metaLines,
-      taxonomyLines,
+      metaParts,
+      taxonomy,
       codeLines,
-      heightPx: Math.max(textHeight, iconHeight, codeBlockHeight) + 2 * theme.action.padding,
+      heightPx: Math.max(textHeight, iconHeight, codeBlockHeight) + 2 * theme.action.padding
+        + (metaLines.length ? 14 : 0),
     };
   }
 
@@ -216,7 +256,10 @@ export function createDocumentReceiptRenderer({
         for (const part of parseRichText(block.md)) {
           if (part.kind === 'math') ops.push(await mathOp(part.tex, true));
           else if (part.style === 'heading') ops.push(textOps(ctx, part.text, { font: theme.fonts.heading, lineHeight: theme.text.headingLineHeight }));
-          else ops.push(textOps(ctx, part.text, { font: theme.fonts.body, lineHeight: theme.text.bodyLineHeight }));
+          else ops.push({
+            ...textOps(ctx, part.text, { font: theme.fonts.body, lineHeight: theme.text.bodyLineHeight }),
+            compactReview: /^-\s+\d+:/.test(block.md),
+          });
         }
         break;
 
@@ -235,24 +278,33 @@ export function createDocumentReceiptRenderer({
       case 'result_summary': {
         const hasCounts = Number.isInteger(block.correctCount) && Number.isInteger(block.totalCount);
         const count = hasCounts ? block.totalCount : 0;
-        const boxesWidth = count * theme.result.boxSize + Math.max(0, count - 1) * theme.result.boxGap;
+        const scoreMode = count > 10 ? 'aggregate' : 'items';
+        const displayBoxCount = scoreMode === 'aggregate' ? theme.result.progressSegments : count;
+        const boxSize = displayBoxCount
+          ? Math.min(theme.result.boxSize, (contentWidth * 0.58 - Math.max(0, displayBoxCount - 1) * theme.result.boxGap) / displayBoxCount)
+          : theme.result.boxSize;
+        const boxesWidth = displayBoxCount * boxSize + Math.max(0, displayBoxCount - 1) * theme.result.boxGap;
         const summaryIcon = block.icon ? await iconPng(block.icon) : null;
+        const taxonomy = taxonomyOp(ctx, block.taxonomy, contentWidth, { icon: summaryIcon });
+        const progressRows = Array.isArray(block.progress) ? block.progress : (block.progress ? [block.progress] : []);
+        const progressHeight = progressRows.length * 54;
         ctx.font = theme.fonts.code;
-        const taxonomyLines = block.taxonomy
-          ? [
-            `Subject · ${block.taxonomy.subject}`,
-            `Course · ${block.taxonomy.course}`,
-            `Unit · ${block.taxonomy.unit}`,
-          ].flatMap((line) => wrapTight(ctx, line, contentWidth))
-          : [];
+        const reviewRows = (block.reviewHints ?? []).map((hint) => {
+          const match = /^(\d+):\s*(.+)$/.exec(hint);
+          const number = match?.[1] ?? '';
+          const text = match?.[2] ?? hint;
+          return { number, lines: wrapTight(ctx, text, contentWidth - 54) };
+        });
+        const reviewHeight = reviewRows.length
+          ? 48 + reviewRows.reduce((sum, row) => sum + row.lines.length * 26 + 8, 0)
+          : 0;
         ops.push({
-          kind: 'result-summary', ...block, summaryIcon, taxonomyLines, boxesWidth,
-          heightPx: theme.result.padY * 2 + theme.result.headlineLineHeight
-            + theme.result.titleLineHeight + (hasCounts ? theme.result.boxSize + 42 : 38)
-            + (block.progress ? 62 : 0) + (summaryIcon ? theme.action.iconPx + 8 : 0)
-            + ((block.learnerName || block.date || block.studentNo) ? 36 : 0)
-            + (typeof block.passingPercent === 'number' ? 27 : 0)
-            + taxonomyLines.length * theme.text.codeLineHeight,
+          kind: 'result-summary', ...block, taxonomy, progressRows, reviewRows, boxesWidth, boxSize, scoreMode, displayBoxCount,
+          heightPx: theme.result.padY * 2
+            + ((block.learnerName || block.date || block.time || block.studentNo) ? theme.result.identityHeight + 14 : 0)
+            + (taxonomy?.heightPx ?? 0) + 16
+            + (hasCounts ? theme.result.scorePanelHeight + 2 * theme.result.scorePanelGap : 42)
+            + progressHeight + reviewHeight,
         });
         break;
       }
@@ -313,7 +365,7 @@ export function createDocumentReceiptRenderer({
     const cutPoints = [];
     let y = ops[0]?.kind === 'header' ? 0 : theme.layout.margin;
     let segmentStart = 0;
-    for (const op of ops) {
+    ops.forEach((op, index) => {
       const opHeight = op.kind === 'math' ? op.totalHeightPx : op.heightPx;
       if (y - segmentStart > theme.layout.maxSegmentPx) {
         cutPoints.push(y);
@@ -321,8 +373,10 @@ export function createDocumentReceiptRenderer({
         segmentStart = y;
       }
       op.yPx = y;
-      y += opHeight + theme.layout.blockGap;
-    }
+      const next = ops[index + 1];
+      const gap = op.compactReview && next?.compactReview ? 6 : theme.layout.blockGap;
+      y += opHeight + gap;
+    });
     const height = Math.ceil(y - theme.layout.blockGap + theme.layout.margin);
     cutPoints.push(height);
 
@@ -335,11 +389,81 @@ export function createDocumentReceiptRenderer({
     const drawnMath = [];
     const x = theme.layout.margin;
 
+    async function drawTaxonomy(taxonomy, tx, ty) {
+      if (!taxonomy) return;
+      if (taxonomy.icon) {
+        const image = await loadImage(taxonomy.icon);
+        ctx.drawImage(image, tx, ty, taxonomy.iconSize, taxonomy.iconSize);
+      }
+      const textX = tx + taxonomy.textOffset;
+      ctx.textAlign = 'left';
+      ctx.font = taxonomy.topFont;
+      ctx.fillText(taxonomy.top, textX, ty);
+      ctx.font = taxonomy.bottomFont;
+      ctx.fillText(taxonomy.bottom, textX + 12, ty + taxonomy.lineHeight);
+    }
+
+    function drawActionIndicator(kind, ix, iy) {
+      ctx.save();
+      ctx.strokeStyle = theme.colors.text;
+      ctx.fillStyle = theme.colors.text;
+      ctx.lineWidth = 3;
+      if (/next/i.test(kind)) {
+        ctx.beginPath();
+        ctx.moveTo(ix, iy + 3);
+        ctx.lineTo(ix + 14, iy + 10);
+        ctx.lineTo(ix, iy + 17);
+        ctx.closePath();
+        ctx.fill();
+      } else if (/try/i.test(kind)) {
+        ctx.beginPath();
+        ctx.arc(ix + 9, iy + 10, 7, Math.PI * 0.35, Math.PI * 1.9);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(ix + 15, iy + 2);
+        ctx.lineTo(ix + 17, iy + 9);
+        ctx.lineTo(ix + 10, iy + 7);
+        ctx.closePath();
+        ctx.fill();
+      } else {
+        // TODAY: a compact sun survives thermal rasterization better than a
+        // tiny calendar, which reads as an accidental checkbox at this size.
+        ctx.beginPath();
+        ctx.arc(ix + 9, iy + 10, 5, 0, Math.PI * 2);
+        ctx.stroke();
+        [[9, 0, 9, 3], [9, 17, 9, 20], [0, 10, 3, 10], [15, 10, 18, 10],
+          [2, 3, 4, 5], [14, 15, 16, 17], [14, 5, 16, 3], [2, 17, 4, 15]]
+          .forEach(([x1, y1, x2, y2]) => {
+            ctx.beginPath();
+            ctx.moveTo(ix + x1, iy + y1);
+            ctx.lineTo(ix + x2, iy + y2);
+            ctx.stroke();
+          });
+      }
+      ctx.restore();
+    }
+
+    function drawScanIndicator(ix, iy) {
+      ctx.save();
+      ctx.strokeStyle = theme.colors.text;
+      ctx.lineWidth = 2;
+      const s = 17;
+      const arm = 5;
+      [[0, 0, 1, 1], [s, 0, -1, 1], [0, s, 1, -1], [s, s, -1, -1]].forEach(([dx, dy, hx, vy]) => {
+        ctx.beginPath();
+        ctx.moveTo(ix + dx + hx * arm, iy + dy);
+        ctx.lineTo(ix + dx, iy + dy);
+        ctx.lineTo(ix + dx, iy + dy + vy * arm);
+        ctx.stroke();
+      });
+      ctx.restore();
+    }
+
     for (const op of ops) {
       if (op.kind === 'header') {
         ctx.fillStyle = theme.colors.text;
         ctx.fillRect(0, op.yPx, theme.canvas.width, op.heightPx);
-        ctx.fillStyle = theme.colors.background;
+        ctx.fillStyle = theme.colors.headerText;
         ctx.font = theme.fonts.header;
         op.lines.forEach((line, index) => ctx.fillText(
           line,
@@ -363,70 +487,178 @@ export function createDocumentReceiptRenderer({
       }
       if (op.kind === 'result-summary') {
         let sy = op.yPx + theme.result.padY;
-        ctx.textAlign = 'center';
-        if (op.summaryIcon) {
-          // eslint-disable-next-line no-await-in-loop
-          const summaryIcon = await loadImage(op.summaryIcon);
-          ctx.drawImage(summaryIcon, (theme.canvas.width - theme.action.iconPx) / 2, sy, theme.action.iconPx, theme.action.iconPx);
-          sy += theme.action.iconPx + 8;
+        if (op.learnerName || op.date || op.time || op.studentNo) {
+          const columns = [
+            { label: 'NAME', value: op.learnerName ?? '—', width: contentWidth * 0.24 },
+            { label: 'DATE', value: op.date ?? '—', width: contentWidth * 0.27 },
+            { label: 'TIME', value: op.time ?? '—', width: contentWidth * 0.18 },
+            { label: 'STUDENT NO.', value: op.studentNo ?? '—', width: contentWidth * 0.31 },
+          ];
+          ctx.lineWidth = 2;
+          ctx.strokeRect(x, sy, contentWidth, theme.result.identityHeight);
+          let cx = x;
+          columns.forEach((column, index) => {
+            if (index) {
+              ctx.beginPath();
+              ctx.moveTo(cx, sy);
+              ctx.lineTo(cx, sy + theme.result.identityHeight);
+              ctx.stroke();
+            }
+            ctx.textAlign = 'center';
+            ctx.font = theme.fonts.identityLabel;
+            ctx.fillText(column.label, cx + column.width / 2, sy + 10);
+            ctx.font = theme.fonts.identityValue;
+            ctx.fillText(column.value, cx + column.width / 2, sy + 38);
+            cx += column.width;
+          });
+          sy += theme.result.identityHeight + 14;
         }
-        if (op.learnerName || op.date || op.studentNo) {
-          ctx.font = theme.fonts.code;
-          const identity = [op.learnerName && `Name: ${op.learnerName}`, op.date && `Date: ${op.date}`, op.studentNo && `Student No. ${op.studentNo}`]
-            .filter(Boolean).join('  ·  ');
-          ctx.fillText(identity, theme.canvas.width / 2, sy);
-          sy += 36;
-        }
-        if (op.taxonomyLines.length) {
-          ctx.font = theme.fonts.code;
-          op.taxonomyLines.forEach((line, index) => ctx.fillText(
-            line, theme.canvas.width / 2, sy + index * theme.text.codeLineHeight,
-          ));
-          sy += op.taxonomyLines.length * theme.text.codeLineHeight;
-        }
-        ctx.font = theme.fonts.heading;
-        ctx.fillText(op.headline, theme.canvas.width / 2, sy);
-        sy += theme.result.headlineLineHeight;
-        ctx.font = theme.fonts.body;
-        ctx.fillText(op.taxonomy ? `Lesson · ${op.title}` : op.title, theme.canvas.width / 2, sy);
-        sy += theme.result.titleLineHeight;
+        await drawTaxonomy(op.taxonomy, x, sy);
+        sy += (op.taxonomy?.heightPx ?? 0) + 16;
+        ctx.textAlign = 'left';
         if (Number.isInteger(op.correctCount) && Number.isInteger(op.totalCount)) {
-          const startX = (theme.canvas.width - op.boxesWidth) / 2;
-          for (let index = 0; index < op.totalCount; index += 1) {
-            const bx = startX + index * (theme.result.boxSize + theme.result.boxGap);
+          const panelY = sy + theme.result.scorePanelGap;
+          const panelHeight = theme.result.scorePanelHeight;
+          const panelPad = theme.result.scorePanelPad;
+          ctx.lineWidth = 3;
+          ctx.strokeRect(x, panelY, contentWidth, panelHeight);
+          const scoreColumnWidth = contentWidth * 0.38;
+          const marksX = x + scoreColumnWidth + panelPad;
+          const marksWidth = contentWidth - scoreColumnWidth - 2 * panelPad;
+          const markGap = op.displayBoxCount > 1 ? Math.min(theme.result.boxGap, 6) : 0;
+          const markSize = Math.min(op.boxSize, (marksWidth - (op.displayBoxCount - 1) * markGap) / op.displayBoxCount);
+          const startX = marksX + Math.max(0, (marksWidth - (op.displayBoxCount * markSize + (op.displayBoxCount - 1) * markGap)) / 2);
+          const marksY = panelY + (panelHeight - markSize) / 2;
+          const filledBoxes = op.scoreMode === 'aggregate'
+            ? Math.round((op.correctCount / op.totalCount) * op.displayBoxCount)
+            : op.correctCount;
+          for (let index = 0; index < op.displayBoxCount; index += 1) {
+            const bx = startX + index * (markSize + markGap);
+            if (op.scoreMode === 'items' && Number.isInteger(op.questionStart)) {
+              ctx.font = theme.fonts.breadcrumb;
+              ctx.textAlign = 'center';
+              ctx.fillText(String(op.questionStart + index), bx + markSize / 2, marksY - 20);
+            }
             ctx.lineWidth = theme.result.boxLineWidth;
-            ctx.strokeRect(bx, sy, theme.result.boxSize, theme.result.boxSize);
-            ctx.font = theme.fonts.eyebrow;
-            ctx.fillText(index < op.correctCount ? '✓' : '×', bx + theme.result.boxSize / 2, sy + 3);
+            ctx.strokeRect(bx, marksY, markSize, markSize);
+            if (op.scoreMode === 'aggregate') {
+              if (index < filledBoxes) ctx.fillRect(bx + 4, marksY + 4, markSize - 8, markSize - 8);
+            } else {
+              ctx.font = theme.fonts.eyebrow;
+              ctx.textAlign = 'center';
+              if (index < op.correctCount) {
+                ctx.fillText('✓', bx + markSize / 2, marksY + 3);
+              } else {
+                ctx.fillStyle = theme.colors.text;
+                ctx.fillRect(bx, marksY, markSize, markSize);
+                ctx.fillStyle = theme.colors.headerText;
+                ctx.fillText('×', bx + markSize / 2, marksY + 3);
+                ctx.fillStyle = theme.colors.text;
+              }
+            }
           }
-          sy += theme.result.boxSize + 8;
+          const scoreX = x + scoreColumnWidth / 2 + 2;
+          const scoreTop = panelY + 15;
+          const earnedPercent = typeof op.percent === 'number'
+            ? Math.round(op.percent)
+            : Math.round((op.correctCount / op.totalCount) * 100);
+          ctx.textAlign = 'center';
+          ctx.font = theme.fonts.summary;
+          ctx.fillText(`${op.correctCount}/${op.totalCount} · ${earnedPercent}%`, scoreX, scoreTop);
           ctx.font = theme.fonts.label;
-          ctx.fillText(`${op.correctCount} of ${op.totalCount} correct`, theme.canvas.width / 2, sy);
-          sy += 34;
+          const outcomeText = op.headline;
+          const outcomeWidth = ctx.measureText(outcomeText).width;
+          const outcomeIconX = scoreX - outcomeWidth / 2 - 25;
+          const outcomeY = scoreTop + 43;
+          const outcomeIconY = outcomeY + 6;
+          ctx.lineWidth = 3;
+          ctx.strokeRect(outcomeIconX, outcomeIconY, 18, 18);
+          ctx.beginPath();
+          if (/^pass/i.test(outcomeText)) {
+            ctx.moveTo(outcomeIconX + 4, outcomeIconY + 10);
+            ctx.lineTo(outcomeIconX + 8, outcomeIconY + 14);
+            ctx.lineTo(outcomeIconX + 15, outcomeIconY + 5);
+          } else {
+            ctx.moveTo(outcomeIconX + 5, outcomeIconY + 5);
+            ctx.lineTo(outcomeIconX + 13, outcomeIconY + 13);
+            ctx.moveTo(outcomeIconX + 13, outcomeIconY + 5);
+            ctx.lineTo(outcomeIconX + 5, outcomeIconY + 13);
+          }
+          ctx.stroke();
+          ctx.font = theme.fonts.label;
+          ctx.fillText(outcomeText, scoreX + 8, outcomeY - 1);
+          if (typeof op.passingPercent === 'number') {
+            ctx.font = theme.fonts.breadcrumb;
+            ctx.fillText(`${Math.round(op.passingPercent)}% to pass`, scoreX, scoreTop + 82);
+          }
+          sy = panelY + panelHeight + theme.result.scorePanelGap;
         } else if (typeof op.percent === 'number') {
           ctx.font = theme.fonts.label;
           ctx.fillText(`Score: ${Math.round(op.percent)}%`, theme.canvas.width / 2, sy);
           sy += 34;
         }
-        if (typeof op.passingPercent === 'number') {
+        for (const progress of op.progressRows) {
+          ctx.textAlign = 'left';
+          ctx.font = theme.fonts.eyebrow;
+          const complete = progress.completed === progress.total;
+          ctx.fillText(`${progress.label.toUpperCase()} ${complete ? 'COMPLETE' : 'PROGRESS'}`, x, sy);
+          ctx.textAlign = 'right';
           ctx.font = theme.fonts.code;
-          ctx.fillText(`Passing is ${Math.round(op.passingPercent)}%`, theme.canvas.width / 2, sy);
-          sy += 27;
-        }
-        if (op.progress) {
-          ctx.font = theme.fonts.body;
-          ctx.fillText(`${op.progress.label} · ${op.progress.completed} of ${op.progress.total}`, theme.canvas.width / 2, sy);
+          ctx.fillText(`${progress.completed} of ${progress.total}`, x + contentWidth, sy);
           sy += 31;
-          const segments = Math.min(theme.result.progressSegments, op.progress.total);
-          const filled = Math.ceil((op.progress.completed / op.progress.total) * segments);
-          const segmentWidth = (contentWidth - (segments - 1) * theme.result.progressGap) / segments;
-          let px = x;
+          const segments = Math.min(theme.result.progressSegments, progress.total);
+          const trackY = sy + theme.result.progressHeight / 2;
+          ctx.lineWidth = 4;
+          ctx.beginPath();
+          ctx.moveTo(x, trackY);
+          ctx.lineTo(x + contentWidth, trackY);
+          ctx.stroke();
+          const filledWidth = (progress.completed / progress.total) * contentWidth;
+          if (filledWidth > 0) ctx.fillRect(x, sy, filledWidth, theme.result.progressHeight);
           for (let index = 0; index < segments; index += 1) {
             ctx.lineWidth = 2;
-            ctx.strokeRect(px, sy, segmentWidth, theme.result.progressHeight);
-            if (index < filled) ctx.fillRect(px + 3, sy + 3, segmentWidth - 6, theme.result.progressHeight - 6);
-            px += segmentWidth + theme.result.progressGap;
+            const tickX = x + (index / segments) * contentWidth;
+            ctx.beginPath();
+            ctx.moveTo(tickX, sy - 2);
+            ctx.lineTo(tickX, sy + theme.result.progressHeight + 2);
+            ctx.stroke();
           }
+          ctx.beginPath();
+          ctx.moveTo(x + contentWidth, sy - 2);
+          ctx.lineTo(x + contentWidth, sy + theme.result.progressHeight + 2);
+          ctx.stroke();
+          sy += 23;
+        }
+        if (op.reviewRows.length) {
+          sy += 16;
+          // Open-book review mark: bold, monochrome, and readable at 203 dpi.
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(x, sy + 4);
+          ctx.quadraticCurveTo(x + 10, sy, x + 20, sy + 7);
+          ctx.lineTo(x + 20, sy + 24);
+          ctx.quadraticCurveTo(x + 10, sy + 17, x, sy + 21);
+          ctx.closePath();
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(x + 20, sy + 7);
+          ctx.quadraticCurveTo(x + 30, sy, x + 40, sy + 4);
+          ctx.lineTo(x + 40, sy + 21);
+          ctx.quadraticCurveTo(x + 30, sy + 17, x + 20, sy + 24);
+          ctx.stroke();
+          ctx.font = theme.fonts.heading;
+          ctx.textAlign = 'left';
+          ctx.fillText('REVIEW BEFORE YOU RETRY', x + 52, sy);
+          sy += 42;
+          op.reviewRows.forEach((row) => {
+            ctx.font = theme.fonts.label;
+            ctx.textAlign = 'right';
+            ctx.fillText(row.number, x + 34, sy);
+            ctx.font = theme.fonts.code;
+            ctx.textAlign = 'left';
+            row.lines.forEach((line, index) => ctx.fillText(line, x + 48, sy + index * 26));
+            sy += row.lines.length * 26 + 8;
+          });
         }
         ctx.textAlign = 'left';
         continue;
@@ -444,7 +676,7 @@ export function createDocumentReceiptRenderer({
       let labelX = op.lesson
         ? codeX + theme.action.codeAreaPx + theme.action.lessonTextGap
         : x + theme.action.padding;
-      if (op.icon) {
+      if (op.icon && !op.lesson) {
         // eslint-disable-next-line no-await-in-loop
         const iconImage = await loadImage(op.icon);
         ctx.drawImage(
@@ -456,19 +688,16 @@ export function createDocumentReceiptRenderer({
         );
         labelX += theme.action.iconPx + theme.action.iconGap;
       }
-
       let labelY = op.yPx + theme.action.padding;
       if (op.lesson) {
+        drawActionIndicator(op.eyebrowLines[0] ?? '', labelX, labelY + 11);
         ctx.font = theme.fonts.eyebrow;
         op.eyebrowLines.forEach((line, index) => ctx.fillText(
-          line, labelX, labelY + index * theme.action.eyebrowLineHeight,
+          line, labelX + 24, labelY + index * theme.action.eyebrowLineHeight,
         ));
         labelY += op.eyebrowLines.length * theme.action.eyebrowLineHeight + 3;
-        ctx.font = theme.fonts.code;
-        op.taxonomyLines.forEach((line, index) => ctx.fillText(
-          line, labelX, labelY + index * theme.text.codeLineHeight,
-        ));
-        labelY += op.taxonomyLines.length * theme.text.codeLineHeight + (op.taxonomyLines.length ? 3 : 0);
+        await drawTaxonomy(op.taxonomy, labelX, labelY);
+        labelY += (op.taxonomy?.heightPx ?? 0) + (op.taxonomy ? 3 : 0);
       }
       ctx.font = theme.fonts.label;
       op.labelLines.forEach((line, index) => ctx.fillText(line, labelX, labelY + index * theme.text.bodyLineHeight));
@@ -476,13 +705,32 @@ export function createDocumentReceiptRenderer({
       if (op.lesson) {
         ctx.font = theme.fonts.description;
         op.descriptionLines.forEach((line, index) => ctx.fillText(
-          line, labelX, labelY + index * theme.action.descriptionLineHeight,
+          line, labelX + op.descriptionIndent, labelY + index * theme.action.descriptionLineHeight,
         ));
         labelY += op.descriptionLines.length * theme.action.descriptionLineHeight + (op.metaLines.length ? 5 : 0);
-        ctx.font = theme.fonts.code;
-        op.metaLines.forEach((line, index) => ctx.fillText(
-          line, labelX, labelY + index * theme.text.codeLineHeight,
-        ));
+        if (op.metaParts.length) {
+          const footerY = op.yPx + boxHeight - theme.action.padding - theme.text.codeLineHeight;
+          ctx.beginPath();
+          ctx.lineWidth = 2;
+          ctx.moveTo(labelX, footerY - 7);
+          ctx.lineTo(x + contentWidth - theme.action.padding, footerY - 7);
+          ctx.stroke();
+          ctx.font = theme.fonts.code;
+          ctx.textAlign = 'left';
+          if (op.metaParts.length === 1) {
+            const footerRight = x + contentWidth - theme.action.padding;
+            const groupWidth = 17 + 8 + ctx.measureText(op.metaParts[0]).width;
+            const groupX = labelX + (footerRight - labelX - groupWidth) / 2;
+            drawScanIndicator(groupX, footerY + 7);
+            ctx.fillText(op.metaParts[0], groupX + 25, footerY);
+          } else {
+            drawScanIndicator(labelX, footerY + 7);
+            ctx.fillText(op.metaParts[0], labelX + 25, footerY);
+            ctx.textAlign = 'right';
+            ctx.fillText(op.metaParts.slice(1).join(' · '), x + contentWidth - theme.action.padding, footerY);
+          }
+          ctx.textAlign = 'left';
+        }
       }
 
       ctx.strokeRect(codeX, codeY, theme.action.codeAreaPx, theme.action.codeAreaPx);

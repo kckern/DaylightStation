@@ -229,6 +229,7 @@ export class CloseSessionOutcome {
 
     const retryToken = passed ? null : await this.#mintRetryToken({ sessionId, state, nowIso });
     const unlocked = passed ? await this.#nextUnlocked({ state, unit, nowIso }) : null;
+    const progress = await this.#learningProgress({ state, unit, nowIso });
 
     const actions = [];
     if (retryToken) actions.push({
@@ -264,11 +265,14 @@ export class CloseSessionOutcome {
 
     const notes = await this.#collectNotes(sessionId);
     const work = (await this.#curriculum.listWorks?.() ?? []).find((candidate) => candidate.work === unit?.courseId);
+    const learnerAssignment = await this.#assignments.get(state.learnerId);
+    const enrollment = learnerAssignment?.courses?.find((course) => course.courseId === unit?.courseId)?.enrollment;
+    const moduleIndex = enrollment?.moduleOrder?.indexOf(unit?.module) ?? -1;
     const moduleTitle = work?.modules?.find((module) => module.module === unit?.module)?.title;
     const taxonomy = {
       subject: unit?.subject ? unit.subject[0].toUpperCase() + unit.subject.slice(1) : 'School',
       course: work?.title ?? unit?.courseId ?? 'Independent study',
-      unit: moduleTitle ?? unit?.module ?? unit?.title ?? state.unitId,
+      unit: moduleIndex >= 0 ? `Unit ${moduleIndex}: ${moduleTitle}` : (moduleTitle ?? unit?.module ?? unit?.title ?? state.unitId),
       lesson: unit?.title ?? state.unitId,
     };
     const worksheet = await this.#worksheetInstances?.findBySession?.(sessionId) ?? null;
@@ -278,7 +282,7 @@ export class CloseSessionOutcome {
       const row = (worksheet.omr?.rowRange?.start ?? 1) + index;
       const page = String(question.source?.page ?? '').replace(/^p\.\s*/i, 'page ');
       const zone = String(question.source?.zone ?? '').replaceAll(/[.-]/g, ' ');
-      return [`Question ${row}: review ${[page, zone].filter(Boolean).join(' · ')}.`];
+      return [`${row}: review ${[page, zone].filter(Boolean).join(' · ')}.`];
     });
     const document = resultDocument({
       sessionId,
@@ -287,11 +291,14 @@ export class CloseSessionOutcome {
       percent: state.gradedPercent,
       correctCount: state.gradedCorrectCount,
       totalCount: state.gradedTotalCount,
+      questionStart: worksheet?.omr?.rowRange?.start ?? null,
       passingPercent: state.gradedPassingPercent ?? unit?.passing?.percent ?? null,
-      progress: unlocked?.progress ?? null,
+      progress,
       subjectIcon: unit?.subject ?? null,
       learnerName: state.learnerId ? state.learnerId[0].toUpperCase() + state.learnerId.slice(1) : null,
       date: new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: this.#timezone }).format(new Date(nowIso)),
+      time: new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: this.#timezone })
+        .format(new Date(nowIso)).toLowerCase(),
       studentNo: worksheet?.omr?.cardId ?? null,
       hints,
       taxonomy,
@@ -452,29 +459,55 @@ export class CloseSessionOutcome {
     // Only report it as unlocked if it actually is: a unit still gated by
     // something else must not be promised on a receipt.
     if (!next || next.status === 'locked') return null;
-    const assignmentCourse = assignment?.courses?.find?.((entry) => entry?.courseId === unit.courseId);
-    const optionalModules = new Set(assignmentCourse?.enrollment?.optionalModules ?? []);
-    const moduleEntries = plan.entries.filter((entry) => entry.courseId === unit.courseId && entry.module === unit.module);
-    const requiredEntries = plan.entries.filter((entry) => entry.courseId === unit.courseId
-      && !optionalModules.has(entry.module));
-    const completed = (entries) => entries.filter((entry) => entry.status === 'completed').length;
-    const humanModule = String(unit.module ?? '').replaceAll('-', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
-    const progress = moduleEntries.length > 1
-      ? { label: humanModule, completed: completed(moduleEntries), total: moduleEntries.length }
-      : { label: 'Atlas course', completed: completed(requiredEntries), total: requiredEntries.length };
+    const assignmentCourse = assignment?.courses?.find((entry) => entry.courseId === unit.courseId);
     const course = (works ?? []).find((work) => work.work === next.courseId);
+    const nextModuleIndex = assignmentCourse?.enrollment?.moduleOrder?.indexOf(next.module) ?? -1;
     const nextModuleTitle = course?.modules?.find((module) => module.module === next.module)?.title;
     return {
-      unitId: next.unitId, title: next.title, description: next.description ?? null, progress,
+      unitId: next.unitId, title: next.title, description: next.description ?? null,
       taxonomy: {
         subject: (next.subject ?? unit.subject)
           ? (next.subject ?? unit.subject)[0].toUpperCase() + (next.subject ?? unit.subject).slice(1)
           : 'School',
         course: course?.title ?? next.courseId,
-        unit: nextModuleTitle ?? next.module ?? next.title,
+        unit: nextModuleIndex >= 0 ? `Unit ${nextModuleIndex}: ${nextModuleTitle}` : (nextModuleTitle ?? next.module ?? next.title),
         lesson: next.title,
       },
     };
+  }
+
+  async #learningProgress({ state, unit, nowIso }) {
+    if (!unit?.courseId) return null;
+    const [assignment, units, history, works] = await Promise.all([
+      this.#assignments.get(state.learnerId),
+      this.#curriculum.listUnits(),
+      this.#sessions.listForLearner(state.learnerId),
+      this.#curriculum.listWorks?.() ?? [],
+    ]);
+    const coursePolicies = Object.fromEntries((works ?? [])
+      .map((work) => [work.work, work.progression]).filter(([, progression]) => progression));
+    const plan = planLearnerWork({
+      learnerId: state.learnerId, assignment, units, sessions: history, now: nowIso, coursePolicies,
+    });
+    const course = assignment?.courses?.find((entry) => entry.courseId === unit.courseId);
+    const enrollment = course?.enrollment;
+    const optionalModules = new Set(enrollment?.optionalModules ?? []);
+    const requiredModules = (enrollment?.moduleOrder ?? []).filter((module) => !optionalModules.has(module));
+    const moduleEntries = plan.entries.filter((entry) => entry.courseId === unit.courseId && entry.module === unit.module);
+    const completedModules = requiredModules.filter((module) => {
+      const entries = plan.entries.filter((entry) => entry.courseId === unit.courseId && entry.module === module);
+      return entries.length > 0 && entries.every((entry) => entry.status === 'completed');
+    }).length;
+    const moduleIndex = enrollment?.moduleOrder?.indexOf(unit.module) ?? -1;
+    const rows = [
+      { label: 'Course', completed: completedModules, total: requiredModules.length },
+      {
+        label: moduleIndex >= 0 ? `Unit ${moduleIndex}` : 'Unit',
+        completed: moduleEntries.filter((entry) => entry.status === 'completed').length,
+        total: moduleEntries.length,
+      },
+    ].filter((row) => row.total > 0);
+    return rows.length ? rows : null;
   }
 
   async #unavailable(sessionId, line) {

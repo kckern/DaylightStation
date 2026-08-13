@@ -90,9 +90,9 @@ describe('fail closed', () => {
   it('exposes the whole use-case graph once wired', async () => {
     const { useCases } = await wire({ lifecycle: { enabled: true }, virtualDevices: true });
     expect(Object.keys(useCases).sort()).toEqual([
-      'buildAgenda', 'closeSessionOutcome', 'dispatchMedia', 'gradeSubmission',
+      'buildAgenda', 'closeSessionOutcome', 'createLostAnswerSheetTicket', 'dispatchMedia', 'gradeSubmission',
       'issueDocument', 'markSessionAbandoned', 'openRemediation', 'previewAgenda',
-      'recordMediaCompletion', 'resolvePersonalCard', 'resolveReviewItem',
+      'recordMediaCompletion', 'replaceLostAnswerSheet', 'resolvePersonalCard', 'resolveReviewItem',
       'resolveScanAction', 'setAssignments', 'submitPaperWork',
     ]);
   });
