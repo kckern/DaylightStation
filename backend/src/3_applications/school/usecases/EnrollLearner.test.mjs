@@ -156,6 +156,15 @@ describe('UnenrollLearner', () => {
       .rejects.toThrow(/open session/i);
   });
 
+  it('ignores an open session on a DIFFERENT course', async () => {
+    const h = unenrollHarness({
+      assignment: enrolled,
+      open: [{ sessionId: 'ws_2', unitId: 'other.01', state: 'issued' }],
+    });
+    await h.useCase.execute({ learnerId: 'milo', courseId: 'elements', removedBy: 'kckern', pin: '7410' });
+    expect(h.saved).toHaveLength(1);
+  });
+
   it('refuses to construct without a teacherGate', () => {
     expect(() => new UnenrollLearner({
       assignments: {}, curriculum: {},
