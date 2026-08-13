@@ -36,6 +36,8 @@ import { computeCycleDimStyle } from './cycleDimStyle.js';
 import { computeStudyDims } from './studyLayout.js';
 import { computeAllowLoadingOverlayFullscreen } from './loadingOverlayFullscreenGate.js';
 import { useScreenDataRefetch } from '@/screen-framework/data/ScreenDataProvider.jsx';
+import useLoopWindow from './hooks/useLoopWindow.js';
+import StudyControls from './footer/StudyControls.jsx';
 
 // Helper function to generate Plex thumbnail URLs for specific timestamps
 const generateThumbnailUrl = (plexObj, timeInSeconds) => {
@@ -830,6 +832,30 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       setIsSeeking(true);
     }
   }, [seekTo, governancePaused]);
+
+  // Study-mode loop engine (Task 8). Called unconditionally regardless of
+  // contentMode.studyUx — contentMode resolves asynchronously (starts false, may flip
+  // true mid-session) and hooks must never be gated behind that value. getMediaElement
+  // and onSeek are memoized: useLoopWindow's effects key off their identity, so an
+  // inline arrow here would tear down and rebuild the polling interval and the
+  // timeupdate/ended listeners on every render. playerRef is a stable ref object, so an
+  // empty dependency array is correct — its .current is read at call time, not closed
+  // over. handleSeek is already its own useCallback, so it's passed straight through.
+  const loopGetMediaElement = useCallback(() => playerRef.current?.getMediaElement?.() || null, []);
+  const loopApi = useLoopWindow({ getMediaElement: loopGetMediaElement, onSeek: handleSeek });
+
+  // Release the loop on USER seeks only — the loop's own boundary seek (jumping back to
+  // win.start when playback reaches win.end) must not self-release. isBoundarySeek() is
+  // a sticky, consuming flag with no correlation token, so it MUST be read synchronously
+  // inside this handler, in the same tick as the seek it gates — never from an async
+  // 'seeked' DOM listener (see the isSeeking-clearing listener above for the pattern NOT
+  // to follow here), or a stale/interleaved flag could suppress a genuine release.
+  // Only the footer's seek routes through here; handleSeek itself is also called by the
+  // loop engine and by keyboard/resume call sites, which must stay untouched.
+  const handleUserSeek = useCallback((seconds) => {
+    if (!loopApi.isBoundarySeek()) loopApi.releaseLoop();
+    handleSeek(seconds);
+  }, [loopApi, handleSeek]);
 
   // Memoize keyboard overrides to prevent recreation on every render
   const keyboardOverrides = useMemo(() => ({
@@ -1975,6 +2001,24 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     />
   ) : null;
 
+  // Study-mode footer controls (jog, loop, mirror). Built only when studyUx is active —
+  // contentMode.studyUx is false at render time for workout content and for the initial
+  // paint of every session, so this stays null (no extra DOM) until labels resolve.
+  const studyControlsNode = contentMode.studyUx ? (
+    <StudyControls
+      isPaused={isPaused}
+      jogSteps={Array.isArray(studyCfg.jog_steps) ? studyCfg.jog_steps : [5, 10]}
+      loopDurations={Array.isArray(studyCfg.loop_durations) ? studyCfg.loop_durations : [10, 15, 20, 30]}
+      loop={loopApi.loop}
+      onJog={(delta) => handleUserSeek((getPlayerTime?.() || 0) + delta)}
+      onArmLoop={(direction, secs) =>
+        loopApi.armLoop(direction, secs, getPlayerTime?.() || 0, getPlayerDuration?.() || 0)}
+      onReleaseLoop={loopApi.releaseLoop}
+      videoMirrored={videoMirrored}
+      onToggleMirror={toggleVideoMirror}
+    />
+  ) : null;
+
   // Footer slot content
   const footerContent = (
     <FitnessPlayerFooter
@@ -1986,7 +2030,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       duration={duration}
       currentItem={currentItem}
       seekButtons={seekButtons}
-      onSeek={handleSeek}
+      onSeek={handleUserSeek}
+      studyControls={studyControlsNode}
       onPrev={handlePrev}
       onNext={handleNext}
       onClose={handleClose}
