@@ -32,7 +32,7 @@ describe('TOKEN_CLASSES', () => {
   it('is the closed spec §6.1 set', () => {
     expect(TOKEN_CLASSES).toEqual([
       'identify', 'select_unit', 'issue_document', 'media_action', 'remediation', 'recovery',
-      'subject_next', 'learning_action',
+      'subject_next', 'learning_action', 'answer_sheet_lost',
     ]);
   });
 
@@ -226,7 +226,7 @@ describe('resolveTokenState: renewable action classes', () => {
   it('an advanced state is never an error — the message is friendly and points somewhere', () => {
     // identify and subject_next are both sessionless short-circuits (never
     // reach the sessionState-driven actionable/done split this test exercises).
-    TOKEN_CLASSES.filter((c) => !['identify', 'subject_next', 'learning_action'].includes(c)).forEach((tokenClass) => {
+    TOKEN_CLASSES.filter((c) => !['identify', 'subject_next', 'learning_action', 'answer_sheet_lost'].includes(c)).forEach((tokenClass) => {
       const out = at(tokenClass, 'rewarded', { terminal: true });
       expect(out.status).toBe('already_done');
       expect(out.message.length).toBeGreaterThan(0);

@@ -43,11 +43,14 @@ question that consumes no row prints no number at all — two numbering systems
 on one page is exactly the sheet-to-card confusion the design exists to
 prevent).
 
-For enrollment-issued work, a settled card is reused at its next untouched row
-until row 50. A lesson that would cross row 50 starts a new card; completed rows
-are not reclaimed. Continuation worksheets say **REUSE THE SAME ANSWER SHEET**
-and print the exact row range so a learner does not consume another physical
-sheet unnecessarily.
+For enrollment-issued work, a settled card is currently reused at its next
+untouched row until row 50. A lesson that would cross row 50 starts a new card;
+completed rows are not reclaimed. Continuation worksheets say **REUSE THE SAME
+ANSWER SHEET** and print the exact row range so a learner does not consume
+another physical sheet unnecessarily. The allocation model can already attach
+several documents to one card across subjects and courses; the current issuing
+policy merely waits for the previous allocation to settle. The configurable
+many-to-one policy is specified in [§5.1](#51-configurable-answer-sheet-reuse).
 
 ---
 
@@ -227,6 +230,113 @@ Rules the record system holds to:
   jam) logs the orphaned card loudly and best-effort releases it, so retries
   land on a clean slate instead of burning cards forever.
 
+### 5.1 Configurable answer-sheet reuse
+
+`Student No.` identifies one **physical answer sheet**, not one document,
+course, subject, or work session. Internally this identity should be treated as
+an `answerSheetId` even though the printed label remains `Student No.` to match
+the purchased form. A worksheet instance remains independently identifiable by
+its immutable document/allocation record.
+
+This makes the relationship intentionally many-to-one:
+
+```text
+Student No. 7651208
+
+Civilization worksheet       rows 1–6
+Mathematics worksheet         rows 7–14
+Science quiz                  rows 15–20
+Civilization retry            rows 21–23
+```
+
+There is no grading ambiguity in this arrangement. Each allocation retains its
+learner, document revision, worksheet instance or work session, answer mapping,
+and non-overlapping row range. The scanner resolves each marked row through its
+owning allocation, so documents on the same card may belong to different
+subjects and courses. A card must never contain allocations for different
+learners.
+
+The issuing policy is configurable at the household level:
+
+```yaml
+answer_sheets:
+  reuse: until_full
+  capacity: 50
+```
+
+Supported policy values:
+
+| Policy | Behavior |
+|---|---|
+| `never` | Mint a new answer sheet for every worksheet. |
+| `after_scan` | Reuse only after the previous allocation settles. This is the default, conservative behavior. |
+| `school_day` | Reserve all of a learner's worksheets issued during the local school day on one answer sheet when they fit. |
+| `until_full` | Keep one active answer sheet across subjects, courses, and days until the next whole worksheet would exceed its capacity. This is the recommended default because it conserves the most physical cards. |
+
+Allocation invariants apply in every mode:
+
+- Reserve each row range atomically; concurrent issue requests cannot claim the
+  same rows.
+- Never split one worksheet across answer sheets. If the next worksheet does
+  not fit in the remaining rows, mint a new sheet before allocating it.
+- Never overwrite, reclaim, or renumber a range that reached the learner.
+  Remediation uses the next untouched rows when they fit.
+- A reprint reproduces the original answer-sheet number and row range exactly.
+- Multiple outstanding (`live`) allocations may share a card only in
+  `school_day` or `until_full` mode, only for the same learner, and only at
+  non-overlapping ranges.
+- Progressive rescans grade newly completed live ranges and ignore unchanged,
+  already-recorded answers. Changed answers on a settled range and marks in
+  unallocated rows remain diagnostic events rather than silently replacing
+  evidence.
+
+The learner-facing language must make physical-sheet reuse explicit without
+using the implementation term OMR:
+
+- First allocation: **NEW ANSWER SHEET · ROWS 1–6**
+- Later allocation: **KEEP USING THE SAME ANSWER SHEET · ROWS 7–14**
+- Agenda summary: **TODAY'S ANSWER SHEET · Student No. 7651208 · Use rows
+  7–20 today**
+
+For `school_day`, reuse is compared in the household's local timezone. A future
+agenda-batch reservation may reserve all advertised ranges together so print
+order cannot change them. For `until_full`, the allocator may append
+work as it is issued, but the same atomic reservation rule applies. The agenda
+may therefore point several course worksheets at one answer sheet while every
+worksheet and result receipt still carries enough identity and row information
+to be understood if separated from the agenda.
+
+### 5.2 Lost answer sheets
+
+A lost answer sheet is **superseded, never deleted or reset in place**. Settled
+allocations remain immutable evidence. Only work whose allocation is still
+`live` is printed again, on a newly minted Student No. and fresh row ranges.
+Each old record links to its replacement with `supersededReason:
+answer-sheet-lost`, the replacement card and record ids, the reporting teacher,
+and the timestamp.
+
+Loss recovery is a teacher-console write guarded by the normal teacher role and
+PIN. It is available in two forms:
+
+- `POST /api/v1/school/lifecycle/answer-sheets/:cardId/lost` performs the
+  replacement immediately.
+- `POST /api/v1/school/lifecycle/answer-sheets/:cardId/lost-ticket` mints a
+  15-minute, one-use School QR for that specific card. Add `?format=png` to
+  receive a rendered QR slip rather than its JSON description. Scanning the QR
+  performs the same replacement and revokes the token after success.
+
+The QR is not a permanent teacher credential. Teacher authorization is checked
+when the card-specific token is created; the opaque token then carries only
+that narrow, expiring authority. A child who finds an old replacement QR cannot
+use it for another card or after it has succeeded or expired.
+
+Replacement is committed one allocation at a time. The new worksheet must
+render and physically print before its old live record becomes superseded. If
+the printer fails, the just-created replacement allocation is released and the
+old allocation remains scannable. If several live worksheets shared the lost
+card and printing stops partway through, successfully printed replacements stay
+valid while a later recovery attempt handles only the still-live remainder.
+
 ## 6. The print API
 
 `GET /api/v1/school/print/<id-path>` — the id is the full taxonomy path
@@ -322,7 +432,46 @@ simulated card scan, renders the thermal result receipt, scans its next-lesson
 QR, and verifies answer-sheet reuse. It writes PDFs, PNGs, instance YAML, and a
 `proof.yml`; it deliberately constructs no physical printer adapter and keeps
 sessions, worksheet instances, and attempts in memory so the run leaves no
-learner test history.
+learner test history. Pass `--outcome fail` to submit a deterministic failed
+attempt and exercise the complete remediation loop: locator-only review hints,
+a retry QR, the same Student No., the next untouched answer-sheet rows, and a
+fresh worksheet instance containing only the missed item ids with newly chosen
+and ordered options.
+
+### Agenda and result-receipt language
+
+Agenda lesson cards and worksheet results share one compact, subject-led visual
+language. The subject icon establishes the visual family (for example, the
+Civilization globe), while every artifact names the complete learning path:
+**Subject → Course → Unit → Lesson**. A lesson action places its QR at the left
+and the hierarchy, lesson description, and progress at the right; the opaque
+scan token is encoded in the QR but is not printed as redundant text.
+Course names describe the curriculum rather than duplicating a source-book
+title. Unit numbers follow the enrollment's durable shuffled module order, so
+the required opening block is Unit 0 and the learner's first regional block is
+Unit 1 even when its book order differs.
+
+A worksheet result also carries the learner name, local date, local time, and
+Student No. in a compact identity strip so a loose receipt remains attributable.
+Its bordered result panel is the visual lead: exact correct/total and earned
+percentage share the first line, the pass/retry verdict follows with its icon,
+and the smaller final line states the percentage needed to pass. Item checks or
+X marks are vertically centered beside that summary. Two progress
+scales provide both context and detail: course progress counts completed units,
+while unit progress counts completed lessons. A single-lesson unit collapses
+to a compact complete/progress row instead of drawing a meaningless one-segment
+bar. Assessments up to ten items show one box per item; larger exams
+switch to a compact ten-segment score bar beside the exact fraction rather than
+shrinking dozens of boxes past legibility. A passing result offers the next lesson. A failed result offers
+only a retry, lists hints for missed items according to the profile disclosure
+policy, and never unlocks or advertises the next lesson.
+
+The agenda and next/retry cards reuse one two-row taxonomy component: the
+subject icon spans `Subject › Course` and the bold `Unit › Lesson` row. Action
+state is separate from subject identity (`NEXT UP` uses a forward marker,
+`TRY AGAIN` a retry marker), and the footer uses a scan-corner symbol with a
+plain-language print instruction. Descriptions use compact leading so the QR
+and hierarchy, rather than wrapped supporting copy, determine card height.
 
 ## 8. Scan-back: grading and the lifecycle
 
@@ -404,7 +553,11 @@ and the real attempt ids. Two things hold it back on purpose:
   matches a bank-selected sheet's actual questions.
 
 From `graded`, the ordinary session machinery takes over (outcome, rewards,
-remediation), exactly as for on-screen work.
+remediation), exactly as for on-screen work. The graded event retains the exact
+correct/total counts and missed item ids. A linked remediation session copies
+that immutable missed-item roster; issuance then creates a fresh worksheet
+snapshot for only those items while the allocation planner continues on the
+same physical answer sheet when rows remain.
 
 ## 9. Trust model and known limits
 

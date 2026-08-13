@@ -98,7 +98,7 @@ describe('agendaDocument', () => {
     const noGrade = agendaDocument({
       learnerId: 'kid1', tokensBySubject, sections: [{ subject: 'math', servedToday: false, next: { title: 'Unit Two', token: 'sch:AAAA' } }],
     });
-    expect(actionsOf(noGrade)[0]).not.toHaveProperty('meta');
+    expect(actionsOf(noGrade)[0].meta).toBe('SCAN TO PRINT');
   });
 
   it('uses the shared QR-left lesson card without exposing or repeating the token', () => {
@@ -146,21 +146,21 @@ describe('agendaDocument', () => {
   it('prints the time a person can read, not an ISO timestamp', () => {
     const text = textOf(agendaDocument({ learnerId: 'kid1', generatedAt: '2026-07-27T09:05:00.000Z', sections: [] }));
     expect(text).not.toContain('2026-07-27T09:05:00.000Z');
-    expect(text).toContain('Printed Mon 27 Jul, 9:05 am');
+    expect(text).toContain('Mon 27 Jul, 9:05 am');
   });
 
   it('prints midnight and noon as a person says them', () => {
     const at = (iso) => textOf(agendaDocument({ learnerId: 'kid1', generatedAt: iso, sections: [] }));
-    expect(at('2026-07-27T00:00:00.000Z')).toContain('Printed Mon 27 Jul, 12:00 am');
-    expect(at('2026-07-27T12:30:00.000Z')).toContain('Printed Mon 27 Jul, 12:30 pm');
-    expect(at('2026-07-27T13:07:00.000Z')).toContain('Printed Mon 27 Jul, 1:07 pm');
+    expect(at('2026-07-27T00:00:00.000Z')).toContain('Mon 27 Jul, 12:00 am');
+    expect(at('2026-07-27T12:30:00.000Z')).toContain('Mon 27 Jul, 12:30 pm');
+    expect(at('2026-07-27T13:07:00.000Z')).toContain('Mon 27 Jul, 1:07 pm');
   });
 
   it('renders the time in the timezone it was handed', () => {
     const text = textOf(agendaDocument({
       learnerId: 'kid1', generatedAt: '2026-07-27T09:05:00.000Z', timeZone: 'America/Denver', sections: [],
     }));
-    expect(text).toContain('Printed Mon 27 Jul, 3:05 am');
+    expect(text).toContain('Mon 27 Jul, 3:05 am');
   });
 
   it('says nothing at all rather than printing "Invalid Date"', () => {
@@ -190,6 +190,11 @@ describe('resultDocument', () => {
 
   it('prints the score rounded', () => {
     expect(summaryOf(resultDocument(pass)).percent).toBe(83.4);
+  });
+
+  it('carries the separately formatted local time in the identity strip', () => {
+    expect(summaryOf(resultDocument({ ...pass, date: '13 Aug 2026', time: '9:15 am' })))
+      .toMatchObject({ date: '13 Aug 2026', time: '9:15 am' });
   });
 
   it('prints coins only when coins were actually awarded', () => {

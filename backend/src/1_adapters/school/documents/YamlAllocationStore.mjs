@@ -69,10 +69,10 @@ const MAX_CARD_ID_ATTEMPTS = 20;
 const TERMINAL_STATUSES = new Set(['satisfied', 'released', 'superseded']);
 
 export class YamlAllocationStore {
-  #directory; #rng; #now; #io; #writeChain = Promise.resolve();
+  #directory; #rng; #now; #io; #timeZone; #writeChain = Promise.resolve();
 
   constructor({
-    directory, rng = Math.random, now = () => new Date().toISOString(), io = {},
+    directory, rng = Math.random, now = () => new Date().toISOString(), io = {}, timeZone = 'UTC',
   } = {}) {
     if (typeof directory !== 'string' || directory.trim().length === 0) {
       throw new Error('YamlAllocationStore requires a non-empty directory');
@@ -80,6 +80,7 @@ export class YamlAllocationStore {
     this.#directory = directory;
     this.#rng = rng;
     this.#now = now;
+    this.#timeZone = timeZone;
     this.#io = {
       load: io.load ?? loadYamlFromPath,
       save: io.save ?? saveYamlToPathAtomic,
@@ -215,7 +216,7 @@ export class YamlAllocationStore {
    * untouched rows for another worksheet. Rows are never reclaimed: marks
    * remain on paper even after an allocation is satisfied or superseded.
    */
-  async findReusableCard({ learnerId, rowsNeeded, capacity = 50 } = {}) {
+  async findReusableCard({ learnerId, rowsNeeded, capacity = 50, reuse = 'after_scan' } = {}) {
     if (typeof learnerId !== 'string' || !learnerId.trim()) {
       throw new Error('YamlAllocationStore.findReusableCard requires learnerId');
     }
@@ -225,14 +226,23 @@ export class YamlAllocationStore {
     if (!Number.isInteger(capacity) || capacity < 1) {
       throw new Error('YamlAllocationStore.findReusableCard requires capacity >= 1');
     }
+    if (!['never', 'after_scan', 'school_day', 'until_full'].includes(reuse)) {
+      throw new Error(`YamlAllocationStore.findReusableCard: unknown reuse policy "${reuse}"`);
+    }
+    if (reuse === 'never') return null;
 
     const candidates = [];
     for (const cardId of this.#io.list(path.join(this.#directory, 'allocations'))) {
       const records = this.#load(cardId);
       const learnerRecords = records.filter((record) => record.learnerId === learnerId);
       if (learnerRecords.length === 0) continue;
-      // Never add a second worksheet while one on this physical card is still awaiting a scan.
-      if (learnerRecords.some((record) => record.status === 'live')) continue;
+      // Conservative mode preserves the original behavior. Shared-card modes
+      // may append non-overlapping live allocations for this same learner.
+      if (reuse === 'after_scan' && learnerRecords.some((record) => record.status === 'live')) continue;
+      if (reuse === 'school_day') {
+        const today = localDateKey(this.#now(), this.#timeZone);
+        if (!learnerRecords.some((record) => localDateKey(record.renderedAt, this.#timeZone) === today)) continue;
+      }
       // A Student No. must never be shared between learners.
       if (records.some((record) => record.learnerId != null && record.learnerId !== learnerId)) continue;
       const occupiedThrough = Math.max(...records.map((record) => record.rowRange.end));
@@ -245,6 +255,65 @@ export class YamlAllocationStore {
     }
     candidates.sort((a, b) => b.lastUsedAt.localeCompare(a.lastUsedAt) || b.cardId.localeCompare(a.cardId));
     return candidates.length ? { cardId: candidates[0].cardId, startRow: candidates[0].startRow } : null;
+  }
+
+  /**
+   * Retires every live allocation on a lost physical answer sheet. Settled
+   * evidence remains settled; history is never deleted. Replacement metadata
+   * makes the lineage inspectable from either card.
+   */
+  async markCardLost({ cardId, replacementCardId, reportedBy, at = this.#now() } = {}) {
+    assertCardId(cardId);
+    assertCardId(replacementCardId);
+    if (cardId === replacementCardId) throw new Error('replacementCardId must differ from lost cardId');
+    if (typeof reportedBy !== 'string' || !reportedBy.trim()) throw new Error('markCardLost requires reportedBy');
+    return this.#enqueue(async () => {
+      const records = this.#load(cardId);
+      const changed = [];
+      const updated = records.map((record) => {
+        if (record.status !== 'live') return record;
+        const next = {
+          ...record,
+          status: 'superseded',
+          supersededReason: 'answer-sheet-lost',
+          replacementCardId,
+          supersededAt: at,
+          supersededBy: reportedBy,
+        };
+        changed.push(next);
+        return next;
+      });
+      if (changed.length > 0) this.#save(cardId, updated);
+      return structuredClone(changed);
+    });
+  }
+
+  async markRecordLost({ cardId, recordId, replacementCardId, replacementRecordId, reportedBy, at = this.#now() } = {}) {
+    assertCardId(cardId);
+    assertCardId(replacementCardId);
+    if (cardId === replacementCardId) throw new Error('replacementCardId must differ from lost cardId');
+    if (typeof reportedBy !== 'string' || !reportedBy.trim()) throw new Error('markRecordLost requires reportedBy');
+    return this.#enqueue(async () => {
+      const records = this.#load(cardId);
+      const record = records.find((entry) => entry.recordId === recordId);
+      if (!record) throw new EntityNotFoundError('AllocationRecord', recordId, { details: { cardId } });
+      if (record.status !== 'live') {
+        throw new DomainInvariantError(`cannot replace ${record.status} allocation ${recordId} as lost`, {
+          code: 'ALLOCATION_ILLEGAL_TRANSITION',
+        });
+      }
+      const replacement = {
+        ...record,
+        status: 'superseded',
+        supersededReason: 'answer-sheet-lost',
+        replacementCardId,
+        replacementRecordId,
+        supersededAt: at,
+        supersededBy: reportedBy,
+      };
+      this.#save(cardId, records.map((entry) => (entry.recordId === recordId ? replacement : entry)));
+      return structuredClone(replacement);
+    });
   }
 
   /** Every card id with any records in the store — the near-miss pool for mis-bubbled-card diagnostics. */
@@ -339,6 +408,18 @@ function listAllocationCardIds(dir) {
   } catch (err) {
     if (err.code === 'ENOENT') return [];
     throw err;
+  }
+}
+
+function localDateKey(value, timeZone) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(date);
+  } catch {
+    return date.toISOString().slice(0, 10);
   }
 }
 

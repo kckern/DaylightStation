@@ -53,7 +53,10 @@ const build = ({
 };
 
 /** Drive a session all the way to `graded` so the outcome step has input. */
-const graded = async ({ unitId = WORKSHEET_UNIT, percent = 90, sessionId = SID, passedEarlier = [] } = {}) => {
+const graded = async ({
+  unitId = WORKSHEET_UNIT, percent = 90, sessionId = SID, passedEarlier = [],
+  correctCount = undefined, totalCount = undefined, missedItemIds = undefined,
+} = {}) => {
   for (const done of passedEarlier) {
     await sessions.appendEvent(done.sessionId, { type: 'created', at: clock.iso(), sessionId: done.sessionId, learnerId: 'kid1', unitId: done.unitId });
     await sessions.appendEvent(done.sessionId, { type: 'issued', at: clock.iso(), sessionId: done.sessionId, artifactId: 'art_x' });
@@ -65,7 +68,10 @@ const graded = async ({ unitId = WORKSHEET_UNIT, percent = 90, sessionId = SID, 
   await sessions.appendEvent(sessionId, { type: 'created', at: clock.iso(), sessionId, learnerId: 'kid1', unitId });
   await sessions.appendEvent(sessionId, { type: 'issued', at: clock.iso(), sessionId, artifactId: 'art_1' });
   await sessions.appendEvent(sessionId, { type: 'submitted', at: clock.iso(), sessionId, transport: 'paper' });
-  await sessions.appendEvent(sessionId, { type: 'graded', at: clock.iso(), sessionId, attemptIds: ['att_1'], percent });
+  await sessions.appendEvent(sessionId, {
+    type: 'graded', at: clock.iso(), sessionId, attemptIds: ['att_1'], percent,
+    correctCount, totalCount, missedItemIds,
+  });
   return sessionId;
 };
 
@@ -523,6 +529,13 @@ describe('OpenRemediation', () => {
     const result = await remediate.execute({ sessionId: SID });
     expect(result).toMatchObject({ status: 'opened', newSessionId: 'ses_r1', variant: 1 });
     expect(sessions.derive('ses_r1')).toMatchObject({ unitId: WORKSHEET_UNIT, remediationOf: SID, variant: 1, state: 'created' });
+  });
+
+  it('carries only missed item ids into the linked retry session', async () => {
+    await graded({ percent: 50, correctCount: 3, totalCount: 6, missedItemIds: ['q4', 'q5', 'q6'] });
+    await close.execute({ sessionId: SID });
+    await remediate.execute({ sessionId: SID });
+    expect(sessions.derive('ses_r1').remediationItemIds).toEqual(['q4', 'q5', 'q6']);
   });
 
   it('closes the original as terminal, keeping its own evidence', async () => {

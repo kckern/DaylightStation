@@ -73,6 +73,8 @@ import { ResolveSubjectNext } from '#apps/school/usecases/ResolveSubjectNext.mjs
 import { ResolveReviewItem } from '#apps/school/usecases/ResolveReviewItem.mjs';
 import { SetAssignments } from '#apps/school/usecases/SetAssignments.mjs';
 import { MarkSessionAbandoned } from '#apps/school/usecases/MarkSessionAbandoned.mjs';
+import { ReplaceLostAnswerSheet } from '#apps/school/usecases/ReplaceLostAnswerSheet.mjs';
+import { CreateLostAnswerSheetTicket } from '#apps/school/usecases/CreateLostAnswerSheetTicket.mjs';
 import { isSchoolToken } from '#domains/school/sessions/tokens.mjs';
 import { shortId } from '#domains/core/utils/id.mjs';
 import { createSchoolLifecycleRouter } from '#api/v1/routers/schoolLifecycle.mjs';
@@ -494,7 +496,7 @@ export async function createSchoolLifecycle({
   // wiring them unconditionally costs a legacy-only deployment nothing.
   const printDocumentsRoot = path.join(dataDir, 'content/school/print-documents');
   const printDocuments = new YamlPrintDocumentRepository({ directory: printDocumentsRoot });
-  const allocationStore = new YamlAllocationStore({ directory: printDocumentsRoot });
+  const allocationStore = new YamlAllocationStore({ directory: printDocumentsRoot, timeZone: timezone });
   const worksheetInstances = new YamlWorksheetInstanceStore({ configService });
   const renderPrintDocument = new RenderPrintDocument({
     repository: printDocuments,
@@ -507,6 +509,7 @@ export async function createSchoolLifecycle({
     renderer: documentRenderer, printer: laserPrinter, formMaps: stores.formMaps,
     printDocuments, renderPrintDocument, allocationStore,
     assignments: stores.assignments, worksheetInstances,
+    answerSheetPolicy: cfg.answer_sheets ?? null,
     bankReader, clock, rng: draw, logger,
   });
   const dispatchMedia = playback
@@ -567,6 +570,14 @@ export async function createSchoolLifecycle({
       durationSec: null, message: 'There is nowhere to play this right now. Tell a grown-up.', document: null,
     }),
   };
+  const replaceLostAnswerSheet = new ReplaceLostAnswerSheet({
+    allocationStore, printDocuments, renderPrintDocument, printer: laserPrinter,
+    teacherGate, clock, logger,
+  });
+  const createLostAnswerSheetTicket = new CreateLostAnswerSheetTicket({
+    tokens: stores.tokens, teacherGate, clock, rng: draw,
+    ttlMinutes: cfg.answer_sheets?.lost_ticket_ttl_minutes ?? 15,
+  });
   const resolveScanAction = new ResolveScanAction({
     tokens: stores.tokens, sessions: stores.sessions, curriculum,
     resolvePersonalCard, issueDocument, dispatchMedia: mediaOrNothing, openRemediation,
@@ -578,6 +589,7 @@ export async function createSchoolLifecycle({
     // this file constructs nothing to feed it.
     donow, closeSessionOutcome, clock, logger,
     resolveLearningAction: schoolCalcActionResolver,
+    replaceLostAnswerSheet,
   });
 
   // The pending->approved half of the launch-unit loop (spec §6 "the approval
@@ -630,7 +642,7 @@ export async function createSchoolLifecycle({
     buildAgenda, issueDocument, dispatchMedia, recordMediaCompletion,
     submitPaperWork, gradeSubmission, closeSessionOutcome, openRemediation,
     resolvePersonalCard, resolveScanAction, resolveReviewItem, setAssignments,
-    previewAgenda, markSessionAbandoned,
+    previewAgenda, markSessionAbandoned, replaceLostAnswerSheet, createLostAnswerSheetTicket,
   };
 
   const router = createSchoolLifecycleRouter({

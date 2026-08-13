@@ -118,6 +118,36 @@ describe('findReusableCard', () => {
     await store.updateStatus({ cardId: record.cardId, recordId: record.recordId, status: 'satisfied' });
     expect(await store.findReusableCard({ learnerId: 'milo', rowsNeeded: 1 })).toBeNull();
   });
+
+  it('until_full appends another live worksheet for the same learner', async () => {
+    const { io } = fakeIo();
+    const store = new YamlAllocationStore({ directory: '/docs', io, now: () => '2026-08-04T10:00:00.000Z' });
+    await store.allocate({
+      cardId: '1234567', request: request({ learnerId: 'milo', rowRange: { start: 1, end: 6 } }),
+    });
+    expect(await store.findReusableCard({ learnerId: 'milo', rowsNeeded: 8, reuse: 'until_full' }))
+      .toEqual({ cardId: '1234567', startRow: 7 });
+    expect(await store.findReusableCard({ learnerId: 'milo', rowsNeeded: 8, reuse: 'after_scan' }))
+      .toBeNull();
+  });
+
+  it('school_day does not carry a card into another local date', async () => {
+    const { io } = fakeIo();
+    let now = '2026-08-04T23:59:00.000Z';
+    const store = new YamlAllocationStore({ directory: '/docs', io, now: () => now });
+    await store.allocate({
+      cardId: '1234567', request: request({ learnerId: 'milo', rowRange: { start: 1, end: 6 } }),
+    });
+    now = '2026-08-05T00:01:00.000Z';
+    expect(await store.findReusableCard({ learnerId: 'milo', rowsNeeded: 6, reuse: 'school_day' })).toBeNull();
+  });
+
+  it('never always requests a fresh card', async () => {
+    const { io } = fakeIo();
+    const store = new YamlAllocationStore({ directory: '/docs', io });
+    await store.allocate({ cardId: '1234567', request: request({ learnerId: 'milo' }) });
+    expect(await store.findReusableCard({ learnerId: 'milo', rowsNeeded: 1, reuse: 'never' })).toBeNull();
+  });
 });
 
 describe('allocate — fresh cardId generation (spec §5.2)', () => {
@@ -338,6 +368,30 @@ describe('updateStatus', () => {
     await store.allocate({ cardId: '1234567', request: request() });
     await expect(store.updateStatus({ cardId: '1234567', recordId: 'nope', status: 'satisfied' }))
       .rejects.toThrow(/not found/i);
+  });
+});
+
+describe('lost answer-sheet lineage', () => {
+  it('supersedes only the named live record and links its replacement', async () => {
+    const { io } = fakeIo();
+    const store = new YamlAllocationStore({ directory: '/docs', io, now: () => '2026-08-04T10:00:00.000Z' });
+    const live = await store.allocate({
+      cardId: '1234567', request: request({ learnerId: 'milo', documentId: 'doc-a', rowRange: { start: 1, end: 6 } }),
+    });
+    const settled = await store.allocate({
+      cardId: '1234567', request: request({ learnerId: 'milo', documentId: 'doc-b', rowRange: { start: 7, end: 12 } }),
+    });
+    await store.updateStatus({ cardId: '1234567', recordId: settled.recordId, status: 'satisfied' });
+    const result = await store.markRecordLost({
+      cardId: '1234567', recordId: live.recordId,
+      replacementCardId: '7654321', replacementRecordId: 'replacement-record', reportedBy: 'kckern',
+    });
+    expect(result).toMatchObject({
+      status: 'superseded', supersededReason: 'answer-sheet-lost',
+      replacementCardId: '7654321', replacementRecordId: 'replacement-record', supersededBy: 'kckern',
+    });
+    expect((await store.findByCard('1234567')).find((record) => record.recordId === settled.recordId).status)
+      .toBe('satisfied');
   });
 });
 

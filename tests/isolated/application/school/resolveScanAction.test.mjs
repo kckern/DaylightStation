@@ -39,6 +39,7 @@ const build = ({
   donowDispatch = null,
   wireDonow = true,
   resolveLearningAction = null,
+  replaceLostAnswerSheet = null,
 } = {}) => {
   clock = fakeClock();
   rng = seededRng(21);
@@ -93,6 +94,7 @@ const build = ({
     dispatchMedia, openRemediation, receipts,
     resolveSubjectNext, portal, launchers, donow, closeSessionOutcome: close,
     resolveLearningAction,
+    replaceLostAnswerSheet,
     clock: clock.now, logger: silentLogger,
   });
 };
@@ -130,6 +132,33 @@ const cardToken = async (learnerId = 'kid1') => {
 };
 
 beforeEach(() => build());
+
+describe('lost answer-sheet teacher ticket', () => {
+  it('replaces the named card once and revokes the short-lived ticket', async () => {
+    const replaceLostAnswerSheet = { execute: vi.fn(async () => ({
+      status: 'replaced', cardId: '1234567', replacementCardId: '7654321', message: 'Replaced.',
+    })) };
+    build({ replaceLostAnswerSheet });
+    const record = mintToken({
+      tokenClass: 'answer_sheet_lost',
+      subject: { cardId: '1234567', authorizedBy: 'kckern' },
+      at: clock.iso(), expiresAt: new Date(clock.now().getTime() + 60_000).toISOString(), rng,
+    });
+    await tokens.put(record);
+    const first = await resolve.execute({ code: record.token });
+    expect(first).toMatchObject({
+      status: 'replaced', tokenClass: 'answer_sheet_lost', physical: 'worksheet', printed: true,
+      effect: { replacementCardId: '7654321' },
+    });
+    expect(replaceLostAnswerSheet.execute).toHaveBeenCalledWith({
+      cardId: '1234567', reportedBy: 'kckern', authorized: true,
+    });
+    expect((await tokens.get(record.token)).revokedAt).toBeTruthy();
+    const second = await resolve.execute({ code: record.token });
+    expect(second.status).toBe('expired');
+    expect(replaceLostAnswerSheet.execute).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe('the personal card', () => {
   it('prints the agenda, by name', async () => {

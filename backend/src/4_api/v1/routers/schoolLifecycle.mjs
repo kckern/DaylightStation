@@ -145,6 +145,8 @@ export function createSchoolLifecycleRouter({
   resolveReviewItem = null,
   setAssignments = null,
   markSessionAbandoned = null,
+  replaceLostAnswerSheet = null,
+  createLostAnswerSheetTicket = null,
   curriculum = null,
   sessions = null,
   // Study-day-windowed sessions read (`?window=today`) — a use case, not an
@@ -372,6 +374,32 @@ export function createSchoolLifecycleRouter({
   if (openRemediation) {
     router.post('/sessions/:sessionId/remediation', asyncHandler(async (req, res) => {
       reply(res, await openRemediation.execute({ sessionId: req.params.sessionId }));
+    }));
+  }
+
+  // A lost physical answer sheet is a parent operation. The immediate route
+  // performs it now; the ticket route mints a short-lived, one-card QR whose
+  // later scan performs the same operation and then revokes itself.
+  if (replaceLostAnswerSheet) {
+    router.post('/answer-sheets/:cardId/lost', guarded(async (req, res) => {
+      const { reportedBy = null, pin = null } = req.body || {};
+      reply(res, await replaceLostAnswerSheet.execute({
+        cardId: req.params.cardId, reportedBy, pin,
+      }));
+    }));
+  }
+  if (createLostAnswerSheetTicket) {
+    router.post('/answer-sheets/:cardId/lost-ticket', guarded(async (req, res) => {
+      const { requestedBy = null, pin = null } = req.body || {};
+      const result = await createLostAnswerSheetTicket.execute({
+        cardId: req.params.cardId, requestedBy, pin,
+      });
+      if (req.query.format === 'png' && receiptPngRenderer) {
+        const { canvas } = await receiptPngRenderer.createCanvas(result.document, { tokens: {} });
+        const buffer = canvas.toBuffer('image/png');
+        return res.type('image/png').send(buffer);
+      }
+      return reply(res, result);
     }));
   }
 

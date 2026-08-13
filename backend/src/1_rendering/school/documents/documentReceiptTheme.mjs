@@ -24,19 +24,23 @@ export const documentReceiptTheme = Object.freeze({
     family: 'Roboto Condensed',
     fontPath: 'roboto-condensed/RobotoCondensed-Regular.ttf',
     heading: 'bold 34px "Roboto Condensed"',
-    header: 'bold 44px "Roboto Condensed"',
+    header: 'bold 34px "Roboto Condensed"',
     body: '24px "Roboto Condensed"',
     label: 'bold 26px "Roboto Condensed"',
     eyebrow: 'bold 20px "Roboto Condensed"',
-    description: 'italic 22px "Roboto Condensed"',
+    description: 'italic 18px "Roboto Condensed"',
     summary: 'bold 28px "Roboto Condensed"',
     code: '22px "Roboto Condensed"',
+    breadcrumb: '18px "Roboto Condensed"',
+    breadcrumbStrong: 'bold 20px "Roboto Condensed"',
+    identityLabel: 'bold 18px "Roboto Condensed"',
+    identityValue: '20px "Roboto Condensed"',
   },
 
   /** The standard header: a full-bleed black band with the title knocked out. */
   header: {
-    lineHeight: 52,
-    padY: 20,
+    lineHeight: 40,
+    padY: 12,
   },
 
   text: {
@@ -49,6 +53,7 @@ export const documentReceiptTheme = Object.freeze({
     background: '#FFFFFF',
     text: '#000000',
     border: '#000000',
+    headerText: '#FFFFFF',
   },
 
   math: {
@@ -61,21 +66,27 @@ export const documentReceiptTheme = Object.freeze({
   },
 
   action: {
-    padding: 14,
+    padding: 12,
     borderWidth: 3,
-    codeAreaPx: 150,
+    codeAreaPx: 132,
     labelGap: 10,
     codeGap: 8,
     /** Subject shelf icon drawn left of the label (58mm tape, so keep it bold). */
     iconPx: 56,
+    subjectIconPx: 28,
     iconGap: 12,
-    lessonTextGap: 18,
+    lessonTextGap: 14,
     eyebrowLineHeight: 24,
-    descriptionLineHeight: 27,
+    descriptionLineHeight: 22,
   },
 
   result: {
     padY: 8,
+    iconPx: 42,
+    identityHeight: 68,
+    scorePanelHeight: 136,
+    scorePanelPad: 12,
+    scorePanelGap: 18,
     headlineLineHeight: 42,
     titleLineHeight: 32,
     boxSize: 31,
