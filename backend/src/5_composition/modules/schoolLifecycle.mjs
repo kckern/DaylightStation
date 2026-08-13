@@ -41,6 +41,7 @@ import { YamlCurriculumDatastore } from '#adapters/persistence/yaml/YamlCurricul
 import { YamlWorkSessionDatastore } from '#adapters/persistence/yaml/YamlWorkSessionDatastore.mjs';
 import { YamlTokenRegistry } from '#adapters/persistence/yaml/YamlTokenRegistry.mjs';
 import { YamlAssignmentStore } from '#adapters/persistence/yaml/YamlAssignmentStore.mjs';
+import { YamlSyllabusStore } from '#adapters/persistence/yaml/YamlSyllabusStore.mjs';
 import { YamlFormMapStore } from '#adapters/persistence/yaml/YamlFormMapStore.mjs';
 import { YamlWorksheetInstanceStore } from '#adapters/persistence/yaml/YamlWorksheetInstanceStore.mjs';
 import { YamlReviewQueue } from '#adapters/persistence/yaml/YamlReviewQueue.mjs';
@@ -75,6 +76,10 @@ import { SetAssignments } from '#apps/school/usecases/SetAssignments.mjs';
 import { MarkSessionAbandoned } from '#apps/school/usecases/MarkSessionAbandoned.mjs';
 import { ReplaceLostAnswerSheet } from '#apps/school/usecases/ReplaceLostAnswerSheet.mjs';
 import { CreateLostAnswerSheetTicket } from '#apps/school/usecases/CreateLostAnswerSheetTicket.mjs';
+import { EnrollLearner } from '#apps/school/usecases/EnrollLearner.mjs';
+import { UnenrollLearner } from '#apps/school/usecases/UnenrollLearner.mjs';
+import { validateSyllabus } from '#domains/school/curriculum/syllabus.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 import { isSchoolToken } from '#domains/school/sessions/tokens.mjs';
 import { shortId } from '#domains/core/utils/id.mjs';
 import { createSchoolLifecycleRouter } from '#api/v1/routers/schoolLifecycle.mjs';
@@ -638,11 +643,58 @@ export async function createSchoolLifecycle({
     clock, logger,
   });
 
+  // --- syllabi + enrollment (spec: docs/reference/school/enrollment.md) ------
+  const syllabusStore = new YamlSyllabusStore({ configService, logger });
+  // The store is dumb; validation and the teacher gate belong to the write,
+  // not to persistence — the same split SetAssignments/YamlAssignmentStore use.
+  const syllabi = {
+    get: (id) => syllabusStore.get(id),
+    list: () => syllabusStore.list(),
+    async save({ raw, editedBy, pin }) {
+      teacherGate.assert({ userId: editedBy, pin, action: 'syllabus.put', context: { syllabusId: raw?.syllabusId } });
+      const works = await curriculum.listWorks();
+      const courseIds = new Set(works.map((w) => w.work).filter(Boolean));
+      const profileIds = new Set(Object.keys(works.find((w) => w.work === raw?.courseId)?.profiles ?? {}));
+      const { errors, syllabus } = validateSyllabus({ schema: 'school.syllabus/v1', ...raw }, { courseIds, profileIds });
+      if (errors.length) {
+        const err = new ValidationError(errors.join('; '));
+        err.status = 400;
+        throw err;
+      }
+      return syllabusStore.put({ ...syllabus, editedBy, updatedAt: clock().toISOString() });
+    },
+    archiveGuarded({ syllabusId, archivedBy, pin }) {
+      teacherGate.assert({ userId: archivedBy, pin, action: 'syllabus.archive', context: { syllabusId } });
+      return syllabusStore.archive(syllabusId, { archivedBy, at: clock().toISOString() });
+    },
+  };
+
+  // TODO(enrollment-auth): swap for `teacherGate` to turn on PIN enforcement for
+  // enrollment writes. Deliberately permissive for the enrollment wave — the use
+  // cases already require a gate and assert through it unconditionally, so
+  // enabling enforcement is this one binding, not an audit of the use cases.
+  const PERMISSIVE_ENROLLMENT_GATE = {
+    assert: () => true,
+  };
+  logger.warn?.('school.enrollment.gate-permissive', {
+    detail: 'enrollment writes are not PIN-gated; swap PERMISSIVE_ENROLLMENT_GATE for teacherGate',
+  });
+
+  const enrollLearner = new EnrollLearner({
+    syllabi: syllabusStore, assignments: stores.assignments, curriculum,
+    sessions: stores.sessions, teacherGate: PERMISSIVE_ENROLLMENT_GATE, clock, logger,
+  });
+  const unenrollLearner = new UnenrollLearner({
+    assignments: stores.assignments, curriculum, sessions: stores.sessions,
+    teacherGate: PERMISSIVE_ENROLLMENT_GATE, clock, logger,
+  });
+
   const useCases = {
     buildAgenda, issueDocument, dispatchMedia, recordMediaCompletion,
     submitPaperWork, gradeSubmission, closeSessionOutcome, openRemediation,
     resolvePersonalCard, resolveScanAction, resolveReviewItem, setAssignments,
     previewAgenda, markSessionAbandoned, replaceLostAnswerSheet, createLostAnswerSheetTicket,
+    enrollLearner, unenrollLearner,
   };
 
   const router = createSchoolLifecycleRouter({
@@ -654,6 +706,7 @@ export async function createSchoolLifecycle({
     sessions: stores.sessions,
     listLearnerSessions: new ListLearnerSessions({ sessions: stores.sessions, timezone, clock }),
     roster: displayRoster,
+    syllabi,
     logger,
   });
 
@@ -721,6 +774,10 @@ export async function createSchoolLifecycle({
     // The same override store CloseSessionOutcome grades against — the
     // routes read/write THIS instance so a PUT is live at the next close.
     passOverrides,
+    // The guarded save/archiveGuarded wrapper the router calls (never the raw
+    // `YamlSyllabusStore`) — exposed for the same "same instance, not a second
+    // one" reason as `passOverrides` above.
+    syllabi,
   };
 }
 
