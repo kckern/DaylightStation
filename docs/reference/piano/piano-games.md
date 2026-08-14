@@ -697,10 +697,12 @@ Each visual channel answers one question, so they coexist without competing:
 Naming a square and committing to it are different acts. One played chord **hovers** —
 it lights the square, previews a ghost piece, and commits nothing, so a player can try
 a chord and see where it lands. The **same square played twice** within a short window
-picks the piece up; the pick-up fires on recognition, while the fingers are still down,
-and that chord's own release is swallowed so it cannot double as a drop. **Dropping**
-takes only one play, because a held piece can reach only a handful of lit, labelled
-squares and intent is already declared. An octave (or Esc) puts the piece back.
+picks the piece up. Preview is visual only: pick-up and drop both fire after every key
+has been released, using the fullest/latest growing shape played during that press.
+Thus a major triad sounded while the player is still adding its seventh cannot act on
+the triad's square. **Dropping** takes only one play, because a held piece can reach only
+a handful of lit, labelled squares and intent is already declared. An octave (or Esc)
+puts the piece back.
 
 The square whose piece is in the air wears an animated marching-ants border — a child
 element, not the square's `::before`, which the best-move ring already owns (the piece
@@ -728,11 +730,12 @@ who want the rim-intersection drill back.
 
 A square is a candidate while its chord's pitch classes contain every pitch class
 currently held. One note lights a scatter (a note is the root of one chord and the
-third of another); each added note contracts the set. A completed triad leaves the
-triad plus its extensions on the same file — the single bright square comes from the
-settle-window cursor, not from the candidate set reaching one. An empty candidate set
-means no square can contain these notes, and the read-out says "not a square" at once
-instead of waiting out the settle window.
+third of another); each added note contracts the set. That harmonic set is intersected
+with the current chess choices — movable pieces before pick-up, legal destinations
+afterward — so empty, enemy, and unreachable squares never flash as though they were
+available. A completed triad leaves its actionable triad/extension addresses lit; the
+single bright square comes from the settle-window cursor, not from the candidate set
+reaching one. An empty candidate set means no actionable square can contain these notes.
 
 ### Hint gestures
 

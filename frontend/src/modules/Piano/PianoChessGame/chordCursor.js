@@ -7,12 +7,12 @@ import { isStaffScheme } from './staffAddress.js';
  * A chord is not an event, it is a shape held over time: the notes of one chord
  * land tens of milliseconds apart, so reading the keyboard the instant a key goes
  * down would see a single note, then an interval, then the chord. This module
- * waits for the held set to stop changing, then reads it.
+ * waits for the held set to stop changing, then previews it.
  *
- * Commit happens on release rather than on recognition. That gives the player a
- * preview they can correct while still holding — a cursor, not a trigger — and it
- * makes playing the same chord twice in a row work, which a move like Nf3-g1-f3
- * needs.
+ * Commit happens on release rather than on recognition. The fullest/latest
+ * growing shape is retained through a staggered release, so a major triad played
+ * on the way to a major seventh can never fire the triad's square prematurely.
+ * Preview is only feedback; release is the sole statement of intent.
  */
 
 export const DEFAULT_SETTLE_MS = 140;
@@ -41,7 +41,7 @@ export function isOctave(notes) {
 }
 
 export function createCursorState() {
-  return { held: [], stableSince: null, preview: null };
+  return { held: [], intentNotes: [], stableSince: null, preview: null };
 }
 
 const sameNotes = (a, b) => a.length === b.length && a.every((note, index) => note === b[index]);
@@ -59,31 +59,45 @@ export function advanceCursor(state, notes, now, { settleMs = DEFAULT_SETTLE_MS,
   const held = [...notes].sort((a, b) => a - b);
   const minNotes = minNotesFor(scheme);
 
-  // Release: everything is up, so whatever was previewed is the player's answer.
+  // Release: everything is up, so resolve the complete shape the player built,
+  // not whichever smaller shape happened to sit still long enough for a preview.
+  // Settling is a visual debounce, not a condition the fingers have to satisfy.
   if (!held.length) {
-    // A chord tapped and let go inside the settle window was never read. Saying
-    // so beats the silence a child cannot tell apart from a broken piano.
-    if (!state.preview && state.held.length >= minNotes) {
-      return { state: createCursorState(), event: { type: 'too_quick' } };
+    const intentNotes = state.intentNotes?.length ? state.intentNotes : state.held;
+    const addressed = intentNotes.length >= minNotes ? identifyChord(intentNotes, scheme) : null;
+    if (isOctave(intentNotes) && !addressed?.square) {
+      return { state: createCursorState(), event: { type: 'escape' } };
     }
-    if (state.preview) {
+    if (intentNotes.length >= minNotes) {
       return {
         state: createCursorState(),
-        event: state.preview.escape
-          ? { type: 'escape' }
-          : { type: 'commit', square: state.preview.square, chord: state.preview },
+        event: {
+          type: 'commit',
+          square: addressed?.square ?? null,
+          chord: addressed?.square ? addressed : null,
+        },
       };
     }
     return { state: createCursorState(), event: null };
   }
 
-  // The shape is still changing; restart the settle clock and show nothing yet.
+  // A same-size revision or an addition is new intent. A reduction is normally
+  // fingers lifting at different times, so it must not replace the complete
+  // shape that will be resolved when the last key comes up. A corrected note's
+  // replacement onset grows the live set again and becomes the new intent.
   if (!sameNotes(held, state.held)) {
-    return { state: { ...state, held, stableSince: now }, event: null };
+    const intentNotes = held.length >= state.held.length ? held : state.intentNotes;
+    return { state: { ...state, held, intentNotes, stableSince: now, preview: null }, event: null };
   }
 
   const stableSince = state.stableSince ?? now;
   if (now - stableSince < settleMs) return { state: { ...state, held, stableSince }, event: null };
+
+  // Do not let the tail of a staggered release preview a different, smaller
+  // chord. It is release residue, not a fresh fingering.
+  if (held.length < state.intentNotes.length) {
+    return { state: { ...state, held, stableSince }, event: null };
+  }
 
   // Checked before the note-count gate: an octave is two notes, so the chord
   // minimum would otherwise swallow it.

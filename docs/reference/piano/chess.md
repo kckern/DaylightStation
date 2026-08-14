@@ -55,8 +55,9 @@ identical for both; only the rim labels change.
    players benefit from seeing both.
 10. **Is this chord going anywhere?** Three answers, and the player must be able to tell them
     apart: still too few notes; a real chord that no square carries; a chord that names a square.
-11. **Which square does it name?** The named square lights. Nothing is committed — the player is
-    looking, not moving.
+11. **Which square does it name?** The named square lights. Nothing is committed while any key is
+    down — the player is looking, not moving. The complete press is resolved only after release,
+    so a triad played on the way to a seventh is never mistaken for the intended address.
 
 ### Picking a piece up
 
@@ -135,6 +136,8 @@ and it is the first place to look when nothing happens.
 **The board (centre)** answers the questions about *the position*, through four channels that never
 compete: light for what the hands are doing now, outline for where the player is in the move, marks
 for what a held piece can do, colour for alarm only. Its rim carries the addressing vocabulary.
+Light narrows only across squares actionable at that moment: movable pieces before pick-up and legal
+destinations afterward. Empty, enemy, and unreachable squares do not join the partial-chord dance.
 
 **The chord rail (right)** answers the questions about *what is being played*: the chord's name, and
 the same chord as notation on a grand staff. It is a mirror of the player's hands, in both
