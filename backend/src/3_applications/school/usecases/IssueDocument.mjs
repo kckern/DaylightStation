@@ -41,6 +41,7 @@ import { shortId } from '#domains/core/utils/id.mjs';
 import { createWorksheetInstance, worksheetInstanceDocument } from '#domains/school/questionBankV2.mjs';
 import { PublishPrintDocument } from '#apps/school/documents/PublishPrintDocument.mjs';
 import { slugify } from '#domains/school/documents/receipts.mjs';
+import { DEFAULT_PRINT_POLICY } from '#domains/school/index.mjs';
 
 /** States in which handing over a sheet still means something. */
 const ISSUABLE = new Set(['created', 'media_completed', 'issued', 'reprinted']);
@@ -54,6 +55,23 @@ const ISSUABLE = new Set(['created', 'media_completed', 'issued', 'reprinted']);
  * `buildRecordId` convention for the same pair.
  */
 const PRINT_DOCUMENT_REF = /^print\/([^@]+)@([^@]+)$/;
+
+/**
+ * `school.yml printing.printCooldownMinutes` — how long a session's most
+ * recent SUCCESSFUL print silences a re-scan of the same ticket (spec: print
+ * debounce). Validated the same defensive way `normalizeAnswerSheetPolicy`
+ * is: this number reaches a re-scan's fast path on every single scan in the
+ * house, so a malformed config value (a negative number, a string left over
+ * from a YAML typo) must fail loudly at construction rather than silently
+ * producing a debounce window that never expires or never engages.
+ */
+function normalizePrintCooldownMinutes(raw) {
+  const minutes = raw ?? DEFAULT_PRINT_POLICY.printCooldownMinutes;
+  if (!Number.isFinite(minutes) || minutes < 0) {
+    throw new Error('IssueDocument: printCooldownMinutes must be a number >= 0');
+  }
+  return minutes;
+}
 
 function normalizeAnswerSheetPolicy(raw) {
   const reuse = raw?.reuse ?? 'after_scan';
@@ -119,7 +137,7 @@ export class IssueDocument {
   #curriculum; #sessions; #tokens; #renderer; #printer; #formMaps; #bankReader;
   #printDocuments; #renderPrintDocument; #allocationStore;
   #assignments; #worksheetInstances; #publishPrintDocument;
-  #answerSheetPolicy;
+  #answerSheetPolicy; #printCooldownMinutes;
   #clock; #rng; #newArtifactId; #logger;
 
   /**
@@ -149,13 +167,17 @@ export class IssueDocument {
    * @param {() => Date} [deps.clock]
    * @param {() => number} [deps.rng]
    * @param {() => string} [deps.newArtifactId]
+   * @param {number} [deps.printCooldownMinutes] - `school.yml printing.printCooldownMinutes`
+   *   (default `DEFAULT_PRINT_POLICY.printCooldownMinutes`, 10). See the
+   *   debounce check near the top of `execute()` for the deliberate silence
+   *   this implements.
    * @param {object} [deps.logger]
    */
   constructor({
     curriculum, sessions, tokens, renderer, printer, formMaps, bankReader = null,
     printDocuments = null, renderPrintDocument = null, allocationStore = null,
     assignments = null, worksheetInstances = null, publishPrintDocument = null,
-    answerSheetPolicy = null,
+    answerSheetPolicy = null, printCooldownMinutes = null,
     clock = () => new Date(), rng = Math.random,
     newArtifactId = () => `art_${shortId(8)}`, logger = console,
   } = {}) {
@@ -175,6 +197,7 @@ export class IssueDocument {
     this.#assignments = assignments;
     this.#worksheetInstances = worksheetInstances;
     this.#answerSheetPolicy = normalizeAnswerSheetPolicy(answerSheetPolicy);
+    this.#printCooldownMinutes = normalizePrintCooldownMinutes(printCooldownMinutes);
     this.#publishPrintDocument = publishPrintDocument
       ?? (printDocuments ? new PublishPrintDocument({ repository: printDocuments }) : null);
     this.#clock = clock;
@@ -221,6 +244,44 @@ export class IssueDocument {
           headline: 'All finished with that one',
           lines: ['Scan your card to see what is next.'],
         }),
+      };
+    }
+
+    // PRINT DEBOUNCE (spec: a household print quota, not a paper factory).
+    // Two scans of the SAME ticket ten seconds apart used to put two
+    // identical worksheets on the laser printer — nothing in the school
+    // layers deduplicated a PRINT, only card-scan ingestion and bank
+    // warming. `state.issuedArtifacts.length > 0` is exactly "this session
+    // has printed before" (every one of the three issuing branches below
+    // shares the same `issued`/`reprinted` event vocabulary), and
+    // `state.lastPrintedAt` is stamped ONLY by a successful print (see
+    // `sessionEvents.mjs`) — never by a `failed` annotation — which is what
+    // lets an offline-printer retry go through immediately below instead of
+    // being silenced by the very failure it is trying to recover from.
+    //
+    // THIS IS A DELIBERATE, AUTHORISED EXCEPTION to `tokens.mjs`'s house
+    // rule that "a scan never succeeds silently, and never dead-ends" — every
+    // other non-happy-path in this file hands back a message, a slip, a
+    // recovery ticket. This one hands back nothing at all: no worksheet, no
+    // receipt, no explanation. That was a conscious call (the household chose
+    // silence over a redundant thermal slip for every debounced re-scan, not
+    // an oversight this comment is here to flag) — see `ResolveScanAction`'s
+    // own `#print`, which special-cases `status: 'debounced'` to skip its
+    // receipts fallback for the identical reason. Do not "fix" this back to
+    // printing a slip; that reintroduces the very duplicate-output bug the
+    // debounce exists to remove.
+    if (state.issuedArtifacts.length > 0 && this.#withinPrintCooldown(state.lastPrintedAt, nowIso)) {
+      this.#logger.info?.('school.issue.print-debounced', {
+        sessionId, unitId: state.unitId, artifactId: state.issuedArtifacts.at(-1), lastPrintedAt: state.lastPrintedAt,
+      });
+      return {
+        status: 'debounced',
+        sessionId,
+        artifactId: state.issuedArtifacts.at(-1),
+        pageCount: null,
+        tokens: {},
+        document: null,
+        message: '',
       };
     }
 
@@ -646,6 +707,24 @@ export class IssueDocument {
         sessionId, cardId: allocation.cardId, recordId: allocation.recordId, error: err.message,
       });
     }
+  }
+
+  /**
+   * Whether `lastPrintedAt` is still inside the debounce window. Pure
+   * arithmetic on two ISO strings — no I/O, no clock read of its own, so a
+   * test can assert it against any `nowIso` without waiting on a real timer.
+   *
+   * `lastPrintedAt: null` (nothing has ever successfully printed for this
+   * session) always answers `false` — there is nothing to debounce against,
+   * which is what lets the very first issue through unconditionally and lets
+   * a retry after a print FAILURE through immediately (see the call site's
+   * comment: a `failed` annotation never touches `lastPrintedAt`).
+   */
+  #withinPrintCooldown(lastPrintedAt, nowIso) {
+    if (!lastPrintedAt) return false;
+    const elapsedMs = Date.parse(nowIso) - Date.parse(lastPrintedAt);
+    if (!Number.isFinite(elapsedMs)) return false;
+    return elapsedMs < this.#printCooldownMinutes * 60_000;
   }
 
   /**

@@ -252,6 +252,28 @@ describe('starting a unit', () => {
     expect(laser.jobs).toHaveLength(1);
     expect(thermal.jobs).toEqual([]);
   });
+
+  // IssueDocument's print debounce (school.yml printing.printCooldownMinutes)
+  // is a DELIBERATE exception to "a scan never succeeds silently"
+  // (tokens.mjs) — this is the composition-level proof that ResolveScanAction
+  // honours the silence all the way out to the physical devices, not just at
+  // the IssueDocument return value: no second laser job AND no thermal slip
+  // explaining the debounce, because a receipt about "nothing happened" is
+  // exactly the redundant paper the debounce exists to prevent.
+  it('a re-scan inside the print debounce window is fully silent — no second job, no slip', async () => {
+    await sessions.appendEvent('ses_w', { type: 'created', at: clock.iso(), sessionId: 'ses_w', learnerId: 'kid1', unitId: WORKSHEET_UNIT });
+    const first = mintToken({ tokenClass: 'select_unit', subject: { sessionId: 'ses_w' }, at: clock.iso(), rng });
+    await tokens.put(first);
+    await resolve.execute({ code: first.token });
+    expect(laser.jobs).toHaveLength(1);
+
+    const second = mintToken({ tokenClass: 'recovery', subject: { sessionId: 'ses_w' }, at: clock.iso(), rng });
+    await tokens.put(second);
+    const result = await resolve.execute({ code: second.token });
+    expect(result).toMatchObject({ status: 'debounced', physical: 'none', printed: false });
+    expect(laser.jobs).toHaveLength(1); // no second laser job
+    expect(thermal.jobs).toEqual([]); // no thermal slip either
+  });
 });
 
 describe('a launch unit (Task 12, spec §6/§6.2)', () => {
@@ -379,6 +401,11 @@ describe('recovery', () => {
   it('a recovery ticket reprints the same artifact', async () => {
     await sessions.appendEvent('ses_w', { type: 'created', at: clock.iso(), sessionId: 'ses_w', learnerId: 'kid1', unitId: WORKSHEET_UNIT });
     await sessions.appendEvent('ses_w', { type: 'issued', at: clock.iso(), sessionId: 'ses_w', artifactId: 'art_9' });
+    // Past the default print-debounce window: this scenario is "the recovery
+    // ticket still points at the right artifact", not "two scans of the same
+    // ticket seconds apart" — that overlapping case is covered directly in
+    // issueDocument.test.mjs's `print debounce` describe block.
+    clock.advanceMs(11 * 60_000);
     const record = mintToken({ tokenClass: 'recovery', subject: { sessionId: 'ses_w' }, at: clock.iso(), rng });
     await tokens.put(record);
     const result = await resolve.execute({ code: record.token });
