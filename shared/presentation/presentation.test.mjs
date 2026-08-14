@@ -436,7 +436,6 @@ test('multi-material joins compose topology-compatible target-palette variants b
   catalog.materials.path = { ...catalog.materials.grass, fill: { asset: 'terrain.grass', frame: 'fill' } };
   catalog.assets['terrain.grass'].autotile = { topology: 'cardinal-4', supported_polarities: ['positive'], positive: { fallback: 'fill' } };
   catalog.terrain_interfaces['grass-to-path'] = { inside: 'grass', outside: 'path', asset: 'terrain.grass', polarity: 'positive' };
-  catalog.terrain_interfaces['grass-to-water'] = { inside: 'grass', outside: 'water', asset: 'terrain.grass', polarity: 'positive' };
   catalog.terrain_interfaces['water-to-path'] = { inside: 'water', outside: 'path', asset: 'terrain.water', polarity: 'positive' };
   catalog.terrain_interfaces.shore.asset = 'terrain.water.field-palette';
   const scene = {
@@ -456,6 +455,25 @@ test('multi-material joins compose topology-compatible target-palette variants b
   assert.throws(() => compileTopDownScene(catalog, scene), /incompatible interface assets at a multi-material join/);
 });
 
+test('a terrain interface has one visual owner and the reverse side renders passively', () => {
+  const catalog = topologyCatalog();
+  catalog.materials.path = { ...catalog.materials.grass };
+  catalog.assets['terrain.grass'].autotile = { topology: 'cardinal-4', supported_polarities: ['positive'], positive: { fallback: 'fill' } };
+  catalog.terrain_interfaces['path-to-grass'] = { inside: 'path', outside: 'grass', asset: 'terrain.grass', polarity: 'positive' };
+  catalog.terrain_interfaces['water-to-path'] = { inside: 'water', outside: 'path', asset: 'terrain.water', polarity: 'positive' };
+  const scene = {
+    schema_version: 2, kind: 'top-down-scene', id: 'single-owner-boundary', catalog: 'topology-test', style_profile: 'pixel16.topdown', logical_size: [48, 16], pixel_scale: 2,
+    grid: { cell: [16, 16] }, terrain: { base: 'grass', regions: [
+      { id: 'road', material: 'path', cells: [[1, 0]] },
+      { id: 'pool', material: 'water', cells: [[2, 0]] },
+    ] }, placements: [],
+  };
+  const plan = compileTopDownScene(catalog, scene);
+  assert.ok(plan.commands.some((command) => command.at[0] === 16 && command.provenance === 'passive-interface-fill:path'));
+  assert.ok(!plan.commands.some((command) => command.at[0] === 16 && command.provenance === 'interface:water-to-path'));
+  assert.ok(plan.commands.some((command) => command.at[0] === 32 && command.provenance === 'interface:water-to-path'));
+});
+
 test('transparent terrain interfaces can request the inside material fill as an underlay', () => {
   const catalog = topologyCatalog();
   catalog.terrain_interfaces.shore.underlay = 'inside-fill';
@@ -468,7 +486,9 @@ test('transparent terrain interfaces can request the inside material fill as an 
   assert.ok(plan.commands.some((command) => command.provenance === 'interface-underlay:water'));
   assert.ok(plan.commands.some((command) => command.provenance === 'interface:shore'));
   catalog.terrain_interfaces.shore.underlay = 'outside-fill';
-  assert.ok(validatePresentationCatalog(catalog).errors.some((error) => error.includes('underlay must be inside-fill')));
+  assert.deepEqual(validatePresentationCatalog(catalog), { valid: true, errors: [] });
+  const outsidePlan = compileTopDownScene(catalog, scene);
+  assert.ok(outsidePlan.commands.some((command) => command.provenance === 'interface-underlay:grass'));
 });
 
 test('connector cells are structural occupancy for authored placements', () => {
@@ -567,6 +587,23 @@ test('semantic blobs can bound adjacent-row edge movement to prevent terrain ton
   for (let index = 1; index < leftEdges.length; index += 1) assert.ok(Math.abs(leftEdges[index] - leftEdges[index - 1]) <= 1);
   const invalid = structuredClone(scene); invalid.terrain.regions[0].shapes[0].edge_step = 0;
   assert.ok(validateTopDownScene(invalid, catalog).errors.some((error) => error.includes('edge_step')));
+});
+
+test('semantic blobs hold contour turns for a readable cadence by default', () => {
+  const catalog = topologyCatalog();
+  const scene = {
+    schema_version: 2, kind: 'top-down-scene', id: 'calm-coast', catalog: 'topology-test', style_profile: 'pixel16.topdown', logical_size: [192, 144], pixel_scale: 2,
+    grid: { cell: [16, 16] }, terrain: { base: 'grass', regions: [{ id: 'lake', material: 'water', shapes: [{ kind: 'blob', center: [9, 4], radius: [8, 4], roughness: 0.8, seed: 207 }], continues: ['east'] }] }, placements: [],
+  };
+  const plan = compileTopDownScene(catalog, scene);
+  const leftEdges = plan.material_grid.map((row) => row.indexOf('water')).filter((left) => left >= 0);
+  for (let index = 2; index < leftEdges.length; index += 1) {
+    if (leftEdges[index] !== leftEdges[index - 1]) assert.equal(leftEdges[index - 1], leftEdges[index - 2], 'successive contour turns must be separated by a held edge cell');
+  }
+  const explicit = structuredClone(scene); explicit.terrain.regions[0].shapes[0].edge_cadence = 1;
+  assert.notDeepEqual(compileTopDownScene(catalog, explicit).material_grid, plan.material_grid);
+  const invalid = structuredClone(scene); invalid.terrain.regions[0].shapes[0].edge_cadence = 0;
+  assert.ok(validateTopDownScene(invalid, catalog).errors.some((error) => error.includes('edge_cadence')));
 });
 
 test('terrain regions can eliminate one-cell fringe runs with a minimum thickness contract', () => {
