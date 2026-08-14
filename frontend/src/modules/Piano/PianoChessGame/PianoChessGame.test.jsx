@@ -68,6 +68,108 @@ describe('the takeback prompt', () => {
   });
 });
 
+// The prompt tests above would still pass if the octave were routed to
+// restart() — they test the sentence, not the gesture. This block drives the
+// actual keys: arming, firing inside the window, missing the window, and the
+// two-clock regression (Finding 1) where a re-arm inside the window must
+// replace the FIRST arm's disarm timer, not race it.
+describe('taking a move back at the keys', () => {
+  const notesFor = (square) => squareToChord(square, DEFAULT_CHORD_SCHEME)
+    .pitch_classes.map((pc) => 60 + pc);
+  const holdNotes = (notes) => mockUsePianoMidiNotes.mockReturnValue({
+    activeNotes: new Map(notes.map((n) => [n, { velocity: 80 }])),
+    noteHistory: [],
+  });
+  // A FRESH element per render: reusing one element object makes React bail
+  // out on identical props, so the changed note mock would never be re-read.
+  const makeElement = () => <PianoChessGame gameConfig={{ shuffle_each_turn: false }} />;
+
+  const playChord = async (rerender, notes) => {
+    holdNotes(notes);
+    rerender(makeElement());
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    holdNotes([]);
+    rerender(makeElement());
+    await act(async () => { await vi.advanceTimersByTimeAsync(120); });
+  };
+  const OCTAVE = [60, 72];
+  const noteOf = (container, title) => [...container.querySelectorAll('.gesture-card')]
+    .find((card) => card.textContent.includes(title))
+    ?.querySelector('.gesture-card__note')?.textContent;
+
+  // Picks a piece up and moves it, then lets the opponent answer. Mirror the
+  // move-flow block already in this file; do not invent a second way to move.
+  // e2 is a White pawn with legal moves from the opening position (see 'hover
+  // before commit' above) — hover, lift, land on e4.
+  const playAMove = async (container, rerender) => {
+    await playChord(rerender, notesFor('e2')); // hover
+    await playChord(rerender, notesFor('e2')); // lift
+    await playChord(rerender, notesFor('e4')); // land — White's opening move
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mockUsePianoMidi.mockReturnValue({ connected: true, status: 'connected' });
+    fetchChessConfig.mockReset();
+    fetchChessConfig.mockResolvedValue(null);
+    requestOpponentMove.mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    mockUsePianoMidi.mockReturnValue({ connected: false, status: 'disconnected' });
+    mockUsePianoMidiNotes.mockReturnValue({ activeNotes: new Map(), noteHistory: [] });
+  });
+
+  it('arms on the first octave and says so', async () => {
+    const { container, rerender } = render(makeElement());
+    await playAMove(container, rerender);
+    await playChord(rerender, OCTAVE);
+    expect(container.querySelector('.piano-chess__prompt').textContent)
+      .toBe('Play the octave again to take your move back.');
+  });
+
+  it('rewinds on the second octave inside the window', async () => {
+    const { container, rerender } = render(makeElement());
+    await playAMove(container, rerender);
+    await playChord(rerender, OCTAVE);
+    await playChord(rerender, OCTAVE);
+    expect(container.querySelector('.piano-chess__toast').textContent).toMatch(/^Took back /);
+    // Not '2 left': the ladder has not loaded (fetchLadder resolves null), so
+    // willStillCount falls back to DEFAULT_MAX_TAKEBACKS — mirroring the
+    // server's own DEFAULT_LADDER_POLICY.max_takebacks: 1 (shared/gaming/chess/
+    // ladder.mjs). One is already spent, so the note about spending ANOTHER has
+    // to lead with "won't count" rather than the three-per-game kiosk cap,
+    // exactly as takebackBudget.test.js's own
+    // 'follows the ladder ceiling' case asserts for used:1.
+    expect(noteOf(container, 'Take it back')).toBe("won't count toward the climb");
+  });
+
+  it('does not rewind when the second octave is too late', async () => {
+    const { container, rerender } = render(makeElement());
+    await playAMove(container, rerender);
+    await playChord(rerender, OCTAVE);
+    await act(async () => { await vi.advanceTimersByTimeAsync(DOUBLE_WINDOW_MS + 200); });
+    await playChord(rerender, OCTAVE);
+    expect(container.querySelector('.piano-chess__toast')).toBe(null);
+    expect(noteOf(container, 'Take it back')).toBe('3 left');
+  });
+
+  it('re-arming inside the window does not let the first timer dim the prompt', async () => {
+    // The two-clock regression: arm, wait ALMOST the whole window, arm again,
+    // then advance past the FIRST arm's deadline. The prompt must still show,
+    // because the second arm replaced the timer.
+    const { container, rerender } = render(makeElement());
+    await playAMove(container, rerender);
+    await playChord(rerender, OCTAVE);
+    await act(async () => { await vi.advanceTimersByTimeAsync(DOUBLE_WINDOW_MS - 120); });
+    await playChord(rerender, OCTAVE);
+    await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+    expect(container.querySelector('.piano-chess__prompt').textContent)
+      .toBe('Play the octave again to take your move back.');
+  });
+});
+
 describe('PianoChessGame chrome', () => {
   it('has no header of its own — the kiosk breadcrumb rail names the screen', () => {
     const { container } = render(<PianoChessGame onDeactivate={() => {}} />);

@@ -260,15 +260,25 @@ export function PianoChessGame({
   const gestureLatchRef = useRef(false);
   const gameRef = useRef(game);
   gameRef.current = game;
-  // The takeback is the octave gesture played twice, which means the tick loop
-  // has to remember the first one. A ref rather than state: the tick reads it
-  // on the same pass it writes it, and a re-render in between would lose the
-  // window.
-  const lastEscapeAtRef = useRef(0);
+  // The takeback is the octave gesture played twice, so the first one has to be
+  // remembered — and remembered ONCE. An earlier design held the window in a
+  // ref and the prompt in a boolean, which is two clocks that drift: re-arming
+  // called setTakebackArmed(true) on a value already true, React bailed out of
+  // the render, the disarm effect never re-ran, and the FIRST octave's timer
+  // then cleared the prompt while the ref had advanced to the second. Under
+  // main-thread jank that lands a rewind with no armed prompt on screen —
+  // exactly the accident the arming step exists to prevent.
+  //
+  // So the timestamp IS the state, and the ref only mirrors it for the tick
+  // (which is mount-stable and cannot read render values), the same way gameRef
+  // mirrors game below.
+  const [armedAt, setArmedAt] = useState(0);
+  const takebackArmed = armedAt > 0;
+  const armedAtRef = useRef(0);
+  armedAtRef.current = armedAt;
   // Where the cooldown counts from — the player's own move count at the last
   // takeback, or null when there has not been one this game.
   const lastTakebackAtRef = useRef(null);
-  const [takebackArmed, setTakebackArmed] = useState(false);
   // The tick effect and the takeback callback are both mount-stable, so
   // everything they read of the render's values has to arrive by ref.
   const chessConfigRef = useRef(null);
@@ -507,9 +517,8 @@ export function PianoChessGame({
     setToast(null);
     setHelp({ legal: false, best: null });
     setHelpUsed({ hints: 0, bestMoves: 0, takebacks: 0 });
-    lastEscapeAtRef.current = 0;
     lastTakebackAtRef.current = null;
-    setTakebackArmed(false);
+    setArmedAt(0);
     setFinishedRecord(null);
     selectionRef.current = createSelection();
     // A best-move ask still in flight belongs to the finished game. Its answer
@@ -619,20 +628,20 @@ export function PianoChessGame({
           // been. Putting it back also restarts the double window, so the very
           // next octave arms the takeback rather than firing it.
           cancelSelection();
-          lastEscapeAtRef.current = 0;
-          setTakebackArmed(false);
-        } else if (at - lastEscapeAtRef.current <= DOUBLE_WINDOW_MS) {
-          lastEscapeAtRef.current = 0;
-          setTakebackArmed(false);
+          setArmedAt(0);
+        } else if (armedAtRef.current && at - armedAtRef.current <= DOUBLE_WINDOW_MS) {
+          setArmedAt(0);
           attemptTakeback();
         } else {
           // With nothing in hand this used to do nothing at all, silently. Now
           // it says what a second one would do — which is both how the gesture
           // is discovered and why an idle octave can never rewind a game by
           // accident.
-          lastEscapeAtRef.current = at;
-          setTakebackArmed(true);
-          logger().info('takeback-armed', { moves_played: current.history.length });
+          // A fresh timestamp every time, so re-arming always re-renders and
+          // always replaces the disarm timer. That is the whole fix for the
+          // two-clock drift described at the state declaration.
+          setArmedAt(at);
+          logger().debug('takeback-armed', { moves_played: current.history.length });
         }
       }
       if (event.type === 'commit') setCursor(null);
@@ -670,7 +679,13 @@ export function PianoChessGame({
           }
         }
         if (action.type === 'hover') setCursor(action.square);
-        if (action.type === 'pickup' || action.type === 'drop') handleSquare(action.square);
+        if (action.type === 'pickup' || action.type === 'drop') {
+          // What an octave means has just changed: with a piece in hand it puts
+          // the piece back. An arm left standing would promise a rewind that the
+          // next octave will not perform.
+          setArmedAt(0);
+          handleSquare(action.square);
+        }
         if (action.type === 'refuse') handleSquare(null);
         // 'none' and 'swallowed' change nothing, deliberately.
       }
@@ -683,10 +698,12 @@ export function PianoChessGame({
   // The armed prompt has to expire with the window it describes, or it would
   // stand there offering a takeback that the next octave no longer performs.
   useEffect(() => {
-    if (!takebackArmed) return undefined;
-    const timer = setTimeout(() => setTakebackArmed(false), DOUBLE_WINDOW_MS);
+    if (!armedAt) return undefined;
+    const timer = setTimeout(() => setArmedAt(0), DOUBLE_WINDOW_MS);
     return () => clearTimeout(timer);
-  }, [takebackArmed]);
+    // Keyed on the TIMESTAMP, not on a boolean: re-arming inside the window
+    // changes armedAt, so this tears down the old timer and starts a new one.
+  }, [armedAt]);
 
   // The opponent answers on a delay so its move reads as a reply, not a flicker.
   // The server is the strong opponent; the bundled engine is what keeps the game
