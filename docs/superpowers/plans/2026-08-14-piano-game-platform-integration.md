@@ -150,6 +150,40 @@ opponent:
 
 ---
 
+### Task 4b: Connect Four — the disc actually falls
+
+**Why:** a disc that teleports into its slot gives a player nothing to follow. Live
+evidence from the kiosk: opponent replies landed **206ms** apart (`08:43:33.512` →
+`33.718`) and one whole game ran start to finish in **two seconds**, ending in a loss.
+Task 3 gives the opponent time to think; this gives the move something to look at.
+Together they are what makes the game readable.
+
+**Files:**
+- Modify: `frontend/src/modules/Piano/PianoConnectFour/PianoConnectFour.jsx` and `.scss`
+
+**Required:**
+- A dropped disc animates from above the board down to its resting row, accelerating —
+  gravity, not a linear slide. Land it with a short settle (a small squash or bounce),
+  because a disc that stops dead reads as a bug.
+- Duration scales with distance fallen: a disc landing in the bottom row travels further
+  and takes longer than one stacking on top. A fixed duration makes the near ones feel
+  sluggish and the far ones feel teleported.
+- **`transform` and `opacity` only — never `top`/`height`/`filter`.** Animating layout
+  properties on the piano tablet drops the whole screen's frame rate with no long tasks
+  to show for it, which makes it invisible in a profiler and expensive on the bench.
+- The board must not reflow while a disc is in flight. Animate the disc, not the grid.
+- The move is committed in state immediately; the animation is presentation only. A
+  player who plays the next column mid-animation must never lose that input, and an
+  unmount mid-flight must not leave a stuck element.
+- Honour `prefers-reduced-motion`: fall back to a brief fade-in rather than no feedback
+  at all.
+
+**Acceptance:** dropping a disc into an empty column visibly falls further and slower
+than one landing on a full stack; rapid successive plays queue or overlap without
+dropping a move; no test regressions.
+
+---
+
 ### Task 5: The games grid — three rows, right-sized
 
 **Files:**
