@@ -9,15 +9,16 @@ import { ValidationError } from '#domains/core/errors/index.mjs';
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export class RecordEnrichment {
-  #log; #teacherGate; #clock; #idGen;
+  #log; #teacherGate; #clock; #idGen; #logger;
 
-  constructor({ log, teacherGate, clock = () => new Date(), idGen = () => `enr_${Math.random().toString(36).slice(2, 10)}` } = {}) {
+  constructor({ log, teacherGate, clock = () => new Date(), idGen = () => `enr_${Math.random().toString(36).slice(2, 10)}`, logger = console } = {}) {
     if (!log) throw new Error('RecordEnrichment requires log');
     if (!teacherGate) throw new Error('RecordEnrichment requires teacherGate');
     this.#log = log;
     this.#teacherGate = teacherGate;
     this.#clock = clock;
     this.#idGen = idGen;
+    this.#logger = logger;
   }
 
   async execute({
@@ -49,6 +50,11 @@ export class RecordEnrichment {
       ...(note ? { note: String(note) } : {}),
     };
     await this.#log.append(entry);
+    // Enrichment excuses pacing lateness, so a term-end review of "why was
+    // this milestone not late" needs the credit that answered it.
+    this.#logger.info?.('school.enrichment.recorded', {
+      entryId: entry.id, recordedBy, learnerIds: entry.learnerIds, from, to: end, kind,
+    });
     return { entry };
   }
 }

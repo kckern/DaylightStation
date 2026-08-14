@@ -10,16 +10,17 @@ import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index
 const STORES = ['enrichment', 'attestation', 'note'];
 
 export class RetractTeacherRecord {
-  #stores; #teacherGate; #clock; #notes;
+  #stores; #teacherGate; #clock; #notes; #logger;
 
   /** @param {{stores: {enrichment, attestation, note}, teacherGate, clock?}} deps */
-  constructor({ stores, teacherGate, notes = null, clock = () => new Date() } = {}) {
+  constructor({ stores, teacherGate, notes = null, clock = () => new Date(), logger = console } = {}) {
     if (!stores) throw new Error('RetractTeacherRecord requires stores');
     if (!teacherGate) throw new Error('RetractTeacherRecord requires teacherGate');
     this.#stores = stores;
     this.#teacherGate = teacherGate;
     this.#clock = clock;
     this.#notes = notes;
+    this.#logger = logger;
   }
 
   async execute({ kind, entryId, retractedBy = null, pin = null } = {}) {
@@ -42,8 +43,18 @@ export class RetractTeacherRecord {
           from: retractedBy, learnerId: target.learnerId,
           note: `The completion mark for ${target.unitId} was removed — that unit is back on your list.`,
         });
-      } catch { /* best-effort */ }
+      } catch (err) {
+        // Best-effort: the retraction itself already succeeded and must not be
+        // undone by a failed courtesy note — but a child who was never told
+        // their gate re-locked is exactly what a later review wants to see.
+        this.#logger.warn?.('school.record.retract-note-failed', {
+          learnerId: target.learnerId, entryId, error: err?.message,
+        });
+      }
     }
+    this.#logger.info?.('school.record.retracted', {
+      kind, entryId, retractedBy, learnerId: target?.learnerId ?? null,
+    });
     return { retracted: entryId, kind };
   }
 }

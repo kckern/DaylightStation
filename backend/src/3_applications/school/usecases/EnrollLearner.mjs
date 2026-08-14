@@ -135,9 +135,17 @@ export class EnrollLearner {
       assignedBy: enrolledBy,
       updatedAt: nowIso,
     });
+    // Carries the policy-bearing fields, not just the ids: a later review of
+    // "why was this worksheet at this level / graded at this bar" is answered
+    // by the enrollment that was in force, and re-materializing can change
+    // both without any other record of the previous values.
     this.#logger.info?.('school.enrollment.materialized', {
       learnerId, courseId, syllabusId: syllabus.syllabusId, rematerialize,
+      profile: syllabus.profile ?? null,
+      passing: syllabus.passing ?? null,
       modules: enrollment.moduleOrder.length,
+      optionalModules: enrollment.optionalModules.length,
+      lessons: Object.values(enrollment.lessonOrder ?? {}).reduce((n, l) => n + l.length, 0),
     });
     return record;
   }
