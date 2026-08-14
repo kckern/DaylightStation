@@ -12,46 +12,67 @@ import { importWithReload, lazyWithReload } from '../../lib/chunkReload.js';
 // instead of failing into a blank Suspense. See lib/chunkReload.js.
 const GAME_REGISTRY = {
   'card-game': {
+    label: 'Battle Stadium', icon: 'game-battle-stadium', status: 'preview', family: 'external-runtime',
     component: () => importWithReload(() => import('./PianoCardGame/CardGame')),
     hook: () => importWithReload(() => import('./PianoCardGame/CardGame')),
     layout: 'replace',
     LazyComponent: lazyWithReload(() => import('./PianoCardGame/CardGame')),
   },
   'space-invaders': {
+    label: 'Space Invaders', icon: 'game-space-invaders', status: 'released', family: 'note-stream',
     component: () => importWithReload(() => import('./PianoSpaceInvaders/SpaceInvadersGame')),
     hook: () => importWithReload(() => import('./PianoSpaceInvaders/useSpaceInvadersGame')),
     layout: 'replace',
     LazyComponent: lazyWithReload(() => import('./PianoSpaceInvaders/SpaceInvadersGame')),
   },
   tetris: {
+    label: 'Tetris', icon: 'game-tetris', status: 'released', family: 'bound-action',
     component: () => importWithReload(() => import('./PianoTetris/PianoTetris')),
     hook: () => importWithReload(() => import('./PianoTetris/useTetrisGame')),
     layout: 'replace',
     LazyComponent: lazyWithReload(() => import('./PianoTetris/PianoTetris')),
   },
   flashcards: {
+    label: 'Flashcards', icon: 'game-flashcards', status: 'released', family: 'prompt-response',
     component: () => importWithReload(() => import('./PianoFlashcards/PianoFlashcards')),
     hook: () => importWithReload(() => import('./PianoFlashcards/useFlashcardGame')),
     layout: 'replace',
     LazyComponent: lazyWithReload(() => import('./PianoFlashcards/PianoFlashcards')),
   },
   hero: {
+    label: 'Piano Hero', icon: 'game-hero', status: 'released', family: 'note-stream',
     component: () => importWithReload(() => import('./PianoHeroGame/PianoHeroGame')),
     hook: () => importWithReload(() => import('./PianoHeroGame/PianoHeroGame')),
     layout: 'replace',
     LazyComponent: lazyWithReload(() => import('./PianoHeroGame/PianoHeroGame')),
   },
   'side-scroller': {
+    label: 'Side Scroller', icon: 'game-side-scroller', status: 'released', family: 'bound-action',
     component: () => importWithReload(() => import('./SideScrollerGame/SideScrollerGame')),
     hook: () => importWithReload(() => import('./SideScrollerGame/useSideScrollerGame')),
     layout: 'replace',
     LazyComponent: lazyWithReload(() => import('./SideScrollerGame/SideScrollerGame')),
   },
   chess: {
+    label: 'Piano Chess', icon: 'game-chess', status: 'released', family: 'addressed-board',
     component: () => importWithReload(() => import('./PianoChessGame/PianoChessGame')),
     hook: () => importWithReload(() => import('./PianoChessGame/PianoChessGame')),
     layout: 'replace',
     LazyComponent: lazyWithReload(() => import('./PianoChessGame/PianoChessGame')),
+  },
+  'connect-four': {
+    label: 'Connect Four', icon: 'game-connect-four', status: 'released', family: 'addressed-board',
+    component: () => importWithReload(() => import('./PianoConnectFour/PianoConnectFour')),
+    hook: () => importWithReload(() => import('./PianoConnectFour/PianoConnectFour')),
+    layout: 'replace',
+    LazyComponent: lazyWithReload(() => import('./PianoConnectFour/PianoConnectFour')),
+  },
+  checkers: {
+    label: 'Piano Checkers', icon: 'game-checkers', status: 'released', family: 'addressed-board',
+    component: () => importWithReload(() => import('./PianoCheckers/PianoCheckers')),
+    hook: () => importWithReload(() => import('./PianoCheckers/PianoCheckers')),
+    layout: 'replace',
+    LazyComponent: lazyWithReload(() => import('./PianoCheckers/PianoCheckers')),
   },
 };
 

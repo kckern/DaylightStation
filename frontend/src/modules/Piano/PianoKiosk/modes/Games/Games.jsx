@@ -10,36 +10,6 @@ import PianoTile from '../../PianoTile.jsx';
 import { balancedColumns } from '../../tileGridLayout.js';
 import { SkeletonStage } from '../../Skeleton.jsx';
 
-// Friendly labels for the registry ids. 'card-game' keeps its registry id but
-// every player-facing surface calls it Battle Stadium; the campaign rewrite of
-// this registry landed in parallel with the earlier rename and reverted the
-// label by accident — restored (and renamed per 2026-08-11) at the origin merge.
-const GAME_LABELS = {
-  'card-game': 'Battle Stadium',
-  'space-invaders': 'Space Invaders',
-  tetris: 'Tetris',
-  flashcards: 'Flashcards',
-  hero: 'Piano Hero',
-  'side-scroller': 'Side Scroller',
-  chess: 'Piano Chess',
-};
-
-// Per-game tile icons (currentColor SVGs in ../../icons/svg).
-const GAME_ICONS = {
-  'card-game': 'game-battle-stadium',
-  'space-invaders': 'game-space-invaders',
-  tetris: 'game-tetris',
-  flashcards: 'game-flashcards',
-  hero: 'game-hero',
-  'side-scroller': 'game-side-scroller',
-  chess: 'game-chess',
-};
-
-// Built but not released. The tile is greyed out so the picker still shows what
-// is coming without letting anyone in; the route itself stays open, so
-// /piano/games/card-game reaches it for anyone testing.
-const UNRELEASED_GAMES = new Set(['card-game']);
-
 /**
  * Relative destination for a game-owned URL segment.
  *
@@ -88,19 +58,22 @@ function GamePicker() {
   return (
     <section className="piano-menu piano-mode--games">
       <ul className="piano-menu__tiles" style={{ '--tile-cols': cols }}>
-        {ids.map((id) => (
-          <li key={id}>
-            <PianoTile
-              icon={GAME_ICONS[id] || 'game'}
-              label={GAME_LABELS[id] ?? id}
-              disabled={UNRELEASED_GAMES.has(id)}
-              onClick={() => {
-                logger.info('piano.game-enter', { game: id });
-                navigate(id);
-              }}
-            />
-          </li>
-        ))}
+        {ids.map((id) => {
+          const entry = getGameEntry(id);
+          return (
+            <li key={id}>
+              <PianoTile
+                icon={entry?.icon || 'game'}
+                label={entry?.label ?? id}
+                disabled={entry?.status !== 'released'}
+                onClick={() => {
+                  logger.info('piano.game-enter', { game: id });
+                  navigate(id);
+                }}
+              />
+            </li>
+          );
+        })}
       </ul>
     </section>
   );
@@ -125,7 +98,7 @@ function GameHost() {
 
   // Current location in the header breadcrumb (Games › this game). The breadcrumb
   // replaces the old in-canvas back pill — tap the "Games" crumb to exit.
-  usePianoBreadcrumb(useMemo(() => [{ label: GAME_LABELS[gameId] ?? gameId }], [gameId]));
+  usePianoBreadcrumb(useMemo(() => [{ label: entry?.label ?? gameId }], [entry?.label, gameId]));
 
   const exit = () => {
     logger.info('piano.game-exit', { game: gameId });

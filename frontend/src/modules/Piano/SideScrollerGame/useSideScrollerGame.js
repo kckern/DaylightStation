@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { getChildLogger } from '../../../lib/logging/singleton.js';
-import { useStaffMatching } from '../PianoTetris/useStaffMatching.js';
+import { useStaffMatching } from '../game-platform/families/bound-action/useStaffMatching.js';
 import { shuffle, buildNotePool } from '../noteUtils.js';
 import { resolveTheme } from './sideScrollerTheme.js';
 import { useSideScrollerSfx } from './sideScrollerSounds.js';
