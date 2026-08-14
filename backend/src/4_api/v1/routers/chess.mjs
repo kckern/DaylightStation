@@ -60,7 +60,7 @@ export function createChessRouter({
       movetime_ms: rung?.movetime_ms ?? null,
     };
     logger?.info?.('chess.move.requested', {
-      userId,
+      userId: user,
       gameId: gameId || 'default',
       requested: { rung: rungId || null, level: level ?? null },
       effective: effectiveOpponent,
