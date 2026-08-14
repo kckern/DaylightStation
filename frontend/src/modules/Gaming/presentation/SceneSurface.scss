@@ -5,3 +5,16 @@
   image-rendering: pixelated;
   image-rendering: crisp-edges;
 }
+
+.presentation-scene-surface--interactive {
+  width: 100%;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.presentation-scene-surface__error {
+  padding: 1rem;
+  color: #ffb4a8;
+  background: #301b24;
+  border: 1px solid #7d3540;
+}

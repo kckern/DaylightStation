@@ -109,7 +109,7 @@ media/games/_common/assets/
 The original `sprites/` import is retained only as immutable provenance while
 cataloged runtime paths, derived atlases, and QA evidence use `assets/`.
 
-The first pack is the privately held Cute Fantasy collection. Its included licenses permit project use and modification but prohibit redistribution/resale. Keep its asset files and license texts in private media storage, not Git or a public package.
+The first pack is the privately held default collection. Its included licenses permit project use and modification but prohibit redistribution/resale. Keep its asset files and license texts in private media storage, not Git or a public package.
 
 ## Existing seams
 
@@ -804,7 +804,12 @@ Validate both structure and pixels:
 - assets must resolve under the approved media root;
 - named scene fixtures render at a fixed size and compare to approved snapshot PNGs with a defined tolerance;
 - failed visual snapshots produce diff images;
-- scenario tests assert real reducer/engine state and can render replay checkpoints.
+- scenario tests assert real reducer/engine state and can render replay checkpoints;
+- every locomoting actor declares a complete facing scheme, records which facings are authored versus catalog-mirrored, and passes fixed-anchor clips plus semantic control simulations;
+- every one-shot actor action returns to a registered state or is explicitly terminal;
+- every modular body, wearable, hand, tool, held-item, and mount sheet maps all non-empty cells, declares reviewed transparent phases, and passes catalog-rig registration plus composite action/facing renders;
+- animated items, props, mechanisms, and effects pass timing, stable-anchor, effect-envelope, state-endpoint, and transition QA even when no showcase scene currently places them;
+- release reports count actors, objects/effects, animation layers, temporal clips, transitions, returns, terminals, composites, and control simulations separately, with zero runtime errors and zero deferred canonical sprite candidates before the library is called complete.
 
 All render targets consume a normalized scene plan, for example:
 
@@ -827,7 +832,7 @@ This shared plan is what makes CLI previews and visual tests representative of t
 
 0. Audit and establish the private asset metadata layer described below. Do not use the current directory as a runtime library beforehand.
 1. Define and test the pure asset-catalog, prefab, scene, and scene-plan schemas in `shared/gaming/`.
-2. Curate a minimal Cute Fantasy meadow pack: grass, path, water, tree, flowers, chest, two NPCs, rain, and enough building parts for one cottage.
+2. Curate a minimal default meadow pack: grass, path, water, tree, flowers, chest, two NPCs, rain, and enough building parts for one cottage.
 3. Add catalog loading, validation, and the safe asset-serving endpoint.
 4. Implement CLI catalog inspection, contact sheets, prefab validation/explanation, and static PNG rendering.
 5. Author `house.cottage` and `meadow-demo.yml`; add visual snapshot testing. This is the first proof point.
@@ -840,7 +845,7 @@ This shared plan is what makes CLI previews and visual tests representative of t
 
 The normative YAML vocabulary is [Gaming Asset Metadata Standard](../reference/gaming/asset-metadata.md). The roadmap's early illustrative snippets are superseded by that standard where they differ.
 
-`media/games/_common/sprites/` is presently an uncurated vendor-source archive, not a runtime asset library. The existing `sprite_manifest.json` is historical: it contains a stale `media/img/Sprites` base path, uses heuristic frame detection, predates files now present, and should not become a source of truth. The source tree also mixes multiple Cute Fantasy packs with differing licenses, plus loose artifacts such as the Mega Man sheet and `river_render.png`.
+`media/games/_common/sprites/` is presently an uncurated vendor-source archive, not a runtime asset library. The existing `sprite_manifest.json` is historical: it contains a stale `media/img/Sprites` base path, uses heuristic frame detection, predates files now present, and should not become a source of truth. The source tree also mixes multiple vendor packs with differing licenses, plus loose artifacts such as the Mega Man sheet and `river_render.png`.
 
 ### Preserve sources; add an overlay first
 
@@ -879,7 +884,7 @@ media/games/_common/
 
 Actual path details may be adjusted, but the policy matters: raw source, generated facts, curated semantic metadata, and derived previews are separate. The runtime reads only approved authored entries plus the relevant generated source facts; it never scans the entire tree as a catalog.
 
-The application schema, parsers, validators, CLI, and test fixtures belong in Git. The real catalog/provenance data belongs beside the private media assets so it travels with the licensed files and is available to the deployed media directory. Keep generated previews recreatable; do not treat them as source art.
+The application schema, parsers, validators, CLI, and synthetic unit-test data belong in Git. Production catalogs, provenance, scene manifests, QA manifests, and their real-asset test cases belong beside the private media assets so they travel with the licensed files and are available to the deployed media directory. Keep generated previews recreatable; do not treat them as source art.
 
 ### Audit passes
 

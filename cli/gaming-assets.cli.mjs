@@ -9,6 +9,7 @@ import {
   auditTerrainMetadataSweep,
   auditAssetMetadataCoverage,
   auditAnimationMetadataCoverage,
+  auditSpriteGeometrySweep,
   parseFrames,
   parsePair,
   renderAnimation,
@@ -29,6 +30,7 @@ import {
   renderHeightQa,
   renderHeightQaSet,
   renderComponentQa,
+  renderComponentQaSet,
   explainPrefab,
   renderPrefabPreview,
   deriveAtlas,
@@ -53,13 +55,14 @@ Commands:
   organize-verify --root <common-dir> --plan <plan.yml>
   terrain-sweep --root <common-dir> --manifest <sweep.yml>
   metadata-coverage --root <common-dir> --inventory <inventory.yml> --catalog <catalog.yml> [--out <report.yml>]
-  animation-coverage --root <common-dir> --catalog <catalog.yml> [--out <report.yml>]
+  animation-coverage --root <common-dir> --catalog <catalog.yml> [--dispositions <sources.yml>] [--out <report.yml>]
+  sprite-geometry-sweep --root <common-dir> --animation-coverage <report.yml> [--out <report.yml>]
   validate   --root <common-dir> --manifest <pack.yml>
   sheet      --root <common-dir> --out <sheet.png> [--source sprites] [--catalog <pack.yml>] [--columns 6] [--limit 60] [--scale 3]
   frames     --root <common-dir> --source <relative.png> --cell 16x16 --out <grid.png> [--scale 4]
   measure    --root <common-dir> --source <relative.png> --cell 16x16
   animate    --root <common-dir> --source <relative.png> --cell 16x16 --frames 0,0;1,0 --out <clip.gif> [--fps 8] [--scale 4]
-  animation-qa-set --root <common-dir> --catalog <catalog.yml> --out-dir <directory> [--scale 4]
+  animation-qa-set --root <common-dir> --catalog <catalog.yml> --out-dir <directory> [--asset <id-or-prefix>] [--scale 4]
   render     --root <common-dir> --manifest <layout.yml> --out <layout.png>
   scene      --root <common-dir> --catalog <pack.yml> --manifest <scene.yml> --out <scene.png>
   scene-legacy --root <common-dir> --catalog <v1-pack.yml> --manifest <v1-scene.yml> --out <scene.png>
@@ -73,6 +76,7 @@ Commands:
   height-qa --root <common-dir> --catalog <pack.yml> --asset <asset-id> --out <matrix.png> [--scale 4]
   height-qa-set --root <common-dir> --catalog <pack.yml> --out-dir <directory> [--scale 4]
   component-qa --root <common-dir> --catalog <pack.yml> --asset <asset-id> --out <matrix.png> [--scale 3]
+  component-qa-set --root <common-dir> --catalog <pack.yml> --out-dir <directory> [--scale 3]
   prefab-explain --root <common-dir> --catalog <pack.yml> --id <prefab> [--params size=large,garden=false]
   prefab-render --root <common-dir> --catalog <pack.yml> --id <prefab> --out <png> [--params size=large] [--viewport 320x240] [--scale 1]
   derive     --root <common-dir> --recipe <recipe.yml> --out <atlas.png>
@@ -183,8 +187,12 @@ export async function main(argv = process.argv.slice(2), { env = process.env, st
         if (parsed.flags.out) await writeYaml(parsed.flags.out, { schema_version: 1, kind: 'asset-metadata-coverage-report', ...report });
         break;
       case 'animation-coverage':
-        report = await auditAnimationMetadataCoverage({ root, catalogPath: required(parsed.flags, 'catalog') });
+        report = await auditAnimationMetadataCoverage({ root, catalogPath: required(parsed.flags, 'catalog'), dispositionsPath: parsed.flags.dispositions ?? null });
         if (parsed.flags.out) await writeYaml(parsed.flags.out, { schema_version: 1, kind: 'animation-metadata-coverage-report', ...report });
+        break;
+      case 'sprite-geometry-sweep':
+        report = await auditSpriteGeometrySweep({ root, coveragePath: required(parsed.flags, 'animation-coverage'), out: parsed.flags.out });
+        if (parsed.flags.out) report = { out: parsed.flags.out, valid: report.valid, ...report.summary };
         break;
       case 'validate':
         report = await validateManifest({ root, manifestPath: required(parsed.flags, 'manifest') });
@@ -215,7 +223,7 @@ export async function main(argv = process.argv.slice(2), { env = process.env, st
         });
         break;
       case 'animation-qa-set':
-        report = await renderAnimationQaSet({ root, catalogPath: required(parsed.flags, 'catalog'), outDir: required(parsed.flags, 'out-dir'), scale: integer(parsed.flags, 'scale', 4) });
+        report = await renderAnimationQaSet({ root, catalogPath: required(parsed.flags, 'catalog'), outDir: required(parsed.flags, 'out-dir'), asset: parsed.flags.asset ?? null, scale: integer(parsed.flags, 'scale', 4) });
         break;
       case 'render':
         report = await renderLayout({ root, manifestPath: required(parsed.flags, 'manifest'), out: required(parsed.flags, 'out') });
@@ -261,6 +269,9 @@ export async function main(argv = process.argv.slice(2), { env = process.env, st
         break;
       case 'component-qa':
         report = await renderComponentQa({ root, catalogPath: required(parsed.flags, 'catalog'), assetId: required(parsed.flags, 'asset'), out: required(parsed.flags, 'out'), scale: integer(parsed.flags, 'scale', 3) });
+        break;
+      case 'component-qa-set':
+        report = await renderComponentQaSet({ root, catalogPath: required(parsed.flags, 'catalog'), outDir: required(parsed.flags, 'out-dir'), scale: integer(parsed.flags, 'scale', 3) });
         break;
       case 'prefab-explain':
         report = await explainPrefab({ catalogPath: required(parsed.flags, 'catalog'), id: required(parsed.flags, 'id'), params: params(parsed.flags.params) });

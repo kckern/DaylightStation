@@ -34,4 +34,22 @@ describe('presentation Canvas executor', () => {
     expect(context.clip).toHaveBeenCalledOnce();
     expect(context.drawImage).toHaveBeenCalledWith(expect.anything(), 0, 0, 16, 16, -16, -32, 32, 32);
   });
+
+  it('composes browser frames offscreen before one visible-canvas blit', async () => {
+    globalThis.Image = class FakeImage { async decode() {} };
+    const context = () => ({
+      imageSmoothingEnabled: true, fillStyle: '', globalAlpha: 1,
+      clearRect: vi.fn(), fillRect: vi.fn(), save: vi.fn(), restore: vi.fn(), beginPath: vi.fn(), ellipse: vi.fn(), fill: vi.fn(),
+      moveTo: vi.fn(), lineTo: vi.fn(), closePath: vi.fn(), clip: vi.fn(), translate: vi.fn(), rotate: vi.fn(), scale: vi.fn(), drawImage: vi.fn(),
+    });
+    const visible = context(); const offscreen = context(); const buffer = { width: 0, height: 0, getContext: () => offscreen };
+    const canvas = { width: 0, height: 0, getContext: () => visible, ownerDocument: { createElement: () => buffer } };
+    const catalog = { assets: {} };
+    const plan = { logical_size: [16, 16], pixel_scale: 2, background: '#123456', hash: 'atomic', commands: [{ type: 'fill', at: [0, 0], size: [16, 16], color: '#0095e9', opacity: 1 }] };
+    await drawScenePlanToCanvas(canvas, catalog, plan);
+    expect(offscreen.fillRect).toHaveBeenCalledWith(0, 0, 32, 32);
+    expect(visible.fillRect).not.toHaveBeenCalled();
+    expect(visible.drawImage).toHaveBeenCalledOnce();
+    expect(visible.drawImage).toHaveBeenCalledWith(buffer, 0, 0);
+  });
 });

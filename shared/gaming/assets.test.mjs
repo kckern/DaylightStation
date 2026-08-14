@@ -18,7 +18,7 @@ const catalog = {
       source: 'assets/default/terrain/shore.png', source_sha256: 'b'.repeat(64),
       geometry: { layout: 'grid', cell: [16, 16], grid: [6, 3] },
       frames: { 'water.center': { cell: [4, 1] }, 'sand.center': { cell: [1, 1] } },
-      autotile: { topology: 'cardinal-4', positive: { isolated: 'water.center', fallback: 'water.center' }, negative: { isolated: 'sand.center', fallback: 'sand.center' } },
+      autotile: { topology: 'cardinal-4', supported_polarities: ['positive', 'negative'], positive: { isolated: 'water.center', fallback: 'water.center' }, negative: { isolated: 'sand.center', fallback: 'sand.center' } },
     },
   },
   prefabs: {
@@ -51,7 +51,7 @@ describe('gaming asset catalog', () => {
       asset_templates: {
         blob: {
           kind: 'tile-sheet', geometry: { layout: 'grid', cell: [16, 16], grid: [1, 1] },
-          frames: { center: { cell: [0, 0] } }, autotile: { topology: 'cardinal-4', positive: { fallback: 'center' } },
+          frames: { center: { cell: [0, 0] } }, autotile: { topology: 'cardinal-4', supported_polarities: ['positive'], positive: { fallback: 'center' } },
         },
       },
       assets: {
@@ -129,6 +129,18 @@ describe('gaming asset catalog', () => {
     assert.throws(() => resolveTerrainFrame({
       cells: compound, at: [1, 1], frames: { positive: { nesw: 'center' }, inner_corners: { nw: 'inner.nw', se: 'inner.se' } },
     }), /inside-corner key: nw-se/);
+  });
+
+  it('requires autotile polarity support to be explicit and internally consistent', () => {
+    const missing = structuredClone(catalog);
+    delete missing.assets['terrain.shore'].autotile.supported_polarities;
+    assert.match(validateAssetCatalog(missing).errors.join('\n'), /supported_polarities/);
+    const overclaimed = structuredClone(catalog);
+    overclaimed.assets['terrain.shore'].autotile.supported_polarities = ['positive'];
+    assert.match(validateAssetCatalog(overclaimed).errors.join('\n'), /negative mapping is not declared/);
+    const underimplemented = structuredClone(catalog);
+    delete underimplemented.assets['terrain.shore'].autotile.negative;
+    assert.match(validateAssetCatalog(underimplemented).errors.join('\n'), /declared negative polarity needs a mapping/);
   });
 
   it('resolves typed prefab defaults and finite variants', () => {

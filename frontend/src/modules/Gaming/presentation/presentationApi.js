@@ -9,5 +9,11 @@ export function createPresentationApi() {
     getCatalog(packId) {
       return request(`/api/v1/presentation/catalogs/${encodeURIComponent(packId)}`);
     },
+    getScenes(packId) {
+      return request(`/api/v1/presentation/catalogs/${encodeURIComponent(packId)}/scenes`);
+    },
+    getScene(packId, sceneId) {
+      return request(`/api/v1/presentation/catalogs/${encodeURIComponent(packId)}/scenes/${encodeURIComponent(sceneId)}`);
+    },
   };
 }

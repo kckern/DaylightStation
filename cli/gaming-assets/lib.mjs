@@ -2,8 +2,8 @@ import crypto from 'node:crypto';
 import { copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import YAML from 'yaml';
-import { materializeAssetCatalog, resolveConnectorFrame, resolveHeightTransition, resolvePrefabLayers, resolveTerrainFrame, validatePrefabCatalog } from '../../shared/gaming/assets.mjs';
-import { compileTopDownScene, migratePresentationV1, PRESENTATION_CATALOG_MAP_FIELDS, resolveAssetAnimation, validatePresentationCatalog, validateTopDownScene } from '../../shared/presentation/index.mjs';
+import { materializeAssetCatalog, resolveConnectorFrame, resolveHeightTransition, resolvePrefabLayers, resolveTerrainFrame, validateAssetCatalog, validatePrefabCatalog } from '../../shared/gaming/assets.mjs';
+import { compileTopDownScene, migratePresentationV1, PRESENTATION_CATALOG_MAP_FIELDS, resolveAssetAnimation, resolveLayeredAssetAnimation, resolveRiggedAssetAnimation, resolveRiggedAnimationState, validatePresentationCatalog, validateTopDownScene } from '../../shared/presentation/index.mjs';
 
 const IMAGE_EXTENSIONS = new Set(['.png']);
 const PNG_SIGNATURE = '89504e470d0a1a0a';
@@ -484,6 +484,58 @@ const TERRAIN_SWEEP_CORNER_SUPPORT = new Set([
   'raw', 'derived', 'missing', 'mixed', 'not-applicable',
 ]);
 
+function terrainCapability(asset, topology) {
+  if (['cardinal-4', 'cardinal-4+diagonal-corners', 'border-kit'].includes(topology)) return asset?.autotile ? 'autotile' : null;
+  if (topology === 'cliff-height') return asset?.height ? 'height' : null;
+  if (topology === 'connector-graph') return asset?.connector ? 'connector' : asset?.components ? 'components' : null;
+  if (topology === 'composite-atlas') return asset?.autotile ? 'autotile' : asset?.components ? 'components' : null;
+  return null;
+}
+
+function terrainCapabilities(asset) {
+  return ['autotile', 'height', 'connector', 'components'].filter((capability) => asset?.[capability]);
+}
+
+function verifyTerrainEvidenceAsset({ asset, assetId, prefix, qaAssets, errors }) {
+  if (!asset?.geometry || !asset?.frames || !Object.keys(asset.frames).length) {
+    errors.push(`${prefix}: evidence asset lacks geometry or named frames: ${assetId}`);
+    return;
+  }
+  const capabilities = terrainCapabilities(asset);
+  if (!capabilities.length) errors.push(`${prefix}: evidence asset lacks reviewed topology metadata: ${assetId}`);
+  for (const capability of capabilities) if (!qaAssets.get(capability)?.has(assetId)) errors.push(`${prefix}: evidence asset lacks passing ${capability} QA: ${assetId}`);
+}
+
+function verifyTerrainFamilyClaims({ assets, family, prefix, errors }) {
+  if (!assets.some((asset) => terrainCapability(asset, family.topology))) errors.push(`${prefix}: no evidence asset implements ${family.topology}`);
+  const required = new Set(family.required_metadata ?? []);
+  if (required.has('polarity-map')) {
+    if (!assets.some((asset) => Array.isArray(asset.autotile?.supported_polarities) && asset.autotile.supported_polarities.length)) errors.push(`${prefix}: polarity-map claim lacks supported_polarities`);
+  }
+  if (required.has('inner-corner-map') || required.has('compact-inner-corner-derivatives')) {
+    if (!assets.some((asset) => asset.autotile?.inner_corners)) errors.push(`${prefix}: inside-corner claim lacks inner_corners`);
+  }
+  if (required.has('height-transitions') || required.has('cliff-height-map') || required.has('wall-height-map')) {
+    if (!assets.some((asset) => asset.height?.transitions)) errors.push(`${prefix}: height claim lacks height.transitions`);
+  }
+  if (required.has('ports') || required.has('bridge-ports') || required.has('doorway-ports') || required.has('stair-ports')) {
+    const hasPorts = assets.some((asset) => Object.values(asset.frames ?? {}).some((frame) => frame?.ports && Object.keys(frame.ports).length));
+    if (!hasPorts) errors.push(`${prefix}: port claim lacks frame ports`);
+  }
+  if (required.has('stair-transition-map') || required.has('platform-transition-map')) {
+    if (!assets.some((asset) => Object.values(asset.components ?? {}).some((component) => component?.transitions && Object.keys(component.transitions).length))) errors.push(`${prefix}: transition-map claim lacks component transitions`);
+  }
+  if (required.has('stair-direction-map')) {
+    if (!assets.some((asset) => Object.values(asset.components ?? {}).some((component) => component?.directional_frames && Object.keys(component.directional_frames).length))) errors.push(`${prefix}: direction-map claim lacks component directional_frames`);
+  }
+  if (required.has('lava-border-map')) {
+    if (!assets.some((asset) => Object.values(asset.components ?? {}).some((component) => component?.outline && component?.interior))) errors.push(`${prefix}: lava-border-map claim lacks outline and interior frames`);
+  }
+  if (family.topology === 'cardinal-4+diagonal-corners' && family.corner_support?.inner === 'missing') {
+    errors.push(`${prefix}: cataloged diagonal topology cannot claim missing inside corners`);
+  }
+}
+
 function globPattern(pattern) {
   let expression = '^';
   for (let index = 0; index < pattern.length; index += 1) {
@@ -519,6 +571,26 @@ export async function auditTerrainMetadataSweep({ root, manifestPath }) {
     return { valid: false, errors: [...errors, 'families must be an object'], warnings, summary: {} };
   }
 
+  const qaAssets = new Map();
+  const qaReports = manifest.qa_reports;
+  const hasCatalogedFamilies = Object.values(families).some((family) => family?.readiness === 'cataloged');
+  if (hasCatalogedFamilies && (!qaReports || typeof qaReports !== 'object' || Array.isArray(qaReports))) errors.push('qa_reports must map terrain capabilities to report paths');
+  for (const capability of hasCatalogedFamilies ? ['autotile', 'height', 'connector', 'components'] : []) {
+    const specifiers = Array.isArray(qaReports?.[capability]) ? qaReports[capability] : [qaReports?.[capability]].filter(Boolean);
+    if (!specifiers.length) { errors.push(`qa_reports.${capability} must contain at least one report`); continue; }
+    const ids = new Set();
+    for (const specifier of specifiers) {
+      if (typeof specifier !== 'string' || !specifier.trim()) { errors.push(`qa_reports.${capability} contains an invalid path`); continue; }
+      const reportFile = path.resolve(path.dirname(manifestPath), specifier);
+      try {
+        const report = YAML.parse(await readFile(reportFile, 'utf8')) ?? {};
+        if (report.valid !== true || !report.outputs || typeof report.outputs !== 'object' || Array.isArray(report.outputs)) errors.push(`qa report is not a passing output map: ${specifier}`);
+        else for (const assetId of Object.keys(report.outputs)) ids.add(assetId);
+      } catch (error) { errors.push(`cannot read qa report ${specifier}: ${error.message}`); }
+    }
+    qaAssets.set(capability, ids);
+  }
+
   const ownedSources = new Map();
   const familyReports = [];
   const readinessCounts = {};
@@ -534,6 +606,7 @@ export async function auditTerrainMetadataSweep({ root, manifestPath }) {
     }
     if (!Array.isArray(family?.required_metadata) || !family.required_metadata.length) errors.push(`${prefix}: required_metadata must be a non-empty array`);
     if (!Array.isArray(family?.sources) || !family.sources.length) { errors.push(`${prefix}: sources must be a non-empty array`); continue; }
+    const familyEvidenceAssets = [];
     if (family.readiness === 'cataloged') {
       const evidence = Array.isArray(family.catalog_evidence)
         ? family.catalog_evidence
@@ -543,15 +616,26 @@ export async function auditTerrainMetadataSweep({ root, manifestPath }) {
         const catalogFile = path.resolve(path.dirname(manifestPath), evidenceEntry.catalog);
         let catalog = catalogCache.get(catalogFile);
         if (!catalog) {
-          try { catalog = await loadAssetCatalog(catalogFile); catalogCache.set(catalogFile, catalog); }
+          try {
+            catalog = await loadAssetCatalog(catalogFile);
+            catalogCache.set(catalogFile, catalog);
+            const validation = catalog.schema_version === 2 ? validatePresentationCatalog(catalog) : validateAssetCatalog(catalog);
+            if (!validation.valid) errors.push(...validation.errors.map((error) => `${prefix}: evidence catalog invalid: ${error}`));
+          }
           catch (error) { errors.push(`${prefix}: cannot read evidence catalog: ${error.message}`); }
         }
         for (const assetId of evidenceEntry.assets) {
           const asset = catalog?.assets?.[assetId];
           if (asset?.status !== 'approved') errors.push(`${prefix}: evidence asset is not approved: ${assetId}`);
-          else if (asset.derived_from && !family.sources.some((source) => source.source === asset.derived_from)) errors.push(`${prefix}: evidence asset provenance is outside family sources: ${assetId}`);
+          else {
+            const provenance = asset.derived_from ?? asset.source;
+            if (!family.sources.some((source) => source.source === provenance)) errors.push(`${prefix}: evidence asset provenance is outside family sources: ${assetId}`);
+            verifyTerrainEvidenceAsset({ asset, assetId, prefix, qaAssets, errors });
+            familyEvidenceAssets.push(asset);
+          }
         }
       }
+      verifyTerrainFamilyClaims({ assets: familyEvidenceAssets, family, prefix, errors });
     }
     if (family.readiness === 'quarantined') {
       if (family.runtime_available !== false || typeof family.reason !== 'string' || !family.reason.trim() || typeof family.catalog !== 'string' || !Array.isArray(family.catalog_assets) || !family.catalog_assets.length) errors.push(`${prefix}: quarantined families need a reason, runtime_available false, and catalog evidence`);
@@ -560,7 +644,15 @@ export async function auditTerrainMetadataSweep({ root, manifestPath }) {
         let catalog;
         try { catalog = await loadAssetCatalog(catalogFile); }
         catch (error) { errors.push(`${prefix}: cannot read quarantine catalog: ${error.message}`); }
-        for (const assetId of family.catalog_assets) if (catalog?.assets?.[assetId]?.status !== 'deferred') errors.push(`${prefix}: quarantine asset must remain deferred: ${assetId}`);
+        for (const assetId of family.catalog_assets) {
+          const asset = catalog?.assets?.[assetId];
+          if (asset?.status !== 'deferred') errors.push(`${prefix}: quarantine asset must remain deferred: ${assetId}`);
+          else {
+            if (!asset.geometry || !asset.frames || !Object.keys(asset.frames).length) errors.push(`${prefix}: quarantined asset still needs reviewed geometry and named frames: ${assetId}`);
+            const provenance = asset.derived_from ?? asset.source;
+            if (!family.sources.some((source) => source.source === provenance)) errors.push(`${prefix}: quarantine asset provenance is outside family sources: ${assetId}`);
+          }
+        }
       }
     }
     readinessCounts[family.readiness] = (readinessCounts[family.readiness] ?? 0) + 1;
@@ -731,6 +823,88 @@ function frameRect(asset, frame, facts, cellOffset = [0, 0]) {
   return frame.rect;
 }
 
+function longestTrueRun(values) {
+  let longest = 0; let current = 0;
+  for (const value of values) { current = value ? current + 1 : 0; longest = Math.max(longest, current); }
+  return longest;
+}
+
+/**
+ * Detect likely frame geometry that cuts a sprite through an internal grid
+ * seam. A two-pixel continuous alpha bridge is extremely unlikely between
+ * independent animation cells, but is common when a 32px actor was
+ * accidentally described as two 16px rows (or a 48px actor as two 24px rows).
+ */
+function gridSeamBleedFromPixels({ pixels, imageWidth, asset }) {
+  if (asset.geometry?.layout !== 'grid') return [];
+  const allowedAxes = new Set(asset.geometry.cross_cell_alpha?.allowed_axes ?? []);
+  const [cellWidth, cellHeight] = asset.geometry.cell; const [columns, rows] = asset.geometry.grid;
+  const margin = asset.geometry.margin ?? [0, 0]; const spacing = asset.geometry.spacing ?? [0, 0];
+  if (spacing.some((value) => value > 0)) return [];
+  const visible = (x, y) => pixels[(y * imageWidth + x) * 4 + 3] > 0;
+  const findings = [];
+  for (let row = 1; row < rows; row += 1) {
+    const y = margin[1] + row * cellHeight;
+    for (let column = 0; column < columns; column += 1) {
+      const x = margin[0] + column * cellWidth;
+      const run = longestTrueRun(Array.from({ length: cellWidth }, (_, offset) => visible(x + offset, y - 1) && visible(x + offset, y)));
+      if (run >= 2 && !allowedAxes.has('horizontal')) findings.push({ axis: 'horizontal', between: [row - 1, row], lane: column, continuous_alpha: run });
+    }
+  }
+  for (let column = 1; column < columns; column += 1) {
+    const x = margin[0] + column * cellWidth;
+    for (let row = 0; row < rows; row += 1) {
+      const y = margin[1] + row * cellHeight;
+      const run = longestTrueRun(Array.from({ length: cellHeight }, (_, offset) => visible(x - 1, y + offset) && visible(x, y + offset)));
+      if (run >= 2 && !allowedAxes.has('vertical')) findings.push({ axis: 'vertical', between: [column - 1, column], lane: row, continuous_alpha: run });
+    }
+  }
+  return findings;
+}
+
+function animationGridSeamBleed(image, asset, createCanvas) {
+  const sample = createCanvas(image.width, image.height); const context = sample.getContext('2d'); context.drawImage(image, 0, 0);
+  return gridSeamBleedFromPixels({ pixels: context.getImageData(0, 0, image.width, image.height).data, imageWidth: image.width, asset });
+}
+
+/**
+ * Measure plausible grid geometries across every deferred sprite-like source.
+ * This is a machine-fact gate only: a seam-free grid is a curation candidate,
+ * never an automatically approved semantic frame map.
+ */
+export async function auditSpriteGeometrySweep({ root, coveragePath, out = null }) {
+  const coverage = YAML.parse(await readFile(coveragePath, 'utf8')) ?? {};
+  if (coverage.schema_version !== 1 || coverage.kind !== 'animation-metadata-coverage-report' || !Array.isArray(coverage.deferred_sources)) throw new Error('sprite geometry sweep requires an animation-metadata-coverage-report');
+  const { createCanvas, loadImage } = await import('canvas');
+  const sources = [];
+  for (const entry of coverage.deferred_sources) {
+    const file = resolveUnder(root, entry.source); const image = await loadImage(file);
+    const sample = createCanvas(image.width, image.height); const context = sample.getContext('2d'); context.drawImage(image, 0, 0);
+    const pixels = context.getImageData(0, 0, image.width, image.height).data;
+    const cellPairs = [];
+    const spriteCells = [...COMMON_CELLS, 80, 96, 128];
+    for (const width of spriteCells) for (const height of spriteCells) if (image.width % width === 0 && image.height % height === 0 && width / height >= 0.5 && width / height <= 2) cellPairs.push([width, height]);
+    const candidates = cellPairs.map((cell) => {
+      const asset = { geometry: { layout: 'grid', cell, grid: [image.width / cell[0], image.height / cell[1]] } };
+      const seams = gridSeamBleedFromPixels({ pixels, imageWidth: image.width, asset });
+      return { cell, grid: asset.geometry.grid, frames: asset.geometry.grid[0] * asset.geometry.grid[1], seam_findings: seams.length, seam_examples: seams.slice(0, 3) };
+    }).sort((a, b) => a.seam_findings - b.seam_findings || a.frames - b.frames || a.cell[0] - b.cell[0]);
+    const minimumSeams = candidates[0]?.seam_findings ?? null;
+    const best = candidates.filter((candidate) => candidate.seam_findings === minimumSeams);
+    sources.push({ source: entry.source, rule: entry.rule, dimensions: [image.width, image.height], minimum_seam_findings: minimumSeams, candidate_status: !candidates.length ? 'no-divisible-grid' : best.length === 1 ? 'single-best' : 'ambiguous', best, candidates });
+  }
+  const summary = {
+    sources: sources.length,
+    single_best: sources.filter((entry) => entry.candidate_status === 'single-best').length,
+    ambiguous: sources.filter((entry) => entry.candidate_status === 'ambiguous').length,
+    no_divisible_grid: sources.filter((entry) => entry.candidate_status === 'no-divisible-grid').length,
+    seam_free: sources.filter((entry) => entry.minimum_seam_findings === 0).length,
+  };
+  const report = { schema_version: 1, kind: 'sprite-geometry-sweep-report', valid: summary.no_divisible_grid === 0, summary, sources };
+  if (out) await writeYaml(out, report);
+  return report;
+}
+
 /** Validate the authored, one-file catalog shape used during the audit phase. */
 export async function validateManifest({ root, manifestPath }) {
   const errors = [];
@@ -775,6 +949,7 @@ export async function validateManifest({ root, manifestPath }) {
       if (!validCoordinate(margin) || !validCoordinate(spacing)) errors.push(`${prefix}: grid margin and spacing must be non-negative pairs`);
       const [cellW, cellH] = geometry.cell; const [columns, rows] = geometry.grid;
       if (Number.isInteger(asset.pixel_density) && geometry.cell.some((value) => value % asset.pixel_density !== 0)) errors.push(`${prefix}: grid cell must be divisible by pixel_density`);
+      if (geometry.cross_cell_alpha !== undefined && (!geometry.cross_cell_alpha || typeof geometry.cross_cell_alpha !== 'object' || Array.isArray(geometry.cross_cell_alpha) || !Array.isArray(geometry.cross_cell_alpha.allowed_axes) || !geometry.cross_cell_alpha.allowed_axes.length || geometry.cross_cell_alpha.allowed_axes.some((axis) => !['horizontal', 'vertical'].includes(axis)) || !String(geometry.cross_cell_alpha.reason ?? '').trim())) errors.push(`${prefix}: geometry.cross_cell_alpha needs allowed_axes and a review reason`);
       const requiredWidth = margin[0] * 2 + cellW * columns + spacing[0] * (columns - 1);
       const requiredHeight = margin[1] * 2 + cellH * rows + spacing[1] * (rows - 1);
       if (requiredWidth > facts.image.width || requiredHeight > facts.image.height || (!geometry.allow_trailing_padding && (requiredWidth !== facts.image.width || requiredHeight !== facts.image.height))) errors.push(`${prefix}: grid geometry does not match ${facts.image.width}x${facts.image.height} source`);
@@ -794,9 +969,25 @@ export async function validateManifest({ root, manifestPath }) {
       if (hasCell && (geometry.layout !== 'grid' || !validFrame(frame.cell, grid))) errors.push(`${prefix}: frame ${frameName} has invalid grid cell`);
       if (hasRect && (geometry.layout !== 'freeform' || !Array.isArray(frame.rect) || frame.rect.length !== 4 || frame.rect.some((part) => !Number.isInteger(part) || part < 0) || frame.rect[2] < 1 || frame.rect[3] < 1 || frame.rect[0] + frame.rect[2] > facts.image.width || frame.rect[1] + frame.rect[3] > facts.image.height)) errors.push(`${prefix}: frame ${frameName} has invalid source rect`);
       if (hasRect && Number.isInteger(asset.pixel_density) && frame.rect.slice(2).some((value) => value % asset.pixel_density !== 0)) errors.push(`${prefix}: frame ${frameName} size must be divisible by pixel_density`);
+      if (frame.scale_reference !== undefined && (!validId(frame.scale_reference) || !frames?.[frame.scale_reference] || frame.scale_reference === frameName)) errors.push(`${prefix}: frame ${frameName} scale_reference must name another frame`);
       if (frame?.anchor && !validAnchor(frame.anchor)) errors.push(`${prefix}: frame ${frameName} has invalid anchor`);
+      if (frame?.transparent !== undefined && typeof frame.transparent !== 'boolean') errors.push(`${prefix}: frame ${frameName} transparent must be boolean`);
+      if (frame?.transparent === true && frame.content_bounds !== undefined) errors.push(`${prefix}: transparent frame ${frameName} cannot declare content_bounds`);
       if (frame?.opaque_overlay !== undefined && typeof frame.opaque_overlay !== 'boolean') errors.push(`${prefix}: frame ${frameName} opaque_overlay must be boolean`);
       if (frame?.allow_edge_contact !== undefined && typeof frame.allow_edge_contact !== 'boolean') errors.push(`${prefix}: frame ${frameName} allow_edge_contact must be boolean`);
+      if (frame?.edge_contact !== undefined && (!Array.isArray(frame.edge_contact?.allowed) || frame.edge_contact.allowed.some((side) => !['north', 'east', 'south', 'west'].includes(side)) || !String(frame.edge_contact?.reason ?? '').trim())) errors.push(`${prefix}: frame ${frameName} edge_contact needs allowed sides and reason`);
+      const forbiddenColorExceptions = frame?.forbidden_color_exceptions;
+      const exceptionColors = forbiddenColorExceptions?.allowed ?? [];
+      const exceptionShapeValid = forbiddenColorExceptions === undefined || (
+        forbiddenColorExceptions && typeof forbiddenColorExceptions === 'object' && !Array.isArray(forbiddenColorExceptions)
+        && Array.isArray(exceptionColors) && exceptionColors.length
+        && exceptionColors.every((color) => /^#[0-9a-f]{6}$/i.test(color))
+        && String(forbiddenColorExceptions.reason ?? '').trim()
+      );
+      if (!exceptionShapeValid) errors.push(`${prefix}: frame ${frameName} forbidden_color_exceptions needs allowed #rrggbb values and a review reason`);
+      const normalizedExceptionColors = new Set(exceptionColors.map((color) => color.slice(1).toLowerCase()));
+      const exceptionOutsidePolicy = [...normalizedExceptionColors].filter((color) => !forbiddenRgb.has(color));
+      if (exceptionOutsidePolicy.length) errors.push(`${prefix}: frame ${frameName} forbidden_color_exceptions must be a subset of asset forbidden_colors: ${exceptionOutsidePolicy.map((color) => `#${color}`).join(', ')}`);
       const frameShapeValid = (hasCell && geometry.layout === 'grid' && validFrame(frame.cell, grid))
         || (hasRect && geometry.layout === 'freeform' && frame.rect.length === 4 && frame.rect.every(Number.isInteger) && frame.rect[2] > 0 && frame.rect[3] > 0 && frame.rect[0] + frame.rect[2] <= facts.image.width && frame.rect[1] + frame.rect[3] <= facts.image.height);
       if (frameShapeValid && frame.anchor?.point) {
@@ -832,20 +1023,49 @@ export async function validateManifest({ root, manifestPath }) {
             }
             const derived = maxX < 0 ? null : [minX, minY, maxX - minX + 1, maxY - minY + 1];
             if (!derived || derived.some((value, index) => value !== bounds[index])) errors.push(`${prefix}: frame ${frameName} content_bounds does not match visible alpha (${derived?.join(', ') ?? 'empty'})`);
+            if (derived && asset.edge_policy === 'isolated') {
+              const contacts = [...(derived[1] === 0 ? ['north'] : []), ...(derived[0] + derived[2] === sw ? ['east'] : []), ...(derived[1] + derived[3] === sh ? ['south'] : []), ...(derived[0] === 0 ? ['west'] : [])];
+              const allowed = frame.edge_contact?.allowed ?? [];
+              const missing = contacts.filter((side) => !allowed.includes(side)); const extra = allowed.filter((side) => !contacts.includes(side));
+              if (missing.length) errors.push(`${prefix}: frame ${frameName} has undocumented source-edge contact: ${missing.join(', ')}`);
+              if (extra.length) errors.push(`${prefix}: frame ${frameName} declares absent source-edge contact: ${extra.join(', ')}`);
+            }
           }
         }
+      } else if (frame.transparent === true && frameShapeValid) {
+        const { createCanvas, loadImage } = await import('canvas');
+        decodedImage ??= await loadImage(file);
+        const [sx, sy, sw, sh] = frameRect(asset, frame, facts); const sample = createCanvas(sw, sh); const context = sample.getContext('2d'); context.drawImage(decodedImage, sx, sy, sw, sh, 0, 0, sw, sh);
+        const pixels = context.getImageData(0, 0, sw, sh).data;
+        if (pixels.some((value, index) => index % 4 === 3 && value > 0)) errors.push(`${prefix}: frame ${frameName} declares transparent but contains visible alpha`);
+        if (!asset.tags.includes('animation-layer')) errors.push(`${prefix}: transparent frame ${frameName} is only valid on animation-layer assets`);
       } else if (asset.tags.includes('actor')) warnings.push(`${prefix}: frame ${frameName} content_bounds is missing for actor scale review`);
+      if (frame.subject_bounds !== undefined) {
+        const bounds = frame.subject_bounds;
+        if (!frameShapeValid || !Array.isArray(bounds) || bounds.length !== 4 || bounds.some((value) => !Number.isInteger(value) || value < 0) || bounds[2] < 1 || bounds[3] < 1) {
+          errors.push(`${prefix}: frame ${frameName} has invalid subject_bounds`);
+        } else {
+          const [, , sw, sh] = frameRect(asset, frame, facts); const content = frame.content_bounds;
+          if (bounds[0] + bounds[2] > sw || bounds[1] + bounds[3] > sh) errors.push(`${prefix}: frame ${frameName} subject_bounds exceeds frame`);
+          if (!content || bounds[0] < content[0] || bounds[1] < content[1] || bounds[0] + bounds[2] > content[0] + content[2] || bounds[1] + bounds[3] > content[1] + content[3]) errors.push(`${prefix}: frame ${frameName} subject_bounds must be enclosed by content_bounds`);
+        }
+      }
       if (asset.tags.includes('ground-contact')) {
         const anchor = frame.anchor ?? asset.defaults?.anchor;
         if (!Array.isArray(frame.content_bounds) || !Array.isArray(anchor?.point)) {
           errors.push(`${prefix}: ground-contact frame ${frameName} needs content_bounds and a custom anchor point`);
-        } else if (frame.content_bounds[1] + frame.content_bounds[3] !== anchor.point[1]) {
+        } else if (frame.ground_contact !== undefined && (!validCoordinate(frame.ground_contact?.point) || !String(frame.ground_contact?.reason ?? '').trim())) {
+          errors.push(`${prefix}: ground-contact frame ${frameName} ground_contact needs a point and review reason`);
+        } else if (frame.ground_contact?.point && frame.ground_contact.point.some((value, index) => value !== anchor.point[index])) {
+          errors.push(`${prefix}: ground-contact frame ${frameName} ground_contact point must equal its custom anchor`);
+        } else if (!frame.ground_contact && frame.content_bounds[1] + frame.content_bounds[3] !== anchor.point[1]) {
           errors.push(`${prefix}: ground-contact frame ${frameName} anchor must equal the visible-alpha bottom`);
         } else if (frameShapeValid) {
           const [, , frameWidth, frameHeight] = frameRect(asset, frame, facts);
           const [boundsX, boundsY, boundsWidth, boundsHeight] = frame.content_bounds;
-          const documentedBaseline = boundsY + boundsHeight === frameHeight && frame.edge_contact?.allowed?.includes('south');
-          if (boundsX === 0 || boundsY === 0 || boundsX + boundsWidth === frameWidth || boundsY + boundsHeight === frameHeight && !documentedBaseline) errors.push(`${prefix}: ground-contact frame ${frameName} visible alpha must be enclosed by transparent frame padding (a measured south baseline contact may be explicitly documented)`);
+          const contacts = [...(boundsY === 0 ? ['north'] : []), ...(boundsX + boundsWidth === frameWidth ? ['east'] : []), ...(boundsY + boundsHeight === frameHeight ? ['south'] : []), ...(boundsX === 0 ? ['west'] : [])];
+          const documented = contacts.every((side) => frame.edge_contact?.allowed?.includes(side));
+          if (contacts.length && !documented) errors.push(`${prefix}: ground-contact frame ${frameName} visible alpha must be enclosed by transparent frame padding or explicitly document every measured source-edge contact`);
         }
       }
       if (frameShapeValid && asset.tags.includes('overlay')) {
@@ -870,13 +1090,31 @@ export async function validateManifest({ root, manifestPath }) {
         const sample = createCanvas(sw, sh); const sampleContext = sample.getContext('2d');
         sampleContext.drawImage(decodedImage, sx, sy, sw, sh, 0, 0, sw, sh);
         const pixels = sampleContext.getImageData(0, 0, sw, sh).data;
-        let found = null;
+        const found = new Set();
         for (let index = 0; index < pixels.length; index += 4) {
           if (!pixels[index + 3]) continue;
           const rgb = [pixels[index], pixels[index + 1], pixels[index + 2]].map((value) => value.toString(16).padStart(2, '0')).join('');
-          if (forbiddenRgb.has(rgb)) { found = `#${rgb}`; break; }
+          if (forbiddenRgb.has(rgb)) found.add(rgb);
         }
-        if (found) errors.push(`${prefix}: frame ${frameName} contains forbidden color ${found}`);
+        const unreviewed = [...found].filter((color) => !normalizedExceptionColors.has(color));
+        const stale = [...normalizedExceptionColors].filter((color) => !found.has(color));
+        if (unreviewed.length) errors.push(`${prefix}: frame ${frameName} contains forbidden color ${unreviewed.map((color) => `#${color}`).join(', ')}`);
+        if (stale.length) errors.push(`${prefix}: frame ${frameName} declares absent forbidden-color exception: ${stale.map((color) => `#${color}`).join(', ')}`);
+      }
+    }
+    if (asset.animation?.mode === 'state-machine' && geometry.layout === 'grid') {
+      const { createCanvas, loadImage } = await import('canvas');
+      decodedImage ??= await loadImage(file);
+      const seamBleed = animationGridSeamBleed(decodedImage, asset, createCanvas);
+      if (seamBleed.length) {
+        const sample = seamBleed.slice(0, 4).map((entry) => `${entry.axis} ${entry.between.join('/')} lane ${entry.lane} (${entry.continuous_alpha}px)`).join(', ');
+        errors.push(`${prefix}: animation grid has continuous alpha across internal cell seams; cell geometry likely splits frames: ${sample}${seamBleed.length > 4 ? `, +${seamBleed.length - 4} more` : ''}`);
+      }
+    }
+    if (asset.animation?.mode === 'state-machine') for (const [clipName, clip] of Object.entries(asset.clips ?? {})) {
+      for (const entry of clip?.frames ?? []) {
+        const frameName = typeof entry === 'string' ? entry : entry?.frame;
+        if (frames?.[frameName] && !Array.isArray(frames[frameName].content_bounds) && frames[frameName].transparent !== true) errors.push(`${prefix}: animated frame ${frameName} in clip ${clipName} needs decoded content_bounds or reviewed transparent: true`);
       }
     }
     for (const [clipName, clip] of Object.entries(asset.clips ?? {})) {
@@ -984,7 +1222,9 @@ export async function validateManifest({ root, manifestPath }) {
     }
   }
   errors.push(...validatePrefabCatalog(manifest));
-  return { valid: errors.length === 0, errors, warnings, assets: Object.keys(manifest.assets).length };
+  if (manifest.schema_version === 2) errors.push(...validatePresentationCatalog(manifest).errors);
+  const uniqueErrors = [...new Set(errors)];
+  return { valid: uniqueErrors.length === 0, errors: uniqueErrors, warnings, assets: Object.keys(manifest.assets).length };
 }
 
 async function createPixelCanvas(width, height) {
@@ -1165,14 +1405,74 @@ function isSpriteAsset(asset) {
     || (asset.tags ?? []).some((tag) => SPRITE_TAGS.has(tag));
 }
 
+async function runtimeSpriteSourceCoverage(root, runtimeAssets) {
+  const { createCanvas, loadImage } = await import('canvas');
+  const bySource = new Map();
+  for (const entry of runtimeAssets) {
+    const asset = entry.asset;
+    const signature = asset.geometry?.layout === 'grid'
+      ? `grid:${asset.geometry.cell?.join('x')}:${asset.geometry.grid?.join('x')}:${(asset.geometry.margin ?? [0, 0]).join('x')}:${(asset.geometry.spacing ?? [0, 0]).join('x')}`
+      : 'freeform';
+    if (!bySource.has(entry.source)) bySource.set(entry.source, new Map());
+    if (!bySource.get(entry.source).has(signature)) bySource.get(entry.source).set(signature, []);
+    bySource.get(entry.source).get(signature).push(asset);
+  }
+  const sources = [];
+  for (const [source, layouts] of bySource) {
+    const image = await loadImage(resolveUnder(root, source));
+    const canvas = createCanvas(image.width, image.height); const context = canvas.getContext('2d'); context.drawImage(image, 0, 0);
+    const pixels = context.getImageData(0, 0, image.width, image.height).data;
+    const visible = (x, y) => pixels[(y * image.width + x) * 4 + 3] > 0;
+    const candidates = [];
+    for (const [signature, assets] of layouts) {
+      const geometry = assets[0].geometry;
+      if (geometry.layout === 'freeform') {
+        const rects = assets.flatMap((asset) => Object.values(asset.frames ?? {}).map((frame) => frame.rect).filter(Boolean));
+        let visiblePixels = 0; let mappedVisiblePixels = 0; let minX = image.width; let minY = image.height; let maxX = -1; let maxY = -1;
+        for (let y = 0; y < image.height; y += 1) for (let x = 0; x < image.width; x += 1) if (visible(x, y)) {
+          visiblePixels += 1;
+          if (rects.some(([rx, ry, rw, rh]) => x >= rx && x < rx + rw && y >= ry && y < ry + rh)) mappedVisiblePixels += 1;
+          else { minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); }
+        }
+        const complete = visiblePixels === mappedVisiblePixels;
+        candidates.push({ layout: 'freeform', signature, mapped_regions: rects.length, visible_alpha_pixels: visiblePixels, mapped_visible_alpha_pixels: mappedVisiblePixels, unmapped_alpha_pixels: visiblePixels - mappedVisiblePixels, ...(complete ? {} : { unmapped_bounds: [minX, minY, maxX - minX + 1, maxY - minY + 1] }), complete, coverage: visiblePixels ? mappedVisiblePixels / visiblePixels : 1 });
+        continue;
+      }
+      const [cellWidth, cellHeight] = geometry.cell; const [columns, rows] = geometry.grid;
+      const margin = geometry.margin ?? [0, 0]; const spacing = geometry.spacing ?? [0, 0];
+      const mapped = new Set();
+      for (const asset of assets) for (const frame of Object.values(asset.frames ?? {})) if (frame.cell) {
+        mapped.add(frame.cell.join(','));
+        const animation = asset.autotile?.animation;
+        if (animation?.mode === 'grid-offset') for (let phase = 1; phase < animation.frames; phase += 1) mapped.add([frame.cell[0] + animation.phase_stride[0] * phase, frame.cell[1] + animation.phase_stride[1] * phase].join(','));
+      }
+      const nonempty = [];
+      for (let row = 0; row < rows; row += 1) for (let column = 0; column < columns; column += 1) {
+        const sx = margin[0] + column * (cellWidth + spacing[0]); const sy = margin[1] + row * (cellHeight + spacing[1]);
+        let hasAlpha = false;
+        for (let y = sy; !hasAlpha && y < sy + cellHeight; y += 1) for (let x = sx; x < sx + cellWidth; x += 1) if (visible(x, y)) { hasAlpha = true; break; }
+        if (hasAlpha) nonempty.push(`${column},${row}`);
+      }
+      const mappedNonempty = nonempty.filter((cell) => mapped.has(cell));
+      const unmapped = nonempty.filter((cell) => !mapped.has(cell));
+      candidates.push({ layout: 'grid', signature, cell: geometry.cell, grid: geometry.grid, nonempty_cells: nonempty.length, mapped_nonempty_cells: mappedNonempty.length, unmapped_nonempty_cells: unmapped.length, unmapped_examples: unmapped.slice(0, 12).map((cell) => cell.split(',').map(Number)), complete: unmapped.length === 0, coverage: nonempty.length ? mappedNonempty.length / nonempty.length : 1 });
+    }
+    candidates.sort((left, right) => Number(right.complete) - Number(left.complete) || right.coverage - left.coverage);
+    sources.push({ source, complete: candidates[0]?.complete ?? false, coverage: candidates[0]?.coverage ?? 0, best: candidates[0] ?? null, candidates });
+  }
+  return sources.sort((left, right) => left.source.localeCompare(right.source));
+}
+
 /** Enumerate animation readiness without confusing measured files with curated motion. */
-export async function auditAnimationMetadataCoverage({ root, catalogPath }) {
+export async function auditAnimationMetadataCoverage({ root, catalogPath, dispositionsPath = null }) {
   const catalog = await loadAssetCatalog(catalogPath);
   const catalogValidation = validatePresentationCatalog(catalog);
   const runtime = [];
   const reviewedSources = new Set();
+  const approvedNonSpriteSources = new Set();
   for (const [id, asset] of Object.entries(catalog.assets ?? {})) {
-    if (asset.status !== 'approved' || !isSpriteAsset(asset)) continue;
+    if (asset.status !== 'approved') continue;
+    if (!isSpriteAsset(asset)) { approvedNonSpriteSources.add(asset.source); continue; }
     reviewedSources.add(asset.source);
     const mode = asset.animation?.mode ?? 'missing';
     const states = Object.entries(asset.animation?.states ?? {});
@@ -1180,18 +1480,52 @@ export async function auditAnimationMetadataCoverage({ root, catalogPath }) {
     runtime.push({
       id, source: asset.source, kind: asset.kind, tags: asset.tags ?? [], mode,
       frames: Object.keys(asset.frames ?? {}).length, clips: Object.keys(asset.clips ?? {}).length,
+      temporal: Object.values(asset.clips ?? {}).some((clip) => (clip.frames?.length ?? 0) > 1),
       states: states.map(([state]) => state), directional_states: directionalStates,
       control_scheme: asset.animation?.control?.scheme ?? null,
       ready: ['static', 'state-machine'].includes(mode),
       ...(mode === 'deferred' ? { reason: asset.animation.reason } : {}),
+      asset,
     });
+  }
+  for (const source of reviewedSources) approvedNonSpriteSources.delete(source);
+  const sourceCoverage = await runtimeSpriteSourceCoverage(root, runtime);
+  const sourceCoverageBySource = new Map(sourceCoverage.map((entry) => [entry.source, entry]));
+  for (const entry of runtime) {
+    entry.source_coverage = sourceCoverageBySource.get(entry.source)?.coverage ?? 0;
+    delete entry.asset;
   }
   const canonicalFiles = await walk(resolveUnder(root, 'assets'));
   const candidates = canonicalFiles
     .filter((file) => path.extname(file).toLowerCase() === '.png')
     .map((file) => posixRelative(root, file))
-    .filter((source) => SPRITE_PATH_PATTERN.test(`/${source}`));
+    .filter((source) => SPRITE_PATH_PATTERN.test(`/${source}`) && !approvedNonSpriteSources.has(source));
   const deferredSources = candidates.filter((source) => !reviewedSources.has(source));
+  const candidateSet = new Set(candidates);
+  const runtimeCandidateCoverage = sourceCoverage.filter((entry) => candidateSet.has(entry.source));
+  const fullyMappedCandidateSources = runtimeCandidateCoverage.filter((entry) => entry.complete).length;
+  const dispositionErrors = []; let dispositionRules = [];
+  if (dispositionsPath) {
+    let manifest;
+    try { manifest = YAML.parse(await readFile(dispositionsPath, 'utf8')) ?? {}; }
+    catch (error) { dispositionErrors.push(`cannot parse animation source dispositions: ${error.message}`); }
+    if (manifest && (manifest.schema_version !== 1 || manifest.kind !== 'animation-source-dispositions' || !Array.isArray(manifest.rules))) dispositionErrors.push('animation source dispositions must be schema v1 with kind animation-source-dispositions and rules');
+    dispositionRules = (manifest?.rules ?? []).map((rule, index) => {
+      const prefix = `animation disposition rule ${index}`;
+      if (!validId(rule?.id)) dispositionErrors.push(`${prefix}: id is invalid`);
+      if (typeof rule?.match !== 'string' || !rule.match.trim()) dispositionErrors.push(`${prefix}: match glob is required`);
+      if (!['family-deferred', 'layered-component', 'non-runtime-static'].includes(rule?.disposition)) dispositionErrors.push(`${prefix}: disposition is invalid`);
+      if (!String(rule?.reason ?? '').trim()) dispositionErrors.push(`${prefix}: reason is required`);
+      if (!Array.isArray(rule?.required_qa) || !rule.required_qa.length || rule.required_qa.some((entry) => typeof entry !== 'string' || !entry.trim())) dispositionErrors.push(`${prefix}: required_qa must be a non-empty string array`);
+      return { ...rule, pattern: typeof rule?.match === 'string' ? globPattern(rule.match) : /^$/ };
+    });
+  }
+  const deferred = deferredSources.map((source) => {
+    const matches = dispositionRules.filter((rule) => rule.pattern.test(source));
+    if (dispositionsPath && matches.length !== 1) dispositionErrors.push(`${source}: expected exactly one animation disposition rule, matched ${matches.length}`);
+    const rule = matches[0];
+    return rule ? { source, rule: rule.id, disposition: rule.disposition, reason: rule.reason, required_qa: [...rule.required_qa] } : { source, disposition: 'unclassified' };
+  });
   const incomplete = runtime.filter((asset) => !asset.ready);
   const controlled = runtime.filter((asset) => asset.control_scheme);
   const animated = runtime.filter((asset) => asset.mode === 'state-machine');
@@ -1200,25 +1534,44 @@ export async function auditAnimationMetadataCoverage({ root, catalogPath }) {
     runtime_sprite_assets: runtime.length,
     runtime_static: runtime.filter((asset) => asset.mode === 'static').length,
     runtime_animated: animated.length,
+    runtime_temporally_animated: runtime.filter((asset) => asset.temporal).length,
     runtime_controlled: controlled.length,
     runtime_deferred_or_missing: incomplete.length,
+    runtime_unique_sources: sourceCoverage.length,
+    runtime_sources_fully_mapped: sourceCoverage.filter((entry) => entry.complete).length,
+    runtime_sources_partial_or_unmeasured: sourceCoverage.filter((entry) => !entry.complete).length,
     canonical_deferred: deferredSources.length,
-    semantic_source_coverage: candidates.length ? (candidates.length - deferredSources.length) / candidates.length : 1,
+    canonical_classified_deferred: deferred.filter((entry) => entry.disposition !== 'unclassified').length,
+    canonical_unclassified: deferred.filter((entry) => entry.disposition === 'unclassified').length,
+    catalog_source_presence: candidates.length ? (candidates.length - deferredSources.length) / candidates.length : 1,
+    semantic_source_coverage: candidates.length ? fullyMappedCandidateSources / candidates.length : 1,
+    runtime_candidate_sources_fully_mapped: fullyMappedCandidateSources,
   };
+  const runtimeValid = catalogValidation.valid && incomplete.length === 0;
+  const dispositionValid = dispositionErrors.length === 0 && deferred.every((entry) => entry.disposition !== 'unclassified');
+  const libraryComplete = runtimeValid && deferredSources.length === 0 && sourceCoverage.every((entry) => entry.complete);
   return {
-    valid: catalogValidation.valid && incomplete.length === 0 && deferredSources.length === 0,
-    errors: catalogValidation.errors,
+    valid: libraryComplete,
+    runtime_valid: runtimeValid,
+    disposition_valid: dispositionValid,
+    library_complete: libraryComplete,
+    errors: [...catalogValidation.errors, ...dispositionErrors],
     summary,
     runtime,
-    deferred_sources: deferredSources,
+    source_coverage: sourceCoverage,
+    deferred_sources: deferred,
   };
 }
 
 function animationReferences(asset) {
   const references = [];
   for (const [state, descriptor] of Object.entries(asset.animation?.states ?? {})) {
-    if (descriptor.clip) references.push({ state, facing: null, motion: descriptor.motion, reference: descriptor.clip });
-    for (const [facing, reference] of Object.entries(descriptor.facings ?? {})) references.push({ state, facing, motion: descriptor.motion, reference });
+    if (descriptor.clip) references.push({ kind: 'state', state, facing: null, motion: descriptor.motion, reference: descriptor.clip });
+    for (const [facing, reference] of Object.entries(descriptor.facings ?? {})) references.push({ kind: 'state', state, facing, motion: descriptor.motion, reference });
+  }
+  for (const [transition, descriptor] of Object.entries(asset.animation?.transitions ?? {})) {
+    if (descriptor.clip) references.push({ kind: 'transition', state: `transition.${transition}`, transition, facing: null, motion: 'in-place', reference: descriptor.clip });
+    for (const [facing, reference] of Object.entries(descriptor.facings ?? {})) references.push({ kind: 'transition', state: `transition.${transition}`, transition, facing, motion: 'in-place', reference });
   }
   return references;
 }
@@ -1235,7 +1588,7 @@ function animationSequence(clip) {
   return entries;
 }
 
-async function renderReviewedClip({ root, catalog, assetId, asset, state, facing, reference, outDir, scale }) {
+async function renderReviewedClip({ root, catalog, assetId, asset, kind = 'state', state, transition = null, facing, motion, reference, outDir, scale }) {
   const { createCanvas, loadImage } = await import('canvas');
   const { GifCodec, GifFrame, GifUtil } = await import('gifwrap');
   const descriptor = animationClipDescriptor(reference); const clip = asset.clips[descriptor.clip];
@@ -1250,20 +1603,34 @@ async function renderReviewedClip({ root, catalog, assetId, asset, state, facing
     const pixels = sampleContext.getImageData(0, 0, sw, sh).data; let minX = sw; let minY = sh; let maxX = -1; let maxY = -1;
     for (let y = 0; y < sh; y += 1) for (let x = 0; x < sw; x += 1) if (pixels[(y * sw + x) * 4 + 3]) { minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); }
     const bounds = maxX < 0 ? null : [minX, minY, maxX - minX + 1, maxY - minY + 1];
-    if (!bounds || !frame.content_bounds || bounds.some((value, index) => value !== frame.content_bounds[index])) throw new Error(`${assetId}#${entry.frame}: content_bounds do not match decoded alpha ${bounds?.join(',') ?? 'empty'}`);
+    const reviewedTransparent = frame.transparent === true && asset.tags?.includes('animation-layer');
+    if (reviewedTransparent ? bounds !== null : (!bounds || !frame.content_bounds || bounds.some((value, index) => value !== frame.content_bounds[index]))) throw new Error(`${assetId}#${entry.frame}: ${reviewedTransparent ? 'transparent frame contains visible alpha' : `content_bounds do not match decoded alpha ${bounds?.join(',') ?? 'empty'}`}`);
     const logicalWidth = sw / density; const logicalHeight = sh / density;
     const anchor = anchorOffset(frame.anchor ?? asset.defaults?.anchor, logicalWidth, logicalHeight, 1 / density);
-    const visible = { x: bounds[0] / density - anchor[0], y: bounds[1] / density - anchor[1], width: bounds[2] / density, height: bounds[3] / density };
+    const visible = bounds ? { x: bounds[0] / density - anchor[0], y: bounds[1] / density - anchor[1], width: bounds[2] / density, height: bounds[3] / density } : null;
     const scaleClass = asset.world?.scale_class; const expected = catalog.style_profiles?.[asset.style_profile]?.scale_classes?.[scaleClass]?.logical_height;
-    const measuredHeight = bounds[3] / density;
-    if (!expected || measuredHeight < expected[0] || measuredHeight > expected[1]) throw new Error(`${assetId}#${entry.frame}: logical content height ${measuredHeight} is outside ${scaleClass} range ${expected?.join('-') ?? 'missing'}`);
-    const groundDelta = visible.y + visible.height;
-    if (asset.tags?.includes('ground-contact') && Math.abs(groundDelta) > 0.0001) throw new Error(`${assetId}#${entry.frame}: visible feet/hull miss the fixed ground anchor by ${groundDelta}`);
-    decoded.push({ ...entry, frame, sx, sy, sw, sh, bounds, anchor, visible, logical_height: measuredHeight, expected });
+    const scaleFrame = frame.scale_reference ? asset.frames[frame.scale_reference] : frame;
+    const subjectBounds = scaleFrame?.subject_bounds ?? scaleFrame?.content_bounds;
+    if (!subjectBounds && !reviewedTransparent) throw new Error(`${assetId}#${entry.frame}: scale reference ${frame.scale_reference ?? entry.frame} needs subject_bounds or content_bounds`);
+    const measuredHeight = subjectBounds ? subjectBounds[3] / density : null;
+    const measuredWidth = subjectBounds ? subjectBounds[2] / density : null;
+    const envelopeHeight = bounds ? bounds[3] / density : null; const envelopeWidth = bounds ? bounds[2] / density : null;
+    if (!asset.tags?.includes('animation-layer') && (!expected || measuredHeight < expected[0] || measuredHeight > expected[1])) throw new Error(`${assetId}#${entry.frame}: logical content height ${measuredHeight} is outside ${scaleClass} range ${expected?.join('-') ?? 'missing'}`);
+    const groundDelta = frame.ground_contact?.point
+      ? frame.ground_contact.point[1] / density - anchor[1]
+      : visible ? visible.y + visible.height : 0;
+    if (asset.tags?.includes('ground-contact') && Math.abs(groundDelta) > 0.0001) throw new Error(`${assetId}#${entry.frame}: reviewed ground contact misses the fixed anchor by ${groundDelta}`);
+    decoded.push({ ...entry, frame, sx, sy, sw, sh, bounds, anchor, visible, logical_height: measuredHeight, logical_width: measuredWidth, envelope_height: envelopeHeight, envelope_width: envelopeWidth, expected });
   }
-  const minX = Math.min(...decoded.map((entry) => entry.visible.x)); const minY = Math.min(...decoded.map((entry) => entry.visible.y));
-  const maxX = Math.max(...decoded.map((entry) => entry.visible.x + entry.visible.width)); const maxY = Math.max(...decoded.map((entry) => entry.visible.y + entry.visible.height));
-  const margin = 2; const logicalWidth = Math.ceil(maxX - minX + margin * 2); const logicalHeight = Math.ceil(maxY - minY + margin * 2);
+  const qaProfile = clip.qa_profile ?? (motion === 'stationary' ? 'expressive' : 'tight');
+  const qaLimits = { tight: [1.65, 2], expressive: [2.25, 4], transform: [6, 8], mechanism: [32, 16] }[qaProfile];
+  const visibleDecoded = decoded.filter((entry) => entry.visible);
+  const heightRatio = visibleDecoded.length ? Math.max(...visibleDecoded.map((entry) => entry.envelope_height)) / Math.min(...visibleDecoded.map((entry) => entry.envelope_height)) : 1;
+  const widthRatio = visibleDecoded.length ? Math.max(...visibleDecoded.map((entry) => entry.envelope_width)) / Math.min(...visibleDecoded.map((entry) => entry.envelope_width)) : 1;
+  if (heightRatio > qaLimits[0] || widthRatio > qaLimits[1]) throw new Error(`${assetId}#${descriptor.clip}: ${qaProfile} animation silhouette varies too much (height ${heightRatio.toFixed(2)}x, width ${widthRatio.toFixed(2)}x; limits ${qaLimits.join('x, ')}x)`);
+  const minX = visibleDecoded.length ? Math.min(...visibleDecoded.map((entry) => entry.visible.x)) : -1; const minY = visibleDecoded.length ? Math.min(...visibleDecoded.map((entry) => entry.visible.y)) : -1;
+  const maxX = visibleDecoded.length ? Math.max(...visibleDecoded.map((entry) => entry.visible.x + entry.visible.width)) : 1; const maxY = visibleDecoded.length ? Math.max(...visibleDecoded.map((entry) => entry.visible.y + entry.visible.height)) : 1;
+  const margin = 2; const logicalWidth = Math.max(1, Math.ceil(maxX - minX + margin * 2)); const logicalHeight = Math.max(1, Math.ceil(maxY - minY + margin * 2));
   const anchorTarget = [(margin - minX) * scale, (margin - minY) * scale];
   const canvases = decoded.map((entry) => {
     const canvas = createCanvas(logicalWidth * scale, logicalHeight * scale); const ctx = canvas.getContext('2d'); ctx.imageSmoothingEnabled = false;
@@ -1279,61 +1646,197 @@ async function renderReviewedClip({ root, catalog, assetId, asset, state, facing
   const strip = createCanvas(canvases[0].width * canvases.length, canvases[0].height); const stripContext = strip.getContext('2d'); stripContext.imageSmoothingEnabled = false;
   canvases.forEach((canvas, index) => stripContext.drawImage(canvas, index * canvas.width, 0));
   const stripPath = path.join(outDir, assetId, `${name}-strip.png`); await writeFile(stripPath, strip.toBuffer('image/png'));
-  return { asset: assetId, state, facing, motion: asset.animation.states[state].motion, clip: descriptor.clip, flip_x: descriptor.flip_x, frames: sequence.length, source_frames: clip.frames.length, logical_canvas: [logicalWidth, logicalHeight], logical_heights: decoded.map((entry) => entry.logical_height), gif: posixRelative(outDir, gifPath), strip: posixRelative(outDir, stripPath) };
+  return { asset: assetId, kind, state, ...(transition ? { transition } : {}), facing, motion, clip: descriptor.clip, flip_x: descriptor.flip_x, qa_profile: qaProfile, frames: sequence.length, source_frames: clip.frames.length, logical_canvas: [logicalWidth, logicalHeight], logical_heights: decoded.map((entry) => entry.logical_height), logical_widths: decoded.map((entry) => entry.logical_width), envelope_heights: decoded.map((entry) => entry.envelope_height), envelope_widths: decoded.map((entry) => entry.envelope_width), silhouette_ratios: { height: heightRatio, width: widthRatio }, gif: posixRelative(outDir, gifPath), strip: posixRelative(outDir, stripPath) };
 }
 
-async function renderControlSimulation({ root, assetId, asset, outDir, scale }) {
+async function renderLayeredReviewedClip({ root, catalog, assetId, asset, state, facing, outDir, scale, equipment = null, assemblyId = null }) {
+  const options = { state, facing: facing ?? 'south' };
+  const resolved = equipment ? resolveRiggedAssetAnimation(catalog, assetId, { ...options, equipment }) : resolveLayeredAssetAnimation(catalog, assetId, options);
+  if (resolved.layers.length < 2) return null;
+  const prepared = [];
+  for (const layer of resolved.layers) {
+    const layerAsset = catalog.assets[layer.asset]; const file = resolveUnder(root, layerAsset.source); const facts = await imageFacts(file);
+    if (facts.sha256 !== layerAsset.source_sha256) throw new Error(`${layer.asset}: source_sha256 does not match ${layerAsset.source}`);
+    const { loadImage } = await import('canvas'); const image = await loadImage(file); const clip = layerAsset.clips[layer.clip];
+    prepared.push({ layer, asset: layerAsset, facts, image, sequence: animationSequence(clip), clip });
+  }
+  const phaseCount = prepared[0].sequence.length;
+  if (prepared.some((entry) => entry.sequence.length !== phaseCount)) throw new Error(`${assetId} state ${state}: layered rendered phase counts differ`);
+  const phases = [];
+  for (let phase = 0; phase < phaseCount; phase += 1) {
+    const decoded = [];
+    for (const entry of prepared) {
+      const sequenceFrame = entry.sequence[phase]; const frame = entry.asset.frames[sequenceFrame.frame]; const [sx, sy, sw, sh] = frameRect(entry.asset, frame, entry.facts);
+      const { createCanvas } = await import('canvas'); const sample = createCanvas(sw, sh); const sampleContext = sample.getContext('2d'); sampleContext.drawImage(entry.image, sx, sy, sw, sh, 0, 0, sw, sh);
+      const pixels = sampleContext.getImageData(0, 0, sw, sh).data; let minX = sw; let minY = sh; let maxX = -1; let maxY = -1;
+      for (let y = 0; y < sh; y += 1) for (let x = 0; x < sw; x += 1) if (pixels[(y * sw + x) * 4 + 3]) { minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); }
+      const bounds = maxX < 0 ? null : [minX, minY, maxX - minX + 1, maxY - minY + 1];
+      const reviewedTransparent = frame.transparent === true && entry.asset.tags?.includes('animation-layer');
+      if (reviewedTransparent ? bounds !== null : (!bounds || !frame.content_bounds || bounds.some((value, index) => value !== frame.content_bounds[index]))) throw new Error(`${entry.layer.asset}#${sequenceFrame.frame}: ${reviewedTransparent ? 'transparent frame contains visible alpha' : `content_bounds do not match decoded alpha ${bounds?.join(',') ?? 'empty'}`}`);
+      const density = entry.asset.pixel_density; const logicalWidth = sw / density; const logicalHeight = sh / density;
+      const anchor = anchorOffset(frame.anchor ?? entry.asset.defaults?.anchor, logicalWidth, logicalHeight, 1 / density);
+      decoded.push({ ...entry, sequenceFrame, frame, sx, sy, sw, sh, density, anchor, visible: bounds ? { x: bounds[0] / density - anchor[0], y: bounds[1] / density - anchor[1], width: bounds[2] / density, height: bounds[3] / density } : null });
+    }
+    phases.push(decoded);
+  }
+  const flat = phases.flat().filter((entry) => entry.visible); const minX = Math.min(...flat.map((entry) => entry.visible.x)); const minY = Math.min(...flat.map((entry) => entry.visible.y));
+  const maxX = Math.max(...flat.map((entry) => entry.visible.x + entry.visible.width)); const maxY = Math.max(...flat.map((entry) => entry.visible.y + entry.visible.height));
+  const margin = 2; const logicalWidth = Math.ceil(maxX - minX + margin * 2); const logicalHeight = Math.ceil(maxY - minY + margin * 2);
+  const anchorTarget = [(margin - minX) * scale, (margin - minY) * scale]; const { createCanvas } = await import('canvas');
+  const canvases = phases.map((decoded) => {
+    const canvas = createCanvas(logicalWidth * scale, logicalHeight * scale); const context = canvas.getContext('2d'); context.imageSmoothingEnabled = false;
+    for (const entry of decoded) {
+      const normalized = createCanvas(entry.sw / entry.density, entry.sh / entry.density); const normalizedContext = normalized.getContext('2d'); normalizedContext.imageSmoothingEnabled = false;
+      normalizedContext.drawImage(entry.image, entry.sx, entry.sy, entry.sw, entry.sh, 0, 0, normalized.width, normalized.height);
+      context.save(); context.translate(anchorTarget[0], anchorTarget[1]); context.scale(entry.layer.flip_x ? -1 : 1, 1);
+      context.drawImage(normalized, -entry.anchor[0] * scale, -entry.anchor[1] * scale, normalized.width * scale, normalized.height * scale); context.restore();
+    }
+    return canvas;
+  });
+  const { GifCodec, GifFrame, GifUtil } = await import('gifwrap');
+  const gifFrames = canvases.map((canvas, index) => new GifFrame(canvas.width, canvas.height, Buffer.from(canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data), { delayCentisecs: prepared[0].sequence[index].delayCentisecs }));
+  GifUtil.quantizeWu(gifFrames, 256, 5); const gif = await new GifCodec().encodeGif(gifFrames, { loops: prepared[0].clip.loop === 'once' ? 1 : 0 });
+  const name = `composite-${assemblyId ? `${assemblyId}-` : ''}${state}${facing ? `-${facing}` : ''}`; const gifPath = path.join(outDir, assetId, `${name}.gif`); await ensureParent(gifPath); await writeFile(gifPath, gif.buffer);
+  const strip = createCanvas(canvases[0].width * canvases.length, canvases[0].height); const stripContext = strip.getContext('2d'); stripContext.imageSmoothingEnabled = false;
+  canvases.forEach((canvas, index) => stripContext.drawImage(canvas, index * canvas.width, 0)); const stripPath = path.join(outDir, assetId, `${name}-strip.png`); await writeFile(stripPath, strip.toBuffer('image/png'));
+  return { asset: assetId, ...(assemblyId ? { assembly: assemblyId, rig: resolved.rig } : {}), state, facing, layers: resolved.layers.map((layer) => ({ asset: layer.asset, role: layer.role, clip: layer.clip, flip_x: layer.flip_x })), frames: phaseCount, logical_canvas: [logicalWidth, logicalHeight], gif: posixRelative(outDir, gifPath), strip: posixRelative(outDir, stripPath) };
+}
+
+async function renderControlSimulation({ root, catalog, assetId, asset, outDir, scale, equipment = null, assemblyId = null, rigProfileId = null }) {
   const { createCanvas, loadImage } = await import('canvas'); const { GifCodec, GifFrame, GifUtil } = await import('gifwrap');
-  const file = resolveUnder(root, asset.source); const facts = await imageFacts(file); const image = await loadImage(file); const density = asset.pixel_density;
-  if (facts.sha256 !== asset.source_sha256) throw new Error(`${assetId}: source_sha256 does not match ${asset.source}`);
-  const script = [
-    { moving: false, facing: 'south', frames: 4, delta: [0, 0] },
-    { moving: true, facing: 'east', frames: 6, delta: [1, 0] },
-    { moving: false, facing: 'east', frames: 3, delta: [0, 0] },
-    { moving: true, facing: 'north', frames: 6, delta: [0, -1] },
-    { moving: true, facing: 'west', frames: 6, delta: [-1, 0] },
-    { moving: true, facing: 'south', frames: 6, delta: [0, 1] },
-  ];
+  const decodedSources = new Map();
+  const decodedSource = async (id) => {
+    if (decodedSources.has(id)) return decodedSources.get(id);
+    const descriptor = catalog.assets[id]; const file = resolveUnder(root, descriptor.source); const facts = await imageFacts(file);
+    if (facts.sha256 !== descriptor.source_sha256) throw new Error(`${id}: source_sha256 does not match ${descriptor.source}`);
+    const decoded = { descriptor, facts, image: await loadImage(file), density: descriptor.pixel_density }; decodedSources.set(id, decoded); return decoded;
+  };
+  const controlScheme = rigProfileId ? catalog.animation_rigs[rigProfileId].control.scheme : asset.animation.control.scheme;
+  const script = controlScheme === 'horizontal'
+    ? [
+      { moving: false, facing: 'east', frames: 4, delta: [0, 0] },
+      { moving: true, facing: 'east', frames: 8, delta: [1, 0] },
+      { moving: false, facing: 'east', frames: 3, delta: [0, 0] },
+      { moving: true, facing: 'west', frames: 8, delta: [-1, 0] },
+      { moving: false, facing: 'west', frames: 3, delta: [0, 0] },
+    ]
+    : [
+      { moving: false, facing: 'south', frames: 4, delta: [0, 0] },
+      { moving: true, facing: 'east', frames: 6, delta: [1, 0] },
+      { moving: false, facing: 'east', frames: 3, delta: [0, 0] },
+      { moving: true, facing: 'north', frames: 6, delta: [0, -1] },
+      { moving: true, facing: 'west', frames: 6, delta: [-1, 0] },
+      { moving: true, facing: 'south', frames: 6, delta: [0, 1] },
+    ];
   const logicalSize = [96, 80]; const anchor = [40, 48]; const rendered = []; const trace = [];
   for (const step of script) {
-    const resolved = resolveAssetAnimation(asset, step); const clip = asset.clips[resolved.clip]; const sequence = animationSequence(clip);
+    const resolved = rigProfileId ? resolveRiggedAnimationState(catalog, rigProfileId, { ...step, equipment }) : equipment ? resolveRiggedAssetAnimation(catalog, assetId, { ...step, equipment }) : resolveLayeredAssetAnimation(catalog, assetId, step);
+    const prepared = [];
+    for (const layer of resolved.layers) {
+      const source = await decodedSource(layer.asset); const clip = source.descriptor.clips[layer.clip]; prepared.push({ layer, source, sequence: animationSequence(clip) });
+    }
+    const phaseCount = prepared[0].sequence.length;
+    if (prepared.some((entry) => entry.sequence.length !== phaseCount)) throw new Error(`${assetId} control simulation: layered rendered phase counts differ`);
     for (let index = 0; index < step.frames; index += 1) {
-      const sequenceFrame = sequence[index % sequence.length]; const frame = asset.frames[sequenceFrame.frame]; const [sx, sy, sw, sh] = frameRect(asset, frame, facts);
-      const normalized = createCanvas(sw / density, sh / density); const normalizedContext = normalized.getContext('2d'); normalizedContext.imageSmoothingEnabled = false;
-      normalizedContext.drawImage(image, sx, sy, sw, sh, 0, 0, normalized.width, normalized.height);
       const canvas = createCanvas(logicalSize[0] * scale, logicalSize[1] * scale); const ctx = canvas.getContext('2d'); ctx.imageSmoothingEnabled = false;
       ctx.fillStyle = '#4f8a52'; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.strokeStyle = '#3f7745'; ctx.lineWidth = 1;
       for (let x = 0; x <= logicalSize[0]; x += 16) { ctx.beginPath(); ctx.moveTo(x * scale, 0); ctx.lineTo(x * scale, canvas.height); ctx.stroke(); }
       for (let y = 0; y <= logicalSize[1]; y += 16) { ctx.beginPath(); ctx.moveTo(0, y * scale); ctx.lineTo(canvas.width, y * scale); ctx.stroke(); }
-      const frameAnchor = anchorOffset(frame.anchor ?? asset.defaults?.anchor, normalized.width, normalized.height);
       ctx.fillStyle = 'rgba(20,25,30,0.35)'; ctx.beginPath(); ctx.ellipse(anchor[0] * scale, anchor[1] * scale, 5 * scale, 2 * scale, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.save(); ctx.translate(anchor[0] * scale, anchor[1] * scale); ctx.scale(resolved.flip_x ? -1 : 1, 1);
-      ctx.drawImage(normalized, -frameAnchor[0] * scale, -frameAnchor[1] * scale, normalized.width * scale, normalized.height * scale); ctx.restore();
+      for (const entry of prepared) {
+        const sequenceFrame = entry.sequence[index % phaseCount]; const frame = entry.source.descriptor.frames[sequenceFrame.frame];
+        const [sx, sy, sw, sh] = frameRect(entry.source.descriptor, frame, entry.source.facts);
+        if (sx + sw > entry.source.image.width || sy + sh > entry.source.image.height) throw new Error(`${entry.layer.asset}#${sequenceFrame.frame}: source rectangle exceeds image`);
+        const normalized = createCanvas(sw / entry.source.density, sh / entry.source.density); const normalizedContext = normalized.getContext('2d'); normalizedContext.imageSmoothingEnabled = false;
+        normalizedContext.drawImage(entry.source.image, sx, sy, sw, sh, 0, 0, normalized.width, normalized.height);
+        const frameAnchor = anchorOffset(frame.anchor ?? entry.source.descriptor.defaults?.anchor, normalized.width, normalized.height);
+        ctx.save(); ctx.translate(anchor[0] * scale, anchor[1] * scale); ctx.scale(entry.layer.flip_x ? -1 : 1, 1);
+        ctx.drawImage(normalized, -frameAnchor[0] * scale, -frameAnchor[1] * scale, normalized.width * scale, normalized.height * scale); ctx.restore();
+      }
       rendered.push(new GifFrame(canvas.width, canvas.height, Buffer.from(ctx.getImageData(0, 0, canvas.width, canvas.height).data), { delayCentisecs: 12 }));
-      trace.push({ moving: step.moving, facing: step.facing, state: resolved.state, clip: resolved.clip, flip_x: resolved.flip_x, at: [...anchor] });
+      trace.push({ moving: step.moving, facing: step.facing, state: resolved.state, layers: resolved.layers.map((layer) => ({ asset: layer.asset, clip: layer.clip, flip_x: layer.flip_x })), at: [...anchor] });
       if (step.moving) { anchor[0] += step.delta[0]; anchor[1] += step.delta[1]; }
     }
   }
   GifUtil.quantizeWu(rendered, 256, 5); const gif = await new GifCodec().encodeGif(rendered, { loops: 0 });
-  const out = path.join(outDir, assetId, 'control-simulation.gif'); await ensureParent(out); await writeFile(out, gif.buffer);
-  return { asset: assetId, gif: posixRelative(outDir, out), frames: rendered.length, logical_size: logicalSize, script, trace };
+  const out = path.join(outDir, assetId, `control-simulation${assemblyId ? `-${assemblyId}` : ''}.gif`); await ensureParent(out); await writeFile(out, gif.buffer);
+  return { asset: assetId, ...(assemblyId ? { assembly: assemblyId } : {}), gif: posixRelative(outDir, out), frames: rendered.length, logical_size: logicalSize, script, trace };
 }
 
 /** Render every reachable reviewed clip at one fixed world anchor. */
-export async function renderAnimationQaSet({ root, catalogPath, outDir, scale = 4 }) {
+export async function renderAnimationQaSet({ root, catalogPath, outDir, scale = 4, asset: assetSelector = null }) {
   if (!Number.isInteger(scale) || scale < 1) throw new Error('animation QA scale must be a positive integer');
   const catalog = await loadAssetCatalog(catalogPath); const catalogValidation = validatePresentationCatalog(catalog);
-  const artifacts = []; const controlSimulations = []; const errors = [...catalogValidation.errors]; const deferred = [];
+  const decodedValidation = await validateManifest({ root, manifestPath: catalogPath });
+  const artifacts = []; const layeredComposites = []; const controlSimulations = []; const actionReturns = []; const terminalActions = []; const errors = [...new Set([...catalogValidation.errors, ...decodedValidation.errors])]; const deferred = [];
+  const selected = (assetId) => !assetSelector || assetId === assetSelector || assetId.startsWith(assetSelector);
+  if (assetSelector && !Object.keys(catalog.assets ?? {}).some(selected)) throw new Error(`no catalog assets match --asset ${assetSelector}`);
+  const selectedRigProfiles = new Set(Object.entries(catalog.assets ?? {}).filter(([id, descriptor]) => selected(id) && descriptor.animation?.rig && catalog.animation_rigs?.[descriptor.animation.rig.profile]?.base_slot === descriptor.animation.rig.slot).map(([, descriptor]) => descriptor.animation.rig.profile));
+  const selectedForCoverage = (assetId) => selected(assetId) || selectedRigProfiles.has(catalog.assets?.[assetId]?.animation?.rig?.profile);
   for (const [assetId, asset] of Object.entries(catalog.assets ?? {})) {
+    if (!selected(assetId)) continue;
     if (asset.status !== 'approved' || !isSpriteAsset(asset)) continue;
     if (asset.animation?.mode === 'deferred' || !asset.animation) { deferred.push({ asset: assetId, reason: asset.animation?.reason ?? 'missing animation disposition' }); continue; }
     if (asset.animation.mode !== 'state-machine') continue;
+    const rigProfile = asset.animation.rig ? catalog.animation_rigs?.[asset.animation.rig.profile] : null;
+    if (rigProfile && asset.animation.rig.slot !== rigProfile.base_slot) continue;
     for (const entry of animationReferences(asset)) try {
       artifacts.push(await renderReviewedClip({ root, catalog, assetId, asset, ...entry, outDir, scale }));
     } catch (error) { errors.push(error.message); }
-    if (asset.animation.control) try { controlSimulations.push(await renderControlSimulation({ root, assetId, asset, outDir, scale })); } catch (error) { errors.push(error.message); }
+    if (asset.animation.layers) for (const entry of animationReferences(asset).filter((reference) => reference.kind === 'state')) try {
+      const composite = await renderLayeredReviewedClip({ root, catalog, assetId, asset, state: entry.state, facing: entry.facing, outDir, scale });
+      if (composite) layeredComposites.push(composite);
+    } catch (error) { errors.push(error.message); }
+    if (asset.animation.control) try { controlSimulations.push(await renderControlSimulation({ root, catalog, assetId, asset, outDir, scale })); } catch (error) { errors.push(error.message); }
   }
-  const report = { schema_version: 1, kind: 'animation-qa-report', valid: errors.length === 0 && deferred.length === 0, catalog: path.resolve(catalogPath), artifacts, control_simulations: controlSimulations, deferred, errors, summary: { animated_assets: new Set(artifacts.map((entry) => entry.asset)).size, controlled_assets: controlSimulations.length, clips: artifacts.length, deferred: deferred.length, errors: errors.length } };
+  for (const [profileId, profile] of Object.entries(catalog.animation_rigs ?? {})) for (const assembly of profile.qa_assemblies ?? []) {
+    if (!selected(assembly.base)) continue;
+    const base = catalog.assets[assembly.base];
+    if (!base || base.animation?.rig?.profile !== profileId) continue;
+    for (const entry of animationReferences(base).filter((reference) => reference.kind === 'state')) try {
+      const composite = await renderLayeredReviewedClip({ root, catalog, assetId: assembly.base, asset: base, state: entry.state, facing: entry.facing, equipment: assembly.equipment, assemblyId: assembly.id, outDir, scale });
+      if (composite) layeredComposites.push(composite);
+    } catch (error) { errors.push(error.message); }
+    if (base.animation.control) try { controlSimulations.push(await renderControlSimulation({ root, catalog, assetId: assembly.base, asset: base, equipment: assembly.equipment, assemblyId: assembly.id, outDir, scale })); } catch (error) { errors.push(error.message); }
+    if (assembly.control && profile.control) try { controlSimulations.push(await renderControlSimulation({ root, catalog, assetId: assembly.base, asset: base, equipment: assembly.equipment, assemblyId: assembly.id, rigProfileId: profileId, outDir, scale })); } catch (error) { errors.push(error.message); }
+  }
+  for (const [assetId, asset] of Object.entries(catalog.assets ?? {})) if (selected(assetId) && asset.animation?.control) {
+    for (const state of [asset.animation.control.idle_state, asset.animation.control.move_state]) {
+      const stateArtifacts = artifacts.filter((entry) => entry.asset === assetId && entry.state === state && entry.facing);
+      if (!stateArtifacts.length) continue;
+      const facingHeights = stateArtifacts.map((entry) => entry.logical_heights.reduce((sum, value) => sum + value, 0) / entry.logical_heights.length);
+      const facingRatio = Math.max(...facingHeights) / Math.min(...facingHeights);
+      if (facingRatio > 1.35) errors.push(`${assetId} state ${state}: directional median scale differs by ${facingRatio.toFixed(2)}x (limit 1.35x)`);
+    }
+  }
+  for (const [assetId, asset] of Object.entries(catalog.assets ?? {})) if (selected(assetId) && asset.status === 'approved' && isSpriteAsset(asset) && asset.animation?.mode === 'state-machine') {
+    const rigProfile = asset.animation.rig ? catalog.animation_rigs?.[asset.animation.rig.profile] : null;
+    if (rigProfile && asset.animation.rig.slot !== rigProfile.base_slot) continue;
+    for (const [stateId, state] of Object.entries(asset.animation.states ?? {})) {
+      if (state.terminal === true) terminalActions.push({ asset: assetId, state: stateId });
+      if (!state.return_to) continue;
+      const facings = state.facings ? Object.keys(state.facings) : [null];
+      for (const facing of facings) try {
+        const actionArtifact = artifacts.find((entry) => entry.asset === assetId && entry.kind === 'state' && entry.state === stateId && entry.facing === facing);
+        if (!actionArtifact) throw new Error(`${assetId} state ${stateId}: missing rendered one-shot artifact${facing ? ` for ${facing}` : ''}`);
+        const returned = asset.animation.states?.[state.return_to]
+          ? resolveAssetAnimation(asset, { state: state.return_to, facing: facing ?? 'south' })
+          : resolveRiggedAnimationState(catalog, asset.animation.rig?.profile, { state: state.return_to, facing: facing ?? 'south' });
+        actionReturns.push({ asset: assetId, state: stateId, facing, clip: actionArtifact.clip, return_to: state.return_to, return_clip: returned.clip, return_flip_x: returned.flip_x });
+      } catch (error) { errors.push(error.message); }
+    }
+  }
+  const animatedIds = new Set(artifacts.map((entry) => entry.asset));
+  const registeredAnimationLayerIds = new Set(Object.entries(catalog.assets ?? {}).filter(([id, descriptor]) => selectedForCoverage(id) && descriptor.status === 'approved' && descriptor.animation?.mode === 'state-machine' && descriptor.tags?.includes('animation-layer')).map(([id]) => id));
+  const animationLayerIds = new Set([...registeredAnimationLayerIds]);
+  const actorIds = new Set([...animatedIds].filter((id) => catalog.assets[id]?.tags?.includes('actor') && !animationLayerIds.has(id)));
+  const objectIds = new Set([...animatedIds].filter((id) => !catalog.assets[id]?.tags?.includes('actor') && !animationLayerIds.has(id)));
+  const temporalIds = new Set(artifacts.filter((entry) => entry.source_frames > 1).map((entry) => entry.asset));
+  const temporalActorIds = new Set([...temporalIds].filter((id) => catalog.assets[id]?.tags?.includes('actor')));
+  const temporalObjectIds = new Set([...temporalIds].filter((id) => !catalog.assets[id]?.tags?.includes('actor') && !animationLayerIds.has(id)));
+  const temporalAnimationLayerIds = new Set([...animationLayerIds].filter((id) => Object.values(catalog.assets[id]?.clips ?? {}).some((clip) => clip.frames?.length > 1)));
+  const layeredIds = new Set(layeredComposites.map((entry) => entry.asset));
+  const report = { schema_version: 1, kind: 'animation-qa-report', valid: errors.length === 0 && deferred.length === 0, catalog: path.resolve(catalogPath), ...(assetSelector ? { asset_selector: assetSelector } : {}), artifacts, layered_composites: layeredComposites, control_simulations: controlSimulations, action_returns: actionReturns, terminal_actions: terminalActions, deferred, errors, summary: { animated_assets: animatedIds.size, animated_actors: actorIds.size, animated_objects: objectIds.size, animation_layer_assets: animationLayerIds.size, temporally_animated_assets: temporalIds.size, temporally_animated_actors: temporalActorIds.size, temporally_animated_objects: temporalObjectIds.size, temporally_animated_layers: temporalAnimationLayerIds.size, layered_assets: layeredIds.size, composite_clips: layeredComposites.length, controlled_assets: controlSimulations.length, action_returns: actionReturns.length, terminal_actions: terminalActions.length, state_clips: artifacts.filter((entry) => entry.kind === 'state').length, transition_clips: artifacts.filter((entry) => entry.kind === 'transition').length, clips: artifacts.length, deferred: deferred.length, errors: errors.length } };
   await writeYaml(path.join(outDir, 'report.yml'), report);
   return report;
 }
@@ -2297,7 +2800,9 @@ export async function renderConnectorQaSet({ root, catalogPath, outDir, scale = 
     const report = await renderConnectorQa({ root, catalogPath, assetId, out: path.join(outDir, `${assetId}.png`), scale });
     outputs[assetId] = { out: report.out, cases: report.cases };
   }
-  return { valid: true, assets: assetIds.length, out_dir: outDir, outputs };
+  const result = { valid: true, catalog: catalogPath, assets: assetIds.length, cases: Object.values(outputs).reduce((sum, entry) => sum + entry.cases, 0), out_dir: outDir, outputs };
+  await writeYaml(path.join(outDir, 'report.yml'), result);
+  return result;
 }
 
 export async function renderHeightQa({ root, catalogPath, assetId, out, scale = 4 }) {
@@ -2336,7 +2841,9 @@ export async function renderHeightQaSet({ root, catalogPath, outDir, scale = 4 }
     const report = await renderHeightQa({ root, catalogPath, assetId, out: path.join(outDir, `${assetId}.png`), scale });
     outputs[assetId] = { out: report.out, transitions: report.transitions.length };
   }
-  return { valid: true, assets: assetIds.length, out_dir: outDir, outputs };
+  const result = { valid: true, catalog: catalogPath, assets: assetIds.length, transitions: Object.values(outputs).reduce((sum, entry) => sum + entry.transitions, 0), out_dir: outDir, outputs };
+  await writeYaml(path.join(outDir, 'report.yml'), result);
+  return result;
 }
 
 export async function renderComponentQa({ root, catalogPath, assetId, out, scale = 3 }) {
@@ -2355,6 +2862,29 @@ export async function renderComponentQa({ root, catalogPath, assetId, out, scale
   }
   await ensureParent(out); await writeFile(out, canvas.toBuffer('image/png'));
   return { out, asset: assetId, components: Object.keys(asset.components).length, frames: entries.length };
+}
+
+/** Render all approved component atlases so every named unit has visual evidence. */
+export async function renderComponentQaSet({ root, catalogPath, outDir, scale = 3 }) {
+  const catalog = await loadAssetCatalog(catalogPath);
+  const assetIds = Object.entries(catalog.assets ?? {}).filter(([, asset]) => asset?.status === 'approved' && asset?.components).map(([id]) => id).sort();
+  if (!assetIds.length) throw new Error('component QA set found no approved component assets');
+  const outputs = {};
+  for (const assetId of assetIds) {
+    const report = await renderComponentQa({ root, catalogPath, assetId, out: path.join(outDir, `${assetId}.png`), scale });
+    outputs[assetId] = { out: report.out, components: report.components, frames: report.frames };
+  }
+  const result = {
+    valid: true,
+    catalog: catalogPath,
+    assets: assetIds.length,
+    components: Object.values(outputs).reduce((sum, entry) => sum + entry.components, 0),
+    frames: Object.values(outputs).reduce((sum, entry) => sum + entry.frames, 0),
+    out_dir: outDir,
+    outputs,
+  };
+  await writeYaml(path.join(outDir, 'report.yml'), result);
+  return result;
 }
 
 export async function explainPrefab({ catalogPath, id, params = {} }) {
@@ -2619,6 +3149,7 @@ async function buildBlobRecipe({ root, recipe }) {
     frames: Object.fromEntries([...positiveFrames, ...negativeFrames]),
     autotile: {
       topology,
+      supported_polarities: hasNegative ? ['positive', 'negative'] : ['positive'],
       outer_corner_mode: outerCornerMode,
       outer_corner_style: outerCornerStyle,
       outer_edge_mode: outerEdgeMode,

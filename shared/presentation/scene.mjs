@@ -18,7 +18,8 @@ const SCENE_FIELDS = new Set(['schema_version', 'kind', 'id', 'catalog', 'style_
 const PLACEMENT_FIELDS = new Set(['id', 'asset', 'frame', 'prefab', 'params', 'at', 'state', 'flip_x', 'rotation', 'opacity', 'role']);
 const COMPOSITION_ROLES = new Set(['focal', 'support', 'detail', 'actor', 'reward', 'hazard']);
 const SIDES = ['north', 'east', 'south', 'west'];
-const PASS = Object.freeze({ terrain: 0, below: 10, shadow: 20, ground: 30, actor: 40, structure: 40, overhead: 60, air: 70, ui: 80 });
+export const PRESENTATION_RENDER_PASSES = Object.freeze({ terrain: 0, below: 10, shadow: 20, ground: 30, actor: 40, structure: 40, overhead: 60, air: 70, ui: 80 });
+const PASS = PRESENTATION_RENDER_PASSES;
 
 function unknownFields(value, fields, prefix, errors) {
   for (const field of Object.keys(value ?? {})) if (!fields.has(field)) errors.push(`${prefix}: unsupported field ${field}`);
@@ -809,7 +810,8 @@ export function compileTopDownScene(authoredCatalog, scene) {
   for (const command of ordered) if (command.provenance?.startsWith('placement:') && command.semantic_role) roleByPlacement.set(command.provenance, command.semantic_role);
   diagnostics.semantic_roles = {};
   for (const role of roleByPlacement.values()) diagnostics.semantic_roles[role] = (diagnostics.semantic_roles[role] ?? 0) + 1;
-  const plan = { schema_version: 2, kind: 'presentation-draw-plan', scene: scene.id, catalog: scene.catalog, style_profile: scene.style_profile, logical_size: scene.logical_size, pixel_scale: scene.pixel_scale, background: scene.background ?? base.fill.color ?? '#000000', grid: { cell, columns, rows }, material_grid: materialGrid, elevation_grid: elevationGrid, commands: ordered, diagnostics };
+  const navigationGrid = Array.from({ length: rows }, (_, y) => Array.from({ length: columns }, (_, x) => walkableCells.has(`${x},${y}`)));
+  const plan = { schema_version: 2, kind: 'presentation-draw-plan', scene: scene.id, catalog: scene.catalog, style_profile: scene.style_profile, logical_size: scene.logical_size, pixel_scale: scene.pixel_scale, background: scene.background ?? base.fill.color ?? '#000000', grid: { cell, columns, rows }, material_grid: materialGrid, elevation_grid: elevationGrid, navigation_grid: navigationGrid, commands: ordered, diagnostics };
   plan.hash = hashDrawPlan(plan);
   return deepFreeze(plan);
 }

@@ -41,6 +41,7 @@ npm run gaming:assets -- metadata-coverage \
 npm run gaming:assets -- animation-coverage \
   --root "$DAYLIGHT_BASE_PATH/media/games/_common" \
   --catalog "$DAYLIGHT_BASE_PATH/media/games/_common/catalog/showcase-v2/catalog.yml" \
+  --dispositions "$DAYLIGHT_BASE_PATH/media/games/_common/catalog/animation-source-dispositions.yml" \
   --out "$DAYLIGHT_BASE_PATH/media/games/_common/catalog/generated/animation-metadata-coverage.yml"
 
 # Decode and render every reachable clip at a fixed catalog anchor, plus a
@@ -48,15 +49,24 @@ npm run gaming:assets -- animation-coverage \
 npm run gaming:assets -- animation-qa-set \
   --root "$DAYLIGHT_BASE_PATH/media/games/_common" \
   --catalog "$DAYLIGHT_BASE_PATH/media/games/_common/catalog/showcase-v2/catalog.yml" \
-  --out-dir "$DAYLIGHT_BASE_PATH/media/games/_common/previews/qa/animation-v1" \
+  --out-dir "$DAYLIGHT_BASE_PATH/media/games/_common/previews/qa/animation-v2" \
+  --scale 4
+
+# During metadata authoring, render one asset or id prefix without weakening
+# whole-catalog validation. For example, this selects every chicken variant.
+npm run gaming:assets -- animation-qa-set \
+  --root "$DAYLIGHT_BASE_PATH/media/games/_common" \
+  --catalog "$DAYLIGHT_BASE_PATH/media/games/_common/catalog/showcase-v2/catalog.yml" \
+  --out-dir /tmp/chicken-animation-qa \
+  --asset animal.chicken \
   --scale 4
 ```
 
 Inventory records every non-hidden file with source-relative path, SHA-256, byte size, detected MIME type, modified time, source pack, nearest readme/license, and license scope. PNG records add dimensions, colour mode, alpha, and candidate square cell sizes. Use `--source assets` for the canonical coverage ledger; the command's `sprites` default is only for auditing the untouched vendor dump. `metadata-coverage` rejects an inventory generated from any source other than `assets`. The optional reports directory receives separate `duplicates.yml`, `issues.yml`, and `non-images.yml` reports. Contact sheets label filename, dimensions, candidate cells, and catalog review status. Candidate frame sizes are hints only; authors must explicitly define sheet geometry and named clips.
 
-`terrain-sweep` verifies the curated topology backlog against the canonical tree. Every PNG below a `tiles/` directory must be assigned to a reviewed family or match an explicit non-topology exclusion; a newly added, unclassified tile sheet makes the command fail. It also measures topology sheets found outside `tiles/`, including sewer, autumn, legacy cave, interior-wall, fence, and bridge systems. `cataloged` families name approved, hash-pinned evidence whose provenance points back to measured sources. `quarantined` families name deferred entries and explicitly remain unavailable at runtime.
+`terrain-sweep` verifies the curated topology backlog against the canonical tree. Every PNG below a `tiles/` directory must be assigned to a reviewed family or match an explicit non-topology exclusion; a newly added, unclassified tile sheet makes the command fail. It also measures topology sheets found outside `tiles/`, including sewer, autumn, legacy cave, interior-wall, fence, and bridge systems. `cataloged` families name approved, hash-pinned evidence whose provenance points back to measured sources. They must also link passing autotile, height, connector, and component QA reports; catalog presence alone is not evidence. The audit rejects stale required-metadata claims, unsupported topology capabilities, missing inside corners, undeclared polarities, and cataloged assets absent from QA. `quarantined` families remain unavailable at runtime but still require hash-pinned geometry and named-frame metadata so quarantine is not an excuse for an opaque sheet.
 
-`metadata-coverage` is the whole-library companion gate. It rechecks every PNG against the generated inventory, verifies dimensions and hashes have not drifted, requires a known license scope, and verifies every runtime catalog source has explicit density, geometry, named frames, world metadata, and a matching source hash. Its dispositions are intentionally honest: `runtime_reviewed` means semantic frames are approved, `derivation_provenance` means a raw source backs a deterministic derived asset, and `deferred_measured` means the source is known but remains unavailable until its frames and meanings are curated. The generated `sources` array retains that evidence and disposition for every canonical file, making the remaining backlog enumerable rather than implicit. One hundred percent disposition coverage must never be reported as one hundred percent semantic readiness; the report exposes both figures.
+`metadata-coverage` is the whole-library companion gate. It rechecks every PNG against the generated inventory, verifies dimensions and hashes have not drifted, requires a known license scope, and verifies every runtime catalog source has explicit density, geometry, named frames, world metadata, and a matching source hash. Its dispositions are intentionally honest: `runtime_reviewed` means semantic frames are approved, `derivation_provenance` means a raw source backs a deterministic derived asset, and `deferred_measured` means the source is known but remains unavailable until its frames and meanings are curated. The generated `sources` array retains that evidence and disposition for every canonical file, making the remaining backlog enumerable rather than implicit. One hundred percent disposition coverage must never be reported as one hundred percent semantic readiness; the report exposes both figures. `animation-coverage` also decodes every runtime source, aggregates all assets sharing the same source/grid, excludes truly empty cells, and reports how many visible cells or full-source freeform regions are actually named. It reports `runtime_valid`, `disposition_valid`, and `library_complete`: a green runtime catalog, a fully classified backlog, or one named preview cell from a large atlas cannot turn the strict library-complete result green.
 
 ## Unit previews
 
@@ -79,7 +89,15 @@ npm run gaming:assets -- animate \
 
 The result is an animated GIF with nearest-neighbour scaling. The tool fails when a requested frame is outside the source sheet.
 
-Raw `animate` is an authoring probe, not acceptance evidence. `animation-qa-set` resolves catalog state/facing mappings, normalizes `pixel_density`, rechecks source hashes and exact alpha bounds, aligns every phase on its ground/custom anchor, enforces scale classes, and emits both GIFs and phase strips. Controlled actors also receive a logical-grid simulation that drives idle, east, north, west, and south movement through the same resolver used by hosts. Its report remains invalid while any runtime sprite is explicitly deferred, even when all currently reviewed animations render without errors.
+Raw `animate` is an authoring probe, not acceptance evidence. `animation-qa-set` resolves catalog state/facing mappings and object transitions, normalizes `pixel_density`, rechecks source hashes and exact alpha bounds for every reachable frame, aligns every phase on its ground/custom anchor, enforces scale classes and clip silhouette-stability profiles, and emits both GIFs and phase strips. Catalog validation also rejects continuous alpha crossing undeclared internal grid seams, which catches dimensions that divide the source cleanly while slicing actors in half. Locomoting actors must declare their complete four-way or horizontal facing scheme; `authored_facings` distinguishes distinct source directions from catalog-owned mirrors and fails if authored art is replaced with `flip_x` or a shared clip. Controlled actors receive a scheme-aware logical-grid simulation through the same resolver used by hosts: cardinal idle/movement for four-way actors and east/west idle/movement for side-scrollers. Every one-shot actor/object/effect state must return or terminate; interactable/destructible objects additionally require stable states and one-shot endpoint-checked transitions. Catalog-owned `animation.layers` must match their base actor's states, facings, flips, timing, normalized geometry, and anchors. Runtime-selectable `animation_rigs` add deterministic semantic slots, state-scoped tools/mounts, mounted `qa_assemblies`, synchronized composite GIFs/strips, and rigged control simulations. An intentionally empty registered equipment phase uses `transparent: true`; decoded QA proves it is actually empty instead of accepting an unmeasured omission. The report splits animated actors, animated objects/effects, animation-only layers, state clips, transition clips, action-return resolutions, and terminal actions so one category cannot hide another. `--asset <id-or-prefix>` narrows artifact rendering for iteration but still validates the entire catalog first. The report remains invalid while any selected runtime sprite is explicitly deferred, even when all currently reviewed animations render without errors.
+
+Split-sheet rigs use profile `state_bases` so one logical actor can select a different registered base PNG for idle, run, attack, fishing, or riding without leaking filenames into gameplay. Their profile may also own `control` for cross-sheet idle/run simulation. Use slot `registration: custom-anchor` only for a deliberately wider effect/tool canvas whose phases share reviewed world anchors with the base; clothes and body layers continue to require exact normalized frame geometry.
+
+The reports separately count state-machine assets and genuinely temporal assets with multi-frame clips. A one-frame kinematic projectile remains fully reviewed without being misreported as temporal animation.
+
+Use `motion: kinematic` for an authored single pose that the host translates, such as a slide or projectile. Do not duplicate one frame merely to satisfy the two-phase requirement for true `locomotion` or `in-place` animation.
+
+Use `qa_profile: mechanism` only for reviewed machinery whose visible envelope legitimately collapses or extends beyond the normal `transform` bounds (for example a retracting spike gate). It remains a finite spatial check, not an escape hatch.
 
 ## Assembly previews
 
@@ -194,7 +212,7 @@ npm run gaming:assets -- scene \
 
 That scene uses one `world_scale`, content-aware custom ground anchors, a tiled `ground`, viewport-edge `continues` declarations, deterministic terrain variants, y-depth ordering, explicit contact shadows, and visible-alpha clipping enforcement. A render is rejected when visible pixels leave the viewport unless the scene deliberately sets `fail_on_clipping: false`.
 
-`autotile` declares `topology: cardinal-4` for simple shapes or `cardinal-4+diagonal-corners` for bends and junctions, with a `positive` map for a lake plus an optional `negative` map for an island. Each map names every reviewed neighbour mask (`n`, `ne`, `nes`, ..., `nesw`) or an explicit `fallback`. Diagonal topology additionally requires `inner_corners`; a cell with a missing shared diagonal fails instead of silently rendering a square center tile. A fallback is acceptable only during curation and must not be used as evidence that shoreline corners are reviewed.
+`autotile` declares `topology: cardinal-4` for simple shapes or `cardinal-4+diagonal-corners` for bends and junctions. `supported_polarities: [positive]` is an explicit positive-region limitation; `[positive, negative]` supports both a lake and its island/hole inverse. Every declared polarity must have its own map, no undeclared map is accepted, and a terrain interface cannot request an unsupported polarity. Each map names every reviewed neighbour mask (`n`, `ne`, `nes`, ..., `nesw`) or an explicit `fallback`. Diagonal topology additionally requires `inner_corners` for every supported polarity; a cell with a missing shared diagonal fails instead of silently rendering a square center tile. A fallback is acceptable only during curation and must not be used as evidence that shoreline corners are reviewed.
 
 Run exhaustive unit evidence before promotion:
 
@@ -205,12 +223,11 @@ npm run gaming:assets -- connector-qa-set --root /path/to/_common \
   --catalog /path/to/_common/catalog/fence-connectors.yml --out-dir /tmp/connectors
 npm run gaming:assets -- height-qa-set --root /path/to/_common \
   --catalog /path/to/_common/catalog/terrain-heights.yml --out-dir /tmp/heights
-npm run gaming:assets -- component-qa --root /path/to/_common \
-  --catalog /path/to/_common/catalog/terrain-components.yml \
-  --asset components.volcano.atlas --out /tmp/volcano-components.png
+npm run gaming:assets -- component-qa-set --root /path/to/_common \
+  --catalog /path/to/_common/catalog/terrain-components.yml --out-dir /tmp/components
 ```
 
-Topology QA renders every cardinal mask, both declared polarities, all fifteen compound concavities, and every temporal phase. Connector matrices mark measured ports; height matrices assemble ordered bands; component matrices expose each mixed-atlas subsystem.
+Every set command writes `report.yml`. Topology QA renders every cardinal mask, every declared polarity, all fifteen compound concavities, and every temporal phase. Connector matrices mark measured ports; height matrices assemble ordered bands; component matrices expose each mixed-atlas subsystem. The terrain sweep consumes these reports and refuses to call a family cataloged when any evidence asset is absent.
 
 Reproducible normalization regenerates PNGs and catalog hashes together:
 
