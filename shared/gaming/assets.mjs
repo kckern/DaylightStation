@@ -1,6 +1,7 @@
 const ASSET_ID = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/;
 const FRAME_ANCHORS = new Set(['top-left', 'top-center', 'top-right', 'center-left', 'center', 'center-right', 'bottom-left', 'bottom-center', 'bottom-right']);
 const APPROVED_LICENSE_SCOPES = new Set(['core-commercial', 'characters-commercial', 'desert-commercial', 'dungeons-commercial', 'free-noncommercial', 'halloween-commercial', 'ui-commercial', 'volcano-commercial', 'legacy-private-use']);
+const AUTOTILE_POLARITIES = ['positive', 'negative'];
 
 function isPair(value, { positive = false } = {}) {
   return Array.isArray(value) && value.length === 2 && value.every((part) => Number.isInteger(part) && (positive ? part > 0 : part >= 0));
@@ -187,12 +188,18 @@ export function validateAssetCatalog(catalog) {
     }
     if (asset?.autotile !== undefined) {
       if (asset.kind !== 'tile-sheet' || !['cardinal-4', 'cardinal-4+diagonal-corners'].includes(asset.autotile?.topology)) errors.push(`${prefix}: autotile requires a supported tile-sheet topology`);
+      const supportedPolarities = asset.autotile?.supported_polarities;
+      if (!Array.isArray(supportedPolarities) || !supportedPolarities.length || new Set(supportedPolarities).size !== supportedPolarities.length || supportedPolarities.some((polarity) => !AUTOTILE_POLARITIES.includes(polarity))) {
+        errors.push(`${prefix}: autotile supported_polarities must explicitly contain positive and/or negative`);
+      }
       if (asset.autotile?.outer_corner_mode !== undefined && !['quarter-composite', 'native'].includes(asset.autotile.outer_corner_mode)) errors.push(`${prefix}: autotile outer_corner_mode must be quarter-composite or native`);
       if (asset.autotile?.outer_edge_mode !== undefined && !['quarter-composite', 'native'].includes(asset.autotile.outer_edge_mode)) errors.push(`${prefix}: autotile outer_edge_mode must be quarter-composite or native`);
       if (asset.autotile?.outer_corner_style !== undefined && !['square', 'rounded'].includes(asset.autotile.outer_corner_style)) errors.push(`${prefix}: autotile outer_corner_style must be square or rounded`);
-      for (const polarity of ['positive', 'negative']) {
+      for (const polarity of AUTOTILE_POLARITIES) {
         const mapping = asset.autotile?.[polarity];
-        if (polarity === 'positive' && (!mapping || typeof mapping !== 'object')) errors.push(`${prefix}: autotile needs a positive mapping`);
+        const declared = supportedPolarities?.includes(polarity);
+        if (declared && (!mapping || typeof mapping !== 'object' || Array.isArray(mapping))) errors.push(`${prefix}: declared ${polarity} polarity needs a mapping`);
+        if (!declared && mapping !== undefined) errors.push(`${prefix}: autotile ${polarity} mapping is not declared in supported_polarities`);
         if (mapping && typeof mapping === 'object') {
           for (const [mask, frameId] of Object.entries(mapping)) {
             if (!['fallback', 'isolated'].includes(mask) && !/^(?:n)?(?:e)?(?:s)?(?:w)?$/.test(mask)) errors.push(`${prefix}: autotile ${polarity} mask is invalid: ${mask}`);
@@ -215,6 +222,10 @@ export function validateAssetCatalog(catalog) {
             if (mode === 'composite' && key.includes('-')) errors.push(`${prefix}: composite inside-corner maps use single corner keys, not ${key}`);
             if (!ASSET_ID.test(String(frameId)) || !asset.frames?.[frameId]) errors.push(`${prefix}: inside-corner key references unknown frame: ${frameId}`);
           }
+        }
+        for (const polarity of supportedPolarities ?? []) {
+          const map = innerCorners?.[polarity] ?? (innerCorners?.positive || innerCorners?.negative ? undefined : innerCorners);
+          if (!map) errors.push(`${prefix}: declared ${polarity} polarity needs an inside-corner map`);
         }
       }
       if (asset.autotile?.animation !== undefined) {
@@ -263,6 +274,15 @@ export function validateAssetCatalog(catalog) {
             const keys = ['nw', 'n', 'ne', 'w', 'e', 'sw', 's', 'se'];
             if (!['border', 'hazard'].includes(component.role) || !component.outline || typeof component.outline !== 'object' || Array.isArray(component.outline) || keys.some((key) => !asset.frames?.[component.outline[key]])) errors.push(`${prefix}: component ${componentId} outline must map nw/n/ne/w/e/sw/s/se to frames for a border or hazard`);
             if (component.interior !== undefined && !asset.frames?.[component.interior]) errors.push(`${prefix}: component ${componentId} interior references unknown frame`);
+          }
+          if (component.transitions !== undefined) {
+            if (!component.transitions || typeof component.transitions !== 'object' || Array.isArray(component.transitions)) errors.push(`${prefix}: component ${componentId} transitions must be a direction map`);
+            else for (const [direction, sequence] of Object.entries(component.transitions)) {
+              if (!['north', 'east', 'south', 'west'].includes(direction) || !Array.isArray(sequence) || !sequence.length || sequence.some((frameId) => !component.frames.includes(frameId))) errors.push(`${prefix}: component ${componentId} transition ${direction} must use component frames`);
+            }
+          }
+          if (component.directional_frames !== undefined) {
+            if (!component.directional_frames || typeof component.directional_frames !== 'object' || Array.isArray(component.directional_frames) || Object.entries(component.directional_frames).some(([direction, frameId]) => !['north', 'east', 'south', 'west'].includes(direction) || !component.frames.includes(frameId))) errors.push(`${prefix}: component ${componentId} directional_frames must map directions to component frames`);
           }
         }
       }

@@ -8,6 +8,10 @@ import {
   createPresentationAdapterRegistry,
   presentationAction,
   resolveAssetAnimation,
+  resolveAssetAnimationTransition,
+  resolveRiggedAssetAnimation,
+  resolveRiggedAnimationState,
+  resolveCatalogFrame,
   validatePresentationCatalog,
   validateTopDownScene,
 } from './index.mjs';
@@ -53,6 +57,146 @@ test('controlled animation fails closed when a direction or locomotion mapping i
   assert.throws(() => resolveAssetAnimation(actor, { moving: true, facing: 'west' }), /unknown clip missing/);
 });
 
+test('animation clips reject unknown spatial QA profiles and fields', () => {
+  const actor = directionalActor();
+  actor.clips['run.right'].qa_profile = 'rubber';
+  assert.throws(() => resolveAssetAnimation(actor, { moving: true, facing: 'east' }), /qa_profile must be tight, expressive, transform, or mechanism/);
+  actor.clips['run.right'].qa_profile = 'tight';
+  actor.clips['run.right'].mystery = true;
+  assert.throws(() => resolveAssetAnimation(actor, { moving: true, facing: 'east' }), /mystery is unknown/);
+});
+
+test('uncontrolled locomotion declares and fulfills its supported facing scheme', () => {
+  const actor = directionalActor();
+  delete actor.animation.control;
+  delete actor.animation.states.idle.facings.north;
+  delete actor.animation.states.idle.facings.south;
+  delete actor.animation.states.run.facings.north;
+  delete actor.animation.states.run.facings.south;
+  for (const clip of ['idle.down', 'idle.up', 'run.down', 'run.up']) delete actor.clips[clip];
+  assert.throws(() => resolveAssetAnimation(actor, { state: 'run', facing: 'west' }), /must declare a state or animation facing_scheme/);
+  actor.animation.facing_scheme = 'horizontal';
+  assert.equal(resolveAssetAnimation(actor, { state: 'run', facing: 'west' }).flip_x, true);
+  delete actor.animation.states.run.facings.west;
+  assert.throws(() => resolveAssetAnimation(actor, { state: 'run', facing: 'west' }), /horizontal scheme lacks west facing/);
+});
+
+test('individual actor states may narrow a four-way actor to honestly authored horizontal facings', () => {
+  const actor = directionalActor();
+  actor.animation.states.rest = { motion: 'stationary', facing_scheme: 'horizontal', facings: { east: 'idle.right', west: { clip: 'idle.right', flip_x: true } } };
+  assert.equal(resolveAssetAnimation(actor, { state: 'rest', facing: 'west' }).flip_x, true);
+  delete actor.animation.states.rest.facing_scheme;
+  assert.throws(() => resolveAssetAnimation(actor, { state: 'rest', facing: 'west' }), /declared four-way scheme lacks north facing/);
+  actor.animation.states.rest.facing_scheme = 'diagonal';
+  assert.throws(() => resolveAssetAnimation(actor, { state: 'rest', facing: 'west' }), /facing_scheme must be four-way or horizontal/);
+});
+
+test('authored facings cannot silently degrade into mirrored or shared source clips', () => {
+  const actor = directionalActor();
+  actor.clips['idle.left'] = { frames: ['idle.right'], fps: 1 };
+  actor.clips['run.left'] = { frames: ['run.right.0', 'run.right.1'], fps: 8 };
+  actor.animation.authored_facings = ['east', 'west'];
+  actor.animation.states.idle.facings.west = 'idle.left';
+  actor.animation.states.run.facings.west = 'run.left';
+  assert.equal(resolveAssetAnimation(actor, { moving: true, facing: 'west' }).clip, 'run.left');
+  actor.animation.states.run.facings.west = { clip: 'run.right', flip_x: true };
+  assert.throws(() => resolveAssetAnimation(actor, { moving: true, facing: 'west' }), /authored facing west cannot be synthesized/);
+  actor.animation.states.run.facings.west = 'run.right';
+  assert.throws(() => resolveAssetAnimation(actor, { moving: true, facing: 'west' }), /authored facings must reference distinct source clips/);
+});
+
+test('runtime equipment resolves through validated rig slots in catalog order', () => {
+  const base = directionalActor(); base.tags.push('actor'); base.animation.rig = { profile: 'player.default', slot: 'body' };
+  const hat = structuredClone(base); hat.tags = ['animation-layer']; delete hat.animation.control; hat.animation.rig = { profile: 'player.default', slot: 'head' };
+  const catalog = { animation_rigs: { 'player.default': { base_slot: 'body', slots: { body: { order: 0, required: true }, head: { order: 20 } } } }, assets: { 'player.base': base, 'layer.hat': hat } };
+  const resolved = resolveRiggedAssetAnimation(catalog, 'player.base', { moving: true, facing: 'west', equipment: { head: 'layer.hat' } });
+  assert.deepEqual(resolved.layers.map((layer) => [layer.asset, layer.role, layer.clip, layer.flip_x]), [
+    ['player.base', 'body', 'run.right', true], ['layer.hat', 'head', 'run.right', true],
+  ]);
+  assert.throws(() => resolveRiggedAssetAnimation(catalog, 'player.base', { equipment: { head: 'player.base' } }), /incompatible/);
+});
+
+test('state-scoped rig equipment participates only in its registered actor actions', () => {
+  const base = directionalActor(); base.animation.rig = { profile: 'player.default', slot: 'body' };
+  const tool = structuredClone(base); tool.tags = ['animation-layer']; delete tool.animation.control;
+  tool.animation.states = { run: tool.animation.states.run }; tool.animation.default_state = 'run';
+  tool.animation.rig = { profile: 'player.default', slot: 'tool-top', states: ['run'] };
+  tool.clips = Object.fromEntries(Object.entries(tool.clips).filter(([id]) => id.startsWith('run.')));
+  const catalog = { animation_rigs: { 'player.default': { base_slot: 'body', slots: { body: { order: 0, required: true }, 'tool-top': { order: 20 } } } }, assets: { 'player.base': base, 'tool.axe': tool } };
+  assert.deepEqual(resolveRiggedAssetAnimation(catalog, 'player.base', { state: 'idle', equipment: { 'tool-top': 'tool.axe' } }).layers.map((layer) => layer.asset), ['player.base']);
+  assert.deepEqual(resolveRiggedAssetAnimation(catalog, 'player.base', { state: 'run', facing: 'east', equipment: { 'tool-top': 'tool.axe' } }).layers.map((layer) => layer.asset), ['player.base', 'tool.axe']);
+  assert.deepEqual(resolveRiggedAssetAnimation(catalog, 'player.base', { state: 'run', facing: 'east', equipment: { 'tool-top': { states: { run: 'tool.axe' } } } }).layers.map((layer) => layer.asset), ['player.base', 'tool.axe']);
+});
+
+test('split-sheet rigs resolve a logical state through the catalog-owned base registry', () => {
+  const idle = directionalActor(); idle.animation.states = { idle: idle.animation.states.idle }; idle.animation.default_state = 'idle'; delete idle.animation.control; idle.animation.facing_scheme = 'four-way'; idle.animation.rig = { profile: 'player.legacy', slot: 'body', states: ['idle'] };
+  idle.clips = Object.fromEntries(Object.entries(idle.clips).filter(([id]) => id.startsWith('idle.')));
+  const run = directionalActor(); run.animation.states = { run: run.animation.states.run }; run.animation.default_state = 'run'; delete run.animation.control; run.animation.facing_scheme = 'four-way'; run.animation.rig = { profile: 'player.legacy', slot: 'body', states: ['run'] };
+  run.clips = Object.fromEntries(Object.entries(run.clips).filter(([id]) => id.startsWith('run.')));
+  const catalog = { animation_rigs: { 'player.legacy': { base_slot: 'body', slots: { body: { order: 0, required: true } }, state_bases: { idle: 'player.idle', run: 'player.run' } } }, assets: { 'player.idle': idle, 'player.run': run } };
+  assert.equal(resolveRiggedAnimationState(catalog, 'player.legacy', { state: 'run', facing: 'west' }).layers[0].asset, 'player.run');
+  assert.throws(() => resolveRiggedAnimationState(catalog, 'player.legacy', { state: 'jump' }), /no base registered/);
+});
+
+test('kinematic motion represents a host-translated single pose without inventing animation phases', () => {
+  const actor = directionalActor();
+  delete actor.animation.control;
+  actor.animation.facing_scheme = 'four-way';
+  actor.animation.states.run.motion = 'kinematic';
+  actor.clips['run.down'].frames = ['run.down.0'];
+  actor.clips['run.up'].frames = ['run.up.0'];
+  actor.clips['run.right'].frames = ['run.right.0'];
+  assert.equal(resolveAssetAnimation(actor, { state: 'run', facing: 'west' }).motion, 'kinematic');
+});
+
+test('stateful objects require endpoint-checked transitions between stable states', () => {
+  const chest = {
+    tags: ['item', 'interactable'],
+    frames: { closed: { cell: [0, 0] }, opening: { cell: [1, 0] }, opened: { cell: [2, 0] } },
+    clips: {
+      closed: { frames: ['closed'], fps: 1, loop: 'loop' },
+      opened: { frames: ['opened'], fps: 1, loop: 'loop' },
+      opening: { frames: ['closed', 'opening', 'opened'], fps: 8, loop: 'once' },
+    },
+    animation: {
+      mode: 'state-machine', default_state: 'closed',
+      states: { closed: { motion: 'stationary', clip: 'closed' }, opened: { motion: 'stationary', clip: 'opened' } },
+      transitions: { open: { from: 'closed', to: 'opened', clip: 'opening' } },
+    },
+  };
+  assert.deepEqual(resolveAssetAnimationTransition(chest, 'open', { from: 'closed' }), {
+    mode: 'transition', transition: 'open', from: 'closed', to: 'opened', facing: 'south', clip: 'opening', flip_x: false,
+  });
+  chest.clips.opening.frames[2] = 'opening';
+  assert.throws(() => resolveAssetAnimationTransition(chest, 'open'), /must end on state opened/);
+});
+
+test('one-shot object and effect states return or terminate instead of freezing', () => {
+  const effect = {
+    tags: ['effect'], frames: { ready: { cell: [0, 0] }, flash: { cell: [1, 0] } },
+    clips: {
+      ready: { frames: ['ready'], fps: 1, loop: 'loop' },
+      flash: { frames: ['flash'], fps: 8, loop: 'once' },
+    },
+    animation: { mode: 'state-machine', default_state: 'ready', states: {
+      ready: { motion: 'stationary', clip: 'ready' }, flash: { motion: 'stationary', clip: 'flash' },
+    } },
+  };
+  assert.throws(() => resolveAssetAnimation(effect, { state: 'flash' }), /one-shot state needs exactly one/);
+  effect.animation.states.flash.return_to = 'ready';
+  effect.clips.flash.qa_profile = 'mechanism';
+  assert.equal(resolveAssetAnimation(effect, { state: 'flash' }).clip, 'flash');
+});
+
+test('static composition resolves semantic clip and state names to reviewed first frames', () => {
+  const actor = directionalActor();
+  actor.status = 'approved';
+  const catalog = { assets: { hero: actor } };
+  assert.equal(resolveCatalogFrame(catalog, 'hero#run.down').frameId, 'run.down.0');
+  assert.equal(resolveCatalogFrame(catalog, 'hero#run').frameId, 'run.down.0');
+  assert.equal(resolveCatalogFrame(catalog, 'hero#idle').frameId, 'idle.down');
+});
+
 const gamingRoot = process.env.DAYLIGHT_GAMING_ROOT
   ?? (process.env.DAYLIGHT_BASE_PATH
     ? path.join(process.env.DAYLIGHT_BASE_PATH, 'media', 'games', '_common')
@@ -69,7 +213,7 @@ function loadMountedCatalog() {
 
 function topologyCatalog() {
   const world = { footprint: { size: [16, 16] }, scale_class: 'terrain', allowed_materials: ['*'], allowed_surfaces: ['solid'], allowed_planes: ['ground'], allowed_biomes: ['*'], boundary_policy: 'allow', render_layer: 'ground', collision: 'passable' };
-  const asset = (overrides) => ({ status: 'approved', source: 'assets/test.png', source_sha256: '0'.repeat(64), pixel_density: 1, style_profile: 'pixel16.topdown', edge_policy: 'seamless', geometry: { layout: 'grid', cell: [16, 16], grid: [4, 4] }, world, ...overrides });
+  const asset = (overrides) => ({ status: 'approved', source: 'assets/test.png', source_sha256: '0'.repeat(64), pixel_density: 1, style_profile: 'pixel16.topdown', edge_policy: 'seamless', kind: 'tile-sheet', geometry: { layout: 'grid', cell: [16, 16], grid: [4, 4] }, world, ...overrides });
   return {
     schema_version: 2, kind: 'presentation-catalog', pack: { id: 'topology-test', style_profile: 'pixel16.topdown', logical_cell: [16, 16] },
     style_profiles: { 'pixel16.topdown': { logical_cell: [16, 16], sampling: 'nearest', base_pixel: 1, scale_classes: { terrain: { logical_height: [1, 32] } }, composition: { sector_grid: [3, 3], minimum_occupied_sectors: 1, visual_coverage: [0, 1], minimum_navigation_connectivity: 0, maximum_repeat_ratio: 1, minimum_role_diversity: 1, maximum_role_ratio: 1 } } },
@@ -77,7 +221,7 @@ function topologyCatalog() {
       'terrain.grass': asset({ frames: { fill: { cell: [0, 0] } }, world: { ...world, allowed_surfaces: ['solid', 'liquid', 'void'] } }),
       'terrain.water': asset({
         frames: { base: { cell: [0, 0] }, 'inner.nw': { cell: [1, 0] }, 'inner.ne': { cell: [1, 0] }, 'inner.se': { cell: [1, 0] }, 'inner.sw': { cell: [1, 0] } },
-        autotile: { topology: 'cardinal-4+diagonal-corners', positive: { fallback: 'base', nesw: 'base' }, inner_corner_mode: 'composite', inner_corners: { positive: { nw: 'inner.nw', ne: 'inner.ne', se: 'inner.se', sw: 'inner.sw' } } },
+        autotile: { topology: 'cardinal-4+diagonal-corners', supported_polarities: ['positive'], positive: { fallback: 'base', nesw: 'base' }, inner_corner_mode: 'composite', inner_corners: { positive: { nw: 'inner.nw', ne: 'inner.ne', se: 'inner.se', sw: 'inner.sw' } } },
       }),
       'connector.fence': asset({
         frames: { start: { cell: [0, 0] }, middle: { cell: [1, 0] }, end: { cell: [2, 0] } },
@@ -124,6 +268,8 @@ test('strict v2 catalog and all mounted showcase scenes compile deterministicall
     assert.equal(first.hash, second.hash, file);
     assert.ok(Object.isFrozen(first)); assert.ok(Object.isFrozen(first.commands));
     assert.equal(first.material_grid.length, first.grid.rows);
+    assert.equal(first.navigation_grid.length, first.grid.rows);
+    assert.equal(first.navigation_grid.every((row) => row.length === first.grid.columns && row.every((cell) => typeof cell === 'boolean')), true);
     assert.equal(first.elevation_grid.length, first.grid.rows);
     assert.equal(first.commands.some((command) => 'source' in command || 'image_url' in command), false);
     assert.equal(first.diagnostics.overlaps.length, 0);
@@ -255,6 +401,30 @@ test('rounded terrain interfaces require matching reviewed outer-corner semantic
   assert.ok(validatePresentationCatalog(catalog).errors.some((error) => error.includes('asset outer_corner_style must match rounded')));
 });
 
+test('terrain interfaces cannot request an unsupported autotile polarity', () => {
+  const catalog = topologyCatalog();
+  catalog.terrain_interfaces.shore.polarity = 'negative';
+  assert.match(validatePresentationCatalog(catalog).errors.join('\n'), /does not support declared negative polarity/);
+});
+
+test('frame effect envelopes require reviewed ground and subject-scale references', () => {
+  const catalog = topologyCatalog();
+  const asset = catalog.assets['terrain.grass'];
+  asset.frames.fill.content_bounds = [0, 0, 16, 16];
+  asset.frames.effect = {
+    cell: [1, 0], content_bounds: [0, 0, 16, 16],
+    anchor: { point: [8, 12] },
+    ground_contact: { point: [8, 12], reason: 'subject feet remain above the effect envelope' },
+    scale_reference: 'fill',
+  };
+  assert.equal(validatePresentationCatalog(catalog).valid, true);
+  asset.frames.effect.ground_contact.point = [8, 13];
+  assert.match(validatePresentationCatalog(catalog).errors.join('\n'), /ground_contact point must equal its custom anchor/);
+  asset.frames.effect.ground_contact.point = [8, 12];
+  asset.frames.effect.scale_reference = 'missing';
+  assert.match(validatePresentationCatalog(catalog).errors.join('\n'), /scale_reference must name another frame/);
+});
+
 test('multi-material joins compose topology-compatible target-palette variants by contact wedge', () => {
   const catalog = topologyCatalog();
   catalog.assets['terrain.water.field-palette'] = {
@@ -264,7 +434,7 @@ test('multi-material joins compose topology-compatible target-palette variants b
     source_sha256: '1'.repeat(64),
   };
   catalog.materials.path = { ...catalog.materials.grass, fill: { asset: 'terrain.grass', frame: 'fill' } };
-  catalog.assets['terrain.grass'].autotile = { topology: 'cardinal-4', positive: { fallback: 'fill' } };
+  catalog.assets['terrain.grass'].autotile = { topology: 'cardinal-4', supported_polarities: ['positive'], positive: { fallback: 'fill' } };
   catalog.terrain_interfaces['grass-to-path'] = { inside: 'grass', outside: 'path', asset: 'terrain.grass', polarity: 'positive' };
   catalog.terrain_interfaces['grass-to-water'] = { inside: 'grass', outside: 'water', asset: 'terrain.grass', polarity: 'positive' };
   catalog.terrain_interfaces['water-to-path'] = { inside: 'water', outside: 'path', asset: 'terrain.water', polarity: 'positive' };
@@ -282,7 +452,7 @@ test('multi-material joins compose topology-compatible target-palette variants b
   assert.deepEqual(fieldWedge.clip_polygon, [[0, 16], [0, 0], [8, 8]]);
   assert.ok(plan.commands.some((command) => command.provenance === 'interface:water-to-path' && command.at[0] === 16 && command.at[1] === 16 && command.clip_polygon === undefined));
 
-  catalog.assets['terrain.water.field-palette'].autotile = { topology: 'cardinal-4', positive: { fallback: 'base' } };
+  catalog.assets['terrain.water.field-palette'].autotile = { topology: 'cardinal-4', supported_polarities: ['positive'], positive: { fallback: 'base' } };
   assert.throws(() => compileTopDownScene(catalog, scene), /incompatible interface assets at a multi-material join/);
 });
 
@@ -534,6 +704,25 @@ test('catalog requires complete style-level composition contracts', () => {
   const result = validatePresentationCatalog(catalog);
   assert.equal(result.valid, false);
   assert.ok(result.errors.some((error) => error.includes('composition.visual_coverage')));
+});
+
+test('runtime catalogs validate the safe API projection without private integrity fields', () => {
+  const catalog = topologyCatalog();
+  catalog.kind = 'presentation-runtime-catalog';
+  for (const [id, asset] of Object.entries(catalog.assets)) {
+    delete asset.source;
+    delete asset.source_sha256;
+    delete asset.provenance;
+    delete asset.distribution;
+    asset.image_url = `/api/v1/presentation/catalogs/topology-test/assets/${id}/image`;
+  }
+  assert.deepEqual(validatePresentationCatalog(catalog), { valid: true, errors: [] });
+  assert.doesNotThrow(() => compileTopDownScene(catalog, {
+    schema_version: 2, kind: 'top-down-scene', id: 'runtime-projection', catalog: 'topology-test', style_profile: 'pixel16.topdown', logical_size: [32, 32], pixel_scale: 2,
+    grid: { cell: [16, 16] }, terrain: { base: 'grass', regions: [] }, placements: [],
+  }));
+  catalog.assets['terrain.grass'].source = '/private/asset.png';
+  assert.match(validatePresentationCatalog(catalog).errors.join('\n'), /must not expose private source metadata/);
 });
 
 test('catalog rejects visual-scale multipliers that change pixel grain', () => {

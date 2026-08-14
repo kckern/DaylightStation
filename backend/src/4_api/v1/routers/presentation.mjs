@@ -18,7 +18,17 @@ export function createPresentationRouter({ catalog, logger = null }) {
       void source; void sourceSha256; void provenance; void distribution;
       return [id, { ...publicAsset, image_url: `/api/v1/presentation/catalogs/${encodeURIComponent(req.params.packId)}/assets/${encodeURIComponent(id)}/image` }];
     }));
-    res.json({ ...loaded, assets, asset_templates: undefined, imports: undefined });
+    res.json({ ...loaded, kind: 'presentation-runtime-catalog', assets, asset_templates: undefined, imports: undefined });
+  }));
+  router.get('/catalogs/:packId/scenes', handle((req, res) => {
+    const index = catalog.listScenes?.(req.params.packId);
+    if (!index) return res.status(404).json({ error: 'presentation_scene_index_not_found' });
+    res.json(index);
+  }));
+  router.get('/catalogs/:packId/scenes/:sceneId', handle((req, res) => {
+    const scene = catalog.getScene?.(req.params.packId, req.params.sceneId);
+    if (!scene) return res.status(404).json({ error: 'presentation_scene_not_found' });
+    res.json(scene);
   }));
   router.get('/catalogs/:packId/assets/:assetId/image', handle((req, res) => {
     const asset = catalog.getAsset(req.params.packId, req.params.assetId);
