@@ -35,7 +35,7 @@ import { DOCUMENT_SOURCE_SCHEMA, validateDocumentSource } from './documentSource
 
 export const DOCUMENT_V2_SCHEMA = 'school.document/v2';
 export const ARCHETYPES = ['quiz', 'worksheet', 'infopage'];
-export const FIT_POLICIES = ['flow', 'one-page', 'fill'];
+export const FIT_POLICIES = ['flow', 'one-page', 'fill', 'prefer-one-page'];
 
 /**
  * Which print targets each block type may appear on (spec §7). Seeded from
@@ -87,6 +87,30 @@ const HEADER_PRESETS = {
   quiz: { name: true, date: true, scoreBox: true },
   worksheet: { name: true, date: true, scoreBox: false },
   infopage: { name: false, date: false, scoreBox: false },
+};
+
+/**
+ * Per-archetype fit-policy default (household rule, spec §7: "we can only
+ * use two pages if we have an exceptionally long number of questions ...
+ * within each page there should be right sizing"). This is the seam chosen
+ * for "make `prefer-one-page` the default for worksheets": an archetype
+ * preset, exactly parallel to `HEADER_PRESETS` above, rather than a change to
+ * the FLAT fallback (`fit.policy: 'flow'`) every archetype used to share.
+ * That flat fallback stays `'flow'` here (used only when an archetype isn't
+ * in this map at all, e.g. an already-rejected unknown archetype) — a global
+ * default change would have silently right-sized quizzes, infopages, and
+ * receipts too, none of which this task touches or was asked to. A quiz's
+ * scored, row-mapped layout in particular has its own pagination
+ * expectations (`allocation.mjs` row ranges) that were never part of this
+ * request. Only `worksheet` moves; every other archetype keeps requesting
+ * `flow` exactly as before, unless a document explicitly opts into something
+ * else via `fit.policy` (still honored below — this is a DEFAULT, not a
+ * override).
+ */
+const FIT_POLICY_PRESETS = {
+  quiz: 'flow',
+  worksheet: 'prefer-one-page',
+  infopage: 'flow',
 };
 
 const isPlainObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -210,7 +234,7 @@ export function validateDocumentV2(raw, { allowAnswers = false } = {}) {
   const rawFitValid = raw.fit === undefined || isPlainObject(raw.fit);
   if (!rawFitValid) errors.push('fit must be a mapping');
   const rawFit = rawFitValid && raw.fit ? raw.fit : {};
-  const fit = { policy: 'flow', typeScale: 'standard' };
+  const fit = { policy: FIT_POLICY_PRESETS[raw.archetype] ?? 'flow', typeScale: 'standard' };
   if (rawFit.policy !== undefined) {
     if (!FIT_POLICIES.includes(rawFit.policy)) errors.push(`unknown fit.policy: ${rawFit.policy}`);
     else fit.policy = rawFit.policy;
@@ -221,8 +245,19 @@ export function validateDocumentV2(raw, { allowAnswers = false } = {}) {
   }
 
   // Letter-only fit policies (spec §7): a continuous receipt roll has no page
-  // to overset-check or bottom out.
-  if ((fit.policy === 'one-page' || fit.policy === 'fill') && Array.isArray(raw.target) && raw.target.includes('receipt')) {
+  // to overset-check or bottom out. `prefer-one-page` deliberately does NOT
+  // join `one-page`/`fill` here, even though its decision is also framed in
+  // terms of page count: unlike those two, it can never hard-fail or demand
+  // page-boundary knowledge to grow into (its worst case degrades to plain
+  // `flow`-shaped behavior — take whatever the normal-density measurement
+  // produced), so there is no failure mode here for this check to prevent.
+  // Concretely, this is also the policy `worksheet`'s ARCHETYPE DEFAULT now
+  // resolves to (see `FIT_POLICY_PRESETS` above) — banning it here would
+  // reject every existing worksheet+receipt document that never asked for
+  // any particular fit policy, breaking a previously-working combination
+  // for a document type this task was never asked to touch.
+  if (['one-page', 'fill'].includes(fit.policy)
+    && Array.isArray(raw.target) && raw.target.includes('receipt')) {
     errors.push(`fit policy '${fit.policy}' requires letter target`);
   }
 

@@ -53,6 +53,24 @@ function int32(tag, name, value) {
 }
 
 /**
+ * RFC 8011 §5.1.14 resolution value: xres(4) yres(4) units(1) — 9 octets,
+ * mirrors decodeResponse's structural read. Returns the raw VALUE bytes, not
+ * a full attribute — callers push `{ tag: TAGS.RESOLUTION, name, value:
+ * resolutionValue(...) }` onto the same operationAttrs list every other
+ * attribute uses, since `encodeRequest` re-encodes every entry uniformly
+ * from that `{tag, name, value}` shape (a pre-built attribute Buffer in that
+ * list would desync the loop that reads `.tag`/`.name`/`.value` off each
+ * entry).
+ */
+function resolutionValue({ xres, yres, units = 3 }) {
+  const v = Buffer.alloc(9);
+  v.writeInt32BE(xres, 0);
+  v.writeInt32BE(yres, 4);
+  v.writeUInt8(units, 8);
+  return v;
+}
+
+/**
  * Encode an IPP request. `operationAttrs` is an ordered list of
  * {tag, name, value} — order matters: RFC 8011 requires charset, then
  * natural-language, then the rest.
@@ -88,7 +106,24 @@ export function baseAttrs(printerUri, user) {
   ];
 }
 
-export function printJobAttrs(printerUri, { user, jobName, copies, documentFormat }) {
+/**
+ * @param {string} printerUri
+ * @param {Object} params
+ * @param {string} params.user
+ * @param {string} params.jobName
+ * @param {number} [params.copies]
+ * @param {string} params.documentFormat
+ * @param {Object} [params.jobAttributes] - output of negotiate.mjs's `chooseJobAttributes`:
+ *   already filtered to only the names the printer's own
+ *   `job-creation-attributes-supported` listed. This function does not
+ *   re-decide whether to send any of these — that decision, like the format
+ *   decision above, belongs to negotiate.mjs; this is pure wire encoding.
+ * @param {{xres:number,yres:number,units:number}} [params.jobAttributes.printerResolution]
+ * @param {string} [params.jobAttributes.printColorMode]
+ * @param {string} [params.jobAttributes.sides]
+ * @param {string} [params.jobAttributes.media]
+ */
+export function printJobAttrs(printerUri, { user, jobName, copies, documentFormat, jobAttributes = {} }) {
   if (!documentFormat) {
     // No silent default here on purpose. `application/octet-stream` means
     // "printer, please guess the format from the bytes" — that guess is
@@ -106,6 +141,27 @@ export function printJobAttrs(printerUri, { user, jobName, copies, documentForma
     // copies is a JOB attribute, but Brother/AirPrint accept it in the
     // operation group for Print-Job; keep 1-copy jobs attribute-free.
     attrs.push({ tag: TAGS.INTEGER, name: 'copies', value: copies });
+  }
+  // Incident #2 (see LaserPrinterAdapter/negotiate.mjs headers): getting the
+  // document-format envelope right was not enough — a printer that agreed to
+  // `image/urf` still silently dropped the job because the BYTES inside
+  // didn't match what it separately declared for that envelope. Telling the
+  // printer, via real job attributes, exactly what we rasterized to (not
+  // just hoping it re-derives the same reading from the raster header) is
+  // the other half of that fix; each of these is only ever present when
+  // negotiate.mjs already confirmed the printer's job-creation-attributes-
+  // supported names it.
+  if (jobAttributes.printerResolution) {
+    attrs.push({ tag: TAGS.RESOLUTION, name: 'printer-resolution', value: resolutionValue(jobAttributes.printerResolution) });
+  }
+  if (jobAttributes.printColorMode) {
+    attrs.push({ tag: TAGS.KEYWORD, name: 'print-color-mode', value: jobAttributes.printColorMode });
+  }
+  if (jobAttributes.sides) {
+    attrs.push({ tag: TAGS.KEYWORD, name: 'sides', value: jobAttributes.sides });
+  }
+  if (jobAttributes.media) {
+    attrs.push({ tag: TAGS.KEYWORD, name: 'media', value: jobAttributes.media });
   }
   return attrs;
 }

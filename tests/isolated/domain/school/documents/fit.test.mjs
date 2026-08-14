@@ -70,3 +70,55 @@ describe('resolveFitPlan — attempt ordering is not assumed', () => {
     expect(result).toEqual({ error: { code: 'FIT_OVERSET', oversetPt: 90 } });
   });
 });
+
+// `prefer-one-page`: the household rule this policy exists to satisfy has two
+// halves — "we can only use two pages if we have an exceptionally long
+// number of questions" (try hard to land on one page, same normal-then-
+// compact search `one-page` already does) AND "within each page there should
+// be right sizing" (even the pages that DO get produced must not be loosely
+// spaced). Unlike `one-page`, it must never hard-fail — a genuinely long
+// document still has to print, just spilled rather than rejected. These
+// three describe blocks are the three outcomes TDD'd for this policy: fits
+// at normal, fits only at compact, fits at neither (spills).
+describe('resolveFitPlan — policy: prefer-one-page', () => {
+  describe('outcome 1: fits at normal', () => {
+    it('picks the normal attempt directly, same as one-page would', () => {
+      const result = resolveFitPlan({ policy: 'prefer-one-page', attempts: [normalFits, compactFits] });
+      expect(result).toEqual({ attempt: normalFits });
+    });
+  });
+
+  describe('outcome 2: fits only at compact', () => {
+    it('falls through to the compact attempt when normal overflows but compact fits', () => {
+      const result = resolveFitPlan({ policy: 'prefer-one-page', attempts: [normalOverset, compactFits] });
+      expect(result).toEqual({ attempt: compactFits });
+    });
+  });
+
+  describe('outcome 3: fits at neither — spills instead of failing', () => {
+    it('never returns an error — the one-page/prefer-one-page divergence', () => {
+      const result = resolveFitPlan({ policy: 'prefer-one-page', attempts: [normalOverset, compactOverset] });
+      expect(result.error).toBeUndefined();
+    });
+
+    it('spills using the COMPACT attempt (right-sized even while spilled), not the loosely-spaced normal one', () => {
+      const result = resolveFitPlan({ policy: 'prefer-one-page', attempts: [normalOverset, compactOverset] });
+      expect(result).toEqual({ attempt: compactOverset });
+    });
+
+    it('falls back to the normal attempt if no compact attempt was ever measured (defensive — the real orchestration loop always measures compact when normal overflows for this policy)', () => {
+      const result = resolveFitPlan({ policy: 'prefer-one-page', attempts: [normalOverset] });
+      expect(result).toEqual({ attempt: normalOverset });
+    });
+  });
+
+  it('never marks growLastPage — unlike `fill`, right-sizing here means density, not answer-space growth', () => {
+    const result = resolveFitPlan({ policy: 'prefer-one-page', attempts: [normalOverset, compactOverset] });
+    expect(result.attempt.growLastPage).toBeUndefined();
+  });
+
+  it('attempt ordering is not assumed, same as one-page', () => {
+    const result = resolveFitPlan({ policy: 'prefer-one-page', attempts: [compactFits, normalOverset] });
+    expect(result).toEqual({ attempt: compactFits });
+  });
+});

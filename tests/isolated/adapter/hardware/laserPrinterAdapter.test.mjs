@@ -46,7 +46,20 @@ afterEach(() => { if (server) { server.close(); server = null; } });
 // is identical in both directions; only the *meaning* of the 2-byte field
 // at offset 2 differs (operation vs. status-code).
 // -----------------------------------------------------------------------
-function ippServer({ documentFormatSupported = [], documentFormatPreferred = null, urfSupported = [] } = {}) {
+/** RFC 8011 §5.1.14 resolution value — mirrors ipp.mjs's own resolutionAttr, duplicated here so the fake server has no production import. */
+function resolutionValue({ xres, yres, units = 3 }) {
+  const v = Buffer.alloc(9);
+  v.writeInt32BE(xres, 0);
+  v.writeInt32BE(yres, 4);
+  v.writeUInt8(units, 8);
+  return v;
+}
+
+function ippServer({
+  documentFormatSupported = [], documentFormatPreferred = null, urfSupported = [],
+  pwgRasterDocumentTypeSupported = [], pwgRasterResolutionSupported = [],
+  jobCreationAttributesSupported = [],
+} = {}) {
   const printJobs = [];
   const capabilityAttrs = [
     { tag: 0x47, name: 'attributes-charset', value: 'utf-8' },
@@ -55,6 +68,9 @@ function ippServer({ documentFormatSupported = [], documentFormatPreferred = nul
     ...documentFormatSupported.map((f) => ({ tag: 0x49, name: 'document-format-supported', value: f })),
     ...(documentFormatPreferred ? [{ tag: 0x49, name: 'document-format-preferred', value: documentFormatPreferred }] : []),
     ...urfSupported.map((u) => ({ tag: 0x44, name: 'urf-supported', value: u })),
+    ...pwgRasterDocumentTypeSupported.map((t) => ({ tag: 0x44, name: 'pwg-raster-document-type-supported', value: t })),
+    ...pwgRasterResolutionSupported.map((r) => ({ tag: 0x32, name: 'pwg-raster-document-resolution-supported', value: resolutionValue(r) })),
+    ...jobCreationAttributesSupported.map((a) => ({ tag: 0x44, name: 'job-creation-attributes-supported', value: a })),
   ];
 
   return new Promise((resolve) => {
@@ -71,7 +87,15 @@ function ippServer({ documentFormatSupported = [], documentFormatPreferred = nul
         }
         if (operation === OPS.PRINT_JOB) {
           const { attrs } = decodeResponse(body); // stops at end-tag; never touches the trailing document
-          printJobs.push({ documentFormat: attrs['document-format']?.[0] ?? null, fullBody: body, copies: attrs.copies?.[0] ?? 1 });
+          printJobs.push({
+            documentFormat: attrs['document-format']?.[0] ?? null,
+            fullBody: body,
+            copies: attrs.copies?.[0] ?? 1,
+            printerResolution: attrs['printer-resolution']?.[0] ?? null,
+            printColorMode: attrs['print-color-mode']?.[0] ?? null,
+            sides: attrs.sides?.[0] ?? null,
+            media: attrs.media?.[0] ?? null,
+          });
           res.writeHead(200, { 'Content-Type': 'application/ipp' });
           res.end(encodeRequest(0x0000, [
             { tag: 0x47, name: 'attributes-charset', value: 'utf-8' },
@@ -138,7 +162,11 @@ describe('LaserPrinterAdapter.printPdf — capability negotiation (the fix)', ()
     const { httpServer, port, printJobs } = await ippServer({
       documentFormatSupported: ['application/octet-stream', 'image/urf', 'image/pwg-raster'],
       documentFormatPreferred: 'image/urf',
-      urfSupported: ['V1.4', 'RS300-600'],
+      // "W8" is what tells negotiate.mjs's chooseUrfColor this printer wants
+      // 8-bit grayscale — without a CS token here there is nothing to
+      // satisfy urf's raster constraints and the print plan correctly comes
+      // back null (see the incident #2 header comment in LaserPrinterAdapter.mjs).
+      urfSupported: ['V1.4', 'RS300-600', 'W8'],
     });
     const p = new LaserPrinterAdapter({ host: '127.0.0.1', port, logger: { info() {} } });
     const result = await p.printPdf(REAL_PDF, { jobName: 'ws', user: 'learner-two' });
@@ -152,6 +180,46 @@ describe('LaserPrinterAdapter.printPdf — capability negotiation (the fix)', ()
     // incident needs never repeat. They're ghostscript's urf output.
     expect(tailBytes(printJobs[0].fullBody, REAL_PDF)).toBe(false);
     expect(printJobs[0].fullBody.includes(Buffer.from('UNIRAST\0', 'latin1'))).toBe(true);
+  });
+
+  it.runIf(hasGs)('incident #2, end to end: the exact Brother HL-L2460DW capability shape produces a grayscale-8bpp raster at the format-specific DPI, with matching IPP job attributes', async () => {
+    const { httpServer, port, printJobs } = await ippServer({
+      documentFormatSupported: ['application/octet-stream', 'image/urf', 'image/pwg-raster'],
+      documentFormatPreferred: 'image/urf',
+      urfSupported: ['W8', 'CP1', 'IS4-1', 'MT1-3-4-5-8', 'OB10', 'PQ3-4-5', 'RS300-600-1200', 'V1.5', 'DM1'],
+      pwgRasterDocumentTypeSupported: ['sgray_8'],
+      pwgRasterResolutionSupported: [{ xres: 600, yres: 600, units: 3 }],
+      jobCreationAttributesSupported: [
+        'copies', 'finishings', 'ipp-attribute-fidelity', 'job-name', 'media', 'media-col',
+        'orientation-requested', 'output-bin', 'output-mode', 'print-quality', 'printer-resolution',
+        'requesting-user-name', 'sides', 'print-color-mode', 'job-pages-per-set',
+      ],
+    });
+    const p = new LaserPrinterAdapter({ host: '127.0.0.1', port, logger: { info() {} } });
+    const result = await p.printPdf(REAL_PDF, { jobName: 'ws', user: 'learner-two' });
+    httpServer.close();
+
+    expect(result.ok).toBe(true);
+    // image/urf is the printer's own document-format-preferred, and its
+    // urf-supported list (W8, RS300-600-1200) is fully satisfiable, so
+    // negotiatePrintPlan has no reason to fall back to pwg-raster here.
+    expect(result.documentFormat).toBe('image/urf');
+    expect(printJobs).toHaveLength(1);
+
+    // The IPP job attributes describe exactly what was rasterized — the
+    // metadata and the pixels no longer disagree with each other.
+    expect(printJobs[0].printerResolution).toEqual({ xres: 300, yres: 300, units: 3 });
+    expect(printJobs[0].printColorMode).toBe('monochrome');
+    expect(printJobs[0].sides).toBe('one-sided');
+    expect(printJobs[0].media).toBe('na_letter_8.5x11in');
+
+    // And the raster bytes actually sent match: 8bpp (not the ghostscript
+    // device's 1-bit default), Letter geometry at 300dpi.
+    const doc = printJobs[0].fullBody.subarray(printJobs[0].fullBody.length - (printJobs[0].fullBody.length - printJobs[0].fullBody.indexOf(Buffer.from('UNIRAST\0', 'latin1'))));
+    expect(doc.readUInt8(12)).toBe(8); // bitsPerPixel
+    expect(doc.readUInt32BE(24)).toBe(2550); // width px @300dpi Letter
+    expect(doc.readUInt32BE(28)).toBe(3300); // height px @300dpi Letter
+    expect(doc.readUInt32BE(32)).toBe(300); // resolution
   });
 
   it('a printer advertising neither PDF nor a producible raster format is REFUSED — nothing is sent', async () => {
