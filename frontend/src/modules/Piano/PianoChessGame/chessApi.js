@@ -28,19 +28,19 @@ const withUser = (path, userId) => (userId ? `${path}?user=${encodeURIComponent(
 const MOVE_TIMEOUT_MS = 8000;
 
 /** Resolves null on any failure: the caller falls back to the local engine. */
-export async function requestOpponentMove({ fen, rung, gameId, userId = null }) {
-  const request = DaylightAPI(withUser('api/v1/chess/move', userId), { fen, rung, gameId }, 'POST')
+export async function requestOpponentMove({ fen, rung, level = null, gameId, userId = null }) {
+  const request = DaylightAPI(withUser('api/v1/chess/move', userId), { fen, rung, level, gameId }, 'POST')
     .then((body) => (body && body.from ? body : null))
     .catch((error) => {
       // Attached up front so a rejection arriving after the timeout has already
       // won is still handled rather than surfacing as an unhandled rejection.
-      logger().warn('chess.move.request-error', { error: error.message });
+      logger().warn('chess.move.request-error', { error: error.message, gameId, rung, level });
       return null;
     });
   let timer;
   const deadline = new Promise((resolve) => {
     timer = setTimeout(() => {
-      logger().warn('chess.move.timeout', { gameId, timeoutMs: MOVE_TIMEOUT_MS });
+      logger().warn('chess.move.timeout', { gameId, rung, level, timeoutMs: MOVE_TIMEOUT_MS });
       resolve(null);
     }, MOVE_TIMEOUT_MS);
   });

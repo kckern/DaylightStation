@@ -627,10 +627,13 @@ instrument is the controller.
 
 The opponent is served by the backend — a Stockfish WASM engine behind
 `POST /api/v1/chess/move` — with the bundled heuristic engine as a local fallback. Every
-request carries the position, the active rung, and a per-game id; on any transport or
+request carries the position, the active rung, the ladder level, and a per-game id; on any transport or
 engine failure the client falls back to the bundled engine so the game never blocks on
 the network. The reply is delayed by `opponent_delay_ms` so it reads as a reply, not a
-flicker.
+flicker. The server logs `chess.move.requested` with both the requested and effective
+opponent, and each engine result logs its exact skill/Elo and think-time. Both game
+records preserve that effective opponent snapshot, so a roster label can never be
+mistaken for a different engine strength again.
 
 ### The config pair
 
