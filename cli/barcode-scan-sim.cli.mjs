@@ -80,6 +80,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import yaml from 'js-yaml';
+import dotenv from 'dotenv';
 import { parseArgv } from './_argv.mjs';
 
 import { parseScanCode } from '#domains/scan/ScanCode.mjs';
@@ -114,6 +115,23 @@ const EXIT_OK = 0;
 const EXIT_FAIL = 1;
 const EXIT_USAGE = 2;
 const ENTRYPOINT = fileURLToPath(import.meta.url);
+
+// This file previously loaded no .env at all — unlike every sibling CLI that
+// reads real household data (see `exercise-library.cli.mjs`,
+// `school-catalog.cli.mjs`, etc.), which all call `dotenv.config()` for
+// exactly this reason. Without it, `resolveScanSimPaths` below fell through
+// to the Docker-only default (`/usr/src/app/data`) on any host where
+// `DAYLIGHT_BASE_PATH` wasn't ALREADY exported in the calling shell — which a
+// plain `node cli/barcode-scan-sim.cli.mjs card felix` never does. The
+// nonexistent directory then fed every Yaml adapter down the line, each of
+// which treats a missing directory as "legitimately nothing here yet" (an
+// empty shelf is valid data — see `YamlCurriculumDatastore#curriculumWorks`),
+// so the whole pipeline "succeeded" with an empty agenda instead of erroring.
+// That is the exact failure this CLI exists to catch, happening to itself.
+// `dotenv.config` never overwrites a variable already in the environment, so
+// a real shell export (Docker, CI, an operator who already set it) still
+// wins over the file, and `--data-dir` still wins over both.
+dotenv.config({ path: path.join(path.dirname(ENTRYPOINT), '..', '.env'), quiet: true });
 
 const DEFAULT_STATE_DIR = path.join(os.tmpdir(), 'daylight-barcode-scan-sim-state');
 const DEFAULT_OUT_DIR = path.join(os.tmpdir(), 'daylight-barcode-scan-sim-out');
@@ -222,6 +240,48 @@ export function resolveScanSimPaths({ flags = {}, env = process.env } = {}) {
   const stateDir = path.resolve(valueFlag(flags['state-dir'], '--state-dir') ?? DEFAULT_STATE_DIR);
   const outDir = path.resolve(valueFlag(flags.out, '--out') ?? DEFAULT_OUT_DIR);
   return { dataDir, stateDir, outDir };
+}
+
+/**
+ * A loud gate on `dataDir` for every command that reads real household
+ * curriculum/assignments (`card`/`scan`/`lesson`/`flow`/`proof` — NOT
+ * `printer-status`, which never touches this tree).
+ *
+ * Why this needs its own check, separate from just fixing the dotenv miss
+ * above: every Yaml adapter downstream (`YamlCurriculumDatastore`,
+ * `YamlAssignmentStore`, ...) treats a missing directory as "an empty shelf,
+ * legitimately" — that's the correct behavior FOR THEM, because a household
+ * really can have a subject with no work published yet. But it means an
+ * entirely absent or wrong `dataDir` (a bad `--data-dir`, a host where the
+ * data volume isn't mounted, a future regression that reintroduces the
+ * dotenv gap this file just fixed) produces the SAME shape as "nothing
+ * assigned today": `sections: 0, offers: [], errors: []`. That shape is
+ * indistinguishable from truth without this check — which is precisely the
+ * failure that sent an operator down a wrong path trusting `card felix`'s
+ * "empty agenda" as fact. This function is what makes "no data reachable"
+ * fail LOUD instead of quietly resolving to "nothing to do".
+ */
+export function validateDataDir(dataDir) {
+  const errors = [];
+  if (!fs.existsSync(dataDir) || !fs.statSync(dataDir).isDirectory()) {
+    errors.push(`data directory not found: ${dataDir} — check --data-dir, DAYLIGHT_BASE_PATH (in .env or the environment), or that the data volume is mounted on this host`);
+    return errors; // nothing downstream of a missing root is worth checking
+  }
+  const curriculumDir = path.join(dataDir, 'content', 'school', 'curriculum');
+  let curriculumEntries = [];
+  try {
+    curriculumEntries = fs.readdirSync(curriculumDir).filter((name) => !name.startsWith('.'));
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+  }
+  if (curriculumEntries.length === 0) {
+    errors.push(`no curriculum content found under ${curriculumDir} — every card/lesson/flow/proof command reads real courses from here; an agenda built against this dataDir cannot be trusted as a report of what's actually assigned`);
+  }
+  const householdDir = path.join(dataDir, 'household');
+  if (!fs.existsSync(householdDir)) {
+    errors.push(`household config/data not found under ${householdDir} — assignments, sessions and tokens all read/write relative to this directory`);
+  }
+  return errors;
 }
 
 function loadYamlSafe(filePath) {
@@ -1050,6 +1110,18 @@ export async function runBarcodeScanSim(argv = [], deps = {}) {
     return usageResult([error.message]);
   }
   if (flags.fresh === true) fs.rmSync(paths.stateDir, { recursive: true, force: true });
+
+  // `printer-status` never reads curriculum/assignments — everything else
+  // does, and a bad/absent dataDir must fail here, loudly, rather than let
+  // BuildAgenda et al. quietly report "nothing assigned" (see
+  // `validateDataDir`'s docstring for why that shape is indistinguishable
+  // from truth otherwise).
+  if (subcommand !== 'printer-status') {
+    const dataDirErrors = validateDataDir(paths.dataDir);
+    if (dataDirErrors.length) {
+      return { exitCode: EXIT_FAIL, report: { ok: false, mode: subcommand, errors: dataDirErrors } };
+    }
+  }
 
   const clock = deps.clock ?? (() => new Date());
   const device = valueFlag(flags.device, '--device') ?? 'cli-scan-sim';

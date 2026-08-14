@@ -40,6 +40,7 @@ const build = ({
   wireDonow = true,
   resolveLearningAction = null,
   replaceLostAnswerSheet = null,
+  logger = silentLogger,
 } = {}) => {
   clock = fakeClock();
   rng = seededRng(21);
@@ -95,7 +96,7 @@ const build = ({
     resolveSubjectNext, portal, launchers, donow, closeSessionOutcome: close,
     resolveLearningAction,
     replaceLostAnswerSheet,
-    clock: clock.now, logger: silentLogger,
+    clock: clock.now, logger,
   });
 };
 
@@ -587,6 +588,35 @@ describe('the subject ticket', () => {
     expect(result.sessionId).toBe('ses_w');
   });
 
+  // THE HOUSEHOLD'S "DONE" RULE (2026-08-14 investigation): printing a
+  // worksheet must never retire it. Until an OMR/grade event lands, the work
+  // is pending and the subject ticket must keep offering a REPRINT of it —
+  // lost, destroyed, or garbled by the printer, scan again, same sheet again.
+  // `IssueDocument`'s own `ISSUABLE` set already agrees (`issued`/`reprinted`
+  // are both issuable), but nothing reached it: `nextMove` (offerSession.mjs)
+  // has no `case 'issued'`/`case 'reprinted'` in its switch, so both states
+  // fell into the generic `default: kind: 'wait'` branch — and `#subjectNext`
+  // routes `kind: 'wait'` to a "carry on" SLIP, never to `#print`. A parent
+  // rescanning the subject card after the cooldown window (an ordinary "my
+  // kid lost the sheet, print it again" scan) got a thermal note instead of
+  // their worksheet back, with no `school.issue.*` event at all — exactly
+  // the failure that produced the mystery 11:25 slip this test is named for.
+  it('a rescan of an ALREADY-ISSUED, still-ungraded unit reprints the SAME worksheet — printing never retires ungraded work', async () => {
+    build({ assignment: { learnerId: 'kid1', units: [WORKSHEET_UNIT] } });
+    const sid = 'ses_w';
+    await sessions.appendEvent(sid, { type: 'created', at: clock.iso(), sessionId: sid, learnerId: 'kid1', unitId: WORKSHEET_UNIT });
+    await sessions.appendEvent(sid, { type: 'issued', at: clock.iso(), sessionId: sid, artifactId: 'art_1' });
+    // Past the print-cooldown window (default 10 min) — this must be a
+    // genuine "print it again" rescan, not the SEPARATE, deliberate silent
+    // debounce that guards against a double-tap scan seconds apart.
+    clock.advanceHours(1);
+    const result = await resolve.execute({ code: await subjectToken('math') });
+    expect(result).toMatchObject({ status: 'reprinted', tokenClass: 'subject_next', physical: 'worksheet', printed: true });
+    expect(result.effect?.artifactId).toBe('art_1'); // same artifact, not a fresh one — the reprint lineage rule
+    expect(laser.jobs).toHaveLength(1);
+    expect(sessions.derive(sid)).toMatchObject({ state: 'reprinted', terminal: false });
+  });
+
   // The bank hand-off routes through DoNow (Task 12 review — spec §6
   // "occupancy applies uniformly"): a screen mid-quiz for one child must not
   // be clobbered by another child's scan, which a direct PortalDispatch
@@ -788,5 +818,58 @@ describe('device-bound SchoolCalc lesson actions', () => {
       status: 'printed', physical: 'worksheet', printed: true,
     });
     expect(thermal.jobs).toHaveLength(0);
+  });
+});
+
+describe('physical outcome logging (2026-08-14 investigation)', () => {
+  // `school.scan.resolved` fires the instant a token's status is known —
+  // BEFORE any of ResolveScanAction's dozen branches has actually run, so it
+  // can never say which one fired or what physically came out. Diagnosing
+  // the 11:25 mystery slip (a `subject_next` scan that should have reprinted
+  // a worksheet but produced a "carry on" slip instead) took real
+  // archaeology precisely because of that gap — this is the log line that
+  // closes it: `school.scan.outcome`, once per `execute()` call, carrying
+  // the resolved status, the physical thing that happened, and whether it
+  // actually printed.
+  it('logs the final physical outcome — not just the token status — for a worksheet reprint', async () => {
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    build({ assignment: { learnerId: 'kid1', units: [WORKSHEET_UNIT] }, logger });
+    const sid = 'ses_w';
+    await sessions.appendEvent(sid, { type: 'created', at: clock.iso(), sessionId: sid, learnerId: 'kid1', unitId: WORKSHEET_UNIT });
+    await sessions.appendEvent(sid, { type: 'issued', at: clock.iso(), sessionId: sid, artifactId: 'art_1' });
+    clock.advanceHours(1);
+    const record = mintToken({ tokenClass: 'subject_next', subject: { learnerId: 'kid1', subject: 'math' }, at: clock.iso(), rng });
+    await tokens.put(record);
+
+    await resolve.execute({ code: record.token, device: 'kitchen-scanner' });
+
+    // Both log lines exist and disagree in exactly the way the 11:25 slip
+    // needed: `resolved` alone says the token was `actionable` (true both
+    // before and after the fix) — only `outcome` says what actually happened
+    // physically (worksheet vs. slip), which is the fact that was missing.
+    expect(logger.info).toHaveBeenCalledWith('school.scan.resolved', expect.objectContaining({
+      device: 'kitchen-scanner', tokenClass: 'subject_next', status: 'actionable',
+    }));
+    expect(logger.info).toHaveBeenCalledWith('school.scan.outcome', {
+      device: 'kitchen-scanner',
+      tokenClass: 'subject_next',
+      sessionId: sid,
+      status: 'reprinted',
+      physical: 'worksheet',
+      printed: true,
+    });
+  });
+
+  it('logs a slip outcome (physical: receipt) distinctly from a worksheet outcome', async () => {
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    build({ assignment: null, logger });
+    const record = mintToken({ tokenClass: 'subject_next', subject: { learnerId: 'kid1', subject: 'math' }, at: clock.iso(), rng });
+    await tokens.put(record);
+
+    await resolve.execute({ code: record.token });
+
+    expect(logger.info).toHaveBeenCalledWith('school.scan.outcome', expect.objectContaining({
+      status: 'empty', physical: 'receipt', printed: true,
+    }));
   });
 });
