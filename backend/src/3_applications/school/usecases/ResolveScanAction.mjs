@@ -105,6 +105,34 @@ export class ResolveScanAction {
    *                     message: string, effect: object|null }>}
    */
   async execute({ code, device = null } = {}) {
+    const outcome = await this.#route({ code, device });
+    // THE MISSING HALF OF THE STORY (2026-08-14 investigation): `school.scan.
+    // resolved` above logs the TOKEN's status the instant it's known — before
+    // any of the dozen branches below (`#print`, `#retry`, `#onScreen`,
+    // `#subjectNext`'s own served/locked/empty/program/move fan-out, ...) has
+    // actually run. A household owner staring at logs for a scan that "did
+    // the wrong thing" could see the token was `actionable` and nothing else
+    // — not which branch fired, not whether paper or a thermal slip came out.
+    // That gap is exactly why the 11:25 mystery slip (a `subject_next` scan
+    // that should have reprinted a worksheet but produced a "carry on" slip
+    // instead — see `offerSession.mjs#nextMove`'s `issued`/`reprinted` fix)
+    // took real archaeology to diagnose instead of one log line. This closes
+    // it: ONE log per `execute()` call, at every exit path (this method has
+    // no other `return`), carrying exactly what a diagnosis needs — the
+    // outcome status, which physical thing happened, and whether it actually
+    // printed.
+    this.#logger.info?.('school.scan.outcome', {
+      device,
+      tokenClass: outcome.tokenClass,
+      sessionId: outcome.sessionId,
+      status: outcome.status,
+      physical: outcome.physical,
+      printed: outcome.printed,
+    });
+    return outcome;
+  }
+
+  async #route({ code, device = null } = {}) {
     if (!isSchoolToken(code)) {
       // Not ours. The relay branches on the same predicate, so reaching here is
       // a caller mistake rather than a child's — say so, print nothing.
