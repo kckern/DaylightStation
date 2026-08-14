@@ -54,13 +54,15 @@ function expandShape(shape, prefix, anchors = {}) {
       if (!radius || dx * dx + dy * dy <= radius * radius) cells.push([x, y]);
     }
   } else if (kind === 'ellipse' || kind === 'blob') {
-    const allowed = kind === 'blob' ? new Set(['kind', 'center', 'radius', 'roughness', 'seed', 'edge_step']) : new Set(['kind', 'center', 'radius']);
+    const allowed = kind === 'blob' ? new Set(['kind', 'center', 'radius', 'roughness', 'seed', 'edge_step', 'edge_cadence']) : new Set(['kind', 'center', 'radius']);
     const unknown = Object.keys(shape).filter((field) => !allowed.has(field)); if (unknown.length) throw new Error(`${prefix}: unsupported fields ${unknown.join(', ')}`);
     if (!isPair(shape.center) || !isPair(shape.radius, { positive: true })) throw new Error(`${prefix}: ${kind} needs non-negative integer center and positive integer radius`);
     const [centerX, centerY] = shape.center; const [radiusX, radiusY] = shape.radius; const roughness = shape.roughness ?? 0.35; const seed = shape.seed ?? 0;
     if (kind === 'blob' && (!Number.isFinite(roughness) || roughness < 0 || roughness > 1 || !Number.isInteger(seed))) throw new Error(`${prefix}: blob roughness must be 0..1 and seed must be an integer`);
-    const edgeStep = shape.edge_step;
+    const edgeStep = shape.edge_step ?? (kind === 'blob' ? 1 : undefined);
+    const edgeCadence = shape.edge_cadence ?? (kind === 'blob' ? 2 : undefined);
     if (kind === 'blob' && edgeStep !== undefined && (!Number.isInteger(edgeStep) || edgeStep < 1 || edgeStep > 4)) throw new Error(`${prefix}: blob edge_step must be an integer from 1 to 4`);
+    if (kind === 'blob' && edgeCadence !== undefined && (!Number.isInteger(edgeCadence) || edgeCadence < 1 || edgeCadence > 4)) throw new Error(`${prefix}: blob edge_cadence must be an integer from 1 to 4`);
     const extents = [];
     for (let y = Math.max(0, centerY - radiusY); y <= centerY + radiusY; y += 1) {
       const vertical = (y - centerY) / radiusY; const baseHalfWidth = radiusX * Math.sqrt(Math.max(0, 1 - vertical * vertical));
@@ -78,6 +80,22 @@ function expandShape(shape, prefix, anchors = {}) {
         extents[index].left = clampEdge(extents[index].left, extents[index + 1].left);
         extents[index].right = clampEdge(extents[index].right, extents[index + 1].right);
       }
+    }
+    if (edgeCadence > 1 && extents.length > 1) {
+      const centerIndex = extents.reduce((best, entry, index) => Math.abs(entry.y - centerY) < Math.abs(extents[best].y - centerY) ? index : best, 0);
+      const regularize = (field, direction) => {
+        let index = centerIndex; let value = extents[index][field]; let run = 1;
+        for (index += direction; index >= 0 && index < extents.length; index += direction) {
+          const desired = extents[index][field];
+          if (desired === value) run += 1;
+          else if (run < edgeCadence) { extents[index][field] = value; run += 1; }
+          else {
+            value = edgeStep === undefined ? desired : Math.max(value - edgeStep, Math.min(value + edgeStep, desired));
+            extents[index][field] = value; run = 1;
+          }
+        }
+      };
+      for (const field of ['left', 'right']) { regularize(field, -1); regularize(field, 1); }
     }
     for (const { y, left, right } of extents) for (let x = left; x <= Math.max(left, right); x += 1) cells.push([x, y]);
   } else if (kind === 'route') {
@@ -335,8 +353,12 @@ function inferredCompositionRole(asset) {
 
 function interfaceFor(catalog, inside, outside) {
   const matches = Object.entries(catalog.terrain_interfaces ?? {}).filter(([, entry]) => entry.inside === inside && entry.outside === outside);
-  if (matches.length !== 1) throw new Error(`material boundary ${inside} -> ${outside} needs exactly one terrain interface; found ${matches.length}`);
-  return { id: matches[0][0], ...matches[0][1] };
+  const reverse = Object.entries(catalog.terrain_interfaces ?? {}).filter(([, entry]) => entry.inside === outside && entry.outside === inside);
+  if (matches.length === 1 && reverse.length) throw new Error(`material boundary ${inside} <-> ${outside} declares two visual owners`);
+  if (matches.length === 1) return { id: matches[0][0], ...matches[0][1], passive: false, contacted_material: outside };
+  if (matches.length > 1) throw new Error(`material boundary ${inside} -> ${outside} needs at most one terrain interface; found ${matches.length}`);
+  if (reverse.length !== 1) throw new Error(`material boundary ${inside} <-> ${outside} needs exactly one owning terrain interface; found ${reverse.length}`);
+  return { id: reverse[0][0], ...reverse[0][1], passive: true, contacted_material: outside };
 }
 
 function variantRoot(catalog, assetId) {
@@ -350,16 +372,18 @@ function variantRoot(catalog, assetId) {
 
 function compatibleInterfaces(catalog, inside, outsideMaterials) {
   const profiles = [...outsideMaterials].map((outside) => interfaceFor(catalog, inside, outside));
-  const signatures = new Set(profiles.map((profile) => `${profile.asset}|${profile.polarity}`));
+  const active = profiles.filter((profile) => !profile.passive);
+  if (!active.length) return profiles;
+  const signatures = new Set(active.map((profile) => `${profile.asset}|${profile.polarity}`));
   if (signatures.size === 1) return profiles;
-  const polarities = new Set(profiles.map((profile) => profile.polarity));
-  const assetIds = profiles.map((profile) => assetReference(profile.asset).asset);
+  const polarities = new Set(active.map((profile) => profile.polarity));
+  const assetIds = active.map((profile) => assetReference(profile.asset).asset);
   const roots = new Set(assetIds.map((assetId) => variantRoot(catalog, assetId)));
   const topology = assetIds.map((assetId) => {
     const asset = catalog.assets[assetId];
     return JSON.stringify({ pixel_density: asset.pixel_density, geometry: asset.geometry, frames: asset.frames, autotile: asset.autotile });
   });
-  if (polarities.size !== 1 || roots.size !== 1 || new Set(topology).size !== 1) throw new Error(`material boundary ${inside} has incompatible interface assets at a multi-material join: ${profiles.map((profile) => profile.id).join(', ')}`);
+  if (polarities.size !== 1 || roots.size !== 1 || new Set(topology).size !== 1) throw new Error(`material boundary ${inside} has incompatible interface assets at a multi-material join: ${active.map((profile) => profile.id).join(', ')}`);
   return profiles;
 }
 
@@ -400,8 +424,8 @@ function commandForFrame(catalog, reference, at, extra = {}) {
   };
 }
 
-function commandForColor(color, at, size, provenance) {
-  return { type: 'fill', color, at, size, opacity: 1, render_layer: 'terrain', sort_y: -1, provenance };
+function commandForColor(color, at, size, provenance, extra = {}) {
+  return { type: 'fill', color, at, size, opacity: 1, render_layer: 'terrain', sort_y: -1, provenance, clip_polygon: extra.clip_polygon };
 }
 
 function footprintCells(world, at, cell, columns, rows) {
@@ -485,19 +509,42 @@ export function compileTopDownScene(authoredCatalog, scene) {
         else commands.push(commandForColor(material.fill.color, [x * cell[0], y * cell[1]], cell, `material:${region.material}`));
         continue;
       }
-      const profiles = compatibleInterfaces(catalog, region.material, outsideMaterials); const profile = profiles[0];
+      const profiles = compatibleInterfaces(catalog, region.material, outsideMaterials); const activeProfiles = profiles.filter((matched) => !matched.passive);
+      if (!activeProfiles.length) {
+        const material = catalog.materials[region.material];
+        if (material.fill.asset) commands.push(commandForFrame(catalog, `${material.fill.asset}#${material.fill.frame ?? 'default'}`, [x * cell[0], y * cell[1]], { render_layer: 'terrain', sort_y: -1, provenance: `material:${region.material}` }));
+        else commands.push(commandForColor(material.fill.color, [x * cell[0], y * cell[1]], cell, `material:${region.material}`));
+        continue;
+      }
+      const profile = activeProfiles[0];
       const asset = catalog.assets[assetReference(profile.asset).asset];
-      if (profiles.some((matched) => matched.underlay === 'inside-fill')) {
-        if (profiles.some((matched) => matched.underlay !== 'inside-fill')) throw new Error(`material boundary ${region.material} mixes inside-fill underlay with opaque interfaces`);
+      const hasPassive = activeProfiles.length !== profiles.length;
+      if (hasPassive) {
+        const material = catalog.materials[region.material];
+        if (material.fill.asset) commands.push(commandForFrame(catalog, `${material.fill.asset}#${material.fill.frame ?? 'default'}`, [x * cell[0], y * cell[1]], { render_layer: 'terrain', sort_y: -1, provenance: `passive-interface-fill:${region.material}` }));
+        else commands.push(commandForColor(material.fill.color, [x * cell[0], y * cell[1]], cell, `passive-interface-fill:${region.material}`));
+      }
+      const underlayModes = new Set(activeProfiles.map((matched) => matched.underlay).filter(Boolean));
+      if (underlayModes.size > 1 || underlayModes.size && activeProfiles.some((matched) => !matched.underlay)) throw new Error(`material boundary ${region.material} mixes incompatible interface underlays`);
+      if (underlayModes.has('inside-fill')) {
         const material = catalog.materials[region.material];
         if (material.fill.asset) commands.push(commandForFrame(catalog, `${material.fill.asset}#${material.fill.frame ?? 'default'}`, [x * cell[0], y * cell[1]], { render_layer: 'terrain', sort_y: -1, provenance: `interface-underlay:${region.material}` }));
         else commands.push(commandForColor(material.fill.color, [x * cell[0], y * cell[1]], cell, `interface-underlay:${region.material}`));
+      } else if (underlayModes.has('outside-fill')) {
+        for (const [profileIndex, matched] of activeProfiles.entries()) {
+          const clips = profileIndex === 0 && !hasPassive ? [undefined] : contacts.filter(({ material }) => material === matched.contacted_material).map(({ contact }) => interfaceClip(contact, cell));
+          const material = catalog.materials[matched.outside];
+          for (const clipPolygon of clips) {
+            if (material.fill.asset) commands.push(commandForFrame(catalog, `${material.fill.asset}#${material.fill.frame ?? 'default'}`, [x * cell[0], y * cell[1]], { clip_polygon: clipPolygon, render_layer: 'terrain', sort_y: -1, provenance: `interface-underlay:${matched.outside}` }));
+            else commands.push(commandForColor(material.fill.color, [x * cell[0], y * cell[1]], cell, `interface-underlay:${matched.outside}`, { clip_polygon: clipPolygon }));
+          }
+        }
       }
       const resolved = resolveTerrainFrame({ cells: continued, at: [x, y], frames: asset.autotile, polarity: profile.polarity });
       diagnostics.inside_corners_resolved += resolved.inner_corners.length;
-      for (const matched of profiles) diagnostics.boundaries[matched.id] = (diagnostics.boundaries[matched.id] ?? 0) + 1;
-      for (const [profileIndex, matched] of profiles.entries()) {
-        const clips = profileIndex === 0 ? [undefined] : contacts.filter(({ material }) => material === matched.outside).map(({ contact }) => interfaceClip(contact, cell));
+      for (const matched of activeProfiles) diagnostics.boundaries[matched.id] = (diagnostics.boundaries[matched.id] ?? 0) + 1;
+      for (const [profileIndex, matched] of activeProfiles.entries()) {
+        const clips = profileIndex === 0 && !hasPassive ? [undefined] : contacts.filter(({ material }) => material === matched.contacted_material).map(({ contact }) => interfaceClip(contact, cell));
         for (const clipPolygon of clips) for (const frame of resolved.layers) {
           const assetId = assetReference(matched.asset).asset;
           diagnostics.terrain_frames[`${assetId}#${frame}`] = (diagnostics.terrain_frames[`${assetId}#${frame}`] ?? 0) + 1;
