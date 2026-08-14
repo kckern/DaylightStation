@@ -66,13 +66,23 @@ export const DEFAULT_ROSTER = Object.freeze([
  *
  * `max_best_moves: 0` — asking the engine for the best move is the engine
  * taking the turn. `max_hints: 1` — one look at what can legally move is a
- * child orienting themselves, not being carried.
+ * child orienting themselves, not being carried. `max_takebacks: 1` follows the
+ * hint rather than the best move: one slip corrected is a child noticing their
+ * own mistake, which is the thing we want to encourage; a second is being
+ * carried through the game.
+ *
+ * `unrestricted_below_level` exempts the bottom of the ladder from all three
+ * ceilings, so the first rungs can teach the game before they teach the
+ * discipline. Zero — the default — means the ceilings apply everywhere, which
+ * is the behaviour this policy had before the key existed.
  */
 export const DEFAULT_LADDER_POLICY = Object.freeze({
   window: 7,
   wins_required: 5,
   max_hints: 1,
   max_best_moves: 0,
+  max_takebacks: 1,
+  unrestricted_below_level: 0,
   movetime_ms: 400,
 });
 
@@ -180,9 +190,13 @@ export function normalizeProgress(stored) {
 export function countsTowardPromotion(record, policy, currentLevel) {
   if (!record || !record.completed) return false;
   if (Number(record.level) !== currentLevel) return false;
+  // The first rungs teach the game, not the discipline. Below this level a
+  // game counts however much help was leant on — the ceilings resume above it.
+  if (currentLevel < Number(policy.unrestricted_below_level || 0)) return true;
   const help = record.help || {};
   if (Number(help.best_moves || 0) > Number(policy.max_best_moves)) return false;
   if (Number(help.hints || 0) > Number(policy.max_hints)) return false;
+  if (Number(help.takebacks || 0) > Number(policy.max_takebacks)) return false;
   return true;
 }
 
