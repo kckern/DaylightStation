@@ -28,7 +28,7 @@ export class YamlWorksheetInstanceStore {
       return yaml.load(await fs.readFile(this.#file(id), 'utf8')) ?? null;
     } catch (err) {
       if (err?.code !== 'ENOENT') {
-        this.#logger.warn?.('school.worksheet-instance.unreadable', { instanceId: id, error: err?.message });
+        this.#logger.error?.('school.worksheet-instance.unreadable', { instanceId: id, error: err?.message });
       }
       return null;
     }

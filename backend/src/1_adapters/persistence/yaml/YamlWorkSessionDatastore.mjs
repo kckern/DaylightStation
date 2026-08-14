@@ -62,7 +62,7 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
       // bucket a session lives in) and stays quiet. An unreadable-but-present
       // file is not ordinary, so it is reported before being answered the same.
       if (err?.code !== 'ENOENT') {
-        this.#logger.warn?.('school.session.file-unreadable', { file, error: err?.message });
+        this.#logger.error?.('school.session.file-unreadable', { file, error: err?.message });
       }
       return null;
     }
@@ -73,7 +73,7 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
       // must not take down the agenda for every other child. But a child's work
       // record silently reading as absent is exactly what a later review needs
       // to know about, so it is recorded on the way past.
-      this.#logger.warn?.('school.session.file-corrupt', { file, error: err?.message });
+      this.#logger.error?.('school.session.file-corrupt', { file, error: err?.message });
       return null;
     }
   }

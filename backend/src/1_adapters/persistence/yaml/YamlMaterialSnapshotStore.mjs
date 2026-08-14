@@ -70,11 +70,11 @@ export class YamlMaterialSnapshotStore {
       try {
         raw = loadYaml(base);
       } catch (err) {
-        this.#logger.warn?.('school.material.snapshot-corrupt', { file: `${base}.yml`, error: err?.message });
+        this.#logger.error?.('school.material.snapshot-corrupt', { file: `${base}.yml`, error: err?.message });
         raw = null;
       }
       if (raw != null && (typeof raw !== 'object' || Array.isArray(raw))) {
-        this.#logger.warn?.('school.material.snapshot-corrupt', { file: `${base}.yml`, error: 'not a mapping' });
+        this.#logger.error?.('school.material.snapshot-corrupt', { file: `${base}.yml`, error: 'not a mapping' });
         raw = null;
       }
     }

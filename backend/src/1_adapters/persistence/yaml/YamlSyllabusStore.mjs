@@ -65,7 +65,7 @@ export class YamlSyllabusStore {
 
   #markCorrupt(syllabusId) {
     this.#corrupt.add(syllabusId);
-    this.#logger.warn?.('school.syllabus.file-corrupt', { syllabusId, file: this.#fileFor(syllabusId) });
+    this.#logger.error?.('school.syllabus.file-corrupt', { syllabusId, file: this.#fileFor(syllabusId) });
   }
 
   async #writeYamlAtomic(filePath, content) {

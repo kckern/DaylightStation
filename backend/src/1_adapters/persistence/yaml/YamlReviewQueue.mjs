@@ -60,7 +60,7 @@ export class YamlReviewQueue extends IReviewQueue {
       text = await fs.readFile(file, 'utf8');
     } catch (err) {
       if (err?.code !== 'ENOENT') {
-        this.#logger.warn?.('school.review-queue.unreadable', { file, error: err?.message });
+        this.#logger.error?.('school.review-queue.unreadable', { file, error: err?.message });
       }
       return null;
     }
@@ -68,7 +68,7 @@ export class YamlReviewQueue extends IReviewQueue {
       const raw = yaml.load(text);
       return Array.isArray(raw) ? raw.filter((i) => i && typeof i === 'object' && !Array.isArray(i)) : [];
     } catch (err) {
-      this.#logger.warn?.('school.review-queue.corrupt', { file, error: err?.message });
+      this.#logger.error?.('school.review-queue.corrupt', { file, error: err?.message });
       return null;
     }
   }
