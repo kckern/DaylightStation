@@ -34,6 +34,7 @@ const seqOf = (event) => (event && typeof event === 'object' ? Number(event.seq)
 
 export class YamlWorkSessionDatastore extends IWorkSessionRepository {
   #configService;
+  #logger;
   // One queue for every append on this instance. Per-session queues would be
   // faster, but an append is a read-modify-write over a small file and a lost
   // event is a lost piece of a child's work record — throughput is not the
@@ -47,16 +48,32 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
       throw new Error('YamlWorkSessionDatastore: configService with getHouseholdPath() is required');
     }
     this.#configService = config.configService;
+    this.#logger = config.logger || console;
   }
 
   #root() { return this.#configService.getHouseholdPath('apps/school/sessions'); }
 
   async #readYaml(file) {
+    let text;
     try {
-      return yaml.load(await fs.readFile(file, 'utf8'));
-    } catch {
-      // Missing OR unparseable, deliberately the same answer: one corrupt
-      // session must not take down the agenda for every other child.
+      text = await fs.readFile(file, 'utf8');
+    } catch (err) {
+      // Missing is the ordinary case (a day with no sessions, a probe for the
+      // bucket a session lives in) and stays quiet. An unreadable-but-present
+      // file is not ordinary, so it is reported before being answered the same.
+      if (err?.code !== 'ENOENT') {
+        this.#logger.warn?.('school.session.file-unreadable', { file, error: err?.message });
+      }
+      return null;
+    }
+    try {
+      return yaml.load(text);
+    } catch (err) {
+      // Corrupt, deliberately answered the same as missing: one corrupt session
+      // must not take down the agenda for every other child. But a child's work
+      // record silently reading as absent is exactly what a later review needs
+      // to know about, so it is recorded on the way past.
+      this.#logger.warn?.('school.session.file-corrupt', { file, error: err?.message });
       return null;
     }
   }
