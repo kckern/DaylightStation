@@ -5,15 +5,16 @@ const DEFAULT_TTL_MINUTES = 15;
 
 /** Creates a short-lived, one-card recovery QR after teacher authorization. */
 export class CreateLostAnswerSheetTicket {
-  #tokens; #teacherGate; #clock; #rng; #ttlMinutes;
+  #tokens; #teacherGate; #clock; #rng; #ttlMinutes; #logger;
 
-  constructor({ tokens, teacherGate, clock = () => new Date(), rng = Math.random, ttlMinutes = DEFAULT_TTL_MINUTES } = {}) {
+  constructor({ tokens, teacherGate, clock = () => new Date(), rng = Math.random, ttlMinutes = DEFAULT_TTL_MINUTES, logger = console } = {}) {
     if (!tokens || !teacherGate) throw new Error('CreateLostAnswerSheetTicket requires tokens and teacherGate');
     this.#tokens = tokens;
     this.#teacherGate = teacherGate;
     this.#clock = clock;
     this.#rng = rng;
     this.#ttlMinutes = ttlMinutes;
+    this.#logger = logger;
   }
 
   async execute({ cardId, requestedBy, pin = null } = {}) {
@@ -30,6 +31,9 @@ export class CreateLostAnswerSheetTicket {
       rng: this.#rng,
     });
     await this.#tokens.put(record);
+    this.#logger.info?.('school.answer-sheet.lost-ticket-issued', {
+      cardId, requestedBy, expiresAt: record.expiresAt,
+    });
     const document = noticeDocument({
       id: `replace-lost-${cardId}`,
       headline: 'Lost answer sheet',

@@ -6,14 +6,15 @@
 import { ValidationError } from '#domains/core/errors/index.mjs';
 
 export class SetPassOverride {
-  #store; #teacherGate; #clock;
+  #store; #teacherGate; #clock; #logger;
 
-  constructor({ store, teacherGate, clock = () => new Date() } = {}) {
+  constructor({ store, teacherGate, clock = () => new Date(), logger = console } = {}) {
     if (!store) throw new Error('SetPassOverride requires store');
     if (!teacherGate) throw new Error('SetPassOverride requires teacherGate');
     this.#store = store;
     this.#teacherGate = teacherGate;
     this.#clock = clock;
+    this.#logger = logger;
   }
 
   async execute({ unitId, percent = null, editedBy = null, pin = null } = {}) {
@@ -23,6 +24,9 @@ export class SetPassOverride {
       throw new ValidationError('percent must be an integer from 1-100, or null to clear');
     }
     await this.#store.set(unitId, percent, { editedBy, at: this.#clock().toISOString() });
+    this.#logger.info?.('school.pass-override.set', {
+      unitId, percent, editedBy, cleared: percent === null,
+    });
     return { unitId, percent };
   }
 }

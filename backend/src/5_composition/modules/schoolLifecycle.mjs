@@ -580,7 +580,7 @@ export async function createSchoolLifecycle({
     teacherGate, clock, logger,
   });
   const createLostAnswerSheetTicket = new CreateLostAnswerSheetTicket({
-    tokens: stores.tokens, teacherGate, clock, rng: draw,
+    tokens: stores.tokens, teacherGate, clock, rng: draw, logger,
     ttlMinutes: cfg.answer_sheets?.lost_ticket_ttl_minutes ?? 15,
   });
   const resolveScanAction = new ResolveScanAction({
