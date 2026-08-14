@@ -281,7 +281,7 @@ describe('cli/commands/finance', () => {
       const { stdout, stderr } = makeBuffers();
       let captured;
       const fakeFetch = async (url, opts) => {
-        captured = { url, method: opts?.method };
+        captured = { url, method: opts?.method, headers: opts?.headers, body: opts?.body };
         return { ok: true, status: 200, async json() { return { refreshed: true, accounts: 17 }; } };
       };
       const r = await finance.run(
@@ -291,6 +291,8 @@ describe('cli/commands/finance', () => {
       expect(r.exitCode).toBe(0);
       expect(captured.url).toMatch(/\/api\/v1\/finance\/refresh$/);
       expect(captured.method).toBe('POST');
+      expect(captured.headers).toEqual({ 'content-type': 'application/json' });
+      expect(captured.body).toBe('{}');
       const out = JSON.parse(stdout.read().trim());
       expect(out.ok).toBe(true);
       expect(out.refreshed).toBe(true);

@@ -267,13 +267,13 @@ describe('Finance API Router', () => {
     test('updates transaction', async () => {
       const res = await request(app)
         .post('/api/finance/transactions/123')
-        .send({ description: 'Updated', tags: ['Food'] });
+        .send({ description: 'Updated', tags: ['Food'], type: 'expense' });
 
       expect(res.status).toBe(200);
       expect(res.body.ok).toBe(true);
       expect(mockBuxferAdapter.updateTransaction).toHaveBeenCalledWith(
         '123',
-        expect.objectContaining({ description: 'Updated' })
+        expect.objectContaining({ description: 'Updated', type: 'expense' })
       );
     });
 
@@ -360,6 +360,17 @@ describe('Finance API Router', () => {
       expect(mockHarvestService.harvest).toHaveBeenCalledWith(
         'default',
         { skipCategorization: true, skipCompilation: true }
+      );
+    });
+
+    test('accepts a POST with no request body', async () => {
+      const res = await request(app)
+        .post('/api/finance/refresh');
+
+      expect(res.status).toBe(200);
+      expect(mockHarvestService.harvest).toHaveBeenCalledWith(
+        'default',
+        { skipCategorization: false, skipCompilation: false }
       );
     });
 

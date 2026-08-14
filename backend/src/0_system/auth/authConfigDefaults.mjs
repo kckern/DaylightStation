@@ -17,7 +17,7 @@ export function getDefaultAuthConfig() {
       default: ['kiosk']
     },
     app_routes: {
-      admin: ['admin/*'],
+      admin: ['admin/*', 'pressure-mats/*'],
       finance: ['finance/*'],
       config: ['config/*'],
       scheduler: ['scheduling/*'],

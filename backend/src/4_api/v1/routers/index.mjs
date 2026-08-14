@@ -41,6 +41,7 @@ export { createDeviceRouter } from './device.mjs';
 export { createTriggerRouter } from './trigger.mjs';
 export { createEpaperRouter } from './epaper.mjs';
 export { createPrinterRouter } from './printer.mjs';
+export { createPressureMatRouter } from './pressureMat.mjs';
 
 // Domain routers - Journaling & Tracking
 export { createGratitudeRouter } from './gratitude.mjs';

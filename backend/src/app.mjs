@@ -158,6 +158,9 @@ import { initUnlockService } from '#apps/fitness/unlockService.mjs';
 import { initManageService } from '#apps/fitness/manageService.mjs';
 import { createFoodScaleRelay } from '#apps/hardware/foodScaleRelay.mjs';
 import { createOmrRelay } from '#apps/hardware/omrRelay.mjs';
+import { createPressureMatRelay } from '#apps/hardware/pressureMatRelay.mjs';
+import { PressureMatAdapter } from '#adapters/hardware/pressure-mat/index.mjs';
+import { createPressureMatRouter } from '#api/v1/routers/pressureMat.mjs';
 import { createAutomotiveRelay } from '#apps/hardware/automotiveRelay.mjs';
 import { createAutomotiveApi } from '#composition/modules/automotiveApi.mjs';
 import { createQuizScanRecorder } from '#apps/quizzes/quizScanRecorder.mjs';
@@ -676,6 +679,26 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'food-scale-relay' }),
   });
 
+  // Pressure-mat relay — ingests the TrampleTek Blue's analog voltage,
+  // derived occupancy, and press/release events. Voltage is deliberately kept
+  // as voltage: the textile response is nonlinear and is not a calibrated
+  // scale. See _extensions/pressure-mat-relay.
+  const pressureMatConfig = configService.getHouseholdAppConfig(householdId, 'pressure-mats')
+    || configService.reloadHouseholdAppConfig?.(householdId, 'pressure-mats')
+    || {};
+  const pressureMatAdapter = new PressureMatAdapter({
+    eventBus,
+    config: pressureMatConfig,
+    logger: rootLogger.child({ module: 'pressure-mat-relay' }),
+  }).start();
+  createPressureMatRelay({
+    eventBus,
+    dataDir,
+    config: pressureMatConfig,
+    timezone: configService.getHouseholdTimezone?.(householdId),
+    logger: rootLogger.child({ module: 'pressure-mat-relay' }),
+  });
+
   // OMR relay — ingests the ESP32 bubble-sheet relay's decoded card records
   // (source: 'omr-relay') off a Chatsworth OMR-1100 and re-broadcasts on the
   // `omr` topic; a decoupled subscriber persists completed reads to
@@ -1129,6 +1152,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   const v1Routers = {
+    'pressure-mats': createPressureMatRouter({
+      pressureMatAdapter,
+      logger: rootLogger.child({ module: 'pressure-mat-api' }),
+    }),
     // New unified item API
     item: itemRouter,
     // Legacy content domain routers (to be deprecated)

@@ -265,7 +265,8 @@ describe('BuxferAdapter', () => {
       const result = await adapter.updateTransaction('123', {
         description: 'Updated desc',
         tags: ['Food', 'Groceries'],
-        memo: 'Weekly shopping'
+        memo: 'Weekly shopping',
+        type: 'expense'
       });
 
       expect(mockHttpClient.post).toHaveBeenCalledWith(
@@ -274,7 +275,8 @@ describe('BuxferAdapter', () => {
           id: '123',
           description: 'Updated desc',
           tags: 'Food,Groceries',
-          memo: 'Weekly shopping'
+          memo: 'Weekly shopping',
+          type: 'expense'
         })
       );
     });
