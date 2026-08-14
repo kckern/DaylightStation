@@ -159,8 +159,12 @@ export class YamlTokenRegistry extends ITokenRegistry {
           // Unparseable, corrupt, or unexpiring records are all KEPT: deletion
           // is only ever justified by a timestamp that is legibly long past.
           expired = Number.isFinite(expiresMs) && nowMs - expiresMs > this.#graceMs;
-        } catch {
+        } catch (err) {
+          // Keeping an unreadable token is the safe answer — deletion needs a
+          // legible timestamp — but a token record that cannot be read will be
+          // kept forever and never explain why, so it is named once per sweep.
           expired = false;
+          this.#logger?.warn?.('school.tokens.record-unreadable', { file: name, error: err?.message });
         }
       }
       if (expired) {
