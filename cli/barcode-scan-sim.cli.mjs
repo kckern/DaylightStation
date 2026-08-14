@@ -397,6 +397,20 @@ const silentLogger = { warn() {}, info() {}, error() {} };
  * printer-failure handling into dead code neither this file nor its tests
  * ever exercise: the use case always "prints" (to memory); only the
  * household's actual laser printer is optional.
+ *
+ * `confirmed: false` (IssueDocument's `#printConfirmed`, sessionEvents.mjs's
+ * `issued`/`reprinted` SCHEMA): this double is, BY DESIGN, never a genuine
+ * physical print at the moment IssueDocument calls it — `maybePhysicallyPrint`
+ * runs entirely OUTSIDE this call, after `execute()` has already returned, so
+ * from IssueDocument's own vantage point nothing has reached the tray yet
+ * regardless of whether `--print` will later fire. Before `confirmed`
+ * existed, every `lesson`/`card`/`flow` run — `--print` or not — silently
+ * armed the SAME print-cooldown a real household scan uses, so running this
+ * simulator against a session that a family member might rescan for real
+ * could debounce their genuine print for no reason anyone watching could see
+ * (no paper came out, yet the next real scan got silently refused). Setting
+ * this false is what makes "dry run" true for the COOLDOWN too, not just for
+ * the physical printer.
  */
 function capturingPrinter() {
   const captured = { pdf: null, opts: null };
@@ -406,7 +420,7 @@ function capturingPrinter() {
       async printPdf(pdf, opts) {
         captured.pdf = pdf;
         captured.opts = opts;
-        return { printed: true };
+        return { printed: true, confirmed: false };
       },
     },
   };

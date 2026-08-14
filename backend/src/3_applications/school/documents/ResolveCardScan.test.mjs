@@ -132,21 +132,158 @@ describe('execute — CARD_ID_UNREADABLE (spec §5.4)', () => {
     expect(result).toEqual({ error: { code: 'CARD_ID_UNREADABLE' } });
   });
 
-  it('never guesses a testId with an unreadable digit', async () => {
+  it('never guesses a testId with an unreadable digit when no allocated card is consistent with the pattern', async () => {
     const allocationStore = fakeAllocationStore();
     const repository = fakeRepository();
     const useCase = new ResolveCardScan({ allocationStore, repository });
     const result = await useCase.execute({ testId: '482?306', answers: { 1: 'A' } });
-    expect(result).toEqual({ error: { code: 'CARD_ID_UNREADABLE' } });
+    // Best-effort resolution (household direction) ran — the store has no
+    // cards at all, so zero candidates were consistent — and it still
+    // refuses exactly like before, now WITH the diagnostic (`ambiguous`)
+    // that explains why, mirroring `unknownCard`'s `nearMissCardIds`.
+    expect(result).toEqual({
+      error: { code: 'CARD_ID_UNREADABLE' },
+      ambiguous: { pattern: '482?306', candidateCardIds: [] },
+    });
   });
 
-  it('never even queries the allocation store for an unreadable id', async () => {
+  it('never even queries the allocation store for an unreadable id when the store cannot list known cards', async () => {
     const repository = fakeRepository();
     const allocationStore = { findByCard: () => { throw new Error('must not be called'); } };
     const useCase = new ResolveCardScan({ allocationStore, repository });
+    // No `listCardIds` on this fake (older-store shape) — best-effort
+    // resolution can't even be attempted, so it degrades straight to the
+    // same refusal, never touching `findByCard`.
     await expect(useCase.execute({ testId: '???????', answers: {} })).resolves.toEqual({
       error: { code: 'CARD_ID_UNREADABLE' },
+      ambiguous: { pattern: '???????', candidateCardIds: [] },
     });
+  });
+});
+
+// Best-effort ambiguous-id resolution (household direction, real incident
+// 2026-08-14): a double-marked test-id digit decoded '?', matched no
+// allocation, and a fully-answered sheet silently vanished. These exercise
+// the full `execute` path — `#resolveTestId` -> `resolveAmbiguousCardId`
+// (`allocation.mjs`, unit-tested on its own in
+// `tests/isolated/domain/school/documents/allocation.test.mjs`) -> the SAME
+// `findByCard`/grading `execute` already ran for a cleanly-read id.
+describe('execute — best-effort ambiguous card-id resolution (household direction)', () => {
+  function spyLogger() {
+    const calls = [];
+    return { calls, warn: (...args) => calls.push(args), debug() {}, info() {}, error() {} };
+  }
+
+  it('resolves and grades when EXACTLY ONE known card is consistent with the pattern, and marks cardIdInferred', async () => {
+    const repository = fakeRepository();
+    const allocationStore = fakeAllocationStore(); // constant rng -> first card is '4444444'
+    const source = sourceDoc('ambiguous-quiz', [
+      mcQuestion('q1', 1, { choices: ['Alpha', 'Beta'], answer: 'Alpha' }),
+    ]);
+    const { allocation } = await publishAndAllocate({
+      repository, allocationStore, source, context: { freshCard: true },
+    });
+    expect(allocation.cardId).toBe('4444444');
+
+    const logger = spyLogger();
+    const useCase = new ResolveCardScan({ allocationStore, repository, logger });
+    // Position 3 double-marked digits 4 and 7 (a decoy that happens to
+    // match no printed card) — only '4444444' in the store is consistent.
+    const result = await useCase.execute({
+      testId: '444?444',
+      testIdCandidates: [[4], [4], [4], [4, 7], [4], [4], [4]],
+      answers: { 1: 'A' },
+    });
+
+    expect(result.cardIdInferred).toEqual({ pattern: '444?444', cardId: '4444444' });
+    expect(result.results).toHaveLength(1);
+    expect(result.results[0].cardId).toBe('4444444');
+    expect(result.results[0].results[0]).toMatchObject({ row: 1, status: 'correct' });
+    // LOUD BY DESIGN: an inferred id must be visible in the log, not just the record.
+    expect(logger.calls.some((call) => call[0] === 'school.scan.card-id-inferred'
+      && call[1].pattern === '444?444' && call[1].cardId === '4444444')).toBe(true);
+  });
+
+  it('refuses (never guesses) when TWO known cards are both consistent with the pattern', async () => {
+    const repository = fakeRepository();
+    const allocationStore = fakeAllocationStore();
+    const source = sourceDoc('ambiguous-quiz-a', [
+      mcQuestion('q1', 1, { choices: ['Alpha', 'Beta'], answer: 'Alpha' }),
+    ]);
+    const { allocation } = await publishAndAllocate({
+      repository, allocationStore, source, context: { freshCard: true },
+    });
+    expect(allocation.cardId).toBe('4444444');
+    // A second, decoy card differing only at the ambiguous position, with
+    // the OTHER digit the double mark actually hit — seeded directly
+    // (bypassing render) since only its id needs to exist for this test.
+    await allocationStore.allocate({
+      cardId: '4447444',
+      request: {
+        documentId: 'decoy-doc', rev: 'r1', seed: 1, rowRange: { start: 1, end: 1 },
+      },
+    });
+
+    const logger = spyLogger();
+    const useCase = new ResolveCardScan({ allocationStore, repository, logger });
+    const result = await useCase.execute({
+      testId: '444?444',
+      testIdCandidates: [[4], [4], [4], [4, 7], [4], [4], [4]],
+      answers: { 1: 'A' },
+    });
+
+    expect(result).toEqual({
+      error: { code: 'CARD_ID_UNREADABLE' },
+      ambiguous: { pattern: '444?444', candidateCardIds: ['4444444', '4447444'] },
+    });
+    expect(logger.calls.some((call) => call[0] === 'school.scan.card-id-unresolved')).toBe(true);
+    // Never the "resolved" log — nothing was actually inferred.
+    expect(logger.calls.some((call) => call[0] === 'school.scan.card-id-inferred')).toBe(false);
+  });
+
+  it('refuses when NO known card is consistent with the pattern', async () => {
+    const repository = fakeRepository();
+    const allocationStore = fakeAllocationStore();
+    const source = sourceDoc('ambiguous-quiz-b', [
+      mcQuestion('q1', 1, { choices: ['Alpha', 'Beta'], answer: 'Alpha' }),
+    ]);
+    await publishAndAllocate({ repository, allocationStore, source, context: { freshCard: true } });
+    // Only card in the store is '4444444' (digit 4 throughout); a double
+    // mark that hit digits 7 and 9 (never 4) at the ambiguous position is
+    // consistent with no known card at all.
+    const useCase = new ResolveCardScan({ allocationStore, repository });
+    const result = await useCase.execute({
+      testId: '444?444',
+      testIdCandidates: [[4], [4], [4], [7, 9], [4], [4], [4]],
+      answers: { 1: 'A' },
+    });
+
+    expect(result).toEqual({
+      error: { code: 'CARD_ID_UNREADABLE' },
+      ambiguous: { pattern: '444?444', candidateCardIds: [] },
+    });
+  });
+
+  it('a blank column (no marks at all, not double-marked) still resolves when only one known card fits — full wildcard, narrowed by every OTHER clean digit', async () => {
+    const repository = fakeRepository();
+    const allocationStore = fakeAllocationStore();
+    const source = sourceDoc('ambiguous-quiz-c', [
+      mcQuestion('q1', 1, { choices: ['Alpha', 'Beta'], answer: 'Alpha' }),
+    ]);
+    const { allocation } = await publishAndAllocate({
+      repository, allocationStore, source, context: { freshCard: true },
+    });
+    expect(allocation.cardId).toBe('4444444');
+
+    const useCase = new ResolveCardScan({ allocationStore, repository });
+    const result = await useCase.execute({
+      testId: '444?444',
+      testIdCandidates: [[4], [4], [4], [], [4], [4], [4]], // blank column: no marks
+      answers: { 1: 'A' },
+    });
+
+    expect(result.cardIdInferred).toEqual({ pattern: '444?444', cardId: '4444444' });
+    expect(result.results).toHaveLength(1);
   });
 });
 

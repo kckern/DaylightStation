@@ -177,6 +177,154 @@ function distributeAnswerSpace(pageFragments, contentTopPt, contentBottomPt, spa
 }
 
 /**
+ * BALANCED SPILL (household rule, spec appendix: "we're not just having a
+ * dangling question number 10 at the end" — equal vertical FILL across
+ * pages, never equal question count). `placeFragments`'s ordinary loop
+ * below is first-fit: pack page one to capacity, whatever doesn't fit
+ * starts page two. For an atomic-fragment document (every `question` block
+ * is one unbreakable unit — measure.mjs's own "a page break can never land
+ * between a question and the space to answer it") that produces exactly the
+ * shape the household rejected: 9 questions on page one with 1.5in of
+ * unclaimed white space, question 10 alone on page two. First-fit only ever
+ * asks "does the NEXT item fit here" — it never looks back to ask whether
+ * moving one more item from a fuller page to page two would leave both
+ * pages closer to even.
+ *
+ * These three helpers are the pure math for `placeFragments`'s `balance`
+ * option: given `items` (an ALREADY atomic, already-normalized fragment
+ * list — see that option's own precondition check, just below), find where
+ * to break them into contiguous groups so the TALLEST group is as short as
+ * possible. Minimizing the tallest group is the well-known equivalent of
+ * "make every group even": for a fixed total height and a fixed group
+ * count, pushing the max down can only happen by moving content off the
+ * fullest group, which pulls every other group up toward it — there is no
+ * way to lower the max without narrowing the spread. It's solved by binary
+ * search on the answer (the candidate per-page cap) validated by a
+ * monotonic greedy bin-count (a bigger cap never needs MORE bins) — the
+ * classic "split into k parts, minimize the largest part" technique.
+ *
+ * NEVER attempted on anything but a fully-atomic list (`placeFragments`
+ * checks this before calling in): a flowable (`lines`-bearing) fragment can
+ * still SPLIT mid-fragment under the ordinary loop below, at a wrap point
+ * only `chooseBreakPoint`/`splitFragment` know how to find; teaching this
+ * balance search to also reason about line-level splits would mean
+ * re-deriving that same split point by a second, independent path — exactly
+ * the "fit decision computed one way, drawn another" class of bug this
+ * codebase's own doctrine forbids elsewhere (measure.mjs's header comment).
+ * A `stickToNextId` pair or an authored `page_break` are excluded for the
+ * identical reason: both already have their own placement rule (keep-with-
+ * next, unconditional break) that this search does not know how to honor.
+ * Whenever any of that is present, `placeFragments` simply skips balancing
+ * and falls back to the ordinary greedy result — never a worse or invalid
+ * page count, only a missed opportunity to even it out.
+ */
+
+/** The gap `items[index]` would pay if placed right after `items[index - 1]` on the SAME page (0 for index 0 — nothing precedes it — and, by the same rule `gapBetween` already applies, 0 for whatever starts a fresh group/page). */
+function leadingGapPt(items, index, spacing) {
+  if (index <= 0) return 0;
+  return gapBetween(spacing, items[index - 1].spacingClass, items[index].spacingClass);
+}
+
+/**
+ * How many contiguous groups `items` needs if no group's content may exceed
+ * `capPt` — the SAME "pack until it doesn't fit, start a new page" rule
+ * `placeFragments`'s own loop applies below, just counting instead of
+ * placing. `Infinity` when a single item alone (zero leading gap, since it
+ * could always start its own group) still exceeds `capPt` — no cap that low
+ * could ever place it, which is what makes the search below stop shrinking
+ * `capPt` any further.
+ */
+function groupsNeededForCap(items, spacing, capPt) {
+  let groups = 1;
+  let usedPt = 0;
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index];
+    if (item.heightPt > capPt + EPSILON) return Infinity;
+    const gapPt = usedPt === 0 ? 0 : leadingGapPt(items, index, spacing);
+    if (usedPt + gapPt + item.heightPt > capPt + EPSILON) {
+      groups += 1;
+      usedPt = item.heightPt;
+    } else {
+      usedPt += gapPt + item.heightPt;
+    }
+  }
+  return groups;
+}
+
+/** The same greedy fill as `groupsNeededForCap`, returning WHERE each new group starts instead of just how many there are — the index (into `items`) of the first item of every group after the first. */
+function breakIndicesForCap(items, spacing, capPt) {
+  const breaks = [];
+  let usedPt = 0;
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index];
+    const gapPt = usedPt === 0 ? 0 : leadingGapPt(items, index, spacing);
+    if (usedPt + gapPt + item.heightPt > capPt + EPSILON) {
+      breaks.push(index);
+      usedPt = item.heightPt;
+    } else {
+      usedPt += gapPt + item.heightPt;
+    }
+  }
+  return breaks;
+}
+
+/**
+ * Minimal per-page cap that still packs `items` into exactly `targetGroups`
+ * contiguous groups, never exceeding the hard page budget `capPt` — see this
+ * section's header comment for why minimizing the largest group is the same
+ * thing as balancing them. `targetGroups` is expected to be
+ * `groupsNeededForCap(items, spacing, capPt)` (the page count the document
+ * would ALREADY need at full capacity) — the search only ever tightens that
+ * same cap, it never asks for fewer pages than the budget already forces.
+ *
+ * Returns `null` when `items` cannot be packed into `targetGroups` groups at
+ * all within `capPt` (should not happen when `targetGroups` was derived from
+ * `capPt` itself, but `placeFragments` treats `null` as "give up, fall back
+ * to the plain greedy placement" rather than ever trusting an unproven
+ * partition) or when the search's own result doesn't land on exactly
+ * `targetGroups` groups.
+ */
+function balancedBreakIndices(items, spacing, capPt, targetGroups) {
+  if (targetGroups <= 1 || items.length === 0) return [];
+  let lo = items.reduce((max, item) => Math.max(max, item.heightPt), 0);
+  let hi = capPt;
+  if (groupsNeededForCap(items, spacing, hi) > targetGroups) return null;
+  // Float bisection (a page is ~700pt tall), not an integer search — a fixed
+  // iteration count is the correct exit condition, not a `lo === hi` check
+  // that float rounding could miss forever.
+  for (let iteration = 0; iteration < 50; iteration += 1) {
+    const mid = (lo + hi) / 2;
+    if (groupsNeededForCap(items, spacing, mid) <= targetGroups) hi = mid; else lo = mid;
+  }
+  const breaks = breakIndicesForCap(items, spacing, hi);
+  return breaks.length === targetGroups - 1 ? breaks : null;
+}
+
+/** Splice a zero-height `forceBreak` marker (the same shape measure.mjs's `page_break` block already produces) in front of `fragments[index]` for every index in `breakIndices` — reusing `placeFragments`'s EXISTING unconditional-break handling is what lets balanced placement share every other rule (answer-space growth, widow/orphan minima, errors) with the ordinary path instead of re-implementing them. */
+function insertBreakMarkers(fragments, breakIndices) {
+  const breakSet = new Set(breakIndices);
+  const result = [];
+  fragments.forEach((fragment, index) => {
+    if (breakSet.has(index)) {
+      result.push({
+        id: `balance-break-before-${index}`,
+        blocks: [],
+        atomic: true,
+        spacingClass: null,
+        widthPt: fragment.widthPt ?? 0,
+        nodes: [],
+        heightPt: 0,
+        baseHeightPt: 0,
+        forceBreak: true,
+        answerSpace: null,
+      });
+    }
+    result.push(fragment);
+  });
+  return result;
+}
+
+/**
  * Places fragments onto pages.
  *
  * @param {Array<Object>} fragments - Measured fragments, in document order.
@@ -190,6 +338,18 @@ function distributeAnswerSpace(pageFragments, contentTopPt, contentBottomPt, spa
  *   Default false reproduces the engine's original behavior byte-for-byte —
  *   "trailing space on the last page belongs to the document, not the
  *   answers" — which `flow` and `one-page` still rely on.
+ * @param {boolean} [page.balance=false] - Fit policy `prefer-one-page`'s
+ *   spill case (spec appendix, `fit.mjs`'s `balanceSpill`): when true AND
+ *   the whole fragment list is atomic with no `stickToNextId`/`forceBreak`
+ *   (see this file's "BALANCED SPILL" section above for exactly why those
+ *   are excluded), a document that would still spill across N pages is
+ *   re-partitioned for even vertical fill across those N pages instead of
+ *   first-fit's "pack page one solid, dump the rest." Ineligible content
+ *   (any flowable/splittable fragment, a keep-with-next pair, an authored
+ *   page_break) or a document that already fits on one page silently
+ *   behaves exactly as `false` — this option can only ever make a spilled
+ *   render more even, never change WHETHER it spills or reject a document
+ *   the ordinary loop would have accepted.
  * @returns {{ pages: Array<{ fragments: Array<Object> }>, errors: Array<Object> }}
  *   Each placed fragment carries yPt (absolute page coordinate of its top), its
  *   effective heightPt, and isContinuation/continuesOnNextPage split flags.
@@ -229,15 +389,42 @@ export function contentHeightPt(fragments, { spacing = {} } = {}) {
   return total;
 }
 
-export function placeFragments(fragments, { pageHeightPt, marginPt, spacing = {}, growLastPage = false }) {
+export function placeFragments(fragments, {
+  pageHeightPt, marginPt, spacing = {}, growLastPage = false, balance = false,
+}) {
   const contentTopPt = marginPt;
   const contentBottomPt = pageHeightPt - marginPt;
   if (!(contentBottomPt - contentTopPt > 0)) {
     throw new Error(`page geometry leaves no content height: ${pageHeightPt}pt page, ${marginPt}pt margins`);
   }
 
+  // Balanced spill (see this file's "BALANCED SPILL" section above): decided
+  // BEFORE normal placement runs, by measuring the SAME `fragments` list a
+  // second, throwaway time (a discarded `errors` sink — real validation
+  // errors are collected once, below, off whichever list actually gets
+  // placed). Eligibility is deliberately narrow: every fragment must already
+  // be atomic with no keep-with-next partner and no authored page break, or
+  // this silently falls back to `source = fragments` and behaves exactly as
+  // `balance: false` — a missed opportunity to even out a spill is a far
+  // safer failure mode than mis-placing content this search does not
+  // understand how to split.
+  let source = fragments;
+  if (balance) {
+    const preview = fragments.map((fragment) => normalizeFragment(fragment, []));
+    const capPt = contentBottomPt - contentTopPt;
+    const eligible = preview.length > 0
+      && preview.every((fragment) => fragment.atomic && !fragment.forceBreak && !fragment.stickToNextId);
+    if (eligible) {
+      const targetGroups = groupsNeededForCap(preview, spacing, capPt);
+      if (Number.isFinite(targetGroups) && targetGroups > 1) {
+        const breaks = balancedBreakIndices(preview, spacing, capPt, targetGroups);
+        if (breaks) source = insertBreakMarkers(fragments, breaks);
+      }
+    }
+  }
+
   const errors = [];
-  const queue = fragments.map((fragment) => normalizeFragment(fragment, errors));
+  const queue = source.map((fragment) => normalizeFragment(fragment, errors));
   const pages = [];
 
   let pageFragments = [];

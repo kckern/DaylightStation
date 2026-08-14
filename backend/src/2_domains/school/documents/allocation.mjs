@@ -44,6 +44,79 @@ export function generateCardId(rng) {
   return id;
 }
 
+/**
+ * Best-effort resolution of an ambiguous decoded test id against the
+ * household's own known card ids (household direction, real incident
+ * 2026-08-14: a scan chirped success, decoded 8 real answers, and still
+ * silently dropped everything because one digit column double-marked ->
+ * `7481?48` matched no allocation). The owner's own framing is the
+ * invariant this function encodes: "a best effort ... [when] the likelihood
+ * of collisions will be very low" BUT "guessing a card that was never
+ * printed is far worse than refusing" — so this only ever returns a single
+ * id when EXACTLY one known card is consistent with the pattern; two or
+ * more (however small a set) is refused exactly like zero, because a wrong
+ * guess is graded as though it were a clean read and nothing downstream
+ * would ever know to doubt it.
+ *
+ * `digitMarks[i]` is what `decodeQuizSheet` actually saw punched in column
+ * `i` — NOT a re-guess: an empty array (a truly blank column) carries no
+ * constraint at all and is treated as a full 0-9 wildcard, while 2+ entries
+ * (a double-marked column, the actual incident) constrains that position to
+ * just those digits. This is deliberately narrower than the also-considered
+ * "any single-digit misread" search over the CLEAN columns too — a cleanly
+ * decoded digit carries no signal that it might be wrong (unlike a blank or
+ * double mark, both of which the scanner itself flags as uncertain), so
+ * treating it as fuzzy would mean silently overriding a digit the hardware
+ * actually read with more confidence than the ambiguous ones, on no
+ * evidence whatsoever. Only positions the decoder itself marked '?' are
+ * ever loosened; every other position must match exactly.
+ *
+ * A missing/malformed `digitMarks` entry for a '?' position (a caller that
+ * only has the pattern string, e.g. this file's own tests, or a decode path
+ * that predates `testIdCandidates`) degrades to the widest-possible wildcard
+ * for that position, same as an observed blank — never narrower than what
+ * was actually seen, so a caller with less information than a live scan
+ * never resolves something a live scan itself would have refused.
+ *
+ * @param {string} pattern - 7-char decoded test id, '?' at each unreadable position
+ * @param {Array<number[]>|null} digitMarks - one entry per position (0..6):
+ *   the digits `decodeQuizSheet` actually saw marked there. Only consulted
+ *   at a '?' position in `pattern`; ignored elsewhere.
+ * @param {string[]} knownCardIds - every card id the allocation store
+ *   currently has any record for (`YamlAllocationStore#listCardIds`).
+ * @returns {{cardId: string}|{candidates: string[]}} exactly one consistent
+ *   id resolves to `{cardId}`; zero or 2+ return `{candidates}` (the full
+ *   matching set, empty when none) for the caller to report and refuse.
+ */
+export function resolveAmbiguousCardId(pattern, digitMarks, knownCardIds) {
+  if (typeof pattern !== 'string' || pattern.length !== 7) return { candidates: [] };
+  const marks = Array.isArray(digitMarks) ? digitMarks : [];
+
+  const isConsistent = (candidateId) => {
+    if (typeof candidateId !== 'string' || candidateId.length !== 7) return false;
+    for (let position = 0; position < 7; position += 1) {
+      const expected = pattern[position];
+      if (expected !== '?') {
+        if (candidateId[position] !== expected) return false;
+        continue;
+      }
+      const observed = marks[position];
+      // Empty (or absent) observation = blank column = unconstrained; a
+      // non-empty observation = double-marked column = must be one of the
+      // actual marks. Never wider than an empty array; never narrower than
+      // what was truly observed at that position.
+      if (Array.isArray(observed) && observed.length > 0
+        && !observed.includes(Number(candidateId[position]))) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const matches = [...new Set((knownCardIds || []).filter(isConsistent))];
+  return matches.length === 1 ? { cardId: matches[0] } : { candidates: matches };
+}
+
 // --- row planning (spec §5.3) ---
 
 /**

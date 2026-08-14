@@ -34,7 +34,7 @@
  * Task 7's job.
  */
 import { DomainInvariantError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
-import { planRows } from '#domains/school/documents/allocation.mjs';
+import { planRows, resolveAmbiguousCardId } from '#domains/school/documents/allocation.mjs';
 import { gradeAnswer } from '#domains/school/grading.mjs';
 import { prepareV2Document, mergeBank } from './RenderPrintDocument.mjs';
 
@@ -324,32 +324,48 @@ function gradeRow(item, given, points) {
 }
 
 export class ResolveCardScan {
-  #allocationStore; #repository; #banks;
+  #allocationStore; #repository; #banks; #logger;
 
   /**
    * @param {object} deps
-   * @param {{findByCard: Function, updateStatus: Function}} deps.allocationStore -
-   *   `YamlAllocationStore`-shaped.
+   * @param {{findByCard: Function, updateStatus: Function, listCardIds?: Function}} deps.allocationStore -
+   *   `YamlAllocationStore`-shaped. `listCardIds` is OPTIONAL-DEGRADING —
+   *   absent (an older fake), best-effort ambiguous-id resolution simply
+   *   never runs (see `execute`'s own guard) rather than crashing; every
+   *   other behavior is unchanged.
    * @param {{getPublished: Function, getDerivedBank?: Function}} deps.repository -
    *   `YamlPrintDocumentRepository`-shaped.
    * @param {{getBank: (id: string) => (object|null)}} [deps.banks] - bank-select
    *   sugar reader (spec §6.2) — same shape `RenderPrintDocument` takes, and
    *   MUST be the same content root the original render used, or a
    *   bank-select-bearing document will re-derive a different row mapping.
+   * @param {object} [deps.logger] - same DI-with-console-default convention
+   *   as every other use case in this codebase (`RenderPrintDocument`,
+   *   `ResolveScanAction`, `quizScanRecorder`) — an inferred card id (see
+   *   `#resolveTestId` below) must be LOUD (household direction: "the
+   *   resolution must be visible, not silently substituted"), so this class
+   *   now needs somewhere to say so even when no caller wires one explicitly.
    */
-  constructor({ allocationStore, repository, banks = null } = {}) {
+  constructor({
+    allocationStore, repository, banks = null, logger = console,
+  } = {}) {
     if (!allocationStore) throw new Error('ResolveCardScan requires allocationStore');
     if (!repository) throw new Error('ResolveCardScan requires repository');
     this.#allocationStore = allocationStore;
     this.#repository = repository;
     this.#banks = banks;
+    this.#logger = logger;
   }
 
   /**
-   * @param {{testId: string|null, answers?: Record<number, string|string[]>}} args
-   * @returns {Promise<{error: {code: 'CARD_ID_UNREADABLE'}}
-   *   |{results: object[], unallocatedRows?: number[]}
-   *   |{results: [], deadCard: true, answeredRowCount: number, recordStatuses: string[]}>}
+   * @param {{testId: string|null, testIdCandidates?: Array<number[]>,
+   *   answers?: Record<number, string|string[]>}} args `testIdCandidates`
+   *   (`quizScanRecorder.mjs`'s `decodeQuizSheet` output, present only when
+   *   `testId` itself contains a `?`) is what makes best-effort resolution
+   *   possible at all — see `#resolveTestId` below.
+   * @returns {Promise<{error: {code: 'CARD_ID_UNREADABLE'}, ambiguous?: {pattern: string, candidateCardIds: string[]}}
+   *   |{results: object[], unallocatedRows?: number[], cardIdInferred?: {pattern: string, cardId: string}}
+   *   |{results: [], deadCard: true, answeredRowCount: number, recordStatuses: string[], cardIdInferred?: {pattern: string, cardId: string}}>}
    *   Each `results[]` entry is EITHER a graded result —
    *   `{cardId, recordId, documentId, rev, variant, learnerId?, renderedAt,
    *   revisionSuperseded, results: [{row, itemId, itemType, prompt,
@@ -388,16 +404,53 @@ export class ResolveCardScan {
    *   owned rows got zero marks while other rows were answered (wrong-rows
    *   signature); an unknown card with real answers returns
    *   `{results: [], unknownCard: true, answeredRowCount, nearMissCardIds}`
-   *   instead of a bare empty result.
+   *   instead of a bare empty result. `cardIdInferred: {pattern, cardId}`
+   *   marks EVERY successful outcome (graded `results`, `deadCard`) whose
+   *   card id was inferred rather than read cleanly (household direction:
+   *   "the resolution must be visible, not silently substituted" — see
+   *   `#resolveTestId`) — absent entirely on a clean read, so its mere
+   *   presence is itself the tell. An ambiguous id that fails to resolve
+   *   (zero or 2+ consistent cards) still refuses `CARD_ID_UNREADABLE`,
+   *   with `ambiguous: {pattern, candidateCardIds}` describing why, for the
+   *   same "never guess, always explain" reason `unknownCard`'s
+   *   `nearMissCardIds` already exists.
    */
-  async execute({ testId, answers = {} } = {}) {
-    // testId null or containing '?' (any digit unreadable) — never guess
-    // which card this was (spec §5.4).
-    if (testId == null || String(testId).includes('?')) {
+  async execute({ testId, testIdCandidates = null, answers = {} } = {}) {
+    if (testId == null) {
       return { error: { code: 'CARD_ID_UNREADABLE' } };
     }
 
-    const records = await this.#allocationStore.findByCard(testId);
+    // Best-effort resolution (household direction, real incident: a
+    // double-marked test-id digit decoded `?`, matched no allocation, and a
+    // fully-answered sheet silently vanished). Only reached when `testId`
+    // itself carries a `?` — a clean id skips straight to `findByCard`,
+    // byte-identical to this method's behavior before this feature existed.
+    let cardId = testId;
+    let cardIdInferred = null;
+    if (String(testId).includes('?')) {
+      const resolved = await this.#resolveTestId(testId, testIdCandidates);
+      if (!resolved.cardId) {
+        this.#logger.warn?.('school.scan.card-id-unresolved', {
+          pattern: testId, candidateCardIds: resolved.candidates,
+        });
+        return {
+          error: { code: 'CARD_ID_UNREADABLE' },
+          ambiguous: { pattern: testId, candidateCardIds: resolved.candidates },
+        };
+      }
+      cardId = resolved.cardId;
+      cardIdInferred = { pattern: testId, cardId };
+      // LOUD, ON PURPOSE (household direction, verbatim: "the resolution
+      // must be visible, not silently substituted"). `warn`, not `info` —
+      // even a correctly inferred id is still a guess this system made on
+      // the household's behalf, low-probability collision or not, and it
+      // deserves a human's eyes at least once, the same way `reScored`
+      // and `silentLiveRecords` earn a `warn` elsewhere in this file for
+      // the same "a machine made a judgment call here" reason.
+      this.#logger.warn?.('school.scan.card-id-inferred', { pattern: testId, cardId });
+    }
+
+    const records = await this.#allocationStore.findByCard(cardId);
     const live = records.filter((record) => record.status === 'live');
     // A reused card retains old marks in satisfied rows. While a new worksheet
     // is live, grade only that live allocation and ignore the settled rows.
@@ -410,13 +463,15 @@ export class ResolveCardScan {
     // always a mis-bubbled card id (7 student-transcribed digits, no check
     // digit) — the child did the work and the quiz would otherwise silently
     // vanish. Surface it as its own outcome, with the live cards one digit
-    // away as candidates the teacher can act on.
+    // away as candidates the teacher can act on. (Unreachable when
+    // `cardIdInferred` is set: `#resolveTestId` only ever resolves to an id
+    // `listCardIds` already knows has records.)
     if (records.length === 0 && answeredRows.size > 0) {
       return {
         results: [],
         unknownCard: true,
         answeredRowCount: answeredRows.size,
-        nearMissCardIds: await this.#nearMissLiveCards(testId),
+        nearMissCardIds: await this.#nearMissLiveCards(cardId),
       };
     }
 
@@ -432,6 +487,7 @@ export class ResolveCardScan {
         deadCard: true,
         answeredRowCount: answeredRows.size,
         recordStatuses: records.map((record) => record.status),
+        ...(cardIdInferred ? { cardIdInferred } : {}),
       };
     }
 
@@ -504,7 +560,7 @@ export class ResolveCardScan {
       const fullyAnswered = cardResult.results.every((row) => row.status !== 'blank');
       if (record.status === 'live' && fullyAnswered) {
         // eslint-disable-next-line no-await-in-loop
-        await this.#allocationStore.updateStatus({ cardId: testId, recordId: record.recordId, status: 'satisfied' });
+        await this.#allocationStore.updateStatus({ cardId, recordId: record.recordId, status: 'satisfied' });
       }
     }
 
@@ -516,7 +572,31 @@ export class ResolveCardScan {
       results,
       ...(unallocatedRows.length ? { unallocatedRows } : {}),
       ...(silentLiveRecords.length ? { silentLiveRecords } : {}),
+      ...(cardIdInferred ? { cardIdInferred } : {}),
     };
+  }
+
+  /**
+   * Best-effort resolution of a `?`-bearing `testId` against every card id
+   * the store currently has ANY record for (`listCardIds` — live, satisfied,
+   * released, superseded alike; the domain matcher only decides "which
+   * printed card is this", not "is it still usable" — that's `execute`'s
+   * own `findByCard`/`eligible` filtering right after this returns, exactly
+   * as it already was for a cleanly-read id). Delegates the actual
+   * consistency check to `resolveAmbiguousCardId` (`allocation.mjs`) —
+   * matching invariants are a domain concern, this method is just the I/O
+   * (listing the known ids) the pure function needs handed to it.
+   *
+   * `listCardIds` is OPTIONAL-DEGRADING (see constructor doc): a store
+   * without it (an older test fake, or a future store shape) can never
+   * attempt resolution, so this returns "no candidates" immediately rather
+   * than throwing — the caller's existing `CARD_ID_UNREADABLE` refusal is
+   * exactly right for that case too.
+   */
+  async #resolveTestId(testId, testIdCandidates) {
+    if (typeof this.#allocationStore.listCardIds !== 'function') return { candidates: [] };
+    const knownCardIds = await this.#allocationStore.listCardIds();
+    return resolveAmbiguousCardId(testId, testIdCandidates, knownCardIds);
   }
 
   /**

@@ -36,6 +36,9 @@ const allOf = (...checks) => (raw, push) => { checks.forEach((c) => c(raw, push)
 const oneOfField = (field, allowed) => (raw, push) => {
   if (!allowed.includes(raw[field])) push(`${field}: must be one of ${allowed.join(', ')}`);
 };
+const booleanIfPresent = (field) => (raw, push) => {
+  if (raw[field] !== undefined && typeof raw[field] !== 'boolean') push(`${field}: must be a boolean when present`);
+};
 
 const TRANSPORTS = ['paper', 'screen'];
 const RESULTS = ['passed', 'needs_remediation'];
@@ -69,8 +72,30 @@ const SCHEMA = {
   // A reprint reuses the ORIGINAL artifactId — that is the lineage rule (spec
   // §5.2). Reprinting under a fresh id would make the same worksheet look like
   // two different pieces of work.
-  issued: { fields: ['artifactId'], validate: stringField('artifactId') },
-  reprinted: { fields: ['artifactId'], validate: stringField('artifactId') },
+  //
+  // `confirmed` (optional, default true when absent — see `isBooleanIfPresent`
+  // below): whether the printer port that produced this event represents a
+  // GENUINE physical dispatch. `IssueDocument` sets this from whatever its
+  // injected `printer.printPdf()` result reports (real `LaserPrinterAdapter`
+  // calls never set it, so every production print defaults to confirmed);
+  // a caller-supplied double that captures bytes in memory instead of sending
+  // them anywhere (the CLI simulator's own "dry run by default" printer, or a
+  // future preview/email-me-the-PDF delivery mode) can say so explicitly. The
+  // event itself still means what it always meant — this session HAS an
+  // issued artifact, its lineage/reprint history is unaffected either way —
+  // `confirmed` only changes whether `APPLY.issued`/`APPLY.reprinted` below
+  // arm the print-cooldown timer from it. Absent from the field list would
+  // mean `createEvent`'s whitelist silently drops it (see that function's own
+  // "fields is the whitelist that survives" comment) — it must be declared
+  // here to reach the stored event at all.
+  issued: {
+    fields: ['artifactId', 'confirmed'],
+    validate: allOf(stringField('artifactId'), booleanIfPresent('confirmed')),
+  },
+  reprinted: {
+    fields: ['artifactId', 'confirmed'],
+    validate: allOf(stringField('artifactId'), booleanIfPresent('confirmed')),
+  },
   media_dispatched: {
     fields: ['dispatchId', 'target', 'contentId'],
     validate: allOf(stringField('dispatchId'), stringField('target'), stringField('contentId')),
@@ -235,13 +260,18 @@ const emptyState = () => ({
   state: null,
   terminal: false,
   issuedArtifacts: [],
-  // The `at` of the most recent successful `issued`/`reprinted` event — NOT
-  // the most recent scan. IssueDocument's print-debounce times its cooldown
-  // window from this field precisely because a `failed` annotation (an
-  // attempt that never reached paper) does not touch it: a print that failed
-  // must be retryable on the very next scan, and the only way to tell "just
-  // printed" from "just tried and failed" is to record ONLY the successful
-  // one. See the `issued`/`reprinted` handlers below.
+  // The `at` of the most recent CONFIRMED `issued`/`reprinted` event — NOT
+  // the most recent scan, and not just any issue. IssueDocument's
+  // print-debounce times its cooldown window from this field for two
+  // independent reasons: a `failed` annotation (an attempt that never
+  // reached paper) does not touch it, so a print that failed is retryable on
+  // the very next scan; and an `issued`/`reprinted` event with
+  // `confirmed: false` (the injected printer port saying "I did not actually
+  // send this anywhere") ALSO does not touch it — an issue that does not
+  // print must not arm the cooldown, or a household print-preview/simulator
+  // tool silently blocks the next REAL print for however many minutes the
+  // cooldown lasts, for a sheet nobody ever saw. See the `issued`/
+  // `reprinted` handlers below.
   lastPrintedAt: null,
   attemptIds: [],
   gradedPercent: null,
@@ -278,14 +308,19 @@ const APPLY = {
   issued(s, e) {
     if (e.artifactId && !s.issuedArtifacts.includes(e.artifactId)) s.issuedArtifacts.push(e.artifactId);
     s.lastFailure = null;
-    s.lastPrintedAt = e.at;
+    // `e.confirmed === false` is the ONLY way to opt out — absent (every
+    // production print; every event built before this field existed) and
+    // `true` both arm the cooldown, so this is additive: nothing that used to
+    // set `lastPrintedAt` stops doing so. See this event type's own SCHEMA
+    // comment for what `confirmed` represents and who sets it to false.
+    if (e.confirmed !== false) s.lastPrintedAt = e.at;
   },
   reprinted(s, e, push) {
     if (e.artifactId && !s.issuedArtifacts.includes(e.artifactId)) {
       push(`reprinted artifactId "${e.artifactId}" was never issued (a reprint reuses the original)`);
     }
     s.lastFailure = null;
-    s.lastPrintedAt = e.at;
+    if (e.confirmed !== false) s.lastPrintedAt = e.at;
   },
   media_dispatched(s, e) {
     s.mediaDispatch = {

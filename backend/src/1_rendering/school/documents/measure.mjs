@@ -515,8 +515,17 @@ function measureOmrNode(ctx, block, { widthPt, path }) {
     ? Math.max(...cells.map((cell) => cell.lines.length))
     : theme.omr.probeChoiceLines;
   const compactRows = Math.ceil(block.choices / columnCount);
+  // `compactRowPadPt` (theme-driven, not a bare literal): a compact omr row's
+  // choices sit on one baseline per row with a fixed pad below the tallest
+  // wrapped label — pure whitespace around already-sized choice text, so
+  // `workbookTheme`'s `compact` density tightens it exactly like every other
+  // inter-element gap. `drawOmrRow` (DocumentPdfRenderer.mjs) computes this
+  // SAME `rowLeading` independently (it draws from `node.layout`/`node.cells`,
+  // not from this returned node's height) and MUST read the identical token —
+  // a measure/draw disagreement here is exactly the "fit decision drawn
+  // differently" class of bug this codebase's own doctrine forbids.
   const compactHeight = compact
-    ? compactRows * (textLines * theme.omr.choiceLeadingPt + 5)
+    ? compactRows * (textLines * theme.omr.choiceLeadingPt + theme.omr.compactRowPadPt)
     : theme.omr.rowHeightPt + theme.omr.choiceGapPt + textLines * theme.omr.choiceLeadingPt;
 
   // multi_select's instruction caption (spec §5.3's row-mapped disposition
@@ -1340,11 +1349,30 @@ function headerFragment(document, {
   const instructions = headerConfig.instructions || null;
   const subtitle = headerConfig.subtitle || null;
   const reading = headerConfig.reading || null;
+  // Header manifest ("10 questions · pass 80%", spec appendix: a child sees
+  // how much sheet there is and what clears it without flipping a page to
+  // find out). NEVER authored in source YAML — `RenderPrintDocument` computes
+  // it (question count is a pure count of the document's own top-level
+  // `question` blocks; the pass mark comes from the caller's
+  // `context.passPercent`, since a document has no notion of "passing" on
+  // its own) and writes it onto `document.header.manifest` right before
+  // measurement, the same "adjust the document just before render" seam
+  // `dropRedundantTitleHeading` already uses — so this is read here exactly
+  // like `subtitle`/`reading`, a precomputed string with no policy of its
+  // own to apply.
+  const manifest = headerConfig.manifest || null;
   const showScoreBox = Boolean(headerConfig.scoreBox) && totalPoints !== undefined && totalPoints !== null;
   const showRule = headerConfig.rule !== false;
   const metaFirst = headerConfig.metaFirst === true;
   const frame = headerConfig.frame ?? 'none';
-  const framePaddingPt = frame === 'double' ? 7 : 0;
+  // Theme-driven (not a bare literal) so `workbookTheme`'s `compact` density
+  // can shrink the double-frame's own padding along with every other
+  // inter-block gap it tightens — this box's padding is whitespace around
+  // the title/meta text, not the text itself, so it belongs in the same
+  // "gaps first" bucket as `spacing`/`innerGapPt` rather than being pinned at
+  // `documentPdfTheme`'s legacy constant forever. `?? 7` preserves that
+  // legacy constant exactly for any theme that predates this field.
+  const framePaddingPt = frame === 'double' ? (header.framePaddingPt ?? 7) : 0;
   const gapBelowPt = metaFirst && frame === 'double' ? 0 : header.gapBelowPt;
   const metaRowHeightPt = showMetaLine || embeddedCard
     ? Math.max(showMetaLine ? header.metaLeadingPt : 0, embeddedCard?.heightPt ?? 0)
@@ -1353,6 +1381,7 @@ function headerFragment(document, {
     + (instructions ? header.metaLeadingPt : 0)
     + (subtitle ? theme.styles.body.leadingPt : 0)
     + (reading ? theme.styles.body.leadingPt : 0)
+    + (manifest ? (theme.styles.caption ?? theme.styles.body).leadingPt : 0)
     + framePaddingPt * 2
     + metaRowHeightPt
     + (metaRowHeightPt && metaFirst ? header.metaTitleGapPt : 0)
@@ -1376,6 +1405,7 @@ function headerFragment(document, {
     instructions,
     subtitle,
     reading,
+    manifest,
     showScoreBox,
     showRule,
     metaFirst,
