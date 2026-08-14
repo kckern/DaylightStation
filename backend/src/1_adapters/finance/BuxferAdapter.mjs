@@ -266,11 +266,12 @@ export class BuxferAdapter {
    * @param {Object} updates - Fields to update
    * @returns {Promise<Object>} Updated transaction
    */
-  async updateTransaction(id, { description, tags, memo }) {
+  async updateTransaction(id, { description, tags, memo, type }) {
     const params = { id };
     if (description) params.description = description;
     if (tags) params.tags = Array.isArray(tags) ? tags.join(',') : tags;
     if (memo) params.memo = memo;
+    if (type) params.type = type;
 
     try {
       const response = await this.request('transaction_edit', params, 'POST');

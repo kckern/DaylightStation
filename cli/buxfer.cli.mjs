@@ -28,7 +28,7 @@
  *   node cli/buxfer.cli.mjs add <fromAccountId> -5000 "Net Pay Transfer" --type transfer --to <toAccountId>
  *
  *   # Rename/retag a transaction (get ID from `txns` output)
- *   node cli/buxfer.cli.mjs update <txnId> --desc "Renamed" --tags "Food,Dining"
+ *   node cli/buxfer.cli.mjs update <txnId> --desc "Renamed" --tags "Food,Dining" --type expense
  *
  *   # Delete a transaction
  *   node cli/buxfer.cli.mjs delete <txnId>
@@ -344,7 +344,7 @@ async function cmdAdd() {
 async function cmdUpdate() {
   const id = commandArgs[0];
   if (!id) {
-    console.error('Usage: buxfer update <transactionId> [--desc description] [--tags tag1,tag2] [--memo text]');
+    console.error('Usage: buxfer update <transactionId> [--desc description] [--tags tag1,tag2] [--memo text] [--type expense|income|refund|transfer]');
     process.exit(1);
   }
 
@@ -352,13 +352,20 @@ async function cmdUpdate() {
   const desc = getFlag('desc');
   const tags = getFlag('tags');
   const memo = getFlag('memo');
+  const type = getFlag('type');
+
+  if (type && !['expense', 'income', 'refund', 'transfer'].includes(type)) {
+    console.error(`Error: Unsupported transaction type "${type}"`);
+    process.exit(1);
+  }
 
   if (desc) params.description = desc;
   if (tags) params.tags = tags;
   if (memo) params.memo = memo;
+  if (type) params.type = type;
 
-  if (!desc && !tags && !memo) {
-    console.error('Error: Provide at least one of --desc, --tags, or --memo');
+  if (!desc && !tags && !memo && !type) {
+    console.error('Error: Provide at least one of --desc, --tags, --memo, or --type');
     process.exit(1);
   }
 
@@ -373,6 +380,7 @@ async function cmdUpdate() {
   if (desc) console.log(`  Description: ${desc}`);
   if (tags) console.log(`  Tags: ${tags}`);
   if (memo) console.log(`  Memo: ${memo}`);
+  if (type) console.log(`  Type: ${type}`);
   console.log();
 }
 
@@ -607,6 +615,8 @@ Update Options:
   --desc <description>              New description
   --tags <tag1,tag2>                New tags
   --memo <text>                     New memo
+  --type <expense|income|refund|transfer>
+                                    New transaction type
 
 Payroll Options:
   --all                             Show all paychecks summary

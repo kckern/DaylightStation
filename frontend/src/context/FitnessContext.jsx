@@ -23,6 +23,7 @@ import { buildRiderToast } from '../modules/Fitness/player/overlays/buildRiderTo
 import { lookupUserName } from '../modules/Fitness/player/overlays/lookupUserName.js';
 import { createChallengeToastTracker, nextChallengeToast } from '../modules/Fitness/player/overlays/challengeToastTracker.js';
 import { buildChallengeToast } from '../modules/Fitness/player/overlays/buildChallengeToast.js';
+import { normalizePressureMatMessage, pressureMatFitnessEvent } from './fitnessPressureMat.js';
 
 // Phase 3 SSOT: Domain model imports
 import ParticipantFactory from '../modules/Fitness/domain/ParticipantFactory.js';
@@ -177,6 +178,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   // ~4/sec ceiling as HR. Read via getEquipmentVibration / value.vibrationState
   // (both keyed on `version`, so each throttled publish surfaces the latest).
   const vibrationStateRef = useRef({});
+  // Live repetition totals and analog diagnostics, keyed by mat id.
+  const pressureMatStateRef = useRef({});
   // Bluetooth game-controller management (Task 3.3)
   const [btInventory, setBtInventory] = useState(null);
   const [controllerPairing, setControllerPairing] = useState(null);
@@ -1299,6 +1302,23 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     }
   }, [batchedForceUpdate]);
 
+  const handlePressureMatEvent = React.useCallback((message) => {
+    const previous = pressureMatStateRef.current[message?.id] || null;
+    const reading = normalizePressureMatMessage(message, previous);
+    if (!reading) return;
+
+    pressureMatStateRef.current = {
+      ...pressureMatStateRef.current,
+      [reading.id]: reading,
+    };
+    batchedForceUpdate();
+
+    const fitnessEvent = pressureMatFitnessEvent(reading);
+    if (!fitnessEvent) return;
+    emitAppEvent('pressure-mat', reading, reading.id);
+    emitAppEvent(fitnessEvent.type, fitnessEvent.payload, reading.id);
+  }, [batchedForceUpdate, emitAppEvent]);
+
   const pushFitnessToast = useCallback((toast) => {
     toastIdRef.current += 1;
     setFitnessToast(normalizeToast(toast, toastIdRef.current));
@@ -1321,7 +1341,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       
       // Subscribe to fitness and vibration topics
       unsubscribe = wsService.subscribe(
-        ['fitness', 'vibration', 'rider_select', 'bt_inventory', 'bt.pair.progress', 'bt.remove.result'],
+        ['fitness', 'vibration', 'pressure-mat', 'rider_select', 'bt_inventory', 'bt.pair.progress', 'bt.remove.result'],
         (data) => {
           // Guard against malformed or empty data during reconnect churn
           if (!data || typeof data !== 'object') return;
@@ -1329,6 +1349,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
           if (data?.topic === 'vibration') {
             handleVibrationEvent(data);
+            return;
+          }
+
+          if (data?.topic === 'pressure-mat') {
+            handlePressureMatEvent(data);
             return;
           }
 
@@ -1406,7 +1431,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       Object.values(vibrationTimeoutRefs.current || {}).forEach(clearTimeout);
       vibrationTimeoutRefs.current = {};
     };
-  }, [batchedForceUpdate, handleVibrationEvent]);
+  }, [batchedForceUpdate, handlePressureMatEvent, handleVibrationEvent]);
 
   // Run device pruning unconditionally for the lifetime of FitnessProvider.
   // Previously gated by currentSessionId — but ANT+ packets can still arrive
@@ -2495,6 +2520,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     
     connected,
     vibrationState: vibrationStateRef.current,
+    pressureMatState: pressureMatStateRef.current,
     // Bluetooth game-controller management (Task 3.3)
     btInventory,
     controllerPairing,

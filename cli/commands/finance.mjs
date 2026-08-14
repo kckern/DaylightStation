@@ -149,7 +149,11 @@ async function actionRefresh(args, deps) {
 
   let response;
   try {
-    response = await fetchFn(url, { method: 'POST' });
+    response = await fetchFn(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    });
   } catch (err) {
     printError(deps.stderr, { error: 'backend_unreachable', url, message: err.message });
     return { exitCode: EXIT_BACKEND };

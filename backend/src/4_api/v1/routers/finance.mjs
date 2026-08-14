@@ -241,13 +241,13 @@ export function createFinanceRouter(config) {
    */
   router.post('/transactions/:id', asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { description, tags, memo } = req.body;
+    const { description, tags, memo, type } = req.body;
 
     if (!buxferAdapter?.isConfigured()) {
       return res.status(503).json({ error: 'Buxfer adapter not configured' });
     }
 
-    const result = await buxferAdapter.updateTransaction(id, { description, tags, memo });
+    const result = await buxferAdapter.updateTransaction(id, { description, tags, memo, type });
     return res.json({
       ok: true,
       transactionId: id,
@@ -354,8 +354,9 @@ export function createFinanceRouter(config) {
    * Equivalent to legacy /harvest/budget
    */
   router.post('/refresh', asyncHandler(async (req, res) => {
-    const householdId = resolveHouseholdId(req.body.household || req.query.household);
-    const { skipCategorization, skipCompilation } = req.body;
+    const body = req.body || {};
+    const householdId = resolveHouseholdId(body.household || req.query.household);
+    const { skipCategorization, skipCompilation } = body;
 
     if (!harvestService) {
       return res.status(503).json({
