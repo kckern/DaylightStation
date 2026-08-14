@@ -78,7 +78,7 @@ export class WorkSessionReporter {
         pending = (await this.#reviewQueue.listPending()).filter((i) => i.learnerId === userId);
       }
     } catch (err) {
-      this.#logger.warn?.('school.coursework.report-failed', { userId, error: err.message });
+      this.#logger.warn?.('school.coursework.report-failed', { learnerId: userId, error: err.message });
       return [];
     }
     if (!plan.entries.length) return [];

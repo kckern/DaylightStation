@@ -72,7 +72,7 @@ export class YamlSittingStore {
 
   #markCorrupt(userId, file) {
     this.#corrupt.add(userId);
-    this.#logger.warn?.('school.sittings.corrupt', { userId, file });
+    this.#logger.warn?.('school.sittings.corrupt', { learnerId: userId, file });
     return { state: 'corrupt', map: {}, file };
   }
 

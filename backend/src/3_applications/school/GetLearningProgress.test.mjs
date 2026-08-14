@@ -67,7 +67,7 @@ describe('GetLearningProgress', () => {
       logger, clock: () => new Date('2026-08-03T00:00:00.000Z'),
     });
     await expect(useCase.execute()).resolves.toMatchObject({ summary: { evidenceCount: 1 }, followUps: [] });
-    expect(logger.error).toHaveBeenCalledWith('school.progress.follow-up-source-failed', { error: 'advisor offline' });
+    expect(logger.error).toHaveBeenCalledWith('school.progress.follow-up-source-failed', { scopeType: 'household', scopeId: 'household', error: 'advisor offline' });
   });
 
   it('publishes filter options separately from a snapshot', async () => {
@@ -140,7 +140,7 @@ describe('GetLearningProgress', () => {
         logger, clock: () => new Date('2026-08-03T00:00:00.000Z'),
       });
       await expect(useCase.execute()).resolves.toMatchObject({ summary: { evidenceCount: 1 } });
-      expect(logger.error).toHaveBeenCalledWith('school.progress.expectation-source-failed', { error: 'outline offline' });
+      expect(logger.error).toHaveBeenCalledWith('school.progress.expectation-source-failed', { scopeType: 'household', scopeId: 'household', error: 'outline offline' });
     });
   });
 });
