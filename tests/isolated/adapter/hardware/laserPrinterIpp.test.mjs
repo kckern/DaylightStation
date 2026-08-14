@@ -45,6 +45,46 @@ describe('IPP encodeRequest', () => {
     expect(one.includes('copies')).toBe(false);
     expect(three.includes('copies')).toBe(true);
   });
+
+  describe('jobAttributes — incident #2: telling the printer what we actually rasterized', () => {
+    it('with no jobAttributes at all, none of printer-resolution/print-color-mode/sides/media are sent', () => {
+      const buf = encodeRequest(OPS.PRINT_JOB, printJobAttrs('ipp://p/ipp/print', { user: 'u', jobName: 'j', documentFormat: 'image/urf' }));
+      expect(buf.includes('printer-resolution')).toBe(false);
+      expect(buf.includes('print-color-mode')).toBe(false);
+      expect(buf.includes(Buffer.from('sides'))).toBe(false);
+      expect(buf.includes(Buffer.from('media'))).toBe(false);
+    });
+
+    it('encodes printer-resolution as a structural 9-octet resolution value, decodable by decodeResponse', () => {
+      const attrs = printJobAttrs('ipp://p/ipp/print', {
+        user: 'u',
+        jobName: 'j',
+        documentFormat: 'image/urf',
+        jobAttributes: { printerResolution: { xres: 300, yres: 300, units: 3 } },
+      });
+      const buf = encodeRequest(OPS.PRINT_JOB, attrs);
+      // decodeResponse's frame layout is identical for a request (see its own
+      // header comment / the fake IPP server in laserPrinterAdapter.test.mjs);
+      // round-tripping through it is the cheapest way to prove this wasn't
+      // encoded as a mangled string.
+      const decoded = decodeResponse(buf);
+      expect(decoded.attrs['printer-resolution']).toEqual([{ xres: 300, yres: 300, units: 3 }]);
+    });
+
+    it('encodes print-color-mode, sides, and media as keyword attributes with the exact negotiated values', () => {
+      const attrs = printJobAttrs('ipp://p/ipp/print', {
+        user: 'u',
+        jobName: 'j',
+        documentFormat: 'image/pwg-raster',
+        jobAttributes: { printColorMode: 'monochrome', sides: 'one-sided', media: 'na_letter_8.5x11in' },
+      });
+      const buf = encodeRequest(OPS.PRINT_JOB, attrs);
+      const decoded = decodeResponse(buf);
+      expect(decoded.attrs['print-color-mode']).toEqual(['monochrome']);
+      expect(decoded.attrs.sides).toEqual(['one-sided']);
+      expect(decoded.attrs.media).toEqual(['na_letter_8.5x11in']);
+    });
+  });
 });
 
 describe('IPP decodeResponse', () => {

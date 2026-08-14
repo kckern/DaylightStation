@@ -72,7 +72,7 @@ title: "Pokemon Identification — Quiz 1"
 header:
   instructions: "Mark your answers on your bubble card."
 fit:
-  policy: flow                              # flow | one-page | fill
+  policy: flow                              # flow | one-page | fill | prefer-one-page
   typeScale: standard                       # standard | young
 blocks:
   - type: question
@@ -92,10 +92,18 @@ blocks:
   multi-select, true/false, scan/media action codes) plus layout controls
   (dividers, spacers, page breaks). Wordbank/matching orders are
   seeded-shuffled; cloze blanks are fixed-width atoms.
-- **Fit** is decided by measurement, never streaming: `flow` paginates,
-  `one-page` must fit (density falls back to compact before refusing with the
-  overset amount), `fill` grows answer spaces into leftover page space.
-  `typeScale: young` enlarges glyphs *and* leading for early readers.
+- **Fit** is decided by measurement, never streaming: `flow` paginates at
+  normal density with no shrinking; `one-page` must fit — density falls back
+  to compact, and a document still overset at compact is REJECTED with a
+  structured overset amount rather than printed; `fill` grows answer spaces
+  into leftover page space (never tries compact); `prefer-one-page` tries
+  normal, then compact, and only spills (at compact density, never rejecting)
+  if neither reaches one page — this is the **default for the `worksheet`
+  archetype** (an archetype preset, like `header`'s name/date/scoreBox
+  defaults; an explicit `fit.policy` still overrides it). It exists for
+  documents where one page is strongly preferred but not worth refusing a
+  render over — unlike `one-page`, it never throws. `typeScale: young`
+  enlarges glyphs *and* leading for early readers.
 - **Shuffles are edit-stable**: derived from `(seed, variant, block key)`, so
   editing one block never reshuffles its neighbours, and variant N is a
   different-but-deterministic shuffle of the same content.

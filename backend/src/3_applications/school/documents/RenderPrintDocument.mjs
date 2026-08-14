@@ -7,8 +7,9 @@
  *     calling that renderer directly. v2 is additive, never a migration.
  *   - v2 documents run the fit loop `fit.mjs`'s own docs describe: measure at
  *     normal density always; measure again at compact ONLY when fit policy
- *     `one-page` needs the fallback (`flow`/`fill` never try compact — see
- *     `resolveFitPlan`); feed the measured attempt(s) to `resolveFitPlan`;
+ *     `one-page` or `prefer-one-page` needs the fallback (`flow`/`fill` never
+ *     try compact — see `resolveFitPlan`); feed the measured attempt(s) to
+ *     `resolveFitPlan`;
  *     render once, at the chosen density, with furniture (footer +
  *     continuation strip + archetype-driven gutter/duplex) and `growLastPage`
  *     threaded through.
@@ -858,9 +859,17 @@ export class RenderPrintDocument {
 
     const attempts = [normalAttempt];
     let compactTheme = null;
-    // Measurement at compact density is run ONLY when `one-page` needs the
-    // fallback (`fit.mjs`'s own contract) — `flow`/`fill` never try compact.
-    if (document.fit.policy === 'one-page' && normalAttempt.pageCount !== 1) {
+    // Measurement at compact density is run ONLY when `one-page` OR
+    // `prefer-one-page` needs the fallback (`fit.mjs`'s own contract) —
+    // `flow`/`fill` never try compact. Both policies share this same
+    // gate/condition because they share the same first move ("try normal,
+    // and only pay for a second measurement pass if normal didn't already
+    // land on one page") — they diverge only in what `resolveFitPlan` does
+    // with the result once compact ALSO fails to reach one page: `one-page`
+    // rejects the render outright, `prefer-one-page` spills at compact
+    // density rather than failing (see `resolveFitPlan`'s own doc comment).
+    if ((document.fit.policy === 'one-page' || document.fit.policy === 'prefer-one-page')
+      && normalAttempt.pageCount !== 1) {
       compactTheme = createWorkbookTheme({ typeScale: document.fit.typeScale, density: 'compact' });
       attempts.push(this.#measureAttempt(document, compactTheme, 'compact', context, furnitureOpts, totalPoints));
     }
@@ -944,7 +953,33 @@ export class RenderPrintDocument {
     });
 
     if (chosen.density === 'compact') {
-      warnings.push(`fit.policy 'one-page' required compact density to fit '${document.id}' on one page`);
+      // `one-page` can only ever reach this branch with a `chosen` attempt
+      // that measured `pageCount === 1` — a compact attempt that still
+      // overflowed takes the FIT_OVERSET throw above instead, never
+      // `chosen`. `prefer-one-page` CAN reach here with a spilled `chosen`
+      // (its whole point is to spill rather than fail — see `resolveFitPlan`),
+      // so the warning has to say which of the two actually happened.
+      //
+      // Deliberately reads `result.pageCount` (the REAL render this call just
+      // produced — the SAME "whole artifact" count `DocumentPdfRenderer.render`
+      // documents and every other caller of this method already reports),
+      // not `chosen.pageCount` (the TRIAL's prediction from `#measureAttempt`).
+      // The two can legitimately disagree in either direction:
+      //   - `#measureAttempt` never threads `bank` through to `resolveChoices`,
+      //     so any `omr_response` block is measured in measure.mjs's own
+      //     "probe mode" (a conservative reservation) during the trial —
+      //     which can make the trial predict MORE student pages than the real,
+      //     bank-aware render actually needs.
+      //   - a teacher render (`context.teacher`) appends key pages AFTER the
+      //     fit decision (`chosen` only ever describes the STUDENT content —
+      //     see the "Teacher key" comment below), so `result.pageCount` can be
+      //     LARGER than `chosen.pageCount` simply because the answer key added
+      //     pages the fit loop was never asked about.
+      // Either way, a diagnostic warning's page number has to be the number
+      // that was really printed, not a prediction from an earlier pass.
+      warnings.push(result.pageCount === 1
+        ? `fit.policy '${document.fit.policy}' required compact density to fit '${document.id}' on one page`
+        : `fit.policy '${document.fit.policy}' could not fit '${document.id}' on one page even at compact density; spilled to ${result.pageCount} pages`);
     }
     // `#renderV2` is PDF/Letter-always in Phase A (spec §13: no receipt path
     // wired for v2 yet) — a document declaring ONLY `target: ['receipt']`

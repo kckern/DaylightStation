@@ -48,12 +48,43 @@
  *    never selected by assumption, and this Brother will never route through
  *    it because it never advertises PDF.
  *
+ * ── Incident #2, 2026-08 ───────────────────────────────────────────────────
+ * The fix above shipped, and a real worksheet scan went through it
+ * successfully — correct container (`image/urf`), correct IPP transport,
+ * printer answered idle/accepting throughout — and STILL produced no paper.
+ * Negotiating the CONTAINER (`document-format-supported`) was only half the
+ * problem: this printer separately advertises, per container, what the
+ * PIXELS inside have to look like (`urf-supported: ["W8", ...]` = 8-bit
+ * grayscale; `pwg-raster-document-type-supported: ["sgray_8"]` = the same
+ * thing in PWG's vocabulary; `pwg-raster-document-resolution-supported` =
+ * 600 DPI only, a DIFFERENT resolution constraint than `urf-supported`'s
+ * `RS300-600-1200`). Ghostscript's raster devices default to 1-bit
+ * monochrome regardless of `-r`/`-sPAPERSIZE`, which is not what either
+ * capability list named — the printer silently dropped a job whose
+ * container it had agreed to but whose bit depth it never did.
+ *
+ * The fix, same shape as the first: never assume, always verify.
+ *  1. `negotiate.mjs`'s `negotiatePrintPlan` reads the printer's per-container
+ *     pixel capabilities (`urf-supported` CS/RS tokens, or
+ *     `pwg-raster-document-type-supported`/`-resolution-supported`) and
+ *     derives the exact channels/bits-per-color/DPI to target — falling back
+ *     to the other raster container if the first one's constraints can't be
+ *     satisfied, rather than shipping an unverified guess.
+ *  2. `rasterize.mjs` drives ghostscript with those exact parameters, then
+ *     PARSES THE RASTER IT JUST PRODUCED and asserts it matches — refusing
+ *     (RASTERIZE_PARAM_MISMATCH) rather than returning bytes nobody checked.
+ *  3. The negotiated resolution/color-mode/media are also sent as real IPP
+ *     job attributes (`printer-resolution`, `print-color-mode`, `media`,
+ *     `sides`), gated on the printer's own `job-creation-attributes-supported`
+ *     — so the metadata and the pixels agree, instead of the printer having
+ *     to guess from mismatched hints again.
+ *
  * @module adapters/hardware/laser-printer
  */
 import { createConnection } from 'net';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { OPS, encodeRequest, baseAttrs, printJobAttrs, decodeResponse } from './ipp.mjs';
-import { chooseDocumentFormat, chooseResolution, DEFAULT_MEDIA } from './negotiate.mjs';
+import { negotiatePrintPlan, chooseJobAttributes, DEFAULT_MEDIA } from './negotiate.mjs';
 import { rasterizePdf } from './rasterize.mjs';
 
 /** IPP printer-state enum (RFC 8011 §5.4.11). */
@@ -129,10 +160,16 @@ export class LaserPrinterAdapter {
   }
 
   /**
-   * The capabilities format negotiation needs, straight off the wire — no
-   * guessing, no caching (a print is rare enough that a fresh query every
-   * time is cheap, and printer capabilities are exactly the kind of thing
-   * that must never go stale behind an assumption).
+   * The capabilities negotiation needs, straight off the wire — no guessing,
+   * no caching (a print is rare enough that a fresh query every time is
+   * cheap, and printer capabilities are exactly the kind of thing that must
+   * never go stale behind an assumption). Deliberately returns the RAW
+   * per-container attributes (urf-supported, pwg-raster-document-type-
+   * supported, etc.) rather than pre-resolving a single dpi/format here —
+   * incident #2 was caused by exactly that kind of premature, format-
+   * agnostic resolution; `negotiate.mjs`'s `negotiatePrintPlan` is the only
+   * place that decision gets made now, and it needs the per-container lists
+   * intact to do it correctly.
    */
   async #getCapabilities() {
     const attrs = await this.#fetchAttributes();
@@ -140,10 +177,11 @@ export class LaserPrinterAdapter {
       documentFormatSupported: attrs['document-format-supported'] ?? [],
       documentFormatPreferred: attrs['document-format-preferred']?.[0] ?? null,
       documentFormatDefault: attrs['document-format-default']?.[0] ?? null,
-      dpi: chooseResolution({
-        printerResolutionSupported: attrs['printer-resolution-supported'] ?? [],
-        urfSupported: attrs['urf-supported'] ?? [],
-      }),
+      urfSupported: attrs['urf-supported'] ?? [],
+      pwgRasterDocumentTypeSupported: attrs['pwg-raster-document-type-supported'] ?? [],
+      pwgRasterResolutionSupported: attrs['pwg-raster-document-resolution-supported'] ?? [],
+      printerResolutionSupported: attrs['printer-resolution-supported'] ?? [],
+      jobCreationAttributesSupported: attrs['job-creation-attributes-supported'] ?? [],
       media: attrs['media-default']?.[0] ?? DEFAULT_MEDIA,
     };
   }
@@ -175,20 +213,33 @@ export class LaserPrinterAdapter {
     const nCopies = Math.max(1, Math.floor(copies));
 
     const caps = await this.#getCapabilities();
-    const chosen = chooseDocumentFormat({
+    // Decides BOTH the container (document-format) and, when rasterizing is
+    // required, the exact pixel parameters for that container — falling back
+    // to the other raster format if the first choice's own capability list
+    // turns out to have nothing this adapter can parse/produce (see
+    // negotiate.mjs and this file's incident #2 header comment).
+    const plan = negotiatePrintPlan({
       payloadFormat: 'application/pdf',
-      supported: caps.documentFormatSupported,
-      preferred: caps.documentFormatPreferred,
+      documentFormatSupported: caps.documentFormatSupported,
+      documentFormatPreferred: caps.documentFormatPreferred,
+      urfSupported: caps.urfSupported,
+      pwgRasterDocumentTypeSupported: caps.pwgRasterDocumentTypeSupported,
+      pwgRasterResolutionSupported: caps.pwgRasterResolutionSupported,
+      printerResolutionSupported: caps.printerResolutionSupported,
+      media: caps.media,
     });
 
-    // THE GUARD. No format this printer hasn't named -> refuse, loudly, with
-    // exactly what we tried and what it offered. This is the check that
-    // would have stopped the incident: a printer listing
-    // `application/octet-stream` alone (with no PDF and no raster format we
-    // can produce) does NOT pass — see negotiate.mjs for why.
-    if (!chosen || !caps.documentFormatSupported.includes(chosen.format)) {
+    // THE GUARD. No format this printer hasn't named (or whose own
+    // per-container pixel capabilities we could actually satisfy) -> refuse,
+    // loudly, with exactly what we tried and what it offered. This is the
+    // check that would have stopped BOTH incidents: a printer listing
+    // `application/octet-stream` alone (incident #1) or a raster container
+    // whose declared color/resolution tokens don't parse into anything
+    // producible (incident #2's shape, generalized) does NOT pass — see
+    // negotiate.mjs for why.
+    if (!plan || !caps.documentFormatSupported.includes(plan.format)) {
       throw new InfrastructureError(
-        `refusing to print: no supported document-format for this payload `
+        `refusing to print: no supported document-format (with satisfiable raster parameters, if rasterizing) for this payload `
         + `(payload=application/pdf, printer supports=[${caps.documentFormatSupported.join(', ') || 'none'}])`,
         {
           code: 'PRINT_FORMAT_UNSUPPORTED', host: this.#host,
@@ -197,28 +248,45 @@ export class LaserPrinterAdapter {
       );
     }
 
-    const bytes = chosen.needsRasterize
+    const bytes = plan.needsRasterize
       ? await rasterizePdf(pdf, {
-        format: chosen.format, dpi: caps.dpi, media: caps.media,
+        format: plan.format, dpi: plan.raster.dpi, media: plan.raster.media,
+        colorParams: plan.raster,
         maxPages: this.#renderPageLimit, logger: this.#logger,
       })
       : pdf;
 
-    if (this.#rawTransport && chosen.format === 'application/pdf') {
+    // Only sent when the printer's own job-creation-attributes-supported
+    // named them (see negotiate.mjs's chooseJobAttributes) — and only ever
+    // describing what we actually rasterized (or, for a direct-PDF
+    // container, no pixel-derived hints at all: there's no raster to have
+    // decided a resolution/color-mode from).
+    const jobAttributes = chooseJobAttributes({
+      jobCreationAttributesSupported: caps.jobCreationAttributesSupported,
+      dpi: plan.raster?.dpi ?? null,
+      printColorMode: plan.raster?.printColorMode ?? null,
+      media: plan.raster?.media ?? caps.media,
+    });
+
+    if (this.#rawTransport && plan.format === 'application/pdf') {
       // Opt-in only, and still capability-gated: we only get here because
-      // `chosen.format === 'application/pdf'` came out of negotiation, which
+      // `plan.format === 'application/pdf'` came out of negotiation, which
       // means the printer's own document-format-supported listed it.
       const raw = await this.#sendRaw9100(bytes, { jobName, user, copies: nCopies });
-      return { ...raw, documentFormat: chosen.format, transport: 'raw9100' };
+      return { ...raw, documentFormat: plan.format, transport: 'raw9100' };
     }
 
-    const sent = await this.#sendIpp(bytes, { jobName, user, copies: nCopies, documentFormat: chosen.format });
-    return { ...sent, documentFormat: chosen.format, transport: 'ipp' };
+    const sent = await this.#sendIpp(bytes, {
+      jobName, user, copies: nCopies, documentFormat: plan.format, jobAttributes,
+    });
+    return { ...sent, documentFormat: plan.format, transport: 'ipp' };
   }
 
   /** IPP Print-Job — the default transport. `copies` is a real IPP attribute; no manual concatenation needed. */
-  async #sendIpp(document, { jobName, user, copies, documentFormat }) {
-    const attrs = printJobAttrs(this.printerUri, { user, jobName, copies, documentFormat });
+  async #sendIpp(document, { jobName, user, copies, documentFormat, jobAttributes = {} }) {
+    const attrs = printJobAttrs(this.printerUri, {
+      user, jobName, copies, documentFormat, jobAttributes,
+    });
     const { ok, statusCode } = await this.#ipp(OPS.PRINT_JOB, attrs, document, this.#printTimeout);
     if (!ok) {
       throw new InfrastructureError(`print-job failed (ipp status 0x${statusCode.toString(16)})`, {
@@ -226,7 +294,7 @@ export class LaserPrinterAdapter {
       });
     }
     this.#logger.info?.('laser-printer.job-sent', {
-      host: this.#host, port: this.#port, transport: 'ipp', jobName, user, copies, documentFormat, bytes: document.length,
+      host: this.#host, port: this.#port, transport: 'ipp', jobName, user, copies, documentFormat, jobAttributes, bytes: document.length,
     });
     return { ok: true, bytes: document.length, copies };
   }

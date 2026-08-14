@@ -152,7 +152,27 @@ export function worksheetInstanceDocument(instance, {
     variant: 0,
     target: ['letter'],
     archetype: 'worksheet',
-    fit: { policy: 'fill', typeScale: 'standard' },
+    // No explicit `fit` here (deliberately, since the prior code DID pin one
+    // — see git blame): `fill`'s "never shrink, always grow the last page"
+    // behavior never even TRIES compact density, so a worksheet spilling onto
+    // a second page always did so at the loosest possible spacing, even when
+    // a denser layout would have fit more of it on page one. Omitting `fit`
+    // lets `validateDocumentV2`'s per-archetype preset
+    // (`FIT_POLICY_PRESETS.worksheet`) apply instead, which as of this change
+    // is `prefer-one-page` — the policy built to satisfy the household rule
+    // this function exists to serve ("we can only use two pages if we have an
+    // exceptionally long number of questions ... within each page there
+    // should be right sizing"). This does NOT guarantee every worksheet lands
+    // on one page — a genuinely long question set (e.g. the atlas course's
+    // "upper" profile: 10 five-choice multiple-choice questions) can still
+    // spill even at compact density, and correctly should: that is the
+    // "exceptionally long" half of the household rule, not a bug. What
+    // changes is that the spill now happens at the RIGHT-SIZED density
+    // instead of the loose default, and is reported (a warning) instead of
+    // silent. A future worksheet that legitimately needs different fit
+    // behavior can still pass `fit` explicitly through
+    // `worksheetInstanceDocument`'s options; nothing here forecloses that, it
+    // just stops HARD-CODING a policy that never even tried to right-size.
     title,
     header: {
       name: true, date: true, scoreBox: false, metaFirst: true, rule: false, frame: 'double',
