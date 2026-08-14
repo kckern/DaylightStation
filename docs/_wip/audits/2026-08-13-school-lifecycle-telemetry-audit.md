@@ -1,5 +1,8 @@
 # School Lifecycle Telemetry Audit
 
+> **Status: all five gaps addressed.** See §11 for what shipped, and for one
+> place this audit was wrong about its own findings.
+
 **Date:** 2026-08-13
 **Scope:** Diagnostic and post-hoc-review coverage across the School subsystem — curriculum load, assignment and enrollment, session lifecycle, document issuance and printing, submission, grading, review/repair, and the frontend surfaces.
 **Question asked:** can we diagnose a School problem while it is happening, and reconstruct what happened afterwards?
@@ -169,7 +172,50 @@ Items 1–4 together are what turns "we can watch it happen" into "we can recons
 
 ---
 
-## 10. Caveats on this audit
+## 10. What shipped
+
+| Gap | Outcome |
+|---|---|
+| A | `YamlAssignmentStore` now receives the lifecycle logger; three silent stores gained one |
+| B | Seven state-changing use cases now emit an event; enrollment carries its policy fields |
+| C | `learnerId` standardized (18 → 30 events); four bare-`{error}` payloads gained their subject |
+| D | `createSchoolLedgerTransport` — dated JSONL under `media/logs/school/`, pruned at 400 days |
+| E | Two genuinely silent failures reported; the rest reviewed and deliberately left alone |
+
+### Where this audit was wrong about itself
+
+**Gap A was mis-framed.** It said "12 constructions forgot to pass a logger."
+Reading the code showed only **one** store (`YamlAssignmentStore`) accepted a
+logger and was denied it. Seven others had *no logging capability at all* —
+zero references to a logger — so passing one would have been a no-op. For those,
+gap A and gap E were the same problem: their catches were silent because there
+was nothing to log with. The fix was to give them logging, not to pass an
+argument.
+
+Two of the twelve (`YamlCurriculumDatastore`, and `YamlSchoolDatastore`'s corrupt
+branch) turned out not to be gaps at all: the first accumulates `errors[]` that
+`CurriculumAccess` surfaces as `school.curriculum.invalid-units`, and the second
+returns `{state: 'corrupt'}` which its callers log. Both were left untouched.
+
+The lesson generalizes: a static census tells you where a symbol is absent, not
+whether its absence is a defect. Every item still needed reading.
+
+### A defect introduced while fixing gap D
+
+The first version of the ledger transport called `fs.mkdirSync` unguarded at
+construction. Construction runs during boot, so an unwritable media volume
+became `[FATAL] Server initialization failed: EACCES` — the transport took down
+the subsystem it existed to observe, contradicting the principle written into
+its own file header.
+
+It was nearly missed: the boot check returned `200` from a *stale server process
+still listening on the port*. Only reading the new process's own log caught it.
+Construction now degrades to a no-op with a one-line warning, and that path is
+tested.
+
+---
+
+## 11. Caveats on this audit
 
 - Counts come from static extraction. A dynamic-name log call (none were observed, but the scan would not catch one) would be missed.
 - "Zero logs" means zero `logger.*` calls in the use case file itself; a use case may still be observable through events emitted by its collaborators.
