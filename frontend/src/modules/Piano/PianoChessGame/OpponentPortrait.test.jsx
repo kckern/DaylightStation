@@ -62,6 +62,22 @@ describe('the portrait', () => {
   });
 });
 
+describe('the think-time pulse', () => {
+  it('pulses with the actual floor the opponent is being held for, not a made-up duration', () => {
+    const { container } = render(<OpponentPortrait opponent={DEFAULT_ROSTER[3]} level={3} thinkMs={2500} />);
+    const figure = container.querySelector('.chess-opponent');
+    expect(figure.classList.contains('chess-opponent--thinking')).toBe(true);
+    expect(figure.style.getPropertyValue('--pc-think-ms')).toBe('2500ms');
+  });
+
+  it('draws no pulse when it is not this character\'s turn', () => {
+    const { container } = render(<OpponentPortrait opponent={DEFAULT_ROSTER[3]} level={3} thinkMs={null} />);
+    const figure = container.querySelector('.chess-opponent');
+    expect(figure.classList.contains('chess-opponent--thinking')).toBe(false);
+    expect(figure.style.getPropertyValue('--pc-think-ms')).toBe('');
+  });
+});
+
 describe('the board theme', () => {
   it('is a colour per level, deepening up the ladder', () => {
     expect(themeForLevel(0)).not.toBe(themeForLevel(TOP_LEVEL));

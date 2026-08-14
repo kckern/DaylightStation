@@ -66,6 +66,24 @@
   .chess-opponent__name { font-size: var(--t-h, 1.25rem); }
 }
 
+/* The character's own think time, made visible. --pc-think-ms is set inline
+   per-render from thinkTimeFor's actual result, so a brooding, high-rung
+   opponent pulses visibly slower than a fast, low-rung one — the pause IS
+   the difficulty, read without reading. transform + opacity only: CSS
+   `filter` animation is a known paint-cost trap on this kiosk's WebView. */
+.chess-opponent--thinking .chess-opponent__face {
+  animation: chess-opponent-think var(--pc-think-ms, 3200ms) ease-in-out infinite;
+}
+
+@keyframes chess-opponent-think {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.05); opacity: 0.82; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chess-opponent--thinking .chess-opponent__face { animation: none; }
+}
+
 /* How close this player is to the next character. Shown as counted games, not
    as a percentage: "3 of 5 wins" is something a child can act on, and it also
    makes it visible that some games did not count. */
