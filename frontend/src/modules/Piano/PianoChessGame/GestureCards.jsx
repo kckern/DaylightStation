@@ -56,7 +56,7 @@ function KeyDiagram({ pressed, span = 13 }) {
 }
 
 /**
- * @param {object[]} gestures  {id, pressed, title, note, active, charged}
+ * @param {object[]} gestures  {id, pressed, title, note, active, muted, repeat}
  */
 export function GestureCards({ gestures }) {
   return (
@@ -66,7 +66,16 @@ export function GestureCards({ gestures }) {
           key={gesture.id}
           className={`gesture-card${gesture.active ? ' gesture-card--active' : ''}${gesture.muted ? ' gesture-card--muted' : ''}`}
         >
-          <KeyDiagram pressed={gesture.pressed} />
+          <div className="gesture-card__figure">
+            <KeyDiagram pressed={gesture.pressed} />
+            {gesture.repeat > 1 && (
+              /* Drawn rather than written into the title: "play this twice" is
+                 the same instruction the board already gives for picking a
+                 piece up, and a child who has learned that reads the badge
+                 without being told what it means. */
+              <span className="gesture-card__repeat">{`×${gesture.repeat}`}</span>
+            )}
+          </div>
           <div className="gesture-card__text">
             <span className="gesture-card__title">{gesture.title}</span>
             {gesture.note && <span className="gesture-card__note">{gesture.note}</span>}

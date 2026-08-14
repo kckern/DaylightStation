@@ -38,6 +38,26 @@
   height: auto;
 }
 
+.gesture-card__figure {
+  position: relative;
+  display: block;
+}
+
+/* Sits on the diagram rather than beside it: the column is 4.6rem wide and a
+   second element in it would squeeze the keys until they stopped reading as
+   keys. */
+.gesture-card__repeat {
+  position: absolute;
+  right: -0.1rem;
+  bottom: -0.35rem;
+  padding: 0 0.25rem;
+  border-radius: var(--r-sm, 6px);
+  background: var(--piano-accent);
+  color: var(--piano-bg, #16161b);
+  font-size: var(--t-cap);
+  line-height: 1.4;
+}
+
 .gesture-card__key {
   fill: #efe9df;
   stroke: rgb(0 0 0 / 45%);

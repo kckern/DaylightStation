@@ -31,6 +31,22 @@ export function localDateStamp(at) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
+/** One move, in both notations. Shared by the played line and the rewound one. */
+function serializeMove(entry, ply, undone) {
+  return {
+    ply,
+    san: entry.san,
+    from: entry.from,
+    to: entry.to,
+    color: entry.color,
+    captured: entry.captured || null,
+    // The two addresses the player performed it with, origin then destination.
+    played: Array.isArray(entry.chords) ? entry.chords.filter(Boolean) : [],
+    undone,
+    ...(undone ? { undone_at_ply: entry.undone_at_ply ?? ply, undone_seq: entry.undone_seq ?? null } : {}),
+  };
+}
+
 /**
  * @param {object} args
  * @param {object} args.game        live game state
@@ -40,18 +56,22 @@ export function localDateStamp(at) {
  * @param {string} args.addressing  'chords' | 'staff' — the vocabulary in use
  * @param {number} args.hints
  * @param {number} args.bestMoves
+ * @param {number} args.takebacks
  * @param {number} args.startedAt
  * @param {number} args.endedAt
  * @param {string} args.endedBy     'game_over' | 'left'
  */
 export function buildGameArchive({
   game, gameId, userId, rungId, opponent = null, addressing = 'chords',
-  hints = 0, bestMoves = 0, startedAt, endedAt, endedBy = 'left',
+  hints = 0, bestMoves = 0, takebacks = 0, startedAt, endedAt, endedBy = 'left',
 }) {
   const history = Array.isArray(game?.history) ? game.history : [];
+  const rewound = Array.isArray(game?.undoneHistory) ? game.undoneHistory : [];
   // A game with no moves is not a game. Recording it would bury the real ones
-  // under a file per accidental visit to the screen.
-  if (!history.length) return null;
+  // under a file per accidental visit to the screen. A game whose every move
+  // was taken back IS one, though — a child who played and unplayed a move sat
+  // down and tried something, and that is the thing worth knowing.
+  if (!history.length && !rewound.length) return null;
 
   const completed = !!game?.status?.game_over;
   const outcome = completed ? game.status.outcome : null;
@@ -88,18 +108,21 @@ export function buildGameArchive({
     initial_fen: game?.initialFen || INITIAL_FEN,
     final_fen: game?.game?.fen || null,
     move_count: history.length,
-    moves: history.map((entry, index) => ({
-      ply: index + 1,
-      san: entry.san,
-      from: entry.from,
-      to: entry.to,
-      color: entry.color,
-      captured: entry.captured || null,
-      // The two addresses the player performed it with, origin then destination.
-      played: Array.isArray(entry.chords) ? entry.chords.filter(Boolean) : [],
-    })),
+    // The played line and the abandoned ones, in the order they happened. A
+    // replayer filters `undone` out and reaches `final_fen`; an analyzer reads
+    // them and finds the moment the game actually turned. Sorted by the ply
+    // each was played at, with the rewound move first when both share one —
+    // because it was played first, and then unplayed.
+    moves: [
+      ...rewound.map((entry) => serializeMove(entry, entry.ply, true)),
+      ...history.map((entry, index) => serializeMove(entry, index + 1, false)),
+    ].sort((a, b) => (a.ply - b.ply) || (a.undone === b.undone ? 0 : (a.undone ? -1 : 1))),
 
-    help: { hints: Math.max(0, hints || 0), best_moves: Math.max(0, bestMoves || 0) },
+    help: {
+      hints: Math.max(0, hints || 0),
+      best_moves: Math.max(0, bestMoves || 0),
+      takebacks: Math.max(0, takebacks || 0),
+    },
   };
 }
 

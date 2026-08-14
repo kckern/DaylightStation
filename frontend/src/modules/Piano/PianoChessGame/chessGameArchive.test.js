@@ -94,7 +94,7 @@ describe('the household game archive', () => {
   it('carries the help tally, so a game won on hints is not read as one that was not', () => {
     const game = played([['e2', 'e4']]);
     const archive = buildGameArchive(inputs(game, { hints: 3, bestMoves: 2 }));
-    expect(archive.help).toEqual({ hints: 3, best_moves: 2 });
+    expect(archive.help).toEqual({ hints: 3, best_moves: 2, takebacks: 0 });
   });
 
   it('states the effective opponent, not merely the UI rung', () => {
@@ -108,5 +108,66 @@ describe('the household game archive', () => {
   it('keeps a guest game, with a null player rather than no record', () => {
     const game = played([['e2', 'e4']]);
     expect(buildGameArchive(inputs(game, { userId: null })).user_id).toBe(null);
+  });
+});
+
+describe('rewound moves in the archive', () => {
+  const game = {
+    playerColor: 'w',
+    initialFen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+    game: { fen: 'after', moves: ['Nf3'] },
+    status: { game_over: false },
+    scheme: { id: 'chords-default' },
+    history: [{ san: 'Nf3', from: 'g1', to: 'f3', color: 'w', captured: null, chords: ['G', 'F'] }],
+    undoneHistory: [
+      { san: 'Qh5', from: 'd1', to: 'h5', color: 'w', captured: null, chords: ['D', 'H'], ply: 1, undone_at_ply: 1, undone_seq: 1 },
+    ],
+  };
+
+  it('keeps the taken-back move, marked, in the order it was played', () => {
+    const archive = buildGameArchive({
+      game, gameId: 'g1', userId: 'kid', rungId: 'learner',
+      hints: 0, bestMoves: 0, takebacks: 1, startedAt: 0, endedAt: 1000,
+    });
+    expect(archive.moves).toHaveLength(2);
+    expect(archive.moves[0]).toMatchObject({ san: 'Qh5', undone: true, undone_at_ply: 1, undone_seq: 1, ply: 1 });
+    expect(archive.moves[1]).toMatchObject({ san: 'Nf3', undone: false, ply: 1 });
+  });
+
+  it('counts only the line that was actually played', () => {
+    const archive = buildGameArchive({
+      game, gameId: 'g1', userId: 'kid', rungId: 'learner',
+      hints: 0, bestMoves: 0, takebacks: 1, startedAt: 0, endedAt: 1000,
+    });
+    expect(archive.move_count).toBe(1);
+    expect(archive.help).toEqual({ hints: 0, best_moves: 0, takebacks: 1 });
+  });
+
+  it('replays cleanly once the undone moves are filtered out', () => {
+    const archive = buildGameArchive({
+      game, gameId: 'g1', userId: 'kid', rungId: 'learner',
+      hints: 0, bestMoves: 0, takebacks: 1, startedAt: 0, endedAt: 1000,
+    });
+    const played = archive.moves.filter((move) => !move.undone).map((move) => move.san);
+    expect(played).toEqual(['Nf3']);
+  });
+
+  it('is still a game when every move was taken back', () => {
+    const allRewound = { ...game, history: [], undoneHistory: game.undoneHistory };
+    const archive = buildGameArchive({
+      game: allRewound, gameId: 'g1', userId: 'kid', rungId: 'learner',
+      hints: 0, bestMoves: 0, takebacks: 1, startedAt: 0, endedAt: 1000,
+    });
+    expect(archive).not.toBe(null);
+    expect(archive.move_count).toBe(0);
+    expect(archive.moves).toHaveLength(1);
+  });
+
+  it('is still not a game when nothing was played at all', () => {
+    const untouched = { ...game, history: [], undoneHistory: [] };
+    expect(buildGameArchive({
+      game: untouched, gameId: 'g1', userId: 'kid', rungId: 'learner',
+      hints: 0, bestMoves: 0, takebacks: 0, startedAt: 0, endedAt: 1000,
+    })).toBe(null);
   });
 });

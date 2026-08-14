@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { legalDestinations } from '@shared-gaming/chess/index.mjs';
 import { DEFAULT_CHORD_SCHEME, chordBoard, squareToChord } from './chordAddress.js';
 import {
-  applySquare, capturedPieces, clearSelection, commitMove, createChessGameState, destinationsFor, isPlayerTurn, pieceAt, playableSources,
+  applySquare, capturedPieces, clearSelection, commitMove, createChessGameState, destinationsFor, isPlayerTurn, pieceAt, playableSources, takeMoveBack,
 } from './chessGameState.js';
 import { advanceCursor, createCursorState } from './chordCursor.js';
 
@@ -20,6 +21,11 @@ function firstMovableSquare(state) {
   }
   return null;
 }
+
+// Every square the side to move could lift right now, whoever that is.
+// `playableSources` answers only for the player, and these tests need to drive
+// the opponent's reply by hand.
+const legalDestinationsOf = (state) => legalDestinations(state.game.fen);
 
 describe('piano chess move flow', () => {
   it('starts with White to move and nothing selected', () => {
@@ -349,5 +355,105 @@ describe('chord cursor', () => {
     const corrected = tick(state, [60, 63, 67], 400);
     expect(corrected.event.square).toBe('c2');
     expect(tick(corrected.state, [], 460).event.square).toBe('c2');
+  });
+});
+
+describe('taking a move back', () => {
+  // A fixed seed keeps the dealt chord map stable so the assertions can name it.
+  const start = () => createChessGameState({ seed: 7 });
+
+  it('refuses when the player has not moved yet', () => {
+    const { state, event } = takeMoveBack(start());
+    expect(event.type).toBe('rejected');
+    expect(event.reason).toBe('nothing_to_take_back');
+    expect(state.history).toHaveLength(0);
+  });
+
+  it('rewinds the player move and the opponent answer together', () => {
+    const state = start();
+    const from = firstMovableSquare(state);
+    const to = destinationsFor(state, from)[0];
+    const afterMine = commitMove(state, from, to).state;
+    const reply = Object.keys(legalDestinationsOf(afterMine))[0];
+    const afterTheirs = commitMove(afterMine, reply, destinationsFor(afterMine, reply)[0]).state;
+    expect(afterTheirs.history).toHaveLength(2);
+
+    const { state: rewound, event } = takeMoveBack(afterTheirs);
+    expect(event.type).toBe('took_back');
+    expect(event.plies).toBe(2);
+    expect(rewound.game.fen).toBe(state.game.fen);
+    expect(rewound.history).toHaveLength(0);
+    expect(rewound.undoneHistory).toHaveLength(2);
+    expect(isPlayerTurn(rewound)).toBe(true);
+  });
+
+  it('rewinds one ply when the opponent has not answered', () => {
+    const state = start();
+    const from = firstMovableSquare(state);
+    const afterMine = commitMove(state, from, destinationsFor(state, from)[0]).state;
+
+    const { state: rewound, event } = takeMoveBack(afterMine);
+    expect(event.plies).toBe(1);
+    expect(rewound.game.fen).toBe(state.game.fen);
+    expect(rewound.undoneHistory).toHaveLength(1);
+  });
+
+  it('restores the chord map the player was reading when they moved', () => {
+    const state = createChessGameState({ seed: 7, shuffleEachTurn: true });
+    const from = firstMovableSquare(state);
+    const afterMine = commitMove(state, from, destinationsFor(state, from)[0]).state;
+    const { state: rewound } = takeMoveBack(afterMine);
+    expect(rewound.scheme.id).toBe(state.scheme.id);
+  });
+
+  it('clears anything in hand and any standing refusal', () => {
+    const state = start();
+    const from = firstMovableSquare(state);
+    const afterMine = commitMove(state, from, destinationsFor(state, from)[0]).state;
+    // A piece in hand and a refusal on screen both describe a board that is
+    // about to be taken away, so neither may survive the rewind.
+    const cluttered = { ...afterMine, origin: from, rejection: { reason: 'empty_square', seq: 3 } };
+    const { state: rewound } = takeMoveBack(cluttered);
+    expect(rewound.origin).toBe(null);
+    expect(rewound.rejection).toBe(null);
+  });
+
+  it('records when each rewind happened', () => {
+    const state = start();
+    const from = firstMovableSquare(state);
+    const afterMine = commitMove(state, from, destinationsFor(state, from)[0]).state;
+    const { state: rewound } = takeMoveBack(afterMine);
+    expect(rewound.undoneHistory[0].ply).toBe(1);
+    expect(rewound.undoneHistory[0].undone_at_ply).toBe(1);
+    expect(rewound.undoneHistory[0].undone_seq).toBe(1);
+  });
+
+  it('keeps two rewind episodes distinguishable even when they land on the same ply', () => {
+    // The collision `undone_at_ply` alone cannot survive: a rewind trims
+    // history, so playing and unplaying twice in a row produces two episodes
+    // that both happened "at ply 1".
+    const state = start();
+    const first = firstMovableSquare(state);
+    const afterFirst = commitMove(state, first, destinationsFor(state, first)[0]).state;
+    const rewoundOnce = takeMoveBack(afterFirst).state;
+
+    const second = firstMovableSquare(rewoundOnce);
+    const afterSecond = commitMove(rewoundOnce, second, destinationsFor(rewoundOnce, second)[0]).state;
+    const rewoundTwice = takeMoveBack(afterSecond).state;
+
+    expect(rewoundTwice.undoneHistory).toHaveLength(2);
+    expect(rewoundTwice.undoneHistory.map((entry) => entry.undone_at_ply)).toEqual([1, 1]);
+    expect(rewoundTwice.undoneHistory.map((entry) => entry.undone_seq)).toEqual([1, 2]);
+  });
+
+  it('refuses once the game is over', () => {
+    // Fool's mate: the game ends, and the board must not be rewindable past it.
+    const mated = createChessGameState({
+      fen: 'rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3',
+      playerColor: 'w',
+    });
+    const { event } = takeMoveBack(mated);
+    expect(event.type).toBe('rejected');
+    expect(event.reason).toBe('game_over');
   });
 });
