@@ -30,7 +30,7 @@ vi.mock('./chessApi.js', () => ({
   fetchLadder: vi.fn(async () => null),
 }));
 
-import { PianoChessGame } from './PianoChessGame.jsx';
+import { PianoChessGame, promptFor } from './PianoChessGame.jsx';
 import {
   archiveGame, fetchChessConfig, fetchLadder, requestOpponentMove, saveChessConfig, saveGameRecord,
 } from './chessApi.js';
@@ -38,6 +38,35 @@ import { DEFAULT_CHORD_SCHEME, squareToChord } from './chordAddress.js';
 import { DOUBLE_WINDOW_MS } from './chordSelection.js';
 
 const sourceOutlines = (container) => container.querySelectorAll('.chess-board__square--source').length;
+
+describe('the takeback prompt', () => {
+  const playing = {
+    status: { game_over: false, turn: 'w', check: false },
+    playerColor: 'w',
+    origin: null,
+  };
+
+  it('says what a second octave will do once the first has been played', () => {
+    expect(promptFor(playing, null, null, false, true))
+      .toBe('Play the octave again to take your move back.');
+  });
+
+  it('says so even while the opponent is thinking, which is when it is wanted', () => {
+    const theirTurn = { ...playing, status: { ...playing.status, turn: 'b' } };
+    expect(promptFor(theirTurn, null, null, false, true))
+      .toBe('Play the octave again to take your move back.');
+  });
+
+  it('goes back to the ordinary instruction when nothing is armed', () => {
+    expect(promptFor(playing, null, null, false, false))
+      .toBe("Play a piece's chord twice to pick it up.");
+  });
+
+  it('never talks over a refusal', () => {
+    expect(promptFor(playing, { reason: 'empty_square' }, null, false, true))
+      .toBe('Nothing on that square.');
+  });
+});
 
 describe('PianoChessGame chrome', () => {
   it('has no header of its own — the kiosk breadcrumb rail names the screen', () => {
