@@ -24,6 +24,7 @@ export const APP_REGISTRY = {
   'weekly-review':   { label: 'Weekly Review',    icon: null,               param: null, component: () => import('../modules/WeeklyReview/WeeklyReview.jsx') },
   'gameshow':        { label: 'Game Show',        icon: null,               param: null, component: () => import('../modules/GameShow/GameShow.jsx') },
   'gaming':          { label: 'Scale Clash',      icon: null,               param: null, component: () => import('../Apps/GamingApp.jsx') },
+  'game-demo':       { label: 'Game Framework',   icon: null,               param: null, component: () => import('../Apps/GameDemoApp.jsx') },
   'school':          { label: 'School',           icon: null,               param: null, component: () => import('../modules/School/SchoolApp.jsx') },
 };
 

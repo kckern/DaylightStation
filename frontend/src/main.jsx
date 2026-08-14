@@ -22,6 +22,7 @@ import AppContainer from './modules/AppContainer/AppContainer.jsx';
 // styles must not ride in the bundle every kiosk loads.
 const TeacherConsole = React.lazy(() => import('./modules/School/teacher/TeacherConsole.jsx'));
 const GamingApp = React.lazy(() => import('./Apps/GamingApp.jsx'));
+const GameDemoApp = React.lazy(() => import('./Apps/GameDemoApp.jsx'));
 const TeacherConsoleRoute = () => (
   <React.Suspense fallback={<div />}> <TeacherConsole /> </React.Suspense>
 );
@@ -205,6 +206,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/fitness/*" element={<FitnessApp />} />
         <Route path="/piano/*" element={<PianoApp />} />
         <Route path="/gaming/*" element={<React.Suspense fallback={null}><GamingApp /></React.Suspense>} />
+        <Route path="/game-demo" element={<React.Suspense fallback={null}><GameDemoApp /></React.Suspense>} />
         <Route path="/life/*" element={<LifeApp />} />
         <Route path="/admin/*" element={<AdminApp />} />
         {["/screen/:screenId/*", "/screens/:screenId/*"].map(p => <Route key={p} path={p} element={<WebSocketProvider><ScreenRenderer /></WebSocketProvider>} />)}

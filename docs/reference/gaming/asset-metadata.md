@@ -145,8 +145,36 @@ Exactly one of `cell` or `rect` is allowed:
 - `rect` is valid only for `geometry.layout: freeform` and must stay within source-image bounds.
 - A frame inherits the asset default anchor/tags unless explicitly overridden.
 - `content_bounds` is `[x, y, width, height]` inside the frame and must exactly match its non-transparent pixels. It makes padded animation cells auditable and gives scale review a visible size rather than a misleading crop size.
+- `subject_bounds` is an optional reviewed `[x, y, width, height]` inside `content_bounds` for an opaque or effect-backed frame whose alpha envelope is not the subject silhouette. Scale-class QA uses it, while clipping and rendering continue to use exact decoded `content_bounds`. It must not be used on ordinary transparent sprites merely to conceal incorrectly sized art.
 
 Frames tagged through an asset with `ground-contact` must use both exact `content_bounds` and a custom point anchor whose y coordinate equals the visible-alpha bottom. Visible alpha must also retain transparent padding on all four sides of the source frame. These are the hard checks for trees, actors, boats, and other silhouettes whose feet, trunk, or hull must reach their authored ground point without being truncated by a source-cell or viewport boundary.
+
+Action frames may contain a tool, weapon, projectile, splash, or spell envelope below the actor's feet. In that case the visible-alpha bottom is not the world contact. Preserve the reviewed foot baseline explicitly instead of moving the actor anchor to the effect:
+
+```yaml
+anchor: { point: [32, 41] }
+ground_contact:
+  point: [32, 41]
+  reason: fixed actor foot baseline; fishing splash extends below the feet
+```
+
+The contact point must equal the custom anchor and remain stable across the clip. This exception changes only the decoded visual envelope; it does not permit per-frame world-position drift.
+
+When a tool, weapon, projectile, or effect makes `content_bounds` larger than the actor body, add `scale_reference: idle.right.0` (or the corresponding reviewed facing). Scale-class and cross-facing body comparisons use that referenced subject silhouette, while clipping, canvas sizing, fixed-anchor rendering, and silhouette-envelope QA continue to use the action frame's complete `content_bounds`. A scale reference must name another frame with decoded bounds; it cannot be used to hide a wrongly sized base sprite.
+
+For animated grid assets, validation also scans internal cell seams for continuous alpha. This catches a 32-pixel actor mistakenly declared as two 16-pixel rows, or a 48-pixel actor split into two 24-pixel rows, even when the incorrect grid happens to cover the source dimensions exactly. If independently reviewed adjacent frames genuinely touch opposite cell edges, document only the affected axis:
+
+```yaml
+geometry:
+  layout: grid
+  cell: [32, 48]
+  grid: [4, 1]
+  cross_cell_alpha:
+    allowed_axes: [vertical]
+    reason: reviewed independent adjacent frames intentionally touch opposite vertical cell edges
+```
+
+This is an explicit geometry exception, not permission to suppress frame-edge or anchor QA.
 
 Frame IDs are local to their asset. A consuming scene refers to `npc.farmer-bob#idle.down.0` only for inspection/debugging; normal gameplay-facing YAML should refer to a named clip.
 
@@ -199,6 +227,7 @@ clips:
       - { frame: chest.opening.1, duration_ms: 120 }
       - { frame: chest.open, duration_ms: 700 }
     loop: once
+    qa_profile: expressive
 ```
 
 Clip rules:
@@ -207,8 +236,11 @@ Clip rules:
 - `fps` is positive and may be fractional; `duration_ms` is a positive integer.
 - `loop` is `loop`, `once`, or `ping-pong`; default is `loop`.
 - `once` holds its final frame until its host changes state or removes the clip.
+- `qa_profile` is optional and is `tight`, `expressive`, `transform`, or `mechanism`. Fixed-anchor QA derives conservative silhouette-variance limits from the motion state by default. Use `transform` only for reviewed attacks, transformations, and explosions; use the broader but still finite `mechanism` envelope for doors, gates, spikes, and machinery that intentionally retract almost completely.
 - Clips are visual timing only. They do not emit gameplay events, trigger sounds, or advance game state.
 - A clip by itself is not a runtime animation contract. Every actor, every asset tagged `animated`, and every asset with clips declares `animation.mode` so unreviewed sheet cells cannot be mistaken for usable motion.
+
+An intentionally empty registered cell in a wearable, tool, mount, or other `animation-layer` uses `transparent: true` instead of fabricated pixels or an omitted phase. Decoded QA requires zero visible alpha and forbids `content_bounds`; non-layer assets cannot use this marker. This preserves exact phase registration when, for example, a hat disappears during a roll or a hand layer has no pixels in one attack phase.
 
 The animation state machine maps host state and logical cardinal facing to reviewed visual clips. Logical facing uses `north/east/south/west`; clip IDs may retain art-language names such as `run.right`. Mirroring belongs in this catalog mapping, never in a scene or input adapter.
 
@@ -216,6 +248,8 @@ The animation state machine maps host state and logical cardinal facing to revie
 animation:
   mode: state-machine
   default_state: idle
+  facing_scheme: four-way
+  authored_facings: [south, north, east]
   control: { scheme: four-way, idle_state: idle, move_state: run }
   states:
     idle:
@@ -234,9 +268,81 @@ animation:
         west: { clip: run.right, flip_x: true }
 ```
 
-`mode: static` requires `default_frame` and makes an explicit claim that this catalog asset has no reachable clips. `mode: deferred` requires a reviewed `preview_frame` and a reason; it permits static scene composition while correctly failing animation-readiness QA. `mode: state-machine` requires every clip to be reachable from one state. State motion is `stationary`, `in-place`, `locomotion`, or `airborne`. In-place and locomotion clips require at least two frames. Controlled locomotion requires every facing in its `four-way` or `horizontal` scheme.
+`mode: static` requires `default_frame` and makes an explicit claim that this catalog asset has no reachable clips. `mode: deferred` requires a reviewed `preview_frame` and a reason; it permits static scene composition while correctly failing animation-readiness QA. `mode: state-machine` requires every clip to be reachable from a state or transition. State motion is `stationary`, `in-place`, `locomotion`, `kinematic`, or `airborne`. `kinematic` means the host translates a pose (for example a one-frame slide or projectile) without claiming that the art contains a multi-phase locomotion cycle. In-place and locomotion clips require at least two frames; kinematic clips may contain one. Every actor with directional states declares a `four-way` or `horizontal` `facing_scheme` (the control scheme may supply it), and every directional state must fulfill that complete set. A genuinely side-only action on a generally four-way actor declares state-level `facing_scheme: horizontal`, requiring east/west mappings without inventing absent north/south art. Every one-shot state—actor, object, or effect—declares exactly one of `return_to: <state>` or `terminal: true`, preventing attacks, reactions, mechanisms, and temporary effects from silently freezing on their last frame.
 
-`resolveAssetAnimation(asset, { moving, facing })` is the shared host-facing resolver. Keyboard, touch, gamepad, piano, Fitness, and School adapters all produce semantic movement state/cardinal facing and receive `{ clip, flip_x, motion }`; they never know sheet coordinates.
+`authored_facings` records which logical directions have distinct source art. It may be declared once on `animation` or overridden on a state when a sheet mixes four-way locomotion with side-only actions. Each declared authored facing must exist, must reference its own clip, and cannot use `flip_x`; synthesized directions remain ordinary facing entries with an explicit catalog-owned flip. This makes direction provenance testable and prevents a separately drawn left-facing row from being silently discarded in favor of mirroring.
+
+Stateful items and objects use stable states plus endpoint-checked visual transitions:
+
+```yaml
+animation:
+  mode: state-machine
+  default_state: closed
+  states:
+    closed: { motion: stationary, clip: closed }
+    opened: { motion: stationary, clip: opened }
+  transitions:
+    open: { from: closed, to: opened, clip: opening }
+```
+
+An asset tagged `interactable`, `destructible`, or `stateful` needs at least two stable states and one explicit transition. Transition clips must use `loop: once`, begin with the source state's stable frame, and finish with the destination state's stable frame. `resolveAssetAnimationTransition` returns the reviewed clip and destination state. This describes visual continuity only; the host remains responsible for deciding that a gameplay event occurred.
+
+`resolveAssetAnimation(asset, { moving, facing })` is the shared host-facing resolver. Keyboard, touch, gamepad, piano, Fitness, and School adapters all produce semantic movement state/facing and receive `{ clip, flip_x, motion }`; they never know sheet coordinates. Animation QA drives all four cardinal directions for `four-way` controls and only east/west for `horizontal` controls, so a side-scroller is not incorrectly rejected for lacking top-down facings.
+
+Layered actors keep their state machine on the base asset and register catalog-owned visual layers explicitly:
+
+```yaml
+animation:
+  mode: state-machine
+  default_state: idle
+  facing_scheme: four-way
+  states: { ... }
+  layers:
+    - asset: layer.skeleton-bow
+      role: weapon
+      states: [idle, run, attack]
+```
+
+Each referenced asset is tagged `animation-layer` and owns reviewed frames, clips, and states for the listed subset. The validator requires matching style profile, pixel density, scale class, motion, facing/flip registration, phase count, timing, normalized frame geometry, anchors, and return/terminal semantics. Omit `states` only when the layer implements every base state. Nested layer graphs and scene-authored sprite overlays are rejected. `resolveLayeredAssetAnimation(catalog, assetId, options)` returns the ordered base-plus-overlay resolution, while animation QA emits `composite-*.gif` and `composite-*-strip.png` evidence, renders active layers in the controlled movement simulation, and reports `layered_assets`/`composite_clips` separately.
+
+Runtime-selectable modular actors use a catalog-level animation rig rather than hard-coding a costume into the base actor:
+
+```yaml
+animation_rigs:
+  player.default:
+    base_slot: body
+    slots:
+      mount-under: { order: -10 }
+      body: { order: 0, required: true }
+      feet: { order: 10 }
+      legs: { order: 20 }
+      chest: { order: 30 }
+      head: { order: 40 }
+      hands: { order: 60 }
+      tool-top: { order: 70 }
+    qa_assemblies:
+      - id: farmer-actions
+        base: player.default
+        equipment:
+          feet: layer.player.default.feet.brown
+          tool-top:
+            states:
+              attack: layer.player.default.tool.iron-sword
+              axe: layer.player.default.tool.iron-tools
+
+animation:
+  rig: { profile: player.default, slot: body }
+```
+
+Every participant declares the same rig `profile` and a semantic `slot`. A full wearable implements the complete base state machine. An action-specific tool, held light, or mount declares `animation.rig.states`; validation requires an exact match for that reviewed subset and the runtime resolver omits it from unrelated states. Equipment may name one compatible asset, or `{default, states}` when a slot changes source by action. Slot order is deterministic and catalog-owned. Mounted `qa_assemblies` are production metadata, not Git test fixtures: animation QA renders every base state/facing for the representative costumes and runs their control simulations. This proves interchangeability and compositing before any frontend integration.
+
+A legacy or vendor rig may store each action in a different base PNG. Its profile declares `state_bases: { idle: player.idle, run: player.running, attack: player.attack }`, and every base participant scopes itself with `animation.rig.states`. `resolveRiggedAnimationState` selects the correct base from the logical state, so input and gameplay code still operate on one semantic actor. A wider tool/effect sheet may use `registration: custom-anchor` on its slot only when every base and layer phase has a reviewed custom world anchor; ordinary body and wearable slots retain exact normalized canvas-and-anchor registration.
+
+Coverage reports distinguish state-machine assets from genuinely temporal animation. `runtime_animated`/`animated_assets` count reviewed state machines, including useful one-frame kinematic states; `runtime_temporally_animated` and `temporally_animated_{assets,actors,objects,layers}` count only assets with a reachable multi-frame clip. Animation-only equipment/overlay sources are reported as `animation_layer_assets`, never as world objects. Report temporal counts when making claims about actual animation coverage.
+
+Animation candidate discovery is path-assisted but catalog-aware. A PNG beneath `effects/` that is already approved solely as a tile/component asset remains governed by tile geometry/topology coverage and is excluded from the sprite-animation denominator; directory naming alone cannot turn it into deferred animation work.
+
+Static composition may name an exact frame, a clip, or an animation state. A clip/state reference resolves to its first reviewed frame (and the state's south/default clip where directional) so scene YAML can say `frame: idle` without duplicating compatibility frames. Gameplay still uses `resolveAssetAnimation`; this fallback is only for deterministic still rendering.
 
 Topology animation is declared on `autotile`, not as an unrelated sprite clip. A normalized atlas stores identical topology pages at a fixed cell offset:
 
@@ -314,6 +420,7 @@ Catalogs declare the mappings explicitly:
 ```yaml
 autotile:
   topology: cardinal-4+diagonal-corners
+  supported_polarities: [positive, negative]
   outer_corner_mode: native
   outer_corner_style: rounded
   outer_edge_mode: native
@@ -331,7 +438,7 @@ autotile:
   inner_corner_mode: composite
 ```
 
-Every mask that an authored region may produce must be declared, or `fallback` may be used only while a pack remains in curation.
+`supported_polarities` is required. It is the asset's capability contract, not documentation: each declared polarity needs a map and diagonal-corner coverage, undeclared maps are rejected, and a terrain interface cannot request an unsupported polarity. Positive-only farmland or bank art therefore fails closed for inverse islands instead of quietly reusing incorrect artwork. Every mask that an authored region may produce must be declared, or `fallback` may be used only while a pack remains in curation.
 
 Cardinal masks select the outside edge or corner. `cardinal-4+diagonal-corners` then checks the four diagonals. In legacy `replace` mode, `inner_corners` must contain every exact compound key. In `composite` mode, each polarity provides four transparent quadrant overlays; the renderer layers every missing corner over the selected base, so all fifteen non-empty compound combinations are representable. Missing overlays still fail closed.
 
@@ -375,6 +482,20 @@ forbidden_colors: ['#0095e9', '#006da8']
 frames:
   top.middle: { cell: [3, 0], opaque_overlay: true }
 ```
+
+Mixed prop atlases occasionally reuse a forbidden background color as intentional visible art—for example, an authored blue accent or a water-substrate prop. Keep the asset-level prohibition and declare a narrowly reviewed frame exception instead of weakening the whole asset:
+
+```yaml
+forbidden_colors: ['#006da8']
+frames:
+  lily.pad:
+    rect: [48, 64, 16, 16]
+    forbidden_color_exceptions:
+      allowed: ['#006da8']
+      reason: authored water substrate retained for water-only placement
+```
+
+Exceptions must be a subset of the asset policy, must include a review reason, and are rejected if the named color is absent from the frame. This makes exceptions exact and non-stale rather than a general palette bypass.
 
 Use measured visible-alpha bounds when adjoining assemblies. Nominal 16×16 cells do not guarantee that a fence rail, bridge landing, hull, or dock plank reaches the cell boundary.
 
@@ -581,8 +702,8 @@ The CLI and runtime validator must reject:
 - bad grid geometry, non-positive dimensions, invalid anchor, invalid scale, or opacity outside `0..1`;
 - unknown frames referenced by a clip;
 - mixed clip timing styles, invalid timing, or invalid loop mode;
-- missing animation disposition, unreachable clips, one-frame in-place/locomotion clips, incomplete controlled facings, or scene-authored logical mirrors;
-- visual metadata that attempts to declare collision rules, executable expressions, input bindings, scoring, or gameplay transitions.
+- missing animation disposition, unreachable clips, animated frames without decoded bounds, one-frame in-place/locomotion clips, undeclared/incomplete actor facing schemes, one-shot actor/object/effect states without return/terminal semantics, stateful objects without endpoint-checked transitions, mismatched layered-animation registration, or scene-authored logical mirrors;
+- visual metadata that attempts to declare collision rules, executable expressions, input bindings, scoring, or gameplay-event conditions.
 
 ## Migration compatibility
 
