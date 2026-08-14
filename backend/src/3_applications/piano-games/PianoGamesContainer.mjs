@@ -51,8 +51,16 @@ export class PianoGamesContainer {
     if (!saved) return { saved: false, ladder: null };
     const progress = await this.#repository.readProgress(gameId, userId);
     const current = new OpponentLadder({ opponents: game.opponents, progress, ...game.promotion });
+    // The offline-fallback flag is decided before the ladder ever sees the
+    // game: Connect Four/Checkers set ranked: false the moment Wi-Fi drops
+    // the real opponent, and there is nothing worth persisting about a game
+    // the local engine partly played — a fresh read next time reproduces the
+    // same unpromoted state. OpponentLadder.record() also accepts `ranked`
+    // now (for callers, like a migrated Chess ladder, that want the game kept
+    // in the series as a not-counted entry instead) — this caller just
+    // doesn't need that history for an offline fallback.
     if (record.ranked === false) return { saved: true, ladder: current.snapshot() };
-    const ladder = current.record(record.result, record.level);
+    const ladder = current.record(record.result, record.level, { help: record.help });
     await this.#repository.writeProgress(gameId, userId, {
       unlockedThrough: ladder.unlockedThrough,
       series: ladder.series,
