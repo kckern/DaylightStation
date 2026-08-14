@@ -241,6 +241,21 @@
   color: #ffe66d;
 }
 
+.legend-item--voltage {
+  background: rgba(159, 122, 234, 0.2);
+  color: #9f7aea;
+}
+
+.legend-item--delta {
+  background: rgba(79, 209, 197, 0.2);
+  color: #4fd1c5;
+}
+
+.legend-item--gradient {
+  background: rgba(99, 179, 237, 0.2);
+  color: #63b3ed;
+}
+
 .direction-chip {
   padding: 0.25rem 0.55rem;
   border-radius: 999px;
@@ -283,6 +298,69 @@
   opacity: calc(1 - var(--dot-age, 0));
   transform: scale(calc(1 - (var(--dot-age, 0) * 0.4)));
   box-shadow: 0 0 8px rgba(255, 255, 255, 0.25);
+}
+
+.pressure-mat-card {
+  position: relative;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 0.75rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  transition: transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.pressure-mat-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pressure-mat-card__title {
+  margin: 0;
+  font-size: 1rem;
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.pressure-mat-card__type {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.pressure-mat-chip {
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.pressure-mat-chip--high {
+  background: rgba(255, 87, 51, 0.15);
+  border-color: rgba(255, 87, 51, 0.35);
+  color: #ffac99;
+}
+
+.pressure-mat-chip--low {
+  background: rgba(0, 200, 83, 0.12);
+  border-color: rgba(0, 200, 83, 0.3);
+  color: #8de6ae;
+}
+
+.pressure-mat-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.7rem;
+  font-size: 0.87rem;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.pressure-mat-metrics > div {
+  min-width: 8.4rem;
 }
 
 @media (prefers-reduced-motion: reduce) {
