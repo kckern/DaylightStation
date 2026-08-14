@@ -29,10 +29,15 @@ import { shouldBypassGovernance } from './governanceBypass.js';
 import { isKioskEnv } from '@/lib/kioskEnv.js';
 import { useRenderProfiler } from '@/hooks/fitness/useRenderProfiler.js';
 import usePlayerFrameCapture from '@/hooks/fitness/usePlayerFrameCapture.js';
+import useContentMode from '@/hooks/fitness/useContentMode.js';
 import SessionCameraCapture from './SessionCameraCapture.jsx';
 import { getLogger } from '@/lib/logging/Logger.js';
 import { computeCycleDimStyle } from './cycleDimStyle.js';
+import { computeStudyDims } from './studyLayout.js';
+import { computeAllowLoadingOverlayFullscreen } from './loadingOverlayFullscreenGate.js';
 import { useScreenDataRefetch } from '@/screen-framework/data/ScreenDataProvider.jsx';
+import useLoopWindow from './hooks/useLoopWindow.js';
+import StudyControls from './footer/StudyControls.jsx';
 
 // Helper function to generate Plex thumbnail URLs for specific timestamps
 const generateThumbnailUrl = (plexObj, timeInSeconds) => {
@@ -187,6 +192,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     participantRoster: contextParticipantRoster,
     registerVideoPlayer,
     setCurrentMedia,
+    setCaptureDisabled,
     trackRecentlyPlayed,
     emitAppEvent,
     fitnessConfiguration
@@ -197,11 +203,43 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   // Realtime player-frame capture for the session time-lapse (role:'player').
   // Mirrors the webcam capture; reuses the same save_screenshot pipeline.
   const timelapseCfg = (fitnessConfiguration?.fitness || fitnessConfiguration || {})?.timelapse || {};
+  // Study-mode layout config (footer share, etc). Task 9 reuses this exact binding.
+  const studyCfg = (fitnessConfiguration?.fitness || fitnessConfiguration || {})?.study_mode || {};
+
+  // Content mode drives capture suppression and the study UX. `resolved` is false while
+  // labels are still being fetched for items that arrived without them — capture stays
+  // off until then, so an unresolvable item fails safe rather than recording.
+  const contentMode = useContentMode(currentItem, plexConfig);
+  const captureAllowed = timelapseCfg.enabled !== false
+    && contentMode.resolved
+    && !contentMode.captureDisabled;
+
   usePlayerFrameCapture({
     sessionId: fitnessSessionInstance?.sessionId ?? null,
     intervalMs: Number.isFinite(timelapseCfg.capture_interval_ms) ? timelapseCfg.capture_interval_ms : 1000,
-    enabled: timelapseCfg.enabled !== false
+    enabled: captureAllowed
   });
+
+  // Publish capture suppression so consumers OUTSIDE the player (the module menu, the
+  // camera widget) can honour it. manifest.requires is decorative — it gates nothing —
+  // so this is the actual mechanism. Unresolved content mode publishes as disabled to
+  // preserve the fail-closed privacy invariant while labels are still loading.
+  // The cleanup is load-bearing, not hygiene: this flag is app-wide context state, and
+  // nothing else ever clears it. Without the reset, closing the player after an
+  // Instructional item leaves `captureDisabled` true for the rest of the session — the
+  // camera_view widget stays withheld everywhere until some other player happens to mount
+  // and publish `false`. Suppression is scoped to a playing item, so it ends with the
+  // player.
+  //
+  // The cleanup also runs between dep changes (e.g. `resolved` flipping false -> true),
+  // which is harmless: React batches the cleanup's `false` and the re-run's `true` into a
+  // single commit, so no consumer ever observes a transient `false` and no capture window
+  // opens. In-player capture does not read this flag at all — `usePlayerFrameCapture`
+  // above is gated on `captureAllowed` directly.
+  useEffect(() => {
+    setCaptureDisabled?.(contentMode.resolved ? contentMode.captureDisabled : true);
+    return () => setCaptureDisabled?.(false);
+  }, [contentMode.resolved, contentMode.captureDisabled, setCaptureDisabled]);
 
   const [mediaElement, setMediaElement] = useState(null);
 
@@ -808,6 +846,47 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     }
   }, [seekTo, governancePaused]);
 
+  // Study-mode loop engine (Task 8). Called unconditionally regardless of
+  // contentMode.studyUx — contentMode resolves asynchronously (starts false, may flip
+  // true mid-session) and hooks must never be gated behind that value. getMediaElement
+  // and onSeek are memoized: useLoopWindow's effects key off their identity, so an
+  // inline arrow here would tear down and rebuild the polling interval and the
+  // timeupdate/ended listeners on every render. playerRef is a stable ref object, so an
+  // empty dependency array is correct — its .current is read at call time, not closed
+  // over. handleSeek is already its own useCallback, so it's passed straight through.
+  const loopGetMediaElement = useCallback(() => playerRef.current?.getMediaElement?.() || null, []);
+  // A loop belongs to the item it was armed on. Advancing the queue keeps this hook
+  // instance alive, so without an item identity the armed window would follow the viewer
+  // into the next episode and drag it back — resume positions are routinely non-zero, so
+  // the stale window is usually reachable. Primitive on purpose: `currentItem` is a fresh
+  // object on many unrelated re-renders and keying on it would release live loops.
+  // `playPlayback` is usePlayerController's stable useCallback, so passing it straight
+  // through keeps `loopApi` identity stable (handleUserSeek depends on it).
+  const loopItemKey = currentItem?.contentId || currentItem?.id || null;
+  const loopApi = useLoopWindow({
+    getMediaElement: loopGetMediaElement,
+    onSeek: handleSeek,
+    itemKey: loopItemKey,
+    onPlay: playPlayback
+  });
+
+  // Release the loop on USER seeks only — the loop's own boundary seek (jumping back to
+  // win.start when playback reaches win.end) must not self-release. There is no flag to
+  // check here: the loop's boundary re-seek calls `handleSeek` directly (see the
+  // `onSeek: handleSeek` wiring above) and never goes through this wrapper, so by
+  // construction every call that reaches `handleUserSeek` IS a genuine user seek — an
+  // earlier version gated this on a sticky `isBoundarySeek()` flag, which went stale
+  // after a loop repeated more than once and silently suppressed the next real release.
+  // `releaseLoop()` itself is a no-op when nothing is armed, so this is safe to call
+  // unconditionally for ordinary (non-study) seeks too.
+  // Routed through here: the footer's seek, the jog buttons, and the keyboard
+  // Arrow-seek handlers. `handleSeek` itself stays untouched for the loop engine's own
+  // re-seek and for resume/seekPositions logic, which are not user seeks.
+  const handleUserSeek = useCallback((seconds) => {
+    loopApi.releaseLoop();
+    handleSeek(seconds);
+  }, [loopApi, handleSeek]);
+
   // Memoize keyboard overrides to prevent recreation on every render
   const keyboardOverrides = useMemo(() => ({
     'Escape': () => handleClose(),
@@ -834,7 +913,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       if (thumbnailsCommitRef.current) {
         thumbnailsCommitRef.current(newTime);
       } else {
-        handleSeek(newTime);
+        handleUserSeek(newTime);
       }
     },
     'ArrowRight': (event) => {
@@ -860,10 +939,10 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       if (thumbnailsCommitRef.current) {
         thumbnailsCommitRef.current(newTime);
       } else {
-        handleSeek(newTime);
+        handleUserSeek(newTime);
       }
     }
-  }), [getPlayerTime, getPlayerDuration, handleSeek, logFitnessEvent]);
+  }), [getPlayerTime, getPlayerDuration, handleUserSeek, logFitnessEvent]);
 
   
 
@@ -898,6 +977,22 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
         const viewportEl = viewportRef.current;
         if (!viewportEl) return;
         const { width: totalW, height: totalH } = viewportEl.getBoundingClientRect();
+
+        // Study mode: reserve the footer band FIRST and clamp video height to what
+        // remains, instead of sizing width-first and giving the footer the leftover
+        // (which is how the footer gets stranded to near-nothing on a 16:9 display).
+        // No sidebar is reserved — there's no workout to monitor — and the sub-5%
+        // fullscreen auto-snap below never runs for this branch.
+        if (contentMode.studyUx) {
+          const { videoW: sw, videoH: sh, footerHeight: sf } =
+            computeStudyDims({ totalW, totalH, footerRatio: studyCfg.footer_height_ratio });
+          hasInitializedLayoutRef.current = true;
+          setVideoDims(prev => (prev.width === sw && prev.height === sh
+            && prev.hideFooter === false && prev.footerHeight === sf)
+            ? prev
+            : { width: sw, height: sh, hideFooter: false, footerHeight: sf });
+          return;
+        }
 
         // Effective sidebar width based on sidebar size mode
         let effectiveSidebar = 0;
@@ -970,7 +1065,10 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     return () => {
       ro.disconnect();
     };
-  }, [viewportRef, sidebarSizeMode, playerMode]);
+    // contentMode.studyUx resolves asynchronously (starts false, may flip true once the
+    // show-label lookup returns) — it must be a dep so the layout re-derives on that flip
+    // without waiting for an unrelated resize.
+  }, [viewportRef, sidebarSizeMode, playerMode, contentMode.studyUx, studyCfg.footer_height_ratio]);
 
   // Recompute when stackMode flips (its className may change per-thumb width) to allow exiting when space increases
   useEffect(() => {
@@ -1637,6 +1735,16 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     }
   }, [playerMode]);
 
+  // Study mode never uses fullscreen — the footer must stay reachable. contentMode.studyUx
+  // can flip true mid-session (async label resolution), so this has to be a live effect
+  // rather than a one-time check. It only ever pushes playerMode OUT of fullscreen, and
+  // only when studyUx is true, so it cannot fight a user-initiated toggle back into
+  // fullscreen while studyUx is false, nor loop (setPlayerMode('normal') is a no-op once
+  // playerMode is already 'normal').
+  useEffect(() => {
+    if (contentMode.studyUx && playerMode === 'fullscreen') setPlayerMode('normal');
+  }, [contentMode.studyUx, playerMode]);
+
   // Check if there are previous/next items in the queue
   const currentIndex = currentItem ? queue.findIndex(item => item.id === currentItem?.id) : -1;
   const hasPrev = currentIndex > 0;
@@ -1648,7 +1756,9 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   // Sidebar width for render (mirrors compute logic; may lag first frame until measure)
   const viewportW = viewportRef?.current?.clientWidth || 0;
   let sidebarRenderWidth;
-  if (playerMode === 'fullscreen') sidebarRenderWidth = 0; else sidebarRenderWidth = (sidebarSizeMode === 'large' ? Math.round(viewportW * 0.45) : DEFAULT_SIDEBAR);
+  // Study mode: no sidebar — there's no workout to monitor.
+  if (playerMode === 'fullscreen' || contentMode.studyUx) sidebarRenderWidth = 0;
+  else sidebarRenderWidth = (sidebarSizeMode === 'large' ? Math.round(viewportW * 0.45) : DEFAULT_SIDEBAR);
 
   const toggleFullscreen = useCallback(() => {
     setPlayerMode(m => m === 'fullscreen' ? (lastNonFullscreenRef.current || 'normal') : 'fullscreen');
@@ -1661,10 +1771,13 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   // Flips ONLY the wrapped <Player> (scaleX(-1)); the vitals/chart/scrim overlays
   // are siblings and stay upright. Persists across episodes within the session.
   const [videoMirrored, setVideoMirrored] = useState(false);
-  const toggleVideoMirror = useCallback((event) => {
+  // `source` defaults to 'corner-hotspot' so the existing hotspot call sites (which pass
+  // only the PointerEvent) keep reporting as before; StudyControls' mirror button passes
+  // its own source explicitly so telemetry doesn't misattribute it to the hotspot.
+  const toggleVideoMirror = useCallback((event, source = 'corner-hotspot') => {
     if (event && typeof event.button === 'number' && event.button !== 0) return;
     setVideoMirrored((m) => {
-      logFitnessEvent('video-mirror-toggle', { source: 'corner-hotspot', mirrored: !m });
+      logFitnessEvent('video-mirror-toggle', { source, mirrored: !m });
       return !m;
     });
   }, [logFitnessEvent]);
@@ -1689,6 +1802,10 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   }, []);
 
   const handleVideoContainerPointerDown = useCallback((event) => {
+    // Study mode: taps must never toggle fullscreen — losing the footer mid-scrub is
+    // the exact failure this mode exists to prevent. Suppressing the pause scrim also
+    // removed the shield that used to block paused taps from reaching this handler.
+    if (contentMode.studyUx) return;
     if (typeof event.button === 'number' && event.button !== 0) return;
     // BUG-04 Fix: Ignore events that occurred before this component was mounted
     const eventTime = event.nativeEvent?.timeStamp || performance.now();
@@ -1713,7 +1830,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       button: event.button
     });
     toggleFullscreen();
-  }, [toggleFullscreen, logFitnessEvent, shouldBlockFullscreenToggle]);
+  }, [toggleFullscreen, logFitnessEvent, shouldBlockFullscreenToggle, contentMode.studyUx]);
 
   const handleVideoContainerClickCapture = useCallback((event) => {
     logFitnessEvent('fullscreen-click-capture', {
@@ -1723,6 +1840,10 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   }, [logFitnessEvent]);
 
   const handleRootPointerDownCapture = useCallback((event) => {
+    // Study mode: taps must never toggle fullscreen — losing the footer mid-scrub is
+    // the exact failure this mode exists to prevent. Suppressing the pause scrim also
+    // removed the shield that used to block paused taps from reaching this handler.
+    if (contentMode.studyUx) return;
     if (typeof event.button === 'number' && event.button !== 0) return;
     // BUG-04 Fix: Ignore events that occurred before this component was mounted
     const eventTime = event.nativeEvent?.timeStamp || performance.now();
@@ -1750,9 +1871,20 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       button: event.button
     });
     toggleFullscreen();
-  }, [toggleFullscreen, logFitnessEvent, shouldBlockFullscreenToggle]);
+  }, [toggleFullscreen, logFitnessEvent, shouldBlockFullscreenToggle, contentMode.studyUx]);
 
-  const allowLoadingOverlayFullscreen = Boolean(resilienceState?.waitingToPlay || resilienceState?.stalled);
+  // Study mode: a stalled/buffering video must never let a tap fall through to
+  // fullscreen — that is precisely the footer-vanishes failure this mode exists to
+  // prevent, and buffering/stall state is generic Player state that applies to
+  // study content exactly as much as to workouts. Gating the flag itself (rather
+  // than only guarding inside the handler) means the global listener is never even
+  // installed while study mode is active. See loadingOverlayFullscreenGate.js for
+  // the exhaustively-tested pure decision.
+  const allowLoadingOverlayFullscreen = computeAllowLoadingOverlayFullscreen({
+    studyUx: contentMode.studyUx,
+    waitingToPlay: resilienceState?.waitingToPlay,
+    stalled: resilienceState?.stalled
+  });
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -1762,6 +1894,12 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       return undefined;
     }
     const handleGlobalPointerDown = (event) => {
+      // Belt-and-suspenders: allowLoadingOverlayFullscreen already keeps this
+      // listener from being installed in study mode, but guard the handler body
+      // too in case the flag is ever reused for another purpose.
+      if (contentMode.studyUx) {
+        return;
+      }
       if (!contentRef.current) {
         return;
       }
@@ -1802,7 +1940,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     return () => {
       window.removeEventListener('pointerdown', handleGlobalPointerDown, true);
     };
-  }, [allowLoadingOverlayFullscreen, toggleFullscreen, shouldBlockFullscreenToggle, logFitnessEvent]);
+  }, [allowLoadingOverlayFullscreen, toggleFullscreen, shouldBlockFullscreenToggle, logFitnessEvent, contentMode.studyUx]);
 
   const reloadTargetSeconds = Math.max(0, lastKnownTimeRef.current || currentTime || 0);
 
@@ -1849,6 +1987,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
             onProgress={handlePlayerProgress}
             onController={handlePlayerControllerUpdate}
             onMediaRef={() => {/* media element captured internally by Player; use playerRef API */}}
+            suppressPauseOverlay={contentMode.studyUx}
             ref={playerRef}
           />
         </div>
@@ -1881,7 +2020,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   );
 
   // Sidebar slot content
-  const sidebarContent = hasActiveItem ? (
+  // Study mode: no sidebar — there's no workout to monitor.
+  const sidebarContent = (hasActiveItem && !contentMode.studyUx) ? (
     <FitnessSidebar
       playerRef={playerRef}
       videoVolume={videoVolume}
@@ -1891,6 +2031,24 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       showChart={showChart}
       boostLevel={boostLevel}
       setBoost={setBoost}
+    />
+  ) : null;
+
+  // Study-mode footer controls (jog, loop, mirror). Built only when studyUx is active —
+  // contentMode.studyUx is false at render time for workout content and for the initial
+  // paint of every session, so this stays null (no extra DOM) until labels resolve.
+  const studyControlsNode = contentMode.studyUx ? (
+    <StudyControls
+      isPaused={isPaused}
+      jogSteps={Array.isArray(studyCfg.jog_steps) ? studyCfg.jog_steps : [5, 10]}
+      loopDurations={Array.isArray(studyCfg.loop_durations) ? studyCfg.loop_durations : [10, 15, 20, 30]}
+      loop={loopApi.loop}
+      onJog={(delta) => handleUserSeek((getPlayerTime?.() || 0) + delta)}
+      onArmLoop={(direction, secs) =>
+        loopApi.armLoop(direction, secs, getPlayerTime?.() || 0, getPlayerDuration?.() || 0)}
+      onReleaseLoop={loopApi.releaseLoop}
+      videoMirrored={videoMirrored}
+      onToggleMirror={() => toggleVideoMirror(undefined, 'study-controls')}
     />
   ) : null;
 
@@ -1905,7 +2063,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       duration={duration}
       currentItem={currentItem}
       seekButtons={seekButtons}
-      onSeek={handleSeek}
+      onSeek={handleUserSeek}
+      studyControls={studyControlsNode}
       onPrev={handlePrev}
       onNext={handleNext}
       onClose={handleClose}
@@ -1986,7 +2145,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       <SessionCameraCapture
         sessionId={fitnessSessionInstance?.sessionId ?? null}
         intervalMs={Number.isFinite(timelapseCfg.capture_interval_ms) ? timelapseCfg.capture_interval_ms : 1000}
-        enabled={timelapseCfg.enabled !== false}
+        enabled={captureAllowed}
       />
       <UnlockPrompt
         open={unlockPromptOpen}

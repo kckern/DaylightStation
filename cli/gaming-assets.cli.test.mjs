@@ -524,10 +524,11 @@ describe('gaming asset audit tooling', () => {
     ctx.fillStyle = '#a04030'; ctx.fillRect(0, 0, 16, 16);
     ctx.fillStyle = '#55aa55'; ctx.fillRect(16, 0, 8, 16);
     ctx.fillStyle = '#55aa55'; ctx.fillRect(32, 0, 16, 16);
-    ctx.fillStyle = '#2277cc'; ctx.fillRect(48, 0, 16, 16);
+    ctx.fillStyle = '#55aa55'; ctx.fillRect(48, 0, 16, 16);
+    ctx.fillStyle = '#2277cc'; ctx.fillRect(49, 1, 14, 14);
     for (const [index, [left, top]] of [[4, [8, 0]], [5, [8, 8]], [6, [0, 8]], [7, [0, 0]]]) {
       ctx.fillStyle = '#55aa55'; ctx.fillRect(index * 16, 0, 16, 16);
-      ctx.fillStyle = '#2277cc'; ctx.fillRect(index * 16 + left + 3, top + 3, 5, 5);
+      ctx.fillStyle = '#2277cc'; ctx.fillRect(index * 16 + left + 3, top + 3, 3, 3);
     }
     const png = canvas.toBuffer('image/png'); await writeFile(path.join(root, 'assets', 'terrain.png'), png); const sha = crypto.createHash('sha256').update(png).digest('hex');
     const world = { footprint: { size: [16, 16] }, scale_class: 'terrain', allowed_materials: ['*'], allowed_surfaces: ['solid'], allowed_planes: ['ground'], allowed_biomes: ['*'], boundary_policy: 'allow', render_layer: 'ground', collision: 'passable' };
@@ -542,13 +543,15 @@ describe('gaming asset audit tooling', () => {
       },
       terrain_interfaces: { shore: { inside: 'solid', outside: 'outside', asset: 'terrain', polarity: 'positive', transition_band: { minimum_changed_ratio: 0.5 }, corner_profile: { style: 'rounded', minimum_cutback_ratio: 0.5 } } },
     };
-    const valid = await auditPresentationMaterialPixels({ root, catalog }); assert.equal(valid.valid, true); assert.equal(valid.overlays, 1); assert.equal(valid.transition_bands.shore.north, 1); assert.ok(valid.corner_profiles.shore.ne >= 0.5);
+    const valid = await auditPresentationMaterialPixels({ root, catalog }); assert.equal(valid.valid, true); assert.equal(valid.overlays, 1); assert.ok(valid.transition_bands.shore.north > 0.5); assert.equal(valid.interface_seams.shore.north, 0); assert.ok(valid.corner_profiles.shore.ne >= 0.5);
     catalog.materials.overlay.fill_mode = 'solid'; const invalidFill = await auditPresentationMaterialPixels({ root, catalog }); assert.ok(invalidFill.errors.some((error) => error.includes('solid fill has')));
     catalog.materials.overlay.fill_mode = 'overlay'; catalog.assets.terrain.autotile.positive = Object.fromEntries(Object.keys(masks).map((mask) => [mask, 'outside']));
     const invisible = await auditPresentationMaterialPixels({ root, catalog }); assert.ok(invisible.errors.some((error) => error.includes('transition band changes only')));
     assert.ok(invisible.errors.some((error) => error.includes('convex turn cuts back only')));
     delete catalog.terrain_interfaces.shore.transition_band;
     const mandatoryBand = await auditPresentationMaterialPixels({ root, catalog }); assert.ok(mandatoryBand.errors.some((error) => error.includes('transition band changes only') && error.includes('requires 0.1')));
+    catalog.assets.terrain.autotile.positive = Object.fromEntries(Object.keys(masks).map((mask) => [mask, 'fill']));
+    const brokenSeam = await auditPresentationMaterialPixels({ root, catalog }); assert.ok(brokenSeam.errors.some((error) => error.includes('receiving seam mismatches')));
   });
 
   it('writes contact-sheet PNG, frame GIF, and assembly PNG from source data', async () => {

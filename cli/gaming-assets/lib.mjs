@@ -2237,7 +2237,12 @@ async function renderPresentationPlan({ root, catalog, plan, out }) {
   };
   for (const command of plan.commands) {
     if (command.type === 'fill') {
-      ctx.save(); ctx.globalAlpha = command.opacity; ctx.fillStyle = command.color;
+      ctx.save();
+      if (command.clip_polygon) {
+        ctx.beginPath(); command.clip_polygon.forEach(([x, y], index) => ctx[index ? 'lineTo' : 'moveTo']((command.at[0] + x) * scale, (command.at[1] + y) * scale));
+        ctx.closePath(); ctx.clip();
+      }
+      ctx.globalAlpha = command.opacity; ctx.fillStyle = command.color;
       ctx.fillRect(command.at[0] * scale, command.at[1] * scale, command.size[0] * scale, command.size[1] * scale); ctx.restore();
       continue;
     }
@@ -2347,7 +2352,8 @@ async function renderPresentationPlan({ root, catalog, plan, out }) {
 /** Decode material fills and every interface band before any scene render.
  * A terrain material marked solid must be an opaque cell; sparse art belongs
  * in an overlay/component layer. Every interface must visibly differ from the
- * outside material along every cardinal edge; metadata may raise the default. */
+ * outside material along every cardinal edge and meet the receiving fill
+ * exactly where the two cells touch; metadata may raise the band default. */
 export async function auditPresentationMaterialPixels({ root, catalog }) {
   const { createCanvas, loadImage } = await import('canvas');
   const errors = []; const images = new Map(); const facts = new Map(); const samples = new Map();
@@ -2385,12 +2391,21 @@ export async function auditPresentationMaterialPixels({ root, catalog }) {
     if (mode === 'solid') { solid += 1; if (opaque !== total) errors.push(`material ${id}: solid fill has ${total - opaque} transparent or translucent pixels`); }
     else { overlays += 1; if (!visible || opaque === total) errors.push(`material ${id}: overlay fill must contain both visible and transparent pixels`); }
   }
-  const directionMasks = { north: 'esw', east: 'nsw', south: 'new', west: 'nes' }; const transitionBands = {}; const cornerProfiles = {};
+  const directionMasks = { north: 'esw', east: 'nsw', south: 'new', west: 'nes' }; const transitionBands = {}; const interfaceSeams = {}; const cornerProfiles = {};
   for (const [id, entry] of Object.entries(catalog.terrain_interfaces ?? {})) {
     const minimumChangedRatio = entry.transition_band?.minimum_changed_ratio ?? 0.1;
     const assetId = String(entry.asset).split('#')[0]; const asset = catalog.assets[assetId]; const mapping = asset.autotile[entry.polarity]; const outside = await materialSample(catalog.materials[entry.outside]); const ratios = {};
+    const underlayFill = entry.underlay === 'inside-fill' ? await materialSample(catalog.materials[entry.inside]) : entry.underlay === 'outside-fill' ? outside : null; const seamRatios = {};
     for (const [direction, mask] of Object.entries(directionMasks)) {
-      const frameId = mapping[mask] ?? mapping.fallback; const inside = await frameSample(`${assetId}#${frameId}`); let changed = 0; let total = 0;
+      const frameId = mapping[mask] ?? mapping.fallback; const sampled = await frameSample(`${assetId}#${frameId}`); const inside = underlayFill ? new Uint8ClampedArray(sampled.length) : sampled;
+      if (underlayFill) for (let index = 0; index < sampled.length; index += 4) {
+        const alpha = sampled[index + 3] / 255; const inverse = 1 - alpha;
+        inside[index] = Math.round(sampled[index] * alpha + underlayFill[index] * inverse);
+        inside[index + 1] = Math.round(sampled[index + 1] * alpha + underlayFill[index + 1] * inverse);
+        inside[index + 2] = Math.round(sampled[index + 2] * alpha + underlayFill[index + 2] * inverse);
+        inside[index + 3] = 255;
+      }
+      let changed = 0; let total = 0;
       for (let y = 0; y < logicalCell[1]; y += 1) for (let x = 0; x < logicalCell[0]; x += 1) {
         const inBand = direction === 'north' ? y < logicalCell[1] / 2 : direction === 'south' ? y >= logicalCell[1] / 2 : direction === 'west' ? x < logicalCell[0] / 2 : x >= logicalCell[0] / 2;
         if (!inBand) continue; total += 1; const index = (y * logicalCell[0] + x) * 4;
@@ -2398,10 +2413,29 @@ export async function auditPresentationMaterialPixels({ root, catalog }) {
       }
       ratios[direction] = changed / total;
       if (ratios[direction] < minimumChangedRatio) errors.push(`terrain interface ${id}: ${direction} transition band changes only ${ratios[direction].toFixed(3)} of boundary pixels; requires ${minimumChangedRatio}`);
+      let mismatched = 0;
+      for (let offset = 0; offset < (direction === 'north' || direction === 'south' ? logicalCell[0] : logicalCell[1]); offset += 1) {
+        // Compare against the receiving material at the same tile-local phase.
+        // Textured fills may intentionally have different opposite edges; an
+        // interface must preserve what that material would paint in this cell,
+        // not repair (or be blamed for) the fill's own tiling contract.
+        const [insideX, insideY] = direction === 'north' ? [offset, 0]
+          : direction === 'east' ? [logicalCell[0] - 1, offset]
+            : direction === 'south' ? [offset, logicalCell[1] - 1] : [0, offset];
+        const [outsideX, outsideY] = [insideX, insideY];
+        const insideIndex = (insideY * logicalCell[0] + insideX) * 4; const outsideIndex = (outsideY * logicalCell[0] + outsideX) * 4;
+        if (inside[insideIndex] !== outside[outsideIndex] || inside[insideIndex + 1] !== outside[outsideIndex + 1] || inside[insideIndex + 2] !== outside[outsideIndex + 2] || inside[insideIndex + 3] !== outside[outsideIndex + 3]) mismatched += 1;
+      }
+      seamRatios[direction] = mismatched / (direction === 'north' || direction === 'south' ? logicalCell[0] : logicalCell[1]);
+      const maximumMismatchRatio = entry.seam?.maximum_mismatch_ratio ?? (entry.seam?.mode === 'outlined' ? 1 : 0);
+      if (seamRatios[direction] > maximumMismatchRatio) errors.push(`terrain interface ${id}: ${direction} receiving seam mismatches ${seamRatios[direction].toFixed(3)} of edge pixels; allows ${maximumMismatchRatio}`);
     }
-    transitionBands[id] = ratios;
+    transitionBands[id] = ratios; interfaceSeams[id] = seamRatios;
   }
-  const convexCorners = { ne: [logicalCell[0] / 2, 0], es: [logicalCell[0] / 2, logicalCell[1] / 2], sw: [0, logicalCell[1] / 2], nw: [0, 0] };
+  // A cardinal mask names present neighbours, so its convex cutback is in the
+  // opposite (missing-neighbour) quadrant: ne cuts southwest, es northwest,
+  // sw northeast, and nw southeast.
+  const convexCorners = { ne: [0, logicalCell[1] / 2], es: [0, 0], sw: [logicalCell[0] / 2, 0], nw: [logicalCell[0] / 2, logicalCell[1] / 2] };
   for (const [id, entry] of Object.entries(catalog.terrain_interfaces ?? {})) {
     if (!entry.corner_profile) continue;
     const assetId = String(entry.asset).split('#')[0]; const asset = catalog.assets[assetId]; const mapping = asset.autotile[entry.polarity];
@@ -2417,7 +2451,7 @@ export async function auditPresentationMaterialPixels({ root, catalog }) {
     }
     cornerProfiles[id] = ratios;
   }
-  return { valid: errors.length === 0, errors, materials: Object.keys(catalog.materials).length, solid, overlays, transition_bands: transitionBands, corner_profiles: cornerProfiles };
+  return { valid: errors.length === 0, errors, materials: Object.keys(catalog.materials).length, solid, overlays, transition_bands: transitionBands, interface_seams: interfaceSeams, corner_profiles: cornerProfiles };
 }
 
 /** Render either strict presentation v2 or an explicit legacy v1 scene. */

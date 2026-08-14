@@ -1,7 +1,7 @@
 import { useMemo, useEffect } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
 import { getChildLogger } from '../../../lib/logging/singleton.js';
-import { PianoKeyboard } from '../components/PianoKeyboard';
+import PianoGameHost from '../game-platform/host/PianoGameHost.jsx';
 import { ActionStaff } from '../components/ActionStaff.jsx';
 import { useSideScrollerGame } from './useSideScrollerGame.js';
 import { useAutoGameLifecycle } from '../useAutoGameLifecycle.js';
@@ -74,7 +74,15 @@ export function SideScrollerGame({ activeNotes, gameConfig, onDeactivate, onNote
   }, [game.phase]);
 
   return (
-    <div className="side-scroller">
+    <PianoGameHost
+      gameId="side-scroller"
+      phase={game.phase}
+      phaseMapping={{ GAME_OVER: 'result', COMPLETE: 'result' }}
+      className="side-scroller"
+      instrumentClassName="side-scroller__keyboard"
+      instrument={{ activeNotes, startNote, endNote, showLabels: true, targetNotes: null, onNoteOn, onNoteOff }}
+      overlay={<SideScrollerOverlay phase={game.phase} countdown={game.countdown} score={game.score} level={game.level} levelName={game.levelName} />}
+    >
       {/* Play area */}
       <div className="side-scroller__play-area">
         {/* Health bar — far left */}
@@ -131,28 +139,7 @@ export function SideScrollerGame({ activeNotes, gameConfig, onDeactivate, onNote
         </div>
       </div>
 
-      {/* Piano keyboard */}
-      <div className="side-scroller__keyboard">
-        <PianoKeyboard
-          activeNotes={activeNotes}
-          startNote={startNote}
-          endNote={endNote}
-          showLabels={true}
-          targetNotes={null}
-          onNoteOn={onNoteOn}
-          onNoteOff={onNoteOff}
-        />
-      </div>
-
-      {/* Overlay */}
-      <SideScrollerOverlay
-        phase={game.phase}
-        countdown={game.countdown}
-        score={game.score}
-        level={game.level}
-        levelName={game.levelName}
-      />
-    </div>
+    </PianoGameHost>
   );
 }
 

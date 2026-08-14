@@ -1,6 +1,6 @@
 # Piano Games Architecture
 
-Reference for the DaylightStation piano game system — MIDI-driven games layered on the piano visualizer. The kiosk Games picker includes Piano Hero, Space Invaders, Tetris, Flashcards, Side Scroller, Piano Chess, and the YAML-driven Card Game.
+Reference for the DaylightStation piano game system — MIDI-driven games layered on the piano visualizer. The kiosk Games picker includes Piano Hero, Space Invaders, Tetris, Flashcards, Side Scroller, Piano Chess, Connect Four, Piano Checkers, and the YAML-driven Card Game.
 
 ---
 
@@ -136,7 +136,9 @@ mechanics:
 | Battle Stadium | held chords or ordered cursor, timing dimensions, rubric and pace gate | move strength, damage, campaign flow | bank-backed challenges persist to the piano ledger |
 | Tetris | exact-MIDI held command recognition | movement, rotations, line score, repeat timing | none |
 | Side Scroller | reuses Tetris's shared held-command hook | running/jumping and game score | none |
-| Piano Chess | none; chord addresses are controller input, not a performance expectation | square selection and chess state | none |
+| Piano Chess | none; chord addresses are controller input, not a performance expectation | square selection and chess state | ranked game record and opponent ladder |
+| Connect Four | none; note/chord addresses are controller input | gravity board, column drop, opponent response | ranked record, archive, and opponent ladder |
+| Piano Checkers | none; square notes are controller input | forced captures, multi-jumps, kings | ranked record, archive, and opponent ladder |
 
 Hero points, Space Invaders health, Flashcard points, card-game damage, and
 Tetris/Side Scroller scores remain deliberately local projections. Only the
@@ -153,13 +155,17 @@ PianoMidiContext ── activeNotes + noteHistory ──▶ Games route
                                       /piano/games/:gameId
                                                      │
                                                      ▼
-                                                GameHost
+                                         routed GameHost
                                                      │
                                       gameRegistry lazy entry
                                                      │
                                                      ▼
        Battle Stadium | Space Invaders | Tetris | Flashcards
-       Piano Hero | Side Scroller | Piano Chess
+       Piano Hero | Side Scroller | Piano Chess | Connect Four | Checkers
+                                                     │
+                                                     ▼
+                                           PianoGameHost
+                                      (one instrument dock)
                                                      │
                                                      ▼
                                     assessmentSession as needed
@@ -238,11 +244,16 @@ Maps game IDs to their component loaders, layout modes, and lazy React component
   hero:            { layout: 'replace', LazyComponent },
   'side-scroller': { layout: 'replace', LazyComponent },
   chess:           { layout: 'replace', LazyComponent },
+  'connect-four':  { layout: 'replace', LazyComponent },
+  checkers:         { layout: 'replace', LazyComponent },
 }
 ```
 
 Every current game uses `replace` and has a `LazyComponent` entry used by the
-kiosk host and standalone visualizer inside a Suspense boundary.
+kiosk host and standalone visualizer inside a Suspense boundary. Native games
+mount `PianoGameHost`, which owns the only keyboard dock and lifecycle phase
+projection. Battle Stadium remains an external campaign runtime but participates
+in registry discovery through `family: external-runtime`.
 
 **Config prop naming:** All fullscreen games receive their config as `gameConfig` (not game-specific names like `tetrisConfig`). PianoVisualizer passes `gamesConfig[activeGameId]` as the `gameConfig` prop.
 
@@ -270,7 +281,8 @@ PianoTetris
 | `PianoTetris/PianoTetris.scss` | Flex layout, score/lines display |
 | `PianoTetris/useTetrisGame.js` | Game state machine, gravity, locking, levels |
 | `PianoTetris/tetrisEngine.js` | Pure functions: board ops, collision, rotation, scoring |
-| `PianoTetris/useStaffMatching.js` | MIDI → action matching with hold-to-repeat |
+| `game-platform/families/bound-action/useStaffMatching.js` | shared MIDI → action matching with hold-to-repeat |
+| `PianoTetris/useStaffMatching.js` | compatibility export for existing Tetris callers/tests |
 | `PianoTetris/components/TetrisBoard.jsx` | Grid renderer with piece colors |
 | `PianoTetris/components/TetrisBoard.scss` | Board styles |
 | `PianoTetris/components/TetrisOverlay.jsx` | Countdown and game-over screens |
@@ -697,10 +709,12 @@ Each visual channel answers one question, so they coexist without competing:
 Naming a square and committing to it are different acts. One played chord **hovers** —
 it lights the square, previews a ghost piece, and commits nothing, so a player can try
 a chord and see where it lands. The **same square played twice** within a short window
-picks the piece up; the pick-up fires on recognition, while the fingers are still down,
-and that chord's own release is swallowed so it cannot double as a drop. **Dropping**
-takes only one play, because a held piece can reach only a handful of lit, labelled
-squares and intent is already declared. An octave (or Esc) puts the piece back.
+picks the piece up. Preview is visual only: pick-up and drop both fire after every key
+has been released, using the fullest/latest growing shape played during that press.
+Thus a major triad sounded while the player is still adding its seventh cannot act on
+the triad's square. **Dropping** takes only one play, because a held piece can reach only
+a handful of lit, labelled squares and intent is already declared. An octave (or Esc)
+puts the piece back.
 
 The square whose piece is in the air wears an animated marching-ants border — a child
 element, not the square's `::before`, which the best-move ring already owns (the piece
@@ -728,11 +742,12 @@ who want the rim-intersection drill back.
 
 A square is a candidate while its chord's pitch classes contain every pitch class
 currently held. One note lights a scatter (a note is the root of one chord and the
-third of another); each added note contracts the set. A completed triad leaves the
-triad plus its extensions on the same file — the single bright square comes from the
-settle-window cursor, not from the candidate set reaching one. An empty candidate set
-means no square can contain these notes, and the read-out says "not a square" at once
-instead of waiting out the settle window.
+third of another); each added note contracts the set. That harmonic set is intersected
+with the current chess choices — movable pieces before pick-up, legal destinations
+afterward — so empty, enemy, and unreachable squares never flash as though they were
+available. A completed triad leaves its actionable triad/extension addresses lit; the
+single bright square comes from the settle-window cursor, not from the candidate set
+reaching one. An empty candidate set means no actionable square can contain these notes.
 
 ### Hint gestures
 

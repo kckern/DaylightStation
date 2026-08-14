@@ -39,7 +39,7 @@ function screenCell(square, orientation) {
 function Square({
   square, piece, isLight, isSelected, isDestination, isLastMove,
   isCursor, isCandidate, isCheck, isHint, isBest, isHeld, isRejected, onSelect,
-  ghostPiece, label, isMuted,
+  ghostPiece, label,
 }) {
   const classes = [
     'chess-board__square',
@@ -47,12 +47,6 @@ function Square({
     // channel 1 — light: what the hands are doing now
     isCandidate && 'chess-board__square--candidate',
     isCursor && 'chess-board__square--cursor',
-    // The other side of the same channel: while a chord is being spelled, the
-    // squares it CANNOT be recede. Tinting the few was near-invisible against
-    // the board's own colours; withdrawing the many is unmissable, and in the
-    // reading vocabulary — where one note lights a whole rank or file — it is
-    // what makes the row and the column visibly meet.
-    isMuted && 'chess-board__square--muted',
     // channel 2 — outline: committed state
     isSelected && 'chess-board__square--selected',
     isLastMove && 'chess-board__square--last-move',
@@ -220,7 +214,6 @@ export function ChessBoard({
             isSelected={selected === square}
             isDestination={destinationSet.has(square)}
             isCandidate={candidateSet.has(square)}
-            isMuted={candidateSet.size > 0 && !candidateSet.has(square)}
             isHint={hintSet.has(square)}
             isBest={bestMove?.from === square || bestMove?.to === square}
             isHeld={heldSquare === square}

@@ -193,6 +193,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const [transferVersion, setTransferVersion] = useState(0);
   const [currentMedia, setCurrentMedia] = useState(null);
   const [recentlyPlayed, setRecentlyPlayed] = useState([]);
+  // Capture suppression for the currently-playing item, published by FitnessPlayer.
+  // Defaults to false so nothing changes when no player is mounted.
+  const [captureDisabled, setCaptureDisabled] = useState(false);
 
   // App State
   const [activeApp, setActiveApp] = useState(null);
@@ -2608,6 +2611,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
     currentMedia,
     setCurrentMedia,
+    captureDisabled,
+    setCaptureDisabled,
     recentlyPlayed,
     trackRecentlyPlayed,
     emitAppEvent,

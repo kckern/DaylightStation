@@ -55,13 +55,20 @@ identical for both; only the rim labels change.
    players benefit from seeing both.
 10. **Is this chord going anywhere?** Three answers, and the player must be able to tell them
     apart: still too few notes; a real chord that no square carries; a chord that names a square.
-11. **Which square does it name?** The named square lights. Nothing is committed — the player is
-    looking, not moving.
+11. **Which square does it name?** The named square lights. Nothing is committed while any key is
+    down — the player is looking, not moving. The complete press is resolved only after release,
+    so a triad played on the way to a seventh is never mistaken for the intended address.
 
 ### Picking a piece up
 
 12. **How do I actually pick something up?** The double-play rule is not discoverable. It is
-    stated in words, on screen, at the moment it applies.
+    stated in words, on screen, at the moment it applies — and because that instruction carries a
+    deadline, the deadline is drawn with it: a rule beneath the sentence drains for exactly as long
+    as the repeat will be heard. Without it the double is the one interaction that fails
+    invisibly, since a player who repeats a chord too late gets silence and no way to tell whether
+    they were slow or misheard. The window is deliberately slack — two and a half seconds, enough
+    to read the sentence asking for the repeat and then play it, because the logged failures were
+    players pausing to read rather than players fumbling a fast repeat.
 13. **Did I pick it up?** The single most expensive silence in the game's history. The square whose
     piece is in the air is marked unmistakably.
 14. **What am I holding right now?** A standing question, not a momentary one. A player hunting for
@@ -129,6 +136,8 @@ and it is the first place to look when nothing happens.
 **The board (centre)** answers the questions about *the position*, through four channels that never
 compete: light for what the hands are doing now, outline for where the player is in the move, marks
 for what a held piece can do, colour for alarm only. Its rim carries the addressing vocabulary.
+Light narrows only across squares actionable at that moment: movable pieces before pick-up and legal
+destinations afterward. Empty, enemy, and unreachable squares do not join the partial-chord dance.
 
 **The chord rail (right)** answers the questions about *what is being played*: the chord's name, and
 the same chord as notation on a grand staff. It is a mirror of the player's hands, in both

@@ -565,7 +565,8 @@ SinglePlayer.propTypes = {
     waitKey: PropTypes.string,
     trigger: PropTypes.object,
     conditions: PropTypes.object,
-    timestamp: PropTypes.number
+    timestamp: PropTypes.number,
+    wasPaused: PropTypes.bool
   }),
   suppressLocalOverlay: PropTypes.bool,
   maxVideoBitrate: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),

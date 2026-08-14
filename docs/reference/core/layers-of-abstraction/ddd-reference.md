@@ -85,7 +85,7 @@ Level 1 (shared):       content, common, messaging, notification,
                         scheduling, entropy
                           ↑
 Level 2 (features):     ambient, art, automotive, barcode, concierge, cost,
-                        feed, finance, fitness, gratitude, home-automation,
+                        feed, finance, fitness, gaming, gratitude, home-automation,
                         journaling, lifeplan, livestream, media,
                         nutrition, playback-hub, trigger
                           ↑
@@ -100,7 +100,7 @@ The table below assigns **every** domain folder in `2_domains/` a level (Decisio
 |-------|----------------|
 | **0 — Foundation** | `core` |
 | **1 — Shared** | `content`, `common`, `messaging`, `notification`, `scheduling`, `entropy` |
-| **2 — Features** | `ambient`, `art`, `automotive`, `barcode`, `concierge`, `cost`, `feed`, `finance`, `fitness`, `gratitude`, `home-automation`, `journaling`, `lifeplan`, `livestream`, `media`, `nutrition`, `playback-hub`, `school`, `trigger` |
+| **2 — Features** | `ambient`, `art`, `automotive`, `barcode`, `concierge`, `cost`, `feed`, `finance`, `fitness`, `gaming`, `gratitude`, `home-automation`, `journaling`, `lifeplan`, `livestream`, `media`, `nutrition`, `playback-hub`, `school`, `trigger` |
 | **3 — Aggregators** | `health`, `journalist`, `lifelog`, `weekly-review` |
 
 ---

@@ -57,7 +57,12 @@ export function createCanvasSceneRenderer(canvas, catalog, {
 
   const drawCommand = (command, scale, targetContext = context) => {
     if (command.type === 'fill') {
-      targetContext.save(); targetContext.globalAlpha = command.opacity; targetContext.fillStyle = command.color;
+      targetContext.save();
+      if (command.clip_polygon) {
+        targetContext.beginPath(); command.clip_polygon.forEach(([x, y], index) => targetContext[index ? 'lineTo' : 'moveTo']((command.at[0] + x) * scale, (command.at[1] + y) * scale));
+        targetContext.closePath(); targetContext.clip();
+      }
+      targetContext.globalAlpha = command.opacity; targetContext.fillStyle = command.color;
       targetContext.fillRect(command.at[0] * scale, command.at[1] * scale, command.size[0] * scale, command.size[1] * scale); targetContext.restore(); return;
     }
     if (command.type === 'shadow') {

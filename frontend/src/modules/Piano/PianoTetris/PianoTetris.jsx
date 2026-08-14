@@ -1,6 +1,6 @@
 import { useMemo, useEffect } from 'react';
 import { getChildLogger } from '../../../lib/logging/singleton.js';
-import { PianoKeyboard } from '../components/PianoKeyboard';
+import PianoGameHost from '../game-platform/host/PianoGameHost.jsx';
 import { useTetrisGame } from './useTetrisGame.js';
 import { useAutoGameLifecycle } from '../useAutoGameLifecycle.js';
 import { TetrisBoard } from './components/TetrisBoard.jsx';
@@ -71,7 +71,15 @@ export function PianoTetris({ activeNotes, gameConfig, onDeactivate, onNoteOn, o
   }, [game.targets]);
 
   return (
-    <div className="piano-tetris">
+    <PianoGameHost
+      gameId="tetris"
+      phase={game.phase}
+      phaseMapping={{ GAME_OVER: 'result', COMPLETE: 'result' }}
+      className="piano-tetris"
+      instrumentClassName="piano-tetris__keyboard"
+      instrument={{ activeNotes, startNote, endNote, showLabels: true, targetNotes: keyboardTargets, onNoteOn, onNoteOff }}
+      overlay={<TetrisOverlay phase={game.phase} countdown={game.countdown} score={game.score} linesCleared={game.linesCleared} level={game.level} />}
+    >
       {/* Play area */}
       <div className="piano-tetris__play-area">
         {/* Left staves + score */}
@@ -138,28 +146,7 @@ export function PianoTetris({ activeNotes, gameConfig, onDeactivate, onNoteOn, o
         </div>
       </div>
 
-      {/* Piano keyboard */}
-      <div className="piano-tetris__keyboard">
-        <PianoKeyboard
-          activeNotes={activeNotes}
-          startNote={startNote}
-          endNote={endNote}
-          showLabels={true}
-          targetNotes={keyboardTargets}
-          onNoteOn={onNoteOn}
-          onNoteOff={onNoteOff}
-        />
-      </div>
-
-      {/* Overlay (countdown, game over) */}
-      <TetrisOverlay
-        phase={game.phase}
-        countdown={game.countdown}
-        score={game.score}
-        linesCleared={game.linesCleared}
-        level={game.level}
-      />
-    </div>
+    </PianoGameHost>
   );
 }
 

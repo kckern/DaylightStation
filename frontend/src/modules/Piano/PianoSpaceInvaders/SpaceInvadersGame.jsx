@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
 import { getChildLogger } from '../../../lib/logging/singleton.js';
-import { PianoKeyboard } from '../components/PianoKeyboard';
+import PianoGameHost from '../game-platform/host/PianoGameHost.jsx';
 import { NoteWaterfall } from '../components/NoteWaterfall';
 import { useSpaceInvadersGame } from './useSpaceInvadersGame.js';
 import { useAutoGameLifecycle } from '../useAutoGameLifecycle.js';
@@ -64,7 +64,25 @@ export function SpaceInvadersGame({ activeNotes, noteHistory, gameConfig, onDeac
   }, [game.wrongNotes]);
 
   return (
-    <div className="space-invaders-game">
+    <PianoGameHost
+      gameId="space-invaders"
+      phase={game.gameState}
+      phaseMapping={{ GAME_OVER: 'result', LEVEL_COMPLETE: 'result' }}
+      className="space-invaders-game"
+      instrumentClassName="space-invaders-game__keyboard"
+      instrument={{
+        activeNotes, startNote, endNote, showLabels: true, targetNotes,
+        wrongNotes: game.wrongNotes, destroyedKeys: game.destroyedKeys, onNoteOn, onNoteOff,
+      }}
+      overlay={(
+        <>
+          <SpaceInvadersOverlay gameState={game.gameState} countdown={game.countdown}
+            score={game.score} currentLevel={game.currentLevel} levelProgress={game.levelProgress}
+          />
+          {screenFlash && <div className="space-invaders-game__wrong-flash" />}
+        </>
+      )}
+    >
       {/* Game header with score, level, misses */}
       <div className="space-invaders-game__header">
         <div className="space-invaders-game__header-left">
@@ -120,23 +138,7 @@ export function SpaceInvadersGame({ activeNotes, noteHistory, gameConfig, onDeac
         )}
       </div>
 
-      {/* Piano keyboard */}
-      <div className="space-invaders-game__keyboard">
-        <PianoKeyboard activeNotes={activeNotes} startNote={startNote} endNote={endNote}
-          showLabels={true} targetNotes={targetNotes} wrongNotes={game.wrongNotes}
-          destroyedKeys={game.destroyedKeys}
-          onNoteOn={onNoteOn} onNoteOff={onNoteOff}
-        />
-      </div>
-
-      {/* Overlay (countdown/banners/victory) */}
-      <SpaceInvadersOverlay gameState={game.gameState} countdown={game.countdown}
-        score={game.score} currentLevel={game.currentLevel} levelProgress={game.levelProgress}
-      />
-
-      {/* Wrong-press screen flash */}
-      {screenFlash && <div className="space-invaders-game__wrong-flash" />}
-    </div>
+    </PianoGameHost>
   );
 }
 
