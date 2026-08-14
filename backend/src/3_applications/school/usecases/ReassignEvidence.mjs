@@ -73,6 +73,13 @@ export class ReassignEvidence {
     try {
       await mk(fromLearnerId, `Some work recorded on your account on ${day} was moved to the right person. Ask a grown-up if that seems wrong.`);
       await mk(toLearnerId, `Some work you did on ${day} was credited to you — it had landed on the wrong account.`);
-    } catch { /* the move already succeeded; the note is best-effort */ }
+    } catch (err) {
+      // The move already succeeded and must not be undone by a failed note —
+      // but both children were told something about their own record that they
+      // then did not hear, which is exactly what a later review needs to find.
+      this.#logger.warn?.('school.reassign.note-failed', {
+        fromLearnerId, toLearnerId, day, error: err?.message,
+      });
+    }
   }
 }
