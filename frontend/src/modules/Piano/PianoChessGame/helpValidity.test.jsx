@@ -119,7 +119,7 @@ describe('help validity: seams the per-task tests could not see', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
     expect(saveGameRecord).toHaveBeenCalledTimes(1);
     // The record must not claim a hint that never displayed anything.
-    expect(saveGameRecord.mock.calls[0][1].hints).toBe(0);
+    expect(saveGameRecord.mock.calls[0][1].help.hints).toBe(0);
   });
 
   it('R4: a finished game reads its tallies back on the end screen, from the record that was saved', async () => {
@@ -149,15 +149,17 @@ describe('help validity: seams the per-task tests could not see', () => {
 
     expect(saveGameRecord).toHaveBeenCalledTimes(1);
     const record = saveGameRecord.mock.calls[0][1];
-    expect(record).toMatchObject({ result: 'win', moves: 1, hints: 1, best_moves: 0 });
+    expect(record).toMatchObject({ result: 'win', moves: 1, help: { hints: 1, best_moves: 0, takebacks: 0 } });
 
     // The end screen must state the same facts the record keeps — one source,
     // so the two can never disagree.
     const values = [...container.querySelectorAll('.piano-chess__summary-value')]
       .map((el) => el.textContent);
-    expect(values).toEqual([String(record.moves), String(record.hints), String(record.best_moves)]);
+    expect(values).toEqual([
+      String(record.moves), String(record.help.hints), String(record.help.best_moves), String(record.help.takebacks),
+    ]);
     const labels = [...container.querySelectorAll('.piano-chess__summary .piano-chess__slot-label')]
       .map((el) => el.textContent.toLowerCase());
-    expect(labels).toEqual(['moves', 'hints', 'best moves']);
+    expect(labels).toEqual(['moves', 'hints', 'best moves', 'takebacks']);
   });
 });

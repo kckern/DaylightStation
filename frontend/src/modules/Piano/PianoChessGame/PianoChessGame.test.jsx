@@ -735,8 +735,7 @@ describe('the game record', () => {
       result: 'win',
       outcome: 'checkmate',
       moves: 1,
-      hints: 1,
-      best_moves: 0,
+      help: expect.objectContaining({ hints: 1, best_moves: 0 }),
     }));
 
     // Play again must reset the once-only guard AND the tallies — without it
@@ -753,8 +752,7 @@ describe('the game record', () => {
     expect(saveGameRecord.mock.calls[1][1]).toMatchObject({
       result: 'win',
       moves: 1,
-      hints: 0,
-      best_moves: 0,
+      help: { hints: 0, best_moves: 0, takebacks: 0 },
     });
   });
 });

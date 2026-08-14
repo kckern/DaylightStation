@@ -622,7 +622,8 @@ export function PianoChessGame({
     if (!game.status?.game_over || recordedRef.current) return;
     recordedRef.current = true;
     const record = buildGameRecord({
-      game, rungId, hints: helpUsed.hints, bestMoves: helpUsed.bestMoves,
+      game, rungId, level: ladderLevel,
+      hints: helpUsed.hints, bestMoves: helpUsed.bestMoves, takebacks: helpUsed.takebacks,
       opponent: effectiveOpponentRef.current,
       startedAt: startedAtRef.current, endedAt: Date.now(),
     });
@@ -786,8 +787,9 @@ export function PianoChessGame({
             <dl className="piano-chess__summary">
               {[
                 ['Moves', finishedRecord.moves],
-                ['Hints', finishedRecord.hints],
-                ['Best moves', finishedRecord.best_moves],
+                ['Hints', finishedRecord.help.hints],
+                ['Best moves', finishedRecord.help.best_moves],
+                ['Takebacks', finishedRecord.help.takebacks],
               ].map(([label, value]) => (
                 <div key={label} className="piano-chess__summary-row">
                   <dt className="piano-chess__slot-label">{label}</dt>
