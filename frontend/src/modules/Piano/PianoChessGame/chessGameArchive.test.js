@@ -97,6 +97,14 @@ describe('the household game archive', () => {
     expect(archive.help).toEqual({ hints: 3, best_moves: 2 });
   });
 
+  it('states the effective opponent, not merely the UI rung', () => {
+    const game = played([['e2', 'e4']]);
+    const archive = buildGameArchive(inputs(game, {
+      opponent: { source: 'ladder', level: 0, name: 'Caterpie', rung: { id: 'level-0', skill: 0 } },
+    }));
+    expect(archive.opponent).toEqual({ source: 'ladder', level: 0, name: 'Caterpie', rung: { id: 'level-0', skill: 0 } });
+  });
+
   it('keeps a guest game, with a null player rather than no record', () => {
     const game = played([['e2', 'e4']]);
     expect(buildGameArchive(inputs(game, { userId: null })).user_id).toBe(null);

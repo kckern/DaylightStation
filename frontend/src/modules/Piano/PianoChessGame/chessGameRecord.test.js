@@ -11,9 +11,13 @@ describe('buildGameRecord', () => {
   it('records a win with its move count and help taken', () => {
     const rec = buildGameRecord({
       game: finished('checkmate', 'w', 48), rungId: 'steady',
+      opponent: { source: 'ladder', level: 8, name: 'Cubone', rung: { id: 'level-8', skill: 8 } },
       hints: 3, bestMoves: 1, startedAt: 1000, endedAt: 61000,
     });
-    expect(rec).toMatchObject({ result: 'win', moves: 24, hints: 3, best_moves: 1, rung: 'steady', duration_ms: 60000 });
+    expect(rec).toMatchObject({
+      result: 'win', moves: 24, hints: 3, best_moves: 1, rung: 'steady', duration_ms: 60000,
+      opponent: { source: 'ladder', level: 8, name: 'Cubone', rung: { id: 'level-8', skill: 8 } },
+    });
   });
 
   it('counts moves as full moves, not plies', () => {

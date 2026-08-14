@@ -165,6 +165,10 @@ export function PianoChessGame({
   const archivedRef = useRef(false);
   const archiveInputsRef = useRef(null);
   const addressingRef = useRef('chords');
+  // The server is the authority on clamping a ladder request. Keep its reply so
+  // both history formats state who actually played, rather than merely who the
+  // rail happened to show while it was loading.
+  const effectiveOpponentRef = useRef(null);
 
   // Latching the player internally is not enough: the kiosk chip still offered
   // the switch, so a child could pick themselves mid-game, see the header change
@@ -595,13 +599,18 @@ export function PianoChessGame({
       const served = await requestOpponentMove({
         fen, rung: rungId, level: ladderLevel, gameId, userId: lockedUser,
       });
+      if (served?.opponent) effectiveOpponentRef.current = served.opponent;
       const reply = served
         || chooseMove(fen, { difficulty: localFallbackDifficulty, seed: gameRef.current.history.length });
       if (cancelled || !reply) return;
       const { state } = commitMove(gameRef.current, reply.from, reply.to, reply.promotion);
       setGame(state);
       setOpponentThinking(false);
-      logger().info('opponent-replied', { san: reply.san, engine: served ? served.engine : 'local' });
+      logger().info('opponent-replied', {
+        san: reply.san,
+        engine: served ? served.engine : 'local',
+        opponent: served?.opponent || null,
+      });
     }, opponentDelayMs);
     return () => { cancelled = true; clearTimeout(timer); setOpponentThinking(false); };
   }, [game.status, playerColor, rungId, ladderLevel, gameId, opponentDelayMs, lockedUser, localFallbackDifficulty]);
@@ -614,6 +623,7 @@ export function PianoChessGame({
     recordedRef.current = true;
     const record = buildGameRecord({
       game, rungId, hints: helpUsed.hints, bestMoves: helpUsed.bestMoves,
+      opponent: effectiveOpponentRef.current,
       startedAt: startedAtRef.current, endedAt: Date.now(),
     });
     setFinishedRecord(record);
@@ -622,6 +632,7 @@ export function PianoChessGame({
     archivedRef.current = true;
     archiveGame(buildGameArchive({
       game, gameId, userId: lockedUser, rungId, addressing: addressingRef.current,
+      opponent: effectiveOpponentRef.current,
       hints: helpUsed.hints, bestMoves: helpUsed.bestMoves,
       startedAt: startedAtRef.current, endedAt: Date.now(), endedBy: 'game_over',
     }));
@@ -676,6 +687,7 @@ export function PianoChessGame({
   addressingRef.current = reading ? 'staff' : 'chords';
   archiveInputsRef.current = {
     game, gameId, userId: lockedUser, rungId, addressing: addressingRef.current,
+    opponent: effectiveOpponentRef.current,
     hints: helpUsed.hints, bestMoves: helpUsed.bestMoves, startedAt: startedAtRef.current,
   };
   // Only offered when the hovered square really does hold a piece this player

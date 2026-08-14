@@ -10,11 +10,11 @@ beforeEach(() => { vi.clearAllMocks(); });
 describe('requestOpponentMove', () => {
   it('posts the position and returns the move', async () => {
     DaylightAPI.mockResolvedValue({ from: 'e7', to: 'e5', san: 'e5', engine: 'stockfish' });
-    const move = await requestOpponentMove({ fen: 'x', rung: 'learner', gameId: 'g1', userId: 'felix' });
+    const move = await requestOpponentMove({ fen: 'x', rung: 'learner', level: 0, gameId: 'g1', userId: 'felix' });
     expect(move).toMatchObject({ from: 'e7', to: 'e5' });
     const [path, data, method] = DaylightAPI.mock.calls[0];
     expect(path).toBe('api/v1/chess/move?user=felix');
-    expect(data).toMatchObject({ fen: 'x', rung: 'learner', gameId: 'g1' });
+    expect(data).toMatchObject({ fen: 'x', rung: 'learner', level: 0, gameId: 'g1' });
     expect(method).toBe('POST');
   });
 

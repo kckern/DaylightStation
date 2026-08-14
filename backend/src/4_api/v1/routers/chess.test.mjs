@@ -37,6 +37,32 @@ describe('POST /api/v1/chess/move', () => {
     expect(res.body).toMatchObject({ from: 'e2', to: 'e4', san: 'e4', engine: 'stockfish' });
   });
 
+  it('logs and returns the server-resolved ladder opponent', async () => {
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+    const ladderService = {
+      rungFor: vi.fn(async () => ({
+        rung: { id: 'level-0', label: 'Level 0', skill: 0, movetime_ms: 400 },
+        level: 0,
+        opponent: { name: 'Caterpie' },
+      })),
+    };
+    const engine = { chooseMove: vi.fn(async () => ({ from: 'e2', to: 'e4', san: 'e4' })) };
+    const app = express();
+    app.use(express.json());
+    app.use('/api/v1/chess', createChessRouter({ engine, configService: stubConfig(), ladderService, logger }));
+    const res = await request(app).post('/api/v1/chess/move?user=felix')
+      .send({ fen: START, rung: 'learner', level: 0, gameId: 'g1' });
+    expect(res.body.opponent).toEqual({
+      source: 'ladder', level: 0, name: 'Caterpie',
+      rung: { id: 'level-0', label: 'Level 0', skill: 0, elo: null, movetime_ms: 400 },
+    });
+    expect(engine.chooseMove).toHaveBeenCalledWith(expect.objectContaining({ rung: expect.objectContaining({ skill: 0 }) }));
+    expect(logger.info).toHaveBeenCalledWith('chess.move.requested', expect.objectContaining({
+      requested: { rung: 'learner', level: 0 },
+      effective: expect.objectContaining({ name: 'Caterpie', level: 0 }),
+    }));
+  });
+
   it('rejects an invalid FEN before it reaches the engine', async () => {
     const chooseMove = vi.fn();
     const res = await request(appWith({ engine: { chooseMove }, configService: stubConfig() }))

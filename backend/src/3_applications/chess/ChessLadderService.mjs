@@ -88,11 +88,12 @@ export function createChessLadderService({ readConfig, readProgress, writeProgre
      * bypassed with a crafted request.
      */
     async rungFor(userId, requestedLevel) {
-      const policy = await policyFor(userId);
+      const config = await readConfig(userId);
+      const policy = resolvePolicy(config);
       const progress = userId ? normalizeProgress(await readProgress(userId)) : createLadderProgress();
       const asked = Number.isFinite(Number(requestedLevel)) ? Number(requestedLevel) : progress.unlocked_through;
       const level = Math.min(progress.unlocked_through, Math.max(0, Math.floor(asked)));
-      return { rung: rungForLevel(level, policy), level };
+      return { rung: rungForLevel(level, policy), level, opponent: resolveRoster(config)[level] || null };
     },
   };
 }
