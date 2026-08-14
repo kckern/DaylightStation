@@ -73,7 +73,12 @@ export function AudioPlayer({
     onProgress,
     onMediaRef,
     onController,
-    recoverySessionKey: resilienceBridge?.playbackSessionKey || null
+    recoverySessionKey: resilienceBridge?.playbackSessionKey || null,
+    // Threaded from Player.jsx's forceSinglePlayerRemount diagnostics via
+    // resilienceBridge (SinglePlayer.jsx) — not previously forwarded into this
+    // call, so a resilience remount always armed autoplay regardless of pause
+    // intent. See shouldArmAutoplay.
+    remountDiagnostics: resilienceBridge?.remountDiagnostics ?? null
   });
 
   // Register accessors with resilience bridge
@@ -304,6 +309,9 @@ AudioPlayer.propTypes = {
     onRegisterMediaAccess: PropTypes.func,
     seekToIntentSeconds: PropTypes.number,
     onSeekRequestConsumed: PropTypes.func,
-    playbackSessionKey: PropTypes.string
+    playbackSessionKey: PropTypes.string,
+    remountDiagnostics: PropTypes.shape({
+      wasPaused: PropTypes.bool
+    })
   })
 };

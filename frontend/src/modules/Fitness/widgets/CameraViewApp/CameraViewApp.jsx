@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import useFitnessModule from '@/modules/Fitness/player/useFitnessModule';
-import { useFitnessContext } from '@/context/FitnessContext.jsx';
+import { useFitnessContext, useFitness } from '@/context/FitnessContext.jsx';
 import { Webcam as FitnessWebcam } from '@/modules/Fitness/components/FitnessWebcam.jsx';
 import { DaylightAPI } from '@/lib/api.mjs';
 import getLogger from '@/lib/logging/Logger.js';
@@ -151,6 +151,20 @@ const CameraViewApp = ({ mode, onClose, config, onMount }) => {
       uploadInFlightRef.current = false;
     }
   }, [sessionId, captureEnabled, streamReady, captureIntervalMs, blobToBase64, computeCaptureIndex]);
+
+  const { captureDisabled } = useFitness() || {};
+
+  // Menu filtering cannot help an already-open panel — the widget must drop its own
+  // stream when an instructional item starts playing. This early return runs after
+  // every hook above has executed unconditionally, so hook order stays stable across
+  // the render where captureDisabled flips.
+  if (captureDisabled) {
+    return (
+      <div className="camera-view-app camera-view-app--disabled">
+        <p>The camera is off for this content.</p>
+      </div>
+    );
+  }
 
   const layoutClass = {
     standalone: 'camera-layout-full',

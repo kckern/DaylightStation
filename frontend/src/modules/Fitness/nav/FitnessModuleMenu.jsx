@@ -41,7 +41,7 @@ const FitnessModuleMenu = ({ activeModuleMenuId, onModuleSelect, onBack }) => {
   // Config-driven locks map (e.g. { dance_party: ['user_1','user_9'] }). A
   // module is gated iff locks[id] is a non-empty array. Surfaced via the unified
   // fitness config (root + nested fitness block).
-  const { fitnessConfiguration } = useFitness();
+  const { fitnessConfiguration, captureDisabled } = useFitness();
   const locks = useMemo(() => {
     const cfg = fitnessConfiguration || {};
     return cfg.locks || cfg.fitness?.locks || {};
@@ -110,10 +110,13 @@ const FitnessModuleMenu = ({ activeModuleMenuId, onModuleSelect, onBack }) => {
     // The menu is fully config-driven: items come from fitness.yml's
     // `plex.app_menus[].items` (SSoT). Each id is resolved to its registered
     // manifest; items without a manifest are dropped. Nothing is injected here.
+    // Camera view is additionally withheld while capture is suppressed for the
+    // playing item — manifest.requires is decorative and gates nothing.
     return (menuConfig?.items || [])
       .map(item => ({ ...item, manifest: getModuleManifest(item.id) }))
-      .filter(item => item.manifest);
-  }, [menuConfig]);
+      .filter(item => item.manifest)
+      .filter(item => !(captureDisabled && item.id === 'camera_view'));
+  }, [menuConfig, captureDisabled]);
 
   if (loading) return <div className="fitness-module-menu loading">Loading modules...</div>;
 

@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { getChildLogger } from '../../../lib/logging/singleton.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
-import { PianoKeyboard } from '../components/PianoKeyboard';
+import PianoGameHost from '../game-platform/host/PianoGameHost.jsx';
 import { ActionStaff } from '../components/ActionStaff.jsx';
 import { useFlashcardGame } from './useFlashcardGame.js';
 import { useAutoGameLifecycle } from '../useAutoGameLifecycle.js';
@@ -122,7 +122,14 @@ export function PianoFlashcards({ activeNotes, gameConfig, onDeactivate, onNoteO
     : 0;
 
   return (
-    <div className="piano-flashcards">
+    <PianoGameHost
+      gameId="flashcards"
+      phase={game.phase}
+      phaseMapping={{ COMPLETE: 'result' }}
+      className="piano-flashcards"
+      instrumentClassName="piano-flashcards__keyboard"
+      instrument={{ activeNotes, startNote, endNote, showLabels: true, targetNotes, wrongNotes, onNoteOn, onNoteOff }}
+    >
       <div className="piano-flashcards__play-area">
         {/* Left column: level info + score */}
         <div className="piano-flashcards__stats-left">
@@ -189,19 +196,7 @@ export function PianoFlashcards({ activeNotes, gameConfig, onDeactivate, onNoteO
         />
       )}
 
-      <div className="piano-flashcards__keyboard">
-        <PianoKeyboard
-          activeNotes={activeNotes}
-          startNote={startNote}
-          endNote={endNote}
-          showLabels={true}
-          targetNotes={targetNotes}
-          wrongNotes={wrongNotes}
-          onNoteOn={onNoteOn}
-          onNoteOff={onNoteOff}
-        />
-      </div>
-    </div>
+    </PianoGameHost>
   );
 }
 

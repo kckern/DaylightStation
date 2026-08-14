@@ -487,11 +487,19 @@ export function validatePresentationCatalog(catalog) {
     if (!assets?.[assetId]?.autotile) errors.push(`${prefix}: asset needs reviewed autotile metadata`);
     if (!['positive', 'negative'].includes(entry?.polarity)) errors.push(`${prefix}: polarity must be positive or negative`);
     else if (!assets?.[assetId]?.autotile?.supported_polarities?.includes(entry.polarity)) errors.push(`${prefix}: asset does not support declared ${entry.polarity} polarity`);
-    if (entry?.underlay !== undefined && entry.underlay !== 'inside-fill') errors.push(`${prefix}: underlay must be inside-fill`);
+    if (entry?.underlay !== undefined && !['inside-fill', 'outside-fill'].includes(entry.underlay)) errors.push(`${prefix}: underlay must be inside-fill or outside-fill`);
     if (entry?.transition_band !== undefined) {
       const band = entry.transition_band;
       if (!band || typeof band !== 'object' || Array.isArray(band)) errors.push(`${prefix}: transition_band must be a map`);
       else if (!Number.isFinite(band.minimum_changed_ratio) || band.minimum_changed_ratio <= 0 || band.minimum_changed_ratio > 1) errors.push(`${prefix}: transition_band.minimum_changed_ratio must be greater than 0 and at most 1`);
+    }
+    if (entry?.seam !== undefined) {
+      const seam = entry.seam;
+      if (!seam || typeof seam !== 'object' || Array.isArray(seam) || Object.keys(seam).some((field) => !['mode', 'maximum_mismatch_ratio'].includes(field))) errors.push(`${prefix}: seam supports only mode and maximum_mismatch_ratio`);
+      else {
+        if (seam.mode !== undefined && !['receiving-fill', 'outlined'].includes(seam.mode)) errors.push(`${prefix}: seam.mode must be receiving-fill or outlined`);
+        if (seam.maximum_mismatch_ratio !== undefined && (!Number.isFinite(seam.maximum_mismatch_ratio) || seam.maximum_mismatch_ratio < 0 || seam.maximum_mismatch_ratio > 1)) errors.push(`${prefix}: seam.maximum_mismatch_ratio must be between 0 and 1`);
+      }
     }
     if (entry?.corner_profile !== undefined) {
       const corner = entry.corner_profile;
@@ -502,6 +510,8 @@ export function validatePresentationCatalog(catalog) {
         if (assets?.[assetId]?.autotile?.outer_corner_style !== corner.style) errors.push(`${prefix}: asset outer_corner_style must match ${corner.style}`);
       }
     }
+    const reverse = Object.entries(catalog?.terrain_interfaces ?? {}).find(([reverseId, candidate]) => reverseId !== id && candidate?.inside === entry?.outside && candidate?.outside === entry?.inside);
+    if (reverse && id < reverse[0]) errors.push(`${prefix}: material pair also declares reverse visual owner ${reverse[0]}`);
   }
 
   for (const [field, capability] of [['connector_profiles', 'connector'], ['height_interfaces', 'height'], ['component_profiles', 'components']]) {

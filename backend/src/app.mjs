@@ -271,6 +271,7 @@ import { buildChessArchiveFilename, buildGameRecordFilename } from './4_api/v1/r
 import { createStockfishEngine } from './1_adapters/chess/StockfishEngineAdapter.mjs';
 import { createChessConfigService } from './3_applications/chess/ChessConfigService.mjs';
 import { createChessLadderService } from './3_applications/chess/ChessLadderService.mjs';
+import { createPianoGamesModule } from '#composition/modules/pianoGames.mjs';
 import { WikipediaAdapter } from './1_adapters/reference/WikipediaAdapter.mjs';
 import { GameShowService } from './3_applications/gameshow/GameShowService.mjs';
 import { GameShowSessionStore } from './3_applications/gameshow/GameShowSessionStore.mjs';
@@ -1757,6 +1758,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     }),
     logger: rootLogger.child({ module: 'chess-api' }),
   });
+
+  const pianoGamesModule = createPianoGamesModule({
+    dataService,
+    configService,
+    logger: rootLogger.child({ module: 'piano-games' }),
+    compatibilityRouters: { chess: v1Routers.chess },
+  });
+  server?.once?.('close', () => pianoGamesModule.container.dispose());
+  v1Routers['piano-games'] = pianoGamesModule.router;
 
   // Self-hosted Wikipedia (kiwix-backed, plain-text) proxy. URL from services.yml;
   // router is skipped entirely when no wikipedia service is declared.

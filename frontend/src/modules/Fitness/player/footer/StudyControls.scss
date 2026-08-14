@@ -1,0 +1,51 @@
+.study-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  &__label {
+    min-width: 6.5rem;
+    font-size: 0.85rem;
+    color: #b8b8b8;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  // Discrete tap targets — no sliders anywhere in the kiosk touch UI.
+  &__jog,
+  &__chip,
+  &__mirror {
+    min-width: 3.25rem;
+    min-height: 2.75rem;
+    padding: 0 0.75rem;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.06);
+    color: #e8e8e8;
+    font-size: 1rem;
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+
+    &:active { background: rgba(255, 255, 255, 0.16); }
+    &.is-active {
+      background: rgba(74, 163, 255, 0.22);
+      border-color: #4aa3ff;
+      color: #fff;
+    }
+  }
+
+  &__mirror {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-left: auto;
+  }
+}

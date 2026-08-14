@@ -4,7 +4,7 @@ import { fenToPosition } from '@shared-gaming/chess/position.mjs';
 import getLogger from '../../../lib/logging/Logger.js';
 import ChessBoard from '../../Chess/ChessBoard.jsx';
 import { pieceSource } from '../../Chess/pieceAssets.js';
-import { PianoKeyboard } from '../components/PianoKeyboard.jsx';
+import PianoGameHost from '../game-platform/host/PianoGameHost.jsx';
 import ChordNamePanel from '../components/ChordNamePanel.jsx';
 import CurrentChordStaff from '../components/CurrentChordStaff.jsx';
 import ChordReadout from './ChordReadout.jsx';
@@ -197,6 +197,8 @@ export function PianoChessGame({
   // effect depends on the level, and a const cannot be read before it exists.
   const opponent = ladder?.current ?? null;
   const ladderLevel = ladder?.unlocked_through ?? null;
+  const ladderLevelRef = useRef(ladderLevel);
+  ladderLevelRef.current = ladderLevel;
   const [rungId, setRungId] = useState('learner');
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -254,6 +256,12 @@ export function PianoChessGame({
   // Naming a square and committing to it are different acts: the selection
   // machine decides which. One chord hovers, the same square twice picks up.
   const selectionRef = useRef(createSelection());
+  // The pick-up window, mirrored out of the ref so it can be DRAWN. The double
+  // is the one interaction that fails invisibly — a player repeating a chord
+  // and getting nothing cannot tell whether they were too slow or misheard —
+  // so the deadline has to be visible while it is running, not inferred after
+  // it has passed. Mirrored rather than derived because a ref cannot re-render.
+  const [armed, setArmed] = useState(null);
   // True from the first tick where the held set reads as a help gesture until
   // the hands are fully off the keys. See the cursor tick for why: a staggered
   // release must not let the gesture's residue land as an unrecognised chord.
@@ -341,6 +349,7 @@ export function PianoChessGame({
     let cancelled = false;
     fetchLadder(lockedUser).then((loaded) => {
       if (cancelled || !loaded) return;
+      ladderLevelRef.current = loaded.unlocked_through ?? null;
       setLadder(loaded);
       logger().info('ladder-loaded', {
         level: loaded.unlocked_through,
@@ -359,10 +368,16 @@ export function PianoChessGame({
   // Gesture recognition runs before square matching, and a recognised cluster
   // is never chord input: while it is physically down, narrowing is suppressed.
   const gesture = recognizeGesture(heldNotes);
-  const candidates = useMemo(
-    () => (gesture ? [] : candidateSquares(heldNotes, liveScheme)),
-    [gesture, heldNotes, liveScheme],
-  );
+  const candidates = useMemo(() => {
+    if (gesture) return [];
+    // Narrow only among squares the player can act on in the current half of
+    // the move. Lighting empty, enemy, or unreachable squares made the board
+    // look random even though the pitch-class subset calculation was correct.
+    const available = new Set(game.origin
+      ? destinationsFor(game, game.origin)
+      : playableSources(game));
+    return candidateSquares(heldNotes, liveScheme).filter((square) => available.has(square));
+  }, [game, gesture, heldNotes, liveScheme]);
 
   // Help is per-move, not per-press: mashing the cluster cannot inflate the
   // tally, and the marks clear themselves when the move they helped with
@@ -604,9 +619,9 @@ export function PianoChessGame({
       // The latch remembers that a gesture was held at ANY point since the
       // hands went down, and stands until they are fully off the keys. While
       // it stands, a null-square commit (the gesture's own residue) and a
-      // too-quick scold are swallowed; a commit that names a real square still
-      // plays, so a gesture flowing straight into a chord without a full
-      // release behaves as chord input.
+      // refusal is swallowed; a commit that names a real square still plays, so
+      // a gesture flowing straight into a chord without a full release behaves
+      // as chord input.
       if (wasGesture) gestureLatchRef.current = true;
       const { state, event } = advanceCursor(cursorRef.current, heldNotes, Date.now(), { scheme: liveScheme });
       cursorRef.current = state;
@@ -614,9 +629,6 @@ export function PianoChessGame({
       if (!state.held.length) gestureLatchRef.current = false;
       if (!event) return;
       if (event.type === 'preview') setCursor(event.square);
-      if (event.type === 'too_quick' && !wasGesture && !latched) {
-        setToast({ text: 'Hold the chord a moment longer.', seq: `quick-${Date.now()}` });
-      }
       if (event.type === 'escape') {
         setCursor(null);
         const current = gameRef.current;
@@ -645,11 +657,10 @@ export function PianoChessGame({
         }
       }
       if (event.type === 'commit') setCursor(null);
-      // Both cursor events feed the selection machine: the pick-up fires on
-      // recognition — while the fingers are still down — and everything else
-      // on release. The gesture latch stays exactly as it was: it solves a
-      // different problem (a staggered cluster release landing as a false
-      // refusal), and both guards are needed.
+      // Preview is visual feedback only. Every chess action waits for the full
+      // release, so a major triad heard while a seventh is still arriving can
+      // never pick up or drop on the triad's square. The gesture latch solves a
+      // separate problem: staggered cluster release landing as a false refusal.
       if (event.type === 'preview' || event.type === 'commit') {
         if (wasGesture || (latched && !event.square)) return;
         const current = gameRef.current;
@@ -661,11 +672,23 @@ export function PianoChessGame({
           type: event.type, square: event.square, at, holdingPiece, isEligible,
         });
         selectionRef.current = selection;
+        // Armed is not a fourth thing to keep in sync — it is exactly the
+        // machine's own memory of "a repeat of this square would be a double",
+        // read straight back out. Identity is held stable so the countdown
+        // animation restarts only on a genuine re-arm, never on a re-render.
+        setArmed((prev) => {
+          const next = selection.lastSquare
+            ? { square: selection.lastSquare, at: selection.lastAt }
+            : null;
+          if (!prev && !next) return prev;
+          if (prev && next && prev.square === next.square && prev.at === next.at) return prev;
+          return next;
+        });
         // The double-play is the one interaction that fails INVISIBLY: a player
         // repeating a chord and getting nothing cannot tell whether they were
         // too slow, too fast, or heard as a different square. Log the interval
         // so the next report is answerable from the logs instead of guessed at.
-        if (event.type === 'preview' && !holdingPiece && event.square) {
+        if (event.type === 'commit' && !holdingPiece && event.square) {
           const sameSquare = previous.lastSquare === event.square;
           const elapsed = sameSquare ? at - previous.lastAt : null;
           if (action.type === 'pickup') {
@@ -687,7 +710,7 @@ export function PianoChessGame({
           handleSquare(action.square);
         }
         if (action.type === 'refuse') handleSquare(null);
-        // 'none' and 'swallowed' change nothing, deliberately.
+        // 'none' changes nothing, deliberately.
       }
     };
     tick();
@@ -718,7 +741,7 @@ export function PianoChessGame({
       // plays at — the server clamps it to what the player has actually
       // unlocked, so this is a request, not an authority.
       const served = await requestOpponentMove({
-        fen, rung: rungId, level: ladderLevel, gameId, userId: lockedUser,
+        fen, rung: rungId, level: ladderLevelRef.current, gameId, userId: lockedUser,
       });
       if (served?.opponent) effectiveOpponentRef.current = served.opponent;
       const reply = served
@@ -734,7 +757,7 @@ export function PianoChessGame({
       });
     }, opponentDelayMs);
     return () => { cancelled = true; clearTimeout(timer); setOpponentThinking(false); };
-  }, [game.status, playerColor, rungId, ladderLevel, gameId, opponentDelayMs, lockedUser, localFallbackDifficulty]);
+  }, [game.status, playerColor, rungId, gameId, opponentDelayMs, lockedUser, localFallbackDifficulty]);
 
   // One record per finished game, posted only for a signed-in player — guests
   // never reach the per-user endpoints. Ref-guarded, not state-guarded: the
@@ -831,6 +854,11 @@ export function PianoChessGame({
     ? cursorChord?.symbol ?? null
     : null;
   const prompt = promptFor(game, game.rejection, pickupChord, reading, takebackArmed);
+  // The countdown is drawn only where the prompt is actually asking for a
+  // repeat: same gate as pickupChord, plus the armed square agreeing with the
+  // cursor. A bar running under "play a piece's chord twice" — an instruction
+  // with no deadline attached yet — would be counting down nothing.
+  const pickupDeadline = pickupChord && armed?.square === cursor ? armed.at : null;
   const turnColour = game.status?.turn === 'w' ? 'White' : 'Black';
   const turnLabel = game.status?.turn === playerColor ? `Yours (${turnColour})` : `Theirs (${turnColour})`;
   const displayName = (typeof currentUser === 'object' && currentUser?.id === lockedUser && currentUser.name)
@@ -838,11 +866,15 @@ export function PianoChessGame({
     : (lockedUser || 'Guest');
 
   return (
-    <div
+    <PianoGameHost
+      gameId="chess"
+      phase={game.status?.game_over ? 'result' : 'playing'}
       className={`piano-chess${reading ? ' piano-chess--reading' : ''}`}
       /* Arriving at a new character LOOKS like arriving somewhere new. Purely
          cosmetic: it retints the dark squares and touches nothing else. */
       style={boardTheme ? { '--pc-dark': boardTheme } : undefined}
+      instrumentClassName="piano-chess__instrument"
+      instrument={{ activeNotes, startNote: 36, endNote: 84, showLabels: true }}
     >
       <div className="piano-chess__stage">
         {/* THE STATE RAIL — what the game is currently thinking. Every row here
@@ -885,6 +917,24 @@ export function PianoChessGame({
               isReading={reading}
             />
             <p className="piano-chess__prompt" role="status">{prompt}</p>
+            {/* The deadline on that sentence, made visible. Keyed on the arming
+                instant so each fresh hover restarts the run; aria-hidden because
+                the prompt beside it already speaks the instruction, and a bar
+                that announced itself would talk over every hover. */}
+            {pickupDeadline !== null && (
+              <div
+                key={pickupDeadline}
+                /* The key restarts the CSS run; the attribute is that same
+                   instant made observable, so "it re-armed" is a fact a test
+                   can read rather than an animation it has to infer. */
+                data-armed-at={pickupDeadline}
+                className="piano-chess__window"
+                style={{ '--pc-window-ms': `${DOUBLE_WINDOW_MS}ms` }}
+                aria-hidden="true"
+              >
+                <span className="piano-chess__window-bar" />
+              </div>
+            )}
           </div>
 
           {/* WHAT ELSE YOU CAN PLAY. Drawn as keys, because no child can act on
@@ -1077,13 +1127,7 @@ export function PianoChessGame({
         />
       )}
 
-      {/* The instrument zone is the instrument, and nothing else: which keys are
-          down. Everything that used to ride up here answers a question that
-          belongs beside the other answers of its kind, on one of the rails. */}
-      <footer className="piano-chess__instrument">
-        <PianoKeyboard activeNotes={activeNotes} startNote={36} endNote={84} showLabels />
-      </footer>
-    </div>
+    </PianoGameHost>
   );
 }
 
