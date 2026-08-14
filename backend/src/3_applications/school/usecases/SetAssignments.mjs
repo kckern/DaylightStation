@@ -12,6 +12,7 @@
  * a person rather than appearing out of the air.
  */
 import { ValidationError } from '#domains/core/errors/index.mjs';
+import { assertNotStale } from './staleSaveGuard.mjs';
 
 export class SetAssignments {
   #assignments; #grownUps; #teacherGate; #curriculum; #roster; #clock; #logger;
@@ -80,7 +81,7 @@ export class SetAssignments {
         known = new Set((await this.#curriculum.listUnits() ?? [])
           .map((u) => u.courseId).filter(Boolean));
       } catch (err) {
-        this.#logger.warn?.('school.assignments.course-check-skipped', { error: err?.message });
+        this.#logger.warn?.('school.assignments.course-check-skipped', { learnerId, error: err?.message });
       }
       if (known && known.size) {
         const asked = courses.map((c) => (typeof c === 'string' ? c : c?.courseId)).filter(Boolean);
@@ -90,22 +91,8 @@ export class SetAssignments {
         }
       }
     }
-    // Concurrent-edit guard (advocacy B14): a caller that says what it
-    // LOADED is refused when someone else saved since — last-write-wins
-    // silently losing a co-teacher's edit is the bug. Optional: a caller
-    // that sends nothing keeps the legacy behavior.
     if (baseUpdatedAt !== undefined) {
-      const current = await this.#assignments.get(learnerId);
-      const currentAt = current?.updatedAt ?? null;
-      if (currentAt !== baseUpdatedAt) {
-        const err = new ValidationError('Assignments changed since you loaded them — reload and try again.');
-        err.code = 'STALE_SAVE';
-        // A stale-base write is a conflict with someone else's edit, not a
-        // malformed request — 409, not this class's default 400 (the app
-        // error handler maps an explicit err.status first).
-        err.status = 409;
-        throw err;
-      }
+      assertNotStale(await this.#assignments.get(learnerId), baseUpdatedAt);
     }
 
     const record = await this.#assignments.put({

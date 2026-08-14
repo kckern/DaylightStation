@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, act, fireEvent, within } from '@testing-library/react';
 import PlanningTab from './PlanningTab.jsx';
 import { TeacherProfileProvider } from '../TeacherProfileContext.jsx';
 import PinPrompt from '../panels/PinPrompt.jsx';
@@ -13,6 +13,7 @@ vi.mock('../../schoolApi.js', () => ({
     periods: vi.fn(),
     putPeriods: vi.fn(),
     curriculumUnits: vi.fn(),
+    syllabi: vi.fn(),
     periodsMeta: vi.fn(),
     attestations: vi.fn(async () => ({ ok: true, status: 200, data: { entries: [] } })),
     passOverrides: vi.fn(),
@@ -53,6 +54,7 @@ beforeEach(() => {
     { unitId: 'math-fractions.01', title: 'What Is a Fraction', subject: 'math', courseId: 'math-fractions', sequence: 1, hasBank: true, passingPercent: 80 },
     { unitId: 'language-daily', title: 'Daily Language', subject: 'language', courseId: null, sequence: null, hasBank: false, passingPercent: null },
   ] }));
+  schoolApi.syllabi.mockResolvedValue(ok({ syllabi: [] }));
   schoolApi.passOverrides.mockResolvedValue(ok({ overrides: { 'math-fractions.01': 65 } }));
   schoolApi.putPassOverride.mockResolvedValue(ok({ unitId: 'math-fractions.01', percent: 60 }));
   schoolApi.milestones.mockResolvedValue(ok({ milestones: [
@@ -83,7 +85,8 @@ describe('PlanningTab (wave 3, all live)', () => {
   it('an assignments 404 still offers Edit (empty, never an error)', async () => {
     schoolApi.assignments.mockResolvedValue(fail(404));
     mount(<PlanningTab learnerId="felix" kids={KIDS} />);
-    await waitFor(() => expect(screen.getByText(/Nothing assigned/)).toBeTruthy());
+    const assignmentsSection = screen.getByRole('heading', { name: 'Assignments' }).closest('section');
+    await waitFor(() => expect(within(assignmentsSection).getByText(/Nothing assigned to/)).toBeTruthy());
     expect(screen.getByRole('button', { name: 'Edit assignments' })).toBeTruthy();
   });
 
@@ -167,5 +170,29 @@ describe('PlanningTab (wave 3, all live)', () => {
     mount(<PlanningTab learnerId="felix" kids={KIDS} />);
     await waitFor(() => expect(screen.getByText('Fall 2026')).toBeTruthy());
     expect(document.querySelectorAll('[data-todo]').length).toBe(0);
+  });
+
+  it('standalone units handles object-form entries with unitId property', async () => {
+    schoolApi.assignments.mockResolvedValue(ok({
+      learnerId: 'felix', courses: ['math-fractions'], units: ['language-daily', { unitId: 'poetry-study' }], assignedBy: 'kckern', updatedAt: '2026-08-01T00:00:00Z',
+    }));
+    mount(<PlanningTab learnerId="felix" kids={KIDS} />);
+    const standaloneSection = screen.getByRole('heading', { name: 'Standalone work' }).closest('section');
+    await waitFor(() => {
+      expect(within(standaloneSection).getByText('Language Daily')).toBeTruthy();
+      expect(within(standaloneSection).getByText('Poetry Study')).toBeTruthy();
+    });
+  });
+
+  it('standalone units shows empty state when learner has courses but no standalone work', async () => {
+    schoolApi.assignments.mockResolvedValue(ok({
+      learnerId: 'felix', courses: ['math-fractions'], units: [], assignedBy: 'kckern', updatedAt: '2026-08-01T00:00:00Z',
+    }));
+    mount(<PlanningTab learnerId="felix" kids={KIDS} />);
+    const standaloneSection = screen.getByRole('heading', { name: 'Standalone work' }).closest('section');
+    await waitFor(() => {
+      expect(within(standaloneSection).getByText('Nothing assigned outside a course.')).toBeTruthy();
+      expect(standaloneSection).toHaveAttribute('data-state', 'empty');
+    });
   });
 });

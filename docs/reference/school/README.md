@@ -16,6 +16,18 @@
 >
 > **Roadmap (candidate future work, categorized):** [`docs/roadmap/2026-07-21-school-module-roadmap.md`](../../roadmap/2026-07-21-school-module-roadmap.md)
 >
+> **Enrollment and syllabi (whole-course path built, wave 1):**
+> [`enrollment.md`](./enrollment.md) — `school.course-enrollment/v1` exists and
+> the planner and issue path honor it fully. `EnrollLearner`/`UnenrollLearner`
+> now materialize/remove enrollments from a saved *syllabus* — a reusable set
+> of arguments to `createCourseEnrollment` — through the whole-school matrix
+> and its drawer, behind `teacherGate`. There is still no console UI for
+> *authoring* a syllabus (`putSyllabus`/`archiveSyllabus` exist in the client
+> with no caller), so a syllabus must be written by hand or via API before the
+> drawer has anything to enroll from. Scope subsetting, the per-learner pass
+> bar, and terms/pacing remain designed, not built (waves 2–4). §3 inventories
+> four authored-but-unconsumed curriculum fields.
+>
 > **Cross-surface educational-technology audit:** [`edtech-research-audit.md`](./edtech-research-audit.md)
 >
 > **Formative learner/three-calculator pilot:** [`school-learning-pilot-protocol.md`](./school-learning-pilot-protocol.md)
@@ -1013,6 +1025,12 @@ answer to "what should a book sticker do in the school room", such a tap is logg
 and does nothing.
 
 ### An assigned course, not a catalog, is what prints
+
+> An assignment entry may also carry a `profile` and a
+> `school.course-enrollment/v1` **enrollment** (module order, optional modules,
+> frozen lesson order), which the planner and the worksheet issue path honor.
+> Nothing creates one yet — see [`enrollment.md`](./enrollment.md), which
+> designs the **syllabus** that materializes them and the teacher surface for it.
 
 A valid curriculum catalog offers **nothing** on its own. `BuildAgenda` builds
 strictly from what a grown-up has assigned — courses, standalone units, and

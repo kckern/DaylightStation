@@ -118,6 +118,11 @@ function reply(res, result) {
  * @param {object} [deps.resolveReviewItem] - guarded sign-off; without it the
  *   sign-off route does not exist. The store is never written to directly.
  * @param {object} [deps.setAssignments] - guarded planning write; likewise
+ * @param {object} [deps.syllabi] - `{get, list, save, archiveGuarded}`; save/
+ *   archiveGuarded carry validation and the teacher gate themselves (composition),
+ *   so this router only calls them, never the raw `YamlSyllabusStore`
+ * @param {object} [deps.enrollLearner] - guarded materialize-syllabus-onto-learner write
+ * @param {object} [deps.unenrollLearner] - guarded drop-course-from-learner write
  * @param {object} [deps.curriculum] - CurriculumAccess, READ-ONLY. Summaries
  *   only: a unit's `review` block holds the answer key, and this route is as
  *   reachable as any other.
@@ -144,6 +149,9 @@ export function createSchoolLifecycleRouter({
   reviewQueue = null,
   resolveReviewItem = null,
   setAssignments = null,
+  syllabi = null,
+  enrollLearner = null,
+  unenrollLearner = null,
   markSessionAbandoned = null,
   replaceLostAnswerSheet = null,
   createLostAnswerSheetTicket = null,
@@ -492,6 +500,62 @@ export function createSchoolLifecycleRouter({
       const { courses = [], units = [], assignedBy = null, pin = null, baseUpdatedAt } = req.body || {};
       res.json(await setAssignments.execute({
         learnerId: req.params.learnerId, courses, units, assignedBy, pin, baseUpdatedAt,
+      }));
+    }));
+  }
+
+  // --- syllabi: the saved arguments a materialized enrollment is built from ---
+  if (syllabi) {
+    router.get('/syllabi', asyncHandler(async (_req, res) => {
+      res.json({ syllabi: await syllabi.list() });
+    }));
+
+    router.get('/syllabi/:syllabusId', asyncHandler(async (req, res) => {
+      const record = await syllabi.get(req.params.syllabusId);
+      if (!record) {
+        const err = new Error(`no syllabus ${req.params.syllabusId}`);
+        err.status = 404;
+        throw err;
+      }
+      res.json(record);
+    }));
+
+    router.put('/syllabi/:syllabusId', guarded(async (req, res) => {
+      const { editedBy = null, pin = null, ...body } = req.body || {};
+      res.json(await syllabi.save({
+        raw: { ...body, syllabusId: req.params.syllabusId },
+        editedBy,
+        pin,
+      }));
+    }));
+
+    router.post('/syllabi/:syllabusId/archive', guarded(async (req, res) => {
+      const { archivedBy = null, pin = null } = req.body || {};
+      const record = await syllabi.archiveGuarded({ syllabusId: req.params.syllabusId, archivedBy, pin });
+      if (!record) {
+        const err = new Error(`no syllabus ${req.params.syllabusId}`);
+        err.status = 404;
+        throw err;
+      }
+      res.json(record);
+    }));
+  }
+
+  if (enrollLearner) {
+    router.post('/enrollments/:learnerId', guarded(async (req, res) => {
+      const { syllabusId, rematerialize = false, enrolledBy = null, pin = null, baseUpdatedAt } = req.body || {};
+      res.json(await enrollLearner.execute({
+        learnerId: req.params.learnerId, syllabusId, rematerialize: rematerialize === true,
+        enrolledBy, pin, baseUpdatedAt,
+      }));
+    }));
+  }
+
+  if (unenrollLearner) {
+    router.delete('/enrollments/:learnerId/:courseId', guarded(async (req, res) => {
+      const { removedBy = null, pin = null, baseUpdatedAt } = req.body || {};
+      res.json(await unenrollLearner.execute({
+        learnerId: req.params.learnerId, courseId: req.params.courseId, removedBy, pin, baseUpdatedAt,
       }));
     }));
   }

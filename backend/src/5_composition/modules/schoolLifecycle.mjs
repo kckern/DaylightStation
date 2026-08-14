@@ -41,6 +41,7 @@ import { YamlCurriculumDatastore } from '#adapters/persistence/yaml/YamlCurricul
 import { YamlWorkSessionDatastore } from '#adapters/persistence/yaml/YamlWorkSessionDatastore.mjs';
 import { YamlTokenRegistry } from '#adapters/persistence/yaml/YamlTokenRegistry.mjs';
 import { YamlAssignmentStore } from '#adapters/persistence/yaml/YamlAssignmentStore.mjs';
+import { YamlSyllabusStore } from '#adapters/persistence/yaml/YamlSyllabusStore.mjs';
 import { YamlFormMapStore } from '#adapters/persistence/yaml/YamlFormMapStore.mjs';
 import { YamlWorksheetInstanceStore } from '#adapters/persistence/yaml/YamlWorksheetInstanceStore.mjs';
 import { YamlReviewQueue } from '#adapters/persistence/yaml/YamlReviewQueue.mjs';
@@ -75,6 +76,10 @@ import { SetAssignments } from '#apps/school/usecases/SetAssignments.mjs';
 import { MarkSessionAbandoned } from '#apps/school/usecases/MarkSessionAbandoned.mjs';
 import { ReplaceLostAnswerSheet } from '#apps/school/usecases/ReplaceLostAnswerSheet.mjs';
 import { CreateLostAnswerSheetTicket } from '#apps/school/usecases/CreateLostAnswerSheetTicket.mjs';
+import { EnrollLearner } from '#apps/school/usecases/EnrollLearner.mjs';
+import { UnenrollLearner } from '#apps/school/usecases/UnenrollLearner.mjs';
+import { validateSyllabus } from '#domains/school/curriculum/syllabus.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 import { isSchoolToken } from '#domains/school/sessions/tokens.mjs';
 import { shortId } from '#domains/core/utils/id.mjs';
 import { createSchoolLifecycleRouter } from '#api/v1/routers/schoolLifecycle.mjs';
@@ -282,11 +287,11 @@ export async function createSchoolLifecycle({
   // --- persistence -----------------------------------------------------------
   const stores = {
     catalog: new YamlCurriculumDatastore({ configService }),
-    sessions: new YamlWorkSessionDatastore({ configService }),
+    sessions: new YamlWorkSessionDatastore({ configService, logger }),
     tokens: tokenRegistry ?? new YamlTokenRegistry({ configService, logger }),
-    assignments: new YamlAssignmentStore({ configService }),
+    assignments: new YamlAssignmentStore({ configService, logger }),
     formMaps: new YamlFormMapStore({ configService }),
-    reviewQueue: new YamlReviewQueue({ configService }),
+    reviewQueue: new YamlReviewQueue({ configService, logger }),
   };
   // Long-expired token files are dead weight (a pruned scan resolves to the
   // "unknown ticket" slip, which is what week-old paper deserves). Swept at
@@ -497,7 +502,7 @@ export async function createSchoolLifecycle({
   const printDocumentsRoot = path.join(dataDir, 'content/school/print-documents');
   const printDocuments = new YamlPrintDocumentRepository({ directory: printDocumentsRoot });
   const allocationStore = new YamlAllocationStore({ directory: printDocumentsRoot, timeZone: timezone });
-  const worksheetInstances = new YamlWorksheetInstanceStore({ configService });
+  const worksheetInstances = new YamlWorksheetInstanceStore({ configService, logger });
   const renderPrintDocument = new RenderPrintDocument({
     repository: printDocuments,
     banks: createYamlBankReader({ dataDir }),
@@ -575,7 +580,7 @@ export async function createSchoolLifecycle({
     teacherGate, clock, logger,
   });
   const createLostAnswerSheetTicket = new CreateLostAnswerSheetTicket({
-    tokens: stores.tokens, teacherGate, clock, rng: draw,
+    tokens: stores.tokens, teacherGate, clock, rng: draw, logger,
     ttlMinutes: cfg.answer_sheets?.lost_ticket_ttl_minutes ?? 15,
   });
   const resolveScanAction = new ResolveScanAction({
@@ -638,11 +643,47 @@ export async function createSchoolLifecycle({
     clock, logger,
   });
 
+  // --- syllabi + enrollment (spec: docs/reference/school/enrollment.md) ------
+  const syllabusStore = new YamlSyllabusStore({ configService, logger });
+  // The store is dumb; validation and the teacher gate belong to the write,
+  // not to persistence — the same split SetAssignments/YamlAssignmentStore use.
+  const syllabi = {
+    get: (id) => syllabusStore.get(id),
+    list: () => syllabusStore.list(),
+    async save({ raw, editedBy, pin }) {
+      teacherGate.assert({ userId: editedBy, pin, action: 'syllabus.put', context: { syllabusId: raw?.syllabusId } });
+      const works = await curriculum.listWorks();
+      const courseIds = new Set(works.map((w) => w.work).filter(Boolean));
+      const profileIds = new Set(Object.keys(works.find((w) => w.work === raw?.courseId)?.profiles ?? {}));
+      const { errors, syllabus } = validateSyllabus({ schema: 'school.syllabus/v1', ...raw }, { courseIds, profileIds });
+      if (errors.length) {
+        const err = new ValidationError(errors.join('; '));
+        err.status = 400;
+        throw err;
+      }
+      return syllabusStore.put({ ...syllabus, editedBy, updatedAt: clock().toISOString() });
+    },
+    archiveGuarded({ syllabusId, archivedBy, pin }) {
+      teacherGate.assert({ userId: archivedBy, pin, action: 'syllabus.archive', context: { syllabusId } });
+      return syllabusStore.archive(syllabusId, { archivedBy, at: clock().toISOString() });
+    },
+  };
+
+  const enrollLearner = new EnrollLearner({
+    syllabi: syllabusStore, assignments: stores.assignments, curriculum,
+    sessions: stores.sessions, teacherGate, clock, logger,
+  });
+  const unenrollLearner = new UnenrollLearner({
+    assignments: stores.assignments, curriculum, sessions: stores.sessions,
+    teacherGate, clock, logger,
+  });
+
   const useCases = {
     buildAgenda, issueDocument, dispatchMedia, recordMediaCompletion,
     submitPaperWork, gradeSubmission, closeSessionOutcome, openRemediation,
     resolvePersonalCard, resolveScanAction, resolveReviewItem, setAssignments,
     previewAgenda, markSessionAbandoned, replaceLostAnswerSheet, createLostAnswerSheetTicket,
+    enrollLearner, unenrollLearner,
   };
 
   const router = createSchoolLifecycleRouter({
@@ -654,6 +695,7 @@ export async function createSchoolLifecycle({
     sessions: stores.sessions,
     listLearnerSessions: new ListLearnerSessions({ sessions: stores.sessions, timezone, clock }),
     roster: displayRoster,
+    syllabi,
     logger,
   });
 
@@ -721,6 +763,10 @@ export async function createSchoolLifecycle({
     // The same override store CloseSessionOutcome grades against — the
     // routes read/write THIS instance so a PUT is live at the next close.
     passOverrides,
+    // The guarded save/archiveGuarded wrapper the router calls (never the raw
+    // `YamlSyllabusStore`) — exposed for the same "same instance, not a second
+    // one" reason as `passOverrides` above.
+    syllabi,
   };
 }
 

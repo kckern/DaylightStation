@@ -279,7 +279,7 @@ export class LanguageStudyService {
     }
 
     this.#writeProgress(userId, corpusId, { ...progress, lastActivity: at });
-    this.#logger.debug?.('school.language.attempt', { userId, corpus: corpusId, seq, rung });
+    this.#logger.debug?.('school.language.attempt', { learnerId: userId, corpus: corpusId, seq, rung });
     return event;
   }
 
@@ -349,7 +349,7 @@ export class LanguageStudyService {
 
     const next = { ...progress, day: progress.day + 1 };
     this.#writeProgress(userId, corpusId, next);
-    this.#logger.info?.('school.language.day-rolled', { userId, corpus: corpusId, day: next.day });
+    this.#logger.info?.('school.language.day-rolled', { learnerId: userId, corpus: corpusId, day: next.day });
     return { rolled: true, day: next.day, reason: decision.reason };
   }
 
@@ -511,7 +511,7 @@ export class LanguageStudyService {
       }
       return { doneToday: false, progressLabel: null, score: null };
     } catch (err) {
-      this.#logger.error?.('school.language.today-status-failed', { userId, error: err.message });
+      this.#logger.error?.('school.language.today-status-failed', { learnerId: userId, error: err.message });
       return { doneToday: false, progressLabel: null, score: null };
     }
   }
