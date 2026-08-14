@@ -1376,6 +1376,7 @@ const FitnessApp = () => {
         >
           <IdentityProvider>
           <GlobalOverlays />
+          <PressureMatEventBridge logger={logger} />
           <FitnessFleetPublisher />
           {feedbackOpen && (
             <FitnessFeedback
@@ -1665,6 +1666,24 @@ const FitnessFleetPublisher = () => {
   const playerRefObj = fitnessCtx?.videoPlayerRef ?? null;
   usePlayerSessionBinding(() => playerRefObj?.current ?? null);
   return <DeviceStatePublisher deviceId={FLEET_DEVICE_ID} />;
+};
+
+// Modules/challenges consume FitnessContext events; this bridge also exposes
+// the same stream at the Fitness app shell for future app-level modes.
+const PressureMatEventBridge = ({ logger }) => {
+  const { subscribeToAppEvent } = useFitnessContext();
+  useEffect(() => subscribeToAppEvent('pressure-mat', (event) => {
+    logger.info('fitness.pressure-mat', {
+      matId: event.payload.id,
+      event: event.payload.event,
+      steps: event.payload.steps,
+      stomps: event.payload.stomps,
+    });
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('fitness:pressure-mat', { detail: event }));
+    }
+  }), [logger, subscribeToAppEvent]);
+  return null;
 };
 
 const GlobalOverlays = () => {
