@@ -797,7 +797,7 @@ git commit -m "feat(piano-chess): takeback budget — per-game cap, cooldown, an
 
 **Interfaces:**
 - Consumes: `game.undoneHistory` from Task 3.
-- Produces: `buildGameArchive({ ..., takebacks })` whose `moves` array interleaves undone plies (`undone: true`, `undone_at_ply`) with the surviving line, and whose `help` block gains `takebacks`.
+- Produces: `buildGameArchive({ ..., takebacks })` whose `moves` array interleaves undone plies (`undone: true`, `undone_at_ply`, `undone_seq`) with the surviving line, and whose `help` block gains `takebacks`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -813,7 +813,7 @@ describe('rewound moves in the archive', () => {
     scheme: { id: 'chords-default' },
     history: [{ san: 'Nf3', from: 'g1', to: 'f3', color: 'w', captured: null, chords: ['G', 'F'] }],
     undoneHistory: [
-      { san: 'Qh5', from: 'd1', to: 'h5', color: 'w', captured: null, chords: ['D', 'H'], ply: 1, undone_at_ply: 1 },
+      { san: 'Qh5', from: 'd1', to: 'h5', color: 'w', captured: null, chords: ['D', 'H'], ply: 1, undone_at_ply: 1, undone_seq: 1 },
     ],
   };
 
@@ -823,7 +823,7 @@ describe('rewound moves in the archive', () => {
       hints: 0, bestMoves: 0, takebacks: 1, startedAt: 0, endedAt: 1000,
     });
     expect(archive.moves).toHaveLength(2);
-    expect(archive.moves[0]).toMatchObject({ san: 'Qh5', undone: true, undone_at_ply: 1, ply: 1 });
+    expect(archive.moves[0]).toMatchObject({ san: 'Qh5', undone: true, undone_at_ply: 1, undone_seq: 1, ply: 1 });
     expect(archive.moves[1]).toMatchObject({ san: 'Nf3', undone: false, ply: 1 });
   });
 
@@ -900,7 +900,7 @@ function serializeMove(entry, ply, undone) {
     // The two addresses the player performed it with, origin then destination.
     played: Array.isArray(entry.chords) ? entry.chords.filter(Boolean) : [],
     undone,
-    ...(undone ? { undone_at_ply: entry.undone_at_ply ?? ply } : {}),
+    ...(undone ? { undone_at_ply: entry.undone_at_ply ?? ply, undone_seq: entry.undone_seq ?? null } : {}),
   };
 }
 ```

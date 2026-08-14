@@ -184,8 +184,10 @@ themselves, a second is being carried.
 ## 4. Archive — the rewound blunder survives
 
 `buildGameArchive` merges `undoneHistory` back into the `moves` list, ordered by
-the `ply` each move was played at, marking those entries `undone: true` and
-carrying `undone_at_ply` so the ordering is recoverable. A replayer filters them
+the `ply` each move was played at, marking those entries `undone: true` and carrying
+`undone_at_ply` (where the board stood when it came off) and `undone_seq`
+(which rewind took it) so both grouping and ordering are recoverable. A ply
+alone cannot do it: a rewind trims history, so two episodes can share one. A replayer filters them
 out to reconstruct the game that was actually played; an analyzer reads them to
 find the moment that matters.
 
