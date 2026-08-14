@@ -42,8 +42,9 @@ export class ReceiptPrinting {
       this.#logger.debug?.('school.receipt.not-wired', { id: document.id });
       return { printed: false, reason: 'not_wired' };
     }
+    let job = null;
     try {
-      const job = await this.#renderer.render(document, opts);
+      job = await this.#renderer.render(document, opts);
       // The real adapter's `print` resolves FALSE on failure and never rejects;
       // both are handled, because a double or a future adapter might differ.
       const ok = await this.#printer.print(job);
@@ -55,6 +56,16 @@ export class ReceiptPrinting {
     } catch (err) {
       this.#logger.warn?.('school.receipt.failed', { id: document.id, error: err.message });
       return { printed: false, reason: 'printer_error' };
+    } finally {
+      // A raster renderer's job points the printer at a scratch PNG on disk
+      // (ESC/POS has no in-memory image item) and hands back a `cleanup()` to
+      // remove it once the bytes are no longer needed — after the print
+      // attempt, win or lose. A text renderer sets none, so this is a no-op
+      // for the ordinary case. Best-effort: a stray temp file is disk
+      // clutter, never a reason to turn a successful print into a failed one.
+      try { await job?.cleanup?.(); } catch (err) {
+        this.#logger.debug?.('school.receipt.cleanup-failed', { id: document.id, error: err.message });
+      }
     }
   }
 }

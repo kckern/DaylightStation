@@ -30,9 +30,16 @@
  *   clock, rng                  — determinism controls, now first-class
  *                                 parameters of the composition itself.
  *
- * The only test-only object built here is `receiptCanvasRenderer`: an ORACLE,
- * wired into nothing, used to answer "could this document be drawn on 58mm
- * tape?" The composition deliberately prints ESC/POS items instead, and says so.
+ * The only test-only object built here is `receiptCanvasRenderer`: a SECOND
+ * instance of the same canvas renderer the composition builds for itself
+ * (`receiptPngRenderer`), used by `probeReceiptRendering` below to draw a
+ * document without going through a live scan. The composition's OWN instance
+ * is what actually reaches paper now — every scan-triggered receipt this
+ * console prints is a raster PNG rasterized to a single ESC/POS image item,
+ * with a real scannable QR baked into the pixels — so `barcodesInLastReceipt`
+ * below reads the captured job's `codes` field (the raster renderer's own
+ * account of what it drew) rather than filtering `items` by type, which would
+ * find nothing: a raster job has no `qrcode` item, only pixels.
  *
  * WHAT A TEST ASSERTS ON. Observable artifacts only: the transcript off the
  * receipt roll, the PDF bytes in the tray, the form map that was stored, the
@@ -430,14 +437,24 @@ export async function createLifecycleHarness({
     return list.length ? list[list.length - 1] : null;
   };
 
-  // The composition wires the school console's receipt renderer with
-  // `symbology: 'QR'` (Task 12), so every scannable action a test finds on a
-  // printed receipt is a `qrcode` item, not a `barcode` one — `barcode` stays
-  // in the filter only as a defensive regression check, should the
-  // composition ever revert to Code128.
-  const barcodesInLastReceipt = () => (lastCapture()?.items ?? [])
-    .filter((item) => item.type === 'qrcode' || item.type === 'barcode')
-    .map((item) => ({ token: String(item.content), label: String(item.label ?? '') }));
+  // A raster receipt's `items` is a single `{type:'image'}` — its QR is
+  // pixels the printer drew, not an item this harness can read a token out
+  // of. `DocumentReceiptRasterRenderer` knows what it drew and hands that
+  // over as the job's `codes` field (`VirtualThermalPrinterAdapter` passes it
+  // through the capture untouched), so that is read FIRST. The `items` scan
+  // stays as a fallback for a text-only job — no `receiptPngRenderer` built
+  // (a missing `qrcode`/`canvas`/`resvg` dependency), or the raster path
+  // itself fell back to the ESC/POS renderer — where `codes` is never set and
+  // the school console's `symbology: 'QR'` still means `qrcode`, not
+  // `barcode`; `barcode` stays in the filter only as a defensive regression
+  // check, should the composition ever revert to Code128.
+  const barcodesInLastReceipt = () => {
+    const capture = lastCapture();
+    if (capture?.codes) return capture.codes.map(({ token, label }) => ({ token, label }));
+    return (capture?.items ?? [])
+      .filter((item) => item.type === 'qrcode' || item.type === 'barcode')
+      .map((item) => ({ token: String(item.content), label: String(item.label ?? '') }));
+  };
 
   /** Every session this learner has, newest first, as derived facts. */
   const sessionRows = async (learnerId = currentLearner) => stores.sessions.listForLearner(learnerId);

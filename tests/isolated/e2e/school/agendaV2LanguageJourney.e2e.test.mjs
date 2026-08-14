@@ -8,9 +8,12 @@
  * two subjects on one card, the daily serving that quiets a subject once it
  * is done, a STALE per-subject ticket that stays safe rather than
  * double-crediting or double-dispatching, a program unit that hands off to
- * the Portal instead of opening a work session, and the exact ESC/POS item
- * stream a printer receives for the tap that started it all (the golden
- * tape).
+ * the Portal instead of opening a work session, and a golden-snapshot check
+ * of the ESC/POS item stream the console derives from the same tap's document
+ * (the golden tape) — no longer literally what reaches paper (that is a
+ * raster PNG now, `DocumentReceiptRasterRenderer`), but exactly what the
+ * printed receipt's operator transcript is built from, and what would print
+ * instead if rasterizing ever failed.
  *
  * PLACEMENT: `tests/isolated/e2e/school/`, not `application/school/`. The
  * journey needs the full production graph — `createSchoolLifecycle`, real
@@ -146,7 +149,13 @@ describe('the v2 agenda — math and language together, one card', () => {
     expect((await h.sessionRows()).some((r) => r.unitId === LANGUAGE_UNIT)).toBe(false);
 
     // -------------------------------------------------------------------
-    // (f) golden tape: the exact item stream the printer got for tap (a)
+    // (f) golden tape: the ESC/POS item stream the console's transcript/
+    // fallback renderer derives from tap (a)'s own document. What actually
+    // reached the (virtual) printer for tap (a) is a raster image job —
+    // asserted on via `h.lastReceiptText()`/`h.tokensInLastReceipt()`
+    // elsewhere in this suite, which read the SAME words/codes this stream
+    // carries, just sourced from the raster job's `transcript`/`codes`
+    // fields instead of printable items.
     // -------------------------------------------------------------------
     const renderer = createDocumentEscPosRenderer({ symbology: 'QR' });
     const job = renderer.render(agendaA.document);

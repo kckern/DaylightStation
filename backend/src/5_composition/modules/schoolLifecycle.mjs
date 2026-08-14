@@ -198,16 +198,26 @@ export async function createSchoolLifecycle({
   }
 
   try {
-    // ESC/POS text + barcode items, NOT the canvas renderer's PNG.
+    // The text/barcode receipt renderer. It no longer reaches paper directly
+    // for the three receipts this console prints (see `receiptPrintRenderer`
+    // below) — it now backs the raster path, as the source of the operator
+    // transcript and as the fallback when rasterizing fails.
     //
-    // The canvas draws an empty square where the code belongs — it renders no
-    // barcode at all — so an image job handed a child a receipt with nothing
-    // scannable on it, and left the printer's text transcript (the operator's
-    // record of what a child was told) empty. Emitting items lets the printer
-    // generate a real Code128 in firmware. None of the three receipts this
-    // console prints contains math, which is the only thing the raster path
-    // buys; `DocumentReceiptRenderer` stays the probe that proves a document
-    // CAN be drawn on 58mm tape.
+    // THIS USED TO BE THE PRIMARY PATH, on the reasoning that the canvas
+    // renderer's receipt drew an empty square where the code belonged. That
+    // was true when the symbology was Code128 and false the moment
+    // `DocumentReceiptRenderer` grew a real QR encoder (`scanCodes:'qr'`,
+    // which the raster path below always requests): the canvas has drawn a
+    // genuinely scannable code for a while, and printing plain text items
+    // instead was solving a problem that no longer existed while leaving the
+    // designed receipt layout — the one the print-design system exists to
+    // produce — permanently unreached. The one part of that old reasoning
+    // that was never stale is that an ESC/POS `{type:'image'}` item carries
+    // no decodable text of its own, so a pure raster job leaves the printer's
+    // operator transcript empty. That is solved below by running THIS
+    // renderer alongside the raster one (never printed) purely to harvest its
+    // words as `transcript`/`codes` — see `DocumentReceiptRasterRenderer.mjs`
+    // for the full accounting.
     const { createDocumentEscPosRenderer } = await import('#rendering/school/documents/DocumentEscPosRenderer.mjs');
     // QR, not Code128: the school console's tickets are minted and re-derived
     // through this one renderer, and a QR is what a phone-shaped scanner in a
@@ -217,6 +227,42 @@ export async function createSchoolLifecycle({
     // A missing receipt renderer is survivable: worksheets still print, and
     // `ReceiptPrinting` reports every receipt as unprinted rather than lying.
     logger.warn?.('school.lifecycle.no-receipt-renderer', { error: err.message });
+  }
+
+  // The designed receipt: `DocumentReceiptRenderer`'s canvas, rasterized to
+  // the ESC/POS image job `receipts` (below) actually prints — the SAME
+  // renderer the `.../agenda/preview` route uses, so a parent previewing an
+  // agenda and a child holding the printed one see the identical layout.
+  // Built here, ABOVE `receipts`'s construction, because `ReceiptPrinting`
+  // takes its renderer at construction time: this was a real ordering bug,
+  // not a style preference — `receiptPngRenderer` used to exist only after
+  // `receipts` did, which made wiring it in structurally impossible without
+  // moving this block. Optional like `receiptRenderer` above: a missing
+  // `qrcode`/`canvas`/`resvg` dependency degrades the receipt/preview surface,
+  // not the whole console.
+  let receiptPngRenderer = null;
+  try {
+    const { createDocumentReceiptRenderer } = await import('#rendering/school/documents/DocumentReceiptRenderer.mjs');
+    receiptPngRenderer = createDocumentReceiptRenderer({ scanCodes: 'qr' });
+  } catch (err) {
+    logger.warn?.('school.lifecycle.no-receipt-png-renderer', { error: err.message });
+  }
+
+  // `ReceiptPrinting`'s actual renderer: the raster receipt when it can be
+  // built, wrapping `receiptRenderer` for its transcript/fallback duties (see
+  // `DocumentReceiptRasterRenderer.mjs`); otherwise `receiptRenderer` alone,
+  // the same text-only behaviour this console shipped with before this PNG
+  // wiring existed. `null` only when BOTH renderer imports failed, which
+  // leaves `receipts.wired` false and every receipt reporting `not_wired`
+  // rather than throwing (`ReceiptPrinting`'s own contract).
+  let receiptPrintRenderer = receiptRenderer;
+  if (receiptPngRenderer) {
+    const { createDocumentReceiptRasterRenderer } = await import('#rendering/school/documents/DocumentReceiptRasterRenderer.mjs');
+    receiptPrintRenderer = createDocumentReceiptRasterRenderer({
+      canvasRenderer: receiptPngRenderer,
+      escPosRenderer: receiptRenderer,
+      logger,
+    });
   }
 
   const devices = {};
@@ -409,7 +455,7 @@ export async function createSchoolLifecycle({
   const bankReader = {
     getBank: (id) => { try { return schoolService.getBank(id); } catch { return null; } },
   };
-  const receipts = new ReceiptPrinting({ renderer: receiptRenderer, printer: receiptPrinter, logger });
+  const receipts = new ReceiptPrinting({ renderer: receiptPrintRenderer, printer: receiptPrinter, logger });
   // Who may act for a child. Read through `userService` per call, never
   // snapshotted: a member added after boot is a member. With no user service at
   // all, nobody is a grown-up and every parent-only write is refused — the
@@ -478,19 +524,11 @@ export async function createSchoolLifecycle({
     schoolCalcMode: schoolCalcStudies ? 'preview' : 'off',
     logger: logger.child ? logger.child({ preview: true }) : logger,
   });
-  // The rendering-layer PNG renderer, same optional-dependency posture as the
-  // ESC/POS receipt renderer above: a preview is a nice-to-have surface, not
-  // the console itself, so its absence degrades the one route rather than the
-  // whole lifecycle.
-  let receiptPngRenderer = null;
-  try {
-    const { createDocumentReceiptRenderer } = await import('#rendering/school/documents/DocumentReceiptRenderer.mjs');
-    // QR, matching the printed receipt's own symbology — the preview is
-    // supposed to look like the paper, not like a different console.
-    receiptPngRenderer = createDocumentReceiptRenderer({ scanCodes: 'qr' });
-  } catch (err) {
-    logger.warn?.('school.lifecycle.no-preview-renderer', { error: err.message });
-  }
+  // `receiptPngRenderer` (the canvas renderer) is already built above,
+  // before `receipts` — it backs BOTH the printed receipt (via
+  // `receiptPrintRenderer`) and this preview route, so a parent previewing an
+  // agenda and a child holding the printed one are always looking at the
+  // output of the same renderer instance.
   // --- print documents (Task 7, spec §9): tracked quizzes through IssueDocument ---
   // Rooted at the SAME content root `school-docs.cli.mjs` defaults to
   // (`<dataDir>/content/school/print-documents`) — a unit authored/published
@@ -749,10 +787,18 @@ export async function createSchoolLifecycle({
     // reason as `stores.printDocuments`/`stores.allocationStore` above.
     renderPrintDocument,
     devices,
-    // The two renderers this console built, exposed for inspection. Neither is
-    // reachable any other way, and a caller that wants to know whether a
-    // document can be drawn on 58mm tape should ask the one that will draw it.
-    renderers: { document: documentRenderer, receipt: receiptRenderer, receiptPng: receiptPngRenderer },
+    // The renderers this console built, exposed for inspection. `receipt` is
+    // the ESC/POS text renderer (fallback + transcript source now, not the
+    // print path); `receiptPng` is the raw canvas renderer the preview route
+    // draws with; `receiptPrint` is what `receipts` actually prints through —
+    // the raster-with-fallback wrapper when built, `receipt` alone otherwise.
+    // None of the three is reachable any other way, and a caller that wants
+    // to know whether a document can be drawn on 58mm tape should ask the one
+    // that will draw it.
+    renderers: {
+      document: documentRenderer, receipt: receiptRenderer,
+      receiptPng: receiptPngRenderer, receiptPrint: receiptPrintRenderer,
+    },
     // Null when no eventBus was wired (see above) — `app.mjs` calls
     // `schoolLifecycle.donowSchoolBridge?.stop()` on shutdown, same
     // conditional-on-existence pattern as its other graceful-shutdown hooks.

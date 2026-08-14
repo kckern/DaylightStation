@@ -737,6 +737,34 @@ describe('the artifacts a child is handed', () => {
     expect(drawn.codes[0].code).toMatch(/^sch:/);
   });
 
+  it('actually prints the agenda through the raster renderer, transcript and scannable token intact', async () => {
+    // Unlike the probe above (an oracle wired into nothing), this is what the
+    // scan really put on the wire: `schoolLifecycle.mjs`'s `receiptPrintRenderer`
+    // wraps `DocumentReceiptRenderer`'s canvas into a single ESC/POS image job,
+    // so a bare `qrcode`/`barcode` item should never appear on a real card scan
+    // again — only its `codes`/`transcript` fields carry that now.
+    await h.scanCard();
+
+    const items = h.lastReceiptItems();
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ type: 'image', align: 'left' });
+    expect(items[0].width).toBeGreaterThan(0);
+    expect(items[0].height).toBeGreaterThan(0);
+    expect(items.some((i) => i.type === 'qrcode' || i.type === 'barcode' || i.type === 'text')).toBe(false);
+
+    // The operator transcript — the thing a bare image item cannot carry —
+    // survived the switch to raster.
+    const transcript = h.lastReceiptText();
+    expect(transcript).toContain('TEST LEARNER');
+    expect(transcript.length).toBeGreaterThan(0);
+
+    // And the code itself is still scannable, sourced from `codes` (pixels,
+    // not an item) rather than an item type scan.
+    const offered = h.tokensInLastReceipt();
+    expect(offered).toHaveLength(1);
+    expect(offered[0].token).toMatch(/^sch:[2-9A-HJ-NP-Z]{16}$/);
+  });
+
   it('puts a legible worksheet in the tray with the questions actually on it', async () => {
     await h.completeMediaUnit();
     h.advanceDays(1);

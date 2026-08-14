@@ -16,7 +16,13 @@
  *    the e2e harness assert on this ("the receipt told the child to rescan and
  *    carried token sch:abc"), so it must preserve authored order and content.
  *    Barcode/QR items render as their code value on its own line; image items
- *    contribute no text and are recorded by dimension only.
+ *    contribute no text and are recorded by dimension only — UNLESS the job
+ *    itself carries a `transcript` string (a raster job's own words for what
+ *    it drew as pixels, since there is no text item to decode one from). When
+ *    present, that string is authoritative and nothing is re-derived from
+ *    `items`. Likewise `codes`, if the job carries it: a raster job's QR is
+ *    pixels, not a `qrcode` item, so anything reading "what can be scanned
+ *    off this receipt" from item types alone would see none.
  *
  * Faults:
  *  - `offline` — unreachable. `print` resolves FALSE (the real adapter never
@@ -31,6 +37,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { nowTs24 } from '#system/utils/index.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { transcribeEscPosItems } from '#system/utils/escposTranscript.mjs';
 import { ThermalPrinterAdapter } from './ThermalPrinterAdapter.mjs';
 
 const FAULTS = Object.freeze(['offline', 'jam']);
@@ -183,7 +190,15 @@ export class VirtualThermalPrinterAdapter extends ThermalPrinterAdapter {
     // Transcript order is the AUTHORED order. The real adapter reverses items on
     // the wire for upside-down mounting; that is a wire concern, and reversing
     // the transcript would make every assertion read backwards.
-    const transcript = transcribe(printJob.items);
+    //
+    // A renderer that already knows what it drew (the raster receipt renderer,
+    // which has no text item for `transcribeEscPosItems` to read) hands that
+    // knowledge over explicitly as `printJob.transcript`; that string wins
+    // outright rather than being merged with a derived one, because a job that
+    // set it deliberately chose it over whatever `items` alone would say.
+    const transcript = typeof printJob.transcript === 'string'
+      ? printJob.transcript
+      : transcribeEscPosItems(printJob.items);
     const images = printJob.items
       .map((item, index) => ({ item, index }))
       .filter(({ item }) => item.type === 'image')
@@ -204,6 +219,13 @@ export class VirtualThermalPrinterAdapter extends ThermalPrinterAdapter {
       items: printJob.items,
       images,
       transcript,
+      // Pass-through, not derived: a raster job's scannable codes live in
+      // drawn pixels, not in `qrcode`/`barcode` items, so anything that wants
+      // to know what a child could scan off THIS receipt (the e2e harness's
+      // `barcodesInLastReceipt`, among others) has to be told rather than
+      // shown. `null` for a job that never set it — the normal ESC/POS-items
+      // case, where a reader already has `items` to look at directly.
+      codes: printJob.codes ?? null,
     };
 
     await fs.mkdir(this.#captureDir, { recursive: true });
@@ -214,38 +236,6 @@ export class VirtualThermalPrinterAdapter extends ThermalPrinterAdapter {
     this.#logger.info?.('virtual-thermal.receipt-captured', { receiptId, itemCount: printJob.items.length });
     return true;
   }
-}
-
-/**
- * Decode an ESC/POS item list into the plain text a human would read off the
- * paper. Text and rules render as printed; barcode/QR codes render as their code
- * value on its own line; images contribute nothing (dimensions live in the JSON).
- * @param {Array<Object>} items
- * @returns {string}
- */
-function transcribe(items) {
-  const lines = [];
-  for (const item of items) {
-    switch (item.type) {
-      case 'text':
-        if (item.content !== undefined && item.content !== null) lines.push(String(item.content));
-        break;
-      case 'barcode':
-      case 'qrcode':
-        if (item.content) lines.push(String(item.content));
-        break;
-      case 'line':
-        lines.push(String(item.content || '-').repeat(item.width || 48));
-        break;
-      case 'space':
-        for (let i = 0; i < (item.lines || 1); i++) lines.push('');
-        break;
-      default:
-        // image / cut / feedButton / unknown — nothing printable.
-        break;
-    }
-  }
-  return lines.join('\n');
 }
 
 export default VirtualThermalPrinterAdapter;
