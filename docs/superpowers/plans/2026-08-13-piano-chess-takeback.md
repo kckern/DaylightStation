@@ -356,11 +356,12 @@ describe('taking a move back', () => {
     const state = start();
     const from = firstMovableSquare(state);
     const afterMine = commitMove(state, from, destinationsFor(state, from)[0]).state;
-    const holding = applySquare({ ...afterMine, status: { ...afterMine.status, turn: 'w' } }, from);
-    const { state: rewound } = takeMoveBack(afterMine);
+    // A piece in hand and a refusal on screen both describe a board that is
+    // about to be taken away, so neither may survive the rewind.
+    const cluttered = { ...afterMine, origin: from, rejection: { reason: 'empty_square', seq: 3 } };
+    const { state: rewound } = takeMoveBack(cluttered);
     expect(rewound.origin).toBe(null);
     expect(rewound.rejection).toBe(null);
-    expect(holding).toBeDefined(); // guards against the fixture silently going stale
   });
 
   it('records when each rewind happened, so two rewinds stay distinguishable', () => {
