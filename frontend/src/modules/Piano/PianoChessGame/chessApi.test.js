@@ -13,7 +13,7 @@ describe('requestOpponentMove', () => {
     const move = await requestOpponentMove({ fen: 'x', rung: 'learner', level: 0, gameId: 'g1', userId: 'felix' });
     expect(move).toMatchObject({ from: 'e7', to: 'e5' });
     const [path, data, method] = DaylightAPI.mock.calls[0];
-    expect(path).toBe('api/v1/chess/move?user=felix');
+    expect(path).toBe('api/v1/piano-games/chess/move?user=felix');
     expect(data).toMatchObject({ fen: 'x', rung: 'learner', level: 0, gameId: 'g1' });
     expect(method).toBe('POST');
   });
@@ -50,7 +50,7 @@ describe('fetchChessConfig', () => {
   it('reads without a data object, so the helper does not promote it to POST', async () => {
     DaylightAPI.mockResolvedValue({ default_rung: 'learner' });
     await fetchChessConfig('felix');
-    expect(DaylightAPI).toHaveBeenCalledWith('api/v1/chess/config?user=felix');
+    expect(DaylightAPI).toHaveBeenCalledWith('api/v1/piano-games/chess/config?user=felix');
   });
 
   it('returns null on failure rather than throwing into render', async () => {
@@ -63,7 +63,7 @@ describe('saveChessConfig', () => {
   it('PUTs the patch for the user', async () => {
     DaylightAPI.mockResolvedValue({ default_rung: 'steady' });
     await saveChessConfig('felix', { default_rung: 'steady' });
-    expect(DaylightAPI).toHaveBeenCalledWith('api/v1/chess/config?user=felix', { default_rung: 'steady' }, 'PUT');
+    expect(DaylightAPI).toHaveBeenCalledWith('api/v1/piano-games/chess/config?user=felix', { default_rung: 'steady' }, 'PUT');
   });
 });
 
@@ -72,7 +72,7 @@ describe('saveGameRecord', () => {
     DaylightAPI.mockResolvedValue({ saved: true });
     const record = { result: 'win', moves: 24, hints: 3, best_moves: 1, rung: 'steady', duration_ms: 60000 };
     await saveGameRecord('felix', record);
-    expect(DaylightAPI).toHaveBeenCalledWith('api/v1/chess/games?user=felix', record, 'POST');
+    expect(DaylightAPI).toHaveBeenCalledWith('api/v1/piano-games/chess/games?user=felix', record, 'POST');
   });
 
   it('returns null when the request fails rather than throwing', async () => {
