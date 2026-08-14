@@ -53,6 +53,7 @@ const PAPER_SIZE_BY_MEDIA = {
  */
 export async function rasterizePdf(pdf, {
   format, dpi = 300, media = 'na_letter_8.5x11in', gsBin = 'gs', timeoutMs = 30000, logger = console,
+  maxPages = null,
 } = {}) {
   const device = GS_DEVICE_BY_FORMAT[format];
   if (!device) {
@@ -69,11 +70,21 @@ export async function rasterizePdf(pdf, {
     await writeFile(inPath, pdf);
 
     try {
+      // A ceiling on PAGES RENDERED, distinct from `maxPagesPerJob`, which
+      // REFUSES an oversized job outright. This one trims instead — which is
+      // what a supervised hardware test needs: "prove one page comes out
+      // right" must not be answerable only by "the job was refused". Null
+      // means no ceiling, and that is the production default; a household
+      // that sets this is deliberately truncating real worksheets.
+      const pageRange = Number.isInteger(maxPages) && maxPages > 0
+        ? ['-dFirstPage=1', `-dLastPage=${maxPages}`]
+        : [];
       await execFileAsync(gsBin, [
         '-q', '-dNOPAUSE', '-dBATCH', '-dSAFER',
         `-sDEVICE=${device}`,
         `-r${dpi}`,
         `-sPAPERSIZE=${paperSize}`,
+        ...pageRange,
         `-sOutputFile=${outPath}`,
         inPath,
       ], { timeout: timeoutMs });

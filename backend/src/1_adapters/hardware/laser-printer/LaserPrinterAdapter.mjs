@@ -71,11 +71,12 @@ const PRINTER_STATE = { 3: 'idle', 4: 'processing', 5: 'stopped' };
  */
 export class LaserPrinterAdapter {
   #host; #port; #rawPort; #path; #timeout; #printTimeout; #rawTransport; #logger;
+  #renderPageLimit;
   #requestId = 0;
 
   constructor({
     host, port = 631, rawPort = 9100, path = '/ipp/print', timeout = 15000, printTimeout = 60000,
-    rawTransport = false, logger = console,
+    rawTransport = false, logger = console, renderPageLimit = null,
   } = {}) {
     if (!host) {
       throw new InfrastructureError('LaserPrinterAdapter requires host', {
@@ -83,6 +84,8 @@ export class LaserPrinterAdapter {
       });
     }
     this.#host = host;
+    // Trim, not refuse: see rasterize.mjs. Null in production.
+    this.#renderPageLimit = renderPageLimit;
     this.#port = port;
     this.#rawPort = rawPort;
     this.#path = path.startsWith('/') ? path : `/${path}`;
@@ -195,7 +198,10 @@ export class LaserPrinterAdapter {
     }
 
     const bytes = chosen.needsRasterize
-      ? await rasterizePdf(pdf, { format: chosen.format, dpi: caps.dpi, media: caps.media, logger: this.#logger })
+      ? await rasterizePdf(pdf, {
+        format: chosen.format, dpi: caps.dpi, media: caps.media,
+        maxPages: this.#renderPageLimit, logger: this.#logger,
+      })
       : pdf;
 
     if (this.#rawTransport && chosen.format === 'application/pdf') {
