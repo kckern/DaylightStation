@@ -81,7 +81,7 @@ export class SetAssignments {
         known = new Set((await this.#curriculum.listUnits() ?? [])
           .map((u) => u.courseId).filter(Boolean));
       } catch (err) {
-        this.#logger.warn?.('school.assignments.course-check-skipped', { error: err?.message });
+        this.#logger.warn?.('school.assignments.course-check-skipped', { learnerId, error: err?.message });
       }
       if (known && known.size) {
         const asked = courses.map((c) => (typeof c === 'string' ? c : c?.courseId)).filter(Boolean);

@@ -51,7 +51,7 @@ export class GetLearningProgress {
       } catch (error) {
         // Follow-up advice is optional enrichment. A broken advisor must not
         // hide durable scores/progress from the learner or parent.
-        this.#logger.error?.('school.progress.follow-up-source-failed', { error: error.message });
+        this.#logger.error?.('school.progress.follow-up-source-failed', { scopeType, scopeId, error: error.message });
         return [];
       }
     }))).flat();
@@ -70,7 +70,7 @@ export class GetLearningProgress {
         } catch (error) {
           // Same posture as an optional follow-up provider: a broken outline
           // source must not hide durable evidence-backed progress.
-          this.#logger.error?.('school.progress.expectation-source-failed', { error: error.message });
+          this.#logger.error?.('school.progress.expectation-source-failed', { scopeType, scopeId, error: error.message });
           return [];
         }
       }),

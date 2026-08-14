@@ -9,7 +9,7 @@ export async function listSchoolLearningEvidence({ sources, query, logger = null
       if (!Array.isArray(rows)) throw new Error('evidence source returned a non-array');
       return rows;
     } catch (error) {
-      logger?.error?.('school.progress.evidence-source-failed', { error: error.message });
+      logger?.error?.('school.progress.evidence-source-failed', { scope: query?.scope ?? null, error: error.message });
       throw error;
     }
   }));

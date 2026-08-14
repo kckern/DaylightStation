@@ -194,7 +194,7 @@ export class SchoolService {
       });
     }
     this.#ds.saveQuizRequests(keep);
-    this.#logger.info?.('school.quiz.request-dismissed', { unitId, bankId, kind, sessionId, userId, dismissedBy });
+    this.#logger.info?.('school.quiz.request-dismissed', { unitId, bankId, kind, sessionId, learnerId: userId, dismissedBy });
     return { dismissed: true };
   }
 
