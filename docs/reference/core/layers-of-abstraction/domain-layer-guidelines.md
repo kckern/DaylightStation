@@ -336,7 +336,7 @@ Level 1 (shared):       content, common, messaging, notification,
                         scheduling, entropy
                           ↑
 Level 2 (features):     ambient, art, barcode, concierge, cost, feed,
-                        finance, fitness, gratitude, home-automation,
+                        finance, fitness, gaming, gratitude, home-automation,
                         journaling, lifeplan, livestream, media,
                         nutrition, playback-hub, trigger
                           ↑
@@ -349,7 +349,7 @@ Level 3 (aggregators):  health, journalist, lifelog, weekly-review
 |-------|----------------|
 | **0 — Foundation** | `core` |
 | **1 — Shared** | `content`, `common`, `messaging`, `notification`, `scheduling`, `entropy` |
-| **2 — Features** | `ambient`, `art`, `barcode`, `concierge`, `cost`, `feed`, `finance`, `fitness`, `gratitude`, `home-automation`, `journaling`, `lifeplan`, `livestream`, `media`, `nutrition`, `playback-hub`, `trigger` |
+| **2 — Features** | `ambient`, `art`, `barcode`, `concierge`, `cost`, `feed`, `finance`, `fitness`, `gaming`, `gratitude`, `home-automation`, `journaling`, `lifeplan`, `livestream`, `media`, `nutrition`, `playback-hub`, `trigger` |
 | **3 — Aggregators** | `health`, `journalist`, `lifelog`, `weekly-review` |
 
 ### Rules

@@ -3,7 +3,7 @@ import { DaylightAPIText } from '../../../lib/api.mjs';
 import { getChildLogger } from '../../../lib/logging/singleton.js';
 import { parseMusicXml } from '../../MusicNotation/parseMusicXml.js';
 import { getNoteHue, getNotePosition, getNoteWidth, computeKeyboardRange } from '../noteUtils.js';
-import { PianoKeyboard } from '../components/PianoKeyboard.jsx';
+import PianoGameHost from '../game-platform/host/PianoGameHost.jsx';
 import { usePianoKioskConfig } from '../PianoKiosk/PianoConfig.jsx';
 import { usePianoMidi, usePianoMidiNotes } from '../PianoKiosk/PianoMidiContext.jsx';
 import PianoEmpty from '../PianoKiosk/PianoEmpty.jsx';
@@ -208,7 +208,17 @@ export function HeroGame({ song, chart, gameConfig, onChooseSong, onNoteOn, onNo
   };
 
   return (
-    <div className="piano-hero-game">
+    <PianoGameHost
+      gameId="hero"
+      phase={game.phase}
+      phaseMapping={{ complete: 'result', finished: 'result' }}
+      className="piano-hero-game"
+      instrumentClassName="piano-hero-game__keyboard"
+      instrument={{
+        activeNotes, startNote: range.startNote, endNote: range.endNote,
+        targetNotes: imminent.size ? imminent : null, onNoteOn, onNoteOff,
+      }}
+    >
       <header className="piano-hero-game__hud">
         <button type="button" className="piano-hero-game__songs" onClick={onChooseSong}>Songs</button>
         <div className="piano-hero-game__title">
@@ -252,17 +262,6 @@ export function HeroGame({ song, chart, gameConfig, onChooseSong, onNoteOn, onNo
         playing={game.phase === 'playing'}
       />
 
-      <div className="piano-hero-game__keyboard">
-        <PianoKeyboard
-          activeNotes={activeNotes}
-          startNote={range.startNote}
-          endNote={range.endNote}
-          targetNotes={imminent.size ? imminent : null}
-          onNoteOn={onNoteOn}
-          onNoteOff={onNoteOff}
-        />
-      </div>
-
       {game.phase === 'ready' && (
         <div className="piano-hero-overlay">
           <h2>{song.title}</h2>
@@ -294,7 +293,7 @@ export function HeroGame({ song, chart, gameConfig, onChooseSong, onNoteOn, onNo
         onPick={changeTempo}
         onClose={() => setTempoSheetOpen(false)}
       />
-    </div>
+    </PianoGameHost>
   );
 }
 

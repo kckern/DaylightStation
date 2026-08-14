@@ -4,7 +4,7 @@ import { fenToPosition } from '@shared-gaming/chess/position.mjs';
 import getLogger from '../../../lib/logging/Logger.js';
 import ChessBoard from '../../Chess/ChessBoard.jsx';
 import { pieceSource } from '../../Chess/pieceAssets.js';
-import { PianoKeyboard } from '../components/PianoKeyboard.jsx';
+import PianoGameHost from '../game-platform/host/PianoGameHost.jsx';
 import ChordNamePanel from '../components/ChordNamePanel.jsx';
 import CurrentChordStaff from '../components/CurrentChordStaff.jsx';
 import ChordReadout from './ChordReadout.jsx';
@@ -191,6 +191,8 @@ export function PianoChessGame({
   // effect depends on the level, and a const cannot be read before it exists.
   const opponent = ladder?.current ?? null;
   const ladderLevel = ladder?.unlocked_through ?? null;
+  const ladderLevelRef = useRef(ladderLevel);
+  ladderLevelRef.current = ladderLevel;
   const [rungId, setRungId] = useState('learner');
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -316,6 +318,7 @@ export function PianoChessGame({
     let cancelled = false;
     fetchLadder(lockedUser).then((loaded) => {
       if (cancelled || !loaded) return;
+      ladderLevelRef.current = loaded.unlocked_through ?? null;
       setLadder(loaded);
       logger().info('ladder-loaded', {
         level: loaded.unlocked_through,
@@ -617,7 +620,7 @@ export function PianoChessGame({
       // plays at — the server clamps it to what the player has actually
       // unlocked, so this is a request, not an authority.
       const served = await requestOpponentMove({
-        fen, rung: rungId, level: ladderLevel, gameId, userId: lockedUser,
+        fen, rung: rungId, level: ladderLevelRef.current, gameId, userId: lockedUser,
       });
       if (served?.opponent) effectiveOpponentRef.current = served.opponent;
       const reply = served
@@ -633,7 +636,7 @@ export function PianoChessGame({
       });
     }, opponentDelayMs);
     return () => { cancelled = true; clearTimeout(timer); setOpponentThinking(false); };
-  }, [game.status, playerColor, rungId, ladderLevel, gameId, opponentDelayMs, lockedUser, localFallbackDifficulty]);
+  }, [game.status, playerColor, rungId, gameId, opponentDelayMs, lockedUser, localFallbackDifficulty]);
 
   // One record per finished game, posted only for a signed-in player — guests
   // never reach the per-user endpoints. Ref-guarded, not state-guarded: the
@@ -729,11 +732,15 @@ export function PianoChessGame({
     : (lockedUser || 'Guest');
 
   return (
-    <div
+    <PianoGameHost
+      gameId="chess"
+      phase={game.status?.game_over ? 'result' : 'playing'}
       className={`piano-chess${reading ? ' piano-chess--reading' : ''}`}
       /* Arriving at a new character LOOKS like arriving somewhere new. Purely
          cosmetic: it retints the dark squares and touches nothing else. */
       style={boardTheme ? { '--pc-dark': boardTheme } : undefined}
+      instrumentClassName="piano-chess__instrument"
+      instrument={{ activeNotes, startNote: 36, endNote: 84, showLabels: true }}
     >
       <div className="piano-chess__stage">
         {/* THE STATE RAIL — what the game is currently thinking. Every row here
@@ -972,13 +979,7 @@ export function PianoChessGame({
         />
       )}
 
-      {/* The instrument zone is the instrument, and nothing else: which keys are
-          down. Everything that used to ride up here answers a question that
-          belongs beside the other answers of its kind, on one of the rails. */}
-      <footer className="piano-chess__instrument">
-        <PianoKeyboard activeNotes={activeNotes} startNote={36} endNote={84} showLabels />
-      </footer>
-    </div>
+    </PianoGameHost>
   );
 }
 

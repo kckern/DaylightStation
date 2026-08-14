@@ -118,14 +118,16 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
         </div>
       )}
 
-      <div className="keyboard-container">
-        <PianoKeyboard
-          activeNotes={activeNotes}
-          startNote={startNote}
-          endNote={endNote}
-          showLabels={true}
-        />
-      </div>
+      {!isFullscreenGame && (
+        <div className="keyboard-container">
+          <PianoKeyboard
+            activeNotes={activeNotes}
+            startNote={startNote}
+            endNote={endNote}
+            showLabels={true}
+          />
+        </div>
+      )}
 
       {sessionInfo?.event === 'session_end' && (
         <div className="session-summary">
