@@ -61,7 +61,13 @@ identical for both; only the rim labels change.
 ### Picking a piece up
 
 12. **How do I actually pick something up?** The double-play rule is not discoverable. It is
-    stated in words, on screen, at the moment it applies.
+    stated in words, on screen, at the moment it applies — and because that instruction carries a
+    deadline, the deadline is drawn with it: a rule beneath the sentence drains for exactly as long
+    as the repeat will be heard. Without it the double is the one interaction that fails
+    invisibly, since a player who repeats a chord too late gets silence and no way to tell whether
+    they were slow or misheard. The window is deliberately slack — two and a half seconds, enough
+    to read the sentence asking for the repeat and then play it, because the logged failures were
+    players pausing to read rather than players fumbling a fast repeat.
 13. **Did I pick it up?** The single most expensive silence in the game's history. The square whose
     piece is in the air is marked unmistakably.
 14. **What am I holding right now?** A standing question, not a momentary one. A player hunting for
