@@ -79,12 +79,60 @@
  *     — so the metadata and the pixels agree, instead of the printer having
  *     to guess from mismatched hints again.
  *
+ * ── Incident #3, 2026-08 ───────────────────────────────────────────────────
+ * Both fixes above shipped, capabilities all negotiated correctly, and a
+ * real Print-Job STILL came back rejected outright — `0x0505
+ * server-error-temporary-error` — from a printer reporting itself idle and
+ * accepting (`printer-state: 3`, `printer-state-reasons: ["none"]`,
+ * `queued-job-count: 0`). Progress over incident #2 (an honest rejection
+ * instead of a silent discard), but still not a print, and this time the
+ * capability list gave no clue why: every attribute in the job — document
+ * format, resolution, color mode, media, `sides` — was one the printer's own
+ * `job-creation-attributes-supported` and format-specific capability lists
+ * had named as supported.
+ *
+ * The culprit, found by bisecting the job attributes one at a time against
+ * IPP's Validate-Job operation (`OPS.VALIDATE_JOB`, RFC 8011 §3.2.3 — "ask
+ * the printer whether it would accept this job" with no document body and no
+ * paper produced, so bisecting costs nothing): `sides`. The printer
+ * separately advertises `sides-supported: ["one-sided",
+ * "two-sided-long-edge", "two-sided-short-edge"]` — a complete, spec-shaped
+ * declaration — and its own `sides-default` IS `one-sided`, the exact value
+ * this adapter was sending. None of that mattered: the attribute being
+ * PRESENT at all, at any value, is what this firmware refuses. Every other
+ * job attribute validated individually and combined; only `sides` didn't.
+ * `job-creation-attributes-supported` naming a key, it turns out, is a
+ * weaker promise than `document-format-supported` naming a format — the
+ * same "the capability list doesn't mean what I assumed" lesson as
+ * incidents #1 and #2, one layer further up the stack (container, then
+ * pixels, now job template attributes).
+ *
+ * The fix generalizes past "never send `sides` to this one Brother":
+ *  1. `LaserPrinterAdapter` now implements Validate-Job (`validateJob`,
+ *     exposed publicly — the same `printJobAttrs` encoding as Print-Job,
+ *     minus the document body, see ipp.mjs) and calls it, via
+ *     `#negotiateJobAttributes`, on EVERY real print, before Print-Job ever
+ *     runs. It starts from the full candidate `chooseJobAttributes` computed
+ *     and, only if the printer refuses it, drops ONE attribute at a time —
+ *     in `negotiate.mjs`'s `JOB_ATTRIBUTE_TRIM_ORDER`, least physically
+ *     consequential first — re-validating after each drop, never guessing
+ *     which one was the problem, until the printer accepts or nothing is
+ *     left (at which point the print is refused with the real cause, not
+ *     attempted blind).
+ *  2. This is the same "never assume, always verify" posture as incidents #1
+ *     and #2, extended to the one remaining layer that hadn't been checked:
+ *     we had verified the printer would open the envelope (container) and
+ *     could read what was inside it (pixels), but never actually asked
+ *     whether it would take the job at all.
+ *
  * @module adapters/hardware/laser-printer
  */
 import { createConnection } from 'net';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { OPS, encodeRequest, baseAttrs, printJobAttrs, decodeResponse } from './ipp.mjs';
-import { negotiatePrintPlan, chooseJobAttributes, DEFAULT_MEDIA } from './negotiate.mjs';
+import {
+  negotiatePrintPlan, chooseJobAttributes, DEFAULT_MEDIA, JOB_ATTRIBUTE_TRIM_ORDER,
+} from './negotiate.mjs';
 import { rasterizePdf } from './rasterize.mjs';
 
 /** IPP printer-state enum (RFC 8011 §5.4.11). */
@@ -201,7 +249,7 @@ export class LaserPrinterAdapter {
    * @param {string} [opts.user='daylight'] - for our own logging / job-originating-user-name
    * @param {number} [opts.copies=1]
    * @returns {Promise<{ok:boolean, bytes:number, copies:number, documentFormat:string, transport:'ipp'|'raw9100'}>}
-   * @throws {InfrastructureError} INVALID_DOCUMENT | PRINT_FORMAT_UNSUPPORTED | RASTERIZE_* | PRINT_SEND_FAILED
+   * @throws {InfrastructureError} INVALID_DOCUMENT | PRINT_FORMAT_UNSUPPORTED | RASTERIZE_* | PRINT_VALIDATE_FAILED | PRINT_SEND_FAILED
    */
   async printPdf(pdf, { jobName = 'daylight-print', user = 'daylight', copies = 1 } = {}) {
     if (!Buffer.isBuffer(pdf) || pdf.length === 0) {
@@ -271,15 +319,112 @@ export class LaserPrinterAdapter {
     if (this.#rawTransport && plan.format === 'application/pdf') {
       // Opt-in only, and still capability-gated: we only get here because
       // `plan.format === 'application/pdf'` came out of negotiation, which
-      // means the printer's own document-format-supported listed it.
+      // means the printer's own document-format-supported listed it. Raw
+      // JetDirect has no IPP job-attributes concept at all — Validate-Job
+      // (an IPP operation) has nothing to check on this transport, so it's
+      // skipped rather than performed pointlessly.
       const raw = await this.#sendRaw9100(bytes, { jobName, user, copies: nCopies });
       return { ...raw, documentFormat: plan.format, transport: 'raw9100' };
     }
 
+    // Incident #3 (see this file's header): a capability list naming
+    // `sides` was not a promise this printer would actually accept it. Ask
+    // FIRST, with Validate-Job — same attributes Print-Job is about to carry,
+    // zero paper cost — and only fall through to Print-Job with whatever
+    // subset the printer actually confirmed.
+    const validatedJobAttributes = await this.#negotiateJobAttributes({
+      documentFormat: plan.format, jobName, user, copies: nCopies, jobAttributes,
+    });
+
     const sent = await this.#sendIpp(bytes, {
-      jobName, user, copies: nCopies, documentFormat: plan.format, jobAttributes,
+      jobName, user, copies: nCopies, documentFormat: plan.format, jobAttributes: validatedJobAttributes,
     });
     return { ...sent, documentFormat: plan.format, transport: 'ipp' };
+  }
+
+  /**
+   * Validate-Job (RFC 8011 §3.2.3) — "would you accept this job?" with no
+   * document body and no side effect: the printer answers without
+   * allocating a Job object or producing paper, so this can be (and, in
+   * building the fix for incident #3, was) called as many times as needed
+   * to bisect a rejection. Same operation-attribute encoding as Print-Job
+   * (`printJobAttrs` in ipp.mjs) — the only difference on the wire is the
+   * operation code and the absence of trailing document bytes.
+   *
+   * Exposed publicly (not just used internally by `#negotiateJobAttributes`)
+   * so a caller — or a diagnostic script, the way incident #3 was actually
+   * root-caused — can probe an arbitrary candidate job directly.
+   *
+   * @param {Object} params
+   * @param {string} [params.jobName='daylight-print']
+   * @param {string} [params.user='daylight']
+   * @param {number} [params.copies=1]
+   * @param {string} params.documentFormat - required, same rule as printJobAttrs: never default to octet-stream
+   * @param {Object} [params.jobAttributes] - see printJobAttrs's jobAttributes shape
+   * @returns {Promise<{ok:boolean, statusCode:number}>}
+   */
+  async validateJob({
+    jobName = 'daylight-print', user = 'daylight', copies = 1, documentFormat, jobAttributes = {},
+  } = {}) {
+    const attrs = printJobAttrs(this.printerUri, {
+      user, jobName, copies, documentFormat, jobAttributes,
+    });
+    const { ok, statusCode } = await this.#ipp(OPS.VALIDATE_JOB, attrs, null, this.#timeout);
+    return { ok, statusCode };
+  }
+
+  /**
+   * Incident #3's actual fix. Starts from the full candidate job attributes
+   * `chooseJobAttributes` computed from capability lists alone, and asks the
+   * printer for real via `validateJob`. If refused, drops exactly one
+   * attribute — `negotiate.mjs`'s `JOB_ATTRIBUTE_TRIM_ORDER`, least
+   * physically consequential first — and asks again, repeating until the
+   * printer accepts or nothing is left to drop. Never guesses which
+   * attribute was the problem: every candidate that gets sent as a real
+   * Print-Job was independently confirmed by the printer itself, not
+   * inferred from a single rejection.
+   *
+   * @throws {InfrastructureError} PRINT_VALIDATE_FAILED — the printer refuses
+   *   even the empty-job-attributes candidate; the problem is the document
+   *   format/content itself, not a trimmable job attribute, so this refuses
+   *   to guess further and Print-Job is never attempted.
+   */
+  async #negotiateJobAttributes({
+    documentFormat, jobName, user, copies, jobAttributes,
+  }) {
+    let candidate = { ...jobAttributes };
+    let probe = await this.validateJob({
+      jobName, user, copies, documentFormat, jobAttributes: candidate,
+    });
+    if (probe.ok) return candidate;
+
+    this.#logger.warn?.('laser-printer.validate-job-rejected', {
+      host: this.#host, documentFormat, jobAttributes: candidate, statusCode: probe.statusCode,
+    });
+
+    for (const key of JOB_ATTRIBUTE_TRIM_ORDER) {
+      if (!(key in candidate)) continue;
+      const trimmed = { ...candidate };
+      delete trimmed[key];
+      // eslint-disable-next-line no-await-in-loop -- each probe's candidate depends on the previous probe's outcome; nothing here can run in parallel
+      probe = await this.validateJob({
+        jobName, user, copies, documentFormat, jobAttributes: trimmed,
+      });
+      candidate = trimmed;
+      this.#logger.info?.('laser-printer.validate-job-retry', {
+        host: this.#host, dropped: key, statusCode: probe.statusCode, ok: probe.ok,
+      });
+      if (probe.ok) return candidate;
+    }
+
+    throw new InfrastructureError(
+      `printer refuses this job even with every optional job attribute stripped `
+      + `(validate-job status 0x${probe.statusCode.toString(16)}) — the document-format or `
+      + `rasterized content itself is the problem, not a job attribute; refusing to send Print-Job blind`,
+      {
+        code: 'PRINT_VALIDATE_FAILED', host: this.#host, documentFormat, statusCode: probe.statusCode,
+      },
+    );
   }
 
   /** IPP Print-Job — the default transport. `copies` is a real IPP attribute; no manual concatenation needed. */

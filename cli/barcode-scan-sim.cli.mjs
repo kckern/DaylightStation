@@ -511,7 +511,24 @@ async function maybePhysicallyPrint({
   }
   const { LaserPrinterAdapter } = await import('#adapters/hardware/laser-printer/LaserPrinterAdapter.mjs');
   const laserPrinter = new LaserPrinterAdapter({
-    host, port, path: printPath, logger: silentLogger,
+    host,
+    port,
+    path: printPath,
+    // `policy` is `{...DEFAULT_PRINT_POLICY, ...schoolCfg.printing}` (see
+    // resolvePrinterConfig) — `renderPageLimit` rides along in the same
+    // object as `host`/`port`/`maxPagesPerJob`, but until this line it was
+    // never actually forwarded to the adapter that does the real send. That
+    // made `school.yml`'s own documented safety valve ("set ONLY for a
+    // supervised hardware test") a no-op for the ONE tool that IS a
+    // supervised hardware test: this simulator's `--print` would have
+    // rasterized and sent every page `maxPagesPerJob` allowed (up to 20),
+    // not the single page an operator set `renderPageLimit: 1` to guarantee.
+    // `evaluatePrintQuota`'s `maxPagesPerJob` check above refuses an
+    // OVERSIZED job outright; it does not and should not TRIM a job that's
+    // within quota — trimming is `renderPageLimit`'s job alone, and it only
+    // does that job if it reaches the adapter.
+    renderPageLimit: policy.renderPageLimit ?? null,
+    logger: silentLogger,
   });
   const reachable = await laserPrinter.ping({ timeout: 3000 });
   if (!reachable) return { attempted: true, sent: false, reason: 'printer unreachable (IPP TCP ping failed)' };
