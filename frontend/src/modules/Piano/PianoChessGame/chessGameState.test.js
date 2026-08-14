@@ -409,13 +409,32 @@ describe('taking a move back', () => {
     expect(rewound.rejection).toBe(null);
   });
 
-  it('records when each rewind happened, so two rewinds stay distinguishable', () => {
+  it('records when each rewind happened', () => {
     const state = start();
     const from = firstMovableSquare(state);
     const afterMine = commitMove(state, from, destinationsFor(state, from)[0]).state;
     const { state: rewound } = takeMoveBack(afterMine);
     expect(rewound.undoneHistory[0].ply).toBe(1);
     expect(rewound.undoneHistory[0].undone_at_ply).toBe(1);
+    expect(rewound.undoneHistory[0].undone_seq).toBe(1);
+  });
+
+  it('keeps two rewind episodes distinguishable even when they land on the same ply', () => {
+    // The collision `undone_at_ply` alone cannot survive: a rewind trims
+    // history, so playing and unplaying twice in a row produces two episodes
+    // that both happened "at ply 1".
+    const state = start();
+    const first = firstMovableSquare(state);
+    const afterFirst = commitMove(state, first, destinationsFor(state, first)[0]).state;
+    const rewoundOnce = takeMoveBack(afterFirst).state;
+
+    const second = firstMovableSquare(rewoundOnce);
+    const afterSecond = commitMove(rewoundOnce, second, destinationsFor(rewoundOnce, second)[0]).state;
+    const rewoundTwice = takeMoveBack(afterSecond).state;
+
+    expect(rewoundTwice.undoneHistory).toHaveLength(2);
+    expect(rewoundTwice.undoneHistory.map((entry) => entry.undone_at_ply)).toEqual([1, 1]);
+    expect(rewoundTwice.undoneHistory.map((entry) => entry.undone_seq)).toEqual([1, 2]);
   });
 
   it('refuses once the game is over', () => {
