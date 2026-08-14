@@ -5,6 +5,7 @@ import PianoGameHost from '../game-platform/host/PianoGameHost.jsx';
 import InstrumentBoardStage from '../game-platform/families/addressed-board/InstrumentBoardStage.jsx';
 import { BOARD_LAYOUTS } from '../game-platform/families/addressed-board/contracts.js';
 import { resolveAddressedSelection } from '../game-platform/families/addressed-board/interactionGrammars.js';
+import { thinkTimeFor, useOpponentReply } from '../game-platform/opponent/opponentPacing.js';
 import checkersClient from './checkersApi.js';
 import './PianoCheckers.scss';
 
@@ -13,6 +14,12 @@ const DEFAULT_CONFIG = Object.freeze({
   square_notes: Array.from({ length: 32 }, (_, index) => 48 + index),
   default_level: 1,
 });
+// Checkers' ladder is 7 rungs (1-7, see the "Level {level} of 7" rail below) —
+// thinkTimeFor's `levels` generalises the old chess-only ladder size.
+const LADDER_LEVELS = 7;
+// Used only when thinkTimeFor has nothing to read yet (no ladder resolved) —
+// mirrors chess's own OPPONENT_DELAY_MS fallback constant.
+const OPPONENT_THINK_FALLBACK_MS = 700;
 const NOTE_NAMES = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
 
 function userIdOf(currentUser) {
@@ -89,7 +96,6 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
   const [moves, setMoves] = useState([]);
   const [selected, setSelected] = useState(null);
   const [message, setMessage] = useState(null);
-  const [thinking, setThinking] = useState(false);
   const [hint, setHint] = useState(null);
   const [localPractice, setLocalPractice] = useState(false);
   const [seed, setSeed] = useState(() => Date.now() >>> 0);
@@ -102,6 +108,33 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
   const game = useMemo(() => replayGame({ moves }), [moves]);
   const deal = useMemo(() => config.shuffle_each_game ? shuffledSquares(seed) : Array.from({ length: 32 }, (_, index) => index), [config.shuffle_each_game, seed]);
   const level = ladder?.unlocked_through ?? config.default_level ?? 1;
+
+  // The opponent's reply is a floor on the wait, never an addend — see
+  // opponentPacing.js. `resetKey: gameSessionId` covers the reset case
+  // `enabled` alone can't see: after restart() the fresh board always opens
+  // on the player's turn (turn 1) here, so `enabled` already flips false on
+  // its own, but the reset key costs nothing and matches the other two games.
+  const opponentEnabled = !game.status.gameOver && game.turn === 2;
+  const opponentPace = config.opponent?.pace ?? 1;
+  const thinkMs = thinkTimeFor({
+    level, levels: LADDER_LEVELS, config, seed, ply: moves.length, pace: opponentPace,
+  }) ?? OPPONENT_THINK_FALLBACK_MS;
+  const { thinking } = useOpponentReply({
+    enabled: opponentEnabled,
+    thinkMs,
+    resetKey: gameSessionId,
+    request: () => checkersClient.requestMove({ transcript: { moves }, level, gameSessionId, userId }),
+    onReply: (answer) => {
+      if (!answer?.move) {
+        rankedRef.current = false;
+        setLocalPractice(true);
+      }
+      // Keep offline practice responsive on the kiosk's older WebView CPU.
+      const move = answer?.move ?? chooseMove(game, { level: Math.min(2, level) });
+      const next = move ? applyMove(game, move) : game;
+      if (!next.error && move) setMoves(next.moves);
+    },
+  });
 
   useEffect(() => {
     checkersClient.readConfig(userId).then((value) => value && setConfig((old) => ({ ...old, ...value })));
@@ -145,25 +178,6 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
   }, [activeNotes, config, deal, game, level, selected, thinking]);
 
   useEffect(() => {
-    if (game.status.gameOver || game.turn !== 2) return;
-    let cancelled = false;
-    setThinking(true);
-    checkersClient.requestMove({ transcript: { moves }, level, gameSessionId, userId }).then((answer) => {
-      if (cancelled) return;
-      if (!answer?.move) {
-        rankedRef.current = false;
-        setLocalPractice(true);
-      }
-      // Keep offline practice responsive on the kiosk's older WebView CPU.
-      const move = answer?.move ?? chooseMove(game, { level: Math.min(2, level) });
-      const next = move ? applyMove(game, move) : game;
-      if (!next.error && move) setMoves(next.moves);
-      setThinking(false);
-    });
-    return () => { cancelled = true; };
-  }, [game, gameSessionId, level, moves, userId]);
-
-  useEffect(() => {
     if (!game.status.gameOver || savedRef.current) return;
     savedRef.current = true;
     const result = game.status.draw ? 'draw' : game.status.winner === 1 ? 'win' : 'loss';
@@ -190,7 +204,6 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
     setSelected(null);
     setMessage(null);
     setHint(null);
-    setThinking(false);
     setLocalPractice(false);
     rankedRef.current = true;
     savedRef.current = false;

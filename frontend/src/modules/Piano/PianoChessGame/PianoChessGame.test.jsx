@@ -156,6 +156,31 @@ describe('taking a move back at the keys', () => {
     expect(container.querySelector('.piano-chess__toast')).toBe(null);
     expect(noteOf(container, 'Take it back')).toBe('3 left');
   });
+
+  it('discards the opponent reply when a takeback lands before it has resolved', async () => {
+    // A promise that never settles: the opponent is left thinking forever,
+    // so the takeback below is guaranteed to land BEFORE any reply could.
+    requestOpponentMove.mockImplementation(() => new Promise(() => {}));
+    const { container, rerender } = render(makeElement());
+    await playAMove(container, rerender); // White's e2-e4; the opponent's own request is now pending.
+    expect(requestOpponentMove).toHaveBeenCalledTimes(1);
+
+    // Take the move back while the opponent is still "thinking" — Black has
+    // not replied, so this undoes only White's own move.
+    await playChord(rerender, OCTAVE);
+    await playChord(rerender, OCTAVE);
+    expect(container.querySelector('.piano-chess__toast').textContent).toMatch(/^Took back /);
+
+    // Give the (never-resolving, but still pending) reply every chance to
+    // land — if the cancellation were broken, this is where a stale Nf3
+    // would appear on a board it was never asked about.
+    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+
+    // Fully reverted: no move on the board, and no second request was fired
+    // (it is the player's turn again — nothing should be asking the engine).
+    expect(container.querySelectorAll('.chess-board__square--last-move')).toHaveLength(0);
+    expect(requestOpponentMove).toHaveBeenCalledTimes(1);
+  });
 });
 
 // A regression test for the two-clock arming race (Finding 1) was attempted
@@ -253,10 +278,33 @@ describe('PianoChessGame opponent effect', () => {
     vi.restoreAllMocks();
   });
 
+  it('sends the move request immediately, before any of the think time elapses', async () => {
+    // The floor is applied to the ANSWER, not to when the question is asked —
+    // a network-then-request effect would add the delay on top of any round
+    // trip and turn a deliberate brood into a hang on a stalled kiosk WiFi.
+    requestOpponentMove.mockResolvedValueOnce({ from: 'e2', to: 'e4', san: 'e4', engine: 'stockfish' });
+    render(<PianoChessGame playerColor="b" seed={1} />);
+
+    // Only a microtask flush — zero timers advanced.
+    await act(async () => { await Promise.resolve(); });
+
+    expect(requestOpponentMove).toHaveBeenCalledTimes(1);
+  });
+
+  // The opponent's very first request of a fresh mount waits on the ladder
+  // fetch settling (see PianoChessGame.jsx's `ladderReady` gate — it exists so
+  // that first request carries the real skill level instead of a placeholder
+  // null). That settle is a real async hop ahead of the think-time floor, so
+  // it has to be flushed on its own tick before the floor's own timer budget
+  // is advanced — otherwise the ladder-settle and the floor race for the SAME
+  // requested window and the floor's timer never gets scheduled in time.
+  const settleLadderGate = () => act(async () => { await vi.advanceTimersByTimeAsync(0); });
+
   it('plays the server-supplied reply once the opponent delay elapses', async () => {
     requestOpponentMove.mockResolvedValueOnce({ from: 'e2', to: 'e4', san: 'e4', engine: 'stockfish' });
     const { container } = render(<PianoChessGame playerColor="b" seed={1} />);
 
+    await settleLadderGate();
     await act(async () => { await vi.advanceTimersByTimeAsync(OPPONENT_DELAY_MS); });
 
     expect(requestOpponentMove).toHaveBeenCalledTimes(1);
@@ -272,6 +320,7 @@ describe('PianoChessGame opponent effect', () => {
     requestOpponentMove.mockResolvedValueOnce(null);
     const { container } = render(<PianoChessGame playerColor="b" seed={1} />);
 
+    await settleLadderGate();
     await act(async () => { await vi.advanceTimersByTimeAsync(OPPONENT_DELAY_MS); });
 
     expect(requestOpponentMove).toHaveBeenCalledTimes(1);

@@ -4,6 +4,7 @@ import { playColumn, replayGame } from '@shared-gaming/connect-four/engine.mjs';
 import PianoGameHost from '../game-platform/host/PianoGameHost.jsx';
 import InstrumentBoardStage from '../game-platform/families/addressed-board/InstrumentBoardStage.jsx';
 import { BOARD_LAYOUTS } from '../game-platform/families/addressed-board/contracts.js';
+import { thinkTimeFor, useOpponentReply } from '../game-platform/opponent/opponentPacing.js';
 import {
   archiveConnectFourGame, fetchConnectFourConfig, fetchConnectFourLadder,
   requestConnectFourMove, saveConnectFourConfig, saveConnectFourGame,
@@ -15,6 +16,12 @@ const DEFAULT_CONFIG = {
   column_notes: [60, 62, 64, 65, 67, 69, 71],
   column_chords: ['C', 'D', 'E', 'F', 'G', 'A', 'B'], default_level: 1,
 };
+// Connect Four's ladder is 7 rungs (1-7, see the "Level {level} of 7" rail
+// below) — thinkTimeFor's `levels` generalises the old chess-only ladder size.
+const LADDER_LEVELS = 7;
+// Used only when thinkTimeFor has nothing to read yet (no ladder resolved) —
+// mirrors chess's own OPPONENT_DELAY_MS fallback constant.
+const OPPONENT_THINK_FALLBACK_MS = 700;
 const ROOTS = [0, 2, 4, 5, 7, 9, 11];
 const NOTE_NAMES = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
 
@@ -67,7 +74,6 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
   const [config, setConfig] = useState(DEFAULT_CONFIG);
   const [ladder, setLadder] = useState(null);
   const [moves, setMoves] = useState([]);
-  const [thinking, setThinking] = useState(false);
   const [hint, setHint] = useState(null);
   const [localPractice, setLocalPractice] = useState(false);
   const [seed, setSeed] = useState(() => Date.now() >>> 0);
@@ -80,6 +86,34 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
   const game = useMemo(() => replayGame({ moves }), [moves]);
   const deal = useMemo(() => config.shuffle_each_game ? shuffledColumns(seed) : [0, 1, 2, 3, 4, 5, 6], [config.shuffle_each_game, seed]);
   const level = ladder?.unlocked_through ?? config.default_level ?? 1;
+
+  // The opponent's reply is a floor on the wait, never an addend: the request
+  // goes out the instant it is this character's turn, and the disc lands at
+  // max(elapsed, thinkMs) — see opponentPacing.js. `resetKey: gameId` covers
+  // the reset case `enabled` alone can't: after restart() the fresh board
+  // always opens on the player's turn (turn 1), so `enabled` already flips
+  // false on its own here, but keeping the game id as the reset key too costs
+  // nothing and matches the other two games for the same reason.
+  const opponentEnabled = !game.status.gameOver && game.turn === 2;
+  const opponentPace = config.opponent?.pace ?? 1;
+  const thinkMs = thinkTimeFor({
+    level, levels: LADDER_LEVELS, config, seed, ply: moves.length, pace: opponentPace,
+  }) ?? OPPONENT_THINK_FALLBACK_MS;
+  const { thinking } = useOpponentReply({
+    enabled: opponentEnabled,
+    thinkMs,
+    resetKey: gameId,
+    request: () => requestConnectFourMove({ transcript: { moves }, level, gameId, userId }),
+    onReply: (answer) => {
+      if (!answer?.move) {
+        rankedRef.current = false;
+        setLocalPractice(true);
+      }
+      const column = answer?.move?.column ?? chooseColumn(game.board, { player: 2, level });
+      const next = playColumn({ moves }, column);
+      if (!next.error) setMoves(next.moves);
+    },
+  });
 
   useEffect(() => {
     fetchConnectFourConfig(userId).then((value) => value && setConfig((old) => ({ ...old, ...value })));
@@ -104,24 +138,6 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
   }, [activeNotes, config, deal, game, level, moves, thinking]);
 
   useEffect(() => {
-    if (game.status.gameOver || game.turn !== 2) return;
-    let cancelled = false;
-    setThinking(true);
-    requestConnectFourMove({ transcript: { moves }, level, gameId, userId }).then((answer) => {
-      if (cancelled) return;
-      if (!answer?.move) {
-        rankedRef.current = false;
-        setLocalPractice(true);
-      }
-      const column = answer?.move?.column ?? chooseColumn(game.board, { player: 2, level });
-      const next = playColumn({ moves }, column);
-      if (!next.error) setMoves(next.moves);
-      setThinking(false);
-    });
-    return () => { cancelled = true; };
-  }, [game.board, game.status.gameOver, game.turn, gameId, level, moves, userId]);
-
-  useEffect(() => {
     if (!game.status.gameOver || savedRef.current) return;
     savedRef.current = true;
     const result = game.status.draw ? 'draw' : game.status.winner === 1 ? 'win' : 'loss';
@@ -143,7 +159,6 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
   const restart = () => {
     setMoves([]);
     setHint(null);
-    setThinking(false);
     setLocalPractice(false);
     savedRef.current = false;
     rankedRef.current = true;
