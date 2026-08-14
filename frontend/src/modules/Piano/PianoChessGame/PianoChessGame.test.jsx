@@ -35,6 +35,7 @@ import {
   archiveGame, fetchChessConfig, fetchLadder, requestOpponentMove, saveChessConfig, saveGameRecord,
 } from './chessApi.js';
 import { DEFAULT_CHORD_SCHEME, squareToChord } from './chordAddress.js';
+import { DEFAULT_STAFF_SCHEME } from './staffAddress.js';
 import { DOUBLE_WINDOW_MS } from './chordSelection.js';
 
 const sourceOutlines = (container) => container.querySelectorAll('.chess-board__square--source').length;
@@ -487,6 +488,70 @@ describe('hover before commit', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(DOUBLE_WINDOW_MS + 200); });
     await playChord(rerender, notesFor('e2'));
     expect(heldSquares(container)).toHaveLength(0);
+  });
+
+  // The window is the one deadline the player is held to, so it has to be on
+  // screen while it runs. These assert the CUE, not the timing — the machine's
+  // own boundary tests live in chordSelection.test.js.
+  const windowBar = (container) => container.querySelector('.piano-chess__window');
+
+  it('shows the pick-up countdown once a hover arms the double', async () => {
+    const { container, rerender } = render(makeElement());
+    expect(windowBar(container)).toBeNull();
+    await playChord(rerender, notesFor('e2'));
+    expect(windowBar(container)).not.toBeNull();
+  });
+
+  it('runs the countdown for exactly the window the machine enforces', async () => {
+    const { container, rerender } = render(makeElement());
+    await playChord(rerender, notesFor('e2'));
+    // A bar that drained on a different clock than the one deciding the double
+    // would be a lie told precisely: it must carry the real window.
+    expect(windowBar(container).style.getPropertyValue('--pc-window-ms'))
+      .toBe(`${DOUBLE_WINDOW_MS}ms`);
+  });
+
+  it('does not offer a countdown on a square holding nothing to pick up', async () => {
+    const { container, rerender } = render(makeElement());
+    // d5 is empty in the opening position: the prompt has no repeat to ask for
+    // there, so there is no deadline to draw.
+    await playChord(rerender, notesFor('d5'));
+    expect(windowBar(container)).toBeNull();
+  });
+
+  it('drops the countdown once the piece is in hand', async () => {
+    const { container, rerender } = render(makeElement());
+    await playChord(rerender, notesFor('e2'));
+    await playChord(rerender, notesFor('e2'));
+    expect(heldSquares(container)).toHaveLength(1);
+    expect(windowBar(container)).toBeNull();
+  });
+
+  it('restarts the countdown on a fresh arming rather than letting it run on', async () => {
+    const { container, rerender } = render(makeElement());
+    await playChord(rerender, notesFor('e2'));
+    const first = windowBar(container).getAttribute('data-armed-at');
+    await act(async () => { await vi.advanceTimersByTimeAsync(DOUBLE_WINDOW_MS + 200); });
+    await playChord(rerender, notesFor('e2'));   // window lapsed: this re-arms
+    expect(windowBar(container).getAttribute('data-armed-at')).not.toBe(first);
+  });
+
+  // Reading mode is the BEGINNER vocabulary — the players least able to infer an
+  // unstated deadline — and it runs the same window. A cue that only reached the
+  // chord spellers would be missing from the mode that needs it most.
+  it('draws the countdown in the reading vocabulary too', async () => {
+    const staffElement = () => (
+      <PianoChessGame gameConfig={{ shuffle_each_turn: false }} scheme={DEFAULT_STAFF_SCHEME} />
+    );
+    const { container, rerender } = render(staffElement());
+    // A staff address is two real MIDI notes, not pitch classes off middle C.
+    holdNotes(squareToChord('e2', DEFAULT_STAFF_SCHEME).midis);
+    rerender(staffElement());
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    holdNotes([]);
+    rerender(staffElement());
+    await act(async () => { await vi.advanceTimersByTimeAsync(120); });
+    expect(windowBar(container)).not.toBeNull();
   });
 
   it('never refuses while exploring with a piece in hand', async () => {

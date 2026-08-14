@@ -27,7 +27,8 @@ const FitnessPlayerFooterView = forwardRef(function FitnessPlayerFooterView(prop
     mediaElementKey,
     generateThumbnailUrl,
     thumbnailsCommitRef,
-    thumbnailsGetTimeRef
+    thumbnailsGetTimeRef,
+    studyControls = null
   } = props;
 
   const baseDuration = (duration && !Number.isNaN(duration) ? duration : (currentItem?.duration || 600));
@@ -55,6 +56,8 @@ const FitnessPlayerFooterView = forwardRef(function FitnessPlayerFooterView(prop
       style={{ height: height + 'px', flex: `0 0 ${height}px`, transition: 'height .25s ease' }}
       data-stalled={isStalled ? '1' : '0'}
     >
+      {studyControls}
+
       <FitnessPlayerFooterControls
         section="left"
         currentTime={currentTime}
@@ -132,7 +135,8 @@ FitnessPlayerFooterView.propTypes = {
   mediaElementKey: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
   generateThumbnailUrl: PropTypes.func,
   thumbnailsCommitRef: PropTypes.shape({ current: PropTypes.func }),
-  thumbnailsGetTimeRef: PropTypes.shape({ current: PropTypes.func })
+  thumbnailsGetTimeRef: PropTypes.shape({ current: PropTypes.func }),
+  studyControls: PropTypes.node
 };
 
 export default FitnessPlayerFooterView;

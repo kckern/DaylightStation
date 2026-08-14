@@ -226,6 +226,20 @@ function PlexSection({ data, update }) {
           placeholder="Add label..."
         />
         <TagsInput
+          label="No-Capture Labels"
+          description="Content whose session is never recorded — no webcam, no player frames, no recap."
+          value={plex.no_capture_labels || []}
+          onChange={(vals) => update('plex.no_capture_labels', vals)}
+          placeholder="Add label..."
+        />
+        <TagsInput
+          label="Study UX Labels"
+          description="Content that gets the study interaction model — no pause scrim, scrub footer, jog, loop."
+          value={plex.study_ux_labels || []}
+          onChange={(vals) => update('plex.study_ux_labels', vals)}
+          placeholder="Add label..."
+        />
+        <TagsInput
           label="Governed Types"
           value={plex.governed_types || []}
           onChange={(vals) => update('plex.governed_types', vals)}

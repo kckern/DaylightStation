@@ -20,24 +20,24 @@ describe('with no piece in hand', () => {
     expect(ev(createSelection(), 'preview', 'e4', 1000).action).toEqual({ type: 'none' });
   });
 
-  // The window is specified as 800ms (DOUBLE_WINDOW_MS). These two boundary
+  // The window is specified as 2500ms (DOUBLE_WINDOW_MS). These two boundary
   // tests deliberately use LITERAL offsets rather than computing them from the
   // imported constant: a test that derives its own expected boundary from the
   // value under test can never fail when that value changes, since both move
   // together. The explicit value is pinned separately below.
-  it('the window is specified as 800ms', () => {
-    expect(DOUBLE_WINDOW_MS).toBe(800);
+  it('the window is specified as 2500ms', () => {
+    expect(DOUBLE_WINDOW_MS).toBe(2500);
   });
 
   it('picks the piece up when the same square is RECOGNISED again inside the window', () => {
     const first = play(createSelection(), 'e4', 1000);        // released at 1100
-    const second = ev(first.selection, 'preview', 'e4', 1100 + 799);
+    const second = ev(first.selection, 'preview', 'e4', 1100 + 2499);
     expect(second.action).toEqual({ type: 'pickup', square: 'e4' });
   });
 
   it('does not pick up when the second recognition is outside the window', () => {
     const first = play(createSelection(), 'e4', 1000);
-    const second = ev(first.selection, 'preview', 'e4', 1100 + 801);
+    const second = ev(first.selection, 'preview', 'e4', 1100 + 2501);
     expect(second.action).toEqual({ type: 'none' });
   });
 

@@ -197,7 +197,12 @@ export function VideoPlayer({
     onMediaRef,
     keyboardOverrides,
     onController,
-    recoverySessionKey: resilienceBridge?.playbackSessionKey || null
+    recoverySessionKey: resilienceBridge?.playbackSessionKey || null,
+    // Threaded from Player.jsx's forceSinglePlayerRemount diagnostics via
+    // resilienceBridge (SinglePlayer.jsx) — not previously forwarded into this
+    // call, so a resilience remount always armed autoplay regardless of pause
+    // intent. See shouldArmAutoplay.
+    remountDiagnostics: resilienceBridge?.remountDiagnostics ?? null
   });
 
   // Fallback queue-advance when HTML5 `ended` never fires. Plex transcode tails
@@ -824,6 +829,9 @@ VideoPlayer.propTypes = {
     seekToIntentSeconds: PropTypes.number,
     onSeekRequestConsumed: PropTypes.func,
     requestRecovery: PropTypes.func,
-    playbackSessionKey: PropTypes.string
+    playbackSessionKey: PropTypes.string,
+    remountDiagnostics: PropTypes.shape({
+      wasPaused: PropTypes.bool
+    })
   })
 };
