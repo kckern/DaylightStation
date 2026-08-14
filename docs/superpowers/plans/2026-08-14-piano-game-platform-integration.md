@@ -59,7 +59,36 @@
 **Interfaces produced:** chess reachable at `/api/v1/piano-games/chess/{move,config,ladder,games,history}` with identical response shapes to `/api/v1/chess/*`.
 
 **Constraints:**
-- The 21-rung chess ladder keeps `winsRequired: 5, seriesLength: 7` and its help ceilings — pass them through `games.chess.promotion` and `games.chess.helpCeilings` in composition. Do **not** flatten chess onto the 7-opponent/3-of-5 default.
+- The 21-rung chess ladder keeps `winsRequired: 5, seriesLength: 7` and its help ceilings.
+  **`helpCeilings` must be nested INSIDE `promotion`**, not a sibling of it:
+  `PianoGamesContainer.recordGame` constructs the ladder as
+  `new OpponentLadder({ opponents, progress, ...game.promotion })`, so a sibling
+  `games.chess.helpCeilings` key is never read and the ceiling silently no-ops —
+  which is precisely the regression Task 1 exists to prevent. Wire it as:
+
+  ```js
+  chess: {
+    opponentGateway: chessGateway,
+    opponents: CHESS_OPPONENTS,
+    promotion: {
+      winsRequired: 5,
+      seriesLength: 7,
+      helpCeilings: { max_hints: 1, max_best_moves: 0, max_takebacks: 1, unrestricted_below_level: 0 },
+    },
+  },
+  ```
+
+  Add a test that a help-heavy chess game recorded through the container does **not**
+  promote — a wiring mistake here is invisible without one. Do **not** flatten chess
+  onto the 7-opponent/3-of-5 default.
+- `unrestricted_below_level` is read by `OpponentLadder` in **1-based** numbering while
+  chess's own policy is 0-based. Convert when porting a non-zero value; `0` is
+  equivalent in both and is the current default.
+- The container's `ranked: false` path early-returns and **drops** the game rather than
+  recording it as not-counted. Chess's own `applyGameToProgress` keeps every game with a
+  `counted` flag. Do not introduce `ranked: false` for chess in this task — if the
+  bundled-fallback engine should mark games unranked (it arguably should), that is a
+  separate decision with a visible behavioural difference, and it needs its own task.
 - `/api/v1/chess/*` must keep working unchanged for one release — it is what the deployed kiosk calls until this ships.
 - Chess games recorded through the container must still pass `help` and `level`, and must reach the same promotion decision as before. **Prove it:** a test that feeds one record through both paths and asserts the same `counted`/promotion outcome.
 
