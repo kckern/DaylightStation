@@ -1,17 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { applyMove, indexToCoord, legalMoves, replayGame } from '@shared-gaming/checkers/engine.mjs';
+import { applyMove, legalMoves, replayGame } from '@shared-gaming/checkers/engine.mjs';
 import { chooseMove } from '@shared-gaming/checkers/opponent.mjs';
 import PianoGameHost from '../game-platform/host/PianoGameHost.jsx';
 import InstrumentBoardStage from '../game-platform/families/addressed-board/InstrumentBoardStage.jsx';
+import AddressRail from '../game-platform/families/addressed-board/AddressRail.jsx';
 import { BOARD_LAYOUTS } from '../game-platform/families/addressed-board/contracts.js';
 import { resolveAddressedSelection } from '../game-platform/families/addressed-board/interactionGrammars.js';
 import { thinkTimeFor, useOpponentReply } from '../game-platform/opponent/opponentPacing.js';
+import {
+  DEFAULT_FILE_NOTES, DEFAULT_RANK_NOTES, activeFileIndex, activeRankDisplayIndex,
+  fileRailAddresses, normalizeCheckersNotes, rankRailAddresses, shuffleCheckersNotes, squareForAddress,
+} from './checkersAddress.js';
 import checkersClient from './checkersApi.js';
 import './PianoCheckers.scss';
 
 const DEFAULT_CONFIG = Object.freeze({
   shuffle_each_game: false,
-  square_notes: Array.from({ length: 32 }, (_, index) => 48 + index),
+  file_notes: DEFAULT_FILE_NOTES,
+  rank_notes: DEFAULT_RANK_NOTES,
   default_level: 1,
 });
 // Checkers' ladder is 7 rungs (1-7, see the "Level {level} of 7" rail below) —
@@ -20,44 +26,16 @@ const LADDER_LEVELS = 7;
 // Used only when thinkTimeFor has nothing to read yet (no ladder resolved) —
 // mirrors chess's own OPPONENT_DELAY_MS fallback constant.
 const OPPONENT_THINK_FALLBACK_MS = 700;
-const NOTE_NAMES = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
 
 function userIdOf(currentUser) {
   const value = typeof currentUser === 'string' ? currentUser : currentUser?.id;
   return value && value !== 'guest' ? value : null;
 }
 
-export function noteName(note) {
-  return `${NOTE_NAMES[note % 12]}${Math.floor(note / 12) - 1}`;
-}
-
-export function shuffledSquares(seed) {
-  const values = Array.from({ length: 32 }, (_, index) => index);
-  let state = seed >>> 0;
-  for (let index = values.length - 1; index > 0; index -= 1) {
-    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
-    const target = state % (index + 1);
-    [values[index], values[target]] = [values[target], values[index]];
-  }
-  return values;
-}
-
-export function squareForNotes(activeNotes, config, deal) {
-  const held = [...activeNotes.keys()].sort((a, b) => a - b);
-  if (!held.length) return null;
-  const address = config.square_notes.indexOf(held.at(-1));
-  return address < 0 ? null : deal[address];
-}
-
-function CheckersBoard({ game, deal, config, selected, hint }) {
+function CheckersBoard({ game, selected, hint }) {
   const moves = legalMoves(game.board, game.turn, game.forcedFrom);
   const sources = new Set(moves.map((move) => move.from));
   const destinations = new Set(moves.filter((move) => move.from === selected).map((move) => move.to));
-  const addressBySquare = useMemo(() => {
-    const inverse = [];
-    deal.forEach((square, address) => { inverse[square] = address; });
-    return inverse;
-  }, [deal]);
   return (
     <div className="checkers-board" role="grid" aria-label="Checkers board">
       {Array.from({ length: 64 }, (_, cell) => {
@@ -66,7 +44,6 @@ function CheckersBoard({ game, deal, config, selected, hint }) {
         const playable = (row + column) % 2 === 1;
         const square = playable ? row * 4 + Math.floor(column / 2) : null;
         const piece = playable ? game.board[square] : null;
-        const address = playable ? addressBySquare[square] : null;
         const classes = [
           'checkers-board__cell', playable ? 'is-playable' : 'is-light',
           playable && selected !== null && square === selected ? 'is-selected' : '',
@@ -74,9 +51,11 @@ function CheckersBoard({ game, deal, config, selected, hint }) {
           selected === null && game.turn === 1 && sources.has(square) ? 'is-source' : '',
           hint && (hint.from === square || hint.to === square) ? 'is-hint' : '',
         ].filter(Boolean).join(' ');
+        // No address label here — see checkersAddress.js. The square is still
+        // addressed by playing its file note and rank note together; the rim
+        // rails around the board (below) are where that answer lives now.
         return (
           <div key={cell} className={classes} role="gridcell">
-            {playable && <span className="checkers-board__address">{noteName(config.square_notes[address])}</span>}
             {piece && (
               <span className={`checkers-board__piece checkers-board__piece--${piece.toLowerCase() === 'r' ? 'player' : 'opponent'}`}>
                 {piece === piece.toUpperCase() && <span className="checkers-board__crown">♛</span>}
@@ -106,7 +85,16 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
   const movesRef = useRef(moves);
   movesRef.current = moves;
   const game = useMemo(() => replayGame({ moves }), [moves]);
-  const deal = useMemo(() => config.shuffle_each_game ? shuffledSquares(seed) : Array.from({ length: 32 }, (_, index) => index), [config.shuffle_each_game, seed]);
+  // Normalized first — a persisted config from before this redesign carries
+  // `square_notes` and nothing else, and normalizeCheckersNotes is what turns
+  // that into valid axes instead of a silent dead end (see checkersAddress.js).
+  // Re-dealt on top the same way chess re-deals its chord scheme: the axes,
+  // not the mechanic, so "which key means which square" is what changes.
+  const baseNotes = useMemo(() => normalizeCheckersNotes(config), [config]);
+  const notes = useMemo(
+    () => (config.shuffle_each_game ? shuffleCheckersNotes(baseNotes, seed) : baseNotes),
+    [baseNotes, config.shuffle_each_game, seed],
+  );
   const level = ladder?.unlocked_through ?? config.default_level ?? 1;
 
   // The opponent's reply is a floor on the wait, never an addend — see
@@ -151,7 +139,11 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
       latchedRef.current = true;
       return;
     }
-    const square = squareForNotes(activeNotes, config, deal);
+    // Two notes together, exactly like chess's staff scheme — squareForAddress
+    // returns null (a no-op, not a rejection) while only one of the pair is
+    // down, so this effect naturally waits for the second note rather than
+    // needing its own "how many notes so far" bookkeeping.
+    const square = squareForAddress([...activeNotes.keys()], notes);
     if (square === null) return;
     const available = legalMoves(game.board, 1, game.forcedFrom);
     const currentSelection = game.forcedFrom ?? selected;
@@ -171,11 +163,11 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
       }
     } else {
       setSelected(resolution.selected);
-      setMessage(resolution.rejection === 'select_source' ? 'Play the note on a glowing red piece.'
-        : resolution.rejection === 'select_destination' ? 'Play a glowing destination note.' : null);
+      setMessage(resolution.rejection === 'select_source' ? "Play a glowing red piece's file and rank notes together."
+        : resolution.rejection === 'select_destination' ? "Play a glowing destination's file and rank notes together." : null);
     }
     latchedRef.current = true;
-  }, [activeNotes, config, deal, game, level, selected, thinking]);
+  }, [activeNotes, game, level, notes, selected, thinking]);
 
   useEffect(() => {
     if (!game.status.gameOver || savedRef.current) return;
@@ -214,18 +206,43 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
   const status = game.status.gameOver
     ? game.status.draw ? 'Draw game' : game.status.winner === 1 ? 'You won the board!' : `${ladder?.current?.name ?? 'Opponent'} wins`
     : thinking ? `${ladder?.current?.name ?? 'Opponent'} is thinking…`
-      : message ?? (selected !== null ? 'Now play a glowing destination note.' : 'Play the note shown on a movable red piece.');
+      : message ?? (selected !== null ? "Now play the destination's file and rank notes together." : "Play a movable red piece's file and rank notes together.");
+
+  // The rail's own cards, from the SAME (possibly re-dealt) notes the
+  // addressing effect above just used — the rim can never show a note that
+  // does not actually work. Active highlighting follows whichever half of
+  // the pair is currently held, same idea as chess's cursor: a lone file
+  // note lights its file card, a lone rank note lights its rank card, and
+  // both light together in the instant just before the square commits.
+  const heldNotesList = useMemo(() => [...activeNotes.keys()], [activeNotes]);
+  const fileAddresses = useMemo(() => fileRailAddresses(notes), [notes]);
+  const rankAddresses = useMemo(() => rankRailAddresses(notes), [notes]);
+  const activeFile = activeFileIndex(heldNotesList, notes);
+  const activeRank = activeRankDisplayIndex(heldNotesList, notes);
 
   return (
     <PianoGameHost
       gameId="checkers"
       phase={game.status.gameOver ? 'result' : thinking ? 'paused' : 'playing'}
       className="piano-checkers"
-      instrument={{ activeNotes, startNote: 48, endNote: 79, showLabels: true, onNoteOn, onNoteOff }}
+      // Same scheme as chess now (DEFAULT_STAFF_SCHEME, 47-72), so the same
+      // keyboard window shows every note either game addresses with.
+      instrument={{ activeNotes, startNote: 36, endNote: 84, showLabels: true, onNoteOn, onNoteOff }}
     >
       <InstrumentBoardStage
         layout={BOARD_LAYOUTS.SINGLE}
-        primary={<CheckersBoard game={game} deal={deal} config={config} selected={game.forcedFrom ?? selected} hint={hint} />}
+        topRail={<AddressRail addresses={fileAddresses} orientation="horizontal" active={activeFile} />}
+        primary={(
+          <div className="checkers-stage">
+            <AddressRail
+              addresses={rankAddresses}
+              orientation="vertical"
+              active={activeRank}
+              className="checkers-stage__rank-rail"
+            />
+            <CheckersBoard game={game} selected={game.forcedFrom ?? selected} hint={hint} />
+          </div>
+        )}
         leftRail={(
           <div className="checkers-opponent">
             <strong>{ladder?.current?.name ?? 'Button'}</strong>
@@ -236,8 +253,8 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
         )}
         rightRail={(
           <div className="checkers-settings">
-            <label className="checkers-settings__check"><input type="checkbox" checked={config.shuffle_each_game} onChange={(event) => updateConfig({ shuffle_each_game: event.target.checked })} /> Re-deal square notes</label>
-            <p>Each dark square shows its piano note. Play a piece, then its destination.</p>
+            <label className="checkers-settings__check"><input type="checkbox" checked={config.shuffle_each_game} onChange={(event) => updateConfig({ shuffle_each_game: event.target.checked })} /> Re-deal file &amp; rank notes</label>
+            <p>Every dark square is a file note (above the board) plus a rank note (beside it) — play both together, then the destination the same way.</p>
             <p>Captures glow and are required. Multiple jumps keep the piece selected.</p>
             <small>Play seven notes together for a suggested move.</small>
           </div>

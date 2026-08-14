@@ -1,5 +1,9 @@
 .piano-connect-four { display: flex; flex-direction: column; overflow: hidden; color: #f8fafc; background: radial-gradient(circle at 50% 25%, #193b68, #071426 72%); }
 .piano-connect-four .instrument-board-stage { flex: 1; height: auto; padding-bottom: .4rem; }
+/* Same cap as .connect-four-board's own `min(100%, 34rem)` — a card has to sit
+   directly over its column, and the rail's default width:100% would run wider
+   than the board itself the moment the board hits its own max-width. */
+.piano-connect-four .instrument-board-stage__top-rail { width: min(100%, 34rem); margin: 0 auto; }
 .connect-four-board {
   width: min(100%, 34rem);
   aspect-ratio: 7 / 6;
@@ -21,6 +25,5 @@
 .connect-four-opponent strong { font-size: 1.5rem; color: #ffdc5e; }
 .connect-four-settings label { display: flex; flex-direction: column; gap: .3rem; }
 .connect-four-settings label:has(input) { flex-direction: row; align-items: center; }
-.connect-four-key { display: grid; grid-template-columns: 1fr 1fr; gap: .25rem; font-variant-numeric: tabular-nums; }
 .connect-four-status { display: flex; justify-content: center; align-items: center; gap: 1rem; font-size: 1.25rem; font-weight: 700; min-height: 1.8em; }
 .connect-four-status button { border: 0; border-radius: .6rem; padding: .45rem .9rem; background: #72f1b8; color: #062416; font-weight: 800; }
