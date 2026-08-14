@@ -19,4 +19,29 @@ export function buildGameRecordFilename(date = new Date()) {
   return `${day}-${crypto.randomUUID()}`;
 }
 
-export default { buildGameRecordFilename };
+/**
+ * A human-scannable name for the household piano archive. `played_on` selects
+ * the directory in the caller and is deliberately the piano client's local
+ * calendar day; this filename describes the game within that day.
+ */
+export function buildChessArchiveFilename(record, userSlug, date = new Date()) {
+  const slug = String(userSlug || 'guest').replace(/[^a-zA-Z0-9_-]/g, '-');
+  const rawLevel = Number(record?.opponent?.level);
+  const level = Number.isFinite(rawLevel) ? Math.max(0, Math.floor(rawLevel)) : 'unknown';
+  const durationMs = Math.max(0, Number(record?.duration_ms) || 0);
+  const seconds = Math.floor(durationMs / 1000);
+  const duration = seconds >= 60
+    ? `${Math.floor(seconds / 60)}m${String(seconds % 60).padStart(2, '0')}s`
+    : `${seconds}s`;
+  const moves = Math.max(0, Math.floor(Number(record?.move_count) || 0));
+  // A child leaving a board is a real outcome in the archive, but `left` is an
+  // implementation event. Name it `quit` in the human-facing filename.
+  const result = String(record?.result || (record?.completed ? 'draw' : 'quit') || 'unknown')
+    .replace(/[^a-zA-Z0-9_-]/g, '-');
+  const outcome = String(record?.outcome || (record?.completed ? 'unknown' : 'quit'))
+    .replace(/[^a-zA-Z0-9_-]/g, '-');
+  const stamp = date.toISOString().replace(/[:.]/g, '-');
+  return `${slug}_level${level}_${duration}_${moves}ply_${result}_${outcome}_${stamp}-${crypto.randomUUID()}`;
+}
+
+export default { buildGameRecordFilename, buildChessArchiveFilename };

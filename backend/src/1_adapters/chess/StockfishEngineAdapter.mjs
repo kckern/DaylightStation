@@ -151,10 +151,23 @@ export function createStockfishEngine({
       const move = uci ? fromUci(fen, uci) : null;
       if (move) {
         const thinkingMs = Date.now() - startedAt;
-        logger?.info?.('chess.engine.move', { rung: rung?.id, thinkingMs, engine: 'stockfish' });
+        logger?.info?.('chess.engine.move', {
+          rung: rung?.id,
+          skill: options.skill ?? null,
+          elo: options.elo ?? null,
+          movetimeMs: options.movetimeMs,
+          thinkingMs,
+          engine: 'stockfish',
+        });
         return { ...move, engine: 'stockfish', thinkingMs };
       }
-      logger?.warn?.('chess.engine.fallback', { rung: rung?.id, reason: workerUsable ? 'no_bestmove' : 'worker_unavailable' });
+      logger?.warn?.('chess.engine.fallback', {
+        rung: rung?.id,
+        skill: options.skill ?? null,
+        elo: options.elo ?? null,
+        movetimeMs: options.movetimeMs,
+        reason: workerUsable ? 'no_bestmove' : 'worker_unavailable',
+      });
       const fallback = homegrownChooseMove(fen, {
         difficulty: fallbackDifficultyFor(rung, options),
         seed: fen.length,

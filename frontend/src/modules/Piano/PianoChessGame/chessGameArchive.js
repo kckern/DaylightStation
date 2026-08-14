@@ -45,7 +45,7 @@ export function localDateStamp(at) {
  * @param {string} args.endedBy     'game_over' | 'left'
  */
 export function buildGameArchive({
-  game, gameId, userId, rungId, addressing = 'chords',
+  game, gameId, userId, rungId, opponent = null, addressing = 'chords',
   hints = 0, bestMoves = 0, startedAt, endedAt, endedBy = 'left',
 }) {
   const history = Array.isArray(game?.history) ? game.history : [];
@@ -77,6 +77,7 @@ export function buildGameArchive({
 
     player_color: playerColor,
     rung: rungId || null,
+    opponent,
 
     // How the squares were addressed. Without this the chords below cannot be
     // interpreted — 'C/B' is two staff notes, 'Cm' is a chord.
