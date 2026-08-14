@@ -16,8 +16,11 @@ export default function EnrollmentDrawer({ learner, courseId, cell, syllabi = []
   const offered = syllabi.filter((s) => s.courseId === courseId);
   const [choice, setChoice] = useState(cell?.syllabusId ?? offered[0]?.syllabusId ?? '');
 
+  // These are state changes, not fetches — and the syllabus is the whole point
+  // of the change, so it travels with them. `teacher.write.*` filtered to one
+  // learner reads as what a grown-up did to that child's plan.
   const after = (event) => () => {
-    teacherLog.fetch(event, { learnerId: learner.id, courseId });
+    teacherLog.write(event, { learnerId: learner.id, courseId, syllabusId: choice });
     onChanged?.();
     onClose?.();
   };
