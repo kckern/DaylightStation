@@ -1104,6 +1104,86 @@ describe('the takeback prompt', () => {
 });
 ```
 
+
+Then add a second describe block that tests the GESTURE, not the sentence. The
+prompt tests above would still pass if the octave were routed to `restart()`, so
+they are not sufficient on their own for a gesture that destroys a game in
+progress.
+
+`PianoChessGame.test.jsx` already has everything this needs: `makeElement()`,
+`notesFor(square)`, per-block `playChord(rerender, notes)` helpers that hold,
+settle 400ms, release and advance 120ms, and `DOUBLE_WINDOW_MS` already
+imported. Copy the nearest block's `playChord` rather than inventing a new
+harness. An octave is `[60, 72]`.
+
+Assert on what the player can actually see:
+
+```javascript
+describe('taking a move back at the keys', () => {
+  const playChord = async (rerender, notes) => {
+    holdNotes(notes);
+    rerender(makeElement());
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    holdNotes([]);
+    rerender(makeElement());
+    await act(async () => { await vi.advanceTimersByTimeAsync(120); });
+  };
+  const OCTAVE = [60, 72];
+  const noteOf = (container, title) => [...container.querySelectorAll('.gesture-card')]
+    .find((card) => card.textContent.includes(title))
+    ?.querySelector('.gesture-card__note')?.textContent;
+
+  // Picks a piece up and moves it, then lets the opponent answer. Mirror the
+  // move-flow block already in this file; do not invent a second way to move.
+  const playAMove = async (container, rerender) => { /* fill from that block */ };
+
+  it('arms on the first octave and says so', async () => {
+    const { container, rerender } = render(makeElement());
+    await playAMove(container, rerender);
+    await playChord(rerender, OCTAVE);
+    expect(container.querySelector('.piano-chess__prompt').textContent)
+      .toBe('Play the octave again to take your move back.');
+  });
+
+  it('rewinds on the second octave inside the window', async () => {
+    const { container, rerender } = render(makeElement());
+    await playAMove(container, rerender);
+    await playChord(rerender, OCTAVE);
+    await playChord(rerender, OCTAVE);
+    expect(container.querySelector('.piano-chess__toast').textContent).toMatch(/^Took back /);
+    expect(noteOf(container, 'Take it back')).toBe('2 left');
+  });
+
+  it('does not rewind when the second octave is too late', async () => {
+    const { container, rerender } = render(makeElement());
+    await playAMove(container, rerender);
+    await playChord(rerender, OCTAVE);
+    await act(async () => { await vi.advanceTimersByTimeAsync(DOUBLE_WINDOW_MS + 200); });
+    await playChord(rerender, OCTAVE);
+    expect(container.querySelector('.piano-chess__toast')).toBe(null);
+    expect(noteOf(container, 'Take it back')).toBe('3 left');
+  });
+
+  it('re-arming inside the window does not let the first timer dim the prompt', async () => {
+    // The two-clock regression: arm, wait ALMOST the whole window, arm again,
+    // then advance past the FIRST arm's deadline. The prompt must still show,
+    // because the second arm replaced the timer.
+    const { container, rerender } = render(makeElement());
+    await playAMove(container, rerender);
+    await playChord(rerender, OCTAVE);
+    await act(async () => { await vi.advanceTimersByTimeAsync(DOUBLE_WINDOW_MS - 120); });
+    await playChord(rerender, OCTAVE);
+    await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+    expect(container.querySelector('.piano-chess__prompt').textContent)
+      .toBe('Play the octave again to take your move back.');
+  });
+});
+```
+
+If an assertion cannot be made to hold because the harness does not expose what
+it needs, say so in your report rather than weakening the assertion — a test
+that cannot fail is worse than an absent one.
+
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `./node_modules/.bin/vitest run frontend/src/modules/Piano/PianoChessGame/PianoChessGame.test.jsx`
@@ -1151,15 +1231,25 @@ Change the `helpUsed` initial state:
 Add, next to the other refs near `gameRef`:
 
 ```javascript
-  // The takeback is the octave gesture played twice, which means the tick loop
-  // has to remember the first one. A ref rather than state: the tick reads it
-  // on the same pass it writes it, and a re-render in between would lose the
-  // window.
-  const lastEscapeAtRef = useRef(0);
+  // The takeback is the octave gesture played twice, so the first one has to be
+  // remembered — and remembered ONCE. An earlier design held the window in a
+  // ref and the prompt in a boolean, which is two clocks that drift: re-arming
+  // called setTakebackArmed(true) on a value already true, React bailed out of
+  // the render, the disarm effect never re-ran, and the FIRST octave's timer
+  // then cleared the prompt while the ref had advanced to the second. Under
+  // main-thread jank that lands a rewind with no armed prompt on screen —
+  // exactly the accident the arming step exists to prevent.
+  //
+  // So the timestamp IS the state, and the ref only mirrors it for the tick
+  // (which is mount-stable and cannot read render values), the same way gameRef
+  // mirrors game below.
+  const [armedAt, setArmedAt] = useState(0);
+  const takebackArmed = armedAt > 0;
+  const armedAtRef = useRef(0);
+  armedAtRef.current = armedAt;
   // Where the cooldown counts from — the player's own move count at the last
   // takeback, or null when there has not been one this game.
   const lastTakebackAtRef = useRef(null);
-  const [takebackArmed, setTakebackArmed] = useState(false);
   // The tick effect and the takeback callback are both mount-stable, so
   // everything they read of the render's values has to arrive by ref.
   const chessConfigRef = useRef(null);
@@ -1238,25 +1328,42 @@ Replace the existing `escape` branch inside `tick`:
           // been. Putting it back also restarts the double window, so the very
           // next octave arms the takeback rather than firing it.
           cancelSelection();
-          lastEscapeAtRef.current = 0;
-          setTakebackArmed(false);
-        } else if (at - lastEscapeAtRef.current <= DOUBLE_WINDOW_MS) {
-          lastEscapeAtRef.current = 0;
-          setTakebackArmed(false);
+          setArmedAt(0);
+        } else if (armedAtRef.current && at - armedAtRef.current <= DOUBLE_WINDOW_MS) {
+          setArmedAt(0);
           attemptTakeback();
         } else {
           // With nothing in hand this used to do nothing at all, silently. Now
           // it says what a second one would do — which is both how the gesture
           // is discovered and why an idle octave can never rewind a game by
           // accident.
-          lastEscapeAtRef.current = at;
-          setTakebackArmed(true);
-          logger().info('takeback-armed', { moves_played: current.history.length });
+          // A fresh timestamp every time, so re-arming always re-renders and
+          // always replaces the disarm timer. That is the whole fix for the
+          // two-clock drift described at the state declaration.
+          setArmedAt(at);
+          logger().debug('takeback-armed', { moves_played: current.history.length });
         }
       }
 ```
 
 Add `attemptTakeback` to the tick effect's dependency array.
+
+- [ ] **Step 6b: Disarm when a piece is picked up**
+
+While a piece is in hand an octave puts it back — it does not rewind — so an arm
+that survives a pick-up leaves the prompt promising something the next octave
+will not do. In the tick branch that already dispatches the selection machine's
+actions, clear the arm when a piece is taken up:
+
+```javascript
+        if (action.type === 'pickup' || action.type === 'drop') {
+          // What an octave means has just changed: with a piece in hand it puts
+          // the piece back. An arm left standing would promise a rewind that the
+          // next octave will not perform.
+          setArmedAt(0);
+          handleSquare(action.square);
+        }
+```
 
 - [ ] **Step 7: Disarm when the window lapses**
 
@@ -1266,10 +1373,12 @@ Add near the other effects:
   // The armed prompt has to expire with the window it describes, or it would
   // stand there offering a takeback that the next octave no longer performs.
   useEffect(() => {
-    if (!takebackArmed) return undefined;
-    const timer = setTimeout(() => setTakebackArmed(false), DOUBLE_WINDOW_MS);
+    if (!armedAt) return undefined;
+    const timer = setTimeout(() => setArmedAt(0), DOUBLE_WINDOW_MS);
     return () => clearTimeout(timer);
-  }, [takebackArmed]);
+    // Keyed on the TIMESTAMP, not on a boolean: re-arming inside the window
+    // changes armedAt, so this tears down the old timer and starts a new one.
+  }, [armedAt]);
 ```
 
 - [ ] **Step 8: Add the card, the prompt argument, and the reset**
@@ -1317,9 +1426,8 @@ In `restart()`, add:
 
 ```javascript
     setHelpUsed({ hints: 0, bestMoves: 0, takebacks: 0 });
-    lastEscapeAtRef.current = 0;
     lastTakebackAtRef.current = null;
-    setTakebackArmed(false);
+    setArmedAt(0);
 ```
 
 (The existing `setHelpUsed({ hints: 0, bestMoves: 0 })` line is replaced by the first of these.)
