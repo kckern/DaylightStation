@@ -23,6 +23,7 @@ const TAGS = {
   INTEGER: 0x21,
   BOOLEAN: 0x22,
   ENUM: 0x23,
+  RESOLUTION: 0x32,
   TEXT: 0x41,
   NAME: 0x42,
   KEYWORD: 0x44,
@@ -87,15 +88,19 @@ export function baseAttrs(printerUri, user) {
   ];
 }
 
-export function printJobAttrs(printerUri, { user, jobName, copies, documentFormat = 'application/octet-stream' }) {
+export function printJobAttrs(printerUri, { user, jobName, copies, documentFormat }) {
+  if (!documentFormat) {
+    // No silent default here on purpose. `application/octet-stream` means
+    // "printer, please guess the format from the bytes" — that guess is
+    // exactly what printed a PDF's raw source as plain text and burned a
+    // tray of paper (see LaserPrinterAdapter's header comment for the
+    // incident). The caller (LaserPrinterAdapter) MUST negotiate a format
+    // the target printer actually advertises in `document-format-supported`
+    // and pass it explicitly; this function refuses to paper over that.
+    throw new Error('printJobAttrs requires an explicit documentFormat — negotiate one, do not default to octet-stream');
+  }
   const attrs = baseAttrs(printerUri, user);
   attrs.push({ tag: TAGS.NAME, name: 'job-name', value: jobName });
-  // `application/octet-stream` = let the printer auto-detect from the bytes.
-  // Many AirPrint/IPP-Everywhere printers (e.g. Brother HL-L2460DW) do NOT
-  // advertise `application/pdf` in document-format-supported and reject an
-  // explicit PDF format with 0x040a (document-format-not-supported), even
-  // though their firmware happily renders a PDF once it sniffs the %PDF
-  // header. octet-stream is the universal, always-supported default.
   attrs.push({ tag: TAGS.MIME_TYPE, name: 'document-format', value: documentFormat });
   if (copies && copies > 1) {
     // copies is a JOB attribute, but Brother/AirPrint accept it in the
@@ -134,7 +139,13 @@ export function decodeResponse(buf) {
     let value;
     if ((tag === TAGS.INTEGER || tag === TAGS.ENUM) && valueLen === 4) value = buf.readInt32BE(o);
     else if (tag === TAGS.BOOLEAN && valueLen === 1) value = buf.readUInt8(o) === 1;
-    else value = buf.toString('utf8', o, o + valueLen);
+    // resolution (RFC 8011 §5.1.14): 9 octets — xres(4) yres(4) units(1),
+    // units 3 = dots/inch, 4 = dots/cm. Printer-resolution-supported/-default
+    // use this; decoding it structurally is what lets DPI selection avoid a
+    // hard-coded number (see negotiate.mjs's chooseResolution).
+    else if (tag === TAGS.RESOLUTION && valueLen === 9) {
+      value = { xres: buf.readInt32BE(o), yres: buf.readInt32BE(o + 4), units: buf.readUInt8(o + 8) };
+    } else value = buf.toString('utf8', o, o + valueLen);
     o += valueLen;
     if (name) {
       (attrs[name] ||= []).push(value);

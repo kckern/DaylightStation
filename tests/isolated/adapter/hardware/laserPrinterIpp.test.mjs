@@ -4,7 +4,7 @@ import { OPS, encodeRequest, decodeResponse, printJobAttrs } from '../../../../b
 describe('IPP encodeRequest', () => {
   it('emits version 1.1, the operation, request-id, and the document after end-of-attributes', () => {
     const pdf = Buffer.from('%PDF-1.4 fake');
-    const buf = encodeRequest(OPS.PRINT_JOB, printJobAttrs('ipp://p:631/ipp/print', { user: 'learner-two', jobName: 'ws' }), pdf, 7);
+    const buf = encodeRequest(OPS.PRINT_JOB, printJobAttrs('ipp://p:631/ipp/print', { user: 'learner-two', jobName: 'ws', documentFormat: 'application/pdf' }), pdf, 7);
 
     expect(buf.readUInt8(0)).toBe(1);
     expect(buf.readUInt8(1)).toBe(1);
@@ -20,15 +20,28 @@ describe('IPP encodeRequest', () => {
     expect(end).toBeGreaterThan(8);
   });
 
-  it('declares octet-stream document-format by default (printer auto-detects the PDF)', () => {
-    const buf = encodeRequest(OPS.PRINT_JOB, printJobAttrs('ipp://p/ipp/print', { user: 'u', jobName: 'j' }));
-    expect(buf.includes('application/octet-stream')).toBe(true);
-    expect(buf.includes('application/pdf')).toBe(false);
+  it('requires an explicit documentFormat — no silent octet-stream default', () => {
+    // This is the guard against the incident: octet-stream ("printer,
+    // please guess") is what let a raw PDF through to a printer with no PDF
+    // interpreter, which guessed "plain text" and printed the PDF source.
+    // printJobAttrs refuses to paper over a missing negotiated format.
+    expect(() => printJobAttrs('ipp://p/ipp/print', { user: 'u', jobName: 'j' })).toThrow(/documentFormat/i);
+  });
+
+  it('encodes exactly the negotiated document-format — never a substituted default', () => {
+    const urf = encodeRequest(OPS.PRINT_JOB, printJobAttrs('ipp://p/ipp/print', { user: 'u', jobName: 'j', documentFormat: 'image/urf' }));
+    expect(urf.includes('image/urf')).toBe(true);
+    expect(urf.includes('application/octet-stream')).toBe(false);
+    expect(urf.includes('application/pdf')).toBe(false);
+
+    const pdf = encodeRequest(OPS.PRINT_JOB, printJobAttrs('ipp://p/ipp/print', { user: 'u', jobName: 'j', documentFormat: 'application/pdf' }));
+    expect(pdf.includes('application/pdf')).toBe(true);
+    expect(pdf.includes('image/urf')).toBe(false);
   });
 
   it('single-copy jobs carry no copies attribute; multi-copy jobs do', () => {
-    const one = encodeRequest(OPS.PRINT_JOB, printJobAttrs('ipp://p/ipp/print', { user: 'u', jobName: 'j', copies: 1 }));
-    const three = encodeRequest(OPS.PRINT_JOB, printJobAttrs('ipp://p/ipp/print', { user: 'u', jobName: 'j', copies: 3 }));
+    const one = encodeRequest(OPS.PRINT_JOB, printJobAttrs('ipp://p/ipp/print', { user: 'u', jobName: 'j', copies: 1, documentFormat: 'image/urf' }));
+    const three = encodeRequest(OPS.PRINT_JOB, printJobAttrs('ipp://p/ipp/print', { user: 'u', jobName: 'j', copies: 3, documentFormat: 'image/urf' }));
     expect(one.includes('copies')).toBe(false);
     expect(three.includes('copies')).toBe(true);
   });
@@ -67,5 +80,19 @@ describe('IPP decodeResponse', () => {
     const head = Buffer.from([1, 1, 0x04, 0x00, 0, 0, 0, 1, 0x03]); // client-error-bad-request
     expect(decodeResponse(head).ok).toBe(false);
     expect(decodeResponse(head).statusCode).toBe(0x0400);
+  });
+
+  it('decodes a resolution attribute (xres/yres/units) structurally, not as a mangled string', () => {
+    // RFC 8011 §5.1.14: 9 octets — xres(4) yres(4) units(1). This backs DPI
+    // selection (negotiate.mjs's chooseResolution) reading
+    // printer-resolution-supported/-default off the wire.
+    const res = Buffer.alloc(9);
+    res.writeInt32BE(300, 0);
+    res.writeInt32BE(300, 4);
+    res.writeUInt8(3, 8); // dots/inch
+    const head = Buffer.from([1, 1, 0x00, 0x00, 0, 0, 0, 1]);
+    const body = Buffer.concat([Buffer.from([0x02]), attr(0x32, 'printer-resolution-default', res), Buffer.from([0x03])]);
+    const out = decodeResponse(Buffer.concat([head, body]));
+    expect(out.attrs['printer-resolution-default']).toEqual([{ xres: 300, yres: 300, units: 3 }]);
   });
 });
