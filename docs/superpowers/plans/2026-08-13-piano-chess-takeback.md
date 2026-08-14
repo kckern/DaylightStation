@@ -295,7 +295,7 @@ git commit -m "feat(chess): ladder policy gains max_takebacks and unrestricted_b
 
 **Interfaces:**
 - Consumes: `undoMove` from `@shared-gaming/chess/index.mjs`.
-- Produces: `takeMoveBack(state)` → `{ state, event }` where `event` is either `{ type: 'took_back', plies, restoredFen, undone }` or the standard `{ type: 'rejected', reason, square, seq }`. Game state gains `undoneHistory: []`, an array of history entries each carrying `ply` and `undone_at_ply`. Task 5 reads it; Task 7 calls the function.
+- Produces: `takeMoveBack(state)` → `{ state, event }` where `event` is either `{ type: 'took_back', plies, restoredFen, undone }` or the standard `{ type: 'rejected', reason, square, seq }`. Game state gains `undoneHistory: []`, an array of history entries each carrying `ply`, `undone_at_ply`, and `undone_seq`. Task 5 reads it; Task 7 calls the function.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -364,13 +364,32 @@ describe('taking a move back', () => {
     expect(rewound.rejection).toBe(null);
   });
 
-  it('records when each rewind happened, so two rewinds stay distinguishable', () => {
+  it('records when each rewind happened', () => {
     const state = start();
     const from = firstMovableSquare(state);
     const afterMine = commitMove(state, from, destinationsFor(state, from)[0]).state;
     const { state: rewound } = takeMoveBack(afterMine);
     expect(rewound.undoneHistory[0].ply).toBe(1);
     expect(rewound.undoneHistory[0].undone_at_ply).toBe(1);
+    expect(rewound.undoneHistory[0].undone_seq).toBe(1);
+  });
+
+  it('keeps two rewind episodes distinguishable even when they land on the same ply', () => {
+    // The collision `undone_at_ply` alone cannot survive: a rewind trims
+    // history, so playing and unplaying twice in a row produces two episodes
+    // that both happened "at ply 1".
+    const state = start();
+    const first = firstMovableSquare(state);
+    const afterFirst = commitMove(state, first, destinationsFor(state, first)[0]).state;
+    const rewoundOnce = takeMoveBack(afterFirst).state;
+
+    const second = firstMovableSquare(rewoundOnce);
+    const afterSecond = commitMove(rewoundOnce, second, destinationsFor(rewoundOnce, second)[0]).state;
+    const rewoundTwice = takeMoveBack(afterSecond).state;
+
+    expect(rewoundTwice.undoneHistory).toHaveLength(2);
+    expect(rewoundTwice.undoneHistory.map((entry) => entry.undone_at_ply)).toEqual([1, 1]);
+    expect(rewoundTwice.undoneHistory.map((entry) => entry.undone_seq)).toEqual([1, 2]);
   });
 
   it('refuses once the game is over', () => {
@@ -459,12 +478,24 @@ export function takeMoveBack(state) {
   let game = state.game;
   for (let i = 0; i < plies; i += 1) game = undoMove(game);
 
+  // Which rewind this was, counted from the ones already recorded rather than
+  // held in a field of its own. `undone_at_ply` cannot do this job alone: a
+  // rewind TRIMS history, so a player who plays one move, takes it back, plays
+  // a different move and takes that back produces two episodes both reading
+  // `undone_at_ply: 1` — the same number for two unrelated moments.
+  let priorSeq = 0;
+  for (const entry of state.undoneHistory || []) {
+    if ((entry.undone_seq || 0) > priorSeq) priorSeq = entry.undone_seq;
+  }
   const undone = history.slice(lastOwnIndex).map((entry, offset) => ({
     ...entry,
     ply: lastOwnIndex + offset + 1,
-    // Both plies of one rewind share this, which is what groups them back
-    // together when the archive is read.
+    // Where the board stood when this came off. Both plies of one rewind share
+    // it, and it is true of the position — but it repeats across episodes.
     undone_at_ply: history.length,
+    // Which rewind took it. Both plies of one rewind share this too, and no
+    // two episodes ever do, so a reader can group and order them.
+    undone_seq: priorSeq + 1,
   }));
   const nextHistory = history.slice(0, lastOwnIndex);
   const previous = nextHistory.length ? nextHistory[nextHistory.length - 1] : null;
