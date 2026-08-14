@@ -20,6 +20,21 @@ describe('fitness module resolution', () => {
     expect(getModule('fitness:fingerprint-manager')).toBeTruthy();
   });
 
+  it('resolves vibration monitor by legacy id', () => {
+    expect(getModule('vibration_monitor')).toBeTruthy();
+    expect(getModuleManifest('vibration_monitor')).toBeTruthy();
+  });
+
+  it('resolves vibration monitor by hyphenated deep-link id', () => {
+    expect(getModule('vibration-monitor')).toBeTruthy();
+    expect(getModuleManifest('vibration-monitor')).toBeTruthy();
+  });
+
+  it('resolves vibration monitor by namespaced id', () => {
+    expect(getModule('fitness:vibration')).toBeTruthy();
+    expect(getModuleManifest('fitness:vibration')).toBeTruthy();
+  });
+
   it('returns null for an unknown id', () => {
     expect(getModule('definitely-not-a-module')).toBeNull();
   });
