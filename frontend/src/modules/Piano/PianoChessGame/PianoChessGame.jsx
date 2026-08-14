@@ -334,10 +334,16 @@ export function PianoChessGame({
   // Gesture recognition runs before square matching, and a recognised cluster
   // is never chord input: while it is physically down, narrowing is suppressed.
   const gesture = recognizeGesture(heldNotes);
-  const candidates = useMemo(
-    () => (gesture ? [] : candidateSquares(heldNotes, liveScheme)),
-    [gesture, heldNotes, liveScheme],
-  );
+  const candidates = useMemo(() => {
+    if (gesture) return [];
+    // Narrow only among squares the player can act on in the current half of
+    // the move. Lighting empty, enemy, or unreachable squares made the board
+    // look random even though the pitch-class subset calculation was correct.
+    const available = new Set(game.origin
+      ? destinationsFor(game, game.origin)
+      : playableSources(game));
+    return candidateSquares(heldNotes, liveScheme).filter((square) => available.has(square));
+  }, [game, gesture, heldNotes, liveScheme]);
 
   // Help is per-move, not per-press: mashing the cluster cannot inflate the
   // tally, and the marks clear themselves when the move they helped with
@@ -527,9 +533,9 @@ export function PianoChessGame({
       // The latch remembers that a gesture was held at ANY point since the
       // hands went down, and stands until they are fully off the keys. While
       // it stands, a null-square commit (the gesture's own residue) and a
-      // too-quick scold are swallowed; a commit that names a real square still
-      // plays, so a gesture flowing straight into a chord without a full
-      // release behaves as chord input.
+      // refusal is swallowed; a commit that names a real square still plays, so
+      // a gesture flowing straight into a chord without a full release behaves
+      // as chord input.
       if (wasGesture) gestureLatchRef.current = true;
       const { state, event } = advanceCursor(cursorRef.current, heldNotes, Date.now(), { scheme: liveScheme });
       cursorRef.current = state;
@@ -537,20 +543,16 @@ export function PianoChessGame({
       if (!state.held.length) gestureLatchRef.current = false;
       if (!event) return;
       if (event.type === 'preview') setCursor(event.square);
-      if (event.type === 'too_quick' && !wasGesture && !latched) {
-        setToast({ text: 'Hold the chord a moment longer.', seq: `quick-${Date.now()}` });
-      }
       if (event.type === 'escape') {
         setCursor(null);
         if (gameRef.current.status?.game_over) restart();
         else cancelSelection();
       }
       if (event.type === 'commit') setCursor(null);
-      // Both cursor events feed the selection machine: the pick-up fires on
-      // recognition — while the fingers are still down — and everything else
-      // on release. The gesture latch stays exactly as it was: it solves a
-      // different problem (a staggered cluster release landing as a false
-      // refusal), and both guards are needed.
+      // Preview is visual feedback only. Every chess action waits for the full
+      // release, so a major triad heard while a seventh is still arriving can
+      // never pick up or drop on the triad's square. The gesture latch solves a
+      // separate problem: staggered cluster release landing as a false refusal.
       if (event.type === 'preview' || event.type === 'commit') {
         if (wasGesture || (latched && !event.square)) return;
         const current = gameRef.current;
@@ -578,7 +580,7 @@ export function PianoChessGame({
         // repeating a chord and getting nothing cannot tell whether they were
         // too slow, too fast, or heard as a different square. Log the interval
         // so the next report is answerable from the logs instead of guessed at.
-        if (event.type === 'preview' && !holdingPiece && event.square) {
+        if (event.type === 'commit' && !holdingPiece && event.square) {
           const sameSquare = previous.lastSquare === event.square;
           const elapsed = sameSquare ? at - previous.lastAt : null;
           if (action.type === 'pickup') {
@@ -594,7 +596,7 @@ export function PianoChessGame({
         if (action.type === 'hover') setCursor(action.square);
         if (action.type === 'pickup' || action.type === 'drop') handleSquare(action.square);
         if (action.type === 'refuse') handleSquare(null);
-        // 'none' and 'swallowed' change nothing, deliberately.
+        // 'none' changes nothing, deliberately.
       }
     };
     tick();

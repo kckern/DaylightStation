@@ -344,10 +344,16 @@ describe('narrowing on the board', () => {
   });
 
   it('a held partial chord lights the squares it could still become', () => {
-    // C and E: two notes, not adjacent semitones — it narrows, triggers nothing.
-    mockUsePianoMidiNotes.mockReturnValue({ activeNotes: new Map([[60, {}], [64, {}]]), noteHistory: [] });
-    const { container } = render(<PianoChessGame />);
-    expect(container.querySelectorAll('.chess-board__square--candidate').length).toBeGreaterThan(0);
+    // Use two notes from e2's address: e2 is a playable opening source, so it
+    // remains lit while unavailable squares carrying compatible chords do not.
+    const notes = squareToChord('e2', DEFAULT_CHORD_SCHEME).pitch_classes.slice(0, 2).map((pc) => 60 + pc);
+    mockUsePianoMidiNotes.mockReturnValue({ activeNotes: new Map(notes.map((note) => [note, {}])), noteHistory: [] });
+    const { container } = render(<PianoChessGame gameConfig={{ shuffle_each_turn: false }} />);
+    const lit = [...container.querySelectorAll('.chess-board__square--candidate')]
+      .map((square) => square.getAttribute('data-square'));
+    expect(lit).toContain('e2');
+    expect(lit.every((square) => ['a2', 'b1', 'b2', 'c2', 'd2', 'e2', 'f2', 'g1', 'g2', 'h2'].includes(square)))
+      .toBe(true);
   });
 });
 
@@ -476,8 +482,7 @@ describe('hover before commit', () => {
   it('picks it up when the same square is played twice inside the window', async () => {
     const { container, rerender } = render(makeElement());
     await playChord(rerender, notesFor('e2'));
-    // ~120ms since the first release: the second recognition lands well inside
-    // the window, while the fingers are still down — the release is swallowed.
+    // The second full release lands well inside the window.
     await playChord(rerender, notesFor('e2'));
     expect(heldSquares(container)).toHaveLength(1);
   });

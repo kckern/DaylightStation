@@ -219,6 +219,7 @@ describe('four channels', () => {
     const { container } = render(<ChessBoard fen={START} candidates={['e4', 'e5', 'd4']} cursorSquare="e4" />);
     expect(sq(container, 'e5').className).toContain('chess-board__square--candidate');
     expect(sq(container, 'e4').className).toContain('chess-board__square--cursor');
+    expect(container.querySelectorAll('.chess-board__square--muted')).toHaveLength(0);
   });
 
   it('draws no crosshair lines across the file and rank', () => {

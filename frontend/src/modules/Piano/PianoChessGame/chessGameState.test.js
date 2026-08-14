@@ -294,8 +294,7 @@ describe('chord cursor', () => {
 
     ({ state } = tick(state, [48, 60], 220));
     ({ state } = tick(state, [48, 60], 400));
-    expect(state.preview.escape, 'the leftover octave must not arm an escape').toBeUndefined();
-    expect(state.preview.square).toBe('c1');
+    expect(state.preview, 'release residue must not preview a new address').toBeNull();
 
     expect(tick(state, [], 460).event).toEqual(expect.objectContaining({ type: 'commit', square: 'c1' }));
   });
@@ -307,12 +306,22 @@ describe('chord cursor', () => {
     expect(tick(state, [], 260).event).toEqual({ type: 'escape' });
   });
 
-  it('says so when a chord is tapped too quickly to read', () => {
-    // Pressed and released inside the settle window: previously total silence,
-    // which a child cannot tell apart from a broken piano.
+  it('resolves a complete chord on release even inside the visual settle window', () => {
     let { state } = tick(createCursorState(), [60, 64, 67], 0);
     ({ state } = tick(state, [60, 64, 67], 40));
-    expect(tick(state, [], 60).event).toEqual({ type: 'too_quick' });
+    expect(tick(state, [], 60).event).toEqual(expect.objectContaining({ type: 'commit', square: 'c1' }));
+  });
+
+  it('commits the seventh added after a settled major preview', () => {
+    // B major names b1; Bmaj7 names b7. The triad may settle while the hand is
+    // still being built, but only the fullest shape at release is intent.
+    let { state } = tick(createCursorState(), [59, 63, 66], 0);
+    ({ state } = tick(state, [59, 63, 66], 200));
+    expect(state.preview.square).toBe('b1');
+
+    ({ state } = tick(state, [59, 63, 66, 70], 220));
+    expect(state.preview).toBeNull();
+    expect(tick(state, [], 240).event).toEqual(expect.objectContaining({ type: 'commit', square: 'b7' }));
   });
 
   it('stays silent for a stray single note', () => {

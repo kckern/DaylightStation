@@ -86,7 +86,6 @@
      both be visible on the same square at once — box-shadow itself is set exactly
      once, here, composed from whichever layers the square's classes populate. */
   box-shadow:
-    var(--sq-mute, 0 0 #0000),
     var(--sq-light, 0 0 #0000),
     var(--sq-light-ring, 0 0 #0000),
     var(--sq-mark, 0 0 #0000),
@@ -118,12 +117,6 @@
   --sq-light-ring: inset 0 0 0 2px color-mix(in srgb, var(--cb-accent-glow) 60%, transparent);
 }
 
-/* Out of play for what is currently being spelled. Pulled back with a dark
-   scrim rather than an opacity change: opacity on a grid of 64 buttons is a
-   compositing layer each, which the 2018 tablet cannot afford. */
-.chess-board__square--muted {
-  --sq-mute: inset 0 0 0 100vmax rgb(10 8 12 / 46%);
-}
 /* The one square the chord actually names: the same ring, drawn heavier and at
    full strength, plus a whisper of fill so it still reads from across the room
    without becoming a colour swatch. */
