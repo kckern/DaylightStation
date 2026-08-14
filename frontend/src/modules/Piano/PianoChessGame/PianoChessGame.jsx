@@ -32,8 +32,11 @@ import { advanceCursor, createCursorState } from './chordCursor.js';
 import { applyEvent, createSelection, DOUBLE_WINDOW_MS } from './chordSelection.js';
 import {
   REJECTION_MESSAGES, applySquare, capturedPieces, clearSelection, commitMove,
-  createChessGameState, destinationsFor, isPlayerTurn, playableSources,
+  createChessGameState, destinationsFor, isPlayerTurn, playableSources, takeMoveBack,
 } from './chessGameState.js';
+import {
+  checkTakeback, playerMoveCount, takebackNote, takebackRefusalMessage, willStillCount,
+} from './takebackBudget.js';
 import './PianoChessGame.scss';
 
 /**
@@ -112,7 +115,7 @@ function logger() {
  * square, the prompt names that square's own chord, so the instruction is the
  * literal next thing to play rather than a rule to apply.
  */
-export function promptFor(state, rejection, hoveredChord = null, reading = false) {
+export function promptFor(state, rejection, hoveredChord = null, reading = false, takebackArmed = false) {
   if (state.status?.game_over) {
     if (state.status.outcome === 'checkmate') {
       return state.status.winner === state.playerColor ? 'Checkmate. You win.' : 'Checkmate. Your opponent wins.';
@@ -120,6 +123,9 @@ export function promptFor(state, rejection, hoveredChord = null, reading = false
     return `Draw — ${state.status.outcome.replace(/_/g, ' ')}.`;
   }
   if (rejection) return REJECTION_MESSAGES[rejection.reason] ?? 'Try another chord.';
+  // Before the turn check on purpose: the moment a player wants this most is
+  // while the opponent is still answering the move they regret.
+  if (takebackArmed) return 'Play the octave again to take your move back.';
   if (!isPlayerTurn(state)) return 'Your opponent is thinking.';
   if (state.status?.check) return 'You are in check. Play a chord to answer it.';
   if (state.origin) {
@@ -262,6 +268,31 @@ export function PianoChessGame({
   const gestureLatchRef = useRef(false);
   const gameRef = useRef(game);
   gameRef.current = game;
+  // The takeback is the octave gesture played twice, so the first one has to be
+  // remembered — and remembered ONCE. An earlier design held the window in a
+  // ref and the prompt in a boolean, which is two clocks that drift: re-arming
+  // called setTakebackArmed(true) on a value already true, React bailed out of
+  // the render, the disarm effect never re-ran, and the FIRST octave's timer
+  // then cleared the prompt while the ref had advanced to the second. Under
+  // main-thread jank that lands a rewind with no armed prompt on screen —
+  // exactly the accident the arming step exists to prevent.
+  //
+  // So the timestamp IS the state, and the ref only mirrors it for the tick
+  // (which is mount-stable and cannot read render values), the same way gameRef
+  // mirrors game below.
+  const [armedAt, setArmedAt] = useState(0);
+  const takebackArmed = armedAt > 0;
+  const armedAtRef = useRef(0);
+  armedAtRef.current = armedAt;
+  // Where the cooldown counts from — the player's own move count at the last
+  // takeback, or null when there has not been one this game.
+  const lastTakebackAtRef = useRef(null);
+  // The tick effect and the takeback callback are both mount-stable, so
+  // everything they read of the render's values has to arrive by ref.
+  const chessConfigRef = useRef(null);
+  chessConfigRef.current = chessConfig;
+  const ladderPolicyRef = useRef(null);
+  ladderPolicyRef.current = ladder?.policy ?? null;
 
   // Below the game state on purpose: this effect may recreate it. The initial
   // game is built in the useState initializer — always before this fetch can
@@ -353,7 +384,11 @@ export function PianoChessGame({
   // completes. `best` asks the server at full strength regardless of the rung
   // being played — a hint only as strong as a beginner's opponent is not a hint.
   const [help, setHelp] = useState({ legal: false, best: null });
-  const [helpUsed, setHelpUsed] = useState({ hints: 0, bestMoves: 0 });
+  const [helpUsed, setHelpUsed] = useState({ hints: 0, bestMoves: 0, takebacks: 0 });
+  // The takeback callback is mount-stable, so it cannot close over this render's
+  // helpUsed directly — it reads the tally through this ref instead.
+  const helpUsedRef = useRef(helpUsed);
+  helpUsedRef.current = helpUsed;
   // One best-move request at a time: `help.best` is still null while the server
   // thinks, so without this gate a re-gesture mid-flight would queue a second
   // request (and, worse, a second charge).
@@ -496,7 +531,9 @@ export function PianoChessGame({
     lockedUserRef.current = userId;
     setToast(null);
     setHelp({ legal: false, best: null });
-    setHelpUsed({ hints: 0, bestMoves: 0 });
+    setHelpUsed({ hints: 0, bestMoves: 0, takebacks: 0 });
+    lastTakebackAtRef.current = null;
+    setArmedAt(0);
     setFinishedRecord(null);
     selectionRef.current = createSelection();
     // A best-move ask still in flight belongs to the finished game. Its answer
@@ -507,6 +544,52 @@ export function PianoChessGame({
     startedAtRef.current = Date.now();
     logger().info('restarted');
   }, [fen, gameSeed, playerColor, scheme, shuffleEachTurn, userId]);
+
+  /**
+   * The rewind, budget first.
+   *
+   * The budget is checked before the rules are, so a player out of takebacks is
+   * told that rather than being told there is nothing to take back — two very
+   * different sentences, and only one of them is true.
+   */
+  const attemptTakeback = useCallback(() => {
+    const current = gameRef.current;
+    const used = helpUsedRef.current.takebacks;
+    const since = lastTakebackAtRef.current === null
+      ? null
+      : playerMoveCount(current.history, current.playerColor) - lastTakebackAtRef.current;
+    const check = checkTakeback({ config: chessConfigRef.current, used, movesSinceLast: since });
+    if (!check.allowed) {
+      setToast({ text: takebackRefusalMessage(check), seq: `takeback-${Date.now()}` });
+      logger().info('takeback-refused', { reason: check.reason, remaining: check.remaining });
+      return;
+    }
+
+    const { state, event } = takeMoveBack(current);
+    if (event.type === 'rejected') {
+      setToast({
+        text: REJECTION_MESSAGES[event.reason] ?? 'You cannot take a move back right now.',
+        seq: `takeback-${Date.now()}`,
+      });
+      logger().info('takeback-refused', { reason: event.reason, remaining: check.remaining });
+      return;
+    }
+
+    const willCount = willStillCount({ policy: ladderPolicyRef.current, used });
+    setGame(state);
+    setHelpUsed((prev) => ({ ...prev, takebacks: prev.takebacks + 1 }));
+    lastTakebackAtRef.current = playerMoveCount(state.history, state.playerColor);
+    setToast({
+      text: `Took back ${event.undone.map((entry) => entry.san).join(' and ')}.`,
+      seq: `takeback-${Date.now()}`,
+    });
+    logger().info('takeback', {
+      plies: event.plies,
+      undone_san: event.undone.map((entry) => entry.san),
+      remaining: check.remaining === null ? null : check.remaining - 1,
+      will_count: willCount,
+    });
+  }, []);
 
   const cancelSelection = useCallback(() => {
     setGame((current) => (current.origin ? clearSelection(current) : current));
@@ -548,8 +631,30 @@ export function PianoChessGame({
       if (event.type === 'preview') setCursor(event.square);
       if (event.type === 'escape') {
         setCursor(null);
-        if (gameRef.current.status?.game_over) restart();
-        else cancelSelection();
+        const current = gameRef.current;
+        const at = Date.now();
+        if (current.status?.game_over) {
+          restart();
+        } else if (current.origin) {
+          // A piece in hand is the first thing an octave means, and always has
+          // been. Putting it back also restarts the double window, so the very
+          // next octave arms the takeback rather than firing it.
+          cancelSelection();
+          setArmedAt(0);
+        } else if (armedAtRef.current && at - armedAtRef.current <= DOUBLE_WINDOW_MS) {
+          setArmedAt(0);
+          attemptTakeback();
+        } else {
+          // With nothing in hand this used to do nothing at all, silently. Now
+          // it says what a second one would do — which is both how the gesture
+          // is discovered and why an idle octave can never rewind a game by
+          // accident.
+          // A fresh timestamp every time, so re-arming always re-renders and
+          // always replaces the disarm timer. That is the whole fix for the
+          // two-clock drift described at the state declaration.
+          setArmedAt(at);
+          logger().debug('takeback-armed', { moves_played: current.history.length });
+        }
       }
       if (event.type === 'commit') setCursor(null);
       // Preview is visual feedback only. Every chess action waits for the full
@@ -597,7 +702,13 @@ export function PianoChessGame({
           }
         }
         if (action.type === 'hover') setCursor(action.square);
-        if (action.type === 'pickup' || action.type === 'drop') handleSquare(action.square);
+        if (action.type === 'pickup' || action.type === 'drop') {
+          // What an octave means has just changed: with a piece in hand it puts
+          // the piece back. An arm left standing would promise a rewind that the
+          // next octave will not perform.
+          setArmedAt(0);
+          handleSquare(action.square);
+        }
         if (action.type === 'refuse') handleSquare(null);
         // 'none' changes nothing, deliberately.
       }
@@ -605,7 +716,17 @@ export function PianoChessGame({
     tick();
     const timer = setInterval(tick, CURSOR_TICK_MS);
     return () => clearInterval(timer);
-  }, [cancelSelection, handleSquare, heldKey, heldNotes, liveScheme, restart]);
+  }, [attemptTakeback, cancelSelection, handleSquare, heldKey, heldNotes, liveScheme, restart]);
+
+  // The armed prompt has to expire with the window it describes, or it would
+  // stand there offering a takeback that the next octave no longer performs.
+  useEffect(() => {
+    if (!armedAt) return undefined;
+    const timer = setTimeout(() => setArmedAt(0), DOUBLE_WINDOW_MS);
+    return () => clearTimeout(timer);
+    // Keyed on the TIMESTAMP, not on a boolean: re-arming inside the window
+    // changes armedAt, so this tears down the old timer and starts a new one.
+  }, [armedAt]);
 
   // The opponent answers on a delay so its move reads as a reply, not a flicker.
   // The server is the strong opponent; the bundled engine is what keeps the game
@@ -645,7 +766,8 @@ export function PianoChessGame({
     if (!game.status?.game_over || recordedRef.current) return;
     recordedRef.current = true;
     const record = buildGameRecord({
-      game, rungId, hints: helpUsed.hints, bestMoves: helpUsed.bestMoves,
+      game, rungId, level: ladderLevel,
+      hints: helpUsed.hints, bestMoves: helpUsed.bestMoves, takebacks: helpUsed.takebacks,
       opponent: effectiveOpponentRef.current,
       startedAt: startedAtRef.current, endedAt: Date.now(),
     });
@@ -656,7 +778,7 @@ export function PianoChessGame({
     archiveGame(buildGameArchive({
       game, gameId, userId: lockedUser, rungId, addressing: addressingRef.current,
       opponent: effectiveOpponentRef.current,
-      hints: helpUsed.hints, bestMoves: helpUsed.bestMoves,
+      hints: helpUsed.hints, bestMoves: helpUsed.bestMoves, takebacks: helpUsed.takebacks,
       startedAt: startedAtRef.current, endedAt: Date.now(), endedBy: 'game_over',
     }));
     // Everything but the game-over flag is read at the moment the game ends.
@@ -684,6 +806,17 @@ export function PianoChessGame({
   const hintTargets = help.legal
     ? (game.origin ? destinationsFor(game, game.origin) : playableSources(game))
     : [];
+  // Recomputed every render off the same inputs the callback reads by ref: the
+  // card and the toast the callback would produce must never disagree about
+  // whether a takeback is currently affordable.
+  const takebackCheck = checkTakeback({
+    config: chessConfig,
+    used: helpUsed.takebacks,
+    movesSinceLast: lastTakebackAtRef.current === null
+      ? null
+      : playerMoveCount(game.history, game.playerColor) - lastTakebackAtRef.current,
+  });
+  const takebackWillCount = willStillCount({ policy: ladder?.policy ?? null, used: helpUsed.takebacks });
   // The answer to the pick-up: each eligible square wears the chord that
   // reaches it. Not help and never charged — the double-play that lifted the
   // piece WAS the request. Config can silence it for players who want the
@@ -711,7 +844,8 @@ export function PianoChessGame({
   archiveInputsRef.current = {
     game, gameId, userId: lockedUser, rungId, addressing: addressingRef.current,
     opponent: effectiveOpponentRef.current,
-    hints: helpUsed.hints, bestMoves: helpUsed.bestMoves, startedAt: startedAtRef.current,
+    hints: helpUsed.hints, bestMoves: helpUsed.bestMoves, takebacks: helpUsed.takebacks,
+    startedAt: startedAtRef.current,
   };
   // Only offered when the hovered square really does hold a piece this player
   // can move — naming the double on an empty square would be an instruction
@@ -719,7 +853,7 @@ export function PianoChessGame({
   const pickupChord = !game.origin && cursor && playableSources(game).includes(cursor)
     ? cursorChord?.symbol ?? null
     : null;
-  const prompt = promptFor(game, game.rejection, pickupChord, reading);
+  const prompt = promptFor(game, game.rejection, pickupChord, reading, takebackArmed);
   // The countdown is drawn only where the prompt is actually asking for a
   // repeat: same gate as pickupChord, plus the armed square agreeing with the
   // cursor. A bar running under "play a piece's chord twice" — an instruction
@@ -829,6 +963,19 @@ export function PianoChessGame({
                 note: help.best ? 'showing' : 'counts as help',
                 active: !!help.best,
               },
+              {
+                id: 'takeback',
+                pressed: [0, 12],
+                repeat: 2,
+                title: 'Take it back',
+                note: takebackNote({
+                  check: takebackCheck,
+                  willCount: takebackWillCount,
+                  opponentName: opponent?.name ?? null,
+                }),
+                active: takebackArmed,
+                muted: !takebackCheck.allowed,
+              },
             ]}
           />
 
@@ -836,8 +983,9 @@ export function PianoChessGame({
             <dl className="piano-chess__summary">
               {[
                 ['Moves', finishedRecord.moves],
-                ['Hints', finishedRecord.hints],
-                ['Best moves', finishedRecord.best_moves],
+                ['Hints', finishedRecord.help.hints],
+                ['Best moves', finishedRecord.help.best_moves],
+                ['Takebacks', finishedRecord.help.takebacks],
               ].map(([label, value]) => (
                 <div key={label} className="piano-chess__summary-row">
                   <dt className="piano-chess__slot-label">{label}</dt>
