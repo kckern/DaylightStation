@@ -1,5 +1,5 @@
 import {
-  createGame, describeGame, fenToPosition, legalDestinations, playMove,
+  createGame, describeGame, fenToPosition, legalDestinations, playMove, undoMove,
 } from '@shared-gaming/chess/index.mjs';
 import {
   DEFAULT_CHORD_SCHEME, findChordCollisions, shuffleChordScheme, squareToChord, validateChordScheme,
@@ -91,6 +91,11 @@ export function createChessGameState({
     rejection: null,
     status: describeGame(game),
     history: [],
+    // Moves that were played and then taken back. They leave `history` — that
+    // list is the game being played, and the board, the captured rail and the
+    // move count all read it — but they are the most interesting thing in a
+    // child's game, so they are kept here for the archive rather than dropped.
+    undoneHistory: [],
   };
   return { ...base, scheme: schemeForPly(base, game.moves.length) };
 }
@@ -204,6 +209,66 @@ export function commitMove(state, from, to, promotion = PROMOTION_PIECE) {
   };
 }
 
+/**
+ * Takes the player's last move back, and the opponent's answer with it.
+ *
+ * The unit is the round trip, not the ply. A player who undoes only their own
+ * move lands on a board they never faced — the opponent's reply still standing,
+ * their own piece back home — and there is no way to explain that position to a
+ * child. Rewinding both puts them exactly where they were when they chose.
+ *
+ * Allowed while the opponent is thinking, and that is not an edge case: it is
+ * the moment a player actually notices. Only one ply comes off then, because
+ * the answer has not landed. The opponent effect's own cancellation handles the
+ * request already in flight.
+ *
+ * The chord map needs no special handling. `schemeForPly` is a pure function of
+ * the seed and the turn, so rewinding re-derives exactly the map the player was
+ * reading when they moved — which is the only map their memory of the board
+ * matches.
+ */
+export function takeMoveBack(state) {
+  if (state.status?.game_over) return reject(state, 'game_over', null);
+
+  const history = state.history;
+  // An explicit reverse walk rather than findLastIndex: the kiosk runs a 2018
+  // WebView, and this is on the path of a gesture that must never throw.
+  let lastOwnIndex = -1;
+  for (let i = history.length - 1; i >= 0; i -= 1) {
+    if (history[i].color === state.playerColor) { lastOwnIndex = i; break; }
+  }
+  if (lastOwnIndex < 0) return reject(state, 'nothing_to_take_back', null);
+
+  const plies = history.length - lastOwnIndex;
+  let game = state.game;
+  for (let i = 0; i < plies; i += 1) game = undoMove(game);
+
+  const undone = history.slice(lastOwnIndex).map((entry, offset) => ({
+    ...entry,
+    ply: lastOwnIndex + offset + 1,
+    // Both plies of one rewind share this, which is what groups them back
+    // together when the archive is read.
+    undone_at_ply: history.length,
+  }));
+  const nextHistory = history.slice(0, lastOwnIndex);
+  const previous = nextHistory.length ? nextHistory[nextHistory.length - 1] : null;
+
+  const next = {
+    ...state,
+    game,
+    origin: null,
+    rejection: null,
+    lastMove: previous ? { from: previous.from, to: previous.to } : null,
+    status: describeGame(game),
+    history: nextHistory,
+    undoneHistory: [...(state.undoneHistory || []), ...undone],
+  };
+  return {
+    state: { ...next, scheme: schemeForPly(next, game.moves.length) },
+    event: { type: 'took_back', plies, restoredFen: game.fen, undone },
+  };
+}
+
 /** Captured material, for the side rails. */
 export function capturedPieces(history) {
   const captured = { w: [], b: [] };
@@ -223,4 +288,5 @@ export const REJECTION_MESSAGES = Object.freeze({
   not_your_piece: 'That piece belongs to your opponent.',
   piece_is_stuck: 'That piece has nowhere to go.',
   illegal_destination: 'That piece cannot reach that square.',
+  nothing_to_take_back: 'There is nothing to take back yet.',
 });
