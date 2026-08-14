@@ -8,14 +8,15 @@ import { validateMilestone } from '#domains/school/milestones.mjs';
 import { ValidationError } from '#domains/core/errors/index.mjs';
 
 export class SetMilestones {
-  #store; #teacherGate; #clock;
+  #store; #teacherGate; #clock; #logger;
 
-  constructor({ store, teacherGate, clock = () => new Date() } = {}) {
+  constructor({ store, teacherGate, clock = () => new Date(), logger = console } = {}) {
     if (!store) throw new Error('SetMilestones requires store');
     if (!teacherGate) throw new Error('SetMilestones requires teacherGate');
     this.#store = store;
     this.#teacherGate = teacherGate;
     this.#clock = clock;
+    this.#logger = logger;
   }
 
   async execute({ learnerId, milestones, editedBy = null, pin = null, baseHistoryLength = undefined } = {}) {
@@ -37,6 +38,9 @@ export class SetMilestones {
       throw new ValidationError('Milestones changed since you loaded them — reload and try again.');
     }
     await this.#store.replaceForLearner(learnerId, validated, { editedBy, at: this.#clock().toISOString() });
+    this.#logger.info?.('school.milestones.updated', {
+      learnerId, editedBy, count: validated.length,
+    });
     return { milestones: validated };
   }
 }

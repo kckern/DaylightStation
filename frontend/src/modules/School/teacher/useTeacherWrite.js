@@ -22,7 +22,12 @@ export function useTeacherWrite({ panel }) {
     setErrors((e) => ({ ...e, [key]: null }));
     const { ok, status, data } = await call({ actorId, pin: usePin });
     setBusy(null);
-    if (ok) { pendingRef.current = null; onSuccess?.(data); return true; }
+    if (ok) {
+      pendingRef.current = null;
+      teacherLog.write('saved', { panel, key, actorId });
+      onSuccess?.(data);
+      return true;
+    }
     const message = typeof data?.error === 'string' ? data.error : data?.error?.message;
     if (status === 403) {
       pendingRef.current = { key, call, onSuccess, pinAtStash: usePin, hadTeacher: true };
@@ -32,13 +37,18 @@ export function useTeacherWrite({ panel }) {
       pendingRef.current = null;
       setErrors((e) => ({ ...e, [key]: message ?? 'That didn’t save — try again.' }));
     }
-    teacherLog.fetch('write-refused', { panel, key, status });
+    // 403 is not a failure, it is the PIN gate doing its job and the write is
+    // stashed for replay; anything else is a genuine refusal the teacher has to
+    // act on. Distinguishing them is the difference between "the console is
+    // broken" and "someone needs to type a PIN".
+    teacherLog.writeRefused(status === 403 ? 'blocked-on-pin' : 'refused', { panel, key, status, actorId });
     return false;
   }, [openPinPrompt, panel]);
 
   const run = useCallback(async (key, call, { onSuccess } = {}) => {
     if (!currentTeacher) {
       pendingRef.current = { key, call, onSuccess, pinAtStash: pin, hadTeacher: false };
+      teacherLog.writeRefused('blocked-on-claim', { panel, key });
       openPicker();
       return;
     }
@@ -62,8 +72,14 @@ export function useTeacherWrite({ panel }) {
     }
     const dismissed = (pending.hadTeacher && !pinPromptOpen && pin === pending.pinAtStash)
       || (!pending.hadTeacher && !pickerOpen && !currentTeacher);
-    if (dismissed) pendingRef.current = null;
-  }, [currentTeacher, pin, pinPromptOpen, pickerOpen, attempt]);
+    if (dismissed) {
+      // The teacher walked away from the picker or the PIN prompt, so a tap
+      // they made never became a write. Nothing failed and nothing saved —
+      // without this line that intent leaves no trace anywhere.
+      teacherLog.writeRefused('stash-dropped', { panel, key: pending.key });
+      pendingRef.current = null;
+    }
+  }, [currentTeacher, pin, pinPromptOpen, pickerOpen, attempt, panel]);
 
   return { run, busy, errors };
 }

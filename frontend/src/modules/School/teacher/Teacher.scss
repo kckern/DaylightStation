@@ -867,13 +867,145 @@
   thead th.is-unenrolled { color: #a15b16; }
   td.is-assigned { color: #3d6a3d; font-weight: 800; }
 }
-.teacher-matrix__flag { color: #a15b16; }
+// Every matrix cell is a <button> (including empty, unassigned intersections)
+// so the whole grid is keyboard/tap reachable — reset it to read as table
+// text, not a default browser button, while keeping a visible clickable cue.
+.teacher-matrix__cell {
+  display: block;
+  width: 100%;
+  margin: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 0.3rem 0.4rem;
+  cursor: pointer;
+
+  &:hover, &:focus-visible {
+    background: #fbf4e6;
+  }
+  &:focus-visible {
+    outline: 2px solid #b8873b;
+    outline-offset: -2px;
+  }
+}
 .teacher-matrix__dead { margin-top: 0.5rem; padding: 0.5rem 0.75rem; border-radius: 10px; background: #f8e3df; color: #6b201a;
   p { margin: 0; font-weight: 700; }
   ul { margin: 0.3rem 0 0; padding-left: 1.1rem; }
 }
 .teacher-matrix__note { margin: 0.4rem 0 0; color: #6b5111; font-weight: 700; }
 .teacher-matrix__note--orphan { color: #6b201a; }
+
+// The enrollment editor for one learner × one course (rendered inline below
+// the matrix, which has no backdrop) — a bordered, raised panel so it reads
+// as its own surface rather than more grid.
+.teacher-drawer {
+  margin-top: 0.6rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid #e8e1d2;
+  border-radius: 12px;
+  background: #fffdf8;
+  box-shadow: 0 2px 8px rgba(43, 38, 32, 0.08);
+  font-size: 0.85rem;
+
+  &__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 0.5rem;
+
+    h3 { margin: 0; font-size: 0.95rem; }
+
+    button {
+      border: none;
+      background: transparent;
+      color: #8a8272;
+      font-size: 1rem;
+      line-height: 1;
+      cursor: pointer;
+      padding: 2px 4px;
+
+      &:hover { color: #2b2620; }
+    }
+  }
+
+  &__facts {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.2rem 0.6rem;
+    margin: 0 0 0.6rem;
+
+    dt { color: #8a8272; font-weight: 700; }
+    dd { margin: 0; }
+    em { color: #8a8272; font-style: italic; }
+  }
+
+  &__note {
+    margin: 0 0 0.6rem;
+    padding: 0.4rem 0.6rem;
+    border-radius: 8px;
+    background: #f4e9d2;
+    color: #6d5527;
+  }
+
+  &__pick {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-bottom: 0.6rem;
+    font-weight: 700;
+    color: #4a4335;
+
+    select {
+      border: 1px solid #e0d8c8;
+      background: #fff;
+      border-radius: 8px;
+      padding: 6px 8px;
+      font-size: 0.85rem;
+      font-weight: 400;
+    }
+  }
+
+  &__actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+
+    button {
+      min-height: 36px;
+      border: 1px solid #d9bfae;
+      background: #fff;
+      border-radius: 8px;
+      padding: 4px 12px;
+      font-size: 0.85rem;
+      cursor: pointer;
+
+      &:disabled { opacity: 0.5; cursor: not-allowed; }
+    }
+  }
+}
+
+// Work belonging to no course (program units, course-less curriculum units) —
+// modest list styling consistent with sibling read-only panels.
+.teacher-standalone {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 0.85rem;
+
+  li { padding: 2px 0; }
+}
+
+.teacher-assignments__enrolled-note {
+  margin: 0.3rem 0 0;
+  padding: 0.35rem 0.6rem;
+  border-radius: 8px;
+  background: #f7f3e9;
+  color: #5d5647;
+  font-size: 0.78rem;
+  font-style: italic;
+}
 
 .teacher-stale { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
 .teacher-stale__row { display: flex; flex-wrap: wrap; gap: 0.5rem 0.75rem; align-items: center; padding: 0.4rem 0; border-bottom: 1px solid #eee4cf; }

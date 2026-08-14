@@ -164,7 +164,7 @@ export class PrintService {
     const verdict = evaluatePrintQuota({ recentJobs, pages, now: this.#now(), policy: this.#policy });
 
     if (verdict.decision === 'deny') {
-      this.#logger.warn?.('school.print.denied', { userId, printableId, pages, reason: verdict.reason });
+      this.#logger.warn?.('school.print.denied', { learnerId: userId, printableId, pages, reason: verdict.reason });
       return { decision: 'deny', pages, reason: verdict.reason };
     }
 
@@ -177,13 +177,13 @@ export class PrintService {
         status: 'pending',
       };
       this.#ds.savePrintPending([...this.#ds.readPrintPending(), req]);
-      this.#logger.info?.('school.print.approval-requested', { requestId: req.id, userId, printableId, pages });
+      this.#logger.info?.('school.print.approval-requested', { requestId: req.id, learnerId: userId, printableId, pages });
       return { decision: 'approval', pages, requestId: req.id, reason: verdict.reason };
     }
 
     await this.#print(pdf, { jobName: `${def.label} — ${this.#studentName(userId) || userId}`, user: userId, copies: nCopies });
     this.#ds.appendPrintLog({ at: new Date(this.#now()).toISOString(), userId, printableId, pages, label: def.label });
-    this.#logger.info?.('school.print.printed', { userId, printableId, pages });
+    this.#logger.info?.('school.print.printed', { learnerId: userId, printableId, pages });
     return { decision: 'printed', pages, remaining: Math.max(0, this.#policy.pagesPerWindow - verdict.pagesInWindow - pages) };
   }
 
@@ -207,7 +207,7 @@ export class PrintService {
 
     this.#ds.savePrintPending(pending.filter((r) => r.id !== requestId));
     this.#ds.appendPrintLog({ at: new Date(this.#now()).toISOString(), userId: req.userId, printableId: req.printableId, pages: req.pages, label: def.label, approvedBy: approver });
-    this.#logger.info?.('school.print.approved', { requestId, approver, userId: req.userId, pages: req.pages });
+    this.#logger.info?.('school.print.approved', { requestId, approver, learnerId: req.userId, pages: req.pages });
     return { decision: 'printed', pages: req.pages };
   }
 
@@ -229,7 +229,7 @@ export class PrintService {
       .map((r) => (r.id === requestId ? { ...r, status: 'denied', deniedBy: approver, deniedAt } : r))
       .filter((r) => r.status !== 'denied' || Date.parse(r.deniedAt ?? deniedAt) >= cutoff);
     this.#ds.savePrintPending(next);
-    this.#logger.info?.('school.print.denied-by-parent', { requestId, approver, userId: req.userId });
+    this.#logger.info?.('school.print.denied-by-parent', { requestId, approver, learnerId: req.userId });
     return { decision: 'denied' };
   }
 

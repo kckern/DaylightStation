@@ -25,7 +25,7 @@ process.on('unhandledRejection', (reason) => {
 import { initConfigService, ConfigValidationError, configService } from '#system/config/index.mjs';
 import { hydrateProcessEnvFromConfigs, loadLoggingConfig, resolveLoggerLevel, getLoggingTags, resolveLogglyToken } from '#system/logging/config.mjs';
 import { initializeLogging } from '#system/logging/dispatcher.mjs';
-import { createConsoleTransport, createFileTransport, createLogglyTransport, initSessionFileTransport, initSessionEventsFileTransport } from '#system/logging/transports/index.mjs';
+import { createConsoleTransport, createFileTransport, createLogglyTransport, initSessionFileTransport, initSessionEventsFileTransport, createSchoolLedgerTransport } from '#system/logging/transports/index.mjs';
 import { createLogger } from '#system/logging/logger.mjs';
 
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
@@ -128,6 +128,16 @@ async function main() {
     baseDir: join(mediaDir, 'logs'),
     maxAgeDays: 30
   });
+
+  // School ledger - dated JSONL of every `school.*` event, so a term's worth of
+  // issuance, grading and enrollment history outlives a container restart. In
+  // Docker the only other transports are console and Loggly, which meant the
+  // School record lived in stdout and a redeploy erased the evidence for the
+  // very problem that prompted it.
+  dispatcher.addTransport(createSchoolLedgerTransport({
+    baseDir: join(mediaDir, 'logs'),
+    maxAgeDays: 400
+  }));
 
   const logger = createLogger({
     source: 'backend',

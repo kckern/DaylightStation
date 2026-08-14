@@ -86,7 +86,7 @@ export class YamlAssignmentStore extends IAssignmentStore {
 
   #markHistoryCorrupt(learnerId) {
     this.#corruptHistory.add(learnerId);
-    this.#logger.warn?.('school.assignments.history-corrupt', { learnerId, file: this.#historyFileFor(learnerId) });
+    this.#logger.error?.('school.assignments.history-corrupt', { learnerId, file: this.#historyFileFor(learnerId) });
   }
 
   /**
@@ -127,7 +127,7 @@ export class YamlAssignmentStore extends IAssignmentStore {
 
   #markCurrentCorrupt(learnerId) {
     this.#corruptCurrent.add(learnerId);
-    this.#logger.warn?.('school.assignments.file-corrupt', { learnerId, file: this.#fileFor(learnerId) });
+    this.#logger.error?.('school.assignments.file-corrupt', { learnerId, file: this.#fileFor(learnerId) });
   }
 
   /** Atomically replace a YAML file: write beside it, then rename over it. */

@@ -3343,7 +3343,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const schoolAttestations = new YamlAttestationLog({ configService, logger: rootLogger.child({ module: 'school-attestations' }) });
   const schoolTeacherNotes = new YamlTeacherNotes({ configService, logger: rootLogger.child({ module: 'school-teacher-notes' }) });
   const recordAttestation = new RecordAttestation({ log: schoolAttestations, teacherGate: schoolTeacherGate, notes: schoolTeacherNotes });
-  const recordTeacherNote = new RecordTeacherNote({ notes: schoolTeacherNotes, teacherGate: schoolTeacherGate });
+  const recordTeacherNote = new RecordTeacherNote({ notes: schoolTeacherNotes, teacherGate: schoolTeacherGate, logger: rootLogger.child({ module: 'school-planning' }) });
   // Task 12 (debt M5): reassignments write their own audit trail — a
   // best-effort append that never blocks or unwinds the move itself.
   const schoolReassignmentLog = new YamlReassignmentLog({ configService, logger: rootLogger.child({ module: 'school-reassignments' }) });
@@ -3356,6 +3356,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     stores: { enrichment: schoolEnrichmentLog, attestation: schoolAttestations, note: schoolTeacherNotes },
     teacherGate: schoolTeacherGate,
     notes: schoolTeacherNotes,
+    logger: rootLogger.child({ module: 'school-planning' }),
   });
   const { GetTranscript } = await import('#apps/school/usecases/GetTranscript.mjs');
   const getTranscript = new GetTranscript({ reportCardsStore: schoolDatastore });
@@ -3367,6 +3368,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const setAcademicPeriods = new SetAcademicPeriods({
     store: schoolAcademicPeriods,
     teacherGate: schoolTeacherGate,
+    logger: rootLogger.child({ module: 'school-planning' }),
     // Frozen-card guard (admin advocacy #15): the roster-wide set of periodIds
     // holding a FROZEN card — removing/renaming one of those ids is refused.
     frozenPeriodIds: async () => {
@@ -3381,15 +3383,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     },
   });
   const setPassOverride = schoolLifecycle.passOverrides
-    ? new SetPassOverride({ store: schoolLifecycle.passOverrides, teacherGate: schoolTeacherGate })
+    ? new SetPassOverride({ store: schoolLifecycle.passOverrides, teacherGate: schoolTeacherGate, logger: rootLogger.child({ module: 'school-planning' }) })
     : null;
-  const setMilestones = new SetMilestones({ store: schoolMilestoneStore, teacherGate: schoolTeacherGate });
+  const setMilestones = new SetMilestones({ store: schoolMilestoneStore, teacherGate: schoolTeacherGate, logger: rootLogger.child({ module: 'school-planning' }) });
   const milestoneStatuses = new GetMilestoneStatuses({
     store: schoolMilestoneStore, sessions: schoolLifecycle.stores?.sessions ?? null,
     attestations: schoolAttestations,
     timezone: configService.getTimezone?.() || null,
   });
-  const recordEnrichment = new RecordEnrichment({ log: schoolEnrichmentLog, teacherGate: schoolTeacherGate });
+  const recordEnrichment = new RecordEnrichment({ log: schoolEnrichmentLog, teacherGate: schoolTeacherGate, logger: rootLogger.child({ module: 'school-planning' }) });
   // Wave-4 records: the progress-report read model + the two renderers.
   let getProgressReport = null;
   if (getReportCard) {

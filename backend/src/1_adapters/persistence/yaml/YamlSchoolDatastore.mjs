@@ -351,7 +351,7 @@ export class YamlSchoolDatastore {
     const base = path.join(dir, dayStr);
     const read = this.#readAttemptShard(base);
     if (read.state === 'corrupt') {
-      this.#logger.warn?.('school.attempts.shard-corrupt', { file: read.file });
+      this.#logger.error?.('school.attempts.shard-corrupt', { file: read.file });
     }
     return read.rows;
   }
@@ -378,7 +378,7 @@ export class YamlSchoolDatastore {
   #readAttemptDayFile(dir, filename) {
     const read = this.#readAttemptShard(path.join(dir, filename.replace(/\.yml$/, '')));
     if (read.state === 'corrupt') {
-      this.#logger.warn?.('school.attempts.shard-corrupt', { file: read.file });
+      this.#logger.error?.('school.attempts.shard-corrupt', { file: read.file });
     }
     return read.rows;
   }

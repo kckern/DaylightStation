@@ -3,7 +3,7 @@
  * validate-and-replace with history; a refusal or a bad period writes nothing.
  */
 export class SetAcademicPeriods {
-  #store; #teacherGate; #frozenPeriodIds; #clock;
+  #store; #teacherGate; #frozenPeriodIds; #clock; #logger;
 
   /**
    * @param {(() => Promise<Iterable<string>>)|null} [deps.frozenPeriodIds] -
@@ -11,13 +11,14 @@ export class SetAcademicPeriods {
    *   Removing (or renaming, which reads as remove+add) such an id strands
    *   every frozen card keyed to it (admin advocacy #15) — refused BY NAME.
    */
-  constructor({ store, teacherGate, frozenPeriodIds = null, clock = () => new Date() } = {}) {
+  constructor({ store, teacherGate, frozenPeriodIds = null, clock = () => new Date(), logger = console } = {}) {
     if (!store) throw new Error('SetAcademicPeriods requires store');
     if (!teacherGate) throw new Error('SetAcademicPeriods requires teacherGate');
     this.#store = store;
     this.#teacherGate = teacherGate;
     this.#frozenPeriodIds = typeof frozenPeriodIds === 'function' ? frozenPeriodIds : null;
     this.#clock = clock;
+    this.#logger = logger;
   }
 
   async execute({ periods, editedBy = null, pin = null, baseHistoryLength = undefined } = {}) {
@@ -48,6 +49,9 @@ export class SetAcademicPeriods {
     }
     const validated = await this.#store.replacePeriods(periods, {
       editedBy, at: this.#clock().toISOString(),
+    });
+    this.#logger.info?.('school.periods.updated', {
+      editedBy, count: Array.isArray(validated) ? validated.length : 0,
     });
     return { periods: validated };
   }

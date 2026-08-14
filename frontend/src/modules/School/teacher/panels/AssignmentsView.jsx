@@ -20,6 +20,22 @@ import { labelize } from '../labelize.js';
 const idOf = (entry, key) => (typeof entry === 'string' ? entry : entry?.[key] ?? null);
 const idsOf = (list, key) => (list ?? []).map((e) => idOf(e, key)).filter(Boolean);
 
+/**
+ * A save must round-trip whatever the record already held. An entry may carry
+ * `profile` and a `school.course-enrollment/v1` block (module order, optional
+ * modules, a frozen lessonOrder) which this panel neither renders nor
+ * understands — flattening it to a bare id silently destroys the enrollment.
+ * Checked ids that already had an object entry keep that entire object.
+ */
+export function mergeEntries(originalEntries, checkedIds, key) {
+  const byId = new Map();
+  (originalEntries ?? []).forEach((entry) => {
+    const id = idOf(entry, key);
+    if (id) byId.set(id, entry);
+  });
+  return checkedIds.map((id) => byId.get(id) ?? id);
+}
+
 export default function AssignmentsView({ learnerId, learnerName }) {
   const record = usePanelFetch(() => schoolApi.assignments(learnerId), {
     deps: [learnerId],
@@ -54,7 +70,10 @@ export default function AssignmentsView({ learnerId, learnerName }) {
   }));
 
   const save = () => run('save', ({ actorId, pin }) => schoolApi.putAssignments(learnerId, {
-    courses: draft.courses, units: draft.units, assignedBy: actorId, pin,
+    courses: mergeEntries(record.data?.courses, draft.courses, 'courseId'),
+    units: mergeEntries(record.data?.units, draft.units, 'unitId'),
+    assignedBy: actorId,
+    pin,
     // Concurrent-edit guard (B14): what we LOADED; a stale save is refused
     // with a friendly reload message instead of silently clobbering.
     baseUpdatedAt: record.data?.updatedAt ?? null,
@@ -112,6 +131,15 @@ export default function AssignmentsView({ learnerId, learnerName }) {
                 {!courseIds.includes(id) && <span className="teacher-assignments__stale-tag">not in catalog</span>}
               </label>
             ))}
+            {idsOf(record.data?.courses, 'courseId')
+              .filter((id) => (record.data.courses ?? []).some(
+                (e) => typeof e === 'object' && e?.courseId === id && e.enrollment,
+              ))
+              .map((id) => (
+                <p key={`enr-${id}`} className="teacher-assignments__enrolled-note">
+                  {labelize(id)} has an enrollment — order and profile are edited from The whole school.
+                </p>
+              ))}
           </div>
           <div className="teacher-assignments__group">
             <h3>Standalone units</h3>
