@@ -70,3 +70,14 @@ describe('PianoConnectFour opponent pacing', () => {
     expect(requestConnectFourMove).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('PianoConnectFour address rail', () => {
+  it('renders seven staff cards above the board and drops the text legend', () => {
+    const { container } = render(<PianoConnectFour activeNotes={new Map()} />);
+    const topRail = container.querySelector('.instrument-board-stage__top-rail .address-rail');
+    expect(topRail).toBeTruthy();
+    expect(topRail.querySelectorAll('.address-rail__card')).toHaveLength(7);
+    // The board now says it — the old "1: C  2: D ..." panel legend is gone.
+    expect(container.querySelector('.connect-four-key')).toBeFalsy();
+  });
+});

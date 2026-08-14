@@ -3,8 +3,10 @@ import { chooseColumn } from '@shared-gaming/connect-four/opponent.mjs';
 import { playColumn, replayGame } from '@shared-gaming/connect-four/engine.mjs';
 import PianoGameHost from '../game-platform/host/PianoGameHost.jsx';
 import InstrumentBoardStage from '../game-platform/families/addressed-board/InstrumentBoardStage.jsx';
+import AddressRail from '../game-platform/families/addressed-board/AddressRail.jsx';
 import { BOARD_LAYOUTS } from '../game-platform/families/addressed-board/contracts.js';
 import { thinkTimeFor, useOpponentReply } from '../game-platform/opponent/opponentPacing.js';
+import { noteName } from '../PianoChessGame/staffAddress.js';
 import {
   archiveConnectFourGame, fetchConnectFourConfig, fetchConnectFourLadder,
   requestConnectFourMove, saveConnectFourConfig, saveConnectFourGame,
@@ -23,7 +25,6 @@ const LADDER_LEVELS = 7;
 // mirrors chess's own OPPONENT_DELAY_MS fallback constant.
 const OPPONENT_THINK_FALLBACK_MS = 700;
 const ROOTS = [0, 2, 4, 5, 7, 9, 11];
-const NOTE_NAMES = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
 
 function userIdOf(currentUser) {
   const value = typeof currentUser === 'string' ? currentUser : currentUser?.id;
@@ -51,6 +52,26 @@ export function addressedColumn(active, config, deal) {
   }
   const index = config.column_notes.findIndex((note) => note === notes.at(-1) || note % 12 === notes.at(-1) % 12);
   return index < 0 ? null : deal[index];
+}
+
+/**
+ * The rail's cards, in COLUMN order — not address order.
+ *
+ * `deal[address] = column`, so a shuffled game moves which note plays which
+ * column while `config.column_notes` itself never changes. A rail drawn in
+ * address order would show the SAME seven cards regardless of the deal, which
+ * is exactly backwards: the rail sits over the board, so card N has to name
+ * whatever note actually drops a disc into column N right now — inverting the
+ * deal is what makes that true instead of coincidental.
+ */
+export function columnAddresses(config, deal) {
+  const addressByColumn = [];
+  deal.forEach((column, address) => { addressByColumn[column] = address; });
+  return addressByColumn.map((address) => ({
+    midi: config.column_notes[address],
+    label: noteName(config.column_notes[address]),
+    chord: config.column_chords?.[address] ?? null,
+  }));
 }
 
 function Board({ game, hint }) {
@@ -170,6 +191,14 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
     ? game.status.draw ? 'Draw game' : game.status.winner === 1 ? 'You connected four!' : `${ladder?.current?.name ?? 'Opponent'} wins`
     : thinking ? `${ladder?.current?.name ?? 'Opponent'} is thinking…` : 'Play the key for a column';
 
+  // The rail's own cards, one per column, already inverted through the deal —
+  // see columnAddresses. The active card follows whatever the held keys
+  // currently address, the SAME resolution the drop itself uses a moment
+  // later, so the highlight never promises a column the drop would disagree
+  // with.
+  const railAddresses = useMemo(() => columnAddresses(config, deal), [config, deal]);
+  const hoveredColumn = addressedColumn(activeNotes, config, deal);
+
   return (
     <PianoGameHost
       gameId="connect-four"
@@ -179,6 +208,7 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
     >
       <InstrumentBoardStage
         layout={BOARD_LAYOUTS.SINGLE}
+        topRail={<AddressRail addresses={railAddresses} orientation="horizontal" active={hoveredColumn} />}
         primary={<Board game={game} hint={hint} />}
         leftRail={(
           <div className="connect-four-opponent">
@@ -196,9 +226,11 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
               </select>
             </label>
             <label><input type="checkbox" checked={config.shuffle_each_game} onChange={(event) => updateConfig({ shuffle_each_game: event.target.checked })} /> Re-deal columns</label>
-            <div className="connect-four-key">
-              {deal.map((column, address) => <span key={column}>{column + 1}: {config.input_mode === 'chords' ? config.column_chords[address] : NOTE_NAMES[config.column_notes[address] % 12]}</span>)}
-            </div>
+            {/* The text legend used to live here ("1: C  2: D  ..."), tucked in
+                a settings panel the player has to open and read while their
+                hands are off the keys. The rail above the board says the same
+                thing where it actually helps — over each column, all the
+                time, in the vocabulary the player is learning. */}
             <small>Play seven notes together for a hint.</small>
           </div>
         )}

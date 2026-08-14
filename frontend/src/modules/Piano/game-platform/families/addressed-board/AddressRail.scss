@@ -1,0 +1,49 @@
+/**
+ * The rail: a strip of address cards along one axis of a board.
+ *
+ * Horizontal (a file rail, a column rail) lays cards left-to-right; vertical
+ * (a rank rail) lays them top-to-bottom. Both are equal-share flex tracks —
+ * every card the same size — because an axis where one label is bigger than
+ * its neighbours reads as "this one matters more," which is never the intent.
+ */
+.address-rail {
+  display: flex;
+  gap: 0.4rem;
+  min-width: 0;
+  min-height: 0;
+}
+
+.address-rail--horizontal {
+  flex-direction: row;
+  width: 100%;
+}
+
+.address-rail--vertical {
+  flex-direction: column;
+  height: 100%;
+}
+
+.address-rail__card {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  /* transform/opacity only — filter is a documented frame-rate killer on the
+     piano tablet, so the active highlight is a lift-and-glow, never a blur. */
+  transform: translateY(0) scale(1);
+  transition: transform 120ms ease-out, opacity 120ms ease-out;
+  opacity: 0.82;
+}
+
+.address-rail__card--active {
+  opacity: 1;
+  transform: translateY(-0.08rem) scale(1.05);
+}
+
+.address-rail__text {
+  font-weight: 700;
+  font-size: clamp(0.7rem, 2.2cqh, 1.1rem);
+  color: var(--piano-fg, #fffad9);
+  text-align: center;
+}
