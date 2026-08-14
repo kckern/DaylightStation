@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { OPS, encodeRequest, decodeResponse, printJobAttrs } from '../../../../backend/src/1_adapters/hardware/laser-printer/ipp.mjs';
+import {
+  OPS, encodeRequest, decodeResponse, printJobAttrs,
+} from '../../../../backend/src/1_adapters/hardware/laser-printer/ipp.mjs';
 
 describe('IPP encodeRequest', () => {
   it('emits version 1.1, the operation, request-id, and the document after end-of-attributes', () => {
@@ -84,6 +86,58 @@ describe('IPP encodeRequest', () => {
       expect(decoded.attrs.sides).toEqual(['one-sided']);
       expect(decoded.attrs.media).toEqual(['na_letter_8.5x11in']);
     });
+  });
+});
+
+describe('IPP Validate-Job (RFC 8011 §3.2.3, Incident #3) — same encoding as Print-Job, no document', () => {
+  it('OPS.VALIDATE_JOB is operation code 0x0004', () => {
+    expect(OPS.VALIDATE_JOB).toBe(0x0004);
+  });
+
+  it('encodes with the SAME operation-attribute bytes a Print-Job for the same job would carry — only the operation code and the absence of a document differ', () => {
+    const attrs = printJobAttrs('ipp://p:631/ipp/print', {
+      user: 'learner-two',
+      jobName: 'ws',
+      documentFormat: 'image/urf',
+      jobAttributes: { printColorMode: 'monochrome', media: 'na_letter_8.5x11in' },
+    });
+    const printBuf = encodeRequest(OPS.PRINT_JOB, attrs, Buffer.from('raster-bytes'), 5);
+    const validateBuf = encodeRequest(OPS.VALIDATE_JOB, attrs, null, 5);
+    const printHead = printBuf.subarray(0, printBuf.length - Buffer.from('raster-bytes').length);
+
+    // Identical byte-for-byte except the 2-byte operation code at offset 2
+    // — this is the whole reason Validate-Job can be trusted as a stand-in
+    // for "would Print-Job with this exact job succeed": it IS the same
+    // request, operation code and document bytes aside.
+    expect(printBuf.readUInt16BE(2)).toBe(OPS.PRINT_JOB);
+    expect(validateBuf.readUInt16BE(2)).toBe(OPS.VALIDATE_JOB);
+    expect(validateBuf.subarray(0, 2).equals(printHead.subarray(0, 2))).toBe(true); // version
+    expect(validateBuf.subarray(4).equals(printHead.subarray(4))).toBe(true); // request-id + all attributes + end tag
+  });
+
+  it('carries no document bytes — encodeRequest called with document=null appends nothing after the end-of-attributes tag', () => {
+    const attrs = printJobAttrs('ipp://p/ipp/print', { user: 'u', jobName: 'j', documentFormat: 'image/pwg-raster' });
+    const buf = encodeRequest(OPS.VALIDATE_JOB, attrs, null, 1);
+    const endTagIndex = buf.indexOf(0x03, 8);
+    expect(endTagIndex).toBe(buf.length - 1); // end-of-attributes is the LAST byte — nothing trails it
+  });
+
+  it('still requires an explicit documentFormat — the same guard as Print-Job, since printJobAttrs is shared', () => {
+    expect(() => encodeRequest(OPS.VALIDATE_JOB, printJobAttrs('ipp://p/ipp/print', { user: 'u', jobName: 'j' })))
+      .toThrow(/documentFormat/i);
+  });
+
+  it('carries the sides/media/etc. job attributes exactly like Print-Job — decodable the same way', () => {
+    const attrs = printJobAttrs('ipp://p/ipp/print', {
+      user: 'u',
+      jobName: 'j',
+      documentFormat: 'image/urf',
+      jobAttributes: { sides: 'one-sided', media: 'na_letter_8.5x11in' },
+    });
+    const buf = encodeRequest(OPS.VALIDATE_JOB, attrs, null, 1);
+    const decoded = decodeResponse(buf); // frame layout is identical to a response; see this suite's own header note
+    expect(decoded.attrs.sides).toEqual(['one-sided']);
+    expect(decoded.attrs.media).toEqual(['na_letter_8.5x11in']);
   });
 });
 

@@ -14,6 +14,7 @@
 
 export const OPS = {
   PRINT_JOB: 0x0002,
+  VALIDATE_JOB: 0x0004,
   GET_PRINTER_ATTRIBUTES: 0x000b,
 };
 
@@ -113,11 +114,22 @@ export function baseAttrs(printerUri, user) {
  * @param {string} params.jobName
  * @param {number} [params.copies]
  * @param {string} params.documentFormat
- * @param {Object} [params.jobAttributes] - output of negotiate.mjs's `chooseJobAttributes`:
- *   already filtered to only the names the printer's own
- *   `job-creation-attributes-supported` listed. This function does not
- *   re-decide whether to send any of these — that decision, like the format
- *   decision above, belongs to negotiate.mjs; this is pure wire encoding.
+ * @param {Object} [params.jobAttributes] - output of negotiate.mjs's `chooseJobAttributes`
+ *   (trimmed further by `LaserPrinterAdapter#negotiateJobAttributes`, see
+ *   that module's Incident #3 comment): already filtered to only the names
+ *   the printer's own `job-creation-attributes-supported` listed. This
+ *   function does not re-decide whether to send any of these — that
+ *   decision, like the format decision above, belongs to negotiate.mjs; this
+ *   is pure wire encoding.
+ *
+ *   Shared, unmodified, by BOTH Print-Job and Validate-Job (RFC 8011 §3.2.3
+ *   defines Validate-Job as "identical to... Print-Job... except that a
+ *   client supplies no document data and the Printer allocates no
+ *   resources" — same operation-attribute group, same job-template
+ *   attributes, just called with `document: null`). One encoder, two
+ *   operations, is what makes it possible to ask "would you take this?"
+ *   with exactly the bytes the real job would carry — see
+ *   LaserPrinterAdapter.mjs's Incident #3.
  * @param {{xres:number,yres:number,units:number}} [params.jobAttributes.printerResolution]
  * @param {string} [params.jobAttributes.printColorMode]
  * @param {string} [params.jobAttributes.sides]

@@ -324,6 +324,49 @@ export function negotiatePrintPlan({
 }
 
 /**
+ * Incident #3 (see LaserPrinterAdapter.mjs's header): `job-creation-
+ * attributes-supported` naming a key is NOT the same guarantee as
+ * `document-format-supported` naming a format. The Brother HL-L2460DW lists
+ * `sides` there, and separately advertises `sides-supported: ["one-sided",
+ * "two-sided-long-edge", "two-sided-short-edge"]` — a fully-formed,
+ * spec-shaped capability declaration — and STILL answers Validate-Job with
+ * `0x0505 server-error-temporary-error` the instant a `sides` attribute is
+ * present at ANY value, including its own `sides-default` of `one-sided`.
+ * Confirmed empirically against the real device (see the fix report): every
+ * other job attribute this adapter can send — `printer-resolution`,
+ * `print-color-mode`, `media` — validated fine, individually and combined;
+ * only `sides` did not, and dropping just that one key made the exact same
+ * candidate validate successfully.
+ *
+ * `chooseJobAttributes` still computes the FULL candidate a capability-only
+ * reading would justify — this order is what `LaserPrinterAdapter`'s
+ * `#negotiateJobAttributes` drops from that candidate, one key at a time,
+ * each time Validate-Job refuses it, until the printer accepts or nothing is
+ * left. The order encodes how physically consequential each key actually
+ * is, not the order they appear in the IPP spec:
+ *
+ *   1. `sides` — this adapter only ever renders independent single pages
+ *      (see rasterize.mjs's `maxPages`/`renderPageLimit`); there is no
+ *      duplex pairing to lose, and the printer's OWN `sides-default` is
+ *      already `one-sided`. Omitting the attribute changes nothing physical
+ *      — the printer falls back to a default that was already correct.
+ *   2. `print-color-mode`, 3. `printer-resolution` — informational, not
+ *      load-bearing: both `image/urf` and `image/pwg-raster` embed the
+ *      authoritative resolution/colorspace/bit-depth directly in the raster
+ *      page header `rasterize.mjs` writes (and `validateRasterOutput`
+ *      already asserts matches what was negotiated) — these two IPP job
+ *      attributes are a redundant hint on top of self-describing pixel data,
+ *      not the source of truth for it. Dropping either does not reopen
+ *      incident #2: the bytes still say exactly what they are.
+ *   4. `media` — kept longest. Unlike the three above, nothing else in the
+ *      job tells the printer which paper tray/size to feed from; this is
+ *      the one attribute whose absence could produce a physically wrong
+ *      result (wrong tray), not just a redundant one, so it's the last
+ *      thing given up rather than the first.
+ */
+export const JOB_ATTRIBUTE_TRIM_ORDER = ['sides', 'printColorMode', 'printerResolution', 'media'];
+
+/**
  * Filter our own desired job attributes down to the ones the printer's
  * `job-creation-attributes-supported` actually names. An attribute a printer
  * never declared it accepts is exactly the class of assumption that caused

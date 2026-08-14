@@ -59,8 +59,14 @@ function ippServer({
   documentFormatSupported = [], documentFormatPreferred = null, urfSupported = [],
   pwgRasterDocumentTypeSupported = [], pwgRasterResolutionSupported = [],
   jobCreationAttributesSupported = [],
+  // (decodedAttrs) => boolean — the fake printer's Validate-Job verdict for a
+  // given candidate. Default accepts everything, matching a printer with no
+  // incident-#3-shaped quirk. Tests below override this to reproduce the
+  // real Brother's exact behavior: refuse whenever `sides` is present.
+  validateJob = () => true,
 } = {}) {
   const printJobs = [];
+  const validateJobs = [];
   const capabilityAttrs = [
     { tag: 0x47, name: 'attributes-charset', value: 'utf-8' },
     { tag: 0x48, name: 'attributes-natural-language', value: 'en' },
@@ -103,11 +109,36 @@ function ippServer({
           ], null, 1));
           return;
         }
+        if (operation === OPS.VALIDATE_JOB) {
+          // Real Validate-Job (RFC 8011 §3.2.3) carries no document body —
+          // `body` here is operation-attributes only, same shape as a
+          // Print-Job request minus the trailing bytes, which is exactly
+          // what `decodeResponse` (reused for its identical frame layout)
+          // reads.
+          const { attrs } = decodeResponse(body);
+          const accept = validateJob(attrs);
+          validateJobs.push({
+            accept,
+            documentFormat: attrs['document-format']?.[0] ?? null,
+            printerResolution: attrs['printer-resolution']?.[0] ?? null,
+            printColorMode: attrs['print-color-mode']?.[0] ?? null,
+            sides: attrs.sides?.[0] ?? null,
+            media: attrs.media?.[0] ?? null,
+          });
+          res.writeHead(200, { 'Content-Type': 'application/ipp' });
+          res.end(encodeRequest(accept ? 0x0000 : 0x0505, [
+            { tag: 0x47, name: 'attributes-charset', value: 'utf-8' },
+            { tag: 0x48, name: 'attributes-natural-language', value: 'en' },
+          ], null, 1));
+          return;
+        }
         res.writeHead(500);
         res.end();
       });
     });
-    httpServer.listen(0, '127.0.0.1', () => resolve({ httpServer, port: httpServer.address().port, printJobs }));
+    httpServer.listen(0, '127.0.0.1', () => resolve({
+      httpServer, port: httpServer.address().port, printJobs, validateJobs,
+    }));
   });
 }
 
@@ -240,6 +271,124 @@ describe('LaserPrinterAdapter.printPdf — capability negotiation (the fix)', ()
     await expect(p.printPdf(PDF)).rejects.toMatchObject({ code: 'PRINT_FORMAT_UNSUPPORTED' });
     httpServer.close();
     expect(printJobs).toHaveLength(0);
+  });
+});
+
+describe('LaserPrinterAdapter — Incident #3: Validate-Job before every real Print-Job', () => {
+  // The exact Brother HL-L2460DW capability shape from the incidents,
+  // reused so these tests exercise the real negotiated candidate
+  // (image/urf, 8-bit grayscale, printer-resolution/print-color-mode/
+  // sides/media all present) rather than a synthetic one.
+  const brotherCaps = {
+    documentFormatSupported: ['application/octet-stream', 'image/urf', 'image/pwg-raster'],
+    documentFormatPreferred: 'image/urf',
+    urfSupported: ['W8', 'CP1', 'IS4-1', 'MT1-3-4-5-8', 'OB10', 'PQ3-4-5', 'RS300-600-1200', 'V1.5', 'DM1'],
+    pwgRasterDocumentTypeSupported: ['sgray_8'],
+    pwgRasterResolutionSupported: [{ xres: 600, yres: 600, units: 3 }],
+    jobCreationAttributesSupported: [
+      'copies', 'finishings', 'ipp-attribute-fidelity', 'job-name', 'media', 'media-col',
+      'orientation-requested', 'output-bin', 'output-mode', 'print-quality', 'printer-resolution',
+      'requesting-user-name', 'sides', 'print-color-mode', 'job-pages-per-set',
+    ],
+  };
+
+  it.runIf(hasGs)('a printer that accepts the full candidate: Validate-Job runs once, Print-Job carries every attribute unchanged', async () => {
+    const { httpServer, port, printJobs, validateJobs } = await ippServer(brotherCaps); // default validateJob: () => true
+    const p = new LaserPrinterAdapter({ host: '127.0.0.1', port, logger: { info() {}, warn() {} } });
+
+    const result = await p.printPdf(REAL_PDF, { jobName: 'ws', user: 'learner-two' });
+    httpServer.close();
+
+    expect(result.ok).toBe(true);
+    expect(validateJobs).toHaveLength(1); // exactly one round trip when nothing needed trimming
+    expect(validateJobs[0].sides).toBe('one-sided');
+    expect(validateJobs[0].printColorMode).toBe('monochrome');
+    expect(validateJobs[0].media).toBe('na_letter_8.5x11in');
+    // Validate-Job's candidate and the eventual Print-Job's attributes match
+    // exactly — the whole point of validating with the SAME encoder.
+    expect(printJobs[0].sides).toBe(validateJobs[0].sides);
+    expect(printJobs[0].printColorMode).toBe(validateJobs[0].printColorMode);
+    expect(printJobs[0].media).toBe(validateJobs[0].media);
+  });
+
+  it.runIf(hasGs)('the exact real-world shape: printer refuses any job carrying `sides` — adapter drops it and Print-Job succeeds without it', async () => {
+    const { httpServer, port, printJobs, validateJobs } = await ippServer({
+      ...brotherCaps,
+      // Reproduces the real Brother HL-L2460DW's Validate-Job behavior
+      // (confirmed against the physical device, see the fix report):
+      // `sides-supported` lists `one-sided` — the printer's own default —
+      // and it STILL refuses the instant a `sides` attribute is present at
+      // any value.
+      validateJob: (attrs) => !('sides' in attrs),
+    });
+    const p = new LaserPrinterAdapter({ host: '127.0.0.1', port, logger: { info() {}, warn() {} } });
+
+    const result = await p.printPdf(REAL_PDF, { jobName: 'ws', user: 'learner-two' });
+    httpServer.close();
+
+    expect(result.ok).toBe(true);
+    // Two Validate-Job round trips: the full candidate (rejected because it
+    // carries `sides`), then the same candidate with `sides` dropped
+    // (accepted) — `sides` is first in JOB_ATTRIBUTE_TRIM_ORDER, so nothing
+    // else needed to be tried.
+    expect(validateJobs).toHaveLength(2);
+    expect(validateJobs[0].accept).toBe(false);
+    expect(validateJobs[0].sides).toBe('one-sided');
+    expect(validateJobs[1].accept).toBe(true);
+    expect(validateJobs[1].sides).toBeNull();
+    // The other three attributes survived the trim untouched.
+    expect(validateJobs[1].printColorMode).toBe('monochrome');
+    expect(validateJobs[1].media).toBe('na_letter_8.5x11in');
+
+    // And the real Print-Job that followed carries the SAME trimmed set —
+    // never the original, never a guess.
+    expect(printJobs).toHaveLength(1);
+    expect(printJobs[0].sides).toBeNull();
+    expect(printJobs[0].printColorMode).toBe('monochrome');
+    expect(printJobs[0].media).toBe('na_letter_8.5x11in');
+  });
+
+  it.runIf(hasGs)('a printer that refuses every candidate, down to the empty one, is never sent a real Print-Job: PRINT_VALIDATE_FAILED', async () => {
+    const { httpServer, port, printJobs, validateJobs } = await ippServer({
+      ...brotherCaps,
+      validateJob: () => false, // refuses categorically, including the empty candidate
+    });
+    const p = new LaserPrinterAdapter({ host: '127.0.0.1', port, logger: { info() {}, warn() {} } });
+
+    await expect(p.printPdf(REAL_PDF, { jobName: 'ws', user: 'learner-two' }))
+      .rejects.toMatchObject({ code: 'PRINT_VALIDATE_FAILED' });
+    httpServer.close();
+
+    // Every optional attribute (sides, print-color-mode, printer-resolution,
+    // media — JOB_ATTRIBUTE_TRIM_ORDER's full length) was tried and stripped
+    // in turn before giving up: 1 (full candidate) + 4 (one per trimmed key).
+    expect(validateJobs).toHaveLength(5);
+    expect(validateJobs.every((v) => v.accept === false)).toBe(true);
+    // The guard held: no paper-costing Print-Job was ever attempted.
+    expect(printJobs).toHaveLength(0);
+  });
+
+  it('validateJob is exposed publicly and reports the raw ok/statusCode the printer returned', async () => {
+    const { httpServer, port } = await ippServer({
+      ...brotherCaps,
+      validateJob: (attrs) => !('sides' in attrs),
+    });
+    const p = new LaserPrinterAdapter({ host: '127.0.0.1', port, logger: { info() {} } });
+
+    const rejected = await p.validateJob({ documentFormat: 'image/urf', jobAttributes: { sides: 'one-sided' } });
+    expect(rejected).toEqual({ ok: false, statusCode: 0x0505 });
+
+    const accepted = await p.validateJob({ documentFormat: 'image/urf', jobAttributes: { media: 'na_letter_8.5x11in' } });
+    expect(accepted).toEqual({ ok: true, statusCode: 0x0000 });
+
+    httpServer.close();
+  });
+
+  it('validateJob requires an explicit documentFormat, same rule as Print-Job — never defaults to octet-stream', async () => {
+    const { httpServer, port } = await ippServer(brotherCaps);
+    const p = new LaserPrinterAdapter({ host: '127.0.0.1', port, logger: { info() {} } });
+    await expect(p.validateJob({ jobAttributes: {} })).rejects.toThrow(/documentFormat/i);
+    httpServer.close();
   });
 });
 

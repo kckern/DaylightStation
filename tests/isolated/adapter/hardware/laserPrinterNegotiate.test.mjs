@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   chooseDocumentFormat, chooseResolution, chooseUrfColor, choosePwgRasterColor,
-  negotiatePrintPlan, chooseJobAttributes, RASTER_FORMATS, FALLBACK_DPI,
+  negotiatePrintPlan, chooseJobAttributes, RASTER_FORMATS, FALLBACK_DPI, JOB_ATTRIBUTE_TRIM_ORDER,
 } from '../../../../backend/src/1_adapters/hardware/laser-printer/negotiate.mjs';
 
 describe('chooseDocumentFormat', () => {
@@ -238,5 +238,38 @@ describe('chooseJobAttributes — only ever names what job-creation-attributes-s
       dpi: null, printColorMode: null, media: 'na_letter_8.5x11in',
     });
     expect(attrs).toEqual({ media: 'na_letter_8.5x11in' });
+  });
+});
+
+describe('JOB_ATTRIBUTE_TRIM_ORDER — Incident #3: job-creation-attributes-supported naming a key is not a guarantee every value works', () => {
+  it('is exactly the four keys chooseJobAttributes can produce, each appearing once', () => {
+    // Every key this trim order names must be a key chooseJobAttributes
+    // actually emits — trimming a key that was never in the candidate is a
+    // silent no-op in LaserPrinterAdapter's negotiation loop (see its own
+    // `key in candidate` guard), but the two lists drifting apart would be
+    // a sign this test (and JOB_ATTRIBUTE_TRIM_ORDER's own header comment)
+    // are stale relative to what chooseJobAttributes can actually produce.
+    const producible = Object.keys(chooseJobAttributes({
+      jobCreationAttributesSupported: ['printer-resolution', 'print-color-mode', 'sides', 'media'],
+      dpi: 300, printColorMode: 'monochrome', media: 'na_letter_8.5x11in',
+    }));
+    expect(new Set(JOB_ATTRIBUTE_TRIM_ORDER)).toEqual(new Set(producible));
+    expect(JOB_ATTRIBUTE_TRIM_ORDER).toHaveLength(new Set(JOB_ATTRIBUTE_TRIM_ORDER).size); // no duplicates
+  });
+
+  it('drops `sides` first — the exact real-world Brother HL-L2460DW quirk this order exists to encode', () => {
+    // `sides` costs nothing to lose (this adapter never does duplex, and
+    // the printer's own sides-default already matches what was asserted),
+    // so it must be the very first thing tried when a candidate is refused.
+    expect(JOB_ATTRIBUTE_TRIM_ORDER[0]).toBe('sides');
+  });
+
+  it('keeps `media` last — the one attribute that is not redundant with the self-describing raster header', () => {
+    // printer-resolution/print-color-mode duplicate information already
+    // embedded in the urf/pwg-raster page header (see rasterize.mjs's
+    // validateRasterOutput); media is the only one of the four that
+    // actually steers which paper tray gets used, so it's the last thing
+    // given up.
+    expect(JOB_ATTRIBUTE_TRIM_ORDER[JOB_ATTRIBUTE_TRIM_ORDER.length - 1]).toBe('media');
   });
 });
