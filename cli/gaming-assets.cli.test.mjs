@@ -68,7 +68,7 @@ describe('gaming asset audit tooling', () => {
       schema_version: 2, kind: 'presentation-catalog', pack: { id: 'animation-test', style_profile: 'pixel16.topdown', logical_cell: [16, 16] },
       style_profiles: { 'pixel16.topdown': { logical_cell: [16, 16], sampling: 'nearest', base_pixel: 1, scale_classes: { humanoid: { logical_height: [8, 16] } }, composition: { sector_grid: [1, 1], minimum_occupied_sectors: 1, visual_coverage: [0, 1], minimum_navigation_connectivity: 0, maximum_repeat_ratio: 1, minimum_role_diversity: 1, maximum_role_ratio: 1 } } },
       assets: { 'player.test': {
-        source, source_sha256: crypto.createHash('sha256').update(png).digest('hex'), status: 'approved', pixel_density: 1, style_profile: 'pixel16.topdown', edge_policy: 'isolated', kind: 'sprite-sheet', tags: ['actor', 'player', 'ground-contact'],
+        source, source_sha256: crypto.createHash('sha256').update(png).digest('hex'), status: 'approved', license_scope: 'test-private-use', pixel_density: 1, style_profile: 'pixel16.topdown', edge_policy: 'isolated', kind: 'sprite-sheet', tags: ['actor', 'player', 'ground-contact'],
         geometry: { layout: 'grid', cell: [16, 16], grid: [2, 1] }, frames: { 'idle.right': frame(0), 'run.right.0': frame(0), 'run.right.1': frame(1) },
         clips: { 'idle.right': { frames: ['idle.right'], fps: 1 }, 'run.right': { frames: ['run.right.0', 'run.right.1'], fps: 8 } },
         animation: { mode: 'state-machine', default_state: 'idle', control: { scheme: 'four-way', idle_state: 'idle', move_state: 'run' }, states: {
@@ -82,17 +82,143 @@ describe('gaming asset audit tooling', () => {
     const catalogPath = path.join(root, 'catalog.yml'); await writeFile(catalogPath, YAML.stringify(catalog));
     const coverage = await auditAnimationMetadataCoverage({ root, catalogPath });
     assert.equal(coverage.valid, true); assert.equal(coverage.summary.runtime_controlled, 1); assert.equal(coverage.summary.canonical_deferred, 0);
+    assert.equal(coverage.summary.runtime_sources_fully_mapped, 1); assert.equal(coverage.summary.runtime_sources_partial_or_unmeasured, 0);
     const outDir = path.join(root, 'qa'); const qa = await renderAnimationQaSet({ root, catalogPath, outDir, scale: 3 });
     assert.equal(qa.valid, true); assert.equal(qa.summary.clips, 8);
     assert.equal(qa.summary.controlled_assets, 1);
+    assert.equal(qa.summary.temporally_animated_assets, 1);
     assert.equal(qa.artifacts.find((entry) => entry.state === 'run' && entry.facing === 'west').flip_x, true);
     assert.ok((await readFile(path.join(outDir, 'player.test', 'run-west.gif'))).length > 0);
     assert.ok((await readFile(path.join(outDir, 'player.test', 'control-simulation.gif'))).length > 0);
+    const focusedQa = await renderAnimationQaSet({ root, catalogPath, outDir: path.join(root, 'qa-focused'), asset: 'player.', scale: 2 });
+    assert.equal(focusedQa.asset_selector, 'player.');
+    assert.equal(focusedQa.summary.animated_assets, 1);
+    await assert.rejects(() => renderAnimationQaSet({ root, catalogPath, outDir: path.join(root, 'qa-missing'), asset: 'animal.missing' }), /no catalog assets match/);
+
+    const fourWayAnimation = structuredClone(catalog.assets['player.test'].animation);
+    catalog.assets['player.test'].animation.control.scheme = 'horizontal';
+    for (const state of Object.values(catalog.assets['player.test'].animation.states)) {
+      delete state.facings.north;
+      delete state.facings.south;
+    }
+    await writeFile(catalogPath, YAML.stringify(catalog));
+    const horizontalQa = await renderAnimationQaSet({ root, catalogPath, outDir: path.join(root, 'qa-horizontal'), scale: 3 });
+    assert.equal(horizontalQa.valid, true);
+    assert.deepEqual([...new Set(horizontalQa.control_simulations[0].trace.map((entry) => entry.facing))].sort(), ['east', 'west']);
+    catalog.assets['player.test'].animation = fourWayAnimation;
+
+    catalog.assets['player.test'].frames['run.right.1'].scale_reference = 'idle.right';
+    catalog.assets['player.test'].frames['run.right.1'].ground_contact = { point: [8, 14], reason: 'effect envelope uses the reviewed actor foot point' };
+    await writeFile(catalogPath, YAML.stringify(catalog));
+    assert.equal((await validateManifest({ root, manifestPath: catalogPath })).valid, true);
+    catalog.assets['player.test'].frames['run.right.1'].ground_contact.point = [8, 13];
+    await writeFile(catalogPath, YAML.stringify(catalog));
+    const badGroundContact = await validateManifest({ root, manifestPath: catalogPath });
+    assert.equal(badGroundContact.valid, false);
+    assert.ok(badGroundContact.errors.some((error) => error.includes('ground_contact point must equal its custom anchor')));
+    catalog.assets['player.test'].frames['run.right.1'].ground_contact.point = [8, 14];
+    catalog.assets['player.test'].frames['run.right.1'].edge_contact = { allowed: ['north'], reason: 'deliberate test overclaim' };
+    await writeFile(catalogPath, YAML.stringify(catalog));
+    const badEdgeClaim = await validateManifest({ root, manifestPath: catalogPath });
+    assert.equal(badEdgeClaim.valid, false);
+    assert.ok(badEdgeClaim.errors.some((error) => error.includes('declares absent source-edge contact: north')));
+    delete catalog.assets['player.test'].frames['run.right.1'].edge_contact;
+    await writeFile(catalogPath, YAML.stringify(catalog));
+
+    const deferredDir = path.join(root, 'assets', 'default', 'actors', 'animals'); await mkdir(deferredDir, { recursive: true });
+    await writeFile(path.join(deferredDir, 'owl.png'), png);
+    const dispositionsPath = path.join(root, 'animation-source-dispositions.yml');
+    await writeFile(dispositionsPath, YAML.stringify({ schema_version: 1, kind: 'animation-source-dispositions', rules: [{
+      id: 'animals.backlog', match: 'assets/default/actors/animals/**', disposition: 'family-deferred',
+      reason: 'requires reviewed animal state metadata', required_qa: ['geometry', 'movement-simulation'],
+    }] }));
+    const classified = await auditAnimationMetadataCoverage({ root, catalogPath, dispositionsPath });
+    assert.equal(classified.valid, false); assert.equal(classified.runtime_valid, true); assert.equal(classified.disposition_valid, true); assert.equal(classified.library_complete, false);
+    assert.equal(classified.summary.canonical_classified_deferred, 1); assert.equal(classified.summary.canonical_unclassified, 0);
+
+    const effectDir = path.join(root, 'assets', 'default', 'environment', 'effects'); await mkdir(effectDir, { recursive: true });
+    const tileSource = 'assets/default/environment/effects/reviewed-tile.png'; await writeFile(path.join(root, tileSource), png);
+    catalog.assets['terrain.reviewed'] = {
+      ...structuredClone(catalog.assets['player.test']), source: tileSource, kind: 'tile-sheet', tags: ['terrain'],
+      frames: { left: frame(0), right: frame(1) }, clips: undefined, animation: undefined,
+    };
+    await writeFile(catalogPath, YAML.stringify(catalog));
+    const tileExcluded = await auditAnimationMetadataCoverage({ root, catalogPath, dispositionsPath });
+    assert.equal(tileExcluded.summary.canonical_sprite_candidates, 2);
+    assert.equal(tileExcluded.summary.canonical_deferred, 1);
+    delete catalog.assets['terrain.reviewed'];
 
     delete catalog.assets['player.test'].animation.states.run.facings.west;
     await writeFile(catalogPath, YAML.stringify(catalog));
     const incomplete = await auditAnimationMetadataCoverage({ root, catalogPath });
     assert.equal(incomplete.valid, false); assert.ok(incomplete.errors.some((error) => error.includes('lacks west facing')));
+
+    catalog.assets['player.test'].animation.states.run.facings.west = reference(true);
+    catalog.assets['player.test'].geometry = { layout: 'grid', cell: [16, 8], grid: [2, 2] };
+    await writeFile(catalogPath, YAML.stringify(catalog));
+    const splitFrames = await validateManifest({ root, manifestPath: catalogPath });
+    assert.equal(splitFrames.valid, false);
+    assert.ok(splitFrames.errors.some((error) => error.includes('continuous alpha across internal cell seams')));
+    const splitQa = await renderAnimationQaSet({ root, catalogPath, outDir: path.join(root, 'split-qa'), scale: 2 });
+    assert.equal(splitQa.valid, false);
+    assert.ok(splitQa.errors.some((error) => error.includes('continuous alpha across internal cell seams')));
+  });
+
+  it('validates registered animation layers and renders synchronized composite QA', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'gaming-layered-animation-'));
+    const assetDir = path.join(root, 'assets', 'default', 'actors', 'player'); await mkdir(assetDir, { recursive: true });
+    const makePng = async (source, color, bounds, columns = [0, 1]) => {
+      const canvas = createCanvas(32, 16); const context = canvas.getContext('2d'); context.fillStyle = color;
+      for (const column of columns) context.fillRect(column * 16 + bounds[0], bounds[1], bounds[2], bounds[3]);
+      const png = canvas.toBuffer('image/png'); await writeFile(path.join(root, source), png); return png;
+    };
+    const baseSource = 'assets/default/actors/player/layered-base.png'; const overlaySource = 'assets/default/actors/player/layered-hat.png';
+    const basePng = await makePng(baseSource, '#44aaff', [4, 4, 8, 10]); const overlayPng = await makePng(overlaySource, '#ff5544', [4, 4, 8, 3], [0]);
+    const facing = (clip) => ({ north: clip, east: clip, south: clip, west: { clip, flip_x: true } });
+    const frames = (bounds) => ({
+      'idle.0': { cell: [0, 0], content_bounds: bounds, anchor: { point: [8, 14] } },
+      'run.0': { cell: [0, 0], content_bounds: bounds, anchor: { point: [8, 14] } },
+      'run.1': { cell: [1, 0], content_bounds: bounds, anchor: { point: [8, 14] } },
+    });
+    const clips = { idle: { frames: ['idle.0'], fps: 1, loop: 'loop' }, run: { frames: ['run.0', 'run.1'], fps: 8, loop: 'loop' } };
+    const states = { idle: { motion: 'stationary', facings: facing('idle') }, run: { motion: 'locomotion', facings: facing('run') } };
+    const world = { footprint: { size: [8, 4] }, scale_class: 'humanoid', allowed_materials: ['*'], allowed_surfaces: ['solid'], allowed_planes: ['ground'], allowed_biomes: ['*'], boundary_policy: 'allow', render_layer: 'actor', collision: 'solid' };
+    const common = { status: 'approved', license_scope: 'test-private-use', pixel_density: 1, style_profile: 'pixel16.topdown', edge_policy: 'isolated', kind: 'sprite-sheet', geometry: { layout: 'grid', cell: [16, 16], grid: [2, 1] }, world };
+    const catalog = {
+      schema_version: 2, kind: 'presentation-catalog', pack: { id: 'layered-animation-test', style_profile: 'pixel16.topdown', logical_cell: [16, 16] },
+      style_profiles: { 'pixel16.topdown': { logical_cell: [16, 16], sampling: 'nearest', base_pixel: 1, scale_classes: { humanoid: { logical_height: [1, 16] } }, composition: { sector_grid: [1, 1], minimum_occupied_sectors: 1, visual_coverage: [0, 1], minimum_navigation_connectivity: 0, maximum_repeat_ratio: 1, minimum_role_diversity: 1, maximum_role_ratio: 1 } } },
+      assets: {
+        'player.layered': {
+          ...common, source: baseSource, source_sha256: crypto.createHash('sha256').update(basePng).digest('hex'), tags: ['actor', 'player'], frames: frames([4, 4, 8, 10]), clips,
+          animation: { mode: 'state-machine', default_state: 'idle', facing_scheme: 'four-way', control: { scheme: 'four-way', idle_state: 'idle', move_state: 'run' }, states, layers: [{ asset: 'layer.hat', role: 'headwear' }] },
+        },
+        'layer.hat': {
+          ...common, source: overlaySource, source_sha256: crypto.createHash('sha256').update(overlayPng).digest('hex'), tags: ['animation-layer', 'animated'], frames: { ...frames([4, 4, 8, 3]), 'run.1': { cell: [1, 0], transparent: true, anchor: { point: [8, 14] } } }, clips: structuredClone(clips),
+          animation: { mode: 'state-machine', default_state: 'idle', facing_scheme: 'four-way', states: structuredClone(states) },
+        },
+      },
+      materials: { ground: { style_profile: 'pixel16.topdown', plane: 'ground', biome: 'test', surface: 'solid', fill: { color: '#225522' } } },
+    };
+    const catalogPath = path.join(root, 'catalog.yml'); await writeFile(catalogPath, YAML.stringify(catalog));
+    assert.equal((await validateManifest({ root, manifestPath: catalogPath })).valid, true);
+    const outDir = path.join(root, 'qa'); const qa = await renderAnimationQaSet({ root, catalogPath, outDir, scale: 3 });
+    assert.equal(qa.valid, true); assert.equal(qa.summary.layered_assets, 1); assert.equal(qa.summary.composite_clips, 8);
+    assert.equal(qa.summary.animated_actors, 1); assert.equal(qa.summary.animated_objects, 0); assert.equal(qa.summary.animation_layer_assets, 1);
+    assert.equal(qa.summary.temporally_animated_actors, 1); assert.equal(qa.summary.temporally_animated_objects, 0); assert.equal(qa.summary.temporally_animated_layers, 1);
+    assert.equal(qa.control_simulations[0].trace.every((entry) => entry.layers.length === 2), true);
+    assert.ok((await readFile(path.join(outDir, 'player.layered', 'composite-run-west.gif'))).length > 0);
+    assert.ok((await readFile(path.join(outDir, 'player.layered', 'composite-run-west-strip.png'))).length > 0);
+    catalog.animation_rigs = { 'player.test': { base_slot: 'body', slots: { body: { order: 0, required: true }, head: { order: 10 } } } };
+    catalog.assets['player.layered'].animation.rig = { profile: 'player.test', slot: 'body' };
+    catalog.assets['layer.hat'].animation.rig = { profile: 'player.test', slot: 'head' };
+    await writeFile(catalogPath, YAML.stringify(catalog));
+    assert.equal((await validateManifest({ root, manifestPath: catalogPath })).valid, true);
+    catalog.assets['layer.hat'].animation.rig.slot = 'missing'; await writeFile(catalogPath, YAML.stringify(catalog));
+    assert.ok((await validateManifest({ root, manifestPath: catalogPath })).errors.some((error) => error.includes('unknown slot missing')));
+    catalog.assets['layer.hat'].animation.rig.slot = 'head';
+    catalog.assets['layer.hat'].clips.run.fps = 7; await writeFile(catalogPath, YAML.stringify(catalog));
+    const mismatched = await validateManifest({ root, manifestPath: catalogPath });
+    assert.equal(mismatched.valid, false); assert.ok(mismatched.errors.some((error) => error.includes('clip timing and phase count must match')));
   });
 
   it('composes relative catalog imports and rejects duplicate IDs', async () => {
@@ -228,16 +354,26 @@ describe('gaming asset audit tooling', () => {
           tags: ['terrain'],
           geometry: { layout: 'grid', cell: [16, 16], grid: [2, 1] },
           frames: { ground: { cell: [0, 0] } },
-          autotile: { topology: 'cardinal-4', positive: { isolated: 'ground' } },
+          autotile: { topology: 'cardinal-4', supported_polarities: ['positive'], positive: { isolated: 'ground' } },
         },
       },
     };
     const manifestPath = path.join(root, 'pack.yml');
     await writeFile(manifestPath, YAML.stringify(manifest));
     assert.equal((await validateManifest({ root, manifestPath })).valid, true);
+    manifest.assets['npc.hero'].frames['walk.0'].subject_bounds = [2, 2, 12, 12];
+    await writeFile(manifestPath, YAML.stringify(manifest));
+    assert.equal((await validateManifest({ root, manifestPath })).valid, true);
+    manifest.assets['npc.hero'].frames['walk.0'].subject_bounds = [8, 8, 12, 12];
+    await writeFile(manifestPath, YAML.stringify(manifest));
+    assert.match((await validateManifest({ root, manifestPath })).errors.join('\n'), /subject_bounds exceeds frame/);
+    delete manifest.assets['npc.hero'].frames['walk.0'].subject_bounds;
     manifest.schema_version = 2;
     await writeFile(manifestPath, YAML.stringify(manifest));
-    assert.equal((await validateManifest({ root, manifestPath })).valid, true, 'schema-v2 presentation catalogs use the same decoded asset audit');
+    const incompleteV2 = await validateManifest({ root, manifestPath });
+    assert.equal(incompleteV2.valid, false, 'schema-v2 catalogs must satisfy the presentation contract in addition to decoded asset auditing');
+    assert.ok(incompleteV2.errors.includes('kind must be presentation-catalog'));
+    assert.ok(incompleteV2.errors.includes('style_profiles must be a map'));
     manifest.schema_version = 1;
     manifest.assets['npc.hero'].tags.push('ground-contact');
     await writeFile(manifestPath, YAML.stringify(manifest));
@@ -268,6 +404,19 @@ describe('gaming asset audit tooling', () => {
     const forbiddenColor = await validateManifest({ root, manifestPath });
     assert.equal(forbiddenColor.valid, false);
     assert.ok(forbiddenColor.errors.some((error) => error.includes('frame ground contains forbidden color #ff0000')));
+    manifest.assets['terrain.single'].frames.ground.forbidden_color_exceptions = {
+      allowed: ['#ff0000'],
+      reason: 'reviewed authored accent rather than an accidental baked background',
+    };
+    await writeFile(manifestPath, YAML.stringify(manifest));
+    const reviewedForbiddenColor = await validateManifest({ root, manifestPath });
+    assert.equal(reviewedForbiddenColor.valid, true);
+    manifest.assets['terrain.single'].frames.ground.forbidden_color_exceptions.allowed = ['#00ff00'];
+    await writeFile(manifestPath, YAML.stringify(manifest));
+    const invalidForbiddenColorException = await validateManifest({ root, manifestPath });
+    assert.equal(invalidForbiddenColorException.valid, false);
+    assert.ok(invalidForbiddenColorException.errors.some((error) => error.includes('must be a subset of asset forbidden_colors')));
+    delete manifest.assets['terrain.single'].frames.ground.forbidden_color_exceptions;
     delete manifest.assets['terrain.single'].forbidden_colors;
     const blank = createCanvas(16, 16);
     await writeFile(path.join(root, 'blank.png'), blank.toBuffer('image/png'));
