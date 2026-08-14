@@ -287,11 +287,11 @@ export async function createSchoolLifecycle({
   // --- persistence -----------------------------------------------------------
   const stores = {
     catalog: new YamlCurriculumDatastore({ configService }),
-    sessions: new YamlWorkSessionDatastore({ configService }),
+    sessions: new YamlWorkSessionDatastore({ configService, logger }),
     tokens: tokenRegistry ?? new YamlTokenRegistry({ configService, logger }),
-    assignments: new YamlAssignmentStore({ configService }),
+    assignments: new YamlAssignmentStore({ configService, logger }),
     formMaps: new YamlFormMapStore({ configService }),
-    reviewQueue: new YamlReviewQueue({ configService }),
+    reviewQueue: new YamlReviewQueue({ configService, logger }),
   };
   // Long-expired token files are dead weight (a pruned scan resolves to the
   // "unknown ticket" slip, which is what week-old paper deserves). Swept at
@@ -502,7 +502,7 @@ export async function createSchoolLifecycle({
   const printDocumentsRoot = path.join(dataDir, 'content/school/print-documents');
   const printDocuments = new YamlPrintDocumentRepository({ directory: printDocumentsRoot });
   const allocationStore = new YamlAllocationStore({ directory: printDocumentsRoot, timeZone: timezone });
-  const worksheetInstances = new YamlWorksheetInstanceStore({ configService });
+  const worksheetInstances = new YamlWorksheetInstanceStore({ configService, logger });
   const renderPrintDocument = new RenderPrintDocument({
     repository: printDocuments,
     banks: createYamlBankReader({ dataDir }),

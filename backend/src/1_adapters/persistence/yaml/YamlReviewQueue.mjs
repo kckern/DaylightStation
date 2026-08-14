@@ -33,6 +33,7 @@ const isSafeSessionId = (id) => typeof id === 'string' && SESSION_ID_RE.test(id)
 
 export class YamlReviewQueue extends IReviewQueue {
   #configService;
+  #logger;
   #writeChain = Promise.resolve();
 
   constructor(config = {}) {
@@ -41,6 +42,7 @@ export class YamlReviewQueue extends IReviewQueue {
       throw new Error('YamlReviewQueue: configService with getHouseholdPath() is required');
     }
     this.#configService = config.configService;
+    this.#logger = config.logger || console;
   }
 
   #root() { return this.#configService.getHouseholdPath('apps/school/review'); }
@@ -50,10 +52,23 @@ export class YamlReviewQueue extends IReviewQueue {
   #settledFile(sessionId) { return path.join(this.#root(), `${sessionId}.settled.yml`); }
 
   async #readFile(file) {
+    // `null` means "no queue file here", which callers treat as nothing pending.
+    // A corrupt file answering the same way would hide work waiting on a
+    // grown-up, so absent stays quiet and unreadable is reported.
+    let text;
     try {
-      const raw = yaml.load(await fs.readFile(file, 'utf8'));
+      text = await fs.readFile(file, 'utf8');
+    } catch (err) {
+      if (err?.code !== 'ENOENT') {
+        this.#logger.warn?.('school.review-queue.unreadable', { file, error: err?.message });
+      }
+      return null;
+    }
+    try {
+      const raw = yaml.load(text);
       return Array.isArray(raw) ? raw.filter((i) => i && typeof i === 'object' && !Array.isArray(i)) : [];
-    } catch {
+    } catch (err) {
+      this.#logger.warn?.('school.review-queue.corrupt', { file, error: err?.message });
       return null;
     }
   }

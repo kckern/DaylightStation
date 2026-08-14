@@ -9,9 +9,11 @@ const dump = (value) => yaml.dump(value, { indent: 2, lineWidth: -1, noRefs: tru
 /** Append-only persistence for the exact worksheet a learner received. */
 export class YamlWorksheetInstanceStore {
   #configService;
-  constructor({ configService } = {}) {
+  #logger;
+  constructor({ configService, logger = console } = {}) {
     if (!configService?.getHouseholdPath) throw new Error('YamlWorksheetInstanceStore requires configService');
     this.#configService = configService;
+    this.#logger = logger;
   }
   #root() { return this.#configService.getHouseholdPath('apps/school/worksheet-instances'); }
   #file(id) {
@@ -19,7 +21,17 @@ export class YamlWorksheetInstanceStore {
     return path.join(this.#root(), `${id}.yml`);
   }
   async get(id) {
-    try { return yaml.load(await fs.readFile(this.#file(id), 'utf8')) ?? null; } catch { return null; }
+    // An issued worksheet is the self-contained record grading reads back — a
+    // corrupt one silently answering "absent" turns into "this lesson was never
+    // issued", so missing stays quiet and unreadable-but-present is reported.
+    try {
+      return yaml.load(await fs.readFile(this.#file(id), 'utf8')) ?? null;
+    } catch (err) {
+      if (err?.code !== 'ENOENT') {
+        this.#logger.warn?.('school.worksheet-instance.unreadable', { instanceId: id, error: err?.message });
+      }
+      return null;
+    }
   }
   async put(instance) {
     const file = this.#file(instance?.id);
@@ -41,7 +53,14 @@ export class YamlWorksheetInstanceStore {
         const file = path.join(dir, entry.name);
         if (entry.isDirectory()) values.push(...await walk(file));
         else if (/\.ya?ml$/i.test(entry.name)) {
-          try { values.push(yaml.load(await fs.readFile(file, 'utf8'))); } catch { /* ignored */ }
+          // Skipping a corrupt instance keeps the scan useful for the rest of
+          // the session, but a skipped sheet is one the learner did receive —
+          // report it rather than quietly returning a short list.
+          try {
+            values.push(yaml.load(await fs.readFile(file, 'utf8')));
+          } catch (err) {
+            this.#logger.warn?.('school.worksheet-instance.scan-skipped', { file, sessionId, error: err?.message });
+          }
         }
       }
       return values;
