@@ -186,6 +186,23 @@ describe('PianoChessGame opponent effect', () => {
       userId: null,
     }));
   });
+
+  it('threads the displayed ladder level so the server can enforce Caterpie at skill 0', async () => {
+    fetchLadder.mockResolvedValueOnce({
+      unlocked_through: 0,
+      current: { level: 0, name: 'Caterpie' },
+      status: { wins: 0, needed: 5 },
+      persisted: true,
+    });
+    requestOpponentMove.mockResolvedValueOnce({ from: 'e2', to: 'e4', san: 'e4', engine: 'stockfish' });
+    render(<PianoChessGame playerColor="b" seed={1} currentUser="felix" />);
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(OPPONENT_DELAY_MS); });
+
+    expect(requestOpponentMove).toHaveBeenCalledWith(expect.objectContaining({
+      userId: 'felix', rung: 'learner', level: 0,
+    }));
+  });
 });
 
 // The settings wiring is where Task 7's promises are kept: the config loads on

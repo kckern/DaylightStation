@@ -267,7 +267,7 @@ import { PianoLearningService } from './3_applications/piano/PianoLearningServic
 import { scaleClashDefinition } from '#shared/gaming/definitions/scaleClash.mjs';
 import { createWikipediaRouter } from './4_api/v1/routers/wikipedia.mjs';
 import { createChessRouter } from './4_api/v1/routers/chess.mjs';
-import { buildGameRecordFilename } from './4_api/v1/routers/lib/chessGameFilename.mjs';
+import { buildChessArchiveFilename, buildGameRecordFilename } from './4_api/v1/routers/lib/chessGameFilename.mjs';
 import { createStockfishEngine } from './1_adapters/chess/StockfishEngineAdapter.mjs';
 import { createChessConfigService } from './3_applications/chess/ChessConfigService.mjs';
 import { createChessLadderService } from './3_applications/chess/ChessLadderService.mjs';
@@ -1736,9 +1736,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         const day = /^\d{4}-\d{2}-\d{2}$/.test(record.played_on || '')
           ? record.played_on
           : new Date().toISOString().slice(0, 10);
-        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
         return dataService.household.write(
-          `history/gaming/pianochess/${day}/${userSegment}-${stamp}`,
+          `history/gaming/pianochess/${day}/${buildChessArchiveFilename(record, userSegment)}`,
           { ...record, archived_at: new Date().toISOString() },
         );
       },

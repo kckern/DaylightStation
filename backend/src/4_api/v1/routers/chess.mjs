@@ -43,14 +43,31 @@ export function createChessRouter({
     // "no skipping ahead" is actually enforced, since anything on the client
     // can be bypassed with a crafted request.
     let rung;
+    let effectiveOpponent;
     if (level !== undefined && level !== null && ladderService) {
-      ({ rung } = await ladderService.rungFor(user, level));
+      const resolved = await ladderService.rungFor(user, level);
+      rung = resolved.rung;
+      effectiveOpponent = { source: 'ladder', level: resolved.level, name: resolved.opponent?.name || null };
     } else {
       rung = configService.resolveRung(config, rungId || config.default_rung);
+      effectiveOpponent = { source: 'rung', level: null, name: null };
     }
+    effectiveOpponent.rung = {
+      id: rung?.id || null,
+      label: rung?.label || null,
+      skill: rung?.skill ?? null,
+      elo: rung?.elo ?? null,
+      movetime_ms: rung?.movetime_ms ?? null,
+    };
+    logger?.info?.('chess.move.requested', {
+      userId,
+      gameId: gameId || 'default',
+      requested: { rung: rungId || null, level: level ?? null },
+      effective: effectiveOpponent,
+    });
     const move = await engine.chooseMove({ fen, rung, gameId: gameId || 'default' });
-    if (!move) return res.json({ move: null });
-    return res.json(move);
+    if (!move) return res.json({ move: null, opponent: effectiveOpponent });
+    return res.json({ ...move, opponent: effectiveOpponent });
   }));
 
   router.get('/config', asyncHandler(async (req, res) => {
@@ -79,7 +96,9 @@ export function createChessRouter({
       logger?.warn?.('chess.game.record-failed', { userId, result: req.body?.result, moves: req.body?.moves });
       return res.status(500).json({ error: 'save_failed' });
     }
-    logger?.info?.('chess.game.recorded', { userId, result: req.body?.result, moves: req.body?.moves });
+    logger?.info?.('chess.game.recorded', {
+      userId, result: req.body?.result, moves: req.body?.moves, opponent: req.body?.opponent || null,
+    });
     // Promotion is decided here, on the server, not by the kiosk: a reloaded tab
     // mid-write would otherwise lose a rung the child had earned.
     const ladder = ladderService ? await ladderService.recordGame(userId, req.body || {}) : null;
@@ -129,6 +148,7 @@ export function createChessRouter({
       completed: !!record.completed,
       ended_by: record.ended_by,
       addressing: record.addressing,
+      opponent: record.opponent || null,
     });
     return res.status(201).json({ archived: true });
   }));

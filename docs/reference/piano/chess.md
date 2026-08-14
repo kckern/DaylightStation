@@ -178,7 +178,12 @@ file, so the player watches the row and the column meet.
 ## The game history
 
 Every game played on this piano is archived under
-`data/household/history/gaming/pianochess/YYYY-MM-DD/`, one file per game, named for the player.
+`data/household/history/gaming/pianochess/YYYY-MM-DD/`, where `YYYY-MM-DD` is the
+piano's local calendar day. One file is written per game, named
+`{user}_level{opponentLevel}_{duration}_{moveCount}ply_{result}_{outcome}_{timestamp}-{uuid}.yml`.
+The filename makes a directory listing useful without opening YAML; `levelunknown` is
+used honestly for an old/incomplete game where effective-opponent telemetry was never resolved.
+An abandoned game is named `quit_quit`; its YAML retains `ended_by: left` as the event detail.
 This is separate from the player's own scorecard (`apps/chess/games/`), which only exists for games
 that finished, and it answers a different question: *how is this child actually doing, over months?*
 
