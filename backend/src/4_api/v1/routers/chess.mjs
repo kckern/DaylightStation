@@ -8,6 +8,20 @@ import { safeSegment } from './lib/emulatorPaths.mjs';
  *
  * One request per move — there is nothing to stream until a live eval bar
  * exists, and adding one later does not disturb this contract.
+ *
+ * Mounted twice in `app.mjs`: at `/api/v1/chess` directly, and a second time
+ * — the SAME router instance — as a `compatibilityRouters` entry inside
+ * `pianoGames.mjs`'s composition, which is what actually answers
+ * `/api/v1/piano-games/chess/*`. That second mount is registered before the
+ * generic `:gameId` routes in `pianoGames.mjs` (the router), so it intercepts
+ * every chess request there and this file's fen-trusting contract is what the
+ * kiosk gets either way — chess is not yet running through
+ * `PianoGamesContainer` for real traffic. `chessApi.js` was pointed at the
+ * unified path so the client is already on the URL every game is meant to
+ * converge on; this file is unchanged and stays the actual implementation
+ * until a later task cuts traffic over to the container (see
+ * `ChessEngineAdapter.mjs`, which exists today only so the container CAN run
+ * chess, and is exercised by tests rather than by either mount).
  */
 export function createChessRouter({
   engine, configService, recordStore = null, archiveStore = null, ladderService = null, logger = null,
