@@ -75,4 +75,18 @@ describe('the record the ladder actually reads', () => {
     });
     expect(countsTowardPromotion(record, DEFAULT_LADDER_POLICY, 5)).toBe(false);
   });
+
+  it('records an unresolved level as null, not 0 — Number(null) is 0, a real finite number, so a naive coercion would silently turn "the ladder had not loaded yet" into an indistinguishable, promotable level-0 win', () => {
+    const explicitlyNull = buildGameRecord({
+      game: finished, rungId: 'learner', level: null,
+      hints: 0, bestMoves: 0, takebacks: 0, startedAt: 0, endedAt: 1000,
+    });
+    expect(explicitlyNull.level).toBeNull();
+
+    const omitted = buildGameRecord({
+      game: finished, rungId: 'learner',
+      hints: 0, bestMoves: 0, takebacks: 0, startedAt: 0, endedAt: 1000,
+    });
+    expect(omitted.level).toBeNull();
+  });
 });

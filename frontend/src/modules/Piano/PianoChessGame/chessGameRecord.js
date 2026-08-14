@@ -30,8 +30,12 @@ export function buildGameRecord({
     completed: true,
     // Which rung this was played against. The ladder refuses to promote on a
     // game played against anyone other than the opponent being climbed, and
-    // without this it cannot tell the difference.
-    level: Number.isFinite(Number(level)) ? Number(level) : null,
+    // without this it cannot tell the difference. `level == null` is checked
+    // first and explicitly: `Number(null)` is `0`, a finite number, so folding
+    // that case into the Number.isFinite check below would turn "the ladder
+    // hadn't loaded yet" into a silent, promotable "level 0" — the exact kind
+    // of unknown-read-as-zero this task exists to stop happening.
+    level: level == null ? null : (Number.isFinite(Number(level)) ? Number(level) : null),
     moves: Math.ceil((game.history?.length || 0) / 2),
     help: {
       hints: Math.max(0, hints || 0),
