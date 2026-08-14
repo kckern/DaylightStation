@@ -235,6 +235,14 @@ const emptyState = () => ({
   state: null,
   terminal: false,
   issuedArtifacts: [],
+  // The `at` of the most recent successful `issued`/`reprinted` event — NOT
+  // the most recent scan. IssueDocument's print-debounce times its cooldown
+  // window from this field precisely because a `failed` annotation (an
+  // attempt that never reached paper) does not touch it: a print that failed
+  // must be retryable on the very next scan, and the only way to tell "just
+  // printed" from "just tried and failed" is to record ONLY the successful
+  // one. See the `issued`/`reprinted` handlers below.
+  lastPrintedAt: null,
   attemptIds: [],
   gradedPercent: null,
   gradedPassingPercent: null,
@@ -270,12 +278,14 @@ const APPLY = {
   issued(s, e) {
     if (e.artifactId && !s.issuedArtifacts.includes(e.artifactId)) s.issuedArtifacts.push(e.artifactId);
     s.lastFailure = null;
+    s.lastPrintedAt = e.at;
   },
   reprinted(s, e, push) {
     if (e.artifactId && !s.issuedArtifacts.includes(e.artifactId)) {
       push(`reprinted artifactId "${e.artifactId}" was never issued (a reprint reuses the original)`);
     }
     s.lastFailure = null;
+    s.lastPrintedAt = e.at;
   },
   media_dispatched(s, e) {
     s.mediaDispatch = {

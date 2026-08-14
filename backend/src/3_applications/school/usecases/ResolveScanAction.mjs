@@ -427,6 +427,32 @@ export class ResolveScanAction {
       return this.#onScreen(sessionId, unit, tokenClass, sessionState?.learnerId ?? null);
     }
     const result = await this.#issue.execute({ sessionId });
+
+    // PRINT DEBOUNCE (IssueDocument, spec: a household print quota, not a
+    // paper factory): `status: 'debounced'` means the sheet was already
+    // printed inside the cooldown window, and IssueDocument deliberately
+    // returned NOTHING to explain — no worksheet, no `document`. This is the
+    // one status this method must NOT fall through to the `receipts.print`
+    // branch below for: `result.document` is null here, and printing a
+    // thermal slip that says "nothing happened" is exactly the redundant
+    // paper the debounce exists to eliminate. This is an AUTHORISED,
+    // DOCUMENTED exception to `tokens.mjs`'s "a scan never succeeds
+    // silently" rule — see IssueDocument's own comment at its debounce check
+    // for why the household chose silence here. Do not merge this branch
+    // back into the `printedSheet` fallback below; that would resurrect the
+    // duplicate-slip bug this debounce exists to remove.
+    if (result.status === 'debounced') {
+      return {
+        status: result.status,
+        tokenClass,
+        sessionId,
+        physical: 'none',
+        printed: false,
+        message: result.message,
+        effect: { artifactId: result.artifactId },
+      };
+    }
+
     // A worksheet came out of the laser: that IS the physical response, and a
     // receipt beside it would be noise. Anything else needs explaining.
     const printedSheet = result.status === 'issued' || result.status === 'reprinted';

@@ -515,6 +515,11 @@ export async function createSchoolLifecycle({
     printDocuments, renderPrintDocument, allocationStore,
     assignments: stores.assignments, worksheetInstances,
     answerSheetPolicy: cfg.answer_sheets ?? null,
+    // Same `printing:` block the laser host/port/path and the page-quota
+    // policy keys already live in (see the printer construction above and
+    // `PrintService`'s `#policy` getter) — one block, one place a grown-up
+    // edits the household's whole print posture from.
+    printCooldownMinutes: cfg.printing?.printCooldownMinutes ?? null,
     bankReader, clock, rng: draw, logger,
   });
   const dispatchMedia = playback

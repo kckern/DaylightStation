@@ -12,11 +12,18 @@
  * @property {number} windowMinutes  - rolling window length
  * @property {number} pagesPerWindow - pages a child may print unattended per window
  * @property {number} maxPagesPerJob - hard ceiling on a single job (approval can't bypass this)
+ * @property {number} printCooldownMinutes - per-session debounce: a re-scan of an
+ *   already-printed ticket inside this window is a silent no-op (IssueDocument),
+ *   so two scans of the same ticket ten seconds apart cannot put two identical
+ *   jobs on the laser printer. A DIFFERENT axis from the three keys above —
+ *   those throttle total PAGES across a household window; this throttles
+ *   repeat prints of the SAME session regardless of page count.
  */
 export const DEFAULT_PRINT_POLICY = Object.freeze({
   windowMinutes: 60,
   pagesPerWindow: 5,
   maxPagesPerJob: 20,
+  printCooldownMinutes: 10,
 });
 
 /**

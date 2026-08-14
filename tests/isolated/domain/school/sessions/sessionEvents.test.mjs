@@ -403,6 +403,48 @@ describe('reduceSession: reprint lineage', () => {
   });
 });
 
+// The print-debounce feature (IssueDocument) needs to time its cooldown from
+// the last successful PRINT, not the last scan — a session with no print yet
+// carries no such signal, and a print carries the ONLY signal a re-scan (that
+// never reaches the printer) must not overwrite.
+describe('reduceSession: lastPrintedAt', () => {
+  it('is null before anything has ever been printed', () => {
+    const state = reduceSession(log(['created']));
+    expect(state.lastPrintedAt).toBeNull();
+  });
+
+  it('is stamped from the issued event\'s own `at`', () => {
+    const events = [
+      { ...ev('created'), at: '2026-08-14T09:00:00.000Z' },
+      { ...ev('issued'), at: '2026-08-14T09:00:05.000Z' },
+    ];
+    const state = reduceSession(events);
+    expect(state.lastPrintedAt).toBe('2026-08-14T09:00:05.000Z');
+  });
+
+  it('advances to the LATEST reprint\'s `at`, not the original issue', () => {
+    const events = [
+      { ...ev('created'), at: '2026-08-14T09:00:00.000Z' },
+      { ...ev('issued'), at: '2026-08-14T09:00:05.000Z' },
+      { ...ev('reprinted'), at: '2026-08-14T09:10:00.000Z' },
+    ];
+    const state = reduceSession(events);
+    expect(state.lastPrintedAt).toBe('2026-08-14T09:10:00.000Z');
+  });
+
+  // A `failed` annotation records an attempt that never reached paper — it
+  // must never look like a successful print to a debounce reading this field.
+  it('a failed print attempt does not move lastPrintedAt', () => {
+    const events = [
+      { ...ev('created'), at: '2026-08-14T09:00:00.000Z' },
+      { ...ev('failed'), at: '2026-08-14T09:00:03.000Z' },
+      { ...ev('issued'), at: '2026-08-14T09:00:05.000Z' },
+    ];
+    const state = reduceSession(events);
+    expect(state.lastPrintedAt).toBe('2026-08-14T09:00:05.000Z');
+  });
+});
+
 describe('reduceSession: annotation events', () => {
   it('reassignment moves the credited learner without advancing state', () => {
     const state = reduceSession(log(['created', 'issued', 'reassigned']));

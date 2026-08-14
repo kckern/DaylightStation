@@ -425,18 +425,23 @@ record — recover with `release-card`. Accepted at household scale.
   than pinning a phantom rev.
 - `release-card <cardId> [--rows a-b]` — allocation housekeeping.
 
-`node cli/school-atlas-sim.cli.mjs --out <directory>` is the file-only Atlas
-lifecycle proof. It builds Milo's and Felix's real agendas, scans Milo's agenda
-QR, issues and renders the enrollment-bound worksheet, submits a perfect
-simulated card scan, renders the thermal result receipt, scans its next-lesson
-QR, and verifies answer-sheet reuse. It writes PDFs, PNGs, instance YAML, and a
-`proof.yml`; it deliberately constructs no physical printer adapter and keeps
-sessions, worksheet instances, and attempts in memory so the run leaves no
-learner test history. Pass `--outcome fail` to submit a deterministic failed
-attempt and exercise the complete remediation loop: locator-only review hints,
-a retry QR, the same Student No., the next untouched answer-sheet rows, and a
-fresh worksheet instance containing only the missed item ids with newly chosen
-and ordered options.
+`node cli/barcode-scan-sim.cli.mjs proof <learnerId> <courseId> --out <directory>`
+is the file-only lifecycle proof (formerly `school-atlas-sim.cli.mjs`,
+generalized and folded into this file — see that CLI's own header comment). It
+builds the learner's real agenda, scans the agenda QR, issues and renders the
+enrollment-bound worksheet, submits a perfect simulated card scan, renders the
+thermal result receipt, scans its next-lesson QR, and verifies answer-sheet
+reuse. It writes PDFs and a `proof.yml`-equivalent JSON report; it deliberately
+constructs no physical printer adapter and keeps sessions, worksheet instances,
+and attempts in memory so the run leaves no learner test history. Pass
+`--outcome fail` to submit a deterministic failed attempt and exercise the
+complete remediation loop: locator-only review hints, a retry QR, the same
+Student No., the next untouched answer-sheet rows, and a fresh worksheet
+instance containing only the missed item ids with newly chosen and ordered
+options. `barcode-scan-sim.cli.mjs` also has `scan`/`card`/`lesson`/`flow`
+commands that drive the SAME lifecycle through persistent `--state-dir` stores
+(and, opt-in via `--print`, the real laser printer) rather than in-memory
+doubles — see its header comment for when to reach for which mode.
 
 ### Agenda and result-receipt language
 
