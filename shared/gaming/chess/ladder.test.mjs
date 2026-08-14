@@ -132,6 +132,24 @@ describe('which games count', () => {
     // Replaying a beaten character is practice, and practice earns nothing.
     expect(countsTowardPromotion(game({ level: 0 }), POLICY, 3)).toBe(false);
   });
+
+  it('allows one takeback and refuses two', () => {
+    expect(countsTowardPromotion(game({ help: { takebacks: 1 } }), POLICY, 0)).toBe(true);
+    expect(countsTowardPromotion(game({ help: { takebacks: 2 } }), POLICY, 0)).toBe(false);
+  });
+
+  it('ignores every help ceiling below the unrestricted level', () => {
+    const teaching = { ...POLICY, unrestricted_below_level: 3 };
+    const leaned = game({ level: 2, help: { hints: 9, best_moves: 9, takebacks: 9 } });
+    expect(countsTowardPromotion(leaned, teaching, 2)).toBe(true);
+    expect(countsTowardPromotion({ ...leaned, level: 3 }, teaching, 3)).toBe(false);
+  });
+
+  it('defaults leave existing behaviour untouched', () => {
+    expect(DEFAULT_LADDER_POLICY.max_takebacks).toBe(1);
+    expect(DEFAULT_LADDER_POLICY.unrestricted_below_level).toBe(0);
+    expect(countsTowardPromotion(game(), DEFAULT_LADDER_POLICY, 0)).toBe(true);
+  });
 });
 
 describe('climbing', () => {
