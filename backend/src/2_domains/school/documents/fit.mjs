@@ -77,7 +77,31 @@ export function resolveFitPlan({ policy, attempts }) {
     // `?? normalAttempt` fallback only matters for a caller (e.g. this
     // file's own unit tests) that measured normal alone.
     const compactAttempt = attempts.find((attempt) => attempt.density === 'compact');
-    return { attempt: compactAttempt ?? normalAttempt };
+    const spilled = compactAttempt ?? normalAttempt;
+
+    // BALANCED SPILL (household rule: "we're not just having a dangling
+    // question number 10 at the end" — equal vertical fill across pages, not
+    // equal question COUNT) is real, but it is deliberately NOT decided here.
+    // This function's whole contract (see the header note) is "judge already-
+    // measured attempts, never opine on how rendering should use one" — `fill`
+    // is the one existing exception, and only because `growLastPage` there is
+    // unconditional on the policy alone (every `fill` render always grows,
+    // full stop). Balancing a `prefer-one-page` spill is NOT unconditional on
+    // the policy alone: it only makes sense when a spill actually happened
+    // (`pageCount > 1` on the attempt this function is about to return), and
+    // "does the chosen attempt still overflow one page" is exactly the kind
+    // of post-hoc, render-shaped question `fit.mjs` is not supposed to be
+    // asking — it would mean this "pure decision table" (see every other
+    // branch's plain `{ attempt }` returns) starts inspecting its own output
+    // to decide whether to mutate it, for a policy-specific special case.
+    // `RenderPrintDocument.mjs` (the use case explicitly licensed to reason
+    // about rendering — see this file's own header) derives `balance` and
+    // the spill-only half of `growLastPage` itself from the same two facts
+    // this function already exposes for free: `document.fit.policy` and
+    // `chosen.pageCount`. Returning the spilled attempt untouched here also
+    // keeps this branch symmetric with the two outcomes above it (fits at
+    // normal / fits at compact) — none of them decorate the attempt either.
+    return { attempt: spilled };
   }
 
   throw new Error(`resolveFitPlan: unknown fit.policy '${policy}'`);

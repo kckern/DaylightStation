@@ -346,8 +346,9 @@ export class IssueDocument {
       });
     }
 
+    let printResult;
     try {
-      await this.#printer.printPdf(rendered.pdf, {
+      printResult = await this.#printer.printPdf(rendered.pdf, {
         jobName: `school-${state.unitId}-${artifactId}`,
         user: state.learnerId ?? 'daylight',
       });
@@ -359,7 +360,9 @@ export class IssueDocument {
     if (rendered.formMap) await this.#formMaps.put(artifactId, rendered.formMap);
 
     const type = reprinting ? 'reprinted' : 'issued';
-    const { errors, event } = createEvent({ type, at: nowIso, sessionId, artifactId });
+    const { errors, event } = createEvent({
+      type, at: nowIso, sessionId, artifactId, confirmed: this.#printConfirmed(printResult),
+    });
     if (errors.length) throw new Error(`IssueDocument: could not record the issue: ${errors.join('; ')}`);
     await this.#sessions.appendEvent(sessionId, event);
 
@@ -431,15 +434,30 @@ export class IssueDocument {
         reuse: this.#answerSheetPolicy.reuse,
       })
       : null;
+    // Header manifest (Task 2, RenderPrintDocument's `context.passPercent`):
+    // `unit.passing.percent` is the SAME field `GradeSubmission`/
+    // `CloseSessionOutcome` already read as the authoritative pass bar for
+    // closing this exact lesson's session — reading anything else here (a
+    // course-level default, a hand-copied constant) would risk the printed
+    // sheet disagreeing with what actually grades it. `?? null` (no
+    // `passing` authored for this unit) prints the question count alone —
+    // see `RenderPrintDocument`'s `buildManifestText`.
+    const passPercent = unit.passing?.percent ?? null;
     let rendered;
     try {
       const result = await this.#renderPrintDocument.execute({
         document: publishedDocument,
         context: reprinting && instance.omr?.cardId
-          ? { cardId: instance.omr.cardId, startRow: instance.omr.rowRange.start, learnerId: state.learnerId, learnerName, date: issueDate, sessionId }
+          ? {
+            cardId: instance.omr.cardId, startRow: instance.omr.rowRange.start, learnerId: state.learnerId, learnerName, date: issueDate, sessionId, passPercent,
+          }
           : reusableCard
-            ? { ...reusableCard, learnerId: state.learnerId, learnerName, date: issueDate, sessionId }
-            : { freshCard: true, learnerId: state.learnerId, learnerName, date: issueDate, sessionId },
+            ? {
+              ...reusableCard, learnerId: state.learnerId, learnerName, date: issueDate, sessionId, passPercent,
+            }
+            : {
+              freshCard: true, learnerId: state.learnerId, learnerName, date: issueDate, sessionId, passPercent,
+            },
       });
       rendered = { pdf: result.bytes, pageCount: result.pageCount, allocation: result.allocation };
     } catch (err) {
@@ -463,14 +481,17 @@ export class IssueDocument {
       await this.#worksheetInstances.put(instance);
     }
 
+    let printResult;
     try {
-      await this.#printer.printPdf(rendered.pdf, { jobName: `school-${state.unitId}-${instance.id}`, user: state.learnerId });
+      printResult = await this.#printer.printPdf(rendered.pdf, { jobName: `school-${state.unitId}-${instance.id}`, user: state.learnerId });
     } catch (err) {
       await this.#orphanAllocation(rendered.allocation, { sessionId, unitId: state.unitId, stage: 'print' });
       return this.#recordFailure({ sessionId, stage: 'print', reason: err.message, nowIso, state, cause: 'printer' });
     }
     const type = reprinting ? 'reprinted' : 'issued';
-    const { errors, event } = createEvent({ type, at: nowIso, sessionId, artifactId: instance.id });
+    const { errors, event } = createEvent({
+      type, at: nowIso, sessionId, artifactId: instance.id, confirmed: this.#printConfirmed(printResult),
+    });
     if (errors.length) throw new Error(`IssueDocument: could not record worksheet instance: ${errors.join('; ')}`);
     await this.#sessions.appendEvent(sessionId, event);
     return {
@@ -624,8 +645,9 @@ export class IssueDocument {
       });
     }
 
+    let printResult;
     try {
-      await this.#printer.printPdf(rendered.pdf, {
+      printResult = await this.#printer.printPdf(rendered.pdf, {
         jobName: `school-${state.unitId}-${artifactId}`,
         user: state.learnerId ?? 'daylight',
       });
@@ -652,7 +674,9 @@ export class IssueDocument {
     }
 
     const type = reprinting ? 'reprinted' : 'issued';
-    const { errors, event } = createEvent({ type, at: nowIso, sessionId, artifactId });
+    const { errors, event } = createEvent({
+      type, at: nowIso, sessionId, artifactId, confirmed: this.#printConfirmed(printResult),
+    });
     if (errors.length) throw new Error(`IssueDocument: could not record the issue: ${errors.join('; ')}`);
     await this.#sessions.appendEvent(sessionId, event);
 
@@ -725,6 +749,38 @@ export class IssueDocument {
     const elapsedMs = Date.parse(nowIso) - Date.parse(lastPrintedAt);
     if (!Number.isFinite(elapsedMs)) return false;
     return elapsedMs < this.#printCooldownMinutes * 60_000;
+  }
+
+  /**
+   * Whether a `printer.printPdf()` result represents a GENUINE physical
+   * print, for the `confirmed` field threaded into the `issued`/`reprinted`
+   * event (see `sessionEvents.mjs`'s SCHEMA comment on that field).
+   *
+   * The bug this exists to close: `printer.printPdf()` NOT throwing only
+   * ever meant "the injected port accepted this call" — every one of this
+   * class's three issuing branches already treated that as "the print
+   * succeeded" and stamped the debounce timer from it, with no way to tell
+   * a real laser-printer dispatch apart from a caller that deliberately
+   * captures bytes instead of sending them anywhere (the `barcode-scan-sim`
+   * CLI's own "dry run by default" printer double is exactly this — see its
+   * `capturingPrinter` doc comment). A double built that way IS legitimate
+   * (it is what makes "dry run unless `--print`" true for that tool without
+   * turning IssueDocument's own printer-failure handling into dead code no
+   * test ever exercises) — the bug was never that such a double should not
+   * exist, only that arming a REAL debounce off it, silently, was wrong. A
+   * real print that came out of the tray must debounce the next scan; a
+   * simulator run that produced nothing must not block the next REAL print
+   * for however many minutes the cooldown lasts.
+   *
+   * `printResult?.confirmed === false` is the ONLY way to opt out — every
+   * existing adapter/double (`LaserPrinterAdapter`'s IPP/raw-9100 result
+   * shapes, `FakeLaserPrinter`'s `{ok:true,...}`, anything that resolves
+   * without ever mentioning `confirmed`) defaults to "yes, this was real,"
+   * so this is purely additive: nothing that used to arm the cooldown stops
+   * arming it just because this check exists.
+   */
+  #printConfirmed(printResult) {
+    return printResult?.confirmed !== false;
   }
 
   /**

@@ -98,12 +98,19 @@ export class RecordCardScanOutcome {
   }
 
   /**
-   * @param {{testId: string, card: object}} args - `card` is ONE graded entry
-   *   from `ResolveCardScan.execute().results` (never a drift-error entry).
+   * @param {{testId: string, card: object, cardIdInferred?: {pattern: string, cardId: string}|null}} args -
+   *   `card` is ONE graded entry from `ResolveCardScan.execute().results`
+   *   (never a drift-error entry). `cardIdInferred` is that SAME `execute()`
+   *   call's top-level diagnostic (present only when `testId` itself needed
+   *   best-effort resolution) — threaded down so the permanent evidence
+   *   record, not just the transient log stream, can tell a read id from an
+   *   inferred one (household direction: "the resolution must be visible,
+   *   not silently substituted" — a log line rotates away, an attempt record
+   *   does not).
    * @returns {Promise<{recorded: boolean, reason?: string, attemptIds?: string[],
    *   session?: {sessionId: string, advancedTo: string|null, reason?: string}}>}
    */
-  async execute({ testId, card } = {}) {
+  async execute({ testId, card, cardIdInferred = null } = {}) {
     if (!card || card.error || !Array.isArray(card.results)) {
       return { recorded: false, reason: 'not-a-graded-result' };
     }
@@ -208,6 +215,10 @@ export class RecordCardScanOutcome {
           rowStatus: row.status,
           scanKey: key,
           ...(card.reScored ? { reScored: true } : {}),
+          // The card id this row's allocation was resolved against was
+          // INFERRED (best-effort match against a `?`-bearing scan), not
+          // cleanly read off the sheet — see this method's own doc comment.
+          ...(cardIdInferred ? { cardIdInferred } : {}),
           // The attempt's own `sessionId` already carries `card.sessionId`
           // (set below); this copy is for evidence-layer reach, since
           // `attemptEvidence` maps provenance rather than the raw attempt.

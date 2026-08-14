@@ -5,7 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   generateCardId, CARD_ROWS, ROW_CHOICES, ROW_MAPPABLE_TYPES, ALLOCATION_STATUSES,
-  planRows, rangesOverlap, checkCollision, supersedes,
+  planRows, rangesOverlap, checkCollision, supersedes, resolveAmbiguousCardId,
 } from '#domains/school/documents/allocation.mjs';
 
 // A tiny deterministic rng stand-in for mulberry32: replays a fixed queue of
@@ -67,6 +67,84 @@ describe('generateCardId', () => {
       expect(id).toMatch(/^\d{7}$/);
       expect(id).not.toBe('0000000');
     }
+  });
+});
+
+describe('resolveAmbiguousCardId', () => {
+  // The real incident this exists for: column 5 double-marked (digits 4 and
+  // 1), everything else read clean -> `7481?48`.
+  const REAL_PATTERN = '7481?48';
+  const REAL_CANDIDATES = [[7], [4], [8], [1], [4, 1], [4], [8]];
+
+  it('resolves the real incident pattern when exactly one known card is consistent', () => {
+    const known = ['7481148', '9999999'];
+    const result = resolveAmbiguousCardId(REAL_PATTERN, REAL_CANDIDATES, known);
+    expect(result).toEqual({ cardId: '7481148' });
+  });
+
+  it('refuses (never guesses) when two known cards are BOTH consistent with the double-marked candidate set', () => {
+    // Both 7481148 and 7481448 are printed cards, and the double mark hit
+    // digits 4 and 1 — either is a real possibility, so this must refuse.
+    const known = ['7481148', '7481448'];
+    const result = resolveAmbiguousCardId(REAL_PATTERN, REAL_CANDIDATES, known);
+    expect(result).toEqual({ candidates: ['7481148', '7481448'] });
+  });
+
+  it('refuses when zero known cards are consistent with the pattern', () => {
+    const known = ['1111111', '2222222'];
+    const result = resolveAmbiguousCardId(REAL_PATTERN, REAL_CANDIDATES, known);
+    expect(result).toEqual({ candidates: [] });
+  });
+
+  it('a double-marked column constrains the search to the marked digits — a card using the UNMARKED digit is excluded even though it otherwise matches', () => {
+    // Position 4 (0-indexed) double-marked 4+1 — a card with digit 9 there
+    // is not a possible read of that mark, however cleanly everything else
+    // matches, so it must not be offered as a candidate.
+    const known = ['7481948'];
+    const result = resolveAmbiguousCardId(REAL_PATTERN, REAL_CANDIDATES, known);
+    expect(result).toEqual({ candidates: [] });
+  });
+
+  it('a blank column (empty candidate set) is a full wildcard — any digit at that position is consistent', () => {
+    const pattern = '748??48';
+    const candidates = [[7], [4], [8], [], [], [4], [8]];
+    const known = ['7481248'];
+    const result = resolveAmbiguousCardId(pattern, candidates, known);
+    expect(result).toEqual({ cardId: '7481248' });
+  });
+
+  it('never second-guesses a CLEANLY decoded digit — only "?" positions are ever loosened', () => {
+    // '7481148' clean-reads identically to the resolved id except this
+    // candidate list claims position 0 (a clean '7', no '?' in the pattern)
+    // is "really" ambiguous between 7 and 1 — that claim must be ignored
+    // entirely; position 0 is required to match the pattern's own '7' exactly.
+    const pattern = '7481?48';
+    const candidates = [[7, 1], [4], [8], [1], [4, 1], [4], [8]];
+    const known = ['1481148']; // would match on candidates[0] if position 0 were loosened
+    const result = resolveAmbiguousCardId(pattern, candidates, known);
+    expect(result).toEqual({ candidates: [] });
+  });
+
+  it('missing/absent digitMarks degrades to full wildcards at every "?" position — never narrower than an observed blank', () => {
+    const known = ['7481148', '7481948'];
+    expect(resolveAmbiguousCardId(REAL_PATTERN, null, known)).toEqual({
+      candidates: ['7481148', '7481948'],
+    });
+  });
+
+  it('a clean id (no "?") still only matches itself, unaffected by candidate data', () => {
+    const known = ['7481148', '7481948'];
+    expect(resolveAmbiguousCardId('7481148', null, known)).toEqual({ cardId: '7481148' });
+  });
+
+  it('rejects a malformed pattern rather than throwing', () => {
+    expect(resolveAmbiguousCardId('12345', null, ['1234567'])).toEqual({ candidates: [] });
+    expect(resolveAmbiguousCardId(null, null, ['1234567'])).toEqual({ candidates: [] });
+  });
+
+  it('de-duplicates a known-id list that repeats the same card', () => {
+    const result = resolveAmbiguousCardId(REAL_PATTERN, REAL_CANDIDATES, ['7481148', '7481148']);
+    expect(result).toEqual({ cardId: '7481148' });
   });
 });
 

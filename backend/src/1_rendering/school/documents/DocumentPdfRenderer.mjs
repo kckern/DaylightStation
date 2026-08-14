@@ -263,8 +263,11 @@ export function createDocumentPdfRenderer({
 
     if (node.layout === 'compact') {
       const columns = node.columnCount ?? 2;
+      // Same `theme.omr.compactRowPadPt` token `measureOmrNode` (measure.mjs)
+      // sized this row's height with — see that function's own comment for
+      // why a bare literal here would be a measure/draw disagreement.
       const rowLeading = Math.max(...node.cells.map((cell) => cell.lines.length), 1)
-        * choiceLeadingPt + 5;
+        * choiceLeadingPt + theme.omr.compactRowPadPt;
       node.cells.forEach((cell, index) => {
         const column = index % columns;
         const row = Math.floor(index / columns);
@@ -642,6 +645,20 @@ export function createDocumentPdfRenderer({
       cursorY += style.leadingPt;
     }
 
+    // Header manifest ("10 questions · pass 80%" — see measure.mjs's
+    // `headerFragment` for what computes this string and why it is never
+    // authored in source). Centered, caption-register (small + muted) like
+    // `subtitle`/`reading` above it, but its OWN line: it answers a
+    // different question ("how much is here, what clears it") than either
+    // of those, and folding it into `subtitle` would mean a document that
+    // legitimately wants both loses one of them.
+    if (node.manifest) {
+      const style = theme.styles.caption ?? theme.styles.body;
+      setFont(out, style.font ?? 'regular', style.sizePt, style.ink ?? 'muted');
+      out.text(node.manifest, contentX, cursorY, { width: contentWidth, align: 'center', lineBreak: false });
+      cursorY += style.leadingPt;
+    }
+
     if (node.instructions) {
       // Same style-fallback chain drawLineNumbers already uses for a theme
       // that may not carry every optional style key.
@@ -858,7 +875,7 @@ export function createDocumentPdfRenderer({
   // ── render ────────────────────────────────────────────────────────────
   function renderPlaced(document, {
     studentName, date = null, isAnswerKey, keyItems, bank, tokens, furniture = null, growLastPage = false,
-    italic = false, totalPoints = null, keyBlocks = null, keyTitle = null, card = null,
+    italic = false, totalPoints = null, keyBlocks = null, keyTitle = null, card = null, balance = false,
   }) {
     // Opting into `furniture` shrinks the usable page height by the
     // footer-band + continuation-strip reservation (contentBox) BEFORE
@@ -905,6 +922,13 @@ export function createDocumentPdfRenderer({
       // caller that ever sets this true. Default false reproduces every
       // existing render byte-for-byte — see layout.mjs's own doc comment.
       growLastPage,
+      // Fit policy `prefer-one-page`'s spill case (`fit.mjs`'s
+      // `balanceSpill`): RenderPrintDocument sets this true only for the
+      // chosen attempt that policy already decided must spill — see
+      // layout.mjs's own `balance` option doc for the even-fill algorithm
+      // and its narrow eligibility. Default false reproduces every existing
+      // render byte-for-byte.
+      balance,
     });
     if (errors.length) {
       const error = new Error(`document '${document.id}' cannot be laid out: ${errors.map((e) => e.message).join('; ')}`);
@@ -1137,7 +1161,7 @@ export function createDocumentPdfRenderer({
   async function render(source, {
     studentName = null, date = null, answers = null, answerKey = false, bank = null, tokens = null,
     variant = null, furniture = null, growLastPage = false, italic = false, totalPoints = null,
-    keyBlocks = null, keyTitle = null, card = null,
+    keyBlocks = null, keyTitle = null, card = null, balance = false,
   } = {}) {
     // The variant rides on the DOCUMENT, not just alongside it: the footer and
     // the form map both derive from what was rendered, so a variant passed only
@@ -1155,7 +1179,7 @@ export function createDocumentPdfRenderer({
     if (!resolvedAnswers) {
       return renderPlaced(document, {
         studentName, date, isAnswerKey: false, keyItems: [], bank, tokens, furniture, growLastPage, italic, totalPoints,
-        keyBlocks, keyTitle, card,
+        keyBlocks, keyTitle, card, balance,
       });
     }
     const keyItems = keyItemsFor(document, resolvedAnswers);

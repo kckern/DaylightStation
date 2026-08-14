@@ -76,6 +76,37 @@ describe('decodeQuizSheet', () => {
     expect(decoded.testId).toBe('0?2????');
   });
 
+  it('carries testIdCandidates alongside an ambiguous id — the actual marks per column, not a re-guess', () => {
+    const marks = new Array(32).fill(0);
+    marks[0] = 1 << 9;              // digit 0, clean
+    marks[1] = (1 << 9) | (1 << 8); // digits 0+1 double-marked → ?
+    marks[2] = 1 << 7;              // digit 2, clean
+    marks[3] = 1 << 6;              // digit 3, clean
+    marks[4] = 0;                   // blank → ?
+    marks[5] = 1 << 4;              // digit 5, clean
+    marks[6] = 1 << 3;              // digit 6, clean
+    const decoded = decodeQuizSheet(marks);
+    expect(decoded.testId).toBe('0?23?56');
+    // A double-marked column carries the digits actually hit (a real, small
+    // candidate set); a blank column carries nothing at all (unconstrained).
+    // Clean columns carry their own single digit, redundant with `testId`
+    // but harmless — the matcher only ever consults a '?' position.
+    expect(decoded.testIdCandidates).toEqual([[0], [0, 1], [2], [3], [], [5], [6]]);
+  });
+
+  it('omits testIdCandidates entirely for a cleanly-decoded id — no bloat on the common case', () => {
+    const decoded = decodeQuizSheet(CALIBRATION_MARKS);
+    expect(decoded.testId).toBe('0123456');
+    expect(decoded.testIdCandidates).toBeUndefined();
+  });
+
+  it('omits testIdCandidates for a fully blank id (testId null) — nothing for a matcher to do with it', () => {
+    const marks = new Array(32).fill(0);
+    const decoded = decodeQuizSheet(marks);
+    expect(decoded.testId).toBeNull();
+    expect(decoded.testIdCandidates).toBeUndefined();
+  });
+
   it('ignores marks on the unused label rows (bits 5 and 11)', () => {
     const marks = new Array(32).fill(0);
     marks[7] = (1 << 11) | (1 << 5) | (1 << 9); // stray label-row ink + Q1=B

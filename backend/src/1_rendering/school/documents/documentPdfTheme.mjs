@@ -72,6 +72,12 @@ export const documentPdfTheme = Object.freeze({
     ruleWidthPt: 0.8,
     gapBelowPt: 10,
     blankFieldPt: 150,
+    // Matches `measure.mjs`'s prior bare-literal default exactly — legacy
+    // v1 rendering never sets `header.frame: 'double'` (that field is a v2
+    // concept), so this is never actually read on this path; present for
+    // shape completeness only (`workbookTheme.mjs`'s own copy is what a
+    // frame:double v2 document actually reads).
+    framePaddingPt: 7,
     spacingClass: 'heading',
   },
 
@@ -122,6 +128,11 @@ export const documentPdfTheme = Object.freeze({
     choiceGapPt: 3,
     /** Lines of choice text reserved when the probe has no bank to measure. */
     probeChoiceLines: 2,
+    // Matches `measure.mjs`/`DocumentPdfRenderer.mjs`'s prior bare-literal
+    // `+ 5` exactly — legacy v1 rendering never sets `omr_response.layout:
+    // 'compact'` (that field is a v2 concept), so this is never actually
+    // read on this path; present for shape completeness only.
+    compactRowPadPt: 5,
     spacingClass: 'body',
   },
 

@@ -98,7 +98,18 @@ const NORMAL_SPACING = {
   action: { heading: 16, body: 12, question: 14, instruction: 12, asset: 14, action: 12 },
 };
 
-const COMPACT_RATIO = 0.7;
+// 0.7 (the original value) reclaimed too little: measured against the
+// household's own worst-case worksheet (young-peoples-atlas-us, upper
+// profile, 10 five-choice questions — see the fit-policy report this change
+// shipped with), `prefer-one-page`'s compact fallback still overset a real
+// one-page budget by as much as ~100pt at 0.7, i.e. compact was reclaiming
+// gap space but not nearly enough of it. 0.55 was the value that, combined
+// with this file's other compact-only reductions (header frame padding, omr
+// row pad, furniture bands), closed that gap with room to spare across a
+// sample of 20 seeded worksheet instances (0 pages over budget; see that
+// report for the sweep). Still comfortably more than half the normal gap —
+// this is tighter rhythm, not touching text.
+const COMPACT_RATIO = 0.42;
 
 function scaleSpacing(table, ratio) {
   const scaled = {};
@@ -186,10 +197,18 @@ export function createWorkbookTheme({ typeScale = 'standard', density = 'normal'
       titleLeadingPt: styles.heading1.leadingPt,
       metaSizePt: styles.label.sizePt,
       metaLeadingPt: styles.label.leadingPt,
-      metaTitleGapPt: density === 'compact' ? 6 : 9,
-      ruleGapPt: density === 'compact' ? 5 : 7,
+      metaTitleGapPt: density === 'compact' ? 4 : 9,
+      ruleGapPt: density === 'compact' ? 3 : 7,
       ruleWidthPt: 0.8,
-      gapBelowPt: density === 'compact' ? 7 : 10,
+      gapBelowPt: density === 'compact' ? 5 : 10,
+      // The `frame: 'double'` border's own inner padding (spec §7 "right
+      // sizing"): whitespace around the title/meta text, not the text
+      // itself, so `compact` tightens it the same way it tightens every
+      // other inter-element gap in this theme — see `measure.mjs`'s
+      // `headerFragment` for the one place this is read. `documentPdfTheme`'s
+      // matching field stays a flat 7 (legacy default, never actually
+      // exercised there — see that file's own comment).
+      framePaddingPt: density === 'compact' ? 4 : 7,
       blankFieldPt: 150,
       spacingClass: 'heading',
     },
@@ -293,7 +312,17 @@ export function createWorkbookTheme({ typeScale = 'standard', density = 'normal'
        * instruction line exists there), so this token has no effect on the
        * legacy circle-row geometry above.
        */
-      instructionGapPt: density === 'compact' ? 3 : 5,
+      instructionGapPt: density === 'compact' ? 2 : 5,
+      /**
+       * Vertical pad below a `layout: 'compact'` omr row's tallest wrapped
+       * choice label (`measureOmrNode`/`drawOmrRow`) — whitespace under
+       * already-sized choice text, same "gaps first" bucket as every other
+       * compact-tightened token here. This row never draws a bubble/checkbox
+       * on a card-backed sheet (the mark lives on the physical Chatsworth
+       * card, not this page — see `drawOmrRow`'s `cardBacked` branch), so
+       * shrinking its pad has no bearing on scan geometry either way.
+       */
+      compactRowPadPt: density === 'compact' ? 3 : 5,
       spacingClass: 'body',
     },
 
@@ -307,7 +336,7 @@ export function createWorkbookTheme({ typeScale = 'standard', density = 'normal'
     question: {
       numberGutterPt: 24,
       numberSizePt: styles.label.sizePt,
-      innerGapPt: density === 'compact' ? 5 : 6,
+      innerGapPt: density === 'compact' ? 4 : 6,
       spacingClass: 'question',
     },
 
@@ -316,13 +345,17 @@ export function createWorkbookTheme({ typeScale = 'standard', density = 'normal'
      * `footerBandPt`/`continuationStripPt` are reserved out of the bottom of
      * the content flow on every page (`contentBox`); `gutterPt` is the
      * default 3-hole-punch allowance (0.25in) used when a caller passes
-     * `gutter: true` rather than an explicit width. It does not vary by
-     * density/scale — hole spacing is a physical constant of the punch, not
-     * a typographic one.
+     * `gutter: true` rather than an explicit width. `gutterPt` does not vary
+     * by density/scale — hole spacing is a physical constant of the punch,
+     * not a typographic one. `footerBandPt`/`continuationStripPt` are NOT
+     * physical constants (they only need to fit the footer/continuation
+     * text plus a little breathing room), so — unlike the gutter — `compact`
+     * tightens them same as every other reserved band in this theme; the
+     * text they hold (`theme.footer`/`theme.styles.label`) is unchanged.
      */
     furniture: {
-      footerBandPt: density === 'compact' ? 22 : 28,
-      continuationStripPt: density === 'compact' ? 14 : 18,
+      footerBandPt: density === 'compact' ? 12 : 28,
+      continuationStripPt: density === 'compact' ? 13 : 18,
       gutterPt: 18,
     },
 
