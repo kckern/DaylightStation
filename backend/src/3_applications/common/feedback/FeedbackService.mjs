@@ -13,7 +13,7 @@ import { shortId } from '#domains/core/utils/id.mjs';
  * the collection doubles as a triage inbox.
  *
  *   audio  → media/audio/feedback/{app}/{id}.{ext}
- *   item   → data/household/common/feedback/{app}/{id}.yml
+ *   item   → data/household/feedback/{app}/{id}.yml
  */
 
 const EXT_BY_MIME = {
@@ -31,7 +31,7 @@ export class FeedbackService {
     this.transcription = transcriptionService;
     this.logger = logger;
     this.audioRoot = path.join(configService.getMediaDir(), 'audio', 'feedback');
-    this.itemsRoot = configService.getHouseholdPath('common/feedback');
+    this.itemsRoot = configService.getHouseholdPath('feedback');
   }
 
   _itemsDir(app) { return safeApp(app) ? path.join(this.itemsRoot, app) : null; }
