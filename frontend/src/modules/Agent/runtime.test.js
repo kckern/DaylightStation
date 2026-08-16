@@ -263,23 +263,26 @@ describe('createAgentRuntime("health-coach").run — messages forwarding', () =>
 });
 
 describe('createAgentRuntime — threadId', () => {
-  let originalFetch, originalLocalStorage;
+  let originalFetch;
   beforeEach(() => {
     originalFetch = globalThis.fetch;
-    originalLocalStorage = globalThis.localStorage;
-    // Provide a minimal localStorage shim
+    // `localStorage` is an accessor with no setter on the DOM environment's
+    // window, so assigning to it throws "Cannot set property localStorage of
+    // #<GlobalWindow> which has only a getter" — which failed this whole block
+    // in beforeEach, before any assertion ran. vi.stubGlobal defines the
+    // property instead of assigning to it.
     const store = {};
-    globalThis.localStorage = {
+    vi.stubGlobal('localStorage', {
       _store: store,
       getItem(k) { return Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null; },
       setItem(k, v) { store[k] = String(v); },
       removeItem(k) { delete store[k]; },
       clear() { for (const k of Object.keys(store)) delete store[k]; },
-    };
+    });
   });
   afterEach(() => {
     globalThis.fetch = originalFetch;
-    globalThis.localStorage = originalLocalStorage;
+    vi.unstubAllGlobals();
   });
 
   it('ships a threadId in the request body', async () => {
@@ -383,21 +386,23 @@ describe('createAgentRuntime — threadId', () => {
 });
 
 describe('threadId helpers exported from runtime', () => {
+  // runtime.js exports getOrCreateThreadId at line 28 and uses it on both the run
+  // and runStream paths, so its absence is a real regression rather than an
+  // acceptable variation. The previous `if (typeof … !== 'function') return`
+  // turned that regression into a silent pass.
   it('getOrCreateThreadId is exported and returns stable id', () => {
-    if (typeof getOrCreateThreadId !== 'function') {
-      // Helper not exported — that's fine, just skip.
-      return;
-    }
+    expect(typeof getOrCreateThreadId).toBe('function');
+
     const store = {};
-    const savedLS = globalThis.localStorage;
-    globalThis.localStorage = {
+    vi.stubGlobal('localStorage', {
       getItem(k) { return store[k] ?? null; },
       setItem(k, v) { store[k] = v; },
       removeItem(k) { delete store[k]; },
-    };
-    const a = getOrCreateThreadId('agent', 'user');
-    const b = getOrCreateThreadId('agent', 'user');
-    globalThis.localStorage = savedLS;
-    expect(a).toBe(b);
+    });
+    try {
+      expect(getOrCreateThreadId('agent', 'user')).toBe(getOrCreateThreadId('agent', 'user'));
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
