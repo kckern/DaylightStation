@@ -84,6 +84,21 @@ export function requestLoggerMiddleware(options = {}) {
         // null, not absent: "the client sent no User-Agent" is a fact, and a
         // missing field would be indistinguishable from a field never captured.
         userAgent: req.headers['user-agent'] ?? null,
+        // WHICH device. All frontend traffic arrives from the docker network,
+        // so `path`+`status`+`ip` cannot tell the garage fitness kiosk from the
+        // piano tablet — on 2026-08-16 that conflation sent the investigation
+        // after the wrong screen. Stamped by deviceResolver (4_api).
+        deviceId: req.deviceId ?? null,
+        // Reading `deviceId` without this is a mistake: the value is a declared
+        // device id in one case and a User-Agent string in another.
+        //   'header'     the client sent X-Daylight-Device
+        //   'user-agent' it did not; deviceId is the UA, which separates
+        //                Shield WebView / tablet Chromium / garage Firefox but
+        //                not two identical kiosks
+        //   'none'       neither; deviceId is null
+        //   'unresolved' deviceResolver did not run for this request — the
+        //                request was NOT anonymous, we simply did not look
+        deviceIdSource: req.deviceIdSource ?? 'unresolved',
         aborted,
       };
 
