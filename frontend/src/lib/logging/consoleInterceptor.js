@@ -12,6 +12,21 @@
  */
 
 import { getDaylightLogger } from './singleton.js';
+import { isEmittingToConsole } from './consoleEmitGuard.js';
+
+/**
+ * Should this console call be forwarded to the logger?
+ *
+ * No, if the logger itself produced it — otherwise the logger's own
+ * `[Logger] …` dev output is captured and re-shipped as a second event, and
+ * every warn/error reaches the backend twice. See consoleEmitGuard.js.
+ *
+ * @param {string} level - Log level
+ * @returns {boolean}
+ */
+function shouldForward(level) {
+  return !isEmittingToConsole() && !shouldRateLimit(level);
+}
 
 // Rate limiting: max events per level per second
 const RATE_LIMIT_CONFIG = {
@@ -128,7 +143,7 @@ export function interceptConsole(options = {}) {
     console.log = (...args) => {
       originalConsole.log(...args);
 
-      if (!shouldRateLimit('log')) {
+      if (shouldForward('log')) {
         logger.debug('console.log', {
           args: args.map(serializeArg)
         });
@@ -141,7 +156,7 @@ export function interceptConsole(options = {}) {
     console.info = (...args) => {
       originalConsole.info(...args);
 
-      if (!shouldRateLimit('info')) {
+      if (shouldForward('info')) {
         logger.info('console.info', {
           args: args.map(serializeArg)
         });
@@ -154,7 +169,7 @@ export function interceptConsole(options = {}) {
     console.warn = (...args) => {
       originalConsole.warn(...args);
 
-      if (!shouldRateLimit('warn')) {
+      if (shouldForward('warn')) {
         logger.warn('console.warn', {
           args: args.map(serializeArg)
         });
@@ -167,7 +182,7 @@ export function interceptConsole(options = {}) {
     console.error = (...args) => {
       originalConsole.error(...args);
 
-      if (!shouldRateLimit('error')) {
+      if (shouldForward('error')) {
         logger.error('console.error', {
           args: args.map(serializeArg)
         });
@@ -180,7 +195,7 @@ export function interceptConsole(options = {}) {
     console.debug = (...args) => {
       originalConsole.debug(...args);
 
-      if (!shouldRateLimit('debug')) {
+      if (shouldForward('debug')) {
         logger.debug('console.debug', {
           args: args.map(serializeArg)
         });

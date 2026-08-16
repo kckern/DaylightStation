@@ -138,6 +138,8 @@ export function useStreamingSearch(endpoint, extraQueryString = '') {
   const [sourceErrors, setSourceErrors] = useState([]);
   const eventSourceRef = useRef(null);
   const queryRef = useRef('');
+  const resultCountRef = useRef(0);
+  const startedAtRef = useRef(null);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -170,6 +172,12 @@ export function useStreamingSearch(endpoint, extraQueryString = '') {
 
     // Start new search
     queryRef.current = query;
+    // A completed search that found nothing used to be indistinguishable from
+    // one that found plenty — `search.completed` carried only the query, so a
+    // zero-result query could only be read as the ABSENCE of a preceding
+    // `search.results-received`. Count it directly (2026-08-16).
+    resultCountRef.current = 0;
+    startedAtRef.current = Date.now();
     setIsSearching(true);
     logger().info('search.started', { query, endpoint, filterParams: effectiveExtra || null });
     setResults([]);
@@ -196,11 +204,19 @@ export function useStreamingSearch(endpoint, extraQueryString = '') {
           const newItems = data.items?.length || 0;
           // Keep the list relevance-sorted as batches arrive: dedupe, collapse
           // plex/abs near-duplicates, insert by score (arrival-stable ties).
-          setResults(prev => mergeSearchResults(prev, data.items ?? [], queryRef.current));
+          setResults(prev => {
+            const merged = mergeSearchResults(prev, data.items ?? [], queryRef.current);
+            resultCountRef.current = merged.length;
+            return merged;
+          });
           logger().info('search.results-received', { source: data.source, newItems });
           setPending(data.pending);
         } else if (data.event === 'complete') {
-          logger().info('search.completed', { query });
+          logger().info('search.completed', {
+            query,
+            resultCount: resultCountRef.current,
+            totalMs: startedAtRef.current ? Date.now() - startedAtRef.current : null,
+          });
           setPending([]);
           setIsSearching(false);
           eventSource.close();
