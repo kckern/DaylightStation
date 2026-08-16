@@ -25,6 +25,7 @@ import { test, expect } from '@playwright/test';
 import { FRONTEND_URL } from '#fixtures/runtime/urls.mjs';
 
 const PAD_ID = 'test-pad-0000-Synthetic Arcade Pad';
+const GAME_NAME = 'Mario Kart Super Circuit';
 
 /**
  * Install a fake gamepad that is present from the very first poll.
@@ -64,8 +65,9 @@ test.describe('Emulator gamepad routing', () => {
     // arcade launches a game directly.
     await page.goto(`${FRONTEND_URL}/fitness/module/emulator?nokiosk`);
 
-    // The arcade grid renders game cards; take the first playable one.
-    const card = page.locator('.emulator-game-card, .game-card, .module-card').first();
+    // Mario Kart Super Circuit specifically: the GBA title that was dead on
+    // 2026-08-15, and the one that broke again the moment a game was switched.
+    const card = page.getByRole('button', { name: GAME_NAME });
     await expect(card).toBeVisible({ timeout: 45000 });
     await card.click();
 
@@ -78,14 +80,24 @@ test.describe('Emulator gamepad routing', () => {
     );
 
     // ── The core assertion ────────────────────────────────────────────────────
-    // The pad must hold a player slot. Without the claim this array is
-    // ["","","",""] and every input is discarded — the exact 2026-08-15 failure.
-    const selection = await page.evaluate(() => window.EJS_emulator.gamepadSelection);
-    expect(selection, 'gamepadSelection should exist on the running instance').toBeTruthy();
-    expect(
-      selection.includes(`${PAD_ID}_0`),
-      `pad missing from gamepadSelection (${JSON.stringify(selection)}) — input would be silently dropped`,
-    ).toBe(true);
+    // The pad must end up holding a player slot. Without the claim this array
+    // stays ["","","",""] and every input is discarded — the 2026-08-15 failure.
+    //
+    // Polled rather than sampled once: `started` flips partway through the app's
+    // own boot (WRAM calibration and the settle barrier still follow), so a
+    // single read here races the very code under test.
+    await page
+      .waitForFunction(
+        (padId) => (window.EJS_emulator?.gamepadSelection || []).includes(`${padId}_0`),
+        PAD_ID,
+        { timeout: 30000 },
+      )
+      .catch(async () => {
+        const selection = await page.evaluate(() => window.EJS_emulator?.gamepadSelection ?? null);
+        throw new Error(
+          `pad never claimed a slot; gamepadSelection=${JSON.stringify(selection)} — input would be silently dropped`,
+        );
+      });
 
     // ── End-to-end: a press must reach the core ──────────────────────────────
     // Tap simulateInput, which is the funnel EVERY consumed input passes through.
@@ -116,7 +128,7 @@ test.describe('Emulator gamepad routing', () => {
     await installSyntheticPad(page);
 
     await page.goto(`${FRONTEND_URL}/fitness/module/emulator?nokiosk`);
-    const card = page.locator('.emulator-game-card, .game-card, .module-card').first();
+    const card = page.getByRole('button', { name: GAME_NAME });
     await expect(card).toBeVisible({ timeout: 45000 });
     await card.click();
 
