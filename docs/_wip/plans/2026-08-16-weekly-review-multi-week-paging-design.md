@@ -1,7 +1,30 @@
 # Weekly Review — multi-week paging
 
 **Date:** 2026-08-16
-**Status:** Design, validated. Not yet implemented.
+**Status:** Implemented and merged to main. 151 weekly-review tests green
+(112 frontend, 39 backend); production build clean.
+
+## What changed during implementation
+
+Two things the design did not anticipate, both found by tests:
+
+1. **The loading gate ate the third tap.** Tap two starts a fetch, which set
+   `windowLoading`, which made the keymap swallow tap three — so jump-to-oldest
+   was unreachable by a natural triple-tap. The gate now exempts exactly that
+   escalation (an armed `Up` with `count >= 2`) and nothing else.
+2. **Responses could land out of order.** With the exemption in place, a
+   jump-to-oldest can fire over an in-flight page-back. A monotonic request id
+   (`windowReqRef`) now lets only the newest response paint; the cached
+   fast-path claims the slot too.
+
+Also corrected beyond the original scope: `finalizePriorDraft` re-fetched the
+default window and called `setData` unconditionally, which would have yanked a
+user out of whatever earlier window they had paged to. It now fetches the
+pinned recording week and paints only if that is still the window on screen.
+
+A note on the relative tag: the design sketched "2 weeks ago", but a window is
+8 days, not 7, so the stride drifts against calendar weeks. The header says
+"2 windows back" instead — the exact date range sits right beside it.
 
 ## Problem
 
