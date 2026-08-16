@@ -8,6 +8,7 @@
  * title-cased — is the drift this module exists to stop from spreading).
  */
 import { ValidationError } from '#domains/core/errors/index.mjs';
+import { DEFAULT_TIMEZONE } from '#domains/core/utils/timezone.mjs';
 
 /** `'mary-jane_doe'` -> `'Mary Jane Doe'` — split on hyphen/underscore/space, title-case each part. */
 export function deriveLearnerName(learnerId) {
@@ -16,10 +17,19 @@ export function deriveLearnerName(learnerId) {
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
 }
 
-/** An ISO timestamp as it prints on the sheet's Date line — day-month-year, household timezone. */
-export function deriveIssueDate(isoTimestamp) {
+/**
+ * An ISO timestamp as it prints on the sheet's Date line — day-month-year,
+ * household timezone (`DEFAULT_TIMEZONE`, the shared-kernel SSOT).
+ *
+ * `'en-GB'` here is a FORMAT choice, not a locale preference: it is what gives
+ * the day-month-year ordering the sheets print ("14 Aug 2026"). Switching it
+ * to `'en-US'` would silently reorder EVERY printed date (and break the
+ * byte-for-byte reprint contract against every sheet already in a binder), so
+ * leave it alone.
+ */
+export function deriveIssueDate(isoTimestamp, timeZone = DEFAULT_TIMEZONE) {
   return new Date(isoTimestamp).toLocaleDateString('en-GB', {
-    timeZone: 'America/Los_Angeles', day: 'numeric', month: 'short', year: 'numeric',
+    timeZone, day: 'numeric', month: 'short', year: 'numeric',
   });
 }
 

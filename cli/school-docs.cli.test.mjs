@@ -740,7 +740,7 @@ describe('school-docs CLI', () => {
       expect(text).toContain(cardId);
     }));
 
-    it('never mutates the allocation store — reprinting twice yields byte-identical PDFs', async () => withTmpDir(async (root) => {
+    it('reproduces the ORIGINAL print byte-for-byte and leaves the allocation file untouched', async () => withTmpDir(async (root) => {
       const dataDir = path.join(root, 'data');
       const contentRoot = path.join(dataDir, 'content/school/print-documents');
       await mkdir(contentRoot, { recursive: true });
@@ -766,16 +766,134 @@ describe('school-docs CLI', () => {
         },
       }));
 
+      const allocationFile = path.join(contentRoot, 'allocations', `${cardId}.yml`);
+      const allocationBefore = await readFile(allocationFile, 'utf8');
+
       await runSchoolDocs(['reprint', 'ws-fixture', '--out', path.join(root, 'a.pdf'), '--data-dir', dataDir]);
       await runSchoolDocs(['reprint', 'ws-fixture', '--out', path.join(root, 'b.pdf'), '--data-dir', dataDir]);
 
-      const [a, b] = await Promise.all([
-        readFile(path.join(root, 'a.pdf')), readFile(path.join(root, 'b.pdf')),
+      const [original, a, b] = await Promise.all([
+        readFile(path.join(root, 'first.pdf')),
+        readFile(path.join(root, 'a.pdf')),
+        readFile(path.join(root, 'b.pdf')),
       ]);
-      expect(a.equals(b)).toBe(true);
+      // THE claim this whole command exists to make: a reprint is the ORIGINAL
+      // print, not merely two reprints agreeing with each other.
+      expect(a.equals(original)).toBe(true);
+      expect(b.equals(original)).toBe(true);
 
+      // Byte-identical allocation file is a TOTAL check — it catches an appended
+      // record, a supersede (status flip), a refreshed renderedAt, anything. A
+      // "still exactly one `status: live`" count does NOT: a supersede leaves
+      // exactly one live record while retiring the card already in circulation.
+      expect(await readFile(allocationFile, 'utf8')).toBe(allocationBefore);
+    }));
+
+    it('reports a FAILURE when the reprint does not reproduce the original allocation', async () => withTmpDir(async (root) => {
+      const dataDir = path.join(root, 'data');
+      const contentRoot = path.join(dataDir, 'content/school/print-documents');
+      await mkdir(contentRoot, { recursive: true });
+      await writeFile(path.join(contentRoot, 'quiz.yml'), dump(sourceQuizDoc()));
+      const published = await runSchoolDocs(['publish', 'quiz.yml', '--data-dir', dataDir]);
+      const publishedFile = path.join(contentRoot, 'published', `teacher-cli-fixture@${published.report.rev}.yml`);
+      const minted = await runSchoolDocs([
+        'render', publishedFile, '--out', path.join(root, 'first.pdf'), '--data-dir', dataDir,
+        '--fresh-card', '--learner-id', 'felix', '--learner-name', 'Felix', '--date', '14 Aug 2026',
+      ]);
+      const cardId = minted.report.allocation.cardId;
+      const originalRecordId = minted.report.allocation.recordId;
+
+      const instancesDir = path.join(dataDir, 'household/apps/school/worksheet-instances');
+      await mkdir(instancesDir, { recursive: true });
+      // Hand-edited instance: the recorded recordId is the original, but the row
+      // range it asks the reprint to plan is NOT. `YamlAllocationStore.allocate`
+      // then supersedes the original record and appends a new live one — the
+      // physical card stops resolving on scan. This used to report ok/exit 0.
+      await writeFile(path.join(instancesDir, 'ws-drifted.yml'), dump({
+        id: 'ws-drifted',
+        sessionId: 'ses_fixture',
+        learnerId: 'felix',
+        documentId: 'teacher-cli-fixture',
+        documentRevision: published.report.rev,
+        issuedAt: '2026-08-14T17:55:20.033Z',
+        omr: { cardId, recordId: originalRecordId, rowRange: { start: 20, end: 20 } },
+      }));
+
+      const outPath = path.join(root, 'drifted.pdf');
+      const { exitCode, report } = await runSchoolDocs([
+        'reprint', 'ws-drifted', '--out', outPath, '--data-dir', dataDir,
+      ]);
+
+      expect(exitCode).toBe(1);
+      expect(report.ok).toBe(false);
+      expect(report.errors[0]).toContain(originalRecordId); // names the record the operator expected
+      expect(report.errors[0]).toMatch(/did NOT reproduce the original allocation/);
+      // No sheet is written for an allocation we refuse to vouch for.
+      await expect(readFile(outPath)).rejects.toThrow();
+
+      // Detection is POST-HOC: the store write already happened. Asserting it
+      // keeps the known limitation honest rather than implying a pre-check.
       const allocationRaw = await readFile(path.join(contentRoot, 'allocations', `${cardId}.yml`), 'utf8');
-      expect(allocationRaw.match(/status: live/g)?.length).toBe(1); // still exactly one live record — no duplicate written
+      expect(allocationRaw).toMatch(/status: superseded/);
+    }));
+
+    it('refuses an unsafe instance id instead of traversing out of the instances directory', async () => withTmpDir(async (root) => {
+      const dataDir = path.join(root, 'data');
+      await mkdir(dataDir, { recursive: true });
+      await writeFile(path.join(root, 'secret.yml'), dump({ documentId: 'x', documentRevision: 'y' }));
+
+      const { exitCode, report } = await runSchoolDocs([
+        'reprint', '../../../secret', '--out', path.join(root, 'x.pdf'), '--data-dir', dataDir,
+      ]);
+      expect(exitCode).toBe(1);
+      expect(report.ok).toBe(false);
+      expect(report.errors[0]).toMatch(/unsafe worksheet instance id/);
+    }));
+
+    it('refuses an empty/malformed instance file with a structured error, never an uncaught crash', async () => withTmpDir(async (root) => {
+      const dataDir = path.join(root, 'data');
+      const instancesDir = path.join(dataDir, 'household/apps/school/worksheet-instances');
+      await mkdir(instancesDir, { recursive: true });
+      await writeFile(path.join(instancesDir, 'ws-empty.yml'), '');
+
+      const { exitCode, report } = await runSchoolDocs([
+        'reprint', 'ws-empty', '--out', path.join(root, 'x.pdf'), '--data-dir', dataDir,
+      ]);
+      expect(exitCode).toBe(1);
+      expect(report.ok).toBe(false);
+      expect(report.mode).toBe('reprint'); // a structured report, not a thrown TypeError
+      expect(report.errors[0]).toMatch(/ws-empty/);
+      expect(report.errors[0]).toMatch(/empty or is not a YAML mapping/);
+    }));
+
+    it('refuses an instance with no documentRevision rather than silently reprinting the LATEST revision', async () => withTmpDir(async (root) => {
+      const dataDir = path.join(root, 'data');
+      const contentRoot = path.join(dataDir, 'content/school/print-documents');
+      await mkdir(contentRoot, { recursive: true });
+      await writeFile(path.join(contentRoot, 'quiz.yml'), dump(sourceQuizDoc()));
+      const published = await runSchoolDocs(['publish', 'quiz.yml', '--data-dir', dataDir]);
+      expect(published.exitCode).toBe(0);
+
+      const instancesDir = path.join(dataDir, 'household/apps/school/worksheet-instances');
+      await mkdir(instancesDir, { recursive: true });
+      await writeFile(path.join(instancesDir, 'ws-no-rev.yml'), dump({
+        id: 'ws-no-rev',
+        learnerId: 'felix',
+        documentId: 'teacher-cli-fixture',
+        // documentRevision omitted — `getPublished(id, undefined)` would resolve
+        // "newest published revision by mtime", i.e. a DIFFERENT sheet.
+        issuedAt: '2026-08-14T17:55:20.033Z',
+        omr: { cardId: '5922785', recordId: 'x:v0:1-1', rowRange: { start: 1, end: 1 } },
+      }));
+
+      const { exitCode, report } = await runSchoolDocs([
+        'reprint', 'ws-no-rev', '--out', path.join(root, 'x.pdf'), '--data-dir', dataDir,
+      ]);
+      expect(exitCode).toBe(1);
+      expect(report.ok).toBe(false);
+      expect(report.errors[0]).toMatch(/ws-no-rev/);
+      expect(report.errors[0]).toMatch(/documentRevision/);
+      expect(report.errors[0]).toMatch(/refuses to guess/);
     }));
 
     it('fails clearly when the instance id does not resolve to a file', async () => withTmpDir(async (root) => {

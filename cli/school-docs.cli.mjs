@@ -81,6 +81,7 @@ import { PublishPrintDocument } from '#apps/school/documents/PublishPrintDocumen
 import { buildReprintContext } from '#apps/school/documents/reprintContext.mjs';
 import { YamlPrintDocumentRepository } from '#adapters/school/documents/YamlPrintDocumentRepository.mjs';
 import { YamlAllocationStore } from '#adapters/school/documents/YamlAllocationStore.mjs';
+import { SAFE_WORKSHEET_INSTANCE_ID } from '#adapters/persistence/yaml/YamlWorksheetInstanceStore.mjs';
 
 const EXIT_OK = 0;
 const EXIT_FAIL = 1;
@@ -143,7 +144,7 @@ Options:
   --data-dir <path>      data root (default: $DAYLIGHT_BASE_PATH/data)
   --content-root <path>  content root, absolute or data-relative
                          (default: content/school/print-documents)
-  --out <path>           (render) output PDF path — required
+  --out <path>           (render/reprint) output PDF path — required
   --learner-name <s>     (render) prefill the header Name line
   --date <s>             (render) prefill the header Date line
   --type-scale <s>       (render) override document.fit.typeScale for proofing
@@ -471,9 +472,29 @@ export async function runRender({
   }
 }
 
-/** `<dataDir>/household/apps/school/worksheet-instances/<instanceId>.yml` — the single-household convention this codebase's other worksheet-instance readers already use. */
+/**
+ * `<dataDir>/household/apps/school/worksheet-instances/<instanceId>.yml`.
+ *
+ * SINGLE-HOUSEHOLD ASSUMPTION: `household/` is hardcoded here, whereas the
+ * canonical reader (`YamlWorksheetInstanceStore`) resolves the same directory
+ * through `configService.getHouseholdPath(...)` and therefore honours a
+ * multi-household layout (`household-{hid}/`). On a multi-household install
+ * this CLI only sees the default household's instances; pass `--data-dir`
+ * pointed at the right tree, or teach it the hid, if that ever changes.
+ *
+ * The id itself IS validated with the store's own rule
+ * (`SAFE_WORKSHEET_INSTANCE_ID`) before it reaches this function — an
+ * unvalidated id interpolated here is a path traversal.
+ */
 function resolveWorksheetInstancePath(dataDir, instanceId) {
   return path.join(dataDir, 'household/apps/school/worksheet-instances', `${instanceId}.yml`);
+}
+
+/** Same rule the canonical `YamlWorksheetInstanceStore` applies, imported so the two cannot drift. */
+function isSafeInstanceId(instanceId) {
+  return typeof instanceId === 'string'
+    && SAFE_WORKSHEET_INSTANCE_ID.test(instanceId)
+    && !instanceId.includes('..');
 }
 
 /**
@@ -485,39 +506,69 @@ function resolveWorksheetInstancePath(dataDir, instanceId) {
  * `cardId`/`startRow`, which is what makes `RenderPrintDocument`'s allocation
  * store recognize this as the identical live record and return it unchanged
  * (`YamlAllocationStore.allocate`'s idempotent-reprint shortcut) rather than
- * writing a new one or colliding.
+ * writing a new one or colliding. When that idempotency does NOT hold — the
+ * resulting recordId disagrees with the one the instance recorded — this
+ * reports a FAILURE rather than a sheet nobody can scan (see below).
  *
  * @param {{instanceId: string, outPath: string, paths: {dataDir: string, contentRoot: string}}} args
  */
 export async function runReprint({ instanceId, outPath, paths }) {
+  /** Every failure exit from this command reports the same shape — never a thrown exception. */
+  const fail = (errors) => ({
+    ok: false, mode: 'reprint', instanceId, out: outPath, pages: null, density: null, allocation: null, warnings: [], errors,
+  });
+
+  if (!isSafeInstanceId(instanceId)) {
+    return fail([
+      `unsafe worksheet instance id '${instanceId}': an id must start with a letter or digit, `
+      + "may contain only letters, digits, '.', '_', '-' and '/', and may never contain '..'. "
+      + 'Refusing to build a file path from it.',
+    ]);
+  }
+
   const instancePath = resolveWorksheetInstancePath(paths.dataDir, instanceId);
   let instance;
   try {
     instance = loadYamlDocument(instancePath);
   } catch (error) {
-    return {
-      ok: false, mode: 'reprint', instanceId, out: outPath, pages: null, density: null, allocation: null, warnings: [],
-      errors: [`could not read worksheet instance '${instanceId}' at ${instancePath}: ${error.message}`],
-    };
+    return fail([`could not read worksheet instance '${instanceId}' at ${instancePath}: ${error.message}`]);
+  }
+
+  // `loadYamlDocument` SUCCEEDS on an empty file (js-yaml returns `undefined`)
+  // and on a bare scalar, so the shape has to be checked here — otherwise the
+  // first property read throws a raw TypeError straight out of this function,
+  // escaping the structured report every other path returns.
+  if (!instance || typeof instance !== 'object' || Array.isArray(instance)) {
+    return fail([
+      `worksheet instance '${instanceId}' at ${instancePath} is empty or is not a YAML mapping; nothing to reprint`,
+    ]);
+  }
+  const nonEmptyString = (value) => typeof value === 'string' && value.trim() !== '';
+  const missing = [
+    ...(nonEmptyString(instance.documentId) ? [] : ['documentId']),
+    ...(nonEmptyString(instance.documentRevision) ? [] : ['documentRevision']),
+  ];
+  if (missing.length > 0) {
+    return fail([
+      `worksheet instance '${instanceId}' at ${instancePath} is missing required field(s): ${missing.join(', ')}. `
+      + 'A reprint reproduces ONE exact historical revision, so it refuses to guess: an absent '
+      + 'documentRevision would otherwise resolve to the LATEST published revision — a different '
+      + 'sheet printed under the original sheet\'s name. Repair the instance file, or fall back to '
+      + '`render` with explicit flags.',
+    ]);
   }
 
   const repository = new YamlPrintDocumentRepository({ directory: paths.contentRoot });
   const published = await repository.getPublished(instance.documentId, instance.documentRevision);
   if (!published) {
-    return {
-      ok: false, mode: 'reprint', instanceId, out: outPath, pages: null, density: null, allocation: null, warnings: [],
-      errors: [`no published revision '${instance.documentRevision}' found for document '${instance.documentId}'`],
-    };
+    return fail([`no published revision '${instance.documentRevision}' found for document '${instance.documentId}'`]);
   }
 
   let context;
   try {
     context = buildReprintContext(instance);
   } catch (error) {
-    return {
-      ok: false, mode: 'reprint', instanceId, out: outPath, pages: null, density: null, allocation: null, warnings: [],
-      errors: [error.message],
-    };
+    return fail([error.message]);
   }
 
   const banks = createYamlBankReader({ dataDir: paths.dataDir });
@@ -526,6 +577,27 @@ export async function runReprint({ instanceId, outPath, paths }) {
 
   try {
     const result = await useCase.execute({ document: published, context });
+
+    // POST-HOC detection: if the allocation this reprint landed on is not the
+    // one the instance recorded, `YamlAllocationStore.allocate` has already
+    // marked the ORIGINAL record `superseded` and appended a new live one — the
+    // physical card in the filing cabinet no longer resolves on scan. The store
+    // write has happened by the time we can see this; a true pre-check would
+    // mean threading an expected-recordId down into `allocate` so it can refuse
+    // to supersede. Noted follow-up, deliberately not built here. Reporting the
+    // mismatch loudly beats the silent `ok: true` this command exists to end.
+    const expectedRecordId = instance.omr?.recordId;
+    const actualRecordId = result.allocation?.recordId ?? null;
+    if (nonEmptyString(expectedRecordId) && actualRecordId !== expectedRecordId) {
+      return fail([
+        `reprint did NOT reproduce the original allocation for instance '${instanceId}': the instance `
+        + `records recordId '${expectedRecordId}', but this render allocated '${actualRecordId}'. `
+        + 'Do not print this sheet: an allocation for a different row range supersedes the original '
+        + 'record in the store, so the card already in the filing cabinet may no longer resolve when '
+        + `scanned. Inspect ${instancePath} and the allocations file for card '${instance.omr?.cardId}'.`,
+      ]);
+    }
+
     fs.mkdirSync(path.dirname(outPath), { recursive: true });
     fs.writeFileSync(outPath, result.bytes);
     return {
@@ -540,10 +612,7 @@ export async function runReprint({ instanceId, outPath, paths }) {
       errors: [],
     };
   } catch (error) {
-    return {
-      ok: false, mode: 'reprint', instanceId, out: outPath, pages: null, density: null, allocation: null,
-      warnings: [], errors: [error?.message ?? String(error)],
-    };
+    return fail([error?.message ?? String(error)]);
   }
 }
 
