@@ -25,6 +25,7 @@ import {
 import { ItemDetailsDrawer } from './ItemDetailsDrawer.jsx';
 import { AppParamPicker } from './AppParamPicker.jsx';
 import { ActionChipSelect } from './ActionChipSelect.jsx';
+import { CapabilityWarning } from './CapabilityWarning.jsx';
 import { EmptyItemRow, InsertRowButton } from './EmptyItemRow.jsx';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
 import ImagePickerModal from './ImagePickerModal.jsx';
@@ -560,6 +561,14 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
             )}
           />
         )}
+        {/* Catches an action pointed at a source that can't perform it — the
+            failure mode that rendered `action: Display` on a files: image as a
+            blank frame with no error on either the screen or this preview. */}
+        <CapabilityWarning
+          input={item.input}
+          action={item.action}
+          onUpdate={onUpdate}
+        />
       </div>
 
       {isWatchlist && (
