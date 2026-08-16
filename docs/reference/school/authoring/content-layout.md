@@ -13,8 +13,33 @@ and its backend twin `SUBJECT_IDS` in
 `2_domains/school/curriculum/unitValidation.mjs`):
 
 ```
-english  writing  math  history  scripture  science  language  skills  arts
+english  writing  math  civilization  scripture  science  language  skills  arts
 ```
+
+(The list once read `history` here while the code said `civilization`. That
+drift is what produced a `history/` shelf the datastore never walked and 28
+files nobody could reach.)
+
+## Where each kind of thing lives
+
+`content/school/` holds authored, live coursework and nothing else.
+
+| tree | holds | written by |
+|---|---|---|
+| `content/school/<subject>/<course>/` | course packages | a person |
+| `content/school/learning-catalog/` | `school.catalog/v1` catalogs, documents, question banks | a person |
+| `content/_staging/school/` | imports, drafts, unfinished courses — **not live** | a person |
+| `household/apps/school/print-documents/` | published revisions, derived banks, allocations | `school-docs publish` |
+| `household/apps/school/ti86-packs/` | SchoolCalc device builds | the pack publisher |
+| `household/config/school/surfaces/` | surface profiles | a person |
+
+`content/_staging/` is a **sibling** of `content/school/`, not a child. That is
+what keeps it out of `ContentTreeManifest`, which walks the school content tree
+with no skip list.
+
+Course packages resolve from the subject shelf directly. The
+`content/school/curriculum/<subject>/` nesting is retired: both datastores read
+`<subject>/<course>` and nothing else.
 
 A **work** is one body of curriculum — Shakespeare Tales, I Survived, ap-biology,
 us-capitals — and it is self-contained. Its units, documents, manifests and
@@ -120,9 +145,10 @@ know which one your content belongs to (admin advocacy #17):
 
 | tree | system | validator / CLI |
 |---|---|---|
-| `content/school/{subject}/{work}/…` (works, units, documents, quizzes) | lifecycle curriculum | `node cli/school-catalog.cli.mjs validate` — parses, cross-resolves references, checks the bank↔unit seam (duplicate `unit:` claims and dead curriculum backlinks are refusals), and prints history drift |
-| `content/school/catalogs/…` (`school.catalog/v1` Learning Catalog) | Learning Catalog | `npm run school:certify` — catalog + surface certification |
-| `content/school/catalog/documents/…` | print documents (`school.document-source/v1`) **and** learning documents (`school.learning-document/v1`) — one shelf, told apart by schema | `node cli/school-docs.cli.mjs validate` (print sources; skips learning documents) / `npm run school:certify` (learning documents) |
+| `content/school/{subject}/{course}/…` (courses, units, lessons, documents, quizzes) | lifecycle curriculum | `node cli/school-catalog.cli.mjs validate` — parses, cross-resolves references, checks the bank↔unit seam (duplicate `unit:` claims and dead curriculum backlinks are refusals), and prints history drift |
+| `content/school/learning-catalog/…` (`school.catalog/v1` Learning Catalog) | Learning Catalog | `npm run school:certify` — catalog + surface certification |
+| `content/school/learning-catalog/documents/…` | print document SOURCES (`school.document-source/v1`) **and** learning documents (`school.learning-document/v1`) — one shelf, told apart by schema | `node cli/school-docs.cli.mjs validate` (print sources; skips learning documents) / `npm run school:certify` (learning documents) |
+| `household/apps/school/print-documents/…` | print ARTIFACTS — published revisions, derived banks, allocations | `node cli/school-docs.cli.mjs audit` |
 
 `school:certify` does NOT cover the lifecycle curriculum; run the
 school-catalog CLI before mounting new works.
