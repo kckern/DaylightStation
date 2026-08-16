@@ -756,6 +756,118 @@ the layer rules. The printer host defaults to the `kitchen-printer` entry in
 `devices.yml`; `school.yml` `printing:` need only opt in and can override
 limits.
 
+#### Duplex: double-sided by default, via PJL
+
+**Jobs default to double-sided, long-edge (book-style) binding.** Nothing has
+to be configured for that — it is the adapter's constructor default.
+
+Because there is no CUPS layer here, the usual `-o sides=two-sided-long-edge`
+has nothing to attach to, and this printer's IPP path rejects PDF outright (see
+Transport above), so IPP job attributes are not an option either. What a raw
+JetDirect job *can* carry is a **PJL (Printer Job Language) envelope** wrapped
+around the PDF bytes — `pjlWrap()` in `LaserPrinterAdapter.mjs`. Every job goes
+out as:
+
+```
+<UEL>@PJL JOB NAME="<job name>"
+@PJL SET COPIES=1
+@PJL SET DUPLEX=ON
+@PJL SET BINDING=LONGEDGE      # omitted entirely when duplex is off
+@PJL ENTER LANGUAGE=PDF
+…the PDF bytes, unmodified…
+<UEL>@PJL EOJ
+<UEL>
+```
+
+…where `<UEL>` is the Universal Exit Language escape `\x1B%-12345X`. The PDF
+itself passes through byte-for-byte; only the envelope is added. Every `SET`
+lands *before* the language switch — after it, the bytes belong to the PDF
+personality and PJL is no longer reading.
+
+**Copies are the firmware's job.** `copies: 3` sends the document **once** with
+`@PJL SET COPIES=3`, not three concatenated PDFs. Concatenation hands the PDF
+personality one contiguous stream, which resolves a single document from its
+trailing xref — the plausible outcome is *"3 requested, 1 printed"*, silently,
+with the quota still charging 3. `COPIES` also gets copy boundaries right under
+duplex (each copy starts on a fresh sheet). Inferred from the PJL spec like the
+rest of this envelope, not measured.
+
+**`binding` is whitelisted** to exactly `LONGEDGE` / `SHORTEDGE` (case and
+surrounding whitespace forgiven). A plausible typo — `long-edge` — would
+otherwise emit an invalid value that the printer rejects while keeping its own
+default: wrong physical output, nothing logged. A rejected value is replaced by
+the configured default and logged as `laser-printer.invalid-binding`, naming
+what was supplied and what was used.
+
+`printPdf` resolves with `duplex` echoing what was *requested* (9100 gives no
+ack, so it is never a confirmation).
+
+Overrides, both optional:
+
+```yaml
+printing:
+  duplex: true         # default true; false = single-sided
+  binding: LONGEDGE    # default LONGEDGE (book-style, right for portrait text); or SHORTEDGE
+```
+
+Both are read at **two** composition sites and must stay in sync: `app.mjs`
+(the `PrintService` adapter, behind `/print/*`) and
+`5_composition/modules/schoolLifecycle.mjs` (the adapter injected into
+`IssueDocument` / `ReplaceLostAnswerSheet` — every tracked worksheet and quiz).
+`tests/isolated/composition/schoolLifecyclePrinterOptions.test.mjs` pins the
+second one.
+
+Per-job overrides of the same two options are available on
+`printPdf(pdf, { duplex, binding })`, and the print-document pipeline uses
+them — see **Duplex follows the document** below.
+`VirtualLaserPrinterAdapter` takes the same `duplex`/`binding` constructor
+options (so a single-sided deployment is reproducible against the double) and
+records both in its job sidecar, but applies no PJL — it has no printer to
+parse it, so its captures stay plain readable PDFs.
+
+#### Duplex follows the document, not the adapter default
+
+A print job's duplex setting is **not** simply the adapter default: the
+print-document pipeline overrides it per job with the geometry the renderer
+actually drew.
+
+`RenderPrintDocument` reserves a 3-hole-punch gutter, and *where* it reserves it
+depends on the archetype:
+
+| Archetype | Gutter | Printed |
+|---|---|---|
+| `worksheet` | alternates side by page parity (mirror margins) | double-sided |
+| everything else (`quiz`, `infopage`, …) | fixed to the **left of every page** | single-sided |
+| v1 legacy documents | no gutter drawn at all | adapter default |
+
+Print a fixed-gutter document double-sided and page 2's reserved punch margin
+sits on the opposite physical edge from page 1's while the two share one sheet
+— punching the stack destroys content on every verso. So the render reports its
+own decision (`duplex` on the `execute()` result: `true`, `false`, or `null` for
+v1), and `IssueDocument` / `ReplaceLostAnswerSheet` pass it straight to
+`printPdf({ duplex })`. `null` falls through to the adapter default.
+
+`PrintService`'s quota path (`/print/request`, bank worksheets and `type: pdf`
+files) has no such per-document decision and stays on the adapter default.
+
+Adding an archetype to `DUPLEX_ARCHETYPES` changes page *layout*, not just a
+printer setting — it needs its own visual check.
+
+The **quota is unaffected**: it meters *pages*, not sheets, so duplex halves
+the paper a child burns without changing what any request costs them.
+
+> ⚠️ **UNVERIFIED against the physical Brother HL-L2460DW.** PJL duplex is a
+> well-documented de facto standard (HP's PJL Technical Reference, broadly
+> implemented by Brother firmware) and the wire format above is what we now
+> send — but as of **2026-08-15** nobody has held a sheet of paper from this
+> printer to confirm it. Two things a physical test should check: (1) the sheet
+> actually comes out double-sided, and (2) `@PJL ENTER LANGUAGE=PDF` is
+> accepted — PDF is a vendor personality, not one of the PJL spec's named
+> languages, so if the firmware balks, the first thing to try is dropping that
+> one line and letting PDF Direct Print auto-detect, as it did before this
+> change. **Whoever runs that print: replace this block with "confirmed working
+> as of `<date>`" or "confirmed NOT supported, fell back to `<X>`".**
+
 | Layer | Path |
 |---|---|
 | Domain (pure) | `backend/src/2_domains/school/printing.mjs` — the quota policy |
@@ -783,6 +895,8 @@ printing:              # optional; omitting host defaults to the kitchen-printer
   windowMinutes: 60
   pagesPerWindow: 5    # pages a child may print unattended per window
   maxPagesPerJob: 20   # hard ceiling on one job (approval cannot bypass it)
+  duplex: true         # optional; default true (double-sided). false = single-sided
+  binding: LONGEDGE    # optional; default LONGEDGE. LONGEDGE | SHORTEDGE
 printables:
   - id: state-capitals
     label: US State Capitals
@@ -793,10 +907,11 @@ printables:
 
 Boot-cached like the rest of `school.yml`; edits need a container restart.
 
-**Explicitly not built** (named deferrals): duplex/paper-size selection (jobs
-print single-sided default), a print history surface for parents (the log
-exists; nothing renders it), and Telegram approval (the pending API is ready
-for it, no bot hook is wired).
+**Explicitly not built** (named deferrals): paper-size selection (Letter only),
+a print history surface for parents (the log exists; nothing renders it), and
+Telegram approval (the pending API is ready for it, no bot hook is wired).
+Duplex *was* on this list; it now ships on by default — see Duplex above,
+including the standing caveat that it is not yet hardware-confirmed.
 
 ### Print documents — worksheets, quizzes, and OMR grading
 
@@ -1691,6 +1806,18 @@ No code exists for anything in this section. Each links its spec.
   9100 clears on the printer's own TCP idle timeout. `printPdf` resolves on
   flush, not on the printer closing the socket, precisely so a fire-and-forget
   job doesn't hang on that.
+- **Duplex rides on a PJL envelope, and is not hardware-confirmed.** Every job
+  is now wrapped in `@PJL SET COPIES` / `SET DUPLEX=ON` / `BINDING=LONGEDGE`
+  around `@PJL ENTER LANGUAGE=PDF`. That envelope is standard and the PDF inside
+  is untouched, but no one has yet held a double-sided sheet from this printer
+  to prove the firmware honors it. If a job prints single-sided — or worse,
+  prints the PJL text as garbage — suspect `@PJL ENTER LANGUAGE=PDF` first (PDF
+  is a vendor personality, not a PJL-spec language) and see Printing → Duplex.
+  **Run the first physical test with a short stack of paper in the tray.** If
+  the firmware rejects `ENTER LANGUAGE=PDF` and falls back to a *text*
+  personality, "garbage" is not one wasted sheet: it would render a ~200KB
+  binary PDF as printable characters, which is **dozens to hundreds of pages**.
+  A near-empty tray is the cheapest abort switch there is.
 - **YAML scalar trap in question banks:** a choice written as a bare number
   (`- 12`) parses as an integer and fails the bank validator's non-empty-string
   check. Quote numeric choices (`'12'`). The error names the field but not the

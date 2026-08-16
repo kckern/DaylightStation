@@ -377,7 +377,12 @@ export class IssueDocument {
             ? { ...reusableCard, learnerId: state.learnerId, learnerName, date: issueDate, sessionId }
             : { freshCard: true, learnerId: state.learnerId, learnerName, date: issueDate, sessionId },
       });
-      rendered = { pdf: result.bytes, pageCount: result.pageCount, allocation: result.allocation };
+      rendered = {
+        pdf: result.bytes, pageCount: result.pageCount, allocation: result.allocation,
+        // Carried so the print job matches the geometry that was drawn — see
+        // the `printPdf` call below.
+        duplex: result.duplex,
+      };
     } catch (err) {
       await this.#orphanAllocation(err.details?.allocation, { sessionId, unitId: state.unitId, stage: 'render' });
       return this.#recordFailure({ sessionId, stage: 'render', reason: err.message, nowIso, state, cause: 'render' });
@@ -400,7 +405,17 @@ export class IssueDocument {
     }
 
     try {
-      await this.#printer.printPdf(rendered.pdf, { jobName: `school-${state.unitId}-${instance.id}`, user: state.learnerId });
+      await this.#printer.printPdf(rendered.pdf, {
+        jobName: `school-${state.unitId}-${instance.id}`,
+        user: state.learnerId,
+        // The DOCUMENT decides whether this sheet is double-sided, not the
+        // adapter's global default: the renderer reserved the 3-hole-punch
+        // gutter either alternating by page parity (duplex) or fixed to the
+        // left of every page (simplex), and only one of those survives being
+        // folded onto one sheet. `undefined` (the v1 legacy path, which draws
+        // no gutter at all) falls through to the adapter default.
+        duplex: rendered.duplex ?? undefined,
+      });
     } catch (err) {
       await this.#orphanAllocation(rendered.allocation, { sessionId, unitId: state.unitId, stage: 'print' });
       return this.#recordFailure({ sessionId, stage: 'print', reason: err.message, nowIso, state, cause: 'printer' });
@@ -544,6 +559,9 @@ export class IssueDocument {
       });
       rendered = {
         pdf: result.bytes, pageCount: result.pageCount, formMap: null, allocation: result.allocation,
+        // Carried so the print job matches the geometry that was drawn — see
+        // the `printPdf` call below.
+        duplex: result.duplex,
       };
     } catch (err) {
       // A card may have been allocated and durably written before THIS
@@ -564,6 +582,13 @@ export class IssueDocument {
       await this.#printer.printPdf(rendered.pdf, {
         jobName: `school-${state.unitId}-${artifactId}`,
         user: state.learnerId ?? 'daylight',
+        // A tracked quiz is NOT a `worksheet` archetype, so its punch gutter is
+        // fixed to the left of every page — printing it double-sided would put
+        // page 2's margin on the opposite physical edge of the same sheet, and
+        // punching the stack would eat the content on every verso. The render
+        // reports which geometry it drew; the job follows it. `undefined` (v1
+        // legacy documents, which draw no gutter) keeps the adapter default.
+        duplex: rendered.duplex ?? undefined,
       });
     } catch (err) {
       // Render already succeeded here, so the allocation (if any) is right
