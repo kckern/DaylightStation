@@ -17,8 +17,18 @@ finding below is an application of one of them.
 2. **Devices are a sub-key of a domain, not a peer of one.** The established shape is
    `{domain}/log/{deviceId}/{date}.yml`. Device-scoped state that belongs to *no* domain
    (telemetry, calibration, volume) goes under `hardware/`.
-3. **`data/` is text only** — yaml, md, json, ndjson. Anything binary or dense (images,
-   MIDI, ROM/calculator blobs, audio) belongs in `media/` under its corresponding item.
+3. **`data/` is what you would commit to GitHub.** This is the operative test, and it is
+   stricter than "text only". `data/` must stay light enough to zip into one file, diff,
+   and back up often. `media/` holds everything heavy — binaries, assets, renders, **and
+   big fat logs** — and is never source-controlled, with sparser backups.
+
+   > **Being text is not sufficient.** A 109 MB tree of YAML fails this test exactly as a
+   > video file does. Ask "would I commit this?", not "is this text?".
+
+   The practical split:
+   - `data/` — configuration and curated state: things a person authors, edits, and reads
+     in a diff.
+   - `media/` — accumulated output: logs, renders, caches, generated corpora, binaries.
 4. **No lifecycle-stage roots.** `history/`, `assets/`, `cache/` describe *when* or *what
    kind*, not *what about*. They belong inside the domain they serve.
 
@@ -54,9 +64,15 @@ navigation. The resolution is a test:
 The tree's hybrid shape is this rule already applied; it simply was never written down,
 which is why it drifts at the edges.
 
-**Known inconsistency:** session logs live at `media/logs/{app}/` (kind-first) while
-household logs live at `{domain}/log/` (domain-first) — the same kind under two opposite
-schemes. Worth deciding deliberately.
+**Corrected:** an earlier draft of this audit called `media/logs/{app}/` (kind-first) an
+inconsistency against `{domain}/log/` (domain-first). That was backwards. Under rule 3,
+`media/logs/` is the CORRECT destination and `household/{domain}/log/` is the
+misplacement — a log is accumulated output and does not belong in the committable tree at
+all. The domain-vs-kind question does not arise for logs, because they leave `data/`.
+
+The same correction applies to `fitness/log/` (109 MB) and `weekly-review/log/` (38 MB),
+which this audit first filed under "text, but pathological density — worth a retention
+policy". They do not need a retention policy to stay; they need to move.
 
 **Known gap:** nothing marks regenerable data. `komga/cache`, `school/cache`,
 `vidangel-catalog.json`, `weather/current.yml` are all rebuildable, but nothing says so.
@@ -313,6 +329,42 @@ unit of work:
    `komga/`, `content-filter/`, `livestream/`, and the `hardware/` consolidation. Each is
    a small, injected-path change.
 5. **Then** take up fitness/weekly-review log density as its own piece of work.
+
+## Measured against rule 3 — `data/` is 1.7 GB
+
+Measured 2026-08-16. The committable-tree test is failed by far more than the binaries
+this audit originally chased; binaries turned out to be a rounding error, and volume of
+generated YAML is the real weight.
+
+| Tree | Size | Verdict |
+|---|---|---|
+| `content/readalong/scripture/` | **649M** | generated word-timing YAML → `media/` |
+| `users/kckern/lifelog/` | **208M** | includes a 68.8M `.yml.migrated` in `archives/_trash/` |
+| `household/fitness/log/` | **109M** | log → `media/logs/fitness/` (which already exists) |
+| `household/piano/log/` | **60M** | 2,673 `.mid` — log AND binary → `media/` |
+| `household/weekly-review/log/` | **38M** | see `.webm` below |
+| `household/content-filter/edl/` | 20M | 499 generated EDL files → `media/` |
+| `household/gaming/log/` | 5.5M | log → `media/` |
+| `household/strava/strava-webhooks/` | 2.3M | captured webhook bodies → `media/` |
+| smaller `*/log/` dirs | ~2.7M | weather, automotive, newsreporter, barcode, nutrition, omr, pressure-mats, cli |
+
+**The most flagrant single violation:** `household/weekly-review/log/*/.drafts/*.webm` —
+actual recorded audio/video sitting in the committable tree, including one **25.8 MB**
+file. That is most of what makes weekly-review 38M.
+
+**Also inside `data/`, not counted above:** `_deleteme/` at 263M and `_trash/` at 42M.
+Retired data is parked correctly, but it is parked inside the tree that is supposed to zip
+small.
+
+**What is genuinely fine:** every binary this audit originally flagged. `komga/hero` was 8
+orphans against a 531-file live cache in `media/img/komga/hero` (retired). `retroarch/
+thumbnails` is empty with a no-op downloader. `school/ti86-packs` is 6 hand-placed files.
+`assets/icons` is 27 SVGs. Together they are under 2 MB — the binaries were never the
+problem.
+
+**Rough arithmetic:** moving the logs and generated corpora takes `data/` from 1.7 GB to
+roughly 30–40 MB. That is the difference between "cannot be committed" and "zips into one
+file", which is the whole point of the rule.
 
 ## Relationship to `household/tier1`
 
