@@ -20,7 +20,6 @@
  * error rather than faking a 202.
  */
 import path from 'path';
-import fs from 'fs';
 import yaml from 'js-yaml';
 import {
   ValidationError,
@@ -31,6 +30,8 @@ import {
 const YAML_DUMP_OPTS = { indent: 2, lineWidth: -1, noRefs: true };
 
 export class SchedulerAdminService {
+  #configFiles;
+
   /**
    * @param {Object} deps
    * @param {Object} deps.configService - ConfigService for data directory paths
@@ -39,7 +40,10 @@ export class SchedulerAdminService {
    *   throws a NOT_IMPLEMENTED error (mapped to 501) instead of a fake 202.
    * @param {Object} [deps.logger=console] - Logger instance
    */
-  constructor({ configService, schedulerOrchestrator = null, logger = console }) {
+  constructor({ configService, configFiles, schedulerOrchestrator = null, logger = console }) {
+    // D5: no fs in the application layer. This service still decides WHICH
+    // file and what its contents mean; the store does the four primitives.
+    this.#configFiles = configFiles;
     if (!configService) {
       throw new Error('SchedulerAdminService requires a configService dependency');
     }
@@ -56,8 +60,8 @@ export class SchedulerAdminService {
   /** Read the jobs array from system/config/jobs.yml */
   #readJobsFile() {
     const absPath = path.join(this.#getDataRoot(), 'system/config/jobs.yml');
-    if (!fs.existsSync(absPath)) return [];
-    const raw = fs.readFileSync(absPath, 'utf8');
+    if (!this.#configFiles.exists(absPath)) return [];
+    const raw = this.#configFiles.readText(absPath);
     return yaml.load(raw) || [];
   }
 
@@ -65,18 +69,15 @@ export class SchedulerAdminService {
   #writeJobsFile(jobs) {
     const absPath = path.join(this.#getDataRoot(), 'system/config/jobs.yml');
     const parentDir = path.dirname(absPath);
-    if (!fs.existsSync(parentDir)) {
-      fs.mkdirSync(parentDir, { recursive: true });
-    }
     const content = yaml.dump(jobs, YAML_DUMP_OPTS);
-    fs.writeFileSync(absPath, content, 'utf8');
+    this.#configFiles.writeText(absPath, content);
   }
 
   /** Read the runtime state map from system/state/cron-runtime.yml */
   #readRuntimeState() {
     const absPath = path.join(this.#getDataRoot(), 'system/state/cron-runtime.yml');
-    if (!fs.existsSync(absPath)) return {};
-    const raw = fs.readFileSync(absPath, 'utf8');
+    if (!this.#configFiles.exists(absPath)) return {};
+    const raw = this.#configFiles.readText(absPath);
     return yaml.load(raw) || {};
   }
 

@@ -15,8 +15,6 @@
  * - household/config/devices.yml    -- device registry
  */
 import path from 'path';
-import fs from 'fs';
-import yaml from 'js-yaml';
 import {
   ValidationError,
   NotFoundError,
@@ -36,12 +34,17 @@ function isValidId(str) {
 const YAML_DUMP_OPTS = { indent: 2, lineWidth: -1, noRefs: true };
 
 export class HouseholdAdminService {
+  #configFiles;
+
   /**
    * @param {Object} deps
    * @param {Object} deps.configService - ConfigService for data directory paths
    * @param {Object} [deps.logger=console] - Logger instance
    */
-  constructor({ configService, logger = console }) {
+  constructor({ configService, configFiles, logger = console }) {
+    // D5: no fs in the application layer. This service still decides WHICH
+    // file and what its contents mean; the store does the four primitives.
+    this.#configFiles = configFiles;
     if (!configService) {
       throw new Error('HouseholdAdminService requires a configService dependency');
     }
@@ -61,47 +64,44 @@ export class HouseholdAdminService {
   /** Read household config from household/config/household.yml */
   #readHousehold() {
     const absPath = path.join(this.#getDataRoot(), 'household/config/household.yml');
-    if (!fs.existsSync(absPath)) return {};
-    return yaml.load(fs.readFileSync(absPath, 'utf8')) || {};
+    if (!this.#configFiles.exists(absPath)) return {};
+    return this.#configFiles.readYaml(absPath, {});
   }
 
   /** Write household config to household/config/household.yml */
   #writeHousehold(data) {
     const absPath = path.join(this.#getDataRoot(), 'household/config/household.yml');
     const parentDir = path.dirname(absPath);
-    if (!fs.existsSync(parentDir)) {
-      fs.mkdirSync(parentDir, { recursive: true });
-    }
-    fs.writeFileSync(absPath, yaml.dump(data, YAML_DUMP_OPTS), 'utf8');
+    this.#configFiles.writeYaml(absPath, data);
   }
 
   /** Read a user's profile from users/{username}/profile.yml */
   #readProfile(username) {
     const absPath = path.join(this.#getDataRoot(), `users/${username}/profile.yml`);
-    if (!fs.existsSync(absPath)) return null;
-    return yaml.load(fs.readFileSync(absPath, 'utf8')) || {};
+    if (!this.#configFiles.exists(absPath)) return null;
+    return this.#configFiles.readYaml(absPath, {});
   }
 
   /** Write a user's profile to users/{username}/profile.yml */
   #writeProfile(username, data) {
-    const dir = path.join(this.#getDataRoot(), `users/${username}`);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    const absPath = path.join(dir, 'profile.yml');
-    fs.writeFileSync(absPath, yaml.dump(data, YAML_DUMP_OPTS), 'utf8');
+    // writeYaml creates the parent, so the explicit mkdir is gone with the
+    // fs import.
+    const absPath = path.join(this.#getDataRoot(), `users/${username}`, 'profile.yml');
+    this.#configFiles.writeYaml(absPath, data);
   }
 
   /** Read a user's login data from users/{username}/auth/login.yml */
   #readLoginData(username) {
     const absPath = path.join(this.#getDataRoot(), `users/${username}/auth/login.yml`);
-    if (!fs.existsSync(absPath)) return null;
-    return yaml.load(fs.readFileSync(absPath, 'utf8')) || {};
+    if (!this.#configFiles.exists(absPath)) return null;
+    return this.#configFiles.readYaml(absPath, {});
   }
 
   /** Read devices map from household/config/devices.yml */
   #readDevices() {
     const absPath = path.join(this.#getDataRoot(), 'household/config/devices.yml');
-    if (!fs.existsSync(absPath)) return {};
-    const raw = yaml.load(fs.readFileSync(absPath, 'utf8')) || {};
+    if (!this.#configFiles.exists(absPath)) return {};
+    const raw = this.#configFiles.readYaml(absPath, {});
     return raw.devices || {};
   }
 
@@ -109,10 +109,7 @@ export class HouseholdAdminService {
   #writeDevices(devices) {
     const absPath = path.join(this.#getDataRoot(), 'household/config/devices.yml');
     const parentDir = path.dirname(absPath);
-    if (!fs.existsSync(parentDir)) {
-      fs.mkdirSync(parentDir, { recursive: true });
-    }
-    fs.writeFileSync(absPath, yaml.dump({ devices }, YAML_DUMP_OPTS), 'utf8');
+    this.#configFiles.writeYaml(absPath, { devices });
   }
 
   // ---------------------------------------------------------------------------

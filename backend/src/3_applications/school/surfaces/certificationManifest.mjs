@@ -1,5 +1,4 @@
 // backend/src/3_applications/school/surfaces/certificationManifest.mjs
-import nodeFs from 'node:fs';
 
 export const CERTIFICATION_MANIFEST_SCHEMA = 'school.certification-manifest/v1';
 
@@ -51,7 +50,13 @@ function toEntry(row) {
  * @param {string} params.path - Destination file path.
  * @param {{writeFileSync: Function}} [params.fs] - Injectable fs (defaults to node:fs).
  */
-export function writeManifest({ rows, path, fs = nodeFs }) {
+/**
+ * `fs` is REQUIRED, not defaulted. It was already an injectable seam; the
+ * `node:fs` default was the only reason this application-layer file imported
+ * fs at all, which D5 bans. The one real caller already passes its own.
+ */
+export function writeManifest({ rows, path, fs }) {
+  if (!fs?.writeFileSync) throw new Error('writeManifest requires an fs with writeFileSync');
   const entries = {};
   for (const row of rows) {
     entries[`${row.contentDigest}:${row.profileDigest}`] = toEntry(row);
@@ -70,7 +75,8 @@ export function writeManifest({ rows, path, fs = nodeFs }) {
  * @param {{readFileSync: Function, existsSync: Function}} [params.fs] - Injectable fs.
  * @returns {{schema: string, entries: object}}
  */
-export function readManifest({ path, fs = nodeFs }) {
+export function readManifest({ path, fs }) {
+  if (!fs?.existsSync) throw new Error('readManifest requires an fs with existsSync');
   if (!fs.existsSync(path)) {
     return { schema: CERTIFICATION_MANIFEST_SCHEMA, entries: {} };
   }
