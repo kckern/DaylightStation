@@ -78,6 +78,7 @@ import { validateAnyDocument, DOCUMENT_V2_SCHEMA } from '#domains/school/documen
 import { DOCUMENT_SOURCE_SCHEMA } from '#domains/school/documents/documentSource.mjs';
 import { RenderPrintDocument, createYamlBankReader } from '#apps/school/documents/RenderPrintDocument.mjs';
 import { PublishPrintDocument } from '#apps/school/documents/PublishPrintDocument.mjs';
+import { buildReprintContext } from '#apps/school/documents/reprintContext.mjs';
 import { YamlPrintDocumentRepository } from '#adapters/school/documents/YamlPrintDocumentRepository.mjs';
 import { YamlAllocationStore } from '#adapters/school/documents/YamlAllocationStore.mjs';
 
@@ -108,6 +109,7 @@ const RENDER_FLAGS = new Set([
 ]);
 const RELEASE_CARD_FLAGS = new Set([...COMMON_FLAGS, 'rows']);
 const LIST_CARDS_FLAGS = new Set([...COMMON_FLAGS, 'status', 'older-than']);
+const REPRINT_FLAGS = new Set([...COMMON_FLAGS, 'out']);
 
 const HELP = `school-docs — validate and proof-render School print-document source YAML
 
@@ -117,6 +119,7 @@ Usage:
   school-docs.cli.mjs render <file> --out <pdf> [options]
   school-docs.cli.mjs release-card <cardId> [options]
   school-docs.cli.mjs list-cards [options]
+  school-docs.cli.mjs reprint <instanceId> --out <pdf>
 
 Commands:
   validate <file|dir>   parse + validateAnyDocument (v1 or v2); directory form
@@ -131,6 +134,10 @@ Commands:
                          release-card never had (admin advocacy A5: stranded
                          live cards were a documented leak with no tool to
                          find them). Filter with --status / --older-than.
+  reprint <instanceId>   reproduce an exact historical print from a
+                         persisted worksheet-instance file — same learner
+                         name, date, card number, row range, question
+                         order/content — no manual flags needed.
 
 Options:
   --data-dir <path>      data root (default: $DAYLIGHT_BASE_PATH/data)
@@ -464,6 +471,82 @@ export async function runRender({
   }
 }
 
+/** `<dataDir>/household/apps/school/worksheet-instances/<instanceId>.yml` — the single-household convention this codebase's other worksheet-instance readers already use. */
+function resolveWorksheetInstancePath(dataDir, instanceId) {
+  return path.join(dataDir, 'household/apps/school/worksheet-instances', `${instanceId}.yml`);
+}
+
+/**
+ * `reprint <instanceId>` (fixes the "human hand-reconstructs five flags" gap):
+ * reads the ALREADY-PERSISTED worksheet instance (learner, issue date, card/
+ * row assignment) and reproduces its render byte-for-byte, no flags needed.
+ * Resolves the PUBLISHED document (never the raw source) the same way card
+ * mode does in `runRender`, and always passes the instance's own `learnerId`/
+ * `cardId`/`startRow`, which is what makes `RenderPrintDocument`'s allocation
+ * store recognize this as the identical live record and return it unchanged
+ * (`YamlAllocationStore.allocate`'s idempotent-reprint shortcut) rather than
+ * writing a new one or colliding.
+ *
+ * @param {{instanceId: string, outPath: string, paths: {dataDir: string, contentRoot: string}}} args
+ */
+export async function runReprint({ instanceId, outPath, paths }) {
+  const instancePath = resolveWorksheetInstancePath(paths.dataDir, instanceId);
+  let instance;
+  try {
+    instance = loadYamlDocument(instancePath);
+  } catch (error) {
+    return {
+      ok: false, mode: 'reprint', instanceId, out: outPath, pages: null, density: null, allocation: null, warnings: [],
+      errors: [`could not read worksheet instance '${instanceId}' at ${instancePath}: ${error.message}`],
+    };
+  }
+
+  const repository = new YamlPrintDocumentRepository({ directory: paths.contentRoot });
+  const published = await repository.getPublished(instance.documentId, instance.documentRevision);
+  if (!published) {
+    return {
+      ok: false, mode: 'reprint', instanceId, out: outPath, pages: null, density: null, allocation: null, warnings: [],
+      errors: [`no published revision '${instance.documentRevision}' found for document '${instance.documentId}'`],
+    };
+  }
+
+  let context;
+  try {
+    context = buildReprintContext(instance);
+  } catch (error) {
+    return {
+      ok: false, mode: 'reprint', instanceId, out: outPath, pages: null, density: null, allocation: null, warnings: [],
+      errors: [error.message],
+    };
+  }
+
+  const banks = createYamlBankReader({ dataDir: paths.dataDir });
+  const allocationStore = new YamlAllocationStore({ directory: paths.contentRoot });
+  const useCase = new RenderPrintDocument({ repository, banks, allocationStore });
+
+  try {
+    const result = await useCase.execute({ document: published, context });
+    fs.mkdirSync(path.dirname(outPath), { recursive: true });
+    fs.writeFileSync(outPath, result.bytes);
+    return {
+      ok: true,
+      mode: 'reprint',
+      instanceId,
+      out: outPath,
+      pages: result.pageCount,
+      density: result.density,
+      allocation: result.allocation ?? null,
+      warnings: result.warnings,
+      errors: [],
+    };
+  } catch (error) {
+    return {
+      ok: false, mode: 'reprint', instanceId, out: outPath, pages: null, density: null, allocation: null,
+      warnings: [], errors: [error?.message ?? String(error)],
+    };
+  }
+}
+
 /**
  * `release-card <cardId> [--rows a-b]` (Task 7, spec §5.4): allocation
  * lifecycle housekeeping against a `YamlAllocationStore` rooted at the SAME
@@ -600,13 +683,13 @@ export async function runSchoolDocs(argv = [], deps = {}) {
     };
   }
 
-  const KNOWN_COMMANDS = new Set(['validate', 'publish', 'render', 'release-card', 'list-cards']);
+  const KNOWN_COMMANDS = new Set(['validate', 'publish', 'render', 'release-card', 'list-cards', 'reprint']);
   if (!KNOWN_COMMANDS.has(subcommand)) {
     return usageResult([`Unknown command: ${subcommand}`]);
   }
 
   const allowedFlags = {
-    validate: VALIDATE_FLAGS, publish: PUBLISH_FLAGS, render: RENDER_FLAGS, 'release-card': RELEASE_CARD_FLAGS, 'list-cards': LIST_CARDS_FLAGS,
+    validate: VALIDATE_FLAGS, publish: PUBLISH_FLAGS, render: RENDER_FLAGS, 'release-card': RELEASE_CARD_FLAGS, 'list-cards': LIST_CARDS_FLAGS, reprint: REPRINT_FLAGS,
   }[subcommand];
   const unknown = Object.keys(flags).filter((flag) => !allowedFlags.has(flag));
   if (unknown.length) {
@@ -660,6 +743,22 @@ export async function runSchoolDocs(argv = [], deps = {}) {
     const { rows, error: rowsError } = parseRowRangeFlag(flags.rows, '--rows');
     if (rowsError) return usageResult([rowsError]);
     const report = await runReleaseCard({ cardId: positional[0], rows, paths });
+    return { exitCode: report.ok ? EXIT_OK : EXIT_FAIL, report };
+  }
+
+  if (subcommand === 'reprint') {
+    if (positional.length !== 1) {
+      return usageResult(['reprint requires exactly one <instanceId> argument']);
+    }
+    let outValue;
+    try {
+      outValue = valueFlag(flags.out, '--out');
+    } catch (error) {
+      return usageResult([error.message]);
+    }
+    if (outValue === undefined) return usageResult(['--out needs a path']);
+    const outPath = path.isAbsolute(outValue) ? path.resolve(outValue) : path.resolve(process.cwd(), outValue);
+    const report = await runReprint({ instanceId: positional[0], outPath, paths });
     return { exitCode: report.ok ? EXIT_OK : EXIT_FAIL, report };
   }
 
@@ -746,7 +845,7 @@ export function formatSchoolDocsReport(report) {
     return `${lines.join('\n')}\n`;
   }
 
-  if (report.mode === 'render') {
+  if (report.mode === 'render' || report.mode === 'reprint') {
     if (report.ok) {
       // `allocation` only when the render actually attached to a card
       // (`--card`/`--fresh-card`) — a plain proof render's output stays
