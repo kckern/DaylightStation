@@ -246,7 +246,7 @@ export async function getFinance() {
 
 /**
  * Build the write-audit log writer. Append-only NDJSON, one file per UTC date,
- * stored under data/household/cli-transcripts/. Falls back to /tmp when the
+ * stored under data/household/cli/log/. Falls back to /tmp when the
  * data path is not writable (typical on dev hosts where the data volume is
  * Docker-owned).
  */
@@ -256,7 +256,7 @@ export async function getWriteAuditor() {
 
   _writeAuditorInitPromise = (async () => {
     const cfg = await getConfigService();
-    const baseDir = path.join(cfg.getDataDir(), 'household', 'cli-transcripts');
+    const baseDir = path.join(cfg.getDataDir(), 'household', 'cli', 'log');
     _writeAuditor = createWriteAuditor({ baseDir });
     return _writeAuditor;
   })();
