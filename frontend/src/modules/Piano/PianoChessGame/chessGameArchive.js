@@ -1,4 +1,5 @@
 import { INITIAL_FEN } from '@shared-gaming/chess/engine.mjs';
+import { elapsedBySide, moveDurations } from './chessClock.js';
 
 /**
  * The full account of a game, for the household history.
@@ -32,7 +33,7 @@ export function localDateStamp(at) {
 }
 
 /** One move, in both notations. Shared by the played line and the rewound one. */
-function serializeMove(entry, ply, undone) {
+function serializeMove(entry, ply, undone, thinkMs = null) {
   return {
     ply,
     san: entry.san,
@@ -42,6 +43,13 @@ function serializeMove(entry, ply, undone) {
     captured: entry.captured || null,
     // The two addresses the player performed it with, origin then destination.
     played: Array.isArray(entry.chords) ? entry.chords.filter(Boolean) : [],
+    // How long this move took. The single most useful thing about it is not the
+    // number but its correlation with the move's quality — a child's blunders
+    // and their fastest moves tend to be the same moves, and that is only
+    // visible if the time was written down while it happened. Omitted entirely
+    // rather than zeroed when untimed, so an analyzer can tell "instant" from
+    // "not recorded".
+    ...(thinkMs == null ? {} : { think_ms: thinkMs }),
     undone,
     ...(undone ? { undone_at_ply: entry.undone_at_ply ?? ply, undone_seq: entry.undone_seq ?? null } : {}),
   };
@@ -64,6 +72,7 @@ function serializeMove(entry, ply, undone) {
 export function buildGameArchive({
   game, gameId, userId, rungId, opponent = null, addressing = 'chords',
   hints = 0, bestMoves = 0, takebacks = 0, startedAt, endedAt, endedBy = 'left',
+  timing = null,
 }) {
   const history = Array.isArray(game?.history) ? game.history : [];
   const rewound = Array.isArray(game?.undoneHistory) ? game.undoneHistory : [];
@@ -72,6 +81,9 @@ export function buildGameArchive({
   // was taken back IS one, though — a child who played and unplayed a move sat
   // down and tried something, and that is the thing worth knowing.
   if (!history.length && !rewound.length) return null;
+
+  const durations = moveDurations(history, startedAt);
+  const spent = elapsedBySide(history, startedAt);
 
   const completed = !!game?.status?.game_over;
   const outcome = completed ? game.status.outcome : null;
@@ -114,9 +126,27 @@ export function buildGameArchive({
     // each was played at, with the rewound move first when both share one —
     // because it was played first, and then unplayed.
     moves: [
+      // A rewound move has no think time attached. Its duration would be
+      // measured against a played line it is not part of, and the number would
+      // be meaningless — the total time it consumed is still visible in
+      // `duration_ms`, which is wall clock and counts everything.
       ...rewound.map((entry) => serializeMove(entry, entry.ply, true)),
-      ...history.map((entry, index) => serializeMove(entry, index + 1, false)),
+      ...history.map((entry, index) => serializeMove(entry, index + 1, false, durations[index])),
     ].sort((a, b) => (a.ply - b.ply) || (a.undone === b.undone ? 0 : (a.undone ? -1 : 1))),
+
+    // How the clock was set and where the time went. `mode: 'off'` is recorded
+    // rather than omitted: a game played without a clock is a fact about the
+    // game, and an analyzer must be able to tell it from one whose timing was
+    // lost.
+    timing: {
+      mode: timing?.mode || 'off',
+      initial_ms: timing?.initial_ms ?? null,
+      increment_ms: timing?.increment_ms ?? null,
+      // Summed from the moves rather than from the clock display, so the
+      // archive agrees with the move list it ships alongside.
+      spent_ms: spent,
+      timed_moves: durations.filter((value) => value != null).length,
+    },
 
     help: {
       hints: Math.max(0, hints || 0),

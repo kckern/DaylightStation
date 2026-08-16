@@ -58,7 +58,7 @@
    needs to know the map moved without it shouting every turn. */
 .piano-chess__redeal {
   margin: 0;
-  font-size: 0.8rem;
+  font-size: var(--t-cap, 0.85rem);
   color: var(--piano-muted);
   transition: color 300ms ease;
 }
@@ -124,7 +124,7 @@
 
 .chess-settings__title {
   margin: 0;
-  font-size: 1rem;
+  font-size: var(--t-h, 1rem);
   font-weight: 700;
   color: var(--pc-ivory);
 }
@@ -136,7 +136,7 @@
   background: none;
   color: var(--pc-brass);
   font: inherit;
-  font-size: 0.8rem;
+  font-size: var(--t-cap, 0.85rem);
   cursor: pointer;
 
   &:hover,
@@ -145,7 +145,7 @@
 
 .chess-settings__group {
   margin: 0.5rem 0 0;
-  font-size: 0.7rem;
+  font-size: var(--t-cap, 0.85rem);
   font-weight: 400;
   color: var(--piano-muted, #9a9aa6);
 }
@@ -169,7 +169,7 @@
   background: none;
   color: var(--pc-ivory-dim);
   font: inherit;
-  font-size: 0.9rem;
+  font-size: var(--t-body, 1rem);
   letter-spacing: 0.08em;
   cursor: pointer;
 
@@ -184,7 +184,7 @@
 }
 
 .chess-settings__note {
-  font-size: 0.65rem;
+  font-size: var(--t-cap, 0.85rem);
   letter-spacing: 0.08em;
   color: var(--piano-muted, #9a9aa6);
 }
@@ -272,82 +272,33 @@
 
 .piano-chess__rail--chords { justify-content: flex-start; }
 
-/* ---- the state rail: whose game, what is in hand, what was heard --------- */
-
-.piano-chess__facts {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  margin: 0;
-}
-
-.piano-chess__fact {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.5rem;
-}
-
-.piano-chess__fact-value {
-  margin: 0;
-  font-size: 0.95rem;
-  color: var(--pc-ivory);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 /* IN HAND. A reserved block, the same size whether or not a piece is held, so
    the rail never reflows at the moment the player most needs it to stay put. */
-.piano-chess__hand {
-  display: grid;
-  grid-template-rows: auto 1fr auto auto;
-  justify-items: center;
-  gap: 0.1rem;
-  min-height: 8.5rem;
-  padding: 0.5rem 0.4rem 0.6rem;
-  border: 1px solid var(--piano-border, #34343f);
-  border-radius: var(--r-md, 12px);
-  background: rgb(0 0 0 / 18%);
-  text-align: center;
-}
 
 .piano-chess__hand--holding {
   border-color: var(--piano-accent, #2ec46f);
   background: color-mix(in srgb, var(--piano-accent) 14%, transparent);
 }
 
-.piano-chess__hand-piece {
-  font-size: 3.4rem;
-  line-height: 1;
-  color: var(--pc-ivory);
-}
-
-.piano-chess__hand-piece--black { color: #14141a; text-shadow: 0 0 2px var(--piano-fg); }
-.piano-chess__hand-piece--empty { color: var(--piano-muted, #9a9aa6); font-size: 2.4rem; }
 
 .piano-chess__hand-from {
   font-size: var(--t-cap, 0.85rem);
   color: var(--piano-muted);
 }
 
-.piano-chess__hand-escape {
-  font-size: 0.75rem;
-  line-height: 1.2;
-  color: var(--piano-accent, #2ec46f);
-}
-
-
 .piano-chess__slot-label {
   font-size: var(--t-cap, 0.85rem);
   color: var(--piano-muted);
 }
 
+/* THE instruction, so it reads as body text rather than as an aside. One
+   block: the size and the colour used to be re-stated separately further down
+   the file, which is how this screen's styles drifted into two generations. */
 .piano-chess__prompt {
   margin: 0.4rem 0 0;
-  font-size: 0.95rem;
+  font-size: var(--t-body, 1rem);
   line-height: 1.35;
-  color: var(--pc-ivory-dim);
+  color: var(--piano-fg);
 }
 
 /* THE PICK-UP WINDOW. A rule under the prompt that drains left to right for
@@ -393,31 +344,6 @@
   }
 }
 
-/* The end-of-game tallies: the record read back as facts, in the same label
-   voice as the captured-material rows below it. */
-.piano-chess__summary {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  margin: 0.4rem 0 0;
-  padding-block-start: 0.6rem;
-  border-block-start: 1px solid var(--piano-border, #34343f);
-}
-
-.piano-chess__summary-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.5rem;
-}
-
-.piano-chess__summary-value {
-  margin: 0;
-  font-size: 1.05rem;
-  font-weight: 700;
-  color: var(--pc-brass);
-}
-
 .piano-chess__cancel {
   display: flex;
   flex-direction: column;
@@ -440,13 +366,6 @@
     border-color: var(--pc-brass);
     color: var(--pc-brass);
   }
-}
-
-.piano-chess__cancel-hint {
-  font-size: 0.65rem;
-  letter-spacing: 0.08em;
-  text-transform: none;
-  color: var(--piano-muted, #9a9aa6);
 }
 
 /* ---- board -------------------------------------------------------------- */
@@ -488,14 +407,12 @@
   --cb-hint: var(--pc-verdigris);
   --cb-danger: var(--pc-felt);
   --cb-label: var(--pc-ivory-dim);
+  /* The last move gets a colour of its own rather than borrowing the hands'
+     brass. Sharing it meant the record of what the OPPONENT just did was drawn
+     in the same colour as what YOUR hands are doing now — so the one mark a
+     player needs after looking away read as part of their own input. */
+  --cb-last-move: var(--pc-verdigris);
 }
-
-/* ---- move log ----------------------------------------------------------- */
-
-
-
-
-.piano-chess__move-san { color: var(--piano-muted, #9a9aa6); font-size: 0.8rem; }
 
 /* Sits at the foot of the chord rail. A dash for "nothing yet" reads as
    unfinished when it is the whole row, so the label and the pieces share one
@@ -508,11 +425,27 @@
   border-block-start: 1px solid var(--piano-border, #34343f);
 }
 
+/* One declaration, not two. This selector was set here AND again in the later
+   "rebuilt rail" pass at the foot of the file, with a duplicated `line-height`
+   inside this block for good measure — the whole row rendered by cascade
+   accident. The size now lives with the rest of the type scale below. */
 .piano-chess__captured-pieces {
-  font-size: 1.25rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.1rem;
   line-height: 1;
-  line-height: 1.1;
   color: var(--pc-ivory);
+}
+
+/* Artwork, sized to sit on a text line. Replaces unicode chess glyphs, which
+   this WebView renders as tofu. */
+.piano-chess__captured-piece {
+  width: 1.35rem;
+  height: 1.35rem;
+  object-fit: contain;
+  /* The dark set is nearly invisible against the case; a hairline lifts it. */
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 55%));
 }
 
 /* ---- refusal toast ------------------------------------------------------ */
@@ -570,30 +503,6 @@
    flex item forced ChordReadout out to the far right while the plaque's
    pill floated centred inside its own oversized box. Scoped to .piano-chess
    so TheoryPanel's card usage is untouched. */
-.piano-chess .piano-chord-name {
-  width: auto;
-  height: auto;
-}
-
-.piano-chess .piano-chord-name__plaque {
-  min-height: 0;
-  max-width: none;
-  width: auto;
-  gap: 0.15rem;
-  padding: 0.25rem 0.85rem;
-  border-radius: 0.35rem;
-}
-
-.piano-chess .piano-chord-name__eyebrow {
-  font-size: 0.65rem;
-}
-
-/* No vw: matched to .chess-readout__chord's size instead of the Studio
-   card's viewport-relative clamp. */
-.piano-chess .piano-chord-name__value {
-  font-size: 1.15rem;
-}
-
 .piano-chess__instrument .piano-keyboard {
   height: clamp(4.5rem, 12cqh, 7rem);
 }
@@ -611,7 +520,7 @@
   min-height: 3.4rem;
   padding: 0.4rem 0.5rem;
   border-inline-start: 2px solid var(--piano-border, #34343f);
-  font-size: 0.9rem;
+  font-size: var(--t-body, 1rem);
   letter-spacing: 0.04em;
   color: var(--pc-ivory-dim);
   overflow: hidden;
@@ -658,12 +567,6 @@
 /* Sits with the rest of the rail rather than being flung to the bottom by an
    auto margin — that left a hand's-height of dead charcoal in the middle of the
    one rail the player reads when they are stuck. */
-.piano-chess__rail-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  margin-block-start: 0.25rem;
-}
 
 /* ---- staff rim labels (the reading vocabulary) --------------------------- */
 
@@ -752,6 +655,8 @@
 /* The rail heading is the label; a second one inside disagreed with it. */
 .piano-chess .piano-chord-name__eyebrow { display: none; }
 
+/* On the type scale, never a vw clamp: the Studio card's viewport-relative
+   sizing lies inside PianoDesignScale. */
 .piano-chess .piano-chord-name__value { font-size: var(--t-h); font-weight: 700; }
 
 /* Silence, not a dash — with the height still reserved so nothing reflows when
@@ -766,13 +671,6 @@
 /* Exactly one auto margin in this column. With two, the leftover space was
    split between them, so any content change re-divided it and moved the blocks
    above as well as below. The rail now grows downward only. */
-.piano-chess__rail-actions { margin-block-start: auto; }
-
-.piano-chess__hand-empty {
-  align-self: center;
-  font-size: var(--t-body);
-  color: var(--piano-muted);
-}
 
 .piano-chess__captured { margin-block-start: auto; }
 
@@ -784,27 +682,15 @@
 
 /* ---- on the type and colour scales, not one-offs ------------------------- */
 
-.piano-chess__fact-value,
-.piano-chess__prompt { font-size: var(--t-body); }
 
-/* The prompt is THE instruction — it reads as body text, not as an aside. */
-.piano-chess__prompt { color: var(--piano-fg); }
 
-.piano-chess__hand-piece { font-size: var(--t-display); }
 .piano-chess__hand-from,
-.piano-chess__hand-escape,
-.piano-chess__cancel-hint,
 .piano-chess__redeal { font-size: var(--t-cap); }
 
-.piano-chess__summary-value,
-.piano-chess__captured-pieces { font-size: var(--t-h); }
 
-.piano-chess__hand { background: var(--piano-surface); }
 .piano-chess__hand--holding {
   background: color-mix(in srgb, var(--piano-accent) 14%, var(--piano-surface));
 }
-.piano-chess__hand-piece--black { color: var(--piano-bg); }
-
 /* Every slot label sits on the same left edge; only the piece in hand centres. */
 .piano-chess__hand > .piano-chess__slot-label { justify-self: start; }
 
@@ -945,10 +831,55 @@
   color: var(--piano-muted);
 }
 
+/* One block, and it states the result the three separate ones used to compose
+   by cascade order: row direction and alignment from the last, the gap from the
+   first, and `margin-block-start: auto` — which pins the actions to the foot of
+   the rail — from the middle. */
 .piano-chess__rail-actions {
+  display: flex;
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
+  gap: 0.4rem;
+  margin-block-start: auto;
+}
+
+/* Whose game, whose turn, which colour. The first three questions anyone asks
+   and none of them had an answer on screen. Sits at the very top of the rail,
+   above the opponent, because it is about the player rather than about the
+   game they happen to be in. */
+.piano-chess__identity {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-block-end: 0.5rem;
+  border-block-end: 1px solid var(--piano-border, #34343f);
+}
+
+.piano-chess__identity-player {
+  font-size: var(--t-h);
+  color: var(--pc-ivory);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* State in form as well as in words: whether it is your move should be
+   answerable without reading the sentence. */
+.piano-chess__turn {
+  flex: none;
+  padding: 0.1rem 0.45rem;
+  border: 1px solid var(--piano-border, #34343f);
+  border-radius: 2px;
+  font-size: var(--t-cap);
+  color: var(--pc-ivory-dim);
+  white-space: nowrap;
+}
+
+.piano-chess__turn--mine {
+  border-color: var(--pc-brass);
+  color: var(--pc-brass);
 }
 
 .piano-chess__opponent-rung {
@@ -977,4 +908,56 @@
      rail — the design canvas is 1280 wide, and a reservation checked only at
      1920 was a reservation that did not hold on the tablet. */
   min-height: calc(2 * 1.3em);
+}
+
+/* ---- the opening beat ---------------------------------------------------- */
+
+/* A game should begin, not merely appear. Over the board like the result card,
+   flat scrim, and gone in under two seconds — or the instant the first move is
+   played, whichever comes first. Nothing here is ever something to wait out. */
+.chess-opening {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  background: rgb(0 0 0 / 45%);
+  pointer-events: none;
+  text-align: center;
+  animation: chess-opening-in 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
+             chess-opening-out 320ms ease-in 1280ms forwards;
+}
+
+.chess-opening__vs {
+  margin: 0;
+  font-size: var(--t-display, 2rem);
+  font-weight: 700;
+  line-height: 1;
+  color: var(--pc-ivory);
+  text-wrap: balance;
+}
+
+.chess-opening__lead {
+  margin: 0;
+  font-size: var(--t-body, 1rem);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pc-brass);
+}
+
+@keyframes chess-opening-in {
+  from { opacity: 0; transform: scale(1.03); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes chess-opening-out {
+  to { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Still leaves, still on its own — only the movement goes. */
+  .chess-opening { animation: chess-opening-out 320ms ease-in 1280ms forwards; }
 }

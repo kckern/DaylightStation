@@ -272,6 +272,7 @@ import { createWikipediaRouter } from './4_api/v1/routers/wikipedia.mjs';
 import { createChessRouter } from './4_api/v1/routers/chess.mjs';
 import { buildChessArchiveFilename, buildGameRecordFilename } from './4_api/v1/routers/lib/chessGameFilename.mjs';
 import { createStockfishEngine } from './1_adapters/chess/StockfishEngineAdapter.mjs';
+import { createStockfishAnalyst } from './1_adapters/chess/StockfishAnalysisAdapter.mjs';
 import { createChessConfigService } from './3_applications/chess/ChessConfigService.mjs';
 import { createChessLadderService } from './3_applications/chess/ChessLadderService.mjs';
 import { createPianoGamesModule } from '#composition/modules/pianoGames.mjs';
@@ -1760,9 +1761,19 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Chess: server-side Stockfish behind a worker thread + household/user config layers.
   const chessEngine = createStockfishEngine({ logger: rootLogger.child({ module: 'chess-engine' }) });
-  server?.once?.('close', () => chessEngine.dispose());
+  // A SECOND engine, never handicapped, for hints and analysis. Separate from
+  // the opponent because the bottom ladder rungs are no longer Stockfish at all
+  // — asking the opponent engine for the best move would now return a
+  // beginner's guess — and because the two want different UCI conversations:
+  // one throttled bestmove out versus a scored search.
+  const chessAnalyst = createStockfishAnalyst({
+    depth: 14,
+    logger: rootLogger.child({ module: 'chess-analyst' }),
+  });
+  server?.once?.('close', () => { chessEngine.dispose(); chessAnalyst.dispose(); });
   v1Routers.chess = createChessRouter({
     engine: chessEngine,
+    analyst: chessAnalyst,
     configService: createChessConfigService({
       readHouseholdConfig: () => configService.getHouseholdAppConfig(null, 'chess'),
       readUserConfig: (userId) => dataService.user.read('apps/chess/config', userId) || {},

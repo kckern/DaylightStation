@@ -142,7 +142,7 @@ function reject(state, reason, square) {
  * Feeds one recognised chord (as its square) into the flow.
  * Always returns the next state and one event; never throws.
  */
-export function applySquare(state, square) {
+export function applySquare(state, square, at = null) {
   if (!square) return reject(state, 'unrecognised_chord', null);
   if (state.status?.game_over) return reject(state, 'game_over', square);
   if (!isPlayerTurn(state)) return reject(state, 'not_your_turn', square);
@@ -161,7 +161,7 @@ export function applySquare(state, square) {
   }
 
   if (destinationsFor(state, state.origin).includes(square)) {
-    return commitMove(state, state.origin, square);
+    return commitMove(state, state.origin, square, PROMOTION_PIECE, at);
   }
 
   // Naming another of your own pieces switches the selection rather than failing,
@@ -181,7 +181,7 @@ export function clearSelection(state) {
 }
 
 /** Plays a legal move. Shared by the chord flow and by the opponent's reply. */
-export function commitMove(state, from, to, promotion = PROMOTION_PIECE) {
+export function commitMove(state, from, to, promotion = PROMOTION_PIECE, at = null) {
   const result = playMove(state.game, { from, to, promotion });
   if (result.error) return reject(state, 'illegal_destination', to);
   const status = describeGame(result.game);
@@ -192,6 +192,15 @@ export function commitMove(state, from, to, promotion = PROMOTION_PIECE) {
     color: result.move.color,
     captured: result.move.captured || null,
     chords: [squareToChord(from, state.scheme)?.symbol, squareToChord(to, state.scheme)?.symbol],
+    // When this move landed. Passed in rather than read from the clock here so
+    // the reducer stays pure and replayable; the caller owns "now". Every
+    // downstream time figure — the clock face, the per-move think times, the
+    // post-game analysis — is derived from these, so a move without one is
+    // simply untimed rather than wrong. `== null` is checked BEFORE the Number
+    // coercion and `||` is avoided on the result: Number(null) is 0 and 0 is
+    // falsy, so either shortcut turns one of "untimed" and "the epoch" into the
+    // other.
+    at: at == null || !Number.isFinite(Number(at)) ? null : Number(at),
   };
   const next = {
     ...state,

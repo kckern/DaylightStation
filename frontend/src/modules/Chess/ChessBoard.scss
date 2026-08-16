@@ -8,6 +8,12 @@
  */
 
 .chess-board-frame {
+  /* A LAST-RESORT default, and viewport-relative on purpose: a bare host with
+     no opinion should still get a board that fits its screen. Every host inside
+     a transformed canvas MUST override it — PianoDesignScale scales the whole
+     surface, so `vw`/`vh` there measure the physical screen rather than the
+     design box, and the board runs off the edge. The piano host sets it from
+     container query units for exactly this reason. */
   --cb-size: min(58vw, 62vh);
   --cb-light: #f0dfc0;
   --cb-dark: #b07d54;
@@ -63,7 +69,14 @@
 .chess-board__axis-label {
   display: grid;
   place-items: center;
-  font-size: clamp(0.7rem, 1.1vw, 0.95rem);
+  /* Sized off the BOARD, not the viewport. A `vw` term here lies inside the
+     piano kiosk: PianoDesignScale transforms the whole canvas, so viewport
+     units measure the physical screen rather than the design box the board is
+     laid out in — the same trap the host's own stylesheet documents, and the
+     reason the badge below already sizes from `--cb-size`. A square is
+     `--cb-size / 8`, so this is 22% of a square's side, clamped to stay
+     readable at both extremes. */
+  font-size: clamp(0.7rem, calc(var(--cb-size) / 8 * 0.22), 0.95rem);
   font-weight: 700;
   letter-spacing: 0.1em;
   color: color-mix(in srgb, var(--cb-label) 45%, transparent);
@@ -80,7 +93,12 @@
   padding: 0;
   background: var(--cb-dark);
   cursor: default;
-  transition: box-shadow 120ms ease;
+  /* NO TRANSITION ON box-shadow. It is a paint property: a partial chord lights
+     several candidate squares at once, and transitioning it rasterized every one
+     of them on every frame for the whole 120ms — then again on release. On the
+     kiosk's 2018 tablet that was the reported "jank when the board lights up".
+     Snapping is also the better feedback: this channel is the instrument
+     answering a keystroke, and an instrument that fades in is a broken one. */
   /* Every channel contributes a layer through its own custom property instead of
      setting box-shadow wholesale, so e.g. the cursor's ring and the check wash can
      both be visible on the same square at once — box-shadow itself is set exactly
@@ -129,13 +147,41 @@
 
 /* Channel 2 — outline. Where you are in the move. */
 .chess-board__square--selected { outline: 3px solid var(--cb-accent); outline-offset: -3px; }
-.chess-board__square--last-move { outline: 2px dashed color-mix(in srgb, var(--cb-accent) 42%, transparent); outline-offset: -2px; }
+
+/* The last move, drawn to be READ. This was a 2px dash at 42% opacity, which is
+   invisible at the distance a child stands from a piano — and it is the only
+   record of an opponent reply they looked away from. Solid, heavier, and backed
+   by a faint wash so both squares of the move register as a pair. */
+.chess-board__square--last-move {
+  outline: 3px solid color-mix(in srgb, var(--cb-last-move, var(--cb-accent)) 85%, transparent);
+  outline-offset: -3px;
+  --sq-mark: inset 0 0 0 100vmax color-mix(in srgb, var(--cb-last-move, var(--cb-accent)) 12%, transparent);
+}
+
+/* Pickup. The piece rises out of the board.
+   The single most legible thing available and it was missing: the square gained
+   a dashed edge, which is a diagram, not an event. Transform only, so it costs
+   the compositor and nothing else. The heavier shadow is a static class swap —
+   animating a filter is a documented paint trap on this tablet. */
+.chess-board__square--held .chess-board__piece {
+  transform: translateY(-6%) scale(1.1);
+  filter: drop-shadow(0 5px 7px rgb(0 0 0 / 45%));
+  transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  z-index: 2;
+}
+
+/* The landing settle lives in the slide's own WAAPI keyframes (ChessBoard.jsx),
+   not here. A CSS animation on `transform` would fight the slide for the same
+   property and one of the two would silently lose. */
 
 /* The piece in hand. An animated variant of the outline channel, not a fifth
-   visual language: a solid outline still means "last move"; the crawl means
-   "this one is in the air". background-position is animated deliberately —
-   an animated filter is a documented paint-cost trap on the kiosk's 2018
-   tablet.
+   visual language: a solid outline still means "last move"; the pulse means
+   "this one is in the air".
+   This was marching ants — an animated `background-position`, which repaints
+   the square every frame. It ran during the LONGEST-LIVED state in the game (a
+   child hunting for a destination sits here for 30-60 seconds), so it was a
+   standing paint load on the weakest device this house owns. A static dashed
+   outline breathing on `opacity` says the same thing on the compositor alone.
    This is a real child element (`.chess-board__held-ants`), not
    `.chess-board__square--held::before` — `--best` already claims `::before`
    on the square, and a held piece can also be the engine's suggested move
@@ -143,55 +189,22 @@
    board). An element has one `::before`; two rules fighting over it was
    found and fixed on this board once already. */
 .chess-board__held-ants {
-  /* One dash + one gap. The animation travels EXACTLY this far, which is what
-     makes the loop seamless — travel any other distance and the pattern lands
-     out of phase and visibly snaps back at the end of every cycle. */
-  --cb-ant-period: 14px;
-
   position: absolute;
   inset: 3px;
   pointer-events: none;
   border-radius: 2px;
-
-  /* TILED, not a single painted band. With `no-repeat` the one band slides off
-     its edge and leaves a growing gap behind it, then jumps home — which reads
-     as the border being yanked back rather than crawling. Repeating the tile
-     means there is always another dash arriving. */
-  background-image:
-    repeating-linear-gradient(90deg, var(--cb-accent-glow) 0 7px, transparent 7px 14px),
-    repeating-linear-gradient(90deg, var(--cb-accent-glow) 0 7px, transparent 7px 14px),
-    repeating-linear-gradient(0deg, var(--cb-accent-glow) 0 7px, transparent 7px 14px),
-    repeating-linear-gradient(0deg, var(--cb-accent-glow) 0 7px, transparent 7px 14px);
-  background-repeat: repeat-x, repeat-x, repeat-y, repeat-y;
-  background-size: 100% 2px, 100% 2px, 2px 100%, 2px 100%;
-  /* Numeric on both ends of the animation. Keyword positions (`top`, `left`)
-     do not interpolate to a numeric offset, so the browser jumps between them
-     instead of tweening — the other half of the jerk. */
-  background-position: 0 0, 0 100%, 0 0, 100% 0;
-  animation: chess-board-ants 0.6s linear infinite;
+  border: 2px dashed var(--cb-accent-glow);
+  animation: chess-board-breathe 1400ms ease-in-out infinite;
 }
 
-/* Around the perimeter, not four independent stripes: top travels right,
-   bottom left, right down, left up. That circulation is what makes it read as
-   one thread going round the square. */
-@keyframes chess-board-ants {
-  from { background-position: 0 0, 0 100%, 0 0, 100% 0; }
-  to {
-    background-position:
-      var(--cb-ant-period) 0,
-      calc(-1 * var(--cb-ant-period)) 100%,
-      0 calc(-1 * var(--cb-ant-period)),
-      100% var(--cb-ant-period);
-  }
+@keyframes chess-board-breathe {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .chess-board__held-ants {
-    animation: none;
-    background: none;
-    outline: 3px solid var(--cb-accent-glow);
-    outline-offset: -3px;
-  }
+  .chess-board__held-ants { animation: none; opacity: 1; }
+  .chess-board__square--held .chess-board__piece { transition: none; }
 }
 
 /* Channel 3 — marks. Only ever present because the player asked. */
@@ -259,25 +272,77 @@
   pointer-events: none;
 }
 
-/* Channel 4 — colour. Alarms, and nothing else. */
+/* Channel 4 — colour. Alarms, and nothing else.
+   The wash arrives rather than merely existing: two pulses on an overlay, then
+   it holds static for as long as the check does. A standing red square is easy
+   to stop seeing; a square that flashes twice when it happens is not. Opacity
+   on a child element, so the pulse costs the compositor only and the square's
+   own four --sq-* layers are left alone. */
 .chess-board__square--check {
   --sq-alarm: inset 0 0 0 100vmax color-mix(in srgb, var(--cb-danger) 45%, transparent);
 }
 
+/* One overlay element carries both alarms. See the note in ChessBoard.jsx for
+   why this is not `::after`. */
+.chess-board__flash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: var(--cb-danger);
+  opacity: 0;
+}
+
+.chess-board__flash--check { animation: chess-board-alarm 500ms ease-out 2; }
+.chess-board__flash--refuse { animation: chess-board-flare 600ms ease-out forwards; }
+
+@keyframes chess-board-alarm {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 0.45; }
+}
+
+/* The rim announces a re-deal. The chord map moving is the single most
+   disorienting thing that happens on this board, and it was reported only by a
+   caption at the foot of a rail — never by the labels that actually changed.
+   Staggered per label so it reads as a sweep round the rim rather than a blink. */
+.chess-board__axis-label--dealt {
+  animation: chess-board-dealt 700ms ease-out;
+}
+
+@keyframes chess-board-dealt {
+  0% { opacity: 0.25; }
+  40% { opacity: 1; }
+  100% { opacity: 1; }
+}
+
 /* A refused square says no in the place the player was looking — a message in a
    side rail is not where their attention is. */
+/* The shake is transform-only. The red flare rides a separate overlay animating
+   `opacity`, rather than being keyframed onto the square's own box-shadow —
+   which repainted the square for the full 620ms and, worse, fought the four
+   --sq-* layers this board composes box-shadow from. */
 .chess-board__square--rejected {
-  animation: chess-board-refuse 620ms ease-out;
+  animation: chess-board-shake 500ms ease-out;
   z-index: 2;
 }
 
-@keyframes chess-board-refuse {
-  0% { box-shadow: inset 0 0 0 100vmax color-mix(in srgb, var(--cb-danger) 78%, transparent); transform: translateX(0); }
+@keyframes chess-board-shake {
+  0%, 100% { transform: translateX(0); }
   15% { transform: translateX(-7%); }
   35% { transform: translateX(6%); }
   55% { transform: translateX(-4%); }
   75% { transform: translateX(2%); }
-  100% { box-shadow: inset 0 0 0 100vmax transparent; transform: translateX(0); }
+}
+
+@keyframes chess-board-flare {
+  from { opacity: 0.78; }
+  to { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The shake goes; the flare stays. A refusal must still be visible when
+     motion is reduced — it is the board saying no. */
+  .chess-board__square--rejected { animation: none; }
+  .chess-board__flash--check { animation: none; opacity: 0.45; }
 }
 
 .chess-board__piece {
@@ -301,7 +366,53 @@
   filter: none;
 }
 
+/* A piece being taken, injected by the board's diff effect and removed when its
+   animation finishes. Below the arriving piece (z-index 1) on purpose: the
+   victim stays visible for as long as its taker is still crossing the board,
+   and is covered at the moment it lands. */
+.chess-board__piece--captured {
+  z-index: 0;
+  filter: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .chess-board__square,
   .chess-board__axis-label { transition: none; }
+}
+
+/* The mated king topples. The game ends with a picture rather than only with a
+   sentence in a rail — and the piece that lost is the one that says so.
+   Transform only, held at the end state: the position stays on screen behind
+   the result card, so this must not animate forever. */
+.chess-board__square--mated .chess-board__piece {
+  animation: chess-board-topple 700ms cubic-bezier(0.3, 0.7, 0.4, 1) forwards;
+  transform-origin: 50% 85%;
+  z-index: 2;
+}
+
+@keyframes chess-board-topple {
+  0% { transform: rotate(0deg); }
+  60% { transform: rotate(74deg); }
+  78% { transform: rotate(66deg); }
+  100% { transform: rotate(70deg); }
+}
+
+/* A pawn became something else. One beat of scale, so the change is an event
+   rather than a substitution nobody saw. */
+.chess-board__square--promoted .chess-board__piece {
+  animation: chess-board-promote 500ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  z-index: 2;
+}
+
+@keyframes chess-board-promote {
+  0% { transform: scale(0.6); opacity: 0.4; }
+  55% { transform: scale(1.25); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The topple is information — which king lost — so it holds its end state
+     rather than being removed entirely. */
+  .chess-board__square--mated .chess-board__piece { animation: none; transform: rotate(70deg); }
+  .chess-board__square--promoted .chess-board__piece { animation: none; }
 }

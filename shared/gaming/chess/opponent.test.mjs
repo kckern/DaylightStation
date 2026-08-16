@@ -50,4 +50,29 @@ describe('chess opponent', () => {
     assert.notEqual(result.fen, INITIAL_FEN);
     assert.equal(describePosition(result.fen).turn, 'b');
   });
+
+  it('takes an explicit depth and blunder rate, for rungs between the presets', () => {
+    // A ladder of weak rungs has to sit BETWEEN beginner/learner/steady, so the
+    // settings cannot only come from the frozen preset table.
+    const fen = 'r1bqkbnr/pppp1ppp/2n5/4p3/3PP3/5N2/PPP2PPP/RNBQKB1R b KQkq - 0 3';
+    const greedy = chooseMove(fen, { depth: 1, blunder_rate: 0, seed: 1 });
+    const always = chooseMove(fen, { depth: 1, blunder_rate: 1, seed: 1 });
+    assert.ok(greedy && always);
+    // Blundering every time must not mean playing the best move anyway.
+    assert.notEqual(greedy.san, always.san);
+  });
+
+  it('honours blunder_rate 0 rather than falling back to the preset rate', () => {
+    // `beginner` blunders 35% of the time; asking for 0 must silence it, which
+    // a `||` default would not do.
+    const fen = 'r1bqkbnr/pppp1ppp/2n5/4p3/3PP3/5N2/PPP2PPP/RNBQKB1R b KQkq - 0 3';
+    const never = chooseMove(fen, { difficulty: 'beginner', blunder_rate: 0, seed: 1 });
+    const best = chooseMove(fen, { difficulty: 'steady', depth: 1, blunder_rate: 0, seed: 1 });
+    assert.equal(never.san, best.san);
+  });
+
+  it('still honours the named presets when no override is given', () => {
+    const reply = chooseMove(INITIAL_FEN, { difficulty: 'steady' });
+    assert.ok(legalMoves(INITIAL_FEN).map((move) => move.san).includes(reply.san));
+  });
 });

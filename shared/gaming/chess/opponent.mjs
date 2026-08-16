@@ -84,8 +84,20 @@ function search(fen, depth, color, alpha, beta) {
  * Picks a reply. Returns null when the side to move has none, which is the
  * caller's cue that the game is already over.
  */
-export function chooseMove(fen, { difficulty = 'learner', seed = 0 } = {}) {
-  const settings = DIFFICULTIES[difficulty] || DIFFICULTIES.learner;
+export function chooseMove(fen, {
+  difficulty = 'learner', seed = 0, depth = null, blunder_rate = null,
+} = {}) {
+  const preset = DIFFICULTIES[difficulty] || DIFFICULTIES.learner;
+  // `depth` and `blunder_rate` override the named preset. The three presets are
+  // three points on a continuum, not the only points on it: a ladder of weak
+  // rungs needs to sit BETWEEN them, and the alternative — a named entry per
+  // rung in a frozen table — makes the rung list a code change instead of
+  // config. `??` rather than `||` so `blunder_rate: 0` means "never blunder"
+  // instead of falling through to the preset's rate.
+  const settings = {
+    depth: depth ?? preset.depth,
+    blunder_rate: blunder_rate ?? preset.blunder_rate,
+  };
   const moves = legalMoves(fen);
   if (!moves.length) return null;
 

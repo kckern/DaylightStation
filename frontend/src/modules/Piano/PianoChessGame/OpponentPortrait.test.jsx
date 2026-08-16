@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import OpponentPortrait, { opponentStatus } from './OpponentPortrait.jsx';
+import OpponentPortrait, { opponentMood, opponentStatus } from './OpponentPortrait.jsx';
 import { DEFAULT_ROSTER, themeForLevel, TOP_LEVEL } from '@shared-gaming/chess/ladder.mjs';
 
 describe('the opponent status line', () => {
@@ -87,5 +87,42 @@ describe('the board theme', () => {
   it('clamps rather than producing nonsense off the ends', () => {
     expect(themeForLevel(-5)).toBe(themeForLevel(0));
     expect(themeForLevel(999)).toBe(themeForLevel(TOP_LEVEL));
+  });
+});
+
+describe('opponentMood', () => {
+  const base = {
+    thinking: false, gameOver: false, result: null,
+    tookPiece: false, lostPiece: false, givingCheck: false,
+  };
+
+  it('is neutral when nothing has happened', () => {
+    expect(opponentMood(base)).toBe('neutral');
+  });
+
+  it('reacts to taking and to losing a piece, differently', () => {
+    expect(opponentMood({ ...base, tookPiece: true })).toBe('pleased');
+    expect(opponentMood({ ...base, lostPiece: true })).toBe('hurt');
+  });
+
+  it('leans in when it is giving check', () => {
+    expect(opponentMood({ ...base, givingCheck: true })).toBe('attacking');
+  });
+
+  it('ranks the game ending above everything else', () => {
+    // A mate is also a check and often also a capture; only one reaction plays.
+    expect(opponentMood({
+      ...base, gameOver: true, result: 'win', givingCheck: true, tookPiece: true,
+    })).toBe('beaten');
+    expect(opponentMood({ ...base, gameOver: true, result: 'loss' })).toBe('triumphant');
+    expect(opponentMood({ ...base, gameOver: true, result: 'draw' })).toBe('neutral');
+  });
+
+  it('ranks check above a capture, since check is the thing to answer', () => {
+    expect(opponentMood({ ...base, givingCheck: true, tookPiece: true })).toBe('attacking');
+  });
+
+  it('says it is thinking before it says anything about the last move', () => {
+    expect(opponentMood({ ...base, thinking: true, tookPiece: true })).toBe('thinking');
   });
 });
