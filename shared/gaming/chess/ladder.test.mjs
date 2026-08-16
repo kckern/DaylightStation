@@ -241,10 +241,61 @@ describe('stored progress', () => {
 });
 
 describe('engine settings', () => {
-  it('maps a level straight onto the engine skill it names', () => {
-    expect(rungForLevel(0, POLICY).skill).toBe(0);
-    expect(rungForLevel(20, POLICY).skill).toBe(20);
-    expect(rungForLevel(99, POLICY).skill).toBe(TOP_LEVEL);
-    expect(rungForLevel(-3, POLICY).skill).toBe(0);
+  it('puts the bottom of the ladder on the homegrown teaching opponent', () => {
+    // Not Stockfish: its weakest setting measured far stronger than the children
+    // this rung exists for. See DEFAULT_LEVEL_RUNGS.
+    const rung = rungForLevel(0, POLICY);
+    expect(rung.engine).toBe('homegrown');
+    expect(rung.depth).toBe(1);
+    expect(rung.skill).toBeUndefined();
+  });
+
+  it('puts the top of the ladder on Stockfish at full skill', () => {
+    const rung = rungForLevel(TOP_LEVEL, POLICY);
+    expect(rung.engine).toBe('stockfish');
+    expect(rung.skill).toBe(20);
+  });
+
+  it('rises monotonically in search depth then hands over to Stockfish', () => {
+    const rungs = Array.from({ length: LADDER_SIZE }, (unused, level) => rungForLevel(level, POLICY));
+    const homegrown = rungs.filter((rung) => rung.engine === 'homegrown');
+    const stockfish = rungs.filter((rung) => rung.engine === 'stockfish');
+    expect(homegrown.length).toBeGreaterThan(0);
+    expect(stockfish.length).toBeGreaterThan(0);
+    // Every homegrown rung comes before every Stockfish one — a ladder that
+    // alternated engines would not be ordered by strength.
+    expect(rungs.findIndex((rung) => rung.engine === 'stockfish'))
+      .toBe(homegrown.length);
+    for (let index = 1; index < homegrown.length; index += 1) {
+      expect(homegrown[index].depth).toBeGreaterThanOrEqual(homegrown[index - 1].depth);
+    }
+    for (let index = 1; index < stockfish.length; index += 1) {
+      expect(stockfish[index].skill).toBeGreaterThanOrEqual(stockfish[index - 1].skill);
+    }
+  });
+
+  it('clamps a level that is out of range instead of trusting it', () => {
+    expect(rungForLevel(99, POLICY).id).toBe(`level-${TOP_LEVEL}`);
+    expect(rungForLevel(-3, POLICY).id).toBe('level-0');
+  });
+
+  it('lets a household re-space the ladder from YAML after a calibration run', () => {
+    const policy = resolvePolicy({
+      ladder: { levels: [{ engine: 'homegrown', depth: 3, blunder_rate: 0.5 }] },
+    });
+    expect(rungForLevel(0, policy)).toMatchObject({ engine: 'homegrown', depth: 3, blunder_rate: 0.5 });
+  });
+
+  it('fills the rest of the ladder from the default when an override is short', () => {
+    // A partial override must not punch a hole that makes a level unreachable.
+    const policy = resolvePolicy({ ladder: { levels: [{ engine: 'homegrown', depth: 3 }] } });
+    expect(rungForLevel(TOP_LEVEL, policy).engine).toBe('stockfish');
+  });
+
+  it('keeps a never-blunder rung at zero rather than defaulting it', () => {
+    const policy = resolvePolicy({
+      ladder: { levels: [{ engine: 'homegrown', depth: 2, blunder_rate: 0 }] },
+    });
+    expect(rungForLevel(0, policy).blunder_rate).toBe(0);
   });
 });

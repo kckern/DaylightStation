@@ -59,6 +59,39 @@ export async function requestOpponentMove({ fen, rung, level = null, gameId, use
   }
 }
 
+/**
+ * The engine's real opinion about a position, for hints.
+ *
+ * A separate endpoint from the move request, not the move endpoint with a
+ * strong rung. The ladder's lower rungs are no longer Stockfish at all, so
+ * asking the opponent engine for "the best move" would hand a child whatever a
+ * deliberately-weak teaching opponent happened to like. Analysis has its own
+ * door and is never handicapped.
+ *
+ * Resolves null on any failure or timeout, exactly like a move request: the
+ * caller must not charge the player for help that never arrived.
+ */
+export async function requestBestMove({ fen, userId = null }) {
+  const request = DaylightAPI(withUser('api/v1/piano-games/chess/analyze', userId), { fen }, 'POST')
+    .then((body) => (body && body.move && body.move.from ? body.move : null))
+    .catch((error) => {
+      logger().warn('chess.analyze.request-error', { error: error.message });
+      return null;
+    });
+  let timer;
+  const deadline = new Promise((resolve) => {
+    timer = setTimeout(() => {
+      logger().warn('chess.analyze.timeout', { timeoutMs: MOVE_TIMEOUT_MS });
+      resolve(null);
+    }, MOVE_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([request, deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function fetchChessConfig(userId = null) {
   try {
     // No data object: DaylightAPI promotes a GET with a body to POST.
@@ -142,6 +175,6 @@ export function beaconArchive(record) {
 }
 
 export default {
-  requestOpponentMove, fetchChessConfig, saveChessConfig, saveGameRecord, archiveGame,
-  beaconArchive, fetchLadder,
+  requestOpponentMove, requestBestMove, fetchChessConfig, saveChessConfig, saveGameRecord,
+  archiveGame, beaconArchive, fetchLadder,
 };

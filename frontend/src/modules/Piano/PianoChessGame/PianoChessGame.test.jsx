@@ -22,6 +22,7 @@ vi.mock('../PianoKiosk/PianoMidiContext.jsx', () => ({
 // the mount effect calls .then() on it unconditionally.
 vi.mock('./chessApi.js', () => ({
   requestOpponentMove: vi.fn(),
+  requestBestMove: vi.fn(async () => null),
   fetchChessConfig: vi.fn(async () => null),
   saveChessConfig: vi.fn(async () => null),
   saveGameRecord: vi.fn(async () => null),
@@ -30,9 +31,10 @@ vi.mock('./chessApi.js', () => ({
   fetchLadder: vi.fn(async () => null),
 }));
 
-import { PianoChessGame, promptFor } from './PianoChessGame.jsx';
+import { OPPONENT_DELAY_MS, PianoChessGame, promptFor } from './PianoChessGame.jsx';
 import {
-  archiveGame, fetchChessConfig, fetchLadder, requestOpponentMove, saveChessConfig, saveGameRecord,
+  archiveGame, fetchChessConfig, fetchLadder, requestBestMove, requestOpponentMove,
+  saveChessConfig, saveGameRecord,
 } from './chessApi.js';
 import { DEFAULT_CHORD_SCHEME, squareToChord } from './chordAddress.js';
 import { DEFAULT_STAFF_SCHEME } from './staffAddress.js';
@@ -259,7 +261,6 @@ describe('the instrument zone', () => {
 // without needing a simulated player move first — White is on move from the
 // initial position, and the human is Black.
 describe('PianoChessGame opponent effect', () => {
-  const OPPONENT_DELAY_MS = 700;
   // The move log was removed from the chrome, so a move is observed where it
   // actually shows: on the board. The last-move outline names both squares, and
   // reading it proves the position advanced rather than that a list was written.
@@ -557,6 +558,11 @@ describe('hint gestures', () => {
   beforeEach(() => {
     mockUsePianoMidi.mockReturnValue({ connected: true, status: 'connected' });
     requestOpponentMove.mockReset();
+    requestBestMove.mockReset();
+    // mockReset drops the factory's async default, and the component awaits
+    // this unconditionally — restore a resolved promise or every test in this
+    // block that touches the best cluster throws on `.then`.
+    requestBestMove.mockResolvedValue(null);
   });
 
   afterEach(() => {
@@ -571,17 +577,21 @@ describe('hint gestures', () => {
     expect(container.querySelectorAll('.chess-board__square--hint').length).toBeGreaterThan(0);
   });
 
-  it('a four-semitone cluster asks the server at full strength and rings the best move', async () => {
-    requestOpponentMove.mockResolvedValueOnce({ from: 'g1', to: 'f3', san: 'Nf3', engine: 'stockfish' });
+  it('a four-semitone cluster asks the ANALYSIS endpoint, not the opponent, and rings the best move', async () => {
+    // The hint must not be routed through the ladder: its lower rungs are a
+    // deliberately-weak teaching engine, so the opponent's "best move" would be
+    // a beginner's guess.
+    requestBestMove.mockResolvedValueOnce({ from: 'g1', to: 'f3' });
     holdNotes(BEST_CLUSTER);
     const { container } = render(<PianoChessGame />);
-    expect(requestOpponentMove).toHaveBeenCalledWith(expect.objectContaining({ rung: 'ruthless' }));
+    expect(requestBestMove).toHaveBeenCalledWith(expect.objectContaining({ fen: expect.any(String) }));
+    expect(requestOpponentMove).not.toHaveBeenCalled();
     await waitFor(() => expect(container.querySelectorAll('.chess-board__square--best')).toHaveLength(2));
   });
 
   it('does not queue a second charge while a best-move request is in flight', async () => {
     let resolveMove;
-    requestOpponentMove.mockImplementation(() => new Promise((resolve) => { resolveMove = resolve; }));
+    requestBestMove.mockImplementation(() => new Promise((resolve) => { resolveMove = resolve; }));
     holdNotes(BEST_CLUSTER);
     const { rerender } = render(<PianoChessGame />);
     // Release and mash the cluster again before the server has answered.
@@ -589,8 +599,8 @@ describe('hint gestures', () => {
     rerender(<PianoChessGame />);
     holdNotes(BEST_CLUSTER);
     rerender(<PianoChessGame />);
-    expect(requestOpponentMove).toHaveBeenCalledTimes(1);
-    await act(async () => { resolveMove({ from: 'g1', to: 'f3', san: 'Nf3', engine: 'stockfish' }); });
+    expect(requestBestMove).toHaveBeenCalledTimes(1);
+    await act(async () => { resolveMove({ from: 'g1', to: 'f3' }); });
   });
 
   it('a released gesture is never chord input — no refusal appears, and the marks persist', async () => {
@@ -1011,5 +1021,42 @@ describe('the game record', () => {
       moves: 1,
       help: { hints: 0, best_moves: 0, takebacks: 0 },
     });
+  });
+});
+
+describe('the opening beat', () => {
+  it('names who you are facing when the game starts', () => {
+    const { container } = render(<PianoChessGame seed={1} />);
+    expect(container.querySelector('.chess-opening')).toBeTruthy();
+    expect(container.querySelector('.chess-opening__vs').textContent).toMatch(/White versus/);
+  });
+
+  it('says who moves first, from the player\'s side', () => {
+    const asBlack = render(<PianoChessGame playerColor="b" seed={1} />);
+    expect(asBlack.container.querySelector('.chess-opening__lead').textContent).toBe('They open');
+  });
+
+  it('clears itself on a timer rather than waiting to be dismissed', async () => {
+    vi.useFakeTimers();
+    try {
+      const { container, rerender } = render(<PianoChessGame seed={1} />);
+      expect(container.querySelector('.chess-opening')).toBeTruthy();
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+      rerender(<PianoChessGame seed={1} />);
+      expect(container.querySelector('.chess-opening')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('never covers a finished board', () => {
+    // A mate-in-one played out would otherwise show the opening banner and the
+    // result card at once.
+    const MATE_IN_ONE_FEN = '7k/8/6K1/8/8/8/8/5R2 w - - 0 1';
+    const { container } = render(<PianoChessGame fen={MATE_IN_ONE_FEN} seed={1} />);
+    // Still live here, so the banner is legitimate...
+    expect(container.querySelector('.chess-opening')).toBeTruthy();
+    // ...and the guard is on game_over, asserted directly.
+    expect(container.querySelector('.chess-result')).toBeNull();
   });
 });

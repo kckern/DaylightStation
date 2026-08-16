@@ -39,12 +39,48 @@ export function opponentStatus({ thinking, lastMove, lastCapture, gameOver, resu
  * pulse's own duration is that character's think time. Null (not currently
  * this character's turn) draws no pulse at all.
  */
-export function OpponentPortrait({ opponent, level, size = 'md', status = null, thinkMs = null }) {
+/**
+ * How the character should look right now.
+ *
+ * Reactions are derived from what actually happened on the board, never
+ * scheduled or randomised — the same discipline `opponentStatus` follows. A
+ * portrait that emotes on a timer is theatre, and a child stops reading it for
+ * the same reason they stop reading a status that is sometimes invented.
+ *
+ * Separate from the thinking pulse and composable with it: the pulse says the
+ * character is working, the mood says how the last move went for them.
+ *
+ * One reaction at a time, most consequential first: the game ending outranks a
+ * check, which outranks a capture either way. `thinking` is accepted so a
+ * caller without a `thinkMs` can still say so.
+ */
+export function opponentMood({ thinking, gameOver, result, tookPiece, lostPiece, givingCheck }) {
+  if (gameOver) {
+    if (result === 'win') return 'beaten';
+    return result === 'loss' ? 'triumphant' : 'neutral';
+  }
+  if (thinking) return 'thinking';
+  if (givingCheck) return 'attacking';
+  if (tookPiece) return 'pleased';
+  if (lostPiece) return 'hurt';
+  return 'neutral';
+}
+
+export function OpponentPortrait({
+  opponent, level, size = 'md', status = null, thinkMs = null, mood = null,
+}) {
   const name = opponent?.name || `Level ${level ?? 0}`;
   const pulsing = Number.isFinite(thinkMs) && thinkMs > 0;
   return (
     <figure
-      className={`chess-opponent chess-opponent--${size}${pulsing ? ' chess-opponent--thinking' : ''}`}
+      className={[
+        'chess-opponent',
+        `chess-opponent--${size}`,
+        pulsing && 'chess-opponent--thinking',
+        // `thinking` is the pulse; the mood is the reaction. Both may apply —
+        // a character can be brooding AND have just lost a piece.
+        mood && mood !== 'neutral' && mood !== 'thinking' && `chess-opponent--${mood}`,
+      ].filter(Boolean).join(' ')}
       style={pulsing ? { '--pc-think-ms': `${thinkMs}ms` } : undefined}
     >
       <div className="chess-opponent__face">

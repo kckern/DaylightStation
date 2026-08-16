@@ -14,10 +14,10 @@ const CONFIG = {
 };
 const silentLogger = { info() {}, warn() {}, error() {}, debug() {} };
 
-function appWith({ engine, configService, recordStore, logger = silentLogger }) {
+function appWith({ engine, configService, recordStore, analyst, logger = silentLogger }) {
   const app = express();
   app.use(express.json());
-  app.use('/api/v1/chess', createChessRouter({ engine, configService, recordStore, logger }));
+  app.use('/api/v1/chess', createChessRouter({ engine, configService, recordStore, analyst, logger }));
   return app;
 }
 
@@ -54,7 +54,13 @@ describe('POST /api/v1/chess/move', () => {
       .send({ fen: START, rung: 'learner', level: 0, gameId: 'g1' });
     expect(res.body.opponent).toEqual({
       source: 'ladder', level: 0, name: 'Caterpie',
-      rung: { id: 'level-0', label: 'Level 0', skill: 0, elo: null, movetime_ms: 400 },
+      // `engine` (and its homegrown tuning) rides along so the archive can say
+      // WHICH engine a level meant — the mapping changes over time and the two
+      // engines' strengths are not comparable.
+      rung: {
+        id: 'level-0', label: 'Level 0', skill: 0, elo: null, movetime_ms: 400,
+        engine: 'stockfish', depth: null, blunder_rate: null,
+      },
     });
     expect(engine.chooseMove).toHaveBeenCalledWith(expect.objectContaining({ rung: expect.objectContaining({ skill: 0 }) }));
     expect(logger.info).toHaveBeenCalledWith('chess.move.requested', expect.objectContaining({
@@ -196,5 +202,56 @@ describe('POST /api/v1/chess/games', () => {
     expect(res.body).not.toMatchObject({ saved: true });
     expect(logger.info).not.toHaveBeenCalledWith('chess.game.recorded', expect.anything());
     expect(logger.warn).toHaveBeenCalled();
+  });
+});
+
+describe('POST /api/v1/chess/analyze', () => {
+  const MATED = '3r1rk1/2p5/6p1/p1p3Kq/4P3/2P2b2/PP6/RNR5 w - - 2 26';
+
+  it('answers with the engine\'s best move, never a rung\'s', async () => {
+    // The whole point of the separate endpoint: a hint must not be routed
+    // through the ladder, whose lower rungs are a deliberately-weak engine.
+    const engine = { chooseMove: vi.fn() };
+    const analyst = {
+      evaluate: vi.fn(async () => ({ cp: 35, mate: null, depth: 14, bestUci: 'e2e4', terminal: false })),
+    };
+    const res = await request(appWith({ engine, configService: stubConfig(), analyst }))
+      .post('/api/v1/chess/analyze').send({ fen: START });
+    expect(res.status).toBe(200);
+    expect(res.body.move).toEqual({ from: 'e2', to: 'e4' });
+    expect(res.body.cp).toBe(35);
+    // The opponent engine must not be consulted for a hint at all.
+    expect(engine.chooseMove).not.toHaveBeenCalled();
+  });
+
+  it('carries a promotion through, so a hint can point at a queening move', async () => {
+    const analyst = { evaluate: async () => ({ cp: 900, bestUci: 'e7e8q', terminal: false }) };
+    const res = await request(appWith({ engine: {}, configService: stubConfig(), analyst }))
+      .post('/api/v1/chess/analyze').send({ fen: START });
+    expect(res.body.move).toEqual({ from: 'e7', to: 'e8', promotion: 'q' });
+  });
+
+  it('treats a finished position as a null move, not an error', async () => {
+    // Asking for a hint after checkmate is a thing a child can do.
+    const analyst = { evaluate: async () => ({ cp: null, mate: null, bestUci: null, terminal: true }) };
+    const res = await request(appWith({ engine: {}, configService: stubConfig(), analyst }))
+      .post('/api/v1/chess/analyze').send({ fen: MATED });
+    expect(res.status).toBe(200);
+    expect(res.body.move).toBeNull();
+    expect(res.body.terminal).toBe(true);
+  });
+
+  it('rejects an invalid FEN before it reaches the engine', async () => {
+    const evaluate = vi.fn();
+    const res = await request(appWith({ engine: {}, configService: stubConfig(), analyst: { evaluate } }))
+      .post('/api/v1/chess/analyze').send({ fen: 'not-a-fen' });
+    expect(res.status).toBe(400);
+    expect(evaluate).not.toHaveBeenCalled();
+  });
+
+  it('says so plainly when no analyst is wired, rather than 500ing', async () => {
+    const res = await request(appWith({ engine: {}, configService: stubConfig() }))
+      .post('/api/v1/chess/analyze').send({ fen: START });
+    expect(res.status).toBe(501);
   });
 });
