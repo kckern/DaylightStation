@@ -401,7 +401,7 @@ class UserDataService {
     const subdirs = [
       '',                        // household root
       'common',                  // common data stores
-      'common/gratitude',        // gratitude bank/options
+      'gratitude',        // gratitude bank/options
       'common/infinity',         // Infinity harvested data
       'config',                  // Configuration files
       'config/lists',            // List definitions

@@ -2,7 +2,7 @@
  * YamlGratitudeDatastore - YAML-based gratitude persistence
  *
  * Implements IGratitudeDatastore port for gratitude/hopes data storage.
- * Data stored at: household[-{hid}]/common/gratitude/
+ * Data stored at: household[-{hid}]/gratitude/
  *   - options.{category}.yml
  *   - selections.{category}.yml
  *   - discarded.{category}.yml
@@ -57,7 +57,7 @@ export class YamlGratitudeDatastore extends IGratitudeDatastore {
   #readArray(householdId, key) {
     // Append .yml explicitly — keys like "options.gratitude" have a dot that
     // confuses DataService's ensureExtension (treats ".gratitude" as an extension)
-    const data = this.#dataService.household.read(`common/gratitude/${key}.yml`, householdId);
+    const data = this.#dataService.household.read(`gratitude/${key}.yml`, householdId);
     return Array.isArray(data) ? data : [];
   }
 
@@ -67,7 +67,7 @@ export class YamlGratitudeDatastore extends IGratitudeDatastore {
    */
   #writeArray(householdId, key, arr) {
     const data = Array.isArray(arr) ? arr : [];
-    this.#dataService.household.write(`common/gratitude/${key}.yml`, data, householdId);
+    this.#dataService.household.write(`gratitude/${key}.yml`, data, householdId);
   }
 
   // ===========================================================================
@@ -132,7 +132,7 @@ export class YamlGratitudeDatastore extends IGratitudeDatastore {
    */
   #getSnapshotDir(householdId) {
     // resolvePath adds .yml extension, so we strip it for directory paths
-    const resolvedPath = this.#dataService.household.resolvePath('common/gratitude/snapshots', householdId);
+    const resolvedPath = this.#dataService.household.resolvePath('gratitude/snapshots', householdId);
     return resolvedPath.replace(/\.yml$/, '');
   }
 
