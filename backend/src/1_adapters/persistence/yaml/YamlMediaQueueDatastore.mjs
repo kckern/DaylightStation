@@ -32,7 +32,7 @@ export class YamlMediaQueueDatastore extends IMediaQueueDatastore {
    * @returns {string}
    */
   _getQueuePath(householdId) {
-    const mediaDir = this.configService.getHouseholdPath('apps/media', householdId);
+    const mediaDir = this.configService.getHouseholdPath('media', householdId);
     return path.join(mediaDir, 'queue');
   }
 
