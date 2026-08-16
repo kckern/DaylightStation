@@ -1237,6 +1237,10 @@ content box so the scroller's padding-left does not pull the block off centre."
 **Files:**
 - Modify: `docs/reference/screen-configs.md`
 - Modify: `docs/reference/admin-components.md`
+- Modify: `docs/reference/core/screen-framework.md` (~line 303)
+- Modify: `docs/reference/player/lessons-and-gotchas.md`
+
+> Added after Task 1's code review: `screen-framework.md:301-305` describes the router as "GET /screens, GET /screens/:id … returns JSON" but documents no response shape. Task 1 changed the list response from `string[]` to `object[]` and nothing records it, so a future consumer has to read the router to find out.
 
 **Step 1: Add a resolution section to `screen-configs.md`**
 
@@ -1297,7 +1301,23 @@ The selected screen persists in `localStorage` under
 `daylight.adminPreview.screenId`.
 ```
 
-**Step 3: Record the two gotchas in the player lessons doc**
+**Step 3: Record the list response shape in `core/screen-framework.md`**
+
+Under the `### Backend` heading (~line 301), after the line "Reads YAML from `data/household/screens/{id}.yml`, validates `screen` field, returns JSON.", add:
+
+```markdown
+`GET /screens` returns `{ screens: [{ id, name, resolution }] }` — one entry per
+config file, carrying each screen's declared CSS-pixel `resolution` so a caller
+that must render at a screen's scale sizes itself from one request. `resolution`
+is `null` when the screen declares none (e-ink panels) or declares a non-positive
+one. A config file that fails to parse degrades to `{ id, name: id, resolution: null }`
+and logs `screens.list.unreadable`; it never fails the whole list.
+
+`GET /screens/:id` returns the full config for one screen, with any
+`screensaver.preset` reference expanded into resolved props.
+```
+
+**Step 4: Record the two gotchas in the player lessons doc**
 
 Append to `docs/reference/player/lessons-and-gotchas.md`:
 
@@ -1326,16 +1346,16 @@ is what left every hymn flush left until `width: fit-content` was added. Use
 by side whenever two fit on a row.
 ```
 
-**Step 4: Update the docs freshness marker**
+**Step 5: Update the docs freshness marker**
 
 ```bash
 git rev-parse HEAD > docs/docs-last-updated.txt
 ```
 
-**Step 5: Commit**
+**Step 6: Commit**
 
 ```bash
-git add docs/reference/screen-configs.md docs/reference/admin-components.md docs/reference/player/lessons-and-gotchas.md docs/docs-last-updated.txt
+git add docs/reference/screen-configs.md docs/reference/admin-components.md docs/reference/core/screen-framework.md docs/reference/player/lessons-and-gotchas.md docs/docs-last-updated.txt
 git commit -m "docs: record the screen resolution contract and preview scaling"
 ```
 
