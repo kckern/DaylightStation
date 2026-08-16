@@ -1,6 +1,6 @@
 /**
  * FsJamCorderArchive — persists JamCorder .mid recordings under
- * household/history/piano/jamcorder/<relPath> and maintains a dedup index
+ * household/piano/log/jamcorder/<relPath> and maintains a dedup index
  * (device listPath → archive relPath) at .../piano/jamcorder/_index.yml.
  * Layer: ADAPTER (1_adapters/jamcorder). All FS via FileIO.
  * @module adapters/jamcorder/FsJamCorderArchive

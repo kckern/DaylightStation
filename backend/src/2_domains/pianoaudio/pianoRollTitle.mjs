@@ -15,7 +15,7 @@ const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct
 const RE = /(\d{4})-(\d{2})-(\d{2})[ /](\d{2})[.:](\d{2})[.:](\d{2})/;
 
 /**
- * @param {string} relPath - path relative to history/piano (e.g. a jamcorder or user path)
+ * @param {string} relPath - path relative to piano/log (e.g. a jamcorder or user path)
  * @returns {string} e.g. "Thu Jul 9, 2026 · 7:22 AM" — or '' if no timestamp found
  */
 export function pianoRollTitleFromRel(relPath) {
