@@ -222,3 +222,4 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-08-12 | school-household-paths | 1e0be9301 | Already fully merged (0 commits ahead of main) |
 | 2026-08-12 | scrub/apply-to-origin | b79c2271d | Already fully merged (0 commits ahead of main) — PII scrub application |
 | 2026-08-13 | fitness/instructional-content-modes | 952bc69b2 | Plex-label content modes: no_capture_labels suppresses session capture; study_ux_labels swaps in study player UX. Merged to main. |
+| 2026-08-16 | origin/fix/piano-bridge-config-clobber | 3a08e2c5d | REMOTE branch only (local copy was already gone). "stop config clobber that dropped MIDI; make the link self-heal" — verified an ancestor of origin/main before deletion. Restore with `git push origin 3a08e2c5d:refs/heads/fix/piano-bridge-config-clobber`. |
