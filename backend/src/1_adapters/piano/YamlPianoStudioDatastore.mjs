@@ -6,7 +6,7 @@
  *   - Per-user preferences/progress    data/users/{id}/apps/piano/{preferences,progress}.yml
  *   - Household producer pool          <householdDataDir>/apps/piano/producer/{family}/{id}.yml
  *   - Lesson drills (read-only)        <mediaDir>/docs/piano-lessons/{collection}/{index,id}.yml
- *   - Always-on MIDI history (.mid)    <householdDataDir>/history/piano/{userId}/{date}/{takeId}.mid
+ *   - Always-on MIDI history (.mid)    <householdDataDir>/piano/log/{userId}/{date}/{takeId}.mid
  *   - Effect-audit clips + manifest    <mediaDir>/logs/piano/effect-audit/{runId}/…
  *   - Loop-library manifest            <mediaDir>/midi (walked + baked by getManifest)
  *   - Roster                           household.yml users (household order, hydrated)
@@ -233,7 +233,7 @@ export class YamlPianoStudioDatastore {
 
   // ── Always-on MIDI history (.mid per user/date) ──────────────────────────────
   writeHistoryMidi(userId, date, takeId, events) {
-    const dir = this.#configService.getHouseholdPath(path.join('history', 'piano', userId, date));
+    const dir = this.#configService.getHouseholdPath(path.join('piano', 'log', userId, date));
     ensureDir(dir);
     const buf = encodeMidiFile(events);
     const file = path.join(dir, `${takeId}.mid`);
