@@ -28,9 +28,11 @@
 import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
 import { questionItemIds, questionPrompts } from '#domains/school/documents/documentValidation.mjs';
 import { PRINT_DOCUMENT_REF_PATTERN } from '#domains/school/curriculum/unitValidation.mjs';
+import { worksheetInstanceRoster } from '#domains/school/questionBankV2.mjs';
 
 export class GradeSubmission {
   #curriculum; #sessions; #reviewQueue; #grader; #bankReader; #grownUps; #teacherGate; #clock; #logger; #passOverrides;
+  #worksheetInstances;
 
   /**
    * @param {object} deps
@@ -51,12 +53,16 @@ export class GradeSubmission {
    *   for a call that actually carries a person's verdicts — the self-closing
    *   finisher (`execute({sessionId})`, no verdicts) is already behind the
    *   gated resolve that triggered it and must never re-assert.
+   * @param {{findBySession: (sessionId: string) => Promise<object|null>}|null}
+   *   [deps.worksheetInstances] - the issued sheets. OPTIONAL and read-only:
+   *   an install that never mints instances leaves it unwired and keeps
+   *   marking against the bank, exactly as it did before instances existed.
    * @param {() => Date} [deps.clock]
    * @param {object} [deps.logger]
    */
   constructor({
     curriculum, sessions, reviewQueue, grader, bankReader = null, grownUps = null, teacherGate = null,
-    passOverrides = null, clock = () => new Date(), logger = console,
+    worksheetInstances = null, passOverrides = null, clock = () => new Date(), logger = console,
   } = {}) {
     if (!curriculum || !sessions || !reviewQueue || !grader) {
       throw new Error('GradeSubmission requires curriculum, sessions, reviewQueue and grader');
@@ -69,6 +75,7 @@ export class GradeSubmission {
     this.#bankReader = bankReader;
     this.#grownUps = grownUps;
     this.#teacherGate = teacherGate;
+    this.#worksheetInstances = worksheetInstances;
     this.#clock = clock;
     this.#logger = logger;
     this.#passOverrides = passOverrides;
@@ -152,9 +159,23 @@ export class GradeSubmission {
     // so re-reading it separately per use risked the roster and the
     // attempt-id collection disagreeing on what the queue held.
     const queueItemsForSession = await this.#reviewQueue.listForSession(sessionId);
+    // A unit with a `bank` and no `document` is issued as a WORKSHEET INSTANCE:
+    // a subset of the bank is sampled once, frozen onto the sheet the child
+    // receives, and written down as that instance's `itemIds`. The bank goes on
+    // growing afterwards, so the instance — not the bank — is the only honest
+    // denominator. Reading the live bank back here scored a perfect ten-question
+    // paper out of twenty AND parked the ten never-printed questions on a
+    // grown-up's list, where they could never be marked because they were never
+    // asked, leaving the session stuck at `awaiting_review` for good.
+    //
+    // No instance means none was ever minted (a legacy screen-path hand-in, or
+    // an install with the store unwired): the bank stays the roster, unchanged.
+    const roster = !isPrintUnit && !document
+      ? worksheetInstanceRoster(await this.#worksheetInstances?.findBySession?.(sessionId) ?? null)
+      : null;
     const expectedItems = isPrintUnit
       ? [...new Set(queueItemsForSession.map((item) => item.itemId))]
-      : (document ? questionItemIds(document) : (bank?.items ?? []).map((i) => i.id));
+      : (document ? questionItemIds(document) : (roster ?? (bank?.items ?? []).map((i) => i.id)));
     if (!expectedItems.length) return this.#unavailable(sessionId, 'There are no questions to mark on that one.');
 
     // --- verdicts already on record ------------------------------------------

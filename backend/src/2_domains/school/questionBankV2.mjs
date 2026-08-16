@@ -138,6 +138,36 @@ export function createWorksheetInstance({
   });
 }
 
+/**
+ * The questions an instance actually asked, in printed order — the ONE roster
+ * anything marking that sheet may use.
+ *
+ * The bank an instance was drawn from keeps growing; the sheet in the child's
+ * hand does not. Reading the live bank back at grading time divides a perfect
+ * ten-question paper by however many items the bank holds today, and files the
+ * questions that were never printed as work a grown-up still owes — questions
+ * nobody can ever mark, because nobody ever asked them.
+ *
+ * `itemIds` is the authority: `createWorksheetInstance` derives it from the
+ * selected items themselves (`items.map((item) => item.itemId)`), so it and
+ * `questions[].itemId` are the same list in the same order by construction.
+ * `questions` is read only when `itemIds` is absent, which no minted instance
+ * is — it is there so a hand-repaired file still grades against its own sheet
+ * rather than silently reverting to the bank.
+ *
+ * @param {object|null|undefined} instance
+ * @returns {string[]|null} the frozen roster, or `null` when there is no
+ *   instance to read one from — the caller keeps whatever roster it used
+ *   before instances existed.
+ */
+export function worksheetInstanceRoster(instance) {
+  const ids = [instance?.itemIds, (instance?.questions ?? []).map((question) => question?.itemId)]
+    .find((candidate) => Array.isArray(candidate)
+      && candidate.length
+      && candidate.every((id) => typeof id === 'string' && id));
+  return ids ? [...new Set(ids)] : null;
+}
+
 /** Convert an instance into a self-contained publishable OMR document source. */
 export function worksheetInstanceDocument(instance, {
   title = instance.lessonId, description = null,
