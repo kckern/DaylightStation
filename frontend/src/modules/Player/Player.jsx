@@ -21,6 +21,8 @@ import { getLogWaitKey } from './lib/waitKeyLabel.js';
 import { useMediaTransportAdapter } from './hooks/transport/useMediaTransportAdapter.js';
 import { shouldSkipResilienceReload } from './lib/shouldSkipResilienceReload.js';
 import { createRemountStormGuard } from './lib/remountStormGuard.js';
+import { changedKeyComponent } from './lib/keyChange.js';
+import { getLogger } from '../../lib/logging/Logger.js';
 import { OnDeckCard } from './components/OnDeckCard.jsx';
 import { usePlayerConfig } from './hooks/usePlayerConfig.js';
 import { REVIEW_ACTIVE } from '../../lib/Player/reviewParams.js';
@@ -646,6 +648,12 @@ const Player = forwardRef(function Player(props, ref) {
   const stormLoggedRef = useRef(false);
   const stormTrippedAtRef = useRef(0);
 
+  // The inputs behind the last ADMITTED key, so a change can name which one moved.
+  // Held separately from lastAdmittedKeyRef because the composite key cannot be
+  // split back apart — a compound plex guid contains the ':' separator itself.
+  const lastAdmittedKeyInputsRef = useRef(null);
+  const keyLogger = useMemo(() => getLogger().child({ component: 'player-key' }), []);
+
   // StrictMode landmine, noted deliberately: this memo reads Date.now(), writes three
   // refs and logs during render. It is safe today — nothing under frontend/src mounts a
   // <React.StrictMode>, and re-admitting an already-admitted key costs nothing, so a
@@ -702,9 +710,48 @@ const Player = forwardRef(function Player(props, ref) {
       }
       return lastAdmittedKeyRef.current;
     }
+
+    // Report the admitted transition. This sits AFTER admit() on purpose: a
+    // rejected key is already reported by `player-remount-storm` above, and
+    // reporting it here as well would inflate the very count a diagnostician
+    // came for. Only the idle placeholder is skipped, by starting the baseline
+    // at null — the first key of a run is a mount, not a change, and giving it
+    // a `from` would put a fabricated value in the log.
+    //
+    // Sampled because a key change IS the remount, and the failure mode being
+    // instrumented is a storm of them. The budget of 20/min is the storm
+    // guard's own ceiling (10 admitted keys per 30s window), so under a working
+    // brake every transition is recorded in full; if the brake is ever loosened
+    // or bypassed the aggregate still carries the count, which on 2026-08-16
+    // was the whole diagnosis and had to be read out of Plex's log instead.
+    // Null while idle, which clears the baseline: arriving at the first real key
+    // is a mount, not a change, and it has no meaningful `from`.
+    const keyInputs = !singlePlayerProps ? null : {
+      // The identity half of the key. Image slideshows deliberately use a fixed
+      // token here so image→image transitions keep one ImageFrame alive.
+      guid: activeSource?.mediaType === 'image' ? 'image-slideshow' : (currentMediaGuid || 'entry'),
+      nonce: remountState.nonce
+    };
+    const changedComponent = changedKeyComponent(lastAdmittedKeyInputsRef.current, keyInputs);
+    if (changedComponent) {
+      keyLogger.sampled('playback.player-key-changed', {
+        from: lastAdmittedKeyRef.current,
+        to: candidate,
+        // Which input moved: `guid` is a content change, `nonce` is a deliberate
+        // remount, `guid+nonce` is both at once. In the storm it was the guid —
+        // the half nothing logged, because `player-remount` only ever covered
+        // the nonce.
+        changedComponent,
+        guid: currentMediaGuid || null,
+        playerType: playerType || null,
+        isQueue
+      }, { maxPerMinute: 20, aggregate: true });
+    }
+    lastAdmittedKeyInputsRef.current = keyInputs;
+
     lastAdmittedKeyRef.current = candidate;
     return candidate;
-  }, [singlePlayerProps, currentMediaGuid, remountState.nonce, activeSource?.mediaType, playerType, resolvedWaitKey, isQueue]);
+  }, [singlePlayerProps, currentMediaGuid, remountState.nonce, activeSource?.mediaType, playerType, resolvedWaitKey, isQueue, keyLogger]);
 
   const exposedMediaRef = useRef(null);
   const controllerRef = useRef(null);
