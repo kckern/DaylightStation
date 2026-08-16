@@ -115,6 +115,16 @@ workflow once that spec lands; nothing is deleted.
 Five roots resolve into the moved trees. Two are hardcoded and one of those
 bypasses config entirely — they must change together.
 
+> **Corrected during implementation.** A repo-wide grep found roughly twice
+> this many call sites. Beyond the table below: `school-docs.cli.mjs` and
+> `barcode-scan-sim.cli.mjs` each defaulted to the old print root;
+> `schoolcalc-catalog.cli.mjs` and `school-certify.cli.mjs` each defaulted to
+> the old catalog root; `school-certify` also derived `surfaces/` from it; and
+> `barcode-scan-sim`'s preflight *required* `content/school/curriculum` to be
+> non-empty, so it would have failed every run after the move. Six test files
+> pinned the old literals. The lesson for the next tree move: grep for the
+> literal path first — a composition-root table understates the real surface.
+
 The `curriculum/` resolution logic is **duplicated byte-for-byte across two
 datastores**. Both copies must be removed together; removing one leaves the
 other still reading a directory that no longer exists.
