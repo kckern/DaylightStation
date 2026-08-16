@@ -35,9 +35,30 @@ export function createScreensRouter(config = {}) {
 
       try {
         const files = await fs.readdir(screensDir);
-        const screens = files
+        // Keep the real filename — `.yaml` screens exist and re-appending
+        // `.yml` to a stripped id would read the wrong path.
+        const entries = files
           .filter(f => f.endsWith('.yml') || f.endsWith('.yaml'))
-          .map(f => f.replace(/\.ya?ml$/, ''));
+          .map(f => ({ id: f.replace(/\.ya?ml$/, ''), file: f }));
+
+        // Each entry carries the screen's declared CSS-pixel `resolution` so a
+        // caller that must render AT a screen's scale (the admin preview) sizes
+        // itself from one request instead of N detail fetches. A file that fails
+        // to parse degrades to id-only rather than failing the whole list.
+        const screens = await Promise.all(entries.map(async ({ id, file }) => {
+          try {
+            const raw = await fs.readFile(path.join(screensDir, file), 'utf-8');
+            const cfg = yaml.load(raw) || {};
+            const r = cfg.resolution;
+            const resolution = (Number.isFinite(r?.width) && Number.isFinite(r?.height))
+              ? { width: r.width, height: r.height }
+              : null;
+            return { id, name: cfg.name || cfg.screen || id, resolution };
+          } catch (err) {
+            logger.warn?.('screens.list.unreadable', { id, error: err.message });
+            return { id, name: id, resolution: null };
+          }
+        }));
 
         logger.debug?.('screens.list.success', { count: screens.length });
         res.json({ screens });
