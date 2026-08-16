@@ -2820,7 +2820,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       });
 
       const jobStore = new StravaWebhookJobStore({
-        basePath: configService.getHouseholdPath('strava/strava-webhooks'),
+        basePath: path.join(configService.getMediaDir(), 'archives', 'strava-webhooks'),
         logger: rootLogger.child({ module: 'strava-jobs' }),
       });
 

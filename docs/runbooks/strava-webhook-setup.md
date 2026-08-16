@@ -91,7 +91,7 @@ curl -G "https://<domain>/api/v1/fitness/provider/webhook?hub.mode=subscribe&hub
 
 ### Enrichment not happening
 
-1. Check job files: `data/household/common/strava/strava-webhooks/`
+1. Check job files: `media/archives/strava-webhooks/`
 2. Look for `status: unmatched` — means no fitness session matched
 3. Check the fitness session has `participants.*.strava.activityId` populated
 4. Check backend logs: `strava.enrichment.*`

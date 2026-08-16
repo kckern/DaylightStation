@@ -300,4 +300,4 @@ Expected: `{"hub.challenge":"test"}`
 
 ### Job Files
 
-Durable jobs stored per provider, e.g. `data/household/common/strava/strava-webhooks/{activityId}.yml`. Check `status` field: `pending`, `completed`, or `unmatched`.
+Durable jobs stored per provider, e.g. `media/archives/strava-webhooks/{activityId}.yml`. Check `status` field: `pending`, `completed`, or `unmatched`.
