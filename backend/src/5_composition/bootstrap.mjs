@@ -74,7 +74,7 @@ import { QueueService } from '#domains/content/services/QueueService.mjs';
 import { createSiblingsRouter } from '#api/v1/routers/siblings.mjs';
 import { SiblingsService } from '#apps/content/services/SiblingsService.mjs';
 import { PlayResponseService } from '#apps/content/services/PlayResponseService.mjs';
-import { UserVideoProgressStore } from '#adapters/persistence/yaml/YamlUserVideoProgressStore.mjs';
+import { YamlUserVideoProgressStore as UserVideoProgressStore } from '#adapters/persistence/yaml/YamlUserVideoProgressStore.mjs';
 import { createStreamRouter } from '#api/v1/routers/stream.mjs';
 import { createLocalRouter } from '#api/v1/routers/local.mjs';
 import { createQueriesRouter } from '#api/v1/routers/queries.mjs';
