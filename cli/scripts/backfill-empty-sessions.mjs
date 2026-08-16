@@ -13,6 +13,7 @@
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
+import { fitnessHistoryDir } from '../lib/fitness/context.mjs';
 
 const DEFAULT_DATA_PATH = process.env.DAYLIGHT_DATA_PATH
   || '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation/data';
@@ -21,7 +22,7 @@ const args = process.argv.slice(2);
 const DRY_RUN = args.includes('--dry-run');
 const API_BASE = 'http://localhost:3112';
 
-const FITNESS_DIR = path.join(DEFAULT_DATA_PATH, 'household', 'history', 'fitness');
+const FITNESS_DIR = fitnessHistoryDir(DEFAULT_DATA_PATH);
 const MEDIA_MEMORY_PATH = path.join(DEFAULT_DATA_PATH, 'household', 'media', 'memory', 'plex', '14_fitness.yml');
 const ARCHIVE_DIR = path.join(FITNESS_DIR, '_archived_empty_events');
 

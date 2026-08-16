@@ -18,6 +18,7 @@
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
+import { fitnessHistoryDir } from '../lib/fitness/context.mjs';
 
 // =============================================================================
 // Configuration
@@ -38,7 +39,7 @@ const DATA_ROOT = dataPathIdx >= 0 && args[dataPathIdx + 1]
   ? args[dataPathIdx + 1]
   : DEFAULT_DATA_PATH;
 
-const FITNESS_DIR = path.join(DATA_ROOT, 'household/history/fitness');
+const FITNESS_DIR = fitnessHistoryDir(DATA_ROOT);
 
 // =============================================================================
 // Helpers

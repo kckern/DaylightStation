@@ -21,6 +21,7 @@
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
+import { fitnessHistoryDir } from '../lib/fitness/context.mjs';
 
 // =============================================================================
 // Configuration
@@ -98,7 +99,7 @@ async function lookupPlexItem(plexId) {
 // Session File Helpers
 // =============================================================================
 
-const FITNESS_DIR = path.join(DATA_PATH, 'household', 'history', 'fitness');
+const FITNESS_DIR = fitnessHistoryDir(DATA_PATH);
 
 function listDateDirs() {
   if (!fs.existsSync(FITNESS_DIR)) return [];

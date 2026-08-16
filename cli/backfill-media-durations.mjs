@@ -21,6 +21,7 @@ import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { existsSync } from 'fs';
 import { computeSessionEndMs, findBrokenEndEvents, findStaleDurationEvents } from './backfill-media-durations.lib.mjs';
+import { fitnessHistoryDir as resolveFitnessHistoryDir } from './lib/fitness/context.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.join(__dirname, '..');
@@ -55,7 +56,7 @@ console.log(`Scope: ${scope === 'all' ? 'Bug A + Bug B' : `Bug ${scope.toUpperCa
 // ------------------------------------------------------------------
 // Constants
 // ------------------------------------------------------------------
-const fitnessHistoryDir = path.join(dataDir, 'household', 'history', 'fitness');
+const fitnessHistoryDir = resolveFitnessHistoryDir(dataDir);
 
 // Plex auth (for workout video duration lookups)
 const plexAuthPath = path.join(dataDir, 'household', 'auth', 'plex');

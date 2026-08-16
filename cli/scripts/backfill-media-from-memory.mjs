@@ -20,6 +20,7 @@
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
+import { fitnessHistoryDir } from '../lib/fitness/context.mjs';
 
 // =============================================================================
 // Configuration
@@ -59,7 +60,7 @@ Options:
 // File Helpers
 // =============================================================================
 
-const FITNESS_DIR = path.join(DATA_PATH, 'household', 'history', 'fitness');
+const FITNESS_DIR = fitnessHistoryDir(DATA_PATH);
 const MEDIA_MEMORY_FILE = path.join(DATA_PATH, 'household', 'media', 'memory', 'plex', '14_fitness.yml');
 
 function listDateDirs() {
