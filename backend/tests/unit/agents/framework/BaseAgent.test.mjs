@@ -42,15 +42,32 @@ describe('BaseAgent', () => {
       );
     });
 
-    it('should throw if workingMemory is not provided', () => {
+    // workingMemory is OPTIONAL at construction and required only to run an
+    // assignment — BaseAgent's own docstring says agents with no assignments
+    // "may omit the dep entirely". This previously asserted a constructor
+    // throw that the framework deliberately stopped doing.
+    it('constructs without workingMemory when the agent has no assignments', () => {
       class TestAgent extends BaseAgent {
         static id = 'test';
         getSystemPrompt() { return 'test'; }
         registerTools() {}
       }
-      assert.throws(
-        () => new TestAgent({ agentRuntime: mockRuntime, logger: mockLogger }),
-        /workingMemory is required/
+      const agent = new TestAgent({ agentRuntime: mockRuntime, logger: mockLogger });
+      assert.ok(agent);
+    });
+
+    it('refuses to run an assignment when constructed without workingMemory', async () => {
+      class TestAgent extends BaseAgent {
+        static id = 'test';
+        getSystemPrompt() { return 'test'; }
+        registerTools() {}
+      }
+      const agent = new TestAgent({ agentRuntime: mockRuntime, logger: mockLogger });
+      agent.registerAssignment({ id: 'daily', execute: async () => ({ ok: true }) });
+
+      await assert.rejects(
+        () => agent.runAssignment('daily', { userId: 'u1' }),
+        /without workingMemory dep/
       );
     });
   });

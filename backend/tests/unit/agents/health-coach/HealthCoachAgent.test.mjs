@@ -70,39 +70,59 @@ describe('HealthCoachAgent', () => {
   });
 
   describe('getTools', () => {
-    it('should return tools from all three factories', () => {
+    it('registers the factories these deps satisfy', () => {
       const agent = new HealthCoachAgent(mockDeps);
-      const tools = agent.getTools();
+      const names = agent.getTools().map(t => t.name);
 
-      const names = tools.map(t => t.name);
-      // Health tools
-      assert.ok(names.includes('get_weight_trend'));
-      assert.ok(names.includes('get_today_nutrition'));
-      // Fitness content tools
+      // Fitness content
       assert.ok(names.includes('get_fitness_content'));
       assert.ok(names.includes('get_program_state'));
-      // Dashboard tools
+      // Dashboard
       assert.ok(names.includes('write_dashboard'));
       assert.ok(names.includes('get_user_goals'));
+      // Longitudinal — always registered, tools self-report missing deps
+      assert.ok(names.includes('query_named_period'));
+      assert.ok(names.includes('read_notes_file'));
+
+      // get_weight_trend / get_today_nutrition are NOT asserted: no factory
+      // defines them any more (they belonged to the retired health factories,
+      // whose surface HealthQueryToolFactory replaced with query_health /
+      // compute / personal_constants). Three assignments still call them and
+      // silently get null — tracked separately; it is a product bug, not a
+      // test one.
     });
 
     it('should have 24 total tools', () => {
-      // 18 pre-existing tools (Health/FitnessContent/Dashboard/Reconciliation;
-      // Messaging is gated behind a gateway+conversationId and not present
-      // here) + 6 longitudinal tools (F-102/103/104). The
-      // LongitudinalToolFactory is always registered; its individual tools
-      // surface "dependency missing" errors when optional deps (e.g.
-      // archiveScope, personalContextLoader) are unwired, but they still
-      // count in `getTools()`.
+      // The exact set these deps produce, named rather than counted — a bare
+      // number says nothing about WHICH tool vanished when it changes, and
+      // this one silently drifted from 24 to 12 as factories were retired and
+      // others put behind dep gates (messaging needs a gateway +
+      // conversationId; period needs healthAnalyticsService; health-query
+      // needs four services — none of which these mocks supply).
       const agent = new HealthCoachAgent(mockDeps);
-      assert.strictEqual(agent.getTools().length, 24);
+      assert.deepStrictEqual(agent.getTools().map(t => t.name).sort(), [
+        'browse_fitness_catalog',
+        'get_fitness_content',
+        'get_program_state',
+        'get_recently_watched_fitness',
+        'get_user_goals',
+        'log_coaching_note',
+        'query_named_period',
+        'read_notes_file',
+        'record_playbook',
+        'update_playbook',
+        'update_program_state',
+        'write_dashboard',
+      ]);
     });
   });
 
   describe('getSystemPrompt', () => {
-    it('should return a non-empty string', () => {
+    // getSystemPrompt is async — it assembles personal context. Unawaited, the
+    // assertions were inspecting a Promise.
+    it('should return a non-empty string', async () => {
       const agent = new HealthCoachAgent(mockDeps);
-      const prompt = agent.getSystemPrompt();
+      const prompt = await agent.getSystemPrompt();
       assert.ok(typeof prompt === 'string');
       assert.ok(prompt.length > 100);
     });
@@ -119,7 +139,12 @@ describe('HealthCoachAgent', () => {
   });
 
   describe('runAssignment', () => {
-    it('should inject default userId when not provided', async () => {
+    // Threads the userId it is GIVEN. Defaulting to head-of-household belongs
+    // to AgentOrchestrator.#resolveUserId, not here — this called the agent
+    // directly, bypassing the layer that owns the default, then hid the
+    // resulting failure behind a bare `catch {}`. The default is covered in
+    // AgentOrchestrator.test.mjs.
+    it('threads userId through to the runtime context', async () => {
       let capturedUserId;
 
       mockRuntime.execute = async ({ context }) => {
@@ -136,11 +161,7 @@ describe('HealthCoachAgent', () => {
 
       const agent = new HealthCoachAgent(mockDeps);
 
-      try {
-        await agent.runAssignment('daily-dashboard', {});
-      } catch {
-        // May fail on write — that's OK, we just check userId was injected
-      }
+      await agent.runAssignment('daily-dashboard', { userId: 'user_1' });
 
       assert.strictEqual(capturedUserId, 'user_1');
     });

@@ -75,13 +75,16 @@ describe('DashboardToolFactory', () => {
       assert.strictEqual(result.goals.weight.target_lbs, 175);
     });
 
-    it('should return null when no goals set', async () => {
+    // An EMPTY OBJECT, not null. The tool normalises a missing record with
+    // `|| {}` so the nutrition-profile enrichment below it has something to
+    // write into; null would have to be re-checked at every use site.
+    it('returns empty goals when none are set', async () => {
       mockDataService.user.read = () => null;
       const tools = factory.createTools();
       const tool = tools.find(t => t.name === 'get_user_goals');
       const result = await tool.execute({ userId: 'user_1' });
 
-      assert.strictEqual(result.goals, null);
+      assert.deepStrictEqual(result.goals, {});
     });
   });
 
