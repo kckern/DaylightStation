@@ -423,6 +423,27 @@ record — recover with `release-card`. Accepted at household scale.
   **Card mode always resolves the published document** — the file argument
   only supplies the id; an unpublished id fails with "publish first" rather
   than pinning a phantom rev.
+- `reprint <instanceId> --out <pdf>` — reproduce an exact historical print from
+  a persisted worksheet instance, with **no manual flags**. Reads
+  `<dataDir>/household/apps/school/worksheet-instances/<instanceId>.yml` and
+  derives everything the original sheet carried — learner name, issue date,
+  answer-sheet number, row range, question order — from that record, so the
+  reprint is byte-identical to the paper that first came out of the tray. This
+  is the command to reach for when a sheet is lost, destroyed, or re-scanned
+  days later; `render --card …` requires hand-assembling five flags and prints
+  a silently different sheet if any one of them is wrong or omitted.
+
+  Because the date comes from the instance's own `issuedAt`, a sheet reprinted
+  later still prints its ORIGINAL date — it stands in for the paper generated
+  that day, rather than claiming to be new work.
+
+  It refuses rather than guessing: an unsafe instance id, a malformed instance
+  file, a missing `documentRevision` (which would otherwise silently resolve to
+  the latest published revision — a different sheet under the original's name),
+  or an allocation that does not reproduce the instance's own recorded
+  `recordId` all fail loudly with exit 1 and no PDF written. On the happy path
+  it writes nothing to the allocation store: the store's identical-reprint
+  shortcut returns the existing live record untouched.
 - `release-card <cardId> [--rows a-b]` — allocation housekeeping.
 
 `node cli/school-atlas-sim.cli.mjs --out <directory>` is the file-only Atlas
