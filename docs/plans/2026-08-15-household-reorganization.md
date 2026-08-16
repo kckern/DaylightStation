@@ -35,15 +35,43 @@ mv "$SRC" "$REPO/_deleteme/<name>"
 
 ---
 
-## Prerequisite — run this on the homeserver before Tier 3
+## THE DEPLOY HAZARD — read before moving any data
 
-A recursive grep for embedded path strings across the wider data tree timed out against the local Dropbox mount and was never completed. Per the project's own guidance on measuring the cloud mount over SSH rather than hydrating it locally:
+**The data directory is Dropbox-synced, and prod runs against the same tree.**
+
+Local: `~/Library/CloudStorage/Dropbox/Apps/DaylightStation/data`
+Prod container mount: `/media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/data → /usr/src/app/data`
+
+Those are the same Dropbox account. **A directory you move on the laptop propagates to the running production container within seconds**, while that container is still executing code that expects the old path. Every Tier 1-4 move therefore has a window where deployed code and on-disk data disagree, and the failure mode is not always loud — several relays *create* a missing directory rather than erroring, so the app comes up healthy and quietly writes into an empty tree.
+
+This is not a theoretical concern. It is the single most likely way this reorganization causes an outage.
+
+**Required sequence for every data move:**
+
+1. **Make the code read both paths first.** Land a commit where the adapter tries the new path and falls back to the old one. Deploy it. Verify prod is healthy.
+2. **Then move the data.** Prod is already reading the new location; the fallback covers the sync window.
+3. **Verify on prod**, not just locally — `ssh homeserver.local` and confirm the app still resolves the data.
+4. **Only then remove the fallback**, as a separate commit.
+
+A move without the read-both step is a coin flip on whether anyone is using the app during the sync.
+
+**Alternative, if a domain is genuinely idle:** stop the container, move, redeploy. Simpler and acceptable for low-traffic domains — but confirm idleness rather than assuming it, and never do this for anything the household uses on a schedule.
+
+---
+
+## Prerequisite for Tier 3 — DONE
+
+A recursive grep for embedded path strings across the wider data tree timed out against the local Dropbox mount. It has since been run on the server against the real tree:
 
 ```bash
 ssh homeserver.local "grep -rn --include='*.yml' --include='*.json' \
   -E 'household/(apps|common|shared|history)/' \
-  /opt/Code/DaylightStation/data 2>/dev/null | head -50"
+  /media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/data"
 ```
+
+**Result: 8 hits, of which only 4 are real values** — exactly the four already named in Tier 3 (`scales.yml`, `vehicles.yml`, `games.yml`, `retroarch.yml`). The other four are comments (`piano.yml:12`, `school.yml:217`, a conflicted-copy header in `users/milo/`) and one incidental match: a git commit log pasted inside a journal entry at `users/kckern/lifelog/journalist/debriefs.yml`.
+
+**No hidden Tier 3 blockers.** The list in Tier 3 is complete.
 
 Any hit is a path stored *inside a file's contents* — a Tier 3 item that needs a data migration, not a rename. **Tiers 0-2 do not depend on this. Do not start Tier 3 until it has run.**
 
