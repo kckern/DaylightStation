@@ -21,7 +21,7 @@ export class YamlWorksheetInstanceStore {
     this.#configService = configService;
     this.#logger = logger;
   }
-  #root() { return this.#configService.getHouseholdPath('apps/school/worksheet-instances'); }
+  #root() { return this.#configService.getHouseholdPath('school/worksheet-instances'); }
   #file(id) {
     if (typeof id !== 'string' || !SAFE_WORKSHEET_INSTANCE_ID.test(id) || id.includes('..')) throw new Error(`unsafe worksheet instance id: ${id}`);
     return path.join(this.#root(), `${id}.yml`);

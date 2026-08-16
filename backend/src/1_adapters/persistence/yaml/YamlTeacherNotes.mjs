@@ -28,7 +28,7 @@ export class YamlTeacherNotes {
     this.#logger = logger;
   }
 
-  #file() { return path.join(this.#configService.getHouseholdPath('apps/school'), 'teacher-notes.yml'); }
+  #file() { return path.join(this.#configService.getHouseholdPath('school'), 'teacher-notes.yml'); }
 
   #readState() {
     let text;

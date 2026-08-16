@@ -9,7 +9,7 @@ import path from 'node:path';
 import { IJamCorderArchive } from '#apps/jamcorder/ports/IJamCorderArchive.mjs';
 import { writeBinary, fileExists, loadYamlSafe, saveYaml } from '#system/utils/FileIO.mjs';
 
-const REL_ROOT = 'history/piano/jamcorder';
+const REL_ROOT = 'piano/log/jamcorder';
 
 export class FsJamCorderArchive extends IJamCorderArchive {
   #configService; #logger; #index;

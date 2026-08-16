@@ -29,7 +29,7 @@ export class YamlEnrichmentLog {
     this.#logger = logger;
   }
 
-  #file() { return path.join(this.#configService.getHouseholdPath('apps/school'), 'enrichment.yml'); }
+  #file() { return path.join(this.#configService.getHouseholdPath('school'), 'enrichment.yml'); }
 
   #readState() {
     let text;

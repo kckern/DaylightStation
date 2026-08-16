@@ -72,9 +72,9 @@ export function bootstrapNotifications(deps = {}) {
   const preference = new NotificationPreference(preferences || DEFAULT_PREFERENCES);
 
   // Governance (dedupe + quiet hours). The ledger persists under
-  // <dataPath>/household/state; the config loader re-reads notifications.yml
+  // <dataPath>/household/notifications; the config loader re-reads notifications.yml
   // on every send so household edits take effect without a restart.
-  const ledgerStore = new YamlNotificationLedgerStore({ basePath: path.join(dataPath, 'household', 'state') });
+  const ledgerStore = new YamlNotificationLedgerStore({ basePath: path.join(dataPath, 'household', 'notifications') });
   const policy = new NotificationPolicy();
   const configLoader = () => {
     // reloadHouseholdAppConfig (not getHouseholdAppConfig) — it reads fresh from

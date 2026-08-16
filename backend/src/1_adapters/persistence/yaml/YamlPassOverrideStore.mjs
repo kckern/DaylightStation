@@ -29,7 +29,7 @@ export class YamlPassOverrideStore {
     this.#logger = logger;
   }
 
-  #file() { return path.join(this.#configService.getHouseholdPath('apps/school'), 'pass-overrides.yml'); }
+  #file() { return path.join(this.#configService.getHouseholdPath('school'), 'pass-overrides.yml'); }
 
   #readState() {
     let text;

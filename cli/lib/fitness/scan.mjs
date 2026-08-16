@@ -245,7 +245,7 @@ export async function run(argv, ctx) {
   const autoFix = bool(flags, 'auto-fix');
 
   const historyDir = ctx.fitnessHistoryDir;
-  const webhookJobsDir = path.join(ctx.dataDir, 'household', 'common', 'strava', 'strava-webhooks');
+  const webhookJobsDir = path.join(ctx.dataDir, 'household', 'strava', 'strava-webhooks');
   const loadYaml = ctx.loadYamlSafe;
 
   const sessions = loadAllSessions(historyDir, loadYaml);

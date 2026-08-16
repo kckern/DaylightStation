@@ -51,7 +51,7 @@ import { ValidationError } from '#system/utils/errors/index.mjs';
 export const WORKOUT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 
 /** Path, relative to the household directory, where workouts live. */
-const WORKOUTS_RELATIVE_DIR = 'apps/fitness/workouts';
+const WORKOUTS_RELATIVE_DIR = 'fitness/workouts';
 
 /** @returns {boolean} true when `id` may be used as a filename in the workouts dir. */
 export function isValidWorkoutId(id) {

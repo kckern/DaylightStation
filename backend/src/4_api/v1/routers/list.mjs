@@ -507,7 +507,7 @@ export function createListRouter(config) {
       if (modifiers.recent_on_top && !hasFixedOrder) {
         // Load menu_memory for sorting by menu selection time
         // Note: loadFile is scoped to data dir; household path built by caller
-        const menuMemory = loadFile?.('history/menu_memory') || {};
+        const menuMemory = loadFile?.('media/menu-memory') || {};
 
         items = [...items].sort((a, b) => {
           const aKey = getMenuMemoryKey(a);

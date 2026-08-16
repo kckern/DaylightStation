@@ -337,7 +337,7 @@ export function createHomeAutomationRouter(config) {
     }
 
     // loadFile already prepends household path, just use relative path
-    const eventsData = loadFile('common/events') || [];
+    const eventsData = loadFile('events') || [];
     res.json(eventsData);
   }));
 

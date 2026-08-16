@@ -27,7 +27,7 @@ export function createAdminMediaRouter(config) {
    */
   router.get('/freshvideo/sources', async (req, res) => {
     try {
-      const sources = await loadFile('state/youtube');
+      const sources = await loadFile('youtube');
       if (!sources || !Array.isArray(sources)) {
         return res.json({ sources: [], count: 0 });
       }
@@ -59,7 +59,7 @@ export function createAdminMediaRouter(config) {
 
     try {
       // Load source config
-      const sources = await loadFile('state/youtube');
+      const sources = await loadFile('youtube');
       if (!sources || !Array.isArray(sources)) {
         return res.status(404).json({ error: 'No freshvideo sources configured' });
       }
@@ -104,7 +104,7 @@ export function createAdminMediaRouter(config) {
    */
   router.post('/freshvideo/metadata/all', async (req, res) => {
     try {
-      const sources = await loadFile('state/youtube');
+      const sources = await loadFile('youtube');
       if (!sources || !Array.isArray(sources)) {
         return res.json({ results: [], count: 0 });
       }

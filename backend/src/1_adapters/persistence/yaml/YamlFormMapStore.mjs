@@ -31,7 +31,7 @@ export class YamlFormMapStore extends IFormMapStore {
     this.#configService = config.configService;
   }
 
-  #root() { return this.#configService.getHouseholdPath('apps/school/forms'); }
+  #root() { return this.#configService.getHouseholdPath('school/forms'); }
 
   #fileFor(formId) { return path.join(this.#root(), `${formId}.yml`); }
 

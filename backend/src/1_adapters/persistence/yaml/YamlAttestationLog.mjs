@@ -29,7 +29,7 @@ export class YamlAttestationLog {
     this.#logger = logger;
   }
 
-  #file() { return path.join(this.#configService.getHouseholdPath('apps/school'), 'attestations.yml'); }
+  #file() { return path.join(this.#configService.getHouseholdPath('school'), 'attestations.yml'); }
 
   #readState() {
     let text;

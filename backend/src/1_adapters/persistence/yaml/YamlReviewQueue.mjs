@@ -45,7 +45,7 @@ export class YamlReviewQueue extends IReviewQueue {
     this.#logger = config.logger || console;
   }
 
-  #root() { return this.#configService.getHouseholdPath('apps/school/review'); }
+  #root() { return this.#configService.getHouseholdPath('school/review'); }
 
   #liveFile(sessionId) { return path.join(this.#root(), `${sessionId}.yml`); }
 

@@ -12,8 +12,8 @@ import { JobState } from '#domains/scheduling/entities/JobState.mjs';
 import { IStateDatastore } from '#apps/scheduling/ports/IStateDatastore.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
-const STATE_PATH = 'state/cron-runtime';
-const BACKUP_PATH = 'state/cron-runtime_bak';
+const STATE_PATH = 'scheduling/cron-runtime';
+const BACKUP_PATH = 'scheduling/cron-runtime_bak';
 
 export class YamlStateDatastore extends IStateDatastore {
   #dataService;

@@ -75,7 +75,7 @@ export class DataServicePianoGameRepository {
     const day = /^\d{4}-\d{2}-\d{2}$/.test(record.played_on || '')
       ? record.played_on : new Date().toISOString().slice(0, 10);
     return this.dataService.household.write(
-      `history/gaming/${gameId}/${day}/${userSegment}-${Date.now()}.yml`, stamp(record, 'archived_at'),
+      `gaming/log/${gameId}/${day}/${userSegment}-${Date.now()}.yml`, stamp(record, 'archived_at'),
     );
   }
 }
