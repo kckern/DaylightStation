@@ -65,6 +65,7 @@ config.app-local.yml
 !scripts/build-daylight.sh
 !scripts/school-smoke.mjs
 !scripts/school-reorg-rehearse.sh
+!scripts/audit-household-paths.mjs
 *.log
 .github/copilot-instructions.md
 # Skill local configs

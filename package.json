@@ -145,6 +145,7 @@
     "test:slot-machine": "npx playwright test tests/live/flow/admin/content-search-combobox/11-slot-machine.runtime.test.mjs --reporter=line",
     "ingest:health-archive": "node cli/ingest-health-archive.cli.mjs",
     "test:unit:vitest": "node scripts/gate-vitest.mjs",
-    "sheet": "node scripts/gen-sheet.mjs"
+    "sheet": "node scripts/gen-sheet.mjs",
+    "audit:paths": "node scripts/audit-household-paths.mjs"
   }
 }
