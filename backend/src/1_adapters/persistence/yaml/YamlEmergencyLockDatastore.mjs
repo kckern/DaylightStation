@@ -7,7 +7,7 @@ import { LockdownState } from '#domains/fitness/value-objects/LockdownState.mjs'
  * YamlEmergencyLockDatastore
  *
  * YAML-backed persistence for the single current emergency lockdown.
- * Path: household[-{hid}]/history/fitness/emergency_lock.yml
+ * Path: household[-{hid}]/fitness/log/emergency_lock.yml
  *
  * Household is fixed at construction (the emergency lock is per-household), so
  * the repository interface (load/save/clear) takes no household argument.
@@ -15,7 +15,7 @@ import { LockdownState } from '#domains/fitness/value-objects/LockdownState.mjs'
  *
  * @module adapters/persistence/yaml
  */
-const REL_DIR = 'history/fitness';
+const REL_DIR = 'fitness/log';
 const FILE_NAME = 'emergency_lock.yml';
 
 export class YamlEmergencyLockDatastore extends IEmergencyLockRepository {

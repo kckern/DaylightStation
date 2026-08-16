@@ -2,7 +2,7 @@
  * YamlSessionDatastore - YAML-based session persistence
  *
  * Implements ISessionDatastore port for fitness session storage.
- * Sessions are stored at: household[-{id}]/history/fitness/{YYYY-MM-DD}/{sessionId}.yml
+ * Sessions are stored at: household[-{id}]/fitness/log/{YYYY-MM-DD}/{sessionId}.yml
  * Screenshots at: {mediaRoot}/apps/fitness/sessions/{YYYY-MM-DD}/{sessionId}/screenshots/
  */
 import path from 'path';
@@ -99,7 +99,7 @@ export class YamlSessionDatastore extends ISessionDatastore {
     const canonicalId = String(sessionId).replace(/\D/g, '');
 
     const sessionsDir = path.join(
-      this.configService.getHouseholdPath('history/fitness', householdId),
+      this.configService.getHouseholdPath('fitness/log', householdId),
       sessionDate
     );
 
@@ -275,7 +275,7 @@ export class YamlSessionDatastore extends ISessionDatastore {
    * @returns {Promise<string[]>}
    */
   async listDates(householdId) {
-    const sessionsRoot = this.configService.getHouseholdPath('history/fitness', householdId);
+    const sessionsRoot = this.configService.getHouseholdPath('fitness/log', householdId);
 
     return listDirsMatching(sessionsRoot, /^\d{4}-\d{2}-\d{2}$/)
       .sort()
@@ -290,7 +290,7 @@ export class YamlSessionDatastore extends ISessionDatastore {
    */
   async findByDate(date, householdId) {
     const sessionsDir = path.join(
-      this.configService.getHouseholdPath('history/fitness', householdId),
+      this.configService.getHouseholdPath('fitness/log', householdId),
       date
     );
 
@@ -566,14 +566,14 @@ export class YamlSessionDatastore extends ISessionDatastore {
   // ── Index internals ─────────────────────────────────────────────────────
 
   /**
-   * Path to a month's index shard: history/fitness/_index/{YYYY-MM}.json
+   * Path to a month's index shard: fitness/log/_index/{YYYY-MM}.json
    * @param {string} householdId
    * @param {string} yyyymm - 'YYYY-MM'
    * @returns {string}
    */
   #indexShardPath(householdId, yyyymm) {
     return path.join(
-      this.configService.getHouseholdPath('history/fitness', householdId),
+      this.configService.getHouseholdPath('fitness/log', householdId),
       INDEX_DIR_NAME,
       `${yyyymm}.json`
     );
@@ -619,7 +619,7 @@ export class YamlSessionDatastore extends ISessionDatastore {
    */
   #dayDirMtimeMs(householdId, date) {
     const dir = path.join(
-      this.configService.getHouseholdPath('history/fitness', householdId),
+      this.configService.getHouseholdPath('fitness/log', householdId),
       date
     );
     const stats = getStats(dir);

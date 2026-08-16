@@ -51,7 +51,7 @@ describe('YamlSessionDatastore — strava extraction in findByDate', () => {
       },
     };
 
-    const sessionsDir = path.join(tmpDir, 'history/fitness', DATE);
+    const sessionsDir = path.join(tmpDir, 'fitness/log', DATE);
     fs.mkdirSync(sessionsDir, { recursive: true });
     saveYaml(path.join(sessionsDir, SESSION_ID), sessionData);
 
@@ -85,7 +85,7 @@ describe('YamlSessionDatastore — strava extraction in findByDate', () => {
       },
     };
 
-    const sessionsDir = path.join(tmpDir, 'history/fitness', DATE);
+    const sessionsDir = path.join(tmpDir, 'fitness/log', DATE);
     fs.mkdirSync(sessionsDir, { recursive: true });
     saveYaml(path.join(sessionsDir, SESSION_ID), sessionData);
 
@@ -110,7 +110,7 @@ describe('YamlSessionDatastore — strava extraction in findByDate', () => {
       },
     };
 
-    const sessionsDir = path.join(tmpDir, 'history/fitness', DATE);
+    const sessionsDir = path.join(tmpDir, 'fitness/log', DATE);
     fs.mkdirSync(sessionsDir, { recursive: true });
     saveYaml(path.join(sessionsDir, SESSION_ID), sessionData);
 
@@ -139,7 +139,7 @@ describe('YamlSessionDatastore — strava extraction in findByDate', () => {
       },
     };
 
-    const sessionsDir = path.join(tmpDir, 'history/fitness', DATE);
+    const sessionsDir = path.join(tmpDir, 'fitness/log', DATE);
     fs.mkdirSync(sessionsDir, { recursive: true });
     saveYaml(path.join(sessionsDir, SESSION_ID), sessionData);
 

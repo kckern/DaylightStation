@@ -34,7 +34,7 @@ import {
   isCumulativeSeriesKey
 } from '../fitnessSessionSummary.mjs';
 import { parseArgs, bool } from './argv.mjs';
-import { CliError, isValidDate, isValidSessionId } from './context.mjs';
+import { CliError, isValidDate, isValidSessionId, fitnessHistoryDir } from './context.mjs';
 
 // ---------------------------------------------------------------------------
 // Timestamp helpers

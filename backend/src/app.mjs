@@ -2770,7 +2770,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         lookbackDays: stravaLookbackDays,
         selectionConfig: stravaSelectionConfig,
         timezone: stravaTimezone,
-        fitnessHistoryDir: configService.getHouseholdPath('history/fitness'),
+        fitnessHistoryDir: configService.getHouseholdPath('fitness/log'),
         logger: rootLogger.child({ module: 'strava-reconciliation' }),
       });
 
@@ -2783,7 +2783,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         configService,
         selectionConfig: stravaSelectionConfig,
         resolveDisplayName: (slug) => userService.resolveDisplayName(slug),
-        fitnessHistoryDir: configService.getHouseholdPath('history/fitness'),
+        fitnessHistoryDir: configService.getHouseholdPath('fitness/log'),
         reconciliationService: stravaReconciliationService,
         logger: rootLogger.child({ module: 'strava-enrichment' }),
       });

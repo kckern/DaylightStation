@@ -80,7 +80,7 @@ export async function run(argv, ctx) {
   // Paths
   // ----------------------------------------------------------------
   const stravaArchiveDir = path.join(ctx.dataDir, 'users', username, 'lifelog', 'strava');
-  const fitnessHistoryDir = configService.getHouseholdPath('history/fitness') || ctx.fitnessHistoryDir;
+  const fitnessHistoryDir = configService.getHouseholdPath('fitness/log') || ctx.fitnessHistoryDir;
   if (!fitnessHistoryDir) {
     throw new CliError('Could not resolve the fitness history directory');
   }

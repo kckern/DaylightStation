@@ -12,7 +12,7 @@
  * Dry-run by default — prints the plan without touching the file. Pass
  * `--apply` to write the healed YAML back.
  *
- * `--sweep` iterates every `history/fitness/<date>/*.yml` under the (test-
+ * `--sweep` iterates every `fitness/log/<date>/*.yml` under the (test-
  * injectable) data base dir, plans a heal for each, and reports the ones with
  * `needsHeal === true`. Dry-run writes NOTHING — it only reads and reports.
  * `--since Nd` restricts the scan to date directories within the last N days
@@ -31,7 +31,7 @@ import { decodeSeries, encodeSeries } from '#domains/fitness/services/TimelineSe
 import { planHeal } from '#domains/fitness/services/SessionIdentityHealer.mjs';
 import { buildSummary, isCumulativeSeriesKey, getLastNonNull } from '../fitnessSessionSummary.mjs';
 import { parseArgs, bool, str } from './argv.mjs';
-import { CliError } from './context.mjs';
+import { CliError, fitnessHistoryDir } from './context.mjs';
 
 // ---------------------------------------------------------------------------
 // Cell-level series merge
@@ -180,7 +180,7 @@ export function isValidSessionId(id) {
 // ---------------------------------------------------------------------------
 
 /**
- * Resolve the `history/fitness` root directory (parent of the per-date
+ * Resolve the `fitness/log` root directory (parent of the per-date
  * dirs), honoring the same `baseDir` override convention as
  * `resolveSessionPath`.
  *
@@ -244,7 +244,7 @@ export function cutoffDateString(now, sinceDays) {
 }
 
 /**
- * Scan every stored session under `history/fitness/<date>/*.yml`, plan a
+ * Scan every stored session under `fitness/log/<date>/*.yml`, plan a
  * heal for each, and collect the ones that need healing. Read-only unless
  * `apply` is set, in which case each candidate is healed via `heal()`
  * (which does its own load/plan/apply — the sweep doesn't re-derive the

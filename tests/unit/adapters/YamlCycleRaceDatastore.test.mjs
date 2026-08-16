@@ -18,10 +18,10 @@ beforeEach(() => { tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cgrace-')); });
 afterEach(() => { fs.rmSync(tmp, { recursive: true, force: true }); });
 
 describe('YamlCycleRaceDatastore', () => {
-  it('saves a record under history/fitness/cycle-races/{date}/{id}.yml', async () => {
+  it('saves a record under fitness/log/cycle-races/{date}/{id}.yml', async () => {
     const ds = makeStore();
     await ds.save(record(), 'default');
-    const file = path.join(tmp, 'history/fitness/cycle-races/2026-06-02/20260602143012.yml');
+    const file = path.join(tmp, 'fitness/log/cycle-races/2026-06-02/20260602143012.yml');
     expect(fs.existsSync(file)).toBe(true);
   });
   it('finds a saved record by id', async () => {

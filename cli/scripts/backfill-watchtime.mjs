@@ -13,7 +13,7 @@
  * Example:
  *   node cli/scripts/backfill-watchtime.mjs \
  *     /path/to/media_memory/plex/14_fitness.yml \
- *     /path/to/history/fitness/ \
+ *     /path/to/fitness/log/ \
  *     --dry-run
  */
 

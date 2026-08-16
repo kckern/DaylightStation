@@ -22,7 +22,7 @@ test('save then load round-trips a LockdownState', async () => {
   const state = LockdownState.create({ lockedBy: 'alice', durationSec: 1800, now: 1000 });
   await store.save(state);
   // Persisted under the household path
-  assert.equal(files.has('/data/household/history/fitness/emergency_lock.yml'), true);
+  assert.equal(files.has('/data/household/fitness/log/emergency_lock.yml'), true);
   const loaded = await store.load();
   assert.deepEqual(loaded.toData(), state.toData());
 });
@@ -41,7 +41,7 @@ test('clear deletes the record so load returns null', async () => {
 
 test('load returns null for a corrupt/partial record', async () => {
   const { store, files } = makeStore();
-  files.set('/data/household/history/fitness/emergency_lock.yml', { lockedBy: 'x' }); // missing times
+  files.set('/data/household/fitness/log/emergency_lock.yml', { lockedBy: 'x' }); // missing times
   assert.equal(await store.load(), null);
 });
 

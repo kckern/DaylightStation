@@ -2,7 +2,7 @@
  * YamlSessionDatastore — session list index (findInRange read cache)
  *
  * The index caches each day's computed summaries in a per-month JSON shard under
- * history/fitness/_index/ so a date-range query reads ~one shard per month instead
+ * fitness/log/_index/ so a date-range query reads ~one shard per month instead
  * of re-reading+parsing every session YAML in the window. These tests pin the two
  * properties that matter: (1) the cached result is byte-for-byte the same as the
  * uncached scan, and (2) the cache stays correct as sessions are added, mutated,
@@ -44,7 +44,7 @@ describe('YamlSessionDatastore — findInRange index', () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'session-index-test-'));
     const configService = { getHouseholdPath: (subPath) => path.join(tmpDir, subPath) };
     store = new YamlSessionDatastore({ configService });
-    fitnessRoot = path.join(tmpDir, 'history/fitness');
+    fitnessRoot = path.join(tmpDir, 'fitness/log');
 
     seedSession('2026-06-01', '20260601120000', { coins: 5 });
     seedSession('2026-06-02', '20260602120000', { coins: 7 });

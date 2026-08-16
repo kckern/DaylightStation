@@ -56,7 +56,7 @@ describe('listIndexEntries', () => {
     await store.listIndexEntries('household');
     // Overwrite the shard with garbage
     // (path: <base>/_index/2026-06.json — use the tmp dir from the harness)
-    fs.writeFileSync(path.join(tmpBase, 'history/fitness/cycle-races/_index/2026-06.json'), '{nope');
+    fs.writeFileSync(path.join(tmpBase, 'fitness/log/cycle-races/_index/2026-06.json'), '{nope');
     const entries = await store.listIndexEntries('household');
     expect(entries).toHaveLength(1);
   });
