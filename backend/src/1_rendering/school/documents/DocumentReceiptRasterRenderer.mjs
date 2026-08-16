@@ -53,13 +53,33 @@ import crypto from 'node:crypto';
 import { writeBinary, deleteFile } from '#system/utils/FileIO.mjs';
 import { transcribeEscPosItems } from '#system/utils/escposTranscript.mjs';
 
-/** `{barcode|qrcode}` items → `{token,label}` pairs, in printed order. */
+/**
+ * `{barcode|qrcode}` items → `{token, label, printed}` triples, in printed order.
+ *
+ * `printed` is every line of tape between the previous code and this one — the
+ * LESSON CARD (eyebrow, course/unit/lesson hierarchy, description, footer
+ * instruction) a child actually reads before waving the scanner at the code
+ * beside it. It is carried here because a raster receipt's own `items` is a
+ * single `{type:'image'}`: the card is pixels by then, unreadable to any test.
+ * This text job is the one place that text still exists as text, so a caller
+ * asserting on what the card SAYS (rather than merely that a code exists) has
+ * no other source. Dropping it is what made the school e2e suites unable to
+ * tell an agenda card naming its action from one naming only a lesson title.
+ */
 function codesFrom(job) {
   const codes = [];
+  let printed = [];
   for (const item of job?.items ?? []) {
     if (item.type === 'barcode' || item.type === 'qrcode') {
-      codes.push({ token: String(item.content), label: String(item.label ?? '') });
-    }
+      codes.push({
+        token: String(item.content),
+        label: String(item.label ?? ''),
+        printed: printed.join('\n'),
+      });
+      printed = [];
+    } else if (item.type === 'text' && typeof item.content === 'string' && item.content.trim()) {
+      printed.push(String(item.content));
+    } else if (item.type === 'line') printed = [];
   }
   return codes;
 }

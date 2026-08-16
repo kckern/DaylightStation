@@ -244,6 +244,19 @@ export async function createLifecycleHarness({
     // reads `cfg.programs`, not `cfg.lifecycle.programs`) — mirrors a real
     // `school.yml`'s own shape.
     programs,
+    printing: {
+      // The per-session print debounce is OFF here, deliberately. A house
+      // defaults to 10 minutes so a child cannot spam the tray by re-waving
+      // one code; these suites drive a whole lifecycle inside a single
+      // harness clock and legitimately reprint the same sheet seconds apart
+      // (reprint lineage, "every printed action resolves to something that
+      // prints"). Left at the default, those reads come back `debounced` and
+      // the scenario under test never runs. The debounce has its own
+      // coverage in `IssueDocument.printDebounce.test.mjs`, which is where
+      // that behaviour belongs — a test wanting it here can pass its own
+      // `printCooldownMinutes` through `schoolConfig`.
+      printCooldownMinutes: 0,
+    },
     lifecycle: {
       enabled: true,
       tokenTtlHours,
@@ -443,8 +456,10 @@ export async function createLifecycleHarness({
   // the printer drew, not an item this harness can read a token out of.
   // `DocumentReceiptRasterRenderer` knows what it drew and hands that over as
   // the job's `codes` field (`VirtualThermalPrinterAdapter` passes it through
-  // the capture untouched), so that is read FIRST. There is no surrounding
-  // tape text to recover in that shape, so `printed` is empty.
+  // the capture untouched), so that is read FIRST. It carries `printed` too —
+  // the renderer builds an ESC/POS text job internally to derive transcript
+  // and codes, and that job is the one place the lesson-card text still
+  // exists as text once the receipt itself is pixels.
   //
   // The `items` scan is the fallback for a TEXT-only job — no
   // `receiptPngRenderer` built (a missing `qrcode`/`canvas`/`resvg`
@@ -462,8 +477,8 @@ export async function createLifecycleHarness({
   const barcodesInLastReceipt = () => {
     const capture = lastCapture();
     if (capture?.codes) {
-      return capture.codes.map(({ token, label }) => ({
-        token: String(token), label: String(label ?? ''), printed: '',
+      return capture.codes.map(({ token, label, printed }) => ({
+        token: String(token), label: String(label ?? ''), printed: String(printed ?? ''),
       }));
     }
     const found = [];
