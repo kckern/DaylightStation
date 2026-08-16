@@ -23,11 +23,20 @@
  *
  * OMR is a feeder, not a second pipeline (§7.3). `fromOmrSheet` decodes column
  * masks against the stored form map and then goes through the same `execute`.
+ *
+ * WHERE THE DENOMINATOR COMES FROM, precisely. A printed `document` states its
+ * own questions. A unit with a `bank` and no `document` states nothing — its
+ * sheet was SAMPLED from the bank at issue time and frozen as a worksheet
+ * instance, so that instance is the sheet and the bank is only what it was
+ * drawn from. Reading the bank back here turned every item the sampler left off
+ * into a `blank` for a grown-up to mark: questions the child was never asked,
+ * on a list nobody could ever clear.
  */
 import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
 import { questionItemIds, questionPrompts } from '#domains/school/documents/documentValidation.mjs';
 import { decodeOmrSheet } from '#domains/school/documents/omrForm.mjs';
 import { noticeDocument } from '#domains/school/documents/receipts.mjs';
+import { worksheetInstanceRoster } from '#domains/school/questionBankV2.mjs';
 
 /** States from which handing work in is a legal move. */
 const SUBMITTABLE = new Set(['issued', 'reprinted', 'media_completed']);
@@ -35,7 +44,7 @@ const SUBMITTABLE = new Set(['issued', 'reprinted', 'media_completed']);
 const ALREADY_IN = new Set(['submitted', 'graded', 'outcome_recorded', 'rewarded', 'remediation_opened']);
 
 export class SubmitPaperWork {
-  #curriculum; #sessions; #formMaps; #reviewQueue; #bankReader; #clock; #logger;
+  #curriculum; #sessions; #formMaps; #reviewQueue; #bankReader; #worksheetInstances; #clock; #logger;
 
   /**
    * @param {object} deps
@@ -44,10 +53,17 @@ export class SubmitPaperWork {
    * @param {import('../ports/IFormMapStore.mjs').IFormMapStore} deps.formMaps
    * @param {import('../ports/IReviewQueue.mjs').IReviewQueue} deps.reviewQueue
    * @param {{getBank: (id: string) => object|null}} [deps.bankReader]
+   * @param {{findBySession: (sessionId: string) => Promise<object|null>}|null}
+   *   [deps.worksheetInstances] - the issued sheets. OPTIONAL and read-only:
+   *   unwired, or with no instance on file, the bank stays the roster exactly
+   *   as it was before instances existed.
    * @param {() => Date} [deps.clock]
    * @param {object} [deps.logger]
    */
-  constructor({ curriculum, sessions, formMaps, reviewQueue, bankReader = null, clock = () => new Date(), logger = console } = {}) {
+  constructor({
+    curriculum, sessions, formMaps, reviewQueue, bankReader = null,
+    worksheetInstances = null, clock = () => new Date(), logger = console,
+  } = {}) {
     if (!curriculum || !sessions || !formMaps || !reviewQueue) {
       throw new Error('SubmitPaperWork requires curriculum, sessions, formMaps and reviewQueue');
     }
@@ -56,6 +72,7 @@ export class SubmitPaperWork {
     this.#formMaps = formMaps;
     this.#reviewQueue = reviewQueue;
     this.#bankReader = bankReader;
+    this.#worksheetInstances = worksheetInstances;
     this.#clock = clock;
     this.#logger = logger;
   }
@@ -104,7 +121,15 @@ export class SubmitPaperWork {
     const unit = await this.#curriculum.getUnit(state.unitId);
     const document = unit?.document ? await this.#curriculum.getDocument(unit.document) : null;
     const bank = unit?.bank ? (this.#bankReader?.getBank(unit.bank) ?? null) : null;
-    const expectedItems = document ? questionItemIds(document) : (bank?.items ?? []).map((i) => i.id);
+    // The sheet the child actually received, when one was frozen for this
+    // session (see the note at the top of the file). `null` — no store, or no
+    // instance — leaves the bank as the roster, unchanged.
+    const roster = document
+      ? null
+      : worksheetInstanceRoster(await this.#worksheetInstances?.findBySession?.(sessionId) ?? null);
+    const expectedItems = document
+      ? questionItemIds(document)
+      : (roster ?? (bank?.items ?? []).map((i) => i.id));
     if (!expectedItems.length) {
       return this.#unavailable(sessionId, 'There are no questions to mark on that one. Tell a grown-up.');
     }
