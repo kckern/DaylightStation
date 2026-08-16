@@ -7,8 +7,9 @@
  *     calling that renderer directly. v2 is additive, never a migration.
  *   - v2 documents run the fit loop `fit.mjs`'s own docs describe: measure at
  *     normal density always; measure again at compact ONLY when fit policy
- *     `one-page` needs the fallback (`flow`/`fill` never try compact — see
- *     `resolveFitPlan`); feed the measured attempt(s) to `resolveFitPlan`;
+ *     `one-page` or `prefer-one-page` needs the fallback (`flow`/`fill` never
+ *     try compact — see `resolveFitPlan`); feed the measured attempt(s) to
+ *     `resolveFitPlan`;
  *     render once, at the chosen density, with furniture (footer +
  *     archetype-driven gutter/duplex) and `growLastPage` threaded through.
  *
@@ -60,6 +61,24 @@ function dropRedundantTitleHeading(document) {
  * visual check, not just a printer setting.
  */
 const DUPLEX_ARCHETYPES = new Set(['worksheet']);
+
+/**
+ * Archetypes that grow a header manifest line (Task 2, "10 questions · pass
+ * 80%"). Scoped to `worksheet` — the household's own ask was specifically
+ * about the worksheet header, and a quiz's header already carries the
+ * archetype-driven `Score ____ / N` score box (spec §13) for the identical
+ * "how much and what clears it" information; adding a SECOND, differently
+ * worded line with the same job would be redundant on the one archetype that
+ * already has it. Scoping this narrowly also means every fit-policy fixture
+ * in this codebase's own test suite — which exercises `archetype: 'quiz'`
+ * almost exclusively, tuned to page-break boundaries that predate this
+ * feature — keeps its exact geometry: a manifest that grew EVERY v2
+ * document's header by one line would have silently shifted those
+ * boundaries, the same "measured, then invalidated by an unrelated feature"
+ * failure mode `#measureAttempt`'s own `totalPoints`/`tokens` threading
+ * exists to prevent.
+ */
+const MANIFEST_ARCHETYPES = new Set(['worksheet']);
 
 /**
  * `banks` dependency for bank-select sugar (spec §6.2, Task 5): synchronous
@@ -207,6 +226,55 @@ function sumScoredPoints(blocks, defaultPoints) {
       ? total + (typeof block.points === 'number' ? block.points : defaultPoints)
       : total
   ), 0);
+}
+
+/**
+ * Question COUNT (Task 2's header manifest), as distinct from `sumScoredPoints`'s
+ * POINTS total — a document with one 5-point question and one 1-point question
+ * has `totalPoints === 6` but `questionCount === 2`; a header that shows only
+ * the point total would silently under-report how much paper work is actually
+ * on the sheet. Same top-level-only scan, same reasoning: bank-select sugar
+ * has already been expanded into concrete `question` blocks by the time this
+ * runs (`#prepareV2Document`), and a `question` can never nest, so scanning
+ * top-level blocks alone is complete.
+ */
+function countQuestions(blocks) {
+  if (!Array.isArray(blocks)) return 0;
+  return blocks.reduce((total, block) => total + (block?.type === 'question' ? 1 : 0), 0);
+}
+
+/**
+ * "10 questions · pass 80%" (household rule, Task 2: a child sees how much
+ * sheet there is and what clears it without flipping to the footer or the
+ * last page). The pass mark is appended ONLY when the caller actually
+ * supplied one (`context.passPercent` — see `#renderV2Body`'s call site and
+ * `IssueDocument`'s own doc comment on where that number comes from,
+ * `unit.passing.percent`): a document with no known pass bar — a plain
+ * worksheet outside a graded course, or any caller that hasn't threaded this
+ * yet — still gets the count alone rather than a fabricated or stale
+ * percentage. `questionCount <= 0` (an infopage, a reading-only worksheet)
+ * returns null rather than printing "0 questions".
+ */
+function buildManifestText(questionCount, passPercent) {
+  if (questionCount <= 0) return null;
+  const countText = `${questionCount} question${questionCount === 1 ? '' : 's'}`;
+  return Number.isFinite(passPercent) ? `${countText} · pass ${passPercent}%` : countText;
+}
+
+/**
+ * Writes the computed manifest onto `document.header.manifest` — the SAME
+ * "adjust the already-validated document immediately before it's measured"
+ * seam `dropRedundantTitleHeading` already uses, so `measure.mjs`'s
+ * `headerFragment` can read `manifest` as a precomputed string with no
+ * policy of its own (see that function's own doc comment). A no-op — returns
+ * `document` unchanged, not even a shallow copy — when there is nothing to
+ * show, so a document with no questions never grows an empty header line or
+ * an unnecessary object identity change.
+ */
+function withHeaderManifest(document, { questionCount, passPercent }) {
+  const manifest = buildManifestText(questionCount, passPercent);
+  if (!manifest) return document;
+  return { ...document, header: { ...(document.header ?? {}), manifest } };
 }
 
 /**
@@ -668,7 +736,7 @@ export class RenderPrintDocument {
    * @param {string} [args.id] - looked up via `repository` when `document` is not given
    * @param {{learnerName?: string, date?: string, gutter?: boolean|number, teacher?: boolean,
    *   cardId?: string, startRow?: number, freshCard?: boolean, learnerId?: string,
-   *   tokens?: Object<string,string>}} [args.context] -
+   *   tokens?: Object<string,string>, passPercent?: number}} [args.context] -
    *   `learnerName`/`date` prefill the header's Name/Date lines (blank ruled lines
    *   when absent); `gutter` overrides the default 3-hole-punch reservation
    *   (v2 only — must be >= 0). `teacher` (v2 only, spec §4.1/§12.1) is a RENDER
@@ -693,7 +761,16 @@ export class RenderPrintDocument {
    *   them through here — omitted (every caller before this field existed)
    *   falls back to `block.action`/`.code`/`.token` exactly as before
    *   (`measure.mjs`'s `actionCodeText`), so a document with no action blocks,
-   *   or a caller that never mints tokens, is unaffected.
+   *   or a caller that never mints tokens, is unaffected. `passPercent`
+   *   (Task 2's header manifest) — the household's pass bar for THIS lesson
+   *   ("10 questions · pass 80%"), a plain number 1-100. `IssueDocument`
+   *   threads `unit.passing?.percent` through here for a worksheet-instance
+   *   render — the SAME field `GradeSubmission`/`CloseSessionOutcome` already
+   *   treat as the authoritative pass mark for closing that session, so the
+   *   sheet can never print a bar that disagrees with what actually grades
+   *   it. Omitted/null (every caller before this field existed, or a lesson
+   *   with no configured pass bar) prints the question count alone, never a
+   *   fabricated percentage.
    * @returns {Promise<{bytes: Buffer, pageCount: number, density: 'normal'|'compact'|null,
    *   warnings: string[], allocation: {cardId: string, rowRange: {start: number, end: number},
    *   recordId: string, status: string}|null, duplex: boolean|null}>}
@@ -867,6 +944,26 @@ export class RenderPrintDocument {
 
     // Geometry only. The footer's card number comes from the render's own
     // `card` context inside `DocumentPdfRenderer`, not from here.
+
+    // Header manifest (Task 2): computed and written onto `document.header`
+    // BEFORE either fit-loop trial measures anything, not just before the
+    // final render — the manifest line has real height (measure.mjs's
+    // `headerFragment` adds a leading for it), so a trial that didn't know
+    // about it could choose a density that then doesn't actually fit once
+    // the real render's header grows by one line, exactly the class of bug
+    // `#measureAttempt`'s `totalPoints`/`tokens` threading already guards
+    // against (see that method's own comments). `document` is reassigned
+    // here (not a new local) so every use below — both trials AND the final
+    // `renderer.render(document, ...)` call — sees the SAME manifest-bearing
+    // document.
+    if (MANIFEST_ARCHETYPES.has(document.archetype)) {
+      document = withHeaderManifest(document, {
+        questionCount: countQuestions(document.blocks),
+        passPercent: context.passPercent,
+      });
+    }
+
+
     const furnitureOpts = {
       gutter,
       duplex: DUPLEX_ARCHETYPES.has(document.archetype),
@@ -877,9 +974,17 @@ export class RenderPrintDocument {
 
     const attempts = [normalAttempt];
     let compactTheme = null;
-    // Measurement at compact density is run ONLY when `one-page` needs the
-    // fallback (`fit.mjs`'s own contract) — `flow`/`fill` never try compact.
-    if (document.fit.policy === 'one-page' && normalAttempt.pageCount !== 1) {
+    // Measurement at compact density is run ONLY when `one-page` OR
+    // `prefer-one-page` needs the fallback (`fit.mjs`'s own contract) —
+    // `flow`/`fill` never try compact. Both policies share this same
+    // gate/condition because they share the same first move ("try normal,
+    // and only pay for a second measurement pass if normal didn't already
+    // land on one page") — they diverge only in what `resolveFitPlan` does
+    // with the result once compact ALSO fails to reach one page: `one-page`
+    // rejects the render outright, `prefer-one-page` spills at compact
+    // density rather than failing (see `resolveFitPlan`'s own doc comment).
+    if ((document.fit.policy === 'one-page' || document.fit.policy === 'prefer-one-page')
+      && normalAttempt.pageCount !== 1) {
       compactTheme = createWorkbookTheme({ typeScale: document.fit.typeScale, density: 'compact' });
       attempts.push(this.#measureAttempt(document, compactTheme, 'compact', context, furnitureOpts, totalPoints));
     }
@@ -897,6 +1002,37 @@ export class RenderPrintDocument {
     const renderer = this.#rendererFactory({
       theme: chosenTheme, texToSvg: this.#texToSvg, resolveAsset: this.#resolveAsset,
     });
+
+    // Balanced spill (household rule: "we're not just having a dangling
+    // question number 10 at the end" — equal vertical fill, not equal
+    // question COUNT) is decided HERE, not inside `resolveFitPlan`.
+    // `fit.mjs` deliberately stays a pure decision table — it hands back
+    // whichever measured attempt satisfies the policy and stops there (see
+    // its own doc comment); it does not inspect its own output to decide
+    // whether to decorate it. Whether a `prefer-one-page` render needs
+    // balancing is exactly that kind of post-hoc, render-shaped question —
+    // it's true only when THIS document actually spilled (`chosen.pageCount
+    // > 1` on the attempt `resolveFitPlan` just returned), which is a fact
+    // this use case is already licensed to reason about (see the file
+    // header: this is the one place allowed to run rendering's measurement
+    // loop). `growLastPage` here has two independent triggers: `fill`'s is
+    // unconditional on the policy alone (every `fill` render always grows —
+    // that half still lives in `fit.mjs`, on the attempt itself, because
+    // it's genuinely policy-only); `prefer-one-page`'s spill needs it too,
+    // for a different reason — `layout.mjs`'s `distributeAnswerSpace` grows
+    // every page's trailing answer-space EXCEPT the last one by default, so
+    // a balanced split would otherwise still show the earlier page(s)
+    // stretched flush to the margin while the last page — never grown under
+    // that default — sits well short of it, undoing the evenness `balance`
+    // just achieved. Confirmed empirically against the atlas worst-case
+    // fixture: balance alone left the two pages ~41pt and ~319pt short of
+    // their margin respectively; adding `growLastPage: true` closed that to
+    // ~41pt and ~27pt. `balance` itself is a no-op on content it can't
+    // safely re-partition, so threading it whenever the document actually
+    // spilled costs nothing on one it can't help.
+    const spilledPreferOnePage = document.fit.policy === 'prefer-one-page' && chosen.pageCount > 1;
+    const growLastPage = (chosen.growLastPage ?? false) || spilledPreferOnePage;
+    const balance = spilledPreferOnePage;
 
     // Teacher key (spec §4.1, §12.1, Task 6): a RENDER MODE, orthogonal to
     // everything above — the fit loop, `document`, `chosen` density/theme,
@@ -968,7 +1104,33 @@ export class RenderPrintDocument {
     });
 
     if (chosen.density === 'compact') {
-      warnings.push(`fit.policy 'one-page' required compact density to fit '${document.id}' on one page`);
+      // `one-page` can only ever reach this branch with a `chosen` attempt
+      // that measured `pageCount === 1` — a compact attempt that still
+      // overflowed takes the FIT_OVERSET throw above instead, never
+      // `chosen`. `prefer-one-page` CAN reach here with a spilled `chosen`
+      // (its whole point is to spill rather than fail — see `resolveFitPlan`),
+      // so the warning has to say which of the two actually happened.
+      //
+      // Deliberately reads `result.pageCount` (the REAL render this call just
+      // produced — the SAME "whole artifact" count `DocumentPdfRenderer.render`
+      // documents and every other caller of this method already reports),
+      // not `chosen.pageCount` (the TRIAL's prediction from `#measureAttempt`).
+      // The two can legitimately disagree in either direction:
+      //   - `#measureAttempt` never threads `bank` through to `resolveChoices`,
+      //     so any `omr_response` block is measured in measure.mjs's own
+      //     "probe mode" (a conservative reservation) during the trial —
+      //     which can make the trial predict MORE student pages than the real,
+      //     bank-aware render actually needs.
+      //   - a teacher render (`context.teacher`) appends key pages AFTER the
+      //     fit decision (`chosen` only ever describes the STUDENT content —
+      //     see the "Teacher key" comment below), so `result.pageCount` can be
+      //     LARGER than `chosen.pageCount` simply because the answer key added
+      //     pages the fit loop was never asked about.
+      // Either way, a diagnostic warning's page number has to be the number
+      // that was really printed, not a prediction from an earlier pass.
+      warnings.push(result.pageCount === 1
+        ? `fit.policy '${document.fit.policy}' required compact density to fit '${document.id}' on one page`
+        : `fit.policy '${document.fit.policy}' could not fit '${document.id}' on one page even at compact density; spilled to ${result.pageCount} pages`);
     }
     // `#renderV2` is PDF/Letter-always in Phase A (spec §13: no receipt path
     // wired for v2 yet) — a document declaring ONLY `target: ['receipt']`

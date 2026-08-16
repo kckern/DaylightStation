@@ -47,9 +47,9 @@ export function createSchoolPrintScanConsumer({
 
   const onPayload = (payload) => {
     if (payload?.event !== 'sheet' || !Array.isArray(payload.marks)) return;
-    const { testId, answers } = decodeQuizSheet(payload.marks);
+    const { testId, answers, testIdCandidates } = decodeQuizSheet(payload.marks);
 
-    resolveCardScan.execute({ testId, answers })
+    resolveCardScan.execute({ testId, testIdCandidates, answers })
       .then((outcome) => {
         if (outcome?.error) {
           // CARD_ID_UNREADABLE (or any future resolver error code) — never
@@ -80,6 +80,13 @@ export function createSchoolPrintScanConsumer({
           // card, not a card whose records are all already retired.
           logger.warn?.('school.print.scan-dead-card', {
             testId, answeredRowCount: outcome.answeredRowCount, recordStatuses: outcome.recordStatuses,
+            // Present only when `testId` itself was a `?`-bearing pattern
+            // `ResolveCardScan` resolved by best-effort match rather than a
+            // clean read (see its own `cardIdInferred` doc comment) — carried
+            // here too so a reader following ONE scan's log trail sees the
+            // inference at the point the outcome was actually acted on, not
+            // only in `ResolveCardScan`'s own separate `card-id-inferred` line.
+            cardIdInferred: outcome.cardIdInferred ?? null,
           });
           return;
         }
@@ -126,6 +133,10 @@ export function createSchoolPrintScanConsumer({
             reScored: card.reScored === true,
             earnedPoints: card.earnedPoints,
             totalPoints: card.totalPoints,
+            // See the `scan-dead-card` log above for why this rides along —
+            // same "visible at the point of action, not just at the point of
+            // inference" reasoning, present only for a best-effort-resolved id.
+            cardIdInferred: outcome.cardIdInferred ?? null,
           });
           if (card.reScored) {
             // The record had already settled before this scan — a re-fed
@@ -141,7 +152,7 @@ export function createSchoolPrintScanConsumer({
           // records plus the session bridge (submitted → graded) when the
           // allocation record carries its issuing session. Sequential and
           // per-card so one failure never swallows a cardmate's recording.
-          recordCardScanOutcome.execute({ testId, card })
+          recordCardScanOutcome.execute({ testId, card, cardIdInferred: outcome.cardIdInferred ?? null })
             .then(async (recorded) => {
               if (recorded?.session?.advancedTo === 'graded' && closeSessionOutcome && card.sessionId) {
                 await closeSessionOutcome.execute({ sessionId: card.sessionId });

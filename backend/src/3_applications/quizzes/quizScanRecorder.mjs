@@ -44,23 +44,40 @@ const LOWER_BANK_TOP_BIT = 4;  // A..E = bits 4..0,  questions 26–50
 const ID_DIGIT_TOP_BIT = 9;    // digit d = bit (9−d)
 
 /**
- * Decode one raw marks[] frame into { testId, answers }.
+ * Decode one raw marks[] frame into { testId, answers[, testIdCandidates] }.
  * Pure — safe to reuse for live decode, backfill, and future grading.
  *
+ * A '?' in `testId` means "position kept, value unknown" — but blank and
+ * double-marked are NOT the same kind of unknown, and collapsing them loses
+ * information a downstream best-effort matcher needs (real incident
+ * 2026-08-14: a double-marked digit produced `?`, no allocation matched, and
+ * a fully-answered sheet silently vanished — see
+ * `#domains/school/documents/allocation.mjs`'s `resolveAmbiguousCardId`,
+ * the ONE place that information is spent). A blank column carries zero
+ * marks — any digit is possible, a full wildcard. A double-marked column
+ * carries the ACTUAL digits the student's stray mark(s) hit — a small,
+ * real, non-guessed candidate set. `testIdCandidates[i]` (one entry per id
+ * column, only present when the id has at least one `?`) is exactly the
+ * `digits` array this loop already builds per column, whichever length it
+ * turned out to be — not re-derived, just not thrown away.
+ *
  * @param {number[]} marks one 12-bit mask per column
- * @returns {{ testId: string|null, answers: Record<number, string|string[]> }}
+ * @returns {{ testId: string|null, answers: Record<number, string|string[]>,
+ *   testIdCandidates?: Array<number[]> }}
  */
 export function decodeQuizSheet(marks) {
   const cols = Array.isArray(marks) ? marks : [];
 
   let anyDigit = false;
   let testId = '';
+  const idDigitCandidates = [];
   for (let i = 0; i < ID_COLUMNS; i++) {
     const digits = [];
     const mask = cols[i] | 0;
     for (let d = 0; d <= 9; d++) {
       if (mask & (1 << (ID_DIGIT_TOP_BIT - d))) digits.push(d);
     }
+    idDigitCandidates.push(digits);
     if (digits.length === 1) {
       testId += String(digits[0]);
       anyDigit = true;
@@ -86,7 +103,16 @@ export function decodeQuizSheet(marks) {
     readBank(mask, LOWER_BANK_TOP_BIT, i + 1 + QUESTION_COLUMNS);
   }
 
-  return { testId: anyDigit ? testId : null, answers };
+  const result = { testId: anyDigit ? testId : null, answers };
+  // Only attached when there is actually a '?' to resolve — a fully clean
+  // id (the overwhelming common case) stays exactly the two-field shape
+  // this function has always returned, and a fully blank id (`testId` null)
+  // has nothing a matcher could do with it regardless (`ResolveCardScan`
+  // refuses a null id before ever looking at candidates).
+  if (result.testId && result.testId.includes('?')) {
+    result.testIdCandidates = idDigitCandidates;
+  }
+  return result;
 }
 
 /**

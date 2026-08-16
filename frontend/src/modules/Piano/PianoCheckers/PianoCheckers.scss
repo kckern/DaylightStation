@@ -1,6 +1,15 @@
 .piano-checkers { display: flex; flex-direction: column; overflow: hidden; color: #f8fafc; background: radial-gradient(circle at 50% 25%, #334155, #0b1220 72%); }
 .piano-checkers .instrument-board-stage { flex: 1; height: auto; padding-bottom: .4rem; }
-.checkers-board { width: min(100%, 34rem); aspect-ratio: 1; display: grid; grid-template: repeat(8, 1fr) / repeat(8, 1fr); border: .7rem solid #5c3520; border-radius: .45rem; box-shadow: 0 1rem 2.5rem #0009, inset 0 0 0 .15rem #d39a5e; }
+/* Same cap as .checkers-board's own `min(100%, 34rem)` — a file card has to
+   sit directly over its column, same reasoning as Connect Four's top-rail. */
+.piano-checkers .instrument-board-stage__top-rail { width: min(100%, 34rem); margin: 0 auto; }
+/* The rank rail sits directly beside the board, not out in the far
+   leftRail — it has to be tall as the board (row for row) to read as "this
+   card is THIS row," which only works pinned right up against it. */
+.checkers-stage { display: flex; align-items: stretch; gap: .5rem; width: min(100%, 34rem); }
+.checkers-stage__rank-rail { flex: 0 0 auto; width: 2.6rem; }
+.checkers-stage .checkers-board { flex: 1 1 auto; width: auto; }
+.checkers-board { aspect-ratio: 1; display: grid; grid-template: repeat(8, 1fr) / repeat(8, 1fr); border: .7rem solid #5c3520; border-radius: .45rem; box-shadow: 0 1rem 2.5rem #0009, inset 0 0 0 .15rem #d39a5e; }
 .checkers-board__cell { position: relative; display: grid; place-items: center; min-width: 0; min-height: 0; }
 .checkers-board__cell.is-light { background: #e7c79f; }
 .checkers-board__cell.is-playable { background: #75452f; box-shadow: inset 0 0 .45rem #2b160e88; }
@@ -8,7 +17,6 @@
 .checkers-board__cell.is-selected { background: #956338; }
 .checkers-board__cell.is-selected::after { content: ''; position: absolute; inset: 5%; border: .22rem solid #ffe081; border-radius: 50%; }
 .checkers-board__cell.is-hint::after { border-color: #72f1b8; box-shadow: 0 0 .7rem #72f1b8; }
-.checkers-board__address { position: absolute; z-index: 3; inset: .12rem auto auto .18rem; color: #fffad9; font-size: clamp(.42rem, 1.2cqh, .68rem); font-weight: 800; text-shadow: 0 1px 2px #000; }
 .checkers-board__piece { position: relative; z-index: 2; display: grid; place-items: center; width: 72%; aspect-ratio: 1; border-radius: 50%; box-shadow: inset 0 .22rem .2rem #fff5, inset 0 -.3rem .3rem #0007, 0 .18rem .25rem #0008; }
 .checkers-board__piece--player { background: #dc3b35; border: .18rem solid #8f1716; }
 .checkers-board__piece--opponent { background: #3d7ed8; border: .18rem solid #17498f; }

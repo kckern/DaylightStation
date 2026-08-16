@@ -88,7 +88,7 @@ title: "Pokemon Identification — Quiz 1"
 header:
   instructions: "Mark your answers on your bubble card."
 fit:
-  policy: flow                              # flow | one-page | fill
+  policy: flow                              # flow | one-page | fill | prefer-one-page
   typeScale: standard                       # standard | young
 blocks:
   - type: question
@@ -109,9 +109,16 @@ blocks:
   multi-select, true/false, scan/media action codes) plus layout controls
   (dividers, spacers, page breaks). Wordbank/matching orders are
   seeded-shuffled; cloze blanks are fixed-width atoms.
-- **Fit** is decided by measurement, never streaming: `flow` paginates,
-  `one-page` must fit (density falls back to compact before refusing with the
-  overset amount), `fill` balances and then grows into leftover page space.
+- **Fit** is decided by measurement, never streaming. Four policies:
+  `flow` paginates at normal density with no shrinking; `one-page` must fit —
+  density falls back to compact, and a document still overset at compact is
+  REJECTED with a structured overset amount rather than printed;
+  `prefer-one-page` tries normal, then compact, and only spills (at compact,
+  never rejecting) if neither reaches one page — this is the **default for the
+  `worksheet` archetype** (an archetype preset, like `header`'s
+  name/date/scoreBox defaults; an explicit `fit.policy` still overrides it),
+  for documents where one page is strongly preferred but not worth refusing a
+  render over; `fill` balances and then grows into leftover page space.
   `typeScale: young` enlarges glyphs *and* leading for early readers.
 
   `fill` does two things, in order. First it **balances**: placement runs a
@@ -120,33 +127,14 @@ blocks:
   ceiling still governs every fit decision, so the target only ever starts a
   page early — and the balanced result is adopted only if it produced the same
   page count, so balancing can never make pagination worse. Then it **grows**:
-  answer spaces
-  expand first, each to its own `maxPt`; any space still left is shared among
-  `fillAfter` fragments, capped per share at `theme.pagination.maxFillGrowthPt`
-  (32pt normal, 22pt compact).
+  answer spaces expand first, each to its own `maxPt`; any space still left is
+  shared among `fillAfter` fragments, capped per share at
+  `theme.pagination.maxFillGrowthPt` (32pt normal, 22pt compact).
 
   That cap is the point. Uncapped, a sparse last page dumped all its slack into
   one or two gaps and produced page-tall voids between questions. Capped, the
   leftover simply stays as blank space at the bottom of the page — trailing
   white space is preferred over an oversized interior gap.
-
-  The target is **per page, not one number**, because the pages do not all have
-  the same room. The banner fragment — title/name/date, plus the answer-sheet
-  strip when the render is card-attached — prints on page 1 and nowhere else,
-  and on a card sheet it is over 110pt tall. Charged against a flat
-  `content ÷ pages` target it came straight out of page 1's share of the
-  *questions*, so page 1 took two fewer of them than page 2 (a 10-question
-  atlas worksheet balanced 4/6) and the difference collected as a void in the
-  middle of the document. So the banner's height is subtracted from the shared
-  pool and handed back to the page carrying it: each page's target is
-  `(content height − Σ per-page reserves) ÷ page count + its own reserve`. That
-  worksheet now splits 5/5. `layout.mjs` knows nothing about banners or cards —
-  it takes a generic `balanceReservePt` array (index 0 = page 1) and the
-  renderer, which measured the fragment, names it.
-
-  Balancing moves questions, never white space: the total slack is fixed by the
-  fill cap above, so an evened-out sheet still ends with a short page. It is now
-  the LAST page — which is where a short page belongs — instead of page 1.
 - **Shuffles are edit-stable**: derived from `(seed, variant, block key)`, so
   editing one block never reshuffles its neighbours, and variant N is a
   different-but-deterministic shuffle of the same content.
@@ -570,18 +558,23 @@ record — recover with `release-card`. Accepted at household scale.
   rev resolves to the LATEST revision, which would turn every orphan into a
   false pass.
 
-`node cli/school-atlas-sim.cli.mjs --out <directory>` is the file-only Atlas
-lifecycle proof. It builds Milo's and Felix's real agendas, scans Milo's agenda
-QR, issues and renders the enrollment-bound worksheet, submits a perfect
-simulated card scan, renders the thermal result receipt, scans its next-lesson
-QR, and verifies answer-sheet reuse. It writes PDFs, PNGs, instance YAML, and a
-`proof.yml`; it deliberately constructs no physical printer adapter and keeps
-sessions, worksheet instances, and attempts in memory so the run leaves no
-learner test history. Pass `--outcome fail` to submit a deterministic failed
-attempt and exercise the complete remediation loop: locator-only review hints,
-a retry QR, the same Student No., the next untouched answer-sheet rows, and a
-fresh worksheet instance containing only the missed item ids with newly chosen
-and ordered options.
+`node cli/barcode-scan-sim.cli.mjs proof <learnerId> <courseId> --out <directory>`
+is the file-only lifecycle proof (formerly `school-atlas-sim.cli.mjs`,
+generalized and folded into this file — see that CLI's own header comment). It
+builds the learner's real agenda, scans the agenda QR, issues and renders the
+enrollment-bound worksheet, submits a perfect simulated card scan, renders the
+thermal result receipt, scans its next-lesson QR, and verifies answer-sheet
+reuse. It writes PDFs and a `proof.yml`-equivalent JSON report; it deliberately
+constructs no physical printer adapter and keeps sessions, worksheet instances,
+and attempts in memory so the run leaves no learner test history. Pass
+`--outcome fail` to submit a deterministic failed attempt and exercise the
+complete remediation loop: locator-only review hints, a retry QR, the same
+Student No., the next untouched answer-sheet rows, and a fresh worksheet
+instance containing only the missed item ids with newly chosen and ordered
+options. `barcode-scan-sim.cli.mjs` also has `scan`/`card`/`lesson`/`flow`
+commands that drive the SAME lifecycle through persistent `--state-dir` stores
+(and, opt-in via `--print`, the real laser printer) rather than in-memory
+doubles — see its header comment for when to reach for which mode.
 
 ### Agenda and result-receipt language
 

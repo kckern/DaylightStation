@@ -329,7 +329,28 @@ describe('Phase B acceptance sweep (spec §12, items tagged [B], plus the Phase-
       const text = pdfText(result.bytes);
       expect(text).toMatch(/1\.\s*C/); // mc1: 'Blue' is index 2 of ['Red','Green','Blue'] -> letter C
       expect(text).toMatch(/2\.\s*A,\s*B,\s*D/); // ms1: '2','3','5' are indices 0,1,3 of ['2','3','4','5']
-      expect(result.warnings).toEqual([]);
+      // This fixture deliberately exercises EVERY Phase B block type in one
+      // document — it is the "exceptionally long number of questions" case
+      // the household fit rule (spec §7) carves out as legitimate for two
+      // pages. `worksheet`'s archetype default is now `prefer-one-page`
+      // (this task's change): it still tries compact density first (right
+      // sizing), and only spills to a second page because this fixture
+      // genuinely doesn't fit even then — which now surfaces as an
+      // informative warning instead of the old silent `flow` spill.
+      //
+      // The warning's page count is 3, not 2: this is a `context.teacher`
+      // render, and `result.pageCount` (what the warning reports — see its
+      // own comment in RenderPrintDocument.mjs) is honestly the WHOLE
+      // artifact's page count, student pages plus the appended teacher-key
+      // page — the same total `DocumentPdfRenderer.render`'s own docstring
+      // documents and every other caller of `pageCount` already sees. The
+      // student content alone is 2 pages (confirmed by rendering the same
+      // fixture without `context.teacher` — see the "renders both..." test
+      // below, and the visual-evidence snapshot's page 1/2); the 3rd page is
+      // the key, not a THIRD student page.
+      expect(result.warnings).toEqual([
+        `fit.policy 'prefer-one-page' could not fit '${id}' on one page even at compact density; spilled to 3 pages`,
+      ]);
     });
 
     for (const variant of [0, 1, 2]) {

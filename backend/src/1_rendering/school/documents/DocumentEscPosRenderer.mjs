@@ -1,27 +1,31 @@
 /**
- * Receipt document → the ESC/POS job a thermal printer takes.
+ * Receipt document → the ESC/POS TEXT job a thermal printer takes.
  *
- * This is the `IReceiptRenderer` the lifecycle needs: `render(document, opts)`
- * → `{ items, footer }`, the shape `ThermalPrinterAdapter.print()` accepts.
+ * This is one of two `IReceiptRenderer`s the lifecycle builds: `render(document,
+ * opts)` → `{ items, footer }`, the shape `ThermalPrinterAdapter.print()`
+ * accepts. The other is the raster path (`DocumentReceiptRasterRenderer.mjs`,
+ * wrapping this module's sibling `DocumentReceiptRenderer.mjs`), which is what
+ * actually reaches paper for the three receipts this console prints today
+ * (spec §6.2) — see `5_composition/modules/schoolLifecycle.mjs` for why, and
+ * for the stale "the canvas draws an empty square" reasoning this module used
+ * to be built to route around (`scanCodes:'qr'` has drawn a real, scannable QR
+ * for a while now; that was never the objection that survived).
  *
- * WHY NOT THE CANVAS RENDERER. `DocumentReceiptRenderer` draws a receipt as a
- * PNG, and the composition root used to send that as a single `{type:'image'}`
- * item. Two things were wrong with it, and only one of them was cosmetic:
+ * THIS RENDERER'S JOB DIDN'T GO AWAY. It does two things for the raster path
+ * that a bitmap cannot do for itself:
  *
- *  - **The PNG has no barcode in it.** The canvas draws an empty square where
- *    the code belongs and prints the token underneath as small text. A child
- *    handed that receipt has nothing to scan — the entire action loop runs on
- *    barcodes. Emitting a `barcode` item instead makes the printer generate a
- *    real, scannable Code128 in its own firmware.
- *  - **An image has no text.** `VirtualThermalPrinterAdapter` transcribes text
- *    and barcode items and records images by dimension only, so every receipt
- *    transcript — the thing the e2e suite is documented to assert on — was
- *    empty, and so was the operator's log of what a child was told.
- *
- * The canvas renderer keeps its job (it is what proves a document can be drawn
- * on 58mm tape at all, and the e2e suite still probes with it). It is simply
- * not what reaches paper for the three receipts this console actually prints,
- * none of which contain math.
+ *  - **Operator transcript.** ESC/POS has no channel for embedding decodable
+ *    text inside a raster image, so `DocumentReceiptRasterRenderer` runs this
+ *    renderer on the side (never printed) and reads its `items` back as plain
+ *    words via `transcribeEscPosItems` — the same transcript
+ *    `VirtualThermalPrinterAdapter`'s capture and the e2e suite have always
+ *    asserted on, and the same operator record of what a child was told the
+ *    real printer's log line now carries too.
+ *  - **Fallback receipt.** If rasterizing throws — font registration, canvas
+ *    allocation, the `qrcode` encoder, a scratch-disk write — this renderer IS
+ *    the fallback: a text receipt with a real Code128/QR item beats a child
+ *    standing at a printer with nothing, which is the one failure this whole
+ *    subsystem exists to prevent (spec §6.2, "a scan never succeeds silently").
  *
  * A `scan_action` prints its LABEL and then its code, in that order: a page of
  * unlabelled stripes is not something a child can act on.

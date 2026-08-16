@@ -102,6 +102,49 @@ export function nextMove(unit, state) {
       if (unit.bank) return { kind: 'screen', tokenClass: reducerTokenClass, label: 'answer on the screen' };
       return { kind: 'wait', tokenClass: reducerTokenClass, label: 'carry on' };
 
+    case 'issued':
+    case 'reprinted':
+      // THE HOUSEHOLD'S "DONE" RULE (2026-08-14 investigation): printing a
+      // worksheet must never retire it. Only an OMR/grade event does that —
+      // `IssueDocument`'s own `ISSUABLE` set (`created|media_completed|
+      // issued|reprinted`) was built to accept a rescan from exactly this
+      // state, precisely so a lost, destroyed, or printer-garbled sheet can
+      // be reprinted as many times as needed before it's graded. But before
+      // this case existed, `issued`/`reprinted` fell into the generic
+      // `default` branch below (`kind: 'wait'`) — and `ResolveScanAction
+      // #subjectNext` routes `wait` to a "carry on" SLIP, never back through
+      // `#print`/`IssueDocument`. A parent rescanning the subject card after
+      // a worksheet had already come out (an ordinary "print it again," well
+      // past the print-cooldown window) got a thermal note instead of their
+      // worksheet back, with no `school.issue.*` event at all — this is what
+      // actually produced the mystery 11:25 slip: not a "done" bug that
+      // marked ungraded work served, but this move NEVER ROUTING BACK to a
+      // reprint in the first place.
+      //
+      // ALWAYS `print` here — deliberately NOT a unit.bank/unit.document/
+      // unit.subject guess the way `created`/`media_completed` above make
+      // one. Those two cases have to guess, because at `created` nothing has
+      // been issued yet and the unit's composition is the only evidence in
+      // the room. `issued`/`reprinted` is different: a session can ONLY
+      // reach this state by having already passed `IssueDocument`'s own
+      // ISSUABLE gate once — legacy document, or the bank-only
+      // worksheet-instance pipeline gated behind `IssueDocument.canIssueBank`
+      // (see `ResolveScanAction#print`'s guard, which calls it) — so "is this
+      // printable" was already answered YES for this exact unit before this
+      // code ever runs again. An EARLIER version of this case tried to
+      // re-answer that question locally with `unit.bank && unit.subject !==
+      // 'civilization'` — a hard-coded course name standing in for "is this
+      // printable," wrong for the next paper course in any other subject,
+      // and a needless second copy of a decision `nextMove` cannot even see
+      // all the inputs for (it has no `curriculum`/`IssueDocument` access, so
+      // it cannot call `canIssueBank` itself). Returning a neutral `print`
+      // and leaving `ResolveScanAction#print` to make the ONE authoritative
+      // canIssueBank check removes that duplicated, drifting judgement
+      // entirely; if a unit's printability somehow changed between the first
+      // issue and this rescan, `#print`'s own guard still catches it and
+      // falls back to the screen hand-off, same as it always has.
+      return { kind: 'print', tokenClass: reducerTokenClass, label: 'print it again' };
+
     case 'media_stalled':
       return { kind: 'play', tokenClass: reducerTokenClass, label: 'start it again' };
 

@@ -143,6 +143,25 @@ describe('attempt persistence', () => {
     expect(attempts[1].correct).toBe(false);
   });
 
+  it('carries cardIdInferred in provenance when the scan resolved a best-effort id — the durable record, not just the log, must show an inferred id was inferred', async () => {
+    const datastore = fakeDatastore();
+    const useCase = new RecordCardScanOutcome({ datastore, logger: quietLogger });
+    const cardIdInferred = { pattern: '123456?', cardId: '1234567' };
+    await useCase.execute({ testId: '123456?', card: gradedCard(), cardIdInferred });
+
+    const attempts = datastore.readAllAttempts('felix');
+    expect(attempts[0].provenance.cardIdInferred).toEqual(cardIdInferred);
+  });
+
+  it('omits cardIdInferred from provenance for an ordinary clean-read scan', async () => {
+    const datastore = fakeDatastore();
+    const useCase = new RecordCardScanOutcome({ datastore, logger: quietLogger });
+    await useCase.execute({ testId: '1234567', card: gradedCard() });
+
+    const attempts = datastore.readAllAttempts('felix');
+    expect(attempts[0].provenance.cardIdInferred).toBeUndefined();
+  });
+
   it('blank rows produce NO attempt — unresolved, not wrong', async () => {
     const datastore = fakeDatastore();
     const useCase = new RecordCardScanOutcome({ datastore, logger: quietLogger });

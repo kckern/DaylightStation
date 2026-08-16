@@ -32,10 +32,21 @@ export function opponentStatus({ thinking, lastMove, lastCapture, gameOver, resu
   return 'Waiting for you';
 }
 
-export function OpponentPortrait({ opponent, level, size = 'md', status = null }) {
+/**
+ * `thinkMs`, when given, is the SAME floor opponentPacing.js is holding the
+ * current reply for — not a decorative timing, the actual one. A strong
+ * character broods visibly slower, not just for a flat 700ms, because the
+ * pulse's own duration is that character's think time. Null (not currently
+ * this character's turn) draws no pulse at all.
+ */
+export function OpponentPortrait({ opponent, level, size = 'md', status = null, thinkMs = null }) {
   const name = opponent?.name || `Level ${level ?? 0}`;
+  const pulsing = Number.isFinite(thinkMs) && thinkMs > 0;
   return (
-    <figure className={`chess-opponent chess-opponent--${size}`}>
+    <figure
+      className={`chess-opponent chess-opponent--${size}${pulsing ? ' chess-opponent--thinking' : ''}`}
+      style={pulsing ? { '--pc-think-ms': `${thinkMs}ms` } : undefined}
+    >
       <div className="chess-opponent__face">
         {opponent?.art ? (
           <img className="chess-opponent__art" src={opponent.art} alt="" />

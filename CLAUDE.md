@@ -205,6 +205,7 @@ git rev-parse HEAD > docs/docs-last-updated.txt
 | Layer guidelines | `docs/reference/core/layers-of-abstraction/*.md` |
 | Piano Producer (jam/song builder) | `docs/reference/piano/producer.md` |
 | Exercise library (shared corpus: Fitness workouts + School anatomy) | `docs/reference/fitness/exercise-library.md` |
+| Arcade emulator (EmulatorJS boot contract, gamepad routing, fault handling) | `docs/reference/gaming/emulator-resilience.md` |
 | Household economy (coins) | `docs/reference/economy/economy.md` |
 | DoNow (household "start this, there, now" dispatch) | `docs/reference/donow/README.md` |
 | Nutrition (scan-enriched food logging) | `docs/reference/nutrition/README.md` |

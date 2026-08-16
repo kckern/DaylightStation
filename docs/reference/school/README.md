@@ -895,8 +895,14 @@ printing:              # optional; omitting host defaults to the kitchen-printer
   windowMinutes: 60
   pagesPerWindow: 5    # pages a child may print unattended per window
   maxPagesPerJob: 20   # hard ceiling on one job (approval cannot bypass it)
-  duplex: true         # optional; default true (double-sided). false = single-sided
+  duplex: true         # optional; default true. ACCEPTED BUT NOT APPLIED on the
+                       # HL-L2460DW — it rejects the IPP `sides` attribute at
+                       # any value, so the adapter logs the request and prints
+                       # one-sided. See negotiate.mjs's trim order.
   binding: LONGEDGE    # optional; default LONGEDGE. LONGEDGE | SHORTEDGE
+  printCooldownMinutes: 10 # IssueDocument's own debounce (see below) — a
+                        # DIFFERENT axis: total pages across the household vs.
+                        # repeat prints of one physical console session
 printables:
   - id: state-capitals
     label: US State Capitals
@@ -966,6 +972,22 @@ among several. A child scans a personal card, a thermal agenda prints, they scan
 a choice, a worksheet prints or media plays, the work is graded through the
 *same* engine as the on-screen quiz, and a result receipt prints with the next
 action on it. Four new pieces carry that.
+
+**A re-scan of an already-issued sheet is a REPRINT, and a re-scan inside the
+print debounce window is a SILENT no-op.** `IssueDocument` deliberately reuses
+the original artifact id, worksheet instance, and OMR card/start-row on every
+reprint — a lost or forgotten sheet is a real, expected event, and the same
+piece of paper (same Student No., same bubble geometry) has to come back out,
+not a second copy of a first attempt. Two identical scans within
+`school.yml` `printing.printCooldownMinutes` (default 10) of the last
+*successful* print, though, are collapsed into one job — the second is silent:
+no second worksheet, no thermal slip explaining why. That is a deliberate,
+narrow exception to the console's own rule that a scan never succeeds
+silently (see `tokens.mjs`'s module doc), made once, for this one case, and
+commented at the check site so it reads as an authorised exception rather than
+a bug. The window is timed from the *print*, not the *scan* — a print that
+failed (printer offline) never counts against the window, so the very next
+scan retries immediately.
 
 **The curriculum catalog** — a published, reviewed set of units at
 `data/content/school/curriculum/{units,documents,manifests}/`. A unit composes

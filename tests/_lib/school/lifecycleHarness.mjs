@@ -30,9 +30,16 @@
  *   clock, rng                  — determinism controls, now first-class
  *                                 parameters of the composition itself.
  *
- * The only test-only object built here is `receiptCanvasRenderer`: an ORACLE,
- * wired into nothing, used to answer "could this document be drawn on 58mm
- * tape?" The composition deliberately prints ESC/POS items instead, and says so.
+ * The only test-only object built here is `receiptCanvasRenderer`: a SECOND
+ * instance of the same canvas renderer the composition builds for itself
+ * (`receiptPngRenderer`), used by `probeReceiptRendering` below to draw a
+ * document without going through a live scan. The composition's OWN instance
+ * is what actually reaches paper now — every scan-triggered receipt this
+ * console prints is a raster PNG rasterized to a single ESC/POS image item,
+ * with a real scannable QR baked into the pixels — so `barcodesInLastReceipt`
+ * below reads the captured job's `codes` field (the raster renderer's own
+ * account of what it drew) rather than filtering `items` by type, which would
+ * find nothing: a raster job has no `qrcode` item, only pixels.
  *
  * WHAT A TEST ASSERTS ON. Observable artifacts only: the transcript off the
  * receipt roll, the PDF bytes in the tray, the form map that was stored, the
@@ -430,23 +437,38 @@ export async function createLifecycleHarness({
     return list.length ? list[list.length - 1] : null;
   };
 
-  // The composition wires the school console's receipt renderer with
-  // `symbology: 'QR'` (Task 12), so every scannable action a test finds on a
-  // printed receipt is a `qrcode` item, not a `barcode` one — `barcode` stays
-  // in the filter only as a defensive regression check, should the
-  // composition ever revert to Code128.
+  // TWO receipt shapes, read in order.
   //
-  // A scannable action is not one line any more. The agenda and result slips
-  // print a LESSON CARD — eyebrow, course/unit/lesson hierarchy, description
-  // and a footer instruction — and only then the code beside it. So each code
-  // is returned with `printed`: every line of tape between the previous code
-  // and this one, which is exactly what a child reads before waving the
-  // scanner at it. `label` stays the code's own label (the lesson title) for
-  // tests that mean that specifically.
+  // A RASTER receipt's `items` is a single `{type:'image'}` — its QR is pixels
+  // the printer drew, not an item this harness can read a token out of.
+  // `DocumentReceiptRasterRenderer` knows what it drew and hands that over as
+  // the job's `codes` field (`VirtualThermalPrinterAdapter` passes it through
+  // the capture untouched), so that is read FIRST. There is no surrounding
+  // tape text to recover in that shape, so `printed` is empty.
+  //
+  // The `items` scan is the fallback for a TEXT-only job — no
+  // `receiptPngRenderer` built (a missing `qrcode`/`canvas`/`resvg`
+  // dependency), or the raster path fell back to the ESC/POS renderer. There,
+  // a scannable action is not one line: the agenda and result slips print a
+  // LESSON CARD — eyebrow, course/unit/lesson hierarchy, description and a
+  // footer instruction — and only then the code beside it. So each code
+  // carries `printed`: every line of tape between the previous code and this
+  // one, which is exactly what a child reads before waving the scanner at it.
+  // `label` stays the code's own label (the lesson title).
+  //
+  // The composition wires `symbology: 'QR'` (Task 12), so a scannable action
+  // is a `qrcode` item; `barcode` stays in the filter only as a defensive
+  // regression check, should the composition ever revert to Code128.
   const barcodesInLastReceipt = () => {
+    const capture = lastCapture();
+    if (capture?.codes) {
+      return capture.codes.map(({ token, label }) => ({
+        token: String(token), label: String(label ?? ''), printed: '',
+      }));
+    }
     const found = [];
     let printed = [];
-    for (const item of lastCapture()?.items ?? []) {
+    for (const item of capture?.items ?? []) {
       if (item.type === 'qrcode' || item.type === 'barcode') {
         found.push({
           token: String(item.content),

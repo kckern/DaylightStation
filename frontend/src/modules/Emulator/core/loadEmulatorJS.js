@@ -30,9 +30,10 @@ const LOADER_SCRIPT_ID = 'ejs-loader';
  * @param {Function} [args.onReady] - lifecycle callback wired to EJS_ready.
  * @param {Function} [args.onGameStart] - lifecycle callback wired to EJS_onGameStart.
  * @param {object} [args.controls] - EJS_defaultControls object (player->index->{value,value2}).
+ * @param {number} [args.volume] - initial volume 0..1. MUST be the user's persisted level; EJS re-asserts this value during its own start chain.
  * @returns {object} key/value map of EJS_* globals.
  */
-export function buildEjsGlobals({ player, core = 'gb', romUrl, pathtodata, onReady, onGameStart, controls } = {}) {
+export function buildEjsGlobals({ player, core = 'gb', romUrl, pathtodata, onReady, onGameStart, controls, volume } = {}) {
   if (!player) throw new Error('buildEjsGlobals: player (mount selector/element) is required');
   if (!romUrl) throw new Error('buildEjsGlobals: romUrl is required');
   if (!pathtodata) throw new Error('buildEjsGlobals: pathtodata is required');
@@ -61,9 +62,13 @@ export function buildEjsGlobals({ player, core = 'gb', romUrl, pathtodata, onRea
     EJS_pathtodata: normalizedPath,
     EJS_startOnLoaded: true,
     EJS_threads: false,
-    // Non-muted default; the console's AudioMixer pushes the real game-bus level
-    // on boot and on volume changes. Without this EmulatorJS can start silent.
-    EJS_volume: 0.5,
+    // The volume EmulatorJS itself will assert. This MUST be the user's persisted
+    // level, not a fixed default: EJS re-asserts `config.volume` late in its own
+    // start chain (`this.muted||this.setVolume(this.volume)`), overwriting whatever
+    // the AudioMixer applied earlier. Hard-coding 0.5 here is what made every game
+    // come up loud until the volume panel was opened (2026-08-15). bootSettle still
+    // verifies and re-asserts afterwards — belt and braces.
+    EJS_volume: typeof volume === 'number' ? volume : 0.5,
     // NOTE: deliberately NOT setting EJS_DEBUG_XX — it forces unminified
     // src/* loads that 404 on the self-hosted bundle.
   };
@@ -145,7 +150,7 @@ export function forceNearestFiltering(win = window) {
  * @param {object} [args.controls] - EJS_defaultControls (keyboard+gamepad mapping).
  * @returns {Promise<object>} resolves with win.EJS_emulator
  */
-export function loadEmulatorJS({ player, core = 'gb', romUrl, pathtodata, win = window, timeoutMs = DEFAULT_TIMEOUT_MS, controls } = {}) {
+export function loadEmulatorJS({ player, core = 'gb', romUrl, pathtodata, win = window, timeoutMs = DEFAULT_TIMEOUT_MS, controls, volume } = {}) {
   const requestedKey = loadKey(core, romUrl);
   if (_loadPromise) {
     if (_loadedKey === requestedKey) {
@@ -194,7 +199,7 @@ export function loadEmulatorJS({ player, core = 'gb', romUrl, pathtodata, win = 
 
     let globals;
     try {
-      globals = buildEjsGlobals({ player, core, romUrl, pathtodata, onGameStart: handleGameStart, controls });
+      globals = buildEjsGlobals({ player, core, romUrl, pathtodata, onGameStart: handleGameStart, controls, volume });
     } catch (err) {
       fail(err);
       return;
