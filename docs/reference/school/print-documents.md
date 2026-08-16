@@ -150,7 +150,8 @@ could ever serve.
 The renderer produces Letter PDFs in the **modern workbook** aesthetic
 (Atkinson Hyperlegible, four text styles, normal/compact densities), with
 name/date lines, a score box for point-bearing documents, page furniture
-(x-of-y footers, continuation strips, duplex gutters), and vector QR codes
+(x-of-y footers carrying the card number when card-attached, duplex
+gutters), and vector QR codes
 for any action block whose token was minted at issue time.
 
 Two **varieties** exist at the request level:

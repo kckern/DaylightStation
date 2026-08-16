@@ -177,9 +177,10 @@ export function createWorkbookTheme({ typeScale = 'standard', density = 'normal'
      * (`measure.mjs`'s `headerFragment` reads this unconditionally, for every
      * theme). Sized off this theme's own `heading1`/`label` styles rather than
      * duplicated numbers, so `young`/`compact` scale it the same way they scale
-     * everything else. Task 6 (page furniture) adds the continuation-strip
-     * treatment for pages 2+; this is the baseline banner that makes a
-     * `workbookTheme` document renderable at all.
+     * everything else. It is the ONLY place a document's name line is
+     * printed — pages 2+ carry no banner of their own, only the footer band
+     * (`furniture.mjs`), which re-identifies a stray page by the OMR card
+     * number rather than a second blank "Name:" rule.
      */
     header: {
       titleSizePt: styles.heading1.sizePt,
@@ -313,16 +314,14 @@ export function createWorkbookTheme({ typeScale = 'standard', density = 'normal'
 
     /**
      * Page furniture geometry, consumed by `furniture.mjs` (Task 6):
-     * `footerBandPt`/`continuationStripPt` are reserved out of the bottom of
-     * the content flow on every page (`contentBox`); `gutterPt` is the
-     * default 3-hole-punch allowance (0.25in) used when a caller passes
-     * `gutter: true` rather than an explicit width. It does not vary by
-     * density/scale — hole spacing is a physical constant of the punch, not
-     * a typographic one.
+     * `footerBandPt` is reserved out of the bottom of the content flow on
+     * every page (`contentBox`); `gutterPt` is the default 3-hole-punch
+     * allowance (0.25in) used when a caller passes `gutter: true` rather than
+     * an explicit width. It does not vary by density/scale — hole spacing is
+     * a physical constant of the punch, not a typographic one.
      */
     furniture: {
       footerBandPt: density === 'compact' ? 22 : 28,
-      continuationStripPt: density === 'compact' ? 14 : 18,
       gutterPt: 18,
     },
 
