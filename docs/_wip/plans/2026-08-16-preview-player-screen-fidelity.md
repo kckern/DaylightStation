@@ -671,10 +671,18 @@ describe('AdminPreviewPlayer frame', () => {
 
     const { container } = renderPreview();
 
+    // Assert on box height, NOT screen width. `waitFor` runs its callback once
+    // synchronously before waiting, and at that instant the API promise has not
+    // settled, so `screens` still holds FALLBACK_SCREEN — which is ALSO 1280
+    // wide. A `--preview-screen-width === '1280px'` assertion is satisfied by
+    // the in-flight fallback and passes with persistence deleted entirely.
+    // 600px is unique to portal (fallback and living-room both give 540px).
     await waitFor(() => {
       const root = container.querySelector('.admin-preview-player');
+      expect(root.style.getPropertyValue('--preview-box-height')).toBe('600px');
       expect(root.style.getPropertyValue('--preview-screen-width')).toBe('1280px');
     });
+    expect(screen.getByLabelText('Preview at screen').value).toBe('portal');
   });
 });
 ```
@@ -687,7 +695,30 @@ frontend/node_modules/.bin/vitest run --config vitest.config.mjs frontend/src/mo
 
 Expected: FAIL — no `--preview-screen-width` on the root, and no "Preview at screen" control.
 
-**Step 3: Write the implementation**
+**Step 3a: Hoist the previewable-resolution predicate**
+
+> Added after Task 3's review. Task 3 restated `previewFrameVars`'s finite-and-positive guard inline in `usePreviewScreens.js` because its scope forbade touching `previewFrame.js`. That was the right call under the constraint, but it leaves "the picker's filter matches the frame builder" true only by comment. `previewFrame.js` is in scope here, so make it a fact.
+
+In `frontend/src/modules/Admin/Preview/previewFrame.js`, extract the guard:
+
+```javascript
+/**
+ * Can a screen with this resolution be previewed at all? Shared with
+ * usePreviewScreens so the picker can never offer a screen whose frame vars
+ * would come back null — a selectable option that renders nothing.
+ */
+export function isPreviewableResolution(resolution) {
+  const w = resolution?.width;
+  const h = resolution?.height;
+  return Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0;
+}
+```
+
+and rewrite `previewFrameVars`'s guard as `if (!isPreviewableResolution(resolution)) return null;`.
+
+Then in `usePreviewScreens.js`, replace the local `isPreviewable` helper with an import of `isPreviewableResolution` and filter on it. Both existing test files must still pass unchanged — if either needs editing to accommodate this, the extraction changed behavior and is wrong.
+
+**Step 3b: Write the component implementation**
 
 In `frontend/src/modules/Admin/Preview/AdminPreviewPlayer.jsx`:
 
