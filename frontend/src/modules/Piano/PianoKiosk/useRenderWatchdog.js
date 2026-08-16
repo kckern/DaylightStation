@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
+import { autoReport } from '../../Feedback/autoReport.js';
 
 /**
  * Self-heal watchdog for the Fully Kiosk WebView.
@@ -177,6 +178,25 @@ export function useRenderWatchdog({
                 logger.warn('piano.jank.snapshot', root.perfSnapshot ? root.perfSnapshot() : {});
                 if (root.startDiagnostics) root.startDiagnostics({ intervalMs: 2000 });
               } catch { /* telemetry must never break the render loop */ }
+              // File the episode as a feedback item too. The perf snapshot above
+              // goes to the log transports, which is where the 2026-08-16
+              // evidence was lost when the container restarted; the feedback item
+              // is stored verbatim and indefinitely, and it takes the last 150
+              // client events with it. autoReport caps itself, so a screen that
+              // janks all evening still files once.
+              autoReport({
+                app: 'piano',
+                reason: 'render-watchdog',
+                dedupeKey: 'jank-episode',
+                detail: {
+                  fps: Math.round(fps),
+                  minFps,
+                  sustainSeconds,
+                  selfHealEnabled: !!restart,
+                  visibility: typeof document !== 'undefined' ? document.visibilityState : 'unknown',
+                  sinceLoadMs: Math.round(t - startedAt),
+                },
+              });
               if (restart) {
                 logger.warn('piano.watchdog.restart', { fps: Math.round(fps), minFps, sustainSeconds });
                 restart();

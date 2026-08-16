@@ -198,40 +198,119 @@ function clearPruneTimer() {
   }
 }
 
+/**
+ * How far below the logs root the pruner will walk.
+ *
+ * Two levels, because that is the deepest layout a session log is written at:
+ * `<app>/*.jsonl` is what this transport produces, and `<app>/<date>/*.jsonl`
+ * is the dated variant a nested layout would use. Anything deeper is not a
+ * shape any log transport writes — and `media/logs/` is a real media directory
+ * holding a camera archive and .webm captures, so an unbounded walk over it
+ * with a delete at the end is its own hazard.
+ */
+const MAX_PRUNE_DEPTH = 2;
+
+/** The only extension this transport ever writes. */
+const OWNED_EXTENSION = '.jsonl';
+
+/**
+ * Does this file look like something this transport wrote?
+ *
+ * Extension is not ownership. `media/logs/` also holds
+ * `poses/<date>/*.jsonl` (pose-estimation recordings) and
+ * `camera-archive/<camera>/<date>.jsonl` (motion events) — both `.jsonl`, and
+ * the pose files even share this transport's `<ISO-datetime>.jsonl` filename
+ * shape. Deleting either would be data loss, so nested candidates have to
+ * prove themselves by content: every line this transport writes is a
+ * dispatcher event, which always carries a string `event` and an object
+ * `context`. A pose file opens with `{"type":"session_start",...}` and a
+ * camera entry with `{"ts":...,"camera":...}`; neither passes.
+ *
+ * Reads only the head of the file — enough for the first line.
+ */
+function looksLikeSessionLog(filePath) {
+  let fd;
+  try {
+    fd = fs.openSync(filePath, 'r');
+    const buf = Buffer.alloc(2048);
+    const read = fs.readSync(fd, buf, 0, buf.length, 0);
+    const firstLine = buf.subarray(0, read).toString('utf8').split('\n')[0];
+    if (!firstLine) return false;
+    const parsed = JSON.parse(firstLine);
+    return typeof parsed?.event === 'string'
+      && parsed.context !== null
+      && typeof parsed.context === 'object';
+  } catch {
+    // Unreadable, truncated mid-line, or not JSON: not ours, so leave it.
+    return false;
+  } finally {
+    if (fd !== undefined) {
+      try { fs.closeSync(fd); } catch { /* ignore */ }
+    }
+  }
+}
+
+/**
+ * Delete session logs older than maxAgeDays, walking nested layouts.
+ *
+ * Files sitting directly in the logs root are never touched — `backend.log`
+ * and loose screenshots live there and belong to nobody here. Directories are
+ * never removed, only files.
+ *
+ * Entries are classified with `lstat` rather than by the dirent type readdir
+ * reports. lstat never follows a symlink, so a link out of the tree is neither
+ * descended into nor deleted through; and it does not depend on the
+ * filesystem filling in d_type, which some do not — that would leave every
+ * entry "unknown", the walk skipping everything, and retention doing nothing
+ * while looking like it worked. That failure mode is the reason this tier
+ * exists.
+ */
 function pruneOldFiles(baseDir, maxAgeDays) {
   const cutoff = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
 
-  let appDirs;
-  try {
-    appDirs = fs.readdirSync(baseDir, { withFileTypes: true })
-      .filter(d => d.isDirectory())
-      .map(d => d.name);
-  } catch {
-    return;
-  }
-
-  for (const appName of appDirs) {
-    const appDir = path.join(baseDir, appName);
-    let files;
+  const walk = (dir, depth) => {
+    let names;
     try {
-      files = fs.readdirSync(appDir);
+      names = fs.readdirSync(dir);
     } catch {
-      continue;
+      return; // a directory we cannot read is not worth failing over
     }
 
-    for (const file of files) {
-      if (!file.endsWith('.jsonl')) continue;
-      const filePath = path.join(appDir, file);
+    for (const name of names) {
+      const full = path.join(dir, name);
+
+      let stat;
       try {
-        const stat = fs.statSync(filePath);
-        if (stat.mtimeMs < cutoff) {
-          fs.unlinkSync(filePath);
-        }
+        stat = fs.lstatSync(full);
       } catch {
-        // Ignore stat/unlink errors
+        continue; // vanished between readdir and here
+      }
+
+      if (stat.isDirectory()) {
+        if (depth < MAX_PRUNE_DEPTH) walk(full, depth + 1);
+        continue;
+      }
+
+      if (!stat.isFile()) continue;             // symlinks, sockets, devices
+      if (depth === 0) continue;                // the logs root itself
+      if (!name.endsWith(OWNED_EXTENSION)) continue;
+
+      // The flat `<app>/*.jsonl` layout is this transport's own output and has
+      // always been pruned on extension alone; keep that. Deeper files are
+      // shared ground, so they have to prove ownership first.
+      if (depth > 1 && !looksLikeSessionLog(full)) continue;
+
+      if (stat.mtimeMs < cutoff) {
+        try {
+          fs.unlinkSync(full);
+        } catch {
+          // A file we cannot remove is not worth failing over
+        }
       }
     }
-  }
+  };
+
+  walk(baseDir, 0);
 }
 
 export default getSessionFileTransport;

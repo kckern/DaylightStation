@@ -439,6 +439,42 @@ export const setPlaybackLoggerContext = (context = {}) => {
   return { ...globalLoggerContext };
 };
 
+/**
+ * Record the identifier Plex will log for the stream we are about to play, so
+ * every later playback line can be joined to Plex's own server log.
+ *
+ * On 2026-08-16 that join did not exist: diagnosing 495 transcode sessions in
+ * four minutes meant reading Plex's server log inside its container, because
+ * nothing on our side shared a key with it.
+ *
+ * Two context fields, because one would have to encode three different facts:
+ *   plexClientIdentifier      the value Plex logs, or null when there is none
+ *   plexClientIdentifierState which of the three cases produced it —
+ *     'threaded'          the backend accepted our session; this is the join key
+ *     'no-session-sent'   a Plex stream, but no `?session=` reached the backend,
+ *                         so Plex will see a fresh random client per request
+ *     'not-a-plex-stream' this item does not go through Plex at all
+ *
+ * @param {string|null|undefined} plexClientIdentifier - the play response's
+ *   field: a string when threaded, null when the response was a Plex stream
+ *   with no session, undefined when the response was not a Plex stream.
+ * @returns {Object} the updated global context
+ */
+export const setPlexSessionIdentity = (plexClientIdentifier) => {
+  const state = typeof plexClientIdentifier === 'string' && plexClientIdentifier
+    ? 'threaded'
+    : plexClientIdentifier === null
+      ? 'no-session-sent'
+      : 'not-a-plex-stream';
+  // Always written, never merged-around: leaving a previous item's identifier
+  // in place would attach the last Plex stream's key to lines about the local
+  // file that replaced it.
+  return setPlaybackLoggerContext({
+    plexClientIdentifier: state === 'threaded' ? plexClientIdentifier : null,
+    plexClientIdentifierState: state
+  });
+};
+
 export const resetPlaybackLoggerContext = () => {
   globalLoggerContext = { ...DEFAULT_CONTEXT };
   return { ...globalLoggerContext };

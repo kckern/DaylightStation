@@ -80,7 +80,10 @@ describe('ImmichCanvasAdapter', () => {
 
     it('builds correct proxy URL', async () => {
       const item = await adapter.getItem('canvas-immich:asset-1');
-      expect(item.imageUrl).toBe('/api/v1/proxy/immich-canvas/assets/asset-1/original');
+      // Display renditions come from ?size=preview rather than /original:
+      // originals are frequently HEIC, which only Safari decodes, so the
+      // canvas rendered blank frames.
+      expect(item.imageUrl).toBe('/api/v1/proxy/immich-canvas/assets/asset-1/thumbnail?size=preview');
     });
   });
 });

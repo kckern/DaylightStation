@@ -12,6 +12,31 @@
 
 ---
 
+## Status — 2026-08-16
+
+Executed end to end the same day the audit was written. Every tier shipped; nothing was left shelved.
+
+| Tier | State | Landed as |
+|---|---|---|
+| **0** — evidence survives | ✅ | kiosk tagged `piano-kiosk`, 14-day retention pruned on a timer, 200 MB general sink at `media/logs/backend.log`, silent-drop counters |
+| **1** — dark junctions | ✅ | `media-element.generation`, `plex.stream.mint`, `playback.player-key-changed` / `dash-element-rekeyed` with `changedComponent`, stream-URL succeeded/failed/skipped, global request logging on `finish`+`close` |
+| **2** — identity joins up | ✅ | session id threaded frontend→backend→Plex, `X-Daylight-Device`, `trust proxy` |
+| **3** — notice and tell a human | ✅ | `PlaybackStallDetector`, default recipient resolution for `system` notifications, `autoReport`, feedback arrival notification |
+| **4** — honest fields | ✅ | seven fabricated overlay fields removed, one `waitKey` meaning, dash-absence disambiguation, cleanup + ledger instrumentation, dead `DEBUG_MEDIA` logging replaced |
+
+**Still unverified in the field.** All of it is proven in unit tests and jsdom only. The kiosk verification below has NOT been run, because no deploy was authorised. That check — `start.mpd` down from 73–93/min to ≤3 per session, one transcode session UUID in the audio segment requests, `el:t=` advancing past 0, and `media/logs/piano-kiosk/*.jsonl` surviving a container restart — remains the real gate.
+
+**Known consequence of Tier 3.** `resolveDefaultRecipient` also repairs the ESP relay watchdog, which has been returning `delivered: false` since it was written. If the kitchen board is currently dead, the first 30-minute tick after a deploy will send a Telegram message that looks new but is years overdue.
+
+**Follow-ups that outlived the plan:**
+- `63 MB/day at `info`` is the highest-value remaining item — trimming one chatty component buys log retention for free rather than by spending disk.
+- `Logger.js`'s `.aggregated` roll-up **sums numeric fields**, so `requestSeq`, `msSinceLastRequest` and the backend's `startOffset` are meaningless in an aggregate line. Same class of defect this programme was written to correct.
+- `poses/` and `camera-archive/` have no retention policy from anyone; they are now protected from the log pruner, which means nothing prunes them.
+- Two `logging.yml` files exist; only the repo-root one is read.
+- The 60s stall threshold is untuned against field data.
+
+---
+
 ---
 
 ## Scope decision — 2026-08-16
@@ -25,6 +50,11 @@ The tiers below are written 0-1-2-3-4, but **Tier 3 runs before Tier 2**. The in
 Task 4.2 is promoted out of Tier 4 because it is not hygiene. `startup:armed attempts=0 timeout=n/a` and `playheadPosition: null` are hardcoded defaults that render as measurements — they misled the 2026-08-16 investigation directly. **Removing a field that lies is worth more than adding one that tells the truth.**
 
 **Shelved (8 tasks):** all of Tier 2 (2.1 session threading, 2.2 device identity, and the global tracing middleware inside 1.4 — mount the request logger, skip tracing for now), and Tier 4 tasks 4.1, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8. All are real; none are urgent once detection works. Revisit after the new telemetry has caught something in the field.
+
+> **Superseded for Tier 2 — 2026-08-16, later the same day.** Tasks 2.1 and 2.2 were un-shelved and landed (see the Tier 2 addenda below). The global tracing middleware inside 1.4 stays shelved. Two decisions taken during that work are worth carrying forward:
+>
+> - **The session value needs sanitising, not restructuring.** It is opaque and now contains `#` (`${singlePlayerKey}#${playerInstanceId}`); Plex receives it by hand-built query string, where a raw `#` truncates the url. `sanitizePlexSessionId` restricts it to characters legal unescaped in a query and appends a digest of the original whenever it had to change anything — without that digest, two player instances differing only in a replaced character would arrive at Plex as ONE identity.
+> - **`trust proxy` had to be prevented from moving an auth boundary.** `networkTrustResolver` grants `sysadmin` by address; it now reads the socket peer explicitly rather than `req.ip`, so setting `trust proxy` changes logging and nothing else. The pre-existing hole it preserves — anyone arriving through the reverse proxy presents a private peer and is trusted — is unfixed and deliberate: that is a decision about remote access, not a side effect of an observability change.
 
 **Deploy policy for this work:** merge to `main` and push. **No deploy** — no homeserver rebuild, no container restart. The kiosk verification in the Verification section below therefore cannot run yet; it stays pending until a deploy is separately authorised.
 
@@ -265,6 +295,15 @@ plex.stream.mint.aggregated {sampledCount: 20, skippedCount: 475, aggregated: {r
 
 **Step 6: Commit** — `feat(plex): one session id across frontend, backend and Plex`
 
+**Landed 2026-08-16.** Commits `795b34ba1` + `94c29b5c2`.
+
+- `?session=` is read in **both** play routes. The bare-compound-id route (`/play/plex:694719`) is the one the piano kiosk actually uses, and it is a separate handler from the splat route — reading the param in only one of them leaves the storm path untouched.
+- The value reaches the media element as a **query param**, because a `<video>`/dash element issues that request itself and cannot be given custom headers.
+- The play response reports `plexClientIdentifier` — the exact string Plex records as `X-Plex-Client-Identifier` — and the frontend adopts it into the playback logger's context. `plex.stream.mint` carries both the raw session (joins to the frontend counter) and that identifier (joins to Plex's server log); a line with only one is joinable in only one direction.
+- **Character set:** see the sanitising note in the Scope decision above. Reverting the sanitiser makes two player instances collapse onto `X-Plex-Client-Identifier=008c56a342:0`, because the `#` truncates the url — that collapse is what the test asserts against.
+- `resolveClientIdentifier(session)` is a public adapter method so the application layer can ask what Plex will see without opening a stream, and without `3_applications` importing adapter internals.
+- **Not covered:** `FitnessShow.jsx` builds `/api/v1/proxy/plex/stream/<id>` client-side, bypassing the play route, so the garage fitness path still mints an unidentified session. `PlayResponseService` also sets `videoUrl` from the raw `item.mediaUrl`, so that field carries neither `offset` nor `session` — pre-existing for `offset`, and no current Plex consumer prefers it over `mediaUrl`.
+
 ---
 
 ## Task 2.2: Per-device identity in backend logs
@@ -285,6 +324,14 @@ plex.stream.mint.aggregated {sampledCount: 20, skippedCount: 475, aggregated: {r
 **Step 4:** Note in your report that `<video>`/dash segment fetches cannot carry the header and rely on Task 2.1's query param instead.
 
 **Step 5: Commit** — `feat(api): know which device is calling`
+
+**Landed 2026-08-16.** Commit `27b3e034d`.
+
+- `frontend/src/lib/deviceIdentity.js` mints the id. There was nothing to reuse: the fleet name lives only inside a rendered screen and `window.__DAYLIGHT_DEVICE_ID` is read in one place and set in none — so the module prefers that name when something finally sets it.
+- Both `deviceId` and `deviceIdSource` go on every `http.response` line. One field would have to encode four facts: a declared id, a User-Agent standing in for one, nothing sent, and nobody having looked. The last two are the ones a single `null` would merge.
+- The frontend id carries the same distinction in its own value — `fleet:` is joinable to `devices.yml`, `browser:` persists for this browser profile, `ephemeral:` could NOT be persisted. A kiosk in private mode must not read as a stream of new devices.
+- **`<video>`/dash segment fetches cannot carry the header** and are identified by Task 2.1's query param instead. In the end-to-end trace this shows as a second `http.response` line with `deviceIdSource: 'none'` sitting beside a `plex.stream.mint` that names the session — the two lines are joined through the url, not the header.
+- See the `trust proxy` note in the Scope decision above.
 
 ---
 
@@ -403,6 +450,18 @@ Add a test asserting the summary contains no field whose value is a hardcoded de
 
 Commit — `fix(player): stop reporting defaults as measurements`
 
+**Follow-up done (2026-08-16, `a90fa15d6`).** Two remaining unwired props were
+checked. `sessionInstance` needed nothing — it was already removed and the
+structured payload now ships through `playbackLog` with the readable line as a
+`summary` field. `getMediaEl` / `showDebugDiagnostics` gated a 1Hz
+`buildMediaDiagnostics` poll that was **deleted, not wired**: its output went
+into a `detailedDiagnostics` state that no JSX rendered and no log carried, the
+on-screen strip it fed is gone from the markup, and its readings duplicate
+`usePlaybackHealth`. Left orphaned by that deletion, and worth a later sweep:
+`lib/mediaDiagnostics.js` (no consumers) and `.loading-debug-strip` in
+`Player.scss` (no markup). `PlayerOverlayStateDebug.jsx:43` also returns `false`
+unconditionally — the whole on-screen debug surface is off.
+
 ---
 
 ## Task 4.3: One encoding for `waitKey`
@@ -412,6 +471,15 @@ Commit — `fix(player): stop reporting defaults as measurements`
 Pick one encoding. Recommendation: log **both**, as distinct fields (`waitKey` raw, `waitKeyHash` for correlation), and make the empty case distinguishable from a real key.
 
 Commit — `fix(player): one waitKey, one meaning`
+
+**DONE (2026-08-16, `fc59314a7`).** Both encodings ship as distinct fields —
+`waitKey` raw, `waitKeyHash` for correlation — from Player.jsx,
+useMediaResilience, usePlaybackHealth and PlayerOverlayLoading. The three
+absences that collapsed onto `0000000000` are now `(absent)` and `(empty)`.
+Gotcha found on the way: `getLogWaitKey` is not only a log label — Player.jsx's
+`ensureEntryGuid` uses it to MINT entry guids, so the digest for a non-empty
+input had to stay byte-identical (it did; verified against the old
+implementation, not copied from the new one).
 
 ---
 
@@ -464,6 +532,16 @@ Commit — `feat(player): make the retry ledger auditable`
 Add a distinct-value counter on `waitKey`/`guid` per media item with a threshold warn (e.g. >10 distinct per item per minute). Note also that `utils/mediaIdentity.js:9` falls through to `meta.mediaUrl` as identity, so a `refreshUrl` recovery can **change an item's identity mid-recovery**, breaking correlation across the very operation it was performing — flag this in your report; fixing it may belong with the remount-storm plan's Task 2.
 
 Commit — `feat(player): flag identity churn before it becomes a storm`
+
+**DONE (2026-08-16, `9b796dfb5`).** `lib/identityChurn.js`, wired from an effect
+in Player.jsx, warns `playback.identity-churn` at >10 distinct values per minute
+— once per episode, not once per value. The bucket is the **Player instance**,
+not the media item: per-guid buckets would have counted nothing here, since the
+guid was itself what churned. The `refreshUrl` identity change noted above IS
+counted, but cannot reach the threshold alone (the ledger caps a session at 5
+attempts with 4s/12s/36s backoff); `samples.guid` is what tells the two apart.
+`utils/mediaIdentity.js:9` is still unfixed — it belongs with the remount-storm
+plan's Task 2.
 
 ---
 

@@ -48,9 +48,12 @@ export class PlayResponseService {
    * @param {Object|null} watchState - Watch state (from getWatchState)
    * @param {Object} [options]
    * @param {Object} [options.adapter] - Content adapter instance (for format resolution)
+   * @param {string|null} [options.session] - Opaque client session the caller
+   *   put on the wire as `?session=`. Threaded into the returned Plex stream
+   *   url so the media element carries it to the proxy route.
    * @returns {Object} Play response DTO
    */
-  toPlayResponse(item, watchState = null, { adapter, resume } = {}) {
+  toPlayResponse(item, watchState = null, { adapter, resume, session = null } = {}) {
     const response = {
       id: item.id,
       assetId: item.id,
@@ -79,6 +82,31 @@ export class PlayResponseService {
           const sep = response.mediaUrl.includes('?') ? '&' : '?';
           response.mediaUrl = `${response.mediaUrl}${sep}offset=${Math.floor(progress.playhead)}`;
         }
+      }
+    }
+
+    // Plex stream urls carry the client session.
+    //
+    // It rides in the URL rather than a header because the request is issued by
+    // the <video>/dash element itself, and a media element cannot be given
+    // custom headers. Without it the proxy route has nothing to pass to Plex
+    // and PlexAdapter mints a fresh random identifier per request — which is
+    // how one tablet retrying came to look like 495 distinct Plex clients.
+    if (typeof response.mediaUrl === 'string' && response.mediaUrl.includes('/proxy/plex/stream/')) {
+      // Two absences, deliberately kept apart:
+      //   field missing  → this response is not a Plex stream at all
+      //   field === null → it is, but the caller sent no `?session=`, so Plex
+      //                    will see a fresh random client for every request
+      response.plexClientIdentifier = typeof adapter?.resolveClientIdentifier === 'function'
+        ? adapter.resolveClientIdentifier(session)
+        : null;
+
+      if (session) {
+        const sep = response.mediaUrl.includes('?') ? '&' : '?';
+        // Encoded on our own hop; the proxy route decodes it back to the exact
+        // bytes the caller sent, and the adapter applies Plex's character-set
+        // constraint at the boundary that owns it.
+        response.mediaUrl = `${response.mediaUrl}${sep}session=${encodeURIComponent(session)}`;
       }
     }
 

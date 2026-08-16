@@ -129,7 +129,16 @@ export function createLocalContentRouter(config) {
   const router = express.Router();
   // Label font for generated placeholder art, resolved here (API layer owns
   // path resolution; the renderer just takes a fontPath).
-  const placeholderFontPath = path.join(mediaBasePath, 'fonts/RobotoCondensed-Regular.ttf');
+  //
+  // mediaBasePath is optional throughout this router — every other use is
+  // guarded — but this one joined it unconditionally at construction time, so
+  // building the router without it threw `The "path" argument must be of type
+  // string` before a single route was registered. The renderer already treats
+  // a null fontPath as "use the default sans-serif", so degrade the same way
+  // the rest of the file does rather than refusing to construct.
+  const placeholderFontPath = mediaBasePath
+    ? path.join(mediaBasePath, 'fonts/RobotoCondensed-Regular.ttf')
+    : null;
 
   // Deprecation notice: these endpoints are superseded by the unified Play API
   // (GET /api/v1/play/:source/*) which returns a `format` field for frontend dispatch.

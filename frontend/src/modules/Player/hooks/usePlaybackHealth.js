@@ -1,6 +1,39 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { playbackLog } from '../lib/playbackLogger.js';
-import { getLogWaitKey } from '../lib/waitKeyLabel.js';
+import { describeWaitKey } from '../lib/waitKeyLabel.js';
+import { getLogger } from '../../../lib/logging/Logger.js';
+
+// Module-level lazy child logger (the hooks convention in CLAUDE.md): building
+// it at import time races the logger's own configuration.
+let _elementLogger;
+const elementLogger = () => {
+  if (!_elementLogger) _elementLogger = getLogger().child({ component: 'playback-health' });
+  return _elementLogger;
+};
+
+/**
+ * Which object `getMediaEl()` actually handed back.
+ *
+ * `useCommonMediaController.getMediaEl` returns the inner <video> when the
+ * container has a shadow root, and otherwise returns the container itself —
+ * which for dash playback is the <dash-video> wrapper, whose `readyState` is
+ * not a number. Both cases used to print an identical `r=n/a`, and nothing
+ * recorded which object had been read. Derived here from the node rather than
+ * from the resolver, so `getMediaEl`'s signature is untouched.
+ */
+export const describeElementSource = (el) => {
+  if (!el) return 'none';
+  try {
+    const root = typeof el.getRootNode === 'function' ? el.getRootNode() : null;
+    if (root && root !== el && root.host) return 'shadow';
+  } catch (_) {
+    // A detached or cross-realm node: fall through to 'container'.
+  }
+  return 'container';
+};
+
+/** Lowercased tagName, or null when there is no element to name. */
+export const readElementTag = (el) => (el?.tagName ? String(el.tagName).toLowerCase() : null);
 
 const DEFAULT_SIGNALS = Object.freeze({
   waiting: false,
@@ -83,6 +116,11 @@ export function usePlaybackHealth({
   seconds,
   getMediaEl,
   waitKey,
+  // Content identity for the element-generation log. The key is logged raw
+  // alongside its hash (see waitKeyLabel.js), but it names the PLAYER's wait
+  // state, not the item — `mediaKey` is what maps a generation event back to
+  // what was playing.
+  mediaKey = null,
   mediaType: mediaTypeHint,
   playerFlavor: playerFlavorHint,
   epsilonSeconds = 0.25
@@ -120,20 +158,36 @@ export function usePlaybackHealth({
   }, [seconds]);
 
   const lastSecondsRef = useRef(Number.isFinite(seconds) ? seconds : null);
-  const logWaitKey = useMemo(() => getLogWaitKey(waitKey), [waitKey]);
+  // Raw key AND its hash, as two distinct fields: the raw one carries the `:N`
+  // nonce ordinal and can be grepped back to an item, the hash joins these lines
+  // to everything logged before 2026-08-16.
+  const waitKeyFields = useMemo(() => describeWaitKey(waitKey), [waitKey]);
   const logContextRef = useRef({
-    waitKey: logWaitKey,
+    ...waitKeyFields,
     mediaType,
     playerFlavor
   });
 
   useEffect(() => {
     logContextRef.current = {
-      waitKey: logWaitKey,
+      ...waitKeyFields,
       mediaType,
       playerFlavor
     };
-  }, [logWaitKey, mediaType, playerFlavor]);
+  }, [waitKeyFields, mediaType, playerFlavor]);
+
+  // Read by the 400ms poll below, which runs outside the render that knows the
+  // current mediaKey.
+  const mediaKeyRef = useRef(mediaKey);
+  mediaKeyRef.current = mediaKey;
+
+  // Distinguishes THIS hook instance from its replacement, and is the field that
+  // makes a video remount greppable alongside AudioPlayer's `mounted`/`unmounted`
+  // pair (which carries the same `instanceId`, minted the same way).
+  const instanceIdRef = useRef(null);
+  if (instanceIdRef.current === null) {
+    instanceIdRef.current = Math.random().toString(36).slice(2, 10);
+  }
 
   useEffect(() => {
     setElementSignals(DEFAULT_SIGNALS);
@@ -215,6 +269,33 @@ export function usePlaybackHealth({
   //   playing", overriding stuck `waiting`/`buffering` flags downstream.
   const attachedElRef = useRef(null);
   const advanceSampleRef = useRef(null);
+
+  // The element-generation ledger deliberately lives OUTSIDE the effect below,
+  // which clears `attachedElRef` every time `waitKey` changes. A new waitKey over
+  // the same live element is not a new element, and counting it as one would
+  // inflate the very number this event exists to measure.
+  const elementLedgerRef = useRef({ el: null, generation: 0, atMs: null });
+  const logElementGeneration = useCallback((el) => {
+    const ledger = elementLedgerRef.current;
+    const now = Date.now();
+    const generation = ledger.generation + 1;
+    elementLedgerRef.current = { el, generation, atMs: now };
+    // Rate-limited because a remount storm is exactly the condition this event
+    // reports, and 300 lines of it would drown the aggregate that IS the
+    // diagnosis. `aggregate: true` keeps the skipped count and the per-tag
+    // tallies, so the storm still shows its size (2026-08-16).
+    elementLogger().sampled('media-element.generation', {
+      instanceId: instanceIdRef.current,
+      generation,
+      mediaKey: mediaKeyRef.current,
+      waitKey: logContextRef.current.waitKey,
+      waitKeyHash: logContextRef.current.waitKeyHash,
+      elTag: readElementTag(el),
+      elSource: describeElementSource(el),
+      msSincePreviousSwap: ledger.atMs == null ? null : now - ledger.atMs
+    }, { maxPerMinute: 30, aggregate: true });
+  }, []);
+
   useEffect(() => {
     attachedElRef.current = null;
     advanceSampleRef.current = null;
@@ -226,6 +307,9 @@ export function usePlaybackHealth({
         attachedElRef.current = el;
         advanceSampleRef.current = null;
         setElementGeneration((gen) => gen + 1);
+        if (el !== elementLedgerRef.current.el) {
+          logElementGeneration(el);
+        }
       }
       if (!el || !Number.isFinite(el.currentTime)) {
         advanceSampleRef.current = null;
@@ -244,7 +328,7 @@ export function usePlaybackHealth({
     poll();
     const intervalId = setInterval(poll, ADVANCE_POLL_MS);
     return () => clearInterval(intervalId);
-  }, [waitKey]);
+  }, [waitKey, logElementGeneration]);
 
   useEffect(() => {
     const mediaEl = typeof getMediaElRef.current === 'function' ? getMediaElRef.current() : null;

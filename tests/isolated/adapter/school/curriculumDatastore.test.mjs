@@ -178,10 +178,11 @@ describe('work configs', () => {
 
   it('lists one work per work.yml, keyed by <subject>/<work>', async () => {
     writeWork('math', 'fractions', 'work: fractions\n');
-    writeWork('history', 'capitals', 'work: capitals\n');
+    writeWork('civilization', 'capitals', 'work: capitals\n');
     const { items, errors } = await ds.listWorks();
     expect(errors).toEqual([]);
-    expect(items.map((i) => i.id)).toEqual(['math/fractions', 'history/capitals']);
+    // SUBJECT_IDS order puts math before civilization.
+    expect(items.map((i) => i.id)).toEqual(['math/fractions', 'civilization/capitals']);
     // subject and work travel with the entry so a validator can check placement
     expect(items[0]).toMatchObject({ subject: 'math', work: 'fractions' });
   });

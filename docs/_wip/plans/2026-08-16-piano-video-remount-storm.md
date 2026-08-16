@@ -725,88 +725,21 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ---
 
-## Task 4b: A remount must not report progress it never made (D5)
+## Task 4b: DROPPED — the premise did not survive verification
 
-Added 2026-08-16 after the observability sweep (`docs/_wip/audits/2026-08-16-observability-sweep.md`). The plan originally assumed one mechanism defeated the retry cap. There are three, and Tasks 1–4 only close two of them.
+Added 2026-08-16 from the observability sweep, then **withdrawn the same day before implementation**. Recorded here rather than deleted, because the reasoning is the useful part.
 
-**The defect:** `playheadProgress.js:27` returns `{ advanced: true }` when there is no baseline to compare against. After every remount the baseline is null, so **the first tick of every element generation reports forward progress**. At `useMediaResilience.js:334-336` that calls `getRecoveryLedger().recordSuccess(...)`, which zeroes the attempt count (`recoveryLedger.js:104-107`). A remount loop therefore looks like continuous successful recovery, and the 5-attempt cap never accumulates — independently of the guid churn Task 2 fixes.
+**The claim was:** `playheadProgress.js` returns `{ advanced: true }` with no baseline, so after every remount the first tick reports progress, calls `recordSuccess()`, and zeroes the retry cap — a third independent mechanism defeating the backoff.
 
-**Files:**
-- Modify: `frontend/src/modules/Player/lib/playheadProgress.js`
-- Modify: `frontend/src/modules/Player/lib/playheadProgress.test.js`
+**Why it is wrong.** The baseline is `lastSuccessPosRef`, a ref inside `useMediaResilience`. That hook is called from exactly one place — `Player.jsx:887` — which sits **above** the `singlePlayerKey` boundary (the keyed child renders around `:1198`). A remount tears down the child; the hook never re-runs, so its refs survive. The ref is nulled at exactly one site, `useMediaResilience.js:112`, inside the effect that fires when `playbackSessionKey` changes — a genuine media change, which in the same effect also calls `releaseSession`.
 
-**Step 1: Write the failing test**
+So the no-baseline branch is only ever reached when the ledger has just been released and has **nothing to zero**. The false progress lands on an empty session. Impact: none.
 
-Read the existing test file first and match its style. Add:
+The audit labelled this one as inference (*"Verified in code; that this fired during the incident is inference"*), and the inference did not hold. Two mechanisms defeat the retry cap, not three — both closed by Task 2.
 
-The real signature, verified 2026-08-16:
+**The one case where it would bite** is a fresh Player sharing a `playbackSessionKey` with an already-running sibling: its first tick would zero the sibling's accumulated attempts. That is the sibling-collision bug, fixed at the root in Task 3, so a change here would be treating a symptom of something already handled.
 
-```js
-export function evaluatePlayheadProgress(pos, lastAdvancePos, epsilon = PROGRESS_EPSILON)
-// returns { advanced: boolean, nextPos: number|null }
-```
-
-and the defect is this branch:
-
-```js
-  if (lastAdvancePos == null) {
-    return { advanced: true, nextPos: pos };   // ← claims progress with nothing to compare against
-  }
-```
-
-Add to the existing test file (match its style):
-
-```js
-it('does not claim progress on the first observation — there is nothing to compare against', () => {
-  // A remount resets the baseline to null. Reporting `advanced` here let a
-  // remount loop register as continuous successful recovery, zeroing the retry
-  // cap on every iteration (2026-08-16 storm).
-  expect(evaluatePlayheadProgress(12, null)).toEqual({ advanced: false, nextPos: 12 });
-});
-
-it('reports progress once a real baseline exists and the playhead moves past epsilon', () => {
-  expect(evaluatePlayheadProgress(13, 12).advanced).toBe(true);
-});
-
-it('still refuses progress when the playhead is stuck', () => {
-  expect(evaluatePlayheadProgress(12, 12).advanced).toBe(false);
-});
-```
-
-**Note the design intent you must not break.** The module docstring explains that stall recovery depends on distinguishing a real advance from the nudge strategy's `currentTime -= 0.001`. Returning `advanced: false` on first observation is compatible with that: the first tick establishes the baseline, the second reports real motion. The only cost is a one-tick (~250ms) delay before the first genuine advance is recognised, which no caller is sensitive to. Confirm that reading yourself before changing the branch.
-
-**Step 2: Run and verify the first test fails**
-
-```bash
-npx vitest run frontend/src/modules/Player/lib/playheadProgress.test.js
-```
-Expected: the first-observation test FAILS (`expected true to be false`); the other two pass.
-
-**Step 3: Fix the baseline case**
-
-Change the no-baseline branch at `playheadProgress.js:27` to return `advanced: false` while still seeding the baseline, with a comment naming the incident. Do not change any other branch.
-
-**Step 4: Verify**
-
-```bash
-npx vitest run frontend/src/modules/Player/lib/playheadProgress.test.js
-npx vitest run frontend/src/modules/Player/
-```
-Expected: all pass. **If an existing test asserted the old first-observation behavior, that test encoded the bug** — update it and say so explicitly in the commit body.
-
-**Step 5: Confirm the consequence at the call site**
-
-Read `useMediaResilience.js:330-340` and confirm in your report that with `advanced: false` on first observation, `recordSuccess` is no longer reached on a fresh generation. Do not change that file.
-
-**Step 6: Commit**
-
-```bash
-git add frontend/src/modules/Player/lib/playheadProgress.js \
-        frontend/src/modules/Player/lib/playheadProgress.test.js
-git commit -m "fix(player): a fresh baseline is not evidence the playhead moved
-
-Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
-```
+**Do not implement.** Changing the branch would also risk the documented recovery semantics the module exists for — distinguishing genuine motion from the nudge strategy's `currentTime -= 0.001` — for no measurable gain.
 
 ---
 
@@ -824,7 +757,12 @@ Expected: all pass; counts ≥ the Task 0 baseline.
 ```bash
 node scripts/gate-vitest.mjs
 ```
-Expected: exit 0. If it reports a NEW failing file, fix it — do not run `--update`.
+
+**Revised pass criterion (2026-08-16): "no NEW failures", not "exit 0".** The gate currently exits 1 on roughly 24 pre-existing failing files that have nothing to do with this branch — school datastores, laser printer, jamcorder, gaming, admin, Life. Two independent agents confirmed this by running the same files in the main checkout at a different commit and reproducing the failures there. The NEW-vs-baseline count also *fell* from 26 to 24 across a rebase (`e01046cd8` fixed `GetCourseProgress.char.test.mjs`), which is the behavior of a stale baseline, not of anything this branch did.
+
+So: record the NEW count, compare it to the count measured on the branch point, and require that it has not increased. **Never run `--update`** — that would bake this branch's state into the baseline and hide a real regression later.
+
+**Also expect load-flakiness in full sweeps.** Identical runs of the same ~4,300-test sweep have produced 0, 7 and 12 failures, all `Test timed out in 5000ms`, in files unrelated to any change — matching the pool flakiness documented in `vitest.config.mjs`. Before concluding a failure is real, re-run the affected file in isolation. A full-sweep number alone is not evidence.
 
 **Step 3: Commit if anything changed**
 

@@ -71,6 +71,7 @@ import {
 
 import { bootstrapLifeplan } from '#composition/modules/lifeplan.mjs';
 import { bootstrapNotifications } from '#composition/modules/notifications.mjs';
+import { createPlaybackStallDetector } from '#composition/modules/playbackStall.mjs';
 import { createHubFleetBridge } from '#composition/modules/hubFleetBridge.mjs';
 import { createApiRouters } from '#composition/modules/contentApi.mjs';
 import { createFitnessApiRouter } from '#composition/modules/fitnessApi.mjs';
@@ -129,7 +130,7 @@ import { CommandHandlerLivenessService } from '#apps/devices/services/CommandHan
 import { SessionControlService } from '#apps/devices/services/SessionControlService.mjs';
 
 // HTTP middleware
-import { createDevProxy, errorHandlerMiddleware } from './0_system/http/middleware/index.mjs';
+import { createDevProxy, errorHandlerMiddleware, requestLoggerMiddleware } from './0_system/http/middleware/index.mjs';
 import { createEventBusRouter } from './4_api/v1/routers/admin/eventbus.mjs';
 import { createAdminRouter } from './4_api/v1/routers/admin/index.mjs';
 // Admin app-services (constructed HERE at the composition root and injected into
@@ -213,6 +214,7 @@ import { tokenResolver } from '#api/middleware/tokenResolver.mjs';
 import { permissionGate } from '#api/middleware/permissionGate.mjs';
 import { createAuthRouter } from '#api/v1/routers/auth.mjs';
 import { householdResolver } from '#api/middleware/householdResolver.mjs';
+import { deviceResolver } from '#api/middleware/deviceResolver.mjs';
 
 // Conversation state persistence
 import { YamlConversationStateDatastore } from '#adapters/messaging/YamlConversationStateDatastore.mjs';
@@ -363,6 +365,22 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // ==========================================================================
 
   const app = express();
+
+  // Trust the reverse proxy in front of us, so `req.ip` is the CLIENT's address
+  // rather than the docker peer's. Never set before, which is part of why every
+  // client looked like `172.18.0.53` on 2026-08-16.
+  //
+  // Scoped, not `true`. Blanket trust makes `req.ip` whatever the caller writes
+  // in X-Forwarded-For — forgeable by anyone who can reach the port. With this
+  // preset Express walks the chain from the right and stops at the first address
+  // that is NOT loopback/link-local/private, which is the real client whenever
+  // the proxy appends rather than replaces.
+  //
+  // NOTE: networkTrustResolver grants roles by address, and it deliberately
+  // reads the socket peer rather than req.ip so this line cannot move a trust
+  // boundary. See the comment there.
+  app.set('trust proxy', 'loopback, linklocal, uniquelocal');
+
   // Enable SharedArrayBuffer for TF.js WASM multi-threaded SIMD
   app.use((req, res, next) => {
     res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
@@ -426,7 +444,21 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const jwtSecret = authConfig?.jwt?.secret || '';
   const jwtConfig = authConfig?.jwt || { issuer: 'daylight-station', expiry: '10y', algorithm: 'HS256' };
 
+  // 0. Request logging, ahead of the auth pipeline on purpose: a request the
+  // permission gate rejects is still a request, and a 403 storm is a signal we
+  // would rather see than not. Until now nothing logged HTTP traffic globally
+  // — the one router that mounted this middleware hooked res.json, which both
+  // hot paths of the 2026-08-16 storm (a redirect and a pipe) bypass entirely.
+  // Successful responses are budgeted; failures always go out. Never bodies.
+  app.use('/api/v1', requestLoggerMiddleware());
+
   // Auth middleware pipeline — runs on all /api/v1/* requests
+  // 0b. deviceResolver stamps req.deviceId / req.deviceIdSource. Mounted beside
+  //     householdResolver because it answers the sibling question: that one says
+  //     WHICH HOUSEHOLD, this one says WHICH MACHINE. The request logger above
+  //     reads both at res 'finish', which is after this has run.
+  app.use('/api/v1', deviceResolver());
+
   // 1. householdResolver sets req.householdId from Host header
   const domainConfig = dataService.system.read('config/domains') || {};
   app.use('/api/v1', householdResolver({ domainConfig, configService }));
@@ -1051,6 +1083,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     // identities.homeassistant.notify_service (e.g. 'mobile_app_kc_phone')
     resolveNotifyService: (username) =>
       userService.getProfile(username)?.identities?.homeassistant?.notify_service ?? null,
+    // System-category alerts are about the house, not about a person, so they
+    // arrive with no `metadata.username` — and every channel resolves its
+    // destination from that field. household.yml already names the head of
+    // household for exactly this "default user for single-user operations" case.
+    resolveDefaultRecipient: () => configService.getHeadOfHousehold(),
     configService,
     dataPath: dataBasePath,
     clock: null,
@@ -1709,10 +1746,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // App-wide voice-feedback capture + inbox. Background-transcribes via the shared
   // OpenAI gateway (null-safe: items still save when transcription isn't configured).
+  // The notification service is what finally gives the inbox a reader: until now
+  // arrival triggered nothing but a log line, so a recorded complaint sat in a
+  // YAML file until somebody thought to go looking.
   v1Routers.feedback = createFeedbackRouter({
     feedbackService: new FeedbackService({
       configService,
       transcriptionService: sharedAiGateway || null,
+      notificationService: notificationStack?.notificationService || null,
       logger: rootLogger.child({ module: 'feedback' }),
     }),
     logger: rootLogger.child({ module: 'feedback-api' }),
@@ -4201,6 +4242,42 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     });
     agentsServices.scheduler.registerTask('hardware:relay-watchdog', '*/30 * * * *', async () => {
       relayWatchdog.check();
+    });
+  }
+
+  // Playback stall watchdog — the kiosk half of the same idea. On 2026-08-16 a
+  // child sat in front of a wedged piano kiosk for 17 minutes: the APK watchdog
+  // read 37 fps, heartbeats arrived every second, and every health check we
+  // owned said HEALTHY, because all of them measured frame rate or beat arrival
+  // rather than progress. PlaybackStallDetector reads the `position` the 5s
+  // device-state heartbeat has always carried and alerts when a device claiming
+  // `playing` stops advancing. It rides the event bus directly, so no scheduler
+  // tick is involved — the verdict lands on the heartbeat that proves it.
+  if (notificationStack?.notificationService) {
+    createPlaybackStallDetector({
+      eventBus,
+      logger: rootLogger.child({ module: 'playback-stall' }),
+      onStall: ({ deviceId, contentId, title, position, stalledForMs }) => {
+        const minutes = Math.max(1, Math.round(stalledForMs / 60_000));
+        notificationStack.notificationService.send({
+          title: 'A screen is stuck',
+          body: `${deviceId} says it is playing ${title || contentId || 'something'} `
+            + `but the playhead has not moved in ${minutes} minute${minutes === 1 ? '' : 's'} `
+            + `(stuck at ${Math.round(position)}s). Someone is probably waiting in front of it.`,
+          category: 'system',
+          // HIGH routes this to a phone rather than an in-app card; the whole
+          // point is reaching someone who is NOT looking at the dashboard. See
+          // DEFAULT_PREFERENCES in 5_composition/modules/notifications.mjs.
+          urgency: 'high',
+          // One alert per episode per item. The detector already latches, so
+          // this is the belt to that pair of braces: it also survives a restart,
+          // which would otherwise re-arm the detector and re-alert.
+          dedupeKey: `playback-stall:${deviceId}:${contentId || 'unknown'}`,
+        }).catch((err) => rootLogger.warn('playback-stall.notify-failed', { error: err.message }));
+      },
+      onRecover: ({ deviceId, reason, stalledForMs }) => {
+        rootLogger.info('playback-stall.cleared', { deviceId, reason, stalledForMs });
+      },
     });
   }
 

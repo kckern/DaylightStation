@@ -17,10 +17,13 @@ import { nextPlaybackRate } from './utils/playbackRateCycle.js';
 import { guid } from './lib/helpers.js';
 import { playbackLog } from './lib/playbackLogger.js';
 import { resolveMediaIdentity, resolveSourceContentKey } from './utils/mediaIdentity.js';
-import { getLogWaitKey } from './lib/waitKeyLabel.js';
+import { getLogWaitKey, describeWaitKey } from './lib/waitKeyLabel.js';
 import { useMediaTransportAdapter } from './hooks/transport/useMediaTransportAdapter.js';
 import { shouldSkipResilienceReload } from './lib/shouldSkipResilienceReload.js';
 import { createRemountStormGuard } from './lib/remountStormGuard.js';
+import { changedKeyComponent } from './lib/keyChange.js';
+import { createIdentityChurnCounter } from './lib/identityChurn.js';
+import { getLogger } from '../../lib/logging/Logger.js';
 import { OnDeckCard } from './components/OnDeckCard.jsx';
 import { usePlayerConfig } from './hooks/usePlayerConfig.js';
 import { REVIEW_ACTIVE } from '../../lib/Player/reviewParams.js';
@@ -35,6 +38,12 @@ const REMOUNT_BACKOFF_MAX_MS = 45000;
 // inside about eight seconds, and a viewer who then picks something else must not
 // be turned away. Ten in thirty seconds leaves that headroom while capping a
 // runaway at 20 remounts per minute — the 2026-08-16 storm ran about 124.
+//
+// The one reachable false trip is rapid manual skipping: eleven "next" presses in
+// thirty seconds, which a child with a remote can produce. The consequence is mild —
+// content still swaps in place (only the media element's key is frozen), and mountId
+// is resolvedWaitKey, which the guard does not gate, so per-item recovery budgets
+// still reset per item. The guard re-arms one window after the skipping stops.
 const REMOUNT_STORM_MAX_MOUNTS = 10;
 const REMOUNT_STORM_WINDOW_MS = 30000;
 
@@ -51,6 +60,11 @@ const ensureEntryGuid = (source) => {
   // Hashed, not raw, so the token keeps the opaque short shape that
   // plexClientSession and the logs expect.
   const contentKey = resolveSourceContentKey(source);
+  // NOTE: this is the one caller of getLogWaitKey that MINTS AN IDENTITY rather
+  // than labelling a log line. Its digest for a non-empty input must stay
+  // byte-identical or every entry guid in the fleet moves. (The absence
+  // sentinels added in 2026-08-16 Task 4.3 are unreachable here — `contentKey`
+  // is truthy on this branch.)
   if (contentKey) return getLogWaitKey(contentKey);
   // Unidentifiable source: fall back to the old per-object random identity.
   if (typeof source !== 'object') return guid();  // primitives can't be WeakMap keys
@@ -336,8 +350,9 @@ const Player = forwardRef(function Player(props, ref) {
   // on the nav stack (MenuWidget is a layout widget, so it renders inside the
   // overlay provider's children) while a media:play action mounts a second in the
   // fullscreen slot, whose dismissOverlay clears only the overlay slot. Sharing the
-  // session keys below would mean one Player consuming the other's resume seek and
-  // either one's unmount wiping the survivor's recovery-attempt budget.
+  // ITEM session key below would mean one Player consuming the other's resume seek and
+  // either one's unmount wiping the survivor's recovery-attempt budget. (The prefs key
+  // is deliberately NOT per-instance — see the note on it.)
   //
   // A ref is the right home for this: a remount happens BELOW this component (React
   // rebuilds SinglePlayer when singlePlayerKey changes), so the id — and with it the
@@ -348,16 +363,28 @@ const Player = forwardRef(function Player(props, ref) {
 
   // Two sessions: preferences (volume/rate) live at queue scope so they survive
   // item swaps; seek intent lives at item scope so resume-position never crosses items.
-  // Both carry the instance id so a sibling Player on the same content keeps its own.
+  //
+  // Only ONE of them carries the instance id, and which one is not arbitrary. Both
+  // hazards in the note above are item-scoped: the resume seek is `targetTimeSeconds`
+  // on `itemSessionKey`, and the recovery-attempt budget is the ledger keyed on
+  // `resilienceSessionKey`, which is `itemSessionKey`. So `itemSessionKey` is the key
+  // that has to be per-instance.
+  //
+  // `prefsSessionKey` carries only volume (and rate, when there's no collection to
+  // scope it to), which is a user preference that is SUPPOSED to be shared — leave a
+  // lecture and come back inside the same page session and the volume you chose is
+  // still there. There is no wipe hazard on this key either: usePlaybackSession has
+  // no delete path, so an unmount takes nothing with it. Adding the instance id here
+  // would mint a fresh entry per mount and drop every override back to the default.
   const prefsSessionKey = useMemo(() => {
     if (queueSessionId && isQueue) {
-      return `player-session:queue:${queueSessionId}#${playerInstanceId}`;
+      return `player-session:queue:${queueSessionId}`;
     }
     const identifier = currentMediaGuid ?? mediaIdentity;
     return identifier
-      ? `player-session:${identifier}#${playerInstanceId}`
-      : `player-session:idle#${playerInstanceId}`;
-  }, [queueSessionId, isQueue, currentMediaGuid, mediaIdentity, playerInstanceId]);
+      ? `player-session:${identifier}`
+      : 'player-session:idle';
+  }, [queueSessionId, isQueue, currentMediaGuid, mediaIdentity]);
 
   const itemSessionKey = useMemo(() => {
     const identifier = currentMediaGuid ?? mediaIdentity;
@@ -512,6 +539,44 @@ const Player = forwardRef(function Player(props, ref) {
     return `${fallback}:${remountState.nonce}`;
   }, [effectiveMeta, mediaIdentity, remountState.nonce]);
 
+  // Raw key plus its hash on every line this file writes, so a Player line and a
+  // (formerly hash-only) resilience/health line can be joined either way. Same
+  // two field names everywhere: `waitKey` raw, `waitKeyHash` digest.
+  const resolvedWaitKeyFields = useMemo(() => describeWaitKey(resolvedWaitKey), [resolvedWaitKey]);
+
+  // Identity churn detector. 480 distinct waitKeys appeared in three minutes on
+  // 2026-08-16 and nothing counted them; the number had to be uniq'd out of a log
+  // by hand afterwards. One counter per mounted Player — deliberately NOT one per
+  // guid, because the guid is one of the things that churns, and per-guid buckets
+  // would each have held a single value while the fleet melted.
+  const churnCounterRef = useRef(null);
+  if (!churnCounterRef.current) {
+    churnCounterRef.current = createIdentityChurnCounter();
+  }
+  const churnLogger = useMemo(() => getLogger().child({ component: 'player-identity-churn' }), []);
+  const hasEffectiveMeta = Boolean(effectiveMeta);
+
+  // In an EFFECT, not in the key memo above: that memo already logs during
+  // render and carries a StrictMode caveat, and a fourth ref write there would
+  // consume a stamp on a discarded render. An effect commits once per real
+  // change, and `record` is idempotent for a repeated value — so a double
+  // invocation cannot inflate a distinct count. The emit is bounded by the
+  // episode latch inside the counter (one line per burst, not one per value),
+  // which is the rate limit; adding a sampler on top would only hide the alert.
+  useEffect(() => {
+    if (!hasEffectiveMeta) return;
+    const report = churnCounterRef.current.record({
+      waitKey: resolvedWaitKey,
+      guid: currentMediaGuid
+    });
+    if (!report) return;
+    churnLogger.warn('playback.identity-churn', {
+      ...report,
+      playerType: playerType || null,
+      isQueue
+    });
+  }, [hasEffectiveMeta, resolvedWaitKey, currentMediaGuid, churnLogger, playerType, isQueue]);
+
   const forceSinglePlayerRemount = useCallback((input = null, meta = {}) => {
     const options = (input && typeof input === 'object' && !Array.isArray(input))
       ? input
@@ -550,7 +615,7 @@ const Player = forwardRef(function Player(props, ref) {
     };
 
     playbackLog('player-remount', {
-      waitKey: resolvedWaitKey,
+      ...resolvedWaitKeyFields,
       reason,
       source,
       seekSeconds: normalized,
@@ -582,7 +647,7 @@ const Player = forwardRef(function Player(props, ref) {
     // playbackMetrics is deliberately NOT a dependency: it is read through
     // playbackMetricsRef so this callback stays stable and a timer-captured copy still
     // observes the CURRENT pause state when it fires.
-  }, [currentMediaGuid, effectiveMeta, isQueue, playerType, resolvedWaitKey, setTargetTimeSeconds]);
+  }, [currentMediaGuid, effectiveMeta, isQueue, playerType, resolvedWaitKey, resolvedWaitKeyFields, setTargetTimeSeconds]);
 
   const scheduleSinglePlayerRemount = useCallback((input = null) => {
     const attempt = (remountInfoRef.current?.nonce ?? 0) + 1;
@@ -591,7 +656,7 @@ const Player = forwardRef(function Player(props, ref) {
     clearRemountTimer();
 
     playbackLog('player-remount-scheduled', {
-      waitKey: resolvedWaitKey,
+      ...resolvedWaitKeyFields,
       attempt,
       backoffMs,
       guid: currentMediaGuid,
@@ -610,7 +675,7 @@ const Player = forwardRef(function Player(props, ref) {
       forceSinglePlayerRemount(input, { scheduledDelayMs: backoffMs, attempt });
     }, backoffMs);
     // See forceSinglePlayerRemount: playbackMetrics is read via ref, not closed over.
-  }, [currentMediaGuid, clearRemountTimer, computeRemountDelayMs, forceSinglePlayerRemount, isQueue, playerType, resolvedWaitKey]);
+  }, [currentMediaGuid, clearRemountTimer, computeRemountDelayMs, forceSinglePlayerRemount, isQueue, playerType, resolvedWaitKey, resolvedWaitKeyFields]);
 
   // Storm brake for the key below. It belongs on the KEY, not on the explicit
   // remount path: during the 2026-08-16 storm only three of roughly three hundred
@@ -627,6 +692,17 @@ const Player = forwardRef(function Player(props, ref) {
   const stormLoggedRef = useRef(false);
   const stormTrippedAtRef = useRef(0);
 
+  // The inputs behind the last ADMITTED key, so a change can name which one moved.
+  // Held separately from lastAdmittedKeyRef because the composite key cannot be
+  // split back apart — a compound plex guid contains the ':' separator itself.
+  const lastAdmittedKeyInputsRef = useRef(null);
+  const keyLogger = useMemo(() => getLogger().child({ component: 'player-key' }), []);
+
+  // StrictMode landmine, noted deliberately: this memo reads Date.now(), writes three
+  // refs and logs during render. It is safe today — nothing under frontend/src mounts a
+  // <React.StrictMode>, and re-admitting an already-admitted key costs nothing, so a
+  // double invocation is idempotent. The day StrictMode or a concurrent feature is
+  // switched on, a discarded render would still consume a stamp from the window.
   const singlePlayerKey = useMemo(() => {
     const candidate = !singlePlayerProps
       ? 'player-idle'
@@ -666,15 +742,58 @@ const Player = forwardRef(function Player(props, ref) {
           frozenKey: lastAdmittedKeyRef.current,
           rejectedKey: candidate,
           guid: currentMediaGuid,
+          // Same triage fields its neighbours (player-remount, -scheduled) carry. On a
+          // multi-surface fleet playerType is what says whether the piano kiosk or the
+          // garage display stormed.
+          playerType: playerType || null,
+          ...resolvedWaitKeyFields,
+          isQueue,
           maxMounts: REMOUNT_STORM_MAX_MOUNTS,
           windowMs: REMOUNT_STORM_WINDOW_MS
         }, { level: 'error' });
       }
       return lastAdmittedKeyRef.current;
     }
+
+    // Report the admitted transition. This sits AFTER admit() on purpose: a
+    // rejected key is already reported by `player-remount-storm` above, and
+    // reporting it here as well would inflate the very count a diagnostician
+    // came for. Only the idle placeholder is skipped, by starting the baseline
+    // at null — the first key of a run is a mount, not a change, and giving it
+    // a `from` would put a fabricated value in the log.
+    //
+    // Sampled because a key change IS the remount, and the failure mode being
+    // instrumented is a storm of them. The budget of 20/min is the storm
+    // guard's own ceiling (10 admitted keys per 30s window), so under a working
+    // brake every transition is recorded in full; if the brake is ever loosened
+    // or bypassed the aggregate still carries the count, which on 2026-08-16
+    // was the whole diagnosis and had to be read out of Plex's log instead.
+    const keyInputs = !singlePlayerProps ? null : {
+      // The identity half of the key. Image slideshows deliberately use a fixed
+      // token here so image→image transitions keep one ImageFrame alive.
+      guid: activeSource?.mediaType === 'image' ? 'image-slideshow' : (currentMediaGuid || 'entry'),
+      nonce: remountState.nonce
+    };
+    const changedComponent = changedKeyComponent(lastAdmittedKeyInputsRef.current, keyInputs);
+    if (changedComponent) {
+      keyLogger.sampled('playback.player-key-changed', {
+        from: lastAdmittedKeyRef.current,
+        to: candidate,
+        // Which input moved: `guid` is a content change, `nonce` is a deliberate
+        // remount, `guid+nonce` is both at once. In the storm it was the guid —
+        // the half nothing logged, because `player-remount` only ever covered
+        // the nonce.
+        changedComponent,
+        guid: currentMediaGuid || null,
+        playerType: playerType || null,
+        isQueue
+      }, { maxPerMinute: 20, aggregate: true });
+    }
+    lastAdmittedKeyInputsRef.current = keyInputs;
+
     lastAdmittedKeyRef.current = candidate;
     return candidate;
-  }, [singlePlayerProps, currentMediaGuid, remountState.nonce, activeSource?.mediaType]);
+  }, [singlePlayerProps, currentMediaGuid, remountState.nonce, activeSource?.mediaType, playerType, resolvedWaitKeyFields, isQueue, keyLogger]);
 
   const exposedMediaRef = useRef(null);
   const controllerRef = useRef(null);
@@ -835,7 +954,7 @@ const Player = forwardRef(function Player(props, ref) {
     if (hardResetInvoked && !hardResetErrored && !forceRemount) {
       playbackLog('player-remount', {
         payload: {
-          waitKey: resolvedWaitKey,
+          ...resolvedWaitKeyFields,
           reason: rest?.reason || 'resilience',
           source: 'hard-reset-accepted',
           seekSeconds,
@@ -855,14 +974,14 @@ const Player = forwardRef(function Player(props, ref) {
       trigger: triggerDetails,
       conditions
     });
-  }, [scheduleSinglePlayerRemount, transportAdapter, playerType, isQueue, advance, clear, currentMediaGuid, resolvedWaitKey, activeSource, resolvedMeta]);
+  }, [scheduleSinglePlayerRemount, transportAdapter, playerType, isQueue, advance, clear, currentMediaGuid, resolvedWaitKey, resolvedWaitKeyFields, activeSource, resolvedMeta]);
 
   const handleResilienceExhausted = useCallback(({ reason, attempts, waitKey: exhaustedWaitKey }) => {
     if (isQueue && hasNextQueueItem) {
       playbackLog('resilience-exhausted-auto-skip', {
         reason,
         attempts,
-        waitKey: exhaustedWaitKey,
+        ...describeWaitKey(exhaustedWaitKey),
         action: 'advance',
         queueRemaining: playQueue?.length ?? 0
       }, { level: 'warn' });
@@ -871,7 +990,7 @@ const Player = forwardRef(function Player(props, ref) {
       playbackLog('resilience-exhausted-dismiss', {
         reason,
         attempts,
-        waitKey: exhaustedWaitKey,
+        ...describeWaitKey(exhaustedWaitKey),
         action: isQueue ? 'queue-end' : 'clear',
         queueRemaining: playQueue?.length ?? 0
       }, { level: 'warn' });
@@ -1229,7 +1348,18 @@ const Player = forwardRef(function Player(props, ref) {
     suppressLocalOverlay: !!overlayElements,
     // Use external session if provided (for multi-player isolation) — that value is
     // the caller's own scheme (FitnessMusicPlayer) and passes through untouched.
-    // Otherwise: media GUID, remount nonce, and this Player's instance id.
+    // Otherwise: the ADMITTED player key plus this Player's instance id.
+    //
+    // Derived from `singlePlayerKey` and not from the raw guid so the storm brake
+    // covers this value too. `plexClientSession` is a dep of SinglePlayer's
+    // fetchVideoInfoCallback, so a value that keeps moving keeps re-running the
+    // metadata fetch — one live /api/v1/play/<id> against Plex per pass — even while
+    // the frozen key is holding the <dash-video> still. Reading the admitted key
+    // instead means the fetch stops when the remounts do. The key still embeds the
+    // remount nonce, so a deliberate recovery remount still mints a fresh session.
+    // (Image slideshows hold one key across image→image so ImageFrame can dissolve,
+    // and therefore one session value — harmless: they carry no transcode, and their
+    // metadata fetch is driven by effectiveContentId, which still moves.)
     //
     // The instance id matters even though nothing reads it yet. The backend ignores
     // `?session=` today (PlexAdapter mints its own identifiers), so a shared value is
@@ -1240,7 +1370,7 @@ const Player = forwardRef(function Player(props, ref) {
     // compute an identical `<hash>-r0` and hand Plex one session identifier for two
     // independent streams. Cheap to keep per-instance now, expensive to discover later.
     plexClientSession: externalPlexClientSession
-      || (currentMediaGuid ? `${currentMediaGuid}-r${remountState.nonce}#${playerInstanceId}` : null)
+      || (currentMediaGuid ? `${singlePlayerKey}#${playerInstanceId}` : null)
   };
 
   const playerShellClass = ['player', effectiveShader, props.playerType || '']

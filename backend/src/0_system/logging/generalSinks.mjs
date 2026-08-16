@@ -14,21 +14,20 @@
  * exact repo-root path, and `npm run dev` does not tee, so this transport is
  * its only writer.
  *
- * ┌─ CONSTRAINT: the default path is inside a Dropbox-synced folder ─────────┐
- * │ On prod, `media/` is bind-mounted from a Dropbox tree and there is no    │
- * │ `.dropboxignore` covering it (only `data/` has one), so everything       │
- * │ written here syncs. An append-and-rotate log is the worst shape for      │
- * │ that: the file is rewritten continuously, and Dropbox keeps version      │
- * │ history for each revision. The on-disk ceiling below bounds the host;    │
- * │ it does NOT bound the account-side cost, which is invisible from the     │
- * │ host and is the reason these numbers are deliberately small.             │
- * │                                                                          │
- * │ BEFORE RAISING maxSize OR maxFiles: confirm where the log actually       │
- * │ lands. If it is still on the synced volume, raising them multiplies a    │
- * │ cost you cannot see from here. Both the path and the bounds are          │
- * │ configurable (see below) precisely so the log can be moved off the       │
- * │ synced volume instead of being made smaller.                            │
- * └──────────────────────────────────────────────────────────────────────────┘
+ * ┌─ STANDING FACTS about the default path ──────────────────────────────────┐
+ * │ `media/logs/` is the sanctioned home for heavy logs. On prod `media/` is  │
+ * │ bind-mounted from a Dropbox tree with no `.dropboxignore` covering it, so │
+ * │ everything written here syncs — and that cost is accepted, decided by the │
+ * │ owner, not a hazard to design around. Do not shrink these numbers to      │
+ * │ dodge it, and do not add a `.dropboxignore` to an already-synced folder:  │
+ * │ excluding a synced directory can remove the remote copy, and this repo    │
+ * │ has history of exactly that nearly destroying live data.                  │
+ * │                                                                           │
+ * │ The real bound is the rotation ceiling below. It is sized against the     │
+ * │ measured intake, so changing maxSize or maxFiles changes a deliberate     │
+ * │ decision about how much history the next incident gets — which is the     │
+ * │ only question worth weighing here.                                        │
+ * └───────────────────────────────────────────────────────────────────────────┘
  *
  * Kept separate from backend/index.js so the policy can be asserted without
  * booting a server; index.js still owns the wiring (the addTransport calls).
@@ -37,17 +36,22 @@
 import path from 'path';
 
 /**
- * Defaults for the durable backend log: 10 MB per generation × 3 generations,
- * a 30 MB ceiling. At a measured 63 MB/day of container stdout that is roughly
- * eleven hours of history — chosen for the Dropbox constraint above rather
- * than for how much history is useful, which is more.
+ * Defaults for the durable backend log: 25 MB per generation × 8 generations,
+ * a 200 MB ceiling. At a measured 63 MB/day of backend stdout that is roughly
+ * three to four days, on a volume with 450 GB free.
  *
- * The kiosk's own events do not depend on this window: Task 0.1 routes them
- * through the session-file transport, which keeps 14 days per app. This sink
- * covers backend-side events and any surface that is still untagged.
+ * Three to four days rather than a handful of hours because this sink carries
+ * the lines that diagnose an incident — `plex.stream.mint`, `http.response` —
+ * and household problems are reported the next morning by whoever hit them,
+ * not within the hour. A window that expires before anyone thinks to look is
+ * a window that was never really there.
+ *
+ * The kiosk's own events do not depend on this window: they route through the
+ * session-file transport, which keeps 14 days per app. This sink covers
+ * backend-side events and any surface that is still untagged.
  */
-export const BACKEND_LOG_MAX_SIZE = 10 * 1024 * 1024;
-export const BACKEND_LOG_MAX_FILES = 3;
+export const BACKEND_LOG_MAX_SIZE = 25 * 1024 * 1024;
+export const BACKEND_LOG_MAX_FILES = 8;
 
 /** dev.log predates this and keeps its own sizing: a developer's checkout is
  *  not the media volume, and its harnesses expect the file they have always

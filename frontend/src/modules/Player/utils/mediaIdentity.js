@@ -73,11 +73,16 @@ const SOURCE_CONTENT_FIELDS = ['guid', 'contentId', 'assetId', 'key', 'plex', 'm
  * Only strings and finite numbers do. A present-but-empty field must not win the
  * precedence race and stop the scan before it reaches the field that carries the real
  * identity: `{ guid: false, contentId: 'plex:694719' }` has to resolve by contentId,
- * matching how `ensureEntryGuid` skips a falsy guid. `0` counts, since a numeric key
- * of zero is a usable id; `false`, `NaN` and `Infinity` never identify anything.
- * Objects are rejected too — every field here holds a scalar (SinglePlayer types
- * `media` as a string), and interpolating an object yields "[object Object]", which
- * would collapse distinct sources onto one key.
+ * the same outcome `ensureEntryGuid` reaches by skipping a falsy guid.
+ *
+ * The predicate is NOT plain truthiness, and the one place the two part company is
+ * `0`: falsy, but a numeric key of zero is a usable id, so it counts here. (For the
+ * `guid` field specifically that means `{ guid: 0 }` resolves by guid here while
+ * `ensureEntryGuid` would fall through — harmless, since a guid of 0 does not occur
+ * and both paths still produce a stable, content-derived key.) `false`, `NaN` and
+ * `Infinity` never identify anything. Objects are rejected too — every field here
+ * holds a scalar (SinglePlayer types `media` as a string), and interpolating an
+ * object yields "[object Object]", which would collapse distinct sources onto one key.
  */
 const identifies = (value) => {
   if (typeof value === 'string') return value !== '';

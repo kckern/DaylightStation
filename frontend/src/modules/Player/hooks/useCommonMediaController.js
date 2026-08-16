@@ -74,8 +74,6 @@ export function useCommonMediaController({
   // shouldArmAutoplay.
   remountDiagnostics = null
 }) {
-  const DEBUG_MEDIA = false;
-
   // Screen-framework effective master (post-ceiling, post-curve). When this hook
   // is rendered outside a ScreenVolumeProvider (e.g., Fitness, Feed, or any
   // other host), effectiveMaster = 1 and behavior is unchanged.
@@ -161,6 +159,32 @@ export function useCommonMediaController({
   const [isStalled, setIsStalled] = useState(false);
   const recoverySnapshotRef = useRef(null);
   const [elementKey, setElementKey] = useState(0);
+  // Mirrors elementKey for the two effects that re-key it. They must not take it
+  // as a dependency — the media-change effect would then re-run on its own reset
+  // — but they still need the outgoing value to report what the key moved from.
+  const elementKeyRef = useRef(0);
+  elementKeyRef.current = elementKey;
+
+  /**
+   * The one emitter for "this hook asked for a new media element".
+   *
+   * Both re-key sites route through here so they cannot drift into two shapes,
+   * and `reason` names which of them fired. Sampled at 30/min to match the
+   * budget on VideoPlayer's `playback.dash-element-rekeyed`, which is the event
+   * this one explains: during the 2026-08-16 storm that path ran at roughly
+   * 75/min, so the per-line record gives out and the aggregated count of each
+   * `reason` becomes the answer.
+   */
+  const logElementRekey = useCallback((reason, from, to, detail = {}) => {
+    mcLog().sampled('playback.element-rekey-requested', {
+      mediaKey: assetId,
+      reason,
+      from,
+      to,
+      mountId: recoveryMountIdRef.current,
+      ...detail
+    }, { maxPerMinute: 30, aggregate: true });
+  }, [assetId]);
 
   // Stall monitoring is always on (formerly stallConfig.enabled; no producer
   // ever disabled it).
@@ -252,27 +276,36 @@ export function useCommonMediaController({
   // Use DASH for dash_video mediaType (set by adapters that serve DASH streams)
   const isDash = meta.mediaType === 'dash_video';
 
-  // Reset per-media state on media change to prevent carryover
+  // Reset per-media state on media change to prevent carryover.
+  //
+  // The module-level `__prevKeyLog` that used to be tracked here fed nothing but
+  // a console.log behind a permanently false flag, so it recorded media changes
+  // to no reader. The change itself is now reported by the re-key effect below
+  // on the occasions it actually costs an element.
   useEffect(() => {
-    // Log media key changes to catch unexpected resets
-    try {
-      if (assetId) {
-        if (!useCommonMediaController.__prevKeyLog) useCommonMediaController.__prevKeyLog = assetId;
-        if (useCommonMediaController.__prevKeyLog !== assetId) {
-          if (DEBUG_MEDIA) console.log('[MediaKey] change detected', { from: useCommonMediaController.__prevKeyLog, to: assetId });
-          useCommonMediaController.__prevKeyLog = assetId;
-        }
-      }
-    } catch {}
     // Reset initial load flag when media changes
     isInitialLoadRef.current = true;
     // Reset playback started flag for new media
     playbackStartedRef.current = false;
   }, [assetId]);
 
+  // The fourth re-key site, and the one the remediation plan did not list. A new
+  // media item resets the generation counter, which replaces the element exactly
+  // as a soft re-init does.
+  const rekeySeenAssetRef = useRef(false);
   useEffect(() => {
+    const previousElementKey = elementKeyRef.current;
+    const isFirstMedia = !rekeySeenAssetRef.current;
+    rekeySeenAssetRef.current = true;
     setElementKey(0);
-  }, [assetId]);
+
+    // Report only when an element is really given up. On the first media, and
+    // whenever the counter is already 0, this reset changes nothing — and an
+    // event that fires when nothing happened is the defect the rest of this
+    // sweep is removing, not one to add.
+    if (isFirstMedia || previousElementKey === 0) return;
+    logElementRekey('media-changed', previousElementKey, 0);
+  }, [assetId, logElementRekey]);
 
   const handleProgressClick = useCallback((event) => {
     if (!duration || !containerRef.current) return;
@@ -366,7 +399,6 @@ export function useCommonMediaController({
       // the resilience jolt ladder handle escalation (the nudge is this
       // controller's single ledger-gated action; anything heavier is not its job)
       if (!inBuffer && buffered.length > 0) {
-        if (DEBUG_MEDIA) console.log('[Stall Recovery] nudge: currentTime not in any buffered range, skipping', { t, ranges: buffered.length });
         mcLog().debug('playback.recovery-strategy', { mediaKey: assetId, strategy: 'nudge', success: false, reason: 'outside-buffered-range', currentTime: t, bufferedRanges: buffered.length });
         return false;
       }
@@ -416,7 +448,15 @@ export function useCommonMediaController({
             node[method]();
             performed = true;
           } catch (err) {
-            console.warn('[Stall Recovery] softReinit: error invoking', method, err);
+            // A destroy that throws leaves the old dash.js MediaPlayer alive
+            // while we build its replacement, which is how two players end up
+            // fetching the same stream at once.
+            mcLog().warn('playback.soft-reinit-destroy-failed', {
+              mediaKey: assetId,
+              method,
+              target: node === containerRef.current ? 'host' : 'media',
+              error: err?.message || String(err)
+            });
           }
         }
       });
@@ -425,7 +465,12 @@ export function useCommonMediaController({
           node.dashjsPlayer.reset();
           performed = true;
         } catch (err) {
-          console.warn('[Stall Recovery] softReinit: error invoking dashjsPlayer.reset', err);
+          mcLog().warn('playback.soft-reinit-destroy-failed', {
+            mediaKey: assetId,
+            method: 'dashjsPlayer.reset',
+            target: node === containerRef.current ? 'host' : 'media',
+            error: err?.message || String(err)
+          });
         }
       }
       return performed;
@@ -434,7 +479,23 @@ export function useCommonMediaController({
     const hostDestroyed = attemptDestroy(hostEl);
     const mediaDestroyed = mediaEl && mediaEl !== hostEl ? attemptDestroy(mediaEl) : false;
 
+    const previousElementKey = elementKeyRef.current;
     setElementKey((prev) => prev + 1);
+
+    // VideoPlayer's re-key log names `elementKey` as the input that moved, but
+    // not which recovery moved it — and this hook has two paths that do. Until
+    // now the only record of this one was a console.log behind a flag that was
+    // permanently false, so a soft re-init and a media change were the same
+    // event downstream. `reason` is what makes them countable apart; the
+    // aggregate of that field during a storm is the diagnosis.
+    logElementRekey('soft-reinit', previousElementKey, previousElementKey + 1, {
+      targetTime,
+      seekBackSeconds,
+      // Whether the outgoing dash.js player actually tore down. A re-init that
+      // re-keys without destroying leaves a second player fetching segments.
+      hostDestroyed,
+      mediaDestroyed
+    });
 
     // Clear the start-time guard so the remounted instance re-applies start time
     delete useCommonMediaController.__appliedStartByKey[assetId];
@@ -444,10 +505,8 @@ export function useCommonMediaController({
     try { useCommonMediaController.__lastSeekByKey[assetId] = targetTime; } catch {}
     mcLog().debug('playback.state-mutation', { dict: 'seekIntent', action: 'set', mediaKey: assetId, value: targetTime, reason: 'softReinit' });
 
-    if (DEBUG_MEDIA) console.log('[Stall Recovery] softReinit: triggered', { targetTime, seekBackSeconds, hostDestroyed, mediaDestroyed });
-
     return true;
-  }, [getMediaEl, playbackRate, setElementKey, assetId]);
+  }, [getMediaEl, playbackRate, setElementKey, assetId, logElementRekey]);
 
   // Position watchdog: verify recovery landed at the expected position
   const verifyRecoveryPosition = useCallback((expectedTime, toleranceSeconds = 30) => {
@@ -458,7 +517,6 @@ export function useCommonMediaController({
       const actual = mediaEl.currentTime;
       const drift = Math.abs(actual - expectedTime);
       if (drift > toleranceSeconds) {
-        if (DEBUG_MEDIA) console.log('[Stall Recovery] position watchdog: drift detected, correcting', { expected: expectedTime, actual, drift });
         mcLog().warn('playback.position-watchdog', { mediaKey: assetId, status: 'drift-detected', expected: expectedTime, actual, drift, tolerance: toleranceSeconds, correcting: true });
         try {
           if (containerRef.current?.api?.seek) {
@@ -467,11 +525,9 @@ export function useCommonMediaController({
             mediaEl.currentTime = expectedTime;
           }
         } catch (e) {
-          if (DEBUG_MEDIA) console.log('[Stall Recovery] position watchdog: correction seek failed', e);
           mcLog().error('playback.position-watchdog', { mediaKey: assetId, status: 'correction-failed', expected: expectedTime, actual, drift });
         }
       } else {
-        if (DEBUG_MEDIA) console.log('[Stall Recovery] position watchdog: position OK', { expected: expectedTime, actual, drift });
         mcLog().debug('playback.position-watchdog', { mediaKey: assetId, status: 'ok', expected: expectedTime, actual, drift });
       }
     }, checkDelay);
@@ -480,7 +536,6 @@ export function useCommonMediaController({
   const scheduleStallDetection = useCallback(() => {
     const s = stallStateRef.current;
     if (s.hasEnded) {
-      if (DEBUG_MEDIA) console.log('[Stall] schedule: skip (hasEnded=true)');
       return;
     }
     if (s.softTimer) {
@@ -488,13 +543,11 @@ export function useCommonMediaController({
       return;
     }
     if (s.isStalled) {
-      if (DEBUG_MEDIA) console.log('[Stall] schedule: already marked stalled; awaiting recovery');
       return;
     }
     
     const mediaEl = getMediaEl();
     if (!mediaEl) {
-      if (DEBUG_MEDIA) console.log('[Stall] schedule: no media element');
       return;
     }
     if (mediaEl.paused) {
@@ -503,21 +556,18 @@ export function useCommonMediaController({
     }
     
     // Schedule a soft stall check
-    if (DEBUG_MEDIA) console.log('[Stall] schedule: set softTimer', { checkInterval: STALL_CHECK_INTERVAL_MS, currentTime: mediaEl.currentTime, duration: mediaEl.duration });
     s.softTimer = setTimeout(() => {
       const mediaEl = getMediaEl();
       const s = stallStateRef.current;
       
       // If media element is gone or paused, stop checking
       if (!mediaEl || mediaEl.paused) {
-        if (DEBUG_MEDIA) console.log('[Stall] softTimer: cancel (no media or paused)');
         clearTimers();
         return;
       }
       
       // Check if media has ended or is very close to end
       if (s.hasEnded || mediaEl.ended || (mediaEl.duration && mediaEl.currentTime >= mediaEl.duration - 0.5)) {
-        if (DEBUG_MEDIA) console.log('[Stall] softTimer: media ended or near end; cancel timers');
         // Audit 2026-05-23 §2.2: when the guard activates due to the near-end
         // branch (not a legitimate ended event), the screens player is in the
         // stuck-at-duration failure mode. Emit a one-shot telemetry log so the
@@ -540,7 +590,6 @@ export function useCommonMediaController({
       if (s.lastProgressTs === 0) {
         // No progress yet, reschedule
         s.softTimer = null;
-        if (DEBUG_MEDIA) console.log('[Stall] softTimer: no progress yet; reschedule');
         scheduleStallDetection();
         return;
       }
@@ -565,7 +614,6 @@ export function useCommonMediaController({
         s.lastObservedCurrentTime = mediaEl.currentTime;
         s.lastObservedVideoFrames = videoFrames;
         s.softTimer = null;
-        if (DEBUG_MEDIA) console.log('[Stall] softTimer: progressing (currentTime advanced); fast-forward', { currentTime: mediaEl.currentTime });
         scheduleStallDetection();
         return;
       }
@@ -583,13 +631,11 @@ export function useCommonMediaController({
             currentTime: mediaEl.currentTime,
             gapMs: verdict.stallDurationMs
           };
-          if (DEBUG_MEDIA) console.log('[Stall] suspected (soft); awaiting confirmation re-sample', { gapMs: verdict.stallDurationMs, currentTime: mediaEl.currentTime });
           s.softTimer = null;
           scheduleStallDetection();
           return;
         }
         s.stallSuspicion = null;
-        if (DEBUG_MEDIA) console.log('[Stall] DETECTED (soft)', { diff: verdict.stallDurationMs, softMs: SOFT_STALL_MS, hardMs: HARD_STALL_MS, currentTime: mediaEl.currentTime, duration: mediaEl.duration });
         // Prod telemetry: stall detected
         const logger = getLogger();
         logger.warn('playback.stalled', {
@@ -617,13 +663,11 @@ export function useCommonMediaController({
 
           // Don't attempt recovery if media has ended
           if (s.hasEnded || !mediaEl || mediaEl.ended || (mediaEl.duration && mediaEl.currentTime >= mediaEl.duration - 0.5)) {
-            if (DEBUG_MEDIA) console.log('[Stall] hardTimer: skip recovery (ended or invalid)');
             clearTimers();
             return;
           }
 
           if (!s.isStalled) {
-            if (DEBUG_MEDIA) console.log('[Stall] hardTimer: not stalled anymore; abort');
             return;
           }
 
@@ -668,7 +712,6 @@ export function useCommonMediaController({
               });
               return;
             }
-            if (DEBUG_MEDIA) console.log('[Stall] hardTimer: duration lost, escalating to softReinit');
             mcLog().error('playback.duration-lost', {
               mediaKey: assetId,
               currentTime: mediaEl.currentTime,
@@ -712,7 +755,6 @@ export function useCommonMediaController({
       } else {
         // verdict 'within-window' — reschedule
         s.softTimer = null;
-        if (DEBUG_MEDIA) console.log('[Stall] softTimer: no stall yet; diff < softMs; reschedule', { softMs: SOFT_STALL_MS });
         scheduleStallDetection();
       }
     }, STALL_CHECK_INTERVAL_MS);
@@ -747,7 +789,6 @@ export function useCommonMediaController({
     s.lastObservedVideoFrames = readVideoFrames(mediaEl);
 
     if (wasStalled) {
-      if (DEBUG_MEDIA) console.log('[Stall] Progress resumed; clearing stalled state', { currentTime: mediaEl?.currentTime, lastStrategy: s.lastStrategy });
       mcLog().info('playback.recovery-resolved', {
         mediaKey: assetId,
         currentTime: mediaEl?.currentTime,
@@ -898,18 +939,11 @@ export function useCommonMediaController({
         isInitialLoadRef.current = false;
         try { useCommonMediaController.__appliedStartByKey[assetId] = mountIdRef.current; } catch {}
         mcLog().debug('playback.state-mutation', { dict: 'appliedStartByKey', action: 'set', mediaKey: assetId, reason: 'initial-load' });
-        if (DEBUG_MEDIA) console.log('[StartTime] initial load applying start', { startTime, start, isVideo, duration });
-      } else {
-        if (DEBUG_MEDIA) console.log('[StartTime] treating as non-initial load', {
-          isRecovering: isRecoveringRef.current,
-          hasAppliedForKey: hasAppliedThisMount,
-          wasInitial: isInitialLoadRef.current,
-          duration
-        });
-        if (isRecoveringRef.current) {
-          if (DEBUG_MEDIA) console.log('[StartTime] skip applying start during recovery');
-        }
       }
+      // The non-initial branch applies no start time. Which of its causes
+      // applied — recovery in progress, a start already applied for this key, or
+      // simply not the first load — is reported by playback.start-time-decision
+      // below, which carries all three as fields.
 
       // If an unexpected loadedmetadata occurs and we're not in recovery,
       // avoid snapping to 0 if we have a recent seek intent or a last known good position.
@@ -926,10 +960,7 @@ export function useCommonMediaController({
         const recent = (Date.now() - (stallStateRef.current.lastProgressTs || 0)) <= 15000;
         if (startTime === 0 && !nearStart && !nearEnd && (recent || sticky > 5)) {
           const stickyTarget = Math.max(0, sticky - 1); // small cushion back
-          if (DEBUG_MEDIA) console.log('[StartTime] sticky resume on unexpected metadata', { sticky, stickyTarget, duration, recent });
           startTime = stickyTarget;
-        } else if (startTime === 0) {
-          if (DEBUG_MEDIA) console.log('[StartTime] sticky resume skipped', { sticky, nearStart, nearEnd, recent, duration });
         }
       } else if (snapshotTarget != null) {
         startTime = snapshotTarget;
@@ -966,7 +997,6 @@ export function useCommonMediaController({
 
       if (isDash && dashSeekTarget > 0) {
         {
-          if (DEBUG_MEDIA) console.log('[StartTime] DASH: deferring seek to loadedmetadata/timeupdate', { startTime, urlOffset, dashSeekTarget });
           const container = containerRef.current;
           let seekApplied = false;
           const applySeek = (source) => {
@@ -989,7 +1019,6 @@ export function useCommonMediaController({
               drift: Math.abs(mediaEl.currentTime - dashSeekTarget)
             });
             lastSeekIntentRef.current = null;
-            if (DEBUG_MEDIA) console.log('[StartTime] DASH: applied seek via', source, { dashSeekTarget, currentTime: mediaEl.currentTime });
           };
           // Seek on loadedmetadata (earliest reliable point for DASH with server offset)
           const onLoaded = () => applySeek('loadedmetadata');
@@ -1016,7 +1045,6 @@ export function useCommonMediaController({
           // Clear seek intent after start-time is applied — prevents stale intent
           // from polluting drift calculations on subsequent pause/resume seeks
           lastSeekIntentRef.current = null;
-          if (DEBUG_MEDIA) console.log('[StartTime] set currentTime on load', { startTime, recovering: isRecoveringRef.current });
         } catch (_) {}
       }
       
@@ -1118,7 +1146,6 @@ export function useCommonMediaController({
             { maxPerMinute: 5 });
         }
         delete mediaEl.__seekSource;
-        if (DEBUG_MEDIA) console.log('[Seek] seeking event: intent captured', { intent: lastSeekIntentRef.current, duration: mediaEl.duration });
       }
       setIsSeeking(true);
     };
@@ -1147,19 +1174,13 @@ export function useCommonMediaController({
     mediaEl.addEventListener('seeked', clearSeeking);
     mediaEl.addEventListener('playing', clearSeeking);
 
-    const onWaiting = () => {
-      const el = getMediaEl();
-      if (DEBUG_MEDIA) console.log('[Media] waiting event', { currentTime: el?.currentTime, duration: el?.duration });
-      scheduleStallDetection();
-    };
-    const onStalled = () => {
-      const el = getMediaEl();
-      if (DEBUG_MEDIA) console.log('[Media] stalled event', { currentTime: el?.currentTime, duration: el?.duration });
-      scheduleStallDetection();
-    };
+    // The element's own waiting/stalled events only arm this hook's detector;
+    // what the element looked like at the time is reported by playback.stalled
+    // if the detector goes on to declare one.
+    const onWaiting = () => { scheduleStallDetection(); };
+    const onStalled = () => { scheduleStallDetection(); };
     const onPlaying = () => {
       const el = getMediaEl();
-      if (DEBUG_MEDIA) console.log('[Media] playing event', { currentTime: el?.currentTime, duration: el?.duration });
       // Prod telemetry: playback actually started
       if (el && !playbackStartedRef.current) {
         playbackStartedRef.current = true;

@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react';
 import { wsService } from '../../services/WebSocketService.js';
 import { buildDeviceStateBroadcast } from '@shared-contracts/media/envelopes.mjs';
 import getLogger from '../../lib/logging/Logger.js';
+import { createPlaybackStallWatch } from './playbackStallWatch.js';
+import { autoReport } from '../../modules/Feedback/autoReport.js';
 
 let _logger;
 function logger() {
@@ -43,12 +45,32 @@ export function useSessionStatePublisher({ deviceId, getSnapshot, subscribe } = 
     let debounceTimer = null;
     let heartbeatTimer = null;
 
+    // Every snapshot this publisher builds also passes a stall watch. The
+    // snapshot already carries `state` and `position`; nothing compared
+    // consecutive values, which is why the 2026-08-16 remount storm ran for 17
+    // minutes with a healthy-looking device. When it fires, the kiosk files its
+    // own feedback report so the client log ring — the only complete record of
+    // that incident — is captured while it still exists. autoReport dedupes and
+    // caps on its own, so the worst case is one report per page load per
+    // incident, not one per heartbeat.
+    const stallWatch = createPlaybackStallWatch({
+      onStall: (detail) => {
+        logger().warn('playback-stall-observed', { deviceId, ...detail });
+        autoReport({
+          reason: 'playback-stall',
+          dedupeKey: `${deviceId}:${detail.contentId || 'unknown'}`,
+          detail: { deviceId, ...detail },
+        });
+      },
+    });
+
     const publish = (reason) => {
       const snapshot = getSnapshotRef.current?.();
       if (!snapshot) {
         logger().debug('publish-skipped-no-snapshot', { deviceId, reason });
         return;
       }
+      stallWatch.observe(snapshot);
       try {
         const msg = buildDeviceStateBroadcast({
           deviceId,
@@ -126,6 +148,7 @@ export function useSessionStatePublisher({ deviceId, getSnapshot, subscribe } = 
     return () => {
       clearDebounce();
       clearHeartbeat();
+      stallWatch.reset();
       if (typeof unsubscribe === 'function') {
         try { unsubscribe(); } catch (err) {
           logger().warn('unsubscribe-failed', { deviceId, error: String(err?.message ?? err) });

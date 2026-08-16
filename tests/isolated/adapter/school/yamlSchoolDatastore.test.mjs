@@ -117,75 +117,77 @@ describe('banks', () => {
   const BANK = 'title: Caps\nitems:\n  - id: q1\n';
 
   it('lists ids as <subject>/<work>/<rest> and reads one back', () => {
-    writeBank('history', 'us-capitals', 'caps.yml', `id: history/us-capitals/caps\n${BANK}`);
-    expect(ds.listBankIds()).toEqual(['history/us-capitals/caps']);
-    expect(ds.readBankRaw('history/us-capitals/caps')).toMatchObject({ title: 'Caps' });
+    writeBank('civilization', 'us-capitals', 'caps.yml', `id: civilization/us-capitals/caps\n${BANK}`);
+    expect(ds.listBankIds()).toEqual(['civilization/us-capitals/caps']);
+    expect(ds.readBankRaw('civilization/us-capitals/caps')).toMatchObject({ title: 'Caps' });
   });
 
   it('empty/missing dir lists nothing; unknown or path-traversal id reads null', () => {
     expect(ds.listBankIds()).toEqual([]);
-    expect(ds.readBankRaw('history/us-capitals/nope')).toBe(null);
+    expect(ds.readBankRaw('civilization/us-capitals/nope')).toBe(null);
     expect(ds.readBankRaw('../secrets')).toBe(null);
   });
 
   it('an id shorter than <subject>/<work>/<rest> resolves to nothing', () => {
-    writeBank('history', 'us-capitals', 'caps.yml', `id: x\n${BANK}`);
-    expect(ds.readBankRaw('history')).toBe(null);
-    expect(ds.readBankRaw('history/us-capitals')).toBe(null);
+    writeBank('civilization', 'us-capitals', 'caps.yml', `id: x\n${BANK}`);
+    expect(ds.readBankRaw('civilization')).toBe(null);
+    expect(ds.readBankRaw('civilization/us-capitals')).toBe(null);
   });
 
   it('a first segment that is not one of the nine shelves is not a bank', () => {
-    // `civ` was a real folder before the 2026-07-30 restructure; it is not a shelf.
-    writeBank('history', 'us-capitals', 'caps.yml', `id: x\n${BANK}`);
+    // `civ` was a real folder before the 2026-07-30 restructure; it is not a
+// shelf (the shelf is `civilization`, and `history` was folded into it).
+    writeBank('civilization', 'us-capitals', 'caps.yml', `id: x\n${BANK}`);
     writeBank('civ', 'literature', 'x.yml', `id: x\n${BANK}`);
     expect(ds.readBankRaw('civ/literature/x')).toBe(null);
-    expect(ds.listBankIds()).toEqual(['history/us-capitals/caps']);
+    expect(ds.listBankIds()).toEqual(['civilization/us-capitals/caps']);
   });
 
   it('lists and reads a .yaml bank (not just .yml)', () => {
-    writeBank('history', 'us-capitals', 'states.yaml', `id: history/us-capitals/states\ntitle: States\nitems:\n  - id: q1\n`);
-    expect(ds.listBankIds()).toEqual(['history/us-capitals/states']);
-    expect(ds.readBankRaw('history/us-capitals/states')).toMatchObject({ title: 'States' });
+    writeBank('civilization', 'us-capitals', 'states.yaml', `id: civilization/us-capitals/states\ntitle: States\nitems:\n  - id: q1\n`);
+    expect(ds.listBankIds()).toEqual(['civilization/us-capitals/states']);
+    expect(ds.readBankRaw('civilization/us-capitals/states')).toMatchObject({ title: 'States' });
   });
 
   it('excludes AppleDouble hidden sidecar files from listings', () => {
-    writeBank('history', 'us-capitals', 'caps.yml', `id: x\n${BANK}`);
-    writeBank('history', 'us-capitals', '._caps.yml', 'garbage-not-yaml-safe-content');
-    expect(ds.listBankIds()).toEqual(['history/us-capitals/caps']);
+    writeBank('civilization', 'us-capitals', 'caps.yml', `id: x\n${BANK}`);
+    writeBank('civilization', 'us-capitals', '._caps.yml', 'garbage-not-yaml-safe-content');
+    expect(ds.listBankIds()).toEqual(['civilization/us-capitals/caps']);
   });
 
   // The audiobook banks are foldered by volume so the tree stays browsable
   // instead of being one flat dump of several hundred files.
   it('lists deeply nested banks by relative path and reads one back', () => {
-    writeBank('history', 'i-survived', path.join('01-titanic-1912', '01-two-am-on-deck.yml'),
-      'id: history/i-survived/01-titanic-1912/01-two-am-on-deck\ntitle: Two AM on Deck\nitems:\n  - id: q1\n');
-    expect(ds.listBankIds()).toEqual(['history/i-survived/01-titanic-1912/01-two-am-on-deck']);
-    expect(ds.readBankRaw('history/i-survived/01-titanic-1912/01-two-am-on-deck'))
+    writeBank('civilization', 'i-survived', path.join('01-titanic-1912', '01-two-am-on-deck.yml'),
+      'id: civilization/i-survived/01-titanic-1912/01-two-am-on-deck\ntitle: Two AM on Deck\nitems:\n  - id: q1\n');
+    expect(ds.listBankIds()).toEqual(['civilization/i-survived/01-titanic-1912/01-two-am-on-deck']);
+    expect(ds.readBankRaw('civilization/i-survived/01-titanic-1912/01-two-am-on-deck'))
       .toMatchObject({ title: 'Two AM on Deck' });
   });
 
   it('mixes works and shelves in one sorted listing', () => {
-    writeBank('history', 'us-capitals', 'caps.yml', `id: x\n${BANK}`);
+    writeBank('civilization', 'us-capitals', 'caps.yml', `id: x\n${BANK}`);
     writeBank('english', 'shakespeare-tales', path.join('hamlet', '01-the-ghost.yml'), `id: x\n${BANK}`);
+    // Sorted by id, so the shelf name decides the order — not shelf position.
     expect(ds.listBankIds()).toEqual([
+      'civilization/us-capitals/caps',
       'english/shakespeare-tales/hamlet/01-the-ghost',
-      'history/us-capitals/caps',
     ]);
   });
 
   it('a nested id cannot be used to climb out of the banks directory', () => {
-    writeBank('history', 'us-capitals', 'caps.yml', `id: x\n${BANK}`);
+    writeBank('civilization', 'us-capitals', 'caps.yml', `id: x\n${BANK}`);
     fs.writeFileSync(path.join(tmp, 'content', 'secrets.yml'), `id: secrets\n${BANK}`);
     expect(ds.readBankRaw('../secrets')).toBe(null);
-    expect(ds.readBankRaw('history/../../secrets')).toBe(null);
+    expect(ds.readBankRaw('civilization/../../secrets')).toBe(null);
     expect(ds.readBankRaw('/etc/passwd')).toBe(null);
-    expect(ds.readBankRaw('history/./secrets')).toBe(null);
+    expect(ds.readBankRaw('civilization/./secrets')).toBe(null);
   });
 
   it('skips dot-directories when walking the bank tree', () => {
-    writeBank('history', 'us-capitals', 'caps.yml', `id: x\n${BANK}`);
-    writeBank('history', 'us-capitals', path.join('.trash', 'old.yml'), `id: old\n${BANK}`);
-    expect(ds.listBankIds()).toEqual(['history/us-capitals/caps']);
+    writeBank('civilization', 'us-capitals', 'caps.yml', `id: x\n${BANK}`);
+    writeBank('civilization', 'us-capitals', path.join('.trash', 'old.yml'), `id: old\n${BANK}`);
+    expect(ds.listBankIds()).toEqual(['civilization/us-capitals/caps']);
   });
 
   it('a dot in a filename is addressable — imported banks name half-steps that way', () => {
