@@ -238,8 +238,21 @@ export function agendaDocument({
         title: nextTitle,
         description: next.description,
         icon: section.subject,
-        meta: ['SCAN TO PRINT', next.progressLabel ?? section.progressLabel, Number.isFinite(section.gradePercent) ? `Grade ${Math.round(section.gradePercent)}%` : null]
-          .filter(isNonEmptyString).join(' · '),
+        // The footer instruction names what THIS card actually asks for.
+        // `actionLabel` is the one place that decides that wording
+        // (`offerSession.nextMove`) and it is composition-aware: a media unit
+        // plays a video, a bank unit is answered on the screen, a stalled one
+        // starts over, a program unit names WHERE it lives ("on the Portal").
+        // Hardcoding "SCAN TO PRINT" told a child to print a film. It is
+        // printed as-is rather than under a "SCAN TO …" stem because a
+        // location hint does not read as a verb phrase; the scan-corner glyph
+        // beside it is what says "scan" (print-documents.md, "Agenda and
+        // result-receipt language").
+        meta: [
+          isNonEmptyString(next.actionLabel) ? next.actionLabel.toUpperCase() : 'SCAN TO PRINT',
+          next.progressLabel ?? section.progressLabel,
+          Number.isFinite(section.gradePercent) ? `Grade ${Math.round(section.gradePercent)}%` : null,
+        ].filter(isNonEmptyString).join(' · '),
         taxonomy: next.taxonomy,
       }));
     } else {

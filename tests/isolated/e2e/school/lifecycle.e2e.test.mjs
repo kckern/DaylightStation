@@ -42,7 +42,10 @@ describe('scenario 1 — the video unit, end to end', () => {
     const agenda = h.lastReceiptText();
     expect(agenda).toContain('TEST LEARNER');
     expect(agenda).toContain('Equivalent Fractions and Common Denominators');
-    expect(agenda).toContain('watch or listen');
+    // The card's footer instruction names what THIS scan does. A video unit's
+    // scan plays a film, so the line must not say "print" — see "Agenda and
+    // result-receipt language" in docs/reference/school/print-documents.md.
+    expect(agenda).toMatch(/WATCH OR LISTEN/i);
 
     const offered = h.tokensInLastReceipt();
     expect(offered).toHaveLength(1);
@@ -92,10 +95,14 @@ describe('scenario 1 — the video unit, end to end', () => {
     expect(settled.status).toBe('settled');
     expect(settled.result).toBe('passed');
 
+    // The result slip's verdict, its exact score, and the lesson it opens up.
+    // (Wave-A2 copy: the headline is the verdict word and the score is the
+    // exact fraction — see receipts.mjs `resultDocument`.)
     const receipt = h.lastReceiptText();
-    expect(receipt).toContain('Nice work!');
-    expect(receipt).toContain('Score: 100%');
-    expect(receipt).toContain('Next up: Adding and Subtracting Unlike Denominators');
+    expect(receipt).toContain('PASSED');
+    expect(receipt).toContain('6 of 6 correct');
+    expect(receipt).toContain('NEXT UP');
+    expect(receipt).toContain('Adding and Subtracting Unlike Denominators');
 
     // --- and unit 02 is now offered ----------------------------------------
     const plan = await h.plan();
@@ -107,7 +114,8 @@ describe('scenario 1 — the video unit, end to end', () => {
     // only shows up on the card tomorrow's study day.
     h.advanceDays(1);
     await h.scanCard();
-    expect(h.lastReceiptText()).toContain('Adding and Subtracting Unlike Denominators — print your sheet');
+    expect(h.lastReceiptText()).toContain('Lesson · Adding and Subtracting Unlike Denominators');
+    expect(h.lastReceiptText()).toMatch(/PRINT YOUR SHEET/i);
   });
 });
 
@@ -163,7 +171,7 @@ describe('scenario 2 — the printed worksheet unit', () => {
 
     const settled = await h.closeOutcome({ sessionId });
     expect(settled.result).toBe('passed');
-    expect(h.lastReceiptText()).toContain('Score: 83%');
+    expect(h.lastReceiptText()).toContain('5 of 6 correct');
     expect(h.lastReceiptText()).toContain('You earned 5 coins.');
     expect(await h.coinsFor()).toBe(5);
   });
@@ -298,13 +306,16 @@ describe('scenario 4 — failing, retrying, and being paid exactly once', () => 
 
     // --- the receipt says what went wrong AND carries the next move ---------
     const receipt = h.lastReceiptText();
-    expect(receipt).toContain('Almost there');
-    expect(receipt).toContain('Score: 50%');
-    expect(receipt).toContain('Worth another look:');
-    expect(receipt).toContain('Try again with a fresh sheet');
+    expect(receipt).toContain('TRY AGAIN');
+    expect(receipt).toContain('3 of 6 correct');
+    expect(receipt).toContain('REVIEW BEFORE YOU RETRY');
     const retryTicket = h.tokensInLastReceipt();
     expect(retryTicket).toHaveLength(1);
-    expect(retryTicket[0].label).toMatch(/try again/i);
+    // The retry is offered as a lesson card: the TRY AGAIN eyebrow, the unit it
+    // reopens, and a footer saying a fresh sheet is what the scan produces.
+    expect(retryTicket[0].printed).toMatch(/try again/i);
+    expect(retryTicket[0].printed).toMatch(/fresh worksheet/i);
+    expect(retryTicket[0].printed).toMatch(/scan to print your retry/i);
     expect(await h.coinsFor()).toBe(0);
 
     // --- scanning it prints a NEW sheet on a linked session ------------------
@@ -538,7 +549,7 @@ describe('scenario 7 — the video is stopped halfway and never finishes', () =>
 
     // The recovery is on paper, and it works.
     await h.scanCard();
-    expect(h.lastReceiptText()).toContain('start it again');
+    expect(h.lastReceiptText()).toMatch(/START IT AGAIN/i);
     const replay = await h.scanTokenMatching(/start it again/i);
     expect(replay.status).toBe('dispatched');
     expect(h.devices.playback.listDispatches()).toHaveLength(2);
@@ -571,7 +582,8 @@ describe('scenario 8 — a locked unit always names its remedy', () => {
   it('will not offer unit 03 before 02 passes, though only one line prints per day', async () => {
     await h.scanCard();
     // The one line math owes today is unit 01 — not the distant lock.
-    expect(h.lastReceiptText()).toContain('Equivalent Fractions and Common Denominators — watch or listen');
+    expect(h.lastReceiptText()).toContain('Lesson · Equivalent Fractions and Common Denominators');
+    expect(h.lastReceiptText()).toMatch(/WATCH OR LISTEN/i);
     expect(h.tokensInLastReceipt()).toHaveLength(1);
     expect(h.tokensInLastReceipt().some((t) => t.label.includes('Fractions Checkpoint'))).toBe(false);
 
@@ -586,7 +598,8 @@ describe('scenario 8 — a locked unit always names its remedy', () => {
     await h.completeMediaUnit();
     h.advanceDays(1);
     await h.scanCard();
-    expect(h.lastReceiptText()).toContain('Adding and Subtracting Unlike Denominators — print your sheet');
+    expect(h.lastReceiptText()).toContain('Lesson · Adding and Subtracting Unlike Denominators');
+    expect(h.lastReceiptText()).toMatch(/PRINT YOUR SHEET/i);
     expect((await h.plan()).entries.find((e) => e.unitId === OMR_UNIT).remedy).toMatchObject({ unitId: WORKSHEET_UNIT });
 
     // Passing 02 opens 03, and math's one line becomes it (the next study day).
