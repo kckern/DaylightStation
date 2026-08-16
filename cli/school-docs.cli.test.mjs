@@ -411,7 +411,7 @@ describe('school-docs CLI', () => {
     // the CLI had already computed.
     it('resolves a bank-select question\'s bank from --data-dir, not $DAYLIGHT_BASE_PATH', async () => withTmpDir(async (root) => {
       const customDataDir = path.join(root, 'custom-data');
-      const banksDir = path.join(customDataDir, 'content/school/catalog/question-banks');
+      const banksDir = path.join(customDataDir, 'content/school/learning-catalog/question-banks');
       await mkdir(banksDir, { recursive: true });
       await writeFile(path.join(banksDir, 'planets.yml'), dump({
         id: 'custom-root-bank',

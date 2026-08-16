@@ -67,7 +67,7 @@ const DUPLEX_ARCHETYPES = new Set(['worksheet']);
  * already use elsewhere in this codebase — mirrored here rather than reused
  * because those two live in a different part of the School application (the
  * pre-Phase-B quiz/worksheet delivery path) with their own injection story.
- * Reads from `<dataDir>/content/school/catalog/question-banks` — the SAME
+ * Reads from `<dataDir>/content/school/learning-catalog/question-banks` — the SAME
  * layout `schoolCatalog.mjs`'s composition wiring resolves (against the
  * process's own `DAYLIGHT_BASE_PATH`) and the same data-root convention
  * `school-docs.cli.mjs`'s `resolveSchoolDocsContentPaths` resolves against
@@ -92,7 +92,7 @@ const DUPLEX_ARCHETYPES = new Set(['worksheet']);
 export function createYamlBankReader({ dataDir } = {}) {
   const resolvedDataDir = dataDir
     ?? (process.env.DAYLIGHT_BASE_PATH ? path.join(process.env.DAYLIGHT_BASE_PATH, 'data') : '/usr/src/app/data');
-  const directory = path.resolve(resolvedDataDir, 'content/school/catalog/question-banks');
+  const directory = path.resolve(resolvedDataDir, 'content/school/learning-catalog/question-banks');
   let cache = null;
 
   function loadAll() {
