@@ -12,34 +12,87 @@ const recentNetworkErrors = {
   count: 0,
   resetTime: 0,
   THRESHOLD: 3,      // After 3 errors in window, suppress
-  WINDOW_MS: 2000    // 2 second window
+  WINDOW_MS: 2000,   // 2 second window
+  // What the current window has thrown away, and one example of it. A remount
+  // storm IS a fetch-failure storm, so this suppressor was deleting precisely
+  // the events that described the incident and saying nothing about it. The
+  // bodies are still worth dropping — hundreds of near-identical stacks help
+  // nobody — but the COUNT is the diagnosis and has to survive.
+  suppressedCount: 0,
+  representativeMessage: null,
+  flushTimer: null
 };
+
+/**
+ * Report and clear the current window's suppressions.
+ *
+ * Called both on window rollover and from a timer, because a storm that stops
+ * is a storm that never rolls over — and the last window is usually the
+ * biggest one. Without the timer the loudest burst would be the silent one.
+ */
+function flushSuppressedNetworkErrors(logger) {
+  if (recentNetworkErrors.flushTimer != null) {
+    clearTimeout(recentNetworkErrors.flushTimer);
+    recentNetworkErrors.flushTimer = null;
+  }
+  if (recentNetworkErrors.suppressedCount === 0) return;
+
+  logger.warn('errors.suppressed', {
+    kind: 'network',
+    suppressedCount: recentNetworkErrors.suppressedCount,
+    representativeMessage: recentNetworkErrors.representativeMessage,
+    threshold: recentNetworkErrors.THRESHOLD,
+    windowMs: recentNetworkErrors.WINDOW_MS
+  });
+
+  recentNetworkErrors.suppressedCount = 0;
+  recentNetworkErrors.representativeMessage = null;
+}
 
 /**
  * Check if this is a network error we should suppress to prevent cascades
  * @param {*} reason - Error reason
+ * @param {Object} logger - logger used for the roll-up when a window closes
  * @returns {boolean} True if should suppress
  */
-function shouldSuppressNetworkError(reason) {
+function shouldSuppressNetworkError(reason, logger) {
   const message = reason?.message || String(reason);
-  
+
   // Only suppress "Failed to fetch" type errors
   if (!message.includes('Failed to fetch') && !message.includes('NetworkError')) {
     return false;
   }
-  
+
   const now = Date.now();
-  
+
   // Reset counter if window expired
   if (now >= recentNetworkErrors.resetTime) {
+    // Whatever the closing window swallowed gets reported before the new one
+    // opens, so each roll-up covers exactly one window.
+    flushSuppressedNetworkErrors(logger);
     recentNetworkErrors.count = 0;
     recentNetworkErrors.resetTime = now + recentNetworkErrors.WINDOW_MS;
   }
-  
+
   recentNetworkErrors.count++;
-  
+
   // Suppress if we've seen too many in this window
-  return recentNetworkErrors.count > recentNetworkErrors.THRESHOLD;
+  const suppress = recentNetworkErrors.count > recentNetworkErrors.THRESHOLD;
+  if (suppress) {
+    recentNetworkErrors.suppressedCount++;
+    // First of the window, kept verbatim: in a storm the messages are
+    // near-identical, and one real example beats a count with no shape.
+    if (!recentNetworkErrors.representativeMessage) {
+      recentNetworkErrors.representativeMessage = message;
+    }
+    if (recentNetworkErrors.flushTimer == null && typeof setTimeout === 'function') {
+      recentNetworkErrors.flushTimer = setTimeout(
+        () => flushSuppressedNetworkErrors(logger),
+        recentNetworkErrors.WINDOW_MS
+      );
+    }
+  }
+  return suppress;
 }
 
 /**
@@ -75,7 +128,7 @@ export function setupGlobalErrorHandlers() {
     const reason = event.reason;
 
     // Suppress cascading network errors to prevent log spam
-    if (shouldSuppressNetworkError(reason)) {
+    if (shouldSuppressNetworkError(reason, logger)) {
       return;
     }
 
@@ -123,6 +176,9 @@ export function setupGlobalErrorHandlers() {
   // Return cleanup function
   return () => {
     handlers.forEach(cleanup => cleanup());
+    // Report anything the last window swallowed before the handlers go away,
+    // and leave no timer behind pointing at a logger nobody is reading.
+    flushSuppressedNetworkErrors(logger);
     logger.info('error-handlers.removed', {});
   };
 }

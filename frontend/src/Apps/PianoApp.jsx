@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation, useParams } from 'react-router-dom';
 import useDocumentTitle from '../hooks/useDocumentTitle.js';
-import getLogger from '../lib/logging/Logger.js';
+import getLogger, { configure as configureLogger } from '../lib/logging/Logger.js';
 import { launchAndroidTarget } from '../lib/fkb.js';
 import { DaylightAPI } from '../lib/api.mjs';
 import Icon from '../modules/Piano/PianoKiosk/icons/Icon.jsx';
@@ -62,6 +62,13 @@ import { useWhoPromptAutoClose } from '../modules/Piano/PianoKiosk/useWhoPromptA
 import { useAutoMidiHistory } from '../modules/Piano/PianoKiosk/useAutoMidiHistory.js';
 import ProfilePicker from '../lib/identity/ProfilePicker.jsx';
 import './PianoApp.scss';
+
+/**
+ * The app slug this kiosk's events are filed under, on both sides: it becomes
+ * `context.app` on every event and the directory name the backend session-file
+ * transport writes into (`media/logs/piano-kiosk/*.jsonl`).
+ */
+export const PIANO_KIOSK_LOG_APP = 'piano-kiosk';
 
 /**
  * Connect-gate: BLE pairing is an OS concern, so the browser only sees already-
@@ -462,7 +469,36 @@ function PianoRoutes() {
  */
 export default function PianoApp() {
   useDocumentTitle('Piano');
-  const logger = useMemo(() => getLogger().child({ component: 'piano-app' }), []);
+
+  // Tag every event this kiosk emits so it reaches disk. The backend's
+  // sessionFile transport drops any event whose context lacks BOTH `app` and
+  // `sessionLog`, and nothing here used to set either — so on 2026-08-16 the
+  // whole video remount storm existed only in container stdout, which Docker
+  // truncated on the next restart about 90 minutes later.
+  //
+  // The slug is `piano-kiosk`, NOT `piano`: `piano` already belongs to
+  // PianoVisualizer, the wall-screen widget registered in screen-framework's
+  // builtins, which is the only other surface setting `app: 'piano'`. Reusing
+  // it would interleave two unrelated surfaces into one session file, which is
+  // precisely the confusion that made `media/logs/piano/` look like kiosk
+  // evidence when it was nothing of the kind.
+  //
+  // Configured during render rather than in an effect: descendants build their
+  // loggers with getLogger().child({ component }) while THEY render, and a
+  // child snapshots the root context at creation. An effect runs after those
+  // children have already rendered, so their loggers would be created untagged
+  // and stay that way for the life of the page.
+  useMemo(() => {
+    // Session logging runs at 'info'. Per-component debug can be turned on at
+    // runtime with window.DAYLIGHT_LOG_LEVEL='debug' when investigating.
+    configureLogger({ level: 'info', context: { app: PIANO_KIOSK_LOG_APP, sessionLog: true } });
+  }, []);
+  // Leaving the kiosk must not leave the rest of the SPA claiming to be it.
+  useEffect(() => () => { configureLogger({ context: { sessionLog: false } }); }, []);
+
+  // Carries app + sessionLog explicitly (not just by inheritance) so this child
+  // emits the session-log.start that opens a fresh file on the backend.
+  const logger = useMemo(() => getLogger().child({ component: 'piano-app', app: PIANO_KIOSK_LOG_APP, sessionLog: true }), []);
   useEffect(() => { logger.info('piano-app.mount', {}); }, [logger]);
   useEffect(() => applyPianoBodyTheme(), []);
   // Self-heal: if the Fully WebView's compositor gets stuck (renderer pegs, fps

@@ -59,6 +59,84 @@ const accumulateSampledData = (aggregated, data) => {
   }
 };
 
+/**
+ * A bounded queue that says what it threw away.
+ *
+ * Both WS transports keep a ring and, when it is full, discard the OLDEST
+ * queued event. During a storm that is the beginning of the incident — the
+ * part you most want — and it went with no counter and no marker, so a log
+ * with a hole in it read exactly like a log with nothing missing.
+ *
+ * So: count the drops, and hand a synthetic `logging.transport.overflow` event
+ * to the socket alongside the survivors, so the gap is visible in the stream
+ * rather than only in a counter someone has to think to go and read.
+ *
+ * The marker is held OUTSIDE the ring and attached at take() time. Keeping it
+ * in the ring was the obvious design and it is wrong: the marker is by
+ * definition the oldest thing in a full queue, so the next drop evicts the
+ * record of the gap and the hole goes back to being invisible. Outside the
+ * ring it costs no capacity and cannot be evicted.
+ *
+ * One marker per flush, its count updated in place while the burst continues —
+ * a marker per dropped event would be a second flood on top of the first. The
+ * count is cumulative for the transport's life, so two bursts are still
+ * distinguishable by the number climbing.
+ *
+ * @param {number} maxQueue - ring capacity (0 or less disables queueing)
+ * @param {string} transportName - carried on the marker, so two transports
+ *   overflowing are distinguishable
+ * @param {(event: object) => object} wrapMarker - wraps the synthetic event in
+ *   whatever envelope this transport's queue holds (the two differ)
+ */
+function createBoundedRing(maxQueue, transportName, wrapMarker) {
+  const items = [];
+  let dropped = 0;
+  let pendingMarker = null; // mutated in place until a take() carries it away
+
+  return {
+    get length() { return items.length; },
+    get dropped() { return dropped; },
+
+    push(wrapped) {
+      if (maxQueue <= 0) return;
+      if (items.length >= maxQueue) {
+        items.shift();
+        dropped += 1;
+        if (pendingMarker) {
+          pendingMarker.data.droppedCount = dropped;
+        } else {
+          pendingMarker = {
+            ts: new Date().toISOString(),
+            level: 'warn',
+            event: 'logging.transport.overflow',
+            data: { droppedCount: dropped, maxQueue, transport: transportName },
+            context: { logger: 'transport' },
+            tags: [],
+            source: 'frontend',
+          };
+        }
+      }
+      items.push(wrapped);
+    },
+
+    /**
+     * Remove and return up to `n` entries, oldest first, with any outstanding
+     * overflow marker at the FRONT — the events it is warning about went
+     * missing before the ones that survived.
+     */
+    take(n) {
+      const batch = items.splice(0, n);
+      if (pendingMarker) {
+        batch.unshift(wrapMarker(pendingMarker));
+        pendingMarker = null;
+      }
+      return batch;
+    },
+
+    stats() { return { queued: items.length, dropped, maxQueue }; },
+  };
+}
+
 function consoleTransport() {
   return {
     name: 'console',
@@ -77,7 +155,7 @@ function createWebSocketTransport(options = {}) {
   } = options;
 
   let wsServiceInstance = null;
-  let queue = [];
+  const ring = createBoundedRing(maxQueue, 'ws', (evt) => ({ topic, event: evt }));
 
   // Dynamically import shared WebSocketService to avoid circular deps
   const getWsService = async () => {
@@ -99,14 +177,17 @@ function createWebSocketTransport(options = {}) {
   const flush = async () => {
     const ws = await getWsService();
     if (!ws) return;
-    
-    while (queue.length) {
-      const payload = queue.shift();
-      try {
-        ws.send(payload);
-      } catch (err) {
-        devOutput('warn', '[DaylightLogger] WS send failed', err);
-        break;
+
+    // take() can hand back more than asked for — an overflow marker rides
+    // along at the front — so send whatever it returns, not just its head.
+    while (ring.length) {
+      for (const payload of ring.take(1)) {
+        try {
+          ws.send(payload);
+        } catch (err) {
+          devOutput('warn', '[DaylightLogger] WS send failed', err);
+          return;
+        }
       }
     }
   };
@@ -114,13 +195,11 @@ function createWebSocketTransport(options = {}) {
   return {
     name: 'ws',
     send: (evt) => {
-      const payload = { topic, event: evt };
-      if (maxQueue > 0) {
-        if (queue.length >= maxQueue) queue.shift();
-        queue.push(payload);
-      }
+      ring.push({ topic, event: evt });
       flush();
-    }
+    },
+    flush,
+    getStats: () => ring.stats()
   };
 }
 
@@ -136,8 +215,8 @@ function createBufferingWebSocketTransport(options = {}) {
   } = options;
 
   let wsServiceInstance = null;
-  let queue = [];
   let flushTimer = null;
+  const ring = createBoundedRing(maxQueue, 'ws-buffered', (evt) => ({ event: evt }));
 
   // Dynamically import shared WebSocketService to avoid circular deps
   const getWsService = async () => {
@@ -169,12 +248,12 @@ function createBufferingWebSocketTransport(options = {}) {
   };
 
   const flush = async () => {
-    if (!queue.length) return;
-    const batch = queue.splice(0, batchSize);
+    if (!ring.length) return;
+    const batch = ring.take(batchSize);
     await sendBatch(batch);
-    if (queue.length) {
+    if (ring.length) {
       // keep flushing until drained
-      flush();
+      await flush();
     }
   };
 
@@ -189,16 +268,15 @@ function createBufferingWebSocketTransport(options = {}) {
   return {
     name: 'ws-buffered',
     send: (evt) => {
-      if (maxQueue > 0) {
-        if (queue.length >= maxQueue) queue.shift();
-        queue.push({ event: evt });
-      }
-      if (queue.length >= batchSize) {
+      ring.push({ event: evt });
+      if (ring.length >= batchSize) {
         flush();
       } else {
         scheduleFlush();
       }
-    }
+    },
+    flush,
+    getStats: () => ring.stats()
   };
 }
 
