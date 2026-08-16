@@ -13,6 +13,7 @@ import { changedKeyComponent } from '../lib/keyChange.js';
 import { createStaleSessionWatchdog } from '../lib/staleSessionWatchdog.js';
 import { buildFpsStatsPayload } from '../lib/fpsStatsPayload.js';
 import { requestDashErrorRecovery } from '../lib/dashErrorRecovery.js';
+import { readDashApiState } from '../lib/dashApiState.js';
 import { useContentFilter } from '../../../lib/Player/useContentFilter.js';
 import { useFilterData } from '../../../lib/Player/useFilterData.js';
 import { REVIEW_GOTO } from '../../../lib/Player/reviewParams.js';
@@ -538,14 +539,62 @@ export function VideoPlayer({
 
     // --- dash.js diagnostic logging ---
     const dashLog = getLogger().child({ component: 'dash-diag' });
+
+    // Origin for msFromMountToApiReady. This effect re-runs per <dash-video>
+    // generation, so the clock starts when this element generation began rather
+    // than when the component first mounted — which is the interval that matters,
+    // because each generation gets its own dash.js MediaPlayer.
+    const generationStartedAt = Date.now();
+    let apiReached = false;
+    let neverReadyEmitted = false;
+
+    // Describes the element for either "we never got an api" emission. Kept in
+    // one place so the two reasons carry identical fields and can be counted
+    // together.
+    const elementFacts = () => ({
+      mountId: mountIdRef.current,
+      elTag: el.tagName ? el.tagName.toLowerCase() : null,
+      src: el.src ? String(el.src).substring(0, 150) : null
+    });
+
+    // Without this the poll below is unbounded and emits nothing when it never
+    // succeeds, so a dash.js that never initialised and a subscription that
+    // merely arrived late produce the same evidence: silence. Fifteen seconds is
+    // far past a healthy attach (sub-second in the field) and still short enough
+    // to land inside the element generation that failed.
+    const API_READY_TIMEOUT_MS = 15000;
+    const apiNeverReadyTimer = setTimeout(() => {
+      if (apiReached) return;
+      neverReadyEmitted = true;
+      dashLog.warn('dash.api-never-ready', {
+        reason: 'timeout',
+        msWaited: Date.now() - generationStartedAt,
+        ...elementFacts()
+      });
+    }, API_READY_TIMEOUT_MS);
+
     const waitForApi = setInterval(() => {
       if (!el.api) return;
       clearInterval(waitForApi);
+      apiReached = true;
       const api = el.api;
-      const Dash = api.constructor;
-      const events = Dash?.events || {};
 
-      dashLog.info('dash.api-ready', { src: el.src, events: Object.keys(events).length });
+      // Read the player's current state as well as subscribing. The old payload
+      // counted event constants on the constructor, which is 0 on this build and
+      // said nothing either way about whether the stream was running.
+      const { state, unreadable } = readDashApiState(api);
+
+      dashLog.info('dash.api-ready', {
+        src: el.src,
+        msFromMountToApiReady: Date.now() - generationStartedAt,
+        // True means the timeout above already declared this player dead and it
+        // came back — the subscription is live but every event before now is lost.
+        afterNeverReadyTimeout: neverReadyEmitted,
+        ...state,
+        // Empty means every accessor answered; a named field here means that
+        // field's null is "not measured", not "measured as nothing".
+        unreadable
+      });
 
       let consecutiveEmptyFragments = 0;
       const EMPTY_FRAGMENT_THRESHOLD = 6;
@@ -685,7 +734,14 @@ export function VideoPlayer({
           // Refreshable code, but the ledger denied it (mount budget spent or
           // session cap reached). The stale-session watchdog remains the
           // escalation route (bridge.requestRecovery → triggerRecovery).
-          dashLog.debug('dash.error-recovery-budget-denied', {
+          //
+          // Warn, not debug: production runs at info, so at debug this line
+          // vanished and a dash-error storm that had spent its budget showed up
+          // only as `dash.error` lines that stopped having any consequence, with
+          // nothing saying why. Volume is bounded by the `dash.error` handler
+          // above, which already emits at error level for the same events, so
+          // raising this cannot make the stream noisier than it already is.
+          dashLog.warn('dash.error-recovery-budget-denied', {
             reason: decision.reason,
             deniedBy: gate.deniedBy,
             attempt: gate.attempt
@@ -735,6 +791,24 @@ export function VideoPlayer({
       el.removeEventListener('playing', handlePlaying);
       clearTimeout(autoplayCheckTimer);
       clearInterval(waitForApi);
+      clearTimeout(apiNeverReadyTimer);
+
+      // An element torn down before its api appeared is the storm signature: on
+      // 2026-08-16 generations were replaced every few seconds, far inside the
+      // timeout above, so the timeout alone would have recorded none of them.
+      // Sampled because that is exactly the case where this fires most, and the
+      // aggregate count is the diagnosis.
+      if (!apiReached && !neverReadyEmitted) {
+        dashLog.sampled('dash.api-never-ready', {
+          reason: 'torn-down-before-ready',
+          msWaited: Date.now() - generationStartedAt,
+          // True means the api did appear, in the window between the last poll
+          // tick and this teardown — the player initialised and we still never
+          // subscribed to it.
+          apiPresentAtTeardown: !!el.api,
+          ...elementFacts()
+        }, { maxPerMinute: 30, aggregate: true });
+      }
     };
   }, [isDash, mediaUrl, elementKey]);
 
