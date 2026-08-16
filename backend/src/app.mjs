@@ -3314,6 +3314,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       host: printerHost,
       port: schoolFullConfig.printing?.port || 631,
       path: schoolFullConfig.printing?.path || '/ipp/print',
+      // Double-sided by default; `school.yml` printing.duplex/.binding override.
+      duplex: schoolFullConfig.printing?.duplex ?? true,
+      binding: schoolFullConfig.printing?.binding || 'LONGEDGE',
       logger: rootLogger.child({ module: 'school-print' })
     });
     // Paper-certification gate (Task 15, spec §9/§11): a `bank` printable is

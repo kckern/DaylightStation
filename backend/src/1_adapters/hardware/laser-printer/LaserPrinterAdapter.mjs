@@ -14,6 +14,10 @@
  *    printer's built-in PDF Direct Print renders the PDF as-is. No CUPS, no
  *    client-side rasterization, no npm printing deps.
  *
+ * Because there is no CUPS layer, per-job options (duplex, binding) cannot be
+ * expressed as `-o sides=...` / IPP job attributes. They are sent as a PJL
+ * preamble wrapped around the PDF bytes instead — see {@link pjlWrap}.
+ *
  * @module adapters/hardware/laser-printer
  */
 import { createConnection } from 'net';
@@ -23,6 +27,53 @@ import { OPS, encodeRequest, baseAttrs, decodeResponse } from './ipp.mjs';
 /** IPP printer-state enum (RFC 8011 §5.4.11). */
 const PRINTER_STATE = { 3: 'idle', 4: 'processing', 5: 'stopped' };
 
+/** Universal Exit Language — enters/leaves PJL job-control mode around a raw job. */
+const UEL = '\x1B%-12345X';
+
+/** PJL job names are a quoted single-line string; keep them printable and short. */
+function sanitizeJobName(jobName) {
+  return String(jobName ?? '')
+    .replace(/[^\x20-\x7E]/g, ' ') // no CR/LF/control bytes — they would break PJL line parsing
+    .replace(/"/g, "'")
+    .slice(0, 80) || 'daylight-print';
+}
+
+/**
+ * Standard PJL preamble/trailer around raw PDF bytes for a JetDirect (port
+ * 9100) job — sets per-job DUPLEX/BINDING before the printer enters PDF
+ * parsing mode, then exits cleanly so the settings do not leak into the next
+ * job. The PDF bytes themselves pass through byte-for-byte untouched.
+ *
+ * INFERRED, NOT MEASURED: this is the de facto standard preamble for
+ * PJL-capable laser printers (HP's PJL Technical Reference, which Brother
+ * firmware broadly implements), but it has NOT been verified against the
+ * physical Brother HL-L2460DW this codebase targets — no hardware print was
+ * run when this was written. Two specific things a physical test should
+ * confirm: (1) the sheet actually comes out double-sided, and (2) `@PJL ENTER
+ * LANGUAGE=PDF` is accepted (PDF is a vendor personality, not one of the PJL
+ * spec's named languages; if the firmware rejects it, dropping that one line
+ * and letting PDF Direct Print auto-detect — as it does today — is the first
+ * thing to try). See docs/reference/school/README.md → Printing → Duplex.
+ *
+ * @param {Buffer} pdf - the document bytes to wrap (already includes all copies)
+ * @param {Object} opts
+ * @param {string} opts.jobName
+ * @param {boolean} opts.duplex
+ * @param {'LONGEDGE'|'SHORTEDGE'} opts.binding
+ * @returns {Buffer}
+ */
+export function pjlWrap(pdf, { jobName, duplex, binding }) {
+  const header = [
+    `${UEL}@PJL JOB NAME="${sanitizeJobName(jobName)}"`,
+    `@PJL SET DUPLEX=${duplex ? 'ON' : 'OFF'}`,
+    ...(duplex ? [`@PJL SET BINDING=${binding}`] : []),
+    '@PJL ENTER LANGUAGE=PDF',
+    '',
+  ].join('\r\n');
+  const trailer = `\r\n${UEL}@PJL EOJ\r\n${UEL}`;
+  return Buffer.concat([Buffer.from(header, 'latin1'), pdf, Buffer.from(trailer, 'latin1')]);
+}
+
 /**
  * @typedef {Object} LaserPrinterConfig
  * @property {string} host - printer IP or hostname
@@ -31,12 +82,17 @@ const PRINTER_STATE = { 3: 'idle', 4: 'processing', 5: 'stopped' };
  * @property {string} [path='/ipp/print'] - IPP endpoint path (AirPrint default)
  * @property {number} [timeout=15000] - IPP request timeout in ms
  * @property {number} [printTimeout=60000] - raw print send timeout in ms
+ * @property {boolean} [duplex=true] - default double-sided printing (config-driven; per-job override in printPdf)
+ * @property {'LONGEDGE'|'SHORTEDGE'} [binding='LONGEDGE'] - duplex flip style; LONGEDGE = book-style, the right default for portrait text
  */
 export class LaserPrinterAdapter {
-  #host; #port; #rawPort; #path; #timeout; #printTimeout; #logger;
+  #host; #port; #rawPort; #path; #timeout; #printTimeout; #duplexDefault; #bindingDefault; #logger;
   #requestId = 0;
 
-  constructor({ host, port = 631, rawPort = 9100, path = '/ipp/print', timeout = 15000, printTimeout = 60000, logger = console } = {}) {
+  constructor({
+    host, port = 631, rawPort = 9100, path = '/ipp/print', timeout = 15000, printTimeout = 60000,
+    duplex = true, binding = 'LONGEDGE', logger = console,
+  } = {}) {
     if (!host) {
       throw new InfrastructureError('LaserPrinterAdapter requires host', {
         code: 'MISSING_DEPENDENCY', dependency: 'host',
@@ -50,6 +106,8 @@ export class LaserPrinterAdapter {
     // Port 9100 is single-session: a print in progress holds the socket, so a
     // fresh job's connect can wait. Generous timeout covers warm-up + render.
     this.#printTimeout = printTimeout;
+    this.#duplexDefault = duplex;
+    this.#bindingDefault = binding;
     this.#logger = logger;
   }
 
@@ -80,15 +138,26 @@ export class LaserPrinterAdapter {
    * and the socket closes cleanly — port 9100 is fire-and-forget, so there is
    * no per-job ack; a stream/connect failure is the only failure signal.
    *
+   * The payload is wrapped in ONE {@link pjlWrap} envelope carrying the duplex
+   * settings — one PJL job, N documents inside it, exactly the single stream
+   * the printer already parses today.
+   *
    * @param {Buffer} pdf - complete PDF bytes
    * @param {Object} [opts]
-   * @param {string} [opts.jobName='daylight-print'] - for our own logging (9100 carries no metadata)
-   * @param {string} [opts.user='daylight'] - for our own logging
+   * @param {string} [opts.jobName='daylight-print'] - our own logging AND the PJL JOB NAME
+   * @param {string} [opts.user='daylight'] - for our own logging (9100 carries no user metadata)
    * @param {number} [opts.copies=1]
-   * @returns {Promise<{ok:boolean, bytes:number, copies:number}>}
+   * @param {boolean} [opts.duplex] - per-job override; defaults to the adapter's configured default
+   * @param {'LONGEDGE'|'SHORTEDGE'} [opts.binding] - per-job override; ignored when duplex is off
+   * @returns {Promise<{ok:boolean, bytes:number, copies:number, duplex:boolean}>} `bytes` counts the
+   *   wire payload INCLUDING the PJL envelope; `duplex` echoes what was requested (not confirmed —
+   *   9100 gives no ack, and PJL duplex is unverified on this printer model)
    * @throws {InfrastructureError} on transport failure
    */
-  printPdf(pdf, { jobName = 'daylight-print', user = 'daylight', copies = 1 } = {}) {
+  printPdf(pdf, {
+    jobName = 'daylight-print', user = 'daylight', copies = 1,
+    duplex = this.#duplexDefault, binding = this.#bindingDefault,
+  } = {}) {
     if (!Buffer.isBuffer(pdf) || pdf.length === 0) {
       return Promise.reject(new InfrastructureError('printPdf requires non-empty PDF buffer', { code: 'INVALID_DOCUMENT' }));
     }
@@ -96,7 +165,11 @@ export class LaserPrinterAdapter {
       return Promise.reject(new InfrastructureError('document is not a PDF', { code: 'INVALID_DOCUMENT' }));
     }
     const nCopies = Math.max(1, Math.floor(copies));
-    const payload = nCopies === 1 ? pdf : Buffer.concat(Array.from({ length: nCopies }, () => pdf));
+    const documents = nCopies === 1 ? pdf : Buffer.concat(Array.from({ length: nCopies }, () => pdf));
+    // ONE envelope around ALL copies, not one per copy: the settings apply to
+    // the whole job and the printer sees the same single concatenated stream it
+    // already handles today. Per-copy envelopes would mint N separate PJL jobs.
+    const payload = pjlWrap(documents, { jobName, duplex, binding });
 
     return new Promise((resolve, reject) => {
       const sock = createConnection({ host: this.#host, port: this.#rawPort, timeout: this.#printTimeout });
@@ -110,8 +183,8 @@ export class LaserPrinterAdapter {
         // have confirmation the bytes flushed, so destroying now is safe and
         // releases the port immediately.
         sock.destroy();
-        this.#logger.info?.('laser-printer.job-sent', { host: this.#host, port: this.#rawPort, jobName, user, copies: nCopies, bytes: payload.length });
-        resolve({ ok: true, bytes: payload.length, copies: nCopies });
+        this.#logger.info?.('laser-printer.job-sent', { host: this.#host, port: this.#rawPort, jobName, user, copies: nCopies, duplex, bytes: payload.length });
+        resolve({ ok: true, bytes: payload.length, copies: nCopies, duplex });
       };
       const fail = (msg) => {
         if (settled) return; settled = true;

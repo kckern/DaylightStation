@@ -35,16 +35,16 @@ describe('construction', () => {
 });
 
 describe('printPdf — happy path', () => {
-  it('resolves the real adapter return shape {ok, bytes, copies}', async () => {
+  it('resolves the real adapter return shape {ok, bytes, copies, duplex}', async () => {
     const pdf = makePdf(2);
     const res = await printer.printPdf(pdf, { jobName: 'worksheet', user: 'kid1' });
-    expect(res).toEqual({ ok: true, bytes: pdf.length, copies: 1 });
+    expect(res).toEqual({ ok: true, bytes: pdf.length, copies: 1, duplex: true });
   });
 
   it('counts copies as N concatenated documents, like JetDirect does', async () => {
     const pdf = makePdf(1);
     const res = await printer.printPdf(pdf, { copies: 3 });
-    expect(res).toEqual({ ok: true, bytes: pdf.length * 3, copies: 3 });
+    expect(res).toEqual({ ok: true, bytes: pdf.length * 3, copies: 3, duplex: true });
   });
 
   it('floors and clamps copies to at least 1', async () => {
@@ -78,6 +78,26 @@ describe('printPdf — happy path', () => {
     const pdf = makePdf(1);
     await printer.printPdf(pdf, { copies: 4 });
     const [job] = printer.listJobs();
+    const captured = await readFile(path.join(captureDir, `${job.jobId}.pdf`));
+    expect(captured.equals(pdf)).toBe(true);
+  });
+
+  it('records duplex/binding in the job sidecar, defaulting to true/LONGEDGE', async () => {
+    await printer.printPdf(makePdf(1), { jobName: 'x' });
+    const [job] = printer.listJobs();
+    expect(job.duplex).toBe(true);
+    expect(job.binding).toBe('LONGEDGE');
+    const sidecar = JSON.parse(await readFile(path.join(captureDir, `${job.jobId}.json`), 'utf8'));
+    expect(sidecar).toMatchObject({ duplex: true, binding: 'LONGEDGE' });
+  });
+
+  it('records a single-sided / short-edge job as asked, without applying it', async () => {
+    const pdf = makePdf(1);
+    const res = await printer.printPdf(pdf, { jobName: 'x', duplex: false, binding: 'SHORTEDGE' });
+    expect(res.duplex).toBe(false);
+    const [job] = printer.listJobs();
+    expect(job).toMatchObject({ duplex: false, binding: 'SHORTEDGE' });
+    // No PJL envelope here — the capture stays a plain, readable PDF.
     const captured = await readFile(path.join(captureDir, `${job.jobId}.pdf`));
     expect(captured.equals(pdf)).toBe(true);
   });
