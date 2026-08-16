@@ -40,6 +40,7 @@ import { walkBlocks } from '#domains/school/documents/documentValidation.mjs';
 import { shortId } from '#domains/core/utils/id.mjs';
 import { createWorksheetInstance, worksheetInstanceDocument } from '#domains/school/questionBankV2.mjs';
 import { PublishPrintDocument } from '#apps/school/documents/PublishPrintDocument.mjs';
+import { deriveLearnerName, deriveIssueDate } from '#apps/school/documents/reprintContext.mjs';
 import { slugify } from '#domains/school/documents/receipts.mjs';
 
 /** States in which handing over a sheet still means something. */
@@ -356,12 +357,8 @@ export class IssueDocument {
     }
 
     const publishedDocument = await this.#printDocuments.getPublished(instance.documentId, instance.documentRevision);
-    const learnerName = String(instance.learnerId)
-      .split(/[-_\s]+/).filter(Boolean)
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
-    const issueDate = new Date(instance.issuedAt).toLocaleDateString('en-GB', {
-      timeZone: 'America/Los_Angeles', day: 'numeric', month: 'short', year: 'numeric',
-    });
+    const learnerName = deriveLearnerName(instance.learnerId);
+    const issueDate = deriveIssueDate(instance.issuedAt);
     const reusableCard = !reprinting && typeof this.#allocationStore.findReusableCard === 'function'
       ? await this.#allocationStore.findReusableCard({
         learnerId: instance.learnerId,
