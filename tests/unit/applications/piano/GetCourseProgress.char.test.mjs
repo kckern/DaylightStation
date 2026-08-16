@@ -32,10 +32,14 @@ const pianoConfig = {
   },
 };
 
+// Profiles carry `display_name`/`username`, not `name` — see GetCourseProgress's
+// own comment: a bare `p.name` once shipped "undefined" labels, which is why the
+// resolution is display_name || username || id. This fixture said `name` and so
+// characterized a shape that never existed on disk.
 const profiles = {
-  alice: { name: 'Alice' },
-  bob: { name: 'Bob' },
-  carol: { name: 'Carol' },
+  alice: { display_name: 'Alice' },
+  bob: { display_name: 'Bob' },
+  carol: { display_name: 'Carol' },
 };
 
 const configService = {
