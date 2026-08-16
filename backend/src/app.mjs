@@ -1202,7 +1202,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const { ChannelManager } = await import('./3_applications/livestream/ChannelManager.mjs');
   const { FFmpegStreamAdapter } = await import('./1_adapters/livestream/FFmpegStreamAdapter.mjs');
   const { SourceFeeder } = await import('./1_adapters/livestream/SourceFeeder.mjs');
-  const programsBasePath = `${configService.getDataDir()}/household/apps/livestream/programs`;
+  const programsBasePath = configService.getHouseholdPath('apps/livestream/programs');
   const channelManager = new ChannelManager({
     mediaBasePath,
     programsBasePath,
@@ -2234,7 +2234,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
           configService.getHouseholdAppConfig(householdId, 'scales') || {},
         ),
         loadIcon: createIconLoader({
-          dir: `${configService.getDataDir()}/household/assets/icons`,
+          dir: configService.getHouseholdPath('assets/icons'),
           logger: sheetsLogger,
         }),
       }),
@@ -2513,7 +2513,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // from memory — a second instance would double that for no benefit. A missing
   // manifest degrades to an empty corpus rather than failing boot.
   const exerciseLibrary = new YamlExerciseLibraryRepository({
-    indexPath: join(configService.getDataDir(), 'household', 'apps', 'fitness', 'exercise-index.yml'),
+    indexPath: configService.getHouseholdPath('apps/fitness/exercise-index.yml'),
     logger: rootLogger.child({ module: 'exercise-library' })
   }).load();
   // The authored Catalog is a School capability shared by web, print, and
