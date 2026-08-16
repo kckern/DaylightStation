@@ -23,6 +23,23 @@ describe('resolveSourceContentKey', () => {
     expect(resolveSourceContentKey({ mediaUrl: '/x.mp4' })).toBe('mediaUrl:/x.mp4');
   });
 
+  it('skips a present-but-empty field and keeps scanning for a real identity', () => {
+    // ensureEntryGuid short-circuits on a TRUTHY guid, so a falsy one reaches here and
+    // must not win the precedence race — the item is identified by its contentId.
+    expect(resolveSourceContentKey({ guid: false, contentId: 'plex:694719' })).toBe('contentId:plex:694719');
+    expect(resolveSourceContentKey({ guid: '', contentId: 'plex:694719' })).toBe('contentId:plex:694719');
+    expect(resolveSourceContentKey({ guid: NaN, contentId: 'plex:694719' })).toBe('contentId:plex:694719');
+  });
+
+  it('accepts a numeric id of zero, which is a usable key', () => {
+    expect(resolveSourceContentKey({ plex: 0 })).toBe('plex:0');
+  });
+
+  it('rejects a non-scalar field rather than collapsing it to [object Object]', () => {
+    expect(resolveSourceContentKey({ media: { url: '/a.mp4' }, contentId: 'plex:694719' }))
+      .toBe('contentId:plex:694719');
+  });
+
   it('returns null when no field identifies the content', () => {
     expect(resolveSourceContentKey({ shader: 'focused' })).toBeNull();
     expect(resolveSourceContentKey(null)).toBeNull();

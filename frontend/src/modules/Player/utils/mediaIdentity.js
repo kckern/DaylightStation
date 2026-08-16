@@ -68,6 +68,24 @@ export const normalizeDuration = (...candidates) => {
 const SOURCE_CONTENT_FIELDS = ['guid', 'contentId', 'assetId', 'key', 'plex', 'media', 'id', 'mediaUrl'];
 
 /**
+ * Does this value actually name a piece of content?
+ *
+ * Only strings and finite numbers do. A present-but-empty field must not win the
+ * precedence race and stop the scan before it reaches the field that carries the real
+ * identity: `{ guid: false, contentId: 'plex:694719' }` has to resolve by contentId,
+ * matching how `ensureEntryGuid` skips a falsy guid. `0` counts, since a numeric key
+ * of zero is a usable id; `false`, `NaN` and `Infinity` never identify anything.
+ * Objects are rejected too — every field here holds a scalar (SinglePlayer types
+ * `media` as a string), and interpolating an object yields "[object Object]", which
+ * would collapse distinct sources onto one key.
+ */
+const identifies = (value) => {
+  if (typeof value === 'string') return value !== '';
+  if (typeof value === 'number') return Number.isFinite(value);
+  return false;
+};
+
+/**
  * Stable content key for a play/queue source object.
  *
  * The Player used to identify a source by OBJECT IDENTITY (a WeakMap keyed on
@@ -82,7 +100,7 @@ export const resolveSourceContentKey = (source) => {
   if (!source || typeof source !== 'object' || Array.isArray(source)) return null;
   for (const field of SOURCE_CONTENT_FIELDS) {
     const value = source[field];
-    if (value != null && value !== '') return `${field}:${value}`;
+    if (identifies(value)) return `${field}:${value}`;
   }
   return null;
 };
