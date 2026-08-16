@@ -8,6 +8,7 @@ import { createHomeAutomationAdapters } from '../bootstrap.mjs';
 import { YamlHomeDashboardConfigRepository } from '#adapters/persistence/yaml/YamlHomeDashboardConfigRepository.mjs';
 import { createHomeDashboardRouter } from '#api/v1/routers/home-dashboard.mjs';
 import { dataService } from '#system/config/index.mjs';
+import { YamlWeatherDatastore } from '#adapters/persistence/yaml/YamlWeatherDatastore.mjs';
 
 /**
  * Create home automation API router
@@ -46,6 +47,10 @@ export function createHomeAutomationApiRouter(config) {
 
   return createHomeAutomationRouter({
     haGateway: adapters.haGateway,
+    // The router asks for current conditions; this store owns where they live.
+    weatherStore: dataService
+      ? new YamlWeatherDatastore({ dataService, configService, householdId, logger })
+      : null,
     tvAdapter: adapters.tvAdapter,
     kioskAdapter: adapters.kioskAdapter,
     taskerAdapter: adapters.taskerAdapter,

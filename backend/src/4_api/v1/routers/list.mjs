@@ -505,9 +505,12 @@ export function createListRouter(config) {
       // Apply recent_on_top sorting if requested (uses menu_memory, not play history)
       // Skip if fixed order - maintain YAML order
       if (modifiers.recent_on_top && !hasFixedOrder) {
-        // Load menu_memory for sorting by menu selection time
-        // Note: loadFile is scoped to data dir; household path built by caller
-        const menuMemory = loadFile?.('media/menu-memory') || {};
+        // Same store the sibling handlers above read and write via the
+        // INJECTED menuMemoryPath. This line used to name the location itself
+        // (`history/menu_memory`, then `media/menu-memory`), so one file
+        // addressed one store two different ways and the reorganization had
+        // to find both.
+        const menuMemory = loadYaml(menuMemoryPath) || {};
 
         items = [...items].sort((a, b) => {
           const aKey = getMenuMemoryKey(a);
