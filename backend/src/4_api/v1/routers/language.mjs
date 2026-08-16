@@ -6,7 +6,6 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
-import { GuestForbiddenError, GateClosedError } from '#domains/school/errors.mjs';
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 
 const AUDIO_CACHE = 'public, max-age=31536000, immutable';
@@ -50,7 +49,14 @@ function sendAudioFile(res, filePath, { cache = AUDIO_CACHE } = {}) {
   fs.createReadStream(filePath).pipe(res);
 }
 
-export function createLanguageRouter({ languageStudyService, logger = console }) {
+export function createLanguageRouter({ languageStudyService, schoolErrors = {}, logger = console }) {
+  // School error CLASSES arrive via the factory. A router may not import
+  // 2_domains (api-layer-guidelines.md), but it does own the mapping from a
+  // domain failure to an HTTP status, so it needs the types to match on.
+  // Guarded at each use: an un-injected class would make `instanceof`
+  // throw a TypeError mid-request, which reads as a hang rather than a
+  // wiring mistake. Composition always supplies these.
+  const { GuestForbiddenError, GateClosedError } = schoolErrors;
   const router = express.Router();
 
   const wrap = (fn) => (req, res) => {
@@ -59,12 +65,12 @@ export function createLanguageRouter({ languageStudyService, logger = console })
       .catch((err) => {
         // 423 Locked, with the resolved gate, so the SPA can render a remedy
         // screen instead of string-matching a 403 meant for identity.
-        if (err instanceof GateClosedError) {
+        if (GateClosedError && err instanceof GateClosedError) {
           return res.status(423).json({
             error: err.message, gate: { level: err.level, missing: err.missing, stale: err.stale },
           });
         }
-        if (err instanceof GuestForbiddenError) return res.status(403).json({ error: err.message });
+        if (GuestForbiddenError && err instanceof GuestForbiddenError) return res.status(403).json({ error: err.message });
         if (err instanceof EntityNotFoundError) return res.status(404).json({ error: err.message });
         if (err instanceof ValidationError) return res.status(400).json({ error: err.message });
         logger.error?.('school.language.router.error', { path: req.path, error: err.message });

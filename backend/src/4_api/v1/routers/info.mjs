@@ -15,7 +15,6 @@
 import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { parseActionRouteId } from '../utils/actionRouteParser.mjs';
-import { resolveFormat } from '../utils/resolveFormat.mjs';
 import { stripEmpty } from '#api/v1/utils/stripEmpty.mjs';
 import { splatPath } from '#api/utils/wildcard.mjs';
 
@@ -74,7 +73,7 @@ function deriveCapabilities(item, adapter) {
  * @param {Object} adapter - The content adapter for the item
  * @returns {Object} Formatted response object
  */
-function transformToInfoResponse(item, source, adapter) {
+function transformToInfoResponse(item, source, adapter, resolveFormat) {
   const response = {
     contentId: item.id,  // Compound ID (e.g., "plex:12345") — unified identifier
     id: item.id,
@@ -132,6 +131,9 @@ function transformToInfoResponse(item, source, adapter) {
  * @returns {express.Router} Express router instance
  */
 export function createInfoRouter(config) {
+  // `resolveFormat` is pure domain logic, so it arrives via the factory
+  // rather than being imported (api-layer-guidelines.md).
+  const { resolveFormat } = config;
   const { registry, contentQueryService, contentIdResolver, logger = console } = config;
   const router = express.Router();
 
@@ -184,7 +186,7 @@ export function createInfoRouter(config) {
 
     // Transform response with capability evaluation.
     // Use resolved source (not parser source) to get correct format from adapter.
-    const response = transformToInfoResponse(item, finalSource, adapter);
+    const response = transformToInfoResponse(item, finalSource, adapter, resolveFormat);
 
     // For container items, prefer metadata childCount over expensive getList() call
     if (item.itemType === 'container') {

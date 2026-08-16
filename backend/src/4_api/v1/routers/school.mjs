@@ -3,7 +3,6 @@
  * All policy lives in the service; this file only maps errors to statuses.
  */
 import express from 'express';
-import { GuestForbiddenError, SessionGoneError } from '#domains/school/errors.mjs';
 import { ValidationError, EntityNotFoundError, DomainInvariantError } from '#domains/core/errors/index.mjs';
 import { splatPath } from '#api/utils/wildcard.mjs';
 // Same slug the school receipts already use to keep an untrusted id out of a
@@ -12,6 +11,7 @@ import { splatPath } from '#api/utils/wildcard.mjs';
 import { slugify } from '#domains/school/documents/receipts.mjs';
 
 export function createSchoolRouter({
+  schoolErrors = {},
   schoolService,
   getMaterialCatalog = null,
   getMaterialUnits = null,
@@ -97,14 +97,21 @@ export function createSchoolRouter({
   recordEnrichment = null,
   logger = console,
 }) {
+  // School error CLASSES arrive via the factory. A router may not import
+  // 2_domains (api-layer-guidelines.md), but it does own the mapping from a
+  // domain failure to an HTTP status, so it needs the types to match on.
+  // Guarded at each use: an un-injected class would make `instanceof`
+  // throw a TypeError mid-request, which reads as a hang rather than a
+  // wiring mistake. Composition always supplies these.
+  const { GuestForbiddenError, SessionGoneError } = schoolErrors;
   const router = express.Router();
   let warnedMaterialsConfigMissing = false;
   const wrap = (fn) => (req, res) => {
     Promise.resolve()
       .then(() => fn(req, res))
       .catch((err) => {
-        if (err instanceof GuestForbiddenError) return res.status(403).json({ error: err.message });
-        if (err instanceof SessionGoneError) return res.status(410).json({ error: err.message });
+        if (GuestForbiddenError && err instanceof GuestForbiddenError) return res.status(403).json({ error: err.message });
+        if (SessionGoneError && err instanceof SessionGoneError) return res.status(410).json({ error: err.message });
         if (err instanceof EntityNotFoundError) return res.status(404).json({ error: err.message });
         if ([
           'REMEDIATION_ACTION_CONFLICT', 'REMEDIATION_ACTION_OUT_OF_ORDER',

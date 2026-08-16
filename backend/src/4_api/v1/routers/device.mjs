@@ -15,7 +15,6 @@
 
 import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
-import { hasActiveCall, forceEndCall } from '#apps/homeline/CallStateService.mjs';
 import { buildErrorBody, ERROR_CODES } from '#shared-contracts/media/errors.mjs';
 import { buildCommandEnvelope } from '#shared-contracts/media/envelopes.mjs';
 import { validateSessionSnapshot } from '#shared-contracts/media/shapes.mjs';
@@ -31,7 +30,6 @@ import {
   DispatchIdempotencyService,
   IdempotencyConflictError,
 } from '#apps/devices/services/DispatchIdempotencyService.mjs';
-import { contentRequiresCamera } from '#apps/devices/services/contentRequiresCamera.mjs';
 
 /**
  * Map a SessionControlService.sendCommand result to an HTTP response.
@@ -102,6 +100,9 @@ function isNonEmptyString(v) {
  * @returns {express.Router}
  */
 export function createDeviceRouter(config) {
+  // Application services arrive through the factory — a router may not import
+  // 3_applications (api-layer-guidelines.md: "Containers are injected").
+  const { hasActiveCall, forceEndCall, contentRequiresCamera } = config;
   const router = express.Router();
   const {
     deviceService,
