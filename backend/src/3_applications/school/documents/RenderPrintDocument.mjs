@@ -51,7 +51,14 @@ function dropRedundantTitleHeading(document) {
   return { ...document, blocks: document.blocks.slice(1) };
 }
 
-/** Archetypes bound through a physical binder get the alternating gutter (spec §7 furniture). */
+/**
+ * Archetypes bound through a physical binder get the alternating gutter (spec
+ * §7 furniture). Everything else reserves its punch margin on the LEFT of every
+ * page, which only survives being printed one-sided — hence this same set is
+ * what the render reports as its `duplex` decision, and what the print job then
+ * follows. Adding an archetype here changes page layout, so it needs its own
+ * visual check, not just a printer setting.
+ */
 const DUPLEX_ARCHETYPES = new Set(['worksheet']);
 
 /**
@@ -689,9 +696,13 @@ export class RenderPrintDocument {
    *   or a caller that never mints tokens, is unaffected.
    * @returns {Promise<{bytes: Buffer, pageCount: number, density: 'normal'|'compact'|null,
    *   warnings: string[], allocation: {cardId: string, rowRange: {start: number, end: number},
-   *   recordId: string, status: string}|null}>}
+   *   recordId: string, status: string}|null, duplex: boolean|null}>}
    *   `density` is null for a v1 (legacy-path) document, which has no density concept.
    *   `allocation` is null for every render that did not attach to a card.
+   *   `duplex` is the geometry this render actually drew — true when the gutter
+   *   alternates by page parity, false when it is fixed to the left of every
+   *   page, null on the v1 path, which draws no gutter at all. Pass it to
+   *   `printPdf({ duplex })` so the sheet is folded the way it was drawn.
    */
   async execute({ document: rawDocument, id, context = {} } = {}) {
     const raw = rawDocument !== undefined ? rawDocument : (id !== undefined ? await this.#loadById(id) : undefined);
@@ -770,7 +781,16 @@ export class RenderPrintDocument {
       tokens: context.tokens ?? null,
     });
     return {
-      bytes: result.pdf, pageCount: result.pageCount, density: null, warnings: [], allocation: null,
+      bytes: result.pdf,
+      pageCount: result.pageCount,
+      density: null,
+      warnings: [],
+      allocation: null,
+      // v1 draws no page furniture at all (no gutter is reserved, on either
+      // side), so it has no duplex decision to express — null, and the caller
+      // leaves the printer on its configured default rather than inventing one
+      // on the legacy path's behalf.
+      duplex: null,
     };
   }
 
@@ -964,6 +984,17 @@ export class RenderPrintDocument {
       density: chosen.density,
       warnings,
       allocation: allocationSnapshot(allocationRecord),
+      // The document's OWN duplex decision, surfaced so the print job can
+      // match the geometry that was just drawn. `furnitureOpts.duplex` is what
+      // decided whether the 3-hole-punch gutter alternates by page parity
+      // (mirror margins) or sits on a fixed left edge on every page. Printing
+      // a fixed-gutter document double-sided puts page 2's reserved punch
+      // margin on the opposite physical edge from page 1's while the two share
+      // one sheet — punching that stack destroys content on every verso. So
+      // the caller passes this straight through to `printPdf({ duplex })`
+      // rather than letting a global adapter default decide the physical form
+      // of a document it never looked at.
+      duplex: furnitureOpts.duplex,
     };
   }
 

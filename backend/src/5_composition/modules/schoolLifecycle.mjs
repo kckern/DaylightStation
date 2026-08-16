@@ -237,6 +237,11 @@ export async function createSchoolLifecycle({
     ]);
     devices.laserPrinter = new VirtualLaserPrinterAdapter({
       captureDir: path.join(captureRoot, 'laser'), logger,
+      // Same two knobs, same defaults as the real adapter below — a
+      // `duplex: false` deployment must be reproducible against the double,
+      // or the captures tell a story the paper would not.
+      duplex: cfg.printing?.duplex ?? true,
+      binding: cfg.printing?.binding || 'LONGEDGE',
     });
     devices.thermalPrinter = new VirtualThermalPrinterAdapter(
       { captureDir: path.join(captureRoot, 'thermal') }, { logger },
@@ -260,6 +265,14 @@ export async function createSchoolLifecycle({
       host: printerHost,
       port: cfg.printing?.port || 631,
       path: cfg.printing?.path || '/ipp/print',
+      // Resolved IDENTICALLY to app.mjs's PrintService adapter (the other
+      // construction site). This is the adapter `IssueDocument` and
+      // `ReplaceLostAnswerSheet` print through — i.e. every tracked worksheet
+      // and quiz — so a `printing.duplex: false` that reached only the other
+      // site would leave the paper path an operator actually cares about
+      // untouched, with nothing logged to say so.
+      duplex: cfg.printing?.duplex ?? true,
+      binding: cfg.printing?.binding || 'LONGEDGE',
       logger,
     });
     // The thermal registry is built elsewhere in the composition root, so the

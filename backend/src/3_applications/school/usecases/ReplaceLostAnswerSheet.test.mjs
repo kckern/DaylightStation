@@ -8,7 +8,7 @@ const live = (overrides = {}) => ({
   ...overrides,
 });
 
-function harness({ printFails = false } = {}) {
+function harness({ printFails = false, renderDuplex } = {}) {
   const records = [live(), live({
     recordId: 'math/doc@abcdef123:v0:7-12', documentId: 'math/doc',
     rowRange: { start: 7, end: 12 }, sessionId: 'ws-2', status: 'satisfied',
@@ -23,6 +23,7 @@ function harness({ printFails = false } = {}) {
     execute: vi.fn(async () => ({
       bytes: Buffer.from('%PDF'),
       allocation: { cardId: '7654321', recordId: 'new-record', rowRange: { start: 1, end: 6 } },
+      ...(renderDuplex === undefined ? {} : { duplex: renderDuplex }),
     })),
   };
   const printer = { printPdf: printFails ? vi.fn(async () => { throw new Error('jam'); }) : vi.fn(async () => {}) };
@@ -47,6 +48,25 @@ describe('ReplaceLostAnswerSheet', () => {
       cardId: '1234567', replacementCardId: '7654321', replacementRecordId: 'new-record',
     }));
     expect(result).toMatchObject({ status: 'replaced', replacementCardId: '7654321', learnerId: 'milo' });
+  });
+
+  // The replacement sheet has to be folded the way it was DRAWN. A quiz's
+  // punch gutter is fixed to the left of every page; printed double-sided,
+  // facing pages' margins land on opposite edges of one sheet and punching the
+  // stack eats the versos.
+  it('prints the replacement with the duplex the render reported', async () => {
+    const h = harness({ renderDuplex: false });
+    await h.useCase.execute({ cardId: '1234567', reportedBy: 'kckern', pin: '4321' });
+    expect(h.printer.printPdf).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ duplex: false }),
+    );
+  });
+
+  it('leaves duplex to the adapter default when the render reports none (v1 legacy)', async () => {
+    const h = harness();
+    await h.useCase.execute({ cardId: '1234567', reportedBy: 'kckern', pin: '4321' });
+    expect(h.printer.printPdf.mock.calls[0][1].duplex).toBeUndefined();
   });
 
   it('does not retire the old allocation when printing fails', async () => {

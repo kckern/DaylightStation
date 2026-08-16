@@ -421,6 +421,22 @@ describe('tracked quizzes (print/<id>@<rev> document references, spec §9)', () 
     expect(printSessions.derive(sid).issuedArtifacts).toEqual(['art_1']);
   });
 
+  it('prints a quiz SINGLE-SIDED, because its punch gutter does not alternate', async () => {
+    // The renderer reserves the 3-hole-punch gutter on the LEFT of every page
+    // for every archetype except `worksheet`. Printed double-sided, page 2's
+    // reserved margin would sit on the opposite physical edge of the same
+    // sheet, and punching the stack would destroy content on every verso — so
+    // the job follows the geometry the render actually drew, never a global
+    // adapter default that never looked at the document. (The `worksheet`
+    // half of this pairing is asserted at the render layer, in
+    // RenderPrintDocument.test.mjs: a worksheet archetype has no
+    // row-consuming OMR questions, so it cannot take the card-attached path
+    // this use case drives.)
+    const sid = await openPrintSession();
+    await printUseCase.execute({ sessionId: sid });
+    expect(printPrinter.jobs[0].opts.duplex).toBe(false);
+  });
+
   it('never touches the legacy curriculum.getDocument lookup', async () => {
     const sid = await openPrintSession();
     // curriculum.getDocument throws if called at all (see the fixture above) —

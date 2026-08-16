@@ -69,6 +69,14 @@ export class ReplaceLostAnswerSheet {
         await this.#printer.printPdf(rendered.bytes, {
           jobName: `school-replace-lost-${oldRecord.documentId.replaceAll('/', '-')}`,
           user: learnerId,
+          // The replacement sheet is folded the way it was DRAWN: the render
+          // reports whether it alternated the 3-hole-punch gutter by page
+          // parity (duplex) or fixed it to the left of every page (simplex),
+          // and printing the fixed-gutter case double-sided would put facing
+          // pages' punch margins on opposite edges of one sheet. `undefined`
+          // (the v1 legacy path, which draws no gutter) keeps the adapter's
+          // configured default.
+          duplex: rendered.duplex ?? undefined,
         });
       } catch (error) {
         if (rendered?.allocation) {

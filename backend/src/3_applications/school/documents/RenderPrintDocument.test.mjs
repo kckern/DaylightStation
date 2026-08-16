@@ -424,6 +424,44 @@ describe('RenderPrintDocument — gutter threads into body measurement AND drawi
     expect(Math.abs((footer1.xPt - footer2.xPt) - bodyShiftPt)).toBeLessThan(2);
   });
 
+  // The render's own duplex decision has to leave the use case, or the print
+  // job falls back to a global adapter default that never looked at the
+  // document — and a fixed-gutter document printed double-sided puts facing
+  // pages' punch margins on opposite edges of ONE sheet.
+  it('reports duplex: true for a worksheet, whose gutter mirrors by page parity', async () => {
+    const useCase = new RenderPrintDocument();
+    const result = await useCase.execute({ document, context: { learnerName: 'Riley' } });
+    expect(result.duplex).toBe(true);
+  });
+
+  it('reports duplex: false for every archetype whose gutter is fixed to the left', async () => {
+    const useCase = new RenderPrintDocument();
+    for (const archetype of ['quiz', 'infopage']) {
+      // eslint-disable-next-line no-await-in-loop
+      const result = await useCase.execute({
+        document: v2doc({
+          archetype,
+          fit: { policy: 'flow', typeScale: 'standard' },
+          blocks: [
+            { type: 'rich_text', md: 'Page one body.' },
+            { type: 'page_break' },
+            { type: 'rich_text', md: 'Page two body.' },
+          ],
+        }),
+      });
+      expect(result.pageCount, `${archetype} page count`).toBe(2);
+      expect(result.duplex, `${archetype} duplex`).toBe(false);
+    }
+  });
+
+  it('reports duplex: null on the v1 legacy path, which draws no gutter at all', async () => {
+    const useCase = new RenderPrintDocument();
+    const result = await useCase.execute({ document: v1doc() });
+    // Null, not false: v1 has no decision to express, so the caller leaves the
+    // printer on its configured default rather than inventing one.
+    expect(result.duplex).toBe(null);
+  });
+
   it('a non-card render keeps the plain "Page X of Y" footer — no card number, no separator', async () => {
     const useCase = new RenderPrintDocument();
     const result = await useCase.execute({ document, context: { learnerName: 'Riley' } });
