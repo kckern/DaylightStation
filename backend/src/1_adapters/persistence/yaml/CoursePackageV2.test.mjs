@@ -31,17 +31,13 @@ const fixture = (layout = 'root') => {
 afterEach(() => roots.splice(0).forEach((root) => fs.rmSync(root, { recursive: true, force: true })));
 
 describe('school.course/v2 package discovery', () => {
-  it('projects lesson indexes as units and discovers arbitrary typed YAML artifacts', async () => {
+  it('ignores a package left under the retired curriculum/ nesting', async () => {
     const configService = fixture('curriculum');
     const curriculum = new YamlCurriculumDatastore({ configService });
     const school = new YamlSchoolDatastore({ configService });
-    expect((await curriculum.listWorks()).items[0].raw.schema).toBe('school.course/v2');
-    expect((await curriculum.listWorks()).items.map((entry) => [entry.id, entry.work]))
-      .toEqual([['civilization/atlas', 'atlas']]);
-    expect((await curriculum.listUnits()).items.map((entry) => entry.id)).toEqual(['maine']);
-    expect(await curriculum.getUnit('maine')).toMatchObject({ unitId: 'maine' });
-    expect(school.listBankIds()).toEqual(['civilization/atlas/maine/flashcards', 'civilization/atlas/maine/worksheet']);
-    expect(school.readBankRaw('civilization/atlas/maine/worksheet')).toMatchObject({ title: 'Maine worksheet' });
+    expect((await curriculum.listWorks()).items).toEqual([]);
+    expect((await curriculum.listUnits()).items).toEqual([]);
+    expect(school.listBankIds()).toEqual([]);
   });
 
   // The reorganization moves every course from curriculum/<subject>/<work> to

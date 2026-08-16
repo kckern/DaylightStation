@@ -5,7 +5,7 @@
  * The promotion gate, on the command line. Runtime serves only a published,
  * reviewed catalog (spec §3), so before anything is promoted this asks the one
  * question that matters: does every unit, document, and manifest in
- * `<dataDir>/content/school/curriculum/` parse, validate, and resolve?
+ * `<dataDir>/content/school/<subject>/<course>/` parse, validate, and resolve?
  *
  * Exit 1 on any error makes it usable as a CI gate. The shell is deliberately
  * thin — wiring plus a report; every rule lives in ValidateCatalog and the
@@ -126,7 +126,7 @@ function reportFileErrors(label, byId) {
 
 function report(result, { dataDir }) {
   const { summary } = result;
-  process.stdout.write(`Curriculum catalog: ${path.join(dataDir, 'content', 'school', 'curriculum')}\n`);
+  process.stdout.write(`Curriculum catalog: ${path.join(dataDir, 'content', 'school')}\n`);
   process.stdout.write(`  units      ${String(summary.units).padStart(4)}  (${summary.publishable} publishable)\n`);
   process.stdout.write(`  documents  ${String(summary.documents).padStart(4)}\n`);
   process.stdout.write(`  manifests  ${String(summary.manifests).padStart(4)}\n`);
