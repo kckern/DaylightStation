@@ -486,6 +486,37 @@ $amber-ink: #1a1300;
   .media-search-input-wrap { flex: 1; min-width: 0; }
 }
 
+// ---- Portrait: search gets the row while it is being used -------------------
+// A 360px dock has ~336px to spend. The scope select (130px, flex-shrink: 0)
+// and the icon cluster (168px) took all of it, leaving the input 14px of
+// typable width with its own left icon over the centre — elementFromPoint at
+// the field's centre returned the magnifier, so the tap that should focus it
+// never landed, and typed text was invisible. Field report 2026-08-16: 18s to
+// get into the box, then a query had to be retyped blind.
+@include mobile-only {
+  .media-search-bar {
+    max-width: none;
+
+    // Decoration, never a tap target.
+    .mantine-Input-section[data-position='left'] { pointer-events: none; }
+
+    // Both must be allowed below their intrinsic width or the input overflows
+    // the wrap and slides under the cluster.
+    .media-search-input-wrap { min-width: 0; }
+    input { min-width: 0; }
+
+    // Idle: yield enough of the scope select that the field is a real tap target.
+    .media-search-scope { max-width: 96px; }
+  }
+
+  // In use, search owns the row. The scope select and the cluster come back on
+  // blur, so nothing is removed from the dock.
+  .media-dock:has(.media-search-bar:focus-within) {
+    .media-search-scope,
+    .media-dock-cluster { display: none; }
+  }
+}
+
 .media-search-overlay {
   position: absolute;
   top: calc(100% + 6px);
