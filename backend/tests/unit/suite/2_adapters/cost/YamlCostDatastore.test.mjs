@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { YamlCostDatastore } from '#adapters/cost/YamlCostDatastore.mjs';
-import { ICostRepository } from '#applications/cost/ports/ICostRepository.mjs';
+import { ICostRepository } from '#apps/cost/ports/ICostRepository.mjs';
 import { CostEntry } from '#domains/cost/entities/CostEntry.mjs';
 import { Money } from '#domains/cost/value-objects/Money.mjs';
 import { CostCategory } from '#domains/cost/value-objects/CostCategory.mjs';

@@ -115,8 +115,15 @@ describe('WebSocketEventBus routing — per-device topics', () => {
 
     expect(clientTv1.ws.send).toHaveBeenCalledTimes(1);
     expect(clientTv2.ws.send).not.toHaveBeenCalled();
-    // screen:<id> must NOT leak to wildcard subscribers.
-    expect(clientWildcard.ws.send).not.toHaveBeenCalled();
+    // Wildcard subscribers DO receive screen:<id>, deliberately. Screens
+    // subscribe through predicate filters, which the frontend
+    // WebSocketService syncs to the server as '*' and never as the exact
+    // `screen:<id>` topic — so excluding wildcard made every
+    // SessionControlService command structurally undeliverable (5s
+    // DEVICE_REFUSED on all remote control). Screens drop envelopes whose
+    // targetDevice isn't theirs, which is what makes this safe. See the
+    // `kind === 'screen'` branch in WebSocketEventBus.
+    expect(clientWildcard.ws.send).toHaveBeenCalledTimes(1);
   });
 
   it('playback_state fans out to all subscribers (including wildcard)', () => {
