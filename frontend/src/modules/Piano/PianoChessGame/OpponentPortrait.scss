@@ -110,18 +110,9 @@
    looking at while they wait for the board.
    Opacity on the face only: compositor-only, and it leaves the name and status
    text at full contrast so the words stay readable while it breathes. */
-.chess-opponent--thinking .chess-opponent__face {
-  animation: chess-opponent-thinking 1200ms ease-in-out infinite;
-}
-
-@keyframes chess-opponent-thinking {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .chess-opponent--thinking .chess-opponent__face { animation: none; opacity: 0.75; }
-}
+/* The thinking pulse is declared once, above, and driven by `--pc-think-ms` —
+   the character's REAL think time for this rung. A second flat-duration rule
+   here would win on cascade order and silently discard that. */
 
 /* The character reacts to what actually happened.
    Every reaction is a one-shot transform on the face — keyed by the move that

@@ -505,3 +505,24 @@ describe('the landing settle', () => {
     expect(compiledCss).not.toMatch(/@keyframes chess-board-settle/);
   });
 });
+
+describe('no rule fights itself (compiled CSS)', () => {
+  /**
+   * The failure mode this whole stylesheet has been bitten by twice: a second
+   * declaration of the same property on the same selector, where the later one
+   * wins by position and silently discards the first. It cost this screen its
+   * rung-scaled thinking pulse once already.
+   */
+  it('declares each animated property once per selector', () => {
+    const offenders = [];
+    for (const match of compiledCss.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      const selector = match[1].trim();
+      if (selector.startsWith('@')) continue;
+      for (const property of ['animation', 'transform', 'transition', 'box-shadow']) {
+        const count = [...match[2].matchAll(new RegExp(`(?:^|;)\\s*${property}\\s*:`, 'g'))].length;
+        if (count > 1) offenders.push(`${selector} declares ${property} ${count}x`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});
