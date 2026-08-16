@@ -1,0 +1,45 @@
+import { describe, it, expect } from 'vitest';
+import { deriveLearnerName, deriveIssueDate, buildReprintContext } from './reprintContext.mjs';
+
+describe('deriveLearnerName', () => {
+  it('title-cases a plain learner id', () => {
+    expect(deriveLearnerName('felix')).toBe('Felix');
+  });
+
+  it('title-cases each word of a hyphenated/underscored id', () => {
+    expect(deriveLearnerName('mary-jane_doe')).toBe('Mary Jane Doe');
+  });
+});
+
+describe('deriveIssueDate', () => {
+  it('formats an ISO timestamp as day-month-year in America/Los_Angeles', () => {
+    // 2026-08-14T17:55:20.033Z is still 2026-08-14 in America/Los_Angeles (UTC-7 in August)
+    expect(deriveIssueDate('2026-08-14T17:55:20.033Z')).toBe('14 Aug 2026');
+  });
+});
+
+describe('buildReprintContext', () => {
+  const instance = () => ({
+    id: 'civilization/young-peoples-atlas-us/ws-ses-f6buxumv',
+    sessionId: 'ses_f6Buxumv',
+    learnerId: 'felix',
+    issuedAt: '2026-08-14T17:55:20.033Z',
+    omr: { cardId: '5922785', recordId: 'x:v0:7-16', rowRange: { start: 7, end: 16 } },
+  });
+
+  it('builds the full render context from a card-backed instance', () => {
+    expect(buildReprintContext(instance())).toEqual({
+      cardId: '5922785',
+      startRow: 7,
+      learnerId: 'felix',
+      learnerName: 'Felix',
+      date: '14 Aug 2026',
+      sessionId: 'ses_f6Buxumv',
+    });
+  });
+
+  it('throws a ValidationError when the instance has no card allocation', () => {
+    const { omr, ...noCard } = instance();
+    expect(() => buildReprintContext(noCard)).toThrow(/no card allocation/);
+  });
+});
