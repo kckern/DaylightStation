@@ -131,8 +131,26 @@ window is sized for how problems are actually reported (the next morning, by
 whoever hit them), not for how small the file can be made.
 
 `media/logs/` is the sanctioned home for heavy logs and is Dropbox-synced on
-prod; that sync cost is an accepted decision. **Do not add a `.dropboxignore` to
-it** — excluding an already-synced folder can remove the remote copy.
+prod; for the periodic writers that sync cost is an accepted decision. **Do not
+add a `.dropboxignore` to it** — excluding an already-synced folder can remove
+the remote copy.
+
+`backend.log` is the exception and no longer uses that default anywhere. It
+appends continuously (~3 KB/s), so Dropbox re-uploaded it without pause, and
+with prod and a macbook dev server writing the same synced file it could not
+converge — five "conflicted copy" files in three minutes on 2026-08-16. Every
+environment now sets `logging.fileSink.path` to a non-synced but still
+persistent location, so the survives-a-restart guarantee is intact:
+
+| Env | Path |
+|-----|------|
+| `docker` | `/usr/src/app/logs/backend.log` (bind mount → `DockerDrive/daylight-logs`) |
+| `kckern-macbook` | `~/Library/Logs/DaylightStation/backend.log` |
+| `kckern-server` | `DockerDrive/daylight-logs/backend-kckern-server.log` |
+
+The Docker entry needs the `logs` bind mount in `docker/docker-compose.yml`;
+without it the path lands in the container's ephemeral layer and dies on
+redeploy. Point any of these back at `media/logs/` and the sync loop returns.
 
 Unusable values (zero, negative, non-numeric) fall back to the defaults rather
 than producing a transport that rotates on every line. Read by
@@ -144,7 +162,12 @@ Per-environment overrides merged on top of system.yml.
 
 **Docker (system-local.docker.yml)**
 ```yaml
-# Empty or minimal - system.yml has Docker defaults
+# system.yml has the Docker port/scheduler defaults; this file carries the
+# per-machine log path, which cannot live in system.yml because ConfigService
+# .get() does no env resolution — it returns whatever literal is there.
+logging:
+  fileSink:
+    path: /usr/src/app/logs/backend.log
 ```
 
 **Linux Dev (system-local.kckern-server.yml)**
@@ -154,12 +177,25 @@ app:
 
 webhook:
   port: 3120
+
+logging:
+  fileSink:
+    path: /media/kckern/DockerDrive/daylight-logs/backend-kckern-server.log
 ```
 
 **Macbook Dev (system-local.kckern-macbook.yml)**
 ```yaml
 # Uses default ports (3111) - no Docker running
+logging:
+  fileSink:
+    path: /Users/kckern/Library/Logs/DaylightStation/backend.log
 ```
+
+Note that `app.ports.{env}` and `scheduler.enabled.{env}` in `system.yml` are
+env-keyed maps resolved by dedicated accessors (`getAppPort`,
+`isSchedulerEnabled`). Generic `configService.get('some.path')` has no such
+resolution, so anything machine-specific reached that way belongs in these
+files instead.
 
 ---
 
