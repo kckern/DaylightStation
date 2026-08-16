@@ -9,6 +9,7 @@ import { useEndOfContentWatchdog } from '../hooks/useEndOfContentWatchdog.js';
 import { getLogger } from '../../../lib/logging/Logger.js';
 import { playbackLog } from '../lib/playbackLogger.js';
 import { cleanupDashElement } from '../lib/dashCleanup.js';
+import { changedKeyComponent } from '../lib/keyChange.js';
 import { createStaleSessionWatchdog } from '../lib/staleSessionWatchdog.js';
 import { buildFpsStatsPayload } from '../lib/fpsStatsPayload.js';
 import { requestDashErrorRecovery } from '../lib/dashErrorRecovery.js';
@@ -33,6 +34,13 @@ const CONTENT_FILTER_ENABLED = (typeof window !== 'undefined'
 // Per-mount identity for the recoveryLedger's 'dash-error' sub-budget. A module
 // counter (not Math.random) so log payloads are deterministic across a session.
 let _mountSeq = 0;
+
+/**
+ * The one place the <dash-video> key is spelled out. Both the element below and
+ * the re-key log build from this, so a log line and the key it describes cannot
+ * drift into two different formats.
+ */
+const buildDashElementKey = ({ mediaUrl, bitrate, elementKey }) => `${mediaUrl}:${bitrate}:${elementKey}`;
 
 /**
  * Append or replace a cache-buster query param on a URL.
@@ -411,7 +419,14 @@ export function VideoPlayer({
   // and the cleanup effect must read the same value, or a replaced element leaks
   // its dash.js MediaPlayer — it keeps fetching audio segments, and
   // dash-video-element has no disconnectedCallback to save us (2026-08-16 echo).
-  const dashElementKey = `${mediaUrl || ''}:${media?.maxVideoBitrate ?? 'unlimited'}:${elementKey}`;
+  const dashElementKeyInputs = {
+    mediaUrl: mediaUrl || '',
+    // 'unlimited' rather than a blank or a zero: an uncapped stream is a state
+    // we measured, not a measurement we failed to take.
+    bitrate: media?.maxVideoBitrate ?? 'unlimited',
+    elementKey
+  };
+  const dashElementKey = buildDashElementKey(dashElementKeyInputs);
 
   // Clean up DASH resources per element generation, not just on unmount. With
   // `[]` deps this captured only the FIRST <dash-video>: because the element's
@@ -424,6 +439,41 @@ export function VideoPlayer({
     const el = containerRef.current;
     return () => { cleanupDashElement(el); };
   }, [dashElementKey, containerRef]);
+
+  // Report which of the key's three inputs replaced the element. Every one of
+  // them tears down a live <dash-video> and, on a Plex source, opens a fresh
+  // transcode session — and until now not one of them was logged, which is why
+  // the 2026-08-16 count had to be read out of Plex's server log instead of
+  // ours. Runs in an effect rather than in render so it counts elements that
+  // were actually committed.
+  //
+  // Sampled at 30/min. Unlike the player key above, nothing brakes this path:
+  // a url refresh and a soft re-init can each churn it on their own, and during
+  // the incident it ran at roughly 75/min. Thirty is high enough that ordinary
+  // playback (a few per item) is recorded line by line, and low enough that a
+  // storm lands in the aggregate, where the count is the diagnosis.
+  const dashKeyInputsRef = useRef(null);
+  const dashKeyLogger = useMemo(() => getLogger().child({ component: 'video-player-key' }), []);
+  useEffect(() => {
+    const next = { mediaUrl: mediaUrl || '', bitrate: media?.maxVideoBitrate ?? 'unlimited', elementKey };
+    const previous = dashKeyInputsRef.current;
+    dashKeyInputsRef.current = next;
+    // No baseline means this is the first element of the mount, which is not a
+    // re-key and has no `from` worth printing.
+    const changedComponent = changedKeyComponent(previous, next);
+    if (!changedComponent) return;
+    dashKeyLogger.sampled('playback.dash-element-rekeyed', {
+      from: buildDashElementKey(previous),
+      to: buildDashElementKey(next),
+      // `mediaUrl` is the recovery path re-minting a stream, `bitrate` is the
+      // cap moving, `elementKey` is a soft re-init from the media controller.
+      changedComponent,
+      mountId: mountIdRef.current,
+      // Distinguishes a <dash-video> (whose replacement costs a transcode
+      // session) from the plain <video> branch, which shares this key.
+      isDash: !!isDash
+    }, { maxPerMinute: 30, aggregate: true });
+  }, [mediaUrl, media?.maxVideoBitrate, elementKey, isDash, dashKeyLogger]);
 
   // If the mediaUrl (or its effective bitrate cap) changes, reset display readiness so UI transitions are correct
   useEffect(() => {
