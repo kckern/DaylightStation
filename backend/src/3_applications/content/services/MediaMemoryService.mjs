@@ -24,7 +24,7 @@ import { slugify } from '#system/utils/strings.mjs';
  */
 export const getMediaMemoryPath = (category, householdId = null) => {
   // Return path relative to household dir for use with household-scoped loadFile/saveFile
-  return `history/media_memory/${category}`;
+  return `media/memory/${category}`;
 };
 
 /**
@@ -36,13 +36,13 @@ export const getMediaMemoryDir = (householdId = null) => {
   const hid = householdId || configService.getDefaultHouseholdId();
   const householdDir = userDataService.getHouseholdDir(hid);
   if (householdDir) {
-    const householdMemPath = path.join(householdDir, 'history', 'media_memory');
+    const householdMemPath = path.join(householdDir, 'media', 'memory');
     if (fs.existsSync(householdMemPath)) {
       return householdMemPath;
     }
   }
   // Fall back to legacy path
-  const legacyPath = path.join(process.env.path.data, 'history', 'media_memory');
+  const legacyPath = path.join(process.env.path.data, 'media', 'memory');
   return legacyPath;
 };
 

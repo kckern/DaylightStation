@@ -17,7 +17,7 @@ export const defaultMockConfig = {
     },
     paths: {
       media: '/test/media',
-      watchState: '/test/data/history/media_memory',
+      watchState: '/test/data/media/memory',
       img: '/test/media/img'
     },
     scheduler: {

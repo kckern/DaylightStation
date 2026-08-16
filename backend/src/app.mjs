@@ -806,10 +806,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // watchlistPath removed - lists now in config/lists/ directory (managed by ListAdapter)
   const contentPath = `${dataBasePath}/content`;  // LocalContentAdapter expects content/ subdirectory
-  const mediaMemoryPath = `${householdDir}/history/media_memory`;
+  const mediaMemoryPath = `${householdDir}/media/memory`;
 
   // Media progress path - use household-scoped path (SSOT for media progress)
-  const mediaProgressPath = configService.getPath('watchState') || `${householdDir}/history/media_memory`;
+  const mediaProgressPath = configService.getPath('watchState') || `${householdDir}/media/memory`;
   const mediaProgressMemory = createMediaProgressMemory({ mediaProgressPath });
 
   // Progress sync — bidirectional progress sync for remote media servers

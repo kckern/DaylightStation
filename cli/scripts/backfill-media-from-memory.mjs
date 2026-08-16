@@ -60,7 +60,7 @@ Options:
 // =============================================================================
 
 const FITNESS_DIR = path.join(DATA_PATH, 'household', 'history', 'fitness');
-const MEDIA_MEMORY_FILE = path.join(DATA_PATH, 'household', 'history', 'media_memory', 'plex', '14_fitness.yml');
+const MEDIA_MEMORY_FILE = path.join(DATA_PATH, 'household', 'media', 'memory', 'plex', '14_fitness.yml');
 
 function listDateDirs() {
   if (!fs.existsSync(FITNESS_DIR)) return [];

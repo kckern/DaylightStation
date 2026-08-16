@@ -37,7 +37,7 @@ export function createArtAdapter({ imgBasePath, householdDir = null, logger = co
     // householdDir = resolved household base (ConfigService.getHouseholdPath(''))
     _recencyStore = householdDir
       ? createArtRecencyStore({
-          filePath: path.join(householdDir, 'history', 'media_memory', 'art.yml'),
+          filePath: path.join(householdDir, 'media', 'memory', 'art.yml'),
           logger,
         })
       : null;

@@ -1,6 +1,6 @@
 /**
  * Persistent recency log for ArtMode, living alongside the other media_memory
- * stores at `history/media_memory/art.yml`. Keyed `art:<id>` with
+ * stores at `media/memory/art.yml`. Keyed `art:<id>` with
  * `{ lastShown, showCount }`, mirroring the plex/files convention so it reads the
  * same as the rest of media_memory.
  *

@@ -9,7 +9,7 @@
  *
  * Uses real data from:
  * - household/config/fitness.yml
- * - household/history/media_memory/plex/14_fitness.yml
+ * - household/media/memory/plex/14_fitness.yml
  *
  * Run with: node tests/integration/api/fitness-plex-parity.test.mjs
  */
@@ -25,7 +25,7 @@ const BASE_URL = process.env.PARITY_TEST_URL || 'http://localhost:3112';
 // Data path from config helper (SSOT)
 const DATA_PATH = getDataPath();
 const FITNESS_CONFIG_PATH = path.join(DATA_PATH, 'household/config/fitness.yml');
-const FITNESS_MEMORY_PATH = path.join(DATA_PATH, 'household/history/media_memory/plex/14_fitness.yml');
+const FITNESS_MEMORY_PATH = path.join(DATA_PATH, 'household/media/memory/plex/14_fitness.yml');
 
 // Helper to make requests
 async function fetchJSON(urlPath) {
