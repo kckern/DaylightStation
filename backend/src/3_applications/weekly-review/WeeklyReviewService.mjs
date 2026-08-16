@@ -26,6 +26,7 @@ export class WeeklyReviewService {
     // default-household folder whose name comes from the SSOT resolver rather
     // than a hardcoded literal.
     this.#householdDir = config.householdDir || path.join(config.dataPath, toFolderName('default'));
+
     this.#mediaPath = config.mediaPath;
     this.#householdId = config.householdId;
     this.#immichAdapter = deps.immichAdapter;
@@ -34,6 +35,17 @@ export class WeeklyReviewService {
     this.#weatherStore = deps.weatherStore;
     this.#transcriptionService = deps.transcriptionService;
     this.#logger = deps.logger || console;
+  }
+
+  /**
+   * Every path this service touches, in one place.
+   *
+   * These eight joins were spelled out independently at eight call sites, so
+   * relocating the tree meant an eight-line edit nobody could review as a
+   * single decision. Routed through here, the location is one string.
+   */
+  #reviewPath(...segments) {
+    return path.join(this.#householdDir, 'common', 'weekly-review', ...segments);
   }
 
   async bootstrap(weekStart) {
@@ -193,7 +205,7 @@ export class WeeklyReviewService {
       transcriptRaw,
       transcriptClean,
     };
-    const transcriptDir = path.join(this.#householdDir, 'common', 'weekly-review', week);
+    const transcriptDir = this.#reviewPath(week);
     fs.mkdirSync(transcriptDir, { recursive: true });
     fs.writeFileSync(
       path.join(transcriptDir, 'transcript.yml'),
@@ -220,7 +232,7 @@ export class WeeklyReviewService {
     if (typeof seq !== 'number' || seq < 0 || !Number.isInteger(seq)) throw new Error(`invalid seq: ${seq}`);
     if (!Buffer.isBuffer(buffer) || buffer.length === 0) throw new Error('buffer required');
 
-    const draftDir = path.join(this.#householdDir, 'common', 'weekly-review', week, '.drafts');
+    const draftDir = this.#reviewPath(week, '.drafts');
     const draftPath = path.join(draftDir, `${sessionId}.webm`);
     const metaPath = path.join(draftDir, `${sessionId}.meta.json`);
     fs.mkdirSync(draftDir, { recursive: true });
@@ -279,7 +291,7 @@ export class WeeklyReviewService {
 
   async listDrafts(week) {
     if (!this.#isValidWeek(week)) throw new Error(`invalid week: ${week}`);
-    const draftDir = path.join(this.#householdDir, 'common', 'weekly-review', week, '.drafts');
+    const draftDir = this.#reviewPath(week, '.drafts');
     if (!fs.existsSync(draftDir)) return [];
 
     const entries = fs.readdirSync(draftDir);
@@ -307,7 +319,7 @@ export class WeeklyReviewService {
     if (!this.#isValidSessionId(sessionId)) throw new Error(`invalid sessionId: ${sessionId}`);
     if (!this.#isValidWeek(week)) throw new Error(`invalid week: ${week}`);
 
-    const draftDir = path.join(this.#householdDir, 'common', 'weekly-review', week, '.drafts');
+    const draftDir = this.#reviewPath(week, '.drafts');
     const draftPath = path.join(draftDir, `${sessionId}.webm`);
     const metaPath = path.join(draftDir, `${sessionId}.meta.json`);
     if (!fs.existsSync(draftPath)) throw new Error(`draft not found: ${sessionId}`);
@@ -348,7 +360,7 @@ export class WeeklyReviewService {
     });
 
     // Save transcript + manifest (same format as saveRecording)
-    const transcriptDir = path.join(this.#householdDir, 'common', 'weekly-review', week);
+    const transcriptDir = this.#reviewPath(week);
     fs.mkdirSync(transcriptDir, { recursive: true });
     fs.writeFileSync(
       path.join(transcriptDir, 'transcript.yml'),
@@ -369,7 +381,7 @@ export class WeeklyReviewService {
   }
 
   async sweepStaleDrafts({ maxAgeDays = 30 } = {}) {
-    const baseDir = path.join(this.#householdDir, 'common', 'weekly-review');
+    const baseDir = this.#reviewPath();
     if (!fs.existsSync(baseDir)) return { deleted: [] };
     const cutoff = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
     const deleted = [];
@@ -400,7 +412,7 @@ export class WeeklyReviewService {
   async discardDraft({ sessionId, week }) {
     if (!this.#isValidSessionId(sessionId)) throw new Error(`invalid sessionId: ${sessionId}`);
     if (!this.#isValidWeek(week)) throw new Error(`invalid week: ${week}`);
-    const draftDir = path.join(this.#householdDir, 'common', 'weekly-review', week, '.drafts');
+    const draftDir = this.#reviewPath(week, '.drafts');
     const draftPath = path.join(draftDir, `${sessionId}.webm`);
     const metaPath = path.join(draftDir, `${sessionId}.meta.json`);
     let existed = false;
@@ -420,7 +432,7 @@ export class WeeklyReviewService {
 
   #getRecordingStatus(week) {
     try {
-      const transcriptPath = path.join(this.#householdDir, 'common', 'weekly-review', week, 'transcript.yml');
+      const transcriptPath = this.#reviewPath(week, 'transcript.yml');
       if (fs.existsSync(transcriptPath)) {
         const content = fs.readFileSync(transcriptPath, 'utf-8');
         const data = JSON.parse(content);
