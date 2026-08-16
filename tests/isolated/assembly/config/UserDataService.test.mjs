@@ -104,13 +104,16 @@ describe('UserDataService household path resolution', () => {
     });
   });
 
-  describe('legacy shared/ consumers', () => {
-    it('still resolves explicit shared/ prefixes, so retroarch and content-filter are untouched', () => {
+  describe('caller-supplied domain prefixes', () => {
+    it('resolves a domain prefix verbatim — retroarch now sits at the household root', () => {
       // app.mjs reads these as dataService.household.read('retroarch/catalog').
-      // The literal prefix is supplied by the caller, so it must survive unchanged.
+      // The literal prefix is supplied by the caller, so it must survive
+      // unchanged; this test used to pin the shared/ root that retroarch was
+      // filed under before the domain-first reorganization.
       const resolved = dataService.household.resolveDir('retroarch/catalog', 'default');
 
-      expect(resolved).toMatch(/household[^/]*\/shared\/retroarch\/catalog$/);
+      expect(resolved).toMatch(/household[^/]*\/retroarch\/catalog$/);
+      expect(resolved).not.toContain('/shared/');
     });
   });
 });
