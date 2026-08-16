@@ -728,7 +728,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'pressure-mat-relay' }),
   }).start();
   createPressureMatRelay({
-    dayLog: relayDayLog(pressureMatConfig, 'pressure-mats/log', 'pressure_mat'),
+    dayLog: relayDayLog(pressureMatConfig, 'hardware/pressure-mats/log', 'pressure_mat'),
     eventBus,
     dataDir,
     config: pressureMatConfig,
@@ -746,7 +746,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     || configService.reloadHouseholdAppConfig?.(householdId, 'omr-readers')
     || {};
   createOmrRelay({
-    dayLog: relayDayLog(omrReadersConfig, 'omr/log', 'omr'),
+    dayLog: relayDayLog(omrReadersConfig, 'hardware/omr/log', 'omr'),
     eventBus,
     dataDir,
     config: omrReadersConfig,
@@ -3766,7 +3766,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   createBarcodeRelay({
     eventBus,
     dataDir,
-    dayLog: relayDayLog({ persistence: { dir: barcodePersistDir } }, 'barcode/log', 'barcode_relay'),
+    dayLog: relayDayLog({ persistence: { dir: barcodePersistDir } }, 'hardware/barcode/log', 'barcode_relay'),
     timezone: configService.getHouseholdTimezone?.(householdId),
     logger: rootLogger.child({ module: 'barcode-relay' }),
     onScan: (relay) => {

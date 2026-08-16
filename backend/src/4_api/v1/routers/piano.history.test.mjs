@@ -53,13 +53,13 @@ describe('PUT /users/:userId/history/:date/:takeId', () => {
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
     expect(written).toHaveLength(1);
-    expect(written[0].path).toBe('/data/household/piano/log/kc/2026-06-26/10.00.00.mid');
+    expect(written[0].path).toBe('/data/media/apps/piano/log/kc/2026-06-26/10.00.00.mid');
     expect(written[0].bytes).toBeGreaterThan(20);
   });
   it('accepts the guest user', async () => {
     const res = await request(app()).put('/api/v1/piano/users/guest/history/2026-06-26/10.00.00').send(body);
     expect(res.status).toBe(200);
-    expect(written[0].path).toBe('/data/household/piano/log/guest/2026-06-26/10.00.00.mid');
+    expect(written[0].path).toBe('/data/media/apps/piano/log/guest/2026-06-26/10.00.00.mid');
   });
   it('rejects an unknown user (not guest)', async () => {
     const res = await request(app()).put('/api/v1/piano/users/nobody/history/2026-06-26/10.00.00').send(body);
@@ -77,8 +77,8 @@ describe('PUT /users/:userId/history/:date/:takeId', () => {
     await request(app()).put('/api/v1/piano/users/kc/history/2026-06-26/10.00.00').send(body);
     await request(app()).put('/api/v1/piano/users/kc/history/2026-06-26/10.00.00').send(body);
     expect(written.map((w) => w.path)).toEqual([
-      '/data/household/piano/log/kc/2026-06-26/10.00.00.mid',
-      '/data/household/piano/log/kc/2026-06-26/10.00.00.mid',
+      '/data/media/apps/piano/log/kc/2026-06-26/10.00.00.mid',
+      '/data/media/apps/piano/log/kc/2026-06-26/10.00.00.mid',
     ]);
   });
 });
