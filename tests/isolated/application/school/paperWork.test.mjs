@@ -223,6 +223,19 @@ describe('GradeSubmission through the one engine', () => {
     expect(grader.attempts.every((a) => a.transport === 'paper' && a.mode === 'quiz')).toBe(true);
   });
 
+  it('carries correctCount/totalCount on the graded event so the receipt can say "N of M"', async () => {
+    const missed = someWrong(['u3-q4', 'u3-q5', 'u3-q6']);
+    await submitAll(missed);
+    await grade.execute({ sessionId: SID, entries: missed });
+    // Same field names `RecordCardScanOutcome` emits — `reduceSession` only
+    // projects `gradedCorrectCount`/`gradedTotalCount`, which
+    // `CloseSessionOutcome` renders onto the result receipt, from these.
+    expect(sessions.events(SID).find((e) => e.type === 'graded'))
+      .toMatchObject({ correctCount: 3, totalCount: PRINTED.length });
+    expect(sessions.derive(SID))
+      .toMatchObject({ gradedCorrectCount: 3, gradedTotalCount: PRINTED.length });
+  });
+
   it('stamps the EFFECTIVE passing bar into the graded event — override first, authored as fallback (M7/A4)', async () => {
     // With an override wired, grading stamps the override; the return says it too.
     const withOverride = new GradeSubmission({
@@ -612,5 +625,58 @@ describe('GradeSubmission on a print-document unit', () => {
     const result = await grade.execute({ sessionId: SID });
     expect(result).toMatchObject({ status: 'graded' });
     expect(teacherGate.assert).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The producer and the consumer of the graded event's counts, joined.
+//
+// `CloseSessionOutcome` renders `correctCount`/`totalCount` onto the printed
+// result receipt, but it can only read them off the session state, which
+// `reduceSession` fills from the graded event. Grading a sheet and closing it
+// are tested apart everywhere else — which is exactly how `GradeSubmission`
+// went for so long emitting no counts at all while `closeOutcome.test.mjs`
+// went on passing, because it hand-writes its own graded events. This drives
+// the real grader into the real close.
+// ---------------------------------------------------------------------------
+
+describe('the result receipt counts what GradeSubmission marked', () => {
+  it('says "3 of 6", not nulls, for a screen/paper-marked session', async () => {
+    const { CloseSessionOutcome } = await import('#apps/school/usecases/CloseSessionOutcome.mjs');
+    const { ReceiptPrinting } = await import('#apps/school/ReceiptPrinting.mjs');
+    const {
+      FakeTokenRegistry, FakeAssignmentStore, FakeEconomy,
+      FakeReceiptPrinter, FakeReceiptRenderer, seededRng,
+    } = await import('#testlib/school/lifecycleFakes.mjs');
+
+    const missed = someWrong(['u3-q4', 'u3-q5', 'u3-q6']);
+    await issued();
+    await submit.execute({ sessionId: SID, entries: missed });
+    const marked = await grade.execute({ sessionId: SID, entries: missed });
+    expect(marked).toMatchObject({ status: 'graded', correct: 3, expected: 6 });
+
+    const close = new CloseSessionOutcome({
+      curriculum,
+      sessions,
+      tokens: new FakeTokenRegistry(),
+      assignments: new FakeAssignmentStore([{ learnerId: 'kid1', courses: ['math-fractions'] }]),
+      economy: new FakeEconomy(),
+      economyEnabled: false,
+      receipts: new ReceiptPrinting({
+        renderer: new FakeReceiptRenderer(), printer: new FakeReceiptPrinter(), logger: silentLogger,
+      }),
+      grownUps: fakeGrownUps(clock),
+      reviewQueue,
+      clock: clock.now,
+      rng: seededRng(5),
+      logger: silentLogger,
+    });
+
+    const { document } = await close.execute({ sessionId: SID });
+    // The renderers key off BOTH being integers — `DocumentEscPosRenderer`
+    // prints "3 of 6 correct" and a per-question tick row only then, and
+    // drops the line entirely when either is null.
+    expect(document.blocks.find((block) => block.type === 'result_summary'))
+      .toMatchObject({ correctCount: 3, totalCount: PRINTED.length });
   });
 });
