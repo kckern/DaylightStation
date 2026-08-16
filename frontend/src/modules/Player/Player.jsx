@@ -20,6 +20,7 @@ import { resolveMediaIdentity, resolveSourceContentKey } from './utils/mediaIden
 import { getLogWaitKey } from './lib/waitKeyLabel.js';
 import { useMediaTransportAdapter } from './hooks/transport/useMediaTransportAdapter.js';
 import { shouldSkipResilienceReload } from './lib/shouldSkipResilienceReload.js';
+import { createRemountStormGuard } from './lib/remountStormGuard.js';
 import { OnDeckCard } from './components/OnDeckCard.jsx';
 import { usePlayerConfig } from './hooks/usePlayerConfig.js';
 import { REVIEW_ACTIVE } from '../../lib/Player/reviewParams.js';
@@ -28,6 +29,14 @@ import { DaylightAPI } from '../../lib/api.mjs';
 const REMOUNT_BACKOFF_BASE_MS = 1000;
 const REMOUNT_BACKOFF_FACTOR = 1.5;
 const REMOUNT_BACKOFF_MAX_MS = 45000;
+
+// Circuit breaker on player-key churn. The cap has to clear the legitimate worst
+// case: one initial mount plus the five-attempt recovery ladder is six key changes
+// inside about eight seconds, and a viewer who then picks something else must not
+// be turned away. Ten in thirty seconds leaves that headroom while capping a
+// runaway at 20 remounts per minute — the 2026-08-16 storm ran about 124.
+const REMOUNT_STORM_MAX_MOUNTS = 10;
+const REMOUNT_STORM_WINDOW_MS = 30000;
 
 // Shader aliases must match useQueueController's map. Hoisted to module scope
 // so identity is stable across renders (useEffect deps).
@@ -318,20 +327,44 @@ const Player = forwardRef(function Player(props, ref) {
     [effectiveMeta, singlePlayerProps, play, queue]
   );
 
+  // One id per mounted Player, minted once and never recomputed.
+  //
+  // Media identity is derived from CONTENT since 2026-08-16, which is what keeps
+  // singlePlayerKey stable when a caller re-creates an equivalent `play` literal.
+  // The cost is that two Players showing the same content now compute the same
+  // identity, and two Players CAN be mounted at once: a menu selection mounts one
+  // on the nav stack (MenuWidget is a layout widget, so it renders inside the
+  // overlay provider's children) while a media:play action mounts a second in the
+  // fullscreen slot, whose dismissOverlay clears only the overlay slot. Sharing the
+  // session keys below would mean one Player consuming the other's resume seek and
+  // either one's unmount wiping the survivor's recovery-attempt budget.
+  //
+  // A ref is the right home for this: a remount happens BELOW this component (React
+  // rebuilds SinglePlayer when singlePlayerKey changes), so the id — and with it the
+  // ledger's five-attempt cap — survives every remount and dies only with the Player.
+  const playerInstanceIdRef = useRef(null);
+  if (!playerInstanceIdRef.current) playerInstanceIdRef.current = guid();
+  const playerInstanceId = playerInstanceIdRef.current;
+
   // Two sessions: preferences (volume/rate) live at queue scope so they survive
   // item swaps; seek intent lives at item scope so resume-position never crosses items.
+  // Both carry the instance id so a sibling Player on the same content keeps its own.
   const prefsSessionKey = useMemo(() => {
     if (queueSessionId && isQueue) {
-      return `player-session:queue:${queueSessionId}`;
+      return `player-session:queue:${queueSessionId}#${playerInstanceId}`;
     }
     const identifier = currentMediaGuid ?? mediaIdentity;
-    return identifier ? `player-session:${identifier}` : 'player-session:idle';
-  }, [queueSessionId, isQueue, currentMediaGuid, mediaIdentity]);
+    return identifier
+      ? `player-session:${identifier}#${playerInstanceId}`
+      : `player-session:idle#${playerInstanceId}`;
+  }, [queueSessionId, isQueue, currentMediaGuid, mediaIdentity, playerInstanceId]);
 
   const itemSessionKey = useMemo(() => {
     const identifier = currentMediaGuid ?? mediaIdentity;
-    return identifier ? `player-item:${identifier}` : 'player-item:idle';
-  }, [currentMediaGuid, mediaIdentity]);
+    return identifier
+      ? `player-item:${identifier}#${playerInstanceId}`
+      : `player-item:idle#${playerInstanceId}`;
+  }, [currentMediaGuid, mediaIdentity, playerInstanceId]);
 
   // Rate persists per show/album/artist (in-memory, per session). Falls back to the
   // prefs (queue/item) scope when there's no collection metadata.
@@ -579,13 +612,68 @@ const Player = forwardRef(function Player(props, ref) {
     // See forceSinglePlayerRemount: playbackMetrics is read via ref, not closed over.
   }, [currentMediaGuid, clearRemountTimer, computeRemountDelayMs, forceSinglePlayerRemount, isQueue, playerType, resolvedWaitKey]);
 
+  // Storm brake for the key below. It belongs on the KEY, not on the explicit
+  // remount path: during the 2026-08-16 storm only three of roughly three hundred
+  // teardowns came through forceSinglePlayerRemount — the rest were React
+  // reconciliation reacting to a key that kept changing.
+  const stormGuardRef = useRef(null);
+  if (!stormGuardRef.current) {
+    stormGuardRef.current = createRemountStormGuard({
+      maxMounts: REMOUNT_STORM_MAX_MOUNTS,
+      windowMs: REMOUNT_STORM_WINDOW_MS
+    });
+  }
+  const lastAdmittedKeyRef = useRef('player-idle');
+  const stormLoggedRef = useRef(false);
+  const stormTrippedAtRef = useRef(0);
+
   const singlePlayerKey = useMemo(() => {
-    if (!singlePlayerProps) return 'player-idle';
-    // Stable key for image→image transitions so ImageFrame persists (cross-dissolve)
-    if (activeSource?.mediaType === 'image') {
-      return `image-slideshow:${remountState.nonce}`;
+    const candidate = !singlePlayerProps
+      ? 'player-idle'
+      : activeSource?.mediaType === 'image'
+        // Stable key for image→image transitions so ImageFrame persists (cross-dissolve)
+        ? `image-slideshow:${remountState.nonce}`
+        : `${currentMediaGuid || 'entry'}:${remountState.nonce}`;
+
+    const guard = stormGuardRef.current;
+    const now = Date.now();
+
+    // Re-arm one window after a trip. A tripped guard is NOT re-armed by a content
+    // change, tempting as that is: in the storm the guid changed on every pass, so
+    // forgiving content changes would clear the counter before it could ever count
+    // past one. Waiting out the window instead means the brake holds while churn is
+    // in flight and lets go once it stops, so a viewer who picks something else is
+    // never stranded on the frozen key for longer than the window.
+    if (guard.tripped() && now - stormTrippedAtRef.current >= REMOUNT_STORM_WINDOW_MS) {
+      guard.reset();
+      stormLoggedRef.current = false;
+      playbackLog('player-remount-storm-rearmed', {
+        frozenKey: lastAdmittedKeyRef.current,
+        nextKey: candidate,
+        guid: currentMediaGuid,
+        windowMs: REMOUNT_STORM_WINDOW_MS
+      }, { level: 'warn' });
     }
-    return `${currentMediaGuid || 'entry'}:${remountState.nonce}`;
+
+    // If key churn outruns the cap, freeze on the last admitted key. Remounting
+    // faster than media can start never recovers — it only opens transcode
+    // sessions and stacks overlapping audio.
+    if (!guard.admit(candidate, now)) {
+      if (!stormLoggedRef.current) {
+        stormLoggedRef.current = true;
+        stormTrippedAtRef.current = now;
+        playbackLog('player-remount-storm', {
+          frozenKey: lastAdmittedKeyRef.current,
+          rejectedKey: candidate,
+          guid: currentMediaGuid,
+          maxMounts: REMOUNT_STORM_MAX_MOUNTS,
+          windowMs: REMOUNT_STORM_WINDOW_MS
+        }, { level: 'error' });
+      }
+      return lastAdmittedKeyRef.current;
+    }
+    lastAdmittedKeyRef.current = candidate;
+    return candidate;
   }, [singlePlayerProps, currentMediaGuid, remountState.nonce, activeSource?.mediaType]);
 
   const exposedMediaRef = useRef(null);
