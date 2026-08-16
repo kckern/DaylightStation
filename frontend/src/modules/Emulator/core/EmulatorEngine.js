@@ -49,7 +49,23 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
   function getAudioContextState() {
     if (!ready || !instance) return null;
     try {
-      return instance?.gameManager?.Module?.AL?.currentCtx?.ctx?.state ?? null;
+      const AL = instance?.gameManager?.Module?.AL;
+      if (!AL) return null;
+      // Verified against the vendored EJS 4.2.3 build in a real browser: the live
+      // state lives at AL.contexts[<id>].audioCtx.state. The old
+      // `AL.currentCtx.ctx.state` path does NOT exist here — it returned null in
+      // 24/24 production sessions, reporting a permanent false "unavailable" that
+      // would have masked a genuine audio failure. Several shapes are tried
+      // because this path has moved between EJS builds.
+      const fromCtx = (c) => c?.audioCtx?.state ?? c?.ctx?.state ?? null;
+      const current = fromCtx(AL.currentCtx);
+      if (current) return current;
+      const contexts = AL.contexts ? Object.values(AL.contexts) : [];
+      for (const c of contexts) {
+        const state = fromCtx(c);
+        if (state) return state;
+      }
+      return null;
     } catch {
       return null;
     }
