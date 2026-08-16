@@ -44,6 +44,17 @@ export class WeeklyReviewService {
    * relocating the tree meant an eight-line edit nobody could review as a
    * single decision. Routed through here, the location is one string.
    */
+  /**
+   * Draft chunks are raw in-progress audio — heavy, transient, never diffed.
+   * They belong beside the FINAL recording in media, which saveRecording and
+   * finalizeDraft already write to. Keeping drafts under the household dir while
+   * finals went to media is the asymmetry that let a 26MB orphan hide in the
+   * tree that is supposed to zip small.
+   */
+  #draftDir(week) {
+    return path.join(this.#mediaPath, 'weekly-review', week, '.drafts');
+  }
+
   #reviewPath(...segments) {
     return path.join(this.#householdDir, 'weekly-review', 'log', ...segments);
   }
@@ -232,7 +243,7 @@ export class WeeklyReviewService {
     if (typeof seq !== 'number' || seq < 0 || !Number.isInteger(seq)) throw new Error(`invalid seq: ${seq}`);
     if (!Buffer.isBuffer(buffer) || buffer.length === 0) throw new Error('buffer required');
 
-    const draftDir = this.#reviewPath(week, '.drafts');
+    const draftDir = this.#draftDir(week);
     const draftPath = path.join(draftDir, `${sessionId}.webm`);
     const metaPath = path.join(draftDir, `${sessionId}.meta.json`);
     fs.mkdirSync(draftDir, { recursive: true });
@@ -291,7 +302,7 @@ export class WeeklyReviewService {
 
   async listDrafts(week) {
     if (!this.#isValidWeek(week)) throw new Error(`invalid week: ${week}`);
-    const draftDir = this.#reviewPath(week, '.drafts');
+    const draftDir = this.#draftDir(week);
     if (!fs.existsSync(draftDir)) return [];
 
     const entries = fs.readdirSync(draftDir);
@@ -319,7 +330,7 @@ export class WeeklyReviewService {
     if (!this.#isValidSessionId(sessionId)) throw new Error(`invalid sessionId: ${sessionId}`);
     if (!this.#isValidWeek(week)) throw new Error(`invalid week: ${week}`);
 
-    const draftDir = this.#reviewPath(week, '.drafts');
+    const draftDir = this.#draftDir(week);
     const draftPath = path.join(draftDir, `${sessionId}.webm`);
     const metaPath = path.join(draftDir, `${sessionId}.meta.json`);
     if (!fs.existsSync(draftPath)) throw new Error(`draft not found: ${sessionId}`);
@@ -381,12 +392,12 @@ export class WeeklyReviewService {
   }
 
   async sweepStaleDrafts({ maxAgeDays = 30 } = {}) {
-    const baseDir = this.#reviewPath();
+    const baseDir = path.join(this.#mediaPath, 'weekly-review');
     if (!fs.existsSync(baseDir)) return { deleted: [] };
     const cutoff = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
     const deleted = [];
     for (const week of fs.readdirSync(baseDir)) {
-      const draftDir = path.join(baseDir, week, '.drafts');
+      const draftDir = this.#draftDir(week);
       if (!fs.existsSync(draftDir)) continue;
       for (const name of fs.readdirSync(draftDir)) {
         if (!name.endsWith('.meta.json')) continue;
@@ -404,6 +415,23 @@ export class WeeklyReviewService {
           this.#logger.warn?.('weekly-review.sweep.meta-parse-failed', { name, error: err.message });
         }
       }
+
+      // Second pass: `.processing-<stamp>.webm` files have no meta beside them —
+      // finalizeDraft removes the meta before transcribing, so a transcription
+      // failure orphans the renamed file where the meta-driven pass above can
+      // never reach it. Sweep those on mtime instead.
+      for (const name of fs.readdirSync(draftDir)) {
+        if (!name.includes('.processing-')) continue;
+        const orphanPath = path.join(draftDir, name);
+        try {
+          if (fs.statSync(orphanPath).mtimeMs < cutoff) {
+            fs.unlinkSync(orphanPath);
+            deleted.push(name);
+          }
+        } catch (err) {
+          this.#logger.warn?.('weekly-review.sweep.orphan-failed', { name, error: err.message });
+        }
+      }
     }
     if (deleted.length > 0) this.#logger.info?.('weekly-review.sweep.deleted', { count: deleted.length, sessionIds: deleted });
     return { deleted };
@@ -412,7 +440,7 @@ export class WeeklyReviewService {
   async discardDraft({ sessionId, week }) {
     if (!this.#isValidSessionId(sessionId)) throw new Error(`invalid sessionId: ${sessionId}`);
     if (!this.#isValidWeek(week)) throw new Error(`invalid week: ${week}`);
-    const draftDir = this.#reviewPath(week, '.drafts');
+    const draftDir = this.#draftDir(week);
     const draftPath = path.join(draftDir, `${sessionId}.webm`);
     const metaPath = path.join(draftDir, `${sessionId}.meta.json`);
     let existed = false;
