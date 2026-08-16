@@ -669,12 +669,27 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // stream (source: 'food-scale-relay') and re-broadcasts on the `food-scale`
   // topic; a decoupled subscriber persists settled measurements + button
   // presses to history/hardware/food-scale/. See _extensions/food-scale-relay.
+  // Relay history roots are resolved HERE, in the composition root, and handed
+  // down absolute. The relays used to each carry their own
+  // `household/<domain>/log` literal and join it onto dataDir, which put
+  // storage layout in the application layer. `persistence.dir` (a
+  // data-relative override in the domain's config file) is honoured the same
+  // way it always was — the resolution just happens at the wiring seam now.
+  const relayHistoryRoot = (cfg, domainPath) => {
+    const override = cfg?.persistence?.dir;
+    return override
+      ? path.join(dataDir, ...String(override).replace(/^\/+/, '').split('/'))
+      : configService.getHouseholdPath(domainPath, householdId);
+  };
+
+  const scalesConfig = configService.getHouseholdAppConfig(householdId, 'scales')
+    || configService.reloadHouseholdAppConfig?.(householdId, 'scales')
+    || {};
   createFoodScaleRelay({
+    historyRoot: relayHistoryRoot(scalesConfig, 'nutrition/log'),
     eventBus,
     dataDir,
-    config: configService.getHouseholdAppConfig(householdId, 'scales')
-      || configService.reloadHouseholdAppConfig?.(householdId, 'scales')
-      || {},
+    config: scalesConfig,
     timezone: configService.getHouseholdTimezone?.(householdId),
     logger: rootLogger.child({ module: 'food-scale-relay' }),
   });
@@ -692,6 +707,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'pressure-mat-relay' }),
   }).start();
   createPressureMatRelay({
+    historyRoot: relayHistoryRoot(pressureMatConfig, 'pressure-mats/log'),
     eventBus,
     dataDir,
     config: pressureMatConfig,
@@ -709,6 +725,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     || configService.reloadHouseholdAppConfig?.(householdId, 'omr-readers')
     || {};
   createOmrRelay({
+    historyRoot: relayHistoryRoot(omrReadersConfig, 'omr/log'),
     eventBus,
     dataDir,
     config: omrReadersConfig,
@@ -731,12 +748,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // stream (source: 'obd-relay') whenever the car is on home WiFi and
   // re-broadcasts on the `automotive` topic; a decoupled persister writes
   // trips + snapshots to history/automotive/. See _extensions/obd-relay.
+  const vehiclesRelayConfig = configService.getHouseholdAppConfig(householdId, 'vehicles')
+    || configService.reloadHouseholdAppConfig?.(householdId, 'vehicles')
+    || {};
   createAutomotiveRelay({
+    historyRoot: relayHistoryRoot(vehiclesRelayConfig, 'automotive/log'),
     eventBus,
     dataDir,
-    config: configService.getHouseholdAppConfig(householdId, 'vehicles')
-      || configService.reloadHouseholdAppConfig?.(householdId, 'vehicles')
-      || {},
+    config: vehiclesRelayConfig,
     // Threaded, not read from a config singleton inside the relay — day keys and
     // trip filenames must follow the household's zone, not UTC or DEFAULT_TIMEZONE.
     timezone: configService.getHouseholdTimezone(householdId),
@@ -3700,13 +3719,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     barcodeLogger,
   });
 
-  // Persistence (per-device day-log under household/history/barcode) and the
-  // relay's own device/gatekeeper config are untouched by everything above —
-  // only where a scan goes has ever changed here.
+  // Persistence (per-device day-log under the barcode domain) and the relay's
+  // own device/gatekeeper config are untouched by everything above — only
+  // where a scan goes has ever changed here.
   createBarcodeRelay({
     eventBus,
     dataDir,
-    persistDir: barcodePersistDir,
+    historyRoot: barcodePersistDir
+      ? path.join(dataDir, ...String(barcodePersistDir).replace(/^\/+/, '').split('/'))
+      : configService.getHouseholdPath('barcode/log', householdId),
     timezone: configService.getHouseholdTimezone?.(householdId),
     logger: rootLogger.child({ module: 'barcode-relay' }),
     onScan: (relay) => {

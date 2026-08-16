@@ -21,7 +21,6 @@ import { DEFAULT_TIMEZONE } from '#domains/core/utils/timezone.mjs';
 const RELAY_SOURCE = 'pressure-mat-relay';
 const VALID_EVENTS = new Set(['pressed', 'stomped', 'released']);
 const DEFAULT_TOPIC = 'pressure-mat';
-const DEFAULT_DIR = 'household/pressure-mats/log'; // relative to dataDir
 
 /**
  * @param {object}   deps
@@ -32,7 +31,17 @@ const DEFAULT_DIR = 'household/pressure-mats/log'; // relative to dataDir
  * @param {object}   [deps.logger]
  * @returns {{ dispose: () => void, flush: () => Promise<void> }}
  */
-export function createPressureMatRelay({ eventBus, dataDir, config = {}, timezone = DEFAULT_TIMEZONE, logger = console }) {
+/**
+ * `historyRoot` is INJECTED, absolute, and already resolved.
+ *
+ * This relay used to hold `const DEFAULT_DIR = 'household/<domain>/log'` and
+ * join it onto dataDir itself. That put storage layout in the application
+ * layer, which the layer guidelines forbid outright ("Application layer never
+ * builds file paths") — and it is why relocating the household tree touched
+ * this file at all. The composition root resolves the location, including any
+ * `persistence.dir` override, and hands down one directory.
+ */
+export function createPressureMatRelay({ eventBus, dataDir, historyRoot, config = {}, timezone = DEFAULT_TIMEZONE, logger = console }) {
   if (!eventBus?.subscribe) {
     throw new Error('createPressureMatRelay: eventBus with subscribe required');
   }
@@ -42,8 +51,6 @@ export function createPressureMatRelay({ eventBus, dataDir, config = {}, timezon
   }
 
   const matDefs = config?.pressure_mats || {};
-  const persistDir = (config?.persistence?.dir || DEFAULT_DIR).replace(/^\/+/, '');
-  const historyRoot = path.join(dataDir, ...persistDir.split('/'));
   const topics = new Set([DEFAULT_TOPIC, ...Object.values(matDefs).map((m) => m?.topic).filter(Boolean)]);
 
   let writeChain = Promise.resolve();

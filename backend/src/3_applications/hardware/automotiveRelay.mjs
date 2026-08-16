@@ -43,7 +43,6 @@ import { DEFAULT_TIMEZONE } from '#domains/core/utils/timezone.mjs';
 
 const RELAY_SOURCE = 'obd-relay';
 const DEFAULT_TOPIC = 'automotive';
-const DEFAULT_DIR = 'household/automotive/log'; // relative to dataDir
 const DEFAULT_SNAPSHOT_MIN_S = 60;
 const DEFAULT_MIN_TRIP_SAMPLES = 0; // opt-in; 0 keeps every trip
 const CHUNK_TTL_MS = 10 * 60 * 1000; // drop stale partial trip reassemblies
@@ -85,22 +84,29 @@ const ECU_FIELDS = ['rpm', 'coolant_c', 'fuel_pct'];
  * @param {() => number} [deps.now] clock (injectable for tests)
  * @returns {{ dispose: () => void, flush: () => Promise<void> }}
  */
+/**
+ * `historyRoot` is INJECTED, absolute, and already resolved.
+ *
+ * This relay used to hold `const DEFAULT_DIR = 'household/automotive/log'` and
+ * join it onto dataDir itself. That put storage layout in the application
+ * layer, which the layer guidelines forbid outright ("Application layer never
+ * builds file paths"). The composition root resolves the location, including
+ * any `persistence.dir` override, and hands down one directory.
+ */
 export function createAutomotiveRelay({
-  eventBus, dataDir, config = {}, timezone = DEFAULT_TIMEZONE, logger = console, now = Date.now,
+  eventBus, dataDir, historyRoot, config = {}, timezone = DEFAULT_TIMEZONE, logger = console, now = Date.now,
 }) {
   if (!eventBus?.onClientMessage || !eventBus?.broadcast) {
     throw new Error('createAutomotiveRelay: eventBus with onClientMessage + broadcast required');
   }
 
   const vehicleDefs = config?.vehicles || {};
-  const persistDir = (config?.persistence?.dir || DEFAULT_DIR).replace(/^\/+/, '');
   const snapshotMinMs = (Number(config?.persistence?.snapshot_min_s) > 0
     ? Number(config.persistence.snapshot_min_s)
     : DEFAULT_SNAPSHOT_MIN_S) * 1000;
   const minTripSamples = Number(config?.persistence?.min_trip_samples) > 0
     ? Number(config.persistence.min_trip_samples)
     : DEFAULT_MIN_TRIP_SAMPLES;
-  const historyRoot = path.join(dataDir, ...persistDir.split('/'));
   const topicForId = (id) => vehicleDefs[id]?.topic || DEFAULT_TOPIC;
 
   // Serialize all writes: day logs are read-modify-write, and a trip-ack must

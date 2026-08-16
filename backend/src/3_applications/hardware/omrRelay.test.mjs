@@ -86,7 +86,9 @@ describe('createOmrRelay', () => {
     createOmrRelay({
       eventBus: bus,
       dataDir,
-      config: { persistence: { dir: 'omr' }, ...config },
+      // Resolved by the composition root in production; supplied directly here.
+      historyRoot: path.join(dataDir, 'omr'),
+      config: { ...config },
       timezone,
       logger: NOOP_LOGGER,
     });
