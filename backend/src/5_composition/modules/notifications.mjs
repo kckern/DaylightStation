@@ -46,6 +46,10 @@ export const DEFAULT_PREFERENCES = {
  *   ceremony nudges are text-only (no "Begin" button).
  * @param {Object} [deps.haGateway] - Home Assistant gateway (callService)
  * @param {Function} [deps.resolveNotifyService] - username -> HA notify service
+ * @param {Function} [deps.resolveDefaultRecipient] - () => username; the fallback
+ *   addressee for system-category intents, which are about the house rather than
+ *   a person and so arrive with no `metadata.username`. Without it they route to
+ *   a channel that cannot resolve a destination and return `delivered: false`.
  * @param {Object} [deps.preferences] - Category->urgency->channels overrides
  * @param {Object} [deps.configService] - ConfigService; used to read household
  *   notifications.yml (quiet hours + cooldowns) fresh on every send.
@@ -58,7 +62,7 @@ export const DEFAULT_PREFERENCES = {
 export function bootstrapNotifications(deps = {}) {
   const {
     eventBus, telegramAdapter, resolveChatId, publicBaseUrl,
-    haGateway, resolveNotifyService,
+    haGateway, resolveNotifyService, resolveDefaultRecipient,
     preferences, logger,
     configService, dataPath, clock,
   } = deps;
@@ -92,6 +96,7 @@ export function bootstrapNotifications(deps = {}) {
   const container = new NotificationContainer({
     adapters,
     preferenceLoader: () => preference,
+    resolveDefaultRecipient,
     policy,
     ledgerStore,
     configLoader,

@@ -71,6 +71,7 @@ import {
 
 import { bootstrapLifeplan } from '#composition/modules/lifeplan.mjs';
 import { bootstrapNotifications } from '#composition/modules/notifications.mjs';
+import { createPlaybackStallDetector } from '#composition/modules/playbackStall.mjs';
 import { createHubFleetBridge } from '#composition/modules/hubFleetBridge.mjs';
 import { createApiRouters } from '#composition/modules/contentApi.mjs';
 import { createFitnessApiRouter } from '#composition/modules/fitnessApi.mjs';
@@ -1059,6 +1060,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     // identities.homeassistant.notify_service (e.g. 'mobile_app_kc_phone')
     resolveNotifyService: (username) =>
       userService.getProfile(username)?.identities?.homeassistant?.notify_service ?? null,
+    // System-category alerts are about the house, not about a person, so they
+    // arrive with no `metadata.username` — and every channel resolves its
+    // destination from that field. household.yml already names the head of
+    // household for exactly this "default user for single-user operations" case.
+    resolveDefaultRecipient: () => configService.getHeadOfHousehold(),
     configService,
     dataPath: dataBasePath,
     clock: null,
@@ -4209,6 +4215,42 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     });
     agentsServices.scheduler.registerTask('hardware:relay-watchdog', '*/30 * * * *', async () => {
       relayWatchdog.check();
+    });
+  }
+
+  // Playback stall watchdog — the kiosk half of the same idea. On 2026-08-16 a
+  // child sat in front of a wedged piano kiosk for 17 minutes: the APK watchdog
+  // read 37 fps, heartbeats arrived every second, and every health check we
+  // owned said HEALTHY, because all of them measured frame rate or beat arrival
+  // rather than progress. PlaybackStallDetector reads the `position` the 5s
+  // device-state heartbeat has always carried and alerts when a device claiming
+  // `playing` stops advancing. It rides the event bus directly, so no scheduler
+  // tick is involved — the verdict lands on the heartbeat that proves it.
+  if (notificationStack?.notificationService) {
+    createPlaybackStallDetector({
+      eventBus,
+      logger: rootLogger.child({ module: 'playback-stall' }),
+      onStall: ({ deviceId, contentId, title, position, stalledForMs }) => {
+        const minutes = Math.max(1, Math.round(stalledForMs / 60_000));
+        notificationStack.notificationService.send({
+          title: 'A screen is stuck',
+          body: `${deviceId} says it is playing ${title || contentId || 'something'} `
+            + `but the playhead has not moved in ${minutes} minute${minutes === 1 ? '' : 's'} `
+            + `(stuck at ${Math.round(position)}s). Someone is probably waiting in front of it.`,
+          category: 'system',
+          // HIGH routes this to a phone rather than an in-app card; the whole
+          // point is reaching someone who is NOT looking at the dashboard. See
+          // DEFAULT_PREFERENCES in 5_composition/modules/notifications.mjs.
+          urgency: 'high',
+          // One alert per episode per item. The detector already latches, so
+          // this is the belt to that pair of braces: it also survives a restart,
+          // which would otherwise re-arm the detector and re-alert.
+          dedupeKey: `playback-stall:${deviceId}:${contentId || 'unknown'}`,
+        }).catch((err) => rootLogger.warn('playback-stall.notify-failed', { error: err.message }));
+      },
+      onRecover: ({ deviceId, reason, stalledForMs }) => {
+        rootLogger.info('playback-stall.cleared', { deviceId, reason, stalledForMs });
+      },
     });
   }
 

@@ -14,6 +14,7 @@ export class NotificationService {
   #ledgerStore;
   #configLoader;
   #clock;
+  #resolveDefaultRecipient;
 
   /**
    * @param {Object} deps
@@ -24,8 +25,10 @@ export class NotificationService {
    * @param {Object} [deps.ledgerStore] - dedupe/quiet-hours ledger; enables governance when paired with policy
    * @param {Function} [deps.configLoader] - () => ({ quietHours, cooldowns })
    * @param {Object} [deps.clock] - { now: () => Date }
+   * @param {Function} [deps.resolveDefaultRecipient] - () => username; the house-wide
+   *   fallback addressee for SYSTEM-category intents (see #withResolvedRecipient)
    */
-  constructor({ adapters = [], preferenceLoader, logger, policy, ledgerStore, configLoader, clock } = {}) {
+  constructor({ adapters = [], preferenceLoader, logger, policy, ledgerStore, configLoader, clock, resolveDefaultRecipient } = {}) {
     this.#adapters = adapters;
     this.#adapterMap = new Map(adapters.map(a => [a.channel, a]));
     this.#preferenceLoader = preferenceLoader;
@@ -35,6 +38,48 @@ export class NotificationService {
     this.#ledgerStore = ledgerStore;
     this.#configLoader = configLoader;
     this.#clock = clock;
+    this.#resolveDefaultRecipient = resolveDefaultRecipient;
+  }
+
+  /**
+   * Give a SYSTEM-category intent an addressee when the caller supplied none.
+   *
+   * Every delivery channel resolves its destination from `metadata.username` —
+   * the Telegram adapter turns it into a chat id and refuses without one. That is
+   * right for the personal categories: a ceremony nudge or a school backlog
+   * reminder is about one person, and guessing a recipient would deliver their
+   * prompt to somebody else. So the default is scoped to `system` alone, whose
+   * subject is the house rather than a person: a dead relay, a wedged kiosk. Such
+   * an alert had no addressee and therefore no delivery, which is how the relay
+   * watchdog managed to be both correct and silent.
+   *
+   * A missing or throwing resolver leaves the intent exactly as it was — the
+   * caller then gets the same undelivered result it got before, never an
+   * exception on the notification path.
+   *
+   * @private
+   */
+  #withResolvedRecipient(intent) {
+    if (intent.category !== 'system' || intent.metadata?.username) return intent;
+    if (typeof this.#resolveDefaultRecipient !== 'function') return intent;
+
+    let username = null;
+    try {
+      username = this.#resolveDefaultRecipient() || null;
+    } catch (error) {
+      this.#logger?.warn?.('notification.default_recipient.failed', { error: error.message });
+      return intent;
+    }
+    if (!username) {
+      this.#logger?.warn?.('notification.default_recipient.unresolved', { category: intent.category });
+      return intent;
+    }
+
+    this.#logger?.debug?.('notification.default_recipient.applied', { username });
+    return new NotificationIntent({
+      ...intent.toJSON(),
+      metadata: { ...intent.metadata, username },
+    });
   }
 
   /**
@@ -45,9 +90,11 @@ export class NotificationService {
    * @returns {Promise<Array<{delivered: boolean, channel: string, channelId?: string, error?: string}>>}
    */
   async send(rawIntent) {
-    const intent = rawIntent instanceof NotificationIntent
-      ? rawIntent
-      : new NotificationIntent(rawIntent);
+    // Resolve the addressee BEFORE governance so the dedupe ledger is keyed on
+    // the recipient who actually gets the message rather than on a placeholder.
+    const intent = this.#withResolvedRecipient(
+      rawIntent instanceof NotificationIntent ? rawIntent : new NotificationIntent(rawIntent),
+    );
 
     // Governance (dedupe + quiet hours). Additive: only active when policy+ledger
     // are wired. Degrades open — a governance error never blocks delivery.
