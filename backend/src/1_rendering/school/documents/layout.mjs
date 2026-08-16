@@ -219,18 +219,21 @@ export function contentHeightPt(fragments, { spacing = {} } = {}) {
  * ONE greedy forward pass — exactly the algorithm `placeFragments` has always
  * run, extracted verbatim so it can be run a second time under a soft target.
  *
- * `targetPerPagePt`, when given, is a SOFT per-page height: once a non-empty
- * page has accumulated (or would overshoot) that much content, the page ends
- * early. The true page-height ceiling (`contentBottomPt`) still governs every
- * per-fragment fit/split/overflow decision below, completely unchanged, so a
- * single oversized fragment can never be wrongly rejected merely for exceeding
- * the soft target — the soft target only ever STARTS a page early, and the
- * fragment that triggered it is then re-tried against a full empty page, the
- * most room it could ever have had.
+ * `targetForPagePt`, when given, is a function of the 0-based page index
+ * returning that page's SOFT height budget: once a non-empty page has
+ * accumulated (or would overshoot) that much content, the page ends early. It
+ * is a function of the page rather than one number because pages do not all
+ * have the same room for shared content — see `balanceReservePt` on
+ * `placeFragments`. The true page-height ceiling (`contentBottomPt`) still
+ * governs every per-fragment fit/split/overflow decision below, completely
+ * unchanged, so a single oversized fragment can never be wrongly rejected
+ * merely for exceeding the soft target — the soft target only ever STARTS a
+ * page early, and the fragment that triggered it is then re-tried against a
+ * full empty page, the most room it could ever have had.
  *
- * With `targetPerPagePt = null` this is byte-for-byte the original loop.
+ * With `targetForPagePt = null` this is byte-for-byte the original loop.
  */
-function runPlacement(fragments, { contentTopPt, contentBottomPt, spacing, targetPerPagePt = null }) {
+function runPlacement(fragments, { contentTopPt, contentBottomPt, spacing, targetForPagePt = null }) {
   const errors = [];
   const queue = fragments.map((fragment) => normalizeFragment(fragment, errors));
   const pages = [];
@@ -275,7 +278,10 @@ function runPlacement(fragments, { contentTopPt, contentBottomPt, spacing, targe
     // fragment is unshifted, the page ends, and on the now-empty page the
     // check is skipped and the ordinary hard-ceiling logic below decides its
     // fate with the full page available to it.
-    if (targetPerPagePt !== null && !pageIsEmpty) {
+    if (targetForPagePt !== null && !pageIsEmpty) {
+      // `pages.length` is the 0-based index of the page currently being
+      // filled — the finished ones are already pushed.
+      const targetPerPagePt = targetForPagePt(pages.length);
       const usedPt = cursor - contentTopPt;
       const wouldUsePt = usedPt + gapPt + fragment.heightPt;
       if (wouldUsePt - targetPerPagePt > targetPerPagePt - usedPt + EPSILON) {
@@ -361,13 +367,28 @@ function runPlacement(fragments, { contentTopPt, contentBottomPt, spacing, targe
  *   "trailing space on the last page belongs to the document, not the
  *   answers" — which `flow` and `one-page` still rely on.
  * @param {boolean} [page.balance=false] - Fit policy `fill` (spec §7): when
- *   true, re-run placement against a soft per-page target of
- *   `contentHeightPt / pageCount` so fragments spread evenly over the page
- *   count the greedy pass already settled on, instead of packing early pages
+ *   true, re-run placement against a soft per-page target derived from
+ *   `contentHeightPt` and the page count the greedy pass already settled on,
+ *   so fragments spread evenly over those pages instead of packing early pages
  *   to the brim and stranding a handful on the last one. The rebalanced
  *   layout is ADOPTED ONLY if it produced the same page count and no errors —
  *   balancing may improve a document's rhythm, never its pagination. Default
  *   false reproduces the engine's original behavior byte-for-byte.
+ * @param {Array<number>} [page.balanceReservePt=[]] - Per-page heights (index
+ *   0 = page 1) that are page-SPECIFIC furniture rather than shared content,
+ *   for the purpose of the `balance` target only. Some pages carry matter the
+ *   others do not — a masthead that prints once on page 1 — so an even split
+ *   of TOTAL height hands those pages the same height budget while leaving
+ *   them measurably less room for the content actually being spread, and they
+ *   end up with visibly fewer items than their neighbours. Each page's target
+ *   becomes `(contentHeightPt − Σreserves) / pageCount + its own reserve`: the
+ *   shared content divides evenly, and a page that must also carry furniture
+ *   is simply allowed to be that much taller. Purely geometric — this module
+ *   neither knows nor asks what the reserved height contains; the caller that
+ *   measured the fragment is the one that names it. Entries past the end (and
+ *   the default empty array) are 0, which reproduces the plain
+ *   `contentHeightPt / pageCount` target byte-for-byte. Ignored entirely
+ *   unless `balance` is true.
  * @param {number} [page.maxFillAfterPt=Infinity] - Fit policy `fill` (spec
  *   §7): the largest share `distributeAnswerSpace` may add to any one
  *   `fillAfter` fragment. Space the cap leaves unclaimed stays blank at the
@@ -379,6 +400,7 @@ function runPlacement(fragments, { contentTopPt, contentBottomPt, spacing, targe
  */
 export function placeFragments(fragments, {
   pageHeightPt, marginPt, spacing = {}, growLastPage = false, balance = false, maxFillAfterPt = Infinity,
+  balanceReservePt = [],
 }) {
   const contentTopPt = marginPt;
   const contentBottomPt = pageHeightPt - marginPt;
@@ -389,9 +411,20 @@ export function placeFragments(fragments, {
   let { pages, errors } = runPlacement(fragments, { contentTopPt, contentBottomPt, spacing });
 
   if (balance && errors.length === 0 && pages.length > 1) {
-    const targetPerPagePt = contentHeightPt(fragments, { spacing }) / pages.length;
+    const pageCount = pages.length;
+    // Furniture that lands on one specific page is not content to be shared
+    // out; it is subtracted from the pool, divided nowhere, and handed back to
+    // the page that has to carry it. With no reserves this is exactly
+    // `contentHeightPt / pageCount` on every page.
+    const reserveForPagePt = (pageIndex) => balanceReservePt[pageIndex] ?? 0;
+    let reservedTotalPt = 0;
+    for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) reservedTotalPt += reserveForPagePt(pageIndex);
+    const sharedPt = Math.max(0, contentHeightPt(fragments, { spacing }) - reservedTotalPt);
     const rebalanced = runPlacement(fragments, {
-      contentTopPt, contentBottomPt, spacing, targetPerPagePt,
+      contentTopPt,
+      contentBottomPt,
+      spacing,
+      targetForPagePt: (pageIndex) => sharedPt / pageCount + reserveForPagePt(pageIndex),
     });
     // Adopt the rebalanced layout only when it agrees with the greedy pass on
     // page count and introduced no errors — balancing must never make
