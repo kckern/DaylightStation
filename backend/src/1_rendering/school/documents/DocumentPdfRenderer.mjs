@@ -913,6 +913,17 @@ export function createDocumentPdfRenderer({
       growLastPage,
       balance,
       maxFillAfterPt: theme.pagination?.maxFillGrowthPt ?? Infinity,
+      // The banner fragment (title/name/date, plus the answer-card strip when
+      // this render is card-attached) prints on page 1 and nowhere else, so
+      // page 1 has that much less room for the questions being spread. Told
+      // to `balance` as page 1's reserve, it stops an even split of TOTAL
+      // height from charging the banner to page 1's share of the QUESTIONS
+      // and leaving it a question or two short of its neighbours.
+      // `measureDocumentFragments` always emits it first, and never emits a
+      // second one; matching on its id keeps this honest if that ever
+      // changes. Read only when `balance` is on (fit policy `fill`) — every
+      // other render is byte-identical.
+      balanceReservePt: [fragments[0]?.id === 'header' ? (fragments[0].heightPt ?? 0) : 0],
     });
     if (errors.length) {
       const error = new Error(`document '${document.id}' cannot be laid out: ${errors.map((e) => e.message).join('; ')}`);
