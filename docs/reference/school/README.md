@@ -827,9 +827,12 @@ a child's work never vanishes silently.
 `GET /print/<7-digit card id>` alone reproduces the sheet that card was
 printed for;
 `cli/school-docs.cli.mjs` covers validate/publish/render/release-card.
-Sources live at `data/content/school/print-documents/` under hierarchical
-taxonomy ids (`subject/course/slug`); curriculum units reference a printed
-quiz as `document: print/<id>@<rev>`.
+Sources live at `data/content/school/catalog/documents/` under hierarchical
+taxonomy ids (`subject/course/slug`) — the authored document *class*, on the
+same catalog shelf as the `school.learning-document/v1` files;
+`data/content/school/print-documents/` holds only the artifacts minted from
+them (`published/`, `derived-banks/`, `allocations/`). Curriculum units
+reference a printed quiz as `document: print/<id>@<rev>`.
 
 ### The physical learning console
 

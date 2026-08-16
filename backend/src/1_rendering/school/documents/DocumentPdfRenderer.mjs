@@ -759,7 +759,7 @@ export function createDocumentPdfRenderer({
    * factory default, no furniture) or, once furniture/gutter is opted in,
    * that page's own `contentBox(...).xPt` (F2: the same left edge
    * `contentBox`'s gutter-adjusted `widthPt` was measured against, and the
-   * one furniture's own footer/continuation-strip painting already uses —
+   * one furniture's own footer painting already uses —
    * so body text starts flush with furniture, not the page's raw margin).
    * `fragment.gutterPt` (only ever set on a `passage`'s line-numbered text
    * node) is an UNRELATED, smaller reservation nested inside that box for
@@ -813,7 +813,7 @@ export function createDocumentPdfRenderer({
    * `tests/isolated/rendering/school/golden/`) stays untouched.
    *
    * `render()`'s new `options.furniture` opts a document INTO
-   * `furniture.mjs`'s richer footer (+ continuation strip + gutter) instead
+   * `furniture.mjs`'s richer footer (+ gutter) instead
    * of this one — the two are mutually exclusive per render, chosen once in
    * `renderPlaced` below, so a page is never drawn by both (no double-draw).
    * `furniture.mjs`'s footer intentionally does not carry the "Form B" form
@@ -858,10 +858,11 @@ export function createDocumentPdfRenderer({
   // ── render ────────────────────────────────────────────────────────────
   function renderPlaced(document, {
     studentName, date = null, isAnswerKey, keyItems, bank, tokens, furniture = null, growLastPage = false,
+    balance = false,
     italic = false, totalPoints = null, keyBlocks = null, keyTitle = null, card = null,
   }) {
     // Opting into `furniture` shrinks the usable page height by the
-    // footer-band + continuation-strip reservation (contentBox) BEFORE
+    // footer-band reservation (contentBox) BEFORE
     // placement runs, so no fragment is ever placed where furniture paints.
     // Without it, placement uses the page's full height exactly as it always
     // has — existing (non-furniture) callers and their goldens are untouched.
@@ -902,9 +903,16 @@ export function createDocumentPdfRenderer({
       marginPt: box?.marginPt ?? theme.page.marginPt,
       spacing: theme.spacing,
       // Fit policy `fill` (spec §7): RenderPrintDocument (Task 8) is the only
-      // caller that ever sets this true. Default false reproduces every
-      // existing render byte-for-byte — see layout.mjs's own doc comment.
+      // caller that ever sets these. Defaults (false / uncapped) reproduce
+      // every existing render byte-for-byte — see layout.mjs's own doc
+      // comment. `growLastPage` bottoms out the last page; `balance` spreads
+      // fragments evenly over the page count instead of overpacking page 1;
+      // `maxFillAfterPt` stops the leftover space on a sparse page from
+      // inflating one interior gap. All three only ever apply to the STUDENT
+      // pages — the teacher key below is placed by its own separate call.
       growLastPage,
+      balance,
+      maxFillAfterPt: theme.pagination?.maxFillGrowthPt ?? Infinity,
     });
     if (errors.length) {
       const error = new Error(`document '${document.id}' cannot be laid out: ${errors.map((e) => e.message).join('; ')}`);
@@ -1029,8 +1037,7 @@ export function createDocumentPdfRenderer({
             theme,
             page: index + 1,
             pageCount: pages.length,
-            title: furniture.title ?? document.title ?? document.id,
-            nameLine: furniture.nameLine ?? studentName,
+            cardId: card?.cardId ?? null,
             duplex: furniture.duplex,
             gutter: furniture.gutter,
           });
@@ -1040,8 +1047,8 @@ export function createDocumentPdfRenderer({
       });
       // Teacher-key pages (Task 6): drawn from their OWN separately-placed
       // `keyPages`, appended after every student page. No footer/furniture —
-      // an appendix key page carries no "Page x of y"/continuation-strip
-      // chrome of its own in v1; its content (the entry list) is what
+      // an appendix key page carries no "Page x of y" chrome of its own in
+      // v1; its content (the entry list) is what
       // matters. `leftPt` is the plain (non-duplex, non-alternating) content
       // edge — a key page is a loose appendix, never bound into the
       // duplex-punched student packet the gutter reservation is for.
@@ -1084,13 +1091,10 @@ export function createDocumentPdfRenderer({
    *   until then the plumbing is honest about which form was issued, and the
    *   e2e suite reports the sameness rather than hiding it.
    * @param {Object} [options.furniture] - opt into `furniture.mjs` page
-   *   furniture (page-x-of-y footer + continuation strip + gutter) INSTEAD OF
-   *   the legacy `drawFooter`. Omitted/null (the default) leaves every
-   *   existing caller's output byte-identical to before this option existed.
-   * @param {string} [options.furniture.title] - continuation-strip title;
-   *   defaults to `document.title ?? document.id`
-   * @param {string|null} [options.furniture.nameLine] - continuation-strip
-   *   "Name:" field; defaults to `studentName`
+   *   furniture (page-x-of-y footer + gutter) INSTEAD OF the legacy
+   *   `drawFooter`. Omitted/null (the default) leaves every existing caller's
+   *   output byte-identical to before this option existed. The footer picks up
+   *   the card number straight from `options.card` — there is nothing to pass.
    * @param {boolean} [options.furniture.duplex] - alternate gutter side by page parity
    * @param {boolean|number} [options.furniture.gutter] - gutter width; see `furniture.mjs`
    * @param {string|null} [options.date] - printed on the header's Date line
@@ -1101,6 +1105,13 @@ export function createDocumentPdfRenderer({
    *   forwarded to `placeFragments`' `growLastPage`, so the LAST page also
    *   bottoms out its answer spaces/spacers. Default false reproduces every
    *   existing render byte-for-byte.
+   * @param {boolean} [options.balance] - fit policy `fill` (spec §7):
+   *   forwarded to `placeFragments`' `balance`, so fragments are redistributed
+   *   evenly across the already-decided page count instead of greedily
+   *   overpacking early pages and stranding the remainder on the last one.
+   *   Default false reproduces every existing render byte-for-byte. Applies to
+   *   the student pages only; the teacher-key appendix is placed separately
+   *   and never balanced.
    * @param {boolean} [options.italic] - recognise `*italic*` in `rich_text`/
    *   `passage` inline grammar (v2, spec §12.8). Default false reproduces
    *   every existing render byte-for-byte — a v1 caller's stray `*word*`
@@ -1136,7 +1147,7 @@ export function createDocumentPdfRenderer({
    */
   async function render(source, {
     studentName = null, date = null, answers = null, answerKey = false, bank = null, tokens = null,
-    variant = null, furniture = null, growLastPage = false, italic = false, totalPoints = null,
+    variant = null, furniture = null, growLastPage = false, balance = false, italic = false, totalPoints = null,
     keyBlocks = null, keyTitle = null, card = null,
   } = {}) {
     // The variant rides on the DOCUMENT, not just alongside it: the footer and
@@ -1154,13 +1165,15 @@ export function createDocumentPdfRenderer({
 
     if (!resolvedAnswers) {
       return renderPlaced(document, {
-        studentName, date, isAnswerKey: false, keyItems: [], bank, tokens, furniture, growLastPage, italic, totalPoints,
+        studentName, date, isAnswerKey: false, keyItems: [], bank, tokens, furniture, growLastPage, balance,
+        italic, totalPoints,
         keyBlocks, keyTitle, card,
       });
     }
     const keyItems = keyItemsFor(document, resolvedAnswers);
     return renderPlaced(keyDocumentFor(document, keyItems), {
-      studentName: null, date: null, isAnswerKey: true, keyItems, bank, tokens, furniture, growLastPage, italic, totalPoints,
+      studentName: null, date: null, isAnswerKey: true, keyItems, bank, tokens, furniture, growLastPage, balance,
+      italic, totalPoints,
       card,
     });
   }

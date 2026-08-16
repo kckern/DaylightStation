@@ -3,7 +3,13 @@ import { isDeepStrictEqual } from 'node:util';
 import { promises as fs } from 'node:fs';
 import yaml from 'js-yaml';
 
-const SAFE_ID = /^[a-z0-9][a-z0-9._/-]*$/i;
+/**
+ * The one definition of a well-formed worksheet-instance id. Exported because
+ * anything else that turns an operator-supplied id into a path (e.g.
+ * `school-docs reprint`) must apply the IDENTICAL rule — two copies of this
+ * regex would eventually drift and reopen the traversal it exists to close.
+ */
+export const SAFE_WORKSHEET_INSTANCE_ID = /^[a-z0-9][a-z0-9._/-]*$/i;
 const dump = (value) => yaml.dump(value, { indent: 2, lineWidth: -1, noRefs: true });
 
 /** Append-only persistence for the exact worksheet a learner received. */
@@ -17,7 +23,7 @@ export class YamlWorksheetInstanceStore {
   }
   #root() { return this.#configService.getHouseholdPath('apps/school/worksheet-instances'); }
   #file(id) {
-    if (typeof id !== 'string' || !SAFE_ID.test(id) || id.includes('..')) throw new Error(`unsafe worksheet instance id: ${id}`);
+    if (typeof id !== 'string' || !SAFE_WORKSHEET_INSTANCE_ID.test(id) || id.includes('..')) throw new Error(`unsafe worksheet instance id: ${id}`);
     return path.join(this.#root(), `${id}.yml`);
   }
   async get(id) {

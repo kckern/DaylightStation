@@ -13,7 +13,7 @@
  * page_break) had only structural (`toMatchSnapshot()`) coverage before this
  * file — no one had actually LOOKED at a rendered page. The "visual proof"
  * describe below renders one document exercising all seven blocks plus page
- * furniture (footer band, continuation strip, duplex gutter) across 3 pages
+ * furniture (footer band, duplex gutter) across 3 pages
  * at both type-scale presets, rasterizes every page with poppler, commits
  * the PDFs + PNGs as reviewable evidence under
  * `docs/_wip/audits/2026-08-04-print-design-phase-a-acceptance/`, and pins
@@ -168,7 +168,7 @@ describe('Phase A acceptance sweep (spec §12, items tagged [A])', () => {
       });
     });
 
-    describe('policy: flow — paginates with correct footers + continuation strips', () => {
+    describe('policy: flow — paginates with correct footers', () => {
       let rendered;
       let pages;
       let text;
@@ -194,25 +194,24 @@ describe('Phase A acceptance sweep (spec §12, items tagged [A])', () => {
         expect(text).toMatch(/Page 2 of 2/);
       });
 
-      it('page 2 carries the continuation strip (title + Name field) that page 1 does not need', () => {
-        // Page 1 has the real header ("Name: Riley" once); page 2 ALSO gets the
-        // continuation strip's own "Name: Riley" — so the string appears twice
-        // once pagination actually happens, once per page.
+      it('page 2 carries NO continuation strip — the name line lives on page 1\'s real header alone', () => {
+        // Page 1 has the real header ("Name: Riley" once). Nothing repeats it
+        // on page 2: the blank continuation strip that used to print a second
+        // "Name: ____" is gone, replaced by the footer's card number (which
+        // this non-card fixture does not carry — see the footer test above).
         const occurrences = text.match(/Name: Riley/g) ?? [];
-        expect(occurrences.length).toBeGreaterThanOrEqual(2);
-        // The continuation strip prints the document's title-or-id — this
-        // fixture's v2doc() default id — proving the strip actually painted,
-        // not just that SOME "Name:" text happened to appear twice.
-        expect(text).toContain('acceptance-fixture');
+        expect(occurrences).toHaveLength(1);
+        // The document's title-or-id prints once, in that same page-1 header.
+        expect((text.match(/acceptance-fixture/g) ?? [])).toHaveLength(1);
         expect(rendered.pageCount).toBe(2);
       });
 
-      it('the reserved furniture band is non-zero — layout result backing the visual check', () => {
+      it('the reserved furniture band is exactly the footer band — layout result backing the visual check', () => {
         const theme = createWorkbookTheme({ typeScale: 'standard', density: 'normal' });
         expect(theme.furniture.footerBandPt).toBeGreaterThan(0);
-        expect(theme.furniture.continuationStripPt).toBeGreaterThan(0);
+        expect(theme.furniture.continuationStripPt).toBeUndefined();
         const box = contentBox(theme, { gutter: true, duplex: false, pageIndex: 1 });
-        expect(box.pageHeightPt).toBeLessThan(theme.page.heightPt);
+        expect(box.pageHeightPt).toBe(theme.page.heightPt - theme.furniture.footerBandPt);
       });
 
       it('extracted page text is snapshot-pinned — a regression that reflows/renumbers pages shows up as a text diff', () => {
@@ -541,7 +540,7 @@ describe('Phase A acceptance sweep (spec §12, items tagged [A])', () => {
       expect(standardResult.bytes.equals(youngResult.bytes)).toBe(false);
     });
 
-    it('page 2 (continuation strip + duplex gutter + bold/italic prose) matches the committed visual snapshot', async () => {
+    it('page 2 (duplex gutter + bold/italic prose) matches the committed visual snapshot', async () => {
       const snapshotPath = path.join(EVIDENCE_DIR, 'proof-standard-p02.png');
       const rendered = standardPages[1];
 

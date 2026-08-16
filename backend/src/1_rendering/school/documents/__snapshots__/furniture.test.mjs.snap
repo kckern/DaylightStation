@@ -7,7 +7,7 @@ exports[`furniture — drawFurniture > snapshot: a furnished 3-page document's f
       {
         "align": "center",
         "op": "text",
-        "str": "Page 1 of 3",
+        "str": "Page 1 of 3 · 5922785",
         "width": 486,
         "xPt": 72,
         "yPt": 769,
@@ -18,25 +18,9 @@ exports[`furniture — drawFurniture > snapshot: a furnished 3-page document's f
   {
     "calls": [
       {
-        "align": undefined,
-        "op": "text",
-        "str": "Furnished Fixture",
-        "width": 326,
-        "xPt": 54,
-        "yPt": 696,
-      },
-      {
-        "align": "right",
-        "op": "text",
-        "str": "Name: Alice",
-        "width": 160,
-        "xPt": 380,
-        "yPt": 696,
-      },
-      {
         "align": "center",
         "op": "text",
-        "str": "Page 2 of 3",
+        "str": "Page 2 of 3 · 5922785",
         "width": 486,
         "xPt": 54,
         "yPt": 769,
@@ -47,25 +31,9 @@ exports[`furniture — drawFurniture > snapshot: a furnished 3-page document's f
   {
     "calls": [
       {
-        "align": undefined,
-        "op": "text",
-        "str": "Furnished Fixture",
-        "width": 326,
-        "xPt": 72,
-        "yPt": 696,
-      },
-      {
-        "align": "right",
-        "op": "text",
-        "str": "Name: ____________________",
-        "width": 160,
-        "xPt": 398,
-        "yPt": 696,
-      },
-      {
         "align": "center",
         "op": "text",
-        "str": "Page 3 of 3",
+        "str": "Page 3 of 3 · 5922785",
         "width": 486,
         "xPt": 72,
         "yPt": 769,
