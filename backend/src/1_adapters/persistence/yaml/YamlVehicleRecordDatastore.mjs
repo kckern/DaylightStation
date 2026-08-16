@@ -26,6 +26,8 @@ import { Document } from '#domains/automotive/entities/Document.mjs';
 import { loadYamlSafe, saveYaml, ensureDir, dirExists, listDirs } from '#system/utils/FileIO.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
+const RESERVED_LOG_DIR = 'log';
+
 export class YamlVehicleRecordDatastore extends IVehicleRecordRepository {
   #root;
   #logger;
@@ -48,7 +50,12 @@ export class YamlVehicleRecordDatastore extends IVehicleRecordRepository {
 
   async listVehicleIds() {
     if (!dirExists(this.#root)) return [];
-    return listDirs(this.#root).sort();
+    // `log/` is the ONE reserved name inside a household domain (see
+    // configuration.md, "one domain, one folder") — append-only history, not
+    // live state. This root is the automotive domain itself, so its sibling
+    // log/ would otherwise enumerate as a vehicle named "log". It did,
+    // briefly, and showed up in /api/v1/automotive/vehicles.
+    return listDirs(this.#root).filter((name) => name !== RESERVED_LOG_DIR).sort();
   }
 
   async readVehicle(vehicleId) {
