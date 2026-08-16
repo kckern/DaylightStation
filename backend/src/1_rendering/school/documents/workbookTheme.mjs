@@ -203,6 +203,19 @@ export function createWorkbookTheme({ typeScale = 'standard', density = 'normal'
     },
 
     /**
+     * Layout-quality bounds that aren't part of the fixed spacing table
+     * (`spacing[prevClass][nextClass]`) because they only govern GROWTH — how
+     * far `distributeAnswerSpace` (layout.mjs) may stretch a single
+     * `fillAfter` gap before leaving the remainder as blank trailing space
+     * instead. Only fit policy `fill` ever reaches this; every other policy
+     * leaves the last page ungrown anyway. Scaled by density like everything
+     * else in this theme.
+     */
+    pagination: {
+      maxFillGrowthPt: density === 'compact' ? 22 : 32,
+    },
+
+    /**
      * Legacy (v1) key title suffix — `titleSuffix` — plus, additively, the
      * v2 teacher-key render mode's geometry (Task 6, spec §4.1/§12.1): a
      * dense, single-column "<label> <answer>" appendix built by

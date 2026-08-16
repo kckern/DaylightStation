@@ -182,6 +182,68 @@ describe('RenderPrintDocument — fit policy fill bottoms out the last page (c)'
     expect(lastFragment(filled).heightPt).toBeCloseTo(lastFragment(filled).answerSpace.maxPt, 1);
     expect(lastFragment(unfilled).heightPt).toBeCloseTo(lastFragment(unfilled).answerSpace.minPt, 1);
   });
+
+  it('threads balance: true into the final render for fit.policy "fill"', async () => {
+    const renderer = spyRendererFactory();
+    const useCase = new RenderPrintDocument({ renderer });
+    await useCase.execute({ document: growable });
+
+    expect(renderer.calls).toHaveLength(1);
+    expect(renderer.calls[0].options.balance).toBe(true);
+  });
+
+  it('a non-fill policy threads balance: false', async () => {
+    const renderer = spyRendererFactory();
+    const useCase = new RenderPrintDocument({ renderer });
+    await useCase.execute({
+      document: v2doc({ archetype: 'worksheet', fit: { policy: 'flow', typeScale: 'standard' } }),
+    });
+
+    expect(renderer.calls[0].options.balance).toBe(false);
+    expect(renderer.calls[0].options.growLastPage).toBe(false);
+  });
+
+  it('balance: true measurably evens out a two-page document instead of overpacking page 1', () => {
+    // Same real pipeline RenderPrintDocument calls, exercised directly so the
+    // page split is inspectable — a rendered PDF only tells you the page
+    // COUNT, which is precisely what balancing leaves alone.
+    const many = v2doc({
+      archetype: 'worksheet',
+      fit: { policy: 'fill', typeScale: 'standard' },
+      blocks: Array.from({ length: 10 }, (_, i) => ({
+        type: 'question',
+        itemId: `b${i + 1}`,
+        number: i + 1,
+        blocks: [
+          { type: 'rich_text', md: `Question ${i + 1}. Explain your reasoning.` },
+          { type: 'answer_space', minPt: 60, maxPt: 90 },
+        ],
+      })),
+    });
+    const theme = createWorkbookTheme({ typeScale: 'standard', density: 'normal' });
+    const doc = createMeasurementDocument({ theme });
+    const fragments = measureDocumentFragments(many, { doc, theme, texToSvg, studentName: null });
+    const box = contentBox(theme, { gutter: true, duplex: true, pageIndex: 0 });
+    const place = (balance) => placeFragments(fragments, {
+      pageHeightPt: box.pageHeightPt,
+      marginPt: box.marginPt,
+      spacing: theme.spacing,
+      growLastPage: true,
+      balance,
+      maxFillAfterPt: theme.pagination.maxFillGrowthPt,
+    });
+
+    const greedy = place(false);
+    const balanced = place(true);
+    const sizes = (result) => result.pages.map((page) => page.fragments.length);
+    const spread = (result) => Math.max(...sizes(result)) - Math.min(...sizes(result));
+
+    // Same pagination, better distribution — the whole contract of `balance`.
+    expect(balanced.pages).toHaveLength(greedy.pages.length);
+    expect(greedy.pages.length).toBeGreaterThan(1);
+    expect(spread(balanced)).toBeLessThan(spread(greedy));
+    expect(balanced.errors).toEqual([]);
+  });
 });
 
 // F4 (review finding): a standalone short_answer/essay prompt must never
