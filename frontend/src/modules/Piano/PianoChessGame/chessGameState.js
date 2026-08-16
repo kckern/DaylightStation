@@ -1,5 +1,5 @@
 import {
-  createGame, describeGame, fenToPosition, legalDestinations, playMove, undoMove,
+  applyMove, createGame, describeGame, fenToPosition, legalDestinations, playMove, undoMove,
 } from '@shared-gaming/chess/index.mjs';
 import {
   DEFAULT_CHORD_SCHEME, findChordCollisions, shuffleChordScheme, squareToChord, validateChordScheme,
@@ -291,6 +291,28 @@ export function takeMoveBack(state) {
 }
 
 /** Captured material, for the side rails. */
+/**
+ * The position as it stood `pliesBack` moves ago.
+ *
+ * Replayed from the starting position rather than stored per ply: the state
+ * already carries everything needed, and keeping a parallel list of FENs would
+ * be one more thing that can fall out of step with the move list after a
+ * takeback. Only ever called for a one-shot gesture, never per render.
+ *
+ * Returns null when the game has not gone back that far.
+ */
+export function fenBefore(state, pliesBack) {
+  const history = Array.isArray(state?.history) ? state.history : [];
+  if (pliesBack <= 0 || history.length < pliesBack) return null;
+  let fen = state.initialFen;
+  for (const entry of history.slice(0, history.length - pliesBack)) {
+    const applied = applyMove(fen, { from: entry.from, to: entry.to, promotion: PROMOTION_PIECE });
+    if (applied.error) return null;
+    fen = applied.fen;
+  }
+  return fen;
+}
+
 export function capturedPieces(history) {
   const captured = { w: [], b: [] };
   for (const entry of history) {

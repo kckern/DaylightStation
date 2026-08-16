@@ -48,3 +48,24 @@ describe('recognizeGesture', () => {
     }
   });
 });
+
+describe('the replay gesture', () => {
+  it('recognises five adjacent semitones', () => {
+    expect(recognizeGesture([60, 61, 62, 63, 64])).toBe('replay');
+  });
+
+  it('stays distinct from the other two requests', () => {
+    expect(recognizeGesture([60, 61, 62])).toBe('hint');
+    expect(recognizeGesture([60, 61, 62, 63])).toBe('best');
+  });
+
+  it('is not a chord any square could mean', () => {
+    // The whole basis for the gesture vocabulary: no square voices an unbroken
+    // semitone run, so this can never collide with move input.
+    expect(recognizeGesture([60, 64, 67, 71, 74])).toBeNull();
+  });
+
+  it('ignores octave doubling, as the other gestures do', () => {
+    expect(recognizeGesture([60, 61, 62, 63, 64, 72])).toBe('replay');
+  });
+});
