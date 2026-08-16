@@ -59,10 +59,17 @@ describe('Player — media identity is derived from content', () => {
     const firstSession = mounts[0];
     expect(firstSession).toBeTruthy();
 
+    // Baseline the count before re-rendering. Mounting alone renders the stub three
+    // times as effects settle, so an absolute threshold like `renders.length > 1`
+    // already holds here and would wait on a condition the re-render never has to
+    // satisfy — leaving the mount assertion below to pass without proof that the
+    // re-render reached the child at all.
+    const rendersBeforeRerender = renders.length;
+
     // A different object carrying the same content — the exact shape PianoVideoPlayer
     // produced on every poll tick, and the shape SingalongPlayer still produces.
     rerender(<Player play={{ contentId: 'plex:694719' }} />);
-    await waitFor(() => expect(renders.length).toBeGreaterThan(1));
+    await waitFor(() => expect(renders.length).toBeGreaterThan(rendersBeforeRerender));
 
     expect(mounts).toHaveLength(1);
     expect(renders.at(-1)).toBe(firstSession);

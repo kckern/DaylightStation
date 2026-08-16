@@ -114,9 +114,21 @@ export function useMediaResilience({
     prevSessionKeyRef.current = playbackSessionKey;
   }, [playbackSessionKey]);
   // … and on unmount — the final session's entry used to leak (audit §5).
-  // Assumes one mounted Player per playbackSessionKey: a sibling hook sharing
-  // the key would get its ledger entry wiped here (theoretical today —
-  // DancePartyWidget/AudioLayer pairs play different guids).
+  //
+  // Requires one mounted Player per playbackSessionKey: a sibling hook sharing the key
+  // gets its ledger entry wiped here. That used to hold by accident, because the Player
+  // minted a RANDOM guid per source object, so two Players never shared a key. Since
+  // 2026-08-16 the guid is derived from content (a hash of contentId/plex/…), which is
+  // what stops a re-rendering caller from remounting the video — and it means two
+  // Players showing the SAME content now compute the same key. So this is a constraint
+  // the app has to honor, not a property it gets for free.
+  //
+  // A reachable pairing: a menu selection mounts a Player on the nav stack (MenuWidget
+  // is a layout widget, so it renders inside ScreenOverlayProvider's children), then a
+  // media:play action mounts a second Player in the fullscreen slot for content already
+  // open in the menu — its dismissOverlay clears only the overlay slot and cannot
+  // unmount the first. Both then share this ledger session and the usePlaybackSession
+  // entry behind prefsSessionKey/itemSessionKey (volume, rate, seek intent).
   useEffect(() => () => {
     if (prevSessionKeyRef.current) {
       getRecoveryLedger().releaseSession(prevSessionKeyRef.current);
