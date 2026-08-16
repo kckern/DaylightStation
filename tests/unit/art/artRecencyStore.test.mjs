@@ -9,7 +9,7 @@ let dir;
 beforeEach(async () => { dir = await fs.mkdtemp(path.join(os.tmpdir(), 'artrec-')); });
 afterEach(async () => { await fs.rm(dir, { recursive: true, force: true }); });
 
-const file = () => path.join(dir, 'history', 'media_memory', 'art.yml');
+const file = () => path.join(dir, 'media', 'memory', 'art.yml');
 
 describe('artRecencyStore', () => {
   it('starts empty when no file exists (missing file is not an error)', async () => {

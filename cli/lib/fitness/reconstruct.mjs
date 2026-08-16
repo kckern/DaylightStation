@@ -193,7 +193,7 @@ export async function run(argv, ctx) {
   const stravaSummaryPath = path.join(ctx.dataDir, 'users', username, 'lifelog', 'strava');
   const stravaArchiveDir = path.join(ctx.dataDir, 'users', username, 'lifelog', 'strava');
   const olderArchiveDir = path.join(ctx.baseDir, 'media', 'archives', 'strava');
-  const mediaMemoryPath = path.join(ctx.dataDir, 'household', 'history', 'media_memory', 'plex', '14_fitness');
+  const mediaMemoryPath = path.join(ctx.dataDir, 'household', 'media', 'memory', 'plex', '14_fitness');
   const fitnessHistoryDir = ctx.fitnessHistoryDir;
 
   const archiveDeps = { loadYamlSafe, stravaArchiveDir, olderArchiveDir };

@@ -35,7 +35,7 @@ import yaml from 'js-yaml';
 
 const DATA_PATH = process.env.DAYLIGHT_DATA_PATH
   || '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation/data';
-const MEDIA_MEMORY_PATH = path.join(DATA_PATH, 'household/history/media_memory');
+const MEDIA_MEMORY_PATH = path.join(DATA_PATH, 'household/media/memory');
 const PLEX_API_BASE = 'http://localhost:3112/api/v1/proxy/plex';
 
 // Canonical fields to keep in watch history

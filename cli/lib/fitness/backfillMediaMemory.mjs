@@ -4,7 +4,7 @@
  * Scans every stored fitness session for Plex content IDs (from
  * `summary.media`, `timeline.events`, and the legacy `plexId` field) and
  * appends minimal `{ playCount, lastPlayed }` entries to
- * `data/household/history/media_memory/plex/14_fitness.yml` for any ID not
+ * `data/household/media/memory/plex/14_fitness.yml` for any ID not
  * already present.
  *
  * Dry-run by default; `--write` appends.
@@ -38,7 +38,7 @@ export async function run(argv, ctx) {
 
   const fitnessHistoryDir = process.env.FITNESS_HISTORY_DIR || ctx.fitnessHistoryDir;
   const mediaMemoryPath = process.env.MEDIA_MEMORY_PATH
-    || path.join(ctx.dataDir, 'household', 'history', 'media_memory', 'plex', '14_fitness.yml');
+    || path.join(ctx.dataDir, 'household', 'media', 'memory', 'plex', '14_fitness.yml');
 
   // ------------------------------------------------------------------
   // 1. Scan fitness sessions for plex content IDs

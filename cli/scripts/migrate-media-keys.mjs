@@ -38,7 +38,7 @@ const DATA_PATH = dataPathIdx !== -1 && args[dataPathIdx + 1]
   ? args[dataPathIdx + 1]
   : DEFAULT_DATA_PATH;
 
-const MEDIA_MEMORY_PATH = `${DATA_PATH}/household/history/media_memory`;
+const MEDIA_MEMORY_PATH = `${DATA_PATH}/household/media/memory`;
 
 // Map directory names to key prefixes
 const PREFIX_MAP = {

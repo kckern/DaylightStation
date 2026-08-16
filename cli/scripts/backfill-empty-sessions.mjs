@@ -22,7 +22,7 @@ const DRY_RUN = args.includes('--dry-run');
 const API_BASE = 'http://localhost:3112';
 
 const FITNESS_DIR = path.join(DEFAULT_DATA_PATH, 'household', 'history', 'fitness');
-const MEDIA_MEMORY_PATH = path.join(DEFAULT_DATA_PATH, 'household', 'history', 'media_memory', 'plex', '14_fitness.yml');
+const MEDIA_MEMORY_PATH = path.join(DEFAULT_DATA_PATH, 'household', 'media', 'memory', 'plex', '14_fitness.yml');
 const ARCHIVE_DIR = path.join(FITNESS_DIR, '_archived_empty_events');
 
 // ── Load media memory ──────────────────────────────────────────

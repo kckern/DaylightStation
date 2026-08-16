@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { parse, stringify } from 'yaml';
 
-const DEFAULT_MEDIA_MEMORY_RELATIVE = path.join('household', 'history', 'media_memory');
+const DEFAULT_MEDIA_MEMORY_RELATIVE = path.join('household', 'media', 'memory');
 
 function resolveMediaMemoryPath(inputPath) {
   if (!inputPath) return null;
@@ -10,7 +10,7 @@ function resolveMediaMemoryPath(inputPath) {
   const candidates = [
     inputPath,
     path.join(inputPath, DEFAULT_MEDIA_MEMORY_RELATIVE),
-    path.join(inputPath, 'history', 'media_memory')
+    path.join(inputPath, 'media', 'memory')
   ];
 
   return candidates.find(candidate => fs.existsSync(candidate)) || null;

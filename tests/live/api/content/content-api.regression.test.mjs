@@ -41,7 +41,7 @@ function loadYamlSafe(filePath) {
  * Discover watch history files from media_memory
  */
 function discoverWatchHistory() {
-  const historyPath = path.join(DATA_PATH, 'household/history/media_memory');
+  const historyPath = path.join(DATA_PATH, 'household/media/memory');
   const discovered = {
     plex: [],
     scriptures: null,
@@ -375,7 +375,7 @@ describe('Content API Regression Tests', () => {
       // Find an in-progress item from history
       const library = watchHistory.plex[0];
       const historyData = loadYamlSafe(
-        path.join(DATA_PATH, `household/history/media_memory/plex/${library.file}.yml`)
+        path.join(DATA_PATH, `household/media/memory/plex/${library.file}.yml`)
       );
 
       if (!historyData) return;
