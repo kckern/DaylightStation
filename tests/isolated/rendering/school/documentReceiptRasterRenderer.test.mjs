@@ -72,8 +72,15 @@ describe('createDocumentReceiptRasterRenderer', () => {
     expect(job.transcript).toContain(TOKEN);
 
     // The same code a text job would have offered as a `qrcode` item, handed
-    // over as data instead of an item a raster job cannot carry.
-    expect(job.codes).toEqual([{ token: TOKEN, label: 'Equivalent Fractions' }]);
+    // over as data instead of an item a raster job cannot carry — WITH the
+    // lesson-card lines that preceded it on the tape. Those lines are the
+    // only surviving text once the receipt is pixels, and they are what tells
+    // a reader (and the school e2e suites) what the scan actually DOES, not
+    // merely which lesson it belongs to.
+    expect(job.codes).toHaveLength(1);
+    expect(job.codes[0]).toMatchObject({ token: TOKEN, label: 'Equivalent Fractions' });
+    expect(job.codes[0].printed).toContain('Equivalent Fractions');
+    expect(job.codes[0].printed).toContain('WATCH OR LISTEN');
   });
 
   it('cleans up its scratch PNG when cleanup() is called, and not before', async () => {
