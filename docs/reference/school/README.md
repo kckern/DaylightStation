@@ -756,6 +756,64 @@ the layer rules. The printer host defaults to the `kitchen-printer` entry in
 `devices.yml`; `school.yml` `printing:` need only opt in and can override
 limits.
 
+#### Duplex: double-sided by default, via PJL
+
+**Jobs default to double-sided, long-edge (book-style) binding.** Nothing has
+to be configured for that — it is the adapter's constructor default.
+
+Because there is no CUPS layer here, the usual `-o sides=two-sided-long-edge`
+has nothing to attach to, and this printer's IPP path rejects PDF outright (see
+Transport above), so IPP job attributes are not an option either. What a raw
+JetDirect job *can* carry is a **PJL (Printer Job Language) envelope** wrapped
+around the PDF bytes — `pjlWrap()` in `LaserPrinterAdapter.mjs`. Every job goes
+out as:
+
+```
+<UEL>@PJL JOB NAME="<job name>"
+@PJL SET DUPLEX=ON
+@PJL SET BINDING=LONGEDGE      # omitted entirely when duplex is off
+@PJL ENTER LANGUAGE=PDF
+…the PDF bytes, unmodified…
+<UEL>@PJL EOJ
+<UEL>
+```
+
+…where `<UEL>` is the Universal Exit Language escape `\x1B%-12345X`. The PDF
+itself passes through byte-for-byte; only the envelope is added. Multiple
+`copies` stay N concatenated documents inside **one** envelope — one printer
+job, one set of settings, the same single stream port 9100 already parses.
+`printPdf` resolves with `duplex` echoing what was *requested* (9100 gives no
+ack, so it is never a confirmation).
+
+Overrides, both optional:
+
+```yaml
+printing:
+  duplex: true         # default true; false = single-sided
+  binding: LONGEDGE    # default LONGEDGE (book-style, right for portrait text); or SHORTEDGE
+```
+
+Per-job overrides of the same two options are available on
+`printPdf(pdf, { duplex, binding })` for a caller that needs one-off
+single-sided output. `VirtualLaserPrinterAdapter` records both in its job
+sidecar but applies no PJL — it has no printer to parse it, so its captures
+stay plain readable PDFs.
+
+The **quota is unaffected**: it meters *pages*, not sheets, so duplex halves
+the paper a child burns without changing what any request costs them.
+
+> ⚠️ **UNVERIFIED against the physical Brother HL-L2460DW.** PJL duplex is a
+> well-documented de facto standard (HP's PJL Technical Reference, broadly
+> implemented by Brother firmware) and the wire format above is what we now
+> send — but as of **2026-08-15** nobody has held a sheet of paper from this
+> printer to confirm it. Two things a physical test should check: (1) the sheet
+> actually comes out double-sided, and (2) `@PJL ENTER LANGUAGE=PDF` is
+> accepted — PDF is a vendor personality, not one of the PJL spec's named
+> languages, so if the firmware balks, the first thing to try is dropping that
+> one line and letting PDF Direct Print auto-detect, as it did before this
+> change. **Whoever runs that print: replace this block with "confirmed working
+> as of `<date>`" or "confirmed NOT supported, fell back to `<X>`".**
+
 | Layer | Path |
 |---|---|
 | Domain (pure) | `backend/src/2_domains/school/printing.mjs` — the quota policy |
@@ -783,6 +841,8 @@ printing:              # optional; omitting host defaults to the kitchen-printer
   windowMinutes: 60
   pagesPerWindow: 5    # pages a child may print unattended per window
   maxPagesPerJob: 20   # hard ceiling on one job (approval cannot bypass it)
+  duplex: true         # optional; default true (double-sided). false = single-sided
+  binding: LONGEDGE    # optional; default LONGEDGE. LONGEDGE | SHORTEDGE
 printables:
   - id: state-capitals
     label: US State Capitals
@@ -793,10 +853,11 @@ printables:
 
 Boot-cached like the rest of `school.yml`; edits need a container restart.
 
-**Explicitly not built** (named deferrals): duplex/paper-size selection (jobs
-print single-sided default), a print history surface for parents (the log
-exists; nothing renders it), and Telegram approval (the pending API is ready
-for it, no bot hook is wired).
+**Explicitly not built** (named deferrals): paper-size selection (Letter only),
+a print history surface for parents (the log exists; nothing renders it), and
+Telegram approval (the pending API is ready for it, no bot hook is wired).
+Duplex *was* on this list; it now ships on by default — see Duplex above,
+including the standing caveat that it is not yet hardware-confirmed.
 
 ### Print documents — worksheets, quizzes, and OMR grading
 
@@ -1691,6 +1752,13 @@ No code exists for anything in this section. Each links its spec.
   9100 clears on the printer's own TCP idle timeout. `printPdf` resolves on
   flush, not on the printer closing the socket, precisely so a fire-and-forget
   job doesn't hang on that.
+- **Duplex rides on a PJL envelope, and is not hardware-confirmed.** Every job
+  is now wrapped in `@PJL SET DUPLEX=ON` / `BINDING=LONGEDGE` around `@PJL
+  ENTER LANGUAGE=PDF`. That envelope is standard and the PDF inside is
+  untouched, but no one has yet held a double-sided sheet from this printer to
+  prove the firmware honors it. If a job prints single-sided — or worse, prints
+  the PJL text as garbage — suspect `@PJL ENTER LANGUAGE=PDF` first (PDF is a
+  vendor personality, not a PJL-spec language) and see Printing → Duplex.
 - **YAML scalar trap in question banks:** a choice written as a bare number
   (`- 12`) parses as an integer and fails the bank validator's non-empty-string
   check. Quote numeric choices (`'12'`). The error names the field but not the
