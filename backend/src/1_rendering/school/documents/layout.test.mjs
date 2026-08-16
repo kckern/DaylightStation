@@ -172,3 +172,89 @@ describe('placeFragments — maxFillAfterPt caps fillAfter growth', () => {
     expect(omitted).toEqual(explicit);
   });
 });
+
+describe('placeFragments — balanceReservePt (per-page furniture in the balance target)', () => {
+  // A masthead that prints on page 1 only, then ten identical questions —
+  // the shape of a real card-attached worksheet, where page 1 spends 200pt on
+  // a banner page 2 never carries.
+  const MASTHEAD_PT = 200;
+  const SPACING_WITH_MASTHEAD = { question: { question: 14 }, heading: { question: 14 } };
+  const MASTHEAD_GEOMETRY = { pageHeightPt: 750, marginPt: 25, spacing: SPACING_WITH_MASTHEAD };
+  const withMasthead = () => [
+    { id: 'masthead', heightPt: MASTHEAD_PT, atomic: true, spacingClass: 'heading' },
+    ...questions(10),
+  ];
+  const questionsPerPage = (result) => result.pages
+    .map((page) => page.fragments.filter((fragment) => fragment.id !== 'masthead').length);
+
+  it('total content is 940pt over 2 pages — the arithmetic both cases below are read against', () => {
+    // 200pt masthead + 14pt gap + 10 x 60pt + 9 x 14pt gaps.
+    expect(contentHeightPt(withMasthead(), { spacing: SPACING_WITH_MASTHEAD })).toBe(940);
+    expect(placeFragments(withMasthead(), MASTHEAD_GEOMETRY).pages).toHaveLength(2);
+  });
+
+  it('UNADJUSTED (no reserve): an even split of TOTAL height charges the masthead to page 1 and leaves it two questions short', () => {
+    // Soft target 940/2 = 470pt on BOTH pages. Page 1 spends 200 of its 470
+    // on the masthead, so it stops after 4 questions (496pt); page 2 spends
+    // none, so it takes the other 6. Balanced by height, lopsided by eye.
+    const result = placeFragments(withMasthead(), { ...MASTHEAD_GEOMETRY, balance: true });
+
+    expect(result.errors).toEqual([]);
+    expect(result.pages).toHaveLength(2);
+    expect(questionsPerPage(result)).toEqual([4, 6]);
+  });
+
+  it('ADJUSTED: reserving the masthead on page 1 moves the split toward even — 5/5', () => {
+    // Reserve 200 -> 740pt of shared content, 370pt each; page 1's target is
+    // 370 + 200 = 570pt, page 2's is 370pt. Page 1 now takes 5 questions.
+    const result = placeFragments(withMasthead(), {
+      ...MASTHEAD_GEOMETRY, balance: true, balanceReservePt: [MASTHEAD_PT],
+    });
+
+    expect(result.errors).toEqual([]);
+    expect(result.pages).toHaveLength(2);
+    expect(questionsPerPage(result)).toEqual([5, 5]);
+    // Still one masthead, still ten questions, still in order.
+    expect(result.pages.flatMap((page) => page.fragments.map((f) => f.id)))
+      .toEqual(withMasthead().map((f) => f.id));
+  });
+
+  it('the reserve is inert without balance — a non-fill render is byte-identical with or without it', () => {
+    const without = placeFragments(withMasthead(), MASTHEAD_GEOMETRY);
+    const withReserve = placeFragments(withMasthead(), { ...MASTHEAD_GEOMETRY, balanceReservePt: [MASTHEAD_PT] });
+
+    expect(withReserve).toEqual(without);
+  });
+
+  it('an empty reserve array is the plain contentHeight/pageCount target, byte-for-byte', () => {
+    const omitted = placeFragments(withMasthead(), { ...MASTHEAD_GEOMETRY, balance: true });
+    const explicit = placeFragments(withMasthead(), { ...MASTHEAD_GEOMETRY, balance: true, balanceReservePt: [] });
+
+    expect(explicit).toEqual(omitted);
+  });
+
+  it('a reserve larger than the whole document cannot produce a negative share, lose a fragment, or add a page', () => {
+    const absurd = placeFragments(withMasthead(), {
+      ...MASTHEAD_GEOMETRY, balance: true, balanceReservePt: [10000],
+    });
+
+    expect(absurd.errors).toEqual([]);
+    expect(absurd.pages).toHaveLength(2);
+    expect(absurd.pages.flatMap((page) => page.fragments.map((f) => f.id)))
+      .toEqual(withMasthead().map((f) => f.id));
+  });
+
+  it('the hard page ceiling still governs: a reserve cannot push more onto a page than fits', () => {
+    // Reserve 600 -> 340pt shared, 170 each, so page 1's soft target is
+    // 770pt — more than the 700pt page physically holds. The ceiling, not the
+    // target, has to be what stops page 1.
+    const result = placeFragments(withMasthead(), {
+      ...MASTHEAD_GEOMETRY, balance: true, balanceReservePt: [600],
+    });
+    const page1Pt = result.pages[0].fragments
+      .reduce((total, fragment) => Math.max(total, fragment.yPt + fragment.heightPt), 0);
+
+    expect(result.errors).toEqual([]);
+    expect(page1Pt).toBeLessThanOrEqual(CONTENT_BOTTOM_PT + 1e-6);
+  });
+});

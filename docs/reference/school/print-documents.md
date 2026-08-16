@@ -115,12 +115,12 @@ blocks:
   `typeScale: young` enlarges glyphs *and* leading for early readers.
 
   `fill` does two things, in order. First it **balances**: placement runs a
-  second time against a soft per-page target (total content height ÷ the page
-  count the greedy pass produced), ending a page when stopping lands closer to
-  that target than adding the next fragment would. The hard page ceiling still
-  governs every fit decision, so the target only ever starts a page early — and
-  the balanced result is adopted only if it produced the same page count, so
-  balancing can never make pagination worse. Then it **grows**: answer spaces
+  second time against a soft per-page target, ending a page when stopping lands
+  closer to that target than adding the next fragment would. The hard page
+  ceiling still governs every fit decision, so the target only ever starts a
+  page early — and the balanced result is adopted only if it produced the same
+  page count, so balancing can never make pagination worse. Then it **grows**:
+  answer spaces
   expand first, each to its own `maxPt`; any space still left is shared among
   `fillAfter` fragments, capped per share at `theme.pagination.maxFillGrowthPt`
   (32pt normal, 22pt compact).
@@ -130,12 +130,23 @@ blocks:
   leftover simply stays as blank space at the bottom of the page — trailing
   white space is preferred over an oversized interior gap.
 
-  One consequence worth knowing: the balance target is computed from content
-  height, not question count, and it does not model per-page furniture. A
-  card-attached sheet spends ~40pt of page 1 on the answer-sheet header strip,
-  so its split can land one question short of even (a 10-question sheet
-  balancing 4/6 rather than 5/5) while still being far better than the greedy
-  8/2 it replaced.
+  The target is **per page, not one number**, because the pages do not all have
+  the same room. The banner fragment — title/name/date, plus the answer-sheet
+  strip when the render is card-attached — prints on page 1 and nowhere else,
+  and on a card sheet it is over 110pt tall. Charged against a flat
+  `content ÷ pages` target it came straight out of page 1's share of the
+  *questions*, so page 1 took two fewer of them than page 2 (a 10-question
+  atlas worksheet balanced 4/6) and the difference collected as a void in the
+  middle of the document. So the banner's height is subtracted from the shared
+  pool and handed back to the page carrying it: each page's target is
+  `(content height − Σ per-page reserves) ÷ page count + its own reserve`. That
+  worksheet now splits 5/5. `layout.mjs` knows nothing about banners or cards —
+  it takes a generic `balanceReservePt` array (index 0 = page 1) and the
+  renderer, which measured the fragment, names it.
+
+  Balancing moves questions, never white space: the total slack is fixed by the
+  fill cap above, so an evened-out sheet still ends with a short page. It is now
+  the LAST page — which is where a short page belongs — instead of page 1.
 - **Shuffles are edit-stable**: derived from `(seed, variant, block key)`, so
   editing one block never reshuffles its neighbours, and variant N is a
   different-but-deterministic shuffle of the same content.
