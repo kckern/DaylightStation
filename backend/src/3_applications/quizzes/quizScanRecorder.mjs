@@ -6,7 +6,7 @@
 // 50-question card and double-processes every scan:
 //
 //   raw manifest (relay)   {dataDir}/household/omr/log/{reader}/{day}.yml
-//   decoded record (here)  {dataDir}/household/quizzes/{reader}/{day}.yml
+//   decoded record (here)  {dataDir}/household/school/quizzes/{reader}/{day}.yml
 //
 // The raw file stays byte-faithful; this one is the meaningful version.
 //
