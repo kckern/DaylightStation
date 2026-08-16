@@ -112,13 +112,17 @@ workflow once that spec lands; nothing is deleted.
 
 ## Code changes
 
-Four roots resolve into the moved trees. Two are hardcoded and one of those
+Five roots resolve into the moved trees. Two are hardcoded and one of those
 bypasses config entirely — they must change together.
+
+The `curriculum/` resolution logic is **duplicated byte-for-byte across two
+datastores**. Both copies must be removed together; removing one leaves the
+other still reading a directory that no longer exists.
 
 | file:line | current | change |
 |---|---|---|
-| `YamlSchoolDatastore.mjs:98-105` | `#curriculumWorks()` reads `curriculum/<subject>` | delete; `#works()` already unions the root layout |
-| `YamlSchoolDatastore.mjs:107-111` | `#workDir()` prefers `curriculum/<subject>/<work>` when it holds a v2 `index.yml` | delete the branch; return `<subject>/<work>` |
+| `YamlSchoolDatastore.mjs:98-111` | `#curriculumWorks()` + `#workDir()` read `curriculum/<subject>` | delete both branches; `#works()` already unions the root layout |
+| `YamlCurriculumDatastore.mjs:73-86` | identical `#curriculumWorks()` + `#workDir()` | same change, same commit |
 | `schoolLifecycle.mjs:540` | `path.join(dataDir, 'content/school/print-documents')` — hardcoded | point at `household/apps/school/print-documents` |
 | `RenderPrintDocument.mjs:108` | `path.resolve(dataDir, 'content/school/catalog/question-banks')` — hardcoded, **bypasses `catalog.content.root`** | point at `content/school/learning-catalog/question-banks` |
 | `schoolCatalog.mjs:31` | `config.content?.root ?? 'content/school/catalog'` | change the default to `content/school/learning-catalog` |
