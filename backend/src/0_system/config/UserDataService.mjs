@@ -252,25 +252,26 @@ class UserDataService {
   }
 
   /**
-   * Get a household-level data store path, rooted at `common/`.
+   * Get a household-level data store path, rooted at the household directory.
    *
-   * `common/` is where household-wide stores actually live on disk — the
-   * calendar, the gratitude bank, and the Infinity harvest all sit there, and
-   * `createHouseholdDirectory` seeds it. This helper previously rooted at
-   * `shared/`, which meant every household calendar read resolved to a file
-   * that has never existed and returned null.
+   * There is no intermediate root any more. Household-wide stores are domains
+   * at the top of `household/` — `calendar.yml`, `gratitude/`, `events.yml` —
+   * so a segment IS the path.
    *
-   * `shared/` survives as a legacy root holding content-filter/, komga/ and
-   * retroarch/. Those are reached by callers that spell the `shared/` prefix
-   * themselves (`dataService.household.read('retroarch/catalog')`), not
-   * through this helper, so they are unaffected by the root used here.
+   * This helper has now been wrong twice in opposite directions, which is why
+   * it carries this much comment. It first rooted at `shared/`, a directory
+   * the calendar has never lived in, so every household calendar read
+   * returned null. It was then corrected to `common/` — right until the
+   * domain-first reorganization retired that root too. Rooting at the
+   * household directory itself is what stops the next rename from breaking
+   * it again.
    *
    * @param {string} householdId - Household identifier
    * @param {...string} segments - Path segments (e.g., 'gratitude', 'options.gratitude')
    * @returns {string|null}
    */
   getHouseholdSharedPath(householdId, ...segments) {
-    return this.getHouseholdDataPath(householdId, 'common', ...segments);
+    return this.getHouseholdDataPath(householdId, ...segments);
   }
 
   /**
