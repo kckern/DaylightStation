@@ -541,13 +541,20 @@ export async function createSchoolLifecycle({
     curriculum, sessions: stores.sessions, clock,
     graceSec: lifecycleCfg.media?.graceSec ?? 600, logger,
   });
+  // `worksheetInstances` reaches BOTH paper use cases read-only, for one
+  // reason: a unit with a `bank` and no `document` prints a SAMPLED subset of
+  // that bank, and the instance is the only record of which questions the child
+  // was actually asked. Without it here, both used the live bank as the roster —
+  // grading a ten-question sheet out of the whole bank and demanding a grown-up
+  // mark the questions the sampler never printed.
   const submitPaperWork = new SubmitPaperWork({
     curriculum, sessions: stores.sessions, formMaps: stores.formMaps,
-    reviewQueue: stores.reviewQueue, bankReader, clock, logger,
+    reviewQueue: stores.reviewQueue, bankReader, worksheetInstances, clock, logger,
   });
   const gradeSubmission = new GradeSubmission({
     curriculum, sessions: stores.sessions, reviewQueue: stores.reviewQueue,
-    grader: schoolService, bankReader, grownUps, teacherGate, passOverrides, clock, logger,
+    grader: schoolService, bankReader, worksheetInstances,
+    grownUps, teacherGate, passOverrides, clock, logger,
   });
   const closeSessionOutcome = new CloseSessionOutcome({
     curriculum, sessions: stores.sessions, tokens: stores.tokens, assignments: stores.assignments,
