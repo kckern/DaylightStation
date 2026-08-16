@@ -58,7 +58,7 @@ This document captures every change made under `frontend/src/modules/Player/**` 
 | **`.loading-overlay` layout tweaks** – padding, box sizing, center alignment moved to flex column wrapper. | Support richer overlay content (debug strip, timers) with better spacing. | Keeps overlay responsive and ensures spinner stays centered regardless of viewport. | Extra padding could intersect with existing video letterboxing; test across themes.
 | **`.loading-overlay__inner` container** | Provide structural wrapper for spinner vs. debug strip. | Simplifies aligning timer vs. log sections. | Adds another DOM level; ensure accessibility tree remains reasonable.
 | **Pointer cursor on `.loading-spinner`** | Communicate that spinner is now clickable (manual hard reset). | UX hint for manual recovery interactions. | On TV devices without pointer, cursor style has no effect; consider conditional styling to avoid confusing remote users.
-| **`.loading-debug-strip` styles** | Visualize telemetry text appended by `PlayerOverlayLoading`. | Gives operators contextual data without opening dev tools. | Always-on debug strip might distract end users; consider gating behind `debug` flag or environment check.
+| **`.loading-debug-strip` styles** | ~~Visualize telemetry text appended by `PlayerOverlayLoading`.~~ **Gone.** The strip was removed from the markup; only the styles remain in `Player.scss`, and the 1Hz diagnostics poll that fed it was deleted on 2026-08-16 (Task 4.9) — no caller ever supplied the `getMediaEl` it was gated on, and its readings went into state nothing rendered. Buffer runway and dropped frames come from `usePlaybackHealth` instead. | — | — |
 
 ---
 

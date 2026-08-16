@@ -1,9 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import PropTypes from 'prop-types';
 import spinner from '../../../assets/icons/spinner.svg';
 import pause from '../../../assets/icons/pause.svg';
 import { playbackLog } from '../lib/playbackLogger.js';
-import { buildMediaDiagnostics, EMPTY_MEDIA_DIAGNOSTICS } from '../lib/mediaDiagnostics.js';
 import { subscribeSkipCard, isSkipCardPaused } from '../../../lib/Player/skipCardState.js';
 
 /**
@@ -34,8 +33,6 @@ export function PlayerOverlayLoading({
   mediaDetails: mediaDetailsProp = null,
   suppressForBlackout = false,
   showPauseIcon = false,
-  showDebugDiagnostics = false,
-  getMediaEl,
   isExhausted = false,
   onRetryFromExhausted
 }) {
@@ -68,7 +65,6 @@ export function PlayerOverlayLoading({
   const overlayDisplayActive = shouldRender && isVisible && (!pauseOverlayActive || stalled);
 
   const logIntervalRef = useRef(null);
-  const diagnosticIntervalRef = useRef(null);
   const visibleSinceRef = useRef(null);
   const componentIdRef = useRef(`overlay-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`);
   const lastPlayheadRef = useRef(null);
@@ -212,58 +208,19 @@ export function PlayerOverlayLoading({
     return ct >= (dur - 0.5);
   }, [normalizedMediaDetails]);
 
-  // Debug-only detailed diagnostics (buffer, dropped frames)
-  const debugEnabled = showDebugDiagnostics ||
-    (typeof window !== 'undefined' && window.PLAYER_DEBUG_OVERLAY);
-
-  const [detailedDiagnostics, setDetailedDiagnostics] = useState(EMPTY_MEDIA_DIAGNOSTICS);
-
-  useEffect(() => {
-    // Clear any existing diagnostic timer first to prevent duplicates
-    if (diagnosticIntervalRef.current) {
-      clearInterval(diagnosticIntervalRef.current);
-      diagnosticIntervalRef.current = null;
-    }
-
-    if (!debugEnabled || typeof getMediaEl !== 'function' || !isVisible) {
-      return () => {};
-    }
-
-    const readDiagnostics = () => {
-      try {
-        const el = getMediaEl();
-        if (el) {
-          setDetailedDiagnostics(buildMediaDiagnostics(el));
-        }
-      } catch (_) {
-        // ignore diagnostic errors
-      }
-    };
-
-    readDiagnostics();
-    const timerId = `diag-${componentIdRef.current}-${Date.now()}`;
-    playbackLog('timer.lifecycle', {
-      timerId,
-      action: 'started',
-      componentName: 'PlayerOverlayLoading',
-      timerType: 'diagnostic'
-    }, { level: 'debug', context: overlayLogContext });
-
-    diagnosticIntervalRef.current = setInterval(readDiagnostics, 1000);
-
-    return () => {
-      if (diagnosticIntervalRef.current) {
-        playbackLog('timer.lifecycle', {
-          timerId,
-          action: 'stopped',
-          componentName: 'PlayerOverlayLoading',
-          timerType: 'diagnostic'
-        }, { level: 'debug', context: overlayLogContext });
-        clearInterval(diagnosticIntervalRef.current);
-        diagnosticIntervalRef.current = null;
-      }
-    };
-  }, [debugEnabled, getMediaEl, isVisible, overlayLogContext]);
+  // Removed 2026-08-16 (Task 4.9): a 1Hz `buildMediaDiagnostics` poll gated on
+  // `debugEnabled && typeof getMediaEl === 'function'`. No caller in the repo
+  // ever passed `getMediaEl` or `showDebugDiagnostics`, so the block could not
+  // run even with the debug flag set — and reviving it would have produced
+  // nothing, because its output went into a `detailedDiagnostics` state that no
+  // JSX rendered and no log carried. The on-screen strip it once fed
+  // (`.loading-debug-strip`, still in Player.scss) is gone from the markup.
+  //
+  // Its readings are not lost: `usePlaybackHealth` already computes
+  // `bufferRunwayMs` and `frameInfo.dropped/total`, and the overlay-summary line
+  // below carries readyState / networkState / paused / currentTime. Deleted
+  // rather than wired, because wiring it would only have added a timer and a
+  // pair of `timer.lifecycle` lines in exchange for no observable output.
 
   // Determine position display using freshness-based priority (Fix 3: position display audit)
   // While the wait is seek-driven (seeking, or the stall/loading that follows a
@@ -507,8 +464,6 @@ PlayerOverlayLoading.propTypes = {
   }),
   suppressForBlackout: PropTypes.bool,
   showPauseIcon: PropTypes.bool,
-  showDebugDiagnostics: PropTypes.bool,
-  getMediaEl: PropTypes.func,
   isExhausted: PropTypes.bool,
   onRetryFromExhausted: PropTypes.func
 };

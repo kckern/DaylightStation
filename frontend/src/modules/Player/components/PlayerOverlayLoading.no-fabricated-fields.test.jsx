@@ -132,6 +132,37 @@ describe('PlayerOverlayLoading — no field may report a default as a measuremen
     expect(typeof payload.timestamp).toBe('string');
     expect(opts?.level).toBe('info');
   });
+
+  // Task 4.9. A 1Hz `buildMediaDiagnostics` poll used to sit here, gated on
+  // `debugEnabled && typeof getMediaEl === 'function'` — a gate no caller in the
+  // repo could open, since none passed either prop. Wiring it would have bought
+  // nothing: its readings went into a `detailedDiagnostics` state that no JSX
+  // rendered and no log carried. This guard is what stops it coming back: a
+  // poller whose output nothing reads is a timer and two log lines for free.
+  it('starts no timer whose output nothing reads, even when handed the debug props', () => {
+    const getMediaEl = vi.fn(() => ({ currentTime: 1, readyState: 4, buffered: { length: 0 } }));
+    render(
+      <PlayerOverlayLoading
+        shouldRender
+        isVisible
+        status="stalled"
+        stalled
+        effectiveMetaIsNull={false}
+        showDebugDiagnostics
+        getMediaEl={getMediaEl}
+      />
+    );
+    act(() => { vi.advanceTimersByTime(5000); });
+
+    const diagnosticTimers = playbackLogCalls.filter(
+      (c) => c.event === 'timer.lifecycle' && c.payload?.timerType === 'diagnostic'
+    );
+    expect(diagnosticTimers).toHaveLength(0);
+    expect(getMediaEl).not.toHaveBeenCalled();
+    // Anti-vacuity: the component really is mounted and reporting — the absence
+    // above is a deletion, not a dead render.
+    expect(summaries().length).toBeGreaterThan(0);
+  });
 });
 
 describe('PlayerOverlayLoading — the stall report carries a real playhead', () => {
