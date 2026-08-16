@@ -246,7 +246,7 @@ export async function getFinance() {
 
 /**
  * Build the write-audit log writer. Append-only NDJSON, one file per UTC date,
- * stored under data/household/cli/log/. Falls back to /tmp when the
+ * stored under media/logs/cli/. Falls back to /tmp when the
  * data path is not writable (typical on dev hosts where the data volume is
  * Docker-owned).
  */
@@ -256,7 +256,12 @@ export async function getWriteAuditor() {
 
   _writeAuditorInitPromise = (async () => {
     const cfg = await getConfigService();
-    const baseDir = path.join(cfg.getDataDir(), 'household', 'cli', 'log');
+    // Append-only, unbounded, and read by nobody in backend/src, cli or
+    // frontend/src — an operator-inspectable trail, which is a log. Logs live in
+    // media, not the committable tree. `cli` also named the mechanism rather
+    // than a domain, so its old home failed the folder rule twice over.
+    // _writeAudit keeps its /tmp fallback for a read-only volume.
+    const baseDir = path.join(cfg.getMediaDir(), 'logs', 'cli');
     _writeAuditor = createWriteAuditor({ baseDir });
     return _writeAuditor;
   })();
