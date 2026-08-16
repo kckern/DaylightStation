@@ -183,7 +183,7 @@ async function main() {
     const bookId = file.replace('.yml', '');
     if (specificBook && bookId !== specificBook) continue;
 
-    const cachePath = `common/komga/toc/${bookId}.yml`;
+    const cachePath = `komga/cache/toc/${bookId}.yml`;
     const cached = dataService.household.read(cachePath);
     if (!cached) continue;
 
@@ -229,7 +229,7 @@ async function main() {
 
     const offset = await detectOffset(book.bookId, startPage);
 
-    const cachePath = `common/komga/toc/${book.bookId}.yml`;
+    const cachePath = `komga/cache/toc/${book.bookId}.yml`;
     const cached = dataService.household.read(cachePath);
 
     // Validate: check if applying the offset causes articles to map outside 1..pageCount

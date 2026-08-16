@@ -191,7 +191,7 @@ export class KomgaFeedAdapter extends IFeedSourceAdapter {
     const sections = [];
 
     // Read TOC for offset and article boundaries
-    const cachePath = `common/komga/toc/${bookId}.yml`;
+    const cachePath = `komga/cache/toc/${bookId}.yml`;
     const toc = this.#dataService.household.read(cachePath);
     const offset = toc?.tocPageOffset || 0;
 
@@ -228,7 +228,7 @@ export class KomgaFeedAdapter extends IFeedSourceAdapter {
    * @returns {number} Last page of the article (inclusive)
    */
   #getArticleEndPage(bookId, startPage, totalPages) {
-    const cachePath = `common/komga/toc/${bookId}.yml`;
+    const cachePath = `komga/cache/toc/${bookId}.yml`;
     const toc = this.#dataService.household.read(cachePath);
 
     if (!toc?.articles?.length) {
@@ -269,7 +269,7 @@ export class KomgaFeedAdapter extends IFeedSourceAdapter {
   /**
    * Get TOC for a book, using disk cache to avoid re-downloading PDFs.
    *
-   * Cache path: household common/komga/toc/{bookId}.yml
+   * Cache path: household komga/cache/toc/{bookId}.yml
    * (Explicit .yml extension to avoid ensureExtension issues with dotted IDs.)
    *
    * @param {string} bookId
@@ -280,7 +280,7 @@ export class KomgaFeedAdapter extends IFeedSourceAdapter {
    */
   async #getToc(bookId, seriesLabel, issueTitle, pageCount) {
     // Check disk cache
-    const cachePath = `common/komga/toc/${bookId}.yml`;
+    const cachePath = `komga/cache/toc/${bookId}.yml`;
     const cached = this.#dataService.household.read(cachePath);
     if (cached) return cached;
 
