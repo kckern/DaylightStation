@@ -26,10 +26,20 @@ const safeId = (s) => typeof s === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(s);
 const TRANSCRIBE_PROMPT = 'A short spoken software-feedback note: a bug report, UX/layout quirk, or feature idea about an app the user was just using.';
 
 export class FeedbackService {
-  constructor({ configService, transcriptionService = null, logger = console }) {
+  /**
+   * @param {Object} deps
+   * @param {Object} deps.configService
+   * @param {Object} [deps.transcriptionService]
+   * @param {Object} [deps.logger]
+   * @param {Object} [deps.notificationService] - optional; when wired, each
+   *   arriving item raises an alert (see #notifyArrival). Optional because
+   *   capture must work whether or not anyone is listening.
+   */
+  constructor({ configService, transcriptionService = null, logger = console, notificationService = null }) {
     this.config = configService;
     this.transcription = transcriptionService;
     this.logger = logger;
+    this.notifications = notificationService;
     this.audioRoot = path.join(configService.getMediaDir(), 'audio', 'feedback');
     this.itemsRoot = configService.getHouseholdPath('feedback');
   }
@@ -75,8 +85,55 @@ export class FeedbackService {
     saveYaml(path.join(itemsDir, id), item);
     this.logger.info?.('feedback.created', { app, id, durationMs: item.durationMs, hasAudio, willTranscribe: canTranscribe });
 
+    this._notifyArrival(item);
     if (canTranscribe) this._transcribeInBackground(app, id, audioBuffer);
     return item;
+  }
+
+  /**
+   * Tell somebody an item arrived.
+   *
+   * A machine report and a person's recording want different urgency. A child
+   * recording a complaint is a direct request for a human, and app-only routing
+   * would leave it unread — that is the whole reason the inbox went unwatched.
+   * A machine report is the paper trail for an incident the stall detector has
+   * already paged about, so it stays an in-app card; paging twice for one event
+   * teaches people to ignore both.
+   *
+   * Fire-and-forget and fail-soft. Capture is the valuable part, and a dead
+   * Telegram must never cost us the report it was announcing.
+   */
+  _notifyArrival(item) {
+    if (!this.notifications?.send) return;
+    const auto = item.context?.auto === true;
+    const reason = typeof item.context?.reason === 'string' ? item.context.reason : null;
+    const seconds = Math.round((item.durationMs || 0) / 1000);
+
+    try {
+      this.notifications.send({
+        title: auto ? 'A screen filed a report' : 'New feedback recording',
+        body: auto
+          ? `${item.app} filed itself a report (${reason || 'no reason given'}). `
+            + 'The last 150 client log events are attached to the item.'
+          : `Somebody recorded ${seconds ? `${seconds}s of ` : ''}feedback about ${item.app}.`,
+        category: 'system',
+        urgency: auto ? 'normal' : 'high',
+        // There is no admin UI route for the inbox yet, so this links the API
+        // endpoint, which is complete and returns the whole item — transcript,
+        // context and the attached log ring. A JSON page beats a 404; point this
+        // at the UI the day one exists.
+        actions: [{ label: 'Read the report', action: 'open', data: { url: `/api/v1/feedback/${item.app}/${item.id}` } }],
+        metadata: { app: item.app, id: item.id, auto },
+        // Machine reports of one reason collapse into the category cooldown; a
+        // jank episode that recurs all evening is one nudge. Every human
+        // recording is its own ask and keys uniquely.
+        dedupeKey: auto
+          ? `feedback-auto:${item.app}:${reason || 'unknown'}`
+          : `feedback:${item.app}:${item.id}`,
+      })?.catch?.((err) => this.logger.warn?.('feedback.notify-failed', { app: item.app, id: item.id, error: err.message }));
+    } catch (err) {
+      this.logger.warn?.('feedback.notify-failed', { app: item.app, id: item.id, error: err.message });
+    }
   }
 
   _transcribeInBackground(app, id, audioBuffer) {
