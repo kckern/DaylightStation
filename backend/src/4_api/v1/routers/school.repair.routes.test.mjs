@@ -15,6 +15,7 @@ function appWith(over = {}) {
   const app = express();
   app.use(express.json());
   app.use('/api/v1/school', createSchoolRouter({
+    schoolErrors: { GuestForbiddenError },
     schoolService: { listBankSourceSummaries: () => [] },
     attestationLog: { list: vi.fn(() => [{ id: 'att_1', learnerId: 'felix', unitId: 'u1' }]) },
     recordAttestation: { execute: vi.fn(async (args) => ({ entry: { id: 'att_2', ...args } })) },

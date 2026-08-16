@@ -4,6 +4,8 @@
 import { createDeviceRouter } from '#api/v1/routers/device.mjs';
 import { getScreenOverrideService } from '#composition/modules/screenOverride.mjs';
 import { createDeviceServices } from '../bootstrap.mjs';
+import { hasActiveCall, forceEndCall } from '#apps/homeline/CallStateService.mjs';
+import { contentRequiresCamera } from '#apps/devices/services/contentRequiresCamera.mjs';
 
 /**
  * Create device API router
@@ -26,6 +28,9 @@ export function createDeviceApiRouter(config) {
   } = config;
 
   return createDeviceRouter({
+    hasActiveCall,
+    forceEndCall,
+    contentRequiresCamera,
     presenceStore: config.presenceStore ?? null,
     readGate: config.readGate ?? null,
     deviceService: deviceServices.deviceService,

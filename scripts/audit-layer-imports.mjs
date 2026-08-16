@@ -69,7 +69,12 @@ export const CONTENT_RULES = [
   //                                    domains and never move
   {
     rule: 'no-storage-paths',
-    layer: 'backend/src/',
+    // backend/src plus shared/ — library code that several entry points reuse.
+    // cli/ is deliberately NOT here: a CLI is its own composition root, so
+    // naming a path there is legitimate wiring, not a layer violation. What
+    // the chess archive bug actually showed is that a reader and a writer must
+    // share one constant; that is `npm run audit:paths`'s job, not this rule's.
+    layer: ['backend/src/', 'shared/'],
     re: /['"`]household\/[a-z]|'household'\s*,\s*'/,
     exclude: ['1_adapters/', '0_system/config/', '5_composition/', 'src/app.mjs', '3_applications/admin/'],
   },
@@ -79,7 +84,8 @@ export function scanContent(filePath, content) {
   const out = [];
   const lines = content.split('\n');
   for (const r of CONTENT_RULES) {
-    if (!filePath.includes(r.layer)) continue;
+    const layers = Array.isArray(r.layer) ? r.layer : [r.layer];
+    if (!layers.some((l) => filePath.includes(l))) continue;
     const excludes = Array.isArray(r.exclude) ? r.exclude : (r.exclude ? [r.exclude] : []);
     if (excludes.some((e) => filePath.includes(e))) continue;
     lines.forEach((line, i) => {
@@ -115,7 +121,9 @@ function walk(dir, acc = []) {
 const isMain = process.argv[1] === fileURLToPath(import.meta.url);
 if (isMain) {
   const args = process.argv.slice(2);
-  const files = walk('backend/src');
+  // backend/src plus the trees that also address storage. Every other rule is
+  // scoped by its own `layer` filter, so only no-storage-paths sees these.
+  const files = ['backend/src', 'shared'].flatMap((d) => walk(d));
   const all = files.flatMap(f => scanViolations(f, readFileSync(f, 'utf8')));
   const allContent = files.flatMap(f => scanContent(f, readFileSync(f, 'utf8')));
   const counts = {};

@@ -14,7 +14,6 @@ import fs from 'fs';
 import path from 'path';
 import imageSize from 'image-size';
 import { KNOWN_COMMANDS } from '#domains/barcode/BarcodeCommandMap.mjs';
-import { ContentExpression } from '#domains/content/ContentExpression.mjs';
 
 const COMMAND_ICON_MAP = {
   pause: 'pause.svg',
@@ -50,6 +49,10 @@ const DISPLAY_PARAMS = new Set([
  * @param {Object} [config.logger]
  */
 export function createQRCodeRouter(config) {
+  // `contentExpression` is INJECTED. A router may not import 2_domains
+  // (api-layer-guidelines.md: "API has no domain knowledge"); it receives the
+  // parser and calls fromQuery on it.
+  const { contentExpression } = config;
   const { renderer, contentIdResolver, mediaPath, defaultLogoPath, defaultScreen, logger = console } = config;
   const router = express.Router();
 
@@ -80,7 +83,7 @@ export function createQRCodeRouter(config) {
       for (const [key, value] of Object.entries(req.query)) {
         if (!DISPLAY_PARAMS.has(key)) exprQuery[key] = value;
       }
-      const expr = ContentExpression.fromQuery(exprQuery);
+      const expr = contentExpression.fromQuery(exprQuery);
       const actionParams = expr.action ? (() => {
         const options = Object.keys(expr.options).filter(k => expr.options[k] === true);
 

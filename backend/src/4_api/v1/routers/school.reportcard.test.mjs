@@ -11,6 +11,7 @@ function appWith({
   const app = express();
   app.use(express.json());
   app.use('/api/v1/school', createSchoolRouter({
+    schoolErrors: { GuestForbiddenError },
     schoolService: { listBankSourceSummaries: () => [] },
     getReportCard: getReportCard ?? null,
     closeAcademicPeriod: closeAcademicPeriod ?? null,

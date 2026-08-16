@@ -14,7 +14,6 @@ import express from 'express';
 import PDFDocument from 'pdfkit';
 import SVGtoPDF from 'svg-to-pdfkit';
 import { Resvg } from '@resvg/resvg-js';
-import { ContentExpression } from '#domains/content/ContentExpression.mjs';
 
 const PAGE_WIDTH = 612;   // US Letter
 const PAGE_HEIGHT = 792;
@@ -30,6 +29,10 @@ const CELL_GAP = 8;
  * @param {Object} [config.logger]
  */
 export function createCatalogRouter(config) {
+  // `contentExpression` is INJECTED. A router may not import 2_domains
+  // (api-layer-guidelines.md: "API has no domain knowledge"); it receives the
+  // parser and calls fromQuery on it.
+  const { contentExpression } = config;
   const { port, logger = console } = config;
   const router = express.Router();
 
@@ -40,7 +43,7 @@ export function createCatalogRouter(config) {
       const { source, id } = req.params;
 
       // Parse screen and bare-key options from query via ContentExpression
-      const expr = ContentExpression.fromQuery(req.query);
+      const expr = contentExpression.fromQuery(req.query);
       const screen = expr.screen;
       const optionStr = Object.entries(expr.options)
         .map(([k, v]) => v === true ? k : `${k}=${v}`)

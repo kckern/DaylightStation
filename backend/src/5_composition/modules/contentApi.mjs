@@ -24,6 +24,7 @@ import { ContentSourceRegistry } from '#domains/content/services/ContentSourceRe
 import { QueueService } from '#domains/content/services/QueueService.mjs';
 import { ProxyService } from '#system/proxy/ProxyService.mjs';
 import path from 'path';
+import { ContentExpression } from '#domains/content/ContentExpression.mjs';
 
 /**
  * Create API routers for the content domain
@@ -135,7 +136,7 @@ export function createApiRouters(config) {
       play: createPlayRouter({ registry, mediaProgressMemory, playResponseService, contentQueryService, contentIdResolver, progressSyncService, progressSyncSources, eventBus, userVideoProgressStore, economyService, logger }),
       list: createListRouter({ registry, loadFile, configService, contentQueryService, contentIdResolver, menuMemoryPath: configService.getHouseholdPath('media/menu-memory'), logger }),
       siblings: createSiblingsRouter({ siblingsService, contentIdResolver, logger }),
-      queue: createQueueRouter({ contentIdResolver, queueService: new QueueService({ mediaProgressMemory }), logger }),
+      queue: createQueueRouter({ contentExpression: ContentExpression, contentIdResolver, queueService: new QueueService({ mediaProgressMemory }), logger }),
       local: createLocalRouter({ localMediaAdapter, mediaBasePath, cacheBasePath: cacheBasePath || path.join(dataPath, 'system/cache'), logger }),
       stream: createStreamRouter({
         singalongMediaPath: path.join(mediaBasePath, 'audio', 'singalong'),

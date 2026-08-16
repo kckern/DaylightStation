@@ -3,7 +3,6 @@ import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { parseActionRouteId } from '../utils/actionRouteParser.mjs';
 import { splatPath } from '#api/utils/wildcard.mjs';
-import { ContentExpression } from '#domains/content/ContentExpression.mjs';
 
 export function toQueueItem(item) {
   const qi = {
@@ -75,6 +74,10 @@ export function toQueueItem(item) {
 }
 
 export function createQueueRouter(config) {
+  // `contentExpression` is INJECTED. A router may not import 2_domains
+  // (api-layer-guidelines.md: "API has no domain knowledge"); it receives the
+  // parser and calls fromQuery on it.
+  const { contentExpression } = config;
   const { contentIdResolver, queueService, logger = console } = config;
   const router = express.Router();
 
@@ -87,7 +90,7 @@ export function createQueueRouter(config) {
       path: rawPath
     });
 
-    const expr = ContentExpression.fromQuery(req.query);
+    const expr = contentExpression.fromQuery(req.query);
     const shuffle = expr.options.shuffle === true || expr.options.shuffle === 'true' || expr.options.shuffle === '1';
     const limitRaw = expr.options.limit;
     const limitParsed = Number.parseInt(limitRaw, 10);

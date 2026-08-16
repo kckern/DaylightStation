@@ -9,6 +9,7 @@ import { ContentSourceRegistry } from '#domains/content/services/ContentSourceRe
 import { ContentIdResolver } from '#apps/content/ContentIdResolver.mjs';
 import { FileAdapter } from '#adapters/content/media/files/FileAdapter.mjs';
 import { QueueService } from '#domains/content/services/QueueService.mjs';
+import { ContentExpression } from '#domains/content/ContentExpression.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixturesPath = path.resolve(__dirname, '../../_fixtures/media');
@@ -24,7 +25,7 @@ describe('Queue API Router', () => {
     app = express();
     app.use(express.json());
     const queueService = new QueueService({ mediaProgressMemory: null });
-    app.use('/api/v1/queue', createQueueRouter({ contentIdResolver, queueService }));
+    app.use('/api/v1/queue', createQueueRouter({ contentExpression: ContentExpression, contentIdResolver, queueService }));
   });
 
   test('GET /api/v1/queue/files/:path returns queue items', async () => {

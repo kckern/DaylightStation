@@ -335,6 +335,9 @@ import { createHaDetectionSource } from '#adapters/camera/HaDetectionSource.mjs'
 import { ArchiveEncoder } from '#adapters/camera/ArchiveEncoder.mjs';
 import { ArchiveManifestStore } from '#adapters/camera/ArchiveManifestStore.mjs';
 import { getCurriculumIndex, mergeSeason } from '#adapters/content/media/plex/CurriculumIndex.mjs';
+import { ContentExpression } from '#domains/content/ContentExpression.mjs';
+import { resolveFormat } from '#domains/content/utils/resolveFormat.mjs';
+import * as schoolErrors from '#domains/school/errors.mjs';
 
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
 
@@ -1205,6 +1208,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Info router (action-based metadata)
   const { createInfoRouter } = await import('./4_api/v1/routers/info.mjs');
   v1Routers.info = createInfoRouter({
+    resolveFormat,
     registry: contentRegistry,
     contentQueryService: contentServices.contentQueryService,
     contentIdResolver: contentServices.contentIdResolver,
@@ -2236,6 +2240,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     .find(d => d.type === 'barcode-scanner')?.target_screen || null;
 
   v1Routers.qrcode = createQRCodeRouter({
+    contentExpression: ContentExpression,
     renderer: qrcodeRenderer,
     contentIdResolver: contentServices.contentIdResolver,
     mediaPath: mediaBasePath,
@@ -2247,6 +2252,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Catalog PDF router
   const { createCatalogRouter } = await import('./4_api/v1/routers/catalog.mjs');
   v1Routers.catalog = createCatalogRouter({
+    contentExpression: ContentExpression,
     port: Number(process.env.PORT || 3111),
     logger: rootLogger.child({ module: 'catalog' }),
   });
@@ -3494,6 +3500,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const { createCertificatePdfRenderer } = await import('#rendering/school/reports/CertificateRenderer.mjs');
 
   v1Routers.school = createSchoolRouter({
+    schoolErrors,
     schoolService,
     getMaterialCatalog,
     getMaterialUnits,
@@ -3587,7 +3594,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'school-api' })
   });
 
-  v1Routers.school.use('/language', createLanguageRouter({
+  v1Routers.school.use('/language', createLanguageRouter({ schoolErrors,
     languageStudyService,
     logger: rootLogger.child({ module: 'school-language-api' })
   }));

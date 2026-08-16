@@ -34,7 +34,7 @@ const DATA = process.env.DAYLIGHT_DATA
   || '/media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/data';
 const HH = path.join(DATA, 'household');
 const DELETED = path.join(DATA, '_deleteme');
-const SCAN_DIRS = ['backend/src', 'cli'];
+const SCAN_DIRS = ['backend/src', 'cli', 'shared', 'scripts'];
 
 /** Roots that are not domains and are excluded from the orphan sweep. */
 const NOT_DOMAINS = new Set(['config', 'auth', 'screens', 'assets']);
@@ -65,6 +65,11 @@ const PATTERNS = [
   /household\.(?:read|write|resolveDir|resolvePath)\(\s*'([^']+)'/g,
   /(?:loadFile|saveFile)\??\.?\(\s*'([^']+)'/g,
   /(?:path|PATH|_DIR|_PATH|Root|ROOT)\s*=\s*'([a-z][a-z0-9._/-]*\/[a-z0-9._/-]+)'/g,
+  // Array-of-segments: `['household', 'gaming', 'log', 'pianochess']`. This
+  // shape is why the chess review CLIs went on reading a directory the
+  // household reorganization had moved, reporting "no archived games" for a
+  // corpus of 32 sitting one level away. It matches none of the forms above.
+  /(?:PATH|DIR|SUBPATH|Path|Dir|Root|ROOT)\w*\s*=\s*\[\s*'household'\s*,\s*((?:'[a-z0-9._-]+'\s*,?\s*)+)\]/g,
 ];
 
 const expected = new Map(); // relPath -> Set(files)
@@ -73,8 +78,10 @@ for (const dir of SCAN_DIRS) {
     const src = stripComments(fs.readFileSync(file, 'utf8'));
     for (const re of PATTERNS) {
       for (const m of src.matchAll(re)) {
-        const rel = m[1];
-        if (rel.startsWith('.') || rel.endsWith('.mjs') || rel.includes('${')) continue;
+        let rel = m[1];
+        // Array-of-segments capture: "'gaming', 'log'" -> "gaming/log"
+        if (rel.includes("'")) rel = rel.split(',').map((s) => s.trim().replace(/'/g, '')).filter(Boolean).join('/');
+        if (!rel || rel.startsWith('.') || rel.endsWith('.mjs') || rel.includes('${')) continue;
         if (!expected.has(rel)) expected.set(rel, new Set());
         expected.get(rel).add(file);
       }
