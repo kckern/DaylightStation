@@ -119,6 +119,26 @@ export class RecordCardScanOutcome {
       return { recorded: false, reason: 'unattributed' };
     }
 
+    // ZERO ROWS RESOLVED — a fault, not a duplicate. `ResolveCardScan` omits
+    // a record that owns none of the rows marked this scan (spec §5.4), so a
+    // card that reached this use case at all is supposed to carry rows. Zero
+    // means the resolver/allocation side failed to map the paper onto any
+    // question: nothing was assessed, and nothing CAN be. Reported before the
+    // dedup read below (which has nothing to compare) so it can never fall
+    // through into the `duplicate-scan` exit — "already recorded" would put a
+    // false claim about the child's work into the durable log.
+    if (card.results.length === 0) {
+      this.#logger.warn?.('school.print.scan-no-rows-resolved', {
+        testId,
+        cardId: card.cardId,
+        recordId: card.recordId,
+        documentId: card.documentId,
+        learnerId,
+        ...(card.sessionId ? { sessionId: card.sessionId } : {}),
+      });
+      return { recorded: false, reason: 'no-rows-resolved' };
+    }
+
     const key = scanKey(card);
     // Dedup only ever needs to see attempts from this card's own printing
     // forward — a card rendered today cannot collide with a day file from
@@ -138,6 +158,25 @@ export class RecordCardScanOutcome {
       (row) => row.status !== 'blank' && !recordedRows.has(`${row.row}:${JSON.stringify(row.given)}`),
     );
     if (freshRows.length === 0) {
+      // NO MARKS — every row this record owns resolved blank. The card is
+      // real and mapped fine; it simply carries no work: fed face-down, fed
+      // by mistake, or never filled in. Benign in cause and expected to be
+      // the most frequent of these three exits in the field, but the person
+      // at the scanner has to learn to re-feed it rather than walk away
+      // believing the quiz landed — so it warns, carrying `cardId` (the
+      // number printed on the paper in their hand) to identify which sheet.
+      if (card.results.every((row) => row.status === 'blank')) {
+        this.#logger.warn?.('school.print.scan-no-marks', {
+          testId,
+          cardId: card.cardId,
+          recordId: card.recordId,
+          documentId: card.documentId,
+          learnerId,
+          rowCount: card.results.length,
+          ...(card.sessionId ? { sessionId: card.sessionId } : {}),
+        });
+        return { recorded: false, reason: 'no-marks' };
+      }
       // Every non-blank row on this card was already recorded verbatim —
       // nothing new happened to the child's work, so nothing new lands in
       // the log (whether that's the identical card re-fed, or a complete
@@ -237,9 +276,8 @@ export class RecordCardScanOutcome {
       totalPoints: card.totalPoints,
     });
 
-    const priorAttemptIdsForRecord = priorAttempts.map((attempt) => attempt.id);
     const session = await this.#bridgeSession(
-      card, attemptIds, attemptIdByItem, at, preReadState, priorAttemptIdsForRecord,
+      card, attemptIds, attemptIdByItem, at, preReadState,
     );
     return { recorded: true, attemptIds, ...(session ? { session } : {}) };
   }
@@ -266,7 +304,7 @@ export class RecordCardScanOutcome {
    * `sessionId` is `null` — that is the pre-existing `session-missing` path,
    * distinct from a pre-read failure.
    */
-  async #bridgeSession(card, attemptIds, attemptIdByItem, at, preReadState, priorAttemptIdsForRecord = []) {
+  async #bridgeSession(card, attemptIds, attemptIdByItem, at, preReadState) {
     if (!this.#sessions || card.sessionId == null) return null;
     const { sessionId } = card;
     try {
@@ -358,12 +396,12 @@ export class RecordCardScanOutcome {
         type: 'graded',
         at,
         sessionId,
-        // attemptIds is only the rows freshly appended THIS call; if this
-        // graded event ever fires without any (defensive — the row-scoped
-        // dedup above normally returns before reaching here), fall back to
-        // the ids already on record for this recordId rather than a
-        // synthetic id.
-        attemptIds: attemptIds.length ? attemptIds : priorAttemptIdsForRecord,
+        // Always the rows freshly appended THIS call, and always at least
+        // one: `execute` returns at its `freshRows.length === 0` exit before
+        // ever calling this method, and the append loop pushes an id per
+        // fresh row (or returns early on a write failure). There is no
+        // reachable path here with an empty `attemptIds`, so no fallback.
+        attemptIds,
         percent,
         correctCount: correctRows,
         totalCount: card.results.length,
