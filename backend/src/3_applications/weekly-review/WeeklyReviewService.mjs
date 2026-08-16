@@ -45,7 +45,7 @@ export class WeeklyReviewService {
    * single decision. Routed through here, the location is one string.
    */
   #reviewPath(...segments) {
-    return path.join(this.#householdDir, 'common', 'weekly-review', ...segments);
+    return path.join(this.#householdDir, 'weekly-review', 'log', ...segments);
   }
 
   async bootstrap(weekStart) {
