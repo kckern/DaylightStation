@@ -19,9 +19,15 @@ export function cleanupDashElement(el) {
     else if (typeof el.reset === 'function') el.reset();
   } catch (_) {}
 
-  // Access inner <video> via shadow DOM and clean up
+  // Resolve the element that actually holds the media. For <dash-video> that is
+  // the inner element in the shadow root; for the NATIVE branch the container IS
+  // the <video>, and it has no shadow root at all. Both branches render under the
+  // same containerRef and the same dashElementKey, so this cleanup runs for both
+  // — resolving only through shadowRoot bailed here and left a replaced native
+  // element playing on with no DOM node and no controls bound to it.
   try {
-    const mediaEl = el.shadowRoot?.querySelector('video, audio');
+    const mediaEl = el.shadowRoot?.querySelector('video, audio')
+      || (typeof el.pause === 'function' ? el : null);
     if (!mediaEl) return;
 
     mediaEl.pause();
