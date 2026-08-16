@@ -252,13 +252,25 @@ class UserDataService {
   }
 
   /**
-   * Get household shared data path (for household-level data stores)
+   * Get a household-level data store path, rooted at `common/`.
+   *
+   * `common/` is where household-wide stores actually live on disk — the
+   * calendar, the gratitude bank, and the Infinity harvest all sit there, and
+   * `createHouseholdDirectory` seeds it. This helper previously rooted at
+   * `shared/`, which meant every household calendar read resolved to a file
+   * that has never existed and returned null.
+   *
+   * `shared/` survives as a legacy root holding content-filter/, komga/ and
+   * retroarch/. Those are reached by callers that spell the `shared/` prefix
+   * themselves (`dataService.household.read('shared/retroarch/catalog')`), not
+   * through this helper, so they are unaffected by the root used here.
+   *
    * @param {string} householdId - Household identifier
    * @param {...string} segments - Path segments (e.g., 'gratitude', 'options.gratitude')
    * @returns {string|null}
    */
   getHouseholdSharedPath(householdId, ...segments) {
-    return this.getHouseholdDataPath(householdId, 'shared', ...segments);
+    return this.getHouseholdDataPath(householdId, 'common', ...segments);
   }
 
   /**
@@ -286,7 +298,12 @@ class UserDataService {
       }
     }
 
-    // Legacy fallback: apps/<appName>/<segments> (deprecated - directory removed)
+    // Legacy fallback: apps/<appName>/<segments>. Still live — household/apps/
+    // exists and holds seven domains (fitness, gaming, livestream, media, piano,
+    // quizzes, school), and this branch is still read. It is slated to dissolve
+    // into household/<domain>/ per
+    // docs/plans/2026-08-15-household-reorganization.md; until that lands, do
+    // not treat this path as dead.
     return this.getHouseholdDataPath(householdId, 'apps', appName, ...flatSegments);
   }
 
@@ -390,7 +407,10 @@ class UserDataService {
       'config/lists',            // List definitions
       'history',                 // Time-series data
       // Note: Bot conversations now per-user (users/{username}/conversations/{bot}/)
-      // Note: apps/ directory removed - configs in config/, shared data in common/
+      // Note: apps/ is deliberately not seeded here — new households get their
+      // configs in config/ and their shared data in common/. It is NOT gone:
+      // existing households still have a populated apps/ that getHouseholdAppPath
+      // reads. See docs/plans/2026-08-15-household-reorganization.md.
     ];
 
     for (const subdir of subdirs) {
