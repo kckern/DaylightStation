@@ -35,6 +35,12 @@ const REMOUNT_BACKOFF_MAX_MS = 45000;
 // inside about eight seconds, and a viewer who then picks something else must not
 // be turned away. Ten in thirty seconds leaves that headroom while capping a
 // runaway at 20 remounts per minute — the 2026-08-16 storm ran about 124.
+//
+// The one reachable false trip is rapid manual skipping: eleven "next" presses in
+// thirty seconds, which a child with a remote can produce. The consequence is mild —
+// content still swaps in place (only the media element's key is frozen), and mountId
+// is resolvedWaitKey, which the guard does not gate, so per-item recovery budgets
+// still reset per item. The guard re-arms one window after the skipping stops.
 const REMOUNT_STORM_MAX_MOUNTS = 10;
 const REMOUNT_STORM_WINDOW_MS = 30000;
 
@@ -640,6 +646,11 @@ const Player = forwardRef(function Player(props, ref) {
   const stormLoggedRef = useRef(false);
   const stormTrippedAtRef = useRef(0);
 
+  // StrictMode landmine, noted deliberately: this memo reads Date.now(), writes three
+  // refs and logs during render. It is safe today — nothing under frontend/src mounts a
+  // <React.StrictMode>, and re-admitting an already-admitted key costs nothing, so a
+  // double invocation is idempotent. The day StrictMode or a concurrent feature is
+  // switched on, a discarded render would still consume a stamp from the window.
   const singlePlayerKey = useMemo(() => {
     const candidate = !singlePlayerProps
       ? 'player-idle'
@@ -679,6 +690,12 @@ const Player = forwardRef(function Player(props, ref) {
           frozenKey: lastAdmittedKeyRef.current,
           rejectedKey: candidate,
           guid: currentMediaGuid,
+          // Same triage fields its neighbours (player-remount, -scheduled) carry. On a
+          // multi-surface fleet playerType is what says whether the piano kiosk or the
+          // garage display stormed.
+          playerType: playerType || null,
+          waitKey: resolvedWaitKey,
+          isQueue,
           maxMounts: REMOUNT_STORM_MAX_MOUNTS,
           windowMs: REMOUNT_STORM_WINDOW_MS
         }, { level: 'error' });
@@ -687,7 +704,7 @@ const Player = forwardRef(function Player(props, ref) {
     }
     lastAdmittedKeyRef.current = candidate;
     return candidate;
-  }, [singlePlayerProps, currentMediaGuid, remountState.nonce, activeSource?.mediaType]);
+  }, [singlePlayerProps, currentMediaGuid, remountState.nonce, activeSource?.mediaType, playerType, resolvedWaitKey, isQueue]);
 
   const exposedMediaRef = useRef(null);
   const controllerRef = useRef(null);
