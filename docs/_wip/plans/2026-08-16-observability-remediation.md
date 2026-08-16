@@ -403,6 +403,18 @@ Add a test asserting the summary contains no field whose value is a hardcoded de
 
 Commit — `fix(player): stop reporting defaults as measurements`
 
+**Follow-up done (2026-08-16, `a90fa15d6`).** Two remaining unwired props were
+checked. `sessionInstance` needed nothing — it was already removed and the
+structured payload now ships through `playbackLog` with the readable line as a
+`summary` field. `getMediaEl` / `showDebugDiagnostics` gated a 1Hz
+`buildMediaDiagnostics` poll that was **deleted, not wired**: its output went
+into a `detailedDiagnostics` state that no JSX rendered and no log carried, the
+on-screen strip it fed is gone from the markup, and its readings duplicate
+`usePlaybackHealth`. Left orphaned by that deletion, and worth a later sweep:
+`lib/mediaDiagnostics.js` (no consumers) and `.loading-debug-strip` in
+`Player.scss` (no markup). `PlayerOverlayStateDebug.jsx:43` also returns `false`
+unconditionally — the whole on-screen debug surface is off.
+
 ---
 
 ## Task 4.3: One encoding for `waitKey`
@@ -412,6 +424,15 @@ Commit — `fix(player): stop reporting defaults as measurements`
 Pick one encoding. Recommendation: log **both**, as distinct fields (`waitKey` raw, `waitKeyHash` for correlation), and make the empty case distinguishable from a real key.
 
 Commit — `fix(player): one waitKey, one meaning`
+
+**DONE (2026-08-16, `fc59314a7`).** Both encodings ship as distinct fields —
+`waitKey` raw, `waitKeyHash` for correlation — from Player.jsx,
+useMediaResilience, usePlaybackHealth and PlayerOverlayLoading. The three
+absences that collapsed onto `0000000000` are now `(absent)` and `(empty)`.
+Gotcha found on the way: `getLogWaitKey` is not only a log label — Player.jsx's
+`ensureEntryGuid` uses it to MINT entry guids, so the digest for a non-empty
+input had to stay byte-identical (it did; verified against the old
+implementation, not copied from the new one).
 
 ---
 
@@ -464,6 +485,16 @@ Commit — `feat(player): make the retry ledger auditable`
 Add a distinct-value counter on `waitKey`/`guid` per media item with a threshold warn (e.g. >10 distinct per item per minute). Note also that `utils/mediaIdentity.js:9` falls through to `meta.mediaUrl` as identity, so a `refreshUrl` recovery can **change an item's identity mid-recovery**, breaking correlation across the very operation it was performing — flag this in your report; fixing it may belong with the remount-storm plan's Task 2.
 
 Commit — `feat(player): flag identity churn before it becomes a storm`
+
+**DONE (2026-08-16, `9b796dfb5`).** `lib/identityChurn.js`, wired from an effect
+in Player.jsx, warns `playback.identity-churn` at >10 distinct values per minute
+— once per episode, not once per value. The bucket is the **Player instance**,
+not the media item: per-guid buckets would have counted nothing here, since the
+guid was itself what churned. The `refreshUrl` identity change noted above IS
+counted, but cannot reach the threshold alone (the ledger caps a session at 5
+attempts with 4s/12s/36s backoff); `samples.guid` is what tells the two apart.
+`utils/mediaIdentity.js:9` is still unfixed — it belongs with the remount-storm
+plan's Task 2.
 
 ---
 
