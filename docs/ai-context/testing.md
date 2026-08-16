@@ -1,5 +1,38 @@
 # Testing Context
 
+## Three runners, and how a file gets one
+
+The repo runs **jest**, **vitest** and **node:test**, and which one executes a
+file is decided by what the file imports — not by where it lives. Getting this
+wrong does not produce an error; it produces a file nobody runs.
+
+| Runner | Population | Gate |
+|--------|-----------|------|
+| jest | `tests/unit/suite/` | `npm run test:unit` |
+| vitest | `tests/unit`, `tests/isolated` (excluding `suite/` and `backend/`) | `npm run test:unit:vitest` (ratchet) |
+| mixed | `backend/tests/` — 60 vitest + 35 node:test | `npm run test:backend` |
+
+The mixing is why `backend/tests` needs its own runner: `describe` from
+`node:test` does not register with vitest (vitest reports "No test suite
+found"), and a file importing from `'vitest'` does not run under `node --test`
+at all. `scripts/test-backend.mjs` splits the tree by import and runs each half
+under the right runner.
+
+Two traps:
+
+- **A file that imports nothing still runs under vitest**, because
+  `vitest.config.mjs` sets `globals: true`. Seven files in `backend/tests` do
+  exactly this. Absence of a `vitest` import does not mean it is a node:test
+  file.
+- **`@jest/globals` throws under vitest** and no jest glob covers
+  `backend/tests`, so such a file is unrunnable anywhere. `test:backend` fails
+  the run rather than skipping it.
+
+All three are wired into `npm test`. Before 2026-08-16 `backend/tests` was in
+none of them — 89 files executed by nothing, which is how it accumulated 18
+vitest failures, 28 node:test failures, two files importing an alias that never
+existed, and one testing a deleted module.
+
 ## Quick Reference
 
 | Category | Harness | Data Source |
