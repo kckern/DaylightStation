@@ -146,6 +146,75 @@ describe('SessionFileTransport', () => {
     expect(entries).toHaveLength(0);
   });
 
+  // The gate that discarded the piano kiosk's entire event stream for months
+  // did it without leaving a trace. A dropped event has to be countable.
+  describe('drop accounting', () => {
+    test('counts skipped events per app and reports them in getStatus', () => {
+      initSessionFileTransport({ baseDir: tmpDir, maxAgeDays: 3 });
+      const sft = getSessionFileTransport();
+
+      // Tagged with an app but never opted into session logging — the exact
+      // shape of every event PianoApp emitted before it was tagged.
+      sft.write({ ts: '2026-08-16T18:32:00.000', level: 'info', event: 'piano.video.open', data: {}, context: { app: 'piano-kiosk' } });
+      sft.write({ ts: '2026-08-16T18:32:01.000', level: 'info', event: 'playback.player-remount', data: {}, context: { app: 'piano-kiosk' } });
+      // No app at all.
+      sft.write({ ts: '2026-08-16T18:32:02.000', level: 'info', event: 'anonymous', data: {}, context: {} });
+
+      const status = sft.getStatus();
+      expect(status.skipped.total).toBe(3);
+      expect(status.skipped.byApp['piano-kiosk']).toBe(2);
+      expect(status.skipped.byApp['(untagged)']).toBe(1);
+    });
+
+    test('separates "no app" from "app present but not session-logged"', () => {
+      initSessionFileTransport({ baseDir: tmpDir, maxAgeDays: 3 });
+      const sft = getSessionFileTransport();
+
+      sft.write({ ts: '2026-08-16T18:32:00.000', level: 'info', event: 'e1', data: {}, context: { app: 'piano-kiosk' } });
+      sft.write({ ts: '2026-08-16T18:32:01.000', level: 'info', event: 'e2', data: {}, context: {} });
+
+      const status = sft.getStatus();
+      expect(status.skipped.byReason['not-session-logged']).toBe(1);
+      expect(status.skipped.byReason['no-app']).toBe(1);
+    });
+
+    test('a written event is not counted as a skip', () => {
+      initSessionFileTransport({ baseDir: tmpDir, maxAgeDays: 3 });
+      const sft = getSessionFileTransport();
+
+      sft.write({ ts: '2026-08-16T18:32:00.000', level: 'info', event: 'kept', data: {}, context: { app: 'fitness', sessionLog: true } });
+
+      expect(sft.getStatus().skipped.total).toBe(0);
+    });
+
+    // One warn line naming the first app dropped would have made the untagged
+    // piano kiosk obvious months before the incident. Once per process, so a
+    // storm cannot turn the diagnosis into its own flood.
+    test('warns exactly once, naming the first app dropped', () => {
+      resetLogging();
+      initializeLogging({ defaultLevel: 'debug' });
+      const captured = [];
+      getDispatcher().addTransport({ name: 'capture', send: (e) => captured.push(e) });
+
+      initSessionFileTransport({ baseDir: tmpDir, maxAgeDays: 3 });
+      const sft = getSessionFileTransport();
+
+      sft.write({ ts: '2026-08-16T18:32:00.000', level: 'info', event: 'e1', data: {}, context: { app: 'piano-kiosk' } });
+      sft.write({ ts: '2026-08-16T18:32:01.000', level: 'info', event: 'e2', data: {}, context: { app: 'piano-kiosk' } });
+      sft.write({ ts: '2026-08-16T18:32:02.000', level: 'info', event: 'e3', data: {}, context: { app: 'school' } });
+
+      const warns = captured.filter((e) => e.event === 'logging.session-file.untagged');
+      expect(warns).toHaveLength(1);
+      expect(warns[0].level).toBe('warn');
+      expect(warns[0].data.app).toBe('piano-kiosk');
+      expect(warns[0].data.reason).toBe('not-session-logged');
+      expect(warns[0].data.droppedEvent).toBe('e1');
+      expect(sft.getStatus().skipped.warned).toBe(true);
+
+      resetLogging();
+    });
+  });
+
   test('getStatus returns active session info', () => {
     initSessionFileTransport({ baseDir: tmpDir, maxAgeDays: 3 });
     const sft = getSessionFileTransport();
@@ -203,6 +272,59 @@ describe('SessionFileTransport', () => {
       initSessionFileTransport({ baseDir: tmpDir, maxAgeDays: 3 });
 
       expect(fs.existsSync(readmeFile)).toBe(true);
+    });
+
+    // Pruning used to happen only inside init, which meant retention was
+    // really "maxAgeDays as of the last container restart" — unbounded on a
+    // long-lived process. A file that ages past the window while the server is
+    // up has to go without anyone restarting anything.
+    test('prunes on a recurring timer, not only at init', () => {
+      vi.useFakeTimers();
+      try {
+        const appDir = path.join(tmpDir, 'piano-kiosk');
+        fs.mkdirSync(appDir, { recursive: true });
+        const file = path.join(appDir, '2026-08-16T10-00-00.jsonl');
+        fs.writeFileSync(file, '{"event":"incident"}\n');
+
+        // Fresh at boot, so the init-time prune must leave it alone.
+        initSessionFileTransport({ baseDir: tmpDir, maxAgeDays: 3 });
+        expect(fs.existsSync(file)).toBe(true);
+
+        // Age it past retention without re-initializing the transport.
+        const fiveDaysAgo = Date.now() - 5 * 24 * 60 * 60 * 1000;
+        fs.utimesSync(file, new Date(fiveDaysAgo), new Date(fiveDaysAgo));
+
+        vi.advanceTimersByTime(24 * 60 * 60 * 1000 + 1000);
+
+        expect(fs.existsSync(file)).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    test('resetSessionFileTransport stops the prune timer', () => {
+      vi.useFakeTimers();
+      try {
+        const appDir = path.join(tmpDir, 'piano-kiosk');
+        fs.mkdirSync(appDir, { recursive: true });
+        const file = path.join(appDir, '2026-08-16T10-00-00.jsonl');
+        fs.writeFileSync(file, '{"event":"incident"}\n');
+
+        initSessionFileTransport({ baseDir: tmpDir, maxAgeDays: 3 });
+        expect(vi.getTimerCount()).toBeGreaterThan(0);
+        resetSessionFileTransport();
+
+        const fiveDaysAgo = Date.now() - 5 * 24 * 60 * 60 * 1000;
+        fs.utimesSync(file, new Date(fiveDaysAgo), new Date(fiveDaysAgo));
+
+        vi.advanceTimersByTime(3 * 24 * 60 * 60 * 1000);
+
+        // A released transport must not still be deleting files behind us.
+        expect(fs.existsSync(file)).toBe(true);
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });
