@@ -724,8 +724,6 @@ const Player = forwardRef(function Player(props, ref) {
     // brake every transition is recorded in full; if the brake is ever loosened
     // or bypassed the aggregate still carries the count, which on 2026-08-16
     // was the whole diagnosis and had to be read out of Plex's log instead.
-    // Null while idle, which clears the baseline: arriving at the first real key
-    // is a mount, not a change, and it has no meaningful `from`.
     const keyInputs = !singlePlayerProps ? null : {
       // The identity half of the key. Image slideshows deliberately use a fixed
       // token here so image→image transitions keep one ImageFrame alive.
