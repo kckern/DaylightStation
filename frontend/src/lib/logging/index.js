@@ -110,7 +110,12 @@ function createBoundedRing(maxQueue, transportName, wrapMarker) {
             level: 'warn',
             event: 'logging.transport.overflow',
             data: { droppedCount: dropped, maxQueue, transport: transportName },
-            context: { logger: 'transport' },
+            // The marker adopts the identity of the stream whose events went
+            // missing. Without it the context would be bare, and the backend
+            // files an event only when its context carries app + sessionLog —
+            // so the one event you most want in the durable per-app log would
+            // be discarded by the very gate this tier just taught to count.
+            context: { ...(wrapped?.event?.context || {}), logger: 'transport' },
             tags: [],
             source: 'frontend',
           };
