@@ -30,6 +30,12 @@ describe('previewFrameVars', () => {
     expect(previewFrameVars({ width: 1280, height: 800 })['--preview-box-height']).toBe('600px');
   });
 
+  it('rounds the box height to whole pixels', () => {
+    // 960/1366 = 0.7027818448023426; 768 × that = 539.7364568081991.
+    // Without Math.round the box height would carry that full tail.
+    expect(previewFrameVars({ width: 1366, height: 768 })['--preview-box-height']).toBe('540px');
+  });
+
   it('returns null for a screen with no usable resolution', () => {
     expect(previewFrameVars(null)).toBeNull();
     expect(previewFrameVars({})).toBeNull();
