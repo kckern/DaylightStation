@@ -76,6 +76,33 @@ describe('FileAdapter', () => {
     expect(() => new FileAdapter({ mediaBasePath: '' })).toThrow('FileAdapter requires mediaBasePath');
   });
 
+  // An image is its own poster. It used to fall through the thumbnail chain to
+  // null and never got an imageUrl, which made it the only media type reported
+  // as not displayable — rows rendered no artwork and `action: Display`
+  // previewed an empty <img> — while a video file was marked displayable.
+  describe('standalone images are displayable', () => {
+    test('getItem gives an image file a thumbnail', async () => {
+      const item = await adapter.getItem('docs/sheet-music/gallery.jpg');
+      expect(item).not.toBeNull();
+      expect(item.mediaType).toBe('image');
+      expect(item.thumbnail).toBe(
+        `/api/v1/local/thumbnail/${encodeURIComponent('docs/sheet-music/gallery.jpg')}`,
+      );
+    });
+
+    test('getItem gives an image file a full-resolution imageUrl', async () => {
+      const item = await adapter.getItem('docs/sheet-music/gallery.jpg');
+      expect(item.imageUrl).toBe(
+        `/api/v1/proxy/media/stream/${encodeURIComponent('docs/sheet-music/gallery.jpg')}`,
+      );
+    });
+
+    test('non-image files get no imageUrl', async () => {
+      const audio = await adapter.getItem('audio/test.mp3');
+      expect(audio.imageUrl).toBeNull();
+    });
+  });
+
   describe('image sidecar posters (sheet music)', () => {
     test('getItem uses a same-basename .jpg sidecar as a notation file thumbnail', async () => {
       const item = await adapter.getItem('docs/sheet-music/song.musicxml');

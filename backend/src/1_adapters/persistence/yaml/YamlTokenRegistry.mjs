@@ -1,7 +1,10 @@
 /**
  * YAML persistence for printed action tokens (spec §6.1).
  *
- *   <dataDir>/household/apps/school/tokens/{body}.yml
+ *   <dataDir>/household/school/tokens/{body}.yml
+ *
+ * No `apps/` segment: that layout applies to per-user data
+ * (users/{id}/apps/{app}/), not to household-scoped school data.
  *
  * The `sch:` prefix never reaches the filesystem: a colon is legal in a POSIX
  * filename but the prefix is a routing marker, not identity, and stripping it

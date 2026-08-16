@@ -18,7 +18,9 @@ beforeEach(() => {
   ds = new YamlWorkSessionDatastore({ configService: { getDataDir: () => tmp, getHouseholdPath: (rel) => `${tmp}/${rel}` } });
 });
 
-const sessionsRoot = () => path.join(tmp, 'apps', 'school', 'sessions');
+// Household-scoped school data has no `apps/` segment; see ConfigService
+// .getHouseholdPath (<dataDir>/<household>/school/sessions).
+const sessionsRoot = () => path.join(tmp, 'school', 'sessions');
 const eventsFile = (sessionId, day = DAY) => path.join(sessionsRoot(), day, sessionId, 'events.yml');
 const created = (over = {}) => ({ type: 'created', at: AT, sessionId: SID, learnerId: 'kid1', unitId: 'u1', ...over });
 const issued = (over = {}) => ({ type: 'issued', at: AT, sessionId: SID, artifactId: 'doc_1', ...over });

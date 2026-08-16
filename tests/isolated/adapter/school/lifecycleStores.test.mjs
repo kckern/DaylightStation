@@ -16,25 +16,33 @@ let tmp;
 let assignments;
 let forms;
 let review;
+// Corrupt-file events are logged at error level across every school store
+// (school.*.file-corrupt), so capture both levels — asserting only on warn
+// meant the assertions could never see them.
 let warnings;
+let errors;
+const logged = () => [...warnings, ...errors];
 
 const logger = {
   warn: (...args) => warnings.push(args),
   info: () => {},
-  error: () => {},
+  error: (...args) => errors.push(args),
   debug: () => {},
 };
 
 beforeEach(() => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'school-lifecycle-'));
   warnings = [];
+  errors = [];
   const configService = { getDataDir: () => tmp, getHouseholdPath: (rel) => `${tmp}/${rel}` };
   assignments = new YamlAssignmentStore({ configService, logger });
   forms = new YamlFormMapStore({ configService });
   review = new YamlReviewQueue({ configService });
 });
 
-const under = (...segments) => path.join(tmp, 'apps', 'school', ...segments);
+// Household-scoped school data lives at <household>/school/... with no
+// `apps/` segment (that layout is only used under users/{id}/apps/{app}/).
+const under = (...segments) => path.join(tmp, 'school', ...segments);
 const write = (file, body) => {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, body, 'utf8');
@@ -120,7 +128,7 @@ describe('YamlAssignmentStore', () => {
       expect(fs.readFileSync(file, 'utf8')).toBe(before);
 
       expect(await assignments.get('kid1')).toBeNull();
-      expect(warnings.some(([event]) => event === 'school.assignments.file-corrupt')).toBe(true);
+      expect(logged().some(([event]) => event === 'school.assignments.file-corrupt')).toBe(true);
     });
 
     it('put() refuses when the HISTORY file is corrupt even though the current file is fine', async () => {
@@ -137,7 +145,7 @@ describe('YamlAssignmentStore', () => {
       // caller believe a fresh append-only history was legitimately started.
       expect(fs.readFileSync(under('assignments', 'kid5.yml'), 'utf8')).toBe(beforeCurrent);
       expect(fs.readFileSync(historyFile, 'utf8')).toBe(beforeHistory);
-      expect(warnings.some(([event]) => event === 'school.assignments.history-corrupt')).toBe(true);
+      expect(logged().some(([event]) => event === 'school.assignments.history-corrupt')).toBe(true);
     });
 
     it('a fixed file clears the refusal — put() succeeds once the corrupt bytes are gone', async () => {

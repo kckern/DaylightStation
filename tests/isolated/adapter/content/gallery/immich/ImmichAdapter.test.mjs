@@ -168,7 +168,10 @@ describe('ImmichAdapter', () => {
       const result = await adapter.getViewable('immich:abc-123');
 
       expect(result.id).toBe('immich:abc-123');
-      expect(result.imageUrl).toBe('/api/v1/proxy/immich/assets/abc-123/original');
+      // Display renditions come from ?size=preview, not /original: originals
+      // are often HEIC, which only Safari decodes, so /original rendered blank
+      // on our surfaces. See ImmichAdapter#displayImageUrl.
+      expect(result.imageUrl).toBe('/api/v1/proxy/immich/assets/abc-123/thumbnail?size=preview');
       expect(result.thumbnail).toBe('/api/v1/proxy/immich/assets/abc-123/thumbnail');
       expect(result.width).toBe(4000);
       expect(result.height).toBe(3000);
@@ -211,6 +214,28 @@ describe('ImmichAdapter', () => {
         expect.objectContaining({ personIds: ['person-1'], type: 'IMAGE' }),
         expect.any(Object)
       );
+    });
+  });
+
+  describe('free-text asset search', () => {
+    // `/api/search/metadata` has no `query` field. Sending one narrowed
+    // nothing — Immich dropped it and answered with the newest N assets, so
+    // every search returned the same recent photos no matter what was typed.
+    test('sends free text as originalFileName, never as query', async () => {
+      mockHttpClient.get.mockResolvedValue({ data: [] });
+      mockHttpClient.post.mockResolvedValue({ data: { assets: { items: [], total: 0 } } });
+      const adapter = new ImmichAdapter(
+        { host: 'http://localhost:2283', apiKey: 'test-key' },
+        { httpClient: mockHttpClient }
+      );
+
+      await adapter.search({ text: 'esther' });
+
+      const metadataCall = mockHttpClient.post.mock.calls
+        .find(([url]) => url.includes('/api/search/metadata'));
+      expect(metadataCall).toBeDefined();
+      expect(metadataCall[1].originalFileName).toBe('esther');
+      expect(metadataCall[1]).not.toHaveProperty('query');
     });
   });
 
