@@ -65,26 +65,30 @@ describe('UserDataService household path resolution', () => {
   });
 
   describe('getHouseholdSharedPath', () => {
-    it('resolves household shared data to common/, where the data actually lives', () => {
+    // Regression: this resolver has pointed at the wrong root twice. First
+    // shared/, which the calendar has never lived in — every household
+    // calendar read returned null. Then common/, correct until the
+    // domain-first reorganization retired that root too. It now resolves to
+    // the household directory itself, so a domain segment IS the path.
+    it('resolves household shared data to the household root, where the data actually lives', () => {
       const resolved = userDataService.getHouseholdSharedPath('default', 'calendar');
 
-      expect(resolved).toMatch(/household[^/]*\/common\/calendar$/);
+      expect(resolved).toMatch(/household[^/]*\/calendar$/);
       expect(resolved).not.toContain('/shared/');
+      expect(resolved).not.toContain('/common/');
     });
 
-    it('resolves nested segments under common/', () => {
+    it('resolves nested segments as a domain path', () => {
       const resolved = userDataService.getHouseholdSharedPath('default', 'gratitude', 'options.gratitude');
 
-      expect(resolved).toMatch(/household[^/]*\/common\/gratitude\/options\.gratitude$/);
+      expect(resolved).toMatch(/household[^/]*\/gratitude\/options\.gratitude$/);
     });
   });
 
   describe('readHouseholdSharedData', () => {
-    it('reads a household calendar stored at common/calendar.yml', () => {
-      const commonDir = path.join(dataDir, 'household', 'common');
-      fs.mkdirSync(commonDir, { recursive: true });
+    it('reads a household calendar stored at calendar.yml', () => {
       fs.writeFileSync(
-        path.join(commonDir, 'calendar.yml'),
+        path.join(dataDir, 'household', 'calendar.yml'),
         'events:\n  - title: Test Event\n    date: 2026-01-21\n'
       );
 

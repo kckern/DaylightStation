@@ -50,7 +50,7 @@ export function createCalendarRouter(config) {
       }
 
       // Fallback: try reading from common/calendar.yml
-      const fallback = userDataService.readHouseholdAppData?.(householdId, 'common', 'calendar');
+      const fallback = userDataService.readHouseholdAppData?.(householdId, 'calendar');
       if (fallback && Array.isArray(fallback)) {
         return fallback;
       }
