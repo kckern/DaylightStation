@@ -145,6 +145,9 @@ export function useMediaResilience({
     seconds,
     getMediaEl,
     waitKey,
+    // Content identity, shaped like AudioPlayer's `mediaKey` so an audio remount
+    // and a video element generation read off the same field.
+    mediaKey: meta?.contentId || meta?.assetId || plexId || null,
     mediaType: mediaTypeHint || meta?.mediaType,
     playerFlavor: playerFlavorHint,
     epsilonSeconds
