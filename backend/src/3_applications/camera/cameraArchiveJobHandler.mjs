@@ -15,9 +15,6 @@
  * @module 3_applications/camera/cameraArchiveJobHandler
  */
 
-import { ReolinkClient, makeSource } from '#adapters/camera/ReolinkRecordingAdapter.mjs';
-import { ArchiveEncoder } from '#adapters/camera/ArchiveEncoder.mjs';
-import { ArchiveManifestStore } from '#adapters/camera/ArchiveManifestStore.mjs';
 import { ArchiveCameraDay } from '#apps/camera/usecases/ArchiveCameraDay.mjs';
 import { readLedger } from '#apps/camera/usecases/BuildDetectionLedger.mjs';
 
@@ -39,7 +36,22 @@ function localDay(offsetDays = 0, now = new Date()) {
  * @param {Object} [deps.logger]
  * @returns {Function} (logger, executionId) => Promise
  */
-export function createCameraArchiveJobHandler({ configService, householdId = null, logger = console }) {
+/**
+ * Camera adapters arrive as an INJECTED bundle, not imports.
+ *
+ * Decision D1: a Container/handler never imports a concrete adapter — no
+ * exceptions. These build a client per camera at run time, so what is injected
+ * is the set of factories rather than instances; bootstrap owns which concrete
+ * implementations those are.
+ */
+export function createCameraArchiveJobHandler({
+  configService, cameraAdapters, householdId = null, logger = console,
+}) {
+  const { ReolinkClient, makeSource, ArchiveEncoder, ArchiveManifestStore } = cameraAdapters || {};
+  if (!ReolinkClient || !makeSource || !ArchiveEncoder || !ArchiveManifestStore) {
+    throw new Error('createCameraArchiveJobHandler requires cameraAdapters '
+      + '{ ReolinkClient, makeSource, ArchiveEncoder, ArchiveManifestStore }');
+  }
   return async function runCameraArchive(scopedLogger, executionId) {
     const log = scopedLogger?.info ? scopedLogger : logger;
     const config = configService.getHouseholdAppConfig(householdId, 'camera-archive');

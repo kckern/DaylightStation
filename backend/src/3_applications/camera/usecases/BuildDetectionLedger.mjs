@@ -15,7 +15,6 @@
 import { mkdir, writeFile, readFile } from 'fs/promises';
 import path from 'path';
 import { toClip } from '#domains/camera/selection.mjs';
-import { parseTriggerBits } from '#adapters/camera/ReolinkRecordingAdapter.mjs';
 
 /**
  * Build ledger records for one camera-day from every source available.
@@ -23,7 +22,14 @@ import { parseTriggerBits } from '#adapters/camera/ReolinkRecordingAdapter.mjs';
  * Sources are layered strongest-first; each record carries the `source` that
  * produced it so a weak density guess is never mistaken for an HA detection.
  */
-export async function buildLedgerRecords({ camera, day, cameraSource, nvrSource, haHistory, bitMap }) {
+export async function buildLedgerRecords({
+  camera, day, cameraSource, nvrSource, haHistory, bitMap, parseTriggerBits,
+}) {
+  // Pure, but it encodes the recorder's clip-naming convention, so it is the
+  // adapter's knowledge. Injected rather than imported (D1).
+  if (typeof parseTriggerBits !== 'function') {
+    throw new Error('buildLedgerRecords requires a parseTriggerBits function');
+  }
   const records = [];
 
   // Strongest: Home Assistant detections (~10 day window).

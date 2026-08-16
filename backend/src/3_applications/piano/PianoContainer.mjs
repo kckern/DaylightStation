@@ -18,6 +18,8 @@ import { GetPlayableUnits } from './usecases/GetPlayableUnits.mjs';
 import { GetRecentCourseActivity } from './usecases/GetRecentCourseActivity.mjs';
 
 export class PianoContainer {
+  #curriculumIndex;
+
   #studioDatastore;
   #fitnessPlayableService;
   #userVideoProgressStore;
@@ -32,6 +34,7 @@ export class PianoContainer {
   #getRecentCourseActivity;
 
   constructor({ studioDatastore, fitnessPlayableService = null, userVideoProgressStore = null, composerSongStore = null, configService, plexClient = null, learningService = null, logger = console } = {}) {
+    this.#curriculumIndex = arguments[0]?.curriculumIndex ?? null;
     if (!studioDatastore) throw new Error('PianoContainer: studioDatastore required');
     if (!configService) throw new Error('PianoContainer: configService required');
     this.#studioDatastore = studioDatastore;
@@ -78,6 +81,7 @@ export class PianoContainer {
         userVideoProgressStore: this.#userVideoProgressStore,
         configService: this.#configService,
         learningService: this.#learningService,
+        curriculumIndex: this.#curriculumIndex,
         logger: this.#logger,
       });
     }

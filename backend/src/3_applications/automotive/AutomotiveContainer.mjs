@@ -13,9 +13,6 @@
  */
 
 import path from 'path';
-import { YamlVehicleHistoryDatastore } from '#adapters/persistence/yaml/YamlVehicleHistoryDatastore.mjs';
-import { YamlVehicleRecordDatastore } from '#adapters/persistence/yaml/YamlVehicleRecordDatastore.mjs';
-import { YamlPlaceDatastore } from '#adapters/persistence/yaml/YamlPlaceDatastore.mjs';
 import { ListJourneys } from './usecases/ListJourneys.mjs';
 import { GetVehicleOverview } from './usecases/GetVehicleOverview.mjs';
 import { GetTripDetail } from './usecases/GetTripDetail.mjs';
@@ -41,24 +38,27 @@ export class AutomotiveContainer {
    * @param {object} [deps.logger]
    */
 /**
- * Roots are INJECTED, absolute, already resolved.
+ * Repositories are INJECTED, not constructed here.
  *
- * These used to be `household/<domain>` literals joined onto dataDir here.
- * That is storage layout living in the application layer, which
- * application-layer-guidelines.md rules out ("Application layer never builds
- * file paths"), and it is why the household reorganization had to edit this
- * file. The composition root resolves the location — config override
- * included — and passes directories down.
+ * This container used to import three concrete Yaml datastores and build
+ * their paths from `household/<domain>` literals. Both are ruled out:
+ * Decision D1 says a Container never imports a concrete adapter — no
+ * exceptions — and application-layer-guidelines.md says the application layer
+ * never builds file paths. Bootstrap constructs the adapters, resolves their
+ * locations, and passes them in.
  */
-  constructor({ configService, historyRoot, recordsRoot, vehiclesConfig = {}, logger = console }) {
+  constructor({
+    configService, historyRepository, recordRepository, placeRepository,
+    vehiclesConfig = {}, logger = console,
+  }) {
     if (!configService) throw new Error('AutomotiveContainer requires configService');
-    if (!historyRoot || !recordsRoot) {
-      throw new Error('AutomotiveContainer requires historyRoot and recordsRoot');
+    if (!historyRepository || !recordRepository || !placeRepository) {
+      throw new Error('AutomotiveContainer requires historyRepository, recordRepository and placeRepository');
     }
 
-    this.#historyRepository = new YamlVehicleHistoryDatastore({ historyRoot, logger });
-    this.#recordRepository = new YamlVehicleRecordDatastore({ recordsRoot, logger });
-    this.#placeRepository = new YamlPlaceDatastore({ recordsRoot, logger });
+    this.#historyRepository = historyRepository;
+    this.#recordRepository = recordRepository;
+    this.#placeRepository = placeRepository;
 
     this.#vehicleDefs = vehiclesConfig?.vehicles || {};
     // Household-extensible without a deploy — `service_types:` in vehicles.yml.

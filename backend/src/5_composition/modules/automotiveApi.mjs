@@ -12,6 +12,9 @@
 import { AutomotiveContainer } from '#apps/automotive/AutomotiveContainer.mjs';
 import { createAutomotiveRouter } from '#api/v1/routers/automotive.mjs';
 import path from 'node:path';
+import { YamlVehicleHistoryDatastore } from '#adapters/persistence/yaml/YamlVehicleHistoryDatastore.mjs';
+import { YamlVehicleRecordDatastore } from '#adapters/persistence/yaml/YamlVehicleRecordDatastore.mjs';
+import { YamlPlaceDatastore } from '#adapters/persistence/yaml/YamlPlaceDatastore.mjs';
 
 /**
  * Create the automotive container + API router.
@@ -30,8 +33,15 @@ export function createAutomotiveApi({ configService, vehiclesConfig = {}, logger
     ? path.join(dataDir, ...String(override).replace(/^\/+/, '').split('/'))
     : configService.getHouseholdPath('automotive/log');
   const recordsRoot = configService.getHouseholdPath('automotive');
+  // Bootstrap constructs the concrete adapters (D1) and resolves where they
+  // read from; the container receives ports, not classes.
   const automotiveContainer = new AutomotiveContainer({
-    configService, historyRoot, recordsRoot, vehiclesConfig, logger,
+    configService,
+    historyRepository: new YamlVehicleHistoryDatastore({ historyRoot, logger }),
+    recordRepository: new YamlVehicleRecordDatastore({ recordsRoot, logger }),
+    placeRepository: new YamlPlaceDatastore({ recordsRoot, logger }),
+    vehiclesConfig,
+    logger,
   });
   return {
     automotiveContainer,
