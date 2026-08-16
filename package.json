@@ -149,6 +149,7 @@
     "test:unit:vitest": "node scripts/gate-vitest.mjs",
     "sheet": "node scripts/gen-sheet.mjs",
     "audit:paths": "node scripts/audit-household-paths.mjs",
+    "audit:links": "node scripts/audit-esm-links.mjs",
     "smoke:yaml": "node scripts/smoke-yaml-contracts.mjs"
   }
 }
