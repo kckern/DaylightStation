@@ -1227,9 +1227,20 @@ const Player = forwardRef(function Player(props, ref) {
     resilienceSessionKey: itemSessionKey,
     wrapWithContainer: false,
     suppressLocalOverlay: !!overlayElements,
-    // Use external session if provided (for multi-player isolation),
-    // otherwise generate based on current media GUID and remount nonce
-    plexClientSession: externalPlexClientSession || (currentMediaGuid ? `${currentMediaGuid}-r${remountState.nonce}` : null)
+    // Use external session if provided (for multi-player isolation) — that value is
+    // the caller's own scheme (FitnessMusicPlayer) and passes through untouched.
+    // Otherwise: media GUID, remount nonce, and this Player's instance id.
+    //
+    // The instance id matters even though nothing reads it yet. The backend ignores
+    // `?session=` today (PlexAdapter mints its own identifiers), so a shared value is
+    // inert server-side — but the GUID has been content-derived since 2026-08-16, and
+    // threading this id end-to-end for observability is a known next step. The day
+    // someone wires it, a content-derived value stops being a two-Players-on-one-screen
+    // problem and becomes a cross-device one: two browsers playing the same title would
+    // compute an identical `<hash>-r0` and hand Plex one session identifier for two
+    // independent streams. Cheap to keep per-instance now, expensive to discover later.
+    plexClientSession: externalPlexClientSession
+      || (currentMediaGuid ? `${currentMediaGuid}-r${remountState.nonce}#${playerInstanceId}` : null)
   };
 
   const playerShellClass = ['player', effectiveShader, props.playerType || '']
