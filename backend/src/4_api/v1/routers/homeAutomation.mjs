@@ -157,7 +157,7 @@ export function createHomeAutomationRouter(config) {
 
     const { level } = req.params;
     // Path relative to household dir (loadFile/saveFile prepend householdDir)
-    const volumeStateFile = `history/hardware/volLevel`;
+    const volumeStateFile = `hardware/volLevel`;
     const cycleLevels = [70, 50, 30, 20, 10, 0];
     const increment = 12;
 
@@ -319,7 +319,7 @@ export function createHomeAutomationRouter(config) {
     }
 
     // loadFile already prepends household path, just use relative path
-    const weatherData = loadFile('common/weather') || {};
+    const weatherData = loadFile('weather/current') || {};
     res.json(weatherData);
   }));
 
