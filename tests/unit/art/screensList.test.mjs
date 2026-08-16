@@ -5,7 +5,16 @@ import path from 'path';
 import { createScreensRouter } from '../../../backend/src/4_api/v1/routers/screens.mjs';
 
 let dataPath;
-const logger = { debug() {}, info() {}, warn() {}, error() {} };
+
+// Recording stub: on the degrade path the response body is deliberately
+// indistinguishable from a screen that declares no resolution, so the warn is
+// the only observable difference and has to be asserted.
+let logged;
+const record = (level) => (event, data) => { logged.push({ level, event, data }); };
+const logger = {
+  debug: record('debug'), info: record('info'), warn: record('warn'), error: record('error'),
+};
+const findLog = (level, event) => logged.find((l) => l.level === level && l.event === event);
 
 const writeScreen = (id, yamlStr) =>
   fs.writeFile(path.join(dataPath, 'household', 'screens', `${id}.yml`), yamlStr);
@@ -25,6 +34,7 @@ const callList = async () => {
 };
 
 beforeEach(async () => {
+  logged = [];
   dataPath = await fs.mkdtemp(path.join(os.tmpdir(), 'screens-list-'));
   await fs.mkdir(path.join(dataPath, 'household', 'screens'), { recursive: true });
 });
@@ -51,6 +61,18 @@ describe('screens list endpoint', () => {
     expect(r.body.screens).toEqual([{ id: 'kitchen-eink', name: 'kitchen-eink', resolution: null }]);
   });
 
+  it('treats a zero or negative dimension as no declared resolution', async () => {
+    await writeScreen('zeroed', 'screen: zeroed\nresolution:\n  width: 0\n  height: 0\n');
+    await writeScreen('inverted', 'screen: inverted\nresolution:\n  width: -1920\n  height: -1080\n');
+
+    const r = await callList();
+
+    expect(r.body.screens).toEqual(expect.arrayContaining([
+      { id: 'zeroed', name: 'zeroed', resolution: null },
+      { id: 'inverted', name: 'inverted', resolution: null },
+    ]));
+  });
+
   it('degrades an unparsable screen file to id-only instead of failing the list', async () => {
     await writeScreen('good', 'screen: good\nresolution:\n  width: 960\n  height: 540\n');
     await writeScreen('broken', 'screen: [unclosed\n');
@@ -59,6 +81,20 @@ describe('screens list endpoint', () => {
 
     expect(r.body.screens).toHaveLength(2);
     expect(r.body.screens.find((s) => s.id === 'broken')).toEqual({ id: 'broken', name: 'broken', resolution: null });
+  });
+
+  it('warns per degraded screen and counts them on the summary line', async () => {
+    await writeScreen('good', 'screen: good\nresolution:\n  width: 960\n  height: 540\n');
+    await writeScreen('broken', 'screen: [unclosed\n');
+
+    await callList();
+
+    // The body cannot distinguish "degraded" from "declares nothing", so the
+    // warn is the operator's only per-screen signal.
+    expect(findLog('warn', 'screens.list.unreadable')?.data).toMatchObject({ id: 'broken' });
+    // ...and the summary line makes a directory-wide failure one greppable event
+    // rather than N scattered warns.
+    expect(findLog('debug', 'screens.list.success')?.data).toEqual({ count: 2, unreadable: 1 });
   });
 
   it('still returns an empty list when the screens directory is absent', async () => {
