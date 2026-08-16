@@ -294,6 +294,17 @@ export class GradeSubmission {
       ?? unit?.passing?.percent;
     const { errors, event } = createEvent({
       type: 'graded', at: nowIso, sessionId, attemptIds: recordedAttempts, percent,
+      // The receipt says "8 of 10", not "80%". `CloseSessionOutcome` renders
+      // those two numbers off `state.gradedCorrectCount`/`gradedTotalCount`,
+      // which `reduceSession` only sets from a graded event's `correctCount`/
+      // `totalCount` — the same pair `RecordCardScanOutcome` emits. Until
+      // 2026-08-15 only that paper-scan producer sent them, so every
+      // screen-path and grown-up-marked session printed a receipt with null
+      // counts. `expectedItems.length` is >= 1 here: the empty roster returns
+      // `unavailable` well above, which is what the event schema's
+      // `totalCount >= 1` rule requires.
+      correctCount: correct,
+      totalCount: expectedItems.length,
       ...(typeof effectivePassingPercent === 'number' ? { passingPercent: effectivePassingPercent } : {}),
     });
     if (errors.length) throw new Error(`GradeSubmission: could not record the grade: ${errors.join('; ')}`);
