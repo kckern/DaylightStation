@@ -28,7 +28,7 @@
 // resolved here. Refs are already namespaced by subsystem, which is why the root
 // is `content/assets` and not `content/school/assets`: one tree, and the ref's
 // first segment says whose it is. Curriculum YAML sits beside it under
-// `content/school/curriculum/`.
+// `content/school/<subject>/<course>/`.
 //
 // Shipping with NO resolver (which is what this file used to do) meant the
 // renderer's default one threw on every sheet carrying a diagram, `IssueDocument`

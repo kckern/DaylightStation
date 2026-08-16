@@ -70,18 +70,7 @@ export class YamlCurriculumDatastore extends ICurriculumCatalog {
     return path.join(this.#schoolDir(), subject, work, kind);
   }
 
-  #curriculumWorks(subject) {
-    const root = path.join(this.#schoolDir(), 'curriculum', subject);
-    try {
-      return fs.readdirSync(root, { withFileTypes: true })
-        .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
-        .map((entry) => entry.name);
-    } catch { return []; }
-  }
-
   #workDir(subject, work) {
-    const curriculumDir = path.join(this.#schoolDir(), 'curriculum', subject, work);
-    if (loadYamlSafe(path.join(curriculumDir, 'index'))?.schema === COURSE_V2) return curriculumDir;
     return path.join(this.#schoolDir(), subject, work);
   }
 
@@ -91,13 +80,11 @@ export class YamlCurriculumDatastore extends ICurriculumCatalog {
    * quizzes; a shelf with no works yet simply has no directories to list.
    */
   #works(subject) {
-    let legacy = [];
     try {
-      legacy = fs.readdirSync(path.join(this.#schoolDir(), subject), { withFileTypes: true })
+      return fs.readdirSync(path.join(this.#schoolDir(), subject), { withFileTypes: true })
         .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
         .map((e) => e.name);
-    } catch { /* empty shelf */ }
-    return [...new Set([...this.#curriculumWorks(subject), ...legacy])];
+    } catch { return []; /* empty shelf */ }
   }
 
   #courseV2(subject, work) {
