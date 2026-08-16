@@ -17,7 +17,50 @@
  * instead of 12s, and the exhaustion floor drops from ~480s to ~160s. This
  * is deliberate — it matches the old code's own documented intent
  * ("4s → 12s → 36s → 108s"), which the old implementation never delivered.
+ *
+ * Auditability (2026-08-16): the three teardown paths used to erase state
+ * without a word. During the remount storm media identity churned on every
+ * remount, so `releaseSession` fired constantly and deleted the attempt record
+ * each time, restoring the 5-attempt cap to zero — which is why every recovery
+ * logged attempt=1 forever, and why "the cap keeps resetting" could not be told
+ * apart from "the cap was never reached" from the logs alone. Each teardown now
+ * emits what it is about to destroy, and `dumpAll()` answers "what does the
+ * ledger hold right now" without the caller having to already know the key.
+ *
+ * `sessionsCreated` counts distinct session keys this ledger has ever tracked —
+ * one per media identity — and lives outside the sessions Map so a release
+ * cannot lower it. Each new identity is a remount, and each remount mints a
+ * fresh Plex transcode session, so this is the client-side stand-in for the
+ * 495-session count that had to be read off Plex's server log. It is a count of
+ * identities observed here, not of sessions confirmed at the server.
  */
+
+import { getLogger } from '../../../lib/logging/Logger.js';
+
+// Lazy child logger — the convention in CLAUDE.md for non-component code.
+// Resolving it at import time would race the logger's own configuration, and
+// this module is imported by hooks, so it must stay cheap to load.
+let _logger;
+const defaultLogger = () => {
+  if (!_logger) _logger = getLogger().child({ component: 'recovery-ledger' });
+  return _logger;
+};
+
+// Mints across every ledger in the tab. Monotonic and deliberately outside the
+// sessions Map, so releasing a session cannot lower it. Production runs a single
+// shared ledger, so in practice this and the per-ledger count agree; they differ
+// only when something constructs a second ledger (tests do).
+let _sessionsCreatedAllLedgers = 0;
+
+/** Total recovery sessions minted in this tab, across all ledgers. Never decreases. */
+export function getSessionsCreatedAllLedgers() {
+  return _sessionsCreatedAllLedgers;
+}
+
+/** Test-only: the tab-wide mint counter is process-lifetime state. */
+export function _resetSessionsCreatedForTests() {
+  _sessionsCreatedAllLedgers = 0;
+}
 
 // Session-wide recovery cap (all actors). The ledger is the single source of
 // truth for this number — consumers import it for log payloads/UI copy rather
@@ -39,19 +82,53 @@ const DEFAULTS = {
  * @param {number} [options.cooldownBackoffMultiplier=3] - cooldown growth per attempt
  * @param {Object<string, number>} [options.mountBudgets] - per-mount attempt caps by actor
  * @param {Function} [options.now=Date.now] - injectable clock for tests
- * @returns {{ request: Function, recordSuccess: Function, userReset: Function, releaseSession: Function, snapshot: Function }}
+ * @param {Object} [options.logger] - injected logger; defaults to the lazily-resolved child logger
+ * @returns {{ request: Function, recordSuccess: Function, userReset: Function, releaseSession: Function, snapshot: Function, dumpAll: Function }}
  */
 export function createRecoveryLedger(options = {}) {
   const cfg = { ...DEFAULTS, ...options, mountBudgets: { ...DEFAULTS.mountBudgets, ...(options.mountBudgets || {}) } };
-  const sessions = new Map(); // sessionKey -> { count, lastAt, urlRefreshCount, exhausted, mounts: Map<mountId, Map<actor, n>> }
+  const sessions = new Map(); // sessionKey -> { count, lastAt, createdAt, urlRefreshCount, exhausted, mounts: Map<mountId, Map<actor, n>> }
+  const log = () => options.logger || defaultLogger();
+
+  // Mints for THIS ledger. Held outside `sessions` so a release cannot lower it.
+  let sessionsCreated = 0;
 
   const getSession = (key) => {
     let s = sessions.get(key);
     if (!s) {
-      s = { count: 0, lastAt: 0, urlRefreshCount: 0, exhausted: false, mounts: new Map() };
+      s = { count: 0, lastAt: 0, createdAt: cfg.now(), urlRefreshCount: 0, exhausted: false, mounts: new Map() };
       sessions.set(key, s);
+      sessionsCreated += 1;
+      _sessionsCreatedAllLedgers += 1;
     }
     return s;
+  };
+
+  /**
+   * Report what a teardown is about to destroy. Rate-limited because identity
+   * churn can fire `releaseSession` hundreds of times a minute — which is the
+   * condition this event exists to expose, so the aggregate's skippedCount is
+   * itself the diagnosis and must not be drowned.
+   *
+   * @param {string} sessionKey
+   * @param {Object} s - the live session, read BEFORE it is mutated or deleted
+   * @param {'release'|'user-reset'|'success'} releasedBy
+   */
+  const reportTeardown = (sessionKey, s, releasedBy) => {
+    try {
+      log().sampled('recovery-ledger.session-released', {
+        sessionKey,
+        releasedBy,
+        count: s.count,
+        urlRefreshCount: s.urlRefreshCount,
+        exhausted: s.exhausted,
+        mountCount: s.mounts.size,
+        ageMs: cfg.now() - s.createdAt,
+        sessionsCreated
+      }, { maxPerMinute: 30, aggregate: true });
+    } catch (_) {
+      // Accounting must not fail because reporting did.
+    }
   };
 
   return {
@@ -97,10 +174,17 @@ export function createRecoveryLedger(options = {}) {
       return { allowed: true, attempt: s.count, waitMs: 0, exhausted: false, deniedBy: null, reason };
     },
 
-    /** Playback resumed — clear attempts/cooldown but keep telemetry counters until release. */
+    /**
+     * Playback resumed — clear attempts/cooldown but keep telemetry counters
+     * until release. Reports only when there was an attempt record to erase: a
+     * success against an already-clean session destroyed nothing, and this is
+     * called on every forward-progress tick, so reporting those would be noise
+     * with no content.
+     */
     recordSuccess(sessionKey) {
       const s = sessions.get(sessionKey);
       if (!s) return;
+      if (s.count > 0 || s.mounts.size > 0) reportTeardown(sessionKey, s, 'success');
       s.count = 0;
       s.lastAt = 0;
       s.exhausted = false;
@@ -109,11 +193,21 @@ export function createRecoveryLedger(options = {}) {
 
     /** User-initiated retry from exhausted: full reset. */
     userReset(sessionKey) {
+      const s = sessions.get(sessionKey);
+      if (!s) return;
+      reportTeardown(sessionKey, s, 'user-reset');
       sessions.delete(sessionKey);
     },
 
-    /** Session ended/changed: prune (prevents unbounded growth on kiosk tabs). */
+    /**
+     * Session ended/changed: prune (prevents unbounded growth on kiosk tabs).
+     * A release of a key that was never minted destroyed nothing, so it reports
+     * nothing — `sessionsCreated` remains the authority on how many existed.
+     */
     releaseSession(sessionKey) {
+      const s = sessions.get(sessionKey);
+      if (!s) return;
+      reportTeardown(sessionKey, s, 'release');
       sessions.delete(sessionKey);
     },
 
@@ -123,6 +217,39 @@ export function createRecoveryLedger(options = {}) {
       const s = sessions.get(sessionKey);
       if (!s) return null;
       return { count: s.count, lastAt: s.lastAt, urlRefreshCount: s.urlRefreshCount, exhausted: s.exhausted };
+    },
+
+    /**
+     * Everything the ledger currently holds, plus the mint count that outlives
+     * it. `snapshot()` answers only about a key you already know and omits
+     * `mounts` entirely, so there was no way to ask what state exists — during
+     * the 2026-08-16 storm `sessionsCreated` would have read ~495 while the live
+     * map held a single fresh session, which is the whole shape of that bug in
+     * two numbers.
+     *
+     * Returns plain copies: the caller can log or mutate the result without
+     * reaching into the ledger's live Maps.
+     */
+    dumpAll() {
+      const t = cfg.now();
+      return {
+        sessionsCreated,
+        sessionsLive: sessions.size,
+        atMs: t,
+        sessions: Array.from(sessions.entries()).map(([sessionKey, s]) => ({
+          sessionKey,
+          count: s.count,
+          lastAt: s.lastAt,
+          createdAt: s.createdAt,
+          ageMs: t - s.createdAt,
+          urlRefreshCount: s.urlRefreshCount,
+          exhausted: s.exhausted,
+          mounts: Array.from(s.mounts.entries()).map(([mountId, actors]) => ({
+            mountId,
+            actors: Object.fromEntries(actors)
+          }))
+        }))
+      };
     }
   };
 }
