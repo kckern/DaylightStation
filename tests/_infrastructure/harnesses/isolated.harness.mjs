@@ -37,7 +37,7 @@ const JEST_TARGETS = [
 const VITEST_TARGETS = [
   'modules',
   'adapters', 'agents', 'applications', 'composition', 'e2e', 'hardware',
-  'hooks', 'lifeplan', 'notification', 'rendering', 'screen-framework',
+  'hooks', 'lifeplan', 'notification', 'observability', 'rendering', 'screen-framework',
   'services', 'system', 'tooling', 'ui',
 ];
 // Pseudo-target for the frontend/src/ colocated tree. Allows --only=frontend

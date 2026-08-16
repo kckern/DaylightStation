@@ -18,6 +18,40 @@ export class WeeklyReviewImmichAdapter {
     this.#logger = deps.logger || console;
   }
 
+  /**
+   * Earliest date carrying reviewable media in `[startDate, endDate]`, or null.
+   *
+   * Backs the review's jump-to-oldest, so it must stay cheap: one search asking
+   * for a single oldest-first row. Whether this Immich build honors `order` on
+   * /api/search/metadata is unverified, so the result is reduced rather than
+   * read off items[0] — correct either way, and free when `order` does work.
+   *
+   * @returns {Promise<string|null>} YYYY-MM-DD
+   */
+  async searchOldest({ startDate, endDate }) {
+    const takenAfter = new Date(`${startDate}T00:00:00.000Z`).toISOString();
+    const endPlusOne = new Date(`${endDate}T00:00:00.000Z`);
+    endPlusOne.setDate(endPlusOne.getDate() + 1);
+
+    const result = await this.#client.searchMetadata({
+      takenAfter,
+      takenBefore: endPlusOne.toISOString(),
+      size: 1,
+      order: 'asc',
+    });
+
+    const assets = result?.items || result || [];
+    let oldest = null;
+    for (const asset of assets) {
+      if (asset.type !== 'IMAGE' && asset.type !== 'VIDEO') continue;
+      const date = asset.localDateTime?.slice(0, 10);
+      if (date && (oldest === null || date < oldest)) oldest = date;
+    }
+
+    this.#logger.debug?.('weekly-review.immich.oldest', { startDate, endDate, oldest, scanned: assets.length });
+    return oldest;
+  }
+
   async getPhotosForDateRange(startDate, endDate) {
     const takenAfter = new Date(`${startDate}T00:00:00.000Z`).toISOString();
     const endPlusOne = new Date(`${endDate}T00:00:00.000Z`);

@@ -25,6 +25,24 @@ export function createWeeklyReviewRouter(config) {
     }
   });
 
+  // How far back there is still content, so the client can jump to the start of
+  // a trip rather than paging one 8-day window at a time.
+  router.get('/extent', async (req, res) => {
+    try {
+      const { before, lookbackDays } = req.query;
+      const lookback = lookbackDays ? Number(lookbackDays) : undefined;
+      if (lookback !== undefined && (!Number.isFinite(lookback) || lookback <= 0)) {
+        return res.status(400).json({ ok: false, error: 'lookbackDays must be a positive number' });
+      }
+      const result = await weeklyReviewService.getContentExtent({ before, lookbackDays: lookback });
+      res.json({ ok: true, ...result });
+    } catch (err) {
+      // Only validation reaches here — the service swallows probe failures.
+      logger.warn?.('weekly-review.api.extent.error', { error: err.message });
+      res.status(400).json({ ok: false, error: err.message });
+    }
+  });
+
   router.post('/recording', async (req, res) => {
     const startMs = Date.now();
     try {

@@ -8,6 +8,62 @@ import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { resolveTranscodeCaps, buildClientProfileExtra, canDirectPlayH264, canDirectStreamVideo } from './transcodeProfile.mjs';
 
 /**
+ * Characters that may appear unescaped in a Plex session identifier.
+ *
+ * The identifiers are pasted into query strings by hand (see
+ * `_buildTranscodeUrl`, which joins `X-Plex-Client-Identifier=${...}` with
+ * `&`), so anything with meaning in a URL has to go. `#` is the dangerous one:
+ * the frontend's session value has carried it since 2026-08-16
+ * (`${singlePlayerKey}#${playerInstanceId}`), and a `#` in a hand-built URL
+ * truncates it at that point, taking every later parameter with it.
+ */
+const PLEX_SESSION_UNSAFE = /[^A-Za-z0-9._~:-]+/g;
+
+/** Keep identifiers short enough that no upstream truncates them for us. */
+const PLEX_SESSION_MAX_LENGTH = 96;
+
+/** FNV-1a, 32-bit, hex. Used only to keep sanitising injective — not a hash of anything secret. */
+function fnv1aHex(str) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i += 1) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16).padStart(8, '0');
+}
+
+/**
+ * Make a client-supplied session value safe to interpolate into a Plex URL.
+ *
+ * The value is OPAQUE. Its shape has already changed once (it was
+ * `<guid>-r<nonce>`, it is now `${singlePlayerKey}#${playerInstanceId}`) and
+ * nothing here parses it — Plex constrains the character set, so we sanitise
+ * rather than restructure.
+ *
+ * Replacement is lossy, and lossy is dangerous here: if two different sessions
+ * could sanitise to one identifier, two independent streams would arrive at
+ * Plex under one identity, which is a milder version of the failure this whole
+ * change exists to remove. So whenever anything is replaced or truncated, a
+ * digest of the ORIGINAL is appended, which makes the mapping injective again.
+ *
+ * @param {unknown} raw
+ * @returns {string|null} null means "no usable session was supplied" — the
+ *   caller then mints a random identifier per request.
+ */
+export function sanitizePlexSessionId(raw) {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  const replaced = trimmed.replace(PLEX_SESSION_UNSAFE, '-');
+  if (replaced === trimmed && replaced.length <= PLEX_SESSION_MAX_LENGTH) return replaced;
+
+  const digest = fnv1aHex(trimmed);
+  const head = replaced.slice(0, PLEX_SESSION_MAX_LENGTH - (digest.length + 2));
+  return `${head}-x${digest}`;
+}
+
+/**
  * Plex content source adapter.
  * Implements IContentSource interface for accessing Plex Media Server content.
  */
@@ -892,19 +948,14 @@ export class PlexAdapter {
   // STREAMING & TRANSCODE METHODS
   // ===========================================================================
 
-  /**
-   * Generate unique session identifiers for Plex streaming
-   * @param {string} [clientSession] - Optional client-provided session ID
-   * @returns {{sessionUUID: string, clientIdentifier: string, sessionIdentifier: string}}
-   * @private
-   */
-  _generateSessionIds(clientSession = null) {
-    const sessionUUID = Math.random().toString(36).substring(2, 15) +
-      Math.random().toString(36).substring(2, 15);
-    const clientIdentifier = clientSession || `api-${sessionUUID}`;
-    const sessionIdentifier = clientSession ? `${clientSession}-${sessionUUID}` : sessionUUID;
-    return { sessionUUID, clientIdentifier, sessionIdentifier };
-  }
+  // NOTE: `_generateSessionIds` used to be defined HERE as well as further down
+  // in this same class body, with the same name and a near-identical body. A
+  // duplicate method definition is not an error in JavaScript — the later one
+  // simply replaces the earlier — so this copy had never executed, while
+  // reading the file gave every impression that it did. It is the exact
+  // function the 2026-08-16 transcode storm turned on, so a reader landing on
+  // the dead copy would have drawn conclusions from code that never ran. The
+  // surviving definition is in the STREAMING URL GENERATION section below.
 
   /**
    * Get container metadata bundled with its children
@@ -1366,23 +1417,51 @@ export class PlexAdapter {
   // ===========================================================================
 
   /**
-   * Generate unique session identifiers for Plex streaming
-   * @param {string} [session] - Optional client session from frontend
+   * What client identifier will this adapter present to Plex for `session`?
+   *
+   * Callers outside the adapter (the play response, so the frontend can log the
+   * same key Plex logs) need the answer without triggering a stream request.
+   *
+   * @param {string|null|undefined} session - the caller's opaque client session
+   * @returns {string|null} the identifier Plex will see, or null when the
+   *   caller supplied no usable session — in which case every request mints a
+   *   fresh random identifier and Plex counts each retry as a new client.
+   */
+  resolveClientIdentifier(session) {
+    return sanitizePlexSessionId(session);
+  }
+
+  /**
+   * Generate unique session identifiers for Plex streaming.
+   *
+   * @param {string} [session] - Optional client session from frontend. Opaque:
+   *   the frontend's scheme has changed before and will again, so nothing here
+   *   parses it — it is only made safe for the URLs it ends up in.
+   * @param {string|null} [variant] - Suffix distinguishing a second stream the
+   *   same client opens for the same item (today: the audio path). Applied
+   *   AFTER sanitising, so the identifier stays derivable from the session
+   *   alone plus a known suffix.
    * @returns {{clientIdentifier: string, sessionIdentifier: string, sessionUUID: string}}
    * @private
    */
-  _generateSessionIds(session = null) {
+  _generateSessionIds(session = null, variant = null) {
     // Generate a unique UUID for this request
     const sessionUUID = Math.random().toString(36).substring(2, 15) +
       Math.random().toString(36).substring(2, 15);
 
+    const base = sanitizePlexSessionId(session);
+    const clientSession = base && variant ? `${base}-${variant}` : base;
+
     // clientIdentifier: Use frontend-provided session for multi-player isolation.
     // If no session provided, generate unique ID per request to prevent collisions.
-    const clientIdentifier = session || `api-${sessionUUID}`;
+    // That fallback is what Plex actually saw for four minutes on 2026-08-16:
+    // nothing in the backend read `?session=`, so one tablet retrying looked
+    // like 495 separate clients.
+    const clientIdentifier = clientSession || `api-${sessionUUID}`;
 
     // sessionIdentifier: Always unique per request. If we have a stable client session,
     // append the UUID so Plex can track it's from the same client but a new segment request.
-    const sessionIdentifier = session ? `${session}-${sessionUUID}` : sessionUUID;
+    const sessionIdentifier = clientSession ? `${clientSession}-${sessionUUID}` : sessionUUID;
 
     return { clientIdentifier, sessionIdentifier, sessionUUID };
   }
@@ -1649,9 +1728,12 @@ export class PlexAdapter {
       const resolvedMaxResolution = maxResolution ?? maxVideoResolution;
 
       if (mediaType === 'audio') {
-        const { clientIdentifier, sessionIdentifier } = this._generateSessionIds(
-          session ? `${session}-audio` : null
-        );
+        // The audio stream is a second, independent stream the same client can
+        // hold open alongside the video one, so it gets its own identifier.
+        // Passing 'audio' as a variant (rather than pre-concatenating it onto
+        // the raw session) keeps the result derivable: it is exactly
+        // `resolveClientIdentifier(session)` plus `-audio`.
+        const { clientIdentifier, sessionIdentifier } = this._generateSessionIds(session, 'audio');
 
         const mediaKey = playableItem.metadata?.Media?.[0]?.Part?.[0]?.key;
         if (!mediaKey) {

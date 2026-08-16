@@ -554,13 +554,23 @@ export class FileAdapter {
       // Build thumbnail URL -- video uses ffmpeg-generated thumbnail, audio uses cover art
       // Use resolved path relative to mediaBasePath (includes prefix + extension)
       const relativeMediaPath = path.relative(this.mediaBasePath, resolved.path);
-      // Video → ffmpeg frame thumbnail; audio → embedded cover art; notation/
-      // document/unknown have no inherent thumbnail (the frontend labels them).
+      // Video → ffmpeg frame thumbnail; audio → embedded cover art; image → the
+      // file itself (an image needs no poster derived for it, it IS one);
+      // notation/document/unknown have no inherent thumbnail (the frontend
+      // labels them).
+      //
+      // Images used to fall through this chain to null, which made them the one
+      // media type with no thumbnail and — because capability is derived from
+      // thumbnail/imageUrl presence — the one media type reported as not
+      // displayable. Rows rendered no artwork and `action: Display` previewed
+      // an empty <img>, while a video file was happily marked displayable.
       let thumbnail = mediaType === 'video'
         ? `/api/v1/local/thumbnail/${encodeURIComponent(relativeMediaPath)}`
         : mediaType === 'audio'
           ? `/api/v1/local-content/cover/${encodeURIComponent(localId)}`
-          : null;
+          : mediaType === 'image'
+            ? `/api/v1/local/thumbnail/${encodeURIComponent(relativeMediaPath)}`
+            : null;
 
       // Notation / document files have no inherent thumbnail — honor a same-basename
       // image sidecar (e.g. fur-elise.jpg next to fur-elise.musicxml) as the poster.
@@ -581,6 +591,12 @@ export class FileAdapter {
         title,
         type: mediaType, // 'audio', 'video', or 'image'
         thumbnail,
+        // Full-resolution source for viewers that render the image itself
+        // (Displayer reads imageUrl, not mediaUrl). Without this an image file
+        // resolved fine and streamed fine but previewed as an empty <img>.
+        imageUrl: mediaType === 'image'
+          ? `/api/v1/proxy/media/stream/${encodeURIComponent(localId)}`
+          : null,
         mediaType,
         mediaUrl: `/api/v1/proxy/media/stream/${encodeURIComponent(localId)}`,
         duration,

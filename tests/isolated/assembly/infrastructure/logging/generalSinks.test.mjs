@@ -26,20 +26,19 @@ describe('general file sinks', () => {
     expect(durable(sinks)).toBeTruthy();
   });
 
-  // Rotation bounds are a decision, not a default someone inherited. 30 MB is
-  // deliberately modest: the default path sits inside a Dropbox-synced folder
-  // on prod, where an append-and-rotate file costs version history that the
-  // on-disk ceiling does not bound.
-  test('states its rotation bounds explicitly, capping disk at 30 MB', () => {
+  // Rotation bounds are a decision, not a default someone inherited. 200 MB is
+  // roughly three to four days at the measured 63 MB/day of backend stdout —
+  // enough to survive a problem noticed the next morning, which is how
+  // household problems actually get reported.
+  test('states its rotation bounds explicitly, capping disk at 200 MB', () => {
     const sink = durable(resolveGeneralFileSinks({ isDocker: true, mediaDir: MEDIA_DIR, repoRoot: REPO_ROOT }));
     expect(sink.maxSize).toBe(BACKEND_LOG_MAX_SIZE);
     expect(sink.maxFiles).toBe(BACKEND_LOG_MAX_FILES);
-    expect(sink.maxSize * sink.maxFiles).toBe(30 * 1024 * 1024);
+    expect(sink.maxSize * sink.maxFiles).toBe(200 * 1024 * 1024);
   });
 
-  // The bounds and the location are configurable so the log can be MOVED off
-  // the synced volume rather than shrunk further — an infra decision that
-  // should not need a code change.
+  // The bounds and the location stay configurable so an operator can move or
+  // resize the log without a code change.
   test('takes its bounds from system config when given', () => {
     const sink = durable(resolveGeneralFileSinks({
       isDocker: true,

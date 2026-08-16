@@ -95,6 +95,32 @@ export class WeeklyReviewService {
     return { week: start, days, recording };
   }
 
+  /**
+   * How far back there is still something to review, so the client can jump
+   * straight to the start of a trip instead of paging a window at a time.
+   *
+   * Probes `[before - lookbackDays, before)` — strictly older than the window
+   * the caller is on. Never throws on a probe failure: this backs a convenience
+   * key inside a live recording session, and the client's fallback is ordinary
+   * one-window-at-a-time paging.
+   */
+  async getContentExtent({ before, lookbackDays = 120 } = {}) {
+    if (!before || !/^\d{4}-\d{2}-\d{2}$/.test(before)) {
+      throw new Error('before must be a YYYY-MM-DD date');
+    }
+    const startDate = this.#addDays(before, -lookbackDays);
+    const endDate = this.#addDays(before, -1);
+
+    try {
+      const oldestContentDate = await this.#immichAdapter.searchOldest({ startDate, endDate });
+      this.#logger.info?.('weekly-review.extent', { before, lookbackDays, oldestContentDate });
+      return { oldestContentDate: oldestContentDate || null, hasOlder: !!oldestContentDate };
+    } catch (err) {
+      this.#logger.warn?.('weekly-review.extent.failed', { before, error: err.message });
+      return { oldestContentDate: null, hasOlder: false };
+    }
+  }
+
   async #fetchFitnessSessions(dates) {
     if (!this.#sessionService) return {};
     const result = {};

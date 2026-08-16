@@ -58,7 +58,7 @@ This document captures every change made under `frontend/src/modules/Player/**` 
 | **`.loading-overlay` layout tweaks** – padding, box sizing, center alignment moved to flex column wrapper. | Support richer overlay content (debug strip, timers) with better spacing. | Keeps overlay responsive and ensures spinner stays centered regardless of viewport. | Extra padding could intersect with existing video letterboxing; test across themes.
 | **`.loading-overlay__inner` container** | Provide structural wrapper for spinner vs. debug strip. | Simplifies aligning timer vs. log sections. | Adds another DOM level; ensure accessibility tree remains reasonable.
 | **Pointer cursor on `.loading-spinner`** | Communicate that spinner is now clickable (manual hard reset). | UX hint for manual recovery interactions. | On TV devices without pointer, cursor style has no effect; consider conditional styling to avoid confusing remote users.
-| **`.loading-debug-strip` styles** | Visualize telemetry text appended by `PlayerOverlayLoading`. | Gives operators contextual data without opening dev tools. | Always-on debug strip might distract end users; consider gating behind `debug` flag or environment check.
+| **`.loading-debug-strip` styles** | ~~Visualize telemetry text appended by `PlayerOverlayLoading`.~~ **Gone.** The strip was removed from the markup; only the styles remain in `Player.scss`, and the 1Hz diagnostics poll that fed it was deleted on 2026-08-16 (Task 4.9) — no caller ever supplied the `getMediaEl` it was gated on, and its readings went into state nothing rendered. Buffer runway and dropped frames come from `usePlaybackHealth` instead. | — | — |
 
 ---
 
@@ -68,7 +68,7 @@ This document captures every change made under `frontend/src/modules/Player/**` 
 2. **Implicit contracts** – Handshake between `SinglePlayer` and parent (`onResolvedMeta`, `onRegisterMediaAccess`, transport API) is undocumented. Add TypeScript types or at least a shared JSDoc contract to reduce accidental breakages.
 3. **Logging volume** – Overlay logging emits every second when visible. Validate that `playbackLog` backend can handle the traffic, or throttle to warning scenarios.
 4. **User-facing debug strip** – Consider hiding the debug strip for production viewers or behind a `debug` feature flag to avoid confusing non-technical users.
-5. **Remount storm safeguards** – Add metrics/guardrails to avoid infinite remount loops (e.g., limit to N remounts per minute, escalate to full page reload after threshold).
+5. ~~**Remount storm safeguards** – Add metrics/guardrails to avoid infinite remount loops (e.g., limit to N remounts per minute, escalate to full page reload after threshold).~~ **Done 2026-08-16** — see [Remount storm brake](#remount-storm-brake) below. (The escalate-to-page-reload half was deliberately not built: freezing the key already stops the damage and keeps the viewer's page, and a reload on a kiosk is a worse outcome than a frozen player.)
 
 ---
 
@@ -144,6 +144,129 @@ writeup: `docs/_wip/bugs/2026-07-10-player-resilience-soak-findings.md`.
    `useEndOfContentWatchdog`, which is mounted in **both** `ContentScroller` and the dash
    `VideoPlayer` path — do not let it regress to one renderer only (that scoping is what
    caused the 2026-07-10 regression of a bug first fixed on 2026-05-23).
+
+---
+
+## Remount storm brake
+
+On 2026-08-16 a piano kiosk opened **495 Plex transcode sessions in four minutes**
+on one lecture. The video never played, and two overlapping sessions streamed the
+same audio, which is what the family heard as an echo. Only three of roughly three
+hundred teardowns went through `forceSinglePlayerRemount`; the rest were React
+reconciliation reacting to a `singlePlayerKey` that would not hold still. The brake
+therefore sits on the **key**, in `Player.jsx`, not on the explicit remount path.
+
+### The cap
+
+`REMOUNT_STORM_MAX_MOUNTS = 10` distinct keys per `REMOUNT_STORM_WINDOW_MS = 30000`
+(`lib/remountStormGuard.js` holds the arithmetic; `Player.jsx` holds the wiring).
+
+The cap has to clear the legitimate worst case: one initial mount plus the
+five-attempt recovery ladder is six key changes inside about eight seconds, and a
+viewer who then picks something else must not be turned away. Ten in thirty seconds
+leaves that headroom while capping a runaway at 20 remounts per minute — the storm
+ran about 124.
+
+When the cap is exceeded the memo returns the **last admitted key**, so the media
+element is not rebuilt. Content still swaps in place behind the frozen key.
+`plexClientSession` is derived from the admitted key too, so the freeze also stops
+SinglePlayer's metadata refetch (that effect depends on the session value); before
+that was wired the brake stopped new transcode sessions but left roughly 124
+`/api/v1/play/<id>` calls a minute running.
+
+The one reachable false trip is **rapid manual skipping** — eleven "next" presses in
+thirty seconds, which a child with a remote can produce. The consequence is mild:
+content still swaps, and the recovery ledger's `mountId` is `resolvedWaitKey`, which
+the brake does not gate, so per-item recovery budgets still reset per item.
+
+### Re-arm
+
+A tripped guard re-arms **one window after the trip**, evaluated lazily inside the
+key memo — there is no timer, so nothing to leak or to fire after unmount. If no
+render happens the guard simply stays tripped until one does, which is the correct
+behaviour: nothing is being rebuilt in the meantime.
+
+A tripped guard is deliberately **not** re-armed by a content change, tempting as
+that is. In the storm the guid changed on every pass, so forgiving content changes
+would clear the counter before it could ever count past one. Waiting out the window
+means the brake holds while churn is in flight and lets go once it stops, so a
+viewer who picks something else is never stranded for longer than one window.
+
+### Reading `player-remount-storm`
+
+| Event | Level | Meaning |
+|---|---|---|
+| `playback.player-remount-storm` | **error** | The cap was exceeded; the player key is frozen. Logged **once per trip**, not per rejected key. |
+| `playback.player-remount-storm-rearmed` | warn | A window elapsed with the churn stopped; the next key will be admitted. |
+
+Payload carries `frozenKey`, `rejectedKey`, `guid`, `playerType`, `waitKey`,
+`waitKeyHash`, `isQueue`, `maxMounts`, `windowMs`. On a multi-surface fleet
+`playerType` is what tells you whether the piano kiosk or the garage display
+stormed.
+
+### Reading `playback.identity-churn`
+
+| Event | Level | Meaning |
+|---|---|---|
+| `playback.identity-churn` | warn | More than 10 distinct `waitKey` or `guid` values were seen by one mounted Player inside a rolling minute. |
+
+Emitted **once per episode**, not once per value — a detector that fires 480
+times is a second storm. The episode closes only when every dimension has
+receded below the threshold, so a second line means a second burst.
+
+`churningDimensions` is the field to read first: `guid` means content identity
+is moving (something upstream is re-minting it, e.g. a caller re-creating a
+`play` literal every render), `waitKey` alone means the nonce is climbing (a
+recovery loop). On 2026-08-16 it was both. `distinct` carries the counts and
+`samples` the three most recent values per dimension.
+
+The counter is scoped to the **Player instance**, not to the media item.
+Bucketing per guid is the natural reading of "per item", and in this incident it
+would have counted nothing — the guid was itself what churned, so every bucket
+would have held exactly one value.
+
+> A legitimate `refreshUrl` recovery also changes identity, because
+> `resolveMediaIdentity` falls through to `meta.mediaUrl`. It cannot reach this
+> threshold on its own: the recovery ledger caps a session at 5 attempts with a
+> 4s/12s/36s backoff. If you see a churn line whose `samples.guid` are near-
+> identical signed URLs, read it as URL refreshes, not as content churn.
+
+### Reading `waitKey` and `waitKeyHash`
+
+Every player line carries the wait key twice, and the two names never swap
+meanings:
+
+| Field | Value | Use it for |
+|---|---|---|
+| `waitKey` | The key raw — `<identity>:<nonce>`, e.g. `IIni70e01E:7` | Grepping a line back to an item, and reading the nonce ordinal. A climbing `:N` **is** a remount loop. |
+| `waitKeyHash` | 10 hex chars, FNV-1a of the same key | Joining to lines written before 2026-08-16, when `waitKey` in `useMediaResilience` / `usePlaybackHealth` WAS the hash. |
+
+Two absences are named rather than merged: `(absent)` means no key was supplied,
+`(empty)` means one was and it was blank. Before 2026-08-16 both — and `''` —
+came out as `0000000000`, so every keyless player in the fleet shared one
+apparent identity.
+
+**Treat any occurrence as a real defect, not as the brake doing its job.** Tasks 1–4
+of the 2026-08-16 work (stable `play` prop, content-derived media identity, this
+brake, per-generation dash cleanup) should have driven the rate to zero. Seeing this
+event means something upstream is still churning identity — a caller re-creating a
+`play` literal every render, or a new field leaking into the identity derivation.
+Start from `frozenKey` vs. `rejectedKey`: what differs between them is what is
+churning.
+
+### Why the dash cleanup fix is a prerequisite, not a sibling
+
+Task 4 (`VideoPlayer` cleaning up **every** `<dash-video>` generation, not just the
+first) has to land **before or with** the brake, never after.
+
+A frozen key means new content arrives by **prop change** rather than by remount. So
+`mediaUrl` moves, the `<dash-video>` element's own React key changes, and the element
+is replaced **without `VideoPlayer` unmounting** — precisely the case Task 4 fixes.
+With the old `[]`-deps cleanup effect, the freeze would have been actively harmful:
+every frozen-key content swap would strand a live dash.js `MediaPlayer` still fetching
+segments, with no `disconnectedCallback` to reap it. That is the same leak that
+produced the doubled audio in the incident, and the brake would have manufactured
+more of it.
 
 ---
 

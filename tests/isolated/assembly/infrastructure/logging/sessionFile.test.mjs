@@ -302,6 +302,125 @@ describe('SessionFileTransport', () => {
       }
     });
 
+    // media/logs is the sanctioned home for heavy logs, and it holds more than
+    // logs: pose recordings, a camera event archive, .events telemetry, .webm
+    // captures, loose screenshots. A recursive pruner that goes by extension
+    // alone would delete other features' data.
+    describe('nested layouts', () => {
+      const aged = (file) => {
+        const old = Date.now() - 30 * 24 * 60 * 60 * 1000;
+        fs.utimesSync(file, new Date(old), new Date(old));
+      };
+      const write = (rel, contents) => {
+        const file = path.join(tmpDir, rel);
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, contents);
+        aged(file);
+        return file;
+      };
+
+      // What the transport itself writes: one dispatcher event per line.
+      const SESSION_LINE = JSON.stringify({
+        ts: '2026-07-01T10:00:00.000Z', level: 'info', event: 'piano.video.open',
+        data: {}, context: { app: 'piano-kiosk', sessionLog: true },
+      }) + '\n';
+
+      test('prunes an aged session log one directory deeper than the app dir', () => {
+        const nested = write('piano-kiosk/2026-07-01/2026-07-01T10-00-00.jsonl', SESSION_LINE);
+
+        initSessionFileTransport({ baseDir: tmpDir, maxAgeDays: 14 });
+
+        expect(fs.existsSync(nested)).toBe(false);
+      });
+
+      test('leaves a nested session log that is still inside the window', () => {
+        const file = path.join(tmpDir, 'piano-kiosk/2026-07-01/fresh.jsonl');
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, SESSION_LINE);
+
+        initSessionFileTransport({ baseDir: tmpDir, maxAgeDays: 14 });
+
+        expect(fs.existsSync(file)).toBe(true);
+      });
+
+      // Real prod data: media/logs/poses/<date>/*.jsonl, pose-estimation
+      // recordings that happen to share the extension AND the filename shape.
+      test('leaves nested .jsonl that another feature owns (pose recordings)', () => {
+        const poses = write(
+          'poses/2026-03-04/2026-03-04T06-11-23.jsonl',
+          '{"type":"session_start","ts":1772604739323,"backend":"cpu"}\n',
+        );
+
+        initSessionFileTransport({ baseDir: tmpDir, maxAgeDays: 14 });
+
+        expect(fs.existsSync(poses), 'deleted a pose recording').toBe(true);
+      });
+
+      // Real prod data: media/logs/camera-archive/<camera>/<date>.jsonl.
+      test('leaves nested .jsonl that another feature owns (camera archive)', () => {
+        const archive = write(
+          'camera-archive/driveway-camera/2026-08-03.jsonl',
+          '{"ts":"2026-08-03T06:59:59.000Z","camera":"driveway-camera","labels":[]}\n',
+        );
+
+        initSessionFileTransport({ baseDir: tmpDir, maxAgeDays: 14 });
+
+        expect(fs.existsSync(archive), 'deleted a camera archive entry').toBe(true);
+      });
+
+      test('leaves files this transport does not write, whatever their age', () => {
+        const events = write('piano-kiosk/2026-07-01/input.events', 'anything\n');
+        const webm = write('brain/effect-audit/2026-07-01/clip.webm', 'binary\n');
+        const png = write('screenshot.png', 'binary\n');
+
+        initSessionFileTransport({ baseDir: tmpDir, maxAgeDays: 14 });
+
+        expect(fs.existsSync(events), 'deleted .events (a different transport, 30-day retention)').toBe(true);
+        expect(fs.existsSync(webm)).toBe(true);
+        expect(fs.existsSync(png), 'deleted a file sitting directly in the logs root').toBe(true);
+      });
+
+      test('removes files, never directories', () => {
+        write('piano-kiosk/2026-07-01/2026-07-01T10-00-00.jsonl', SESSION_LINE);
+
+        initSessionFileTransport({ baseDir: tmpDir, maxAgeDays: 14 });
+
+        expect(fs.existsSync(path.join(tmpDir, 'piano-kiosk/2026-07-01'))).toBe(true);
+        expect(fs.existsSync(path.join(tmpDir, 'piano-kiosk'))).toBe(true);
+      });
+
+      // An unbounded walk over a media directory is its own hazard.
+      test('stops at two directory levels below the root', () => {
+        const tooDeep = write('piano-kiosk/2026-07-01/extra/2026-07-01T10-00-00.jsonl', SESSION_LINE);
+
+        initSessionFileTransport({ baseDir: tmpDir, maxAgeDays: 14 });
+
+        expect(fs.existsSync(tooDeep)).toBe(true);
+      });
+
+      test('does not follow a symlinked directory out of the tree', () => {
+        const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'outside-'));
+        const victim = path.join(outside, '2026-07-01T10-00-00.jsonl');
+        fs.writeFileSync(victim, SESSION_LINE);
+        aged(victim);
+        fs.mkdirSync(path.join(tmpDir, 'piano-kiosk'), { recursive: true });
+        fs.symlinkSync(outside, path.join(tmpDir, 'piano-kiosk', 'elsewhere'), 'dir');
+
+        initSessionFileTransport({ baseDir: tmpDir, maxAgeDays: 14 });
+
+        expect(fs.existsSync(victim), 'followed a symlink out of the log tree').toBe(true);
+        fs.rmSync(outside, { recursive: true, force: true });
+      });
+
+      test('still prunes the flat app-dir layout it always did', () => {
+        const flat = write('fitness/2026-07-01T10-00-00.jsonl', SESSION_LINE);
+
+        initSessionFileTransport({ baseDir: tmpDir, maxAgeDays: 14 });
+
+        expect(fs.existsSync(flat)).toBe(false);
+      });
+    });
+
     test('resetSessionFileTransport stops the prune timer', () => {
       vi.useFakeTimers();
       try {

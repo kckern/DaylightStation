@@ -3,14 +3,10 @@ import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import { PlayerOverlayLoading } from './PlayerOverlayLoading.jsx';
 
-// playbackLog and buildMediaDiagnostics are not relevant to the at-duration
-// suppression check — silence them to keep the test focused on the visible
-// surface.
+// playbackLog is not relevant to the at-duration suppression check — silence it
+// to keep the test focused on the visible surface. (The mediaDiagnostics mock
+// that used to sit here went with the dead diagnostics poll, 2026-08-16.)
 vi.mock('../lib/playbackLogger.js', () => ({ playbackLog: vi.fn() }));
-vi.mock('../lib/mediaDiagnostics.js', () => ({
-  buildMediaDiagnostics: () => ({}),
-  EMPTY_MEDIA_DIAGNOSTICS: {}
-}));
 
 const baseProps = {
   shouldRender: true,

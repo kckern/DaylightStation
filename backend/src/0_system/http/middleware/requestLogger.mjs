@@ -2,95 +2,121 @@
  * Request Logger Middleware
  * @module infrastructure/http/middleware/requestLogger
  *
- * Logs HTTP requests and responses.
+ * Logs one `http.response` line per request, from `res.on('finish')`.
+ *
+ * WHY 'finish' AND NOT res.json: this middleware existed before the
+ * 2026-08-16 remount storm, and would have missed it even had it been mounted
+ * globally — it wrapped `res.json`, while both hot paths of that incident end
+ * in `res.redirect` (the Plex stream mint) and `proxyRes.pipe` (the media
+ * passthrough). A response logger that only sees JSON is not a response
+ * logger. The 'finish' event fires once the response is fully written,
+ * whatever wrote it.
+ *
+ * Request bodies are never logged. They carry credentials, meal photos and
+ * children's schoolwork, and no question worth asking of a log needs them.
  */
 
 import { createLogger } from '../../logging/logger.mjs';
 
-const logger = createLogger({ source: 'http', app: 'middleware' });
+const defaultLogger = createLogger({ source: 'http', app: 'middleware' });
+
+/**
+ * Successful responses are budgeted: this runs on every request in the system,
+ * and an unbounded line per request would swamp the log it is written into. In
+ * a storm the per-minute aggregate is the diagnosis anyway.
+ */
+const DEFAULT_MAX_PER_MINUTE = 30;
+
+/**
+ * Low-cardinality grouping for the aggregate.
+ *
+ * The sampler buckets string fields but keeps at most 20 distinct values per
+ * field before collapsing the rest into `__other__`, and raw paths carry ids
+ * (`/proxy/plex/stream/694719`), so an aggregate keyed on `path` would be
+ * almost entirely `__other__` — the storm's shape lost precisely when it
+ * matters. The first two segments are stable enough to count.
+ *
+ * @param {string} p
+ * @returns {string}
+ */
+function routeGroup(p) {
+  const parts = String(p || '/').split('/').filter(Boolean).slice(0, 2);
+  return parts.length ? `/${parts.join('/')}` : '/';
+}
 
 /**
  * Create request logger middleware
  * @param {Object} options
- * @param {boolean} [options.logBody=false] - Whether to log request body
+ * @param {Object} [options.logger] - injected logger (defaults to the module's)
+ * @param {number} [options.maxPerMinute] - budget for successful responses
  * @returns {Function} Express middleware
  */
 export function requestLoggerMiddleware(options = {}) {
-  const { logBody = false } = options;
+  const { logger = defaultLogger, maxPerMinute = DEFAULT_MAX_PER_MINUTE } = options;
 
   return (req, res, next) => {
     const startTime = Date.now();
+    let recorded = false;
 
-    // Log request
-    const requestLog = {
-      traceId: req.traceId,
-      method: req.method,
-      path: req.path,
-      query: Object.keys(req.query).length > 0 ? req.query : undefined,
-    };
+    const record = () => {
+      // 'close' fires after 'finish' on a normal response, so without this
+      // guard every line in the system would appear twice.
+      if (recorded) return;
+      recorded = true;
 
-    if (logBody && req.body) {
-      // Sanitize sensitive data
-      requestLog.body = sanitizeBody(req.body);
-    }
+      // A response the client walked away from never reaches 'finish'. That is
+      // the shape a remount storm produces by the hundred — abandoned in-flight
+      // media requests — and hooking only 'finish' would have left the log
+      // saying it did not happen.
+      const aborted = !res.writableEnded;
 
-    logger.debug('http.request', requestLog);
-
-    // Capture response
-    const originalJson = res.json.bind(res);
-    res.json = (body) => {
-      const duration = Date.now() - startTime;
-
-      logger.info('http.response', {
-        traceId: req.traceId,
+      const data = {
         method: req.method,
+        // Mount-relative, and deliberately without the query string: session
+        // ids and tokens ride in query params and have no business here.
         path: req.path,
+        route: routeGroup(req.path),
         status: res.statusCode,
-        durationMs: duration,
-      });
+        // Read THIS in an aggregate, not `status` — the sampler sums numbers,
+        // so an aggregated `status` is a sum of status codes and means nothing.
+        statusClass: `${Math.floor(res.statusCode / 100)}xx`,
+        durationMs: Date.now() - startTime,
+        // null, not absent: "the client sent no User-Agent" is a fact, and a
+        // missing field would be indistinguishable from a field never captured.
+        userAgent: req.headers['user-agent'] ?? null,
+        // WHICH device. All frontend traffic arrives from the docker network,
+        // so `path`+`status`+`ip` cannot tell the garage fitness kiosk from the
+        // piano tablet — on 2026-08-16 that conflation sent the investigation
+        // after the wrong screen. Stamped by deviceResolver (4_api).
+        deviceId: req.deviceId ?? null,
+        // Reading `deviceId` without this is a mistake: the value is a declared
+        // device id in one case and a User-Agent string in another.
+        //   'header'     the client sent X-Daylight-Device
+        //   'user-agent' it did not; deviceId is the UA, which separates
+        //                Shield WebView / tablet Chromium / garage Firefox but
+        //                not two identical kiosks
+        //   'none'       neither; deviceId is null
+        //   'unresolved' deviceResolver did not run for this request — the
+        //                request was NOT anonymous, we simply did not look
+        deviceIdSource: req.deviceIdSource ?? 'unresolved',
+        aborted,
+      };
 
-      return originalJson(body);
+      // Failures skip the budget entirely. A 500 storm sampled away is exactly
+      // the class of blindness this is here to remove. An abandoned request
+      // counts as one: hundreds of them is the storm.
+      if (res.statusCode >= 400 || aborted) {
+        logger.warn('http.response', data);
+      } else {
+        logger.sampled('http.response', data, { maxPerMinute });
+      }
     };
+
+    res.on('finish', record);
+    res.on('close', record);
 
     next();
   };
-}
-
-/**
- * Sanitize body for logging
- * @param {Object} body
- * @returns {Object}
- */
-function sanitizeBody(body) {
-  if (!body || typeof body !== 'object') {
-    return body;
-  }
-
-  const sanitized = { ...body };
-
-  // Remove/truncate potentially large or sensitive fields
-  const sensitiveFields = ['photo', 'voice', 'document', 'audio', 'video', 'sticker'];
-  const truncateFields = ['text', 'caption'];
-
-  for (const field of sensitiveFields) {
-    if (sanitized[field]) {
-      sanitized[field] = '[REDACTED]';
-    }
-    if (sanitized.message?.[field]) {
-      sanitized.message = { ...sanitized.message, [field]: '[REDACTED]' };
-    }
-  }
-
-  for (const field of truncateFields) {
-    if (sanitized[field] && typeof sanitized[field] === 'string' && sanitized[field].length > 100) {
-      sanitized[field] = sanitized[field].slice(0, 100) + '...';
-    }
-    if (sanitized.message?.[field] && typeof sanitized.message[field] === 'string' && sanitized.message[field].length > 100) {
-      sanitized.message = { ...sanitized.message, [field]: sanitized.message[field].slice(0, 100) + '...' };
-    }
-  }
-
-  return sanitized;
 }
 
 export default requestLoggerMiddleware;

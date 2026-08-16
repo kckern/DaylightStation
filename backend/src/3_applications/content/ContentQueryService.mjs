@@ -357,9 +357,21 @@ export class ContentQueryService {
       // frontend can merge-sort batches as they arrive. Additive field —
       // the event shape is otherwise unchanged. Items within a batch are
       // pre-sorted by score for consumers that render batches as-is.
+      //
+      // A zero score means the item matched no part of the query. Streaming it
+      // anyway is how a source that ignores the search term (returning its
+      // newest N regardless) fills the result list with noise, so drop those
+      // here rather than making every consumer re-derive the same judgement.
       items = items
         .map(item => ({ ...item, score: RelevanceScoringService.score(item, query.text) }))
+        .filter(item => !query.text || item.score > 0)
         .sort((a, b) => b.score - a.score);
+
+      // A batch can empty out entirely once non-matches are dropped; say
+      // nothing rather than yielding an empty results event.
+      if (items.length === 0) {
+        continue;
+      }
 
       yield {
         event: 'results',
@@ -539,7 +551,18 @@ export class ContentQueryService {
       const rest = items.filter(i => !i._idMatch);
       items = idMatch ? [idMatch, ...this.#shuffle(rest)] : this.#shuffle(items);
     } else if (!query.sort || query.sort === 'relevance') {
-      // Sort by relevance - containers first, then artists, then tracks
+      // Relevance floor. Adapters answer a text search with whatever they have
+      // — some ignore the term entirely and return their newest N — so without
+      // this, a query matching nothing still renders a full page of results and
+      // "we found nothing" is indistinguishable from "here are your matches".
+      // Only applies when there IS text to match against; an empty query is a
+      // browse and every item legitimately belongs.
+      if (query.text) {
+        items = items.filter(item =>
+          item._idMatch || RelevanceScoringService.matches(item, query.text)
+        );
+      }
+      // Sort by match quality, with category breaking ties
       items = this.#sortByRelevance(items, query.text);
     }
 

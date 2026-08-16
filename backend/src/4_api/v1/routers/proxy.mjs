@@ -262,20 +262,61 @@ export function createProxyRouter(config) {
   router.get('/plex/stream/:ratingKey', asyncHandler(async (req, res) => {
     const { ratingKey } = req.params;
     const startOffset = parseInt(req.query.offset) || 0;
+    // The client session, threaded through to Plex. It arrives as a QUERY PARAM
+    // and not a header because this request is issued by the <video>/dash
+    // element itself, and a media element cannot be given custom headers — the
+    // play response puts it in the url for exactly this reason.
+    //
+    // Until 2026-08-16 nothing in the backend read it, so PlexAdapter fell
+    // through to a fresh random identifier on every request and Plex logged 495
+    // distinct clients where there was one tablet retrying.
+    const session = typeof req.query.session === 'string' && req.query.session ? req.query.session : null;
+
     const adapter = registry.get('plex');
     if (!adapter) {
+      logger.warn?.('plex.stream.mint-skipped', { ratingKey, startOffset, session, reason: 'no-plex-adapter' });
       return res.status(404).json({ error: 'Plex adapter not configured' });
     }
 
-    const result = await adapter.getMediaUrl(ratingKey, { startOffset });
+    const result = await adapter.getMediaUrl(ratingKey, { startOffset, session });
     const mediaUrl = result?.url ?? null;
     if (!mediaUrl) {
+      logger.warn?.('plex.stream.mint-failed', { ratingKey, startOffset, session, reason: result?.reason ?? null });
       return res.status(404).json({
         error: 'Could not generate stream URL',
         ratingKey,
         reason: result?.reason
       });
     }
+
+    // Every call here starts a Plex transcode session, and until now the whole
+    // route logged nothing on success. Budgeted rather than unbounded: in a
+    // storm the aggregate is the diagnosis, and it must not be drowned by the
+    // very flood it is describing —
+    //   plex.stream.mint.aggregated {sampledCount: 20, skippedCount: 475,
+    //                                aggregated: {ratingKey: {"694719": 495}}}
+    // The -failed and -skipped variants above exist so that the absence of a
+    // mint line means something definite rather than "we did not look".
+    //
+    // Both identities go on the line. `session` is byte-for-byte what the client
+    // sent, which joins to the frontend's own mint line;
+    // `plexClientIdentifier` is what Plex records as X-Plex-Client-Identifier,
+    // which joins to Plex's server log. They are deterministically related but
+    // not equal — the second is the first made safe for a Plex url — so a line
+    // carrying only one of them is joinable in only one direction.
+    //
+    // null means the caller sent no session, and therefore that this request
+    // opened a transcode session under a fresh random identity. A run of nulls
+    // here IS the 2026-08-16 failure, stated directly.
+    logger.sampled?.('plex.stream.mint', {
+      ratingKey,
+      startOffset,
+      session,
+      plexClientIdentifier: typeof adapter.resolveClientIdentifier === 'function'
+        ? adapter.resolveClientIdentifier(session)
+        : null,
+    }, { maxPerMinute: 20 });
+
     res.redirect(mediaUrl);
   }));
 
