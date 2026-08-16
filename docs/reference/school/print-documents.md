@@ -524,6 +524,40 @@ record — recover with `release-card`. Accepted at household scale.
   it writes nothing to the allocation store: the store's identical-reprint
   shortcut returns the existing live record untouched.
 - `release-card <cardId> [--rows a-b]` — allocation housekeeping.
+- `list-cards [--status <s>] [--older-than <Nd>]` — every allocation record
+  across every card, flattened. The read that makes `release-card` usable:
+  before it, releasing a stranded card required already knowing its id.
+- `audit [--status <s>]` — read-only integrity check over the same allocation
+  store, for CI or cron. It walks every record and reports:
+
+  | Check | Meaning | Severity |
+  |---|---|---|
+  | `missing-published-revision` | `published/<documentId>@<rev>.yml` is not on disk — the record can never be reprinted and a scan of it can never resolve | `error` for a `live` record, `warn` otherwise |
+  | `missing-derived-bank` | the published revision has inline OMR questions whose choice text lives only in the bank, but no derived bank exists | `error` for `live`, `warn` otherwise; `info` when it cannot be determined |
+  | `missing-bank-select-bank` | a bank-select block names a catalog bank that no longer resolves | `error` for `live`, `warn` otherwise |
+  | `unresolved-row-items` | a record's frozen `rowItems` mapping references item ids absent from the resolved bank, so those rows cannot be graded | `error` for `live`, `warn` otherwise |
+  | `overlapping-live-rows` | two `live` records on one card claim the same rows — the store's `checkCollision` refuses this on write, so a hit means file drift | `error` |
+
+  **A missing derived bank is not automatically a fault.** A bank-select
+  document keeps its answers in the external catalog bank and legitimately
+  mints none (`publishQuestion` passes a `select` block through untouched, so
+  `publishDocument` returns `bank: null`), and `mergeBank` picks those items up
+  from `prepareV2Document`'s `extraItems` rather than from the repository. The
+  audit only reports the absence when the published revision carries an INLINE
+  `omr_response` question — whose choice text exists nowhere but the bank — and
+  drops to `info` when the answer-free published document cannot settle it.
+
+  `unresolved-row-items` asks whether an id still exists anywhere the resolver
+  can reach, not whether the seeded selection would pick it again: re-deriving
+  the selection keys off `bank.items.length` and would report a false positive
+  for any bank that has since gained or lost an unrelated item.
+
+  Exit code is 1 only when something at `error` severity is found, 0 otherwise.
+  It calls `listCardIds`/`findByCard`/`getPublished`/`getDerivedBank` and
+  nothing else — it never allocates, releases, or updates a status. Revisions
+  are always looked up at the record's exact `rev`; `getPublished(id)` with no
+  rev resolves to the LATEST revision, which would turn every orphan into a
+  false pass.
 
 `node cli/school-atlas-sim.cli.mjs --out <directory>` is the file-only Atlas
 lifecycle proof. It builds Milo's and Felix's real agendas, scans Milo's agenda

@@ -77,6 +77,14 @@
  * lifecycle housekeeping — `YamlAllocationStore#release`, against the same
  * content-root-rooted store `render`'s card flags use. Prints the records it
  * released (empty array when nothing was `live`).
+ *
+ * `audit` is the INTEGRITY read that pairs with `list-cards`: it walks every
+ * allocation record and reports the ones whose referenced artifacts are gone
+ * (a published revision that no longer exists on disk, a row→item mapping
+ * whose ids no longer resolve, two live records claiming the same rows). It
+ * is strictly read-only — no allocate/release/updateStatus, nothing written —
+ * and exits non-zero only when it finds something at `error` severity, so it
+ * can gate CI or run from cron without a warn-level blemish paging anyone.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -90,6 +98,7 @@ import { PublishPrintDocument } from '#apps/school/documents/PublishPrintDocumen
 import { buildReprintContext } from '#apps/school/documents/reprintContext.mjs';
 import { YamlPrintDocumentRepository } from '#adapters/school/documents/YamlPrintDocumentRepository.mjs';
 import { YamlAllocationStore } from '#adapters/school/documents/YamlAllocationStore.mjs';
+import { rangesOverlap } from '#domains/school/documents/allocation.mjs';
 import { SAFE_WORKSHEET_INSTANCE_ID } from '#adapters/persistence/yaml/YamlWorksheetInstanceStore.mjs';
 
 const EXIT_OK = 0;
@@ -122,6 +131,7 @@ const RENDER_FLAGS = new Set([
 ]);
 const RELEASE_CARD_FLAGS = new Set([...COMMON_FLAGS, 'rows']);
 const LIST_CARDS_FLAGS = new Set([...COMMON_FLAGS, 'status', 'older-than']);
+const AUDIT_FLAGS = new Set([...COMMON_FLAGS, 'status']);
 const REPRINT_FLAGS = new Set([...COMMON_FLAGS, 'out']);
 
 const HELP = `school-docs — validate and proof-render School print-document source YAML
@@ -132,6 +142,7 @@ Usage:
   school-docs.cli.mjs render <file> --out <pdf> [options]
   school-docs.cli.mjs release-card <cardId> [options]
   school-docs.cli.mjs list-cards [options]
+  school-docs.cli.mjs audit [options]
   school-docs.cli.mjs reprint <instanceId> --out <pdf>
 
 Commands:
@@ -150,6 +161,13 @@ Commands:
                          release-card never had (admin advocacy A5: stranded
                          live cards were a documented leak with no tool to
                          find them). Filter with --status / --older-than.
+  audit                  read-only integrity check over the same allocation
+                         store list-cards reads: reports records whose
+                         published revision is gone, whose derived bank is
+                         missing when the document actually needed one, whose
+                         frozen rowItems no longer resolve to a bank item, and
+                         cards carrying two overlapping live row ranges.
+                         Exits 1 only on an error-severity finding.
   reprint <instanceId>   reproduce an exact historical print from a
                          persisted worksheet-instance file — same learner
                          name, date, card number, row range, question
@@ -184,7 +202,8 @@ Options:
                          mutually exclusive with --card
   --start-row <n>        (render) first physical row to allocate (default 1);
                          only meaningful alongside --card or --fresh-card
-  --status <s>            (list-cards) only records with this status (e.g. live)
+  --status <s>            (list-cards/audit) only records with this status
+                         (e.g. live)
   --older-than <Nd>       (list-cards) only records rendered more than N days ago
   --rows <a-b>            (release-card) release only rows a..b (inclusive);
                          omitted releases every live record on the card
@@ -783,6 +802,278 @@ export async function runListCards({ status = null, olderThanDays = null, paths,
   }
 }
 
+// ── audit (integrity read) ─────────────────────────────────────────────────
+
+/** Severity ladder, worst first — `error` is the only one that fails the exit code. */
+const AUDIT_SEVERITIES = ['error', 'warn', 'info'];
+
+/**
+ * Severity for a finding about a record that references a MISSING artifact.
+ *
+ * A `live` record is a real sheet in the filing cabinet that a child can still
+ * hand in: nothing can grade it, so that is an `error` and the command exits
+ * non-zero. Every other status (`released`/`superseded`/`satisfied`) is a
+ * retired record — worth surfacing, never worth failing a cron job over.
+ */
+function severityForRecord(record) {
+  return record.status === 'live' ? 'error' : 'warn';
+}
+
+/** Depth-first walk over a document's block tree (`question` and `inset` both nest `blocks`). */
+function walkBlocks(blocks, visit) {
+  if (!Array.isArray(blocks)) return;
+  for (const block of blocks) {
+    if (!block || typeof block !== 'object') continue;
+    visit(block);
+    walkBlocks(block.blocks, visit);
+  }
+}
+
+function hasBlockOfType(block, type) {
+  let found = false;
+  walkBlocks([block], (node) => { if (node.type === type) found = true; });
+  return found;
+}
+
+/**
+ * Splits a PUBLISHED document's top-level questions into the two kinds that
+ * decide whether a missing derived bank is a fault at all.
+ *
+ * A `question` can never nest (`blocks.mjs` bans one inside another question
+ * or inside an `inset`), so top level is the whole population.
+ *
+ * - BANK-SELECT (`select` present): passes through `publishDocument`
+ *   UNTOUCHED (`publishQuestion` returns it as-is) and mints NO derived-bank
+ *   item. Its answers live in the external catalog bank the block names, and
+ *   `mergeBank` picks them up from `prepareV2Document`'s `extraItems`, not
+ *   from `#resolvePublishedBank`. A bank-select-only document therefore
+ *   legitimately has no derived bank on disk.
+ * - INLINE-OMR (no `select`, contains an `omr_response`): its choice TEXT
+ *   lives only in the bank — `#resolvePublishedBank`'s own docstring — so a
+ *   published revision carrying one and no derived bank cannot be graded.
+ */
+function classifyPublishedQuestions(document) {
+  const top = Array.isArray(document?.blocks) ? document.blocks : [];
+  const questions = top.filter((block) => block && block.type === 'question');
+  const bankSelect = questions.filter((block) => block.select !== undefined);
+  const inline = questions.filter((block) => block.select === undefined);
+  return {
+    bankSelect,
+    inlineOmr: inline.filter((block) => hasBlockOfType(block, 'omr_response')),
+    /**
+     * Inline content that MIGHT have minted a bank item — `publishDocument`
+     * mints from `matching`/`cloze`/`short_answer` sugar and from a
+     * `trueFalse` question too — but whose answer was stripped at publish
+     * time, so the answer-free published document cannot prove it either way.
+     * Drives an `info`, never an `error`.
+     */
+    maybeAnswerBearing: top.some((block) => hasBlockOfType(block, 'matching')
+      || hasBlockOfType(block, 'cloze')
+      || hasBlockOfType(block, 'short_answer'))
+      || inline.some((block) => block.trueFalse === true),
+  };
+}
+
+/**
+ * Every item id a scan of this revision could still resolve: the derived
+ * bank's own minted items PLUS every item of every external bank a
+ * bank-select block names.
+ *
+ * ALL items of the external bank, not the seeded SELECTION: `rowItems` froze
+ * one particular selection at print time, and re-deriving it here (via
+ * `deriveShuffle`, which keys off `bank.items.length`) would report a false
+ * "unresolved" for any bank that has since gained or lost an unrelated item.
+ * The question this check asks is narrower and drift-proof — "does this id
+ * still exist anywhere the resolver can reach?" — which is exactly the
+ * condition under which a row genuinely cannot be graded.
+ */
+function resolvableItemIds(document, derivedBank, banks) {
+  const ids = new Set();
+  const missingBanks = [];
+  for (const item of derivedBank?.items ?? []) {
+    if (item && typeof item.id === 'string') ids.add(item.id);
+  }
+  for (const block of classifyPublishedQuestions(document).bankSelect) {
+    let bank = null;
+    try {
+      bank = banks.getBank(block.bankId);
+    } catch {
+      bank = null;
+    }
+    if (!bank || !Array.isArray(bank.items)) {
+      missingBanks.push(block.bankId);
+      continue;
+    }
+    for (const item of bank.items) {
+      if (item && typeof item.id === 'string') ids.add(item.id);
+    }
+  }
+  return { ids, missingBanks };
+}
+
+/**
+ * `audit` — the read that would have caught the orphan nobody was told about:
+ * an allocation record pinned to a published revision that does not exist on
+ * disk, so the card can never be reprinted and a scan of it can never resolve.
+ *
+ * STRICTLY READ-ONLY. It calls only `listCardIds`/`findByCard` on the
+ * allocation store and `getPublished`/`getDerivedBank` on the repository, plus
+ * the catalog bank reader. Nothing here allocates, releases or updates a
+ * status — an integrity check that repaired what it found would destroy the
+ * evidence of how the drift happened.
+ *
+ * EXACT REV, NEVER LATEST: `getPublished(id, undefined)` resolves to the most
+ * recently written revision for `id`, which would turn every orphan into a
+ * false pass (the pokemon quiz that motivated this has a perfectly healthy
+ * LATEST rev and a dead pinned one). The rev off the record is always passed
+ * through, and a null return is treated as missing.
+ *
+ * @param {{status?: string|null, paths: {dataDir: string, contentRoot: string,
+ *   sourceRoot: string}}} args
+ * @returns {Promise<{ok: boolean, mode: 'audit',
+ *   scanned: {cards: number, records: number},
+ *   counts: {error: number, warn: number, info: number},
+ *   findings: object[], errors: string[]}>} `ok` is the CI gate: true when no
+ *   `error`-severity finding was raised and the walk itself did not fail.
+ *   Warn/info findings are reported but never fail the exit code.
+ */
+export async function runAudit({ status = null, paths } = {}) {
+  const allocationStore = new YamlAllocationStore({ directory: paths.contentRoot });
+  const repository = openRepository(paths);
+  const banks = createYamlBankReader({ dataDir: paths.dataDir });
+
+  const findings = [];
+  const scanned = { cards: 0, records: 0 };
+  const add = (severity, check, record, cardId, detail, extra = {}) => {
+    findings.push({
+      severity,
+      check,
+      cardId,
+      recordId: record?.recordId ?? null,
+      status: record?.status ?? null,
+      documentId: record?.documentId ?? null,
+      rev: record?.rev === undefined || record?.rev === null ? null : String(record.rev),
+      detail,
+      ...extra,
+    });
+  };
+
+  try {
+    for (const cardId of await allocationStore.listCardIds()) {
+      scanned.cards += 1;
+      // eslint-disable-next-line no-await-in-loop
+      const all = await allocationStore.findByCard(cardId);
+      const records = status === null ? all : all.filter((record) => record.status === status);
+      scanned.records += records.length;
+
+      // CHECK 4 — two live records claiming the same physical rows.
+      // `YamlAllocationStore.allocate` already refuses this on write
+      // (`checkCollision`), so a hit here means the FILE drifted out from
+      // under the guard (a hand edit, a merge, a partial restore) rather than
+      // a code path that can produce it. Always `error`: both sheets are out
+      // there and a scan of the overlap cannot say which record it belongs to.
+      const live = records.filter((record) => record.status === 'live');
+      for (let i = 0; i < live.length; i += 1) {
+        for (let j = i + 1; j < live.length; j += 1) {
+          if (!rangesOverlap(live[i].rowRange, live[j].rowRange)) continue;
+          add('error', 'overlapping-live-rows', live[i], cardId,
+            `live rows ${live[i].rowRange.start}-${live[i].rowRange.end} overlap live record `
+            + `'${live[j].recordId}' (rows ${live[j].rowRange.start}-${live[j].rowRange.end}) on the same card`,
+            { otherRecordId: live[j].recordId });
+        }
+      }
+
+      for (const record of records) {
+        const rev = record.rev === undefined || record.rev === null ? null : String(record.rev);
+        if (!rev) {
+          add(severityForRecord(record), 'missing-published-revision', record, cardId,
+            'record pins no rev at all, so no published revision can ever be resolved for it');
+          continue;
+        }
+
+        // CHECK 1 — the orphan class. Exact rev; a null return is missing,
+        // never a cue to fall back to the latest revision.
+        let published = null;
+        try {
+          published = await repository.getPublished(record.documentId, rev); // eslint-disable-line no-await-in-loop
+        } catch (error) {
+          published = null;
+          add(severityForRecord(record), 'missing-published-revision', record, cardId,
+            `published/${record.documentId}@${rev}.yml could not be read: ${error?.message ?? String(error)}`);
+          continue;
+        }
+        if (!published) {
+          add(severityForRecord(record), 'missing-published-revision', record, cardId,
+            `published/${record.documentId}@${rev}.yml does not exist; this record can never be `
+            + 'reprinted and a scan of it can never resolve');
+          continue;
+        }
+
+        let derivedBank = null;
+        try {
+          derivedBank = await repository.getDerivedBank(record.documentId, rev); // eslint-disable-line no-await-in-loop
+        } catch (error) {
+          derivedBank = null;
+          add('info', 'missing-derived-bank', record, cardId,
+            `derived-banks/${record.documentId}@${rev}.yml could not be read: ${error?.message ?? String(error)}`);
+        }
+
+        // CHECK 2 — a missing derived bank, reported ONLY when the document
+        // actually needed one. See `classifyPublishedQuestions`.
+        if (!derivedBank) {
+          const shape = classifyPublishedQuestions(published);
+          if (shape.inlineOmr.length > 0) {
+            add(severityForRecord(record), 'missing-derived-bank', record, cardId,
+              `published revision has ${shape.inlineOmr.length} inline OMR question(s) whose choice text `
+              + `lives only in the bank, but derived-banks/${record.documentId}@${rev}.yml does not exist`);
+          } else if (shape.bankSelect.length === 0 && shape.maybeAnswerBearing) {
+            add('info', 'missing-derived-bank', record, cardId,
+              'no derived bank on disk and no bank-select block to explain it; the published document is '
+              + 'answer-free by construction, so whether this revision minted a bank cannot be determined here');
+          }
+        }
+
+        // CHECK 3 — the frozen row→item mapping still resolves.
+        const { ids, missingBanks } = resolvableItemIds(published, derivedBank, banks);
+        for (const bankId of missingBanks) {
+          add(severityForRecord(record), 'missing-bank-select-bank', record, cardId,
+            `bank-select block references catalog bank '${bankId}', which does not resolve`);
+        }
+        const rowItems = Array.isArray(record.rowItems) ? record.rowItems : [];
+        const unresolved = rowItems.filter((entry) => !ids.has(entry?.itemId));
+        if (unresolved.length > 0) {
+          add(severityForRecord(record), 'unresolved-row-items', record, cardId,
+            `${unresolved.length} of ${rowItems.length} printed row(s) reference item ids absent from the `
+            + `resolved bank: ${unresolved.map((entry) => `row ${entry.row} -> '${entry.itemId}'`).join(', ')}`,
+            { rows: unresolved.map((entry) => entry.row) });
+        }
+      }
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      mode: 'audit',
+      scanned,
+      counts: { error: 0, warn: 0, info: 0 },
+      findings: [],
+      errors: [error?.message ?? String(error)],
+    };
+  }
+
+  findings.sort((a, b) => AUDIT_SEVERITIES.indexOf(a.severity) - AUDIT_SEVERITIES.indexOf(b.severity)
+    || String(a.cardId).localeCompare(String(b.cardId))
+    || String(a.recordId).localeCompare(String(b.recordId))
+    || a.check.localeCompare(b.check));
+  const counts = {
+    error: findings.filter((f) => f.severity === 'error').length,
+    warn: findings.filter((f) => f.severity === 'warn').length,
+    info: findings.filter((f) => f.severity === 'info').length,
+  };
+  return {
+    ok: counts.error === 0, mode: 'audit', scanned, counts, findings, errors: [],
+  };
+}
+
 export async function runReleaseCard({ cardId, rows, paths }) {
   const allocationStore = new YamlAllocationStore({ directory: paths.contentRoot });
   try {
@@ -874,13 +1165,13 @@ export async function runSchoolDocs(argv = [], deps = {}) {
     };
   }
 
-  const KNOWN_COMMANDS = new Set(['validate', 'publish', 'render', 'release-card', 'list-cards', 'reprint']);
+  const KNOWN_COMMANDS = new Set(['validate', 'publish', 'render', 'release-card', 'list-cards', 'audit', 'reprint']);
   if (!KNOWN_COMMANDS.has(subcommand)) {
     return usageResult([`Unknown command: ${subcommand}`]);
   }
 
   const allowedFlags = {
-    validate: VALIDATE_FLAGS, publish: PUBLISH_FLAGS, render: RENDER_FLAGS, 'release-card': RELEASE_CARD_FLAGS, 'list-cards': LIST_CARDS_FLAGS, reprint: REPRINT_FLAGS,
+    validate: VALIDATE_FLAGS, publish: PUBLISH_FLAGS, render: RENDER_FLAGS, 'release-card': RELEASE_CARD_FLAGS, 'list-cards': LIST_CARDS_FLAGS, audit: AUDIT_FLAGS, reprint: REPRINT_FLAGS,
   }[subcommand];
   const unknown = Object.keys(flags).filter((flag) => !allowedFlags.has(flag));
   if (unknown.length) {
@@ -922,6 +1213,16 @@ export async function runSchoolDocs(argv = [], deps = {}) {
     const report = await runListCards({
       status: flags.status !== undefined ? String(flags.status) : null,
       olderThanDays,
+      paths,
+    });
+    return { exitCode: report.ok ? EXIT_OK : EXIT_FAIL, report };
+  }
+
+  if (subcommand === 'audit') {
+    if (positional.length !== 0) return usageResult(['audit takes no positional arguments']);
+    if (flags.status === true) return usageResult(['--status needs a value']);
+    const report = await runAudit({
+      status: flags.status !== undefined ? String(flags.status) : null,
       paths,
     });
     return { exitCode: report.ok ? EXIT_OK : EXIT_FAIL, report };
@@ -1066,6 +1367,23 @@ export function formatSchoolDocsReport(report) {
       return `${lines.join('\n')}\n`;
     }
     return `FAILED\n${report.errors.map((e) => `  - ${e}`).join('\n')}\n`;
+  }
+
+  if (report.mode === 'audit') {
+    if (report.errors.length) {
+      return `FAILED\n${report.errors.map((e) => `  - ${e}`).join('\n')}\n`;
+    }
+    // One JSON line per finding, then a summary — the same shape `list-cards`
+    // prints, so the two reads pipe into the same tooling.
+    const lines = report.findings.map((finding) => JSON.stringify(finding));
+    lines.push(
+      `scanned ${report.scanned.cards} card${report.scanned.cards === 1 ? '' : 's'}, `
+      + `${report.scanned.records} record${report.scanned.records === 1 ? '' : 's'}`,
+      `${report.findings.length} finding${report.findings.length === 1 ? '' : 's'} `
+      + `(${report.counts.error} error, ${report.counts.warn} warn, ${report.counts.info} info)`,
+      report.ok ? 'OK' : 'FAILED',
+    );
+    return `${lines.join('\n')}\n`;
   }
 
   if (report.mode === 'release-card') {
