@@ -297,7 +297,25 @@ export function createProxyRouter(config) {
     //                                aggregated: {ratingKey: {"694719": 495}}}
     // The -failed and -skipped variants above exist so that the absence of a
     // mint line means something definite rather than "we did not look".
-    logger.sampled?.('plex.stream.mint', { ratingKey, startOffset, session }, { maxPerMinute: 20 });
+    //
+    // Both identities go on the line. `session` is byte-for-byte what the client
+    // sent, which joins to the frontend's own mint line;
+    // `plexClientIdentifier` is what Plex records as X-Plex-Client-Identifier,
+    // which joins to Plex's server log. They are deterministically related but
+    // not equal — the second is the first made safe for a Plex url — so a line
+    // carrying only one of them is joinable in only one direction.
+    //
+    // null means the caller sent no session, and therefore that this request
+    // opened a transcode session under a fresh random identity. A run of nulls
+    // here IS the 2026-08-16 failure, stated directly.
+    logger.sampled?.('plex.stream.mint', {
+      ratingKey,
+      startOffset,
+      session,
+      plexClientIdentifier: typeof adapter.resolveClientIdentifier === 'function'
+        ? adapter.resolveClientIdentifier(session)
+        : null,
+    }, { maxPerMinute: 20 });
 
     res.redirect(mediaUrl);
   }));

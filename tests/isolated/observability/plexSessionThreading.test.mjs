@@ -134,6 +134,23 @@ describe('proxy route → PlexAdapter', () => {
     expect(getMediaUrl).toHaveBeenCalledWith('694719', { startOffset: 900, session: instanceA });
   });
 
+  it('logs both identities, so the mint line joins in both directions', async () => {
+    const sampled = [];
+    const logger = { ...silentLogger, sampled: (event, data) => sampled.push({ event, data }) };
+    const plex = { getMediaUrl: async () => ({ url: 'http://plex.test/x.mpd' }), resolveClientIdentifier: sanitizePlexSessionId };
+    const app = express();
+    app.use('/proxy', createProxyRouter({ registry: { get: () => plex }, logger }));
+
+    await request(app).get(`/proxy/plex/stream/694719?session=${encodeURIComponent(instanceA)}`);
+
+    const mint = sampled.find((s) => s.event === 'plex.stream.mint');
+    // `session` joins to the frontend's mint line; `plexClientIdentifier` joins
+    // to Plex's server log. They are related but not equal, so a line with only
+    // one of them is joinable in only one direction.
+    expect(mint.data.session).toBe(instanceA);
+    expect(mint.data.plexClientIdentifier).toBe(sanitizePlexSessionId(instanceA));
+  });
+
   it('passes null when the media element carried no session', async () => {
     const getMediaUrl = vi.fn(async () => ({ url: 'http://plex.test/x.mpd' }));
 
