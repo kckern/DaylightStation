@@ -255,6 +255,14 @@ describe('previewFrameVars', () => {
     expect(previewFrameVars({ width: '1280', height: 'wide' })).toBeNull();
   });
 
+  it('rounds the box height to whole pixels', () => {
+    // Added after Task 2's review: every other numeric case divides evenly
+    // (720x0.75, 540x1, 800x0.75), so without this one, deleting Math.round
+    // from the implementation passes the whole suite green.
+    // 960/1366 = 0.7027818448023426; 768 x that = 539.7364469985359.
+    expect(previewFrameVars({ width: 1366, height: 768 })['--preview-box-height']).toBe('540px');
+  });
+
   it('exports the preview surface width the SCSS is written against', () => {
     expect(PREVIEW_WIDTH).toBe(960);
   });
@@ -556,6 +564,8 @@ git commit -m "refactor(admin-preview): drive the preview frame from CSS custom 
 **Files:**
 - Modify: `frontend/src/modules/Admin/Preview/AdminPreviewPlayer.jsx`
 - Test: `frontend/src/modules/Admin/Preview/AdminPreviewPlayer.test.jsx` (new)
+
+> **The `null` branch is a required render path, not an error path.** Confirmed during Task 2's review: `kitchen-eink.yml` and `upstairs-eink.yml` declare no top-level `resolution:` (their dimensions sit under `content:`), so `previewFrameVars` returns `null` for **2 of the 5 real screens**. Task 3's `usePreviewScreens` filters those out of the picker, and the `|| previewFrameVars(FALLBACK_SCREEN.resolution)` below is the second line of defence. Do not let a bare `null` reach the `style` prop — the SCSS defaults would silently take over, which is structurally how the original 1920x1080 bug got in.
 
 **Step 1: Write the failing test**
 
