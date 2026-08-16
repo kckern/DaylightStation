@@ -454,8 +454,11 @@ export function VideoPlayer({
   // storm lands in the aggregate, where the count is the diagnosis.
   const dashKeyInputsRef = useRef(null);
   const dashKeyLogger = useMemo(() => getLogger().child({ component: 'video-player-key' }), []);
+  // The deps are the key's three inputs rather than the object built from them,
+  // which is fresh on every render. Reading that object here is still exact: the
+  // effect runs on the render whose inputs changed, so it sees that render's values.
   useEffect(() => {
-    const next = { mediaUrl: mediaUrl || '', bitrate: media?.maxVideoBitrate ?? 'unlimited', elementKey };
+    const next = dashElementKeyInputs;
     const previous = dashKeyInputsRef.current;
     dashKeyInputsRef.current = next;
     // No baseline means this is the first element of the mount, which is not a
