@@ -35,7 +35,7 @@ export class WeatherFeedAdapter extends IFeedSourceAdapter {
 
   async fetchItems(query, _username) {
     try {
-      const data = this.#dataService.household.read('common/weather');
+      const data = this.#dataService.household.read('weather/current');
       if (!data?.current) return [];
 
       const current = data.current;
