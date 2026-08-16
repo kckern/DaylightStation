@@ -25,7 +25,7 @@ import { NamePlace } from './usecases/NamePlace.mjs';
 import { GetFuelStops } from './usecases/GetFuelStops.mjs';
 import { resolveServiceTypes } from '#domains/automotive/entities/serviceTypes.mjs';
 
-const DEFAULT_HISTORY_DIR = 'household/history/automotive';
+const DEFAULT_HISTORY_DIR = 'household/automotive/log';
 const DEFAULT_RECORDS_DIR = 'household/automotive';
 
 export class AutomotiveContainer {

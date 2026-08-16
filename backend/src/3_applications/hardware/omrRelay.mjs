@@ -11,7 +11,7 @@
 //
 //   2) PERSIST (bus → disk): a subscriber records completed reads to
 //      {dataDir}/{persistence.dir}/{id}/{YYYY-MM-DD}.yml
-//      (default dir: household/history/omr).
+//      (default dir: household/omr/log).
 //
 // THE RELAY DOES NOT SCORE. The OMR-1100 is a read-only mark detector: it has
 // no printer, no imprinter, and no grading mechanism, so it reports *which
@@ -48,7 +48,7 @@ import { DEFAULT_TIMEZONE } from '#domains/core/utils/timezone.mjs';
 
 const RELAY_SOURCE = 'omr-relay';
 const DEFAULT_TOPIC = 'omr';
-const DEFAULT_DIR = 'household/history/omr'; // relative to dataDir
+const DEFAULT_DIR = 'household/omr/log'; // relative to dataDir
 
 // Ingest discriminators we accept. Kept as a set (rather than an equality check)
 // to match the sibling relays' shape, so a future second board — or a renamed

@@ -10,14 +10,14 @@ import yaml from 'js-yaml';
  * can apply skip/mute/blur/etc. in real time:
  *   GET /:ratingKey?profile=family
  *     -> { edl, profile, override }
- * from data/household/shared/content-filter/{edl,profiles,overrides}/.
+ * from data/household/content-filter/{edl,profiles,overrides}/.
  *
  * ratingKey is the Plex rating key (contentId `plex:<ratingKey>`); it is
  * digit-sanitized to prevent path traversal.
  */
 export function createContentFilterRouter({ householdDir, logger = console } = {}) {
   const router = express.Router();
-  const root = path.join(householdDir, 'shared', 'content-filter');
+  const root = path.join(householdDir, 'content-filter');
 
   const readYaml = (p) => {
     try { return existsSync(p) ? (yaml.load(readFileSync(p, 'utf8')) || null) : null; }

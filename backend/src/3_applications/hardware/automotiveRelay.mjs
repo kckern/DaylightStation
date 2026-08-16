@@ -43,7 +43,7 @@ import { DEFAULT_TIMEZONE } from '#domains/core/utils/timezone.mjs';
 
 const RELAY_SOURCE = 'obd-relay';
 const DEFAULT_TOPIC = 'automotive';
-const DEFAULT_DIR = 'household/history/automotive'; // relative to dataDir
+const DEFAULT_DIR = 'household/automotive/log'; // relative to dataDir
 const DEFAULT_SNAPSHOT_MIN_S = 60;
 const DEFAULT_MIN_TRIP_SAMPLES = 0; // opt-in; 0 keeps every trip
 const CHUNK_TTL_MS = 10 * 60 * 1000; // drop stale partial trip reassemblies

@@ -262,7 +262,7 @@ class UserDataService {
    *
    * `shared/` survives as a legacy root holding content-filter/, komga/ and
    * retroarch/. Those are reached by callers that spell the `shared/` prefix
-   * themselves (`dataService.household.read('shared/retroarch/catalog')`), not
+   * themselves (`dataService.household.read('retroarch/catalog')`), not
    * through this helper, so they are unaffected by the root used here.
    *
    * @param {string} householdId - Household identifier

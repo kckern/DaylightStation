@@ -5,8 +5,8 @@
 // nothing else). This module owns the mark→meaning mapping for the household
 // 50-question card and double-processes every scan:
 //
-//   raw manifest (relay)   {dataDir}/household/history/omr/{reader}/{day}.yml
-//   decoded record (here)  {dataDir}/household/apps/quizzes/{reader}/{day}.yml
+//   raw manifest (relay)   {dataDir}/household/omr/log/{reader}/{day}.yml
+//   decoded record (here)  {dataDir}/household/quizzes/{reader}/{day}.yml
 //
 // The raw file stays byte-faithful; this one is the meaningful version.
 //
@@ -30,8 +30,8 @@ import path from 'path';
 import yaml from 'js-yaml';
 
 const DEFAULT_TOPIC = 'omr';
-const DEFAULT_HISTORY_DIR = 'household/history/omr';
-const DEFAULT_QUIZZES_DIR = 'household/apps/quizzes';
+const DEFAULT_HISTORY_DIR = 'household/omr/log';
+const DEFAULT_QUIZZES_DIR = 'household/quizzes';
 // Same retransmit-suppression semantics (and config knob) as the relay's raw
 // persistence, so the decoded file and the manifest agree on what "one card" is.
 const DEFAULT_DEDUP_WINDOW_MS = 2000;

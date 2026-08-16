@@ -86,7 +86,7 @@ function loadYaml(p) {
 
 /** Cache dir for content-filter artifacts (catalog dump, plex->VA map). */
 function filterCacheDir() {
-  return path.join(resolveDataDir(), 'household', 'shared', 'content-filter');
+  return path.join(resolveDataDir(), 'household', 'content-filter');
 }
 const CATALOG_PATH = () => path.join(filterCacheDir(), 'vidangel-catalog.json');
 const MAP_PATH = () => path.join(filterCacheDir(), 'plex-vidangel-map.yml');
