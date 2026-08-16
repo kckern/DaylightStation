@@ -21,6 +21,7 @@ import path from 'node:path';
 import YAML from 'yaml';
 import dotenv from 'dotenv';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { CHESS_ARCHIVE_DIR } from '../shared/gaming/chess/archivePaths.mjs';
 import { createStockfishAnalyst } from '../backend/src/1_adapters/chess/StockfishAnalysisAdapter.mjs';
 import { reviewGame, THRESHOLDS, bandForAcpl } from '../backend/src/3_applications/chess/ChessGameReview.mjs';
 import { coach } from '../backend/src/3_applications/chess/ChessGameCoaching.mjs';
@@ -31,7 +32,7 @@ import { renderBoard } from './chess.cli.mjs';
 dotenv.config({ path: path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '.env'), quiet: true });
 
 const DEFAULT_DEPTH = 16;
-const ARCHIVE_SUBPATH = ['household', 'history', 'gaming', 'pianochess'];
+
 
 function requiredValue(argv, index, option) {
   const value = argv[index + 1];
@@ -90,7 +91,13 @@ export function parseArgs(argv) {
 function archiveRoot() {
   const base = process.env.DAYLIGHT_BASE_PATH;
   if (!base) throw new Error('DAYLIGHT_BASE_PATH is not set — pass --file instead');
-  return path.join(base, 'data', ...ARCHIVE_SUBPATH);
+  const root = path.join(base, 'data', 'household', ...CHESS_ARCHIVE_DIR.split('/'));
+  // Loudly, not emptily. This directory moved once in a household
+  // reorganisation and the CLIs went on reporting "no archived games" for a
+  // corpus that was sitting one directory away — a wrong path must never look
+  // like an empty one.
+  if (!fs.existsSync(root)) throw new Error(`No chess archive at ${root}`);
+  return root;
 }
 
 /** Every archived game, newest first, narrowed by user, day, or start date. */
