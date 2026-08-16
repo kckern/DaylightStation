@@ -75,8 +75,11 @@ export function createAdminArtRouter({ mediaPath, householdDir, getCollections, 
       const start = (page - 1) * pageSize;
       res.json({ total: filtered.length, page, pageSize, works: filtered.slice(start, start + pageSize) });
     } catch (err) {
+      // Rethrow, don't hand-roll a 500. Express 5 forwards a rejected handler
+      // to errorHandlerMiddleware, which owns status mapping and the response
+      // shape; a local 500 bypasses it and loses the correlation id.
       logger.error?.('admin.art.list.failed', { error: err.message });
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -108,7 +111,7 @@ export function createAdminArtRouter({ mediaPath, householdDir, getCollections, 
       if (/^Invalid /.test(err.message)) return res.status(400).json({ error: err.message });
       if (err.code === 'ENOENT') return res.status(404).json({ error: 'Work not found' });
       logger.error?.('admin.art.patch.failed', { id: rawId, error: err.message });
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 

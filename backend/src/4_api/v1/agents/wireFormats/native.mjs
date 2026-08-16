@@ -98,7 +98,8 @@ export function respondError(res, err) {
   const msg = err?.message ?? String(err);
   if (/input is required/i.test(msg)) return res.status(400).json({ error: msg });
   if (/not found/i.test(msg)) return res.status(404).json({ error: msg });
-  return res.status(500).json({ error: msg });
+  // errorHandlerMiddleware owns the mapping; do not hand-roll the status.
+  throw new Error(msg);
 }
 
 export default {
