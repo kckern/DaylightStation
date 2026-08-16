@@ -37,6 +37,14 @@ export function viewReducer(state, action) {
     case 'OPEN_DAY':
       return { ...state, level: 'reel', ...REEL_RESET };
 
+    // A new 8-day window finished loading. Focus lands where the next press
+    // wants it: index 7 (bottom-right) coming back, so Up re-arms a further
+    // jump; index 0 going forward, so a chronological walk starts at the top.
+    // Always returns to the grid — the reel's item indices belong to the window
+    // we just left.
+    case 'PAGE_LANDED':
+      return { ...initialViewState, dayIndex: action.dayIndex };
+
     case 'CROSS_DAY':
       return { ...state, level: 'reel', dayIndex: action.dayIndex, itemIndex: action.itemIndex, playing: false, muted: true, contextOpen: false };
 
