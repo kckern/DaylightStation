@@ -262,12 +262,14 @@ export function createProxyRouter(config) {
   router.get('/plex/stream/:ratingKey', asyncHandler(async (req, res) => {
     const { ratingKey } = req.params;
     const startOffset = parseInt(req.query.offset) || 0;
-    // Read for logging only. The frontend already mints this id and puts it on
-    // the wire, and nothing in the backend has ever read it — so Plex sees a
-    // fresh random client per request and logged 495 distinct clients where
-    // there was one tablet retrying. Threading it into getMediaUrl is a
-    // separate change; recording what the caller sent costs nothing and makes
-    // our lines joinable to theirs in the meantime.
+    // The client session, threaded through to Plex. It arrives as a QUERY PARAM
+    // and not a header because this request is issued by the <video>/dash
+    // element itself, and a media element cannot be given custom headers — the
+    // play response puts it in the url for exactly this reason.
+    //
+    // Until 2026-08-16 nothing in the backend read it, so PlexAdapter fell
+    // through to a fresh random identifier on every request and Plex logged 495
+    // distinct clients where there was one tablet retrying.
     const session = typeof req.query.session === 'string' && req.query.session ? req.query.session : null;
 
     const adapter = registry.get('plex');
@@ -276,7 +278,7 @@ export function createProxyRouter(config) {
       return res.status(404).json({ error: 'Plex adapter not configured' });
     }
 
-    const result = await adapter.getMediaUrl(ratingKey, { startOffset });
+    const result = await adapter.getMediaUrl(ratingKey, { startOffset, session });
     const mediaUrl = result?.url ?? null;
     if (!mediaUrl) {
       logger.warn?.('plex.stream.mint-failed', { ratingKey, startOffset, session, reason: result?.reason ?? null });

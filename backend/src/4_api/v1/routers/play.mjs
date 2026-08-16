@@ -7,6 +7,23 @@ import { splatPath } from '#api/utils/wildcard.mjs';
 import { MediaProgress } from '#domains/content/entities/MediaProgress.mjs';
 
 /**
+ * Read the opaque client session off the query string.
+ *
+ * Opaque on purpose: the frontend's scheme for this value has changed before
+ * (it is currently `${singlePlayerKey}#${playerInstanceId}`) and nothing here
+ * parses or validates its shape. An empty or non-string value reads as null,
+ * which means "the caller minted no session" — a distinct fact from "the
+ * caller sent one", and the reason Plex sees a random client per request.
+ *
+ * @param {import('express').Request} req
+ * @returns {string|null}
+ */
+function readSessionParam(req) {
+  const raw = req.query?.session;
+  return typeof raw === 'string' && raw !== '' ? raw : null;
+}
+
+/**
  * Create play API router for retrieving playable media info
  *
  * Endpoints:
@@ -302,6 +319,15 @@ export function createPlayRouter(config) {
       // item) forwards it consistently.
       const resumeOverride = req.query.resume === 'false' ? false : undefined;
 
+      // The client session. The frontend has minted and sent this for a long
+      // time; nothing here read it until 2026-08-16, so PlexAdapter fell
+      // through to a fresh random identifier per request and Plex logged one
+      // retrying tablet as 495 separate clients. PlayResponseService threads it
+      // into the Plex stream url — a query param, not a header, because the
+      // <video>/dash element issues that request itself and cannot be given
+      // custom headers.
+      const session = readSessionParam(req);
+
       // If shuffle modifier, use resolve with random pick
       if (modifiers.shuffle) {
         let selectedItem;
@@ -331,7 +357,7 @@ export function createPlayRouter(config) {
           : finalSource;
         const watchState = await playResponseService.getWatchState(selectedItem, storagePath, adapter);
 
-        return res.json(playResponseService.toPlayResponse(selectedItem, watchState, { adapter, resume: resumeOverride }));
+        return res.json(playResponseService.toPlayResponse(selectedItem, watchState, { adapter, resume: resumeOverride, session }));
       }
 
       // Get single item using resolver's localId
@@ -374,7 +400,7 @@ export function createPlayRouter(config) {
           : finalSource;
         const watchState = await playResponseService.getWatchState(selectedItem, storagePath, adapter);
 
-        return res.json(playResponseService.toPlayResponse(selectedItem, watchState, { adapter, resume: resumeOverride }));
+        return res.json(playResponseService.toPlayResponse(selectedItem, watchState, { adapter, resume: resumeOverride, session }));
       }
 
       // Return playable item
@@ -388,7 +414,7 @@ export function createPlayRouter(config) {
         watchState.playhead = watchState.bookmark.playhead;
       }
 
-      res.json(playResponseService.toPlayResponse(item, watchState, { adapter, resume: resumeOverride }));
+      res.json(playResponseService.toPlayResponse(item, watchState, { adapter, resume: resumeOverride, session }));
   }));
 
   // GET /:source - handles compound IDs like /play/plex:12345 and heuristics like /play/12345
@@ -410,6 +436,11 @@ export function createPlayRouter(config) {
     // and land on this route, not the /:source/*splat one above — it must
     // forward the same override or ?resume=false silently does nothing here.
     const resumeOverride = req.query.resume === 'false' ? false : undefined;
+
+    // Bare compound ids (`plex:694719`) land here, not on the splat route above,
+    // and the piano kiosk's lecture player uses exactly that form — so this is
+    // the route the 2026-08-16 storm ran through. It must read the session too.
+    const session = readSessionParam(req);
 
     const item = await adapter.getItem(finalLocalId);
     if (!item) {
@@ -439,7 +470,7 @@ export function createPlayRouter(config) {
         ? await adapter.getStoragePath(selectedItem.id)
         : finalSource;
       const watchState = await playResponseService.getWatchState(selectedItem, storagePath, adapter);
-      return res.json(playResponseService.toPlayResponse(selectedItem, watchState, { adapter, resume: resumeOverride }));
+      return res.json(playResponseService.toPlayResponse(selectedItem, watchState, { adapter, resume: resumeOverride, session }));
     }
 
     const storagePath = typeof adapter.getStoragePath === 'function'
@@ -452,7 +483,7 @@ export function createPlayRouter(config) {
       watchState.playhead = watchState.bookmark.playhead;
     }
 
-    res.json(playResponseService.toPlayResponse(item, watchState, { adapter, resume: resumeOverride }));
+    res.json(playResponseService.toPlayResponse(item, watchState, { adapter, resume: resumeOverride, session }));
   }));
 
   return router;
