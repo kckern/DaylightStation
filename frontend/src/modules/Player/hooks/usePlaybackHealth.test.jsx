@@ -23,6 +23,7 @@ vi.mock('../../../lib/logging/Logger.js', () => {
 });
 
 import { usePlaybackHealth } from './usePlaybackHealth.js';
+import { getLogWaitKey } from '../lib/waitKeyLabel.js';
 import { makeFakeEl } from './__testHelpers/fakeMediaEl.js';
 
 describe('usePlaybackHealth', () => {
@@ -131,7 +132,13 @@ describe('usePlaybackHealth — media element generation logging', () => {
       elTag: 'dash-video',
       msSincePreviousSwap: null
     });
-    expect(generations()[0].data.waitKey).toBeTruthy();
+    // Task 4.3: the raw key, greppable back to the item, AND the hash under a
+    // separate name so this line still joins to the hash-only lines written
+    // before 2026-08-16. `waitKey` was the hash here; a hashed line could not be
+    // mapped back to anything, and the `:N` nonce ordinal was destroyed on entry.
+    expect(generations()[0].data.waitKey).toBe('k1');
+    expect(generations()[0].data.waitKeyHash).toBe(getLogWaitKey('k1'));
+    expect(generations()[0].data.waitKeyHash).not.toBe(generations()[0].data.waitKey);
     expect(typeof generations()[0].data.instanceId).toBe('string');
     // A storm must not drown its own aggregate count.
     expect(generations()[0].opts).toMatchObject({ maxPerMinute: 30, aggregate: true });

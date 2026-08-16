@@ -200,8 +200,24 @@ viewer who picks something else is never stranded for longer than one window.
 | `playback.player-remount-storm-rearmed` | warn | A window elapsed with the churn stopped; the next key will be admitted. |
 
 Payload carries `frozenKey`, `rejectedKey`, `guid`, `playerType`, `waitKey`,
-`isQueue`, `maxMounts`, `windowMs`. On a multi-surface fleet `playerType` is what
-tells you whether the piano kiosk or the garage display stormed.
+`waitKeyHash`, `isQueue`, `maxMounts`, `windowMs`. On a multi-surface fleet
+`playerType` is what tells you whether the piano kiosk or the garage display
+stormed.
+
+### Reading `waitKey` and `waitKeyHash`
+
+Every player line carries the wait key twice, and the two names never swap
+meanings:
+
+| Field | Value | Use it for |
+|---|---|---|
+| `waitKey` | The key raw — `<identity>:<nonce>`, e.g. `IIni70e01E:7` | Grepping a line back to an item, and reading the nonce ordinal. A climbing `:N` **is** a remount loop. |
+| `waitKeyHash` | 10 hex chars, FNV-1a of the same key | Joining to lines written before 2026-08-16, when `waitKey` in `useMediaResilience` / `usePlaybackHealth` WAS the hash. |
+
+Two absences are named rather than merged: `(absent)` means no key was supplied,
+`(empty)` means one was and it was blank. Before 2026-08-16 both — and `''` —
+came out as `0000000000`, so every keyless player in the fleet shared one
+apparent identity.
 
 **Treat any occurrence as a real defect, not as the brake doing its job.** Tasks 1–4
 of the 2026-08-16 work (stable `play` prop, content-derived media identity, this

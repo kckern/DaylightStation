@@ -27,6 +27,10 @@ export function PlayerOverlayLoading({
   overlayLoggingActive = true,
   overlayLogLabel = null,
   waitKey,
+  // The same key, hashed, so these lines still join to everything logged before
+  // 2026-08-16 — when `waitKey` here WAS the hash and nothing carried the raw
+  // key. Kept as a separate field; the two encodings never share a name again.
+  waitKeyHash = null,
   mediaDetails: mediaDetailsProp = null,
   suppressForBlackout = false,
   showPauseIcon = false,
@@ -78,8 +82,9 @@ export function PlayerOverlayLoading({
   const overlayLogContext = useMemo(() => ({
     source: 'PlayerOverlayLoading',
     overlayLogLabel: overlayLogLabel || null,
-    waitKey: waitKey || null
-  }), [overlayLogLabel, waitKey]);
+    waitKey: waitKey || null,
+    waitKeyHash: waitKeyHash || null
+  }), [overlayLogLabel, waitKey, waitKeyHash]);
 
   // Gate on what is actually PAINTED (overlayDisplayActive), not on the
   // inputs to that decision. Keyed on shouldRender && isVisible, this clock
@@ -121,13 +126,14 @@ export function PlayerOverlayLoading({
         playheadPosition: Number.isFinite(seconds) ? seconds : null,
         lastGoodPosition: lastPlayheadRef.current,
         status,
-        waitKey: waitKey || null
+        waitKey: waitKey || null,
+        waitKeyHash: waitKeyHash || null
       }, {
         level: 'warn',
         context: overlayLogContext
       });
     }
-  }, [stalled, seconds, status, waitKey, overlayLogContext]);
+  }, [stalled, seconds, status, waitKey, waitKeyHash, overlayLogContext]);
 
   const emitManualReset = useCallback((reasonOrPayload, extra = {}) => {
     const basePayload = typeof reasonOrPayload === 'string'
@@ -360,13 +366,14 @@ export function PlayerOverlayLoading({
       stalled,
       waitingToPlay,
       waitKey: waitKey || null,
+      waitKeyHash: waitKeyHash || null,
       overlayLogLabel: overlayLogLabel || null,
       summary: logLabel ? `[${logLabel}] ${line}` : line
     }, {
       level: 'info',
       context: overlayLogContext
     });
-  }, [effectiveMetaIsNull, overlayDisplayActive, isVisible, status, seekSummary, mediaSummary, logLabel, overlayLogContext, statusLabel, intentPositionDisplay, normalizedMediaDetails, stalled, waitingToPlay, waitKey, overlayLogLabel]);
+  }, [effectiveMetaIsNull, overlayDisplayActive, isVisible, status, seekSummary, mediaSummary, logLabel, overlayLogContext, statusLabel, intentPositionDisplay, normalizedMediaDetails, stalled, waitingToPlay, waitKey, waitKeyHash, overlayLogLabel]);
 
   // Use a ref to store the latest logOverlaySummary function to avoid timer recreation
   const logOverlaySummaryRef = useRef(logOverlaySummary);
@@ -487,6 +494,7 @@ PlayerOverlayLoading.propTypes = {
   overlayLoggingActive: PropTypes.bool,
   overlayLogLabel: PropTypes.string,
   waitKey: PropTypes.any,
+  waitKeyHash: PropTypes.string,
   mediaDetails: PropTypes.shape({
     hasElement: PropTypes.bool,
     elTag: PropTypes.string,

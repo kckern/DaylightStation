@@ -17,7 +17,7 @@ import { nextPlaybackRate } from './utils/playbackRateCycle.js';
 import { guid } from './lib/helpers.js';
 import { playbackLog } from './lib/playbackLogger.js';
 import { resolveMediaIdentity, resolveSourceContentKey } from './utils/mediaIdentity.js';
-import { getLogWaitKey } from './lib/waitKeyLabel.js';
+import { getLogWaitKey, describeWaitKey } from './lib/waitKeyLabel.js';
 import { useMediaTransportAdapter } from './hooks/transport/useMediaTransportAdapter.js';
 import { shouldSkipResilienceReload } from './lib/shouldSkipResilienceReload.js';
 import { createRemountStormGuard } from './lib/remountStormGuard.js';
@@ -59,6 +59,11 @@ const ensureEntryGuid = (source) => {
   // Hashed, not raw, so the token keeps the opaque short shape that
   // plexClientSession and the logs expect.
   const contentKey = resolveSourceContentKey(source);
+  // NOTE: this is the one caller of getLogWaitKey that MINTS AN IDENTITY rather
+  // than labelling a log line. Its digest for a non-empty input must stay
+  // byte-identical or every entry guid in the fleet moves. (The absence
+  // sentinels added in 2026-08-16 Task 4.3 are unreachable here — `contentKey`
+  // is truthy on this branch.)
   if (contentKey) return getLogWaitKey(contentKey);
   // Unidentifiable source: fall back to the old per-object random identity.
   if (typeof source !== 'object') return guid();  // primitives can't be WeakMap keys
@@ -533,6 +538,11 @@ const Player = forwardRef(function Player(props, ref) {
     return `${fallback}:${remountState.nonce}`;
   }, [effectiveMeta, mediaIdentity, remountState.nonce]);
 
+  // Raw key plus its hash on every line this file writes, so a Player line and a
+  // (formerly hash-only) resilience/health line can be joined either way. Same
+  // two field names everywhere: `waitKey` raw, `waitKeyHash` digest.
+  const resolvedWaitKeyFields = useMemo(() => describeWaitKey(resolvedWaitKey), [resolvedWaitKey]);
+
   const forceSinglePlayerRemount = useCallback((input = null, meta = {}) => {
     const options = (input && typeof input === 'object' && !Array.isArray(input))
       ? input
@@ -571,7 +581,7 @@ const Player = forwardRef(function Player(props, ref) {
     };
 
     playbackLog('player-remount', {
-      waitKey: resolvedWaitKey,
+      ...resolvedWaitKeyFields,
       reason,
       source,
       seekSeconds: normalized,
@@ -603,7 +613,7 @@ const Player = forwardRef(function Player(props, ref) {
     // playbackMetrics is deliberately NOT a dependency: it is read through
     // playbackMetricsRef so this callback stays stable and a timer-captured copy still
     // observes the CURRENT pause state when it fires.
-  }, [currentMediaGuid, effectiveMeta, isQueue, playerType, resolvedWaitKey, setTargetTimeSeconds]);
+  }, [currentMediaGuid, effectiveMeta, isQueue, playerType, resolvedWaitKey, resolvedWaitKeyFields, setTargetTimeSeconds]);
 
   const scheduleSinglePlayerRemount = useCallback((input = null) => {
     const attempt = (remountInfoRef.current?.nonce ?? 0) + 1;
@@ -612,7 +622,7 @@ const Player = forwardRef(function Player(props, ref) {
     clearRemountTimer();
 
     playbackLog('player-remount-scheduled', {
-      waitKey: resolvedWaitKey,
+      ...resolvedWaitKeyFields,
       attempt,
       backoffMs,
       guid: currentMediaGuid,
@@ -631,7 +641,7 @@ const Player = forwardRef(function Player(props, ref) {
       forceSinglePlayerRemount(input, { scheduledDelayMs: backoffMs, attempt });
     }, backoffMs);
     // See forceSinglePlayerRemount: playbackMetrics is read via ref, not closed over.
-  }, [currentMediaGuid, clearRemountTimer, computeRemountDelayMs, forceSinglePlayerRemount, isQueue, playerType, resolvedWaitKey]);
+  }, [currentMediaGuid, clearRemountTimer, computeRemountDelayMs, forceSinglePlayerRemount, isQueue, playerType, resolvedWaitKey, resolvedWaitKeyFields]);
 
   // Storm brake for the key below. It belongs on the KEY, not on the explicit
   // remount path: during the 2026-08-16 storm only three of roughly three hundred
@@ -702,7 +712,7 @@ const Player = forwardRef(function Player(props, ref) {
           // multi-surface fleet playerType is what says whether the piano kiosk or the
           // garage display stormed.
           playerType: playerType || null,
-          waitKey: resolvedWaitKey,
+          ...resolvedWaitKeyFields,
           isQueue,
           maxMounts: REMOUNT_STORM_MAX_MOUNTS,
           windowMs: REMOUNT_STORM_WINDOW_MS
@@ -749,7 +759,7 @@ const Player = forwardRef(function Player(props, ref) {
 
     lastAdmittedKeyRef.current = candidate;
     return candidate;
-  }, [singlePlayerProps, currentMediaGuid, remountState.nonce, activeSource?.mediaType, playerType, resolvedWaitKey, isQueue, keyLogger]);
+  }, [singlePlayerProps, currentMediaGuid, remountState.nonce, activeSource?.mediaType, playerType, resolvedWaitKeyFields, isQueue, keyLogger]);
 
   const exposedMediaRef = useRef(null);
   const controllerRef = useRef(null);
@@ -910,7 +920,7 @@ const Player = forwardRef(function Player(props, ref) {
     if (hardResetInvoked && !hardResetErrored && !forceRemount) {
       playbackLog('player-remount', {
         payload: {
-          waitKey: resolvedWaitKey,
+          ...resolvedWaitKeyFields,
           reason: rest?.reason || 'resilience',
           source: 'hard-reset-accepted',
           seekSeconds,
@@ -930,14 +940,14 @@ const Player = forwardRef(function Player(props, ref) {
       trigger: triggerDetails,
       conditions
     });
-  }, [scheduleSinglePlayerRemount, transportAdapter, playerType, isQueue, advance, clear, currentMediaGuid, resolvedWaitKey, activeSource, resolvedMeta]);
+  }, [scheduleSinglePlayerRemount, transportAdapter, playerType, isQueue, advance, clear, currentMediaGuid, resolvedWaitKey, resolvedWaitKeyFields, activeSource, resolvedMeta]);
 
   const handleResilienceExhausted = useCallback(({ reason, attempts, waitKey: exhaustedWaitKey }) => {
     if (isQueue && hasNextQueueItem) {
       playbackLog('resilience-exhausted-auto-skip', {
         reason,
         attempts,
-        waitKey: exhaustedWaitKey,
+        ...describeWaitKey(exhaustedWaitKey),
         action: 'advance',
         queueRemaining: playQueue?.length ?? 0
       }, { level: 'warn' });
@@ -946,7 +956,7 @@ const Player = forwardRef(function Player(props, ref) {
       playbackLog('resilience-exhausted-dismiss', {
         reason,
         attempts,
-        waitKey: exhaustedWaitKey,
+        ...describeWaitKey(exhaustedWaitKey),
         action: isQueue ? 'queue-end' : 'clear',
         queueRemaining: playQueue?.length ?? 0
       }, { level: 'warn' });

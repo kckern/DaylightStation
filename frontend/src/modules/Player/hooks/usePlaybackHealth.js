@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { playbackLog } from '../lib/playbackLogger.js';
-import { getLogWaitKey } from '../lib/waitKeyLabel.js';
+import { describeWaitKey } from '../lib/waitKeyLabel.js';
 import { getLogger } from '../../../lib/logging/Logger.js';
 
 // Module-level lazy child logger (the hooks convention in CLAUDE.md): building
@@ -116,9 +116,10 @@ export function usePlaybackHealth({
   seconds,
   getMediaEl,
   waitKey,
-  // Content identity for the element-generation log. `waitKey` is hashed before
-  // it is logged, so on its own a generation event cannot be mapped back to what
-  // was playing.
+  // Content identity for the element-generation log. The key is logged raw
+  // alongside its hash (see waitKeyLabel.js), but it names the PLAYER's wait
+  // state, not the item — `mediaKey` is what maps a generation event back to
+  // what was playing.
   mediaKey = null,
   mediaType: mediaTypeHint,
   playerFlavor: playerFlavorHint,
@@ -157,20 +158,23 @@ export function usePlaybackHealth({
   }, [seconds]);
 
   const lastSecondsRef = useRef(Number.isFinite(seconds) ? seconds : null);
-  const logWaitKey = useMemo(() => getLogWaitKey(waitKey), [waitKey]);
+  // Raw key AND its hash, as two distinct fields: the raw one carries the `:N`
+  // nonce ordinal and can be grepped back to an item, the hash joins these lines
+  // to everything logged before 2026-08-16.
+  const waitKeyFields = useMemo(() => describeWaitKey(waitKey), [waitKey]);
   const logContextRef = useRef({
-    waitKey: logWaitKey,
+    ...waitKeyFields,
     mediaType,
     playerFlavor
   });
 
   useEffect(() => {
     logContextRef.current = {
-      waitKey: logWaitKey,
+      ...waitKeyFields,
       mediaType,
       playerFlavor
     };
-  }, [logWaitKey, mediaType, playerFlavor]);
+  }, [waitKeyFields, mediaType, playerFlavor]);
 
   // Read by the 400ms poll below, which runs outside the render that knows the
   // current mediaKey.
@@ -285,6 +289,7 @@ export function usePlaybackHealth({
       generation,
       mediaKey: mediaKeyRef.current,
       waitKey: logContextRef.current.waitKey,
+      waitKeyHash: logContextRef.current.waitKeyHash,
       elTag: readElementTag(el),
       elSource: describeElementSource(el),
       msSincePreviousSwap: ledger.atMs == null ? null : now - ledger.atMs
