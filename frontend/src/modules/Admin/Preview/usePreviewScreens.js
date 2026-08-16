@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import getLogger from '../../../lib/logging/Logger.js';
+import { isPreviewableResolution } from './previewFrame.js';
 
 let _logger;
 function logger() {
@@ -16,27 +17,14 @@ function logger() {
  * goes into state by identity, so a consumer mutating `.resolution` would poison
  * it for the rest of the session. A `width: 0` in particular would make
  * `previewFrameVars` return null — the "option that renders nothing" that
- * `isPreviewable` exists to prevent, reintroduced via the one screen that is
- * always present.
+ * `isPreviewableResolution` exists to prevent, reintroduced via the one screen
+ * that is always present.
  */
 export const FALLBACK_SCREEN = Object.freeze({
   id: '__fallback',
   name: '1280 x 720',
   resolution: Object.freeze({ width: 1280, height: 720 }),
 });
-
-/**
- * A resolution the preview can actually lay out against: two finite, positive
- * CSS-pixel dimensions. This is the same predicate `previewFrameVars` applies
- * before it will build frame variables, restated here so that membership in
- * this hook's list always implies a renderable frame — a picker entry that
- * produced no variables would be an option that renders nothing.
- */
-function isPreviewable(resolution) {
-  const w = resolution?.width;
-  const h = resolution?.height;
-  return Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0;
-}
 
 /**
  * usePreviewScreens
@@ -65,7 +53,11 @@ export function usePreviewScreens() {
     DaylightAPI('api/v1/screens').then(
       (data) => {
         if (cancelled) return;
-        const sized = (data?.screens || []).filter((s) => isPreviewable(s?.resolution));
+        // The filter is `previewFrameVars`'s own guard, imported rather than
+        // restated, so membership in this list always implies a renderable
+        // frame — an entry that produced no variables would be a picker option
+        // that renders nothing.
+        const sized = (data?.screens || []).filter((s) => isPreviewableResolution(s?.resolution));
         logger().debug('screens-loaded', { total: data?.screens?.length || 0, sized: sized.length });
         setScreens(sized.length ? sized : [FALLBACK_SCREEN]);
         setLoading(false);

@@ -19,16 +19,29 @@
 export const PREVIEW_WIDTH = 960;
 
 /**
+ * Can a screen with this resolution be previewed at all? Shared with
+ * usePreviewScreens so the picker can never offer a screen whose frame vars
+ * would come back null — a selectable option that renders nothing.
+ *
+ * @param {{width: number, height: number}|null|undefined} resolution
+ * @returns {boolean}
+ */
+export function isPreviewableResolution(resolution) {
+  const w = resolution?.width;
+  const h = resolution?.height;
+  return Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0;
+}
+
+/**
  * Build the CSS custom properties that drive AdminPreviewPlayer.scss.
  *
  * @param {{width: number, height: number}|null|undefined} resolution
  * @returns {Object<string,string>|null} null when the screen declares no usable resolution
  */
 export function previewFrameVars(resolution) {
-  const w = resolution?.width;
-  const h = resolution?.height;
-  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return null;
+  if (!isPreviewableResolution(resolution)) return null;
 
+  const { width: w, height: h } = resolution;
   const scale = PREVIEW_WIDTH / w;
   return {
     '--preview-width': `${PREVIEW_WIDTH}px`,
