@@ -1675,7 +1675,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Game Show shell (teams/buzzers/scoreboard) + Jeopardy. Config from
   // gameshow.yml, content from data/content/games/, sessions checkpointed to
-  // data/household/state/gameshow/sessions/, media served from media/apps/.
+  // data/household/gameshow/sessions/, media served from media/apps/.
   v1Routers.gameshow = createGameshowRouter({
     gameShowService: new GameShowService({
       configService,
@@ -1683,7 +1683,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       logger: rootLogger.child({ module: 'gameshow' }),
     }),
     sessionStore: new GameShowSessionStore({
-      sessionsDir: configService.getHouseholdPath('state/gameshow/sessions'),
+      sessionsDir: configService.getHouseholdPath('gameshow/sessions'),
       logger: rootLogger.child({ module: 'gameshow' }),
     }),
     broadcastEvent,
@@ -1697,7 +1697,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // itself bundled as YAML; a household games/{gameId}/game.yml overrides either
   // bundled source without changing composition code.
   const gamingDefinitionStore = new YamlGamingDefinitionStore({
-    definitionsDir: configService.getHouseholdPath('apps/gaming/games'),
+    definitionsDir: configService.getHouseholdPath('gaming/games'),
     archiveDir: configService.getHouseholdPath('history/gaming/_definitions'),
     builtIns: { 'scale-clash': scaleClashDefinition },
     builtInFiles: {
