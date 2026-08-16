@@ -615,8 +615,15 @@ The agenda and next/retry cards reuse one two-row taxonomy component: the
 subject icon spans `Subject › Course` and the bold `Unit › Lesson` row. Action
 state is separate from subject identity (`NEXT UP` uses a forward marker,
 `TRY AGAIN` a retry marker), and the footer uses a scan-corner symbol with a
-plain-language print instruction. Descriptions use compact leading so the QR
-and hierarchy, rather than wrapped supporting copy, determine card height.
+plain-language instruction. That instruction names what THIS card's scan
+actually does and comes from one place — `offerSession.nextMove`, surfaced to
+the document as `next.actionLabel` — so it is composition-aware: `PRINT YOUR
+SHEET` for a worksheet, `WATCH OR LISTEN` for a media unit, `ANSWER ON THE
+SCREEN` for a bank, `START IT AGAIN` for a stalled video, and a program unit's
+own location hint (`ON THE PORTAL`, `IN THE GARAGE`). It is never hardcoded to
+"print": a card that says print but plays a film sends the child to the wrong
+machine. Descriptions use compact leading so the QR and hierarchy, rather than
+wrapped supporting copy, determine card height.
 
 ## 8. Scan-back: grading and the lifecycle
 

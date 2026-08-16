@@ -156,10 +156,10 @@ const retryTicketScenario = () => onTheConsole(async (h) => {
   const failed = await h.closeOutcome({ sessionId: firstSession });
   expect(failed.result).toBe('needs_remediation');
   expect(failed.printed).toBe(true);
-  expect(h.lastReceiptText()).toContain('Almost there');
+  expect(h.lastReceiptText()).toContain('TRY AGAIN');
   const ticket = h.tokensInLastReceipt();
   expect(ticket).toHaveLength(1);
-  expect(ticket[0].label).toMatch(/try again/i);
+  expect(ticket[0].printed).toMatch(/try again/i);
 
   const retry = await h.scanTokenMatching(/try again/i);
   expect(retry.status).toBe('issued');

@@ -435,9 +435,31 @@ export async function createLifecycleHarness({
   // printed receipt is a `qrcode` item, not a `barcode` one — `barcode` stays
   // in the filter only as a defensive regression check, should the
   // composition ever revert to Code128.
-  const barcodesInLastReceipt = () => (lastCapture()?.items ?? [])
-    .filter((item) => item.type === 'qrcode' || item.type === 'barcode')
-    .map((item) => ({ token: String(item.content), label: String(item.label ?? '') }));
+  //
+  // A scannable action is not one line any more. The agenda and result slips
+  // print a LESSON CARD — eyebrow, course/unit/lesson hierarchy, description
+  // and a footer instruction — and only then the code beside it. So each code
+  // is returned with `printed`: every line of tape between the previous code
+  // and this one, which is exactly what a child reads before waving the
+  // scanner at it. `label` stays the code's own label (the lesson title) for
+  // tests that mean that specifically.
+  const barcodesInLastReceipt = () => {
+    const found = [];
+    let printed = [];
+    for (const item of lastCapture()?.items ?? []) {
+      if (item.type === 'qrcode' || item.type === 'barcode') {
+        found.push({
+          token: String(item.content),
+          label: String(item.label ?? ''),
+          printed: printed.join('\n'),
+        });
+        printed = [];
+      } else if (item.type === 'text' && typeof item.content === 'string' && item.content.trim()) {
+        printed.push(String(item.content));
+      } else if (item.type === 'line') printed = [];
+    }
+    return found;
+  };
 
   /** Every session this learner has, newest first, as derived facts. */
   const sessionRows = async (learnerId = currentLearner) => stores.sessions.listForLearner(learnerId);
@@ -514,11 +536,11 @@ export async function createLifecycleHarness({
      */
     async scanTokenMatching(pattern) {
       const options = barcodesInLastReceipt();
-      const hit = options.find(({ label }) => pattern.test(label));
+      const hit = options.find(({ label, printed }) => pattern.test(label) || pattern.test(printed));
       if (!hit) {
         throw new Error(
           `no scannable action on the last receipt matching ${pattern}. Printed actions: `
-          + `${options.map((o) => JSON.stringify(o.label)).join(', ') || '(none)'}`,
+          + `${options.map((o) => JSON.stringify(o.printed || o.label)).join(', ') || '(none)'}`,
         );
       }
       return harness.scan(hit.token);
@@ -531,7 +553,7 @@ export async function createLifecycleHarness({
     receiptTexts() { return thermal.listReceipts().map((r) => r.transcript); },
     lastReceiptItems() { return lastCapture()?.items ?? []; },
 
-    /** `[{ token, label }]` for every scannable action on the last receipt. */
+    /** `[{ token, label, printed }]` for every scannable action on the last receipt. */
     tokensInLastReceipt() { return barcodesInLastReceipt(); },
 
     /** Sidecars for everything that reached the paper tray, in order. */

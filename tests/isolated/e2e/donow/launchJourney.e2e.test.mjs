@@ -105,12 +105,15 @@ describe('the DoNow launch journey — one card, garage-fitness, end to end (Tas
     expect(tapA).toContain('SCIENCE');
 
     const offeredA = h.tokensInLastReceipt();
-    const launchToken = offeredA.find((o) => /go to the garage/i.test(o.label))?.token;
+    // The location hint reads off the whole lesson card printed above the
+    // code (`printed`), not the code's own label — the label is the lesson
+    // title. See `barcodesInLastReceipt` in the lifecycle harness.
+    const launchToken = offeredA.find((o) => /go to the garage/i.test(o.printed))?.token;
     // `pe-daily` dispatches to `garage-fitness`, never the Portal — its
     // configured `locationHint: 'in the garage'` is what the offer label
     // reads (spec review finding: this used to wrongly say "on the Portal"
     // for every program, garage included).
-    const peToken = offeredA.find((o) => /in the garage/i.test(o.label))?.token;
+    const peToken = offeredA.find((o) => /in the garage/i.test(o.printed))?.token;
     expect(launchToken, `no launch ticket in ${JSON.stringify(offeredA)}`).toBeTruthy();
     expect(peToken, `no pe-daily ticket in ${JSON.stringify(offeredA)}`).toBeTruthy();
 
@@ -203,9 +206,9 @@ describe('the DoNow launch journey — one card, garage-fitness, end to end (Tas
     await h.scanCard();
     expect(h.lastReceiptText()).toMatch(/SCIENCE.*done today/i);
     const offeredD = h.tokensInLastReceipt();
-    expect(offeredD.find((o) => /go to the garage/i.test(o.label))).toBeUndefined();
+    expect(offeredD.find((o) => /go to the garage/i.test(o.printed))).toBeUndefined();
     // The pe-daily subject is still unserved — its ticket is still offered.
-    const peTokenD = offeredD.find((o) => /in the garage/i.test(o.label))?.token;
+    const peTokenD = offeredD.find((o) => /in the garage/i.test(o.printed))?.token;
     expect(peTokenD, `no pe-daily ticket in ${JSON.stringify(offeredD)}`).toBeTruthy();
 
     // -----------------------------------------------------------------------
