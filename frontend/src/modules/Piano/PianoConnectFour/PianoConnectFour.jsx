@@ -142,23 +142,41 @@ export function dropDurationMs(rows) {
   return 190 + Math.max(0, rows) * 52;
 }
 
+/**
+ * The four cells that won, as `row-column` keys.
+ *
+ * The engine has always reported them (`describeBoard` → `winningCells`) and the
+ * board has always thrown them away, so a finished game looked exactly like an
+ * unfinished one plus a sentence. Keys rather than the raw pairs because the
+ * board asks the question once per cell, forty-two times a render.
+ */
+export function winningKeys(status) {
+  return new Set((status?.winningCells ?? []).map(({ row, column }) => `${row}-${column}`));
+}
+
 function Board({ game, hint, drop }) {
+  const winners = winningKeys(game.status);
   return (
-    <div className="connect-four-board pg-board" role="grid" aria-label="Connect Four board">
+    <div
+      className={`connect-four-board pg-board${winners.size ? ' is-decided' : ''}`}
+      role="grid"
+      aria-label="Connect Four board"
+    >
       {game.board.map((row, rowIndex) => row.map((cell, column) => {
         const falling = drop && drop.row === rowIndex && drop.column === column;
+        const won = winners.has(`${rowIndex}-${column}`);
         return (
           <div
             key={`${rowIndex}-${column}`}
             role="gridcell"
-            className={`connect-four-board__cell${hint === column ? ' is-hint' : ''}`}
+            className={`connect-four-board__cell${hint === column ? ' is-hint' : ''}${won ? ' is-winner' : ''}`}
           >
             <span
               /* Keyed on the ply so the same column twice running still animates
                  twice — a remount is the only thing that restarts a CSS
                  animation, and every disc landing deserves its own drop. */
               key={falling ? `drop-${drop.ply}` : 'seated'}
-              className={`connect-four-board__disc connect-four-board__disc--${cell || 'empty'}${falling ? ' is-falling' : ''}`}
+              className={`connect-four-board__disc connect-four-board__disc--${cell || 'empty'}${falling ? ' is-falling' : ''}${won ? ' is-winner' : ''}`}
               style={falling ? {
                 '--c4-drop-rows': drop.rows,
                 '--c4-drop-ms': `${dropDurationMs(drop.rows)}ms`,
@@ -167,6 +185,9 @@ function Board({ game, hint, drop }) {
           </div>
         );
       }))}
+      {/* The blue sheet with forty-two holes in it, drawn OVER the discs —
+          which is where it is in the physical game. See PianoConnectFour.scss. */}
+      <div className="connect-four-board__panel" aria-hidden="true" />
     </div>
   );
 }
@@ -298,9 +319,16 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
   };
 
   const opponentName = ladder?.current?.name ?? 'Pebble';
+  // Who won, in the terms the player can check against the board: a colour and
+  // the four lit discs. "You connected four!" and a bare "Pebble wins" left the
+  // player hunting for the line that ended the game.
   const status = game.status.gameOver
-    ? game.status.draw ? 'Draw game' : game.status.winner === 1 ? 'You connected four!' : `${opponentName} wins`
-    : thinking ? `${opponentName} is thinking…` : 'Play the key for a column';
+    ? game.status.draw
+      ? 'Draw — the board is full and nobody connected four'
+      : game.status.winner === 1
+        ? 'You win! Your four yellow discs are lit up'
+        : `${opponentName} wins — the four red discs are lit up`
+    : thinking ? `${opponentName} is thinking…` : 'Your turn — play a key to drop a disc';
 
   // The rail's own cards, one per column, already inverted through the deal —
   // see columnAddresses. The active card follows whatever the held keys
