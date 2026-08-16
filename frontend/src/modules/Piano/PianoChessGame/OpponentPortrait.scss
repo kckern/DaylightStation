@@ -103,3 +103,78 @@
 .chess-ladder-progress--top .chess-ladder-progress__value {
   color: var(--piano-warn, #e0a83a);
 }
+
+/* The character is thinking, said on the character rather than only in a
+   caption beside it. "Thinking…" in muted grey at caption size was the entire
+   signal that the opponent was acting, and it sat in a rail the player is not
+   looking at while they wait for the board.
+   Opacity on the face only: compositor-only, and it leaves the name and status
+   text at full contrast so the words stay readable while it breathes. */
+.chess-opponent--thinking .chess-opponent__face {
+  animation: chess-opponent-thinking 1200ms ease-in-out infinite;
+}
+
+@keyframes chess-opponent-thinking {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chess-opponent--thinking .chess-opponent__face { animation: none; opacity: 0.75; }
+}
+
+/* The character reacts to what actually happened.
+   Every reaction is a one-shot transform on the face — keyed by the move that
+   caused it in the host, so a repeat of the same event replays it. Transform
+   and opacity only, and none of them loop: an expression that never resolves
+   stops being an expression. */
+.chess-opponent--pleased .chess-opponent__face {
+  animation: chess-opponent-pleased 420ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.chess-opponent--hurt .chess-opponent__face {
+  animation: chess-opponent-hurt 460ms ease-out;
+}
+
+.chess-opponent--attacking .chess-opponent__face {
+  animation: chess-opponent-attacking 380ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.chess-opponent--triumphant .chess-opponent__face {
+  animation: chess-opponent-pleased 520ms cubic-bezier(0.2, 0.8, 0.2, 1) 2;
+}
+
+/* Beaten: the one reaction that holds, because the game is over and the state
+   it describes is permanent. */
+.chess-opponent--beaten .chess-opponent__face {
+  transform: rotate(-6deg) scale(0.94);
+  opacity: 0.65;
+  transition: transform 400ms ease-out, opacity 400ms ease-out;
+}
+
+@keyframes chess-opponent-pleased {
+  0%, 100% { transform: translateY(0) scale(1); }
+  40% { transform: translateY(-9%) scale(1.06); }
+}
+
+@keyframes chess-opponent-hurt {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-7%); }
+  45% { transform: translateX(5%); }
+  70% { transform: translateX(-3%); }
+}
+
+/* Leaning in. Toward the board, which is to the left of the rail this sits in. */
+@keyframes chess-opponent-attacking {
+  0%, 100% { transform: translateX(0) scale(1); }
+  45% { transform: translateX(-8%) scale(1.05); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chess-opponent--pleased .chess-opponent__face,
+  .chess-opponent--hurt .chess-opponent__face,
+  .chess-opponent--attacking .chess-opponent__face,
+  .chess-opponent--triumphant .chess-opponent__face { animation: none; }
+  /* Beaten is a state, not a flourish — it stays. */
+  .chess-opponent--beaten .chess-opponent__face { transition: none; }
+}

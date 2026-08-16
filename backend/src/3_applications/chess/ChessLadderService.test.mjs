@@ -23,11 +23,15 @@ describe('no skipping ahead', () => {
     // This is the ONLY place the rule is enforced. Everything else about it is
     // presentation, and presentation can be bypassed with a crafted request —
     // which is exactly what this asserts cannot work.
-    const { service } = makeService({ progress: { milo: { unlocked_through: 2, results: [] } } });
-    expect((await service.rungFor('milo', 20)).level).toBe(2);
-    expect((await service.rungFor('milo', 20)).rung.skill).toBe(2);
-    expect((await service.rungFor('milo', 1)).level, 'a beaten character may be replayed').toBe(1);
-    expect((await service.rungFor('milo', -5)).level).toBe(0);
+    const { service } = makeService({ progress: { "test-user": { unlocked_through: 2, results: [] } } });
+    expect((await service.rungFor('test-user', 20)).level).toBe(2);
+    // The rung handed back must be the CLAMPED level's, not the requested one's.
+    // Asserted by identity rather than by `skill`: which engine settings a level
+    // carries is the ladder table's business (and level 2 is no longer
+    // Stockfish at all), while what this test guards is the clamp.
+    expect((await service.rungFor('test-user', 20)).rung.id).toBe('level-2');
+    expect((await service.rungFor('test-user', 1)).level, 'a beaten character may be replayed').toBe(1);
+    expect((await service.rungFor('test-user', -5)).level).toBe(0);
   });
 
   it('holds a guest to the bottom of the roster', async () => {
@@ -36,27 +40,27 @@ describe('no skipping ahead', () => {
   });
 
   it('defaults to the current opponent when no level is asked for', async () => {
-    const { service } = makeService({ progress: { milo: { unlocked_through: 4, results: [] } } });
-    expect((await service.rungFor('milo', undefined)).level).toBe(4);
+    const { service } = makeService({ progress: { "test-user": { unlocked_through: 4, results: [] } } });
+    expect((await service.rungFor('test-user', undefined)).level).toBe(4);
   });
 });
 
 describe('recording a game', () => {
   it('promotes on the fifth clean win and says who is next', async () => {
-    const { service, store } = makeService({ progress: { milo: { unlocked_through: 0, results: [] } } });
+    const { service, store } = makeService({ progress: { "test-user": { unlocked_through: 0, results: [] } } });
     let last;
-    for (let i = 0; i < 5; i += 1) last = await service.recordGame('milo', win(0));
+    for (let i = 0; i < 5; i += 1) last = await service.recordGame('test-user', win(0));
     expect(last.promoted).toBe(true);
     expect(last.to).toBe(1);
     expect(last.next_opponent.name).toBeTruthy();
-    expect(store.milo.unlocked_through, 'the climb is persisted, not just reported').toBe(1);
+    expect(store['test-user'].unlocked_through, 'the climb is persisted, not just reported').toBe(1);
   });
 
   it('does not promote on wins that leant on the engine', async () => {
-    const { service } = makeService({ progress: { milo: { unlocked_through: 0, results: [] } } });
+    const { service } = makeService({ progress: { "test-user": { unlocked_through: 0, results: [] } } });
     let last;
     for (let i = 0; i < 7; i += 1) {
-      last = await service.recordGame('milo', win(0, { hints: 0, best_moves: 3 }));
+      last = await service.recordGame('test-user', win(0, { hints: 0, best_moves: 3 }));
     }
     expect(last.promoted).toBe(false);
     expect(last.status.wins).toBe(0);
@@ -72,8 +76,8 @@ describe('recording a game', () => {
   it('reports a failed write rather than a promotion that did not stick', async () => {
     // A promotion announced on screen and then lost on the next load is worse
     // than one that never happened.
-    const { service } = makeService({ progress: { milo: { unlocked_through: 0, results: [] } }, writable: false });
-    const result = await service.recordGame('milo', win(0));
+    const { service } = makeService({ progress: { "test-user": { unlocked_through: 0, results: [] } }, writable: false });
+    const result = await service.recordGame('test-user', win(0));
     expect(result.persisted).toBe(false);
     expect(result.promoted).toBe(false);
   });
@@ -81,8 +85,8 @@ describe('recording a game', () => {
 
 describe('reading the ladder', () => {
   it('offers only what has been unlocked', async () => {
-    const { service } = makeService({ progress: { milo: { unlocked_through: 3, results: [] } } });
-    const view = await service.read('milo');
+    const { service } = makeService({ progress: { "test-user": { unlocked_through: 3, results: [] } } });
+    const view = await service.read('test-user');
     expect(view.available).toHaveLength(4);
     expect(view.current.level).toBe(3);
     expect(view.roster).toHaveLength(21);

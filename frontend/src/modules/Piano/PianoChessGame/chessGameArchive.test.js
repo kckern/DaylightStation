@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { INITIAL_FEN, createGame, playMove } from '@shared-gaming/chess/engine.mjs';
 import { buildGameArchive, localDateStamp } from './chessGameArchive.js';
-import { createChessGameState, commitMove } from './chessGameState.js';
+import { createChessGameState, commitMove, takeMoveBack } from './chessGameState.js';
 import { DEFAULT_STAFF_SCHEME } from './staffAddress.js';
 
 /** A real game state carried forward by real moves — never a hand-built fake. */
@@ -169,5 +169,72 @@ describe('rewound moves in the archive', () => {
       game: untouched, gameId: 'g1', userId: 'kid', rungId: 'learner',
       hints: 0, bestMoves: 0, takebacks: 0, startedAt: 0, endedAt: 1000,
     })).toBe(null);
+  });
+});
+
+describe('timing in the archive', () => {
+  const START = Date.UTC(2026, 7, 12, 17, 0, 0);
+
+  /** A game whose moves landed at known instants. */
+  function timed(moves) {
+    let state = createChessGameState({ seed: 1, shuffleEachTurn: false });
+    for (const [from, to, at] of moves) state = commitMove(state, from, to, undefined, at).state;
+    return state;
+  }
+
+  it('records what each move cost in thinking time', () => {
+    const game = timed([
+      ['e2', 'e4', START + 4000],
+      ['e7', 'e5', START + 5000],
+      ['g1', 'f3', START + 25000],
+    ]);
+    const archive = buildGameArchive(inputs(game, {
+      startedAt: START, timing: { mode: 'up', initial_ms: null, increment_ms: null },
+    }));
+    expect(archive.moves.map((move) => move.think_ms)).toEqual([4000, 1000, 20000]);
+  });
+
+  it('sums each side\'s time from the moves, so the archive agrees with itself', () => {
+    const game = timed([
+      ['e2', 'e4', START + 4000],
+      ['e7', 'e5', START + 5000],
+      ['g1', 'f3', START + 25000],
+    ]);
+    const archive = buildGameArchive(inputs(game, { startedAt: START, timing: { mode: 'up' } }));
+    expect(archive.timing.spent_ms).toEqual({ w: 24000, b: 1000 });
+    expect(archive.timing.timed_moves).toBe(3);
+  });
+
+  it('omits think_ms entirely for an untimed game rather than writing zeroes', () => {
+    // A zero would read as "played instantly", which is a different claim from
+    // "we were not recording".
+    const game = played([['e2', 'e4'], ['e7', 'e5']]);
+    const archive = buildGameArchive(inputs(game, { startedAt: START }));
+    expect(archive.moves.every((move) => !('think_ms' in move))).toBe(true);
+    expect(archive.timing.timed_moves).toBe(0);
+  });
+
+  it('records that the clock was off, rather than leaving it unsaid', () => {
+    const game = played([['e2', 'e4']]);
+    expect(buildGameArchive(inputs(game)).timing.mode).toBe('off');
+  });
+
+  it('carries the time control when one was set', () => {
+    const game = played([['e2', 'e4']]);
+    const archive = buildGameArchive(inputs(game, {
+      timing: { mode: 'down', initial_ms: 300000, increment_ms: 3000 },
+    }));
+    expect(archive.timing).toMatchObject({ mode: 'down', initial_ms: 300000, increment_ms: 3000 });
+  });
+
+  it('leaves a taken-back move untimed, having no line to measure it against', () => {
+    let state = createChessGameState({ seed: 1, shuffleEachTurn: false, playerColor: 'w' });
+    state = commitMove(state, 'e2', 'e4', undefined, START + 1000).state;
+    state = commitMove(state, 'e7', 'e5', undefined, START + 2000).state;
+    state = takeMoveBack(state).state;
+    const archive = buildGameArchive(inputs(state, { startedAt: START, timing: { mode: 'up' } }));
+    const rewound = archive.moves.filter((move) => move.undone);
+    expect(rewound.length).toBeGreaterThan(0);
+    expect(rewound.every((move) => !('think_ms' in move))).toBe(true);
   });
 });

@@ -136,8 +136,10 @@ describe('ChessBoard', () => {
       rerender(<ChessBoard fen={applyMove(INITIAL_FEN, 'e4').fen} />);
       expect(calls).toHaveLength(1);
       // e2 -> e4 is two ranks up the board and no sideways travel.
-      expect(calls[0].frames[0].transform).toBe('translate(0%, 200%)');
-      expect(calls[0].frames[1].transform).toBe('translate(0, 0)');
+      expect(calls[0].frames[0].transform).toContain('translate(0%, 200%)');
+      // The last frame is home, at rest — the settle overshoot in between must
+      // resolve rather than leave the piece scaled.
+      expect(calls[0].frames.at(-1).transform).toBe('translate(0, 0) scale(1)');
       expect(calls[0].options.duration).toBeGreaterThan(0);
     } finally {
       window.Element.prototype.animate = original;
@@ -154,7 +156,7 @@ describe('ChessBoard', () => {
       // Black's reply is a diff like any other — no move object involved.
       rerender(<ChessBoard fen={applyMove(afterWhite, 'e5').fen} />);
       expect(calls).toHaveLength(1);
-      expect(calls[0][0].transform).toBe('translate(0%, -200%)');
+      expect(calls[0][0].transform).toContain('translate(0%, -200%)');
     } finally {
       window.Element.prototype.animate = original;
     }
@@ -356,5 +358,150 @@ describe('channels compose instead of overwriting (compiled CSS)', () => {
     expect(ruleBody('.chess-board__square--best::before')).not.toBeNull();
     expect(compiledCss).not.toMatch(/\.chess-board__square--held::before\s*\{/);
     expect(ruleBody('.chess-board__held-ants')).not.toBeNull();
+  });
+});
+
+describe('the capture, animated', () => {
+  /** Stub WAAPI and hand back every element it was called on. */
+  function captureAnimations() {
+    const calls = [];
+    const original = window.Element.prototype.animate;
+    window.Element.prototype.animate = function animate(keyframes, options) {
+      calls.push({ element: this, keyframes, options });
+      return { cancel: () => {}, set onfinish(fn) { this._fn = fn; }, get onfinish() { return this._fn; } };
+    };
+    return { calls, restore: () => { window.Element.prototype.animate = original; } };
+  }
+
+  // 1. e4 e5 2. Nf3 Nc6 3. Nxe5 — the knight takes a pawn on e5.
+  const before = 'r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 4 3';
+  const after = applyMove(before, { from: 'f3', to: 'e5' }).fen;
+
+  it('fades the taken piece out instead of vanishing it mid-frame', () => {
+    const { calls, restore } = captureAnimations();
+    try {
+      const { container, rerender } = render(<ChessBoard fen={before} />);
+      rerender(<ChessBoard fen={after} />);
+      // A clone of the captured pawn is injected on the square it stood on.
+      const clone = container.querySelector('.chess-board__piece--captured');
+      expect(clone).toBeTruthy();
+      expect(clone.closest('[data-square]').dataset.square).toBe('e5');
+      const faded = calls.find((call) => call.element === clone);
+      expect(faded.keyframes.at(-1)).toMatchObject({ opacity: 0 });
+    } finally {
+      restore();
+    }
+  });
+
+  it('leaves nothing behind on a quiet move', () => {
+    const { calls, restore } = captureAnimations();
+    try {
+      const quiet = applyMove(INITIAL_FEN, { from: 'e2', to: 'e4' }).fen;
+      const { container, rerender } = render(<ChessBoard fen={INITIAL_FEN} />);
+      rerender(<ChessBoard fen={quiet} />);
+      expect(container.querySelector('.chess-board__piece--captured')).toBeNull();
+      expect(calls).toHaveLength(1); // the slide, and only the slide
+    } finally {
+      restore();
+    }
+  });
+
+  it('paces the slide from the duration the host asked for', () => {
+    const { calls, restore } = captureAnimations();
+    try {
+      const quiet = applyMove(INITIAL_FEN, { from: 'e2', to: 'e4' }).fen;
+      const { rerender } = render(<ChessBoard fen={INITIAL_FEN} moveDurationMs={420} />);
+      rerender(<ChessBoard fen={quiet} moveDurationMs={420} />);
+      expect(calls[0].options.duration).toBe(420);
+    } finally {
+      restore();
+    }
+  });
+});
+
+describe('the render path (compiled CSS)', () => {
+  it('never transitions box-shadow on a square', () => {
+    // A paint property transitioned on up to eight squares at once was the
+    // reported jank when the board lights up. This channel must snap.
+    const body = ruleBody('.chess-board__square');
+    expect(body).not.toMatch(/transition:[^;]*box-shadow/);
+  });
+
+  it('animates the held indicator on opacity, not on a repainting property', () => {
+    const body = ruleBody('.chess-board__held-ants');
+    expect(body).not.toMatch(/background-position/);
+    expect(compiledCss).toMatch(/@keyframes chess-board-breathe/);
+  });
+
+  it('lifts the held piece with a transform', () => {
+    const body = ruleBody('.chess-board__square--held .chess-board__piece');
+    expect(body).toMatch(/transform:\s*translateY/);
+  });
+
+  it('draws the last move solid enough to read across a room', () => {
+    const body = ruleBody('.chess-board__square--last-move');
+    expect(body).toMatch(/outline:\s*3px solid/);
+    expect(body).not.toMatch(/dashed/);
+  });
+});
+
+describe('the end of the game, and the one promotion', () => {
+  it('topples the mated king, and only the mated one', () => {
+    // Fool's mate: White is mated on e1.
+    const fen = 'rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3';
+    const { container } = render(<ChessBoard fen={fen} status={describePosition(fen)} />);
+    expect(container.querySelector('[data-square="e1"]').className).toContain('--mated');
+    // The surviving king is untouched.
+    expect(container.querySelector('[data-square="e8"]').className).not.toContain('--mated');
+  });
+
+  it('does not topple a king that is merely in check', () => {
+    // Same board, but read as a live position rather than a finished game.
+    const fen = 'rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3';
+    const status = { ...describePosition(fen), game_over: false, outcome: null };
+    const { container } = render(<ChessBoard fen={fen} status={status} />);
+    const square = container.querySelector('[data-square="e1"]');
+    expect(square.className).toContain('--check');
+    expect(square.className).not.toContain('--mated');
+  });
+
+  it('marks the square a pawn promoted on, when the host names one', () => {
+    const { container } = render(<ChessBoard fen={INITIAL_FEN} promotedSquare="e8" />);
+    expect(container.querySelector('[data-square="e8"]').className).toContain('--promoted');
+  });
+
+  it('holds the topple at its end state under reduced motion', () => {
+    // The topple is information — which king lost — so it must survive when
+    // motion is reduced rather than being removed with the other animations.
+    const rule = ruleBody('.chess-board__square--mated .chess-board__piece');
+    expect(rule).toMatch(/animation:\s*chess-board-topple/);
+    // The reduced-motion override appears later in the file and wins.
+    const overrides = compiledCss.split('.chess-board__square--mated .chess-board__piece');
+    expect(overrides.at(-1)).toMatch(/rotate\(70deg\)/);
+  });
+});
+
+describe('the landing settle', () => {
+  it('rides the slide as one animation rather than a competing CSS keyframe', () => {
+    // Two animations on one element fight over `transform`, and the loser is
+    // whichever the browser decides. The settle is composed into the slide.
+    const calls = [];
+    const original = window.Element.prototype.animate;
+    window.Element.prototype.animate = function animate(frames) { calls.push(frames); return {}; };
+    try {
+      const { rerender } = render(<ChessBoard fen={INITIAL_FEN} />);
+      rerender(<ChessBoard fen={applyMove(INITIAL_FEN, 'e4').fen} />);
+      const frames = calls[0];
+      expect(frames).toHaveLength(3);
+      // Overshoot, then rest.
+      expect(frames[1].transform).toMatch(/scale\(1\.0[0-9]\)/);
+      expect(frames[2].transform).toMatch(/scale\(1\)/);
+    } finally {
+      window.Element.prototype.animate = original;
+    }
+  });
+
+  it('leaves no orphan settle keyframe in the stylesheet', () => {
+    expect(compiledCss).not.toMatch(/@keyframes chess-board-settle/);
   });
 });

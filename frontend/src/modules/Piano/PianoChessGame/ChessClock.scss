@@ -1,0 +1,70 @@
+/**
+ * The clock.
+ *
+ * No palette of its own — every colour is one of the game's existing tokens, so
+ * a re-theme of the board carries the clock with it. It reads as part of the
+ * state rail rather than as a widget bolted beside the board.
+ */
+
+.chess-clock {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding-block-end: 0.6rem;
+  border-block-end: 1px solid var(--piano-border, #34343f);
+}
+
+.chess-clock__side {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  /* The idle side is dimmed rather than hidden: both times are information, but
+     only one of them is currently changing. */
+  color: var(--pc-ivory-dim);
+}
+
+.chess-clock__who {
+  font-size: var(--t-cap);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Tabular figures so the digits do not shuffle sideways every second — a clock
+   whose colon moves is a clock nobody can read at a glance. */
+.chess-clock__time {
+  font-size: var(--t-h);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+/* Whose clock is running, said in form as well as position. */
+.chess-clock__side--running {
+  border-color: var(--pc-brass);
+  color: var(--pc-ivory);
+}
+
+/* Out of time. The board's one alarm colour, and only ever in `down` mode —
+   nothing here ends a game, so this states a fact rather than a result. */
+.chess-clock__side--flagged {
+  border-color: var(--pc-felt);
+  color: var(--pc-felt);
+}
+
+/* A running low clock breathes. Opacity only, and only on the side that is
+   actually running out. */
+.chess-clock__side--running.chess-clock__side--flagged {
+  animation: chess-clock-flag 900ms ease-in-out infinite;
+}
+
+@keyframes chess-clock-flag {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chess-clock__side--running.chess-clock__side--flagged { animation: none; }
+}
