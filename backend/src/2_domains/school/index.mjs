@@ -2,10 +2,7 @@ export { validateQuestionBank, summarizeQuestionBank } from './questionBankValid
 export { gradeAnswer, givenShapeError } from './grading.mjs';
 export { createAttempt, isRegradeCorrection } from './attempt.mjs';
 export { bankContentRev } from './bankRev.mjs';
-export {
-  normalizeQuestionBankV2, issueWorksheet,
-  gradeIssuedWorksheet, remediationReceipt,
-} from './questionBankV2.mjs';
+export { normalizeQuestionBankV2, issueWorksheet } from './questionBankV2.mjs';
 // export { reviewAtlasCurriculum } from './atlasCurriculumReview.mjs';
 //   Commented out, not deleted: 7c66acb44 added this re-export but never
 //   committed atlasCurriculumReview.mjs, so the whole backend failed to boot —
