@@ -27,6 +27,7 @@ import { hydrateProcessEnvFromConfigs, loadLoggingConfig, resolveLoggerLevel, ge
 import { initializeLogging } from '#system/logging/dispatcher.mjs';
 import { createConsoleTransport, createFileTransport, createLogglyTransport, initSessionFileTransport, initSessionEventsFileTransport, createSchoolLedgerTransport } from '#system/logging/transports/index.mjs';
 import { createLogger } from '#system/logging/logger.mjs';
+import { resolveGeneralFileSinks } from '#system/logging/generalSinks.mjs';
 
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
 // Load repo-root .env deterministically (nodemon/working-dir can vary)
@@ -95,14 +96,38 @@ async function main() {
     format: isDocker ? 'json' : 'pretty'
   }));
 
-  if (!isDocker) {
-    dispatcher.addTransport(createFileTransport({
-      filename: join(__dirname, '..', 'dev.log'),
-      format: 'json',
-      maxSize: 50 * 1024 * 1024,
-      maxFiles: 3,
-      colorize: false
-    }));
+  // File sinks. The durable one at media/logs/backend.log is registered in
+  // every environment now: it used to be skipped in Docker, and with Loggly
+  // unconfigured in production that left stdout as the dispatcher's only
+  // general transport — the log Docker truncated 90 minutes after the
+  // 2026-08-16 remount storm. Which files, and their rotation bounds, is
+  // policy and lives in generalSinks.mjs; the registration is wiring and lives
+  // here. The transport rotates by size and re-opens through the new inode, so
+  // buffered writes flush into the generation they belong to (see the comment
+  // above openStream in file.mjs).
+  //
+  // Each registration is guarded because createFileTransport opens its
+  // descriptor eagerly and throws if it cannot: before this change the only
+  // file sink lived at the repo root, where that could not realistically fail,
+  // and now one lives on the media mount, where a full disk, a read-only
+  // remount or a permissions slip is a thing that happens. Following
+  // schoolLedger's rule — a logging failure must cost the log, never the
+  // server — degrade to the remaining transports and say so on stderr, which
+  // is the one channel that cannot itself be the thing that broke.
+  const mediaDir = configService.getMediaDir();
+  for (const sink of resolveGeneralFileSinks({
+    isDocker,
+    mediaDir,
+    repoRoot: join(__dirname, '..')
+  })) {
+    try {
+      dispatcher.addTransport(createFileTransport(sink));
+    } catch (err) {
+      process.stderr.write(
+        `[WARN] file log sink disabled: cannot write ${sink.filename} (${err?.code ?? err?.message}). `
+        + 'Backend logs will still reach the console, but nothing there survives a restart.\n'
+      );
+    }
   }
 
   const logglyToken = resolveLogglyToken();
@@ -125,7 +150,6 @@ async function main() {
   // even at the busiest observed day-rate (18.2 MB) the ceiling is ~255 MB.
   // Pruning now runs on a daily timer inside the transport, so this window is
   // enforced continuously rather than only at boot.
-  const mediaDir = configService.getMediaDir();
   initSessionFileTransport({
     baseDir: join(mediaDir, 'logs'),
     maxAgeDays: 14
