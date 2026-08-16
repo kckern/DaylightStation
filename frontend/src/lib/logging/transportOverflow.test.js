@@ -64,6 +64,24 @@ describe('buffering WS transport — ring overflow', () => {
     expect(marker.data.maxQueue).toBe(10);
   });
 
+  // The backend files an event only when its context carries app + sessionLog.
+  // A marker with a bare context would be dropped by that gate and counted as
+  // untagged — the one event you most want in the durable log, discarded by
+  // the other mechanism this tier just fixed. It adopts the identity of the
+  // stream whose events went missing.
+  it('inherits the app identity of the stream it is marking', async () => {
+    const t = makeTransport(10);
+    for (let i = 0; i < 15; i += 1) t.send(makeEvent(i));
+
+    await t.flush();
+
+    const marker = sent.flatMap((p) => p.events || [])
+      .map((e) => e.event)
+      .find((e) => e?.event === 'logging.transport.overflow');
+    expect(marker.context).toMatchObject({ app: 'piano-kiosk' });
+    expect(marker.context.logger).toBe('transport');
+  });
+
   it('coalesces one marker per burst rather than one per dropped event', async () => {
     const t = makeTransport(10);
     for (let i = 0; i < 25; i += 1) t.send(makeEvent(i));
