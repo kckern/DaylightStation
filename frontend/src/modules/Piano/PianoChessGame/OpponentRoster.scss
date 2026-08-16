@@ -70,7 +70,7 @@
 /* Smaller than the name and tucked under it — it is a footnote to the name,
    not a second heading. */
 .opponent-roster__blurb {
-  font-size: 0.72rem;
+  font-size: var(--t-cap, 0.85rem);
   line-height: 1.15;
   color: var(--piano-muted);
   white-space: nowrap;
@@ -224,7 +224,7 @@
 .opponent-roster-modal__state {
   grid-area: state;
   justify-self: start;
-  font-size: 0.68rem;
+  font-size: var(--t-cap, 0.85rem);
 }
 
 .opponent-roster-modal__row {
@@ -262,7 +262,7 @@
   margin: 0;
   padding: 0;
   list-style: none;
-  font-size: 0.72rem;
+  font-size: var(--t-cap, 0.85rem);
   color: var(--piano-muted);
 
   li { display: flex; align-items: center; gap: 0.3rem; }

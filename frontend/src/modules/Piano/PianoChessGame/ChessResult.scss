@@ -1,0 +1,147 @@
+/**
+ * The result overlay.
+ *
+ * Sits over the board, not instead of it: the position that produced the result
+ * is the first thing anyone wants to see when a game ends, so the scrim is flat
+ * and the card is narrow.
+ *
+ * No blur anywhere. A backdrop-filter over a full-screen layer is one of the
+ * documented frame-cost traps on the kiosk tablet, and a flat scrim reads the
+ * same at this size.
+ */
+
+.chess-result {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  display: grid;
+  place-items: center;
+  background: rgb(0 0 0 / 60%);
+  animation: chess-result-in 320ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.chess-result__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  width: min(24rem, 76cqw);
+  padding: 1.5rem 1.75rem;
+  border: 1px solid var(--piano-border, #34343f);
+  border-block-start: 3px solid var(--chess-result-accent, var(--pc-brass));
+  border-radius: var(--r-lg, 16px);
+  /* Opaque, for the same reason the settings panel is. */
+  background: var(--piano-surface, #1f1f26);
+  box-shadow: 0 1.5rem 4rem rgb(0 0 0 / 65%);
+  text-align: center;
+  animation: chess-result-card-in 320ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* Win, loss and draw were distinguishable only by their words. The accent is
+   the one thing that changes, and it changes the card's whole read. */
+.chess-result--win { --chess-result-accent: var(--pc-brass-glow, #2ec46f); }
+.chess-result--loss { --chess-result-accent: var(--pc-felt, #e05a4f); }
+.chess-result--draw { --chess-result-accent: var(--pc-ivory-dim, #9a9aa6); }
+
+.chess-result__headline {
+  margin: 0;
+  font-size: var(--t-display, 2rem);
+  font-weight: 700;
+  line-height: 1;
+  color: var(--chess-result-accent);
+}
+
+.chess-result__outcome {
+  margin: 0;
+  font-size: var(--t-body, 1rem);
+  color: var(--pc-ivory, #f1f1f4);
+  text-wrap: balance;
+}
+
+.chess-result__promoted {
+  margin: 0;
+  padding: 0.2rem 0.7rem;
+  border: 1px solid var(--pc-brass, #5fe39a);
+  border-radius: 2px;
+  font-size: var(--t-cap, 0.85rem);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pc-brass, #5fe39a);
+  animation: chess-result-tick 450ms cubic-bezier(0.2, 0.8, 0.2, 1) 320ms both;
+}
+
+.chess-result__tallies {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.4rem 1.1rem;
+  margin: 0.4rem 0 0;
+  padding-block-start: 0.75rem;
+  border-block-start: 1px solid var(--piano-border, #34343f);
+  width: 100%;
+}
+
+.chess-result__tally {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.chess-result__tally-label {
+  font-size: var(--t-cap, 0.85rem);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--pc-ivory-dim, #9a9aa6);
+}
+
+.chess-result__tally-value {
+  margin: 0;
+  font-size: var(--t-h, 1.2rem);
+  font-variant-numeric: tabular-nums;
+  color: var(--pc-ivory, #f1f1f4);
+}
+
+.chess-result__again {
+  margin-block-start: 0.5rem;
+  padding: 0.55rem 1.6rem;
+  border: 1px solid var(--chess-result-accent);
+  border-radius: var(--r-sm, 8px);
+  background: none;
+  color: var(--chess-result-accent);
+  font: inherit;
+  font-size: var(--t-body, 1rem);
+  cursor: pointer;
+
+  &:hover,
+  &:focus-visible {
+    background: color-mix(in srgb, var(--chess-result-accent) 16%, transparent);
+  }
+}
+
+.chess-result__hint {
+  margin: 0;
+  font-size: var(--t-cap, 0.85rem);
+  color: var(--pc-ivory-dim, #9a9aa6);
+}
+
+@keyframes chess-result-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes chess-result-card-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes chess-result-tick {
+  0% { opacity: 0; transform: scale(1); }
+  55% { opacity: 1; transform: scale(1.25); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chess-result,
+  .chess-result__card,
+  .chess-result__promoted { animation: none; }
+}

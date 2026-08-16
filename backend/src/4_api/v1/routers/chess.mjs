@@ -24,7 +24,8 @@ import { safeSegment } from './lib/emulatorPaths.mjs';
  * chess, and is exercised by tests rather than by either mount).
  */
 export function createChessRouter({
-  engine, configService, recordStore = null, archiveStore = null, ladderService = null, logger = null,
+  engine, configService, recordStore = null, archiveStore = null, ladderService = null,
+  analyst = null, logger = null,
 }) {
   const router = express.Router();
 
@@ -72,6 +73,13 @@ export function createChessRouter({
       skill: rung?.skill ?? null,
       elo: rung?.elo ?? null,
       movetime_ms: rung?.movetime_ms ?? null,
+      // Which engine answered, and how it was tuned. The archive keeps this, and
+      // without it a reviewed game cannot say whether "level 3" meant the
+      // homegrown opponent or Stockfish — the two are not comparable, and the
+      // ladder's mapping between them changes over time.
+      engine: rung?.engine ?? 'stockfish',
+      depth: rung?.depth ?? null,
+      blunder_rate: rung?.blunder_rate ?? null,
     };
     logger?.info?.('chess.move.requested', {
       userId: user,
@@ -82,6 +90,35 @@ export function createChessRouter({
     const move = await engine.chooseMove({ fen, rung, gameId: gameId || 'default' });
     if (!move) return res.json({ move: null, opponent: effectiveOpponent });
     return res.json({ ...move, opponent: effectiveOpponent });
+  }));
+
+  /**
+   * What the best move here is — for hints, and for anything else that needs
+   * the engine's real opinion.
+   *
+   * Deliberately NOT the move endpoint with a strong rung set, which is how
+   * hints used to work. Two reasons that arrangement had to go. A hint is only
+   * useful at full strength, so routing it through the ladder made its quality
+   * depend on config that exists for an entirely different purpose — and once
+   * the bottom rungs stopped being Stockfish at all, "ask the opponent engine
+   * for the best move" would have returned a beginner's guess. Analysis is a
+   * different question from opposition and now has a different door.
+   *
+   * Answers `{ move: null }` rather than 4xx for a finished position: asking for
+   * a hint in a mated position is a thing a child can do, not an error.
+   */
+  router.post('/analyze', asyncHandler(async (req, res) => {
+    if (!analyst) return res.status(501).json({ error: 'analysis_unavailable' });
+    const { fen, depth } = req.body || {};
+    if (!isValidFen(fen)) return res.status(400).json({ error: 'invalid_fen' });
+    const evaluation = await analyst.evaluate(fen, depth ? { depth: Number(depth) } : undefined);
+    if (evaluation.terminal || !evaluation.bestUci) {
+      return res.json({ move: null, terminal: true, cp: null, mate: null });
+    }
+    const uci = evaluation.bestUci;
+    const move = { from: uci.slice(0, 2), to: uci.slice(2, 4), ...(uci[4] ? { promotion: uci[4] } : {}) };
+    logger?.info?.('chess.analyze.served', { depth: evaluation.depth ?? null, cp: evaluation.cp ?? null });
+    return res.json({ move, cp: evaluation.cp, mate: evaluation.mate, depth: evaluation.depth, terminal: false });
   }));
 
   router.get('/config', asyncHandler(async (req, res) => {

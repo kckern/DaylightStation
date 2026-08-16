@@ -2,7 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, afterAll } from 'vitest';
 import { legalMoves } from '../../../../shared/gaming/chess/engine.mjs';
-import { createStockfishEngine, engineOptionsForRung, fallbackDifficultyFor } from './StockfishEngineAdapter.mjs';
+import { createStockfishEngine, engineOptionsForRung, fallbackDifficultyFor, isHomegrownRung } from './StockfishEngineAdapter.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const BOOT_FAILING_WORKER = path.join(HERE, '__fixtures__', 'bootFailingWorker.mjs');
@@ -102,5 +102,55 @@ describe('fallbackDifficultyFor', () => {
   it('gives the top rungs the strongest homegrown level', () => {
     expect(fallbackDifficultyFor({ id: 'sharp' }, { skill: 14 })).toBe('steady');
     expect(fallbackDifficultyFor({ id: 'ruthless' }, { elo: 1800 })).toBe('steady');
+  });
+});
+
+describe('isHomegrownRung', () => {
+  it('routes only rungs that ask for the teaching opponent', () => {
+    expect(isHomegrownRung({ engine: 'homegrown', depth: 1 })).toBe(true);
+    expect(isHomegrownRung({ engine: 'stockfish', skill: 8 })).toBe(false);
+    // An old rung with no `engine` predates the split and means Stockfish.
+    expect(isHomegrownRung({ skill: 3, movetime_ms: 200 })).toBe(false);
+    expect(isHomegrownRung(null)).toBe(false);
+  });
+});
+
+describe('the homegrown tier', () => {
+  const START = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+
+  it('answers a homegrown rung without ever starting a Stockfish worker', async () => {
+    // Pointed at a worker path that cannot exist: if the adapter reached for
+    // Stockfish at all, this would fall back or fail rather than answer.
+    const engine = createStockfishEngine({ workerPath: '/nonexistent/worker.mjs' });
+    const move = await engine.chooseMove({
+      fen: START,
+      rung: { id: 'level-0', engine: 'homegrown', depth: 1, blunder_rate: 0 },
+      gameId: 'g1',
+    });
+    expect(move).toBeTruthy();
+    expect(move.engine).toBe('homegrown');
+    expect(legalMoves(START).map((m) => m.san)).toContain(move.san);
+    engine.dispose();
+  });
+
+  it('is deterministic, so a rung plays the same way twice', async () => {
+    const engine = createStockfishEngine({ workerPath: '/nonexistent/worker.mjs' });
+    const rung = { id: 'level-2', engine: 'homegrown', depth: 1, blunder_rate: 0.2 };
+    const first = await engine.chooseMove({ fen: START, rung, gameId: 'a' });
+    const second = await engine.chooseMove({ fen: START, rung, gameId: 'b' });
+    expect(first.san).toBe(second.san);
+    engine.dispose();
+  });
+
+  it('returns null in a finished position rather than inventing a move', async () => {
+    const mated = '3r1rk1/2p5/6p1/p1p3Kq/4P3/2P2b2/PP6/RNR5 w - - 2 26';
+    const engine = createStockfishEngine({ workerPath: '/nonexistent/worker.mjs' });
+    const move = await engine.chooseMove({
+      fen: mated,
+      rung: { engine: 'homegrown', depth: 1, blunder_rate: 0 },
+      gameId: 'g1',
+    });
+    expect(move).toBeNull();
+    engine.dispose();
   });
 });

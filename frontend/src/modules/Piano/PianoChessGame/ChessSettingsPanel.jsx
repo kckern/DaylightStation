@@ -16,6 +16,7 @@ export default function ChessSettingsPanel({ config, rungId, onChange, onClose }
   const shuffle = config?.shuffle_each_turn !== false;
   const delayMs = config?.opponent_delay_ms ?? 700;
   const labelsOn = config?.feedback?.show_destination_labels !== false;
+  const soundOn = config?.feedback?.sound !== false;
   const addressing = config?.addressing === 'staff' ? 'staff' : 'chords';
 
   return (
@@ -89,6 +90,24 @@ export default function ChessSettingsPanel({ config, rungId, onChange, onClose }
             className={`chess-settings__opt${labelsOn === opt.id ? ' is-active' : ''}`}
             aria-pressed={labelsOn === opt.id}
             onClick={() => onChange({ feedback: { show_destination_labels: opt.id } })}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
+      <h3 className="chess-settings__group">Sound</h3>
+      <div className="chess-settings__row">
+        {/* The board confirms a move, a capture, a refusal and a check out
+            loud. Operator-facing because a room with someone practising in it
+            is a room where a second voice is sometimes unwelcome. */}
+        {[{ id: true, label: 'Sound on' }, { id: false, label: 'Silent' }].map((opt) => (
+          <button
+            key={String(opt.id)}
+            type="button"
+            className={`chess-settings__opt${soundOn === opt.id ? ' is-active' : ''}`}
+            aria-pressed={soundOn === opt.id}
+            onClick={() => onChange({ feedback: { sound: opt.id } })}
           >
             {opt.label}
           </button>

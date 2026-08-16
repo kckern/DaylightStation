@@ -89,9 +89,14 @@ export const DEFAULT_LADDER_POLICY = Object.freeze({
 /**
  * What facing this character is like, in words a child can weigh.
  *
- * The ladder is 21 rungs of one engine setting, which tells a player nothing.
+ * A rung is an engine and a pair of numbers, which tells a player nothing.
  * These say what to expect, so the ones still ahead read as something to work
  * towards rather than as locked doors.
+ *
+ * They are worth re-reading against `DEFAULT_LEVEL_RUNGS` after any re-spacing:
+ * "Gives pieces away" only became true of level 0 when that rung stopped being
+ * Stockfish, and a blurb that promises a beginner while the rung plays like a
+ * club player is how the ladder misled everyone in the first place.
  */
 const LEVEL_BLURBS = [
   'Gives pieces away', 'Barely looks', 'Misses a lot', 'Plays by accident',
@@ -112,6 +117,11 @@ export function resolvePolicy(config) {
   // A window smaller than the wins required can never be satisfied, which would
   // strand every player on level 0 with no visible cause.
   if (policy.wins_required > policy.window) policy.wins_required = policy.window;
+  // The level->engine table travels with the policy, so `rungForLevel` needs
+  // only the policy to answer. Kept out of the promotion block deliberately:
+  // how a rung plays and what it takes to beat it are separate decisions, and a
+  // household re-spacing the ladder should not have to restate its win rules.
+  if (Array.isArray(ladder.levels) && ladder.levels.length) policy.levels = ladder.levels;
   return Object.freeze(policy);
 }
 
@@ -259,14 +269,91 @@ export function availableOpponents(progress, roster) {
   return roster.slice(0, progress.unlocked_through + 1);
 }
 
-/** The engine settings for a level, in the shape the move endpoint expects. */
+/**
+ * What each level actually plays like.
+ *
+ * The ladder used to be level N = Stockfish skill N. Measurement killed that:
+ * `cli/chess-calibrate.cli.mjs` scored every skill level against positions from
+ * the children's own games and found the entire 0-20 range clustered at 32-79
+ * centipawns lost per move, while the child it was built for scored 111. Skill 0
+ * was never a beginner — it is a weakened strong engine, and Stockfish has no
+ * setting below it (`skill` clamps at 0, `UCI_Elo` at 1320, and `go nodes 1`
+ * measured *stronger*, not weaker).
+ *
+ * So the bottom of the ladder is the homegrown opponent instead, whose depth and
+ * blunder rate reach the band children are actually in. The measured ACPL of each
+ * rung is in the comments — re-measure with the calibrate CLI before moving one.
+ *
+ * The two tiers meet where they measured equal: depth 2 with no blundering (74)
+ * sits alongside Stockfish skill 0 (79).
+ */
+export const DEFAULT_LEVEL_RUNGS = Object.freeze([
+  // Learning what hangs. The blunder rate is what a child perceives here; these
+  // four measured within noise of each other on ACPL (~195-243), so they are
+  // graded by how OFTEN a piece is given away rather than by search strength.
+  { engine: 'homegrown', depth: 1, blunder_rate: 0.60 },  // ~200
+  { engine: 'homegrown', depth: 1, blunder_rate: 0.40 },  // ~205
+  { engine: 'homegrown', depth: 1, blunder_rate: 0.20 },  // ~200
+  { engine: 'homegrown', depth: 1, blunder_rate: 0.00 },  // 195
+  // Now it looks a move ahead, and the blunder rate becomes a real dial.
+  { engine: 'homegrown', depth: 2, blunder_rate: 0.50 },  // 146
+  { engine: 'homegrown', depth: 2, blunder_rate: 0.35 },  // 134
+  { engine: 'homegrown', depth: 2, blunder_rate: 0.20 },  // 101
+  { engine: 'homegrown', depth: 2, blunder_rate: 0.10 },  // 83
+  { engine: 'homegrown', depth: 2, blunder_rate: 0.00 },  // 74
+  // Stockfish from here up. The spacing below is PROVISIONAL: a depth-12
+  // reference could not separate skill 0 from skill 20, so these rungs are
+  // ordered by construction rather than by measurement. Movetime rises alongside
+  // skill because skill alone did not separate them at a flat 400ms. Re-run the
+  // calibrate CLI with a much deeper reference before trusting this half.
+  { engine: 'stockfish', skill: 0, movetime_ms: 300 },
+  { engine: 'stockfish', skill: 2, movetime_ms: 350 },
+  { engine: 'stockfish', skill: 4, movetime_ms: 400 },
+  { engine: 'stockfish', skill: 6, movetime_ms: 450 },
+  { engine: 'stockfish', skill: 8, movetime_ms: 500 },
+  { engine: 'stockfish', skill: 10, movetime_ms: 600 },
+  { engine: 'stockfish', skill: 12, movetime_ms: 700 },
+  { engine: 'stockfish', skill: 14, movetime_ms: 800 },
+  { engine: 'stockfish', skill: 16, movetime_ms: 1000 },
+  { engine: 'stockfish', skill: 18, movetime_ms: 1200 },
+  { engine: 'stockfish', skill: 20, movetime_ms: 2000 },
+].map(Object.freeze));
+
+/**
+ * The engine settings for a level, in the shape the move endpoint expects.
+ *
+ * A household can replace the whole table from YAML under `ladder.levels`, the
+ * same way it replaces the roster — the rungs are data, and re-spacing a ladder
+ * after a calibration run should not be a code change. A short or missing list
+ * falls back to the default entry for that level, so a partial override cannot
+ * punch a hole in the middle of the ladder.
+ */
 export function rungForLevel(level, policy) {
-  const skill = Math.min(TOP_LEVEL, Math.max(0, Math.floor(Number(level) || 0)));
-  return { id: `level-${skill}`, label: `Level ${skill}`, skill, movetime_ms: policy.movetime_ms };
+  const index = Math.min(TOP_LEVEL, Math.max(0, Math.floor(Number(level) || 0)));
+  const table = Array.isArray(policy?.levels) && policy.levels.length ? policy.levels : DEFAULT_LEVEL_RUNGS;
+  const entry = table[index] || DEFAULT_LEVEL_RUNGS[index];
+  const base = { id: `level-${index}`, label: `Level ${index}` };
+  if (entry?.engine === 'homegrown') {
+    return {
+      ...base,
+      engine: 'homegrown',
+      depth: Number(entry.depth) || 1,
+      // `??` not `||`, so a rung that never blunders stays at 0 rather than
+      // falling through to a default rate.
+      blunder_rate: Number(entry.blunder_rate ?? 0),
+      movetime_ms: policy?.movetime_ms ?? DEFAULT_LADDER_POLICY.movetime_ms,
+    };
+  }
+  return {
+    ...base,
+    engine: 'stockfish',
+    skill: Math.min(20, Math.max(0, Number(entry?.skill ?? index))),
+    movetime_ms: entry?.movetime_ms ?? policy?.movetime_ms ?? DEFAULT_LADDER_POLICY.movetime_ms,
+  };
 }
 
 export default {
-  LADDER_SIZE, TOP_LEVEL, DEFAULT_ROSTER, DEFAULT_LADDER_POLICY, themeForLevel,
+  LADDER_SIZE, TOP_LEVEL, DEFAULT_ROSTER, DEFAULT_LADDER_POLICY, DEFAULT_LEVEL_RUNGS, themeForLevel,
   resolvePolicy, resolveRoster, createLadderProgress, normalizeProgress, describeLevel,
   countsTowardPromotion, promotionStatus, applyGameToProgress, availableOpponents, rungForLevel,
 };

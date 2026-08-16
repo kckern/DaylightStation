@@ -20,6 +20,11 @@ export function cuesFromConfig(config) {
     flashRejected: feedback.flash_rejected !== false,
     toast: feedback.toast !== false,
     showDestinationLabels: feedback.show_destination_labels !== false,
+    // Sound. Default ON: this screen sits in front of an instrument and the
+    // game was mute, so a move landing had no confirmation a player could hear
+    // while looking at their hands. `!== false` like the rest, so a household
+    // silences it explicitly rather than by omission.
+    sound: feedback.sound !== false,
   };
 }
 

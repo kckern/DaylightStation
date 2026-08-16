@@ -20,6 +20,22 @@ function fromUci(fen, uci) {
 }
 
 /**
+ * Does this rung want the homegrown teaching opponent rather than Stockfish?
+ *
+ * The bottom of the ladder does, because Stockfish cannot go low enough — its
+ * weakest setting measured far stronger than the children it was meant to
+ * teach. See `DEFAULT_LEVEL_RUNGS` for the measurements.
+ *
+ * This says nothing about ANALYSIS. Hints, best-move reveals and post-game
+ * review always run full-strength Stockfish through
+ * `StockfishAnalysisAdapter` — a hint only as strong as a beginner's opponent
+ * would not be a hint. Only the opponent is weakened here.
+ */
+export function isHomegrownRung(rung) {
+  return rung?.engine === 'homegrown';
+}
+
+/**
  * Resolve a rung to engine options. skill and elo are different mechanisms and
  * cannot both apply: UCI_Elo makes the engine target a rating and ignore Skill
  * Level entirely, so a rung carrying both is a config error.
@@ -141,6 +157,39 @@ export function createStockfishEngine({
     /** Resolves the opponent's reply, or null when there are no legal moves. */
     async chooseMove({ fen, rung, gameId }) {
       if (legalMoves(fen).length === 0) return null;
+
+      // The bottom rungs are not Stockfish at all. Routed here rather than in a
+      // separate adapter because the caller asks one question — "what does this
+      // rung play?" — and which engine answers it is this layer's business, not
+      // the router's.
+      if (isHomegrownRung(rung)) {
+        const startedAt = Date.now();
+        const move = homegrownChooseMove(fen, {
+          depth: rung.depth,
+          blunder_rate: rung.blunder_rate,
+          // Seeded by position so a rung is deterministic: the same board always
+          // draws the same reply, which is what makes a rung reproducible in a
+          // calibration run and in a test.
+          seed: fen.length,
+        });
+        if (!move) return null;
+        logger?.info?.('chess.engine.move', {
+          rung: rung?.id,
+          engine: 'homegrown',
+          depth: rung.depth,
+          blunderRate: rung.blunder_rate,
+          thinkingMs: Date.now() - startedAt,
+        });
+        return {
+          from: move.from,
+          to: move.to,
+          ...(move.promotion ? { promotion: move.promotion } : {}),
+          san: move.san,
+          engine: 'homegrown',
+          thinkingMs: Date.now() - startedAt,
+        };
+      }
+
       const options = engineOptionsForRung(rung, logger);
       const startedAt = Date.now();
       // Serialized: one board in the house, so a queue beats a pool and keeps
@@ -190,4 +239,4 @@ export function createStockfishEngine({
   };
 }
 
-export default { createStockfishEngine, engineOptionsForRung };
+export default { createStockfishEngine, engineOptionsForRung, isHomegrownRung };
