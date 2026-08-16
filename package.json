@@ -148,6 +148,7 @@
     "ingest:health-archive": "node cli/ingest-health-archive.cli.mjs",
     "test:unit:vitest": "node scripts/gate-vitest.mjs",
     "sheet": "node scripts/gen-sheet.mjs",
-    "audit:paths": "node scripts/audit-household-paths.mjs"
+    "audit:paths": "node scripts/audit-household-paths.mjs",
+    "smoke:yaml": "node scripts/smoke-yaml-contracts.mjs"
   }
 }
