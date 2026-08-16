@@ -51,6 +51,11 @@ Task 4.2 is promoted out of Tier 4 because it is not hygiene. `startup:armed att
 
 **Shelved (8 tasks):** all of Tier 2 (2.1 session threading, 2.2 device identity, and the global tracing middleware inside 1.4 — mount the request logger, skip tracing for now), and Tier 4 tasks 4.1, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8. All are real; none are urgent once detection works. Revisit after the new telemetry has caught something in the field.
 
+> **Superseded for Tier 2 — 2026-08-16, later the same day.** Tasks 2.1 and 2.2 were un-shelved and landed (see the Tier 2 addenda below). The global tracing middleware inside 1.4 stays shelved. Two decisions taken during that work are worth carrying forward:
+>
+> - **The session value needs sanitising, not restructuring.** It is opaque and now contains `#` (`${singlePlayerKey}#${playerInstanceId}`); Plex receives it by hand-built query string, where a raw `#` truncates the url. `sanitizePlexSessionId` restricts it to characters legal unescaped in a query and appends a digest of the original whenever it had to change anything — without that digest, two player instances differing only in a replaced character would arrive at Plex as ONE identity.
+> - **`trust proxy` had to be prevented from moving an auth boundary.** `networkTrustResolver` grants `sysadmin` by address; it now reads the socket peer explicitly rather than `req.ip`, so setting `trust proxy` changes logging and nothing else. The pre-existing hole it preserves — anyone arriving through the reverse proxy presents a private peer and is trusted — is unfixed and deliberate: that is a decision about remote access, not a side effect of an observability change.
+
 **Deploy policy for this work:** merge to `main` and push. **No deploy** — no homeserver rebuild, no container restart. The kiosk verification in the Verification section below therefore cannot run yet; it stays pending until a deploy is separately authorised.
 
 ---
@@ -290,6 +295,15 @@ plex.stream.mint.aggregated {sampledCount: 20, skippedCount: 475, aggregated: {r
 
 **Step 6: Commit** — `feat(plex): one session id across frontend, backend and Plex`
 
+**Landed 2026-08-16.** Commits `795b34ba1` + `94c29b5c2`.
+
+- `?session=` is read in **both** play routes. The bare-compound-id route (`/play/plex:694719`) is the one the piano kiosk actually uses, and it is a separate handler from the splat route — reading the param in only one of them leaves the storm path untouched.
+- The value reaches the media element as a **query param**, because a `<video>`/dash element issues that request itself and cannot be given custom headers.
+- The play response reports `plexClientIdentifier` — the exact string Plex records as `X-Plex-Client-Identifier` — and the frontend adopts it into the playback logger's context. `plex.stream.mint` carries both the raw session (joins to the frontend counter) and that identifier (joins to Plex's server log); a line with only one is joinable in only one direction.
+- **Character set:** see the sanitising note in the Scope decision above. Reverting the sanitiser makes two player instances collapse onto `X-Plex-Client-Identifier=008c56a342:0`, because the `#` truncates the url — that collapse is what the test asserts against.
+- `resolveClientIdentifier(session)` is a public adapter method so the application layer can ask what Plex will see without opening a stream, and without `3_applications` importing adapter internals.
+- **Not covered:** `FitnessShow.jsx` builds `/api/v1/proxy/plex/stream/<id>` client-side, bypassing the play route, so the garage fitness path still mints an unidentified session. `PlayResponseService` also sets `videoUrl` from the raw `item.mediaUrl`, so that field carries neither `offset` nor `session` — pre-existing for `offset`, and no current Plex consumer prefers it over `mediaUrl`.
+
 ---
 
 ## Task 2.2: Per-device identity in backend logs
@@ -310,6 +324,14 @@ plex.stream.mint.aggregated {sampledCount: 20, skippedCount: 475, aggregated: {r
 **Step 4:** Note in your report that `<video>`/dash segment fetches cannot carry the header and rely on Task 2.1's query param instead.
 
 **Step 5: Commit** — `feat(api): know which device is calling`
+
+**Landed 2026-08-16.** Commit `27b3e034d`.
+
+- `frontend/src/lib/deviceIdentity.js` mints the id. There was nothing to reuse: the fleet name lives only inside a rendered screen and `window.__DAYLIGHT_DEVICE_ID` is read in one place and set in none — so the module prefers that name when something finally sets it.
+- Both `deviceId` and `deviceIdSource` go on every `http.response` line. One field would have to encode four facts: a declared id, a User-Agent standing in for one, nothing sent, and nobody having looked. The last two are the ones a single `null` would merge.
+- The frontend id carries the same distinction in its own value — `fleet:` is joinable to `devices.yml`, `browser:` persists for this browser profile, `ephemeral:` could NOT be persisted. A kiosk in private mode must not read as a stream of new devices.
+- **`<video>`/dash segment fetches cannot carry the header** and are identified by Task 2.1's query param instead. In the end-to-end trace this shows as a second `http.response` line with `deviceIdSource: 'none'` sitting beside a `plex.stream.mint` that names the session — the two lines are joined through the url, not the header.
+- See the `trust proxy` note in the Scope decision above.
 
 ---
 
