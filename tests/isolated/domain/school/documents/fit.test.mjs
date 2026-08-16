@@ -26,14 +26,18 @@ describe('resolveFitPlan — policy: flow', () => {
 });
 
 describe('resolveFitPlan — policy: fill', () => {
-  it('always returns the normal-density attempt marked growLastPage: true', () => {
+  // `fill` asks for two things, and both ride on the attempt: `growLastPage`
+  // lets the LAST page bottom out its answer spaces, and `balance` asks
+  // placement to redistribute fragments evenly across the page count the
+  // greedy pass produced rather than front-loading them.
+  it('always returns the normal-density attempt marked growLastPage + balance', () => {
     const result = resolveFitPlan({ policy: 'fill', attempts: [normalOverset, compactFits] });
-    expect(result).toEqual({ attempt: { ...normalOverset, growLastPage: true } });
+    expect(result).toEqual({ attempt: { ...normalOverset, growLastPage: true, balance: true } });
   });
 
-  it('marks growLastPage even when the normal attempt already fits on one page', () => {
+  it('marks them even when the normal attempt already fits on one page', () => {
     const result = resolveFitPlan({ policy: 'fill', attempts: [normalFits, compactFits] });
-    expect(result.attempt).toEqual({ ...normalFits, growLastPage: true });
+    expect(result.attempt).toEqual({ ...normalFits, growLastPage: true, balance: true });
   });
 });
 
