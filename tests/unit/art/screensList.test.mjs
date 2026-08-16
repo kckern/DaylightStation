@@ -91,10 +91,27 @@ describe('screens list endpoint', () => {
 
     // The body cannot distinguish "degraded" from "declares nothing", so the
     // warn is the operator's only per-screen signal.
-    expect(findLog('warn', 'screens.list.unreadable')?.data).toMatchObject({ id: 'broken' });
-    // ...and the summary line makes a directory-wide failure one greppable event
-    // rather than N scattered warns.
-    expect(findLog('debug', 'screens.list.success')?.data).toEqual({ count: 2, unreadable: 1 });
+    const warns = logged.filter((l) => l.event === 'screens.list.unreadable');
+    expect(warns).toHaveLength(1);
+    expect(warns[0].data).toMatchObject({ id: 'broken' });
+    // The summary makes a directory-wide failure one greppable event rather than
+    // N scattered warns, so its count is checked against the warns themselves —
+    // a counter that drifted out of the catch must not still read as correct.
+    expect(findLog('debug', 'screens.list.success')?.data).toEqual({ count: 2, unreadable: warns.length });
+  });
+
+  it('reports the error code when a screen entry is unreadable rather than malformed', async () => {
+    // A directory named like a screen file: readdir lists it and the .yml filter
+    // passes it, but readFile throws EISDIR. Exercises the filesystem branch,
+    // where `code` is populated — unlike a YAML syntax error, whose exception
+    // carries no `code` at all.
+    await fs.mkdir(path.join(dataPath, 'household', 'screens', 'isdir.yml'));
+
+    const r = await callList();
+
+    expect(r.body.screens).toEqual([{ id: 'isdir', name: 'isdir', resolution: null }]);
+    expect(findLog('warn', 'screens.list.unreadable')?.data).toMatchObject({ id: 'isdir', code: 'EISDIR' });
+    expect(findLog('debug', 'screens.list.success')?.data).toEqual({ count: 1, unreadable: 1 });
   });
 
   it('still returns an empty list when the screens directory is absent', async () => {
