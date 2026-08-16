@@ -5,7 +5,7 @@
  * IReportRunHistory port: records the outcome of one reporter run for
  * observability.
  *
- * Household path: history/newsreporter/{reporterId}/{date}
+ * Household path: newsreporter/log/{reporterId}/{date}
  * (DataService auto-appends the .yml extension). The {date} is the calendar
  * date derived from runResult.startedAt (the run's start instant), so all
  * runs for a given day land in one file.
@@ -19,7 +19,7 @@
 import { IReportRunHistory } from '#apps/newsreporter/ports/IReportRunHistory.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
-const HISTORY_BASE = 'history/newsreporter';
+const HISTORY_BASE = 'newsreporter/log';
 
 export class YamlReportRunDatastore extends IReportRunHistory {
   #dataService;

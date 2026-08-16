@@ -43,12 +43,12 @@ describe('YamlReportRunDatastore', () => {
     expect(isReportRunHistory(store)).toBe(true);
   });
 
-  it('writes to history/newsreporter/{reporterId}/{date} keyed by startedAt calendar date', async () => {
+  it('writes to newsreporter/log/{reporterId}/{date} keyed by startedAt calendar date', async () => {
     const dataService = fakeDataService();
     const store = new YamlReportRunDatastore({ dataService, logger: captureLogger() });
     await store.record('world-cup-reporter', runResult());
     expect(dataService.writes).toHaveLength(1);
-    expect(dataService.writes[0].path).toBe('history/newsreporter/world-cup-reporter/2026-06-21');
+    expect(dataService.writes[0].path).toBe('newsreporter/log/world-cup-reporter/2026-06-21');
   });
 
   it('persists the run outcome fields', async () => {
