@@ -26,7 +26,7 @@
  * TWO ROOTS. `--source-root` (default `content/school/learning-catalog/documents`) is
  * where hand-authored document CLASSES live, on the School catalog shelf
  * beside the `school.learning-document/v1` files; `--content-root` (default
- * `content/school/print-documents`) is the ARTIFACT root — `published/`,
+ * `household/apps/school/print-documents`) is the ARTIFACT root — `published/`,
  * `derived-banks/`, `allocations/` and nothing else. A non-absolute positional
  * resolves against the source root first and the content root second (see
  * `resolveDocumentPath`), which is what keeps a `published/<id>@<rev>.yml`

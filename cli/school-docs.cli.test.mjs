@@ -108,7 +108,7 @@ describe('school-docs CLI', () => {
     })).toEqual({
       dataDir: '/srv/daylight/data',
       contentRoot: '/srv/daylight/data/published/print-documents',
-      sourceRoot: '/srv/daylight/data/content/school/catalog/documents',
+      sourceRoot: '/srv/daylight/data/content/school/learning-catalog/documents',
     });
   });
 
@@ -119,7 +119,7 @@ describe('school-docs CLI', () => {
 
   it('defaults source-root to the catalog documents shelf, and honours --source-root (absolute or data-relative)', () => {
     expect(resolveSchoolDocsContentPaths({ env: { DAYLIGHT_BASE_PATH: '/srv/daylight' } }).sourceRoot)
-      .toBe('/srv/daylight/data/content/school/catalog/documents');
+      .toBe('/srv/daylight/data/content/school/learning-catalog/documents');
     expect(resolveSchoolDocsContentPaths({
       flags: { 'source-root': 'content/school/catalog/elsewhere' },
       env: { DAYLIGHT_BASE_PATH: '/srv/daylight' },
@@ -192,8 +192,8 @@ describe('school-docs CLI', () => {
     }));
 
     it('resolves a bare file argument against the SOURCE root first when it exists in both', async () => withTmpDir(async (root) => {
-      const contentRoot = path.join(root, 'data/content/school/print-documents');
-      const sourceRoot = path.join(root, 'data/content/school/catalog/documents');
+      const contentRoot = path.join(root, 'data/household/apps/school/print-documents');
+      const sourceRoot = path.join(root, 'data/content/school/learning-catalog/documents');
       await mkdir(contentRoot, { recursive: true });
       await mkdir(sourceRoot, { recursive: true });
       // Same relative name in both roots: the content-root copy is broken, so
@@ -820,7 +820,7 @@ describe('school-docs CLI', () => {
   describe('reprint <instanceId>', () => {
     it('reproduces an exact historical print from a worksheet-instance file alone — no manual flags', async () => withTmpDir(async (root) => {
       const dataDir = path.join(root, 'data');
-      const contentRoot = path.join(dataDir, 'content/school/print-documents');
+      const contentRoot = path.join(dataDir, 'household/apps/school/print-documents');
       await mkdir(contentRoot, { recursive: true });
       await writeFile(path.join(contentRoot, 'quiz.yml'), dump(sourceQuizDoc()));
 
@@ -866,7 +866,7 @@ describe('school-docs CLI', () => {
 
     it('reproduces the ORIGINAL print byte-for-byte and leaves the allocation file untouched', async () => withTmpDir(async (root) => {
       const dataDir = path.join(root, 'data');
-      const contentRoot = path.join(dataDir, 'content/school/print-documents');
+      const contentRoot = path.join(dataDir, 'household/apps/school/print-documents');
       await mkdir(contentRoot, { recursive: true });
       await writeFile(path.join(contentRoot, 'quiz.yml'), dump(sourceQuizDoc()));
       const published = await runSchoolDocs(['publish', 'quiz.yml', '--data-dir', dataDir]);
@@ -915,7 +915,7 @@ describe('school-docs CLI', () => {
 
     it('reports a FAILURE when the reprint does not reproduce the original allocation', async () => withTmpDir(async (root) => {
       const dataDir = path.join(root, 'data');
-      const contentRoot = path.join(dataDir, 'content/school/print-documents');
+      const contentRoot = path.join(dataDir, 'household/apps/school/print-documents');
       await mkdir(contentRoot, { recursive: true });
       await writeFile(path.join(contentRoot, 'quiz.yml'), dump(sourceQuizDoc()));
       const published = await runSchoolDocs(['publish', 'quiz.yml', '--data-dir', dataDir]);
@@ -992,7 +992,7 @@ describe('school-docs CLI', () => {
 
     it('refuses an instance with no documentRevision rather than silently reprinting the LATEST revision', async () => withTmpDir(async (root) => {
       const dataDir = path.join(root, 'data');
-      const contentRoot = path.join(dataDir, 'content/school/print-documents');
+      const contentRoot = path.join(dataDir, 'household/apps/school/print-documents');
       await mkdir(contentRoot, { recursive: true });
       await writeFile(path.join(contentRoot, 'quiz.yml'), dump(sourceQuizDoc()));
       const published = await runSchoolDocs(['publish', 'quiz.yml', '--data-dir', dataDir]);
@@ -1030,7 +1030,7 @@ describe('school-docs CLI', () => {
 
     it('fails clearly (not a crash) when the worksheet instance has no card allocation', async () => withTmpDir(async (root) => {
       const dataDir = path.join(root, 'data');
-      const contentRoot = path.join(dataDir, 'content/school/print-documents');
+      const contentRoot = path.join(dataDir, 'household/apps/school/print-documents');
       await mkdir(contentRoot, { recursive: true });
       await writeFile(path.join(contentRoot, 'quiz.yml'), dump(sourceQuizDoc()));
       const published = await runSchoolDocs(['publish', 'quiz.yml', '--data-dir', dataDir]);
@@ -1104,8 +1104,8 @@ describe('school-docs CLI', () => {
      */
     async function makeDataDir(root) {
       const dataDir = path.join(root, 'data');
-      const contentRoot = path.join(dataDir, 'content/school/print-documents');
-      const banksDir = path.join(dataDir, 'content/school/catalog/question-banks');
+      const contentRoot = path.join(dataDir, 'household/apps/school/print-documents');
+      const banksDir = path.join(dataDir, 'content/school/learning-catalog/question-banks');
       await mkdir(contentRoot, { recursive: true });
       await mkdir(banksDir, { recursive: true });
       return { dataDir, contentRoot, banksDir };
@@ -1115,7 +1115,7 @@ describe('school-docs CLI', () => {
     async function publishAndAllocate(root, dataDir, sourceFile, docId) {
       const published = await runSchoolDocs(['publish', sourceFile, '--data-dir', dataDir]);
       expect(published.exitCode).toBe(0);
-      const contentRoot = path.join(dataDir, 'content/school/print-documents');
+      const contentRoot = path.join(dataDir, 'household/apps/school/print-documents');
       const publishedFile = path.join(contentRoot, 'published', `${docId}@${published.report.rev}.yml`);
       const rendered = await runSchoolDocs([
         'render', publishedFile, '--out', path.join(root, `${published.report.rev}.pdf`),
