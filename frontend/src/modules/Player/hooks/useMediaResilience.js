@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { playbackLog } from '../lib/playbackLogger.js';
 import { getLogWaitKey } from '../lib/waitKeyLabel.js';
-import { usePlaybackHealth } from './usePlaybackHealth.js';
+import { usePlaybackHealth, describeElementSource, readElementTag } from './usePlaybackHealth.js';
 import { useResilienceConfig } from './useResilienceConfig.js';
 import { useResilienceState, RESILIENCE_STATUS } from './useResilienceState.js';
 import { usePlaybackSession } from './usePlaybackSession.js';
@@ -474,16 +474,24 @@ export function useMediaResilience({
   // isBuffering, causing the overlay to flash with the old position).
   // Also reads __seekSource ('bump' for arrow keys, 'click' for progress bar) to decide
   // whether the seek grace period should apply.
+  // Also the authority for `mediaDetails.hasElement`, which used to be the
+  // literal `true` (2026-08-16): the loading overlay branches on it to choose
+  // `el:…` over `el:none`, so the `el:` prefix asserted an element existed and
+  // nothing had ever checked. `elTag`/`elSource` come along because a
+  // <dash-video> wrapper and the real inner <video> both used to print `r=n/a`.
   const mediaElSnapshot = (() => {
     try {
       const el = getMediaEl?.();
       return {
+        hasElement: Boolean(el),
+        elTag: readElementTag(el),
+        elSource: describeElementSource(el),
         seeking: el?.seeking === true,
         seekSource: el?.__seekSource || null,
         duration: Number.isFinite(el?.duration) ? el.duration : null
       };
     } catch {
-      return { seeking: false, seekSource: null, duration: null };
+      return { hasElement: false, elTag: null, elSource: 'none', seeking: false, seekSource: null, duration: null };
     }
   })();
   const effectiveSeeking = isSeeking || mediaElSnapshot.seeking;
@@ -764,7 +772,9 @@ export function useMediaResilience({
     intentPositionUpdatedAt: intentPositionUpdatedAt
       || (effectiveSeeking ? stickyIntentUpdatedAtRef.current : null),
     mediaDetails: {
-      hasElement: true,
+      hasElement: mediaElSnapshot.hasElement,
+      elTag: mediaElSnapshot.elTag,
+      elSource: mediaElSnapshot.elSource,
       // Numeric currentTime + duration so the loading overlay can recognize
       // paused-at-duration and suppress the misleading "Seeking…" spinner.
       currentTime: Number.isFinite(seconds) ? Math.round(seconds * 10) / 10 : null,
@@ -786,6 +796,15 @@ export function useMediaResilience({
     isUserPaused,
     seekGraceActive,
     seekGraceExpired,
+    // Every field of mediaElSnapshot that reaches mediaDetails, `duration`
+    // included — it was missing. Nothing observable depended on it, because
+    // triggerRecovery's identity changes each render and drags the memo along,
+    // but a dep list that only works by accident is one refactor from reporting
+    // the first read forever, which is a hardcoded value with extra steps.
+    mediaElSnapshot.hasElement,
+    mediaElSnapshot.elTag,
+    mediaElSnapshot.elSource,
+    mediaElSnapshot.duration,
     shouldShowOverlay,
     showPauseOverlay,
     userIntent,

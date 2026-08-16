@@ -17,30 +17,36 @@ export function PlayerOverlayLoading({
   seconds = 0,
   stalled = false,
   waitingToPlay = false,
-  startupWatchdogState = null,
   status = 'pending',
   togglePauseOverlay,
   playerPositionDisplay,
   intentPositionDisplay,
   playerPositionUpdatedAt = null,
   intentPositionUpdatedAt = null,
-  countdownSeconds = null,
   onRequestHardReset,
   overlayLoggingActive = true,
   overlayLogLabel = null,
   waitKey,
-  overlayRevealDelayMs = 0,
   mediaDetails: mediaDetailsProp = null,
   suppressForBlackout = false,
   showPauseIcon = false,
   showDebugDiagnostics = false,
   getMediaEl,
-  sessionInstance = null,
-  currentTime = null,
-  videoFps = null,
   isExhausted = false,
   onRetryFromExhausted
 }) {
+  // Removed on 2026-08-16, all for the same reason: no caller anywhere in the
+  // repo supplied them, so every value they ever reported came from the default
+  // written on this line — `startupWatchdogState` (rendered as
+  // `startup:armed attempts=0 timeout=n/a` in every startup log ever written),
+  // `countdownSeconds`, `overlayRevealDelayMs` (the `/0ms` half of the vis
+  // field), `currentTime` and `videoFps` (which made every
+  // playback.stall_threshold_exceeded report a null playhead), and
+  // `sessionInstance`, whose presence diverted the whole structured payload
+  // below into a branch that never ran. A field nobody supplies does not report
+  // a small truth; it reports a confident falsehood, and these ones cost real
+  // hours during the remount-storm investigation.
+
   // Suppress the buffering spinner during a deliberate content-filter skip-card
   // pause (we pause to buffer behind the card; that's not a stall). Subscribed
   // FIRST so this hook is always called regardless of the early returns below.
@@ -93,12 +99,14 @@ export function PlayerOverlayLoading({
     }
   }, [overlayDisplayActive]);
 
-  // Track last good playhead position when not stalled
+  // Track last good playhead position when not stalled. Reads `seconds` — the
+  // playhead the caller actually passes — rather than the `currentTime` prop
+  // that nothing ever set.
   useEffect(() => {
-    if (!stalled && Number.isFinite(currentTime) && currentTime > 0) {
-      lastPlayheadRef.current = currentTime;
+    if (!stalled && Number.isFinite(seconds) && seconds > 0) {
+      lastPlayheadRef.current = seconds;
     }
-  }, [stalled, currentTime]);
+  }, [stalled, seconds]);
 
   // Stall threshold detection - emit event when stall exceeds 3 seconds (Issue #4 fix)
   useEffect(() => {
@@ -108,25 +116,18 @@ export function PlayerOverlayLoading({
     const overlayDuration = Date.now() - visibleSinceRef.current;
     if (overlayDuration > 3000) {
       stallThresholdEmittedRef.current = true;
-      const payload = {
+      playbackLog('playback.stall_threshold_exceeded', {
         duration: overlayDuration,
-        playheadPosition: currentTime,
-        videoFps: videoFps ?? null,
+        playheadPosition: Number.isFinite(seconds) ? seconds : null,
         lastGoodPosition: lastPlayheadRef.current,
         status,
         waitKey: waitKey || null
-      };
-      // Prefer sessionInstance for remote transport; fall back to playbackLog
-      if (sessionInstance && typeof sessionInstance.logEvent === 'function') {
-        sessionInstance.logEvent('playback.stall_threshold_exceeded', payload);
-      } else {
-        playbackLog('playback.stall_threshold_exceeded', payload, {
-          level: 'warn',
-          context: overlayLogContext
-        });
-      }
+      }, {
+        level: 'warn',
+        context: overlayLogContext
+      });
     }
-  }, [stalled, currentTime, videoFps, status, waitKey, sessionInstance, overlayLogContext]);
+  }, [stalled, seconds, status, waitKey, overlayLogContext]);
 
   const emitManualReset = useCallback((reasonOrPayload, extra = {}) => {
     const basePayload = typeof reasonOrPayload === 'string'
@@ -165,6 +166,12 @@ export function PlayerOverlayLoading({
     if (mediaDetailsProp && typeof mediaDetailsProp === 'object') {
       return {
         hasElement: Boolean(mediaDetailsProp.hasElement),
+        // Which object the reading was taken from. `r=n/a` had three causes and
+        // one output; the <dash-video> wrapper's readyState is not a number at
+        // all, and nothing recorded whether the wrapper or the inner <video>
+        // had been read.
+        elTag: mediaDetailsProp.elTag ?? null,
+        elSource: mediaDetailsProp.elSource ?? null,
         currentTime: mediaDetailsProp.currentTime ?? null,
         duration: mediaDetailsProp.duration ?? null,
         readyState: mediaDetailsProp.readyState ?? null,
@@ -174,6 +181,8 @@ export function PlayerOverlayLoading({
     }
     return {
       hasElement: false,
+      elTag: null,
+      elSource: null,
       currentTime: null,
       duration: null,
       readyState: null,
@@ -307,17 +316,14 @@ export function PlayerOverlayLoading({
     onPointerDown: handleSpinnerInteraction
   };
 
-  const countdownLabel = Number.isFinite(countdownSeconds)
-    ? `${Math.max(0, Math.floor(countdownSeconds))}s`
-    : 'n/a';
-  const timerSummary = `countdown:${countdownLabel}`;
   const seekSummary = `seek:${intentPositionDisplay || 'n/a'}`;
   const mediaSummary = normalizedMediaDetails.hasElement
-    ? `el:t=${normalizedMediaDetails.currentTime ?? 'n/a'} r=${normalizedMediaDetails.readyState ?? 'n/a'} n=${normalizedMediaDetails.networkState ?? 'n/a'} p=${normalizedMediaDetails.paused ?? 'n/a'}`
+    ? `el:${normalizedMediaDetails.elTag || 'unknown'}/${normalizedMediaDetails.elSource || 'unknown'}`
+      + ` t=${normalizedMediaDetails.currentTime ?? 'n/a'}`
+      + ` r=${normalizedMediaDetails.readyState ?? 'n/a'}`
+      + ` n=${normalizedMediaDetails.networkState ?? 'n/a'}`
+      + ` p=${normalizedMediaDetails.paused ?? 'n/a'}`
     : 'el:none';
-  const startupSummary = (isStartupPhase || startupWatchdogState?.active)
-    ? `startup:${startupWatchdogState?.state || 'armed'} attempts=${startupWatchdogState?.attempts ?? 0} timeout=${startupWatchdogState?.timeoutMs ?? 'n/a'}`
-    : 'startup:idle';
 
   const logLabel = overlayLogLabel || waitKey || '';
   const logOverlaySummary = useCallback(() => {
@@ -338,41 +344,29 @@ export function PlayerOverlayLoading({
     const now = Date.now();
     const timestampLabel = new Date(now).toISOString();
     const visibleDurationMs = visibleSinceRef.current ? now - visibleSinceRef.current : null;
-    const revealLabel = Number.isFinite(overlayRevealDelayMs) ? `${overlayRevealDelayMs}ms` : 'n/a';
-    // Build structured payload for session logging
-    const payload = {
+    const line = `ts:${timestampLabel} vis:${visibleDurationMs != null ? `${visibleDurationMs}ms` : 'n/a'} | status:${statusLabel} | ${seekSummary} | ${mediaSummary}`;
+    // The structured payload used to be built here and thrown away: it was
+    // handed to `sessionInstance.logEvent`, and no caller in modules/Player has
+    // ever passed a sessionInstance (every one in the repo is Fitness's). The
+    // string below it is what shipped. Both now go out together through
+    // playbackLog — the fields for anything reading the log, `summary` for
+    // anyone reading it with their eyes.
+    playbackLog('overlay-summary', {
       timestamp: timestampLabel,
       visibleDurationMs,
-      revealDelayMs: overlayRevealDelayMs,
       status: statusLabel,
-      countdownSeconds: countdownSeconds ?? null,
       intentPosition: intentPositionDisplay || null,
       mediaDetails: normalizedMediaDetails,
-      startupState: (isStartupPhase || startupWatchdogState?.active)
-        ? {
-          state: startupWatchdogState?.state || 'armed',
-          attempts: startupWatchdogState?.attempts ?? 0,
-          timeoutMs: startupWatchdogState?.timeoutMs ?? null
-        }
-        : null,
       stalled,
       waitingToPlay,
       waitKey: waitKey || null,
-      overlayLogLabel: overlayLogLabel || null
-    };
-    // Issue #4 fix: Use sessionInstance.logEvent() for critical telemetry (no sampling)
-    // This ensures overlay events reach remote transport for production debugging
-    if (sessionInstance && typeof sessionInstance.logEvent === 'function') {
-      sessionInstance.logEvent('overlay-summary', payload);
-    } else {
-      // Fallback to playbackLog with info level (elevated from debug) for non-session contexts
-      const summary = `ts:${timestampLabel} vis:${visibleDurationMs != null ? `${visibleDurationMs}ms` : 'n/a'}/${revealLabel} | status:${statusLabel} | ${timerSummary} | ${seekSummary} | ${mediaSummary} | ${startupSummary}`;
-      playbackLog('overlay-summary', logLabel ? `[${logLabel}] ${summary}` : summary, {
-        level: 'info',
-        context: overlayLogContext
-      });
-    }
-  }, [effectiveMetaIsNull, overlayDisplayActive, isVisible, status, overlayRevealDelayMs, timerSummary, seekSummary, mediaSummary, startupSummary, logLabel, overlayLogContext, sessionInstance, statusLabel, countdownSeconds, intentPositionDisplay, normalizedMediaDetails, isStartupPhase, startupWatchdogState, stalled, waitingToPlay, waitKey, overlayLogLabel]);
+      overlayLogLabel: overlayLogLabel || null,
+      summary: logLabel ? `[${logLabel}] ${line}` : line
+    }, {
+      level: 'info',
+      context: overlayLogContext
+    });
+  }, [effectiveMetaIsNull, overlayDisplayActive, isVisible, status, seekSummary, mediaSummary, logLabel, overlayLogContext, statusLabel, intentPositionDisplay, normalizedMediaDetails, stalled, waitingToPlay, waitKey, overlayLogLabel]);
 
   // Use a ref to store the latest logOverlaySummary function to avoid timer recreation
   const logOverlaySummaryRef = useRef(logOverlaySummary);
@@ -483,29 +477,22 @@ PlayerOverlayLoading.propTypes = {
   seconds: PropTypes.number,
   stalled: PropTypes.bool,
   waitingToPlay: PropTypes.bool,
-  startupWatchdogState: PropTypes.shape({
-    active: PropTypes.bool,
-    state: PropTypes.string,
-    reason: PropTypes.string,
-    attempts: PropTypes.number,
-    timeoutMs: PropTypes.number,
-    timestamp: PropTypes.number
-  }),
   togglePauseOverlay: PropTypes.func,
   status: PropTypes.string,
   playerPositionDisplay: PropTypes.string,
   intentPositionDisplay: PropTypes.string,
   playerPositionUpdatedAt: PropTypes.number,
   intentPositionUpdatedAt: PropTypes.number,
-  countdownSeconds: PropTypes.number,
   onRequestHardReset: PropTypes.func,
   overlayLoggingActive: PropTypes.bool,
   overlayLogLabel: PropTypes.string,
   waitKey: PropTypes.any,
-  overlayRevealDelayMs: PropTypes.number,
   mediaDetails: PropTypes.shape({
     hasElement: PropTypes.bool,
+    elTag: PropTypes.string,
+    elSource: PropTypes.string,
     currentTime: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    duration: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
     readyState: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
     networkState: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
     paused: PropTypes.bool
@@ -514,11 +501,6 @@ PlayerOverlayLoading.propTypes = {
   showPauseIcon: PropTypes.bool,
   showDebugDiagnostics: PropTypes.bool,
   getMediaEl: PropTypes.func,
-  sessionInstance: PropTypes.shape({
-    logEvent: PropTypes.func
-  }),
-  currentTime: PropTypes.number,
-  videoFps: PropTypes.number,
   isExhausted: PropTypes.bool,
   onRetryFromExhausted: PropTypes.func
 };
