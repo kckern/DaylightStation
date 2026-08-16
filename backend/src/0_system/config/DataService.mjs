@@ -7,8 +7,8 @@
  * Usage:
  *   dataService.user.read('lifelog/nutrition', username?)
  *   dataService.user.write('lifelog/nutrition', data, username?)
- *   dataService.household.read('common/weather', hid?)
- *   dataService.household.write('common/weather', data, hid?)
+ *   dataService.household.read('weather/current', hid?)
+ *   dataService.household.write('weather/current', data, hid?)
  *   dataService.system.read('state/cron-runtime')
  *   dataService.system.write('state/cron-runtime', data)
  *

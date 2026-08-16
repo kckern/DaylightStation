@@ -8,7 +8,7 @@ function harness(files = {}) {
     'config/triggers/bindings/nfc': {},
     'config/triggers/responses': {},
     'config/triggers/endpoints': {},
-    'history/triggers/nfc.observed': {},
+    'triggers/nfc.observed': {},
     ...files,
   };
   const loadFile = (p) => disk[p];
@@ -25,7 +25,7 @@ describe('YamlTriggerConfigRepository split writes', () => {
     const { repo, disk } = harness();
     const r = await repo.recordObserved('aa', '2026-07-11 10:00:00');
     expect(r.created).toBe(true);
-    expect(disk['history/triggers/nfc.observed'].aa.count).toBe(1);
+    expect(disk['triggers/nfc.observed'].aa.count).toBe(1);
     expect(disk['config/triggers/bindings/nfc'].aa).toBeUndefined();
   });
 
@@ -35,6 +35,6 @@ describe('YamlTriggerConfigRepository split writes', () => {
     expect(r.created).toBe(true);
     expect(disk['config/triggers/bindings/nfc'].bb.note).toBe('Pinocchio');
     expect(disk['config/triggers/bindings/nfc'].bb.scanned_at).toBeUndefined();
-    expect(disk['history/triggers/nfc.observed'].bb.last_seen).toBe('2026-07-11 10:00:00');
+    expect(disk['triggers/nfc.observed'].bb.last_seen).toBe('2026-07-11 10:00:00');
   });
 });

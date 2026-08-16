@@ -3,7 +3,7 @@
  *
  * Simple YAML-based datastore for household weather data.
  * Weather data is shared at household level (not user-specific).
- * Path: household[-{id}]/common/weather
+ * Path: household[-{id}]/weather/current
  *
  * Uses DataService for filesystem abstraction - adapter does not
  * interact with filesystem directly.

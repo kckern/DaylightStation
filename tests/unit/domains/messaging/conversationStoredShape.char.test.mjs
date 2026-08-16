@@ -66,7 +66,7 @@ describe('conversation stored YAML shape (characterization)', () => {
     }, '2026-07-07T10:00:02.000Z');
 
     const file = path.join(
-      root, 'household', 'shared/messaging/conversations', `${conv.id}.yml`
+      root, 'household', 'messaging/conversations', `${conv.id}.yml`
     );
     const stored = yaml.load(readFileSync(file, 'utf8'));
 
