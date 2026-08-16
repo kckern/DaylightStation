@@ -12,6 +12,31 @@
 
 ---
 
+## Status — 2026-08-16
+
+Executed end to end the same day the audit was written. Every tier shipped; nothing was left shelved.
+
+| Tier | State | Landed as |
+|---|---|---|
+| **0** — evidence survives | ✅ | kiosk tagged `piano-kiosk`, 14-day retention pruned on a timer, 200 MB general sink at `media/logs/backend.log`, silent-drop counters |
+| **1** — dark junctions | ✅ | `media-element.generation`, `plex.stream.mint`, `playback.player-key-changed` / `dash-element-rekeyed` with `changedComponent`, stream-URL succeeded/failed/skipped, global request logging on `finish`+`close` |
+| **2** — identity joins up | ✅ | session id threaded frontend→backend→Plex, `X-Daylight-Device`, `trust proxy` |
+| **3** — notice and tell a human | ✅ | `PlaybackStallDetector`, default recipient resolution for `system` notifications, `autoReport`, feedback arrival notification |
+| **4** — honest fields | ✅ | seven fabricated overlay fields removed, one `waitKey` meaning, dash-absence disambiguation, cleanup + ledger instrumentation, dead `DEBUG_MEDIA` logging replaced |
+
+**Still unverified in the field.** All of it is proven in unit tests and jsdom only. The kiosk verification below has NOT been run, because no deploy was authorised. That check — `start.mpd` down from 73–93/min to ≤3 per session, one transcode session UUID in the audio segment requests, `el:t=` advancing past 0, and `media/logs/piano-kiosk/*.jsonl` surviving a container restart — remains the real gate.
+
+**Known consequence of Tier 3.** `resolveDefaultRecipient` also repairs the ESP relay watchdog, which has been returning `delivered: false` since it was written. If the kitchen board is currently dead, the first 30-minute tick after a deploy will send a Telegram message that looks new but is years overdue.
+
+**Follow-ups that outlived the plan:**
+- `63 MB/day at `info`` is the highest-value remaining item — trimming one chatty component buys log retention for free rather than by spending disk.
+- `Logger.js`'s `.aggregated` roll-up **sums numeric fields**, so `requestSeq`, `msSinceLastRequest` and the backend's `startOffset` are meaningless in an aggregate line. Same class of defect this programme was written to correct.
+- `poses/` and `camera-archive/` have no retention policy from anyone; they are now protected from the log pruner, which means nothing prunes them.
+- Two `logging.yml` files exist; only the repo-root one is read.
+- The 60s stall threshold is untuned against field data.
+
+---
+
 ---
 
 ## Scope decision — 2026-08-16
