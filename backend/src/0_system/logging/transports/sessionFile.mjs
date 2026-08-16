@@ -14,9 +14,22 @@
 
 import fs from 'fs';
 import path from 'path';
+import { createLogger } from '../logger.mjs';
 
 let instance = null;
 let pruneTimer = null;
+
+/**
+ * Once per process, not once per transport: the point of the warn below is to
+ * be noticed, and a surface that is emitting thousands of untagged events a
+ * minute would otherwise turn the diagnosis into its own flood.
+ * resetSessionFileTransport clears it, which is what lets tests exercise it.
+ */
+let warnedAboutSkips = false;
+
+// This transport is invoked directly from ingestion and is NOT registered with
+// the dispatcher, so logging through the dispatcher here cannot recurse.
+const logger = createLogger({ source: 'backend', app: 'logging', context: { module: 'session-file' } });
 
 /** How often the recurring prune runs. Daily: retention is measured in days. */
 const DEFAULT_PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1000;
@@ -51,6 +64,35 @@ export function initSessionFileTransport({ baseDir, maxAgeDays = 3, pruneInterva
   // Map<app, { filePath, fd }> — uses file descriptors for synchronous writes
   const activeSessions = new Map();
 
+  // Drop accounting. The gate below discarded every event the piano kiosk ever
+  // emitted, for months, without leaving a trace — and during a storm the drop
+  // IS the signal. Count by app so the answer to "why is there no log for X"
+  // is a number rather than an investigation.
+  const skippedByApp = new Map();
+  const skippedByReason = new Map();
+
+  const recordSkip = (event) => {
+    const app = event?.context?.app;
+    // Two different absences, kept apart: an event with no app at all is a
+    // logger that was never given an identity, while an event WITH an app but
+    // no sessionLog is a surface that logs and simply was not opted in. The
+    // second is the one worth chasing; collapsing them hides that.
+    const reason = app ? 'not-session-logged' : 'no-app';
+    const key = app || '(untagged)';
+    skippedByApp.set(key, (skippedByApp.get(key) || 0) + 1);
+    skippedByReason.set(reason, (skippedByReason.get(reason) || 0) + 1);
+
+    if (!warnedAboutSkips) {
+      warnedAboutSkips = true;
+      logger.warn('logging.session-file.untagged', {
+        app: key,
+        reason,
+        droppedEvent: typeof event?.event === 'string' ? event.event : null,
+        hint: 'call configure({ context: { app, sessionLog: true } }) in the app that owns this surface',
+      });
+    }
+  };
+
   const openSession = (app, ts) => {
     const existing = activeSessions.get(app);
     if (existing?.fd != null) {
@@ -77,7 +119,10 @@ export function initSessionFileTransport({ baseDir, maxAgeDays = 3, pruneInterva
     // directly from ingestion, not registered with the dispatcher.
     write(event) {
       const app = event?.context?.app;
-      if (!app || !event?.context?.sessionLog) return;
+      if (!app || !event?.context?.sessionLog) {
+        recordSkip(event);
+        return;
+      }
 
       if (event.event === 'session-log.start') {
         const session = openSession(app, event.ts);
@@ -112,7 +157,21 @@ export function initSessionFileTransport({ baseDir, maxAgeDays = 3, pruneInterva
       for (const [app, session] of activeSessions) {
         sessions[app] = { filePath: session.filePath, writable: session.fd != null };
       }
-      return { name: 'session-file', baseDir, maxAgeDays, pruneIntervalMs, sessions };
+      let total = 0;
+      for (const n of skippedByApp.values()) total += n;
+      return {
+        name: 'session-file',
+        baseDir,
+        maxAgeDays,
+        pruneIntervalMs,
+        sessions,
+        skipped: {
+          total,
+          byApp: Object.fromEntries(skippedByApp),
+          byReason: Object.fromEntries(skippedByReason),
+          warned: warnedAboutSkips,
+        },
+      };
     }
   };
 
@@ -128,6 +187,7 @@ export function resetSessionFileTransport() {
     instance.flush();
   }
   clearPruneTimer();
+  warnedAboutSkips = false;
   instance = null;
 }
 
