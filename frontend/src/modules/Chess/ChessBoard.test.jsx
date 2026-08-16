@@ -163,13 +163,29 @@ describe('ChessBoard', () => {
   });
 
   it('is inert until a host supplies a click handler', () => {
+    // Inert means NOT A BUTTON, not a disabled one: no host in this app passes
+    // a handler, so sixty-four disabled buttons inside a role="grid" were a
+    // focus stop that went nowhere and the wrong thing to announce.
     const { container, rerender } = render(<ChessBoard fen={INITIAL_FEN} />);
-    expect(container.querySelector('[data-square="e2"]').disabled).toBe(true);
+    const inert = container.querySelector('[data-square="e2"]');
+    expect(inert.tagName).toBe('DIV');
+    expect(inert.getAttribute('role')).toBe('gridcell');
 
     const onSelect = vi.fn();
     rerender(<ChessBoard fen={INITIAL_FEN} onSelect={onSelect} />);
+    const live = container.querySelector('[data-square="e2"]');
+    expect(live.tagName).toBe('BUTTON');
     fireEvent.click(screen.getByLabelText('e2 — wP'));
     expect(onSelect).toHaveBeenCalledWith('e2');
+  });
+
+  it('never advertises a pointer on a square that cannot be pressed', () => {
+    // `:not(:disabled)` matches any div, so an unscoped rule would have offered
+    // a pointer cursor on every inert square.
+    // Anchored: an unanchored search finds this selector INSIDE the
+    // button-scoped one and passes for the wrong reason.
+    expect(compiledCss).toMatch(/button\.chess-board__square:not\(:disabled\)/);
+    expect(compiledCss).not.toMatch(/(^|[},\s])\.chess-board__square:not\(:disabled\)/);
   });
 });
 

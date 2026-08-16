@@ -60,8 +60,8 @@ describe('createChessConfigService', () => {
       writeUserConfig: (userId, data) => { writes.push({ userId, data }); },
       logger: silent,
     });
-    await service.writeUserLayer('user_2', { default_rung: 'steady' });
-    expect(writes).toEqual([{ userId: 'user_2', data: { default_rung: 'steady' } }]);
+    await service.writeUserLayer('test-user', { default_rung: 'steady' });
+    expect(writes).toEqual([{ userId: 'test-user', data: { default_rung: 'steady' } }]);
   });
 
   it('merges a patch into the existing override instead of replacing the file', async () => {
@@ -74,7 +74,7 @@ describe('createChessConfigService', () => {
       writeUserConfig: (_userId, data) => { stored = data; },
       logger: silent,
     });
-    await service.writeUserLayer('user_2', { feedback: { hint_level: 'off' } });
+    await service.writeUserLayer('test-user', { feedback: { hint_level: 'off' } });
     expect(stored).toEqual({ default_rung: 'steady', feedback: { hint_level: 'off' } });
   });
 
