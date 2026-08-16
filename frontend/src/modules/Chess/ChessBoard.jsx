@@ -91,14 +91,27 @@ const Square = memo(function Square({
     isPromotion && 'chess-board__square--promoted',
   ].filter(Boolean).join(' ');
 
+  /**
+   * A button only when there is something to press.
+   *
+   * No host in this app passes `onSelect` — the piano drives the board from
+   * MIDI, and every square rendered here was a `<button disabled>` inside a
+   * `role="grid"`: wrong semantics for assistive tech, a focus stop that goes
+   * nowhere, and sixty-four elements carrying interactive machinery for a
+   * board nobody can click. The interactive form is still exactly what it was
+   * for any host that does supply a handler.
+   */
+  const Tag = onSelect ? 'button' : 'div';
+  const interactive = onSelect
+    ? { type: 'button', onClick: () => onSelect(square) }
+    : { role: 'gridcell' };
+
   return (
-    <button
-      type="button"
+    <Tag
       className={classes}
       data-square={square}
       aria-label={piece ? `${square} — ${piece}` : square}
-      onClick={onSelect ? () => onSelect(square) : undefined}
-      disabled={!onSelect}
+      {...interactive}
     >
       {isDestination && !piece && <span className="chess-board__dot" aria-hidden="true" />}
       {/* The alarm layer. A real child, NOT `::after` — that pseudo-element is
@@ -134,7 +147,7 @@ const Square = memo(function Square({
           draggable="false"
         />
       )}
-    </button>
+    </Tag>
   );
 });
 
