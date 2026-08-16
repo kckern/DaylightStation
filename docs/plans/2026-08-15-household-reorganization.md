@@ -232,6 +232,15 @@ Expected: no new failures vs. the baseline you recorded before starting.
 
 ## Tier 1 — Cheap moves. One or two call sites each.
 
+> **EXECUTED 2026-08-16 on the server — see `docs/_wip/2026-08-16-household-tier1-outcome.md`.**
+> Seven domains moved (feedback, feed, gameshow, newsreporter/log, media,
+> gaming/games, cli/log); 73 files, all originals preserved in
+> `data/_deleteme/`. **Four escalated to Tier 2** — `finances`, `komga`,
+> `gratitude`, and `weather` all exceed the one-or-two-site budget, and
+> `weather`/`komga` are split across two roots so they must move whole.
+> **`common/cost` does not exist.** Three corrections to this plan's method
+> are recorded in that outcome doc — read it before starting Tier 2.
+
 Each of these resolves through `getHouseholdPath()` / `dataService.household.read`, so the move is: change the key string, move the data, run the tests.
 
 **Do them one domain at a time, one commit each.** Do not batch — a batched failure is much harder to localize.

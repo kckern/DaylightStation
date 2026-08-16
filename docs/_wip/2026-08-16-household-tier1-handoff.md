@@ -1,5 +1,11 @@
 # Handoff — Household Tier 1 domain moves (for the prod agent)
 
+> **SUPERSEDED 2026-08-16.** Both blockers cleared and Tier 1 ran on the
+> server. Outcome, escalations, and three corrections to the procedure:
+> `docs/_wip/2026-08-16-household-tier1-outcome.md`. Do not re-run the list
+> below without reading that first — `common/cost` does not exist, and four
+> of its rows are Tier 2.
+
 **Written:** 2026-08-16, from the laptop, by an agent with no prod deploy authority.
 **For:** whoever runs this on `homeserver.local`, with the container in reach.
 **Plan this executes:** `docs/plans/2026-08-15-household-reorganization.md` — Tier 1.
