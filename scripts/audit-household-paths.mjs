@@ -30,6 +30,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+// Guards the executable body below so `findWriterReaderSplits` can be
+// imported by tests (tests/isolated/tooling/auditHouseholdPaths.test.mjs)
+// without running the full disk audit and its terminal `process.exit`.
+const isMainModule = import.meta.url === `file://${process.argv[1]}`;
+
 const DATA = process.env.DAYLIGHT_DATA
   || '/media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/data';
 const HH = path.join(DATA, 'household');
@@ -72,7 +77,74 @@ const PATTERNS = [
   /(?:PATH|DIR|SUBPATH|Path|Dir|Root|ROOT)\w*\s*=\s*\[\s*'household'\s*,\s*((?:'[a-z0-9._-]+'\s*,?\s*)+)\]/g,
 ];
 
+// Generic wrapper roots that are not themselves a domain — the domain is the
+// segment underneath. `history/triggers` and `history/piano` (see the header
+// comment above and the 2026-08-16 incident) are both filed under `history`,
+// but the bounded context is `triggers` / `piano`, not `history` itself.
+const GENERIC_PREFIXES = new Set(['history']);
+
+/**
+ * Find domains where the code WRITES one subpath and READS a different one.
+ *
+ * The existing checks ask "does every resolved path exist" and "does every
+ * domain on disk have a reader". Both answered YES on 2026-08-16 while the
+ * piano MIDI corpus was forked: the writer targeted history/piano, the render
+ * jobs read piano/log, and both roots existed with readers. Nothing failed.
+ *
+ * A domain is the first path segment (after stripping a GENERIC_PREFIXES
+ * wrapper, if any). Within one domain, if the set of written subpaths and the
+ * set of read subpaths are both non-empty and share nothing, the two halves
+ * disagree about which root is canonical.
+ *
+ * Write-only trails (barcode/log) and read-only trees (config/devices) are
+ * NOT flagged — a missing counterpart is normal, a contradicting one is not.
+ */
+export function findWriterReaderSplits(sites) {
+  const byDomain = new Map();
+  for (const site of sites) {
+    const segments = String(site.subpath).split('/');
+    const domain = (GENERIC_PREFIXES.has(segments[0]) && segments[1]) ? segments[1] : segments[0];
+    if (!byDomain.has(domain)) byDomain.set(domain, { writes: new Map(), reads: new Map() });
+    const bucket = byDomain.get(domain);
+    const target = site.mode === 'write' ? bucket.writes : bucket.reads;
+    if (!target.has(site.subpath)) target.set(site.subpath, []);
+    target.get(site.subpath).push(`${site.file}:${site.line}`);
+  }
+
+  const splits = [];
+  for (const { writes, reads } of byDomain.values()) {
+    if (writes.size === 0 || reads.size === 0) continue;
+    const shared = [...writes.keys()].some((p) => reads.has(p));
+    if (shared) continue; // at least one path agrees — not a split
+    for (const [subpath, files] of writes) splits.push({ subpath, writers: files, readers: [] });
+    for (const [subpath, files] of reads) splits.push({ subpath, writers: [], readers: files });
+  }
+  return splits;
+}
+
+/**
+ * Determine read/write mode from the full matched text, independent of which
+ * PATTERN matched. `household.read(`/`household.write(` and `loadFile`/
+ * `saveFile` are the only shapes that say which direction the access is;
+ * `resolveDir`/`resolvePath`/`getHouseholdPath` and the bare path-literal
+ * shapes are ambiguous on their own and are left out of the writer/reader
+ * check rather than guessed at.
+ */
+const modeOf = (matchText) => {
+  if (/\.read\(/.test(matchText)) return 'read';
+  if (/\.write\(/.test(matchText)) return 'write';
+  if (/(?:^|[^a-zA-Z])loadFile/.test(matchText)) return 'read';
+  if (/(?:^|[^a-zA-Z])saveFile/.test(matchText)) return 'write';
+  return null;
+};
+
+// Everything below is the executable audit — scans disk, prints a report,
+// and exits with a status code. Guarded so importing this module (e.g. to
+// use `findWriterReaderSplits` from a test) doesn't run it as a side effect.
+if (isMainModule) {
+
 const expected = new Map(); // relPath -> Set(files)
+const collectedSites = []; // { file, line, subpath, mode } — feeds findWriterReaderSplits
 for (const dir of SCAN_DIRS) {
   for (const file of walk(dir)) {
     const src = stripComments(fs.readFileSync(file, 'utf8'));
@@ -84,6 +156,12 @@ for (const dir of SCAN_DIRS) {
         if (!rel || rel.startsWith('.') || rel.endsWith('.mjs') || rel.includes('${')) continue;
         if (!expected.has(rel)) expected.set(rel, new Set());
         expected.get(rel).add(file);
+
+        const mode = modeOf(m[0]);
+        if (mode) {
+          const line = src.slice(0, m.index).split('\n').length;
+          collectedSites.push({ file, line, subpath: rel, mode });
+        }
       }
     }
   }
@@ -160,6 +238,20 @@ if (orphans.length) {
   for (const o of orphans) line(`  household/${o}`);
 }
 
-const bad = movedAway.length + orphans.length;
+const splits = findWriterReaderSplits(collectedSites);
+if (splits.length > 0) {
+  console.log('\nWRITER/READER SPLIT — one half of a domain writes where the other never reads:');
+  for (const s of splits) {
+    const role = s.writers.length ? `written by ${s.writers.join(', ')}` : `read by ${s.readers.join(', ')}`;
+    console.log(`  ${s.subpath} — ${role}`);
+  }
+  process.exitCode = 1;
+} else {
+  console.log('no writer/reader splits');
+}
+
+const bad = movedAway.length + orphans.length + splits.length;
 line(bad === 0 ? '\nOK — every contract resolves, nothing orphaned' : `\nFAILED — ${bad} contract problem(s)`);
 process.exit(bad === 0 ? 0 : 1);
+
+}
