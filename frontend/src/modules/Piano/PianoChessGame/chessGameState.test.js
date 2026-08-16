@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { legalDestinations } from '@shared-gaming/chess/index.mjs';
 import { DEFAULT_CHORD_SCHEME, chordBoard, squareToChord } from './chordAddress.js';
 import {
-  applySquare, capturedPieces, clearSelection, commitMove, createChessGameState, destinationsFor, isPlayerTurn, pieceAt, playableSources, takeMoveBack,
+  applySquare, capturedPieces, clearSelection, commitMove, createChessGameState, destinationsFor, isPlayerTurn, pieceAt, playableSources, takeMoveBack, fenBefore,
 } from './chessGameState.js';
 import { advanceCursor, createCursorState } from './chordCursor.js';
 
@@ -455,5 +455,38 @@ describe('taking a move back', () => {
     const { event } = takeMoveBack(mated);
     expect(event.type).toBe('rejected');
     expect(event.reason).toBe('game_over');
+  });
+});
+
+describe('fenBefore', () => {
+  it('returns the position as it stood N plies ago', () => {
+    let state = createChessGameState({ seed: 1, shuffleEachTurn: false });
+    const opening = state.game.fen;
+    state = commitMove(state, 'e2', 'e4').state;
+    const afterOne = state.game.fen;
+    state = commitMove(state, 'e7', 'e5').state;
+    expect(fenBefore(state, 2)).toBe(opening);
+    expect(fenBefore(state, 1)).toBe(afterOne);
+  });
+
+  it('refuses to go back further than the game has gone', () => {
+    let state = createChessGameState({ seed: 1, shuffleEachTurn: false });
+    state = commitMove(state, 'e2', 'e4').state;
+    expect(fenBefore(state, 2)).toBeNull();
+    expect(fenBefore(state, 0)).toBeNull();
+  });
+
+  it('replays from the start rather than from a stored list, so a takeback cannot desync it', () => {
+    let state = createChessGameState({ seed: 1, shuffleEachTurn: false, playerColor: 'w' });
+    const opening = state.game.fen;
+    state = commitMove(state, 'e2', 'e4').state;
+    state = commitMove(state, 'e7', 'e5').state;
+    state = commitMove(state, 'g1', 'f3').state;
+    const rewound = takeMoveBack(state).state;
+    // The takeback trimmed the line; a stored per-ply list would still be
+    // holding the discarded positions. Replaying from the start cannot.
+    expect(rewound.history.length).toBeLessThan(3);
+    expect(fenBefore(rewound, rewound.history.length)).toBe(opening);
+    expect(fenBefore(rewound, rewound.history.length + 1)).toBeNull();
   });
 });

@@ -178,3 +178,22 @@
   /* Beaten is a state, not a flourish — it stays. */
   .chess-opponent--beaten .chess-opponent__face { transition: none; }
 }
+
+/* The character's own voice. Quieter than the status line above it — that says
+   what happened, this says how they took it — and it arrives rather than
+   appearing, so it reads as speech. */
+.chess-opponent__says {
+  font-size: var(--t-cap, 0.85rem);
+  font-style: italic;
+  color: var(--pc-brass, #5fe39a);
+  animation: chess-opponent-says 300ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes chess-opponent-says {
+  from { opacity: 0; transform: translateY(0.2rem); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chess-opponent__says { animation: none; }
+}

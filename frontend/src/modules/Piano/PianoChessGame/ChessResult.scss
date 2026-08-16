@@ -145,3 +145,45 @@
   .chess-result__card,
   .chess-result__promoted { animation: none; }
 }
+
+/* ---- confetti (a win only) ----------------------------------------------- */
+
+/* Transform and opacity only. On the kiosk tablet a particle effect is the
+   fastest way to turn a celebration into a stutter, so these are twenty plain
+   elements on the compositor and nothing more — no canvas, no shadows, no
+   filters. Behind the card, so it never competes with the result itself. */
+.chess-result__confetti {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.chess-result__flake {
+  position: absolute;
+  inset-block-start: -8%;
+  width: 0.5rem;
+  height: 0.85rem;
+  border-radius: 1px;
+  opacity: 0;
+  animation-name: chess-result-fall;
+  animation-timing-function: cubic-bezier(0.35, 0.15, 0.5, 1);
+  animation-fill-mode: forwards;
+}
+
+/* Three colours drawn from the screen's own accents rather than a new palette. */
+.chess-result__flake--0 { background: var(--pc-brass-glow, #2ec46f); }
+.chess-result__flake--1 { background: var(--pc-verdigris, #e0a83a); }
+.chess-result__flake--2 { background: var(--pc-ivory, #f1f1f4); }
+
+@keyframes chess-result-fall {
+  0% { opacity: 0; transform: translateY(0) rotate(0deg); }
+  10% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(80vh) rotate(420deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* No falling, and nothing left parked on screen. */
+  .chess-result__confetti { display: none; }
+}

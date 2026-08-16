@@ -494,6 +494,23 @@ are doing — thinking, what they last played, what they just took off you, and 
 Every one of those is read off real game state; none of it is written to fill the line, because a
 status that is sometimes theatre is a status a child stops reading.
 
+## Learning it, and looking again
+
+**The first game teaches itself.** A four-step walkthrough — find a square, arm it, lift the piece,
+land it — keyed to states the selection machine really reaches, so a player who does something out
+of order is never stranded on a step they have passed. Shown once per player, recorded as
+`seen_intro` in the user config layer: a coach-mark that returns every session is one a child learns
+to ignore.
+
+**"Show that again" is a fifth gesture.** Five adjacent semitones, safe for the same reason three
+and four are — no square's chord voices an unbroken semitone run, so it cannot collide with move
+input. It rewinds to before the last exchange and plays it forward at half speed. Never charged as
+help: it shows what already happened in full view.
+
+The rewound position is replayed from the start of the game rather than read from a stored list of
+per-ply positions. A stored list is one more thing that can fall out of step with the move list
+after a takeback; replaying cannot.
+
 ## Not yet built
 
 - **Calibrate the Stockfish half against a deeper reference.** Levels 9-20 are currently spaced by

@@ -66,6 +66,30 @@ export function opponentMood({ thinking, gameOver, result, tookPiece, lostPiece,
   return 'neutral';
 }
 
+/**
+ * What the character says, for the moods that are worth a word.
+ *
+ * Driven by the SAME derived mood as the animation, so a line can never
+ * contradict the face — and only for moods that have something to say. Silence
+ * is the default: a character that comments on every move stops being read, the
+ * same way an always-on status line does.
+ *
+ * Keyed by mood rather than written per character, because the roster is data:
+ * twenty-one entries in YAML cannot each carry dialogue, and a line that only
+ * some characters had would read as a bug.
+ */
+const MOOD_LINES = Object.freeze({
+  pleased: 'Thank you.',
+  hurt: 'Ow.',
+  attacking: 'Check!',
+  triumphant: 'Good game.',
+  beaten: 'You got me.',
+});
+
+export function opponentLine(mood) {
+  return MOOD_LINES[mood] ?? null;
+}
+
 export function OpponentPortrait({
   opponent, level, size = 'md', status = null, thinkMs = null, mood = null,
 }) {
@@ -111,6 +135,11 @@ export function OpponentPortrait({
       <figcaption className="chess-opponent__text">
         <span className="chess-opponent__name">{name}</span>
         {status && <span className="chess-opponent__status">{status}</span>}
+        {/* The character speaking. Below the status rather than replacing it:
+            the status is what they DID, this is what they think of it. */}
+        {opponentLine(mood) && (
+          <span className="chess-opponent__says" key={`${mood}-${status}`}>{opponentLine(mood)}</span>
+        )}
       </figcaption>
     </figure>
   );

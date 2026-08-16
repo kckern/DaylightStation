@@ -14,6 +14,7 @@ import ChordReadout from './ChordReadout.jsx';
 import ChessClock from './ChessClock.jsx';
 import ChessResult from './ChessResult.jsx';
 import { playCue } from './chessSounds.js';
+import { onboardingCopy, onboardingStep, shouldOnboard } from './chessOnboarding.js';
 import { elapsedBySide, resolveTiming } from './chessClock.js';
 import { isPersistentUser } from '../PianoKiosk/pianoUser.js';
 import { usePianoMidi, usePianoMidiNotes } from '../PianoKiosk/PianoMidiContext.jsx';
@@ -39,7 +40,7 @@ import { advanceCursor, createCursorState } from './chordCursor.js';
 import { applyEvent, createSelection, DOUBLE_WINDOW_MS } from './chordSelection.js';
 import {
   REJECTION_MESSAGES, applySquare, capturedPieces, clearSelection, commitMove,
-  createChessGameState, destinationsFor, isPlayerTurn, takeMoveBack,
+  createChessGameState, destinationsFor, fenBefore, isPlayerTurn, takeMoveBack,
 } from './chessGameState.js';
 import {
   checkTakeback, playerMoveCount, takebackNote, takebackRefusalMessage, willStillCount,
@@ -91,6 +92,14 @@ const PIECE_ORDER = ['p', 'n', 'b', 'r', 'q'];
  * exactly as thoroughly as changed data would — and that costs 64 square
  * subtrees and ~32 images on every MIDI note event.
  */
+/** The teachable steps, in order, for the "step N of M" counter. */
+const ONBOARD_ORDER = Object.freeze(['find', 'arm', 'lift', 'land']);
+
+/** How long the rewind holds before the exchange plays forward again. */
+const REPLAY_HOLD_MS = 260;
+/** Half speed, so the move that was missed can actually be followed. */
+const REPLAY_MOVE_MS = 840;
+
 const EMPTY_ARRAY = Object.freeze([]);
 const EMPTY_OBJECT = Object.freeze({});
 
@@ -422,6 +431,27 @@ export function PianoChessGame({
    */
   const [opening, setOpening] = useState(true);
 
+  /**
+   * The replay's two beats: rewind instantly, then play forward slowly.
+   *
+   * Two phases rather than one because the jump backwards is not the thing
+   * worth watching — it is scaffolding. Only the forward pass is paced.
+   */
+  const [replay, setReplay] = useState(null);
+  useEffect(() => {
+    if (!replay) return undefined;
+    if (replay.phase === 'rewind') {
+      const timer = setTimeout(() => setReplay((prev) => (prev ? { ...prev, phase: 'play' } : null)), REPLAY_HOLD_MS);
+      return () => clearTimeout(timer);
+    }
+    const timer = setTimeout(() => setReplay(null), REPLAY_MOVE_MS + 120);
+    return () => clearTimeout(timer);
+  }, [replay]);
+
+  // A move landing mid-replay retires it: the board must never show a position
+  // the game has already moved past.
+  useEffect(() => { setReplay(null); }, [game.history.length]);
+
   useEffect(() => {
     if (!opening) return undefined;
     // Cleared by the first move too (below), so this is a ceiling and not a
@@ -433,6 +463,16 @@ export function PianoChessGame({
   useEffect(() => {
     if (opening && game.history.length) setOpening(false);
   }, [opening, game.history.length]);
+
+  // One completed move is the whole lesson. Written once, and only for a
+  // signed-in player — a guest has nowhere to remember it.
+  const introSavedRef = useRef(false);
+  useEffect(() => {
+    if (introSavedRef.current || !game.history.length) return;
+    if (!lockedUser || chessConfig?.seen_intro === true) return;
+    introSavedRef.current = true;
+    saveChessConfig(lockedUser, { seen_intro: true });
+  }, [game.history.length, lockedUser, chessConfig?.seen_intro]);
 
   const heldNotes = useMemo(() => [...activeNotes.keys()].sort((a, b) => a - b), [activeNotes]);
   const heldKey = heldNotes.join(',');
@@ -458,6 +498,18 @@ export function PianoChessGame({
    * on. Everything below derives from this map and never touches the engine.
    */
   const legalMap = useMemo(() => legalDestinations(game.game.fen), [game.game.fen]);
+  /**
+   * The same map, reachable from the cursor clock.
+   *
+   * That clock ticks every 25ms for as long as keys are held and asked
+   * `destinationsFor` on each tick — a fresh `new Chess(fen)` and a full move
+   * generation forty times a second, on the hottest path in the screen. The FEN
+   * rides along because the tick can run between a state update and the render
+   * that follows it; when they disagree the map is stale and the engine is the
+   * only correct answer.
+   */
+  const legalMapRef = useRef({ fen: game.game.fen, map: legalMap });
+  legalMapRef.current = { fen: game.game.fen, map: legalMap };
   const playerTurn = isPlayerTurn(game);
   // Stable identities on the idle paths: these feed a memoized board, and a
   // fresh [] every render defeats the memo just as surely as new data would.
@@ -518,6 +570,28 @@ export function PianoChessGame({
       setHelp((prev) => ({ ...prev, legal: true }));
       setHelpUsed((prev) => ({ ...prev, hints: prev.hints + 1 }));
       logger().info('help-requested', { kind: 'legal' });
+    }
+    /**
+     * "Show me that again."
+     *
+     * Rewinds the board to before the last exchange and plays it forward at
+     * half speed. The archive already keeps every move, so nothing new is
+     * stored — the position is replayed from the start of the game, which is
+     * the only source that cannot fall out of step with a takeback.
+     *
+     * Never charged as help: it shows what already happened in full view, and
+     * tells the player nothing they were not entitled to see the first time.
+     */
+    if (gesture === 'replay' && !replay) {
+      const live = gameRef.current;
+      // The last exchange is their reply plus the move that provoked it; on the
+      // very first ply there is only one.
+      const plies = Math.min(2, live.history.length);
+      const from = plies ? fenBefore(live, plies) : null;
+      if (from) {
+        setReplay({ fen: from, phase: 'rewind' });
+        logger().info('replay-requested', { plies });
+      }
     }
     if (gesture === 'best' && !help.best && !bestPendingRef.current) {
       bestPendingRef.current = true;
@@ -823,7 +897,16 @@ export function PianoChessGame({
         if (wasGesture || (latched && !event.square)) return;
         const current = gameRef.current;
         const holdingPiece = Boolean(current.origin);
-        const isEligible = holdingPiece && destinationsFor(current, current.origin).includes(event.square);
+        // Read from the memoized map when it matches the position being
+        // acted on; fall back to the engine only when this tick has outrun the
+        // render that would have refreshed it.
+        const cached = legalMapRef.current;
+        const reach = holdingPiece
+          ? (cached.fen === current.game.fen
+            ? (cached.map[current.origin] ?? EMPTY_ARRAY)
+            : destinationsFor(current, current.origin))
+          : EMPTY_ARRAY;
+        const isEligible = holdingPiece && reach.includes(event.square);
         const at = Date.now();
         const previous = selectionRef.current;
         const { selection, action } = applyEvent(previous, {
@@ -1145,6 +1228,29 @@ export function PianoChessGame({
   const pickupChord = !game.origin && cursor && sources.includes(cursor)
     ? cursorChord?.symbol ?? null
     : null;
+  /**
+   * The first-game walkthrough.
+   *
+   * Derived from the board rather than stepped through by hand, so a player who
+   * does something out of order is never left on a step they have passed. The
+   * "seen" flag rides the user config layer, which is the same place every
+   * other per-player preference lives — a walkthrough that returns each session
+   * is one a child learns to ignore.
+   */
+  const onboardStep = onboardingStep({
+    history: game.history,
+    origin: game.origin,
+    hoveredChord: pickupChord,
+    armed: Boolean(armed?.square),
+  });
+  const onboardVisible = shouldOnboard({
+    seen: chessConfig?.seen_intro === true,
+    gameOver: !!game.status?.game_over,
+    playerTurn,
+    step: onboardStep,
+  });
+  const onboardCopy = onboardVisible ? onboardingCopy(onboardStep, { reading }) : null;
+
   const prompt = promptFor(game, game.rejection, pickupChord, reading, takebackArmed);
   // The countdown is drawn only where the prompt is actually asking for a
   // repeat: same gate as pickupChord, plus the armed square agreeing with the
@@ -1209,6 +1315,15 @@ export function PianoChessGame({
               isReading={reading}
             />
             <p className="piano-chess__prompt" role="status">{prompt}</p>
+            {onboardCopy && (
+              <aside className="chess-onboard" key={onboardStep}>
+                <span className="chess-onboard__step">
+                  {`Step ${ONBOARD_ORDER.indexOf(onboardStep) + 1} of ${ONBOARD_ORDER.length}`}
+                </span>
+                <strong className="chess-onboard__title">{onboardCopy.title}</strong>
+                <span className="chess-onboard__body">{onboardCopy.body}</span>
+              </aside>
+            )}
             {/* The deadline on that sentence, made visible. Keyed on the arming
                 instant so each fresh hover restarts the run; aria-hidden because
                 the prompt beside it already speaks the instruction, and a bar
@@ -1254,6 +1369,16 @@ export function PianoChessGame({
                 title: 'Best move',
                 note: help.best ? 'showing' : 'counts as help',
                 active: !!help.best,
+              },
+              {
+                id: 'replay',
+                pressed: [0, 1, 2, 3, 4],
+                title: 'Show that again',
+                // Never charged: it replays what already happened in full view
+                // and tells the player nothing they were not entitled to see.
+                note: replay ? 'replaying' : (game.history.length ? 'free' : 'after a move'),
+                active: !!replay,
+                muted: !game.history.length,
               },
               {
                 id: 'takeback',
@@ -1304,7 +1429,7 @@ export function PianoChessGame({
         </aside>
 
         <ChessBoard
-          fen={game.game.fen}
+          fen={replay?.phase === 'rewind' ? replay.fen : game.game.fen}
           status={game.status}
           orientation={playerColor === 'b' ? 'black' : 'white'}
           fileLabels={fileLabels}
@@ -1331,7 +1456,9 @@ export function PianoChessGame({
           lastMove={game.lastMove}
           cursorSquare={cursor}
           ghost={ghost}
-          moveDurationMs={moveDurationMs}
+          /* The rewind is scaffolding and snaps; only the forward pass is
+             paced, at half the normal tempo so a missed move can be followed. */
+          moveDurationMs={replay ? (replay.phase === 'rewind' ? 1 : REPLAY_MOVE_MS) : moveDurationMs}
         />
 
         {/* THE CHORD RAIL — a mirror of the hands, in both vocabularies at once:

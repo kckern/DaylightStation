@@ -12,7 +12,7 @@ import { isOctave } from './chordCursor.js';
  */
 
 /** How many adjacent semitones each request takes. */
-export const GESTURE_SIZES = Object.freeze({ hint: 3, best: 4 });
+export const GESTURE_SIZES = Object.freeze({ hint: 3, best: 4, replay: 5 });
 
 /** Distinct pitch classes, ascending. */
 function pitchClasses(notes) {
@@ -46,6 +46,10 @@ export function recognizeGesture(heldNotes) {
   if (!isAdjacentRun(classes)) return null;
   if (classes.length === GESTURE_SIZES.hint) return 'hint';
   if (classes.length === GESTURE_SIZES.best) return 'best';
+  // Five adjacent semitones: "show me that again". Safe for the same reason
+  // three and four are — no square's chord voices an unbroken semitone run, so
+  // this can never collide with move input.
+  if (classes.length === GESTURE_SIZES.replay) return 'replay';
   return null;
 }
 

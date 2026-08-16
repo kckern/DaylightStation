@@ -961,3 +961,49 @@
   /* Still leaves, still on its own — only the movement goes. */
   .chess-opening { animation: chess-opening-out 320ms ease-in 1280ms forwards; }
 }
+
+/* ---- first-game walkthrough ---------------------------------------------- */
+
+/* Under the prompt, not over the board: this teaches the instruction the
+   prompt is already giving, so it belongs beside it rather than covering the
+   thing the player is being taught to read. Shown once per player. */
+.chess-onboard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin-block-start: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--pc-brass);
+  border-radius: var(--r-sm, 8px);
+  background: color-mix(in srgb, var(--piano-accent, #2ec46f) 10%, transparent);
+  /* Keyed on the step in JSX, so each advance remounts and replays this. */
+  animation: chess-onboard-in 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.chess-onboard__step {
+  font-size: var(--t-cap, 0.85rem);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--pc-brass);
+}
+
+.chess-onboard__title {
+  font-size: var(--t-body, 1rem);
+  font-weight: 700;
+  color: var(--pc-ivory);
+}
+
+.chess-onboard__body {
+  font-size: var(--t-cap, 0.85rem);
+  line-height: 1.35;
+  color: var(--pc-ivory-dim);
+}
+
+@keyframes chess-onboard-in {
+  from { opacity: 0; transform: translateY(0.25rem); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chess-onboard { animation: none; }
+}
