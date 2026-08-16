@@ -30,7 +30,7 @@ describe('YamlSessionDatastore — appendVoiceMemo with prefixed sessionId', () 
     store = new YamlSessionDatastore({ configService });
 
     // Seed a persisted (ended) session at the canonical dated path.
-    const sessionsDir = path.join(tmpDir, 'history/fitness', DATE);
+    const sessionsDir = path.join(tmpDir, 'fitness/log', DATE);
     fs.mkdirSync(sessionsDir, { recursive: true });
     saveYaml(path.join(sessionsDir, BARE_ID), {
       sessionId: BARE_ID,
@@ -54,7 +54,7 @@ describe('YamlSessionDatastore — appendVoiceMemo with prefixed sessionId', () 
       durationSeconds: 5,
     });
     expect(result).not.toBeNull();
-    const data = loadYamlSafe(path.join(tmpDir, 'history/fitness', DATE, BARE_ID));
+    const data = loadYamlSafe(path.join(tmpDir, 'fitness/log', DATE, BARE_ID));
     expect(data.summary.voiceMemos).toHaveLength(1);
     expect(data.summary.voiceMemos[0].transcript).toBe('sanity check memo');
   });
@@ -81,7 +81,7 @@ describe('YamlSessionDatastore — appendVoiceMemo with prefixed sessionId', () 
 
     // It must land in the correct dated session record (derived from the
     // sanitized digits, not the bogus "fs_2-02-60" date).
-    const data = loadYamlSafe(path.join(tmpDir, 'history/fitness', DATE, BARE_ID));
+    const data = loadYamlSafe(path.join(tmpDir, 'fitness/log', DATE, BARE_ID));
     expect(data).not.toBeNull();
     expect(data.summary.voiceMemos).toHaveLength(1);
     expect(data.summary.voiceMemos[0].transcript).toBe('retroactive prefixed memo');

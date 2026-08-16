@@ -16,7 +16,7 @@
  *   node cli/scripts/reconstruct-missing-sessions.mjs \
  *     /path/to/lifelog/strava/ \
  *     /path/to/media_memory/plex/14_fitness.yml \
- *     /path/to/history/fitness/ \
+ *     /path/to/fitness/log/ \
  *     --dry-run
  */
 

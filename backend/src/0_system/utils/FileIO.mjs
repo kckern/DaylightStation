@@ -259,7 +259,7 @@ export function ensureDir(dirPath) {
 export function listDirs(dirPath) {
   if (!fs.existsSync(dirPath)) return [];
   // Use withFileTypes so the directory check comes from the single readdir call
-  // rather than a per-entry statSync. On large histories (e.g. history/fitness/
+  // rather than a per-entry statSync. On large histories (e.g. fitness/log/
   // with thousands of date-folders) this turns N+1 sync syscalls into one,
   // which is the dominant cost of the fitness /sessions + /suggestions queries.
   // Symlinks report isDirectory()=false from a dirent, so resolve only those few

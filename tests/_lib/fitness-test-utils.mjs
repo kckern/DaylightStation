@@ -128,7 +128,7 @@ function getTodayDate() {
 function getSessionsFolder() {
   const dataPath = getDataPath();
   const today = getTodayDate();
-    return path.join(dataPath, 'household/history/fitness', today);
+    return path.join(dataPath, 'household/fitness/log', today);
 }
 
 /**

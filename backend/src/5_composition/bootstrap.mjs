@@ -3439,7 +3439,7 @@ export function createHarvesterServices(config) {
       redirectUri: secret('STRAVA_URL'),
       mediaDir,
       timezone: harvesterTimezone,
-      fitnessHistoryDir: configService.getHouseholdPath('history/fitness'),
+      fitnessHistoryDir: configService.getHouseholdPath('fitness/log'),
       logger,
     }));
   }

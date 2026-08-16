@@ -78,7 +78,7 @@ describe('YamlSessionDatastore — primary media from timeline events (findByDat
       },
     };
 
-    const sessionsDir = path.join(tmpDir, 'history/fitness', DATE);
+    const sessionsDir = path.join(tmpDir, 'fitness/log', DATE);
     fs.mkdirSync(sessionsDir, { recursive: true });
     saveYaml(path.join(sessionsDir, SESSION_ID), sessionData);
 

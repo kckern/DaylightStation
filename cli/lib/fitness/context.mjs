@@ -49,7 +49,7 @@ let cached = null;
  * through here now — `dataDir` is the `<root>/data` directory.
  */
 export function fitnessHistoryDir(dataDir) {
-  return path.join(dataDir, 'household', 'history', 'fitness');
+  return path.join(dataDir, 'household', 'fitness', 'log');
 }
 
 export function getContext() {

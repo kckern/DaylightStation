@@ -12,7 +12,7 @@
  *
  * Example:
  *   node cli/scripts/enrich-session-media.mjs \
- *     /path/to/history/fitness/ \
+ *     /path/to/fitness/log/ \
  *     http://localhost:3112 \
  *     --dry-run
  */

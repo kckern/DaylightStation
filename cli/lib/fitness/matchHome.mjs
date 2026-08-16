@@ -65,7 +65,7 @@ export async function run(argv, ctx) {
 
   const lifelogStore = new YamlLifelogDatastore({ io });
 
-  const fitnessHistoryDir = configService.getHouseholdPath('history/fitness');
+  const fitnessHistoryDir = configService.getHouseholdPath('fitness/log');
 
   // Create a minimal strava client stub (not used by matchBacklog)
   const stubStravaClient = {

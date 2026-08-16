@@ -1,6 +1,6 @@
 /**
  * YamlCycleRaceDatastore - YAML persistence for cycle-game races.
- * Stored at: household[-{id}]/history/fitness/cycle-races/{YYYY-MM-DD}/{raceId}.yml
+ * Stored at: household[-{id}]/fitness/log/cycle-races/{YYYY-MM-DD}/{raceId}.yml
  * Mirrors YamlSessionDatastore; raceId is a YYYYMMDDHHmmss timestamp.
  */
 import path from 'path';
@@ -45,7 +45,7 @@ export class YamlCycleRaceDatastore {
   }
 
   _baseDir(householdId) {
-    return this.configService.getHouseholdPath('history/fitness/cycle-races', householdId);
+    return this.configService.getHouseholdPath('fitness/log/cycle-races', householdId);
   }
 
   _dateFromId(raceId) {

@@ -5,7 +5,7 @@
 // WHY THIS USE CASE EXISTS
 // ------------------------
 // Session detail, the recap sweep, the longitudinal widget and Strava reconciliation all
-// read `data/household/history/fitness/{date}/{id}.yml`. Writing a workout anywhere else
+// read `data/household/fitness/log/{date}/{id}.yml`. Writing a workout anywhere else
 // would create a second history that none of them display — the run would be "logged" and
 // still invisible. So this use case takes the runner's report, reduces it to a strength
 // block, and hangs it off the existing session through the existing save path. Nothing

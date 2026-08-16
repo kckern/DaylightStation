@@ -199,7 +199,7 @@ export const spec = {
   session and treasureBox.buckets has no per-participant split. The summary is
   not rebuilt either, so the primary-media flag (the session title) stays put.
 
-  A pre-drop backup lands in history/fitness/_participant_backups/ —
+  A pre-drop backup lands in fitness/log/_participant_backups/ —
   deliberately outside any scanned YYYY-MM-DD dir.`,
 };
 

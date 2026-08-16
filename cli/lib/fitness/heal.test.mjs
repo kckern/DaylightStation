@@ -23,16 +23,16 @@ let sessionFile;
 
 async function setUpTempSession() {
   baseDir = await mkdtemp(path.join(tmpdir(), 'heal-fitness-'));
-  const dir = path.join(baseDir, 'data', 'household', 'history', 'fitness', DATE);
+  const dir = path.join(baseDir, 'data', 'household', 'fitness', 'log', DATE);
   await mkdir(dir, { recursive: true });
   sessionFile = path.join(dir, `${SESSION_ID}.yml`);
   await copyFile(FIXTURE, sessionFile);
 }
 
 describe('resolveSessionPath / isValidDate / isValidSessionId', () => {
-  it('joins baseDir/data/household/history/fitness/<date>/<id>.yml', () => {
+  it('joins baseDir/data/household/fitness/log/<date>/<id>.yml', () => {
     expect(resolveSessionPath(DATE, SESSION_ID, '/tmp/base')).toBe(
-      path.join('/tmp/base', 'data', 'household', 'history', 'fitness', DATE, `${SESSION_ID}.yml`)
+      path.join('/tmp/base', 'data', 'household', 'fitness', 'log', DATE, `${SESSION_ID}.yml`)
     );
   });
 
@@ -155,7 +155,7 @@ describe('heal() — merges path (known-user device swap) folds coins ADDITIVELY
 
   beforeEach(async () => {
     mergeBaseDir = await mkdtemp(path.join(tmpdir(), 'heal-fitness-merge-'));
-    const dir = path.join(mergeBaseDir, 'data', 'household', 'history', 'fitness', MERGE_DATE);
+    const dir = path.join(mergeBaseDir, 'data', 'household', 'fitness', 'log', MERGE_DATE);
     await mkdir(dir, { recursive: true });
     mergeSessionFile = path.join(dir, `${MERGE_SESSION_ID}.yml`);
 
@@ -287,7 +287,7 @@ describe('sweep() — golden + clean sessions in the same date dir', () => {
 
   beforeEach(async () => {
     sweepBaseDir = await mkdtemp(path.join(tmpdir(), 'heal-fitness-sweep-'));
-    const dir = path.join(sweepBaseDir, 'data', 'household', 'history', 'fitness', DATE);
+    const dir = path.join(sweepBaseDir, 'data', 'household', 'fitness', 'log', DATE);
     await mkdir(dir, { recursive: true });
 
     goldenFile = path.join(dir, `${SESSION_ID}.yml`);
@@ -349,11 +349,11 @@ describe('sweep() — --since filtering excludes out-of-window date dirs', () =>
   beforeEach(async () => {
     sweepBaseDir = await mkdtemp(path.join(tmpdir(), 'heal-fitness-sweep-since-'));
 
-    const inWindowDir = path.join(sweepBaseDir, 'data', 'household', 'history', 'fitness', DATE);
+    const inWindowDir = path.join(sweepBaseDir, 'data', 'household', 'fitness', 'log', DATE);
     await mkdir(inWindowDir, { recursive: true });
     await copyFile(FIXTURE, path.join(inWindowDir, `${SESSION_ID}.yml`));
 
-    const outOfWindowDir = path.join(sweepBaseDir, 'data', 'household', 'history', 'fitness', OLD_DATE);
+    const outOfWindowDir = path.join(sweepBaseDir, 'data', 'household', 'fitness', 'log', OLD_DATE);
     await mkdir(outOfWindowDir, { recursive: true });
     await copyFile(FIXTURE, path.join(outOfWindowDir, `${OLD_SESSION_ID}.yml`));
   });

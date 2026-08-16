@@ -81,7 +81,7 @@ const contaminatedSession = () => ({
 
 async function setUp(session = contaminatedSession()) {
   baseDir = await mkdtemp(path.join(tmpdir(), 'drop-participant-'));
-  sessionsRoot = path.join(baseDir, 'history', 'fitness');
+  sessionsRoot = path.join(baseDir, 'fitness', 'log');
   const dateDir = path.join(sessionsRoot, '2026-07-25');
   await mkdir(dateDir, { recursive: true });
   sessionFile = path.join(dateDir, '20260725132556.yml');
