@@ -116,10 +116,9 @@ async function main() {
   // is the one channel that cannot itself be the thing that broke.
   //
   // `logging.fileSink` in system.yml (path / maxSizeMb / maxFiles) overrides
-  // the defaults. It exists because the default location is inside the
-  // Dropbox-synced media tree on prod, and moving the log off that volume is
-  // an infrastructure decision that should not require a code change. See the
-  // constraint block at the top of generalSinks.mjs before changing any of it.
+  // the defaults, so an operator can move or resize the log without a code
+  // change. The bounds are a decision about how much history the next incident
+  // gets — read the standing facts at the top of generalSinks.mjs first.
   const mediaDir = configService.getMediaDir();
   for (const sink of resolveGeneralFileSinks({
     isDocker,

@@ -119,19 +119,23 @@ timezone: America/Los_Angeles
 logging:
   fileSink:               # Durable general backend log (all optional)
     path: null            # Absolute path; default <mediaDir>/logs/backend.log
-    maxSizeMb: 10         # Rotate at this size
-    maxFiles: 3           # Generations kept, including the live file
+    maxSizeMb: 25         # Rotate at this size
+    maxFiles: 8           # Generations kept, including the live file
 ```
 
-**`logging.fileSink` — why it is configurable.** The default location is inside
-the media tree, which on prod is bind-mounted from a Dropbox-synced folder with
-no `.dropboxignore` covering it. An append-and-rotate log is continuously
-rewritten, and Dropbox retains version history per revision, so the account-side
-cost is not bounded by the on-disk ceiling and is invisible from the host. The
-defaults (30 MB total) are deliberately modest for that reason. **Prefer moving
-the log off the synced volume via `path` over raising the size bounds.** Unusable
-values (zero, negative, non-numeric) fall back to the defaults rather than
-producing a transport that rotates on every line. Read by
+**`logging.fileSink`.** The durable general backend log — the sink that carries
+`http.response`, `plex.stream.mint` and every other backend event, and the one
+thing that survives a container restart. Defaults to `<mediaDir>/logs/backend.log`
+at a 200 MB ceiling, roughly three to four days at the measured intake. That
+window is sized for how problems are actually reported (the next morning, by
+whoever hit them), not for how small the file can be made.
+
+`media/logs/` is the sanctioned home for heavy logs and is Dropbox-synced on
+prod; that sync cost is an accepted decision. **Do not add a `.dropboxignore` to
+it** — excluding an already-synced folder can remove the remote copy.
+
+Unusable values (zero, negative, non-numeric) fall back to the defaults rather
+than producing a transport that rotates on every line. Read by
 `backend/src/0_system/logging/generalSinks.mjs`.
 
 ### system-local.{ENV}.yml (Environment Overrides)
