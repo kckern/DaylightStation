@@ -21,7 +21,7 @@ import { DEFAULT_TIMEZONE } from '#domains/core/utils/timezone.mjs';
 const RELAY_SOURCE = 'pressure-mat-relay';
 const VALID_EVENTS = new Set(['pressed', 'stomped', 'released']);
 const DEFAULT_TOPIC = 'pressure-mat';
-const DEFAULT_DIR = 'household/history/pressure-mats'; // relative to dataDir
+const DEFAULT_DIR = 'household/pressure-mats/log'; // relative to dataDir
 
 /**
  * @param {object}   deps

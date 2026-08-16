@@ -10,7 +10,7 @@
 //
 //   2) PERSIST (bus → disk): a subscriber records only MEANINGFUL events to
 //      {dataDir}/{persistence.dir}/{id}/{YYYY-MM-DD}.yml
-//      (default dir: household/history/nutrition). Two kinds of records:
+//      (default dir: household/nutrition/log). Two kinds of records:
 //        - settled measurements: a stable, non-empty weight, recorded once and
 //          not repeated until the value changes or the pan is emptied (so the
 //          scale resting on its side on the shelf isn't logged over and over).
@@ -32,7 +32,7 @@ import { DEFAULT_TIMEZONE } from '#domains/core/utils/timezone.mjs';
 
 const RELAY_SOURCE = 'food-scale-relay';
 const DEFAULT_TOPIC = 'food-scale';
-const DEFAULT_DIR = 'household/history/nutrition'; // relative to dataDir
+const DEFAULT_DIR = 'household/nutrition/log'; // relative to dataDir
 
 // Ingest discriminators we accept. `kitchen-relay` is the unified kitchen board
 // (_extensions/kitchen-relay), which carries the scale AND the DS2278 scanner and

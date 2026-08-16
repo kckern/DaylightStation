@@ -106,9 +106,9 @@ describe('UserDataService household path resolution', () => {
 
   describe('legacy shared/ consumers', () => {
     it('still resolves explicit shared/ prefixes, so retroarch and content-filter are untouched', () => {
-      // app.mjs reads these as dataService.household.read('shared/retroarch/catalog').
+      // app.mjs reads these as dataService.household.read('retroarch/catalog').
       // The literal prefix is supplied by the caller, so it must survive unchanged.
-      const resolved = dataService.household.resolveDir('shared/retroarch/catalog', 'default');
+      const resolved = dataService.household.resolveDir('retroarch/catalog', 'default');
 
       expect(resolved).toMatch(/household[^/]*\/shared\/retroarch\/catalog$/);
     });

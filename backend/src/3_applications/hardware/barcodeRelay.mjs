@@ -14,8 +14,8 @@
 //
 //   2) PERSIST (bus → disk): a subscriber appends every scan to an append-only
 //      day log at {dataDir}/{persistDir}/{device}/{YYYY-MM-DD}.yml
-//      (default dir: household/history/barcode) — same shape as the food-scale
-//      history under household/history/nutrition/<scale>/. Persistence is enabled
+//      (default dir: household/barcode/log) — same shape as the food-scale
+//      history under household/nutrition/log/<scale>/. Persistence is enabled
 //      only when a `dataDir` is supplied (unit tests omit it → no disk writes).
 //
 // Decoupled + unit-tested like foodScaleRelay.mjs.
@@ -27,7 +27,7 @@ import { DEFAULT_TIMEZONE } from '#domains/core/utils/timezone.mjs';
 
 const RELAY_SOURCE = 'barcode-relay';
 const TOPIC = 'barcode-relay';
-const DEFAULT_DIR = 'household/history/barcode'; // relative to dataDir
+const DEFAULT_DIR = 'household/barcode/log'; // relative to dataDir
 
 // Ingest discriminators we accept, which is NOT the same set as the one value we
 // re-broadcast (`RELAY_SOURCE`). Two boards can feed this handler:
@@ -51,7 +51,7 @@ const INGEST_SOURCES = new Set([RELAY_SOURCE, 'kitchen-relay']);
  * @param {string}   [deps.defaultDevice]     device id when the relay omits one
  * @param {string}   [deps.defaultRoute]      route when the relay omits one (content|nutribot)
  * @param {string}   [deps.dataDir]           resolved data dir — enables disk persistence when set
- * @param {string}   [deps.persistDir]        history root relative to dataDir (default household/history/barcode)
+ * @param {string}   [deps.persistDir]        history root relative to dataDir (default household/barcode/log)
  * @param {string}   [deps.timezone]          IANA tz for the `ts` field + day-file bucket (default household tz)
  * @param {object}   [deps.logger]
  * @returns {{ dispose: () => void }}

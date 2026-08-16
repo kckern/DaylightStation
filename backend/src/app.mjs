@@ -864,7 +864,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     readalong: readalongConfig,  // Follow-along readalong content (scripture, talks, poetry)
     games: {  // Game launcher (RetroArch adapter)
       config: configService.getHouseholdAppConfig(null, 'games'),
-      catalogReader: () => dataService.household.read('shared/retroarch/catalog')
+      catalogReader: () => dataService.household.read('retroarch/catalog')
     },
     storagePaths                 // Collection → media_memory filename mapping
   }, { httpClient: axios, mediaProgressMemory, app, configService, logger: rootLogger });
@@ -1812,7 +1812,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // after the shared content adapters have been registered.
 
   // Content-filter cascade (EDL + profile + override) for the Player's
-  // useContentFilter hook. Reads data/household/shared/content-filter/.
+  // useContentFilter hook. Reads data/household/content-filter/.
   v1Routers['content-filter'] = createContentFilterRouter({
     householdDir: configService.getHouseholdPath(''),
     logger: rootLogger.child({ module: 'content-filter-api' }),
@@ -4627,10 +4627,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       xploreBaseUrl,
       sourceConfig: retroarchConfig.source || {},
       consoleConfig: retroarchConfig.consoles,
-      thumbnailBasePath: configService.getHouseholdPath('shared/retroarch/thumbnails'),
+      thumbnailBasePath: configService.getHouseholdPath('retroarch/thumbnails'),
       httpClient: axios,
-      readCatalog: () => dataService.household.read('shared/retroarch/catalog'),
-      writeCatalog: (data) => dataService.household.write('shared/retroarch/catalog', data),
+      readCatalog: () => dataService.household.read('retroarch/catalog'),
+      writeCatalog: (data) => dataService.household.write('retroarch/catalog', data),
       downloadThumbnail: async () => {},
       logger: rootLogger.child({ module: 'retroarch-sync' })
     });
