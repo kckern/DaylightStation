@@ -506,24 +506,28 @@ export async function createSchoolLifecycle({
   }
   // --- print documents (Task 7, spec §9): tracked quizzes through IssueDocument ---
   // Rooted at the SAME content root `school-docs.cli.mjs` defaults to
-  // (`<dataDir>/content/school/print-documents`) — a unit authored/published
-  // via the CLI is exactly what a child's scan resolves against here. Cheap
+  // (`<dataDir>/household/apps/school/print-documents`) — a unit
+  // authored/published via the CLI is exactly what a child's scan resolves
+  // against here. These are machine-written artifacts, so they live with the
+  // rest of School's household state rather than on the authored content
+  // mount, which holds only abstract coursework. Cheap
   // to construct (no I/O at construction time — both stores read/write
   // lazily), and only ever exercised when a unit's `document` actually names
   // a `print/<id>@<rev>` reference (`IssueDocument`'s own prefix branch), so
   // wiring them unconditionally costs a legacy-only deployment nothing.
-  const printDocumentsRoot = path.join(dataDir, 'content/school/print-documents');
+  const printDocumentsRoot = path.join(dataDir, 'household/apps/school/print-documents');
   // Hand-authored SOURCES are a different kind of thing from the artifacts
-  // above — a document CLASS, not a published object — and live on the School
-  // catalog shelf beside the `school.learning-document/v1` files, the same
-  // mount `createSchoolCatalog` resolves as `documentDirectories`
-  // (`catalog.content.document_directories`, default `<contentRoot>/documents`).
-  // Resolved here the same way its artifact sibling one line up is, because
+  // above — a document CLASS, not a published object. The artifacts are machine
+  // written and live with School's household state; the sources are authored and
+  // stay on the content mount, on the learning-catalog shelf beside the
+  // `school.learning-document/v1` files — the same mount `createSchoolCatalog`
+  // resolves as `documentDirectories` (`catalog.content.document_directories`,
+  // default `<contentRoot>/documents`). Resolved here directly because
   // `resolveDirectoryList`/`resolveFromData` are module-private to
   // `schoolCatalog.mjs` and this module has no handle on the catalog wiring;
   // if that mount ever becomes configurable for print sources too, both should
   // move behind one shared helper rather than growing a second convention.
-  const printSourceRoot = path.join(dataDir, 'content/school/catalog/documents');
+  const printSourceRoot = path.join(dataDir, 'content/school/learning-catalog/documents');
   const printDocuments = new YamlPrintDocumentRepository({
     directory: printDocumentsRoot,
     sourceDirectory: printSourceRoot,
