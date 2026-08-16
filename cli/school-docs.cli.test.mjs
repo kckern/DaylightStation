@@ -693,6 +693,129 @@ describe('school-docs CLI', () => {
     }));
   });
 
+  describe('reprint <instanceId>', () => {
+    it('reproduces an exact historical print from a worksheet-instance file alone — no manual flags', async () => withTmpDir(async (root) => {
+      const dataDir = path.join(root, 'data');
+      const contentRoot = path.join(dataDir, 'content/school/print-documents');
+      await mkdir(contentRoot, { recursive: true });
+      await writeFile(path.join(contentRoot, 'quiz.yml'), dump(sourceQuizDoc()));
+
+      const published = await runSchoolDocs(['publish', 'quiz.yml', '--data-dir', dataDir]);
+      expect(published.exitCode).toBe(0);
+      const publishedFile = path.join(contentRoot, 'published', `teacher-cli-fixture@${published.report.rev}.yml`);
+
+      // Mint the card the instance will point at, exactly as a real issuance would.
+      const minted = await runSchoolDocs([
+        'render', publishedFile, '--out', path.join(root, 'first.pdf'), '--data-dir', dataDir,
+        '--fresh-card', '--learner-id', 'felix', '--learner-name', 'Felix', '--date', '14 Aug 2026',
+      ]);
+      expect(minted.exitCode).toBe(0);
+      const cardId = minted.report.allocation.cardId;
+
+      const instancesDir = path.join(dataDir, 'household/apps/school/worksheet-instances');
+      await mkdir(instancesDir, { recursive: true });
+      await writeFile(path.join(instancesDir, 'ws-fixture.yml'), dump({
+        id: 'ws-fixture',
+        sessionId: 'ses_fixture',
+        learnerId: 'felix',
+        documentId: 'teacher-cli-fixture',
+        documentRevision: published.report.rev,
+        issuedAt: '2026-08-14T17:55:20.033Z',
+        omr: {
+          cardId, recordId: minted.report.allocation.recordId, rowRange: minted.report.allocation.rowRange,
+        },
+      }));
+
+      const { exitCode, report } = await runSchoolDocs([
+        'reprint', 'ws-fixture', '--out', path.join(root, 'reprinted.pdf'), '--data-dir', dataDir,
+      ]);
+
+      expect(exitCode).toBe(0);
+      expect(report.ok).toBe(true);
+      expect(report.allocation).toMatchObject({ cardId, status: 'live' });
+
+      const text = pdfText(await readFile(path.join(root, 'reprinted.pdf')));
+      expect(text).toContain('Felix');
+      expect(text).toContain('14 Aug 2026');
+      expect(text).toContain(cardId);
+    }));
+
+    it('never mutates the allocation store — reprinting twice yields byte-identical PDFs', async () => withTmpDir(async (root) => {
+      const dataDir = path.join(root, 'data');
+      const contentRoot = path.join(dataDir, 'content/school/print-documents');
+      await mkdir(contentRoot, { recursive: true });
+      await writeFile(path.join(contentRoot, 'quiz.yml'), dump(sourceQuizDoc()));
+      const published = await runSchoolDocs(['publish', 'quiz.yml', '--data-dir', dataDir]);
+      const publishedFile = path.join(contentRoot, 'published', `teacher-cli-fixture@${published.report.rev}.yml`);
+      const minted = await runSchoolDocs([
+        'render', publishedFile, '--out', path.join(root, 'first.pdf'), '--data-dir', dataDir,
+        '--fresh-card', '--learner-id', 'felix', '--learner-name', 'Felix', '--date', '14 Aug 2026',
+      ]);
+      const cardId = minted.report.allocation.cardId;
+      const instancesDir = path.join(dataDir, 'household/apps/school/worksheet-instances');
+      await mkdir(instancesDir, { recursive: true });
+      await writeFile(path.join(instancesDir, 'ws-fixture.yml'), dump({
+        id: 'ws-fixture',
+        sessionId: 'ses_fixture',
+        learnerId: 'felix',
+        documentId: 'teacher-cli-fixture',
+        documentRevision: published.report.rev,
+        issuedAt: '2026-08-14T17:55:20.033Z',
+        omr: {
+          cardId, recordId: minted.report.allocation.recordId, rowRange: minted.report.allocation.rowRange,
+        },
+      }));
+
+      await runSchoolDocs(['reprint', 'ws-fixture', '--out', path.join(root, 'a.pdf'), '--data-dir', dataDir]);
+      await runSchoolDocs(['reprint', 'ws-fixture', '--out', path.join(root, 'b.pdf'), '--data-dir', dataDir]);
+
+      const [a, b] = await Promise.all([
+        readFile(path.join(root, 'a.pdf')), readFile(path.join(root, 'b.pdf')),
+      ]);
+      expect(a.equals(b)).toBe(true);
+
+      const allocationRaw = await readFile(path.join(contentRoot, 'allocations', `${cardId}.yml`), 'utf8');
+      expect(allocationRaw.match(/status: live/g)?.length).toBe(1); // still exactly one live record — no duplicate written
+    }));
+
+    it('fails clearly when the instance id does not resolve to a file', async () => withTmpDir(async (root) => {
+      const dataDir = path.join(root, 'data');
+      await mkdir(dataDir, { recursive: true });
+      const { exitCode, report } = await runSchoolDocs(['reprint', 'nope', '--out', path.join(root, 'x.pdf'), '--data-dir', dataDir]);
+      expect(exitCode).toBe(1);
+      expect(report.errors[0]).toMatch(/nope/);
+    }));
+
+    it('fails clearly (not a crash) when the worksheet instance has no card allocation', async () => withTmpDir(async (root) => {
+      const dataDir = path.join(root, 'data');
+      const contentRoot = path.join(dataDir, 'content/school/print-documents');
+      await mkdir(contentRoot, { recursive: true });
+      await writeFile(path.join(contentRoot, 'quiz.yml'), dump(sourceQuizDoc()));
+      const published = await runSchoolDocs(['publish', 'quiz.yml', '--data-dir', dataDir]);
+      expect(published.exitCode).toBe(0);
+
+      const instancesDir = path.join(dataDir, 'household/apps/school/worksheet-instances');
+      await mkdir(instancesDir, { recursive: true });
+      await writeFile(path.join(instancesDir, 'ws-no-card.yml'), dump({
+        id: 'ws-no-card',
+        sessionId: 'ses_fixture',
+        learnerId: 'felix',
+        documentId: 'teacher-cli-fixture',
+        documentRevision: published.report.rev,
+        issuedAt: '2026-08-14T17:55:20.033Z',
+        // no `omr` field at all — never attached to a physical card.
+      }));
+
+      const { exitCode, report } = await runSchoolDocs([
+        'reprint', 'ws-no-card', '--out', path.join(root, 'x.pdf'), '--data-dir', dataDir,
+      ]);
+      expect(exitCode).toBe(1);
+      expect(report.ok).toBe(false);
+      expect(report.errors[0]).toMatch(/ws-no-card/);
+      expect(report.errors[0]).toMatch(/card allocation/i);
+    }));
+  });
+
   describe('list-cards (admin advocacy A5)', () => {
     it('lists every allocation record with card/status/age fields; --status filters', async () => withTmpDir(async (root) => {
       const contentRoot = path.join(root, 'content');
