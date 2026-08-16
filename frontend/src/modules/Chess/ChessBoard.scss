@@ -112,7 +112,7 @@
 
 .chess-board__square--light { background: var(--cb-light); }
 .chess-board__square--dark { background: var(--cb-dark); }
-.chess-board__square:not(:disabled) { cursor: pointer; }
+button.chess-board__square:not(:disabled) { cursor: pointer; }
 
 .chess-board__square:focus-visible {
   outline: 3px solid var(--cb-accent-glow);
