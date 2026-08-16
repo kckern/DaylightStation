@@ -212,6 +212,15 @@ and a **canvas** that shows exactly one view at a time:
 - the **dispatch progress tray** — live step-by-step progress of in-flight
   casts, with retry on failure.
 
+**On phones the dock cannot hold all of that at once.** At 360px there is
+~336px to spend, and the scope selector plus the icon cluster take all of it —
+which left the search input 14px of typable width, with its own left icon over
+the field's centre swallowing the tap that should focus it. Under
+`mobile-only`, focus therefore hands the entire row to search: the scope
+selector and the icon cluster hide while `.media-search-bar:focus-within` and
+return on blur, so nothing is removed from the dock. The left icon is
+`pointer-events: none` at every width — it is decoration, never a tap target.
+
 ### Views
 
 | View | Purpose | Reached from |
@@ -273,6 +282,21 @@ Consequences this design must preserve in any rebuild:
 - The session (item, position, queue, config) outlives every view.
 - Format-specific rendering is delegated entirely to the platform's playable
   format registry; the app never branches on content format.
+
+**How re-hosting must be implemented.** `PlayerBridge` owns exactly one DOM
+node, always portals the player into it, and re-parents that node with
+`appendChild` as views claim and release the host (`usePlayerHost`). Views
+never receive the player as portal *target* directly. Rendering the player
+inline when unhosted and portalling when hosted reads as equivalent but is
+not: React treats a portal and a plain element at the same position — and two
+portals with different `containerInfo` — as a type change, so every host
+transition unmounts the media element and kills in-flight playback with
+`AbortError: The play() request was interrupted because the media was removed
+from the document`. Audio claims no host at all (the mini player's dock claim
+is video-only), so an audio track dispatched from search mounted in the
+off-screen park and was then remounted by the arriving claim; recovery fell to
+the 15s stall watchdog, 19s after the tap. Guarded by
+`PlayerBridge.test.jsx`.
 
 ### Concurrency: nothing blocks anything
 

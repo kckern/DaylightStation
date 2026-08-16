@@ -3,9 +3,11 @@
 // behaviors live here; preserve them in any refactor:
 //  - The `play` prop identity must be stable per content item — a new object
 //    reference remounts the media element.
-//  - The tree shape is identical whether hidden or portal-hosted, so
-//    navigating to/from Now Playing never remounts the Player (audio
-//    continues across all views: "playback is ambient, not modal").
+//  - The Player is portalled into ONE bridge-owned node that is re-parented
+//    imperatively, so navigating to/from Now Playing never remounts the Player
+//    (audio continues across all views: "playback is ambient, not modal").
+//    Guarded by PlayerBridge.test.jsx — do not go back to conditionally
+//    portalling; see the note at the render for why that remounts.
 //  - Volume is applied imperatively via getMediaElement() with a bounded
 //    retry, because the element may not exist when the effect first runs and
 //    routing volume through the play prop would remount the Player.
@@ -168,34 +170,54 @@ export function PlayerBridge() {
 
   const hostEl = useContext(PlayerHostContext);
 
+  // The Player ALWAYS portals into this one node, which React never reconciles
+  // away, and the node is re-parented imperatively as views claim/release the
+  // host. Rendering the tree directly when unhosted and portalling when hosted
+  // looks equivalent but is not: React matches a portal against a plain element
+  // (and a portal against a portal with a different containerInfo) as a type
+  // change, so every host transition tore the media element out of the
+  // document. On 2026-08-16 a phone dispatched an audio track with no host
+  // claimed, the Player mounted in the park, the arriving claim remounted it
+  // mid-play() — "The play() request was interrupted because the media was
+  // removed from the document" — and the track needed the 15s stall watchdog
+  // to recover, 19s after the tap. A same-document appendChild does not
+  // interrupt playback; a remount always does.
+  const hostNodeRef = useRef(null);
+  if (hostNodeRef.current === null) {
+    const el = document.createElement('div');
+    el.className = 'media-player-host';
+    hostNodeRef.current = el;
+  }
+  // Attached during render (not in an effect) so the media element is never
+  // mounted into a detached tree: the Player's own mount effects run before any
+  // effect here could attach it.
+  if (!hostNodeRef.current.isConnected) document.body.appendChild(hostNodeRef.current);
+
+  useEffect(() => {
+    const node = hostNodeRef.current;
+    const parent = hostEl ?? document.body;
+    const hidden = !hostEl;
+    node.classList.toggle('media-player-host--hidden', hidden);
+    node.setAttribute('aria-hidden', hidden ? 'true' : 'false');
+    // Parked off-screen rather than display:none — a hidden media element is
+    // throttled or refused playback by mobile browsers.
+    Object.assign(node.style, hidden
+      ? { position: 'fixed', left: '-10000px', top: '0', width: '1px', height: '1px', overflow: 'hidden', pointerEvents: 'none' }
+      : { position: '', left: '', top: '', width: '', height: '', overflow: '', pointerEvents: '' });
+    if (node.parentNode !== parent) parent.appendChild(node);
+  }, [hostEl]);
+
+  useEffect(() => () => hostNodeRef.current?.remove(), []);
+
   if (!playProp) return null;
 
-  // Identical tree shape hidden vs hosted — see header comment.
-  const hidden = !hostEl;
-  const hiddenStyle = hidden
-    ? {
-        position: 'fixed',
-        left: '-10000px',
-        top: 0,
-        width: '1px',
-        height: '1px',
-        overflow: 'hidden',
-        pointerEvents: 'none',
-      }
-    : null;
-  const tree = (
-    <div
-      className={hidden ? 'media-player-host media-player-host--hidden' : 'media-player-host'}
-      style={hiddenStyle}
-      aria-hidden={hidden ? 'true' : 'false'}
-    >
-      {/* ignoreKeys: the Player's global hotkeys (Space/Tab/Backspace/arrows)
-          are for kiosk surfaces with no text inputs or tab order. This app
-          has a search box and full transport UI — it owns its keys. */}
-      <Player ref={playerRef} play={playProp} clear={onClear} onProgress={onProgress} ignoreKeys />
-    </div>
+  return createPortal(
+    /* ignoreKeys: the Player's global hotkeys (Space/Tab/Backspace/arrows)
+       are for kiosk surfaces with no text inputs or tab order. This app
+       has a search box and full transport UI — it owns its keys. */
+    <Player ref={playerRef} play={playProp} clear={onClear} onProgress={onProgress} ignoreKeys />,
+    hostNodeRef.current
   );
-  return hostEl ? createPortal(tree, hostEl) : tree;
 }
 
 export default PlayerBridge;
