@@ -308,11 +308,16 @@ describe('work configs', () => {
   it('a work config that disagrees with where it lives fails the gate', async () => {
     // The whole reason works are validated positionally: only the gate can see
     // that this config claims a shelf it is not filed on.
-    const catalog = new FakeCatalog({ workEntries: [entry(aWork({ subject: 'history' }))] });
+    //
+    // The subject must be a REAL shelf, or the mismatch is masked by the
+    // "not one of the nine" error instead. This case used `history`, which
+    // stopped being a shelf when the list settled on `civilization` — so the
+    // test was asserting a message the validator no longer produced.
+    const catalog = new FakeCatalog({ workEntries: [entry(aWork({ subject: 'science' }))] });
     const result = await new ValidateCatalog({ catalog }).execute();
     expect(result.ok).toBe(false);
     expect(result.workErrors['math/fractions'])
-      .toEqual([expect.stringMatching(/subject is "history" but the shelf is "math"/)]);
+      .toEqual([expect.stringMatching(/subject is "science" but the shelf is "math"/)]);
   });
 
   it('an unreadable work.yml becomes a catalogError and fails the gate', async () => {
