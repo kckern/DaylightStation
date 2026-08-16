@@ -116,10 +116,19 @@ async function main() {
   }
 
   // Session file transport - writes per-app session logs to media/logs/
+  //
+  // 14 days, not 3. Three days assumed someone would go looking the same week,
+  // and a household does not work that way: a kiosk problem is usually reported
+  // days after it started, by a child, in passing. Two weeks spans that gap and
+  // covers a holiday. Measured cost on prod: the 3-day window held 30.7 MB of
+  // .jsonl and the 14-day window 32.7 MB, so the change costs about 2 MB today;
+  // even at the busiest observed day-rate (18.2 MB) the ceiling is ~255 MB.
+  // Pruning now runs on a daily timer inside the transport, so this window is
+  // enforced continuously rather than only at boot.
   const mediaDir = configService.getMediaDir();
   initSessionFileTransport({
     baseDir: join(mediaDir, 'logs'),
-    maxAgeDays: 3
+    maxAgeDays: 14
   });
 
   // Session events file transport - stream-writes full-fidelity input telemetry
