@@ -72,8 +72,8 @@ const payrollConfig = {
   directDepositAccountId: payrollAuth.direct_deposit_account_id,
 };
 
-const PAYROLL_FILE = `${DATA}/household/common/finances/payroll.yml`;
-const MAPPING_FILE = `${DATA}/household/common/finances/payrollDict.yml`;
+const PAYROLL_FILE = `${DATA}/household/finances/payroll.yml`;
+const MAPPING_FILE = `${DATA}/household/finances/payrollDict.yml`;
 
 const financeStore = {
   getPayrollData: () => {
