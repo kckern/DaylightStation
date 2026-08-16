@@ -48,7 +48,6 @@ import { DEFAULT_TIMEZONE } from '#domains/core/utils/timezone.mjs';
 
 const RELAY_SOURCE = 'omr-relay';
 const DEFAULT_TOPIC = 'omr';
-const DEFAULT_DIR = 'household/omr/log'; // relative to dataDir
 
 // Ingest discriminators we accept. Kept as a set (rather than an equality check)
 // to match the sibling relays' shape, so a future second board — or a renamed
@@ -77,15 +76,23 @@ const DEFAULT_DEDUP_WINDOW_MS = 2000;
  * @param {object}   [deps.logger]   structured logger
  * @returns {{ dispose: () => void }}
  */
-export function createOmrRelay({ eventBus, dataDir, config = {}, timezone = DEFAULT_TIMEZONE, logger = console }) {
+/**
+ * `historyRoot` is INJECTED, absolute, and already resolved.
+ *
+ * This relay used to hold `const DEFAULT_DIR = 'household/<domain>/log'` and
+ * join it onto dataDir itself. That put storage layout in the application
+ * layer, which the layer guidelines forbid outright ("Application layer never
+ * builds file paths") — and it is why relocating the household tree touched
+ * this file at all. The composition root resolves the location, including any
+ * `persistence.dir` override, and hands down one directory.
+ */
+export function createOmrRelay({ eventBus, dataDir, historyRoot, config = {}, timezone = DEFAULT_TIMEZONE, logger = console }) {
   if (!eventBus?.onClientMessage || !eventBus?.subscribe) {
     throw new Error('createOmrRelay: eventBus with onClientMessage + subscribe required');
   }
 
   const readerDefs = config?.scanners || {};
   const dedupWindowMs = Number(config?.persistence?.dedupWindowMs ?? DEFAULT_DEDUP_WINDOW_MS);
-  const persistDir = (config?.persistence?.dir || DEFAULT_DIR).replace(/^\/+/, '');
-  const historyRoot = path.join(dataDir, ...persistDir.split('/'));
   const topicForId = (id) => readerDefs[id]?.topic || DEFAULT_TOPIC;
   // Every distinct topic we must persist from (default + any per-reader overrides).
   const topics = new Set([DEFAULT_TOPIC, ...Object.values(readerDefs).map((r) => r?.topic).filter(Boolean)]);

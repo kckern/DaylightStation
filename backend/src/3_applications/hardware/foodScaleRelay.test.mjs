@@ -74,7 +74,9 @@ describe('createFoodScaleRelay persistence', () => {
     createFoodScaleRelay({
       eventBus: bus,
       dataDir,
-      config: { persistence: { dir: 'nutrition' } },
+      // Resolved by the composition root in production; supplied directly here.
+      historyRoot: path.join(dataDir, 'nutrition'),
+      config: {},
       timezone,
       logger: NOOP_LOGGER,
     });
@@ -166,7 +168,8 @@ describe('createFoodScaleRelay ingest sources', () => {
     createFoodScaleRelay({
       eventBus: bus,
       dataDir: os.tmpdir(),
-      config: { persistence: { dir: 'kitchen-relay-ingest-test' } },
+      historyRoot: path.join(os.tmpdir(), 'kitchen-relay-ingest-test'),
+      config: {},
       timezone: 'UTC',
       logger: NOOP_LOGGER,
     });

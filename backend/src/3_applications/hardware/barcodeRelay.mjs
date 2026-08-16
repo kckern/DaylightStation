@@ -27,7 +27,6 @@ import { DEFAULT_TIMEZONE } from '#domains/core/utils/timezone.mjs';
 
 const RELAY_SOURCE = 'barcode-relay';
 const TOPIC = 'barcode-relay';
-const DEFAULT_DIR = 'household/barcode/log'; // relative to dataDir
 
 // Ingest discriminators we accept, which is NOT the same set as the one value we
 // re-broadcast (`RELAY_SOURCE`). Two boards can feed this handler:
@@ -51,7 +50,7 @@ const INGEST_SOURCES = new Set([RELAY_SOURCE, 'kitchen-relay']);
  * @param {string}   [deps.defaultDevice]     device id when the relay omits one
  * @param {string}   [deps.defaultRoute]      route when the relay omits one (content|nutribot)
  * @param {string}   [deps.dataDir]           resolved data dir — enables disk persistence when set
- * @param {string}   [deps.persistDir]        history root relative to dataDir (default household/barcode/log)
+ * @param {string}   [deps.historyRoot]       absolute history root, resolved by the composition root
  * @param {string}   [deps.timezone]          IANA tz for the `ts` field + day-file bucket (default household tz)
  * @param {object}   [deps.logger]
  * @returns {{ dispose: () => void }}
@@ -62,7 +61,7 @@ export function createBarcodeRelay({
   defaultDevice = 'barcode-relay',
   defaultRoute = 'content',
   dataDir = null,
-  persistDir = DEFAULT_DIR,
+  historyRoot,
   timezone = DEFAULT_TIMEZONE,
   logger = console,
 }) {
@@ -96,7 +95,6 @@ export function createBarcodeRelay({
   // ---- 2) PERSIST: bus → disk (every scan) -------------------------------
   const unsubs = [];
   if (dataDir && eventBus.subscribe) {
-    const historyRoot = path.join(dataDir, ...String(persistDir).replace(/^\/+/, '').split('/'));
 
     // Serialize appends: appendRecord is a read-modify-write, so back-to-back
     // scans would otherwise clobber each other's day list.

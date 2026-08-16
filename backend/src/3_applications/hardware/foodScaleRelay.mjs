@@ -32,7 +32,6 @@ import { DEFAULT_TIMEZONE } from '#domains/core/utils/timezone.mjs';
 
 const RELAY_SOURCE = 'food-scale-relay';
 const DEFAULT_TOPIC = 'food-scale';
-const DEFAULT_DIR = 'household/nutrition/log'; // relative to dataDir
 
 // Ingest discriminators we accept. `kitchen-relay` is the unified kitchen board
 // (_extensions/kitchen-relay), which carries the scale AND the DS2278 scanner and
@@ -65,7 +64,17 @@ const DEFAULT_DEDUP_DELTA_G = 2;
  * @param {object}   [deps.logger]  structured logger
  * @returns {{ dispose: () => void }}
  */
-export function createFoodScaleRelay({ eventBus, dataDir, config = {}, timezone = DEFAULT_TIMEZONE, logger = console }) {
+/**
+ * `historyRoot` is INJECTED, absolute, and already resolved.
+ *
+ * This relay used to hold `const DEFAULT_DIR = 'household/<domain>/log'` and
+ * join it onto dataDir itself. That put storage layout in the application
+ * layer, which the layer guidelines forbid outright ("Application layer never
+ * builds file paths") — and it is why relocating the household tree touched
+ * this file at all. The composition root resolves the location, including any
+ * `persistence.dir` override, and hands down one directory.
+ */
+export function createFoodScaleRelay({ eventBus, dataDir, historyRoot, config = {}, timezone = DEFAULT_TIMEZONE, logger = console }) {
   if (!eventBus?.onClientMessage || !eventBus?.subscribe) {
     throw new Error('createFoodScaleRelay: eventBus with onClientMessage + subscribe required');
   }
@@ -73,8 +82,6 @@ export function createFoodScaleRelay({ eventBus, dataDir, config = {}, timezone 
   const scaleDefs = config?.scales || {};
   const emptyThresholdG = Number(config?.persistence?.emptyThresholdG ?? DEFAULT_EMPTY_THRESHOLD_G);
   const dedupDeltaG = Number(config?.persistence?.dedupDeltaG ?? DEFAULT_DEDUP_DELTA_G);
-  const persistDir = (config?.persistence?.dir || DEFAULT_DIR).replace(/^\/+/, '');
-  const historyRoot = path.join(dataDir, ...persistDir.split('/'));
   const topicForId = (id) => scaleDefs[id]?.topic || DEFAULT_TOPIC;
   // Every distinct topic we must persist from (default + any per-scale overrides).
   const topics = new Set([DEFAULT_TOPIC, ...Object.values(scaleDefs).map((s) => s?.topic).filter(Boolean)]);

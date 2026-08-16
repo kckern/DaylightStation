@@ -36,13 +36,16 @@ const LOCAL_DAY = '2026-08-11';
 
 describe('automotiveRelay', () => {
   let bus, dataDir, relay, clock;
-  const historyRoot = () => path.join(dataDir, 'household', 'history', 'automotive');
+  const historyRoot = () => path.join(dataDir, 'household', 'automotive', 'log');
   const readDayLog = async (day = LOCAL_DAY) =>
     yaml.load(await fs.readFile(path.join(historyRoot(), VEHICLE, `${day}.yml`), 'utf8'));
   const readTrip = async (relPath) =>
     yaml.load(await fs.readFile(path.join(historyRoot(), VEHICLE, 'trips', relPath), 'utf8'));
+  // historyRoot is resolved by the composition root in production; the test
+  // supplies it directly, which is also what keeps this file honest about
+  // where the relay actually writes.
   const make = (config = {}) => createAutomotiveRelay({
-    eventBus: bus, dataDir, config, logger, timezone: TZ, now: () => clock,
+    eventBus: bus, dataDir, historyRoot: historyRoot(), config, logger, timezone: TZ, now: () => clock,
   });
 
   beforeEach(async () => {
