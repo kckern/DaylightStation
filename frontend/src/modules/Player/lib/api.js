@@ -1,5 +1,5 @@
 import { DaylightAPI } from '../../../lib/api.mjs';
-import { playbackLog } from './playbackLogger.js';
+import { playbackLog, setPlexSessionIdentity } from './playbackLogger.js';
 import { getLogger } from '../../../lib/logging/Logger.js';
 
 // Every answer this module gets back opens a Plex transcode session, and until
@@ -122,6 +122,11 @@ export async function fetchMediaInfo({ contentId, plex, media, shuffle, maxVideo
   // fields, so `contentId`/`session` carry the useful per-value histogram while
   // the summed `requestSeq` and `msSinceLastRequest` mean nothing there.
   const logSuccess = (playResponse) => {
+    // The identifier Plex itself will log for this stream, adopted into the
+    // playback logger's context so every subsequent line from this player
+    // carries the key that joins our log to Plex's. Passing the field through
+    // untouched keeps its three states apart (see setPlexSessionIdentity).
+    setPlexSessionIdentity(playResponse?.plexClientIdentifier);
     mintLogger().sampled('playback.fetch-media-succeeded', {
       ...requestFacts,
       // A completed request that returned nothing still cost a backend call, so

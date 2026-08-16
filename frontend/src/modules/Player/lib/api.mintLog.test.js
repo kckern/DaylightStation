@@ -16,12 +16,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const sampled = [];
 const playbackLogCalls = [];
+const plexIdentityCalls = [];
 
 vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: vi.fn() }));
 
 vi.mock('./playbackLogger.js', () => ({
   __esModule: true,
   playbackLog: (event, payload, options) => { playbackLogCalls.push({ event, payload, options }); },
+  // Tier 2.1: the mint path also adopts the identifier Plex will log for this
+  // stream, so every later playback line can be joined to Plex's own log.
+  setPlexSessionIdentity: (value) => { plexIdentityCalls.push(value); },
   default: (event, payload, options) => { playbackLogCalls.push({ event, payload, options }); }
 }));
 
@@ -57,6 +61,7 @@ const loadApi = async () => {
 beforeEach(() => {
   sampled.length = 0;
   playbackLogCalls.length = 0;
+  plexIdentityCalls.length = 0;
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(BASE_TIME);
 });
@@ -70,6 +75,9 @@ describe('fetchMediaInfo — stream-URL request counting', () => {
 
     await fetchMediaInfo({ contentId: 'plex:694719', session: 'IIni70e01E' });
 
+    // Tier 2.1: whatever the backend said about Plex's own identifier is
+    // adopted on this path — including its absence, which is a distinct fact.
+    expect(plexIdentityCalls).toEqual([undefined]);
     expect(successes()).toHaveLength(1);
     expect(successes()[0].data).toMatchObject({
       contentId: 'plex:694719',
