@@ -77,8 +77,11 @@ describe('the v2 agenda — math and language together, one card', () => {
 
     const offeredA = h.tokensInLastReceipt();
     expect(offeredA).toHaveLength(2);
-    const staleMathToken = offeredA.find((o) => /watch or listen/i.test(o.label))?.token;
-    const languageToken = offeredA.find((o) => /on the portal/i.test(o.label))?.token;
+    // The action a code belongs to is the whole lesson card printed above it
+    // (hierarchy + footer instruction), not the code's own label — the label
+    // is just the lesson title. `printed` is that card's tape.
+    const staleMathToken = offeredA.find((o) => /watch or listen/i.test(o.printed))?.token;
+    const languageToken = offeredA.find((o) => /on the portal/i.test(o.printed))?.token;
     expect(staleMathToken, `no math ticket in ${JSON.stringify(offeredA)}`).toBeTruthy();
     expect(languageToken, `no language ticket in ${JSON.stringify(offeredA)}`).toBeTruthy();
 
@@ -110,7 +113,7 @@ describe('the v2 agenda — math and language together, one card', () => {
     expect(tapC).toMatch(/MATH.*done today/i);
     const offeredC = h.tokensInLastReceipt();
     expect(offeredC).toHaveLength(1); // ONE token: math served, language is not
-    expect(offeredC[0].label).toMatch(/on the portal/i);
+    expect(offeredC[0].printed).toMatch(/on the portal/i);
 
     // -------------------------------------------------------------------
     // (d) the STALE math ticket from (a): yesterday's paper stays safe
@@ -165,10 +168,13 @@ describe('the v2 agenda — math and language together, one card', () => {
       expect(banner.content).not.toMatch(/^#/);
       expect(banner.content).toContain('TEST LEARNER');
 
-      // Section headers: `## ` renders bold, left, NORMAL size — and MATH
-      // prints before LANGUAGE (the subject-wall order, spec §6.2).
-      const mathHeaderIndex = job.items.findIndex((i) => i.type === 'text' && i.content.startsWith('MATH'));
-      const languageHeaderIndex = job.items.findIndex((i) => i.type === 'text' && i.content.startsWith('LANGUAGE'));
+      // Section headers render bold, left, NORMAL size — and MATH prints
+      // before LANGUAGE (the subject-wall order, spec §6.2). A LIVE section's
+      // header is the lesson card's eyebrow (`TODAY · {subject}`), not a `## `
+      // heading: the heading is only emitted for sections with no card to
+      // offer (served/locked/unavailable). See receipts.mjs `agendaDocument`.
+      const mathHeaderIndex = job.items.findIndex((i) => i.type === 'text' && i.content === 'TODAY · MATH');
+      const languageHeaderIndex = job.items.findIndex((i) => i.type === 'text' && i.content === 'TODAY · LANGUAGE');
       expect(mathHeaderIndex).toBeGreaterThan(0);
       expect(languageHeaderIndex).toBeGreaterThan(mathHeaderIndex);
       for (const idx of [mathHeaderIndex, languageHeaderIndex]) {
