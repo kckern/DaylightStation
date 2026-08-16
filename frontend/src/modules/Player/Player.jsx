@@ -336,8 +336,9 @@ const Player = forwardRef(function Player(props, ref) {
   // on the nav stack (MenuWidget is a layout widget, so it renders inside the
   // overlay provider's children) while a media:play action mounts a second in the
   // fullscreen slot, whose dismissOverlay clears only the overlay slot. Sharing the
-  // session keys below would mean one Player consuming the other's resume seek and
-  // either one's unmount wiping the survivor's recovery-attempt budget.
+  // ITEM session key below would mean one Player consuming the other's resume seek and
+  // either one's unmount wiping the survivor's recovery-attempt budget. (The prefs key
+  // is deliberately NOT per-instance — see the note on it.)
   //
   // A ref is the right home for this: a remount happens BELOW this component (React
   // rebuilds SinglePlayer when singlePlayerKey changes), so the id — and with it the
@@ -348,16 +349,28 @@ const Player = forwardRef(function Player(props, ref) {
 
   // Two sessions: preferences (volume/rate) live at queue scope so they survive
   // item swaps; seek intent lives at item scope so resume-position never crosses items.
-  // Both carry the instance id so a sibling Player on the same content keeps its own.
+  //
+  // Only ONE of them carries the instance id, and which one is not arbitrary. Both
+  // hazards in the note above are item-scoped: the resume seek is `targetTimeSeconds`
+  // on `itemSessionKey`, and the recovery-attempt budget is the ledger keyed on
+  // `resilienceSessionKey`, which is `itemSessionKey`. So `itemSessionKey` is the key
+  // that has to be per-instance.
+  //
+  // `prefsSessionKey` carries only volume (and rate, when there's no collection to
+  // scope it to), which is a user preference that is SUPPOSED to be shared — leave a
+  // lecture and come back inside the same page session and the volume you chose is
+  // still there. There is no wipe hazard on this key either: usePlaybackSession has
+  // no delete path, so an unmount takes nothing with it. Adding the instance id here
+  // would mint a fresh entry per mount and drop every override back to the default.
   const prefsSessionKey = useMemo(() => {
     if (queueSessionId && isQueue) {
-      return `player-session:queue:${queueSessionId}#${playerInstanceId}`;
+      return `player-session:queue:${queueSessionId}`;
     }
     const identifier = currentMediaGuid ?? mediaIdentity;
     return identifier
-      ? `player-session:${identifier}#${playerInstanceId}`
-      : `player-session:idle#${playerInstanceId}`;
-  }, [queueSessionId, isQueue, currentMediaGuid, mediaIdentity, playerInstanceId]);
+      ? `player-session:${identifier}`
+      : 'player-session:idle';
+  }, [queueSessionId, isQueue, currentMediaGuid, mediaIdentity]);
 
   const itemSessionKey = useMemo(() => {
     const identifier = currentMediaGuid ?? mediaIdentity;

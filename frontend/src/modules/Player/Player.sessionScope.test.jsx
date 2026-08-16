@@ -17,19 +17,21 @@
  * that lifetime — it is the assumption the whole scheme rests on.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, waitFor, cleanup } from '@testing-library/react';
+import { render, waitFor, cleanup, act } from '@testing-library/react';
 
 // SinglePlayer is stubbed so the session keys the Player hands down are observable,
 // and so a MOUNT (the remount that a key change causes) can be counted directly.
 const mounts = [];
 const renders = [];
 const clientSessions = [];
+const volumeFrames = [];
 
 vi.mock('./components/SinglePlayer.jsx', async () => {
   const { useEffect } = await import('react');
   return {
-    SinglePlayer: ({ resilienceSessionKey, plexClientSession }) => {
+    SinglePlayer: ({ resilienceSessionKey, plexClientSession, volume, setVolume }) => {
       renders.push(resilienceSessionKey);
+      volumeFrames.push({ volume, setVolume });
       useEffect(() => {
         mounts.push(resilienceSessionKey);
         clientSessions.push(plexClientSession);
@@ -52,6 +54,7 @@ beforeEach(() => {
   mounts.length = 0;
   renders.length = 0;
   clientSessions.length = 0;
+  volumeFrames.length = 0;
 });
 
 afterEach(() => {
@@ -120,6 +123,30 @@ describe('Player — per-instance session scope', () => {
     expect(clientSessions[0]).toBeTruthy();
     expect(clientSessions[1]).toBeTruthy();
     expect(clientSessions[0]).not.toBe(clientSessions[1]);
+  });
+
+  it('restores a volume override on a later mount of the same content', async () => {
+    // The instance discriminator belongs on `itemSessionKey` ONLY. `prefsSessionKey`
+    // carries volume, which is a user preference and is meant to outlive the Player
+    // that set it — leave and come back to the same lecture inside one page session
+    // and the volume you chose is still there. Putting the instance id on this key
+    // too would mint a fresh entry per mount and silently drop the override back to
+    // the default, with nothing failing to say so.
+    const first = render(<Player play={{ contentId: 'plex:555001' }} />);
+    await waitFor(() => expect(volumeFrames.length).toBeGreaterThan(0));
+    expect(volumeFrames.at(-1).volume).toBe(1);
+
+    await act(async () => {
+      volumeFrames.at(-1).setVolume(0.35);
+    });
+    await waitFor(() => expect(volumeFrames.at(-1).volume).toBe(0.35));
+
+    first.unmount();
+    volumeFrames.length = 0;
+
+    render(<Player play={{ contentId: 'plex:555001' }} />);
+    await waitFor(() => expect(volumeFrames.length).toBeGreaterThan(0));
+    expect(volumeFrames.at(-1).volume).toBe(0.35);
   });
 
   it('hands an externally supplied session through untouched', async () => {
