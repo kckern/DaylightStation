@@ -5,12 +5,18 @@ import PianoGameHost from '../game-platform/host/PianoGameHost.jsx';
 import InstrumentBoardStage from '../game-platform/families/addressed-board/InstrumentBoardStage.jsx';
 import AddressRail from '../game-platform/families/addressed-board/AddressRail.jsx';
 import { BOARD_LAYOUTS } from '../game-platform/families/addressed-board/contracts.js';
+import { useAddressedBoardGame } from '../game-platform/families/addressed-board/useAddressedBoardGame.js';
+import { useAddressing } from '../game-platform/addressing/useAddressing.js';
+import { useAddressingLadder } from '../game-platform/addressing/useAddressingLadder.js';
 import { thinkTimeFor, useOpponentReply } from '../game-platform/opponent/opponentPacing.js';
-import { noteName } from '../PianoChessGame/staffAddress.js';
 import {
-  archiveConnectFourGame, fetchConnectFourConfig, fetchConnectFourLadder,
-  requestConnectFourMove, saveConnectFourConfig, saveConnectFourGame,
-} from './connectFourApi.js';
+  GameRail, GameSlot, GameButton, GameStatusBar, GameToggle, GameChoice, LadderBadge, DealNotice, GameSheet,
+} from '../game-platform/chrome/index.js';
+import AddressingSettings from '../game-platform/addressing/AddressingSettings.jsx';
+import GearIcon from '../game-platform/chrome/GearIcon.jsx';
+import { materialFor } from '../game-platform/addressing/resolveAddressing.js';
+import { noteName } from '../PianoChessGame/staffAddress.js';
+import connectFourClient from './connectFourApi.js';
 import './PianoConnectFour.scss';
 
 const DEFAULT_CONFIG = {
@@ -18,18 +24,58 @@ const DEFAULT_CONFIG = {
   column_notes: [60, 62, 64, 65, 67, 69, 71],
   column_chords: ['C', 'D', 'E', 'F', 'G', 'A', 'B'], default_level: 1,
 };
-// Connect Four's ladder is 7 rungs (1-7, see the "Level {level} of 7" rail
-// below) — thinkTimeFor's `levels` generalises the old chess-only ladder size.
+// Connect Four's ladder is 7 rungs — thinkTimeFor's `levels` generalises the
+// old chess-only ladder size.
 const LADDER_LEVELS = 7;
-// Used only when thinkTimeFor has nothing to read yet (no ladder resolved) —
-// mirrors chess's own OPPONENT_DELAY_MS fallback constant.
+// Used only when thinkTimeFor has nothing to read yet (no ladder resolved).
 const OPPONENT_THINK_FALLBACK_MS = 700;
-const ROOTS = [0, 2, 4, 5, 7, 9, 11];
+const COLUMNS = 7;
 
-function userIdOf(currentUser) {
-  const value = typeof currentUser === 'string' ? currentUser : currentUser?.id;
-  return value && value !== 'guest' ? value : null;
+/**
+ * This game's own historical config keys, read forward onto the dimensions.
+ *
+ * `column_notes` is in real players' folders, so a saved axis still wins over a
+ * tier — that is what the explicit-scheme escape hatch is for.
+ *
+ * One axis, not two: gravity picks the row, so Connect Four addresses a COLUMN
+ * and nothing else. The scheme's `qualities` is filled with the same values as
+ * `roots` because the shape is shared with the two-axis games and a scheme with
+ * a missing axis fails validation — nothing ever reads it here.
+ */
+export function legacyAddressing(config) {
+  const notes = config?.column_notes;
+  const legacy = {};
+  if (Array.isArray(notes) && notes.length === COLUMNS && notes.every(Number.isFinite)
+    && notes.join() !== DEFAULT_CONFIG.column_notes.join()) {
+    legacy.scheme = { id: 'connect-four-saved-columns', kind: 'staff', roots: notes, qualities: notes };
+  }
+  if (config?.shuffle_each_game !== undefined) legacy.shuffle_each_game = config.shuffle_each_game;
+  return legacy;
 }
+
+/**
+ * The chord roots this game addresses columns with, in SCALE order.
+ *
+ * The chord tier tables are alphabetical, because chess maps file `a` to A. A
+ * row of columns read left to right is a scale, not an alphabet — so the same
+ * tier material is re-sorted from C upward here. Same notes, the order a player
+ * reading a keyboard expects.
+ */
+export function scaleRoots(roots, size = COLUMNS) {
+  const order = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
+  const rank = (root) => {
+    const index = order.indexOf(root);
+    return index < 0 ? order.length : index;
+  };
+  return [...roots].sort((a, b) => rank(a) - rank(b)).slice(0, size);
+}
+
+const ROOTS = [0, 2, 4, 5, 7, 9, 11];
+const INPUT_MODES = [
+  { value: 'notes', label: 'Single notes' },
+  { value: 'chords', label: 'Major chords' },
+];
+const HINT_CLUSTER = 7;
 
 export function shuffledColumns(seed) {
   const values = [0, 1, 2, 3, 4, 5, 6];
@@ -74,130 +120,194 @@ export function columnAddresses(config, deal) {
   }));
 }
 
-function Board({ game, hint }) {
+/**
+ * Where the newest disc landed, and how far it had to fall to get there.
+ *
+ * Discs stack from the floor up, so the newest one in a column is the TOPMOST
+ * occupied cell in it — no need to diff boards or thread the landing row out of
+ * the engine. `rows` counts cells from above the board's rim down to the resting
+ * place, which is what turns one animation into a fall of the right length: a
+ * disc into a full column barely moves, a disc into an empty one falls six.
+ */
+export function lastDrop(board, moves) {
+  if (!moves.length) return null;
+  const column = moves.at(-1);
+  const row = board.findIndex((cells) => cells[column]);
+  if (row < 0) return null;
+  return { row, column, rows: row + 1, ply: moves.length };
+}
+
+/** Longer falls take longer. Gravity, not a fixed transition. */
+export function dropDurationMs(rows) {
+  return 190 + Math.max(0, rows) * 52;
+}
+
+function Board({ game, hint, drop }) {
   return (
-    <div className="connect-four-board" role="grid" aria-label="Connect Four board">
-      {game.board.map((row, rowIndex) => row.map((cell, column) => (
-        <div
-          key={`${rowIndex}-${column}`}
-          role="gridcell"
-          className={`connect-four-board__cell${hint === column ? ' is-hint' : ''}`}
-        >
-          <span className={`connect-four-board__disc connect-four-board__disc--${cell || 'empty'}`} />
-        </div>
-      )))}
+    <div className="connect-four-board pg-board" role="grid" aria-label="Connect Four board">
+      {game.board.map((row, rowIndex) => row.map((cell, column) => {
+        const falling = drop && drop.row === rowIndex && drop.column === column;
+        return (
+          <div
+            key={`${rowIndex}-${column}`}
+            role="gridcell"
+            className={`connect-four-board__cell${hint === column ? ' is-hint' : ''}`}
+          >
+            <span
+              /* Keyed on the ply so the same column twice running still animates
+                 twice — a remount is the only thing that restarts a CSS
+                 animation, and every disc landing deserves its own drop. */
+              key={falling ? `drop-${drop.ply}` : 'seated'}
+              className={`connect-four-board__disc connect-four-board__disc--${cell || 'empty'}${falling ? ' is-falling' : ''}`}
+              style={falling ? {
+                '--c4-drop-rows': drop.rows,
+                '--c4-drop-ms': `${dropDurationMs(drop.rows)}ms`,
+              } : undefined}
+            />
+          </div>
+        );
+      }))}
     </div>
   );
 }
 
 export default function PianoConnectFour({ activeNotes = new Map(), currentUser = null, onNoteOn, onNoteOff }) {
-  const userId = userIdOf(currentUser);
-  const [config, setConfig] = useState(DEFAULT_CONFIG);
-  const [ladder, setLadder] = useState(null);
-  const [moves, setMoves] = useState([]);
   const [hint, setHint] = useState(null);
-  const [localPractice, setLocalPractice] = useState(false);
-  const [seed, setSeed] = useState(() => Date.now() >>> 0);
-  const [gameId, setGameId] = useState(() => `connect-four-${Date.now()}`);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const latchedRef = useRef(false);
-  const savedRef = useRef(false);
-  const rankedRef = useRef(true);
-  const movesRef = useRef(moves);
-  movesRef.current = moves;
+
+  // The transcript IS the game — nothing else is persisted, and a replay from
+  // moves is what the server validates against.
+  const [moves, setMoves] = useState([]);
   const game = useMemo(() => replayGame({ moves }), [moves]);
-  const deal = useMemo(() => config.shuffle_each_game ? shuffledColumns(seed) : [0, 1, 2, 3, 4, 5, 6], [config.shuffle_each_game, seed]);
-  const level = ladder?.unlocked_through ?? config.default_level ?? 1;
+  const result = !game.status.gameOver
+    ? null
+    : game.status.draw ? 'draw' : game.status.winner === 1 ? 'win' : 'loss';
+
+  const {
+    config, updateConfig, ladder, level, seed, gameSessionId, userId,
+    localPractice, noteLocalPractice, restart: resetSession, logger,
+  } = useAddressedBoardGame({
+    gameId: 'connect-four',
+    client: connectFourClient,
+    currentUser,
+    defaultConfig: DEFAULT_CONFIG,
+    ladderLevels: LADDER_LEVELS,
+    moves,
+    result,
+  });
+
+  // Which key drops into which column, resolved from the layers rather than
+  // from a constant in this file — see docs/reference/piano/grid-addressing.md.
+  const legacy = useMemo(() => legacyAddressing(config), [config]);
+  const { x: columnNotes, addressing } = useAddressing({
+    config, axisSize: COLUMNS, seed, ply: moves.length, legacy,
+  });
+
+  // The deal stays this game's own: `deal[address] = column`, so the ADDRESS
+  // order is what the resolver produces and the deal is what maps it onto the
+  // board. Re-dealing the columns and re-ordering the axis are two different
+  // things, and only the second belongs to the shared vocabulary.
+  const deal = useMemo(
+    () => (addressing.shuffle === 'never' ? [0, 1, 2, 3, 4, 5, 6] : shuffledColumns(seed)),
+    [addressing.shuffle, seed],
+  );
+
+  // The material this game addresses with, whichever vocabulary is resolved.
+  const columns = useMemo(() => ({
+    ...config,
+    // `addressedColumn` reads this; the resolved vocabulary is the source of
+    // truth for it now, so a saved `input_mode` no longer disagrees with the
+    // rail the player is reading.
+    input_mode: addressing.vocabulary === 'chords' ? 'chords' : 'notes',
+    column_notes: columnNotes,
+    column_chords: scaleRoots(
+      addressing.vocabulary === 'chords'
+        ? materialFor('chords', 'x', addressing.x.tier)
+        : config.column_chords ?? DEFAULT_CONFIG.column_chords,
+    ),
+  }), [config, columnNotes, addressing.vocabulary, addressing.x.tier]);
+
+  // The reading ladder watches how the player ADDRESSES, not whether they win.
+  const reading = useAddressingLadder({
+    client: connectFourClient, gameId: 'connect-four', userId, config, logger,
+  });
+
+  // The disc that just landed, so it can fall in rather than appear.
+  const drop = useMemo(() => lastDrop(game.board, moves), [game.board, moves]);
 
   // The opponent's reply is a floor on the wait, never an addend: the request
   // goes out the instant it is this character's turn, and the disc lands at
-  // max(elapsed, thinkMs) — see opponentPacing.js. `resetKey: gameId` covers
-  // the reset case `enabled` alone can't: after restart() the fresh board
-  // always opens on the player's turn (turn 1), so `enabled` already flips
-  // false on its own here, but keeping the game id as the reset key too costs
-  // nothing and matches the other two games for the same reason.
+  // max(elapsed, thinkMs) — see opponentPacing.js.
   const opponentEnabled = !game.status.gameOver && game.turn === 2;
-  const opponentPace = config.opponent?.pace ?? 1;
   const thinkMs = thinkTimeFor({
-    level, levels: LADDER_LEVELS, config, seed, ply: moves.length, pace: opponentPace,
+    level, levels: LADDER_LEVELS, config, seed, ply: moves.length, pace: config.opponent?.pace ?? 1,
   }) ?? OPPONENT_THINK_FALLBACK_MS;
   const { thinking } = useOpponentReply({
     enabled: opponentEnabled,
     thinkMs,
-    resetKey: gameId,
-    request: () => requestConnectFourMove({ transcript: { moves }, level, gameId, userId }),
+    resetKey: gameSessionId,
+    request: () => connectFourClient.requestMove({
+      transcript: { moves }, level, gameSessionId, userId,
+    }),
     onReply: (answer) => {
-      if (!answer?.move) {
-        rankedRef.current = false;
-        setLocalPractice(true);
-      }
+      if (!answer?.move) noteLocalPractice();
       const column = answer?.move?.column ?? chooseColumn(game.board, { player: 2, level });
       const next = playColumn({ moves }, column);
       if (!next.error) setMoves(next.moves);
     },
   });
 
+  // Time-to-address is measured from when it became the player's turn.
   useEffect(() => {
-    fetchConnectFourConfig(userId).then((value) => value && setConfig((old) => ({ ...old, ...value })));
-    fetchConnectFourLadder(userId).then((value) => value && setLadder(value));
-  }, [userId]);
+    if (!game.status.gameOver && game.turn === 1 && !thinking) reading.startTurn();
+  }, [game.status.gameOver, game.turn, thinking]);
 
   useEffect(() => {
     if (game.status.gameOver || game.turn !== 1 || thinking) return;
     if (activeNotes.size === 0) { latchedRef.current = false; setHint(null); return; }
     if (latchedRef.current) return;
-    // Seven-note cluster is the universal best-move gesture, independent of addressing mode.
-    if (activeNotes.size >= 7) {
-      setHint(chooseColumn(game.board, { player: 1, level }));
+    // Seven-note cluster is the universal best-move gesture, independent of
+    // addressing mode.
+    if (activeNotes.size >= HINT_CLUSTER) {
+      const suggested = chooseColumn(game.board, { player: 1, level });
+      setHint(suggested);
+      logger.debug('connect-four.hint', { column: suggested, level });
       latchedRef.current = true;
       return;
     }
-    const column = addressedColumn(activeNotes, config, deal);
+    const column = addressedColumn(activeNotes, columns, deal);
     if (column === null) return;
     const next = playColumn({ moves }, column);
-    if (!next.error) setMoves(next.moves);
-    latchedRef.current = true;
-  }, [activeNotes, config, deal, game, level, moves, thinking]);
-
-  useEffect(() => {
-    if (!game.status.gameOver || savedRef.current) return;
-    savedRef.current = true;
-    const result = game.status.draw ? 'draw' : game.status.winner === 1 ? 'win' : 'loss';
-    const record = { moves, result, level, ranked: rankedRef.current, completed: true, played_on: new Date().toISOString().slice(0, 10) };
-    if (userId) saveConnectFourGame(userId, record).then((response) => response?.ladder && setLadder(response.ladder));
-    archiveConnectFourGame({ ...record, user_id: userId });
-  }, [game.status, level, moves, userId]);
-
-  useEffect(() => () => {
-    if (!savedRef.current && movesRef.current.length) {
-      archiveConnectFourGame({ moves: movesRef.current, completed: false, user_id: userId, ended_by: 'exit' });
+    if (!next.error) {
+      setMoves(next.moves);
+      logger.debug('connect-four.drop', { column, ply: next.moves.length });
     }
-  }, [userId]);
+    // A full column is a refused address, not a landed one.
+    reading.record({ ok: !next.error });
+    latchedRef.current = true;
+  }, [activeNotes, columns, deal, game, level, logger, moves, thinking]);
 
-  const updateConfig = (patch) => {
-    setConfig((value) => ({ ...value, ...patch }));
-    if (userId) saveConnectFourConfig(userId, patch);
-  };
   const restart = () => {
     setMoves([]);
     setHint(null);
-    setLocalPractice(false);
-    savedRef.current = false;
-    rankedRef.current = true;
+    // A key already down when the game restarts must not immediately address a
+    // column — the latch opens on the next release, not on this render.
     latchedRef.current = activeNotes.size > 0;
-    setSeed((value) => (value + 1) >>> 0);
-    setGameId(`connect-four-${Date.now()}`);
+    resetSession();
   };
+
+  const opponentName = ladder?.current?.name ?? 'Pebble';
   const status = game.status.gameOver
-    ? game.status.draw ? 'Draw game' : game.status.winner === 1 ? 'You connected four!' : `${ladder?.current?.name ?? 'Opponent'} wins`
-    : thinking ? `${ladder?.current?.name ?? 'Opponent'} is thinking…` : 'Play the key for a column';
+    ? game.status.draw ? 'Draw game' : game.status.winner === 1 ? 'You connected four!' : `${opponentName} wins`
+    : thinking ? `${opponentName} is thinking…` : 'Play the key for a column';
 
   // The rail's own cards, one per column, already inverted through the deal —
   // see columnAddresses. The active card follows whatever the held keys
-  // currently address, the SAME resolution the drop itself uses a moment
-  // later, so the highlight never promises a column the drop would disagree
-  // with.
-  const railAddresses = useMemo(() => columnAddresses(config, deal), [config, deal]);
-  const hoveredColumn = addressedColumn(activeNotes, config, deal);
+  // currently address, the SAME resolution the drop itself uses a moment later,
+  // so the highlight never promises a column the drop would disagree with.
+  const railAddresses = useMemo(() => columnAddresses(columns, deal), [columns, deal]);
+  const hoveredColumn = addressedColumn(activeNotes, columns, deal);
 
   return (
     <PianoGameHost
@@ -208,39 +318,85 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
     >
       <InstrumentBoardStage
         layout={BOARD_LAYOUTS.SINGLE}
-        topRail={<AddressRail addresses={railAddresses} orientation="horizontal" active={hoveredColumn} />}
-        primary={<Board game={game} hint={hint} />}
+        topRail={(
+          <AddressRail addresses={railAddresses} orientation="horizontal" active={hoveredColumn} />
+        )}
+        primary={<Board game={game} hint={hint} drop={drop} />}
         leftRail={(
-          <div className="connect-four-opponent">
-            <strong>{ladder?.current?.name ?? 'Pebble'}</strong>
-            <span>Level {level} of 7</span>
-            <span>{ladder?.wins ?? 0} / 3 wins</span>
-          </div>
+          <GameRail label="Opponent">
+            <GameSlot label="Playing against">
+              <LadderBadge
+                name={opponentName}
+                level={level}
+                levels={LADDER_LEVELS}
+                wins={ladder?.wins ?? 0}
+                needed={ladder?.needed ?? 3}
+              />
+            </GameSlot>
+          </GameRail>
         )}
         rightRail={(
-          <div className="connect-four-settings">
-            <label>Input
-              <select value={config.input_mode} onChange={(event) => updateConfig({ input_mode: event.target.value })}>
-                <option value="notes">Single notes</option>
-                <option value="chords">Major chords</option>
-              </select>
-            </label>
-            <label><input type="checkbox" checked={config.shuffle_each_game} onChange={(event) => updateConfig({ shuffle_each_game: event.target.checked })} /> Re-deal columns</label>
+          <GameRail
+            label="Setup"
+            foot={(
+              <GameButton
+                variant="icon"
+                onClick={() => setSettingsOpen((open) => !open)}
+                aria-expanded={settingsOpen}
+                aria-label="Settings"
+                title="Settings"
+              >
+                <GearIcon />
+              </GameButton>
+            )}
+          >
+            <GameSlot label="How you play a column">
+              <GameChoice
+                value={addressing.vocabulary === 'chords' ? 'chords' : 'notes'}
+                options={INPUT_MODES}
+                onChange={(value) => updateConfig({
+                  addressing: { vocabulary: value === 'chords' ? 'chords' : 'staff' },
+                })}
+              />
+              <GameToggle
+                label="Re-deal columns each game"
+                checked={addressing.shuffle !== 'never'}
+                onChange={(value) => updateConfig({
+                  addressing: { shuffle: value ? 'each_game' : 'never' },
+                })}
+              />
+            </GameSlot>
             {/* The text legend used to live here ("1: C  2: D  ..."), tucked in
                 a settings panel the player has to open and read while their
                 hands are off the keys. The rail above the board says the same
-                thing where it actually helps — over each column, all the
-                time, in the vocabulary the player is learning. */}
-            <small>Play seven notes together for a hint.</small>
-          </div>
+                thing where it actually helps — over each column, all the time,
+                in the vocabulary the player is learning. */}
+            <GameSlot label="Stuck?" variant="plain">
+              Play seven notes together and the best column lights up.
+              {/* Without this a re-deal is invisible: the player plays
+                  yesterday's key and a disc lands in the wrong column. */}
+              <DealNotice cadence={addressing.shuffle} dealKey={`${seed}-${moves.length}`} />
+            </GameSlot>
+          </GameRail>
         )}
         status={(
-          <div className="connect-four-status">
-            <span>{status}{localPractice ? ' · local practice' : ''}</span>
-            {game.status.gameOver && <button type="button" onClick={restart}>Play again</button>}
-          </div>
+          <GameStatusBar
+            aside={localPractice ? 'local practice' : null}
+            action={game.status.gameOver && (
+              <GameButton variant="primary" onClick={restart}>Play again</GameButton>
+            )}
+          >
+            {status}
+          </GameStatusBar>
         )}
       />
+
+      {/* The same reading ladder chess offers, on the same control. */}
+      {settingsOpen && (
+        <GameSheet title="Settings" onClose={() => setSettingsOpen(false)}>
+          <AddressingSettings config={config} axisSize={COLUMNS} onChange={updateConfig} />
+        </GameSheet>
+      )}
     </PianoGameHost>
   );
 }

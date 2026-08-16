@@ -1,0 +1,670 @@
+/**
+ * THE GAME CABINET — the visual layer the platform owns.
+ *
+ * Before this file the platform owned layout and nothing else, so every game
+ * invented its own surface, its own border, its own accent and its own idea of
+ * how big a button is. Three games shipped three answers; Chess's was good and
+ * private, the other two were a pair of near-identical hexes (#071526aa vs
+ * #071526b8) that read as slop because they were.
+ *
+ * The vocabulary is a piano cabinet, because that is what the player is sitting
+ * at: a CASE the whole game sits in, a SHELF (the music desk) every read-out
+ * rests on, IVORY for what you read, BRASS for what is live right now, FELT for
+ * a refusal. Every value aliases a house token from Apps/PianoApp.scss, so the
+ * kiosk still has exactly one palette — this file only gives a game's parts the
+ * names a game actually uses. A game overrides `--pg-board-*` and nothing else:
+ * the board carries the game's colour, the furniture around it does not, and
+ * three games in one kiosk stop reading as three different apps.
+ */
+
+/* Declared on BOTH the host and the fullscreen wrapper around it: a game owns
+   its host, but the crash boundary and the loading skeleton replace the host
+   entirely and still have to be furniture from the same room. */
+.piano-game-host,
+.piano-game-fullscreen {
+  /* --- the cabinet --- */
+  --pg-case: var(--piano-bg, #16161b);
+  --pg-shelf: var(--piano-surface, #1f1f26);
+  --pg-shelf-lift: var(--piano-surface-2, #2a2a33);
+  --pg-hairline: var(--piano-border, #34343f);
+  --pg-ivory: var(--piano-fg, #f1f1f4);
+  --pg-ivory-dim: var(--piano-muted, #9a9aa6);
+  --pg-brass: var(--piano-accent-text, #5fe39a);
+  --pg-brass-fill: var(--piano-accent, #2ec46f);
+  --pg-brass-ink: var(--piano-accent-ink, #07210f);
+  --pg-felt: var(--piano-danger, #e05a4f);
+
+  /* --- metrics --- */
+  /* Both rails claim this, so the board is centred as a property of the layout
+     rather than as a coincidence of the current content length. */
+  --pg-rail-w: 15.5rem;
+  /* The board's own ceiling. A top rail sits over the board, so it has to read
+     this same number — it was a `min(100%, 34rem)` copy-pasted into four rules
+     across two files, and a rail one pixel wider than its board is a card that
+     no longer points at its column. */
+  --pg-board-max: 34rem;
+  --pg-gap: 0.5rem;
+  /* How tall the instrument stands. The platform owns the dock; a game that
+     wants a bigger keyboard raises THIS rather than setting a percentage height
+     on the dock — Space Invaders asked for a 40% dock and got 296px of it
+     holding a 103px keyboard, so the game ended in 190px of dead black above
+     the screen edge. The dock now hugs the instrument, whatever size it is. */
+  --pg-keyboard-h: clamp(5.5rem, 14cqh, 7rem);
+  /* Touch floor. The kiosk is a tablet with no pointer: nothing a finger has to
+     hit is ever smaller than this. */
+  --pg-tap: 2.75rem;
+
+  background: var(--pg-case);
+  color: var(--pg-ivory);
+}
+
+/* ── RAIL ──────────────────────────────────────────────────────────────────
+   A fixed-width column of slots. A rail FITS the width it is given; it never
+   sets it — which is why one long refusal message can't shove the board
+   sideways. Everything inside is clipped or wrapped, never allowed to size the
+   column. */
+.pg-rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pg-gap);
+  width: var(--pg-rail-w);
+  min-width: 0;
+  max-width: var(--pg-rail-w);
+  align-self: stretch;
+  justify-content: flex-start;
+  padding-block-start: 0.5rem;
+  overflow: hidden;
+}
+
+/* Pinned to the foot of the rail, so the actions sit in the same place whether
+   the rail above them is full or nearly empty. */
+/* A fragment that renders nothing is still a truthy child, so a game with no
+   game-over button and no settings panel still got 50px of padded foot at the
+   base of its rail — enough, on an 800px kiosk, to push the last gesture card
+   off the bottom. */
+.pg-rail__foot:empty { display: none; }
+
+.pg-rail__foot {
+  margin-block-start: auto;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  padding-block-start: 0.4rem;
+}
+
+/* ── SLOT ──────────────────────────────────────────────────────────────────
+   THE SIGNATURE. A slot holds its size whether or not it has anything to say.
+   A read-out that grows a line as fingers land drags the eye and — because the
+   rails size the stage — moves the BOARD, during the exact half-second the
+   player is looking at it. `reserve` is measured above the tallest state the
+   slot has, never guessed, and never a floor below it (a floor reserves
+   nothing: the box still shrinks for shorter messages, which is the defect).
+   Empty, a slot still shows that something belongs there. */
+.pg-slot {
+  display: flex;
+  flex-direction: column;
+  /* NEVER SHRINKS. A rail is a height-constrained flex column, so a slot left at
+     the default `flex-shrink: 1` gets squeezed below its own content the moment
+     the rail runs short — and the content does not disappear, it OVERFLOWS, so
+     one slot's text lands on top of the next slot's. A reservation that can be
+     overruled is not a reservation. If a rail genuinely cannot fit its slots,
+     the honest failure is the rail clipping its own foot, which it does. */
+  flex: 0 0 auto;
+  gap: 0.35rem;
+  min-width: 0;
+  min-height: var(--pg-slot-reserve, auto);
+  padding: 0.55rem 0.7rem 0.7rem;
+  border: 1px solid var(--pg-hairline);
+  border-radius: var(--r-md, 12px);
+  background: var(--pg-shelf);
+  color: var(--pg-ivory);
+  text-align: start;
+}
+
+/* Live right now. Accent border plus a tint of the same accent — never a glow
+   and never a `filter`, which is a documented frame-rate killer on the kiosk
+   tablet's 2018 WebView. */
+.pg-slot--active {
+  border-color: var(--pg-brass-fill);
+  background: color-mix(in srgb, var(--pg-brass-fill) 12%, var(--pg-shelf));
+}
+
+/* Available, but nothing to use it on yet. Dimmed, never hidden: a control a
+   child cannot see is a control they will never learn. */
+.pg-slot--muted { opacity: 0.55; }
+
+/* Nested inside another slot, or carrying the game's own voice. */
+.pg-slot--lift { background: var(--pg-shelf-lift); }
+
+/* A socket: an inset well with a dashed lip, which reads as "something goes
+   here" without the word "Empty" having to say it. */
+.pg-slot--well {
+  border-style: dashed;
+  border-width: 2px;
+  border-color: color-mix(in srgb, var(--pg-hairline) 90%, transparent);
+  background: color-mix(in srgb, var(--pg-case) 70%, transparent);
+  box-shadow: inset 0 2px 6px rgb(0 0 0 / 45%), inset 0 -1px 0 rgb(255 255 255 / 4%);
+}
+.pg-slot--well.pg-slot--active {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--pg-brass-fill) 55%, transparent);
+}
+
+/* Structure without furniture — for a group that needs the label and the
+   reservation but would look boxed-in with an edge of its own. */
+.pg-slot--plain {
+  border-color: transparent;
+  background: none;
+  padding-inline: 0;
+  padding-block-end: 0;
+}
+
+/* The nameplate. Engraved, not shouted: this is a label, so it takes the
+   quietest voice in the type scale and stays there. */
+.pg-slot__label {
+  margin: 0;
+  font-size: var(--t-cap, 0.85rem);
+  font-weight: 400;
+  line-height: 1.2;
+  letter-spacing: 0.04em;
+  color: var(--pg-ivory-dim);
+}
+
+.pg-slot__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+/* Centred contents (a socket's held piece, a single glyph). */
+.pg-slot--center .pg-slot__body {
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ── BUTTON ────────────────────────────────────────────────────────────────
+   One button, three voices. Every one clears the touch floor, because the
+   "Play again" pill that ended a finished game used to be 30px tall on a
+   tablet. */
+.pg-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: var(--pg-tap);
+  padding-inline: 1.1rem;
+  border: 1px solid var(--pg-hairline);
+  border-radius: var(--r-pill, 999px);
+  background: var(--pg-shelf-lift);
+  color: var(--pg-ivory);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  /* transform/opacity only — see the note on --pg-slot--active. */
+  transition: transform 120ms ease-out, background 120ms ease-out;
+}
+
+.pg-btn:active { transform: scale(0.97); }
+
+/* The kiosk base-reset kills focus rings app-wide for touch; a keyboard still
+   has to be able to see where it is. */
+.pg-btn:focus-visible {
+  outline: 2px solid var(--pg-brass);
+  outline-offset: 2px;
+}
+
+.pg-btn--primary {
+  border-color: var(--pg-brass-fill);
+  background: var(--pg-brass-fill);
+  color: var(--pg-brass-ink);
+}
+
+.pg-btn--ghost {
+  background: transparent;
+  color: var(--pg-ivory-dim);
+}
+
+.pg-btn--danger {
+  border-color: var(--pg-felt);
+  background: transparent;
+  color: var(--pg-felt);
+}
+
+/* An icon, not a full-width slab. Square, so it reads as a control rather than
+   as a truncated label. */
+.pg-btn--icon {
+  width: var(--pg-tap);
+  min-width: var(--pg-tap);
+  padding: 0;
+  background: var(--pg-shelf);
+  color: var(--pg-ivory-dim);
+}
+
+.pg-btn[disabled] {
+  opacity: 0.4;
+  cursor: default;
+}
+.pg-btn[disabled]:active { transform: none; }
+
+/* ── STATUS ────────────────────────────────────────────────────────────────
+   One sentence, centred under the board, in the game's own voice. Reserved
+   height for the same reason a slot is: the "Play again" button appearing at
+   game over must not lift the board. */
+.pg-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  min-height: var(--pg-tap);
+  text-align: center;
+}
+
+.pg-status__text {
+  font-size: var(--t-h, 1.25rem);
+  font-weight: 700;
+  color: var(--pg-ivory);
+}
+
+/* A qualifier on the sentence, not part of it — "local practice", "unranked".
+   Quieter, so it never competes with the thing it qualifies. */
+.pg-status__aside {
+  font-size: var(--t-cap, 0.85rem);
+  font-weight: 400;
+  color: var(--pg-ivory-dim);
+}
+
+/* ── TOGGLE ────────────────────────────────────────────────────────────────
+   Replaces a bare `<input type=checkbox>`, which on the kiosk's WebView renders
+   as a light-grey OS widget on a charcoal panel with a hit target a child
+   misses. The whole row is the target. */
+.pg-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  width: 100%;
+  min-height: var(--pg-tap);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--pg-ivory);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.pg-toggle:focus-visible {
+  outline: 2px solid var(--pg-brass);
+  outline-offset: 3px;
+  border-radius: var(--r-sm, 8px);
+}
+
+.pg-toggle__label { min-width: 0; line-height: 1.25; }
+
+.pg-toggle__track {
+  position: relative;
+  flex: 0 0 auto;
+  width: 2.6rem;
+  height: 1.5rem;
+  border: 1px solid var(--pg-hairline);
+  border-radius: var(--r-pill, 999px);
+  background: var(--pg-case);
+  transition: background 120ms ease-out, border-color 120ms ease-out;
+}
+
+.pg-toggle__knob {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 0.15rem;
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 50%;
+  background: var(--pg-ivory-dim);
+  transform: translateY(-50%);
+  transition: transform 120ms ease-out, background 120ms ease-out;
+}
+
+.pg-toggle[aria-checked='true'] .pg-toggle__track {
+  border-color: var(--pg-brass-fill);
+  background: color-mix(in srgb, var(--pg-brass-fill) 30%, var(--pg-case));
+}
+
+.pg-toggle[aria-checked='true'] .pg-toggle__knob {
+  background: var(--pg-brass);
+  transform: translateY(-50%) translateX(1.05rem);
+}
+
+/* ── CHOICE ────────────────────────────────────────────────────────────────
+   Replaces a native `<select>`. Every option visible at once, because a dropdown
+   hides the thing a player is choosing between behind a tap, and a kiosk that
+   never has a keyboard should never open an OS picker. */
+.pg-choice-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.pg-choice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.pg-choice__opt {
+  flex: 1 1 auto;
+  min-height: var(--pg-tap);
+  padding-inline: 0.7rem;
+  border: 1px solid var(--pg-hairline);
+  border-radius: var(--r-md, 12px);
+  background: var(--pg-shelf-lift);
+  color: var(--pg-ivory-dim);
+  font: inherit;
+  cursor: pointer;
+  transition: background 120ms ease-out, color 120ms ease-out;
+}
+
+.pg-choice__opt:focus-visible {
+  outline: 2px solid var(--pg-brass);
+  outline-offset: 2px;
+}
+
+.pg-choice__opt[aria-checked='true'] {
+  border-color: var(--pg-brass-fill);
+  background: color-mix(in srgb, var(--pg-brass-fill) 16%, var(--pg-shelf));
+  color: var(--pg-ivory);
+  font-weight: 700;
+}
+
+/* ── LADDER ────────────────────────────────────────────────────────────────
+   Who you are playing, how far up you are, and how close the next rung is.
+   Drawn rather than spelled: three sentences of text ("Level 3 of 7", "1 / 3
+   wins") answer at reading distance, and the player is a child across a room
+   with their hands on the keys. The rungs ARE a ladder and the wins ARE a
+   tally, so structure carries the information the words used to. */
+.pg-ladder {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.pg-ladder__name {
+  font-size: var(--t-title, 1.6rem);
+  line-height: 1.1;
+  color: var(--pg-ivory);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Rungs climbed are brass and full height; rungs above are hairline stubs. */
+.pg-ladder__rungs {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.18rem;
+  height: 1.1rem;
+}
+
+.pg-ladder__rung {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 45%;
+  border-radius: 1px;
+  background: var(--pg-hairline);
+}
+
+.pg-ladder__rung--climbed { background: color-mix(in srgb, var(--pg-brass-fill) 55%, var(--pg-hairline)); }
+
+.pg-ladder__rung--here {
+  height: 100%;
+  background: var(--pg-brass-fill);
+}
+
+.pg-ladder__line {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: var(--t-cap, 0.85rem);
+  color: var(--pg-ivory-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.pg-ladder__pips {
+  display: flex;
+  gap: 0.22rem;
+}
+
+.pg-ladder__pip {
+  width: 0.5rem;
+  height: 0.5rem;
+  border: 1px solid var(--pg-hairline);
+  border-radius: 50%;
+}
+
+.pg-ladder__pip--won {
+  border-color: var(--pg-brass-fill);
+  background: var(--pg-brass-fill);
+}
+
+/* ── BOARD SURFACE ─────────────────────────────────────────────────────────
+   The one place a game gets a colour of its own. A game sets --pg-board-* and
+   inherits the ceiling, so the top rail above it and the board below it are
+   guaranteed to agree on where a column is. */
+.pg-board {
+  width: min(100%, var(--pg-board-max));
+  box-shadow: 0 1.2rem 2.5rem rgb(0 0 0 / 55%);
+}
+
+/* Any board-width element that is NOT the board — a top rail, a caption — takes
+   the same ceiling from the same token instead of restating the number. */
+.pg-board-width {
+  width: min(100%, var(--pg-board-max));
+  margin-inline: auto;
+}
+
+/* ── HUD (countdown / life / progress) ─────────────────────────────────────
+   GameChrome.jsx has rendered these three since it was written and nothing has
+   ever styled them — `.piano-game-life__notch` was an unstyled empty span, so
+   a life meter drew nothing at all. */
+.piano-game-countdown {
+  display: grid;
+  place-items: center;
+  font-size: var(--t-display, 2.2rem);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--pg-ivory);
+  text-shadow: 0 2px 12px rgb(0 0 0 / 70%);
+}
+
+.piano-game-life {
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
+}
+
+.piano-game-life__notch {
+  width: 0.55rem;
+  height: 1.1rem;
+  border: 1px solid var(--pg-hairline);
+  border-radius: 2px;
+  background: transparent;
+}
+
+.piano-game-life__notch.is-active {
+  border-color: var(--pg-brass-fill);
+  background: var(--pg-brass-fill);
+}
+
+.piano-game-life__notch.is-danger {
+  border-color: var(--pg-felt);
+  background: var(--pg-felt);
+}
+
+.piano-game-progress {
+  width: 100%;
+  height: 0.4rem;
+  border-radius: var(--r-pill, 999px);
+  background: var(--pg-shelf-lift);
+  overflow: hidden;
+}
+
+.piano-game-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--pg-brass-fill);
+  transition: width 200ms ease-out;
+}
+
+/* ── SHEET ─────────────────────────────────────────────────────────────────
+   A panel over the board. Settings are a pause in the game, not a different
+   room, so the sheet sits ON the board rather than replacing it. */
+.pg-sheet__scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  /* Neutral, not tinted: a coloured scrim over a chessboard changes what the
+     squares look like, and the player is about to go back to reading them. */
+  background: rgb(0 0 0 / 55%);
+}
+
+.pg-sheet {
+  position: absolute;
+  inset-block-start: 8%;
+  inset-inline: 0;
+  z-index: 6;
+  justify-self: center;
+  display: flex;
+  flex-direction: column;
+  width: min(34rem, 80cqw);
+  /* Never taller than the room it is in. Chess's settings had six groups and no
+     ceiling, so on an 800px canvas the last one fell off the bottom with no way
+     to reach it. */
+  max-height: 78cqh;
+  margin-inline: auto;
+  border: 1px solid var(--pg-hairline);
+  border-radius: var(--r-lg, 16px);
+  /* OPAQUE — see GameSheet.jsx. */
+  background: var(--pg-shelf);
+  box-shadow: 0 1.5rem 4rem rgb(0 0 0 / 65%);
+  overflow: hidden;
+}
+
+.pg-sheet:focus { outline: none; }
+
+.pg-sheet__head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1.2rem;
+  border-block-end: 1px solid var(--pg-hairline);
+}
+
+.pg-sheet__title {
+  margin: 0;
+  font-size: var(--t-h, 1.25rem);
+  font-weight: 700;
+  color: var(--pg-ivory);
+}
+
+.pg-sheet__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.4rem 1.2rem 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.pg-sheet__foot {
+  flex: 0 0 auto;
+  padding: 0.8rem 1.2rem;
+  border-block-start: 1px solid var(--pg-hairline);
+}
+
+/* ── FIELD ─────────────────────────────────────────────────────────────────
+   One labelled setting. The label takes the same quiet voice as a slot's
+   nameplate, because it is doing the same job. */
+.pg-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.pg-field__label {
+  margin: 0;
+  font-size: var(--t-cap, 0.85rem);
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  color: var(--pg-ivory-dim);
+}
+
+/* The caveat a control cannot say itself — "next game" on a setting that cannot
+   safely take effect mid-play. */
+.pg-field__note {
+  margin: 0;
+  font-size: var(--t-cap, 0.85rem);
+  color: var(--pg-ivory-dim);
+  font-style: italic;
+}
+
+/* ── STEPPER ───────────────────────────────────────────────────────────────
+   An ordered value, stepped. A thirteen-rung ladder in a segmented control
+   wraps to four rows and stops being a control; a ladder is ordered, so the
+   shape that fits it is a step with the current rung named between the ends. */
+.pg-stepper {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pg-stepper__value {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+  text-align: center;
+}
+
+.pg-stepper__ordinal {
+  font-size: var(--t-cap, 0.85rem);
+  color: var(--pg-ivory-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.pg-stepper__label {
+  font-weight: 700;
+  color: var(--pg-ivory);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+/* ── DEAL NOTICE ───────────────────────────────────────────────────────────
+   A re-deal is the one change a player cannot see coming. Loud for a beat, then
+   a standing reminder — a notice that only flashes is missed by a player looking
+   at their hands, and one that only sits there stops being read by turn two. */
+.pg-deal-notice {
+  margin: 0;
+  font-size: var(--t-cap, 0.85rem);
+  color: var(--pg-ivory-dim);
+  transition: color 300ms ease;
+}
+
+.pg-deal-notice--fresh {
+  color: var(--pg-brass);
+  font-weight: 700;
+}

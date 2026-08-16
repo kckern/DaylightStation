@@ -8,6 +8,11 @@ import ChessBoard from '../../Chess/ChessBoard.jsx';
 import { pieceSource } from '../../Chess/pieceAssets.js';
 import PianoGameHost from '../game-platform/host/PianoGameHost.jsx';
 import { thinkTimeFor, useOpponentReply } from '../game-platform/opponent/opponentPacing.js';
+import { GameRail, GameSlot, GameButton, WinTally } from '../game-platform/chrome/index.js';
+import { resolveAddressing } from '../game-platform/addressing/resolveAddressing.js';
+import { schemeFor } from '../game-platform/addressing/buildScheme.js';
+import GearIcon from '../game-platform/chrome/GearIcon.jsx';
+import { useAddressingLadder } from '../game-platform/addressing/useAddressingLadder.js';
 import ChordNamePanel from '../components/ChordNamePanel.jsx';
 import CurrentChordStaff from '../components/CurrentChordStaff.jsx';
 import ChordReadout from './ChordReadout.jsx';
@@ -103,22 +108,6 @@ const REPLAY_MOVE_MS = 840;
 const EMPTY_ARRAY = Object.freeze([]);
 const EMPTY_OBJECT = Object.freeze({});
 
-/** Inline SVG, never a unicode glyph — the kiosk WebView renders those as tofu. */
-function GearIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
-      <path
-        fill="currentColor"
-        d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm0 6a2 2 0 1 1 0-4 2 2 0 0 1 0 4Z"
-      />
-      <path
-        fill="currentColor"
-        d="m19.4 13-.2-1 1.7-1.3-1.7-3-2 .7-1-.6-.3-2.1h-3.8l-.3 2.1-1 .6-2-.7-1.7 3L8.8 12l-.2 1-1.7 1.3 1.7 3 2-.7 1 .6.3 2.1h3.8l.3-2.1 1-.6 2 .7 1.7-3L19.2 13Z"
-        opacity="0.55"
-      />
-    </svg>
-  );
-}
 
 /**
  * The addressing vocabulary, chosen by config rather than by code.
@@ -130,9 +119,31 @@ function GearIcon() {
  * the game changes.
  */
 export function schemeForAddressing(addressing, fallback = DEFAULT_CHORD_SCHEME) {
-  if (addressing === 'staff') return DEFAULT_STAFF_SCHEME;
-  if (addressing === 'chords') return fallback === DEFAULT_STAFF_SCHEME ? DEFAULT_CHORD_SCHEME : fallback;
-  return fallback;
+  // Two shapes reach here: the shipped `addressing: chords` string, and the
+  // whole loaded config once a caller passes its block. Both are the game layer.
+  const stated = (addressing && typeof addressing === 'object') ? addressing : { addressing };
+  // The fallback carries what this game was already using, so a config that
+  // says nothing about vocabulary keeps it rather than dropping to the house
+  // default. Chess ships `chords`; the house floor is `staff`.
+  const game = { vocabulary: isStaffScheme(fallback) ? 'staff' : 'chords', ...stated };
+
+  const resolved = resolveAddressing({
+    game,
+    ladder: stated?.addressing?.ladder ?? null,
+    axisSize: 8,
+  });
+
+  // Seed 0, deliberately: chess re-deals per turn through its OWN
+  // `shuffleEachTurn` machinery inside `createChessGameState`, and letting the
+  // cadence deal here as well would shuffle an already-shuffled board. The
+  // resolver supplies the base material and its layout; chess supplies when it
+  // moves.
+  const built = schemeFor(resolved, { size: 8, seed: 0, fallback });
+  if (!built.valid) {
+    logger().warn('addressing.scheme-rejected', { errors: built.errors, source: built.source });
+    return fallback;
+  }
+  return built.scheme;
 }
 
 /** A chord takes three notes to name a square; a staff address takes two. */
@@ -370,7 +381,7 @@ export function PianoChessGame({
       // known once that player's config layer has resolved — after the game was
       // built. Same rule as the shuffle: adopt it while the game is untouched,
       // never rearrange the board under a player mid-move.
-      const loadedScheme = schemeForAddressing(loaded.addressing, scheme);
+      const loadedScheme = schemeForAddressing(loaded, scheme);
       setGame((current) => {
         const untouched = current.history.length === 0 && !current.origin;
         const nextShuffle = typeof loadedShuffle === 'boolean' ? loadedShuffle : current.shuffleEachTurn;
@@ -717,7 +728,50 @@ export function PianoChessGame({
 
   const [rosterOpen, setRosterOpen] = useState(false);
   const [toast, setToast] = useState(null);
+
+  /**
+   * The READING ladder — how well this player addresses squares, which is a
+   * different question from how well they play chess and moves on its own rung.
+   * `saveChessConfig` is the same deep-merged config write every other setting
+   * uses, so a rung earned here lands beside the opponent ladder.
+   */
+  const readingLadder = useAddressingLadder({
+    client: { writeConfig: saveChessConfig },
+    gameId: 'chess',
+    userId: lockedUser,
+    config: chessConfig,
+    logger: logger(),
+  });
+
+  // Time-to-address runs from when it became this player's turn.
+  const myTurn = !game.status?.game_over && game.status?.turn === playerColor;
+  useEffect(() => { if (myTurn) readingLadder.startTurn(); }, [myTurn]);
+
+  /**
+   * A landed address, counted once per ply.
+   *
+   * History length is the honest signal: a chord that named a square and moved a
+   * piece is an address that worked. Counting `preview` events instead would
+   * count every hover on the way to a decision, which measures browsing rather
+   * than addressing.
+   */
+  const addressedPliesRef = useRef(0);
+  useEffect(() => {
+    if (game.history.length <= addressedPliesRef.current) {
+      addressedPliesRef.current = game.history.length;
+      return;
+    }
+    addressedPliesRef.current = game.history.length;
+    readingLadder.record({ ok: true });
+  }, [game.history.length]);
+
   const rejection = game.rejection;
+
+  // A refused chord is an address that did not land — exactly what accuracy is.
+  useEffect(() => {
+    if (rejection?.seq === undefined) return;
+    readingLadder.record({ ok: false });
+  }, [rejection?.seq]);
   useEffect(() => {
     if (!rejection || !cues.toast) return undefined;
     setToast({ text: REJECTION_MESSAGES[rejection.reason] ?? 'Try another chord.', seq: rejection.seq });
@@ -1279,13 +1333,49 @@ export function PianoChessGame({
             holds its place whether or not it has something to say: a read-out
             that resizes as fingers land drags the eye and, worse, moves the
             board. Fixed rows, fixed rail width, board centred regardless. */}
-        <aside className="piano-chess__rail piano-chess__rail--state">
+        <GameRail
+          label="What the game is thinking"
+          className="piano-chess__rail piano-chess__rail--state"
+          foot={(
+            <>
+              {/* The result overlay carries "Play again" whenever it is up, and
+                  it is where the eye already is. This is the fallback for a
+                  finished game that produced no record to show a card for — two
+                  identical buttons on screen at once is an ambiguity, not a
+                  convenience. */}
+              {game.status?.game_over && !finishedRecord && (
+                <GameButton variant="ghost" className="piano-chess__cancel" onClick={restart}>
+                  Play again
+                </GameButton>
+              )}
+              {chessConfig && (
+                <GameButton
+                  variant="icon"
+                  className="piano-chess__settings-btn"
+                  onClick={() => setSettingsOpen((open) => !open)}
+                  aria-expanded={settingsOpen}
+                  aria-label="Settings"
+                  title="Settings"
+                >
+                  <GearIcon />
+                </GameButton>
+              )}
+            </>
+          )}
+        >
           {/* IN HAND. Not a fact table row — a socket, with the piece sitting in
               it or visibly waiting for one. The way to put it back lives in the
               same tile, because "Put it back" floating on its own asks "put
               WHAT back?" every time the socket is empty. */}
-          <section className={`piano-chess__hand${game.origin ? ' piano-chess__hand--holding' : ''}`}>
-            <h2 className="piano-chess__slot-label">In hand</h2>
+          <GameSlot
+            label="In hand"
+            /* Measured above the tallest state this socket has, not guessed —
+               see gameChrome.scss. The rail must not step when a piece is
+               picked up. */
+            reserve="8.5rem"
+            variant={game.origin ? 'active' : null}
+            className={`piano-chess__hand${game.origin ? ' piano-chess__hand--holding' : ''}`}
+          >
             <div className="piano-chess__hand-slot">
               {game.origin && heldPiece ? (
                 /* The SAME artwork the board draws, not a character from a font.
@@ -1300,11 +1390,26 @@ export function PianoChessGame({
             <span className="piano-chess__hand-from">
               {game.origin ? `from ${game.origin}` : 'Nothing picked up'}
             </span>
-          </section>
+          </GameSlot>
 
           {/* WHAT THE GAME HEARD, in its own voice. It is the game answering
               you, so it is shaped like speech rather than like a field. */}
-          <div className="piano-chess__says">
+          <GameSlot
+            as="div"
+            variant="lift"
+            /* Above the TALLEST state, measured (two-line prompt + the
+               read-out's square line = 150px). A floor BELOW the tallest state
+               reserves nothing — the box still shrinks for shorter messages,
+               which is the whole defect.
+               Dropped while the onboarding card is up: that card is already
+               taller than the reservation, so holding BOTH heights at once just
+               pushes the last gesture cards off the foot of the rail. The
+               reservation exists to stop the rail stepping, and a slot that is
+               taller than its reservation for four consecutive steps is not
+               stepping. */
+            reserve={onboardCopy ? null : '9.75rem'}
+            className="piano-chess__says"
+          >
             <ChordReadout
               heldNotes={heldNotes}
               chord={reading ? null : cursorChord}
@@ -1314,7 +1419,11 @@ export function PianoChessGame({
               minNotes={minNotes}
               isReading={reading}
             />
-            <p className="piano-chess__prompt" role="status">{prompt}</p>
+            {/* One instruction at a time. While a step is being taught, the
+                onboarding card IS the instruction — showing the standing prompt
+                as well put two different things to do in one box, and cost the
+                rail the 50px that pushed "Take it back" off its foot. */}
+            {!onboardCopy && <p className="piano-chess__prompt" role="status">{prompt}</p>}
             {onboardCopy && (
               <aside className="chess-onboard" key={onboardStep}>
                 <span className="chess-onboard__step">
@@ -1342,11 +1451,14 @@ export function PianoChessGame({
                 <span className="piano-chess__window-bar" />
               </div>
             )}
-          </div>
+          </GameSlot>
 
           {/* WHAT ELSE YOU CAN PLAY. Drawn as keys, because no child can act on
               "a run of three adjacent semitones". */}
           <GestureCards
+            /* The rail is carrying the onboarding card too; tighten so the last
+               two gestures stay on screen rather than clipping off the foot. */
+            compact={!!onboardCopy}
             gestures={[
               {
                 id: 'octave',
@@ -1396,37 +1508,12 @@ export function PianoChessGame({
             ]}
           />
 
-          <div className="piano-chess__rail-actions">
-            {/* The result overlay carries "Play again" whenever it is up, and
-                it is where the eye already is. This is the fallback for a
-                finished game that produced no record to show a card for — two
-                identical buttons on screen at once is an ambiguity, not a
-                convenience. */}
-            {game.status?.game_over && !finishedRecord && (
-              <button type="button" className="piano-chess__cancel" onClick={restart}>
-                Play again
-              </button>
-            )}
-            {chessConfig && (
-              <button
-                type="button"
-                className="piano-chess__settings-btn"
-                onClick={() => setSettingsOpen((open) => !open)}
-                aria-expanded={settingsOpen}
-                aria-label="Settings"
-                title="Settings"
-              >
-                <GearIcon />
-              </button>
-            )}
-          </div>
-
           {shuffleEachTurn && (
             <p className={`piano-chess__redeal${justDealt ? ' piano-chess__redeal--fresh' : ''}`} role="status">
               {justDealt ? 'New chord map — read the edges' : 'Chords move every turn'}
             </p>
           )}
-        </aside>
+        </GameRail>
 
         <ChessBoard
           fen={replay?.phase === 'rewind' ? replay.fen : game.game.fen}
@@ -1464,7 +1551,7 @@ export function PianoChessGame({
         {/* THE CHORD RAIL — a mirror of the hands, in both vocabularies at once:
             the name for the speller, the notation for the reader. It reports;
             it does not teach theory, which is why there is no circle here. */}
-        <aside className="piano-chess__rail piano-chess__rail--chords">
+        <GameRail label="Your hands" className="piano-chess__rail piano-chess__rail--chords">
           {/* Whose game this is, whose turn it is, and which colour you have.
               All three were already computed and none of them was ever drawn —
               the first questions anyone asks on sitting down, answered nowhere
@@ -1492,8 +1579,7 @@ export function PianoChessGame({
               (a guest, or before it resolves) the rail still has to say what
               strength is on the other side of the board, so it falls back to
               the rung the settings panel sets. */}
-          <section className="piano-chess__opponent">
-            <h2 className="piano-chess__slot-label">Opponent</h2>
+          <GameSlot label="Opponent" className="piano-chess__opponent">
             {opponent ? (
               <button
                 type="button"
@@ -1527,16 +1613,17 @@ export function PianoChessGame({
               </p>
             )}
             {ladder?.status && !ladder.status.at_top && ladder.persisted && (
-              <p className="chess-ladder-progress">
-                <span>To beat {opponent?.name}</span>
-                <span className="chess-ladder-progress__value">
-                  {ladder.status.wins} of {ladder.status.needed}
-                </span>
-              </p>
+              /* Was an unstyled <p> in a class with no rules anywhere — the
+                 one place on this screen that still spelled a tally out. */
+              <WinTally
+                label={`to beat ${opponent?.name ?? 'them'}`}
+                wins={ladder.status.wins}
+                needed={ladder.status.needed}
+              />
             )}
-          </section>
+          </GameSlot>
 
-          <h2 className="piano-chess__slot-label">Playing</h2>
+          <h2 className="pg-slot__label">Playing</h2>
           <ChordNamePanel midiNotes={heldNotes} />
           {/* Notation is ink, so it needs paper. Same card the other games put
               their staves on, rather than staff lines floating on charcoal. */}
@@ -1552,7 +1639,7 @@ export function PianoChessGame({
               <p className="piano-chess__captured-none">No pieces taken yet</p>
             ) : ['w', 'b'].filter((color) => captured[color].length).map((color) => (
               <div key={color} className="piano-chess__captured-row">
-                <span className="piano-chess__slot-label">{color === 'w' ? 'White took' : 'Black took'}</span>
+                <span className="pg-slot__label">{color === 'w' ? 'White took' : 'Black took'}</span>
                 <span className="piano-chess__captured-pieces">
                   {/* Artwork, not unicode chess glyphs — those render as tofu in
                       the kiosk WebView, which this file already says twelve
@@ -1576,7 +1663,7 @@ export function PianoChessGame({
               </div>
             ))}
           </div>
-        </aside>
+        </GameRail>
       </div>
 
       {/* The start of the game, given a moment. Same placement as the result

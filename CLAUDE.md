@@ -204,6 +204,7 @@ git rev-parse HEAD > docs/docs-last-updated.txt
 | Coding standards | `docs/reference/core/coding-standards.md` |
 | Layer guidelines | `docs/reference/core/layers-of-abstraction/*.md` |
 | Piano Producer (jam/song builder) | `docs/reference/piano/producer.md` |
+| Piano grid addressing (keys→squares: permutations, config, difficulty ladder) | `docs/reference/piano/grid-addressing.md` |
 | Exercise library (shared corpus: Fitness workouts + School anatomy) | `docs/reference/fitness/exercise-library.md` |
 | Arcade emulator (EmulatorJS boot contract, gamepad routing, fault handling) | `docs/reference/gaming/emulator-resilience.md` |
 | Household economy (coins) | `docs/reference/economy/economy.md` |

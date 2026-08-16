@@ -19,7 +19,7 @@ import PianoCheckers from './PianoCheckers.jsx';
 describe('PianoCheckers address rail', () => {
   it('renders a file rail above the board and a rank rail beside it, both full', () => {
     const { container } = render(<PianoCheckers activeNotes={new Map()} />);
-    const fileRail = container.querySelector('.instrument-board-stage__top-rail .address-rail--horizontal');
+    const fileRail = container.querySelector('.checkers-stage .address-rail--horizontal');
     expect(fileRail).toBeTruthy();
     expect(fileRail.querySelectorAll('.address-rail__card')).toHaveLength(8);
 

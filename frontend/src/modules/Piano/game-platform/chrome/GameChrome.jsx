@@ -1,3 +1,5 @@
+import './gameChrome.scss';
+
 export function CountdownOverlay({ value, className = '' }) {
   if (value === null || value === undefined) return null;
   return <div className={`piano-game-countdown${className ? ` ${className}` : ''}`}>{value}</div>;

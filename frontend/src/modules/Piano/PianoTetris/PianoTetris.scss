@@ -1,10 +1,21 @@
+/**
+ * Tetris. The playfield is the game's own; everything around it is the cabinet.
+ *
+ * Score used to be `#00ffc8` and lines `#ffd700` — two neons this game invented,
+ * neither of which existed anywhere else in the kiosk, and one of which
+ * (`#00ffc8`) three OTHER games had each re-invented slightly differently. They
+ * are the house accent and the house warn colour now: same job, one value.
+ */
 .piano-tetris {
+  /* The one colour this game names: the cool dark its playfield sits on. */
+  --tetris-field: #1a1a2e;
+
   display: flex;
   flex-direction: column;
   width: 100%;
   height: 100%;
-  background: #1a1a2e;
-  color: #fff;
+  background: var(--tetris-field);
+  color: var(--pg-ivory);
   position: relative;
   overflow: hidden;
 
@@ -55,19 +66,19 @@
   &__stat-label {
     font-size: 0.5rem;
     font-weight: 700;
-    color: rgba(255, 255, 255, 0.4);
+    color: var(--pg-ivory-dim);
     letter-spacing: 0.15em;
     text-transform: uppercase;
   }
 
   &__stat--score &__stat-value {
-    color: #00ffc8;
-    text-shadow: 0 0 8px rgba(0, 255, 200, 0.4);
+    color: var(--pg-brass);
+    text-shadow: 0 0 8px color-mix(in srgb, var(--pg-brass) 40%, transparent);
   }
 
   &__stat--lines &__stat-value {
-    color: #ffd700;
-    text-shadow: 0 0 8px rgba(255, 215, 0, 0.4);
+    color: var(--piano-warn);
+    text-shadow: 0 0 8px color-mix(in srgb, var(--piano-warn) 40%, transparent);
   }
 
   &__board-area {
@@ -79,10 +90,9 @@
 
   // ─── Keyboard ─────────────────────────────────────────────────
   &__keyboard {
-    height: 18%;
     flex-shrink: 0;
     display: flex;
     align-items: flex-start;
-    border-top: 1px solid rgba(0, 200, 255, 0.2);
+    border-top: 1px solid var(--pg-hairline);
   }
 }

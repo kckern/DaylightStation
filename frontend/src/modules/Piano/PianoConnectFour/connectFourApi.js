@@ -1,14 +1,14 @@
 import getLogger from '../../../lib/logging/Logger.js';
 import { createPianoGameClient } from '../game-platform/api/createPianoGameClient.js';
 
-const log = getLogger().child({ component: 'connect-four-api' });
-const client = createPianoGameClient('connect-four', { logger: log });
-
-export const fetchConnectFourConfig = (userId) => client.readConfig(userId);
-export const saveConnectFourConfig = (userId, config) => client.writeConfig(userId, config);
-export const fetchConnectFourLadder = (userId) => client.readLadder(userId);
-export const requestConnectFourMove = ({ transcript, level, gameId, userId }) => client.requestMove({
-  transcript, level, gameSessionId: gameId, userId,
+/**
+ * Connect Four's transport. The HTTP grammar is the platform's; only the game
+ * name is ours. Exported as the client itself rather than six wrapper functions
+ * — the wrappers renamed `gameSessionId` to `gameId` and back on every call and
+ * bought nothing for it.
+ */
+export const connectFourClient = createPianoGameClient('connect-four', {
+  logger: getLogger().child({ component: 'connect-four-api' }),
 });
-export const saveConnectFourGame = (userId, record) => client.saveGame(userId, record);
-export const archiveConnectFourGame = (record) => client.archiveGame(record);
+
+export default connectFourClient;

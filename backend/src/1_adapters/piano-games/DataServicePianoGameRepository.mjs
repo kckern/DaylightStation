@@ -1,3 +1,5 @@
+import { deepMerge } from '../../0_system/utils/deepMerge.mjs';
+
 const DEFAULT_CONNECT_FOUR_CONFIG = Object.freeze({
   input_mode: 'notes',
   shuffle_each_game: false,
@@ -35,18 +37,36 @@ export class DataServicePianoGameRepository {
     this.configService = configService;
   }
 
+  /**
+   * The three layers, deep-merged: house defaults, then the household's YAML,
+   * then this player's own overrides.
+   *
+   * DEEP, not shallow. A spread merge replaces a nested block wholesale, so a
+   * player who overrode one addressing dimension —
+   *   addressing: { x: { tier: 4 } }
+   * — silently discarded the household's `vocabulary`, `clefs`, `shuffle` and
+   * the other axis, and got defaults for all of them. Every dimension has to be
+   * independently overridable at every layer or the layering is decorative.
+   * See docs/reference/piano/grid-addressing.md.
+   */
   async readConfig(gameId, userId) {
     const household = this.configService.getHouseholdAppConfig(null, gameId) || {};
     const user = userId ? (this.dataService.user.read(`apps/${gameId}/config`, userId) || {}) : {};
     const defaults = gameId === 'connect-four' ? DEFAULT_CONNECT_FOUR_CONFIG
       : gameId === 'checkers' ? DEFAULT_CHECKERS_CONFIG : {};
-    return { ...defaults, ...household, ...user };
+    return deepMerge(deepMerge(defaults, household), user);
   }
 
+  /**
+   * A patch, deep-merged onto what this player already had — so writing one
+   * dimension of a nested block leaves its siblings alone. A spread here made
+   * `updateConfig({ addressing: { shuffle: 'each_game' } })` erase the player's
+   * vocabulary and tiers.
+   */
   writeConfig(gameId, userId, config) {
     const path = `apps/${gameId}/config`;
     const current = this.dataService.user.read(path, userId) || {};
-    return this.dataService.user.write(path, { ...current, ...config }, userId);
+    return this.dataService.user.write(path, deepMerge(current, config), userId);
   }
 
   readProgress(gameId, userId) {

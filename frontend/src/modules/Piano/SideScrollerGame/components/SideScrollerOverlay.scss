@@ -13,10 +13,10 @@
   &__countdown {
     font-size: 8rem;
     font-weight: 900;
-    color: white;
+    color: var(--pg-ivory);
     text-shadow:
-      0 0 30px rgba(0, 200, 255, 0.8),
-      0 0 60px rgba(0, 200, 255, 0.4);
+      0 0 30px color-mix(in srgb, var(--pg-brass) 80%, transparent),
+      0 0 60px color-mix(in srgb, var(--pg-brass) 40%, transparent);
   }
 
   &__level-up {
@@ -24,7 +24,7 @@
     background: rgba(0, 0, 0, 0.8);
     padding: 40px 60px;
     border-radius: 16px;
-    border: 2px solid rgba(0, 255, 200, 0.5);
+    border: 2px solid color-mix(in srgb, var(--pg-brass-fill) 55%, transparent);
   }
 
   &__gameover {
@@ -32,7 +32,7 @@
     background: rgba(0, 0, 0, 0.8);
     padding: 40px 60px;
     border-radius: 16px;
-    border: 2px solid rgba(255, 50, 50, 0.5);
+    border: 2px solid color-mix(in srgb, var(--pg-felt) 55%, transparent);
   }
 
   &__title {
@@ -42,18 +42,18 @@
   }
 
   &__gameover &__title {
-    color: #ff4444;
-    text-shadow: 0 0 20px rgba(255, 68, 68, 0.6);
+    color: var(--pg-felt);
+    text-shadow: 0 0 20px color-mix(in srgb, var(--pg-felt) 60%, transparent);
   }
 
   &__level-up &__title {
-    color: #00ffc8;
-    text-shadow: 0 0 20px rgba(0, 255, 200, 0.6);
+    color: var(--pg-brass);
+    text-shadow: 0 0 20px color-mix(in srgb, var(--pg-brass) 60%, transparent);
   }
 
   &__level-name {
     font-size: 1.5rem;
-    color: rgba(255, 255, 255, 0.7);
+    color: var(--pg-ivory-dim);
     margin: 0;
   }
 
@@ -73,13 +73,13 @@
   &__stat-value {
     font-size: 2rem;
     font-weight: 800;
-    color: white;
+    color: var(--pg-ivory);
   }
 
   &__stat-label {
     font-size: 0.75rem;
     font-weight: 600;
-    color: rgba(255, 255, 255, 0.5);
+    color: var(--pg-ivory-dim);
     text-transform: uppercase;
     letter-spacing: 0.1em;
   }

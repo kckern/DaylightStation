@@ -1,10 +1,24 @@
+/**
+ * Flashcards. The card is paper; everything else is the cabinet.
+ *
+ * "Correct" used to be `#00ffc8` here, `#38f0cf` in Piano Hero, `#00ffc8` again
+ * in Space Invaders and `#2ec46f` in the house — four values for one meaning, on
+ * one kiosk. It is the house accent now, and "wrong" is the house danger colour.
+ */
 .piano-flashcards {
+  /* The two colours this game names: the dark it sits on, and the warm paper a
+     card is printed on — notation reads on paper, which is why the card is not
+     a charcoal surface like everything around it. */
+  --fc-field: #1a1a2e;
+  --fc-field-lift: #23233d;
+  --fc-paper: #fffef5;
+
   position: relative; // anchors the level-picker backdrop
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: #1a1a2e;
-  color: #fff;
+  background: var(--fc-field);
+  color: var(--pg-ivory);
 
   &__play-area {
     flex: 1;
@@ -58,7 +72,7 @@
   }
 
   &__picker {
-    background: #23233d;
+    background: var(--fc-field-lift);
     border: 1px solid rgba(255, 255, 255, 0.15);
     border-radius: 14px;
     padding: 1rem 1.25rem 1.25rem;
@@ -99,7 +113,7 @@
     padding: 0.55rem 0.75rem;
     cursor: pointer;
     font: inherit;
-    color: #fff;
+    color: var(--pg-ivory);
     text-align: left;
 
     &:active {
@@ -107,8 +121,8 @@
     }
 
     &--active {
-      border-color: #00ffc8;
-      background: rgba(0, 255, 200, 0.08);
+      border-color: var(--pg-brass-fill);
+      background: color-mix(in srgb, var(--pg-brass-fill) 8%, transparent);
     }
   }
 
@@ -140,7 +154,7 @@
   &__level-name {
     font-size: 1.1rem;
     font-weight: 700;
-    color: #00ffc8;
+    color: var(--pg-brass);
   }
 
   &__score-block {
@@ -151,7 +165,7 @@
     font-size: 2.5rem;
     font-weight: 800;
     line-height: 1;
-    color: #fff;
+    color: var(--pg-ivory);
   }
 
   &__score-label {
@@ -168,7 +182,7 @@
 
   &__progress-fill {
     height: 100%;
-    background: #00ffc8;
+    background: var(--pg-brass-fill);
     border-radius: 3px;
     transition: width 0.3s ease;
   }
@@ -201,8 +215,8 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      background: #fffef5;
-      color: #1a1a2e;
+      background: var(--fc-paper);
+      color: var(--fc-field);
       user-select: none;
       padding: 0.75rem 1rem 1rem;
     }
@@ -229,7 +243,7 @@
       font-size: clamp(1.4rem, 5vh, 2.8rem);
       font-weight: 700;
       margin-left: 0.12em;
-      color: rgba(26, 26, 46, 0.8);
+      color: color-mix(in srgb, var(--fc-field) 80%, transparent);
     }
 
     .piano-flashcards__chord-longname {
@@ -237,7 +251,7 @@
       font-size: clamp(0.9rem, 2.5vh, 1.3rem);
       font-weight: 400;
       letter-spacing: 0.04em;
-      color: rgba(26, 26, 46, 0.45);
+      color: color-mix(in srgb, var(--fc-field) 45%, transparent);
     }
 
     &--hit {
@@ -264,7 +278,7 @@
   &__complete-title {
     font-size: 2rem;
     font-weight: 800;
-    color: #00ffc8;
+    color: var(--pg-brass);
   }
 
   &__complete-stat {
@@ -275,8 +289,6 @@
 
   // ─── Keyboard ──────────────────────────────────────
   &__keyboard {
-    height: 18%;
-    min-height: 80px;
   }
 }
 
@@ -301,18 +313,18 @@
     border-radius: 50%;
 
     &--hit {
-      background: #00ffc8;
+      background: var(--pg-brass-fill);
     }
 
     &--miss {
-      background: #ff4444;
+      background: var(--pg-felt);
     }
   }
 
   &__accuracy {
     font-size: 1.8rem;
     font-weight: 800;
-    color: #fff;
+    color: var(--pg-ivory);
   }
 
   &__label {
@@ -325,9 +337,9 @@
 
 // ─── Animations ──────────────────────────────────────
 @keyframes fc-flash-green {
-  0% { box-shadow: 0 0 0 0 rgba(0, 255, 200, 0.6); }
-  50% { box-shadow: 0 0 40px 15px rgba(0, 255, 200, 0.3); }
-  100% { box-shadow: 0 0 0 0 rgba(0, 255, 200, 0); }
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--pg-brass-fill) 60%, transparent); }
+  50% { box-shadow: 0 0 40px 15px color-mix(in srgb, var(--pg-brass-fill) 30%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--pg-brass-fill) 0%, transparent); }
 }
 
 @keyframes fc-shake {

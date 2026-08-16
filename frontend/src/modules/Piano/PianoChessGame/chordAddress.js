@@ -95,6 +95,42 @@ export function chordSymbol(root, quality) {
   return definition ? `${root}${definition.label}` : null;
 }
 
+const PITCH_NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
+
+/**
+ * Which note this square wants in the bass, under the scheme's inversion policy.
+ *
+ * `any`   — no opinion. Voicing is free, which is the shipped floor.
+ * `root`  — the root, always. The player has to work out which note that is and
+ *           put it under their thumb rather than grabbing the nearest shape.
+ * `named` — a specific chord tone, so the board's vocabulary becomes slash
+ *           chords. Which tone is derived from the SQUARE, deterministically, so
+ *           it survives a replay and a re-deal moves it along with everything
+ *           else: file index plus rank index, modulo the number of tones the
+ *           chord has. That spreads root position and both inversions evenly
+ *           across the board instead of clumping them on one rank.
+ */
+export function requiredBass(square, chord, policy = 'any') {
+  if (!chord?.pitch_classes?.length || policy === 'any') return null;
+  const rootPc = rootPitchClass(chord.root);
+  if (policy === 'root') return rootPc;
+  const file = FILES.indexOf(square[0]);
+  const rank = RANKS.indexOf(square[1]);
+  if (file < 0 || rank < 0) return rootPc;
+  // Ordered from the root upward, so index 0 is root position, 1 is first
+  // inversion, and so on — the numbering a player is taught.
+  const tones = chord.pitch_classes
+    .slice()
+    .sort((a, b) => ((a - rootPc + 12) % 12) - ((b - rootPc + 12) % 12));
+  return tones[(file + rank) % tones.length];
+}
+
+/** `Cm` in root position; `Cm/G` when the board wants a specific bass. */
+export function slashSymbol(symbol, bassPc, rootPc) {
+  if (bassPc === null || bassPc === undefined || bassPc === rootPc) return symbol;
+  return `${symbol}/${PITCH_NAMES[((bassPc % 12) + 12) % 12]}`;
+}
+
 export function validateChordScheme(scheme, { qualities: table = CHORD_QUALITIES } = {}) {
   if (isStaffScheme(scheme)) return validateStaffScheme(scheme);
   const errors = [];
@@ -176,13 +212,23 @@ export function squareToChord(square, scheme = DEFAULT_CHORD_SCHEME) {
   const root = scheme.roots[FILES.indexOf(square[0])];
   const quality = scheme.qualities[RANKS.indexOf(square[1])];
   if (!root || !quality) return null;
-  return {
+  const base = {
     square,
     root,
     quality,
     name: CHORD_QUALITIES[quality]?.name ?? null,
     symbol: chordSymbol(root, quality),
     pitch_classes: chordPitchClasses(root, quality),
+  };
+  // The inversion policy rides on the scheme (see the addressing dimensions), so
+  // a square knows which bass it wants and the rim can print it.
+  const policy = scheme?.inversions ?? 'any';
+  if (policy === 'any') return base;
+  const bass = requiredBass(square, base, policy);
+  return {
+    ...base,
+    required_bass: bass,
+    symbol: slashSymbol(base.symbol, bass, rootPitchClass(root)),
   };
 }
 
@@ -249,9 +295,16 @@ export function identifyChord(midiNotes, scheme = DEFAULT_CHORD_SCHEME) {
   const bass = ((Math.min(...notes) % 12) + 12) % 12;
   const signature = played.join(',');
 
+  const policy = scheme?.inversions ?? 'any';
   const candidates = [];
   for (const [square, chord] of Object.entries(chordBoard(scheme))) {
     if (chord?.pitch_classes?.join(',') !== signature) continue;
+    // Under a policy the bass is LOAD-BEARING rather than a tiebreak: a square
+    // whose required bass is not the note being played is not this address, so
+    // it is not a candidate at all. That also means a policy can only ever make
+    // an ambiguous set LESS ambiguous, never more.
+    const wanted = policy === 'any' ? null : requiredBass(square, chord, policy);
+    if (wanted !== null && wanted !== bass) continue;
     candidates.push({ square, symbol: chord.symbol, root_in_bass: rootPitchClass(chord.root) === bass });
   }
   candidates.sort((a, b) => Number(b.root_in_bass) - Number(a.root_in_bass) || a.square.localeCompare(b.square));

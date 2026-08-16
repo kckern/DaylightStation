@@ -6,10 +6,18 @@ import InstrumentBoardStage from '../game-platform/families/addressed-board/Inst
 import AddressRail from '../game-platform/families/addressed-board/AddressRail.jsx';
 import { BOARD_LAYOUTS } from '../game-platform/families/addressed-board/contracts.js';
 import { resolveAddressedSelection } from '../game-platform/families/addressed-board/interactionGrammars.js';
+import { useAddressedBoardGame } from '../game-platform/families/addressed-board/useAddressedBoardGame.js';
+import { useAddressing } from '../game-platform/addressing/useAddressing.js';
+import { useAddressingLadder } from '../game-platform/addressing/useAddressingLadder.js';
 import { thinkTimeFor, useOpponentReply } from '../game-platform/opponent/opponentPacing.js';
 import {
+  GameRail, GameSlot, GameButton, GameStatusBar, GameToggle, LadderBadge, DealNotice, GameSheet,
+} from '../game-platform/chrome/index.js';
+import AddressingSettings from '../game-platform/addressing/AddressingSettings.jsx';
+import GearIcon from '../game-platform/chrome/GearIcon.jsx';
+import {
   DEFAULT_FILE_NOTES, DEFAULT_RANK_NOTES, activeFileIndex, activeRankDisplayIndex,
-  fileRailAddresses, normalizeCheckersNotes, rankRailAddresses, shuffleCheckersNotes, squareForAddress,
+  fileRailAddresses, rankRailAddresses, squareForAddress,
 } from './checkersAddress.js';
 import checkersClient from './checkersApi.js';
 import './PianoCheckers.scss';
@@ -20,16 +28,36 @@ const DEFAULT_CONFIG = Object.freeze({
   rank_notes: DEFAULT_RANK_NOTES,
   default_level: 1,
 });
-// Checkers' ladder is 7 rungs (1-7, see the "Level {level} of 7" rail below) —
-// thinkTimeFor's `levels` generalises the old chess-only ladder size.
+// Checkers' ladder is 7 rungs — thinkTimeFor's `levels` generalises the old
+// chess-only ladder size.
 const LADDER_LEVELS = 7;
-// Used only when thinkTimeFor has nothing to read yet (no ladder resolved) —
-// mirrors chess's own OPPONENT_DELAY_MS fallback constant.
+// Used only when thinkTimeFor has nothing to read yet (no ladder resolved).
 const OPPONENT_THINK_FALLBACK_MS = 700;
+const HINT_CLUSTER = 7;
+const AXIS = 8;
 
-function userIdOf(currentUser) {
-  const value = typeof currentUser === 'string' ? currentUser : currentUser?.id;
-  return value && value !== 'guest' ? value : null;
+/**
+ * This game's own historical config keys, read forward onto the dimensions.
+ *
+ * `file_notes`/`rank_notes` are in real players' folders, so a saved axis still
+ * wins over a tier — that is what the explicit-scheme escape hatch is for. Only
+ * a CLEAN pair is honoured: a config from before the redesign carries
+ * `square_notes` and nothing else, and half-trusting that shape is how the game
+ * ends up comparing held notes against `undefined` and looking permanently
+ * unresponsive with no error to explain why.
+ */
+export function legacyAddressing(config) {
+  const clean = (axis) => Array.isArray(axis) && axis.length === AXIS && axis.every(Number.isFinite);
+  const legacy = {};
+  if (clean(config?.file_notes) && clean(config?.rank_notes)
+    && (config.file_notes !== DEFAULT_FILE_NOTES || config.rank_notes !== DEFAULT_RANK_NOTES)) {
+    legacy.scheme = {
+      id: 'checkers-saved-axes', kind: 'staff',
+      roots: config.file_notes, qualities: config.rank_notes,
+    };
+  }
+  if (config?.shuffle_each_game !== undefined) legacy.shuffle_each_game = config.shuffle_each_game;
+  return legacy;
 }
 
 function CheckersBoard({ game, selected, hint }) {
@@ -69,43 +97,56 @@ function CheckersBoard({ game, selected, hint }) {
 }
 
 export default function PianoCheckers({ activeNotes = new Map(), currentUser = null, onNoteOn, onNoteOff }) {
-  const userId = userIdOf(currentUser);
-  const [config, setConfig] = useState(DEFAULT_CONFIG);
-  const [ladder, setLadder] = useState(null);
   const [moves, setMoves] = useState([]);
   const [selected, setSelected] = useState(null);
   const [message, setMessage] = useState(null);
   const [hint, setHint] = useState(null);
-  const [localPractice, setLocalPractice] = useState(false);
-  const [seed, setSeed] = useState(() => Date.now() >>> 0);
-  const [gameSessionId, setGameSessionId] = useState(() => `checkers-${Date.now()}`);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const latchedRef = useRef(false);
-  const rankedRef = useRef(true);
-  const savedRef = useRef(false);
-  const movesRef = useRef(moves);
-  movesRef.current = moves;
+
   const game = useMemo(() => replayGame({ moves }), [moves]);
-  // Normalized first — a persisted config from before this redesign carries
-  // `square_notes` and nothing else, and normalizeCheckersNotes is what turns
-  // that into valid axes instead of a silent dead end (see checkersAddress.js).
-  // Re-dealt on top the same way chess re-deals its chord scheme: the axes,
-  // not the mechanic, so "which key means which square" is what changes.
-  const baseNotes = useMemo(() => normalizeCheckersNotes(config), [config]);
+  const result = !game.status.gameOver
+    ? null
+    : game.status.draw ? 'draw' : game.status.winner === 1 ? 'win' : 'loss';
+
+  const {
+    config, updateConfig, ladder, level, seed, gameSessionId, userId,
+    localPractice, noteLocalPractice, restart: resetSession, logger,
+  } = useAddressedBoardGame({
+    gameId: 'checkers',
+    client: checkersClient,
+    currentUser,
+    defaultConfig: DEFAULT_CONFIG,
+    ladderLevels: LADDER_LEVELS,
+    moves,
+    result,
+  });
+
+  // Which key means which square, resolved from the layers rather than from a
+  // constant in this file: house default → this game's YAML → the addressing
+  // rung → this player. The tier decides the material, the order decides the
+  // layout, and the cadence decides when it moves — see
+  // docs/reference/piano/grid-addressing.md.
+  const legacy = useMemo(() => legacyAddressing(config), [config]);
+  const { x: fileNotes, y: rankNotes, addressing } = useAddressing({
+    config, axisSize: AXIS, seed, ply: moves.length, legacy,
+  });
   const notes = useMemo(
-    () => (config.shuffle_each_game ? shuffleCheckersNotes(baseNotes, seed) : baseNotes),
-    [baseNotes, config.shuffle_each_game, seed],
+    () => ({ file_notes: fileNotes, rank_notes: rankNotes }),
+    [fileNotes, rankNotes],
   );
-  const level = ladder?.unlocked_through ?? config.default_level ?? 1;
+
+  // The reading ladder watches how the player ADDRESSES, not whether they win —
+  // see game-platform/addressing/addressingProgress.js.
+  const reading = useAddressingLadder({
+    client: checkersClient, gameId: 'checkers', userId, config, logger,
+  });
 
   // The opponent's reply is a floor on the wait, never an addend — see
-  // opponentPacing.js. `resetKey: gameSessionId` covers the reset case
-  // `enabled` alone can't see: after restart() the fresh board always opens
-  // on the player's turn (turn 1) here, so `enabled` already flips false on
-  // its own, but the reset key costs nothing and matches the other two games.
+  // opponentPacing.js.
   const opponentEnabled = !game.status.gameOver && game.turn === 2;
-  const opponentPace = config.opponent?.pace ?? 1;
   const thinkMs = thinkTimeFor({
-    level, levels: LADDER_LEVELS, config, seed, ply: moves.length, pace: opponentPace,
+    level, levels: LADDER_LEVELS, config, seed, ply: moves.length, pace: config.opponent?.pace ?? 1,
   }) ?? OPPONENT_THINK_FALLBACK_MS;
   const { thinking } = useOpponentReply({
     enabled: opponentEnabled,
@@ -113,10 +154,7 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
     resetKey: gameSessionId,
     request: () => checkersClient.requestMove({ transcript: { moves }, level, gameSessionId, userId }),
     onReply: (answer) => {
-      if (!answer?.move) {
-        rankedRef.current = false;
-        setLocalPractice(true);
-      }
+      if (!answer?.move) noteLocalPractice();
       // Keep offline practice responsive on the kiosk's older WebView CPU.
       const move = answer?.move ?? chooseMove(game, { level: Math.min(2, level) });
       const next = move ? applyMove(game, move) : game;
@@ -124,18 +162,20 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
     },
   });
 
+  // Time-to-address is measured from when it became the player's turn.
   useEffect(() => {
-    checkersClient.readConfig(userId).then((value) => value && setConfig((old) => ({ ...old, ...value })));
-    checkersClient.readLadder(userId).then((value) => value && setLadder(value));
-  }, [userId]);
+    if (!game.status.gameOver && game.turn === 1 && !thinking) reading.startTurn();
+  }, [game.status.gameOver, game.turn, thinking]);
 
   useEffect(() => {
     if (game.status.gameOver || game.turn !== 1 || thinking) return;
     if (activeNotes.size === 0) { latchedRef.current = false; return; }
     if (latchedRef.current) return;
-    if (activeNotes.size >= 7) {
-      setHint(chooseMove(game, { level }));
+    if (activeNotes.size >= HINT_CLUSTER) {
+      const suggestion = chooseMove(game, { level });
+      setHint(suggestion);
       setMessage('Suggested move is glowing.');
+      logger.debug('checkers.hint', { from: suggestion?.from ?? null, to: suggestion?.to ?? null, level });
       latchedRef.current = true;
       return;
     }
@@ -145,6 +185,7 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
     // needing its own "how many notes so far" bookkeeping.
     const square = squareForAddress([...activeNotes.keys()], notes);
     if (square === null) return;
+    reading.record({ ok: true });
     const available = legalMoves(game.board, 1, game.forcedFrom);
     const currentSelection = game.forcedFrom ?? selected;
     const resolution = resolveAddressedSelection({
@@ -160,80 +201,81 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
         setSelected(next.turn === 1 ? next.forcedFrom : null);
         setMessage(next.forcedFrom !== null ? 'Keep jumping with the same piece.' : null);
         setHint(null);
+        logger.debug('checkers.move', {
+          from: resolution.committed.from, to: resolution.committed.to, ply: next.moves.length,
+        });
       }
     } else {
       setSelected(resolution.selected);
       setMessage(resolution.rejection === 'select_source' ? "Play a glowing red piece's file and rank notes together."
         : resolution.rejection === 'select_destination' ? "Play a glowing destination's file and rank notes together." : null);
+      if (resolution.rejection) {
+        logger.debug('checkers.rejected', { square, reason: resolution.rejection });
+        // A refused address is still an address that did not land: the ladder
+        // counts it, because accuracy is what it is judging.
+        reading.record({ ok: false });
+      }
     }
     latchedRef.current = true;
-  }, [activeNotes, game, level, notes, selected, thinking]);
+  }, [activeNotes, game, level, logger, notes, selected, thinking]);
 
-  useEffect(() => {
-    if (!game.status.gameOver || savedRef.current) return;
-    savedRef.current = true;
-    const result = game.status.draw ? 'draw' : game.status.winner === 1 ? 'win' : 'loss';
-    const record = {
-      moves, result, level, ranked: rankedRef.current, completed: true,
-      played_on: new Date().toISOString().slice(0, 10),
-    };
-    if (userId) checkersClient.saveGame(userId, record).then((response) => response?.ladder && setLadder(response.ladder));
-    checkersClient.archiveGame({ ...record, user_id: userId });
-  }, [game.status, level, moves, userId]);
-
-  useEffect(() => () => {
-    if (!savedRef.current && movesRef.current.length) {
-      checkersClient.archiveGame({ moves: movesRef.current, completed: false, user_id: userId, ended_by: 'exit' });
-    }
-  }, [userId]);
-
-  const updateConfig = (patch) => {
-    setConfig((value) => ({ ...value, ...patch }));
-    if (userId) checkersClient.writeConfig(userId, patch);
-  };
   const restart = () => {
     setMoves([]);
     setSelected(null);
     setMessage(null);
     setHint(null);
-    setLocalPractice(false);
-    rankedRef.current = true;
-    savedRef.current = false;
+    // A key already down when the game restarts must not immediately address a
+    // square — the latch opens on the next release, not on this render.
     latchedRef.current = activeNotes.size > 0;
-    setSeed((value) => (value + 1) >>> 0);
-    setGameSessionId(`checkers-${Date.now()}`);
+    resetSession();
   };
+
+  const opponentName = ladder?.current?.name ?? 'Button';
   const status = game.status.gameOver
-    ? game.status.draw ? 'Draw game' : game.status.winner === 1 ? 'You won the board!' : `${ladder?.current?.name ?? 'Opponent'} wins`
-    : thinking ? `${ladder?.current?.name ?? 'Opponent'} is thinking…`
+    ? game.status.draw ? 'Draw game' : game.status.winner === 1 ? 'You won the board!' : `${opponentName} wins`
+    : thinking ? `${opponentName} is thinking…`
       : message ?? (selected !== null ? "Now play the destination's file and rank notes together." : "Play a movable red piece's file and rank notes together.");
 
-  // The rail's own cards, from the SAME (possibly re-dealt) notes the
-  // addressing effect above just used — the rim can never show a note that
-  // does not actually work. Active highlighting follows whichever half of
-  // the pair is currently held, same idea as chess's cursor: a lone file
-  // note lights its file card, a lone rank note lights its rank card, and
-  // both light together in the instant just before the square commits.
+  // The rail's own cards, from the SAME (possibly re-dealt) notes the addressing
+  // effect above just used — the rim can never show a note that does not
+  // actually work. Active highlighting follows whichever half of the pair is
+  // currently held, same idea as chess's cursor: a lone file note lights its
+  // file card, a lone rank note lights its rank card, and both light together in
+  // the instant just before the square commits.
   const heldNotesList = useMemo(() => [...activeNotes.keys()], [activeNotes]);
   const fileAddresses = useMemo(() => fileRailAddresses(notes), [notes]);
   const rankAddresses = useMemo(() => rankRailAddresses(notes), [notes]);
   const activeFile = activeFileIndex(heldNotesList, notes);
   const activeRank = activeRankDisplayIndex(heldNotesList, notes);
 
+  const red = game.board.filter((piece) => piece?.toLowerCase() === 'r').length;
+  const blue = game.board.filter((piece) => piece?.toLowerCase() === 'b').length;
+
   return (
     <PianoGameHost
       gameId="checkers"
       phase={game.status.gameOver ? 'result' : thinking ? 'paused' : 'playing'}
       className="piano-checkers"
-      // Same scheme as chess now (DEFAULT_STAFF_SCHEME, 47-72), so the same
-      // keyboard window shows every note either game addresses with.
+      // Same scheme as chess (DEFAULT_STAFF_SCHEME, 47-72), so the same keyboard
+      // window shows every note either game addresses with.
       instrument={{ activeNotes, startNote: 36, endNote: 84, showLabels: true, onNoteOn, onNoteOff }}
     >
       <InstrumentBoardStage
         layout={BOARD_LAYOUTS.SINGLE}
-        topRail={<AddressRail addresses={fileAddresses} orientation="horizontal" active={activeFile} />}
+        /* Both rim rails live INSIDE the board's own grid rather than in the
+           stage's `topRail` slot. The file rail has to sit over the files it
+           names, and the stage centres its top-rail slot in a different box
+           than it centres the board — so the two were arithmetically chased
+           into alignment and still landed a full column apart. One grid, one
+           set of columns, and a card cannot drift from its file. */
         primary={(
           <div className="checkers-stage">
+            <AddressRail
+              addresses={fileAddresses}
+              orientation="horizontal"
+              active={activeFile}
+              className="checkers-stage__file-rail"
+            />
             <AddressRail
               addresses={rankAddresses}
               orientation="vertical"
@@ -244,28 +286,88 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
           </div>
         )}
         leftRail={(
-          <div className="checkers-opponent">
-            <strong>{ladder?.current?.name ?? 'Button'}</strong>
-            <span>Level {level} of 7</span>
-            <span>{ladder?.wins ?? 0} / 3 wins</span>
-            <span>{game.board.filter((piece) => piece?.toLowerCase() === 'r').length} red · {game.board.filter((piece) => piece?.toLowerCase() === 'b').length} blue</span>
-          </div>
+          <GameRail label="Opponent">
+            <GameSlot label="Playing against">
+              <LadderBadge
+                name={opponentName}
+                level={level}
+                levels={LADDER_LEVELS}
+                wins={ladder?.wins ?? 0}
+                needed={ladder?.needed ?? 3}
+              />
+            </GameSlot>
+            {/* A tally, so "am I ahead?" is answerable at a glance rather than by
+                counting discs across the board. */}
+            <GameSlot label="Pieces left">
+              <p className="checkers-tally">
+                <span className="checkers-tally__side checkers-tally__side--player">
+                  <span className="checkers-tally__count">{red}</span> yours
+                </span>
+                <span className="checkers-tally__side checkers-tally__side--opponent">
+                  <span className="checkers-tally__count">{blue}</span> theirs
+                </span>
+              </p>
+            </GameSlot>
+          </GameRail>
         )}
         rightRail={(
-          <div className="checkers-settings">
-            <label className="checkers-settings__check"><input type="checkbox" checked={config.shuffle_each_game} onChange={(event) => updateConfig({ shuffle_each_game: event.target.checked })} /> Re-deal file &amp; rank notes</label>
-            <p>Every dark square is a file note (above the board) plus a rank note (beside it) — play both together, then the destination the same way.</p>
-            <p>Captures glow and are required. Multiple jumps keep the piece selected.</p>
-            <small>Play seven notes together for a suggested move.</small>
-          </div>
+          <GameRail
+            label="How to play"
+            foot={(
+              <GameButton
+                variant="icon"
+                onClick={() => setSettingsOpen((open) => !open)}
+                aria-expanded={settingsOpen}
+                aria-label="Settings"
+                title="Settings"
+              >
+                <GearIcon />
+              </GameButton>
+            )}
+          >
+            <GameSlot label="Addressing a square">
+              Every dark square is a file note (above the board) plus a rank note
+              (beside it). Play both together, then the destination the same way.
+            </GameSlot>
+            <GameSlot label="Captures">
+              Captures glow and are required. Multiple jumps keep the piece selected.
+            </GameSlot>
+            <GameSlot label="Setup">
+              <GameToggle
+                label="Re-deal file &amp; rank notes each game"
+                checked={addressing.shuffle !== 'never'}
+                onChange={(value) => updateConfig({
+                  addressing: { shuffle: value ? 'each_game' : 'never' },
+                })}
+              />
+            </GameSlot>
+            <GameSlot label="Stuck?" variant="plain">
+              Play seven notes together and a good move starts glowing.
+              {/* Without this a re-deal is invisible: the player spells
+                  yesterday's square, it is refused, and nothing explains why. */}
+              <DealNotice cadence={addressing.shuffle} dealKey={`${seed}-${moves.length}`} />
+            </GameSlot>
+          </GameRail>
         )}
         status={(
-          <div className="checkers-status">
-            <span>{status}{localPractice ? ' · local practice' : ''}</span>
-            {game.status.gameOver && <button type="button" onClick={restart}>Play again</button>}
-          </div>
+          <GameStatusBar
+            aside={localPractice ? 'local practice' : null}
+            action={game.status.gameOver && (
+              <GameButton variant="primary" onClick={restart}>Play again</GameButton>
+            )}
+          >
+            {status}
+          </GameStatusBar>
         )}
       />
+
+      {/* The same reading ladder chess offers, on the same control — "how hard
+          is the reading" is the same question on every board. */}
+      {settingsOpen && (
+        <GameSheet title="Settings" onClose={() => setSettingsOpen(false)}>
+          <AddressingSettings config={config} axisSize={AXIS} onChange={updateConfig} />
+        </GameSheet>
+      )}
     </PianoGameHost>
   );
 }

@@ -43,6 +43,37 @@ const BASS = Object.freeze([47, 48, 50, 52, 53, 55, 57, 59]);
  */
 export const SPLIT_MIDI = 60;
 
+/**
+ * Where THIS scheme's two axes part company.
+ *
+ * Middle C is the split for the grand-staff default, and stating it as a
+ * constant was right for exactly as long as `grand` was the only pair. A
+ * treble-only scheme stacks both axes above middle C and a bass-only one puts
+ * both below it, so a fixed boundary sends every note to the same axis and the
+ * board stops answering.
+ *
+ * Derived instead: the two axes occupy disjoint ranges by construction (see
+ * `materialFor`), so the boundary is the midpoint of the gap between them, and
+ * which side is which falls out of the same comparison. Returns `null` when the
+ * ranges overlap — a scheme whose axes share pitches cannot be split, and a
+ * caller that gets null should refuse the address rather than guess.
+ */
+export function splitFor(scheme = DEFAULT_STAFF_SCHEME) {
+  const x = scheme?.roots;
+  const y = scheme?.qualities;
+  if (!Array.isArray(x) || !Array.isArray(y) || !x.length || !y.length) return null;
+  if (!x.every(Number.isFinite) || !y.every(Number.isFinite)) return null;
+  const xLow = Math.min(...x);
+  const xHigh = Math.max(...x);
+  const yLow = Math.min(...y);
+  const yHigh = Math.max(...y);
+  // Files above ranks — the grand-staff arrangement, and treble-only/bass-only.
+  if (yHigh < xLow) return { boundary: Math.ceil((yHigh + xLow) / 2), filesAbove: true };
+  // Ranks above files — `inverted`, where the left hand picks the file.
+  if (xHigh < yLow) return { boundary: Math.ceil((xHigh + yLow) / 2), filesAbove: false };
+  return null;
+}
+
 export const DEFAULT_STAFF_SCHEME = Object.freeze({
   id: 'grand-staff-naturals-v1',
   kind: 'staff',
@@ -146,12 +177,18 @@ export function identifyStaffAddress(midiNotes, scheme = DEFAULT_STAFF_SCHEME) {
   const pitch_classes = [...new Set(notes.map((n) => ((n % 12) + 12) % 12))].sort((a, b) => a - b);
   if (notes.length !== 2) return { square: null, candidates: [], pitch_classes };
 
-  const above = notes.filter((note) => note >= SPLIT_MIDI);
-  const below = notes.filter((note) => note < SPLIT_MIDI);
+  const split = splitFor(scheme);
+  // A scheme whose axes overlap cannot say which axis a note belongs to. Refuse
+  // the address rather than guess — a wrong square committed is worse than a
+  // press that did nothing.
+  if (!split) return { square: null, candidates: [], pitch_classes };
+  const above = notes.filter((note) => note >= split.boundary);
+  const below = notes.filter((note) => note < split.boundary);
   if (above.length !== 1 || below.length !== 1) return { square: null, candidates: [], pitch_classes };
 
-  const file = axisIndex(above[0], scheme.roots);
-  const rank = axisIndex(below[0], scheme.qualities);
+  const [fileNote, rankNote] = split.filesAbove ? [above[0], below[0]] : [below[0], above[0]];
+  const file = axisIndex(fileNote, scheme.roots);
+  const rank = axisIndex(rankNote, scheme.qualities);
   if (file < 0 || rank < 0) return { square: null, candidates: [], pitch_classes };
   const square = `${FILES[file]}${RANKS[rank]}`;
   return {
@@ -172,11 +209,14 @@ export function identifyStaffAddress(midiNotes, scheme = DEFAULT_STAFF_SCHEME) {
 export function staffCandidateSquares(heldNotes, scheme = DEFAULT_STAFF_SCHEME) {
   const notes = [...new Set((heldNotes || []).filter(Number.isFinite))];
   if (!notes.length) return [];
-  const above = notes.filter((note) => note >= SPLIT_MIDI);
-  const below = notes.filter((note) => note < SPLIT_MIDI);
+  const split = splitFor(scheme);
+  if (!split) return [];
+  const above = notes.filter((note) => note >= split.boundary);
+  const below = notes.filter((note) => note < split.boundary);
   if (above.length > 1 || below.length > 1) return [];
-  const fileIndex = above.length ? axisIndex(above[0], scheme.roots) : null;
-  const rankIndex = below.length ? axisIndex(below[0], scheme.qualities) : null;
+  const [fileSide, rankSide] = split.filesAbove ? [above, below] : [below, above];
+  const fileIndex = fileSide.length ? axisIndex(fileSide[0], scheme.roots) : null;
+  const rankIndex = rankSide.length ? axisIndex(rankSide[0], scheme.qualities) : null;
   // A note that is not one of the eight letters is not on the way to a square.
   if (fileIndex === -1 || rankIndex === -1) return [];
   const files = fileIndex === null ? FILES : [FILES[fileIndex]];
@@ -213,6 +253,6 @@ export function validateStaffScheme(scheme) {
 }
 
 export default {
-  DEFAULT_STAFF_SCHEME, SPLIT_MIDI, isStaffScheme, squareToStaffAddress, staffToSquare,
+  DEFAULT_STAFF_SCHEME, SPLIT_MIDI, splitFor, isStaffScheme, squareToStaffAddress, staffToSquare,
   identifyStaffAddress, staffCandidateSquares, validateStaffScheme, axisIndex, noteLetter, noteName,
 };

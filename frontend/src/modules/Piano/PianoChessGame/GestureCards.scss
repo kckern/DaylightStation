@@ -3,12 +3,35 @@
  * House tokens only.
  */
 .gesture-cards {
+  /* The diagram is a picture of a keyboard, so it names the two colours a
+     keyboard is made of. Nothing else in this file names a colour. */
+  --gesture-key-white: #efe9df;
+  --gesture-key-black: #23232a;
+  --gesture-key-edge: #000;
+
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+/* Tighter, for the moments when the rail is carrying something else as well —
+   the four-step onboarding card, in practice. The cards stay legible and stay
+   VISIBLE, which matters more: a gesture clipped off the foot of the rail is a
+   gesture a child never learns exists, and "Take it back" was the one falling
+   off. */
+.gesture-cards--compact {
+  gap: 0.2rem;
+
+  .gesture-card {
+    grid-template-columns: 3.6rem 1fr;
+    padding: 0.15rem 0.45rem;
+    gap: 0.5rem;
+  }
+
+  .gesture-card__text { line-height: 1.2; }
 }
 
 .gesture-card {
@@ -59,18 +82,18 @@
 }
 
 .gesture-card__key {
-  fill: #efe9df;
+  fill: var(--gesture-key-white);
   stroke: rgb(0 0 0 / 45%);
   stroke-width: 0.6;
 }
 
-.gesture-card__key--black { fill: #23232a; }
+.gesture-card__key--black { fill: var(--gesture-key-black); }
 
 /* The keys to press. Accent rather than a colour of its own, because this is
    the same "do this" voice the rest of the screen uses. */
 .gesture-card__key--on {
   fill: var(--piano-accent);
-  stroke: color-mix(in srgb, var(--piano-accent) 60%, #000);
+  stroke: color-mix(in srgb, var(--piano-accent) 60%, var(--gesture-key-edge));
 }
 
 .gesture-card__text {

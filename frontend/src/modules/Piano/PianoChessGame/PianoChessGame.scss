@@ -13,21 +13,26 @@
   --pc-light: #e8ddc8;
   --pc-dark: #9e7070;
 
-  /* The old walnut/brass/ivory names survive only as aliases so one edit
-     retints the whole screen; nothing here invents a colour any more. */
   /* Rim strips: the space outside the board that the frame still occupies.
      Named because the board's size AND its centring are both computed from
      them. */
   --pc-axis: 2.5rem;
   --pc-axis-w: 2.75rem;
 
-  --pc-case: var(--piano-bg, #16161b);
-  --pc-case-lift: var(--piano-surface, #1f1f26);
-  --pc-ivory: var(--piano-fg, #f1f1f4);
-  --pc-ivory-dim: var(--piano-muted, #9a9aa6);
-  --pc-brass: var(--piano-accent-text, #5fe39a);
-  --pc-brass-glow: var(--piano-accent, #2ec46f);
-  --pc-felt: var(--piano-danger, #e05a4f);
+  /* The cabinet names now come from the platform (game-platform/chrome), which
+     is where they always belonged — this screen invented them, and Checkers and
+     Connect Four then had to invent their own worse versions because there was
+     nowhere shared to find them. These `--pc-` aliases stay only so the ~90
+     existing references in this file keep reading, and they resolve to exactly
+     the same house tokens they did before: this is a re-pointing, not a
+     re-theming. New rules should use --pg- directly. */
+  --pc-case: var(--pg-case);
+  --pc-case-lift: var(--pg-shelf);
+  --pc-ivory: var(--pg-ivory);
+  --pc-ivory-dim: var(--pg-ivory-dim);
+  --pc-brass: var(--pg-brass);
+  --pc-brass-glow: var(--pg-brass-fill);
+  --pc-felt: var(--pg-felt);
   --pc-verdigris: var(--piano-warn, #e0a83a);
   --pc-walnut: var(--pc-dark);
   --pc-walnut-deep: var(--pc-dark);
@@ -69,125 +74,19 @@
 
 
 
-.piano-chess__settings-btn {
-  align-self: flex-start;
-  padding: 0.3rem 0.7rem;
-  border: 1px solid var(--piano-border, #34343f);
-  border-radius: var(--r-sm, 8px);
-  background: none;
-  color: var(--pc-ivory-dim);
-  font: inherit;
-  font-size: var(--t-cap, 0.85rem);
-  cursor: pointer;
-
-  &:hover,
-  &:focus-visible,
-  &[aria-expanded='true'] {
-    border-color: var(--pc-brass);
-    color: var(--pc-brass);
-  }
+/* Settings is `.pg-btn--icon` now; only its open state is chess's to say. */
+.piano-chess__settings-btn[aria-expanded='true'] {
+  border-color: var(--pc-brass);
+  color: var(--pc-brass);
 }
 
 /* ---- settings panel ------------------------------------------------------ */
 
-/* Sits over the board like the toast does: settings are a pause in the game,
-   not a different room. Every control is a discrete tap target. */
-.chess-settings {
-  position: absolute;
-  inset-block-start: 12%;
-  inset-inline: 0;
-  z-index: 6;
-  justify-self: center;
-  width: min(34rem, 80cqw);
-  margin-inline: auto;
-  padding: 1rem 1.4rem 1.3rem;
-  border: 1px solid var(--piano-border);
-  border-radius: var(--r-lg, 16px);
-  /* OPAQUE. A translucent panel over a chessboard leaves the board showing
-     through the controls, which is unreadable and — on this tablet — costs
-     real frames, because a see-through full-width layer defeats occlusion
-     culling. */
-  background: var(--piano-surface);
-  box-shadow: 0 1.5rem 4rem rgb(0 0 0 / 65%);
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-}
-
-.chess-settings__head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  padding-block-end: 0.4rem;
-  border-block-end: 1px solid var(--piano-border, #34343f);
-}
-
-.chess-settings__title {
-  margin: 0;
-  font-size: var(--t-h, 1rem);
-  font-weight: 700;
-  color: var(--pc-ivory);
-}
-
-.chess-settings__close {
-  padding: 0.35rem 0.9rem;
-  border: 1px solid var(--pc-brass);
-  border-radius: var(--r-sm, 8px);
-  background: none;
-  color: var(--pc-brass);
-  font: inherit;
-  font-size: var(--t-cap, 0.85rem);
-  cursor: pointer;
-
-  &:hover,
-  &:focus-visible { color: var(--pc-brass-glow); border-color: var(--pc-brass-glow); }
-}
-
-.chess-settings__group {
-  margin: 0.5rem 0 0;
-  font-size: var(--t-cap, 0.85rem);
-  font-weight: 400;
-  color: var(--piano-muted, #9a9aa6);
-}
-
-.chess-settings__row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-}
-
-.chess-settings__opt {
-  display: flex;
-  flex-direction: column;
-  gap: 0.05rem;
-  align-items: flex-start;
-  /* Kiosk-sized: a fingertip, not a pointer, is what lands here. */
-  min-height: 2.6rem;
-  padding: 0.4rem 0.85rem;
-  border: 1px solid var(--piano-border, #34343f);
-  border-radius: var(--r-sm, 8px);
-  background: none;
-  color: var(--pc-ivory-dim);
-  font: inherit;
-  font-size: var(--t-body, 1rem);
-  letter-spacing: 0.08em;
-  cursor: pointer;
-
-  &:hover,
-  &:focus-visible { border-color: var(--piano-accent, #2ec46f); color: var(--pc-ivory); }
-
-  &.is-active {
-    border-color: var(--pc-brass);
-    background: var(--piano-accent, #2ec46f);
-    color: var(--pc-brass-glow);
-  }
-}
-
-.chess-settings__note {
-  font-size: var(--t-cap, 0.85rem);
-  letter-spacing: 0.08em;
-  color: var(--piano-muted, #9a9aa6);
-}
+/* The panel, its head, its scroll and its option buttons are all `GameSheet` /
+   `GameField` / `GameChoice` / `GameToggle` now (game-platform/chrome). What
+   used to live here was six hand-rolled segmented controls and a `<section>`
+   with no dialog semantics; the ~90 lines it took are the kit's. Nothing chess-
+   specific is left to say about it. */
 
 /* The shared kiosk context rail sits to the RIGHT of the board here, so its
    divider has to change sides. */
@@ -206,7 +105,10 @@
      it. This is why every rail row below is clipped or wrapped rather than
      allowed to size its column — one long refusal message must not shove the
      board sideways. */
-  --pc-rail: 15.5rem;
+  /* The platform owns this number, because both rails claiming ONE width is
+     what centres the board, and `.pg-rail` reads it from --pg-rail-w. Two
+     names for one measurement is how a board drifts off centre. */
+  --pc-rail: var(--pg-rail-w);
   /* The rails FILL. They were fixed, so whatever the board did not use showed
      as dead space beside it. Equal fractions with a floor: they take the
      leftover in equal shares, which is also what keeps the board centred — the
@@ -256,37 +158,22 @@
   width: var(--pc-axis-w);
 }
 
-.piano-chess__rail {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  /* Fixed width, and nothing inside may exceed it — see the stage grid. */
-  width: var(--pc-rail);
-  min-width: 0;
-  max-width: var(--pc-rail);
-  align-self: stretch;
-  justify-content: flex-start;
-  padding-block-start: 0.5rem;
-  overflow: hidden;
+/* THE DENSEST RAIL IN THE KIOSK, and the only one that needs to be told so.
+   Chess carries a socket, a speech bubble, a four-step teaching card and five
+   gesture cards in the height of one 800px canvas — 16px more than there is.
+   The foot holds the way into settings and must never be the thing that clips,
+   and a gesture card clipped off the bottom is a gesture a child never learns
+   exists, so the space comes out of the seams instead: no top padding, tighter
+   gaps between blocks. Chess only; the other rails have room to breathe. */
+.piano-chess__rail--state {
+  --pg-gap: 0.3rem;
+  padding-block-start: 0;
 }
-
-.piano-chess__rail--chords { justify-content: flex-start; }
 
 /* IN HAND. A reserved block, the same size whether or not a piece is held, so
    the rail never reflows at the moment the player most needs it to stay put. */
 
-.piano-chess__hand--holding {
-  border-color: var(--piano-accent, #2ec46f);
-  background: color-mix(in srgb, var(--piano-accent) 14%, transparent);
-}
-
-
 .piano-chess__hand-from {
-  font-size: var(--t-cap, 0.85rem);
-  color: var(--piano-muted);
-}
-
-.piano-chess__slot-label {
   font-size: var(--t-cap, 0.85rem);
   color: var(--piano-muted);
 }
@@ -344,29 +231,7 @@
   }
 }
 
-.piano-chess__cancel {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-  align-items: flex-start;
-  margin-block-start: 0.75rem;
-  padding: 0.45rem 0.8rem;
-  border: 1px solid var(--piano-border, #34343f);
-  border-radius: var(--r-sm, 8px);
-  background: none;
-  color: var(--pc-ivory-dim);
-  font: inherit;
-  text-align: start;
-  cursor: pointer;
 
-  &:disabled { opacity: 0.35; cursor: default; }
-
-  &:not(:disabled):hover,
-  &:not(:disabled):focus-visible {
-    border-color: var(--pc-brass);
-    color: var(--pc-brass);
-  }
-}
 
 /* ---- board -------------------------------------------------------------- */
 
@@ -688,11 +553,6 @@
 .piano-chess__redeal { font-size: var(--t-cap); }
 
 
-.piano-chess__hand--holding {
-  background: color-mix(in srgb, var(--piano-accent) 14%, var(--piano-surface));
-}
-/* Every slot label sits on the same left edge; only the piece in hand centres. */
-.piano-chess__hand > .piano-chess__slot-label { justify-self: start; }
 
 
 /* The live staff is a card, not a page. Given the whole rail it became a tall
@@ -713,17 +573,16 @@
 /* IN HAND — a socket, not a field. Empty, it still shows that a piece belongs
    there: an inset well with a dashed lip, which reads as "something goes here"
    without the word "Empty" having to say it. */
-.piano-chess__hand {
+/* The surface, the edge, the radius and the 8.5rem reservation are `.pg-slot`
+   and its `reserve` now. What is left here is the one thing the socket needs
+   that a generic slot cannot know: the well takes the leftover height, and the
+   "from e2" caption sits under it. */
+.piano-chess__hand .pg-slot__body {
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: 1fr auto;
   justify-items: stretch;
   gap: 0.4rem;
-  min-height: 8.5rem;
-  padding: 0.55rem 0.7rem 0.7rem;
-  border: 1px solid var(--piano-border);
-  border-radius: var(--r-md);
-  background: var(--piano-surface);
-  text-align: start;
+  min-height: 0;
 }
 
 .piano-chess__hand-slot {
@@ -736,10 +595,8 @@
   box-shadow: inset 0 2px 6px rgb(0 0 0 / 45%), inset 0 -1px 0 rgb(255 255 255 / 4%);
 }
 
+/* Holding is `.pg-slot--active`; the well inside it firms up to match. */
 .piano-chess__hand--holding {
-  border-color: var(--piano-accent);
-  background: color-mix(in srgb, var(--piano-accent) 12%, var(--piano-surface));
-
   .piano-chess__hand-slot {
     border-style: solid;
     border-color: color-mix(in srgb, var(--piano-accent) 55%, transparent);
@@ -769,12 +626,10 @@
      line = 150px), not guessed. A floor below the tallest state reserves
      nothing — the box still shrinks for shorter messages, which is the whole
      defect. */
-  min-height: 9.75rem;
+  /* The number itself is the slot's `reserve` prop; everything below is what
+     makes this slot a speech bubble rather than a panel. */
   position: relative;
   padding: 0.6rem 0.75rem;
-  border: 1px solid var(--piano-border);
-  border-radius: var(--r-md);
-  background: var(--piano-surface-2, var(--piano-surface));
 }
 
 /* The tail, drawn as a rotated square tucked under the top-left corner so it
@@ -786,9 +641,9 @@
   inset-inline-start: 1.1rem;
   width: 0.7rem;
   height: 0.7rem;
-  border-inline-start: 1px solid var(--piano-border);
-  border-block-start: 1px solid var(--piano-border);
-  background: var(--piano-surface-2, var(--piano-surface));
+  border-inline-start: 1px solid var(--pg-hairline);
+  border-block-start: 1px solid var(--pg-hairline);
+  background: var(--pg-shelf-lift);
   transform: rotate(45deg);
 }
 
@@ -816,32 +671,6 @@
    it is held whether or not it has landed. */
 .piano-chess__says .chess-readout {
   min-height: calc(3 * 1.3em);
-}
-
-/* SETTINGS — an icon, not a full-width slab. */
-.piano-chess__settings-btn {
-  display: grid;
-  place-items: center;
-  width: 2.4rem;
-  height: 2.4rem;
-  padding: 0;
-  border: 1px solid var(--piano-border);
-  border-radius: var(--r-pill);
-  background: var(--piano-surface);
-  color: var(--piano-muted);
-}
-
-/* One block, and it states the result the three separate ones used to compose
-   by cascade order: row direction and alignment from the last, the gap from the
-   first, and `margin-block-start: auto` — which pins the actions to the foot of
-   the rail — from the middle. */
-.piano-chess__rail-actions {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.4rem;
-  margin-block-start: auto;
 }
 
 /* Whose game, whose turn, which colour. The first three questions anyone asks

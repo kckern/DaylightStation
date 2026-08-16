@@ -12,7 +12,7 @@
     left: 0;
     right: 0;
     height: 3px;
-    box-shadow: 0 0 8px rgba(100, 200, 255, 0.3);
+    box-shadow: 0 0 8px color-mix(in srgb, var(--pg-brass-fill) 30%, transparent);
   }
 
   &__ground-scroll {
@@ -23,8 +23,8 @@
     margin-top: 3px;
     background: repeating-linear-gradient(
       90deg,
-      rgba(100, 200, 255, 0.25) 0px,
-      rgba(100, 200, 255, 0.25) 16px,
+      color-mix(in srgb, var(--pg-brass-fill) 25%, transparent) 0px,
+      color-mix(in srgb, var(--pg-brass-fill) 25%, transparent) 16px,
       transparent 16px,
       transparent 28px
     );

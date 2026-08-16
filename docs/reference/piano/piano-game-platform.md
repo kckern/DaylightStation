@@ -4,15 +4,65 @@ The Piano game platform standardizes the instrument-facing shell without pretend
 
 ## Ownership
 
-- `game-platform/host` owns the fullscreen container, one keyboard dock, overlay stacking, and host lifecycle projection.
+- `game-platform/host` owns the fullscreen container, one keyboard dock, overlay stacking, host lifecycle projection, and the crash boundary (`GameBoundary`).
 - `game-platform/input` owns normalized musical input events.
-- `game-platform/chrome` owns reusable countdown, life, and progress displays.
+- `game-platform/chrome` owns **the cabinet**: the token layer every game's furniture is built from, and the furniture itself. See "The chrome kit" below.
 - `game-platform/opponent` owns how long a board-game opponent appears to think before replying.
 - `game-platform/families` owns mechanics shared by a genuine family of games:
-  - `addressed-board`: semantic left/right rails, single/dual board layouts, and column-drop or source/destination interaction grammars.
+  - `addressed-board`: semantic left/right rails, single/dual board layouts, column-drop or source/destination interaction grammars, and `useAddressedBoardGame` — the ranked/laddered/archived session a board game keeps around its rules (config load and patch, ladder, seed, session id, local-practice flag, restart, save-on-result, archive-on-abandon, structured logging). The game keeps its own transcript and passes it in; the hook reads it and never writes it.
   - `bound-action`: note/chord bindings, fresh-press rules, and hold-to-repeat behavior used by Tetris and Side Scroller.
 - Each game owns rules, scene rendering, language, scoring, settings, and game-specific feedback.
 - Battle Stadium remains an external runtime. It participates in registry discovery but does not inherit a piano gameplay model.
+
+
+## The chrome kit
+
+Before this existed, the platform owned layout and nothing else, so every game invented its own surface, border, accent and idea of how big a button is. Eight games shipped six palettes: Chess's stylesheet was 76% tokenized and the other seven were 0%, Checkers' panel was `#071526b8` where Connect Four's was `#071526aa`, and four separate games each picked their own neon for "you scored" (`#00ffc8`, `#38f0cf`, `#72f1b8`, and the house `#2ec46f`).
+
+`game-platform/chrome` is the answer. Import from `chrome/index.js`.
+
+### The cabinet (`gameChrome.scss`)
+
+Declared once on `.piano-game-host` and `.piano-game-fullscreen`. The vocabulary is a piano cabinet, because that is what the player is sitting at: a CASE the game sits in, a SHELF every read-out rests on, IVORY for what you read, BRASS for what is live right now, FELT for a refusal. Every value aliases a house token from `Apps/PianoApp.scss`, so the kiosk keeps exactly one palette.
+
+| Token | Role |
+|---|---|
+| `--pg-case` / `--pg-shelf` / `--pg-shelf-lift` | the cabinet, the music desk, a nested surface |
+| `--pg-hairline` | every edge, one weight |
+| `--pg-ivory` / `--pg-ivory-dim` | what you read / what labels it |
+| `--pg-brass` / `--pg-brass-fill` / `--pg-brass-ink` | live now, do this — the only accent |
+| `--pg-felt` | refusal and danger, nothing else |
+| `--pg-rail-w` / `--pg-board-max` / `--pg-gap` / `--pg-tap` | rail width, board ceiling, seam, touch floor |
+
+A game overrides **the board's colours and nothing else**. The board carries the game's hue; the furniture around it does not, so three games in one kiosk stop reading as three different apps.
+
+### The furniture
+
+| Primitive | What it is |
+|---|---|
+| `GameRail` | the fixed-width column beside the board. A rail FITS the width it is given; it never sets it. `foot` is pinned to the base. |
+| `GameSlot` | **the signature.** A bordered tile with an optional label, and a `reserve` height it holds whether or not it has anything to say. Variants: `active`, `muted`, `lift`, `well`, `plain`. Never shrinks. |
+| `GameButton` | `primary` / `ghost` / `danger` / `icon`. Every one clears `--pg-tap`. |
+| `GameStatusBar` | the one sentence under the board, with `role="status"` and a reserved height. |
+| `GameToggle` / `GameChoice` | replace the native checkbox and `<select>`, which rendered as OS widgets on a charcoal kiosk at hit sizes a child misses. |
+| `LadderBadge` / `WinTally` | who you are playing, drawn as a ladder and a tally rather than spelled as "Level 3 of 7 · 1 / 3 wins". |
+| `CountdownOverlay` / `LifeMeter` / `ProgressMeter` | the HUD. These existed unstyled for a year — `.piano-game-life__notch` drew nothing at all. |
+
+### The reservation rule
+
+A slot holds its size whether or not it has anything to say. The rails size the stage, so a read-out that grows a line as fingers land moves the **board** — during the exact half-second the player is looking at it.
+
+Pass `reserve` measured **above** the slot's tallest state, never guessed, and never a floor below it: a floor reserves nothing, because the box still shrinks for shorter messages, which is the defect it was meant to fix. `.pg-slot` is `flex: 0 0 auto` for the same reason — a reservation that a short rail can overrule is not a reservation.
+
+### The colour rule, and its guard
+
+**A colour a game names must be NAMED** — declared as a custom property, in one palette block, in the file that owns it. Ordinary declarations reference a variable and never a literal.
+
+Board and scene art still gets a colour of its own (the wood of a checkers board, the blue of a Connect Four grid). It just has to say its name out loud. `chrome/gameChromeTokens.test.js` enforces both halves and carries a per-file budget for how many colours each may name; the budgets are a ratchet that may fall freely and rise only with a reason written beside them.
+
+### Crash containment
+
+`GameBoundary` wraps the lazy game in `PianoKiosk/modes/Games/Games.jsx`. Nothing stood between a game's render and the app root, so any throw in any of the eight games blanked the whole screen — and on the piano tablet the render watchdog then read a dead page and rebooted it. The boundary recovers to the picker (not "try again in place": whatever state made the game throw is still there) and unlatches on `resetKey`, so one crashed game does not shut its neighbours out.
 
 ## Addressed-board layout contract
 
@@ -20,12 +70,14 @@ The Piano game platform standardizes the instrument-facing shell without pretend
 
 | Policy | Use |
 |---|---|
-| `single-centered` | Chess and Connect Four |
+| `single-centered` | Connect Four and Checkers |
 | `single-wide` | Wide rectangular boards |
 | `dual-equal` | Two peer boards, such as Battleship placement/target views |
 | `primary-secondary` | Main board plus a smaller tactical or private board |
 
 The renderer remains game-specific. Chess therefore keeps its specialized piece and legality renderer; Connect Four owns its gravity board; a future Battleship game may provide two board renderers without changing the host.
+
+**Chess does not use `InstrumentBoardStage`.** It hand-rolls the identical three-column equal-rail grid in `.piano-chess__stage`, because it also needs `container-type: size` (its board sizes itself in `cq` units) and a rank-axis centring compensation the stage has no hook for. It does use the chrome kit, and its `--pc-rail` reads `--pg-rail-w`, so the two layouts cannot drift apart on the one measurement that matters. Migrating it onto the stage is worthwhile only if those two hooks land cleanly; until then this paragraph is the reason, not an oversight.
 
 ## Opponent pacing
 
@@ -62,6 +114,7 @@ Both new games persist configuration, ranked records, ladder progress, and house
 
 1. Add registry metadata (`label`, `icon`, `status`, `family`, lazy component).
 2. Mount the scene in `PianoGameHost`; do not render a second keyboard.
+2b. Build every rail, panel, button, toggle and status line from the chrome kit. Name the scene's own colours in one palette block and nothing anywhere else — `gameChromeTokens.test.js` will tell you if you drift.
 3. Reuse a family only when the interaction semantics match. Otherwise introduce a small new family or keep the game isolated.
 4. Keep deterministic rules in `shared/gaming/<game>` when both browser and server need them.
 5. Put server invariants in `2_domains`, orchestration and ports in `3_applications`, implementations in `1_adapters`, HTTP translation in `4_api`, and wiring in `5_composition`.

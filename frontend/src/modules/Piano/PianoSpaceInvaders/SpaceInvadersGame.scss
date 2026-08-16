@@ -3,8 +3,8 @@
   flex-direction: column;
   width: 100%;
   height: 100%;
-  background: #1a1a2e;
-  color: #fff;
+  background: var(--si-space);
+  color: var(--pg-ivory);
   position: relative;
   overflow: hidden;
 
@@ -14,8 +14,8 @@
     display: flex;
     justify-content: center;
     align-items: center;
-    background: rgba(20, 20, 30, 0.95);
-    color: #fff;
+    background: color-mix(in srgb, var(--si-well) 95%, transparent);
+    color: var(--pg-ivory);
     height: 12%;
     flex-shrink: 0;
     padding: 0 1rem;
@@ -54,15 +54,15 @@
     font-size: 2rem;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
-    color: #00ffc8;
-    text-shadow: 0 0 10px rgba(0, 255, 200, 0.4);
+    color: var(--pg-brass);
+    text-shadow: 0 0 10px color-mix(in srgb, var(--pg-brass-fill) 40%, transparent);
   }
 
   &__combo-badge {
     font-size: 1.2rem;
     font-weight: 700;
-    color: #ffd700;
-    text-shadow: 0 0 8px rgba(255, 215, 0, 0.5);
+    color: var(--piano-warn);
+    text-shadow: 0 0 8px color-mix(in srgb, var(--piano-warn) 50%, transparent);
   }
 
   // ─── Level Info ───────────────────────────────────────────────
@@ -79,7 +79,7 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.1em;
-    color: #ccc;
+    color: var(--pg-ivory-dim);
   }
 
   &__progress-bar {
@@ -92,7 +92,7 @@
 
   &__progress-fill {
     height: 100%;
-    background: linear-gradient(90deg, #00ffc8, #00ddaa);
+    background: linear-gradient(90deg, var(--pg-brass), var(--pg-brass-fill));
     border-radius: 4px;
     transition: width 0.15s ease-out;
   }
@@ -108,24 +108,24 @@
   &__miss-count {
     font-size: 1.5rem;
     font-weight: 700;
-    color: #ff6666;
+    color: var(--pg-felt);
   }
 
   &__miss-sep {
     font-size: 1rem;
-    color: #666;
+    color: var(--pg-ivory-dim);
   }
 
   &__miss-max {
     font-size: 1rem;
-    color: #666;
+    color: var(--pg-ivory-dim);
   }
 
   &__miss-label {
     font-size: 0.7rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: #666;
+    color: var(--pg-ivory-dim);
     margin-left: 0.3rem;
   }
 
@@ -135,7 +135,7 @@
     min-height: 0;
     position: relative;
     overflow: hidden;
-    background: #2a2a2a;
+    background: var(--si-inert);
   }
 
   // ─── Mega Man Life Meter ──────────────────────────────────────
@@ -157,8 +157,8 @@
     flex-direction: column-reverse; // Fill from bottom
     gap: clamp(1px, 0.15vh, 3px);
     padding: clamp(4px, 0.5vw, 8px);
-    background: #0a0a12;
-    border: clamp(2px, 0.3vw, 5px) solid #1a1a2e;
+    background: var(--si-well);
+    border: clamp(2px, 0.3vw, 5px) solid var(--si-space);
     border-radius: clamp(6px, 0.8vw, 14px);
     box-shadow: inset 0 0 0 clamp(1px, 0.1vw, 2px) rgba(255, 255, 255, 0.08);
     box-sizing: border-box;
@@ -171,21 +171,23 @@
     background: transparent;
 
     &--active {
-      background: #e8b830;
+      background: var(--piano-warn);
       box-shadow: inset 0 clamp(-1px, -0.1vh, -2px) 0 rgba(0, 0, 0, 0.35);
-      border-top: clamp(1px, 0.08vh, 2px) solid rgba(255, 235, 150, 0.6);
+      border-top: clamp(1px, 0.08vh, 2px) solid color-mix(in srgb, var(--piano-warn) 60%, transparent);
     }
 
     &--danger {
-      background: #e83030;
+      background: var(--pg-felt);
       box-shadow: inset 0 clamp(-1px, -0.1vh, -2px) 0 rgba(0, 0, 0, 0.35);
-      border-top-color: rgba(255, 150, 150, 0.6);
+      border-top-color: color-mix(in srgb, var(--pg-felt) 60%, transparent);
     }
   }
 
   // ─── Keyboard ─────────────────────────────────────────────────
   &__keyboard {
-    height: 40%;
+    // A prominent instrument — this game is about hitting keys — asked for by
+    // name rather than by claiming 40% of the screen for a dock.
+    --pg-keyboard-h: clamp(7rem, 20cqh, 10rem);
     flex-shrink: 0;
     display: flex;
     align-items: flex-start;
@@ -198,7 +200,7 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(255, 0, 0, 0.6);
+    background: color-mix(in srgb, var(--pg-felt) 60%, transparent);
     z-index: 60;
     pointer-events: none;
   }
