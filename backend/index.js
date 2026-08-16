@@ -114,11 +114,18 @@ async function main() {
   // schoolLedger's rule — a logging failure must cost the log, never the
   // server — degrade to the remaining transports and say so on stderr, which
   // is the one channel that cannot itself be the thing that broke.
+  //
+  // `logging.fileSink` in system.yml (path / maxSizeMb / maxFiles) overrides
+  // the defaults. It exists because the default location is inside the
+  // Dropbox-synced media tree on prod, and moving the log off that volume is
+  // an infrastructure decision that should not require a code change. See the
+  // constraint block at the top of generalSinks.mjs before changing any of it.
   const mediaDir = configService.getMediaDir();
   for (const sink of resolveGeneralFileSinks({
     isDocker,
     mediaDir,
-    repoRoot: join(__dirname, '..')
+    repoRoot: join(__dirname, '..'),
+    config: configService.get('logging.fileSink')
   })) {
     try {
       dispatcher.addTransport(createFileTransport(sink));
