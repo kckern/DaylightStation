@@ -14,8 +14,11 @@
  * positions for the same content and, when a device claims `playing` while the
  * playhead has not moved for `stallThresholdMs`, calls `onStall` exactly once.
  *
- * A detector that cries wolf gets ignored, so the following are deliberately NOT
- * stalls, and each is tested:
+ * The rules for what counts as progress live in
+ * `shared/contracts/media/playbackProgress.mjs`, shared with the kiosk-side
+ * watch that files the feedback report — two detectors reading the same
+ * heartbeat have to reach the same verdict. A detector that cries wolf gets
+ * ignored, so the following are deliberately NOT stalls, and each is tested:
  *   - anything other than `playing` — paused, buffering (a long seek can sit
  *     there for minutes), loading, stalled, ended, error, idle. A frozen
  *     playhead is only anomalous when the player insists it is playing.
@@ -39,17 +42,14 @@
  */
 
 import { parseDeviceTopic } from '#shared-contracts/media/topics.mjs';
-
-const DEFAULT_STALL_THRESHOLD_MS = 60_000;
-const DEFAULT_MIN_SAMPLES = 3;
-
-// Seconds of playhead movement below which we treat the position as unchanged.
-// Media elements report fractional drift while genuinely frozen, so an exact
-// equality test would miss real stalls.
-const DEFAULT_POSITION_EPSILON_SEC = 0.25;
-
-// How close to the declared duration counts as "parked at the end".
-const END_OF_ITEM_EPSILON_SEC = 1.5;
+import {
+  POSITION_EPSILON_SEC,
+  STALL_THRESHOLD_MS,
+  STALL_MIN_SAMPLES,
+  isStallableItem,
+  isAtEndOfItem,
+  positionAdvanced,
+} from '#shared-contracts/media/playbackProgress.mjs';
 
 /**
  * @typedef {Object} StallEntry
@@ -100,15 +100,15 @@ export class PlaybackStallDetector {
     this.#stallThresholdMs =
       typeof deps.stallThresholdMs === 'number' && deps.stallThresholdMs > 0
         ? deps.stallThresholdMs
-        : DEFAULT_STALL_THRESHOLD_MS;
+        : STALL_THRESHOLD_MS;
     this.#minSamples =
       typeof deps.minSamples === 'number' && deps.minSamples > 1
         ? deps.minSamples
-        : DEFAULT_MIN_SAMPLES;
+        : STALL_MIN_SAMPLES;
     this.#positionEpsilonSec =
       typeof deps.positionEpsilonSec === 'number' && deps.positionEpsilonSec >= 0
         ? deps.positionEpsilonSec
-        : DEFAULT_POSITION_EPSILON_SEC;
+        : POSITION_EPSILON_SEC;
     this.#onStall = typeof deps.onStall === 'function' ? deps.onStall : null;
     this.#onRecover = typeof deps.onRecover === 'function' ? deps.onRecover : null;
   }
@@ -224,7 +224,7 @@ export class PlaybackStallDetector {
     // paused, buffering a long seek, loading, ended — has a legitimate reason
     // for a motionless playhead, so the window closes and any open episode
     // resolves.
-    if (snapshot.state !== 'playing' || !this.#isStallableItem(snapshot.currentItem)) {
+    if (snapshot.state !== 'playing' || !isStallableItem(snapshot.currentItem)) {
       if (prev?.stalled) this.#resolve(deviceId, prev, snapshot.state === 'playing' ? 'content' : snapshot.state);
       this.#entries.delete(deviceId);
       return;
@@ -237,8 +237,7 @@ export class PlaybackStallDetector {
     const contentKey = this.#contentKey(item);
 
     // The playhead parked on the last second of an item is a tail, not a stall.
-    const duration = Number(item?.duration);
-    if (Number.isFinite(duration) && duration > 0 && position >= duration - END_OF_ITEM_EPSILON_SEC) {
+    if (isAtEndOfItem(item, position)) {
       if (prev?.stalled) this.#resolve(deviceId, prev, 'end-of-item');
       this.#entries.delete(deviceId);
       return;
@@ -269,7 +268,7 @@ export class PlaybackStallDetector {
 
     // Any movement counts, in either direction: a seek backwards is progress
     // too, because it proves the player is responding.
-    if (Math.abs(position - prev.position) > this.#positionEpsilonSec) {
+    if (positionAdvanced(prev.position, position, this.#positionEpsilonSec)) {
       if (prev.stalled) this.#resolve(deviceId, prev, 'advancing');
       prev.position = position;
       prev.sinceAt = now;
@@ -324,20 +323,6 @@ export class PlaybackStallDetector {
     } catch (err) {
       this.#logger.error?.(failureEvent, { deviceId: arg?.deviceId, error: err?.message });
     }
-  }
-
-  /**
-   * Whether this item's playhead is expected to advance at all. Live content has
-   * no meaningful position to compare, and neither does content whose duration
-   * we were never told — absent duration is exactly how a live stream presents,
-   * so we decline to guess rather than page someone about a livestream.
-   * @private
-   */
-  #isStallableItem(item) {
-    if (!item || typeof item !== 'object') return false;
-    if (item.isLive === true || item.live === true || item.format === 'live') return false;
-    const duration = Number(item.duration);
-    return Number.isFinite(duration) && duration > 0;
   }
 
   /** @private */
