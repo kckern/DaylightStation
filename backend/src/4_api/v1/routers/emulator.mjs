@@ -123,8 +123,10 @@ export function createEmulatorRouter({
     try {
       publishBtPair({ requestId, durationMs });
     } catch (err) {
+      // Rethrow: Express 5 forwards it to errorHandlerMiddleware, which owns
+      // status mapping. A local 500 bypasses it.
       logger.error('emulator.bt_pair.publish_error', { requestId, error: err.message });
-      return res.status(500).json({ error: 'internal error' });
+      throw err;
     }
     logger.info('emulator.bt_pair.requested', { requestId, durationMs });
     res.status(202).json({ requestId });
@@ -179,7 +181,7 @@ export function createEmulatorRouter({
         return res.status(404).json({ error: 'not found' });
       }
       logger.error('emulator.engine.error', { relPath, error: err.message });
-      res.status(500).json({ error: 'internal error' });
+      throw err;
     }
   });
 
