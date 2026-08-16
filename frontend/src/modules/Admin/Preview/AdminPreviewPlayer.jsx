@@ -1,7 +1,19 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { NativeSelect } from '@mantine/core';
 import { DaylightAPI, DaylightMediaPath } from '../../../lib/api.mjs';
 import Player from '../../Player/Player.jsx';
+import { previewFrameVars } from './previewFrame.js';
+import { usePreviewScreens, FALLBACK_SCREEN } from './usePreviewScreens.js';
 import './AdminPreviewPlayer.scss';
+
+const STORAGE_KEY = 'daylight.adminPreview.screenId';
+
+function readStoredScreenId() {
+  try { return window.localStorage.getItem(STORAGE_KEY) || null; } catch { return null; }
+}
+function writeStoredScreenId(id) {
+  try { window.localStorage.setItem(STORAGE_KEY, id); } catch { /* private mode — selection just won't persist */ }
+}
 
 export default function AdminPreviewPlayer({ contentId, action, volume, playbackRate, shuffle, onClose }) {
   const isQueue = action === 'Queue';
@@ -9,6 +21,40 @@ export default function AdminPreviewPlayer({ contentId, action, volume, playback
   const [currentIndex, setCurrentIndex] = useState(0);
   const [error, setError] = useState(null);
   const activeRef = useRef(null);
+
+  // Which real screen this preview is imitating. The Player is sized entirely
+  // in rem, so the ONLY thing that makes the preview match the kiosk is laying
+  // out in the same number of CSS px the kiosk has.
+  const { screens } = usePreviewScreens();
+  const [screenId, setScreenId] = useState(readStoredScreenId);
+
+  const activeScreen = useMemo(
+    () => screens.find((s) => s.id === screenId) || screens[0] || FALLBACK_SCREEN,
+    [screens, screenId]
+  );
+  const frameVars = useMemo(
+    () => previewFrameVars(activeScreen.resolution) || previewFrameVars(FALLBACK_SCREEN.resolution),
+    [activeScreen]
+  );
+
+  const handleScreenChange = useCallback((event) => {
+    const id = event.currentTarget.value;
+    setScreenId(id);
+    writeStoredScreenId(id);
+  }, []);
+
+  const screenPicker = (
+    <NativeSelect
+      size="xs"
+      label="Preview at screen"
+      value={activeScreen.id}
+      onChange={handleScreenChange}
+      data={screens.map((s) => ({
+        value: s.id,
+        label: `${s.name} — ${s.resolution.width}x${s.resolution.height}`,
+      }))}
+    />
+  );
 
   // Fetch queue items on mount for Queue mode
   useEffect(() => {
@@ -52,7 +98,8 @@ export default function AdminPreviewPlayer({ contentId, action, volume, playback
   if (!isQueue) {
     const mediaConfig = { contentId, volume, playbackRate };
     return (
-      <div className="admin-preview-player">
+      <div className="admin-preview-player" style={frameVars}>
+        {screenPicker}
         <div className="admin-preview-player__video">
           <div className="admin-preview-player__video-inner">
             <Player
@@ -81,7 +128,8 @@ export default function AdminPreviewPlayer({ contentId, action, volume, playback
   const currentSlice = queueItems.slice(currentIndex);
 
   return (
-    <div className="admin-preview-player">
+    <div className="admin-preview-player" style={frameVars}>
+      {screenPicker}
       <div className="admin-preview-player__video">
         <div className="admin-preview-player__video-inner">
           <Player
