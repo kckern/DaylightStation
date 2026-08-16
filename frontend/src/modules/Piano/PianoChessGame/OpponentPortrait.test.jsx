@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import * as sass from 'sass';
+import { fileURLToPath } from 'url';
 import { render, screen } from '@testing-library/react';
 import OpponentPortrait, { opponentMood, opponentStatus } from './OpponentPortrait.jsx';
 import { DEFAULT_ROSTER, themeForLevel, TOP_LEVEL } from '@shared-gaming/chess/ladder.mjs';
@@ -124,5 +126,19 @@ describe('opponentMood', () => {
 
   it('says it is thinking before it says anything about the last move', () => {
     expect(opponentMood({ ...base, thinking: true, tookPiece: true })).toBe('thinking');
+  });
+});
+
+describe('the thinking pulse is declared once', () => {
+  // A merge once added a second, flat-duration `animation` on this selector.
+  // Being later it won, silently discarding `--pc-think-ms` — the rung-scaled
+  // duration that is the entire point of driving the pulse from real think time.
+  it('has exactly one animation rule for the thinking face', () => {
+    const css = sass.compile(fileURLToPath(new URL('./OpponentPortrait.scss', import.meta.url))).css;
+    const bodies = [...css.matchAll(/\.chess-opponent--thinking \.chess-opponent__face\s*\{([^}]*)\}/g)]
+      .map((m) => m[1]);
+    const animating = bodies.filter((b) => /animation:\s*chess-opponent/.test(b));
+    expect(animating).toHaveLength(1);
+    expect(animating[0]).toMatch(/--pc-think-ms/);
   });
 });
