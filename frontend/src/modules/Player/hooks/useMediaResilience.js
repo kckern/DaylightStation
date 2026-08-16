@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { playbackLog } from '../lib/playbackLogger.js';
-import { getLogWaitKey } from '../lib/waitKeyLabel.js';
+import { describeWaitKey } from '../lib/waitKeyLabel.js';
 import { usePlaybackHealth, describeElementSource, readElementTag } from './usePlaybackHealth.js';
 import { useResilienceConfig } from './useResilienceConfig.js';
 import { useResilienceState, RESILIENCE_STATUS } from './useResilienceState.js';
@@ -139,7 +139,11 @@ export function useMediaResilience({
     }
   }, []);
 
-  const logWaitKey = useMemo(() => getLogWaitKey(waitKey), [waitKey]);
+  // Raw key AND its hash, as two distinct fields. The raw half carries the `:N`
+  // nonce ordinal that a hash destroys — the field that would have made the
+  // 2026-08-16 nonce climb self-evident — and the hash half joins these lines to
+  // every hashed line written before the change. Spread, never renamed.
+  const waitKeyFields = useMemo(() => describeWaitKey(waitKey), [waitKey]);
 
   const playbackHealth = usePlaybackHealth({
     seconds,
@@ -237,7 +241,7 @@ export function useMediaResilience({
       if (gate.deniedBy === 'session-cap') {
         // Max attempts — prevents an infinite remount loop.
         playbackLog('resilience-recovery-exhausted', {
-          reason, waitKey: logWaitKey,
+          reason, ...waitKeyFields,
           attempts: gate.attempt, maxAttempts,
           urlRefreshesAttempted: ledger.snapshot(playbackSessionKey)?.urlRefreshCount || 0
         }, { level: 'warn' });
@@ -250,7 +254,7 @@ export function useMediaResilience({
         }
       } else if (gate.deniedBy === 'cooldown') {
         playbackLog('resilience-recovery-cooldown-denied', {
-          reason, waitKey: logWaitKey, waitMs: gate.waitMs, attempts: gate.attempt
+          reason, ...waitKeyFields, waitMs: gate.waitMs, attempts: gate.attempt
         }, { level: 'debug' });
       }
       return;
@@ -258,7 +262,7 @@ export function useMediaResilience({
 
     const attempt = gate.attempt;
     playbackLog('resilience-recovery', {
-      reason, waitKey: logWaitKey,
+      reason, ...waitKeyFields,
       status: statusRef.current, attempt, maxAttempts,
       // Explicit flag so soak-log filtering doesn't depend on reason-string
       // conventions to tell user-initiated recoveries from automatic ones.
@@ -292,7 +296,7 @@ export function useMediaResilience({
         seekToIntentMs: seekMs
       });
     }
-  }, [actions, logWaitKey, meta, onReload, onExhausted, statusRef, targetTimeSeconds, initialStart, waitKey, playbackSessionKey, maxSamePositionRetries, recoverySeekNudgeSeconds]);
+  }, [actions, waitKeyFields, meta, onReload, onExhausted, statusRef, targetTimeSeconds, initialStart, waitKey, playbackSessionKey, maxSamePositionRetries, recoverySeekNudgeSeconds]);
 
   const retryFromExhausted = useCallback(() => {
     getRecoveryLedger().userReset(playbackSessionKey);
@@ -306,7 +310,7 @@ export function useMediaResilience({
     clearTimeout(startupDeadlineRef.current);
     startupDeadlineRef.current = null;
     setRecoveryNonce((n) => n + 1);
-    playbackLog('resilience-retry-from-exhausted', { waitKey: logWaitKey, seekToIntentMs: seekMs });
+    playbackLog('resilience-retry-from-exhausted', { ...waitKeyFields, seekToIntentMs: seekMs });
     if (typeof onReload === 'function') {
       // forceRemount: in-place hardReset (even with refreshUrl) is unreliable on a
       // reaped Plex transcode session — the <video> stays wedged at readyState=0.
@@ -315,7 +319,7 @@ export function useMediaResilience({
       // remount nonce). refreshUrl stays true so any in-place fallback still refreshes.
       onReload({ reason: 'user-retry-exhausted', meta, waitKey, refreshUrl: true, forceRemount: true, seekToIntentMs: seekMs });
     }
-  }, [actions, consumeTargetTimeSeconds, logWaitKey, meta, onReload, playbackSessionKey, waitKey, targetTimeSeconds, playbackHealth.lastProgressSeconds, seconds, initialStart]);
+  }, [actions, consumeTargetTimeSeconds, waitKeyFields, meta, onReload, playbackSessionKey, waitKey, targetTimeSeconds, playbackHealth.lastProgressSeconds, seconds, initialStart]);
 
   useEffect(() => {
     // Self-contained formats (titlecard, etc.) have no media element —
@@ -408,7 +412,7 @@ export function useMediaResilience({
         msSinceLastSeek,
       });
       playbackLog('resilience-transcode-warming', {
-        waitKey: logWaitKey, kind, deadlineMs, reason, msSinceLastSeek
+        ...waitKeyFields, kind, deadlineMs, reason, msSinceLastSeek
       });
 
       clearTimeout(startupDeadlineRef.current);
@@ -423,7 +427,7 @@ export function useMediaResilience({
     const handleWarmed = () => {
       if (transcodeWarmingRef.current) {
         transcodeWarmingRef.current = false;
-        playbackLog('resilience-transcode-warmed', { waitKey: logWaitKey });
+        playbackLog('resilience-transcode-warmed', { ...waitKeyFields });
       }
       // Data is flowing again — cancel a pending warmup-armed recovery so a short
       // seek-stall deadline doesn't fire after the stall already cleared.
@@ -442,7 +446,7 @@ export function useMediaResilience({
       target.removeEventListener('transcodewarmed', handleWarmed);
     };
     // registrationSignal: re-run once a renderer's element actually exists.
-  }, [disabled, getMediaEl, logWaitKey, triggerRecovery, registrationSignal]);
+  }, [disabled, getMediaEl, waitKeyFields, triggerRecovery, registrationSignal]);
 
   // Handle outside onStateChange
   useEffect(() => {
@@ -607,7 +611,7 @@ export function useMediaResilience({
   // (and not tear down/rebuild — resetting the ladder — when a callback identity or
   // a frozen scalar changes).
   joltLatestRef.current = {
-    getMediaEl, targetTimeSeconds, seconds, meta, waitKey, logWaitKey,
+    getMediaEl, targetTimeSeconds, seconds, meta, waitKey, waitKeyFields,
     onReload, onExhausted, actions, statusRef, playbackSessionKey,
   };
 
@@ -644,7 +648,7 @@ export function useMediaResilience({
       const ledger = getRecoveryLedger();
       const declareExhausted = (attempts) => {
         playbackLog('resilience-stall-jolt-exhausted', {
-          waitKey: L.logWaitKey, rung: joltStepRef.current, attempt: attempts
+          ...L.waitKeyFields, rung: joltStepRef.current, attempt: attempts
         }, { level: 'warn' });
         L.actions?.setStatus(STATUS.exhausted);
         if (!exhaustedNotifiedRef.current) {
@@ -675,7 +679,7 @@ export function useMediaResilience({
           // Too soon after the last recovery (any actor). Re-check this SAME
           // rung once the cooldown has elapsed — don't advance the ladder.
           playbackLog('resilience-stall-jolt-cooldown-denied', {
-            waitKey: L.logWaitKey, rung: joltStepRef.current, waitMs: gate.waitMs
+            ...L.waitKeyFields, rung: joltStepRef.current, waitMs: gate.waitMs
           }, { level: 'debug' });
           joltTimerRef.current = setTimeout(fireRung, gate.waitMs);
           return;
@@ -688,7 +692,7 @@ export function useMediaResilience({
         // Any other denial (e.g. a future mount-budget on this actor) must not
         // masquerade as session exhaustion — log it and stop this ladder run.
         playbackLog('resilience-stall-jolt-denied', {
-          waitKey: L.logWaitKey, rung: joltStepRef.current, deniedBy: gate.deniedBy
+          ...L.waitKeyFields, rung: joltStepRef.current, deniedBy: gate.deniedBy
         }, { level: 'debug' });
         joltTimerRef.current = null;
         return;
@@ -699,7 +703,7 @@ export function useMediaResilience({
       const seekToIntentMs = Number.isFinite(intentSeconds) ? Math.max(0, intentSeconds * 1000) : undefined;
       L.actions?.setStatus(STATUS.recovering);
       playbackLog('resilience-stall-jolt', {
-        waitKey: L.logWaitKey, step: plan.reason, rung: joltStepRef.current, attempt,
+        ...L.waitKeyFields, step: plan.reason, rung: joltStepRef.current, attempt,
         intentSeconds, refreshUrl: plan.refreshUrl, forceRemount: plan.forceRemount,
       });
       L.onReload?.({
@@ -761,7 +765,7 @@ export function useMediaResilience({
     lastProgressTs: playbackHealth.lastProgressAt,
     togglePauseOverlay: () => setShowPauseOverlay(p => !p),
     isSeeking: effectiveSeeking,
-    waitKey: logWaitKey,
+    ...waitKeyFields,
     onRequestHardReset: () => triggerRecovery('manual-reset'),
     onRetryFromExhausted: retryFromExhausted,
     isExhausted,
@@ -814,7 +818,7 @@ export function useMediaResilience({
     plexId,
     debugContext,
     playbackHealth,
-    logWaitKey,
+    waitKeyFields,
     triggerRecovery,
     retryFromExhausted,
     isExhausted,
