@@ -71,9 +71,10 @@ describe('the takeback prompt', () => {
 
 // The prompt tests above would still pass if the octave were routed to
 // restart() — they test the sentence, not the gesture. This block drives the
-// actual keys: arming, firing inside the window, missing the window, and the
-// two-clock regression (Finding 1) where a re-arm inside the window must
-// replace the FIRST arm's disarm timer, not race it.
+// actual keys: arming, firing inside the window, and missing the window. (A
+// fourth test attempting to reproduce the two-clock arming race directly was
+// removed — see the comment after this block for why it cannot be reproduced
+// through this harness.)
 describe('taking a move back at the keys', () => {
   const notesFor = (square) => squareToChord(square, DEFAULT_CHORD_SCHEME)
     .pitch_classes.map((pc) => 60 + pc);
@@ -156,20 +157,51 @@ describe('taking a move back at the keys', () => {
     expect(noteOf(container, 'Take it back')).toBe('3 left');
   });
 
-  it('re-arming inside the window does not let the first timer dim the prompt', async () => {
-    // The two-clock regression: arm, wait ALMOST the whole window, arm again,
-    // then advance past the FIRST arm's deadline. The prompt must still show,
-    // because the second arm replaced the timer.
+  it('discards the opponent reply when a takeback lands before it has resolved', async () => {
+    // A promise that never settles: the opponent is left thinking forever,
+    // so the takeback below is guaranteed to land BEFORE any reply could.
+    requestOpponentMove.mockImplementation(() => new Promise(() => {}));
     const { container, rerender } = render(makeElement());
-    await playAMove(container, rerender);
+    await playAMove(container, rerender); // White's e2-e4; the opponent's own request is now pending.
+    expect(requestOpponentMove).toHaveBeenCalledTimes(1);
+
+    // Take the move back while the opponent is still "thinking" — Black has
+    // not replied, so this undoes only White's own move.
     await playChord(rerender, OCTAVE);
-    await act(async () => { await vi.advanceTimersByTimeAsync(DOUBLE_WINDOW_MS - 120); });
     await playChord(rerender, OCTAVE);
-    await act(async () => { await vi.advanceTimersByTimeAsync(200); });
-    expect(container.querySelector('.piano-chess__prompt').textContent)
-      .toBe('Play the octave again to take your move back.');
+    expect(container.querySelector('.piano-chess__toast').textContent).toMatch(/^Took back /);
+
+    // Give the (never-resolving, but still pending) reply every chance to
+    // land — if the cancellation were broken, this is where a stale Nf3
+    // would appear on a board it was never asked about.
+    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+
+    // Fully reverted: no move on the board, and no second request was fired
+    // (it is the player's turn again — nothing should be asking the engine).
+    expect(container.querySelectorAll('.chess-board__square--last-move')).toHaveLength(0);
+    expect(requestOpponentMove).toHaveBeenCalledTimes(1);
   });
 });
+
+// A regression test for the two-clock arming race (Finding 1) was attempted
+// here and removed: it could not be made to fail against the pre-fix
+// lastEscapeAtRef+boolean implementation. The bug is inherently a REAL-CLOCK
+// JANK bug — the finding's own worked example requires the disarm setTimeout
+// to fire LATE relative to its scheduled deadline ("delayed... by main-thread
+// jank"). Vitest's fake timers are deterministic: a scheduled callback always
+// fires exactly at its virtual deadline, during whichever advanceTimersByTime
+// sweep crosses it — there is no jitter available to open the gap between
+// "the ref says the window has elapsed" and "the timer has actually fired"
+// that the bug depends on. Verified two ways: (1) analytically, by re-deriving
+// the arm/fire branch conditions and the disarm effect's dependency-array
+// bailout against Finding 1's own t=0/850/950/1000 example, which only breaks
+// under a LATE-firing timer; (2) empirically, by adding this exact test to a
+// scratch worktree at c2a69491c (the pre-fix commit) and running it — it
+// passed against the OLD code too, for every timing split tried. See the
+// task-7 fix report (round 3) for the worktree commands and output. The
+// single-`armedAt` design is still correct and still closes a real exposure
+// under actual browser scheduling; it is simply not a race this harness can
+// force through a deterministic clock.
 
 describe('PianoChessGame chrome', () => {
   it('has no header of its own — the kiosk breadcrumb rail names the screen', () => {
@@ -246,10 +278,33 @@ describe('PianoChessGame opponent effect', () => {
     vi.restoreAllMocks();
   });
 
+  it('sends the move request immediately, before any of the think time elapses', async () => {
+    // The floor is applied to the ANSWER, not to when the question is asked —
+    // a network-then-request effect would add the delay on top of any round
+    // trip and turn a deliberate brood into a hang on a stalled kiosk WiFi.
+    requestOpponentMove.mockResolvedValueOnce({ from: 'e2', to: 'e4', san: 'e4', engine: 'stockfish' });
+    render(<PianoChessGame playerColor="b" seed={1} />);
+
+    // Only a microtask flush — zero timers advanced.
+    await act(async () => { await Promise.resolve(); });
+
+    expect(requestOpponentMove).toHaveBeenCalledTimes(1);
+  });
+
+  // The opponent's very first request of a fresh mount waits on the ladder
+  // fetch settling (see PianoChessGame.jsx's `ladderReady` gate — it exists so
+  // that first request carries the real skill level instead of a placeholder
+  // null). That settle is a real async hop ahead of the think-time floor, so
+  // it has to be flushed on its own tick before the floor's own timer budget
+  // is advanced — otherwise the ladder-settle and the floor race for the SAME
+  // requested window and the floor's timer never gets scheduled in time.
+  const settleLadderGate = () => act(async () => { await vi.advanceTimersByTimeAsync(0); });
+
   it('plays the server-supplied reply once the opponent delay elapses', async () => {
     requestOpponentMove.mockResolvedValueOnce({ from: 'e2', to: 'e4', san: 'e4', engine: 'stockfish' });
     const { container } = render(<PianoChessGame playerColor="b" seed={1} />);
 
+    await settleLadderGate();
     await act(async () => { await vi.advanceTimersByTimeAsync(OPPONENT_DELAY_MS); });
 
     expect(requestOpponentMove).toHaveBeenCalledTimes(1);
@@ -265,6 +320,7 @@ describe('PianoChessGame opponent effect', () => {
     requestOpponentMove.mockResolvedValueOnce(null);
     const { container } = render(<PianoChessGame playerColor="b" seed={1} />);
 
+    await settleLadderGate();
     await act(async () => { await vi.advanceTimersByTimeAsync(OPPONENT_DELAY_MS); });
 
     expect(requestOpponentMove).toHaveBeenCalledTimes(1);

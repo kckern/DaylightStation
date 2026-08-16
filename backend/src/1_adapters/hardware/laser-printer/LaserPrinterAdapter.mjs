@@ -4,146 +4,158 @@
  * state. Page quotas, approval flows, and who-may-print policy belong in the
  * application layer (ddd-reference: adapters translate, they do not decide).
  *
- * Two protocols, each for what it does best:
- *  - STATUS/PING over IPP/1.1 (HTTP POST application/ipp, port 631) — clean
- *    structured Get-Printer-Attributes.
- *  - PRINTING over raw JetDirect (port 9100) — this Brother's IPP does NOT
- *    accept a PDF: it advertises only image/urf + image/pwg-raster + generic
- *    octet-stream, rejects `application/pdf` (0x040a) and hangs on an
- *    octet-stream PDF (its auto-detect can't parse PDF). Port 9100 with the
- *    printer's built-in PDF Direct Print renders the PDF as-is. No CUPS, no
- *    client-side rasterization, no npm printing deps.
+ * ── Incident, 2026-08 ──────────────────────────────────────────────────────
+ * An earlier version of this adapter printed by opening a raw JetDirect
+ * socket (port 9100) and writing the PDF bytes straight in, on the premise —
+ * stated right here in this comment, at the time — that "this Brother's PDF
+ * Direct Print" would render the PDF as-is. That premise was false. Queried
+ * over IPP, this printer's actual capabilities are:
  *
- * Because there is no CUPS layer, per-job options (duplex, binding) cannot be
- * expressed as `-o sides=...` / IPP job attributes. They are sent as a PJL
- * preamble wrapped around the PDF bytes instead — see {@link pjlWrap}.
+ *   printer-make-and-model    = "Brother HL-L2460DW"
+ *   document-format-supported = [application/octet-stream, image/urf, image/pwg-raster]
+ *   document-format-default   = application/octet-stream
+ *   document-format-preferred = image/urf
+ *
+ * There is no PDF interpreter, no PostScript, no PCL — it's an AirPrint-class
+ * raster printer. `application/octet-stream` does not mean "PDF welcome";
+ * it means "raw bytes, printer guesses the format from content." Its guess
+ * for a PDF was plain text, and it printed the PDF's own `%PDF-1.3…` source
+ * until the tray ran out of paper.
+ *
+ * The fix has two parts:
+ *  1. Never assume a format works — query `document-format-supported` first
+ *    and negotiate (`negotiate.mjs`'s `chooseDocumentFormat`). A PDF payload
+ *    against a printer that only lists urf/pwg-raster gets rasterized with
+ *    ghostscript (`rasterize.mjs`) into one of those formats before anything
+ *    is transmitted.
+ *  2. A hard guard: this adapter refuses to transmit any payload whose
+ *    format is not literally present in the printer's advertised
+ *    `document-format-supported`. `application/octet-stream` being present
+ *    is NEVER read as "anything goes" — that permissiveness is exactly what
+ *    let the raw PDF through last time.
+ *
+ * Transport, post-fix:
+ *  - STATUS/capabilities over IPP/1.1 (HTTP POST application/ipp, port 631)
+ *    — Get-Printer-Attributes, used both for health checks and to drive
+ *    format negotiation before every print.
+ *  - PRINTING over IPP/1.1 Print-Job (same port 631), with the negotiated
+ *    `document-format` operation attribute — the standards-compliant path,
+ *    now the default for everything.
+ *  - Raw JetDirect (port 9100) still exists (`#sendRaw9100`), for a printer
+ *    that genuinely advertises `application/pdf` (or another format its
+ *    firmware is confirmed to accept raw) and is explicitly configured with
+ *    `rawTransport: true`. It is capability-gated the same as the IPP path —
+ *    never selected by assumption, and this Brother will never route through
+ *    it because it never advertises PDF.
+ *
+ * ── Incident #2, 2026-08 ───────────────────────────────────────────────────
+ * The fix above shipped, and a real worksheet scan went through it
+ * successfully — correct container (`image/urf`), correct IPP transport,
+ * printer answered idle/accepting throughout — and STILL produced no paper.
+ * Negotiating the CONTAINER (`document-format-supported`) was only half the
+ * problem: this printer separately advertises, per container, what the
+ * PIXELS inside have to look like (`urf-supported: ["W8", ...]` = 8-bit
+ * grayscale; `pwg-raster-document-type-supported: ["sgray_8"]` = the same
+ * thing in PWG's vocabulary; `pwg-raster-document-resolution-supported` =
+ * 600 DPI only, a DIFFERENT resolution constraint than `urf-supported`'s
+ * `RS300-600-1200`). Ghostscript's raster devices default to 1-bit
+ * monochrome regardless of `-r`/`-sPAPERSIZE`, which is not what either
+ * capability list named — the printer silently dropped a job whose
+ * container it had agreed to but whose bit depth it never did.
+ *
+ * The fix, same shape as the first: never assume, always verify.
+ *  1. `negotiate.mjs`'s `negotiatePrintPlan` reads the printer's per-container
+ *     pixel capabilities (`urf-supported` CS/RS tokens, or
+ *     `pwg-raster-document-type-supported`/`-resolution-supported`) and
+ *     derives the exact channels/bits-per-color/DPI to target — falling back
+ *     to the other raster container if the first one's constraints can't be
+ *     satisfied, rather than shipping an unverified guess.
+ *  2. `rasterize.mjs` drives ghostscript with those exact parameters, then
+ *     PARSES THE RASTER IT JUST PRODUCED and asserts it matches — refusing
+ *     (RASTERIZE_PARAM_MISMATCH) rather than returning bytes nobody checked.
+ *  3. The negotiated resolution/color-mode/media are also sent as real IPP
+ *     job attributes (`printer-resolution`, `print-color-mode`, `media`,
+ *     `sides`), gated on the printer's own `job-creation-attributes-supported`
+ *     — so the metadata and the pixels agree, instead of the printer having
+ *     to guess from mismatched hints again.
+ *
+ * ── Incident #3, 2026-08 ───────────────────────────────────────────────────
+ * Both fixes above shipped, capabilities all negotiated correctly, and a
+ * real Print-Job STILL came back rejected outright — `0x0505
+ * server-error-temporary-error` — from a printer reporting itself idle and
+ * accepting (`printer-state: 3`, `printer-state-reasons: ["none"]`,
+ * `queued-job-count: 0`). Progress over incident #2 (an honest rejection
+ * instead of a silent discard), but still not a print, and this time the
+ * capability list gave no clue why: every attribute in the job — document
+ * format, resolution, color mode, media, `sides` — was one the printer's own
+ * `job-creation-attributes-supported` and format-specific capability lists
+ * had named as supported.
+ *
+ * The culprit, found by bisecting the job attributes one at a time against
+ * IPP's Validate-Job operation (`OPS.VALIDATE_JOB`, RFC 8011 §3.2.3 — "ask
+ * the printer whether it would accept this job" with no document body and no
+ * paper produced, so bisecting costs nothing): `sides`. The printer
+ * separately advertises `sides-supported: ["one-sided",
+ * "two-sided-long-edge", "two-sided-short-edge"]` — a complete, spec-shaped
+ * declaration — and its own `sides-default` IS `one-sided`, the exact value
+ * this adapter was sending. None of that mattered: the attribute being
+ * PRESENT at all, at any value, is what this firmware refuses. Every other
+ * job attribute validated individually and combined; only `sides` didn't.
+ * `job-creation-attributes-supported` naming a key, it turns out, is a
+ * weaker promise than `document-format-supported` naming a format — the
+ * same "the capability list doesn't mean what I assumed" lesson as
+ * incidents #1 and #2, one layer further up the stack (container, then
+ * pixels, now job template attributes).
+ *
+ * The fix generalizes past "never send `sides` to this one Brother":
+ *  1. `LaserPrinterAdapter` now implements Validate-Job (`validateJob`,
+ *     exposed publicly — the same `printJobAttrs` encoding as Print-Job,
+ *     minus the document body, see ipp.mjs) and calls it, via
+ *     `#negotiateJobAttributes`, on EVERY real print, before Print-Job ever
+ *     runs. It starts from the full candidate `chooseJobAttributes` computed
+ *     and, only if the printer refuses it, drops ONE attribute at a time —
+ *     in `negotiate.mjs`'s `JOB_ATTRIBUTE_TRIM_ORDER`, least physically
+ *     consequential first — re-validating after each drop, never guessing
+ *     which one was the problem, until the printer accepts or nothing is
+ *     left (at which point the print is refused with the real cause, not
+ *     attempted blind).
+ *  2. This is the same "never assume, always verify" posture as incidents #1
+ *     and #2, extended to the one remaining layer that hadn't been checked:
+ *     we had verified the printer would open the envelope (container) and
+ *     could read what was inside it (pixels), but never actually asked
+ *     whether it would take the job at all.
  *
  * @module adapters/hardware/laser-printer
  */
 import { createConnection } from 'net';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
-import { OPS, encodeRequest, baseAttrs, decodeResponse } from './ipp.mjs';
+import { OPS, encodeRequest, baseAttrs, printJobAttrs, decodeResponse } from './ipp.mjs';
+import {
+  negotiatePrintPlan, chooseJobAttributes, DEFAULT_MEDIA, JOB_ATTRIBUTE_TRIM_ORDER,
+} from './negotiate.mjs';
+import { rasterizePdf } from './rasterize.mjs';
 
 /** IPP printer-state enum (RFC 8011 §5.4.11). */
 const PRINTER_STATE = { 3: 'idle', 4: 'processing', 5: 'stopped' };
 
-/** Universal Exit Language — enters/leaves PJL job-control mode around a raw job. */
-const UEL = '\x1B%-12345X';
-
-/** PJL job names are a quoted single-line string; keep them printable and short. */
-function sanitizeJobName(jobName) {
-  return String(jobName ?? '')
-    .replace(/[^\x20-\x7E]/g, ' ') // no CR/LF/control bytes — they would break PJL line parsing
-    .replace(/"/g, "'")
-    .slice(0, 80)
-    // Trimmed BEFORE the fallback: a name that is all whitespace (or became
-    // all whitespace once control bytes were blanked above) is not a name, and
-    // `NAME="   "` is worse than the default — it names nothing in the
-    // printer's job log.
-    .trim() || 'daylight-print';
-}
-
-/** The only two values `@PJL SET BINDING=` may carry. */
-const BINDINGS = Object.freeze(['LONGEDGE', 'SHORTEDGE']);
-
-/**
- * Whitelist a binding value on its way to the wire.
- *
- * `binding` arrives from `school.yml`, i.e. from a human. Two things go wrong
- * without this: a value containing a newline would inject arbitrary PJL lines,
- * and — far more likely — a plausible typo (`long-edge`, `longedge `) would
- * emit an invalid value that the printer rejects while silently keeping its own
- * default, producing the wrong physical output with nothing logged. Anything
- * not on the list falls back and says so.
- *
- * Case and surrounding whitespace are forgiven (YAML invites both); the value
- * that reaches the wire is always one of {@link BINDINGS} verbatim.
- *
- * @param {*} binding
- * @param {Object} [opts]
- * @param {'LONGEDGE'|'SHORTEDGE'} [opts.fallback='LONGEDGE']
- * @param {{warn?: Function}} [opts.logger]
- * @param {string} [opts.source] - where the bad value came from, for the log line
- * @returns {'LONGEDGE'|'SHORTEDGE'}
- */
-export function normalizeBinding(binding, { fallback = 'LONGEDGE', logger = null, source = 'binding' } = {}) {
-  const candidate = String(binding ?? '').trim().toUpperCase();
-  if (BINDINGS.includes(candidate)) return candidate;
-  logger?.warn?.('laser-printer.invalid-binding', {
-    source, supplied: binding, used: fallback, expected: BINDINGS,
-  });
-  return fallback;
-}
-
-/**
- * Standard PJL preamble/trailer around raw PDF bytes for a JetDirect (port
- * 9100) job — sets per-job DUPLEX/BINDING before the printer enters PDF
- * parsing mode, then exits cleanly so the settings do not leak into the next
- * job. The PDF bytes themselves pass through byte-for-byte untouched.
- *
- * INFERRED, NOT MEASURED: this is the de facto standard preamble for
- * PJL-capable laser printers (HP's PJL Technical Reference, which Brother
- * firmware broadly implements), but it has NOT been verified against the
- * physical Brother HL-L2460DW this codebase targets — no hardware print was
- * run when this was written. Two specific things a physical test should
- * confirm: (1) the sheet actually comes out double-sided, and (2) `@PJL ENTER
- * LANGUAGE=PDF` is accepted (PDF is a vendor personality, not one of the PJL
- * spec's named languages; if the firmware rejects it, dropping that one line
- * and letting PDF Direct Print auto-detect — as it does today — is the first
- * thing to try). See docs/reference/school/README.md → Printing → Duplex.
- *
- * @param {Buffer} pdf - the document bytes to wrap (ONE copy — see `copies`)
- * @param {Object} opts
- * @param {string} opts.jobName
- * @param {boolean} opts.duplex
- * @param {'LONGEDGE'|'SHORTEDGE'} opts.binding
- * @param {number} [opts.copies=1] - emitted as `@PJL SET COPIES`; the document
- *   itself is sent exactly once regardless
- * @returns {Buffer}
- */
-export function pjlWrap(pdf, {
-  jobName, duplex, binding, copies = 1,
-}) {
-  const header = [
-    `${UEL}@PJL JOB NAME="${sanitizeJobName(jobName)}"`,
-    // Copies are the FIRMWARE's job, not ours. Sending the PDF N times inside
-    // one `ENTER LANGUAGE=PDF` stream hands the PDF personality one contiguous
-    // stream, which resolves a single document from its trailing xref — the
-    // plausible outcome is "3 requested, 1 printed", silent, with the quota
-    // still charging 3. `COPIES` is a standard PJL environment variable and
-    // also gets copy boundaries right under duplex (each copy starts on a
-    // fresh sheet), which concatenation could not.
-    // INFERRED, NOT MEASURED — like everything else in this envelope; see the
-    // block comment above.
-    `@PJL SET COPIES=${Math.max(1, Math.floor(Number(copies) || 1))}`,
-    `@PJL SET DUPLEX=${duplex ? 'ON' : 'OFF'}`,
-    ...(duplex ? [`@PJL SET BINDING=${normalizeBinding(binding)}`] : []),
-    '@PJL ENTER LANGUAGE=PDF',
-    '',
-  ].join('\r\n');
-  const trailer = `\r\n${UEL}@PJL EOJ\r\n${UEL}`;
-  return Buffer.concat([Buffer.from(header, 'latin1'), pdf, Buffer.from(trailer, 'latin1')]);
-}
-
 /**
  * @typedef {Object} LaserPrinterConfig
  * @property {string} host - printer IP or hostname
- * @property {number} [port=631] - IPP port (status/ping)
- * @property {number} [rawPort=9100] - JetDirect port (printing)
+ * @property {number} [port=631] - IPP port (status + printing)
+ * @property {number} [rawPort=9100] - JetDirect port (only used when rawTransport is true AND the printer advertises the format)
  * @property {string} [path='/ipp/print'] - IPP endpoint path (AirPrint default)
  * @property {number} [timeout=15000] - IPP request timeout in ms
- * @property {number} [printTimeout=60000] - raw print send timeout in ms
- * @property {boolean} [duplex=true] - default double-sided printing (config-driven; per-job override in printPdf)
- * @property {'LONGEDGE'|'SHORTEDGE'} [binding='LONGEDGE'] - duplex flip style; LONGEDGE = book-style,
- *   the right default for portrait text. Whitelisted at construction — see {@link normalizeBinding}
+ * @property {number} [printTimeout=60000] - print-send timeout in ms (IPP Print-Job or raw)
+ * @property {boolean} [rawTransport=false] - opt into raw JetDirect for a printer confirmed (by capability, not assumption) to accept a format that way; default is IPP for everything
  */
 export class LaserPrinterAdapter {
-  #host; #port; #rawPort; #path; #timeout; #printTimeout; #duplexDefault; #bindingDefault; #logger;
+  #host; #port; #rawPort; #path; #timeout; #printTimeout; #rawTransport; #logger;
+  #renderPageLimit;
   #requestId = 0;
 
   constructor({
     host, port = 631, rawPort = 9100, path = '/ipp/print', timeout = 15000, printTimeout = 60000,
-    duplex = true, binding = 'LONGEDGE', logger = console,
+    rawTransport = false, logger = console, renderPageLimit = null,
   } = {}) {
     if (!host) {
       throw new InfrastructureError('LaserPrinterAdapter requires host', {
@@ -151,17 +163,17 @@ export class LaserPrinterAdapter {
       });
     }
     this.#host = host;
+    // Trim, not refuse: see rasterize.mjs. Null in production.
+    this.#renderPageLimit = renderPageLimit;
     this.#port = port;
     this.#rawPort = rawPort;
     this.#path = path.startsWith('/') ? path : `/${path}`;
     this.#timeout = timeout;
     // Port 9100 is single-session: a print in progress holds the socket, so a
     // fresh job's connect can wait. Generous timeout covers warm-up + render.
+    // The same generous window covers a rasterize-then-IPP-Print-Job send.
     this.#printTimeout = printTimeout;
-    this.#duplexDefault = duplex;
-    // Validated once, at construction, so a `school.yml` typo is reported at
-    // boot rather than silently mis-binding every job for the rest of time.
-    this.#bindingDefault = normalizeBinding(binding, { logger, source: 'adapter-config' });
+    this.#rawTransport = Boolean(rawTransport);
     this.#logger = logger;
   }
 
@@ -185,49 +197,285 @@ export class LaserPrinterAdapter {
     return decodeResponse(Buffer.from(await res.arrayBuffer()));
   }
 
+  async #fetchAttributes() {
+    const { ok, statusCode, attrs } = await this.#ipp(OPS.GET_PRINTER_ATTRIBUTES, baseAttrs(this.printerUri, 'daylight'));
+    if (!ok) {
+      throw new InfrastructureError(`get-printer-attributes failed (ipp status 0x${statusCode.toString(16)})`, {
+        code: 'PRINTER_STATUS_ERROR', host: this.#host, statusCode,
+      });
+    }
+    return attrs;
+  }
+
   /**
-   * Print a PDF via raw JetDirect (port 9100). The Brother's PDF Direct Print
-   * renders the bytes as-is. Resolves once every byte is flushed and the socket
-   * closes cleanly — port 9100 is fire-and-forget, so there is no per-job ack;
-   * a stream/connect failure is the only failure signal.
-   *
-   * The document is wrapped in ONE {@link pjlWrap} envelope carrying the duplex
-   * settings and the copy count — one PJL job, ONE document inside it, with
-   * `@PJL SET COPIES` asking the firmware for the repeats.
+   * The capabilities negotiation needs, straight off the wire — no guessing,
+   * no caching (a print is rare enough that a fresh query every time is
+   * cheap, and printer capabilities are exactly the kind of thing that must
+   * never go stale behind an assumption). Deliberately returns the RAW
+   * per-container attributes (urf-supported, pwg-raster-document-type-
+   * supported, etc.) rather than pre-resolving a single dpi/format here —
+   * incident #2 was caused by exactly that kind of premature, format-
+   * agnostic resolution; `negotiate.mjs`'s `negotiatePrintPlan` is the only
+   * place that decision gets made now, and it needs the per-container lists
+   * intact to do it correctly.
+   */
+  async #getCapabilities() {
+    const attrs = await this.#fetchAttributes();
+    return {
+      documentFormatSupported: attrs['document-format-supported'] ?? [],
+      documentFormatPreferred: attrs['document-format-preferred']?.[0] ?? null,
+      documentFormatDefault: attrs['document-format-default']?.[0] ?? null,
+      urfSupported: attrs['urf-supported'] ?? [],
+      pwgRasterDocumentTypeSupported: attrs['pwg-raster-document-type-supported'] ?? [],
+      pwgRasterResolutionSupported: attrs['pwg-raster-document-resolution-supported'] ?? [],
+      printerResolutionSupported: attrs['printer-resolution-supported'] ?? [],
+      jobCreationAttributesSupported: attrs['job-creation-attributes-supported'] ?? [],
+      media: attrs['media-default']?.[0] ?? DEFAULT_MEDIA,
+    };
+  }
+
+  /**
+   * Print a PDF. Negotiates a document format the target printer has
+   * actually advertised (rasterizing with ghostscript first if the printer
+   * doesn't take PDF directly), refuses to transmit if no safe format
+   * exists, then sends over IPP Print-Job (or raw JetDirect, only if this
+   * adapter was constructed with `rawTransport: true` AND the negotiated
+   * format is one the printer's own capabilities list — never by default,
+   * never by assumption).
    *
    * @param {Buffer} pdf - complete PDF bytes
    * @param {Object} [opts]
-   * @param {string} [opts.jobName='daylight-print'] - our own logging AND the PJL JOB NAME
-   * @param {string} [opts.user='daylight'] - for our own logging (9100 carries no user metadata)
+   * @param {string} [opts.jobName='daylight-print'] - job name (also our own logging)
+   * @param {string} [opts.user='daylight'] - for our own logging / job-originating-user-name
    * @param {number} [opts.copies=1]
-   * @param {boolean} [opts.duplex] - per-job override; defaults to the adapter's configured default
-   * @param {'LONGEDGE'|'SHORTEDGE'} [opts.binding] - per-job override; ignored when duplex is off.
-   *   Anything outside that pair is refused with a `laser-printer.invalid-binding` warning and the
-   *   adapter's configured default is used instead
-   * @returns {Promise<{ok:boolean, bytes:number, copies:number, duplex:boolean}>} `bytes` counts the
-   *   wire payload INCLUDING the PJL envelope; `duplex` echoes what was requested (not confirmed —
-   *   9100 gives no ack, and PJL duplex is unverified on this printer model)
-   * @throws {InfrastructureError} on transport failure
+   * @returns {Promise<{ok:boolean, bytes:number, copies:number, documentFormat:string, transport:'ipp'|'raw9100'}>}
+   * @throws {InfrastructureError} INVALID_DOCUMENT | PRINT_FORMAT_UNSUPPORTED | RASTERIZE_* | PRINT_VALIDATE_FAILED | PRINT_SEND_FAILED
    */
-  printPdf(pdf, {
-    jobName = 'daylight-print', user = 'daylight', copies = 1,
-    duplex = this.#duplexDefault, binding = this.#bindingDefault,
+  /**
+   * `duplex` is ACCEPTED and NOT APPLIED, deliberately — see
+   * `negotiate.mjs`'s `JOB_ATTRIBUTE_TRIM_ORDER` note. This printer advertises
+   * `sides-supported` and then returns `0x0505 server-error-temporary-error`
+   * the instant a `sides` attribute is present at ANY value, including its own
+   * `sides-default`. That was measured against the physical HL-L2460DW, which
+   * is why `sides` is first in the trim order. The alternative PJL duplex
+   * envelope was never measured on this hardware.
+   *
+   * Callers (`IssueDocument`, `school.yml printing.duplex`) still pass their
+   * intent and it is logged, so the request is visible rather than silently
+   * dropped — but the job goes out one-sided. Reinstating duplex means
+   * proving, at the printer, that one of the two mechanisms actually works.
+   */
+  async printPdf(pdf, {
+    jobName = 'daylight-print', user = 'daylight', copies = 1, duplex = undefined,
   } = {}) {
+    if (duplex === true) {
+      this.#logger.info?.('laser-printer.duplex-requested-not-applied', {
+        host: this.#host, jobName, reason: 'printer rejects the IPP `sides` attribute at any value',
+      });
+    }
     if (!Buffer.isBuffer(pdf) || pdf.length === 0) {
-      return Promise.reject(new InfrastructureError('printPdf requires non-empty PDF buffer', { code: 'INVALID_DOCUMENT' }));
+      throw new InfrastructureError('printPdf requires non-empty PDF buffer', { code: 'INVALID_DOCUMENT' });
     }
     if (pdf.subarray(0, 5).toString('latin1') !== '%PDF-') {
-      return Promise.reject(new InfrastructureError('document is not a PDF', { code: 'INVALID_DOCUMENT' }));
+      throw new InfrastructureError('document is not a PDF', { code: 'INVALID_DOCUMENT' });
     }
     const nCopies = Math.max(1, Math.floor(copies));
-    const resolvedBinding = normalizeBinding(binding, {
-      fallback: this.#bindingDefault, logger: this.#logger, source: 'print-job',
-    });
-    // ONE envelope, ONE document, `COPIES` doing the repeating: see pjlWrap.
-    const payload = pjlWrap(pdf, {
-      jobName, duplex, binding: resolvedBinding, copies: nCopies,
+
+    const caps = await this.#getCapabilities();
+    // Decides BOTH the container (document-format) and, when rasterizing is
+    // required, the exact pixel parameters for that container — falling back
+    // to the other raster format if the first choice's own capability list
+    // turns out to have nothing this adapter can parse/produce (see
+    // negotiate.mjs and this file's incident #2 header comment).
+    const plan = negotiatePrintPlan({
+      payloadFormat: 'application/pdf',
+      documentFormatSupported: caps.documentFormatSupported,
+      documentFormatPreferred: caps.documentFormatPreferred,
+      urfSupported: caps.urfSupported,
+      pwgRasterDocumentTypeSupported: caps.pwgRasterDocumentTypeSupported,
+      pwgRasterResolutionSupported: caps.pwgRasterResolutionSupported,
+      printerResolutionSupported: caps.printerResolutionSupported,
+      media: caps.media,
     });
 
+    // THE GUARD. No format this printer hasn't named (or whose own
+    // per-container pixel capabilities we could actually satisfy) -> refuse,
+    // loudly, with exactly what we tried and what it offered. This is the
+    // check that would have stopped BOTH incidents: a printer listing
+    // `application/octet-stream` alone (incident #1) or a raster container
+    // whose declared color/resolution tokens don't parse into anything
+    // producible (incident #2's shape, generalized) does NOT pass — see
+    // negotiate.mjs for why.
+    if (!plan || !caps.documentFormatSupported.includes(plan.format)) {
+      throw new InfrastructureError(
+        `refusing to print: no supported document-format (with satisfiable raster parameters, if rasterizing) for this payload `
+        + `(payload=application/pdf, printer supports=[${caps.documentFormatSupported.join(', ') || 'none'}])`,
+        {
+          code: 'PRINT_FORMAT_UNSUPPORTED', host: this.#host,
+          payloadFormat: 'application/pdf', supported: caps.documentFormatSupported,
+        },
+      );
+    }
+
+    const bytes = plan.needsRasterize
+      ? await rasterizePdf(pdf, {
+        format: plan.format, dpi: plan.raster.dpi, media: plan.raster.media,
+        colorParams: plan.raster,
+        maxPages: this.#renderPageLimit, logger: this.#logger,
+      })
+      : pdf;
+
+    // Only sent when the printer's own job-creation-attributes-supported
+    // named them (see negotiate.mjs's chooseJobAttributes) — and only ever
+    // describing what we actually rasterized (or, for a direct-PDF
+    // container, no pixel-derived hints at all: there's no raster to have
+    // decided a resolution/color-mode from).
+    const jobAttributes = chooseJobAttributes({
+      jobCreationAttributesSupported: caps.jobCreationAttributesSupported,
+      dpi: plan.raster?.dpi ?? null,
+      printColorMode: plan.raster?.printColorMode ?? null,
+      media: plan.raster?.media ?? caps.media,
+    });
+
+    if (this.#rawTransport && plan.format === 'application/pdf') {
+      // Opt-in only, and still capability-gated: we only get here because
+      // `plan.format === 'application/pdf'` came out of negotiation, which
+      // means the printer's own document-format-supported listed it. Raw
+      // JetDirect has no IPP job-attributes concept at all — Validate-Job
+      // (an IPP operation) has nothing to check on this transport, so it's
+      // skipped rather than performed pointlessly.
+      const raw = await this.#sendRaw9100(bytes, { jobName, user, copies: nCopies });
+      return { ...raw, documentFormat: plan.format, transport: 'raw9100' };
+    }
+
+    // Incident #3 (see this file's header): a capability list naming
+    // `sides` was not a promise this printer would actually accept it. Ask
+    // FIRST, with Validate-Job — same attributes Print-Job is about to carry,
+    // zero paper cost — and only fall through to Print-Job with whatever
+    // subset the printer actually confirmed.
+    const validatedJobAttributes = await this.#negotiateJobAttributes({
+      documentFormat: plan.format, jobName, user, copies: nCopies, jobAttributes,
+    });
+
+    const sent = await this.#sendIpp(bytes, {
+      jobName, user, copies: nCopies, documentFormat: plan.format, jobAttributes: validatedJobAttributes,
+    });
+    return { ...sent, documentFormat: plan.format, transport: 'ipp' };
+  }
+
+  /**
+   * Validate-Job (RFC 8011 §3.2.3) — "would you accept this job?" with no
+   * document body and no side effect: the printer answers without
+   * allocating a Job object or producing paper, so this can be (and, in
+   * building the fix for incident #3, was) called as many times as needed
+   * to bisect a rejection. Same operation-attribute encoding as Print-Job
+   * (`printJobAttrs` in ipp.mjs) — the only difference on the wire is the
+   * operation code and the absence of trailing document bytes.
+   *
+   * Exposed publicly (not just used internally by `#negotiateJobAttributes`)
+   * so a caller — or a diagnostic script, the way incident #3 was actually
+   * root-caused — can probe an arbitrary candidate job directly.
+   *
+   * @param {Object} params
+   * @param {string} [params.jobName='daylight-print']
+   * @param {string} [params.user='daylight']
+   * @param {number} [params.copies=1]
+   * @param {string} params.documentFormat - required, same rule as printJobAttrs: never default to octet-stream
+   * @param {Object} [params.jobAttributes] - see printJobAttrs's jobAttributes shape
+   * @returns {Promise<{ok:boolean, statusCode:number}>}
+   */
+  async validateJob({
+    jobName = 'daylight-print', user = 'daylight', copies = 1, documentFormat, jobAttributes = {},
+  } = {}) {
+    const attrs = printJobAttrs(this.printerUri, {
+      user, jobName, copies, documentFormat, jobAttributes,
+    });
+    const { ok, statusCode } = await this.#ipp(OPS.VALIDATE_JOB, attrs, null, this.#timeout);
+    return { ok, statusCode };
+  }
+
+  /**
+   * Incident #3's actual fix. Starts from the full candidate job attributes
+   * `chooseJobAttributes` computed from capability lists alone, and asks the
+   * printer for real via `validateJob`. If refused, drops exactly one
+   * attribute — `negotiate.mjs`'s `JOB_ATTRIBUTE_TRIM_ORDER`, least
+   * physically consequential first — and asks again, repeating until the
+   * printer accepts or nothing is left to drop. Never guesses which
+   * attribute was the problem: every candidate that gets sent as a real
+   * Print-Job was independently confirmed by the printer itself, not
+   * inferred from a single rejection.
+   *
+   * @throws {InfrastructureError} PRINT_VALIDATE_FAILED — the printer refuses
+   *   even the empty-job-attributes candidate; the problem is the document
+   *   format/content itself, not a trimmable job attribute, so this refuses
+   *   to guess further and Print-Job is never attempted.
+   */
+  async #negotiateJobAttributes({
+    documentFormat, jobName, user, copies, jobAttributes,
+  }) {
+    let candidate = { ...jobAttributes };
+    let probe = await this.validateJob({
+      jobName, user, copies, documentFormat, jobAttributes: candidate,
+    });
+    if (probe.ok) return candidate;
+
+    this.#logger.warn?.('laser-printer.validate-job-rejected', {
+      host: this.#host, documentFormat, jobAttributes: candidate, statusCode: probe.statusCode,
+    });
+
+    for (const key of JOB_ATTRIBUTE_TRIM_ORDER) {
+      if (!(key in candidate)) continue;
+      const trimmed = { ...candidate };
+      delete trimmed[key];
+      // eslint-disable-next-line no-await-in-loop -- each probe's candidate depends on the previous probe's outcome; nothing here can run in parallel
+      probe = await this.validateJob({
+        jobName, user, copies, documentFormat, jobAttributes: trimmed,
+      });
+      candidate = trimmed;
+      this.#logger.info?.('laser-printer.validate-job-retry', {
+        host: this.#host, dropped: key, statusCode: probe.statusCode, ok: probe.ok,
+      });
+      if (probe.ok) return candidate;
+    }
+
+    throw new InfrastructureError(
+      `printer refuses this job even with every optional job attribute stripped `
+      + `(validate-job status 0x${probe.statusCode.toString(16)}) — the document-format or `
+      + `rasterized content itself is the problem, not a job attribute; refusing to send Print-Job blind`,
+      {
+        code: 'PRINT_VALIDATE_FAILED', host: this.#host, documentFormat, statusCode: probe.statusCode,
+      },
+    );
+  }
+
+  /** IPP Print-Job — the default transport. `copies` is a real IPP attribute; no manual concatenation needed. */
+  async #sendIpp(document, { jobName, user, copies, documentFormat, jobAttributes = {} }) {
+    const attrs = printJobAttrs(this.printerUri, {
+      user, jobName, copies, documentFormat, jobAttributes,
+    });
+    const { ok, statusCode } = await this.#ipp(OPS.PRINT_JOB, attrs, document, this.#printTimeout);
+    if (!ok) {
+      throw new InfrastructureError(`print-job failed (ipp status 0x${statusCode.toString(16)})`, {
+        code: 'PRINT_SEND_FAILED', host: this.#host, port: this.#port, statusCode, documentFormat,
+      });
+    }
+    this.#logger.info?.('laser-printer.job-sent', {
+      host: this.#host, port: this.#port, transport: 'ipp', jobName, user, copies, documentFormat, jobAttributes, bytes: document.length,
+    });
+    return { ok: true, bytes: document.length, copies };
+  }
+
+  /**
+   * Raw JetDirect send (port 9100). Fire-and-forget: resolves once every
+   * byte is flushed and the socket closes cleanly — there is no per-job ack,
+   * so a stream/connect failure is the only failure signal. `copies` is sent
+   * as N concatenated documents (9100 has no copies attribute); only ever
+   * used for a format JetDirect's target firmware is confirmed to accept
+   * (see `printPdf`'s capability gate — this method itself does not decide
+   * whether raw is appropriate, it just sends what it's given).
+   */
+  #sendRaw9100(document, { jobName, user, copies }) {
+    const payload = copies === 1 ? document : Buffer.concat(Array.from({ length: copies }, () => document));
     return new Promise((resolve, reject) => {
       const sock = createConnection({ host: this.#host, port: this.#rawPort, timeout: this.#printTimeout });
       let settled = false;
@@ -240,8 +488,10 @@ export class LaserPrinterAdapter {
         // have confirmation the bytes flushed, so destroying now is safe and
         // releases the port immediately.
         sock.destroy();
-        this.#logger.info?.('laser-printer.job-sent', { host: this.#host, port: this.#rawPort, jobName, user, copies: nCopies, duplex, bytes: payload.length });
-        resolve({ ok: true, bytes: payload.length, copies: nCopies, duplex });
+        this.#logger.info?.('laser-printer.job-sent', {
+          host: this.#host, port: this.#rawPort, transport: 'raw9100', jobName, user, copies, bytes: payload.length,
+        });
+        resolve({ ok: true, bytes: payload.length, copies });
       };
       const fail = (msg) => {
         if (settled) return; settled = true;
@@ -266,12 +516,7 @@ export class LaserPrinterAdapter {
    * @returns {Promise<{state:string, stateReasons:string[], name:?string, model:?string, accepting:?boolean}>}
    */
   async getStatus() {
-    const { ok, statusCode, attrs } = await this.#ipp(OPS.GET_PRINTER_ATTRIBUTES, baseAttrs(this.printerUri, 'daylight'));
-    if (!ok) {
-      throw new InfrastructureError(`get-printer-attributes failed (ipp status 0x${statusCode.toString(16)})`, {
-        code: 'PRINTER_STATUS_ERROR', host: this.#host, statusCode,
-      });
-    }
+    const attrs = await this.#fetchAttributes();
     return {
       state: PRINTER_STATE[attrs['printer-state']?.[0]] ?? 'unknown',
       stateReasons: (attrs['printer-state-reasons'] ?? []).filter((r) => r !== 'none'),

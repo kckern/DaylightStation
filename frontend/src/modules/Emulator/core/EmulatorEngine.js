@@ -49,17 +49,33 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
   function getAudioContextState() {
     if (!ready || !instance) return null;
     try {
-      return instance?.gameManager?.Module?.AL?.currentCtx?.ctx?.state ?? null;
+      const AL = instance?.gameManager?.Module?.AL;
+      if (!AL) return null;
+      // Verified against the vendored EJS 4.2.3 build in a real browser: the live
+      // state lives at AL.contexts[<id>].audioCtx.state. The old
+      // `AL.currentCtx.ctx.state` path does NOT exist here — it returned null in
+      // 24/24 production sessions, reporting a permanent false "unavailable" that
+      // would have masked a genuine audio failure. Several shapes are tried
+      // because this path has moved between EJS builds.
+      const fromCtx = (c) => c?.audioCtx?.state ?? c?.ctx?.state ?? null;
+      const current = fromCtx(AL.currentCtx);
+      if (current) return current;
+      const contexts = AL.contexts ? Object.values(AL.contexts) : [];
+      for (const c of contexts) {
+        const state = fromCtx(c);
+        if (state) return state;
+      }
+      return null;
     } catch {
       return null;
     }
   }
 
-  async function boot({ mount, romUrl, pathtodata, core = 'gb', controls } = {}) {
+  async function boot({ mount, romUrl, pathtodata, core = 'gb', controls, volume } = {}) {
     if (bootPromise) return bootPromise;
 
     log().info('boot.start', { core });
-    bootPromise = load({ player: mount, core, romUrl, pathtodata, controls, win })
+    bootPromise = load({ player: mount, core, romUrl, pathtodata, controls, volume, win })
       .then((emu) => {
         instance = emu;
         ready = true;
@@ -333,6 +349,112 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
   }
 
   /**
+   * True when EmulatorJS has finished its start chain.
+   *
+   * This is the settle barrier (see bootSettle.js): EJS sets `started = true` only
+   * after it has re-asserted its own volume and built the control-settings menu
+   * that creates `gamepadSelection`. Configuring before this point is what let the
+   * 2026-08-15 volume and gamepad bugs happen. EJS's own gamepadEvent guards on
+   * the same flag.
+   */
+  function isStarted() {
+    if (!instance) return false;
+    try { return instance.started === true; } catch { return false; }
+  }
+
+  /** True when EJS reports the emulation paused (frozen-detection needs this). */
+  function isPaused() {
+    if (!ready || !instance) return false;
+    try { return instance.paused === true; } catch { return false; }
+  }
+
+  /** EJS's live volume, for verifying our level actually stuck after its start chain. */
+  function getEjsVolume() {
+    if (!ready || !instance) return null;
+    try { return typeof instance.volume === 'number' ? instance.volume : null; } catch { return null; }
+  }
+
+  /**
+   * Snapshot of the pad→player slot mapping. Diagnostic only: attaching this to a
+   * detected input gap names the root cause instantly, instead of requiring the
+   * minified bundle to be disassembled by hand.
+   */
+  function getGamepadSelection() {
+    if (!instance) return null;
+    try {
+      return Array.isArray(instance.gamepadSelection) ? [...instance.gamepadSelection] : null;
+    } catch { return null; }
+  }
+
+  /** The live EJS instance, for boot-time contract assertion. Never mutate it here. */
+  function getInstance() {
+    return instance;
+  }
+
+  /**
+   * Claim a player slot for every already-connected gamepad.
+   *
+   * WHY THIS EXISTS (EmulatorJS 4.2.3 bug): `gamepadEvent` routes input by
+   * looking the pad up in `gamepadSelection` and bails on a miss:
+   *   const e = this.gamepadSelection.indexOf(pad.id+"_"+pad.index);
+   *   if (e < 0) return;
+   * That array is only filled by the GamepadHandler `"connected"` listener. But
+   * the handler polls SYNCHRONOUSLY from its own constructor
+   * (`...this.timeout=null,this.loop()`), while the listener is registered on
+   * the NEXT statement (`this.gamepad=new GamepadHandler, this.gamepad.on(...)`)
+   * — and `dispatchEvent` is a no-op when no listener is bound. So a pad that is
+   * ALREADY connected when the emulator boots has its one and only "connected"
+   * event dispatched into an empty listener map and silently dropped. It never
+   * fires again (the pad never disconnects), so every button and axis is
+   * discarded for the life of that instance.
+   *
+   * Each game launch mints a fresh instance, so this must run on EVERY boot —
+   * not once per page. Power-cycling the pad after boot is the manual
+   * equivalent; this removes the need.
+   *
+   * Idempotent and defensive: a pad already claimed is left alone, and a build
+   * without `gamepadSelection` (control-settings menu never built) is a no-op
+   * rather than a throw. Returns the number of pads newly claimed.
+   *
+   * @returns {number} pads newly assigned to a player slot
+   */
+  function claimGamepads() {
+    if (!ready || !instance) return 0;
+    let claimed = 0;
+    try {
+      const selection = instance.gamepadSelection;
+      const pads = instance.gamepad?.gamepads;
+      if (!Array.isArray(selection) || !Array.isArray(pads)) {
+        log().warn('gamepad-claim.unavailable', {
+          hasSelection: Array.isArray(selection),
+          padCount: Array.isArray(pads) ? pads.length : null,
+        });
+        return 0;
+      }
+      for (const pad of pads) {
+        if (!pad) continue;
+        const key = `${pad.id}_${pad.index}`;
+        if (selection.includes(key)) continue;
+        const slot = selection.indexOf('');
+        if (slot < 0) {
+          log().warn('gamepad-claim.no-free-slot', { id: pad.id, slots: selection.length });
+          continue;
+        }
+        selection[slot] = key;
+        claimed += 1;
+        log().info('gamepad-claim.assigned', { id: pad.id, slot });
+      }
+      if (claimed > 0) {
+        try { instance.updateGamepadLabels?.(); } catch { /* cosmetic only */ }
+      }
+    } catch (err) {
+      log().warn('gamepad-claim.failed', { error: err?.message });
+      return claimed;
+    }
+    return claimed;
+  }
+
+  /**
    * Best-effort teardown. EmulatorJS does not cleanly support re-init within a
    * single page; a full re-boot may require a page reload. That's acceptable —
    * this just releases what it can so a reload starts clean.
@@ -378,6 +500,12 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
     loadResume,
     restart,
     tapInput,
+    claimGamepads,
+    isStarted,
+    isPaused,
+    getEjsVolume,
+    getGamepadSelection,
+    getInstance,
     destroy,
   };
 }

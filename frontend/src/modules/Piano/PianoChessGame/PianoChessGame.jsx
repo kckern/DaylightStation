@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { chooseMove } from '@shared-gaming/chess/opponent.mjs';
+import { LADDER_SIZE } from '@shared-gaming/chess/ladder.mjs';
 import { fenToPosition } from '@shared-gaming/chess/position.mjs';
 import getLogger from '../../../lib/logging/Logger.js';
 import ChessBoard from '../../Chess/ChessBoard.jsx';
 import { pieceSource } from '../../Chess/pieceAssets.js';
 import PianoGameHost from '../game-platform/host/PianoGameHost.jsx';
+import { thinkTimeFor, useOpponentReply } from '../game-platform/opponent/opponentPacing.js';
 import ChordNamePanel from '../components/ChordNamePanel.jsx';
 import CurrentChordStaff from '../components/CurrentChordStaff.jsx';
 import ChordReadout from './ChordReadout.jsx';
@@ -175,6 +177,10 @@ export function PianoChessGame({
   // both history formats state who actually played, rather than merely who the
   // rail happened to show while it was loading.
   const effectiveOpponentRef = useRef(null);
+  // The exact position the pending opponent request was asked about — the
+  // bundled-engine fallback has to reason about the SAME position, not
+  // whatever gameRef happens to hold when the reply finally lands.
+  const requestedFenRef = useRef(null);
 
   // Latching the player internally is not enough: the kiosk chip still offered
   // the switch, so a child could pick themselves mid-game, see the header change
@@ -199,6 +205,13 @@ export function PianoChessGame({
   const ladderLevel = ladder?.unlocked_through ?? null;
   const ladderLevelRef = useRef(ladderLevel);
   ladderLevelRef.current = ladderLevel;
+  // True once the ladder fetch has settled at least once — success, failure,
+  // or "no ladder" for a guest all count. Firing the opponent's very first
+  // request before this resolves would race the level the server is asked to
+  // enforce: `ladderLevelRef` would still read its initial `null`, and the
+  // request that is supposed to say "Caterpie, skill 0" would say nothing.
+  // Every later turn is unaffected — this only guards the opening move.
+  const [ladderReady, setLadderReady] = useState(false);
   const [rungId, setRungId] = useState('learner');
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -348,7 +361,9 @@ export function PianoChessGame({
   useEffect(() => {
     let cancelled = false;
     fetchLadder(lockedUser).then((loaded) => {
-      if (cancelled || !loaded) return;
+      if (cancelled) return;
+      setLadderReady(true);
+      if (!loaded) return;
       ladderLevelRef.current = loaded.unlocked_through ?? null;
       setLadder(loaded);
       logger().info('ladder-loaded', {
@@ -500,9 +515,6 @@ export function PianoChessGame({
     } else logger().debug(`chord-${event.type}`, { square });
   }, []);
 
-  // Whether the character is currently taking their turn — the panel says so,
-  // and it is read off the same effect that asks the engine, never guessed.
-  const [opponentThinking, setOpponentThinking] = useState(false);
   const [rosterOpen, setRosterOpen] = useState(false);
   const [toast, setToast] = useState(null);
   const rejection = game.rejection;
@@ -728,36 +740,59 @@ export function PianoChessGame({
     // changes armedAt, so this tears down the old timer and starts a new one.
   }, [armedAt]);
 
-  // The opponent answers on a delay so its move reads as a reply, not a flicker.
-  // The server is the strong opponent; the bundled engine is what keeps the game
-  // playable when it cannot be reached.
-  useEffect(() => {
-    if (game.status?.game_over || game.status?.turn === playerColor) return undefined;
-    let cancelled = false;
-    setOpponentThinking(true);
-    const timer = setTimeout(async () => {
-      const fen = gameRef.current.game.fen;
-      // The ladder's level, when there is one, is the strength this character
-      // plays at — the server clamps it to what the player has actually
-      // unlocked, so this is a request, not an authority.
-      const served = await requestOpponentMove({
-        fen, rung: rungId, level: ladderLevelRef.current, gameId, userId: lockedUser,
+  // The opponent's reply is a floor on the wait, never an addend: the request
+  // goes out the instant it becomes this character's turn, and the move
+  // lands at max(elapsed, thinkMs) — see opponentPacing.js. The OLD version
+  // of this effect waited `opponentDelayMs` and only THEN sent the request,
+  // which added the round trip on top of the pause; on the kiosk tablet,
+  // where WiFi is known to stall silently, that turned a deliberate brood
+  // into a hang. `thinkTimeFor` also makes the pause SCALE with the rung —
+  // fast at the bottom of the ladder, slow at the top — rather than one flat
+  // number for all twenty-one characters.
+  //
+  // `resetKey: gameId` covers what `enabled` alone cannot: a fresh game can
+  // start right back on the opponent's turn (the player as Black), so
+  // restart() never toggles `enabled` across the reset — only the game's
+  // identity does, and without this a stale reply for the FINISHED game
+  // could land on the new one.
+  const chessOpponentEnabled = ladderReady && !game.status?.game_over && game.status?.turn !== playerColor;
+  const chessOpponentPace = chessConfig?.opponent?.pace ?? 1;
+  const chessThinkMs = thinkTimeFor({
+    level: ladderLevel, levels: LADDER_SIZE, config: chessConfig, seed: gameSeed,
+    ply: game.history.length, pace: chessOpponentPace,
+  }) ?? opponentDelayMs;
+  // Null while it is not the opponent's turn, so OpponentPortrait's pulse
+  // only ever runs while there is something to pulse for.
+  const thinkMs = chessOpponentEnabled ? chessThinkMs : null;
+
+  const { thinking: opponentThinking } = useOpponentReply({
+    enabled: chessOpponentEnabled,
+    thinkMs: chessThinkMs,
+    resetKey: gameId,
+    request: () => {
+      requestedFenRef.current = gameRef.current.game.fen;
+      // The ladder's level, when there is one, is the strength this
+      // character plays at — the server clamps it to what the player has
+      // actually unlocked, so this is a request, not an authority.
+      return requestOpponentMove({
+        fen: requestedFenRef.current, rung: rungId, level: ladderLevelRef.current, gameId, userId: lockedUser,
       });
+    },
+    onReply: (served) => {
       if (served?.opponent) effectiveOpponentRef.current = served.opponent;
+      const fen = requestedFenRef.current;
       const reply = served
         || chooseMove(fen, { difficulty: localFallbackDifficulty, seed: gameRef.current.history.length });
-      if (cancelled || !reply) return;
+      if (!reply) return;
       const { state } = commitMove(gameRef.current, reply.from, reply.to, reply.promotion);
       setGame(state);
-      setOpponentThinking(false);
       logger().info('opponent-replied', {
         san: reply.san,
         engine: served ? served.engine : 'local',
         opponent: served?.opponent || null,
       });
-    }, opponentDelayMs);
-    return () => { cancelled = true; clearTimeout(timer); setOpponentThinking(false); };
-  }, [game.status, playerColor, rungId, gameId, opponentDelayMs, lockedUser, localFallbackDifficulty]);
+    },
+  });
 
   // One record per finished game, posted only for a signed-in player — guests
   // never reach the per-user endpoints. Ref-guarded, not state-guarded: the
@@ -1060,7 +1095,7 @@ export function PianoChessGame({
                 onClick={() => setRosterOpen(true)}
                 aria-label={`${opponent.name} — see all opponents`}
               >
-                <OpponentPortrait opponent={opponent} level={ladderLevel} status={opponentLine} size="lg" />
+                <OpponentPortrait opponent={opponent} level={ladderLevel} status={opponentLine} size="lg" thinkMs={thinkMs} />
               </button>
             ) : (
               <p className="piano-chess__opponent-rung">

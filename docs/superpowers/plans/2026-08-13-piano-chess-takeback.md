@@ -1447,6 +1447,11 @@ git commit -m "feat(piano-chess): octave twice takes the last move back"
 
 ---
 
+> **SUPERSEDED (2026-08-14)** — Tasks 8 and 9 are replaced by Task 3 of
+> `2026-08-14-piano-game-platform-integration.md`, which builds opponent pacing
+> once in `game-platform` for Chess, Connect Four and Checkers instead of
+> chess-only. Do not implement Tasks 8 or 9 from this plan.
+
 ### Task 8: The thinking-time curve
 
 **Files:**

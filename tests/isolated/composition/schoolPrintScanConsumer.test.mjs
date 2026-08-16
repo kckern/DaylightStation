@@ -188,7 +188,7 @@ describe('resolution outcomes', () => {
     });
     bus.broadcast('omr', sheetPayload());
     await flush();
-    expect(recordCardScanOutcome.execute).toHaveBeenCalledWith({ testId: '0123456', card });
+    expect(recordCardScanOutcome.execute).toHaveBeenCalledWith({ testId: '0123456', card, cardIdInferred: null });
     expect(closeSessionOutcome.execute).toHaveBeenCalledWith({ sessionId: 'ses-one' });
   });
 

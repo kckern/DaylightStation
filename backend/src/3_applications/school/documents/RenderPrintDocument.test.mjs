@@ -119,6 +119,89 @@ describe('RenderPrintDocument — fit policy one-page (b)', () => {
   });
 });
 
+// `prefer-one-page` (household rule: "we can only use two pages if we have an
+// exceptionally long number of questions ... within each page there should
+// be right sizing"): try normal, then compact, then SPILL rather than
+// rejecting — the one difference from `one-page` above, which hard-fails
+// instead of spilling. Reuses `one-page`'s own empirically-calibrated fixture
+// sizes (9/10/12 questions — see that describe block's comment) so the three
+// outcomes below are apples-to-apples with `one-page`'s.
+describe('RenderPrintDocument — fit policy prefer-one-page', () => {
+  const preferOneShot = (n) => v2doc({
+    archetype: 'quiz', header: { scoreBox: false }, fit: { policy: 'prefer-one-page', typeScale: 'standard' }, blocks: manyQuestions(n),
+  });
+
+  it('outcome 1 — fits at normal density: density "normal", pageCount 1', async () => {
+    const useCase = new RenderPrintDocument();
+    const result = await useCase.execute({ document: preferOneShot(9) });
+    expect(result.pageCount).toBe(1);
+    expect(result.density).toBe('normal');
+  });
+
+  it('outcome 2 — fits only at compact density: falls back to compact, still one page', async () => {
+    const useCase = new RenderPrintDocument();
+    const result = await useCase.execute({ document: preferOneShot(10) });
+    expect(result.pageCount).toBe(1);
+    expect(result.density).toBe('compact');
+    expect(result.warnings).toEqual(expect.arrayContaining([
+      expect.stringMatching(/required compact density to fit .* on one page/),
+    ]));
+  });
+
+  it('outcome 3 — fits at neither: SPILLS at compact density instead of throwing (the one-page/prefer-one-page divergence)', async () => {
+    const useCase = new RenderPrintDocument();
+    const result = await useCase.execute({ document: preferOneShot(12) });
+    expect(result.pageCount).toBeGreaterThan(1);
+    expect(result.density).toBe('compact');
+    expect(result.warnings).toEqual(expect.arrayContaining([
+      expect.stringMatching(/could not fit .* on one page even at compact density; spilled to \d+ pages/),
+    ]));
+  });
+
+  // Regression coverage for a real disagreement found while verifying this
+  // policy against actual atlas-course content: `#measureAttempt` (the fit
+  // loop's TRIAL) never threads `bank` through to `resolveChoices`, so any
+  // `omr_response` block is measured in measure.mjs's own "probe mode" — a
+  // conservative reservation, not the real choice text's real width. That can
+  // make the trial predict MORE pages than the real (bank-aware) final render
+  // actually produces. The spill warning must report what was ACTUALLY
+  // printed, not the trial's pessimistic guess — this asserts that
+  // self-consistency directly, on a real OMR/bank-backed document, rather
+  // than trusting a hardcoded page-count number that would drift with any
+  // measurement-fidelity change.
+  it('outcome 3 with OMR content: the spill warning\'s page count always matches result.pageCount, even when the trial disagreed with the real render', async () => {
+    const omrQuestion = (n) => ({
+      type: 'question',
+      itemId: `oq${n}`,
+      number: n,
+      blocks: [
+        { type: 'rich_text', md: `Which of these best answers overlong prompt number ${n}, spanning enough words to wrap onto more than one line at either density?` },
+        { type: 'omr_response', itemId: `oq${n}`, choices: 5 },
+      ],
+      choices: ['Alpha option', 'Beta option', 'Gamma option', 'Delta option', 'Epsilon option'],
+      answer: 'Alpha option',
+    });
+    const document = {
+      schema: DOCUMENT_SOURCE_SCHEMA,
+      id: 'prefer-one-page-omr-fixture',
+      seed: 4242,
+      variant: 0,
+      target: ['letter'],
+      archetype: 'worksheet',
+      fit: { policy: 'prefer-one-page', typeScale: 'standard' },
+      title: 'OMR overflow fixture',
+      blocks: Array.from({ length: 16 }, (_, i) => omrQuestion(i + 1)),
+    };
+    const useCase = new RenderPrintDocument();
+    const result = await useCase.execute({ document });
+
+    expect(result.pageCount).toBeGreaterThan(1); // confirms this fixture actually exercises the spill path
+    const spillWarning = result.warnings.find((w) => w.includes('spilled to'));
+    expect(spillWarning).toBeDefined();
+    expect(spillWarning).toContain(`spilled to ${result.pageCount} pages`);
+  });
+});
+
 describe('RenderPrintDocument — fit policy fill bottoms out the last page (c)', () => {
   const growable = v2doc({
     archetype: 'worksheet',

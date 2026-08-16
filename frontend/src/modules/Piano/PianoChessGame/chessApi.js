@@ -7,6 +7,14 @@ import getLogger from '../../../lib/logging/Logger.js';
  * Every call resolves rather than throws: the caller (the opponent effect in
  * PianoChessGame) falls back to the bundled engine on any failure, so the game
  * must never block on the network. Errors are logged, then swallowed.
+ *
+ * Points at `/api/v1/piano-games/chess/*` — the unified piano-games namespace
+ * — rather than `/api/v1/chess/*` directly. Both currently resolve to the
+ * exact same request handler: `pianoGames.mjs` composition mounts the
+ * existing chess router as a `compatibilityRouters` entry under
+ * `/piano-games/chess`, so this is not yet a behavioural migration onto
+ * PianoGamesContainer, just the client adopting the URL clients are meant to
+ * converge on. See `backend/src/4_api/v1/routers/chess.mjs`'s header comment.
  */
 
 let cachedLogger;
@@ -29,7 +37,7 @@ const MOVE_TIMEOUT_MS = 8000;
 
 /** Resolves null on any failure: the caller falls back to the local engine. */
 export async function requestOpponentMove({ fen, rung, level = null, gameId, userId = null }) {
-  const request = DaylightAPI(withUser('api/v1/chess/move', userId), { fen, rung, level, gameId }, 'POST')
+  const request = DaylightAPI(withUser('api/v1/piano-games/chess/move', userId), { fen, rung, level, gameId }, 'POST')
     .then((body) => (body && body.from ? body : null))
     .catch((error) => {
       // Attached up front so a rejection arriving after the timeout has already
@@ -54,7 +62,7 @@ export async function requestOpponentMove({ fen, rung, level = null, gameId, use
 export async function fetchChessConfig(userId = null) {
   try {
     // No data object: DaylightAPI promotes a GET with a body to POST.
-    return await DaylightAPI(withUser('api/v1/chess/config', userId));
+    return await DaylightAPI(withUser('api/v1/piano-games/chess/config', userId));
   } catch (error) {
     logger().warn('chess.config.fetch-error', { error: error.message });
     return null;
@@ -63,7 +71,7 @@ export async function fetchChessConfig(userId = null) {
 
 export async function saveChessConfig(userId, patch) {
   try {
-    return await DaylightAPI(withUser('api/v1/chess/config', userId), patch, 'PUT');
+    return await DaylightAPI(withUser('api/v1/piano-games/chess/config', userId), patch, 'PUT');
   } catch (error) {
     logger().warn('chess.config.save-error', { error: error.message });
     return null;
@@ -72,7 +80,7 @@ export async function saveChessConfig(userId, patch) {
 
 export async function saveGameRecord(userId, record) {
   try {
-    return await DaylightAPI(withUser('api/v1/chess/games', userId), record, 'POST');
+    return await DaylightAPI(withUser('api/v1/piano-games/chess/games', userId), record, 'POST');
   } catch (error) {
     logger().warn('chess.game.save-error', { error: error.message });
     return null;
@@ -93,7 +101,7 @@ export async function saveGameRecord(userId, record) {
  */
 export async function archiveGame(record) {
   try {
-    return await DaylightAPI('api/v1/chess/history', record, 'POST');
+    return await DaylightAPI('api/v1/piano-games/chess/history', record, 'POST');
   } catch (error) {
     logger().warn('chess.game.archive-error', { error: error.message });
     return null;
@@ -115,7 +123,7 @@ export async function archiveGame(record) {
 /** Where this player stands on the opponent ladder. */
 export async function fetchLadder(userId) {
   try {
-    return await DaylightAPI(withUser('api/v1/chess/ladder', userId));
+    return await DaylightAPI(withUser('api/v1/piano-games/chess/ladder', userId));
   } catch (error) {
     logger().warn('chess.ladder.fetch-error', { error: error.message });
     return null;
@@ -126,7 +134,7 @@ export function beaconArchive(record) {
   try {
     if (typeof navigator === 'undefined' || typeof navigator.sendBeacon !== 'function') return false;
     const blob = new Blob([JSON.stringify(record)], { type: 'application/json' });
-    return navigator.sendBeacon('/api/v1/chess/history', blob);
+    return navigator.sendBeacon('/api/v1/piano-games/chess/history', blob);
   } catch (error) {
     logger().warn('chess.game.beacon-error', { error: error.message });
     return false;

@@ -3317,6 +3317,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       // Double-sided by default; `school.yml` printing.duplex/.binding override.
       duplex: schoolFullConfig.printing?.duplex ?? true,
       binding: schoolFullConfig.printing?.binding || 'LONGEDGE',
+      // Renders at most this many pages of a document. Distinct from
+      // `maxPagesPerJob`, which REFUSES an oversized job — this one TRIMS, so a
+      // supervised hardware test can ask for exactly one page and still get a
+      // real print rather than a refusal. Unset in normal operation.
+      renderPageLimit: schoolFullConfig.printing?.renderPageLimit ?? null,
       logger: rootLogger.child({ module: 'school-print' })
     });
     // Paper-certification gate (Task 15, spec §9/§11): a `bank` printable is

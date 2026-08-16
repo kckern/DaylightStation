@@ -1,10 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { OPS, encodeRequest, decodeResponse, printJobAttrs } from '../../../../backend/src/1_adapters/hardware/laser-printer/ipp.mjs';
+import {
+  OPS, encodeRequest, decodeResponse, printJobAttrs,
+} from '../../../../backend/src/1_adapters/hardware/laser-printer/ipp.mjs';
 
 describe('IPP encodeRequest', () => {
   it('emits version 1.1, the operation, request-id, and the document after end-of-attributes', () => {
     const pdf = Buffer.from('%PDF-1.4 fake');
-    const buf = encodeRequest(OPS.PRINT_JOB, printJobAttrs('ipp://p:631/ipp/print', { user: 'learner-two', jobName: 'ws' }), pdf, 7);
+    const buf = encodeRequest(OPS.PRINT_JOB, printJobAttrs('ipp://p:631/ipp/print', { user: 'learner-two', jobName: 'ws', documentFormat: 'application/pdf' }), pdf, 7);
 
     expect(buf.readUInt8(0)).toBe(1);
     expect(buf.readUInt8(1)).toBe(1);
@@ -20,17 +22,122 @@ describe('IPP encodeRequest', () => {
     expect(end).toBeGreaterThan(8);
   });
 
-  it('declares octet-stream document-format by default (printer auto-detects the PDF)', () => {
-    const buf = encodeRequest(OPS.PRINT_JOB, printJobAttrs('ipp://p/ipp/print', { user: 'u', jobName: 'j' }));
-    expect(buf.includes('application/octet-stream')).toBe(true);
-    expect(buf.includes('application/pdf')).toBe(false);
+  it('requires an explicit documentFormat — no silent octet-stream default', () => {
+    // This is the guard against the incident: octet-stream ("printer,
+    // please guess") is what let a raw PDF through to a printer with no PDF
+    // interpreter, which guessed "plain text" and printed the PDF source.
+    // printJobAttrs refuses to paper over a missing negotiated format.
+    expect(() => printJobAttrs('ipp://p/ipp/print', { user: 'u', jobName: 'j' })).toThrow(/documentFormat/i);
+  });
+
+  it('encodes exactly the negotiated document-format — never a substituted default', () => {
+    const urf = encodeRequest(OPS.PRINT_JOB, printJobAttrs('ipp://p/ipp/print', { user: 'u', jobName: 'j', documentFormat: 'image/urf' }));
+    expect(urf.includes('image/urf')).toBe(true);
+    expect(urf.includes('application/octet-stream')).toBe(false);
+    expect(urf.includes('application/pdf')).toBe(false);
+
+    const pdf = encodeRequest(OPS.PRINT_JOB, printJobAttrs('ipp://p/ipp/print', { user: 'u', jobName: 'j', documentFormat: 'application/pdf' }));
+    expect(pdf.includes('application/pdf')).toBe(true);
+    expect(pdf.includes('image/urf')).toBe(false);
   });
 
   it('single-copy jobs carry no copies attribute; multi-copy jobs do', () => {
-    const one = encodeRequest(OPS.PRINT_JOB, printJobAttrs('ipp://p/ipp/print', { user: 'u', jobName: 'j', copies: 1 }));
-    const three = encodeRequest(OPS.PRINT_JOB, printJobAttrs('ipp://p/ipp/print', { user: 'u', jobName: 'j', copies: 3 }));
+    const one = encodeRequest(OPS.PRINT_JOB, printJobAttrs('ipp://p/ipp/print', { user: 'u', jobName: 'j', copies: 1, documentFormat: 'image/urf' }));
+    const three = encodeRequest(OPS.PRINT_JOB, printJobAttrs('ipp://p/ipp/print', { user: 'u', jobName: 'j', copies: 3, documentFormat: 'image/urf' }));
     expect(one.includes('copies')).toBe(false);
     expect(three.includes('copies')).toBe(true);
+  });
+
+  describe('jobAttributes — incident #2: telling the printer what we actually rasterized', () => {
+    it('with no jobAttributes at all, none of printer-resolution/print-color-mode/sides/media are sent', () => {
+      const buf = encodeRequest(OPS.PRINT_JOB, printJobAttrs('ipp://p/ipp/print', { user: 'u', jobName: 'j', documentFormat: 'image/urf' }));
+      expect(buf.includes('printer-resolution')).toBe(false);
+      expect(buf.includes('print-color-mode')).toBe(false);
+      expect(buf.includes(Buffer.from('sides'))).toBe(false);
+      expect(buf.includes(Buffer.from('media'))).toBe(false);
+    });
+
+    it('encodes printer-resolution as a structural 9-octet resolution value, decodable by decodeResponse', () => {
+      const attrs = printJobAttrs('ipp://p/ipp/print', {
+        user: 'u',
+        jobName: 'j',
+        documentFormat: 'image/urf',
+        jobAttributes: { printerResolution: { xres: 300, yres: 300, units: 3 } },
+      });
+      const buf = encodeRequest(OPS.PRINT_JOB, attrs);
+      // decodeResponse's frame layout is identical for a request (see its own
+      // header comment / the fake IPP server in laserPrinterAdapter.test.mjs);
+      // round-tripping through it is the cheapest way to prove this wasn't
+      // encoded as a mangled string.
+      const decoded = decodeResponse(buf);
+      expect(decoded.attrs['printer-resolution']).toEqual([{ xres: 300, yres: 300, units: 3 }]);
+    });
+
+    it('encodes print-color-mode, sides, and media as keyword attributes with the exact negotiated values', () => {
+      const attrs = printJobAttrs('ipp://p/ipp/print', {
+        user: 'u',
+        jobName: 'j',
+        documentFormat: 'image/pwg-raster',
+        jobAttributes: { printColorMode: 'monochrome', sides: 'one-sided', media: 'na_letter_8.5x11in' },
+      });
+      const buf = encodeRequest(OPS.PRINT_JOB, attrs);
+      const decoded = decodeResponse(buf);
+      expect(decoded.attrs['print-color-mode']).toEqual(['monochrome']);
+      expect(decoded.attrs.sides).toEqual(['one-sided']);
+      expect(decoded.attrs.media).toEqual(['na_letter_8.5x11in']);
+    });
+  });
+});
+
+describe('IPP Validate-Job (RFC 8011 §3.2.3, Incident #3) — same encoding as Print-Job, no document', () => {
+  it('OPS.VALIDATE_JOB is operation code 0x0004', () => {
+    expect(OPS.VALIDATE_JOB).toBe(0x0004);
+  });
+
+  it('encodes with the SAME operation-attribute bytes a Print-Job for the same job would carry — only the operation code and the absence of a document differ', () => {
+    const attrs = printJobAttrs('ipp://p:631/ipp/print', {
+      user: 'learner-two',
+      jobName: 'ws',
+      documentFormat: 'image/urf',
+      jobAttributes: { printColorMode: 'monochrome', media: 'na_letter_8.5x11in' },
+    });
+    const printBuf = encodeRequest(OPS.PRINT_JOB, attrs, Buffer.from('raster-bytes'), 5);
+    const validateBuf = encodeRequest(OPS.VALIDATE_JOB, attrs, null, 5);
+    const printHead = printBuf.subarray(0, printBuf.length - Buffer.from('raster-bytes').length);
+
+    // Identical byte-for-byte except the 2-byte operation code at offset 2
+    // — this is the whole reason Validate-Job can be trusted as a stand-in
+    // for "would Print-Job with this exact job succeed": it IS the same
+    // request, operation code and document bytes aside.
+    expect(printBuf.readUInt16BE(2)).toBe(OPS.PRINT_JOB);
+    expect(validateBuf.readUInt16BE(2)).toBe(OPS.VALIDATE_JOB);
+    expect(validateBuf.subarray(0, 2).equals(printHead.subarray(0, 2))).toBe(true); // version
+    expect(validateBuf.subarray(4).equals(printHead.subarray(4))).toBe(true); // request-id + all attributes + end tag
+  });
+
+  it('carries no document bytes — encodeRequest called with document=null appends nothing after the end-of-attributes tag', () => {
+    const attrs = printJobAttrs('ipp://p/ipp/print', { user: 'u', jobName: 'j', documentFormat: 'image/pwg-raster' });
+    const buf = encodeRequest(OPS.VALIDATE_JOB, attrs, null, 1);
+    const endTagIndex = buf.indexOf(0x03, 8);
+    expect(endTagIndex).toBe(buf.length - 1); // end-of-attributes is the LAST byte — nothing trails it
+  });
+
+  it('still requires an explicit documentFormat — the same guard as Print-Job, since printJobAttrs is shared', () => {
+    expect(() => encodeRequest(OPS.VALIDATE_JOB, printJobAttrs('ipp://p/ipp/print', { user: 'u', jobName: 'j' })))
+      .toThrow(/documentFormat/i);
+  });
+
+  it('carries the sides/media/etc. job attributes exactly like Print-Job — decodable the same way', () => {
+    const attrs = printJobAttrs('ipp://p/ipp/print', {
+      user: 'u',
+      jobName: 'j',
+      documentFormat: 'image/urf',
+      jobAttributes: { sides: 'one-sided', media: 'na_letter_8.5x11in' },
+    });
+    const buf = encodeRequest(OPS.VALIDATE_JOB, attrs, null, 1);
+    const decoded = decodeResponse(buf); // frame layout is identical to a response; see this suite's own header note
+    expect(decoded.attrs.sides).toEqual(['one-sided']);
+    expect(decoded.attrs.media).toEqual(['na_letter_8.5x11in']);
   });
 });
 
@@ -67,5 +174,19 @@ describe('IPP decodeResponse', () => {
     const head = Buffer.from([1, 1, 0x04, 0x00, 0, 0, 0, 1, 0x03]); // client-error-bad-request
     expect(decodeResponse(head).ok).toBe(false);
     expect(decodeResponse(head).statusCode).toBe(0x0400);
+  });
+
+  it('decodes a resolution attribute (xres/yres/units) structurally, not as a mangled string', () => {
+    // RFC 8011 §5.1.14: 9 octets — xres(4) yres(4) units(1). This backs DPI
+    // selection (negotiate.mjs's chooseResolution) reading
+    // printer-resolution-supported/-default off the wire.
+    const res = Buffer.alloc(9);
+    res.writeInt32BE(300, 0);
+    res.writeInt32BE(300, 4);
+    res.writeUInt8(3, 8); // dots/inch
+    const head = Buffer.from([1, 1, 0x00, 0x00, 0, 0, 0, 1]);
+    const body = Buffer.concat([Buffer.from([0x02]), attr(0x32, 'printer-resolution-default', res), Buffer.from([0x03])]);
+    const out = decodeResponse(Buffer.concat([head, body]));
+    expect(out.attrs['printer-resolution-default']).toEqual([{ xres: 300, yres: 300, units: 3 }]);
   });
 });

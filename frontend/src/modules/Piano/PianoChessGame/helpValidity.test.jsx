@@ -86,6 +86,12 @@ describe('help validity: seams the per-task tests could not see', () => {
     expect(requestOpponentMove).toHaveBeenCalledWith(expect.objectContaining({ rung: 'ruthless' }));
     holdNotes([]);
     rerender(<PianoChessGame playerColor="b" seed={1} />);
+    // The opponent's own move request waits on the ladder fetch settling
+    // (PianoChessGame.jsx's `ladderReady` gate) before it fires — flush that
+    // async hop on its own tick first, or it races the think-time floor for
+    // the same advanced window below and the floor's timer never gets
+    // scheduled in time.
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
     // Opponent's reply lands (position advances; help is cleared).
     await act(async () => { await vi.advanceTimersByTimeAsync(800); });
     expect(container.querySelectorAll('.chess-board__square--last-move').length).toBe(2);
@@ -115,6 +121,9 @@ describe('help validity: seams the per-task tests could not see', () => {
     expect(container.querySelectorAll('.chess-board__square--hint')).toHaveLength(0);
     holdNotes([]);
     rerender(makeElement());
+    // Flush the ladder-fetch gate before advancing the think-time floor — see
+    // the identical comment in R2 above.
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
     // Opponent mates; game over; record posts.
     await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
     expect(saveGameRecord).toHaveBeenCalledTimes(1);

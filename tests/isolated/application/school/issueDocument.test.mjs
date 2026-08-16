@@ -19,14 +19,14 @@ import {
   WORKSHEET_DOCUMENT_ID, OMR_DOCUMENT_ID,
 } from '#testlib/school/lifecycleFixtures.mjs';
 
-let clock, sessions, tokens, formMaps, renderer, printer, useCase;
+let clock, sessions, tokens, formMaps, renderer, printer, useCase, curriculum;
 
 const SID = 'ses_1';
 
 const build = ({ formMapFor = null } = {}) => {
   clock = fakeClock();
   const catalog = new FakeCatalog({ units: rawUnits(), documents: rawDocuments(), manifests: rawManifests() });
-  const curriculum = new CurriculumAccess({ catalog, bankIds: () => BANK_IDS, clock: clock.epoch, logger: silentLogger });
+  curriculum = new CurriculumAccess({ catalog, bankIds: () => BANK_IDS, clock: clock.epoch, logger: silentLogger });
   sessions = new FakeSessionRepository();
   tokens = new FakeTokenRegistry();
   formMaps = new FakeFormMapStore();
@@ -141,6 +141,7 @@ describe('form maps', () => {
     await openSession(OMR_UNIT);
     const first = await useCase.execute({ sessionId: SID });
     const before = await formMaps.get(first.artifactId);
+    clock.advanceMs(11 * 60_000); // past the default print-debounce window — a REAL reprint
     const second = await useCase.execute({ sessionId: SID });
     expect(second.artifactId).toBe(first.artifactId);
     expect(await formMaps.get(first.artifactId)).toEqual(before);
@@ -149,9 +150,14 @@ describe('form maps', () => {
 });
 
 describe('reprinting', () => {
+  // Both tests below advance the clock past the default print-debounce
+  // window (`print debounce` describe block covers the window ITSELF) — a
+  // reprint scan minutes apart is the scenario this describe block is about,
+  // not two scans of the same ticket seconds apart.
   it('reuses the ORIGINAL artifact id and appends a lineage event', async () => {
     await openSession();
     const first = await useCase.execute({ sessionId: SID });
+    clock.advanceMs(11 * 60_000);
     const second = await useCase.execute({ sessionId: SID });
     expect(second).toMatchObject({ status: 'reprinted', artifactId: first.artifactId });
     expect(sessions.types(SID)).toEqual(['created', 'issued', 'reprinted']);
@@ -162,6 +168,7 @@ describe('reprinting', () => {
   it('prints a second time — a reprint is a real piece of paper', async () => {
     await openSession();
     await useCase.execute({ sessionId: SID });
+    clock.advanceMs(11 * 60_000);
     await useCase.execute({ sessionId: SID });
     expect(printer.jobs).toHaveLength(2);
   });
@@ -242,6 +249,93 @@ describe('printer offline', () => {
     // Still a ticket: a grown-up fixes the artwork, the child scans and retries.
     const action = result.document.blocks.find((b) => b.type === 'scan_action');
     expect(await tokens.get(action.action)).toMatchObject({ tokenClass: 'recovery' });
+  });
+});
+
+// Print debounce (school.yml printing.printCooldownMinutes, default 10): two
+// scans of the SAME already-printed session inside the cooldown window must
+// not put a second identical job on the laser printer. This is a DELIBERATE,
+// DOCUMENTED exception to the house rule that "a scan never succeeds
+// silently" (tokens.mjs) — see IssueDocument's own comment at the check site
+// for why the user chose silence here specifically.
+describe('print debounce', () => {
+  it('is never applied to a genuine first issue, however the clock is set', async () => {
+    build(); // default cooldown
+    await openSession();
+    const result = await useCase.execute({ sessionId: SID });
+    expect(result.status).toBe('issued');
+    expect(printer.jobs).toHaveLength(1);
+  });
+
+  it('silently swallows a reprint inside the cooldown window — no second job, no event', async () => {
+    await openSession();
+    const first = await useCase.execute({ sessionId: SID });
+    clock.advanceMs(30_000); // 30s later, well inside the default 10-minute window
+    const second = await useCase.execute({ sessionId: SID });
+    expect(second).toMatchObject({ status: 'debounced', artifactId: first.artifactId, document: null });
+    expect(printer.jobs).toHaveLength(1); // no second laser job
+    expect(sessions.types(SID)).toEqual(['created', 'issued']); // no event appended
+  });
+
+  it('prints again once the cooldown window has elapsed', async () => {
+    await openSession();
+    await useCase.execute({ sessionId: SID });
+    clock.advanceMs(10 * 60_000 + 1); // just past the default 10-minute window
+    const second = await useCase.execute({ sessionId: SID });
+    expect(second.status).toBe('reprinted');
+    expect(printer.jobs).toHaveLength(2);
+  });
+
+  it('honours a configured cooldown window', async () => {
+    build();
+    useCase = new IssueDocument({
+      curriculum, sessions, tokens, renderer, printer, formMaps,
+      bankReader: { getBank: (id) => ({ id, items: [] }) },
+      clock: clock.now, rng: seededRng(11), newArtifactId: () => 'art_x',
+      printCooldownMinutes: 1,
+      logger: silentLogger,
+    });
+    await openSession();
+    await useCase.execute({ sessionId: SID });
+    clock.advanceMs(61_000); // just past the configured 1-minute window
+    const second = await useCase.execute({ sessionId: SID });
+    expect(second.status).toBe('reprinted');
+    expect(printer.jobs).toHaveLength(2);
+  });
+
+  // "Time the window from the last successful PRINT, not the last scan" — a
+  // print that FAILED must be retryable on the very next scan, with no
+  // cooldown standing in the way, because nothing was ever successfully
+  // printed to debounce against.
+  it('does not block an immediate retry after a print failure', async () => {
+    await openSession();
+    printer.setFault('offline');
+    const first = await useCase.execute({ sessionId: SID });
+    expect(first.status).toBe('print_failed');
+    printer.setFault(null);
+    // No clock advance at all — a debounce keyed off "last scan" would still
+    // be inside any window; keyed off "last successful print" (still null),
+    // it must not be.
+    const second = await useCase.execute({ sessionId: SID });
+    expect(second.status).toBe('issued');
+    expect(printer.jobs).toHaveLength(1);
+  });
+
+  it('does not interfere with the already_done path', async () => {
+    await openSession();
+    await useCase.execute({ sessionId: SID });
+    await sessions.appendEvent(SID, { type: 'submitted', at: clock.iso(), sessionId: SID, transport: 'paper' });
+    const result = await useCase.execute({ sessionId: SID });
+    expect(result.status).toBe('already_done');
+  });
+
+  it('is scoped per session — a different session prints immediately', async () => {
+    await openSession(WORKSHEET_UNIT, SID);
+    await useCase.execute({ sessionId: SID });
+    await openSession(WORKSHEET_UNIT, 'ses_2');
+    const result = await useCase.execute({ sessionId: 'ses_2' });
+    expect(result.status).toBe('issued');
+    expect(printer.jobs).toHaveLength(2);
   });
 });
 
@@ -619,10 +713,23 @@ describe('tracked quizzes (print/<id>@<rev> document references, spec §9)', () 
   it('a reprint reuses the ORIGINAL artifact id but still allocates a fresh physical card', async () => {
     const sid = await openPrintSession();
     const first = await printUseCase.execute({ sessionId: sid });
+    printClock.advanceMs(11 * 60_000); // past the default print-debounce window — a REAL reprint
     const second = await printUseCase.execute({ sessionId: sid });
     expect(second).toMatchObject({ status: 'reprinted', artifactId: first.artifactId });
     expect(printSessions.types(sid)).toEqual(['created', 'issued', 'reprinted']);
     expect(printPrinter.jobs).toHaveLength(2);
+  });
+
+  // The debounce check in `execute()` runs BEFORE the legacy/print-document/
+  // worksheet-instance branch is even chosen, so it applies uniformly — this
+  // proves it is not a legacy-only behaviour.
+  it('debounces a re-scan of an already-issued tracked quiz too', async () => {
+    const sid = await openPrintSession();
+    const first = await printUseCase.execute({ sessionId: sid });
+    printClock.advanceMs(30_000); // well inside the default 10-minute window
+    const second = await printUseCase.execute({ sessionId: sid });
+    expect(second).toMatchObject({ status: 'debounced', artifactId: first.artifactId });
+    expect(printPrinter.jobs).toHaveLength(1);
   });
 
   it('degrades to unavailable (never throws) when the print-document deps are not configured', async () => {

@@ -610,6 +610,21 @@ export class ThermalPrinterAdapter {
         upsideDown: config.upsideDown
       });
 
+      // A job that renders itself as a single `{type:'image'}` (the School
+      // receipt raster path) puts nothing decodable on the wire for a human
+      // reviewing production logs — the paper says plenty, the log says
+      // "itemCount: 1". `printJob.transcript`, when the renderer set one, is
+      // that operator record: the same words a text-item job would have put
+      // on the wire, logged instead of printed twice. Absent for every job
+      // that never set it (the ordinary ESC/POS case, where `itemCount` plus
+      // the items above already tell the story).
+      if (typeof printJob.transcript === 'string' && printJob.transcript) {
+        this.#logger.info?.('thermalPrinter.job.transcript', {
+          target: `${config.host}:${config.port}`,
+          transcript: printJob.transcript,
+        });
+      }
+
       const device = new Network(config.host, config.port);
 
       return new Promise((resolve) => {

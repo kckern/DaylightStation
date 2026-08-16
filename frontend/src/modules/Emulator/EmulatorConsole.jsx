@@ -17,7 +17,10 @@ import { createAudioMixer } from './audio/AudioMixer.js';
 import { createEmulatorSession } from './core/EmulatorSession.js';
 import { createHtmlAudioClip } from './audio/htmlAudioClip.js';
 import { ControllerStatus } from './input/ControllerStatus.jsx';
-import { InputActivityLED } from './input/InputActivityLED.jsx';
+import { ControllerIndicator } from './input/ControllerIndicator.jsx';
+import { assertEjsContract } from './core/ejsContract.js';
+import { settleBoot } from './core/bootSettle.js';
+import { createSessionSupervisor } from './core/sessionSupervisor.js';
 import { isActive, readPadActivity, activitySignature } from './input/inputActivity.js';
 import { TouchVolumeButtons, logVolumeFromLevel } from '@/modules/Fitness/player/panels/TouchVolumeButtons.jsx';
 import { createHotspotController } from './core/hotspotController.js';
@@ -28,6 +31,11 @@ import './EmulatorConsole.scss';
 
 const STATUS_POLL_MS = 500;
 const DEFAULT_VOLUME_LEVEL = 70; // log curve: ~25% output — audible default (not muted)
+// The vendored EmulatorJS build (media/emulation/_engine/version.json) this
+// integration's contract was verified against. Logged at boot for provenance:
+// a vendored dep is invisible to git log and npm audit, so without this a
+// version change leaves no trace in the record when something breaks.
+const EJS_ENGINE_VERSION = '4.2.3';
 
 // LCD shade tints (multiplied over the screen). Subtle, pale colours so the game
 // reads through them like tinted glass. Cycled from the settings sheet.
@@ -344,6 +352,25 @@ export function EmulatorConsole({
   const consumedLogAtRef = useRef(0);
   const inputTapUntapRef = useRef(null);
   const [inputLed, setInputLed] = useState({ browser: false, emulator: false });
+  // Supervisor-owned health for the chrome indicator. `ok` until proven otherwise
+  // so a booting console never flashes an alarm.
+  const [health, setHealth] = useState({ state: 'ok', fault: null });
+  const supervisorRef = useRef(null);
+  const contractOkRef = useRef(true);
+  const lastFrameRef = useRef(null);
+
+  // Single pad reader shared by the LED poll and the supervisor, honouring the
+  // injectable `getGamepads` prop (tests + the Playwright smoke test override it).
+  const readPadsSafely = useCallback(() => {
+    try {
+      const raw = typeof getGamepads === 'function'
+        ? getGamepads()
+        : ((typeof navigator !== 'undefined' && navigator.getGamepads) ? navigator.getGamepads() : []);
+      return Array.from(raw || []).filter(Boolean);
+    } catch {
+      return [];
+    }
+  }, [getGamepads]);
 
   // Record a core-consumed input (called from the engine.tapInput cb). Cheap:
   // bumps a timestamp/counter; logging is throttled so held/mashed buttons don't
@@ -399,21 +426,86 @@ export function EmulatorConsole({
   // never received — the failure signature, trivially searchable in the logs.
   useEffect(() => {
     if (!showInputActivity) return undefined;
+    const supervisor = createSessionSupervisor({
+      healers: {
+        // Safe heal: re-run the slot claim. Costs the player nothing, so it runs
+        // with no UI at all — the pad simply starts working again.
+        'input-gap': () => {
+          const claimed = runtimeRef.current?.engine?.claimGamepads?.() ?? 0;
+          logger.warn('emulator.fault.heal', { kind: 'input-gap', claimed });
+          return claimed > 0;
+        },
+        'audio-suspended': () => {
+          runtimeRef.current?.engine?.resume?.();
+          logger.warn('emulator.fault.heal', { kind: 'audio-suspended' });
+          return true;
+        },
+      },
+    });
+    supervisorRef.current = supervisor;
+
     const id = setInterval(() => {
       const browserPings = browserCountRef.current;
       const emulatorConsumes = emulatorCountRef.current;
       browserCountRef.current = 0;
       emulatorCountRef.current = 0;
+
+      const engine = runtimeRef.current?.engine;
+      const pads = readPadsSafely();
+      const padCount = pads.length;
+      const gap = browserPings > 0 && emulatorConsumes === 0;
+
       if (browserPings || emulatorConsumes) {
         logger.info('emulator.input.summary', {
           browserPings,
           emulatorConsumes,
-          gap: browserPings > 0 && emulatorConsumes === 0,
+          gap,
+          // Attach the state that EXPLAINS a gap. Counts alone forced a manual
+          // disassembly of minified EJS on 2026-08-15; these two fields name the
+          // root cause outright.
+          ...(gap ? { gamepadSelection: engine?.getGamepadSelection?.() ?? null, padCount } : {}),
         });
       }
+
+      // Frame progress: only meaningful while unpaused and running.
+      const frame = engine?.getFrameNum?.() ?? null;
+      const frameAdvanced = frame === null || lastFrameRef.current === null
+        ? true
+        : frame !== lastFrameRef.current;
+      lastFrameRef.current = frame;
+
+      const event = supervisor.observe({
+        contractOk: contractOkRef.current,
+        padCount,
+        browserPings,
+        emulatorConsumes,
+        audioState: engine?.getAudioContextState?.() ?? null,
+        paused: !!engine?.isPaused?.(),
+        frameAdvanced,
+      });
+
+      if (event) {
+        const { state, fault } = supervisor.getState();
+        setHealth({ state, fault });
+        if (event.type === 'heal-attempted') {
+          logger.warn('emulator.fault.detected', { kind: event.kind, attempt: event.attempts, healed: event.ok });
+        } else if (event.type === 'healed') {
+          logger.info('emulator.fault.healed', { kind: event.kind });
+        } else if (event.type === 'fault' || event.type === 'unrecovered') {
+          logger.error('emulator.fault.unrecovered', {
+            kind: event.kind,
+            tier: event.tier ?? 'risky',
+            attempts: event.attempts ?? 0,
+            game: game?.id ?? null,
+          });
+        }
+      }
     }, 5000);
-    return () => clearInterval(id);
-  }, [showInputActivity, logger]);
+    return () => { clearInterval(id); supervisorRef.current = null; };
+    // `game` only feeds a log field; re-subscribing on it would reset the
+    // supervisor's heal budget mid-session.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showInputActivity, logger, readPadsSafely]);
 
   // Apply a touch-volume level (0..100, log curve) to the emulator's game bus.
   // Also resumes the audio engine, since browsers gate autoplay until a gesture.
@@ -520,7 +612,10 @@ export function EmulatorConsole({
       mixer,
       governanceGate,
       game,
-      engineConfig,
+      // Carry the persisted volume into EJS's own config so its late self-assert
+      // lands on the user's level rather than the hard-coded 0.5 that made every
+      // game boot loud until the volume panel was opened.
+      engineConfig: { ...engineConfig, volume: logVolumeFromLevel(volumeLevelRef.current) },
       actionHandlers: mergedHandlers,
       deps: { resolveMediaUrl },
       logger,
@@ -560,8 +655,12 @@ export function EmulatorConsole({
           bus: 'game',
           isDefault: level === DEFAULT_VOLUME_LEVEL,
         });
-        const audioCtxState = runtimeRef.current?.engine?.getAudioContextState?.() ?? 'unavailable';
-        logger.info('emulator.console.started', { game: game?.id, wramBase: res?.wramBase, audioContext: audioCtxState });
+        // NOTE: audioContext is deliberately NOT logged here. Probed at this point
+        // it read `null` in 24/24 real sessions — the core's audio glue does not
+        // exist until EJS has started — so the field reported a permanent false
+        // "unavailable" that would have masked a genuine audio failure. It is now
+        // read after the settle barrier instead.
+        logger.info('emulator.console.started', { game: game?.id, wramBase: res?.wramBase });
 
         // Tap the core's input funnel so the chrome LED + logs reflect what the
         // emulation ACTUALLY received (the "emulator" channel), not just what the
@@ -573,6 +672,72 @@ export function EmulatorConsole({
           } catch (err) {
             logger.warn('emulator.input.tap-failed', { error: err && err.message });
           }
+        }
+
+        // ── Settle barrier ────────────────────────────────────────────────────
+        // Wait for EmulatorJS to actually FINISH starting, then apply our config
+        // and verify each setting by reading it back. Everything before this
+        // point is EJS's own start chain, which re-asserts its volume and rebuilds
+        // gamepadSelection — clobbering anything we set early. See bootSettle.js.
+        try {
+          const desiredVolume = logVolumeFromLevel(volumeLevelRef.current);
+          const settle = await settleBoot({
+            // A build that cannot report the barrier must not stall boot for the
+            // full deadline — proceed immediately and let the contract assert
+            // below be the thing that complains about the missing probe.
+            isStarted: () => (typeof engine.isStarted === 'function' ? engine.isStarted() === true : true),
+            settings: [
+              {
+                name: 'gamepad-slots',
+                apply: () => engine.claimGamepads?.(),
+                // Verified against EJS's own routing key: a pad absent from
+                // gamepadSelection has every input silently discarded.
+                verify: () => {
+                  const pads = readPadsSafely();
+                  if (pads.length === 0) return true; // nothing to claim; keyboard works
+                  const selection = engine.getGamepadSelection?.() || [];
+                  return pads.every((p) => selection.includes(`${p.id}_${p.index}`));
+                },
+              },
+              {
+                name: 'volume',
+                apply: () => mixer.setBusVolume?.('game', desiredVolume),
+                verify: () => {
+                  const live = engine.getEjsVolume?.();
+                  return live === null || Math.abs(live - desiredVolume) < 0.001;
+                },
+              },
+            ],
+          });
+
+          if (cancelled) return;
+          logger.info('emulator.settle', {
+            started: settle.started,
+            waitedMs: settle.waitedMs,
+            reasserted: settle.reasserted,
+            failed: settle.failed,
+            // Now meaningful: past the barrier the core's audio glue exists.
+            audioContext: engine.getAudioContextState?.() ?? 'unavailable',
+          });
+          // Drift = EJS clobbered us. This is the early-warning signal that did
+          // not exist when the volume bug shipped.
+          if (settle.reasserted.length) {
+            logger.warn('emulator.settle.reasserted', { settings: settle.reasserted, game: game?.id ?? null });
+          }
+          if (!settle.started) {
+            logger.error('emulator.settle.no-start', { waitedMs: settle.waitedMs, game: game?.id ?? null });
+          }
+
+          // Contract check: an EJS upgrade that renames what we reach into must
+          // fail loudly here rather than silently killing input in the garage.
+          const contract = assertEjsContract(engine.getInstance?.(), { version: EJS_ENGINE_VERSION });
+          contractOkRef.current = contract.ok;
+          logger.info('emulator.boot.provenance', { engine: 'emulatorjs', version: contract.version });
+          if (!contract.ok) {
+            logger.error('emulator.contract.broken', { missing: contract.missing, version: contract.version });
+          }
+        } catch (err) {
+          logger.warn('emulator.settle.failed', { error: err && err.message });
         }
 
         // Success = OBSERVED, not resolved: confirm the game actually rendered a
@@ -762,7 +927,15 @@ export function EmulatorConsole({
       <OverlayLayer overlays={overlays} resolve={resolveOverlay} />
       <HotspotLayer hotspots={hotspots} onActivate={(h) => controllerRef.current?.activate(h)} />
       {showInputActivity && (
-        <InputActivityLED browserActive={inputLed.browser} emulatorActive={inputLed.emulator} />
+        <ControllerIndicator
+          state={health.state}
+          fault={health.fault}
+          connected={readPadsSafely().length > 0}
+          // Activity means the CORE consumed input — the browser channel now feeds
+          // fault detection rather than being shown as a second, always-agreeing dot.
+          activity={inputLed.emulator}
+          onFix={health.state === 'fault' ? retryBoot : undefined}
+        />
       )}
       {showOverlay && (
         <div className={`emulator-governance-overlay overlay-${status.state}`}>

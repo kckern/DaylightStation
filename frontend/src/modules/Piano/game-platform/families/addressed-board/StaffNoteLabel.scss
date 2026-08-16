@@ -2,10 +2,17 @@
  * Rim labels for the reading vocabulary.
  *
  * Reuses `.action-staff` from the other piano games — same cream card, same
- * engraver, same ink — so a note on the chess rim looks like a note anywhere
+ * engraver, same ink — so a note on any board's rim looks like a note anywhere
  * else on this instrument. Only the sizing is local: these have to fit the
  * board's axis strip, and the strip is a fixed part of the board's own size
  * calculation, so the card is pinned to it rather than scaling with a square.
+ *
+ * The class stays `chess-staff-label` even outside chess: it is the name
+ * PianoChessGame.scss's rim overrides already select on (`.chess-staff-label`,
+ * `.piano-chess--reading .chess-staff-label`), and chess is still the deployed
+ * game with the sizing pass tuned against it. Renaming it here would either
+ * break that rule silently or require touching chess's stylesheet for a move
+ * that is supposed to be behaviour-neutral for chess.
  */
 .chess-staff-label.action-staff {
   /* MUST match SvgStaffRenderer's STAFF_ASPECT (100/112). Its staff lines

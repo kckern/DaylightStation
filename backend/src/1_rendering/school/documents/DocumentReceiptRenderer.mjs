@@ -119,34 +119,63 @@ export function createDocumentReceiptRenderer({
     return lines;
   }
 
-  function fittedFont(ctx, text, { weight = '', start = 20, min = 14, maxWidth }) {
-    let size = start;
-    do {
-      ctx.font = `${weight ? `${weight} ` : ''}${size}px "${theme.fonts.family}"`;
-      if (ctx.measureText(text).width <= maxWidth) return ctx.font;
-      size -= 1;
-    } while (size >= min);
-    return `${weight ? `${weight} ` : ''}${min}px "${theme.fonts.family}"`;
+  /**
+   * Offset (from a `textBaseline:'top'` draw-y) down to a text run's own
+   * visual center — the midpoint of its actual measured ink, not the font's
+   * nominal line-box center. Line-box centering is what made the TODAY sun
+   * and the SCAN TO PRINT corner marks read as footnotes hanging below their
+   * text on the printed copy: a font's 'top' reference sits well above where
+   * capital letters actually start, so a glyph box-centered against it lands
+   * too low. Re-measuring per call (rather than a hand-picked constant) keeps
+   * this correct if the font or size ever changes.
+   */
+  function textOpticalCenter(ctx, font, text) {
+    ctx.font = font;
+    const { actualBoundingBoxAscent: ascent, actualBoundingBoxDescent: descent } = ctx.measureText(text || ' ');
+    return (descent - ascent) / 2;
   }
 
-  /** Shared two-row Subject/Course → Unit/Lesson taxonomy presentation. */
+  /**
+   * Shared Subject›Course / Unit taxonomy presentation (agenda lesson card AND
+   * the result-summary receipt). Fixed sizes that WRAP rather than the old
+   * shrink-to-fit single line: 58mm tape has vertical room to spare and none
+   * to spare sideways, so a long breadcrumb should grow to more lines, not
+   * shrink to fit one (design feedback on the printed agenda).
+   *
+   * The gutter icon (when present) is sized and optically centered against
+   * the TOP line's first line only — same fix as the TODAY sun, applied here
+   * because box-centering it across both taxonomy rows is exactly what made
+   * it read as belonging to neither ("Unit 0" line has no icon of its own;
+   * see `drawTaxonomy`).
+   */
   function taxonomyOp(ctx, taxonomy, maxWidth, { icon = null, includeLesson = true } = {}) {
     if (!taxonomy) return null;
-    const lineHeight = 24;
-    const iconSize = lineHeight * 2;
-    const textWidth = maxWidth - (icon ? iconSize + 10 : 0);
+    const iconSize = icon ? theme.action.subjectIconPx : 0;
+    const textOffset = icon ? iconSize + theme.action.iconGap : 0;
+    const textWidth = maxWidth - textOffset;
     const top = `${taxonomy.subject}  ›  ${taxonomy.course}`;
     const bottom = includeLesson ? `${taxonomy.unit}  ›  ${taxonomy.lesson}` : taxonomy.unit;
+
+    ctx.font = theme.fonts.taxonomyTop;
+    const topLines = wrapTight(ctx, top, textWidth);
+    const iconCenterOffset = icon
+      ? textOpticalCenter(ctx, theme.fonts.taxonomyTop, topLines[0] ?? '') - iconSize / 2
+      : 0;
+
+    ctx.font = theme.fonts.taxonomyBottom;
+    const bottomLines = wrapTight(ctx, bottom, textWidth - theme.action.taxonomyBottomIndent);
+
     return {
       icon,
       iconSize,
-      textOffset: icon ? iconSize + 10 : 0,
-      top,
-      bottom,
-      topFont: fittedFont(ctx, top, { start: 18, min: 13, maxWidth: textWidth }),
-      bottomFont: fittedFont(ctx, bottom, { weight: 'bold', start: 20, min: 14, maxWidth: textWidth - 12 }),
-      lineHeight,
-      heightPx: lineHeight * 2,
+      iconCenterOffset,
+      textOffset,
+      topLines,
+      bottomLines,
+      topLineHeight: theme.action.taxonomyTopLineHeight,
+      bottomLineHeight: theme.action.taxonomyBottomLineHeight,
+      heightPx: topLines.length * theme.action.taxonomyTopLineHeight
+        + (bottomLines.length ? theme.action.taxonomyGap + bottomLines.length * theme.action.taxonomyBottomLineHeight : 0),
     };
   }
 
@@ -183,12 +212,19 @@ export function createDocumentReceiptRenderer({
     const code = tokens?.[block.action] ?? block.code ?? block.token ?? block.action;
     const lesson = block.presentation === 'lesson';
     const iconSpan = icon && !lesson ? theme.action.iconPx + theme.action.iconGap : 0;
-    ctx.font = theme.fonts.label;
+    // The lesson card's title gets its own (larger) font — see fonts.lessonTitle.
+    const titleFont = lesson ? theme.fonts.lessonTitle : theme.fonts.label;
+    const titleLineHeight = lesson ? theme.action.titleLineHeight : theme.text.bodyLineHeight;
+    ctx.font = titleFont;
     const labelWidth = contentWidth - 2 * theme.action.padding - theme.action.codeAreaPx
       - (lesson ? theme.action.lessonTextGap : theme.action.labelGap) - iconSpan;
     const taxonomy = lesson && block.taxonomy
       ? taxonomyOp(ctx, block.taxonomy, labelWidth, { icon, includeLesson: false })
       : null;
+    // taxonomyOp leaves ctx.font on whatever it last measured with — reset to
+    // the title font before wrapping the title, so its line breaks are
+    // computed against the font it is actually drawn in.
+    ctx.font = titleFont;
     const labelLines = wrapTight(ctx, block.label, labelWidth);
     ctx.font = theme.fonts.eyebrow;
     const eyebrow = lesson && block.eyebrow
@@ -208,13 +244,16 @@ export function createDocumentReceiptRenderer({
     // (design audit: 'sch:8V2QWGT4A / FXHHD4U' wrapped mid-token). A code a
     // person may have to type by hand deserves phone-number ergonomics.
     const codeLines = block.hideCode ? [] : wrapTight(ctx, chunkCode(code), theme.action.codeAreaPx);
+    // Row gaps mirror the draw loop's spacing exactly (rowGap between each
+    // populated row-group) so the measured box height never runs short of
+    // what actually gets drawn into it.
     const textHeight = lesson
-      ? eyebrowLines.length * theme.action.eyebrowLineHeight
-        + (taxonomy?.heightPx ?? 0)
-        + labelLines.length * theme.text.bodyLineHeight
-        + descriptionLines.length * theme.action.descriptionLineHeight
+      ? eyebrowLines.length * theme.action.eyebrowLineHeight + theme.action.rowGap
+        + (taxonomy?.heightPx ?? 0) + (taxonomy ? theme.action.rowGap : 0)
+        + labelLines.length * titleLineHeight + (descriptionLines.length ? theme.action.rowGap : 0)
+        + descriptionLines.length * theme.action.descriptionLineHeight + (metaLines.length ? theme.action.rowGap : 0)
         + metaLines.length * theme.text.codeLineHeight + 10
-      : labelLines.length * theme.text.bodyLineHeight;
+      : labelLines.length * titleLineHeight;
     const iconHeight = icon ? theme.action.iconPx : 0;
     const codeBlockHeight = theme.action.codeAreaPx + (codeLines.length ? theme.action.codeGap : 0)
       + codeLines.length * theme.text.codeLineHeight;
@@ -391,17 +430,31 @@ export function createDocumentReceiptRenderer({
 
     async function drawTaxonomy(taxonomy, tx, ty) {
       if (!taxonomy) return;
-      if (taxonomy.icon) {
-        const image = await loadImage(taxonomy.icon);
-        ctx.drawImage(image, tx, ty, taxonomy.iconSize, taxonomy.iconSize);
-      }
       const textX = tx + taxonomy.textOffset;
       ctx.textAlign = 'left';
-      ctx.font = taxonomy.topFont;
-      ctx.fillText(taxonomy.top, textX, ty);
-      ctx.font = taxonomy.bottomFont;
-      ctx.fillText(taxonomy.bottom, textX + 12, ty + taxonomy.lineHeight);
+      ctx.font = theme.fonts.taxonomyTop;
+      taxonomy.topLines.forEach((line, index) => ctx.fillText(line, textX, ty + index * taxonomy.topLineHeight));
+      if (taxonomy.icon) {
+        // Centered on the TOP line's own ink (iconCenterOffset, computed in
+        // taxonomyOp) — not box-centered across both taxonomy rows, which is
+        // what made it read as a caption belonging to neither line.
+        const image = await loadImage(taxonomy.icon);
+        ctx.drawImage(image, tx, ty + taxonomy.iconCenterOffset, taxonomy.iconSize, taxonomy.iconSize);
+      }
+      const bottomY = ty + taxonomy.topLines.length * taxonomy.topLineHeight + theme.action.taxonomyGap;
+      ctx.font = theme.fonts.taxonomyBottom;
+      taxonomy.bottomLines.forEach((line, index) => ctx.fillText(
+        line, textX + theme.action.taxonomyBottomIndent, bottomY + index * taxonomy.bottomLineHeight,
+      ));
     }
+
+    // Local geometric centers for the two hand-drawn glyphs below, in the
+    // same (ix, iy)-relative coordinate space their path math uses. Both
+    // shapes are built symmetric around these points (verified against their
+    // own coordinate lists), so — unlike text — no per-call measurement is
+    // needed to find their visual middle.
+    const TODAY_ICON_CENTER_Y = 10; // sun: arc centered at local (9, 10)
+    const SCAN_ICON_CENTER_Y = 8.5; // scan brackets: 17px square, corners at 0 and 17
 
     function drawActionIndicator(kind, ix, iy) {
       ctx.save();
@@ -690,24 +743,31 @@ export function createDocumentReceiptRenderer({
       }
       let labelY = op.yPx + theme.action.padding;
       if (op.lesson) {
-        drawActionIndicator(op.eyebrowLines[0] ?? '', labelX, labelY + 11);
+        // Sun optically centered on the TODAY text's own cap-height, not the
+        // font's line box — see textOpticalCenter. Was a flat "+11" that
+        // landed the sun visibly below the word (printed-copy feedback).
+        const eyebrowText = op.eyebrowLines[0] ?? '';
+        const eyebrowCenterY = labelY + textOpticalCenter(ctx, theme.fonts.eyebrow, eyebrowText);
+        drawActionIndicator(eyebrowText, labelX, eyebrowCenterY - TODAY_ICON_CENTER_Y);
         ctx.font = theme.fonts.eyebrow;
         op.eyebrowLines.forEach((line, index) => ctx.fillText(
           line, labelX + 24, labelY + index * theme.action.eyebrowLineHeight,
         ));
-        labelY += op.eyebrowLines.length * theme.action.eyebrowLineHeight + 3;
+        labelY += op.eyebrowLines.length * theme.action.eyebrowLineHeight + theme.action.rowGap;
         await drawTaxonomy(op.taxonomy, labelX, labelY);
-        labelY += (op.taxonomy?.heightPx ?? 0) + (op.taxonomy ? 3 : 0);
+        labelY += (op.taxonomy?.heightPx ?? 0) + (op.taxonomy ? theme.action.rowGap : 0);
       }
-      ctx.font = theme.fonts.label;
-      op.labelLines.forEach((line, index) => ctx.fillText(line, labelX, labelY + index * theme.text.bodyLineHeight));
-      labelY += op.labelLines.length * theme.text.bodyLineHeight + (op.descriptionLines.length ? 5 : 0);
+      const titleFont = op.lesson ? theme.fonts.lessonTitle : theme.fonts.label;
+      const titleLineHeight = op.lesson ? theme.action.titleLineHeight : theme.text.bodyLineHeight;
+      ctx.font = titleFont;
+      op.labelLines.forEach((line, index) => ctx.fillText(line, labelX, labelY + index * titleLineHeight));
+      labelY += op.labelLines.length * titleLineHeight + (op.descriptionLines.length ? theme.action.rowGap : 0);
       if (op.lesson) {
         ctx.font = theme.fonts.description;
         op.descriptionLines.forEach((line, index) => ctx.fillText(
           line, labelX + op.descriptionIndent, labelY + index * theme.action.descriptionLineHeight,
         ));
-        labelY += op.descriptionLines.length * theme.action.descriptionLineHeight + (op.metaLines.length ? 5 : 0);
+        labelY += op.descriptionLines.length * theme.action.descriptionLineHeight + (op.metaLines.length ? theme.action.rowGap : 0);
         if (op.metaParts.length) {
           const footerY = op.yPx + boxHeight - theme.action.padding - theme.text.codeLineHeight;
           ctx.beginPath();
@@ -717,14 +777,20 @@ export function createDocumentReceiptRenderer({
           ctx.stroke();
           ctx.font = theme.fonts.code;
           ctx.textAlign = 'left';
+          // SCAN TO PRINT's corner marks, optically centered the same way as
+          // the TODAY sun — was a flat "+7" that sat the icon low enough to
+          // look detached from its label (printed-copy feedback: "that icon
+          // should be scooting up").
+          const scanCenterY = footerY + textOpticalCenter(ctx, theme.fonts.code, op.metaParts[0]);
+          const scanIconY = scanCenterY - SCAN_ICON_CENTER_Y;
           if (op.metaParts.length === 1) {
             const footerRight = x + contentWidth - theme.action.padding;
             const groupWidth = 17 + 8 + ctx.measureText(op.metaParts[0]).width;
             const groupX = labelX + (footerRight - labelX - groupWidth) / 2;
-            drawScanIndicator(groupX, footerY + 7);
+            drawScanIndicator(groupX, scanIconY);
             ctx.fillText(op.metaParts[0], groupX + 25, footerY);
           } else {
-            drawScanIndicator(labelX, footerY + 7);
+            drawScanIndicator(labelX, scanIconY);
             ctx.fillText(op.metaParts[0], labelX + 25, footerY);
             ctx.textAlign = 'right';
             ctx.fillText(op.metaParts.slice(1).join(' · '), x + contentWidth - theme.action.padding, footerY);

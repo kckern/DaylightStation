@@ -5,7 +5,17 @@ FROM node:${NODE_VERSION}-alpine
 WORKDIR /usr/src/app
 
 # Layer 1: System dependencies - stable, rarely changes
-RUN apk add --no-cache openssh-client git curl ffmpeg tzdata yq android-tools su-exec fluidsynth soundfont-timgm exiftool
+#
+# ghostscript: the kitchen laser printer (Brother HL-L2460DW) is an
+# AirPrint-class raster printer with NO PDF interpreter — it only accepts
+# image/urf and image/pwg-raster (see LaserPrinterAdapter.mjs's header
+# comment for the incident that proved this). `gs`'s `urf`/`pwgraster`
+# devices are how PDFs get converted before they're sent. Verified (2026-08)
+# that Alpine's ghostscript package (10.05.1-r0) ships both devices — do not
+# remove this without re-checking that, since the printer will silently
+# fail closed (LaserPrinterAdapter now refuses to send an unsupported
+# format rather than guess) if `gs` disappears from the image.
+RUN apk add --no-cache openssh-client git curl ffmpeg tzdata yq android-tools su-exec fluidsynth soundfont-timgm exiftool ghostscript
 
 # Set System Timezone
 ARG TZ=America/Los_Angeles

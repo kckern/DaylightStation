@@ -31,7 +31,7 @@ describe('module constants', () => {
   it('exports the schema literal and closed archetype/fit-policy sets', () => {
     expect(DOCUMENT_V2_SCHEMA).toBe('school.document/v2');
     expect(ARCHETYPES).toEqual(['quiz', 'worksheet', 'infopage']);
-    expect(FIT_POLICIES).toEqual(['flow', 'one-page', 'fill']);
+    expect(FIT_POLICIES).toEqual(['flow', 'one-page', 'fill', 'prefer-one-page']);
   });
 });
 
@@ -196,6 +196,27 @@ describe('validateDocumentV2: archetype presets', () => {
       name: true, date: true, scoreBox: true, instructions: 'Show your work.',
     });
   });
+
+  // The seam chosen for "prefer-one-page is the default for worksheets": an
+  // archetype-keyed fit-policy preset, parallel to the header preset above —
+  // NOT a change to the flat fallback every archetype used to share. Only
+  // `worksheet` moves; `quiz`/`infopage` keep requesting `flow` exactly as
+  // before an author who never touches `fit` at all.
+  it.each([
+    ['quiz', 'flow'],
+    ['worksheet', 'prefer-one-page'],
+    ['infopage', 'flow'],
+  ])('applies the %s fit-policy default when fit is omitted', (archetype, expectedPolicy) => {
+    const { errors, document } = validateDocumentV2(v2doc({ archetype }));
+    expect(errors).toEqual([]);
+    expect(document.fit).toEqual({ policy: expectedPolicy, typeScale: 'standard' });
+  });
+
+  it('lets an explicit fit.policy override the worksheet archetype default', () => {
+    const { errors, document } = validateDocumentV2(v2doc({ archetype: 'worksheet', fit: { policy: 'flow' } }));
+    expect(errors).toEqual([]);
+    expect(document.fit).toEqual({ policy: 'flow', typeScale: 'standard' });
+  });
 });
 
 describe('validateDocumentV2: source desugar', () => {
@@ -260,6 +281,21 @@ describe('validateDocumentV2: rejections', () => {
     expect(errors).toContain(`fit policy '${policy}' requires letter target`);
   });
 
+  // `prefer-one-page` is now the WORKSHEET ARCHETYPE DEFAULT (see the
+  // "archetype presets" describe block) — it must stay legal with a receipt
+  // target, unlike `one-page`/`fill` above, or every existing worksheet
+  // authored with target: ['receipt'] and no explicit fit.policy would break.
+  it("allows fit.policy 'prefer-one-page' combined with a receipt target", () => {
+    // `rich_text`-only blocks: `question`/`answer_space` (v2doc's default
+    // body) aren't receipt-supported block TYPES at all (BLOCK_TARGET_SUPPORT
+    // above) — using them here would fail for that unrelated reason and mask
+    // whether the FIT-policy-vs-receipt check itself passed.
+    const { errors } = validateDocumentV2(v2doc({
+      archetype: 'worksheet', fit: { policy: 'prefer-one-page' }, target: ['receipt'], blocks: [{ type: 'rich_text', md: 'Receipt body.' }],
+    }));
+    expect(errors).toEqual([]);
+  });
+
   it("allows fit.policy 'one-page' with a letter target", () => {
     const { errors } = validateDocumentV2(v2doc({ fit: { policy: 'one-page' }, target: ['letter'] }));
     expect(errors).toEqual([]);
@@ -291,6 +327,20 @@ describe('validateDocumentV2: page_break incompatible with fit.policy one-page (
       const { errors } = validateDocumentV2(raw);
       expect(errors, `policy ${policy}`).toEqual([]);
     }
+  });
+
+  // `prefer-one-page` deliberately does NOT join `one-page` in the page_break
+  // ban above: unlike `one-page`, it never hard-fails on overset, so a forced
+  // page boundary is a legitimate authoring choice, not the same "confusing
+  // FIT_OVERSET with oversetPt: 0" contradiction `one-page`'s ban exists to
+  // catch (see the check's own doc comment).
+  it('page_break is fine under fit.policy prefer-one-page (never a hard-fail policy)', () => {
+    const raw = v2doc({
+      fit: { policy: 'prefer-one-page' },
+      blocks: [question(), { type: 'page_break' }, question({ itemId: 'q2', number: 2 })],
+    });
+    const { errors } = validateDocumentV2(raw);
+    expect(errors).toEqual([]);
   });
 
   it('a page_break-free one-page document is unaffected', () => {

@@ -42,6 +42,7 @@ import { createWorksheetInstance, worksheetInstanceDocument } from '#domains/sch
 import { PublishPrintDocument } from '#apps/school/documents/PublishPrintDocument.mjs';
 import { deriveLearnerName, deriveIssueDate } from '#apps/school/documents/reprintContext.mjs';
 import { slugify } from '#domains/school/documents/receipts.mjs';
+import { DEFAULT_PRINT_POLICY } from '#domains/school/index.mjs';
 
 /** States in which handing over a sheet still means something. */
 const ISSUABLE = new Set(['created', 'media_completed', 'issued', 'reprinted']);
@@ -55,6 +56,23 @@ const ISSUABLE = new Set(['created', 'media_completed', 'issued', 'reprinted']);
  * `buildRecordId` convention for the same pair.
  */
 const PRINT_DOCUMENT_REF = /^print\/([^@]+)@([^@]+)$/;
+
+/**
+ * `school.yml printing.printCooldownMinutes` — how long a session's most
+ * recent SUCCESSFUL print silences a re-scan of the same ticket (spec: print
+ * debounce). Validated the same defensive way `normalizeAnswerSheetPolicy`
+ * is: this number reaches a re-scan's fast path on every single scan in the
+ * house, so a malformed config value (a negative number, a string left over
+ * from a YAML typo) must fail loudly at construction rather than silently
+ * producing a debounce window that never expires or never engages.
+ */
+function normalizePrintCooldownMinutes(raw) {
+  const minutes = raw ?? DEFAULT_PRINT_POLICY.printCooldownMinutes;
+  if (!Number.isFinite(minutes) || minutes < 0) {
+    throw new Error('IssueDocument: printCooldownMinutes must be a number >= 0');
+  }
+  return minutes;
+}
 
 function normalizeAnswerSheetPolicy(raw) {
   const reuse = raw?.reuse ?? 'after_scan';
@@ -120,7 +138,7 @@ export class IssueDocument {
   #curriculum; #sessions; #tokens; #renderer; #printer; #formMaps; #bankReader;
   #printDocuments; #renderPrintDocument; #allocationStore;
   #assignments; #worksheetInstances; #publishPrintDocument;
-  #answerSheetPolicy;
+  #answerSheetPolicy; #printCooldownMinutes;
   #clock; #rng; #newArtifactId; #logger;
 
   /**
@@ -150,13 +168,17 @@ export class IssueDocument {
    * @param {() => Date} [deps.clock]
    * @param {() => number} [deps.rng]
    * @param {() => string} [deps.newArtifactId]
+   * @param {number} [deps.printCooldownMinutes] - `school.yml printing.printCooldownMinutes`
+   *   (default `DEFAULT_PRINT_POLICY.printCooldownMinutes`, 10). See the
+   *   debounce check near the top of `execute()` for the deliberate silence
+   *   this implements.
    * @param {object} [deps.logger]
    */
   constructor({
     curriculum, sessions, tokens, renderer, printer, formMaps, bankReader = null,
     printDocuments = null, renderPrintDocument = null, allocationStore = null,
     assignments = null, worksheetInstances = null, publishPrintDocument = null,
-    answerSheetPolicy = null,
+    answerSheetPolicy = null, printCooldownMinutes = null,
     clock = () => new Date(), rng = Math.random,
     newArtifactId = () => `art_${shortId(8)}`, logger = console,
   } = {}) {
@@ -176,6 +198,7 @@ export class IssueDocument {
     this.#assignments = assignments;
     this.#worksheetInstances = worksheetInstances;
     this.#answerSheetPolicy = normalizeAnswerSheetPolicy(answerSheetPolicy);
+    this.#printCooldownMinutes = normalizePrintCooldownMinutes(printCooldownMinutes);
     this.#publishPrintDocument = publishPrintDocument
       ?? (printDocuments ? new PublishPrintDocument({ repository: printDocuments }) : null);
     this.#clock = clock;
@@ -222,6 +245,44 @@ export class IssueDocument {
           headline: 'All finished with that one',
           lines: ['Scan your card to see what is next.'],
         }),
+      };
+    }
+
+    // PRINT DEBOUNCE (spec: a household print quota, not a paper factory).
+    // Two scans of the SAME ticket ten seconds apart used to put two
+    // identical worksheets on the laser printer — nothing in the school
+    // layers deduplicated a PRINT, only card-scan ingestion and bank
+    // warming. `state.issuedArtifacts.length > 0` is exactly "this session
+    // has printed before" (every one of the three issuing branches below
+    // shares the same `issued`/`reprinted` event vocabulary), and
+    // `state.lastPrintedAt` is stamped ONLY by a successful print (see
+    // `sessionEvents.mjs`) — never by a `failed` annotation — which is what
+    // lets an offline-printer retry go through immediately below instead of
+    // being silenced by the very failure it is trying to recover from.
+    //
+    // THIS IS A DELIBERATE, AUTHORISED EXCEPTION to `tokens.mjs`'s house
+    // rule that "a scan never succeeds silently, and never dead-ends" — every
+    // other non-happy-path in this file hands back a message, a slip, a
+    // recovery ticket. This one hands back nothing at all: no worksheet, no
+    // receipt, no explanation. That was a conscious call (the household chose
+    // silence over a redundant thermal slip for every debounced re-scan, not
+    // an oversight this comment is here to flag) — see `ResolveScanAction`'s
+    // own `#print`, which special-cases `status: 'debounced'` to skip its
+    // receipts fallback for the identical reason. Do not "fix" this back to
+    // printing a slip; that reintroduces the very duplicate-output bug the
+    // debounce exists to remove.
+    if (state.issuedArtifacts.length > 0 && this.#withinPrintCooldown(state.lastPrintedAt, nowIso)) {
+      this.#logger.info?.('school.issue.print-debounced', {
+        sessionId, unitId: state.unitId, artifactId: state.issuedArtifacts.at(-1), lastPrintedAt: state.lastPrintedAt,
+      });
+      return {
+        status: 'debounced',
+        sessionId,
+        artifactId: state.issuedArtifacts.at(-1),
+        pageCount: null,
+        tokens: {},
+        document: null,
+        message: '',
       };
     }
 
@@ -286,8 +347,9 @@ export class IssueDocument {
       });
     }
 
+    let printResult;
     try {
-      await this.#printer.printPdf(rendered.pdf, {
+      printResult = await this.#printer.printPdf(rendered.pdf, {
         jobName: `school-${state.unitId}-${artifactId}`,
         user: state.learnerId ?? 'daylight',
       });
@@ -299,7 +361,9 @@ export class IssueDocument {
     if (rendered.formMap) await this.#formMaps.put(artifactId, rendered.formMap);
 
     const type = reprinting ? 'reprinted' : 'issued';
-    const { errors, event } = createEvent({ type, at: nowIso, sessionId, artifactId });
+    const { errors, event } = createEvent({
+      type, at: nowIso, sessionId, artifactId, confirmed: this.#printConfirmed(printResult),
+    });
     if (errors.length) throw new Error(`IssueDocument: could not record the issue: ${errors.join('; ')}`);
     await this.#sessions.appendEvent(sessionId, event);
 
@@ -367,15 +431,30 @@ export class IssueDocument {
         reuse: this.#answerSheetPolicy.reuse,
       })
       : null;
+    // Header manifest (Task 2, RenderPrintDocument's `context.passPercent`):
+    // `unit.passing.percent` is the SAME field `GradeSubmission`/
+    // `CloseSessionOutcome` already read as the authoritative pass bar for
+    // closing this exact lesson's session — reading anything else here (a
+    // course-level default, a hand-copied constant) would risk the printed
+    // sheet disagreeing with what actually grades it. `?? null` (no
+    // `passing` authored for this unit) prints the question count alone —
+    // see `RenderPrintDocument`'s `buildManifestText`.
+    const passPercent = unit.passing?.percent ?? null;
     let rendered;
     try {
       const result = await this.#renderPrintDocument.execute({
         document: publishedDocument,
         context: reprinting && instance.omr?.cardId
-          ? { cardId: instance.omr.cardId, startRow: instance.omr.rowRange.start, learnerId: state.learnerId, learnerName, date: issueDate, sessionId }
+          ? {
+            cardId: instance.omr.cardId, startRow: instance.omr.rowRange.start, learnerId: state.learnerId, learnerName, date: issueDate, sessionId, passPercent,
+          }
           : reusableCard
-            ? { ...reusableCard, learnerId: state.learnerId, learnerName, date: issueDate, sessionId }
-            : { freshCard: true, learnerId: state.learnerId, learnerName, date: issueDate, sessionId },
+            ? {
+              ...reusableCard, learnerId: state.learnerId, learnerName, date: issueDate, sessionId, passPercent,
+            }
+            : {
+              freshCard: true, learnerId: state.learnerId, learnerName, date: issueDate, sessionId, passPercent,
+            },
       });
       rendered = {
         pdf: result.bytes, pageCount: result.pageCount, allocation: result.allocation,
@@ -408,8 +487,9 @@ export class IssueDocument {
       await this.#worksheetInstances.put(instance);
     }
 
+    let printResult;
     try {
-      await this.#printer.printPdf(rendered.pdf, {
+      printResult = await this.#printer.printPdf(rendered.pdf, {
         jobName: `school-${state.unitId}-${instance.id}`,
         user: state.learnerId,
         // The DOCUMENT decides whether this sheet is double-sided, not the
@@ -425,7 +505,9 @@ export class IssueDocument {
       return this.#recordFailure({ sessionId, stage: 'print', reason: err.message, nowIso, state, cause: 'printer' });
     }
     const type = reprinting ? 'reprinted' : 'issued';
-    const { errors, event } = createEvent({ type, at: nowIso, sessionId, artifactId: instance.id });
+    const { errors, event } = createEvent({
+      type, at: nowIso, sessionId, artifactId: instance.id, confirmed: this.#printConfirmed(printResult),
+    });
     if (errors.length) throw new Error(`IssueDocument: could not record worksheet instance: ${errors.join('; ')}`);
     await this.#sessions.appendEvent(sessionId, event);
     return {
@@ -582,8 +664,9 @@ export class IssueDocument {
       });
     }
 
+    let printResult;
     try {
-      await this.#printer.printPdf(rendered.pdf, {
+      printResult = await this.#printer.printPdf(rendered.pdf, {
         jobName: `school-${state.unitId}-${artifactId}`,
         user: state.learnerId ?? 'daylight',
         // A tracked quiz is NOT a `worksheet` archetype, so its punch gutter is
@@ -617,7 +700,9 @@ export class IssueDocument {
     }
 
     const type = reprinting ? 'reprinted' : 'issued';
-    const { errors, event } = createEvent({ type, at: nowIso, sessionId, artifactId });
+    const { errors, event } = createEvent({
+      type, at: nowIso, sessionId, artifactId, confirmed: this.#printConfirmed(printResult),
+    });
     if (errors.length) throw new Error(`IssueDocument: could not record the issue: ${errors.join('; ')}`);
     await this.#sessions.appendEvent(sessionId, event);
 
@@ -672,6 +757,56 @@ export class IssueDocument {
         sessionId, cardId: allocation.cardId, recordId: allocation.recordId, error: err.message,
       });
     }
+  }
+
+  /**
+   * Whether `lastPrintedAt` is still inside the debounce window. Pure
+   * arithmetic on two ISO strings — no I/O, no clock read of its own, so a
+   * test can assert it against any `nowIso` without waiting on a real timer.
+   *
+   * `lastPrintedAt: null` (nothing has ever successfully printed for this
+   * session) always answers `false` — there is nothing to debounce against,
+   * which is what lets the very first issue through unconditionally and lets
+   * a retry after a print FAILURE through immediately (see the call site's
+   * comment: a `failed` annotation never touches `lastPrintedAt`).
+   */
+  #withinPrintCooldown(lastPrintedAt, nowIso) {
+    if (!lastPrintedAt) return false;
+    const elapsedMs = Date.parse(nowIso) - Date.parse(lastPrintedAt);
+    if (!Number.isFinite(elapsedMs)) return false;
+    return elapsedMs < this.#printCooldownMinutes * 60_000;
+  }
+
+  /**
+   * Whether a `printer.printPdf()` result represents a GENUINE physical
+   * print, for the `confirmed` field threaded into the `issued`/`reprinted`
+   * event (see `sessionEvents.mjs`'s SCHEMA comment on that field).
+   *
+   * The bug this exists to close: `printer.printPdf()` NOT throwing only
+   * ever meant "the injected port accepted this call" — every one of this
+   * class's three issuing branches already treated that as "the print
+   * succeeded" and stamped the debounce timer from it, with no way to tell
+   * a real laser-printer dispatch apart from a caller that deliberately
+   * captures bytes instead of sending them anywhere (the `barcode-scan-sim`
+   * CLI's own "dry run by default" printer double is exactly this — see its
+   * `capturingPrinter` doc comment). A double built that way IS legitimate
+   * (it is what makes "dry run unless `--print`" true for that tool without
+   * turning IssueDocument's own printer-failure handling into dead code no
+   * test ever exercises) — the bug was never that such a double should not
+   * exist, only that arming a REAL debounce off it, silently, was wrong. A
+   * real print that came out of the tray must debounce the next scan; a
+   * simulator run that produced nothing must not block the next REAL print
+   * for however many minutes the cooldown lasts.
+   *
+   * `printResult?.confirmed === false` is the ONLY way to opt out — every
+   * existing adapter/double (`LaserPrinterAdapter`'s IPP/raw-9100 result
+   * shapes, `FakeLaserPrinter`'s `{ok:true,...}`, anything that resolves
+   * without ever mentioning `confirmed`) defaults to "yes, this was real,"
+   * so this is purely additive: nothing that used to arm the cooldown stops
+   * arming it just because this check exists.
+   */
+  #printConfirmed(printResult) {
+    return printResult?.confirmed !== false;
   }
 
   /**

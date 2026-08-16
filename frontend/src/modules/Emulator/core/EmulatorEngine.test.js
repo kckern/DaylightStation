@@ -371,3 +371,68 @@ describe('EmulatorEngine tapInput', () => {
     expect(typeof untap).toBe('function');
   });
 });
+
+describe('EmulatorEngine claimGamepads', () => {
+  // Regression: EmulatorJS 4.2.3 drops the "connected" event for a pad that was
+  // already plugged in when the emulator booted (GamepadHandler polls
+  // synchronously from its constructor, before .on("connected") is bound), so
+  // the pad never lands in gamepadSelection and gamepadEvent discards every
+  // input. Observed on the garage kiosk: 628 browser inputs, 0 consumed.
+  function withPads(pads, selection) {
+    return makeFakeInstance({
+      gamepad: { gamepads: pads },
+      gamepadSelection: selection,
+      updateGamepadLabels: vi.fn(),
+    });
+  }
+
+  it('assigns an already-connected pad to the first free player slot', async () => {
+    const instance = withPads(
+      [{ id: '2dc8-2830-8Bitdo SFC30 GamePad', index: 0 }],
+      ['', '', '', ''],
+    );
+    const engine = createEmulatorEngine({ load: async () => instance, win: makeFakeWin() });
+    await engine.boot({ mount: '#m', romUrl: 'r', pathtodata: 'd/' });
+
+    expect(engine.claimGamepads()).toBe(1);
+    expect(instance.gamepadSelection[0]).toBe('2dc8-2830-8Bitdo SFC30 GamePad_0');
+    expect(instance.updateGamepadLabels).toHaveBeenCalled();
+  });
+
+  it('is idempotent — a pad already claimed is not duplicated into a second slot', async () => {
+    const instance = withPads(
+      [{ id: 'pad', index: 0 }],
+      ['pad_0', '', '', ''],
+    );
+    const engine = createEmulatorEngine({ load: async () => instance, win: makeFakeWin() });
+    await engine.boot({ mount: '#m', romUrl: 'r', pathtodata: 'd/' });
+
+    expect(engine.claimGamepads()).toBe(0);
+    expect(instance.gamepadSelection).toEqual(['pad_0', '', '', '']);
+  });
+
+  it('claims multiple pads into distinct slots', async () => {
+    const instance = withPads(
+      [{ id: 'a', index: 0 }, { id: 'b', index: 1 }],
+      ['', '', '', ''],
+    );
+    const engine = createEmulatorEngine({ load: async () => instance, win: makeFakeWin() });
+    await engine.boot({ mount: '#m', romUrl: 'r', pathtodata: 'd/' });
+
+    expect(engine.claimGamepads()).toBe(2);
+    expect(instance.gamepadSelection).toEqual(['a_0', 'b_1', '', '']);
+  });
+
+  it('no-ops (does not throw) when the build never built gamepadSelection', async () => {
+    const instance = makeFakeInstance({ gamepad: { gamepads: [{ id: 'a', index: 0 }] } });
+    const engine = createEmulatorEngine({ load: async () => instance, win: makeFakeWin() });
+    await engine.boot({ mount: '#m', romUrl: 'r', pathtodata: 'd/' });
+
+    expect(engine.claimGamepads()).toBe(0);
+  });
+
+  it('returns 0 before boot (no instance yet)', () => {
+    const engine = createEmulatorEngine({ load: async () => makeFakeInstance(), win: makeFakeWin() });
+    expect(engine.claimGamepads()).toBe(0);
+  });
+});

@@ -13,9 +13,23 @@
 .instrument-board-stage__rail { min-width: 0; }
 .instrument-board-stage__boards {
   display: grid;
-  place-items: center;
+  /* An `auto` row for the top-rail, then everything else the primary/secondary
+     board(s) already claimed via place-items. When there is no topRail this
+     row simply doesn't exist — the element isn't rendered, not just hidden —
+     so a board without one loses nothing to an empty gap. */
+  grid-template-rows: auto minmax(0, 1fr);
+  justify-items: center;
+  align-items: center;
+  gap: 0.6rem;
   min-width: 0;
   min-height: 0;
+}
+.instrument-board-stage__top-rail {
+  /* Spans whatever column layout `.boards` is currently using (single,
+     dual-equal, primary-secondary) rather than being pinned to column 1 —
+     the rail addresses the WHOLE row of boards below it, not just the first. */
+  grid-column: 1 / -1;
+  width: 100%;
 }
 .instrument-board-stage__primary,
 .instrument-board-stage__secondary {
