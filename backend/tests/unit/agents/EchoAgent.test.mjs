@@ -63,11 +63,11 @@ describe('EchoAgent', () => {
       );
     });
 
-    it('should throw if workingMemory is not provided', () => {
-      assert.throws(
-        () => new EchoAgent({ agentRuntime: mockAgentRuntime }),
-        /workingMemory is required/
-      );
+    // Optional at construction — see BaseAgent: only running an assignment
+    // needs the scratchpad, and this agent registers none.
+    it('constructs without workingMemory', () => {
+      const agent = new EchoAgent({ agentRuntime: mockAgentRuntime });
+      assert.ok(agent);
     });
 
     it('should create with valid dependencies', () => {

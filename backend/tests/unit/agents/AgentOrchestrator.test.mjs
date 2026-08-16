@@ -210,6 +210,34 @@ describe('AgentOrchestrator', () => {
       assert.deepStrictEqual(result, { result: 'assignment done' });
     });
 
+    // Defaulting an absent userId to head-of-household is the ORCHESTRATOR's
+    // job (#resolveUserId), not the agent's. HealthCoachAgent.test.mjs used to
+    // assert it by calling the agent directly, which bypasses this entirely
+    // and so could never pass; it belongs here.
+    it('defaults an absent userId to head-of-household', async () => {
+      const orchestrator = new AgentOrchestrator({
+        agentRuntime: mockAgentRuntime,
+        configService: { getHeadOfHousehold: () => 'user_1' },
+        logger: mockLogger,
+      });
+
+      let capturedOpts;
+
+      class TestAgent {
+        static id = 'test';
+        getTools() { return []; }
+        getSystemPrompt() { return 'test'; }
+        async run() { return { output: '', toolCalls: [] }; }
+        async runAssignment(assignmentId, opts) { capturedOpts = opts; return {}; }
+      }
+
+      orchestrator.register(TestAgent, {});
+      await orchestrator.runAssignment('test', 'daily-dashboard', {});
+
+      assert.strictEqual(capturedOpts.userId, 'user_1');
+      assert.strictEqual(capturedOpts.context.userId, 'user_1');
+    });
+
     it('should throw for unknown agent', async () => {
       const orchestrator = new AgentOrchestrator({
         agentRuntime: mockAgentRuntime,

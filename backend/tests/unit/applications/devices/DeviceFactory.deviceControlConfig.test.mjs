@@ -7,6 +7,7 @@
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert';
 import { DeviceFactory } from '../../../../src/3_applications/devices/services/DeviceFactory.mjs';
+import { HomeAssistantDeviceAdapter } from '../../../../src/1_adapters/devices/HomeAssistantDeviceAdapter.mjs';
 
 describe('DeviceFactory.#buildDeviceControl config plumbing', () => {
   let fakeGateway;
@@ -24,6 +25,15 @@ describe('DeviceFactory.#buildDeviceControl config plumbing', () => {
       wsBus: null,
       remoteExec: null,
       daylightHost: 'https://example.test',
+      // DeviceFactory no longer imports concrete adapters — it looks them up in
+      // adapterFactories, which composition supplies (bootstrap.mjs). Without
+      // this the lookup missed, #createAdapter returned null, and every
+      // powerOn() answered "No device control configured" while the assertion
+      // reported a plumbing failure that was not there. Mirrors the real
+      // registration exactly.
+      adapterFactories: {
+        homeAssistantDevice: (cfg, deps) => new HomeAssistantDeviceAdapter(cfg, deps),
+      },
       logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
     });
   });

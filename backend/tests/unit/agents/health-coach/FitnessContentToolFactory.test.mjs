@@ -42,14 +42,18 @@ describe('FitnessContentToolFactory', () => {
   });
 
   describe('createTools', () => {
-    it('should return 3 tools', () => {
-      const tools = factory.createTools();
-      assert.strictEqual(tools.length, 3);
-
-      const names = tools.map(t => t.name);
-      assert.ok(names.includes('get_fitness_content'));
-      assert.ok(names.includes('get_program_state'));
-      assert.ok(names.includes('update_program_state'));
+    // Names, not a count. The factory grew to five (browse_fitness_catalog and
+    // get_recently_watched_fitness were added); a bare `length === 3` failed
+    // without saying which tool appeared or vanished.
+    it('exposes its full tool surface', () => {
+      const names = factory.createTools().map(t => t.name).sort();
+      assert.deepStrictEqual(names, [
+        'browse_fitness_catalog',
+        'get_fitness_content',
+        'get_program_state',
+        'get_recently_watched_fitness',
+        'update_program_state',
+      ]);
     });
   });
 
