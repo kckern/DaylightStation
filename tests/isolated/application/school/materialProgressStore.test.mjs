@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { UserVideoProgressStore } from '#apps/piano/UserVideoProgressStore.mjs';
+import { UserVideoProgressStore } from '#adapters/persistence/yaml/YamlUserVideoProgressStore.mjs';
 
 const USER = 'kid1';
 let tmp, configService;

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
-import { UserVideoProgressStore } from './UserVideoProgressStore.mjs';
+import { YamlUserVideoProgressStore as UserVideoProgressStore } from '#adapters/persistence/yaml/YamlUserVideoProgressStore.mjs';
 
 const USER = 'test-user';
 const USER_DIR = '/tmp/uvps-test-user';

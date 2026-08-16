@@ -19,7 +19,7 @@ import { loadYaml, saveYaml } from '#system/utils/FileIO.mjs';
  * Piano policy and stays INERT for School (spec §6); School completion is
  * computed entirely in 2_domains/school/materialPolicy.mjs.
  */
-export class UserVideoProgressStore {
+export class YamlUserVideoProgressStore {
   #configService;
   #logger;
   #app;
@@ -167,4 +167,4 @@ export class UserVideoProgressStore {
   }
 }
 
-export default UserVideoProgressStore;
+export default YamlUserVideoProgressStore;

@@ -7,7 +7,7 @@ import fs from 'fs';
 import path from 'path';
 import express from 'express';
 import request from 'supertest';
-import { UserVideoProgressStore } from '#apps/piano/UserVideoProgressStore.mjs';
+import { UserVideoProgressStore } from '#adapters/persistence/yaml/YamlUserVideoProgressStore.mjs';
 import { createPlayRouter } from './play.mjs';
 
 const USER = 'test-user';
