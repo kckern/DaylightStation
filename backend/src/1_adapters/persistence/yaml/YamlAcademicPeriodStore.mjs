@@ -62,7 +62,7 @@ export class YamlAcademicPeriodStore {
     this.#logger = logger;
   }
 
-  #file() { return path.join(this.#configService.getHouseholdPath('apps/school'), 'periods.yml'); }
+  #file() { return path.join(this.#configService.getHouseholdPath('school'), 'periods.yml'); }
 
   /**
    * Missing and corrupt are DIFFERENT answers (M3 review): a missing file is

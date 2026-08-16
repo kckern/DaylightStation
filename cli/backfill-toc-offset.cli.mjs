@@ -175,7 +175,7 @@ async function main() {
   console.log(`  Host: ${komgaHost}`);
   console.log(`  Mode: ${dryRun ? 'DRY RUN' : 'LIVE'}${force ? ' (FORCE)' : ''}\n`);
 
-  const tocDir = join(dataDir, 'household', 'common', 'komga', 'toc');
+  const tocDir = join(dataDir, 'household', 'komga', 'cache', 'toc');
   const files = readdirSync(tocDir).filter(f => f.endsWith('.yml'));
 
   const toProcess = [];

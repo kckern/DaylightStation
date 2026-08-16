@@ -45,7 +45,7 @@ export class YamlMaterialSnapshotStore {
     this.#logger = config.logger || console;
   }
 
-  #base() { return path.join(this.#configService.getHouseholdPath('apps/school/cache'), 'materials'); }
+  #base() { return path.join(this.#configService.getHouseholdPath('school/cache'), 'materials'); }
 
   #serialize(full) {
     if (!(full?.trackParents instanceof Map)) return full;

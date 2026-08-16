@@ -964,7 +964,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Cost domain
-  const costDataRoot = configService.getHouseholdPath('common/cost');
+  const costDataRoot = configService.getHouseholdPath('cost');
   const costServices = createCostServices({
     dataRoot: costDataRoot,
     // budgetRepository not yet implemented - will be added when YamlBudgetDatastore is created
@@ -1143,7 +1143,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Create unified item router (new item-centric API)
   // Resolve menu memory path from configService (bootstrap resolves config values)
-  const menuMemoryPath = configService.getHouseholdPath('history/menu_memory');
+  const menuMemoryPath = configService.getHouseholdPath('media/menu-memory');
   const itemRouter = createItemRouter({
     registry: contentRegistry,
     contentQueryService: contentServices.contentQueryService,
@@ -1202,7 +1202,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const { ChannelManager } = await import('./3_applications/livestream/ChannelManager.mjs');
   const { FFmpegStreamAdapter } = await import('./1_adapters/livestream/FFmpegStreamAdapter.mjs');
   const { SourceFeeder } = await import('./1_adapters/livestream/SourceFeeder.mjs');
-  const programsBasePath = configService.getHouseholdPath('apps/livestream/programs');
+  const programsBasePath = configService.getHouseholdPath('livestream/programs');
   const channelManager = new ChannelManager({
     mediaBasePath,
     programsBasePath,
@@ -1698,7 +1698,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // bundled source without changing composition code.
   const gamingDefinitionStore = new YamlGamingDefinitionStore({
     definitionsDir: configService.getHouseholdPath('gaming/games'),
-    archiveDir: configService.getHouseholdPath('history/gaming/_definitions'),
+    archiveDir: configService.getHouseholdPath('gaming/definitions'),
     builtIns: { 'scale-clash': scaleClashDefinition },
     builtInFiles: {
       'card-game': path.resolve(__dirname, '../../shared/gaming/definitions/card-game.yml'),
@@ -1706,7 +1706,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'gaming-definitions' }),
   });
   const gamingSessionStore = new YamlGamingSessionStore({
-    sessionsDir: configService.getHouseholdPath('history/gaming/sessions'),
+    sessionsDir: configService.getHouseholdPath('gaming/log/sessions'),
   });
   const gamingService = new GamingSessionService({
     definitionStore: gamingDefinitionStore,
@@ -1765,7 +1765,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
           ? record.played_on
           : new Date().toISOString().slice(0, 10);
         return dataService.household.write(
-          `history/gaming/pianochess/${day}/${buildChessArchiveFilename(record, userSegment)}`,
+          `gaming/log/pianochess/${day}/${buildChessArchiveFilename(record, userSegment)}`,
           { ...record, archived_at: new Date().toISOString() },
         );
       },
@@ -2357,7 +2357,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const exerciseBank = new YamlExerciseBank({ contentDir: contentPath });
   const pianoLearningStore = new YamlPianoLearningStore({
     usersDir: join(configService.getDataDir(), 'users'),
-    assignmentsDir: configService.getHouseholdPath('apps/piano/program-assignments'),
+    assignmentsDir: configService.getHouseholdPath('piano/program-assignments'),
   });
   const pianoLearningService = new PianoLearningService({
     exerciseBank,
@@ -2513,7 +2513,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // from memory — a second instance would double that for no benefit. A missing
   // manifest degrades to an empty corpus rather than failing boot.
   const exerciseLibrary = new YamlExerciseLibraryRepository({
-    indexPath: configService.getHouseholdPath('apps/fitness/exercise-index.yml'),
+    indexPath: configService.getHouseholdPath('fitness/exercise-index.yml'),
     logger: rootLogger.child({ module: 'exercise-library' })
   }).load();
   // The authored Catalog is a School capability shared by web, print, and
@@ -2761,7 +2761,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       });
 
       const jobStore = new StravaWebhookJobStore({
-        basePath: configService.getHouseholdPath('common/strava/strava-webhooks'),
+        basePath: configService.getHouseholdPath('strava/strava-webhooks'),
         logger: rootLogger.child({ module: 'strava-jobs' }),
       });
 
@@ -4153,7 +4153,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         const { ContentTreeManifest } = await import('#adapters/school/content/ContentTreeManifest.mjs');
         new ContentTreeManifest({
           contentDir: path.join(contentPath, 'school'),
-          manifestFile: configService.getHouseholdPath('apps/school/content-manifest.yml'),
+          manifestFile: configService.getHouseholdPath('school/content-manifest.yml'),
           logger: rootLogger.child({ module: 'school-content-manifest' }),
         }).run();
       } catch (err) {

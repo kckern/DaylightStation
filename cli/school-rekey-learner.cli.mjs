@@ -79,7 +79,7 @@ export function runRekey({ dataDir, oldId, newId, apply = false }) {
 
   const userDirOld = path.join(dataDir, 'users', oldId);
   const userDirNew = path.join(dataDir, 'users', newId);
-  const schoolDir = path.join(dataDir, 'household', 'apps', 'school');
+  const schoolDir = path.join(dataDir, 'household', 'school');
 
   if (!fs.existsSync(userDirOld) && !fs.existsSync(schoolDir)) {
     errors.push(`nothing found for '${oldId}' under ${dataDir}`);

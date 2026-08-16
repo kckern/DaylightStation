@@ -73,7 +73,7 @@ export class YamlPianoStudioDatastore {
   }
 
   #producerDir(family) {
-    return this.#configService.getHouseholdPath(path.join('apps', 'piano', 'producer', family));
+    return this.#configService.getHouseholdPath(path.join('piano', 'producer', family));
   }
 
   // ── Roster ──────────────────────────────────────────────────────────────────

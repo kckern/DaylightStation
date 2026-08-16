@@ -140,7 +140,7 @@ async function main() {
   const timezone = await resolveTimezone(dataDir);
   const root = flags.root
     ? String(flags.root)
-    : path.join(dataDir, 'household', 'history', 'automotive');
+    : path.join(dataDir, 'household', 'automotive', 'log');
 
   console.log(`root:     ${root}`);
   console.log(`timezone: ${timezone}`);

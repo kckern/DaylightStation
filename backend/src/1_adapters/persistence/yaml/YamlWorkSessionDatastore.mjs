@@ -51,7 +51,7 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
     this.#logger = config.logger || console;
   }
 
-  #root() { return this.#configService.getHouseholdPath('apps/school/sessions'); }
+  #root() { return this.#configService.getHouseholdPath('school/sessions'); }
 
   async #readYaml(file) {
     let text;

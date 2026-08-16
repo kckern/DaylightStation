@@ -28,7 +28,7 @@ export class YamlMilestoneStore {
     this.#logger = logger;
   }
 
-  #file() { return path.join(this.#configService.getHouseholdPath('apps/school'), 'milestones.yml'); }
+  #file() { return path.join(this.#configService.getHouseholdPath('school'), 'milestones.yml'); }
 
   #readState() {
     let text;

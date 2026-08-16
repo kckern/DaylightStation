@@ -2,7 +2,7 @@
  * YamlJournalDatastore - YAML-based journal entry persistence
  *
  * Implements IJournalDatastore port for journal entry storage.
- * Entries stored at (via ConfigService.getHouseholdPath): household[-{id}]/apps/journal/entries/{YYYY-MM-DD}.yml
+ * Entries stored at (via ConfigService.getHouseholdPath): household[-{id}]/journal/entries/{YYYY-MM-DD}.yml
  */
 import path from 'path';
 import {
@@ -40,7 +40,7 @@ export class YamlJournalDatastore extends IJournalDatastore {
    */
   getEntryPath(userId, date) {
     return path.join(
-      this.configService.getHouseholdPath('apps/journal/entries', userId),
+      this.configService.getHouseholdPath('journal/entries', userId),
       date
     );
   }
@@ -51,7 +51,7 @@ export class YamlJournalDatastore extends IJournalDatastore {
    * @returns {string}
    */
   getEntriesDir(userId) {
-    return this.configService.getHouseholdPath('apps/journal/entries', userId);
+    return this.configService.getHouseholdPath('journal/entries', userId);
   }
 
   /**

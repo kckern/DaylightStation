@@ -75,7 +75,7 @@ export class YamlTokenRegistry extends ITokenRegistry {
     this.#logger = config.logger ?? null;
   }
 
-  #root() { return this.#configService.getHouseholdPath('apps/school/tokens'); }
+  #root() { return this.#configService.getHouseholdPath('school/tokens'); }
 
   #fileFor(body) { return path.join(this.#root(), `${body}.yml`); }
 

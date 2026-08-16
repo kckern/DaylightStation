@@ -38,7 +38,7 @@ export class YamlSyllabusStore {
     this.#logger = config.logger || console;
   }
 
-  #root() { return this.#configService.getHouseholdPath('apps/school/syllabi'); }
+  #root() { return this.#configService.getHouseholdPath('school/syllabi'); }
 
   #fileFor(syllabusId) { return path.join(this.#root(), `${syllabusId}.yml`); }
 

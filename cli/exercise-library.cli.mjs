@@ -41,7 +41,7 @@ dotenv.config({ path: path.join(path.dirname(ENTRYPOINT), '..', '.env'), quiet: 
 /** Corpus root, relative to the media directory. */
 const CORPUS_SUBPATH = ['library', 'exercise'];
 /** Published manifest, relative to the data directory. */
-const MANIFEST_SUBPATH = ['household', 'apps', 'fitness', 'exercise-index.yml'];
+const MANIFEST_SUBPATH = ['household', 'fitness', 'exercise-index.yml'];
 
 const VALUE_FLAGS = new Set(['corpus-dir', 'out']);
 const BOOLEAN_FLAGS = new Set(['json']);

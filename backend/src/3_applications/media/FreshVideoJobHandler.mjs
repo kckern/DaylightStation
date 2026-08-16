@@ -31,7 +31,7 @@ export function createFreshVideoJobHandler({ videoSourceGateway, loadFile, media
   const service = new FreshVideoService({
     videoSourceGateway,
     configLoader: async () => {
-      const raw = await loadFile('state/youtube');
+      const raw = await loadFile('youtube');
       if (!Array.isArray(raw)) return [];
       return raw.map(s => ({
         provider: s.shortcode,

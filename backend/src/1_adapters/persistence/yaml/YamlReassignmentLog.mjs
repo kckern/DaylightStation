@@ -33,7 +33,7 @@ export class YamlReassignmentLog {
     this.#logger = logger;
   }
 
-  #file() { return path.join(this.#configService.getHouseholdPath('apps/school'), 'reassignments.yml'); }
+  #file() { return path.join(this.#configService.getHouseholdPath('school'), 'reassignments.yml'); }
 
   #readState() {
     let text;

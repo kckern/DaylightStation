@@ -155,7 +155,7 @@ export class YamlSchoolDatastore {
   }
 
   #quizRequestsPath() {
-    return this.#configService.getHouseholdPath('apps/school/quiz-requests');
+    return this.#configService.getHouseholdPath('school/quiz-requests');
   }
 
   readQuizRequests() {
@@ -171,8 +171,8 @@ export class YamlSchoolDatastore {
   // and a pending queue of jobs awaiting a grown-up's approval. Both are one
   // household-wide list under household/apps/school (attribution is the per-entry
   // userId), same shape as quiz-requests.
-  #printLogPath() { return this.#configService.getHouseholdPath('apps/school/print-log'); }
-  #printPendingPath() { return this.#configService.getHouseholdPath('apps/school/print-pending'); }
+  #printLogPath() { return this.#configService.getHouseholdPath('school/print-log'); }
+  #printPendingPath() { return this.#configService.getHouseholdPath('school/print-pending'); }
 
   readPrintLog() { return loadYamlSafe(this.#printLogPath()) || []; }
 
@@ -198,7 +198,7 @@ export class YamlSchoolDatastore {
       if (entry?.at && entry.at < cutoffIso) old.push(entry); else keep.push(entry);
     }
     if (!old.length) return 0;
-    const archivePath = this.#configService.getHouseholdPath('apps/school/print-log.archive');
+    const archivePath = this.#configService.getHouseholdPath('school/print-log.archive');
     const archived = loadYamlSafe(archivePath) || [];
     saveYamlToPathAtomic(withYamlExt(archivePath), [...archived, ...old], { noRefs: true });
     saveYamlToPathAtomic(withYamlExt(this.#printLogPath()), keep, { noRefs: true });

@@ -13,7 +13,7 @@ export class YamlNotificationLedgerStore {
   #basePath;
   constructor({ basePath }) { this.#basePath = basePath; }
 
-  #file() { return path.join(this.#basePath, 'notification-ledger.yml'); }
+  #file() { return path.join(this.#basePath, 'ledger.yml'); }
   #key(username, dedupeKey) { return `${username || '-'}|${dedupeKey}`; }
 
   #load() {
