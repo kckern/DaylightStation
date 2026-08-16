@@ -405,13 +405,25 @@ export function VideoPlayer({
     };
   }, []);
 
-  // Clean up DASH resources on unmount to prevent SourceBuffer orphans.
+  const { grandparentTitle, parentTitle, title, mediaUrl } = media;
+
+  // SSOT for "which <dash-video> generation is this". Both the element key below
+  // and the cleanup effect must read the same value, or a replaced element leaks
+  // its dash.js MediaPlayer — it keeps fetching audio segments, and
+  // dash-video-element has no disconnectedCallback to save us (2026-08-16 echo).
+  const dashElementKey = `${mediaUrl || ''}:${media?.maxVideoBitrate ?? 'unlimited'}:${elementKey}`;
+
+  // Clean up DASH resources per element generation, not just on unmount. With
+  // `[]` deps this captured only the FIRST <dash-video>: because the element's
+  // key includes mediaUrl, a url or bitrate change replaces the element WITHOUT
+  // unmounting this component, so every later dash.js MediaPlayer leaked — still
+  // fetching segments, still playing audio over the live one. On 2026-08-16 two
+  // of them streamed the same lecture's audio at once, which is the doubled
+  // sound the family reported.
   useEffect(() => {
     const el = containerRef.current;
     return () => { cleanupDashElement(el); };
-  }, []);
-
-  const { grandparentTitle, parentTitle, title, mediaUrl } = media;
+  }, [dashElementKey, containerRef]);
 
   // If the mediaUrl (or its effective bitrate cap) changes, reset display readiness so UI transitions are correct
   useEffect(() => {
@@ -763,7 +775,7 @@ export function VideoPlayer({
       />
       {isDash ? (
         <dash-video
-          key={`${mediaUrl || ''}:${media?.maxVideoBitrate ?? 'unlimited'}:${elementKey}`}
+          key={dashElementKey}
           ref={containerRef}
           class={`video-element ${displayReady ? 'show' : ''}`}
           src={mediaUrl}
@@ -772,7 +784,7 @@ export function VideoPlayer({
         />
       ) : (
         <video
-          key={`${mediaUrl || ''}:${media?.maxVideoBitrate ?? 'unlimited'}:${elementKey}`}
+          key={dashElementKey}
           autoPlay
           ref={containerRef}
           className={`video-element ${displayReady ? 'show' : ''}`}
