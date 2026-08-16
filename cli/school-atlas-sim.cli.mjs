@@ -68,7 +68,7 @@ const arg = (name, fallback) => {
 };
 const dataDir = path.resolve(arg('data-dir', DEFAULT_DATA));
 const courseRoot = path.resolve(arg('course-root', path.join(
-  dataDir, 'content/school/curriculum/civilization/young-peoples-atlas-us',
+  dataDir, 'content/school/civilization/young-peoples-atlas-us',
 )));
 const output = path.resolve(arg('out', path.join(os.tmpdir(), 'daylight-atlas-milo-proof')));
 const outcomeMode = arg('outcome', 'pass');

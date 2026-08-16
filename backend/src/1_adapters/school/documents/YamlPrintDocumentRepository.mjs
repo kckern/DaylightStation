@@ -20,9 +20,9 @@ function statBase(basePath) {
  * from it). Those are different kinds of thing and no longer share a tree:
  *
  *   `sourceDirectory`  — the authored CLASSES, on the School catalog shelf
- *                        (`content/school/catalog/documents/`), beside the
+ *                        (`content/school/learning-catalog/documents/`), beside the
  *                        `school.learning-document/v1` files. `list()`/`get()`.
- *   `directory`        — the ARTIFACT root (`content/school/print-documents/`),
+ *   `directory`        — the ARTIFACT root (`household/apps/school/print-documents/`),
  *                        parent of `published/`, `derived-banks/` and
  *                        `allocations/`. `getPublished()`/`getDerivedBank()`/
  *                        `writePublished()`, and `YamlAllocationStore`'s root.
