@@ -1144,7 +1144,116 @@ correctly; it does not wire them up."
 
 ---
 
-## Task 13: Final reconciliation
+## Task 13: Retire `config/` — colocate each config with its domain
+
+**Sequence this AFTER the log exodus (Tasks 2-3 and the deferred fitness/automotive splits).** The reasoning depends on it: `config/` earns centralization only while domain folders are full of machine-written state. Once logs and telemetry have left `data/`, everything remaining in `data/household/` is configuration and light curated state, and a separate `config/` root is redundant indirection over a taxonomy that already exists.
+
+`/etc` is not the right precedent. `/etc` is centralized because server config is deployed and versioned separately from the data it governs. This is an application data tree where each subject should be self-contained.
+
+**Target shape:**
+
+```
+household/
+  fitness/config.yml     fitness/workouts/     fitness/exercise-index.yml
+  piano/config.yml       piano/studio/         piano/devices/
+  school/config.yml      school/quizzes/       school/assignments/
+  hardware/devices.yml   hardware/pressure-mats/config.yml
+```
+
+**Files:**
+- Modify: `backend/src/0_system/config/ConfigService.mjs` — `reloadHouseholdAppConfig`/`getHouseholdAppConfig` resolution
+- Modify: `backend/src/0_system/config/configLoader.mjs:144` — `NON_APP_CONFIGS`
+- Modify: `backend/src/3_applications/admin/AppsConfigService.mjs:24-34` — the `APP_CONFIGS` map
+
+**Interfaces:**
+- Produces: `getHouseholdAppConfig(hid, app)` resolves `<household>/<app>/config.yml` instead of `<household>/config/<app>.yml`.
+
+- [ ] **Step 1: Decide the homeless configs first**
+
+Six have no domain folder to go to. Resolve each explicitly before moving anything — leaving them stranded mid-migration is how a half-retired `config/` becomes permanent:
+
+| File | Home | Why |
+|---|---|---|
+| `household.yml` | `household.yml` at the household root | It IS the household — roster and identity, not a subject within it |
+| `integrations.yml` | root, beside `household.yml` | Cross-cutting provider registry |
+| `devices.yml` | `hardware/devices.yml` | The device registry, beside the state those devices report |
+| `agents.yml` | `agents/config.yml` | Create the folder; agent state already lives at `data/agents/` |
+| `harvesters.yml` | `harvest/config.yml` | Scheduling for the harvester fleet |
+| `content-prefixes.yml` | `media/content-prefixes.yml` | A content-id resolution table; media owns content addressing |
+
+- [ ] **Step 2: Write the failing test for the new resolution**
+
+Create `tests/isolated/system/config/householdAppConfigLocation.test.mjs`:
+
+```javascript
+import { describe, it, expect } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import { ConfigService } from '#system/config/ConfigService.mjs';
+
+describe('getHouseholdAppConfig resolution', () => {
+  it('reads <household>/<app>/config.yml, not <household>/config/<app>.yml', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cfg-loc-'));
+    const appDir = path.join(tmp, 'household', 'fitness');
+    fs.mkdirSync(appDir, { recursive: true });
+    fs.writeFileSync(path.join(appDir, 'config.yml'), 'marker: colocated\n');
+
+    const svc = new ConfigService({ dataDir: tmp });
+    expect(svc.reloadHouseholdAppConfig(null, 'fitness')?.marker).toBe('colocated');
+
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+});
+```
+
+Adjust the `ConfigService` construction to match its real signature — read the constructor first rather than assuming this shape.
+
+- [ ] **Step 3: Run it to verify it fails**
+
+Run: `/opt/Code/DaylightStation/node_modules/.bin/vitest run tests/isolated/system/config/householdAppConfigLocation.test.mjs`
+Expected: FAIL — resolves the old `config/<app>.yml` path and finds nothing.
+
+- [ ] **Step 4: Repoint the resolver**
+
+In `ConfigService`, change the household app-config path builder from `path.join(dataDir, folder, 'config', app)` to `path.join(dataDir, folder, app, 'config')`. Keep a read-time fallback to the old location for one release so an un-migrated file still resolves:
+
+```javascript
+    // Colocated first: <household>/<app>/config.yml. The legacy
+    // <household>/config/<app>.yml is still read so a file that has not been
+    // moved yet still resolves — drop this fallback once Step 6 reports zero.
+    const colocated = path.join(dir, appName, 'config');
+    if (fs.existsSync(`${colocated}.yml`)) return colocated;
+    return path.join(dir, 'config', appName);
+```
+
+- [ ] **Step 5: Run it to verify it passes**
+
+Run the same command. Expected: PASS.
+
+- [ ] **Step 6: Move the files, one domain per commit**
+
+For each of the 38 remaining configs whose domain folder exists, `mv config/<app>.yml <app>/config.yml`, then verify that app reads back. Do NOT batch all 38 — a single broken read is unattributable in a 38-file commit. Update `AppsConfigService.APP_CONFIGS` in the same step for the nine apps it names.
+
+- [ ] **Step 7: Drop the fallback and the folder**
+
+Once `ls data/household/config` shows only `school/` and `triggers/` (nested app config that stays with its app under the new scheme too — move them to `school/config/` and `trigger/config/`), remove the legacy branch from Step 4 and retire the empty `config/` directory to `_deleteme`.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git commit -m "refactor(config): retire config/, colocate each config with its domain
+
+household/ is already a taxonomy of subjects. A separate config/ root was
+indirection over it, justified only while domain folders were full of
+machine-written state — which the log exodus removed. /etc is centralized
+because server config deploys separately from its data; this is an application
+data tree where each subject should be self-contained."
+```
+
+---
+
+## Task 14: Final reconciliation
 
 - [ ] **Step 1: Run the full audit**
 
