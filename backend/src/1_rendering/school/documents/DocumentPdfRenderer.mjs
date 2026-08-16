@@ -858,6 +858,7 @@ export function createDocumentPdfRenderer({
   // ── render ────────────────────────────────────────────────────────────
   function renderPlaced(document, {
     studentName, date = null, isAnswerKey, keyItems, bank, tokens, furniture = null, growLastPage = false,
+    balance = false,
     italic = false, totalPoints = null, keyBlocks = null, keyTitle = null, card = null,
   }) {
     // Opting into `furniture` shrinks the usable page height by the
@@ -902,9 +903,16 @@ export function createDocumentPdfRenderer({
       marginPt: box?.marginPt ?? theme.page.marginPt,
       spacing: theme.spacing,
       // Fit policy `fill` (spec §7): RenderPrintDocument (Task 8) is the only
-      // caller that ever sets this true. Default false reproduces every
-      // existing render byte-for-byte — see layout.mjs's own doc comment.
+      // caller that ever sets these. Defaults (false / uncapped) reproduce
+      // every existing render byte-for-byte — see layout.mjs's own doc
+      // comment. `growLastPage` bottoms out the last page; `balance` spreads
+      // fragments evenly over the page count instead of overpacking page 1;
+      // `maxFillAfterPt` stops the leftover space on a sparse page from
+      // inflating one interior gap. All three only ever apply to the STUDENT
+      // pages — the teacher key below is placed by its own separate call.
       growLastPage,
+      balance,
+      maxFillAfterPt: theme.pagination?.maxFillGrowthPt ?? Infinity,
     });
     if (errors.length) {
       const error = new Error(`document '${document.id}' cannot be laid out: ${errors.map((e) => e.message).join('; ')}`);
@@ -1097,6 +1105,13 @@ export function createDocumentPdfRenderer({
    *   forwarded to `placeFragments`' `growLastPage`, so the LAST page also
    *   bottoms out its answer spaces/spacers. Default false reproduces every
    *   existing render byte-for-byte.
+   * @param {boolean} [options.balance] - fit policy `fill` (spec §7):
+   *   forwarded to `placeFragments`' `balance`, so fragments are redistributed
+   *   evenly across the already-decided page count instead of greedily
+   *   overpacking early pages and stranding the remainder on the last one.
+   *   Default false reproduces every existing render byte-for-byte. Applies to
+   *   the student pages only; the teacher-key appendix is placed separately
+   *   and never balanced.
    * @param {boolean} [options.italic] - recognise `*italic*` in `rich_text`/
    *   `passage` inline grammar (v2, spec §12.8). Default false reproduces
    *   every existing render byte-for-byte — a v1 caller's stray `*word*`
@@ -1132,7 +1147,7 @@ export function createDocumentPdfRenderer({
    */
   async function render(source, {
     studentName = null, date = null, answers = null, answerKey = false, bank = null, tokens = null,
-    variant = null, furniture = null, growLastPage = false, italic = false, totalPoints = null,
+    variant = null, furniture = null, growLastPage = false, balance = false, italic = false, totalPoints = null,
     keyBlocks = null, keyTitle = null, card = null,
   } = {}) {
     // The variant rides on the DOCUMENT, not just alongside it: the footer and
@@ -1150,13 +1165,15 @@ export function createDocumentPdfRenderer({
 
     if (!resolvedAnswers) {
       return renderPlaced(document, {
-        studentName, date, isAnswerKey: false, keyItems: [], bank, tokens, furniture, growLastPage, italic, totalPoints,
+        studentName, date, isAnswerKey: false, keyItems: [], bank, tokens, furniture, growLastPage, balance,
+        italic, totalPoints,
         keyBlocks, keyTitle, card,
       });
     }
     const keyItems = keyItemsFor(document, resolvedAnswers);
     return renderPlaced(keyDocumentFor(document, keyItems), {
-      studentName: null, date: null, isAnswerKey: true, keyItems, bank, tokens, furniture, growLastPage, italic, totalPoints,
+      studentName: null, date: null, isAnswerKey: true, keyItems, bank, tokens, furniture, growLastPage, balance,
+      italic, totalPoints,
       card,
     });
   }

@@ -917,6 +917,11 @@ export class RenderPrintDocument {
       date: context.date ?? null,
       furniture: furnitureOpts,
       growLastPage: chosen.growLastPage ?? false,
+      // Same fit-plan flag family as `growLastPage` (see fit.mjs): policy
+      // `fill` asks for balanced page assignment so the pages it just told us
+      // to bottom out don't strand a handful of stretched questions on the
+      // last one.
+      balance: chosen.balance ?? false,
       // v2's `*italic*` markdown grammar (spec §12.8) — v1 never opts in.
       // Measurement (`#measureAttempt` below) opts in with the SAME flag, so
       // wrap positions measured at fit-decision time can never drift from
