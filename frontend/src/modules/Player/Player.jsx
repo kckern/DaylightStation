@@ -22,6 +22,7 @@ import { useMediaTransportAdapter } from './hooks/transport/useMediaTransportAda
 import { shouldSkipResilienceReload } from './lib/shouldSkipResilienceReload.js';
 import { createRemountStormGuard } from './lib/remountStormGuard.js';
 import { changedKeyComponent } from './lib/keyChange.js';
+import { createIdentityChurnCounter } from './lib/identityChurn.js';
 import { getLogger } from '../../lib/logging/Logger.js';
 import { OnDeckCard } from './components/OnDeckCard.jsx';
 import { usePlayerConfig } from './hooks/usePlayerConfig.js';
@@ -542,6 +543,39 @@ const Player = forwardRef(function Player(props, ref) {
   // (formerly hash-only) resilience/health line can be joined either way. Same
   // two field names everywhere: `waitKey` raw, `waitKeyHash` digest.
   const resolvedWaitKeyFields = useMemo(() => describeWaitKey(resolvedWaitKey), [resolvedWaitKey]);
+
+  // Identity churn detector. 480 distinct waitKeys appeared in three minutes on
+  // 2026-08-16 and nothing counted them; the number had to be uniq'd out of a log
+  // by hand afterwards. One counter per mounted Player — deliberately NOT one per
+  // guid, because the guid is one of the things that churns, and per-guid buckets
+  // would each have held a single value while the fleet melted.
+  const churnCounterRef = useRef(null);
+  if (!churnCounterRef.current) {
+    churnCounterRef.current = createIdentityChurnCounter();
+  }
+  const churnLogger = useMemo(() => getLogger().child({ component: 'player-identity-churn' }), []);
+  const hasEffectiveMeta = Boolean(effectiveMeta);
+
+  // In an EFFECT, not in the key memo above: that memo already logs during
+  // render and carries a StrictMode caveat, and a fourth ref write there would
+  // consume a stamp on a discarded render. An effect commits once per real
+  // change, and `record` is idempotent for a repeated value — so a double
+  // invocation cannot inflate a distinct count. The emit is bounded by the
+  // episode latch inside the counter (one line per burst, not one per value),
+  // which is the rate limit; adding a sampler on top would only hide the alert.
+  useEffect(() => {
+    if (!hasEffectiveMeta) return;
+    const report = churnCounterRef.current.record({
+      waitKey: resolvedWaitKey,
+      guid: currentMediaGuid
+    });
+    if (!report) return;
+    churnLogger.warn('playback.identity-churn', {
+      ...report,
+      playerType: playerType || null,
+      isQueue
+    });
+  }, [hasEffectiveMeta, resolvedWaitKey, currentMediaGuid, churnLogger, playerType, isQueue]);
 
   const forceSinglePlayerRemount = useCallback((input = null, meta = {}) => {
     const options = (input && typeof input === 'object' && !Array.isArray(input))

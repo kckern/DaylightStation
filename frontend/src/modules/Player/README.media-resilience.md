@@ -204,6 +204,33 @@ Payload carries `frozenKey`, `rejectedKey`, `guid`, `playerType`, `waitKey`,
 `playerType` is what tells you whether the piano kiosk or the garage display
 stormed.
 
+### Reading `playback.identity-churn`
+
+| Event | Level | Meaning |
+|---|---|---|
+| `playback.identity-churn` | warn | More than 10 distinct `waitKey` or `guid` values were seen by one mounted Player inside a rolling minute. |
+
+Emitted **once per episode**, not once per value — a detector that fires 480
+times is a second storm. The episode closes only when every dimension has
+receded below the threshold, so a second line means a second burst.
+
+`churningDimensions` is the field to read first: `guid` means content identity
+is moving (something upstream is re-minting it, e.g. a caller re-creating a
+`play` literal every render), `waitKey` alone means the nonce is climbing (a
+recovery loop). On 2026-08-16 it was both. `distinct` carries the counts and
+`samples` the three most recent values per dimension.
+
+The counter is scoped to the **Player instance**, not to the media item.
+Bucketing per guid is the natural reading of "per item", and in this incident it
+would have counted nothing — the guid was itself what churned, so every bucket
+would have held exactly one value.
+
+> A legitimate `refreshUrl` recovery also changes identity, because
+> `resolveMediaIdentity` falls through to `meta.mediaUrl`. It cannot reach this
+> threshold on its own: the recovery ledger caps a session at 5 attempts with a
+> 4s/12s/36s backoff. If you see a churn line whose `samples.guid` are near-
+> identical signed URLs, read it as URL refreshes, not as content churn.
+
 ### Reading `waitKey` and `waitKeyHash`
 
 Every player line carries the wait key twice, and the two names never swap
