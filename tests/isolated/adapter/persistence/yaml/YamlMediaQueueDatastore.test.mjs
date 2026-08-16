@@ -57,7 +57,7 @@ describe('YamlMediaQueueDatastore', () => {
 
     it('returns a MediaQueue instance when file exists', async () => {
       // Pre-create the queue file on disk
-      const queueDir = path.join(testDataRoot, 'household', 'apps', 'media');
+      const queueDir = path.join(testDataRoot, 'household', 'media');
       fs.mkdirSync(queueDir, { recursive: true });
       const queueData = {
         position: 2,
@@ -106,7 +106,7 @@ describe('YamlMediaQueueDatastore', () => {
       await store.save(queue, 'default');
 
       // Verify file exists and has correct content
-      const filePath = path.join(testDataRoot, 'household', 'apps', 'media', 'queue.yml');
+      const filePath = path.join(testDataRoot, 'household', 'media', 'queue.yml');
       expect(fs.existsSync(filePath)).toBe(true);
 
       const loaded = yaml.load(fs.readFileSync(filePath, 'utf8'));
@@ -122,7 +122,7 @@ describe('YamlMediaQueueDatastore', () => {
       const queue = MediaQueue.empty();
       await store.save(queue, 'new-household');
 
-      const dirPath = path.join(testDataRoot, 'household-new-household', 'apps', 'media');
+      const dirPath = path.join(testDataRoot, 'household-new-household', 'media');
       expect(fs.existsSync(dirPath)).toBe(true);
     });
   });
