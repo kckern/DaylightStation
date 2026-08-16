@@ -3,21 +3,32 @@
  *
  * Writes log events to per-app session files in media/logs/{app}/.
  * Sessions are bounded by session-log.start events.
- * Old files are pruned on initialization based on maxAgeDays.
+ *
+ * Old files are pruned at init AND on a recurring timer thereafter. The timer
+ * is what makes maxAgeDays mean what it says: pruning only at init gave a
+ * retention window of "maxAgeDays as of the last container restart", so a
+ * process that stayed up for a month kept a month of logs while claiming to
+ * keep three days. Retention has to be a property of the running server, not
+ * of how recently someone redeployed.
  */
 
 import fs from 'fs';
 import path from 'path';
 
 let instance = null;
+let pruneTimer = null;
+
+/** How often the recurring prune runs. Daily: retention is measured in days. */
+const DEFAULT_PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Initialize the session file transport singleton
  * @param {Object} options
  * @param {string} options.baseDir - Base directory for session logs (e.g., media/logs)
  * @param {number} options.maxAgeDays - Delete files older than this (default: 3)
+ * @param {number} options.pruneIntervalMs - How often to re-prune (default: 24h)
  */
-export function initSessionFileTransport({ baseDir, maxAgeDays = 3 }) {
+export function initSessionFileTransport({ baseDir, maxAgeDays = 3, pruneIntervalMs = DEFAULT_PRUNE_INTERVAL_MS }) {
   if (!baseDir) {
     throw new Error('Session file transport requires a baseDir option');
   }
@@ -27,6 +38,15 @@ export function initSessionFileTransport({ baseDir, maxAgeDays = 3 }) {
   }
 
   pruneOldFiles(baseDir, maxAgeDays);
+
+  // A re-init (tests, a reconfigure) must not leave the previous schedule
+  // running against a directory this instance no longer owns.
+  clearPruneTimer();
+  pruneTimer = setInterval(() => pruneOldFiles(baseDir, maxAgeDays), pruneIntervalMs);
+  // Housekeeping must never be the reason the process refuses to exit. The
+  // optional call covers hosts where setInterval hands back a plain numeric
+  // handle rather than Node's Timeout object.
+  pruneTimer?.unref?.();
 
   // Map<app, { filePath, fd }> — uses file descriptors for synchronous writes
   const activeSessions = new Map();
@@ -92,7 +112,7 @@ export function initSessionFileTransport({ baseDir, maxAgeDays = 3 }) {
       for (const [app, session] of activeSessions) {
         sessions[app] = { filePath: session.filePath, writable: session.fd != null };
       }
-      return { name: 'session-file', baseDir, sessions };
+      return { name: 'session-file', baseDir, maxAgeDays, pruneIntervalMs, sessions };
     }
   };
 
@@ -107,7 +127,15 @@ export function resetSessionFileTransport() {
   if (instance) {
     instance.flush();
   }
+  clearPruneTimer();
   instance = null;
+}
+
+function clearPruneTimer() {
+  if (pruneTimer) {
+    clearInterval(pruneTimer);
+    pruneTimer = null;
+  }
 }
 
 function pruneOldFiles(baseDir, maxAgeDays) {
