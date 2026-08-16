@@ -94,28 +94,13 @@ export function issueWorksheet({ bank, learnerId, enrollmentId, lessonId, profil
   });
 }
 
-export function gradeIssuedWorksheet(snapshot, answers = {}) {
-  const results = snapshot.items.map((item) => {
-    const expected = item.options.filter((option) => option.correct).map((option) => option.id).sort();
-    const raw = answers[item.itemId];
-    const given = (Array.isArray(raw) ? raw : raw == null ? [] : [raw]).sort();
-    const correct = expected.length === given.length && expected.every((id, index) => id === given[index]);
-    return { itemId: item.itemId, correct, expected, given };
-  });
-  return { results, missedItemIds: results.filter((result) => !result.correct).map((result) => result.itemId) };
-}
-
-export function remediationReceipt(snapshot, grade, policy = 'locator_only') {
-  if (!['locator_only', 'show_answer', 'teacher_only'].includes(policy)) throw new Error(`unknown receipt policy: ${policy}`);
-  if (policy === 'teacher_only') return { policy, items: [] };
-  return {
-    policy,
-    items: snapshot.items.filter((item) => grade.missedItemIds.includes(item.itemId)).map((item) => ({
-      itemId: item.itemId, source: item.source,
-      ...(policy === 'show_answer' ? { answers: item.options.filter((option) => option.correct).map((option) => option.label) } : {}),
-    })),
-  };
-}
+// `gradeIssuedWorksheet` and `remediationReceipt` lived here until 2026-08-15.
+// Both were prototypes that production never called — only their own unit test
+// did — and both had been superseded by shipped code: grading runs through
+// `GradeSubmission` / `ResolveCardScan` (against the frozen worksheet-instance
+// roster, see `worksheetInstanceRoster` below), and the remediation receipt's
+// `locator_only` disclosure is what `CloseSessionOutcome` already prints as its
+// `hints` lines. Two live implementations of one rule is one too many.
 
 /**
  * The immutable, learner-specific realization of one lesson. This is the

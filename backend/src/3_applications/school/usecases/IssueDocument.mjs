@@ -389,16 +389,20 @@ export class IssueDocument {
     }
 
     if (!reprinting) {
+      // Card identity only. The answer key — every question's visible options,
+      // their printed A–E letters, and which are `correct` — already lives once
+      // on `instance.questions[].options` (minted by `issueWorksheet`), and that
+      // is the copy graders and reprints read. An `omr.letters` mirror of it was
+      // written here until 2026-08-15 and read by nothing; it only widened the
+      // blast radius of a leaked instance file. Instances persisted before then
+      // may still carry the vestigial field — the store is append-only, so it is
+      // left in place rather than rewritten out of history. Nothing reads it.
       instance = {
         ...instance,
         omr: {
           cardId: rendered.allocation.cardId,
           recordId: rendered.allocation.recordId,
           rowRange: rendered.allocation.rowRange,
-          letters: instance.questions.map((question) => ({
-            itemId: question.itemId,
-            options: question.options.map(({ id, label, letter, correct }) => ({ id, label, letter, correct })),
-          })),
         },
       };
       await this.#worksheetInstances.put(instance);

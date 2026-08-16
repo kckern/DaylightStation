@@ -3,7 +3,7 @@ import { validateQuestionBank } from './questionBankValidation.mjs';
 import { publishDocument } from './documents/documentSource.mjs';
 import {
   normalizeQuestionBankV2, issueWorksheet,
-  gradeIssuedWorksheet, remediationReceipt, createWorksheetInstance, worksheetInstanceDocument,
+  createWorksheetInstance, worksheetInstanceDocument,
 } from './questionBankV2.mjs';
 
 const item = (id, type = 'multiple_choice') => ({
@@ -42,23 +42,14 @@ describe('question-bank/v2', () => {
     expect(upper.items.filter((entry) => entry.type === 'multi_select').every((entry) => entry.options.filter((option) => option.correct).length === 2)).toBe(true);
   });
 
-  it('grades exact sets from the immutable snapshot and reissues only missed ids freshly', () => {
+  it('reissues only the missed ids, freshly shuffled', () => {
     const issued = issueWorksheet({ bank, learnerId: 'milo', enrollmentId: 'e1', lessonId: 'kansas', profile: 'lower', seed: 'one' });
-    const first = issued.items[0];
-    const grade = gradeIssuedWorksheet(issued, { [first.itemId]: first.options.find((option) => option.correct).id });
-    expect(grade.results[0].correct).toBe(true);
-    expect(grade.missedItemIds).toHaveLength(5);
-    const retry = issueWorksheet({ bank, learnerId: 'milo', enrollmentId: 'e1', lessonId: 'kansas', profile: 'lower', seed: 'retry', itemIds: grade.missedItemIds });
-    expect(new Set(retry.itemIds)).toEqual(new Set(grade.missedItemIds));
+    // The missed set as a caller derives it — every item but the first.
+    const missedItemIds = issued.items.slice(1).map((entry) => entry.itemId);
+    expect(missedItemIds).toHaveLength(5);
+    const retry = issueWorksheet({ bank, learnerId: 'milo', enrollmentId: 'e1', lessonId: 'kansas', profile: 'lower', seed: 'retry', itemIds: missedItemIds });
+    expect(new Set(retry.itemIds)).toEqual(new Set(missedItemIds));
     expect(retry.items[0].options).not.toEqual(issued.items.find((entry) => entry.itemId === retry.items[0].itemId)?.options);
-  });
-
-  it('applies receipt disclosure policies', () => {
-    const issued = issueWorksheet({ bank, learnerId: 'milo', enrollmentId: 'e1', lessonId: 'kansas', profile: 'lower', seed: 'one' });
-    const grade = gradeIssuedWorksheet(issued, {});
-    expect(remediationReceipt(issued, grade, 'locator_only').items[0]).not.toHaveProperty('answers');
-    expect(remediationReceipt(issued, grade, 'show_answer').items[0].answers).toHaveLength(1);
-    expect(remediationReceipt(issued, grade, 'teacher_only').items).toEqual([]);
   });
 
   it('creates a publishable immutable enrollment-bound OMR instance', () => {
