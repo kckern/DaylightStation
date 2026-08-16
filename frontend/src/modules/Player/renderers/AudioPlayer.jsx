@@ -210,11 +210,27 @@ export function AudioPlayer({
     };
   }, [shader]);
 
+  // Distinguishes THIS component instance from its replacement. `mounted` below
+  // re-fires per track, so two `mounted` events alone cannot tell a new track
+  // apart from a remount of the same one — and a remount is what tears the media
+  // element out of the document mid-play(). Pair it with `unmounted` and the
+  // difference is on the face of the log instead of inferred (2026-08-16).
+  const instanceIdRef = useRef(null);
+  if (instanceIdRef.current === null) {
+    instanceIdRef.current = Math.random().toString(36).slice(2, 10);
+  }
+
+  useEffect(() => {
+    const instanceId = instanceIdRef.current;
+    return () => { logger.info('unmounted', { instanceId }); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- logger is stable
+
   // Mount-time launch params: which shader, volume, queue position, media id, etc.
   // Re-fires only when the underlying media key changes (i.e. a new track loads),
   // so this captures the "what did this play start with" snapshot.
   useEffect(() => {
     logger.info('mounted', {
+      instanceId: instanceIdRef.current,
       shader,
       classes,
       volume,
