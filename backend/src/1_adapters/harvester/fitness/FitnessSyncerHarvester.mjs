@@ -40,6 +40,13 @@ export class FitnessSyncerHarvester extends IHarvester {
    * @param {string} [config.timezone] - Timezone for date parsing
    * @param {Object} [config.logger] - Logger instance
    */
+  /**
+   * @param {object} [deps.adapter] pre-built FitnessSyncerAdapter. Optional and
+   *   normally omitted — production lets this build its own. It exists because
+   *   the circuit breaker lives on the adapter, and a hard-constructed
+   *   collaborator behind a `#private` field cannot be driven into cooldown
+   *   from a test at all.
+   */
   constructor({
     httpClient,
     lifelogStore,
@@ -47,6 +54,7 @@ export class FitnessSyncerHarvester extends IHarvester {
     configService,
     timezone = 'America/New_York',
     logger = console,
+    adapter = null,
   }) {
     super();
 
@@ -57,7 +65,7 @@ export class FitnessSyncerHarvester extends IHarvester {
       });
     }
 
-    this.#adapter = new FitnessSyncerAdapter({
+    this.#adapter = adapter || new FitnessSyncerAdapter({
       httpClient,
       authStore,
       configService,

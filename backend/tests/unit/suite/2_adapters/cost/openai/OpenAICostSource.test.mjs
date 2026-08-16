@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { OpenAICostSource } from '#adapters/cost/openai/OpenAICostSource.mjs';
-import { ICostSource } from '#applications/cost/ports/ICostSource.mjs';
+import { ICostSource } from '#apps/cost/ports/ICostSource.mjs';
 import { CostEntry } from '#domains/cost/entities/CostEntry.mjs';
 import { CostCategory } from '#domains/cost/value-objects/CostCategory.mjs';
 

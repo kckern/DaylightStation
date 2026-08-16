@@ -30,17 +30,28 @@ describe('FitnessSyncerHarvester', () => {
     };
 
     mockLifelogStore = {
-      load: vi.fn().mockResolvedValue({}),
+      // A FRESH object per call. `mockResolvedValue({})` hands back the same
+      // instance every time, so the summary document ('fitness') and the
+      // archive ('archives/fitness_long') — which the harvester loads, mutates
+      // and saves independently — became one shared object. The archive then
+      // carried the summary's keys, and asserting its keys were MD5 ids found
+      // 'steps' instead. A real store returns distinct documents.
+      load: vi.fn().mockImplementation(async () => ({})),
       save: vi.fn().mockResolvedValue(undefined),
     };
 
+    // load/save, NOT get/set. FitnessSyncerAdapter calls
+    // `authStore.load(username, 'fitsync')` and `authStore.save(...)`; the
+    // optional-chaining on both calls meant a get/set mock failed silently and
+    // every harvest returned auth_failed instead of exercising the code
+    // under test.
     mockAuthStore = {
-      get: vi.fn().mockResolvedValue({
+      load: vi.fn().mockResolvedValue({
         refresh: 'mock-refresh-token',
         client_id: 'mock-client-id',
         client_secret: 'mock-client-secret',
       }),
-      set: vi.fn().mockResolvedValue(undefined),
+      save: vi.fn().mockResolvedValue(undefined),
     };
 
     mockConfigService = {
@@ -93,13 +104,24 @@ describe('FitnessSyncerHarvester', () => {
 
   describe('circuit breaker integration', () => {
     it('should skip harvest when circuit breaker is open', async () => {
-      // Mock circuit breaker in cooldown
-      vi.spyOn(harvester['_FitnessSyncerHarvester__adapter'], 'isInCooldown')
-        .mockReturnValue(true);
-      vi.spyOn(harvester['_FitnessSyncerHarvester__adapter'], 'getCooldownStatus')
-        .mockReturnValue({ inCooldown: true, remainingMins: 5 });
+      // Inject an adapter already in cooldown. The old version reached for
+      // `harvester['_FitnessSyncerHarvester__adapter']` — a Babel private-field
+      // mangling that does not exist under real ESM `#private` fields, so the
+      // spy target was undefined and the test could only ever throw.
+      const cooledDown = new FitnessSyncerHarvester({
+        httpClient: mockHttpClient,
+        lifelogStore: mockLifelogStore,
+        authStore: mockAuthStore,
+        configService: mockConfigService,
+        timezone: TEST_TIMEZONE,
+        logger: mockLogger,
+        adapter: {
+          isInCooldown: vi.fn().mockReturnValue(true),
+          getCooldownStatus: vi.fn().mockReturnValue({ inCooldown: true, remainingMins: 5 }),
+        },
+      });
 
-      const result = await harvester.harvest(TEST_USERNAME);
+      const result = await cooledDown.harvest(TEST_USERNAME);
 
       expect(result.status).toBe('skipped');
       expect(result.reason).toBe('cooldown');
@@ -123,13 +145,21 @@ describe('FitnessSyncerHarvester', () => {
       const originalEnv = process.env.dev;
       process.env.dev = 'true';
 
-      const result = await harvester.harvest(TEST_USERNAME);
+      try {
+        const result = await harvester.harvest(TEST_USERNAME);
 
-      expect(result.skipped).toBe(true);
-      expect(result.reason).toBe('dev_mode');
-      expect(mockLifelogStore.save).not.toHaveBeenCalled();
-
-      process.env.dev = originalEnv;
+        expect(result.skipped).toBe(true);
+        expect(result.reason).toBe('dev_mode');
+        expect(mockLifelogStore.save).not.toHaveBeenCalled();
+      } finally {
+        // DELETE when it was unset. `process.env.dev = undefined` stores the
+        // STRING "undefined", which is truthy, so harvest() short-circuited to
+        // dev_mode for every test that ran after this one — the whole
+        // transformation block was asserting against {skipped:true}. Restoring
+        // in a finally also keeps a failed assertion from leaking the flag.
+        if (originalEnv === undefined) delete process.env.dev;
+        else process.env.dev = originalEnv;
+      }
     });
   });
 

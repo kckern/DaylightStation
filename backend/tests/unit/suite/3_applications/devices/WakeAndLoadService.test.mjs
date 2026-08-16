@@ -222,7 +222,13 @@ describe('WakeAndLoadService', () => {
       const result = await service.execute('living-room', { queue: 'morning-program' });
 
       expect(result.ok).toBe(true);
-      expect(result.steps.load.method).toBeUndefined();
+      // Going straight to FKB IS the fkb-fallback path: the service stamps
+      // `method: 'fkb-fallback'` plus a `wsSkipped` reason for every WS-skip,
+      // exactly as the no-subscribers case below asserts. `method` was only
+      // ever undefined before that field existed.
+      expect(result.steps.load.method).toBe('fkb-fallback');
+      expect(result.steps.load.wsSkipped).toBe('cold-restart');
+      // The real point of this case: WS is not even probed on a cold restart.
       expect(mockEventBus.getTopicSubscriberCount).not.toHaveBeenCalled();
       expect(device.loadContent).toHaveBeenCalled();
     });
