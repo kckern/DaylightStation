@@ -3,7 +3,7 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { dump } from 'js-yaml';
+import { dump, load } from 'js-yaml';
 import { describe, expect, it, vi } from 'vitest';
 import {
   main,
@@ -1093,6 +1093,312 @@ describe('school-docs CLI', () => {
       expect(bad.exitCode).toBe(2);
       expect(bad.report.mode).toBe('usage');
     }));
+  });
+
+  describe('audit (allocation integrity)', () => {
+    /**
+     * `--data-dir <root>` alone gives the audit BOTH roots it needs (the
+     * artifact content root and the catalog question-banks the bank-select
+     * cases resolve against), exactly as a real invocation gets them from
+     * $DAYLIGHT_BASE_PATH.
+     */
+    async function makeDataDir(root) {
+      const dataDir = path.join(root, 'data');
+      const contentRoot = path.join(dataDir, 'content/school/print-documents');
+      const banksDir = path.join(dataDir, 'content/school/catalog/question-banks');
+      await mkdir(contentRoot, { recursive: true });
+      await mkdir(banksDir, { recursive: true });
+      return { dataDir, contentRoot, banksDir };
+    }
+
+    /** publish + card-attach render through the REAL CLI — never hand-written allocation YAML. */
+    async function publishAndAllocate(root, dataDir, sourceFile, docId) {
+      const published = await runSchoolDocs(['publish', sourceFile, '--data-dir', dataDir]);
+      expect(published.exitCode).toBe(0);
+      const contentRoot = path.join(dataDir, 'content/school/print-documents');
+      const publishedFile = path.join(contentRoot, 'published', `${docId}@${published.report.rev}.yml`);
+      const rendered = await runSchoolDocs([
+        'render', publishedFile, '--out', path.join(root, `${published.report.rev}.pdf`),
+        '--data-dir', dataDir, '--fresh-card',
+      ]);
+      expect(rendered.exitCode).toBe(0);
+      return { rev: published.report.rev, publishedFile, allocation: rendered.report.allocation };
+    }
+
+    it('a healthy store produces ZERO findings and exits 0 — the command must not cry wolf', async () => withTmpDir(async (root) => {
+      const { dataDir, contentRoot } = await makeDataDir(root);
+      const sourceFile = path.join(contentRoot, 'quiz.yml');
+      await writeFile(sourceFile, dump(sourceQuizDoc()));
+      await publishAndAllocate(root, dataDir, sourceFile, 'teacher-cli-fixture');
+
+      const { exitCode, report } = await runSchoolDocs(['audit', '--data-dir', dataDir]);
+      expect(exitCode).toBe(0);
+      expect(report.ok).toBe(true);
+      expect(report.findings).toEqual([]);
+      expect(report.counts).toEqual({ error: 0, warn: 0, info: 0 });
+      expect(report.scanned).toEqual({ cards: 1, records: 1 });
+    }));
+
+    it('an EMPTY store is clean too (no allocations directory at all)', async () => withTmpDir(async (root) => {
+      const { dataDir } = await makeDataDir(root);
+      const { exitCode, report } = await runSchoolDocs(['audit', '--data-dir', dataDir]);
+      expect(exitCode).toBe(0);
+      expect(report.ok).toBe(true);
+      expect(report.findings).toEqual([]);
+      expect(report.scanned).toEqual({ cards: 0, records: 0 });
+    }));
+
+    it('reports a LIVE record whose published revision was removed, at error severity, exit 1', async () => withTmpDir(async (root) => {
+      const { dataDir, contentRoot } = await makeDataDir(root);
+      const sourceFile = path.join(contentRoot, 'quiz.yml');
+      await writeFile(sourceFile, dump(sourceQuizDoc()));
+      const { rev, publishedFile, allocation } = await publishAndAllocate(
+        root, dataDir, sourceFile, 'teacher-cli-fixture',
+      );
+      // The orphan: the pinned revision vanishes from disk while the record
+      // keeps pointing at it.
+      await rm(publishedFile);
+
+      const { exitCode, report } = await runSchoolDocs(['audit', '--data-dir', dataDir]);
+      expect(exitCode).toBe(1);
+      expect(report.ok).toBe(false);
+      expect(report.counts.error).toBe(1);
+      expect(report.findings[0]).toMatchObject({
+        severity: 'error',
+        check: 'missing-published-revision',
+        cardId: allocation.cardId,
+        recordId: allocation.recordId,
+        status: 'live',
+        documentId: 'teacher-cli-fixture',
+        rev,
+      });
+      expect(report.findings[0].detail).toContain(`teacher-cli-fixture@${rev}.yml does not exist`);
+    }));
+
+    it('never falls back to the LATEST published revision when the pinned one is gone', async () => withTmpDir(async (root) => {
+      const { dataDir, contentRoot } = await makeDataDir(root);
+      const sourceFile = path.join(contentRoot, 'quiz.yml');
+      await writeFile(sourceFile, dump(sourceQuizDoc()));
+      const first = await publishAndAllocate(root, dataDir, sourceFile, 'teacher-cli-fixture');
+      // A SECOND, healthy revision of the same document — `getPublished(id)`
+      // with no rev would happily resolve THIS one and hide the orphan.
+      await writeFile(sourceFile, dump(sourceQuizDoc({ title: 'CLI Teacher Fixture (revised)' })));
+      const second = await runSchoolDocs(['publish', sourceFile, '--data-dir', dataDir]);
+      expect(second.report.rev).not.toBe(first.rev);
+      await rm(first.publishedFile);
+
+      const { exitCode, report } = await runSchoolDocs(['audit', '--data-dir', dataDir]);
+      expect(exitCode).toBe(1);
+      expect(report.findings).toHaveLength(1);
+      expect(report.findings[0]).toMatchObject({ check: 'missing-published-revision', rev: first.rev });
+    }));
+
+    it('reports a RELEASED record with a missing revision at lower severity, and still exits 0', async () => withTmpDir(async (root) => {
+      const { dataDir, contentRoot } = await makeDataDir(root);
+      const sourceFile = path.join(contentRoot, 'quiz.yml');
+      await writeFile(sourceFile, dump(sourceQuizDoc()));
+      const { publishedFile, allocation } = await publishAndAllocate(
+        root, dataDir, sourceFile, 'teacher-cli-fixture',
+      );
+      const released = await runSchoolDocs(['release-card', allocation.cardId, '--data-dir', dataDir]);
+      expect(released.exitCode).toBe(0);
+      await rm(publishedFile);
+
+      const { exitCode, report } = await runSchoolDocs(['audit', '--data-dir', dataDir]);
+      // A retired record is still worth surfacing — nobody can hand it in, so
+      // it must never fail the cron/CI gate.
+      expect(exitCode).toBe(0);
+      expect(report.ok).toBe(true);
+      expect(report.counts).toMatchObject({ error: 0, warn: 1 });
+      expect(report.findings[0]).toMatchObject({
+        severity: 'warn', check: 'missing-published-revision', status: 'released',
+      });
+    }));
+
+    it('--status live scopes the walk to live records only', async () => withTmpDir(async (root) => {
+      const { dataDir, contentRoot } = await makeDataDir(root);
+      const sourceFile = path.join(contentRoot, 'quiz.yml');
+      await writeFile(sourceFile, dump(sourceQuizDoc()));
+      const { publishedFile, allocation } = await publishAndAllocate(
+        root, dataDir, sourceFile, 'teacher-cli-fixture',
+      );
+      await runSchoolDocs(['release-card', allocation.cardId, '--data-dir', dataDir]);
+      await rm(publishedFile);
+
+      const all = await runSchoolDocs(['audit', '--data-dir', dataDir]);
+      expect(all.report.scanned.records).toBe(1);
+      expect(all.report.findings).toHaveLength(1);
+
+      const live = await runSchoolDocs(['audit', '--status', 'live', '--data-dir', dataDir]);
+      expect(live.exitCode).toBe(0);
+      expect(live.report.scanned).toEqual({ cards: 1, records: 0 });
+      expect(live.report.findings).toEqual([]);
+
+      const releasedOnly = await runSchoolDocs(['audit', '--status', 'released', '--data-dir', dataDir]);
+      expect(releasedOnly.report.scanned.records).toBe(1);
+      expect(releasedOnly.report.findings).toHaveLength(1);
+    }));
+
+    it('a bank-select document mints NO derived bank and must not be reported for it', async () => withTmpDir(async (root) => {
+      const { dataDir, contentRoot, banksDir } = await makeDataDir(root);
+      await writeFile(path.join(banksDir, 'colors.yml'), dump({
+        id: 'audit/colors',
+        title: 'Colors',
+        items: [
+          {
+            id: 'sky', type: 'multiple_choice', prompt: 'What color is the sky?', choices: ['Blue', 'Green'], answer: 'Blue',
+          },
+          {
+            id: 'grass', type: 'multiple_choice', prompt: 'What color is grass?', choices: ['Blue', 'Green'], answer: 'Green',
+          },
+        ],
+      }));
+      const sourceFile = path.join(contentRoot, 'bank-select.yml');
+      await writeFile(sourceFile, dump({
+        schema: 'school.document-source/v1',
+        id: 'audit-bank-select',
+        seed: 3,
+        target: ['letter'],
+        archetype: 'quiz',
+        title: 'Bank Select Quiz',
+        blocks: [{
+          type: 'question', bankId: 'audit/colors', select: 2, key: 'sel1',
+        }],
+      }));
+      const { rev, allocation } = await publishAndAllocate(root, dataDir, sourceFile, 'audit-bank-select');
+      // Precondition: publish genuinely wrote no derived bank for this doc.
+      await expect(readFile(
+        path.join(contentRoot, 'derived-banks', `audit-bank-select@${rev}.yml`), 'utf8',
+      )).rejects.toThrow();
+      expect(allocation.rowRange).toEqual({ start: 1, end: 2 });
+
+      const { exitCode, report } = await runSchoolDocs(['audit', '--data-dir', dataDir]);
+      expect(exitCode).toBe(0);
+      expect(report.findings).toEqual([]);
+    }));
+
+    it('reports rowItems that no longer resolve when the external bank drifts under a printed card', async () => withTmpDir(async (root) => {
+      const { dataDir, contentRoot, banksDir } = await makeDataDir(root);
+      const bankFile = path.join(banksDir, 'colors.yml');
+      const bank = (itemIds) => ({
+        id: 'audit/colors',
+        title: 'Colors',
+        items: itemIds.map((id) => ({
+          id, type: 'multiple_choice', prompt: `Prompt for ${id}?`, choices: ['Blue', 'Green'], answer: 'Blue',
+        })),
+      });
+      await writeFile(bankFile, dump(bank(['sky', 'grass'])));
+      const sourceFile = path.join(contentRoot, 'bank-select.yml');
+      await writeFile(sourceFile, dump({
+        schema: 'school.document-source/v1',
+        id: 'audit-bank-select',
+        seed: 3,
+        target: ['letter'],
+        archetype: 'quiz',
+        title: 'Bank Select Quiz',
+        blocks: [{
+          type: 'question', bankId: 'audit/colors', select: 2, key: 'sel1',
+        }],
+      }));
+      await publishAndAllocate(root, dataDir, sourceFile, 'audit-bank-select');
+
+      // The card is already printed with rowItems pinned to sky/grass; the
+      // catalog bank is then re-keyed underneath it.
+      await writeFile(bankFile, dump(bank(['sky', 'lawn'])));
+
+      const { exitCode, report } = await runSchoolDocs(['audit', '--data-dir', dataDir]);
+      expect(exitCode).toBe(1);
+      expect(report.findings).toHaveLength(1);
+      expect(report.findings[0]).toMatchObject({ severity: 'error', check: 'unresolved-row-items' });
+      expect(report.findings[0].detail).toContain("'grass'");
+      // Still no derived-bank complaint: this document never needed one.
+      expect(report.findings.map((f) => f.check)).not.toContain('missing-derived-bank');
+    }));
+
+    it('reports a missing derived bank when the document has inline OMR questions that needed one', async () => withTmpDir(async (root) => {
+      const { dataDir, contentRoot } = await makeDataDir(root);
+      const sourceFile = path.join(contentRoot, 'quiz.yml');
+      await writeFile(sourceFile, dump(sourceQuizDoc()));
+      const { rev } = await publishAndAllocate(root, dataDir, sourceFile, 'teacher-cli-fixture');
+      await rm(path.join(contentRoot, 'derived-banks', `teacher-cli-fixture@${rev}.yml`));
+
+      const { exitCode, report } = await runSchoolDocs(['audit', '--data-dir', dataDir]);
+      expect(exitCode).toBe(1);
+      const checks = report.findings.map((f) => f.check);
+      expect(checks).toContain('missing-derived-bank');
+      // The row mapping is collateral damage from the same deletion — both
+      // are reported, because they are separately actionable.
+      expect(checks).toContain('unresolved-row-items');
+      expect(report.findings.every((f) => f.severity === 'error')).toBe(true);
+    }));
+
+    it('reports a card carrying two overlapping LIVE row ranges', async () => withTmpDir(async (root) => {
+      const { dataDir, contentRoot } = await makeDataDir(root);
+      const sourceFile = path.join(contentRoot, 'quiz.yml');
+      await writeFile(sourceFile, dump(sourceQuizDoc()));
+      const { allocation } = await publishAndAllocate(root, dataDir, sourceFile, 'teacher-cli-fixture');
+      const allocationFile = path.join(contentRoot, 'allocations', `${allocation.cardId}.yml`);
+
+      // `YamlAllocationStore.allocate` refuses to WRITE this (checkCollision),
+      // so the only way it can exist is file drift — which is exactly the
+      // condition this check exists to catch. Duplicate the real record under
+      // a second id rather than inventing one from scratch.
+      const [record] = load(await readFile(allocationFile, 'utf8'));
+      await writeFile(allocationFile, dump([
+        record,
+        { ...record, recordId: `${record.recordId}#drift` },
+      ]));
+
+      const { exitCode, report } = await runSchoolDocs(['audit', '--data-dir', dataDir]);
+      expect(exitCode).toBe(1);
+      const overlap = report.findings.find((f) => f.check === 'overlapping-live-rows');
+      expect(overlap).toMatchObject({ severity: 'error', cardId: allocation.cardId });
+      expect(overlap.otherRecordId).toBe(`${record.recordId}#drift`);
+    }));
+
+    it('never writes: the allocation file is byte-identical before and after an audit that finds errors', async () => withTmpDir(async (root) => {
+      const { dataDir, contentRoot } = await makeDataDir(root);
+      const sourceFile = path.join(contentRoot, 'quiz.yml');
+      await writeFile(sourceFile, dump(sourceQuizDoc()));
+      const { publishedFile, allocation } = await publishAndAllocate(
+        root, dataDir, sourceFile, 'teacher-cli-fixture',
+      );
+      await rm(publishedFile);
+      const allocationFile = path.join(contentRoot, 'allocations', `${allocation.cardId}.yml`);
+      const before = await readFile(allocationFile, 'utf8');
+
+      const { exitCode } = await runSchoolDocs(['audit', '--data-dir', dataDir]);
+      expect(exitCode).toBe(1);
+      expect(await readFile(allocationFile, 'utf8')).toBe(before);
+      // Status untouched — an integrity read must never retire what it found.
+      expect(before).toContain('status: live');
+    }));
+
+    it('prints one JSON line per finding plus a summary via the CLI text formatter', async () => withTmpDir(async (root) => {
+      const { dataDir, contentRoot } = await makeDataDir(root);
+      const sourceFile = path.join(contentRoot, 'quiz.yml');
+      await writeFile(sourceFile, dump(sourceQuizDoc()));
+      const { publishedFile } = await publishAndAllocate(root, dataDir, sourceFile, 'teacher-cli-fixture');
+      await rm(publishedFile);
+
+      const io = { stdout: { write: vi.fn() }, stderr: { write: vi.fn() } };
+      const code = await main(['audit', '--data-dir', dataDir], io);
+      expect(code).toBe(1);
+      const printed = io.stdout.write.mock.calls.map((call) => call[0]).join('');
+      expect(printed).toContain('"check":"missing-published-revision"');
+      expect(printed).toContain('scanned 1 card, 1 record');
+      expect(printed).toContain('1 finding (1 error, 0 warn, 0 info)');
+      expect(printed.trim().endsWith('FAILED')).toBe(true);
+    }));
+
+    it('rejects a positional argument and a valueless --status as usage errors', async () => {
+      const withArg = await runSchoolDocs(['audit', 'nope']);
+      expect(withArg.exitCode).toBe(2);
+      expect(withArg.report.errors[0]).toMatch(/positional/);
+      const bareStatus = await runSchoolDocs(['audit', '--status']);
+      expect(bareStatus.exitCode).toBe(2);
+      expect(bareStatus.report.errors[0]).toMatch(/--status/);
+    });
   });
 
   describe('release-card (Task 7, spec §5.4)', () => {
