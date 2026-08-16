@@ -135,6 +135,11 @@ function report(result, { dataDir }) {
     process.stdout.write('\nunreadable files\n');
     for (const message of result.catalogErrors) process.stdout.write(`  - ${message}\n`);
   }
+  // `workErrors` gates `ok` in ValidateCatalog exactly like the three below,
+  // but went unprinted — so a bad course config failed the gate with an empty
+  // report and no way to tell why. Six malformed `source` blocks cost a
+  // debugging round that way; anything that can fail the run must say so.
+  reportFileErrors('works', result.workErrors);
   reportFileErrors('units', result.unitErrors);
   reportFileErrors('documents', result.documentErrors);
   reportFileErrors('manifests', result.manifestErrors);
