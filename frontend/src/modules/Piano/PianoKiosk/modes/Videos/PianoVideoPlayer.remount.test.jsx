@@ -6,7 +6,7 @@
 // object. The Player keys its media identity on that object, so each new
 // object remounted the video and opened another Plex transcode session —
 // which produced another element swap. 495 Plex sessions in 4 minutes.
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
 import PianoVideoPlayer from './PianoVideoPlayer.jsx';
 
@@ -53,6 +53,10 @@ beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
 });
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe('PianoVideoPlayer — play prop identity', () => {
   it('hands the Player ONE `play` object across repeated media-element swaps', async () => {
     const lecture = { plex: '694719', label: 'Introduction to Singing', userPlayhead: 0 };
@@ -61,13 +65,34 @@ describe('PianoVideoPlayer — play prop identity', () => {
 
     // useResolvedMediaEl polls every 100ms; three swaps = what three remounts
     // would produce in production.
+    const swapped = [];
     for (let i = 0; i < 3; i += 1) {
       fakeMedia = document.createElement('video');
+      vi.spyOn(fakeMedia, 'addEventListener');
+      swapped.push(fakeMedia);
       await act(async () => { vi.advanceTimersByTime(150); });
     }
 
+    // The component binds its media listeners on each resolved element, so this
+    // proves the swap actually reached it. Without the check, a stub that stops
+    // delivering an element would leave one render and pass for the wrong reason.
+    expect(swapped.at(-1).addEventListener).toHaveBeenCalled();
+
     const identities = new Set(playPropSpy.mock.calls.map((c) => c[0]));
     expect(identities.size).toBe(1);
+  });
+
+  it('a new onBack identity rebuilds the element but must NOT mint a new play object', async () => {
+    const lecture = { plex: '694719', label: 'Introduction to Singing', userPlayhead: 0 };
+    const { rerender } = render(<PianoVideoPlayer lecture={lecture} source="Course" onBack={vi.fn()} />);
+    await screen.findByTestId('player-stub');
+
+    // Parent recreated its callback — routine, and the case Videos.jsx warns about.
+    rerender(<PianoVideoPlayer lecture={lecture} source="Course" onBack={vi.fn()} />);
+    await act(async () => { vi.advanceTimersByTime(150); });
+
+    expect(playPropSpy.mock.calls.length).toBeGreaterThan(1);        // the element DID rebuild
+    expect(new Set(playPropSpy.mock.calls.map((c) => c[0])).size).toBe(1); // ...with the same play object
   });
 
   it('still carries the right content and resume directive', async () => {

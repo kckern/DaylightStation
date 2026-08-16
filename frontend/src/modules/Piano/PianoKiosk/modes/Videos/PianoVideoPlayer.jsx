@@ -151,7 +151,9 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
   // Memoize the heavy Player element so high-frequency re-renders (timeupdate
   // ticks, MIDI play-along notes) DON'T recreate it — recreating it remounted
   // the video, which caused the per-keypress skips, the restart loop, and audio
-  // that kept playing after navigating away. Stable only if `onBack` is stable.
+  // that kept playing after navigating away. An unstable `onBack` still rebuilds
+  // this element, but `playSpec` above survives that, so the media no longer
+  // re-keys and the rebuild costs a render rather than a remount.
   const playerEl = useMemo(() => (
     <PlayerBoundary onBack={onBack}>
       <Suspense fallback={<SkeletonStage />}>
