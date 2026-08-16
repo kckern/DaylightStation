@@ -312,6 +312,106 @@ describe('attempt persistence', () => {
   });
 });
 
+/**
+ * A scan that records nothing is not automatically a scan that was ALREADY
+ * recorded. Three distinct causes share the "no fresh rows" exit, and only
+ * one of them is benign-and-expected:
+ *
+ *   - zero rows resolved  -> a resolver/allocation fault (the card reached
+ *                            this use case, so it is supposed to own marked
+ *                            rows); nobody's work was assessed.
+ *   - every row blank     -> a misfeed / face-down / never-filled card; the
+ *                            operator must re-feed.
+ *   - content duplicate   -> the genuine idempotency case, benign.
+ *
+ * Collapsing the first two into `duplicate-scan` + an info-level
+ * "already-recorded" line states, in the durable log, that the child's work
+ * was captured when in fact nothing was ever assessed.
+ */
+describe('a scan with nothing to grade', () => {
+  it('a card that resolved ZERO rows reports a resolver fault, never "already recorded"', async () => {
+    const datastore = fakeDatastore();
+    const logger = { ...quietLogger, warn: vi.fn(), info: vi.fn() };
+    const sessions = fakeSessions(seededSession('ws-1'));
+    const useCase = new RecordCardScanOutcome({ datastore, sessions, logger });
+
+    const outcome = await useCase.execute({
+      testId: '1234567',
+      card: gradedCard({
+        sessionId: 'ws-1', results: [], totalPoints: 0, earnedPoints: 0,
+      }),
+    });
+
+    expect(outcome).toMatchObject({ recorded: false, reason: 'no-rows-resolved' });
+    expect(logger.warn).toHaveBeenCalledWith('school.print.scan-no-rows-resolved', expect.objectContaining({
+      testId: '1234567',
+      cardId: '1234567',
+      recordId: 'arts/quiz-1@abcdef123:v0:1-2',
+      learnerId: 'felix',
+    }));
+    // The false claim this whole case exists to kill.
+    expect(logger.info).not.toHaveBeenCalledWith('school.print.scan-already-recorded', expect.anything());
+    expect(datastore.readAllAttempts('felix')).toHaveLength(0);
+    // Nothing was assessed, so the session must not have moved.
+    expect((await sessions.readEvents('ws-1')).map((event) => event.type)).toEqual(['created', 'issued']);
+  });
+
+  it('a misfed card (real card, every row unmarked) tells the operator to re-feed', async () => {
+    const datastore = fakeDatastore();
+    const logger = { ...quietLogger, warn: vi.fn(), info: vi.fn() };
+    const sessions = fakeSessions(seededSession('ws-1'));
+    const useCase = new RecordCardScanOutcome({ datastore, sessions, logger });
+
+    // The field shape: a genuine 2-question card fed face-down (or never
+    // filled in) — every owned row resolves, none of them carries a mark.
+    const misfed = gradedCard({
+      sessionId: 'ws-1',
+      earnedPoints: 0,
+      results: [
+        {
+          row: 1, itemId: 'q1', itemType: 'multiple_choice', prompt: null, status: 'blank', given: null, points: 1, earned: 0, concepts: [],
+        },
+        {
+          row: 2, itemId: 'q2', itemType: 'multiple_choice', prompt: null, status: 'blank', given: null, points: 1, earned: 0, concepts: [],
+        },
+      ],
+    });
+    const outcome = await useCase.execute({ testId: '1234567', card: misfed });
+
+    expect(outcome).toMatchObject({ recorded: false, reason: 'no-marks' });
+    // `cardId` is the number printed on the paper in the operator's hand —
+    // without it the warn is not actionable at the scanner.
+    expect(logger.warn).toHaveBeenCalledWith('school.print.scan-no-marks', expect.objectContaining({
+      testId: '1234567',
+      cardId: '1234567',
+      recordId: 'arts/quiz-1@abcdef123:v0:1-2',
+      learnerId: 'felix',
+      rowCount: 2,
+    }));
+    expect(logger.info).not.toHaveBeenCalledWith('school.print.scan-already-recorded', expect.anything());
+    expect(datastore.readAllAttempts('felix')).toHaveLength(0);
+    expect((await sessions.readEvents('ws-1')).map((event) => event.type)).toEqual(['created', 'issued']);
+  });
+
+  it('a genuine content duplicate still reports duplicate-scan, at info, with no warn', async () => {
+    const datastore = fakeDatastore();
+    const logger = { ...quietLogger, warn: vi.fn(), info: vi.fn() };
+    const useCase = new RecordCardScanOutcome({ datastore, logger });
+
+    const first = await useCase.execute({ testId: '1234567', card: gradedCard() });
+    expect(first.recorded).toBe(true);
+
+    const repeat = await useCase.execute({ testId: '1234567', card: gradedCard() });
+    expect(repeat).toMatchObject({ recorded: false, reason: 'duplicate-scan' });
+    expect(logger.info).toHaveBeenCalledWith('school.print.scan-already-recorded', expect.objectContaining({
+      testId: '1234567', recordId: 'arts/quiz-1@abcdef123:v0:1-2', learnerId: 'felix',
+    }));
+    // A benign re-feed must NOT be escalated by the two guards above.
+    expect(logger.warn).not.toHaveBeenCalled();
+    expect(datastore.readAllAttempts('felix')).toHaveLength(2);
+  });
+});
+
 describe('dedup read windowing', () => {
   it('a card rendered today scopes the dedup read to [renderedAt day, today] and never touches readAllAttempts', async () => {
     const datastore = spyDatastore();
