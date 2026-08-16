@@ -55,11 +55,11 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
     }
   }
 
-  async function boot({ mount, romUrl, pathtodata, core = 'gb', controls } = {}) {
+  async function boot({ mount, romUrl, pathtodata, core = 'gb', controls, volume } = {}) {
     if (bootPromise) return bootPromise;
 
     log().info('boot.start', { core });
-    bootPromise = load({ player: mount, core, romUrl, pathtodata, controls, win })
+    bootPromise = load({ player: mount, core, romUrl, pathtodata, controls, volume, win })
       .then((emu) => {
         instance = emu;
         ready = true;
@@ -333,6 +333,49 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
   }
 
   /**
+   * True when EmulatorJS has finished its start chain.
+   *
+   * This is the settle barrier (see bootSettle.js): EJS sets `started = true` only
+   * after it has re-asserted its own volume and built the control-settings menu
+   * that creates `gamepadSelection`. Configuring before this point is what let the
+   * 2026-08-15 volume and gamepad bugs happen. EJS's own gamepadEvent guards on
+   * the same flag.
+   */
+  function isStarted() {
+    if (!instance) return false;
+    try { return instance.started === true; } catch { return false; }
+  }
+
+  /** True when EJS reports the emulation paused (frozen-detection needs this). */
+  function isPaused() {
+    if (!ready || !instance) return false;
+    try { return instance.paused === true; } catch { return false; }
+  }
+
+  /** EJS's live volume, for verifying our level actually stuck after its start chain. */
+  function getEjsVolume() {
+    if (!ready || !instance) return null;
+    try { return typeof instance.volume === 'number' ? instance.volume : null; } catch { return null; }
+  }
+
+  /**
+   * Snapshot of the pad→player slot mapping. Diagnostic only: attaching this to a
+   * detected input gap names the root cause instantly, instead of requiring the
+   * minified bundle to be disassembled by hand.
+   */
+  function getGamepadSelection() {
+    if (!instance) return null;
+    try {
+      return Array.isArray(instance.gamepadSelection) ? [...instance.gamepadSelection] : null;
+    } catch { return null; }
+  }
+
+  /** The live EJS instance, for boot-time contract assertion. Never mutate it here. */
+  function getInstance() {
+    return instance;
+  }
+
+  /**
    * Claim a player slot for every already-connected gamepad.
    *
    * WHY THIS EXISTS (EmulatorJS 4.2.3 bug): `gamepadEvent` routes input by
@@ -442,6 +485,11 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
     restart,
     tapInput,
     claimGamepads,
+    isStarted,
+    isPaused,
+    getEjsVolume,
+    getGamepadSelection,
+    getInstance,
     destroy,
   };
 }
