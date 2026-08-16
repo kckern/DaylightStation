@@ -5,14 +5,14 @@
  * YAML-backed persistence for dismissed feed item IDs.
  * Stores feedItemId → unix timestamp (seconds). Auto-prunes entries older than 30 days on load.
  *
- * Path: common/feed/dismissed (DataService appends .yml)
+ * Path: feed/dismissed (DataService appends .yml)
  * Scope: household-shared (not per-user) since there's a single scroll user.
  *
  * @module adapters/persistence/yaml
  */
 import { IDismissedItemsStore } from '#apps/feed/ports/IDismissedItemsStore.mjs';
 
-const DISMISSED_PATH = 'common/feed/dismissed';
+const DISMISSED_PATH = 'feed/dismissed';
 const MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 days
 
 export class YamlDismissedItemsStore extends IDismissedItemsStore {
