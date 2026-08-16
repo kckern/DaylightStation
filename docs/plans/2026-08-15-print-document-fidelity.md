@@ -2,9 +2,9 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Fix three School print-document defects: (A) reproducing a historical print by ID requires a human to hand-reconstruct five CLI flags from scattered YAML — add a `reprint <instanceId>` command that does it from persisted data alone; (B) the page-2+ footer prints a blank "Name: ___" line instead of something that actually re-identifies a stray page — replace it with the card/student number; (C) fit policy `fill` greedily overpacks page 1 then stretches whatever's left on the last page into huge gaps — rebalance fragment count across pages and cap how far any single gap can grow.
+**Goal:** Fix four School print-document defects: (A) reproducing a historical print by ID requires a human to hand-reconstruct five CLI flags from scattered YAML — add a `reprint <instanceId>` command that does it from persisted data alone; (B) the page-2+ footer prints a blank "Name: ___" line instead of something that actually re-identifies a stray page — replace it with the card/student number; (C) fit policy `fill` greedily overpacks page 1 then stretches whatever's left on the last page into huge gaps — rebalance fragment count across pages and cap how far any single gap can grow; (D) the laser-printer adapter never requests double-sided printing — default it to duplex, config-driven.
 
-**Architecture:** All three fixes are additive to the existing School print-document pipeline (`backend/src/{2_domains,1_rendering,3_applications}/school/documents/`, `cli/school-docs.cli.mjs`). No new services, no schema changes. Track A adds a small pure-function module (`reprintContext.mjs`) plus a new CLI subcommand. Track B removes a function and threads one new value (`cardId`) through an existing call chain. Track C adds two new parameters (`balance`, `maxFillAfterPt`) to the existing `placeFragments`/`distributeAnswerSpace` layout functions, threaded through `fit.mjs` → `RenderPrintDocument.mjs` → `DocumentPdfRenderer.mjs`, the same path `growLastPage` already uses.
+**Architecture:** All four fixes are additive. Tracks A-C touch the existing School print-document pipeline (`backend/src/{2_domains,1_rendering,3_applications}/school/documents/`, `cli/school-docs.cli.mjs`); Track D touches the separate physical-printer adapter (`backend/src/1_adapters/hardware/laser-printer/`) and is independent of A-C — no shared files, no ordering dependency. No new services, no schema changes. Track A adds a small pure-function module (`reprintContext.mjs`) plus a new CLI subcommand. Track B removes a function and threads one new value (`cardId`) through an existing call chain. Track C adds two new parameters (`balance`, `maxFillAfterPt`) to the existing `placeFragments`/`distributeAnswerSpace` layout functions, threaded through `fit.mjs` → `RenderPrintDocument.mjs` → `DocumentPdfRenderer.mjs`, the same path `growLastPage` already uses. Track D wraps the raw JetDirect payload in a standard PJL preamble/trailer requesting duplex, defaulted on at the adapter constructor and overridable via `schoolFullConfig.printing`.
 
 **Tech Stack:** Node.js ESM, vitest, js-yaml, pdfkit (via existing `DocumentPdfRenderer`). No new dependencies.
 
@@ -1163,6 +1163,208 @@ git commit -m "feat(school-docs): fit policy fill now balances pages and caps fi
 ```bash
 git add docs/reference/school/print-documents.md
 git commit -m "docs(school): describe fill policy's balanced placement and max-gap cap"
+```
+
+---
+
+## Track D — printer adapter: default to double-sided (duplex) printing, config-driven
+
+**Added after the initial plan was written** — a separate, independent defect: the physical print path (`LaserPrinterAdapter`, `backend/src/1_adapters/hardware/laser-printer/`), not the PDF pipeline Tracks A-C touch. Confirmed by direct code reading: this adapter does **not** use CUPS/`lp`/`lpr` at all — printing goes over raw JetDirect (port 9100) via a plain TCP socket, with the printer's own "PDF Direct Print" firmware feature parsing the raw bytes (`LaserPrinterAdapter.mjs:7-15`). IPP (port 631) is used only for `getStatus`/`ping`, never for the print job itself. No duplex/sides option is sent anywhere today (`printPdf` at `LaserPrinterAdapter.mjs:91-131` only handles `jobName`/`user`/`copies`).
+
+Since there's no CUPS layer, the standard `-o sides=...` flag doesn't apply here. The mechanism that DOES apply to a raw JetDirect job is a **PJL (Printer Job Language) preamble/trailer** wrapped around the PDF bytes — `@PJL SET DUPLEX=ON` / `@PJL SET BINDING=LONGEDGE`, terminated by Universal Exit Language (`\x1B%-12345X`) escapes. This is the de facto standard most PJL-compliant laser printers (including HP's PJL spec, which Brother's firmware implements) honor for raw port-9100 jobs.
+
+**Flag for whoever picks this up:** this PJL mechanism is standard and well-documented, but has **not been verified against the physical Brother HL-L2460DW this codebase targets** — no hardware test was run as part of writing this plan. Task 11 below explicitly calls out a real physical test print before this is trusted in the field. Label it as such in code comments too, per this project's own standing rule against asserting unverified device facts.
+
+No config-data-file edit is required for this task: "config-driven" is satisfied by making the adapter's constructor accept `duplex`/`binding` options (default `true`/`'LONGEDGE'`) and wiring `app.mjs` to read them from `schoolFullConfig.printing`, if present — the household's actual `data/household/config/school.yml` (Dropbox-external on this dev machine, not part of this git worktree) is a separate, later change the user can make if they ever want to override the default; it needs no edit for double-sided to become the default.
+
+### Task 11: `LaserPrinterAdapter` — PJL duplex wrapping, config-driven default
+
+**Files:**
+- Modify: `backend/src/1_adapters/hardware/laser-printer/LaserPrinterAdapter.mjs`
+- Modify: `backend/src/1_adapters/hardware/laser-printer/VirtualLaserPrinterAdapter.mjs`
+- Modify: `backend/src/app.mjs` (~lines 3304-3318, the `LaserPrinterAdapter` construction)
+- Test: `tests/isolated/adapter/hardware/laserPrinterAdapter.test.mjs`, `tests/isolated/adapter/school/virtualLaserPrinter.test.mjs` (read both first — grep for existing byte-count/payload assertions, since PJL wrapping changes `payload.length`)
+
+**Step 1: Write the failing test**
+
+Add to `tests/isolated/adapter/hardware/laserPrinterAdapter.test.mjs` (read the file first to match its existing mock-socket harness style — it almost certainly already stubs `net.createConnection`; reuse that harness rather than inventing a new one):
+
+```javascript
+it('defaults to duplex ON with LONGEDGE binding, wrapped in a PJL preamble/trailer', async () => {
+  // ... using whatever socket-capture harness this file already has ...
+  const printer = new LaserPrinterAdapter({ host: '10.0.0.1', logger: silentLogger });
+  await printer.printPdf(fakePdf(), { jobName: 'test-job' });
+  const sent = capturedBytes(); // however this file already captures what was written to the socket
+  const text = sent.toString('latin1');
+  expect(text).toContain('@PJL SET DUPLEX=ON');
+  expect(text).toContain('@PJL SET BINDING=LONGEDGE');
+  expect(text).toContain('@PJL JOB NAME="test-job"');
+  expect(text).toContain('%PDF-'); // the real PDF bytes are still in there, untouched
+});
+
+it('duplex can be disabled per-adapter (config-driven)', async () => {
+  const printer = new LaserPrinterAdapter({ host: '10.0.0.1', duplex: false, logger: silentLogger });
+  await printer.printPdf(fakePdf(), { jobName: 'test-job' });
+  const text = capturedBytes().toString('latin1');
+  expect(text).toContain('@PJL SET DUPLEX=OFF');
+  expect(text).not.toContain('BINDING=');
+});
+
+it('duplex can be disabled per-job, overriding the adapter default', async () => {
+  const printer = new LaserPrinterAdapter({ host: '10.0.0.1', logger: silentLogger }); // duplex defaults true
+  await printer.printPdf(fakePdf(), { jobName: 'test-job', duplex: false });
+  const text = capturedBytes().toString('latin1');
+  expect(text).toContain('@PJL SET DUPLEX=OFF');
+});
+```
+
+If the existing test file has an assertion like `expect(sentBytes.length).toBe(pdf.length)` or similar exact-byte-count checks from BEFORE this change, update them to account for the PJL header/trailer's added length (`sentBytes.length` should now equal `pdf.length + header.length + trailer.length`, or just assert `sentBytes.length > pdf.length` if exact byte-counting isn't the point of that particular test).
+
+Add to `tests/isolated/adapter/school/virtualLaserPrinter.test.mjs`:
+
+```javascript
+it('records duplex/binding in the job sidecar, defaulting to true/LONGEDGE', async () => {
+  const printer = new VirtualLaserPrinterAdapter({ captureDir: tmpDir });
+  await printer.printPdf(fakePdf(), { jobName: 'x' });
+  const [job] = printer.listJobs();
+  expect(job.duplex).toBe(true);
+  expect(job.binding).toBe('LONGEDGE');
+});
+```
+
+**Step 2: Run test to verify it fails**
+
+Run: `npx vitest run tests/isolated/adapter/hardware/laserPrinterAdapter.test.mjs tests/isolated/adapter/school/virtualLaserPrinter.test.mjs`
+Expected: FAIL
+
+**Step 3: Write minimal implementation**
+
+In `LaserPrinterAdapter.mjs`, add near the top (after the `PRINTER_STATE` const):
+
+```javascript
+/** Universal Exit Language — enters/exits PJL job-control mode around a raw print job. */
+const UEL = '\x1B%-12345X';
+
+/**
+ * Standard PJL preamble/trailer around raw PDF bytes for a JetDirect (port
+ * 9100) job — sets per-job DUPLEX/BINDING before the printer enters PDF
+ * parsing mode. This is the de facto standard most PJL-compliant laser
+ * printers honor (HP's PJL spec, which this Brother's firmware implements) —
+ * UNVERIFIED against the physical HL-L2460DW as of writing; confirm with one
+ * real duplex print before relying on it (see Task 11 of the print-document
+ * fidelity plan).
+ */
+function pjlWrap(pdf, { jobName, duplex, binding }) {
+  const safeName = String(jobName).replace(/"/g, "'");
+  const header = [
+    `${UEL}@PJL JOB NAME="${safeName}"`,
+    `@PJL SET DUPLEX=${duplex ? 'ON' : 'OFF'}`,
+    ...(duplex ? [`@PJL SET BINDING=${binding}`] : []),
+    '@PJL ENTER LANGUAGE=PDF',
+    '',
+  ].join('\r\n');
+  const trailer = `\r\n${UEL}@PJL EOJ\r\n${UEL}`;
+  return Buffer.concat([Buffer.from(header, 'latin1'), pdf, Buffer.from(trailer, 'latin1')]);
+}
+```
+
+Update the `LaserPrinterConfig` typedef (lines 26-34) — add:
+```javascript
+ * @property {boolean} [duplex=true] - default double-sided printing (config-driven; per-job override in printPdf)
+ * @property {'LONGEDGE'|'SHORTEDGE'} [binding='LONGEDGE'] - duplex flip style; LONGEDGE = book-style, the right default for portrait text
+```
+
+Update the class field declarations (line 36) and constructor (lines 39-54):
+```javascript
+  #host; #port; #rawPort; #path; #timeout; #printTimeout; #duplexDefault; #bindingDefault; #logger;
+  #requestId = 0;
+
+  constructor({
+    host, port = 631, rawPort = 9100, path = '/ipp/print', timeout = 15000, printTimeout = 60000,
+    duplex = true, binding = 'LONGEDGE', logger = console,
+  } = {}) {
+    if (!host) {
+      throw new InfrastructureError('LaserPrinterAdapter requires host', {
+        code: 'MISSING_DEPENDENCY', dependency: 'host',
+      });
+    }
+    this.#host = host;
+    this.#port = port;
+    this.#rawPort = rawPort;
+    this.#path = path.startsWith('/') ? path : `/${path}`;
+    this.#timeout = timeout;
+    this.#printTimeout = printTimeout;
+    this.#duplexDefault = duplex;
+    this.#bindingDefault = binding;
+    this.#logger = logger;
+  }
+```
+
+Update `printPdf` (lines 91-99 specifically; the rest of the function body below is unchanged except where noted):
+```javascript
+  printPdf(pdf, {
+    jobName = 'daylight-print', user = 'daylight', copies = 1,
+    duplex = this.#duplexDefault, binding = this.#bindingDefault,
+  } = {}) {
+    if (!Buffer.isBuffer(pdf) || pdf.length === 0) {
+      return Promise.reject(new InfrastructureError('printPdf requires non-empty PDF buffer', { code: 'INVALID_DOCUMENT' }));
+    }
+    if (pdf.subarray(0, 5).toString('latin1') !== '%PDF-') {
+      return Promise.reject(new InfrastructureError('document is not a PDF', { code: 'INVALID_DOCUMENT' }));
+    }
+    const nCopies = Math.max(1, Math.floor(copies));
+    const rawPayload = nCopies === 1 ? pdf : Buffer.concat(Array.from({ length: nCopies }, () => pdf));
+    const payload = pjlWrap(rawPayload, { jobName, duplex, binding });
+```
+(everything below this in the function — the `new Promise(...)` socket logic — is unchanged EXCEPT the two spots that log/resolve with job metadata: add `duplex` to both the `this.#logger.info?.('laser-printer.job-sent', {...})` call and the `resolve({ ok: true, bytes: payload.length, copies: nCopies })` call, i.e. `resolve({ ok: true, bytes: payload.length, copies: nCopies, duplex })`.)
+
+Update the `printPdf` JSDoc (lines 76-90) to add `@param {boolean} [opts.duplex]` and `@param {'LONGEDGE'|'SHORTEDGE'} [opts.binding]`, and note in the returns shape that `duplex` is echoed back.
+
+In `VirtualLaserPrinterAdapter.mjs`, mirror the surface (no PJL wrapping needed here — it never talks to a real printer, it just needs to RECORD what it was asked for so tests can assert on it):
+- `printPdf` signature (line 82): add `duplex = true, binding = 'LONGEDGE',` to the destructured options.
+- Sidecar object (lines 103-111): add `duplex,` and `binding,` fields.
+- Update the JSDoc block above it (lines 73-81) to match.
+
+In `backend/src/app.mjs`, update the `LaserPrinterAdapter` construction (~lines 3313-3318):
+```javascript
+    const laserPrinter = new LaserPrinterAdapter({
+      host: printerHost,
+      port: schoolFullConfig.printing?.port || 631,
+      path: schoolFullConfig.printing?.path || '/ipp/print',
+      duplex: schoolFullConfig.printing?.duplex ?? true,
+      binding: schoolFullConfig.printing?.binding || 'LONGEDGE',
+      logger: rootLogger.child({ module: 'school-print' })
+    });
+```
+
+**Step 4: Run test to verify it passes**
+
+Run: `npx vitest run tests/isolated/adapter/hardware/laserPrinterAdapter.test.mjs tests/isolated/adapter/school/virtualLaserPrinter.test.mjs`
+Expected: PASS
+
+Then run every consumer test that stubs `printPdf` as a bare `vi.fn()` (found via research: `backend/src/3_applications/school/PrintService.preview.test.mjs`, `backend/src/3_applications/school/surfaces/acceptance.v1.test.mjs`, `backend/src/3_applications/school/usecases/ReplaceLostAnswerSheet.test.mjs`) to confirm nothing there asserts on the OLD (unwrapped) payload shape in a way that would now be wrong — these stub `printPdf` entirely, so they almost certainly don't care about PJL wrapping at all, but confirm:
+Run: `npx vitest run backend/src/3_applications/school/PrintService.preview.test.mjs backend/src/3_applications/school/surfaces/acceptance.v1.test.mjs backend/src/3_applications/school/usecases/ReplaceLostAnswerSheet.test.mjs`
+Expected: PASS, unchanged.
+
+**Step 5: Commit**
+
+```bash
+git add backend/src/1_adapters/hardware/laser-printer/LaserPrinterAdapter.mjs backend/src/1_adapters/hardware/laser-printer/VirtualLaserPrinterAdapter.mjs backend/src/app.mjs tests/isolated/adapter/hardware/laserPrinterAdapter.test.mjs tests/isolated/adapter/school/virtualLaserPrinter.test.mjs
+git commit -m "feat(printing): default to duplex (double-sided) printing via PJL, config-driven"
+```
+
+### Task 12: Docs + physical verification note
+
+**Files:**
+- Modify: `docs/reference/school/print-documents.md` (or wherever printer/adapter behavior is documented — grep for "LaserPrinterAdapter" or "JetDirect" across `docs/` first)
+
+**Step 1:** Add a short section documenting: default behavior is double-sided (long-edge binding), config-driven via `schoolFullConfig.printing.duplex`/`.binding` (both optional, default `true`/`'LONGEDGE'`), implemented as a PJL wrap around the raw JetDirect payload (not CUPS/IPP job attributes, since this printer's IPP path rejects PDF). **Explicitly flag that PJL duplex has not been verified against the physical Brother HL-L2460DW** — the next person to hold the printed output should confirm one physical duplex print actually comes out double-sided, and update this doc to say "confirmed working as of <date>" or "confirmed NOT supported, fell back to X" once they do.
+
+**Step 2: Commit**
+
+```bash
+git add docs/reference/school/print-documents.md
+git commit -m "docs(printing): document duplex-by-default + flag PJL as unverified against physical hardware"
 ```
 
 ---
