@@ -28,7 +28,7 @@ export function createSchoolCatalog({
   if (config.enabled === false) return inert('school.yml catalog.enabled is false');
   try {
     const dataDirectory = configService.getDataDir();
-    const contentRoot = resolveFromData(dataDirectory, config.content?.root ?? 'content/school/catalog');
+    const contentRoot = resolveFromData(dataDirectory, config.content?.root ?? 'content/school/learning-catalog');
     const catalogDirectories = resolveDirectoryList(dataDirectory,
       config.content?.catalog_directories, [path.join(contentRoot, 'catalogs')], 'catalog.content.catalog_directories');
     const documentDirectories = resolveDirectoryList(dataDirectory,

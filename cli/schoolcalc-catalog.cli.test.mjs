@@ -36,7 +36,7 @@ describe('schoolcalc-catalog CLI', () => {
       },
       catalogErrors: {},
       lessonErrors: { 'main/subject/course/unit/lesson': ['bank not found'] },
-    }, { contentRoot: '/data/content/school/catalog' });
+    }, { contentRoot: '/data/content/school/learning-catalog' });
 
     expect(text).toContain('lessons   2 (1 valid)');
     expect(text).toContain('main/subject/course/unit/lesson');

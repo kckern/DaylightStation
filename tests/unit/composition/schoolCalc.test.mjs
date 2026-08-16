@@ -31,7 +31,7 @@ async function harness({ enabled = true, ingress = true, auth = true, actionKey 
   } : null;
   const catalog = {
     content: {
-      root: 'content/school/catalog',
+      root: 'content/school/learning-catalog',
       catalog_directories: ['mounted/catalogs'],
       document_directories: ['mounted/documents'],
       question_bank_directories: ['mounted/banks'],
@@ -109,7 +109,7 @@ describe('SchoolCalc composition', () => {
     expect(module.container.codecRegistry.listPlatformIds()).toEqual(['ti86']);
     expect(module.diagnostics).toEqual({
       platforms: ['ti86'],
-      contentRoot: path.join(dataDirectory, 'content/school/catalog'),
+      contentRoot: path.join(dataDirectory, 'content/school/learning-catalog'),
       catalogDirectories: [path.join(dataDirectory, 'mounted/catalogs')],
       documentDirectories: [path.join(dataDirectory, 'mounted/documents')],
       questionBankDirectories: [path.join(dataDirectory, 'mounted/banks')],

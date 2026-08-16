@@ -84,11 +84,12 @@ Usage:
 Options:
   --data-dir <path>                  data root (default: $DAYLIGHT_BASE_PATH/data)
   --content-root <path>              content root, absolute or data-relative
-                                     (default: content/school/catalog)
+                                     (default: content/school/learning-catalog)
   --catalog-directories <a,b>        override Catalog mount directories
   --document-directories <a,b>       override learning-document mount directories
   --question-bank-directories <a,b>  override question-bank mount directories
-  --surfaces-directory <path>        override surface-profile directory (default: <content-root>/surfaces)
+  --surfaces-directory <path>        override surface-profile directory
+                                     (default: household/config/school/surfaces)
   --assets-directory <path>          override asset directory (default: <content-root>/assets)
   --surface <id>                     restrict to one surface/baseline id (repeatable, query mode)
   --address <addr>                   certify one lesson (a/b/c/d/e) or bank (bank:<id>) address (query mode)
@@ -158,8 +159,11 @@ function resolveOptionalDirectory(value, fallback, dataDir, name) {
 
 export function resolveCertifyPaths({ flags = {}, env = process.env } = {}) {
   const base = resolveSchoolCalcContentPaths({ flags, env });
+  // Surface profiles declare what a rendering TARGET can do (channels, item
+  // caps, capabilities) — device configuration, not coursework — so they live
+  // under household config rather than on the authored content mount.
   const surfacesDirectory = resolveOptionalDirectory(
-    flags['surfaces-directory'], path.join(base.contentRoot, 'surfaces'), base.dataDir, 'surfaces-directory',
+    flags['surfaces-directory'], path.join(base.dataDir, 'household/config/school/surfaces'), base.dataDir, 'surfaces-directory',
   );
   const assetsDirectory = resolveOptionalDirectory(
     flags['assets-directory'], path.join(base.contentRoot, 'assets'), base.dataDir, 'assets-directory',

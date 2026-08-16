@@ -42,7 +42,7 @@ Usage:
 Options:
   --data-dir <path>                  data root (default: $DAYLIGHT_BASE_PATH/data)
   --content-root <path>              content root, absolute or data-relative
-                                     (default: content/school/catalog)
+                                     (default: content/school/learning-catalog)
   --catalog-directories <a,b>        override Catalog mount directories
   --document-directories <a,b>       override learning-document mount directories
   --question-bank-directories <a,b>  override question-bank mount directories
@@ -79,7 +79,7 @@ export function resolveSchoolCalcContentPaths({ flags = {}, env = process.env } 
   );
   const contentRoot = resolveFrom(
     dataDir,
-    valueFlag(flags['content-root'], 'content/school/catalog', '--content-root'),
+    valueFlag(flags['content-root'], 'content/school/learning-catalog', '--content-root'),
   );
   return {
     dataDir,
