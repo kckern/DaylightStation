@@ -37,6 +37,19 @@ files nobody could reach.)
 what keeps it out of `ContentTreeManifest`, which walks the school content tree
 with no skip list.
 
+### Review state decides what a learner sees
+
+A lesson reaches a learner only when `provenance.reviewState` is `approved` —
+`isPublishable` checks exactly that field. A lesson may be structurally valid,
+on the right shelf, with a resolving bank, and still be withheld; the catalog
+reports it in `units` but not in `publishable`, and the units endpoint 404s it.
+
+That is the intended fail-safe for material whose authoring is unfinished. The
+six Big Fat Notebook courses promoted 2026-08-16 use it: 36 lessons whose final
+approval round was clean are `approved`, and 41 still carrying a
+`decision: rewrite` are `draft` — live on the shelf, invisible to a child.
+
+
 Course packages resolve from the subject shelf directly. The
 `content/school/curriculum/<subject>/` nesting is retired: both datastores read
 `<subject>/<course>` and nothing else.
