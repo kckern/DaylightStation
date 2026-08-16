@@ -5,7 +5,7 @@
 // nothing else). This module owns the mark→meaning mapping for the household
 // 50-question card and double-processes every scan:
 //
-//   raw manifest (relay)   {dataDir}/household/omr/log/{reader}/{day}.yml
+//   raw manifest (relay)   {dataDir}/household/hardware/omr/log/{reader}/{day}.yml
 //   decoded record (here)  {dataDir}/household/school/quizzes/{reader}/{day}.yml
 //
 // The raw file stays byte-faithful; this one is the meaningful version.

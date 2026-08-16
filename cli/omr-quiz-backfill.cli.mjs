@@ -49,7 +49,7 @@ const resolveRoot = (override, fallback) => (override
   ? join(dataDir, ...String(override).replace(/^\/+/, '').split('/'))
   : join(dataDir, 'household', fallback));
 const result = await rebuildQuizDayFiles({
-  historyRoot: resolveRoot(config?.persistence?.dir, 'omr/log'),
+  historyRoot: resolveRoot(config?.persistence?.dir, 'hardware/omr/log'),
   // MUST match app.mjs's live default for the recorder (school/quizzes). These
   // are two composition roots writing the same tree, so a drift here silently
   // rebuilds history into a directory nothing reads — which is what happened
