@@ -90,6 +90,27 @@ describe('Player — remount storm brake', () => {
     expect(stormLogs()[0][1]).toMatchObject({ frozenKey: expect.any(String) });
   });
 
+  it('stops minting new Plex client sessions once the brake is on', async () => {
+    // Freezing the key stops new <dash-video> elements, and therefore new transcode
+    // sessions. It does NOT by itself stop SinglePlayer's metadata fetch: that effect
+    // depends on `plexClientSession`, so while the guid churned behind a frozen key
+    // the Player kept handing down a new value and the effect kept re-running — a
+    // live /api/v1/play/<id> call against Plex on every pass. Deriving the session
+    // from the ADMITTED key means the brake covers the fetch too.
+    const { rerender } = render(<Player play={{ contentId: 'plex:930000' }} />);
+    await waitFor(() => expect(mounts).toHaveLength(1));
+
+    for (let i = 1; i < 15; i += 1) {
+      await churn(rerender, `plex:${930000 + i}`);
+    }
+
+    expect(mounts).toHaveLength(MAX_MOUNTS);
+    expect(stormLogs()).toHaveLength(1);
+    // Fifteen identity changes, ten admitted keys — and so at most ten distinct
+    // sessions handed down, not fifteen.
+    expect(new Set(renders).size).toBe(MAX_MOUNTS);
+  });
+
   it('leaves normal, spaced-out content changes alone', async () => {
     const { rerender } = render(<Player play={{ contentId: 'plex:910000' }} />);
     await waitFor(() => expect(mounts).toHaveLength(1));

@@ -1242,7 +1242,18 @@ const Player = forwardRef(function Player(props, ref) {
     suppressLocalOverlay: !!overlayElements,
     // Use external session if provided (for multi-player isolation) — that value is
     // the caller's own scheme (FitnessMusicPlayer) and passes through untouched.
-    // Otherwise: media GUID, remount nonce, and this Player's instance id.
+    // Otherwise: the ADMITTED player key plus this Player's instance id.
+    //
+    // Derived from `singlePlayerKey` and not from the raw guid so the storm brake
+    // covers this value too. `plexClientSession` is a dep of SinglePlayer's
+    // fetchVideoInfoCallback, so a value that keeps moving keeps re-running the
+    // metadata fetch — one live /api/v1/play/<id> against Plex per pass — even while
+    // the frozen key is holding the <dash-video> still. Reading the admitted key
+    // instead means the fetch stops when the remounts do. The key still embeds the
+    // remount nonce, so a deliberate recovery remount still mints a fresh session.
+    // (Image slideshows hold one key across image→image so ImageFrame can dissolve,
+    // and therefore one session value — harmless: they carry no transcode, and their
+    // metadata fetch is driven by effectiveContentId, which still moves.)
     //
     // The instance id matters even though nothing reads it yet. The backend ignores
     // `?session=` today (PlexAdapter mints its own identifiers), so a shared value is
@@ -1253,7 +1264,7 @@ const Player = forwardRef(function Player(props, ref) {
     // compute an identical `<hash>-r0` and hand Plex one session identifier for two
     // independent streams. Cheap to keep per-instance now, expensive to discover later.
     plexClientSession: externalPlexClientSession
-      || (currentMediaGuid ? `${currentMediaGuid}-r${remountState.nonce}#${playerInstanceId}` : null)
+      || (currentMediaGuid ? `${singlePlayerKey}#${playerInstanceId}` : null)
   };
 
   const playerShellClass = ['player', effectiveShader, props.playerType || '']
