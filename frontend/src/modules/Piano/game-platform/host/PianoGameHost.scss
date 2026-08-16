@@ -12,8 +12,9 @@
   min-height: 0;
 }
 
+/* One height, named, so a game can raise it without redefining the dock. */
 .piano-game-host__instrument .piano-keyboard {
-  height: clamp(5.5rem, 14cqh, 7rem);
+  height: var(--pg-keyboard-h);
 }
 
 .piano-game-host__overlays {

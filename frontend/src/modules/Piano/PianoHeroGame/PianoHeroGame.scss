@@ -1,12 +1,39 @@
+/**
+ * Piano Hero.
+ *
+ * The scene is a night sky with notes falling through it, so the night, the
+ * spark of a lit note and the ink are colours this game names. What it does NOT
+ * get to name is the meaning of a colour: a hit was `#38f0cf` here, `#00ffc8` in
+ * Flashcards, `#00ffc8` again in Space Invaders and `#2ec46f` in the house — four
+ * values for one idea on one kiosk. Hit is the house accent now and miss is the
+ * house danger, and every tint of them is mixed from that one value rather than
+ * hand-picked, so retinting the kiosk retints this scene with it.
+ */
 .piano-hero-picker,
 .piano-hero-game {
+  /* --- what this scene names --- */
+  --hero-ink: #f7fbff;
+  --hero-spark: #fff;
+  --hero-night: #10162b;
+  --hero-night-deep: #080b17;
+  --hero-void: #07131a;
+  --hero-shadow: #000;
+
+  /* --- what it borrows, and mixes --- */
+  --hero-hit: var(--pg-brass);
+  --hero-hit-lit: color-mix(in srgb, var(--pg-brass) 55%, var(--hero-spark));
+  --hero-hit-pale: color-mix(in srgb, var(--pg-brass) 30%, var(--hero-spark));
+  --hero-hit-deep: color-mix(in srgb, var(--pg-brass) 22%, var(--hero-night-deep));
+  --hero-miss: var(--pg-felt);
+  --hero-miss-hot: color-mix(in srgb, var(--pg-felt) 85%, #f00);
+  --hero-miss-pale: color-mix(in srgb, var(--pg-felt) 40%, var(--hero-spark));
   width: 100%;
   height: 100%;
   min-height: 0;
-  color: #f7fbff;
+  color: var(--hero-ink);
   background:
-    radial-gradient(circle at 50% -20%, rgba(23, 216, 196, .2), transparent 46%),
-    linear-gradient(180deg, #10162b 0%, #080b17 100%);
+    radial-gradient(circle at 50% -20%, color-mix(in srgb, var(--hero-hit) 20%, transparent), transparent 46%),
+    linear-gradient(180deg, var(--hero-night) 0%, var(--hero-night-deep) 100%);
 }
 
 .piano-hero-picker {
@@ -41,14 +68,14 @@
     padding: 12px;
     border: 1px solid rgba(255,255,255,.12);
     border-radius: 16px;
-    color: #fff;
+    color: var(--hero-spark);
     background: rgba(255,255,255,.07);
     box-shadow: inset 0 1px 0 rgba(255,255,255,.06);
   }
-  &__grid button:active { transform: scale(.98); background: rgba(23,216,196,.15); }
+  &__grid button:active { transform: scale(.98); background: color-mix(in srgb, var(--pg-brass-fill) 15%, transparent); }
   &__grid img { width: 100%; min-height: 0; flex: 1; object-fit: contain; border-radius: 9px; }
   &__grid strong { overflow: hidden; width: 100%; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
-  &__note { font-size: 54px; line-height: 1; color: #17d8c4; }
+  &__note { font-size: 54px; line-height: 1; color: var(--hero-hit); }
 }
 
 .piano-hero-game {
@@ -65,14 +92,14 @@
     align-items: center;
     gap: 18px;
     padding: 0 22px;
-    background: rgba(5,8,18,.88);
+    background: color-mix(in srgb, var(--hero-night-deep) 88%, transparent);
     border-bottom: 1px solid rgba(255,255,255,.1);
   }
   &__songs {
     min-height: 46px;
     border: 1px solid rgba(255,255,255,.2);
     border-radius: 12px;
-    color: #fff;
+    color: var(--hero-spark);
     background: rgba(255,255,255,.08);
     font-weight: 700;
   }
@@ -94,7 +121,7 @@
     padding: 4px 14px;
     border: 1px solid rgba(255,255,255,.22);
     border-radius: 999px;
-    color: #fff;
+    color: var(--hero-spark);
     background: rgba(255,255,255,.08);
     font-size: 14px;
     font-weight: 700;
@@ -102,7 +129,7 @@
     letter-spacing: .04em;
 
     .piano-icon { font-size: 15px; opacity: .8; }
-    &:not(:disabled):active { transform: scale(.96); background: rgba(23,216,196,.2); }
+    &:not(:disabled):active { transform: scale(.96); background: color-mix(in srgb, var(--pg-brass-fill) 20%, transparent); }
     // Mid-run it is out of reach by design (retiming a chart underway would
     // move every note you are currently reading), so it dims to a readout.
     &:disabled { border-color: rgba(255,255,255,.1); color: rgba(255,255,255,.6); background: transparent; }
@@ -112,12 +139,12 @@
   &__tempo-pct {
     padding: 1px 7px;
     border-radius: 999px;
-    color: #061b18;
-    background: #38f0cf;
+    color: var(--hero-hit-deep);
+    background: var(--hero-hit);
     font-size: 11px;
   }
   &__score { display: flex; flex-direction: column; align-items: flex-end; }
-  &__score strong { color: #38f0cf; font-size: 26px; font-variant-numeric: tabular-nums; }
+  &__score strong { color: var(--hero-hit); font-size: 26px; font-variant-numeric: tabular-nums; }
   &__metronome {
     display: inline-flex;
     align-items: center;
@@ -135,15 +162,15 @@
 
     span { font-size: 22px; line-height: 1; }
     &.is-on {
-      color: #dffef8;
-      border-color: rgba(56,240,207,.7);
-      background: rgba(23,216,196,.16);
-      box-shadow: 0 0 15px rgba(23,216,196,.18), inset 0 1px rgba(255,255,255,.1);
+      color: var(--hero-hit-pale);
+      border-color: color-mix(in srgb, var(--pg-brass-fill) 70%, transparent);
+      background: color-mix(in srgb, var(--pg-brass-fill) 16%, transparent);
+      box-shadow: 0 0 15px color-mix(in srgb, var(--pg-brass-fill) 18%, transparent), inset 0 1px rgba(255,255,255,.1);
     }
     &:active { transform: scale(.97); }
   }
   &__progress { position: absolute; inset: auto 0 0; height: 3px; background: rgba(255,255,255,.08); }
-  &__progress span { display: block; height: 100%; background: #17d8c4; box-shadow: 0 0 12px #17d8c4; }
+  &__progress span { display: block; height: 100%; background: var(--hero-hit); box-shadow: 0 0 12px var(--hero-hit); }
   &__keyboard { position: relative; z-index: 3; min-height: 0; }
   &__keyboard .piano-keyboard { height: 100%; }
 }
@@ -159,7 +186,7 @@
     inset: 0;
     opacity: .18;
     background: repeating-linear-gradient(90deg, transparent 0, transparent calc(2% - 1px), rgba(255,255,255,.16) 2%);
-    mask-image: linear-gradient(to bottom, transparent, #000 38%, #000);
+    mask-image: linear-gradient(to bottom, transparent, var(--hero-shadow) 38%, var(--hero-shadow));
   }
   &__hit-line {
     position: absolute;
@@ -168,20 +195,20 @@
     right: 0;
     top: 82%;
     height: 4px;
-    background: #fff;
-    box-shadow: 0 0 8px #fff, 0 0 22px #17d8c4;
+    background: var(--hero-spark);
+    box-shadow: 0 0 8px var(--hero-spark), 0 0 22px var(--hero-hit);
     pointer-events: none;
   }
   &__beat-flash {
     position: absolute;
     inset: -5px 0;
-    background: linear-gradient(90deg, transparent, rgba(255,255,255,.78) 18%, #fff 50%, rgba(255,255,255,.78) 82%, transparent);
-    box-shadow: 0 0 16px rgba(255,255,255,.9), 0 0 34px rgba(23,216,196,.62);
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,.78) 18%, var(--hero-spark) 50%, rgba(255,255,255,.78) 82%, transparent);
+    box-shadow: 0 0 16px rgba(255,255,255,.9), 0 0 34px color-mix(in srgb, var(--pg-brass-fill) 62%, transparent);
     animation: piano-hero-threshold-beat 150ms ease-out forwards;
 
     &.is-downbeat {
-      background: linear-gradient(90deg, transparent, #a9fff1 18%, #fff 50%, #a9fff1 82%, transparent);
-      box-shadow: 0 0 18px #fff, 0 0 44px rgba(56,240,207,.92);
+      background: linear-gradient(90deg, transparent, var(--hero-hit-lit) 18%, var(--hero-spark) 50%, var(--hero-hit-lit) 82%, transparent);
+      box-shadow: 0 0 18px var(--hero-spark), 0 0 44px color-mix(in srgb, var(--hero-hit) 92%, transparent);
     }
   }
   &__threshold-spark {
@@ -206,27 +233,27 @@
     }
 
     &.is-hit {
-      background: #fff;
-      box-shadow: 0 0 10px #fff, 0 0 28px #38f0cf;
+      background: var(--hero-spark);
+      box-shadow: 0 0 10px var(--hero-spark), 0 0 28px var(--hero-hit);
       animation: piano-hero-threshold-hit 260ms ease-out forwards;
 
       &::before {
-        background: #fff;
-        box-shadow: -18px -8px #38f0cf, 16px -12px #fff, 21px 8px #38f0cf, -16px 12px #fff;
+        background: var(--hero-spark);
+        box-shadow: -18px -8px var(--hero-hit), 16px -12px var(--hero-spark), 21px 8px var(--hero-hit), -16px 12px var(--hero-spark);
         animation: piano-hero-threshold-particles 260ms ease-out forwards;
       }
       &::after {
         width: 34px;
         height: 34px;
-        border: 2px solid #bafff3;
+        border: 2px solid var(--hero-hit-pale);
         background: transparent;
         animation: piano-hero-threshold-ring 260ms ease-out forwards;
       }
     }
 
     &.is-miss {
-      background: #fff;
-      box-shadow: 0 0 12px #fff, 0 0 34px #ff244d;
+      background: var(--hero-spark);
+      box-shadow: 0 0 12px var(--hero-spark), 0 0 34px var(--hero-miss);
       animation: piano-hero-threshold-miss 260ms ease-out forwards;
 
       &::before,
@@ -234,8 +261,8 @@
         width: 3px;
         height: 34px;
         border-radius: 2px;
-        background: #ff244d;
-        box-shadow: 0 0 9px #ff244d;
+        background: var(--hero-miss);
+        box-shadow: 0 0 9px var(--hero-miss);
       }
       &::before { transform: translate(-50%, -50%) rotate(34deg); }
       &::after { transform: translate(-50%, -50%) rotate(-34deg); }
@@ -304,24 +331,24 @@
     animation: piano-hero-note-burst 360ms cubic-bezier(.16, .8, .3, 1) forwards;
 
     &::before {
-      background: #fff;
-      box-shadow: -20px -9px #fff, 18px -14px #38f0cf, 23px 8px #fff, -17px 15px #38f0cf;
+      background: var(--hero-spark);
+      box-shadow: -20px -9px var(--hero-spark), 18px -14px var(--hero-hit), 23px 8px var(--hero-spark), -17px 15px var(--hero-hit);
       animation: piano-hero-note-fragments 420ms ease-out forwards;
     }
 
     &::after {
-      background: #9ffff0;
-      box-shadow: -13px -19px #38f0cf, 12px -22px #fff, 20px 17px #38f0cf, -22px 10px #fff;
+      background: var(--hero-hit-lit);
+      box-shadow: -13px -19px var(--hero-hit), 12px -22px var(--hero-spark), 20px 17px var(--hero-hit), -22px 10px var(--hero-spark);
       animation: piano-hero-note-fragments-alt 440ms ease-out forwards;
     }
   }
 
   &--missed {
-    background: #ff244d;
-    border-color: #ffd1da;
+    background: var(--hero-miss);
+    border-color: var(--hero-miss-pale);
     animation: piano-hero-note-miss 620ms ease-out forwards;
   }
-  &.is-struck { border-color: #fff; box-shadow: 0 0 9px #fff, 0 0 24px #38f0cf; }
+  &.is-struck { border-color: var(--hero-spark); box-shadow: 0 0 9px var(--hero-spark), 0 0 24px var(--hero-hit); }
 }
 
 @keyframes piano-hero-note-burst {
@@ -358,27 +385,27 @@
   0%, 100% { transform: translate(-50%, -100%); }
   0% {
     opacity: 1;
-    background: #ff244d;
-    box-shadow: 0 0 10px rgba(255, 36, 77, .75), inset 0 0 7px rgba(255,255,255,.55);
+    background: var(--hero-miss);
+    box-shadow: 0 0 10px color-mix(in srgb, var(--pg-felt) 75%, transparent), inset 0 0 7px rgba(255,255,255,.55);
   }
   14% {
     transform: translate(calc(-50% - 7px), -100%) scale(1.07);
-    background: #ff123f;
-    box-shadow: 0 0 14px #fff, 0 0 42px #ff244d, inset 0 0 10px rgba(255,255,255,.9);
+    background: var(--hero-miss-hot);
+    box-shadow: 0 0 14px var(--hero-spark), 0 0 42px var(--hero-miss), inset 0 0 10px rgba(255,255,255,.9);
   }
   28% { transform: translate(calc(-50% + 6px), -100%); opacity: .42; }
   43% {
     transform: translate(calc(-50% - 4px), -100%) scale(1.04);
     opacity: 1;
-    box-shadow: 0 0 8px #fff, 0 0 34px #ff244d;
+    box-shadow: 0 0 8px var(--hero-spark), 0 0 34px var(--hero-miss);
   }
   58% { transform: translate(calc(-50% + 3px), -100%); opacity: .38; }
-  74% { opacity: .88; box-shadow: 0 0 28px rgba(255, 36, 77, .9); }
+  74% { opacity: .88; box-shadow: 0 0 28px color-mix(in srgb, var(--pg-felt) 90%, transparent); }
   100% {
     opacity: .3;
-    background: #ff244d;
-    border-color: #ff9aae;
-    box-shadow: 0 0 16px rgba(255, 36, 77, .65);
+    background: var(--hero-miss);
+    border-color: var(--hero-miss-pale);
+    box-shadow: 0 0 16px color-mix(in srgb, var(--pg-felt) 65%, transparent);
   }
 }
 
@@ -397,9 +424,9 @@
   .piano-hero-note--missed {
     animation: none;
     opacity: .55;
-    background: #ff244d;
-    border-color: #fff;
-    box-shadow: 0 0 24px rgba(255, 36, 77, .9);
+    background: var(--hero-miss);
+    border-color: var(--hero-spark);
+    box-shadow: 0 0 24px color-mix(in srgb, var(--pg-felt) 90%, transparent);
   }
 }
 
@@ -409,10 +436,10 @@
   inset: 74px 0 132px;
   display: grid;
   place-items: center;
-  color: #fff;
+  color: var(--hero-spark);
   font-size: 112px;
   font-weight: 900;
-  text-shadow: 0 0 34px #17d8c4;
+  text-shadow: 0 0 34px var(--hero-hit);
   pointer-events: none;
 }
 
@@ -426,7 +453,7 @@
   justify-content: center;
   padding: 30px;
   text-align: center;
-  background: rgba(5,8,18,.84);
+  background: color-mix(in srgb, var(--hero-night-deep) 84%, transparent);
   backdrop-filter: blur(8px);
 
   h2 { margin: 0; font-size: 40px; }
@@ -437,16 +464,16 @@
     padding: 0 22px;
     border: 0;
     border-radius: 14px;
-    color: #07131a;
-    background: #38f0cf;
+    color: var(--hero-void);
+    background: var(--hero-hit);
     font-size: 18px;
     font-weight: 800;
   }
-  &--complete h2 { color: #38f0cf; font-size: 68px; }
+  &--complete h2 { color: var(--hero-hit); font-size: 68px; }
   &__actions { display: flex; gap: 12px; margin-top: 22px; }
-  &__actions button.is-secondary { color: #fff; background: rgba(255,255,255,.13); border: 1px solid rgba(255,255,255,.2); }
+  &__actions button.is-secondary { color: var(--hero-spark); background: rgba(255,255,255,.13); border: 1px solid rgba(255,255,255,.2); }
 }
 
 .piano-hero-results { display: flex; gap: 28px; margin-top: 8px; }
 .piano-hero-results span { display: flex; flex-direction: column; color: rgba(255,255,255,.62); }
-.piano-hero-results strong { color: #fff; font-size: 26px; }
+.piano-hero-results strong { color: var(--hero-spark); font-size: 26px; }

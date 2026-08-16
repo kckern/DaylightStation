@@ -1,29 +1,202 @@
-.piano-checkers { display: flex; flex-direction: column; overflow: hidden; color: #f8fafc; background: radial-gradient(circle at 50% 25%, #334155, #0b1220 72%); }
-.piano-checkers .instrument-board-stage { flex: 1; height: auto; padding-bottom: .4rem; }
-/* Same cap as .checkers-board's own `min(100%, 34rem)` — a file card has to
-   sit directly over its column, same reasoning as Connect Four's top-rail. */
-.piano-checkers .instrument-board-stage__top-rail { width: min(100%, 34rem); margin: 0 auto; }
-/* The rank rail sits directly beside the board, not out in the far
-   leftRail — it has to be tall as the board (row for row) to read as "this
-   card is THIS row," which only works pinned right up against it. */
-.checkers-stage { display: flex; align-items: stretch; gap: .5rem; width: min(100%, 34rem); }
-.checkers-stage__rank-rail { flex: 0 0 auto; width: 2.6rem; }
-.checkers-stage .checkers-board { flex: 1 1 auto; width: auto; }
-.checkers-board { aspect-ratio: 1; display: grid; grid-template: repeat(8, 1fr) / repeat(8, 1fr); border: .7rem solid #5c3520; border-radius: .45rem; box-shadow: 0 1rem 2.5rem #0009, inset 0 0 0 .15rem #d39a5e; }
-.checkers-board__cell { position: relative; display: grid; place-items: center; min-width: 0; min-height: 0; }
-.checkers-board__cell.is-light { background: #e7c79f; }
-.checkers-board__cell.is-playable { background: #75452f; box-shadow: inset 0 0 .45rem #2b160e88; }
-.checkers-board__cell.is-source::after, .checkers-board__cell.is-destination::after, .checkers-board__cell.is-hint::after { content: ''; position: absolute; inset: 8%; border: .18rem solid #72f1b8; border-radius: 50%; pointer-events: none; }
-.checkers-board__cell.is-selected { background: #956338; }
-.checkers-board__cell.is-selected::after { content: ''; position: absolute; inset: 5%; border: .22rem solid #ffe081; border-radius: 50%; }
-.checkers-board__cell.is-hint::after { border-color: #72f1b8; box-shadow: 0 0 .7rem #72f1b8; }
-.checkers-board__piece { position: relative; z-index: 2; display: grid; place-items: center; width: 72%; aspect-ratio: 1; border-radius: 50%; box-shadow: inset 0 .22rem .2rem #fff5, inset 0 -.3rem .3rem #0007, 0 .18rem .25rem #0008; }
-.checkers-board__piece--player { background: #dc3b35; border: .18rem solid #8f1716; }
-.checkers-board__piece--opponent { background: #3d7ed8; border: .18rem solid #17498f; }
-.checkers-board__crown { color: #ffe081; font-size: 1.3rem; line-height: 1; text-shadow: 0 1px 2px #000; }
-.checkers-opponent, .checkers-settings { display: flex; flex-direction: column; gap: .7rem; padding: 1rem; border-radius: 1rem; background: #071526b8; }
-.checkers-opponent strong { color: #ffe081; font-size: 1.5rem; }
-.checkers-settings__check { display: flex; align-items: center; gap: .45rem; }
-.checkers-settings p { margin: 0; line-height: 1.35; }
-.checkers-status { display: flex; justify-content: center; align-items: center; gap: 1rem; min-height: 1.8em; font-size: 1.15rem; font-weight: 750; }
-.checkers-status button { border: 0; border-radius: .6rem; padding: .45rem .9rem; background: #72f1b8; color: #062416; font-weight: 800; }
+/**
+ * Checkers owns its BOARD and nothing else.
+ *
+ * The rails, the panels, the status line and the "Play again" pill used to live
+ * here as 27 raw hexes that were a digit or two away from Connect Four's 21 —
+ * the same furniture described twice, slightly differently, which is what read
+ * as slop. They are the chrome kit now (game-platform/chrome), and the
+ * full-screen slate gradient is gone with them: the cabinet is one charcoal
+ * across all three games, and the board is where this game gets its wood.
+ */
+
+.piano-checkers {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+
+  /* The board's ceiling, read by the board AND by the file rail sitting over it
+     — one number, so a card can never point half a file off. */
+  --pg-board-max: 34rem;
+
+  /* The rank rail's own width and its gap. Named because the FILE rail above
+     has to be inset by exactly this much: the board starts to the right of the
+     rank rail, so a file rail spanning the whole stage puts every card half a
+     file off the column it is naming. */
+  /* Wide enough to ENGRAVE on. At 2.6rem a rank card was 42px across while a
+     file card above the board was 57px, and a clef plus a notehead does not
+     survive that — the rank rail read as eight blank staves while the file rail
+     beside it read fine. Matched to the file card's width, which is the board's
+     own column, so a rank card and a file card are the same object seen on two
+     axes rather than two different-sized things. */
+  --ck-rank-rail: 3.6rem;
+  --ck-rank-gap: 0.5rem;
+  /* The board's wooden frame, and the brass lip drawn just inside it. The
+     playing squares start inside BOTH, so a rail inset by only the rank rail
+     still sits a frame-and-lip to the left of the files it names. */
+  --ck-frame-w: 0.7rem;
+  --ck-frame-lip-w: 0.15rem;
+  --ck-rim: calc(var(--ck-frame-w) + var(--ck-frame-lip-w));
+
+  /* THE BOARD IS CENTRED, NOT THE STAGE. The rank rail hangs off the board's
+     left, so centring the stage puts the board half a rail to the right of
+     centre — the same drift chess documents on its own rank axis, and the same
+     thing that reads as broken. An equal margin on the other side makes the
+     stage's margin box symmetric about the board, so the thing the player looks
+     at is the thing that is centred. */
+  --ck-board-offset: calc(var(--ck-rank-rail) + var(--ck-rank-gap));
+
+  /* ── THE BOARD'S OWN COLOURS ────────────────────────────────────────────
+     Every colour this game names, named here. A checkers set is a wooden board
+     with two colours of squares and two colours of men, which is a thing that
+     exists and has to look like itself; nothing else in this file gets a hue. */
+  --ck-frame: #5c3520;
+  --ck-frame-lip: #d39a5e;
+  --ck-square-light: #e7c79f;
+  --ck-square-dark: #75452f;
+  --ck-square-lifted: #956338;
+  --ck-red: #dc3b35;
+  --ck-red-edge: #8f1716;
+  --ck-red-tally: #f0736d;
+  --ck-blue: #3d7ed8;
+  --ck-blue-edge: #17498f;
+  --ck-blue-tally: #7fadea;
+  --ck-crown: #ffe081;
+  --ck-crown-shadow: #000;
+}
+
+.piano-checkers .instrument-board-stage {
+  flex: 1;
+  height: auto;
+  padding-bottom: 0.4rem;
+}
+
+/* The rank rail sits directly beside the board, not out in the far leftRail —
+   it has to be tall as the board (row for row) to read as "this card is THIS
+   row," which only works pinned right up against it.
+   A GRID, not a flex row: the rail is `height: 100%`, and a percentage height
+   against a flex line's indefinite cross size resolves to `auto` — which is
+   also what cancels `align-items: stretch`. The rail collapsed to its content
+   and drew eight staves stacked in a 40px stub beside a 540px board. A grid
+   track gives the percentage something definite to be 100% OF. */
+.checkers-stage {
+  display: grid;
+  /* One grid for the whole instrument face: a rank-rail column and a board
+     column, a file-rail row and a board row. The file rail shares the board's
+     COLUMN, so a card is over its file by construction rather than by an
+     arithmetic chase through two different centring contexts. */
+  grid-template-columns: var(--ck-rank-rail) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  align-items: stretch;
+  gap: var(--ck-rank-gap);
+  width: min(100%, var(--pg-board-max));
+  margin-inline-end: var(--ck-board-offset);
+}
+
+/* Column 2, row 1 — over the board, inset by the board's own rim so the cards
+   line up with the squares rather than with the frame around them. */
+.checkers-stage__file-rail {
+  grid-column: 2;
+  grid-row: 1;
+  padding-inline: var(--ck-rim);
+  box-sizing: border-box;
+}
+
+.checkers-stage__rank-rail {
+  grid-column: 1;
+  grid-row: 2;
+  min-height: 0;
+  padding-block: var(--ck-rim);
+  box-sizing: border-box;
+}
+
+.checkers-stage .checkers-board { grid-column: 2; grid-row: 2; width: 100%; }
+
+.checkers-board {
+  aspect-ratio: 1;
+  display: grid;
+  grid-template: repeat(8, 1fr) / repeat(8, 1fr);
+  border: var(--ck-frame-w) solid var(--ck-frame);
+  border-radius: 0.45rem;
+  box-shadow: 0 1rem 2.5rem rgb(0 0 0 / 60%), inset 0 0 0 var(--ck-frame-lip-w) var(--ck-frame-lip);
+}
+
+.checkers-board__cell {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 0;
+}
+
+.checkers-board__cell.is-light { background: var(--ck-square-light); }
+.checkers-board__cell.is-playable { background: var(--ck-square-dark); box-shadow: inset 0 0 0.45rem rgb(43 22 14 / 53%); }
+
+/* Playable now: a source you may lift, a destination you may drop on, or the
+   move the game is suggesting. All three are the same house accent, because all
+   three mean the same thing to the player — you can go here. */
+.checkers-board__cell.is-source::after,
+.checkers-board__cell.is-destination::after,
+.checkers-board__cell.is-hint::after {
+  content: '';
+  position: absolute;
+  inset: 8%;
+  border: 0.18rem solid var(--pg-brass-fill);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.checkers-board__cell.is-selected { background: var(--ck-square-lifted); }
+
+.checkers-board__cell.is-selected::after {
+  content: '';
+  position: absolute;
+  inset: 5%;
+  border: 0.22rem solid var(--pg-brass);
+  border-radius: 50%;
+}
+
+.checkers-board__cell.is-hint::after {
+  border-color: var(--pg-brass-fill);
+  box-shadow: 0 0 0.7rem var(--pg-brass-fill);
+}
+
+.checkers-board__piece {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 72%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  box-shadow:
+    inset 0 0.22rem 0.2rem rgb(255 255 255 / 33%),
+    inset 0 -0.3rem 0.3rem rgb(0 0 0 / 44%),
+    0 0.18rem 0.25rem rgb(0 0 0 / 53%);
+}
+
+.checkers-board__piece--player { background: var(--ck-red); border: 0.18rem solid var(--ck-red-edge); }
+.checkers-board__piece--opponent { background: var(--ck-blue); border: 0.18rem solid var(--ck-blue-edge); }
+
+.checkers-board__crown {
+  color: var(--ck-crown);
+  font-size: 1.3rem;
+  line-height: 1;
+  text-shadow: 0 1px 2px var(--ck-crown-shadow);
+}
+
+/* The piece tally in the rail. Each side wears its own colour so the row reads
+   as the board it is counting, and the numbers are tabular so a capture doesn't
+   shuffle the line. */
+.checkers-tally {
+  display: flex;
+  gap: 0.75rem;
+  margin: 0;
+  font-size: var(--t-cap, 0.85rem);
+  color: var(--pg-ivory-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.checkers-tally__side { display: inline-flex; align-items: baseline; gap: 0.3rem; }
+.checkers-tally__count { font-size: var(--t-h, 1.25rem); font-weight: 700; }
+.checkers-tally__side--player .checkers-tally__count { color: var(--ck-red-tally); }
+.checkers-tally__side--opponent .checkers-tally__count { color: var(--ck-blue-tally); }

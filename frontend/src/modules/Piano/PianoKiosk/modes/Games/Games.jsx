@@ -9,6 +9,7 @@ import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
 import PianoTile from '../../PianoTile.jsx';
 import { balancedColumns } from '../../tileGridLayout.js';
 import { SkeletonStage } from '../../Skeleton.jsx';
+import GameBoundary from '../../../game-platform/host/GameBoundary.jsx';
 
 /**
  * Relative destination for a game-owned URL segment.
@@ -122,19 +123,24 @@ function GameHost() {
 
   return (
     <div className="piano-game-fullscreen">
-      <Suspense fallback={<SkeletonStage />}>
-        <entry.LazyComponent
-          activeNotes={activeNotes}
-          noteHistory={noteHistory}
-          gameConfig={config.games?.[gameId]}
-          subRoute={subRoute ?? null}
-          onSubRoute={goSubRoute}
-          currentUser={currentUser}
-          onDeactivate={exit}
-          onNoteOn={pressNote}
-          onNoteOff={releaseNote}
-        />
-      </Suspense>
+      {/* A game that throws costs the player that game — not the kiosk. Without
+          this, any throw blanked the whole screen, and the tablet's render
+          watchdog then read a dead page and rebooted it. */}
+      <GameBoundary resetKey={gameId} label={entry.label ?? 'This game'} onExit={exit}>
+        <Suspense fallback={<SkeletonStage />}>
+          <entry.LazyComponent
+            activeNotes={activeNotes}
+            noteHistory={noteHistory}
+            gameConfig={config.games?.[gameId]}
+            subRoute={subRoute ?? null}
+            onSubRoute={goSubRoute}
+            currentUser={currentUser}
+            onDeactivate={exit}
+            onNoteOn={pressNote}
+            onNoteOff={releaseNote}
+          />
+        </Suspense>
+      </GameBoundary>
     </div>
   );
 }

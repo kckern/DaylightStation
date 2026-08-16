@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { addressedColumn, columnAddresses, shuffledColumns } from './PianoConnectFour.jsx';
+import {
+  addressedColumn, columnAddresses, dropDurationMs, lastDrop, shuffledColumns,
+} from './PianoConnectFour.jsx';
 
 const notes = (...values) => new Map(values.map((note) => [note, { velocity: 100 }]));
 const config = {
@@ -42,5 +44,32 @@ describe('Connect Four rail addresses', () => {
   it('labels every address with a note name, for the "names" notation', () => {
     const addresses = columnAddresses(config, [0, 1, 2, 3, 4, 5, 6]);
     expect(addresses[0].label).toBe('C4');
+  });
+});
+
+describe('Connect Four gravity', () => {
+  // board[0] is the TOP row; discs stack from the floor, so the newest disc in a
+  // column is the topmost occupied cell in it.
+  const empty = () => Array.from({ length: 6 }, () => Array(7).fill(0));
+
+  it('finds the disc that just landed and how far it fell', () => {
+    const board = empty();
+    board[5][3] = 1; // floor of column 3
+    expect(lastDrop(board, [3])).toEqual({ row: 5, column: 3, rows: 6, ply: 1 });
+  });
+
+  it('shortens the fall as the column fills', () => {
+    const board = empty();
+    board[5][3] = 1;
+    board[4][3] = 2;
+    expect(lastDrop(board, [3, 3])).toMatchObject({ row: 4, rows: 5 });
+  });
+
+  it('has nothing to drop before the first move', () => {
+    expect(lastDrop(empty(), [])).toBeNull();
+  });
+
+  it('gives a longer fall a longer animation', () => {
+    expect(dropDurationMs(6)).toBeGreaterThan(dropDurationMs(1));
   });
 });

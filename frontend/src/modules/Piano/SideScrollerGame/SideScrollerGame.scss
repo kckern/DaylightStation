@@ -1,10 +1,23 @@
+/**
+ * Side Scroller. The runner's world is its own; the HUD around it is the cabinet.
+ *
+ * Score was `#00ffc8` — a neon this game invented, that Tetris, Flashcards and
+ * Space Invaders had each also invented in a slightly different shade. Score is
+ * the house accent now, and the life meter's amber/red are the house's warn and
+ * danger, so a full bar means the same thing here as it does anywhere else.
+ */
 .side-scroller {
+  /* The two colours this scene names: the night it runs through, and the darker
+     well the life meter is set into. */
+  --scroller-night: #1a1a2e;
+  --scroller-well: #0a0a12;
+
   display: flex;
   flex-direction: column;
   width: 100%;
   height: 100%;
-  background: #1a1a2e;
-  color: #fff;
+  background: var(--scroller-night);
+  color: var(--pg-ivory);
   position: relative;
   overflow: hidden;
 
@@ -35,8 +48,8 @@
     flex-direction: column-reverse;
     gap: clamp(1px, 0.15vh, 3px);
     padding: clamp(4px, 0.5vw, 8px);
-    background: #0a0a12;
-    border: clamp(2px, 0.3vw, 5px) solid #1a1a2e;
+    background: var(--scroller-well);
+    border: clamp(2px, 0.3vw, 5px) solid var(--scroller-night);
     border-radius: clamp(6px, 0.8vw, 14px);
     box-shadow: inset 0 0 0 clamp(1px, 0.1vw, 2px) rgba(255, 255, 255, 0.08);
     box-sizing: border-box;
@@ -49,15 +62,15 @@
     background: transparent;
 
     &--active {
-      background: #e8b830;
+      background: var(--piano-warn);
       box-shadow: inset 0 clamp(-1px, -0.1vh, -2px) 0 rgba(0, 0, 0, 0.35);
-      border-top: clamp(1px, 0.08vh, 2px) solid rgba(255, 235, 150, 0.6);
+      border-top: clamp(1px, 0.08vh, 2px) solid color-mix(in srgb, var(--piano-warn) 60%, transparent);
     }
 
     &--danger {
-      background: #e83030;
+      background: var(--pg-felt);
       box-shadow: inset 0 clamp(-1px, -0.1vh, -2px) 0 rgba(0, 0, 0, 0.35);
-      border-top-color: rgba(255, 150, 150, 0.6);
+      border-top-color: color-mix(in srgb, var(--pg-felt) 60%, transparent);
     }
   }
 
@@ -89,8 +102,8 @@
     font-size: 2rem;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
-    color: #00ffc8;
-    text-shadow: 0 0 10px rgba(0, 255, 200, 0.4);
+    color: var(--pg-brass);
+    text-shadow: 0 0 10px color-mix(in srgb, var(--pg-brass) 40%, transparent);
   }
 
   &__score-label {
@@ -135,10 +148,9 @@
 
   // ─── Keyboard ─────────────────────────────────────────────────
   &__keyboard {
-    height: 18%;
     flex-shrink: 0;
     display: flex;
     align-items: flex-start;
-    border-top: 1px solid rgba(0, 200, 255, 0.2);
+    border-top: 1px solid color-mix(in srgb, var(--pg-brass-fill) 20%, transparent);
   }
 }

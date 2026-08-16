@@ -434,7 +434,7 @@ describe('PianoChessGame settings wiring', () => {
   it('applies a tapped rung immediately and saves it to the player\'s own layer', async () => {
     const { container } = render(<PianoChessGame currentUser="kckern" />);
     fireEvent.click(await screen.findByRole('button', { name: 'Settings' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Learner' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Learner' }));
     expect(railBadge(container)).toBe('Learner');
     expect(saveChessConfig).toHaveBeenCalledWith('kckern', { default_rung: 'learner' });
     expect(fetchChessConfig).toHaveBeenCalledWith('kckern');
@@ -443,7 +443,7 @@ describe('PianoChessGame settings wiring', () => {
   it('never saves for a guest, though the change still applies for the session', async () => {
     const { container } = render(<PianoChessGame currentUser="guest" />);
     fireEvent.click(await screen.findByRole('button', { name: 'Settings' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Learner' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Learner' }));
     expect(railBadge(container)).toBe('Learner');
     expect(saveChessConfig).not.toHaveBeenCalled();
     expect(fetchChessConfig).toHaveBeenCalledWith(null);

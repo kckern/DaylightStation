@@ -1,29 +1,138 @@
-.piano-connect-four { display: flex; flex-direction: column; overflow: hidden; color: #f8fafc; background: radial-gradient(circle at 50% 25%, #193b68, #071426 72%); }
-.piano-connect-four .instrument-board-stage { flex: 1; height: auto; padding-bottom: .4rem; }
-/* Same cap as .connect-four-board's own `min(100%, 34rem)` — a card has to sit
-   directly over its column, and the rail's default width:100% would run wider
-   than the board itself the moment the board hits its own max-width. */
-.piano-connect-four .instrument-board-stage__top-rail { width: min(100%, 34rem); margin: 0 auto; }
+/**
+ * Connect Four owns its BOARD and nothing else.
+ *
+ * The rails, the panels, the status line and the "Play again" pill used to live
+ * here as 21 raw hexes that were one or two digits away from Checkers' 27 — two
+ * files describing the same furniture in two slightly different voices, which is
+ * what read as slop. They are the chrome kit now (game-platform/chrome), and the
+ * full-screen blue gradient is gone with them: the cabinet is one charcoal
+ * across all three games, and the board is where this game gets to be blue.
+ */
+
+.piano-connect-four {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+
+  /* The board's ceiling, read by the board AND by the address rail sitting over
+     it — one number, so a card can never point half a column off. */
+  --pg-board-max: 34rem;
+
+  /* ── THE BOARD'S OWN COLOURS ────────────────────────────────────────────
+     Every colour this game names, named here. The grid is a piece of moulded
+     blue plastic with holes in it and two colours of counter, which is a thing
+     that exists and has to look like itself; nothing else in this file gets a
+     hue. */
+  --c4-grid: #2876df;
+  --c4-grid-deep: #0d43a0;
+  --c4-hole: #051326;
+  --c4-hole-empty: #09182a;
+  --c4-yellow-lit: #fff39b;
+  --c4-yellow: #f2bb09;
+  --c4-yellow-deep: #a56a00;
+  --c4-red-lit: #ffb0a7;
+  --c4-red: #e83e32;
+  --c4-red-deep: #84150f;
+}
+
+.piano-connect-four .instrument-board-stage {
+  flex: 1;
+  height: auto;
+  padding-bottom: 0.4rem;
+}
+
+.piano-connect-four .instrument-board-stage__top-rail {
+  width: min(100%, var(--pg-board-max));
+  margin-inline: auto;
+}
+
 .connect-four-board {
-  width: min(100%, 34rem);
   aspect-ratio: 7 / 6;
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 1.1%;
   padding: 2%;
   border-radius: 4%;
-  background: linear-gradient(145deg, #2876df, #0d43a0);
-  box-shadow: 0 1.2rem 2.5rem #0008, inset 0 .25rem .3rem #8cc6ff88;
+  background: linear-gradient(145deg, var(--c4-grid), var(--c4-grid-deep));
+  box-shadow: 0 1.2rem 2.5rem rgb(0 0 0 / 55%), inset 0 0.25rem 0.3rem rgb(140 198 255 / 53%);
 }
-.connect-four-board__cell { display: grid; place-items: center; border-radius: 50%; background: #051326; box-shadow: inset 0 .25rem .5rem #000b; }
-.connect-four-board__disc { width: 84%; aspect-ratio: 1; border-radius: 50%; transition: transform .2s ease; }
-.connect-four-board__disc--1 { background: radial-gradient(circle at 35% 30%, #fff39b, #f2bb09 60%, #a56a00); }
-.connect-four-board__disc--2 { background: radial-gradient(circle at 35% 30%, #ffb0a7, #e83e32 60%, #84150f); }
-.connect-four-board__disc--empty { background: #09182a; }
-.connect-four-board__cell.is-hint { outline: .24rem solid #72f1b8; outline-offset: -.2rem; }
-.connect-four-opponent, .connect-four-settings { display: flex; flex-direction: column; gap: .65rem; padding: 1rem; border-radius: 1rem; background: #071526aa; }
-.connect-four-opponent strong { font-size: 1.5rem; color: #ffdc5e; }
-.connect-four-settings label { display: flex; flex-direction: column; gap: .3rem; }
-.connect-four-settings label:has(input) { flex-direction: row; align-items: center; }
-.connect-four-status { display: flex; justify-content: center; align-items: center; gap: 1rem; font-size: 1.25rem; font-weight: 700; min-height: 1.8em; }
-.connect-four-status button { border: 0; border-radius: .6rem; padding: .45rem .9rem; background: #72f1b8; color: #062416; font-weight: 800; }
+
+.connect-four-board__cell {
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--c4-hole);
+  box-shadow: inset 0 0.25rem 0.5rem rgb(0 0 0 / 70%);
+}
+
+.connect-four-board__disc {
+  width: 84%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+}
+
+/* ── GRAVITY ───────────────────────────────────────────────────────────────
+ * A disc used to APPEAR in its cell, which told the player nothing about the
+ * one thing this game is: a thing you drop. Now it falls from above the rim to
+ * where it lands, hits the stack, and settles.
+ *
+ * The distance is counted in CELLS (`--c4-drop-rows`), not pixels, so it holds
+ * at any board size — a disc is 84% of its cell and the grid adds a 1.1% gutter,
+ * which puts one row at ~128% of a disc's own height. Falling into a full column
+ * is a short hop; falling into an empty one is the full six, and the duration
+ * scales with it (dropDurationMs) rather than every drop taking the same beat.
+ *
+ * Compositor-only: transform and nothing else. The kiosk tablet's 2018 WebView
+ * will happily animate this at frame rate and would drop frames on anything
+ * touching layout or filters.
+ */
+@keyframes connect-four-drop {
+  0% {
+    transform: translateY(calc(var(--c4-drop-rows, 6) * -128%));
+    /* Gravity accelerates. A linear or eased-out fall reads as a lift. */
+    animation-timing-function: cubic-bezier(0.45, 0, 1, 1);
+  }
+  /* Impact: the disc squashes against the stack under it. */
+  52% {
+    transform: translateY(0) scaleY(0.86) scaleX(1.06);
+    animation-timing-function: cubic-bezier(0, 0, 0.35, 1);
+  }
+  /* First bounce — decelerating up, the mirror of the fall. */
+  66% {
+    transform: translateY(-17%) scaleY(1.04) scaleX(0.97);
+    animation-timing-function: cubic-bezier(0.45, 0, 1, 1);
+  }
+  80% {
+    transform: translateY(0) scaleY(0.94) scaleX(1.03);
+    animation-timing-function: cubic-bezier(0, 0, 0.35, 1);
+  }
+  /* Second bounce, small enough to read as settling rather than as a rebound. */
+  90% {
+    transform: translateY(-5%) scaleY(1.01);
+    animation-timing-function: cubic-bezier(0.45, 0, 1, 1);
+  }
+  100% { transform: translateY(0) scaleY(1) scaleX(1); }
+}
+
+.connect-four-board__disc.is-falling {
+  /* Squash pivots on the point of contact, not on the disc's middle. */
+  transform-origin: 50% 100%;
+  animation: connect-four-drop var(--c4-drop-ms, 500ms) both;
+  /* The disc leaves its cell during the fall, and a cell's inset shadow would
+     otherwise clip the top of it against the row above. */
+  z-index: 2;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .connect-four-board__disc.is-falling { animation: none; }
+}
+
+.connect-four-board__disc--1 { background: radial-gradient(circle at 35% 30%, var(--c4-yellow-lit), var(--c4-yellow) 60%, var(--c4-yellow-deep)); }
+.connect-four-board__disc--2 { background: radial-gradient(circle at 35% 30%, var(--c4-red-lit), var(--c4-red) 60%, var(--c4-red-deep)); }
+.connect-four-board__disc--empty { background: var(--c4-hole-empty); }
+
+/* The suggested column, in the house accent rather than in a mint of its own. */
+.connect-four-board__cell.is-hint {
+  outline: 0.24rem solid var(--pg-brass-fill);
+  outline-offset: -0.2rem;
+}

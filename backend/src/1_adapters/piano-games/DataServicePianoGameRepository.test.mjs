@@ -54,3 +54,49 @@ test('keeps storage serialization out of the ladder aggregate', async () => {
   assert.deepEqual(writes.at(-1).value, { unlocked_through: 3, series: ['win'] });
   assert.deepEqual(await repository.readProgress('checkers', 'kid'), { unlockedThrough: 3, series: ['win'] });
 });
+
+/**
+ * Every dimension of a nested block has to be independently overridable at every
+ * layer, or the layering is decorative. A spread merge replaces the block
+ * wholesale: a player who set one addressing dimension silently discarded the
+ * household's vocabulary, clefs, shuffle and other axis, and got defaults for
+ * all of them. See docs/reference/piano/grid-addressing.md.
+ */
+test('deep-merges nested config so one overridden dimension keeps its siblings', async () => {
+  const writes = [];
+  const values = new Map();
+  const dataService = {
+    user: {
+      read: (path, user) => values.get(`${user}:${path}`) ?? null,
+      write: (path, value, user) => { writes.push({ path, value, user }); values.set(`${user}:${path}`, value); return true; },
+    },
+    household: { write: () => true },
+  };
+  const configService = {
+    getHouseholdAppConfig: () => ({
+      addressing: {
+        vocabulary: 'chords', clefs: 'grand', shuffle: 'each_game',
+        x: { tier: 2, order: 'sequential' }, y: { tier: 2, order: 'sequential' },
+      },
+    }),
+  };
+  const repository = new DataServicePianoGameRepository({ dataService, configService });
+
+  await repository.writeConfig('checkers', 'kid', { addressing: { x: { tier: 4 } } });
+  const config = await repository.readConfig('checkers', 'kid');
+
+  assert.equal(config.addressing.x.tier, 4, 'the overridden dimension wins');
+  assert.equal(config.addressing.x.order, 'sequential', 'its sibling on the same axis survives');
+  assert.equal(config.addressing.y.tier, 2, 'the other axis survives');
+  assert.equal(config.addressing.vocabulary, 'chords', 'the household vocabulary survives');
+  assert.equal(config.addressing.shuffle, 'each_game', 'the household cadence survives');
+});
+
+test('a second config patch does not erase the first', async () => {
+  const { repository } = fixture();
+  await repository.writeConfig('checkers', 'kid', { addressing: { vocabulary: 'chords' } });
+  await repository.writeConfig('checkers', 'kid', { addressing: { shuffle: 'each_turn' } });
+  const config = await repository.readConfig('checkers', 'kid');
+  assert.equal(config.addressing.vocabulary, 'chords');
+  assert.equal(config.addressing.shuffle, 'each_turn');
+});

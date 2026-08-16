@@ -57,10 +57,13 @@ function KeyDiagram({ pressed, span = 13 }) {
 
 /**
  * @param {object[]} gestures  {id, pressed, title, note, active, muted, repeat}
+ * @param {boolean}  compact   tighten the cards when the rail is also carrying
+ *                             the onboarding card, so the last two gestures stay
+ *                             on screen instead of clipping off its foot.
  */
-export function GestureCards({ gestures }) {
+export function GestureCards({ gestures, compact = false }) {
   return (
-    <ul className="gesture-cards">
+    <ul className={`gesture-cards${compact ? ' gesture-cards--compact' : ''}`}>
       {gestures.map((gesture) => (
         <li
           key={gesture.id}

@@ -266,6 +266,8 @@ logging, so a backend outage degrades gracefully rather than breaking the surfac
 | Backend | `backend/src/4_api/v1/routers/piano.mjs` · `backend/src/4_api/v1/routers/admin/apps.mjs` |
 | Hardware + setup | [kiosk-setup.md](./kiosk-setup.md) |
 | Game engines | [piano-games.md](./piano-games.md) |
+| Game platform (host, chrome kit, families) | [piano-game-platform.md](./piano-game-platform.md) |
+| Grid addressing (keys→squares: permutations, config, difficulty ladder) | [grid-addressing.md](./grid-addressing.md) |
 | Sheet music player | [sheet-music-player.md](./sheet-music-player.md) |
 | Composer (notation editor — spec, not yet built) | [composer.md](./composer.md) |
 | Performance + jank | [performance.md](./performance.md) |

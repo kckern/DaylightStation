@@ -1,5 +1,11 @@
 .instrument-board-stage {
-  --rail-width: minmax(10rem, 0.28fr);
+  /* The floor is the platform's rail width, because that is what a `.pg-rail`
+     inside this column actually measures — a narrower column just let the rail
+     overflow off the side of the screen, which is what it did. Above the floor
+     the rails still FILL in equal shares, which is what keeps the board
+     centred: centring never depended on the rails being fixed, only on their
+     being the same. */
+  --rail-width: minmax(var(--pg-rail-w, 15.5rem), 0.28fr);
   display: grid;
   grid-template: minmax(0, 1fr) auto / var(--rail-width) minmax(0, 1fr) var(--rail-width);
   gap: 1rem;
@@ -43,7 +49,7 @@
 .instrument-board-stage__status { grid-column: 1 / -1; text-align: center; }
 .instrument-board-stage--dual-equal .instrument-board-stage__boards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
 .instrument-board-stage--primary-secondary .instrument-board-stage__boards { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 1rem; }
-.instrument-board-stage--single-wide { --rail-width: minmax(5rem, 0.14fr); }
+.instrument-board-stage--single-wide { --rail-width: minmax(min(5rem, var(--pg-rail-w, 15.5rem)), 0.14fr); }
 
 @media (max-width: 850px) {
   .instrument-board-stage { --rail-width: minmax(0, 0fr); gap: .5rem; padding: .5rem; }

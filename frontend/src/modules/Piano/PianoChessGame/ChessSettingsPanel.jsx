@@ -1,15 +1,43 @@
+import {
+  GameSheet, GameField, GameChoice, GameToggle,
+} from '../game-platform/chrome/index.js';
+import AddressingSettings from '../game-platform/addressing/AddressingSettings.jsx';
+
 /**
  * Settings, in the game, in the player's hands.
  *
  * There is no hint control here: help is asked for at the keys (semitone
- * clusters), not configured, so "no help up front" is the board's resting
- * state rather than a setting anyone can leave on. Refusal loudness (flash,
- * toast) is a different question and stays in YAML.
+ * clusters), not configured, so "no help up front" is the board's resting state
+ * rather than a setting anyone can leave on. Refusal loudness (flash, toast) is
+ * a different question and stays in YAML.
  *
- * Every control is a discrete tap target — this runs on a kiosk, and a slider
- * on a touchscreen is a guess, not a choice.
+ * Every control is a discrete tap target — this runs on a kiosk, and a slider on
+ * a touchscreen is a guess, not a choice. What it is NOT any more is six
+ * hand-rolled radio groups: this panel built its own segmented control six
+ * times, marked each with `aria-pressed` (a toggle's attribute, on a set where
+ * exactly one option is chosen), rendered two plain booleans as two-button
+ * choices, and printed raw milliseconds at a child. All six are `GameChoice` and
+ * `GameToggle` now, and the panel is a real dialog.
  */
-const DELAY_CHOICES_MS = [300, 700, 1200];
+
+/**
+ * How long the character waits before replying, in words a player can act on.
+ *
+ * The old control printed "300 ms / 700 ms / 1200 ms". A number in milliseconds
+ * is not a unit anyone chooses in — and the key it writes is documented in
+ * chess.yml as a legacy fallback, used only when the rung-scaled curve cannot
+ * resolve a level, so the honest label is about the feel and not the figure.
+ */
+const REPLY_SPEEDS = [
+  { value: 300, label: 'Quick' },
+  { value: 700, label: 'Normal' },
+  { value: 1200, label: 'Thoughtful' },
+];
+
+const VOCABULARIES = [
+  { value: 'chords', label: 'Chords' },
+  { value: 'staff', label: 'Notes on a staff' },
+];
 
 export default function ChessSettingsPanel({ config, rungId, onChange, onClose }) {
   const rungs = Array.isArray(config?.rungs) ? config.rungs : [];
@@ -20,114 +48,71 @@ export default function ChessSettingsPanel({ config, rungId, onChange, onClose }
   const addressing = config?.addressing === 'staff' ? 'staff' : 'chords';
 
   return (
-    <section className="chess-settings" aria-label="Chess settings">
-      <header className="chess-settings__head">
-        <h2 className="chess-settings__title">Settings</h2>
-        <button type="button" className="chess-settings__close" onClick={onClose}>Done</button>
-      </header>
+    <GameSheet title="Settings" onClose={onClose} className="chess-settings">
+      <GameField label="Opponent">
+        <GameChoice
+          value={rungId}
+          options={rungs.map((rung) => ({ value: rung.id, label: rung.label }))}
+          onChange={(value) => onChange({ default_rung: value })}
+        />
+      </GameField>
 
-      <h3 className="chess-settings__group">Opponent</h3>
-      <div className="chess-settings__row">
-        {rungs.map((rung) => (
-          <button
-            key={rung.id}
-            type="button"
-            className={`chess-settings__opt${rung.id === rungId ? ' is-active' : ''}`}
-            aria-pressed={rung.id === rungId}
-            onClick={() => onChange({ default_rung: rung.id })}
-          >
-            {rung.label}
-          </button>
-        ))}
-      </div>
+      {/* The reading ladder, shared with every other addressed board — see
+          game-platform/addressing/AddressingSettings.jsx. */}
+      <AddressingSettings config={config} axisSize={8} onChange={onChange} />
 
-      {/* The addressing vocabulary — which skill the board asks for. Reading
-          both clefs comes years before spelling chords, so this is the setting
-          that decides whether a given child can play at all. Takes effect on
-          the next game, like the chord map, and for the same reason. */}
-      <h3 className="chess-settings__group">Squares are</h3>
-      <div className="chess-settings__row">
-        {[
-          { id: 'chords', label: 'Chords' },
-          { id: 'staff', label: 'Notes on a staff' },
-        ].map((opt) => (
-          <button
-            key={opt.id}
-            type="button"
-            className={`chess-settings__opt${addressing === opt.id ? ' is-active' : ''}`}
-            aria-pressed={addressing === opt.id}
-            onClick={() => onChange({ addressing: opt.id })}
-          >
-            {opt.label}
-          </button>
-        ))}
-      </div>
+      {/* The vocabulary on its own, for the case the ladder cannot serve: a
+          child who reads well but cannot spell, or the reverse. Reading both
+          clefs comes years before spelling chords, so this is the setting that
+          decides whether a given child can play at all. */}
+      <GameField label="Squares are" note="Takes effect next game.">
+        <GameChoice
+          value={addressing}
+          options={VOCABULARIES}
+          onChange={(value) => onChange({ addressing: value })}
+        />
+      </GameField>
 
-      <h3 className="chess-settings__group">Chord map</h3>
-      <div className="chess-settings__row">
-        {/* Takes effect next game: the map is dealt when the game is created,
-            and a mid-game re-deal would rearrange the board under the player. */}
-        <button
-          type="button"
-          className={`chess-settings__opt${shuffle ? ' is-active' : ''}`}
-          aria-pressed={shuffle}
-          onClick={() => onChange({ shuffle_each_turn: !shuffle })}
-        >
-          Shuffle chords each turn
-          <span className="chess-settings__note">next game</span>
-        </button>
-      </div>
+      {/* One boolean, one switch. This was a single `aria-pressed` button whose
+          accessible name carried its own caveat, so "next game" was read out
+          every time the option was announced. */}
+      <GameField label="Chord map" note="Takes effect next game — a mid-game re-deal would rearrange the board under the player.">
+        <GameToggle
+          label="Shuffle chords each turn"
+          checked={shuffle}
+          onChange={(next) => onChange({ shuffle_each_turn: next })}
+        />
+      </GameField>
 
-      <h3 className="chess-settings__group">Name the squares</h3>
-      <div className="chess-settings__row">
-        {/* Not a hint control: the labels appear only after the player picks a
-            piece up, and that double-play was the request. This just chooses
-            whether the board answers it. */}
-        {[{ id: true, label: 'Show chords' }, { id: false, label: 'Hide chords' }].map((opt) => (
-          <button
-            key={String(opt.id)}
-            type="button"
-            className={`chess-settings__opt${labelsOn === opt.id ? ' is-active' : ''}`}
-            aria-pressed={labelsOn === opt.id}
-            onClick={() => onChange({ feedback: { show_destination_labels: opt.id } })}
-          >
-            {opt.label}
-          </button>
-        ))}
-      </div>
+      {/* Not a hint control: the labels appear only after the player picks a
+          piece up, and that double-play was the request. This just chooses
+          whether the board answers it. */}
+      <GameField label="Name the squares">
+        <GameToggle
+          label="Show the chord on every square you can reach"
+          checked={labelsOn}
+          onChange={(next) => onChange({ feedback: { show_destination_labels: next } })}
+        />
+      </GameField>
 
-      <h3 className="chess-settings__group">Sound</h3>
-      <div className="chess-settings__row">
-        {/* The board confirms a move, a capture, a refusal and a check out
-            loud. Operator-facing because a room with someone practising in it
-            is a room where a second voice is sometimes unwelcome. */}
-        {[{ id: true, label: 'Sound on' }, { id: false, label: 'Silent' }].map((opt) => (
-          <button
-            key={String(opt.id)}
-            type="button"
-            className={`chess-settings__opt${soundOn === opt.id ? ' is-active' : ''}`}
-            aria-pressed={soundOn === opt.id}
-            onClick={() => onChange({ feedback: { sound: opt.id } })}
-          >
-            {opt.label}
-          </button>
-        ))}
-      </div>
+      {/* The board confirms a move, a capture, a refusal and a check out loud.
+          Operator-facing because a room with someone practising in it is a room
+          where a second voice is sometimes unwelcome. */}
+      <GameField label="Sound">
+        <GameToggle
+          label="Play the board's cues"
+          checked={soundOn}
+          onChange={(next) => onChange({ feedback: { sound: next } })}
+        />
+      </GameField>
 
-      <h3 className="chess-settings__group">Opponent replies after</h3>
-      <div className="chess-settings__row">
-        {DELAY_CHOICES_MS.map((ms) => (
-          <button
-            key={ms}
-            type="button"
-            className={`chess-settings__opt${ms === delayMs ? ' is-active' : ''}`}
-            aria-pressed={ms === delayMs}
-            onClick={() => onChange({ opponent_delay_ms: ms })}
-          >
-            {ms} ms
-          </button>
-        ))}
-      </div>
-    </section>
+      <GameField label="Opponent replies">
+        <GameChoice
+          value={delayMs}
+          options={REPLY_SPEEDS}
+          onChange={(value) => onChange({ opponent_delay_ms: value })}
+        />
+      </GameField>
+    </GameSheet>
   );
 }

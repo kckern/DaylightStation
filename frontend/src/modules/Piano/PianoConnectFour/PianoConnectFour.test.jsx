@@ -5,16 +5,20 @@ import { act, render } from '@testing-library/react';
 // it is what lets these tests drive the server-reply and unmount-cancellation
 // paths without a network, the same pattern chessApi.js's mock uses.
 vi.mock('./connectFourApi.js', () => ({
-  fetchConnectFourConfig: vi.fn(async () => null),
-  fetchConnectFourLadder: vi.fn(async () => null),
-  requestConnectFourMove: vi.fn(),
-  saveConnectFourConfig: vi.fn(async () => null),
-  saveConnectFourGame: vi.fn(async () => null),
-  archiveConnectFourGame: vi.fn(async () => null),
+  default: {
+    readConfig: vi.fn(async () => null),
+    readLadder: vi.fn(async () => null),
+    requestMove: vi.fn(),
+    writeConfig: vi.fn(async () => null),
+    saveGame: vi.fn(async () => null),
+    archiveGame: vi.fn(async () => null),
+  },
 }));
 
 import PianoConnectFour from './PianoConnectFour.jsx';
-import { requestConnectFourMove } from './connectFourApi.js';
+import connectFourClient from './connectFourApi.js';
+
+const requestConnectFourMove = connectFourClient.requestMove;
 
 // Note 65 (F) addresses column 3 in the default (unshuffled) deal under the
 // DEFAULT_CONFIG this component falls back to when fetchConnectFourConfig
@@ -79,5 +83,25 @@ describe('PianoConnectFour address rail', () => {
     expect(topRail.querySelectorAll('.address-rail__card')).toHaveLength(7);
     // The board now says it — the old "1: C  2: D ..." panel legend is gone.
     expect(container.querySelector('.connect-four-key')).toBeFalsy();
+  });
+});
+
+describe('PianoConnectFour gravity', () => {
+  it('marks only the disc that just landed, and tells the CSS how far it fell', async () => {
+    const { container, rerender } = render(<PianoConnectFour activeNotes={new Map()} />);
+    // Note 65 (F) addresses column 3 in the default unshuffled deal.
+    rerender(<PianoConnectFour activeNotes={new Map([[65, { velocity: 90 }]])} />);
+    await act(async () => { await Promise.resolve(); });
+
+    const falling = container.querySelectorAll('.connect-four-board__disc.is-falling');
+    expect(falling).toHaveLength(1);
+    // Column 3 is empty, so the disc lands on the floor: a full six-row fall.
+    expect(falling[0].style.getPropertyValue('--c4-drop-rows')).toBe('6');
+    expect(falling[0].style.getPropertyValue('--c4-drop-ms')).toMatch(/^\d+ms$/);
+  });
+
+  it('has nothing falling on a fresh board', () => {
+    const { container } = render(<PianoConnectFour activeNotes={new Map()} />);
+    expect(container.querySelectorAll('.connect-four-board__disc.is-falling')).toHaveLength(0);
   });
 });
