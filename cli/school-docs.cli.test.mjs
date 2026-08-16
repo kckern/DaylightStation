@@ -108,12 +108,26 @@ describe('school-docs CLI', () => {
     })).toEqual({
       dataDir: '/srv/daylight/data',
       contentRoot: '/srv/daylight/data/published/print-documents',
+      sourceRoot: '/srv/daylight/data/content/school/catalog/documents',
     });
   });
 
   it('defaults content-root to content/school/print-documents', () => {
     expect(resolveSchoolDocsContentPaths({ env: { DAYLIGHT_BASE_PATH: '/srv/daylight' } }).contentRoot)
       .toBe('/srv/daylight/data/content/school/print-documents');
+  });
+
+  it('defaults source-root to the catalog documents shelf, and honours --source-root (absolute or data-relative)', () => {
+    expect(resolveSchoolDocsContentPaths({ env: { DAYLIGHT_BASE_PATH: '/srv/daylight' } }).sourceRoot)
+      .toBe('/srv/daylight/data/content/school/catalog/documents');
+    expect(resolveSchoolDocsContentPaths({
+      flags: { 'source-root': 'content/school/catalog/elsewhere' },
+      env: { DAYLIGHT_BASE_PATH: '/srv/daylight' },
+    }).sourceRoot).toBe('/srv/daylight/data/content/school/catalog/elsewhere');
+    expect(resolveSchoolDocsContentPaths({
+      flags: { 'source-root': '/absolute/sources' },
+      env: { DAYLIGHT_BASE_PATH: '/srv/daylight' },
+    }).sourceRoot).toBe('/absolute/sources');
   });
 
   it('rejects unknown or valueless options as usage errors before touching the filesystem', async () => {
@@ -175,6 +189,81 @@ describe('school-docs CLI', () => {
       );
       expect(exitCode).toBe(0);
       expect(report.ok).toBe(true);
+    }));
+
+    it('resolves a bare file argument against the SOURCE root first when it exists in both', async () => withTmpDir(async (root) => {
+      const contentRoot = path.join(root, 'data/content/school/print-documents');
+      const sourceRoot = path.join(root, 'data/content/school/catalog/documents');
+      await mkdir(contentRoot, { recursive: true });
+      await mkdir(sourceRoot, { recursive: true });
+      // Same relative name in both roots: the content-root copy is broken, so
+      // a pass proves the SOURCE-root copy is the one that was read.
+      await writeFile(path.join(contentRoot, 'ok.yml'), dump(invalidDoc()));
+      await writeFile(path.join(sourceRoot, 'ok.yml'), dump(v1OkDoc()));
+
+      const { exitCode, report } = await runSchoolDocs(
+        ['validate', 'ok.yml'],
+        { env: { DAYLIGHT_BASE_PATH: root } },
+      );
+      expect(exitCode).toBe(0);
+      expect(report.ok).toBe(true);
+      expect(report.target).toBe(path.join(sourceRoot, 'ok.yml'));
+    }));
+
+    it('honours an explicit --source-root, including a nested taxonomy path', async () => withTmpDir(async (root) => {
+      const sourceRoot = path.join(root, 'sources');
+      await mkdir(path.join(sourceRoot, 'arts/pokemon-identification'), { recursive: true });
+      await writeFile(
+        path.join(sourceRoot, 'arts/pokemon-identification/quiz-1.yml'),
+        dump(sourceQuizDoc({ id: 'arts/pokemon-identification/quiz-1', subject: 'arts' })),
+      );
+
+      const { exitCode, report } = await runSchoolDocs([
+        'validate', 'arts/pokemon-identification/quiz-1.yml', '--source-root', sourceRoot,
+      ]);
+      expect(exitCode).toBe(0);
+      expect(report.ok).toBe(true);
+    }));
+
+    it('walks a source directory RECURSIVELY and SKIPS co-resident learning documents', async () => withTmpDir(async (root) => {
+      const sourceRoot = path.join(root, 'sources');
+      await mkdir(path.join(sourceRoot, 'arts/pokemon-identification'), { recursive: true });
+      await writeFile(
+        path.join(sourceRoot, 'arts/pokemon-identification/quiz-1.yml'),
+        dump(sourceQuizDoc({ id: 'arts/pokemon-identification/quiz-1', subject: 'arts' })),
+      );
+      // The other shelf-mate: a school.learning-document/v1 that would fail
+      // validateAnyDocument outright if this walk did not skip it.
+      await writeFile(path.join(sourceRoot, 'starter-math-ten-percent.yml'), dump({
+        schema: 'school.learning-document/v1',
+        documentId: 'starter-math-ten-percent',
+        title: 'Ten Percent Is One Tenth',
+        blocks: [{ blockId: 'p', type: 'prose', text: 'Divide by ten.' }],
+      }));
+
+      const { exitCode, report } = await runSchoolDocs(['validate', sourceRoot, '--source-root', sourceRoot]);
+      expect(exitCode).toBe(0);
+      expect(report.ok).toBe(true);
+      expect(report.files.map((f) => f.file)).toEqual(['arts/pokemon-identification/quiz-1.yml']);
+      expect(report.skipped).toEqual(['starter-math-ten-percent.yml']);
+    }));
+
+    it('walking the CONTENT root never descends into published/derived-banks/allocations', async () => withTmpDir(async (root) => {
+      const contentRoot = path.join(root, 'content');
+      await mkdir(path.join(contentRoot, 'published'), { recursive: true });
+      await mkdir(path.join(contentRoot, 'derived-banks'), { recursive: true });
+      await mkdir(path.join(contentRoot, 'allocations'), { recursive: true });
+      await writeFile(path.join(contentRoot, 'legacy.yml'), dump(v1OkDoc()));
+      // A derived bank is not a document; validating it would fail the run.
+      await writeFile(path.join(contentRoot, 'derived-banks', 'legacy@abc.yml'), dump({
+        id: 'derived/legacy@abc', title: 'Bank', items: [{ id: 'q1' }],
+      }));
+      await writeFile(path.join(contentRoot, 'allocations', '3302880.yml'), dump([{ cardId: '3302880' }]));
+
+      const { exitCode, report } = await runSchoolDocs(['validate', contentRoot]);
+      expect(exitCode).toBe(0);
+      expect(report.ok).toBe(true);
+      expect(report.files.map((f) => f.file)).toEqual(['legacy.yml']);
     }));
   });
 
@@ -373,6 +462,41 @@ describe('school-docs CLI', () => {
   });
 
   describe('publish', () => {
+    it('reads the source from --source-root and writes artifacts to --content-root (the split roots)', async () => withTmpDir(async (root) => {
+      const contentRoot = path.join(root, 'print-documents');
+      const sourceRoot = path.join(root, 'catalog/documents');
+      await mkdir(contentRoot, { recursive: true });
+      await mkdir(path.join(sourceRoot, 'arts/pokemon-identification'), { recursive: true });
+      await writeFile(
+        path.join(sourceRoot, 'arts/pokemon-identification/quiz-1.yml'),
+        dump(sourceQuizDoc({ id: 'arts/pokemon-identification/quiz-1', subject: 'arts' })),
+      );
+
+      const { exitCode, report } = await runSchoolDocs([
+        'publish', 'arts/pokemon-identification/quiz-1.yml',
+        '--source-root', sourceRoot, '--content-root', contentRoot,
+      ]);
+      expect(exitCode).toBe(0);
+      expect(report.id).toBe('arts/pokemon-identification/quiz-1');
+
+      // Artifacts land under the CONTENT root, mirroring the id path — the
+      // source root stays free of machine-written output.
+      const published = await readFile(
+        path.join(contentRoot, 'published/arts/pokemon-identification', `quiz-1@${report.rev}.yml`),
+        'utf8',
+      );
+      expect(published).toContain('arts/pokemon-identification/quiz-1');
+      await expect(readFile(path.join(sourceRoot, 'published'), 'utf8')).rejects.toThrow();
+
+      // And a render by the same relative source path resolves too.
+      const rendered = await runSchoolDocs([
+        'render', 'arts/pokemon-identification/quiz-1.yml', '--out', path.join(root, 'proof.pdf'),
+        '--source-root', sourceRoot, '--content-root', contentRoot,
+      ]);
+      expect(rendered.exitCode).toBe(0);
+      expect(rendered.report.pages).toBeGreaterThanOrEqual(1);
+    }));
+
     it('publishes a source file: writes published + derived-bank YAML under the content root, prints id/rev/bankId', async () => withTmpDir(async (root) => {
       const contentRoot = path.join(root, 'content');
       await mkdir(contentRoot, { recursive: true });

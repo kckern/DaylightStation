@@ -500,7 +500,21 @@ export async function createSchoolLifecycle({
   // a `print/<id>@<rev>` reference (`IssueDocument`'s own prefix branch), so
   // wiring them unconditionally costs a legacy-only deployment nothing.
   const printDocumentsRoot = path.join(dataDir, 'content/school/print-documents');
-  const printDocuments = new YamlPrintDocumentRepository({ directory: printDocumentsRoot });
+  // Hand-authored SOURCES are a different kind of thing from the artifacts
+  // above — a document CLASS, not a published object — and live on the School
+  // catalog shelf beside the `school.learning-document/v1` files, the same
+  // mount `createSchoolCatalog` resolves as `documentDirectories`
+  // (`catalog.content.document_directories`, default `<contentRoot>/documents`).
+  // Resolved here the same way its artifact sibling one line up is, because
+  // `resolveDirectoryList`/`resolveFromData` are module-private to
+  // `schoolCatalog.mjs` and this module has no handle on the catalog wiring;
+  // if that mount ever becomes configurable for print sources too, both should
+  // move behind one shared helper rather than growing a second convention.
+  const printSourceRoot = path.join(dataDir, 'content/school/catalog/documents');
+  const printDocuments = new YamlPrintDocumentRepository({
+    directory: printDocumentsRoot,
+    sourceDirectory: printSourceRoot,
+  });
   const allocationStore = new YamlAllocationStore({ directory: printDocumentsRoot, timeZone: timezone });
   const worksheetInstances = new YamlWorksheetInstanceStore({ configService, logger });
   const renderPrintDocument = new RenderPrintDocument({

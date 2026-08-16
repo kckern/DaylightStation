@@ -43,10 +43,155 @@ function fakeStore({ mtimes = {} } = {}) {
   };
 }
 
+/**
+ * Two-root `io` fake: `list`/`load` keyed by ABSOLUTE path, so a test can put
+ * different files under the source root and the artifact root and prove which
+ * one `list()` actually walks.
+ */
+function fakeRoots(byAbsolutePath) {
+  return {
+    list: (dir, { recursive } = {}) => {
+      const prefix = `${dir}/`;
+      return Object.keys(byAbsolutePath)
+        .filter((p) => p.startsWith(prefix))
+        .map((p) => p.slice(prefix.length))
+        .filter((rel) => recursive || !rel.includes('/'));
+    },
+    load: (fullPath) => byAbsolutePath[fullPath] ?? null,
+  };
+}
+
+const SOURCE = 'school.document-source/v1';
+const PUBLISHED_V2 = 'school.document/v2';
+const LEARNING = 'school.learning-document/v1';
+
 describe('constructor', () => {
   it('requires a non-empty directory', () => {
     expect(() => new YamlPrintDocumentRepository({})).toThrow(/directory/);
     expect(() => new YamlPrintDocumentRepository({ directory: '' })).toThrow(/directory/);
+  });
+
+  it('rejects a present-but-empty sourceDirectory rather than silently ignoring it', () => {
+    expect(() => new YamlPrintDocumentRepository({ directory: '/docs', sourceDirectory: '' }))
+      .toThrow(/sourceDirectory/);
+    expect(() => new YamlPrintDocumentRepository({ directory: '/docs', sourceDirectory: 42 }))
+      .toThrow(/sourceDirectory/);
+  });
+});
+
+describe('list() with a separate sourceDirectory (sources moved to the catalog shelf)', () => {
+  /**
+   * The guard this whole split exists for. `catalog/documents/` is SHARED with
+   * the learning-document system, whose files carry `documentId`, not `id` —
+   * under the old negative-space rule they would have been admitted with their
+   * file PATH as a fabricated id. Deleting the schema filter fails this test.
+   */
+  it('IGNORES a co-resident school.learning-document/v1 instead of admitting it under a fake id', () => {
+    const repo = new YamlPrintDocumentRepository({
+      directory: '/data/print-documents',
+      sourceDirectory: '/data/catalog/documents',
+      io: fakeRoots({
+        '/data/catalog/documents/arts/pokemon-identification/quiz-1':
+          { schema: SOURCE, id: 'arts/pokemon-identification/quiz-1', seed: 1, target: ['letter'], blocks: [] },
+        '/data/catalog/documents/starter-math-ten-percent':
+          { schema: LEARNING, documentId: 'starter-math-ten-percent', title: 'Ten Percent', blocks: [] },
+        '/data/catalog/documents/starter-science-water-cycle':
+          { schema: LEARNING, documentId: 'starter-science-water-cycle', title: 'Water Cycle', blocks: [] },
+      }),
+    });
+
+    expect(repo.list().map((entry) => entry.id)).toEqual(['arts/pokemon-identification/quiz-1']);
+    // Neither by its own `documentId` nor by the file-path id the old
+    // filename fallback would have fabricated for it.
+    expect(repo.get('starter-math-ten-percent')).toBeNull();
+    expect(repo.get('starter-science-water-cycle')).toBeNull();
+  });
+
+  it('walks the SOURCE root, not the artifact root', () => {
+    const repo = new YamlPrintDocumentRepository({
+      directory: '/data/print-documents',
+      sourceDirectory: '/data/catalog/documents',
+      io: fakeRoots({
+        '/data/catalog/documents/quiz-1': { schema: SOURCE, id: 'quiz-1', blocks: [] },
+        // Would have been listed under the legacy single-root rule; must not be now.
+        '/data/print-documents/stray-legacy-source': { id: 'stray-legacy-source', blocks: [] },
+        '/data/print-documents/published/quiz-1@abc': { schema: PUBLISHED_V2, id: 'quiz-1', rev: 'abc' },
+      }),
+    });
+
+    expect(repo.list().map((entry) => entry.id)).toEqual(['quiz-1']);
+  });
+
+  it('admits a hand-authored school.document/v2 class (a legal authored envelope, not only publish output)', () => {
+    const repo = new YamlPrintDocumentRepository({
+      directory: '/data/print-documents',
+      sourceDirectory: '/data/catalog/documents',
+      io: fakeRoots({
+        '/data/catalog/documents/authored-v2': { schema: PUBLISHED_V2, id: 'authored-v2', blocks: [] },
+      }),
+    });
+
+    expect(repo.get('authored-v2')).toEqual({ schema: PUBLISHED_V2, id: 'authored-v2', blocks: [] });
+  });
+
+  it('still excludes the artifact subtrees when the source root IS the artifact root', () => {
+    const repo = new YamlPrintDocumentRepository({
+      directory: '/docs',
+      sourceDirectory: '/docs',
+      io: fakeRoots({
+        '/docs/quiz-1': { schema: SOURCE, id: 'quiz-1', blocks: [] },
+        '/docs/published/quiz-1@abc': { schema: PUBLISHED_V2, id: 'quiz-1', rev: 'abc' },
+        '/docs/derived-banks/quiz-1@abc': { id: 'derived/quiz-1@abc', items: [] },
+        '/docs/allocations/3302880': [{ cardId: '3302880' }],
+      }),
+    });
+
+    expect(repo.list().map((entry) => entry.id)).toEqual(['quiz-1']);
+  });
+
+  it('keeps the filename fallback for a source-schema file with no `id` (authoring diagnostic)', () => {
+    const repo = new YamlPrintDocumentRepository({
+      directory: '/data/print-documents',
+      sourceDirectory: '/data/catalog/documents',
+      io: fakeRoots({ '/data/catalog/documents/half-written': { schema: SOURCE, blocks: [] } }),
+    });
+
+    expect(repo.list()).toEqual([
+      { id: 'half-written', file: 'half-written', document: { schema: SOURCE, blocks: [] } },
+    ]);
+  });
+
+  it('drops an unparsable file (load returns null) rather than fabricating an id for it', () => {
+    const repo = new YamlPrintDocumentRepository({
+      directory: '/data/print-documents',
+      sourceDirectory: '/data/catalog/documents',
+      io: fakeRoots({ '/data/catalog/documents/broken-yaml': null }),
+    });
+
+    expect(repo.list()).toEqual([]);
+  });
+});
+
+describe('list() legacy single-root fallback (backward compatibility)', () => {
+  /**
+   * An unconfigured/legacy construction — `directory` only, no
+   * `sourceDirectory` — must keep finding its documents, including SCHEMA-LESS
+   * legacy v1 ones that the positive schema filter would reject. A deployment
+   * that has not been reconfigured must not silently discover zero documents.
+   */
+  it('finds schema-less legacy v1 sources at the artifact root, with no schema filter', () => {
+    const repo = new YamlPrintDocumentRepository({
+      directory: '/docs',
+      io: fakeRoots({
+        '/docs/legacy-v1': { id: 'legacy-v1', seed: 1, target: ['letter'], blocks: [] },
+        '/docs/arts/pokemon-identification/quiz-1': { schema: SOURCE, id: 'arts/pokemon-identification/quiz-1', blocks: [] },
+        '/docs/published/legacy-v1@abc': { schema: PUBLISHED_V2, id: 'legacy-v1', rev: 'abc' },
+      }),
+    });
+
+    expect(repo.list().map((entry) => entry.id))
+      .toEqual(['arts/pokemon-identification/quiz-1', 'legacy-v1']);
+    expect(repo.get('legacy-v1')).toEqual({ id: 'legacy-v1', seed: 1, target: ['letter'], blocks: [] });
   });
 });
 

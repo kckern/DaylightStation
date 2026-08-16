@@ -56,9 +56,25 @@ many-to-one policy is specified in [§5.1](#51-configurable-answer-sheet-reuse).
 
 ## 2. Authoring: the source document
 
-A source lives under `data/content/school/print-documents/` as
+A source lives under `data/content/school/catalog/documents/` as
 `school.document-source/v1` YAML. It is the ONE place answers may appear —
 publishing strips them.
+
+**A document is the class; a published revision is the object.** That is why a
+source is authored on the catalog shelf and not in `print-documents/`:
+`catalog/documents/` is where authored document *classes* live — the same
+shelf as the `school.learning-document/v1` files, which are authored classes
+too — while `print-documents/` holds only machine-written artifacts
+(`published/`, `derived-banks/`, `allocations/`).
+
+The two schemas share that shelf without colliding, because each system
+identifies its own files positively rather than by elimination:
+`YamlLearningContentRepository` matches a learning document by its
+`documentId` (a print source has `id`, never `documentId`);
+`YamlPrintDocumentRepository.list()` admits a file only when its `schema` is
+`school.document-source/v1` or the hand-authorable `school.document/v2`.
+`school-docs validate <dir>` applies the same rule, reporting anything it
+skipped as belonging to another system.
 
 ```yaml
 schema: school.document-source/v1
@@ -85,7 +101,8 @@ blocks:
   (`subject/course/slug`). A flat slug is still legal. When a `subject:` field
   is present on a hierarchical id, it must equal the first segment;
   contradiction is a validation error, not metadata. Source files nest under
-  their id's path (`print-documents/arts/pokemon-identification/quiz-1.yml`).
+  their id's path
+  (`catalog/documents/arts/pokemon-identification/quiz-1.yml`).
 - **Blocks** are the closed set from the learning-document system (rich text,
   math, figures/assets, insets, lists, wordbank, matching, cloze,
   short answer, essay, questions with inline choices or bank-select,
@@ -131,10 +148,16 @@ No., and answer-sheet rows. Reprints resolve that snapshot, so later question
 bank edits cannot change paper already issued or its grading key.
 
 The authored course and banks remain content under
-`content/school/curriculum/`. Published documents, derived banks, and physical
-card allocations live under `content/school/print-documents/`; the
-learner/enrollment-bound worksheet-instance records live in the household
-school application data. These are runtime records, not curriculum source.
+`content/school/curriculum/`, and the authored print-document sources under
+`content/school/catalog/documents/`. Published documents, derived banks, and
+physical card allocations live under `content/school/print-documents/`, which
+holds nothing else; the learner/enrollment-bound worksheet-instance records
+live in the household school application data. These are runtime records, not
+curriculum source.
+
+Moving a source file never invalidates an artifact: allocations, worksheet
+instances, and published filenames all key off the document's `id`, never its
+path.
 
 **Renders are published-first.** Every render lane that can pin a revision —
 the HTTP route, the tracked-quiz issue path, and the CLI's card mode —
@@ -615,12 +638,13 @@ Known, accepted limits (each was reviewed, not overlooked):
 | Document schemas + validation (pure) | `backend/src/2_domains/school/documents/` — source/v2 envelopes, blocks, shuffles, fit, allocation planning, OMR form geometry |
 | Publish / render / scan / record (use cases) | `backend/src/3_applications/school/documents/` |
 | Issue + grade + review (session use cases) | `backend/src/3_applications/school/usecases/` |
-| Stores | `backend/src/1_adapters/school/documents/` — document repository (sources, `published/`, `derived-banks/`), allocation store (`allocations/`) |
+| Stores | `backend/src/1_adapters/school/documents/` — document repository (two roots: `sourceDirectory` = the catalog shelf; `directory` = the artifact root holding `published/` + `derived-banks/`), allocation store (`allocations/`) |
 | PDF rendering | `backend/src/1_rendering/school/documents/` — workbook theme, measure/place, draw, furniture |
 | API | `backend/src/4_api/v1/routers/school.mjs` → `GET /api/v1/school/print/*` (proof renders + card lookup) and `POST /api/v1/school/print/render` (card-minting renders) |
 | Scan wiring | `backend/src/5_composition/modules/schoolPrintScanConsumer.mjs` |
 | CLI | `cli/school-docs.cli.mjs` |
-| Content | `data/content/school/print-documents/` (sources by taxonomy path, `published/`, `derived-banks/`, `allocations/`) |
+| Content (sources) | `data/content/school/catalog/documents/` — hand-authored, by taxonomy path (CLI: `--source-root`) |
+| Content (artifacts) | `data/content/school/print-documents/` — `published/`, `derived-banks/`, `allocations/` only (CLI: `--content-root`) |
 | Evidence | `data/users/{id}/apps/school/attempts/` (shared with the on-screen engine) |
 | Config | `data/household/config/school.yml` → `print.teacherPin` |
 
