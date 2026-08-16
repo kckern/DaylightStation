@@ -575,6 +575,17 @@ export function EmulatorConsole({
           }
         }
 
+        // Hand already-connected pads a player slot. EmulatorJS drops the
+        // "connected" event for any pad plugged in before boot, leaving its
+        // input unroutable for the life of this instance (see claimGamepads).
+        // Runs on EVERY boot because each game launch is a fresh instance.
+        try {
+          const claimed = engine.claimGamepads?.() ?? 0;
+          logger.info('emulator.gamepad.claimed', { count: claimed });
+        } catch (err) {
+          logger.warn('emulator.gamepad.claim-failed', { error: err && err.message });
+        }
+
         // Success = OBSERVED, not resolved: confirm the game actually rendered a
         // frame. A booted-but-blank screen (e.g. a stale single-instance reuse)
         // trips the error/retry state instead of silently showing nothing.
