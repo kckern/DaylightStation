@@ -12,6 +12,24 @@
 
 ---
 
+---
+
+## Scope decision — 2026-08-16
+
+**Execution order is Tier 0 → Tier 1 → Tier 3 → Task 4.2. Tier 2 and the rest of Tier 4 are shelved.**
+
+The tiers below are written 0-1-2-3-4, but **Tier 3 runs before Tier 2**. The incident was not slow to diagnose for lack of correlation ids; it was 17 minutes of a child in front of a broken screen because *nothing noticed*. Tier 2 makes diagnosis faster. Tier 3 makes the house notice at minute one, and it is cheaper than it looks: the device heartbeat already ships `state` and `position` every 5s, the alert path is one missing field from working, and the auto-report needs no backend change at all.
+
+**Doing (13 tasks):** Tier 0 (0.1–0.4), Tier 1 (1.1–1.4), Tier 3 (3.1–3.5), and **Task 4.2**.
+
+Task 4.2 is promoted out of Tier 4 because it is not hygiene. `startup:armed attempts=0 timeout=n/a` and `playheadPosition: null` are hardcoded defaults that render as measurements — they misled the 2026-08-16 investigation directly. **Removing a field that lies is worth more than adding one that tells the truth.**
+
+**Shelved (8 tasks):** all of Tier 2 (2.1 session threading, 2.2 device identity, and the global tracing middleware inside 1.4 — mount the request logger, skip tracing for now), and Tier 4 tasks 4.1, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8. All are real; none are urgent once detection works. Revisit after the new telemetry has caught something in the field.
+
+**Deploy policy for this work:** merge to `main` and push. **No deploy** — no homeserver rebuild, no container restart. The kiosk verification in the Verification section below therefore cannot run yet; it stays pending until a deploy is separately authorised.
+
+---
+
 ## Ground rules for every task
 
 - **Never raw `console.*` in `frontend/src/`** — use `frontend/src/lib/logging/`. A repo hook enforces this.

@@ -1,9 +1,17 @@
 // frontend/src/modules/Media/logging/mediaLog.js
 import { getChildLogger } from '../../../lib/logging/singleton.js';
 
+// `sessionLog` is what makes these events DURABLE. The backend session-file
+// transport gates on `context.app && context.sessionLog`
+// (0_system/logging/transports/sessionFile.mjs) — without the flag every event
+// below is stdout-only and dies with the container. On 2026-08-16 the durable
+// record of a real incident held 13 events, all of them from ContentCombobox
+// (which sets its own sessionLog); the entire §10.1 taxonomy — playback,
+// stalls, dispatch, errors — was missing, and the diagnosis survived only
+// because `docker logs` happened not to have rolled.
 let _logger;
 function base() {
-  if (!_logger) _logger = getChildLogger({ app: 'media' });
+  if (!_logger) _logger = getChildLogger({ app: 'media', sessionLog: true });
   return _logger;
 }
 
@@ -37,6 +45,7 @@ export const mediaLog = {
   sessionPersisted:       sampled('session.persisted'),
   configChanged:          sampled('config.changed'),
   queueMutated:           debug('queue.mutated'),
+  playerHostChanged:      info('player.host-changed'),
   playbackStarted:        info('playback.started'),
   playbackStalled:        warn('playback.stalled'),
   playbackStallAutoAdvanced: warn('playback.stall-auto-advanced'),

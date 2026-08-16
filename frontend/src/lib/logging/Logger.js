@@ -6,6 +6,7 @@
  */
 
 import { getSharedWsTransport } from './sharedTransport.js';
+import { withConsoleEmit } from './consoleEmitGuard.js';
 import { readHeap } from '../perf/memoryProbe.js';
 import {
   startJankProbes,
@@ -57,10 +58,11 @@ const devOutput = (level, ...args) => {
     window.postMessage({ type: 'frontend-log', level, message }, '*');
   }
   
-  // Console output
+  // Console output. Marked as logger-originated so consoleInterceptor does not
+  // capture it and ship a duplicate event back — see consoleEmitGuard.js.
   const method = level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log';
   if (typeof console !== 'undefined' && console[method]) {
-    console[method](`[Logger] ${message}`);
+    withConsoleEmit(() => console[method](`[Logger] ${message}`));
   }
 };
 
