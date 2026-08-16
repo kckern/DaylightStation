@@ -111,8 +111,31 @@ blocks:
   seeded-shuffled; cloze blanks are fixed-width atoms.
 - **Fit** is decided by measurement, never streaming: `flow` paginates,
   `one-page` must fit (density falls back to compact before refusing with the
-  overset amount), `fill` grows answer spaces into leftover page space.
+  overset amount), `fill` balances and then grows into leftover page space.
   `typeScale: young` enlarges glyphs *and* leading for early readers.
+
+  `fill` does two things, in order. First it **balances**: placement runs a
+  second time against a soft per-page target (total content height ÷ the page
+  count the greedy pass produced), ending a page when stopping lands closer to
+  that target than adding the next fragment would. The hard page ceiling still
+  governs every fit decision, so the target only ever starts a page early — and
+  the balanced result is adopted only if it produced the same page count, so
+  balancing can never make pagination worse. Then it **grows**: answer spaces
+  expand first, each to its own `maxPt`; any space still left is shared among
+  `fillAfter` fragments, capped per share at `theme.pagination.maxFillGrowthPt`
+  (32pt normal, 22pt compact).
+
+  That cap is the point. Uncapped, a sparse last page dumped all its slack into
+  one or two gaps and produced page-tall voids between questions. Capped, the
+  leftover simply stays as blank space at the bottom of the page — trailing
+  white space is preferred over an oversized interior gap.
+
+  One consequence worth knowing: the balance target is computed from content
+  height, not question count, and it does not model per-page furniture. A
+  card-attached sheet spends ~40pt of page 1 on the answer-sheet header strip,
+  so its split can land one question short of even (a 10-question sheet
+  balancing 4/6 rather than 5/5) while still being far better than the greedy
+  8/2 it replaced.
 - **Shuffles are edit-stable**: derived from `(seed, variant, block key)`, so
   editing one block never reshuffles its neighbours, and variant N is a
   different-but-deterministic shuffle of the same content.
