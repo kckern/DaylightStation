@@ -13,8 +13,8 @@
 
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
-const WEATHER_PATH = 'common/weather';
-const HISTORY_PREFIX = 'history/weather';
+const WEATHER_PATH = 'weather/current';
+const HISTORY_PREFIX = 'weather/log';
 
 export class YamlWeatherDatastore {
   #dataService;

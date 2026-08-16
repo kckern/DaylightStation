@@ -106,13 +106,13 @@ describe('DataService', () => {
 
     describe('household paths', () => {
       test('resolves default household path (no hid suffix)', () => {
-        const path = dataService.household.resolvePath('common/weather');
-        expect(path).toBe('/data/household/common/weather.yml');
+        const path = dataService.household.resolvePath('weather/current');
+        expect(path).toBe('/data/household/weather/current.yml');
       });
 
       test('resolves secondary household path (with hid suffix)', () => {
-        const path = dataService.household.resolvePath('common/weather', 'secondary');
-        expect(path).toBe('/data/household-secondary/common/weather.yml');
+        const path = dataService.household.resolvePath('weather/current', 'secondary');
+        expect(path).toBe('/data/household-secondary/weather/current.yml');
       });
 
       test('auto-appends .yml extension when missing', () => {
