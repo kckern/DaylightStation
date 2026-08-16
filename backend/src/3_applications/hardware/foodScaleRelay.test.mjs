@@ -5,6 +5,7 @@ import path from 'path';
 import os from 'os';
 import yaml from 'js-yaml';
 import { createFoodScaleRelay } from './foodScaleRelay.mjs';
+import { YamlDayLogDatastore } from '#adapters/persistence/yaml/YamlDayLogDatastore.mjs';
 
 const NOOP_LOGGER = { warn() {}, info() {}, debug() {}, error() {} };
 const SCALE_ID = 'kitchen';
@@ -75,7 +76,7 @@ describe('createFoodScaleRelay persistence', () => {
       eventBus: bus,
       dataDir,
       // Resolved by the composition root in production; supplied directly here.
-      historyRoot: path.join(dataDir, 'nutrition'),
+      dayLog: new YamlDayLogDatastore({ root: path.join(dataDir, 'nutrition'), timezone, eventPrefix: 'food_scale' }),
       config: {},
       timezone,
       logger: NOOP_LOGGER,
@@ -168,7 +169,7 @@ describe('createFoodScaleRelay ingest sources', () => {
     createFoodScaleRelay({
       eventBus: bus,
       dataDir: os.tmpdir(),
-      historyRoot: path.join(os.tmpdir(), 'kitchen-relay-ingest-test'),
+      dayLog: new YamlDayLogDatastore({ root: path.join(os.tmpdir(), 'kitchen-relay-ingest-test'), timezone: 'UTC', eventPrefix: 'food_scale' }),
       config: {},
       timezone: 'UTC',
       logger: NOOP_LOGGER,

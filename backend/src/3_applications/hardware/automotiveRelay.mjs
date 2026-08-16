@@ -35,7 +35,6 @@
 //
 // Config-driven from the household SSOT (config/vehicles.yml), passed as
 // `config`. Design: docs/_wip/plans/2026-07-14-obd-relay-design.md
-import { promises as fs } from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
 import { formatIsoLocal, formatLocalTimestamp, getDateInTimezone } from '#domains/core/utils/time.mjs';
@@ -85,7 +84,8 @@ const ECU_FIELDS = ['rpm', 'coolant_c', 'fuel_pct'];
  * @returns {{ dispose: () => void, flush: () => Promise<void> }}
  */
 /**
- * `historyRoot` is INJECTED, absolute, and already resolved.
+ * `dayLog` is INJECTED — an append-only day-log store (D5: data operations
+ * go through datastore ports, never `fs` from the application layer).
  *
  * This relay used to hold its own DEFAULT_DIR for the automotive log and
  * join it onto dataDir itself. That put storage layout in the application
@@ -94,7 +94,7 @@ const ECU_FIELDS = ['rpm', 'coolant_c', 'fuel_pct'];
  * any `persistence.dir` override, and hands down one directory.
  */
 export function createAutomotiveRelay({
-  eventBus, dataDir, historyRoot, config = {}, timezone = DEFAULT_TIMEZONE, logger = console, now = Date.now,
+  eventBus, dataDir, dayLog, config = {}, timezone = DEFAULT_TIMEZONE, logger = console, now = Date.now,
 }) {
   if (!eventBus?.onClientMessage || !eventBus?.broadcast) {
     throw new Error('createAutomotiveRelay: eventBus with onClientMessage + broadcast required');
@@ -146,7 +146,7 @@ export function createAutomotiveRelay({
       const last = lastSnapshotPersist.get(id) || 0;
       if (at - last >= snapshotMinMs) {
         lastSnapshotPersist.set(id, at);
-        enqueue('snapshot', id, () => appendRecord(historyRoot, id, snapshot, at, timezone));
+        enqueue('snapshot', id, () => dayLog.appendAt(id, at, snapshot, { omitKeys: ['id'] }));
       }
       return;
     }
@@ -163,7 +163,7 @@ export function createAutomotiveRelay({
       }
       const record = { id, kind: 'event', event: String(message.event || 'unknown'), ...detail, ts };
       eventBus.broadcast(topic, record);
-      enqueue('event', id, () => appendRecord(historyRoot, id, record, at, timezone));
+      enqueue('event', id, () => dayLog.appendAt(id, at, record, { omitKeys: ['id'] }));
       return;
     }
 
@@ -200,7 +200,7 @@ export function createAutomotiveRelay({
     // time it reaches home WiFi. The day log keeps a breadcrumb.
     if (count < minTripSamples) {
       enqueue('trip-dropped', id, async () => {
-        await appendRecord(historyRoot, id, {
+        await dayLog.appendAt(id, at, {
           id, kind: 'trip-dropped', trip_id: tripId, ts, samples: count, reason: 'below-sample-floor',
         }, at, timezone);
         eventBus.sendToClient?.(clientId, { type: 'trip-ack', trip_id: tripId });
@@ -211,8 +211,8 @@ export function createAutomotiveRelay({
 
     // Persist FULL trip, then summary to the day log, then ack the device.
     enqueue('trip', id, async () => {
-      const relPath = await writeTrip(historyRoot, id, tripId, trip, timezone);
-      await appendRecord(historyRoot, id, {
+      const relPath = await dayLog.writeDocument(id, path.join('trips', tripRelPath(trip, timezone)), dumpTrip(trip));
+      await dayLog.appendAt(id, at, {
         id, kind: 'trip', trip_id: tripId, ts,
         file: relPath,
         started: trip.meta.started,
@@ -232,7 +232,7 @@ export function createAutomotiveRelay({
 
   const offClientMessage = eventBus.onClientMessage(ingest);
 
-  logger.info?.('automotive.relay.ready', { historyRoot, snapshotMinMs, minTripSamples, timezone });
+  logger.info?.('automotive.relay.ready', { snapshotMinMs, minTripSamples, timezone });
   return {
     dispose: () => { try { offClientMessage?.(); } catch { /* noop */ } },
     /** test hook: resolves when all enqueued writes have settled */
@@ -521,39 +521,5 @@ export function tripRelPath(trip, timezone) {
 /** Serialize a trip: flowLevel 2 keeps one sample per line — diff-friendly, and
  *  a grepped line stays readable on its own. Exported for the migration. */
 export const dumpTrip = (trip) => yaml.dump(trip, { noRefs: true, flowLevel: 2, lineWidth: -1 });
-
-/**
- * Write one full trip.
- * @returns {Promise<string>} path relative to the vehicle's trips/ dir
- */
-async function writeTrip(historyRoot, id, tripId, trip, timezone) {
-  const relPath = tripRelPath(trip, timezone);
-  const file = path.join(historyRoot, sanitize(id), 'trips', relPath);
-  await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.writeFile(file, dumpTrip(trip), 'utf8');
-  return relPath;
-}
-
-/**
- * Append one record to the vehicle's append-only day log (read-modify-write).
- * Keyed by the household-local day so an evening drive files under the day it
- * was actually driven.
- */
-async function appendRecord(historyRoot, id, record, at, timezone) {
-  const day = getDateInTimezone(new Date(at), timezone);
-  const dir = path.join(historyRoot, sanitize(id));
-  const file = path.join(dir, `${day}.yml`);
-  await fs.mkdir(dir, { recursive: true });
-
-  let list = [];
-  try {
-    const existing = yaml.load(await fs.readFile(file, 'utf8'));
-    if (Array.isArray(existing)) list = existing;
-  } catch { /* first record of the day */ }
-
-  const { id: _omit, ...rest } = record;
-  list.push(rest);
-  await fs.writeFile(file, yaml.dump(list, { noRefs: true, lineWidth: -1 }), 'utf8');
-}
 
 const sanitize = (s) => String(s).replace(/[^a-zA-Z0-9_-]/g, '_');

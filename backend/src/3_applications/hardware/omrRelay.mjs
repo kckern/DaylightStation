@@ -40,9 +40,7 @@
 //
 // Config-driven from the household SSOT (config/omr-readers.yml), passed in as
 // `config`. Persistence policy can change without touching relay firmware.
-import { promises as fs } from 'fs';
 import path from 'path';
-import yaml from 'js-yaml';
 import { formatLocalTimestamp, getDateInTimezone } from '#domains/core/utils/time.mjs';
 import { DEFAULT_TIMEZONE } from '#domains/core/utils/timezone.mjs';
 
@@ -77,7 +75,8 @@ const DEFAULT_DEDUP_WINDOW_MS = 2000;
  * @returns {{ dispose: () => void }}
  */
 /**
- * `historyRoot` is INJECTED, absolute, and already resolved.
+ * `dayLog` is INJECTED — an append-only day-log store (D5: data operations
+ * go through datastore ports, never `fs` from the application layer).
  *
  * This relay used to hold `const DEFAULT_DIR = 'household/<domain>/log'` and
  * join it onto dataDir itself. That put storage layout in the application
@@ -86,7 +85,7 @@ const DEFAULT_DEDUP_WINDOW_MS = 2000;
  * this file at all. The composition root resolves the location, including any
  * `persistence.dir` override, and hands down one directory.
  */
-export function createOmrRelay({ eventBus, dataDir, historyRoot, config = {}, timezone = DEFAULT_TIMEZONE, logger = console }) {
+export function createOmrRelay({ eventBus, dataDir, dayLog, config = {}, timezone = DEFAULT_TIMEZONE, logger = console }) {
   if (!eventBus?.onClientMessage || !eventBus?.subscribe) {
     throw new Error('createOmrRelay: eventBus with onClientMessage + subscribe required');
   }
@@ -206,13 +205,13 @@ export function createOmrRelay({ eventBus, dataDir, historyRoot, config = {}, ti
   // succession both register — only a REPEAT of the same card is suppressed.
   const lastNfc = new Map();   // id -> { uid, atMs }
 
-  // Serialize all appends through one promise chain: appendRecord is a
+  // Serialize all appends through one promise chain: the day-log append is a
   // read-modify-write, so two cards fed in quick succession would otherwise
   // clobber each other's list.
   let writeChain = Promise.resolve();
   const enqueueAppend = (id, record) => {
     writeChain = writeChain
-      .then(() => appendRecord(historyRoot, id, record, timezone, logger))
+      .then(() => dayLog.append(id, record))
       .catch((err) => logger.warn?.('omr.persist.failed', { id, error: err.message }));
   };
 
@@ -287,7 +286,7 @@ export function createOmrRelay({ eventBus, dataDir, historyRoot, config = {}, ti
 
   const unsubs = [...topics].map((topic) => eventBus.subscribe(topic, onPayload));
 
-  logger.info?.('omr.relay.ready', { historyRoot, topics: [...topics] });
+  logger.info?.('omr.relay.ready', { topics: [...topics] });
   return { dispose: () => { for (const u of unsubs) { try { u?.(); } catch { /* noop */ } } } };
 }
 
@@ -307,29 +306,5 @@ function normalizeMarks(marks) {
   return out;
 }
 
-/** Append one record to the reader's append-only day log (read-modify-write). */
-async function appendRecord(historyRoot, id, record, timezone, logger) {
-  // Bucket by the record's LOCAL day (the date prefix of its local `ts`), so an
-  // evening-local read doesn't spill into the next UTC day's file. Fallback to
-  // the current local date if a record somehow lacks a parseable ts.
-  const day = (typeof record?.ts === 'string' && /^\d{4}-\d{2}-\d{2}/.test(record.ts))
-    ? record.ts.slice(0, 10)
-    : getDateInTimezone(new Date(), timezone);
-  const dir = path.join(historyRoot, id);
-  const file = path.join(dir, `${day}.yml`);
-  await fs.mkdir(dir, { recursive: true });
-
-  let list = [];
-  try {
-    const existing = yaml.load(await fs.readFile(file, 'utf8'));
-    if (Array.isArray(existing)) list = existing;
-  } catch (err) {
-    if (err.code !== 'ENOENT') logger.warn?.('omr.persist.read_failed', { file, error: err.message });
-  }
-
-  list.push(record);
-  await fs.writeFile(file, yaml.dump(list, { indent: 2, lineWidth: -1, noRefs: true }), 'utf8');
-  logger.debug?.('omr.persist.wrote', { id, event: record.event, columns: record.columns });
-}
 
 export default createOmrRelay;

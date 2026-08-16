@@ -338,6 +338,7 @@ import { getCurriculumIndex, mergeSeason } from '#adapters/content/media/plex/Cu
 import { ContentExpression } from '#domains/content/ContentExpression.mjs';
 import { resolveFormat } from '#domains/content/utils/resolveFormat.mjs';
 import * as schoolErrors from '#domains/school/errors.mjs';
+import { YamlDayLogDatastore } from '#adapters/persistence/yaml/YamlDayLogDatastore.mjs';
 
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
 
@@ -691,12 +692,21 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       ? path.join(dataDir, ...String(override).replace(/^\/+/, '').split('/'))
       : configService.getHouseholdPath(domainPath, householdId);
   };
+  // D5: relays never touch fs. Each gets an append-only day-log store rooted
+  // where its history lives — five private read-modify-write copies replaced
+  // by one adapter.
+  const relayDayLog = (cfg, domainPath, eventPrefix) => new YamlDayLogDatastore({
+    root: relayHistoryRoot(cfg, domainPath),
+    timezone: configService.getHouseholdTimezone?.(householdId),
+    eventPrefix,
+    logger: rootLogger.child({ module: eventPrefix }),
+  });
 
   const scalesConfig = configService.getHouseholdAppConfig(householdId, 'scales')
     || configService.reloadHouseholdAppConfig?.(householdId, 'scales')
     || {};
   createFoodScaleRelay({
-    historyRoot: relayHistoryRoot(scalesConfig, 'nutrition/log'),
+    dayLog: relayDayLog(scalesConfig, 'nutrition/log', 'food_scale'),
     eventBus,
     dataDir,
     config: scalesConfig,
@@ -717,7 +727,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'pressure-mat-relay' }),
   }).start();
   createPressureMatRelay({
-    historyRoot: relayHistoryRoot(pressureMatConfig, 'pressure-mats/log'),
+    dayLog: relayDayLog(pressureMatConfig, 'pressure-mats/log', 'pressure_mat'),
     eventBus,
     dataDir,
     config: pressureMatConfig,
@@ -735,7 +745,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     || configService.reloadHouseholdAppConfig?.(householdId, 'omr-readers')
     || {};
   createOmrRelay({
-    historyRoot: relayHistoryRoot(omrReadersConfig, 'omr/log'),
+    dayLog: relayDayLog(omrReadersConfig, 'omr/log', 'omr'),
     eventBus,
     dataDir,
     config: omrReadersConfig,
@@ -765,7 +775,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     || configService.reloadHouseholdAppConfig?.(householdId, 'vehicles')
     || {};
   createAutomotiveRelay({
-    historyRoot: relayHistoryRoot(vehiclesRelayConfig, 'automotive/log'),
+    dayLog: relayDayLog(vehiclesRelayConfig, 'automotive/log', 'automotive'),
     eventBus,
     dataDir,
     config: vehiclesRelayConfig,
@@ -3754,9 +3764,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   createBarcodeRelay({
     eventBus,
     dataDir,
-    historyRoot: barcodePersistDir
-      ? path.join(dataDir, ...String(barcodePersistDir).replace(/^\/+/, '').split('/'))
-      : configService.getHouseholdPath('barcode/log', householdId),
+    dayLog: relayDayLog({ persistence: { dir: barcodePersistDir } }, 'barcode/log', 'barcode_relay'),
     timezone: configService.getHouseholdTimezone?.(householdId),
     logger: rootLogger.child({ module: 'barcode-relay' }),
     onScan: (relay) => {
