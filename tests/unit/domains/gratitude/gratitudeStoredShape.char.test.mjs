@@ -29,7 +29,7 @@ describe('gratitude stored YAML shape (characterization)', () => {
   let ds;
   let service;
 
-  const stored = (key) => ds.files.get(`${HH}:common/gratitude/${key}.yml`);
+  const stored = (key) => ds.files.get(`${HH}:gratitude/${key}.yml`);
 
   beforeEach(() => {
     ds = makeDataService();

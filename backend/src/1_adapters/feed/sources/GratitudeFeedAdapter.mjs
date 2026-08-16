@@ -28,7 +28,7 @@ export class GratitudeFeedAdapter extends IFeedSourceAdapter {
   async fetchItems(query, _username) {
     try {
       // Must include .yml explicitly — dotted filename confuses DataService.ensureExtension()
-      const data = this.#dataService.household.read('common/gratitude/selections.gratitude.yml');
+      const data = this.#dataService.household.read('gratitude/selections.gratitude.yml');
       if (!data || !Array.isArray(data)) return [];
 
       const limit = Math.min(query.limit || 3, 3);
