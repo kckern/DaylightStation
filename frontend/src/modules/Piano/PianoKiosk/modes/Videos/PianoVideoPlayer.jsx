@@ -36,6 +36,12 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
   const playerRef = useRef(null);
   const ctrl = usePlayerController(playerRef);
   const { el: mediaEl, timedOut } = useResolvedMediaEl(playerRef);
+  // Read through a ref, not a dep: `mediaEl` is republished by the 100ms poll
+  // on every element swap, and a [mediaEl] dep on the clear callback rebuilds
+  // the memoized player element below — which hands Player a new `play` object
+  // and remounts the video. That loop is self-sustaining (2026-08-16 storm).
+  const mediaElRef = useRef(null);
+  mediaElRef.current = mediaEl;
   // Fleet visibility: register this player so the tablet's DeviceStatePublisher
   // reports live playing/paused state to the /media Devices view.
   usePlayerSessionBinding(() => playerRef.current);
@@ -129,9 +135,18 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
   // listener. When a completion coordinator exists, suppress only that natural
   // end clear so the route can choose checkpoint, next lesson, or course end.
   const handlePlayerClear = useCallback(() => {
-    if (mediaEl?.ended && onAutoAdvanceRef.current) return;
+    if (mediaElRef.current?.ended && onAutoAdvanceRef.current) return;
     onBack();
-  }, [mediaEl, onBack]);
+  }, [onBack]);
+
+  // Own memo, keyed ONLY on content. The Player derives its media identity from
+  // this object; a fresh object for the same lecture remounts the video and
+  // opens a new Plex transcode session, so its identity must not ride along
+  // with anything render-frequency.
+  const playSpec = useMemo(
+    () => ({ contentId, shader: 'focused', seconds: resumeSeconds, resume: false }),
+    [contentId, resumeSeconds]
+  );
 
   // Memoize the heavy Player element so high-frequency re-renders (timeupdate
   // ticks, MIDI play-along notes) DON'T recreate it — recreating it remounted
@@ -148,10 +163,10 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
             playhead and auto-exit seconds later when `ended` fires (the
             re-watch "jumpscare"). Passing our value for BOTH the completed and
             in-progress cases means there's only ever one source of truth. */}
-        <Player ref={playerRef} play={{ contentId, shader: 'focused', seconds: resumeSeconds, resume: false }} clear={handlePlayerClear} />
+        <Player ref={playerRef} play={playSpec} clear={handlePlayerClear} />
       </Suspense>
     </PlayerBoundary>
-  ), [contentId, handlePlayerClear, onBack, resumeSeconds]);
+  ), [playSpec, handlePlayerClear, onBack]);
 
   // Fullscreen is entered from the chrome strip's button; a tap never enters it.
   // While fullscreen the strip is offscreen, so taps summon the transport
