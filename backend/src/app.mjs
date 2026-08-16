@@ -1723,10 +1723,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // App-wide voice-feedback capture + inbox. Background-transcribes via the shared
   // OpenAI gateway (null-safe: items still save when transcription isn't configured).
+  // The notification service is what finally gives the inbox a reader: until now
+  // arrival triggered nothing but a log line, so a recorded complaint sat in a
+  // YAML file until somebody thought to go looking.
   v1Routers.feedback = createFeedbackRouter({
     feedbackService: new FeedbackService({
       configService,
       transcriptionService: sharedAiGateway || null,
+      notificationService: notificationStack?.notificationService || null,
       logger: rootLogger.child({ module: 'feedback' }),
     }),
     logger: rootLogger.child({ module: 'feedback-api' }),
