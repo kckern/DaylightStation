@@ -15,6 +15,29 @@ import express from 'express';
 import path from 'node:path';
 import fs from 'node:fs';
 import { configService } from '#system/config/index.mjs';
+import { getDispatcher, isLoggingInitialized } from '#system/logging/dispatcher.mjs';
+import { getSessionFileTransport } from '#system/logging/transports/sessionFile.mjs';
+
+/**
+ * What the logging pipeline has thrown away, for the status route.
+ *
+ * The dispatcher has counted `dropped` since it was written and nothing has
+ * ever read it; the session-file transport now counts its own skips the same
+ * way. A counter with no reader is not observability, and during a storm the
+ * drop is the signal — so both surface here, next to the route list, where
+ * anyone debugging already looks.
+ *
+ * @returns {object|null} null when logging has not been initialized
+ */
+function loggingStatus() {
+  if (!isLoggingInitialized()) return null;
+  const dispatcher = getDispatcher();
+  return {
+    metrics: dispatcher.getMetrics(),
+    transports: dispatcher.getTransportNames(),
+    sessionFile: getSessionFileTransport()?.getStatus() ?? null,
+  };
+}
 
 /**
  * Create the v1 API router with all domain sub-routers
@@ -158,7 +181,8 @@ export function createApiRouter(config) {
     ok: true,
     version: 'v1',
     routes: mounted,
-    config: safeConfig
+    config: safeConfig,
+    logging: loggingStatus()
   }));
 
   // System reload — re-read household app YAML configs from disk without
