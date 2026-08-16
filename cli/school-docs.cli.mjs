@@ -23,9 +23,18 @@
  * it is intentionally NOT threaded anywhere, since there is nothing in the
  * renderer today for it to override.
  *
+ * TWO ROOTS. `--source-root` (default `content/school/catalog/documents`) is
+ * where hand-authored document CLASSES live, on the School catalog shelf
+ * beside the `school.learning-document/v1` files; `--content-root` (default
+ * `content/school/print-documents`) is the ARTIFACT root — `published/`,
+ * `derived-banks/`, `allocations/` and nothing else. A non-absolute positional
+ * resolves against the source root first and the content root second (see
+ * `resolveDocumentPath`), which is what keeps a `published/<id>@<rev>.yml`
+ * argument and a legacy content-root-only layout both working.
+ *
  * `publish <file>` (Task 6, spec §3/§10) runs `PublishPrintDocument` against
- * a `YamlPrintDocumentRepository` rooted at the SAME content root `validate`/
- * `render` resolve against — the published document + derived bank land at
+ * a `YamlPrintDocumentRepository` spanning both roots — the published document
+ * + derived bank land at
  * `<content-root>/published/<id>@<rev>.yml` and
  * `<content-root>/derived-banks/<id>@<rev>.yml`, append-only. `render` wires
  * the identical repository so a PUBLISHED file (one with a `rev`, e.g. one
@@ -91,7 +100,10 @@ const ENTRYPOINT = fileURLToPath(import.meta.url);
 const DENSITIES = new Set(['normal', 'compact']);
 const V2_LIKE_SCHEMAS = new Set([DOCUMENT_V2_SCHEMA, DOCUMENT_SOURCE_SCHEMA]);
 
-const COMMON_FLAGS = new Set(['data-dir', 'content-root']);
+const COMMON_FLAGS = new Set(['data-dir', 'content-root', 'source-root']);
+
+/** Artifact subtrees under the CONTENT root — never hand-authored, never walked by `validate <dir>`. */
+const ARTIFACT_DIRS = new Set(['published', 'derived-banks', 'allocations']);
 const VALIDATE_FLAGS = new Set([...COMMON_FLAGS]);
 const PUBLISH_FLAGS = new Set([...COMMON_FLAGS]);
 const RENDER_FLAGS = new Set([
@@ -124,7 +136,10 @@ Usage:
 
 Commands:
   validate <file|dir>   parse + validateAnyDocument (v1 or v2); directory form
-                         walks *.yml (non-recursive). Render-free, sub-second.
+                         walks *.yml recursively, skipping the artifact
+                         subtrees and any file declaring another system's
+                         schema (e.g. school.learning-document/v1).
+                         Render-free, sub-second.
   publish <file>         compile a school.document-source/v1 file into a
                          published document + derived question bank, written
                          under the content root (append-only per revision).
@@ -142,8 +157,13 @@ Commands:
 
 Options:
   --data-dir <path>      data root (default: $DAYLIGHT_BASE_PATH/data)
-  --content-root <path>  content root, absolute or data-relative
+  --content-root <path>  ARTIFACT root, absolute or data-relative — where
+                         published/, derived-banks/ and allocations/ live
                          (default: content/school/print-documents)
+  --source-root <path>   authored SOURCE root, absolute or data-relative —
+                         where hand-written document classes live, on the
+                         School catalog shelf beside the learning documents
+                         (default: content/school/catalog/documents)
   --out <path>           (render/reprint) output PDF path — required
   --learner-name <s>     (render) prefill the header Name line
   --date <s>             (render) prefill the header Date line
@@ -170,7 +190,10 @@ Options:
                          omitted releases every live record on the card
   --help, -h             show this message
 
-<file|dir>/<file> resolve relative to the content root when not absolute.
+A non-absolute <file|dir>/<file> resolves against the SOURCE root first, then
+against the CONTENT root if it does not exist there (so a published/<id>@<rev>
+file, and a legacy content-root-only layout, both still work). Absolute paths
+pass through untouched.
 Exit codes: 0 ok, 1 validation/fit/publish/release failure, 2 usage error.
 `;
 
@@ -191,7 +214,16 @@ function resolveFrom(dataDir, value) {
   return path.isAbsolute(value) ? path.resolve(value) : path.resolve(dataDir, value);
 }
 
-/** Same `--data-dir`/`$DAYLIGHT_BASE_PATH` content-root pattern as `schoolcalc-catalog.cli.mjs`. */
+/**
+ * Same `--data-dir`/`$DAYLIGHT_BASE_PATH` pattern as `schoolcalc-catalog.cli.mjs`,
+ * over the two roots this CLI now spans:
+ *
+ * - `contentRoot` (`--content-root`) — the ARTIFACT root. `publish` writes
+ *   `published/` + `derived-banks/` here and every card allocation lives here.
+ * - `sourceRoot` (`--source-root`) — the hand-authored SOURCE root, on the
+ *   School catalog shelf. A document CLASS is authored here; its published
+ *   objects land under `contentRoot`.
+ */
 export function resolveSchoolDocsContentPaths({ flags = {}, env = process.env } = {}) {
   const dataDir = resolveRequiredPath(
     flags['data-dir'],
@@ -202,12 +234,45 @@ export function resolveSchoolDocsContentPaths({ flags = {}, env = process.env } 
     dataDir,
     valueFlag(flags['content-root'], '--content-root') ?? 'content/school/print-documents',
   );
-  return { dataDir, contentRoot };
+  const sourceRoot = resolveFrom(
+    dataDir,
+    valueFlag(flags['source-root'], '--source-root') ?? 'content/school/catalog/documents',
+  );
+  return { dataDir, contentRoot, sourceRoot };
 }
 
-/** A bare positional arg resolves relative to the content root; absolute paths pass through. */
-function resolveContentPath(paths, value) {
-  return path.isAbsolute(value) ? path.resolve(value) : path.resolve(paths.contentRoot, value);
+/**
+ * Resolves a bare (non-absolute) `<file|dir>` positional. Absolute paths always
+ * pass through untouched.
+ *
+ * SOURCE ROOT FIRST, CONTENT ROOT SECOND. Sources moved out of the artifact
+ * root, so `validate`/`publish`/`render`'s positional now means "relative to
+ * `--source-root`" — that is where the thing you are about to validate,
+ * publish or proof-render is authored. But the content root stays a live
+ * second candidate, tried only when the first does not exist on disk: a
+ * `published/<id>@<rev>.yml` file is a legitimate `render` argument, a
+ * deployment (or a caller) that still passes only `--content-root` with its
+ * sources inside must keep working, and neither case is ambiguous in practice
+ * because a given relative path exists under exactly one of the two.
+ *
+ * When it exists under NEITHER, the source-root candidate is returned, so the
+ * resulting "no such file" names the root the caller was most likely aiming at.
+ */
+function resolveDocumentPath(paths, value) {
+  if (path.isAbsolute(value)) return path.resolve(value);
+  const fromSource = path.resolve(paths.sourceRoot, value);
+  if (fs.existsSync(fromSource)) return fromSource;
+  const fromContent = path.resolve(paths.contentRoot, value);
+  if (fs.existsSync(fromContent)) return fromContent;
+  return fromSource;
+}
+
+/** Both roots, wired the way every command needs them (`list()` reads sources, artifacts are written/read under the content root). */
+function openRepository(paths) {
+  return new YamlPrintDocumentRepository({
+    directory: paths.contentRoot,
+    sourceDirectory: paths.sourceRoot,
+  });
 }
 
 /** `--rows a-b` (release-card, Task 7) -> `{start, end}` or a usage error message; absent -> `{rows: null}` (whole card). */
@@ -227,12 +292,50 @@ function loadYamlDocument(filePath) {
   return yaml.load(content);
 }
 
-/** Non-recursive `*.yml` walk, sorted — mirrors `YamlPrintDocumentRepository`'s flat convention. */
-function listYmlFilesFlat(directory) {
-  return fs.readdirSync(directory, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name.endsWith('.yml'))
-    .map((entry) => entry.name)
-    .sort();
+/**
+ * RECURSIVE `*.yml` walk, sorted, returning root-relative paths — mirrors
+ * `YamlPrintDocumentRepository.list()`.
+ *
+ * Recursive because source ids are taxonomy paths and their files nest under
+ * them (`arts/pokemon-identification/quiz-1.yml`): a non-recursive walk of the
+ * source root would report zero files for exactly the documents that exist.
+ * The three artifact subtrees are skipped at the top level so pointing this at
+ * the CONTENT root still means "the hand-authored things", never the
+ * machine-written `published/`/`derived-banks/`/`allocations/` output (a
+ * derived bank is not a document and would fail `validateAnyDocument`).
+ */
+function listYmlFilesRecursive(directory) {
+  const out = [];
+  const walk = (dir, prefix) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        if (prefix === '' && ARTIFACT_DIRS.has(entry.name)) continue;
+        walk(path.join(dir, entry.name), relative);
+      } else if (entry.isFile() && entry.name.endsWith('.yml')) {
+        out.push(relative);
+      }
+    }
+  };
+  walk(directory, '');
+  return out.sort();
+}
+
+/**
+ * Directory form only. The source root is the School catalog shelf, SHARED
+ * with the learning-document system, so a walk will meet `documentId`-keyed
+ * `school.learning-document/v1` files that this CLI has no business
+ * validating — reporting them as failures would make `validate <dir>` red for
+ * files it does not own.
+ *
+ * The test is on a DECLARED schema, not on absence: a file with no `schema`
+ * key at all is a legacy v1 print document and is still ours to check. A file
+ * named explicitly on the command line is always validated, whatever it
+ * declares — the caller asked for that file by name.
+ */
+function isForeignSchema(raw) {
+  const schema = raw?.schema;
+  return typeof schema === 'string' && !V2_LIKE_SCHEMAS.has(schema);
 }
 
 function validateOneFile(filePath) {
@@ -247,7 +350,11 @@ function validateOneFile(filePath) {
 
 /**
  * @param {{target: string}} args - `target` already resolved to an absolute path
- * @returns {{ok: boolean, mode: 'validate', target: string, files: Array, errors: string[]}}
+ * @returns {{ok: boolean, mode: 'validate', target: string, files: Array,
+ *   skipped: string[], errors: string[]}} `skipped` names the files a
+ *   directory walk passed over as belonging to another system (see
+ *   `isForeignSchema`) — reported rather than swallowed, so a source that was
+ *   skipped because of a typo'd `schema:` is visible instead of invisible.
  */
 export function runValidate({ target }) {
   let stat;
@@ -255,26 +362,41 @@ export function runValidate({ target }) {
     stat = fs.statSync(target);
   } catch {
     return {
-      ok: false, mode: 'validate', target, files: [], errors: [`no such file or directory: ${target}`],
+      ok: false, mode: 'validate', target, files: [], skipped: [], errors: [`no such file or directory: ${target}`],
     };
   }
 
   const isDirectory = stat.isDirectory();
   const filePaths = isDirectory
-    ? listYmlFilesFlat(target).map((name) => path.join(target, name))
+    ? listYmlFilesRecursive(target).map((name) => path.join(target, name))
     : [target];
 
-  const files = filePaths.map((filePath) => {
+  const skipped = [];
+  const files = [];
+  for (const filePath of filePaths) {
+    const relative = isDirectory ? path.relative(target, filePath) : filePath;
+    if (isDirectory) {
+      let raw;
+      try {
+        raw = loadYamlDocument(filePath);
+      } catch {
+        raw = null; // unparsable: fall through and let `validateOneFile` report it
+      }
+      if (isForeignSchema(raw)) {
+        skipped.push(relative);
+        continue;
+      }
+    }
     const { errors } = validateOneFile(filePath);
-    return { file: isDirectory ? path.relative(target, filePath) : filePath, ok: errors.length === 0, errors };
-  });
+    files.push({ file: relative, ok: errors.length === 0, errors });
+  }
 
   const errors = files.flatMap(({ file, errors: fileErrors }) => fileErrors.map((message) => (
     isDirectory ? `${file}: ${message}` : message
   )));
 
   return {
-    ok: errors.length === 0, mode: 'validate', target, files, errors,
+    ok: errors.length === 0, mode: 'validate', target, files, skipped, errors,
   };
 }
 
@@ -371,7 +493,7 @@ export async function runRender({
   // `omr_response` and for `--teacher` on a published document.
   // Source-schema files never need it (`RenderPrintDocument` auto-publishes
   // them in memory), and a repository this use case never calls is inert.
-  const repository = new YamlPrintDocumentRepository({ directory: paths.contentRoot });
+  const repository = openRepository(paths);
   const cardMode = wantsCardContext(flags);
 
   // Card-attach lane (re-review wave 2, F2: phantom-rev trap). A card-attach
@@ -558,7 +680,7 @@ export async function runReprint({ instanceId, outPath, paths }) {
     ]);
   }
 
-  const repository = new YamlPrintDocumentRepository({ directory: paths.contentRoot });
+  const repository = openRepository(paths);
   const published = await repository.getPublished(instance.documentId, instance.documentRevision);
   if (!published) {
     return fail([`no published revision '${instance.documentRevision}' found for document '${instance.documentId}'`]);
@@ -702,7 +824,7 @@ export async function runPublish({ filePath, paths }) {
     };
   }
 
-  const repository = new YamlPrintDocumentRepository({ directory: paths.contentRoot });
+  const repository = openRepository(paths);
   const useCase = new PublishPrintDocument({ repository });
 
   try {
@@ -776,7 +898,7 @@ export async function runSchoolDocs(argv = [], deps = {}) {
     if (positional.length !== 1) {
       return usageResult(['validate requires exactly one <file|dir> argument']);
     }
-    const report = runValidate({ target: resolveContentPath(paths, positional[0]) });
+    const report = runValidate({ target: resolveDocumentPath(paths, positional[0]) });
     return { exitCode: report.ok ? EXIT_OK : EXIT_FAIL, report };
   }
 
@@ -784,7 +906,7 @@ export async function runSchoolDocs(argv = [], deps = {}) {
     if (positional.length !== 1) {
       return usageResult(['publish requires exactly one <file> argument']);
     }
-    const filePath = resolveContentPath(paths, positional[0]);
+    const filePath = resolveDocumentPath(paths, positional[0]);
     const report = await runPublish({ filePath, paths });
     return { exitCode: report.ok ? EXIT_OK : EXIT_FAIL, report };
   }
@@ -881,7 +1003,7 @@ export async function runSchoolDocs(argv = [], deps = {}) {
     }
   }
 
-  const filePath = resolveContentPath(paths, positional[0]);
+  const filePath = resolveDocumentPath(paths, positional[0]);
   const outPath = path.isAbsolute(outValue) ? path.resolve(outValue) : path.resolve(process.cwd(), outValue);
   const report = await runRender({
     filePath, outPath, flags, paths,
@@ -896,6 +1018,7 @@ export function formatSchoolDocsReport(report) {
       lines.push(`  ${file}  ${ok ? 'OK' : 'FAILED'}`);
       errors.forEach((error) => lines.push(`    - ${error}`));
     });
+    (report.skipped ?? []).forEach((file) => lines.push(`  ${file}  SKIPPED (not a print document)`));
     if (!report.files.length) lines.push('  (no *.yml files found)');
     lines.push('', report.ok ? 'OK' : 'FAILED');
     return `${lines.join('\n')}\n`;

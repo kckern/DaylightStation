@@ -122,7 +122,7 @@ know which one your content belongs to (admin advocacy #17):
 |---|---|---|
 | `content/school/{subject}/{work}/…` (works, units, documents, quizzes) | lifecycle curriculum | `node cli/school-catalog.cli.mjs validate` — parses, cross-resolves references, checks the bank↔unit seam (duplicate `unit:` claims and dead curriculum backlinks are refusals), and prints history drift |
 | `content/school/catalogs/…` (`school.catalog/v1` Learning Catalog) | Learning Catalog | `npm run school:certify` — catalog + surface certification |
-| `content/school/print-documents/…` | print documents | `node cli/school-docs.cli.mjs validate` |
+| `content/school/catalog/documents/…` | print documents (`school.document-source/v1`) **and** learning documents (`school.learning-document/v1`) — one shelf, told apart by schema | `node cli/school-docs.cli.mjs validate` (print sources; skips learning documents) / `npm run school:certify` (learning documents) |
 
 `school:certify` does NOT cover the lifecycle curriculum; run the
 school-catalog CLI before mounting new works.

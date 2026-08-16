@@ -3,6 +3,8 @@ import { isDeepStrictEqual } from 'node:util';
 import {
   listYamlFiles, loadYaml, saveYaml, resolveYamlPath, getStats,
 } from '#system/utils/FileIO.mjs';
+import { DOCUMENT_SOURCE_SCHEMA } from '#domains/school/documents/documentSource.mjs';
+import { DOCUMENT_V2_SCHEMA } from '#domains/school/documents/documentV2.mjs';
 
 /** Default `io.stat`: mtime of whichever extension (.yml/.yaml) the basePath resolves to, or null when missing. */
 function statBase(basePath) {
@@ -11,9 +13,47 @@ function statBase(basePath) {
 }
 
 /**
- * Reads print-ready document YAML files (v1 or v2 envelope, spec §4.1) from a
- * single flat directory — mirrors the non-recursive directory-walk
- * conventions of `YamlSurfaceProfileRepository` (one document per file).
+ * Reads print-ready document YAML files (v1 or v2 envelope, spec §4.1).
+ *
+ * TWO ROOTS, ONE REPOSITORY. A print document has a CLASS (the hand-authored
+ * source someone edits) and OBJECTS (the immutable published revisions minted
+ * from it). Those are different kinds of thing and no longer share a tree:
+ *
+ *   `sourceDirectory`  — the authored CLASSES, on the School catalog shelf
+ *                        (`content/school/catalog/documents/`), beside the
+ *                        `school.learning-document/v1` files. `list()`/`get()`.
+ *   `directory`        — the ARTIFACT root (`content/school/print-documents/`),
+ *                        parent of `published/`, `derived-banks/` and
+ *                        `allocations/`. `getPublished()`/`getDerivedBank()`/
+ *                        `writePublished()`, and `YamlAllocationStore`'s root.
+ *
+ * SOURCE DISCOVERY IS POSITIVE, BY SCHEMA. The catalog shelf is SHARED with
+ * the learning-document system, so "every YAML file here is mine" is no longer
+ * true: a file counts as a print-document source only when its parsed `schema`
+ * is one this system owns (`school.document-source/v1` or
+ * `school.document/v2`). A `school.learning-document/v1` file sitting in the
+ * same folder is skipped outright — it carries `documentId`, not `id`, so the
+ * old filename fallback below would otherwise have admitted it under a FAKE id
+ * (its own file path) and let `get('arts/…')` resolve to something that is not
+ * a print document at all. The reverse direction needs no guard:
+ * `YamlLearningContentRepository#find` matches on `documentId`, which a print
+ * source never has.
+ *
+ * WHY `school.document/v2` COUNTS TOO, even though `published/` is full of
+ * them: v2 is a legal HAND-AUTHORED envelope, not only a publish output —
+ * `validateAnyDocument` accepts one, `RenderPrintDocument` renders one, and
+ * the CLI documents rendering one. Excluding it would make an authored v2
+ * class unreachable by id. Published artifacts do not leak in through this
+ * door because they live under the ARTIFACT root, which is a different
+ * directory (and, on the legacy single-root path below, is excluded by name).
+ *
+ * LEGACY SINGLE-ROOT FALLBACK: constructing with `directory` alone (no
+ * `sourceDirectory`) keeps the ORIGINAL negative-space rule — walk the
+ * artifact root recursively, treat everything outside `#ARTIFACT_DIRS` as a
+ * source, no schema filter. That is what keeps a not-yet-reconfigured
+ * deployment (and the CLI's `--content-root`-only invocations) finding its
+ * documents instead of silently finding zero, and it is the only path on
+ * which a schema-less legacy v1 document is still discoverable.
  *
  * ID RESOLUTION: a document's own `id` field is the authoritative identity —
  * both envelope generations already require it (`documentValidation.mjs`'s
@@ -32,8 +72,8 @@ function statBase(basePath) {
  * PUBLISH ARTIFACTS (Task 5, spec §3/§4.3): `publishDocument` (domain layer,
  * pure) splits a `school.document-source/v1` into an answer-free published
  * document + a derived question bank. Persisting that pair is this
- * repository's job — two flat, non-recursive sibling directories under the
- * SAME `directory` root as the hand-authored sources:
+ * repository's job — two sibling directories under the ARTIFACT `directory`
+ * root (which the sources no longer share):
  *
  *   <directory>/published/<id>@<rev>.yml       (always written)
  *   <directory>/derived-banks/<id>@<rev>.yml    (written only when a bank exists)
@@ -47,13 +87,30 @@ function statBase(basePath) {
  * artifact) and is refused outright rather than silently overwritten.
  */
 export class YamlPrintDocumentRepository {
-  #directory; #io;
+  #directory; #sourceDirectory; #io;
 
-  constructor({ directory, io = {} } = {}) {
+  /**
+   * @param {object} args
+   * @param {string} args.directory - the ARTIFACT root (`published/`,
+   *   `derived-banks/`, `allocations/` hang off it). Required.
+   * @param {string|null} [args.sourceDirectory] - the authored-source root.
+   *   Singular, not a `sourceDirectories` array (which would match
+   *   `YamlLearningContentRepository`'s `documentDirectories`): `list()`
+   *   returns each entry's `file` as a path relative to ONE root and
+   *   `#ARTIFACT_DIRS` is likewise a one-root exclusion, so a multi-root
+   *   variant would need a different return shape, not just a loop. Omitted
+   *   (or null) selects the legacy single-root behaviour — see the class doc.
+   */
+  constructor({ directory, sourceDirectory = null, io = {} } = {}) {
     if (typeof directory !== 'string' || directory.trim().length === 0) {
       throw new Error('YamlPrintDocumentRepository requires a non-empty directory');
     }
+    if (sourceDirectory !== null && sourceDirectory !== undefined
+        && (typeof sourceDirectory !== 'string' || sourceDirectory.trim().length === 0)) {
+      throw new Error('YamlPrintDocumentRepository sourceDirectory must be a non-empty string when given');
+    }
     this.#directory = directory;
+    this.#sourceDirectory = sourceDirectory ?? null;
     this.#io = {
       list: io.list ?? listYamlFiles,
       load: io.load ?? loadYaml,
@@ -62,26 +119,49 @@ export class YamlPrintDocumentRepository {
     };
   }
 
-  /** Artifact subtrees under the same root that are never source documents. */
+  /** Artifact subtrees that are never source documents, whichever root they turn up under. */
   static #ARTIFACT_DIRS = new Set(['published', 'derived-banks', 'allocations']);
+
+  /** Schemas this system owns. A file on the shared catalog shelf is a source iff it declares one. */
+  static #SOURCE_SCHEMAS = new Set([DOCUMENT_SOURCE_SCHEMA, DOCUMENT_V2_SCHEMA]);
 
   /**
    * @returns {Array<{id: string, file: string, document: *}>} one entry per
-   *   YAML file in the directory tree (hierarchical ids nest their source
+   *   source YAML file in the source tree (hierarchical ids nest their source
    *   files, e.g. `arts/pokemon-identification/quiz-1.yml`), sorted by
-   *   relative path. Publish/allocation artifact subtrees are excluded —
-   *   they share this root but are reached via their own accessors.
-   *   `document` is the raw parsed content (or null on a parse failure).
+   *   relative path. `document` is the raw parsed content (or null on a parse
+   *   failure).
+   *
+   *   With a `sourceDirectory` configured this walks THAT root and admits only
+   *   files whose `schema` this system owns — the catalog shelf is shared with
+   *   the learning-document system, so co-resident
+   *   `school.learning-document/v1` files are skipped rather than admitted
+   *   under a fabricated id. Without one it walks the artifact root and admits
+   *   everything outside `#ARTIFACT_DIRS` (legacy behaviour, class doc above).
    */
   list() {
-    const files = [...this.#io.list(this.#directory, { recursive: true })]
+    const root = this.#sourceDirectory ?? this.#directory;
+    const schemaFiltered = this.#sourceDirectory !== null;
+    const files = [...this.#io.list(root, { recursive: true })]
       .filter((relative) => !YamlPrintDocumentRepository.#ARTIFACT_DIRS.has(relative.split('/')[0]))
       .sort();
-    return files.map((relative) => {
-      const raw = this.#io.load(path.join(this.#directory, relative));
+    const entries = [];
+    for (const relative of files) {
+      const raw = this.#io.load(path.join(root, relative));
+      if (schemaFiltered && !YamlPrintDocumentRepository.#SOURCE_SCHEMAS.has(raw?.schema)) continue;
+      // A source-schema file with no usable `id` still SHOWS UP, under its
+      // filename, so authoring diagnostics can see it — `RenderPrintDocument`
+      // rejects it at validation time anyway. That fallback is safe here
+      // precisely because the schema filter already proved the file is ours.
+      // An UNPARSABLE file (`load` -> null) is the one diagnostic the shared
+      // shelf costs us: nothing distinguishes a broken print source from a
+      // broken learning document, so it is dropped rather than guessed at.
+      // `school-docs validate <dir>` is the authoring diagnostic that still
+      // reports it — it walks files, not schemas, and surfaces parse errors.
       const id = typeof raw?.id === 'string' && raw.id.trim().length > 0 ? raw.id : relative;
-      return { id, file: relative, document: raw };
-    });
+      entries.push({ id, file: relative, document: raw });
+    }
+    return entries;
   }
 
   /**
