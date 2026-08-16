@@ -129,9 +129,14 @@ function reflow(pageFragments, contentTopPt, spacing, leadingFillPt = 0) {
 /**
  * Grows the page's answer spaces into its trailing free space, evenly, each
  * capped at its own maxPt, with the remainder re-shared among those still below
- * their cap.
+ * their cap. Any space still left over after answer spaces have taken their
+ * fill distributes CSS-`space-around`-style among `fillAfter` fragments —
+ * capped at `maxFillAfterPt` PER SHARE, so a sparse page never balloons into
+ * one enormous gap between two questions. Whatever the cap leaves unconsumed
+ * simply stays blank at the bottom of the page, which is the point: trailing
+ * blank space reads better than an oversized interior gap.
  */
-function distributeAnswerSpace(pageFragments, contentTopPt, contentBottomPt, spacing) {
+function distributeAnswerSpace(pageFragments, contentTopPt, contentBottomPt, spacing, maxFillAfterPt = Infinity) {
   const last = pageFragments[pageFragments.length - 1];
   let sparePt = contentBottomPt - (last.yPt + last.heightPt);
   if (sparePt <= EPSILON) return;
@@ -161,39 +166,20 @@ function distributeAnswerSpace(pageFragments, contentTopPt, contentBottomPt, spa
   // rhythm. Once real answer spaces have taken their share, distribute any
   // remaining page height like CSS `space-around`: half a share before the
   // first marked question, a full share between questions, and half a share
-  // after the last question.
+  // after the last question — each share clamped to `maxFillAfterPt`.
   let leadingFillPt = 0;
   if (sparePt > EPSILON) {
     const flexible = pageFragments.filter((fragment) => fragment.fillAfter === true);
     if (flexible.length) {
-      const share = sparePt / flexible.length;
+      const share = Math.min(sparePt / flexible.length, maxFillAfterPt);
       leadingFillPt = share / 2;
       flexible.slice(0, -1).forEach((fragment) => { fragment.heightPt += share; });
-      sparePt = 0;
     }
   }
 
   reflow(pageFragments, contentTopPt, spacing, leadingFillPt);
 }
 
-/**
- * Places fragments onto pages.
- *
- * @param {Array<Object>} fragments - Measured fragments, in document order.
- * @param {Object} page
- * @param {number} page.pageHeightPt - Full page height.
- * @param {number} page.marginPt - Top and bottom margin.
- * @param {Object} [page.spacing] - spacing[prevClass][nextClass] gap table; an
- *   unconfigured pair means no gap.
- * @param {boolean} [page.growLastPage=false] - Fit policy `fill` (spec §7):
- *   when true, the LAST page also participates in answer-space/spacer growth.
- *   Default false reproduces the engine's original behavior byte-for-byte —
- *   "trailing space on the last page belongs to the document, not the
- *   answers" — which `flow` and `one-page` still rely on.
- * @returns {{ pages: Array<{ fragments: Array<Object> }>, errors: Array<Object> }}
- *   Each placed fragment carries yPt (absolute page coordinate of its top), its
- *   effective heightPt, and isContinuation/continuesOnNextPage split flags.
- */
 /**
  * The height this fragment list would occupy as ONE unbroken flow — no page
  * boundaries, no answer-space growth. This is `RenderPrintDocument`'s (Task
@@ -229,13 +215,22 @@ export function contentHeightPt(fragments, { spacing = {} } = {}) {
   return total;
 }
 
-export function placeFragments(fragments, { pageHeightPt, marginPt, spacing = {}, growLastPage = false }) {
-  const contentTopPt = marginPt;
-  const contentBottomPt = pageHeightPt - marginPt;
-  if (!(contentBottomPt - contentTopPt > 0)) {
-    throw new Error(`page geometry leaves no content height: ${pageHeightPt}pt page, ${marginPt}pt margins`);
-  }
-
+/**
+ * ONE greedy forward pass — exactly the algorithm `placeFragments` has always
+ * run, extracted verbatim so it can be run a second time under a soft target.
+ *
+ * `targetPerPagePt`, when given, is a SOFT per-page height: once a non-empty
+ * page has accumulated (or would overshoot) that much content, the page ends
+ * early. The true page-height ceiling (`contentBottomPt`) still governs every
+ * per-fragment fit/split/overflow decision below, completely unchanged, so a
+ * single oversized fragment can never be wrongly rejected merely for exceeding
+ * the soft target — the soft target only ever STARTS a page early, and the
+ * fragment that triggered it is then re-tried against a full empty page, the
+ * most room it could ever have had.
+ *
+ * With `targetPerPagePt = null` this is byte-for-byte the original loop.
+ */
+function runPlacement(fragments, { contentTopPt, contentBottomPt, spacing, targetPerPagePt = null }) {
   const errors = [];
   const queue = fragments.map((fragment) => normalizeFragment(fragment, errors));
   const pages = [];
@@ -269,6 +264,27 @@ export function placeFragments(fragments, { pageHeightPt, marginPt, spacing = {}
     }
 
     const gapPt = gapBetween(spacing, previousClass, fragment.spacingClass);
+
+    // Balanced placement (fit policy `fill`'s rebalance pass). End the page
+    // early when stopping here lands CLOSER to the soft target than adding
+    // this fragment would — the "nearest to target" choice, rather than
+    // "first to reach it", which would overshoot by up to a whole fragment on
+    // every page and just push the imbalance onto the last one.
+    //
+    // Only ever consulted on a NON-EMPTY page, so this cannot loop: the
+    // fragment is unshifted, the page ends, and on the now-empty page the
+    // check is skipped and the ordinary hard-ceiling logic below decides its
+    // fate with the full page available to it.
+    if (targetPerPagePt !== null && !pageIsEmpty) {
+      const usedPt = cursor - contentTopPt;
+      const wouldUsePt = usedPt + gapPt + fragment.heightPt;
+      if (wouldUsePt - targetPerPagePt > targetPerPagePt - usedPt + EPSILON) {
+        queue.unshift(fragment);
+        startNewPage();
+        continue;
+      }
+    }
+
     const availablePt = contentBottomPt - cursor - gapPt;
 
     if (fragment.heightPt <= availablePt + EPSILON) {
@@ -327,13 +343,70 @@ export function placeFragments(fragments, { pageHeightPt, marginPt, spacing = {}
   }
 
   if (pageFragments.length > 0) pages.push({ fragments: pageFragments });
+  return { pages, errors };
+}
+
+/**
+ * Places fragments onto pages.
+ *
+ * @param {Array<Object>} fragments - Measured fragments, in document order.
+ * @param {Object} page
+ * @param {number} page.pageHeightPt - Full page height.
+ * @param {number} page.marginPt - Top and bottom margin.
+ * @param {Object} [page.spacing] - spacing[prevClass][nextClass] gap table; an
+ *   unconfigured pair means no gap.
+ * @param {boolean} [page.growLastPage=false] - Fit policy `fill` (spec §7):
+ *   when true, the LAST page also participates in answer-space/spacer growth.
+ *   Default false reproduces the engine's original behavior byte-for-byte —
+ *   "trailing space on the last page belongs to the document, not the
+ *   answers" — which `flow` and `one-page` still rely on.
+ * @param {boolean} [page.balance=false] - Fit policy `fill` (spec §7): when
+ *   true, re-run placement against a soft per-page target of
+ *   `contentHeightPt / pageCount` so fragments spread evenly over the page
+ *   count the greedy pass already settled on, instead of packing early pages
+ *   to the brim and stranding a handful on the last one. The rebalanced
+ *   layout is ADOPTED ONLY if it produced the same page count and no errors —
+ *   balancing may improve a document's rhythm, never its pagination. Default
+ *   false reproduces the engine's original behavior byte-for-byte.
+ * @param {number} [page.maxFillAfterPt=Infinity] - Fit policy `fill` (spec
+ *   §7): the largest share `distributeAnswerSpace` may add to any one
+ *   `fillAfter` fragment. Space the cap leaves unclaimed stays blank at the
+ *   bottom of the page rather than inflating one interior gap. Default
+ *   `Infinity` is the uncapped original behavior, byte-for-byte.
+ * @returns {{ pages: Array<{ fragments: Array<Object> }>, errors: Array<Object> }}
+ *   Each placed fragment carries yPt (absolute page coordinate of its top), its
+ *   effective heightPt, and isContinuation/continuesOnNextPage split flags.
+ */
+export function placeFragments(fragments, {
+  pageHeightPt, marginPt, spacing = {}, growLastPage = false, balance = false, maxFillAfterPt = Infinity,
+}) {
+  const contentTopPt = marginPt;
+  const contentBottomPt = pageHeightPt - marginPt;
+  if (!(contentBottomPt - contentTopPt > 0)) {
+    throw new Error(`page geometry leaves no content height: ${pageHeightPt}pt page, ${marginPt}pt margins`);
+  }
+
+  let { pages, errors } = runPlacement(fragments, { contentTopPt, contentBottomPt, spacing });
+
+  if (balance && errors.length === 0 && pages.length > 1) {
+    const targetPerPagePt = contentHeightPt(fragments, { spacing }) / pages.length;
+    const rebalanced = runPlacement(fragments, {
+      contentTopPt, contentBottomPt, spacing, targetPerPagePt,
+    });
+    // Adopt the rebalanced layout only when it agrees with the greedy pass on
+    // page count and introduced no errors — balancing must never make
+    // pagination worse than the placement it is trying to improve.
+    if (rebalanced.errors.length === 0 && rebalanced.pages.length === pages.length) {
+      ({ pages, errors } = rebalanced);
+    }
+  }
 
   // Trailing space on the last page belongs to the document, not the
   // answers — UNLESS `growLastPage` (fit policy `fill`) asks the last page to
   // bottom out too, in which case it grows exactly like every other page.
   const pagesToGrow = growLastPage ? pages : pages.slice(0, -1);
   for (const finished of pagesToGrow) {
-    distributeAnswerSpace(finished.fragments, contentTopPt, contentBottomPt, spacing);
+    distributeAnswerSpace(finished.fragments, contentTopPt, contentBottomPt, spacing, maxFillAfterPt);
   }
 
   return { pages, errors };

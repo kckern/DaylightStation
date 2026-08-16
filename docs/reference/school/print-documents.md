@@ -56,9 +56,25 @@ many-to-one policy is specified in [§5.1](#51-configurable-answer-sheet-reuse).
 
 ## 2. Authoring: the source document
 
-A source lives under `data/content/school/print-documents/` as
+A source lives under `data/content/school/catalog/documents/` as
 `school.document-source/v1` YAML. It is the ONE place answers may appear —
 publishing strips them.
+
+**A document is the class; a published revision is the object.** That is why a
+source is authored on the catalog shelf and not in `print-documents/`:
+`catalog/documents/` is where authored document *classes* live — the same
+shelf as the `school.learning-document/v1` files, which are authored classes
+too — while `print-documents/` holds only machine-written artifacts
+(`published/`, `derived-banks/`, `allocations/`).
+
+The two schemas share that shelf without colliding, because each system
+identifies its own files positively rather than by elimination:
+`YamlLearningContentRepository` matches a learning document by its
+`documentId` (a print source has `id`, never `documentId`);
+`YamlPrintDocumentRepository.list()` admits a file only when its `schema` is
+`school.document-source/v1` or the hand-authorable `school.document/v2`.
+`school-docs validate <dir>` applies the same rule, reporting anything it
+skipped as belonging to another system.
 
 ```yaml
 schema: school.document-source/v1
@@ -85,7 +101,8 @@ blocks:
   (`subject/course/slug`). A flat slug is still legal. When a `subject:` field
   is present on a hierarchical id, it must equal the first segment;
   contradiction is a validation error, not metadata. Source files nest under
-  their id's path (`print-documents/arts/pokemon-identification/quiz-1.yml`).
+  their id's path
+  (`catalog/documents/arts/pokemon-identification/quiz-1.yml`).
 - **Blocks** are the closed set from the learning-document system (rich text,
   math, figures/assets, insets, lists, wordbank, matching, cloze,
   short answer, essay, questions with inline choices or bank-select,
@@ -94,8 +111,31 @@ blocks:
   seeded-shuffled; cloze blanks are fixed-width atoms.
 - **Fit** is decided by measurement, never streaming: `flow` paginates,
   `one-page` must fit (density falls back to compact before refusing with the
-  overset amount), `fill` grows answer spaces into leftover page space.
+  overset amount), `fill` balances and then grows into leftover page space.
   `typeScale: young` enlarges glyphs *and* leading for early readers.
+
+  `fill` does two things, in order. First it **balances**: placement runs a
+  second time against a soft per-page target (total content height ÷ the page
+  count the greedy pass produced), ending a page when stopping lands closer to
+  that target than adding the next fragment would. The hard page ceiling still
+  governs every fit decision, so the target only ever starts a page early — and
+  the balanced result is adopted only if it produced the same page count, so
+  balancing can never make pagination worse. Then it **grows**: answer spaces
+  expand first, each to its own `maxPt`; any space still left is shared among
+  `fillAfter` fragments, capped per share at `theme.pagination.maxFillGrowthPt`
+  (32pt normal, 22pt compact).
+
+  That cap is the point. Uncapped, a sparse last page dumped all its slack into
+  one or two gaps and produced page-tall voids between questions. Capped, the
+  leftover simply stays as blank space at the bottom of the page — trailing
+  white space is preferred over an oversized interior gap.
+
+  One consequence worth knowing: the balance target is computed from content
+  height, not question count, and it does not model per-page furniture. A
+  card-attached sheet spends ~40pt of page 1 on the answer-sheet header strip,
+  so its split can land one question short of even (a 10-question sheet
+  balancing 4/6 rather than 5/5) while still being far better than the greedy
+  8/2 it replaced.
 - **Shuffles are edit-stable**: derived from `(seed, variant, block key)`, so
   editing one block never reshuffles its neighbours, and variant N is a
   different-but-deterministic shuffle of the same content.
@@ -131,10 +171,16 @@ No., and answer-sheet rows. Reprints resolve that snapshot, so later question
 bank edits cannot change paper already issued or its grading key.
 
 The authored course and banks remain content under
-`content/school/curriculum/`. Published documents, derived banks, and physical
-card allocations live under `content/school/print-documents/`; the
-learner/enrollment-bound worksheet-instance records live in the household
-school application data. These are runtime records, not curriculum source.
+`content/school/curriculum/`, and the authored print-document sources under
+`content/school/catalog/documents/`. Published documents, derived banks, and
+physical card allocations live under `content/school/print-documents/`, which
+holds nothing else; the learner/enrollment-bound worksheet-instance records
+live in the household school application data. These are runtime records, not
+curriculum source.
+
+Moving a source file never invalidates an artifact: allocations, worksheet
+instances, and published filenames all key off the document's `id`, never its
+path.
 
 **Renders are published-first.** Every render lane that can pin a revision —
 the HTTP route, the tracked-quiz issue path, and the CLI's card mode —
@@ -150,7 +196,8 @@ could ever serve.
 The renderer produces Letter PDFs in the **modern workbook** aesthetic
 (Atkinson Hyperlegible, four text styles, normal/compact densities), with
 name/date lines, a score box for point-bearing documents, page furniture
-(x-of-y footers, continuation strips, duplex gutters), and vector QR codes
+(x-of-y footers carrying the card number when card-attached, duplex
+gutters), and vector QR codes
 for any action block whose token was minted at issue time.
 
 Two **varieties** exist at the request level:
@@ -423,6 +470,27 @@ record — recover with `release-card`. Accepted at household scale.
   **Card mode always resolves the published document** — the file argument
   only supplies the id; an unpublished id fails with "publish first" rather
   than pinning a phantom rev.
+- `reprint <instanceId> --out <pdf>` — reproduce an exact historical print from
+  a persisted worksheet instance, with **no manual flags**. Reads
+  `<dataDir>/household/apps/school/worksheet-instances/<instanceId>.yml` and
+  derives everything the original sheet carried — learner name, issue date,
+  answer-sheet number, row range, question order — from that record, so the
+  reprint is byte-identical to the paper that first came out of the tray. This
+  is the command to reach for when a sheet is lost, destroyed, or re-scanned
+  days later; `render --card …` requires hand-assembling five flags and prints
+  a silently different sheet if any one of them is wrong or omitted.
+
+  Because the date comes from the instance's own `issuedAt`, a sheet reprinted
+  later still prints its ORIGINAL date — it stands in for the paper generated
+  that day, rather than claiming to be new work.
+
+  It refuses rather than guessing: an unsafe instance id, a malformed instance
+  file, a missing `documentRevision` (which would otherwise silently resolve to
+  the latest published revision — a different sheet under the original's name),
+  or an allocation that does not reproduce the instance's own recorded
+  `recordId` all fail loudly with exit 1 and no PDF written. On the happy path
+  it writes nothing to the allocation store: the store's identical-reprint
+  shortcut returns the existing live record untouched.
 - `release-card <cardId> [--rows a-b]` — allocation housekeeping.
 
 `node cli/school-atlas-sim.cli.mjs --out <directory>` is the file-only Atlas
@@ -593,12 +661,13 @@ Known, accepted limits (each was reviewed, not overlooked):
 | Document schemas + validation (pure) | `backend/src/2_domains/school/documents/` — source/v2 envelopes, blocks, shuffles, fit, allocation planning, OMR form geometry |
 | Publish / render / scan / record (use cases) | `backend/src/3_applications/school/documents/` |
 | Issue + grade + review (session use cases) | `backend/src/3_applications/school/usecases/` |
-| Stores | `backend/src/1_adapters/school/documents/` — document repository (sources, `published/`, `derived-banks/`), allocation store (`allocations/`) |
+| Stores | `backend/src/1_adapters/school/documents/` — document repository (two roots: `sourceDirectory` = the catalog shelf; `directory` = the artifact root holding `published/` + `derived-banks/`), allocation store (`allocations/`) |
 | PDF rendering | `backend/src/1_rendering/school/documents/` — workbook theme, measure/place, draw, furniture |
 | API | `backend/src/4_api/v1/routers/school.mjs` → `GET /api/v1/school/print/*` (proof renders + card lookup) and `POST /api/v1/school/print/render` (card-minting renders) |
 | Scan wiring | `backend/src/5_composition/modules/schoolPrintScanConsumer.mjs` |
 | CLI | `cli/school-docs.cli.mjs` |
-| Content | `data/content/school/print-documents/` (sources by taxonomy path, `published/`, `derived-banks/`, `allocations/`) |
+| Content (sources) | `data/content/school/catalog/documents/` — hand-authored, by taxonomy path (CLI: `--source-root`) |
+| Content (artifacts) | `data/content/school/print-documents/` — `published/`, `derived-banks/`, `allocations/` only (CLI: `--content-root`) |
 | Evidence | `data/users/{id}/apps/school/attempts/` (shared with the on-screen engine) |
 | Config | `data/household/config/school.yml` → `print.teacherPin` |
 

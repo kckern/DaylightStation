@@ -33,10 +33,14 @@ export function resolveFitPlan({ policy, attempts }) {
 
   if (policy === 'fill') {
     // Fit policy `fill` (spec §7) is the ONLY policy that inverts
-    // `placeFragments`'s deliberate last-page growth exclusion — this flag is
-    // what the rendering use case forwards as `placeFragments`'s
-    // `growLastPage` option.
-    return { attempt: { ...normalAttempt, growLastPage: true } };
+    // `placeFragments`'s deliberate last-page growth exclusion — `growLastPage`
+    // is what the rendering use case forwards as `placeFragments`'s option of
+    // the same name. It is also the only policy that asks for BALANCED page
+    // assignment (`balance`): a sheet whose last page is deliberately grown to
+    // the bottom is exactly the sheet where greedy first-fit packing reads
+    // worst, because the leftovers stranded on that page get stretched across
+    // its whole height. See layout.mjs for both.
+    return { attempt: { ...normalAttempt, growLastPage: true, balance: true } };
   }
 
   if (policy === 'one-page') {

@@ -10,8 +10,7 @@
  *     `one-page` needs the fallback (`flow`/`fill` never try compact — see
  *     `resolveFitPlan`); feed the measured attempt(s) to `resolveFitPlan`;
  *     render once, at the chosen density, with furniture (footer +
- *     continuation strip + archetype-driven gutter/duplex) and `growLastPage`
- *     threaded through.
+ *     archetype-driven gutter/duplex) and `growLastPage` threaded through.
  *
  * D1 NOTE: this file imports `1_rendering` directly, unlike the rest of
  * `3_applications` (which reaches rendering only through the `IDocumentRenderer`
@@ -846,11 +845,11 @@ export class RenderPrintDocument {
   }) {
     const totalPoints = sumScoredPoints(document.blocks, document.defaultPoints);
 
+    // Geometry only. The footer's card number comes from the render's own
+    // `card` context inside `DocumentPdfRenderer`, not from here.
     const furnitureOpts = {
       gutter,
       duplex: DUPLEX_ARCHETYPES.has(document.archetype),
-      title: document.title || document.id,
-      nameLine: context.learnerName ?? null,
     };
 
     const normalTheme = createWorkbookTheme({ typeScale: document.fit.typeScale, density: 'normal' });
@@ -918,6 +917,11 @@ export class RenderPrintDocument {
       date: context.date ?? null,
       furniture: furnitureOpts,
       growLastPage: chosen.growLastPage ?? false,
+      // Same fit-plan flag family as `growLastPage` (see fit.mjs): policy
+      // `fill` asks for balanced page assignment so the pages it just told us
+      // to bottom out don't strand a handful of stretched questions on the
+      // last one.
+      balance: chosen.balance ?? false,
       // v2's `*italic*` markdown grammar (spec §12.8) — v1 never opts in.
       // Measurement (`#measureAttempt` below) opts in with the SAME flag, so
       // wrap positions measured at fit-decision time can never drift from
