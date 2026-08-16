@@ -19,18 +19,20 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, waitFor, cleanup } from '@testing-library/react';
 
-// SinglePlayer is stubbed so the session key the Player hands down is observable,
+// SinglePlayer is stubbed so the session keys the Player hands down are observable,
 // and so a MOUNT (the remount that a key change causes) can be counted directly.
 const mounts = [];
 const renders = [];
+const clientSessions = [];
 
 vi.mock('./components/SinglePlayer.jsx', async () => {
   const { useEffect } = await import('react');
   return {
-    SinglePlayer: ({ resilienceSessionKey }) => {
+    SinglePlayer: ({ resilienceSessionKey, plexClientSession }) => {
       renders.push(resilienceSessionKey);
       useEffect(() => {
         mounts.push(resilienceSessionKey);
+        clientSessions.push(plexClientSession);
       }, []);
       return <div data-testid="single-player-stub" />;
     }
@@ -49,6 +51,7 @@ const contentOf = (sessionKey) => String(sessionKey).split('#')[0];
 beforeEach(() => {
   mounts.length = 0;
   renders.length = 0;
+  clientSessions.length = 0;
 });
 
 afterEach(() => {
@@ -98,5 +101,34 @@ describe('Player — per-instance session scope', () => {
     expect(contentOf(mounts[0])).not.toBe(contentOf(mounts[1]));
     expect(instanceOf(mounts[0])).toBeTruthy();
     expect(instanceOf(mounts[1])).toBe(instanceOf(mounts[0]));
+  });
+
+  it('presents two simultaneously mounted Players as two Plex sessions', async () => {
+    // `?session=` is inert server-side today — PlexAdapter mints its own identifiers
+    // and nothing reads the query param. Threading it end-to-end is the obvious next
+    // observability step, and on that day a content-derived value would hand Plex one
+    // identifier for two independent streams (two Players here, two devices playing
+    // the same title in the field). Pinned now so wiring it later stays safe.
+    render(
+      <>
+        <Player play={{ contentId: 'plex:694719' }} />
+        <Player play={{ contentId: 'plex:694719' }} />
+      </>
+    );
+    await waitFor(() => expect(clientSessions).toHaveLength(2));
+
+    expect(clientSessions[0]).toBeTruthy();
+    expect(clientSessions[1]).toBeTruthy();
+    expect(clientSessions[0]).not.toBe(clientSessions[1]);
+  });
+
+  it('hands an externally supplied session through untouched', async () => {
+    // FitnessMusicPlayer already mints its own (`fitness-music-<guid>`); it is unique
+    // by construction and must reach the renderer character for character.
+    const external = 'fitness-music-abc123';
+    render(<Player play={{ contentId: 'plex:694719' }} plexClientSession={external} />);
+    await waitFor(() => expect(clientSessions).toHaveLength(1));
+
+    expect(clientSessions[0]).toBe(external);
   });
 });
