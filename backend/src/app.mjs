@@ -329,6 +329,11 @@ import { loadEmulatorConfig } from './3_applications/emulator/loadEmulatorConfig
 import * as emuFs from './4_api/v1/routers/lib/emulatorFs.mjs';
 import { createAmbientLightService } from './3_applications/home-automation/AmbientLightService.mjs';
 import { normalizeAmbientZones, startAmbientZones } from './3_applications/home-automation/ambientZones.mjs';
+import { ReolinkClient, makeSource, parseTriggerBits } from '#adapters/camera/ReolinkRecordingAdapter.mjs';
+import { createHaDetectionSource } from '#adapters/camera/HaDetectionSource.mjs';
+import { ArchiveEncoder } from '#adapters/camera/ArchiveEncoder.mjs';
+import { ArchiveManifestStore } from '#adapters/camera/ArchiveManifestStore.mjs';
+import { getCurriculumIndex, mergeSeason } from '#adapters/content/media/plex/CurriculumIndex.mjs';
 
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
 
@@ -2401,6 +2406,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'piano-learning' }),
   });
   const pianoContainer = new PianoContainer({
+    // D1: the use case receives the Plex curriculum reader, never imports it.
+    curriculumIndex: { getCurriculumIndex, mergeSeason },
     studioDatastore: pianoStudioDatastore,
     fitnessPlayableService,
     userVideoProgressStore: contentServices.userVideoProgressStore,
@@ -4440,8 +4447,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // no media path and no NAS — only the Reolink search API — so it should keep
   // running even when the heavier media plumbing is unavailable. It is the
   // perishable half of the camera archive (see cameraLedgerJobHandler).
+  // D1: bootstrap owns which concrete camera adapters are used; the handlers
+  // receive the factory set.
+  const cameraAdapters = {
+    ReolinkClient, makeSource, createHaDetectionSource, parseTriggerBits, ArchiveEncoder, ArchiveManifestStore,
+  };
   mediaExecutor.register('camera-ledger', createCameraLedgerJobHandler({
     configService,
+    cameraAdapters,
     haGateway: householdAdapters?.has?.('home_automation') ? householdAdapters.get('home_automation') : null,
     logger: rootLogger.child({ module: 'camera-ledger' })
   }));
@@ -4452,6 +4465,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // duration and bitrate density alone.
   mediaExecutor.register('camera-archive', createCameraArchiveJobHandler({
     configService,
+    cameraAdapters,
     logger: rootLogger.child({ module: 'camera-archive' })
   }));
 

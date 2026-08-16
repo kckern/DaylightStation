@@ -1,4 +1,3 @@
-import { getCurriculumIndex, mergeSeason } from '#adapters/content/media/plex/CurriculumIndex.mjs';
 
 /**
  * GetPlayableUnits — a course's playable units for one kiosk user.
@@ -23,8 +22,19 @@ export class GetPlayableUnits {
   #configService;
   #logger;
   #learningService;
+  #curriculumIndex;
 
-  constructor({ fitnessPlayableService, userVideoProgressStore = null, configService, learningService = null, logger = console } = {}) {
+  /**
+   * `curriculumIndex` is INJECTED (Decision D1: a use case never imports a
+   * concrete adapter — no exceptions). It supplies `getCurriculumIndex` and
+   * `mergeSeason`, which read Plex's curriculum layout; bootstrap owns which
+   * implementation that is.
+   */
+  constructor({
+    fitnessPlayableService, userVideoProgressStore = null, configService,
+    learningService = null, curriculumIndex = null, logger = console,
+  } = {}) {
+    this.#curriculumIndex = curriculumIndex;
     this.#fitnessPlayableService = fitnessPlayableService;
     this.#userVideoProgressStore = userVideoProgressStore;
     this.#configService = configService;
@@ -85,10 +95,10 @@ export class GetPlayableUnits {
 
     // Flow each season's curriculum category block into the parents map so the
     // three-lane UX can route Lessons / Reference / Repertoire.
-    const curIdx = getCurriculumIndex(courseId);
+    const curIdx = this.#curriculumIndex?.getCurriculumIndex?.(courseId);
     if (curIdx && playable.parents && typeof playable.parents === 'object') {
       for (const p of Object.values(playable.parents)) {
-        const merged = mergeSeason(curIdx, p?.index);
+        const merged = this.#curriculumIndex?.mergeSeason?.(curIdx, p?.index);
         if (merged?.piano) p.piano = merged.piano;
       }
     }

@@ -18,9 +18,7 @@
  * @module 3_applications/camera/cameraLedgerJobHandler
  */
 
-import { ReolinkClient, makeSource } from '#adapters/camera/ReolinkRecordingAdapter.mjs';
 import { buildLedgerRecords, writeLedger } from '#apps/camera/usecases/BuildDetectionLedger.mjs';
-import { createHaDetectionSource } from '#adapters/camera/HaDetectionSource.mjs';
 
 /** Local calendar date offset by N days — recordings are searched by local day. */
 function localDay(offsetDays = 0, now = new Date()) {
@@ -42,12 +40,23 @@ function localDay(offsetDays = 0, now = new Date()) {
  * @param {Object} [deps.logger]
  * @returns {Function} handler
  */
+/**
+ * Camera adapters arrive as an INJECTED bundle, not imports (Decision D1:
+ * a handler never imports a concrete adapter, no exceptions). A client is
+ * built per camera at run time, so the factories are what get injected.
+ */
 export function createCameraLedgerJobHandler({
   configService,
+  cameraAdapters,
   haGateway = null,
   householdId = null,
   logger = console,
 }) {
+  const { ReolinkClient, makeSource, createHaDetectionSource, parseTriggerBits } = cameraAdapters || {};
+  if (!ReolinkClient || !makeSource || !createHaDetectionSource || !parseTriggerBits) {
+    throw new Error('createCameraLedgerJobHandler requires cameraAdapters '
+      + '{ ReolinkClient, makeSource, createHaDetectionSource, parseTriggerBits }');
+  }
   return async function runCameraLedger(scopedLogger, executionId) {
     const log = scopedLogger?.info ? scopedLogger : logger;
     const config = configService.getHouseholdAppConfig(householdId, 'camera-archive');
@@ -109,6 +118,7 @@ export function createCameraLedgerJobHandler({
           nvrSource,
           haHistory: ha ? await ha.fetchDay(cameraCfg.id, day) : [],
           bitMap: config.classification?.filenameBits?.[cameraCfg.id] ?? {},
+          parseTriggerBits,
         });
 
         const written = await writeLedger({ records, camera: cameraCfg.id, day, destinations });

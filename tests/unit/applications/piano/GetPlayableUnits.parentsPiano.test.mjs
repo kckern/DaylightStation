@@ -5,43 +5,33 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GetPlayableUnits } from '../../../../backend/src/3_applications/piano/usecases/GetPlayableUnits.mjs';
 
-// Mock the CurriculumIndex module before importing GetPlayableUnits
-vi.mock('../../../../backend/src/1_adapters/content/media/plex/CurriculumIndex.mjs', () => {
-  return {
-    getCurriculumIndex: vi.fn((showId) => {
-      // Return a minimal curriculum index for show '676490' with season 10 as 'repertoire'
-      if (showId === '676490') {
-        return {
-          show: 676490,
-          seasons: {
-            '10': {
-              title: 'Song Tutorials',
-              lane: 'repertoire',
-              facets: ['difficulty', 'instructor', 'style'],
-            },
-          },
-        };
-      }
-      return null;
-    }),
-    mergeSeason: vi.fn((index, season) => {
-      if (!index || !index.seasons) return null;
-      const s = index.seasons[String(season)];
-      if (!s) return null;
+// GetPlayableUnits now RECEIVES the curriculum reader (Decision D1), so this
+// is a plain injected double rather than a module mock — no vi.mock, and no
+// coupling between the test and the adapter's file path.
+const curriculumIndex = {
+  getCurriculumIndex: vi.fn((showId) => {
+    if (showId === '676490') {
       return {
-        title: s.title ?? undefined,
-        piano: {
-          lane: s.lane,
-          groups: s.groups,
-          facets: s.facets,
-          sequential: s.sequential,
-          pinned: s.pinned,
+        show: 676490,
+        seasons: {
+          '10': { title: 'Song Tutorials', lane: 'repertoire', facets: ['difficulty', 'instructor', 'style'] },
         },
       };
-    }),
-    _resetCacheForTests: vi.fn(),
-  };
-});
+    }
+    return null;
+  }),
+  mergeSeason: vi.fn((index, season) => {
+    if (!index || !index.seasons) return null;
+    const s = index.seasons[String(season)];
+    if (!s) return null;
+    return {
+      title: s.title ?? undefined,
+      piano: {
+        lane: s.lane, groups: s.groups, facets: s.facets, sequential: s.sequential, pinned: s.pinned,
+      },
+    };
+  }),
+};
 
 const noop = { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} };
 
@@ -69,6 +59,7 @@ const makeUseCase = () => new GetPlayableUnits({
   fitnessPlayableService,
   userVideoProgressStore: null,
   configService,
+  curriculumIndex,
   logger: noop,
 });
 
@@ -106,6 +97,7 @@ describe('GetPlayableUnits (parents piano enrichment)', () => {
 
   it('handles null parents gracefully', async () => {
     const useCase = new GetPlayableUnits({
+      curriculumIndex,
       fitnessPlayableService: {
         async getPlayableEpisodes() {
           return { compoundId: 'plex:676490', info: {}, parents: null, items: [] };
