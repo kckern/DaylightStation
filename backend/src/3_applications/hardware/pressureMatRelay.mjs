@@ -12,9 +12,7 @@
 //
 // History is local-day bucketed by timestamp and uses append-only read-modify-write
 // arrays to keep one list per mat per day.
-import { promises as fs } from 'fs';
 import path from 'path';
-import yaml from 'js-yaml';
 import { formatLocalTimestamp, getDateInTimezone } from '#domains/core/utils/time.mjs';
 import { DEFAULT_TIMEZONE } from '#domains/core/utils/timezone.mjs';
 
@@ -32,7 +30,8 @@ const DEFAULT_TOPIC = 'pressure-mat';
  * @returns {{ dispose: () => void, flush: () => Promise<void> }}
  */
 /**
- * `historyRoot` is INJECTED, absolute, and already resolved.
+ * `dayLog` is INJECTED — an append-only day-log store (D5: data operations
+ * go through datastore ports, never `fs` from the application layer).
  *
  * This relay used to hold `const DEFAULT_DIR = 'household/<domain>/log'` and
  * join it onto dataDir itself. That put storage layout in the application
@@ -41,7 +40,7 @@ const DEFAULT_TOPIC = 'pressure-mat';
  * this file at all. The composition root resolves the location, including any
  * `persistence.dir` override, and hands down one directory.
  */
-export function createPressureMatRelay({ eventBus, dataDir, historyRoot, config = {}, timezone = DEFAULT_TIMEZONE, logger = console }) {
+export function createPressureMatRelay({ eventBus, dataDir, dayLog, config = {}, timezone = DEFAULT_TIMEZONE, logger = console }) {
   if (!eventBus?.subscribe) {
     throw new Error('createPressureMatRelay: eventBus with subscribe required');
   }
@@ -56,7 +55,7 @@ export function createPressureMatRelay({ eventBus, dataDir, historyRoot, config 
   let writeChain = Promise.resolve();
   const enqueueAppend = (id, record) => {
     writeChain = writeChain
-      .then(() => appendRecord(historyRoot, id, record, timezone, logger))
+      .then(() => dayLog.append(id, record))
       .catch((err) => logger.warn?.('pressure_mat.persist.failed', { id, error: err.message }));
   };
 
@@ -84,7 +83,7 @@ export function createPressureMatRelay({ eventBus, dataDir, historyRoot, config 
   };
 
   const unsubs = [...topics].map((topic) => eventBus.subscribe(topic, onPayload));
-  logger.info?.('pressure_mat.relay.ready', { historyRoot, topics: [...topics] });
+  logger.info?.('pressure_mat.relay.ready', { topics: [...topics] });
 
   return {
     dispose: () => {
@@ -96,27 +95,6 @@ export function createPressureMatRelay({ eventBus, dataDir, historyRoot, config 
   };
 }
 
-/** Append one record to the mat's append-only day log (read-modify-write). */
-async function appendRecord(historyRoot, id, record, timezone, logger) {
-  const day = (typeof record?.ts === 'string' && /^\d{4}-\d{2}-\d{2}/.test(record.ts))
-    ? record.ts.slice(0, 10)
-    : getDateInTimezone(new Date(), timezone);
-  const dir = path.join(historyRoot, sanitize(id));
-  const file = path.join(dir, `${day}.yml`);
-  await fs.mkdir(dir, { recursive: true });
-
-  let list = [];
-  try {
-    const existing = yaml.load(await fs.readFile(file, 'utf8'));
-    if (Array.isArray(existing)) list = existing;
-  } catch (err) {
-    if (err.code !== 'ENOENT') logger.warn?.('pressure_mat.persist.read_failed', { file, error: err.message });
-  }
-
-  list.push(record);
-  await fs.writeFile(file, yaml.dump(list, { indent: 2, lineWidth: -1, noRefs: true }), 'utf8');
-  logger.debug?.('pressure_mat.persist.wrote', { id, event: record.event, steps: record.steps, stomps: record.stomps });
-}
 
 const sanitize = (s) => String(s).replace(/[^a-zA-Z0-9_-]/g, '_');
 

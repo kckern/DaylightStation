@@ -5,6 +5,7 @@ import path from 'path';
 import os from 'os';
 import yaml from 'js-yaml';
 import { createOmrRelay } from './omrRelay.mjs';
+import { YamlDayLogDatastore } from '#adapters/persistence/yaml/YamlDayLogDatastore.mjs';
 
 const NOOP_LOGGER = { warn() {}, info() {}, debug() {}, error() {} };
 const READER_ID = 'study-omr';
@@ -87,7 +88,7 @@ describe('createOmrRelay', () => {
       eventBus: bus,
       dataDir,
       // Resolved by the composition root in production; supplied directly here.
-      historyRoot: path.join(dataDir, 'omr'),
+      dayLog: new YamlDayLogDatastore({ root: path.join(dataDir, 'omr'), timezone, eventPrefix: 'omr' }),
       config: { ...config },
       timezone,
       logger: NOOP_LOGGER,

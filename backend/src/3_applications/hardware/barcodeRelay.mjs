@@ -19,9 +19,7 @@
 //      only when a `dataDir` is supplied (unit tests omit it → no disk writes).
 //
 // Decoupled + unit-tested like foodScaleRelay.mjs.
-import { promises as fs } from 'fs';
 import path from 'path';
-import yaml from 'js-yaml';
 import { formatLocalTimestamp, getDateInTimezone } from '#domains/core/utils/time.mjs';
 import { DEFAULT_TIMEZONE } from '#domains/core/utils/timezone.mjs';
 
@@ -50,7 +48,7 @@ const INGEST_SOURCES = new Set([RELAY_SOURCE, 'kitchen-relay']);
  * @param {string}   [deps.defaultDevice]     device id when the relay omits one
  * @param {string}   [deps.defaultRoute]      route when the relay omits one (content|nutribot)
  * @param {string}   [deps.dataDir]           resolved data dir — enables disk persistence when set
- * @param {string}   [deps.historyRoot]       absolute history root, resolved by the composition root
+ * @param {object}   [deps.dayLog]            append-only day-log store, injected (D5)
  * @param {string}   [deps.timezone]          IANA tz for the `ts` field + day-file bucket (default household tz)
  * @param {object}   [deps.logger]
  * @returns {{ dispose: () => void }}
@@ -61,7 +59,7 @@ export function createBarcodeRelay({
   defaultDevice = 'barcode-relay',
   defaultRoute = 'content',
   dataDir = null,
-  historyRoot,
+  dayLog,
   timezone = DEFAULT_TIMEZONE,
   logger = console,
 }) {
@@ -96,12 +94,12 @@ export function createBarcodeRelay({
   const unsubs = [];
   if (dataDir && eventBus.subscribe) {
 
-    // Serialize appends: appendRecord is a read-modify-write, so back-to-back
+    // Serialize appends: the day-log append is a read-modify-write, so back-to-back
     // scans would otherwise clobber each other's day list.
     let writeChain = Promise.resolve();
     const enqueueAppend = (device, record) => {
       writeChain = writeChain
-        .then(() => appendRecord(historyRoot, device, record, timezone, logger))
+        .then(() => dayLog.append(device, record))
         .catch((err) => logger.warn?.('barcode_relay.persist.failed', { device, error: err.message }));
     };
 
@@ -111,35 +109,12 @@ export function createBarcodeRelay({
       enqueueAppend(device, { ts: payload.ts, code: payload.code });
     }));
 
-    logger.info?.('barcode_relay.ready', { historyRoot });
+    logger.info?.('barcode_relay.ready', {});
   } else {
     logger.info?.('barcode_relay.ready', { persist: false });
   }
 
   return { dispose: () => { for (const u of unsubs) { try { u?.(); } catch { /* noop */ } } } };
-}
-
-/** Append one scan to the device's append-only day log (read-modify-write). */
-async function appendRecord(historyRoot, device, record, timezone, logger) {
-  // Bucket by the scan's LOCAL day (date prefix of its local `ts`), not UTC.
-  const day = (typeof record?.ts === 'string' && /^\d{4}-\d{2}-\d{2}/.test(record.ts))
-    ? record.ts.slice(0, 10)
-    : getDateInTimezone(new Date(), timezone);
-  const dir = path.join(historyRoot, device);
-  const file = path.join(dir, `${day}.yml`);
-  await fs.mkdir(dir, { recursive: true });
-
-  let list = [];
-  try {
-    const existing = yaml.load(await fs.readFile(file, 'utf8'));
-    if (Array.isArray(existing)) list = existing;
-  } catch (err) {
-    if (err.code !== 'ENOENT') logger.warn?.('barcode_relay.persist.read_failed', { file, error: err.message });
-  }
-
-  list.push(record);
-  await fs.writeFile(file, yaml.dump(list, { indent: 2, lineWidth: -1, noRefs: true }), 'utf8');
-  logger.debug?.('barcode_relay.persist.wrote', { device, code: record.code });
 }
 
 export default createBarcodeRelay;

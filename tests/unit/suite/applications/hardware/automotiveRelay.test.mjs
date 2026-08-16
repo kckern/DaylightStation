@@ -5,6 +5,7 @@ import { tmpdir } from 'os';
 import path from 'path';
 import yaml from 'js-yaml';
 import { createAutomotiveRelay } from '#apps/hardware/automotiveRelay.mjs';
+import { YamlDayLogDatastore } from '#adapters/persistence/yaml/YamlDayLogDatastore.mjs';
 
 const logger = { debug() {}, info() {}, warn() {}, error() {} };
 
@@ -45,7 +46,13 @@ describe('automotiveRelay', () => {
   // supplies it directly, which is also what keeps this file honest about
   // where the relay actually writes.
   const make = (config = {}) => createAutomotiveRelay({
-    eventBus: bus, dataDir, historyRoot: historyRoot(), config, logger, timezone: TZ, now: () => clock,
+    eventBus: bus,
+    dataDir,
+    dayLog: new YamlDayLogDatastore({ root: historyRoot(), timezone: TZ, eventPrefix: 'automotive' }),
+    config,
+    logger,
+    timezone: TZ,
+    now: () => clock,
   });
 
   beforeEach(async () => {
