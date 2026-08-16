@@ -108,6 +108,9 @@ export function createEmulatorSession({
       pathtodata: engineConfig.pathtodata,
       core: engineConfig.core || system,
       controls: engineConfig.controls,
+      // Hand EJS the user's persisted volume so the value it re-asserts during
+      // its own start chain is already correct (see loadEmulatorJS EJS_volume).
+      volume: engineConfig.volume,
     });
 
     // Calibrate WRAM via a harmless cheat ping.
