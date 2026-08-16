@@ -141,6 +141,9 @@ function catalog() {
 function memoryDevices() {
   const device = SchoolCalcDevice.enroll({
     deviceId: 'SC86A001', label: 'TI-86 A', platformId: 'ti86',
+    // A calculator is enrolled AGAINST the one catalog projected to it —
+    // `SchoolCalcDevice` requires it, and `EnrollSchoolCalcDevice` supplies it.
+    catalogId: 'main',
     createdAt: '2026-08-02T12:00:00.000Z',
   }).observe({
     capabilityReport: {
