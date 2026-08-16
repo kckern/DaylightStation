@@ -73,14 +73,19 @@ data/
 │   ├── logging.yml             # Log levels
 │   └── apps/                   # App-specific config
 │
-├── household/                  # Default household
+├── household/                  # Default household — DOMAIN-FIRST
 │   ├── household.yml           # Identity, users
 │   ├── integrations.yml        # Service names + ports
+│   ├── config/                 # App config (loaded before any path resolver)
 │   ├── auth/
 │   │   ├── plex.yml            # token only
 │   │   └── homeassistant.yml
-│   └── apps/
-│       └── fitness/config.yml
+│   ├── screens/  assets/       # Not domains — different scope
+│   ├── fitness/                # A DOMAIN owns everything for itself
+│   │   ├── exercise-index.yml  #   live state
+│   │   ├── workouts/           #   live state
+│   │   └── log/                #   append-only, date-keyed, prunable
+│   ├── school/  piano/  finances/  weather/  automotive/   …one per domain
 │
 ├── household-jones/            # Secondary household
 │   ├── household.yml
@@ -257,6 +262,36 @@ strava:
 ```
 
 ---
+
+## Household layout: one domain, one folder
+
+`household/<domain>/` owns everything for that domain. Inside a domain, **`log/`
+is the one reserved name** — append-only, date-keyed, prunable. Everything else
+in the folder is live state.
+
+Three things stay at the household root because they are not domains:
+`config/` and `auth/` (the bootstrap loads them before any path resolver
+exists), and `screens/` + `assets/` (a different scope — per-surface and
+shared static).
+
+**There is no `apps/`, `common/`, `shared/`, `history/` or `state/` root.**
+Those five sat side by side with no rule saying which one a domain belonged in,
+so domains drifted into several at once: `fitness`, `gaming`, `piano`, `media`,
+`komga`, `school`, `weather` and `automotive` each lived under two roots
+simultaneously. The ambiguity was not cosmetic — it produced real bugs,
+including a `getHouseholdSharedPath` that hardcoded `'shared'` and made **every
+household calendar read return null**, because the file was in `common/`.
+
+Two rules follow:
+
+- **Resolve through `ConfigService.getHouseholdPath(rel, hid)`** (or
+  `DataService.household.read/write`). Building `<dataDir>/household/...` by
+  hand silently ignores `hid` and always resolves the default household.
+- **Per-user data is NOT household data.** It stays at `users/{id}/apps/{app}/`
+  and is reached with `getUserDir(userId)`. A domain can have both — `school`
+  keeps household assignments and syllabi while each learner's attempts, report
+  cards and sittings stay under their own user directory. Renaming one must
+  never rename the other.
 
 ## Household Configuration
 
