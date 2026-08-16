@@ -75,7 +75,14 @@ export function SingalongScroller({
 
   if (!data) return null;
 
-  // Apply style as CSS variables
+  // Apply style as CSS variables.
+  //
+  // NOTE: for singalong these are inert. No rule reads --font-size or
+  // --font-family, and only `.poetry-text` reads --color/--text-align/
+  // --background. Hymn size comes from `.hymn-text, .singalong-text
+  // { font-size: 2rem }` in styles/ContentScroller.scss. Do not "fix" this by
+  // wiring --font-size through: SingalongAdapter._getDefaultStyle() hardcodes
+  // 1.4rem with no per-item override, so every hymn would shrink 30%.
   const cssVars = {
     '--font-family': data.style?.fontFamily || 'serif',
     '--font-size': data.style?.fontSize || '1.4rem',

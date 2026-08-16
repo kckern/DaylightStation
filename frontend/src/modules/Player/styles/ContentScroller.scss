@@ -234,7 +234,11 @@
 
   .hymn-text, .singalong-text {
     padding-top: 2rem;
-    padding-bottom: calc(0.2 * var(--textpanel-height)); // 60% of .textpanel height
+    // 20% of this block's WIDTH — percentage padding always resolves against
+    // inline size, never height, despite the --textpanel-height name. It is the
+    // run-out space the scroller needs past the last stanza; it scales with the
+    // frame, so it is correct at every screen resolution.
+    padding-bottom: calc(0.2 * var(--textpanel-height));
     font-size: 2rem;
     margin-bottom: 2rem;
     .stanza {
