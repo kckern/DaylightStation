@@ -10,7 +10,7 @@
  * Spec/status split: curated config (sources, bindings, responses,
  * endpoints) is written here; machine-observed state (first/last-seen scan
  * timestamps) is delegated to the injected `observedStore`
- * (YamlObservedStateStore) which owns history/triggers/nfc.observed.yml.
+ * (YamlObservedStateStore) which owns triggers/nfc.observed.yml.
  * This class never writes observed state into config.
  *
  * Writes are serialized through a Promise-chain mutex so two concurrent

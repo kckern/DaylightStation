@@ -1,5 +1,5 @@
 /**
- * Machine-written NFC discovery store: history/triggers/nfc.observed.yml.
+ * Machine-written NFC discovery store: triggers/nfc.observed.yml.
  * Separate writer from the curated config bindings (spec/status split).
  * Layer: ADAPTER (1_adapters/persistence/yaml).
  *
@@ -17,7 +17,7 @@ import { canonicalizeNfcUid } from '#domains/trigger/nfcUid.mjs';
 export class YamlObservedStateStore {
   #loadFile; #saveFile; #path; #cache = null; #writeChain = Promise.resolve();
 
-  constructor({ loadFile, saveFile, path = 'history/triggers/nfc.observed' } = {}) {
+  constructor({ loadFile, saveFile, path = 'triggers/nfc.observed' } = {}) {
     this.#loadFile = loadFile;
     this.#saveFile = saveFile;
     this.#path = path;

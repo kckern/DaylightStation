@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { YamlObservedStateStore } from '#adapters/persistence/yaml/YamlObservedStateStore.mjs';
 
 function fakeIO(initial = {}) {
-  const disk = { 'history/triggers/nfc.observed': initial };
+  const disk = { 'triggers/nfc.observed': initial };
   return {
     loadFile: (p) => disk[p],
     saveFile: (p, data) => { disk[p] = data; },
@@ -17,7 +17,7 @@ describe('YamlObservedStateStore', () => {
     store.load();
     const r = await store.record('aa', '2026-07-11 10:00:00');
     expect(r).toEqual({ first_seen: '2026-07-11 10:00:00', last_seen: '2026-07-11 10:00:00', count: 1 });
-    expect(io._disk['history/triggers/nfc.observed'].aa.count).toBe(1);
+    expect(io._disk['triggers/nfc.observed'].aa.count).toBe(1);
   });
 
   it('preserves first_seen and bumps last_seen + count on re-sight', async () => {

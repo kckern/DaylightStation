@@ -145,7 +145,7 @@ describe('YamlTriggerConfigRepository write methods', () => {
       'config/triggers/bindings/nfc': initialTags,
       'config/triggers/responses': null,
       'config/triggers/endpoints': null,
-      'history/triggers/nfc.observed': observedHistory,
+      'triggers/nfc.observed': observedHistory,
     };
     const loadFile = vi.fn((p) => disk[p] ?? null);
     const saveFile = vi.fn((p, d) => { disk[p] = d; });
@@ -160,7 +160,7 @@ describe('YamlTriggerConfigRepository write methods', () => {
     const { repo, disk } = makeRepo();
     const result = await repo.recordObserved('04a1b2c3', '2026-04-26 14:32:18');
     expect(result.created).toBe(true);
-    expect(disk['history/triggers/nfc.observed']['04a1b2c3']).toEqual({
+    expect(disk['triggers/nfc.observed']['04a1b2c3']).toEqual({
       first_seen: '2026-04-26 14:32:18',
       last_seen: '2026-04-26 14:32:18',
       count: 1,
@@ -176,7 +176,7 @@ describe('YamlTriggerConfigRepository write methods', () => {
     });
     const result = await repo.recordObserved('04a1b2c3', '2026-04-26 14:32:18');
     expect(result.created).toBe(false);
-    expect(disk['history/triggers/nfc.observed']['04a1b2c3']).toEqual({
+    expect(disk['triggers/nfc.observed']['04a1b2c3']).toEqual({
       first_seen: '2026-04-26 10:00:00',
       last_seen: '2026-04-26 14:32:18',
       count: 2,
@@ -198,7 +198,7 @@ describe('YamlTriggerConfigRepository write methods', () => {
       '04a1b2c3': { note: 'kids favorite' },
     });
     expect(disk['config/triggers/bindings/nfc']['04a1b2c3'].scanned_at).toBeUndefined();
-    expect(disk['history/triggers/nfc.observed']['04a1b2c3'].last_seen).toBe('2026-04-26 14:32:18');
+    expect(disk['triggers/nfc.observed']['04a1b2c3'].last_seen).toBe('2026-04-26 14:32:18');
   });
 
   it('setNfcNote overwrites an existing note; still records a history timestamp', async () => {
@@ -211,7 +211,7 @@ describe('YamlTriggerConfigRepository write methods', () => {
     expect(disk['config/triggers/bindings/nfc']).toEqual({
       '04a1b2c3': { note: 'new' },
     });
-    expect(disk['history/triggers/nfc.observed']['04a1b2c3'].last_seen).toBe('2026-04-26 14:32:18');
+    expect(disk['triggers/nfc.observed']['04a1b2c3'].last_seen).toBe('2026-04-26 14:32:18');
   });
 
   it('setNfcNote on a promoted tag preserves intent fields and overrides', async () => {
@@ -242,7 +242,7 @@ describe('YamlTriggerConfigRepository write methods', () => {
     const resolveOrder = [];
     saveFile.mockImplementation((path, data) => {
       disk[path] = data;
-      if (path === 'history/triggers/nfc.observed') resolveOrder.push(Object.keys(data));
+      if (path === 'triggers/nfc.observed') resolveOrder.push(Object.keys(data));
       return new Promise((r) => setImmediate(r));
     });
 
@@ -251,7 +251,7 @@ describe('YamlTriggerConfigRepository write methods', () => {
       repo.recordObserved('bb', '2026-04-26 14:00:01'),
       repo.recordObserved('cc', '2026-04-26 14:00:02'),
     ]);
-    expect(Object.keys(disk['history/triggers/nfc.observed'])).toEqual(['aa', 'bb', 'cc']);
+    expect(Object.keys(disk['triggers/nfc.observed'])).toEqual(['aa', 'bb', 'cc']);
     // Each write saw the cumulative state of prior writes:
     expect(resolveOrder[0]).toEqual(['aa']);
     expect(resolveOrder[1]).toEqual(['aa', 'bb']);

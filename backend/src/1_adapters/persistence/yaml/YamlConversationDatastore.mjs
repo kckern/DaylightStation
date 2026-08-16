@@ -48,11 +48,18 @@ export class YamlConversationDatastore extends IConversationDatastore {
   // ===========================================================================
 
   /**
-   * Get conversations directory path
+   * Get conversations directory path.
+   *
+   * Was `shared/messaging/conversations`. That root is retired, and because
+   * this store is created lazily on first write, nothing had failed — the
+   * next conversation would simply have recreated `household/shared/`.
+   * Found by auditing every resolved path against disk rather than waiting
+   * for a symptom.
+   *
    * @private
    */
   #getConversationsDir(householdId) {
-    return this.#dataService.household.resolveDir('shared/messaging/conversations', householdId);
+    return this.#dataService.household.resolveDir('messaging/conversations', householdId);
   }
 
   /**
