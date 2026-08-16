@@ -16,7 +16,8 @@ import { resolveCollectionKey } from './utils/collectionKey.js';
 import { nextPlaybackRate } from './utils/playbackRateCycle.js';
 import { guid } from './lib/helpers.js';
 import { playbackLog } from './lib/playbackLogger.js';
-import { resolveMediaIdentity } from './utils/mediaIdentity.js';
+import { resolveMediaIdentity, resolveSourceContentKey } from './utils/mediaIdentity.js';
+import { getLogWaitKey } from './lib/waitKeyLabel.js';
 import { useMediaTransportAdapter } from './hooks/transport/useMediaTransportAdapter.js';
 import { shouldSkipResilienceReload } from './lib/shouldSkipResilienceReload.js';
 import { OnDeckCard } from './components/OnDeckCard.jsx';
@@ -36,6 +37,13 @@ const entryGuidCache = typeof WeakMap !== 'undefined' ? new WeakMap() : null;
 const ensureEntryGuid = (source) => {
   if (!source) return null;
   if (source.guid) return source.guid;
+  // Content-derived and deterministic: an equivalent-but-new source object must
+  // NOT mint a new identity (that remounts the video — see 2026-08-16 storm).
+  // Hashed, not raw, so the token keeps the opaque short shape that
+  // plexClientSession and the logs expect.
+  const contentKey = resolveSourceContentKey(source);
+  if (contentKey) return getLogWaitKey(contentKey);
+  // Unidentifiable source: fall back to the old per-object random identity.
   if (typeof source !== 'object') return guid();  // primitives can't be WeakMap keys
   if (!entryGuidCache) return guid();
   if (entryGuidCache.has(source)) {
