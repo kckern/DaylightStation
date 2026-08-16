@@ -54,11 +54,18 @@ const walk = (dir, out = []) => {
   return out;
 };
 
-/** Strip line comments and block comments so a historical note is not read as a call. */
+/**
+ * Strip line comments and block comments so a historical note is not read as
+ * a call — WITHOUT shifting line numbers. Comment text is blanked out in
+ * place (not deleted), so every surviving newline stays where it was and
+ * `src.slice(0, m.index).split('\n').length` still points at the real line
+ * in the original file. Deleting comment lines outright used to drift
+ * reported line numbers by however many comment lines preceded a match.
+ */
 const stripComments = (src) => src
-  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, ''))
   .split('\n')
-  .filter((l) => !/^\s*(\/\/|\*)/.test(l))
+  .map((l) => (/^\s*(\/\/|\*)/.test(l) ? '' : l))
   .join('\n');
 
 /**
@@ -75,6 +82,24 @@ const PATTERNS = [
   // household reorganization had moved, reporting "no archived games" for a
   // corpus of 32 sitting one level away. It matches none of the forms above.
   /(?:PATH|DIR|SUBPATH|Path|Dir|Root|ROOT)\w*\s*=\s*\[\s*'household'\s*,\s*((?:'[a-z0-9._-]+'\s*,?\s*)+)\]/g,
+
+  // Template-literal argument: `` household.write(`gaming/log/${gameId}/...`) ``.
+  // Captures the whole backtick body; the ${ truncation happens once, below,
+  // after this raw capture — same as the single-quote patterns above but with
+  // a backtick delimiter instead of a single quote.
+  /getHouseholdPath\(\s*`([^`]*)`/g,
+  /household\.(?:read|write|resolveDir|resolvePath)\(\s*`([^`]*)`/g,
+  /(?:loadFile|saveFile)\??\.?\(\s*`([^`]*)`/g,
+
+  // `getHouseholdPath(path.join('piano', 'producer', family))` — the shape
+  // that hid YamlPianoStudioDatastore's producer-pool path from every check.
+  // Mirrors the array-of-segments group above: the repeated
+  // `'literal', ` group only matches AS LONG AS each argument is a plain
+  // quoted string, so it stops on its own at the first non-literal argument
+  // (`family`) rather than needing separate stop-here logic.
+  /getHouseholdPath\(\s*path\.join\(\s*((?:'[a-z0-9._-]+'\s*,?\s*)+)/g,
+  /household\.(?:read|write|resolveDir|resolvePath)\(\s*path\.join\(\s*((?:'[a-z0-9._-]+'\s*,?\s*)+)/g,
+  /(?:loadFile|saveFile)\??\.?\(\s*path\.join\(\s*((?:'[a-z0-9._-]+'\s*,?\s*)+)/g,
 ];
 
 // Generic wrapper roots that are not themselves a domain — the domain is the
@@ -138,32 +163,71 @@ const modeOf = (matchText) => {
   return null;
 };
 
+/**
+ * Run every PATTERN against one file's source and return what it resolves.
+ *
+ * Pulled out as its own exported, pure function (file name + raw source in,
+ * data out — no disk access) so the regex/extraction logic itself is
+ * directly testable: the shapes that hid real bugs (`path.join(...)`,
+ * template-literal args) need a test proving they're actually captured, not
+ * just a test of `findWriterReaderSplits`'s grouping logic downstream of them.
+ *
+ * @param {string} file
+ * @param {string} rawSource - the file's ORIGINAL content, comments intact.
+ *   Comments are stripped internally; line numbers are still reported
+ *   against `rawSource` because `stripComments` blanks comment text in place
+ *   rather than deleting lines, so positions never drift.
+ * @returns {{ paths: Set<string>, sites: Array<{file, line, subpath, mode}> }}
+ *   `paths` feeds the existing exists-on-disk / orphan checks (mode-agnostic —
+ *   every shape counts, ambiguous or not). `sites` is mode-tagged and feeds
+ *   `findWriterReaderSplits`; a match with no determinable mode contributes
+ *   to `paths` but not `sites`.
+ */
+export function extractPathSites(file, rawSource) {
+  const src = stripComments(rawSource);
+  const paths = new Set();
+  const sites = [];
+  for (const re of PATTERNS) {
+    for (const m of src.matchAll(re)) {
+      let rel = m[1];
+      // Template-literal capture: truncate at the first interpolation
+      // instead of discarding the whole match. `gratitude/${key}.yml`
+      // still proves this code touches the `gratitude` domain even though
+      // the exact leaf is dynamic — and the writer/reader check compares
+      // domains, not full paths, so a partial subpath is enough.
+      const interpIdx = rel.indexOf('${');
+      if (interpIdx !== -1) rel = rel.slice(0, interpIdx).replace(/\/+$/, '');
+      // Array-of-segments / path.join capture: "'gaming', 'log'" -> "gaming/log"
+      if (rel.includes("'")) rel = rel.split(',').map((s) => s.trim().replace(/'/g, '')).filter(Boolean).join('/');
+      if (!rel || rel.startsWith('.') || rel.endsWith('.mjs')) continue;
+      paths.add(rel);
+
+      const mode = modeOf(m[0]);
+      if (mode) {
+        const line = src.slice(0, m.index).split('\n').length;
+        sites.push({ file, line, subpath: rel, mode });
+      }
+    }
+  }
+  return { paths, sites };
+}
+
 // Everything below is the executable audit — scans disk, prints a report,
 // and exits with a status code. Guarded so importing this module (e.g. to
-// use `findWriterReaderSplits` from a test) doesn't run it as a side effect.
+// use `findWriterReaderSplits` / `extractPathSites` from a test) doesn't run
+// it as a side effect.
 if (isMainModule) {
 
 const expected = new Map(); // relPath -> Set(files)
 const collectedSites = []; // { file, line, subpath, mode } — feeds findWriterReaderSplits
 for (const dir of SCAN_DIRS) {
   for (const file of walk(dir)) {
-    const src = stripComments(fs.readFileSync(file, 'utf8'));
-    for (const re of PATTERNS) {
-      for (const m of src.matchAll(re)) {
-        let rel = m[1];
-        // Array-of-segments capture: "'gaming', 'log'" -> "gaming/log"
-        if (rel.includes("'")) rel = rel.split(',').map((s) => s.trim().replace(/'/g, '')).filter(Boolean).join('/');
-        if (!rel || rel.startsWith('.') || rel.endsWith('.mjs') || rel.includes('${')) continue;
-        if (!expected.has(rel)) expected.set(rel, new Set());
-        expected.get(rel).add(file);
-
-        const mode = modeOf(m[0]);
-        if (mode) {
-          const line = src.slice(0, m.index).split('\n').length;
-          collectedSites.push({ file, line, subpath: rel, mode });
-        }
-      }
+    const { paths, sites } = extractPathSites(file, fs.readFileSync(file, 'utf8'));
+    for (const rel of paths) {
+      if (!expected.has(rel)) expected.set(rel, new Set());
+      expected.get(rel).add(file);
     }
+    collectedSites.push(...sites);
   }
 }
 
