@@ -635,8 +635,21 @@ export class ImmichAdapter {
   async #buildImmichQuery(query) {
     const immichQuery = {};
 
+    // Free text matches the asset filename. `/api/search/metadata` has no
+    // `query` field — sending one did not narrow anything, it was dropped and
+    // the endpoint returned the newest N assets in the library. Every search,
+    // however specific, therefore came back with the same 250 recent photos,
+    // which then competed with real matches for the result list. Verified
+    // against the Immich API: `{query: "zzzqqqxyz"}` returns newest-first
+    // assets, `{originalFileName: "zzzqqqxyz"}` correctly returns none, and
+    // `originalFileName` matches case-insensitively on a substring.
+    //
+    // Name-based discovery (people, tags, albums) is handled by the sibling
+    // searches in search(); semantic/CLIP lookup lives on client.smartSearch()
+    // and is deliberately not wired into unscoped text search, where it would
+    // reintroduce the same always-returns-something noise.
     if (query.text) {
-      immichQuery.query = query.text;
+      immichQuery.originalFileName = query.text;
     }
 
     if (query.mediaType) {

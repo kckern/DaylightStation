@@ -68,12 +68,51 @@ export function isValidContentCategory(category) {
 }
 
 /**
+ * Tiebreak weights, used when a search HAS text.
+ *
+ * The scores above (10..150) are a browse ordering: with no search text, the
+ * only signal available is what kind of thing an item is, so a show should
+ * outrank a loose episode. They are the wrong scale for a text search, where
+ * they dwarf any match signal — an EPISODE (20) with a perfect exact-title
+ * match could never reach a WORK (130) that merely contained the term inside
+ * a long subtitle, which made episodes, tracks and image files unreachable by
+ * search regardless of how well they matched.
+ *
+ * These weights preserve the same ORDER on a single-digit scale, so category
+ * only separates items whose match quality already ties.
+ * @type {Object<string, number>}
+ */
+const CATEGORY_TIEBREAKS = Object.freeze({
+  [ContentCategory.IDENTITY]: 9,
+  [ContentCategory.CURATED]: 8,
+  [ContentCategory.CREATOR]: 7,
+  [ContentCategory.SERIES]: 6,
+  [ContentCategory.WORK]: 5,
+  [ContentCategory.CONTAINER]: 4,
+  [ContentCategory.LIST]: 3,
+  [ContentCategory.EPISODE]: 2,
+  [ContentCategory.TRACK]: 1,
+  [ContentCategory.MEDIA]: 0
+});
+
+/**
  * Get the relevance score for a category
  * @param {string} category
  * @returns {number}
  */
 export function getCategoryScore(category) {
   return CATEGORY_SCORES[category] ?? 5;
+}
+
+/**
+ * Get the single-digit tiebreak weight for a category, for use alongside a
+ * text-match score. Preserves the ordering of getCategoryScore at a magnitude
+ * that cannot override match quality.
+ * @param {string} category
+ * @returns {number}
+ */
+export function getCategoryTiebreak(category) {
+  return CATEGORY_TIEBREAKS[category] ?? 0;
 }
 
 export default ContentCategory;

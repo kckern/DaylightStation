@@ -16,6 +16,7 @@ import { getCacheEntry, setCacheEntry } from '../lib/siblingsCache.js';
 import { reducer, initialState, closeDecision, decideCommit, isContainer, Modes, RENDER_CAP } from './comboboxMachine.js';
 import { sanitizeBreadcrumbs } from '../lib/breadcrumbs.js';
 import { notifyWarning } from './notify.js';
+import { loadKnownSources, isKnownSource } from '../lib/knownSources.js';
 
 const SEARCH_STREAM_ENDPOINT = '/api/v1/content/query/search/stream';
 const SEARCH_BATCH_ENDPOINT = '/api/v1/content/query/search';
@@ -180,6 +181,11 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
     browseTokenRef.current += 1;
     paginationOwnerRef.current = null;
   };
+
+  // Warm the valid-prefix set so a literal commit can tell a pasted-but-valid
+  // id from an invented source. Cached module-wide, so this is one request per
+  // page regardless of how many comboboxes mount.
+  useEffect(() => { loadKnownSources(); }, []);
 
   // ── 1. Reducer wiring: VALUE_CHANGED on prop change (skip initial render) ──
   const prevValueRef = useRef(value);
@@ -621,15 +627,31 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
       case 'select': select(decision.item); break;   // existing helper: onChange(id,item)+close
       case 'drill':  drill(decision.item); break;     // stays OPEN, do not close
       case 'open':   break;                           // keep dropdown open, commit nothing
-      case 'literal':
-        log.info('commit.literal_fallback', { value: decision.value, prevValue: s.value });
-        onChangeRef.current?.(decision.value);
-        notifyWarning({
-          title: 'Saved as raw id',
-          message: `Saved “${decision.value}” as a raw content id`,
+      case 'literal': {
+        // A hand-typed id with an invented prefix used to be saved with the
+        // same reassuring "saved as raw id" toast as a valid one, so a typo'd
+        // source was indistinguishable from a good paste until something else
+        // 404'd later. Name the problem at the moment of saving.
+        const literalSource = parseSourcePrefix(decision.value)?.source ?? null;
+        const known = literalSource ? isKnownSource(literalSource) : null;
+        log.info('commit.literal_fallback', {
+          value: decision.value, prevValue: s.value, source: literalSource, knownSource: known,
         });
+        onChangeRef.current?.(decision.value);
+        if (known === false) {
+          notifyWarning({
+            title: `Unknown source “${literalSource}”`,
+            message: `Saved, but nothing can resolve “${literalSource}:”. Check the prefix — this row will not load.`,
+          });
+        } else {
+          notifyWarning({
+            title: 'Saved as raw id',
+            message: `Saved “${decision.value}” as a raw content id`,
+          });
+        }
         invalidateBrowseLoads(); dispatch({ type: 'CLOSE' }); cancelPendingSearch();
         break;
+      }
       case 'revert':
       case 'dismiss':
         log.info(`commit.${decision.action}`, { discarded: s.search, kept: s.value, reason });

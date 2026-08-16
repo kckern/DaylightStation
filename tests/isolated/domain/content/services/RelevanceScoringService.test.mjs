@@ -3,183 +3,215 @@ import { describe, it, expect } from 'vitest';
 import { RelevanceScoringService } from '#domains/content/services/RelevanceScoringService.mjs';
 import { ContentCategory } from '#domains/content/value-objects/ContentCategory.mjs';
 
+const item = (title, category, extra = {}) => ({
+  title,
+  metadata: { category, ...(extra.metadata || {}) },
+  ...extra
+});
+
 describe('RelevanceScoringService', () => {
   describe('score', () => {
-    it('returns 1000 for ID match', () => {
-      const item = { _idMatch: true, title: 'Test' };
-      expect(RelevanceScoringService.score(item)).toBe(1000);
+    it('returns 10000 for ID match', () => {
+      expect(RelevanceScoringService.score({ _idMatch: true, title: 'Test' })).toBe(10000);
     });
+  });
 
-    it('scores by category from metadata.category', () => {
-      const item = {
-        title: 'Test Person',
-        metadata: { category: ContentCategory.IDENTITY }
-      };
-      expect(RelevanceScoringService.score(item)).toBe(150);
-    });
-
-    it('scores CURATED category at 148', () => {
-      const item = {
-        title: 'My Playlist',
-        metadata: { category: ContentCategory.CURATED }
-      };
-      expect(RelevanceScoringService.score(item)).toBe(148);
-    });
-
-    it('scores CREATOR category at 145', () => {
-      const item = {
-        title: 'Artist Name',
-        metadata: { category: ContentCategory.CREATOR }
-      };
-      expect(RelevanceScoringService.score(item)).toBe(145);
-    });
-
-    it('scores SERIES category at 140', () => {
-      const item = {
-        title: 'TV Show',
-        metadata: { category: ContentCategory.SERIES }
-      };
-      expect(RelevanceScoringService.score(item)).toBe(140);
-    });
-
-    it('scores WORK category at 130', () => {
-      const item = {
-        title: 'Movie',
-        metadata: { category: ContentCategory.WORK }
-      };
-      expect(RelevanceScoringService.score(item)).toBe(130);
-    });
-
-    it('scores CONTAINER category at 125', () => {
-      const item = {
-        title: 'Album',
-        metadata: { category: ContentCategory.CONTAINER }
-      };
-      expect(RelevanceScoringService.score(item)).toBe(125);
-    });
-
-    it('scores EPISODE category at 20', () => {
-      const item = {
-        title: 'Episode 1',
-        metadata: { category: ContentCategory.EPISODE }
-      };
-      expect(RelevanceScoringService.score(item)).toBe(20);
-    });
-
-    it('scores TRACK category at 15', () => {
-      const item = {
-        title: 'Song',
-        metadata: { category: ContentCategory.TRACK }
-      };
-      expect(RelevanceScoringService.score(item)).toBe(15);
-    });
-
-    it('scores MEDIA category at 10', () => {
-      const item = {
-        title: 'image.jpg',
-        metadata: { category: ContentCategory.MEDIA }
-      };
-      expect(RelevanceScoringService.score(item)).toBe(10);
+  // With no search text there is nothing to match against, so the only signal
+  // is what kind of thing an item is. This is the browse ordering and keeps
+  // the original category scale.
+  describe('browse ordering (no search text)', () => {
+    it.each([
+      [ContentCategory.IDENTITY, 150],
+      [ContentCategory.CURATED, 148],
+      [ContentCategory.CREATOR, 145],
+      [ContentCategory.SERIES, 140],
+      [ContentCategory.WORK, 130],
+      [ContentCategory.CONTAINER, 125],
+      [ContentCategory.EPISODE, 20],
+      [ContentCategory.TRACK, 15],
+      [ContentCategory.MEDIA, 10]
+    ])('scores %s at %i', (category, expected) => {
+      expect(RelevanceScoringService.score(item('Anything', category))).toBe(expected);
     });
 
     it('returns 5 for items without category', () => {
-      const item = { title: 'Unknown', metadata: {} };
-      expect(RelevanceScoringService.score(item)).toBe(5);
-    });
-  });
-
-  describe('score with title matching', () => {
-    it('adds 20 for exact title match', () => {
-      const item = {
-        title: 'User_3',
-        metadata: { category: ContentCategory.IDENTITY }
-      };
-      expect(RelevanceScoringService.score(item, 'User_3')).toBe(170);
+      expect(RelevanceScoringService.score({ title: 'Unknown', metadata: {} })).toBe(5);
     });
 
-    it('adds 10 for title starts with search', () => {
-      const item = {
-        title: 'User_3 Smith',
-        metadata: { category: ContentCategory.IDENTITY }
-      };
-      expect(RelevanceScoringService.score(item, 'User_3')).toBe(160);
-    });
-
-    it('adds 5 for title contains search', () => {
-      const item = {
-        title: 'John User_3 Smith',
-        metadata: { category: ContentCategory.IDENTITY }
-      };
-      expect(RelevanceScoringService.score(item, 'User_3')).toBe(155);
-    });
-
-    it('is case insensitive', () => {
-      const item = {
-        title: 'USER_3',
-        metadata: { category: ContentCategory.IDENTITY }
-      };
-      expect(RelevanceScoringService.score(item, 'user_3')).toBe(170);
-    });
-  });
-
-  describe('score with child count bonus', () => {
     it('adds up to 5 points for large collections', () => {
-      const item = {
-        title: 'Big Collection',
-        metadata: { category: ContentCategory.CURATED },
-        childCount: 1000
-      };
-      expect(RelevanceScoringService.score(item)).toBe(153);
+      const big = item('Big Collection', ContentCategory.CURATED, { childCount: 1000 });
+      expect(RelevanceScoringService.score(big)).toBe(153);
     });
 
     it('scales childCount bonus proportionally', () => {
-      const item = {
-        title: 'Small Collection',
-        metadata: { category: ContentCategory.CURATED },
-        childCount: 200
-      };
-      expect(RelevanceScoringService.score(item)).toBe(150);
+      const small = item('Small Collection', ContentCategory.CURATED, { childCount: 200 });
+      expect(RelevanceScoringService.score(small)).toBe(150);
+    });
+  });
+
+  // The regression this scoring exists to prevent: category used to be worth
+  // up to 150 while a text match was worth at most 20, so an episode could
+  // never outrank a container no matter how well it matched.
+  describe('match quality outranks category', () => {
+    it('ranks an exact-title episode above a container that merely contains the term', () => {
+      const episode = item('Job', ContentCategory.EPISODE);
+      const movie = item('The Italian Job', ContentCategory.WORK);
+      expect(RelevanceScoringService.score(episode, 'job'))
+        .toBeGreaterThan(RelevanceScoringService.score(movie, 'job'));
+    });
+
+    it('ranks an exact-title track above a non-matching identity', () => {
+      const track = item('User_3', ContentCategory.TRACK);
+      const person = item('John', ContentCategory.IDENTITY);
+      expect(RelevanceScoringService.score(track, 'User_3'))
+        .toBeGreaterThan(RelevanceScoringService.score(person, 'User_3'));
+    });
+
+    it('ranks an exact-title image file above a partially-matching series', () => {
+      const image = item('esther', ContentCategory.MEDIA);
+      const series = item('Esther and the King', ContentCategory.SERIES);
+      expect(RelevanceScoringService.score(image, 'esther'))
+        .toBeGreaterThan(RelevanceScoringService.score(series, 'esther'));
+    });
+
+    it('uses category only to break ties between equally good matches', () => {
+      const container = item('Job', ContentCategory.CONTAINER);
+      const episode = item('Job', ContentCategory.EPISODE);
+      expect(RelevanceScoringService.score(container, 'job'))
+        .toBeGreaterThan(RelevanceScoringService.score(episode, 'job'));
+    });
+  });
+
+  describe('match tiers', () => {
+    const cat = ContentCategory.EPISODE;
+
+    it('ranks exact above prefix above contains', () => {
+      const exact = RelevanceScoringService.score(item('Job', cat), 'job');
+      const prefix = RelevanceScoringService.score(item('Job Interview', cat), 'job');
+      const contains = RelevanceScoringService.score(item('The Italian Job', cat), 'job');
+      expect(exact).toBeGreaterThan(prefix);
+      expect(prefix).toBeGreaterThan(contains);
+    });
+
+    it('is case insensitive', () => {
+      expect(RelevanceScoringService.score(item('USER_3', cat), 'user_3'))
+        .toBe(RelevanceScoringService.score(item('User_3', cat), 'User_3'));
+    });
+
+    it('ignores punctuation differences', () => {
+      expect(RelevanceScoringService.score(item("Job's Trials", cat), 'jobs trials'))
+        .toBeGreaterThan(0);
+    });
+
+    it('matches word prefixes for typeahead', () => {
+      expect(RelevanceScoringService.score(item('Esther', cat), 'esth')).toBeGreaterThan(0);
+    });
+  });
+
+  describe('multi-token queries', () => {
+    it('matches all tokens regardless of order', () => {
+      expect(RelevanceScoringService.score(item('Red Sea Crossing', ContentCategory.EPISODE), 'crossing red'))
+        .toBeGreaterThan(0);
+    });
+
+    it('scores tokens in query order above scattered order', () => {
+      const ordered = RelevanceScoringService.score(item('Red Sea Crossing', ContentCategory.EPISODE), 'red sea');
+      const scattered = RelevanceScoringService.score(item('Sea of Red', ContentCategory.EPISODE), 'red sea');
+      expect(ordered).toBeGreaterThan(scattered);
+    });
+
+    it('returns 0 when a token matches nothing', () => {
+      expect(RelevanceScoringService.score(item('Baby Moses', ContentCategory.EPISODE), 'holy moly job'))
+        .toBe(0);
+    });
+
+    it('matches across the show title when the episode title alone cannot', () => {
+      const episode = item('Job', ContentCategory.EPISODE, {
+        metadata: { grandparentTitle: 'Scripture Stories', parentTitle: 'Season 1' }
+      });
+      expect(RelevanceScoringService.score(episode, 'scripture stories job')).toBeGreaterThan(0);
+    });
+
+    it('ranks a title-only match above a cross-field match of the same tier', () => {
+      const titleMatch = item('Scripture Stories Job', ContentCategory.EPISODE);
+      const crossField = item('Job', ContentCategory.EPISODE, {
+        metadata: { grandparentTitle: 'Scripture Stories' }
+      });
+      expect(RelevanceScoringService.score(titleMatch, 'scripture stories job'))
+        .toBeGreaterThan(RelevanceScoringService.score(crossField, 'scripture stories job'));
+    });
+  });
+
+  describe('coverage', () => {
+    it('ranks a short exact title above a long title containing the term', () => {
+      const short = item('Job', ContentCategory.WORK);
+      const long = item('Cracking the PM Interview: How to Land a Product Manager Job in Technology', ContentCategory.WORK);
+      expect(RelevanceScoringService.score(short, 'job'))
+        .toBeGreaterThan(RelevanceScoringService.score(long, 'job'));
+    });
+
+    it('separates two same-tier matches by how much of the title the query covers', () => {
+      const tight = RelevanceScoringService.score(item('Inside Job', ContentCategory.WORK), 'job');
+      const loose = RelevanceScoringService.score(item('Every Job Is a Sales Job Really', ContentCategory.WORK), 'job');
+      expect(tight).toBeGreaterThan(loose);
+    });
+  });
+
+  describe('non-matches', () => {
+    it('scores an unrelated item 0 so callers can filter it out', () => {
+      expect(RelevanceScoringService.score(item('2026-08-12 20.56.23.jpg', ContentCategory.MEDIA), 'job'))
+        .toBe(0);
+    });
+
+    it('matches() is true for any item when there is no search text', () => {
+      expect(RelevanceScoringService.matches(item('Anything', ContentCategory.MEDIA), '')).toBe(true);
+    });
+
+    it('matches() is false for an item that matches no token', () => {
+      expect(RelevanceScoringService.matches(item('Baby Moses', ContentCategory.EPISODE), 'job')).toBe(false);
     });
   });
 
   describe('sortByRelevance', () => {
-    it('sorts items by score descending', () => {
+    it('sorts by category when there is no search text', () => {
       const items = [
-        { title: 'Track', metadata: { category: ContentCategory.TRACK } },
-        { title: 'Person', metadata: { category: ContentCategory.IDENTITY } },
-        { title: 'Album', metadata: { category: ContentCategory.CONTAINER } }
+        item('Track', ContentCategory.TRACK),
+        item('Person', ContentCategory.IDENTITY),
+        item('Album', ContentCategory.CONTAINER)
       ];
-
       const sorted = RelevanceScoringService.sortByRelevance(items);
-
-      expect(sorted[0].title).toBe('Person');
-      expect(sorted[1].title).toBe('Album');
-      expect(sorted[2].title).toBe('Track');
+      expect(sorted.map(i => i.title)).toEqual(['Person', 'Album', 'Track']);
     });
 
-    it('considers search text for title matching', () => {
+    it('puts the best text match first regardless of category', () => {
       const items = [
-        { title: 'User_3 Track', metadata: { category: ContentCategory.TRACK } },
-        { title: 'John', metadata: { category: ContentCategory.IDENTITY } },
-        { title: 'User_3', metadata: { category: ContentCategory.IDENTITY } }
+        item('User_3 Track', ContentCategory.TRACK),
+        item('John', ContentCategory.IDENTITY),
+        item('User_3', ContentCategory.IDENTITY)
       ];
-
       const sorted = RelevanceScoringService.sortByRelevance(items, 'User_3');
+      // 'John' matches nothing and sorts last, where it used to sort second
+      // purely because it was an IDENTITY.
+      expect(sorted.map(i => i.title)).toEqual(['User_3', 'User_3 Track', 'John']);
+    });
 
-      expect(sorted[0].title).toBe('User_3');
-      expect(sorted[1].title).toBe('John');
-      expect(sorted[2].title).toBe('User_3 Track');
+    it('is stable within equal scores', () => {
+      const items = [
+        item('Job', ContentCategory.EPISODE, { id: 'a' }),
+        item('Job', ContentCategory.EPISODE, { id: 'b' }),
+        item('Job', ContentCategory.EPISODE, { id: 'c' })
+      ];
+      expect(RelevanceScoringService.sortByRelevance(items, 'job').map(i => i.id))
+        .toEqual(['a', 'b', 'c']);
     });
 
     it('does not mutate original array', () => {
       const items = [
-        { title: 'B', metadata: { category: ContentCategory.TRACK } },
-        { title: 'A', metadata: { category: ContentCategory.IDENTITY } }
+        item('B', ContentCategory.TRACK),
+        item('A', ContentCategory.IDENTITY)
       ];
       const original = [...items];
-
       RelevanceScoringService.sortByRelevance(items);
-
       expect(items).toEqual(original);
     });
   });

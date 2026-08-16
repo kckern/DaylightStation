@@ -115,9 +115,16 @@ describe('ContentQueryService', () => {
   let mockAdapter2;
 
   beforeEach(() => {
+    // Search mocks echo the query into the title. Items used to be returned
+    // titleless, which no real adapter can do (Item throws without a title)
+    // and which now reads as "matches nothing" to the relevance floor that
+    // drops non-matching results.
     mockAdapter1 = {
       source: 'immich',
-      search: vi.fn().mockResolvedValue({ items: [{ id: 'immich:1', source: 'immich' }], total: 1 }),
+      search: vi.fn().mockImplementation(q => ({
+        items: [{ id: 'immich:1', source: 'immich', title: `Immich ${q?.text ?? ''}`.trim() }],
+        total: 1
+      })),
       getList: vi.fn().mockResolvedValue([{ id: 'immich:album:1', source: 'immich', itemType: 'container' }]),
       getSearchCapabilities: vi.fn().mockReturnValue({ canonical: ['text', 'person'], specific: [] }),
       getQueryMappings: vi.fn().mockReturnValue({ person: 'personIds' }),
@@ -126,7 +133,10 @@ describe('ContentQueryService', () => {
 
     mockAdapter2 = {
       source: 'plex',
-      search: vi.fn().mockResolvedValue({ items: [{ id: 'plex:1', source: 'plex' }], total: 1 }),
+      search: vi.fn().mockImplementation(q => ({
+        items: [{ id: 'plex:1', source: 'plex', title: `Plex ${q?.text ?? ''}`.trim() }],
+        total: 1
+      })),
       getList: vi.fn().mockResolvedValue([{ id: 'plex:playlist:1', source: 'plex', itemType: 'container' }]),
       getSearchCapabilities: vi.fn().mockReturnValue({ canonical: ['text'], specific: ['actor'] }),
       getQueryMappings: vi.fn().mockReturnValue({}),
@@ -220,6 +230,71 @@ describe('ContentQueryService', () => {
       expect(idItem).toBeDefined();
       expect(idItem.matchReason).toBe('id-lookup');
       expect(idItem._idMatch).toBeUndefined();
+    });
+
+    // Adapters answer a text search with whatever they have, and some ignore
+    // the term entirely and return their newest N. Without a floor, a query
+    // that matches nothing still renders a full page of results, so "we found
+    // nothing" looks exactly like "here are your matches".
+    describe('relevance floor', () => {
+      it('drops items that match no part of the query text', async () => {
+        mockAdapter1.search = vi.fn().mockResolvedValue({
+          items: [
+            { id: 'immich:1', source: 'immich', title: '2026-08-12 20.56.23.jpg' },
+            { id: 'immich:2', source: 'immich', title: 'Esther at the well.jpg' }
+          ],
+          total: 2
+        });
+        mockRegistry.resolveSource.mockReturnValue([mockAdapter1]);
+
+        const result = await service.search({ text: 'esther' });
+
+        expect(result.items.map(i => i.id)).toEqual(['immich:2']);
+      });
+
+      it('returns nothing when nothing matches, rather than padding', async () => {
+        mockAdapter1.search = vi.fn().mockResolvedValue({
+          items: [
+            { id: 'immich:1', source: 'immich', title: '2026-08-12 20.56.23.jpg' },
+            { id: 'immich:2', source: 'immich', title: '2026-08-10 20.33.25.jpg' }
+          ],
+          total: 2
+        });
+        mockRegistry.resolveSource.mockReturnValue([mockAdapter1]);
+
+        const result = await service.search({ text: 'holy moly job' });
+
+        expect(result.items).toHaveLength(0);
+      });
+
+      it('keeps every item when the query carries no text (browse)', async () => {
+        mockAdapter1.search = vi.fn().mockResolvedValue({
+          items: [
+            { id: 'immich:1', source: 'immich', title: 'anything' },
+            { id: 'immich:2', source: 'immich', title: 'whatever' }
+          ],
+          total: 2
+        });
+        mockRegistry.resolveSource.mockReturnValue([mockAdapter1]);
+
+        const result = await service.search({});
+
+        expect(result.items).toHaveLength(2);
+      });
+
+      it('never drops the direct ID match', async () => {
+        mockAdapter2.getItem = vi.fn().mockResolvedValue({
+          id: 'plex:1989', source: 'plex', title: 'Nothing Like The Query'
+        });
+        mockAdapter1.search = vi.fn().mockResolvedValue({
+          items: [{ id: 'immich:1', source: 'immich', title: 'unrelated' }],
+          total: 1
+        });
+
+        const result = await service.search({ text: '1989' });
+
+        expect(result.items.map(i => i.id)).toContain('plex:1989');
+      });
     });
 
     it('does not add matchReason to plain text-search results', async () => {

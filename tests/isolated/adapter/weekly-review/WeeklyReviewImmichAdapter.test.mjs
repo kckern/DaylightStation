@@ -103,19 +103,38 @@ describe('WeeklyReviewImmichAdapter', () => {
       expect(mar25.photos.length).toBe(2);
     });
 
-    it('sorts face-tagged photos first, multi-face before single', async () => {
+    // Photo order is chronological so browsing a day moves forward in time;
+    // face priority now decides only which photo the collage features as hero
+    // (the grid pulls it forward itself — see PhotoWall).
+    it('orders a day chronologically, earliest first', async () => {
       const result = await adapter.getPhotosForDateRange('2026-03-23', '2026-03-30');
       const mar23 = result.find(d => d.date === '2026-03-23');
-      expect(mar23.photos[0].id).toBe('asset-2');
-      expect(mar23.photos[1].id).toBe('asset-1');
-      expect(mar23.photos[2].id).toBe('asset-3');
+      expect(mar23.photos.map(p => p.id)).toEqual(['asset-1', 'asset-4', 'asset-2', 'asset-3']);
+    });
+
+    it('picks the photo with the most priority people as hero', async () => {
+      const result = await adapter.getPhotosForDateRange('2026-03-23', '2026-03-30');
+      const mar23 = result.find(d => d.date === '2026-03-23');
+      // asset-2 has two priority people; asset-1 has one; asset-3/4 have none.
+      expect(mar23.photos.find(p => p.isHero).id).toBe('asset-2');
     });
 
     it('only counts configured priority people as face matches', async () => {
-      const result = await adapter.getPhotosForDateRange('2026-03-23', '2026-03-30');
+      // A day of three, where the earliest photo's only face is a stranger.
+      // Hero selection must skip it in favour of the photo with a real match.
+      mockClient.searchMetadata.mockResolvedValueOnce({
+        items: [
+          { id: 'stranger', type: 'IMAGE', localDateTime: '2026-03-25T10:00:00.000Z', people: [{ name: 'Stranger' }] },
+          { id: 'known', type: 'IMAGE', localDateTime: '2026-03-25T10:30:00.000Z', people: [{ name: 'User_2' }] },
+          { id: 'faceless', type: 'IMAGE', localDateTime: '2026-03-25T11:00:00.000Z', people: [] }
+        ],
+        total: 3
+      });
+
+      const result = await adapter.getPhotosForDateRange('2026-03-25', '2026-03-25');
       const mar25 = result.find(d => d.date === '2026-03-25');
-      expect(mar25.photos[0].id).toBe('asset-6');
-      expect(mar25.photos[1].id).toBe('asset-5');
+
+      expect(mar25.photos.find(p => p.isHero).id).toBe('known');
     });
 
     it('groups photos into sessions by time proximity', async () => {
@@ -137,11 +156,23 @@ describe('WeeklyReviewImmichAdapter', () => {
       expect(mar25.photos.some(p => p.isHero)).toBe(false);
     });
 
-    it('includes proxy URLs for thumbnail and original', async () => {
+    it('includes proxy URLs, serving images from the preview rendition', async () => {
       const result = await adapter.getPhotosForDateRange('2026-03-23', '2026-03-30');
-      const photo = result.find(d => d.date === '2026-03-23').photos[0];
-      expect(photo.thumbnail).toBe('/proxy/immich/assets/asset-2/thumbnail');
-      expect(photo.original).toBe('/proxy/immich/assets/asset-2/original');
+      const mar23 = result.find(d => d.date === '2026-03-23');
+      const image = mar23.photos.find(p => p.id === 'asset-1');
+
+      expect(image.thumbnail).toBe('/proxy/immich/assets/asset-1/thumbnail');
+      // Images use ?size=preview: /original is usually HEIC, which only Safari
+      // decodes, so it rendered blank on our surfaces.
+      expect(image.original).toBe('/proxy/immich/assets/asset-1/thumbnail?size=preview');
+    });
+
+    it('serves videos from the original stream, not the preview rendition', async () => {
+      const result = await adapter.getPhotosForDateRange('2026-03-23', '2026-03-30');
+      const video = result.find(d => d.date === '2026-03-23').photos.find(p => p.id === 'asset-4');
+
+      expect(video.type).toBe('video');
+      expect(video.original).toBe('/proxy/immich/assets/asset-4/original');
     });
   });
 });

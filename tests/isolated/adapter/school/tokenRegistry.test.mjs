@@ -16,7 +16,10 @@ beforeEach(() => {
   registry = new YamlTokenRegistry({ configService: { getDataDir: () => tmp, getHouseholdPath: (rel) => `${tmp}/${rel}` } });
 });
 
-const tokensRoot = () => path.join(tmp, 'apps', 'school', 'tokens');
+// getHouseholdPath('school/tokens') resolves to <household>/school/tokens —
+// there is no `apps/` segment on household-scoped school data (that layout
+// applies only under users/{id}/apps/{app}/).
+const tokensRoot = () => path.join(tmp, 'school', 'tokens');
 const seededRng = (seed = 1) => {
   let s = seed;
   return () => { s = (s * 1103515245 + 12345) % 2147483648; return s / 2147483648; };
@@ -66,7 +69,7 @@ describe('put / get', () => {
 
   it('returns null rather than resolving a path for a traversal attempt', async () => {
     fs.mkdirSync(tokensRoot(), { recursive: true });
-    fs.writeFileSync(path.join(tmp, 'apps', 'school', 'secret.yml'), 'token: leaked\n');
+    fs.writeFileSync(path.join(tmp, 'school', 'secret.yml'), 'token: leaked\n');
     expect(await registry.get('sch:../secret')).toBe(null);
     expect(await registry.get('../secret')).toBe(null);
     expect(await registry.get('sch:a/b')).toBe(null);
