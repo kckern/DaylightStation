@@ -16,12 +16,21 @@ import { withTimeout, TIMEOUT } from './hooks/withTimeout.js';
 import { modalReducer, initialModalState } from './state/modalReducer.js';
 import { viewReducer, initialViewState } from './state/viewReducer.js';
 import { resolveKey } from './state/keymap.js';
+import {
+  previousWindowStart, nextWindowStart, windowStartForDate, windowEnd, windowsBackLabel,
+} from './state/windowMath.js';
 import './WeeklyReview.scss';
 
 // Most-recent-8-day grid is 4 columns wide.
 const GRID_COLS = 4;
 // Two presses of the same horizontal direction within this window cross to the adjacent day.
 const DOUBLE_EDGE_WINDOW_MS = 500;
+// How long a window-load failure notice stays up before clearing itself.
+const WINDOW_ERROR_MS = 6000;
+
+const fmtShortDate = (d) => new Date(`${d}T12:00:00Z`)
+  .toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+const windowRangeLabel = (start) => (start ? `${fmtShortDate(start)} – ${fmtShortDate(windowEnd(start))}` : '');
 
 export default function WeeklyReview({ dispatch, dismiss, clear }) {
   // Persist this review's logs to media/logs/weekly-review/*.jsonl. The session-file
@@ -56,7 +65,33 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
   // Two-level view state machine (grid ↔ reel). See state/viewReducer.js.
   const [view, dispatchView] = React.useReducer(viewReducer, initialViewState);
 
-  const lastEdgeRef = useRef(null); // { dir, at } for double-tap cross-day
+  const lastEdgeRef = useRef(null); // { dir, at, count } for double-tap cross-day / window paging
+
+  // ---- Multi-week paging ----------------------------------------------------
+  // The review opens on the newest window and can walk backward indefinitely.
+  // `windowStart` is the start date of the window on screen; `newestWindowStart`
+  // is the one the server picked at mount and is the forward stop.
+  const [windowStart, setWindowStart] = useState(null);
+  const [windowLoading, setWindowLoading] = useState(false);
+  const [windowError, setWindowError] = useState(null);
+  const [edgeHint, setEdgeHint] = useState(null); // { text, nonce }
+  const newestWindowStartRef = useRef(null);
+  const windowCacheRef = useRef(new Map());
+  const edgeHintNonceRef = useRef(0);
+
+  // The recording is pinned to the window the review opened on and never
+  // follows the grid. Without this, paging would redirect chunk uploads to a
+  // different folder mid-stream and split the session's audio in two.
+  const [recordingWeek, setRecordingWeek] = useState(null);
+
+  // Backward paging is unbounded; forward stops at the window the review opened
+  // on. Derived per-render rather than memoized — it has to track a ref.
+  const hasNewer = !!(windowStart && newestWindowStartRef.current && windowStart < newestWindowStartRef.current);
+  // Mirror for async callbacks that must not close over a stale window.
+  const windowStartRef = useRef(windowStart);
+  windowStartRef.current = windowStart;
+  // Monotonic window-request id; only the newest response is allowed to paint.
+  const windowReqRef = useRef(0);
 
   // Derive everything the keymap needs about the focused media item.
   const mediaCtx = useMemo(() => {
@@ -93,7 +128,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
     sessionIdRef.current = (crypto?.randomUUID?.() || `sess-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
   }
 
-  const weekForUploader = data?.week || '0000-00-00';
+  const weekForUploader = recordingWeek || '0000-00-00';
   const uploader = useChunkUploader({ sessionId: sessionIdRef.current, week: weekForUploader });
   const { enqueue: uploaderEnqueue, flushNow: uploaderFlushNow, beaconFlush: uploaderBeaconFlush, status: uploaderStatus, pendingCount: uploaderPendingCount, pendingCountRef: uploaderPendingCountRef, lastAckedAt: uploaderLastAckedAt } = uploader;
 
@@ -144,9 +179,9 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
     dispatchModal({ type: 'OPEN', modal: 'disconnect', payload: { phase: 'finalizing' } });
     try {
       uploaderFlushNow();
-      if (sessionIdRef.current && data?.week) {
+      if (sessionIdRef.current && recordingWeek) {
         const res = await withTimeout(DaylightAPI('/api/v1/weekly-review/recording/finalize', {
-          sessionId: sessionIdRef.current, week: data.week, duration: recordingDuration,
+          sessionId: sessionIdRef.current, week: recordingWeek, duration: recordingDuration,
         }, 'POST'), 8000);
         // Only drop the local draft if the server actually confirmed. On timeout
         // keep it so mount-time recovery can finalize later.
@@ -159,7 +194,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
       dispatchModal({ type: 'CLOSE' });
       onExitWidget();
     }
-  }, [stopRecording, uploaderFlushNow, data?.week, recordingDuration, onExitWidget]);
+  }, [stopRecording, uploaderFlushNow, recordingWeek, recordingDuration, onExitWidget]);
 
   // Ref so the pop-guard (registered once) always calls the current onSaveAndExit.
   const onSaveAndExitRef = useRef(onSaveAndExit);
@@ -224,6 +259,12 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
       try {
         const result = await DaylightAPI('/api/v1/weekly-review/bootstrap');
         setData(result);
+        // The window the server picked is both the forward stop for paging and
+        // the folder this session's audio belongs to, for as long as it runs.
+        newestWindowStartRef.current = result.week;
+        windowCacheRef.current.set(result.week, result);
+        setWindowStart(result.week);
+        setRecordingWeek(result.week);
         dispatchView({ type: 'SELECT_DAY', dayIndex: Math.max(0, (result.days?.length || 1) - 1) });
         const totalPhotos = result.days?.reduce((s, d) => s + (d.photoCount || 0), 0) || 0;
         const totalEvents = result.days?.reduce((s, d) => s + (d.calendar?.length || 0), 0) || 0;
@@ -245,6 +286,110 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
     };
     fetchBootstrap();
   }, []);
+
+  // Swap the grid to another 8-day window. Cached windows land instantly; a
+  // fresh one keeps the outgoing window painted (dimmed) until it resolves, so
+  // the review never blanks out mid-sentence. A failure leaves the current
+  // window exactly where it was and surfaces a self-clearing notice — it must
+  // never interrupt the recording.
+  const pageToWindow = useCallback(async (start, landOn, reason) => {
+    if (!start) return;
+    const cached = windowCacheRef.current.get(start);
+    if (cached) {
+      ++windowReqRef.current; // supersede anything still in flight
+      setWindowLoading(false);
+      setData(cached);
+      setWindowStart(start);
+      dispatchView({ type: 'PAGE_LANDED', dayIndex: landOn });
+      logger.info('window.paged', { to: start, reason, cached: true });
+      return;
+    }
+    // A jump-to-oldest can be fired while a page-back fetch is still in flight,
+    // so responses can land out of order. Only the newest request may paint.
+    const req = ++windowReqRef.current;
+    setWindowLoading(true);
+    try {
+      const result = await DaylightAPI(`/api/v1/weekly-review/bootstrap?week=${encodeURIComponent(start)}`);
+      windowCacheRef.current.set(result.week, result);
+      if (windowReqRef.current !== req) {
+        logger.debug('window.load-superseded', { start, reason });
+        return;
+      }
+      setData(result);
+      setWindowStart(result.week);
+      setWindowError(null);
+      dispatchView({ type: 'PAGE_LANDED', dayIndex: landOn });
+      logger.info('window.paged', {
+        to: result.week, reason, cached: false,
+        totalPhotos: result.days?.reduce((s, d) => s + (d.photoCount || 0), 0) || 0,
+      });
+    } catch (err) {
+      if (windowReqRef.current !== req) return;
+      logger.warn('window.load-failed', { start, reason, error: err.message });
+      setWindowError(`Couldn't load ${windowRangeLabel(start)}`);
+    } finally {
+      if (windowReqRef.current === req) setWindowLoading(false);
+    }
+  }, []);
+
+  // Landing focus: coming back we land on the last cell so Up re-arms straight
+  // away for a further jump; going forward we land on the first.
+  const onPageBack = useCallback(() => {
+    const current = windowStart || newestWindowStartRef.current;
+    if (!current) return;
+    return pageToWindow(previousWindowStart(current), GRID_COLS * 2 - 1, 'pageBack');
+  }, [windowStart, pageToWindow]);
+
+  const onPageForward = useCallback(() => {
+    const current = windowStart || newestWindowStartRef.current;
+    const newest = newestWindowStartRef.current;
+    if (!current || !newest) return;
+    const target = nextWindowStart(current, newest);
+    if (!target) return;
+    return pageToWindow(target, 0, 'pageForward');
+  }, [windowStart, pageToWindow]);
+
+  // Third Up: skip straight to the window holding the oldest reviewable media,
+  // so a three-week trip is one gesture rather than three. The probe is a
+  // convenience — if it fails or finds nothing, fall back to an ordinary page
+  // back rather than leaving the press doing nothing.
+  const onJumpOldest = useCallback(async () => {
+    const current = windowStart || newestWindowStartRef.current;
+    const newest = newestWindowStartRef.current;
+    if (!current || !newest) return;
+
+    setWindowLoading(true);
+    let target = null;
+    try {
+      const res = await withTimeout(
+        DaylightAPI(`/api/v1/weekly-review/extent?before=${encodeURIComponent(current)}`), 6000);
+      if (res === TIMEOUT) logger.warn('extent.failed', { before: current, error: 'timeout' });
+      else if (res?.hasOlder && res.oldestContentDate) target = windowStartForDate(res.oldestContentDate, newest);
+    } catch (err) {
+      logger.warn('extent.failed', { before: current, error: err.message });
+    }
+
+    if (!target || target >= current) {
+      logger.info('window.jump-oldest.degraded', { from: current, target });
+      return pageToWindow(previousWindowStart(current), GRID_COLS * 2 - 1, 'jumpOldest-degraded');
+    }
+    logger.info('window.jump-oldest', { from: current, to: target });
+    return pageToWindow(target, GRID_COLS * 2 - 1, 'jumpOldest');
+  }, [windowStart, pageToWindow]);
+
+  // Window-load notices clear themselves; nothing here is worth a dismiss press.
+  useEffect(() => {
+    if (!windowError) return;
+    const t = setTimeout(() => setWindowError(null), WINDOW_ERROR_MS);
+    return () => clearTimeout(t);
+  }, [windowError]);
+
+  // The arming hint lives exactly as long as the double-tap window it describes.
+  useEffect(() => {
+    if (!edgeHint) return;
+    const t = setTimeout(() => setEdgeHint(null), DOUBLE_EDGE_WINDOW_MS);
+    return () => clearTimeout(t);
+  }, [edgeHint]);
 
   useEffect(() => {
     if (!data || autoStartRef.current) return;
@@ -318,7 +463,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
       try {
         uploaderFlushNow();
         const res = await withTimeout(DaylightAPI('/api/v1/weekly-review/recording/finalize', {
-          sessionId: sessionIdRef.current, week: data?.week, duration: recordingDuration,
+          sessionId: sessionIdRef.current, week: recordingWeek, duration: recordingDuration,
         }, 'POST'), 8000);
         if (res !== TIMEOUT) await deleteLocalSession(sessionIdRef.current).catch(() => {});
         else logger.warn('disconnect.finalize-timeout');
@@ -330,15 +475,15 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
         dispatchModal({ type: 'OPEN', modal: 'finalizeError', payload: err.message });
       }
     })();
-  }, [disconnected, reconnect, uploaderFlushNow, data?.week, recordingDuration, onExitWidget]);
+  }, [disconnected, reconnect, uploaderFlushNow, recordingWeek, recordingDuration, onExitWidget]);
 
   // Mount-time draft recovery: check server and local IndexedDB for unfinalized sessions.
   useEffect(() => {
-    if (!data?.week) return;
+    if (!recordingWeek) return;
     let cancelled = false;
     (async () => {
       try {
-        const serverResp = await DaylightAPI(`/api/v1/weekly-review/recording/drafts?week=${data.week}`);
+        const serverResp = await DaylightAPI(`/api/v1/weekly-review/recording/drafts?week=${recordingWeek}`);
         const serverDraft = (serverResp.drafts || [])
           .filter(d => d.sessionId !== sessionIdRef.current)
           .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))[0];
@@ -352,7 +497,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
         }
         const localSessions = await listLocalSessions();
         const localDraft = localSessions
-          .filter(s => s.week === data.week && s.sessionId !== sessionIdRef.current && s.unuploadedCount > 0)
+          .filter(s => s.week === recordingWeek && s.sessionId !== sessionIdRef.current && s.unuploadedCount > 0)
           .sort((a, b) => b.lastSavedAt - a.lastSavedAt)[0];
         if (localDraft && !cancelled) {
           logger.info('recording.resume-candidate.local', localDraft);
@@ -366,11 +511,11 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
       }
     })();
     return () => { cancelled = true; };
-  }, [data?.week]);
+  }, [recordingWeek]);
 
   const finalizePriorDraft = useCallback(async () => {
     const draft = modal.type === 'resumeDraft' ? modal.payload : null;
-    if (!draft?.sessionId || !data?.week) return;
+    if (!draft?.sessionId || !recordingWeek) return;
     // Close the modal immediately so the user gets feedback on Enter and the
     // grid behind it becomes usable — finalize runs in the background. If it
     // fails, log it; the modal does NOT reopen (user can re-trigger from the
@@ -392,7 +537,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
           let lastErr = null;
           for (let attempt = 0; attempt < 3; attempt++) {
             try {
-              await DaylightAPI('/api/v1/weekly-review/recording/chunk', { sessionId: draft.sessionId, seq: row.seq, week: data.week, chunkBase64 }, 'POST');
+              await DaylightAPI('/api/v1/weekly-review/recording/chunk', { sessionId: draft.sessionId, seq: row.seq, week: recordingWeek, chunkBase64 }, 'POST');
               lastErr = null;
               break;
             } catch (err) {
@@ -413,18 +558,22 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
         estimatedDuration = Math.round((draft.totalBytes || 0) / 3000);
       }
       await DaylightAPI('/api/v1/weekly-review/recording/finalize', {
-        sessionId: draft.sessionId, week: data.week, duration: estimatedDuration,
+        sessionId: draft.sessionId, week: recordingWeek, duration: estimatedDuration,
       }, 'POST');
       await deleteLocalSession(draft.sessionId);
-      const fresh = await DaylightAPI('/api/v1/weekly-review/bootstrap');
-      setData(fresh);
+      // Refresh the recording status, but only paint it if the user is still on
+      // the window it belongs to — otherwise this would yank them back out of
+      // whatever earlier window they had paged to.
+      const fresh = await DaylightAPI(`/api/v1/weekly-review/bootstrap?week=${encodeURIComponent(recordingWeek)}`);
+      windowCacheRef.current.set(fresh.week, fresh);
+      if (windowStartRef.current === fresh.week) setData(fresh);
     } catch (err) {
       // 404 = draft already finalized/gone elsewhere — not really an error.
       const is404 = /HTTP 404/.test(err.message || '');
       if (is404) logger.info('recording.resume.finalize-noop', { reason: 'draft-already-gone' });
       else logger.error('recording.resume.finalize-failed', { error: err.message });
     }
-  }, [modal, data?.week]);
+  }, [modal, recordingWeek]);
 
   // Pagehide/beforeunload beacon flush
   useEffect(() => {
@@ -463,9 +612,24 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
         media: mediaCtx,
         lastEdge: lastEdgeRef.current,
         doubleWindowMs: DOUBLE_EDGE_WINDOW_MS,
+        windowNav: { hasNewer },
+        windowLoading,
       });
 
-      lastEdgeRef.current = result.edge; // null clears it; {dir,at} arms the next tap
+      lastEdgeRef.current = result.edge; // null clears it; {dir,at,count} arms the next tap
+      // An arming tap at a grid edge is invisible on its own — say what a second
+      // press will do, or the key reads as broken.
+      if (view.level === 'grid' && result.edge?.count === 1 && result.intents.length === 0) {
+        const target = result.edge.dir === 'up'
+          ? previousWindowStart(windowStart || newestWindowStartRef.current)
+          : nextWindowStart(windowStart || newestWindowStartRef.current, newestWindowStartRef.current);
+        if (target) {
+          const arrow = result.edge.dir === 'up' ? '▲' : '▼';
+          setEdgeHint({ text: `${arrow} again for ${windowRangeLabel(target)}`, nonce: ++edgeHintNonceRef.current });
+        }
+      } else if (result.edge?.count !== 1) {
+        setEdgeHint(null);
+      }
       result.view.forEach(a => dispatchView(a));
       result.modal.forEach(a => dispatchModal(a));
       for (const intent of result.intents) {
@@ -473,13 +637,17 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
         else if (intent === 'exitWidget' || intent === 'exitNoSave') onExitWidget();
         else if (intent === 'retryMic') onPreflightRetry();
         else if (intent === 'finalizeDraft') finalizePriorDraft();
+        else if (intent === 'pageBack') onPageBack();
+        else if (intent === 'pageForward') onPageForward();
+        else if (intent === 'jumpOldest') onJumpOldest();
       }
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [data, view, modal, mediaCtx,
-      finalizePriorDraft, onExitWidget, onSaveAndExit, onPreflightRetry]);
+  }, [data, view, modal, mediaCtx, hasNewer, windowLoading, windowStart,
+      finalizePriorDraft, onExitWidget, onSaveAndExit, onPreflightRetry,
+      onPageBack, onPageForward, onJumpOldest]);
 
   // Pop guard: prevent MenuNavigationContext from popping the app while recording or uploading.
   // Handles remote Back button (FKB/Shield popstate) and any other pop() caller.
@@ -507,16 +675,19 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
     return () => menuNav.clearPopGuard();
   }, [isRecording, menuNav]);
 
-  const weekLabel = useMemo(() => {
-    if (!data?.days?.length) return '';
-    const first = data.days[0];
-    const last = data.days[data.days.length - 1];
-    const fmtDate = (d) => {
-      const dt = new Date(`${d}T12:00:00Z`);
-      return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    };
-    return `Week of ${fmtDate(first.date)} – ${fmtDate(last.date)}`;
-  }, [data]);
+  // The recording bar names the session, which is pinned — it must not move as
+  // the user pages around.
+  const weekLabel = useMemo(
+    () => (recordingWeek ? `Week of ${windowRangeLabel(recordingWeek)}` : ''),
+    [recordingWeek]
+  );
+
+  // The header names the window on screen, which does move.
+  const viewedRangeLabel = useMemo(() => windowRangeLabel(windowStart), [windowStart]);
+  const backLabel = useMemo(
+    () => windowsBackLabel(windowStart, newestWindowStartRef.current),
+    [windowStart, data]
+  );
 
   if (loading) {
     return <div className="weekly-review weekly-review--loading">Loading...</div>;
@@ -566,19 +737,30 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
           </>
         );
       })() : (
-        <div className="weekly-review-grid">
-          {data.days.map((day, realIndex) => (
-            <DayColumn
-              key={day.date}
-              day={day}
-              isFocused={realIndex === view.dayIndex}
-              onClick={() => {
-                dispatchView({ type: 'SELECT_DAY', dayIndex: realIndex });
-                dispatchView({ type: 'OPEN_DAY' });
-              }}
-            />
-          ))}
-        </div>
+        <>
+          {/* Names the window on screen and, once the user has paged, how far
+              back it sits. Also where an arming tap explains itself. */}
+          <div className="weekly-review-window-header">
+            <span className="window-range">{viewedRangeLabel}</span>
+            {backLabel && <span className="window-back-tag">{backLabel}</span>}
+            {windowLoading && <span className="window-status" aria-live="polite">Loading…</span>}
+            {edgeHint && !windowLoading && <span className="window-hint">{edgeHint.text}</span>}
+            {windowError && <span className="window-status window-status--error" role="status">{windowError}</span>}
+          </div>
+          <div className={`weekly-review-grid${windowLoading ? ' weekly-review-grid--loading' : ''}`}>
+            {data.days.map((day, realIndex) => (
+              <DayColumn
+                key={day.date}
+                day={day}
+                isFocused={realIndex === view.dayIndex}
+                onClick={() => {
+                  dispatchView({ type: 'SELECT_DAY', dayIndex: realIndex });
+                  dispatchView({ type: 'OPEN_DAY' });
+                }}
+              />
+            ))}
+          </div>
+        </>
       )}
 
       {/* Finalize-error dialog */}
@@ -628,6 +810,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
         mediaType={mediaCtx.currentType}
         playing={view.playing}
         modalType={modal.type}
+        hasNewer={hasNewer}
       />
 
       <RecordingBar
