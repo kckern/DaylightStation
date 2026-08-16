@@ -1,7 +1,7 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`Phase A acceptance sweep (spec §12, items tagged [A]) > §12.6 fit — the three-policy matrix (one file, three fixtures) + the receipt-target rejection > policy: flow — paginates with correct footers + continuation strips > extracted page text is snapshot-pinned — a regression that reflows/renumbers pages shows up as a text diff 1`] = `
-"acceptance-fixture
+exports[`Phase A acceptance sweep (spec §12, items tagged [A]) > §12.6 fit — the three-policy matrix (one file, three fixtures) + the receipt-target rejection > policy: flow — paginates with correct footers > extracted page text is snapshot-pinned — a regression that reflows/renumbers pages shows up as a text diff 1`] = `
+"                               acceptance-fixture
 Name: Riley                                               Date: ________________________
 Score ____ / 10
 
@@ -21,12 +21,10 @@ Score ____ / 10
 
 8.   Problem 8. Solve and show your work.
 
+9.   Problem 9. Solve and show your work.
+
                                             Page 1 of 2
-9.    Problem 9. Solve and show your work.
-
-10.   Problem 10. Solve and show your work.
-
-acceptance-fixture                                          Name: Riley
+10.   Problem 10. Solve and show your work.
 
                                               Page 2 of 2
 "

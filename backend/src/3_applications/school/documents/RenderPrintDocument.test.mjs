@@ -404,13 +404,33 @@ describe('RenderPrintDocument — gutter threads into body measurement AND drawi
     expect(page1Body.xPt).toBeCloseTo(page1Box.xPt, 1);
     expect(page2Body.xPt).toBeCloseTo(page2Box.xPt, 1);
 
-    // Furniture's own continuation-strip title (page 2 only — page 1 shows
-    // the real header instead) must sit at the SAME left edge as page 2's
-    // body text — the "body-left == furniture-left" the reviewer demanded,
-    // not just two numbers that both happen to match contentBox in isolation.
-    const stripTitle = firstWordOn(2, document.id);
-    expect(stripTitle, 'page 2 continuation-strip title').toBeDefined();
-    expect(stripTitle.xPt).toBeCloseTo(page2Body.xPt, 1);
+    // Furniture's own painted output has to track the SAME flip the body did
+    // — not just two body numbers that happen to match contentBox in
+    // isolation. The footer band is now the only painted furniture, and it is
+    // CENTRED in the content box, so its run's left edge is offset from
+    // box.xPt by half the leftover width; that offset is identical on both
+    // pages (contentBox gives both sides the same widthPt), so the difference
+    // between the two footers' x positions is exactly the gutter shift the
+    // body text saw.
+    const footer1 = firstWordOn(1, 'Page 1 of 2');
+    const footer2 = firstWordOn(2, 'Page 2 of 2');
+    expect(footer1, 'page 1 footer').toBeDefined();
+    expect(footer2, 'page 2 footer').toBeDefined();
+    const bodyShiftPt = page1Body.xPt - page2Body.xPt;
+    expect(bodyShiftPt).toBeCloseTo(theme.furniture.gutterPt, 1); // guards against a vacuous 0-shift
+    // Glyph-advance differences between "1" and "2" move a centred run by a
+    // fraction of a point; the gutter shift is 18pt, so 2pt of slack cannot
+    // let a non-flipping footer through.
+    expect(Math.abs((footer1.xPt - footer2.xPt) - bodyShiftPt)).toBeLessThan(2);
+  });
+
+  it('a non-card render keeps the plain "Page X of Y" footer — no card number, no separator', async () => {
+    const useCase = new RenderPrintDocument();
+    const result = await useCase.execute({ document, context: { learnerName: 'Riley' } });
+    const text = pdfText(result.bytes);
+    expect(text).toContain('Page 1 of 2');
+    expect(text).toContain('Page 2 of 2');
+    expect(text).not.toContain('·');
   });
 
   it('a non-duplex archetype (quiz) keeps the gutter on the SAME side across pages, and body still matches it', async () => {
@@ -1295,6 +1315,28 @@ describe('RenderPrintDocument — card allocation context (spec §5.3/§5.4, Tas
     const stored = await allocationStore.findByCard(result.allocation.cardId);
     expect(stored).toHaveLength(1);
     expect(stored[0].recordId).toBe(result.allocation.recordId);
+  });
+
+  it('the page footer carries the card number on EVERY page, page 1 included (end-to-end, real extracted PDF text)', async () => {
+    const allocationStore = fakeAllocationStore();
+    const useCase = new RenderPrintDocument({ allocationStore });
+    // Enough OMR questions to actually paginate — a page-1-only render could
+    // not prove "every page".
+    const result = await useCase.execute({
+      document: omrSourceDoc(20), context: { freshCard: true },
+    });
+    const { cardId } = result.allocation;
+    expect(cardId).toMatch(/^\d{7}$/);
+    expect(result.pageCount).toBeGreaterThan(1);
+
+    const text = pdfText(result.bytes);
+    for (let page = 1; page <= result.pageCount; page += 1) {
+      expect(text, `page ${page} footer`).toContain(`Page ${page} of ${result.pageCount} · ${cardId}`);
+    }
+    // The blank continuation-strip name line it replaced is gone for good:
+    // "Name:" now appears exactly once, in page 1's real header, not once
+    // more per continuation page.
+    expect((text.match(/Name:/g) ?? []).length).toBe(1);
   });
 
   it('prints the Student No. with offset numbering starting at startRow and no redundant instruction or range', async () => {
