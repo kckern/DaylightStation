@@ -259,7 +259,7 @@ describe('previewFrameVars', () => {
     // Added after Task 2's review: every other numeric case divides evenly
     // (720x0.75, 540x1, 800x0.75), so without this one, deleting Math.round
     // from the implementation passes the whole suite green.
-    // 960/1366 = 0.7027818448023426; 768 x that = 539.7364469985359.
+    // 960/1366 = 0.7027818448023426; 768 x that = 539.7364568081991.
     expect(previewFrameVars({ width: 1366, height: 768 })['--preview-box-height']).toBe('540px');
   });
 
@@ -636,6 +636,29 @@ describe('AdminPreviewPlayer frame', () => {
       expect(root.style.getPropertyValue('--preview-screen-width')).toBe('1280px');
       expect(root.style.getPropertyValue('--preview-scale')).toBe('0.75');
       expect(root.style.getPropertyValue('--preview-box-height')).toBe('600px');
+    });
+  });
+
+  it('does not strand the selection on the fallback id once real screens arrive', async () => {
+    // Added after Task 3's review. Before the API answers, `screens` holds only
+    // FALLBACK_SCREEN, whose id ('__fallback') is absent from the real list that
+    // replaces it. Selection is DERIVED (find-then-fall-back), never copied into
+    // state from `screens[0]`, so it must recover on its own. An implementation
+    // that seeds `useState` from `screens[0].id` strands a dead id here.
+    let resolve;
+    daylightAPI.mockReturnValue(new Promise((r) => { resolve = r; }));
+    const { container } = renderPreview();
+
+    await waitFor(() => {
+      const root = container.querySelector('.admin-preview-player');
+      expect(root.style.getPropertyValue('--preview-screen-width')).toBe('1280px'); // fallback, in flight
+    });
+
+    resolve(SCREENS);
+
+    await waitFor(() => {
+      const root = container.querySelector('.admin-preview-player');
+      expect(root.style.getPropertyValue('--preview-screen-width')).toBe('960px'); // real living-room
     });
   });
 
