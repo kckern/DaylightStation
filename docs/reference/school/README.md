@@ -1555,6 +1555,15 @@ what didn't save.
   already-graded kid. Quiz summaries and paper receipts both state the
   threshold, and a passing-but-unsignedoff receipt prints "Coins: waiting
   for a grown-up's OK."
+- **The receipt says "8 of 10", not just "80%".** Both producers of the
+  `graded` event — `GradeSubmission` (screen and grown-up-marked work) and
+  `RecordCardScanOutcome` (a scanned answer card) — emit `correctCount` and
+  `totalCount` alongside `percent`. `reduceSession` projects them as
+  `gradedCorrectCount`/`gradedTotalCount`, and `CloseSessionOutcome` passes
+  them to the result receipt, where the renderers draw a per-question tick
+  row and the "N of M correct" line. Both must be integers or the line is
+  dropped, so a producer that omits them prints a receipt with no count at
+  all.
 - **Kids can talk back.** Kid-safe (ungated) requests: `POST
   /retake-requests` from a failed quiz summary and `POST /flags` ("Something
   seem wrong? Tell a grown-up") — both land as `kind:'retake'` / `kind:'flag'`
