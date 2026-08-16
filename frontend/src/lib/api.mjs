@@ -1,4 +1,28 @@
 import getLogger from './logging/Logger.js';
+import { getDeviceId } from './deviceIdentity.js';
+
+/**
+ * Headers every call from this module carries.
+ *
+ * `X-Daylight-Device` is the answer to "which machine is calling". All frontend
+ * traffic arrives from the docker network, so `req.ip` is one shared address for
+ * the whole house — on 2026-08-16 that put the garage fitness kiosk and the
+ * piano tablet behind the same `172.18.0.53` and sent the investigation after
+ * the wrong screen.
+ *
+ * NOT carried by media traffic: `<video>`/dash segment fetches are issued by
+ * the element itself and cannot be given custom headers. Those requests are
+ * identified by the `?session=` query param instead (see PlayResponseService).
+ *
+ * @param {string|null} token
+ * @param {boolean} [withContentType]
+ * @returns {Object}
+ */
+const buildHeaders = (token, withContentType = true) => ({
+    ...(withContentType ? { 'Content-Type': 'application/json' } : {}),
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+    'X-Daylight-Device': getDeviceId(),
+});
 
 // In dev mode, Vite proxy handles forwarding to backend (see vite.config.js)
 // In production, frontend and backend are served from same origin
@@ -23,10 +47,7 @@ export const DaylightAPI = async (path, data = {}, method = 'GET') => {
     const token = localStorage.getItem('ds_token');
     const options = {
         method,
-        headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-        },
+        headers: buildHeaders(token),
     };
 
     if (method !== 'GET') {
@@ -59,7 +80,7 @@ export const DaylightAPIText = async (path) => {
     const baseUrl = getBaseUrl();
     const token = localStorage.getItem('ds_token');
     const response = await fetch(`${baseUrl}/${path}`, {
-        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        headers: buildHeaders(token, false),
     });
     if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -125,10 +146,7 @@ export const DaylightStatusCheck = async (path, data = {}, method = 'GET') => {
     const token = localStorage.getItem('ds_token');
     const options = {
         method,
-        headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-        },
+        headers: buildHeaders(token),
     };
     if (method !== 'GET') {
         options.body = JSON.stringify(data);

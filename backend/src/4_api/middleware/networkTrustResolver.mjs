@@ -18,7 +18,22 @@ function isPrivateIp(ip) {
 
 export function networkTrustResolver({ householdRoles }) {
   return (req, res, next) => {
-    const ip = req.ip || '';
+    // The SOCKET PEER, deliberately, not `req.ip`.
+    //
+    // This used to read `req.ip`, which was the socket peer because
+    // `trust proxy` had never been set. Setting it (2026-08-16, so backend logs
+    // can name a client) redefines `req.ip` as an X-Forwarded-For–derived
+    // address — and this line grants `sysadmin` to any private address. Leaving
+    // it on `req.ip` would therefore have changed who holds sysadmin as a side
+    // effect of a logging change, in both directions: remote household members
+    // would lose it, and a spoofed header could become an input to it.
+    //
+    // Pinning to the peer keeps the trust boundary exactly where it was. It
+    // also preserves the pre-existing problem that any caller arriving through
+    // the reverse proxy presents a private peer and is trusted — real, and out
+    // of scope for an observability change. Fixing it is a deliberate decision
+    // about who may reach the house from outside, not a side effect.
+    const ip = req.socket?.remoteAddress || req.connection?.remoteAddress || req.ip || '';
     const local = isPrivateIp(ip);
     req.isLocal = local;
 

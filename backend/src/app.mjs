@@ -214,6 +214,7 @@ import { tokenResolver } from '#api/middleware/tokenResolver.mjs';
 import { permissionGate } from '#api/middleware/permissionGate.mjs';
 import { createAuthRouter } from '#api/v1/routers/auth.mjs';
 import { householdResolver } from '#api/middleware/householdResolver.mjs';
+import { deviceResolver } from '#api/middleware/deviceResolver.mjs';
 
 // Conversation state persistence
 import { YamlConversationStateDatastore } from '#adapters/messaging/YamlConversationStateDatastore.mjs';
@@ -364,6 +365,22 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // ==========================================================================
 
   const app = express();
+
+  // Trust the reverse proxy in front of us, so `req.ip` is the CLIENT's address
+  // rather than the docker peer's. Never set before, which is part of why every
+  // client looked like `172.18.0.53` on 2026-08-16.
+  //
+  // Scoped, not `true`. Blanket trust makes `req.ip` whatever the caller writes
+  // in X-Forwarded-For — forgeable by anyone who can reach the port. With this
+  // preset Express walks the chain from the right and stops at the first address
+  // that is NOT loopback/link-local/private, which is the real client whenever
+  // the proxy appends rather than replaces.
+  //
+  // NOTE: networkTrustResolver grants roles by address, and it deliberately
+  // reads the socket peer rather than req.ip so this line cannot move a trust
+  // boundary. See the comment there.
+  app.set('trust proxy', 'loopback, linklocal, uniquelocal');
+
   // Enable SharedArrayBuffer for TF.js WASM multi-threaded SIMD
   app.use((req, res, next) => {
     res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
@@ -436,6 +453,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   app.use('/api/v1', requestLoggerMiddleware());
 
   // Auth middleware pipeline — runs on all /api/v1/* requests
+  // 0b. deviceResolver stamps req.deviceId / req.deviceIdSource. Mounted beside
+  //     householdResolver because it answers the sibling question: that one says
+  //     WHICH HOUSEHOLD, this one says WHICH MACHINE. The request logger above
+  //     reads both at res 'finish', which is after this has run.
+  app.use('/api/v1', deviceResolver());
+
   // 1. householdResolver sets req.householdId from Host header
   const domainConfig = dataService.system.read('config/domains') || {};
   app.use('/api/v1', householdResolver({ domainConfig, configService }));
