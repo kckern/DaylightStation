@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  addressedColumn, columnAddresses, dropDurationMs, lastDrop, shuffledColumns,
+  addressedColumn, columnAddresses, dropDurationMs, lastDrop, shuffledColumns, winningKeys,
 } from './PianoConnectFour.jsx';
 
 const notes = (...values) => new Map(values.map((note) => [note, { velocity: 100 }]));
@@ -71,5 +71,25 @@ describe('Connect Four gravity', () => {
 
   it('gives a longer fall a longer animation', () => {
     expect(dropDurationMs(6)).toBeGreaterThan(dropDurationMs(1));
+  });
+});
+
+describe('Connect Four winning line', () => {
+  it('keys the four cells the engine reported', () => {
+    const keys = winningKeys({
+      gameOver: true,
+      winner: 1,
+      winningCells: [
+        { row: 5, column: 0 }, { row: 4, column: 0 }, { row: 3, column: 0 }, { row: 2, column: 0 },
+      ],
+    });
+    expect([...keys].sort()).toEqual(['2-0', '3-0', '4-0', '5-0']);
+  });
+
+  it('is empty while the game is still on, and on a draw', () => {
+    expect(winningKeys({ gameOver: false, winningCells: [] }).size).toBe(0);
+    expect(winningKeys({ gameOver: true, draw: true, winningCells: [] }).size).toBe(0);
+    // replayGame returns no `status` at all on an invalid transcript.
+    expect(winningKeys(undefined).size).toBe(0);
   });
 });

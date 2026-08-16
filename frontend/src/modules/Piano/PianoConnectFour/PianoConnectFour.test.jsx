@@ -104,4 +104,73 @@ describe('PianoConnectFour gravity', () => {
     const { container } = render(<PianoConnectFour activeNotes={new Map()} />);
     expect(container.querySelectorAll('.connect-four-board__disc.is-falling')).toHaveLength(0);
   });
+
+  it('draws the front panel over the discs, so a disc falls behind the grid', () => {
+    const { container } = render(<PianoConnectFour activeNotes={new Map()} />);
+    const board = container.querySelector('.connect-four-board');
+    const panel = board.querySelector('.connect-four-board__panel');
+    expect(panel).toBeTruthy();
+    // Last child: the panel paints after every disc, which with its z-index is
+    // what puts the blue plastic in front of a falling counter.
+    expect(board.lastElementChild).toBe(panel);
+    expect(panel.getAttribute('aria-hidden')).toBe('true');
+  });
+});
+
+describe('PianoConnectFour result', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    requestConnectFourMove.mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // Note 60 (C) addresses column 0 in the default unshuffled deal; the opponent
+  // is pinned to column 1, so four player drops in a row are a vertical four.
+  const playColumnZero = async (rerender) => {
+    rerender(<PianoConnectFour activeNotes={new Map([[60, { velocity: 90 }]])} />);
+    await act(async () => { await Promise.resolve(); });
+    // Release: the latch only reopens on an empty keyboard.
+    rerender(<PianoConnectFour activeNotes={new Map()} />);
+    await act(async () => { await Promise.resolve(); });
+  };
+
+  const letOpponentAnswer = async () => {
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => { vi.advanceTimersByTime(10000); await Promise.resolve(); });
+  };
+
+  it('lights the four that connected and steps every other disc back', async () => {
+    requestConnectFourMove.mockResolvedValue({ move: { column: 1 } });
+    const { container, rerender } = render(<PianoConnectFour activeNotes={new Map()} />);
+
+    for (let drop = 0; drop < 3; drop += 1) {
+      await playColumnZero(rerender);
+      await letOpponentAnswer();
+    }
+    // The fourth drop completes the column and ends the game.
+    await playColumnZero(rerender);
+
+    const board = container.querySelector('.connect-four-board');
+    expect(board.className).toContain('is-decided');
+    expect(board.querySelectorAll('.connect-four-board__cell.is-winner')).toHaveLength(4);
+    expect(board.querySelectorAll('.connect-four-board__disc.is-winner')).toHaveLength(4);
+    // Every lit disc is the player's own colour.
+    expect(board.querySelectorAll('.connect-four-board__disc--1.is-winner')).toHaveLength(4);
+    // And the sentence names the winner and the colour, not just "you won".
+    expect(container.querySelector('.pg-status__text').textContent).toContain('You win!');
+    expect(container.querySelector('.pg-status__text').textContent).toContain('yellow');
+  });
+
+  it('marks nothing on a board that is still in play', async () => {
+    requestConnectFourMove.mockResolvedValue({ move: { column: 1 } });
+    const { container, rerender } = render(<PianoConnectFour activeNotes={new Map()} />);
+    await playColumnZero(rerender);
+
+    const board = container.querySelector('.connect-four-board');
+    expect(board.className).not.toContain('is-decided');
+    expect(board.querySelectorAll('.is-winner')).toHaveLength(0);
+  });
 });
