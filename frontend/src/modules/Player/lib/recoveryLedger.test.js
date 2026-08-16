@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { createRecoveryLedger, RECOVERY_MAX_ATTEMPTS } from './recoveryLedger.js';
+import {
+  createRecoveryLedger,
+  RECOVERY_MAX_ATTEMPTS,
+  getSessionsCreatedAllLedgers,
+  _resetSessionsCreatedForTests
+} from './recoveryLedger.js';
 
 const SESSION = 'player-item:abc';
 
@@ -153,5 +158,163 @@ describe('recoveryLedger production DEFAULTS', () => {
     }
     expect(ledger.request({ sessionKey: SESSION, mountId: 'm1', actor: 'dash-error', reason: 'dash-28', bypassCooldown: true }))
       .toMatchObject({ allowed: false, deniedBy: 'mount-budget' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Auditability (2026-08-16). The three teardown paths used to erase state in
+// full silence, so `resilience-recovery attempt=1` repeating forever could mean
+// either "the cap keeps resetting" or "the cap was never reached". These tests
+// pin the difference.
+// ---------------------------------------------------------------------------
+
+describe('recoveryLedger teardown reporting', () => {
+  let now, emitted, ledger;
+
+  const makeLogger = () => ({
+    sampled: (event, data, opts) => { emitted.push({ event, data, opts }); },
+    debug: () => {}, info: () => {}, warn: () => {}, error: () => {}
+  });
+
+  beforeEach(() => {
+    now = 1_000_000;
+    emitted = [];
+    _resetSessionsCreatedForTests();
+    ledger = createRecoveryLedger({ now: () => now, logger: makeLogger() });
+  });
+
+  const releases = () => emitted.filter((e) => e.event === 'recovery-ledger.session-released');
+
+  it('releaseSession reports what it is about to destroy, before destroying it', () => {
+    ledger.request({ sessionKey: SESSION, mountId: 'm1', actor: 'dash-error', reason: 'x', isUrlRefresh: true });
+    now += 2500;
+    ledger.releaseSession(SESSION);
+
+    expect(releases()).toHaveLength(1);
+    expect(releases()[0].data).toMatchObject({
+      sessionKey: SESSION,
+      releasedBy: 'release',
+      count: 1,
+      urlRefreshCount: 1,
+      exhausted: false,
+      mountCount: 1,
+      ageMs: 2500,
+      sessionsCreated: 1
+    });
+    expect(ledger.snapshot(SESSION)).toBeNull();
+  });
+
+  it('userReset reports under its own releasedBy, carrying the exhausted state it clears', () => {
+    for (let i = 0; i < 5; i++) ledger.request({ sessionKey: SESSION, actor: 'a', reason: 'x', bypassCooldown: true });
+    ledger.request({ sessionKey: SESSION, actor: 'a', reason: 'x', bypassCooldown: true }); // trips `exhausted`
+    ledger.userReset(SESSION);
+
+    expect(releases()).toHaveLength(1);
+    expect(releases()[0].data).toMatchObject({ releasedBy: 'user-reset', count: 5, exhausted: true });
+  });
+
+  it('recordSuccess reports the attempt record it erases', () => {
+    ledger.request({ sessionKey: SESSION, mountId: 'm1', actor: 'dash-error', reason: 'x' });
+    now += 700;
+    ledger.recordSuccess(SESSION);
+
+    expect(releases()).toHaveLength(1);
+    expect(releases()[0].data).toMatchObject({ releasedBy: 'success', count: 1, mountCount: 1, ageMs: 700 });
+  });
+
+  it('recordSuccess on an already-clean session reports nothing (it is called on every progress tick)', () => {
+    ledger.request({ sessionKey: SESSION, mountId: 'm1', actor: 'a', reason: 'x' });
+    ledger.recordSuccess(SESSION);
+    emitted.length = 0;
+
+    ledger.recordSuccess(SESSION);
+    ledger.recordSuccess(SESSION);
+    expect(releases()).toHaveLength(0);
+  });
+
+  it('releasing a key that was never minted reports nothing — there was nothing to destroy', () => {
+    ledger.releaseSession('player-item:never-seen');
+    ledger.userReset('player-item:never-seen');
+    expect(releases()).toHaveLength(0);
+  });
+
+  it('rate-limits the teardown event, because identity churn is what fires it', () => {
+    ledger.request({ sessionKey: SESSION, actor: 'a', reason: 'x' });
+    ledger.releaseSession(SESSION);
+    expect(releases()[0].opts).toMatchObject({ aggregate: true });
+    expect(releases()[0].opts.maxPerMinute).toBeGreaterThan(0);
+  });
+
+  it('sessionsCreated survives release — it is the transcode-session count', () => {
+    // The incident in miniature: identity churns, so each generation mints a
+    // session and the release erases it. snapshot() shows one fresh session with
+    // count=1 every time; only sessionsCreated shows that 6 of them happened.
+    for (let i = 0; i < 6; i++) {
+      const key = `player-item:guid-${i}`;
+      ledger.request({ sessionKey: key, actor: 'a', reason: 'x' });
+      expect(ledger.snapshot(key).count).toBe(1);
+      ledger.releaseSession(key);
+    }
+
+    expect(ledger.dumpAll()).toMatchObject({ sessionsCreated: 6, sessionsLive: 0 });
+    expect(getSessionsCreatedAllLedgers()).toBe(6);
+    // And the last teardown carried the running mint count with it.
+    expect(releases()[5].data.sessionsCreated).toBe(6);
+  });
+
+  it('a stable session that retries does NOT inflate sessionsCreated', () => {
+    // The counter measures minted sessions, not attempts — otherwise it could
+    // not separate "the cap keeps resetting" from "the cap was never reached".
+    for (let i = 0; i < 4; i++) ledger.request({ sessionKey: SESSION, actor: 'a', reason: 'x', bypassCooldown: true });
+    expect(ledger.dumpAll()).toMatchObject({ sessionsCreated: 1, sessionsLive: 1 });
+    expect(ledger.snapshot(SESSION).count).toBe(4);
+  });
+
+  it('dumpAll exposes the live state including mounts, without the caller knowing a key', () => {
+    ledger.request({ sessionKey: SESSION, mountId: 'm1', actor: 'dash-error', reason: 'x', bypassCooldown: true });
+    ledger.request({ sessionKey: SESSION, mountId: 'm1', actor: 'dash-error', reason: 'x', bypassCooldown: true });
+    ledger.request({ sessionKey: 'player-item:other', mountId: 'm2', actor: 'dash-error', reason: 'x', bypassCooldown: true });
+    now += 1200;
+
+    const dump = ledger.dumpAll();
+    expect(dump).toMatchObject({ sessionsCreated: 2, sessionsLive: 2, atMs: now });
+    const first = dump.sessions.find((s) => s.sessionKey === SESSION);
+    expect(first).toMatchObject({ count: 2, urlRefreshCount: 0, exhausted: false, ageMs: 1200 });
+    expect(first.mounts).toEqual([{ mountId: 'm1', actors: { 'dash-error': 2 } }]);
+    expect(dump.sessions.find((s) => s.sessionKey === 'player-item:other').mounts)
+      .toEqual([{ mountId: 'm2', actors: { 'dash-error': 1 } }]);
+  });
+
+  it('dumpAll returns copies, so a caller cannot mutate the ledger through it', () => {
+    ledger.request({ sessionKey: SESSION, mountId: 'm1', actor: 'dash-error', reason: 'x' });
+    const dump = ledger.dumpAll();
+    dump.sessions[0].count = 99;
+    dump.sessions[0].mounts.length = 0;
+
+    expect(ledger.snapshot(SESSION).count).toBe(1);
+    expect(ledger.dumpAll().sessions[0].mounts).toEqual([{ mountId: 'm1', actors: { 'dash-error': 1 } }]);
+  });
+
+  it('the tab-wide mint counter spans ledgers and never decreases', () => {
+    ledger.request({ sessionKey: SESSION, actor: 'a', reason: 'x' });
+    const other = createRecoveryLedger({ now: () => now, logger: makeLogger() });
+    other.request({ sessionKey: 'player-item:elsewhere', actor: 'a', reason: 'x' });
+
+    expect(getSessionsCreatedAllLedgers()).toBe(2);
+    ledger.releaseSession(SESSION);
+    other.releaseSession('player-item:elsewhere');
+    expect(getSessionsCreatedAllLedgers()).toBe(2);
+    expect(ledger.dumpAll().sessionsCreated).toBe(1);
+    expect(other.dumpAll().sessionsCreated).toBe(1);
+  });
+
+  it('reporting cannot break the accounting when the logger throws', () => {
+    const hostile = createRecoveryLedger({
+      now: () => now,
+      logger: { sampled: () => { throw new Error('transport down'); }, debug: () => {}, info: () => {}, warn: () => {}, error: () => {} }
+    });
+    hostile.request({ sessionKey: SESSION, actor: 'a', reason: 'x' });
+    expect(() => hostile.releaseSession(SESSION)).not.toThrow();
+    expect(hostile.snapshot(SESSION)).toBeNull();
   });
 });
