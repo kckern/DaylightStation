@@ -177,6 +177,26 @@ name/date lines, a score box for point-bearing documents, page furniture
 gutters), and vector QR codes
 for any action block whose token was minted at issue time.
 
+**Which archetypes get alternating gutters — and what actually prints.** The
+3-hole-punch gutter alternates side by page parity (mirror margins) for the
+`worksheet` archetype only (`DUPLEX_ARCHETYPES` in `RenderPrintDocument.mjs`).
+Every other archetype — `quiz`, `infopage` — reserves the gutter on the **left
+of every page**; v1 legacy documents draw no gutter at all.
+
+That decision now travels with the render: `execute()` returns `duplex`
+(`true` / `false` / `null` for v1), and `IssueDocument` and
+`ReplaceLostAnswerSheet` pass it to `printPdf({ duplex })`, overriding the
+printer adapter's global default. A `worksheet` prints double-sided; a
+multi-page `quiz` or `infopage` prints **single-sided**, because folding a
+fixed-gutter document onto one sheet would put facing pages' punch margins on
+opposite physical edges and punching the stack would destroy content on every
+verso. `null` leaves the adapter default in place.
+
+Adding an archetype to `DUPLEX_ARCHETYPES` changes page layout, not just a
+printer setting — it needs its own visual verification. See
+[`README.md` → Printing → Duplex](./README.md) for the PJL envelope that
+carries it (and the standing caveat that none of it is hardware-confirmed).
+
 Two **varieties** exist at the request level:
 
 - **`omr`** — card-backed. The sheet carries a compact outlined **Student

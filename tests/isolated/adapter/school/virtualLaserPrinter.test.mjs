@@ -41,10 +41,12 @@ describe('printPdf — happy path', () => {
     expect(res).toEqual({ ok: true, bytes: pdf.length, copies: 1, duplex: true });
   });
 
-  it('counts copies as N concatenated documents, like JetDirect does', async () => {
+  it('sends the document ONCE regardless of copies, like the real adapter now does', async () => {
+    // The real adapter asks for repeats with `@PJL SET COPIES`, so the wire
+    // byte count no longer scales with the copy count.
     const pdf = makePdf(1);
     const res = await printer.printPdf(pdf, { copies: 3 });
-    expect(res).toEqual({ ok: true, bytes: pdf.length * 3, copies: 3, duplex: true });
+    expect(res).toEqual({ ok: true, bytes: pdf.length, copies: 3, duplex: true });
   });
 
   it('floors and clamps copies to at least 1', async () => {
@@ -70,7 +72,7 @@ describe('printPdf — happy path', () => {
       copies: 2,
       jobName: 'agenda',
     });
-    expect(sidecar.bytes).toBe(makePdf(3).length * 2);
+    expect(sidecar.bytes).toBe(makePdf(3).length);
     expect(Date.parse(sidecar.at)).not.toBeNaN();
   });
 
@@ -89,6 +91,22 @@ describe('printPdf — happy path', () => {
     expect(job.binding).toBe('LONGEDGE');
     const sidecar = JSON.parse(await readFile(path.join(captureDir, `${job.jobId}.json`), 'utf8'));
     expect(sidecar).toMatchObject({ duplex: true, binding: 'LONGEDGE' });
+  });
+
+  it('mirrors a single-sided deployment when constructed that way', async () => {
+    // Without a constructor knob the double could only ever tell the
+    // double-sided story, whatever `printing.duplex` a deployment set.
+    const simplex = new VirtualLaserPrinterAdapter({
+      captureDir, logger: silent, duplex: false, binding: 'SHORTEDGE',
+    });
+    const res = await simplex.printPdf(makePdf(1), { jobName: 'x' });
+    expect(res.duplex).toBe(false);
+    expect(simplex.listJobs()[0]).toMatchObject({ duplex: false, binding: 'SHORTEDGE' });
+  });
+
+  it('lets a per-job duplex override the constructor default', async () => {
+    const simplex = new VirtualLaserPrinterAdapter({ captureDir, logger: silent, duplex: false });
+    expect((await simplex.printPdf(makePdf(1), { duplex: true })).duplex).toBe(true);
   });
 
   it('records a single-sided / short-edge job as asked, without applying it', async () => {

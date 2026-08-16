@@ -41,7 +41,7 @@ function sniffPageCount(pdf) {
 }
 
 export class VirtualLaserPrinterAdapter {
-  #captureDir; #logger; #clock;
+  #captureDir; #logger; #clock; #duplexDefault; #bindingDefault;
   #fault = null;
   #seq = 0;
   #jobs = [];
@@ -51,8 +51,15 @@ export class VirtualLaserPrinterAdapter {
    * @param {string} opts.captureDir - directory that stands in for the paper tray
    * @param {Object} [opts.logger=console]
    * @param {() => Date} [opts.clock] - injected for deterministic `at` timestamps
+   * @param {boolean} [opts.duplex=true] - default double-sided, same knob and same
+   *   default as the real adapter, so a `duplex: false` deployment can be mirrored
+   *   here instead of always capturing the double-sided story
+   * @param {'LONGEDGE'|'SHORTEDGE'} [opts.binding='LONGEDGE']
    */
-  constructor({ captureDir, logger = console, clock = () => new Date() } = {}) {
+  constructor({
+    captureDir, logger = console, clock = () => new Date(),
+    duplex = true, binding = 'LONGEDGE',
+  } = {}) {
     if (!captureDir) {
       throw new InfrastructureError('VirtualLaserPrinterAdapter requires captureDir', {
         code: 'MISSING_DEPENDENCY', dependency: 'captureDir',
@@ -61,6 +68,8 @@ export class VirtualLaserPrinterAdapter {
     this.#captureDir = captureDir;
     this.#logger = logger;
     this.#clock = clock;
+    this.#duplexDefault = duplex;
+    this.#bindingDefault = binding;
   }
 
   get printerUri() { return `ipp://${VIRTUAL_HOST}:${VIRTUAL_PORT}/ipp/print`; }
@@ -82,14 +91,14 @@ export class VirtualLaserPrinterAdapter {
    * @param {string} [opts.jobName='daylight-print']
    * @param {string} [opts.user='daylight']
    * @param {number} [opts.copies=1]
-   * @param {boolean} [opts.duplex=true] - double-sided, matching the real adapter's default
-   * @param {'LONGEDGE'|'SHORTEDGE'} [opts.binding='LONGEDGE']
+   * @param {boolean} [opts.duplex] - per-job override; defaults to the constructor's
+   * @param {'LONGEDGE'|'SHORTEDGE'} [opts.binding] - per-job override; defaults to the constructor's
    * @returns {Promise<{ok:boolean, bytes:number, copies:number, duplex:boolean}>}
    * @throws {InfrastructureError} INVALID_DOCUMENT | PRINT_SEND_FAILED
    */
   async printPdf(pdf, {
     jobName = 'daylight-print', user = 'daylight', copies = 1,
-    duplex = true, binding = 'LONGEDGE',
+    duplex = this.#duplexDefault, binding = this.#bindingDefault,
   } = {}) {
     if (!Buffer.isBuffer(pdf) || pdf.length === 0) {
       throw new InfrastructureError('printPdf requires non-empty PDF buffer', { code: 'INVALID_DOCUMENT' });
@@ -107,9 +116,10 @@ export class VirtualLaserPrinterAdapter {
     }
 
     const nCopies = Math.max(1, Math.floor(copies));
-    // Wire bytes: copies go out as N concatenated documents (9100 has no copies
-    // attribute). The capture holds ONE readable copy; `bytes` is what was sent.
-    const bytes = pdf.length * nCopies;
+    // Wire bytes: the document goes out ONCE regardless of `copies` — the real
+    // adapter asks for repeats with `@PJL SET COPIES`, not by concatenating —
+    // so `bytes` does not scale with the copy count.
+    const bytes = pdf.length;
     const jobId = `job_${String(++this.#seq).padStart(4, '0')}`;
     const sidecar = {
       jobId,

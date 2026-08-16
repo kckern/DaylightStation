@@ -35,7 +35,44 @@ function sanitizeJobName(jobName) {
   return String(jobName ?? '')
     .replace(/[^\x20-\x7E]/g, ' ') // no CR/LF/control bytes — they would break PJL line parsing
     .replace(/"/g, "'")
-    .slice(0, 80) || 'daylight-print';
+    .slice(0, 80)
+    // Trimmed BEFORE the fallback: a name that is all whitespace (or became
+    // all whitespace once control bytes were blanked above) is not a name, and
+    // `NAME="   "` is worse than the default — it names nothing in the
+    // printer's job log.
+    .trim() || 'daylight-print';
+}
+
+/** The only two values `@PJL SET BINDING=` may carry. */
+const BINDINGS = Object.freeze(['LONGEDGE', 'SHORTEDGE']);
+
+/**
+ * Whitelist a binding value on its way to the wire.
+ *
+ * `binding` arrives from `school.yml`, i.e. from a human. Two things go wrong
+ * without this: a value containing a newline would inject arbitrary PJL lines,
+ * and — far more likely — a plausible typo (`long-edge`, `longedge `) would
+ * emit an invalid value that the printer rejects while silently keeping its own
+ * default, producing the wrong physical output with nothing logged. Anything
+ * not on the list falls back and says so.
+ *
+ * Case and surrounding whitespace are forgiven (YAML invites both); the value
+ * that reaches the wire is always one of {@link BINDINGS} verbatim.
+ *
+ * @param {*} binding
+ * @param {Object} [opts]
+ * @param {'LONGEDGE'|'SHORTEDGE'} [opts.fallback='LONGEDGE']
+ * @param {{warn?: Function}} [opts.logger]
+ * @param {string} [opts.source] - where the bad value came from, for the log line
+ * @returns {'LONGEDGE'|'SHORTEDGE'}
+ */
+export function normalizeBinding(binding, { fallback = 'LONGEDGE', logger = null, source = 'binding' } = {}) {
+  const candidate = String(binding ?? '').trim().toUpperCase();
+  if (BINDINGS.includes(candidate)) return candidate;
+  logger?.warn?.('laser-printer.invalid-binding', {
+    source, supplied: binding, used: fallback, expected: BINDINGS,
+  });
+  return fallback;
 }
 
 /**
@@ -55,18 +92,32 @@ function sanitizeJobName(jobName) {
  * and letting PDF Direct Print auto-detect — as it does today — is the first
  * thing to try). See docs/reference/school/README.md → Printing → Duplex.
  *
- * @param {Buffer} pdf - the document bytes to wrap (already includes all copies)
+ * @param {Buffer} pdf - the document bytes to wrap (ONE copy — see `copies`)
  * @param {Object} opts
  * @param {string} opts.jobName
  * @param {boolean} opts.duplex
  * @param {'LONGEDGE'|'SHORTEDGE'} opts.binding
+ * @param {number} [opts.copies=1] - emitted as `@PJL SET COPIES`; the document
+ *   itself is sent exactly once regardless
  * @returns {Buffer}
  */
-export function pjlWrap(pdf, { jobName, duplex, binding }) {
+export function pjlWrap(pdf, {
+  jobName, duplex, binding, copies = 1,
+}) {
   const header = [
     `${UEL}@PJL JOB NAME="${sanitizeJobName(jobName)}"`,
+    // Copies are the FIRMWARE's job, not ours. Sending the PDF N times inside
+    // one `ENTER LANGUAGE=PDF` stream hands the PDF personality one contiguous
+    // stream, which resolves a single document from its trailing xref — the
+    // plausible outcome is "3 requested, 1 printed", silent, with the quota
+    // still charging 3. `COPIES` is a standard PJL environment variable and
+    // also gets copy boundaries right under duplex (each copy starts on a
+    // fresh sheet), which concatenation could not.
+    // INFERRED, NOT MEASURED — like everything else in this envelope; see the
+    // block comment above.
+    `@PJL SET COPIES=${Math.max(1, Math.floor(Number(copies) || 1))}`,
     `@PJL SET DUPLEX=${duplex ? 'ON' : 'OFF'}`,
-    ...(duplex ? [`@PJL SET BINDING=${binding}`] : []),
+    ...(duplex ? [`@PJL SET BINDING=${normalizeBinding(binding)}`] : []),
     '@PJL ENTER LANGUAGE=PDF',
     '',
   ].join('\r\n');
@@ -83,7 +134,8 @@ export function pjlWrap(pdf, { jobName, duplex, binding }) {
  * @property {number} [timeout=15000] - IPP request timeout in ms
  * @property {number} [printTimeout=60000] - raw print send timeout in ms
  * @property {boolean} [duplex=true] - default double-sided printing (config-driven; per-job override in printPdf)
- * @property {'LONGEDGE'|'SHORTEDGE'} [binding='LONGEDGE'] - duplex flip style; LONGEDGE = book-style, the right default for portrait text
+ * @property {'LONGEDGE'|'SHORTEDGE'} [binding='LONGEDGE'] - duplex flip style; LONGEDGE = book-style,
+ *   the right default for portrait text. Whitelisted at construction — see {@link normalizeBinding}
  */
 export class LaserPrinterAdapter {
   #host; #port; #rawPort; #path; #timeout; #printTimeout; #duplexDefault; #bindingDefault; #logger;
@@ -107,7 +159,9 @@ export class LaserPrinterAdapter {
     // fresh job's connect can wait. Generous timeout covers warm-up + render.
     this.#printTimeout = printTimeout;
     this.#duplexDefault = duplex;
-    this.#bindingDefault = binding;
+    // Validated once, at construction, so a `school.yml` typo is reported at
+    // boot rather than silently mis-binding every job for the rest of time.
+    this.#bindingDefault = normalizeBinding(binding, { logger, source: 'adapter-config' });
     this.#logger = logger;
   }
 
@@ -133,14 +187,13 @@ export class LaserPrinterAdapter {
 
   /**
    * Print a PDF via raw JetDirect (port 9100). The Brother's PDF Direct Print
-   * renders the bytes as-is; copies are sent as N concatenated documents
-   * (JetDirect has no copies attribute). Resolves once every byte is flushed
-   * and the socket closes cleanly — port 9100 is fire-and-forget, so there is
-   * no per-job ack; a stream/connect failure is the only failure signal.
+   * renders the bytes as-is. Resolves once every byte is flushed and the socket
+   * closes cleanly — port 9100 is fire-and-forget, so there is no per-job ack;
+   * a stream/connect failure is the only failure signal.
    *
-   * The payload is wrapped in ONE {@link pjlWrap} envelope carrying the duplex
-   * settings — one PJL job, N documents inside it, exactly the single stream
-   * the printer already parses today.
+   * The document is wrapped in ONE {@link pjlWrap} envelope carrying the duplex
+   * settings and the copy count — one PJL job, ONE document inside it, with
+   * `@PJL SET COPIES` asking the firmware for the repeats.
    *
    * @param {Buffer} pdf - complete PDF bytes
    * @param {Object} [opts]
@@ -148,7 +201,9 @@ export class LaserPrinterAdapter {
    * @param {string} [opts.user='daylight'] - for our own logging (9100 carries no user metadata)
    * @param {number} [opts.copies=1]
    * @param {boolean} [opts.duplex] - per-job override; defaults to the adapter's configured default
-   * @param {'LONGEDGE'|'SHORTEDGE'} [opts.binding] - per-job override; ignored when duplex is off
+   * @param {'LONGEDGE'|'SHORTEDGE'} [opts.binding] - per-job override; ignored when duplex is off.
+   *   Anything outside that pair is refused with a `laser-printer.invalid-binding` warning and the
+   *   adapter's configured default is used instead
    * @returns {Promise<{ok:boolean, bytes:number, copies:number, duplex:boolean}>} `bytes` counts the
    *   wire payload INCLUDING the PJL envelope; `duplex` echoes what was requested (not confirmed —
    *   9100 gives no ack, and PJL duplex is unverified on this printer model)
@@ -165,11 +220,13 @@ export class LaserPrinterAdapter {
       return Promise.reject(new InfrastructureError('document is not a PDF', { code: 'INVALID_DOCUMENT' }));
     }
     const nCopies = Math.max(1, Math.floor(copies));
-    const documents = nCopies === 1 ? pdf : Buffer.concat(Array.from({ length: nCopies }, () => pdf));
-    // ONE envelope around ALL copies, not one per copy: the settings apply to
-    // the whole job and the printer sees the same single concatenated stream it
-    // already handles today. Per-copy envelopes would mint N separate PJL jobs.
-    const payload = pjlWrap(documents, { jobName, duplex, binding });
+    const resolvedBinding = normalizeBinding(binding, {
+      fallback: this.#bindingDefault, logger: this.#logger, source: 'print-job',
+    });
+    // ONE envelope, ONE document, `COPIES` doing the repeating: see pjlWrap.
+    const payload = pjlWrap(pdf, {
+      jobName, duplex, binding: resolvedBinding, copies: nCopies,
+    });
 
     return new Promise((resolve, reject) => {
       const sock = createConnection({ host: this.#host, port: this.#rawPort, timeout: this.#printTimeout });

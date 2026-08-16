@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import net from 'net';
-import { LaserPrinterAdapter, pjlWrap } from '../../../../backend/src/1_adapters/hardware/laser-printer/LaserPrinterAdapter.mjs';
+import { LaserPrinterAdapter, pjlWrap, normalizeBinding } from '../../../../backend/src/1_adapters/hardware/laser-printer/LaserPrinterAdapter.mjs';
 
 const PDF = Buffer.from('%PDF-1.4\n... fake worksheet ...\n%%EOF');
 
@@ -34,20 +34,37 @@ describe('LaserPrinterAdapter.printPdf (raw 9100)', () => {
     expect(received[0].includes(PDF)).toBe(true); // PDF bytes travel untouched
   });
 
-  it('sends N copies as N concatenated documents inside ONE PJL envelope', async () => {
+  it('asks for N copies with @PJL SET COPIES, sending the document exactly ONCE', async () => {
     const { port, received } = await rawSink();
     const p = new LaserPrinterAdapter({ host: '127.0.0.1', rawPort: port, logger: { info() {} } });
     const r = await p.printPdf(PDF, { copies: 3 });
     expect(r.copies).toBe(3);
     await flush();
     const sent = received[0];
+    const text = sent.toString('latin1');
     expect(sent.length).toBe(r.bytes);
-    // Three documents, one envelope — not three envelopes.
-    expect(sent.toString('latin1').split('%PDF-1.4')).toHaveLength(4);
-    expect(sent.toString('latin1').split('@PJL JOB')).toHaveLength(2);
+    expect(text).toContain('@PJL SET COPIES=3');
+    // ONE document, ONE envelope. Concatenating the PDF three times inside a
+    // single `ENTER LANGUAGE=PDF` stream would plausibly print once and drop
+    // the rest — silently, while the quota still charged three.
+    expect(text.split('%PDF-1.4')).toHaveLength(2);
+    expect(text.split('@PJL JOB')).toHaveLength(2);
     expect(sent.length).toBe(
-      pjlWrap(Buffer.concat([PDF, PDF, PDF]), { jobName: 'daylight-print', duplex: true, binding: 'LONGEDGE' }).length,
+      pjlWrap(PDF, {
+        jobName: 'daylight-print', duplex: true, binding: 'LONGEDGE', copies: 3,
+      }).length,
     );
+  });
+
+  it('clamps copies to a whole number of at least 1, on the wire as well as in the result', async () => {
+    const { port, received } = await rawSink();
+    const p = new LaserPrinterAdapter({ host: '127.0.0.1', rawPort: port, logger: { info() {} } });
+    expect((await p.printPdf(PDF, { copies: 0 })).copies).toBe(1);
+    await flush();
+    expect(received[0].toString('latin1')).toContain('@PJL SET COPIES=1');
+    expect((await p.printPdf(PDF, { copies: 2.7 })).copies).toBe(2);
+    await flush();
+    expect(received[1].toString('latin1')).toContain('@PJL SET COPIES=2');
   });
 
   it('rejects a non-PDF buffer before opening a socket', async () => {
@@ -85,8 +102,11 @@ describe('LaserPrinterAdapter duplex (PJL wrapping)', () => {
     expect(text).toContain('@PJL JOB NAME="test-job"');
     expect(text).toContain('%PDF-'); // the real PDF bytes are still in there, untouched
     // Exact envelope: UEL ... ENTER LANGUAGE=PDF, payload, UEL EOJ UEL.
+    // Every SET lands BEFORE the language switch — after it, the bytes belong
+    // to the PDF personality and PJL is no longer reading.
     expect(text.startsWith(
       '\x1B%-12345X@PJL JOB NAME="test-job"\r\n'
+      + '@PJL SET COPIES=1\r\n'
       + '@PJL SET DUPLEX=ON\r\n'
       + '@PJL SET BINDING=LONGEDGE\r\n'
       + '@PJL ENTER LANGUAGE=PDF\r\n',
@@ -129,5 +149,79 @@ describe('LaserPrinterAdapter duplex (PJL wrapping)', () => {
     expect(text).toContain("@PJL JOB NAME=\"a'b  @PJL SET DUPLEX=OFF\"");
     expect(text).toContain('@PJL SET DUPLEX=ON');
     expect(text).not.toContain('\r\n@PJL SET DUPLEX=OFF');
+  });
+
+  it('truncates a job name at 80 characters', async () => {
+    const { text } = await sendAndCapture({}, { jobName: 'x'.repeat(200) });
+    expect(text).toContain(`@PJL JOB NAME="${'x'.repeat(80)}"`);
+    expect(text).not.toContain('x'.repeat(81));
+  });
+
+  it('falls back to the default job name when the name is only whitespace', async () => {
+    // Control bytes are blanked before this check, so "\t\n" arrives here as
+    // spaces — NAME="   " would name nothing in the printer's job log.
+    const { text } = await sendAndCapture({}, { jobName: ' \t\n ' });
+    expect(text).toContain('@PJL JOB NAME="daylight-print"');
+  });
+});
+
+describe('LaserPrinterAdapter binding validation', () => {
+  /** Print once against a live sink, capturing both the wire bytes and every warn. */
+  async function sendAndCapture(adapterOpts = {}, jobOpts = {}) {
+    const { port, received } = await rawSink();
+    const warnings = [];
+    const p = new LaserPrinterAdapter({
+      host: '127.0.0.1',
+      rawPort: port,
+      logger: { info() {}, warn: (event, data) => warnings.push({ event, data }) },
+      ...adapterOpts,
+    });
+    const result = await p.printPdf(PDF, jobOpts);
+    await flush();
+    return { result, warnings, text: received[0].toString('latin1') };
+  }
+
+  it('accepts the two legal bindings, case- and whitespace-insensitively', () => {
+    expect(normalizeBinding('LONGEDGE')).toBe('LONGEDGE');
+    expect(normalizeBinding('SHORTEDGE')).toBe('SHORTEDGE');
+    expect(normalizeBinding(' shortedge ')).toBe('SHORTEDGE');
+  });
+
+  it('refuses a plausible typo, warns, and prints with the fallback instead', async () => {
+    // `long-edge` is the shape a human writes; unchecked it would emit an
+    // invalid PJL value the printer rejects while silently keeping its own
+    // default — the wrong physical output, with nothing logged.
+    const { text, warnings } = await sendAndCapture({ binding: 'long-edge' });
+    expect(text).toContain('@PJL SET BINDING=LONGEDGE');
+    expect(text).not.toContain('long-edge');
+    const warned = warnings.find((w) => w.event === 'laser-printer.invalid-binding');
+    expect(warned).toBeDefined();
+    expect(warned.data).toMatchObject({ supplied: 'long-edge', used: 'LONGEDGE' });
+  });
+
+  it('refuses a per-job binding that would inject a PJL line, and says so', async () => {
+    const { text, warnings } = await sendAndCapture(
+      { binding: 'SHORTEDGE' },
+      { binding: 'LONGEDGE\r\n@PJL SET DUPLEX=OFF' },
+    );
+    // Falls back to the ADAPTER's configured binding, not a hardcoded one.
+    expect(text).toContain('@PJL SET BINDING=SHORTEDGE');
+    expect(text).toContain('@PJL SET DUPLEX=ON');
+    expect(text).not.toContain('DUPLEX=OFF');
+    expect(warnings.find((w) => w.event === 'laser-printer.invalid-binding').data)
+      .toMatchObject({ used: 'SHORTEDGE' });
+  });
+
+  it('warns at CONSTRUCTION for a bad configured binding, before any job runs', () => {
+    const warnings = [];
+    // eslint-disable-next-line no-new
+    new LaserPrinterAdapter({
+      host: '127.0.0.1',
+      binding: 'longedge-ish',
+      logger: { info() {}, warn: (event, data) => warnings.push({ event, data }) },
+    });
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].event).toBe('laser-printer.invalid-binding');
+    expect(warnings[0].data).toMatchObject({ source: 'adapter-config', used: 'LONGEDGE' });
   });
 });
