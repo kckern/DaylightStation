@@ -130,12 +130,28 @@ export class YamlSessionDatastore extends ISessionDatastore {
       canonicalId
     );
 
+    // The snapshot manifest indexes the frames in screenshotsDir, so it is stored
+    // beside them rather than inside the session file. Inline it is by far the
+    // largest thing in data/: one measured session was 294 lines of history and
+    // 90,849 lines of manifest. data/ has to stay committable; an index of media
+    // assets is media.
+    const snapshotsFilePath = path.join(
+      this.mediaRoot,
+      'apps',
+      'fitness',
+      'sessions',
+      sessionDate,
+      canonicalId,
+      'snapshots'
+    );
+
     return {
       sessionDate,
       sessionsDir,
       sessionFilePath,
       screenshotsDir,
       screenshotsRelativeBase,
+      snapshotsFilePath,
       trashDir
     };
   }
@@ -155,7 +171,20 @@ export class YamlSessionDatastore extends ISessionDatastore {
 
     ensureDir(paths.sessionsDir);
     ensureDir(paths.screenshotsDir);
-    saveYaml(paths.sessionFilePath, data);
+
+    // Split the frame manifest out to media before the session hits data/.
+    // `snapshots` is destructured off a shallow copy so the caller's entity is
+    // not mutated by having been saved.
+    const { snapshots, ...history } = data;
+    // Same predicate Session.toJSON uses to decide the field is worth emitting —
+    // an empty captures array with an updatedAt still counts, so it must not be
+    // dropped on the way to the sidecar.
+    const hasManifest = !!snapshots
+      && ((Array.isArray(snapshots.captures) && snapshots.captures.length > 0)
+        || snapshots.updatedAt != null);
+    if (hasManifest) saveYaml(paths.snapshotsFilePath, snapshots);
+
+    saveYaml(paths.sessionFilePath, history);
     this.#invalidateIndexDay(paths.sessionDate, householdId);
   }
 
@@ -224,6 +253,15 @@ export class YamlSessionDatastore extends ISessionDatastore {
 
     const data = loadYamlSafe(paths.sessionFilePath);
     if (!data) return null;
+
+    // Rehydrate the frame manifest from media so consumers (TimelapseFrameMapper,
+    // YamlRecapSnapshotStore) see the same shape they always did. An inline
+    // manifest wins: every session written before the split still carries one, and
+    // those files are left alone until migrated.
+    if (!data.snapshots) {
+      const sidecar = loadYamlSafe(paths.snapshotsFilePath);
+      if (sidecar) data.snapshots = sidecar;
+    }
 
     // Parse timestamps to unix ms for API compatibility
     // New v3 files use session.start/end; older files use root startTime/endTime
