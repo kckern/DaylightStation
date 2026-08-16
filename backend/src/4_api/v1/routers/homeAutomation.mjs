@@ -66,6 +66,7 @@ export function createHomeAutomationRouter(config) {
   const router = express.Router();
   const {
     haGateway,
+    weatherStore,
     tvAdapter,
     kioskAdapter,
     taskerAdapter,
@@ -318,8 +319,11 @@ export function createHomeAutomationRouter(config) {
       return res.status(503).json({ error: 'State file loading not configured' });
     }
 
-    // loadFile already prepends household path, just use relative path
-    const weatherData = loadFile('weather/current') || {};
+    // The STORE knows where weather lives; this router only knows it wants
+    // current conditions. It used to call loadFile('common/weather'), then
+    // loadFile('weather/current') — an API route tracking storage layout,
+    // which is why the household reorganization had to edit this file.
+    const weatherData = (await weatherStore?.load?.()) || {};
     res.json(weatherData);
   }));
 
