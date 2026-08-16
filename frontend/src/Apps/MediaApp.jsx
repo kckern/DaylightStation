@@ -24,7 +24,21 @@ export default function MediaApp() {
   useDocumentTitle('Media');
 
   useEffect(() => {
-    mediaLog.mounted({});
+    // Device shape belongs on the FIRST event of the session. A 2026-08-16
+    // report of "couldn't search on mobile, in portrait" had to be sized from a
+    // viewport that only appeared incidentally inside an audio-shader warning —
+    // nothing else in the stream said how big the screen was, or which way up.
+    const s = typeof window !== 'undefined' ? window.screen : null;
+    mediaLog.mounted({
+      viewport: typeof window !== 'undefined'
+        ? { width: window.innerWidth, height: window.innerHeight }
+        : null,
+      orientation: s?.orientation?.type
+        ?? (typeof window !== 'undefined'
+          ? (window.innerWidth >= window.innerHeight ? 'landscape' : 'portrait')
+          : null),
+      devicePixelRatio: typeof window !== 'undefined' ? window.devicePixelRatio : null,
+    });
     // C9.4/C9.7: a backend outage must never reload this page out from
     // under local playback. Kiosk routes keep the default behavior.
     wsService.setAutoReloadEnabled(false);

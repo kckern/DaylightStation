@@ -778,7 +778,7 @@ dot-delimited namespaces. Every event SHOULD include `clientId`,
 
 | Event | Level | Emitted when | Key fields |
 |---|---|---|---|
-| `media-app.mounted` | info | App mounts. | `clientId`, `displayName` |
+| `media-app.mounted` | info | App mounts. | `clientId`, `displayName`, `viewport{width,height}`, `orientation`, `devicePixelRatio` |
 | `media-app.unmounted` | info | App unmounts. | — |
 | `session.created` | info | New local session started. | `sessionId`, `contentId` |
 | `session.reset` | info | User explicitly reset session. | — |
@@ -786,6 +786,7 @@ dot-delimited namespaces. Every event SHOULD include `clientId`,
 | `session.state-change` | debug | Session state transition. | `from`, `to` |
 | `session.persisted` | debug | State flushed. | `size` |
 | `queue.mutated` | debug | Queue modified. | `op`, `queueItemId?`, `contentId?`, `queueSize` |
+| `player.host-changed` | info | Active player host claim changed (park ↔ dock ↔ Now Playing). | `reason`, `claimant`, `from`, `to`, `parked`, `claimCount` |
 | `playback.started` | info | First progress after load. | `contentId`, `format`, `ttfpMs` |
 | `playback.stalled` | warn | Stall detected. | `contentId`, `stalledAt`, `stallDurationMs` |
 | `playback.error` | error | Load/play error. | `contentId`, `error`, `code` |
@@ -822,6 +823,33 @@ High-frequency events MUST use
 
 All events emitted during a single local session MUST carry that session's
 `sessionId`. External consumers correlate by `clientId` + `sessionId`.
+
+### 10.4 Durability
+
+Every event in §10.1 MUST carry `context.app` **and** `context.sessionLog`.
+The backend session-file transport gates on exactly those two fields
+(`0_system/logging/transports/sessionFile.mjs`); an event missing either is
+written to stdout only, which means `docker logs` — a ring buffer that is
+discarded when the container is recreated. `mediaLog.js` sets both once on its
+base child logger, so every helper in that module inherits them.
+
+This is not theoretical. On 2026-08-16 the durable record of a real incident
+(`media/logs/media/2026-08-16T19-13-26.jsonl`) held 13 events — 8
+`search.dispatch`, 2 `editing.start`, `item_select`, 2 `browse_container.*` —
+all of them from `ContentCombobox`, the one component that set `sessionLog`
+itself. Every playback, stall, host-transition and error event was absent, and
+the diagnosis was possible only because the container happened not to have been
+recreated. Treat "is this event durable?" as part of adding an event, not as an
+operational afterthought.
+
+Two related traps, both fixed and both worth not re-introducing:
+
+- The logger's own console output (`[Logger] …`) must not be re-ingested by
+  `consoleInterceptor` — see `lib/logging/consoleEmitGuard.js`. Without the
+  guard every `warn` and `error` reached the backend twice.
+- Backend events are stamped in local time (ISO with no trailing `Z`) while
+  frontend events are UTC with `Z`. They interleave in one stdout stream, so
+  read timestamps with the offset in mind.
 
 ---
 
