@@ -170,6 +170,18 @@ options, correct option identities, A–E letters, document revision, Student
 No., and answer-sheet rows. Reprints resolve that snapshot, so later question
 bank edits cannot change paper already issued or its grading key.
 
+**The instance is also the grading roster.** For a unit with a `bank` and no
+`document`, the sheet holds a *sample* of the bank — so the instance's
+`itemIds` is the only correct denominator, and the only correct list of
+questions a grown-up can still be asked to mark. `SubmitPaperWork` and
+`GradeSubmission` both read it via `worksheetInstanceRoster()`
+(`2_domains/school/questionBankV2.mjs`), taking `itemIds` as authoritative and
+`questions[].itemId` only as a repair fallback. Reading the live bank back
+instead scored a perfect ten-question paper out of however many items the bank
+holds today, and queued the never-printed remainder as work nobody could ever
+clear — pinning the session at `awaiting_review` permanently. A session with no
+instance on file (a legacy screen-path hand-in) still marks against the bank.
+
 The authored course and banks remain content under
 `content/school/curriculum/`, and the authored print-document sources under
 `content/school/catalog/documents/`. Published documents, derived banks, and
