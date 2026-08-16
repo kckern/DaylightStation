@@ -12,7 +12,6 @@
  * Path registry + behavior are preserved VERBATIM from the router.
  */
 import path from 'path';
-import fs from 'fs';
 import yaml from 'js-yaml';
 import {
   ValidationError,
@@ -37,12 +36,17 @@ const APP_CONFIGS = {
 const YAML_DUMP_OPTS = { indent: 2, lineWidth: -1, noRefs: true };
 
 export class AppsConfigService {
+  #configFiles;
+
   /**
    * @param {Object} deps
    * @param {Object} deps.configService - ConfigService for data directory paths
    * @param {Object} [deps.logger=console] - Logger instance
    */
-  constructor({ configService, logger = console }) {
+  constructor({ configService, configFiles, logger = console }) {
+    // D5: no fs in the application layer. This service still decides WHICH
+    // file and what its contents mean; the store does the four primitives.
+    this.#configFiles = configFiles;
     if (!configService) {
       throw new Error('AppsConfigService requires a configService dependency');
     }
@@ -78,10 +82,10 @@ export class AppsConfigService {
     const dataRoot = this.#getDataRoot();
     const apps = Object.entries(APP_CONFIGS).map(([appId, configPath]) => {
       const absPath = path.join(dataRoot, configPath);
-      const exists = fs.existsSync(absPath);
+      const exists = this.#configFiles.exists(absPath);
       let size = null, modified = null;
       if (exists) {
-        const stat = fs.statSync(absPath);
+        const stat = this.#configFiles.stat(absPath);
         size = stat.size;
         modified = stat.mtime.toISOString();
       }
@@ -102,11 +106,11 @@ export class AppsConfigService {
   readAppConfig(appId) {
     const { configPath, absPath } = this.#resolveApp(appId);
 
-    if (!fs.existsSync(absPath)) {
+    if (!this.#configFiles.exists(absPath)) {
       throw new NotFoundError(`Config file not found for "${appId}"`, undefined, { appId, code: 'CONFIG_NOT_FOUND' });
     }
 
-    const raw = fs.readFileSync(absPath, 'utf8');
+    const raw = this.#configFiles.readText(absPath);
     let parsed;
     try {
       parsed = yaml.load(raw);
@@ -114,7 +118,7 @@ export class AppsConfigService {
       parsed = null;
     }
 
-    const stat = fs.statSync(absPath);
+    const stat = this.#configFiles.stat(absPath);
 
     this.logger.info?.('admin.apps.config.read', { appId });
     return {
@@ -170,13 +174,12 @@ export class AppsConfigService {
     }
 
     const dir = path.dirname(absPath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+    if (!this.#configFiles.exists(dir)) {
     }
 
-    fs.writeFileSync(absPath, fileContent, 'utf8');
+    this.#configFiles.writeText(absPath, fileContent);
 
-    const stat = fs.statSync(absPath);
+    const stat = this.#configFiles.stat(absPath);
 
     this.logger.info?.('admin.apps.config.written', { appId });
     return {

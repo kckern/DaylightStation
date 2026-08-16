@@ -1,5 +1,4 @@
 import path from 'path';
-import { saveYaml } from '#system/utils/FileIO.mjs';
 
 const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 const DEFAULTS = { quiet_hours: { enabled: false, start: '21:00', end: '07:00' }, cooldowns: { default: 60 } };
@@ -13,7 +12,12 @@ function validationError(message) {
 export class NotificationConfigService {
   #configService;
   #logger;
-  constructor({ configService, logger = console }) {
+
+  #configFiles;
+
+  /** D5: the YAML write goes through a datastore port, not FileIO. */
+  constructor({ configFiles, configService, logger = console }) {
+    this.#configFiles = configFiles;
     this.#configService = configService;
     this.#logger = logger;
   }
@@ -44,7 +48,7 @@ export class NotificationConfigService {
       cooldowns: { default: 60, ...cooldowns },
     };
     const file = path.join(this.#configService.getHouseholdPath('config'), 'notifications.yml');
-    saveYaml(file, next);
+    this.#configFiles.writeYaml(file, next);
     this.#configService.reloadHouseholdAppConfig?.(null, 'notifications');
     this.#logger?.info?.('notification.config.updated', { file });
     return this.getConfig();

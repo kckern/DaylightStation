@@ -339,6 +339,7 @@ import { ContentExpression } from '#domains/content/ContentExpression.mjs';
 import { resolveFormat } from '#domains/content/utils/resolveFormat.mjs';
 import * as schoolErrors from '#domains/school/errors.mjs';
 import { YamlDayLogDatastore } from '#adapters/persistence/yaml/YamlDayLogDatastore.mjs';
+import { YamlConfigFileStore } from '#adapters/persistence/yaml/YamlConfigFileStore.mjs';
 
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
 
@@ -1058,6 +1059,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Admin-facing config CRUD for household notification governance
   // (quiet hours, cooldowns). Kept separate from the runtime notificationStack.
   const notificationConfigService = new NotificationConfigService({
+    configFiles: new YamlConfigFileStore({ logger: rootLogger.child({ module: 'config-files' }) }),
     configService,
     logger: rootLogger.child({ module: 'notifications', submodule: 'config' }),
   });
@@ -4592,7 +4594,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // admin router so 4_api/**/admin/* never imports #apps. Persistence + rules live
   // in these services; the sub-routers are thin HTTP shells.
   const adminApiLogger = rootLogger.child({ module: 'admin-api' });
+  // D5: the admin services decide WHICH config file; this store does the I/O.
+  const configFiles = new YamlConfigFileStore({ logger: rootLogger.child({ module: 'config-files' }) });
   const householdAdminService = new HouseholdAdminService({
+    configFiles,
     configService,
     logger: adminApiLogger.child?.({ submodule: 'household' }) || adminApiLogger
   });
@@ -4601,16 +4606,19 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: adminApiLogger.child?.({ submodule: 'config' }) || adminApiLogger
   });
   const appsConfigService = new AppsConfigService({
+    configFiles,
     configService,
     logger: adminApiLogger.child?.({ submodule: 'apps' }) || adminApiLogger
   });
   const schedulerAdminService = new SchedulerAdminService({
+    configFiles,
     configService,
     // Real manual-run path: the same orchestrator the scheduling loop uses.
     schedulerOrchestrator,
     logger: adminApiLogger.child?.({ submodule: 'scheduler' }) || adminApiLogger
   });
   const integrationsQueryService = new IntegrationsQueryService({
+    configFiles,
     configService,
     // Environment resolved at the composition root (was process.env in the router).
     environment: process.env.DAYLIGHT_ENV || 'docker',

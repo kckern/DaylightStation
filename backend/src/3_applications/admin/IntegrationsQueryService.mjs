@@ -21,11 +21,11 @@
  * implemented, so it returns `status: 'untested'` rather than faking a result.
  */
 import path from 'path';
-import fs from 'fs';
-import yaml from 'js-yaml';
 import { NotFoundError } from '#system/utils/errors/index.mjs';
 
 export class IntegrationsQueryService {
+  #configFiles;
+
   /**
    * @param {Object} deps
    * @param {Object} deps.configService - ConfigService for data directory paths
@@ -33,7 +33,10 @@ export class IntegrationsQueryService {
    *   composition root (was `process.env.DAYLIGHT_ENV || 'docker'` inline in the router).
    * @param {Object} [deps.logger=console] - Logger instance
    */
-  constructor({ configService, environment = 'docker', logger = console }) {
+  constructor({ configService, configFiles, environment = 'docker', logger = console }) {
+    // D5: no fs in the application layer. This service still decides WHICH
+    // file and what its contents mean; the store does the four primitives.
+    this.#configFiles = configFiles;
     if (!configService) {
       throw new Error('IntegrationsQueryService requires a configService dependency');
     }
@@ -50,15 +53,15 @@ export class IntegrationsQueryService {
   /** Read household integrations config from household/config/integrations.yml */
   #readIntegrations() {
     const absPath = path.join(this.#getDataRoot(), 'household/config/integrations.yml');
-    if (!fs.existsSync(absPath)) return {};
-    return yaml.load(fs.readFileSync(absPath, 'utf8')) || {};
+    if (!this.#configFiles.exists(absPath)) return {};
+    return this.#configFiles.readYaml(absPath, {});
   }
 
   /** Read services config from system/config/services.yml */
   #readServices() {
     const absPath = path.join(this.#getDataRoot(), 'system/config/services.yml');
-    if (!fs.existsSync(absPath)) return {};
-    return yaml.load(fs.readFileSync(absPath, 'utf8')) || {};
+    if (!this.#configFiles.exists(absPath)) return {};
+    return this.#configFiles.readYaml(absPath, {});
   }
 
   /**
@@ -78,7 +81,7 @@ export class IntegrationsQueryService {
   #checkAuthExists(provider) {
     const householdPath = path.join(this.#getDataRoot(), `household/auth/${provider}.yml`);
     const systemPath = path.join(this.#getDataRoot(), `system/auth/${provider}.yml`);
-    return fs.existsSync(householdPath) || fs.existsSync(systemPath);
+    return this.#configFiles.exists(householdPath) || this.#configFiles.exists(systemPath);
   }
 
   /**
@@ -178,8 +181,8 @@ export class IntegrationsQueryService {
       url: this.#getServiceUrl(services, providerName),
       hasAuth: this.#checkAuthExists(providerName),
       authLocations: {
-        household: fs.existsSync(path.join(dataRoot, `household/auth/${providerName}.yml`)),
-        system: fs.existsSync(path.join(dataRoot, `system/auth/${providerName}.yml`)),
+        household: this.#configFiles.exists(path.join(dataRoot, `household/auth/${providerName}.yml`)),
+        system: this.#configFiles.exists(path.join(dataRoot, `system/auth/${providerName}.yml`)),
       },
     };
 
