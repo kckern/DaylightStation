@@ -23,7 +23,7 @@
  * it is intentionally NOT threaded anywhere, since there is nothing in the
  * renderer today for it to override.
  *
- * TWO ROOTS. `--source-root` (default `content/school/catalog/documents`) is
+ * TWO ROOTS. `--source-root` (default `content/school/learning-catalog/documents`) is
  * where hand-authored document CLASSES live, on the School catalog shelf
  * beside the `school.learning-document/v1` files; `--content-root` (default
  * `content/school/print-documents`) is the ARTIFACT root — `published/`,
@@ -177,11 +177,11 @@ Options:
   --data-dir <path>      data root (default: $DAYLIGHT_BASE_PATH/data)
   --content-root <path>  ARTIFACT root, absolute or data-relative — where
                          published/, derived-banks/ and allocations/ live
-                         (default: content/school/print-documents)
+                         (default: household/apps/school/print-documents)
   --source-root <path>   authored SOURCE root, absolute or data-relative —
                          where hand-written document classes live, on the
-                         School catalog shelf beside the learning documents
-                         (default: content/school/catalog/documents)
+                         learning-catalog shelf beside the learning documents
+                         (default: content/school/learning-catalog/documents)
   --out <path>           (render/reprint) output PDF path — required
   --learner-name <s>     (render) prefill the header Name line
   --date <s>             (render) prefill the header Date line
@@ -251,11 +251,11 @@ export function resolveSchoolDocsContentPaths({ flags = {}, env = process.env } 
   );
   const contentRoot = resolveFrom(
     dataDir,
-    valueFlag(flags['content-root'], '--content-root') ?? 'content/school/print-documents',
+    valueFlag(flags['content-root'], '--content-root') ?? 'household/apps/school/print-documents',
   );
   const sourceRoot = resolveFrom(
     dataDir,
-    valueFlag(flags['source-root'], '--source-root') ?? 'content/school/catalog/documents',
+    valueFlag(flags['source-root'], '--source-root') ?? 'content/school/learning-catalog/documents',
   );
   return { dataDir, contentRoot, sourceRoot };
 }

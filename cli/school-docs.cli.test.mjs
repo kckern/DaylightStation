@@ -112,9 +112,9 @@ describe('school-docs CLI', () => {
     });
   });
 
-  it('defaults content-root to content/school/print-documents', () => {
+  it('defaults content-root to household/apps/school/print-documents', () => {
     expect(resolveSchoolDocsContentPaths({ env: { DAYLIGHT_BASE_PATH: '/srv/daylight' } }).contentRoot)
-      .toBe('/srv/daylight/data/content/school/print-documents');
+      .toBe('/srv/daylight/data/household/apps/school/print-documents');
   });
 
   it('defaults source-root to the catalog documents shelf, and honours --source-root (absolute or data-relative)', () => {
@@ -179,7 +179,7 @@ describe('school-docs CLI', () => {
     }));
 
     it('resolves a bare (non-absolute) file argument relative to the content root', async () => withTmpDir(async (root) => {
-      const contentRoot = path.join(root, 'data/content/school/print-documents');
+      const contentRoot = path.join(root, 'data/household/apps/school/print-documents');
       await mkdir(contentRoot, { recursive: true });
       await writeFile(path.join(contentRoot, 'ok.yml'), dump(v1OkDoc()));
 
@@ -421,7 +421,7 @@ describe('school-docs CLI', () => {
         }],
       }));
 
-      const contentRoot = path.join(customDataDir, 'content/school/print-documents');
+      const contentRoot = path.join(customDataDir, 'household/apps/school/print-documents');
       await mkdir(contentRoot, { recursive: true });
       await writeFile(path.join(contentRoot, 'doc.yml'), dump({
         schema: 'school.document/v2',
