@@ -106,7 +106,7 @@
     "backend:log": "node backend/index.js 2>&1 | tee dev.log",
     "frontend": "npm run dev --prefix frontend",
     "frontend:dev": "npm run dev --prefix frontend",
-    "test": "npm run test:isolated && npm run test:integrated",
+    "test": "npm run test:isolated && npm run test:integrated && npm run test:backend",
     "test:isolated": "node tests/_infrastructure/harnesses/isolated.harness.mjs",
     "test:integrated": "node tests/_infrastructure/harnesses/integrated.harness.mjs",
     "test:unit": "node tests/unit/harness.mjs",
@@ -149,6 +149,7 @@
     "test:unit:vitest": "node scripts/gate-vitest.mjs",
     "sheet": "node scripts/gen-sheet.mjs",
     "audit:paths": "node scripts/audit-household-paths.mjs",
+    "test:backend": "node scripts/test-backend.mjs",
     "audit:links": "node scripts/audit-esm-links.mjs",
     "smoke:yaml": "node scripts/smoke-yaml-contracts.mjs"
   }
