@@ -23,6 +23,8 @@ export class NotificationContainer {
    * @param {Object} [options.ledgerStore] - dedupe/quiet-hours ledger; enables
    *   governance when paired with options.policy.
    * @param {Function} [options.configLoader] - () => ({ quietHours, cooldowns })
+   * @param {Function} [options.resolveDefaultRecipient] - () => username; the
+   *   fallback addressee for system-category intents.
    * @param {Object} [options.clock] - { now: () => Date }
    * @param {Object} [options.logger]
    */
@@ -39,6 +41,7 @@ export class NotificationContainer {
         policy: this.#options.policy,
         ledgerStore: this.#options.ledgerStore,
         configLoader: this.#options.configLoader,
+        resolveDefaultRecipient: this.#options.resolveDefaultRecipient,
         clock: this.#options.clock,
         logger: this.#options.logger,
       });
