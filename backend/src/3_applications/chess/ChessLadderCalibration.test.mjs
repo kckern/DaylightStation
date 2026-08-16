@@ -170,3 +170,24 @@ describe('saturationWarning', () => {
     expect(saturationWarning(distinctRungs(results), results)).toBeNull();
   });
 });
+
+describe('distinctRungs single linkage', () => {
+  it('collapses an evenly-spaced run rather than splitting it arbitrarily', () => {
+    // Real depth-20 output. Anchoring each band on its first member put 132 and
+    // 108 together while giving 106 a band of its own — a nonsense reading.
+    const results = [
+      { id: 'skill 0', acpl: 132 }, { id: 'skill 4', acpl: 106 }, { id: 'skill 8', acpl: 113 },
+      { id: 'skill 12', acpl: 108 }, { id: 'skill 16', acpl: 105 }, { id: 'skill 20', acpl: 108 },
+    ];
+    const bands = distinctRungs(results);
+    expect(bands).toHaveLength(1);
+    expect(bands[0].members).toHaveLength(6);
+  });
+
+  it('still separates candidates that are genuinely apart', () => {
+    const bands = distinctRungs([
+      { id: 'weak', acpl: 200 }, { id: 'mid', acpl: 120 }, { id: 'strong', acpl: 30 },
+    ]);
+    expect(bands).toHaveLength(3);
+  });
+});

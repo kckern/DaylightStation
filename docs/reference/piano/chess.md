@@ -394,10 +394,27 @@ ACPL is stronger; the children's own numbers are on the same scale.
 | homegrown depth 1, any blunder rate | 185-243 |
 
 **Read the first row as a limit of the measurement, not as a fact about Stockfish.** Skill 20 is
-obviously not equal to skill 0. What the run shows is that a depth-12 reference cannot separate them
-on quiet positions out of children's games: every candidate plays at or above the reference's own
-standard, so they all score near zero loss and collapse together. Separating the Stockfish tier
-needs a much deeper reference; that calibration has not been done.
+obviously not equal to skill 0. A depth-12 reference cannot separate them on quiet positions out of
+children's games: every candidate plays at or above the reference's own standard, so they all score
+near zero loss and collapse together.
+
+**Re-run at depth 20, the tier is still flat** — and this time the measurement is not saturated:
+
+| Skill | 0 | 4 | 8 | 12 | 16 | 20 |
+|-------|---|---|---|----|----|----|
+| ACPL  | 132 | 106 | 113 | 108 | 105 | 108 |
+
+Skill 4 through 20 sit inside 8cp of each other, and skill 0 is 19-26cp weaker — around the noise
+floor of a 40-position sample. The deeper reference did what it was supposed to (the numbers rose
+from ~34 to ~110, so it is finding real fault now) and the rungs still did not separate.
+
+The honest reading: **at 400ms per move on positions from real games, Stockfish's skill dial barely
+moves.** Movetime, not skill, is what spaces the upper ladder — which is why the default rungs raise
+both. Before re-spacing levels 9-20 on measurement, run the sweep across *movetime* rather than
+skill, and over more than 40 positions.
+
+Note that ACPL is only comparable *within* one reference depth. Skill 0 scoring 79 at depth 12 and
+132 at depth 20 is one engine judged by two yardsticks, not a change in strength.
 
 What the runs *do* establish, because these gaps are far larger than any noise or ceiling effect:
 

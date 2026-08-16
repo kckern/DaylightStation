@@ -134,10 +134,20 @@ export async function computeBaseline(positions, analyst, { onProgress = null } 
 export function distinctRungs(results, { minGapCp = 25 } = {}) {
   const ordered = [...results].sort((a, b) => b.acpl - a.acpl);
   const bands = [];
+  // Compared against the PREVIOUS candidate, not against the band's first
+  // member. Anchoring on the first admitted anything within one gap of it and
+  // split the rest arbitrarily — it once reported skill 0 and skill 20 as the
+  // same strength while placing skill 4 in a band of its own. Single linkage
+  // instead: a long, evenly-spaced run collapses into one band, which is the
+  // honest reading of a ladder whose rungs are each a step too small to feel.
+  let previous = null;
   for (const result of ordered) {
-    const last = bands[bands.length - 1];
-    if (last && Math.abs(last.acpl - result.acpl) < minGapCp) last.members.push(result.id);
-    else bands.push({ acpl: result.acpl, members: [result.id] });
+    if (previous !== null && Math.abs(previous - result.acpl) < minGapCp) {
+      bands[bands.length - 1].members.push(result.id);
+    } else {
+      bands.push({ acpl: result.acpl, members: [result.id] });
+    }
+    previous = result.acpl;
   }
   return bands;
 }
