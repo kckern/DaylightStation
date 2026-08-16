@@ -176,3 +176,35 @@ default afterward.
 
 This is distinct from the passive `screensaver.preset` (idle/boot, silent): the
 trigger is an explicit, on-demand presentation.
+
+## `resolution` — the screen's CSS-pixel box
+
+```yaml
+resolution:
+  width: 960
+  height: 540
+```
+
+`ScreenRenderer` gives `.screen-root` this size in **CSS pixels** and never
+scales it — the box is centred in the viewport and clipped. So `resolution` must
+match the device's real CSS viewport, not its physical panel: a 1080p kiosk at
+`devicePixelRatio: 2` reports a 960x540 CSS viewport and must declare 960x540.
+
+This value is load-bearing for type size. Everything in the Player and
+ContentScroller is sized in `rem` against an unmodified 16px root, so how large
+text *looks* is a pure function of how many CSS px wide the box is — 2rem type
+is 3.33% of a 960px frame and 2.5% of a 1280px one. Get `resolution` wrong and
+every glyph on that screen is proportionally wrong.
+
+Confirm a screen's real viewport from the `screen.viewport` log event, which
+`ScreenRenderer` emits once per mount with `cssWidth`, `cssHeight` and `dpr`.
+
+A screen that declares no `resolution` falls back to `100%` of the viewport.
+Both e-ink panels do this; their dimensions live under `content:` instead.
+
+### API
+
+`GET /api/v1/screens` returns `{ screens: [{ id, name, resolution }] }` — one
+entry per config file. `resolution` is `null` when the screen declares none, or
+declares a non-positive one. Screens with a `null` resolution are not offered in
+the admin preview picker, because there is no scale for the preview to imitate.
