@@ -590,7 +590,16 @@ a root retired some time ago."
 
 ---
 
-## Task 5: Move `screens/` to `config/screens/`
+## Task 5: ~~Move `screens/` to `config/screens/`~~ — SUPERSEDED by Task 13
+
+**Do not execute.** This task was written while `config/` was assumed to stay. Task 13 retires `config/` and colocates each config with its domain — under that scheme `screens/` is already correct where it is: screens is a subject (display surfaces), and `screens/*.yml` is its config, colocated by definition.
+
+The only work left here is the audit trail: the four call sites (`screens.mjs:34,74`, `app.mjs:2622`, `EinkPanelService.mjs:103`) each hardcode the bare literal `'screens'` with no shared constant. That is worth a named constant regardless of location, since a future rename has to find all four and the e-ink reader is the easy one to miss.
+
+<details>
+<summary>Original task, kept for the call-site inventory</summary>
+
+## Original: Move `screens/` to `config/screens/`
 
 Hand-authored layout config, read on page load, never written by the app — the same shape as `config/devices.yml`. Four call sites, all bare inline literals with no shared constant, one of them easy to miss.
 
@@ -674,7 +683,18 @@ search would miss."
 
 ---
 
-## Task 6: Move `livestream/programs/` to `config/livestream/programs/`
+</details>
+
+## Task 6: ~~Move `livestream/programs/` to `config/livestream/programs/`~~ — SUPERSEDED by Task 13
+
+**Do not execute.** Same reason as Task 5. Under the colocated scheme the movement runs the OTHER way: `livestream/programs/` stays put, and `config/livestream.yml` becomes `livestream/config.yml` as part of Task 13's per-domain sweep.
+
+The naming collision still needs resolving and is NOT superseded: `config/lists/programs/` holds playback lineups (`title` + `items[]`) while `livestream/programs/` holds state machines (`states` + `transitions`). Task 11 moves the former to `content/lists/programs/`, which disambiguates by full path; add the cross-referencing comments at `ListAdapter.mjs:115-117` and the `ChannelManager.mjs` header either way.
+
+<details>
+<summary>Original task, kept for the call-site inventory</summary>
+
+## Original: Move `livestream/programs/`
 
 Hand-authored state machines that `config/livestream.yml` already declares by relative path.
 
@@ -736,6 +756,8 @@ config/lists/programs/ at both ends — playback lineups vs state machines."
 ```
 
 ---
+
+</details>
 
 ## Task 7: Move `cli/log` to `media/logs/cli/`
 
