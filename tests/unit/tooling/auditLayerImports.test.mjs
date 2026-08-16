@@ -83,4 +83,47 @@ describe('audit-layer-imports', () => {
       "  toJSON() {");
     expect(v.some(r => r.rule === 'domains-tojson')).toBe(false);
   });
+
+  describe('no-storage-paths — storage layout belongs to the adapter', () => {
+    const flagged = (f, line) => scanContent(f, line).some((v) => v.rule === 'no-storage-paths');
+
+    it('flags a household path literal in the application layer', () => {
+      expect(flagged('backend/src/3_applications/hardware/x.mjs',
+        "const DEFAULT_DIR = 'household/omr/log';")).toBe(true);
+    });
+
+    it('flags the segmented join form a path-literal grep would miss', () => {
+      expect(flagged('backend/src/3_applications/x.mjs',
+        "path.join(dataDir, 'household', 'fitness')")).toBe(true);
+    });
+
+    it('flags an API router naming a storage location', () => {
+      expect(flagged('backend/src/4_api/v1/routers/x.mjs',
+        "loadFile('household/weather/current')")).toBe(true);
+    });
+
+    it("does not flag 'household' used as a VALUE, not a path", () => {
+      expect(flagged('backend/src/3_applications/school/y.mjs',
+        "scopeType = 'household', scopeId = 'household',")).toBe(false);
+    });
+
+    it('allows the adapter layer, which owns storage addressing', () => {
+      expect(flagged('backend/src/1_adapters/persistence/yaml/Z.mjs',
+        "const REL = 'household/omr/log';")).toBe(false);
+    });
+
+    it('allows the composition root, whose job is wiring', () => {
+      expect(flagged('backend/src/5_composition/modules/x.mjs',
+        "path.join(dataDir, 'household', 'notifications')")).toBe(false);
+      expect(flagged('backend/src/app.mjs',
+        "path.join(dataDir, 'household', 'barcode')")).toBe(false);
+    });
+
+    it('allows the admin surface over household/config and household/auth', () => {
+      // Those two are not domains and never move; editing them by name is a
+      // different concern from domain data storage.
+      expect(flagged('backend/src/3_applications/admin/AppsConfigService.mjs',
+        "fitness: 'household/config/fitness.yml',")).toBe(false);
+    });
+  });
 });

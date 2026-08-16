@@ -43,5 +43,15 @@ try {
   config = yaml.load(readFileSync(join(dataDir, 'household', 'config', 'omr-readers.yml'), 'utf8')) || {};
 } catch { /* defaults */ }
 
-const result = await rebuildQuizDayFiles({ dataDir, config, logger: console });
+// The CLI is its own composition root here: it resolves both roots and passes
+// them down, the same way app.mjs does for the live recorder.
+const resolveRoot = (override, fallback) => (override
+  ? join(dataDir, ...String(override).replace(/^\/+/, '').split('/'))
+  : join(dataDir, 'household', fallback));
+const result = await rebuildQuizDayFiles({
+  historyRoot: resolveRoot(config?.persistence?.dir, 'omr/log'),
+  outRoot: resolveRoot(config?.quizzes?.dir, 'quizzes'),
+  config,
+  logger: console,
+});
 console.log(`Rebuilt ${result.days} day file(s), ${result.sheets} sheet(s), across ${result.readers} reader(s).`);

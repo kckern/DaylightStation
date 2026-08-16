@@ -19,5 +19,6 @@
   "api-handrolled-500": 89,
   "apps-success-false": 49,
   "no-userdataservice": 93,
-  "domains-tojson": 67
+  "domains-tojson": 67,
+  "no-storage-paths": 0
 }

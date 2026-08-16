@@ -87,7 +87,7 @@ const ECU_FIELDS = ['rpm', 'coolant_c', 'fuel_pct'];
 /**
  * `historyRoot` is INJECTED, absolute, and already resolved.
  *
- * This relay used to hold `const DEFAULT_DIR = 'household/automotive/log'` and
+ * This relay used to hold its own DEFAULT_DIR for the automotive log and
  * join it onto dataDir itself. That put storage layout in the application
  * layer, which the layer guidelines forbid outright ("Application layer never
  * builds file paths"). The composition root resolves the location, including

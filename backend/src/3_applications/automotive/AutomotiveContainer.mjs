@@ -25,8 +25,6 @@ import { NamePlace } from './usecases/NamePlace.mjs';
 import { GetFuelStops } from './usecases/GetFuelStops.mjs';
 import { resolveServiceTypes } from '#domains/automotive/entities/serviceTypes.mjs';
 
-const DEFAULT_HISTORY_DIR = 'household/automotive/log';
-const DEFAULT_RECORDS_DIR = 'household/automotive';
 
 export class AutomotiveContainer {
   #historyRepository;
@@ -42,13 +40,21 @@ export class AutomotiveContainer {
    * @param {object} [deps.vehiclesConfig] parsed config/vehicles.yml
    * @param {object} [deps.logger]
    */
-  constructor({ configService, vehiclesConfig = {}, logger = console }) {
+/**
+ * Roots are INJECTED, absolute, already resolved.
+ *
+ * These used to be `household/<domain>` literals joined onto dataDir here.
+ * That is storage layout living in the application layer, which
+ * application-layer-guidelines.md rules out ("Application layer never builds
+ * file paths"), and it is why the household reorganization had to edit this
+ * file. The composition root resolves the location — config override
+ * included — and passes directories down.
+ */
+  constructor({ configService, historyRoot, recordsRoot, vehiclesConfig = {}, logger = console }) {
     if (!configService) throw new Error('AutomotiveContainer requires configService');
-
-    const dataDir = configService.getDataDir();
-    const historyDir = (vehiclesConfig?.persistence?.dir || DEFAULT_HISTORY_DIR).replace(/^\/+/, '');
-    const historyRoot = path.join(dataDir, ...historyDir.split('/'));
-    const recordsRoot = path.join(dataDir, ...DEFAULT_RECORDS_DIR.split('/'));
+    if (!historyRoot || !recordsRoot) {
+      throw new Error('AutomotiveContainer requires historyRoot and recordsRoot');
+    }
 
     this.#historyRepository = new YamlVehicleHistoryDatastore({ historyRoot, logger });
     this.#recordRepository = new YamlVehicleRecordDatastore({ recordsRoot, logger });

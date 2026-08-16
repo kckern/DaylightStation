@@ -50,6 +50,29 @@ export const CONTENT_RULES = [
   // DEFINITIONS (line starts with the method), not `.toJSON()` call sites.
   // Migration: docs/_wip/plans/2026-07-08-serialization-ownership-migration.md
   { rule: 'domains-tojson', layer: '2_domains/', re: /^\s*toJSON\s*\(\s*\)\s*\{/ },
+  // STORAGE LAYOUT BELONGS TO THE ADAPTER. A `household/<domain>` path literal
+  // — or the segmented `'household', '<domain>'` join — outside the adapter
+  // and config layers means application or API code is deciding where bytes
+  // live. application-layer-guidelines.md states it plainly: "Application
+  // layer never builds file paths."
+  //
+  // This is not theoretical tidiness. The 2026-08-16 household reorganization
+  // should have touched ~25 adapter files; it touched ~90, because five
+  // hardware relays, an API router and two application services each carried
+  // their own copy of the layout.
+  //
+  // Excluded, deliberately:
+  //   1_adapters/, 0_system/config/  — they OWN storage addressing
+  //   5_composition/, app.mjs        — the composition root's job is wiring
+  //   3_applications/admin/          — an admin surface over household/config
+  //                                    and household/auth, which are NOT
+  //                                    domains and never move
+  {
+    rule: 'no-storage-paths',
+    layer: 'backend/src/',
+    re: /['"`]household\/[a-z]|'household'\s*,\s*'/,
+    exclude: ['1_adapters/', '0_system/config/', '5_composition/', 'src/app.mjs', '3_applications/admin/'],
+  },
 ];
 
 export function scanContent(filePath, content) {
@@ -57,7 +80,8 @@ export function scanContent(filePath, content) {
   const lines = content.split('\n');
   for (const r of CONTENT_RULES) {
     if (!filePath.includes(r.layer)) continue;
-    if (r.exclude && filePath.includes(r.exclude)) continue;
+    const excludes = Array.isArray(r.exclude) ? r.exclude : (r.exclude ? [r.exclude] : []);
+    if (excludes.some((e) => filePath.includes(e))) continue;
     lines.forEach((line, i) => {
       if (r.re.test(line)) out.push({ rule: r.rule, file: filePath, line: i + 1, spec: line.trim() });
     });

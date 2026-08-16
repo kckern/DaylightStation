@@ -30,8 +30,6 @@ import path from 'path';
 import yaml from 'js-yaml';
 
 const DEFAULT_TOPIC = 'omr';
-const DEFAULT_HISTORY_DIR = 'household/omr/log';
-const DEFAULT_QUIZZES_DIR = 'household/quizzes';
 // Same retransmit-suppression semantics (and config knob) as the relay's raw
 // persistence, so the decoded file and the manifest agree on what "one card" is.
 const DEFAULT_DEDUP_WINDOW_MS = 2000;
@@ -143,12 +141,22 @@ export function resolveQuizScanTopics(config = {}) {
  * @param {object} [deps.logger]
  * @returns {{ dispose: () => void }}
  */
-export function createQuizScanRecorder({ eventBus, dataDir, config = {}, logger = console }) {
+/**
+ * Roots are INJECTED, absolute, already resolved.
+ *
+ * These used to be `household/<domain>` literals joined onto dataDir here.
+ * That is storage layout living in the application layer, which
+ * application-layer-guidelines.md rules out ("Application layer never builds
+ * file paths"), and it is why the household reorganization had to edit this
+ * file. The composition root resolves the location — config override
+ * included — and passes directories down.
+ */
+export function createQuizScanRecorder({ eventBus, dataDir, outRoot, config = {}, logger = console }) {
   if (!eventBus?.subscribe) {
     throw new Error('createQuizScanRecorder: eventBus with subscribe required');
   }
 
-  const outRoot = resolveDir(dataDir, config?.quizzes?.dir, DEFAULT_QUIZZES_DIR);
+  if (!outRoot) throw new Error('createQuizScanRecorder: outRoot required');
   const dedupWindowMs = Number(config?.persistence?.dedupWindowMs ?? DEFAULT_DEDUP_WINDOW_MS);
   const topics = new Set(resolveQuizScanTopics(config));
 
@@ -190,9 +198,7 @@ export function createQuizScanRecorder({ eventBus, dataDir, config = {}, logger 
  *
  * @returns {{ readers: number, days: number, sheets: number }}
  */
-export async function rebuildQuizDayFiles({ dataDir, config = {}, logger = console }) {
-  const historyRoot = resolveDir(dataDir, config?.persistence?.dir, DEFAULT_HISTORY_DIR);
-  const outRoot = resolveDir(dataDir, config?.quizzes?.dir, DEFAULT_QUIZZES_DIR);
+export async function rebuildQuizDayFiles({ historyRoot, outRoot, config = {}, logger = console }) {
 
   const result = { readers: 0, days: 0, sheets: 0 };
   let readerIds = [];

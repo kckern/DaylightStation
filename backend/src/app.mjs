@@ -740,6 +740,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   createQuizScanRecorder({
     eventBus,
     dataDir,
+    outRoot: omrReadersConfig?.quizzes?.dir
+      ? path.join(dataDir, ...String(omrReadersConfig.quizzes.dir).replace(/^\/+/, '').split('/'))
+      : configService.getHouseholdPath('quizzes', householdId),
     config: omrReadersConfig,
     logger: rootLogger.child({ module: 'quiz-scan' }),
   });
