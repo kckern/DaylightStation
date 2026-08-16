@@ -47,17 +47,25 @@
 }
 
 .connect-four-board {
+  position: relative;
   aspect-ratio: 7 / 6;
   display: grid;
+  /* No `gap`. The front panel (&__panel) punches its holes with a background
+     tile of content-box/7 x content-box/6, so the tile pitch and the track pitch
+     have to be the same number — a gutter puts them ~1% apart and by the seventh
+     column the holes no longer sit over the cells. The space between discs comes
+     from the disc being 78% of its cell instead. */
   grid-template-columns: repeat(7, 1fr);
-  gap: 1.1%;
+  grid-template-rows: repeat(6, 1fr);
   padding: 2%;
   border-radius: 4%;
-  background: linear-gradient(145deg, var(--c4-grid), var(--c4-grid-deep));
-  box-shadow: 0 1.2rem 2.5rem rgb(0 0 0 / 55%), inset 0 0.25rem 0.3rem rgb(140 198 255 / 53%);
+  /* The backing behind the slots, not the blue: the blue is a layer ON TOP. */
+  background: var(--c4-hole);
+  box-shadow: 0 1.2rem 2.5rem rgb(0 0 0 / 55%);
 }
 
 .connect-four-board__cell {
+  position: relative;
   display: grid;
   place-items: center;
   border-radius: 50%;
@@ -66,9 +74,44 @@
 }
 
 .connect-four-board__disc {
-  width: 84%;
+  width: 78%;
   aspect-ratio: 1;
   border-radius: 50%;
+}
+
+/* ── THE FRONT PANEL ───────────────────────────────────────────────────────
+ * The blue used to be the board's own background, which put it BEHIND the
+ * discs — so a disc slid down the front of the grid like a sticker on glass
+ * rather than dropping into a slot. It is a sheet of moulded plastic with
+ * forty-two holes in it, drawn over the discs, which is where it sits in the
+ * physical game: the falling disc is behind the panel and flickers into view
+ * through each hole it passes on the way down.
+ *
+ * One element, one repeating tile, and the tile is exactly one cell. The holes
+ * land on the cells because `background-origin: content-box` anchors the tiling
+ * to the same box the grid tracks divide, and `background-clip: border-box`
+ * lets the sheet run out over the 2% frame — no tile centre is close enough to
+ * an edge for a hole to break through it.
+ *
+ * `closest-side` makes the stop percentages read against half the tile, so 81%
+ * is a hole the width of the disc plus a hair, whatever size the board is.
+ */
+.connect-four-board__panel {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  padding: 2%;
+  border-radius: 4%;
+  pointer-events: none;
+  background-image:
+    /* the hole's wall — a bevel, so the hole reads as depth, not as a sticker */
+    radial-gradient(circle closest-side at 50% 50%, transparent 0 81%, rgb(0 0 0 / 42%) 82%, transparent 96%),
+    /* the plastic itself, lit at each rim and deepening into the moulding */
+    radial-gradient(circle closest-side at 50% 50%, transparent 0 81%, var(--c4-grid) 82%, var(--c4-grid-deep));
+  background-origin: content-box;
+  background-clip: border-box;
+  background-size: calc(100% / 7) calc(100% / 6);
+  box-shadow: inset 0 0.25rem 0.3rem rgb(140 198 255 / 53%);
 }
 
 /* ── GRAVITY ───────────────────────────────────────────────────────────────
@@ -77,10 +120,10 @@
  * where it lands, hits the stack, and settles.
  *
  * The distance is counted in CELLS (`--c4-drop-rows`), not pixels, so it holds
- * at any board size — a disc is 84% of its cell and the grid adds a 1.1% gutter,
- * which puts one row at ~128% of a disc's own height. Falling into a full column
- * is a short hop; falling into an empty one is the full six, and the duration
- * scales with it (dropDurationMs) rather than every drop taking the same beat.
+ * at any board size — a disc is 78% of its cell, which puts one row at ~128% of
+ * a disc's own height. Falling into a full column is a short hop; falling into
+ * an empty one is the full six, and the duration scales with it
+ * (dropDurationMs) rather than every drop taking the same beat.
  *
  * Compositor-only: transform and nothing else. The kiosk tablet's 2018 WebView
  * will happily animate this at frame rate and would drop frames on anything
@@ -118,21 +161,65 @@
   /* Squash pivots on the point of contact, not on the disc's middle. */
   transform-origin: 50% 100%;
   animation: connect-four-drop var(--c4-drop-ms, 500ms) both;
-  /* The disc leaves its cell during the fall, and a cell's inset shadow would
-     otherwise clip the top of it against the row above. */
+  /* Above the cells it passes over (so their inset shadows don't clip it) and
+     BELOW the front panel at z-index 3 — that ordering is the whole trick. */
   z-index: 2;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .connect-four-board__disc.is-falling { animation: none; }
 }
 
 .connect-four-board__disc--1 { background: radial-gradient(circle at 35% 30%, var(--c4-yellow-lit), var(--c4-yellow) 60%, var(--c4-yellow-deep)); }
 .connect-four-board__disc--2 { background: radial-gradient(circle at 35% 30%, var(--c4-red-lit), var(--c4-red) 60%, var(--c4-red-deep)); }
 .connect-four-board__disc--empty { background: var(--c4-hole-empty); }
 
-/* The suggested column, in the house accent rather than in a mint of its own. */
-.connect-four-board__cell.is-hint {
-  outline: 0.24rem solid var(--pg-brass-fill);
-  outline-offset: -0.2rem;
+/* The suggested column, in the house accent rather than in a mint of its own.
+   A ring around the hole and above the panel — an outline on the cell now sits
+   under a sheet of blue plastic and is invisible. */
+.connect-four-board__cell.is-hint::after {
+  content: '';
+  position: absolute;
+  inset: 5%;
+  z-index: 4;
+  border-radius: 50%;
+  border: 0.22rem solid var(--pg-brass-fill);
+}
+
+/* ── WHO WON ───────────────────────────────────────────────────────────────
+ * A finished game used to look exactly like an unfinished one plus a sentence:
+ * twenty-odd identical discs, four of which happened to be in a row, and the
+ * player left to trace the line themselves. Now the four that connect are
+ * ringed and pulsing over the panel and everything else on the board steps
+ * back, so the result reads from across the room without reading anything.
+ *
+ * The ring rides on the CELL rather than the disc because the panel covers the
+ * disc everywhere except the hole; drawing it at z-index 4 puts it on the
+ * plastic, circling the hole the way a light behind the board would.
+ *
+ * Opacity and transform only, which is what the kiosk tablet's WebView can
+ * animate indefinitely — and this one runs until the player restarts.
+ */
+@keyframes connect-four-win {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.07); }
+}
+
+.connect-four-board__cell.is-winner::after {
+  content: '';
+  position: absolute;
+  /* Hugs the hole (78% of the cell), not the cell's own edge. */
+  inset: 5%;
+  z-index: 4;
+  border-radius: 50%;
+  /* The house's ivory, not an eleventh hue of this game's own — the board gets
+     to be blue, red and yellow, and a win is the cabinet speaking. */
+  border: 0.25rem solid var(--pg-ivory);
+  box-shadow: 0 0 1rem rgb(255 255 255 / 65%), inset 0 0 0.7rem rgb(255 255 255 / 55%);
+  animation: connect-four-win 760ms ease-in-out infinite;
+}
+
+/* The winning discs brighten; every other disc on the board steps back. */
+.connect-four-board__disc.is-winner { box-shadow: inset 0 0 0.8rem rgb(255 255 255 / 50%); }
+.connect-four-board.is-decided .connect-four-board__disc:not(.is-winner) { opacity: 0.32; }
+
+@media (prefers-reduced-motion: reduce) {
+  .connect-four-board__disc.is-falling { animation: none; }
+  .connect-four-board__cell.is-winner::after { animation: none; opacity: 1; }
 }

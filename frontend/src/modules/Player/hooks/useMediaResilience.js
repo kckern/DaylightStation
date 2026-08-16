@@ -114,9 +114,25 @@ export function useMediaResilience({
     prevSessionKeyRef.current = playbackSessionKey;
   }, [playbackSessionKey]);
   // … and on unmount — the final session's entry used to leak (audit §5).
-  // Assumes one mounted Player per playbackSessionKey: a sibling hook sharing
-  // the key would get its ledger entry wiped here (theoretical today —
-  // DancePartyWidget/AudioLayer pairs play different guids).
+  //
+  // Requires one mounted Player per playbackSessionKey: a sibling hook sharing the key
+  // gets its ledger entry wiped here. That used to hold by accident, because the Player
+  // minted a RANDOM guid per source object, so two Players never shared a key. Since
+  // 2026-08-16 the guid is derived from content (a hash of contentId/plex/…), which is
+  // what stops a re-rendering caller from remounting the video — and it meant two
+  // Players showing the SAME content computed the same key. A reachable pairing: a menu
+  // selection mounts a Player on the nav stack (MenuWidget is a layout widget, so it
+  // renders inside ScreenOverlayProvider's children), then a media:play action mounts a
+  // second Player in the fullscreen slot for content already open in the menu — its
+  // dismissOverlay clears only the overlay slot and cannot unmount the first.
+  //
+  // Player.jsx now pays for the constraint deliberately: it appends a per-instance id
+  // (`#<id>`, a ref seeded once per mounted Player) to itemSessionKey, so two live
+  // Players on the same content hold separate ledger sessions and separate
+  // usePlaybackSession entries. The id is a ref rather than per-mount state because a
+  // remount happens BELOW the Player, and the attempt cap has to accumulate across
+  // remounts. Anything that passes a hand-built playbackSessionKey here still owes the
+  // one-mounted-consumer-per-key rule. See Player.sessionScope.test.jsx.
   useEffect(() => () => {
     if (prevSessionKeyRef.current) {
       getRecoveryLedger().releaseSession(prevSessionKeyRef.current);
