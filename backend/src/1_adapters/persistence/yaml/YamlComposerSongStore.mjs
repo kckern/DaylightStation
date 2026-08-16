@@ -1,4 +1,4 @@
-// backend/src/3_applications/piano/ComposerSongStore.mjs
+// backend/src/1_adapters/persistence/yaml/YamlComposerSongStore.mjs
 import path from 'path';
 import { loadYaml, saveYaml, listYamlFiles, deleteYaml, deleteFile, ensureDir, writeBinary, readFile, listFiles } from '#system/utils/FileIO.mjs';
 import { shortId } from '#domains/core/utils/id.mjs';
@@ -16,7 +16,7 @@ const ID_RE = /^[a-z0-9-]{1,64}$/;
  * `save()` is optimistic-concurrency guarded: a stale `revision` is rejected as
  * a conflict (current record returned) rather than silently overwritten.
  */
-export class ComposerSongStore {
+export class YamlComposerSongStore {
   #configService;
   #logger;
   constructor({ configService, logger = console }) {
@@ -162,4 +162,4 @@ export class ComposerSongStore {
   }
 }
 
-export default ComposerSongStore;
+export default YamlComposerSongStore;

@@ -19,7 +19,7 @@ import { ContentQueryService } from '#apps/content/ContentQueryService.mjs';
 import { ContentQueryAliasResolver } from '#apps/content/services/ContentQueryAliasResolver.mjs';
 import { PlayResponseService } from '#apps/content/services/PlayResponseService.mjs';
 import { SiblingsService } from '#apps/content/services/SiblingsService.mjs';
-import { UserVideoProgressStore } from '#apps/piano/UserVideoProgressStore.mjs';
+import { UserVideoProgressStore } from '#adapters/persistence/yaml/YamlUserVideoProgressStore.mjs';
 import { ContentSourceRegistry } from '#domains/content/services/ContentSourceRegistry.mjs';
 import { QueueService } from '#domains/content/services/QueueService.mjs';
 import { ProxyService } from '#system/proxy/ProxyService.mjs';

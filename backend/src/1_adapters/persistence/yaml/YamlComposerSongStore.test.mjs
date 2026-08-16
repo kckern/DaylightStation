@@ -1,4 +1,4 @@
-// backend/src/3_applications/piano/ComposerSongStore.test.mjs
+// backend/src/1_adapters/persistence/yaml/YamlComposerSongStore.test.mjs
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -15,7 +15,7 @@ vi.mock('#system/utils/FileIO.mjs', () => ({
   readFile: (p) => (p in blobs ? blobs[p] : null),
   listFiles: (dir) => Object.keys(blobs).filter(p => p.startsWith(dir + '/')).map(p => p.slice(dir.length + 1)),
 }));
-import { ComposerSongStore } from './ComposerSongStore.mjs';
+import { YamlComposerSongStore as ComposerSongStore } from '#adapters/persistence/yaml/YamlComposerSongStore.mjs';
 
 const configService = {
   getUserDir: (id) => `/data/users/${id}`,

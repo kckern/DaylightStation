@@ -251,7 +251,7 @@ import { createArtRouter } from './4_api/v1/routers/art.mjs';
 import { createPianoRouter } from './4_api/v1/routers/piano.mjs';
 import { PianoContainer } from './3_applications/piano/PianoContainer.mjs';
 import { YamlPianoStudioDatastore } from './1_adapters/piano/YamlPianoStudioDatastore.mjs';
-import { ComposerSongStore } from './3_applications/piano/ComposerSongStore.mjs';
+import { YamlComposerSongStore as ComposerSongStore } from '#adapters/persistence/yaml/YamlComposerSongStore.mjs';
 import { createFeedbackRouter } from './4_api/v1/routers/feedback.mjs';
 import { createGameshowRouter } from './4_api/v1/routers/gameshow.mjs';
 import { createGamingRouter } from './4_api/v1/routers/gaming.mjs';
@@ -316,7 +316,7 @@ import { PlexSchoolMediaCatalog } from './1_adapters/school/media/plex/PlexSchoo
 import { GeneratedBankSource } from '#adapters/school/generated-content/GeneratedBankSource.mjs';
 import { GetLearnerRecord } from '#apps/school/usecases/GetLearnerRecord.mjs';
 import { RegradeBankAttempts } from '#apps/school/usecases/RegradeBankAttempts.mjs';
-import { UserVideoProgressStore as SchoolUserVideoProgressStore } from './3_applications/piano/UserVideoProgressStore.mjs';
+import { YamlUserVideoProgressStore as SchoolUserVideoProgressStore } from '#adapters/persistence/yaml/YamlUserVideoProgressStore.mjs';
 import { PrintService } from './3_applications/school/PrintService.mjs';
 import { renderBankWorksheet } from './1_rendering/school/WorksheetRenderer.mjs';
 import { createContentFilterRouter } from './4_api/v1/routers/contentFilter.mjs';
