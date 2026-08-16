@@ -23,6 +23,7 @@ import dotenv from 'dotenv';
 import moment from 'moment-timezone';
 import yaml from 'js-yaml';
 import { execSync } from 'child_process';
+import { fitnessHistoryDir } from '../lib/fitness/context.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.join(__dirname, '../..');
@@ -175,7 +176,7 @@ const sessionData = {
   },
 };
 
-const sessionDir = path.join(baseDir, 'data', 'household', 'history', 'fitness', date);
+const sessionDir = path.join(fitnessHistoryDir(path.join(baseDir, 'data')), date);
 const filePath = path.join(sessionDir, `${sessionId}.yml`);
 mkdirSync(sessionDir, { recursive: true });
 writeFileSync(filePath, yaml.dump(sessionData));

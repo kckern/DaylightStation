@@ -160,7 +160,7 @@ export function foldOccupantSeries(decoded, fromId, toId, { cumulativeStrategy =
  */
 export function resolveSessionPath(date, sessionId, baseDir) {
   const resolvedBaseDir = baseDir || process.env.DAYLIGHT_BASE_PATH || process.cwd();
-  return path.join(resolvedBaseDir, 'data', 'household', 'history', 'fitness', date, `${sessionId}.yml`);
+  return path.join(fitnessHistoryDir(path.join(resolvedBaseDir, 'data')), date, `${sessionId}.yml`);
 }
 
 // ---------------------------------------------------------------------------
@@ -189,7 +189,7 @@ export function isValidSessionId(id) {
  */
 export function historyRoot(baseDir) {
   const resolvedBaseDir = baseDir || process.env.DAYLIGHT_BASE_PATH || process.cwd();
-  return path.join(resolvedBaseDir, 'data', 'household', 'history', 'fitness');
+  return path.join(fitnessHistoryDir(path.join(resolvedBaseDir, 'data')));
 }
 
 /**

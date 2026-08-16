@@ -40,6 +40,18 @@ let cached = null;
  *   saveYaml: (p: string, data: any) => void
  * }}
  */
+/**
+ * The ONE place the fitness history tree is named.
+ *
+ * Thirteen CLI scripts each spelled this join out themselves, bypassing
+ * ConfigService entirely, so relocating 107 MB of sessions meant a
+ * thirteen-line edit with no single reviewable decision. Everything routes
+ * through here now — `dataDir` is the `<root>/data` directory.
+ */
+export function fitnessHistoryDir(dataDir) {
+  return path.join(dataDir, 'household', 'history', 'fitness');
+}
+
 export function getContext() {
   if (cached) return cached;
 
@@ -60,7 +72,7 @@ export function getContext() {
     dataDir,
     isDocker,
     username: process.env.DAYLIGHT_USER || 'user_1',
-    fitnessHistoryDir: path.join(dataDir, 'household', 'history', 'fitness'),
+    fitnessHistoryDir: fitnessHistoryDir(dataDir),
     loadYamlSafe,
     saveYaml,
   };

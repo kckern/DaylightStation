@@ -27,6 +27,7 @@ import yaml from 'js-yaml';
 import moment from 'moment-timezone';
 import { buildSessionSummary } from '../../frontend/src/hooks/fitness/buildSessionSummary.js';
 import { decodeSeries } from '../../backend/src/2_domains/fitness/services/TimelineService.mjs';
+import { fitnessHistoryDir } from '../lib/fitness/context.mjs';
 
 // =============================================================================
 // Configuration
@@ -60,7 +61,7 @@ Options:
 // Helpers
 // =============================================================================
 
-const FITNESS_DIR = path.join(DATA_PATH, 'household', 'history', 'fitness');
+const FITNESS_DIR = fitnessHistoryDir(DATA_PATH);
 
 function listDateDirs() {
   if (!fs.existsSync(FITNESS_DIR)) return [];

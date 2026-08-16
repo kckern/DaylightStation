@@ -155,7 +155,7 @@ function applyOffsets(series, offsets) {
  */
 export async function mergeSessions(date, sessionIds, { baseDir, dryRun = false } = {}) {
   const resolvedBase = baseDir || process.env.DAYLIGHT_BASE_PATH || process.cwd();
-  const dir = path.join(resolvedBase, 'data', 'household', 'history', 'fitness', date);
+  const dir = path.join(fitnessHistoryDir(path.join(resolvedBase, 'data')), date);
 
   const loadSession = async (id) => {
     const file = path.join(dir, `${id}.yml`);

@@ -24,6 +24,7 @@ import { fileURLToPath } from 'url';
 import yaml from 'js-yaml';
 import dotenv from 'dotenv';
 import { buildActivityDescription } from '../backend/src/2_domains/fitness/services/buildActivityDescription.mjs';
+import { fitnessHistoryDir } from './lib/fitness/context.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -42,7 +43,7 @@ const DATA_DIR = path.join(BASE_PATH, 'data');
 const TSV_PATH = path.join(ROOT, 'strava-plex-media.tsv');
 const USER_AUTH_PATH = path.join(DATA_DIR, 'users', 'user_1', 'auth', 'strava.yml');
 const SYSTEM_AUTH_PATH = path.join(DATA_DIR, 'system', 'auth', 'strava.yml');
-const FITNESS_HISTORY_DIR = path.join(DATA_DIR, 'household', 'history', 'fitness');
+const FITNESS_HISTORY_DIR = fitnessHistoryDir(DATA_DIR);
 const PLEX_HOST = 'http://10.0.0.10:32400';
 
 let PLEX_TOKEN = null;
