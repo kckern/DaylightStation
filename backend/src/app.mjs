@@ -129,7 +129,7 @@ import { CommandHandlerLivenessService } from '#apps/devices/services/CommandHan
 import { SessionControlService } from '#apps/devices/services/SessionControlService.mjs';
 
 // HTTP middleware
-import { createDevProxy, errorHandlerMiddleware } from './0_system/http/middleware/index.mjs';
+import { createDevProxy, errorHandlerMiddleware, requestLoggerMiddleware } from './0_system/http/middleware/index.mjs';
 import { createEventBusRouter } from './4_api/v1/routers/admin/eventbus.mjs';
 import { createAdminRouter } from './4_api/v1/routers/admin/index.mjs';
 // Admin app-services (constructed HERE at the composition root and injected into
@@ -425,6 +425,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const authConfig = dataService.system.read('config/auth') || {};
   const jwtSecret = authConfig?.jwt?.secret || '';
   const jwtConfig = authConfig?.jwt || { issuer: 'daylight-station', expiry: '10y', algorithm: 'HS256' };
+
+  // 0. Request logging, ahead of the auth pipeline on purpose: a request the
+  // permission gate rejects is still a request, and a 403 storm is a signal we
+  // would rather see than not. Until now nothing logged HTTP traffic globally
+  // — the one router that mounted this middleware hooked res.json, which both
+  // hot paths of the 2026-08-16 storm (a redirect and a pipe) bypass entirely.
+  // Successful responses are budgeted; failures always go out. Never bodies.
+  app.use('/api/v1', requestLoggerMiddleware());
 
   // Auth middleware pipeline — runs on all /api/v1/* requests
   // 1. householdResolver sets req.householdId from Host header

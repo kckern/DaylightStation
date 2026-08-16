@@ -17,7 +17,6 @@ import {
   webhookValidationMiddleware,
   idempotencyMiddleware,
   errorHandlerMiddleware,
-  requestLoggerMiddleware,
   asyncHandler,
 } from '#system/http/middleware/index.mjs';
 
@@ -38,7 +37,9 @@ export function createNutribotRouter(container, options = {}) {
 
   // Apply middleware
   router.use(tracingMiddleware());
-  router.use(requestLoggerMiddleware({ logBody: false }));
+  // No requestLoggerMiddleware here any more: it is mounted globally on
+  // /api/v1 in app.mjs, and a second mount would log every nutribot request
+  // twice into a size-capped sink.
 
   // Webhook endpoint using pre-built handler
   if (webhookHandler) {
