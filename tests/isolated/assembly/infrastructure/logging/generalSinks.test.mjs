@@ -26,12 +26,69 @@ describe('general file sinks', () => {
     expect(durable(sinks)).toBeTruthy();
   });
 
-  // Rotation bounds are a decision, not a default someone inherited.
-  test('states its rotation bounds explicitly, capping disk at 200 MB', () => {
+  // Rotation bounds are a decision, not a default someone inherited. 30 MB is
+  // deliberately modest: the default path sits inside a Dropbox-synced folder
+  // on prod, where an append-and-rotate file costs version history that the
+  // on-disk ceiling does not bound.
+  test('states its rotation bounds explicitly, capping disk at 30 MB', () => {
     const sink = durable(resolveGeneralFileSinks({ isDocker: true, mediaDir: MEDIA_DIR, repoRoot: REPO_ROOT }));
     expect(sink.maxSize).toBe(BACKEND_LOG_MAX_SIZE);
     expect(sink.maxFiles).toBe(BACKEND_LOG_MAX_FILES);
-    expect(sink.maxSize * sink.maxFiles).toBe(200 * 1024 * 1024);
+    expect(sink.maxSize * sink.maxFiles).toBe(30 * 1024 * 1024);
+  });
+
+  // The bounds and the location are configurable so the log can be MOVED off
+  // the synced volume rather than shrunk further — an infra decision that
+  // should not need a code change.
+  test('takes its bounds from system config when given', () => {
+    const sink = durable(resolveGeneralFileSinks({
+      isDocker: true,
+      mediaDir: MEDIA_DIR,
+      repoRoot: REPO_ROOT,
+      config: { maxSizeMb: 50, maxFiles: 4 },
+    }));
+    expect(sink.maxSize).toBe(50 * 1024 * 1024);
+    expect(sink.maxFiles).toBe(4);
+  });
+
+  test('takes its location from system config when given', () => {
+    const sinks = resolveGeneralFileSinks({
+      isDocker: true,
+      mediaDir: MEDIA_DIR,
+      repoRoot: REPO_ROOT,
+      config: { path: '/var/log/daylight/backend.log' },
+    });
+    expect(sinks[0].filename).toBe('/var/log/daylight/backend.log');
+    // …and it still carries the default bounds it was not asked to change.
+    expect(sinks[0].maxSize).toBe(BACKEND_LOG_MAX_SIZE);
+  });
+
+  // A YAML typo must not produce a transport that rotates on every line or
+  // never rotates at all.
+  test('falls back to the defaults for unusable configured values', () => {
+    for (const config of [
+      { maxSizeMb: 0, maxFiles: 0 },
+      { maxSizeMb: -5, maxFiles: -1 },
+      { maxSizeMb: 'ten', maxFiles: 'three' },
+      { maxSizeMb: null, maxFiles: undefined },
+      { path: '   ' },
+    ]) {
+      const sink = durable(resolveGeneralFileSinks({
+        isDocker: true, mediaDir: MEDIA_DIR, repoRoot: REPO_ROOT, config,
+      }));
+      expect(sink, `no durable sink for ${JSON.stringify(config)}`).toBeTruthy();
+      expect(sink.maxSize).toBe(BACKEND_LOG_MAX_SIZE);
+      expect(sink.maxFiles).toBe(BACKEND_LOG_MAX_FILES);
+    }
+  });
+
+  // Numbers arriving as strings from YAML are still numbers to an operator.
+  test('accepts numeric strings from YAML', () => {
+    const sink = durable(resolveGeneralFileSinks({
+      isDocker: true, mediaDir: MEDIA_DIR, repoRoot: REPO_ROOT, config: { maxSizeMb: '20', maxFiles: '2' },
+    }));
+    expect(sink.maxSize).toBe(20 * 1024 * 1024);
+    expect(sink.maxFiles).toBe(2);
   });
 
   // dev.log is tailed by the Playwright harnesses at that exact repo-root path,
