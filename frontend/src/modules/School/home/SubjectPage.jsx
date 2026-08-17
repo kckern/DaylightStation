@@ -23,9 +23,13 @@ import EmptyState from './EmptyState.jsx';
 // aren't Plex/bank content (a typing drill, a writing surface later). Each
 // opens a top-level section. Kept here (a frontend routing concern) rather
 // than in the content pipeline, the same split PROGRAMS makes.
+// Keys MUST be ids from SUBJECTS (home/subjects.js). A key that matches no
+// subject silently yields `programs = []` and the launcher simply never renders
+// — which is what happened to Geography when the `history` shelf was renamed to
+// `civilization` and this map was left behind.
 const SUBJECT_PROGRAMS = {
   writing: [{ id: 'typing', label: 'Typing', hint: 'Learn to touch-type', section: 'typing' }],
-  history: [{ id: 'geography', label: 'Geography', hint: 'States, capitals, and flags', section: 'geography' }],
+  civilization: [{ id: 'geography', label: 'Geography', hint: 'States, capitals, and flags', section: 'geography' }],
   arts: [{ id: 'chess', label: 'Chess', hint: 'Learn the game, one unit at a time', section: 'chess' }],
 };
 

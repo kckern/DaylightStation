@@ -20,6 +20,12 @@ import { balancedColumns } from './tileGridLayout.js';
 // non-clickable) — it stays reachable only via the `producer/*` route (see
 // PianoApp.jsx), not the touch UI, until it ships. Composer is a placeholder
 // shell for a future tool.
+//
+// Games is `disabled` for the same greyed/non-clickable treatment, but for a
+// household reason rather than an unshipped one: it is turned off at the tile
+// while it is a source of contention over the tablet. Note that this closes the
+// touch-UI door only — the MIDI activation combos in useGameActivation.js still
+// launch games from PianoVisualizer, so re-enabling here is the whole revert.
 export const PIANO_MODES = [
   { id: 'videos', label: 'Courses', blurb: 'Watch lessons & lectures', icon: 'video' },
   { id: 'music', label: 'Music', blurb: 'Albums & playlists', icon: 'music' },
@@ -29,7 +35,7 @@ export const PIANO_MODES = [
   { id: 'playalong', label: 'Playalong', blurb: 'Backing tracks to play over', icon: 'playalong' },
   { id: 'singalong', label: 'Karaoke', blurb: 'Grab the mic — sing along', icon: 'singalong' },
   { id: 'exercises', label: 'Exercises', blurb: 'Drills, scales & chords', icon: 'metronome' },
-  { id: 'games', label: 'Games', blurb: 'Play note-driven games', icon: 'game' },
+  { id: 'games', label: 'Games', blurb: 'Play note-driven games', icon: 'game', disabled: true },
   { id: 'producer', label: 'Producer', blurb: 'Coming soon', icon: 'producer', disabled: true },
 ];
 

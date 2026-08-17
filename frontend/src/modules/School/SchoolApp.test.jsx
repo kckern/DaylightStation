@@ -278,7 +278,7 @@ async function tapMaterial(title) {
 describe('SchoolApp home — the subject wall', () => {
   it('renders all nine subjects; empty shelves are greyed, not hidden', async () => {
     render(<SchoolApp clear={() => {}} />);
-    for (const label of ['English & Literature', 'Writing & Typing', 'Language & Culture', 'Math & Money', 'Science & Nature', 'Life & Skills', 'History & Geography', 'Scripture & Gospel', 'Art & Music']) {
+    for (const label of ['English & Literature', 'Writing & Typing', 'Language & Culture', 'Math & Money', 'Science & Nature', 'Life & Skills', 'Civilization', 'Scripture & Gospel', 'Art & Music']) {
       expect(await screen.findByText(label)).toBeInTheDocument();
     }
     // Empty catalog: the shelf is disabled and says so in words (wave-7
@@ -319,7 +319,7 @@ describe('SchoolApp home — the subject wall', () => {
     await screen.findByText('Caps');
     // In a section the home anchor is labelled "Home"; tapping it goes home.
     fireEvent.click(screen.getByRole('button', { name: /^home$/i }));
-    expect(await screen.findByText('History & Geography')).toBeInTheDocument();
+    expect(await screen.findByText('Civilization')).toBeInTheDocument();
     expect(screen.queryByText('Caps')).toBeNull();
   });
 
@@ -345,7 +345,7 @@ describe('SchoolApp home — the subject wall', () => {
   it('the apple home anchor exits (calls clear) at home only when a clear prop exists', async () => {
     const clear = vi.fn();
     const { unmount } = render(<SchoolApp clear={clear} />);
-    await screen.findByText('History & Geography');
+    await screen.findByText('Civilization');
     // At home the anchor is labelled "School" and triggers the app exit.
     fireEvent.click(screen.getByRole('button', { name: /^school$/i }));
     expect(clear).toHaveBeenCalled();
@@ -355,7 +355,7 @@ describe('SchoolApp home — the subject wall', () => {
     const reload = vi.fn();
     vi.spyOn(window, 'location', 'get').mockReturnValue({ ...window.location, pathname: '/', reload });
     render(<SchoolApp />);
-    expect(await screen.findByText('History & Geography')).toBeInTheDocument();
+    expect(await screen.findByText('Civilization')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /^refresh$/i }));
     expect(reload).toHaveBeenCalled();
   });
@@ -385,7 +385,7 @@ describe('language courses', () => {
   it('still builds the wall when the course listing fails', async () => {
     coursesMock.mockResolvedValue({ ok: false, status: 500, data: null });
     render(<SchoolApp clear={() => {}} />);
-    expect(await screen.findByText('History & Geography')).toBeInTheDocument();
+    expect(await screen.findByText('Civilization')).toBeInTheDocument();
   });
 });
 
@@ -499,7 +499,7 @@ describe('SchoolApp bank flows (via the Library)', () => {
     expect(screen.getByText('WA?')).toBeInTheDocument();
     // Second tap: actually leaves.
     fireEvent.click(screen.getByRole('button', { name: /^home$/i }));
-    expect(await screen.findByText('History & Geography')).toBeInTheDocument();
+    expect(await screen.findByText('Civilization')).toBeInTheDocument();
     expect(screen.queryByText('WA?')).toBeNull();
   });
 });

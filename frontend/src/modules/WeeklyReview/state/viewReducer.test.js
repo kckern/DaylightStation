@@ -76,6 +76,21 @@ describe('viewReducer', () => {
     });
   });
 
+  describe('PAGE_LANDED', () => {
+    it('lands on the last cell going back, so Up is immediately armed for another jump', () => {
+      expect(viewReducer(grid({ dayIndex: 2 }), { type: 'PAGE_LANDED', dayIndex: 7 }))
+        .toEqual(grid({ dayIndex: 7 }));
+    });
+    it('lands on the first cell going forward', () => {
+      expect(viewReducer(grid({ dayIndex: 7 }), { type: 'PAGE_LANDED', dayIndex: 0 }))
+        .toEqual(grid({ dayIndex: 0 }));
+    });
+    it('drops back to the grid and clears reel state if a page somehow lands from the reel', () => {
+      expect(viewReducer(reel({ dayIndex: 3, itemIndex: 5, playing: true, muted: false, contextOpen: true }),
+        { type: 'PAGE_LANDED', dayIndex: 7 })).toEqual(grid({ dayIndex: 7 }));
+    });
+  });
+
   describe('context + video actions', () => {
     it('OPEN_CONTEXT / CLOSE_CONTEXT toggle the panel', () => {
       expect(viewReducer(reel(), { type: 'OPEN_CONTEXT' }).contextOpen).toBe(true);

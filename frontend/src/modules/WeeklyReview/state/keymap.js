@@ -10,8 +10,61 @@ function gridMove(dir, cols, total) {
   return { type: 'GRID_MOVE', dir, cols, total };
 }
 
+// True when `lastEdge` is a live arm in this direction — same direction, still
+// inside the double-tap window.
+function armedCount(lastEdge, dir, now, doubleWindowMs) {
+  if (!lastEdge || lastEdge.dir !== dir) return 0;
+  if (now - lastEdge.at >= doubleWindowMs) return 0;
+  return lastEdge.count || 0;
+}
+
+/**
+ * Multi-week paging at the grid's vertical edges. Returns a resolved result, or
+ * null to let the caller fall through to an ordinary GRID_MOVE.
+ *
+ * Up:   1 arms · 2 pages back one window · 3 jumps to the oldest window with content
+ * Down: 1 arms · 2 pages forward (only when a newer window exists)
+ *
+ * The third Up is keyed off the armed count rather than the focused row on
+ * purpose: the second tap already swapped the window and dropped focus onto the
+ * bottom row, so a row test would swallow the third tap.
+ */
+function resolveGridPaging({ dir, view, cols, totalDays, now, lastEdge, doubleWindowMs, windowNav }) {
+  const out = EMPTY();
+  const i = view.dayIndex;
+
+  if (dir === 'up') {
+    const count = armedCount(lastEdge, 'up', now, doubleWindowMs);
+    if (count >= 2) { out.intents.push('jumpOldest'); return out; }
+    if (i >= cols) return null; // not on the top row — ordinary move
+    if (count === 1) {
+      out.intents.push('pageBack');
+      out.edge = { dir: 'up', at: now, count: 2 };
+      return out;
+    }
+    out.edge = { dir: 'up', at: now, count: 1 };
+    return out;
+  }
+
+  if (dir === 'down') {
+    // Nothing newer than the current window to page into, so leave Down alone.
+    if (!windowNav.hasNewer) return null;
+    if (i + cols < totalDays) return null; // not on the bottom row
+    if (armedCount(lastEdge, 'down', now, doubleWindowMs) >= 1) {
+      out.intents.push('pageForward');
+      return out;
+    }
+    out.edge = { dir: 'down', at: now, count: 1 };
+    return out;
+  }
+
+  return null;
+}
+
 export function resolveKey(input) {
   const { view, modalType, modalFocus, preflight, key, now, cols, totalDays, media, lastEdge, doubleWindowMs } = input;
+  const windowNav = input.windowNav || { hasNewer: false };
+  const windowLoading = !!input.windowLoading;
   const isEnter = key === 'Enter';
   const isBack = key === 'Escape';
   const dir = ARROWS[key];
@@ -56,10 +109,28 @@ export function resolveKey(input) {
   // ---- Preflight "acquiring": soft gate over the grid ----
   if (preflight === 'acquiring' && isBack) { out.intents.push('exitNoSave'); return out; }
 
+  // ---- Window swap in flight: everything inert except Back ----
+  // Back stays live on purpose. A window that loads slowly (or never) must not
+  // trap the user inside a live recording session.
+  //
+  // One further exception: an armed Up escalating to jump-to-oldest. The second
+  // tap is what started this load, and the third means "go all the way back" —
+  // it must not be swallowed by the very fetch it supersedes.
+  if (windowLoading && !isBack) {
+    const escalating = view.level === 'grid' && dir === 'up'
+      && armedCount(lastEdge, 'up', now, doubleWindowMs) >= 2;
+    if (!escalating) return out;
+  }
+
   // ---- Main hierarchy ----
   if (view.level === 'grid') {
     if (dir) {
-      // Up on the top row is a clamped no-op in the reducer — no accidental exit.
+      // Row edges are where multi-week paging lives. Up past the top row and
+      // Down past the bottom row used to be clamped no-ops in the reducer; each
+      // is now an arming tap, resolved with the same double-tap counter the reel
+      // uses to cross days. A single stray press still moves nothing.
+      const paging = resolveGridPaging({ dir, view, cols, totalDays, now, lastEdge, doubleWindowMs, windowNav });
+      if (paging) return paging;
       out.view.push(gridMove(dir, cols, totalDays));
       return out;
     }

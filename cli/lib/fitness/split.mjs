@@ -57,6 +57,26 @@ export const spec = {
  * @param {Object} ctx
  * @returns {Promise<Object>}
  */
+/**
+ * Read a session's frame manifest from the media sidecar.
+ *
+ * Mirrors YamlSessionDatastore.getStoragePaths: the session file lives at
+ * .../fitness/log/{date}/{canonicalId}.yml and its manifest at
+ * {mediaDir}/apps/fitness/sessions/{date}/{canonicalId}/snapshots.yml.
+ * Returns null when there is no sidecar (unmigrated session, or none captured).
+ */
+function readSnapshotSidecar(ctx, sessionFile) {
+  const mediaDir = ctx?.configService?.getMediaDir?.() ?? ctx?.mediaDir;
+  if (!mediaDir) return null;
+  const canonicalId = path.basename(sessionFile, '.yml').replace(/\D/g, '');
+  const date = path.basename(path.dirname(sessionFile));
+  const sidecar = path.join(mediaDir, 'apps', 'fitness', 'sessions', date, canonicalId, 'snapshots.yml');
+  try {
+    if (!fs.existsSync(sidecar)) return null;
+    return yaml.load(fs.readFileSync(sidecar, 'utf8'));
+  } catch { return null; }
+}
+
 export async function run(argv, ctx) {
   const { flags } = parseArgs(argv, { valueFlags: ['file', 'split-ts', 'split-content', 'split-time'], booleanFlags: ['write'] });
 
@@ -107,7 +127,14 @@ export async function run(argv, ctx) {
   const ev1 = allEvents.filter(e => Number(e.timestamp) < SPLIT_TS);
   const ev2 = allEvents.filter(e => Number(e.timestamp) >= SPLIT_TS);
 
-  const caps = doc.snapshots?.captures || [];
+  // The frame manifest no longer lives inline: YamlSessionDatastore writes it to
+  // media/apps/fitness/sessions/{date}/{id}/snapshots.yml and rehydrates on read.
+  // This tool loads the session with raw fs, so it has to rehydrate too — reading
+  // `doc.snapshots` alone yields [] for every migrated session, the reconcile
+  // check below then passes vacuously (0 + 0 === 0), and the split writes two
+  // halves with no frames at all. Inline still wins when present, matching
+  // findById, so unmigrated sessions behave exactly as before.
+  const caps = doc.snapshots?.captures || readSnapshotSidecar(ctx, FILE)?.captures || [];
   const cap1 = caps.filter(c => Number(c.timestamp) < SPLIT_TS);
   const cap2 = caps.filter(c => Number(c.timestamp) >= SPLIT_TS);
 

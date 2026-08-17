@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { loadYaml } from '#system/utils/FileIO.mjs';
 import { NotificationConfigService } from '#apps/notification/NotificationConfigService.mjs';
+import { YamlConfigFileStore } from '#adapters/persistence/yaml/YamlConfigFileStore.mjs';
 
 // Mirrors the real ConfigService split: getHouseholdAppConfig is a STALE
 // in-memory-cache read (fixed at construction, never updated by writes),
@@ -22,7 +23,18 @@ function make() {
     getHouseholdPath: (sub) => path.join(dir, sub),
     reloadHouseholdAppConfig: reload,
   };
-  return { svc: new NotificationConfigService({ configService, logger: { warn() {} } }), dir, reload };
+  // The real YamlConfigFileStore, as app.mjs wires it. The service writes through
+  // `configFiles.writeYaml`, and this test asserts on the bytes that land on disk,
+  // so stubbing the writer would leave the actual write path unexercised. Omitting
+  // it entirely — which is what this test did — made updateConfig throw
+  // "Cannot read properties of undefined (reading 'writeYaml')" before any
+  // assertion ran.
+  const configFiles = new YamlConfigFileStore({ logger: { warn() {}, info() {} } });
+  return {
+    svc: new NotificationConfigService({ configFiles, configService, logger: { warn() {} } }),
+    dir,
+    reload,
+  };
 }
 
 describe('NotificationConfigService', () => {

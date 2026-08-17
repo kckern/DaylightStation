@@ -137,14 +137,14 @@ describe('SchoolApp — Portal launch subscription (school.launch)', () => {
 
   it('program:language with no course loaded yet does nothing (no crash, no navigation)', async () => {
     render(<SchoolApp clear={() => {}} />); // coursesMock default: []
-    await screen.findByText('History & Geography');
+    await screen.findByText('Civilization');
 
     deliverLaunch('kid1', { kind: 'program', program: 'language' });
 
     await waitFor(() => expect(bankLogMock).toHaveBeenCalledWith('program-unavailable', { program: 'language' }));
     expect(dayMock).not.toHaveBeenCalled();
     // Still home: the subject wall, not a runner.
-    expect(screen.getByText('History & Geography')).toBeInTheDocument();
+    expect(screen.getByText('Civilization')).toBeInTheDocument();
   });
 
   it('bank launch for a known bank opens the quiz runner directly, bypassing the picker', async () => {

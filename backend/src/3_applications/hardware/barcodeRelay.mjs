@@ -14,7 +14,7 @@
 //
 //   2) PERSIST (bus → disk): a subscriber appends every scan to an append-only
 //      day log at {dataDir}/{persistDir}/{device}/{YYYY-MM-DD}.yml
-//      (default dir: household/barcode/log) — same shape as the food-scale
+//      (default dir: household/hardware/barcode/log) — same shape as the food-scale
 //      history under household/nutrition/log/<scale>/. Persistence is enabled
 //      only when a `dataDir` is supplied (unit tests omit it → no disk writes).
 //

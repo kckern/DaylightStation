@@ -28,7 +28,7 @@ const DEFAULT_HEIGHT = 1404;
 // data/household/state/eink-telemetry.yml). It must survive a server redeploy: a
 // deep-sleep battery panel only reports on its ~6h wake, so an in-memory-only store
 // would show "unknown" for hours after every deploy.
-const TELEMETRY_PATH = 'eink/telemetry';
+const TELEMETRY_PATH = 'hardware/eink/telemetry';
 
 // Single-cell LiPo voltage→charge envelope (raw, not a discharge curve): the panel
 // reads battery millivolts off a GPIO divider. ~4.2V full, ~3.3V is the usable floor.

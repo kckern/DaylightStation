@@ -760,7 +760,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'pressure-mat-relay' }),
   }).start();
   createPressureMatRelay({
-    dayLog: relayDayLog(pressureMatConfig, 'pressure-mats/log', 'pressure_mat'),
+    dayLog: relayDayLog(pressureMatConfig, 'hardware/pressure-mats/log', 'pressure_mat'),
     eventBus,
     dataDir,
     config: pressureMatConfig,
@@ -778,7 +778,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     || configService.reloadHouseholdAppConfig?.(householdId, 'omr-readers')
     || {};
   createOmrRelay({
-    dayLog: relayDayLog(omrReadersConfig, 'omr/log', 'omr'),
+    dayLog: relayDayLog(omrReadersConfig, 'hardware/omr/log', 'omr'),
     eventBus,
     dataDir,
     config: omrReadersConfig,
@@ -795,7 +795,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     dataDir,
     outRoot: omrReadersConfig?.quizzes?.dir
       ? path.join(dataDir, ...String(omrReadersConfig.quizzes.dir).replace(/^\/+/, '').split('/'))
-      : configService.getHouseholdPath('quizzes', householdId),
+      : configService.getHouseholdPath('school/quizzes', householdId),
     config: omrReadersConfig,
     logger: rootLogger.child({ module: 'quiz-scan' }),
   });
@@ -939,7 +939,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     readalong: readalongConfig,  // Follow-along readalong content (scripture, talks, poetry)
     games: {  // Game launcher (RetroArch adapter)
       config: configService.getHouseholdAppConfig(null, 'games'),
-      catalogReader: () => dataService.household.read('retroarch/catalog')
+      catalogReader: () => dataService.household.read('gaming/retroarch/catalog')
     },
     storagePaths                 // Collection → media_memory filename mapping
   }, { httpClient: axios, mediaProgressMemory, app, configService, logger: rootLogger });
@@ -1761,7 +1761,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Game Show shell (teams/buzzers/scoreboard) + Jeopardy. Config from
   // gameshow.yml, content from data/content/games/, sessions checkpointed to
-  // data/household/gameshow/sessions/, media served from media/apps/.
+  // data/household/gaming/gameshow/sessions/, media served from media/apps/.
   v1Routers.gameshow = createGameshowRouter({
     gameShowService: new GameShowService({
       configService,
@@ -1769,7 +1769,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       logger: rootLogger.child({ module: 'gameshow' }),
     }),
     sessionStore: new GameShowSessionStore({
-      sessionsDir: configService.getHouseholdPath('gameshow/sessions'),
+      sessionsDir: configService.getHouseholdPath('gaming/gameshow/sessions'),
       logger: rootLogger.child({ module: 'gameshow' }),
     }),
     broadcastEvent,
@@ -2332,7 +2332,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
           configService.getHouseholdAppConfig(householdId, 'scales') || {},
         ),
         loadIcon: createIconLoader({
-          dir: configService.getHouseholdPath('assets/icons'),
+          dir: configService.getHouseholdPath('nutrition/icons'),
           logger: sheetsLogger,
         }),
       }),
@@ -2861,7 +2861,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       });
 
       const jobStore = new StravaWebhookJobStore({
-        basePath: configService.getHouseholdPath('strava/strava-webhooks'),
+        basePath: path.join(configService.getMediaDir(), 'archives', 'strava-webhooks'),
         logger: rootLogger.child({ module: 'strava-jobs' }),
       });
 
@@ -3807,7 +3807,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   createBarcodeRelay({
     eventBus,
     dataDir,
-    dayLog: relayDayLog({ persistence: { dir: barcodePersistDir } }, 'barcode/log', 'barcode_relay'),
+    dayLog: relayDayLog({ persistence: { dir: barcodePersistDir } }, 'hardware/barcode/log', 'barcode_relay'),
     timezone: configService.getHouseholdTimezone?.(householdId),
     logger: rootLogger.child({ module: 'barcode-relay' }),
     onScan: (relay) => {
@@ -4777,10 +4777,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       xploreBaseUrl,
       sourceConfig: retroarchConfig.source || {},
       consoleConfig: retroarchConfig.consoles,
-      thumbnailBasePath: configService.getHouseholdPath('retroarch/thumbnails'),
+      thumbnailBasePath: configService.getHouseholdPath('gaming/retroarch/thumbnails'),
       httpClient: axios,
-      readCatalog: () => dataService.household.read('retroarch/catalog'),
-      writeCatalog: (data) => dataService.household.write('retroarch/catalog', data),
+      readCatalog: () => dataService.household.read('gaming/retroarch/catalog'),
+      writeCatalog: (data) => dataService.household.write('gaming/retroarch/catalog', data),
       downloadThumbnail: async () => {},
       logger: rootLogger.child({ module: 'retroarch-sync' })
     });

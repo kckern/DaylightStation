@@ -195,7 +195,7 @@ if (existsSync(sliverPath)) {
 }
 
 console.log('\n=== Step 5: Update webhook job ===');
-const jobPath = path.join(baseDir, 'data', 'household', 'strava', 'strava-webhooks', `${ACTIVITY_ID}.yml`);
+const jobPath = path.join(baseDir, 'media', 'archives', 'strava-webhooks', `${ACTIVITY_ID}.yml`);
 const jobData = {
   activityId: Number(ACTIVITY_ID),
   ownerId: 14872916,

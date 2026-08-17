@@ -17,10 +17,12 @@ describe('keymap — week grid', () => {
   it('arrows move focus via GRID_MOVE', () => {
     expect(r({ ...onGrid(), key: 'ArrowRight' }).view).toEqual([{ type: 'GRID_MOVE', dir: 'right', cols: 4, total: 8 }]);
   });
-  it('Up from the top row is a clamped no-op move (no accidental exit)', () => {
+  it('Up from the top row moves nothing and arms the page-back edge (no accidental exit)', () => {
     const res = r({ ...onGrid({ view: { level: 'grid', dayIndex: 1, itemIndex: 0, playing: false, muted: true, contextOpen: false } }), key: 'ArrowUp' });
-    expect(res.view).toEqual([{ type: 'GRID_MOVE', dir: 'up', cols: 4, total: 8 }]);
+    expect(res.view).toEqual([]);
     expect(res.modal).toEqual([]);
+    expect(res.intents).toEqual([]);
+    expect(res.edge).toEqual({ dir: 'up', at: 1000, count: 1 });
   });
   it('Up from the bottom row just moves up a row', () => {
     expect(r({ ...onGrid(), key: 'ArrowUp' }).view).toEqual([{ type: 'GRID_MOVE', dir: 'up', cols: 4, total: 8 }]);
@@ -30,6 +32,113 @@ describe('keymap — week grid', () => {
   });
   it('Back raises the exit gate, pre-focused on Save & Close', () => {
     expect(r({ ...onGrid(), key: 'Escape' }).modal).toEqual([{ type: 'OPEN', modal: 'exitGate', focusIndex: 1 }]);
+  });
+});
+
+describe('keymap — multi-week paging', () => {
+  // Top row = indices 0..3, bottom row = 4..7 on the standard 4x2 window.
+  const top = (over = {}) => base({
+    view: { level: 'grid', dayIndex: 2, itemIndex: 0, playing: false, muted: true, contextOpen: false },
+    ...over,
+  });
+  const bottom = (over = {}) => base({
+    view: { level: 'grid', dayIndex: 6, itemIndex: 0, playing: false, muted: true, contextOpen: false },
+    ...over,
+  });
+
+  it('second Up on the top row pages back a window', () => {
+    const res = resolveKey(top({ key: 'ArrowUp', now: 1300, lastEdge: { dir: 'up', at: 1000, count: 1 } }));
+    expect(res.intents).toEqual(['pageBack']);
+    expect(res.view).toEqual([]);
+    expect(res.edge).toEqual({ dir: 'up', at: 1300, count: 2 });
+  });
+
+  it('second Up after the window expires only re-arms', () => {
+    const res = resolveKey(top({ key: 'ArrowUp', now: 2000, lastEdge: { dir: 'up', at: 1000, count: 1 } }));
+    expect(res.intents).toEqual([]);
+    expect(res.edge).toEqual({ dir: 'up', at: 2000, count: 1 });
+  });
+
+  it('third Up jumps to the oldest window with content and clears the edge', () => {
+    const res = resolveKey(top({ key: 'ArrowUp', now: 1600, lastEdge: { dir: 'up', at: 1300, count: 2 } }));
+    expect(res.intents).toEqual(['jumpOldest']);
+    expect(res.edge).toBeNull();
+  });
+
+  it('third Up still fires from the landing row, since paging back moves focus off the top row', () => {
+    // pageBack lands focus on index 7 (bottom row). The armed edge, not the row,
+    // is what carries the third tap.
+    const res = resolveKey(bottom({
+      view: { level: 'grid', dayIndex: 7, itemIndex: 0, playing: false, muted: true, contextOpen: false },
+      key: 'ArrowUp', now: 1600, lastEdge: { dir: 'up', at: 1300, count: 2 },
+    }));
+    expect(res.intents).toEqual(['jumpOldest']);
+  });
+
+  it('Up off the top row is an ordinary row move, not an arm', () => {
+    const res = resolveKey(bottom({ key: 'ArrowUp' }));
+    expect(res.view).toEqual([{ type: 'GRID_MOVE', dir: 'up', cols: 4, total: 8 }]);
+    expect(res.edge).toBeNull();
+  });
+
+  it('double-Down on the bottom row pages forward when a newer window exists', () => {
+    const armed = { key: 'ArrowDown', now: 1300, lastEdge: { dir: 'down', at: 1000, count: 1 }, windowNav: { hasNewer: true } };
+    const res = resolveKey(bottom(armed));
+    expect(res.intents).toEqual(['pageForward']);
+    expect(res.edge).toBeNull();
+  });
+
+  it('first Down on the bottom row arms without moving', () => {
+    const res = resolveKey(bottom({ key: 'ArrowDown', windowNav: { hasNewer: true } }));
+    expect(res.view).toEqual([]);
+    expect(res.edge).toEqual({ dir: 'down', at: 1000, count: 1 });
+  });
+
+  it('Down on the bottom row is fully inert at the newest window — no arm, no hint', () => {
+    const res = resolveKey(bottom({ key: 'ArrowDown', windowNav: { hasNewer: false } }));
+    expect(res.view).toEqual([{ type: 'GRID_MOVE', dir: 'down', cols: 4, total: 8 }]);
+    expect(res.intents).toEqual([]);
+    expect(res.edge).toBeNull();
+  });
+
+  it('a mixed direction resets the count rather than counting toward a jump', () => {
+    const res = resolveKey(top({ key: 'ArrowUp', now: 1300, lastEdge: { dir: 'down', at: 1000, count: 2 } }));
+    expect(res.intents).toEqual([]);
+    expect(res.edge).toEqual({ dir: 'up', at: 1300, count: 1 });
+  });
+
+  it('while a window is loading every key is inert except Back', () => {
+    for (const key of ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter']) {
+      expect(resolveKey(top({ key, windowLoading: true }))).toEqual({ view: [], modal: [], intents: [], edge: null });
+    }
+    // Back must always work — a slow window must never trap the user mid-review.
+    expect(resolveKey(top({ key: 'Escape', windowLoading: true })).modal)
+      .toEqual([{ type: 'OPEN', modal: 'exitGate', focusIndex: 1 }]);
+  });
+
+  it('the third Up still escalates while the second tap\'s load is in flight', () => {
+    // Otherwise the load started by tap two would swallow tap three, and
+    // jump-to-oldest could never be reached by a natural triple-tap.
+    const res = resolveKey(top({
+      key: 'ArrowUp', now: 1600, lastEdge: { dir: 'up', at: 1300, count: 2 }, windowLoading: true,
+    }));
+    expect(res.intents).toEqual(['jumpOldest']);
+  });
+
+  it('a merely armed Up is still inert while loading — only the escalation gets through', () => {
+    const res = resolveKey(top({
+      key: 'ArrowUp', now: 1300, lastEdge: { dir: 'up', at: 1000, count: 1 }, windowLoading: true,
+    }));
+    expect(res).toEqual({ view: [], modal: [], intents: [], edge: null });
+  });
+
+  it('paging keys do not leak into the reel — Up there still climbs', () => {
+    const res = resolveKey(base({
+      view: { level: 'reel', dayIndex: 0, itemIndex: 0, playing: false, muted: true, contextOpen: false },
+      key: 'ArrowUp', now: 1300, lastEdge: { dir: 'up', at: 1000, count: 2 },
+    }));
+    expect(res.view).toEqual([{ type: 'CLIMB' }]);
+    expect(res.intents).toEqual([]);
   });
 });
 

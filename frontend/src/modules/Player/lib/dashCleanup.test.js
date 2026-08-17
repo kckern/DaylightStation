@@ -43,9 +43,6 @@ const makeDashEl = ({ api, mediaEl, shadow = true, destroy, reset } = {}) => ({
   shadowRoot: shadow ? { querySelector: () => mediaEl || null } : null
 });
 
-/** A native <video> generation: no api, no destroy/reset, no shadow root. */
-const makeNativeVideoEl = () => ({ shadowRoot: null, load: () => {}, pause: () => {} });
-
 const outcomeEvents = () => emits.sampled.filter((e) => e.event === 'dash-cleanup.outcome');
 const failedEvents = () => emits.sampled.filter((e) => e.event === 'dash-cleanup.failed');
 const lastPayload = () => emits.sampled[emits.sampled.length - 1].data;
@@ -89,23 +86,40 @@ describe('cleanupDashElement instrumentation', () => {
     expect(getDashCleanupCounters()).toMatchObject({ attempted: 1, failed: 0, cleaned: 1, noOp: 0 });
   });
 
-  it('a native <video> generation is a no-op, NOT a failure', () => {
-    cleanupDashElement(makeNativeVideoEl());
+  // A native <video> is NOT a no-op: VideoPlayer renders the dash and native
+  // branches under the same containerRef and the same dashElementKey, so this
+  // cleanup runs for both. Skipping the native one left a replaced element
+  // playing with no DOM node and no controls — the 2026-08-16 "audio from
+  // nowhere" report. It must be paused and released like any other.
+  it('a native <video> generation is cleaned, not skipped', () => {
+    const el = makeMediaEl();
+    el.shadowRoot = null;
+    cleanupDashElement(el);
 
+    expect(el.paused).toBe(true);
+    expect(el.removedSrc).toBe(true);
     expect(failedEvents()).toHaveLength(0);
-    expect(emits.warn).toHaveLength(0);
     expect(lastPayload()).toMatchObject({
-      outcome: 'no-op',
+      outcome: 'cleaned',
       hadApi: false,
-      apiDestroyOk: null,
-      componentTeardown: 'none',
-      mediaElLookup: 'no-shadow-root',
-      foundMediaEl: false,
-      srcScheme: 'no-media-el',
-      releaseOk: null,
+      mediaElLookup: 'native-element',
+      foundMediaEl: true,
+      pauseOk: true,
+      releaseOk: true,
       error: null
     });
-    expect(getDashCleanupCounters()).toMatchObject({ attempted: 1, failed: 0, cleaned: 0, noOp: 1 });
+    expect(getDashCleanupCounters()).toMatchObject({ attempted: 1, failed: 0, cleaned: 1, noOp: 0 });
+  });
+
+  it('a non-media container with no shadow root is still a no-op', () => {
+    cleanupDashElement({ shadowRoot: null });
+
+    expect(failedEvents()).toHaveLength(0);
+    expect(lastPayload()).toMatchObject({
+      outcome: 'no-op',
+      mediaElLookup: 'no-shadow-root',
+      foundMediaEl: false
+    });
   });
 
   it('a dash wrapper whose inner element cannot be reached is a FAILURE, under its own event name', () => {
@@ -204,7 +218,7 @@ describe('cleanupDashElement instrumentation', () => {
 
   it('exposes a rising failure rate across a mixed run — the leak signal', () => {
     cleanupDashElement(makeDashEl({ mediaEl: makeMediaEl() }));   // cleaned
-    cleanupDashElement(makeNativeVideoEl());                       // no-op
+    cleanupDashElement({ shadowRoot: null });                      // no-op (non-media container)
     cleanupDashElement(makeDashEl({ mediaEl: null }));             // failed
     cleanupDashElement(makeDashEl({ mediaEl: null }));             // failed
 

@@ -12,7 +12,9 @@ describe('discoverOccupantIds', () => {
       'global:hr': '[]'
     };
     const ids = discoverOccupantIds(series);
-    expect([...ids].sort()).toEqual(['parent-two', 'grannie']);
+    // Sorted on both sides — the assertion is about the SET of ids, not the order
+    // they happen to come out of the series object in.
+    expect([...ids].sort()).toEqual(['grannie', 'parent-two']);
   });
 });
 
