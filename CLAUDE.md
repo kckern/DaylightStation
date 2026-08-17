@@ -88,7 +88,9 @@ SSH config (`~/.ssh/config`) handles authentication for `{env.prod_host}`.
 # SSH to prod
 ssh {env.prod_host}
 
-# View prod logs
+# View prod logs — see "Reading Logs" below; query the log store first,
+# `docker logs` only for startup/crash output the shipper never saw.
+ssh {env.prod_host} "curl -s http://localhost:9428/select/logsql/query -d 'query=level:error AND _time:1h'"
 ssh {env.prod_host} 'docker logs {env.docker_container}'
 ```
 
@@ -350,6 +352,65 @@ For modules with many related log calls across categories (e.g., feed scroll), c
 ### Enabling Debug Output
 
 In browser console: `window.DAYLIGHT_LOG_LEVEL = 'debug'` or call `configure({ level: 'debug' })`.
+
+---
+
+## Reading Logs
+
+**Query the log store first. `docker logs` is the fallback, not the default.**
+
+Logs ship to a log-ingestion container (`victoria-logs` on `kckern-net`, port `9428`,
+7-day retention). It indexes every field of our structured events, so it answers
+"what happened in the piano app at 16:54" — which grepping a file or scrolling
+`docker logs` does not. No API key: it is LAN-only with no auth, reached over SSH.
+
+**Human:** open `http://{env.prod_host}:9428` for the built-in web UI.
+
+**Agent:** query over SSH. Results come back as **JSON Lines**, one object per line.
+
+```bash
+# Errors in the last hour
+ssh {env.prod_host} "curl -s http://localhost:9428/select/logsql/query \
+  -d 'query=level:error AND _time:1h' -d 'limit=50'"
+
+# One subsystem only — this is the main reason the store exists
+ssh {env.prod_host} "curl -s http://localhost:9428/select/logsql/query \
+  -d 'query=context.app:piano AND _time:24h' -d 'limit=100'"
+
+# A specific event name
+ssh {env.prod_host} "curl -s http://localhost:9428/select/logsql/query \
+  -d 'query=\"plex.stream.mint\" AND _time:6h'"
+
+# Nested data.* and context.* fields are indexed and directly filterable
+ssh {env.prod_host} "curl -s http://localhost:9428/select/logsql/query \
+  -d 'query=context.module:weekly-review-immich AND _time:2h'"
+
+# Live tail (like tail -f)
+ssh {env.prod_host} "curl -sN http://localhost:9428/select/logsql/tail -d 'query=level:error'"
+```
+
+**Filter keys** (set by `0_system/logging/logger.mjs`, flattened on ingest):
+
+| Key | Meaning |
+|-----|---------|
+| `context.source` | `backend` \| `frontend` \| `cron` \| `webhook` |
+| `context.app` | Subsystem — `piano`, `fitness`, `api`, … |
+| `context.module` / `context.component` | Finer unit within the app |
+| `level` | `debug` \| `info` \| `warn` \| `error` |
+| `_msg` | The dotted event name |
+| `data.*` | Event payload fields, individually queryable |
+
+Useful LogsQL: `_time:5m`, `AND`/`OR`/`NOT`, `field:value`, `"exact phrase"`,
+`| stats count() by (context.app)` for aggregation, `| limit N`.
+
+**When `docker logs` is still right:** the container failed to start, or the log
+store itself is down — anything that happens before or below the shipper. The
+shipper drops events rather than buffering without bound when the store is
+unreachable, so a gap in the store is itself a signal to check `docker logs`.
+
+**Other sinks** (unchanged, longer windows, on the media mount): per-app session
+logs `media/logs/{app}/` 14 days, school ledger 400 days, `backend.log` on the
+non-synced volume. See `docs/reference/core/configuration.md`.
 
 ---
 
