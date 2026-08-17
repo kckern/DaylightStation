@@ -5,7 +5,7 @@
  *   dscli ha state <entity_id>   — Get current state + attributes for one entity.
  *
  * Auth + base URL come from the household's homeassistant integration
- * (data/household/config/integrations.yml + data/household/auth/homeassistant.yml
+ * (data/household/integrations.yml + data/household/auth/homeassistant.yml
  * + data/system/config/services.yml).
  */
 
