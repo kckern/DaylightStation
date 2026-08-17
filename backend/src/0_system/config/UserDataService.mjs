@@ -405,7 +405,9 @@ class UserDataService {
       'gratitude',        // gratitude bank/options
       'common/infinity',         // Infinity harvested data
       'config',                  // Configuration files
-      'config/lists',            // List definitions
+      // Note: 'config/lists' removed from here — menus/programs/watchlists/
+      // queries now live in the top-level content/lists/ tree (NOT
+      // household-scoped), created on demand by ListAdapter/YamlListDatastore.
       'history',                 // Time-series data
       // Note: Bot conversations now per-user (users/{username}/conversations/{bot}/)
       // Note: apps/ is deliberately not seeded here — new households get their

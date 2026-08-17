@@ -18,7 +18,7 @@ const BASE = BACKEND_URL;
 const DATA_PATH = getDataPath();
 
 // ── Load tvapp menu config ──────────────────────────────────────
-const TVAPP_PATH = `${DATA_PATH}/household/config/lists/menus/tvapp.yml`;
+const TVAPP_PATH = `${DATA_PATH}/content/lists/menus/tvapp.yml`;
 const tvappRaw = load(readFileSync(TVAPP_PATH, 'utf8'));
 const menuItems = tvappRaw?.items || (Array.isArray(tvappRaw) ? tvappRaw : []);
 

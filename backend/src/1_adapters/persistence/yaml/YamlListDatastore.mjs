@@ -1,8 +1,10 @@
 /**
  * YamlListDatastore - YAML-based list persistence
  *
- * Implements IListStore port for household config list storage.
- * Lists are stored at: household[-{id}]/config/lists/{type}/{name}.yml
+ * Implements IListStore port for content list storage.
+ * Lists are stored at: content/lists/{type}/{name}.yml — a top-level tree,
+ * sibling to household/, NOT household-scoped (menus/programs/watchlists
+ * are shared household content, not per-household config).
  *
  * Handles normalization (raw YAML -> canonical sections format) on read
  * and serialization (canonical -> compact YAML) on write via listConfigNormalizer.
@@ -34,12 +36,13 @@ export class YamlListDatastore extends IListStore {
   }
 
   /**
-   * Get the lists base directory for a household
+   * Get the lists base directory. content/lists is a top-level tree, sibling
+   * to household/ — NOT household-scoped, so householdId is accepted (for
+   * call-site signature compatibility) but does not affect the path.
    */
-  _getListsBaseDir(householdId) {
-    const hid = householdId || this.configService.getDefaultHouseholdId();
-    const basePath = this.userDataService.getHouseholdDir(hid);
-    return path.join(basePath, 'config', 'lists');
+  _getListsBaseDir(_householdId) {
+    const basePath = this.userDataService.getDataDir();
+    return path.join(basePath, 'content', 'lists');
   }
 
   /**
@@ -66,7 +69,7 @@ export class YamlListDatastore extends IListStore {
       return {
         type,
         count: names.length,
-        path: `config/lists/${type}`
+        path: `content/lists/${type}`
       };
     });
   }

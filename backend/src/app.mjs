@@ -879,7 +879,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     proxyPath: canvasConfig.proxyPath || '/api/v1/canvas/image'
   };
 
-  // watchlistPath removed - lists now in config/lists/ directory (managed by ListAdapter)
+  // watchlistPath removed - lists now in content/lists/ directory (managed by ListAdapter)
   const contentPath = `${dataBasePath}/content`;  // LocalContentAdapter expects content/ subdirectory
   const mediaMemoryPath = `${householdDir}/media/memory`;
 
@@ -931,7 +931,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     audiobookshelf: audiobookshelfConfig,  // Ebooks/audiobooks
     canvas,  // Canvas art display (filesystem-based)
     dataPath: contentPath,
-    listDataPath: dataBasePath,  // ListAdapter needs root data path for household/config/lists/
+    listDataPath: dataBasePath,  // ListAdapter needs root data path for content/lists/
     mediaMemoryPath,
     nomusicLabels,
     musicOverlayPlaylist,
@@ -1369,15 +1369,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     const { ABSEbookFeedAdapter } = await import('./1_adapters/feed/sources/ABSEbookFeedAdapter.mjs');
 
     // Load query configs at bootstrap time (moves fs access out of application layer)
+    // content/lists is a top-level tree, sibling to household/ — NOT household-scoped.
     const { readdirSync, existsSync } = await import('fs');
-    const queriesPath = configService.getHouseholdPath('config/lists/queries');
+    const queriesPath = dataService.content.resolveDir('lists/queries');
     let queryConfigs = [];
     if (queriesPath) {
       try {
         const files = readdirSync(queriesPath).filter(f => f.endsWith('.yml'));
         queryConfigs = files.map(file => {
           const key = file.replace('.yml', '');
-          const data = dataService.household.read(`config/lists/queries/${key}`);
+          const data = dataService.content.read(`lists/queries/${key}`);
           return data ? { ...data, _filename: file } : null;
         }).filter(Boolean);
       } catch (err) {

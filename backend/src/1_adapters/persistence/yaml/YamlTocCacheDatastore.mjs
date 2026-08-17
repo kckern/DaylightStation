@@ -7,7 +7,7 @@ import { ITocCacheDatastore } from '#apps/agents/paged-media-toc/ports/ITocCache
  *
  * Cache path: content/komga/toc/{bookId}.yml (LLM/vision-extracted, not a
  * disposable cache — lives beside the content it indexes)
- * Config path: household config/lists/queries/komga
+ * Config path: content/lists/queries/komga (not household-scoped)
  *
  * @module adapters/persistence/yaml/YamlTocCacheDatastore
  */
@@ -36,6 +36,6 @@ export class YamlTocCacheDatastore extends ITocCacheDatastore {
       const userConfig = this.#dataService.user.read('config/queries/komga', username);
       if (userConfig) return userConfig;
     }
-    return this.#dataService.household.read('config/lists/queries/komga');
+    return this.#dataService.content.read('lists/queries/komga');
   }
 }
