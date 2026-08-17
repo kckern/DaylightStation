@@ -1168,7 +1168,11 @@ correctly; it does not wire them up."
 
 ## Task 13: Retire `config/` — colocate each config with its domain
 
-**Sequence this AFTER the log exodus (Tasks 2-3 and the deferred fitness/automotive splits).** The reasoning depends on it: `config/` earns centralization only while domain folders are full of machine-written state. Once logs and telemetry have left `data/`, everything remaining in `data/household/` is configuration and light curated state, and a separate `config/` root is redundant indirection over a taxonomy that already exists.
+**Revised precondition (2026-08-16 21:48 PDT).** The original text below required "the log exodus (Tasks 2-3 and the deferred fitness/automotive splits)" as a hard precondition — but the fitness/automotive splits are listed in this same plan's "Deliberately Out of Scope" section, so that precondition could never be satisfied by this plan alone. That was a contradiction baked into the plan, not something an implementer could resolve.
+
+Resolution: the log exodus is satisfied for every domain EXCEPT `fitness/`, where `timeline.series` (67M) is still inline. That is accepted as one known, named exception rather than a blocker — `fitness/config.yml` will sit beside `fitness/log/`, which still carries real telemetry, until the deferred fitness split lands. Every other domain folder is now clean, so the task's core reasoning ("config/ earns centralization only while domain folders hold machine state") holds everywhere but that one domain. Proceed. Do not re-block on the fitness split.
+
+**Original reasoning, unchanged:** `config/` earns centralization only while domain folders are full of machine-written state. Once logs and telemetry have left `data/`, everything remaining in `data/household/` is configuration and light curated state, and a separate `config/` root is redundant indirection over a taxonomy that already exists.
 
 `/etc` is not the right precedent. `/etc` is centralized because server config is deployed and versioned separately from the data it governs. This is an application data tree where each subject should be self-contained.
 
