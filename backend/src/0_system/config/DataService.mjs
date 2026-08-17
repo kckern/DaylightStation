@@ -16,6 +16,7 @@
  *   - user: {dataDir}/users/{username}/{relativePath}.yml
  *   - household: {dataDir}/household[-{hid}]/{relativePath}.yml
  *   - system: {dataDir}/system/{relativePath}.yml
+ *   - content: {dataDir}/content/{relativePath}.yml
  *
  * Location: backend/src/0_system/config/DataService.mjs
  */
@@ -109,6 +110,7 @@ export class DataService {
     this.user = this.#createUserScope();
     this.household = this.#createHouseholdScope();
     this.system = this.#createSystemScope();
+    this.content = this.#createContentScope();
   }
 
   /**
@@ -267,6 +269,64 @@ export class DataService {
       /**
        * Write system data file
        * @param {string} relativePath - Path relative to system directory
+       * @param {object} data - Data to write
+       * @returns {boolean} Success status
+       */
+      write(relativePath, data) {
+        const fullPath = this.resolvePath(relativePath);
+        return writeYamlFile(fullPath, data);
+      },
+    };
+  }
+
+  /**
+   * Create the content-scoped data accessor.
+   *
+   * `content/` is a top-level tree, sibling to household/system/users — NOT
+   * household-scoped. It holds authored/extracted material (e.g. komga TOC
+   * cache) that is expensive or non-reproducible to regenerate, so it lives
+   * beside household/ rather than in the disposable media/ tree.
+   *
+   * @returns {object} { read, write, resolvePath }
+   */
+  #createContentScope() {
+    const self = this;
+
+    return {
+      /**
+       * Resolve full path for a content data file
+       * @param {string} relativePath - Path relative to the content directory
+       * @returns {string} Full absolute path
+       */
+      resolvePath(relativePath) {
+        const dataDir = self.#configService.getDataDir();
+        const fullPath = path.join(dataDir, 'content', relativePath);
+        return ensureExtension(fullPath);
+      },
+
+      /**
+       * Resolve a raw path within the content data tree (no extension handling).
+       * @param {string} [relativePath] - Path relative to the content directory ('' → content root)
+       * @returns {string} Full absolute path
+       */
+      resolveDir(relativePath = '') {
+        const dataDir = self.#configService.getDataDir();
+        return path.join(dataDir, 'content', relativePath);
+      },
+
+      /**
+       * Read content data file
+       * @param {string} relativePath - Path relative to the content directory
+       * @returns {object|null} Parsed data or null
+       */
+      read(relativePath) {
+        const fullPath = this.resolvePath(relativePath);
+        return readYamlFile(fullPath);
+      },
+
+      /**
+       * Write content data file
+       * @param {string} relativePath - Path relative to the content directory
        * @param {object} data - Data to write
        * @returns {boolean} Success status
        */

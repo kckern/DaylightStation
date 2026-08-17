@@ -175,7 +175,7 @@ async function main() {
   console.log(`  Host: ${komgaHost}`);
   console.log(`  Mode: ${dryRun ? 'DRY RUN' : 'LIVE'}${force ? ' (FORCE)' : ''}\n`);
 
-  const tocDir = join(dataDir, 'household', 'komga', 'cache', 'toc');
+  const tocDir = join(dataDir, 'content', 'komga', 'toc');
   const files = readdirSync(tocDir).filter(f => f.endsWith('.yml'));
 
   const toProcess = [];
@@ -183,8 +183,8 @@ async function main() {
     const bookId = file.replace('.yml', '');
     if (specificBook && bookId !== specificBook) continue;
 
-    const cachePath = `komga/cache/toc/${bookId}.yml`;
-    const cached = dataService.household.read(cachePath);
+    const cachePath = `komga/toc/${bookId}.yml`;
+    const cached = dataService.content.read(cachePath);
     if (!cached) continue;
 
     // Skip if already has offset (unless --force)
@@ -229,8 +229,8 @@ async function main() {
 
     const offset = await detectOffset(book.bookId, startPage);
 
-    const cachePath = `komga/cache/toc/${book.bookId}.yml`;
-    const cached = dataService.household.read(cachePath);
+    const cachePath = `komga/toc/${book.bookId}.yml`;
+    const cached = dataService.content.read(cachePath);
 
     // Validate: check if applying the offset causes articles to map outside 1..pageCount
     let finalOffset = offset !== null ? offset : 0;
@@ -246,7 +246,7 @@ async function main() {
     }
 
     cached.tocPageOffset = finalOffset;
-    dataService.household.write(cachePath, cached);
+    dataService.content.write(cachePath, cached);
 
     if (offset !== null) {
       console.log(`  ✓ Saved offset=${finalOffset}\n`);

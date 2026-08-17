@@ -4,7 +4,7 @@ import { KomgaFeedAdapter } from '#adapters/feed/sources/KomgaFeedAdapter.mjs';
 
 // Mock dataService
 const mockDataService = {
-  household: {
+  content: {
     read: vi.fn().mockReturnValue(null),
     write: vi.fn(),
   },
@@ -21,7 +21,7 @@ describe('KomgaFeedAdapter', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockDataService.household.read.mockReturnValue(null);
+    mockDataService.content.read.mockReturnValue(null);
     mockClient.getBooks.mockReset();
   });
 
@@ -57,7 +57,7 @@ describe('KomgaFeedAdapter', () => {
       });
 
       // Return cached TOC so we skip pdfjs entirely
-      mockDataService.household.read.mockReturnValue({
+      mockDataService.content.read.mockReturnValue({
         bookId: 'book-abc',
         series: 'Test Series',
         issue: 'Issue 42',
@@ -98,7 +98,7 @@ describe('KomgaFeedAdapter', () => {
       });
 
       // Return cached TOC so we skip pdfjs entirely
-      mockDataService.household.read.mockReturnValue({
+      mockDataService.content.read.mockReturnValue({
         bookId: 'book-abc',
         series: 'Test Series',
         issue: 'Issue 42',
@@ -140,7 +140,7 @@ describe('KomgaFeedAdapter', () => {
       });
 
       // Cached TOC with junk bookmark titles
-      mockDataService.household.read.mockReturnValue({
+      mockDataService.content.read.mockReturnValue({
         bookId: 'book-junk',
         series: 'Dialogue',
         issue: 'Volume51',
@@ -184,7 +184,7 @@ describe('KomgaFeedAdapter', () => {
         }],
       });
 
-      mockDataService.household.read.mockReturnValue({
+      mockDataService.content.read.mockReturnValue({
         bookId: 'book-good',
         series: 'MIT Sloan',
         issue: 'Spring 2022',
@@ -225,7 +225,7 @@ describe('KomgaFeedAdapter', () => {
         }],
       });
 
-      mockDataService.household.read.mockReturnValue({
+      mockDataService.content.read.mockReturnValue({
         bookId: 'book-mix',
         series: 'Test',
         issue: 'Issue 7',
@@ -271,7 +271,7 @@ describe('KomgaFeedAdapter', () => {
       });
 
       // Return cached TOC so we skip pdfjs
-      mockDataService.household.read.mockReturnValue({
+      mockDataService.content.read.mockReturnValue({
         bookId: 'book-abc',
         series: 'Test Series',
         issue: 'Issue 42',
