@@ -191,8 +191,8 @@ export class KomgaFeedAdapter extends IFeedSourceAdapter {
     const sections = [];
 
     // Read TOC for offset and article boundaries
-    const cachePath = `komga/cache/toc/${bookId}.yml`;
-    const toc = this.#dataService.household.read(cachePath);
+    const cachePath = `komga/toc/${bookId}.yml`;
+    const toc = this.#dataService.content.read(cachePath);
     const offset = toc?.tocPageOffset || 0;
 
     // Convert vendor page back to printed page for boundary lookup
@@ -228,8 +228,8 @@ export class KomgaFeedAdapter extends IFeedSourceAdapter {
    * @returns {number} Last page of the article (inclusive)
    */
   #getArticleEndPage(bookId, startPage, totalPages) {
-    const cachePath = `komga/cache/toc/${bookId}.yml`;
-    const toc = this.#dataService.household.read(cachePath);
+    const cachePath = `komga/toc/${bookId}.yml`;
+    const toc = this.#dataService.content.read(cachePath);
 
     if (!toc?.articles?.length) {
       // No TOC — show a reasonable number of pages (up to 8)
@@ -269,7 +269,7 @@ export class KomgaFeedAdapter extends IFeedSourceAdapter {
   /**
    * Get TOC for a book, using disk cache to avoid re-downloading PDFs.
    *
-   * Cache path: household komga/cache/toc/{bookId}.yml
+   * Cache path: content/komga/toc/{bookId}.yml
    * (Explicit .yml extension to avoid ensureExtension issues with dotted IDs.)
    *
    * @param {string} bookId
@@ -280,8 +280,8 @@ export class KomgaFeedAdapter extends IFeedSourceAdapter {
    */
   async #getToc(bookId, seriesLabel, issueTitle, pageCount) {
     // Check disk cache
-    const cachePath = `komga/cache/toc/${bookId}.yml`;
-    const cached = this.#dataService.household.read(cachePath);
+    const cachePath = `komga/toc/${bookId}.yml`;
+    const cached = this.#dataService.content.read(cachePath);
     if (cached) return cached;
 
     // Download PDF and extract bookmarks
@@ -301,7 +301,7 @@ export class KomgaFeedAdapter extends IFeedSourceAdapter {
     };
 
     // Persist to cache
-    this.#dataService.household.write(cachePath, tocData);
+    this.#dataService.content.write(cachePath, tocData);
 
     return tocData;
   }
