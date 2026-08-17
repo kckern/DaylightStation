@@ -15,7 +15,13 @@
  * 960x540 screen and 1.5x small against a 1280-wide one.
  */
 
-/** Width of the visible preview surface, in real CSS px. */
+/**
+ * Width of the visible preview surface, in real CSS px.
+ *
+ * Coupled to the preview modal's width: `ListsItemRow.jsx` opens it with
+ * `size={980}` and `padding="xs"`. Raise this without raising that and the
+ * frame overflows the modal.
+ */
 export const PREVIEW_WIDTH = 960;
 
 /**
