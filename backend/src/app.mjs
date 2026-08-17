@@ -1908,9 +1908,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // after the shared content adapters have been registered.
 
   // Content-filter cascade (EDL + profile + override) for the Player's
-  // useContentFilter hook. Reads data/household/content-filter/.
+  // useContentFilter hook. Curated policy from data/household/content-filter/,
+  // machine-fetched EDLs from media/content-filter/.
   v1Routers['content-filter'] = createContentFilterRouter({
     householdDir: configService.getHouseholdPath(''),
+    mediaDir: configService.getMediaDir(),
     logger: rootLogger.child({ module: 'content-filter-api' }),
   });
 
