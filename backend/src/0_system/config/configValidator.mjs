@@ -49,6 +49,9 @@ export function validateConfig(config, dataDir) {
     for (const [hid, household] of Object.entries(config.households)) {
       // Use flat structure: household/ for 'default', household-{id}/ for others
       const folderName = household._folderName || toFolderName(hid);
+      // Colocated first (task-13): household.yml at the household root,
+      // falling back to the legacy config/household.yml.
+      checkedPaths.push(`${dataDir}/${folderName}/household.yml`);
       checkedPaths.push(`${dataDir}/${folderName}/config/household.yml`);
       validateObject(household, configSchema.households.valueSchema, `households.${hid}`, errors);
     }

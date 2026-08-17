@@ -519,7 +519,7 @@ function FitnessConfigContent({ data, setData }) {
 function FitnessConfig() {
   return (
     <ConfigFormWrapper
-      filePath="household/config/fitness.yml"
+      filePath="household/fitness/config.yml"
       title="Fitness Configuration"
     >
       {({ data, setData }) => (

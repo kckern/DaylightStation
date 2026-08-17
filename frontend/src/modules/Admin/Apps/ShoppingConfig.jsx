@@ -172,7 +172,7 @@ function ShoppingConfigContent({ data, setData }) {
 function ShoppingConfig() {
   return (
     <ConfigFormWrapper
-      filePath="household/config/harvesters.yml"
+      filePath="household/harvest/config.yml"
       title="Shopping Configuration"
     >
       {({ data, setData }) => (

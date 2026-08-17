@@ -47,7 +47,7 @@ export class AuthService {
     }, username);
 
     // Create household config
-    this.#dataService.household.write('config/household', {
+    this.#dataService.household.write('household', {
       household_id: householdId,
       name: householdName,
       head: username,

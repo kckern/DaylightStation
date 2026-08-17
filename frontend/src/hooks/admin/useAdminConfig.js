@@ -11,7 +11,7 @@ const API_BASE = '/api/v1/admin/config/files';
  * Provides both parsed (JS object) and raw (YAML string) representations,
  * dirty tracking, optimistic revert, and structured logging.
  *
- * @param {string} filePath - Config file path relative to data root, e.g. 'household/config/fitness.yml'
+ * @param {string} filePath - Config file path relative to data root, e.g. 'household/fitness/config.yml'
  * @returns {object} Config state and actions
  */
 export function useAdminConfig(filePath) {

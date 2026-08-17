@@ -15,7 +15,7 @@
  * --apply. Refuses when <newId> already exists in either root.
  *
  * What it deliberately does NOT touch:
- *   - `household/config/school.yml` (`students:`, `schoolcalc.…learner_slots`)
+ *   - `household/school/config.yml` (`students:`, `schoolcalc.…learner_slots`)
  *     — config is boot-cached and hand-edited; the report names the keys.
  *   - teacher ids (`from`, `assignedBy`, `gradedBy`, `dismissedBy`,
  *     `attestedBy`, `decidedBy`) — this rekeys a LEARNER; an adult actor

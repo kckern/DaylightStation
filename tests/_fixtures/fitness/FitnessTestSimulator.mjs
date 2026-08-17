@@ -34,14 +34,14 @@
 import WebSocket from 'ws';
 
 // Device mappings - uses real household device IDs for dev server testing
-// These map to the actual devices in data/household/config/fitness.yml
+// These map to the actual devices in data/household/fitness/config.yml
 export const TEST_DEVICES = {
   alice: { deviceId: 40475, userId: 'user_1', name: 'KC' },        // Real device
   bob: { deviceId: 90003, userId: 'user_2', name: 'User_2' },        // Real device
   charlie: { deviceId: 90001, userId: 'user_3', name: 'User_3' }       // Real device
 };
 
-// Real cadence device IDs from production config (data/household/config/fitness.yml)
+// Real cadence device IDs from production config (data/household/fitness/config.yml)
 export const TEST_CADENCE_DEVICES = {
   cycle_ace: { deviceId: 49904, equipmentId: 'cycle_ace', name: 'CycleAce' },
   ab_roller: { deviceId: 7183, equipmentId: 'ab_roller', name: 'Ab Roller' },
@@ -85,7 +85,7 @@ export const RPM_SCENARIOS = {
 };
 
 // Heart rate zone thresholds (from production config)
-// See: data/household/config/fitness.yml
+// See: data/household/fitness/config.yml
 export const HR_ZONES = {
   cool: { min: 0, max: 99, name: 'Cool', id: 'cool', color: 'blue', governed: false },
   active: { min: 100, max: 119, name: 'Active', id: 'active', color: 'green', governed: true },
