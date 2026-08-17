@@ -59,6 +59,16 @@ const ALLOWED_FILES = [
   'household/notifications/config.yml',
   'household/agents/config.yml',
   'household/media/content-prefixes.yml',
+  // I3 (final-review fix wave, 2026-08-16): task-13 moved this out of
+  // config/ to the household root (household/integrations.yml) and its
+  // review deferred re-adding it here on the theory it "has a dedicated
+  // admin surface elsewhere" — false: IntegrationsQueryService
+  // (backend/src/3_applications/admin/IntegrationsQueryService.mjs) has ZERO
+  // write methods, so without this entry the file was editable only by
+  // shelling into the container. household.yml and hardware/devices.yml
+  // (task-13's other two moved-out files) DO have real dedicated write
+  // surfaces and correctly stay off this list.
+  'household/integrations.yml',
 ];
 
 // Directories that appear in file listings but cannot be read or written

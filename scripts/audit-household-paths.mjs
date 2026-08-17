@@ -38,6 +38,14 @@ const isMainModule = import.meta.url === `file://${process.argv[1]}`;
 const DATA = process.env.DAYLIGHT_DATA
   || '/media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/data';
 const HH = path.join(DATA, 'household');
+// `content/` is the other top-level, committable-contract root this same
+// 2026-08-16 plan created (DataService#content — data/content/{komga,school,
+// music,...}). It gets the SAME orphan sweep as household/ below. `media/` is
+// deliberately NOT swept here — it's never source-controlled and doesn't
+// carry the same "must resolve" contract (see findWriterReaderSplits header
+// for why media/ writer/reader *visibility* is still worth having without a
+// full disk sweep of it).
+const CONTENT = path.join(DATA, 'content');
 const DELETED = path.join(DATA, '_deleteme');
 const SCAN_DIRS = ['backend/src', 'cli', 'shared', 'scripts'];
 
@@ -100,6 +108,17 @@ const PATTERNS = [
   /getHouseholdPath\(\s*path\.join\(\s*((?:'[a-z0-9._-]+'\s*,?\s*)+)/g,
   /household\.(?:read|write|resolveDir|resolvePath)\(\s*path\.join\(\s*((?:'[a-z0-9._-]+'\s*,?\s*)+)/g,
   /(?:loadFile|saveFile)\??\.?\(\s*path\.join\(\s*((?:'[a-z0-9._-]+'\s*,?\s*)+)/g,
+
+  // `content` scope (DataService#createContentScope, e.g.
+  // `dataService.content.read('lists/queries/komga')` /
+  // `this.#dataService.content.write(\`komga/toc/${bookId}.yml\`, ...)`).
+  // Same three shapes as the household.(read|write|...) group above — this
+  // is what let the writer/reader-split check reach the KomgaFeedAdapter /
+  // YamlTocCacheDatastore content.read/write pair, which no PATTERN matched
+  // before (Task 10 added the accessor without a matching audit pattern).
+  /content\.(?:read|write|resolveDir|resolvePath)\(\s*'([^']+)'/g,
+  /content\.(?:read|write|resolveDir|resolvePath)\(\s*`([^`]*)`/g,
+  /content\.(?:read|write|resolveDir|resolvePath)\(\s*path\.join\(\s*((?:'[a-z0-9._-]+'\s*,?\s*)+)/g,
 ];
 
 // Generic wrapper roots that are not themselves a domain — the domain is the
@@ -231,7 +250,14 @@ for (const dir of SCAN_DIRS) {
   }
 }
 
-const onDisk = (rel) => ['', '.yml', '.yaml'].some((ext) => fs.existsSync(path.join(HH, rel + ext)));
+// A resolved subpath may live under EITHER top-level root the code now
+// addresses — household/ (the original scope every PATTERN was written
+// against) or content/ (DataService#content, added by this same plan). A
+// content-scope subpath like `komga/toc` checked only against HH would
+// falsely read as "never written yet" even though data/content/komga/toc
+// is real, populated data — so both roots are tried.
+const onDisk = (rel) => [HH, CONTENT].some((root) =>
+  ['', '.yml', '.yaml'].some((ext) => fs.existsSync(path.join(root, rel + ext))));
 /**
  * Did this path hold data before the reorganization? `_deleteme` is the record.
  *
@@ -271,14 +297,26 @@ for (const [rel, files] of [...expected].sort()) {
 }
 
 // Reverse sweep: a domain on disk that no code mentions is orphaned data.
+// Walks BOTH top-level committable-contract roots this plan produced —
+// household/ (original) and content/ (Task 10's data/content/{komga,school,
+// music,...}). media/ is intentionally excluded (see the CONTENT const
+// comment above).
 const orphans = [];
-if (fs.existsSync(HH)) {
+{
   const src = SCAN_DIRS.flatMap((d) => walk(d)).map((f) => stripComments(fs.readFileSync(f, 'utf8'))).join('\n');
-  for (const entry of fs.readdirSync(HH)) {
-    const name = entry.replace(/\.ya?ml$/, '');
-    if (NOT_DOMAINS.has(name)) continue;
-    const re = new RegExp(`['"\`]${name}(?:[/'"\`])|'${name}'\\s*[,)]`);
-    if (!re.test(src)) orphans.push(entry);
+  for (const { root, label } of [{ root: HH, label: 'household' }, { root: CONTENT, label: 'content' }]) {
+    if (!fs.existsSync(root)) continue;
+    for (const entry of fs.readdirSync(root)) {
+      // Transient/non-domain entries (e.g. content/_staging, the stray
+      // macOS `._plex` AppleDouble file) are not data contracts and don't
+      // need a code reader — same spirit as NOT_DOMAINS below, just keyed
+      // on a leading '.' or '_' instead of an explicit name list.
+      if (/^[._]/.test(entry)) continue;
+      const name = entry.replace(/\.ya?ml$/, '');
+      if (NOT_DOMAINS.has(name)) continue;
+      const re = new RegExp(`['"\`]${name}(?:[/'"\`])|'${name}'\\s*[,)]`);
+      if (!re.test(src)) orphans.push(`${label}/${entry}`);
+    }
   }
 }
 
@@ -299,7 +337,7 @@ if (movedAway.length) {
 }
 if (orphans.length) {
   line('\nORPHANED — data on disk that no code names:');
-  for (const o of orphans) line(`  household/${o}`);
+  for (const o of orphans) line(`  ${o}`);
 }
 
 const splits = findWriterReaderSplits(collectedSites);

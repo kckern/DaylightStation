@@ -224,3 +224,30 @@ describe('YamlConfigFileService — colocated file allowlist (task-13)', () => {
     expect(files.find(f => f.path === 'household/fitness/log/2026-08-16/session-abc123.yml')).toBeUndefined();
   });
 });
+
+// I3 (final-review fix wave, 2026-08-16): task-13's review deferred
+// re-adding household/integrations.yml here, reasoning it "has a dedicated
+// admin surface elsewhere" — false, IntegrationsQueryService has zero write
+// methods, so leaving it off ALLOWED_FILES made it editable only by
+// shelling into the container. This restores it.
+describe('YamlConfigFileService — integrations.yml allowlist (I3)', () => {
+  beforeEach(() => {
+    write('household/integrations.yml', 'plex:\n  enabled: true\n');
+  });
+
+  it('is listed with masked:false', () => {
+    const { files } = service.listFiles();
+    const entry = files.find(f => f.path === 'household/integrations.yml');
+    expect(entry).toBeDefined();
+    expect(entry.masked).toBe(false);
+  });
+
+  it('is readable and writable through the generic admin YAML browser', () => {
+    const result = service.readFile('household/integrations.yml');
+    expect(result.parsed).toEqual({ plex: { enabled: true } });
+
+    const res = service.writeFile('household/integrations.yml', { parsed: { plex: { enabled: false } } });
+    expect(res.ok).toBe(true);
+    expect(service.readFile('household/integrations.yml').parsed).toEqual({ plex: { enabled: false } });
+  });
+});

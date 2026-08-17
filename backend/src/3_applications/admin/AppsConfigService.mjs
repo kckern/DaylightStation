@@ -178,8 +178,29 @@ export class AppsConfigService {
       }
     }
 
+    // I2 (final-review fix wave, 2026-08-16): APP_CONFIGS is a static map, not
+    // the shared colocated-first resolver (ConfigService#getHouseholdAppConfigPath)
+    // NotificationConfigService already routes writes through — see that
+    // class and getHouseholdAppConfigPath's own doc comment for the exact bug
+    // class this guards against. A blind swap to the shared resolver isn't a
+    // clean fit here: it resolves by appId under the household's OWN folder
+    // name (`<household>/<appId>/config.yml`), and at least two of the 9
+    // entries above don't follow that shape — 'shopping' maps to the
+    // 'harvest' domain folder, and 'media' collides with an unrelated
+    // household/media/config.yml that already exists for a different app.
+    // Routing "media" through the shared resolver would silently overwrite
+    // that other app's real config. So: guard instead of swap. If APP_CONFIGS
+    // ever drifts stale (a future config move not reflected here), the
+    // resolved directory won't exist and this throws NotFoundError instead
+    // of `writeText` silently `mkdir -p`-ing a new tree nothing reads back —
+    // the exact silent-vanishing-write bug NotificationConfigService hit.
     const dir = path.dirname(absPath);
     if (!this.#configFiles.exists(dir)) {
+      throw new NotFoundError(
+        `Config directory does not exist for "${appId}" — refusing to write to a possibly-stale location`,
+        undefined,
+        { appId, configPath, code: 'CONFIG_DIR_NOT_FOUND' }
+      );
     }
 
     this.#configFiles.writeText(absPath, fileContent);
