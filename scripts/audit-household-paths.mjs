@@ -30,6 +30,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+// Guards the executable body below so `findWriterReaderSplits` can be
+// imported by tests (tests/isolated/tooling/auditHouseholdPaths.test.mjs)
+// without running the full disk audit and its terminal `process.exit`.
+const isMainModule = import.meta.url === `file://${process.argv[1]}`;
+
 const DATA = process.env.DAYLIGHT_DATA
   || '/media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/data';
 const HH = path.join(DATA, 'household');
@@ -49,11 +54,18 @@ const walk = (dir, out = []) => {
   return out;
 };
 
-/** Strip line comments and block comments so a historical note is not read as a call. */
+/**
+ * Strip line comments and block comments so a historical note is not read as
+ * a call — WITHOUT shifting line numbers. Comment text is blanked out in
+ * place (not deleted), so every surviving newline stays where it was and
+ * `src.slice(0, m.index).split('\n').length` still points at the real line
+ * in the original file. Deleting comment lines outright used to drift
+ * reported line numbers by however many comment lines preceded a match.
+ */
 const stripComments = (src) => src
-  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, ''))
   .split('\n')
-  .filter((l) => !/^\s*(\/\/|\*)/.test(l))
+  .map((l) => (/^\s*(\/\/|\*)/.test(l) ? '' : l))
   .join('\n');
 
 /**
@@ -70,22 +82,152 @@ const PATTERNS = [
   // household reorganization had moved, reporting "no archived games" for a
   // corpus of 32 sitting one level away. It matches none of the forms above.
   /(?:PATH|DIR|SUBPATH|Path|Dir|Root|ROOT)\w*\s*=\s*\[\s*'household'\s*,\s*((?:'[a-z0-9._-]+'\s*,?\s*)+)\]/g,
+
+  // Template-literal argument: `` household.write(`gaming/log/${gameId}/...`) ``.
+  // Captures the whole backtick body; the ${ truncation happens once, below,
+  // after this raw capture — same as the single-quote patterns above but with
+  // a backtick delimiter instead of a single quote.
+  /getHouseholdPath\(\s*`([^`]*)`/g,
+  /household\.(?:read|write|resolveDir|resolvePath)\(\s*`([^`]*)`/g,
+  /(?:loadFile|saveFile)\??\.?\(\s*`([^`]*)`/g,
+
+  // `getHouseholdPath(path.join('piano', 'producer', family))` — the shape
+  // that hid YamlPianoStudioDatastore's producer-pool path from every check.
+  // Mirrors the array-of-segments group above: the repeated
+  // `'literal', ` group only matches AS LONG AS each argument is a plain
+  // quoted string, so it stops on its own at the first non-literal argument
+  // (`family`) rather than needing separate stop-here logic.
+  /getHouseholdPath\(\s*path\.join\(\s*((?:'[a-z0-9._-]+'\s*,?\s*)+)/g,
+  /household\.(?:read|write|resolveDir|resolvePath)\(\s*path\.join\(\s*((?:'[a-z0-9._-]+'\s*,?\s*)+)/g,
+  /(?:loadFile|saveFile)\??\.?\(\s*path\.join\(\s*((?:'[a-z0-9._-]+'\s*,?\s*)+)/g,
 ];
 
-const expected = new Map(); // relPath -> Set(files)
-for (const dir of SCAN_DIRS) {
-  for (const file of walk(dir)) {
-    const src = stripComments(fs.readFileSync(file, 'utf8'));
-    for (const re of PATTERNS) {
-      for (const m of src.matchAll(re)) {
-        let rel = m[1];
-        // Array-of-segments capture: "'gaming', 'log'" -> "gaming/log"
-        if (rel.includes("'")) rel = rel.split(',').map((s) => s.trim().replace(/'/g, '')).filter(Boolean).join('/');
-        if (!rel || rel.startsWith('.') || rel.endsWith('.mjs') || rel.includes('${')) continue;
-        if (!expected.has(rel)) expected.set(rel, new Set());
-        expected.get(rel).add(file);
+// Generic wrapper roots that are not themselves a domain — the domain is the
+// segment underneath. `history/triggers` and `history/piano` (see the header
+// comment above and the 2026-08-16 incident) are both filed under `history`,
+// but the bounded context is `triggers` / `piano`, not `history` itself.
+const GENERIC_PREFIXES = new Set(['history']);
+
+/**
+ * Find domains where the code WRITES one subpath and READS a different one.
+ *
+ * The existing checks ask "does every resolved path exist" and "does every
+ * domain on disk have a reader". Both answered YES on 2026-08-16 while the
+ * piano MIDI corpus was forked: the writer targeted history/piano, the render
+ * jobs read piano/log, and both roots existed with readers. Nothing failed.
+ *
+ * A domain is the first path segment (after stripping a GENERIC_PREFIXES
+ * wrapper, if any). Within one domain, if the set of written subpaths and the
+ * set of read subpaths are both non-empty and share nothing, the two halves
+ * disagree about which root is canonical.
+ *
+ * Write-only trails (barcode/log) and read-only trees (config/devices) are
+ * NOT flagged — a missing counterpart is normal, a contradicting one is not.
+ */
+export function findWriterReaderSplits(sites) {
+  const byDomain = new Map();
+  for (const site of sites) {
+    const segments = String(site.subpath).split('/');
+    const domain = (GENERIC_PREFIXES.has(segments[0]) && segments[1]) ? segments[1] : segments[0];
+    if (!byDomain.has(domain)) byDomain.set(domain, { writes: new Map(), reads: new Map() });
+    const bucket = byDomain.get(domain);
+    const target = site.mode === 'write' ? bucket.writes : bucket.reads;
+    if (!target.has(site.subpath)) target.set(site.subpath, []);
+    target.get(site.subpath).push(`${site.file}:${site.line}`);
+  }
+
+  const splits = [];
+  for (const { writes, reads } of byDomain.values()) {
+    if (writes.size === 0 || reads.size === 0) continue;
+    const shared = [...writes.keys()].some((p) => reads.has(p));
+    if (shared) continue; // at least one path agrees — not a split
+    for (const [subpath, files] of writes) splits.push({ subpath, writers: files, readers: [] });
+    for (const [subpath, files] of reads) splits.push({ subpath, writers: [], readers: files });
+  }
+  return splits;
+}
+
+/**
+ * Determine read/write mode from the full matched text, independent of which
+ * PATTERN matched. `household.read(`/`household.write(` and `loadFile`/
+ * `saveFile` are the only shapes that say which direction the access is;
+ * `resolveDir`/`resolvePath`/`getHouseholdPath` and the bare path-literal
+ * shapes are ambiguous on their own and are left out of the writer/reader
+ * check rather than guessed at.
+ */
+const modeOf = (matchText) => {
+  if (/\.read\(/.test(matchText)) return 'read';
+  if (/\.write\(/.test(matchText)) return 'write';
+  if (/(?:^|[^a-zA-Z])loadFile/.test(matchText)) return 'read';
+  if (/(?:^|[^a-zA-Z])saveFile/.test(matchText)) return 'write';
+  return null;
+};
+
+/**
+ * Run every PATTERN against one file's source and return what it resolves.
+ *
+ * Pulled out as its own exported, pure function (file name + raw source in,
+ * data out — no disk access) so the regex/extraction logic itself is
+ * directly testable: the shapes that hid real bugs (`path.join(...)`,
+ * template-literal args) need a test proving they're actually captured, not
+ * just a test of `findWriterReaderSplits`'s grouping logic downstream of them.
+ *
+ * @param {string} file
+ * @param {string} rawSource - the file's ORIGINAL content, comments intact.
+ *   Comments are stripped internally; line numbers are still reported
+ *   against `rawSource` because `stripComments` blanks comment text in place
+ *   rather than deleting lines, so positions never drift.
+ * @returns {{ paths: Set<string>, sites: Array<{file, line, subpath, mode}> }}
+ *   `paths` feeds the existing exists-on-disk / orphan checks (mode-agnostic —
+ *   every shape counts, ambiguous or not). `sites` is mode-tagged and feeds
+ *   `findWriterReaderSplits`; a match with no determinable mode contributes
+ *   to `paths` but not `sites`.
+ */
+export function extractPathSites(file, rawSource) {
+  const src = stripComments(rawSource);
+  const paths = new Set();
+  const sites = [];
+  for (const re of PATTERNS) {
+    for (const m of src.matchAll(re)) {
+      let rel = m[1];
+      // Template-literal capture: truncate at the first interpolation
+      // instead of discarding the whole match. `gratitude/${key}.yml`
+      // still proves this code touches the `gratitude` domain even though
+      // the exact leaf is dynamic — and the writer/reader check compares
+      // domains, not full paths, so a partial subpath is enough.
+      const interpIdx = rel.indexOf('${');
+      if (interpIdx !== -1) rel = rel.slice(0, interpIdx).replace(/\/+$/, '');
+      // Array-of-segments / path.join capture: "'gaming', 'log'" -> "gaming/log"
+      if (rel.includes("'")) rel = rel.split(',').map((s) => s.trim().replace(/'/g, '')).filter(Boolean).join('/');
+      if (!rel || rel.startsWith('.') || rel.endsWith('.mjs')) continue;
+      paths.add(rel);
+
+      const mode = modeOf(m[0]);
+      if (mode) {
+        const line = src.slice(0, m.index).split('\n').length;
+        sites.push({ file, line, subpath: rel, mode });
       }
     }
+  }
+  return { paths, sites };
+}
+
+// Everything below is the executable audit — scans disk, prints a report,
+// and exits with a status code. Guarded so importing this module (e.g. to
+// use `findWriterReaderSplits` / `extractPathSites` from a test) doesn't run
+// it as a side effect.
+if (isMainModule) {
+
+const expected = new Map(); // relPath -> Set(files)
+const collectedSites = []; // { file, line, subpath, mode } — feeds findWriterReaderSplits
+for (const dir of SCAN_DIRS) {
+  for (const file of walk(dir)) {
+    const { paths, sites } = extractPathSites(file, fs.readFileSync(file, 'utf8'));
+    for (const rel of paths) {
+      if (!expected.has(rel)) expected.set(rel, new Set());
+      expected.get(rel).add(file);
+    }
+    collectedSites.push(...sites);
   }
 }
 
@@ -160,6 +302,20 @@ if (orphans.length) {
   for (const o of orphans) line(`  household/${o}`);
 }
 
-const bad = movedAway.length + orphans.length;
+const splits = findWriterReaderSplits(collectedSites);
+if (splits.length > 0) {
+  console.log('\nWRITER/READER SPLIT — one half of a domain writes where the other never reads:');
+  for (const s of splits) {
+    const role = s.writers.length ? `written by ${s.writers.join(', ')}` : `read by ${s.readers.join(', ')}`;
+    console.log(`  ${s.subpath} — ${role}`);
+  }
+  process.exitCode = 1;
+} else {
+  console.log('no writer/reader splits');
+}
+
+const bad = movedAway.length + orphans.length + splits.length;
 line(bad === 0 ? '\nOK — every contract resolves, nothing orphaned' : `\nFAILED — ${bad} contract problem(s)`);
 process.exit(bad === 0 ? 0 : 1);
+
+}

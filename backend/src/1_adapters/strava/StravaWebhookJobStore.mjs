@@ -4,7 +4,7 @@
  * Durable job queue backed by YAML files. Persists webhook events
  * so enrichment survives crashes, deploys, and Docker restarts.
  *
- * Location: data/household/common/strava/strava-webhooks/{activityId}.yml
+ * Location: media/archives/strava-webhooks/{activityId}.yml
  *
  * @module adapters/strava/StravaWebhookJobStore
  */

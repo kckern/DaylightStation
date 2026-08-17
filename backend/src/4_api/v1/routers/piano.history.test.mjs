@@ -13,6 +13,7 @@ vi.mock('#system/config/UserService.mjs', () => ({ userService: { hydrateUsers: 
 vi.mock('#domains/core/utils/id.mjs', () => ({ shortId: () => 'x' }));
 
 import { createPianoRouter } from './piano.mjs';
+import { YamlPianoStudioDatastore } from '#adapters/piano/YamlPianoStudioDatastore.mjs';
 
 const configService = {
   getDefaultHouseholdId: () => 'default',
@@ -23,10 +24,22 @@ const configService = {
   getMediaDir: () => '/data/media',
 };
 
+const silent = { info() {}, warn() {}, error() {}, debug() {} };
+
+// The real studio datastore, because the path it builds is exactly what these
+// tests exist to pin. Stubbing it would let the writer drift to another root
+// again — which is the regression that stranded every take under history/piano
+// while the MP3/PNG render jobs went on reading piano/log.
 function app() {
   const a = express();
   a.use(express.json());
-  a.use('/api/v1/piano', createPianoRouter({ configService, logger: { info() {}, error() {} } }));
+  const pianoContainer = {
+    studioDatastore: new YamlPianoStudioDatastore({ configService, logger: silent }),
+    composerSongStore: null,
+    isCourseServiceConfigured: () => false,
+    isActivityConfigured: () => false,
+  };
+  a.use('/api/v1/piano', createPianoRouter({ pianoContainer, configService, logger: silent }));
   return a;
 }
 
@@ -40,13 +53,13 @@ describe('PUT /users/:userId/history/:date/:takeId', () => {
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
     expect(written).toHaveLength(1);
-    expect(written[0].path).toBe('/data/household/history/piano/kc/2026-06-26/10.00.00.mid');
+    expect(written[0].path).toBe('/data/media/apps/piano/log/kc/2026-06-26/10.00.00.mid');
     expect(written[0].bytes).toBeGreaterThan(20);
   });
   it('accepts the guest user', async () => {
     const res = await request(app()).put('/api/v1/piano/users/guest/history/2026-06-26/10.00.00').send(body);
     expect(res.status).toBe(200);
-    expect(written[0].path).toBe('/data/household/history/piano/guest/2026-06-26/10.00.00.mid');
+    expect(written[0].path).toBe('/data/media/apps/piano/log/guest/2026-06-26/10.00.00.mid');
   });
   it('rejects an unknown user (not guest)', async () => {
     const res = await request(app()).put('/api/v1/piano/users/nobody/history/2026-06-26/10.00.00').send(body);
@@ -64,8 +77,8 @@ describe('PUT /users/:userId/history/:date/:takeId', () => {
     await request(app()).put('/api/v1/piano/users/kc/history/2026-06-26/10.00.00').send(body);
     await request(app()).put('/api/v1/piano/users/kc/history/2026-06-26/10.00.00').send(body);
     expect(written.map((w) => w.path)).toEqual([
-      '/data/household/history/piano/kc/2026-06-26/10.00.00.mid',
-      '/data/household/history/piano/kc/2026-06-26/10.00.00.mid',
+      '/data/media/apps/piano/log/kc/2026-06-26/10.00.00.mid',
+      '/data/media/apps/piano/log/kc/2026-06-26/10.00.00.mid',
     ]);
   });
 });

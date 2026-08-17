@@ -2,9 +2,17 @@ import React from 'react';
 
 // Context-sensitive hint bar for the remote/keypad UI. Hidden while a modal is
 // open — the modal carries its own choices.
-function hintsFor({ level, contextOpen, mediaType, playing }) {
+function hintsFor({ level, contextOpen, mediaType, playing, hasNewer }) {
   if (level === 'grid') {
-    return [['OK', 'Open day'], ['↑ ↓ ← →', 'Navigate'], ['Back', 'Exit']];
+    // Paging is a double-tap at the vertical edges, so it needs saying — it is
+    // not something a user discovers by pressing Up once.
+    return [
+      ['OK', 'Open day'],
+      ['↑ ↓ ← →', 'Navigate'],
+      ['▲▲', 'Earlier days'],
+      ...(hasNewer ? [['▼▼', 'Later days']] : []),
+      ['Back', 'Exit'],
+    ];
   }
   if (contextOpen) {
     return [['↓ / Back', 'Close details']];
@@ -19,9 +27,9 @@ function hintsFor({ level, contextOpen, mediaType, playing }) {
   return [['← →', 'Browse'], ['↓', 'Details'], ['Back', 'Back to week']];
 }
 
-export default function ControlLegend({ level, contextOpen, mediaType, playing, modalType }) {
+export default function ControlLegend({ level, contextOpen, mediaType, playing, modalType, hasNewer }) {
   if (modalType) return null;
-  const hints = hintsFor({ level, contextOpen, mediaType, playing });
+  const hints = hintsFor({ level, contextOpen, mediaType, playing, hasNewer });
   return (
     <div className="weekly-review-legend" role="note" aria-label="Controls">
       {hints.map(([key, label], i) => (

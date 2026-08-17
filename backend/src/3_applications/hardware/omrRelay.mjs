@@ -11,7 +11,7 @@
 //
 //   2) PERSIST (bus → disk): a subscriber records completed reads to
 //      {dataDir}/{persistence.dir}/{id}/{YYYY-MM-DD}.yml
-//      (default dir: household/omr/log).
+//      (default dir: household/hardware/omr/log).
 //
 // THE RELAY DOES NOT SCORE. The OMR-1100 is a read-only mark detector: it has
 // no printer, no imprinter, and no grading mechanism, so it reports *which

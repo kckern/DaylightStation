@@ -3,7 +3,7 @@
  *
  * Each successful write command calls `audit.log({...})` after the underlying
  * service confirms success. Logging never fails the command:
- *   - Primary path: the configured baseDir (typically data/household/cli/log/)
+ *   - Primary path: the configured baseDir (typically media/logs/cli/)
  *   - Fallback: /tmp/dscli-cli-transcripts/ when the primary path is read-only
  *     (typical on dev hosts where the data volume is owned by Docker)
  *   - Last resort: stderr warning with both error messages

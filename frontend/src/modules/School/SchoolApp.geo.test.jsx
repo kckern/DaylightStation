@@ -45,15 +45,21 @@ vi.mock('./Programs/Glossika/languageApi.js', () => ({
   },
 }));
 
-// A material shelved under `history` so the "History & Geography" tile is
-// enabled (subjectHasContent looks at the actual catalog, not the built-in
+// A material shelved under `civilization` so that tile is enabled
+// (subjectHasContent looks at the actual catalog, not the built-in
 // SUBJECT_PROGRAMS entry) — mirrors SchoolApp.test.jsx's SAMPLE_CATALOG.
-const HISTORY_CATALOG = {
+//
+// The subject id must match SUBJECTS exactly: groupBySubject shelves on
+// `SUBJECT_IDS.has(m.subject)` and sends anything unrecognised to the Library.
+// This fixture still said `history` after the shelf was renamed to
+// `civilization`, so the material silently went to the Library, the shelf came
+// up empty, and the tile was disabled.
+const CIVILIZATION_CATALOG = {
   ok: true, status: 200,
   data: {
     sections: [{ category: 'course', label: 'Courses' }],
     materials: [
-      { id: 'plex:9', title: 'World History', poster: null, source: 'media-series', medium: 'video', category: 'course', subject: 'history', durationMs: null, unitCount: 2 },
+      { id: 'plex:9', title: 'World History', poster: null, source: 'media-series', medium: 'video', category: 'course', subject: 'civilization', durationMs: null, unitCount: 2 },
     ],
   },
 };
@@ -61,7 +67,7 @@ const HISTORY_CATALOG = {
 beforeEach(() => {
   localStorage.clear();
   banksMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: [] });
-  materialsMock.mockReset().mockResolvedValue(HISTORY_CATALOG);
+  materialsMock.mockReset().mockResolvedValue(CIVILIZATION_CATALOG);
   geoDecksMock.mockReset().mockResolvedValue({
     ok: true, status: 200,
     data: { decks: [{ deckId: 'us-capitals', bankId: 'geo:us-capitals', title: 'US Capitals', available: true }] },
@@ -75,7 +81,7 @@ async function openSubject(name) {
 }
 
 describe('SchoolApp geography wiring', () => {
-  it('the History & Geography shelf shows a Geography tile that opens the geography section', async () => {
+  it('the Civilization shelf shows a Geography tile that opens the geography section', async () => {
     render(<SchoolApp clear={() => {}} />);
     // Claim an identity first (mirrors "unclaimed, tapping a face … claims
     // directly" in SchoolApp.test.jsx) — the flow this task wires is meant
@@ -83,7 +89,7 @@ describe('SchoolApp geography wiring', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Alpha/ }));
     await waitFor(() => expect(screen.queryByText(/who's learning\?/i)).toBeNull());
 
-    await openSubject(/history & geography/i);
+    await openSubject(/civilization/i);
     expect((await screen.findAllByText('World History')).length).toBeGreaterThan(0);
 
     const geoTile = await screen.findByRole('button', { name: /geography/i });

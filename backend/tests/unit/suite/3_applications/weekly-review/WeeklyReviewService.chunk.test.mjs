@@ -38,7 +38,7 @@ describe('WeeklyReviewService.appendChunk', () => {
     expect(result.totalBytes).toBe(buffer.length);
     expect(result.nextSeq).toBe(1);
 
-    const draftPath = path.join(tmpDataPath, 'household', 'weekly-review', 'log', '2026-04-12', '.drafts', 'sess-aaaa.webm');
+    const draftPath = path.join(tmpMediaPath, 'weekly-review', '2026-04-12', '.drafts', 'sess-aaaa.webm');
     expect(fs.existsSync(draftPath)).toBe(true);
     expect(fs.readFileSync(draftPath)).toEqual(buffer);
   });
@@ -48,7 +48,7 @@ describe('WeeklyReviewService.appendChunk', () => {
     const r = await service.appendChunk({ sessionId: 'sess-1234', seq: 1, week: '2026-04-12', buffer: Buffer.from('BBB') });
     expect(r.totalBytes).toBe(6);
     expect(r.nextSeq).toBe(2);
-    const draftPath = path.join(tmpDataPath, 'household', 'weekly-review', 'log', '2026-04-12', '.drafts', 'sess-1234.webm');
+    const draftPath = path.join(tmpMediaPath, 'weekly-review', '2026-04-12', '.drafts', 'sess-1234.webm');
     expect(fs.readFileSync(draftPath).toString()).toBe('AAABBB');
   });
 
@@ -57,7 +57,7 @@ describe('WeeklyReviewService.appendChunk', () => {
     const r = await service.appendChunk({ sessionId: 'sess-5678', seq: 0, week: '2026-04-12', buffer: Buffer.from('AAA') });
     expect(r.ok).toBe(true);
     expect(r.duplicate).toBe(true);
-    const draftPath = path.join(tmpDataPath, 'household', 'weekly-review', 'log', '2026-04-12', '.drafts', 'sess-5678.webm');
+    const draftPath = path.join(tmpMediaPath, 'weekly-review', '2026-04-12', '.drafts', 'sess-5678.webm');
     expect(fs.readFileSync(draftPath).toString()).toBe('AAA');
   });
 
@@ -113,7 +113,7 @@ describe('WeeklyReviewService.appendChunk', () => {
   it('recovers from draft/meta desync by truncating to meta.totalBytes', async () => {
     await service.appendChunk({ sessionId: 'sess-aaaa', seq: 0, week: '2026-04-12', buffer: Buffer.from('AAA') });
     // Simulate desync: manually append extra bytes to the draft file without updating meta
-    const draftPath = path.join(tmpDataPath, 'household', 'weekly-review', 'log', '2026-04-12', '.drafts', 'sess-aaaa.webm');
+    const draftPath = path.join(tmpMediaPath, 'weekly-review', '2026-04-12', '.drafts', 'sess-aaaa.webm');
     fs.appendFileSync(draftPath, Buffer.from('GARBAGE'));
     // Now incoming seq 1 should trigger desync recovery, truncate draft back to 3 bytes, then append
     const r = await service.appendChunk({ sessionId: 'sess-aaaa', seq: 1, week: '2026-04-12', buffer: Buffer.from('BBB') });
@@ -125,7 +125,7 @@ describe('WeeklyReviewService.appendChunk', () => {
   it('refuses to append when meta is corrupt and draft is non-empty', async () => {
     await service.appendChunk({ sessionId: 'sess-aaaa', seq: 0, week: '2026-04-12', buffer: Buffer.from('AAA') });
     // Corrupt the meta file
-    const metaPath = path.join(tmpDataPath, 'household', 'weekly-review', 'log', '2026-04-12', '.drafts', 'sess-aaaa.meta.json');
+    const metaPath = path.join(tmpMediaPath, 'weekly-review', '2026-04-12', '.drafts', 'sess-aaaa.meta.json');
     fs.writeFileSync(metaPath, '{ this is not valid json');
     await expect(
       service.appendChunk({ sessionId: 'sess-aaaa', seq: 1, week: '2026-04-12', buffer: Buffer.from('BBB') })
@@ -134,7 +134,7 @@ describe('WeeklyReviewService.appendChunk', () => {
 
   it('truncates stale draft when starting a new session (seq=0, no meta)', async () => {
     // Seed a stale draft with no meta file
-    const draftDir = path.join(tmpDataPath, 'household', 'weekly-review', 'log', '2026-04-12', '.drafts');
+    const draftDir = path.join(tmpMediaPath, 'weekly-review', '2026-04-12', '.drafts');
     fs.mkdirSync(draftDir, { recursive: true });
     const draftPath = path.join(draftDir, 'sess-fresh00.webm');
     fs.writeFileSync(draftPath, Buffer.from('STALE-GARBAGE'));
@@ -237,7 +237,7 @@ describe('WeeklyReviewService.appendChunk', () => {
   describe('draft cleanup', () => {
     it('sweeps drafts older than 30 days on bootstrap', async () => {
       await service.appendChunk({ sessionId: 'sess-old00000', seq: 0, week: '2026-04-12', buffer: Buffer.from('X') });
-      const metaPath = path.join(tmpDataPath, 'household', 'weekly-review', 'log', '2026-04-12', '.drafts', 'sess-old00000.meta.json');
+      const metaPath = path.join(tmpMediaPath, 'weekly-review', '2026-04-12', '.drafts', 'sess-old00000.meta.json');
       const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
       meta.updatedAt = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000).toISOString();
       fs.writeFileSync(metaPath, JSON.stringify(meta));

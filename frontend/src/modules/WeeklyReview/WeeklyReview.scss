@@ -162,6 +162,44 @@
   }
 }
 
+// Names the 8-day window on screen. Sits above the grid and stays a single
+// short line so it never competes with the day cells for height.
+.weekly-review-window-header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 10px 16px 0;
+  font-size: 15px;
+  line-height: 1.2;
+  min-height: 22px;
+
+  .window-range {
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: rgba(255, 255, 255, 0.92);
+  }
+
+  .window-back-tag {
+    font-size: 13px;
+    padding: 1px 8px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.75);
+  }
+
+  .window-hint {
+    font-size: 13px;
+    color: rgba(120, 200, 255, 0.95);
+  }
+
+  .window-status {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.6);
+
+    &--error { color: rgba(255, 150, 140, 0.95); }
+  }
+}
+
 .weekly-review-grid {
   flex: 1;
   display: grid;
@@ -171,6 +209,14 @@
   padding: 16px 16px 8px;
   min-height: 0;
   overflow: hidden;
+  transition: opacity 120ms ease-out;
+
+  // The outgoing window stays on screen while the next one loads — blanking the
+  // grid mid-review would strand whoever is narrating it.
+  &--loading {
+    opacity: 0.45;
+    pointer-events: none;
+  }
 }
 
 .day-column {

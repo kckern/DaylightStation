@@ -33,7 +33,7 @@ describe('SessionIdentityHealer golden parity — session 20260627195941', () =>
     const sessionObj = loadFixture();
     const plan = planHeal(sessionObj);
 
-    expect([...plan.removedOccupants].sort()).toEqual(['parent-two', 'learner-one']);
+    expect([...plan.removedOccupants].sort()).toEqual(['learner-one', 'parent-two']);
     expect(plan.removedOccupants).not.toContain('grannie');
     expect(plan.needsHeal).toBe(true);
   });

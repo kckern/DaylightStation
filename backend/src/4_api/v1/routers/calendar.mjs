@@ -44,7 +44,7 @@ export function createCalendarRouter(config) {
   const loadCalendarEvents = (householdId) => {
     try {
       // Try reading from common/calendar in household directory
-      const events = userDataService.readHouseholdSharedData?.(householdId, 'calendar');
+      const events = userDataService.readHouseholdSharedData?.(householdId, 'calendar/calendar');
       if (events && Array.isArray(events)) {
         return events;
       }

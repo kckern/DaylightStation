@@ -204,7 +204,16 @@ export function cleanupDashElement(el) {
   let mediaEl = null;
   try {
     if (!el.shadowRoot) {
-      report.mediaElLookup = 'no-shadow-root';
+      // A native <video> IS the media element — it has no shadow root to look
+      // into. VideoPlayer renders the dash and native branches under the SAME
+      // containerRef and the SAME dashElementKey, so this cleanup runs for both,
+      // and treating 'no shadow root' as a plain no-op left a replaced native
+      // element playing on with no DOM node and no controls bound to it. That is
+      // the 2026-08-16 "audio from nowhere" report. Resolve to the element
+      // itself when it is pausable; a genuinely non-media container still falls
+      // through as a no-op.
+      mediaEl = typeof el.pause === 'function' ? el : null;
+      report.mediaElLookup = mediaEl ? 'native-element' : 'no-shadow-root';
     } else {
       mediaEl = el.shadowRoot.querySelector('video, audio');
       report.mediaElLookup = mediaEl ? 'found' : 'shadow-root-empty';

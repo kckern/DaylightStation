@@ -33,6 +33,7 @@ let cached = null;
  *   projectRoot: string,
  *   baseDir: string,
  *   dataDir: string,
+ *   mediaDir: string,
  *   isDocker: boolean,
  *   username: string,
  *   fitnessHistoryDir: string,
@@ -65,11 +66,13 @@ export function getContext() {
     ? '/usr/src/app'
     : (process.env.DAYLIGHT_BASE_PATH || projectRoot);
   const dataDir = path.join(baseDir, 'data');
+  const mediaDir = path.join(baseDir, 'media');
 
   cached = {
     projectRoot,
     baseDir,
     dataDir,
+    mediaDir,
     isDocker,
     username: process.env.DAYLIGHT_USER || 'user_1',
     fitnessHistoryDir: fitnessHistoryDir(dataDir),
