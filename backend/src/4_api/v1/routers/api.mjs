@@ -12,8 +12,6 @@
  */
 
 import express from 'express';
-import path from 'node:path';
-import fs from 'node:fs';
 import { configService } from '#system/config/index.mjs';
 import { getDispatcher, isLoggingInitialized } from '#system/logging/dispatcher.mjs';
 import { getSessionFileTransport } from '#system/logging/transports/sessionFile.mjs';
@@ -187,8 +185,12 @@ export function createApiRouter(config) {
 
   // System reload — re-read household app YAML configs from disk without
   // restarting the process. Useful when an admin edits a config file.
-  // Optional ?app=<name> reloads just that app; otherwise iterates the
-  // household config dir and reloads every .yml file found.
+  // Optional ?app=<name> reloads just that app; otherwise reloads every app
+  // configLoader knows about (the colocated + legacy-config/ + apps/ union
+  // it built at boot — task-13 review, Important 3: a bare readdirSync over
+  // the legacy household/config/ directory used to enumerate "every app",
+  // which silently stopped covering the 8 apps colocation moved OUT of that
+  // directory, reporting ok:true with a shrunken list and no failure signal).
   router.post('/system/reload', (req, res) => {
     const requestedApp = req.query?.app || req.body?.app || null;
     const reloaded = [];
@@ -207,21 +209,13 @@ export function createApiRouter(config) {
     if (requestedApp) {
       tryReload(requestedApp);
     } else {
-      let configDir;
+      let apps = [];
       try {
-        configDir = path.join(configService.getHouseholdPath('config', null));
+        apps = configService.getHouseholdAppNames(null);
       } catch (err) {
-        return res.status(500).json({ ok: false, error: 'cannot_resolve_config_dir', message: err.message });
+        return res.status(500).json({ ok: false, error: 'cannot_list_apps', message: err.message });
       }
-      let files = [];
-      try {
-        files = fs.readdirSync(configDir)
-          .filter((f) => f.endsWith('.yml') && !f.includes('.bak'))
-          .map((f) => f.slice(0, -4));
-      } catch (err) {
-        return res.status(500).json({ ok: false, error: 'cannot_list_config_dir', message: err.message });
-      }
-      for (const app of files) tryReload(app);
+      for (const app of apps) tryReload(app);
     }
 
     logger.info?.('system.reload', { reloaded: reloaded.length, failed: failed.length, requestedApp });

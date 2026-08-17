@@ -10,6 +10,7 @@ import path from 'path';
 import yaml from 'js-yaml';
 import { deepMerge } from '../utils/deepMerge.mjs';
 import { listHouseholdDirs, parseHouseholdId, toFolderName } from '../utils/householdDirs.mjs';
+import { resolveYamlPath } from '../utils/FileIO.mjs';
 
 /**
  * Load all config from the data directory.
@@ -169,7 +170,13 @@ function loadHouseholdApps(dataDir, folderName) {
   const appsFromColocated = {};
   for (const subdir of listDirs(path.join(dataDir, folderName))) {
     if (NON_APP_DIRS.has(subdir)) continue;
-    const config = readYaml(path.join(dataDir, folderName, subdir, 'config.yml'));
+    // .yml OR .yaml, matching ConfigService#getHouseholdAppConfigPath /
+    // #resolveHouseholdAppConfigPath's yamlExists-based resolution — task-13
+    // review, Minor M5: this used to hardcode 'config.yml' only, so a
+    // colocated config.yaml would resolve on reload but silently not exist
+    // at boot.
+    const resolvedPath = resolveYamlPath(path.join(dataDir, folderName, subdir, 'config'));
+    const config = resolvedPath ? readYaml(resolvedPath) : null;
     if (config) {
       appsFromColocated[subdir] = config;
     }

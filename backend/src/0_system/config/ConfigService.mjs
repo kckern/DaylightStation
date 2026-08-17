@@ -8,7 +8,7 @@
  * that can be changed at runtime (e.g. via admin UI).
  */
 
-import { loadYaml, loadYamlFromPath, listYamlFiles, yamlExists } from '#system/utils/FileIO.mjs';
+import { loadYaml, loadYamlFromPath, listYamlFiles, yamlExists, resolveYamlPath } from '#system/utils/FileIO.mjs';
 import { ConfigurationError } from '#system/utils/errors/index.mjs';
 import { DEFAULT_TIMEZONE } from '#domains/core/utils/timezone.mjs';
 
@@ -201,6 +201,22 @@ export class ConfigService {
   }
 
   /**
+   * List every app name known for a household — the union configLoader
+   * built at boot from apps/, the legacy config/ directory, and colocated
+   * <app>/config.yml (task-13). Use this instead of directory-listing
+   * household/config/ when enumerating "every app": that directory no
+   * longer contains an app once its config has been colocated, so a
+   * readdirSync-based enumeration silently drops every migrated app
+   * (task-13 review, Important 3).
+   * @param {string|null} householdId - Household ID, defaults to default household
+   * @returns {string[]}
+   */
+  getHouseholdAppNames(householdId) {
+    const hid = householdId ?? this.getDefaultHouseholdId();
+    return Object.keys(this.#config.households?.[hid]?.apps ?? {});
+  }
+
+  /**
    * Resolve the on-disk base path (no extension) for a household app config.
    *
    * Colocated first: <household>/<appName>/config.yml — the app's own domain
@@ -218,6 +234,39 @@ export class ConfigService {
     const colocated = `${dataDir}/${folderName}/${appName}/config`;
     if (yamlExists(colocated)) return colocated;
     return `${dataDir}/${folderName}/config/${appName}`;
+  }
+
+  /**
+   * Resolve the on-disk path (WITH extension) for a household app config —
+   * the WRITE-side counterpart of reloadHouseholdAppConfig's read
+   * resolution. Every writer of a household app config MUST resolve its
+   * target through this method rather than constructing its own path.
+   *
+   * task-13 review Critical 2: NotificationConfigService hardcoded the
+   * legacy household/config/<app>.yml path for writes while its own read
+   * side (reloadHouseholdAppConfig) had already moved to colocated
+   * household/<app>/config.yml — the write silently landed in a file
+   * nothing read back, so admin edits appeared to succeed and then vanished.
+   * A second write mechanism, even one meant to mirror the read side, WILL
+   * drift from it; this method is the single source of truth for both.
+   *
+   * Same colocated-first-with-legacy-fallback rule as the read side, and
+   * preserves whichever extension (.yml/.yaml) the file already has at
+   * whichever location wins — defaulting to .yml for a file that exists at
+   * neither location yet (matches the pre-task-13 default for a brand-new
+   * config file).
+   * @param {string|null} householdId - Household ID, defaults to default household
+   * @param {string} appName - App name (e.g., 'notifications')
+   * @returns {string|null} absolute path, or null if the household doesn't exist
+   */
+  getHouseholdAppConfigPath(householdId, appName) {
+    const hid = householdId ?? this.getDefaultHouseholdId();
+    const household = this.#config.households?.[hid];
+    if (!household) return null;
+    const folderName = household._folderName || hid;
+    const dataDir = this.getDataDir();
+    const base = this.#resolveHouseholdAppConfigPath(dataDir, folderName, appName);
+    return resolveYamlPath(base) ?? `${base}.yml`;
   }
 
   /**

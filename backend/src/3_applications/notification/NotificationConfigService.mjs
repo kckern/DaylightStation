@@ -1,5 +1,3 @@
-import path from 'path';
-
 const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 const DEFAULTS = { quiet_hours: { enabled: false, start: '21:00', end: '07:00' }, cooldowns: { default: 60 } };
 
@@ -47,7 +45,12 @@ export class NotificationConfigService {
       quiet_hours: { enabled: !!qh.enabled, start: qh.start, end: qh.end },
       cooldowns: { default: 60, ...cooldowns },
     };
-    const file = path.join(this.#configService.getHouseholdPath('config'), 'notifications.yml');
+    // Must resolve through the SAME colocated-first-with-fallback logic
+    // getConfig()'s reloadHouseholdAppConfig() reads through — a second,
+    // hand-rolled path here drifts from the read side (task-13 review,
+    // Critical 2: this used to hardcode the legacy config/notifications.yml
+    // path, so a write "succeeded" into a file getConfig() never read back).
+    const file = this.#configService.getHouseholdAppConfigPath(null, 'notifications');
     this.#configFiles.writeYaml(file, next);
     this.#configService.reloadHouseholdAppConfig?.(null, 'notifications');
     this.#logger?.info?.('notification.config.updated', { file });

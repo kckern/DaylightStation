@@ -46,12 +46,27 @@ export async function run(argv, ctx) {
   // read path uses, so the backfill agrees with what the app derives on read.
   // KidsFun-labeled game videos are deprioritized, keeping them out of primary
   // when a real workout is also present.
-  const CONFIG_PATH = path.join(ctx.dataDir, 'household', 'config', 'fitness.yml');
+  //
+  // Colocated-first with legacy fallback (task-13 review, Important 5): this
+  // used to hardcode ONLY household/config/fitness.yml, which the task-13
+  // data move relocated to household/fitness/config.yml — every environment
+  // that has been migrated silently fell through to the catch below and ran
+  // with DEFAULT selection rules instead of "the same source the runtime
+  // read path uses" this comment claims, then WROTE the wrong primary flag
+  // into every fitness history file under --apply. The path.join(...) shape
+  // here is exactly what a literal-string grep for 'config/fitness.yml'
+  // misses.
+  const COLOCATED_CONFIG_PATH = path.join(ctx.dataDir, 'household', 'fitness', 'config.yml');
+  const LEGACY_CONFIG_PATH = path.join(ctx.dataDir, 'household', 'config', 'fitness.yml');
+  const CONFIG_PATH = fs.existsSync(COLOCATED_CONFIG_PATH) ? COLOCATED_CONFIG_PATH : LEGACY_CONFIG_PATH;
   let selectionConfig;
   try {
     const cfg = yaml.load(fs.readFileSync(CONFIG_PATH, 'utf8'));
     selectionConfig = buildSelectionConfig(cfg?.content || cfg?.plex);
-  } catch {
+  } catch (err) {
+    // Loud, not silent: a swallowed failure here is exactly what let this
+    // fall back to DEFAULT rules undetected in production.
+    console.warn(`backfill-primary: could not load fitness config at ${CONFIG_PATH} (${err.message}) — falling back to DEFAULT selection rules, which may not match the runtime read path`);
     selectionConfig = buildSelectionConfig(null);
   }
 
