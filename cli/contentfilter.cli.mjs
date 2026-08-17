@@ -76,6 +76,27 @@ function resolveDataDir() {
   return path.join(base, 'data');
 }
 
+/** Resolve the media dir the app uses (DAYLIGHT_BASE_PATH/media). */
+function resolveMediaDir() {
+  if (process.env.DAYLIGHT_MEDIA_DIR) return process.env.DAYLIGHT_MEDIA_DIR;
+  let base = process.env.DAYLIGHT_BASE_PATH;
+  if (!base) {
+    // Fall back to .env in the repo root (cli/ -> repo root)
+    const envPath = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '.env');
+    if (existsSync(envPath)) {
+      const line = readFileSync(envPath, 'utf8')
+        .split('\n')
+        .find((l) => l.startsWith('DAYLIGHT_BASE_PATH='));
+      if (line) base = line.slice('DAYLIGHT_BASE_PATH='.length).trim();
+    }
+  }
+  if (!base) {
+    console.error('Error: set DAYLIGHT_BASE_PATH (in .env or env) or DAYLIGHT_MEDIA_DIR.');
+    process.exit(1);
+  }
+  return path.join(base, 'media');
+}
+
 function loadYaml(p) {
   try {
     return yaml.load(readFileSync(p, 'utf8')) || {};
@@ -84,12 +105,12 @@ function loadYaml(p) {
   }
 }
 
-/** Cache dir for content-filter artifacts (catalog dump, plex->VA map). */
-function filterCacheDir() {
-  return path.join(resolveDataDir(), 'household', 'content-filter');
-}
-const CATALOG_PATH = () => path.join(filterCacheDir(), 'vidangel-catalog.json');
-const MAP_PATH = () => path.join(filterCacheDir(), 'plex-vidangel-map.yml');
+/** Curated half — profiles, overrides, bad-words. Committable. */
+const filterCacheDir = () => path.join(resolveDataDir(), 'household', 'content-filter');
+/** Machine-fetched half — edl/, catalog, plex map. Heavy, lives in media. */
+const filterMediaDir = () => path.join(resolveMediaDir(), 'content-filter');
+const CATALOG_PATH = () => path.join(filterMediaDir(), 'vidangel-catalog.json');
+const MAP_PATH = () => path.join(filterMediaDir(), 'plex-vidangel-map.yml');
 
 /** Normalize a title for collision-tolerant matching. */
 function normTitle(s) {
@@ -801,7 +822,7 @@ async function main() {
     const mapDoc = yaml.load(readFileSync(MAP_PATH(), 'utf8')) || {};
     const entries = Object.entries(mapDoc.map || {})
       .filter(([, v]) => v.plexType === 'movie' && (v.vidangel?.tagCount || 0) > 0);
-    const outDir = path.join(filterCacheDir(), 'edl');
+    const outDir = path.join(filterMediaDir(), 'edl');
     mkdirSync(outDir, { recursive: true });
     const force = args.includes('--force');
     const delay = args.includes('--delay') ? Number(flags.delay) || 500 : 500;
@@ -855,7 +876,7 @@ async function main() {
   if (command === 'export-mcf') {
     const ref = cmdArgs[0];
     if (!ref) { console.error('Usage: contentfilter export-mcf <ratingKey|path/to.edl.yml> [--out file.mcf]'); process.exit(1); }
-    const edlPath = existsSync(ref) ? ref : path.join(filterCacheDir(), 'edl', `${ref}.edl.yml`);
+    const edlPath = existsSync(ref) ? ref : path.join(filterMediaDir(), 'edl', `${ref}.edl.yml`);
     if (!existsSync(edlPath)) { console.error(`EDL not found: ${edlPath}`); process.exit(1); }
     const edl = yaml.load(readFileSync(edlPath, 'utf8'));
     const mcf = edlToMcf(edl);
@@ -867,7 +888,7 @@ async function main() {
   if (command === 'calibrate') {
     const rk = String(cmdArgs[0] || '').replace(/[^0-9]/g, '');
     if (!rk) { console.error('Usage: contentfilter calibrate <plexRatingKey> [--method srt|whisper] [--samples 25] [--window 6] [--model small.en] [--write]'); process.exit(1); }
-    const edlPath = path.join(filterCacheDir(), 'edl', `${rk}.edl.yml`);
+    const edlPath = path.join(filterMediaDir(), 'edl', `${rk}.edl.yml`);
     if (!existsSync(edlPath)) { console.error(`No EDL for ${rk}: ${edlPath} (run bulk-export/export first)`); process.exit(1); }
     const edl = yaml.load(readFileSync(edlPath, 'utf8'));
     const window = Number(flags.window) || 6;
@@ -940,7 +961,7 @@ async function main() {
   if (command === 'snap') {
     const rk = String(cmdArgs[0] || '').replace(/[^0-9]/g, '');
     if (!rk) { console.error('Usage: contentfilter snap <plexRatingKey> [--window 6] [--model small.en] [--limit N] [--write]'); process.exit(1); }
-    const edlPath = path.join(filterCacheDir(), 'edl', `${rk}.edl.yml`);
+    const edlPath = path.join(filterMediaDir(), 'edl', `${rk}.edl.yml`);
     if (!existsSync(edlPath)) { console.error(`No EDL for ${rk}`); process.exit(1); }
     const edl = yaml.load(readFileSync(edlPath, 'utf8'));
     const overridePath = path.join(filterCacheDir(), 'overrides', `${rk}.yml`);
@@ -1013,7 +1034,7 @@ async function main() {
   if (command === 'srt-mutes') {
     const rk = String(cmdArgs[0] || '').replace(/[^0-9]/g, '');
     if (!rk) { console.error('Usage: contentfilter srt-mutes <plexRatingKey> [--window 1.5] [--write]'); process.exit(1); }
-    const edlPath = path.join(filterCacheDir(), 'edl', `${rk}.edl.yml`);
+    const edlPath = path.join(filterMediaDir(), 'edl', `${rk}.edl.yml`);
     if (!existsSync(edlPath)) { console.error(`No EDL for ${rk}`); process.exit(1); }
     const edl = yaml.load(readFileSync(edlPath, 'utf8'));
     const overridePath = path.join(filterCacheDir(), 'overrides', `${rk}.yml`);
@@ -1127,7 +1148,7 @@ async function main() {
   if (command === 'catalog-sync') {
     // Public, no auth needed — but reuse the client (token is harmless on works).
     const va = new VidAngel({ token: process.env.VIDANGEL_TOKEN || 'public', profile: '' });
-    mkdirSync(filterCacheDir(), { recursive: true });
+    mkdirSync(filterMediaDir(), { recursive: true });
     console.error('Paging VidAngel catalog (public, throttled)…');
     const catalog = await va.catalogSync({ onProgress: (m) => process.stderr.write(`\r${m}        `) });
     process.stderr.write('\n');
@@ -1192,7 +1213,7 @@ async function main() {
         confidence: m.confidence
       };
     }
-    mkdirSync(filterCacheDir(), { recursive: true });
+    mkdirSync(filterMediaDir(), { recursive: true });
     writeFileSync(MAP_PATH(), yaml.dump({
       source: 'vidangel-catalog (offline match)',
       counts: { matched: matched.length, ambiguous: ambiguous.length, unmatched: unmatched.length },
