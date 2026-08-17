@@ -215,32 +215,32 @@ getDefaultUsername()                // Returns head of household
 #### Household Auth Examples
 ```yaml
 # household/auth/plex.yml
-token: SZMcgR9vv5ntHSaezzBE
+token: xxxxx
 server_url: http://plex.local:32400
 
 # household/auth/home_assistant.yml
-token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+token: xxxxx
 base_url: http://homeassistant.local:8123
 
 # household/auth/clickup.yml
-api_key: pk_5827339_33M0N3ALR432W2KK2DQ3QAQ2EPO2NIF2
-workspace_id: 3833120
+api_key: xxxxx
+workspace_id: xxxxx
 ```
 
 #### User Auth Examples
 ```yaml
 # users/{username}/auth/google.yml
-refresh_token: 1//05jfC5qCi3EQLCgYIARAAGAUSNwF-L9Ir...
-access_token: ya29.HgKyffpDVvwLJqalK66uPP7w_k4TbFk3A...
+refresh_token: xxxxx
+access_token: xxxxx
 expiresAt: 1767136504
 services: [gmail, calendar, photos]
 
 # users/{username}/auth/todoist.yml
-api_key: 2e7c36ec309986be3349a55ae95fc4bb90f83656
+api_key: xxxxx
 
 # users/{username}/auth/garmin.yml
 username: user@example.com
-password: buEpVyv,cdRosiUwxFB7
+password: xxxxx
 
 # users/{username}/auth/strava.yml (✅ already working)
 refresh: 845dfacce657333c4c813a61d8fdb33783e389e6

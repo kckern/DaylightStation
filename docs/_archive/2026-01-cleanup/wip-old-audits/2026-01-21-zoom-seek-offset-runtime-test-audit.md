@@ -39,7 +39,7 @@ Run the zoom-seek-offset runtime test to verify the fix for the bug where seekin
 **Investigation**: Checked if plex token is being loaded correctly.
 
 **Findings**:
-- Token correctly stored in `/data/households/default/auth/plex.yml`: `token: SZMcgR9vv5ntHSaezzBE`
+- Token correctly stored in `/data/households/default/auth/plex.yml`: `token: xxxxx`
 - ConfigService correctly loads via `getHouseholdAuth('plex')`
 - Backend logs confirm: `[INFO] plex-proxy.initialized {"host":"http://10.0.0.10:32400","hasToken":true}`
 - Direct Plex API calls with token work: `curl "http://10.0.0.10:32400/library/collections/671468/children?X-Plex-Token=..."` returns valid XML
