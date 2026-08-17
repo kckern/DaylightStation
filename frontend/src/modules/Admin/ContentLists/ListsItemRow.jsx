@@ -25,6 +25,7 @@ import {
 import { ItemDetailsDrawer } from './ItemDetailsDrawer.jsx';
 import { AppParamPicker } from './AppParamPicker.jsx';
 import { ActionChipSelect } from './ActionChipSelect.jsx';
+import { CapabilityWarning } from './CapabilityWarning.jsx';
 import { EmptyItemRow, InsertRowButton } from './EmptyItemRow.jsx';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
 import ImagePickerModal from './ImagePickerModal.jsx';
@@ -494,6 +495,9 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
           onClose={() => { log.info('preview.close', { index: item.index }); setPreviewOpen(false); }}
           title={item.label || 'Preview'}
           centered
+          // 980 is sized to hold AdminPreviewPlayer's 960px frame surface
+          // (PREVIEW_WIDTH in previewFrame.js) plus "xs" padding. Shrink it and
+          // the preview overflows.
           size={item.action === 'Display' ? 'lg' : item.action === 'Open' ? 'xl' : 980}
           padding="xs"
           styles={{ content: { marginLeft: 'var(--app-shell-navbar-width, 250px)' } }}
@@ -560,6 +564,14 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
             )}
           />
         )}
+        {/* Catches an action pointed at a source that can't perform it — the
+            failure mode that rendered `action: Display` on a files: image as a
+            blank frame with no error on either the screen or this preview. */}
+        <CapabilityWarning
+          input={item.input}
+          action={item.action}
+          onUpdate={onUpdate}
+        />
       </div>
 
       {isWatchlist && (

@@ -61,11 +61,16 @@ export function useCenterByWidest(containerRef, deps = [], { observeResize = tru
           currentEl.style.width = `${maxWidth}px`;
         }
 
-        const panelWidth = panel.offsetWidth;
+        // Centre on the CONTENT box, not the panel. `.scrolled-content` carries
+        // a padding-left the text already starts after, so centring on the raw
+        // panel width parks every block half a padding left of true centre.
+        const scrolled = currentEl.closest('.scrolled-content');
+        const padLeft = scrolled ? parseFloat(getComputedStyle(scrolled).paddingLeft) || 0 : 0;
+        const panelWidth = panel.offsetWidth - padLeft;
         const diff = panelWidth - maxWidth;
         const marginLeft = Math.max(0, diff / 2);
         currentEl.style.marginLeft = `${marginLeft}px`;
-        log('recalc', { phase, maxWidth, panelWidth, marginLeft });
+        log('recalc', { phase, maxWidth, panelWidth, padLeft, marginLeft });
       } catch (err) {
         log('recalc-error', { message: err?.message });
       }

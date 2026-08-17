@@ -15,13 +15,24 @@
  * its only writer.
  *
  * ┌─ STANDING FACTS about the default path ──────────────────────────────────┐
- * │ `media/logs/` is the sanctioned home for heavy logs. On prod `media/` is  │
- * │ bind-mounted from a Dropbox tree with no `.dropboxignore` covering it, so │
- * │ everything written here syncs — and that cost is accepted, decided by the │
- * │ owner, not a hazard to design around. Do not shrink these numbers to      │
- * │ dodge it, and do not add a `.dropboxignore` to an already-synced folder:  │
+ * │ `media/logs/` is the sanctioned home for heavy logs, and on prod `media/` │
+ * │ is bind-mounted from a Dropbox tree with no `.dropboxignore` covering it. │
+ * │ For the other transports that cost is accepted, decided by the owner. Do  │
+ * │ not add a `.dropboxignore` to an already-synced folder to dodge it:       │
  * │ excluding a synced directory can remove the remote copy, and this repo    │
  * │ has history of exactly that nearly destroying live data.                  │
+ * │                                                                           │
+ * │ This sink is the one exception, and it is no longer at the default path   │
+ * │ on any real machine. backend.log appends ~3 KB/s, which is a different    │
+ * │ shape of cost from the periodic writers next to it: Dropbox re-uploaded   │
+ * │ it without pause, and because prod and a macbook dev server were both     │
+ * │ appending to the same synced file it could not converge at all — five     │
+ * │ "conflicted copy" files in three minutes on 2026-08-16. Every environment │
+ * │ now sets `logging.fileSink.path` in `system-local.{env}.yml` to a         │
+ * │ non-synced but still persistent location (in Docker, a `logs` bind mount  │
+ * │ alongside the Dropbox ones). The durable-sink guarantee is unchanged —    │
+ * │ the log still outlives a container restart; it just stops fighting a      │
+ * │ sync client. Point it back at `media/logs/` and the loop returns.         │
  * │                                                                           │
  * │ The real bound is the rotation ceiling below. It is sized against the     │
  * │ measured intake, so changing maxSize or maxFiles changes a deliberate     │

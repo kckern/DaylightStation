@@ -351,3 +351,31 @@ A recovery reload resets `totalVideoFrames` to 0 while `lastFpsCheck` keeps the 
 - `docs/reference/media/dash-video-resilience.md` — stall/seek troubleshooting runbook
 - `docs/runbooks/fitness-player-recovery.md` — operator-facing recovery
 - Source incidents live under `docs/_wip/audits/`, `docs/_wip/bugs/`, and `docs/plans/` (dates cited inline above)
+
+## Type size is a function of the frame's CSS-pixel width
+
+Nothing in the Player or ContentScroller uses a viewport-relative unit — it is
+`rem` throughout, against a root font-size no stylesheet overrides. So 2rem type
+is 3.33% of a 960px frame and 1.67% of a 1920px one. Any surface that hosts the
+Player has to give it the same CSS-pixel box the kiosk has, or every glyph is
+proportionally wrong. `zoom` on an outer wrapper fixes the *visual* size while
+leaving the *layout* size wrong, which is exactly the trap the admin preview fell
+into (1920x1080 @ `zoom: 0.5`, so hymns previewed at half the size the
+living-room Shield shows).
+
+When debugging under `zoom`, note the two coordinate spaces: `offsetWidth` and
+`clientHeight` report unzoomed layout px, `getBoundingClientRect()` reports zoomed
+visual px.
+
+## `useCenterByWidest` needs shrink-wrapped stanzas
+
+The hook centres a text block on its widest `.stanza`, measured with
+`offsetWidth`. A block-level stanza always reports the full container width, so
+the measurement returns the container and the centring is a no-op — which is what
+left every hymn flush left until `width: fit-content` was added. Use
+`width: fit-content`, not `display: inline-block`: inline-block stanzas flow side
+by side whenever two fit on a row.
+
+It also centres on the *content* box, subtracting `.scrolled-content`'s
+`padding-left`. Centring on the raw panel width parks every block half a padding
+left of true centre.

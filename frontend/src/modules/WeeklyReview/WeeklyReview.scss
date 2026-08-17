@@ -1280,14 +1280,35 @@
   position: absolute; inset: 0; background: #000;
   display: flex; align-items: center; justify-content: center;
 
-  .reel-video { width: 100%; height: 100%; object-fit: contain; background: #000; }
-
-  .reel-video-poster {
-    width: 100%; height: 100%;
-    background-size: contain; background-position: center; background-repeat: no-repeat;
-    display: flex; align-items: center; justify-content: center;
+  // Shrink-wraps the media so the box IS the picture, never the letterbox. The
+  // reel is already a centering flex parent, so the stage lands centred with no
+  // positioning of its own. `min-width: 0` keeps a wide video from pushing the
+  // stage past the reel before max-width applies.
+  .reel-stage {
+    position: relative;
+    display: flex;
+    min-width: 0;
+    max-width: 100%;
+    max-height: 100%;
   }
+
+  // Intrinsic sizing under a 100% cap, which is what makes the stage equal the
+  // picture. `object-fit` stays as a guard for the frames where a video reports
+  // its 300x150 default before metadata lands.
+  .reel-video,
+  .reel-video-poster {
+    display: block;
+    width: auto; height: auto;
+    max-width: 100%; max-height: 100%;
+    object-fit: contain;
+    background: #000;
+  }
+
   .reel-play-hint {
+    // The poster no longer centres this as a flex parent — it is a sibling now,
+    // so centre it over the stage directly.
+    position: absolute; inset: 0;
+    width: fit-content; height: fit-content; margin: auto;
     font-size: 1.4rem; color: #fff; background: rgba(0,0,0,0.55);
     padding: 0.6em 1.1em; border-radius: 0.4em;
   }

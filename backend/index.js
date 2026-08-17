@@ -25,7 +25,7 @@ process.on('unhandledRejection', (reason) => {
 import { initConfigService, ConfigValidationError, configService } from '#system/config/index.mjs';
 import { hydrateProcessEnvFromConfigs, loadLoggingConfig, resolveLoggerLevel, getLoggingTags, resolveLogglyToken } from '#system/logging/config.mjs';
 import { initializeLogging } from '#system/logging/dispatcher.mjs';
-import { createConsoleTransport, createFileTransport, createLogglyTransport, initSessionFileTransport, initSessionEventsFileTransport, createSchoolLedgerTransport } from '#system/logging/transports/index.mjs';
+import { createConsoleTransport, createFileTransport, createLogglyTransport, createHttpLogSinkTransport, initSessionFileTransport, initSessionEventsFileTransport, createSchoolLedgerTransport } from '#system/logging/transports/index.mjs';
 import { createLogger } from '#system/logging/logger.mjs';
 import { resolveGeneralFileSinks } from '#system/logging/generalSinks.mjs';
 
@@ -144,6 +144,31 @@ async function main() {
       subdomain: logglySubdomain,
       tags: getLoggingTags(loggingConfig)
     }));
+  }
+
+  // Remote log sink — queryable storage for the general event stream, which the
+  // file sinks deliberately do not provide: they answer "did it survive a
+  // restart", not "what happened across the household at 16:54". Everything
+  // product-specific is in the configured URL, so the sink can be repointed
+  // without touching code (`logging.remoteSink` in system-local.{env}.yml).
+  //
+  // Enabled per environment rather than everywhere: a dev machine shipping into
+  // the household's stream makes the stream worse. Absent config is a no-op.
+  //
+  // Guarded like the file sinks, and for a stronger reason — this one is a
+  // network call. `createHttpLogSinkTransport` is written not to throw, so the
+  // try/catch is belt-and-braces around construction only; the same rule holds
+  // either way, that a logging failure costs the log and never the server.
+  const remoteSinkConfig = configService.get('logging.remoteSink');
+  if (remoteSinkConfig?.enabled) {
+    try {
+      dispatcher.addTransport(createHttpLogSinkTransport(remoteSinkConfig));
+    } catch (err) {
+      process.stderr.write(
+        `[WARN] remote log sink disabled: ${err?.message ?? err}. `
+        + 'Backend logs still reach the console and the file sink.\n'
+      );
+    }
   }
 
   // Session file transport - writes per-app session logs to media/logs/

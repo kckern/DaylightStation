@@ -394,6 +394,32 @@ export class TelegramMessagingAdapter extends IMessagingGateway {
 | `3_applications/*/ports/` | Port interfaces (what the app needs) |
 | `1_adapters/*/` | Adapter implementations (how it's done) |
 
+### Optional Adapter Capabilities
+
+Some behaviour only makes sense for a subset of adapters. Rather than widening a
+port every adapter must implement, declare an **optional method**: callers probe
+for it with `typeof adapter.method === 'function'` and skip adapters that don't
+have it. Adapters that can't participate cost nothing.
+
+Content-source adapters currently use:
+
+| Method | Implemented by | Purpose |
+|--------|----------------|---------|
+| `getCapabilities(item)` | adapters with domain-specific rules | Overrides the info router's generic derivation |
+| `resolveFilePath(localId)` | `FileAdapter`, `FilesystemCanvasAdapter` | Local id → absolute path |
+| `localIdForFilePath(absPath)` | `FileAdapter`, `FilesystemCanvasAdapter` | Absolute path → local id |
+
+The last two exist because filesystem-backed sources are rooted at overlapping
+directories — the canvas root defaults to `<media>/img/art`, inside the `files`
+root — so the same file carries different ids and different capabilities.
+`ContentAlternatesService` pairs them up so the admin can offer a working id when
+a list row's action and its source's capabilities disagree. Plex, YouTube, and
+app sources implement neither and are skipped.
+
+Both path methods must reject paths outside their own root, and must compare with
+the separator appended (`base + path.sep`) so a sibling directory sharing the
+prefix doesn't match.
+
 ---
 
 ## Repository Pattern
