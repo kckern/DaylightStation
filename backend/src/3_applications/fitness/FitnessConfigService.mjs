@@ -23,9 +23,14 @@ export class FitnessConfigService {
     const householdConfig = this.configService.getHouseholdAppConfig(hid, 'fitness');
 
     if (!householdConfig) {
+      // task-13 colocated fitness config at household[-{hid}]/fitness/config.yml,
+      // with household[-{hid}]/config/fitness.yml checked as a legacy fallback
+      // (see ConfigService#getHouseholdAppConfig / #resolveHouseholdAppConfigPath) —
+      // this message must name both, not the pre-migration path alone (M2,
+      // final-review fix wave 2026-08-16).
       this.logger.error?.('fitness.config.not-found', {
         householdId: hid,
-        expectedPath: `household[-${hid}]/config/fitness.yml`
+        expectedPath: `household[-${hid}]/fitness/config.yml (or legacy household[-${hid}]/config/fitness.yml)`
       });
       return null;
     }

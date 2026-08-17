@@ -5,7 +5,7 @@
  *
  * Mirrors bootstrap/screenPresence. DISABLED BY DEFAULT — this touches a physical
  * screen, so nothing changes on-device until `screen_power_sync.enabled: true` is
- * set in `config/piano.yml` (design slice 4: on-device verification).
+ * set in `household/piano/config.yml` (design slice 4: on-device verification).
  *
  * @module 5_composition/modules/pianoScreenPowerSync
  */

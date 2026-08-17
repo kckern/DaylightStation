@@ -4,7 +4,7 @@
  * FKB backlight on a BLE-MIDI note (via the always-on piano-bridge WS fan-out).
  *
  * Mirrors bootstrap/pianoScreenPowerSync. DISABLED BY DEFAULT — nothing connects
- * until `midi_wake.enabled: true` in `config/piano.yml`.
+ * until `midi_wake.enabled: true` in `household/piano/config.yml`.
  *
  * @module 5_composition/modules/pianoMidiWake
  */
