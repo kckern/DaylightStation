@@ -16,7 +16,7 @@ export {
 export { createLogger } from './logger.mjs';
 export { serializeError, extractHttpErrorDetails } from './utils.mjs';
 export { ingestFrontendLogs } from './ingestion.mjs';
-export { createConsoleTransport, createLogglyTransport, createFileTransport } from './transports/index.mjs';
+export { createConsoleTransport, createLogglyTransport, createFileTransport, createHttpLogSinkTransport } from './transports/index.mjs';
 export {
   loadLoggingConfig,
   resetLoggingConfig,

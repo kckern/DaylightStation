@@ -1,5 +1,6 @@
 // backend/src/1_adapters/content/canvas/filesystem/FilesystemCanvasAdapter.mjs
 import fs from 'fs';
+import path from 'path';
 import { DisplayableItem } from '#domains/content/capabilities/Displayable.mjs';
 import { ListableItem } from '#domains/content/capabilities/Listable.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
@@ -32,6 +33,43 @@ export class FilesystemCanvasAdapter {
 
   get prefixes() {
     return [{ prefix: 'canvas' }];
+  }
+
+  /**
+   * Absolute path this adapter would read for a local id, or null.
+   *
+   * The canvas root sits INSIDE the media root (`<media>/img/art` by default),
+   * so the same picture is addressable as both `canvas:fhe/x.jpg` and
+   * `files:art/fhe/x.jpg` — with different capabilities. This mapping is what
+   * lets ContentAlternatesService spot the pair.
+   *
+   * @param {string} localId
+   * @returns {string|null}
+   */
+  resolveFilePath(localId) {
+    if (!localId) return null;
+    const full = path.join(this.#basePath, localId.replace(/^canvas:/, ''));
+    if (!this.#fs.existsSync(full)) return null;
+    return full;
+  }
+
+  /**
+   * The local id this adapter would use for an absolute path, or null when the
+   * path lies outside the canvas root.
+   *
+   * @param {string} filePath - absolute path
+   * @returns {string|null}
+   */
+  localIdForFilePath(filePath) {
+    if (!filePath) return null;
+    const base = path.resolve(this.#basePath);
+    const target = path.resolve(filePath);
+    // Require the separator so a sibling dir sharing the prefix doesn't match.
+    if (target !== base && !target.startsWith(base + path.sep)) return null;
+
+    const relative = path.relative(base, target);
+    if (!relative || relative.startsWith('..')) return null;
+    return relative.split(path.sep).join('/');
   }
 
   async list(filters = {}) {

@@ -4,20 +4,33 @@
   gap: 8px;
 }
 
+/* The VISIBLE box: fixed width, height derived from the target screen's own
+   aspect ratio. A hardcoded 540px forced every screen to 16:9 and cropped the
+   16:10 portal panel. */
 .admin-preview-player__video {
-  width: 960px;
-  height: 540px;
+  width: var(--preview-width, 960px);
+  height: var(--preview-box-height, 540px);
   position: relative;
   background: #000;
   overflow: hidden;
   border-radius: var(--mantine-radius-sm);
 }
 
+/* The LAYOUT box is the target screen's CSS-pixel resolution exactly, then
+   zoomed to fit the visible box. This is what makes the preview honest: the
+   Player is sized entirely in rem against an unmodified 16px root, so type
+   only occupies the right fraction of the frame when the frame has the same
+   number of CSS px the kiosk has. The old hardcoded 1920x1080 @ zoom 0.5 was
+   the right visual size at the wrong layout size, which rendered every glyph
+   2x small against a 960x540 screen. See previewFrame.js. */
 .admin-preview-player__video-inner {
-  width: 1920px;
-  height: 1080px;
-  zoom: 0.5;
-  transform-origin: 0 0;
+  width: var(--preview-screen-width, 1280px);
+  height: var(--preview-screen-height, 720px);
+  /* `zoom`, deliberately — NOT `transform: scale()`. Zoom shrinks the box's
+     reserved layout space along with its contents; a transform would paint it
+     smaller while still reserving the full 1920/1280 in the flow. There is no
+     transform-origin here because there is no transform. */
+  zoom: var(--preview-scale, 0.75);
 }
 
 .admin-preview-player__queue-bar {

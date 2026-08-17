@@ -5,8 +5,10 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { isMediaSearchable, validateSearchQuery } from '#domains/media/IMediaSearchable.mjs';
 import { parseContentQuery, validateContentQuery } from '../parsers/contentQueryParser.mjs';
 import { checkSchedule } from '#apps/content/services/scheduleCheck.mjs';
+import { ContentAlternatesService } from '#apps/content/ContentAlternatesService.mjs';
 import { stripEmpty } from '#api/v1/utils/stripEmpty.mjs';
 import { splatPath } from '#api/utils/wildcard.mjs';
+import { parseActionRouteId } from '../utils/actionRouteParser.mjs';
 
 /**
  * Create content API router
@@ -204,6 +206,34 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
     const providers = registry.getProviders();
     res.json({ sources, categories, providers });
   });
+
+  /**
+   * GET /api/content/alternates/:source/*
+   *
+   * Other content ids addressing the SAME file as this one, with what each can
+   * do. The admin uses it to offer a working id when a row's action and its
+   * source's capabilities disagree — `action: Display` on a `files:` image,
+   * which is playable-only, while the identical bytes under `canvas:` are
+   * displayable.
+   *
+   * Always 200. An id with no filesystem identity, or one nothing else reaches,
+   * yields an empty list — this is advisory, and a 4xx would make the admin
+   * paint an alarming state on a perfectly healthy row.
+   */
+  router.get('/alternates/:source{/*splat}', asyncHandler(async (req, res) => {
+    const { source } = req.params;
+    const rawPath = splatPath(req);
+    const { compoundId } = parseActionRouteId({ source, path: rawPath });
+
+    const service = new ContentAlternatesService({ registry, logger });
+    const alternates = await service.findAlternates(compoundId);
+
+    logger.info?.('content.alternates', {
+      contentId: compoundId,
+      found: alternates.map(a => a.contentId),
+    });
+    res.json({ contentId: compoundId, alternates });
+  }));
 
   /**
    * GET /api/content/aliases

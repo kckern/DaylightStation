@@ -99,6 +99,48 @@ export class FileAdapter {
   }
 
   /**
+   * Absolute path this adapter would read for a local id, or null.
+   *
+   * Half of the path<->id mapping that lets ContentAlternatesService notice
+   * when another source addresses the same bytes under a different id (and
+   * therefore different capabilities).
+   *
+   * @param {string} localId
+   * @returns {string|null}
+   */
+  resolveFilePath(localId) {
+    if (!localId) return null;
+    return this.resolvePath(localId)?.path ?? null;
+  }
+
+  /**
+   * The local id this adapter would use for an absolute path, or null when the
+   * path lies outside the media root.
+   *
+   * Strips the media prefix `resolvePath` probes ('audio', 'video', 'img'), so
+   * the id round-trips to the short form list rows actually contain
+   * (`art/fhe/esther.jpg`, not `img/art/fhe/esther.jpg`).
+   *
+   * @param {string} filePath - absolute path
+   * @returns {string|null}
+   */
+  localIdForFilePath(filePath) {
+    if (!filePath) return null;
+    const base = path.resolve(this.mediaBasePath);
+    const target = path.resolve(filePath);
+    // `startsWith` alone would accept a sibling dir sharing the prefix
+    // (…/media-private next to …/media), so require the separator.
+    if (target !== base && !target.startsWith(base + path.sep)) return null;
+
+    const relative = path.relative(base, target);
+    if (!relative || relative.startsWith('..')) return null;
+
+    const [head, ...rest] = relative.split(path.sep);
+    if (rest.length && MEDIA_PREFIXES.includes(head)) return rest.join('/');
+    return relative.split(path.sep).join('/');
+  }
+
+  /**
    * Get watch state for a specific media key
    * @param {string} mediaKey - Media key (file path)
    * @returns {Object|null} Media progress { percent, seconds, playhead, mediaDuration }

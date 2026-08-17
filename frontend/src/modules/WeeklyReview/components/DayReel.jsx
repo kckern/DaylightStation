@@ -41,6 +41,12 @@ function ReelVideo({ item, muted, paused, onEnded }) {
       autoPlay
       playsInline
       muted={muted}
+      // Intrinsic dimensions arrive with metadata, and the stage sizes itself
+      // from the element — so fetch them early to shorten the window where the
+      // video still reports its 300x150 default and the chrome hugs that
+      // instead of the picture.
+      preload="metadata"
+      poster={item.thumbnail}
     />
   );
 }
@@ -60,17 +66,27 @@ export default function DayReel({ item, day, index, total, dayLabel, playing, mu
   if (item.type === 'video') {
     return (
       <div className="weekly-review-reel weekly-review-reel--video">
-        {playing ? (
-          <ReelVideo item={item} muted={muted} paused={paused} onEnded={onEnded} />
-        ) : (
-          <div className="reel-video-poster" style={{ backgroundImage: `url(${item.thumbnail})` }}>
-            <div className="reel-play-hint">▶ Enter to play</div>
+        {/* The chrome hugs the picture, so it has to be a sibling of the media
+            inside a box that IS the picture. Pinning the overlay to the reel
+            instead left it aligned to the letterbox whenever the video's aspect
+            ratio differed from the screen's. The stage shrink-wraps whatever it
+            holds, and the media sizes intrinsically under a 100% cap, so the
+            two always agree. (Photos deliberately do the opposite — see
+            .fullscreen-image-overlay, whose gradient bleeds to the screen edge.) */}
+        <div className="reel-stage">
+          {playing ? (
+            <ReelVideo item={item} muted={muted} paused={paused} onEnded={onEnded} />
+          ) : (
+            <>
+              <img className="reel-video-poster" src={item.thumbnail} alt="" />
+              <div className="reel-play-hint">▶ Enter to play</div>
+            </>
+          )}
+          <div className="reel-overlay">
+            <div className="reel-day-label">{dayLabel}</div>
+            <div className="reel-index">{index + 1} / {total}</div>
+            {playing && <div className="reel-mute-state">{muted ? '🔇 Enter to unmute' : '🔊'}</div>}
           </div>
-        )}
-        <div className="reel-overlay">
-          <div className="reel-day-label">{dayLabel}</div>
-          <div className="reel-index">{index + 1} / {total}</div>
-          {playing && <div className="reel-mute-state">{muted ? '🔇 Enter to unmute' : '🔊'}</div>}
         </div>
       </div>
     );
