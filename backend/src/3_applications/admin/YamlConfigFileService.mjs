@@ -10,8 +10,14 @@
  *   AuthorizationError → 403 (traversal, masked dir, not-allowed dir)
  *   NotFoundError      → 404 (allowed file missing)
  *
- * Security semantics are preserved VERBATIM from the router:
+ * Security semantics are preserved VERBATIM from the router, plus an
+ * explicit-file addendum for task-13:
  * - Allowed dirs: system/config, household/config (list + read + write)
+ * - Allowed files: individual app configs colocated with their own domain
+ *   folder after task-13 (household/fitness/config.yml, etc.) — listed one
+ *   file at a time, NOT as a directory grant. A directory grant on
+ *   e.g. household/fitness would also expose household/fitness/log/, a
+ *   2000+-entry session-telemetry tree that has nothing to do with config.
  * - Masked dirs:  system/auth, household/auth (listed, but NOT readable/writable)
  * - Directory checks run on the NORMALIZED relative path derived from the
  *   RESOLVED absolute path (prevents ../auth bypass), after an absolute
@@ -30,6 +36,15 @@ import {
 const ALLOWED_DIRS = [
   'system/config',
   'household/config'
+];
+
+// Individual files users can read/write even though they sit outside
+// ALLOWED_DIRS — the app configs task-13 colocated with their own domain
+// folder. Deliberately a file allowlist, not a directory one (see header).
+const ALLOWED_FILES = [
+  'household/fitness/config.yml',
+  'household/gratitude/config.yml',
+  'household/harvest/config.yml',
 ];
 
 // Directories that appear in file listings but cannot be read or written
@@ -58,7 +73,8 @@ function isMasked(relPath) {
  */
 function isAllowed(relPath) {
   const normalized = relPath.replace(/\\/g, '/');
-  return ALLOWED_DIRS.some(dir => normalized.startsWith(dir + '/') || normalized === dir);
+  return ALLOWED_DIRS.some(dir => normalized.startsWith(dir + '/') || normalized === dir)
+    || ALLOWED_FILES.includes(normalized);
 }
 
 /**
@@ -182,6 +198,22 @@ export class YamlConfigFileService {
     for (const dir of ALL_DIRS) {
       const absDir = path.join(dataRoot, dir);
       files.push(...collectYamlFiles(absDir, dataRoot));
+    }
+
+    // Individual colocated files (task-13) — listed one at a time, not via
+    // directory recursion. See the ALLOWED_FILES comment for why.
+    for (const relPath of ALLOWED_FILES) {
+      const absPath = path.join(dataRoot, relPath);
+      if (!fs.existsSync(absPath)) continue;
+      const stat = fs.statSync(absPath);
+      files.push({
+        path: relPath,
+        name: path.basename(relPath),
+        directory: path.dirname(relPath),
+        size: stat.size,
+        modified: stat.mtime.toISOString(),
+        masked: false
+      });
     }
 
     this.logger.info?.('admin.config.files.listed', { count: files.length });

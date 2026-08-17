@@ -10,7 +10,7 @@ import SaveBar from './SaveBar.jsx';
  * Wraps a config form with standard load/save/revert/dirty-state chrome.
  *
  * Props:
- *   filePath    - YAML file path relative to data root (e.g. 'household/config/fitness.yml')
+ *   filePath    - YAML file path relative to data root (e.g. 'household/fitness/config.yml')
  *   title       - Page title
  *   children    - Render function: ({ data, setData, raw, setRaw, error }) => JSX
  *                 Receives the parsed config object and a setter.

@@ -93,7 +93,7 @@ export function createAuthRouter({ authService, jwtSecret, jwtConfig, configServ
   // GET /auth/context — public household info for login screen
   router.get('/context', (req, res) => {
     const householdId = req.householdId || configService.getDefaultHouseholdId();
-    const household = dataService.household.read('config/household');
+    const household = dataService.household.read('household');
 
     const needsSetup = authService.needsSetup();
     const users = configService.getAllUserProfiles();

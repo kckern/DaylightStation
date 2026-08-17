@@ -9,10 +9,10 @@
  * error-middleware maps to 400/404/409.
  *
  * Data sources (relative to data root):
- * - household/config/household.yml  -- household settings + user list
+ * - household/household.yml         -- household settings + user list (task-13; was household/config/household.yml)
  * - users/{username}/profile.yml    -- per-user profiles
  * - users/{username}/auth/login.yml -- per-user login/auth data (read-only here)
- * - household/config/devices.yml    -- device registry
+ * - household/hardware/devices.yml  -- device registry (task-13; was household/config/devices.yml)
  */
 import path from 'path';
 import {
@@ -61,16 +61,16 @@ export class HouseholdAdminService {
     return path.resolve(this.configService.getDataDir());
   }
 
-  /** Read household config from household/config/household.yml */
+  /** Read household config from household/household.yml */
   #readHousehold() {
-    const absPath = path.join(this.#getDataRoot(), 'household/config/household.yml');
+    const absPath = path.join(this.#getDataRoot(), 'household/household.yml');
     if (!this.#configFiles.exists(absPath)) return {};
     return this.#configFiles.readYaml(absPath, {});
   }
 
-  /** Write household config to household/config/household.yml */
+  /** Write household config to household/household.yml */
   #writeHousehold(data) {
-    const absPath = path.join(this.#getDataRoot(), 'household/config/household.yml');
+    const absPath = path.join(this.#getDataRoot(), 'household/household.yml');
     const parentDir = path.dirname(absPath);
     this.#configFiles.writeYaml(absPath, data);
   }
@@ -97,17 +97,17 @@ export class HouseholdAdminService {
     return this.#configFiles.readYaml(absPath, {});
   }
 
-  /** Read devices map from household/config/devices.yml */
+  /** Read devices map from household/hardware/devices.yml */
   #readDevices() {
-    const absPath = path.join(this.#getDataRoot(), 'household/config/devices.yml');
+    const absPath = path.join(this.#getDataRoot(), 'household/hardware/devices.yml');
     if (!this.#configFiles.exists(absPath)) return {};
     const raw = this.#configFiles.readYaml(absPath, {});
     return raw.devices || {};
   }
 
-  /** Write devices map to household/config/devices.yml */
+  /** Write devices map to household/hardware/devices.yml */
   #writeDevices(devices) {
-    const absPath = path.join(this.#getDataRoot(), 'household/config/devices.yml');
+    const absPath = path.join(this.#getDataRoot(), 'household/hardware/devices.yml');
     const parentDir = path.dirname(absPath);
     this.#configFiles.writeYaml(absPath, { devices });
   }

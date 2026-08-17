@@ -919,7 +919,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   };
 
   // Load content prefix config early — needed by both createContentRegistry and createApiRouters
-  const contentPrefixesPath = configService.getHouseholdPath('config/content-prefixes');
+  // Colocated under media/ (task-13 — media owns content addressing; was config/content-prefixes)
+  const contentPrefixesPath = configService.getHouseholdPath('media/content-prefixes');
   const contentPrefixes = loadYamlStatic(contentPrefixesPath) || {};
   const prefixAliases = contentPrefixes.aliases || {};
   const storagePaths = contentPrefixes.storagePaths || {};

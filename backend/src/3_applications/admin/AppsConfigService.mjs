@@ -21,16 +21,21 @@ import {
 /**
  * Registry mapping app IDs to their config file paths (relative to data root)
  */
+// task-13: config/ is retiring in favor of colocating each app's config with
+// its own domain folder. Entries below point at the new location ONLY for
+// apps whose config has actually been moved (verified against disk, not
+// assumed) — the rest stay on the legacy household/config/ path until a
+// later task creates a matching domain folder for them.
 const APP_CONFIGS = {
-  fitness: 'household/config/fitness.yml',
+  fitness: 'household/fitness/config.yml',
   finance: 'household/config/finance.yml',
-  gratitude: 'household/config/gratitude.yml',
-  shopping: 'household/config/harvesters.yml',
+  gratitude: 'household/gratitude/config.yml',
+  shopping: 'household/harvest/config.yml',
   media: 'household/config/media-app.yml',
   chatbots: 'household/config/chatbots.yml',
   entropy: 'household/config/entropy.yml',
   keyboard: 'household/config/keyboard.yml',
-  piano: 'household/config/piano.yml',
+  piano: 'household/piano/config.yml',
 };
 
 const YAML_DUMP_OPTS = { indent: 2, lineWidth: -1, noRefs: true };

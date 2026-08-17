@@ -14,10 +14,10 @@ import { capitalize } from '../utils/formatters.js';
  * Maps appId to config file path relative to data root.
  */
 const APP_CONFIG_PATHS = {
-  fitness: 'household/config/fitness.yml',
+  fitness: 'household/fitness/config.yml',
   finance: 'household/config/finance.yml',
-  gratitude: 'household/config/gratitude.yml',
-  shopping: 'household/config/harvesters.yml',
+  gratitude: 'household/gratitude/config.yml',
+  shopping: 'household/harvest/config.yml',
 };
 
 /**

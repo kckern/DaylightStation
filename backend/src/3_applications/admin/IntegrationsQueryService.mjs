@@ -9,7 +9,7 @@
  *   NotFoundError → 404 (provider not found)
  *
  * Data sources (relative to data root):
- * - household/config/integrations.yml  -- what the household uses
+ * - household/integrations.yml  -- what the household uses (task-13; was household/config/integrations.yml)
  * - system/config/services.yml         -- service URLs per environment
  * - household/auth/{provider}.yml      -- household auth (existence check only)
  * - system/auth/{provider}.yml         -- system auth (existence check only)
@@ -50,9 +50,9 @@ export class IntegrationsQueryService {
     return path.resolve(this.configService.getDataDir());
   }
 
-  /** Read household integrations config from household/config/integrations.yml */
+  /** Read household integrations config from household/integrations.yml */
   #readIntegrations() {
-    const absPath = path.join(this.#getDataRoot(), 'household/config/integrations.yml');
+    const absPath = path.join(this.#getDataRoot(), 'household/integrations.yml');
     if (!this.#configFiles.exists(absPath)) return {};
     return this.#configFiles.readYaml(absPath, {});
   }

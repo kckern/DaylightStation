@@ -100,7 +100,7 @@ function GratitudeConfigContent({ data, setData }) {
 function GratitudeConfig() {
   return (
     <ConfigFormWrapper
-      filePath="household/config/gratitude.yml"
+      filePath="household/gratitude/config.yml"
       title="Gratitude Configuration"
     >
       {({ data, setData }) => (

@@ -8,7 +8,7 @@
  * - /media/plex/info/{id} - episode info with watch progress
  *
  * Uses real data from:
- * - household/config/fitness.yml
+ * - household/fitness/config.yml (task-13; was household/config/fitness.yml)
  * - household/media/memory/plex/14_fitness.yml
  *
  * Run with: node tests/integration/api/fitness-plex-parity.test.mjs
@@ -24,7 +24,7 @@ const BASE_URL = process.env.PARITY_TEST_URL || 'http://localhost:3112';
 
 // Data path from config helper (SSOT)
 const DATA_PATH = getDataPath();
-const FITNESS_CONFIG_PATH = path.join(DATA_PATH, 'household/config/fitness.yml');
+const FITNESS_CONFIG_PATH = path.join(DATA_PATH, 'household/fitness/config.yml');
 const FITNESS_MEMORY_PATH = path.join(DATA_PATH, 'household/media/memory/plex/14_fitness.yml');
 
 // Helper to make requests

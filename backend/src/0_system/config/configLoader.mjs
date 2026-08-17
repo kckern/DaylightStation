@@ -106,8 +106,12 @@ function loadAllHouseholds(dataDir) {
 
   for (const dir of flatDirs) {
     const householdId = parseHouseholdId(dir);
-    const configPath = path.join(dataDir, dir, 'config', 'household.yml');
-    const config = readYaml(configPath);
+    // Colocated first: household.yml at the household root (task-13). Legacy
+    // config/household.yml is still read so an un-migrated household still
+    // boots — drop this fallback once every household has been moved.
+    const colocatedPath = path.join(dataDir, dir, 'household.yml');
+    const legacyPath = path.join(dataDir, dir, 'config', 'household.yml');
+    const config = readYaml(colocatedPath) ?? readYaml(legacyPath);
     if (config) {
       households[householdId] = {
         ...config,
@@ -129,17 +133,21 @@ export { listHouseholdDirs, parseHouseholdId, toFolderName };
 
 /**
  * Load apps for a household.
- * Merges from two locations:
- *   1. config/<appName>.yml  (config-only apps, preferred)
- *   2. apps/ directory        (legacy: subdirs with config.yml, top-level YAMLs)
- * config/ entries take precedence over apps/ entries with the same key.
+ * Merges from three locations, later entries winning on key collision:
+ *   1. apps/ directory              (legacy: subdirs with config.yml, top-level YAMLs)
+ *   2. config/<appName>.yml         (retiring: config-only apps)
+ *   3. <appName>/config.yml         (colocated, task-13 — preferred)
+ * Non-app configs (household, integrations, devices) live outside both the
+ * config/ scan and the colocated scan — household.yml and integrations.yml
+ * sit at the household root, devices.yml under hardware/ — so they are never
+ * picked up here regardless of migration state.
  */
 function loadHouseholdApps(dataDir, folderName) {
   // Legacy: load from apps/ directory
   const appsDir = path.join(dataDir, folderName, 'apps');
   const appsFromLegacy = loadAppsFromDir(appsDir);
 
-  // New: load app configs from config/ directory
+  // Retiring: load app configs from config/ directory
   // Excludes known non-app configs (household, integrations, devices)
   const NON_APP_CONFIGS = new Set(['household', 'integrations', 'devices']);
   const configDir = path.join(dataDir, folderName, 'config');
@@ -153,24 +161,47 @@ function loadHouseholdApps(dataDir, folderName) {
     }
   }
 
-  // Merge: config/ takes precedence over apps/
-  return { ...appsFromLegacy, ...appsFromConfig };
+  // Colocated: <household>/<appName>/config.yml — a direct child of the
+  // household root that itself has a config.yml. `config` and `apps` are
+  // excluded so the two loaders above are never re-scanned as if they were
+  // app domains.
+  const NON_APP_DIRS = new Set(['config', 'apps']);
+  const appsFromColocated = {};
+  for (const subdir of listDirs(path.join(dataDir, folderName))) {
+    if (NON_APP_DIRS.has(subdir)) continue;
+    const config = readYaml(path.join(dataDir, folderName, subdir, 'config.yml'));
+    if (config) {
+      appsFromColocated[subdir] = config;
+    }
+  }
+
+  // Merge: colocated takes precedence over config/, which takes precedence
+  // over apps/.
+  return { ...appsFromLegacy, ...appsFromConfig, ...appsFromColocated };
 }
 
 /**
  * Load integrations for a household.
+ * Colocated first: integrations.yml at the household root, beside
+ * household.yml (task-13). Legacy config/integrations.yml is still read as a
+ * fallback until every household has been migrated.
  */
 function loadHouseholdIntegrations(dataDir, folderName) {
-  const integrationsPath = path.join(dataDir, folderName, 'config', 'integrations.yml');
-  return readYaml(integrationsPath) ?? {};
+  const colocatedPath = path.join(dataDir, folderName, 'integrations.yml');
+  const legacyPath = path.join(dataDir, folderName, 'config', 'integrations.yml');
+  return readYaml(colocatedPath) ?? readYaml(legacyPath) ?? {};
 }
 
 /**
  * Load devices config for a household.
+ * Colocated first: hardware/devices.yml, beside the device state hardware/
+ * already holds (task-13). Legacy config/devices.yml is still read as a
+ * fallback until every household has been migrated.
  */
 function loadHouseholdDevices(dataDir, folderName) {
-  const devicesPath = path.join(dataDir, folderName, 'config', 'devices.yml');
-  return readYaml(devicesPath) ?? {};
+  const colocatedPath = path.join(dataDir, folderName, 'hardware', 'devices.yml');
+  const legacyPath = path.join(dataDir, folderName, 'config', 'devices.yml');
+  return readYaml(colocatedPath) ?? readYaml(legacyPath) ?? {};
 }
 
 /**

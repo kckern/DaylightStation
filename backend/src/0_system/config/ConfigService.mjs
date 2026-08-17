@@ -8,7 +8,7 @@
  * that can be changed at runtime (e.g. via admin UI).
  */
 
-import { loadYaml, loadYamlFromPath, listYamlFiles } from '#system/utils/FileIO.mjs';
+import { loadYaml, loadYamlFromPath, listYamlFiles, yamlExists } from '#system/utils/FileIO.mjs';
 import { ConfigurationError } from '#system/utils/errors/index.mjs';
 import { DEFAULT_TIMEZONE } from '#domains/core/utils/timezone.mjs';
 
@@ -201,6 +201,26 @@ export class ConfigService {
   }
 
   /**
+   * Resolve the on-disk base path (no extension) for a household app config.
+   *
+   * Colocated first: <household>/<appName>/config.yml — the app's own domain
+   * folder. The legacy <household>/config/<appName>.yml is still read so a
+   * file that has not been moved off the retired config/ root yet still
+   * resolves — drop this fallback in a follow-up once every app config has
+   * been moved and a redeploy has proven nothing regresses (task-13, step 7
+   * intentionally deferred).
+   * @param {string} dataDir
+   * @param {string} folderName
+   * @param {string} appName
+   * @returns {string} base path (no .yml extension)
+   */
+  #resolveHouseholdAppConfigPath(dataDir, folderName, appName) {
+    const colocated = `${dataDir}/${folderName}/${appName}/config`;
+    if (yamlExists(colocated)) return colocated;
+    return `${dataDir}/${folderName}/config/${appName}`;
+  }
+
+  /**
    * Re-read a household app config fresh from disk.
    * Use for configs that can be changed at runtime (e.g. via admin UI).
    * @param {string|null} householdId - Household ID, defaults to default household
@@ -213,7 +233,7 @@ export class ConfigService {
     if (!household) return null;
     const folderName = household._folderName || hid;
     const dataDir = this.getDataDir();
-    const fresh = loadYaml(`${dataDir}/${folderName}/config/${appName}`) ?? null;
+    const fresh = loadYaml(this.#resolveHouseholdAppConfigPath(dataDir, folderName, appName)) ?? null;
     // Write back into the served snapshot: getHouseholdAppConfig() reads
     // #config, and without this the reload only ever returned the fresh copy
     // to its direct caller while every other consumer kept the boot-time
