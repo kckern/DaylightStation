@@ -494,6 +494,9 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
           onClose={() => { log.info('preview.close', { index: item.index }); setPreviewOpen(false); }}
           title={item.label || 'Preview'}
           centered
+          // 980 is sized to hold AdminPreviewPlayer's 960px frame surface
+          // (PREVIEW_WIDTH in previewFrame.js) plus "xs" padding. Shrink it and
+          // the preview overflows.
           size={item.action === 'Display' ? 'lg' : item.action === 'Open' ? 'xl' : 980}
           padding="xs"
           styles={{ content: { marginLeft: 'var(--app-shell-navbar-width, 250px)' } }}

@@ -26,8 +26,11 @@
 .admin-preview-player__video-inner {
   width: var(--preview-screen-width, 1280px);
   height: var(--preview-screen-height, 720px);
+  /* `zoom`, deliberately — NOT `transform: scale()`. Zoom shrinks the box's
+     reserved layout space along with its contents; a transform would paint it
+     smaller while still reserving the full 1920/1280 in the flow. There is no
+     transform-origin here because there is no transform. */
   zoom: var(--preview-scale, 0.75);
-  transform-origin: 0 0;
 }
 
 .admin-preview-player__queue-bar {
