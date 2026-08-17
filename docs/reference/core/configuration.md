@@ -423,10 +423,10 @@ Secrets only. No hosts or config.
 
 ```yaml
 # household/auth/plex.yml
-token: ***REMOVED***
+token: xxxxx
 
 # household/auth/homeassistant.yml
-token: eyJhbGciOiJIUzI1NiIs...
+token: xxxxx
 ```
 
 ---
