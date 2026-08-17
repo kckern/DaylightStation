@@ -159,3 +159,68 @@ describe('YamlConfigFileService — happy path', () => {
     expect(() => service.readFile('system/config/does-not-exist.yml')).toThrow();
   });
 });
+
+// task-13 review, Important 4: the colocated ALLOWED_FILES list first
+// shipped with only 3 of the 11 files colocation actually created, silently
+// 403ing the other 8 (school, media, livestream, newsreporter,
+// notifications, agents, content-prefixes) even though they were reachable
+// through this same admin surface before the move. These tests pin BOTH
+// directions so a future edit can't silently narrow OR widen the grant:
+// every colocated config file must be reachable, and — the whole reason
+// this is a file allowlist and not a directory one — a sibling file in the
+// same domain folder (e.g. fitness/log/'s session telemetry) must still be
+// denied.
+describe('YamlConfigFileService — colocated file allowlist (task-13)', () => {
+  const colocated = [
+    'household/fitness/config.yml',
+    'household/gratitude/config.yml',
+    'household/harvest/config.yml',
+    'household/school/config.yml',
+    'household/media/config.yml',
+    'household/livestream/config.yml',
+    'household/newsreporter/config.yml',
+    'household/notifications/config.yml',
+    'household/agents/config.yml',
+    'household/media/content-prefixes.yml',
+  ];
+
+  beforeEach(() => {
+    for (const rel of colocated) write(rel, 'marker: colocated\n');
+    // A sibling file in the SAME domain folder as an allowed file, but not
+    // itself allowed — proves the grant is file-scoped, not directory-scoped.
+    write('household/fitness/log/2026-08-16/session-abc123.yml', 'heartRate: 140\n');
+  });
+
+  it.each(colocated)('allows reading %s', (rel) => {
+    const result = service.readFile(rel);
+    expect(result.parsed).toEqual({ marker: 'colocated' });
+  });
+
+  it.each(colocated)('allows writing %s', (rel) => {
+    const res = service.writeFile(rel, { parsed: { marker: 'updated' } });
+    expect(res.ok).toBe(true);
+    expect(service.readFile(rel).parsed).toEqual({ marker: 'updated' });
+  });
+
+  it('DENIES reading a sibling telemetry file inside the same domain folder as an allowed file', () => {
+    expect(() => service.readFile('household/fitness/log/2026-08-16/session-abc123.yml')).toThrow();
+  });
+
+  it('DENIES writing a sibling telemetry file inside the same domain folder as an allowed file', () => {
+    expect(() => service.writeFile('household/fitness/log/2026-08-16/session-abc123.yml', { raw: 'heartRate: 999\n' }))
+      .toThrow();
+    expect(fs.readFileSync(path.join(dataRoot, 'household/fitness/log/2026-08-16/session-abc123.yml'), 'utf8'))
+      .toBe('heartRate: 140\n');
+  });
+
+  it('lists every colocated file with masked:false', () => {
+    const { files } = service.listFiles();
+    for (const rel of colocated) {
+      const entry = files.find(f => f.path === rel);
+      expect(entry, `expected ${rel} in listFiles()`).toBeDefined();
+      expect(entry.masked).toBe(false);
+    }
+    // The telemetry sibling must NOT appear in the listing at all.
+    expect(files.find(f => f.path === 'household/fitness/log/2026-08-16/session-abc123.yml')).toBeUndefined();
+  });
+});

@@ -39,12 +39,26 @@ const ALLOWED_DIRS = [
 ];
 
 // Individual files users can read/write even though they sit outside
-// ALLOWED_DIRS — the app configs task-13 colocated with their own domain
-// folder. Deliberately a file allowlist, not a directory one (see header).
+// ALLOWED_DIRS — every app config task-13 colocated with its own domain
+// folder. Deliberately a file allowlist, not a directory one (see header) —
+// e.g. a directory grant on household/fitness would also expose
+// household/fitness/log/, a 2000+-entry session-telemetry tree.
+// task-13 review, Important 4: this list first shipped with only 3 of the
+// 11 files colocation actually created, silently 403ing the other 8 in the
+// admin YAML browser even though they were reachable before the move. Keep
+// this in sync with every household/<app>/config.yml (and the two
+// non-`config.yml`-named colocated files) task-13 created.
 const ALLOWED_FILES = [
   'household/fitness/config.yml',
   'household/gratitude/config.yml',
   'household/harvest/config.yml',
+  'household/school/config.yml',
+  'household/media/config.yml',
+  'household/livestream/config.yml',
+  'household/newsreporter/config.yml',
+  'household/notifications/config.yml',
+  'household/agents/config.yml',
+  'household/media/content-prefixes.yml',
 ];
 
 // Directories that appear in file listings but cannot be read or written
