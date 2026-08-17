@@ -23,10 +23,23 @@ const SCREENS = { screens: [
   { id: 'portal', name: 'Portal', resolution: { width: 1280, height: 800 } },
 ] };
 
+const QUEUE_ITEMS = { items: [
+  { id: 'singalong:hymn/277', title: 'As I Search the Holy Scriptures' },
+  { id: 'singalong:hymn/2', title: 'The Spirit of God' },
+] };
+
 function renderPreview() {
   return render(
     <MantineProvider>
       <AdminPreviewPlayer contentId="singalong:hymn/277" action="Play" onClose={vi.fn()} />
+    </MantineProvider>
+  );
+}
+
+function renderQueuePreview() {
+  return render(
+    <MantineProvider>
+      <AdminPreviewPlayer contentId="list:hymns" action="Queue" onClose={vi.fn()} />
     </MantineProvider>
   );
 }
@@ -67,7 +80,15 @@ describe('AdminPreviewPlayer frame', () => {
     });
   });
 
-  it('does not strand the selection on the fallback id once real screens arrive', async () => {
+  // Renamed after review. This was called "does not strand the selection on the
+  // fallback id", but mutation testing showed it catches no stranding case
+  // uniquely — a seeded-selection implementation still passes it, because the
+  // `|| screens[0]` fallback rescues the dead id anyway. Stranding is only
+  // observable when the selection should resolve somewhere OTHER than screens[0],
+  // which requires a stored id — that is the persistence test's scenario, and
+  // the stranding rationale now lives there. What this test does pin, and pins
+  // alone, is the in-flight-fallback → resolved-screen transition.
+  it('swaps from the in-flight fallback frame to the resolved screen once the API settles', async () => {
     // Before the API answers, `screens` holds only FALLBACK_SCREEN, whose id
     // ('__fallback') is absent from the real list that replaces it. Selection is
     // DERIVED (find-then-fall-back), never copied into state from `screens[0]`,
@@ -90,6 +111,10 @@ describe('AdminPreviewPlayer frame', () => {
     });
   });
 
+  // This is also where stranding is actually observable: the stored id makes the
+  // selection resolve somewhere other than screens[0], so an implementation that
+  // seeds state from screens[0].id (stranding '__fallback' from the in-flight
+  // window) fails here rather than silently passing.
   it('remembers the chosen screen across mounts', async () => {
     const first = renderPreview();
     await waitFor(() => expect(screen.getByLabelText('Preview at screen')).toBeTruthy());
@@ -109,5 +134,30 @@ describe('AdminPreviewPlayer frame', () => {
       expect(root.style.getPropertyValue('--preview-screen-width')).toBe('1280px');
     });
     expect(screen.getByLabelText('Preview at screen').value).toBe('portal');
+  });
+
+  // Queue is a first-class preview mode with its own render path. Without this,
+  // deleting style={frameVars} from the Queue branch alone leaves the whole
+  // suite green — and since a wrong-but-plausible frame size is invisible by
+  // construction, an untested branch is where a regression goes unnoticed.
+  it('applies the frame to the Queue render path too', async () => {
+    daylightAPI.mockImplementation((path) => (
+      String(path).startsWith('api/v1/queue')
+        ? Promise.resolve(QUEUE_ITEMS)
+        : Promise.resolve(SCREENS)
+    ));
+
+    const { container } = renderQueuePreview();
+
+    await waitFor(() => {
+      expect(container.querySelector('.admin-preview-player__video-inner')).toBeTruthy();
+    });
+    await waitFor(() => {
+      const root = container.querySelector('.admin-preview-player');
+      expect(root.style.getPropertyValue('--preview-screen-width')).toBe('960px');
+      expect(root.style.getPropertyValue('--preview-scale')).toBe('1');
+    });
+    // Confirm we really are on the queue branch, not silently on Play mode.
+    expect(container.querySelector('.admin-preview-player__queue-bar')).toBeTruthy();
   });
 });
