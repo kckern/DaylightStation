@@ -242,6 +242,13 @@
     font-size: 2rem;
     margin-bottom: 2rem;
     .stanza {
+      // Shrink-wrap so useCenterByWidest measures the natural line width rather
+      // than the full container — a block-level stanza always reports the
+      // container width, which made the centring a no-op and left every hymn
+      // flush left. Deliberately NOT `display: inline-block`, which is what
+      // `.poetry-text > div` uses: inline-block stanzas flow side by side
+      // whenever two fit on a row. A shrink-wrapped block still stacks.
+      width: fit-content;
       margin-bottom: 1.5rem;
       p {
         margin: 0;
