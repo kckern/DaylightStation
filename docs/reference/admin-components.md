@@ -331,3 +331,28 @@ function RawEditor({ filePath }) {
 ### Destructive actions
 
 Use `ConfirmModal` before any delete or irreversible operation. Pair it with `CrudTable`'s `confirmDelete` prop for row-level deletes.
+
+## Preview Player
+
+`AdminPreviewPlayer` (`frontend/src/modules/Admin/Preview/`) mounts the real
+`Player` inside the admin UI so a list entry can be checked without walking to
+the kiosk.
+
+Its frame imitates a chosen screen rather than picking a convenient size. The
+inner box is laid out at that screen's exact `resolution` in CSS px and then
+`zoom`ed down to the 960px preview surface (`previewFrame.js`). That is the only
+way the preview can be trusted for type size: the Player is sized entirely in
+`rem` against an unmodified 16px root, so it renders honestly only inside a box
+with the same CSS-pixel count the kiosk has. Before this, the preview hardcoded
+1920x1080 at `zoom: 0.5` — the right visual size at the wrong layout size, which
+rendered every glyph half-size against a 960x540 screen.
+
+Note the two coordinate spaces when debugging: under `zoom`, `offsetWidth` and
+`clientHeight` report **unzoomed layout px** while `getBoundingClientRect()`
+reports **zoomed visual px**.
+
+`usePreviewScreens` loads the previewable screens (those declaring a positive
+resolution) and shares its guard, `isPreviewableResolution`, with
+`previewFrameVars` — so the picker can never offer a screen whose frame vars
+would come back `null`. The selected screen persists in `localStorage` under
+`daylight.adminPreview.screenId`.
