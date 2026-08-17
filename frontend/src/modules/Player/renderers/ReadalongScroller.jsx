@@ -122,7 +122,12 @@ export function ReadalongScroller({
   const CSS_TYPE_MAP = { scripture: 'scriptures' };
   const cssType = CSS_TYPE_MAP[rawCssType] || rawCssType;
 
-  // Apply style as CSS variables
+  // Apply style as CSS variables.
+  //
+  // NOTE: --font-size and --font-family are inert — no rule anywhere reads
+  // them. Only `.poetry-text` reads --color/--text-align/--background, so for
+  // scripture and talk content all five are dead. Type size comes from the
+  // per-type rules in styles/ContentScroller.scss.
   const cssVars = {
     '--font-family': data.style?.fontFamily || 'sans-serif',
     '--font-size': data.style?.fontSize || '1.2rem',

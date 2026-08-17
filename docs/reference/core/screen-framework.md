@@ -305,6 +305,17 @@ backend/src/4_api/v1/routers/screens.mjs   # GET /screens, GET /screens/:id
 
 Reads YAML from `data/household/screens/{id}.yml`, validates `screen` field, returns JSON.
 
+`GET /screens` returns `{ screens: [{ id, name, resolution }] }` — one entry per
+config file, carrying each screen's declared CSS-pixel `resolution` so a caller
+that must render at a screen's scale sizes itself from one request. `resolution`
+is `null` when the screen declares none (both e-ink panels) or declares a
+non-positive one. A config file that fails to parse degrades to
+`{ id, name: id, resolution: null }` and logs `screens.list.unreadable` with the
+error `code`; it never fails the whole list.
+
+`GET /screens/:id` returns the full config for one screen, with any
+`screensaver.preset` reference expanded into resolved props.
+
 ### Config
 
 ```
