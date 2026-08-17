@@ -10,7 +10,7 @@
 //   node cli/migrate-list-configs.mjs --auto                 # Auto-detect path from .env
 //   node cli/migrate-list-configs.mjs --auto --dry-run       # Auto-detect + preview
 //
-// The <lists-path> should point to household/config/lists/ containing menus/, programs/, watchlists/
+// The <lists-path> should point to content/lists/ containing menus/, programs/, watchlists/
 
 import { readFileSync, writeFileSync, readdirSync, existsSync } from 'fs';
 import { resolve, join } from 'path';
@@ -32,13 +32,13 @@ function findListsPath() {
       const envContent = readFileSync(envPath, 'utf8');
       const match = envContent.match(/DAYLIGHT_BASE_PATH=(.+)/);
       if (match) {
-        return join(match[1].trim(), 'data', 'household', 'config', 'lists');
+        return join(match[1].trim(), 'data', 'content', 'lists');
       }
     }
 
     // Try DAYLIGHT_BASE_PATH env var
     if (process.env.DAYLIGHT_BASE_PATH) {
-      return join(process.env.DAYLIGHT_BASE_PATH, 'data', 'household', 'config', 'lists');
+      return join(process.env.DAYLIGHT_BASE_PATH, 'data', 'content', 'lists');
     }
 
     console.error('Could not auto-detect lists path. Set DAYLIGHT_BASE_PATH or provide path argument.');

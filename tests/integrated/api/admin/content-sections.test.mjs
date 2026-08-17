@@ -34,13 +34,15 @@ function testErrorHandler(err, req, res, _next) {
   res.status(status).json({ ok: false, error: err.message, code: err.code });
 }
 
-function buildApp(householdDir) {
+function buildApp(dataDir) {
   const a = express();
   a.use(express.json());
 
   const router = createAdminContentRouter({
+    // content/lists is a top-level tree, sibling to household/ — NOT
+    // household-scoped, so YamlListDatastore resolves it off getDataDir().
     userDataService: {
-      getHouseholdDir: () => householdDir,
+      getDataDir: () => dataDir,
     },
     configService: {
       getDefaultHouseholdId: () => 'test-household',
@@ -60,7 +62,7 @@ function buildApp(householdDir) {
 
 /** Write a YAML file directly into the temp lists directory */
 function writeListYaml(type, name, data) {
-  const dir = path.join(tmpDir, 'config', 'lists', type);
+  const dir = path.join(tmpDir, 'content', 'lists', type);
   fs.mkdirSync(dir, { recursive: true });
   const filePath = path.join(dir, `${name}.yml`);
   fs.writeFileSync(filePath, yaml.dump(data), 'utf8');
@@ -68,7 +70,7 @@ function writeListYaml(type, name, data) {
 
 /** Read a YAML file from the temp lists directory */
 function readListYaml(type, name) {
-  const filePath = path.join(tmpDir, 'config', 'lists', type, `${name}.yml`);
+  const filePath = path.join(tmpDir, 'content', 'lists', type, `${name}.yml`);
   if (!fs.existsSync(filePath)) return null;
   return yaml.load(fs.readFileSync(filePath, 'utf8'));
 }

@@ -46,7 +46,7 @@ function loadDynamicSamples() {
   const DATA_PATH = getDataPath();
   if (!DATA_PATH) return { menus: [], watchlists: [], programs: [] };
 
-  const LISTS_PATH = `${DATA_PATH}/household/config/lists`;
+  const LISTS_PATH = `${DATA_PATH}/content/lists`;
   if (!existsSync(LISTS_PATH)) return { menus: [], watchlists: [], programs: [] };
 
   const samples = { menus: [], watchlists: [], programs: [] };

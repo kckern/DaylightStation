@@ -52,7 +52,8 @@ Options:
 // =============================================================================
 
 const SUBDIRS = ['menus', 'programs', 'watchlists'];
-const listsRoot = path.join(DATA_PATH, 'household', 'config', 'lists');
+// content/lists is a top-level tree, sibling to household/ — NOT household-scoped.
+const listsRoot = path.join(DATA_PATH, 'content', 'lists');
 
 let totalFiles = 0;
 let totalChanged = 0;

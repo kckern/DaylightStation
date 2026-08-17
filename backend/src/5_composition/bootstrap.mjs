@@ -233,7 +233,6 @@ import { NutribotContainer } from '#apps/nutribot/NutribotContainer.mjs';
 import { NutriBotConfig } from '#apps/nutribot/config/NutriBotConfig.mjs';
 import { normalizeScaleNutribotConfig } from '#apps/nutribot/lib/scaleNutribotConfig.mjs';
 import { dataService } from '#system/config/index.mjs';
-import { toFolderName } from '#system/config/configLoader.mjs';
 import { YamlNutriListDatastore } from '#adapters/persistence/yaml/YamlNutriListDatastore.mjs';
 import { NutribotInputRouter } from '#adapters/nutribot/index.mjs';
 import { createNutribotRouter } from '#api/v1/routers/nutribot.mjs';
@@ -514,7 +513,7 @@ export function getMessagingAdapter(householdId, appName) {
  * @param {string} [config.plex.host] - Plex server URL
  * @param {string} [config.plex.token] - Plex auth token
  * @param {string} [config.dataPath] - Path to data files (for LocalContentAdapter)
- * @param {string} [config.listDataPath] - Root data path for ListAdapter (household/config/lists/)
+ * @param {string} [config.listDataPath] - Root data path for ListAdapter (content/lists/)
  * @param {string} [config.watchlistPath] - Path to watchlist YAML (for ListAdapter)
  * @param {Object} [config.canvas] - Canvas (displayable art) configuration
  * @param {Object} [config.canvas.filesystem] - Filesystem canvas config
@@ -587,7 +586,7 @@ export function createContentRegistry(config, deps = {}) {
 
   // Register ListAdapter for menus/programs/watchlists as content sources
   // Handles watchlist: prefix (and menu:, program:, query:)
-  // Uses listDataPath (root data path) for household/config/lists/*, not dataPath (content/)
+  // Uses listDataPath (root data path) for content/lists/*
   const listDataPath = config.listDataPath || config.dataPath;
   if (listDataPath) {
     const listAdapter = new ListAdapter({
@@ -609,13 +608,12 @@ export function createContentRegistry(config, deps = {}) {
   }
 
   // Register QueryAdapter for saved queries (query:dailynews, etc.)
-  // Reads query YAML files from household/config/lists/queries/ and user config/queries/
+  // Reads query YAML files from content/lists/queries/ and user config/queries/
   let savedQueryService = null;
   if (listDataPath) {
-    // configService isn't a required dep here (unit tests call createContentRegistry
-    // with listDataPath but no configService), so resolve the default-household
-    // folder name via the SSOT resolver instead of hardcoding the literal.
-    const queriesDir = path.join(listDataPath, toFolderName('default'), 'config', 'lists', 'queries');
+    // content/ is a top-level tree, sibling to household/ — NOT household-scoped,
+    // so no default-household folder name resolution is needed here.
+    const queriesDir = path.join(listDataPath, 'content', 'lists', 'queries');
 
     // Build list of user query directories from data path
     // listDataPath is the root data dir (contains household/ and users/)

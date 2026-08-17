@@ -14,7 +14,7 @@ export default {
     listsBasePath: {
       type: 'string',
       required: false,
-      description: 'Base path for list YAML files (defaults to data/household/config/lists)'
+      description: 'Base path for list YAML files (defaults to data/content/lists)'
     }
   }
 };

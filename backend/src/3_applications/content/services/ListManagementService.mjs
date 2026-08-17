@@ -168,7 +168,7 @@ export class ListManagementService {
       ok: true,
       type,
       list: listName,
-      path: `config/lists/${type}/${listName}.yml`
+      path: `content/lists/${type}/${listName}.yml`
     };
   }
 

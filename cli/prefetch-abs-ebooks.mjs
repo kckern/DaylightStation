@@ -65,13 +65,14 @@ const username = 'user_1';
 const userQueriesPath = path.join(dataDir, 'users', username, 'config', 'queries');
 let absQueries = [];
 
-// Household queries
-const householdQueriesPath = configService.getHouseholdPath('config/lists/queries');
+// Household queries (content/lists is a top-level tree, sibling to
+// household/ — NOT household-scoped)
+const householdQueriesPath = dataService.content.resolveDir('lists/queries');
 if (householdQueriesPath && existsSync(householdQueriesPath)) {
   const files = readdirSync(householdQueriesPath).filter(f => f.endsWith('.yml'));
   for (const file of files) {
     const key = file.replace('.yml', '');
-    const data = dataService.household.read(`config/lists/queries/${key}`);
+    const data = dataService.content.read(`lists/queries/${key}`);
     if (data?.type === 'abs-ebooks') absQueries.push(data);
   }
 }

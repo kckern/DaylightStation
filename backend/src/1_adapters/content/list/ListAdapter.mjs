@@ -112,9 +112,9 @@ function formatListTitle(name) {
  * Prefixes and paths:
  * | Prefix      | Path                                           |
  * |-------------|------------------------------------------------|
- * | menu:       | data/household/config/lists/menus/{name}.yml   |
- * | program:    | data/household/config/lists/programs/{name}.yml|
- * | watchlist:  | data/household/config/lists/watchlists/{name}.yml|
+ * | menu:       | data/content/lists/menus/{name}.yml            |
+ * | program:    | data/content/lists/programs/{name}.yml         |
+ * | watchlist:  | data/content/lists/watchlists/{name}.yml       |
  *
  * ID format: {prefix}:{name}
  * Examples: menu:fhe, program:music-queue, watchlist:kids-movies
@@ -233,13 +233,11 @@ export class ListAdapter {
    * @returns {string}
    */
   _getListPath(listType, name) {
-    const householdSuffix = this.householdId ? `-${this.householdId}` : '';
-
-    // Try exact match first (household-specific, then default)
-    for (const base of [`household${householdSuffix}`, 'household']) {
-      const exact = path.join(this.dataPath, base, 'config', 'lists', listType, `${name}.yml`);
-      if (fileExists(exact)) return exact;
-    }
+    // content/lists is a top-level tree, sibling to household/ — NOT
+    // household-scoped, so there is a single lookup path (no per-household
+    // fallback loop).
+    const exact = path.join(this.dataPath, 'content', 'lists', listType, `${name}.yml`);
+    if (fileExists(exact)) return exact;
 
     // Try case-insensitive match in the target directory
     const caseMatch = this._findFileInsensitive(listType, name);
@@ -247,19 +245,14 @@ export class ListAdapter {
 
     // For watchlist: prefix, fall back to menus/ directory (backward compat with FolderAdapter)
     if (listType === 'watchlists') {
-      for (const base of [`household${householdSuffix}`, 'household']) {
-        const menuPath = path.join(this.dataPath, base, 'config', 'lists', 'menus', `${name}.yml`);
-        if (fileExists(menuPath)) return menuPath;
-      }
+      const menuPath = path.join(this.dataPath, 'content', 'lists', 'menus', `${name}.yml`);
+      if (fileExists(menuPath)) return menuPath;
       const menuCaseMatch = this._findFileInsensitive('menus', name);
       if (menuCaseMatch) return menuCaseMatch;
     }
 
-    // Return default path (will fail gracefully in _loadList). Uses the
-    // household-scoped folder name (same resolution as the lookup loops above)
-    // rather than a hardcoded 'household', so multi-household installs report
-    // the correct missing path.
-    return path.join(this.dataPath, `household${householdSuffix}`, 'config', 'lists', listType, `${name}.yml`);
+    // Return default path (will fail gracefully in _loadList).
+    return exact;
   }
 
   /**
@@ -271,17 +264,13 @@ export class ListAdapter {
    */
   _findFileInsensitive(listType, name) {
     const nameLower = name.toLowerCase();
-    const householdSuffix = this.householdId ? `-${this.householdId}` : '';
+    const dir = path.join(this.dataPath, 'content', 'lists', listType);
+    if (!dirExists(dir)) return null;
 
-    for (const base of [`household${householdSuffix}`, 'household']) {
-      const dir = path.join(this.dataPath, base, 'config', 'lists', listType);
-      if (!dirExists(dir)) continue;
-
-      const entries = listEntries(dir);
-      for (const entry of entries) {
-        if (entry.toLowerCase() === `${nameLower}.yml` || entry.toLowerCase() === `${nameLower}.yaml`) {
-          return path.join(dir, entry);
-        }
+    const entries = listEntries(dir);
+    for (const entry of entries) {
+      if (entry.toLowerCase() === `${nameLower}.yml` || entry.toLowerCase() === `${nameLower}.yaml`) {
+        return path.join(dir, entry);
       }
     }
     return null;
@@ -293,24 +282,11 @@ export class ListAdapter {
    * @returns {string}
    */
   _getListDir(listType) {
-    // Check household-specific path first
-    const householdPath = path.join(
-      this.dataPath,
-      `household${this.householdId ? `-${this.householdId}` : ''}`,
-      'config',
-      'lists',
-      listType
-    );
-
-    if (dirExists(householdPath)) {
-      return householdPath;
-    }
-
-    // Fall back to default household path
+    // content/lists is a top-level tree, sibling to household/ — NOT
+    // household-scoped.
     return path.join(
       this.dataPath,
-      'household',
-      'config',
+      'content',
       'lists',
       listType
     );
