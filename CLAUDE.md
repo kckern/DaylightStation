@@ -359,35 +359,43 @@ In browser console: `window.DAYLIGHT_LOG_LEVEL = 'debug'` or call `configure({ l
 
 **Query the log store first. `docker logs` is the fallback, not the default.**
 
-Logs ship to a log-ingestion container (`victoria-logs` on `kckern-net`, port `9428`,
-7-day retention). It indexes every field of our structured events, so it answers
-"what happened in the piano app at 16:54" — which grepping a file or scrolling
-`docker logs` does not. No API key: it is LAN-only with no auth, reached over SSH.
+Logs ship to a log-ingestion container (7-day retention). It indexes every field
+of our structured events, so it answers "what happened in the piano app at
+16:54" — which grepping a file or scrolling `docker logs` does not.
 
-**Human:** open `http://{env.prod_host}:9428` for the built-in web UI.
-
-**Agent:** query over SSH. Results come back as **JSON Lines**, one object per line.
+**`https://logs.kckern.net`** — web UI for a human, HTTP API for an agent.
+**No API key needed.** It has no auth of its own; reachability is the existing
+Cloudflare perimeter (home IP / work VPN), enforced by a `return 444` gate for
+any other source. Query it directly — no SSH required. Results come back as
+**JSON Lines**, one object per line.
 
 ```bash
 # Errors in the last hour
-ssh {env.prod_host} "curl -s http://localhost:9428/select/logsql/query \
-  -d 'query=level:error AND _time:1h' -d 'limit=50'"
+curl -s https://logs.kckern.net/select/logsql/query \
+  -d 'query=level:error AND _time:1h' -d 'limit=50'
 
 # One subsystem only — this is the main reason the store exists
-ssh {env.prod_host} "curl -s http://localhost:9428/select/logsql/query \
-  -d 'query=context.app:piano AND _time:24h' -d 'limit=100'"
+curl -s https://logs.kckern.net/select/logsql/query \
+  -d 'query=context.app:piano AND _time:24h' -d 'limit=100'
 
 # A specific event name
-ssh {env.prod_host} "curl -s http://localhost:9428/select/logsql/query \
-  -d 'query=\"plex.stream.mint\" AND _time:6h'"
+curl -s https://logs.kckern.net/select/logsql/query \
+  -d 'query="plex.stream.mint" AND _time:6h'
 
 # Nested data.* and context.* fields are indexed and directly filterable
-ssh {env.prod_host} "curl -s http://localhost:9428/select/logsql/query \
-  -d 'query=context.module:weekly-review-immich AND _time:2h'"
+curl -s https://logs.kckern.net/select/logsql/query \
+  -d 'query=context.module:weekly-review-immich AND _time:2h'
+
+# Count events by subsystem
+curl -s https://logs.kckern.net/select/logsql/query \
+  -d 'query=_time:24h | stats count() by (context.app)'
 
 # Live tail (like tail -f)
-ssh {env.prod_host} "curl -sN http://localhost:9428/select/logsql/tail -d 'query=level:error'"
+curl -sN https://logs.kckern.net/select/logsql/tail -d 'query=level:error'
 ```
+
+If the hostname is unreachable (off-network), go in over SSH instead:
+`ssh {env.prod_host} "curl -s http://localhost:9428/select/logsql/query -d 'query=...'"`
 
 **Filter keys** (set by `0_system/logging/logger.mjs`, flattened on ingest):
 
