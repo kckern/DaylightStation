@@ -6,7 +6,8 @@ import { fileURLToPath } from 'url';
 /**
  * House rule (audit F2): pictorial button content is inline SVG, NEVER a
  * Unicode symbol glyph — the tablet WebView renders many of them as tofu.
- * This test scans PianoKiosk JSX for the banned glyphs. Files fixed by the
+ * This test scans PianoKiosk JSX (plus the shared Piano/ui set the kiosk
+ * renders its button faces from) for the banned glyphs. Files fixed by the
  * wave-1 migration must STAY clean; surfaces awaiting later waves are grand-
  * fathered below and the list must only ever SHRINK.
  */
@@ -30,14 +31,19 @@ const GRANDFATHERED = new Set([
 ]);
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+// The icon set lives outside the kiosk (modules/Piano/ui/icons) but supplies the
+// kiosk's button faces, so it stays inside this guard.
+const SHARED_UI = join(ROOT, '..', 'ui');
 const jsxFiles = [];
-(function walk(dir) {
+function walk(dir) {
   for (const name of readdirSync(dir)) {
     const p = join(dir, name);
     if (statSync(p).isDirectory()) walk(p);
     else if (name.endsWith('.jsx') && !name.includes('.test.')) jsxFiles.push(p);
   }
-})(ROOT);
+}
+walk(ROOT);
+walk(SHARED_UI);
 
 const stripComments = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 

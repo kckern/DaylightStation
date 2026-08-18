@@ -12,7 +12,7 @@ import { usePianoUser } from '../../PianoUserContext.jsx';
 import { isPersistentUser } from '../../pianoUser.js';
 import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
 import { useStudioPlayback } from './useStudioPlayback.js';
-import Icon from '../../icons/Icon.jsx';
+import Icon from '../../../ui/icons/Icon.jsx';
 import { SkeletonStage } from '../../Skeleton.jsx';
 
 const SPEEDS = [0.5, 1, 1.5];

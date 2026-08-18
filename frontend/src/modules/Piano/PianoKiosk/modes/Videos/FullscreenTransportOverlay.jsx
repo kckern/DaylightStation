@@ -1,4 +1,4 @@
-import Icon from '../../icons/Icon.jsx';
+import Icon from '../../../ui/icons/Icon.jsx';
 
 /**
  * Tap-summoned transport for fullscreen playback. The chrome strip is offscreen

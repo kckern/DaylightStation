@@ -9,7 +9,7 @@ import SoundPanel from './SoundPanel.jsx';
 import OperatorDrawer from './OperatorDrawer.jsx';
 import PianoLinkBanner from './PianoLinkBanner.jsx';
 import PianoUserChip from './PianoUserChip.jsx';
-import Icon from './icons/Icon.jsx';
+import Icon from '../ui/icons/Icon.jsx';
 
 /**
  * PianoChrome — always-on header. Left: a breadcrumb trail `home › mode › …deeper

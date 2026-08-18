@@ -14,7 +14,7 @@ import { resolveScoreGroups, groupSlug, groupIndexBySlug } from '../PianoKiosk/m
 import { prettyTitle } from '../PianoKiosk/modes/SheetMusic/scoreTitle.js';
 import useMetronomeClick from '../PianoKiosk/modes/SheetMusic/useMetronomeClick.js';
 import TempoSheet from '../PianoKiosk/transport/TempoSheet.jsx';
-import Icon from '../PianoKiosk/icons/Icon.jsx';
+import Icon from '../ui/icons/Icon.jsx';
 import { buildHeroChart, clampHeroTempo, heroAccuracy, retimeHeroChart } from './heroChart.js';
 import { heroMetronomePlan } from './heroMetronome.js';
 import { heroThresholdState } from './heroThreshold.js';

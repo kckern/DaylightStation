@@ -11,7 +11,7 @@ vi.mock('../../PianoMidiContext.jsx', () => ({
 // Heavy presentational children are irrelevant here; stub the waterfall/keys/icon.
 vi.mock('../../../components/NoteWaterfall.jsx', () => ({ NoteWaterfall: () => <div data-testid="waterfall" /> }));
 vi.mock('../../../components/PianoKeyboard.jsx', () => ({ PianoKeyboard: () => <div data-testid="keys" /> }));
-vi.mock('../../icons/Icon.jsx', () => ({ default: () => <span /> }));
+vi.mock('../../../ui/icons/Icon.jsx', () => ({ default: () => <span /> }));
 
 import StudioPlay from './StudioPlay.jsx';
 
