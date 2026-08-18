@@ -1,13 +1,17 @@
-import { useEffect, useMemo, Suspense } from 'react';
-import { configure as configureLogger } from '../../lib/logging/Logger.js';
+import { useCallback, useEffect, useMemo, Suspense } from 'react';
+import { configure as configureLogger, getLogger } from '../../lib/logging/Logger.js';
 import { PianoKeyboard } from './components/PianoKeyboard';
 import { NoteWaterfall } from './components/NoteWaterfall';
 import { TheoryPanel } from './components/TheoryPanel';
 import { useMidiSubscription } from './useMidiSubscription';
 import { computeKeyboardRange } from './noteUtils.js';
 import './PianoVisualizer.scss';
-import { useGameActivation } from './useGameActivation.js';
-import { getGameEntry } from './gameRegistry.js';
+import { getGameEntry, getGameIds } from './gameRegistry.js';
+import { buildLauncherSlots } from './game-platform/launcher/launcherNotes.js';
+import { useNoteLauncher } from './game-platform/launcher/useNoteLauncher.js';
+import NoteLauncher from './game-platform/launcher/NoteLauncher.jsx';
+import HoldRing from './game-platform/launcher/HoldRing.jsx';
+import GameBoundary from './game-platform/host/GameBoundary.jsx';
 import { usePianoConfig } from './usePianoConfig.js';
 import { useInactivityTimer } from './useInactivityTimer.js';
 import { useSessionTracking } from './useSessionTracking.js';
@@ -25,22 +29,52 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
   const { spamState, warningVisible, blackoutRemaining, spamEventCount } = useSpamDetection(activeNotes, noteHistory);
   const { gamesConfig } = usePianoConfig();
 
-  const activation = useGameActivation(activeNotes, gamesConfig, initialGame);
+  // Launcher slots come from the REGISTRY, not the games config: config only
+  // ever listed the five games that had activation combos, which is why chess,
+  // connect-four and checkers were unreachable here. They take no config —
+  // chess defaults gameConfig to null, the other two never read it.
+  //
+  // Memoized because the slot array is an effect dependency inside the hook:
+  // rebuilt inline it would be a new identity on every render, re-running the
+  // selection effect at MIDI rates.
+  const { slots, dropped } = useMemo(
+    () => buildLauncherSlots(getGameIds().map((id) => ({ id, ...getGameEntry(id) }))),
+    []
+  );
 
-  const activeGameEntry = activation.activeGameId ? getGameEntry(activation.activeGameId) : null;
+  const { isOpen: launcherOpen, activeGameId, isHolding, dismiss, exitGame, timeoutMs } =
+    useNoteLauncher({ activeNotes, slots, initialGame });
+
+  const activeGameEntry = activeGameId ? getGameEntry(activeGameId) : null;
   const isFullscreenGame = activeGameEntry?.layout === 'replace';
 
-  const { inactivityState, countdownProgress } = useInactivityTimer(activeNotes, noteHistory, isFullscreenGame, onClose);
+  // More released games than launcher keys: the extras are silently unreachable,
+  // so say so rather than letting the row read as "everything is here".
+  useEffect(() => {
+    if (dropped.length === 0) return;
+    getLogger().child({ component: 'piano-launcher' }).warn('launcher.slots-overflow', { dropped });
+  }, [dropped]);
+
+  const quitGame = useCallback(() => exitGame('game-exit'), [exitGame]);
+  const quitCrashedGame = useCallback(() => exitGame('crash'), [exitGame]);
+
+  // An open launcher counts as activity: the player is mid-decision, not idle.
+  const { inactivityState, countdownProgress } =
+    useInactivityTimer(activeNotes, noteHistory, isFullscreenGame || launcherOpen, onClose);
   const { sessionDuration } = useSessionTracking(noteHistory);
 
-  // Block escape/back while a game is actively playing
+  // Escape closes the launcher; a running game swallows it outright.
   const { registerEscapeInterceptor, unregisterEscapeInterceptor } = useScreenOverlay();
   useEffect(() => {
-    if (isFullscreenGame) {
-      registerEscapeInterceptor(() => true); // block all escapes during game
-      return () => unregisterEscapeInterceptor();
-    }
-  }, [isFullscreenGame, registerEscapeInterceptor, unregisterEscapeInterceptor]);
+    if (!isFullscreenGame && !launcherOpen) return undefined;
+    registerEscapeInterceptor(() => {
+      // Dismiss only — escape is "never mind", so it must not cost the player
+      // the game that was running underneath the launcher.
+      if (launcherOpen) dismiss('escape');
+      return true;
+    });
+    return () => unregisterEscapeInterceptor();
+  }, [isFullscreenGame, launcherOpen, dismiss, registerEscapeInterceptor, unregisterEscapeInterceptor]);
 
   // Configure root logger so child components using getLogger() directly
   // also get sessionLog: true (routes their events to the JSONL session file)
@@ -136,16 +170,33 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
         </div>
       )}
 
+      {launcherOpen && <NoteLauncher slots={slots} timeoutMs={timeoutMs} />}
+
+      {/* Sibling of the launcher, not a child: holding the combo with the
+          launcher OPEN toggles it shut and only then quits at 2s, so a ring
+          living inside the overlay would vanish at exactly the moment the
+          player needs to see that holding is doing something. */}
+      {isHolding && <HoldRing holdMs={2000} />}
+
       {isFullscreenGame && activeGameEntry?.LazyComponent && (
         <div className="tetris-fullscreen">
-          <Suspense fallback={null}>
-            <activeGameEntry.LazyComponent
-              activeNotes={activeNotes}
-              noteHistory={noteHistory}
-              gameConfig={gamesConfig?.[activation.activeGameId]}
-              onDeactivate={activation.deactivate}
-            />
-          </Suspense>
+          {/* A game that throws costs the player that game, not the office
+              screen. PianoVisualizer never had a boundary; any throw inside any
+              game blanked the whole display. */}
+          <GameBoundary
+            resetKey={activeGameId}
+            label={activeGameEntry.label ?? 'This game'}
+            onExit={quitCrashedGame}
+          >
+            <Suspense fallback={null}>
+              <activeGameEntry.LazyComponent
+                activeNotes={activeNotes}
+                noteHistory={noteHistory}
+                gameConfig={gamesConfig?.[activeGameId] ?? null}
+                onDeactivate={quitGame}
+              />
+            </Suspense>
+          </GameBoundary>
         </div>
       )}
     </div>
