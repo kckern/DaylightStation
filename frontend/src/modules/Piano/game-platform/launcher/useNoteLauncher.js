@@ -141,11 +141,22 @@ export function useNoteLauncher({ activeNotes, slots, initialGame = null, option
       return;
     }
 
+    if (held) return;
+
+    // The hold is broken the INSTANT the combo stops reading as held — the
+    // spec is "held continuously". A ragged two-hand release (top key up at
+    // 1.2s, a finger still resting on A0) must not force-quit a running game
+    // at 2s. This is deliberately separate from the latch below: cancelling
+    // the quit and re-arming the toggle are different questions.
+    if (holdTimerRef.current) {
+      clearHoldTimer();
+      setIsHolding(false);
+    }
+
     // Unlatch only once every combo key is up. Releasing one of two keys while
     // keeping the other down must not re-arm the toggle under the same press.
-    if (!held && comboLatchedRef.current && !comboNotes.some((n) => liveNotes.has(n))) {
+    if (comboLatchedRef.current && !comboNotes.some((n) => liveNotes.has(n))) {
       comboLatchedRef.current = false;
-      clearHoldTimer();
       setIsHolding(false);
     }
   }, [

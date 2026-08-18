@@ -172,6 +172,85 @@ describe('useNoteLauncher', () => {
     expect(result.current.isOpen).toBe(false);
   });
 
+  it('cancels the quit when the combo is released raggedly, one key at a time', () => {
+    // Two hands come off a piano unevenly. Letting the top key go at 1.2s
+    // while a finger still rests on A0 has BROKEN the combo — the spec says
+    // held continuously — so the running game must survive.
+    const { result, rerender } = setup();
+    rerender({ activeNotes: notes(21, 108) });
+    rerender({ activeNotes: new Map() });
+    rerender({ activeNotes: notes(60) });                   // start invaders
+    rerender({ activeNotes: new Map() });
+
+    rerender({ activeNotes: notes(21, 108) });              // press and hold
+    expect(result.current.isHolding).toBe(true);
+    act(() => { vi.advanceTimersByTime(1200); });
+
+    rerender({ activeNotes: notes(21) });                   // top key up, A0 still down
+    expect(result.current.isHolding).toBe(false);
+
+    act(() => { vi.advanceTimersByTime(3000); });
+    expect(result.current.activeGameId).toBe('invaders');   // NOT force-quit
+  });
+
+  it('keeps the running game when the combo taps the launcher shut', () => {
+    // The headline case for "dismissing preserves the game": an accidental
+    // combo mid-Tetris opens the launcher, a second combo shuts it, and
+    // Tetris is still there.
+    const { result, rerender } = setup();
+    rerender({ activeNotes: notes(21, 108) });
+    rerender({ activeNotes: new Map() });
+    rerender({ activeNotes: notes(60) });                   // start invaders
+    rerender({ activeNotes: new Map() });
+
+    rerender({ activeNotes: notes(21, 108) });              // reopen over the game
+    rerender({ activeNotes: new Map() });
+    expect(result.current.isOpen).toBe(true);
+
+    rerender({ activeNotes: notes(21, 108) });              // tap again -> close
+    expect(result.current.isOpen).toBe(false);
+    expect(result.current.activeGameId).toBe('invaders');
+  });
+
+  it('arms the quit even on the press that closed the launcher', () => {
+    // "Held for 2s quits" is true from ANY state, including the press whose
+    // tap-half shut the launcher.
+    const { result, rerender } = setup();
+    rerender({ activeNotes: notes(21, 108) });
+    rerender({ activeNotes: new Map() });
+    rerender({ activeNotes: notes(60) });                   // start invaders
+    rerender({ activeNotes: new Map() });
+    rerender({ activeNotes: notes(21, 108) });              // reopen
+    rerender({ activeNotes: new Map() });
+
+    rerender({ activeNotes: notes(21, 108) });              // this press CLOSES it...
+    expect(result.current.isOpen).toBe(false);
+    act(() => { vi.advanceTimersByTime(2000); });           // ...and keeps holding
+    expect(result.current.activeGameId).toBeNull();
+  });
+
+  it('honours every timing override passed in options', () => {
+    const { result, rerender } = renderHook(
+      ({ activeNotes }) => useNoteLauncher({
+        activeNotes,
+        slots,
+        options: { comboNotes: [36, 96], comboWindowMs: 50, timeoutMs: 5000, holdExitMs: 500 },
+      }),
+      { initialProps: { activeNotes: new Map() } }
+    );
+
+    rerender({ activeNotes: notes(21, 108) });              // the DEFAULT combo
+    expect(result.current.isOpen).toBe(false);              // ...is not this board's
+
+    rerender({ activeNotes: notes(36, 96) });               // the override combo
+    expect(result.current.isOpen).toBe(true);
+    expect(result.current.timeoutMs).toBe(5000);
+
+    act(() => { vi.advanceTimersByTime(500); });            // shorter hold window
+    expect(result.current.activeGameId).toBeNull();
+    expect(result.current.isOpen).toBe(false);
+  });
+
   it('a released combo is a tap, not a hold', () => {
     const { result, rerender } = setup();
     rerender({ activeNotes: notes(21, 108) });
