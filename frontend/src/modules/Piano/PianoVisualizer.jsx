@@ -257,7 +257,7 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
       )}
 
       {launcherOpen && !rosterNeeded && (
-        <NoteLauncher slots={slots} timeoutMs={timeoutMs} playerName={currentUserName} />
+        <NoteLauncher slots={slots} timeoutMs={timeoutMs} playerName={currentUserName} playerId={currentUser} />
       )}
 
       {/* Second level of the pick: who, then what. Same keyboard, same grammar —
@@ -269,6 +269,7 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
           showTimer={false}
           title="Who's playing? · play their key"
           playerName={currentUserName}
+          playerId={currentUser}
         />
       )}
 

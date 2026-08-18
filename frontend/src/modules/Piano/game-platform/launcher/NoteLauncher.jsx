@@ -25,7 +25,7 @@ import './NoteLauncher.scss';
  * game; everything else about the key is identical.
  */
 export default function NoteLauncher({
-  slots = [], timeoutMs = 30000, playerName = null,
+  slots = [], timeoutMs = 30000, playerName = null, playerId = null,
   title = 'Pick a game · play its key', variant = 'games', showTimer = true,
 }) {
   return (
@@ -42,9 +42,14 @@ export default function NoteLauncher({
             than implied: the office screen cannot know who sat down, and a
             silent default is how results end up under the wrong person. */}
         <span className="note-launcher__player">
-          {playerName
-            ? <><b>{playerName}</b><i>top key to change</i></>
-            : <b>Nobody yet — play the top key</b>}
+          {playerName ? (
+            <span className="note-launcher__player-row">
+              <span className="note-launcher__player-avatar">
+                <ProfileAvatar id={playerId} name={playerName} size={96} />
+              </span>
+              <span><b>{playerName}</b><i>top key to change</i></span>
+            </span>
+          ) : <b>Nobody yet — play the top key</b>}
         </span>
       </div>
 
@@ -55,24 +60,33 @@ export default function NoteLauncher({
             className={`nl-key${slot.sharpAfter ? ' has-sharp' : ''}`}
             style={{ '--key-index': i }}
           >
-            {/* Top of the key, above the notation — a face is the thing you scan
-                for, and the tip is where the note card has to be. */}
-            {slot.userId && (
-              <span className="nl-key__avatar">
-                <ProfileAvatar id={slot.userId} name={slot.label} size={200} />
-              </span>
+            {/* Two readings of the same key.
+                A PERSON is read top-down: the face first and largest, because
+                that is what you recognise across a room, then their name, then
+                the key that picks them.
+                A GAME is read from the tip up: the note card and label sit at
+                the near end with the icon last, because the top of a white key
+                is where the black keys are and nothing legible can live there. */}
+            {slot.userId ? (
+              <>
+                <span className="nl-key__avatar">
+                  <ProfileAvatar id={slot.userId} name={slot.label} size={280} />
+                </span>
+                <span className="nl-key__label">{slot.label}</span>
+                {/* The house note card: one note, its own staff, clef chosen
+                    from the pitch — the same component every addressed-board
+                    game draws on its rim. */}
+                <StaffNoteLabel midi={slot.note} />
+                <span className="nl-key__note">{slot.noteName}</span>
+              </>
+            ) : (
+              <>
+                <StaffNoteLabel midi={slot.note} />
+                <span className="nl-key__label">{slot.label}</span>
+                <span className="nl-key__note">{slot.noteName}</span>
+                <Icon name={slot.icon} className="nl-key__icon" />
+              </>
             )}
-            {/* The house note card: one note, its own staff, clef chosen from
-                the pitch — the same component every addressed-board game uses on
-                its rim (chess, checkers, Connect Four's column rail). It was a
-                grand-staff ChordStaffRenderer, which is a live-input widget:
-                two staves and far too much furniture to label one key with. */}
-            <StaffNoteLabel midi={slot.note} />
-            <span className="nl-key__label">{slot.label}</span>
-            <span className="nl-key__note">{slot.noteName}</span>
-            {/* Last in the column, so it lands at the key's tip — see the
-                `justify-content: flex-end` in NoteLauncher.scss. */}
-            {!slot.userId && <Icon name={slot.icon} className="nl-key__icon" />}
           </li>
         ))}
       </ul>
