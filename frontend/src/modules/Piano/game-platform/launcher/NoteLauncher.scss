@@ -229,12 +229,18 @@
   }
 
   // Engraved on the key face, where the eye already looks for it.
+  //
+  // INK, not the accent. `--piano-accent-text` is specified as "accent used AS
+  // text on a charcoal surface (AA)" — a key face is ivory, so the green was
+  // both the wrong surface for that token and a colour with no business on
+  // white. It reads as the staff card's own ink, which is what it labels.
   &__note {
     font-size: clamp(1rem, 1.5vw, 1.6rem);
     font-weight: 700;
     font-variant-numeric: tabular-nums;
     letter-spacing: 0.08em;
-    color: var(--brass);
+    color: var(--ebony);
+    opacity: 0.7;
   }
 }
 

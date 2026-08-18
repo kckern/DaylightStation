@@ -62,14 +62,16 @@ describe('NoteLauncher key anatomy', () => {
     { gameId: 'b', label: 'Beta', icon: 'game', note: 62, noteName: 'D4', sharpAfter: false },
   ];
 
-  it('puts the icon LAST in the key, so it lands at the tip', () => {
+  it('reads card, letter, icon, title down the key face', () => {
     const { container } = render(<NoteLauncher slots={slots} />);
     const key = container.querySelector('.nl-key');
-    const kids = [...key.children];
-    expect(kids.length).toBeGreaterThan(1);
-    // The icon is the element nearest the player's hand; a black key never
-    // covers the tip, which is why it goes there rather than mid-face.
-    expect(kids[kids.length - 1].classList.contains('nl-key__icon')).toBe(true);
+    // A leading flex spacer holds the stack clear of the black keys, so the
+    // content starts after it.
+    const kids = [...key.children].map((el) => el.className);
+    const order = kids.join(' | ');
+    // The notation and the letter it spells belong together; the icon then
+    // introduces the title rather than trailing after it.
+    expect(order).toMatch(/chess-staff-label.*nl-key__note.*nl-key__icon.*nl-key__label/);
   });
 
   it('shows the note as notation as well as a letter', () => {
