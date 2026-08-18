@@ -68,6 +68,10 @@ export function useNoteLauncher({ activeNotes, slots, initialGame = null, onRequ
   // effect re-toggles on every activeNotes change for as long as they're held.
   const comboLatchedRef = useRef(false);
   const holdTimerRef = useRef(null);
+  // The top key is BOTH half the opening combo and the "change player" key, so
+  // whether a given press means one or the other cannot be known at the instant
+  // it arrives — it depends on whether its partner shows up next.
+  const userRequestTimerRef = useRef(null);
   const timeoutTimerRef = useRef(null);
   // Notes already down are not "struck" — diffing against this is what stops a
   // held key from selecting a game the instant the launcher opens.
@@ -139,6 +143,11 @@ export function useNoteLauncher({ activeNotes, slots, initialGame = null, onRequ
 
     if (held && !comboLatchedRef.current) {
       comboLatchedRef.current = true;
+      // Its partner turned up: this was a combo, not a lone top key.
+      if (userRequestTimerRef.current) {
+        clearTimeout(userRequestTimerRef.current);
+        userRequestTimerRef.current = null;
+      }
       setIsHolding(true);
       if (isOpenRef.current) closeLauncher('combo');
       else openLauncher();
@@ -201,12 +210,23 @@ export function useNoteLauncher({ activeNotes, slots, initialGame = null, onRequ
       // so it costs no new vocabulary — and it is not a game slot, so it can
       // never be confused for one. The office screen has no other way to say
       // who is at the keyboard; the kiosk already knows.
-      // ...but only when it is played ALONE. The combo that opens this thing is
-      // lowest+highest, so the opening press itself contains the top key; without
-      // this, every open also demanded a new player.
-      if (note === comboNotes[1] && !liveNotes.has(comboNotes[0])) {
-        logger.info('launcher.user-requested', { note });
-        onRequestUserRef.current?.();
+      // ...but only when it is played ALONE, and "alone" cannot be decided yet.
+      // Two keys struck together almost never land in one event: if the TOP key
+      // registers a few milliseconds before the bottom one, it looks exactly
+      // like a lone press. Checking `!liveNotes.has(comboNotes[0])` catches only
+      // the order that happens to arrive bottom-first, which is why the combo
+      // still demanded a new player half the time (logged: launcher.dismissed
+      // {combo} and launcher.user-requested {103} in the same second).
+      //
+      // So decide LATE: wait out the same window the combo itself is allowed,
+      // and let the combo cancel this if its partner turns up.
+      if (note === comboNotes[1]) {
+        if (userRequestTimerRef.current) clearTimeout(userRequestTimerRef.current);
+        userRequestTimerRef.current = setTimeout(() => {
+          userRequestTimerRef.current = null;
+          logger.info('launcher.user-requested', { note });
+          onRequestUserRef.current?.();
+        }, comboWindowMs);
         return;
       }
       const slot = slotForNote(slots, note);
@@ -215,12 +235,13 @@ export function useNoteLauncher({ activeNotes, slots, initialGame = null, onRequ
       closeLauncher('selected');
       return;
     }
-  }, [liveNotes, isOpen, selectionPaused, slots, comboNotes, closeLauncher, setGame, logger]);
+  }, [liveNotes, isOpen, selectionPaused, slots, comboNotes, comboWindowMs, closeLauncher, setGame, logger]);
 
   // ─── Unmount: no timer outlives the hook ──────────────────────────────────
   useEffect(() => () => {
     clearHoldTimer();
     clearTimeoutTimer();
+    if (userRequestTimerRef.current) clearTimeout(userRequestTimerRef.current);
   }, [clearHoldTimer, clearTimeoutTimer]);
 
   return { launchNonce, isOpen, activeGameId, isHolding, dismiss, exitGame, timeoutMs };
