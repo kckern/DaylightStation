@@ -387,16 +387,19 @@ export function buildLauncherSlots(games) {
   const released = games.filter((g) => g?.status === 'released');
   const dropped = released.slice(LAUNCHER_NOTES.length).map((g) => g.id);
 
-  const slots = released.slice(0, LAUNCHER_NOTES.length).map((g, i) => ({
+  const bound = released.slice(0, LAUNCHER_NOTES.length);
+
+  const slots = bound.map((g, i) => ({
     gameId: g.id,
     label: g.label ?? g.id,
     icon: g.icon ?? 'game',
     note: LAUNCHER_NOTES[i],
     noteName: NOTE_NAMES[i],
-    // Whether a black key sits between this white key and the next. Derived
-    // from the interval, not hardcoded: a whole step has a sharp between, a
-    // half step (E-F, B-C) does not. The last key has no "next".
-    sharpAfter: i < LAUNCHER_NOTES.length - 1 && LAUNCHER_NOTES[i + 1] - LAUNCHER_NOTES[i] === 2,
+    // Whether a black key sits between this key and the next RENDERED one.
+    // The bound is the SLOT count, not the note map's: the overlay draws each
+    // sharp in the gap between two tiles, so the last tile has no gap for one
+    // regardless of what follows it on a real keyboard.
+    sharpAfter: i < bound.length - 1 && LAUNCHER_NOTES[i + 1] - LAUNCHER_NOTES[i] === 2,
   }));
 
   return { slots, dropped };
@@ -414,9 +417,45 @@ export function slotForNote(slots, note) {
 npx vitest run frontend/src/modules/Piano/game-platform/launcher/launcherNotes.test.js
 ```
 
-Expected: PASS, 9 tests.
+Expected: PASS, 14 tests.
 
-Note on the `sharpAfter` expectation: the ninth slot is D5, the last entry, so `sharpAfter` is `false` there by the `i < length - 1` guard even though a D#5 exists on a real keyboard. That is correct — there is no tenth key to put it between.
+Note on the `sharpAfter` expectation: the last slot is always `false`, even though a D#5 (or C#5, at eight games) exists on a real keyboard. That is correct — the overlay draws each sharp in the gap *between two tiles*, and the last tile has no gap beside it. Guard on the slot count, not `LAUNCHER_NOTES.length`: with the eight games released today the row ends on C5, and guarding on the note map would put a C#5 stub off the right edge.
+
+Add these cases beyond the list above — they cover the last-tile bound and three paths the spec list leaves unexercised (`label`/`icon` fallbacks, null entries, and `slotForNote` before slots exist, which the Task 4 hook hits on first render):
+
+```js
+  it('never marks a sharp after the LAST tile, however many games there are', () => {
+    const eight = buildLauncherSlots(Array.from({ length: 8 }, (_, i) => game(`g${i}`))).slots;
+    expect(eight.at(-1).noteName).toBe('C5');
+    expect(eight.at(-1).sharpAfter).toBe(false);
+    for (const n of [1, 2, 5, 8, 9]) {
+      const { slots } = buildLauncherSlots(Array.from({ length: n }, (_, i) => game(`g${i}`)));
+      expect(slots.at(-1).sharpAfter).toBe(false);
+    }
+  });
+
+  it('counts overflow among the released games only', () => {
+    const games = [game('p', 'preview'), ...Array.from({ length: 10 }, (_, i) => game(`g${i}`))];
+    const { slots, dropped } = buildLauncherSlots(games);
+    expect(slots).toHaveLength(9);
+    expect(dropped).toEqual(['g9']);
+  });
+
+  it('falls back to the id and a generic icon when a game supplies neither', () => {
+    const { slots } = buildLauncherSlots([{ id: 'bare', status: 'released' }]);
+    expect(slots[0]).toMatchObject({ label: 'bare', icon: 'game' });
+  });
+
+  it('drops null entries rather than throwing on them', () => {
+    const { slots } = buildLauncherSlots([game('a'), null, undefined, game('b')]);
+    expect(slots.map(s => s.gameId)).toEqual(['a', 'b']);
+  });
+
+  it('returns null when there are no slots yet', () => {
+    expect(slotForNote(null, 60)).toBeNull();
+    expect(slotForNote([], 60)).toBeNull();
+  });
+```
 
 **Step 5: Commit**
 
