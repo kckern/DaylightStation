@@ -1,16 +1,15 @@
-// The launcher is a keyboard at monumental scale. Colours come from the
-// instrument: walnut case, ivory key faces, ebony sharps, damper-felt crimson,
-// brass hardware. The visualiser under it is #d9d0c1 — the same warm hue this
-// ground is, driven down in value, so the overlay reads as a dimming rather
-// than a different app.
-// The picker's own names, mapped onto the shared chrome kit (gameChrome.scss),
-// which declares `--pg-*` on `.note-launcher` and `.nl-hold` for exactly this.
+// Hold-to-quit: a brass ring closing over the hold window. Deliberately NOT
+// nested inside .note-launcher — it renders alongside the overlay and must
+// survive the overlay closing (see HoldRing.jsx). It centres on its nearest
+// positioned ancestor, which is .piano-visualizer.
 //
-// These were five invented hexes — a brown-and-gold scheme that matched nothing
-// else in the app and made the picker read as a different product bolted on.
-// The keyboard still gets to look like a keyboard; it just does it in the
-// cabinet's colours, and follows the design tokens when those move.
-.note-launcher,
+// `.note-launcher` MUST NOT be added to this selector. It was, once: the ring's
+// `width/height: 16rem` and `transform: translate(-50%, -50%)` are not among the
+// properties `.note-launcher` re-declares below, so they survived the cascade
+// and shrank the whole overlay to a 256px square hanging off the visualiser's
+// top-left corner — plus `pointer-events: none` made it untappable. The launcher
+// is a full-bleed `inset: 0` surface; nothing that sizes or offsets a widget
+// belongs in a rule it shares.
 .nl-hold {
   position: absolute;
   top: 50%;
@@ -74,6 +73,17 @@
   to   { stroke-dashoffset: 0; }
 }
 
+// The launcher is a keyboard at monumental scale. Colours come from the
+// instrument: walnut case, ivory key faces, ebony sharps, damper-felt crimson,
+// brass hardware. The visualiser under it is #d9d0c1 — the same warm hue this
+// ground is, driven down in value, so the overlay reads as a dimming rather
+// than a different app. The names are mapped onto the shared chrome kit
+// (gameChrome.scss), which declares `--pg-*` on `.note-launcher` and `.nl-hold`.
+//
+// These were five invented hexes — a brown-and-gold scheme that matched nothing
+// else in the app and made the picker read as a different product bolted on.
+// The keyboard still gets to look like a keyboard; it just does it in the
+// cabinet's colours, and follows the design tokens when those move.
 .note-launcher {
   position: absolute;
   inset: 0;
@@ -149,37 +159,6 @@
     box-sizing: border-box;
   }
 
-}
-
-// Hold-to-quit: a brass ring closing over the hold window. Deliberately NOT
-// nested inside .note-launcher — it renders alongside the overlay and must
-// survive the overlay closing (see HoldRing.jsx). It centres on its nearest
-// positioned ancestor, which is .piano-visualizer.
-
-.nl-hold {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  // Higher than the launcher AND than a running game's fullscreen overlay: the
-  // case this ring exists for is holding to quit WHILE a game is running, and
-  // at 50 it would have tied with that overlay and lost or won on DOM order.
-  z-index: 150;
-  box-sizing: border-box; // so the border stays inside the ring's own diameter
-  width: 7rem;
-  height: 7rem;
-  // Centred by transform, not by negative margins that have to be kept equal to
-  // half the size by hand. The margins were the size's mirror image, so any
-  // change to the diameter silently pushed the ring off centre — and a ring
-  // reported as "not quite centred, edges sliced" is exactly that failure.
-  transform: translate(-50%, -50%);
-  border-radius: 50%;
-  border: 3px solid color-mix(in srgb, var(--brass) 25%, transparent);
-  background: conic-gradient(var(--brass) var(--nl-hold-turn, 0turn), transparent 0);
-  // Hollow centre, so it closes as a ring rather than filling as a brass coin
-  // over whatever the player is looking at.
-  -webkit-mask: radial-gradient(closest-side, transparent 62%, black 63%);
-  mask: radial-gradient(closest-side, transparent 62%, black 63%);
-  animation: nl-hold linear forwards;
 }
 
 .nl-key {
