@@ -169,6 +169,11 @@ function Board({ game, hint, drop }) {
           <div
             key={`${rowIndex}-${column}`}
             role="gridcell"
+            /* Placed explicitly. The panel below spans the whole grid, and an
+               explicitly-placed item makes auto-placement route around it —
+               which pushed all 42 cells into implicit rows and left the holes
+               registered horizontally but 408px out vertically. */
+            style={{ gridRow: rowIndex + 1, gridColumn: column + 1 }}
             className={`connect-four-board__cell${hint === column ? ' is-hint' : ''}${won ? ' is-winner' : ''}`}
           >
             <span
@@ -186,8 +191,16 @@ function Board({ game, hint, drop }) {
         );
       }))}
       {/* The blue sheet with forty-two holes in it, drawn OVER the discs —
-          which is where it is in the physical game. See PianoConnectFour.scss. */}
-      <div className="connect-four-board__panel" aria-hidden="true" />
+          which is where it is in the physical game. See PianoConnectFour.scss.
+          It is a GRID ITEM spanning every track, not an absolutely-positioned
+          overlay, and each hole is a real grid cell rather than a tiled
+          background: that is what makes a hole land on its cell by construction
+          instead of by arithmetic that has to agree. */}
+      <div className="connect-four-board__panel" aria-hidden="true">
+        {Array.from({ length: 42 }, (_, i) => (
+          <span key={i} className="connect-four-board__hole" />
+        ))}
+      </div>
     </div>
   );
 }
