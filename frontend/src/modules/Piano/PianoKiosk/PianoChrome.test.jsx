@@ -12,7 +12,7 @@ vi.mock('./PianoMidiContext.jsx', () => ({ usePianoMidi: () => midi }));
 vi.mock('./PianoSoundContext.jsx', () => ({ usePianoSound: () => sound }));
 vi.mock('./PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ basePath: '/piano' }) }));
 vi.mock('./PianoBreadcrumbContext.jsx', () => ({ usePianoBreadcrumbBar: () => breadcrumbBar }));
-vi.mock('./icons/Icon.jsx', () => ({ default: ({ name }) => <span className="piano-icon" data-icon={name} /> }));
+vi.mock('../ui/icons/Icon.jsx', () => ({ default: ({ name }) => <span className="piano-icon" data-icon={name} /> }));
 vi.mock('./SoundPanel.jsx', () => ({ default: ({ open }) => (open ? <div>SOUND-PANEL-OPEN</div> : null) }));
 vi.mock('./OperatorDrawer.jsx', () => ({ default: ({ open }) => (open ? <div>OPERATOR-DRAWER-OPEN</div> : null) }));
 vi.mock('./useLongPress.js', () => ({

@@ -9,7 +9,7 @@ import SingalongPlayer from '../Singalong/SingalongPlayer.jsx';
 import { SkeletonGrid } from '../../Skeleton.jsx';
 import { parseSongs, categoriesOf, filterSongs, categoryHue, songArt } from './karaokeBrowse.js';
 import { MaterialGlyph } from '../../producer/MaterialGlyph.jsx';
-import Icon from '../../icons/Icon.jsx';
+import Icon from '../../../ui/icons/Icon.jsx';
 
 const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
 

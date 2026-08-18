@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import Icon from '../icons/Icon.jsx';
+import Icon from '../../ui/icons/Icon.jsx';
 import { usePianoMix } from '../PianoMixContext.jsx';
 import { STEPS, stepToLevel, levelToStep } from '../volumeCurve.js';
 import TransportSheet from './TransportSheet.jsx';

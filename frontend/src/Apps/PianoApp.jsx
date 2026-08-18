@@ -5,7 +5,7 @@ import getLogger, { configure as configureLogger } from '../lib/logging/Logger.j
 import { attachPageLifecycleLogging } from '../lib/logging/pageLifecycle.js';
 import { launchAndroidTarget } from '../lib/fkb.js';
 import { DaylightAPI } from '../lib/api.mjs';
-import Icon from '../modules/Piano/PianoKiosk/icons/Icon.jsx';
+import Icon from '../modules/Piano/ui/icons/Icon.jsx';
 import {
   PianoConfigProvider,
   ActivePianoProvider,

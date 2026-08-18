@@ -9,7 +9,7 @@ import { launchAndroidTarget } from '../../../lib/fkb.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import PianoMidiMonitor from './PianoMidiMonitor.jsx';
 import FeedbackOverlay from '@/modules/Feedback/FeedbackOverlay.jsx';
-import Icon from './icons/Icon.jsx';
+import Icon from '../ui/icons/Icon.jsx';
 
 const HW_STATE = {
   connected: { cls: 'is-on', label: 'Connected' },

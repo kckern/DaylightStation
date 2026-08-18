@@ -1,5 +1,5 @@
 // Inline SVG icon set for the School home (subject wall). One coherent Solar
-// (Bold) set, same pattern as Piano/PianoKiosk/icons: raw SVG strings rendered
+// (Bold) set, same pattern as Piano/ui/icons: raw SVG strings rendered
 // inline so `currentColor` inherits the tile's text color and no SVG-loader
 // plugin is required.
 const mods = import.meta.glob('./svg/*.svg', { eager: true, query: '?raw', import: 'default' });

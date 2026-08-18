@@ -8,7 +8,7 @@ import { usePianoMidi, usePianoMidiNotes } from '../../PianoMidiContext.jsx';
 import { usePianoKioskConfig } from '../../PianoConfig.jsx';
 import useReloadGuard from '../../useReloadGuard.js';
 import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
-import Icon from '../../icons/Icon.jsx';
+import Icon from '../../../ui/icons/Icon.jsx';
 import { usePianoMix } from '../../PianoMixContext.jsx';
 import TransportButton from '../../transport/TransportButton.jsx';
 import VolumeControl from '../../transport/VolumeControl.jsx';

@@ -59,6 +59,14 @@ const PALETTE_BUDGET = {
   'SideScrollerGame/SideScrollerGame.scss': 4,
   'PianoFlashcards/PianoFlashcards.scss': 4,
   'PianoHeroGame/PianoHeroGame.scss': 10,
+  // The office-screen launcher. It cannot draw from the cabinet: `--pg-*` is
+  // declared on `.piano-game-host`/`.piano-game-fullscreen`, and the launcher
+  // renders in the visualiser, outside both — and the cabinet is the kiosk's
+  // dark palette, while this overlay dims the visualiser's own warm #d9d0c1
+  // ground. Five names, one per material of the instrument it draws (case,
+  // ivory, ebony, felt, brass); every tint and gradient stop in the file is a
+  // color-mix of one of them, not a sixth colour.
+  'game-platform/launcher/NoteLauncher.scss': 5,
 };
 
 function scssFiles(dir, out = [], base = dir) {

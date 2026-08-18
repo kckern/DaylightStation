@@ -26,7 +26,7 @@ vi.mock('./StudioRecordings.jsx', () => ({ default: () => <div data-testid="reco
 vi.mock('./StudioPlayback.jsx', () => ({ default: () => <div data-testid="playback" /> }));
 vi.mock('./StudioReviewPrompt.jsx', () => ({ default: () => null }));
 // Real RecordButton, but stub its icon.
-vi.mock('../../icons/Icon.jsx', () => ({ default: ({ name }) => <span data-name={name} /> }));
+vi.mock('../../../ui/icons/Icon.jsx', () => ({ default: ({ name }) => <span data-name={name} /> }));
 
 import { Studio } from './Studio.jsx';
 

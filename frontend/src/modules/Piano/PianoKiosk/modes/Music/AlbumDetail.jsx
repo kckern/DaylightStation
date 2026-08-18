@@ -3,7 +3,7 @@ import getLogger from '../../../../../lib/logging/Logger.js';
 import { DaylightAPI } from '../../../../../lib/api.mjs';
 import { toMusicTracks, formatTime } from './musicTracks.js';
 import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
-import Icon from '../../icons/Icon.jsx';
+import Icon from '../../../ui/icons/Icon.jsx';
 import PianoEmpty from '../../PianoEmpty.jsx';
 import { SkeletonList } from '../../Skeleton.jsx';
 

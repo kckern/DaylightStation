@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import Icon from '../../icons/Icon.jsx';
+import Icon from '../../../ui/icons/Icon.jsx';
 
 /** ms → M:SS for a take's length. */
 function mmss(ms) {
