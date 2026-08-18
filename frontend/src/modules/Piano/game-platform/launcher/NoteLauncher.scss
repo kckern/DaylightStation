@@ -18,8 +18,10 @@
   // Higher than the launcher AND than a running game's fullscreen overlay: the
   // case this ring exists for is holding to quit WHILE a game is running.
   z-index: 150;
-  width: 9rem;
-  height: 9rem;
+  /* Big enough to read as progress from across the room — it was reported as
+     showing up but not reading as filling. */
+  width: 16rem;
+  height: 16rem;
   // Centred by transform, not by negative margins that have to be kept equal to
   // half the size by hand — any change to the diameter silently pushed it off.
   transform: translate(-50%, -50%);
@@ -40,7 +42,7 @@
   &__track,
   &__arc {
     fill: none;
-    stroke-width: 7;
+    stroke-width: 9;
     stroke-linecap: round;
   }
 
@@ -59,7 +61,7 @@
   &__label {
     position: relative;
     font-family: 'Roboto Condensed', sans-serif;
-    font-size: 0.72rem;
+    font-size: 1rem;
     font-weight: 700;
     letter-spacing: 0.14em;
     color: var(--ivory);

@@ -412,3 +412,47 @@ describe('useNoteLauncher selectionPaused', () => {
     expect(result.current.activeGameId).toBe('invaders');
   });
 });
+
+// The top key is BOTH half the opening combo and the "change player" key. Two
+// keys struck together almost never land in one event, so if the TOP one
+// registers first it looks exactly like a lone press — and the combo demanded a
+// new player every other time. Logged in production as launcher.dismissed
+// {combo} and launcher.user-requested {103} in the same second.
+describe('useNoteLauncher top key vs. combo', () => {
+  it('does not ask for a player when the combo arrives TOP KEY FIRST', () => {
+    const onRequestUser = vi.fn();
+    const { rerender } = renderHook(
+      ({ activeNotes }) => useNoteLauncher({ activeNotes, slots, onRequestUser }),
+      { initialProps: { activeNotes: new Map() } },
+    );
+    rerender({ activeNotes: notes(108) });        // top key lands first
+    rerender({ activeNotes: notes(108, 21) });    // its partner a beat later
+    act(() => { vi.advanceTimersByTime(1000); });
+    expect(onRequestUser).not.toHaveBeenCalled();
+  });
+
+  it('still asks when the top key really is played alone', () => {
+    const onRequestUser = vi.fn();
+    const { rerender } = renderHook(
+      ({ activeNotes }) => useNoteLauncher({ activeNotes, slots, onRequestUser }),
+      { initialProps: { activeNotes: new Map() } },
+    );
+    rerender({ activeNotes: notes(21, 108) });    // open it
+    rerender({ activeNotes: new Map() });
+    rerender({ activeNotes: notes(108) });        // top key, on its own
+    act(() => { vi.advanceTimersByTime(1000); });
+    expect(onRequestUser).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not ask when the combo arrives bottom-first either', () => {
+    const onRequestUser = vi.fn();
+    const { rerender } = renderHook(
+      ({ activeNotes }) => useNoteLauncher({ activeNotes, slots, onRequestUser }),
+      { initialProps: { activeNotes: new Map() } },
+    );
+    rerender({ activeNotes: notes(21) });
+    rerender({ activeNotes: notes(21, 108) });
+    act(() => { vi.advanceTimersByTime(1000); });
+    expect(onRequestUser).not.toHaveBeenCalled();
+  });
+});
