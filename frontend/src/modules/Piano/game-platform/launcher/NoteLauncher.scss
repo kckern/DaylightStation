@@ -243,14 +243,20 @@
   }
 
   &__label {
-    font-size: clamp(0.85rem, 1.15vw, 1.3rem);
+    // Tracks the KEY's width (`.nl-key` is an inline-size container), not the
+    // viewport's. A vw-based size cannot know how many keys are sharing the row,
+    // so the longest single word — FLASHCARDS — overflowed its key and broke
+    // mid-word into "FLASHCAR / DS".
+    font-size: clamp(0.75rem, 10.5cqi, 1.2rem);
     font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     text-align: center;
     line-height: 1.15;
-    // Long labels wrap rather than shove the key wider — every key is 1fr.
-    overflow-wrap: anywhere;
+    // `break-word`, NOT `anywhere`: both wrap long labels rather than shoving the
+    // key wider, but `anywhere` also splits a word that WOULD have fit, and
+    // `anywhere` counts toward min-content sizing where `break-word` does not.
+    overflow-wrap: break-word;
   }
 
   // Engraved on the key face, where the eye already looks for it.
@@ -346,6 +352,18 @@
   flex: 0 0 50%;
 }
 
+/* Two lines' worth of name, always — the game row only. Names here are one word
+   ("TETRIS") or two ("SPACE INVADERS"), and the label is the LAST item in a
+   `flex-end` column, so a one-line name let everything above it — icon, note
+   name, staff card — sit a line lower than its neighbours'. The staff card is
+   the thing a player reads across the row to find their note, so it has to hold
+   one baseline. Scoped to `--games` because in the roster the label is a
+   person's name in the MIDDLE of the stack, where reserving a second line would
+   just open a gap under every name. */
+.note-launcher--games .nl-key__label {
+  min-height: 2.3em;
+}
+
 /* A face, centred and large — it is what you recognise from across the room, so
    it leads. CIRCULAR: the box has to be square or `border-radius: 50%` yields an
    ellipse, which is what a percentage width against a tall key produced. */
@@ -417,4 +435,14 @@
   display: flex;
   align-items: center;
   gap: 0.7rem;
+}
+
+// The name over its hint. Without this the two are inline siblings in a plain
+// span and read as one run-on word.
+.note-launcher__player-id {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.15rem;
+  line-height: 1.1;
 }
