@@ -1,6 +1,15 @@
 # Piano Note Launcher Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **Status: COMPLETE.** All 7 tasks executed and merged 2026-08-17. Archived as
+> the record of what was built and why. The living documentation is
+> `docs/reference/piano/piano-games.md` § Game Activation.
+>
+> Four defects were caught during execution that this plan's drafts contained:
+> `sharpAfter` bounded by the note map rather than the tile count (a black key
+> drawn off the right edge); the hold timer surviving a ragged combo release
+> (force-quitting a running game); the hold ring nested inside the overlay
+> (invisible during hold-to-quit); and `z-index: 40` placing the launcher behind
+> the game it interrupts. Each is described at its task below.
 
 **Goal:** Replace the nine per-game MIDI activation combos on the office-screen piano with a single combo that opens a note-driven game launcher, and hoist the shared pieces out of `PianoKiosk/` so the office screen never imports from the kiosk.
 
