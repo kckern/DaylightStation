@@ -15,6 +15,7 @@ import {
   readAndClearPlaySource
 } from '../lib/playbackToggleSource.js';
 import { pauseForensics } from '../lib/pauseForensics.js';
+import { shouldReassertRate } from '../lib/rateDrift.js';
 import { useMediaKeyboardHandler } from '../../../lib/Player/useMediaKeyboardHandler.js';
 import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
 import { getLogger } from '../../../lib/logging/Logger.js';
@@ -257,6 +258,35 @@ export function useCommonMediaController({
       el.playbackRate = playbackRate;
     }
   }, [playbackRate, getMediaEl, elementKey]);
+
+  // Drift watchdog. The effect above fires only on dep change, so anything that
+  // moves el.playbackRate afterwards (an element swapped in without re-keying, a
+  // dash source restart) leaves the element drifted with nothing watching — the
+  // app then reports one speed while the video plays at another. Measured on the
+  // piano tablet 2026-08-17: 1.98x actual against an intended 1x for 40s, and
+  // separately 1.02x actual against an intended 1.5x, so it drifts BOTH ways.
+  // Cheap to check (a property read every 2s) and self-correcting; each
+  // correction is logged so the underlying mechanism can still be identified.
+  useEffect(() => {
+    const id = setInterval(() => {
+      const el = getMediaEl();
+      if (!el) return;
+      const actual = el.playbackRate;
+      if (!shouldReassertRate(actual, playbackRate)) return;
+      el.playbackRate = playbackRate;
+      mcLog().warn('playback.rate-drift', {
+        mediaKey: assetId,
+        intended: playbackRate,
+        actual,
+        corrected: el.playbackRate,
+        elementKey,
+        readyState: el.readyState,
+        paused: el.paused,
+        seeking: el.seeking
+      });
+    }, 2000);
+    return () => clearInterval(id);
+  }, [playbackRate, getMediaEl, elementKey, assetId]);
 
   // Re-apply master × volume to the active media element when either changes.
   // Volume is set once on loadedmetadata; this effect propagates live master
