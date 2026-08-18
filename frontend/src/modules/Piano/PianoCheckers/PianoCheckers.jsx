@@ -172,7 +172,15 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
   const { thinking } = useOpponentReply({
     enabled: opponentEnabled,
     thinkMs,
-    resetKey: gameSessionId,
+    // The ply and the forced-jump square are part of the key, not just the
+    // game id. `enabled` is `turn === 2`, and after an opponent CAPTURE with
+    // another jump available the engine leaves `forcedFrom` set and `turn` AT
+    // 2 (engine.mjs: `turn = forcedFrom === null ? swap : game.turn`). So
+    // `enabled` never toggled, the effect never re-ran, and the opponent
+    // stopped halfway through a double jump — the board stayed on its turn
+    // forever and every key the player pressed was discarded as
+    // `not-your-turn`. Any opponent multi-jump hung the game.
+    resetKey: `${gameSessionId}:${moves.length}:${game.forcedFrom ?? '-'}`,
     request: () => checkersClient.requestMove({ transcript: { moves }, level, gameSessionId, userId }),
     onReply: (answer) => {
       if (!answer?.move) noteLocalPractice();
