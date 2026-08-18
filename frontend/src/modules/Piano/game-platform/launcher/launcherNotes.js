@@ -31,16 +31,24 @@ export function buildLauncherSlots(games) {
   const released = games.filter((g) => g?.status === 'released');
   const dropped = released.slice(LAUNCHER_NOTES.length).map((g) => g.id);
 
-  const slots = released.slice(0, LAUNCHER_NOTES.length).map((g, i) => ({
+  const bound = released.slice(0, LAUNCHER_NOTES.length);
+
+  const slots = bound.map((g, i) => ({
     gameId: g.id,
     label: g.label ?? g.id,
     icon: g.icon ?? 'game',
     note: LAUNCHER_NOTES[i],
     noteName: NOTE_NAMES[i],
-    // Whether a black key sits between this white key and the next. Derived
-    // from the interval, not hardcoded: a whole step has a sharp between, a
-    // half step (E-F, B-C) does not. The last key has no "next".
-    sharpAfter: i < LAUNCHER_NOTES.length - 1 && LAUNCHER_NOTES[i + 1] - LAUNCHER_NOTES[i] === 2,
+    // Whether a black key sits between this key and the next RENDERED one.
+    // Derived from the interval, not hardcoded: a whole step has a sharp
+    // between, a half step (E-F, B-C) does not.
+    //
+    // The bound is the slot count, not the note map's — the overlay draws each
+    // sharp in the gap between two tiles, so the last tile has no gap to put
+    // one in no matter what key follows it on a real keyboard. With eight
+    // released games the row ends on C5, and a C#5 stub there would hang off
+    // the right edge pointing at nothing.
+    sharpAfter: i < bound.length - 1 && LAUNCHER_NOTES[i + 1] - LAUNCHER_NOTES[i] === 2,
   }));
 
   return { slots, dropped };
