@@ -30,7 +30,14 @@
    unfinished in the other. */
 .piano-game-host,
 .piano-game-fullscreen,
-.tetris-fullscreen {
+.tetris-fullscreen,
+/* The launcher and its hold ring are SIBLINGS of the game wrapper, not children
+   — they have to survive the game closing — so they need the palette declared
+   on them directly or every `--pg-*` they name resolves to nothing. They used to
+   carry their own invented brown/gold instead, which is why the picker looked
+   like it came from a different product. */
+.note-launcher,
+.nl-hold {
   /* --- the cabinet --- */
   --pg-case: var(--piano-bg, #16161b);
   --pg-shelf: var(--piano-surface, #1f1f26);

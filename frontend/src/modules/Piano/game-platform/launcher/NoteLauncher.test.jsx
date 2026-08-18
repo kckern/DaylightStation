@@ -51,3 +51,38 @@ describe('NoteLauncher', () => {
     expect(getByRole('dialog')).toBeTruthy();
   });
 });
+
+// The picker read as a different product: an invented brown/gold palette, a
+// third of the screen empty above the keys, hairline black keys, and the note
+// given only as a letter. These lock the structural half of that fix — the
+// palette and the proportions are CSS, but WHERE things sit is the DOM.
+describe('NoteLauncher key anatomy', () => {
+  const slots = [
+    { gameId: 'a', label: 'Alpha', icon: 'game', note: 60, noteName: 'C4', sharpAfter: true },
+    { gameId: 'b', label: 'Beta', icon: 'game', note: 62, noteName: 'D4', sharpAfter: false },
+  ];
+
+  it('puts the icon LAST in the key, so it lands at the tip', () => {
+    const { container } = render(<NoteLauncher slots={slots} />);
+    const key = container.querySelector('.nl-key');
+    const kids = [...key.children];
+    expect(kids.length).toBeGreaterThan(1);
+    // The icon is the element nearest the player's hand; a black key never
+    // covers the tip, which is why it goes there rather than mid-face.
+    expect(kids[kids.length - 1].classList.contains('nl-key__icon')).toBe(true);
+  });
+
+  it('shows the note as notation as well as a letter', () => {
+    const { container } = render(<NoteLauncher slots={slots} />);
+    const key = container.querySelector('.nl-key');
+    expect(key.querySelector('.nl-key__staff')).toBeTruthy();
+    expect(key.querySelector('.nl-key__note').textContent).toBe('C4');
+  });
+
+  it('still marks which keys carry a sharp', () => {
+    const { container } = render(<NoteLauncher slots={slots} />);
+    const keys = [...container.querySelectorAll('.nl-key')];
+    expect(keys[0].classList.contains('has-sharp')).toBe(true);
+    expect(keys[1].classList.contains('has-sharp')).toBe(false);
+  });
+});
