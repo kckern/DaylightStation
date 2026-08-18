@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { applyMove, legalMoves, replayGame } from '@shared-gaming/checkers/engine.mjs';
 import { chooseMove } from '@shared-gaming/checkers/opponent.mjs';
 import PianoGameHost from '../game-platform/host/PianoGameHost.jsx';
+import { useAnyKeyToContinue } from '../game-platform/input/useAnyKeyToContinue.js';
+import { slideOffsetCells, slideDurationMs } from './moveSlide.js';
 import InstrumentBoardStage from '../game-platform/families/addressed-board/InstrumentBoardStage.jsx';
 import AddressRail from '../game-platform/families/addressed-board/AddressRail.jsx';
 import { BOARD_LAYOUTS } from '../game-platform/families/addressed-board/contracts.js';
@@ -62,6 +64,11 @@ export function legacyAddressing(config) {
 
 function CheckersBoard({ game, selected, hint }) {
   const moves = legalMoves(game.board, game.turn, game.forcedFrom);
+  // The move that just landed, so the piece now sitting on `to` can be shown
+  // arriving from `from` rather than simply being there. Matters most for the
+  // OPPONENT's move: the player did not make it and has to read it off the board.
+  const slide = slideOffsetCells(game.lastMove);
+  const slideMs = slideDurationMs(slide);
   const sources = new Set(moves.map((move) => move.from));
   const destinations = new Set(moves.filter((move) => move.from === selected).map((move) => move.to));
   return (
@@ -85,7 +92,18 @@ function CheckersBoard({ game, selected, hint }) {
         return (
           <div key={cell} className={classes} role="gridcell">
             {piece && (
-              <span className={`checkers-board__piece checkers-board__piece--${piece.toLowerCase() === 'r' ? 'player' : 'opponent'}`}>
+              <span
+                /* Keyed on the ply so the same piece moving twice running
+                   animates twice — a remount is the only thing that restarts a
+                   CSS animation. */
+                key={slide && square === game.lastMove?.to ? `slide-${game.moves.length}` : 'seated'}
+                className={`checkers-board__piece checkers-board__piece--${piece.toLowerCase() === 'r' ? 'player' : 'opponent'}${slide && square === game.lastMove?.to ? ' is-sliding' : ''}`}
+                style={slide && square === game.lastMove?.to ? {
+                  '--ck-slide-x': slide.dx,
+                  '--ck-slide-y': slide.dy,
+                  '--ck-slide-ms': `${slideMs}ms`,
+                } : undefined}
+              >
                 {piece === piece.toUpperCase() && <span className="checkers-board__crown">♛</span>}
               </span>
             )}
@@ -249,6 +267,12 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
     resetSession();
   };
 
+  // No touchscreen on the office screen, so "Play again" is a dead end there:
+  // the board is finished and the only way out is the launcher combo. Any fresh
+  // key restarts. The keys still down from the winning move do not count — the
+  // player has to see who won first.
+  useAnyKeyToContinue({ enabled: game.status.gameOver, activeNotes, onContinue: restart });
+
   const opponentName = ladder?.current?.name ?? 'Button';
   const status = game.status.gameOver
     ? game.status.draw ? 'Draw game' : game.status.winner === 1 ? 'You won the board!' : `${opponentName} wins`
@@ -372,7 +396,7 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
           <GameStatusBar
             aside={localPractice ? 'local practice' : null}
             action={game.status.gameOver && (
-              <GameButton variant="primary" onClick={restart}>Play again</GameButton>
+              <GameButton variant="primary" onClick={restart}>Play again — or press any key</GameButton>
             )}
           >
             {status}

@@ -200,3 +200,40 @@
 .checkers-tally__count { font-size: var(--t-h, 1.25rem); font-weight: 700; }
 .checkers-tally__side--player .checkers-tally__count { color: var(--ck-red-tally); }
 .checkers-tally__side--opponent .checkers-tally__count { color: var(--ck-blue-tally); }
+
+/* ── THE MOVE ──────────────────────────────────────────────────────────────
+ * A piece used to APPEAR on its destination, which told the player nothing
+ * about the one thing a board game is: something moved, and WHICH thing moved
+ * carries the information. It matters most for the opponent's reply, which the
+ * player did not make and otherwise has to spot by comparing two still boards.
+ *
+ * Counted in CELLS (`--ck-slide-x/y`), not pixels, so it holds at any board
+ * size — the same approach as Connect Four's drop. A piece is 72% of its cell,
+ * so one cell is 100/72 = 138.9% of the piece's own width; that conversion
+ * lives here rather than in the component.
+ *
+ * Compositor-only: transform and nothing else. The office screen and the 2018
+ * kiosk tablet both animate this at frame rate and would drop frames on
+ * anything touching layout, filters or shadows.
+ */
+@keyframes checkers-slide {
+  from {
+    transform:
+      translateX(calc(var(--ck-slide-x, 0) * 138.9%))
+      translateY(calc(var(--ck-slide-y, 0) * 138.9%));
+  }
+  to { transform: translate(0, 0); }
+}
+
+.checkers-board__piece.is-sliding {
+  /* Ease-out: a sliding counter is pushed and released, so it carries speed in
+     and settles, rather than accelerating like Connect Four's falling disc. */
+  animation: checkers-slide var(--ck-slide-ms, 220ms) cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  /* Above its neighbours for the duration, so a piece crossing a jumped square
+     passes OVER it rather than appearing to tunnel underneath. */
+  z-index: 3;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .checkers-board__piece.is-sliding { animation: none; }
+}

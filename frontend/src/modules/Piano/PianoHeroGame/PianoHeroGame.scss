@@ -477,3 +477,39 @@
 .piano-hero-results { display: flex; gap: 28px; margin-top: 8px; }
 .piano-hero-results span { display: flex; flex-direction: column; color: rgba(255,255,255,.62); }
 .piano-hero-results strong { color: var(--hero-spark); font-size: 26px; }
+
+/* ── PICKING WITHOUT A TOUCHSCREEN ─────────────────────────────────────────
+ * The office screen has only a piano attached, so a song list that needs a tap
+ * is a dead end there. Each tile and tab wears the key that picks it, in the
+ * same grammar the game launcher uses — notation first, letter underneath as
+ * the answer key. Hidden entirely where touch exists (see noteSelectionEnabled),
+ * so the tablet is not given a second, redundant instruction.
+ */
+.piano-hero-picker__addr {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  margin-top: 0.35rem;
+
+  em {
+    font-style: normal;
+    font-weight: 700;
+    font-size: 0.85rem;
+    letter-spacing: 0.08em;
+    color: var(--pg-brass, #5fe39a);
+  }
+}
+
+.piano-hero-picker__staff {
+  width: min(100%, 5.5rem);
+  opacity: 0.92;
+}
+
+.piano-course-tab__note {
+  margin-left: 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--pg-brass, #5fe39a);
+}

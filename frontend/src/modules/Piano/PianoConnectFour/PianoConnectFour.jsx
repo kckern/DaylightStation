@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { chooseColumn } from '@shared-gaming/connect-four/opponent.mjs';
 import { playColumn, replayGame } from '@shared-gaming/connect-four/engine.mjs';
 import PianoGameHost from '../game-platform/host/PianoGameHost.jsx';
+import { useAnyKeyToContinue } from '../game-platform/input/useAnyKeyToContinue.js';
 import InstrumentBoardStage from '../game-platform/families/addressed-board/InstrumentBoardStage.jsx';
 import AddressRail from '../game-platform/families/addressed-board/AddressRail.jsx';
 import { BOARD_LAYOUTS } from '../game-platform/families/addressed-board/contracts.js';
@@ -341,6 +342,12 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
     resetSession();
   };
 
+  // No touchscreen on the office screen, so "Play again" is a dead end there:
+  // the board is finished and the only way out is the launcher combo. Any fresh
+  // key restarts. The keys still down from the winning move do not count — the
+  // player has to see who won first.
+  useAnyKeyToContinue({ enabled: game.status.gameOver, activeNotes, onContinue: restart });
+
   const opponentName = ladder?.current?.name ?? 'Pebble';
   // Who won, in the terms the player can check against the board: a colour and
   // the four lit discs. "You connected four!" and a bare "Pebble wins" left the
@@ -434,7 +441,7 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
           <GameStatusBar
             aside={localPractice ? 'local practice' : null}
             action={game.status.gameOver && (
-              <GameButton variant="primary" onClick={restart}>Play again</GameButton>
+              <GameButton variant="primary" onClick={restart}>Play again — or press any key</GameButton>
             )}
           >
             {status}

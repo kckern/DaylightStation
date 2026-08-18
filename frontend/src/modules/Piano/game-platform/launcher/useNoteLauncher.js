@@ -31,7 +31,7 @@ const NO_NOTES = new Map();
  * @param {string|null} [args.initialGame] - deep-linked game id (URL)
  * @param {Object} [args.options] - {comboNotes, comboWindowMs, timeoutMs, holdExitMs}
  */
-export function useNoteLauncher({ activeNotes, slots, initialGame = null, options = {} }) {
+export function useNoteLauncher({ activeNotes, slots, initialGame = null, onRequestUser = null, options = {} }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-launcher' }), []);
 
   // Read as primitives rather than merging into an object: a merged object is a
@@ -56,6 +56,11 @@ export function useNoteLauncher({ activeNotes, slots, initialGame = null, option
   // Mirrors isOpen so the combo effect can decide open-vs-close and log the
   // decision OUTSIDE the state updater. React may call an updater more than
   // once (StrictMode, concurrent re-render); a log line in there double-fires.
+  // Held in a ref: hosts pass a fresh closure each render, and this must not
+  // re-run the selection effect at MIDI rates.
+  const onRequestUserRef = useRef(onRequestUser);
+  onRequestUserRef.current = onRequestUser;
+
   const isOpenRef = useRef(false);
   const activeGameIdRef = useRef(initialGame);
 
@@ -187,13 +192,23 @@ export function useNoteLauncher({ activeNotes, slots, initialGame = null, option
     if (!isOpen || struck.length === 0) return;
 
     for (const note of struck) {                    // lowest first
+      // The board's TOP key changes who is playing. It is the key the player
+      // already learned to open this thing with (the combo is lowest+highest),
+      // so it costs no new vocabulary — and it is not a game slot, so it can
+      // never be confused for one. The office screen has no other way to say
+      // who is at the keyboard; the kiosk already knows.
+      if (note === comboNotes[1]) {
+        logger.info('launcher.user-requested', { note });
+        onRequestUserRef.current?.();
+        return;
+      }
       const slot = slotForNote(slots, note);
       if (!slot) continue;
       setGame(slot.gameId, 'launcher.game-selected', { note });
       closeLauncher('selected');
       return;
     }
-  }, [liveNotes, isOpen, slots, closeLauncher, setGame]);
+  }, [liveNotes, isOpen, slots, comboNotes, closeLauncher, setGame, logger]);
 
   // ─── Unmount: no timer outlives the hook ──────────────────────────────────
   useEffect(() => () => {

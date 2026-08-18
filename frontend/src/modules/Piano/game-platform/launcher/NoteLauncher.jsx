@@ -1,4 +1,5 @@
 import Icon from '../../ui/icons/Icon.jsx';
+import { ChordStaffRenderer } from '../../../MusicNotation/renderers/ChordStaffRenderer.jsx';
 import './NoteLauncher.scss';
 
 /**
@@ -12,11 +13,16 @@ import './NoteLauncher.scss';
  * correspondence with the keys under the player's hands, which is the only
  * reason this reads without instructions.
  */
-export default function NoteLauncher({ slots = [], timeoutMs = 30000 }) {
+export default function NoteLauncher({ slots = [], timeoutMs = 30000, playerName = null }) {
   return (
     <div className="note-launcher" role="dialog" aria-label="Pick a game">
       <div className="note-launcher__head">
         <span className="note-launcher__title">Pick a game · play its key</span>
+        {/* Who the result gets filed under, and how to change it. Named rather
+            than implied: the office screen cannot know who sat down. */}
+        <span className="note-launcher__player">
+          {playerName ? `${playerName} · top key to change` : 'Top key — who’s playing?'}
+        </span>
         <div className="note-launcher__timer" aria-hidden="true">
           <i style={{ animationDuration: `${timeoutMs}ms` }} />
         </div>
@@ -29,9 +35,19 @@ export default function NoteLauncher({ slots = [], timeoutMs = 30000 }) {
             className={`nl-key${slot.sharpAfter ? ' has-sharp' : ''}`}
             style={{ '--key-index': i }}
           >
-            <Icon name={slot.icon} className="nl-key__icon" />
+            {/* The note as NOTATION, not just a letter. This surface teaches
+                reading everywhere else — chess and checkers are addressed by
+                playing what is on the staff — so the picker says it the same
+                way, and the letter stays underneath as the answer key. */}
+            <ChordStaffRenderer
+              notes={[slot.note]}
+              className="chord-staff nl-key__staff"
+            />
             <span className="nl-key__label">{slot.label}</span>
             <span className="nl-key__note">{slot.noteName}</span>
+            {/* Last in the column, so it lands at the key's tip — see the
+                `justify-content: flex-end` in NoteLauncher.scss. */}
+            <Icon name={slot.icon} className="nl-key__icon" />
           </li>
         ))}
       </ul>

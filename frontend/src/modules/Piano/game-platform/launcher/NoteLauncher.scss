@@ -3,17 +3,20 @@
 // brass hardware. The visualiser under it is #d9d0c1 — the same warm hue this
 // ground is, driven down in value, so the overlay reads as a dimming rather
 // than a different app.
-// Both selectors carry the palette: `.nl-hold` renders as a SIBLING of the
-// launcher rather than inside it, so it inherits nothing from `.note-launcher`
-// — a ring declaring only `var(--brass)` out there would resolve to nothing and
-// paint no fill at all.
+// The picker's own names, mapped onto the shared chrome kit (gameChrome.scss),
+// which declares `--pg-*` on `.note-launcher` and `.nl-hold` for exactly this.
+//
+// These were five invented hexes — a brown-and-gold scheme that matched nothing
+// else in the app and made the picker read as a different product bolted on.
+// The keyboard still gets to look like a keyboard; it just does it in the
+// cabinet's colours, and follows the design tokens when those move.
 .note-launcher,
 .nl-hold {
-  --case:   #241E18;
-  --ivory:  #EFE7D8;
-  --ebony:  #17120E;
-  --felt:   #8E2A2C;
-  --brass:  #C08B3E;
+  --case:   var(--pg-case, #16161b);
+  --ivory:  var(--pg-ivory, #f1f1f4);
+  --ebony:  var(--pg-shelf, #1f1f26);
+  --felt:   var(--pg-brass-fill, #2ec46f);
+  --brass:  var(--pg-brass, #5fe39a);
 }
 
 .note-launcher {
@@ -81,7 +84,12 @@
     margin: 0;
     padding: 0 2.5rem 2.5rem;
     list-style: none;
-    height: 62%;
+    // `flex: 1` rather than `height: 62%`. With a fixed 62% and the column
+    // bottom-aligned, everything above the keys was dead space — a third of a
+    // takeover screen showing nothing. The keys now take whatever the head
+    // leaves, so the keyboard fills the surface it took over.
+    flex: 1;
+    min-height: 0;
     box-sizing: border-box;
   }
 
@@ -109,10 +117,14 @@
   // case this ring exists for is holding to quit WHILE a game is running, and
   // at 50 it would have tied with that overlay and lost or won on DOM order.
   z-index: 150;
-  box-sizing: border-box; // so the 3px border stays inside the 7rem the margins undo
+  box-sizing: border-box; // so the border stays inside the ring's own diameter
   width: 7rem;
   height: 7rem;
-  margin: -3.5rem 0 0 -3.5rem;
+  // Centred by transform, not by negative margins that have to be kept equal to
+  // half the size by hand. The margins were the size's mirror image, so any
+  // change to the diameter silently pushed the ring off centre — and a ring
+  // reported as "not quite centred, edges sliced" is exactly that failure.
+  transform: translate(-50%, -50%);
   border-radius: 50%;
   border: 3px solid color-mix(in srgb, var(--brass) 25%, transparent);
   background: conic-gradient(var(--brass) var(--nl-hold-turn, 0turn), transparent 0);
@@ -125,6 +137,7 @@
 
 .nl-key {
   position: relative;
+  container-type: inline-size;
   // Descending, so every key paints over the one to its RIGHT and the sharp
   // hanging off its edge is never clipped by its neighbour. Tree order alone
   // is not enough: while the open animation runs, `transform`/`opacity` give
@@ -137,10 +150,12 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.9rem;
-  // 1.1rem clears the 1.9rem sharp, which hangs 0.95rem over each side of a
-  // key boundary — at 0.6rem a long label ran right up under the black key.
-  padding: 2rem 1.1rem 1.4rem;
+  gap: 0.75rem;
+  // Content sits at the TIP — the near end of the key, the part a player's eye
+  // and hand both go to, and the only part a black key never covers. Top
+  // padding clears the sharp, which hangs 46% down the key face.
+  justify-content: flex-end;
+  padding: 52% 1.4rem 1.6rem;
   box-sizing: border-box;
   background: linear-gradient(
     180deg,
@@ -165,7 +180,12 @@
   // The black key between this white key and the next, hanging from the top
   // into the gap. Only rendered where the note math says one belongs.
   &.has-sharp::after {
-    --sharp-w: 1.9rem;
+    // A real black key is a bit over half the width of a white one. At a fixed
+    // 1.9rem it read as a wire between the keys rather than as a key, and it
+    // did not grow with the row. 58cqw of the white key it hangs off keeps the
+    // proportion at any width, with a floor so it stays hittable-looking on a
+    // narrow row.
+    --sharp-w: max(2.6rem, 58cqw);
     content: '';
     position: absolute;
     top: 0;
@@ -204,7 +224,6 @@
 
   // Engraved on the key face, where the eye already looks for it.
   &__note {
-    margin-top: auto;
     font-size: clamp(1rem, 1.5vw, 1.6rem);
     font-weight: 700;
     font-variant-numeric: tabular-nums;
@@ -234,4 +253,26 @@
   // can override without !important anyway), and collapsing them would leave a
   // full ring reporting a hold that has not happened.
   .nl-key { animation: none; }
+}
+
+
+/* The note's picture on the key face. Sized against the key so it holds at any
+   row width; the renderer carries its own aspect via `.chord-staff`. */
+.nl-key__staff {
+  width: min(100%, 7rem);
+  max-height: 26%;
+  opacity: 0.92;
+}
+
+/* Who the game gets filed under. Quiet — it is a standing answer, not a
+   question — but named, because the office screen cannot know who sat down and
+   a silent default is how results end up under the wrong person. */
+.note-launcher__player {
+  color: var(--brass);
+  opacity: 0.85;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
 }

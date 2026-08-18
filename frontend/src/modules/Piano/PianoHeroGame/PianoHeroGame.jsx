@@ -5,6 +5,8 @@ import { parseMusicXml } from '../../MusicNotation/parseMusicXml.js';
 import { getNoteHue, getNotePosition, getNoteWidth, computeKeyboardRange } from '../noteUtils.js';
 import PianoGameHost from '../game-platform/host/PianoGameHost.jsx';
 import { usePianoKioskConfigOptional } from '../PianoKiosk/PianoConfig.jsx';
+import { bindNoteSlots, useNoteSelection, SELECTION_NOTES, SECONDARY_NOTES } from '../game-platform/input/useNoteSelection.js';
+import { ChordStaffRenderer } from '../../MusicNotation/renderers/ChordStaffRenderer.jsx';
 import { usePianoMidiOptional, usePianoMidiNotesOptional } from '../PianoKiosk/PianoMidiContext.jsx';
 import PianoEmpty from '../PianoKiosk/PianoEmpty.jsx';
 import { SkeletonPoster, SkeletonStage } from '../PianoKiosk/Skeleton.jsx';
@@ -39,7 +41,18 @@ const localMediaId = (contentId) => String(contentId || '').replace(/^[a-z]+:/i,
  *   reload or a shared link opens on the same tab.
  * @param {(slug:string)=>void} [onSubRoute] - report a tab change up to the router.
  */
-export function HeroSongPicker({ sheetmusic, onSelect, subRoute = null, onSubRoute }) {
+/**
+ * True when this screen has no touch, so a list needs a key-driven way in.
+ * `noteSelect` in config overrides it either way — a touchscreen owner may still
+ * want to pick from the keys, and a test needs to force it.
+ */
+export function noteSelectionEnabled(config, nav = (typeof navigator !== 'undefined' ? navigator : null)) {
+  if (config?.noteSelect === true) return true;
+  if (config?.noteSelect === false) return false;
+  return !(nav?.maxTouchPoints > 0);
+}
+
+export function HeroSongPicker({ sheetmusic, onSelect, subRoute = null, onSubRoute, activeNotes = null, noteSelect = null }) {
   const groups = useMemo(() => resolveScoreGroups(sheetmusic).map((group) => ({
     ...group,
     listPath: listPath(group.ref),
@@ -51,6 +64,22 @@ export function HeroSongPicker({ sheetmusic, onSelect, subRoute = null, onSubRou
   const { data, error } = usePianoList(active?.listPath || null);
   const songs = (data || []).filter((item) => NOTATION_RE.test(String(item?.id || '')));
   const grid = balancedGrid(songs.length || 1, { minCols: 5 });
+
+  // Pick by playing a key. Songs take the upper white keys, the collection tabs
+  // the lower ones, so the two axes can never be confused for one another.
+  const byNotes = noteSelect ?? noteSelectionEnabled(null);
+  const { slots: songSlots } = useMemo(() => bindNoteSlots(songs, SELECTION_NOTES), [songs]);
+  const { slots: tabSlots } = useMemo(() => bindNoteSlots(groups, SECONDARY_NOTES), [groups]);
+  const noteFor = useMemo(() => new Map(songSlots.map((s) => [s.item.id, s])), [songSlots]);
+
+  useNoteSelection({
+    activeNotes, slots: songSlots, enabled: byNotes,
+    onSelect: (song) => onSelect({ ...song, title: prettyTitle(song.title || localMediaId(song.id).split('/').pop()?.replace(/\.(musicxml|mxl)$/i, '')) }),
+  });
+  useNoteSelection({
+    activeNotes, slots: tabSlots, enabled: byNotes && groups.length > 1,
+    onSelect: (group, slot) => onSubRoute?.(groupSlug(group, slot.index)),
+  });
 
   return (
     <section className="piano-hero-picker">
@@ -66,6 +95,9 @@ export function HeroSongPicker({ sheetmusic, onSelect, subRoute = null, onSubRou
               onClick={() => onSubRoute?.(groupSlug(group, index))}
             >
               {group.label || 'Scores'}
+              {byNotes && tabSlots[index] && (
+                <span className="piano-course-tab__note">{tabSlots[index].noteName}</span>
+              )}
             </button>
           ))}
         </div>
@@ -87,6 +119,18 @@ export function HeroSongPicker({ sheetmusic, onSelect, subRoute = null, onSubRou
                 <button type="button" onClick={() => onSelect({ ...song, title })} title={title}>
                   {cover ? <img src={cover} alt="" /> : <span className="piano-hero-picker__note">♪</span>}
                   <strong>{title}</strong>
+                  {/* The key that plays this song, as notation — the same
+                      grammar the game launcher uses, so a player who has picked
+                      a game already knows how to pick a song. */}
+                  {byNotes && noteFor.get(song.id) && (
+                    <span className="piano-hero-picker__addr">
+                      <ChordStaffRenderer
+                        notes={[noteFor.get(song.id).note]}
+                        className="chord-staff piano-hero-picker__staff"
+                      />
+                      <em>{noteFor.get(song.id).noteName}</em>
+                    </span>
+                  )}
                 </button>
               </li>
             );
@@ -345,7 +389,18 @@ export function PianoHeroGame({
     return () => { cancelled = true; };
   }, [song, gameConfig?.leadInMs, gameConfig?.fallDurationMs, logger]);
 
-  if (!song) return <HeroSongPicker sheetmusic={config.sheetmusic} onSelect={setSong} subRoute={subRoute} onSubRoute={onSubRoute} />;
+  if (!song) {
+    return (
+      <HeroSongPicker
+        sheetmusic={config.sheetmusic}
+        onSelect={setSong}
+        subRoute={subRoute}
+        onSubRoute={onSubRoute}
+        activeNotes={activeNotesProp}
+        noteSelect={noteSelectionEnabled(gameConfig)}
+      />
+    );
+  }
   if (loading) return <SkeletonStage />;
   if (error) return <PianoEmpty message={error} actionLabel="Choose another song" onAction={() => setSong(null)} />;
   if (!chart) return <SkeletonStage />;

@@ -11,6 +11,8 @@ import { buildLauncherSlots } from './game-platform/launcher/launcherNotes.js';
 import { useNoteLauncher } from './game-platform/launcher/useNoteLauncher.js';
 import { comboNotesForKeyboard } from './game-platform/launcher/comboForKeyboard.js';
 import { useNotesHeldAtMount } from './game-platform/input/heldAtMount.js';
+import { useLauncherUser } from './game-platform/launcher/useLauncherUser.js';
+import ProfilePicker from '../../lib/identity/ProfilePicker.jsx';
 import NoteLauncher from './game-platform/launcher/NoteLauncher.jsx';
 import HoldRing from './game-platform/launcher/HoldRing.jsx';
 import GameBoundary from './game-platform/host/GameBoundary.jsx';
@@ -67,8 +69,12 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
     [deviceConfig?.keyboard],
   );
 
+  // Who is playing. The kiosk knows from its roster context; this screen has to
+  // be told, so it remembers the last answer and the top key changes it.
+  const { users, currentUser, pickerOpen, openPicker, closePicker, pickUser } = useLauncherUser();
+
   const { isOpen: launcherOpen, activeGameId, isHolding, dismiss, exitGame, timeoutMs, launchNonce } =
-    useNoteLauncher({ activeNotes, slots, initialGame, options: launcherOptions });
+    useNoteLauncher({ activeNotes, slots, initialGame, onRequestUser: openPicker, options: launcherOptions });
 
   const activeGameEntry = activeGameId ? getGameEntry(activeGameId) : null;
   const isFullscreenGame = activeGameEntry?.layout === 'replace';
@@ -211,7 +217,25 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
         </div>
       )}
 
-      {launcherOpen && <NoteLauncher slots={slots} timeoutMs={timeoutMs} />}
+      {launcherOpen && (
+        <NoteLauncher
+          slots={slots}
+          timeoutMs={timeoutMs}
+          playerName={users.find((u) => u.id === currentUser)?.name ?? null}
+        />
+      )}
+
+      {/* Second level of the pick: who, then what. Opened by the board's top
+          key from the launcher, and automatically the first time, when there is
+          no remembered player to default to. */}
+      <ProfilePicker
+        open={pickerOpen}
+        users={users}
+        activeId={currentUser}
+        onPick={(id) => pickUser(id)}
+        onDismiss={closePicker}
+        title="Who's playing?"
+      />
 
       {/* Sibling of the launcher, not a child: holding the combo with the
           launcher OPEN toggles it shut and only then quits at 2s, so a ring
@@ -245,6 +269,9 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
                    ActivePianoProvider to read it from. */
                 appConfig={appConfig}
                 gameConfig={gamesConfig?.[activeGameId] ?? null}
+                /* Games that keep a record (chess) file it per player. Without
+                   this every office-screen game was played by nobody. */
+                currentUser={currentUser}
                 onDeactivate={quitGame}
               />
             </Suspense>
