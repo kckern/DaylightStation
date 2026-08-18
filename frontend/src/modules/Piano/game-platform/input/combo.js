@@ -23,5 +23,3 @@ export function isComboHeld(activeNotes, comboNotes, windowMs) {
   const span = Math.max(...timestamps) - Math.min(...timestamps);
   return span <= windowMs;
 }
-
-export default isComboHeld;

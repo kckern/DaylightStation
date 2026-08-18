@@ -6,7 +6,9 @@
 
 **Architecture:** A new `game-platform/launcher/` module owns a pure note-map (`launcherNotes.js`), a state-machine hook (`useNoteLauncher.js`), and a keyboard-shaped overlay (`NoteLauncher.jsx`). `PianoVisualizer.jsx` mounts it and drops `useGameActivation.js` entirely. The icon set moves from `PianoKiosk/icons/` to `modules/Piano/ui/icons/` first, so the dependency arrow points out of the kiosk rather than into it.
 
-**Tech Stack:** React 18, Vite, Vitest + @testing-library/react, SCSS. Tests run from the worktree root with `npx vitest run <path>`.
+**Tech Stack:** React 18, Vite, Vitest + @testing-library/react, SCSS. Tests run from the worktree root with `npx vitest run <path>` — running from `frontend/` breaks `import.meta.url` resolution and produces spurious failures.
+
+**Export convention for the new modules:** components (`.jsx`) default-export; everything else is named-export only. One import form per symbol.
 
 **Worktree:** `.worktrees/piano-note-launcher` on branch `feature/piano-note-launcher`, branched from `main` @ `8279851a5`. `node_modules` and `frontend/node_modules` are symlinked to the main checkout — do not run `npm install`.
 
@@ -222,8 +224,6 @@ export function isComboHeld(activeNotes, comboNotes, windowMs) {
   const span = Math.max(...timestamps) - Math.min(...timestamps);
   return span <= windowMs;
 }
-
-export default isComboHeld;
 ```
 
 **Step 4: Run it and watch it pass**
@@ -755,8 +755,6 @@ export function useNoteLauncher({ activeNotes, slots, initialGame = null, option
 
   return { isOpen, activeGameId, isHolding, dismiss, timeoutMs };
 }
-
-export default useNoteLauncher;
 ```
 
 **Step 4: Run it and watch it pass**
