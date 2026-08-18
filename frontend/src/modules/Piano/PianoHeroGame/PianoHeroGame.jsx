@@ -6,6 +6,8 @@ import { getNoteHue, getNotePosition, getNoteWidth, computeKeyboardRange } from 
 import PianoGameHost from '../game-platform/host/PianoGameHost.jsx';
 import { usePianoKioskConfigOptional } from '../PianoKiosk/PianoConfig.jsx';
 import { bindNoteSlots, useNoteSelection, SELECTION_NOTES, SECONDARY_NOTES } from '../game-platform/input/useNoteSelection.js';
+import { useAnyKeyToContinue } from '../game-platform/input/useAnyKeyToContinue.js';
+import { keyFallbackNeeded } from '../game-platform/input/touchCapability.js';
 import { ChordStaffRenderer } from '../../MusicNotation/renderers/ChordStaffRenderer.jsx';
 import { usePianoMidiOptional, usePianoMidiNotesOptional } from '../PianoKiosk/PianoMidiContext.jsx';
 import PianoEmpty from '../PianoKiosk/PianoEmpty.jsx';
@@ -49,7 +51,8 @@ const localMediaId = (contentId) => String(contentId || '').replace(/^[a-z]+:/i,
 export function noteSelectionEnabled(config, nav = (typeof navigator !== 'undefined' ? navigator : null)) {
   if (config?.noteSelect === true) return true;
   if (config?.noteSelect === false) return false;
-  return !(nav?.maxTouchPoints > 0);
+  // One answer for "is there a finger here", shared with every other gate.
+  return keyFallbackNeeded(config, nav);
 }
 
 export function HeroSongPicker({ sheetmusic, onSelect, subRoute = null, onSubRoute, activeNotes = null, noteSelect = null }) {
@@ -125,7 +128,7 @@ export function HeroSongPicker({ sheetmusic, onSelect, subRoute = null, onSubRou
                   {byNotes && noteFor.get(song.id) && (
                     <span className="piano-hero-picker__addr">
                       <ChordStaffRenderer
-                        notes={[noteFor.get(song.id).note]}
+                        columns={[[noteFor.get(song.id).note]]}
                         className="chord-staff piano-hero-picker__staff"
                       />
                       <em>{noteFor.get(song.id).noteName}</em>
@@ -218,8 +221,18 @@ export function HeroGame({
   const [tempoSheetOpen, setTempoSheetOpen] = useState(false);
   const activeChart = useMemo(() => retimeHeroChart(chart, songBpm * tempoRatio), [chart, songBpm, tempoRatio]);
   const game = usePianoHeroGame({ chart: activeChart, subscribe, config: gameConfig });
+
   const ctxNotes = usePianoMidiNotesOptional();
   const activeNotes = activeNotesProp ?? ctxNotes.activeNotes;
+  // "Play" and "Play again" are buttons, and the office screen has no finger to
+  // press them with — the song loads and then nothing can start it. Any key does
+  // now, on the ready screen and on the result screen alike. The keys still down
+  // from the run that just ended do not count.
+  const needsKeys = keyFallbackNeeded(gameConfig);
+  useAnyKeyToContinue({
+    enabled: needsKeys && (game.phase === 'ready' || game.phase === 'complete'),
+    activeNotes, onContinue: game.start,
+  });
   const range = useMemo(() => computeKeyboardRange([activeChart.startNote, activeChart.endNote]), [activeChart.startNote, activeChart.endNote]);
   const imminent = useMemo(() => new Set(game.run.targets
     .filter((target) => target.state === 'pending' && Math.abs(target.targetTimeMs - game.elapsedMs) <= 500)
@@ -330,7 +343,7 @@ export function HeroGame({
             <span><strong>{game.run.score.maxCombo}</strong> Best streak</span>
           </div>
           <div className="piano-hero-overlay__actions">
-            <button type="button" onClick={game.start}>Play again</button>
+            <button type="button" onClick={game.start}>{needsKeys ? 'Play again — or press any key' : 'Play again'}</button>
             <button type="button" className="is-secondary" onClick={onChooseSong}>Choose a song</button>
           </div>
         </div>
