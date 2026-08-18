@@ -827,6 +827,10 @@ The menu *is* a keyboard — nine tall keys, black-key slivers in the gaps, note
 - Create: `frontend/src/modules/Piano/game-platform/launcher/NoteLauncher.jsx`
 - Create: `frontend/src/modules/Piano/game-platform/launcher/NoteLauncher.scss`
 - Create: `frontend/src/modules/Piano/game-platform/launcher/NoteLauncher.test.jsx`
+- Create: `frontend/src/modules/Piano/game-platform/launcher/HoldRing.jsx`
+- Create: `frontend/src/modules/Piano/game-platform/launcher/HoldRing.test.jsx`
+
+**The hold ring is a sibling of the launcher, not a child of it.** `isHolding` goes true on *every* combo press, including the press that toggles the launcher **closed**. A ring rendered inside `NoteLauncher` would therefore be invisible for "hold to quit while a game is running" — the one case where the player most needs to see that something is happening. `HoldRing` mounts at the `PianoVisualizer` level in Task 6, gated on `isHolding` alone.
 
 **Step 1: Write the failing test**
 
@@ -871,11 +875,12 @@ describe('NoteLauncher', () => {
     expect(container.querySelector('.note-launcher__keys').style.getPropertyValue('--key-count')).toBe('6');
   });
 
-  it('marks the hold-to-quit state so the ring can animate', () => {
-    const { container, rerender } = render(<NoteLauncher slots={build(3)} isHolding={false} />);
-    expect(container.querySelector('.note-launcher__hold')).toBeNull();
-    rerender(<NoteLauncher slots={build(3)} isHolding />);
-    expect(container.querySelector('.note-launcher__hold')).toBeTruthy();
+  it('does not own the hold ring — that survives the launcher closing', () => {
+    // Holding the combo while the launcher is OPEN toggles it shut and then
+    // force-quits at 2s. If the ring lived in here it would vanish at the
+    // moment the player needs it. See HoldRing.test.jsx.
+    const { container } = render(<NoteLauncher slots={build(3)} />);
+    expect(container.querySelector('.nl-hold')).toBeNull();
   });
 
   it('is announced as a dialog', () => {
@@ -910,7 +915,7 @@ import './NoteLauncher.scss';
  * correspondence with the keys under the player's hands, which is the only
  * reason this reads without instructions.
  */
-export default function NoteLauncher({ slots = [], isHolding = false, timeoutMs = 30000 }) {
+export default function NoteLauncher({ slots = [], timeoutMs = 30000 }) {
   return (
     <div className="note-launcher" role="dialog" aria-label="Pick a game">
       <div className="note-launcher__head">
@@ -933,8 +938,6 @@ export default function NoteLauncher({ slots = [], isHolding = false, timeoutMs 
           </li>
         ))}
       </ul>
-
-      {isHolding && <div className="note-launcher__hold" aria-hidden="true" />}
     </div>
   );
 }
@@ -1010,19 +1013,23 @@ Palette derived from the instrument's own materials, and reachable from the app'
     height: 62%;
   }
 
-  // Hold-to-quit: a brass ring closing over the 2s hold window.
-  &__hold {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 7rem;
-    height: 7rem;
-    margin: -3.5rem 0 0 -3.5rem;
-    border-radius: 50%;
-    border: 3px solid rgba(192, 139, 62, 0.25);
-    background: conic-gradient(var(--brass) 0turn, transparent 0turn);
-    animation: nl-hold 2000ms linear forwards;
-  }
+}
+
+// Hold-to-quit: a brass ring closing over the hold window. Deliberately NOT
+// nested inside .note-launcher — it renders alongside the overlay and must
+// survive the overlay closing (see HoldRing.jsx).
+.nl-hold {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 50;
+  width: 7rem;
+  height: 7rem;
+  margin: -3.5rem 0 0 -3.5rem;
+  border-radius: 50%;
+  border: 3px solid rgba(192, 139, 62, 0.25);
+  background: conic-gradient(#C08B3E 0turn, transparent 0turn);
+  animation: nl-hold linear forwards;
 }
 
 .nl-key {
@@ -1107,8 +1114,51 @@ Palette derived from the instrument's own materials, and reachable from the app'
 @media (prefers-reduced-motion: reduce) {
   .nl-key { animation: none; }
   .note-launcher__timer i,
-  .note-launcher__hold { animation-duration: 0.01ms; }
+  .nl-hold { animation-duration: 0.01ms; }
 }
+```
+
+**Step 4b: Write the hold ring**
+
+`HoldRing.jsx` — deliberately its own component so it can render outside the launcher:
+
+```jsx
+import './NoteLauncher.scss';
+
+/**
+ * The brass ring that fills while the player holds the combo down, and at
+ * `holdMs` drops them back to free-play.
+ *
+ * A sibling of the launcher rather than a child. Holding the combo while the
+ * launcher is OPEN toggles it shut and then force-quits at 2s — a ring living
+ * inside the overlay would disappear at exactly the moment the player needs to
+ * see that holding is doing something.
+ */
+export default function HoldRing({ holdMs = 2000 }) {
+  return <div className="nl-hold" style={{ animationDuration: `${holdMs}ms` }} aria-hidden="true" />;
+}
+```
+
+`HoldRing.test.jsx`:
+
+```jsx
+import { describe, it, expect } from 'vitest';
+import { render } from '@testing-library/react';
+import HoldRing from './HoldRing.jsx';
+
+describe('HoldRing', () => {
+  it('renders a ring that fills over the hold window', () => {
+    const { container } = render(<HoldRing holdMs={2000} />);
+    const ring = container.querySelector('.nl-hold');
+    expect(ring).toBeTruthy();
+    expect(ring.style.animationDuration).toBe('2000ms');
+  });
+
+  it('is decorative — it carries no accessible name', () => {
+    const { container } = render(<HoldRing />);
+    expect(container.querySelector('.nl-hold').getAttribute('aria-hidden')).toBe('true');
+  });
+});
 ```
 
 **Step 5: Run the tests**
@@ -1117,7 +1167,7 @@ Palette derived from the instrument's own materials, and reachable from the app'
 npx vitest run frontend/src/modules/Piano/game-platform/launcher/NoteLauncher.test.jsx
 ```
 
-Expected: PASS, 7 tests. The icon test relies on the real `Icon.jsx` returning `null` for unknown names (`game-0` etc. don't exist) — that's fine, the assertions are on the key structure, not the SVG.
+Expected: PASS, 7 tests in `NoteLauncher.test.jsx` and 2 in `HoldRing.test.jsx`. The icon test relies on the real `Icon.jsx` returning `null` for unknown names (`game-0` etc. don't exist) — that's fine, the assertions are on the key structure, not the SVG.
 
 **Step 6: Commit**
 
@@ -1146,7 +1196,7 @@ Add to `PianoVisualizer.test.jsx`. First replace the `useGameActivation` mock wi
 
 ```jsx
 // replaces the useGameActivation mock
-let launcherState = { isOpen: false, activeGameId: null, isHolding: false, dismiss: vi.fn(), timeoutMs: 30000 };
+let launcherState = { isOpen: false, activeGameId: null, isHolding: false, dismiss: vi.fn(), exitGame: vi.fn(), timeoutMs: 30000 };
 vi.mock('./game-platform/launcher/useNoteLauncher.js', () => ({
   useNoteLauncher: () => launcherState,
 }));
@@ -1206,6 +1256,7 @@ import { useGameActivation } from './useGameActivation.js';
 import { useNoteLauncher } from './game-platform/launcher/useNoteLauncher.js';
 import { buildLauncherSlots } from './game-platform/launcher/launcherNotes.js';
 import NoteLauncher from './game-platform/launcher/NoteLauncher.jsx';
+import HoldRing from './game-platform/launcher/HoldRing.jsx';
 import GameBoundary from './game-platform/host/GameBoundary.jsx';
 ```
 
@@ -1289,8 +1340,13 @@ Mount the launcher itself, just before the game block:
 
 ```jsx
       {launcherOpen && (
-        <NoteLauncher slots={slots} isHolding={launcher.isHolding} timeoutMs={launcher.timeoutMs} />
+        <NoteLauncher slots={slots} timeoutMs={launcher.timeoutMs} />
       )}
+
+      {/* Sibling of the launcher, not a child: the ring must outlive the
+          overlay closing, because holding the combo with the launcher OPEN
+          toggles it shut and then quits at 2s. */}
+      {launcher.isHolding && <HoldRing holdMs={2000} />}
 ```
 
 Add the registry import if absent: `import { getGameEntry, getGameIds } from './gameRegistry.js';`
