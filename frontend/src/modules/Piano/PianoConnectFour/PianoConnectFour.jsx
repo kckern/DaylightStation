@@ -76,6 +76,9 @@ const INPUT_MODES = [
   { value: 'notes', label: 'Single notes' },
   { value: 'chords', label: 'Major chords' },
 ];
+/** Search depth for a HINT — competent, and deliberately not the opponent's. */
+const HINT_SEARCH_LEVEL = 5;
+
 const HINT_CLUSTER = 7;
 
 export function shuffledColumns(seed) {
@@ -315,9 +318,12 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
     // Seven-note cluster is the universal best-move gesture, independent of
     // addressing mode.
     if (activeNotes.size >= HINT_CLUSTER) {
-      const suggested = chooseColumn(game.board, { player: 1, level });
+      // Searched at a competent depth, NOT the opponent's — see the same fix in
+      // checkers. At level 1 the search is one ply and cannot see the reply, so
+      // the "best column" it suggested was one that handed the game away.
+      const suggested = chooseColumn(game.board, { player: 1, level: HINT_SEARCH_LEVEL });
       setHint(suggested);
-      logger.info('connect-four.hint', { column: suggested, level });
+      logger.info('connect-four.hint', { column: suggested, level, hintLevel: HINT_SEARCH_LEVEL });
       latchedRef.current = true;
       return;
     }
