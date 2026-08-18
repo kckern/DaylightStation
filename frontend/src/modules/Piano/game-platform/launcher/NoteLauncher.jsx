@@ -32,6 +32,12 @@ export default function NoteLauncher({
     <div className={`note-launcher note-launcher--${variant}`} role="dialog" aria-label={title}>
       <div className="note-launcher__head">
         <span className="note-launcher__title">{title}</span>
+        {showTimer && (
+          <div className="note-launcher__timer" aria-hidden="true">
+            <i style={{ animationDuration: `${timeoutMs}ms` }} />
+          </div>
+        )}
+
         {/* Who the result gets filed under, and how to change it. Named rather
             than implied: the office screen cannot know who sat down, and a
             silent default is how results end up under the wrong person. */}
@@ -40,11 +46,6 @@ export default function NoteLauncher({
             ? <><b>{playerName}</b><i>top key to change</i></>
             : <b>Nobody yet — play the top key</b>}
         </span>
-        {showTimer && (
-          <div className="note-launcher__timer" aria-hidden="true">
-            <i style={{ animationDuration: `${timeoutMs}ms` }} />
-          </div>
-        )}
       </div>
 
       <ul className="note-launcher__keys" style={{ '--key-count': slots.length }}>
