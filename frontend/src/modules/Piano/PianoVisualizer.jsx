@@ -12,7 +12,7 @@ import { useNoteLauncher } from './game-platform/launcher/useNoteLauncher.js';
 import { comboNotesForKeyboard } from './game-platform/launcher/comboForKeyboard.js';
 import { useNotesHeldAtMount } from './game-platform/input/heldAtMount.js';
 import { useLauncherUser } from './game-platform/launcher/useLauncherUser.js';
-import ProfilePicker from '../../lib/identity/ProfilePicker.jsx';
+import { bindNoteSlots, useNoteSelection, SELECTION_NOTES } from './game-platform/input/useNoteSelection.js';
 import NoteLauncher from './game-platform/launcher/NoteLauncher.jsx';
 import HoldRing from './game-platform/launcher/HoldRing.jsx';
 import GameBoundary from './game-platform/host/GameBoundary.jsx';
@@ -73,8 +73,35 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
   // be told, so it remembers the last answer and the top key changes it.
   const { users, currentUser, pickerOpen, openPicker, closePicker, pickUser } = useLauncherUser();
 
+  // The roster, laid out as the same row of keys the games use. It was a
+  // tap-only modal — dark-on-dark and unselectable on a screen with no touch,
+  // which is the one screen it exists for.
+  const userSlots = useMemo(
+    () => bindNoteSlots(users, SELECTION_NOTES).slots.map((slot) => ({
+      ...slot,
+      userId: slot.item.id,
+      label: slot.item.group_label || slot.item.name,
+      note: slot.note,
+      noteName: slot.noteName,
+      sharpAfter: false,
+    })),
+    [users],
+  );
+  useNoteSelection({
+    activeNotes, slots: userSlots, enabled: pickerOpen,
+    onSelect: (_item, slot) => pickUser(slot.userId ?? slot.item.id),
+  });
+  const currentUserName = useMemo(() => {
+    const u = users.find((x) => x.id === currentUser);
+    return u ? (u.group_label || u.name) : null;
+  }, [users, currentUser]);
+
   const { isOpen: launcherOpen, activeGameId, isHolding, dismiss, exitGame, timeoutMs, launchNonce } =
     useNoteLauncher({ activeNotes, slots, initialGame, onRequestUser: openPicker, options: launcherOptions });
+
+  // Two levels, one at a time: with both rows up, one key press would mean two
+  // different things.
+  useEffect(() => { if (pickerOpen && launcherOpen) dismiss('user-picker'); }, [pickerOpen, launcherOpen, dismiss]);
 
   const activeGameEntry = activeGameId ? getGameEntry(activeGameId) : null;
   const isFullscreenGame = activeGameEntry?.layout === 'replace';
@@ -217,25 +244,22 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
         </div>
       )}
 
-      {launcherOpen && (
+      {launcherOpen && !pickerOpen && (
+        <NoteLauncher slots={slots} timeoutMs={timeoutMs} playerName={currentUserName} />
+      )}
+
+      {/* Second level of the pick: who, then what. Same keyboard, same grammar —
+          each player wears the key that chooses them. */}
+      {pickerOpen && (
         <NoteLauncher
-          slots={slots}
-          timeoutMs={timeoutMs}
-          playerName={users.find((u) => u.id === currentUser)?.name ?? null}
+          slots={userSlots}
+          variant="users"
+          showTimer={false}
+          title="Who's playing? · play their key"
+          playerName={currentUserName}
         />
       )}
 
-      {/* Second level of the pick: who, then what. Opened by the board's top
-          key from the launcher, and automatically the first time, when there is
-          no remembered player to default to. */}
-      <ProfilePicker
-        open={pickerOpen}
-        users={users}
-        activeId={currentUser}
-        onPick={(id) => pickUser(id)}
-        onDismiss={closePicker}
-        title="Who's playing?"
-      />
 
       {/* Sibling of the launcher, not a child: holding the combo with the
           launcher OPEN toggles it shut and only then quits at 2s, so a ring
