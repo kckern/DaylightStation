@@ -1,0 +1,93 @@
+/* Names the game and the player on the office screen, which has no breadcrumb
+   rail and no user chip of its own. Sits inside the fullscreen game wrapper, so
+   it inherits the same `--pg-*` cabinet every game is furnished from. */
+.office-game-chrome {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 4;              /* over the board, under the launcher (60) */
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 0.7rem 1.4rem;
+  pointer-events: none;    /* the board owns every input on this screen */
+  font-family: 'Roboto Condensed', sans-serif;
+  /* A wash rather than a bar: the board is the content, and a solid header
+     would take a slice of a screen that is already showing a whole game. */
+  background: linear-gradient(180deg, rgb(0 0 0 / 55%) 0%, transparent 100%);
+  box-sizing: border-box;
+
+  &__what {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    min-width: 0;
+  }
+
+  &__icon {
+    font-size: 1.5rem;
+    line-height: 0;
+    color: var(--pg-brass, #5fe39a);
+    display: inline-flex;
+
+    svg { width: 1em; height: 1em; display: block; }
+  }
+
+  &__title {
+    font-size: 1.15rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--pg-ivory, #f1f1f4);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__who {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex: 0 0 auto;
+  }
+
+  &__avatar {
+    width: 2rem;
+    aspect-ratio: 1;
+
+    .piano-avatar {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .piano-avatar--fallback {
+      display: grid;
+      place-items: center;
+      background: var(--pg-shelf, #1f1f26);
+      color: var(--pg-ivory, #f1f1f4);
+      font-weight: 700;
+      font-size: 0.8rem;
+    }
+  }
+
+  &__name {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--pg-ivory, #f1f1f4);
+    white-space: nowrap;
+
+    /* Stated, not hidden. A game filed under nobody is worth seeing. */
+    &--none {
+      color: var(--pg-felt, #e05a4f);
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-size: 0.9rem;
+    }
+  }
+}

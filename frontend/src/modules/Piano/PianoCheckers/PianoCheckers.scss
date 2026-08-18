@@ -81,35 +81,41 @@
 .checkers-stage {
   display: grid;
   /* One grid for the whole instrument face: a rank-rail column and a board
-     column, a file-rail row and a board row. The file rail shares the board's
+     column, a board row and a file-rail row. The file rail shares the board's
      COLUMN, so a card is over its file by construction rather than by an
-     arithmetic chase through two different centring contexts. */
+     arithmetic chase through two different centring contexts.
+
+     The file rail sits BELOW the board, matching chess. Connect Four keeps its
+     column rail on top, deliberately: you drop a disc from above, so that is
+     where the player is already looking. On a board you move ACROSS, the
+     addresses belong under it, where a hand reading along the rank finds them
+     without covering the pieces. */
   grid-template-columns: var(--ck-rank-rail) minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
   align-items: stretch;
   gap: var(--ck-rank-gap);
   width: min(100%, var(--pg-board-max));
   margin-inline-end: var(--ck-board-offset);
 }
 
-/* Column 2, row 1 — over the board, inset by the board's own rim so the cards
+/* Column 2, row 2 — UNDER the board, inset by the board's own rim so the cards
    line up with the squares rather than with the frame around them. */
 .checkers-stage__file-rail {
   grid-column: 2;
-  grid-row: 1;
+  grid-row: 2;
   padding-inline: var(--ck-rim);
   box-sizing: border-box;
 }
 
 .checkers-stage__rank-rail {
   grid-column: 1;
-  grid-row: 2;
+  grid-row: 1;
   min-height: 0;
   padding-block: var(--ck-rim);
   box-sizing: border-box;
 }
 
-.checkers-stage .checkers-board { grid-column: 2; grid-row: 2; width: 100%; }
+.checkers-stage .checkers-board { grid-column: 2; grid-row: 1; width: 100%; }
 
 .checkers-board {
   aspect-ratio: 1;
