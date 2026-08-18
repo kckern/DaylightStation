@@ -81,10 +81,13 @@ export default function NoteLauncher({
               </>
             ) : (
               <>
+                {/* Card, then the letter it spells, then the game: the notation
+                    and its name belong together, and the icon introduces the
+                    title rather than trailing after it. */}
                 <StaffNoteLabel midi={slot.note} />
-                <span className="nl-key__label">{slot.label}</span>
                 <span className="nl-key__note">{slot.noteName}</span>
                 <Icon name={slot.icon} className="nl-key__icon" />
+                <span className="nl-key__label">{slot.label}</span>
               </>
             )}
           </li>
