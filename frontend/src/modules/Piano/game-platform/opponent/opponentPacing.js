@@ -133,8 +133,16 @@ export function thinkTimeFor({
  * the server's own answer), so that merge stays in each caller's `onReply`,
  * exactly as it already did before this hook existed.
  */
+/**
+ * How long an opponent may take before we stop waiting for it. Generous — a
+ * slow server plus a deliberate brood is legitimate — but finite, because an
+ * unanswered turn is a dead game the player cannot leave.
+ */
+export const OPPONENT_STALL_MS = 15000;
+
 export function useOpponentReply({
   enabled, request, fallback = null, thinkMs = 0, onReply, resetKey = null,
+  stallMs = OPPONENT_STALL_MS,
 }) {
   const requestRef = useRef(request);
   requestRef.current = request;
@@ -153,8 +161,10 @@ export function useOpponentReply({
     setThinking(true);
     const startedAt = Date.now();
 
+    let settled = false;
     const settle = (answer) => {
-      if (cancelled) return;
+      if (cancelled || settled) return;
+      settled = true;
       const elapsed = Date.now() - startedAt;
       const waitMs = Math.max(0, thinkMsRef.current - elapsed);
       timer = setTimeout(() => {
@@ -183,9 +193,20 @@ export function useOpponentReply({
       settle(fallbackRef.current ? fallbackRef.current() : null);
     });
 
+    // Guardrail. A request that neither resolves nor rejects leaves the board on
+    // the opponent's turn forever, and every key the player then presses is
+    // silently discarded — a game that looks alive and cannot be played. Falling
+    // back to the local engine is always better than waiting for nothing.
+    const stallTimer = stallMs > 0 ? setTimeout(() => {
+      if (cancelled || settled) return;
+      logger().error('opponent-stalled', { stallMs, thinkMs: thinkMsRef.current });
+      settle(fallbackRef.current ? fallbackRef.current() : null);
+    }, stallMs) : null;
+
     return () => {
       cancelled = true;
       if (timer) clearTimeout(timer);
+      if (stallTimer) clearTimeout(stallTimer);
       setThinking(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

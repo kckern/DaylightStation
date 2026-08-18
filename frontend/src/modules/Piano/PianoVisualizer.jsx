@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, Suspense } from 'react';
+import { useCallback, useEffect, useMemo, useState, Suspense } from 'react';
 import { configure as configureLogger, getLogger } from '../../lib/logging/Logger.js';
 import { PianoKeyboard } from './components/PianoKeyboard';
 import { NoteWaterfall } from './components/NoteWaterfall';
@@ -12,6 +12,7 @@ import { useNoteLauncher } from './game-platform/launcher/useNoteLauncher.js';
 import { comboNotesForKeyboard } from './game-platform/launcher/comboForKeyboard.js';
 import { useNotesHeldAtMount } from './game-platform/input/heldAtMount.js';
 import { useLauncherUser } from './game-platform/launcher/useLauncherUser.js';
+import PlayerConfirm from './game-platform/launcher/PlayerConfirm.jsx';
 import { bindNoteSlots, useNoteSelection, SELECTION_NOTES } from './game-platform/input/useNoteSelection.js';
 import NoteLauncher from './game-platform/launcher/NoteLauncher.jsx';
 import HoldRing from './game-platform/launcher/HoldRing.jsx';
@@ -101,10 +102,24 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
   // screen is a rendering question, below.
   const rosterNeeded = pickerOpen || (!currentUser && users.length > 0);
 
+  // Picking is one key press against a row of six faces, and the row vanishes
+  // the instant it lands — so nothing said WHO had been chosen. On a shared
+  // instrument, where that answer decides whose record a game is filed under,
+  // "did that pick me or my brother" should not be a question the player holds.
+  const [confirming, setConfirming] = useState(null);
   useNoteSelection({
     activeNotes, slots: userSlots, enabled: rosterNeeded,
-    onSelect: (_item, slot) => pickUser(slot.userId ?? slot.item.id),
+    onSelect: (item, slot) => {
+      const id = slot.userId ?? item.id;
+      pickUser(id);
+      setConfirming({ id, name: item.group_label || item.name });
+    },
   });
+  useEffect(() => {
+    if (!confirming) return undefined;
+    const t = setTimeout(() => setConfirming(null), 1600);
+    return () => clearTimeout(t);
+  }, [confirming]);
 
   const currentUserName = useMemo(() => {
     const u = users.find((x) => x.id === currentUser);
@@ -280,6 +295,8 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
           living inside the overlay would vanish at exactly the moment the
           player needs to see that holding is doing something. */}
       {isHolding && <HoldRing holdMs={2000} />}
+
+      {confirming && <PlayerConfirm userId={confirming.id} name={confirming.name} />}
 
       {isFullscreenGame && activeGameEntry?.LazyComponent && (
         <div className="tetris-fullscreen">

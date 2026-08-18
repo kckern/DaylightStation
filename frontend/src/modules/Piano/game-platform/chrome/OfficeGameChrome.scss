@@ -2,11 +2,13 @@
    rail and no user chip of its own. Sits inside the fullscreen game wrapper, so
    it inherits the same `--pg-*` cabinet every game is furnished from. */
 .office-game-chrome {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 4;              /* over the board, under the launcher (60) */
+  /* In FLOW, not floating over the board. Absolutely positioned it sat on top of
+     whatever the game drew in its first rows — Space Invaders' miss counter went
+     straight under the player's name. A game is entitled to its whole viewport;
+     the chrome takes a strip and gives the rest back, so container and contained
+     never argue about the same pixels. */
+  flex: 0 0 auto;
+  z-index: 4;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -14,9 +16,8 @@
   padding: 0.7rem 1.4rem;
   pointer-events: none;    /* the board owns every input on this screen */
   font-family: 'Roboto Condensed', sans-serif;
-  /* A wash rather than a bar: the board is the content, and a solid header
-     would take a slice of a screen that is already showing a whole game. */
-  background: linear-gradient(180deg, rgb(0 0 0 / 55%) 0%, transparent 100%);
+  background: var(--pg-case, #16161b);
+  border-bottom: 1px solid var(--pg-hairline, #34343f);
   box-sizing: border-box;
 
   &__what {
