@@ -31,7 +31,7 @@ const NO_NOTES = new Map();
  * @param {string|null} [args.initialGame] - deep-linked game id (URL)
  * @param {Object} [args.options] - {comboNotes, comboWindowMs, timeoutMs, holdExitMs}
  */
-export function useNoteLauncher({ activeNotes, slots, initialGame = null, onRequestUser = null, options = {} }) {
+export function useNoteLauncher({ activeNotes, slots, initialGame = null, onRequestUser = null, selectionPaused = false, options = {} }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-launcher' }), []);
 
   // Read as primitives rather than merging into an object: a merged object is a
@@ -189,7 +189,11 @@ export function useNoteLauncher({ activeNotes, slots, initialGame = null, onRequ
     // the very next pass, launching a game nobody picked.
     prevNotesRef.current = current;
 
-    if (!isOpen || struck.length === 0) return;
+    // `selectionPaused` is the first level of the pick holding the floor: while
+    // the roster row is up, a key names a PLAYER, and the same press must not
+    // also start a game. Seeding above still runs, so the key that chose a
+    // player is not read as a fresh strike the moment the game row appears.
+    if (!isOpen || selectionPaused || struck.length === 0) return;
 
     for (const note of struck) {                    // lowest first
       // The board's TOP key changes who is playing. It is the key the player
@@ -208,7 +212,7 @@ export function useNoteLauncher({ activeNotes, slots, initialGame = null, onRequ
       closeLauncher('selected');
       return;
     }
-  }, [liveNotes, isOpen, slots, comboNotes, closeLauncher, setGame, logger]);
+  }, [liveNotes, isOpen, selectionPaused, slots, comboNotes, closeLauncher, setGame, logger]);
 
   // ─── Unmount: no timer outlives the hook ──────────────────────────────────
   useEffect(() => () => {

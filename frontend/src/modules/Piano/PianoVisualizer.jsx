@@ -87,21 +87,33 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
     })),
     [users],
   );
+
+
+  // Who, THEN what. Opening the roster with the top key is the deliberate
+  // route; this is the first-run one. Chess files a record per player, so
+  // launching with nobody selected quietly files the game under a guest — which
+  // is exactly what happened: a game was picked and the roster never appeared.
+  //
+  // Deliberately NOT derived from `launcherOpen`: that comes back from the hook
+  // this value is passed into, and the cycle would not resolve. "Does the roster
+  // still owe an answer" is true or false on its own terms; whether it is on
+  // screen is a rendering question, below.
+  const rosterNeeded = pickerOpen || (!currentUser && users.length > 0);
+
   useNoteSelection({
-    activeNotes, slots: userSlots, enabled: pickerOpen,
+    activeNotes, slots: userSlots, enabled: rosterNeeded,
     onSelect: (_item, slot) => pickUser(slot.userId ?? slot.item.id),
   });
+
   const currentUserName = useMemo(() => {
     const u = users.find((x) => x.id === currentUser);
     return u ? (u.group_label || u.name) : null;
   }, [users, currentUser]);
 
   const { isOpen: launcherOpen, activeGameId, isHolding, dismiss, exitGame, timeoutMs, launchNonce } =
-    useNoteLauncher({ activeNotes, slots, initialGame, onRequestUser: openPicker, options: launcherOptions });
+    useNoteLauncher({ activeNotes, slots, initialGame, onRequestUser: openPicker, selectionPaused: rosterNeeded, options: launcherOptions });
 
-  // Two levels, one at a time: with both rows up, one key press would mean two
-  // different things.
-  useEffect(() => { if (pickerOpen && launcherOpen) dismiss('user-picker'); }, [pickerOpen, launcherOpen, dismiss]);
+
 
   const activeGameEntry = activeGameId ? getGameEntry(activeGameId) : null;
   const isFullscreenGame = activeGameEntry?.layout === 'replace';
@@ -244,13 +256,13 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
         </div>
       )}
 
-      {launcherOpen && !pickerOpen && (
+      {launcherOpen && !rosterNeeded && (
         <NoteLauncher slots={slots} timeoutMs={timeoutMs} playerName={currentUserName} />
       )}
 
       {/* Second level of the pick: who, then what. Same keyboard, same grammar —
           each player wears the key that chooses them. */}
-      {pickerOpen && (
+      {launcherOpen && rosterNeeded && (
         <NoteLauncher
           slots={userSlots}
           variant="users"

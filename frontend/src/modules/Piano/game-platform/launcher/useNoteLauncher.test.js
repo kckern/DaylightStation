@@ -381,3 +381,34 @@ describe('useNoteLauncher launch identity', () => {
     expect(result.current.launchNonce).toBe(afterLaunch);
   });
 });
+
+// A game was picked while the roster had never been shown, so it ran as a guest
+// and chess filed the record under nobody. The first level of the pick has to be
+// able to hold the floor.
+describe('useNoteLauncher selectionPaused', () => {
+  const open = (rerender) => {
+    rerender({ activeNotes: notes(21, 108) });
+    rerender({ activeNotes: new Map() });
+  };
+
+  it('does not start a game while the roster still owes an answer', () => {
+    const { result, rerender } = renderHook(
+      ({ activeNotes, selectionPaused }) => useNoteLauncher({ activeNotes, slots, selectionPaused }),
+      { initialProps: { activeNotes: new Map(), selectionPaused: true } },
+    );
+    open((p) => rerender({ ...p, selectionPaused: true }));
+    rerender({ activeNotes: notes(60), selectionPaused: true });
+    expect(result.current.activeGameId).toBeNull();
+  });
+
+  it('starts one again once the roster has been answered', () => {
+    const { result, rerender } = renderHook(
+      ({ activeNotes, selectionPaused }) => useNoteLauncher({ activeNotes, slots, selectionPaused }),
+      { initialProps: { activeNotes: new Map(), selectionPaused: false } },
+    );
+    rerender({ activeNotes: notes(21, 108), selectionPaused: false });
+    rerender({ activeNotes: new Map(), selectionPaused: false });
+    rerender({ activeNotes: notes(60), selectionPaused: false });
+    expect(result.current.activeGameId).toBe('invaders');
+  });
+});
