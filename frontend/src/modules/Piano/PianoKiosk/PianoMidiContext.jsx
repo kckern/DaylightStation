@@ -99,4 +99,36 @@ export function usePianoMidiNotes() {
   return useSyncExternalStore(notes.subscribe, notes.getSnapshot, notes.getSnapshot);
 }
 
+// ── Provider-optional access ────────────────────────────────────────────────
+// The throwing accessors above are right for the kiosk, where a missing
+// provider is a wiring bug. But a component can legitimately render BOTH inside
+// the kiosk and on the office screen, where PianoVisualizer is a screen-framework
+// widget with no PianoMidiProvider — notes arrive over WebSocket instead. Chess
+// did exactly that and crashed outright the first time the note launcher made it
+// reachable there. These variants let such a component prefer the notes it is
+// handed and fall back to the context only when it is genuinely inside one.
+
+/** Frozen empty snapshot — a stable identity, or useSyncExternalStore loops. */
+const NO_NOTES_SNAPSHOT = Object.freeze({
+  activeNotes: new Map(), noteHistory: [], sustainPedal: false, isPlaying: false,
+});
+const NO_SUBSCRIBE = () => () => {};
+const NO_SNAPSHOT = () => NO_NOTES_SNAPSHOT;
+
+/** The MIDI surface, or null when there is no provider above. Never throws. */
+export function usePianoMidiOptional() {
+  return useContext(PianoMidiContext) ?? null;
+}
+
+/** Live notes, or a stable empty snapshot when there is no provider. Never throws. */
+export function usePianoMidiNotesOptional() {
+  const notes = useContext(PianoMidiContext)?.notes ?? null;
+  // Both callbacks must be passed unconditionally — the hook count cannot vary.
+  return useSyncExternalStore(
+    notes ? notes.subscribe : NO_SUBSCRIBE,
+    notes ? notes.getSnapshot : NO_SNAPSHOT,
+    notes ? notes.getSnapshot : NO_SNAPSHOT,
+  );
+}
+
 export default PianoMidiContext;

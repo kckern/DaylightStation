@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { shuffle, buildNotePool, isWhiteKey, getNoteName, computeKeyboardRange } from './noteUtils.js';
+import { shuffle, buildNotePool, isWhiteKey, getNoteName, computeKeyboardRange, resolveBoardRange } from './noteUtils.js';
 
 // ─── shuffle ────────────────────────────────────────────────────
 
@@ -100,5 +100,29 @@ describe('computeKeyboardRange', () => {
     const { startNote, endNote } = computeKeyboardRange(null);
     expect(startNote).toBe(21);
     expect(endNote).toBe(108);
+  });
+});
+
+describe('resolveBoardRange', () => {
+  it('uses the office 76-key board exactly, inventing no keys', () => {
+    // computeKeyboardRange would pad this by a third of the span each way.
+    expect(resolveBoardRange({ startNote: 28, endNote: 103 })).toEqual({ startNote: 28, endNote: 103 });
+  });
+
+  it('falls back to the full 88 when a screen names no keyboard', () => {
+    for (const input of [undefined, null, {}, { startNote: 28 }, { endNote: 103 }]) {
+      expect(resolveBoardRange(input)).toEqual({ startNote: 21, endNote: 108 });
+    }
+  });
+
+  it('falls back rather than render an empty or inverted keyboard', () => {
+    expect(resolveBoardRange({ startNote: 60, endNote: 60 })).toEqual({ startNote: 21, endNote: 108 });
+    expect(resolveBoardRange({ startNote: 103, endNote: 28 })).toEqual({ startNote: 21, endNote: 108 });
+  });
+
+  it('rejects out-of-MIDI and non-integer values', () => {
+    expect(resolveBoardRange({ startNote: -1, endNote: 103 })).toEqual({ startNote: 21, endNote: 108 });
+    expect(resolveBoardRange({ startNote: 28, endNote: 128 })).toEqual({ startNote: 21, endNote: 108 });
+    expect(resolveBoardRange({ startNote: 28.5, endNote: 103 })).toEqual({ startNote: 21, endNote: 108 });
   });
 });

@@ -168,14 +168,26 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
   }, [game.status.gameOver, game.turn, thinking]);
 
   useEffect(() => {
-    if (game.status.gameOver || game.turn !== 1 || thinking) return;
+    // Every one of these swallows the player's input. Silently, until now: a
+    // finished board re-entered from the launcher looks identical to a working
+    // one, and "I can't move" produced not a single log line to explain it.
+    // Sampled because it is evaluated on every note event.
+    if (game.status.gameOver || game.turn !== 1 || thinking) {
+      if (activeNotes.size > 0) {
+        logger.sampled('checkers.input-ignored', {
+          reason: game.status.gameOver ? 'game-over' : thinking ? 'opponent-thinking' : 'not-your-turn',
+          turn: game.turn, ply: game.moves?.length ?? null,
+        }, { maxPerMinute: 6, aggregate: true });
+      }
+      return;
+    }
     if (activeNotes.size === 0) { latchedRef.current = false; return; }
     if (latchedRef.current) return;
     if (activeNotes.size >= HINT_CLUSTER) {
       const suggestion = chooseMove(game, { level });
       setHint(suggestion);
       setMessage('Suggested move is glowing.');
-      logger.debug('checkers.hint', { from: suggestion?.from ?? null, to: suggestion?.to ?? null, level });
+      logger.info('checkers.hint', { from: suggestion?.from ?? null, to: suggestion?.to ?? null, level });
       latchedRef.current = true;
       return;
     }
@@ -201,8 +213,15 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
         setSelected(next.turn === 1 ? next.forcedFrom : null);
         setMessage(next.forcedFrom !== null ? 'Keep jumping with the same piece.' : null);
         setHint(null);
-        logger.debug('checkers.move', {
+        logger.info('checkers.move', {
           from: resolution.committed.from, to: resolution.committed.to, ply: next.moves.length,
+        });
+      } else {
+        // applyMove refused a move the resolver had already committed to. This
+        // path dropped the move and said nothing, which is indistinguishable
+        // from a dead keyboard.
+        logger.error('checkers.apply-failed', {
+          from: resolution.committed.from, to: resolution.committed.to, error: String(next.error),
         });
       }
     } else {
@@ -210,7 +229,7 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
       setMessage(resolution.rejection === 'select_source' ? "Play a glowing red piece's file and rank notes together."
         : resolution.rejection === 'select_destination' ? "Play a glowing destination's file and rank notes together." : null);
       if (resolution.rejection) {
-        logger.debug('checkers.rejected', { square, reason: resolution.rejection });
+        logger.info('checkers.rejected', { square, reason: resolution.rejection });
         // A refused address is still an address that did not land: the ladder
         // counts it, because accuracy is what it is judging.
         reading.record({ ok: false });

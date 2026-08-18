@@ -214,4 +214,17 @@ export function usePianoKioskConfig() {
   return ctx;
 }
 
+/**
+ * Same, but null outside the provider instead of throwing.
+ *
+ * For components that legitimately render BOTH in the kiosk and on the office
+ * screen, where PianoVisualizer is a screen-framework widget with no
+ * ActivePianoProvider. Piano Hero threw here and died on open the first time
+ * the note launcher made it reachable there; it now takes the config it needs
+ * as a prop and uses this only as the kiosk fallback.
+ */
+export function usePianoKioskConfigOptional() {
+  return useContext(ActivePianoContext) ?? null;
+}
+
 export default ActivePianoContext;

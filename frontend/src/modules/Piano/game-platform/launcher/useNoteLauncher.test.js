@@ -342,3 +342,42 @@ describe('useNoteLauncher', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 });
+
+// Re-picking the game already on screen used to be a no-op setState, so the
+// component never remounted. If that game was FINISHED, the completed board
+// stayed up and swallowed every note — reported 2026-08-18 as checkers being
+// "stuck, can't make a move", with nothing logged because the games' own
+// gameOver guards return before any telemetry.
+describe('useNoteLauncher launch identity', () => {
+  const openAndPick = (result, rerender, note) => {
+    rerender({ activeNotes: notes(21, 108) });   // open the launcher
+    rerender({ activeNotes: new Map() });        // release the combo
+    rerender({ activeNotes: notes(note) });      // strike the slot key
+    rerender({ activeNotes: new Map() });
+  };
+
+  it('bumps the launch nonce every time a game is picked, same id or not', () => {
+    const { result, rerender } = setup();
+    expect(result.current.launchNonce).toBe(0);
+
+    openAndPick(result, rerender, 60);
+    const first = result.current.launchNonce;
+    expect(result.current.activeGameId).toBe('invaders');
+    expect(first).toBeGreaterThan(0);
+
+    // Same game again — the id does not change, so only the nonce can tell the
+    // renderer that this is a NEW game and the old one must be torn down.
+    openAndPick(result, rerender, 60);
+    expect(result.current.activeGameId).toBe('invaders');
+    expect(result.current.launchNonce).toBeGreaterThan(first);
+  });
+
+  it('does not bump the nonce on exit — that unmounts on its own', () => {
+    const { result, rerender } = setup();
+    openAndPick(result, rerender, 60);
+    const afterLaunch = result.current.launchNonce;
+    act(() => { result.current.exitGame('test'); });
+    expect(result.current.activeGameId).toBeNull();
+    expect(result.current.launchNonce).toBe(afterLaunch);
+  });
+});

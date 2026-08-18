@@ -21,6 +21,10 @@ let lastOnOpenTime = 0;
 export function usePianoConfig() {
   const logger = useMemo(() => getChildLogger({ component: 'piano-config' }), []);
   const [gamesConfig, setGamesConfig] = useState(null);
+  // Whole parsed piano app config. Hero needs `sheetmusic` for its song picker
+  // and previously read it from the kiosk's ActivePianoProvider, which does not
+  // exist on the office screen.
+  const [appConfig, setAppConfig] = useState(null);
   const [deviceConfig, setDeviceConfig] = useState(null);
   const pianoConfigRef = useRef(null);
 
@@ -31,7 +35,7 @@ export function usePianoConfig() {
       try {
         const pianoAppConfig = await DaylightAPI('api/v1/admin/apps/piano/config');
         const gamesC = pianoAppConfig?.parsed?.games ?? null;
-        if (!cancelled) setGamesConfig(gamesC);
+        if (!cancelled) { setGamesConfig(gamesC); setAppConfig(pianoAppConfig?.parsed ?? null); }
         return true;
       } catch (err) {
         if (attempt < CONFIG_RETRY_DELAYS.length && !cancelled) {
@@ -85,5 +89,5 @@ export function usePianoConfig() {
     };
   }, [logger]);
 
-  return { gamesConfig, deviceConfig };
+  return { gamesConfig, deviceConfig, appConfig };
 }

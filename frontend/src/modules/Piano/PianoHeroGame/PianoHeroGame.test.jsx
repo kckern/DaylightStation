@@ -11,6 +11,10 @@ vi.mock('../components/PianoKeyboard.jsx', () => ({ PianoKeyboard: () => <div da
 vi.mock('../PianoKiosk/PianoMidiContext.jsx', () => ({
   usePianoMidi: () => ({ subscribe: vi.fn() }),
   usePianoMidiNotes: () => ({ activeNotes: new Set() }),
+  // The game reads the provider-optional variants so it can also render on the
+  // office screen, where there is no PianoMidiProvider.
+  usePianoMidiOptional: () => ({ subscribe: vi.fn() }),
+  usePianoMidiNotesOptional: () => ({ activeNotes: new Set() }),
 }));
 vi.mock('../PianoKiosk/modes/SheetMusic/useMetronomeClick.js', () => ({
   default: (options) => metronomeSpy(options),

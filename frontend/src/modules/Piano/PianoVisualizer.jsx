@@ -4,7 +4,7 @@ import { PianoKeyboard } from './components/PianoKeyboard';
 import { NoteWaterfall } from './components/NoteWaterfall';
 import { TheoryPanel } from './components/TheoryPanel';
 import { useMidiSubscription } from './useMidiSubscription';
-import { computeKeyboardRange } from './noteUtils.js';
+import { resolveBoardRange } from './noteUtils.js';
 import './PianoVisualizer.scss';
 import { getGameEntry, getGameIds } from './gameRegistry.js';
 import { buildLauncherSlots } from './game-platform/launcher/launcherNotes.js';
@@ -26,9 +26,9 @@ const formatDuration = (seconds) => {
 };
 
 export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
-  const { activeNotes, sustainPedal, sessionInfo, noteHistory } = useMidiSubscription();
+  const { activeNotes, sustainPedal, sessionInfo, noteHistory, subscribe } = useMidiSubscription();
   const { spamState, warningVisible, blackoutRemaining, spamEventCount } = useSpamDetection(activeNotes, noteHistory);
-  const { gamesConfig, deviceConfig } = usePianoConfig();
+  const { gamesConfig, deviceConfig, appConfig } = usePianoConfig();
 
   // Launcher slots come from the REGISTRY, not the games config: config only
   // ever listed the five games that had activation combos, which is why chess,
@@ -53,7 +53,7 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
     [deviceConfig?.keyboard],
   );
 
-  const { isOpen: launcherOpen, activeGameId, isHolding, dismiss, exitGame, timeoutMs } =
+  const { isOpen: launcherOpen, activeGameId, isHolding, dismiss, exitGame, timeoutMs, launchNonce } =
     useNoteLauncher({ activeNotes, slots, initialGame, options: launcherOptions });
 
   const activeGameEntry = activeGameId ? getGameEntry(activeGameId) : null;
@@ -96,9 +96,13 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
     };
   }, []);
 
+  // Draw the keys this board actually has. It used to call
+  // computeKeyboardRange(null), which returns a hardcoded 88 — so the office
+  // 76-key (E1..G7) rendered fifteen keys nobody can press, and a note at either
+  // end landed in the wrong place on screen.
   const { startNote, endNote } = useMemo(
-    () => computeKeyboardRange(null),
-    []
+    () => resolveBoardRange(deviceConfig?.keyboard),
+    [deviceConfig?.keyboard],
   );
 
   useEffect(() => {
@@ -206,8 +210,12 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
           {/* A game that throws costs the player that game, not the office
               screen. PianoVisualizer never had a boundary; any throw inside any
               game blanked the whole display. */}
+          {/* Keyed on the launch, not just the id: re-picking the game already
+              running must hand back a NEW game, not the finished board that was
+              still on screen. */}
           <GameBoundary
-            resetKey={activeGameId}
+            key={`${activeGameId}:${launchNonce}`}
+            resetKey={`${activeGameId}:${launchNonce}`}
             label={activeGameEntry.label ?? 'This game'}
             onExit={quitCrashedGame}
           >
@@ -215,6 +223,12 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
               <activeGameEntry.LazyComponent
                 activeNotes={activeNotes}
                 noteHistory={noteHistory}
+                /* Note EVENTS, not just note state — a rhythm game scores on the
+                   press and cannot recover the timing from a Map. */
+                subscribe={subscribe}
+                /* The kiosk app config. A game rendered here has no
+                   ActivePianoProvider to read it from. */
+                appConfig={appConfig}
                 gameConfig={gamesConfig?.[activeGameId] ?? null}
                 onDeactivate={quitGame}
               />
