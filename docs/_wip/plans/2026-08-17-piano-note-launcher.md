@@ -953,13 +953,19 @@ Palette derived from the instrument's own materials, and reachable from the app'
 // brass hardware. The visualiser under it is #d9d0c1 — the same warm hue this
 // ground is, driven down in value, so the overlay reads as a dimming rather
 // than a different app.
-.note-launcher {
+// Both selectors carry the palette: `.nl-hold` renders as a SIBLING of the
+// launcher, and a custom property inside @keyframes resolves against the
+// animated element — so a ring outside .note-launcher would animate to nothing.
+.note-launcher,
+.nl-hold {
   --case:   #241E18;
   --ivory:  #EFE7D8;
   --ebony:  #17120E;
   --felt:   #8E2A2C;
   --brass:  #C08B3E;
+}
 
+.note-launcher {
   position: absolute;
   inset: 0;
   z-index: 40;
@@ -1028,7 +1034,7 @@ Palette derived from the instrument's own materials, and reachable from the app'
   margin: -3.5rem 0 0 -3.5rem;
   border-radius: 50%;
   border: 3px solid rgba(192, 139, 62, 0.25);
-  background: conic-gradient(#C08B3E 0turn, transparent 0turn);
+  background: conic-gradient(var(--brass) 0turn, transparent 0turn);
   animation: nl-hold linear forwards;
 }
 
