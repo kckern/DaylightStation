@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import {
   createInitialState,
   resetForLevel,
-  isActivationComboHeld,
   generatePitches,
   getFallDuration,
   maybeSpawnNote,
@@ -37,35 +36,6 @@ describe('resetForLevel', () => {
     expect(reset.levelIndex).toBe(2);
     expect(reset.health).toBe(TOTAL_HEALTH);
     expect(reset.score.points).toBe(0);
-  });
-});
-
-// ─── isActivationComboHeld ──────────────────────────────────────
-
-describe('isActivationComboHeld', () => {
-  it('returns true when all combo notes are held within window', () => {
-    const now = Date.now();
-    const activeNotes = new Map([
-      [30, { velocity: 100, timestamp: now }],
-      [102, { velocity: 100, timestamp: now + 100 }],
-    ]);
-    expect(isActivationComboHeld(activeNotes, [30, 102], 300)).toBe(true);
-  });
-
-  it('returns false when a combo note is missing', () => {
-    const activeNotes = new Map([
-      [30, { velocity: 100, timestamp: Date.now() }],
-    ]);
-    expect(isActivationComboHeld(activeNotes, [30, 102], 300)).toBe(false);
-  });
-
-  it('returns false when window is exceeded', () => {
-    const now = Date.now();
-    const activeNotes = new Map([
-      [30, { velocity: 100, timestamp: now }],
-      [102, { velocity: 100, timestamp: now + 500 }],
-    ]);
-    expect(isActivationComboHeld(activeNotes, [30, 102], 300)).toBe(false);
   });
 });
 
