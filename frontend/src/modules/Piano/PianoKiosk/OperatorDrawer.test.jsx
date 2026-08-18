@@ -38,7 +38,7 @@ vi.mock('./PianoMidiMonitor.jsx', () => ({ default: () => <div data-testid="midi
 vi.mock('@/modules/Feedback/FeedbackOverlay.jsx', () => ({
   default: ({ open, context }) => (open ? <div data-testid="feedback-overlay">{JSON.stringify(context)}</div> : null),
 }));
-vi.mock('./icons/Icon.jsx', () => ({ default: () => null }));
+vi.mock('../ui/icons/Icon.jsx', () => ({ default: () => null }));
 
 import OperatorDrawer from './OperatorDrawer.jsx';
 

@@ -1,7 +1,7 @@
 import React, { useState, memo } from 'react';
 import HandsControl from './HandsControl.jsx';
 import ViewSheet from './ViewSheet.jsx';
-import Icon from '../../icons/Icon.jsx';
+import Icon from '../../../ui/icons/Icon.jsx';
 import TransportButton from '../../transport/TransportButton.jsx';
 import LoopGroup from '../../transport/LoopGroup.jsx';
 import KeySheet from '../../transport/KeySheet.jsx';

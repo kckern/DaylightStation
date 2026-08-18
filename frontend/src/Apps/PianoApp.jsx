@@ -4,7 +4,7 @@ import useDocumentTitle from '../hooks/useDocumentTitle.js';
 import getLogger, { configure as configureLogger } from '../lib/logging/Logger.js';
 import { launchAndroidTarget } from '../lib/fkb.js';
 import { DaylightAPI } from '../lib/api.mjs';
-import Icon from '../modules/Piano/PianoKiosk/icons/Icon.jsx';
+import Icon from '../modules/Piano/ui/icons/Icon.jsx';
 import {
   PianoConfigProvider,
   ActivePianoProvider,

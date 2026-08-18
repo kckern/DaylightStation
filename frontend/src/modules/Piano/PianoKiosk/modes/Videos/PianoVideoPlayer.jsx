@@ -14,7 +14,7 @@ import useResolvedMediaEl from './useResolvedMediaEl.js';
 import FullscreenTransportOverlay from './FullscreenTransportOverlay.jsx';
 import { videoTapAction, TAP_SKIP_SECONDS } from './videoTapAction.js';
 import { usePlayerSessionBinding } from '../../../../../screen-framework/publishers/usePlayerSessionBinding.js';
-import Icon from '../../icons/Icon.jsx';
+import Icon from '../../../ui/icons/Icon.jsx';
 import usePauseMediaOnUnmount from './usePauseMediaOnUnmount.js';
 import useABLoop from './useABLoop.js';
 import usePianoWatchLog from './usePianoWatchLog.js';

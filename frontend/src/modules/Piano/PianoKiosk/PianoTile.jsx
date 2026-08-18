@@ -1,4 +1,4 @@
-import Icon from './icons/Icon.jsx';
+import Icon from '../ui/icons/Icon.jsx';
 
 /**
  * Shared kiosk tile: an icon + label (+ optional blurb) card with a consistent

@@ -2,7 +2,7 @@ import { render, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 
 // Stub the icon so the stop glyph is identifiable without pulling in real assets.
-vi.mock('../../icons/Icon.jsx', () => ({
+vi.mock('../../../ui/icons/Icon.jsx', () => ({
   default: ({ name }) => <span data-testid="icon" data-name={name} />,
 }));
 
