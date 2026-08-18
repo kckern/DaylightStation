@@ -35,6 +35,9 @@ const DEFAULT_CONFIG = Object.freeze({
 const LADDER_LEVELS = 7;
 // Used only when thinkTimeFor has nothing to read yet (no ladder resolved).
 const OPPONENT_THINK_FALLBACK_MS = 700;
+/** Search depth for a HINT — competent, and deliberately not the opponent's. */
+const HINT_SEARCH_LEVEL = 5;
+
 const HINT_CLUSTER = 7;
 const AXIS = 8;
 
@@ -202,7 +205,14 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
     if (activeNotes.size === 0) { latchedRef.current = false; return; }
     if (latchedRef.current) return;
     if (activeNotes.size >= HINT_CLUSTER) {
-      const suggestion = chooseMove(game, { level });
+      // A HINT is not an opponent move. It used to be searched at the
+      // OPPONENT's level, and level 1 is depth 1 — `search(..., depth - 1)`
+      // with depth 1 never looks at the reply at all, so the "suggested" move
+      // walked pieces onto squares that were immediately jumped. Help that is
+      // deliberately weak is worse than none: the player trusts the glow and
+      // loses a piece for it. Chess already treats help this way — it asks for a
+      // genuine best move regardless of who it is playing against.
+      const suggestion = chooseMove(game, { level: HINT_SEARCH_LEVEL });
       setHint(suggestion);
       setMessage('Suggested move is glowing.');
       logger.info('checkers.hint', { from: suggestion?.from ?? null, to: suggestion?.to ?? null, level });
