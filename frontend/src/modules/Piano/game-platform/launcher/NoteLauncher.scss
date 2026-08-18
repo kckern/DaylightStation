@@ -1,0 +1,237 @@
+// The launcher is a keyboard at monumental scale. Colours come from the
+// instrument: walnut case, ivory key faces, ebony sharps, damper-felt crimson,
+// brass hardware. The visualiser under it is #d9d0c1 — the same warm hue this
+// ground is, driven down in value, so the overlay reads as a dimming rather
+// than a different app.
+// Both selectors carry the palette: `.nl-hold` renders as a SIBLING of the
+// launcher rather than inside it, so it inherits nothing from `.note-launcher`
+// — a ring declaring only `var(--brass)` out there would resolve to nothing and
+// paint no fill at all.
+.note-launcher,
+.nl-hold {
+  --case:   #241E18;
+  --ivory:  #EFE7D8;
+  --ebony:  #17120E;
+  --felt:   #8E2A2C;
+  --brass:  #C08B3E;
+}
+
+.note-launcher {
+  position: absolute;
+  inset: 0;
+  // Above `.tetris-fullscreen` (50 in PianoVisualizer.scss), which is the
+  // sibling a running game paints into: the combo opens the launcher OVER a
+  // game without quitting it, so at 40 the overlay would have opened behind
+  // whatever it was meant to interrupt. Below the no-MIDI notice (100) and the
+  // spam overlays (200), which outrank everything by design.
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  background: var(--case);
+  font-family: 'Roboto Condensed', sans-serif;
+  // The app has no global border-box reset (.piano-visualizer sets it on
+  // itself, and box-sizing does not inherit), so every box that carries both a
+  // percentage size and padding declares it here or the padding adds on top.
+  box-sizing: border-box;
+
+  &__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 2rem;
+    // Bottom padding matters: without it the title sits on the key tops.
+    padding: 1.75rem 2.5rem 1.1rem;
+  }
+
+  &__title {
+    color: var(--ivory);
+    opacity: 0.62;
+    font-size: 1.1rem;
+    font-weight: 400;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+
+  // Time left, as a draining brass hairline. No number — the bar says it.
+  &__timer {
+    flex: 1;
+    max-width: 22rem;
+    height: 2px;
+    background: color-mix(in srgb, var(--brass) 22%, transparent);
+    overflow: hidden;
+
+    // transform-origin lives on the animated element itself, so the bar
+    // retreats toward the left edge rather than collapsing to its centre.
+    i {
+      display: block;
+      height: 100%;
+      background: var(--brass);
+      transform-origin: left center;
+      // Duration comes from the inline style — it is the launcher's real
+      // timeout, not a look.
+      animation: nl-drain linear forwards;
+    }
+  }
+
+  &__keys {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    margin: 0;
+    padding: 0 2.5rem 2.5rem;
+    list-style: none;
+    height: 62%;
+    box-sizing: border-box;
+  }
+
+}
+
+// Hold-to-quit: a brass ring closing over the hold window. Deliberately NOT
+// nested inside .note-launcher — it renders alongside the overlay and must
+// survive the overlay closing (see HoldRing.jsx). It centres on its nearest
+// positioned ancestor, which is .piano-visualizer.
+// The swept angle has to be a REGISTERED property or it cannot interpolate:
+// animating between two whole conic-gradient() values makes Chromium flip
+// discretely at 50%, so the ring reads empty, then instantly full, and never
+// as progress. Verified in headless Chromium before this was registered.
+@property --nl-hold-turn {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0turn;
+}
+
+.nl-hold {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  // Higher than the launcher AND than a running game's fullscreen overlay: the
+  // case this ring exists for is holding to quit WHILE a game is running, and
+  // at 50 it would have tied with that overlay and lost or won on DOM order.
+  z-index: 150;
+  box-sizing: border-box; // so the 3px border stays inside the 7rem the margins undo
+  width: 7rem;
+  height: 7rem;
+  margin: -3.5rem 0 0 -3.5rem;
+  border-radius: 50%;
+  border: 3px solid color-mix(in srgb, var(--brass) 25%, transparent);
+  background: conic-gradient(var(--brass) var(--nl-hold-turn, 0turn), transparent 0);
+  // Hollow centre, so it closes as a ring rather than filling as a brass coin
+  // over whatever the player is looking at.
+  -webkit-mask: radial-gradient(closest-side, transparent 62%, black 63%);
+  mask: radial-gradient(closest-side, transparent 62%, black 63%);
+  animation: nl-hold linear forwards;
+}
+
+.nl-key {
+  position: relative;
+  // Descending, so every key paints over the one to its RIGHT and the sharp
+  // hanging off its edge is never clipped by its neighbour. Tree order alone
+  // is not enough: while the open animation runs, `transform`/`opacity` give
+  // each key its own stacking context, which traps the sharp's `z-index: 2`
+  // inside the key and lets the next key paint over it for those ~260ms.
+  z-index: calc(var(--key-count, 12) - var(--key-index, 0));
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.9rem;
+  // 1.1rem clears the 1.9rem sharp, which hangs 0.95rem over each side of a
+  // key boundary — at 0.6rem a long label ran right up under the black key.
+  padding: 2rem 1.1rem 1.4rem;
+  box-sizing: border-box;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--ivory) 55%, white) 0%,
+    var(--ivory) 62%,
+    color-mix(in srgb, var(--ivory) 92%, var(--case)) 100%
+  );
+  color: var(--ebony);
+  border-radius: 0 0 10px 10px;
+  // Seam on the LEFT edge, matching the direction the drop shadow now falls:
+  // with descending z-index each key casts onto its right-hand neighbour, so a
+  // right-edge seam line would read as a second, contradictory divider.
+  box-shadow: inset 1px 0 0 color-mix(in srgb, var(--case) 18%, transparent), 0 10px 26px rgba(0, 0, 0, 0.45);
+  // Keys rise from the bottom edge in a left-to-right glissando on open.
+  // `backwards` holds the first keyframe through the delay, so a key waiting
+  // its turn is already invisible rather than flashing at full opacity first.
+  animation: nl-rise 260ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation-delay: calc(var(--key-index) * 28ms);
+
+  &:first-child { box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45); }
+
+  // The black key between this white key and the next, hanging from the top
+  // into the gap. Only rendered where the note math says one belongs.
+  &.has-sharp::after {
+    --sharp-w: 1.9rem;
+    content: '';
+    position: absolute;
+    top: 0;
+    right: calc(-1 * var(--sharp-w) / 2);
+    width: var(--sharp-w);
+    height: 46%;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--ebony) 85%, var(--brass)) 0%, var(--ebony) 100%);
+    border-radius: 0 0 4px 4px;
+    box-shadow: 0 6px 14px rgba(0, 0, 0, 0.55);
+    z-index: 2;
+  }
+
+  &__icon {
+    font-size: clamp(2rem, 3.4vw, 3.4rem);
+    line-height: 0;
+    color: var(--felt);
+    display: inline-flex;
+
+    // The raw icon files carry width="800px" height="800px". PianoApp.scss
+    // normalises `.piano-icon svg` to 1em, but the launcher must not depend on
+    // an ancestor app's stylesheet for a takeover surface — without this the
+    // row blows past the viewport (measured: 1176px tall on a 1080p screen).
+    svg { width: 1em; height: 1em; display: block; }
+  }
+
+  &__label {
+    font-size: clamp(0.85rem, 1.15vw, 1.3rem);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    text-align: center;
+    line-height: 1.15;
+    // Long labels wrap rather than shove the key wider — every key is 1fr.
+    overflow-wrap: anywhere;
+  }
+
+  // Engraved on the key face, where the eye already looks for it.
+  &__note {
+    margin-top: auto;
+    font-size: clamp(1rem, 1.5vw, 1.6rem);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.08em;
+    color: var(--brass);
+  }
+}
+
+@keyframes nl-rise {
+  from { transform: translateY(14%); opacity: 0; }
+  to   { transform: none; opacity: 1; }
+}
+
+@keyframes nl-drain {
+  from { transform: scaleX(1); }
+  to   { transform: scaleX(0); }
+}
+
+@keyframes nl-hold {
+  from { --nl-hold-turn: 0turn; }
+  to   { --nl-hold-turn: 1turn; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  // Only the decorative motion goes. The drain bar and the hold ring are
+  // progress readouts — their duration is set inline (which no stylesheet rule
+  // can override without !important anyway), and collapsing them would leave a
+  // full ring reporting a hold that has not happened.
+  .nl-key { animation: none; }
+}
