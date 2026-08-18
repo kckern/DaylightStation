@@ -1,3 +1,35 @@
+// The launcher is a keyboard at monumental scale. Colours come from the
+// instrument: walnut case, ivory key faces, ebony sharps, damper-felt crimson,
+// brass hardware. The visualiser under it is #d9d0c1 — the same warm hue this
+// ground is, driven down in value, so the overlay reads as a dimming rather
+// than a different app.
+// The picker's own names, mapped onto the shared chrome kit (gameChrome.scss),
+// which declares `--pg-*` for exactly this.
+//
+// These were five invented hexes — a brown-and-gold scheme that matched nothing
+// else in the app and made the picker read as a different product bolted on.
+// The keyboard still gets to look like a keyboard; it just does it in the
+// cabinet's colours, and follows the design tokens when those move.
+//
+// The key face takes the kit's FOREGROUND and the ink takes its SURFACE. That
+// inversion is the whole motif: a piano key is white with black on it, while
+// every other surface in the app is dark with light on it.
+//
+// CUSTOM PROPERTIES ONLY. This rule is shared by two elements that have nothing
+// else in common, so anything here that paints or positions lands on both. It
+// once held the hold ring's `width`/`height`/`transform`, which shrank the
+// launcher to a 256px square in a corner; the fix for that dropped these
+// declarations with it, leaving every `var(--ivory)` invalid and the white keys
+// rendering as bare dark boxes.
+.note-launcher,
+.nl-hold {
+  --case:   var(--pg-case, #16161b);
+  --ivory:  var(--pg-ivory, #f1f1f4);
+  --ebony:  var(--pg-shelf, #1f1f26);
+  --felt:   var(--pg-brass-fill, #2ec46f);
+  --brass:  var(--pg-brass, #5fe39a);
+}
+
 // Hold-to-quit: a brass ring closing over the hold window. Deliberately NOT
 // nested inside .note-launcher — it renders alongside the overlay and must
 // survive the overlay closing (see HoldRing.jsx). It centres on its nearest
@@ -73,17 +105,8 @@
   to   { stroke-dashoffset: 0; }
 }
 
-// The launcher is a keyboard at monumental scale. Colours come from the
-// instrument: walnut case, ivory key faces, ebony sharps, damper-felt crimson,
-// brass hardware. The visualiser under it is #d9d0c1 — the same warm hue this
-// ground is, driven down in value, so the overlay reads as a dimming rather
-// than a different app. The names are mapped onto the shared chrome kit
-// (gameChrome.scss), which declares `--pg-*` on `.note-launcher` and `.nl-hold`.
-//
-// These were five invented hexes — a brown-and-gold scheme that matched nothing
-// else in the app and made the picker read as a different product bolted on.
-// The keyboard still gets to look like a keyboard; it just does it in the
-// cabinet's colours, and follows the design tokens when those move.
+// The overlay itself: a full-bleed dark ground for the white keys to sit on.
+// Palette above.
 .note-launcher {
   position: absolute;
   inset: 0;
