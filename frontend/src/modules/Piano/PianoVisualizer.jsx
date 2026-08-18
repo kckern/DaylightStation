@@ -10,6 +10,7 @@ import { getGameEntry, getGameIds } from './gameRegistry.js';
 import { buildLauncherSlots } from './game-platform/launcher/launcherNotes.js';
 import { useNoteLauncher } from './game-platform/launcher/useNoteLauncher.js';
 import { comboNotesForKeyboard } from './game-platform/launcher/comboForKeyboard.js';
+import { useNotesHeldAtMount } from './game-platform/input/heldAtMount.js';
 import NoteLauncher from './game-platform/launcher/NoteLauncher.jsx';
 import HoldRing from './game-platform/launcher/HoldRing.jsx';
 import GameBoundary from './game-platform/host/GameBoundary.jsx';
@@ -24,6 +25,19 @@ const formatDuration = (seconds) => {
   const secs = Math.floor(seconds % 60);
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 };
+
+/**
+ * Renders the running game with the launcher's own selection key masked out.
+ *
+ * Lives inside the keyed GameBoundary so it remounts per launch, which is what
+ * lets `useNotesHeldAtMount` re-capture: the key that picked the game is still
+ * down at that instant, and without this the game read it as the player's first
+ * input — opening Connect Four dropped a disc in the selecting key's column.
+ */
+function MountedGame({ Component, activeNotes, ...rest }) {
+  const live = useNotesHeldAtMount(activeNotes);
+  return <Component activeNotes={live} {...rest} />;
+}
 
 export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
   const { activeNotes, sustainPedal, sessionInfo, noteHistory, subscribe } = useMidiSubscription();
@@ -220,7 +234,8 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
             onExit={quitCrashedGame}
           >
             <Suspense fallback={null}>
-              <activeGameEntry.LazyComponent
+              <MountedGame
+                Component={activeGameEntry.LazyComponent}
                 activeNotes={activeNotes}
                 noteHistory={noteHistory}
                 /* Note EVENTS, not just note state — a rhythm game scores on the
