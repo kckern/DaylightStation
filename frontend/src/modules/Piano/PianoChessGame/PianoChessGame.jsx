@@ -23,6 +23,8 @@ import { onboardingCopy, onboardingStep, shouldOnboard } from './chessOnboarding
 import { elapsedBySide, resolveTiming } from './chessClock.js';
 import { isPersistentUser } from '../PianoKiosk/pianoUser.js';
 import { usePianoMidiOptional, usePianoMidiNotesOptional } from '../PianoKiosk/PianoMidiContext.jsx';
+import { useAnyKeyToContinue } from '../game-platform/input/useAnyKeyToContinue.js';
+import { keyFallbackNeeded } from '../game-platform/input/touchCapability.js';
 import { usePlayerLock } from '../PianoKiosk/PianoPlaybackContext.jsx';
 import {
   archiveGame, beaconArchive, fetchChessConfig, fetchLadder, requestBestMove, requestOpponentMove,
@@ -841,6 +843,15 @@ export function PianoChessGame({
     startedAtRef.current = Date.now();
     logger().info('restarted');
   }, [fen, gameSeed, playerColor, scheme, shuffleEachTurn, userId]);
+
+  // "Play again" is a button, and the office screen has no finger for it. Any
+  // fresh key restarts; the keys still down from the mating move do not count,
+  // so the result stays on screen long enough to read.
+  useAnyKeyToContinue({
+    enabled: keyFallbackNeeded(gameConfig) && !!game.status?.game_over,
+    activeNotes, onContinue: restart,
+  });
+
 
   /**
    * The rewind, budget first.

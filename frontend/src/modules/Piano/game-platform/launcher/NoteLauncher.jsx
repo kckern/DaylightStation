@@ -60,7 +60,11 @@ export default function NoteLauncher({
                 playing what is on the staff — so the picker says it the same
                 way, and the letter stays underneath as the answer key. */}
             <ChordStaffRenderer
-              notes={[slot.note]}
+              /* `columns`, not `notes`: the renderer reads `notes.size` /
+                 `notes.keys()` — it wants the live Map of held notes. An array
+                 fell straight through to "no columns" and drew an empty staff on
+                 every key. A column is a bare list of MIDI notes. */
+              columns={[[slot.note]]}
               className="chord-staff nl-key__staff"
             />
             <span className="nl-key__label">{slot.label}</span>
