@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useWebSocketSubscription } from '../../hooks/useWebSocket';
 import { getChildLogger } from '../../lib/logging/singleton.js';
 import {
@@ -30,6 +30,25 @@ export function useMidiSubscription() {
   const [sessionInfo, setSessionInfo] = useState(null);
   const [noteHistory, setNoteHistory] = useState([]);
 
+  // Note-EVENT stream, alongside the note-STATE above.
+  //
+  // A rhythm game scores the instant a key goes down; it cannot work from a
+  // Map that re-renders shortly afterwards, because the press time is gone by
+  // then. The kiosk has always had this (useWebMidiBLE.subscribe) and the
+  // office screen never did, so Piano Hero reached into the kiosk context for
+  // it and died on open here. Same event shape as the kiosk's:
+  // `{ type, note, velocity, time }`.
+  const noteListenersRef = useRef(new Set());
+  const subscribe = useCallback((fn) => {
+    noteListenersRef.current.add(fn);
+    return () => noteListenersRef.current.delete(fn);
+  }, []);
+  const emitNote = useCallback((event) => {
+    for (const fn of noteListenersRef.current) {
+      try { fn(event); } catch (_) { /* one bad listener must not stop the rest */ }
+    }
+  }, []);
+
   const handleMidiMessage = useCallback((data) => {
     if (data.topic !== 'midi') return;
 
@@ -41,6 +60,7 @@ export function useMidiSubscription() {
       if (event === 'note_on' && velocity > 0) {
         const startTime = Date.now();
         logger.info('note.on', { note, velocity });
+        emitNote({ type: 'note_on', note, velocity, time: startTime });
 
         setActiveNotes(prev => {
           if (prev.has(note)) {
@@ -56,6 +76,7 @@ export function useMidiSubscription() {
         // note_off (or note_on with velocity 0)
         const endTime = Date.now();
         logger.info('note.off', { note });
+        emitNote({ type: 'note_off', note, velocity: 0, time: endTime });
 
         setActiveNotes(prev => {
           if (!prev.has(note)) {
@@ -89,7 +110,9 @@ export function useMidiSubscription() {
         setNoteHistory([]);
       }
     }
-  }, [logger]);
+    // emitNote is stable (useCallback with no deps) but declared here so the
+    // dependency is honest rather than relying on that staying true.
+  }, [logger, emitNote]);
 
   useWebSocketSubscription('midi', handleMidiMessage, [handleMidiMessage]);
 
@@ -193,7 +216,7 @@ export function useMidiSubscription() {
     };
   }, []);
 
-  return { activeNotes, sustainPedal, sessionInfo, isPlaying: activeNotes.size > 0, noteHistory };
+  return { activeNotes, sustainPedal, sessionInfo, isPlaying: activeNotes.size > 0, noteHistory, subscribe };
 }
 
 export default useMidiSubscription;

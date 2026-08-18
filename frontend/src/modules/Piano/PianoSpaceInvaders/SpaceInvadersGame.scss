@@ -1,4 +1,20 @@
 .space-invaders-game {
+  /* ── THE THREE SURFACES ──────────────────────────────────────────────
+     These were used in five places and defined in none — not in this file, not
+     anywhere, not in any commit in the history. Every `var(--si-*)` resolved to
+     nothing, so the game painted no background at all and simply showed whatever
+     sat behind it. It read as "a background" only because the visualizer's
+     theory band happened to be showing through.
+
+     Expressed in terms of the shared cabinet rather than three fresh hexes: the
+     case is one charcoal across every game (see gameChrome.scss), and Space
+     Invaders' identity is what MOVES against it, not a different shade of dark.
+     Fallbacks included so the game is still legible if it is ever mounted
+     somewhere that has not declared the cabinet. */
+  --si-space: var(--pg-case, #16161b);
+  --si-well: var(--pg-shelf, #1f1f26);
+  --si-inert: var(--pg-shelf-lift, #2a2a33);
+
   display: flex;
   flex-direction: column;
   width: 100%;

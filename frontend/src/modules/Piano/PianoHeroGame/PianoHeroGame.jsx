@@ -4,8 +4,8 @@ import { getChildLogger } from '../../../lib/logging/singleton.js';
 import { parseMusicXml } from '../../MusicNotation/parseMusicXml.js';
 import { getNoteHue, getNotePosition, getNoteWidth, computeKeyboardRange } from '../noteUtils.js';
 import PianoGameHost from '../game-platform/host/PianoGameHost.jsx';
-import { usePianoKioskConfig } from '../PianoKiosk/PianoConfig.jsx';
-import { usePianoMidi, usePianoMidiNotes } from '../PianoKiosk/PianoMidiContext.jsx';
+import { usePianoKioskConfigOptional } from '../PianoKiosk/PianoConfig.jsx';
+import { usePianoMidiOptional, usePianoMidiNotesOptional } from '../PianoKiosk/PianoMidiContext.jsx';
 import PianoEmpty from '../PianoKiosk/PianoEmpty.jsx';
 import { SkeletonPoster, SkeletonStage } from '../PianoKiosk/Skeleton.jsx';
 import usePianoList from '../PianoKiosk/usePianoList.js';
@@ -157,9 +157,13 @@ export function HeroHighway({ chart, targets, elapsedMs, fallDurationMs, metrono
   );
 }
 
-export function HeroGame({ song, chart, gameConfig, onChooseSong, onNoteOn, onNoteOff }) {
+export function HeroGame({
+  song, chart, gameConfig, onChooseSong, onNoteOn, onNoteOff,
+  subscribe: subscribeProp = null, activeNotes: activeNotesProp = null,
+}) {
   const logger = useMemo(() => getChildLogger({ component: 'piano-hero-game' }), []);
-  const { subscribe } = usePianoMidi();
+  const midiCtx = usePianoMidiOptional();
+  const subscribe = subscribeProp ?? midiCtx?.subscribe ?? null;
   const [metronomeOn, setMetronomeOn] = useState(() => gameConfig?.metronomeDefault !== false);
   // Practice speed is a RATIO of the song's own tempo, not an absolute BPM. A
   // fixed 72/90/110 preset list means nothing against a chart written at 216:
@@ -170,7 +174,8 @@ export function HeroGame({ song, chart, gameConfig, onChooseSong, onNoteOn, onNo
   const [tempoSheetOpen, setTempoSheetOpen] = useState(false);
   const activeChart = useMemo(() => retimeHeroChart(chart, songBpm * tempoRatio), [chart, songBpm, tempoRatio]);
   const game = usePianoHeroGame({ chart: activeChart, subscribe, config: gameConfig });
-  const { activeNotes } = usePianoMidiNotes();
+  const ctxNotes = usePianoMidiNotesOptional();
+  const activeNotes = activeNotesProp ?? ctxNotes.activeNotes;
   const range = useMemo(() => computeKeyboardRange([activeChart.startNote, activeChart.endNote]), [activeChart.startNote, activeChart.endNote]);
   const imminent = useMemo(() => new Set(game.run.targets
     .filter((target) => target.state === 'pending' && Math.abs(target.targetTimeMs - game.elapsedMs) <= 500)
@@ -298,9 +303,16 @@ export function HeroGame({ song, chart, gameConfig, onChooseSong, onNoteOn, onNo
 }
 
 /** MusicXML-backed falling-note game. */
-export function PianoHeroGame({ gameConfig, onNoteOn, onNoteOff, subRoute = null, onSubRoute }) {
+export function PianoHeroGame({
+  gameConfig, onNoteOn, onNoteOff, subRoute = null, onSubRoute,
+  // Supplied by the game platform (PianoVisualizer). On the office screen there
+  // is no ActivePianoProvider / PianoMidiProvider to read these from — reaching
+  // for them threw and the game died on open.
+  appConfig = null, subscribe: subscribeProp = null, activeNotes: activeNotesProp = null,
+}) {
   const logger = useMemo(() => getChildLogger({ component: 'piano-hero-game' }), []);
-  const { config } = usePianoKioskConfig();
+  const kioskConfig = usePianoKioskConfigOptional();
+  const config = appConfig ?? kioskConfig?.config ?? {};
   const [song, setSong] = useState(null);
   const [chart, setChart] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -345,6 +357,8 @@ export function PianoHeroGame({ gameConfig, onNoteOn, onNoteOff, subRoute = null
       onChooseSong={() => setSong(null)}
       onNoteOn={onNoteOn}
       onNoteOff={onNoteOff}
+      subscribe={subscribeProp}
+      activeNotes={activeNotesProp}
     />
   );
 }

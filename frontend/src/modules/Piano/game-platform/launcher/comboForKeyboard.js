@@ -13,13 +13,10 @@
 // One fact per piano — its key range — rather than a separate combo setting to
 // keep in sync with it.
 
+import { resolveBoardRange, FULL_BOARD_RANGE } from '../../noteUtils.js';
+
 /** Lowest and highest keys of an 88-key board; the fallback when nothing is configured. */
-export const DEFAULT_COMBO_NOTES = Object.freeze([21, 108]);
-
-const MIDI_MIN = 0;
-const MIDI_MAX = 127;
-
-const usable = (n) => Number.isInteger(n) && n >= MIDI_MIN && n <= MIDI_MAX;
+export const DEFAULT_COMBO_NOTES = Object.freeze([FULL_BOARD_RANGE.startNote, FULL_BOARD_RANGE.endNote]);
 
 /**
  * The combo notes for a configured keyboard range.
@@ -33,12 +30,12 @@ const usable = (n) => Number.isInteger(n) && n >= MIDI_MIN && n <= MIDI_MAX;
  * @returns {readonly [number, number]}
  */
 export function comboNotesForKeyboard(keyboard) {
-  const start = keyboard?.startNote;
-  const end = keyboard?.endNote;
-  if (!usable(start) || !usable(end)) return DEFAULT_COMBO_NOTES;
-  // Equal endpoints would collapse the two-key combo into one key.
-  if (start >= end) return DEFAULT_COMBO_NOTES;
-  return Object.freeze([start, end]);
+  // One rule for "what range is this board", shared with the virtual keyboard —
+  // it also rejects a collapsed/reversed range, which here would otherwise
+  // collapse the two-key combo into one key that a single finger satisfies.
+  const { startNote, endNote } = resolveBoardRange(keyboard);
+  if (startNote === FULL_BOARD_RANGE.startNote && endNote === FULL_BOARD_RANGE.endNote) return DEFAULT_COMBO_NOTES;
+  return Object.freeze([startNote, endNote]);
 }
 
 export default comboNotesForKeyboard;

@@ -100,7 +100,15 @@
   position: absolute;
   inset: 0;
   z-index: 3;
-  padding: 2%;
+  /* `inherit`, NOT `2%`. The board and this panel share a border box but NOT a
+     containing block — the panel is absolutely positioned, so its percentage
+     padding resolved against a different width and came out 10.875px against the
+     board's 14.39px. The grid divides the board's content box while the tiling
+     anchors to this element's, so the two boxes disagreed and every hole sat
+     8.55px up-and-left of its cell and ~2.5px too wide; the oversized tiles
+     spilling past the edge were the ragged rim. `inherit` copies the parent's
+     COMPUTED padding — a length — so the boxes coincide at any board size. */
+  padding: inherit;
   border-radius: 4%;
   pointer-events: none;
   background-image:

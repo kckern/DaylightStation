@@ -20,6 +20,10 @@ const { mockUsePianoMidi, mockUsePianoMidiNotes } = vi.hoisted(() => ({
 vi.mock('../PianoKiosk/PianoMidiContext.jsx', () => ({
   usePianoMidi: () => mockUsePianoMidi(),
   usePianoMidiNotes: () => mockUsePianoMidiNotes(),
+  // The game reads the provider-optional variants so it can also render on the
+  // office screen, where there is no PianoMidiProvider. Same mocks behind both.
+  usePianoMidiOptional: () => mockUsePianoMidi(),
+  usePianoMidiNotesOptional: () => mockUsePianoMidiNotes(),
 }));
 
 vi.mock('./chessApi.js', () => ({

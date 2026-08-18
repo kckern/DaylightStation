@@ -285,7 +285,17 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
   }, [game.status.gameOver, game.turn, thinking]);
 
   useEffect(() => {
-    if (game.status.gameOver || game.turn !== 1 || thinking) return;
+    // Same silent swallow as checkers had: a finished board re-entered from the
+    // launcher eats every note and explains nothing. Sampled — evaluated per note.
+    if (game.status.gameOver || game.turn !== 1 || thinking) {
+      if (activeNotes.size > 0) {
+        logger.sampled('connect-four.input-ignored', {
+          reason: game.status.gameOver ? 'game-over' : thinking ? 'opponent-thinking' : 'not-your-turn',
+          turn: game.turn, ply: moves?.length ?? null,
+        }, { maxPerMinute: 6, aggregate: true });
+      }
+      return;
+    }
     if (activeNotes.size === 0) { latchedRef.current = false; setHint(null); return; }
     if (latchedRef.current) return;
     // Seven-note cluster is the universal best-move gesture, independent of
@@ -293,7 +303,7 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
     if (activeNotes.size >= HINT_CLUSTER) {
       const suggested = chooseColumn(game.board, { player: 1, level });
       setHint(suggested);
-      logger.debug('connect-four.hint', { column: suggested, level });
+      logger.info('connect-four.hint', { column: suggested, level });
       latchedRef.current = true;
       return;
     }
@@ -302,7 +312,7 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
     const next = playColumn({ moves }, column);
     if (!next.error) {
       setMoves(next.moves);
-      logger.debug('connect-four.drop', { column, ply: next.moves.length });
+      logger.info('connect-four.drop', { column, ply: next.moves.length });
     }
     // A full column is a refused address, not a landed one.
     reading.record({ ok: !next.error });

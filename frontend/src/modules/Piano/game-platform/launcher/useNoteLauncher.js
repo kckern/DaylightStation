@@ -46,6 +46,11 @@ export function useNoteLauncher({ activeNotes, slots, initialGame = null, option
 
   const [isOpen, setIsOpen] = useState(false);
   const [activeGameId, setActiveGameId] = useState(initialGame);
+  // Bumped on every launch, including a re-launch of the game already running.
+  // Picking the same game again is otherwise a no-op setState, so a FINISHED
+  // board stayed mounted and swallowed every input — "stuck, can't move", with
+  // nothing in the log to say why. Callers key the game element on this.
+  const [launchNonce, setLaunchNonce] = useState(0);
   const [isHolding, setIsHolding] = useState(false);
 
   // Mirrors isOpen so the combo effect can decide open-vs-close and log the
@@ -77,6 +82,9 @@ export function useNoteLauncher({ activeNotes, slots, initialGame = null, option
   const setGame = useCallback((gameId, event, extra = {}) => {
     activeGameIdRef.current = gameId;
     setActiveGameId(gameId);
+    // A launch is always a fresh game, even when it is the same id as the one
+    // on screen. Only bump on launch: an exit sets null, which unmounts anyway.
+    if (gameId !== null) setLaunchNonce((n) => n + 1);
     logger.info(event, extra);
   }, [logger]);
 
@@ -193,5 +201,5 @@ export function useNoteLauncher({ activeNotes, slots, initialGame = null, option
     clearTimeoutTimer();
   }, [clearHoldTimer, clearTimeoutTimer]);
 
-  return { isOpen, activeGameId, isHolding, dismiss, exitGame, timeoutMs };
+  return { launchNonce, isOpen, activeGameId, isHolding, dismiss, exitGame, timeoutMs };
 }
