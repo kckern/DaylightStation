@@ -75,7 +75,9 @@ describe('NoteLauncher key anatomy', () => {
   it('shows the note as notation as well as a letter', () => {
     const { container } = render(<NoteLauncher slots={slots} />);
     const key = container.querySelector('.nl-key');
-    expect(key.querySelector('.nl-key__staff')).toBeTruthy();
+    // The house note card (StaffNoteLabel) — the same one every addressed
+    // board draws on its rim, not a grand-staff live-input widget.
+    expect(key.querySelector('.chess-staff-label')).toBeTruthy();
     expect(key.querySelector('.nl-key__note').textContent).toBe('C4');
   });
 

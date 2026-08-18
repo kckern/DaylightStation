@@ -8,7 +8,7 @@ import { usePianoKioskConfigOptional } from '../PianoKiosk/PianoConfig.jsx';
 import { bindNoteSlots, useNoteSelection, SELECTION_NOTES, SECONDARY_NOTES } from '../game-platform/input/useNoteSelection.js';
 import { useAnyKeyToContinue } from '../game-platform/input/useAnyKeyToContinue.js';
 import { keyFallbackNeeded } from '../game-platform/input/touchCapability.js';
-import { ChordStaffRenderer } from '../../MusicNotation/renderers/ChordStaffRenderer.jsx';
+import { StaffNoteLabel } from '../game-platform/families/addressed-board/StaffNoteLabel.jsx';
 import { usePianoMidiOptional, usePianoMidiNotesOptional } from '../PianoKiosk/PianoMidiContext.jsx';
 import PianoEmpty from '../PianoKiosk/PianoEmpty.jsx';
 import { SkeletonPoster, SkeletonStage } from '../PianoKiosk/Skeleton.jsx';
@@ -127,10 +127,7 @@ export function HeroSongPicker({ sheetmusic, onSelect, subRoute = null, onSubRou
                       a game already knows how to pick a song. */}
                   {byNotes && noteFor.get(song.id) && (
                     <span className="piano-hero-picker__addr">
-                      <ChordStaffRenderer
-                        columns={[[noteFor.get(song.id).note]]}
-                        className="chord-staff piano-hero-picker__staff"
-                      />
+                      <StaffNoteLabel midi={noteFor.get(song.id).note} />
                       <em>{noteFor.get(song.id).noteName}</em>
                     </span>
                   )}

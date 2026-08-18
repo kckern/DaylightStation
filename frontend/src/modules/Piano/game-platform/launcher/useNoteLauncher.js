@@ -201,7 +201,10 @@ export function useNoteLauncher({ activeNotes, slots, initialGame = null, onRequ
       // so it costs no new vocabulary — and it is not a game slot, so it can
       // never be confused for one. The office screen has no other way to say
       // who is at the keyboard; the kiosk already knows.
-      if (note === comboNotes[1]) {
+      // ...but only when it is played ALONE. The combo that opens this thing is
+      // lowest+highest, so the opening press itself contains the top key; without
+      // this, every open also demanded a new player.
+      if (note === comboNotes[1] && !liveNotes.has(comboNotes[0])) {
         logger.info('launcher.user-requested', { note });
         onRequestUserRef.current?.();
         return;

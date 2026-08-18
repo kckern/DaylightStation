@@ -257,20 +257,6 @@
 }
 
 
-/* The note's picture on the key face.
- *
- * A DEFINITE height, not a max-height. `.chord-staff` is `height: 100%` and its
- * SVG is absolutely positioned so it can never contribute layout size — the
- * renderer's contract calls an unsized host a "safe collapse-to-empty", which is
- * exactly what shipped first: every key rendered a staff element of zero height
- * and drew nothing. In a flex column `100%` of an auto height is nothing, so the
- * box has to be stated here. */
-.nl-key__staff {
-  flex: 0 0 auto;
-  width: 100%;
-  height: clamp(2.4rem, 7vh, 4.6rem);
-  opacity: 0.94;
-}
 
 /* Who the game gets filed under. Quiet — it is a standing answer, not a
    question — but named, because the office screen cannot know who sat down and
@@ -303,29 +289,54 @@
   }
 }
 
-/* The roster row. Same keys, same grammar — the only difference is that the
-   thing at the key's tip is a face rather than a game icon. */
+
+
+
+/* The house note card, sized for a key face. StaffNoteLabel brings its own
+   paper and clef; all this does is stop it growing to the width of the key. */
+.nl-key .chess-staff-label {
+  width: min(100%, 7.5rem);
+  flex: 0 0 auto;
+}
+
+/* A face, at the top of the key. CIRCULAR — the avatar box has to be square or
+   `border-radius: 50%` yields an oval, which is what a percentage width against
+   a tall key produced. */
 .nl-key__avatar {
-  display: block;
-  width: clamp(3rem, 5.5vw, 5.5rem);
+  position: absolute;
+  top: 0.7rem;
+  right: 0.7rem;
+  width: clamp(2.4rem, 4vw, 4rem);
+  aspect-ratio: 1;
+  z-index: 3;
 
   .piano-avatar {
     width: 100%;
-    aspect-ratio: 1;
+    height: 100%;
     border-radius: 50%;
     object-fit: cover;
     display: block;
   }
 
-  // Initials fallback: light on the key face, never the app's dark-on-dark
-  // default — these keys are ivory, and a dark chip with dark text on them was
-  // the reported unreadable modal.
   .piano-avatar--fallback {
     display: grid;
     place-items: center;
     background: var(--ebony);
     color: var(--ivory);
     font-weight: 700;
-    font-size: clamp(1rem, 1.8vw, 1.9rem);
+    font-size: clamp(0.8rem, 1.4vw, 1.4rem);
   }
 }
+
+/* The roster row has no sharps hanging into it, so its keys do not need the deep
+   top padding that keeps the game row clear of them — with it, the cluster ran
+   off the bottom of the screen and every face was cut in half. */
+.note-launcher--users .nl-key {
+  padding-top: 16%;
+  gap: 0.6rem;
+}
+
+/* Nothing may spill past the row. The keys are a fixed flex line; content that
+   outgrows it must be contained rather than drawn off-screen. */
+.note-launcher__keys { overflow: hidden; }
+.nl-key { overflow: hidden; }
