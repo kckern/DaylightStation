@@ -55,10 +55,12 @@ Write down the passed/failed counts. Task 1 must not change them.
 **Step 2: List every importer**
 
 ```bash
-grep -rn "icons/Icon" frontend/src --include=*.jsx --include=*.js | grep -v "home/icons"
+grep -rn "icons/Icon" frontend/src --include='*.jsx' --include='*.js' | grep -v "modules/School"
 ```
 
-`grep -v "home/icons"` matters: `modules/School/home/icons/Icon.jsx` is a **separate** icon set. Do not touch School.
+`grep -v "modules/School"` matters: `modules/School/home/icons/Icon.jsx` is a **separate** icon set. Do not touch School.
+
+Filter on `modules/School`, not on `home/icons`: School's importers sit at `School/home/SchoolHome.jsx` and import `./icons/Icon.jsx`, so the matching line contains `home/SchoolHome.jsx` — a `home/icons` filter misses every one of them and leaves six hits that look like failures.
 
 **Step 3: Move the directory**
 
@@ -102,7 +104,7 @@ Then the two cross-module importers by hand:
 
 ```bash
 grep -rn "PianoKiosk/icons\|'\./icons/Icon\|'\.\./icons/Icon\|'\.\./\.\./icons/Icon" frontend/src \
-  | grep -v "home/icons"
+  | grep -v "modules/School"
 ```
 
 Expected: **no output.** Any hit is a missed importer — `vi.mock` calls inside test files are easy to miss because they use the specifier as a string argument, not an `import`.
@@ -1371,6 +1373,8 @@ npm run audit:layers
 ```
 
 All three must pass. Paste the actual output — do not claim green without it.
+
+**Compare test *names*, not counts.** `PianoKiosk/transport/noUnicodeGlyphs.test.js` discovers its cases by walking a directory with `readdirSync` and emitting one per `.jsx`, so moving a file in or out of that tree changes the case count with no failure — a coverage loss that reports as green. Task 1 hit exactly this. Any task that moves files under `modules/Piano/` must diff the test-name sets, not the totals.
 
 **On the real office screen** (this is a MIDI-gesture feature; unit tests cannot confirm the gesture works on hardware):
 
