@@ -12,14 +12,42 @@ describe('buildChallengeToast', () => {
     });
   });
 
-  it('builds a success toast with actual/required counts and zone', () => {
+  // The success toast leads with WHO and WHAT, not with the fact that something
+  // finished. With no contributor data there is no one to name, so it degrades
+  // to the old headline rather than inventing a subject.
+  it('falls back to the generic headline when nobody can be named', () => {
     const toast = buildChallengeToast('end', { zoneLabel: 'Active', requiredCount: 3, actualCount: 3 });
-    expect(toast).toEqual({
-      icon: '🏆',
-      title: 'Challenge complete!',
-      subtitle: '3 of 3 people reached Active',
-      variant: 'success',
-    });
+    expect(toast.title).toBe('Challenge complete!');
+    expect(toast.variant).toBe('success');
+  });
+
+  it('names the people and what they reached', () => {
+    const toast = buildChallengeToast(
+      'end',
+      { zoneLabel: 'Hot', requiredCount: 2, actualCount: 2, metUsers: ['a', 'b'] },
+      { resolveUserName: (id) => ({ a: 'Felix', b: 'Milo' }[id]) },
+    );
+    expect(toast.title).toBe('Felix & Milo reached Hot');
+  });
+
+  it('says how long it took, from the challenge clock', () => {
+    const toast = buildChallengeToast(
+      'end',
+      { zoneLabel: 'Hot', metUsers: ['a'], totalSeconds: 60, remainingSeconds: 15 },
+      { resolveUserName: () => 'Felix' },
+    );
+    expect(toast.title).toBe('Felix reached Hot');
+    expect(toast.subtitle).toBe('in 45s');
+  });
+
+  it('drops the count when the names already say it', () => {
+    // "2 of 2" beside "Felix & Milo" is the same fact twice.
+    const toast = buildChallengeToast(
+      'end',
+      { zoneLabel: 'Hot', requiredCount: 2, actualCount: 2, metUsers: ['a', 'b'] },
+      { resolveUserName: (id) => ({ a: 'Felix', b: 'Milo' }[id]) },
+    );
+    expect(toast.subtitle ?? '').not.toContain('of 2');
   });
 
   it('builds a cycling-specific start toast for cycle challenges', () => {
@@ -32,8 +60,9 @@ describe('buildChallengeToast', () => {
   it('uses singular "person" when requiredCount is 1', () => {
     expect(buildChallengeToast('start', { zoneLabel: 'Hot', requiredCount: 1 }).subtitle)
       .toBe('Get 1 person to Hot');
-    expect(buildChallengeToast('end', { zoneLabel: 'Hot', requiredCount: 1, actualCount: 1 }).subtitle)
-      .toBe('1 of 1 person reached Hot');
+    // The end toast now names the person instead of counting them.
+    expect(buildChallengeToast('end', { zoneLabel: 'Hot', metUsers: ['a'] },
+      { resolveUserName: () => 'Felix' }).title).toBe('Felix reached Hot');
   });
 
   it('falls back to selectionLabel when zoneLabel is absent', () => {
@@ -89,7 +118,7 @@ describe('buildChallengeToast', () => {
         { zoneLabel: 'Active', requiredCount: 2, actualCount: 2, metUsers: ['user_2', 'user_5'] },
         { resolveUserName: (id) => ({ user_2: 'User_2', user_5: 'User_5' }[id] || null) }
       );
-      expect(toast.subtitle).toBe('2 of 2 people reached Active');
+      expect(toast.title).toBe('User_2 & User_5 reached Active');
       expect(toast.contributors).toEqual([
         { id: 'user_2', name: 'User_2', avatarUrl: '/api/v1/static/img/users/user_2' },
         { id: 'user_5', name: 'User_5', avatarUrl: '/api/v1/static/img/users/user_5' },
@@ -168,8 +197,7 @@ describe('buildChallengeToast — cycle success', () => {
       totalPhases: 4
     }, { resolveUserName: (id) => (id === 'user_2' ? 'User_2' : id) });
     expect(toast.variant).toBe('success');
-    expect(toast.title).toBe('Challenge complete!');
-    expect(toast.subtitle).toBe('User_2 completed 4 phases');
+    expect(toast.title).toBe('User_2 rode 4 phases');
     expect(toast.contributors).toEqual([
       { id: 'user_2', name: 'User_2', avatarUrl: '/api/v1/static/img/users/user_2' }
     ]);
@@ -179,6 +207,6 @@ describe('buildChallengeToast — cycle success', () => {
     const toast = buildChallengeToast('end', {
       type: 'cycle', rider: { id: 'user_2', name: 'User_2' }, totalPhases: 1
     });
-    expect(toast.subtitle).toBe('User_2 completed 1 phase');
+    expect(toast.title).toBe('User_2 rode 1 phase');
   });
 });

@@ -86,13 +86,46 @@ export default function FitnessToast({ toast, onDone }) {
 
   if (!toast) return null;
 
-  const { avatarUrl, icon, title, subtitle, contributors, zone, variant = 'info', durationMs = DEFAULT_TOAST_DURATION_MS } = toast;
+  const { avatarUrl, icon, title, subtitle, contributors, zone, achievement = false, variant = 'info', durationMs = DEFAULT_TOAST_DURATION_MS } = toast;
   const hasContributors = Array.isArray(contributors) && contributors.length > 0;
   const className = [
     'fitness-toast',
     `fitness-toast--${variant}`,
+    // An achievement is a different KIND of message from a notice: the people
+    // lead, their faces are the anchor, and the layout stacks rather than sits
+    // in a row beside an icon.
+    achievement && hasContributors ? 'fitness-toast--achievement' : '',
     exiting ? 'fitness-toast--exiting' : 'fitness-toast--entered',
-  ].join(' ');
+  ].filter(Boolean).join(' ');
+
+  if (achievement && hasContributors) {
+    return (
+      <div className={className} role="status" aria-live="polite" onClick={handleDismiss}>
+        <div className="fitness-toast__faces">
+          {contributors.map((c) => (
+            <ContributorChip key={c.id} name={c.name} avatarUrl={c.avatarUrl} />
+          ))}
+        </div>
+        <div className="fitness-toast__headline">{title}</div>
+        {zone ? (
+          <span
+            className={`fitness-toast__zone-pill zone-${zone.id}`}
+            style={{ borderColor: zone.color, color: zone.color }}
+          >
+            {zone.label}
+          </span>
+        ) : null}
+        {subtitle ? <div className="fitness-toast__achieved">{subtitle}</div> : null}
+        <div className="fitness-toast__countdown">
+          <div
+            key={id}
+            className="fitness-toast__countdown-bar"
+            style={{ animationDuration: `${durationMs}ms` }}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={className} role="status" aria-live="polite" onClick={handleDismiss}>
@@ -146,6 +179,7 @@ FitnessToast.propTypes = {
     icon: PropTypes.node,
     title: PropTypes.node,
     subtitle: PropTypes.node,
+    achievement: PropTypes.bool,
     contributors: PropTypes.arrayOf(PropTypes.shape({
       id: PropTypes.string,
       name: PropTypes.string,
