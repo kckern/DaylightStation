@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { getChildLogger } from '../../lib/logging/singleton.js';
-import { isActivationComboHeld } from './PianoSpaceInvaders/spaceInvadersEngine.js';
+import { isComboHeld } from './game-platform/input/combo.js';
 
 const ACTIVATION_COOLDOWN_MS = 2000;
 
@@ -55,7 +55,7 @@ export function useGameActivation(activeNotes, gamesConfig, initialGame = null) 
       const activation = gameConf?.activation;
       if (!activation?.notes) continue;
 
-      const comboHeld = isActivationComboHeld(
+      const comboHeld = isComboHeld(
         activeNotes,
         activation.notes,
         activation.window_ms ?? 300

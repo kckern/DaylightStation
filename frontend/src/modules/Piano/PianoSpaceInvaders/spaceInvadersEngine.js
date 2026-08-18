@@ -61,29 +61,6 @@ export function resetForLevel(state, levelIndex) {
   };
 }
 
-// ─── Activation Detection ───────────────────────────────────────
-
-/**
- * Check if the activation combo is currently held.
- * @param {Map} activeNotes - Current active notes map
- * @param {number[]} comboNotes - MIDI notes that form the activation combo
- * @param {number} windowMs - Max time between first and last note press
- * @returns {boolean}
- */
-export function isActivationComboHeld(activeNotes, comboNotes, windowMs) {
-  if (!comboNotes || comboNotes.length === 0) return false;
-
-  const timestamps = [];
-  for (const note of comboNotes) {
-    const active = activeNotes.get(note);
-    if (!active) return false;
-    timestamps.push(active.timestamp);
-  }
-
-  const span = Math.max(...timestamps) - Math.min(...timestamps);
-  return span <= windowMs;
-}
-
 // ─── Note Generation ────────────────────────────────────────────
 
 /**
