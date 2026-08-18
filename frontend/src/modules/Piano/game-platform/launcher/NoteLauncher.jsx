@@ -1,5 +1,5 @@
 import Icon from '../../ui/icons/Icon.jsx';
-import { ChordStaffRenderer } from '../../../MusicNotation/renderers/ChordStaffRenderer.jsx';
+import { StaffNoteLabel } from '../families/addressed-board/StaffNoteLabel.jsx';
 import ProfileAvatar from '../../../../lib/identity/ProfileAvatar.jsx';
 import './NoteLauncher.scss';
 
@@ -55,25 +55,24 @@ export default function NoteLauncher({
             className={`nl-key${slot.sharpAfter ? ' has-sharp' : ''}`}
             style={{ '--key-index': i }}
           >
-            {/* The note as NOTATION, not just a letter. This surface teaches
-                reading everywhere else — chess and checkers are addressed by
-                playing what is on the staff — so the picker says it the same
-                way, and the letter stays underneath as the answer key. */}
-            <ChordStaffRenderer
-              /* `columns`, not `notes`: the renderer reads `notes.size` /
-                 `notes.keys()` — it wants the live Map of held notes. An array
-                 fell straight through to "no columns" and drew an empty staff on
-                 every key. A column is a bare list of MIDI notes. */
-              columns={[[slot.note]]}
-              className="chord-staff nl-key__staff"
-            />
+            {/* Top of the key, above the notation — a face is the thing you scan
+                for, and the tip is where the note card has to be. */}
+            {slot.userId && (
+              <span className="nl-key__avatar">
+                <ProfileAvatar id={slot.userId} name={slot.label} size={200} />
+              </span>
+            )}
+            {/* The house note card: one note, its own staff, clef chosen from
+                the pitch — the same component every addressed-board game uses on
+                its rim (chess, checkers, Connect Four's column rail). It was a
+                grand-staff ChordStaffRenderer, which is a live-input widget:
+                two staves and far too much furniture to label one key with. */}
+            <StaffNoteLabel midi={slot.note} />
             <span className="nl-key__label">{slot.label}</span>
             <span className="nl-key__note">{slot.noteName}</span>
             {/* Last in the column, so it lands at the key's tip — see the
                 `justify-content: flex-end` in NoteLauncher.scss. */}
-            {slot.userId
-              ? <span className="nl-key__avatar"><ProfileAvatar id={slot.userId} name={slot.label} size={160} /></span>
-              : <Icon name={slot.icon} className="nl-key__icon" />}
+            {!slot.userId && <Icon name={slot.icon} className="nl-key__icon" />}
           </li>
         ))}
       </ul>
