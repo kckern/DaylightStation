@@ -25,7 +25,7 @@ vi.mock('../modules/Piano/PianoKiosk/useScreenControl.js', () => ({
 }));
 vi.mock('../lib/fkb.js', () => ({ launchAndroidTarget: (...a) => h.launchAndroidTarget(...a) }));
 vi.mock('../lib/api.mjs', () => ({ DaylightAPI: (...a) => h.daylightAPI(...a) }));
-vi.mock('../modules/Piano/PianoKiosk/icons/Icon.jsx', () => ({ default: () => null }));
+vi.mock('../modules/Piano/ui/icons/Icon.jsx', () => ({ default: () => null }));
 
 import { ConnectGate } from './PianoApp.jsx';
 

@@ -5,7 +5,7 @@ import { usePianoKioskConfig } from './PianoConfig.jsx';
 import { usePianoSound } from './PianoSoundContext.jsx';
 import { buildFunnel } from './voiceFunnel.js';
 import { instrumentEmoji } from './instrumentIcon.js';
-import Icon from './icons/Icon.jsx';
+import Icon from '../ui/icons/Icon.jsx';
 
 const MAX_FAVORITES_SHOWN = 5;
 const clamp01 = (v) => Math.max(0, Math.min(1, v));

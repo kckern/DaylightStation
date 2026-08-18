@@ -24,8 +24,8 @@ import { balancedColumns } from './tileGridLayout.js';
 // Games is `disabled` for the same greyed/non-clickable treatment, but for a
 // household reason rather than an unshipped one: it is turned off at the tile
 // while it is a source of contention over the tablet. Note that this closes the
-// touch-UI door only — the MIDI activation combos in useGameActivation.js still
-// launch games from PianoVisualizer, so re-enabling here is the whole revert.
+// touch-UI door only — the note launcher (game-platform/launcher/) still opens
+// games from PianoVisualizer, so re-enabling here is the whole revert.
 export const PIANO_MODES = [
   { id: 'videos', label: 'Courses', blurb: 'Watch lessons & lectures', icon: 'video' },
   { id: 'music', label: 'Music', blurb: 'Albums & playlists', icon: 'music' },

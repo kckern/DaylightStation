@@ -1,4 +1,4 @@
-import Icon from '../../icons/Icon.jsx';
+import Icon from '../../../ui/icons/Icon.jsx';
 
 /** ms → M:SS for the recording read-out. Does not roll over to H:MM:SS past
  *  60 min — fine for short studio takes. */

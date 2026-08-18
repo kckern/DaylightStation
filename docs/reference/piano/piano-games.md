@@ -175,37 +175,60 @@ PianoMidiContext ── activeNotes + noteHistory ──▶ Games route
 
 ## Game Activation
 
-**Hook:** `useGameActivation.js`
+Two surfaces launch games, and they use different input vocabularies.
 
-The kiosk's primary `/piano/games` flow uses routed tiles and `GameHost`.
-`useGameActivation` remains for the standalone `PianoVisualizer` screen widget,
-where a configured held chord or `initialGame` can activate a registry entry.
-Activation chords are controller input and intentionally bypass assessment.
+**Kiosk (`/piano/games`)** — routed tiles and `GameHost`. Touch. Unchanged.
+
+**Office screen (`PianoVisualizer`)** — the **note launcher**, in
+`game-platform/launcher/`. Strike the lowest and highest keys of the board
+together and a launcher opens; strike one white key between middle C and D5 to
+launch that game. Launcher input is controller input and intentionally bypasses
+assessment.
+
+This replaced nine per-game two-note combos in August 2026. One combo per game
+was more than anyone could hold in their head, and every new game burned
+another chord.
 
 | Mechanism | Details |
 |-----------|---------|
-| Combo detection | All notes in `activation.notes` held within `window_ms` |
-| Toggle | Same combo re-pressed while active → deactivate |
-| Cooldown | 2-second cooldown prevents rapid re-triggering |
-| Initial activation | the embedding screen may pass an `initialGame` id |
-| Dev shortcut | Backtick key cycles through games (localhost only) |
+| Open / close | Lowest + highest key (`[21, 108]`) held within 300ms, tapped. The same press toggles it shut. |
+| Select | A white key C4–D5 — `[60, 62, 64, 65, 67, 69, 71, 72, 74]`. Notes outside the map are ignored, so you can noodle over an open menu. Lowest wins if several land at once. |
+| Quit to free-play | Hold the same combo ~2s. A brass ring fills while you hold. |
+| Auto-close | 30s, **absolute from open** — playing does not extend it. Noodling with the menu up *is* the "never mind" signal. |
+| Dismissal | Timeout, escape and combo-tap all restore whatever was running. **Only hold-to-quit ends a game** — an accidental combo mid-Tetris must not cost you the game. |
+| Initial activation | The embedding screen may still pass an `initialGame` id. |
 
-**Config (piano.yml):**
-```yaml
-games:
-  space-invaders:
-    activation:
-      notes: [30, 102]    # F#1 + F#7
-      window_ms: 300
-  tetris:
-    activation:
-      notes: [31, 103]    # G1 + G7
-      window_ms: 300
-  flashcards:
-    activation:
-      notes: [29, 101]    # F1 + F7
-      window_ms: 300
-```
+**Which games appear:** the **registry** (`gameRegistry.js`), in registry order,
+filtered to `status: 'released'`. Unreleased games are omitted entirely rather
+than greyed — a key that does nothing is worse than a key that isn't there,
+because the player can't tell a dead tile from a missed note.
+
+This is a change of source. Activation used to iterate the `games:` **config**
+map, which listed only five games, so `chess`, `connect-four` and `checkers`
+were unreachable from the office screen despite being registered. They are
+reachable now. `piano.yml`'s `games:` map still supplies each game's per-game
+settings (passed through as `gameConfig`); it no longer decides what exists.
+
+**There is no `activation:` config any more.** The old per-game
+`activation.notes` / `window_ms` blocks are gone; nothing reads them.
+
+**Adding a tenth released game** overflows the nine keys. `buildLauncherSlots`
+drops the excess and logs `launcher.slots-overflow` (warn) naming what it
+dropped — it never truncates silently. Widen `LAUNCHER_NOTES` in
+`game-platform/launcher/launcherNotes.js` when that day comes.
+
+**Module layout:**
+
+| File | Role |
+|------|------|
+| `launcherNotes.js` | Pure. The note map, the released-only filter, the black-key math. No React. |
+| `useNoteLauncher.js` | The state machine — combo latch, note selection, both timers. |
+| `NoteLauncher.jsx` | The overlay: one white key per game, note engraved on the face. |
+| `HoldRing.jsx` | The hold-to-quit ring. A **sibling** of the overlay, not a child — `isHolding` is true on the press that closes the launcher too, so a ring inside it would vanish exactly when the player needs it. |
+
+**Log events:** `launcher.opened`, `launcher.game-selected`,
+`launcher.dismissed` (with `reason`: `timeout` \| `combo` \| `escape`),
+`launcher.exit-to-free-play`, `launcher.slots-overflow`.
 
 ---
 
@@ -213,19 +236,21 @@ games:
 
 **File:** `PianoVisualizer.jsx`
 
-PianoVisualizer is a pure layout composition component. It does not contain game logic directly. Instead, it delegates to extracted hooks for config, session tracking, inactivity detection, and game activation.
+PianoVisualizer is a pure layout composition component. It does not contain game logic directly. Instead, it delegates to extracted hooks for config, session tracking, inactivity detection, and game launching.
 
 **Hook composition:**
 - `usePianoConfig()` — loads device/app config, fires HA scripts on open/close
 - `useMidiSubscription()` — MIDI input (activeNotes, noteHistory, sustainPedal)
-- `useGameActivation()` — detects combo presses, returns `activeGameId`
-- `useInactivityTimer()` — grace period + countdown → auto-close
+- `useNoteLauncher()` — the launcher state machine, returns `activeGameId`
+- `useInactivityTimer()` — grace period + countdown → auto-close (suppressed while a game runs OR the launcher is open)
 - `useSessionTracking()` — session duration timer
 
 **Rendering modes:**
 - **No game active:** Waterfall visualization + chord staff + keyboard + session timer
-- **Registry game active:** Lazy-loaded `replace` component rendered fullscreen;
-  receives `activeNotes`, `noteHistory`, `gameConfig`, and `onDeactivate`.
+- **Launcher open:** `NoteLauncher` over the top; the view underneath keeps running
+- **Registry game active:** Lazy-loaded `replace` component rendered fullscreen inside a
+  `GameBoundary`; receives `activeNotes`, `noteHistory`, `gameConfig`, and `onDeactivate`.
+  The boundary matters — without it a throw inside any game blanked the whole office screen.
 
 ---
 
@@ -849,7 +874,6 @@ IDLE ──[startGame()]──▶ STARTING ──[3-2-1-GO]──▶ PLAYING
 |----------|---------|
 | `createInitialState()` | Factory for IDLE state |
 | `resetForLevel(state, levelIndex)` | Reset score/health for new level |
-| `isActivationComboHeld(activeNotes, comboNotes, windowMs)` | Check if activation chord is held |
 | `generatePitches(level, lastPitches)` | Generate note/chord for current level |
 | `getFallDuration(level)` | Get fall duration (ms) for a level |
 | `maybeSpawnNote(state, level, now)` | Spawn a new falling note if timing allows |
@@ -930,15 +954,31 @@ games:
 
 | Export | Used By |
 |--------|---------|
-| `isActivationComboHeld()` | useGameActivation |
 | `createInitialState()`, `resetForLevel()`, etc. | useSpaceInvadersGame |
 | timed judgement and `assessSpaceInvaders()` | common assessment service / Space Invaders projection |
+
+### game-platform/input/combo.js
+
+| Export | Used By |
+|--------|---------|
+| `isComboHeld(activeNotes, comboNotes, windowMs)` | useNoteLauncher |
+
+Was `isActivationComboHeld` inside `spaceInvadersEngine.js` until the launcher
+needed it too — a shared input predicate does not belong inside one game.
+
+### game-platform/launcher/
+
+| Export | Used By |
+|--------|---------|
+| `LAUNCHER_NOTES`, `buildLauncherSlots()`, `slotForNote()` | useNoteLauncher, PianoVisualizer |
+| `useNoteLauncher()` | PianoVisualizer |
+| `NoteLauncher`, `HoldRing` (default exports) | PianoVisualizer |
 
 ### Other Shared Files
 
 | File | Exports | Used By |
 |------|---------|---------|
-| `gameRegistry.js` | `getGameEntry()`, `getGameIds()`, `GAME_REGISTRY` | PianoVisualizer |
+| `gameRegistry.js` | `getGameEntry()`, `getGameIds()`, `GAME_REGISTRY` | PianoVisualizer (launcher slots), kiosk GamePicker |
 | `useMidiSubscription.js` | `activeNotes` Map, `noteHistory`, `sustainPedal`, `sessionInfo` | PianoVisualizer |
 
 ---

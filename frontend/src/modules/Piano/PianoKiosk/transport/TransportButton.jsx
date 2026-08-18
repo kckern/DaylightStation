@@ -1,4 +1,4 @@
-import Icon from '../icons/Icon.jsx';
+import Icon from '../../ui/icons/Icon.jsx';
 import './Transport.scss';
 
 /**

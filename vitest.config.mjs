@@ -69,6 +69,10 @@ export default {
       '**/.claude/worktrees/**',
       '**/.claire/worktrees/**',
       '**/.worktrees/**',
+      // Scratch that is on its way out (CLAUDE.md: "can't delete? move to
+      // _deleteme/"). A probe test parked here still got collected, inflating
+      // counts and tearing down noisily mid-sweep.
+      '**/_deleteme/**',
     ],
   },
 };

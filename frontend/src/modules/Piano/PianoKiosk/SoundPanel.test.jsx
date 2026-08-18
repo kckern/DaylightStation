@@ -53,7 +53,7 @@ vi.mock('./PianoConfig.jsx', () => ({
 vi.mock('./PianoSoundContext.jsx', () => ({
   usePianoSound: () => ({ device: { voiceGroups: deviceVoiceGroups, effects: deviceEffects } }),
 }));
-vi.mock('./icons/Icon.jsx', () => ({ default: () => null }));
+vi.mock('../ui/icons/Icon.jsx', () => ({ default: () => null }));
 
 import SoundPanel from './SoundPanel.jsx';
 
