@@ -1,4 +1,5 @@
-// Inline SVG icon set for the Piano Kiosk. One coherent Solar (Bold) set.
+// Inline SVG icon set shared across the Piano app — the kiosk, the games, and
+// the office-screen surfaces. One coherent Solar (Bold) set.
 // Icons are loaded as raw SVG strings and rendered inline so `currentColor`
 // inherits the button's text color and no SVG-loader plugin is required.
 const mods = import.meta.glob('./svg/*.svg', { eager: true, query: '?raw', import: 'default' });
