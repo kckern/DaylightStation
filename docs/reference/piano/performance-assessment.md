@@ -267,8 +267,8 @@ are not assessed. An onset group spanning two measures belongs to neither and is
 excluded from per-measure grading. Per-voice (per-hand) attribution is not
 performed — staves merge into one pitch set per onset.
 
-Piano Chess chord addresses, game-activation chords, and Producer chord
-detection intentionally remain outside assessment. They interpret MIDI as a
+Piano Chess chord addresses, the note launcher's combo and selection keys, and
+Producer chord detection intentionally remain outside assessment. They interpret MIDI as a
 control or musical description; they do not compare a learner's performance to
 an authored expectation. Tetris and Side Scroller sit on the boundary: their
 note-command recognition uses the common held classifier, but ordinary play
