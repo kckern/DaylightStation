@@ -124,8 +124,12 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
     );
   }
 
+  // No fullscreen-game modifier class on the root: a `tetris-mode` class used to
+  // be added here and nothing in any stylesheet ever selected it, so it read like
+  // the mechanism that hid the ambient view while doing nothing at all. What a
+  // replace game hides is decided in the JSX below.
   return (
-    <div className={`piano-visualizer${isFullscreenGame ? ' tetris-mode' : ''}`}>
+    <div className="piano-visualizer">
       {warningVisible && (
         <div className="spam-warning-overlay">
           <div className="warning-content">
@@ -147,9 +151,17 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
             </div>
           )}
         </div>
-        <div className="header-center">
-          <TheoryPanel activeNotes={activeNotes} layout="row" />
-        </div>
+        {/* Dropped for a fullscreen game, like the waterfall and keyboard
+            below. It used to stay mounted, so the staff / circle of fifths /
+            chord name kept drawing under the game and showed through wherever
+            the game left a pixel untouched — `.tetris-fullscreen` had no
+            background of its own until this was fixed. It also re-renders at
+            MIDI rates, which is pure waste behind a game. */}
+        {!isFullscreenGame && (
+          <div className="header-center">
+            <TheoryPanel activeNotes={activeNotes} layout="row" />
+          </div>
+        )}
       </div>
 
       {!isFullscreenGame && (

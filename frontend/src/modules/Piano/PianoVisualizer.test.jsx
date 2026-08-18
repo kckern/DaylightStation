@@ -178,6 +178,26 @@ describe('PianoVisualizer game launcher', () => {
     expect(container.querySelector('.keyboard-container')).toBeNull();
   });
 
+  // A 'replace' game is meant to take the whole viewport. The waterfall and
+  // keyboard were dropped for it but the theory band never was, so the staff,
+  // circle of fifths and chord name stayed lit under the game — reported from
+  // the office screen 2026-08-18 as the game "painting on top of whatever was
+  // already there". They also keep re-rendering at MIDI rates while hidden.
+  it('drops the theory band too — a replace game means the whole viewport', () => {
+    launcherState = { ...launcherState, activeGameId: 'tetris' };
+    const { container } = render(<PianoVisualizer />);
+    expect(container.querySelector('.theory-panel--row')).toBeNull();
+    expect(container.querySelector('.piano-circle-of-fifths')).toBeNull();
+    expect(container.querySelector('.chord-staff')).toBeNull();
+    expect(container.querySelector('.piano-chord-name')).toBeNull();
+  });
+
+  it('still shows the theory band in the ambient view', () => {
+    launcherState = { ...launcherState, activeGameId: null };
+    const { container } = render(<PianoVisualizer />);
+    expect(container.querySelector('.theory-panel--row')).toBeTruthy();
+  });
+
   it('opens over a running game without ending it', () => {
     launcherState = { ...launcherState, isOpen: true, activeGameId: 'tetris' };
     const { container } = render(<PianoVisualizer />);
