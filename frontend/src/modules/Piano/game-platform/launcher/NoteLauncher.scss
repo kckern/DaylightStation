@@ -257,12 +257,19 @@
 }
 
 
-/* The note's picture on the key face. Sized against the key so it holds at any
-   row width; the renderer carries its own aspect via `.chord-staff`. */
+/* The note's picture on the key face.
+ *
+ * A DEFINITE height, not a max-height. `.chord-staff` is `height: 100%` and its
+ * SVG is absolutely positioned so it can never contribute layout size — the
+ * renderer's contract calls an unsized host a "safe collapse-to-empty", which is
+ * exactly what shipped first: every key rendered a staff element of zero height
+ * and drew nothing. In a flex column `100%` of an auto height is nothing, so the
+ * box has to be stated here. */
 .nl-key__staff {
-  width: min(100%, 7rem);
-  max-height: 26%;
-  opacity: 0.92;
+  flex: 0 0 auto;
+  width: 100%;
+  height: clamp(2.4rem, 7vh, 4.6rem);
+  opacity: 0.94;
 }
 
 /* Who the game gets filed under. Quiet — it is a standing answer, not a
