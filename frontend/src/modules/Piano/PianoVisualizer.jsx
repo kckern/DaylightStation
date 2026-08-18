@@ -107,14 +107,6 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
   // instrument, where that answer decides whose record a game is filed under,
   // "did that pick me or my brother" should not be a question the player holds.
   const [confirming, setConfirming] = useState(null);
-  useNoteSelection({
-    activeNotes, slots: userSlots, enabled: rosterNeeded,
-    onSelect: (item, slot) => {
-      const id = slot.userId ?? item.id;
-      pickUser(id);
-      setConfirming({ id, name: item.group_label || item.name });
-    },
-  });
   useEffect(() => {
     if (!confirming) return undefined;
     const t = setTimeout(() => setConfirming(null), 1600);
@@ -130,6 +122,22 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
     useNoteLauncher({ activeNotes, slots, initialGame, onRequestUser: openPicker, selectionPaused: rosterNeeded, options: launcherOptions });
 
 
+
+
+  // Gated on the row being ON SCREEN, not merely on a player being needed.
+  // Enabled by `rosterNeeded` alone, this listened whenever nobody was selected
+  // — so any white key between C4 and G5 silently picked a user with no roster
+  // visible and nothing to say it had happened. Verified live: a note chose
+  // "Felix" while the launcher was closed.
+  const rosterVisible = launcherOpen && rosterNeeded;
+  useNoteSelection({
+    activeNotes, slots: userSlots, enabled: rosterVisible,
+    onSelect: (item, slot) => {
+      const id = slot.userId ?? item.id;
+      pickUser(id);
+      setConfirming({ id, name: item.group_label || item.name });
+    },
+  });
 
   const activeGameEntry = activeGameId ? getGameEntry(activeGameId) : null;
   const isFullscreenGame = activeGameEntry?.layout === 'replace';
@@ -272,13 +280,13 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
         </div>
       )}
 
-      {launcherOpen && !rosterNeeded && (
+      {launcherOpen && !rosterVisible && (
         <NoteLauncher slots={slots} timeoutMs={timeoutMs} playerName={currentUserName} playerId={currentUser} />
       )}
 
       {/* Second level of the pick: who, then what. Same keyboard, same grammar —
           each player wears the key that chooses them. */}
-      {launcherOpen && rosterNeeded && (
+      {rosterVisible && (
         <NoteLauncher
           slots={userSlots}
           variant="users"
