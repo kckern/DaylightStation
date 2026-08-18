@@ -15,6 +15,11 @@ export default function PianoVideoChrome({
   isPlaying, currentTime, duration, rate, loop,
   onToggle, onSkip, onRestart, onCycleRate, onMarkA, onMarkB, onToggleLoop, onClearLoop, onSeek, onToggleFullscreen,
   isSequential = false,
+  // Playback speed is opt-in on two axes (see courseTabPolicy.js): the viewer
+  // must be permitted AND the content type must be one where speed is
+  // meaningful. Default false so a new tab or an unrecognised course never
+  // hands a child a 2× button on a lesson they are supposed to play along with.
+  speedEnabled = false,
   furthestWatched = 0,
   gateOpen = false,
 }) {
@@ -56,7 +61,7 @@ export default function PianoVideoChrome({
         <TransportButton icon="skip-forward-15" label="15" labelFirst ariaLabel="Forward 15 seconds" className="piano-video-chrome__btn" disabled={gateOpen || forwardDisabled} onPress={() => onSkip(15)} />
         <TransportButton icon="skip-forward-30" label="30" labelFirst ariaLabel="Forward 30 seconds" className="piano-video-chrome__btn" disabled={gateOpen || forwardDisabled} onPress={() => onSkip(30)} />
         <div className="piano-video-chrome__spacer" />
-        {!isSequential && (
+        {speedEnabled && !isSequential && (
           <TransportButton label={`${rate}×`} ariaLabel="Playback speed" className="piano-video-chrome__btn piano-video-chrome__btn--rate" disabled={gateOpen} onPress={onCycleRate} />
         )}
         <LoopGroup

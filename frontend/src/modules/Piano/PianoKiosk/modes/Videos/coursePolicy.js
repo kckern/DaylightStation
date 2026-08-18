@@ -1,11 +1,16 @@
 // coursePolicy.js — per-user course-viewing policy (piano.yml videos.user_policies).
 //
 // House default is the strict one: the engagement gate runs on sequential
-// courses, and a finished lecture returns to the menu. A per-user entry can
-// relax either — engagement_gate: false permits passive watching (no
-// play-a-note prompt), auto_advance: true rolls a finished lecture straight
-// into the next episode. Only the gate/end behavior is per-user; sequential
+// courses, a finished lecture returns to the menu, and nobody may change
+// playback speed. A per-user entry can relax each — engagement_gate: false
+// permits passive watching (no play-a-note prompt), auto_advance: true rolls a
+// finished lecture straight into the next episode, allow_speed: true admits the
+// speed control. Only the gate/end/speed behavior is per-user; sequential
 // locking and the seek-forward lock are untouched.
+//
+// allow_speed is the PERSON half of the speed permission; the CONTENT half
+// lives per-tab in videos.collections (see courseTabPolicy.js). Both must say
+// yes, so a grown-up still gets 1x on a piano or singing lesson.
 import { lectureContentId } from './lectureMeta.js';
 
 export function resolveCoursePolicy(videosConfig, userId) {
@@ -13,6 +18,7 @@ export function resolveCoursePolicy(videosConfig, userId) {
   return {
     engagementGate: entry.engagement_gate !== false,
     autoAdvance: entry.auto_advance === true,
+    allowSpeed: entry.allow_speed === true,
   };
 }
 
