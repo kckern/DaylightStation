@@ -14,6 +14,7 @@ import {
   readAndClearPauseSource,
   readAndClearPlaySource
 } from '../lib/playbackToggleSource.js';
+import { pauseForensics } from '../lib/pauseForensics.js';
 import { useMediaKeyboardHandler } from '../../../lib/Player/useMediaKeyboardHandler.js';
 import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
 import { getLogger } from '../../../lib/logging/Logger.js';
@@ -1216,7 +1217,11 @@ export function useCommonMediaController({
           mediaKey: assetId,
           currentTime: el.currentTime,
           duration: el.duration,
-          source
+          source,
+          // An untagged pause is one nobody in our code asked for. Without this
+          // there is no way to tell a starved element from a backgrounded tab
+          // from an external agent pausing a perfectly healthy one.
+          ...pauseForensics(el)
         });
       }
     };
@@ -1234,7 +1239,8 @@ export function useCommonMediaController({
           mediaKey: assetId,
           currentTime: el.currentTime,
           duration: el.duration,
-          source
+          source,
+          ...pauseForensics(el)
         });
       }
     };

@@ -70,7 +70,7 @@ describe('PianoVideoChrome', () => {
   });
   it('renders the current rate and cycles it', () => {
     const onCycleRate = vi.fn();
-    render(<PianoVideoChrome {...baseProps} rate={1.5} onCycleRate={onCycleRate} />);
+    render(<PianoVideoChrome {...baseProps} speedEnabled rate={1.5} onCycleRate={onCycleRate} />);
     fireEvent.click(screen.getByLabelText('Playback speed'));
     expect(onCycleRate).toHaveBeenCalled();
   });
@@ -116,9 +116,23 @@ describe('sequential mode restrictions', () => {
     expect(screen.queryByLabelText('Playback speed')).toBeNull();
   });
 
-  it('shows the rate button when NOT sequential', () => {
-    render(<PianoVideoChrome {...baseProps} isSequential={false} furthestWatched={60} />);
+  it('shows the rate button when NOT sequential AND speed is permitted', () => {
+    render(<PianoVideoChrome {...baseProps} speedEnabled isSequential={false} furthestWatched={60} />);
     expect(screen.getByLabelText('Playback speed')).toBeTruthy();
+  });
+
+  // The speed control is opt-in on two axes (viewer + content type); see
+  // courseTabPolicy.js. Default-off is what keeps a child from turning a piano
+  // lesson into a 2x blur, so the default must stay hidden even when every
+  // other condition allows it.
+  it('hides the rate button by default, even when NOT sequential', () => {
+    render(<PianoVideoChrome {...baseProps} isSequential={false} furthestWatched={60} />);
+    expect(screen.queryByLabelText('Playback speed')).toBeNull();
+  });
+
+  it('hides the rate button when speed is permitted but the course is sequential', () => {
+    render(<PianoVideoChrome {...baseProps} speedEnabled isSequential furthestWatched={60} />);
+    expect(screen.queryByLabelText('Playback speed')).toBeNull();
   });
 
   it('disables forward skips when currentTime is at furthestWatched', () => {

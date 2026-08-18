@@ -24,6 +24,10 @@ import { usePlayerSessionBinding } from '../../../../../screen-framework/publish
 // Player is heavy — code-split it so the menu/other modes don't pay for it.
 const Player = lazy(() => import('../../../../Player/Player.jsx'));
 
+// How long the screen-awake hold outlives a song dropping out of "playing".
+// Matches the Courses player's window (Videos.jsx VIDEO_WAKE_GRACE_MS).
+const SING_WAKE_GRACE_MS = 150_000;
+
 const fmt = (s) => {
   const v = Number.isFinite(s) && s > 0 ? Math.floor(s) : 0;
   const h = Math.floor(v / 3600), m = Math.floor((v % 3600) / 60), sec = v % 60;
@@ -125,8 +129,12 @@ export default function SingalongPlayer({ lecture, source, onBack, startFresh = 
     return () => setVideoActive(false);
   }, [setVideoActive]);
 
-  // Keep the tablet screen awake while a song is actively playing.
-  useKeepScreenAwake('video', isPlaying);
+  // Keep the tablet screen awake while a song is actively playing, holding the
+  // lock across brief drops out of "playing" (rebuffering, stall recovery). A
+  // singer's hands are off the keys and off the glass, so MIDI and touch — the
+  // screensaver's only other activity signals — never fire here; if this lock
+  // lapses the panel goes dark mid-song with no way back but a deliberate tap.
+  useKeepScreenAwake('video', isPlaying, SING_WAKE_GRACE_MS);
 
   useEffect(() => {
     getLogger().child({ component: 'piano-singalong-player' }).info('piano.singalong.open', { contentId, resumeSeconds });
