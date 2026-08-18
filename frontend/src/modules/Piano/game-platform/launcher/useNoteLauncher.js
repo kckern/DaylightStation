@@ -2,9 +2,11 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import getLogger from '../../../../lib/logging/Logger.js';
 import { isComboHeld } from '../input/combo.js';
 import { slotForNote } from './launcherNotes.js';
+// Single source of truth: the fallback pair lives with the range-derivation
+// helper, so a board's combo and the default can't drift apart.
+import { DEFAULT_COMBO_NOTES } from './comboForKeyboard.js';
 
-/** Lowest and highest keys of an 88-key board. Override via options for a short board. */
-export const DEFAULT_COMBO_NOTES = Object.freeze([21, 108]);
+export { DEFAULT_COMBO_NOTES };
 
 const DEFAULT_COMBO_WINDOW_MS = 300;
 const DEFAULT_TIMEOUT_MS = 30000;

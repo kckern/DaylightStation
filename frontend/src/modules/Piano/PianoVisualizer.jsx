@@ -9,6 +9,7 @@ import './PianoVisualizer.scss';
 import { getGameEntry, getGameIds } from './gameRegistry.js';
 import { buildLauncherSlots } from './game-platform/launcher/launcherNotes.js';
 import { useNoteLauncher } from './game-platform/launcher/useNoteLauncher.js';
+import { comboNotesForKeyboard } from './game-platform/launcher/comboForKeyboard.js';
 import NoteLauncher from './game-platform/launcher/NoteLauncher.jsx';
 import HoldRing from './game-platform/launcher/HoldRing.jsx';
 import GameBoundary from './game-platform/host/GameBoundary.jsx';
@@ -27,7 +28,7 @@ const formatDuration = (seconds) => {
 export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
   const { activeNotes, sustainPedal, sessionInfo, noteHistory } = useMidiSubscription();
   const { spamState, warningVisible, blackoutRemaining, spamEventCount } = useSpamDetection(activeNotes, noteHistory);
-  const { gamesConfig } = usePianoConfig();
+  const { gamesConfig, deviceConfig } = usePianoConfig();
 
   // Launcher slots come from the REGISTRY, not the games config: config only
   // ever listed the five games that had activation combos, which is why chess,
@@ -42,8 +43,18 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
     []
   );
 
+  // "Hold the lowest and highest key" only works if we know which notes those
+  // are on THIS board. The office keyboard is a 76-key (E1..G7); the hardcoded
+  // 88-key pair it used to assume does not physically exist there, so the combo
+  // could never be played. Derived from the configured range, memoized because
+  // the hook takes it as an effect dependency.
+  const launcherOptions = useMemo(
+    () => ({ comboNotes: comboNotesForKeyboard(deviceConfig?.keyboard) }),
+    [deviceConfig?.keyboard],
+  );
+
   const { isOpen: launcherOpen, activeGameId, isHolding, dismiss, exitGame, timeoutMs } =
-    useNoteLauncher({ activeNotes, slots, initialGame });
+    useNoteLauncher({ activeNotes, slots, initialGame, options: launcherOptions });
 
   const activeGameEntry = activeGameId ? getGameEntry(activeGameId) : null;
   const isFullscreenGame = activeGameEntry?.layout === 'replace';
