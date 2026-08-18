@@ -304,6 +304,21 @@
   flex: 0 0 auto;
 }
 
+/* Push the game key's contents clear of the sharps.
+ *
+ * The cards were landing at about a third of the way down, which is exactly
+ * where the black keys are — so each card had a black key running across it and
+ * read as damage rather than as a label. The sharps hang 46% down the face, so
+ * the contents start below that.
+ *
+ * A flex spacer, NOT `padding-top`: percentage padding resolves against WIDTH,
+ * which has nothing to do with how far down the sharps reach. `flex-basis` on a
+ * column item is a HEIGHT, which is the dimension actually in question. */
+.note-launcher--games .nl-key::before {
+  content: '';
+  flex: 0 0 50%;
+}
+
 /* A face, centred and large — it is what you recognise from across the room, so
    it leads. CIRCULAR: the box has to be square or `border-radius: 50%` yields an
    ellipse, which is what a percentage width against a tall key produced. */
