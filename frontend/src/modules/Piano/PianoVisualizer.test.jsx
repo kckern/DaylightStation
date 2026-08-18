@@ -358,3 +358,28 @@ describe('PianoVisualizer game crash containment', () => {
     expect(launcherState.dismiss).not.toHaveBeenCalled();
   });
 });
+
+// The office screen has no breadcrumb rail and no user chip, so a game opened
+// into a board that named neither itself nor whose it was.
+describe('office game chrome', () => {
+  it('names the game and the player while one is running', () => {
+    launcherState = { ...launcherState, activeGameId: 'tetris' };
+    const { container } = render(<PianoVisualizer />);
+    const chrome = container.querySelector('.office-game-chrome');
+    expect(chrome).toBeTruthy();
+    expect(chrome.textContent).toContain('Tetris');
+  });
+
+  it('says so when nobody is selected rather than leaving it blank', () => {
+    launcherState = { ...launcherState, activeGameId: 'tetris' };
+    const { container } = render(<PianoVisualizer />);
+    // A game filed under nobody is worth seeing, not hiding.
+    expect(container.querySelector('.office-game-chrome__name--none')).toBeTruthy();
+  });
+
+  it('shows no chrome in the ambient view — there is no game to name', () => {
+    launcherState = { ...launcherState, activeGameId: null };
+    const { container } = render(<PianoVisualizer />);
+    expect(container.querySelector('.office-game-chrome')).toBeNull();
+  });
+});

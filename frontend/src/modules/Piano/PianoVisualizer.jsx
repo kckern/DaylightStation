@@ -16,6 +16,7 @@ import { bindNoteSlots, useNoteSelection, SELECTION_NOTES } from './game-platfor
 import NoteLauncher from './game-platform/launcher/NoteLauncher.jsx';
 import HoldRing from './game-platform/launcher/HoldRing.jsx';
 import GameBoundary from './game-platform/host/GameBoundary.jsx';
+import OfficeGameChrome from './game-platform/chrome/OfficeGameChrome.jsx';
 import { usePianoConfig } from './usePianoConfig.js';
 import { useInactivityTimer } from './useInactivityTimer.js';
 import { useSessionTracking } from './useSessionTracking.js';
@@ -282,6 +283,14 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
 
       {isFullscreenGame && activeGameEntry?.LazyComponent && (
         <div className="tetris-fullscreen">
+          {/* This screen has no breadcrumb rail and no user chip, so a game
+              opened into a board that named neither itself nor its player. */}
+          <OfficeGameChrome
+            label={activeGameEntry.label ?? activeGameId}
+            icon={activeGameEntry.icon ?? null}
+            playerName={currentUserName}
+            playerId={currentUser}
+          />
           {/* A game that throws costs the player that game, not the office
               screen. PianoVisualizer never had a boundary; any throw inside any
               game blanked the whole display. */}
