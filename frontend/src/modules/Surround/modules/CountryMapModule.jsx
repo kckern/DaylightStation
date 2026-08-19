@@ -77,6 +77,11 @@ export default function CountryMapModule({
       city={pin.city}
       lat={pin.lat}
       lon={pin.lon}
+      /* A bare map in a region of its own is the ONLY map that item gets, so it
+         carries the star: "where the composer worked" has to point somewhere.
+         The place carousel draws two maps and splits the question in half, so
+         its regional slide takes the preset's answer (no marker) instead. */
+      showCity
       logger={logger}
     />
   );

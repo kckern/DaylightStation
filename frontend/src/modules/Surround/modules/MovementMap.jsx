@@ -24,8 +24,11 @@
 // still to come are a faint hairline. The playhead survives as a plain brass
 // HAIRLINE — no lit tip, no glow: the glowing tip read as a worm crawling the
 // band, and once the fill carries the progress the cursor has nothing left to
-// prove. Both the fill and the playhead glide on the same 120ms linear ramp,
-// which is what turns the clock's 10 Hz steps into motion.
+// prove. Both the fill and the playhead glide on the same 120ms linear ramp —
+// as TRANSFORMS (design wave 5): a painted box's position and size are
+// pixel-snapped by the engine, so `left`/`width` made a cursor that advances
+// half a pixel a second stand still and then jump. The stylesheet carries the
+// measurement.
 //
 // No clef, no notes, no five-line staff. The restraint is what keeps it from
 // reading as fussy pastiche.
@@ -190,10 +193,17 @@ export default function MovementMap({
                   is the layout order — no `column-reverse`, so the DOM a
                   screen reader walks is the order a viewer sees. */}
               <span className="surround-movement-map__bar" aria-hidden="true">
+                {/* The fill is a full-width bar SCALED to its fraction, not a
+                    bar whose width is set — see the stylesheet: a painted box's
+                    position/size is pixel-snapped and a transform's is not, and
+                    at this scale (a movement is minutes long across a few
+                    hundred pixels) snapping is the difference between a glide
+                    and a crawl. `--fill` is 0..1. */}
                 <span
                   className="surround-movement-map__bar-fill"
                   data-testid="surround-movement-fill"
-                  style={{ width: `${fill * 100}%` }}
+                  data-fill={fill.toFixed(4)}
+                  style={{ '--fill': String(fill) }}
                 />
               </span>
               <span className="surround-movement-map__heading">
@@ -206,11 +216,16 @@ export default function MovementMap({
         })}
         <span className="surround-movement-map__barline surround-movement-map__barline--terminal surround-movement-map__barline--end" aria-hidden="true" />
 
-        {/* A barline in motion: one brass hairline, unlit. */}
+        {/* A barline in motion: one brass hairline, unlit. The ELEMENT is the
+            width of the rule and carries the hairline on its right edge (see
+            the stylesheet); `--head` is how far along, 0..1. That is what lets
+            the cursor move on a compositor transform with sub-pixel precision
+            instead of snapping a whole pixel at a time. */}
         <span
           className="surround-movement-map__playhead"
           data-testid="surround-playhead"
-          style={{ left: `${headPct}%` }}
+          data-head={(headPct / 100).toFixed(4)}
+          style={{ '--head': String(headPct / 100) }}
           aria-hidden="true"
         />
       </div>

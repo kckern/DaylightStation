@@ -312,10 +312,11 @@ describe('SurroundHost', () => {
     const player = makePlayer({ item: { id: 'plex:663134', surround: SURROUND }, media });
     renderHost({ getPlayerHandle: player.get, logger });
 
-    // Let the clock's supervisor find the media element first (<=250ms): that
-    // attach is a legitimate one-off commit, and counting it here would say
-    // nothing about the poll.
-    await act(async () => { vi.advanceTimersByTime(300); });
+    // Let the clock's supervisor find the media element (<=250ms) AND the
+    // entrance choreography finish (`ENTER_UNCLIP_MS`, the timer that puts the
+    // stage's clip back once nothing is moving). Both are legitimate one-off
+    // commits; counting either here would say nothing about the poll.
+    await act(async () => { vi.advanceTimersByTime(1500); });
 
     const before = recorded.length;
     // Three idle polls. A host that setStates on every tick (instead of only on a

@@ -41,6 +41,9 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 're
 import PropTypes from 'prop-types';
 import getLogger from '../../lib/logging/Logger.js';
 import { getSurroundRegistry } from './registry.js';
+import {
+  ENTER_TOTAL_MS, ENTER_UNCLIP_MS, entranceVars, shrinkFrom,
+} from './entrance.js';
 import './SurroundFrame.scss';
 
 const DEFAULT_RAIL_WIDTH = '20%';
@@ -189,6 +192,7 @@ export default function SurroundFrame({
     return data.contentId === contentId ? data : { ...data, contentId };
   }, [data, contentId]);
 
+  const rootRef = useRef(null);
   const mediaRef = useRef(null);
   const footerRef = useRef(null);
   const [mediaWidth, setMediaWidth] = useState(null);
@@ -263,16 +267,57 @@ export default function SurroundFrame({
     return () => { log.debug('surround.frame.unmount', { contentId, surroundId: data?.id ?? null }); };
   }, [enabled, contentId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ENTRANCE — the chrome arrives ~1s after the video, on the first enrichment
-  // poll, so without choreography it POPS in. `--entering` holds the rail, the
-  // band and the placard in their off-position for one committed frame; dropping
-  // it lets the CSS transitions play them in (rail → band → placard).
+  // ENTRANCE — THE ENRICHMENT MOMENT (design wave 5).
   //
-  // It is a CLASS on the root and nothing else: the inactive shell has no
+  // The chrome arrives ~1s after the video, on the first enrichment poll, so
+  // without choreography it POPS in — and so does the video's own resize, from
+  // full-bleed picture to a 16:9 box beside a rail. `--entering` holds all four
+  // moving things in their pre-arrival state for one committed frame; dropping it
+  // lets the CSS transitions play them in as one gesture: the video shrinks out
+  // of the whole frame into its box while the rail slides in from its side, the
+  // band rises and the plate settles down onto the picture.
+  //
+  // It is CLASSES on the root and nothing else: the inactive shell has no
   // className at all, so no animation state can leak there — the same guarantee
-  // `--rail-left` carries. And nothing in the choreography touches the stage or
-  // the media box: the video must not move or reload while the frame arrives.
+  // `--rail-left` carries.
+  //
+  // THE VIDEO IS ANIMATED BUT NEVER REMOUNTED. The transform goes on the media
+  // box, which is rendered at the same depth in both states, so React only ever
+  // updates its style. And it is a UNIFORM scale (see `shrinkFrom`), which is the
+  // one kind of size animation that cannot leave 16:9 at any frame of it.
   const [entered, setEntered] = useState(false);
+  // The over-sized video does not fit the stage while it is shrinking, and the
+  // stage clips. `--arriving` un-clips it, and outlasts the transitions so the
+  // clip never snaps back mid-move.
+  const [arriving, setArriving] = useState(false);
+  const [shrink, setShrink] = useState(null);
+
+  // LAYOUT effect, not a ResizeObserver: the pre-shrink transform has to be in
+  // the SAME committed frame as the box it belongs to, or the first painted
+  // frame shows the video already small and the shrink starts from nowhere. This
+  // runs after the enriched layout exists and before it is painted.
+  useLayoutEffect(() => {
+    if (!enabled) {
+      setShrink(null);
+      return;
+    }
+    const root = rootRef.current;
+    const media = mediaRef.current;
+    if (typeof root?.getBoundingClientRect !== 'function'
+      || typeof media?.getBoundingClientRect !== 'function') return;
+    setShrink(shrinkFrom(root.getBoundingClientRect(), media.getBoundingClientRect()));
+  }, [enabled]);
+
+  useEffect(() => {
+    if (!enabled) {
+      setArriving(false);
+      return undefined;
+    }
+    setArriving(true);
+    const done = setTimeout(() => setArriving(false), ENTER_UNCLIP_MS);
+    return () => clearTimeout(done);
+  }, [enabled]);
+
   useEffect(() => {
     if (!enabled) {
       setEntered(false);
@@ -292,7 +337,7 @@ export default function SurroundFrame({
     // the pre-entrance state is `opacity: 0`. Without this, a frame that mounted
     // while the kiosk tab was hidden would come back to the foreground with
     // invisible chrome. Timers are throttled in the background, not stopped.
-    const net = setTimeout(() => setEntered(true), 400);
+    const net = setTimeout(() => setEntered(true), ENTER_TOTAL_MS);
     return () => {
       cancelAnimationFrame(first);
       if (second) cancelAnimationFrame(second);
@@ -335,14 +380,26 @@ export default function SurroundFrame({
     'surround-frame',
     railSide === 'left' && 'surround-frame--rail-left',
     !entered && 'surround-frame--entering',
+    arriving && 'surround-frame--arriving',
     className,
   ].filter(Boolean).join(' ');
 
   // The measured media width, published as a custom property so the SCSS can
   // size the floating placard AGAINST the video (a plate pinned over a painting
-  // is narrower than the painting) without a magic number in JS.
+  // is narrower than the painting) without a magic number in JS. The entrance's
+  // durations ride alongside it, from `entrance.js`, so the stylesheet never
+  // restates a number the choreography's JS also has to know; the shrink's three
+  // measured numbers join them while the frame is still arriving.
   const rootStyle = enabled
-    ? (mediaWidth ? { '--surround-media-w': `${mediaWidth}px` } : undefined)
+    ? {
+      ...entranceVars(),
+      ...(mediaWidth ? { '--surround-media-w': `${mediaWidth}px` } : null),
+      ...(shrink ? {
+        '--enter-media-scale': String(shrink.scale),
+        '--enter-media-dx': `${shrink.dx}px`,
+        '--enter-media-dy': `${shrink.dy}px`,
+      } : null),
+    }
     : NO_BOX;
 
   // EVERY element on the path down to `children` is rendered in both states, in
@@ -352,6 +409,7 @@ export default function SurroundFrame({
     <div
       className={enabled ? rootClass : undefined}
       data-testid={enabled ? 'surround-frame' : undefined}
+      ref={rootRef}
       style={rootStyle}
     >
       <div className={enabled ? 'surround-frame__main' : undefined} style={enabled ? undefined : NO_BOX}>

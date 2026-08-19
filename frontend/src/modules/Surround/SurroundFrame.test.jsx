@@ -4,6 +4,9 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, act } from '@testing-library/react';
 import * as sass from 'sass-embedded';
 import SurroundFrame from './SurroundFrame.jsx';
+import {
+  ENTER_MS, ENTER_MEDIA_MS, ENTER_DELAY, ENTER_TOTAL_MS, ENTER_UNCLIP_MS, shrinkFrom,
+} from './entrance.js';
 import { registerSurroundModule, resetSurroundRegistry } from './registry.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -305,6 +308,56 @@ describe('SurroundFrame', () => {
     const root = container.firstElementChild;
     expect(root.className).toBe('');
     expect(root.className).not.toContain('surround-frame--entering');
+    expect(root.className).not.toContain('surround-frame--arriving');
+  });
+
+  /**
+   * Design wave 5 — the stage un-clips for the whole gesture, and only for it.
+   *
+   * The video shrinks from the size of the WHOLE FRAME into its box, so for the
+   * length of the shrink it is bigger than the stage that holds it — and the
+   * stage clips. `--arriving` releases that clip. It is a class flip, not a
+   * transition, so its window has to OUTLAST every transition: one landing
+   * mid-move would guillotine the picture. It also has to end, or a later
+   * overflow (a mis-sized module) would silently paint over the band.
+   */
+  it('un-clips the stage for the whole shrink, and puts the clip back after it', async () => {
+    const { getByTestId } = renderFrame();
+    expect(getByTestId('surround-frame').className).toContain('surround-frame--arriving');
+    expect(ENTER_UNCLIP_MS).toBeGreaterThan(ENTER_TOTAL_MS);
+
+    await act(async () => { await new Promise((r) => setTimeout(r, ENTER_TOTAL_MS)); });
+    expect(
+      getByTestId('surround-frame').className,
+      'the stage re-clipped while the video was still shrinking',
+    ).toContain('surround-frame--arriving');
+
+    await act(async () => { await new Promise((r) => setTimeout(r, ENTER_UNCLIP_MS)); });
+    expect(getByTestId('surround-frame').className).not.toContain('surround-frame--arriving');
+  });
+
+  /**
+   * The stylesheet reads its durations from the component, not from its own
+   * literals — `entrance.js` is the one file that knows how long the enrichment
+   * moment takes, because the rAF safety net and the un-clip window need the
+   * same answer as the transitions do.
+   */
+  it('publishes the entrance timings the stylesheet animates on', () => {
+    const { getByTestId } = renderFrame();
+    const root = getByTestId('surround-frame');
+    expect(root.style.getPropertyValue('--enter-ms')).toBe(`${ENTER_MS}ms`);
+    expect(root.style.getPropertyValue('--enter-media-ms')).toBe(`${ENTER_MEDIA_MS}ms`);
+    expect(root.style.getPropertyValue('--enter-delay-header')).toBe(`${ENTER_DELAY.header}ms`);
+    // The last thing to stop is what "the entrance is over" means.
+    expect(ENTER_TOTAL_MS).toBe(Math.max(
+      ENTER_DELAY.media + ENTER_MEDIA_MS,
+      ENTER_DELAY.rail + ENTER_MS,
+      ENTER_DELAY.footer + ENTER_MS,
+      ENTER_DELAY.header + ENTER_MS,
+    ));
+    // ...and the whole gesture stays inside the 450-650ms the design asks for.
+    expect(ENTER_TOTAL_MS).toBeGreaterThanOrEqual(450);
+    expect(ENTER_TOTAL_MS).toBeLessThanOrEqual(650);
   });
 
   it('keeps the player mounted across the entrance — the video never re-parents', async () => {
@@ -579,17 +632,92 @@ describe('SurroundFrame — the shipped composition', () => {
     expect(rail).toContain('multiply');
   });
 
-  it('staggers the entrance rail → band → placard, on one easing', () => {
+  it('staggers the entrance video+rail → band → placard, on one easing', () => {
     const css = withStyles().replace(/\s+/g, ' ');
     expect(css).toMatch(/\.surround-frame--entering \.surround-frame__rail \{[^}]*opacity: 0/);
     expect(css).toMatch(/\.surround-frame--entering \.surround-frame__footer \{[^}]*translateY/);
     expect(css).toMatch(/\.surround-frame--entering \.surround-frame__header \{[^}]*translate\(-50%/);
+    expect(css).toMatch(/\.surround-frame--entering \.surround-frame__media \{[^}]*scale\(/);
 
-    const footerDelay = css.match(/\.surround-frame__footer \{ transition-delay: (\d+)ms/);
-    const headerDelay = css.match(/\.surround-frame__header \{ transition-delay: (\d+)ms/);
-    expect(footerDelay).not.toBeNull();
-    expect(headerDelay).not.toBeNull();
-    expect(Number(headerDelay[1])).toBeGreaterThan(Number(footerDelay[1]));   // plate last
+    // The delays come from `entrance.js`; the stylesheet's job is only to put
+    // them in the right ORDER, which is what these fallbacks encode.
+    const delay = (el) => {
+      const m = css.match(new RegExp(`\\.surround-frame__${el} \\{ transition-delay: var\\(--enter-delay-${el === 'media' ? 'media' : el}, (\\d+)ms\\)`));
+      expect(m, `no published transition-delay for __${el}`).not.toBeNull();
+      return Number(m[1]);
+    };
+    expect(delay('header')).toBeGreaterThan(delay('footer'));   // plate last
+    expect(delay('footer')).toBeGreaterThan(delay('media'));    // band after the picture
+    expect(delay('media')).toBe(delay('rail'));                 // one beat, two moves
+  });
+
+  /**
+   * Design wave 5 — THE ENRICHMENT MOMENT, and the law it has to keep.
+   *
+   * The video visibly shrinks from the whole frame into its box. 16:9 is the
+   * quality floor of the feature and it binds at every FRAME of that animation,
+   * not just at its ends — so the shrink has to be a single UNIFORM `scale()`,
+   * which multiplies both axes by the same number and therefore cannot leave
+   * the ratio even in principle. `scaleX`/`scaleY`, or an animation of `width`
+   * and `height`, would each ask the browser to hold a ratio it never promised.
+   */
+  it('shrinks the video on one uniform scale — never on two axes, never on a box size', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    const rule = css.match(/\.surround-frame--entering \.surround-frame__media \{[^}]*\}/);
+    expect(rule, 'the video does not shrink at all').not.toBeNull();
+    expect(rule[0]).toMatch(/scale\(var\(--enter-media-scale/);
+    expect(rule[0], 'the shrink is per-axis — 16:9 is not guaranteed mid-animation').not.toMatch(/scaleX|scaleY|scale3d/);
+    expect(rule[0], 'the shrink animates the BOX, which relayouts a playing video').not.toMatch(/(^|[^-])(width|height):/);
+
+    // ...and it is the transform that is transitioned, on the media box itself.
+    const base = css.match(/\.surround-frame__media \{[^}]*transition:[^}]*\}/);
+    expect(base, 'the media box has no transition to shrink on').not.toBeNull();
+    expect(base[0]).toMatch(/transition: transform var\(--enter-media-ms/);
+  });
+
+  it('lets the over-sized video out of the stage while, and only while, it is arriving', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    expect(css).toMatch(/\.surround-frame--arriving \.surround-frame__stage \{ overflow: visible/);
+    // The steady state still clips: an un-clipped stage would let any later
+    // overflow paint over the band.
+    expect(css).toMatch(/\.surround-frame__stage \{[^}]*overflow: hidden/);
+  });
+
+  /**
+   * Design wave 5 — the plate is hung two thirds on the hall, a third on the
+   * picture. Half and half cut too deep into the video. One token carries it, so
+   * the base straddle and the entrance's settle cannot drift apart.
+   */
+  it('hangs the plate a third over the picture, from one token', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    const declared = css.match(/--placard-straddle: (-[\d.]+)%/);
+    expect(declared, 'no --placard-straddle token').not.toBeNull();
+    const overlapPct = 100 + Number(declared[1]);        // -66.67% -> 33.33% below the edge
+    expect(overlapPct, 'the plate cuts too deep into the video').toBeLessThan(45);
+    expect(overlapPct, 'the plate barely touches the video — it is not straddling').toBeGreaterThan(20);
+    // Both the resting transform and the entrance's settle read the token.
+    expect(css).toMatch(/\.surround-frame__header \{[^}]*transform: translate\(-50%, var\(--placard-straddle\)\)/);
+    expect(css).toMatch(/\.surround-frame--entering \.surround-frame__header \{[^}]*calc\(var\(--placard-straddle\) - 12px\)/);
+  });
+
+  /**
+   * Design wave 5 — THE HALL WEARS VELVET. The stage's slack (the strip above
+   * the video the plate hangs on, and the letterbox slack beside it) is a drape,
+   * not flat black. ArtMode's curtain recipe, taken down: the fold stripes and
+   * the burgundy ramp, no animation, no second colour system.
+   */
+  it('drapes the stage in velvet without touching any other ground', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    const stage = css.match(/\.surround-frame__stage \{[^}]*\}/);
+    expect(stage, 'no stage rule').not.toBeNull();
+    expect(stage[0], 'the stage has no fold stripes — it is a flat panel, not a drape')
+      .toContain('repeating-linear-gradient');
+    expect(stage[0], 'the drape does not read the house velvet').toContain('var(--velvet');
+    expect(stage[0], 'the drape animates — it is scenery, not a curtain call').not.toContain('transition');
+
+    // The picture keeps its own black, so nothing shows through the video.
+    const media = css.match(/\.surround-frame__media \{[^}]*\}/);
+    expect(media[0]).toContain('background: #000');
   });
 
   it('slides the rail in from whichever side it is on', () => {
@@ -598,14 +726,22 @@ describe('SurroundFrame — the shipped composition', () => {
     expect(css).toMatch(/\.surround-frame--entering\.surround-frame--rail-left \.surround-frame__rail \{[^}]*translateX\(-14%\)/);
   });
 
-  it('never animates the stage or the media box', () => {
+  /**
+   * Wave 2 asserted "never animates the stage or the media box" — wave 5
+   * deliberately reverses half of that: the VIDEO is now the loudest thing in
+   * the entrance. What survives, and is the part that was ever load-bearing, is
+   * that the STAGE does not move: it is the letterbox the media box is measured
+   * inside, and animating it would move the box the 16:9 lock is resolved
+   * against.
+   */
+  it('never animates the stage — only the picture inside it', () => {
     const css = withStyles().replace(/\s+/g, ' ');
     const entering = css.match(/\.surround-frame--entering[^{]*\{[^}]*\}/g) ?? [];
     expect(entering.length).toBeGreaterThan(0);
     entering.forEach((rule) => {
       expect(rule).not.toContain('__stage');
-      expect(rule).not.toContain('__media');
     });
+    expect(css, 'the stage has grown a transition').not.toMatch(/\.surround-frame__stage \{[^}]*transition:/);
   });
 
   it('reduces the entrance to light alone under prefers-reduced-motion', () => {
@@ -614,6 +750,42 @@ describe('SurroundFrame — the shipped composition', () => {
     expect(block.length).toBeGreaterThan(0);
     expect(block).toContain('transform: none');
     // The placard keeps its straddle — "no transform" there would drop it off the edge.
-    expect(block).toMatch(/\.surround-frame--entering \.surround-frame__header \{ transform: translate\(-50%, -50%\)/);
+    expect(block).toMatch(/\.surround-frame--entering \.surround-frame__header \{ transform: translate\(-50%, var\(--placard-straddle\)\)/);
+    // Design wave 5: the video does not shrink either — it is simply in its box
+    // from the first painted frame, which is what "no size animation" means for
+    // the one element whose size the entrance otherwise animates.
+    expect(block).toMatch(/\.surround-frame__media \{ transition: none/);
+    expect(block).toMatch(/\.surround-frame--entering \.surround-frame__media/);
+  });
+
+  /**
+   * `shrinkFrom` is the whole geometry of the entrance, and it is a pure
+   * function precisely so it can be checked without a layout engine (happy-dom
+   * measures every box as 0x0).
+   */
+  describe('shrinkFrom — the pre-shrink transform', () => {
+    const frame = { x: 0, y: 0, width: 960, height: 540 };
+
+    it('scales the box up to CONTAIN it in the frame, and centres it', () => {
+      // A 16:9 media box inside a 16:9 frame: contain is the width ratio.
+      const media = { x: 316, y: 67, width: 643, height: 362 };
+      const s = shrinkFrom(frame, media);
+      expect(s.scale).toBeCloseTo(Math.min(960 / 643, 540 / 362), 3);
+      expect(s.dx).toBe(Math.round(480 - (316 + 643 / 2)));
+      expect(s.dy).toBe(Math.round(270 - (67 + 362 / 2)));
+    });
+
+    it('takes the SMALLER ratio, so the pre-state never overflows the frame', () => {
+      // A tall box: height is the binding constraint, and using the width ratio
+      // would have started the video taller than the frame it came from.
+      const s = shrinkFrom(frame, { x: 0, y: 0, width: 200, height: 400 });
+      expect(s.scale).toBeCloseTo(540 / 400, 3);
+    });
+
+    it('declines to animate a box that is already the frame', () => {
+      expect(shrinkFrom(frame, { x: 0, y: 0, width: 960, height: 540 })).toBeNull();
+      expect(shrinkFrom(frame, { x: 0, y: 0, width: 0, height: 0 })).toBeNull();
+      expect(shrinkFrom(null, null)).toBeNull();
+    });
   });
 });

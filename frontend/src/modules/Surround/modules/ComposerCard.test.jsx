@@ -763,13 +763,63 @@ describe('ComposerCard — pictures whole, fact slot still', () => {
     expect(reserve(short)).toBe(reserve(long));
   });
 
-  it('sets the fact centred and balanced', () => {
-    withStyles();
+  /**
+   * Design wave 5 — CENTRED IN BOTH AXES, and sized to the room it is in.
+   *
+   * `text-align: center` was only ever half the job: a one- or two-line fact in
+   * a three-line reserve hung from the top of the box and left the spare line
+   * below it, which is the top-heavy gap the design review named. `grid` +
+   * `align-content: center` is what actually centres wrapped text vertically —
+   * `-webkit-box-pack` does not, because the clamp idiom's `display` computes
+   * to `flow-root` in current Chromium (wave 2, flag 4) and takes its own
+   * alignment with it. Measured in the harness before it was written: in a 62px
+   * box, one line lands at y=22 under grid and at y=1 under the box idiom.
+   *
+   * The clamp declaration is therefore GONE rather than merely unused, and its
+   * absence is asserted: leaving it in would put two competing layout modes on
+   * one element, which is exactly the state this wave is unpicking elsewhere.
+   */
+  it('centres the fact in its reserve, in both axes', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
     const { getByTestId } = renderCard({ composer: { ...DATA.composer, facts: ['A fact.'] } });
     const style = window.getComputedStyle(getByTestId('surround-composer-fact'));
     expect(style.getPropertyValue('text-align')).toBe('center');
     expect(style.getPropertyValue('text-wrap')).toBe('balance');
-    expect(style.getPropertyValue('-webkit-line-clamp')).toBe('3');
+    expect(style.getPropertyValue('display')).toBe('grid');
+    expect(style.getPropertyValue('align-content')).toBe('center');
+    const rule = css.match(/\.surround-composer-card__fact \{[^}]*\}/)[0];
+    expect(rule, 'the line-clamp idiom is still fighting the grid').not.toContain('-webkit-line-clamp');
+  });
+
+  /**
+   * Design wave 5 — TYPE THAT FILLS ITS ROOM. A flat 0.95rem was fine print in
+   * the tall card a 1080p rail hands this panel. `cqh` sizes it against the
+   * CARD, which is why the card had to become a size container; the clamp's ends
+   * are the design's (ten-foot floor, and the point at which a bio fact would
+   * out-shout the composer's own name on the brass above it).
+   */
+  it('sizes the fact against the card it was given, between a floor and a ceiling', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    expect(css, 'the card is not a container, so cqh would resolve against the viewport')
+      .toMatch(/\.surround-composer-card \{[^}]*container-type: size/);
+    const fact = css.match(/\.surround-composer-card__fact \{[^}]*\}/)[0];
+    const clamp = fact.match(/font-size: clamp\(([\d.]+)rem, ([\d.]+)cqh, ([\d.]+)rem\)/);
+    expect(clamp, 'the fact is set at a fixed size again').not.toBeNull();
+    const [, floor, per, ceiling] = clamp.map(Number);
+    expect(floor, 'below the ten-foot floor').toBeGreaterThanOrEqual(0.85);
+    expect(ceiling).toBeGreaterThan(floor);
+    expect(ceiling, 'a bio fact set as loudly as the composer name above it').toBeLessThanOrEqual(1.4);
+    // The reserve is in `em`, so it tracks the clamp instead of being a second
+    // number that has to be re-derived per screen.
+    expect(fact).toMatch(/min-height: [\d.]+em/);
+    expect(fact).toMatch(/max-height: [\d.]+em/);
+    // The coefficient has to actually BITE between the two card heights the
+    // fleet produces — ~270px on the gate's 960x540 screen-root, ~360px on the
+    // 1280x720 kiosk. Otherwise the clamp is decoration and the fact is pinned
+    // to one end of it at every size.
+    const at = (cardPx) => Math.min(Math.max(per * cardPx / 100, floor * 16), ceiling * 16);
+    expect(at(270), 'the fact is pinned to its floor on every screen we ship').toBeGreaterThan(floor * 16);
+    expect(at(360)).toBeGreaterThan(at(270));
   });
 
   // Design wave 4: the mat went DARK. A cream mat under a brass hairline was

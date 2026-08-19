@@ -143,7 +143,9 @@ describe('CountryMap', () => {
   });
 
   it('draws context countries beneath the highlight, and the marker above both', async () => {
-    const { container } = await renderMap({ country: 'Beta', city: 'Betaville', lat: 20, lon: 20 });
+    const { container } = await renderMap({
+      country: 'Beta', city: 'Betaville', lat: 20, lon: 20, showCity: true,
+    });
     await waitFor(() => expect(pathOf(container, 'Beta')).toBeTruthy());
 
     const painted = [...svgOf(container).querySelectorAll('[data-role], [data-testid="country-map-marker"]')]
@@ -172,15 +174,18 @@ describe('CountryMap', () => {
   });
 
   /**
-   * WAVE 3, and the whole point of the redesign. The user's verdict on the old
-   * framing was "Austria with Vienna, no country name, no neighbours, no
-   * context" — a share of ~0.8 answered "what shape is this country?" and
-   * refused "where is it?". The subject now spans about HALF its frame: still
-   * unmistakably the subject, with the other half available for the countries
-   * around it. Both bounds are load-bearing — the upper one is the defect this
-   * wave fixes, the lower one stops a later tweak from losing the subject.
+   * WAVE 3 asked this frame to stop answering "what shape is this country?" and
+   * start answering "where is it?"; WAVE 5 finished the job. At wave 3's half
+   * share the regional slide and the city slide were two crops of the same
+   * picture — seen live with Vienna, the user could not tell them apart. The
+   * subject is now about a QUARTER of its frame's span, which is what puts
+   * whole neighbouring countries in the view around it.
+   *
+   * Both bounds are load-bearing. The upper one is the defect (a subject that
+   * fills its frame has no context in it); the lower one stops a later tweak
+   * zooming out until the subject is a dot in Europe and the slide says nothing.
    */
-  it('auto-frames at regional zoom: the subject is about half its frame, not all of it', async () => {
+  it('auto-frames at regional zoom: the subject is a quarter of its frame, in continental context', async () => {
     for (const name of ['Alpha', 'Beta', 'Gamma']) {
       __resetMapCache();
       global.fetch = okFetch();
@@ -190,11 +195,57 @@ describe('CountryMap', () => {
       const vb = viewBoxOf(container);
       const ext = extentOf(pathOf(container, name));
       const share = Math.max(ext.w / vb.w, ext.h / vb.h);
-      expect(share, `${name} fills ${share} of its frame — no room for neighbours`)
-        .toBeLessThan(0.7);
+      expect(share, `${name} fills ${share} of its frame — no room for its continent`)
+        .toBeLessThan(0.42);
       expect(share, `${name} fills only ${share} of its frame — it is not the subject`)
-        .toBeGreaterThan(0.35);
+        .toBeGreaterThan(0.18);
     }
+  });
+
+  /**
+   * WAVE 5 — THE TWO MAP SLIDES GET DISTINCT JOBS.
+   *
+   * The regional slide answers "where is AUSTRIA", and it answers it with the
+   * country's own name on its own shape. A star and a city name on that slide
+   * gives away the NEXT slide's answer and drags the eye to a 6px mark on a map
+   * whose subject is a country among countries. So the marker is a property of
+   * the ZOOM, not of whether a city happens to be pinned — the payload here
+   * carries a perfectly good city and coordinate at both zooms, and only the
+   * zoom decides.
+   */
+  it('points at no city on the regional slide, and at one on the city slide', async () => {
+    const pin = { country: 'Beta', city: 'Betaville', lat: 20, lon: 20 };
+
+    const region = await renderMap(pin);
+    await waitFor(() => expect(pathOf(region.container, 'Beta')).toBeTruthy());
+    expect(
+      region.container.querySelector('[data-testid="country-map-marker"]'),
+      'the regional slide is pointing at a city — that is the next slide\'s answer',
+    ).toBeNull();
+    expect(region.container.querySelector('[data-testid="country-map-label"]')).toBeNull();
+    // ...and the country's own name is still there to carry the slide.
+    expect(labelFor(region.container, 'Beta')).toBeTruthy();
+
+    __resetMapCache();
+    global.fetch = okFetch();
+    fetchMock = global.fetch;
+    const city = await renderMap({ ...pin, zoom: 'city' });
+    await waitFor(() => expect(city.container.querySelector('[data-testid="country-map-marker"]')).toBeTruthy());
+    expect(city.container.querySelector('[data-testid="country-map-label"]').textContent).toBe('Betaville');
+  });
+
+  /**
+   * The preset is a DEFAULT, not a law: a caller that draws only one map has to
+   * be able to keep the star at regional zoom, which is exactly what the
+   * standalone `country-map` module does. Asserted here because every other
+   * marker spec in this file relies on it.
+   */
+  it('lets a caller ask for the marker at regional zoom anyway', async () => {
+    const { container } = await renderMap({
+      country: 'Beta', city: 'Betaville', lat: 20, lon: 20, showCity: true,
+    });
+    await waitFor(() => expect(container.querySelector('[data-testid="country-map-marker"]')).toBeTruthy());
+    expect(container.querySelector('[data-testid="country-map"]').getAttribute('data-zoom')).toBe('region');
   });
 
   /**
@@ -281,7 +332,9 @@ describe('CountryMap', () => {
   });
 
   it('places the city marker, and flips its label away from the right edge', async () => {
-    const centred = await renderMap({ country: 'Beta', city: 'Middle', lat: 20, lon: 20 });
+    const centred = await renderMap({
+      country: 'Beta', city: 'Middle', lat: 20, lon: 20, showCity: true,
+    });
     await waitFor(() => expect(centred.container.querySelector('[data-testid="country-map-marker"]')).toBeTruthy());
     expect(centred.container.querySelector('[data-testid="country-map-label"]').textContent).toBe('Middle');
     expect(centred.container.querySelector('[data-testid="country-map-label"]').getAttribute('text-anchor')).toBe('start');
@@ -295,14 +348,16 @@ describe('CountryMap', () => {
     global.fetch = okFetch();
     fetchMock = global.fetch;
     const rightEdge = await renderMap({
-      country: 'Beta', city: 'Eastward', lat: 20, lon: vb.x + vb.w * 0.8,
+      country: 'Beta', city: 'Eastward', lat: 20, lon: vb.x + vb.w * 0.8, showCity: true,
     });
     await waitFor(() => expect(rightEdge.container.querySelector('[data-testid="country-map-label"]')).toBeTruthy());
     expect(rightEdge.container.querySelector('[data-testid="country-map-label"]').getAttribute('text-anchor')).toBe('end');
   });
 
   it('renders the marker in brass at a legible size', async () => {
-    const { container } = await renderMap({ country: 'Beta', city: 'Betaville', lat: 20, lon: 20 });
+    const { container } = await renderMap({
+      country: 'Beta', city: 'Betaville', lat: 20, lon: 20, showCity: true,
+    });
     await waitFor(() => expect(container.querySelector('[data-testid="country-map-marker"]')).toBeTruthy());
     const star = container.querySelector('[data-testid="country-map-star"]');
     expect(star.getAttribute('fill')).toContain('--brass');
@@ -318,13 +373,19 @@ describe('CountryMap', () => {
   });
 
   it('frames the landmass the city is on, not the overseas territories', async () => {
-    const { container } = await renderMap({ country: 'Delta', city: 'Mainville', lat: 3, lon: 53 });
+    const { container } = await renderMap({
+      country: 'Delta', city: 'Mainville', lat: 3, lon: 53, showCity: true,
+    });
     await waitFor(() => expect(pathOf(container, 'Delta')).toBeTruthy());
     const vb = viewBoxOf(container);
 
-    // Raw-bbox framing would span the 71° out to the island; the mainland is 6°.
-    expect(vb.w).toBeLessThan(20);
-    expect(vb.x).toBeGreaterThan(40);
+    // Raw-bbox framing would span the 71° out to the island (>250 units at the
+    // regional pad); the mainland is 6°, so its padded frame is ~22.
+    expect(vb.w).toBeLessThan(40);
+    // Centre, not left edge: at the regional pad the frame is wide enough that
+    // its left edge sits west of the mainland while still being centred on it.
+    expect(vb.x + vb.w / 2).toBeGreaterThan(45);
+    expect(vb.x + vb.w / 2).toBeLessThan(60);
     // The island is still DRAWN — it is only excluded from the framing decision.
     expect(pathOf(container, 'Delta').getAttribute('d')).toContain('120');
     // And the marker still lands inside the frame.
@@ -338,8 +399,9 @@ describe('CountryMap', () => {
     const { container } = await renderMap({ country: 'Delta' });
     await waitFor(() => expect(pathOf(container, 'Delta')).toBeTruthy());
     const vb = viewBoxOf(container);
-    expect(vb.w).toBeLessThan(20);
-    expect(vb.x).toBeGreaterThan(40); // the 6° mainland, not the 1° island
+    expect(vb.w).toBeLessThan(40);   // the padded 6° mainland, not the 71° raw bbox
+    expect(vb.x + vb.w / 2).toBeGreaterThan(45); // centred on the 6° mainland,
+    expect(vb.x + vb.w / 2).toBeLessThan(60);    // not on the 1° island
   });
 
   it('an unknown country still renders the context map, warns, and does not throw', async () => {
@@ -354,7 +416,9 @@ describe('CountryMap', () => {
 
   it('an unknown country still centres on the city when one is given', async () => {
     const logger = makeLogger();
-    const { container } = await renderMap({ country: 'Atlantis', city: 'Nowhere', lat: 20, lon: 20, logger });
+    const { container } = await renderMap({
+      country: 'Atlantis', city: 'Nowhere', lat: 20, lon: 20, showCity: true, logger,
+    });
     await waitFor(() => expect(container.querySelector('[data-testid="country-map-marker"]')).toBeTruthy());
     const vb = viewBoxOf(container);
     expect(20).toBeGreaterThan(vb.x);
@@ -466,7 +530,9 @@ describe('CountryMap labels', () => {
   });
 
   it('moves the subject\'s name clear of the city marker rather than moving the star', async () => {
-    const { container } = await renderMap({ country: 'Beta', city: 'Betaville', lat: 20, lon: 20 });
+    const { container } = await renderMap({
+      country: 'Beta', city: 'Betaville', lat: 20, lon: 20, showCity: true,
+    });
     await waitFor(() => expect(container.querySelector('[data-testid="country-map-marker"]')).toBeTruthy());
 
     const at = (el) => {
@@ -524,7 +590,7 @@ describe('CountryMap labels', () => {
     fetchMock = global.fetch;
 
     const { container } = await renderMap({
-      country: 'Ruritania', city: 'Venice', lat: 0, lon: 0,
+      country: 'Ruritania', city: 'Venice', lat: 0, lon: 0, showCity: true,
     });
     await waitFor(() => expect(container.querySelector('[data-testid="country-map-marker"]')).toBeTruthy());
     await waitFor(() => expect(labelFor(container, 'Ruritania')).toBeTruthy());

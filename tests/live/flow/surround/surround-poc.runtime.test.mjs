@@ -155,14 +155,24 @@ test.beforeAll(async () => {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Where the MovementMap's playhead sits, as a percentage of the engraved rule. */
+/**
+ * Where the MovementMap's playhead sits, as a percentage of the engraved rule.
+ *
+ * Design wave 5 moved the cursor off `left: N%` and onto a transform, because a
+ * painted box's position is pixel-snapped by the engine and a cursor that
+ * advances half a pixel a second therefore stood still and then jumped. The
+ * component publishes the fraction as `--head` (0..1) and the stylesheet turns
+ * it into the translate, so that is what this reads. `style.left` no longer
+ * exists on the element — reading it would have returned null and made every
+ * assertion below fail for the wrong reason.
+ */
 async function playheadPct(page) {
   return page.evaluate(() => {
     const head = document.querySelector('[data-testid="surround-playhead"]');
     if (!head) return null;
-    const left = head.style.left || '';
-    const m = left.match(/^([\d.]+)%$/);
-    return m ? parseFloat(m[1]) : null;
+    const raw = head.style.getPropertyValue('--head');
+    const n = parseFloat(raw);
+    return Number.isFinite(n) ? n * 100 : null;
   });
 }
 
@@ -300,7 +310,7 @@ test.describe('Surround — PoC runtime gate', () => {
       .toBeLessThan(expectedPlayheadPct(ORIGIN) + 3);
 
     const before = await playheadPct(page);
-    expect(before, 'playhead has no left offset before the seek').not.toBeNull();
+    expect(before, 'playhead publishes no position before the seek').not.toBeNull();
 
     await seekTo(page, TARGET);
 
@@ -481,10 +491,14 @@ test.describe('Surround — composed layout gate', () => {
   test('the composed layout: the plate straddles, the band overlaps, nothing clips, rail is on the left', async ({ page }) => {
     await openViaUrl(page, ENRICHED_ID);
     await page.waitForSelector('[data-testid="surround-frame"]', { timeout: 20000 });
-    // The entrance is a ~400ms staggered transition on the rail, the band and
-    // the plate. Measuring mid-flight would read a transformed box, so let the
-    // choreography finish before taking any geometry.
-    await page.waitForTimeout(1200);
+    // THE ENRICHMENT MOMENT has to be over before any geometry is read.
+    // Design wave 5 added the biggest move of all — the VIDEO shrinks from the
+    // whole frame into its box — so the settle wait now has to outlast
+    // `ENTER_UNCLIP_MS` (the stage's clip coming back, ~740ms), not just the
+    // chrome's transitions. Measured mid-flight, the media box is a transformed
+    // box and the plate is 12px high of where it lands: every assertion below
+    // would be reading the animation instead of the design.
+    await page.waitForTimeout(1500);
 
     const box = async (sel) => {
       const b = await page.locator(sel).first().boundingBox();
@@ -521,6 +535,22 @@ test.describe('Surround — composed layout gate', () => {
       placard.y,
       'the plate starts below the video top — it is not straddling the edge',
     ).toBeLessThan(media.y);
+
+    //    ...and it straddles by the RIGHT amount (design wave 5). Half and half
+    //    cut too deep into the picture; the plate now hangs two thirds on the
+    //    hall and a third on the video. The window is deliberately wider than
+    //    the design's own number so a later tune is free, and deliberately
+    //    narrower than "any overlap at all" so it can actually fail: wave 4's
+    //    50% and a 5%-graze both fall outside it.
+    const overlapDepth = (placard.y + placard.height - media.y) / placard.height;
+    expect(
+      overlapDepth,
+      `the plate cuts ${(overlapDepth * 100).toFixed(0)}% of its height into the video`,
+    ).toBeLessThan(0.45);
+    expect(
+      overlapDepth,
+      `the plate overlaps the video by only ${(overlapDepth * 100).toFixed(0)}% — it grazes the edge`,
+    ).toBeGreaterThan(0.20);
 
     //    Content-width: a plate is narrower than the painting it is pinned to.
     expect(
@@ -595,6 +625,27 @@ test.describe('Surround — composed layout gate', () => {
       playhead.y,
       `the rule row rides ${mediaBottom - playhead.y}px up over the picture — too much`,
     ).toBeGreaterThanOrEqual(mediaBottom - 16);
+
+    // 3c. THE TWO MOVING MARKS GLIDE (design wave 5). Both the cursor and the
+    //     elapsed fill move on a TRANSFORM, because Chromium pixel-snaps a
+    //     painted box's position and size — a cursor advancing half a pixel per
+    //     second on `left` stands still and then jumps, which is the "creeps one
+    //     pixel at a time" of the review. The unit suite pins this on the
+    //     compiled stylesheet; here it is read off the RENDERED element, which is
+    //     the only place a cascade override or a lost build step shows up.
+    for (const [name, sel] of [
+      ['playhead', '.surround-movement-map__playhead'],
+      ['fill', '[data-testid="surround-movement-fill"]'],
+    ]) {
+      const ramp = await page.locator(sel).first().evaluate((el) => {
+        const cs = getComputedStyle(el);
+        return { prop: cs.transitionProperty, dur: cs.transitionDuration, timing: cs.transitionTimingFunction, transform: cs.transform };
+      });
+      expect(ramp.prop, `the ${name} animates ${ramp.prop}, a property the engine snaps`).toBe('transform');
+      expect(parseFloat(ramp.dur), `the ${name} has no glide`).toBeGreaterThan(0);
+      expect(ramp.timing).toBe('linear');
+      expect(ramp.transform, `the ${name} carries no transform to glide on`).not.toBe('none');
+    }
 
     //    ...and the lit tip is gone for good: progress is read from the fill.
     expect(

@@ -40,19 +40,31 @@
   --surround-display: "Cormorant Garamond", "Hoefler Text", "EB Garamond", Georgia, serif;
   --surround-body: "EB Garamond", "Cormorant Garamond", Garamond, Georgia, serif;
 
-  /* How far the video's top edge sits below the top of the main column. The
-     floating placard is centred ON that edge, so this doubles as the room the
-     plate's upper half has to breathe in. Wave 4 took the title to 2.05rem — the
-     plate now measures ~82px rather than ~64px — so the inset went 2.7rem ->
-     3.4rem: half of 82 is 41, and 3.4rem (54px) leaves ~13px of dark hall above
-     it, the same breathing room the smaller plate had. */
-  --placard-inset: 3.4rem;
+  /* How far the video's top edge sits below the top of the main column — i.e.
+     the strip of hall the plate hangs on.
+     Wave 5 raised it 3.4rem -> 4.2rem, and the reason is `--placard-straddle`
+     below: the plate no longer sits half on the picture, it sits a THIRD on it,
+     so two thirds of its ~82px height (55px) now have to fit above the video's
+     top edge instead of 41px. 4.2rem (67px) leaves ~12px of dark hall above the
+     plate, the same breathing room wave 2 tuned for — without it the plate would
+     read as cropped by the frame's own edge. The video is nudged down; it is not
+     made smaller (it is width-limited at every kiosk size in the fleet). */
+  --placard-inset: 4.2rem;
+  /* How much of the plate's own height hangs BELOW the video's top edge.
+     `translateY(-66.67%)` puts two thirds of the plate on the hall and one third
+     on the picture. Half and half (wave 2-4's -50%) cut too deep into the video:
+     a museum plate is pinned to the wall the painting hangs on, and it overlaps
+     the frame rather than the canvas. One number, read by the base transform AND
+     by the entrance's settle, so the two can never disagree. */
+  --placard-straddle: -66.67%;
   /* How far the dark band rides up over the video's last pixels. Visual only —
      a negative margin on the footer, never a change to the media box. */
   --band-overlap: 10px;
-  /* One easing and one duration for the whole entrance, staggered by delay. */
+  /* One easing for the whole entrance. The DURATIONS and the stagger are
+     published from `entrance.js` (the rAF safety net and the stage's un-clip
+     window need the same numbers); the literals here are the fallback for a
+     frame rendered without that JS. */
   --enter-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
-  --enter-ms: 400ms;
 
   /* Low-contrast paper fibre for the programme panels — no asset, same trick as
      ArtMode's mat. Kept faint: this is stock, not texture for its own sake. */
@@ -108,7 +120,31 @@
   align-items: flex-start;
   justify-content: center;
   overflow: hidden;
-  background: var(--hall-ink);
+
+  /* THE HALL WEARS VELVET (design wave 5). Every pixel of this box that the
+     video does not cover — the strip above it that the placard hangs on, and
+     the letterbox slack beside it on a screen too narrow for a full-width 16:9
+     — is a drape, not a hole. Flat near-black read as absence; a house has a
+     surface behind its stage.
+     It is ArtMode's curtain recipe (`ArtMode.css`), taken down two registers:
+     the same vertical fold stripes over the same burgundy ramp, but the ramp's
+     lit end is `--velvet` rather than ArtMode's brighter #5c151d, the fold
+     highlight is 3.5% rather than 5%, and a vertical gradient darkens the whole
+     thing towards the video's edges. It is STATIC — ArtMode's drape opens, this
+     one is scenery — and it is deliberately quieter than the rail's maroon, so
+     the picture and the plate stay the brightest things in the room.
+     Only the STAGE wears it. The media box paints its own black, the rail its
+     own oxblood, the band its own stone, the plate its own stone; nothing here
+     changes any of them. And the whole rule is dead on the inactive shell,
+     which has no class and generates no box. */
+  background-color: #240609;
+  background-image:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.38) 0%, rgba(0, 0, 0, 0.06) 50%, rgba(0, 0, 0, 0.5) 100%),
+    repeating-linear-gradient(90deg,
+      rgba(0, 0, 0, 0.34) 0, rgba(0, 0, 0, 0.34) 0.45vw,
+      rgba(255, 255, 255, 0.035) 1.05vw, rgba(0, 0, 0, 0.34) 1.7vw),
+    linear-gradient(90deg, #1d0508, var(--velvet, #4a1018) 42%, #3c0d14 68%, #1a0407);
+  box-shadow: inset 0 -0.5vh 1.4vh rgba(0, 0, 0, 0.5);
 }
 
 /* 16:9 is inviolable. aspect-ratio / max-width / max-height are ALSO set inline
@@ -171,9 +207,11 @@
 }
 
 /* The work placard: a museum plate, not a band. Out of the column's flow,
-   content-width, centred on the video's TOP EDGE — half on the dark hall, half
-   over the video. `translate(-50%, -50%)` is what makes the straddle exact
-   whatever the plate's own height turns out to be.
+   content-width, hung on the video's TOP EDGE — two thirds on the dark hall,
+   one third over the picture (`--placard-straddle`). The translate is what makes
+   that ratio exact whatever the plate's own height turns out to be, which is why
+   the straddle is expressed as a fraction of the plate rather than as a pixel
+   offset from the edge.
    The cap is 86% of the MEASURED video width (published by the frame as
    `--surround-media-w`): a plate pinned over a painting is narrower than the
    painting, and the runtime gate asserts exactly that. */
@@ -181,7 +219,7 @@
   position: absolute;
   top: var(--placard-inset);
   left: 50%;
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, var(--placard-straddle));
   z-index: 30;
   width: max-content;
   max-width: calc(var(--surround-media-w, 100%) * 0.86);
@@ -324,33 +362,68 @@
 }
 
 /* ---------------------------------------------------------------------------
-   ENTRANCE
+   THE ENRICHMENT MOMENT (design wave 5)
    The surround's data arrives about a second after the video does (the host's
-   1 Hz enrichment poll), so the chrome would otherwise pop in on top of a
-   playing picture. It ARRIVES instead: the rail slides in from its own side,
-   the band rises from below, the plate settles down onto the video — in that
-   order, ~400ms each, on one deliberate easing.
+   1 Hz enrichment poll). Until then the player is a bare, full-bleed picture,
+   so the arrival changes FOUR things at once — and without choreography all
+   four of them pop, the video's own resize loudest of all.
 
-   THE VIDEO NEVER MOVES. Only the rail, the band and the plate are animated,
-   and only with transform/opacity — nothing reflows, nothing re-parents, the
-   media box is not in any animated subtree.
+   So it is one gesture: the VIDEO SHRINKS out of the whole frame and into its
+   box, the rail slides in from its own side (same beat — the rail is what makes
+   the box exist), the band rises from below, and the plate settles down onto the
+   settled picture. ~620ms end to end.
+
+   THE VIDEO MOVES BUT NEVER REMOUNTS, AND NEVER LEAVES 16:9. The transform sits
+   on the media box, which is rendered at the same depth whether the frame is on
+   or off, so React only ever updates its style — no re-parenting, no reload. And
+   it is a UNIFORM `scale()`: an animation that multiplies both axes by the same
+   number cannot be off the ratio at any frame of itself, which a width/height
+   animation only promises at its two ends. It composites, too, so a playing
+   video is not re-laid-out sixty times a second while it arrives.
+   `--enter-media-scale/dx/dy` are measured and published by the component; the
+   fallbacks make the rule a no-op if they are ever absent.
 
    `--entering` lives on the frame root, which does not exist in the inactive
    state (no class at all), so no animation state can leak into the boxless
-   shell — the same guarantee `--rail-left` carries.
+   shell — the same guarantee `--rail-left` carries. `--arriving` is its longer
+   sibling: it holds while anything is still moving, and its only job is the
+   stage's `overflow` (below).
    --------------------------------------------------------------------------- */
 .surround-frame__rail,
 .surround-frame__footer,
 .surround-frame__header {
   transition:
-    opacity var(--enter-ms) var(--enter-ease),
-    transform var(--enter-ms) var(--enter-ease);
+    opacity var(--enter-ms, 420ms) var(--enter-ease),
+    transform var(--enter-ms, 420ms) var(--enter-ease);
 }
 
-/* Stagger: rail first, band a beat later, plate last onto the picture. */
-.surround-frame__footer { transition-delay: 90ms; }
-.surround-frame__header { transition-delay: 180ms; }
+.surround-frame__media {
+  transition: transform var(--enter-media-ms, 520ms) var(--enter-ease);
+  transform-origin: center center;
+}
 
+/* Stagger: video and rail together, band a beat later, plate last onto the
+   picture. The delays come from `entrance.js` with these as fallbacks. */
+.surround-frame__media { transition-delay: var(--enter-delay-media, 0ms); }
+.surround-frame__rail { transition-delay: var(--enter-delay-rail, 0ms); }
+.surround-frame__footer { transition-delay: var(--enter-delay-footer, 110ms); }
+.surround-frame__header { transition-delay: var(--enter-delay-header, 200ms); }
+
+/* The stage clips (it has to: the media box is `max-height: 100%` inside it and
+   an overflowing picture would otherwise paint over the band). While the video
+   is BIGGER than its box, that clip would cut the shrink into a letterbox slot.
+   `--arriving` outlives every transition by a frame, so the clip comes back only
+   once nothing is moving — an `overflow` flip cannot be transitioned, and one
+   landing mid-move would read as the picture being guillotined. */
+.surround-frame--arriving .surround-frame__stage {
+  overflow: visible;
+}
+
+.surround-frame--entering .surround-frame__media {
+  transform:
+    translate(var(--enter-media-dx, 0px), var(--enter-media-dy, 0px))
+    scale(var(--enter-media-scale, 1));
+}
 .surround-frame--entering .surround-frame__rail {
   opacity: 0;
   transform: translateX(14%);              /* right rail: in from the right */
@@ -366,16 +439,17 @@
 .surround-frame--entering .surround-frame__header {
   opacity: 0;
   /* The base transform IS the straddle; the entrance only adds the settle. */
-  transform: translate(-50%, calc(-50% - 12px));
+  transform: translate(-50%, calc(var(--placard-straddle) - 12px));
 }
 
-/* Reduced motion: the stagger is gone, not just the sliding. The `transition`
-   shorthand below resets `transition-delay` to its initial value (0s) on all
-   three elements, so rail, band and plate fade in on the SAME 220ms opacity
-   ramp, together — an unstaggered fade, not a slower choreography. That is
-   the right trade for this media query: motion is what reduced-motion asks
-   to lose, and losing the stagger with it is a side effect, not a second
-   design decision made here. */
+/* Reduced motion: the stagger is gone, not just the sliding, and the video does
+   not move at all — it is simply in its box from the first painted frame. The
+   `transition` shorthand below resets `transition-delay` to its initial value
+   (0s) on all three chrome elements, so rail, band and plate fade in on the SAME
+   220ms opacity ramp, together — an unstaggered fade, not a slower
+   choreography. That is the right trade for this media query: motion is what
+   reduced-motion asks to lose, and losing the stagger with it is a side effect,
+   not a second design decision made here. */
 @media (prefers-reduced-motion: reduce) {
   .surround-frame__rail,
   .surround-frame__footer,
@@ -383,13 +457,18 @@
     transition: opacity 220ms linear;
   }
 
+  .surround-frame__media {
+    transition: none;
+  }
+
   .surround-frame--entering .surround-frame__rail,
   .surround-frame--entering.surround-frame--rail-left .surround-frame__rail,
-  .surround-frame--entering .surround-frame__footer {
+  .surround-frame--entering .surround-frame__footer,
+  .surround-frame--entering .surround-frame__media {
     transform: none;
   }
 
   .surround-frame--entering .surround-frame__header {
-    transform: translate(-50%, -50%);
+    transform: translate(-50%, var(--placard-straddle));
   }
 }

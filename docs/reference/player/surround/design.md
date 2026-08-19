@@ -20,10 +20,10 @@ light matte board in a lit room; this is warm ink dark with lit programme panels
 
 | Token | Hex | Role |
 |---|---|---|
-| `--hall-ink` | `#14100c` | The darkened auditorium. Frame ground, video letterbox. |
+| `--hall-ink` | `#14100c` | The darkened auditorium. Frame ground behind everything. |
 | `--programme` | `#efe6d2` | Printed programme stock. Rail and footer panels. |
 | `--programme-edge` | `#ddd0b4` | Paper edge / fold shadow. Hairline rules on stock. |
-| `--velvet` | `#4a1018` | Seat velvet. Accent only, never large areas. Declared but currently unused: the map draws its subject in ink hairlines, not a solid fill. |
+| `--velvet` | `#4a1018` | Seat velvet. The lit end of the stage's curtain ramp, and the house's accent colour elsewhere. |
 | `--brass` | `#c79a3e` | Brushed brass. The playhead, plaque rules. |
 | `--brass-lit` | `#f6e3a0` | Lit brass highlight — the leading edge of the playhead. |
 | `--ink` | `#2a1d07` | Primary text on programme stock. |
@@ -51,10 +51,22 @@ Scale, tuned for a 10-foot living-room read at 1920×1080:
 |---|---|---|
 | Piece title | `2.05rem` | 600, italic — the headline of the screen |
 | Piece provenance (under it) | `0.85rem` | 600, small caps, one line |
-| Composer name (brass plate) | `1.75rem` | 600, measure capped at `5.6em`, up to 3 lines |
+| Composer name (brass plate) | `1.75rem` | 600, measure capped at `12ch`, up to 3 lines |
 | Movement name (active) | `1.05rem` | 600, italic for the tempo term |
-| Ticker body | `1.15rem` | 500 |
-| Rail fact | `0.95rem` | 500, body face, 3 lines reserved |
+| Ticker body | `clamp(0.95rem, 19cqh, 1.5rem)` | 500, 2 lines reserved |
+| Rail fact | `clamp(0.85rem, 5.4cqh, 1.35rem)` | 500, body face, 3 lines reserved |
+
+**Two runs of type size themselves against the room they are in.** The cue ticker
+and the rail fact both sit in panels whose height is decided by the screen, not by
+them — the ticker takes all the band's slack, the fact all the card's — and a
+fixed size made both of them fine print in a tall frame and an overflow in a short
+one. Each is therefore `clamp(floor, Ncqh, ceiling)` against its own panel as a
+size container: 15px / 20px / 24px for the note across the 960×540, 1280×720 and
+1920×1080 frames the fleet produces. The floors are the ten-foot floor; the
+ceilings are the point at which each would start competing with the work title.
+The reserves stay in `em`, so they follow the clamp instead of being a second
+number to re-derive. Everything else in the table is fixed: a size that adapts is
+a decision, not a default.
 | Map — subject country | `0.9rem`, `0.2em` tracking | 600, uppercase |
 | Labels / data / map neighbours | `0.72rem`, `0.14em` tracking | 600, uppercase |
 
@@ -81,8 +93,12 @@ Scale, tuned for a 10-foot living-room read at 1920×1080:
 └───────────────────┴───────────────────────────────────────────┘
 ```
 
-The video is TOP-anchored and the work placard FLOATS out of flow, straddling the
-video's top edge as a content-width museum plate. The bottom band spans exactly
+The video is TOP-anchored and the work placard FLOATS out of flow, hung on the
+video's top edge as a content-width museum plate — **two thirds on the hall above,
+one third over the picture** (`--placard-straddle`). A plate is pinned to the wall
+the painting hangs on; it overlaps the frame, not the canvas. The hall strip above
+it (`--placard-inset`) is sized to hold that two thirds with ~12px to spare, so
+the plate never reads as cropped by the frame's own edge. The bottom band spans exactly
 the video's width — so it reads as that video's timeline, not as page furniture —
 and rides up over the video's last ~10px so the join is one edge, not two boxes
 meeting. The rail runs full height because it carries identity, not progress, and
@@ -111,6 +127,21 @@ the brightest, most distracting mark on a screen whose subject is the video.
 
 Pictures are NEVER cropped. `object-fit: cover` is banned in the rail: a portrait
 is a picture of a person, and a narrow column is not a reason to guillotine one.
+
+**The hall wears velvet.** Every pixel of the stage the video does not cover — the
+strip above it the placard hangs on, and the letterbox slack beside it on a screen
+too narrow for a full-width 16:9 — is a deep burgundy drape with vertical fold
+stripes: ArtMode's curtain recipe (`ArtMode.css`) taken two registers down, static,
+with the ramp's lit end at `--velvet` and a vertical shade towards the video's
+edges. It is scenery, not a curtain call: dark enough that the plate and the
+picture stay the brightest things in the room. Only the stage wears it — the media
+box keeps its black, the rail its oxblood, the band its stone, the plate its
+stone.
+
+**The band's regions are sized to their contents.** The movement map claims only
+the rule lane plus two lines of name; ALL the band's remaining height belongs to
+the ticker, which centres its note in it. A floor larger than the names need would
+be dead black between them and the note, not breathing room.
 
 ## Signature: the movement map as engraved score
 
@@ -173,9 +204,23 @@ Sparse and slow. This plays behind music; anything busy competes with it.
 - Rotation beats are coprime on purpose — ticker facts `20s`, composer facts
   `27s`, carousel slides `12s` — so two panels almost never swap in one instant.
 - The playhead and the movement fills glide on `120ms linear` — one 10 Hz tick.
-  No easing, no trail.
-- The frame ENTERS: rail → band → placard, `400ms` each on one easing, staggered
-  `0 / 90 / 180ms`. The video never moves and is in no animated subtree.
+  No easing, no trail. Both move on a **transform** (the cursor translates, the
+  fill scales), never on `left`/`width`: the engine pixel-snaps a painted box's
+  position and size, and a cursor advancing half a pixel per second on a
+  54-minute piece then stands still and jumps a whole pixel at a time. A
+  transform carries sub-pixel offsets and actually glides.
+- **The frame ENTERS as one gesture — the enrichment moment.** The surround's
+  data arrives about a second after the video, so its arrival is a real event on
+  screen and is choreographed as one: the VIDEO SHRINKS out of the whole frame
+  and into its box (`520ms`) while the rail slides in from its own side, the band
+  rises from below (`+110ms`) and the plate settles down onto the picture
+  (`+200ms`) — ~620ms end to end, on one easing. The video's shrink is a single
+  uniform `scale()` on the media box, which is the only kind of size animation
+  that cannot leave 16:9 at any frame of itself, and the media element is never
+  remounted or re-parented by it. The stage un-clips for the length of the
+  gesture and re-clips after it. Under `prefers-reduced-motion` nothing moves:
+  the chrome fades in together and the video is simply in its box from the first
+  painted frame.
 - Nothing pulses, bounces, or shimmers. Respect `prefers-reduced-motion` by
   dropping the crossfades to instant swaps.
 
@@ -185,13 +230,20 @@ The map answers **"where is that?"**, not "what shape is that country?". A shape
 with a star in it tells a viewer who cannot already place the country nothing at
 all, so:
 
-- **Two zooms, one component.** `region` (pad `0.9`) is the default: the subject
-  spans about HALF its frame and the other half is the countries around it,
-  drawn and named. `city` (pad `0.12`) frames the subject's own shape nearly edge
-  to edge, for the carousel's second map — neighbours are not excluded by rule,
-  they simply mostly fall outside the frame at that zoom. Either way the frame is
-  the subject's own bounding box padded and widened to the render aspect, with no
-  per-country configuration anywhere.
+- **Two zooms with two jobs, one component.** `region` (pad `2.2`) is the
+  default and answers *where is that country*: the subject spans about a third
+  of its frame and the rest is a continental view — measured on the real
+  geodata, an Austria frame is 24° wide with six countries inside it whole and
+  France, Italy, Germany, Poland and Romania named around them. `city` (pad
+  `0.12`) answers *and where in it is the city*: the subject's own shape nearly
+  edge to edge. Either way the frame is the subject's own bounding box padded
+  and widened to the render aspect, with no per-country configuration anywhere.
+- **The star belongs to the city zoom.** The regional slide draws no marker and
+  no city label at all: it would give away the next slide's answer and drag the
+  eye to a 6px mark on a map whose subject is a country among countries. The
+  country's own name carries that slide, and its caption is country-scoped. A
+  caller that draws only ONE map (the standalone `country-map` region) asks for
+  the marker back explicitly.
 - **It names what it draws.** The subject in `--ink` at `0.9rem`, its visible
   neighbours in `--ink-soft` at the `0.72rem` floor. A neighbour is named when
   the part of it inside the frame covers at least `14%` of the frame in BOTH
@@ -204,8 +256,8 @@ all, so:
   are the frame's own ink family, so the map is restyled by the region holding
   it; the region publishes `--map-halo` (its own ground) for the label halos,
   which is the one colour the ink family does not carry.
-- The city keeps its brass star and label — the one thing on the map the
-  programme asserts, and the one label that is never dropped.
+- On the zoom that shows it, the city's brass star and label are the one thing on
+  the map the programme asserts, and the one label that is never dropped.
 
 ## Materials, used with restraint
 
