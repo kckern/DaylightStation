@@ -46,6 +46,24 @@
   margin-inline: auto;
 }
 
+/* Fit the slot on BOTH axes. `.pg-board` sizes on width alone, which is fine
+   until the slot is shorter than the board is tall: with `aspect-ratio` the
+   height falls out of the width, so a shorter slot did not shrink this board at
+   all — it drew 65px past the bottom and printed over the status line.
+   The third term is the height budget (`100cqh`, from the size container on
+   `.instrument-board-stage__primary`) converted into a width by the same 7:6
+   ratio the board declares, so whichever axis runs out first is the one that
+   decides and the ratio is never distorted.
+   Chess has always done this — PianoChessGame.scss takes a `min()` of a width
+   term and a `100cqh` term. That is precisely why chess fitted the office screen
+   and this did not.
+   Compound selector on purpose: `.pg-board` sets `width` at the same specificity,
+   so matching on both classes decides it by specificity rather than by whichever
+   stylesheet the bundler happened to emit last. */
+.connect-four-board.pg-board {
+  width: min(100%, var(--pg-board-max), calc(100cqh * 7 / 6));
+}
+
 .connect-four-board {
   position: relative;
   aspect-ratio: 7 / 6;
