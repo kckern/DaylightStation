@@ -444,4 +444,89 @@ describe('SurroundHost', () => {
       expect(container.querySelector('[data-testid="the-player"]')).toBeTruthy();
     });
   });
+
+  // --- shader enforcement ----------------------------------------------------
+  //
+  // THE RULE: when the surround frame is active for the current item, the Player
+  // it wraps ALWAYS renders the focused/minimal shader — no dispatch parameter
+  // required, and no exception for whatever the launch path asked for. The host
+  // enforces this by `cloneElement`-ing `forceShader: 'focused'` onto `children`,
+  // which is a prop update on the existing element (same type/key => no remount).
+
+  describe('shader enforcement', () => {
+    /** Renders forceShader/shader as data attributes so tests can read the props
+     * React actually delivered, and counts mounts so identity can be checked. */
+    let shaderProbeMounts = 0;
+    const ShaderProbe = ({ forceShader, shader }) => {
+      useEffect(() => { shaderProbeMounts += 1; }, []);
+      return (
+        <video
+          data-testid="the-player"
+          data-force-shader={forceShader ?? ''}
+          data-shader={shader ?? ''}
+        />
+      );
+    };
+
+    beforeEach(() => { shaderProbeMounts = 0; });
+
+    it('injects forceShader="focused" onto the child when the surround is active', () => {
+      const player = makePlayer({
+        item: { id: 'plex:663134', surround: SURROUND },
+        media: new FakeMedia(),
+      });
+      const { container } = renderHost({
+        getPlayerHandle: player.get, logger, children: <ShaderProbe />,
+      });
+
+      expect(container.querySelector('[data-testid="surround-frame"]')).toBeTruthy();
+      expect(container.querySelector('[data-testid="the-player"]').dataset.forceShader).toBe('focused');
+    });
+
+    it('leaves the child untouched when the surround is inactive', () => {
+      const player = makePlayer({ item: { id: 'plex:1', title: 'Plain' }, media: new FakeMedia() });
+      const { container } = renderHost({
+        getPlayerHandle: player.get, logger, children: <ShaderProbe />,
+      });
+
+      expect(container.querySelector('[data-testid="surround-frame"]')).toBeNull();
+      // No forceShader prop was injected at all — not merely empty/undefined by
+      // coincidence, but genuinely never set, so the data attribute is absent.
+      expect(container.querySelector('[data-testid="the-player"]').dataset.forceShader).toBe('');
+    });
+
+    it('preserves the child element identity across the activation flip (no remount)', async () => {
+      const player = makePlayer({ item: { id: 'plex:900001' }, media: new FakeMedia() });
+      const { container } = renderHost({
+        getPlayerHandle: player.get, logger, children: <ShaderProbe />,
+      });
+      const node = container.querySelector('[data-testid="the-player"]');
+      expect(shaderProbeMounts).toBe(1);
+      expect(node.dataset.forceShader).toBe('');
+
+      player.advanceTo({ id: 'plex:663134', surround: SURROUND });
+      await act(async () => { vi.advanceTimersByTime(1000); });
+
+      // Same DOM node, same mount — cloneElement only updated the prop.
+      expect(container.querySelector('[data-testid="the-player"]')).toBe(node);
+      expect(shaderProbeMounts).toBe(1);
+      expect(container.querySelector('[data-testid="the-player"]').dataset.forceShader).toBe('focused');
+    });
+
+    it('overrides an incoming explicit shader on the child while active', () => {
+      const player = makePlayer({
+        item: { id: 'plex:663134', surround: SURROUND },
+        media: new FakeMedia(),
+      });
+      // The launch path dispatched shader="dark" onto the player directly —
+      // surround's focused must win over it while the frame is active.
+      const { container } = renderHost({
+        getPlayerHandle: player.get, logger, children: <ShaderProbe shader="dark" />,
+      });
+
+      const node = container.querySelector('[data-testid="the-player"]');
+      expect(node.dataset.shader).toBe('dark');
+      expect(node.dataset.forceShader).toBe('focused');
+    });
+  });
 });

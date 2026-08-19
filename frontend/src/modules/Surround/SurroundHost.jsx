@@ -129,6 +129,17 @@ function SurroundStage({ contentId, surround, active, mode, logger, getMediaEl, 
     });
   };
 
+  // THE FRAME OWNS THE CHROME: while the surround is active for this item, the
+  // Player it wraps always renders the focused/minimal shader — no dispatch
+  // parameter required, and no exception for whatever shader the launch path
+  // asked for. `cloneElement` preserves `children`'s type and key, so this is a
+  // prop update on the existing element, never a remount (constant depth, see
+  // module header). Inactive/un-enriched items pass `children` through
+  // untouched, so nothing about today's shader behaviour changes for them.
+  const framedChildren = active && React.isValidElement(children)
+    ? React.cloneElement(children, { forceShader: 'focused' })
+    : children;
+
   return (
     <SurroundFrame
       active={active}
@@ -141,7 +152,7 @@ function SurroundStage({ contentId, surround, active, mode, logger, getMediaEl, 
       logger={logger}
       onModuleError={onModuleError}
     >
-      {children}
+      {framedChildren}
     </SurroundFrame>
   );
 }
