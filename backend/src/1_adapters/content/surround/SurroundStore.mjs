@@ -8,6 +8,7 @@ import {
   loadYamlFromPath
 } from '#system/utils/FileIO.mjs';
 import { deepMerge } from '#system/utils/deepMerge.mjs';
+import { ISurroundStore } from '#apps/content/ports/ISurroundStore.mjs';
 
 // Definitions live in this reserved folder; every other `_`-prefixed name under
 // the tree (folders and files alike) is authoring scaffolding, never a piece.
@@ -44,7 +45,7 @@ const isPresent = (v) => v !== undefined && v !== null;
  * A surround is enrichment attached to playback responses, not playable
  * content, so this is a plain store — it is not registered as a content source.
  */
-export class SurroundStore {
+export class SurroundStore extends ISurroundStore {
   #byContentId = new Map();
   // Parallel to #byContentId: the rebind lane, walked only after an id miss.
   #byTitle = [];
@@ -58,6 +59,7 @@ export class SurroundStore {
    * @param {Object} options.logger - Structured logger
    */
   constructor({ rootDir, logger }) {
+    super();
     this.rootDir = rootDir;
     // The composed logger arrives as the content router's child (app: 'api'), which
     // would bury surround events among all other content logging. Claim our own
