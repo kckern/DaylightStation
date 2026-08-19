@@ -616,6 +616,25 @@ describe('ScreenActionHandler', () => {
       expect(play.contentId).toBe('morning-program');
     });
 
+    it('opens a source-prefixed menuId as a content id via the secondary menu:open fallback', () => {
+      const { getByTestId } = render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ playback: { when_idle: 'secondary' } }} />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => {
+        getActionBus().emit('media:playback', {
+          command: 'play',
+          secondary: { action: 'menu:open', payload: { menuId: 'plex:663144' } },
+        });
+      });
+
+      const stack = getByTestId('menu-stack');
+      expect(stack.dataset.menuContentid).toBe('plex:663144');
+      expect(stack.dataset.menu).toBeUndefined();
+    });
+
     it('dispatches keydown normally when when_idle is "dispatch"', () => {
       const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
 

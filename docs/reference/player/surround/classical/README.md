@@ -62,8 +62,13 @@ Two fields worth calling out:
   coprime with the footer ticker's 20 s, so the two panels coincide once every nine
   minutes instead of swapping in lockstep, which reads as a glitch. The rotation is
   time-driven, not playhead-driven: seeking does not reset it.
-- **`map`** drives the `country-map` module. Give it the country name **exactly as the
-  geodata spells it** (`United Kingdom`, `Czechia`) plus the city and its coordinates.
+- **`map`** supplies the place-carousel's map slide (and the standalone `country-map`
+  module, for definitions that use it directly — see "Modules" below). Give it the
+  country name **exactly as the geodata spells it** (`United Kingdom`, `Czechia`)
+  plus the city and its coordinates. An optional **`map.caption`** authors the
+  sentence shown under the place-carousel's city photograph — e.g. "Venice — his
+  lifelong home" — set as prose, not the tracked small-caps label a bare place name
+  gets. Omit it and the caption falls back to `map.city` alone, set as a label.
 
 ### Piece sidecar
 
@@ -198,13 +203,35 @@ curl -s https://logs.kckern.net/select/logsql/query \
 
 ---
 
+## Modules
+
+The `concert-hall` definition's regions resolve to named modules from
+`SURROUND_BUILTIN_MODULES` (`frontend/src/modules/Surround/builtins.js`):
+
+| Module | Region | Draws |
+|---|---|---|
+| `work-placard` | top | The floating stone plate: piece title, composer, opus, premiere. |
+| `composer-card` | right (rail) | The header row — portrait plate and brass nameplate — and, below it, the rotating composer fact. |
+| `place-carousel` | right (rail) | The foot of the rail: the composer's city photograph and the regional map, one at a time. See below. |
+| `country-map` | right, bottom | The regional map component itself (see below). |
+| `movement-map` | bottom | The engraved-score progress band. |
+| `cue-ticker` | bottom | The docked cue/fact ticker under the movement map. |
+
+The `concert-hall` definition authors `place-carousel`, not `country-map`, in the
+rail: the map is one of the carousel's two slides, so a piece's regional map and
+its city photograph share one slot and one dwell cycle instead of each getting a
+cramped half-column. The `country-map` **registration stays live** — it is a
+legitimate module for any definition that wants a bare, non-cycling map in a
+region of its own, and `place-carousel` shares its payload-to-props step
+(`mapPinFrom`) rather than re-deriving the pin.
+
 ## The country map
 
-`country-map` is a surround module that draws an inline SVG map, highlights the
-composer's country, and stars their city. It is **data-driven and auto-framing**:
-it computes the bounding box of the highlighted landmass and derives the viewBox
-from it, so Finland fills the frame exactly as well as Austria does with no
-per-country configuration and no per-composer asset.
+`country-map` draws an inline SVG map, highlights the composer's country, and
+stars their city. It is **data-driven and auto-framing**: it computes the
+bounding box of the highlighted landmass and derives the viewBox from it, so
+Finland fills the frame exactly as well as Austria does with no per-country
+configuration and no per-composer asset.
 
 Geodata: `media/img/surround/_maps/europe.geo.json` — Natural Earth 1:110m, public
 domain, trimmed to Europe plus Mediterranean/Caucasus neighbours, 41 KB, fetched

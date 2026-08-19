@@ -60,8 +60,10 @@ export function resolvePorts({
   const baseConfigPath = path.join(dataPath, 'system', 'config', 'system.yml');
   const localConfigPath = path.join(dataPath, 'system', 'config', `system-local.${envName}.yml`);
 
-  const baseConfig = exists(baseConfigPath) ? (readYaml(baseConfigPath) ?? {}) : {};
-  const localConfig = exists(localConfigPath) ? (readYaml(localConfigPath) ?? {}) : {};
+  const baseExists = exists(baseConfigPath);
+  const localExists = exists(localConfigPath);
+  const baseConfig = baseExists ? (readYaml(baseConfigPath) ?? {}) : {};
+  const localConfig = localExists ? (readYaml(localConfigPath) ?? {}) : {};
 
   const config = deepMerge(baseConfig, localConfig);
 
@@ -72,7 +74,12 @@ export function resolvePorts({
     : (config?.app?.port ?? DEFAULT_APP_PORT);
   const backendPort = appPort + 1; // Backend always +1 in dev (Vite only runs in dev)
 
-  return { app: appPort, backend: backendPort, usedDefault: false };
+  // Neither YAML existed on disk: whatever port fell out of the merge is the
+  // hardcoded default, not a resolved value — say so, so callers don't log it
+  // as "resolved from config" and suppress the fallback warning.
+  const usedDefault = !baseExists && !localExists;
+
+  return { app: appPort, backend: backendPort, usedDefault };
 }
 
 export default resolvePorts;

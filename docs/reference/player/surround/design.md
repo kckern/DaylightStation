@@ -60,7 +60,7 @@ Scale, tuned for a 10-foot living-room read at 1920×1080:
 ```text
 ┌───────────────────┬───────────────────────────────────────────┐
 │ RAIL 33%          │         ┌────────────┐                    │
-│                   │         │WORK PLACARD│ ← floats,          │
+│  composer card    │         │WORK PLACARD│ ← floats,          │
 │                   ├────────┴────────────┴────────────────────┤
 │ [mat] ANTONIO     │                                           │
 │       VIVALDI     │     VIDEO — locked 16:9                   │
@@ -68,15 +68,14 @@ Scale, tuned for a 10-foot living-room read at 1920×1080:
 │       Venice      │                                           │
 │                   │                                           │
 │  fun fact,        │                                           │
-│                   ├───────────────────────────────────────────┤
-│  centred          │  movement map                             │
+│  centred          │                                           │
+├───────────────────┤                                           │
+│  place carousel   │                                           │
+│  city photo ⇄ map ├───────────────────────────────────────────┤
+│  captioned, 5:3   │  movement map                             │
 │                   ├───────────────────────────────────────────┤
 │                   │  cue / fact ticker                        │
-├───────────────────┴───────────────────────────────────────────┘
-│ PLACE CAROUSEL    │
-│  city photo ⇄ map │
-│  captioned, 5:3   │
-└───────────────────┘
+└───────────────────┴───────────────────────────────────────────┘
 ```
 
 The video is TOP-anchored and the work placard FLOATS out of flow, straddling the
