@@ -612,7 +612,12 @@ describe('nutrition — the nutriscan path', () => {
     expect(out).toMatchObject({ domain: 'nutrition', ok: false });
   });
 
-  it('warns ONCE per swallow reason and demotes every repeat to debug', async () => {
+  it('never downgrades a repeated swallow to debug', async () => {
+    // `makeLogger` gives this fake no `sampled` method, so `emitSampled` falls
+    // back to `warn` — the same defensive shape `emit` already uses for a
+    // logger missing a level. Every repeat lands there too, not on `debug`:
+    // `debug` is never shipped to the log store, so demoting repeats to it
+    // was deletion, not suppression. See `emitSampled`'s docstring.
     const h = harness();
     const scan = relayScan({ device: 'nutribot-noscale', route: 'nutribot', code: 'dl:4' });
     const first = await h.scanDispatch.handleScan(scan);
@@ -626,9 +631,8 @@ describe('nutrition — the nutriscan path', () => {
       .filter((c) => c[0] === 'barcode_relay.nutriscan.no_scale_id');
     const debugs = h.barcodeLogger.debug.mock.calls
       .filter((c) => c[0] === 'barcode_relay.nutriscan.no_scale_id');
-    expect(warns).toHaveLength(1);
-    expect(warns[0][1]).toMatchObject({ hint: 'further occurrences log at debug' });
-    expect(debugs).toHaveLength(2);
+    expect(warns).toHaveLength(3);
+    expect(debugs).toHaveLength(0);
     expect(h.execute).not.toHaveBeenCalled();
   });
 
