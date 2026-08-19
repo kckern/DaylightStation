@@ -284,7 +284,7 @@ describe('ComposerCard hard content budget — long text', () => {
     injectedStyle = null;
   });
 
-  it('caps the name to 2 lines and ellipsizes the birthplace to 1', () => {
+  it('caps the name to 3 lines and ellipsizes the birthplace to 1', () => {
     const compiled = sass.compile(path.join(__dirname, 'ComposerCard.scss'));
     injectedStyle = document.createElement('style');
     injectedStyle.textContent = compiled.css;
@@ -301,11 +301,21 @@ describe('ComposerCard hard content budget — long text', () => {
     };
     const { container } = renderCard({ data });
 
+    // Wave 4: the ceiling is a real `max-height` (3 lines at line-height 1.15),
+    // NOT `-webkit-line-clamp`. The clamp idiom computes to `flow-root` in
+    // current Chromium and cannot be relied on for a BOX — the same finding
+    // that put min+max heights on the fact and the ticker. `overflow: hidden`
+    // is what makes the height a real cut rather than a suggestion.
+    // (happy-dom resolves `em` off the default 16px root rather than off the
+    // element's own cascaded font-size, so 3.45em reads back as 55.2px here.
+    // Documented so a future reader does not mistake it for a picked pixel.)
     const name = container.querySelector('.surround-composer-card__name');
     const nameStyle = window.getComputedStyle(name);
-    expect(nameStyle.getPropertyValue('-webkit-line-clamp')).toBe('2');
-    expect(nameStyle.getPropertyValue('-webkit-box-orient')).toBe('vertical');
+    expect(parseFloat(nameStyle.getPropertyValue('max-height'))).toBeCloseTo(3.45 * 16, 1);
     expect(nameStyle.getPropertyValue('overflow')).toBe('hidden');
+    // ...and it is NOT a -webkit-box any more, which is what lets the name wrap
+    // at word boundaries under `text-wrap: balance` (below).
+    expect(nameStyle.getPropertyValue('display')).toBe('block');
 
     const birthplace = container.querySelector('.surround-composer-card__birthplace');
     const birthplaceStyle = window.getComputedStyle(birthplace);
@@ -369,6 +379,45 @@ describe('ComposerCard hard content budget — long text', () => {
     const { container } = renderCard();
     const plate = window.getComputedStyle(container.querySelector('.surround-composer-card__nameplate'));
     expect(plate.getPropertyValue('width')).toBe('fit-content');
+  });
+
+  /**
+   * Design wave 4 — THE PLATE USES THE VERTICAL.
+   *
+   * An engraved museum plate sets a long name in a column: "Antonio" over
+   * "Vivaldi". So the name's MEASURE is capped (in ems of its own size, so the
+   * cap follows the type) and the name breaks at word boundaries inside it,
+   * rather than the type shrinking to fit one line — which is the trade the
+   * user asked for explicitly. The plate is `width: fit-content` (asserted
+   * above), so it then hugs whatever that wrapping produced: narrow and tall.
+   *
+   * Both halves are load-bearing. Without the measure cap the name never wraps
+   * and the "vertical" is unused; without the bigger type the wrap buys
+   * nothing. The size assertion is therefore a floor tied to the OLD value —
+   * 1.35rem was the shrunk-to-fit size this wave replaces.
+   */
+  it('gives the name a measure to break in, and bigger type to break with', () => {
+    const compiled = sass.compile(path.join(__dirname, 'ComposerCard.scss'));
+    injectedStyle = document.createElement('style');
+    injectedStyle.textContent = compiled.css;
+    document.head.appendChild(injectedStyle);
+
+    const { container } = renderCard();
+    const name = window.getComputedStyle(container.querySelector('.surround-composer-card__name'));
+
+    // A measure, in ems of the name's own size — narrow enough that a two-word
+    // name stacks. The UNIT is asserted against the compiled source (happy-dom
+    // resolves em to px in computed style, so the computed value cannot show
+    // it); `em`, not px, is what makes the cap follow the type.
+    expect(compiled.css.replace(/\s+/g, ' '))
+      .toMatch(/\.surround-composer-card__name \{[^}]*max-width: [\d.]+em/);
+    expect(parseFloat(name.getPropertyValue('max-width')))
+      .toBeLessThan(8 * 16);                 // < 8em, at happy-dom's 16px root
+    // Breaking, not shrinking: bigger than the one-line size it replaces.
+    expect(parseFloat(name.getPropertyValue('font-size'))).toBeGreaterThan(1.35 * 16);
+    // ...and it breaks at WORD boundaries by preference.
+    expect(name.getPropertyValue('text-wrap')).toBe('balance');
+    expect(name.getPropertyValue('overflow-wrap')).toBe('break-word');
   });
 
   // Both lines on the brass get the same engraved treatment — the dates read as
@@ -718,12 +767,20 @@ describe('ComposerCard — pictures whole, fact slot still', () => {
     expect(style.getPropertyValue('-webkit-line-clamp')).toBe('3');
   });
 
-  it('keeps real paper under the portrait, so the mat survives the dark rail', () => {
+  // Design wave 4: the mat went DARK. A cream mat under a brass hairline was
+  // the brightest mark on a screen whose subject is the video — a white border
+  // on a dark wall. The plate now reads the frame's `--mat` / `--mat-edge`, and
+  // must read NO paper token at all: `--programme` grounds the programme
+  // panels, not the pictures. (The carousel's mat makes the same move; see
+  // PlaceCarousel.test.jsx.)
+  it('mounts the portrait on a dark mat, not on white paper', () => {
     const css = withStyles().replace(/\s+/g, ' ');
-    // The portrait plate reads the un-remapped `--programme` token — that is
-    // what makes it a mat rather than one more dark rectangle. (The carousel's
-    // mat below it makes the same move; see PlaceCarousel.test.jsx.)
-    expect(css).toMatch(/\.surround-composer-card__plate \{[^}]*var\(--programme,/);
+    const rule = css.match(/\.surround-composer-card__plate \{([^}]*)\}/)?.[1] ?? '';
+    expect(rule).toBeTruthy();
+    expect(rule).toMatch(/background: var\(--mat,/);
+    expect(rule).toMatch(/inset 0 0 0 1px var\(--mat-edge,/);   // the definition line survives
+    expect(rule).not.toMatch(/--programme/);
+    expect(rule).not.toMatch(/--brass/);
   });
 
   // Wave 3: the fact moved from the foot of the card to its middle. `margin:

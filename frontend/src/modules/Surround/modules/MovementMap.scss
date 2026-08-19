@@ -1,10 +1,19 @@
 /**
  * MovementMap — engraved-score barline grammar.
  *
- * One hairline rule. One quiet separator between movements. Names above the
- * rule, tempo term italic, up to two lines. Progress is read from the FILL —
- * the sounding movement's rule thickens and sweeps — with the playhead reduced
- * to a plain brass hairline. Nothing glows.
+ * One hairline rule. One quiet separator between movements. The RULE ROW sits
+ * at the TOP of the band (design wave 4), riding in the footer's overlap so it
+ * reads as the video's own baseline; the names hang BELOW it, tempo term
+ * italic, up to two lines. Progress is read from the FILL — the sounding
+ * movement's rule thickens and sweeps — with the playhead reduced to a plain
+ * brass hairline. Nothing glows.
+ *
+ * THE FUTURE IS VISIBLE. The lane a movement has not reached yet is the shape
+ * of the whole piece, and at wave 3's weight ("--programme-edge", a 28%-alpha
+ * hairline on near-black) it simply was not there: the band showed where we
+ * are and refused to show what is left. The lane is now 2px of `--ink-soft`,
+ * and the ladder that reads progress is elapsed(bright) > future(dim) with the
+ * active movement in brass at double the weight.
  *
  * Tokens come from .surround-frame; the literal fallbacks keep the module honest
  * if it is ever rendered outside the frame.
@@ -22,18 +31,22 @@
      it (content-box would have made the band 102px without saying so). */
   min-height: 5.75rem;
   box-sizing: border-box;          /* the floor is the BAND, padding included */
-  padding: 0.35rem 1.1rem 0.55rem;
+  /* NO TOP PADDING. The rule row has to sit tight against the video's bottom
+     edge — the footer already rides up over it by `--band-overlap`, and any
+     padding here would spend that overlap on empty black, which is exactly the
+     gap the user saw. Zero puts the lane inside the overlap zone. */
+  padding: 0 1.1rem 0.55rem;
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   font-family: var(--surround-display, "Cormorant Garamond", Georgia, serif);
   color: var(--ink, #2a1d07);
 }
 
-/* The staff rule itself. Segments sit on it; the playhead rides over it. */
+/* The staff rule itself. Segments hang from it; the playhead rides over it. */
 .surround-movement-map__rule {
   position: relative;
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   width: 100%;
   height: 100%;
 }
@@ -49,16 +62,16 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
+  justify-content: flex-start;
   box-sizing: border-box;
 }
 
-/* Movement names sit ABOVE the rule, clear of the rule lane below. The gap to
-   the rule is a MARGIN, not padding: the runtime gate measures this element's
-   own bounding box (heading.y + heading.height), and padding would extend
-   that box down through the gap, defeating the check even when the text
-   reads clean of the playhead. Margin sits outside the box, so the box ends
-   exactly at the text and the gap is still there visually.
+/* Movement names sit BELOW the rule now (design wave 4), clear of the rule lane
+   above. The gap to the rule is a MARGIN, not padding: the runtime gate measures
+   this element's own bounding box, and padding would extend that box up through
+   the gap, defeating the check even when the text reads clean of the playhead.
+   Margin sits outside the box, so the box starts exactly at the text and the
+   gap is still there visually.
    Two lines, because a short movement gets a narrow segment and "Marcia
    funebre. Adagio assai" simply does not fit one — a single clamped line
    ellipsized every interesting title away. */
@@ -69,7 +82,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 1.15;
-  margin-bottom: 0.55em;           /* the rule lane's clearance — see above */
+  margin-top: 0.55em;              /* the rule lane's clearance — see above */
   padding: 0 0.5em 0 0.55em;       /* text inset, off the rule */
   font-size: 1.05rem;
   font-weight: 600;
@@ -90,12 +103,16 @@
   font-style: italic;
 }
 
-/* The rule under one movement: a hairline lane carrying an elapsed fill. The
-   LANE is always the same faint hairline; the FILL is the state. */
+/* The rule under one movement: a lane carrying an elapsed fill, drawn from the
+   TOP of the segment. The LANE is the same weight everywhere; the FILL is the
+   state.
+   The lane is `--ink-soft` at 2px, not a 28%-alpha `--programme-edge` hairline:
+   the yet-to-come track IS the shape of the piece, and it has to be legible at
+   ten feet or the band shows a position with no context around it. */
 .surround-movement-map__bar {
   position: relative;
   display: block;
-  height: 4px;                     /* the lane's box — the hairline is drawn inside */
+  height: 4px;                     /* the lane's box — the rule is drawn inside */
   width: 100%;
 }
 
@@ -104,25 +121,34 @@
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 0;
-  height: 1px;
-  background: var(--programme-edge, #ddd0b4);
+  top: 0;
+  height: 2px;
+  background: var(--ink-soft, #6b6152);
+  opacity: 0.55;
 }
 
 /* The elapsed fill. This is where progress is read; 120ms linear is one clock
-   tick, so the 10 Hz steps arrive as a sweep rather than as a stutter. */
+   tick, so the 10 Hz steps arrive as a sweep rather than as a stutter. Full
+   `--ink` (parchment on the band) so "done" is unmistakably brighter than the
+   dim lane it is drawn over — the two are the same 2px otherwise. */
 .surround-movement-map__bar-fill {
   position: absolute;
   left: 0;
-  bottom: 0;
+  top: 0;
   height: 2px;
-  background: var(--ink-soft, #6b6152);
+  background: var(--ink, #2a1d07);
   transition: width 120ms linear;
 }
 
-/* Future — nothing but the hairline lane, name recessive. */
+/* Future — the lane alone, and a name the viewer can actually read. It is
+   RECESSIVE, not hidden: "what is still to come" is context the band exists to
+   give, so the heading is drawn in full parchment at 0.78 rather than in the
+   dimmer `--ink-soft`. Compare the elapsed rule below (0.6): the future is now
+   the brighter of the two quiet states, which is the correct order — a movement
+   already played is the one you no longer need. */
 .surround-movement-map__segment--future .surround-movement-map__heading {
-  color: var(--ink-soft, #6b6152);
+  color: var(--ink, #2a1d07);
+  opacity: 0.78;
   font-weight: 600;
 }
 
@@ -149,7 +175,7 @@
    at both ends. The double barline is gone — correct notation, too much ink. */
 .surround-movement-map__barline {
   position: absolute;
-  bottom: 0;
+  top: 0;                          /* the rule row is at the TOP of the band now */
   width: 1px;
   height: 0.7em;
   background: var(--ink-soft, #6b6152);
@@ -163,20 +189,21 @@
 
 .surround-movement-map__barline--terminal {
   height: 0.6em;
-  background: var(--programme-edge, #ddd0b4);
+  background: var(--ink-soft, #6b6152);
+  opacity: 0.55;                   /* the lane's own weight — one quiet family */
 }
 .surround-movement-map__barline--start { left: 0; }
 .surround-movement-map__barline--end { right: 0; }
 
 /* The playhead: one brass hairline, unlit, in the rule lane only.
-   The rule lane is the heading's margin-bottom plus the bar; names live
-   strictly above it, box and all. The playhead never enters the text band —
-   it is a barline, not a cursor.
+   The rule lane is the bar plus the heading's margin-top; names live strictly
+   BELOW it now, box and all. The playhead never enters the text band — it is a
+   barline, not a cursor.
    It GLIDES: positions arrive at 10 Hz, and 120ms linear (one tick) carries it
    between them without ever running ahead of the clock. */
 .surround-movement-map__playhead {
   position: absolute;
-  bottom: 0;
+  top: 0;
   width: 2px;
   height: 0.55em;                  /* box-clears the heading's margin gap */
   margin-left: -1px;

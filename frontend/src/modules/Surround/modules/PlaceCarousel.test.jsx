@@ -170,6 +170,66 @@ describe('PlaceCarousel — the slides', () => {
     expect(container.querySelector('[data-testid="country-map-label"]').textContent).toBe('Venice');
   });
 
+  /**
+   * Design wave 4 — TWO MAPS. Having shown WHERE the country is, the third
+   * slide shows where in it. Same `CountryMap`, one `zoom` prop: the geography
+   * stays in `map/` rather than sprouting a second component that would have to
+   * be kept in step with the first.
+   */
+  /**
+   * Fake timers must be installed BEFORE the render: the dwell interval is
+   * armed in an effect, and a real interval created first is invisible to fake
+   * timers installed after it (the slide then never advances and the assertion
+   * reads whatever slide 0 is). `flush` drains the geodata promise chain, which
+   * is microtasks only and therefore still runs under fake timers.
+   */
+  const stepped = async (steps, data = DATA) => {
+    vi.useFakeTimers();
+    const flush = async () => {
+      for (let i = 0; i < 6; i += 1) await act(async () => { await Promise.resolve(); });
+    };
+    const view = renderCarousel({ data });
+    await flush();
+    for (let i = 0; i < steps; i += 1) {
+      act(() => { vi.advanceTimersByTime(PLACE_SLIDE_MS); });
+      act(() => { vi.advanceTimersByTime(DISSOLVE_COMMIT_MS); });
+      await flush();
+    }
+    vi.useRealTimers();
+    return view;
+  };
+
+  it('adds a zoomed CITY map as its third slide, captioned by the city alone', async () => {
+    const view = await stepped(2);
+    expect(view.kind()).toBe('city-map');
+    // The city LEADS on its own slide — that is what the slide is about.
+    expect(view.caption().textContent).toBe('Venice');
+    expect(view.caption().className).toContain('surround-place-carousel__caption--label');
+  });
+
+  it('frames the two map slides differently — region, then city', async () => {
+    const map = (view) => view.container.querySelector('[data-testid="country-map"]');
+    const region = map(await stepped(1));
+    const city = map(await stepped(2));
+    expect(region).toBeTruthy();
+    expect(city).toBeTruthy();
+    expect(region.getAttribute('data-zoom')).toBe('region');
+    expect(city.getAttribute('data-zoom')).toBe('city');
+
+    // Not merely a different label: the city slide is genuinely tighter. The
+    // viewBox's third number IS the frame's span in degrees.
+    const span = (svg) => parseFloat(svg.getAttribute('viewBox').split(/\s+/)[2]);
+    expect(span(city)).toBeLessThan(span(region) * 0.75);
+  });
+
+  it('skips the city map when no city is pinned — it would be the country slide again', async () => {
+    const composer = { ...DATA.composer, city_image: undefined, map: { country: 'Italy' } };
+    const view = renderCarousel({ data: withComposer(composer) });
+    await waitFor(() => expect(view.kind()).toBe('map'));
+    expect(view.container.querySelector('[data-testid="surround-place-carousel"]')
+      .getAttribute('data-slides')).toBe('1');
+  });
+
   it('hides a broken photograph and warns, without taking the slot down with it', () => {
     const view = renderCarousel();
     const img = view.getByTestId('surround-place-photo');
@@ -226,11 +286,17 @@ describe('PlaceCarousel — the dwell', () => {
 
   it('holds each slide for the dwell, then dissolves to the next and wraps', () => {
     const view = renderCarousel();
+    // Wave 4: three slides, in the order the place is actually explained —
+    // the city, then where the country is, then where the city is in it.
     expect(view.kind()).toBe('photo');
 
     tick(PLACE_SLIDE_MS);
     tick(DISSOLVE_COMMIT_MS);
     expect(view.kind()).toBe('map');
+
+    tick(PLACE_SLIDE_MS);
+    tick(DISSOLVE_COMMIT_MS);
+    expect(view.kind()).toBe('city-map');
 
     tick(PLACE_SLIDE_MS);
     tick(DISSOLVE_COMMIT_MS);
@@ -336,11 +402,15 @@ describe('PlaceCarousel — the dwell', () => {
     const view = renderCarousel();
     const shown = () => view.logger.debug.mock.calls.filter((c) => c[0] === 'surround.place-slide.shown');
     expect(shown()).toHaveLength(1);
-    expect(shown()[0][1]).toMatchObject({ contentId: 'plex:663146', kind: 'photo', of: 2 });
+    expect(shown()[0][1]).toMatchObject({ contentId: 'plex:663146', kind: 'photo', of: 3 });
 
     tick(PLACE_SLIDE_MS);
     tick(DISSOLVE_COMMIT_MS);
-    expect(shown()[1][1]).toMatchObject({ kind: 'map', of: 2 });
+    expect(shown()[1][1]).toMatchObject({ kind: 'map', of: 3 });
+
+    tick(PLACE_SLIDE_MS);
+    tick(DISSOLVE_COMMIT_MS);
+    expect(shown()[2][1]).toMatchObject({ kind: 'city-map', of: 3 });
   });
 });
 
@@ -446,19 +516,56 @@ describe('PlaceCarousel — the slot never moves', () => {
     expect(css).toMatch(/object-fit:\s*contain/);
   });
 
-  // The photograph is a reproduction and gets real paper — the un-remapped
-  // `--programme` token, which the rail deliberately leaves alone so exactly
-  // this mat stays paper. The map does NOT: it is engraved in the rail's own
-  // ink (`--ink`/`--ink-soft`, which the rail re-maps to parchment FOR THE
-  // MAROON), and printing it on cream would be parchment lines on parchment.
-  // Measured in the headless harness: on paper the subject country's wash
-  // vanished. Same box either way — that is what keeps the swap a dissolve.
-  it('gives the photograph paper and the map the rail itself', () => {
+  // Design wave 4: ONE dark mat, for every slide. Cream paper around a bright
+  // city view read as a white border on a dark wall — the most distracting mark
+  // on the screen. The dark mat also resolves wave 3's asymmetry (the map had
+  // to skip the paper because parchment ink on parchment is invisible): a
+  // near-black ground carries a photograph and an engraving equally, so the
+  // GROUND is now part of the reserve too and the swap stays a pure dissolve.
+  it('mounts every slide on the same dark mat, with a dark definition line', () => {
     const css = withStyles().replace(/\s+/g, ' ');
-    expect(css).toMatch(/\.surround-place-carousel__mat--photo \{[^}]*var\(--programme,/);
-    expect(css).toMatch(/\.surround-place-carousel__mat--map \{[^}]*background: transparent/);
-    // The shared box carries the geometry and no ground at all.
-    expect(css).not.toMatch(/\.surround-place-carousel__mat \{[^}]*background:/);
+    const shared = css.match(/\.surround-place-carousel__mat \{([^}]*)\}/)?.[1] ?? '';
+    expect(shared).toBeTruthy();
+    expect(shared).toMatch(/background: var\(--mat,/);
+    expect(shared).toMatch(/inset 0 0 0 1px var\(--mat-edge,/);
+    // No picture in this module reads the paper token, and no variant re-grounds
+    // the slot — that is what makes it ONE mat rather than two that agree today.
+    expect(css).not.toMatch(/--programme/);
+    expect(css).not.toMatch(/__mat--photo \{[^}]*background/);
+    expect(css).not.toMatch(/__mat--map,?[^{]*\{[^}]*background:/);
+  });
+
+  // The map is drawn over the MAT now, not over the rail, so the one colour it
+  // cannot derive — the ground its labels are haloed against — has to follow.
+  it('re-points the map halo at the mat the map is actually drawn on', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    expect(css).toMatch(/__mat--map,\s*\.surround-place-carousel__mat--city-map \{[^}]*--map-halo: var\(--mat,/);
+  });
+
+  // The caption was the hardest thing in the rail to read: `--ink-soft` on
+  // maroon at 0.86rem. Full parchment ink, and both registers a size up.
+  it('sets the caption in full ink, big enough to read across the room', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    // Full `--ink`, not the dim `--ink-soft` it used to carry. Asserted on the
+    // compiled rule: happy-dom resolves the var to its literal fallback in
+    // computed style, which would make the two tokens indistinguishable.
+    expect(css).toMatch(/\.surround-place-carousel__caption \{[^}]*color: var\(--ink,/);
+    expect(css).not.toMatch(/\.surround-place-carousel__caption \{[^}]*--ink-soft/);
+
+    const label = renderCarousel();
+    const style = window.getComputedStyle(label.caption());
+    expect(parseFloat(style.getPropertyValue('font-size'))).toBeGreaterThanOrEqual(0.9 * 16);
+
+    const sentence = renderCarousel({
+      data: withComposer({
+        ...DATA.composer,
+        map: { ...DATA.composer.map, caption: 'Venice — his lifelong home' },
+      }),
+    });
+    const prose = window.getComputedStyle(sentence.caption());
+    expect(parseFloat(prose.getPropertyValue('font-size'))).toBeGreaterThanOrEqual(1 * 16);
+    // Still a caption's register, not body copy.
+    expect(prose.getPropertyValue('font-style')).toBe('italic');
   });
 
   it('marks which ground each slide is on, so the mat variant follows the slide', () => {

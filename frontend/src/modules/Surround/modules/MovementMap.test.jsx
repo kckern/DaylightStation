@@ -310,6 +310,95 @@ describe('MovementMap — the band’s shipped design', () => {
     expect(px).toBeGreaterThanOrEqual(88);
   });
 
+  /**
+   * Design wave 4 — THE RULE ROW RIDES UP.
+   *
+   * The user's complaint was a "big gap between the progress bar and the bottom
+   * of the video": the rule sat at the FOOT of the band with the names above
+   * it, so the timeline was a bar floating in a strip of black. It now sits at
+   * the TOP, inside the footer's own upward overlap, and the names hang below.
+   *
+   * jsdom cannot lay this out, so the contract is asserted where it is actually
+   * decided: source order (the bar precedes the heading, so the DOM order IS the
+   * visual order), the flex direction of the boxes that stack them, and the
+   * absence of the top padding that would otherwise spend the overlap on black.
+   * The measured version of this is the runtime gate's clearance assertion.
+   */
+  it('puts the rule row above the movement names, tight to the top of the band', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    const { container } = renderMap({ position: 300 });
+
+    // Source order: bar, then heading, inside each segment.
+    const segment = container.querySelector('.surround-movement-map__segment');
+    const classes = [...segment.children].map((el) => el.className);
+    const bar = classes.findIndex((c) => c.includes('__bar'));
+    const heading = classes.findIndex((c) => c.includes('__heading'));
+    expect(bar).toBeGreaterThanOrEqual(0);
+    expect(heading).toBeGreaterThan(bar);
+
+    // Both stacking boxes start at the top, not the bottom.
+    expect(css).toMatch(/\.surround-movement-map \{[^}]*align-items: flex-start/);
+    expect(css).toMatch(/\.surround-movement-map__rule \{[^}]*align-items: flex-start/);
+    expect(css).toMatch(/\.surround-movement-map__segment \{[^}]*justify-content: flex-start/);
+
+    // No top padding: the band's first pixel is the rule lane, which is what
+    // puts it inside `--band-overlap` rather than below it.
+    const pad = css.match(/\.surround-movement-map \{[^}]*padding: ([^;]+);/)?.[1] ?? '';
+    expect(pad.trim().split(/\s+/)[0]).toBe('0');
+
+    // The playhead and the barlines hang from the top edge with it.
+    expect(css).toMatch(/\.surround-movement-map__playhead \{[^}]*top: 0/);
+    expect(css).toMatch(/\.surround-movement-map__barline \{[^}]*top: 0/);
+    // The heading's clearance is a MARGIN above it now, not below.
+    expect(css).toMatch(/\.surround-movement-map__heading \{[^}]*margin-top: [\d.]+em/);
+    expect(css).not.toMatch(/\.surround-movement-map__heading \{[^}]*margin-bottom:/);
+  });
+
+  /**
+   * "Yet-to-come progress is too dark — I can't see the context." The lane a
+   * movement has not reached yet is the SHAPE OF THE PIECE, and at a 28%-alpha
+   * `--programme-edge` hairline it was invisible on the near-black band.
+   *
+   * The ladder asserted here is the design: a lane bright enough to read, an
+   * elapsed fill brighter than the lane it covers, and the sounding movement
+   * louder than both. Weight and colour are checked from the compiled sheet
+   * (happy-dom will not resolve the tokens), heights from computed style.
+   */
+  it('keeps the yet-to-come track visible, under a brighter elapsed fill', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    const { container } = renderMap({ position: 300 });
+
+    // The lane: the rail's own soft ink, not the near-invisible edge token.
+    const lane = css.match(/\.surround-movement-map__bar::before \{([^}]*)\}/)?.[1] ?? '';
+    expect(lane).toBeTruthy();
+    expect(lane).toMatch(/background: var\(--ink-soft,/);
+    expect(lane).not.toMatch(/--programme-edge/);
+    expect(parseFloat(lane.match(/height: ([\d.]+)px/)[1])).toBeGreaterThanOrEqual(2);
+    expect(parseFloat(lane.match(/opacity: ([\d.]+)/)[1])).toBeGreaterThanOrEqual(0.5);
+
+    // The elapsed fill is BRIGHTER than the lane it is drawn over — otherwise
+    // "done" and "still to come" would be the same mark at the same weight.
+    const fill = css.match(/\.surround-movement-map__bar-fill \{([^}]*)\}/)?.[1] ?? '';
+    expect(fill).toMatch(/background: var\(--ink,/);
+
+    // ...and the sounding movement is still the loudest thing on the band.
+    const active = css.match(/--active \.surround-movement-map__bar-fill \{([^}]*)\}/)?.[1] ?? '';
+    expect(active).toMatch(/background: var\(--brass,/);
+    const px = (s) => parseFloat(s.match(/height: ([\d.]+)px/)[1]);
+    expect(px(active)).toBeGreaterThan(px(fill));
+
+    // A future movement's NAME is legible too, and — deliberately — brighter
+    // than an elapsed one's: what is coming is the context, what is gone is not.
+    const future = css.match(/--future \.surround-movement-map__heading \{([^}]*)\}/)?.[1] ?? '';
+    const elapsed = css.match(/--elapsed \.surround-movement-map__heading \{([^}]*)\}/)?.[1] ?? '';
+    expect(future).toMatch(/color: var\(--ink,/);
+    expect(parseFloat(future.match(/opacity: ([\d.]+)/)[1]))
+      .toBeGreaterThan(parseFloat(elapsed.match(/opacity: ([\d.]+)/)[1]));
+
+    // The lane exists under every segment, whatever its state.
+    expect(container.querySelectorAll('.surround-movement-map__bar')).toHaveLength(4);
+  });
+
   it('drops both animations under prefers-reduced-motion', () => {
     const css = withStyles().replace(/\s+/g, ' ');
     const block = css.match(/@media \(prefers-reduced-motion: reduce\) \{([^}]*\})*?[^{]*\}/);

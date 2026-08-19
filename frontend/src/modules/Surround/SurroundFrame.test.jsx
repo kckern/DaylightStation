@@ -552,6 +552,26 @@ describe('SurroundFrame — the shipped composition', () => {
     expect(css).toMatch(/\.surround-frame \{[^}]*--programme: #efe6d2/);
   });
 
+  /**
+   * Design wave 4 — the frame publishes a MAT, and it is dark. Every picture in
+   * the frame (the portrait, the city photograph, the two map plates) reads
+   * these two tokens, so the "no white borders" decision lives in exactly one
+   * place. `--programme` survives beside it and is a different thing: the
+   * programme STOCK the panels are printed on, never a border round a picture.
+   */
+  it('publishes one dark mat for every picture in the frame', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    const root = css.match(/\.surround-frame \{[^}]*\}/)[0];
+    const mat = root.match(/--mat: (#[0-9a-f]{6})/i);
+    expect(mat, 'the frame declares no --mat').not.toBeNull();
+    expect(root).toMatch(/--mat-edge: /);
+    // Near-black, not paper: every channel well below the parchment it replaces.
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(mat[1].slice(i, i + 2), 16));
+    expect(Math.max(r, g, b), `--mat is ${mat[1]} — that is not a dark mat`).toBeLessThan(0x50);
+    // ...and it is a token of its own, not an alias of the programme stock.
+    expect(root).toMatch(/--programme: #efe6d2/);
+  });
+
   it('keeps the paper fibre on the dark rail so the stock keeps its tooth', () => {
     const css = withStyles().replace(/\s+/g, ' ');
     const rail = css.match(/\.surround-frame__region--right \{[^}]*\}/)[0];
