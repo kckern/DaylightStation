@@ -4,6 +4,7 @@
 import { ListAdapter } from '#adapters/content/list/ListAdapter.mjs';
 import { FileAdapter } from '#adapters/content/media/files/FileAdapter.mjs';
 import { YamlMediaProgressMemory } from '#adapters/persistence/yaml/YamlMediaProgressMemory.mjs';
+import { YamlSurroundStore } from '#adapters/content/surround/YamlSurroundStore.mjs';
 import { createContentRouter } from '#api/v1/routers/content.mjs';
 import { createListRouter } from '#api/v1/routers/list.mjs';
 import { createLocalRouter } from '#api/v1/routers/local.mjs';
@@ -118,8 +119,13 @@ export function createApiRouters(config) {
   // Create SiblingsService for sibling resolution
   const siblingsService = new SiblingsService({ registry, logger });
 
+  // Surround sidecars decorate playback; they are not a content source and so
+  // never register with the registry. Composed here because this is the only
+  // layer allowed to name the concrete store — consumers see ISurroundStore.
+  const surroundStore = new YamlSurroundStore({ rootDir: path.join(dataPath, 'content/surround'), logger });
+
   // Create PlayResponseService for play response building and watch state reconciliation
-  const playResponseService = new PlayResponseService({ mediaProgressMemory, progressSyncService, progressSyncSources });
+  const playResponseService = new PlayResponseService({ mediaProgressMemory, progressSyncService, progressSyncSources, surroundStore, logger });
 
   // Per-user video course progress store (piano kiosk). Injected into the play
   // router (write side, via /play/log) and exposed for the piano router (read side).
@@ -136,7 +142,7 @@ export function createApiRouters(config) {
       play: createPlayRouter({ registry, mediaProgressMemory, playResponseService, contentQueryService, contentIdResolver, progressSyncService, progressSyncSources, eventBus, userVideoProgressStore, economyService, logger }),
       list: createListRouter({ registry, loadFile, configService, contentQueryService, contentIdResolver, menuMemoryPath: configService.getHouseholdPath('media/menu-memory'), logger }),
       siblings: createSiblingsRouter({ siblingsService, contentIdResolver, logger }),
-      queue: createQueueRouter({ contentExpression: ContentExpression, contentIdResolver, queueService: new QueueService({ mediaProgressMemory }), logger }),
+      queue: createQueueRouter({ contentExpression: ContentExpression, contentIdResolver, queueService: new QueueService({ mediaProgressMemory }), surroundStore, logger }),
       local: createLocalRouter({ localMediaAdapter, mediaBasePath, cacheBasePath: cacheBasePath || path.join(dataPath, 'system/cache'), logger }),
       stream: createStreamRouter({
         singalongMediaPath: path.join(mediaBasePath, 'audio', 'singalong'),

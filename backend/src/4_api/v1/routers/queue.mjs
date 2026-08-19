@@ -79,6 +79,12 @@ export function createQueueRouter(config) {
   // parser and calls fromQuery on it.
   const { contentExpression } = config;
   const { contentIdResolver, queueService, logger = console } = config;
+  // Optional surround sidecar lookup (ISurroundStore port). Absent → the queue
+  // projection is exactly what it always was.
+  const { surroundStore = null } = config;
+  // Surround keeps its own subsystem identity so its events stay queryable
+  // apart from the generic queue stream.
+  const surroundLogger = logger?.child?.({ app: 'surround', module: 'queue-router' }) ?? logger;
   const router = express.Router();
 
   const handleQueueRequest = asyncHandler(async (req, res) => {
@@ -147,6 +153,24 @@ export function createQueueRouter(config) {
     });
 
     const queueItems = items.map(toQueueItem);
+
+    // Enrichment lives here, not in toQueueItem: that mapper stays pure and
+    // storage-unaware. Per item, so one bad sidecar can never cost the queue.
+    for (const qi of queueItems) {
+      try {
+        const surround = surroundStore?.lookup(qi.contentId, qi.title);
+        if (surround) {
+          qi.surround = surround;
+          surroundLogger?.debug?.('surround.attach', {
+            contentId: qi.contentId,
+            surroundId: surround.id,
+            path: 'queue'
+          });
+        }
+      } catch (err) {
+        surroundLogger?.warn?.('surround.attach.failed', { contentId: qi.contentId, error: err?.message });
+      }
+    }
 
     res.json({
       source: resolvedSource,

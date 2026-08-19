@@ -205,6 +205,7 @@ git rev-parse HEAD > docs/docs-last-updated.txt
 | Config system | `docs/reference/core/configuration.md` |
 | Coding standards | `docs/reference/core/coding-standards.md` |
 | Layer guidelines | `docs/reference/core/layers-of-abstraction/*.md` |
+| Player surround (classical chrome: sidecars, movement detection) | `docs/reference/player/surround/classical/README.md` |
 | Piano Producer (jam/song builder) | `docs/reference/piano/producer.md` |
 | Piano grid addressing (keys→squares: permutations, config, difficulty ladder) | `docs/reference/piano/grid-addressing.md` |
 | Exercise library (shared corpus: Fitness workouts + School anatomy) | `docs/reference/fitness/exercise-library.md` |

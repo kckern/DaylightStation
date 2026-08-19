@@ -8,6 +8,7 @@
 // player resolves real metadata.
 import React, { useRef } from 'react';
 import Player from '../../modules/Player/Player.jsx';
+import SurroundHost from '../../modules/Surround/SurroundHost.jsx';
 import { usePlayerSessionBinding } from './usePlayerSessionBinding.js';
 
 export function ScreenPlayer(props) {
@@ -26,7 +27,19 @@ export function ScreenPlayer(props) {
     },
   );
 
-  return <Player {...props} ref={playerRef} />;
+  // SurroundHost reads the same imperative handle the session binding polls. It
+  // wraps `children` in a shell that generates no box — layout-identical to a
+  // bare player — unless the now-playing item carries a `surround` payload AND
+  // the screen's setting allows it. `contentId` is the seam's own hint at what
+  // was asked for, used to correlate logs before the first poll resolves.
+  return (
+    <SurroundHost
+      getPlayerHandle={() => playerRef.current}
+      contentId={props.play ?? props.queue ?? null}
+    >
+      <Player {...props} ref={playerRef} />
+    </SurroundHost>
+  );
 }
 
 export default ScreenPlayer;

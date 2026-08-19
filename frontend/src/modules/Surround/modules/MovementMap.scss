@@ -1,0 +1,172 @@
+/**
+ * MovementMap — engraved-score barline grammar.
+ *
+ * One hairline rule. Movements separated by double barlines. Names above the
+ * rule, tempo term italic. A slender brass playhead with a lit leading edge.
+ * Nothing else: no clef, no notes, no five-line staff.
+ *
+ * Tokens come from .surround-frame; the literal fallbacks keep the module honest
+ * if it is ever rendered outside the frame.
+ */
+
+.surround-movement-map {
+  height: 100%;
+  padding: 0.45rem 1.1rem 0.55rem;
+  display: flex;
+  align-items: flex-end;
+  font-family: var(--surround-display, "Cormorant Garamond", Georgia, serif);
+  color: var(--ink, #2a1d07);
+}
+
+/* The staff rule itself. Segments sit on it; the playhead rides over it. */
+.surround-movement-map__rule {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  width: 100%;
+  height: 100%;
+}
+
+.surround-movement-map__segment {
+  position: relative;
+  flex: 0 0 auto;
+  height: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 0 0.4em 0 0.55em;
+  box-sizing: border-box;
+}
+
+/* Movement names sit ABOVE the rule. */
+.surround-movement-map__heading {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.15;
+  padding-bottom: 0.25em;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.surround-movement-map__numeral {
+  font-variant-numeric: lining-nums;
+  letter-spacing: 0.04em;
+  margin-right: 0.35em;
+}
+
+.surround-movement-map__title {
+  margin-right: 0.3em;
+}
+
+/* Engraved scores set tempo markings in italic. */
+.surround-movement-map__tempo {
+  font-style: italic;
+}
+
+/* The rule under one movement. Its colour is the movement's state. */
+.surround-movement-map__bar {
+  display: block;
+  height: 1px;
+  width: 100%;
+  background: var(--programme-edge, #ddd0b4);
+}
+
+/* Future — pale paper-edge rule (the default above), name recessive. */
+.surround-movement-map__segment--future .surround-movement-map__heading {
+  color: var(--ink-soft, #6b6152);
+  font-weight: 600;
+}
+
+/* Elapsed — the rule darkens to ink-soft, the name drops to 60%. */
+.surround-movement-map__segment--elapsed .surround-movement-map__bar {
+  background: var(--ink-soft, #6b6152);
+}
+.surround-movement-map__segment--elapsed .surround-movement-map__heading {
+  color: var(--ink-soft, #6b6152);
+  opacity: 0.6;
+}
+
+/* Active — velvet fill beneath the rule, name in full-weight ink.
+   The fill crossfades over 600ms; it never slides. */
+.surround-movement-map__segment--active .surround-movement-map__heading {
+  color: var(--ink, #2a1d07);
+  font-weight: 600;
+}
+.surround-movement-map__segment--active .surround-movement-map__bar {
+  background: var(--velvet, #4a1018);
+}
+.surround-movement-map__segment::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 0.42em;
+  background: var(--velvet, #4a1018);
+  opacity: 0;
+  transition: opacity 600ms ease-out;
+  pointer-events: none;
+}
+.surround-movement-map__segment--active::after {
+  opacity: 0.16;
+}
+
+/* Barlines. Double barlines mark a movement end — the whole point of the
+   grammar. Terminals close the rule at both ends. */
+.surround-movement-map__barline {
+  position: absolute;
+  bottom: 0;
+  width: 1px;
+  height: 0.85em;
+  background: var(--ink-soft, #6b6152);
+  pointer-events: none;
+}
+
+.surround-movement-map__barline--double {
+  left: 0;
+  box-shadow: 2px 0 0 0 var(--ink-soft, #6b6152);
+}
+
+.surround-movement-map__barline--terminal {
+  height: 0.7em;
+  background: var(--programme-edge, #ddd0b4);
+}
+.surround-movement-map__barline--start { left: 0; }
+.surround-movement-map__barline--end { right: 0; }
+
+/* The playhead: a brushed-brass barline in motion with a lit leading edge.
+   Moves continuously at the clock's 10 Hz — no easing, no trail, no pulse. */
+.surround-movement-map__playhead {
+  position: absolute;
+  bottom: -0.15em;
+  width: 2px;
+  height: 1.35em;
+  margin-left: -1px;
+  background: linear-gradient(180deg,
+    var(--brass, #c79a3e) 0%,
+    var(--brass-lit, #f6e3a0) 55%,
+    var(--brass, #c79a3e) 100%);
+  pointer-events: none;
+}
+
+.surround-movement-map__playhead-edge {
+  position: absolute;
+  top: -0.18em;
+  left: -1px;
+  width: 4px;
+  height: 0.34em;
+  border-radius: 1px;
+  background: var(--brass-lit, #f6e3a0);
+  box-shadow: 0 0 4px rgba(246, 227, 160, 0.75);
+}
+
+/* Nothing pulses, bounces, or shimmers; reduced motion drops the one crossfade
+   this module owns to an instant swap. */
+@media (prefers-reduced-motion: reduce) {
+  .surround-movement-map__segment::after {
+    transition: none;
+  }
+}
