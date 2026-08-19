@@ -2,6 +2,7 @@
 import path from 'path';
 import {
   dirExists,
+  getStats,
   listDirs,
   listYamlFiles,
   loadYamlFromPath
@@ -12,6 +13,12 @@ import { deepMerge } from '#system/utils/deepMerge.mjs';
 // the tree (folders and files alike) is authoring scaffolding, never a piece.
 const DEFINITIONS_DIR = '_surrounds';
 const COMPOSER_FILE = '_composer';
+// How long a lookup trusts the index without stat-ing the tree. Authoring a
+// surround is an edit-refresh loop, and every content adapter here caches at
+// startup, so without this each timing tweak costs a backend restart. Playback
+// lookups are a handful an hour, not a second, so the walk is free; the window
+// exists only so a burst of lookups around one play does not repeat it.
+const FRESHNESS_WINDOW_MS = 2000;
 
 const isReserved = (name) => name.startsWith('_');
 // Titles are compared on letters and digits only. Everything else — guillemets
@@ -41,6 +48,9 @@ export class SurroundStore {
   #byContentId = new Map();
   // Parallel to #byContentId: the rebind lane, walked only after an id miss.
   #byTitle = [];
+  // When the serving index was built, and when the tree was last stat-ed.
+  #builtAt = 0;
+  #lastCheckedAt = 0;
 
   /**
    * @param {Object} options
@@ -70,6 +80,9 @@ export class SurroundStore {
    * That fallback answers only when it is sure: two sidecars matching the same
    * live title yield null, not a coin flip.
    *
+   * The index is rebuilt in place when a sidecar changes on disk, so an author
+   * edits a file and refreshes rather than restarting the backend.
+   *
    * Returns a fresh clone each call. The payload is attached verbatim to play
    * and queue responses, where callers may decorate it (asset URLs, defaults);
    * handing out the indexed object would let one such edit persist into every
@@ -81,6 +94,8 @@ export class SurroundStore {
    */
   lookup(contentId, title) {
     try {
+      this.#refreshIfStale();
+
       const payload = this.#byContentId.get(String(contentId));
       if (payload) return structuredClone(payload);
 
@@ -120,6 +135,79 @@ export class SurroundStore {
   }
 
   /**
+   * Rebuild the index if a sidecar has changed since it was built.
+   *
+   * Two guards, and both matter. The window keeps a burst of lookups around one
+   * play from re-walking the tree. The mtime comparison is what keeps the
+   * rebuild honest: every index-time warning is derived from build-local state,
+   * so a rebuild re-emits the whole set from scratch — rebuilding on mere window
+   * expiry would make one sidecar nobody ever fixes warn every two seconds for
+   * the life of the process.
+   *
+   * @private
+   */
+  #refreshIfStale() {
+    try {
+      const now = Date.now();
+      if (now - this.#lastCheckedAt <= FRESHNESS_WINDOW_MS) return;
+      // Stamped before the walk, so a tree that has turned unreadable costs one
+      // failed stat per window rather than one per lookup.
+      this.#lastCheckedAt = now;
+      if (this.#newestMtime() <= this.#builtAt) return;
+      this.#build();
+    } catch {
+      // Best-effort by design: a tree deleted or replaced under a running store
+      // leaves the last good index serving, and lookup answers as it did before.
+    }
+  }
+
+  /**
+   * Newest mtime anywhere in the sidecar tree, in whole milliseconds.
+   *
+   * Directories are stat-ed alongside files because a directory mtime is the
+   * only record that a sidecar was added or deleted. Reserved names are walked
+   * exactly as #build walks them, so a rename into or out of `_`-prefixed
+   * scaffolding still registers via the parent directory.
+   *
+   * @returns {number} 0 when nothing could be stat-ed, which reads as "unchanged"
+   * @private
+   */
+  #newestMtime() {
+    let newest = 0;
+    const consider = (target) => {
+      const stats = getStats(target);
+      // Floored: mtimeMs carries sub-millisecond precision that Date.now() does
+      // not, so a file written in the same millisecond as the build would
+      // otherwise read as newer than it and rebuild on every window, forever.
+      if (stats) newest = Math.max(newest, Math.floor(stats.mtimeMs));
+    };
+
+    consider(this.rootDir);
+    const definitionsDir = path.join(this.rootDir, DEFINITIONS_DIR);
+    consider(definitionsDir);
+    for (const file of listYamlFiles(definitionsDir, { stripExtension: false })) {
+      consider(path.join(definitionsDir, file));
+    }
+
+    for (const domain of listDirs(this.rootDir).filter((d) => !isReserved(d))) {
+      const domainDir = path.join(this.rootDir, domain);
+      consider(domainDir);
+
+      for (const composer of listDirs(domainDir).filter((d) => !isReserved(d))) {
+        const composerDir = path.join(domainDir, composer);
+        consider(composerDir);
+        // Unfiltered: _composer.yml is shared identity, and editing it changes
+        // every piece under the folder.
+        for (const file of listYamlFiles(composerDir, { stripExtension: false })) {
+          consider(path.join(composerDir, file));
+        }
+      }
+    }
+
+    return newest;
+  }
+
+  /**
    * Collect every piece whose authored title matches the live one, ids having gone stale.
    *
    * Substring, not equality, and in both directions: the live Plex title usually
@@ -145,6 +233,11 @@ export class SurroundStore {
 
   /**
    * Walk the sidecar tree and build the contentId index.
+   *
+   * Runs from the constructor and again whenever #refreshIfStale sees a newer
+   * mtime. Every counter and collision map here is build-local, so a rebuild
+   * re-reports the corpus from scratch rather than inheriting a stale verdict.
+   *
    * @private
    */
   #build() {
@@ -211,8 +304,15 @@ export class SurroundStore {
       // A malformed root leaves whatever was indexed so far; lookups miss quietly.
     }
 
+    // Both lanes swap together: a lookup that misses on contentId falls straight
+    // through to #byTitle, so a half-swapped pair would rebind against payloads
+    // the rebuilt index no longer holds.
     this.#byContentId = index;
     this.#byTitle = titles;
+    // Stamped after the walk, so a sidecar edited while the build was reading it
+    // still counts as newer and is picked up on the next window.
+    this.#builtAt = Date.now();
+    this.#lastCheckedAt = this.#builtAt;
     this.#warnAmbiguousTitles(titles);
     if (typeof this.logger?.info !== 'function') return;
     this.logger.info('surround.index.built', {
