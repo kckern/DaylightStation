@@ -371,7 +371,7 @@ Passing the unit through is only half. Nothing may multiply a volume by a kcal-p
 
 **Files:**
 - Modify: `backend/src/2_domains/nutrition/value-objects/Composition.mjs` (the `isComplete` getter)
-- Test: `tests/unit/domain/nutrition/compositionUnitGate.test.mjs`
+- Test: `tests/unit/domains/nutrition/value-objects/compositionUnitGate.test.mjs`
 
 **Interfaces:**
 - Consumes: `Composition.withWeight({ grams, unit })`.
@@ -380,7 +380,7 @@ Passing the unit through is only half. Nothing may multiply a volume by a kcal-p
 - [ ] **Step 1: Write the failing test**
 
 ```javascript
-// tests/unit/domain/nutrition/compositionUnitGate.test.mjs
+// tests/unit/domains/nutrition/value-objects/compositionUnitGate.test.mjs
 import { describe, it, expect } from 'vitest';
 import { Composition } from '#domains/nutrition/index.mjs';
 
@@ -401,7 +401,7 @@ describe('Composition — unit gate', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `npx vitest run tests/unit/domain/nutrition/compositionUnitGate.test.mjs`
+Run: `npx vitest run tests/unit/domains/nutrition/value-objects/compositionUnitGate.test.mjs`
 Expected: FAIL — the `ml` case reports `true`.
 
 - [ ] **Step 3: Gate completeness on the unit**
@@ -420,14 +420,14 @@ and include `isMass` in the returned condition. Leave the container out of it �
 
 - [ ] **Step 4: Run the tests**
 
-Run: `npx vitest run tests/unit/domain/nutrition/ tests/unit/applications/nutribot/`
+Run: `npx vitest run tests/unit/domains/nutrition/ tests/unit/applications/nutribot/`
 Expected: PASS, including the 62 existing Composition tests.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add backend/src/2_domains/nutrition/value-objects/Composition.mjs \
-        tests/unit/domain/nutrition/compositionUnitGate.test.mjs
+        tests/unit/domains/nutrition/value-objects/compositionUnitGate.test.mjs
 git commit -m "feat(nutribot): a millilitre reading can no longer complete a composition"
 ```
 
@@ -765,7 +765,7 @@ Note the weight-last orders exercise the case the old code got wrong: a scan arr
 
 - [ ] **Step 4: Run the whole nutrition surface**
 
-Run: `npx vitest run tests/unit/domain/nutrition/ tests/unit/applications/nutribot/ tests/unit/applications/hardware/ tests/unit/composition/`
+Run: `npx vitest run tests/unit/domains/nutrition/ tests/unit/applications/nutribot/ tests/unit/applications/hardware/ tests/unit/composition/`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
