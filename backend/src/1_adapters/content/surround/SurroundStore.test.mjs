@@ -79,7 +79,7 @@ describe('SurroundStore totality', () => {
     expect(logger.info).toHaveBeenCalledTimes(1);
     const [event, payload] = logger.info.mock.calls[0];
     expect(event).toBe('surround.index.built');
-    expect(payload).toMatchObject({ pieces: 1, composers: 1, definitions: 1 });
+    expect(payload).toMatchObject({ pieces: 1, skipped: 0, composers: 1, definitions: 1 });
     expect(typeof payload.ms).toBe('number');
   });
 
@@ -163,5 +163,66 @@ describe('SurroundStore field resolution', () => {
     const store = new SurroundStore({ rootDir: root, logger: makeLogger() });
     const r = store.lookup('plex:663146', '');
     expect(r).toMatchObject({ movements: [], cues: [], facts: [], composer: {}, assetBase: 'surround/classical' });
+  });
+});
+
+describe('SurroundStore logging identity', () => {
+  // Mirrors createLogger's child(): context spreads childContext over baseContext,
+  // so `app` is genuinely overridden rather than ignored.
+  const makeContextLogger = (context = { source: 'backend', app: 'api', module: 'content' }) => {
+    const rec = { context, calls: [], children: [] };
+    rec.child = vi.fn((childContext) => {
+      const kid = makeContextLogger({ ...context, ...childContext });
+      rec.children.push(kid);
+      return kid;
+    });
+    for (const level of ['debug', 'info', 'warn', 'error']) {
+      rec[level] = vi.fn((event, data) => rec.calls.push({ level, event, data }));
+    }
+    return rec;
+  };
+
+  it('claims its own context.app so surround events are filterable on their own', () => {
+    const parent = makeContextLogger();
+    const store = new SurroundStore({ rootDir: root, logger: parent });
+    store.lookup('plex:missing', '');
+
+    expect(parent.child).toHaveBeenCalledWith({ app: 'surround', module: 'surround-store' });
+    expect(parent.calls).toEqual([]);
+
+    const kid = parent.children[0];
+    expect(kid.context).toMatchObject({ source: 'backend', app: 'surround', module: 'surround-store' });
+    expect(kid.calls.map((c) => c.event)).toEqual(['surround.index.built', 'surround.lookup.miss']);
+  });
+
+  it('falls back to a logger without child(), such as bare console', () => {
+    const bare = { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    let store;
+    expect(() => { store = new SurroundStore({ rootDir: root, logger: bare }); }).not.toThrow();
+    expect(bare.info).toHaveBeenCalledWith('surround.index.built', expect.any(Object));
+    expect(store.lookup('plex:663134', '')).not.toBeNull();
+  });
+
+  it('logs a lookup miss at debug with the contentId that was asked for', () => {
+    const logger = makeLogger();
+    const store = new SurroundStore({ rootDir: root, logger });
+    expect(store.lookup('plex:999999', 'Nothing')).toBeNull();
+    expect(logger.debug).toHaveBeenCalledWith('surround.lookup.miss', { contentId: 'plex:999999' });
+  });
+
+  it('does not log a miss on a hit', () => {
+    const logger = makeLogger();
+    new SurroundStore({ rootDir: root, logger }).lookup('plex:663134', '');
+    expect(logger.debug).not.toHaveBeenCalled();
+  });
+
+  it('counts rejected piece files as skipped in the index line', () => {
+    write('classical/beethoven/broken.yml', 'surround: concert-hall\nmatch: [unclosed\n');
+    write('classical/beethoven/no-definition.yml',
+      'surround: does-not-exist\nmatch:\n  contentId: plex:1\npiece:\n  title: Orphan\n');
+    const logger = makeLogger();
+    new SurroundStore({ rootDir: root, logger });
+    expect(logger.info).toHaveBeenCalledWith('surround.index.built',
+      expect.objectContaining({ pieces: 1, skipped: 2 }));
   });
 });

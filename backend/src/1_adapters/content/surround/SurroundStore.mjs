@@ -35,7 +35,12 @@ export class SurroundStore {
    */
   constructor({ rootDir, logger }) {
     this.rootDir = rootDir;
-    this.logger = logger;
+    // The composed logger arrives as the content router's child (app: 'api'), which
+    // would bury surround events among all other content logging. Claim our own
+    // `context.app` so the log store can filter this subsystem on its own. The
+    // optional call is required: contentApi falls back to bare `console`, which
+    // has no child().
+    this.logger = logger?.child?.({ app: 'surround', module: 'surround-store' }) ?? logger;
     this.#build();
   }
 
@@ -56,7 +61,13 @@ export class SurroundStore {
   lookup(contentId, title) {
     try {
       const payload = this.#byContentId.get(String(contentId));
-      return payload ? structuredClone(payload) : null;
+      if (!payload) {
+        // The only trace an authoring mistake leaves: failing soft means a wrong
+        // contentId is otherwise indistinguishable from an unauthored item.
+        this.logger?.debug?.('surround.lookup.miss', { contentId });
+        return null;
+      }
+      return structuredClone(payload);
     } catch {
       return null;
     }
@@ -70,6 +81,9 @@ export class SurroundStore {
     const startedAt = Date.now();
     const index = new Map();
     let composers = 0;
+    // Piece candidates read but rejected. A malformed definition shows up here too,
+    // as every piece naming it is rejected in turn.
+    let skipped = 0;
     let definitions = new Map();
 
     try {
@@ -89,6 +103,7 @@ export class SurroundStore {
           for (const file of files) {
             const resolved = this.#resolvePiece(path.join(composerDir, file), domain, composerBase, definitions);
             if (resolved) index.set(resolved.contentId, resolved.payload);
+            else skipped += 1;
           }
         }
       }
@@ -100,6 +115,7 @@ export class SurroundStore {
     if (typeof this.logger?.info !== 'function') return;
     this.logger.info('surround.index.built', {
       pieces: index.size,
+      skipped,
       composers,
       definitions: definitions.size,
       ms: Date.now() - startedAt
