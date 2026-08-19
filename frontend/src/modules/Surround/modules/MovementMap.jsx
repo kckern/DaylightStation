@@ -69,7 +69,11 @@ export default function MovementMap({
   const log = useMemo(() => resolveLogger(logger), [logger]);
   const contentId = data?.contentId ?? null;
 
-  const movements = Array.isArray(data?.movements) ? data.movements : [];
+  // Memoized: the `[]` fallback would otherwise be a fresh array every render and
+  // recompute `segments` on every 10 Hz tick.
+  const movements = useMemo(
+    () => (Array.isArray(data?.movements) ? data.movements : []), [data],
+  );
 
   // The rule ends where the MUSIC ends, not where the file does. The Eroica has
   // ~4½ minutes of applause after the final chord; a bar running to `duration`

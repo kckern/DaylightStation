@@ -4,19 +4,15 @@
  * Imported for its side effect by `SurroundHost`, so neither mount seam
  * (`ScreenPlayer`, `MenuStack`) needs a registration call of its own.
  *
- * Still pending:
- *
- *   composer-card  -> Task 13, modules/ComposerCard.jsx
- *
- * Each of those tasks adds its import here and a `registerSurroundModule(...)`
- * line inside `registerSurroundBuiltins()`. Until then an unknown module name
- * resolves to null and `SurroundFrame` renders an empty region and warns
+ * All three PoC modules are registered. A name that is NOT one of these still
+ * resolves to null, and `SurroundFrame` renders an empty region and warns
  * `surround.module.missing` — the intended fail-soft path, not a crash.
  */
 
 import { registerSurroundModule } from './registry.js';
 import MovementMap from './modules/MovementMap.jsx';
 import CueTicker from './modules/CueTicker.jsx';
+import ComposerCard from './modules/ComposerCard.jsx';
 
 /** The module names `SurroundFrame` resolves for the PoC. */
 export const SURROUND_BUILTIN_MODULES = Object.freeze([
@@ -34,7 +30,7 @@ export const SURROUND_BUILTIN_MODULES = Object.freeze([
 export function registerSurroundBuiltins() {
   registerSurroundModule('movement-map', MovementMap, { regions: ['bottom'] });
   registerSurroundModule('cue-ticker', CueTicker, { regions: ['bottom'] });
-  // Task 13 adds its registerSurroundModule(...) call here.
+  registerSurroundModule('composer-card', ComposerCard, { regions: ['right'] });
 }
 
 registerSurroundBuiltins();
