@@ -32,9 +32,16 @@
 .surround-cue-ticker__text {
   margin: 0;
   width: 100%;
-  /* The reserve: two lines at this line-height, always. `em` keeps it tied to
-     the type rather than to a pixel guess. */
+  /* The reserve: two lines at this line-height, always — a floor AND a
+     ceiling, so the box can neither collapse under the flex algorithm nor
+     grow past it. `-webkit-box` + `-webkit-line-clamp` computes to
+     `flow-root` in current Chromium, which is not a height at all; the clamp
+     stays for the ellipsis where an engine honours it, but the box itself is
+     guaranteed by these two explicit heights, the same contract the rail
+     fact's `.surround-composer-card__fact` uses. `em` keeps both tied to the
+     type rather than to a pixel guess. */
   min-height: 2.7em;
+  max-height: 2.7em;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
