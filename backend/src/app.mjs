@@ -3929,12 +3929,25 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'messaging' })
   });
 
-  // Late-bind the telegram channel of the notification stack (constructed
-  // before messaging services exist; sends only happen post-startup).
-  // Prefer the SystemBotLoader nutribot adapter (the proven prod send path);
-  // fall back to the default messaging adapter.
-  notificationTelegram.adapter = getMessagingAdapter(householdId, 'nutribot')
-    || messagingServices.telegramAdapter;
+  // The notification stack has no bot of its own, so it used to borrow
+  // NutriBot's token. That turned the food-logging DM into the whole house's
+  // alert firehose: two ceremony nudges a day that never stop (the periodId is
+  // in the dedupeKey, so the cooldown can never collapse them) plus one message
+  // per feedback recording (same problem — the item id is in the dedupeKey).
+  // Mixing that into the nutrition conversation is what made all of it spam.
+  //
+  // So the telegram channel is deliberately left unwired until a dedicated
+  // notifications bot exists. Nothing breaks: TelegramNotificationAdapter
+  // reports every intent undelivered, the in-app card still lands, and the
+  // governance ledger still records each intent — so
+  // data/household/notifications/ledger.yml remains the running account of what
+  // the future bot will inherit.
+  //
+  // To turn delivery back on, register the new bot in data/system/config/bots.yml
+  // and point this at getMessagingAdapter(householdId, '<newbot>'). Do not point
+  // it back at 'nutribot' (or at messagingServices.telegramAdapter, which is
+  // built from the same NutriBot token) — that is the bug this replaced.
+  notificationTelegram.adapter = null;
 
   const upcHttpClient = new HttpClient({ logger: rootLogger.child({ module: 'upc-http' }) });
   const nxConfig = nutribotConfig.integrations?.nutritionix;
