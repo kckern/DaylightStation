@@ -1,11 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, fireEvent, act } from '@testing-library/react';
+import { render, fireEvent, act, waitFor } from '@testing-library/react';
 import ComposerCard, {
   ASSET_WARN_PER_MINUTE,
   COMPOSER_FACT_INTERVAL_MS,
   COMPOSER_FACT_FADE_MS,
 } from './ComposerCard.jsx';
 import { FACT_INTERVAL_MS } from './CueTicker.jsx';
+import { __resetMapCache } from '../map/CountryMap.jsx';
+import { registerSurroundBuiltins, SURROUND_BUILTIN_MODULES } from '../builtins.js';
+import { getSurroundRegistry, resetSurroundRegistry } from '../registry.js';
 
 const makeLogger = () => ({
   debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), sampled: vi.fn(),
@@ -316,5 +319,112 @@ describe('ComposerCard composer facts', () => {
     const view = renderFacts({ data: withFacts([]) });
     expect(view.logger.debug.mock.calls.filter((c) => c[0] === 'surround.composer-fact.shown'))
       .toHaveLength(0);
+  });
+});
+
+/**
+ * The country map reaches the rail as a registered surround module, so the
+ * generic `CountryMap` never learns the surround payload shape — a thin adapter
+ * in `builtins.js` maps `data.composer.map` onto its props. These specs live
+ * beside the card because that adapter is the rail's other identity module and
+ * has no test file of its own.
+ */
+describe('country-map surround module', () => {
+  const square = (name, lon0, lat0, lon1, lat1) => ({
+    type: 'Feature',
+    properties: { name },
+    geometry: {
+      type: 'Polygon',
+      coordinates: [[[lon0, lat0], [lon1, lat0], [lon1, lat1], [lon0, lat1], [lon0, lat0]]],
+    },
+  });
+  const GEO = {
+    type: 'FeatureCollection',
+    features: [square('Beta', 10, 10, 30, 30), square('Gamma', -5, 40, -4, 41)],
+  };
+
+  let fetchMock;
+
+  beforeEach(() => {
+    __resetMapCache();
+    resetSurroundRegistry();
+    registerSurroundBuiltins();
+    fetchMock = vi.fn(() => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(GEO) }));
+    global.fetch = fetchMock;
+  });
+  afterEach(() => { resetSurroundRegistry(); __resetMapCache(); });
+
+  /**
+   * `CountryMap` fires its fetch from inside a promise chain, so asserting
+   * "asked for no geodata" straight after render would pass even if the map HAD
+   * been mounted. Drain the microtask queue first, or the assertion is vacuous.
+   */
+  const settle = async () => {
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+  };
+
+  const MAP = { country: 'Beta', city: 'Betaville', lat: 20, lon: 20 };
+  const withMap = (map) => ({ ...DATA, composer: { ...DATA.composer, map } });
+
+  /** Render whatever the registry hands back, through the fixed module contract. */
+  const renderModule = (data, logger = makeLogger()) => {
+    const Module = getSurroundRegistry().get('country-map');
+    expect(Module).toBeTruthy();
+    const view = render(
+      <Module
+        position={976}
+        duration={3223}
+        playing
+        seeking={false}
+        data={data}
+        region={{ module: 'country-map', height: 200 }}
+        logger={logger}
+      />,
+    );
+    return { ...view, logger };
+  };
+
+  it('is registered under the name the sidecar authors', () => {
+    expect(getSurroundRegistry().has('country-map')).toBe(true);
+    expect(SURROUND_BUILTIN_MODULES).toContain('country-map');
+    // ...alongside, not instead of, the modules already there.
+    for (const name of ['movement-map', 'cue-ticker', 'composer-card']) {
+      expect(getSurroundRegistry().has(name)).toBe(true);
+    }
+  });
+
+  it('passes the composer map block through to the generic map', async () => {
+    const { container } = renderModule(withMap(MAP));
+    await waitFor(() => expect(container.querySelector('[data-country="Beta"]')).toBeTruthy());
+
+    expect(container.querySelector('[data-country="Beta"]').getAttribute('data-role')).toBe('highlight');
+    expect(container.querySelector('[data-country="Gamma"]').getAttribute('data-role')).toBe('context');
+    expect(container.querySelector('[data-testid="country-map-label"]').textContent).toBe('Betaville');
+    expect(container.querySelector('[data-testid="country-map-marker"]')).toBeTruthy();
+  });
+
+  it('renders nothing, and asks for no geodata, when the composer has no map block', async () => {
+    for (const data of [withMap(undefined), { ...DATA, composer: undefined }, null]) {
+      let view;
+      expect(() => { view = renderModule(data); }).not.toThrow();
+      expect(view.container.innerHTML).toBe('');
+      await settle();
+      expect(view.container.innerHTML).toBe('');
+      view.unmount();
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('renders nothing when the map block names no country', async () => {
+    const view = renderModule(withMap({ city: 'Betaville', lat: 20, lon: 20 }));
+    await settle();
+    expect(view.container.innerHTML).toBe('');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('still draws the country when the map block carries no city pin', async () => {
+    const { container } = renderModule(withMap({ country: 'Beta' }));
+    await waitFor(() => expect(container.querySelector('[data-country="Beta"]')).toBeTruthy());
+    expect(container.querySelector('[data-testid="country-map-marker"]')).toBeNull();
   });
 });
