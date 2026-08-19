@@ -11,7 +11,7 @@
 
 .surround-movement-map {
   height: 100%;
-  padding: 0.45rem 1.1rem 0.55rem;
+  padding: 0.3rem 1.1rem 0.5rem;
   display: flex;
   align-items: flex-end;
   font-family: var(--surround-display, "Cormorant Garamond", Georgia, serif);
@@ -39,14 +39,14 @@
   box-sizing: border-box;
 }
 
-/* Movement names sit ABOVE the rule. */
+/* Movement names sit ABOVE the rule, clear of the rule lane below. */
 .surround-movement-map__heading {
   display: block;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 1.15;
-  padding-bottom: 0.25em;
+  padding-bottom: 0.45em;          /* was 0.25em — clears the taller lane */
   font-size: 1.05rem;
   font-weight: 600;
 }
@@ -138,12 +138,15 @@
 .surround-movement-map__barline--end { right: 0; }
 
 /* The playhead: a brushed-brass barline in motion with a lit leading edge.
-   Moves continuously at the clock's 10 Hz — no easing, no trail, no pulse. */
+   Moves continuously at the clock's 10 Hz — no easing, no trail, no pulse.
+
+   The rule lane is the bottom 0.95em; names live strictly above it. The
+   playhead never enters the text band — it is a barline, not a cursor. */
 .surround-movement-map__playhead {
   position: absolute;
-  bottom: -0.15em;
+  bottom: 0;                       /* was -0.15em */
   width: 2px;
-  height: 1.35em;
+  height: 0.85em;                  /* was 1.35em — text-band overlap */
   margin-left: -1px;
   background: linear-gradient(180deg,
     var(--brass, #c79a3e) 0%,
@@ -154,7 +157,7 @@
 
 .surround-movement-map__playhead-edge {
   position: absolute;
-  top: -0.18em;
+  top: -0.14em;                    /* the lit tip may kiss the band edge, not text */
   left: -1px;
   width: 4px;
   height: 0.34em;
