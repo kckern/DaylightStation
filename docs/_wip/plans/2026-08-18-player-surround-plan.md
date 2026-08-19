@@ -38,6 +38,69 @@ Verified working against `backend/src/4_api/v1/routers/play.userlog.test.mjs` (3
 
 ---
 
+## Observability requirements (apply to EVERY task)
+
+This feature fails soft by design: every failure path renders the bare player. That means **failures are invisible by construction** — nothing crashes, nothing 500s, the video just plays without its frame. Logging is therefore not decoration here, it is the only way anyone will ever answer "I authored the sidecar, so why is there no frame?"
+
+### Give surround its own subsystem identity
+
+`context.app` is the filter that makes the log store worth querying (CLAUDE.md, "Reading Logs"). Surround events must not drown in the generic content-router stream.
+
+**Backend.** The injected logger arrives from `app.mjs:1008` as `rootLogger.child({ module: 'content' })`, where `rootLogger` is `createLogger({ source: 'backend', app: 'api' })`. Every backend surround component must re-tag:
+
+```js
+this.logger = logger?.child?.({ app: 'surround', module: '<component>' }) ?? logger;
+```
+
+`child` is optional-chained deliberately — `contentApi.mjs:45` defaults `logger = console` when none is composed, and `console` has no `.child()`. The override genuinely works: `createLogger`'s `child()` spreads `childContext` after `baseContext`, so `app` is replaced rather than ignored.
+
+**Frontend.** Not just `component` — **`app` and `sessionLog` are required**:
+
+```js
+const logger = useMemo(() => getLogger().child({
+  app: 'surround',
+  component: 'surround-host',
+  sessionLog: true,
+}), []);
+```
+
+Without `app` + `sessionLog`, frontend events are stdout-only and die with the container restart — a failure this repo has already been bitten by. `sessionLog: true` opens a durable per-session file (`Logger.js:219`); a child derived from a sessionLog logger inherits it, so set it once on the host logger and let the modules' children inherit rather than re-declaring it (re-declaring double-opens the session).
+
+### Log the negative paths, not just the happy one
+
+The single most valuable line in this whole feature is the one that fires when **nothing happens**. Required, beyond the per-task tables:
+
+| Event | Level | Where | Why it exists |
+|---|---|---|---|
+| `surround.lookup.miss` | debug | SurroundStore | An item played and no sidecar matched. Without it, an authoring typo is undiagnosable. Cheap — playback is a handful of events per hour, not per second. |
+| `surround.index.built` | info | SurroundStore | Add `skipped` (files walked but not indexed) to the existing counts, so a broken authoring pass is visible without grepping warns. |
+| `surround.disabled` | debug | SurroundHost | Distinguishes "config turned it off" from "data missing" — otherwise both look identical from outside. |
+
+### Correlate the whole path
+
+**Every surround event on both sides carries `contentId`.** A single playback must be reconstructable end to end: backend `surround.attach` → frontend `surround.mount` → `surround.cue.shown` → `surround.unmount`. An event without `contentId` cannot be joined to the others and is close to useless during an incident.
+
+### Make the stated risks measurable rather than observable-by-sitting-there
+
+The plan names kiosk framerate as risk #1 and says "measure on hardware, do not assume". Measuring must not require someone to go stand in the living room:
+
+- `useMediaClock` emits `surround.clock.health` (debug, sampled once per 60 s) with `{ contentId, driver, ticksPerSec, sampledHz }`. Degradation from 10 Hz then shows up as a log-store query over a real 54-minute session instead of an eyeball test.
+- `surround.clock.stalled` (warn) when `playing === true` and no tick has arrived for 5 s — catches a dead rVFC loop, which would silently freeze the cursor while the video keeps playing.
+
+### Rules
+
+- No raw `console.*` in new code, frontend or backend. Hard project rule.
+- Warn/error payloads name the offending **file path or contentId** — an actionable warning, not "something was invalid".
+- `surround.asset.missing` is sampled (≤5/min); a broken portrait path must not flood the store once per render.
+
+Query the result with:
+
+```bash
+curl -s https://logs.kckern.net/select/logsql/query -d 'query=context.app:surround AND _time:24h' -d 'limit=100'
+```
+
+---
+
 ## Task 1: SurroundStore — index, inheritance, exact match
 
 **Files:**
@@ -110,7 +173,9 @@ Expected: FAIL — cannot resolve `./SurroundStore.mjs`.
 
 Walk `<rootDir>/<domain>/<composer>/*.yml`, skipping `_`-prefixed files and folders as piece files. Load `_surrounds/{id}.yml` definitions. Deep-merge `_composer.yml` under the piece's `composer:` block. `assetBase` is `surround/<domain>` (`surround/classical`). Index by `match.contentId`. `lookup()` must never throw — wrap the whole body in try/catch returning `null`.
 
-Use `js-yaml` (already a dependency) and `node:fs`. Emit `surround.index.built` (info) with `{ pieces, composers, definitions, ms }` after each build.
+**Filesystem access goes through `#system/utils/FileIO.mjs`** (`listDirs`, `listYamlFiles`, `loadYamlFromPath`, `dirExists`) — NOT raw `node:fs`. FileIO is the mandatory gateway for adapters, and its loaders already swallow parse/ENOENT errors into `null`, which is the fail-soft read discipline this store needs. Deep-merge via `#system/utils/deepMerge.mjs` (the documented SSOT) rather than a local implementation. Note its deliberate behavior: a `null` override is treated as absent, so a piece cannot clear an inherited composer value with `born: null` — record that in the Task 17 authoring notes rather than working around it.
+
+Emit `surround.index.built` (info) with `{ pieces, composers, definitions, ms }` after each build.
 
 **Step 4: Run to verify it passes**
 
