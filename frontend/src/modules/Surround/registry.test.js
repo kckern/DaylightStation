@@ -84,6 +84,6 @@ describe('surround builtins', () => {
   it('declares the modules the frame resolves by name', async () => {
     const { SURROUND_BUILTIN_MODULES } = await import('./builtins.js');
     expect([...SURROUND_BUILTIN_MODULES].sort())
-      .toEqual(['composer-card', 'country-map', 'cue-ticker', 'movement-map']);
+      .toEqual(['composer-card', 'country-map', 'cue-ticker', 'movement-map', 'work-placard']);
   });
 });

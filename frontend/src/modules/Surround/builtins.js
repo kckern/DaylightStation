@@ -18,6 +18,7 @@ import MovementMap from './modules/MovementMap.jsx';
 import CueTicker from './modules/CueTicker.jsx';
 import ComposerCard from './modules/ComposerCard.jsx';
 import CountryMapModule from './modules/CountryMapModule.jsx';
+import WorkPlacard from './modules/WorkPlacard.jsx';
 
 /** The module names `SurroundFrame` resolves. */
 export const SURROUND_BUILTIN_MODULES = Object.freeze([
@@ -25,6 +26,7 @@ export const SURROUND_BUILTIN_MODULES = Object.freeze([
   'cue-ticker',
   'composer-card',
   'country-map',
+  'work-placard',
 ]);
 
 /**
@@ -38,6 +40,7 @@ export function registerSurroundBuiltins() {
   registerSurroundModule('cue-ticker', CueTicker, { regions: ['bottom'] });
   registerSurroundModule('composer-card', ComposerCard, { regions: ['right'] });
   registerSurroundModule('country-map', CountryMapModule, { regions: ['right', 'bottom'] });
+  registerSurroundModule('work-placard', WorkPlacard, { regions: ['top'] });
 }
 
 registerSurroundBuiltins();
