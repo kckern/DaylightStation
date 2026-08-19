@@ -2,7 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render } from '@testing-library/react';
-import * as sass from 'sass';
+import * as sass from 'sass-embedded';
 import MovementMap from './MovementMap.jsx';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -191,12 +191,26 @@ describe('MovementMap', () => {
     expect(fills(container)).toEqual([100, 100, 100, 100]);
   });
 
+  // A position one tick before the next movement starts can never make the
+  // raw (position - start) / length fraction leave [0, 1] here: `activeIndex`
+  // and each segment's `stop` both derive from the same `end`, so an in-range
+  // position is structurally incapable of pushing a sounding movement's
+  // fraction above 1 — that version of this test passed whether or not
+  // `clamp01` was even called.
+  //
+  // The one place the raw fraction CAN go out of bounds is below zero: a
+  // position a hair before the piece's own start (plausible clock skew right
+  // as playback begins) divides by movement 1's length and goes negative
+  // before the clamp catches it. That is what this drives.
   it('never lets a fill run past its own segment', () => {
-    // One tick before the next movement starts, the sounding fill is at most 100.
-    const { container } = renderMap({ position: 1924 });
-    fills(container).forEach((f) => {
-      expect(f).toBeGreaterThanOrEqual(0);
-      expect(f).toBeLessThanOrEqual(100);
+    const { container } = renderMap({ position: -0.5 });
+    const f = fills(container);
+    expect(f).toHaveLength(4);
+    // Without clamp01 this would render -0.05..., not 0.
+    expect(f[0]).toBe(0);
+    f.forEach((value) => {
+      expect(value).toBeGreaterThanOrEqual(0);
+      expect(value).toBeLessThanOrEqual(100);
     });
   });
 

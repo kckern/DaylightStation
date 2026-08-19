@@ -391,6 +391,12 @@ test.describe('Surround — composed layout gate', () => {
     //    painting. (Was: a full-width band sitting entirely above the video.)
     const placard = await box('.surround-frame__header');
     const media = await box('.surround-frame__media');
+    //    The 16:9 lock is inviolable — none of the recomposition (top-anchored
+    //    stage, straddling plate, overlapping band) may distort the media box.
+    expect(
+      Math.abs(media.width / media.height - 16 / 9),
+      `media box is ${media.width}x${media.height} — not locked to 16:9`,
+    ).toBeLessThan(0.02);
     expect(
       placard.y + placard.height,
       'the plate does not reach the video — it is a band again, not a plate',

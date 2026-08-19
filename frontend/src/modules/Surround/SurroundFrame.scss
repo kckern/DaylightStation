@@ -160,6 +160,11 @@
   max-width: calc(var(--surround-media-w, 100%) * 0.86);
   display: flex;
   flex-direction: column;
+  /* The plate straddles the video's top edge, so its box covers real video —
+     taps in the top-centre of the picture must reach the player underneath,
+     not die on an inert nameplate. Same contract as `__overlay` below: this
+     layer is see-through to input, not just to light. */
+  pointer-events: none;
   /* It sits ON the video, so it casts: a tight contact shadow plus a wide soft
      one. This is the one element in the frame allowed a drop shadow. */
   box-shadow:
@@ -334,8 +339,13 @@
   transform: translate(-50%, calc(-50% - 12px));
 }
 
-/* Reduced motion: the arrival stays choreographed, but as light only — no
-   sliding, no settling, and the placard keeps its straddle transform. */
+/* Reduced motion: the stagger is gone, not just the sliding. The `transition`
+   shorthand below resets `transition-delay` to its initial value (0s) on all
+   three elements, so rail, band and plate fade in on the SAME 220ms opacity
+   ramp, together — an unstaggered fade, not a slower choreography. That is
+   the right trade for this media query: motion is what reduced-motion asks
+   to lose, and losing the stagger with it is a side effect, not a second
+   design decision made here. */
 @media (prefers-reduced-motion: reduce) {
   .surround-frame__rail,
   .surround-frame__footer,

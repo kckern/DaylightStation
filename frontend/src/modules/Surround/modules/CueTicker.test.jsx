@@ -2,7 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, act } from '@testing-library/react';
-import * as sass from 'sass';
+import * as sass from 'sass-embedded';
 import CueTicker, {
   CUE_FADE_MS, CUE_HOLD_MS, CUE_SWAP_MS, CUE_DWELL_S, FACT_INTERVAL_MS,
 } from './CueTicker.jsx';
@@ -301,11 +301,22 @@ describe('CueTicker — reserved height and centred setting', () => {
     expect(reserve(short)).toBe(reserve(long));   // one line and two: same box
   });
 
-  it('caps the panel at those two lines so a long note cannot outgrow the reserve', () => {
+  // `-webkit-line-clamp` alone is not a ceiling: in current Chromium
+  // `display: -webkit-box` computes to `flow-root`, so a shrinkable flex item
+  // relying on the clamp for its box height can still collapse (this is what
+  // happened to the rail fact — see ComposerCard.scss). The real ceiling is
+  // the explicit `max-height`, so that is what this asserts, not the clamp
+  // declaration (kept only for the ellipsis, and covered separately below).
+  it('caps the panel at those two lines with an explicit ceiling, not just the clamp', () => {
     withStyles();
     const view = mount('A fact.');
     const style = window.getComputedStyle(view.container.querySelector('[data-testid="surround-ticker-text"]'));
-    expect(style.getPropertyValue('-webkit-line-clamp')).toBe('2');
+    // happy-dom resolves `em` off the default 16px root rather than the
+    // element's own cascaded font-size, so 2.7em reads back as 43.2px here —
+    // the point of the assertion is that a NUMBER exists at all (a ceiling),
+    // not the clamp declaration, which happy-dom would happily report even
+    // with no box height behind it.
+    expect(style.getPropertyValue('max-height')).toBe('43.2px');
     expect(style.getPropertyValue('overflow')).toBe('hidden');
   });
 

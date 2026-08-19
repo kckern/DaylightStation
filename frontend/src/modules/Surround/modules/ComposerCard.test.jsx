@@ -2,7 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, act, waitFor } from '@testing-library/react';
-import * as sass from 'sass';
+import * as sass from 'sass-embedded';
 import ComposerCard, {
   ASSET_WARN_PER_MINUTE,
   COMPOSER_FACT_INTERVAL_MS,

@@ -2,7 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, act } from '@testing-library/react';
-import * as sass from 'sass';
+import * as sass from 'sass-embedded';
 import SurroundFrame from './SurroundFrame.jsx';
 import { registerSurroundModule, resetSurroundRegistry } from './registry.js';
 
@@ -460,9 +460,21 @@ describe('SurroundFrame — the shipped composition', () => {
     expect(rule[0]).toContain('width: max-content');  // ...and content-width within that
   });
 
-  it('gives the plate the one drop shadow in the frame', () => {
+  it('casts a shadow off the plate so it reads as sitting on the video', () => {
     const css = withStyles().replace(/\s+/g, ' ');
     expect(css).toMatch(/\.surround-frame__header \{[^}]*box-shadow:[^}]*\}/);
+  });
+
+  // The plate straddles the video's top edge, so its box sits on top of real
+  // video pixels — without this, a tap in the top-centre of the picture would
+  // die on an inert nameplate instead of reaching the player. Same shape as
+  // `__overlay`'s pointer-events contract, asserted the same way §2 already
+  // asserts it for the footer's join gradient.
+  it('lets taps pass through the plate to the video underneath', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    const rule = css.match(/\.surround-frame__header \{[^}]*\}/);
+    expect(rule).not.toBeNull();
+    expect(rule[0]).toContain('pointer-events: none');
   });
 
   it('anchors the video to the top and leaves the slack to the band', () => {
