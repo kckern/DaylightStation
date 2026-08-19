@@ -61,10 +61,14 @@ export function createScaleNutribotBridge({
 
   // Buffer writes are best-effort: a store failure must never break the prompt flow,
   // which works on its own and is what the user is looking at.
-  const bufferWeight = (id, grams) => {
+  //
+  // The relay reports the unit on every frame and the scale really can send `ml`
+  // (decode.units maps 0x02 to it). Asserting 'g' here relabelled a volume as a
+  // mass, and nothing downstream could refuse what it was never told.
+  const bufferWeight = (id, grams, unit = 'g') => {
     if (!compositionStore) return;
-    try { compositionStore.setWeight(id, { grams, unit: 'g' }); }
-    catch (err) { logger.warn?.('scaleNutribot.composition.setWeight.failed', { id, grams, error: err.message }); }
+    try { compositionStore.setWeight(id, { grams, unit }); }
+    catch (err) { logger.warn?.('scaleNutribot.composition.setWeight.failed', { id, grams, unit, error: err.message }); }
   };
   const bufferEndPlacement = (id) => {
     if (!compositionStore) return;
@@ -81,16 +85,19 @@ export function createScaleNutribotBridge({
     catch (err) { logger.warn?.('scaleNutribot.composition.read.failed', { scaleId, error: err.message }); return null; }
   };
 
-  const create = (grams, scaleId) =>
+  const create = (grams, scaleId, unit = 'g') =>
     nutribotContainer.getLogFoodFromScale().execute({
-      userId, conversationId, grams, unit: 'g', scaleId,
+      userId, conversationId, grams, unit, scaleId,
       composition: compositionOf(scaleId),
     });
   // `notice` is a TRANSIENT, one-shot line for the prompt (e.g. a refused scan).
   // It rides the call and is never stored, so the next render is clean again.
-  const editInPlace = (grams, scaleId, live, notice = null) =>
+  // `unit` defaults to the live prompt's own unit — the composition-triggered
+  // refresh path (refreshPrompt) has no fresh payload to read one from, so the
+  // in-place render must carry the same unit the prompt was originally posted with.
+  const editInPlace = (grams, scaleId, live, notice = null, unit = live.unit ?? 'g') =>
     nutribotContainer.getLogFoodFromScale().execute({
-      userId, conversationId, grams, unit: 'g', scaleId,
+      userId, conversationId, grams, unit, scaleId,
       existingLogUuid: live.logUuid, messageId: live.messageId,
       composition: compositionOf(scaleId), notice,
     });
@@ -102,14 +109,14 @@ export function createScaleNutribotBridge({
   };
 
   // POST a fresh prompt, preserving the single-live invariant (retract any prior live).
-  const post = async (id, s, grams, reason) => {
+  const post = async (id, s, grams, reason, unit = 'g') => {
     if (s.live) { await retract(s.live); s.live = null; }
-    const res = await create(grams, id);
+    const res = await create(grams, id, unit);
     if (res?.success && res.logUuid) {
-      s.live = { logUuid: res.logUuid, messageId: res.messageId || null, grams };
+      s.live = { logUuid: res.logUuid, messageId: res.messageId || null, grams, unit };
       s.postTimes.push(now());
-      bufferWeight(id, grams);
-      logger.info?.('scaleNutribot.pushed', { id, grams, reason });
+      bufferWeight(id, grams, unit);
+      logger.info?.('scaleNutribot.pushed', { id, grams, unit, reason });
     }
     return res;
   };
@@ -125,6 +132,9 @@ export function createScaleNutribotBridge({
   const onPayload = async (payload) => {
     if (!payload || typeof payload !== 'object') return;
     const id = payload.id || 'unknown';
+    // Reported by the relay on every frame; a missing unit stays grams — that is
+    // the existing contract and must not change.
+    const unit = typeof payload.unit === 'string' && payload.unit ? payload.unit : 'g';
     const s = stateFor(id);
 
     // FORCE: an ESP button press logs the live weight now, bypassing suspicion.
@@ -135,11 +145,11 @@ export function createScaleNutribotBridge({
       inflight.add(id);
       try {
         if (s.live && Math.abs(g - s.live.grams) <= forceTolG) {
-          const res = await editInPlace(g, id, s.live);
-          if (res?.edited) { s.live.grams = g; bufferWeight(id, g); return; }   // already handled → no duplicate
+          const res = await editInPlace(g, id, s.live, null, unit);
+          if (res?.edited) { s.live.grams = g; s.live.unit = unit; bufferWeight(id, g, unit); return; }   // already handled → no duplicate
           if (res?.touched) s.live = null;                 // answered → post fresh below
         }
-        await post(id, s, g, 'button');
+        await post(id, s, g, 'button', unit);
       } catch (err) {
         logger.warn?.('scaleNutribot.dispatch.failed', { id, error: err.message });
       } finally { inflight.delete(id); }
@@ -207,8 +217,8 @@ export function createScaleNutribotBridge({
       // past placement still awaiting an answer and must not be repainted.
       if (s.live && !s.live.closed) {
         if (Math.abs(grams - s.live.grams) < dedupDeltaG) return; // same held value
-        const res = await editInPlace(grams, id, s.live);
-        if (res?.edited) { s.live.grams = grams; bufferWeight(id, grams); return; }  // still unanswered → followed
+        const res = await editInPlace(grams, id, s.live, null, unit);
+        if (res?.edited) { s.live.grams = grams; s.live.unit = unit; bufferWeight(id, grams, unit); return; }  // still unanswered → followed
         if (res?.touched) s.live = null;                    // answered → fall to new placement
         else return;                                        // dispatch failed → bail
       }
@@ -217,7 +227,7 @@ export function createScaleNutribotBridge({
       if (rise < placementDeltaG) return;   // too small a rise
       const why = suspicious(s, grams, rise);
       if (why) { logger.info?.('scaleNutribot.suppressed', { id, grams, why }); return; }
-      await post(id, s, grams, 'auto');
+      await post(id, s, grams, 'auto', unit);
     } catch (err) {
       logger.warn?.('scaleNutribot.dispatch.failed', { id, error: err.message });
     } finally { inflight.delete(id); }
