@@ -24,6 +24,22 @@ function LoadingFallback() {
 }
 
 /**
+ * listConfigNormalizer.mjs puts a YAML item's `shader:` field as a SIBLING of
+ * `play`/`queue` (`result.shader = item.shader`), but Player only reads shader
+ * nested inside the play/queue content object (useQueueController:
+ * `play?.shader || queue?.shader`). This is the one seam that turns a menu
+ * selection into Player props — thread it in here rather than teaching Player
+ * a second contract.
+ */
+function threadShaderIntoContent(selection) {
+  if (selection?.shader == null) return selection;
+  const isContentObject = (v) => v && typeof v === 'object' && !Array.isArray(v);
+  const target = isContentObject(selection.play) ? 'play' : (isContentObject(selection.queue) ? 'queue' : null);
+  if (!target || selection[target].shader != null) return selection;
+  return { ...selection, [target]: { ...selection[target], shader: selection.shader } };
+}
+
+/**
  * Renders the current menu level from the navigation stack.
  * Only the topmost item is rendered (stack-based navigation).
  * 
@@ -124,7 +140,7 @@ export function MenuStack({ rootMenu, playerRef, MENU_TIMEOUT = 0 }) {
         source: 'menu-selection',
         intentTs: Date.now()
       });
-      push({ type: 'player', props: selection });
+      push({ type: 'player', props: threadShaderIntoContent(selection) });
     } else if (selection.display) {
       const sceneId = artSceneIdFromDisplay(selection.display);
       if (sceneId) {

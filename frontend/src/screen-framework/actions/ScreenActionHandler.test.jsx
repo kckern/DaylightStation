@@ -32,7 +32,11 @@ vi.mock('../../modules/Menu/MenuStack.jsx', () => ({
 
 vi.mock('../../modules/Player/Player.jsx', () => ({
   default: React.forwardRef((props, ref) => (
-    <div data-testid="player" data-play={typeof props.play === 'object' ? JSON.stringify(props.play) : props.play}>Player</div>
+    <div
+      data-testid="player"
+      data-play={typeof props.play === 'object' ? JSON.stringify(props.play) : props.play}
+      data-queue={typeof props.queue === 'object' ? JSON.stringify(props.queue) : props.queue}
+    >Player</div>
   )),
 }));
 
@@ -534,6 +538,52 @@ describe('ScreenActionHandler', () => {
       expect(keydownCalls).toHaveLength(0);
 
       dispatchSpy.mockRestore();
+    });
+
+    it('threads shader (and other config) through the secondary media:queue fallback', () => {
+      const { getByTestId } = render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ playback: { when_idle: 'secondary' } }} />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => {
+        getActionBus().emit('media:playback', {
+          command: 'play',
+          secondary: {
+            action: 'media:queue',
+            payload: { contentId: 'morning-program', shader: 'minimal', shuffle: true },
+          },
+        });
+      });
+
+      const player = getByTestId('player');
+      const queue = JSON.parse(player.dataset.queue);
+      expect(queue.shader).toBe('minimal');
+      expect(queue.contentId).toBe('morning-program');
+    });
+
+    it('threads shader (and other config) through the secondary media:play fallback', () => {
+      const { getByTestId } = render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ playback: { when_idle: 'secondary' } }} />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => {
+        getActionBus().emit('media:playback', {
+          command: 'play',
+          secondary: {
+            action: 'media:play',
+            payload: { contentId: 'morning-program', shader: 'minimal', shuffle: true },
+          },
+        });
+      });
+
+      const player = getByTestId('player');
+      const play = JSON.parse(player.dataset.play);
+      expect(play.shader).toBe('minimal');
+      expect(play.contentId).toBe('morning-program');
     });
 
     it('dispatches keydown normally when when_idle is "dispatch"', () => {
