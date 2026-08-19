@@ -1,5 +1,8 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, act, waitFor } from '@testing-library/react';
+import * as sass from 'sass';
 import ComposerCard, {
   ASSET_WARN_PER_MINUTE,
   COMPOSER_FACT_INTERVAL_MS,
@@ -9,6 +12,8 @@ import { FACT_INTERVAL_MS } from './CueTicker.jsx';
 import { __resetMapCache } from '../map/CountryMap.jsx';
 import { registerSurroundBuiltins, SURROUND_BUILTIN_MODULES } from '../builtins.js';
 import { getSurroundRegistry, resetSurroundRegistry } from '../registry.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const makeLogger = () => ({
   debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), sampled: vi.fn(),
@@ -189,6 +194,77 @@ describe('ComposerCard', () => {
     const before = view.container.innerHTML;
     view.at(2999);
     expect(view.container.innerHTML).toBe(before);
+  });
+});
+
+/**
+ * Fix round 1 (review finding): the hard content budget capped the portrait, the
+ * city photo, and the bio fact — but not the nameplate text itself. A long name
+ * or birthplace could still grow the card past the viewport, one element over
+ * from the original 742-on-720 defect.
+ *
+ * This harness's vitest config runs `css: false` (the project default — see
+ * vitest.config.mjs), so `import './ComposerCard.scss'` inside the component
+ * injects no stylesheet into the test DOM at all; asserting computed style off
+ * a plain render would read UA defaults, not the shipped rule, and would pass
+ * whether or not the SCSS actually clamps anything (a vacuously-true test).
+ * Instead this compiles the REAL ComposerCard.scss with the project's own sass
+ * compiler and injects the result before asserting — so a regression in the
+ * actual file (not a hand-typed stand-in string) fails this test.
+ */
+describe('ComposerCard hard content budget — long text', () => {
+  let injectedStyle = null;
+
+  afterEach(() => {
+    injectedStyle?.remove();
+    injectedStyle = null;
+  });
+
+  it('caps the name to 2 lines and ellipsizes the birthplace and city caption to 1', () => {
+    const compiled = sass.compile(path.join(__dirname, 'ComposerCard.scss'));
+    injectedStyle = document.createElement('style');
+    injectedStyle.textContent = compiled.css;
+    document.head.appendChild(injectedStyle);
+
+    const data = {
+      ...DATA,
+      composer: {
+        ...DATA.composer,
+        name: 'Johann Nepomuk Eduard Ambrosius Nepomucenus von und zu Überlingen-Hohenzollern',
+        birthplace: 'Sankt Georgen an der Gusen, Oberösterreich, Holy Roman Empire',
+        map: { ...DATA.composer.map, city: 'A Preposterously Long City Name Nobody Would Actually Author' },
+      },
+    };
+    const { container } = renderCard({ data });
+
+    const name = container.querySelector('.surround-composer-card__name');
+    const nameStyle = window.getComputedStyle(name);
+    expect(nameStyle.getPropertyValue('-webkit-line-clamp')).toBe('2');
+    expect(nameStyle.getPropertyValue('-webkit-box-orient')).toBe('vertical');
+    expect(nameStyle.getPropertyValue('overflow')).toBe('hidden');
+
+    const birthplace = container.querySelector('.surround-composer-card__birthplace');
+    const birthplaceStyle = window.getComputedStyle(birthplace);
+    expect(birthplaceStyle.getPropertyValue('white-space')).toBe('nowrap');
+    expect(birthplaceStyle.getPropertyValue('text-overflow')).toBe('ellipsis');
+    expect(birthplaceStyle.getPropertyValue('overflow')).toBe('hidden');
+
+    const caption = container.querySelector('.surround-composer-card__city figcaption');
+    const captionStyle = window.getComputedStyle(caption);
+    expect(captionStyle.getPropertyValue('white-space')).toBe('nowrap');
+    expect(captionStyle.getPropertyValue('text-overflow')).toBe('ellipsis');
+    expect(captionStyle.getPropertyValue('overflow')).toBe('hidden');
+  });
+
+  // Dates are numeric and short ("1678 – 1741") with a bounded vocabulary — they
+  // cannot grow the way a name or place name can, so the class deliberately
+  // carries no clamp. This pins that as a decision, not an oversight: if dates
+  // ever gain the ability to be long (a free-text era string, say), they need
+  // the same treatment as birthplace.
+  it('leaves the dates line uncapped — it is numeric and inherently short', () => {
+    const { container } = renderCard();
+    const dates = container.querySelector('.surround-composer-card__dates');
+    expect(dates.textContent.length).toBeLessThan(20);
   });
 });
 
