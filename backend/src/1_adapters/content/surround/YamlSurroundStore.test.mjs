@@ -939,6 +939,80 @@ describe('YamlSurroundStore library resolution', () => {
     expect(logger.warn).not.toHaveBeenCalledWith('surround.starts.mismatch', expect.anything());
   });
 
+  it('lets the work-level composer block override the shared _composer.yml', () => {
+    writeLib('classical/beethoven/_composer.yml', 'name: Ludwig van Beethoven\nbirthplace: A\n');
+    writeLib('classical/beethoven/symphony-3-eroica.yml',
+      'title: Symphony No. 3\nmovements: []\ncomposer:\n  birthplace: B\n');
+    write('classical/beethoven/symphony-3-eroica.yml',
+      'work: beethoven/symphony-3-eroica\nsurround: concert-hall\nmatch: { contentId: plex:663134 }\n');
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const r = store.lookup('plex:663134', '');
+    expect(r.composer.birthplace).toBe('B');
+    expect(r.composer.name).toBe('Ludwig van Beethoven'); // untouched keys still inherit
+  });
+
+  it('lets the performance composer block override both the work and the shared composer', () => {
+    writeLib('classical/beethoven/_composer.yml', 'name: Ludwig van Beethoven\nbirthplace: A\n');
+    writeLib('classical/beethoven/symphony-3-eroica.yml',
+      'title: Symphony No. 3\nmovements: []\ncomposer:\n  birthplace: B\n');
+    write('classical/beethoven/symphony-3-eroica.yml',
+      'work: beethoven/symphony-3-eroica\nsurround: concert-hall\nmatch: { contentId: plex:663134 }\ncomposer:\n  birthplace: C\n');
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const r = store.lookup('plex:663134', '');
+    expect(r.composer.birthplace).toBe('C');
+    expect(r.composer.name).toBe('Ludwig van Beethoven');
+  });
+
+  it('drops a negative, null, or non-numeric start and warns starts-entry-invalid', () => {
+    writeLib('classical/beethoven/symphony-3-eroica.yml',
+      'title: Symphony No. 3\nmovements:\n  - { n: 1, name: One, note: "First." }\n  - { n: 2, name: Two, note: "Second." }\n'
+      + '  - { n: 3, name: Three, note: "Third." }\n  - { n: 4, name: Four, note: "Fourth." }\n');
+    write('classical/beethoven/symphony-3-eroica.yml',
+      'work: beethoven/symphony-3-eroica\nsurround: concert-hall\nmatch: { contentId: plex:663134 }\nstarts: [-30, null, "12:00", 900]\n');
+    const logger = makeLogger();
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+    const r = store.lookup('plex:663134', '');
+
+    // Garbage never reaches the payload verbatim; positions are preserved, so the
+    // one good start still lands on the movement it was authored for.
+    expect(r.movements.map((m) => m.start)).toEqual([undefined, undefined, undefined, 900]);
+    // ...and no cue is synthesized at a dropped index.
+    expect(r.cues).toEqual([{ at: 900, render: 'docked', text: 'Fourth.' }]);
+    expect(logger.warn).toHaveBeenCalledWith('surround.sidecar.invalid',
+      expect.objectContaining({
+        file: 'classical/beethoven/symphony-3-eroica.yml',
+        reasons: expect.arrayContaining(['starts-entry-invalid'])
+      }));
+  });
+
+  it('keeps a zero start, which is a valid offset and not a dropped one', () => {
+    write('classical/beethoven/symphony-3-eroica.yml',
+      'work: beethoven/symphony-3-eroica\nsurround: concert-hall\nmatch: { contentId: plex:663134 }\nstarts: [0]\n');
+    const logger = makeLogger();
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+    expect(store.lookup('plex:663134', '').movements[0].start).toBe(0);
+    expect(logger.warn).not.toHaveBeenCalledWith('surround.sidecar.invalid',
+      expect.objectContaining({ reasons: expect.arrayContaining(['starts-entry-invalid']) }));
+  });
+
+  it('warns surround.work.invalid when a corpus work has a non-list movements or facts', () => {
+    writeLib('classical/beethoven/symphony-3-eroica.yml',
+      'title: Symphony No. 3\nmovements: { n: 1 }\nfacts: not-a-list\n');
+    const logger = makeLogger();
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+
+    expect(logger.warn).toHaveBeenCalledWith('surround.work.invalid', {
+      file: 'classical/beethoven/symphony-3-eroica.yml',
+      reason: 'movements-not-a-list',
+      reasons: ['movements-not-a-list', 'facts-not-a-list']
+    });
+    // Warn-then-continue: the work still indexes, with the bad lists coerced empty.
+    const r = store.lookup('plex:663134', '');
+    expect(r).not.toBeNull();
+    expect(r.movements).toEqual([]);
+    expect(r.facts).toEqual([]);
+  });
+
   it('rebuilds when only the library tree changes, not just the performance tree', () => {
     vi.useFakeTimers();
     const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });

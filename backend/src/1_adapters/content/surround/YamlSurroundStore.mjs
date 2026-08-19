@@ -38,6 +38,9 @@ const titlesOverlap = (a, b) => a.includes(b) || b.includes(a);
 const isPresent = (v) => v !== undefined && v !== null;
 // Work-level fields that surface as payload.piece, disjoint from
 // performance-level fields (performance, musicEndsAt) the sidecar supplies.
+// An allowlist, so it must be kept in sync with the corpus schema: a field
+// added to a library work YAML and not added here never reaches the payload,
+// and the only symptom is the region rendering without it.
 const PIECE_FIELDS = ['title', 'opus', 'composed', 'year', 'period', 'period_note', 'city', 'premiered'];
 const pick = (obj, keys) => {
   const out = {};
@@ -397,6 +400,24 @@ export class YamlSurroundStore extends ISurroundStore {
         for (const file of files) {
           const work = loadYamlFromPath(path.join(composerDir, file));
           if (!isPlainObject(work)) continue;
+
+          // The corpus gets the same visibility a sidecar gets. `asArray` below
+          // flattens a mapping written where a list belongs, and without this the
+          // author's only symptom is a movement map that renders empty. Warn and
+          // keep going: a work with one bad list is still worth indexing.
+          const reasons = [];
+          for (const key of ['movements', 'facts']) {
+            if (isPresent(work[key]) && !Array.isArray(work[key])) reasons.push(`${key}-not-a-list`);
+          }
+          if (reasons.length) {
+            // Relative to libraryDir, because that is how the author knows the file.
+            this.logger?.warn?.('surround.work.invalid', {
+              file: path.join(domain, composer, file),
+              reason: reasons[0],
+              reasons
+            });
+          }
+
           const slug = file.replace(/\.(yml|yaml)$/, '');
           works.set(`${composer}/${slug}`, work);
         }
@@ -509,10 +530,24 @@ export class YamlSurroundStore extends ISurroundStore {
     if (isPresent(doc.cues) && !Array.isArray(doc.cues)) soft.push('cues-not-a-list');
     if (isPresent(doc.composer) && !isPlainObject(doc.composer)) soft.push('composer-not-a-mapping');
     if (isPresent(doc.piece) && !isPlainObject(doc.piece)) soft.push('piece-not-a-mapping');
+
+    // A start is an offset in seconds from the top of the media, so the only
+    // usable value is a non-negative finite number. Anything else — a quoted
+    // timestamp, a stray null holding a place, a negative from arithmetic
+    // against the wrong reference point — is dropped to undefined rather than
+    // passed through, the same way every other wrong-typed field here is
+    // flattened by a guard. Positions are preserved (map, not filter): starts
+    // pairs with movements positionally, so dropping an entry outright would
+    // silently shift every later movement's timing by one.
+    const rawStarts = Array.isArray(doc.starts) ? doc.starts : [];
+    const starts = rawStarts.map((v) => (Number.isFinite(v) && v >= 0 ? v : undefined));
+    if (starts.some((v) => v === undefined)) soft.push('starts-entry-invalid');
     if (soft.length) this.#invalid(file, soft);
 
-    const starts = Array.isArray(doc.starts) ? doc.starts : [];
     const movements = asArray(work.movements);
+    // Length, not content: an author who timed the wrong number of movements has
+    // a different problem from one who mistyped a single value, and a dropped
+    // entry above still counts toward the length it was authored at.
     if (starts.length && starts.length !== movements.length) {
       this.logger?.warn?.('surround.starts.mismatch', { file, starts: starts.length, movements: movements.length });
     }
