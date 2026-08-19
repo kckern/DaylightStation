@@ -3,13 +3,26 @@
 How a weight on the kitchen scale becomes a net-weighted, density-classified nutrition
 entry, using a laminated QR sheet on the refrigerator instead of a tare button.
 
-**Status: partially implemented, but the scan path is wired end to end.** The domain layer,
-the composition store, the control grammar and the printable sheet are built, tested and
-reachable: a code scanned on the kitchen relay reaches `barcode_relay.scan`, is claimed by the
-nutrition grammar, and applies to the live composition. What is still missing is the bridge
-integration, the memo flow and the `fd:` food grammar — and no code has yet been scanned off
-printed ink rather than rendered pixels. See [Implementation status](#implementation-status)
-before relying on anything here. Design rationale:
+**Status: wired end to end, and DISABLED IN PRODUCTION by a config error.** The domain layer,
+the composition store, the control grammar, the printable sheet and the scale bridge are all
+built and tested. But `validateScanConfig` throws `MALFORMED_DENSITY_LEVEL: Density level 1 is
+missing macros` on every boot, so `applyScanToComposition` stays `null` and **every `ct:`/`dl:`/
+`rs:` code is swallowed** — `routeNutribotScan` returns `{action:'swallow', reason:'nutriscan-disabled'}`
+and nothing reaches the buffer. The cause is the `nutribot.density_levels` block in
+`scales.yml`, which overrides the code defaults to attach `icon:` and drops `macros`, which the
+validator requires. Restore `macros` (or re-apply `icon:` on top of `DEFAULT_DENSITY_LEVELS`)
+before believing anything below describes running behaviour.
+
+The failure is silent at the fridge as well: `handleNutrition`'s `swallow` branch returns
+without calling `refreshPrompt`, so a refused scan produces no notice on the prompt — and
+`nutriscanWarned` downgrades every repeat after the first to `debug`, which is never shipped,
+so the log store holds at most one refusal per reason per process.
+
+Still genuinely unbuilt: the memo flow, the `fd:` food grammar, and unit passthrough — and no
+code has yet been scanned off printed ink rather than rendered pixels. See
+[Implementation status](#implementation-status) before relying on anything here.
+Fusion design (quiet-commit, memo, ACK-on-refusal):
+[`docs/_wip/plans/2026-08-18-nutribot-input-fusion-design.md`](../../_wip/plans/2026-08-18-nutribot-input-fusion-design.md). Design rationale:
 [`docs/plans/2026-07-21-scan-enriched-food-logging-design.md`](../../plans/2026-07-21-scan-enriched-food-logging-design.md).
 Task plan: [`docs/plans/2026-07-21-scan-enriched-food-logging.md`](../../plans/2026-07-21-scan-enriched-food-logging.md).
 
@@ -252,7 +265,9 @@ restart before it takes effect.
 | `SheetLayout` / `QRSheetRenderer` / `SheetService` + `GET /api/v1/sheets/:id.pdf` | **shipped** |
 | `npm run sheet` local generator | **shipped** |
 | Config: real container table | **shipped** — weighed 2026-07-29, 13 vessels → 9 cards |
-| Bridge integration: unit passthrough, session end, mutex | not started |
+| Bridge integration — session end | **shipped** — `endPlacement` fires on the placed→at-rest crossing (`s.placed`) |
+| Bridge integration — mutex | **shipped** — a per-scale `inflight` lock guards the payload, force and refresh paths |
+| Bridge integration — unit passthrough | **not started** — see the caveat below; this row is the only part still open |
 | Memo (voice flow-state branch, Memo button) | not started |
 | Food grammar (`fd:` prefix) | not started — sheet prints foods as inert labels, if at all |
 
@@ -295,8 +310,13 @@ than the grams — see the caveat below.
 - **An unknown container id currently produces a silent zero tare** — `computeNet` treats an
   absent container as "no tare." The lookup layer that would reject an orphaned id is not built
   yet, so a renamed container id orphans a laminated code without a visible error.
-- **`unit` does not gate `complete`.** The buffer carries `ml` faithfully but nothing rejects
-  it yet; that refusal belongs to `ApplyScanToComposition`.
+- **A millilitre reading is recorded as grams.** The relay sends `unit` on every frame and the
+  scale really can report `ml` (`decode.units` in `scales.yml` maps `0x02` to it), but
+  `ScaleNutribotBridge` never reads `payload.unit` — it passes the literal `unit: 'g'` into both
+  `compositionStore.setWeight` and the log use case. So the buffer does NOT carry `ml`
+  faithfully: the reading is silently relabelled, and nothing downstream can refuse what it was
+  never told. Passing the reported unit through is the first half of the fix; the refusal
+  (`ml` must not satisfy `complete`) belongs to `ApplyScanToComposition` and is the second.
 - **Print legibility is untested.** Nothing verifies a QR printed 25-to-a-page scans off a
   fridge door in kitchen lighting. Print one and try it before laminating.
 
