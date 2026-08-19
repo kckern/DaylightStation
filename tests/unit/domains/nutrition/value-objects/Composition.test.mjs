@@ -152,12 +152,14 @@ describe('Composition', () => {
       expect(c.isComplete).toBe(true);
     });
 
-    it('is unaffected by the unit', () => {
-      // The composition carries 'ml' faithfully; refusing a volumetric unit is
-      // the application layer's call, not this object's.
+    it('is false for a non-gram unit, however much else is scanned', () => {
+      // The composition still carries 'ml' faithfully — the value is not
+      // rejected — but a volume can never satisfy completeness, because
+      // downstream multiplies by a kcal-per-GRAM density and a volume times
+      // that density is a wrong number.
       const c = Composition.empty().withWeight({ grams: 250, unit: 'ml' }).withDensity(4);
       expect(c.unit).toBe('ml');
-      expect(c.isComplete).toBe(true);
+      expect(c.isComplete).toBe(false);
     });
   });
 
@@ -367,7 +369,10 @@ describe('Composition', () => {
         .withContainer('small-bowl');
       const b = Composition.fromData(a.toData());
       expect(b.toData()).toEqual(a.toData());
-      expect(b.isComplete).toBe(true);
+      // 'ml' round-trips faithfully, but completeness stays gated on the unit
+      // on both sides of the round trip — reconstitution must not launder a
+      // volumetric reading into a complete one.
+      expect(b.isComplete).toBe(false);
     });
 
     it('round-trips an empty composition', () => {
