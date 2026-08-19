@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   resolveBandConfig, showsNowHeading, nowSideFor, accordionShares, playheadFraction,
-  bondConnector, BAND_DEFAULTS, NOW_SIDE_THRESHOLD, NOW_SIDE_HYSTERESIS,
-  SEGMENT_FLOOR_PX, ACCORDION_MS, NOW_PANEL_SHARE,
+  bondConnector, elapsedFraction, easeAccordion, BAND_DEFAULTS,
+  NOW_SIDE_THRESHOLD, NOW_SIDE_HYSTERESIS, SEGMENT_FLOOR_PX, NOW_PANEL_SHARE,
 } from './band.js';
 
 const withBand = (band) => ({ definition: { regions: {}, collapse: {}, band } });
@@ -333,16 +333,120 @@ describe('bondConnector', () => {
   });
 });
 
-describe('the constants are single-sourced and stated', () => {
-  it('the accordion has one duration', () => {
-    expect(ACCORDION_MS).toBe(420);
+/**
+ * ONE definition of "how far through the piece" (review finding I3).
+ *
+ * The rail and the band each decide which side the NOW register sits on. They
+ * used to compute the input themselves — `(position - first) / span` on the
+ * rail, `position / end` in the band — which agree only while the first
+ * movement starts at 0. When they disagree the two halves of one shape point at
+ * opposite sides of the screen, each held there by its own hysteresis, and
+ * nothing reports it.
+ */
+describe('elapsedFraction', () => {
+  it('measures from the first movement, not from the top of the file', () => {
+    // A late first movement: tuning, applause, an offset transfer — the same
+    // class of fact `musicEndsAt` models at the other end.
+    expect(elapsedFraction({ position: 1530, first: 60, end: 3000 })).toBeCloseTo(0.5, 9);
+    // The reading the band used to take would have put this at 0.51 — past the
+    // threshold while the rail was still short of it.
+    expect(1530 / 3000).toBeGreaterThan(NOW_SIDE_THRESHOLD);
   });
 
-  it('the two registers are halves', () => {
-    expect(NOW_PANEL_SHARE).toBe(0.5);
+  it('agrees with the naive reading exactly when the first movement starts at 0', () => {
+    // Which is why both shipped sidecars hid the defect.
+    for (const position of [0, 700, 1477, 2955]) {
+      expect(elapsedFraction({ position, first: 0, end: 2955 }))
+        .toBeCloseTo(position / 2955, 12);
+    }
   });
 
-  it('the hysteresis band is the brief’s ~47%', () => {
-    expect(NOW_SIDE_THRESHOLD - NOW_SIDE_HYSTERESIS).toBeCloseTo(0.47, 9);
+  it('puts the two halves of the bond on the same side of the mark, always', () => {
+    // The failure this exists to prevent, driven end to end: with `starts: [60]`
+    // and `musicEndsAt: 3000` the two old readings crossed 30s apart.
+    const cfg = { nowSide: 'dynamic' };
+    let rail = null; let band = null;
+    for (let t = 1400; t <= 1600; t += 5) {
+      const f = elapsedFraction({ position: t, first: 60, end: 3000 });
+      rail = nowSideFor(cfg, f, rail);
+      band = nowSideFor(cfg, f, band);
+      expect(band, `the halves disagree at ${t}s`).toBe(rail);
+    }
+  });
+
+  it('refuses to answer before the transport reports an extent', () => {
+    // NaN, not 0 — a fraction of zero is a real answer ("at the beginning") and
+    // seeding the side from it plays a spurious swap on the first real tick.
+    expect(elapsedFraction({ position: 10, first: 0, end: 0 })).toBeNaN();
+    expect(elapsedFraction({ position: 10, first: 0, end: null })).toBeNaN();
+    expect(elapsedFraction({ position: 10, first: 0, end: undefined })).toBeNaN();
+    expect(elapsedFraction({ position: NaN, first: 0, end: 100 })).toBeNaN();
+  });
+
+  it('clamps rather than running past either end', () => {
+    expect(elapsedFraction({ position: -50, first: 0, end: 100 })).toBe(0);
+    expect(elapsedFraction({ position: 500, first: 0, end: 100 })).toBe(1);
+  });
+});
+
+/**
+ * The accordion's easing, evaluated in JS because the widths are no longer
+ * animated by CSS (review finding I2) while the bond's travel still is. One
+ * curve, two engines.
+ */
+describe('easeAccordion', () => {
+  it('pins both ends', () => {
+    expect(easeAccordion(0)).toBe(0);
+    expect(easeAccordion(1)).toBe(1);
+    expect(easeAccordion(-1)).toBe(0);
+    expect(easeAccordion(2)).toBe(1);
+  });
+
+  it('is monotonic — a width it drives can never move backwards mid-flight', () => {
+    let last = -1;
+    for (let t = 0; t <= 1; t += 0.01) {
+      const e = easeAccordion(t);
+      expect(e).toBeGreaterThanOrEqual(last - 1e-12);
+      last = e;
+    }
+  });
+
+  it('IS cubic-bezier(0.2, 0.8, 0.2, 1) — the frame’s own --enter-ease', () => {
+    // Solved independently here (a coarse parametric sweep for the t whose x
+    // matches, then its y) rather than by calling the implementation, so this
+    // can fail if the curve is ever quietly retyped.
+    const bez = (a, b, u) => (((1 - 3 * b + 3 * a) * u + (3 * b - 6 * a)) * u + 3 * a) * u;
+    for (const x of [0.1, 0.25, 0.5, 0.75, 0.9]) {
+      let best = 0; let bestErr = Infinity;
+      for (let u = 0; u <= 1; u += 0.00005) {
+        const err = Math.abs(bez(0.2, 0.2, u) - x);
+        if (err < bestErr) { bestErr = err; best = u; }
+      }
+      expect(easeAccordion(x)).toBeCloseTo(bez(0.8, 1, best), 4);
+    }
+  });
+
+  it('front-loads, the way an ease-out does', () => {
+    expect(easeAccordion(0.25)).toBeGreaterThan(0.25);
+    expect(easeAccordion(0.5)).toBeGreaterThan(0.5);
+  });
+});
+
+describe('the band’s shared numbers', () => {
+  it('the two registers are halves, and the connector reaches exactly that edge', () => {
+    // NOT `expect(NOW_PANEL_SHARE).toBe(0.5)`, which restates the constant and
+    // cannot fail for any behaviour. What matters is that the geometry the
+    // panel share drives lands on the panel's edge.
+    const c = bondConnector({ segStart: 0.05, segEnd: 0.2, side: 'right' });
+    expect(c.start + c.width).toBeCloseTo(1 - NOW_PANEL_SHARE, 12);
+    const l = bondConnector({ segStart: 0.85, segEnd: 0.95, side: 'left' });
+    expect(l.start).toBeCloseTo(NOW_PANEL_SHARE, 12);
+  });
+
+  it('the hysteresis band is the brief’s ~47%, and it is where the swap-back happens', () => {
+    const edge = NOW_SIDE_THRESHOLD - NOW_SIDE_HYSTERESIS;
+    expect(edge).toBeCloseTo(0.47, 9);
+    expect(nowSideFor({ nowSide: 'dynamic' }, edge, 'right')).toBe('right');
+    expect(nowSideFor({ nowSide: 'dynamic' }, edge - 1e-9, 'right')).toBe('left');
   });
 });

@@ -297,7 +297,18 @@ describe('MovementMap — the band’s shipped design', () => {
     withStyles();
     const { container } = renderMap({ position: 1450 });
     const head = container.querySelector('[data-testid="surround-playhead"]');
-    expect(window.getComputedStyle(head).getPropertyValue('transition')).toBe('transform 120ms linear');
+    // Read COMPUTED, so this is the value that actually reaches the engine
+    // once `--head-ms` resolves — one transport tick, as it has been since
+    // wave 5. The property is now published rather than literal (review
+    // finding I2) and the fallback is what a frame rendered without the JS
+    // gets, so resolving to the same number is the thing worth pinning.
+    expect(window.getComputedStyle(head).getPropertyValue('transition'))
+      .toBe('transform 120ms linear');
+    // ...and at rest the published value IS one tick. It goes to zero only
+    // while the accordion is interpolating the widths this cursor's position is
+    // derived from — see the accordion block (review finding I2).
+    expect(container.querySelector('[data-testid="surround-movement-map"]')
+      .style.getPropertyValue('--head-ms')).toBe('120ms');
   });
 
   /**
@@ -326,7 +337,9 @@ describe('MovementMap — the band’s shipped design', () => {
     };
     const head = ruleFor('.surround-movement-map__playhead');
     expect(head).toMatch(/transform:\s*translateX\(/);
-    expect(head).toMatch(/transition:\s*transform 120ms linear/);
+    // The duration is published rather than literal (review finding I2); the
+    // PROPERTY, which is what this spec is about, is unchanged.
+    expect(head).toMatch(/transition:\s*transform var\(--head-ms, 120ms\) linear/);
     expect(head, 'the playhead is back on a pixel-snapped `left`').not.toMatch(/transition:[^;]*\bleft\b/);
 
     const fill = ruleFor('.surround-movement-map__bar-fill');
@@ -874,8 +887,13 @@ describe('MovementMap — the bond', () => {
     const block = css.match(/@media \(prefers-reduced-motion: reduce\) \{(.*)\}/);
     expect(block, 'no reduced-motion block in the compiled sheet').not.toBeNull();
     expect(block[1]).toContain('surround-movement-map__bond');
-    expect(block[1]).toContain('surround-movement-map__segment');
     expect(block[1]).toMatch(/transition: none/);
+    // The SEGMENT is deliberately absent from this block, and that is the
+    // review-I2 fix showing through: it has no CSS transition to cancel. Its
+    // widths are interpolated in JS, and `useEasedShares` reads the preference
+    // itself and commits the target in one go.
+    const seg = css.match(/\.surround-movement-map__segment \{[^}]*\}/)[0];
+    expect(seg, 'the segment is back on a second, CSS clock').not.toMatch(/transition/);
     // ...and nothing hides the bond there: the highlight still says which
     // movement is sounding, it just arrives in one frame.
     expect(block[1]).not.toMatch(/surround-movement-map__bond[^{]*\{[^}]*(display|opacity)/);
@@ -907,9 +925,10 @@ describe('MovementMap — the accordion', () => {
 
   it('publishes each segment’s NATURAL share alongside its rendered one', () => {
     // The rendered width is what the accordion chose; the natural share is what
-    // the movement's duration earns. Both have to be legible from the DOM or
-    // nothing downstream — the gate included — can tell a widened segment from
-    // a long movement.
+    // the movement's duration earns, and the two are no longer the same number.
+    // Read by this spec (the runtime gate measures the segment's own box
+    // instead), so it is the one place the solver's input is checkable against
+    // the durations it came from without recomputing them here.
     const { container } = renderMap({ position: 2000 });
     const naturals = [...container.querySelectorAll('[data-testid="surround-movement"]')]
       .map((el) => Number(el.getAttribute('data-natural')));
@@ -941,6 +960,86 @@ describe('MovementMap — the accordion', () => {
     }
   });
 
+  /**
+   * REVIEW FINDING I2 — the head and the painted boundary must be on ONE clock.
+   *
+   * The defect was structural: `transition: width` on the segment animated the
+   * boundary over 420ms while the playhead's own 120ms ramp carried the cursor
+   * to the WIDENED solution almost at once. Measured on the Eroica at 1280x720,
+   * that left the head ~70px inside the elapsed fill's still-painted right edge
+   * for ~300ms at every movement boundary.
+   *
+   * jsdom cannot see paint, so this models it: it reads the module's own
+   * declared transitions out of the compiled sheet and asserts that the
+   * boundary's painted position and the head's are governed by the SAME clock.
+   * Against the pre-fix sheet the segment declares a `width` transition the
+   * playhead's rule does not share, and the first assertion fails — which is
+   * the point: the desynchronisation is a property of the stylesheet, and the
+   * fix is that one of the two clocks no longer exists.
+   */
+  it('drives the widths and the head from ONE clock — no CSS transition on either width', () => {
+    const compiled = sass.compile(path.join(__dirname, 'MovementMap.scss')).css;
+    const seg = compiled.match(/\.surround-movement-map__segment\s*\{[^}]*\}/)[0];
+    expect(
+      seg,
+      'the segment animates its own width in CSS — a second clock the playhead '
+      + 'does not share, which is what puts the cursor inside the elapsed fill',
+    ).not.toMatch(/transition/);
+
+    // The head's ramp is published, and the component drops it to zero for
+    // exactly the window in which the widths are being interpolated — so
+    // during a move there is one clock, and at rest the cursor still glides
+    // between the transport's 10 Hz steps.
+    const head = compiled.match(/\.surround-movement-map__playhead\s*\{[^}]*\}/)[0];
+    expect(head).toMatch(/transition:\s*transform var\(--head-ms/);
+  });
+
+  it('keeps the head ON the boundary at every frame of a widening move', () => {
+    // The invariant, checked against the widths the component ITSELF published
+    // in the same render rather than against the solver's target. With one
+    // clock these agree by construction; with two they cannot, because the
+    // head's array and the segments' array are read at different times.
+    //
+    // NOTE on what is NOT asserted: the head legitimately moves BACKWARDS
+    // across a boundary. The accordion compresses the movements to the left of
+    // the newly-sounding one, so the boundary itself travels left and the
+    // cursor travels with it — the non-uniform time scale the brief says the
+    // user accepted explicitly. What must never happen is the head leaving that
+    // boundary, which is what this measures.
+    const props = (position) => (
+      <MovementMap
+        position={position} duration={DURATION} playing seeking={false}
+        data={EROICA} region={{ module: 'movement-map' }} logger={makeLogger()}
+      />
+    );
+    const { container, rerender } = render(props(1900));
+    const sample = () => {
+      const widths = [...container.querySelectorAll('[data-testid="surround-movement"]')]
+        .map((el) => parseFloat(el.style.width) / 100);
+      const head = parseFloat(
+        container.querySelector('[data-testid="surround-playhead"]').getAttribute('data-head'),
+      );
+      return { widths, head };
+    };
+    for (const position of [1900, 1925, 1930, 2100, 2277, 2278, 2500, 2954]) {
+      rerender(props(position));
+      const { widths, head } = sample();
+      const active = [...container.querySelectorAll('[data-testid="surround-movement"]')]
+        .findIndex((el) => el.getAttribute('data-state') === 'active');
+      expect(active, `nothing is sounding at ${position}s`).toBeGreaterThanOrEqual(0);
+      const before = widths.slice(0, active).reduce((a, b) => a + b, 0);
+      expect(
+        head,
+        `at ${position}s the cursor is at ${head} but movement ${active + 1} `
+        + `starts at ${before} in the widths the module published`,
+      ).toBeGreaterThanOrEqual(before - 1e-4);
+      expect(
+        head,
+        `at ${position}s the cursor has run past movement ${active + 1}'s own segment`,
+      ).toBeLessThanOrEqual(before + widths[active] + 1e-4);
+    }
+  });
+
   it('publishes ONE accordion duration, from the shared timing module', () => {
     const { container } = renderMap();
     const map = container.querySelector('[data-testid="surround-movement-map"]');
@@ -961,5 +1060,197 @@ describe('MovementMap — the accordion', () => {
     expect(seg.textContent).toContain('‘the dog that barks’');
     expect(seg.textContent).toContain('Vivaldi’s');
     expect(seg.textContent, 'a straight mark survived the render seam').not.toContain("'");
+  });
+});
+
+/**
+ * THE COMPACT RAIL (`band.railDensity: 'bars'`) — review finding I4.
+ *
+ * The key shipped documented as "what the movement rail itself prints" while the
+ * rail read nothing: authoring `bars` produced a rail that still printed every
+ * name AND a NOW heading that had come back on, i.e. exactly the duplication
+ * this wave exists to remove, produced by the key meant to prevent it. The rail
+ * honours it now, which is also what makes `nowHeading: 'auto'` a real decision
+ * rather than a constant.
+ */
+describe('MovementMap — the compact rail', () => {
+  let injected = null;
+  const withStyles = () => {
+    const compiled = sass.compile(path.join(__dirname, 'MovementMap.scss'));
+    injected = document.createElement('style');
+    injected.textContent = compiled.css;
+    document.head.appendChild(injected);
+    return compiled.css;
+  };
+  afterEach(() => { injected?.remove(); injected = null; });
+
+  const bars = { ...EROICA, definition: { band: { railDensity: 'bars' } } };
+
+  it('prints no names, no glosses and no numerals', () => {
+    const { container } = renderMap({ data: bars });
+    expect(container.querySelectorAll('.surround-movement-map__text-row')).toHaveLength(0);
+    expect(container.querySelectorAll('.surround-movement-map__heading')).toHaveLength(0);
+    expect(container.querySelectorAll('[data-testid="surround-movement-translation"]')).toHaveLength(0);
+    expect(container.querySelectorAll('.surround-movement-map__numeral')).toHaveLength(0);
+  });
+
+  it('still draws the rule, its barlines, the fills and the playhead', () => {
+    // A compact rail is a rail, not an absence: everything that carries
+    // PROGRESS survives; only the type goes.
+    const { container } = renderMap({ data: bars, position: 2000 });
+    expect(container.querySelectorAll('[data-testid="surround-movement"]')).toHaveLength(4);
+    expect(container.querySelectorAll('[data-testid="surround-movement-fill"]')).toHaveLength(4);
+    expect(container.querySelector('[data-testid="surround-playhead"]')).not.toBeNull();
+    expect(container.querySelectorAll('.surround-movement-map__barline').length).toBeGreaterThan(0);
+    // ...and the bond still marks the sounding movement.
+    expect(container.querySelector('[data-testid="surround-bond"]').getAttribute('data-bonded'))
+      .toBe('true');
+  });
+
+  it('says which density it is in, and keeps the names by default', () => {
+    const { container } = renderMap({ data: bars });
+    expect(container.querySelector('[data-testid="surround-movement-map"]')
+      .getAttribute('data-density')).toBe('bars');
+    const { container: named } = renderMap();
+    expect(named.querySelector('[data-testid="surround-movement-map"]')
+      .getAttribute('data-density')).toBe('names');
+    expect(named.querySelectorAll('.surround-movement-map__text-row')).toHaveLength(4);
+  });
+
+  it('drops the band’s floor to what a bars-only rail actually needs', () => {
+    // Omitting the row rather than hiding it is the point: the band's height is
+    // its content, so a hidden-but-rendered row would leave a compact rail as
+    // tall as a named one and buy nothing.
+    const css = withStyles().replace(/\s+/g, ' ');
+    const compact = css.match(/\.surround-movement-map--bars \{[^}]*\}/);
+    expect(compact, 'a bars-only rail keeps the full named-rail floor').not.toBeNull();
+    expect(compact[0]).toMatch(/min-height: calc\(4px \+ var\(--band-pad-bottom\)\)/);
+    const full = css.match(/\.surround-movement-map \{[^}]*\}/)[0];
+    const fullPx = parseFloat(full.match(/min-height: ([\d.]+)rem/)[1]) * 16;
+    expect(fullPx, 'the named floor is not larger than the compact one').toBeGreaterThan(4 + 5.6);
+  });
+
+  it('measures no width to right-size for — there is no type on the rail', () => {
+    // The accordion is inert in this density rather than opening on a stale
+    // measurement: with no text row there is nothing that could be cut.
+    const logger = makeLogger();
+    renderMap({ data: bars, position: 2000, logger });
+    const events = logger.debug.mock.calls.map(([name]) => name);
+    expect(events).not.toContain('surround.accordion.measured');
+  });
+});
+
+/**
+ * REVIEW FINDING I5 — the wave's new decisions have to be visible in prod.
+ * The dynamic crossover happens once in a fifty-minute symphony and moves the
+ * whole band; the accordion's measurement decides every width on the rail and
+ * is read off the DOM in a face that arrives asynchronously. Neither leaves a
+ * surface anyone can point at afterwards.
+ */
+describe('MovementMap — logging the new decisions', () => {
+  it('reports the accordion’s measured width for the sounding segment', () => {
+    // The measurement path is the one part of this module jsdom cannot reach on
+    // its own (every box is 0x0), and it is the number that decides every width
+    // on the rail — so the geometry is stubbed and the path is actually run,
+    // rather than left as the "designed degradation" every other accordion spec
+    // correctly exercises.
+    const rect = Element.prototype.getBoundingClientRect;
+    const scroll = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollWidth');
+    Element.prototype.getBoundingClientRect = function stub() {
+      if (this.classList?.contains('surround-movement-map__text')) {
+        return { width: 52, height: 40, x: 0, y: 0, top: 0, left: 0, right: 52, bottom: 40 };
+      }
+      if (this.classList?.contains('surround-movement-map__segment')) {
+        return { width: 100, height: 60, x: 0, y: 0, top: 0, left: 0, right: 100, bottom: 60 };
+      }
+      return { width: 0, height: 0, x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0 };
+    };
+    Object.defineProperty(Element.prototype, 'scrollWidth', {
+      configurable: true,
+      get() {
+        return this.classList?.contains('surround-movement-map__heading') ? 149 : 0;
+      },
+    });
+    try {
+      const logger = makeLogger();
+      renderMap({ position: 2000, logger });   // movement III, the Scherzo
+      const measured = logger.debug.mock.calls.filter(([n]) => n === 'surround.accordion.measured');
+      expect(measured.length, 'the accordion measured nothing anyone can see').toBe(1);
+      // chrome (100 − 52 = 48) + the widest single-line string (149), rounded up
+      // with one pixel of margin — the number the solver is handed.
+      expect(measured[0][1]).toMatchObject({ index: 2, need: 149, chrome: 48, desired: 198 });
+    } finally {
+      Element.prototype.getBoundingClientRect = rect;
+      if (scroll) Object.defineProperty(Element.prototype, 'scrollWidth', scroll);
+      else delete Element.prototype.scrollWidth;
+    }
+  });
+
+  it('does NOT open the accordion for a name that already fits', () => {
+    // Review finding, minor 3: on a `nowrap` box that is not overflowing,
+    // `scrollWidth === clientWidth`, so the old `Math.ceil(...) + 1` asked for a
+    // pixel more than the segment already had and quietly took one off every
+    // neighbour for a movement whose name was never cut.
+    const rect = Element.prototype.getBoundingClientRect;
+    const scroll = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollWidth');
+    Element.prototype.getBoundingClientRect = function stub() {
+      if (this.classList?.contains('surround-movement-map__text')) {
+        return { width: 52, height: 40, x: 0, y: 0, top: 0, left: 0, right: 52, bottom: 40 };
+      }
+      if (this.classList?.contains('surround-movement-map__segment')) {
+        return { width: 100, height: 60, x: 0, y: 0, top: 0, left: 0, right: 100, bottom: 60 };
+      }
+      return { width: 0, height: 0, x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0 };
+    };
+    Object.defineProperty(Element.prototype, 'scrollWidth', {
+      // The text fits its cell exactly — nothing is being cut.
+      configurable: true,
+      get() {
+        return this.classList?.contains('surround-movement-map__heading') ? 52 : 0;
+      },
+    });
+    try {
+      const logger = makeLogger();
+      renderMap({ position: 2000, logger });
+      expect(
+        logger.debug.mock.calls.filter(([n]) => n === 'surround.accordion.measured'),
+        'the accordion opened for a name that already fitted',
+      ).toHaveLength(0);
+    } finally {
+      Element.prototype.getBoundingClientRect = rect;
+      if (scroll) Object.defineProperty(Element.prototype, 'scrollWidth', scroll);
+      else delete Element.prototype.scrollWidth;
+    }
+  });
+
+  it('reports the side crossover, from both halves of the bond', () => {
+    const logger = makeLogger();
+    const dyn = { ...EROICA, definition: { band: { nowSide: 'dynamic' } } };
+    const props = (position) => (
+      <MovementMap
+        position={position} duration={DURATION} playing seeking={false}
+        data={dyn} region={{ module: 'movement-map' }} logger={logger}
+      />
+    );
+    const { rerender } = render(props(300));
+    logger.debug.mockClear();
+    rerender(props(2000));
+    const sides = logger.debug.mock.calls.filter(([name]) => name === 'surround.band.side');
+    expect(sides.length, 'the crossover left no trace anyone could confirm it by').toBe(1);
+    expect(sides[0][1]).toMatchObject({ side: 'right', from: 'left' });
+    expect(sides[0][1].fraction).toBeGreaterThan(0.5);
+  });
+
+  it('says nothing about a side that cannot change', () => {
+    const logger = makeLogger();
+    const props = (position) => (
+      <MovementMap
+        position={position} duration={DURATION} playing seeking={false}
+        data={EROICA} region={{ module: 'movement-map' }} logger={logger}
+      />
+    );
+    const { rerender } = render(props(300));
+    rerender(props(2500));
+    expect(logger.debug.mock.calls.filter(([n]) => n === 'surround.band.side')).toHaveLength(0);
   });
 });

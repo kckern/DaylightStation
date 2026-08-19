@@ -535,8 +535,18 @@
   }
 }
 
+/* Reduced motion: NOTHING in this band moves. Review finding I1 — this block
+   used to list only the text, leaving the bond's panel sliding for 420ms and
+   the registers' cross-fade playing while the RAIL's half of the same shape
+   (correctly guarded in MovementMap.scss) jumped to the new side in one frame.
+   The "one shape" visibly tore in half for the length of the slide, which is
+   the exact opposite of what the guard exists for. The bond is STATE, not
+   motion: it still moves to the sounding movement and to the configured side,
+   it simply gets there in one frame, on both halves at once. */
 @media (prefers-reduced-motion: reduce) {
-  .surround-cue-ticker__text {
+  .surround-cue-ticker__text,
+  .surround-cue-ticker__zones,
+  .surround-cue-ticker__ground {
     transition: none !important;
   }
 }

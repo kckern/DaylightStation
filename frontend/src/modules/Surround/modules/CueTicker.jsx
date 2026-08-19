@@ -61,6 +61,12 @@
 // (`LISTEN_PHASE_MS`), which is the maximum separation two equal periods admit.
 // Under prefers-reduced-motion both collapse to an instant swap.
 //
+// THAT LAW HAS EXACTLY ONE EXCEPTION, and it is deliberate: the `nowSide` swap
+// (design wave 7) dissolves BOTH registers at once, because the thing changing
+// is not either register's content — it is the band's layout, and hiding half
+// of it while the other half reorders underneath would read as a glitch rather
+// than as a move. One blink, once, for a change the viewer is meant to notice.
+//
 // The reserved heights in the SCSS are what make all of this safe: neither
 // zone's box changes, whether its line is one line, two, or momentarily nothing
 // at all.
@@ -73,7 +79,9 @@ import {
   prefersReducedMotion,
 } from '../dissolve.js';
 import { smartQuotes, smartQuotesAll } from '../typography.js';
-import { resolveBandConfig, showsNowHeading, useNowSide, ACCORDION_MS } from '../band.js';
+import {
+  resolveBandConfig, showsNowHeading, useNowSide, elapsedFraction, ACCORDION_MS,
+} from '../band.js';
 import './CueTicker.scss';
 
 /** Each half of the dissolve: the old line out, then the new line in.
@@ -418,12 +426,23 @@ export default function CueTicker({
   // Both come from `../band.js` so this module and the rail cannot disagree
   // about the shape they are drawing two halves of.
   const nowHeading = showsNowHeading(config);
-  // The same fraction the rail measures: elapsed over where the MUSIC ends,
-  // falling back to the file's duration when no `musicEndsAt` is authored.
+  // ONE definition of "how far through the piece" (review finding I3). This
+  // used to be `position / pieceEnd` while the rail measured
+  // `(position - first) / (end - first)` — equal only while the first movement
+  // starts at 0, which both shipped sidecars do and a sidecar with a late first
+  // movement would not. When they disagree the register's panel and the rail's
+  // connector point at opposite sides of the screen, each held there by its own
+  // hysteresis, and nothing anywhere reports it. `elapsedFraction` is now the
+  // single source, called with the same inputs in both modules.
   const pieceEnd = end !== null ? end : (duration > 0 ? duration : 0);
-  const side = useNowSide(
-    config, pieceEnd > 0 ? Math.min(1, Math.max(0, position / pieceEnd)) : 0,
-  );
+  const pieceFirst = movements.length ? (Number(movements[0]?.start) || 0) : 0;
+  const fraction = elapsedFraction({ position, first: pieceFirst, end: pieceEnd });
+  // NaN until the transport reports an extent. That is a real state, not zero:
+  // seeding the side from a fraction of 0 and then swapping on the first real
+  // tick plays a full band-blanking dissolve during the entrance whenever a
+  // work with no `musicEndsAt` resumes past half-way.
+  const settled = Number.isFinite(fraction);
+  const side = useNowSide(config, fraction, log);
 
   // The swap is a CONSIDERED MOVE, in the house language. The panel slides
   // across the band (the SCSS, `__ground`) while the two registers' text
@@ -431,12 +450,23 @@ export default function CueTicker({
   // `useDissolve` rather than writing a second choreography is what keeps the
   // swap on the same clock as every other content change in the frame, and it
   // brings `prefers-reduced-motion` (an instant commit) with it for free.
+  // `text` is EMPTY until the transport has reported. `useDissolve` commits
+  // instantly out of an empty panel (there is nothing on screen to fade), so
+  // the first real side arrives without a dissolve — and every side change
+  // after it plays the full swap.
   const sideNext = useMemo(
-    () => ({ key: `side:${side}`, kind: 'side', at: null, text: side }),
-    [side],
+    () => ({
+      key: settled ? `side:${side}` : 'side:pending',
+      kind: 'side',
+      at: null,
+      text: settled ? side : '',
+    }),
+    [side, settled],
   );
   const [sideShown, sideSwapping] = useDissolve(sideNext);
-  const renderedSide = sideShown.text === 'left' ? 'left' : 'right';
+  const renderedSide = sideShown.text
+    ? (sideShown.text === 'left' ? 'left' : 'right')
+    : side;
 
   /**
    * THE PIECE REGISTER'S STANDING LABEL (design wave 7).
