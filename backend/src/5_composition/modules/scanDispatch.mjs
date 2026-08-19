@@ -156,7 +156,36 @@ export function errText(err) {
   }
 }
 
-/** Startup-decided swallow reasons, reported once each. Lifted from `app.mjs`. */
+/**
+ * Rate-limit WITHIN a level, never by dropping to one that is not shipped.
+ *
+ * `debug` never reaches the log store (see `docs/reference/core/*` on the
+ * logging framework), so the module used to warn ONCE per swallow reason and
+ * demote every repeat to `debug` — which was not suppression, it was deletion.
+ * The second refusal of an incident simply did not exist anywhere. The 12:31
+ * incident this module is named after is exactly that: a `dl:140` refusal was
+ * visible and the `ct:60` refusal four seconds later left no record at all.
+ *
+ * `logger.sampled` (see `backend/src/0_system/logging/logger.mjs`) keeps a
+ * countable, still-shipped record instead: within budget it logs every call,
+ * over budget it aggregates a count rather than discarding it silently. Falls
+ * back to `warn` via `emit` — unconditionally, not once — when the logger has
+ * no `sampled` method, the same defensive shape `emit` already uses for a
+ * logger missing a level.
+ */
+function emitSampled(logger, event, data, options) {
+  try {
+    if (typeof logger?.sampled === 'function') {
+      logger.sampled(event, data, options);
+      return;
+    }
+  } catch {
+    // Fall through to the `warn` fallback below — see `emit`'s own rationale.
+  }
+  emit(logger, 'warn', event, data);
+}
+
+/** Startup-decided swallow reasons. Lifted from `app.mjs`. */
 const NUTRISCAN_SWALLOW_EVENT = {
   'nutriscan-disabled': 'barcode_relay.nutriscan.config_disabled',
   'no-scale-id': 'barcode_relay.nutriscan.no_scale_id',
@@ -445,12 +474,6 @@ export function createScanDispatch(deps = {}) {
     routeFallback = SCAN_ROUTE_FALLBACK,
   } = deps;
 
-  // Per-PROCESS, keyed by reason — exactly as the `let` in `app.mjs` was. Both
-  // swallow reasons are decided at STARTUP (a broken scales.yml, or a reader
-  // deliberately configured without a scale), so warning per scan buried the log
-  // without adding information.
-  const nutriscanWarned = new Set();
-
   const relayCfgFor = (device) => relayInstances[device] || {};
 
   // ---- content + command ---------------------------------------------------
@@ -545,14 +568,8 @@ export function createScanDispatch(deps = {}) {
       const event = NUTRISCAN_SWALLOW_EVENT[decision.reason] || 'barcode_relay.nutriscan.unavailable';
       // `raw`, not `body`: an operator reading this line wants the string that
       // was physically scanned. They are equal for every legacy code.
-      if (nutriscanWarned.has(decision.reason)) {
-        emit(barcodeLogger, 'debug', event, { device, code: raw });
-      } else {
-        nutriscanWarned.add(decision.reason);
-        emit(barcodeLogger, 'warn', event, {
-          device, code: raw, hint: 'further occurrences log at debug',
-        });
-      }
+      // See `emitSampled`'s own docstring for why this is unconditional now.
+      emitSampled(barcodeLogger, event, { device, code: raw }, { maxPerMinute: 6, aggregate: true });
       // ACK a refusal too. Without this the ONE path where nothing happened is
       // the one path that says nothing: the user gets a scanner beep, no change
       // on the prompt, and no way to tell a dead feature from a bad code.
