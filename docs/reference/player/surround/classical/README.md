@@ -36,6 +36,35 @@ data/content/surround/                  media/img/surround/
   by the existing static route: `/api/v1/static/img/surround/classical/...`.
   A missing asset renders an empty slot; it never breaks the surround.
 
+### Composer file
+
+```yaml
+# classical/beethoven/_composer.yml
+name: Ludwig van Beethoven
+born: 1770
+died: 1827
+birthplace: Bonn
+portrait: beethoven/portrait.jpg
+city_image: beethoven/vienna.jpg
+map: { country: Austria, city: Vienna, lat: 48.21, lon: 16.37 }
+facts:
+  - "Beethoven said his hearing loss began in 1798, during a heated argument with a singer."
+```
+
+Everything here is inherited by **every piece that composer wrote** — author it once,
+and all 41 Beethoven pieces have it. A piece may override any key via its own
+`composer:` block (piece wins per key).
+
+Two fields worth calling out:
+
+- **`facts`** are about the *composer*, not the work, so they hold regardless of what
+  is playing. `ComposerCard` cycles them in the rail on a 27 s timer — deliberately
+  coprime with the footer ticker's 20 s, so the two panels coincide once every nine
+  minutes instead of swapping in lockstep, which reads as a glitch. The rotation is
+  time-driven, not playhead-driven: seeking does not reset it.
+- **`map`** drives the `country-map` module. Give it the country name **exactly as the
+  geodata spells it** (`United Kingdom`, `Czechia`) plus the city and its coordinates.
+
 ### Piece sidecar
 
 ```yaml
@@ -169,12 +198,61 @@ curl -s https://logs.kckern.net/select/logsql/query \
 
 ---
 
+## The country map
+
+`country-map` is a surround module that draws an inline SVG map, highlights the
+composer's country, and stars their city. It is **data-driven and auto-framing**:
+it computes the bounding box of the highlighted landmass and derives the viewBox
+from it, so Finland fills the frame exactly as well as Austria does with no
+per-country configuration and no per-composer asset.
+
+Geodata: `media/img/surround/_maps/europe.geo.json` — Natural Earth 1:110m, public
+domain, trimmed to Europe plus Mediterranean/Caucasus neighbours, 41 KB, fetched
+lazily and cached at module scope. No mapping library is used; the Mercator
+projection is about fifteen lines.
+
+Two things learned building it, both worth preserving:
+
+- **Frame on the landmass containing the city, not the country's raw bounding box.**
+  Natural Earth includes overseas territories, so a raw bbox makes France 116° wide,
+  Norway 145°, and Russia 450° — wider than the planet, so the map wraps and Paris
+  becomes a speck in an ocean. Selecting the part that contains the sidecar's own
+  coordinate fixes all three with still-zero configuration.
+- **Keep degrees and radians straight in the projection.** The Mercator `y` term
+  returns radians while `x` stays in degrees — roughly 57× smaller — and any uniform
+  scale then stretches the map vertically. Convert with `180/π`.
+
+An unmapped composer (no `map:` block) renders nothing and triggers no fetch. A
+country name absent from the geodata logs `surround.map.country-missing` (warn) —
+that is the event that tells an author they mistyped a country.
+
+The module sizes its city label against a ~420 px render width. It is fluid, but
+placing it much narrower than the rail drops that label below the design's
+ten-foot legibility floor.
+
 ## Facts and accuracy
 
 This exists for music literacy, so a wrong fact is the failure that matters most.
-Anything generated should be checked before it ships, and the corpus is small
-enough that this is cheap. Prefer facts that are checkable and specific — a date,
-a place, a documented incident — over atmosphere.
+Prefer facts that are checkable and specific — a date, a place, a documented
+incident — over atmosphere.
+
+**Verify against the local Wikipedia rather than writing from memory.** The
+household runs an offline Wikipedia service; see `CLAUDE.local.md` for how to
+reach it. It is fast, works offline, and it has already caught a real error here:
+the Eroica's headline fact was originally written as "Beethoven scratched the name
+off the title page so hard he tore through the paper," which conflates two
+different artifacts. Ries's actual account is that Beethoven **tore the title page
+in half and threw it on the floor**; separately, a surviving score copy bears the
+dedication *scratched out*, twice, in two languages. Both are true; the popular
+version merges them.
+
+```bash
+curl -s "http://{wikipedia_host}/search?q=Eroica%20Symphony&limit=5" | jq -r '.[].title'
+curl -s "http://{wikipedia_host}/article/Symphony%20No.%203%20(Beethoven)" | jq -r '.text'
+```
+
+It is also a useful independent check on the audio analysis: the article gives
+per-movement durations, and all four measured Eroica movements fell inside them.
 
 ## Scale
 
