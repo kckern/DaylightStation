@@ -150,7 +150,25 @@ Applying a memo:
 
 A memo arriving before commit simply resets the quiet timer like any other input.
 
-### 5. Observability
+### 5. Pass the scale's unit through
+
+Found while scoping this, and it belongs here because the fusion work edits the same call.
+`ScaleNutribotBridge` never reads `payload.unit`. It passes the literal `unit: 'g'` into both
+`compositionStore.setWeight` and the log use case, while the scale really can report `ml`
+(`decode.units` maps `0x02` to it in `scales.yml`) and the relay sends the unit on every frame.
+
+So a millilitre reading is silently recorded as grams. Nothing downstream can refuse it,
+because nothing downstream is ever told. Two halves:
+
+- The bridge passes the reported unit through instead of asserting grams.
+- `ApplyScanToComposition` refuses to let a non-gram unit satisfy `complete` — a volume cannot
+  be multiplied by a kcal-per-gram density, and a wrong entry is worse than no entry.
+
+This is a correctness fix, not a feature, and it should land with the quiet-commit change
+rather than after it: quiet-commit makes entries finalise on their own, which turns a
+mislabelled reading into a committed one.
+
+### 6. Observability
 
 Every state change on this path emits a structured event, at `info` or above — never `debug`,
 which is not shipped:
@@ -218,6 +236,8 @@ rather than by reading boot logs.
   only, with the rejected fields logged.
 - **Heartbeat does not hold the window open**: at-rest frames arriving continuously do not
   reset the commit timer.
+- **A millilitre reading never commits**: a frame reporting `ml` reaches the buffer as `ml`,
+  and the composition does not become `complete` no matter what else is scanned.
 
 ## Out of scope
 
