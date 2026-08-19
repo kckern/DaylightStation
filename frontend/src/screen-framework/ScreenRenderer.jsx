@@ -25,6 +25,7 @@ import { createRegistrySessionSource } from './publishers/registrySessionSource.
 import { getPlayerSessionRegistry } from './publishers/playerSessionRegistry.js';
 import { ScreenSceneProvider } from './providers/ScreenSceneContext.jsx';
 import { ScreenAmbientProvider } from './ambient/ScreenAmbientContext.jsx';
+import { SurroundSettingContext } from '../modules/Surround/SurroundSettingContext.js';
 import { MenuNavigationProvider, useMenuNavigationContext } from '../context/MenuNavigationContext.jsx';
 import { parseAutoplayParams, autoplayToAction, AUTOPLAY_ACTIONS } from '../lib/parseAutoplayParams.js';
 import { getApp } from '../lib/appRegistry.js';
@@ -411,6 +412,9 @@ export function ScreenRenderer({ screenId: propScreenId }) {
           >
             <MasterVolumeToast />
             <PortalKeysBridge config={config.portalKeys} />
+            {/* Screen-level surround setting: 'auto' (default), 'off', or a
+                definition id. Read by SurroundHost at the two player seams. */}
+            <SurroundSettingContext.Provider value={config.surround ?? 'auto'}>
             <ScreenAmbientProvider value={config.ambient}>
             <MenuNavigationProvider>
               <ScreenSceneProvider>
@@ -433,6 +437,7 @@ export function ScreenRenderer({ screenId: propScreenId }) {
               </ScreenSceneProvider>
             </MenuNavigationProvider>
             </ScreenAmbientProvider>
+            </SurroundSettingContext.Provider>
           </ScreenVolumeProvider>
         </div>
       )}
