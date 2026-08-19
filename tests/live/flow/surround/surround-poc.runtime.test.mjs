@@ -732,5 +732,39 @@ test.describe('Surround — composed layout gate', () => {
     // (`rail` was read above, for the header-row containment check.)
     expect(rail.x + rail.width, 'rail is not entirely left of the video').toBeLessThanOrEqual(media.x + 2);
     expect(rail.width / frame.width, 'rail is a fifth, not a third').toBeGreaterThan(0.30);
+
+    // 6. Fix round 1 (review finding, CRITICAL, user-reported). Pausing the
+    //    video brings up the Player's own `.loading-overlay` — before the fix,
+    //    nothing between it and the page root created a stacking context, so it
+    //    escaped `.surround-frame__media` and painted over the placard's lower
+    //    third. `isolation: isolate` on the media box is what seals it in.
+    //    Pause through the same LOCATOR the seek helpers use (see `seekTo`
+    //    above) — the <video> lives inside the <dash-video> shadow root, so a
+    //    document query from page script would silently no-op.
+    await page.locator(PLAYABLE_SEL).first().evaluate((v) => v.pause());
+    await page.waitForTimeout(600);
+
+    const mediaIsolation = await page.locator('.surround-frame__media').first()
+      .evaluate((el) => getComputedStyle(el).isolation);
+    expect(
+      mediaIsolation,
+      'the media box does not seal its own stacking context — a paused/loading overlay can escape it',
+    ).toBe('isolate');
+
+    // ...and the straddle from part 1 still holds while paused: sealing the
+    // media box must not have moved the plate or the video it sits on.
+    const placardPaused = await box('.surround-frame__header');
+    const mediaPaused = await box('.surround-frame__media');
+    expect(
+      placardPaused.y + placardPaused.height,
+      'the plate no longer reaches the video once paused',
+    ).toBeGreaterThan(mediaPaused.y);
+    expect(
+      placardPaused.y,
+      'the plate starts below the video top once paused — it is not straddling the edge',
+    ).toBeLessThan(mediaPaused.y);
+    const overlapDepthPaused = (placardPaused.y + placardPaused.height - mediaPaused.y) / placardPaused.height;
+    expect(overlapDepthPaused, 'the straddle window shifted once paused').toBeLessThan(0.45);
+    expect(overlapDepthPaused, 'the straddle window shifted once paused').toBeGreaterThan(0.20);
   });
 });

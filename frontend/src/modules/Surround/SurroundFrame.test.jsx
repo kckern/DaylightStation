@@ -720,6 +720,40 @@ describe('SurroundFrame — the shipped composition', () => {
     expect(media[0]).toContain('background: #000');
   });
 
+  /**
+   * Fix round 1 (review finding, CRITICAL, user-reported). Nothing between the
+   * Player's own `.loading-overlay` (z-40) and the page root created a stacking
+   * context, so it escaped `.surround-frame__media` and painted over
+   * `.surround-frame__header` (z-30) — the placard's lower third disappeared
+   * behind the pause/loading scrim. `isolation: isolate` seals the media box:
+   * every z-index the Player publishes inside it (the loading overlay, the
+   * filter overlay at z-55, the debug strip at z-60) now resolves against each
+   * other INSIDE this box and can never out-rank a sibling of it.
+   */
+  it('seals the media box so the Player’s own overlays cannot paint over the frame’s chrome', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    const media = css.match(/\.surround-frame__media \{[^}]*\}/)[0];
+    expect(media, 'the media box creates no stacking context — a Player overlay can escape it')
+      .toContain('isolation: isolate');
+  });
+
+  /**
+   * Fix round 1 (review finding, IMPORTANT). The entering media box is
+   * transformed, which paints it at the implicit `z-index: 0` — the same level
+   * as the unpositioned, in-flow rail — and DOM order puts the media box after
+   * the rail, so for the ~200ms the video is still oversized mid-entrance it
+   * paints OVER the rail rather than beside it. The rail needs its own stacking
+   * context and a z-index above that implicit 0 to stay on top of the arriving
+   * picture; harmless at rest, since the rail and the settled media box never
+   * overlap once the entrance ends.
+   */
+  it('keeps the rail above the arriving (scaled-up) video during the entrance', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    const rail = css.match(/\.surround-frame__rail \{[^}]*\}/)[0];
+    expect(rail).toContain('position: relative');
+    expect(parseInt(rail.match(/z-index: (\d+)/)?.[1] ?? '0', 10)).toBeGreaterThan(0);
+  });
+
   it('slides the rail in from whichever side it is on', () => {
     const css = withStyles().replace(/\s+/g, ' ');
     expect(css).toMatch(/\.surround-frame--entering \.surround-frame__rail \{[^}]*translateX\(14%\)/);

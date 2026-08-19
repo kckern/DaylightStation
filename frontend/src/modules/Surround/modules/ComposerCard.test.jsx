@@ -854,4 +854,48 @@ describe('ComposerCard — pictures whole, fact slot still', () => {
     );
     expect(rule.getPropertyValue('margin-top')).not.toBe('auto');
   });
+
+  /**
+   * Fix round 1 (review finding, CRITICAL). Same conflict as the footer ticker
+   * (see CueTicker.test.jsx): grid centring and the line clamp cannot share one
+   * element, and wave 5 resolved it by deleting the clamp — which left an
+   * overflowing bio fact cut mid-glyph by `overflow: hidden` instead of
+   * ellipsized. Several real composer facts exceed this three-line reserve.
+   * The fix restores the clamp on a separate inner element (`__fact-line`) that
+   * `__fact` centres, rather than reviving it on `__fact` itself.
+   */
+  it('clamps the fact to three, with an ellipsis, on the inner element the outer box centres', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    const rule = css.match(/\.surround-composer-card__fact-line \{[^}]*\}/);
+    expect(rule, 'no .surround-composer-card__fact-line rule — the clamp was not restored').not.toBeNull();
+    expect(rule[0]).toContain('display: -webkit-box');
+    expect(rule[0]).toContain('-webkit-line-clamp: 3');
+    expect(rule[0]).toContain('-webkit-box-orient: vertical');
+    expect(rule[0]).toContain('overflow: hidden');
+
+    // The clamp lives on `__fact-line`, not back on `__fact` — reviving it
+    // there would reintroduce the exact `display` conflict this fix removes.
+    const outer = css.match(/\.surround-composer-card__fact \{[^}]*\}/)[0];
+    expect(outer).not.toContain('-webkit-line-clamp');
+
+    const { getByTestId } = renderCard({ composer: { ...DATA.composer, facts: ['A fact.'] } });
+    const outerEl = getByTestId('surround-composer-fact');
+    const lineEl = outerEl.querySelector('.surround-composer-card__fact-line');
+    expect(lineEl, 'the outer box has no .surround-composer-card__fact-line child').not.toBeNull();
+    expect(lineEl.textContent).toBe('A fact.');
+  });
+
+  // A fact well past what three lines of this reserve can hold. As with the
+  // ticker, jsdom cannot measure where the ellipsis paints, so the honest pin
+  // is the clamp declaration on the element carrying the overflow text, next
+  // to the reserve that bounds it.
+  it('carries the clamp on an overflowing fact, not just a short one', () => {
+    withStyles();
+    const longFact = 'A. '.repeat(100).trim(); // 300 characters, well past the three-line reserve
+    const { getByTestId } = renderCard({ composer: { ...DATA.composer, facts: [longFact] } });
+    const lineEl = getByTestId('surround-composer-fact').querySelector('.surround-composer-card__fact-line');
+    const style = window.getComputedStyle(lineEl);
+    expect(style.getPropertyValue('-webkit-line-clamp')).toBe('3');
+    expect(style.getPropertyValue('overflow')).toBe('hidden');
+  });
 });

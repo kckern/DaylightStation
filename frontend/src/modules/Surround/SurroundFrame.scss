@@ -152,6 +152,18 @@
    for a browser that drops the inline style. Children fill the box exactly. */
 .surround-frame__media {
   position: relative;
+  /* Fix round 1 (review finding, user-reported): SEALS the player's own
+     z-universe inside this box. At rest nothing between the Player's internal
+     `.loading-overlay` (z-40) and the page root creates a stacking context —
+     `.surround-frame__media` carries `position: relative` but no `z-index`,
+     which is not enough on its own — so the overlay escaped this box entirely
+     and painted over `.surround-frame__header` (z-30), covering the placard's
+     lower third whenever the video paused or buffered. `isolation: isolate`
+     makes THIS element the stacking-context root for everything inside it: the
+     Player's z-40 overlay, its z-55 filter overlay, its z-60 debug strip — all
+     of them now resolve against each other inside the media box and can never
+     out-rank a sibling of this element, whatever z-index the Player picks. */
+  isolation: isolate;
   aspect-ratio: 16 / 9;
   max-width: 100%;
   max-height: 100%;
@@ -246,6 +258,18 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* Fix round 1: stacked above the arriving (scaled-up) video. The entering
+     media box is transformed, which paints it as if it carried the implicit
+     stacking level every unpositioned, in-flow box gets — the same one this
+     rail was sitting at — and DOM order puts the media box after the rail, so
+     for the ~200ms the video is still oversized mid-entrance it paints OVER
+     the rail rather than beside it. `position: relative` gives the rail an
+     index to have at all; the value below is comfortably above that implicit
+     level and below the footer (20) and plate (30), so every piece of chrome
+     stays on top of the arriving picture — harmless at rest, since the rail
+     and the settled media box never overlap once the entrance ends. */
+  position: relative;
+  z-index: 10;
 }
 
 /* Rail side is definition-driven (`regions.right.side` / `regions.right[0].side`,

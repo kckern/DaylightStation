@@ -254,7 +254,12 @@ export default function ComposerCard({
             data-testid="surround-composer-fact"
             style={{ transition: `opacity ${COMPOSER_FACT_FADE_MS}ms ease` }}
           >
-            {shownFact.text}
+            {/* Fix round 1 (review finding): the reserve (grid + align-content)
+                and the ellipsis (the line clamp) are two jobs, and Chromium
+                will not let one element do both — see CueTicker.jsx for the
+                same split and the reasoning. This span clamps to three lines;
+                the `<p>` around it centres whatever height that produces. */}
+            <span className="surround-composer-card__fact-line">{shownFact.text}</span>
           </p>
         </div>
       )}

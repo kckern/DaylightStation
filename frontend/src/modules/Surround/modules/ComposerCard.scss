@@ -304,10 +304,17 @@
      in a card that looked top-heavy. `grid` + `align-content: center` centres
      the lines themselves; the `-webkit-box` clamp idiom cannot (it computes to
      `flow-root` in current Chromium — wave 2, flag 4 — and its `box-pack`
-     alignment goes with it), so it is gone from this rule. The trade is the
-     ellipsis: a fact too long for three lines is cut by `overflow` rather than
-     ellipsized — the same trade the composer's own name already makes, and the
-     fact pool is authored against this reserve. */
+     alignment goes with it).
+     Fix round 1: wave 5 deleted the clamp here rather than merely disabling it,
+     on the theory that the trade was "cut by overflow instead of ellipsized".
+     Measured against the real corpus that trade was worse than stated: several
+     composer facts overflow this three-line reserve and were cutting mid-word,
+     not at a clean line boundary — `overflow: hidden` alone truncates wherever
+     the box edge happens to fall, glyph included. `display: grid` and
+     `display: -webkit-box` cannot both apply to ONE element (CSS keeps only the
+     last `display`), so the fix is not reviving the clamp here — it is moving
+     it to `.surround-composer-card__fact-line` below, the sole grid item this
+     rule centres. */
   display: grid;
   align-content: center;
   overflow: hidden;
@@ -321,6 +328,20 @@
 
 .surround-composer-card__fact--hidden {
   opacity: 0;
+}
+
+/* THE LINE — the clamp, restored (fix round 1). Size and position stay on
+   `__fact` above; this inner span's only job is truncation: wrap to three
+   lines and ellipsize the third only when the fact genuinely needs a fourth.
+   As the sole grid item in `__fact`, `align-content: center` on the parent
+   centres exactly the height this clamp produces. Text styling (alignment,
+   balance, colour, weight, family) is inherited from `__fact`, not repeated
+   here. */
+.surround-composer-card__fact-line {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 @media (prefers-reduced-motion: reduce) {
