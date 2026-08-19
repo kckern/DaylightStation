@@ -62,17 +62,27 @@ export const RENDER_H = 252;
 const ASPECT = RENDER_W / RENDER_H;
 
 /**
- * Breathing room around the highlighted country, as a fraction of its own span.
+ * Breathing room around the highlighted country, as a fraction of its own span —
+ * one number per ZOOM, because the carousel now shows this map twice and the two
+ * slides are answering different questions.
  *
- * 0.9, not wave 1's 0.25. At 0.25 the subject filled ~80% of the frame and the
- * map answered a question nobody asked ("what shape is Austria?") while refusing
- * the one they did ("where IS that?"). At 0.9 the subject spans about half the
- * frame — still unmistakably the subject — and the half around it is its
- * neighbours, which is the content. The number is bounded on both sides: much
- * below this and the context disappears again; much above it and the subject
- * stops being the subject.
+ * `region` (0.9, not wave 1's 0.25). At 0.25 the subject filled ~80% of the
+ * frame and the map answered a question nobody asked ("what shape is Austria?")
+ * while refusing the one they did ("where IS that?"). At 0.9 the subject spans
+ * about half the frame — still unmistakably the subject — and the half around it
+ * is its neighbours, which is the content. Bounded on both sides: much below and
+ * the context disappears again; much above and the subject stops being subject.
+ *
+ * `city` (0.12). Having established WHERE, the second map answers WHERE IN IT:
+ * the country's own shape fills the frame and the star lands on it legibly. The
+ * neighbours are not excluded by rule — they simply mostly fall outside the
+ * frame at this zoom, and the label-share floor drops the slivers that do not.
+ * That is the brief's "neighbours optional at that zoom", achieved by the
+ * framing rather than by a second code path.
  */
-const PAD = 0.9;
+export const ZOOM_PAD = { region: 0.9, city: 0.12 };
+export const ZOOMS = Object.keys(ZOOM_PAD);
+const DEFAULT_ZOOM = 'region';
 /** Floor on a frame's span in degrees, so a sliver of a country cannot divide by ~0. */
 const MIN_SPAN = 0.75;
 
@@ -249,11 +259,11 @@ function framingBox(geometry, point) {
  * frame: the country keeps its true shape and the surplus is filled with
  * neighbours instead of with stretch.
  */
-function frameFor(bbox) {
+function frameFor(bbox, pad = ZOOM_PAD[DEFAULT_ZOOM]) {
   const cx = (bbox.minX + bbox.maxX) / 2;
   const cy = (bbox.minY + bbox.maxY) / 2;
-  let w = Math.max(bbox.maxX - bbox.minX, MIN_SPAN) * (1 + PAD);
-  let h = Math.max(bbox.maxY - bbox.minY, MIN_SPAN) * (1 + PAD);
+  let w = Math.max(bbox.maxX - bbox.minX, MIN_SPAN) * (1 + pad);
+  let h = Math.max(bbox.maxY - bbox.minY, MIN_SPAN) * (1 + pad);
   if (w / h < ASPECT) w = h * ASPECT; else h = w / ASPECT;
   return { x: cx - w / 2, y: cy - h / 2, w, h };
 }
@@ -365,6 +375,13 @@ export default function CountryMap({
   city = null,
   lat = null,
   lon = null,
+  /**
+   * `region` (default) frames the subject at about half its frame with its
+   * neighbours around it; `city` frames the subject's own shape nearly edge to
+   * edge, for the carousel's second, zoomed-in map slide. Anything else falls
+   * back to `region` rather than producing an undefined pad.
+   */
+  zoom = DEFAULT_ZOOM,
   className = '',
   logger = null,
 }) {
@@ -420,23 +437,26 @@ export default function CountryMap({
   // Frame the highlight when there is one. Failing that, a city still gives us
   // somewhere to look; failing even that, a Europe overview. An unrecognised
   // country shows a map, never a hole.
+  const pad = ZOOM_PAD[zoom] ?? ZOOM_PAD[DEFAULT_ZOOM];
   const frame = useMemo(() => {
     if (!features.length) return null;
     if (highlight) {
       const box = framingBox(highlight.geometry, point);
-      if (box) return frameFor(box);
+      if (box) return frameFor(box, pad);
     }
     if (point) {
       const half = STRAY_CITY_SPAN / 2;
       return frameFor({
         minX: point.x - half, maxX: point.x + half, minY: point.y - half, maxY: point.y + half,
-      });
+      }, pad);
     }
+    // The degraded overview is a fixed extent by definition — a zoom that has
+    // no subject to zoom on gets the default pad, not the caller's.
     return frameFor({
       minX: projectX(EUROPE_FALLBACK.west), maxX: projectX(EUROPE_FALLBACK.east),
       minY: projectY(EUROPE_FALLBACK.north), maxY: projectY(EUROPE_FALLBACK.south),
     });
-  }, [features.length, highlight, point]);
+  }, [features.length, highlight, point, pad]);
 
   // The marker and every label live in PIXEL space, not degrees: at Gamma's 1°
   // frame a degree-sized star would swallow the country, and at Beta's 20° frame
@@ -565,6 +585,7 @@ export default function CountryMap({
       className={`surround-country-map ${className}`.trim()}
       data-testid="country-map"
       viewBox={viewBox}
+      data-zoom={ZOOM_PAD[zoom] ? zoom : DEFAULT_ZOOM}
       preserveAspectRatio="xMidYMid meet"
       role="img"
       aria-label={city && country ? `${city}, ${country}` : (country || 'map')}
@@ -648,6 +669,7 @@ CountryMap.propTypes = {
   city: PropTypes.string,
   lat: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
   lon: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+  zoom: PropTypes.oneOf(ZOOMS),
   className: PropTypes.string,
   logger: PropTypes.object,
 };

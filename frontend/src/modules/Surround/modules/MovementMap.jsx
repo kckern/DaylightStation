@@ -8,6 +8,15 @@
 // proportional to that movement's real duration, names above the rule with the
 // tempo term in italic.
 //
+// WHERE THE RULE SITS (design wave 4)
+// -----------------------------------
+// At the TOP of the band, tight against the video's bottom edge — inside the
+// footer's own overlap, so the timeline reads as the picture's own baseline
+// rather than as a bar floating in a strip of black below it. The movement
+// names hang BELOW the rule. That inverts wave 2's arrangement, and the
+// clearance law it was written for still binds, only mirrored: the playhead
+// lane is ABOVE, the names are below, and the two boxes must not meet.
+//
 // WHERE PROGRESS IS READ (design wave 2)
 // --------------------------------------
 // From the FILL, not from the cursor. The sounding movement's rule thickens and
@@ -175,17 +184,22 @@ export default function MovementMap({
                   aria-hidden="true"
                 />
               )}
-              <span className="surround-movement-map__heading">
-                <span className="surround-movement-map__numeral">{roman(seg.n, i)}</span>
-                {title && <span className="surround-movement-map__title">{title}</span>}
-                {tempo && <span className="surround-movement-map__tempo">{tempo}</span>}
-              </span>
+              {/* THE RULE COMES FIRST (design wave 4). The rule row rides at
+                  the TOP of the band, in the overlap zone under the video's
+                  bottom edge; the movement names hang BELOW it. Source order
+                  is the layout order — no `column-reverse`, so the DOM a
+                  screen reader walks is the order a viewer sees. */}
               <span className="surround-movement-map__bar" aria-hidden="true">
                 <span
                   className="surround-movement-map__bar-fill"
                   data-testid="surround-movement-fill"
                   style={{ width: `${fill * 100}%` }}
                 />
+              </span>
+              <span className="surround-movement-map__heading">
+                <span className="surround-movement-map__numeral">{roman(seg.n, i)}</span>
+                {title && <span className="surround-movement-map__title">{title}</span>}
+                {tempo && <span className="surround-movement-map__tempo">{tempo}</span>}
               </span>
             </div>
           );

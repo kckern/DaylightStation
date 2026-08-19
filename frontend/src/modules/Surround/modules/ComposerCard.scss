@@ -79,6 +79,13 @@
    45% share of the rail, the MAT owns "no pool of paper around a contained
    picture". A tall (2:3) portrait therefore gets a snug mat sized to its own
    width, not a mat stretched to the column's full 45%. */
+/* THE MAT IS DARK (design wave 4). It used to be cream paper under a brass
+   hairline, and on the maroon rail that read as a white border — the brightest
+   mark on the screen, framing the picture by shouting over it. It is now the
+   frame's `--mat`: near-black warm brown, with `--mat-edge` as the 1px
+   definition line so the portrait cannot bleed into the panel. Same job, no
+   glare. (`--programme` still grounds the programme PANELS; it just no longer
+   grounds any picture.) */
 .surround-composer-card__plate {
   position: relative;
   width: fit-content;
@@ -86,10 +93,10 @@
   margin: 0;
   padding: 3px;
   box-sizing: border-box;
-  background: var(--programme, #efe6d2);
+  background: var(--mat, #1d0f11);
   box-shadow:
-    inset 0 0 0 1px var(--brass, #c79a3e),
-    0 1px 2px rgba(20, 16, 12, 0.28);
+    inset 0 0 0 1px var(--mat-edge, rgba(8, 5, 5, 0.9)),
+    0 1px 3px rgba(0, 0, 0, 0.45);
   line-height: 0;
 }
 
@@ -163,19 +170,32 @@
   text-shadow: 0 1px 0 rgba(255, 248, 220, 0.5);
 }
 
-/* Two lines maximum — one is too tight for e.g. "Pyotr Ilyich Tchaikovsky" at
-   the narrower header column; three would defeat the cap. Part of the hard
-   content budget. The size came down from 1.7rem with the column: the plate is
-   ~55% of the rail now, not the whole of it. */
+/* THE NAME USES THE VERTICAL (design wave 4). The plate has a column, not a
+   line: "Antonio" over "Vivaldi" is what an engraved museum plate does, and it
+   is what lets the type be BIG rather than what a single line can afford. So
+   the measure is capped at `6.4em` of the name's own size and the name breaks
+   at word boundaries inside it; the plate (`width: fit-content`) then hugs
+   whatever that wrapping produces — narrow and tall instead of wide and thin.
+   Breaking beats shrinking: 1.35rem -> 1.75rem.
+
+   THREE lines, not two — "Pyotr Ilyich Tchaikovsky" and "Ludwig van Beethoven"
+   want the extra one at this measure, and the ceiling is a real `max-height`
+   rather than `-webkit-line-clamp`. The clamp idiom computes to `flow-root` in
+   current Chromium (wave 2, flag 4) and cannot be relied on for a BOX; the
+   height can. `text-wrap: balance` evens the lines where it is supported and
+   changes nothing where it is not — and it only works at all because this is a
+   normal block now, not a `-webkit-box`. */
 .surround-composer-card__name {
-  margin: 0;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  margin: 0 auto;
+  display: block;
+  max-width: 5.6em;
+  max-height: 3.45em;              /* 3 lines at line-height 1.15 */
   overflow: hidden;
-  font-size: 1.35rem;
+  overflow-wrap: break-word;       /* a single unbreakable word still cannot escape */
+  text-wrap: balance;              /* progressive; wraps as before without it */
+  font-size: 1.75rem;
   font-weight: 600;
-  line-height: 1.1;
+  line-height: 1.15;
 }
 
 /* Small, engraved, beneath the name — ON the brass now (museum convention),
@@ -184,9 +204,9 @@
    above always wins and applies the actual engraved (multiply-blend) colour;
    this base rule only carries the sizing and spacing. */
 .surround-composer-card__dates {
-  margin: 0.2rem 0 0;
+  margin: 0.3rem 0 0;
   text-align: center;
-  font-size: 0.8rem;
+  font-size: 0.85rem;
   font-weight: 600;
   letter-spacing: 0.02em;
   font-variant-numeric: lining-nums;

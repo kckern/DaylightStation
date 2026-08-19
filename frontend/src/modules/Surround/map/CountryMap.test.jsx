@@ -197,6 +197,56 @@ describe('CountryMap', () => {
     }
   });
 
+  /**
+   * Design wave 4 — TWO ZOOMS, ONE COMPONENT.
+   *
+   * The place carousel shows this map twice: once to answer "where is that
+   * country" and once to answer "where in it is the city". That is a framing
+   * decision, not a second map, so it is one `zoom` prop over the same
+   * geography rather than a `CityMap` that would have to be kept in step.
+   *
+   * The two bounds are both load-bearing. The upper one is what makes the city
+   * zoom actually zoomed (the defect it prevents is two slides that look the
+   * same); the lower one stops a later tweak cropping the subject off its own
+   * frame — the country's SHAPE is still the subject at this zoom.
+   */
+  it('frames the subject nearly edge to edge at zoom="city"', async () => {
+    for (const name of ['Alpha', 'Beta', 'Gamma']) {
+      __resetMapCache();
+      global.fetch = okFetch();
+      fetchMock = global.fetch;
+      const { container } = await renderMap({ country: name, zoom: 'city' });
+      await waitFor(() => expect(pathOf(container, name)).toBeTruthy());
+      const vb = viewBoxOf(container);
+      const ext = extentOf(pathOf(container, name));
+      const share = Math.max(ext.w / vb.w, ext.h / vb.h);
+      expect(share, `${name} fills only ${share} of its frame — this is not a zoom`)
+        .toBeGreaterThan(0.8);
+      expect(share, `${name} fills ${share} of its frame — it is cropped, not framed`)
+        .toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('leaves the regional zoom as the default, and falls back to it for an unknown one', async () => {
+    const spans = {};
+    for (const zoom of [undefined, 'region', 'city', 'nonsense']) {
+      __resetMapCache();
+      global.fetch = okFetch();
+      fetchMock = global.fetch;
+      const props = zoom === undefined ? { country: 'Alpha' } : { country: 'Alpha', zoom };
+      const { container } = await renderMap(props);
+      await waitFor(() => expect(pathOf(container, 'Alpha')).toBeTruthy());
+      spans[String(zoom)] = viewBoxOf(container).w;
+      // The rendered zoom is published, so a consumer (and the carousel's test)
+      // can tell the two slides apart without re-deriving the framing.
+      expect(container.querySelector('[data-testid="country-map"]').getAttribute('data-zoom'))
+        .toBe(zoom === 'city' ? 'city' : 'region');
+    }
+    expect(spans.undefined).toBe(spans.region);
+    expect(spans.nonsense).toBe(spans.region);   // never an undefined pad
+    expect(spans.city).toBeLessThan(spans.region);
+  });
+
   it('shows the neighbours: a country adjacent to the subject lands inside the frame', async () => {
     // Alpha (0..2 lon) with Epsilon starting 1° east of it. At wave 1's PAD the
     // frame stopped at ~2.25 and Epsilon was off-screen entirely; at regional

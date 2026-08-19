@@ -25,14 +25,28 @@
   --ink: #2a1d07;
   --ink-soft: #6b6152;
 
+  /* THE MAT. Every picture in the frame is mounted on this, and it is dark on
+     purpose (design wave 4): cream mats around a portrait and a city view read
+     as white borders on a dark wall — the brightest, most distracting marks on
+     a screen whose subject is the video. Near-black warm brown sits quietly on
+     the maroon rail and still separates a lit picture from the ground, which is
+     the only job a mat has here. `--mat-edge` is the 1px definition line, dark
+     as well, so an image never bleeds into the panel behind it.
+     `--programme` survives untouched — it is the programme STOCK (the panels
+     themselves), not the mats. */
+  --mat: #1d0f11;
+  --mat-edge: rgba(8, 5, 5, 0.9);
+
   --surround-display: "Cormorant Garamond", "Hoefler Text", "EB Garamond", Georgia, serif;
   --surround-body: "EB Garamond", "Cormorant Garamond", Garamond, Georgia, serif;
 
   /* How far the video's top edge sits below the top of the main column. The
      floating placard is centred ON that edge, so this doubles as the room the
-     plate's upper half has to breathe in: at the shipped type sizes the plate is
-     ~64px tall, so 2.7rem (43px) leaves ~11px of dark hall above it. */
-  --placard-inset: 2.7rem;
+     plate's upper half has to breathe in. Wave 4 took the title to 2.05rem — the
+     plate now measures ~82px rather than ~64px — so the inset went 2.7rem ->
+     3.4rem: half of 82 is 41, and 3.4rem (54px) leaves ~13px of dark hall above
+     it, the same breathing room the smaller plate had. */
+  --placard-inset: 3.4rem;
   /* How far the dark band rides up over the video's last pixels. Visual only —
      a negative margin on the footer, never a change to the media box. */
   --band-overlap: 10px;

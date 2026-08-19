@@ -15,10 +15,14 @@
 // is no new schema here:
 //
 //   1. CITY PHOTO  `composer.city_image`, captioned by `composer.map.caption`,
-//      falling back to `composer.map.city`. Matted in real paper, never cropped.
-//   2. MAP         `CountryMap` on `composer.map`, captioned with city and
-//      country. The payload -> props decision is `mapPinFrom`, shared with the
-//      standalone `country-map` module rather than copied.
+//      falling back to `composer.map.city`. Matted, never cropped.
+//   2. COUNTRY MAP `CountryMap` at regional zoom on `composer.map`, captioned
+//      with city and country. The payload -> props decision is `mapPinFrom`,
+//      shared with the standalone `country-map` module rather than copied.
+//   3. CITY MAP    the SAME `CountryMap` at `zoom="city"` — the country's own
+//      shape nearly filling the frame, with the star and the city's name on it,
+//      captioned by the city alone. Two questions, asked in order: where is
+//      that country, and then where in it. Only when a city is pinned.
 //
 // A composer with neither renders NOTHING — not an empty frame, not a mat with a
 // hole in it. That is the module contract's null discipline, the same one
@@ -48,11 +52,11 @@ import './PlaceCarousel.scss';
  * How long one slide holds the foot of the rail.
  *
  * 12 s: long enough to look at a photograph properly, short enough that a viewer
- * who glances up twice in a movement sees both slides. Deliberately NOT coprime
- * with the fact rotations the way those are with each other — there are only two
- * slides here, so the pattern a viewer could notice is "the picture changed",
- * not "everything changed at once", and 12 against 27 and 20 already never lands
- * three swaps in one instant.
+ * who glances up twice in a movement sees more than one slide. Deliberately NOT
+ * coprime with the fact rotations the way those are with each other — the
+ * pattern a viewer could notice here is "the picture changed", not "everything
+ * changed at once", and 12 against 27 and 20 already never lands three swaps in
+ * one instant.
  */
 export const PLACE_SLIDE_MS = 12000;
 /** Each half of the dissolve — the house duration, shared with both fact rotations. */
@@ -128,12 +132,29 @@ export default function PlaceCarousel({
         key: 'map',
         kind: 'map',
         pin,
+        zoom: 'region',
         // City AND country: the map draws both, but the caption is what a
         // viewer reads first, and "VENICE, ITALY" answers the slide's question
         // without making them find the star.
         caption: pin.city ? `${pin.city}, ${pin.country}` : pin.country,
         captionKind: 'label',
       });
+      // The zoomed map: having shown WHERE the country is, show where in it.
+      // Same component, same payload, one `zoom` prop — the geography stays in
+      // `map/` rather than sprouting a second map component. It only exists
+      // when there is a city to zoom TO: a "city map" with no city would be the
+      // country slide again at a different scale, which is not a slide.
+      if (pin.city) {
+        built.push({
+          key: 'city-map',
+          kind: 'city-map',
+          pin,
+          zoom: 'city',
+          // The city leads on its own slide — that is what this one is about.
+          caption: pin.city,
+          captionKind: 'label',
+        });
+      }
     }
 
     return built;
@@ -241,6 +262,7 @@ export default function PlaceCarousel({
               city={shown.pin.city}
               lat={shown.pin.lat}
               lon={shown.pin.lon}
+              zoom={shown.zoom}
               logger={logger}
             />
           )}

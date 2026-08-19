@@ -28,6 +28,8 @@ light matte board in a lit room; this is warm ink dark with lit programme panels
 | `--brass-lit` | `#f6e3a0` | Lit brass highlight — the leading edge of the playhead. |
 | `--ink` | `#2a1d07` | Primary text on programme stock. |
 | `--ink-soft` | `#6b6152` | Labels, secondary data, elapsed movements. |
+| `--mat` | `#1d0f11` | The mat every picture is mounted on. Near-black warm brown. |
+| `--mat-edge` | `rgba(8,5,5,.9)` | The mat's 1px definition line, so an image never bleeds into the panel. |
 
 Velvet and brass are accents. If a screenshot reads as mostly red or mostly gold,
 it is wrong.
@@ -47,8 +49,9 @@ Scale, tuned for a 10-foot living-room read at 1920×1080:
 
 | Role | Size | Weight |
 |---|---|---|
-| Piece title | `1.45rem` | 600 |
-| Composer name (brass plate) | `1.35rem` | 600, clamped to 2 lines |
+| Piece title | `2.05rem` | 600, italic — the headline of the screen |
+| Piece provenance (under it) | `0.85rem` | 600, small caps, one line |
+| Composer name (brass plate) | `1.75rem` | 600, measure capped at `5.6em`, up to 3 lines |
 | Movement name (active) | `1.05rem` | 600, italic for the tempo term |
 | Ticker body | `1.15rem` | 500 |
 | Rail fact | `0.95rem` | 500, body face, 3 lines reserved |
@@ -71,8 +74,8 @@ Scale, tuned for a 10-foot living-room read at 1920×1080:
 │  centred          │                                           │
 ├───────────────────┤                                           │
 │  place carousel   │                                           │
-│  city photo ⇄ map ├───────────────────────────────────────────┤
-│  captioned, 5:3   │  movement map                             │
+│  photo ⇄ country  ├───────────────────────────────────────────┤
+│  ⇄ city map, 5:3  │  movement map — rule on top, names below  │
 │                   ├───────────────────────────────────────────┤
 │                   │  cue / fact ticker                        │
 └───────────────────┴───────────────────────────────────────────┘
@@ -89,13 +92,22 @@ still `right`.
 The rail holds two regions, neither with a declared height, so they split it and
 the geometry follows the viewport:
 
-- **composer card** — a header ROW (portrait in its paper mat at 45% of the rail
-  on the left; the brass nameplate carrying the NAME, with dates and birthplace
-  under it, in the column to its right) and, centred in the height the header
-  leaves, the rotating composer fact.
-- **place carousel** — the city photograph and the regional map, one at a time,
-  in one 5:3 slot. The photograph is matted in paper; the map is engraved
-  straight onto the rail. The card owns the person, the carousel owns the place.
+- **composer card** — a header ROW (portrait in its dark mat at 45% of the rail
+  on the left; the brass nameplate carrying the NAME and the dates engraved
+  together, with the birthplace in parchment under it, in the column to its
+  right) and, centred in the height the header leaves, the rotating composer
+  fact. The name is set to a capped MEASURE and breaks at word boundaries —
+  "Antonio" over "Vivaldi" — because an engraved plate uses the vertical rather
+  than shrinking its type to one line.
+- **place carousel** — three slides in one 5:3 slot, dissolving in turn: the city
+  photograph, the country at regional zoom, then the same map zoomed so the
+  country's own shape fills the frame around the city's star. Two questions,
+  asked in order — where is that country, and where in it. The card owns the
+  person, the carousel owns the place.
+
+Every picture in the frame is mounted on the same DARK mat (`--mat` with a
+`--mat-edge` hairline). A cream mat on the maroon rail reads as a white border —
+the brightest, most distracting mark on a screen whose subject is the video.
 
 Pictures are NEVER cropped. `object-fit: cover` is banned in the rail: a portrait
 is a picture of a person, and a narrow column is not a reason to guillotine one.
@@ -119,13 +131,22 @@ movement is a segment proportional to its real duration.
 
 - The band is part of the darkened house, not the programme: near-black stone
   with the text in parchment (the region re-maps `--ink` / `--ink-soft`).
+- The RULE ROW sits at the **top** of the band, riding inside the footer's own
+  upward overlap so it reads as the video's baseline rather than as a bar
+  floating in a strip of black. The movement names hang **below** it.
 - Progress is read from the FILL, not from the cursor: each movement's bar
-  carries its own elapsed fraction. Future = hairline lane, elapsed = 2px,
-  active = 4px brass. The active bar is the loudest mark in the frame, because
-  "how far through *this* movement are we" is what the viewer actually wants.
+  carries its own elapsed fraction. The yet-to-come lane is `--ink-soft` at 2px
+  and visible — it is the shape of the whole piece, and a viewer who cannot see
+  it is being shown a position with no context. Elapsed = 2px of full parchment
+  over that lane, active = 4px brass. The active bar is the loudest mark in the
+  frame, because "how far through *this* movement are we" is what the viewer
+  actually wants.
 - The playhead is a 2px brass hairline in the rule lane. No glow, no lit tip.
+  Its lane and the names never meet, box and all.
 - One quiet separator between movements, not a double barline.
-- Movement names sit **above** the rule, tempo term in italic, wrapping to at
+- A future movement's name is brighter than an elapsed one's: what is coming is
+  context the band exists to give, what is gone is not.
+- Movement names sit **below** the rule, tempo term in italic, wrapping to at
   most two lines.
 - No clef, no notes, no staff of five lines. One rule and the barline grammar.
   The restraint is what keeps it from reading as fussy pastiche.
@@ -164,10 +185,13 @@ The map answers **"where is that?"**, not "what shape is that country?". A shape
 with a star in it tells a viewer who cannot already place the country nothing at
 all, so:
 
-- **Zoom is regional.** The subject country spans about HALF its frame; the other
-  half is the countries around it, drawn and named. The frame is the subject's
-  own bounding box padded by `0.9` of its span, widened to the render aspect —
-  no per-country configuration anywhere.
+- **Two zooms, one component.** `region` (pad `0.9`) is the default: the subject
+  spans about HALF its frame and the other half is the countries around it,
+  drawn and named. `city` (pad `0.12`) frames the subject's own shape nearly edge
+  to edge, for the carousel's second map — neighbours are not excluded by rule,
+  they simply mostly fall outside the frame at that zoom. Either way the frame is
+  the subject's own bounding box padded and widened to the render aspect, with no
+  per-country configuration anywhere.
 - **It names what it draws.** The subject in `--ink` at `0.9rem`, its visible
   neighbours in `--ink-soft` at the `0.72rem` floor. A neighbour is named when
   the part of it inside the frame covers at least `14%` of the frame in BOTH
@@ -192,15 +216,18 @@ Borrow ArtMode's physical realism, but one plate, not a gallery:
   near-black stone, the rail deep oxblood, one register warmer, so the two read
   as one house material). The paper fibre stays, multiplied over the maroon, so
   the rail's stock keeps its tooth.
-- `--programme` is deliberately NOT re-mapped by either. Paper survives in the
-  frame exactly where a picture is mounted: the portrait's mat and the
-  carousel's photograph mat. Those, plus the brass nameplate, are the lit objects
-  on a dark wall. No drop shadows on every element.
+- `--programme` is the programme STOCK — the panels themselves — and is never a
+  border round a picture. Pictures are mounted on `--mat` instead: near-black,
+  quiet on the maroon, with a dark `--mat-edge` hairline that separates a lit
+  image from the ground without competing with it. The brass nameplate is the one
+  bright object on the dark wall. No drop shadows on every element.
 - The floating work placard is the one element allowed a drop shadow — it sits
   ON the video, so it casts.
-- The portrait sits in a single plate frame with a brass hairline — echoing
-  ArtMode's brass nameplate without reproducing the screwed-down plaque.
-- Hairlines are `1px` and `--programme-edge`; no heavy borders anywhere.
+- The portrait sits in a single dark mat with a `--mat-edge` hairline; the brass
+  belongs to the nameplate beside it, echoing ArtMode's plaque without
+  reproducing the screwed-down original.
+- Hairlines are `1px`; `--programme-edge` on the stock, `--mat-edge` on a mat.
+  No heavy borders anywhere.
 
 ## Quality floor
 

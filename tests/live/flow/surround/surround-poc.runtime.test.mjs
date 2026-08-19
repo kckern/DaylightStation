@@ -463,7 +463,10 @@ test.describe('Surround — PoC runtime gate', () => {
 });
 
 // ---------------------------------------------------------------------------
-// The composed-layout gate — the recomposition as it stands after design wave 3:
+// The composed-layout gate — the recomposition as it stands after design wave 4:
+// the work's title LEADS (the plate is the headline of the screen) and the
+// movement band's RULE ROW rides at the top of the band, against the video's
+// bottom edge, with the names below it. Everything wave 3 pinned still holds:
 // the placard FLOATS, straddling the video's top edge as a content-width museum
 // plate; the dark band sits flush under the video and slightly over it; the rail
 // is LEFT at 33% width via `regions.right[0].side: 'left'`, and inside it the
@@ -533,6 +536,25 @@ test.describe('Surround — composed layout gate', () => {
       `plate centre ${placardCentre} vs video centre ${mediaCentre}`,
     ).toBeLessThanOrEqual(8);
 
+    // 1b. THE TITLE LEADS (design wave 4). The plate is the headline of the
+    //     whole screen: walking into the room, the WORK must be the first thing
+    //     legible. The floor is on the rendered pixel size, which is the only
+    //     place a font-size regression, a cascade override and a shrunk root
+    //     size all show up together — a unit test on the stylesheet catches
+    //     only the first of the three.
+    const titleFs = await page.locator('.surround-work-placard__title').first()
+      .evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+    expect(
+      titleFs,
+      `work title renders at ${titleFs}px — too quiet to lead the screen`,
+    ).toBeGreaterThanOrEqual(30);
+    const metaFs = await page.locator('.surround-work-placard__meta').first()
+      .evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+    expect(
+      titleFs / metaFs,
+      `title ${titleFs}px vs meta ${metaFs}px — the provenance line competes with the work`,
+    ).toBeGreaterThan(2);
+
     // 2. The band does not merely touch the video, it OVERLAPS it: its top edge
     //    rides over the video's last few pixels, with the join softened by a
     //    gradient. The overlap is bounded so it can never eat the picture.
@@ -547,15 +569,32 @@ test.describe('Surround — composed layout gate', () => {
       `band overlaps the video by ${mediaBottom - footer.y}px — too much of the picture`,
     ).toBeGreaterThanOrEqual(mediaBottom - 16);
 
-    // 3. The playhead never enters the text band. Movement names may now wrap to
-    //    two lines, so this reads the heading's REAL box rather than assuming a
-    //    single line's height.
+    // 3. The playhead never enters the text band. The law is unchanged from
+    //    design wave 2; its DIRECTION is inverted by wave 4. The rule row now
+    //    rides at the TOP of the band and the movement names hang BELOW it, so
+    //    the clearance reads "playhead lane ends before the heading begins"
+    //    rather than the other way round. Movement names may wrap to two lines,
+    //    so this still reads the heading's REAL box rather than assuming one.
     const heading = await box('.surround-movement-map__heading');
     const playhead = await box('.surround-movement-map__playhead');
     expect(
+      playhead.y + playhead.height,
+      `playhead ends at ${playhead.y + playhead.height}, inside the heading box `
+      + `(starts ${heading.y}) — the rule lane and the names have collided`,
+    ).toBeLessThanOrEqual(heading.y + 1);
+
+    // 3b. ...and the rule row is where wave 4 put it: hard against the video's
+    //     bottom edge, inside the band's own upward overlap — NOT floating in a
+    //     strip of black below it, which is the gap the user saw. The window is
+    //     the same one the footer's overlap is bounded by in 2 above.
+    expect(
       playhead.y,
-      `playhead top ${playhead.y} is inside the heading box (ends ${heading.y + heading.height})`,
-    ).toBeGreaterThanOrEqual(heading.y + heading.height - 1);
+      `the rule row starts ${playhead.y - mediaBottom}px below the video — the gap is back`,
+    ).toBeLessThanOrEqual(mediaBottom + 2);
+    expect(
+      playhead.y,
+      `the rule row rides ${mediaBottom - playhead.y}px up over the picture — too much`,
+    ).toBeGreaterThanOrEqual(mediaBottom - 16);
 
     //    ...and the lit tip is gone for good: progress is read from the fill.
     expect(
