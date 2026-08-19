@@ -88,6 +88,16 @@
   --map-halo: var(--mat, #1d0f11);
 }
 
+/* The era slide is TYPE, not a picture: it fills the plate the same way the map
+   does, but it brings its own leading back (the mat sets `line-height: 0` so a
+   contained picture leaves no gap beneath it) and it needs no halo — nothing on
+   it is drawn over anything else. */
+.surround-place-carousel__era {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 /* NEVER CROPPED — the rail's standing law. `contain` is belt and braces here:
    the photograph's own ratio already matches the mat's, so nothing is
    letterboxed either. */

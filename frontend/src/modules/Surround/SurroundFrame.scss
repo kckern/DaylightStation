@@ -39,6 +39,15 @@
 
   --surround-display: "Cormorant Garamond", "Hoefler Text", "EB Garamond", Georgia, serif;
   --surround-body: "EB Garamond", "Cormorant Garamond", Garamond, Georgia, serif;
+  /* THE ANNOTATION VOICE (design wave 6). A deliberate BREAK from the two
+     Garamonds: a translation under a movement heading, or under the listening
+     band's now-header, is the editor speaking, not the programme. In an all-
+     serif frame the only way to say "this line is a gloss, not more programme"
+     is to change the face — a smaller, greyer Garamond just reads as quieter
+     Garamond. Condensed first because a gloss lives in a narrow column (a
+     movement's segment is a few hundred pixels at most); the system sans is the
+     fallback everywhere it is not installed, and the kiosk has one. */
+  --surround-annotation: "Roboto Condensed", "Helvetica Neue Condensed", ui-sans-serif, system-ui, "Segoe UI", Roboto, Arial, sans-serif;
 
   /* How far the video's top edge sits below the top of the main column — i.e.
      the strip of hall the plate hangs on.

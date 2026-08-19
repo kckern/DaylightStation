@@ -619,3 +619,135 @@ describe('PlaceCarousel — the slot never moves', () => {
     expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\) \{[^}]*__slide \{ transition: none/);
   });
 });
+
+/**
+ * DESIGN WAVE 6 — THE FOURTH SLIDE: WHEN.
+ *
+ * The carousel has always asked where — the composer's city, the country in
+ * continental context, the city inside it. The era timeline is the same kind of
+ * question about a different axis, drawn on the same plate, in the same
+ * engraved language, and it comes LAST because it is the only one that is not a
+ * place.
+ */
+describe('PlaceCarousel — the era slide', () => {
+  const WITH_PERIOD = {
+    ...DATA,
+    piece: {
+      composed: '1803-1804',
+      year: 1804,
+      period: 'Classical to Romantic',
+      period_note: 'Written at the hinge — Classical forms stretched to Romantic scale.',
+    },
+    composer: {
+      ...DATA.composer,
+      period: 'Classical',
+      period_note: 'Clear forms and balanced phrases.',
+    },
+  };
+
+  it('adds a fourth slide when a period resolves, after both maps', async () => {
+    vi.useFakeTimers();
+    try {
+    const view = renderCarousel({ data: WITH_PERIOD });
+    await settle();
+    expect(view.container.querySelector('[data-testid="surround-place-carousel"]')
+      .getAttribute('data-slides')).toBe('4');
+
+    // photo -> region map -> city map -> era, in that order.
+    const kinds = [];
+    for (let i = 0; i < 4; i += 1) {
+      kinds.push(view.kind());
+      await act(async () => { vi.advanceTimersByTime(PLACE_SLIDE_MS); });
+      await act(async () => { vi.advanceTimersByTime(DISSOLVE_COMMIT_MS + DISSOLVE_FADE_MS); });
+    }
+    expect(kinds).toEqual(['photo', 'map', 'city-map', 'era']);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('has no era slide at all when neither the piece nor the composer names a period', async () => {
+    const view = renderCarousel();
+    await settle();
+    expect(view.container.querySelector('[data-testid="surround-place-carousel"]')
+      .getAttribute('data-slides')).toBe('3');
+  });
+
+  it('is the ONLY slide for a piece with a period and nothing else', async () => {
+    const view = renderCarousel({
+      data: { contentId: 'x', piece: { period: 'Baroque', year: 1725 }, composer: null },
+    });
+    await settle();
+    expect(view.kind()).toBe('era');
+    expect(view.container.querySelector('[data-testid="surround-era-timeline"]')).not.toBeNull();
+  });
+
+  it('prefers the piece’s period and note over the composer’s', async () => {
+    const view = renderCarousel({
+      data: { contentId: 'x', piece: WITH_PERIOD.piece, composer: { period: 'Classical', period_note: 'Clear forms and balanced phrases.' } },
+    });
+    await settle();
+    expect(view.container.querySelector('[data-testid="surround-era-timeline"]')
+      .getAttribute('data-subjects')).toBe('Classical,Romantic');
+    expect(view.container.querySelector('[data-testid="surround-era-note"]'))
+      .toHaveTextContent('Written at the hinge');
+  });
+
+  it('falls back to the composer’s period and note', async () => {
+    const view = renderCarousel({
+      data: { contentId: 'x', piece: { year: 1725 }, composer: { period: 'Baroque', period_note: 'Ornamented melody over a driving bass.' } },
+    });
+    await settle();
+    expect(view.container.querySelector('[data-testid="surround-era-timeline"]')
+      .getAttribute('data-subjects')).toBe('Baroque');
+    expect(view.container.querySelector('[data-testid="surround-era-note"]'))
+      .toHaveTextContent('Ornamented melody');
+  });
+
+  /**
+   * THE CAPTION IS THE DATE, NOT THE ERA. The lit band, the brass marker and
+   * the note all name the era, and the composer card six inches up the same
+   * rail names it a fourth time (wave 6 §2): captioning the plate with it too
+   * was measured on screen and read as a duplication bug. What the plate cannot
+   * show is the precise dating the marker stands at.
+   */
+  it('captions the plate with the work’s dating, not with the era again', async () => {
+    const view = renderCarousel({
+      data: { contentId: 'x', piece: WITH_PERIOD.piece, composer: null },
+    });
+    await settle();
+    expect(view.caption()).toHaveTextContent('1803-1804');
+    expect(view.caption().textContent).not.toContain('Classical');
+    // Same register as the country and the city labels — one voice.
+    expect(view.caption().className).toContain('surround-place-carousel__caption--label');
+  });
+
+  it('captions with the year where no composition range is authored', async () => {
+    const view = renderCarousel({
+      data: { contentId: 'x', piece: { period: 'Baroque', year: 1725 }, composer: null },
+    });
+    await settle();
+    expect(view.caption()).toHaveTextContent('1725');
+  });
+
+  it('falls back to the era for a piece that is dated nowhere at all', async () => {
+    const view = renderCarousel({
+      data: { contentId: 'x', piece: { period: 'Baroque' }, composer: null },
+    });
+    await settle();
+    expect(view.caption()).toHaveTextContent('Baroque');
+    // ...and there is no marker to point at a year nobody authored.
+    expect(view.container.querySelector('[data-testid="surround-era-marker"]')).toBeNull();
+  });
+
+  it('keeps the slot’s geometry: the era plate is drawn in the same mat as the maps', async () => {
+    const view = renderCarousel({
+      data: { contentId: 'x', piece: WITH_PERIOD.piece, composer: null },
+    });
+    await settle();
+    const mat = view.container.querySelector('.surround-place-carousel__mat');
+    expect(mat.className).toContain('surround-place-carousel__mat--era');
+    // The reserve is what makes the swap a dissolve rather than a resize: the
+    // plate and its caption are the same two boxes on every slide.
+    expect(mat.querySelector('.surround-place-carousel__era')).not.toBeNull();
+    expect(view.caption()).not.toBeNull();
+  });
+});

@@ -253,6 +253,43 @@
   color: var(--ink-soft, #6b6152);
 }
 
+/* THE PERIOD (design wave 6) — the era the work belongs to, in the programme's
+   section-header voice: letterspaced small caps of the display face, the same
+   register the place carousel's labels and the map's country names are set in.
+   One voice, one more volume down.
+
+   NOT ON THE BRASS. The plate reads name, then dates, and that is settled
+   (museum convention, wave 4): a museum casts a person's name and their years
+   in metal because those are the record, and it prints everything editorial on
+   the card beside it. An era is a classification — contestable, revisable, and
+   in this frame it is even piece-dependent — so it belongs to the rail's voice,
+   with the birthplace, in parchment.
+
+   IT WRAPS, IT DOES NOT SHRINK. `Classical to Romantic` is 21 tracked
+   characters and the identity column is ~146px at the 960x540 screen-root; at
+   the 0.72rem floor it needs two lines there and one at 1280x720 and above.
+   Wrapping is free (this line is static per item — no reserve law applies, and
+   the fact zone below it is centred by `margin: auto 0`, so a second line
+   simply moves the fact rather than displacing anything), whereas the two
+   alternatives both lose: shrinking breaks the ten-foot floor, and the
+   birthplace's single-line ellipsis would print `CLASSICAL TO ROM…` and hide
+   exactly the half of the answer this wave exists to give. The cap is two
+   lines, which no authored era in the corpus exceeds. */
+.surround-composer-card__period {
+  margin: 0.32rem 0 0;
+  text-align: center;
+  font-size: 0.72rem;              /* the ten-foot floor itself */
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  line-height: 1.25;
+  max-height: 2.5em;               /* 2 lines at this line-height */
+  overflow: hidden;
+  overflow-wrap: break-word;
+  text-wrap: balance;              /* progressive; wraps as before without it */
+  color: var(--ink-soft, #6b6152);
+}
+
 /* ---------------------------------------------------------------------------
    FACT ZONE — centred in whatever height the header leaves.
    `margin: auto 0` on a flex-column child splits the free space above and below

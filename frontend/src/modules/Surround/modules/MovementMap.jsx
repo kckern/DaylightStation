@@ -114,6 +114,11 @@ export default function MovementMap({
       return {
         n: m?.n,
         name: m?.name ?? '',
+        // The editor's gloss on the tempo term — "Allegro con brio" -> "Fast,
+        // with spirit". Optional per movement: an unauthored translation
+        // renders NO element at all, never an empty line holding space.
+        translation: typeof m?.translation === 'string' && m.translation.trim()
+          ? m.translation.trim() : null,
         start,
         stop,
         widthPct: ((stop - start) / span) * 100,
@@ -211,6 +216,21 @@ export default function MovementMap({
                 {title && <span className="surround-movement-map__title">{title}</span>}
                 {tempo && <span className="surround-movement-map__tempo">{tempo}</span>}
               </span>
+              {/* THE TRANSLATION (design wave 6). A recessive sub-line under
+                  the heading, in the annotation face — sans, not Garamond — so
+                  it reads as a gloss on the Italian rather than as more
+                  programme. Single line, ellipsized: unlike the heading (which
+                  wraps because a movement's NAME must survive), a translation
+                  that will not fit its segment is better trimmed than given a
+                  second line the band would have to pay for. */}
+              {seg.translation && (
+                <span
+                  className="surround-movement-map__translation"
+                  data-testid="surround-movement-translation"
+                >
+                  {seg.translation}
+                </span>
+              )}
             </div>
           );
         })}

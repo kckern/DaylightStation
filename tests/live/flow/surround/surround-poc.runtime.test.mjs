@@ -52,6 +52,13 @@ const PLAIN_ID = 'plex:663147';
 const MUSIC_ENDS_AT = 613;
 /** From the sidecar's `movements[].start`. */
 const MOVEMENT_STARTS = [0, 225, 385];
+/**
+ * From the sidecar's `movements[].name`. Design wave 6 split the band's text
+ * zone in two and the right-hand register names the movement that is actually
+ * sounding, so the gate now has to know what those names ARE to check that the
+ * register is reading the transport rather than printing furniture.
+ */
+const MOVEMENT_NAMES = ['Allegro', 'Largo e pianissimo sempre', 'Allegro pastorale'];
 /** The sidecar's first cue is at 0s with the default 12s dwell. */
 const FIRST_CUE_AT = 0;
 const CUE_DWELL_S = 12;
@@ -137,6 +144,14 @@ test.beforeAll(async () => {
       `[${starts}], this gate assumes [${MOVEMENT_STARTS}].`,
     );
   }
+  const names = (movements ?? []).map((m) => m.name);
+  if (JSON.stringify(names) !== JSON.stringify(MOVEMENT_NAMES)) {
+    throw new Error(
+      `SURROUND GATE PRECONDITION FAILED: sidecar movement names are ` +
+      `[${names}], this gate assumes [${MOVEMENT_NAMES}]. The NOW register's ` +
+      `header is asserted against them.`,
+    );
+  }
 
   // 4. The negative fixture is genuinely un-enriched. If someone authors a
   //    sidecar for "Summer", the regression case must fail here with a clear
@@ -174,6 +189,15 @@ async function playheadPct(page) {
     const n = parseFloat(raw);
     return Number.isFinite(n) ? n * 100 : null;
   });
+}
+
+/** Which movement is sounding at a given transport position, or -1 in the applause. */
+function movementAt(position) {
+  if (position >= MUSIC_ENDS_AT) return -1;
+  for (let i = MOVEMENT_STARTS.length - 1; i >= 0; i -= 1) {
+    if (position >= MOVEMENT_STARTS[i]) return i;
+  }
+  return -1;
 }
 
 /** What the playhead SHOULD read for a given playhead position, per MovementMap's geometry. */
@@ -344,10 +368,15 @@ test.describe('Surround — PoC runtime gate', () => {
   test('3. the cue ticker advances off the opening cue as the playhead passes its dwell', async ({ page }) => {
     await openViaUrl(page, ENRICHED_ID);
     await waitForTransport(page);
-    await page.waitForSelector('[data-testid="surround-ticker-text"]', { timeout: 20000 });
+    await page.waitForSelector('[data-testid="surround-ticker-listen"]', { timeout: 20000 });
 
     const ticker = page.locator('[data-testid="surround-cue-ticker"]');
-    const text = page.locator('[data-testid="surround-ticker-text"]');
+    // DESIGN WAVE 6: a timed cue belongs to the NOW register on the right. It
+    // is a claim about what is sounding right now, which is that zone's whole
+    // subject; the piece register on the left goes on with the programme note
+    // and is deliberately NOT what this case reads. Reading the left zone here
+    // would have made the case pass on a rotation it has nothing to do with.
+    const text = page.locator('[data-testid="surround-ticker-listen"]');
 
     // Land inside the opening cue's dwell window [0, 12).
     const INSIDE_CUE = FIRST_CUE_AT + 6;
@@ -367,14 +396,15 @@ test.describe('Surround — PoC runtime gate', () => {
       })
       .toBeGreaterThan(FIRST_CUE_AT + CUE_DWELL_S + 1);
 
-    // Past the dwell the cue yields the panel back to the fact rotation.
+    // Past the dwell the cue yields the register back to the movement's own
+    // listening notes.
     await expect
       .poll(async () => (await text.textContent())?.trim(), {
         timeout: 15000,
-        message: 'the ticker still shows the opening cue after its dwell window closed',
+        message: 'the NOW register still shows the opening cue after its dwell window closed',
       })
       .not.toBe(cueText);
-    await expect(ticker).toHaveAttribute('data-kind', 'fact');
+    await expect(ticker).not.toHaveAttribute('data-kind', 'cue');
   });
 
   test('4. an un-enriched item gets NO frame and NO wrapper element', async ({ page }) => {
@@ -656,6 +686,54 @@ test.describe('Surround — composed layout gate', () => {
       await page.locator('[data-testid="surround-movement-fill"]').count(),
       'no elapsed fill on the band — progress has nothing to be read from',
     ).toBeGreaterThanOrEqual(1);
+
+    // 3d. THE BAND SPLITS (design wave 6). Under the rule the text zone is two
+    //     registers: the PIECE on the left (untimed programme notes) and NOW on
+    //     the right (a header naming the movement that is sounding, then that
+    //     movement's listening notes). Both have to be present and neither may
+    //     be a sliver — a `flex: 1 1 50%` that lost its `min-width: 0` collapses
+    //     one of them, which no jsdom spec can see.
+    for (const sel of [
+      '[data-testid="surround-ticker-zone-piece"]',
+      '[data-testid="surround-ticker-zone-now"]',
+    ]) {
+      const count = await page.locator(sel).count();
+      expect(count, `${sel} did not render — the band is not split`).toBe(1);
+    }
+    const zonePiece = await box('[data-testid="surround-ticker-zone-piece"]');
+    const zoneNow = await box('[data-testid="surround-ticker-zone-now"]');
+    expect(
+      Math.abs(zonePiece.width - zoneNow.width),
+      `the two registers are ${zonePiece.width}px and ${zoneNow.width}px — not halves`,
+    ).toBeLessThanOrEqual(2);
+    expect(zoneNow.x, 'the NOW register is not to the right of the piece register')
+      .toBeGreaterThan(zonePiece.x);
+    //     ...and neither register overflows the band it was given. This is the
+    //     one thing the design wave had to measure rather than declare: the
+    //     movement names' translation line takes ~17px off this zone, and on
+    //     the 960x540 screen-root the ticker is left with about forty.
+    const tickerFit = await page.locator('[data-testid="surround-cue-ticker"]').first()
+      .evaluate((el) => ({ scroll: el.scrollHeight, client: el.clientHeight }));
+    expect(
+      tickerFit.scroll,
+      `the band's text zone overflows itself by ${tickerFit.scroll - tickerFit.client}px`,
+    ).toBeLessThanOrEqual(tickerFit.client + 1);
+
+    //     THE HEADER NAMES WHAT IS SOUNDING. The gate knows the position from
+    //     the transport, so this is a real cross-check between the video's
+    //     clock and the register's text — not a check that some string rendered.
+    const now = await currentTime(page);
+    const index = movementAt(now);
+    expect(
+      index,
+      `the transport is at ${now}s, which is not inside any movement — reseek the fixture`,
+    ).toBeGreaterThanOrEqual(0);
+    const header = (await page.locator('[data-testid="surround-ticker-now"]').first().textContent())?.trim();
+    expect(
+      header,
+      `the NOW header reads "${header}" at ${now.toFixed(1)}s, which is movement ${index + 1} `
+      + `("${MOVEMENT_NAMES[index]}")`,
+    ).toContain(MOVEMENT_NAMES[index]);
 
     // 4. Every rail child ends on-screen (the bio used to end at 742 of 720).
     //    The nameplate and the place-carousel are NOT optional for this fixture:
