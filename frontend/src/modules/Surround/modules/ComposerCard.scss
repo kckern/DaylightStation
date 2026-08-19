@@ -1,9 +1,15 @@
 /**
  * ComposerCard — the identity panel in the full-height rail.
  *
- * One plate frame with a brass hairline around the portrait, the composer above
- * a brass rule and the piece below it. Labels are letterspaced small caps of the
- * display face. No drop shadow per element, no second plate, no third typeface.
+ * Wholly the PERSON now: an engraved brass nameplate for the name, a plate
+ * frame with a brass hairline around the portrait, and a city photo captioned
+ * from the composer's map pin. The piece lives in the top placard instead. No
+ * drop shadow per element, no third typeface.
+ *
+ * Hard content budget: this card once measured its bio facts off-screen (bottom
+ * at 742px on a 720px viewport). It is a flex column with `overflow: hidden` and
+ * every child below is capped — portrait `max-height`, city `max-height`, and
+ * the bio fact clamped to 3 lines — so nothing can bleed past the viewport again.
  */
 
 .surround-composer-card {
@@ -17,26 +23,34 @@
   color: var(--ink, #2a1d07);
 }
 
-/* The single plate: a thin brass hairline around the portrait, seated on paper. */
-.surround-composer-card__plate {
-  position: relative;
-  margin-bottom: 0.85rem;
-  padding: 3px;
-  background: var(--programme, #efe6d2);
+/* Engraved brass nameplate — ArtMode's plaque recipe (ArtMode.css:157-239) at a
+   whisper: same brass photo + gradient + edge sheen, screws omitted (a rail
+   card, not a framed gallery plate). */
+.surround-composer-card__nameplate {
+  margin-bottom: 0.7rem;
+  padding: 0.45rem 0.9rem 0.5rem;
+  text-align: center;
+  border: 1px solid #5d4514;
+  border-radius: 2px;
+  background-color: #c79a3e;
+  background-image:
+    url('/api/v1/static/img/ui/plaque/brass.jpg'),
+    linear-gradient(180deg, #7a5c1d 0%, #e7c266 16%, #f6e3a0 36%, #d8ad4d 62%, #9a772b 100%);
+  background-size: cover, cover;
+  background-position: center;
   box-shadow:
-    inset 0 0 0 1px var(--brass, #c79a3e),
-    0 1px 2px rgba(20, 16, 12, 0.28);
-  line-height: 0;
+    0 1px 2px rgba(20, 16, 12, 0.4),
+    inset 0 1px 0 rgba(255, 248, 214, 0.85),
+    inset 0 -1px 0 rgba(78, 56, 18, 0.75);
 }
 
-.surround-composer-card__portrait {
-  display: block;
-  width: 100%;
-  height: auto;
-  max-height: 34vh;
-  object-fit: cover;
-  object-position: top center;
-  filter: saturate(0.92);
+/* Engraved: multiply lets the metal grain show through the letters. */
+.surround-composer-card__nameplate .surround-composer-card__name,
+.surround-composer-card__nameplate .surround-composer-card__dates,
+.surround-composer-card__nameplate .surround-composer-card__birthplace {
+  color: #2a1d07;
+  mix-blend-mode: multiply;
+  text-shadow: 0 1px 0 rgba(255, 248, 220, 0.5);
 }
 
 .surround-composer-card__name {
@@ -61,58 +75,57 @@
   color: var(--ink-soft, #6b6152);
 }
 
-/* The brass hairline that separates the composer from the piece. */
-.surround-composer-card__rule {
-  width: 100%;
-  height: 1px;
-  margin: 0.85rem 0;
-  border: 0;
-  background: var(--brass, #c79a3e);
-  opacity: 0.85;
+/* The single plate: a thin brass hairline around the portrait, seated on paper. */
+.surround-composer-card__plate {
+  position: relative;
+  margin-bottom: 0.85rem;
+  padding: 3px;
+  background: var(--programme, #efe6d2);
+  box-shadow:
+    inset 0 0 0 1px var(--brass, #c79a3e),
+    0 1px 2px rgba(20, 16, 12, 0.28);
+  line-height: 0;
 }
 
-.surround-composer-card__piece-title {
-  margin: 0 0 0.7rem;
-  font-size: 1.45rem;
-  font-weight: 600;
-  line-height: 1.16;
-}
-
-.surround-composer-card__data {
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.surround-composer-card__datum {
+.surround-composer-card__portrait {
   display: block;
+  width: 100%;
+  height: auto;
+  max-height: 26vh; /* was 34vh — the rail now also holds a map and a city */
+  object-fit: cover;
+  object-position: top center;
+  filter: saturate(0.92);
 }
 
-/* Concert-programme section headers: letterspaced small caps of the DISPLAY
-   face. 0.72rem is the 10-foot floor — nothing here goes below it. */
-.surround-composer-card__label {
-  margin: 0;
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--ink-soft, #6b6152);
-}
+/* City photo — the composer's place, captioned from `map.city`. Budgeted small:
+   a supporting image, not a second portrait. */
+.surround-composer-card__city {
+  margin: 0 0 0.7rem;
+  line-height: 0;
 
-.surround-composer-card__value {
-  margin: 0.05rem 0 0;
-  font-family: var(--surround-body, "EB Garamond", Georgia, serif);
-  font-size: 1rem;
-  font-weight: 500;
-  line-height: 1.25;
-  color: var(--ink, #2a1d07);
+  img {
+    display: block;
+    width: 100%;
+    max-height: 14vh;
+    object-fit: cover;
+    filter: saturate(0.92);
+  }
+
+  figcaption {
+    line-height: 1.2;
+    padding-top: 0.25rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-soft, #6b6152);
+  }
 }
 
 /* Composer facts — the quietest register in the rail. Body face, ink-soft, at
-   the foot of the card so the composer name and piece title stay dominant.
-   `margin-top: auto` parks it at the bottom of the flex column, which is also
-   why the card looks identical when a composer has no facts at all. */
+   the foot of the card so the composer name stays dominant. `margin-top: auto`
+   parks it at the bottom of the flex column, which is also why the card looks
+   identical when a composer has no facts at all. */
 .surround-composer-card__fact-rule {
   width: 100%;
   height: 1px;
@@ -121,8 +134,14 @@
   background: var(--programme-edge, #ddd0b4);
 }
 
+/* At most three lines, ellipsized — never clipped mid-glyph by the card edge,
+   never pushed off the screen. Part of the hard content budget. */
 .surround-composer-card__fact {
   margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
   font-family: var(--surround-body, "EB Garamond", Georgia, serif);
   font-size: 0.95rem;
   font-weight: 500;

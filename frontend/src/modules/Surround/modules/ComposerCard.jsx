@@ -1,24 +1,33 @@
 // frontend/src/modules/Surround/modules/ComposerCard.jsx
 //
-// The identity half of the printed programme, in the full-height right rail: who
-// wrote this and what it is. The rail carries identity, not progress, so this
-// module takes the clock props from the module contract and ignores them — it
-// renders the same thing at 0:00 and at 53:00.
+// The identity half of the printed programme, in the full-height right rail. The
+// piece — title, opus, composed/premiered dates — now lives entirely in the top
+// placard; this card is wholly the PERSON: name, portrait, and where they were
+// from. The rail carries identity, not progress, so this module takes the clock
+// props from the module contract and ignores them — it renders the same thing at
+// 0:00 and at 53:00.
 //
-// One plate frame with a brass hairline around the portrait — ArtMode's physical
-// realism borrowed at a whisper, not its screwed-down gallery plaque. Labels are
-// letterspaced small caps of the display face, the way a concert programme sets
-// section headers; there is no third typeface.
+// Order top to bottom: an engraved brass nameplate (ArtMode's plaque recipe,
+// borrowed at a whisper and without its screws — this is a rail card, not a
+// framed gallery plate), the portrait plate, a city photo captioned from the
+// composer's `map.city`, then the composer-fact rotation at the foot. Labels
+// (where any remain) are letterspaced small caps of the display face, the way a
+// concert programme sets section headers; there is no third typeface.
 //
-// Beneath the piece data the card cycles COMPOSER-level facts — the ones the
-// sidecar inherits from `_composer.yml`, about the person rather than the piece.
-// They are quiet supporting text on their own timer: the card stays
-// position-independent, and the beat deliberately does not line up with the
-// footer ticker's (see COMPOSER_FACT_INTERVAL_MS).
+// The card cycles COMPOSER-level facts — the ones the sidecar inherits from
+// `_composer.yml`, about the person rather than the piece. They are quiet
+// supporting text on their own timer: the card stays position-independent, and
+// the beat deliberately does not line up with the footer ticker's (see
+// COMPOSER_FACT_INTERVAL_MS).
 //
-// Every asset degrades to an empty slot: a missing portrait hides itself and the
-// card stays composed. The warning is capped so a broken path cannot flood the
-// log store once per render.
+// Every asset degrades to an empty slot: a missing portrait or city photo hides
+// itself and the card stays composed. The warning is capped so a broken path
+// cannot flood the log store once per render.
+//
+// Hard content budget: this card measured its bio facts off-screen once already
+// (bottom at 742px on a 720px viewport) when it also carried the piece. Now that
+// it holds a portrait AND a city figure, every child is capped — see the height
+// budget in ComposerCard.scss — so nothing can bleed past the viewport again.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
@@ -79,18 +88,6 @@ function lifeSpan(composer) {
   return null;
 }
 
-function Datum({ label, value }) {
-  if (value === null || value === undefined || value === '') return null;
-  return (
-    <div className="surround-composer-card__datum">
-      <dt className="surround-composer-card__label">{label}</dt>
-      <dd className="surround-composer-card__value">{value}</dd>
-    </div>
-  );
-}
-
-Datum.propTypes = { label: PropTypes.string, value: PropTypes.node };
-
 export default function ComposerCard({
   // The clock arrives because the module contract is fixed. This card ignores it.
   // eslint-disable-next-line no-unused-vars
@@ -109,12 +106,21 @@ export default function ComposerCard({
   const log = useMemo(() => resolveLogger(logger), [logger]);
   const contentId = data?.contentId ?? null;
   const composer = data?.composer ?? null;
-  const piece = data?.piece ?? null;
 
   const portraitRef = composer?.portrait ?? null;
   const portraitSrc = useMemo(
     () => assetUrl(data?.assetBase, portraitRef), [data, portraitRef],
   );
+
+  // Same resolution mechanism as the portrait — `assetBase` + a composer-relative
+  // ref, through the static image route. No second path-join invented here.
+  const cityRef = composer?.city_image ?? null;
+  const citySrc = useMemo(
+    () => assetUrl(data?.assetBase, cityRef), [data, cityRef],
+  );
+  const cityName = typeof composer?.map?.city === 'string' && composer.map.city.trim()
+    ? composer.map.city
+    : null;
 
   // Per-card budget. `logger.sampled` would cap the rate but downgrade the event
   // to info; the spec calls for a warn, so the window is kept here instead.
@@ -198,9 +204,22 @@ export default function ComposerCard({
   }, [shownFact, contentId, log]);
 
   const dates = lifeSpan(composer);
+  const hasIdentity = Boolean(composer?.name || dates || composer?.birthplace);
 
   return (
     <div className="surround-composer-card" data-testid="surround-composer-card">
+      {hasIdentity && (
+        <div className="surround-composer-card__nameplate">
+          {composer?.name && (
+            <h2 className="surround-composer-card__name">{composer.name}</h2>
+          )}
+          {dates && <p className="surround-composer-card__dates">{dates}</p>}
+          {composer?.birthplace && (
+            <p className="surround-composer-card__birthplace">{composer.birthplace}</p>
+          )}
+        </div>
+      )}
+
       {portraitSrc && (
         <div className="surround-composer-card__plate">
           <img
@@ -213,26 +232,17 @@ export default function ComposerCard({
         </div>
       )}
 
-      {composer?.name && (
-        <h2 className="surround-composer-card__name">{composer.name}</h2>
+      {citySrc && (
+        <figure className="surround-composer-card__city">
+          <img
+            data-testid="surround-city-image"
+            src={citySrc}
+            alt={cityName ? `View of ${cityName}` : 'Composer city'}
+            onError={(e) => onAssetError(e, cityRef)}
+          />
+          {cityName && <figcaption>{cityName}</figcaption>}
+        </figure>
       )}
-      {dates && <p className="surround-composer-card__dates">{dates}</p>}
-      {composer?.birthplace && (
-        <p className="surround-composer-card__birthplace">{composer.birthplace}</p>
-      )}
-
-      <hr className="surround-composer-card__rule" />
-
-      {piece?.title && (
-        <h3 className="surround-composer-card__piece-title">{piece.title}</h3>
-      )}
-
-      <dl className="surround-composer-card__data">
-        <Datum label="Opus" value={piece?.opus} />
-        <Datum label="Composed" value={piece?.composed} />
-        <Datum label="City" value={piece?.city} />
-        <Datum label="Premiered" value={piece?.premiered} />
-      </dl>
 
       {shownFact.text && (
         <>
