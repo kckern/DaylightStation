@@ -8,6 +8,7 @@
 // player resolves real metadata.
 import React, { useRef } from 'react';
 import Player from '../../modules/Player/Player.jsx';
+import SurroundHost from '../../modules/Surround/SurroundHost.jsx';
 import { usePlayerSessionBinding } from './usePlayerSessionBinding.js';
 
 export function ScreenPlayer(props) {
@@ -26,7 +27,14 @@ export function ScreenPlayer(props) {
     },
   );
 
-  return <Player {...props} ref={playerRef} />;
+  // SurroundHost reads the same imperative handle the session binding polls. It
+  // renders `children` untouched — no wrapper element — unless the now-playing
+  // item carries a `surround` payload AND the screen's setting allows it.
+  return (
+    <SurroundHost getPlayerHandle={() => playerRef.current}>
+      <Player {...props} ref={playerRef} />
+    </SurroundHost>
+  );
 }
 
 export default ScreenPlayer;

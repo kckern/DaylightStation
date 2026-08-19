@@ -37,7 +37,12 @@ vi.mock('../../modules/Player/Player.jsx', () => ({
 }));
 
 // Stub the 'art' widget so the scene overlay renders without ArtMode's deps.
-vi.mock('../widgets/registry.js', () => ({
+// Spread the real module first: `modules/Surround/registry.js` builds the surround
+// registry from this file's `WidgetRegistry` CLASS, and a partial mock that drops
+// that export breaks the import chain (ScreenPlayer -> SurroundHost -> registry).
+// Only `getWidgetRegistry` is stubbed, exactly as before.
+vi.mock('../widgets/registry.js', async (importOriginal) => ({
+  ...(await importOriginal()),
   getWidgetRegistry: () => ({
     get: () => (props) => (
       <button data-testid="art-scene" data-collection={props.collection || ''} onClick={props.onExit}>art</button>
