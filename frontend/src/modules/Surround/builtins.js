@@ -6,7 +6,6 @@
  *
  * Still pending:
  *
- *   cue-ticker     -> Task 12, modules/CueTicker.jsx
  *   composer-card  -> Task 13, modules/ComposerCard.jsx
  *
  * Each of those tasks adds its import here and a `registerSurroundModule(...)`
@@ -17,6 +16,7 @@
 
 import { registerSurroundModule } from './registry.js';
 import MovementMap from './modules/MovementMap.jsx';
+import CueTicker from './modules/CueTicker.jsx';
 
 /** The module names `SurroundFrame` resolves for the PoC. */
 export const SURROUND_BUILTIN_MODULES = Object.freeze([
@@ -33,7 +33,8 @@ export const SURROUND_BUILTIN_MODULES = Object.freeze([
  */
 export function registerSurroundBuiltins() {
   registerSurroundModule('movement-map', MovementMap, { regions: ['bottom'] });
-  // Tasks 12-13 add their registerSurroundModule(...) calls here.
+  registerSurroundModule('cue-ticker', CueTicker, { regions: ['bottom'] });
+  // Task 13 adds its registerSurroundModule(...) call here.
 }
 
 registerSurroundBuiltins();
