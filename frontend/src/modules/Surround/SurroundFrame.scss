@@ -1,0 +1,155 @@
+/**
+ * SurroundFrame — the darkened auditorium with a lit programme beside the stage.
+ *
+ * Palette and type come from docs/reference/player/surround/design.md; the tokens
+ * are declared here, on the frame root, so every module can read them with
+ * `var(--hall-ink)` and still carry a literal fallback when rendered standalone.
+ *
+ * Layout: [ main (stage + footer) | rail ] with an inert overlay above both.
+ * The stage letterboxes the 16:9 media box on ink; the footer is JS-sized to the
+ * media box's measured width so it reads as that video's timeline.
+ */
+
+/* Cormorant Garamond (display) + EB Garamond (body). ArtMode loads the same two
+   families; the kiosk has no Garamond installed, so without this the programme
+   silently falls back to a default serif. */
+@import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500;1,600&family=EB+Garamond:ital,wght@0,500;0,600;1,500&display=swap");
+
+.surround-frame {
+  --hall-ink: #14100c;
+  --programme: #efe6d2;
+  --programme-edge: #ddd0b4;
+  --velvet: #4a1018;
+  --brass: #c79a3e;
+  --brass-lit: #f6e3a0;
+  --ink: #2a1d07;
+  --ink-soft: #6b6152;
+
+  --surround-display: "Cormorant Garamond", "Hoefler Text", "EB Garamond", Georgia, serif;
+  --surround-body: "EB Garamond", "Cormorant Garamond", Garamond, Georgia, serif;
+
+  /* Low-contrast paper fibre for the programme panels — no asset, same trick as
+     ArtMode's mat. Kept faint: this is stock, not texture for its own sake. */
+  --programme-fibre: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.25'/%3E%3C/svg%3E");
+
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--hall-ink);
+  color: var(--ink);
+  font-family: var(--surround-body);
+}
+
+/* Main column: stage on top, footer beneath, footer never squeezing the stage
+   out of its aspect box. */
+.surround-frame__main {
+  order: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* The darkened house: centres the media box and letterboxes it on ink. */
+.surround-frame__stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: var(--hall-ink);
+}
+
+/* 16:9 is inviolable. aspect-ratio / max-width / max-height are ALSO set inline
+   by the component so no cascade can override the lock; these are the fallbacks
+   for a browser that drops the inline style. Children fill the box exactly. */
+.surround-frame__media {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  max-width: 100%;
+  max-height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background: #000;
+
+  > * {
+    width: 100%;
+    height: 100%;
+  }
+
+  video,
+  img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+}
+
+/* The footer belongs to the video: JS pins its width to the measured media box
+   and it stays centred beneath it. */
+.surround-frame__footer {
+  flex: 0 0 auto;
+  align-self: center;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Right rail — full height, because it carries identity, not progress. */
+.surround-frame__rail {
+  order: 1;
+  flex: 0 0 auto;
+  height: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Programme stock. One paper ground and a 1px edge rule — no drop shadow per
+   element; the design calls for one plate, not a gallery. */
+.surround-frame__region {
+  position: relative;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  background-color: var(--programme);
+  background-image: var(--programme-fibre);
+  background-size: 180px 180px;
+  background-blend-mode: multiply;
+  box-shadow: inset 0 0 0 1px var(--programme-edge);
+}
+
+.surround-frame__region--bottom {
+  flex: 0 0 auto;
+}
+
+.surround-frame__region--right {
+  flex: 1 1 auto;
+  height: 100%;
+}
+
+/* An unresolved module leaves paper, not a hole — the frame stays composed. */
+.surround-frame__region--empty {
+  background-image: none;
+  background-color: var(--programme);
+  opacity: 0.55;
+}
+
+.surround-frame__overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+
+  > * {
+    pointer-events: auto;
+  }
+}
