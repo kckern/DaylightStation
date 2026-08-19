@@ -61,7 +61,7 @@ function prefersReducedMotion() {
   }
 }
 
-/** `beethoven/portrait.jpg` + `surround/classical` -> /api/v1/static/img/... */
+/** `beethoven/portrait.jpg` + `library/classical` -> /api/v1/static/img/... */
 function assetUrl(assetBase, ref) {
   if (!assetBase || !ref) return null;
   const base = String(assetBase).replace(/^\/|\/$/g, '');
