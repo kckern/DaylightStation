@@ -4,7 +4,7 @@
 
 **Goal:** When the player plays a media item that has an authored sidecar, automatically shrink the video to a locked 16:9 box and frame it with playhead-synchronized modules (movement map, cue ticker, composer card) — with zero change to `Player.jsx` and byte-identical behavior for every un-enriched item.
 
-**Architecture:** Three layers. A backend `SurroundStore` indexes YAML sidecars from `data/content/surround/` and attaches a resolved `surround` payload in the two playback projections (`PlayResponseService.toPlayResponse` and the queue handler). On the frontend, a `SurroundHost` wrapper at **two** mount seams (`ScreenPlayer` and `MenuStack`) reads that payload off the player's existing imperative handle, owns an independent 10 Hz media clock, and renders a declarative region layout. Every failure path collapses to rendering the bare player.
+**Architecture:** Three layers. A backend `YamlSurroundStore` indexes YAML sidecars from `data/content/surround/` and attaches a resolved `surround` payload in the two playback projections (`PlayResponseService.toPlayResponse` and the queue handler). On the frontend, a `SurroundHost` wrapper at **two** mount seams (`ScreenPlayer` and `MenuStack`) reads that payload off the player's existing imperative handle, owns an independent 10 Hz media clock, and renders a declarative region layout. Every failure path collapses to rendering the bare player.
 
 **Tech Stack:** Node/ESM backend (DDD layers), React 18 frontend, vitest + @testing-library, supertest, Playwright, js-yaml, SCSS.
 
@@ -72,8 +72,8 @@ The single most valuable line in this whole feature is the one that fires when *
 
 | Event | Level | Where | Why it exists |
 |---|---|---|---|
-| `surround.lookup.miss` | debug | SurroundStore | An item played and no sidecar matched. Without it, an authoring typo is undiagnosable. Cheap — playback is a handful of events per hour, not per second. |
-| `surround.index.built` | info | SurroundStore | Add `skipped` (files walked but not indexed) to the existing counts, so a broken authoring pass is visible without grepping warns. |
+| `surround.lookup.miss` | debug | YamlSurroundStore | An item played and no sidecar matched. Without it, an authoring typo is undiagnosable. Cheap — playback is a handful of events per hour, not per second. |
+| `surround.index.built` | info | YamlSurroundStore | Add `skipped` (files walked but not indexed) to the existing counts, so a broken authoring pass is visible without grepping warns. |
 | `surround.disabled` | debug | SurroundHost | Distinguishes "config turned it off" from "data missing" — otherwise both look identical from outside. |
 
 ### Correlate the whole path
@@ -114,21 +114,21 @@ Per `docs/reference/core/layers-of-abstraction/ddd-reference.md`.
 - The exact parallel to copy is `IListStore` (port, `3_applications/content/ports/`) ← `YamlListDatastore` (implementation, `1_adapters/`).
 
 **Therefore:**
-- `SurroundStore extends ISurroundStore`, imported as `#apps/content/ports/ISurroundStore.mjs`. This import is legal in the dependency rule — `1_adapters` may import `3_applications` **ports only** — and `npm run audit:layers` enforces it, so run that gate after wiring.
+- `YamlSurroundStore extends ISurroundStore`, imported as `#apps/content/ports/ISurroundStore.mjs`. This import is legal in the dependency rule — `1_adapters` may import `3_applications` **ports only** — and `npm run audit:layers` enforces it, so run that gate after wiring.
 - `PlayResponseService` and the queue router document their `surroundStore` dependency as `ISurroundStore`, not as the concrete class. They must not import from `1_adapters/`; the composition root (`contentApi.mjs`) is the only place the concrete implementation is named.
 - Use `isSurroundStore(obj)` for duck-typed validation where a guard is warranted, matching `isStreamResolver` / `validateMediaProgressMemory`.
 
 **Ubiquitous language.** "surround", "piece", "movement", "cue", "composer" are the domain vocabulary — in code, log event names, and payload fields alike. Do not drift to "item", "data", "thing", or "config" for these concepts.
 
-**Naming note (judgment call, flag if you disagree):** the class stays `SurroundStore` rather than `YamlSurroundStore`. The codebase prefixes the storage format where an alternative backing store is plausible (`YamlAmbientStateStore`, `YamlListDatastore`) but not universally (`PresenceStore`, `ArchiveManifestStore`). The `content/surround/` folder already scopes it, and renaming after three tasks depend on the name is churn for no rule violation.
+**Naming follows house style.** The class is `YamlSurroundStore`, in `1_adapters/content/surround/`. A survey of every `*Store`/`*Datastore` in `1_adapters` found **64 YAML-backed classes prefixed `Yaml` against 5 bare**, and the prefix is not confined to `persistence/yaml/` — `agents/`, `ambient/`, `cost/`, `harvester/`, `messaging/`, `piano/`, `scheduling/`, and `school/documents/` all carry it inside domain folders. Of the bare ones, `artRecencyStore` is a lowercase function module, `CompositeJobDatastore` decorates other datastores rather than reading YAML itself, and `NewsReporterJobDatastore` has one incidental reference; only `StravaWebhookJobStore` is a real exception. The prefix marks the storage format, which is the adapter's variable part — the port (`ISurroundStore`) stays storage-agnostic, exactly as `IListStore` pairs with `YamlListDatastore`.
 
 ---
 
-## Task 1: SurroundStore — index, inheritance, exact match
+## Task 1: YamlSurroundStore — index, inheritance, exact match
 
 **Files:**
-- Create: `backend/src/1_adapters/content/surround/SurroundStore.mjs`
-- Test: `backend/src/1_adapters/content/surround/SurroundStore.test.mjs`
+- Create: `backend/src/1_adapters/content/surround/YamlSurroundStore.mjs`
+- Test: `backend/src/1_adapters/content/surround/YamlSurroundStore.test.mjs`
 
 **Step 1: Write the failing test**
 
@@ -139,7 +139,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { SurroundStore } from './SurroundStore.mjs';
+import { YamlSurroundStore } from './YamlSurroundStore.mjs';
 
 let root;
 const makeLogger = () => ({ info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() });
@@ -158,9 +158,9 @@ function writeFixture() {
 beforeEach(() => { root = mkdtempSync(path.join(tmpdir(), 'surround-')); writeFixture(); });
 afterEach(() => { rmSync(root, { recursive: true, force: true }); });
 
-describe('SurroundStore exact lookup', () => {
+describe('YamlSurroundStore exact lookup', () => {
   it('returns a resolved payload for an exact contentId match', () => {
-    const store = new SurroundStore({ rootDir: root, logger: makeLogger() });
+    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
     const r = store.lookup('plex:663134', 'anything');
     expect(r).not.toBeNull();
     expect(r.id).toBe('concert-hall');
@@ -171,7 +171,7 @@ describe('SurroundStore exact lookup', () => {
   });
 
   it('merges _composer.yml under the piece composer block, piece winning per key', () => {
-    const store = new SurroundStore({ rootDir: root, logger: makeLogger() });
+    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
     const r = store.lookup('plex:663134', '');
     expect(r.composer.name).toBe('Ludwig van Beethoven');   // inherited
     expect(r.composer.born).toBe(1770);                      // inherited
@@ -179,7 +179,7 @@ describe('SurroundStore exact lookup', () => {
   });
 
   it('returns exactly null for a miss', () => {
-    const store = new SurroundStore({ rootDir: root, logger: makeLogger() });
+    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
     expect(store.lookup('plex:999999', 'Nothing')).toBeNull();
   });
 });
@@ -188,9 +188,9 @@ describe('SurroundStore exact lookup', () => {
 **Step 2: Run it to verify it fails**
 
 ```bash
-./frontend/node_modules/.bin/vitest run --config vitest.config.mjs backend/src/1_adapters/content/surround/SurroundStore.test.mjs
+./frontend/node_modules/.bin/vitest run --config vitest.config.mjs backend/src/1_adapters/content/surround/YamlSurroundStore.test.mjs
 ```
-Expected: FAIL — cannot resolve `./SurroundStore.mjs`.
+Expected: FAIL — cannot resolve `./YamlSurroundStore.mjs`.
 
 **Step 3: Write the minimal implementation**
 
@@ -208,26 +208,26 @@ Same command. Expected: 3 passed.
 
 ```bash
 git add backend/src/1_adapters/content/surround/
-git commit -m "feat(surround): add SurroundStore with sidecar indexing and composer inheritance"
+git commit -m "feat(surround): add YamlSurroundStore with sidecar indexing and composer inheritance"
 ```
 
 ---
 
-## Task 2: SurroundStore — title rebind fallback
+## Task 2: YamlSurroundStore — title rebind fallback
 
 Live Plex titles carry orchestra suffixes (`Beethoven: 3. Sinfonie ∙ hr-Sinfonieorchester ∙ Andrés Orozco-Estrada`), so rebinding must be a **normalized substring** match, not equality. This is the ratingKey-churn safety net.
 
 **Files:**
-- Modify: `backend/src/1_adapters/content/surround/SurroundStore.mjs`
-- Modify: `backend/src/1_adapters/content/surround/SurroundStore.test.mjs`
+- Modify: `backend/src/1_adapters/content/surround/YamlSurroundStore.mjs`
+- Modify: `backend/src/1_adapters/content/surround/YamlSurroundStore.test.mjs`
 
 **Step 1: Write the failing test**
 
 ```javascript
-describe('SurroundStore title rebind', () => {
+describe('YamlSurroundStore title rebind', () => {
   it('matches a real Plex title with an orchestra suffix when the contentId is stale', () => {
     const logger = makeLogger();
-    const store = new SurroundStore({ rootDir: root, logger });
+    const store = new YamlSurroundStore({ rootDir: root, logger });
     const r = store.lookup('plex:999999', 'Beethoven: 3. Sinfonie (»Eroica«) ∙ hr-Sinfonieorchester ∙ Andrés Orozco-Estrada');
     expect(r).not.toBeNull();
     expect(r.piece.title).toBe('Symphony No. 3');
@@ -237,7 +237,7 @@ describe('SurroundStore title rebind', () => {
   });
 
   it('does not rebind an unrelated title', () => {
-    const store = new SurroundStore({ rootDir: root, logger: makeLogger() });
+    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
     expect(store.lookup('plex:999999', 'Vivaldi: Spring')).toBeNull();
   });
 });
@@ -261,18 +261,18 @@ git commit -am "feat(surround): rebind sidecars by normalized title when ratingK
 
 ---
 
-## Task 3: SurroundStore — fail-soft on bad data
+## Task 3: YamlSurroundStore — fail-soft on bad data
 
 **Files:** modify store + test.
 
 **Step 1: Write the failing tests**
 
 ```javascript
-describe('SurroundStore fail-soft', () => {
+describe('YamlSurroundStore fail-soft', () => {
   it('skips a malformed YAML file, warns, and still indexes the rest', () => {
     writeFileSync(path.join(root, 'classical/beethoven/broken.yml'), 'surround: [unclosed\n');
     const logger = makeLogger();
-    const store = new SurroundStore({ rootDir: root, logger });
+    const store = new YamlSurroundStore({ rootDir: root, logger });
     expect(store.lookup('plex:663134', '')).not.toBeNull();   // sibling still works
     expect(logger.warn.mock.calls.some(c => c[0] === 'surround.sidecar.invalid')).toBe(true);
   });
@@ -281,7 +281,7 @@ describe('SurroundStore fail-soft', () => {
     writeFileSync(path.join(root, 'classical/beethoven/symphony-3-eroica.yml'),
       'surround: does-not-exist\nmatch: { contentId: plex:663134 }\npiece: { title: X }\n');
     const logger = makeLogger();
-    const store = new SurroundStore({ rootDir: root, logger });
+    const store = new YamlSurroundStore({ rootDir: root, logger });
     expect(store.lookup('plex:663134', '')).toBeNull();
     expect(logger.warn.mock.calls.some(c => c[0] === 'surround.definition.missing')).toBe(true);
   });
@@ -289,7 +289,7 @@ describe('SurroundStore fail-soft', () => {
   it('skips a sidecar missing required keys', () => {
     writeFileSync(path.join(root, 'classical/beethoven/nokeys.yml'), 'piece: { title: Orphan }\n');
     const logger = makeLogger();
-    const store = new SurroundStore({ rootDir: root, logger });
+    const store = new YamlSurroundStore({ rootDir: root, logger });
     expect(logger.warn.mock.calls.some(c => c[0] === 'surround.sidecar.invalid')).toBe(true);
   });
 });
@@ -309,7 +309,7 @@ git commit -am "feat(surround): fail soft on malformed sidecars and missing defi
 
 ---
 
-## Task 4: SurroundStore — mtime-guarded freshness
+## Task 4: YamlSurroundStore — mtime-guarded freshness
 
 This replaces a reload endpoint. Without it, every authoring edit costs a backend restart — which will dominate the time you spend on Task 17.
 
@@ -318,10 +318,10 @@ This replaces a reload endpoint. Without it, every authoring edit costs a backen
 **Step 1: Write the failing test**
 
 ```javascript
-describe('SurroundStore freshness', () => {
+describe('YamlSurroundStore freshness', () => {
   it('picks up an edited sidecar after the guard window without a restart', () => {
     vi.useFakeTimers();
-    const store = new SurroundStore({ rootDir: root, logger: makeLogger() });
+    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
     expect(store.lookup('plex:663134', '').piece.title).toBe('Symphony No. 3');
 
     writeFileSync(path.join(root, 'classical/beethoven/symphony-3-eroica.yml'),
@@ -417,7 +417,7 @@ git commit -am "feat(surround): attach surround payload in queue projection"
 
 **Files:** Modify `backend/src/5_composition/modules/contentApi.mjs`
 
-**Step 1:** Construct `new SurroundStore({ rootDir: path.join(dataPath, 'content/surround'), logger })`.
+**Step 1:** Construct `new YamlSurroundStore({ rootDir: path.join(dataPath, 'content/surround'), logger })`.
 
 **Step 2:** Inject into `new PlayResponseService({ ..., surroundStore })` (`:121`) and `createQueueRouter({ ..., surroundStore })` (`:139`).
 
@@ -431,7 +431,7 @@ Expected: no new violations.
 **Step 4: Commit**
 
 ```bash
-git commit -am "feat(surround): compose SurroundStore into content API"
+git commit -am "feat(surround): compose YamlSurroundStore into content API"
 ```
 
 ---

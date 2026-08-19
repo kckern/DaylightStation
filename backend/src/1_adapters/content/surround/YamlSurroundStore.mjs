@@ -1,4 +1,4 @@
-// backend/src/1_adapters/content/surround/SurroundStore.mjs
+// backend/src/1_adapters/content/surround/YamlSurroundStore.mjs
 import path from 'path';
 import {
   dirExists,
@@ -45,7 +45,7 @@ const isPresent = (v) => v !== undefined && v !== null;
  * A surround is enrichment attached to playback responses, not playable
  * content, so this is a plain store — it is not registered as a content source.
  */
-export class SurroundStore extends ISurroundStore {
+export class YamlSurroundStore extends ISurroundStore {
   #byContentId = new Map();
   // Parallel to #byContentId: the rebind lane, walked only after an id miss.
   #byTitle = [];
@@ -476,4 +476,4 @@ export class SurroundStore extends ISurroundStore {
   }
 }
 
-export default SurroundStore;
+export default YamlSurroundStore;
