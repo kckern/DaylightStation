@@ -316,6 +316,17 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
             playerName={currentUserName}
             playerId={currentUser}
           />
+          {/* THE STAGE — the room the game is actually given.
+              A `replace` game roots itself `position: absolute; inset: 0`, so
+              its containing block is whatever positioned ancestor it finds. That
+              was `.tetris-fullscreen` itself, which spans the chrome's strip too,
+              so chess laid its board out over the full height and the header
+              printed across the eighth rank. The chrome was giving space back
+              that nothing was taking.
+              This is the only positioned box between the two, so `inset: 0` now
+              means "below the chrome" for every game at once, rather than each
+              game having to know a header exists. */}
+          <div className="tetris-fullscreen__stage">
           {/* A game that throws costs the player that game, not the office
               screen. PianoVisualizer never had a boundary; any throw inside any
               game blanked the whole display. */}
@@ -347,6 +358,7 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
               />
             </Suspense>
           </GameBoundary>
+          </div>
         </div>
       )}
     </div>

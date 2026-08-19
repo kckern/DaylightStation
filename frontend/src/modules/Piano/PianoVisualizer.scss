@@ -167,6 +167,29 @@
       flex: 1 1 auto;
       min-height: 0;
     }
+
+    /* THE STAGE — and specifically `position: relative`, which is the whole fix.
+       Flex sizing above was never the missing piece: a `replace` game roots
+       itself `position: absolute; inset: 0` (PianoChessGame.scss), and an
+       absolutely positioned box is OUT OF FLOW — it ignores the strip the flex
+       column just reserved and resolves `inset: 0` against the nearest
+       POSITIONED ancestor instead. That was `.tetris-fullscreen`, spanning the
+       chrome as well, so the board measured 720px of room on a 720px screen that
+       only had 668 left. It drew its eighth rank under the header and the header
+       painted over it — the exact "pasted on top" the chrome was rewritten to
+       stop doing.
+       Making the stage the nearest positioned ancestor is what finally hands the
+       game the reduced box, and it does so for every game at once: no game has
+       to learn that this screen has a header. */
+    &__stage {
+      position: relative;
+      /* Named again rather than left to the selector above: this rule is load
+         bearing, and a stage that is not allowed below its content height would
+         push the board back under the chrome from the other direction. */
+      flex: 1 1 auto;
+      min-height: 0;
+      min-width: 0;
+    }
   }
 
   // ─── Spam Detection Overlays ────────────────────────────────
