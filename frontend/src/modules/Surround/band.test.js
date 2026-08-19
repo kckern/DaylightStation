@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   resolveBandConfig, showsNowHeading, nowSideFor, accordionShares, playheadFraction,
   bondConnector, elapsedFraction, easeAccordion, BAND_DEFAULTS,
+  placedMovements, activeMovementIndex, roman,
   NOW_SIDE_THRESHOLD, NOW_SIDE_HYSTERESIS, SEGMENT_FLOOR_PX, NOW_PANEL_SHARE,
 } from './band.js';
 
@@ -448,5 +449,94 @@ describe('the band’s shared numbers', () => {
     expect(edge).toBeCloseTo(0.47, 9);
     expect(nowSideFor({ nowSide: 'dynamic' }, edge, 'right')).toBe('right');
     expect(nowSideFor({ nowSide: 'dynamic' }, edge - 1e-9, 'right')).toBe('left');
+  });
+});
+
+/**
+ * WHAT IS SOUNDING — one derivation, for both halves of the band (wave 8).
+ *
+ * The rail and the listening band each held a near-copy of this loop, and the
+ * copies disagreed at exactly the two edges no shipped recording exercises.
+ */
+describe('which movement is sounding', () => {
+  const EROICA = [
+    { n: 1, name: 'Allegro con brio', start: 0 },
+    { n: 2, name: 'Marcia funebre. Adagio assai', start: 976 },
+    { n: 3, name: 'Scherzo. Allegro vivace', start: 1925 },
+    { n: 4, name: 'Finale. Allegro molto', start: 2278 },
+  ];
+
+  it('places every movement of a well-timed recording, in order', () => {
+    expect(placedMovements(EROICA).map((p) => p.start)).toEqual([0, 976, 1925, 2278]);
+    expect(placedMovements(EROICA).map((p) => p.index)).toEqual([0, 1, 2, 3]);
+  });
+
+  // The store ships `start: undefined` for an entry it refused, deliberately
+  // keeping the slot so `starts` still pairs positionally with `movements`.
+  it('declines to place a movement whose start the store refused', () => {
+    const bad = [EROICA[0], { ...EROICA[1], start: undefined }, EROICA[2], EROICA[3]];
+    const placed = placedMovements(bad);
+    expect(placed.map((p) => p.start)).toEqual([0, 1925, 2278]);
+    // ...and the survivors still know which authored movement they are, so the
+    // band can still reach the right listening notes.
+    expect(placed.map((p) => p.index)).toEqual([0, 2, 3]);
+  });
+
+  it('declines a start that runs backwards — it cannot bound the segment before it', () => {
+    const jumbled = [EROICA[0], { ...EROICA[1], start: 500 }, { ...EROICA[2], start: 200 }, EROICA[3]];
+    expect(placedMovements(jumbled).map((p) => p.start)).toEqual([0, 500, 2278]);
+  });
+
+  it('declines a start that is not a number at all, or is negative', () => {
+    expect(placedMovements([{ start: null }, { start: -5 }, { start: NaN }, {}, null]))
+      .toEqual([]);
+  });
+
+  // COERCED, the same reading `musicEndsAt` takes (review finding I4): a YAML
+  // round-trip can hand a timing back as a string, and refusing that would drop
+  // a movement whose start is perfectly well known. It is the values that carry
+  // no position — null, negative, NaN — that cannot be placed.
+  it('places a start that arrived as a numeric string', () => {
+    expect(placedMovements([{ start: '0' }, { start: '976' }]).map((p) => p.start))
+      .toEqual([0, 976]);
+  });
+
+  it('names the sounding movement inside its own span', () => {
+    const placed = placedMovements(EROICA);
+    expect(activeMovementIndex({ placed, position: 0, end: 2955 })).toBe(0);
+    expect(activeMovementIndex({ placed, position: 975.9, end: 2955 })).toBe(0);
+    expect(activeMovementIndex({ placed, position: 976, end: 2955 })).toBe(1);
+    expect(activeMovementIndex({ placed, position: 2954, end: 2955 })).toBe(3);
+  });
+
+  // The two edges the two copies disagreed about.
+  it('says NOTHING is sounding after the music ends', () => {
+    const placed = placedMovements(EROICA);
+    expect(activeMovementIndex({ placed, position: 2955, end: 2955 })).toBe(-1);
+    expect(activeMovementIndex({ placed, position: 3100, end: 2955 })).toBe(-1);
+  });
+
+  it('says NOTHING is sounding before the first movement starts', () => {
+    // A transfer that opens on tuning or an announcement — `starts: [45, …]`,
+    // which the store explicitly permits. The rail used to fall through to
+    // "movement I is active" here and light a segment over music that had not
+    // begun, while the band printed its "nothing is playing" header.
+    const late = placedMovements([{ n: 1, start: 45 }, { n: 2, start: 900 }]);
+    expect(activeMovementIndex({ placed: late, position: 0, end: 2955 })).toBe(-1);
+    expect(activeMovementIndex({ placed: late, position: 44.9, end: 2955 })).toBe(-1);
+    expect(activeMovementIndex({ placed: late, position: 45, end: 2955 })).toBe(0);
+  });
+
+  it('answers -1 rather than throwing for an empty or unusable list', () => {
+    expect(activeMovementIndex({ placed: [], position: 10, end: 100 })).toBe(-1);
+    expect(activeMovementIndex({ placed: null, position: 10, end: 100 })).toBe(-1);
+    expect(activeMovementIndex({ placed: placedMovements(EROICA), position: NaN, end: 2955 })).toBe(-1);
+  });
+
+  it('sets a movement numeral, falling back to its position where none is authored', () => {
+    expect(roman(3, 99)).toBe('III.');
+    expect(roman(undefined, 2)).toBe('III.');
+    // Past the table, the number itself is a better answer than nothing.
+    expect(roman(14, 0)).toBe('14.');
   });
 });

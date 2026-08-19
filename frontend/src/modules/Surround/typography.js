@@ -147,4 +147,20 @@ export function smartQuotesAll(values) {
   return Array.isArray(values) ? values.map(smartQuotes) : values;
 }
 
+/**
+ * An authored string, or null.
+ *
+ * The frame's modules ask this of nearly every field they print, because a YAML
+ * value can arrive as a number, a null holding a place, or a string of spaces —
+ * and all three must render NO ELEMENT rather than an empty one. It lived in
+ * three modules as three identical arrow functions; it belongs beside the other
+ * thing every module does to an authored string on its way to the screen.
+ *
+ * @param {*} value
+ * @returns {string|null} the trimmed string, or null if there is not one.
+ */
+export const trimmed = (value) => (
+  typeof value === 'string' && value.trim() ? value.trim() : null
+);
+
 export default smartQuotes;

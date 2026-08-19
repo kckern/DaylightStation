@@ -5,15 +5,16 @@
  * are declared here, on the frame root, so every module can read them with
  * `var(--hall-ink)` and still carry a literal fallback when rendered standalone.
  *
- * Layout: [ main (stage + footer) | rail ] with an inert overlay above both.
+ * Layout: [ main (stage + footer) | rail ].
  * The stage letterboxes the 16:9 media box on ink; the footer is JS-sized to the
  * media box's measured width so it reads as that video's timeline.
  */
 
-/* Cormorant Garamond (display) + EB Garamond (body). ArtMode loads the same two
-   families; the kiosk has no Garamond installed, so without this the programme
-   silently falls back to a default serif. */
-@import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500;1,600&family=EB+Garamond:ital,wght@0,500;0,600;1,500&display=swap");
+/* Cormorant Garamond (display) + EB Garamond (body), SERVED BY THIS FLEET. The
+   kiosk has no Garamond installed, so without these the programme falls back to
+   a default serif — and to different metrics, which move every clamp and tier
+   threshold in the band. See `_fonts.scss` for the licence and the subsetting. */
+@use "./fonts";
 
 .surround-frame {
   --hall-ink: #14100c;
@@ -314,8 +315,8 @@
   flex-direction: column;
   /* The plate straddles the video's top edge, so its box covers real video —
      taps in the top-centre of the picture must reach the player underneath,
-     not die on an inert nameplate. Same contract as `__overlay` below: this
-     layer is see-through to input, not just to light. */
+     not die on an inert nameplate: this layer is see-through to input, not
+     just to light. */
   pointer-events: none;
   /* It sits ON the video, so it casts: a tight contact shadow plus a wide soft
      one. This is the one element in the frame allowed a drop shadow. */
@@ -458,17 +459,6 @@
   background-image: none;
   background-color: var(--programme);
   opacity: 0.55;
-}
-
-.surround-frame__overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 50;
-  pointer-events: none;
-
-  > * {
-    pointer-events: auto;
-  }
 }
 
 /* ---------------------------------------------------------------------------

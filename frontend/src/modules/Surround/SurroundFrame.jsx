@@ -4,7 +4,7 @@
 // locked to 16:9 on the left and printed programme panels around it.
 //
 // Layout geometry is a deliberate COPY of FitnessPlayerFrame's shell (main column
-// + rail + footer + inert overlay) in a `surround-frame__*` namespace. It is not
+// + rail + footer) in a `surround-frame__*` namespace. It is not
 // imported across the module boundary: the fitness frame is owned by the fitness
 // player and free to change for reasons that have nothing to do with a surround.
 //
@@ -39,7 +39,7 @@
 
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
-import getLogger from '../../lib/logging/Logger.js';
+import { surroundLogger } from './moduleKit.js';
 import { getSurroundRegistry } from './registry.js';
 import {
   ENTER_TOTAL_MS, ENTER_UNCLIP_MS, entranceVars, shrinkFrom,
@@ -76,21 +76,6 @@ function regionStyle(region) {
 }
 
 /** Lazy module-level child. Used only when no host logger was threaded down. */
-let moduleLogger = null;
-function fallbackLogger() {
-  if (!moduleLogger) moduleLogger = getLogger().child({ app: 'surround', component: 'surround-frame' });
-  return moduleLogger;
-}
-
-/**
- * Resolve the logger to use. A host-supplied logger is re-childed so the event
- * carries this component, while inheriting the host's `sessionLog` (durability)
- * and `contentId`. Plain mock loggers with no `.child` are used as-is.
- */
-function childLogger(logger, component) {
-  if (!logger) return fallbackLogger();
-  return logger.child?.({ app: 'surround', component }) ?? logger;
-}
 
 /** A region slot in the definition may be a single object or a list of them. */
 function normalizeRegions(value, slot) {
@@ -146,7 +131,7 @@ export default function SurroundFrame({
   onModuleError = null,
   children = null,
 }) {
-  const log = useMemo(() => childLogger(logger, 'surround-frame'), [logger]);
+  const log = useMemo(() => surroundLogger(logger, 'surround-frame'), [logger]);
 
   // A module that threw takes the frame off for THIS item only; the next
   // contentId gets a fresh attempt because the failure belonged to the old
@@ -180,8 +165,6 @@ export default function SurroundFrame({
     () => normalizeRegions(definition?.regions?.right, 'right'), [definition]);
   const footerRegions = useMemo(
     () => normalizeRegions(definition?.regions?.bottom, 'bottom'), [definition]);
-  const overlayRegions = useMemo(
-    () => normalizeRegions(definition?.regions?.overlay, 'overlay'), [definition]);
 
   // The module contract is exactly { position, duration, playing, seeking, data,
   // region }. contentId is not a seventh prop — it rides inside `data`, so every
@@ -239,8 +222,8 @@ export default function SurroundFrame({
 
   const registry = getSurroundRegistry();
   const allRegions = useMemo(
-    () => [...topRegions, ...rightRegions, ...footerRegions, ...overlayRegions],
-    [topRegions, rightRegions, footerRegions, overlayRegions],
+    () => [...topRegions, ...rightRegions, ...footerRegions],
+    [topRegions, rightRegions, footerRegions],
   );
   const resolved = useMemo(
     () => new Map(allRegions.map((r) => [r.key, registry.get(r.module)])),
@@ -250,10 +233,27 @@ export default function SurroundFrame({
 
   useEffect(() => {
     allRegions.forEach((region) => {
-      if (resolved.get(region.key)) return;
-      log.warn('surround.module.missing', { contentId, module: region.module, slot: region.slot });
+      if (!resolved.get(region.key)) {
+        log.warn('surround.module.missing', { contentId, module: region.module, slot: region.slot });
+        return;
+      }
+      // THE REGISTRATION'S `regions` META, FINALLY DOING ITS JOB. Every built-in
+      // declares the slots it was designed for (`builtins.js`) — the rail's
+      // carousel is a column, the band's rail is a strip, the placard is a
+      // full-width plate — and until now that declaration was stored, asserted
+      // by a test, and read by nothing. A definition that puts a module in a
+      // slot it was never cut for produces a frame that renders and looks
+      // wrong, which is the hardest kind of authoring mistake to find.
+      // It WARNS AND RENDERS: the surround can never be the reason something
+      // does not play, and a module in an unexpected slot may still be exactly
+      // what an author wanted. It says so once, with both ends named.
+      const slots = registry.getMeta?.(region.module)?.regions;
+      if (!Array.isArray(slots) || slots.includes(region.slot)) return;
+      log.warn('surround.module.misplaced', {
+        contentId, module: region.module, slot: region.slot, declared: slots,
+      });
     });
-  }, [allRegions, resolved, contentId, log]);
+  }, [allRegions, resolved, contentId, log, registry]);
 
   useEffect(() => {
     // The component itself is now mounted for every item, so the pair tracks the
@@ -456,17 +456,6 @@ export default function SurroundFrame({
         >
           {rightRegions.map(renderRegion)}
         </aside>
-      )}
-
-      {/* Reserved for phase-two overlay cues. Inert until something is declared. */}
-      {enabled && (
-        <div
-          className="surround-frame__overlay"
-          data-testid="surround-overlay"
-          style={{ pointerEvents: 'none' }}
-        >
-          {overlayRegions.map(renderRegion)}
-        </div>
       )}
     </div>
   );

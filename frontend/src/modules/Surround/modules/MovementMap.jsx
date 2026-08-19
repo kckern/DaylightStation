@@ -63,30 +63,14 @@ import React, {
   useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState,
 } from 'react';
 import PropTypes from 'prop-types';
-import getLogger from '../../../lib/logging/Logger.js';
 import { smartQuotes } from '../typography.js';
+import { surroundLogger } from '../moduleKit.js';
 import {
   resolveBandConfig, useNowSide, useEasedShares, accordionShares, playheadFraction,
-  bondConnector, elapsedFraction, ACCORDION_MS, SEGMENT_FLOOR_PX,
+  bondConnector, elapsedFraction, activeMovementIndex, placedMovements, roman,
+  ACCORDION_MS, SEGMENT_FLOOR_PX,
 } from '../band.js';
 import './MovementMap.scss';
-
-const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
-
-let moduleLogger = null;
-function fallbackLogger() {
-  if (!moduleLogger) moduleLogger = getLogger().child({ app: 'surround', component: 'movement-map' });
-  return moduleLogger;
-}
-function resolveLogger(logger) {
-  if (!logger) return fallbackLogger();
-  return logger.child?.({ app: 'surround', component: 'movement-map' }) ?? logger;
-}
-
-const roman = (n, index) => {
-  const value = Number.isFinite(n) ? n : index + 1;
-  return `${ROMAN[value] ?? value}.`;
-};
 
 /**
  * Split an engraved movement heading into its title and its tempo marking.
@@ -126,7 +110,7 @@ export default function MovementMap({
   region = null,
   logger = null,
 }) {
-  const log = useMemo(() => resolveLogger(logger), [logger]);
+  const log = useMemo(() => surroundLogger(logger, 'movement-map'), [logger]);
   const contentId = data?.contentId ?? null;
   const config = useMemo(() => resolveBandConfig(data), [data]);
   // THE COMPACT RAIL (`band.railDensity: 'bars'`). The rule, its barlines and
@@ -156,14 +140,36 @@ export default function MovementMap({
   const musicEndsAt = Number(data?.piece?.musicEndsAt);
   const end = Number.isFinite(musicEndsAt) && musicEndsAt > 0 ? musicEndsAt : duration;
 
+  // ONLY THE MOVEMENTS THIS RECORDING CAN PLACE. `placedMovements` drops any
+  // whose start the store refused (it ships `start: undefined` and warns) or
+  // whose start runs backwards — the alternative, the `Number(m?.start) || 0`
+  // this used to do, re-anchors a mid-piece movement to the top of the file and
+  // draws a zero-width, out-of-order segment with complete confidence. The band
+  // asks the same function, so both halves place the same movements.
+  const placed = useMemo(() => placedMovements(movements), [movements]);
+
+  // A movement the rail cannot place is a real event on a real screen, not a
+  // silent filter: the store already warned that the START was wrong, and this
+  // says what the renderer did about it.
+  useEffect(() => {
+    if (placed.length === movements.length) return;
+    log.warn('surround.movements.unplaceable', {
+      contentId,
+      authored: movements.length,
+      placed: placed.length,
+      dropped: movements
+        .map((m, i) => (placed.some((p) => p.index === i) ? null : (m?.n ?? i + 1)))
+        .filter((n) => n !== null),
+    });
+  }, [placed, movements, contentId, log]);
+
   const segments = useMemo(() => {
-    if (!movements.length) return [];
-    const first = Number(movements[0]?.start) || 0;
+    if (!placed.length) return [];
+    const first = placed[0].start;
     const span = end - first;
     if (!(span > 0)) return [];
-    return movements.map((m, i) => {
-      const start = Number(m?.start) || 0;
-      const next = i + 1 < movements.length ? (Number(movements[i + 1]?.start) || 0) : end;
+    return placed.map(({ movement: m, start }, i) => {
+      const next = i + 1 < placed.length ? placed[i + 1].start : end;
       const stop = Math.max(start, Math.min(next, end));
       return {
         n: m?.n,
@@ -185,20 +191,23 @@ export default function MovementMap({
         natural: (stop - start) / span,
       };
     });
-  }, [movements, end]);
+  }, [placed, end]);
 
   const first = segments.length ? segments[0].start : 0;
   const span = end - first;
 
-  // -1 = no movement is playing (the applause after the final chord).
-  const activeIndex = useMemo(() => {
-    if (!segments.length) return -1;
-    if (position >= end) return -1;
-    for (let i = segments.length - 1; i >= 0; i -= 1) {
-      if (position >= segments[i].start) return i;
-    }
-    return 0;
-  }, [segments, position, end]);
+  // -1 = NO MOVEMENT IS SOUNDING — the applause after the final chord, and
+  // equally the tuning or the announcement before the first one. This loop used
+  // to fall through to `return 0` for a position before the first start, which
+  // lit movement I over music that had not begun while the band six inches below
+  // printed its "nothing is playing" header. One derivation now answers for
+  // both (`../band.js`), and it answers -1.
+  const activeIndex = useMemo(
+    () => activeMovementIndex({ placed: segments, position, end }),
+    [segments, position, end],
+  );
+  /** Nothing has sounded YET — as against nothing sounding any more. */
+  const unsounded = activeIndex < 0 && segments.length > 0 && position < segments[0].start;
 
   // ---- the accordion's two measurements -------------------------------------
   // The rule's own width, and how wide the SOUNDING segment would have to be for
@@ -412,7 +421,15 @@ export default function MovementMap({
         />
 
         {segments.map((seg, i) => {
-          const state = activeIndex === i ? 'active' : (activeIndex === -1 || i < activeIndex) ? 'elapsed' : 'future';
+          // NOTHING SOUNDING HAS TWO OPPOSITE MEANINGS, and the rail must not
+          // confuse them. After the last chord every movement HAS sounded and
+          // the rule reads full; before the first one — a recording that opens
+          // on tuning or an announcement, which the corpus explicitly permits —
+          // none of them has, and a rule drawn full would say the piece was over
+          // before it began.
+          const state = activeIndex === i ? 'active'
+            : unsounded ? 'future'
+              : (activeIndex === -1 || i < activeIndex) ? 'elapsed' : 'future';
           const { title, tempo } = splitHeading(seg.name);
           // How much of THIS movement has sounded. Elapsed movements read full,
           // future ones empty, and the sounding one sweeps — that sweep is where
