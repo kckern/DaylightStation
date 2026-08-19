@@ -122,7 +122,14 @@ export function createApiRouters(config) {
   // Surround sidecars decorate playback; they are not a content source and so
   // never register with the registry. Composed here because this is the only
   // layer allowed to name the concrete store — consumers see ISurroundStore.
-  const surroundStore = new YamlSurroundStore({ rootDir: path.join(dataPath, 'content/surround'), logger });
+  // Two trees: rootDir holds performance sidecars (bound to a Plex item), libraryDir
+  // the composer/work knowledge they reference. Split so the same corpus can feed
+  // consumers other than playback — see docs/reference/player/surround/classical/.
+  const surroundStore = new YamlSurroundStore({
+    rootDir: path.join(dataPath, 'content/surround'),
+    libraryDir: path.join(dataPath, 'content/library'),
+    logger
+  });
 
   // Create PlayResponseService for play response building and watch state reconciliation
   const playResponseService = new PlayResponseService({ mediaProgressMemory, progressSyncService, progressSyncSources, surroundStore, logger });
