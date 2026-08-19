@@ -5,6 +5,21 @@
 
 export const DEFAULT_MIN_GRAMS = 5;
 
+// Quiet-commit lull, in seconds, and the floor it is clamped to.
+//
+// The floor exists because `num()` accepts ANY finite number, and the two values
+// it happily let through were both destructive: a negative `commit_quiet_sec`
+// yields a timer that fires immediately — commit-on-sufficiency, the design this
+// feature explicitly rejects — and `0` is falsy, so the bridge's
+// `if (!commitQuietMs) return` silently disabled the whole feature with nothing
+// anywhere saying so. Clamping turns a typo into a short wait instead of a
+// different product.
+//
+// 5 s rather than 1: the 12:31 incident's container scan landed 4.4 s behind its
+// density, so anything shorter cannot span the gesture it exists to span.
+export const DEFAULT_COMMIT_QUIET_SEC = 25;
+export const MIN_COMMIT_QUIET_SEC = 5;
+
 export const DEFAULT_CONTAINERS = {
   thresholdG: 150,
   items: [
@@ -138,8 +153,12 @@ export function normalizeScaleNutribotConfig(raw = {}, { logger = null } = {}) {
     // How long the bridge waits for the composition to stop growing before it
     // finalises the entry. Weight, density and container arrive as separate
     // events with no payload boundary, so completeness is an absence rather than
-    // an event and the lull is the only signal there is.
-    commitQuietSec: num(nb.commit_quiet_sec, 25),
+    // an event and the lull is the only signal there is. CLAMPED to
+    // MIN_COMMIT_QUIET_SEC — see its declaration for what 0 and a negative did.
+    commitQuietSec: Math.max(
+      MIN_COMMIT_QUIET_SEC,
+      num(nb.commit_quiet_sec, DEFAULT_COMMIT_QUIET_SEC),
+    ),
     containers: {
       thresholdG: num(nb.containers?.threshold_g, DEFAULT_CONTAINERS.thresholdG),
       items,

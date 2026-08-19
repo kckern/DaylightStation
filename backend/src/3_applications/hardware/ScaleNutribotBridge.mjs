@@ -35,7 +35,8 @@
 // payload boundary, so completeness is an absence rather than an event — see
 // `armCommit` for the incident that settled it. `scheduler` is injected so the
 // lull is testable without fake timers, which interleave badly with the awaited
-// AcceptFoodLog call.
+// AcceptFoodLog call. `commitNowFor` is the one way past the wait — the `rs:done`
+// card, which says the sequence is finished.
 
 const DEFAULT_TOPICS = ['food-scale'];
 
@@ -58,13 +59,17 @@ export function createScaleNutribotBridge({
   const heavyG = scaleConfig?.heavyG ?? 300;
   const forceTolG = scaleConfig?.forceToleranceG ?? 10;
 
-  const scales = new Map();   // id -> { baseline, lastGrams, live, postTimes[], placed, commitTimer }
+  // id -> { baseline, lastGrams, live, postTimes[], placed, commitTimer, committedGrams }
+  const scales = new Map();
   const inflight = new Set();
 
   const stateFor = (id) => {
     let s = scales.get(id);
     if (!s) {
-      s = { baseline: null, lastGrams: null, live: null, postTimes: [], placed: false, commitTimer: null };
+      s = {
+        baseline: null, lastGrams: null, live: null, postTimes: [],
+        placed: false, commitTimer: null, committedGrams: null,
+      };
       scales.set(id, s);
     }
     return s;
@@ -116,14 +121,28 @@ export function createScaleNutribotBridge({
     if (s.commitTimer) { scheduler.clearTimeout(s.commitTimer); s.commitTimer = null; }
   };
 
-  const commitNow = async (id, s) => {
-    if (!s.live) return;
-    let snapshot = null;
-    try { snapshot = compositionStore.read(id); }
-    catch (err) { logger.warn?.('scaleNutribot.commit.read-failed', { id, error: err.message }); return; }
+  /**
+   * Finalise the placement: re-sync the persisted weight, apply the density, accept.
+   *
+   * @param {string} id scale id
+   * @param {object} s per-scale state
+   * @param {object|null} [snapshotOverride] composition to commit against, for a
+   *   caller that has already consumed the slots — `rs:done` reads the snapshot
+   *   BEFORE `endPlacement` wipes it and hands it here, which is the only way
+   *   "process it now" can mean anything. Absent, the store is read as usual.
+   * @returns {Promise<boolean>} whether an entry was accepted.
+   */
+  const commitNow = async (id, s, snapshotOverride = null) => {
+    if (!s.live) return false;
+    let snapshot = snapshotOverride;
+    if (!snapshot) {
+      if (!compositionStore) return false;
+      try { snapshot = compositionStore.read(id); }
+      catch (err) { logger.warn?.('scaleNutribot.commit.read-failed', { id, error: err.message }); return false; }
+    }
     if (!snapshot?.complete) {
       logger.info?.('scaleNutribot.commit.skipped', { id, reason: 'incomplete' });
-      return;
+      return false;
     }
     // A volume cannot be multiplied by a kcal-per-GRAM density, so a millilitre
     // reading must never finalise itself. This lives HERE and not on
@@ -134,10 +153,10 @@ export function createScaleNutribotBridge({
     const unit = snapshot.unit ?? 'g';
     if (unit !== 'g') {
       logger.warn?.('scaleNutribot.commit.skipped', { id, reason: 'non-gram-unit', unit });
-      return;
+      return false;
     }
     const uc = nutribotContainer.getAcceptFoodLog?.();
-    if (!uc) return;
+    if (!uc) return false;
 
     // CLAIM the prompt before awaiting, and give it back if the accept fails.
     //
@@ -170,8 +189,41 @@ export function createScaleNutribotBridge({
     if (!applyDensity) {
       s.live = live;
       logger.warn?.('scaleNutribot.commit.skipped', { id, reason: 'no-density-usecase' });
-      return;
+      return false;
     }
+
+    // RE-SYNC the persisted entry against the composition we are about to
+    // multiply, BEFORE the density is applied. The commit used to trust whatever
+    // grams the last edit happened to persist, and two ordinary things break that:
+    //
+    //  • a `ct:` scan whose ACK refresh was DROPPED (`refreshPrompt` bails when the
+    //    scale is mid-settle) or threw never reached the log, so the tare existed
+    //    only in the buffer — and the density then multiplied GROSS grams and filed
+    //    silently overcounted calories;
+    //  • the human answering the prompt during the quiet window. `editInPlace`
+    //    reports `touched: true` the moment `metadata.densityLevel` is set
+    //    (`LogFoodFromScale.#isUntouched`), which is exactly "a person already
+    //    answered this" — so the commit stands down rather than reverting their
+    //    correction to the scanned level and accepting it under their hand.
+    //
+    // The SAME snapshot the density is resolved from is passed in, so the two
+    // cannot disagree, and so the `rs:done` path (whose slots are already consumed)
+    // re-syncs against the composition it is committing rather than against nothing.
+    let resynced;
+    try {
+      resynced = await editInPlace(live.grams, id, live, null, live.unit ?? 'g', snapshot);
+    } catch (err) {
+      s.live = live;
+      throw err;
+    }
+    if (!resynced?.edited) {
+      s.live = live;
+      logger.info?.('scaleNutribot.commit.skipped', {
+        id, reason: resynced?.touched ? 'answered-by-human' : 'resync-failed',
+      });
+      return false;
+    }
+
     let applied;
     try {
       applied = await applyDensity.execute({
@@ -190,7 +242,7 @@ export function createScaleNutribotBridge({
       logger.warn?.('scaleNutribot.commit.skipped', {
         id, reason: 'density-failed', level: snapshot.density, error: applied?.error ?? null,
       });
-      return;
+      return false;
     }
 
     try {
@@ -210,10 +262,27 @@ export function createScaleNutribotBridge({
     // AFTER the accept and not before, and on no refusal path: an entry that did
     // not commit still needs its scans.
     bufferEndPlacement(id);
+
+    // MARK THE PLACEMENT COMMITTED, or the very next frame re-prompts for it.
+    //
+    // A commit can only happen with the food still ON the pan — any lift-off
+    // disarms the timer — and the relay broadcasts every raw frame at ~4 Hz, not
+    // just deduped ones. With `s.live` nulled and nothing recording what was just
+    // filed, the next settled frame (~250 ms later) found no live prompt, skipped
+    // the dedup guard entirely, cleared `placementDeltaG` and posted a SECOND
+    // prompt for the same food. Tapping it filed a second entry: the meal
+    // double-counted, silently, on the mainline success path.
+    //
+    // Cleared on the placed→at-rest crossing (alongside `disarmCommit`) and by
+    // `post`, so a genuinely new placement — including a nudge to a different
+    // weight, which is a fresh entry and must still prompt — is unaffected.
+    s.committedGrams = live.grams;
+
     logger.info?.('scaleNutribot.commit.committed', {
       id, logUuid: live.logUuid, grams: snapshot.grams, density: snapshot.density,
       container: snapshot.container ?? null,
     });
+    return true;
   };
 
   // Snapshot of what has been scanned for this scale, handed to the use case so the
@@ -235,11 +304,18 @@ export function createScaleNutribotBridge({
   // `unit` defaults to the live prompt's own unit — the composition-triggered
   // refresh path (refreshPrompt) has no fresh payload to read one from, so the
   // in-place render must carry the same unit the prompt was originally posted with.
-  const editInPlace = (grams, scaleId, live, notice = null, unit = live.unit ?? 'g') =>
+  // `composition` likewise defaults to a fresh read, and is passed explicitly only
+  // by `commitNow`, which must edit against the SAME snapshot it multiplies —
+  // including on the `rs:done` path, where the store has already been consumed and
+  // a fresh read would answer "no tare, no density".
+  const editInPlace = (
+    grams, scaleId, live, notice = null, unit = live.unit ?? 'g',
+    composition = compositionOf(scaleId),
+  ) =>
     nutribotContainer.getLogFoodFromScale().execute({
       userId, conversationId, grams, unit, scaleId,
       existingLogUuid: live.logUuid, messageId: live.messageId,
-      composition: compositionOf(scaleId), notice,
+      composition, notice,
     });
   const retract = async (live) => {
     const uc = nutribotContainer.getRetractScaleLog?.();
@@ -254,6 +330,9 @@ export function createScaleNutribotBridge({
     const res = await create(grams, id, unit);
     if (res?.success && res.logUuid) {
       s.live = { logUuid: res.logUuid, messageId: res.messageId || null, grams, unit };
+      // A fresh prompt supersedes the committed marker: whatever weight was filed
+      // before, THIS one is what the pan holds now.
+      s.committedGrams = null;
       s.postTimes.push(now());
       bufferWeight(id, grams, unit);
       armCommit(id, s);
@@ -341,11 +420,20 @@ export function createScaleNutribotBridge({
         // with: `endPlacement` throws the scans away (D10), so a timer still
         // running past this point would commit against a composition that no
         // longer exists. A later scan re-arms it via `armCommitFor`.
-        if (s.placed) { s.placed = false; disarmCommit(s); bufferEndPlacement(id); }
+        //
         // CROSSING only — `rise <= baselineTolG` is also true on every at-rest
         // heartbeat, and consuming the buffer on those would eat a scan made
         // before the food is set down.
-        if (s.placed) { s.placed = false; bufferEndPlacement(id); }
+        //
+        // The committed marker is released here too: the food came off, so the
+        // next thing on the pan is a new placement and deserves its own prompt
+        // even if it happens to weigh the same.
+        if (s.placed) {
+          s.placed = false;
+          s.committedGrams = null;
+          disarmCommit(s);
+          bufferEndPlacement(id);
+        }
         s.baseline = grams;
         return;
       }
@@ -369,6 +457,16 @@ export function createScaleNutribotBridge({
       }
 
       // NEW PLACEMENT.
+      //
+      // Unless this weight is the one that was JUST committed and never left the
+      // pan. The dedup guard above cannot catch it — the commit nulled `s.live`,
+      // so there is no live prompt to compare against — and the relay broadcasts
+      // every raw frame, so the next settle arrives ~250 ms after the accept.
+      // Without this the mainline success path posts a duplicate prompt for food
+      // already filed, and answering it double-counts the meal.
+      if (Number.isFinite(s.committedGrams) && Math.abs(grams - s.committedGrams) < dedupDeltaG) {
+        return;
+      }
       if (rise < placementDeltaG) return;   // too small a rise
       const why = suspicious(s, grams, rise);
       if (why) { logger.info?.('scaleNutribot.suppressed', { id, grams, why }); return; }
@@ -441,9 +539,42 @@ export function createScaleNutribotBridge({
     if (s) armCommit(scaleId, s);
   };
 
+  /**
+   * Finalise NOW, without waiting for the lull — the `rs:done` card.
+   *
+   * "The sequence is complete, process it" is the one gesture that means the wait
+   * is over, so arming a 25 s clock for it is not a lesser version of the feature,
+   * it is the opposite of what the card says. `rs:done` used to route to
+   * `endPlacement` alone, which wiped the slots and left the armed timer to fire
+   * later against an empty composition and skip as incomplete: the explicit
+   * "process it now" gesture GUARANTEED a stranded entry with no density.
+   *
+   * The caller supplies the snapshot it read before consuming the slots, because
+   * by the time this runs the store has nothing left to read.
+   *
+   * @param {string} scaleId
+   * @param {object|null} [snapshot] composition to commit against
+   * @returns {Promise<boolean>} whether an entry was accepted. Never rejects —
+   *   this is called fire-and-forget from the scan path, which must not turn a
+   *   failed commit into a failed scan.
+   */
+  const commitNowFor = async (scaleId, snapshot = null) => {
+    const s = scales.get(scaleId);
+    if (!s) return false;
+    // An immediate commit supersedes any pending lull rather than racing it.
+    disarmCommit(s);
+    try {
+      return await commitNow(scaleId, s, snapshot);
+    } catch (err) {
+      logger.warn?.('scaleNutribot.commit.failed', { id: scaleId, error: err.message });
+      return false;
+    }
+  };
+
   return {
     refreshPrompt,
     armCommitFor,
+    commitNowFor,
     dispose: () => {
       // Disarm FIRST: an unsubscribed bridge that still holds a pending timer
       // would fire into a torn-down container.

@@ -539,6 +539,32 @@ export function createScanDispatch(deps = {}) {
       emit(barcodeLogger, 'info', 'barcode_relay.nutriscan', {
         device, scaleId, kind: outcome.kind, ok: !refused, error: outcome.error || null,
       });
+      const bridge = getScaleNutribotBridge();
+
+      // `rs:done` COMMITS; it does not arm, and it does not ACK.
+      //
+      // The card reads "the sequence is complete, process it now", and arming a
+      // 25 s clock for it was the opposite of that: `ApplyScanToComposition` has
+      // already consumed the slots by the time this branch runs, so the timer
+      // fired against an empty composition and skipped as incomplete — the
+      // explicit finish gesture was the one path that GUARANTEED a stranded entry
+      // with no density. The pre-consumption snapshot rides on the outcome,
+      // because by now the store has nothing left to read.
+      //
+      // No ACK refresh on this path, deliberately. `refreshPrompt` renders from a
+      // FRESH store read, which for `done` is the composition that was just
+      // consumed — so it would repaint the prompt with no tare and no density, and
+      // `LogFoodFromScale` would PERSIST that un-tared weight for the commit to
+      // then multiply. The commit re-renders the message itself once the density
+      // applies, which is the ack the user is waiting for anyway.
+      //
+      // Fire-and-forget like the ACK it replaces: `commitNowFor` never rejects,
+      // and the `.catch` covers a bridge older than it.
+      if (outcome.kind === 'done') {
+        bridge?.commitNowFor?.(scaleId, outcome.snapshot)?.catch?.(() => {});
+        return { status: 'applied', ok: true, effect: outcome };
+      }
+
       // ACK on the message the user is already looking at — INCLUDING a refusal,
       // which writes nothing to the buffer and so would otherwise render as no
       // change whatsoever. That silent failure is precisely what the ACK exists
@@ -546,7 +572,7 @@ export function createScanDispatch(deps = {}) {
       // Fire-and-forget: a failed edit must not swallow a scan that already
       // landed in the buffer.
       const notice = refused ? nutriscanRefusalNotice(outcome) : null;
-      getScaleNutribotBridge()?.refreshPrompt?.(scaleId, notice)?.catch?.(() => {});
+      bridge?.refreshPrompt?.(scaleId, notice)?.catch?.(() => {});
       // A fridge-sheet scan restarts the bridge's quiet-commit clock. Without
       // this the entry finalises 25s after the last WEIGHT, and a density or
       // tare scanned in the meantime lands on a log that is already closed —
@@ -560,7 +586,7 @@ export function createScanDispatch(deps = {}) {
       //
       // Fire-and-forget like the ACK: synchronous, optional, and never allowed
       // to swallow a scan that already reached the buffer.
-      getScaleNutribotBridge()?.armCommitFor?.(scaleId);
+      bridge?.armCommitFor?.(scaleId);
       return { status: refused ? 'refused' : 'applied', ok: !refused, effect: outcome };
     }
 

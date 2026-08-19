@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeScaleNutribotConfig, DEFAULT_DENSITY_LEVELS } from '#apps/nutribot/lib/scaleNutribotConfig.mjs';
+import {
+  normalizeScaleNutribotConfig,
+  DEFAULT_DENSITY_LEVELS,
+  MIN_COMMIT_QUIET_SEC,
+} from '#apps/nutribot/lib/scaleNutribotConfig.mjs';
 
 describe('normalizeScaleNutribotConfig — density macros', () => {
   it('carries macros and per_100g through to the normalized level', () => {
@@ -146,5 +150,21 @@ describe('normalizeScaleNutribotConfig — commit_quiet_sec', () => {
   it('coerces a numeric string and falls back on unusable text', () => {
     expect(normalizeScaleNutribotConfig({ nutribot: { commit_quiet_sec: '40' } }).commitQuietSec).toBe(40);
     expect(normalizeScaleNutribotConfig({ nutribot: { commit_quiet_sec: 'soon' } }).commitQuietSec).toBe(25);
+  });
+
+  // `num()` accepts any FINITE number, and the two it happily let through each
+  // changed the product rather than the timing: a negative fires the timer
+  // immediately (commit-on-sufficiency, the design this feature explicitly
+  // rejects — the 12:31 incident's container scan landed 4.4 s behind its
+  // density), and `0` is falsy, so the bridge's `if (!commitQuietMs) return`
+  // disabled quiet-commit outright with nothing anywhere saying so.
+  it('clamps a zero or negative interval to the floor rather than changing the feature', () => {
+    expect(MIN_COMMIT_QUIET_SEC).toBe(5);
+    for (const bad of [0, -5, -0.1, '-5']) {
+      expect(normalizeScaleNutribotConfig({ nutribot: { commit_quiet_sec: bad } }).commitQuietSec)
+        .toBe(MIN_COMMIT_QUIET_SEC);
+    }
+    // The floor is a floor, not a replacement: anything above it is untouched.
+    expect(normalizeScaleNutribotConfig({ nutribot: { commit_quiet_sec: 6 } }).commitQuietSec).toBe(6);
   });
 });
