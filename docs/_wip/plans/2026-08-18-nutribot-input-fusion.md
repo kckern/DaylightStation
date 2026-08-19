@@ -365,71 +365,32 @@ git commit -m "fix(nutribot): a millilitre reading is no longer recorded as gram
 
 ---
 
-### Task 5: A non-gram reading can never complete a composition
+### Task 5: WITHDRAWN — the unit refusal belongs to the application layer
 
-Passing the unit through is only half. Nothing may multiply a volume by a kcal-per-gram density.
+**Status: withdrawn during execution. Do not implement. Superseded by Task 6.**
 
-**Files:**
-- Modify: `backend/src/2_domains/nutrition/value-objects/Composition.mjs` (the `isComplete` getter)
-- Test: `tests/unit/domains/nutrition/value-objects/compositionUnitGate.test.mjs`
+This task originally put the rule in `Composition.isComplete`. That contradicted a layering
+decision this codebase states twice, in its own words:
 
-**Interfaces:**
-- Consumes: `Composition.withWeight({ grams, unit })`.
-- Produces: `composition.isComplete === false` whenever `unit` is present and not `'g'`.
+> `it('is unaffected by the unit', () => {`
+> `  // The composition carries 'ml' faithfully; refusing a volumetric unit is`
+> `  // the application layer's call, not this object's.`
+> — `tests/unit/domains/nutrition/value-objects/Composition.test.mjs`
 
-- [ ] **Step 1: Write the failing test**
+> **`unit` does not gate `complete`.** …that refusal belongs to `ApplyScanToComposition`.
+> — `docs/reference/nutrition/README.md`
 
-```javascript
-// tests/unit/domains/nutrition/value-objects/compositionUnitGate.test.mjs
-import { describe, it, expect } from 'vitest';
-import { Composition } from '#domains/nutrition/index.mjs';
+The design document agreed with the codebase; only this plan drifted. `isComplete` is a
+STRUCTURAL claim — "the slots are filled" — and overloading it with a usability policy makes
+its name lie. The safety property we actually need is narrower: *nothing may auto-commit a
+volume*. That is a property of the commit path, not of the record.
 
-describe('Composition — unit gate', () => {
-  it('is complete for grams plus a density', () => {
-    const c = Composition.empty().withWeight({ grams: 413, unit: 'g' }).withDensity(4);
-    expect(c.isComplete).toBe(true);
-  });
+An implementation attempt (`de13cdafc`) was made and reverted (`revert` commit follows it);
+it had to rewrite two passing tests that asserted the documented contract, which is what
+surfaced the conflict.
 
-  // A volume cannot be multiplied by kcal-per-GRAM. A wrong entry that
-  // auto-commits is worse than no entry, and quiet-commit makes it commit.
-  it('is NOT complete for millilitres, however much else is scanned', () => {
-    const c = Composition.empty().withWeight({ grams: 240, unit: 'ml' }).withDensity(4);
-    expect(c.isComplete).toBe(false);
-  });
-});
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `npx vitest run tests/unit/domains/nutrition/value-objects/compositionUnitGate.test.mjs`
-Expected: FAIL — the `ml` case reports `true`.
-
-- [ ] **Step 3: Gate completeness on the unit**
-
-In `Composition.mjs`'s `isComplete` getter, require grams AND a density AND a gram unit:
-
-```javascript
-    // `unit` gates completeness because calories come from kcal_per_g. A volume
-    // has no mass without a substance, so a millilitre reading is a measurement
-    // we cannot finish — it stays live and visible rather than auto-committing
-    // a number derived from the wrong quantity.
-    const isMass = !this.unit || this.unit === 'g';
-```
-
-and include `isMass` in the returned condition. Leave the container out of it — a container is enrichment and never gated completeness.
-
-- [ ] **Step 4: Run the tests**
-
-Run: `npx vitest run tests/unit/domains/nutrition/ tests/unit/applications/nutribot/`
-Expected: PASS, including the 62 existing Composition tests.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add backend/src/2_domains/nutrition/value-objects/Composition.mjs \
-        tests/unit/domains/nutrition/value-objects/compositionUnitGate.test.mjs
-git commit -m "feat(nutribot): a millilitre reading can no longer complete a composition"
-```
+**The requirement now lives in Task 6, Step 3** — `commitNow` refuses to finalise unless the
+snapshot's unit is grams. Same guarantee, correct layer, no rewritten tests.
 
 ---
 
@@ -502,6 +463,17 @@ describe('ScaleNutribotBridge quiet-commit', () => {
     bridge.dispose();
   });
 
+  // Task 5 was withdrawn and folded in here: a volume must never auto-commit.
+  it('does not commit a millilitre reading, however complete it looks', async () => {
+    const { bridge, accept, scheduler, publish, compositionStore } = makeHarness();
+    compositionStore.read = () => ({ grams: 240, unit: 'ml', density: 4, container: null, complete: true, active: true });
+    await publish({ id: 'kitchen-food-scale', grams: 240, unit: 'ml', stable: true });
+    scheduler.fire();
+    await Promise.resolve();
+    expect(accept.execute).not.toHaveBeenCalled();
+    bridge.dispose();
+  });
+
   it('does not commit while the composition is incomplete', async () => {
     const { bridge, accept, scheduler, publish } = makeHarness({ complete: false });
     await publish({ id: 'kitchen-food-scale', grams: 639, unit: 'g', stable: true });
@@ -571,6 +543,17 @@ Add near `bufferWeight`:
     catch (err) { logger.warn?.('scaleNutribot.commit.read-failed', { id, error: err.message }); return; }
     if (!snapshot?.complete) {
       logger.info?.('scaleNutribot.commit.skipped', { id, reason: 'incomplete' });
+      return;
+    }
+    // A volume cannot be multiplied by a kcal-per-GRAM density, so a millilitre
+    // reading must never finalise itself. This lives HERE and not on
+    // `Composition.isComplete`, which is a structural claim about filled slots —
+    // the codebase says so in its own tests and reference doc, and quiet-commit
+    // is the thing that makes a mislabelled reading dangerous rather than merely
+    // wrong. An absent unit is grams (the relay contract).
+    const unit = snapshot.unit ?? 'g';
+    if (unit !== 'g') {
+      logger.warn?.('scaleNutribot.commit.skipped', { id, reason: 'non-gram-unit', unit });
       return;
     }
     const uc = nutribotContainer.getAcceptFoodLog?.();
