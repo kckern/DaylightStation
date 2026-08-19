@@ -433,6 +433,102 @@ describe('CountryMap labels', () => {
     expect(name.y).toBeGreaterThan(star.y);
   });
 
+  /**
+   * Fix round 1 (review finding): the subject's own clearance check was a
+   * point-radius test against the city's MARKER star (34px in screen space),
+   * which is not the same thing as the city's LABEL — a rendered word like
+   * "VENICE" reaches well past 34px from its anchor. A naive spot could clear
+   * the star by a wide margin and still land inside the label's text box.
+   *
+   * This fixture engineers exactly that: a MultiPolygon subject whose small
+   * PART A (containing the city point) decides the FRAME, while its larger
+   * PART B — far enough from the star to clear the old radius test, but not
+   * far enough to clear the city's rendered label box — decides the LABEL
+   * SPOT (`labelSpotFor` always picks the biggest clipped part). The result is
+   * a subject spot ~1.3 view-units from the marker, comfortably outside the
+   * ~0.5-unit marker-clearance radius, but still inside "VENICE"'s box.
+   *
+   * The box math below (`labelBox`/`overlaps`) mirrors CountryMap.jsx's own
+   * private helpers of the same name — they have no test export — used here
+   * only to verify the two rendered boxes actually clear each other.
+   */
+  it("relocates the subject's name clear of the city LABEL, not just the marker star", async () => {
+    __resetMapCache();
+    const SUBJECT = {
+      type: 'Feature',
+      properties: { name: 'Ruritania' },
+      geometry: {
+        type: 'MultiPolygon',
+        coordinates: [
+          // Part A: small, sits under the city point — the framing anchor.
+          [[[-1, -1], [1, -1], [1, 1], [-1, 1], [-1, -1]]],
+          // Part B: bigger (so `labelSpotFor` picks it over A), centred at
+          // lon 1.3 — outside the marker-clearance radius but, as hand-checked
+          // against the frame this fixture produces, still inside the city
+          // label's box before any relocation.
+          [[[0.4, -1.8], [2.2, -1.8], [2.2, 1.8], [0.4, 1.8], [0.4, -1.8]]],
+        ],
+      },
+    };
+    global.fetch = okFetch({ type: 'FeatureCollection', features: [SUBJECT] });
+    fetchMock = global.fetch;
+
+    const { container } = await renderMap({
+      country: 'Ruritania', city: 'Venice', lat: 0, lon: 0,
+    });
+    await waitFor(() => expect(container.querySelector('[data-testid="country-map-marker"]')).toBeTruthy());
+    await waitFor(() => expect(labelFor(container, 'Ruritania')).toBeTruthy());
+
+    const LABEL_EM_PER_CHAR = 0.78;
+    const LABEL_MARGIN_EM = 0.5;
+    const labelBox = ({ x, y, text, sizePx, anchor = 'middle', unitsPerPx }) => {
+      const w = (String(text).length * LABEL_EM_PER_CHAR + LABEL_MARGIN_EM * 2) * sizePx * unitsPerPx;
+      const h = (1 + LABEL_MARGIN_EM) * sizePx * unitsPerPx;
+      let x0 = x - w / 2;
+      if (anchor === 'start') x0 = x;
+      if (anchor === 'end') x0 = x - w;
+      return { x0, x1: x0 + w, y0: y - h / 2, y1: y + h / 2 };
+    };
+    const overlaps = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+
+    // The city's rendered label box: marker group gives the translate/scale,
+    // the label text itself carries the local (unscaled) x/y offset.
+    const markerGroup = container.querySelector('[data-testid="country-map-marker"]');
+    const [, markerX, markerY] = markerGroup.getAttribute('transform').match(/translate\((-?[\d.]+) (-?[\d.]+)\)/);
+    const scale = Number(markerGroup.getAttribute('transform').match(/scale\((-?[\d.]+)\)/)[1]);
+    const cityLabel = container.querySelector('[data-testid="country-map-label"]');
+    const cityBox = labelBox({
+      x: Number(markerX) + Number(cityLabel.getAttribute('x')) * scale,
+      y: Number(markerY) + Number(cityLabel.getAttribute('y')) * scale,
+      text: cityLabel.textContent,
+      sizePx: Number(cityLabel.getAttribute('font-size')),
+      anchor: cityLabel.getAttribute('text-anchor'),
+      unitsPerPx: scale,
+    });
+
+    // The subject's rendered label box: its own group is translated straight
+    // to the FINAL (possibly relocated) x/y — the text inside carries no
+    // further offset.
+    const subjectGroup = labelFor(container, 'Ruritania');
+    const [, subjX, subjY] = subjectGroup.getAttribute('transform').match(/translate\((-?[\d.]+) (-?[\d.]+)\)/);
+    const subjectText = subjectGroup.querySelector('text');
+    const subjectBox = labelBox({
+      x: Number(subjX),
+      y: Number(subjY),
+      text: subjectText.textContent,
+      sizePx: Number(subjectText.getAttribute('font-size')),
+      anchor: subjectText.getAttribute('text-anchor'),
+      unitsPerPx: scale,
+    });
+
+    expect(overlaps(cityBox, subjectBox), 'the subject\'s name still overlaps the city label').toBe(false);
+
+    // And it was actually RELOCATED, not accidentally clear: Part B's own
+    // centroid is at y=0 (its lat range -1.8..1.8 is symmetric), the same row
+    // as the city. A y this far below proves the box-collision check moved it.
+    expect(Number(subjY)).toBeGreaterThan(0.3);
+  });
+
   it('names no country when the geodata has no names to give', async () => {
     __resetMapCache();
     global.fetch = okFetch({

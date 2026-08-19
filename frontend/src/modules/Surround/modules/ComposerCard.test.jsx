@@ -123,16 +123,21 @@ describe('ComposerCard', () => {
   // The header row: portrait LEFT, the identity column RIGHT, side by side. The
   // DOM order is the reading order, and the geometry that makes them adjacent
   // rather than stacked is the runtime gate's job (jsdom has no layout).
+  // Fix round 1: the mat now sits inside its own 45% COLUMN rather than
+  // carrying the 45% itself, so the header row's direct children are the
+  // column and the identity block — the mat is one level deeper.
   it('puts the portrait and the identity column side by side in one header row', () => {
     const { getByTestId, container } = renderCard();
     const header = getByTestId('surround-composer-header');
+    const portraitCol = getByTestId('surround-portrait-col');
     const plate = container.querySelector('.surround-composer-card__plate');
     const identity = getByTestId('surround-composer-identity');
 
-    expect(plate.parentElement).toBe(header);
+    expect(portraitCol.parentElement).toBe(header);
+    expect(plate.parentElement).toBe(portraitCol);
     expect(identity.parentElement).toBe(header);
     // Portrait first: the picture is on the left.
-    expect([...header.children].indexOf(plate)).toBeLessThan([...header.children].indexOf(identity));
+    expect([...header.children].indexOf(portraitCol)).toBeLessThan([...header.children].indexOf(identity));
   });
 
   it('stacks the nameplate, the dates and the birthplace in the identity column', () => {
@@ -188,6 +193,7 @@ describe('ComposerCard', () => {
     expect(container.querySelector('.surround-composer-card__nameplate')).not.toBeNull();
     expect(queryByTestId('surround-composer-header')).not.toBeNull();
     expect(container.querySelector('.surround-composer-card__plate')).toBeNull();
+    expect(queryByTestId('surround-portrait-col')).toBeNull();
   });
 
   it('omits the portrait when the payload names no assetBase', () => {
@@ -290,19 +296,33 @@ describe('ComposerCard hard content budget — long text', () => {
     expect(birthplaceStyle.getPropertyValue('overflow')).toBe('hidden');
   });
 
-  // The header row's split. 45% is the sketch's proportion, and it lives on the
-  // MAT's column so the mat itself can still hug the picture — a contained
-  // picture in a 45%-wide mat would be a pool of paper, which wave 2 removed.
-  it('gives the portrait 45% of the card and the identity column the rest', () => {
+  // The header row's split. 45% is the sketch's proportion, and it lives on a
+  // real WRAPPER element (`__portrait-col`) so the MAT inside it can still hug
+  // the picture — a contained picture in a 45%-wide MAT would be a pool of
+  // paper, which wave 2 removed. Fix round 1: this used to assert both
+  // properties on the mat itself, which is exactly the defect (flex-basis wins
+  // over `width: fit-content` on the same element, so the mat was 45% wide
+  // regardless of the picture's shape).
+  it('gives the portrait column 45% of the card, and lets the mat hug its picture', () => {
     const compiled = sass.compile(path.join(__dirname, 'ComposerCard.scss'));
     injectedStyle = document.createElement('style');
     injectedStyle.textContent = compiled.css;
     document.head.appendChild(injectedStyle);
 
-    const { container, getByTestId } = renderCard();
-    const plate = window.getComputedStyle(container.querySelector('.surround-composer-card__plate'));
-    expect(plate.getPropertyValue('max-width')).toBe('45%');
-    expect(plate.getPropertyValue('flex-basis')).toBe('45%');
+    const { getByTestId } = renderCard();
+
+    // The COLUMN carries the 45% flex basis...
+    const portraitCol = window.getComputedStyle(getByTestId('surround-portrait-col'));
+    expect(portraitCol.getPropertyValue('max-width')).toBe('45%');
+    expect(portraitCol.getPropertyValue('flex-basis')).toBe('45%');
+
+    // ...and the MAT inside it carries no width share of its own — it hugs
+    // its picture instead, so a tall (2:3) portrait gets a snug mat rather
+    // than a 45%-wide slab with the picture floating inside it.
+    const plate = window.getComputedStyle(getByTestId('surround-portrait-plate'));
+    expect(plate.getPropertyValue('width')).toBe('fit-content');
+    expect(plate.getPropertyValue('flex-basis')).not.toBe('45%');
+    expect(plate.getPropertyValue('max-width')).not.toBe('45%');
 
     const header = window.getComputedStyle(getByTestId('surround-composer-header'));
     expect(header.getPropertyValue('display')).toBe('flex');

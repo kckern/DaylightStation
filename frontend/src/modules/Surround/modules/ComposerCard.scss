@@ -59,16 +59,29 @@
   min-width: 0;
 }
 
-/* The mat HUGS the picture (`width: fit-content`) inside a column that is 45%
-   of the card. Two separate jobs, deliberately on two separate boxes: the COLUMN
-   owns the 45% share of the rail, the MAT owns "no pool of paper around a
-   contained picture". Setting 45% on the mat itself would give back the pool
-   wave 2 removed. */
-.surround-composer-card__plate {
-  position: relative;
+/* The COLUMN owns the 45% share of the header row — a real wrapper element,
+   not a property shared onto the mat. Fix round 1: the mat used to carry
+   `flex: 0 0 45%; max-width: 45%` itself, which — because a flex item's
+   flex-basis wins over its own `width` — made the MAT exactly 45% wide no
+   matter what picture was inside it. A 2:3 portrait then letterboxed inside
+   that 45%-wide slab: the "pool of paper" wave 2 removed, back by a different
+   route. This column is the only box that knows about 45%; the mat below it
+   knows nothing about the rail's width at all. */
+.surround-composer-card__portrait-col {
   flex: 0 0 45%;
   max-width: 45%;
+  min-width: 0;
+}
+
+/* The mat HUGS the picture (`width: fit-content`) inside the 45% column above.
+   Two separate jobs, deliberately on two separate elements: the COLUMN owns the
+   45% share of the rail, the MAT owns "no pool of paper around a contained
+   picture". A tall (2:3) portrait therefore gets a snug mat sized to its own
+   width, not a mat stretched to the column's full 45%. */
+.surround-composer-card__plate {
+  position: relative;
   width: fit-content;
+  max-width: 100%;
   margin: 0;
   padding: 3px;
   box-sizing: border-box;
