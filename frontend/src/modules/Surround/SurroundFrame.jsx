@@ -134,11 +134,17 @@ export default function SurroundFrame({
   };
 
   const definition = data?.definition ?? null;
-  const railWidth = definition?.regions?.right?.width ?? DEFAULT_RAIL_WIDTH;
+  // `right` is authored as either a single object or a list of modules (e.g.
+  // composer-card + country-map). The width belongs to the rail as a whole, so
+  // when it's a list the first entry carries it.
+  const rightDef = definition?.regions?.right;
+  const railWidth = (Array.isArray(rightDef) ? rightDef[0]?.width : rightDef?.width) ?? DEFAULT_RAIL_WIDTH;
   const footerFloor = Number.isFinite(definition?.collapse?.footerFloor)
     ? definition.collapse.footerFloor
     : DEFAULT_FOOTER_FLOOR;
 
+  const topRegions = useMemo(
+    () => normalizeRegions(definition?.regions?.top, 'top'), [definition]);
   const rightRegions = useMemo(
     () => normalizeRegions(definition?.regions?.right, 'right'), [definition]);
   const footerRegions = useMemo(
@@ -201,8 +207,8 @@ export default function SurroundFrame({
 
   const registry = getSurroundRegistry();
   const allRegions = useMemo(
-    () => [...rightRegions, ...footerRegions, ...overlayRegions],
-    [rightRegions, footerRegions, overlayRegions],
+    () => [...topRegions, ...rightRegions, ...footerRegions, ...overlayRegions],
+    [topRegions, rightRegions, footerRegions, overlayRegions],
   );
   const resolved = useMemo(
     () => new Map(allRegions.map((r) => [r.key, registry.get(r.module)])),
@@ -273,6 +279,14 @@ export default function SurroundFrame({
       style={enabled ? undefined : NO_BOX}
     >
       <div className={enabled ? 'surround-frame__main' : undefined} style={enabled ? undefined : NO_BOX}>
+        {enabled && topRegions.length > 0 && (
+          <div
+            className="surround-frame__header"
+            style={mediaWidth ? { width: `${mediaWidth}px` } : undefined}
+          >
+            {topRegions.map(renderRegion)}
+          </div>
+        )}
         <div className={enabled ? 'surround-frame__stage' : undefined} style={enabled ? undefined : NO_BOX}>
           {/* 16:9 lock lives inline so no outer cascade can stretch the video. */}
           <div
