@@ -396,15 +396,27 @@ test.describe('Surround — composed layout gate', () => {
     expect(playhead.y).toBeGreaterThanOrEqual(heading.y + heading.height - 1);
 
     // 4. Every rail child ends on-screen (the bio used to end at 742 of 720).
+    //    The nameplate and the country-map are NOT optional for this fixture:
+    //    the nameplate always renders in a composer-card rail, and the
+    //    country-map is authored in the enriched fixture's live definition —
+    //    for both, count===0 is a mount failure, not an absent-content case,
+    //    so it must fail loudly rather than be skipped.
     for (const sel of [
-      '.surround-composer-card__fact',
       '.surround-composer-card__nameplate',
       '.surround-frame__region[data-module="country-map"]',
     ]) {
       const count = await page.locator(sel).count();
-      if (count === 0) continue; // fact may be absent for a composer without facts
+      expect(count, `${sel} did not mount`).toBeGreaterThanOrEqual(1);
       const b = await box(sel);
       expect(b.y + b.height, `${sel} clipped off-screen`).toBeLessThanOrEqual(viewport.height + 1);
+    }
+
+    // The fact is the ONE genuinely optional child: a composer without an
+    // authored fact renders no fact element at all, so skip only when absent.
+    const factCount = await page.locator('.surround-composer-card__fact').count();
+    if (factCount > 0) {
+      const factBox = await box('.surround-composer-card__fact');
+      expect(factBox.y + factBox.height, 'fact clipped off-screen').toBeLessThanOrEqual(viewport.height + 1);
     }
 
     // 5. The rail is on the LEFT, not the right — the recomposed contract.
