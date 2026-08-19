@@ -24,17 +24,27 @@ export class PlayResponseService {
   #mediaProgressMemory;
   #progressSyncService;
   #progressSyncSources;
+  #surroundStore;
+  #surroundLogger;
 
   /**
    * @param {Object} deps
    * @param {Object} deps.mediaProgressMemory - MediaProgressMemory for local watch state
    * @param {Object} [deps.progressSyncService] - ProgressSyncService for remote sync
    * @param {Set} [deps.progressSyncSources] - Sources that use progress sync
+   * @param {import('#apps/content/ports/ISurroundStore.mjs').ISurroundStore} [deps.surroundStore]
+   *   Surround sidecar lookup. Optional: when absent, play responses are built
+   *   exactly as before. Depended on as the port, never as a concrete store.
+   * @param {Object} [deps.logger] - Logger instance
    */
-  constructor({ mediaProgressMemory, progressSyncService, progressSyncSources }) {
+  constructor({ mediaProgressMemory, progressSyncService, progressSyncSources, surroundStore, logger }) {
     this.#mediaProgressMemory = mediaProgressMemory;
     this.#progressSyncService = progressSyncService ?? null;
     this.#progressSyncSources = progressSyncSources ?? null;
+    this.#surroundStore = surroundStore ?? null;
+    // Surround gets its own subsystem identity so its events are queryable
+    // apart from the generic content-api stream.
+    this.#surroundLogger = logger?.child?.({ app: 'surround', module: 'play-response' }) ?? logger ?? null;
   }
 
   /**
@@ -138,6 +148,23 @@ export class PlayResponseService {
     if (colonIdx > 0) {
       const sourceKey = item.id.slice(0, colonIdx);
       response[sourceKey] = item.id.slice(colonIdx + 1);
+    }
+
+    // Surround is purely additive: an authored sidecar frames the player, and
+    // its absence — or a store that breaks its never-throw contract — must
+    // leave the response byte-identical to an un-enriched one.
+    try {
+      const surround = this.#surroundStore?.lookup(item.id, item.title);
+      if (surround) {
+        response.surround = surround;
+        this.#surroundLogger?.debug?.('surround.attach', {
+          contentId: item.id,
+          surroundId: surround.id,
+          path: 'play'
+        });
+      }
+    } catch (err) {
+      this.#surroundLogger?.warn?.('surround.attach.failed', { contentId: item.id, error: err?.message });
     }
 
     return response;
