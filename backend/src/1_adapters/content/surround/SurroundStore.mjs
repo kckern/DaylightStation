@@ -61,6 +61,8 @@ export class SurroundStore {
    * would otherwise orphan every sidecar at once with no symptom but a missing
    * frame, so a miss falls back to matching the authored `match.title` against
    * the live one. The warn it logs is how anyone learns the ids went stale.
+   * That fallback answers only when it is sure: two sidecars matching the same
+   * live title yield null, not a coin flip.
    *
    * Returns a fresh clone each call. The payload is attached verbatim to play
    * and queue responses, where callers may decorate it (asset URLs, defaults);
@@ -76,8 +78,9 @@ export class SurroundStore {
       const payload = this.#byContentId.get(String(contentId));
       if (payload) return structuredClone(payload);
 
-      const rebound = this.#rebind(title);
-      if (rebound) {
+      const candidates = this.#rebind(title);
+      if (candidates.length === 1) {
+        const [rebound] = candidates;
         // Warn, not info: the sidecar still works, but its contentId is wrong and
         // the message carries everything needed to fix the file by hand.
         this.logger?.warn?.('surround.match.rebound', {
@@ -87,6 +90,18 @@ export class SurroundStore {
           contentId: rebound.contentId
         });
         return structuredClone(rebound.payload);
+      }
+      if (candidates.length > 1) {
+        // Refuse rather than guess. A wrong surround is a visible error to whoever
+        // is watching — Beethoven's facts pinned over a Vivaldi video — while a
+        // missing one is just the un-enriched status quo. Every candidate file is
+        // named so the author knows exactly which titles to disambiguate.
+        this.logger?.warn?.('surround.match.ambiguous', {
+          staleContentId: contentId,
+          liveTitle: title,
+          candidates: candidates.map(({ file, title: matchedTitle }) => ({ file, title: matchedTitle }))
+        });
+        return null;
       }
 
       // The only trace an authoring mistake leaves: failing soft means a wrong
@@ -99,23 +114,28 @@ export class SurroundStore {
   }
 
   /**
-   * Find a piece whose authored title matches the live one, ids having gone stale.
+   * Collect every piece whose authored title matches the live one, ids having gone stale.
    *
    * Substring, not equality, and in both directions: the live Plex title usually
    * appends the orchestra and conductor to the authored one, but an authored title
    * may equally be the more specific of the two. An empty normalization (a missing
    * or non-string title on either side) matches nothing rather than everything.
    *
+   * Every match is returned, never just the first: substring matching is lossy
+   * enough that a short authored title (`Spring`) hits whole families of live
+   * titles, and picking by walk order would make the answer depend on the
+   * filesystem. The caller decides what more than one match means.
+   *
    * @param {string} title - Live item title
-   * @returns {{ title: string, file: string, contentId: string, payload: Object }|null}
+   * @returns {Array<{ title: string, file: string, contentId: string, payload: Object }>}
    * @private
    */
   #rebind(title) {
     const live = normalizeTitle(title);
-    if (!live) return null;
+    if (!live) return [];
 
-    return this.#byTitle.find(({ normalized }) =>
-      normalized.includes(live) || live.includes(normalized)) ?? null;
+    return this.#byTitle.filter(({ normalized }) =>
+      normalized.includes(live) || live.includes(normalized));
   }
 
   /**
