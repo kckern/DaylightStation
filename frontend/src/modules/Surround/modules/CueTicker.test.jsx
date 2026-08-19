@@ -5,7 +5,7 @@ import { render, act } from '@testing-library/react';
 import * as sass from 'sass-embedded';
 import CueTicker, {
   CUE_FADE_MS, CUE_HOLD_MS, CUE_SWAP_MS, CUE_DWELL_S, FACT_INTERVAL_MS,
-  LISTEN_INTERVAL_MS, LISTEN_PHASE_MS,
+  LISTEN_INTERVAL_MS, LISTEN_PHASE_MS, phaseDelay,
 } from './CueTicker.jsx';
 import { ACCORDION_MS } from '../band.js';
 
@@ -1423,5 +1423,111 @@ describe('CueTicker — review round (I1, I3, I5)', () => {
       view.zones().className,
       'the band blanked itself during the entrance for a side it had never actually shown',
     ).not.toContain('--swapping');
+  });
+});
+
+/**
+ * THE HALF-PERIOD GAP, TESTED AS A RELATION (wave 8, critique finding 2).
+ *
+ * The existing spec above asserts the DELAY VALUES — that `LISTEN_PHASE_MS` is
+ * half `FACT_INTERVAL_MS`, and that at half a period one zone has moved and the
+ * other has not. Both were true, and the invariant they were standing in for was
+ * false: the NOW register re-arms at every movement boundary and at the end of
+ * every cue, and it used to wait a flat half-period from THAT moment while the
+ * piece register's beat ran on untouched from mount. One boundary later the
+ * offset was whatever the boundary's timing made it — including zero, the two
+ * zones dissolving in the same instant, which is the whole reason the constant
+ * exists. Nothing could catch it because nothing measured the two clocks
+ * against each other AFTER a boundary.
+ *
+ * TO GO RED: replace `phaseDelay(Date.now() - pieceSwappedAt.current, …)` in the
+ * NOW register's effect with a flat `LISTEN_PHASE_MS`. The boundary at 7s then
+ * puts the NOW swap 3s from a piece swap instead of 10s, and the assertion
+ * below reports the measured gap.
+ */
+describe('CueTicker — the two registers never blink together (wave 8)', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  const PHASED = {
+    contentId: 'plex:663134',
+    piece: { musicEndsAt: 2955 },
+    movements: [
+      { n: 1, name: 'Allegro con brio', start: 0, listen: ['One A.', 'One B.'] },
+      { n: 2, name: 'Marcia funebre. Adagio assai', start: 976, listen: ['Two A.', 'Two B.'] },
+    ],
+    cues: [],
+    facts: ['Fact one.', 'Fact two.'],
+  };
+
+  it('re-establishes the half-period offset across a movement boundary', () => {
+    const props = (p) => ({
+      position: p, duration: 3223, playing: true, seeking: false,
+      data: PHASED, region: { module: 'cue-ticker', height: 'fill' }, logger: makeLogger(),
+    });
+    const view = render(<CueTicker {...props(0)} />);
+    const read = (id) => view.container.querySelector(`[data-testid="${id}"]`)?.textContent ?? '';
+
+    const STEP = 250;
+    const HORIZON = 60000;
+    let now = 0;
+    let piece = read('surround-ticker-text');
+    let listen = read('surround-ticker-listen');
+    const pieceSwaps = [];
+    const listenSwaps = [];
+    // The boundary lands at 7s — deliberately NOT on the rotation's beat, so a
+    // "wait half a period from here" phase would be 3s away from a piece swap
+    // rather than 10s.
+    const BOUNDARY_AT = 7000;
+    let crossed = false;
+
+    while (now < HORIZON) {
+      if (!crossed && now >= BOUNDARY_AT) {
+        act(() => { view.rerender(<CueTicker {...props(1000)} />); });
+        crossed = true;
+        listen = read('surround-ticker-listen');   // the boundary's own instant commit
+      }
+      act(() => { vi.advanceTimersByTime(STEP); });
+      now += STEP;
+      const p = read('surround-ticker-text');
+      const l = read('surround-ticker-listen');
+      // A dissolve blanks the line for a beat before committing the new one; the
+      // swap is the moment WORDS arrive, and both registers pay the same delay,
+      // so it cancels out of the gap between them.
+      if (p && p !== piece) { pieceSwaps.push(now); piece = p; }
+      if (l && l !== listen) { listenSwaps.push(now); listen = l; }
+    }
+
+    expect(pieceSwaps.length, 'the piece register never rotated').toBeGreaterThan(1);
+    expect(listenSwaps.length, 'the NOW register never rotated after the boundary').toBeGreaterThan(1);
+
+    // THE RELATION. Every NOW swap sits as far as it can from every piece swap:
+    // half a period, allowing for the sampling step at either end.
+    const half = FACT_INTERVAL_MS / 2;
+    const gaps = listenSwaps.map((l) => {
+      const nearest = pieceSwaps.reduce(
+        (best, p) => Math.min(best, Math.abs(l - p)), Infinity,
+      );
+      return { listenAt: l, nearestPieceGap: nearest };
+    });
+    gaps.forEach(({ listenAt, nearestPieceGap }) => {
+      expect(
+        nearestPieceGap,
+        `a NOW swap at ${listenAt}ms landed ${nearestPieceGap}ms from a piece swap; the two registers are meant to be ${half}ms apart. piece swaps at [${pieceSwaps}], NOW swaps at [${listenSwaps}]`,
+      ).toBeGreaterThan(half - (STEP * 4));
+    });
+  });
+
+  it('phaseDelay always lands half a period after a piece swap', () => {
+    const period = 20000;
+    // Whatever the elapsed time, waiting `phaseDelay` puts us exactly on a
+    // half-period offset from the piece register's beat.
+    for (let elapsed = 0; elapsed < 40000; elapsed += 137) {
+      const landsAt = elapsed + phaseDelay(elapsed, period);
+      expect(
+        ((landsAt % period) + period) % period,
+        `elapsed ${elapsed}ms -> swap at ${landsAt}ms, which is ${landsAt % period}ms into the period`,
+      ).toBeCloseTo(period / 2, 6);
+    }
   });
 });

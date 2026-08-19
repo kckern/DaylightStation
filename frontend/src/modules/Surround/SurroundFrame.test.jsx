@@ -424,11 +424,12 @@ describe('SurroundFrame', () => {
     expect(queryByTestId('surround-footer')).toBeNull();
   });
 
-  it('reserves an inert overlay slot', () => {
-    const { getByTestId } = renderFrame();
-    const overlay = getByTestId('surround-overlay');
-    expect(overlay.style.pointerEvents).toBe('none');
-    expect(overlay.childElementCount).toBe(0);
+  // The frame used to render an inert `z-50` overlay layer for a phase-two
+  // pop-up cue that was never built. It is gone: a layer over the whole player
+  // that renders nothing is a thing to trip over, not a foundation.
+  it('renders no overlay layer over the player', () => {
+    const { queryByTestId } = renderFrame();
+    expect(queryByTestId('surround-overlay')).toBeNull();
   });
 
   it('never throws when the surround payload is missing entirely', () => {
@@ -891,5 +892,59 @@ describe('SurroundFrame — the curtain’s bleed', () => {
       <SurroundFrame data={null} active={false} contentId="x"><video /></SurroundFrame>,
     );
     expect(container.querySelector('.surround-frame__stage')).toBeNull();
+  });
+});
+
+/**
+ * THE REGISTRATION'S `regions` META, DOING ITS JOB (wave 8, critique finding 9).
+ *
+ * Every built-in declares the slots it was cut for. That declaration was stored,
+ * asserted by a registry test, and read by nothing — a validation hook nobody
+ * built. It is read now: a definition that puts a rail module in the band still
+ * renders (the surround can never be the reason something does not play) and
+ * says so once, with both ends named.
+ *
+ * TO GO RED: drop the `surround.module.misplaced` branch from the frame's
+ * region effect, or the `{ regions: [...] }` argument from a registration.
+ */
+describe('SurroundFrame — a module in a slot it was not cut for', () => {
+  const Stub = () => <div data-testid="stub" />;
+
+  beforeEach(() => {
+    resetSurroundRegistry();
+    registerSurroundModule('rail-only', Stub, { regions: ['right'] });
+    registerSurroundModule('anywhere', Stub);
+  });
+  afterEach(() => { resetSurroundRegistry(); });
+
+  const frameWith = (definition, logger) => render(
+    <SurroundFrame
+      data={{ ...DATA, definition }} contentId="plex:663134"
+      position={0} duration={3223} playing seeking={false} logger={logger}
+    >
+      <video />
+    </SurroundFrame>,
+  );
+
+  it('warns, and still renders, when a module lands in an undeclared slot', () => {
+    const logger = makeLogger();
+    const { container } = frameWith({ regions: { bottom: [{ module: 'rail-only' }] } }, logger);
+    expect(container.querySelector('[data-testid="stub"]'), 'the frame refused to render it')
+      .not.toBeNull();
+    const warns = logger.warn.mock.calls.filter((c) => c[0] === 'surround.module.misplaced');
+    expect(warns).toHaveLength(1);
+    expect(warns[0][1]).toMatchObject({ module: 'rail-only', slot: 'bottom', declared: ['right'] });
+  });
+
+  it('stays quiet for a module in a slot it declared', () => {
+    const logger = makeLogger();
+    frameWith({ regions: { right: { module: 'rail-only' } } }, logger);
+    expect(logger.warn.mock.calls.filter((c) => c[0] === 'surround.module.misplaced')).toHaveLength(0);
+  });
+
+  it('stays quiet for a module that declares nothing — an omission is not a claim', () => {
+    const logger = makeLogger();
+    frameWith({ regions: { bottom: [{ module: 'anywhere' }] } }, logger);
+    expect(logger.warn.mock.calls.filter((c) => c[0] === 'surround.module.misplaced')).toHaveLength(0);
   });
 });

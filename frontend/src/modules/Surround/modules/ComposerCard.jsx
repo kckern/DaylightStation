@@ -35,12 +35,9 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
-import { DaylightMediaPath } from '../../../lib/api.mjs';
-import getLogger from '../../../lib/logging/Logger.js';
-import { smartQuotes, smartQuotesAll } from '../typography.js';
-import {
-  DISSOLVE_FADE_MS, DISSOLVE_HOLD_MS, DISSOLVE_COMMIT_MS, prefersReducedMotion,
-} from '../dissolve.js';
+import { smartQuotes, smartQuotesAll, trimmed } from '../typography.js';
+import { surroundLogger, assetUrl } from '../moduleKit.js';
+import { DISSOLVE_FADE_MS, DISSOLVE_HOLD_MS, useDissolve } from '../dissolve.js';
 import './ComposerCard.scss';
 
 /** At most this many surround.asset.missing warnings per card per minute. */
@@ -62,25 +59,8 @@ export const COMPOSER_FACT_HOLD_MS = DISSOLVE_HOLD_MS;
 
 const NO_FACT = Object.freeze({ key: 'empty', index: null, text: '' });
 
-let moduleLogger = null;
-function fallbackLogger() {
-  if (!moduleLogger) moduleLogger = getLogger().child({ app: 'surround', component: 'composer-card' });
-  return moduleLogger;
-}
-function resolveLogger(logger) {
-  if (!logger) return fallbackLogger();
-  return logger.child?.({ app: 'surround', component: 'composer-card' }) ?? logger;
-}
-
-/** `beethoven/portrait.jpg` + `library/classical` -> /api/v1/static/img/... */
-function assetUrl(assetBase, ref) {
-  if (!assetBase || !ref) return null;
-  const base = String(assetBase).replace(/^\/|\/$/g, '');
-  const path = String(ref).replace(/^\//, '');
-  return DaylightMediaPath(`media/img/${base}/${path}`);
-}
-
-const trimmed = (value) => (typeof value === 'string' && value.trim() ? value.trim() : null);
+/** A blank fact is present but has nothing on screen to fade out of. */
+const FACT_DISSOLVE = Object.freeze({ hasContent: (v) => Boolean(v?.text) });
 
 /** "1770 – 1827", or "b. 1770" while only one year is known. */
 function lifeSpan(composer) {
@@ -107,7 +87,7 @@ export default function ComposerCard({
   region = null,
   logger = null,
 }) {
-  const log = useMemo(() => resolveLogger(logger), [logger]);
+  const log = useMemo(() => surroundLogger(logger, 'composer-card'), [logger]);
   const contentId = data?.contentId ?? null;
   const composer = data?.composer ?? null;
 
@@ -174,31 +154,12 @@ export default function ComposerCard({
     return { key: `fact:${i}`, index: i, text: facts[i] };
   }, [facts, factIndex]);
 
-  const [shownFact, setShownFact] = useState(() => nextFact);
-  const [factHidden, setFactHidden] = useState(false);
-  const fadeTimers = useRef([]);
-  const clearFadeTimers = () => { fadeTimers.current.forEach(clearTimeout); fadeTimers.current = []; };
-
-  useEffect(() => {
-    if (nextFact.key === shownFact.key) return;
-    clearFadeTimers();
-    // Nothing on screen to fade out of — swap straight in.
-    if (!shownFact.text || prefersReducedMotion()) {
-      setShownFact(nextFact);
-      setFactHidden(false);
-      return;
-    }
-    // The same dissolve the ticker plays: out to the dark rail ground, a beat of
-    // empty ground, then in. The rail's reserved fact height (see the SCSS) is
-    // what keeps the card still while the ground is empty.
-    setFactHidden(true);
-    fadeTimers.current.push(setTimeout(() => {
-      setShownFact(nextFact);
-      setFactHidden(false);
-    }, DISSOLVE_COMMIT_MS));
-  }, [nextFact, shownFact]);
-
-  useEffect(() => () => clearFadeTimers(), []);
+  // The house dissolve, and the SAME controller the band and the carousel run
+  // (`../dissolve.js`): out to the dark rail ground, a beat of empty ground,
+  // then in. The rail's reserved fact height (see the SCSS) is what keeps the
+  // card still while the ground is empty. A `{ text: '' }` fact is present but
+  // blank, so "is there anything to fade out of" is the text, not the object.
+  const [shownFact, factHidden] = useDissolve(nextFact, FACT_DISSOLVE);
 
   useEffect(() => {
     if (!shownFact.text) return;
@@ -218,6 +179,16 @@ export default function ComposerCard({
   // With one of them missing the survivor takes the whole width rather than
   // sitting in a column beside an empty one.
   const hasHeader = hasIdentity || Boolean(portraitSrc);
+
+  // NULL DISCIPLINE, and this module's own law. The store's merge always yields
+  // a composer OBJECT — possibly an empty one — so "there is a composer" is not
+  // a question the payload's shape can answer; only its contents can. With no
+  // name, no dates, no birthplace, no era, no portrait and no facts, this card
+  // rendered its outer element anyway and the rail showed an empty oxblood
+  // panel. Every sibling module (WorkPlacard, PlaceCarousel, CountryMapModule)
+  // renders null on empty data and says why: a mat with nothing in it is worse
+  // than an absence, because it is an absence the viewer has to look at.
+  if (!hasHeader && !shownFact.text) return null;
 
   return (
     <div className="surround-composer-card" data-testid="surround-composer-card">

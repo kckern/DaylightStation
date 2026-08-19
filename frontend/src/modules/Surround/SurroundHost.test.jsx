@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { useEffect } from 'react';
 import { render, act } from '@testing-library/react';
-import SurroundHost from './SurroundHost.jsx';
+import SurroundHost, { definitionModules } from './SurroundHost.jsx';
 import { SurroundSettingContext } from './SurroundSettingContext.js';
 import { registerSurroundModule, getSurroundRegistry } from './registry.js';
 
@@ -529,5 +529,53 @@ describe('SurroundHost', () => {
       expect(node.dataset.shader).toBe('dark');
       expect(node.dataset.forceShader).toBe('focused');
     });
+  });
+});
+
+/**
+ * THE MOUNT LOG TOLD THE TRUTH ABOUT HALF THE FRAME (wave 8, critique finding 6).
+ *
+ * `surround.mount`'s `modules` field read `regions.right?.module` — a single
+ * object — while `right` has been a LIST since the rail gained its carousel, and
+ * `top` was never read at all. So the one event that says what a frame is made
+ * of reported the band and nothing else, for six waves, on every enriched item.
+ *
+ * TO GO RED: read `regions.right?.module` instead of walking the slot, or drop
+ * `'top'` from `REGION_SLOTS`.
+ */
+describe('SurroundHost — the mount log names the whole frame', () => {
+  const SHIPPED = {
+    regions: {
+      top: { module: 'work-placard' },
+      right: [
+        { module: 'composer-card', width: '33%', side: 'left' },
+        { module: 'place-carousel' },
+      ],
+      bottom: [
+        { module: 'movement-map', height: 64 },
+        { module: 'cue-ticker', height: 'fill', collapse: 'first' },
+      ],
+    },
+    collapse: { footerFloor: 90 },
+  };
+
+  it('reports every module of the shipped definition, in layout order', () => {
+    expect(definitionModules(SHIPPED)).toEqual([
+      'work-placard', 'composer-card', 'place-carousel', 'movement-map', 'cue-ticker',
+    ]);
+  });
+
+  it('reads a slot authored as a single object exactly as it reads a list', () => {
+    expect(definitionModules({ regions: { bottom: { module: 'movement-map' } } }))
+      .toEqual(['movement-map']);
+    expect(definitionModules({ regions: { bottom: [{ module: 'movement-map' }] } }))
+      .toEqual(['movement-map']);
+  });
+
+  it('never throws on a definition that is missing, empty or malformed', () => {
+    expect(definitionModules(null)).toEqual([]);
+    expect(definitionModules({})).toEqual([]);
+    expect(definitionModules({ regions: { right: [null, { width: '33%' }, { module: 42 }] } }))
+      .toEqual([]);
   });
 });

@@ -67,3 +67,17 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* THE INTERPUNCT'S AIR. The mark divides three provenance facts on one engraved
+   line, and a divider set tight against the words it divides reads as
+   punctuation inside a phrase rather than as a separator between claims. The
+   space is an `em` — a fraction of this line's own type — so it holds at every
+   screen in the fleet, which three space glyphs joined in the JSX did not: HTML
+   collapsed them to a single space, and that space's width was whatever the
+   face happened to make it. */
+.surround-work-placard__sep {
+  margin: 0 0.7em;
+  /* Slightly quieter than the facts either side: the eye should read the words
+     and merely register the mark. */
+  opacity: 0.65;
+}

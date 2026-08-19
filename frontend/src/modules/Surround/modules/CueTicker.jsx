@@ -57,8 +57,11 @@
 // THE TWO ZONES NEVER SWAP TOGETHER. Both play the house dissolve — out to the
 // band's near-black ground, a held beat of nothing, then in — and two of those
 // firing in the same instant reads as the whole band blinking. The right zone's
-// rotation is therefore phase-offset by half a period from the left's
-// (`LISTEN_PHASE_MS`), which is the maximum separation two equal periods admit.
+// rotation is therefore phase-offset by half a period from the left's, which is
+// the maximum separation two equal periods admit. The offset is measured
+// against the PIECE register's own last swap (`phaseDelay`), not against the
+// moment the right zone happens to re-arm, so a movement boundary or a cue puts
+// it back at its maximum rather than at whatever that beat's timing produced.
 // Under prefers-reduced-motion both collapse to an instant swap.
 //
 // THAT LAW HAS EXACTLY ONE EXCEPTION, and it is deliberate: the `nowSide` swap
@@ -73,14 +76,14 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
-import getLogger from '../../../lib/logging/Logger.js';
 import {
-  DISSOLVE_FADE_MS, DISSOLVE_HOLD_MS, DISSOLVE_SWAP_MS, DISSOLVE_COMMIT_MS,
-  prefersReducedMotion,
+  DISSOLVE_FADE_MS, DISSOLVE_HOLD_MS, DISSOLVE_SWAP_MS, useDissolve,
 } from '../dissolve.js';
-import { smartQuotes, smartQuotesAll } from '../typography.js';
+import { smartQuotes, smartQuotesAll, trimmed } from '../typography.js';
+import { surroundLogger } from '../moduleKit.js';
 import {
-  resolveBandConfig, showsNowHeading, useNowSide, elapsedFraction, ACCORDION_MS,
+  resolveBandConfig, showsNowHeading, useNowSide, elapsedFraction, activeMovementIndex,
+  placedMovements, roman, ACCORDION_MS,
 } from '../band.js';
 import './CueTicker.scss';
 
@@ -106,93 +109,79 @@ export const FACT_INTERVAL_MS = 20000;
  */
 export const LISTEN_INTERVAL_MS = FACT_INTERVAL_MS;
 /**
- * How long the NOW register waits before its FIRST swap — half a period, so
- * the two zones alternate rather than blink together. Re-established (not
- * merely preserved) at every movement boundary and after every timed cue,
- * because both of those are themselves swaps the viewer just watched: a fresh
- * half-period is the right pacing after one, and it puts the offset back at its
- * maximum at the same time.
+ * How long the NOW register waits before its FIRST swap when it has nothing to
+ * phase against — half a period, which at equal periods is the maximum
+ * separation two rotations admit.
+ *
+ * THE OFFSET IS MEASURED FROM THE PIECE REGISTER'S OWN CLOCK, not from the
+ * moment the NOW register re-arms, and that distinction is the whole of this
+ * constant's honesty. The NOW register re-arms at every movement boundary and
+ * at the end of every timed cue; the piece register's beat runs on untouched
+ * from mount (it must — tearing it down on a cue edge in the OTHER zone was
+ * itself a defect). So "wait half a period from HERE" gave an exact half-period
+ * gap once, at mount, and an arbitrary one after the first boundary — the two
+ * zones could land in lockstep and blink together, which is the single effect
+ * this constant exists to prevent. `phaseDelay` below waits instead until the
+ * next instant that is exactly half a period after a piece swap, so the gap is
+ * re-established rather than merely intended.
  */
 export const LISTEN_PHASE_MS = Math.round(FACT_INTERVAL_MS / 2);
 
-const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
+/**
+ * How long to wait so that the next NOW swap lands exactly half a period after a
+ * PIECE swap.
+ *
+ * Pure and exported so the phase relation can be tested as a relation, rather
+ * than by asserting the delay values — which is precisely how the false
+ * invariant survived six waves of review.
+ *
+ * @param {number} sinceLastPieceSwap ms elapsed since the piece register last
+ *   swapped (or since its interval was armed).
+ * @param {number} [periodMs] the shared rotation period.
+ * @returns {number} 0..periodMs.
+ */
+export function phaseDelay(sinceLastPieceSwap, periodMs = FACT_INTERVAL_MS) {
+  const period = Number(periodMs) > 0 ? Number(periodMs) : FACT_INTERVAL_MS;
+  const half = period / 2;
+  const elapsed = Number.isFinite(sinceLastPieceSwap) ? sinceLastPieceSwap : 0;
+  const wait = (half - (elapsed % period)) % period;
+  return wait < 0 ? wait + period : wait;
+}
 
 const EMPTY = Object.freeze({ key: 'empty', kind: null, at: null, text: '' });
 
-let moduleLogger = null;
-function fallbackLogger() {
-  if (!moduleLogger) moduleLogger = getLogger().child({ app: 'surround', component: 'cue-ticker' });
-  return moduleLogger;
-}
-function resolveLogger(logger) {
-  if (!logger) return fallbackLogger();
-  return logger.child?.({ app: 'surround', component: 'cue-ticker' }) ?? logger;
-}
-
-const trimmed = (value) => (typeof value === 'string' && value.trim() ? value.trim() : null);
+/** A dissolving line is only worth fading out of when it has words in it. */
+const hasLine = (value) => Boolean(value?.text);
 
 /**
- * One dissolve controller: hold the current content, and when the next differs,
- * fade out, hold empty ground, then commit and fade in.
+ * The NOW zone's two urgent edges — commit instantly rather than softening.
  *
- * Extracted in wave 6 because there are now TWO of these in one component and a
- * second copy of the choreography is a second chance for the two halves of the
- * band to drift apart. Each zone gets its own instance and therefore its own
- * timers, which is exactly what lets them be phase-offset.
+ * Fix round 1 (review finding I2), scoped to the NOW ZONE ONLY: `mv` is carried
+ * solely on the now-zone's payload (see `nowNext`), so both conditions are false
+ * whenever `next`/`shown` are the piece register's. The piece register's cue
+ * interrupt (the unsplit band, wave 2) keeps its original gentle dissolve on
+ * purpose — it has no header to disagree with.
+ *   - an ACTIVATING CUE (`shown` was not a cue, `next` is): a cue is a claim
+ *     about what is sounding RIGHT NOW, and a stale rotation note lingering
+ *     through even one fade-out is a wrong answer, however briefly.
+ *   - a MOVEMENT BOUNDARY (`next.mv` names a different movement than
+ *     `shown.mv`): the header above this text is NOT dissolved, so a softened
+ *     note would show the NEW movement's header over the OLD movement's note for
+ *     up to a full fade — the two halves of the band naming different movements
+ *     at the same instant.
+ * Without this, a second edge arriving before the first dissolve's commit fires
+ * re-queues a full `DISSOLVE_COMMIT_MS` wait on top of whatever was left of the
+ * first.
  */
-function useDissolve(next) {
-  const [shown, setShown] = useState(() => next);
-  const [hidden, setHidden] = useState(false);
-  const timers = useRef([]);
-  const clearTimers = () => { timers.current.forEach(clearTimeout); timers.current = []; };
-
-  useEffect(() => {
-    if (next.key === shown.key) return;
-    clearTimers();
-    // Fix round 1 (review finding I2), scoped to the NOW ZONE ONLY — `mv` is
-    // carried solely on the now-zone's payload (see `nowNext`), so both
-    // conditions below are false whenever `next`/`shown` are the piece
-    // register's. The piece register's cue interrupt (the unsplit band, wave
-    // 2) keeps its original gentle dissolve on purpose: it has no header to
-    // disagree with, and a hard cut there was never the bug this finding
-    // named. Two now-zone edges ARE urgent enough to skip the out-fade
-    // entirely rather than queue a fresh full dissolve:
-    //   - an ACTIVATING CUE (`shown` was not a cue, `next` is) — a cue is a
-    //     claim about what is sounding RIGHT NOW, and a stale rotation note
-    //     lingering through even one fade-out is a wrong answer, however
-    //     briefly.
-    //   - a MOVEMENT BOUNDARY (`next.mv` names a different movement than
-    //     `shown.mv`). The header above this text is NOT dissolved (it just
-    //     re-renders), so a softened note here would show the NEW movement's
-    //     header over the OLD movement's note for up to a full fade — the two
-    //     halves of the band naming different movements at the same instant.
-    // Without this, a second edge arriving before the first dissolve's commit
-    // fires re-queues a full `DISSOLVE_COMMIT_MS` wait on top of whatever was
-    // left of the first — up to twice the normal commit latency for a cue
-    // that happens to land mid-rotation.
-    const isNowZone = next.mv !== undefined || shown.mv !== undefined;
-    const activating = isNowZone && next.kind === 'cue' && shown.kind !== 'cue';
-    const boundary = next.mv !== undefined && shown.mv !== undefined && next.mv !== shown.mv;
-    // Nothing to fade out of (first line, or recovering from an empty panel).
-    if (!shown.text || prefersReducedMotion() || activating || boundary) {
-      setShown(next);
-      setHidden(false);
-      return;
-    }
-    // Fade out, hold the empty ground, then swap and fade in. The swap commits
-    // at the end of the held beat so the incoming line is never visible sliding
-    // in under the outgoing one's opacity.
-    setHidden(true);
-    timers.current.push(setTimeout(() => {
-      setShown(next);
-      setHidden(false);
-    }, DISSOLVE_COMMIT_MS));
-  }, [next, shown]);
-
-  useEffect(() => () => clearTimers(), []);
-
-  return [shown, hidden];
+export function urgentNowEdge(next, shown) {
+  const isNowZone = next?.mv !== undefined || shown?.mv !== undefined;
+  const activating = isNowZone && next?.kind === 'cue' && shown?.kind !== 'cue';
+  const boundary = next?.mv !== undefined && shown?.mv !== undefined && next.mv !== shown.mv;
+  return activating || boundary;
 }
+
+/** The house dissolve, configured for a band line. One object, never re-made. */
+const LINE_DISSOLVE = Object.freeze({ hasContent: hasLine, instant: urgentNowEdge });
 
 export default function CueTicker({
   position = 0,
@@ -206,7 +195,7 @@ export default function CueTicker({
   region = null,
   logger = null,
 }) {
-  const log = useMemo(() => resolveLogger(logger), [logger]);
+  const log = useMemo(() => surroundLogger(logger, 'cue-ticker'), [logger]);
   const contentId = data?.contentId ?? null;
   const config = useMemo(() => resolveBandConfig(data), [data]);
 
@@ -249,17 +238,19 @@ export default function CueTicker({
   const musicEndsAt = Number(data?.piece?.musicEndsAt);
   const end = Number.isFinite(musicEndsAt) && musicEndsAt > 0 ? musicEndsAt : null;
 
-  /** Which movement is sounding, or -1 during the applause / before the first. */
-  const movementIndex = useMemo(() => {
-    if (!movements.length) return -1;
-    if (end !== null && position >= end) return -1;
-    for (let i = movements.length - 1; i >= 0; i -= 1) {
-      if (position >= (Number(movements[i]?.start) || 0)) return i;
-    }
-    return -1;
-  }, [movements, position, end]);
-
-  const movement = movementIndex >= 0 ? movements[movementIndex] : null;
+  // ONE DERIVATION OF WHAT IS SOUNDING, shared with the rail (`../band.js`).
+  // This module and `MovementMap` used to hold two near-copies of the same loop
+  // whose fall-through cases disagreed — the rail lit movement I before the
+  // first start, this register said nothing was playing. Both now ask the same
+  // function, which also declines to place a movement whose start the store
+  // refused, instead of coercing it to 0.
+  const placed = useMemo(() => placedMovements(movements), [movements]);
+  const placedIndex = useMemo(
+    () => activeMovementIndex({ placed, position, end }), [placed, position, end],
+  );
+  const movement = placedIndex >= 0 ? placed[placedIndex].movement : null;
+  /** The AUTHORED index of the sounding movement — what the log and the bond name. */
+  const movementIndex = placedIndex >= 0 ? placed[placedIndex].index : -1;
 
   const listen = useMemo(
     () => smartQuotesAll(
@@ -297,6 +288,16 @@ export default function CueTicker({
   // ---- the PIECE register (left) -------------------------------------------
   const [factIndex, setFactIndex] = useState(0);
 
+  /**
+   * WHEN THE PIECE REGISTER LAST SWAPPED — the clock the NOW register phases
+   * against. A ref, not state: nothing renders from it, and re-rendering the
+   * band twenty times a symphony to store a timestamp would be absurd.
+   * `Date.now()` rather than `performance.now()` because the only thing computed
+   * from it is a difference of two readings taken by this same component, and
+   * `Date.now` is what a fake-timer suite can move.
+   */
+  const pieceSwappedAt = useRef(Date.now());
+
   // Fix round 1 (review finding I1). TWO separate effects, not one reading
   // `activeCue` for both branches: a single effect with `activeCue` in its
   // deps tore the SPLIT rotation's interval down and rebuilt it on every cue
@@ -311,7 +312,11 @@ export default function CueTicker({
     // must survive a cue landing or lifting in the OTHER zone untouched.
     if (!split) return undefined;
     if (facts.length < 2) return undefined;
-    const id = setInterval(() => setFactIndex((i) => i + 1), FACT_INTERVAL_MS);
+    pieceSwappedAt.current = Date.now();
+    const id = setInterval(() => {
+      pieceSwappedAt.current = Date.now();
+      setFactIndex((i) => i + 1);
+    }, FACT_INTERVAL_MS);
     return () => clearInterval(id);
   }, [split, facts.length]);
 
@@ -339,7 +344,7 @@ export default function CueTicker({
     return EMPTY;
   }, [split, activeCue, facts, factIndex]);
 
-  const [pieceShown, pieceHidden] = useDissolve(pieceNext);
+  const [pieceShown, pieceHidden] = useDissolve(pieceNext, LINE_DISSOLVE);
 
   // ---- the NOW register (right) --------------------------------------------
   const [listenIndex, setListenIndex] = useState(0);
@@ -354,11 +359,20 @@ export default function CueTicker({
     // A cue owns this zone for its dwell; the rotation holds still behind it so
     // the note it interrupted is not skipped.
     if (activeCue) return undefined;
+    // THE HALF-PERIOD GAP, RE-ESTABLISHED RATHER THAN INTENDED. This effect
+    // re-arms at every movement boundary and at the end of every cue, and the
+    // piece register's beat runs on untouched through both. Waiting a flat
+    // `LISTEN_PHASE_MS` from HERE therefore held the offset only until the
+    // first boundary, after which it was whatever the boundary's timing made
+    // it — including zero, the two zones blinking together, which is the one
+    // effect the phase exists to prevent. Waiting until the next instant that
+    // is half a period after a PIECE swap puts the gap back at its maximum,
+    // every time, without touching the other zone's clock (finding I1).
     let interval = null;
     const phase = setTimeout(() => {
       setListenIndex((i) => i + 1);
       interval = setInterval(() => setListenIndex((i) => i + 1), LISTEN_INTERVAL_MS);
-    }, LISTEN_PHASE_MS);
+    }, phaseDelay(Date.now() - pieceSwappedAt.current, LISTEN_INTERVAL_MS));
     return () => { clearTimeout(phase); if (interval) clearInterval(interval); };
   }, [split, activeCue, movementIndex, nowPool.length]);
 
@@ -393,7 +407,7 @@ export default function CueTicker({
     return EMPTY;
   }, [split, activeCue, nowPool, listenIndex, borrowed, movementIndex]);
 
-  const [nowShown, nowHidden] = useDissolve(nowNext);
+  const [nowShown, nowHidden] = useDissolve(nowNext, LINE_DISSOLVE);
 
   // ---- logging --------------------------------------------------------------
   useEffect(() => {
@@ -416,9 +430,7 @@ export default function CueTicker({
   // ever cared about.
   const rootKind = activeCue ? 'cue' : (pieceShown.kind ?? nowShown.kind ?? 'empty');
 
-  const numeral = movement
-    ? `${ROMAN[Number(movement.n)] ?? (movementIndex + 1)}.`
-    : null;
+  const numeral = movement ? roman(Number(movement.n), movementIndex) : null;
   const movementName = smartQuotes(trimmed(movement?.name));
   const movementTranslation = smartQuotes(trimmed(movement?.translation));
 
@@ -463,7 +475,7 @@ export default function CueTicker({
     }),
     [side, settled],
   );
-  const [sideShown, sideSwapping] = useDissolve(sideNext);
+  const [sideShown, sideSwapping] = useDissolve(sideNext, LINE_DISSOLVE);
   const renderedSide = sideShown.text
     ? (sideShown.text === 'left' ? 'left' : 'right')
     : side;

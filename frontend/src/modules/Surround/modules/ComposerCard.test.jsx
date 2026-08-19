@@ -1088,3 +1088,44 @@ describe('ComposerCard — smart quotes', () => {
     expect(view.getByTestId('surround-composer-period').textContent).toContain('composer’s');
   });
 });
+
+/**
+ * NULL DISCIPLINE — the module's own stated law, applied to the module
+ * (wave 8, critique finding §1.2).
+ *
+ * WorkPlacard, PlaceCarousel and CountryMapModule all render null on empty data
+ * and say why in their headers. This card returned its outer element
+ * unconditionally, and the store's composer merge always yields an OBJECT —
+ * possibly an empty one — so a corpus with a sidecar and no composer put an
+ * empty oxblood panel in the rail: an absence the viewer has to look at.
+ *
+ * TO GO RED: remove the `if (!hasHeader && !shownFact.text) return null` guard.
+ */
+describe('ComposerCard — nothing authored, nothing drawn', () => {
+  const renderWith = (composer) => render(
+    <ComposerCard
+      position={0} duration={0} playing={false} seeking={false}
+      data={{ contentId: 'plex:1', composer, assetBase: 'library/classical' }}
+      region={{ module: 'composer-card', width: '33%' }}
+      logger={makeLogger()}
+    />,
+  );
+
+  it('renders nothing at all for the empty object the store’s merge can produce', () => {
+    expect(renderWith({}).container.querySelector('[data-testid="surround-composer-card"]'))
+      .toBeNull();
+  });
+
+  it('renders nothing when there is no composer key on the payload', () => {
+    expect(renderWith(undefined).container.querySelector('[data-testid="surround-composer-card"]'))
+      .toBeNull();
+  });
+
+  it('renders the card for the least a composer can be — one fact and no identity', () => {
+    const { container } = renderWith({ facts: ['He moved to Vienna at twenty-one.'] });
+    expect(container.querySelector('[data-testid="surround-composer-card"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="surround-composer-header"]')).toBeNull();
+    expect(container.querySelector('[data-testid="surround-composer-fact"]').textContent)
+      .toContain('Vienna');
+  });
+});

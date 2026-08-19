@@ -59,6 +59,7 @@ independent of any recording. Abridged from the real Eroica file:
 
 ```yaml
 title: Symphony No. 3 in E-flat major, "Eroica"
+short_title: "Beethoven's Third Symphony"   # the work's own alternate name
 opus: Op. 55                          # or BWV / K. / RV / HWV — whatever the catalog uses
 composed: 1803-1804
 year: 1804
@@ -95,6 +96,10 @@ Notes that save a debugging pass:
 - **`note:` becomes a cue.** A movement with a `note` and a paired start second is
   synthesized into a docked cue at that second. That is the whole mechanism —
   there is no per-movement cue syntax.
+- **`short_title:` is the work's own alternate name**, not an abbreviation of the
+  title. It is the standing label over the listening band's left register —
+  "Beethoven's Third Symphony" — and the band prints no label at all rather than
+  cutting a long `title` down to pretend to be one. Author it or leave it out.
 - **A movement reaches the payload whole**, so `translation:` and `listen:` are
   read by the player: `MovementMap` sets the translation as a gloss under the
   movement's name, and `CueTicker` cycles that movement's `listen` bullets in the
@@ -103,7 +108,8 @@ Notes that save a debugging pass:
 - **Work-level fields are allowlisted, and `themes:`, `set:`, `set_index:` and
   `tier:` are not on the list.** They are corpus fields, authored now for the
   School projection. `piece` is exactly the store's `PIECE_FIELDS` (`title`,
-  `opus`, `composed`, `year`, `period`, `period_note`, `city`, `premiered`), plus
+  `short_title`, `opus`, `composed`, `year`, `period`, `period_note`, `city`,
+  `premiered`), plus
   `movements`, `facts` and an optional `composer:` override block. **Adding a
   work-level field and not adding it to that allowlist is silent** — the region
   simply renders without it. Movement-level fields need no allowlist.
@@ -185,10 +191,64 @@ A `starts` entry that is not a non-negative finite number (a quoted timestamp, a
 placeholder `null`, a negative from arithmetic against the wrong reference) is
 dropped to `undefined` and logs the soft reason `starts-entry-invalid`. Positions
 are preserved rather than compacted, so one bad entry costs one movement's timing
-instead of shifting every later movement by one.
+instead of shifting every later movement by one — the movement keeps its name,
+its translation and its listening notes, which are true whatever this transfer's
+timing says. The band then **declines to draw** that movement on the rule
+(`surround.movements.unplaceable`) rather than anchoring it to second zero, so
+one bad entry costs a segment and never an out-of-order rail.
+
+A first movement that starts late — a transfer that opens on tuning or an
+announcement, `starts: [45, …]` — is a supported recording. Until that second
+the rail draws every movement as still to come and the listening band's header
+says `Listen for`: both halves read the same derivation, and neither claims music
+is sounding before it is.
 
 `render: docked` draws into the ticker region. `render: overlay` is reserved for
 phase two (pop-up-video style, over the video) and needs no schema change.
+
+### The presentation definition
+
+`_surrounds/<id>.yml` — where the chrome goes, for every recording that names it.
+It says nothing about any particular piece; it is the layout the corpus is poured
+into. The shipped one:
+
+```yaml
+id: concert-hall
+regions:
+  top:
+    module: work-placard
+  right:                                # width/side ride the FIRST entry
+    - module: composer-card
+      width: "33%"
+      side: left
+    - module: place-carousel            # no height: both rail regions split evenly
+  bottom:
+    - { module: movement-map, height: 64 }
+    - { module: cue-ticker, height: fill, collapse: first }
+collapse:
+  footerFloor: 90
+band:
+  nowSide: right                        # right | left | dynamic
+  nowHeading: auto                      # auto | always | never
+  railDensity: names                    # names | bars
+```
+
+A slot takes either one module or a list of them. `height` is pixels, or `fill`
+for the region that claims the band's slack. `collapse: first` marks the region
+dropped when the whole band falls under `collapse.footerFloor`. A module in a
+slot it was not registered for still renders and logs
+`surround.module.misplaced`.
+
+`band:` is the third thing a definition says about a frame, beside `regions` and
+`collapse` — how the listening band and the movement rail are laid out relative
+to each other. Every key defaults, and an unauthored, misspelled or wrong-typed
+value degrades to its default rather than reaching a module.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `band.nowSide` | `right` | Which half of the band carries the NOW register. `dynamic` follows the playhead — the register sits on the same side of the band as the sounding segment, so the bond joining them stays short — and swaps once, at half way, with hysteresis so a scrub cannot flap it. |
+| `band.nowHeading` | `auto` | Whether the NOW register prints the sounding movement's name. `auto` prints it exactly when the rail does not, because the rail's own names are that heading; `always` and `never` override. |
+| `band.railDensity` | `names` | What the rail prints. `names` is the shipped rail; `bars` is the rule, its barlines and the playhead with no type under them — for a band too short to carry names, and what makes `nowHeading: auto` resolve the other way. |
 
 ### How the two resolve
 
@@ -363,6 +423,9 @@ curl -s https://logs.kckern.net/select/logsql/query \
 | `surround.match.rebound` | A rescan invalidated a contentId and the title rebound it. Fix the id in the named file. |
 | `surround.match.ambiguous` | The title lane matched more than one sidecar at lookup time, so the store refused. Names the live title and every candidate file. |
 | `surround.lookup.miss` | An item played and nothing matched — the first thing to check when a surround doesn't appear. |
+| `surround.movements.unplaceable` | The rail declined to draw one or more movements: this recording gave them no usable start, or a start that runs backwards. Names how many were authored, how many were placed, and which numerals were dropped. Always paired with a `starts-entry-invalid` or `starts.mismatch` from the store — this one says what the screen did about it. |
+| `surround.module.missing` | A definition names a module the registry does not have. The region renders empty and the rest of the frame is unaffected — usually a typo in `_surrounds/`. |
+| `surround.module.misplaced` | A module is authored into a slot it was not registered for (a rail module in the band). It still renders; the warn names the slot and the slots the module declared. |
 
 ---
 
@@ -373,15 +436,15 @@ The `concert-hall` definition's regions resolve to named modules from
 
 | Module | Region | Draws |
 |---|---|---|
-| `work-placard` | top | The floating stone plate: piece title, composer, opus, premiere. |
+| `work-placard` | top | The floating stone plate: piece title, opus, composed, premiere. The composer is never named here — the person lives on brass in the rail, and the plate is stone, which carries only the work. |
 | `composer-card` | right (rail) | The header row — portrait plate and brass nameplate — and, below it, the rotating composer fact. |
-| `place-carousel` | right (rail) | The foot of the rail: the composer's city photograph and the regional map, one at a time. |
+| `place-carousel` | right (rail) | The foot of the rail, one slide at a time: the composer's city photograph, the country in continental context, the country at city zoom, and the era timeline. |
 | `country-map` | right, bottom | The regional map component itself (see below). |
 | `movement-map` | bottom | The engraved-score progress band, with each movement's translation glossed under its name. |
 | `cue-ticker` | bottom | The docked ticker: the playing movement's `listen` notes on one side, cues and facts on the other. |
 
 The `concert-hall` definition authors `place-carousel`, not `country-map`, in the
-rail: the map is one of the carousel's two slides, so a piece's regional map and
+rail: the map is one of the carousel's four slides, so a piece's regional map and
 its city photograph share one slot and one dwell cycle instead of each getting a
 cramped half-column. The `country-map` registration stays live — it is a
 legitimate module for any definition that wants a bare, non-cycling map in a

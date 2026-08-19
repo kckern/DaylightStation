@@ -2,6 +2,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as sass from 'sass-embedded';
+import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
 import WorkPlacard from './WorkPlacard.jsx';
 
@@ -87,5 +88,43 @@ describe('WorkPlacard — smart quotes', () => {
     );
     expect(getByTestId('surround-work-placard').textContent).toContain('Prince’s');
     expect(getByTestId('surround-work-placard').textContent).not.toContain("'");
+  });
+});
+
+/**
+ * THE INTERPUNCT'S AIR (wave 8, critique finding §1.3).
+ *
+ * The provenance line was joined with `'   ·   '` — three spaces either side of
+ * the mark — and HTML collapses a whitespace run to a single space unless a
+ * `white-space: pre*` rule applies, which none did. The engraved plate's
+ * breathing room existed only in the source code. It is an element with an `em`
+ * margin now, which is the mechanism that actually renders and also the one
+ * that scales with the type.
+ *
+ * TO GO RED: put the `join('   ·   ')` back — no `__sep` element is produced.
+ */
+describe('WorkPlacard — the provenance line’s separators', () => {
+  it('sets the interpunct as an element, not as collapsible whitespace', async () => {
+    const { container } = render(
+      <WorkPlacard data={DATA} position={0} duration={628} playing region={{ slot: 'top' }} />,
+    );
+    const seps = container.querySelectorAll('.surround-work-placard__sep');
+    // Three facts, two separators.
+    expect(seps).toHaveLength(2);
+    seps.forEach((s) => expect(s.textContent).toBe('·'));
+    // ...and its air is a fraction of the type, so it holds at every screen.
+    const css = (await sass.compileAsync(path.join(__dirname, 'WorkPlacard.scss'))).css;
+    expect(css).toMatch(/\.surround-work-placard__sep\s*\{[^}]*margin:\s*0\s+[\d.]+em/);
+  });
+
+  it('sets no separator at all when the corpus authored one fact', () => {
+    const { container } = render(
+      <WorkPlacard
+        data={{ piece: { title: 'Spring', opus: 'Op. 8 No. 1' } }}
+        position={0} duration={0} region={{ slot: 'top' }}
+      />,
+    );
+    expect(container.querySelectorAll('.surround-work-placard__sep')).toHaveLength(0);
+    expect(container.querySelector('.surround-work-placard__meta').textContent).toBe('Op. 8 No. 1');
   });
 });

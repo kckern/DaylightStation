@@ -104,6 +104,112 @@ export function showsNowHeading(config) {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Which movement is sounding — ONE derivation, for both halves of the band     */
+/* -------------------------------------------------------------------------- */
+
+/** Movement numerals, as an engraved score sets them. */
+export const ROMAN = Object.freeze([
+  '', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII',
+]);
+
+/**
+ * The index mark for a movement: its authored `n` as a numeral, or its position
+ * in the list where the corpus authored no number.
+ */
+export function roman(n, index) {
+  const value = Number.isFinite(n) ? n : index + 1;
+  return `${ROMAN[value] ?? value}.`;
+}
+
+/**
+ * The movements this recording can actually PLACE on a timeline.
+ *
+ * THE RENDERER MUST NOT DRAW CONFIDENT GARBAGE FROM BAD DATA. The store ships
+ * `start: undefined` for any `starts` entry it refused (a quoted timestamp, a
+ * null holding a place, a negative) and warns — deliberately keeping the entry
+ * so `starts` still pairs positionally with `movements`. Both halves of the band
+ * then coerced that with `Number(m?.start) || 0`, which re-anchors a mid-piece
+ * movement to the top of the file: a zero-width segment, an out-of-order rail,
+ * and a playhead that jumps backwards, all drawn with total confidence.
+ *
+ * The fix belongs HERE rather than in the store, and the reason is what the two
+ * layers each know. The store's `resolvedMovements` is not only a timeline — it
+ * carries each movement's name, translation and listen notes, which are
+ * RECORDING-INDEPENDENT knowledge and still true when this recording's timing is
+ * wrong; and its positional pairing is the thing the mismatch warn is derived
+ * from. Dropping an entry there would renumber the list, hide authored teaching
+ * material, and destroy the pairing the store went out of its way to preserve.
+ * Only the renderer knows what it needs a start FOR — a segment's geometry — so
+ * the renderer is the layer that declines to draw one.
+ *
+ * OUT OF ORDER IS THE SAME DEFECT. A start that runs backwards cannot bound the
+ * segment before it either, so it is unplaceable for exactly the same reason.
+ *
+ * @param {Array<object>} movements the payload's movement list, in authored order.
+ * @returns {Array<{index:number, start:number, movement:object}>} the placeable
+ *   subset, in rail order, with `index` naming the entry's position in the
+ *   AUTHORED list — so a caller can still reach its listen notes.
+ */
+export function placedMovements(movements) {
+  const list = Array.isArray(movements) ? movements : [];
+  const out = [];
+  let last = -Infinity;
+  list.forEach((movement, index) => {
+    const raw = movement?.start;
+    // TYPE FIRST, THEN COERCE, and the order is the whole point. `Number(null)`
+    // is 0 and `Number([])` is 0 — bare coercion turns "this recording never
+    // said when this movement starts" into "it starts at the top of the file",
+    // which is exactly the re-anchoring this function exists to stop. A NUMERIC
+    // STRING is still accepted: a YAML round-trip can hand a timing back as
+    // "976", and that is a start we know (the same reading `musicEndsAt` takes,
+    // review finding I4).
+    if (typeof raw !== 'number' && !(typeof raw === 'string' && raw.trim())) return;
+    const start = Number(raw);
+    if (!Number.isFinite(start) || start < 0) return;
+    if (start < last) return;
+    last = start;
+    out.push({ index, start, movement });
+  });
+  return out;
+}
+
+/**
+ * Which placed movement is sounding, or -1 when none is.
+ *
+ * ONE derivation, called by the rail and by the listening band, because the two
+ * used to hold two near-copies that disagreed at the edges. The rail's loop fell
+ * through to `return 0` for a position BEFORE the first movement's start, while
+ * the band's fell through to -1 — invisible only because both shipped recordings
+ * start at 0. The store explicitly permits `starts: [45, …]` (a transfer with
+ * tuning or an announcement at the head), and that recording got a lit "active"
+ * segment on the rule above a header saying nothing was playing.
+ *
+ * -1 IS THE CORRECT ANSWER THERE, and it is the same answer for the same reason
+ * the band already gives -1 after `musicEndsAt`: a movement is sounding between
+ * its own start and the next one's, and the head of the file is outside every
+ * movement's span. Lighting movement I before it begins is a claim about the
+ * music that the recording contradicts.
+ *
+ * @param {object} args
+ * @param {Array<{start:number}>} args.placed from `placedMovements`.
+ * @param {number} args.position the transport's position, in seconds.
+ * @param {number|null} args.end where the music stops, or null for "unbounded".
+ * @returns {number} an index into `placed`, or -1.
+ */
+export function activeMovementIndex({ placed, position, end }) {
+  const list = Array.isArray(placed) ? placed : [];
+  if (!list.length) return -1;
+  const at = Number(position);
+  if (!Number.isFinite(at)) return -1;
+  const stop = Number(end);
+  if (Number.isFinite(stop) && stop > 0 && at >= stop) return -1;
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    if (at >= list[i].start) return i;
+  }
+  return -1;
+}
+
+/* -------------------------------------------------------------------------- */
 /* Which side the NOW register sits on                                         */
 /* -------------------------------------------------------------------------- */
 

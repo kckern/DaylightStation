@@ -58,6 +58,33 @@ const ID_KEYS = ['contentId', 'assetId', 'id', 'plex', 'key'];
 /** Handed to the clock while the frame is off: attaches to nothing, ticks nothing. */
 const NO_MEDIA = () => null;
 
+/** The slots a definition can fill, in the order the frame lays them out. */
+const REGION_SLOTS = Object.freeze(['top', 'right', 'bottom', 'overlay']);
+
+/**
+ * Every module the shipped definition actually mounts, in layout order.
+ *
+ * THE MOUNT LOG USED TO LIE. It read `regions.right?.module` — a single object —
+ * and `right` has been a LIST since the rail gained its carousel, so the rail's
+ * modules vanished from the event; `top` was never included at all. For six
+ * waves `surround.mount` reported the band and nothing else, and nobody noticed
+ * because logs are read when something breaks and this one only ever ran when
+ * things worked. Both shapes are legal in a definition (`SurroundFrame`'s own
+ * `normalizeRegions` accepts either), so this reads them the same way the frame
+ * does rather than the way one slot happened to be authored.
+ */
+export function definitionModules(definition) {
+  const regions = definition?.regions;
+  if (!regions || typeof regions !== 'object') return [];
+  return REGION_SLOTS.flatMap((slot) => {
+    const value = regions[slot];
+    if (!value) return [];
+    return (Array.isArray(value) ? value : [value])
+      .map((r) => (r && typeof r === 'object' ? r.module : null))
+      .filter((m) => typeof m === 'string' && m);
+  });
+}
+
 function resolveContentId(item) {
   if (item == null) return null;
   if (typeof item === 'string' || typeof item === 'number') {
@@ -99,12 +126,7 @@ function SurroundStage({ contentId, surround, active, mode, logger, getMediaEl, 
       contentId,
       surroundId: surround?.id ?? null,
       mode,
-      modules: [
-        surround?.definition?.regions?.right?.module,
-        ...(Array.isArray(surround?.definition?.regions?.bottom)
-          ? surround.definition.regions.bottom.map((r) => r?.module)
-          : [surround?.definition?.regions?.bottom?.module]),
-      ].filter(Boolean),
+      modules: definitionModules(surround?.definition),
     });
     return () => {
       logger.info('surround.unmount', {
@@ -256,8 +278,8 @@ export default function SurroundHost({
     // `readHandle` reads through a ref, so it is deliberately not a dependency.
   }, [disabled, pollMs, hostLogger, mode]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // A definition-id mode is a forced definition, which in the PoC still only
-  // applies to items the backend already enriched (plan: "Out of scope").
+  // The frame is on for exactly one reason: the backend attached a payload to
+  // the item, and the screen did not say 'off'.
   const active = !disabled && !!current.surround;
 
   // The seam's id is a hint for log correlation only, and only until the poll

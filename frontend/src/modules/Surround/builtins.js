@@ -42,6 +42,12 @@ export const SURROUND_BUILTIN_MODULES = Object.freeze([
  * Map, so re-registering the same name is a no-op overwrite. Deliberately NOT
  * guarded by a module-level `registered` flag: that would make the function a
  * no-op after `resetSurroundRegistry()` in a test.
+ *
+ * The `regions` meta is each module's declaration of the slots it was CUT FOR: a
+ * rail module is a column and a band module is a strip, and one dropped into the
+ * other renders perfectly and looks wrong. `SurroundFrame` reads it and warns
+ * `surround.module.misplaced` — it does not refuse, because an author may mean
+ * it, but it says so once with both ends named.
  */
 export function registerSurroundBuiltins() {
   registerSurroundModule('movement-map', MovementMap, { regions: ['bottom'] });

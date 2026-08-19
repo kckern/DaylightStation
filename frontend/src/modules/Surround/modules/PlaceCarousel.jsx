@@ -42,17 +42,14 @@
 // The rail is IDENTITY: it cycles at 0:00 and at 53:00, paused or playing. The
 // dwell is this module's own interval, cleaned up on unmount.
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
-import { DaylightMediaPath } from '../../../lib/api.mjs';
-import getLogger from '../../../lib/logging/Logger.js';
 import CountryMap from '../map/CountryMap.jsx';
 import EraTimeline from '../map/EraTimeline.jsx';
 import { mapPinFrom } from './CountryMapModule.jsx';
-import {
-  DISSOLVE_FADE_MS, DISSOLVE_COMMIT_MS, prefersReducedMotion,
-} from '../dissolve.js';
-import { smartQuotes } from '../typography.js';
+import { DISSOLVE_FADE_MS, prefersReducedMotion, useDissolve } from '../dissolve.js';
+import { smartQuotes, trimmed } from '../typography.js';
+import { surroundLogger, assetUrl } from '../moduleKit.js';
 import './PlaceCarousel.scss';
 
 /**
@@ -68,26 +65,6 @@ import './PlaceCarousel.scss';
 export const PLACE_SLIDE_MS = 12000;
 /** Each half of the dissolve — the house duration, shared with both fact rotations. */
 export const PLACE_FADE_MS = DISSOLVE_FADE_MS;
-
-let moduleLogger = null;
-function fallbackLogger() {
-  if (!moduleLogger) moduleLogger = getLogger().child({ app: 'surround', component: 'place-carousel' });
-  return moduleLogger;
-}
-function resolveLogger(logger) {
-  if (!logger) return fallbackLogger();
-  return logger.child?.({ app: 'surround', component: 'place-carousel' }) ?? logger;
-}
-
-/** `vivaldi/venice.jpg` + `library/classical` -> /api/v1/static/img/... */
-function assetUrl(assetBase, ref) {
-  if (!assetBase || !ref) return null;
-  const base = String(assetBase).replace(/^\/|\/$/g, '');
-  const path = String(ref).replace(/^\//, '');
-  return DaylightMediaPath(`media/img/${base}/${path}`);
-}
-
-const trimmed = (value) => (typeof value === 'string' && value.trim() ? value.trim() : null);
 
 export default function PlaceCarousel({
   // The clock arrives because the module contract is fixed. This module ignores
@@ -105,7 +82,7 @@ export default function PlaceCarousel({
   region = null,
   logger = null,
 }) {
-  const log = useMemo(() => resolveLogger(logger), [logger]);
+  const log = useMemo(() => surroundLogger(logger, 'place-carousel'), [logger]);
   const contentId = data?.contentId ?? null;
   const composer = data?.composer ?? null;
 
@@ -232,29 +209,13 @@ export default function PlaceCarousel({
     return slides[i];
   }, [slides, index]);
 
-  const [shown, setShown] = useState(() => next);
-  const [hidden, setHidden] = useState(false);
-  const timers = useRef([]);
-  const clearTimers = () => { timers.current.forEach(clearTimeout); timers.current = []; };
-
-  useEffect(() => {
-    // The slide SET can change under us (a new item, a different composer), not
-    // only the index — comparing keys covers both.
-    if ((next?.key ?? null) === (shown?.key ?? null)) return;
-    clearTimers();
-    if (!shown || reduced) {
-      setShown(next);
-      setHidden(false);
-      return;
-    }
-    setHidden(true);
-    timers.current.push(setTimeout(() => {
-      setShown(next);
-      setHidden(false);
-    }, DISSOLVE_COMMIT_MS));
-  }, [next, shown, reduced]);
-
-  useEffect(() => () => clearTimers(), []);
+  // The house dissolve, and the SAME controller the band and the composer card
+  // run (`../dissolve.js`). Its default identity is the slide's `key`, which is
+  // what catches the slide SET changing under us (a new item, a different
+  // composer) and not only the index. Its default "is there anything on screen"
+  // is "the slide is not null", which is this module's answer too: a slide is
+  // either a picture or it does not exist.
+  const [shown, hidden] = useDissolve(next);
 
   useEffect(() => {
     if (!shown) return;

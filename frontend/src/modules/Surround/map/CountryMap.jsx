@@ -41,7 +41,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
-import getLogger from '../../../lib/logging/Logger.js';
+import { surroundLogger } from '../moduleKit.js';
 import './CountryMap.scss';
 
 /** The shared geodata: Natural Earth 1:110m, public domain, ~41 KB, 52 features. */
@@ -152,15 +152,6 @@ export const LABEL_EM_PER_CHAR = 0.78;
 /** Breathing room around a label box, in ems of its own size. */
 export const LABEL_MARGIN_EM = 0.5;
 
-let moduleLogger = null;
-function fallbackLogger() {
-  if (!moduleLogger) moduleLogger = getLogger().child({ app: 'surround', component: 'country-map' });
-  return moduleLogger;
-}
-function resolveLogger(logger) {
-  if (!logger) return fallbackLogger();
-  return logger.child?.({ app: 'surround', component: 'country-map' }) ?? logger;
-}
 
 // ---------------------------------------------------------------------------
 // Projection
@@ -410,7 +401,7 @@ export default function CountryMap({
   className = '',
   logger = null,
 }) {
-  const log = useMemo(() => resolveLogger(logger), [logger]);
+  const log = useMemo(() => surroundLogger(logger, 'country-map'), [logger]);
   // Seeded from the module cache so the second card on screen paints on its first
   // render instead of flashing empty while an already-settled promise re-resolves.
   const [geo, setGeo] = useState(() => geoResolved ?? null);

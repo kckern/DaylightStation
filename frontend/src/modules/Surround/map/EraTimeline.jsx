@@ -31,7 +31,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
-import getLogger from '../../../lib/logging/Logger.js';
+import { surroundLogger } from '../moduleKit.js';
 import { smartQuotes } from '../typography.js';
 import './EraTimeline.scss';
 
@@ -96,15 +96,6 @@ export const ERA_LABEL_GAP_PX = 6;
  */
 export const NOMINAL_WIDTH_PX = 420;
 
-let moduleLogger = null;
-function fallbackLogger() {
-  if (!moduleLogger) moduleLogger = getLogger().child({ app: 'surround', component: 'era-timeline' });
-  return moduleLogger;
-}
-function resolveLogger(logger) {
-  if (!logger) return fallbackLogger();
-  return logger.child?.({ app: 'surround', component: 'era-timeline' }) ?? logger;
-}
 
 const SPAN = TIMELINE_SPAN.to - TIMELINE_SPAN.from;
 
@@ -245,7 +236,7 @@ export default function EraTimeline({
   className = '',
   logger = null,
 }) {
-  const log = useMemo(() => resolveLogger(logger), [logger]);
+  const log = useMemo(() => surroundLogger(logger, 'era-timeline'), [logger]);
   const ruleRef = useRef(null);
   // Seeded, not zero: happy-dom measures every box as 0x0 and a real browser
   // has not measured anything on the first paint either. The nominal width is
