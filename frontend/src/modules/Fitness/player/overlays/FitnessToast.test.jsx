@@ -112,3 +112,41 @@ describe('FitnessToast', () => {
     expect(onDone).toHaveBeenCalledTimes(1);
   });
 });
+
+// The success toast is the one moment in a session where someone is recognised
+// in front of the room. It used to be shaped like a system message: trophy,
+// "Challenge complete!", and a tally, with the people reduced to small chips.
+describe('FitnessToast achievement layout', () => {
+  const achievement = {
+    id: 900,
+    title: 'Felix & Milo reached Hot',
+    subtitle: 'in 45s',
+    variant: 'success',
+    achievement: true,
+    contributors: [
+      { id: 'a', name: 'Felix', avatarUrl: '/api/v1/static/img/users/a' },
+      { id: 'b', name: 'Milo', avatarUrl: '/api/v1/static/img/users/b' },
+    ],
+  };
+
+  it('leads with the faces, then names what they did', () => {
+    const { container } = render(<FitnessToast toast={achievement} onDone={() => {}} />);
+    const root = container.querySelector('.fitness-toast--achievement');
+    expect(root).toBeTruthy();
+    // Faces before the headline in DOM order — that is the reading order.
+    const kids = [...root.children].map((el) => el.className);
+    expect(kids.join(' | ')).toMatch(/faces.*headline/);
+  });
+
+  it('names both people and the achievement', () => {
+    const { container } = render(<FitnessToast toast={achievement} onDone={() => {}} />);
+    expect(container.textContent).toContain('Felix & Milo reached Hot');
+    expect(container.textContent).toContain('in 45s');
+  });
+
+  it('keeps the plain row layout for an ordinary notice', () => {
+    const notice = { id: 901, title: 'Challenge started', variant: 'info' };
+    const { container } = render(<FitnessToast toast={notice} onDone={() => {}} />);
+    expect(container.querySelector('.fitness-toast--achievement')).toBeNull();
+  });
+});

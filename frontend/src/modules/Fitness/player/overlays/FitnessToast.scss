@@ -112,3 +112,68 @@
   from { transform: scaleX(1); }
   to { transform: scaleX(0); }
 }
+
+/* ── AN ACHIEVEMENT, NOT A NOTICE ──────────────────────────────────────────
+ * The success toast used to be a row: trophy icon, "Challenge complete!", and a
+ * tally underneath ("2 of 2 people reached Hot"), with the people who actually
+ * did it reduced to small chips at the end. That is the shape of a system
+ * message, and this is the one moment in a session where someone is being
+ * recognised in front of the room.
+ *
+ * So it stacks, and the faces come first and large: who did it, what they did,
+ * how long it took.
+ */
+.fitness-toast--achievement {
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.5rem;
+  padding: 1.4rem 2rem 1rem;
+
+  .fitness-toast__faces {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    /* Overlapped, so a group reads as one team rather than a list of separate
+       people — and so four faces still fit the width two used to take. */
+    margin-bottom: 0.2rem;
+
+    .fitness-toast__contributor {
+      flex-direction: column;
+      align-items: center;
+      gap: 0.3rem;
+      margin-inline: -0.4rem;
+    }
+
+    .fitness-toast__contributor-avatar {
+      width: 4.2rem;
+      height: 4.2rem;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 3px solid rgba(255, 255, 255, 0.9);
+      box-shadow: 0 0.4rem 1rem rgba(0, 0, 0, 0.45);
+      font-size: 1.6rem;
+    }
+
+    .fitness-toast__contributor-name {
+      font-size: 0.8rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }
+  }
+
+  .fitness-toast__headline {
+    font-size: 1.45rem;
+    font-weight: 800;
+    line-height: 1.2;
+    letter-spacing: 0.01em;
+  }
+
+  /* The achievement itself — quieter than the names, because the names are the
+     point and this is the detail that qualifies them. */
+  .fitness-toast__achieved {
+    font-size: 1rem;
+    font-weight: 600;
+    opacity: 0.85;
+  }
+}

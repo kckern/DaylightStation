@@ -2,9 +2,11 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import getLogger from '../../../../lib/logging/Logger.js';
 import { isComboHeld } from '../input/combo.js';
 import { slotForNote } from './launcherNotes.js';
+// Single source of truth: the fallback pair lives with the range-derivation
+// helper, so a board's combo and the default can't drift apart.
+import { DEFAULT_COMBO_NOTES } from './comboForKeyboard.js';
 
-/** Lowest and highest keys of an 88-key board. Override via options for a short board. */
-export const DEFAULT_COMBO_NOTES = Object.freeze([21, 108]);
+export { DEFAULT_COMBO_NOTES };
 
 const DEFAULT_COMBO_WINDOW_MS = 300;
 const DEFAULT_TIMEOUT_MS = 30000;
@@ -29,7 +31,7 @@ const NO_NOTES = new Map();
  * @param {string|null} [args.initialGame] - deep-linked game id (URL)
  * @param {Object} [args.options] - {comboNotes, comboWindowMs, timeoutMs, holdExitMs}
  */
-export function useNoteLauncher({ activeNotes, slots, initialGame = null, options = {} }) {
+export function useNoteLauncher({ activeNotes, slots, initialGame = null, onRequestUser = null, selectionPaused = false, options = {} }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-launcher' }), []);
 
   // Read as primitives rather than merging into an object: a merged object is a
@@ -44,11 +46,21 @@ export function useNoteLauncher({ activeNotes, slots, initialGame = null, option
 
   const [isOpen, setIsOpen] = useState(false);
   const [activeGameId, setActiveGameId] = useState(initialGame);
+  // Bumped on every launch, including a re-launch of the game already running.
+  // Picking the same game again is otherwise a no-op setState, so a FINISHED
+  // board stayed mounted and swallowed every input — "stuck, can't move", with
+  // nothing in the log to say why. Callers key the game element on this.
+  const [launchNonce, setLaunchNonce] = useState(0);
   const [isHolding, setIsHolding] = useState(false);
 
   // Mirrors isOpen so the combo effect can decide open-vs-close and log the
   // decision OUTSIDE the state updater. React may call an updater more than
   // once (StrictMode, concurrent re-render); a log line in there double-fires.
+  // Held in a ref: hosts pass a fresh closure each render, and this must not
+  // re-run the selection effect at MIDI rates.
+  const onRequestUserRef = useRef(onRequestUser);
+  onRequestUserRef.current = onRequestUser;
+
   const isOpenRef = useRef(false);
   const activeGameIdRef = useRef(initialGame);
 
@@ -56,6 +68,10 @@ export function useNoteLauncher({ activeNotes, slots, initialGame = null, option
   // effect re-toggles on every activeNotes change for as long as they're held.
   const comboLatchedRef = useRef(false);
   const holdTimerRef = useRef(null);
+  // The top key is BOTH half the opening combo and the "change player" key, so
+  // whether a given press means one or the other cannot be known at the instant
+  // it arrives — it depends on whether its partner shows up next.
+  const userRequestTimerRef = useRef(null);
   const timeoutTimerRef = useRef(null);
   // Notes already down are not "struck" — diffing against this is what stops a
   // held key from selecting a game the instant the launcher opens.
@@ -75,6 +91,9 @@ export function useNoteLauncher({ activeNotes, slots, initialGame = null, option
   const setGame = useCallback((gameId, event, extra = {}) => {
     activeGameIdRef.current = gameId;
     setActiveGameId(gameId);
+    // A launch is always a fresh game, even when it is the same id as the one
+    // on screen. Only bump on launch: an exit sets null, which unmounts anyway.
+    if (gameId !== null) setLaunchNonce((n) => n + 1);
     logger.info(event, extra);
   }, [logger]);
 
@@ -124,6 +143,11 @@ export function useNoteLauncher({ activeNotes, slots, initialGame = null, option
 
     if (held && !comboLatchedRef.current) {
       comboLatchedRef.current = true;
+      // Its partner turned up: this was a combo, not a lone top key.
+      if (userRequestTimerRef.current) {
+        clearTimeout(userRequestTimerRef.current);
+        userRequestTimerRef.current = null;
+      }
       setIsHolding(true);
       if (isOpenRef.current) closeLauncher('combo');
       else openLauncher();
@@ -174,22 +198,51 @@ export function useNoteLauncher({ activeNotes, slots, initialGame = null, option
     // the very next pass, launching a game nobody picked.
     prevNotesRef.current = current;
 
-    if (!isOpen || struck.length === 0) return;
+    // `selectionPaused` is the first level of the pick holding the floor: while
+    // the roster row is up, a key names a PLAYER, and the same press must not
+    // also start a game. Seeding above still runs, so the key that chose a
+    // player is not read as a fresh strike the moment the game row appears.
+    if (!isOpen || selectionPaused || struck.length === 0) return;
 
     for (const note of struck) {                    // lowest first
+      // The board's TOP key changes who is playing. It is the key the player
+      // already learned to open this thing with (the combo is lowest+highest),
+      // so it costs no new vocabulary — and it is not a game slot, so it can
+      // never be confused for one. The office screen has no other way to say
+      // who is at the keyboard; the kiosk already knows.
+      // ...but only when it is played ALONE, and "alone" cannot be decided yet.
+      // Two keys struck together almost never land in one event: if the TOP key
+      // registers a few milliseconds before the bottom one, it looks exactly
+      // like a lone press. Checking `!liveNotes.has(comboNotes[0])` catches only
+      // the order that happens to arrive bottom-first, which is why the combo
+      // still demanded a new player half the time (logged: launcher.dismissed
+      // {combo} and launcher.user-requested {103} in the same second).
+      //
+      // So decide LATE: wait out the same window the combo itself is allowed,
+      // and let the combo cancel this if its partner turns up.
+      if (note === comboNotes[1]) {
+        if (userRequestTimerRef.current) clearTimeout(userRequestTimerRef.current);
+        userRequestTimerRef.current = setTimeout(() => {
+          userRequestTimerRef.current = null;
+          logger.info('launcher.user-requested', { note });
+          onRequestUserRef.current?.();
+        }, comboWindowMs);
+        return;
+      }
       const slot = slotForNote(slots, note);
       if (!slot) continue;
       setGame(slot.gameId, 'launcher.game-selected', { note });
       closeLauncher('selected');
       return;
     }
-  }, [liveNotes, isOpen, slots, closeLauncher, setGame]);
+  }, [liveNotes, isOpen, selectionPaused, slots, comboNotes, comboWindowMs, closeLauncher, setGame, logger]);
 
   // ─── Unmount: no timer outlives the hook ──────────────────────────────────
   useEffect(() => () => {
     clearHoldTimer();
     clearTimeoutTimer();
+    if (userRequestTimerRef.current) clearTimeout(userRequestTimerRef.current);
   }, [clearHoldTimer, clearTimeoutTimer]);
 
-  return { isOpen, activeGameId, isHolding, dismiss, exitGame, timeoutMs };
+  return { launchNonce, isOpen, activeGameId, isHolding, dismiss, exitGame, timeoutMs };
 }

@@ -77,14 +77,36 @@ export function PianoWakeLockProvider({ children }) {
 /**
  * Hold the screen awake for as long as `active` is true under `reason`.
  * No-op outside a PianoWakeLockProvider (so modes used in tests don't blow up).
+ *
+ * `graceMs` keeps the hold alive for that long AFTER `active` goes false. A
+ * media element drops out of "playing" constantly for reasons that are not the
+ * viewer walking away — rebuffering, a DASH source swap, a stall-recovery
+ * pause. On 2026-08-17 a singing lecture emitted a pause/resume pair every 45s
+ * for twelve minutes straight; without a grace window each of those releases the
+ * only thing standing between a hands-off viewer and a dark panel, because the
+ * screensaver's other activity signals (MIDI notes, touch) are exactly what
+ * someone SINGING does not produce. The grace is released immediately on
+ * unmount, so leaving the player still lets the screen sleep on schedule.
  */
-export function useKeepScreenAwake(reason, active) {
+export function useKeepScreenAwake(reason, active, graceMs = 0) {
   const ctx = useContext(PianoWakeLockContext);
   useEffect(() => {
     if (!ctx) return undefined;
-    ctx.setReason(reason, !!active);
-    return () => ctx.setReason(reason, false);
-  }, [ctx, reason, active]);
+    if (active) {
+      ctx.setReason(reason, true);
+      return undefined;
+    }
+    if (!graceMs) {
+      ctx.setReason(reason, false);
+      return undefined;
+    }
+    // Inactive: keep holding until the grace elapses, then release.
+    const id = setTimeout(() => ctx.setReason(reason, false), graceMs);
+    return () => clearTimeout(id);
+  }, [ctx, reason, active, graceMs]);
+
+  // Release on unmount regardless of where the grace timer had got to.
+  useEffect(() => () => ctx?.setReason(reason, false), [ctx, reason]);
 }
 
 /** Current wake-lock state: true when any hold is active. */

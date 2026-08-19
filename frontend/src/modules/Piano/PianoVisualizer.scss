@@ -145,6 +145,28 @@
     right: 0;
     bottom: 0;
     z-index: 50;
+    /* A column: the office chrome takes a strip at the top and the game gets
+       everything below it. The chrome used to be absolutely positioned and sat
+       on whatever the game drew in its first rows — Space Invaders' miss counter
+       ended up under the player's name. */
+    display: flex;
+    flex-direction: column;
+    // Opaque on purpose. A 'replace' game owns the viewport, but nothing forces
+    // a game to paint every pixel — a transparent surface let the ambient view
+    // (header, theory band) show through wherever it didn't, which read as the
+    // game "painting on top of" the visualizer rather than replacing it. This is
+    // the guardrail; the JSX also stops rendering those panels. Inherits the
+    // `.piano-visualizer` backdrop it sits directly inside, so a game that
+    // leaves margins looks deliberate rather than like a hole, and the two can't
+    // drift apart if that colour changes.
+    background: inherit;
+
+    /* Whatever renders the game (the boundary, or its crash/loading state)
+       takes the remaining height rather than overflowing it. */
+    > *:not(.office-game-chrome) {
+      flex: 1 1 auto;
+      min-height: 0;
+    }
   }
 
   // ─── Spam Detection Overlays ────────────────────────────────

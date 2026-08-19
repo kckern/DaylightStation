@@ -51,3 +51,42 @@ describe('NoteLauncher', () => {
     expect(getByRole('dialog')).toBeTruthy();
   });
 });
+
+// The picker read as a different product: an invented brown/gold palette, a
+// third of the screen empty above the keys, hairline black keys, and the note
+// given only as a letter. These lock the structural half of that fix — the
+// palette and the proportions are CSS, but WHERE things sit is the DOM.
+describe('NoteLauncher key anatomy', () => {
+  const slots = [
+    { gameId: 'a', label: 'Alpha', icon: 'game', note: 60, noteName: 'C4', sharpAfter: true },
+    { gameId: 'b', label: 'Beta', icon: 'game', note: 62, noteName: 'D4', sharpAfter: false },
+  ];
+
+  it('reads card, letter, icon, title down the key face', () => {
+    const { container } = render(<NoteLauncher slots={slots} />);
+    const key = container.querySelector('.nl-key');
+    // A leading flex spacer holds the stack clear of the black keys, so the
+    // content starts after it.
+    const kids = [...key.children].map((el) => el.className);
+    const order = kids.join(' | ');
+    // The notation and the letter it spells belong together; the icon then
+    // introduces the title rather than trailing after it.
+    expect(order).toMatch(/chess-staff-label.*nl-key__note.*nl-key__icon.*nl-key__label/);
+  });
+
+  it('shows the note as notation as well as a letter', () => {
+    const { container } = render(<NoteLauncher slots={slots} />);
+    const key = container.querySelector('.nl-key');
+    // The house note card (StaffNoteLabel) — the same one every addressed
+    // board draws on its rim, not a grand-staff live-input widget.
+    expect(key.querySelector('.chess-staff-label')).toBeTruthy();
+    expect(key.querySelector('.nl-key__note').textContent).toBe('C4');
+  });
+
+  it('still marks which keys carry a sharp', () => {
+    const { container } = render(<NoteLauncher slots={slots} />);
+    const keys = [...container.querySelectorAll('.nl-key')];
+    expect(keys[0].classList.contains('has-sharp')).toBe(true);
+    expect(keys[1].classList.contains('has-sharp')).toBe(false);
+  });
+});

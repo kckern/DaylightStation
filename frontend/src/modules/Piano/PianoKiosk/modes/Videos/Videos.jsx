@@ -14,9 +14,16 @@ import { isSubcourseShow } from './subcourses.js';
 import SubcourseNavigator from './SubcourseNavigator.jsx';
 import { SkeletonStage } from '../../Skeleton.jsx';
 import { resolveCoursePolicy, nextLectureAfter } from './coursePolicy.js';
+import { useCourseTabPolicy } from './useCourseTabPolicy.js';
 import { pianoLearningApi } from '../Exercises/pianoLearningApi.js';
 
 const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
+
+// How long the screen-awake hold outlives a lecture dropping out of "playing".
+// Sized to ride out rebuffering and stall-recovery pauses (observed at a 45s
+// cadence on the yellow-room tablet) without keeping an abandoned paused tab
+// lit for long. Leaving the player releases the hold immediately regardless.
+const VIDEO_WAKE_GRACE_MS = 150_000;
 
 /**
  * Normalize the videos config into ordered tab groups — each `{ label, collections }`
@@ -136,9 +143,12 @@ export function LecturePlayerRoute({ PlayerComponent = PianoVideoPlayer }) {
     [lectures, lectureId],
   );
 
-  // Per-user course policy (piano.yml videos.user_policies): gate on/off and
-  // end-of-lecture behavior.
-  const policy = useMemo(() => resolveCoursePolicy(config.videos, currentUser), [config, currentUser]);
+  // Per-user course policy (piano.yml videos.user_policies): gate on/off,
+  // end-of-lecture behavior, speed permission. Folded together with the owning
+  // TAB's policy (videos.collections) so speed needs both a permitted person
+  // and permitted content, and a singing tab can drop the play-a-note gate.
+  const userPolicy = useMemo(() => resolveCoursePolicy(config.videos, currentUser), [config, currentUser]);
+  const policy = useCourseTabPolicy(config.videos, idOf(courseId), userPolicy);
   const nextLecture = useMemo(() => nextLectureAfter(lectures, lectureId), [lectures, lectureId]);
   const checkpoint = lecture?.piano?.checkpoint ?? null;
   const checkpointPending = Boolean(checkpoint && !lecture?.checkpointStatus?.passed);
@@ -205,13 +215,14 @@ export function LecturePlayerRoute({ PlayerComponent = PianoVideoPlayer }) {
     navigate(`../${nextId}`, { relative: 'path', replace: true });
   }, [checkpoint, checkpointPending, courseId, currentUser, lecture, lectureId, location.pathname, navigate, nextLecture, source]);
 
-  // Keep the tablet screen awake only while the lecture is ACTIVELY PLAYING
-  // (passive playback produces no MIDI/touch that would otherwise reset the
-  // screensaver). A paused lecture releases the hold, so an idle paused tab is
-  // allowed to sleep — and a tap/MIDI note wakes it. `playing` is the global
-  // play/pause state PianoVideoPlayer maintains.
+  // Keep the tablet screen awake while the lecture plays (passive playback
+  // produces no MIDI/touch that would otherwise reset the screensaver), with a
+  // grace window so the hold survives the constant brief drops out of "playing"
+  // that rebuffering and stall-recovery cause — see useKeepScreenAwake. A
+  // genuinely abandoned paused tab still sleeps, just a few minutes later.
+  // `playing` is the global play/pause state PianoVideoPlayer maintains.
   const { playing } = usePianoPlayback();
-  useKeepScreenAwake('video', playing);
+  useKeepScreenAwake('video', playing, VIDEO_WAKE_GRACE_MS);
 
   if (lectures === null) return <section className="piano-mode piano-mode--videos"><SkeletonStage /></section>;
   if (!lecture) {
@@ -229,6 +240,7 @@ export function LecturePlayerRoute({ PlayerComponent = PianoVideoPlayer }) {
       source={source}
       onBack={goBack}
       isSequential={isSequential}
+      speedEnabled={policy.allowSpeed}
       engagementTimeoutSeconds={config.videos?.engagement_timeout_seconds ?? 90}
       engagementGateEnabled={policy.engagementGate}
       onAutoAdvance={checkpointPending || policy.autoAdvance ? handleAutoAdvance : null}

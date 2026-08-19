@@ -291,7 +291,10 @@ const FitnessPlayerFooterSeekThumbnails = ({
 
       // Label time: show current displayTime for active, segmentStart otherwise
       const labelTime = isActive ? displayTime : segmentStart;
-      const label = formatTime(Math.max(labelTime, 0));
+      // Nothing at zero. The leftmost poster always seeks to the start, so a
+      // "0:00" under it states the only thing about it that was never in doubt —
+      // and it is the one label that is on screen for the whole session.
+      const label = labelTime >= 1 ? formatTime(labelTime) : '';
 
       // Is this the origin thumbnail? (first one when not zoomed)
       const isOrigin = !isZoomed && Math.abs(segmentStart - rangeStart) < 0.001;

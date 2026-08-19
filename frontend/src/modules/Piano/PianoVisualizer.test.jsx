@@ -178,6 +178,26 @@ describe('PianoVisualizer game launcher', () => {
     expect(container.querySelector('.keyboard-container')).toBeNull();
   });
 
+  // A 'replace' game is meant to take the whole viewport. The waterfall and
+  // keyboard were dropped for it but the theory band never was, so the staff,
+  // circle of fifths and chord name stayed lit under the game — reported from
+  // the office screen 2026-08-18 as the game "painting on top of whatever was
+  // already there". They also keep re-rendering at MIDI rates while hidden.
+  it('drops the theory band too — a replace game means the whole viewport', () => {
+    launcherState = { ...launcherState, activeGameId: 'tetris' };
+    const { container } = render(<PianoVisualizer />);
+    expect(container.querySelector('.theory-panel--row')).toBeNull();
+    expect(container.querySelector('.piano-circle-of-fifths')).toBeNull();
+    expect(container.querySelector('.chord-staff')).toBeNull();
+    expect(container.querySelector('.piano-chord-name')).toBeNull();
+  });
+
+  it('still shows the theory band in the ambient view', () => {
+    launcherState = { ...launcherState, activeGameId: null };
+    const { container } = render(<PianoVisualizer />);
+    expect(container.querySelector('.theory-panel--row')).toBeTruthy();
+  });
+
   it('opens over a running game without ending it', () => {
     launcherState = { ...launcherState, isOpen: true, activeGameId: 'tetris' };
     const { container } = render(<PianoVisualizer />);
@@ -336,5 +356,30 @@ describe('PianoVisualizer game crash containment', () => {
     // different things about a game when they show up in the session log.
     expect(launcherState.exitGame).toHaveBeenCalledWith('crash');
     expect(launcherState.dismiss).not.toHaveBeenCalled();
+  });
+});
+
+// The office screen has no breadcrumb rail and no user chip, so a game opened
+// into a board that named neither itself nor whose it was.
+describe('office game chrome', () => {
+  it('names the game and the player while one is running', () => {
+    launcherState = { ...launcherState, activeGameId: 'tetris' };
+    const { container } = render(<PianoVisualizer />);
+    const chrome = container.querySelector('.office-game-chrome');
+    expect(chrome).toBeTruthy();
+    expect(chrome.textContent).toContain('Tetris');
+  });
+
+  it('says so when nobody is selected rather than leaving it blank', () => {
+    launcherState = { ...launcherState, activeGameId: 'tetris' };
+    const { container } = render(<PianoVisualizer />);
+    // A game filed under nobody is worth seeing, not hiding.
+    expect(container.querySelector('.office-game-chrome__name--none')).toBeTruthy();
+  });
+
+  it('shows no chrome in the ambient view — there is no game to name', () => {
+    launcherState = { ...launcherState, activeGameId: null };
+    const { container } = render(<PianoVisualizer />);
+    expect(container.querySelector('.office-game-chrome')).toBeNull();
   });
 });

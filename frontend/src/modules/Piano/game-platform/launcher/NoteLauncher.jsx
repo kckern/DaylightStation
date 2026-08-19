@@ -1,4 +1,6 @@
 import Icon from '../../ui/icons/Icon.jsx';
+import { StaffNoteLabel } from '../families/addressed-board/StaffNoteLabel.jsx';
+import ProfileAvatar from '../../../../lib/identity/ProfileAvatar.jsx';
 import './NoteLauncher.scss';
 
 /**
@@ -12,26 +14,82 @@ import './NoteLauncher.scss';
  * correspondence with the keys under the player's hands, which is the only
  * reason this reads without instructions.
  */
-export default function NoteLauncher({ slots = [], timeoutMs = 30000 }) {
+/**
+ * One row of keys, used for BOTH levels of the pick: which game, and who is
+ * playing. They are the same gesture — you see the key, you play the key — so
+ * they are the same component rather than a keyboard for one and a tap-only
+ * modal for the other, which is what shipped first and was unusable on a screen
+ * with no touch.
+ *
+ * A slot renders an avatar when it names a user and an icon when it names a
+ * game; everything else about the key is identical.
+ */
+export default function NoteLauncher({
+  slots = [], timeoutMs = 30000, playerName = null, playerId = null,
+  title = 'Pick a game · play its key', variant = 'games', showTimer = true,
+}) {
   return (
-    <div className="note-launcher" role="dialog" aria-label="Pick a game">
+    <div className={`note-launcher note-launcher--${variant}`} role="dialog" aria-label={title}>
       <div className="note-launcher__head">
-        <span className="note-launcher__title">Pick a game · play its key</span>
-        <div className="note-launcher__timer" aria-hidden="true">
-          <i style={{ animationDuration: `${timeoutMs}ms` }} />
-        </div>
+        <span className="note-launcher__title">{title}</span>
+        {showTimer && (
+          <div className="note-launcher__timer" aria-hidden="true">
+            <i style={{ animationDuration: `${timeoutMs}ms` }} />
+          </div>
+        )}
+
+        {/* Who the result gets filed under, and how to change it. Named rather
+            than implied: the office screen cannot know who sat down, and a
+            silent default is how results end up under the wrong person. */}
+        <span className="note-launcher__player">
+          {playerName ? (
+            <span className="note-launcher__player-row">
+              <span className="note-launcher__player-avatar">
+                <ProfileAvatar id={playerId} name={playerName} size={96} />
+              </span>
+              <span><b>{playerName}</b><i>top key to change</i></span>
+            </span>
+          ) : <b>Nobody yet — play the top key</b>}
+        </span>
       </div>
 
       <ul className="note-launcher__keys" style={{ '--key-count': slots.length }}>
         {slots.map((slot, i) => (
           <li
-            key={slot.gameId}
+            key={slot.gameId ?? slot.userId}
             className={`nl-key${slot.sharpAfter ? ' has-sharp' : ''}`}
             style={{ '--key-index': i }}
           >
-            <Icon name={slot.icon} className="nl-key__icon" />
-            <span className="nl-key__label">{slot.label}</span>
-            <span className="nl-key__note">{slot.noteName}</span>
+            {/* Two readings of the same key.
+                A PERSON is read top-down: the face first and largest, because
+                that is what you recognise across a room, then their name, then
+                the key that picks them.
+                A GAME is read from the tip up: the note card and label sit at
+                the near end with the icon last, because the top of a white key
+                is where the black keys are and nothing legible can live there. */}
+            {slot.userId ? (
+              <>
+                <span className="nl-key__avatar">
+                  <ProfileAvatar id={slot.userId} name={slot.label} size={280} />
+                </span>
+                <span className="nl-key__label">{slot.label}</span>
+                {/* The house note card: one note, its own staff, clef chosen
+                    from the pitch — the same component every addressed-board
+                    game draws on its rim. */}
+                <StaffNoteLabel midi={slot.note} />
+                <span className="nl-key__note">{slot.noteName}</span>
+              </>
+            ) : (
+              <>
+                {/* Card, then the letter it spells, then the game: the notation
+                    and its name belong together, and the icon introduces the
+                    title rather than trailing after it. */}
+                <StaffNoteLabel midi={slot.note} />
+                <span className="nl-key__note">{slot.noteName}</span>
+                <Icon name={slot.icon} className="nl-key__icon" />
+                <span className="nl-key__label">{slot.label}</span>
+              </>
+            )}
           </li>
         ))}
       </ul>
