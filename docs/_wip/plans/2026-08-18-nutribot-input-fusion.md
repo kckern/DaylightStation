@@ -45,7 +45,7 @@ The live `scales.yml` overrides `density_levels` to attach `icon:` and drops `ma
 // tests/unit/applications/nutribot/scaleNutribotConfig.test.mjs
 import { describe, it, expect } from 'vitest';
 import { normalizeScaleNutribotConfig, DEFAULT_DENSITY_LEVELS }
-  from '#applications/nutribot/lib/scaleNutribotConfig.mjs';
+  from '#apps/nutribot/lib/scaleNutribotConfig.mjs';
 
 describe('normalizeScaleNutribotConfig — macros backfill', () => {
   // Attaching a cosmetic field must never cost a required one. The live
@@ -210,7 +210,7 @@ The data volume is not version controlled, so note the edit in `docs/_wip/plans/
 ```javascript
 // tests/unit/composition/scanDispatchNutriscanAck.test.mjs
 import { describe, it, expect } from 'vitest';
-import { swallowNotice } from '#applications/nutribot/lib/routeNutribotScan.mjs';
+import { swallowNotice } from '#apps/nutribot/lib/routeNutribotScan.mjs';
 
 describe('swallowNotice', () => {
   it('explains a disabled scanner in words a person at the fridge can act on', () => {
@@ -449,7 +449,7 @@ git commit -m "feat(nutribot): a millilitre reading can no longer complete a com
 ```javascript
 // tests/unit/applications/hardware/scaleNutribotQuietCommit.test.mjs
 import { describe, it, expect, vi } from 'vitest';
-import { createScaleNutribotBridge } from '#applications/hardware/ScaleNutribotBridge.mjs';
+import { createScaleNutribotBridge } from '#apps/hardware/ScaleNutribotBridge.mjs';
 
 // A scheduler we drive by hand: no fake timers, no real waiting.
 function manualScheduler() {
