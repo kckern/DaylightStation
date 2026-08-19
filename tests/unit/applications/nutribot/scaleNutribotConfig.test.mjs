@@ -17,18 +17,42 @@ describe('normalizeScaleNutribotConfig — density macros', () => {
     expect(cfg.densityLevels[0].per_100g).toEqual({ fiber_g: 2, sugar_g: 3, sodium_mg: 40 });
   });
 
-  // Superseded by the "macros backfill" describe block below: omitting macros
-  // for a level the code defaults DO cover now borrows that level's split
-  // instead of leaving it absent — that silent-absence behavior is exactly
-  // what let an icon-only override disable the whole scan feature. This case
-  // now pins the backfill instead of the old omission.
-  it('backfills macros from the code default when the row omits them for a known level', () => {
-    const cfg = normalizeScaleNutribotConfig({
-      nutribot: { density_levels: [{ level: 1, kcal_per_g: 0.2 }] },
-    });
+  // Restores the intent of the original "leaves macros absent... rather than
+  // fabricating a split" case: that objection is upheld, just not by leaving
+  // macros undefined. A level the code defaults DO cover now borrows that
+  // level's split AND says so — the fabrication itself is fine, doing it
+  // silently is what let an icon-only override disable the whole scan
+  // feature without a trace.
+  it('backfills a missing macros split, and says so rather than doing it silently', () => {
+    const warns = [];
+    const logger = { warn: (e, d) => warns.push([e, d]) };
+    const cfg = normalizeScaleNutribotConfig(
+      { nutribot: { density_levels: [{ level: 1, kcal_per_g: 0.2 }] } },
+      { logger },
+    );
     expect(cfg.densityLevels[0].macros).toEqual(
       DEFAULT_DENSITY_LEVELS.find((d) => d.level === 1).macros,
     );
+    expect(warns).toEqual([
+      ['nutriscan.macros.backfilled', { level: 1, source: 'DEFAULT_DENSITY_LEVELS' }],
+    ]);
+  });
+
+  it('does not warn when the row already supplies macros', () => {
+    const warns = [];
+    const logger = { warn: (e, d) => warns.push([e, d]) };
+    normalizeScaleNutribotConfig(
+      {
+        nutribot: {
+          density_levels: [{
+            level: 1, kcal_per_g: 0.2,
+            macros: { fat_pct: 10, carb_pct: 70, protein_pct: 20 },
+          }],
+        },
+      },
+      { logger },
+    );
+    expect(warns).toEqual([]);
   });
 });
 
