@@ -3,24 +3,27 @@
 How a weight on the kitchen scale becomes a net-weighted, density-classified nutrition
 entry, using a laminated QR sheet on the refrigerator instead of a tare button.
 
-**Status: wired end to end, and DISABLED IN PRODUCTION by a config error.** The domain layer,
-the composition store, the control grammar, the printable sheet and the scale bridge are all
-built and tested. But `validateScanConfig` throws `MALFORMED_DENSITY_LEVEL: Density level 1 is
-missing macros` on every boot, so `applyScanToComposition` stays `null` and **every `ct:`/`dl:`/
-`rs:` code is swallowed** — `routeNutribotScan` returns `{action:'swallow', reason:'nutriscan-disabled'}`
-and nothing reaches the buffer. The cause is the `nutribot.density_levels` block in
-`scales.yml`, which overrides the code defaults to attach `icon:` and drops `macros`, which the
-validator requires. Restore `macros` (or re-apply `icon:` on top of `DEFAULT_DENSITY_LEVELS`)
-before believing anything below describes running behaviour.
+**Status: wired end to end and live.** A code scanned on the fridge sheet reaches
+`barcode_relay.nutriscan`, is claimed by the nutrition grammar, and applies to the running
+composition. The domain layer, the composition store, the control grammar, the printable sheet
+and the scale bridge are all built and tested, and the config path that used to be able to
+disable the whole feature by omission no longer can: `normalizeScaleNutribotConfig` backfills a
+density row's `macros` from `DEFAULT_DENSITY_LEVELS` by level whenever an override supplies one
+without it, logging `nutriscan.macros.backfilled` when it substitutes. Attaching a cosmetic
+`icon:` to a density row can no longer drop the `macros` a validator requires and take the
+scanner down with it.
 
-The failure is silent at the fridge as well: `handleNutrition`'s `swallow` branch returns
-without calling `refreshPrompt`, so a refused scan produces no notice on the prompt — and
-`nutriscanWarned` downgrades every repeat after the first to `debug`, which is never shipped,
-so the log store holds at most one refusal per reason per process.
+A scan the grammar cannot apply is no longer silent, either. `handleNutrition`'s `swallow`
+branch calls `refreshPrompt` with a notice built from the refusal reason (`swallowNotice`), so a
+claimed-but-unusable code paints a `⚠️` line on the live prompt instead of just beeping the
+scanner. Repeated refusals stay visible too: they route through `logger.sampled(...)` with
+`{ maxPerMinute: 6, aggregate: true }` rather than the old warn-once-then-`debug` downgrade —
+`debug` is never shipped to the log store, so demoting a repeat used to delete it, not merely
+quiet it down.
 
-Still genuinely unbuilt: the memo flow, the `fd:` food grammar, and unit passthrough — and no
-code has yet been scanned off printed ink rather than rendered pixels. See
-[Implementation status](#implementation-status) before relying on anything here.
+Genuinely unbuilt: the memo flow and the `fd:` food grammar — and no code has yet been scanned
+off printed ink rather than rendered pixels. See [Implementation status](#implementation-status)
+before relying on anything here.
 Fusion design (quiet-commit, memo, ACK-on-refusal):
 [`docs/_wip/plans/2026-08-18-nutribot-input-fusion-design.md`](../../_wip/plans/2026-08-18-nutribot-input-fusion-design.md). Design rationale:
 [`docs/plans/2026-07-21-scan-enriched-food-logging-design.md`](../../plans/2026-07-21-scan-enriched-food-logging-design.md).
@@ -64,7 +67,7 @@ a precise gram measurement, never survives to the entry.
                                         computeNet → computeNutrition   [2_domains/nutrition]
                                                    │
                                                    ▼
-                                   nutribot entry (auto-accepts when complete)
+                              nutribot entry (quiet-commits 25s after complete)
 ```
 
 **A parse miss is not a no-op.** The fridge scanner is configured `route: content`, so a code
@@ -213,13 +216,19 @@ macro split *can* produce a plausible-looking wrong entry.
 `grams` / `density` / `container` — filled by whichever event arrives, **in any order**,
 within a rolling window (default 900 s).
 
-`complete` = grams present AND density present. A complete buffer auto-accepts; a bare weight
-stays `pending` on nutribot's existing density/container keyboard.
+`complete` = grams present AND density present (`Composition.isComplete`). That is a
+**structural** claim about which slots are filled — not gated on `unit`, deliberately: a
+volumetric `ml` reading is carried faithfully and counts as "grams present" for this purpose.
+The narrower question, *may this actually finalise on its own*, is answered downstream by the
+commit path (see [Quiet-commit](#quiet-commit)), not here. A complete buffer is what quiet-commit
+waits to see before it finalises; a bare weight stays `pending` on nutribot's existing
+density/container keyboard until either a scan completes it or the human answers by hand.
 
 **Slots are consumed at placement end.** Without this, the second food weighed inside one
 window inherits the first food's density and tare. Weigh yogurt with `dl:2` + `ct:bowl`,
 eat it, weigh pasta six minutes later without scanning, and the pasta logs as level-2 minus a
-250 g bowl that isn't there — and auto-accepts. That is an ordinary evening, not an edge case.
+250 g bowl that isn't there — and quiet-commit would file it. That is an ordinary evening, not
+an edge case.
 
 **The window refresh set excludes raw scale frames.** The firmware heartbeats at 0.5 Hz
 (`emit.heartbeat_hz`) while the scale rests on its shelf, so frame-driven refresh would mean
@@ -227,6 +236,44 @@ the buffer never expires. Only scans and qualifying placements refresh it.
 
 `now` is injected; the module never reads the wall clock, so window math is deterministic
 under test.
+
+---
+
+## Quiet-commit
+
+`ScaleNutribotBridge` finalises an entry on its own after **25 seconds** with no new *applied*
+input — configurable per scale as `commit_quiet_sec` in the `nutribot` block of `scales.yml`
+(surfaced to code as `commitQuietSec`, default `25`). This is the mechanism that turns a
+complete composition into a saved food-log entry; nothing else does.
+
+**What arms and re-arms the timer.** Only inputs that actually changed the composition: a
+qualifying weight placement (`setWeight`), an applied `dl:`/`ct:` scan (`armCommitFor`, called
+from `scanDispatch.mjs`'s `nutriscan` branch — including on a *refused* scan, since the person
+is mid-gesture and about to rescan), and `rs:undo`. **Raw scale frames never arm it** — the same
+reasoning `CompositionStore` already applies to its own window refresh: the scale heartbeats at
+rest, so a frame-driven timer would never fire. Reading the composition (`compositionOf`,
+`refreshPrompt`) never arms it either.
+
+**On expiry**, if the composition is not `complete`, the timer simply drops the entry — it stays
+live, answerable by hand, and window expiry eventually forgets it. If it is complete, the
+commit applies the buffered density through `SelectScaleDensity` — the same use case behind the
+Telegram density button — using the NET grams `LogFoodFromScale` already persisted at post time
+(the tare is not subtracted a second time). `SelectScaleDensity` is reused rather than
+reimplemented so the calorie arithmetic has exactly one home; `LogFoodFromScale`'s own entry
+carries `calories: 0` until this step runs. **A non-gram unit refuses to commit outright** —
+`commitNow` checks the snapshot's `unit` and, if it is not `'g'`, logs
+`scaleNutribot.commit.skipped` with `reason: 'non-gram-unit'` and returns without touching
+anything. That guard lives in the commit path on purpose, not on `Composition.isComplete` — see
+above.
+
+Only once the density applies successfully does the commit accept the log entry. **If applying
+the density fails**, the commit stands down without accepting: the prompt stays live for the
+next lull to retry, or for the human to answer directly.
+
+**A successful commit consumes the composition** (`bufferEndPlacement`, called only after the
+accept succeeds) so the next food placed on the scale cannot inherit this one's density or tare.
+
+`rs:done` bypasses the wait entirely and commits immediately, exactly as it always has.
 
 ---
 
@@ -267,7 +314,10 @@ restart before it takes effect.
 | Config: real container table | **shipped** — weighed 2026-07-29, 13 vessels → 9 cards |
 | Bridge integration — session end | **shipped** — `endPlacement` fires on the placed→at-rest crossing (`s.placed`) |
 | Bridge integration — mutex | **shipped** — a per-scale `inflight` lock guards the payload, force and refresh paths |
-| Bridge integration — unit passthrough | **not started** — see the caveat below; this row is the only part still open |
+| Bridge integration — unit passthrough | **shipped** — `ScaleNutribotBridge` reads `payload.unit`, defaulting to `'g'` only when absent, and threads it through `setWeight` and both `LogFoodFromScale` calls |
+| Config — macros backfill by level | **shipped** — an override that omits `macros` borrows `DEFAULT_DENSITY_LEVELS`' for its level rather than disabling the feature; `nutriscan.macros.backfilled` logs the substitution |
+| Refusal ACK (`swallowNotice`) | **shipped** — a swallowed scan paints a `⚠️` line on the live prompt instead of producing no visible change |
+| Quiet-commit (`ScaleNutribotBridge` commit timer) | **shipped** — see [Quiet-commit](#quiet-commit) |
 | Memo (voice flow-state branch, Memo button) | not started |
 | Food grammar (`fd:` prefix) | not started — sheet prints foods as inert labels, if at all |
 
@@ -294,7 +344,7 @@ weight and well inside the spread between two nominally identical bowls. The lad
 the guard: no rung is close enough to its neighbour for picking the wrong card to matter much.
 
 **A tare the system does not recognise still fails silently**, which is why the ids matter more
-than the grams — see the caveat below.
+than the grams — see [Known gaps](#known-gaps--deliberate-do-not-silently-fix) below.
 
 ---
 
@@ -310,13 +360,11 @@ than the grams — see the caveat below.
 - **An unknown container id currently produces a silent zero tare** — `computeNet` treats an
   absent container as "no tare." The lookup layer that would reject an orphaned id is not built
   yet, so a renamed container id orphans a laminated code without a visible error.
-- **A millilitre reading is recorded as grams.** The relay sends `unit` on every frame and the
-  scale really can report `ml` (`decode.units` in `scales.yml` maps `0x02` to it), but
-  `ScaleNutribotBridge` never reads `payload.unit` — it passes the literal `unit: 'g'` into both
-  `compositionStore.setWeight` and the log use case. So the buffer does NOT carry `ml`
-  faithfully: the reading is silently relabelled, and nothing downstream can refuse what it was
-  never told. Passing the reported unit through is the first half of the fix; the refusal
-  (`ml` must not satisfy `complete`) belongs to `ApplyScanToComposition` and is the second.
+- **A density-application failure at commit time is silent to the user.** `commitNow` applies
+  the buffered density through `SelectScaleDensity` before accepting, and on refusal it restores
+  the prompt so the next quiet lull retries — but a *persistent* cause (`'unknown level'`,
+  `'log not found'`) fails identically forever, and only a `scaleNutribot.commit.skipped` warn
+  log explains why. The entry just never finalises, with no notice on the prompt.
 - **Print legibility is untested.** Nothing verifies a QR printed 25-to-a-page scans off a
   fridge door in kitchen lighting. Print one and try it before laminating.
 
