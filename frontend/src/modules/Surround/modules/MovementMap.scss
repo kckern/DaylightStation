@@ -33,7 +33,20 @@
      top-heavy gap the design review named. Sized to its content, the slack all
      falls to the ticker, which centres its note in it.
      Border-box, so the padding is inside the number rather than added to it
-     (content-box would have made the band 10px taller without saying so). */
+     (content-box would have made the band 10px taller without saying so).
+
+     WAVE 6 ADDS A TRANSLATION LINE AND DOES NOT MOVE THIS NUMBER, which was
+     measured rather than assumed. The floor's job is the SHORT case — a band of
+     one-line headings — and that case now costs lane (4px) + the heading's
+     clearance (0.55em of 1.05rem = 9.24px) + one line of name (19.32px) + the
+     translation's clearance (0.2em of 0.74rem = 2.37px) + one line of
+     translation (0.74rem x 1.2 = 14.21px) + the bottom padding (8.8px) =
+     57.94px, still inside 62.4px. The module has no ceiling, so where a heading
+     genuinely wraps the module (and the region, which is `flex: 0 0 auto` and
+     content-sized) simply grows — as it did before this wave, by one more line
+     now. Raising the floor to cover the wrapped case would have bought dead
+     black under every band that does NOT wrap, which is precisely the slack
+     wave 5 removed. */
   min-height: 3.9rem;
   box-sizing: border-box;          /* the floor is the BAND, padding included */
   /* NO TOP PADDING. The rule row has to sit tight against the video's bottom
@@ -100,6 +113,38 @@
   padding: 0 0.5em 0 0.55em;       /* text inset, off the rule */
   font-size: 1.05rem;
   font-weight: 600;
+}
+
+/* THE TRANSLATION (design wave 6) — the editor's gloss, one register down and
+   in a DIFFERENT FACE. Every other word in this frame is one of two Garamonds;
+   a translation set in a third weight of the same family would read as quieter
+   programme rather than as annotation, so this is the one place the design
+   breaks the serif and uses the annotation sans (`--surround-annotation`).
+   Recessive by three means at once — face, size, opacity — because it must not
+   compete with the movement NAME six pixels above it.
+   SINGLE LINE, ELLIPSIZED, and that is deliberately the opposite of the
+   heading's wrap-only law: the heading wraps because a movement's name is
+   content the viewer needs whole, while a translation that will not fit its
+   segment is a convenience. Wrapping it would cost the whole band a second
+   annotation line for the sake of one narrow segment. `text-overflow` is the
+   correct idiom HERE precisely because this box is `nowrap` — the thing wave 5
+   removed from the heading was `text-overflow` sitting beside a line CLAMP,
+   which is a different (and contradictory) pairing. */
+.surround-movement-map__translation {
+  display: block;
+  margin-top: 0.2em;
+  padding: 0 0.5em 0 0.55em;       /* the heading's inset, off the rule */
+  font-family: var(--surround-annotation, ui-sans-serif, system-ui, Arial, sans-serif);
+  font-size: 0.74rem;              /* above the 0.72rem ten-foot floor */
+  font-weight: 400;
+  font-style: normal;              /* it is NOT the tempo term — see __tempo */
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ink, #2a1d07);
+  opacity: 0.55;
 }
 
 .surround-movement-map__numeral {
@@ -177,6 +222,17 @@
 .surround-movement-map__segment--elapsed .surround-movement-map__heading {
   color: var(--ink-soft, #6b6152);
   opacity: 0.6;
+}
+
+/* The gloss recedes with its movement. Only the ELAPSED state moves it: a
+   movement already played needs neither its name nor its translation, and
+   leaving the annotation at full strength under a dimmed name would invert the
+   hierarchy inside one column. Future and active keep the base 0.55 — the
+   translation is a gloss in both, and brightening it under the sounding
+   movement would put a sans line in competition with the brass rule. */
+.surround-movement-map__segment--elapsed .surround-movement-map__translation {
+  color: var(--ink-soft, #6b6152);
+  opacity: 0.38;
 }
 
 /* Active — the one thick line on the band. 4px of velvet-lit brass sweeping the

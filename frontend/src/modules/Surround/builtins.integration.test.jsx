@@ -64,7 +64,18 @@ describe('surround builtins in the frame', () => {
     const states = [...document.querySelectorAll('[data-testid="surround-movement"]')]
       .map((el) => el.getAttribute('data-state'));
     expect(states).toEqual(['elapsed', 'active']);
-    expect(document.querySelector('[data-testid="surround-ticker-text"]').textContent)
+
+    // Design wave 6: the band splits, and a TIMED CUE belongs to the NOW
+    // register on the right — it is a claim about what is sounding, which is
+    // that zone's whole subject. The piece register on the left goes on with
+    // the programme note, undisturbed. Both halves are read off the same clock
+    // as the movement states above, which is what this spec exists to prove.
+    expect(document.querySelector('[data-testid="surround-ticker-listen"]').textContent)
       .toBe('The funeral march begins.');
+    expect(document.querySelector('[data-testid="surround-ticker-text"]').textContent)
+      .toBe('Beethoven tore the page.');
+    // ...and the NOW header names the movement the map calls active.
+    expect(document.querySelector('[data-testid="surround-ticker-now"]').textContent)
+      .toContain('Marcia funebre. Adagio assai');
   });
 });

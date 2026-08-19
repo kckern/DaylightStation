@@ -36,14 +36,20 @@ it is wrong.
 
 ## Type
 
-Two families only. A third is one accessory too many.
+Two Garamonds for everything the programme says, and one sans for everything the
+programme *glosses*.
 
 - **Cormorant Garamond** (already loaded by ArtMode) — display. Piece title,
   composer name, movement names. *Italic for tempo markings*, because that is how
   engraved scores actually set them.
 - **EB Garamond** — body. Fact ticker, programme notes.
+- **A condensed system sans** (`--surround-annotation`) — the ANNOTATION voice,
+  and only that: the translation of a tempo term, wherever one appears. It is
+  the editor speaking rather than the programme, and in an all-serif frame the
+  only way to say so is to change the face. A smaller, greyer Garamond reads as
+  quieter Garamond. Condensed because a gloss lives in a narrow column.
 - **Labels** are letterspaced small caps of the display face (`0.14em`), the way
-  concert programmes set section headers. Not a third typeface.
+  concert programmes set section headers. Not a fourth typeface.
 
 Scale, tuned for a 10-foot living-room read at 1920×1080:
 
@@ -53,7 +59,12 @@ Scale, tuned for a 10-foot living-room read at 1920×1080:
 | Piece provenance (under it) | `0.85rem` | 600, small caps, one line |
 | Composer name (brass plate) | `1.75rem` | 600, measure capped at `12ch`, up to 3 lines |
 | Movement name (active) | `1.05rem` | 600, italic for the tempo term |
-| Ticker body | `clamp(0.95rem, 19cqh, 1.5rem)` | 500, 2 lines reserved |
+| Movement translation | `0.74rem` | 400, annotation sans, one line, 0.55 alpha |
+| Ticker body (both zones) | `clamp(0.88rem, 19cqh, 1.5rem)` | 500, 1–2 lines reserved |
+| Listening band now-header | `0.78rem` | 600, display face, one line |
+| Composer period | `0.72rem`, `0.12em` tracking | 600, uppercase, up to 2 lines |
+| Era timeline names | `0.72rem`, `0.12em` tracking | 500/600, uppercase, dropped not shrunk |
+| Era period note | `clamp(0.76rem, 3.6cqw, 0.95rem)` | 500, body face italic, 4 lines max |
 | Rail fact | `clamp(0.85rem, 5.4cqh, 1.35rem)` | 500, body face, 3 lines reserved |
 
 **Two runs of type size themselves against the room they are in.** The cue ticker
@@ -67,6 +78,15 @@ ceilings are the point at which each would start competing with the work title.
 The reserves stay in `em`, so they follow the clamp instead of being a second
 number to re-derive. Everything else in the table is fixed: a size that adapts is
 a decision, not a default.
+
+**Where the band cannot pay, the LAYOUT adapts too, not the type.** The listening
+band's two registers need one line of header and two of note; measured, the
+960×540 screen-root leaves them about forty pixels once the movement names have
+wrapped and the translation line has been paid for. So the ticker's own size
+container carries a query at 70px of content: below it the reserve is one line
+and the now-header's translation is dropped; above it both come back. Shrinking
+the type instead would have broken the ten-foot floor, and budgeting for the
+small band everywhere would have wasted half of the tall one.
 | Map — subject country | `0.9rem`, `0.2em` tracking | 600, uppercase |
 | Labels / data / map neighbours | `0.72rem`, `0.14em` tracking | 600, uppercase |
 
@@ -87,10 +107,12 @@ a decision, not a default.
 ├───────────────────┤                                           │
 │  place carousel   │                                           │
 │  photo ⇄ country  ├───────────────────────────────────────────┤
-│  ⇄ city map, 5:3  │  movement map — rule on top, names below  │
-│                   ├───────────────────────────────────────────┤
-│                   │  cue / fact ticker                        │
-└───────────────────┴───────────────────────────────────────────┘
+│  ⇄ city ⇄ era,    │  movement map — rule on top, names below, │
+│  all 5:3          │  each name glossed by its translation     │
+│                   ├─────────────────────┬─────────────────────┤
+│                   │  the piece:         │  now: II. Largo     │
+│                   │  rotating facts     │  what to listen for │
+└───────────────────┴─────────────────────┴─────────────────────┘
 ```
 
 The video is TOP-anchored and the work placard FLOATS out of flow, hung on the
@@ -111,15 +133,20 @@ the geometry follows the viewport:
 - **composer card** — a header ROW (portrait in its dark mat at 45% of the rail
   on the left; the brass nameplate carrying the NAME and the dates engraved
   together, with the birthplace in parchment under it, in the column to its
-  right) and, centred in the height the header leaves, the rotating composer
-  fact. The name is set to a capped MEASURE and breaks at word boundaries —
-  "Antonio" over "Vivaldi" — because an engraved plate uses the vertical rather
-  than shrinking its type to one line.
-- **place carousel** — three slides in one 5:3 slot, dissolving in turn: the city
-  photograph, the country at regional zoom, then the same map zoomed so the
-  country's own shape fills the frame around the city's star. Two questions,
-  asked in order — where is that country, and where in it. The card owns the
-  person, the carousel owns the place.
+  right, and the PERIOD under that) and, centred in the height the header leaves,
+  the rotating composer fact. The name is set to a capped MEASURE and breaks at
+  word boundaries — "Antonio" over "Vivaldi" — because an engraved plate uses the
+  vertical rather than shrinking its type to one line. The period is
+  `piece.period ?? composer.period`: a composer's era and a work's era are not
+  always the same claim, and beside the Eroica the work's answer ("Classical to
+  Romantic") is the true one. It is rail voice, not engraving — a plate carries
+  the record, and an era is an editor's classification.
+- **place carousel** — four slides in one 5:3 slot, dissolving in turn: the city
+  photograph, the country at regional zoom, the same map zoomed so the country's
+  own shape fills the frame around the city's star, and the era timeline. Three
+  questions asked in order — where is that country, where in it, and when — with
+  the only non-place slide last. The card owns the person, the carousel owns the
+  place and the period.
 
 Every picture in the frame is mounted on the same DARK mat (`--mat` with a
 `--mat-edge` hairline). A cream mat on the maroon rail reads as a white border —
@@ -139,9 +166,28 @@ box keeps its black, the rail its oxblood, the band its stone, the plate its
 stone.
 
 **The band's regions are sized to their contents.** The movement map claims only
-the rule lane plus two lines of name; ALL the band's remaining height belongs to
-the ticker, which centres its note in it. A floor larger than the names need would
-be dead black between them and the note, not breathing room.
+the rule lane, a line of name and its gloss; ALL the band's remaining height
+belongs to the ticker, which centres its notes in it. A floor larger than the
+names need would be dead black between them and the note, not breathing room —
+so the map's floor covers the SHORT case and the band simply grows where a name
+genuinely wraps.
+
+**The band's text zone is two registers, divided by a hairline.**
+
+- LEFT, **the piece**: the untimed `facts` pool, rotating slowly. True at 0:00
+  and at 53:00; it does not care where the playhead is.
+- RIGHT, **now**: a header naming the movement that is sounding (numeral, name,
+  and its translation where the band has room for it), and beneath it that
+  movement's `listen` notes — what to listen for in the next three minutes. A
+  movement change swaps the pool and restarts it at its first note. A **timed
+  cue** interrupts this register, and only this one: a cue is the same kind of
+  claim, pinned to a second rather than to a movement. A movement with no
+  authored notes keeps its header and borrows the piece pool beneath it — never
+  empty paper.
+- The two rotations are **phase-offset by half a period**. Both play the house
+  dissolve, and two of those in one instant reads as the whole band blinking.
+- A piece with no movements does not split at all: there is no "now" to give a
+  register to, so the band stays one full-width zone and cues preempt it.
 
 ## Signature: the movement map as engraved score
 
@@ -179,6 +225,12 @@ movement is a segment proportional to its real duration.
   context the band exists to give, what is gone is not.
 - Movement names sit **below** the rule, tempo term in italic, wrapping to at
   most two lines.
+- Under each name, where one is authored, the **translation** of its tempo term
+  — "Allegro con brio" → *Fast, with spirit*. Annotation sans, one line,
+  ellipsized: unlike the name above it (which wraps, because a movement's name is
+  content the viewer needs whole) a gloss that will not fit its segment is a
+  convenience, and a second annotation line would cost the whole band. It recedes
+  with an elapsed movement and is never brightened for the sounding one.
 - No clef, no notes, no staff of five lines. One rule and the barline grammar.
   The restraint is what keeps it from reading as fussy pastiche.
 
@@ -258,6 +310,35 @@ all, so:
   which is the one colour the ink family does not carry.
 - On the zoom that shows it, the city's brass star and label are the one thing on
   the map the programme asserts, and the one label that is never dropped.
+
+## The era timeline: when, engraved
+
+The fourth slide answers **"when was this written?"** the same way the map
+answers *where* — by drawing a position inside a fixed extent and naming what is
+around it, because "Classical" tells a viewer who cannot place the Classical era
+exactly as little as a shape with a star in it does.
+
+- One hairline spanning **1550–1910**, divided into four era bands. The dates are
+  DATA and they are contestable — 1600, 1750, 1820 and 1910 are conventions
+  rather than events — so they live in one exported constant with the argument
+  written beside them, not as percentages scattered through a stylesheet.
+- The **subject band is brightened**, in weight and value only: `--ink` at double
+  the lane's height, never a colour of its own. A period naming two eras lights
+  BOTH, because that is what "Classical to Romantic" means — the work sits across
+  the join, which is the one thing a timeline can show and a label cannot.
+- A **brass hairline** marks the piece's year, with the year written above it.
+  The same mark the movement map's playhead is, at the scale of centuries. A year
+  outside the span gets no marker rather than a clamped one that would lie.
+- **Era names are dropped, never shrunk.** They are set at the `0.72rem` floor,
+  and a non-subject name that cannot roughly fit its own band — or that would
+  collide with one already written — is simply not drawn: RENAISSANCE appears on
+  a 1080p rail and drops on a 540p one. The SUBJECT's name is never dropped, and
+  two crowded subjects are spread apart rather than one being discarded.
+- The **period note** (`piece.period_note ?? composer.period_note`) sits inside
+  the plate beneath the drawing, in the caption's register. Not in the carousel's
+  caption slot: that is a two-line reserve shared with every slide, and its fixed
+  size is what makes the swap a dissolve. The slide's caption is the work's
+  DATING instead — the one thing the plate cannot show.
 
 ## Materials, used with restraint
 

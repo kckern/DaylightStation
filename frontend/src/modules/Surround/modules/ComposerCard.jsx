@@ -79,6 +79,8 @@ function assetUrl(assetBase, ref) {
   return DaylightMediaPath(`media/img/${base}/${path}`);
 }
 
+const trimmed = (value) => (typeof value === 'string' && value.trim() ? value.trim() : null);
+
 /** "1770 – 1827", or "b. 1770" while only one year is known. */
 function lifeSpan(composer) {
   const born = composer?.born;
@@ -198,7 +200,14 @@ export default function ComposerCard({
   }, [shownFact, contentId, log]);
 
   const dates = lifeSpan(composer);
-  const hasIdentity = Boolean(composer?.name || dates || composer?.birthplace);
+  // THE PERIOD (design wave 6). The PIECE's period wins where it is authored,
+  // because a composer's era and a work's era are not always the same claim:
+  // Beethoven is `Classical`, the Eroica is `Classical to Romantic`, and on a
+  // rail sitting beside that symphony the work's answer is the true one. The
+  // composer's is the fallback, which is what every piece without its own
+  // period (Vivaldi's Spring) actually uses.
+  const period = trimmed(data?.piece?.period) ?? trimmed(composer?.period);
+  const hasIdentity = Boolean(composer?.name || dates || composer?.birthplace || period);
   // The header row is a row only when it has two things to put side by side.
   // With one of them missing the survivor takes the whole width rather than
   // sitting in a column beside an empty one.
@@ -240,6 +249,20 @@ export default function ComposerCard({
               )}
               {composer?.birthplace && (
                 <p className="surround-composer-card__birthplace">{composer.birthplace}</p>
+              )}
+              {/* THE PERIOD (design wave 6). Rail voice, under the plate with
+                  the birthplace — NOT engraved on the brass. The plate is
+                  name + dates and that is settled (museum convention); an era
+                  is an editor's classification, not something a museum casts
+                  in metal. Place first, then time: the birthplace is a fact
+                  about the person, the era is a fact about their music. */}
+              {period && (
+                <p
+                  className="surround-composer-card__period"
+                  data-testid="surround-composer-period"
+                >
+                  {period}
+                </p>
               )}
             </div>
           )}

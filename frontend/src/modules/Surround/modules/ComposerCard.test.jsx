@@ -899,3 +899,129 @@ describe('ComposerCard — pictures whole, fact slot still', () => {
     expect(style.getPropertyValue('overflow')).toBe('hidden');
   });
 });
+
+/**
+ * DESIGN WAVE 6 — THE PERIOD, IN THE VITALS.
+ *
+ * The rail can say when a composer lived (the plate does) without saying what
+ * they wrote. The era is the missing half of the identity, and it is the piece's
+ * era before it is the person's: Beethoven is Classical, the Eroica is Classical
+ * to Romantic, and a rail sitting beside that symphony should say the latter.
+ */
+describe('ComposerCard — the period line', () => {
+  let injected = null;
+  const withStyles = () => {
+    const compiled = sass.compile(path.join(__dirname, 'ComposerCard.scss'));
+    injected = document.createElement('style');
+    injected.textContent = compiled.css;
+    document.head.appendChild(injected);
+    return compiled.css;
+  };
+  afterEach(() => { injected?.remove(); injected = null; });
+
+  const period = (view) => view.container.querySelector('[data-testid="surround-composer-period"]');
+
+  it('prefers the PIECE’s period over the composer’s', () => {
+    const view = renderCard({
+      data: {
+        ...DATA,
+        piece: { ...DATA.piece, period: 'Classical to Romantic' },
+        composer: { ...DATA.composer, period: 'Classical' },
+      },
+    });
+    expect(period(view)).toHaveTextContent('Classical to Romantic');
+  });
+
+  it('falls back to the composer’s period when the piece names none', () => {
+    const view = renderCard({
+      data: { ...DATA, composer: { ...DATA.composer, period: 'Baroque' } },
+    });
+    expect(period(view)).toHaveTextContent('Baroque');
+  });
+
+  it('renders no element at all when neither names one', () => {
+    const view = renderCard();
+    expect(period(view)).toBeNull();
+  });
+
+  it('treats a blank period as no period', () => {
+    const view = renderCard({
+      data: { ...DATA, piece: { ...DATA.piece, period: '  ' }, composer: { ...DATA.composer, period: '' } },
+    });
+    expect(period(view)).toBeNull();
+  });
+
+  /**
+   * NOT ON THE BRASS. The plate reads name, then dates, and that is settled
+   * museum convention (wave 4): a plate carries the record, and an era is an
+   * editor's classification — contestable, revisable, and in this frame
+   * piece-dependent. It belongs to the rail's voice, beside the birthplace.
+   */
+  it('sits in the identity stack, under the birthplace — never on the nameplate', () => {
+    const view = renderCard({
+      data: { ...DATA, piece: { ...DATA.piece, period: 'Baroque' } },
+    });
+    const plate = view.container.querySelector('.surround-composer-card__nameplate');
+    expect(plate, 'the nameplate did not render').not.toBeNull();
+    expect(plate.querySelector('[data-testid="surround-composer-period"]'),
+      'the era was engraved on the brass').toBeNull();
+
+    const identity = view.container.querySelector('[data-testid="surround-composer-identity"]');
+    const kids = [...identity.children].map((el) => el.className);
+    const birthplace = kids.findIndex((c) => c.includes('__birthplace'));
+    const era = kids.findIndex((c) => c.includes('__period'));
+    expect(era).toBeGreaterThanOrEqual(0);
+    expect(era, 'place then time: the era comes after the birthplace').toBeGreaterThan(birthplace);
+  });
+
+  it('renders the identity block for a composer whose ONLY vital is a period', () => {
+    const view = renderCard({
+      data: {
+        ...DATA,
+        piece: { ...DATA.piece, period: 'Baroque' },
+        composer: { portrait: 'vivaldi/portrait.jpg' },
+      },
+    });
+    expect(period(view)).toHaveTextContent('Baroque');
+  });
+
+  it('is set as letterspaced small caps in the rail’s quiet ink, at the floor', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    const rule = css.match(/\.surround-composer-card__period \{[^}]*\}/);
+    expect(rule, 'no period rule in the compiled sheet').not.toBeNull();
+    expect(rule[0]).toContain('text-transform: uppercase');
+    expect(Number(rule[0].match(/letter-spacing: ([\d.]+)em/)[1])).toBeGreaterThanOrEqual(0.08);
+    expect(rule[0]).toMatch(/color: var\(--ink-soft,/);
+    const size = Number(rule[0].match(/font-size: ([\d.]+)rem/)[1]);
+    expect(size, 'below the 0.72rem ten-foot floor').toBeGreaterThanOrEqual(0.72);
+    // Quieter than the birthplace above it is not the goal — it must not be
+    // LOUDER than the name on the brass, which is 1.75rem.
+    expect(size).toBeLessThan(1.75);
+  });
+
+  /**
+   * IT WRAPS, IT DOES NOT ELLIPSIZE. "Classical to Romantic" is 21 tracked
+   * characters against an identity column measured at 145px on the 960x540
+   * screen-root — it needs two lines there and takes one at 1280x720 and above.
+   * The birthplace's single-line ellipsis would print "CLASSICAL TO ROM…" and
+   * hide exactly the half of the answer this line exists to give; shrinking
+   * breaks the ten-foot floor. Wrapping costs nothing: the line is static per
+   * item, so no reserve law applies, and the fact zone below is centred by
+   * `margin: auto 0` and simply moves.
+   */
+  it('wraps to a second line rather than ellipsizing half the era away', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    const rule = css.match(/\.surround-composer-card__period \{[^}]*\}/)[0];
+    expect(rule, 'the era is ellipsized like the birthplace').not.toContain('text-overflow');
+    expect(rule).not.toContain('white-space: nowrap');
+    const cap = rule.match(/max-height: ([\d.]+)em/);
+    expect(cap, 'the era line has no ceiling at all').not.toBeNull();
+    const lh = Number(rule.match(/line-height: ([\d.]+)/)[1]);
+    expect(Number(cap[1]), 'the era may take more than two lines').toBeCloseTo(lh * 2, 2);
+
+    // ...and the birthplace above it still takes the OTHER branch, unchanged.
+    const place = css.match(/\.surround-composer-card__birthplace \{[^}]*\}/)[0];
+    expect(place).toContain('white-space: nowrap');
+    expect(place).toContain('text-overflow: ellipsis');
+  });
+});

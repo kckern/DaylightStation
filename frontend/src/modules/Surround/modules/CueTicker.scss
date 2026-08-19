@@ -1,15 +1,25 @@
 /**
- * CueTicker — the programme note beneath the stage.
+ * CueTicker — the two registers beneath the stage.
  *
- * One or two lines of body Garamond, centred on the dark band. No icon, no
- * badge, no border: the movement map is where the boldness is spent, and a busy
- * ticker would compete with the music it sits under.
+ * LEFT is the piece; RIGHT is now. One hairline between them, and nothing else:
+ * no boxes, no badges, no second ground. The movement map above is where the
+ * band spends its boldness, and two bordered panels under it would turn the
+ * programme into a dashboard.
  *
- * RESERVED HEIGHT IS THE CONTRACT. The pool rotates between one-line and
- * two-line notes; sizing the panel to whatever happens to be showing makes the
- * whole band jump every twenty seconds. The text box is therefore always two
- * lines tall, and the line is centred inside it — a short note sits in the same
- * place a long one does, and the dissolve can play without moving anything.
+ * RESERVED HEIGHT IS THE CONTRACT, in both zones. Each pool rotates between
+ * one-line and two-line notes; sizing a zone to whatever happens to be showing
+ * makes the whole band jump every twenty seconds. Each text box is therefore a
+ * fixed reserve and its line is centred inside it — a short note sits where a
+ * long one does, and the two dissolves can play without moving anything.
+ *
+ * IT ADAPTS TO A BAND THAT CANNOT AFFORD IT (design wave 6). The ticker is a
+ * size container, and the band's slack is not the same on every screen in the
+ * fleet: on the 960x540 screen-root the movement names wrap and this zone is
+ * left with barely forty pixels, while a 1080p frame gives it well over a
+ * hundred. So the reserve is one line in the small band and two in the large
+ * one, and the now-header's translation appears only where there is room for
+ * it. The alternative — one budget, sized for the small screen — would waste
+ * half of the tall band, and sized for the tall one would clip the short.
  *
  * The opacity transition is set inline by the component so the fade duration has
  * a single source of truth with the JS choreography.
@@ -22,10 +32,9 @@
      `.surround-frame__region--bottom`). A percentage height here would ask a
      circular question and get clipped for an answer.
 
-     IT IS A SIZE CONTAINER (design wave 5), which is what lets the note below
+     IT IS A SIZE CONTAINER (design wave 5), which is what lets the type below
      size itself against the ZONE it was actually given rather than against a
-     guess. The band grew when the rule row moved to its top, and a note set for
-     the old band read as a caption lost in a field of black.
+     guess — and, since wave 6, what lets the LAYOUT do the same.
      `container-type: size` means this box's own contents no longer contribute
      to its height — safe here because the shipped definition gives the ticker
      `height: fill` (the region claims the band's slack, so the height comes
@@ -34,53 +43,162 @@
      zero, and this floor is what stops the module vanishing instead of
      shrinking. */
   container-type: size;
-  min-height: 3.4rem;
+  container-name: ticker;
+  /* The floor is the SMALL layout, measured: one line of now-header (0.78rem x
+     1.2 = 14.98px) + its margin (0.1rem = 1.6px) + one line of note at the
+     clamp's floor (0.88rem x 1.35 = 19.0px) = 35.58px of content, plus this
+     box's own padding (0.4rem = 6.4px) = 41.98px, so 2.7rem (43.2px). It went
+     DOWN from wave 5's 3.4rem, and deliberately: that number was a floor under
+     a two-line reserve that no longer applies unconditionally, and left where
+     it was it would have overflowed its own region on the tightest screen in
+     the fleet rather than letting the container query do its job. */
+  min-height: 2.7rem;
   /* The floor is the PANEL, padding included. Without this the floor is the
-     content box and the module is 3.4rem + 0.8rem of padding — measured at
-     67px against a 57px zone on the gate's screen-root, i.e. 10px of the note
-     clipped by the region for no reason anyone declared. */
+     content box and the module is taller than it says it is — measured in wave
+     5 at 67px against a 57px zone on the gate's screen-root, i.e. 10px of the
+     note clipped by the region for no reason anyone declared. */
   box-sizing: border-box;
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: center;
-  padding: 0.4rem 1.6rem;
+  padding: 0.2rem 1rem;
   overflow: hidden;
   font-family: var(--surround-body, "EB Garamond", Georgia, serif);
 }
 
+/* The two registers. `stretch`, not `center`: each zone centres its OWN
+   contents, and a zone shorter than the band would put the hairline between
+   them on a different vertical run than the text it divides. */
+.surround-cue-ticker__zones {
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  width: 100%;
+  min-width: 0;
+}
+
+/* HALF EACH, and equally — `flex: 1 1 50%` with `min-width: 0`, so a long
+   unbroken word in one zone can never take width from the other. The unsplit
+   band (a piece with no movements) renders ONE zone, which then takes the whole
+   width by the same rule. */
+.surround-cue-ticker__zone {
+  position: relative;
+  flex: 1 1 50%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 0.9rem;
+  box-sizing: border-box;
+}
+
+/* THE DIVIDING HAIRLINE. A pseudo-element rather than a border, because a
+   border runs the zone's full height and this rule must not touch the band's
+   top and bottom edges — it divides two columns of text, it does not box them.
+   `--programme-edge` is the frame's own hairline token, re-mapped to a faint
+   parchment on the band's near-black ground, so this is the same line the
+   programme panels are edged with. */
+.surround-cue-ticker--split .surround-cue-ticker__zone--now::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 14%;
+  bottom: 14%;
+  width: 1px;
+  background: var(--programme-edge, rgba(233, 223, 200, 0.26));
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------------------
+   THE NOW HEADER — what is sounding, named.
+   NOT part of the dissolve: it changes on a movement boundary, which the rule
+   above has already shown the viewer. Fading it with the note beneath it would
+   make an ordinary twenty-second rotation look like the piece had moved on.
+   --------------------------------------------------------------------------- */
+.surround-cue-ticker__now {
+  flex: 0 0 auto;
+  margin: 0 0 0.1rem;
+  text-align: center;
+  min-width: 0;
+}
+
+/* The movement's own voice: the display face, as the movement map sets it. One
+   line, ellipsized — this is a header, and a header that wraps stops being one.
+   (The map's headings wrap because a name has to survive there; here the same
+   name is already legible six inches above.) */
+.surround-cue-ticker__now-head {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--surround-display, "Cormorant Garamond", Georgia, serif);
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.03em;
+  color: var(--ink, #2a1d07);
+  opacity: 0.85;
+}
+
+.surround-cue-ticker__now-numeral {
+  font-variant-numeric: lining-nums;
+  margin-right: 0.35em;
+}
+
+/* The translation, in the annotation face — the same gloss, in the same voice,
+   as the movement map's sub-line. Two surfaces, one register: a viewer who
+   learns that sans means "translation" on the rule reads it the same way here.
+   It is the first thing to go when the band is short (see the container query
+   at the foot of this file): the movement's NAME is the header's job, and the
+   gloss is already on the rule above. */
+.surround-cue-ticker__now-translation {
+  display: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--surround-annotation, ui-sans-serif, system-ui, Arial, sans-serif);
+  font-size: 0.72rem;              /* the ten-foot floor itself */
+  font-weight: 400;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  color: var(--ink, #2a1d07);
+  opacity: 0.55;
+}
+
+/* ---------------------------------------------------------------------------
+   THE TEXT BOXES — one per zone, same contract in both.
+   --------------------------------------------------------------------------- */
 .surround-cue-ticker__text {
   margin: 0;
   width: 100%;
+  flex: 0 0 auto;
   /* TYPE THAT FILLS ITS ROOM (design wave 5). `cqh` is 1% of the ticker's own
      height, so the note is large in the tall band a 1080p frame gives it and
-     steps down — rather than overflowing — in the ~59px the gate's 960x540
-     screen-root leaves. The clamp's ends are the design's, not the container's:
-     0.95rem is the ten-foot floor, 1.5rem is the point at which a programme note
-     starts competing with the work's own title on the plate. Measured in the
-     harness across 960x540 / 1280x720 / 1920x1080. */
-  font-size: clamp(0.95rem, 19cqh, 1.5rem);
+     steps down — rather than overflowing — in the ~40px the gate's 960x540
+     screen-root leaves once the movement names have wrapped. The clamp's ends
+     are the design's, not the container's: 0.88rem is the ten-foot floor for
+     body text at this distance (wave 5's 0.95rem was measured against a band
+     that had not yet been asked to carry a second register), 1.5rem is the
+     point at which a programme note starts competing with the work's own title
+     on the plate. The coefficient is wave 5's, unchanged: the zones are half
+     as wide as the panel it was measured on, but `cqh` reads the band's
+     HEIGHT, which the split did not change. */
+  font-size: clamp(0.88rem, 19cqh, 1.5rem);
   line-height: 1.35;
-  /* The reserve: two lines at this line-height, always — a floor AND a
-     ceiling, so the box can neither collapse under the flex algorithm nor
-     grow past it. `em` keeps both tied to the type, so the reserve follows the
-     clamp above instead of having to be re-derived per screen. */
-  min-height: 2.7em;
-  max-height: 2.7em;
-  /* CENTRED IN THE RESERVE, not parked at its top. A one-line note in a
-     two-line box used to hang from the ceiling and leave the whole spare line
-     beneath it, which is the top-heavy gap the design review named. `grid` +
-     `align-content: center` is what actually centres wrapped text vertically:
+  /* The reserve: ONE line here, two under the container query below — a floor
+     AND a ceiling either way, so the box can neither collapse under the flex
+     algorithm nor grow past it. `em` keeps both tied to the type, so the
+     reserve follows the clamp above instead of having to be re-derived per
+     screen. */
+  min-height: 1.35em;
+  max-height: 1.35em;
+  /* CENTRED IN THE RESERVE, not parked at its top. `grid` + `align-content:
+     center` is what actually centres wrapped text vertically:
      `-webkit-box-pack` does not (the box idiom computes to `flow-root` in
      current Chromium — wave 2, flag 4 — and takes its own alignment with it).
-     Fix round 1: wave 5 deleted the clamp here to make room for `align-content`
-     — the two cannot share ONE element, because the webkit line-clamp requires
-     `display: -webkit-box` and this rule needs `display: grid`, and CSS only
-     keeps the last `display` written. Deleting the clamp bought back the
-     centring but LOST the ellipsis: live facts (the Eroica piece note runs to
-     226 characters against this ~180-character two-line reserve) now cut
-     mid-word instead of trailing off cleanly. The fix is not one element doing
-     two jobs, it is two elements each doing one: THIS box stays the grid that
-     centres, `.surround-cue-ticker__line` below is the box that clamps. */
+     The CLAMP that ellipsizes lives on `.surround-cue-ticker__line` below,
+     because `display: grid` and `display: -webkit-box` cannot both apply to one
+     element and CSS keeps only the last one written (wave 5, fix round 1). */
   display: grid;
   align-content: center;
   overflow: hidden;
@@ -97,31 +215,29 @@
   opacity: 0;
 }
 
-/* THE LINE — the clamp, restored (fix round 1). Everything about SIZE and
-   POSITION lives on `__text` above; this inner span's only job is truncation:
-   wrap to two lines and ellipsize the second only when the note genuinely
-   needs a third. It is the sole grid item in `__text`, so `align-content:
-   center` on the parent centres exactly the height this clamp produces —
-   one line, two, or the ellipsised two — without the display conflict that
-   made wave 5 delete the clamp outright. Text styling (alignment, balance,
-   colour, weight) is not repeated here: it is inherited from `__text`. */
+/* THE LINE — the clamp. Everything about SIZE and POSITION lives on `__text`
+   above; this inner span's only job is truncation: wrap to the reserve's line
+   count and ellipsize the last of them only when the note genuinely needs one
+   more. It is the sole grid item in `__text`, so `align-content: center` on the
+   parent centres exactly the height this clamp produces. Text styling
+   (alignment, balance, colour, weight) is not repeated here: it is inherited. */
 .surround-cue-ticker__line {
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
 /* A timed cue is tied to what is sounding right now; one hairline is all that
-   marks it apart from a fact. Accent, not area.
-   It moved from a LEFT border to a short centred rule above the line, because
-   the text is centred now: a full-height rule pinned to the far left of a wide
-   band no longer reads as belonging to the sentence in the middle of it. Brass
-   rather than velvet — velvet is invisible against the band's near-black. */
-.surround-cue-ticker--cue::before {
+   marks it apart from a rotating note. Accent, not area.
+   Since wave 6 it marks the ZONE the cue is actually in — the NOW register —
+   rather than the whole band: with two registers side by side, a rule centred
+   over both would claim the piece note is a cue too. Brass rather than velvet;
+   velvet is invisible against the band's near-black. */
+.surround-cue-ticker__zone--cue::after {
   content: "";
   position: absolute;
-  top: 0.3rem;
+  top: 0;
   left: 50%;
   width: 2.4rem;
   height: 1px;
@@ -129,6 +245,58 @@
   background: var(--brass, #c79a3e);
   opacity: 0.85;
   pointer-events: none;
+}
+
+/* The unsplit band (no movements authored) has one zone and no NOW register, so
+   the cue accent goes back over the panel as a whole — same mark, same place it
+   has always been. */
+.surround-cue-ticker:not(.surround-cue-ticker--split).surround-cue-ticker--cue
+  .surround-cue-ticker__zone--piece::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 2.4rem;
+  height: 1px;
+  transform: translateX(-50%);
+  background: var(--brass, #c79a3e);
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------------------
+   THE TALL BAND. Everything above is the layout that fits the tightest zone in
+   the fleet; this is what the design actually wants, applied wherever the band
+   can pay for it. The threshold is measured, not chosen: two lines of note at
+   the clamp's floor (2 x 0.88rem x 1.35 = 23.8px), the now-header's two lines
+   (0.78rem x 1.2 + 0.15rem + 0.72rem x 1.2 = 24.1px) and this box's padding
+   (8px) come to 55.9px, so 58px is the first height at which the full layout
+   fits with a little air. Below it the single-line layout above holds.
+
+   THE NUMBER IS THE RIGHT ZONE'S ARITHMETIC, not a round figure. In the
+   two-line layout that zone owes: the now-header's two lines (0.78rem x 1.2 +
+   0.1rem + 0.72rem x 1.2 = 30.4px) plus two lines of note. The note is at the
+   clamp's floor (0.88rem) for every container up to 74px of content, so the
+   worst case is 30.4 + 2 x 0.88rem x 1.35 = 68.4px — and above 74px the
+   coefficient (19cqh) grows the reserve more slowly than the container, so it
+   only gets easier. 70px is that worst case with a pixel and a half of air.
+   Container queries evaluate against the query container's CONTENT box, which
+   is what these numbers are: measured, the ticker's content is 37.4px on the
+   960x540 screen-root (single line) and 96.8px at 1280x720 (two).
+   --------------------------------------------------------------------------- */
+@container ticker (min-height: 70px) {
+  .surround-cue-ticker__text {
+    min-height: 2.7em;             /* 2 lines at line-height 1.35 */
+    max-height: 2.7em;
+  }
+
+  .surround-cue-ticker__line {
+    -webkit-line-clamp: 2;
+  }
+
+  .surround-cue-ticker__now-translation {
+    display: block;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

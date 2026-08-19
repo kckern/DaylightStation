@@ -24,6 +24,10 @@
 //      shape nearly filling the frame, with the star and the city's name on it,
 //      captioned by the city alone. Two questions, asked in order: where is
 //      that country, and then where in it. Only when a city is pinned.
+//   4. ERA TIMELINE `EraTimeline` on `piece.period ?? composer.period` — the
+//      engraved centuries with this work's era lit and a brass marker at its
+//      year. LAST, because it is the only slide that is not a place: the
+//      carousel asks where, then where in it, and only then when.
 //
 // A composer with neither renders NOTHING — not an empty frame, not a mat with a
 // hole in it. That is the module contract's null discipline, the same one
@@ -43,6 +47,7 @@ import PropTypes from 'prop-types';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
 import getLogger from '../../../lib/logging/Logger.js';
 import CountryMap from '../map/CountryMap.jsx';
+import EraTimeline from '../map/EraTimeline.jsx';
 import { mapPinFrom } from './CountryMapModule.jsx';
 import {
   DISSOLVE_FADE_MS, DISSOLVE_COMMIT_MS, prefersReducedMotion,
@@ -159,6 +164,40 @@ export default function PlaceCarousel({
       }
     }
 
+    // 4. WHEN — the era timeline (design wave 6). Last, because it is the only
+    //    slide that is not a place: the carousel asks where the composer was,
+    //    then where in that country, and only then when. The piece's own period
+    //    overrides the composer's for the same reason it does on the card —
+    //    Beethoven is Classical, the Eroica is Classical to Romantic.
+    const period = trimmed(data?.piece?.period) ?? trimmed(composer?.period);
+    if (period) {
+      const year = Number(data?.piece?.year);
+      built.push({
+        key: 'era',
+        kind: 'era',
+        period,
+        year: Number.isFinite(year) ? year : null,
+        note: trimmed(data?.piece?.period_note) ?? trimmed(composer?.period_note),
+        // THE CAPTION IS THE DATE, NOT THE ERA — the one thing the plate does
+        // not already say. The lit band, the brass marker and the note all
+        // name the era three times over, and the composer card six inches up
+        // the same rail names it a fourth (design wave 6, section 2): a caption
+        // repeating it was measured on screen and read as a duplication bug.
+        // What the plate cannot show is the precise dating the marker points
+        // at — "1803-1804" against a marker standing at 1804 — so that is what
+        // the caption carries, falling back to the era only where a piece
+        // authors no date at all.
+        // The period NOTE is not the caption either: it lives inside the plate,
+        // where there is room for its three or four lines. The caption slot is
+        // a two-line reserve shared with every other slide, and its fixed size
+        // is what makes the swap a dissolve rather than a resize.
+        caption: trimmed(data?.piece?.composed)
+          ?? (Number.isFinite(year) ? String(year) : null)
+          ?? period,
+        captionKind: 'label',
+      });
+    }
+
     return built;
   }, [composer, data]);
 
@@ -256,6 +295,14 @@ export default function PlaceCarousel({
               src={shown.src}
               alt={shown.alt}
               onError={onPhotoError}
+            />
+          ) : shown.kind === 'era' ? (
+            <EraTimeline
+              className="surround-place-carousel__era"
+              period={shown.period}
+              year={shown.year}
+              note={shown.note}
+              logger={logger}
             />
           ) : (
             <CountryMap

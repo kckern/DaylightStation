@@ -17,10 +17,11 @@ const EROICA = {
   contentId: 'plex:663134',
   piece: { title: 'Symphony No. 3', musicEndsAt: 2955 },
   movements: [
-    { n: 1, name: 'Allegro con brio', start: 0 },
-    { n: 2, name: 'Marcia funebre. Adagio assai', start: 976 },
+    { n: 1, name: 'Allegro con brio', start: 0, translation: 'Fast, with spirit' },
+    { n: 2, name: 'Marcia funebre. Adagio assai', start: 976, translation: 'Funeral march — very slow' },
+    // Deliberately unauthored — the absent-field case, asserted below.
     { n: 3, name: 'Scherzo. Allegro vivace', start: 1925 },
-    { n: 4, name: 'Finale. Allegro molto', start: 2278 },
+    { n: 4, name: 'Finale. Allegro molto', start: 2278, translation: 'Finale — very fast' },
   ],
 };
 const DURATION = 3223;
@@ -480,5 +481,149 @@ describe('MovementMap — the band’s shipped design', () => {
     expect(block[0]).toContain('__bar-fill');
     expect(block[0]).toContain('__playhead');
     expect(block[0]).toContain('transition: none');
+  });
+});
+
+/**
+ * DESIGN WAVE 6 — THE TRANSLATION SUB-LINE.
+ *
+ * "Allegro con brio" is a tempo marking a viewer either knows or does not, and
+ * the band is the one place in the frame that can afford to tell them. The gloss
+ * is an ANNOTATION, not more programme, which is why it is the only text in the
+ * whole surround set in a sans face.
+ */
+describe('MovementMap — the movement translations', () => {
+  let injected = null;
+  const withStyles = () => {
+    const compiled = sass.compile(path.join(__dirname, 'MovementMap.scss'));
+    injected = document.createElement('style');
+    injected.textContent = compiled.css;
+    document.head.appendChild(injected);
+    return compiled.css;
+  };
+  afterEach(() => { injected?.remove(); injected = null; });
+
+  const translations = (container) =>
+    [...container.querySelectorAll('[data-testid="surround-movement-translation"]')]
+      .map((el) => el.textContent);
+
+  it('writes the translation under the heading it glosses', () => {
+    const { container } = renderMap();
+    const first = container.querySelector('[data-testid="surround-movement"]');
+    const classes = [...first.children].map((el) => el.className);
+    const heading = classes.findIndex((c) => c.includes('__heading'));
+    const gloss = classes.findIndex((c) => c.includes('__translation'));
+    expect(gloss, 'the translation is not in the segment at all').toBeGreaterThanOrEqual(0);
+    expect(gloss, 'the gloss is written above the name it glosses').toBeGreaterThan(heading);
+    expect(translations(container)).toEqual([
+      'Fast, with spirit', 'Funeral march — very slow', 'Finale — very fast',
+    ]);
+  });
+
+  it('renders NO element for a movement with no authored translation', () => {
+    // Three of the four movements are authored, and the unauthored one must
+    // leave nothing behind — not an empty span holding a line of the band's
+    // height, which is what every other module in this frame would pay for.
+    const { container } = renderMap();
+    expect(container.querySelectorAll('[data-testid="surround-movement-translation"]')).toHaveLength(3);
+    const third = container.querySelectorAll('[data-testid="surround-movement"]')[2];
+    expect(third.querySelector('[data-testid="surround-movement-translation"]')).toBeNull();
+  });
+
+  it('ignores a blank translation the same way it ignores an absent one', () => {
+    const blank = {
+      ...EROICA,
+      movements: EROICA.movements.map((m) => ({ ...m, translation: '   ' })),
+    };
+    const { container } = renderMap({ data: blank });
+    expect(container.querySelectorAll('[data-testid="surround-movement-translation"]')).toHaveLength(0);
+  });
+
+  /**
+   * A DIFFERENT FACE, ON PURPOSE. Every other word in the frame is one of two
+   * Garamonds; a gloss set in a third weight of the same family reads as quieter
+   * programme rather than as annotation. The break is the message.
+   */
+  it('sets the gloss in the annotation face, recessive, above the ten-foot floor', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    const rule = css.match(/\.surround-movement-map__translation \{[^}]*\}/);
+    expect(rule, 'no translation rule in the compiled sheet').not.toBeNull();
+    expect(rule[0], 'the gloss is set in a serif — it reads as more programme')
+      .toMatch(/font-family: var\(--surround-annotation,/);
+    expect(rule[0]).not.toMatch(/font-family: var\(--surround-(display|body)/);
+    const size = Number(rule[0].match(/font-size: ([\d.]+)rem/)[1]);
+    expect(size, 'below the 0.72rem ten-foot floor').toBeGreaterThanOrEqual(0.72);
+    // ...and quieter than the name it hangs under, which is 1.05rem/600.
+    expect(size).toBeLessThan(1.05);
+    const opacity = Number(rule[0].match(/opacity: ([\d.]+)/)[1]);
+    expect(opacity).toBeGreaterThan(0.4);
+    expect(opacity).toBeLessThan(0.7);
+    // Not italic: the tempo TERM is the italic thing on this band (engraved
+    // score convention). A gloss in italic would read as a second tempo term.
+    expect(rule[0]).toMatch(/font-style: normal/);
+  });
+
+  /**
+   * WRAP OR ELLIPSIS, NEVER BOTH (wave 5) — and this line takes the OTHER
+   * branch from the heading above it, deliberately. `text-overflow` is the
+   * single-line idiom and is correct here precisely because this box is
+   * `nowrap`; what wave 5 deleted from the heading was `text-overflow` sitting
+   * beside a line CLAMP, which is a contradiction rather than a choice.
+   */
+  it('takes the single-line branch: nowrap plus an ellipsis, and no clamp', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    const rule = css.match(/\.surround-movement-map__translation \{[^}]*\}/)[0];
+    expect(rule).toContain('white-space: nowrap');
+    expect(rule).toContain('text-overflow: ellipsis');
+    expect(rule).toContain('overflow: hidden');
+    expect(rule, 'two truncation mechanisms on one element').not.toContain('-webkit-line-clamp');
+  });
+
+  it('recedes with an elapsed movement, and only with an elapsed one', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    const base = Number(css.match(/\.surround-movement-map__translation \{[^}]*opacity: ([\d.]+)/)[1]);
+    const elapsed = css.match(/--elapsed \.surround-movement-map__translation \{([^}]*)\}/);
+    expect(elapsed, 'the gloss stays at full strength under a dimmed name').not.toBeNull();
+    expect(Number(elapsed[1].match(/opacity: ([\d.]+)/)[1])).toBeLessThan(base);
+    // The sounding movement does NOT brighten it: a sans line competing with
+    // the brass rule is the one thing this register must not do.
+    expect(css).not.toMatch(/--active \.surround-movement-map__translation/);
+  });
+
+  /**
+   * THE BAND'S FLOOR DID NOT MOVE, and that is the measured claim.
+   *
+   * The floor's job is the SHORT case — a band whose headings all fit one line
+   * — and the translation still fits inside it there. Raising the floor to
+   * cover the wrapped case would buy dead black under every band that does not
+   * wrap, which is exactly the slack wave 5 removed; the module has no ceiling,
+   * so a band that genuinely needs the second line simply grows.
+   */
+  it('still fits a one-line heading AND its gloss inside the floor it already had', () => {
+    const css = withStyles();
+    const band = css.match(/\.surround-movement-map\s*\{[^}]*\}/)[0];
+    const declared = band.match(/min-height:\s*([\d.]+)rem/);
+    expect(declared, 'the band declares no min-height').not.toBeNull();
+    const floorPx = parseFloat(declared[1]) * 16;
+
+    const heading = css.match(/\.surround-movement-map__heading\s*\{[^}]*\}/)[0];
+    const headSize = parseFloat(heading.match(/font-size:\s*([\d.]+)rem/)[1]) * 16;
+    const headLh = parseFloat(heading.match(/line-height:\s*([\d.]+)/)[1]);
+    const headClear = parseFloat(heading.match(/margin-top:\s*([\d.]+)em/)[1]) * headSize;
+
+    const gloss = css.match(/\.surround-movement-map__translation\s*\{[^}]*\}/)[0];
+    const glossSize = parseFloat(gloss.match(/font-size:\s*([\d.]+)rem/)[1]) * 16;
+    const glossLh = parseFloat(gloss.match(/line-height:\s*([\d.]+)/)[1]);
+    const glossClear = parseFloat(gloss.match(/margin-top:\s*([\d.]+)em/)[1]) * glossSize;
+
+    const lane = 4;
+    const padBottom = parseFloat(band.match(/padding:\s*0 [\d.]+rem ([\d.]+)rem/)[1]) * 16;
+    const needed = lane + headClear + (headSize * headLh)
+      + glossClear + (glossSize * glossLh) + padBottom;
+
+    expect(needed, 'the gloss no longer fits the band the design already had')
+      .toBeLessThanOrEqual(floorPx);
+    // ...and the floor is still not hoarding: wave 5's upper bound stands.
+    expect(floorPx, 'the band hoards slack the ticker should have').toBeLessThan(88);
   });
 });
