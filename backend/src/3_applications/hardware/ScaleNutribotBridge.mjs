@@ -138,12 +138,42 @@ export function createScaleNutribotBridge({
     }
     const uc = nutribotContainer.getAcceptFoodLog?.();
     if (!uc) return;
-    await uc.execute({ userId, conversationId, logUuid: s.live.logUuid, messageId: s.live.messageId });
+
+    // CLAIM the prompt before awaiting, and give it back if the accept fails.
+    //
+    // `AcceptFoodLog` is awaited, and a scan arriving during that await re-arms
+    // the clock. Nulling `s.live` afterwards left the prompt claimable for the
+    // whole flight, so a timer that came round again accepted the SAME logUuid
+    // twice — a duplicate entry in nutrition history. It needs the accept to
+    // outlast the quiet interval, so it is latent rather than everyday, but the
+    // claim costs nothing and the duplicate is silent.
+    //
+    // Restored on failure, because the claim is a loan: a Telegram blip must
+    // leave the entry commitable by the next lull rather than stranding it with
+    // no way back except answering it by hand.
+    const live = s.live;
+    s.live = null;
+    try {
+      await uc.execute({ userId, conversationId, logUuid: live.logUuid, messageId: live.messageId });
+    } catch (err) {
+      s.live = live;
+      throw err;
+    }
+
+    // CONSUME the slots. A committed placement is over, and `endPlacement` is
+    // exactly that statement (D10). Leaving them filled let the next food on the
+    // pan inherit this one's density and tare — nudge the plate without lifting
+    // it and the new placement posts against the old scans, then auto-accepts
+    // 25s later. Quiet-commit is what turns that inheritance from a wrong prompt
+    // somebody would notice into a wrong entry nobody does.
+    //
+    // AFTER the accept and not before, and on no refusal path: an entry that did
+    // not commit still needs its scans.
+    bufferEndPlacement(id);
     logger.info?.('scaleNutribot.commit.committed', {
-      id, logUuid: s.live.logUuid, grams: snapshot.grams, density: snapshot.density,
+      id, logUuid: live.logUuid, grams: snapshot.grams, density: snapshot.density,
       container: snapshot.container ?? null,
     });
-    s.live = null;
   };
 
   // Snapshot of what has been scanned for this scale, handed to the use case so the

@@ -10,6 +10,7 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { createScaleNutribotBridge } from '#apps/hardware/ScaleNutribotBridge.mjs';
+import { CompositionStore } from '#apps/nutribot/CompositionStore.mjs';
 
 // A scheduler we drive by hand: no fake timers, no real waiting.
 // `arms`/`clears` are counted so "restarts the interval" can be asserted as a
@@ -142,10 +143,12 @@ describe('ScaleNutribotBridge quiet-commit', () => {
     bridge.dispose();
   });
 
-  // The scale firmware heartbeats at 0.5 Hz while it merely RESTS on its shelf.
-  // A timer restarted by raw frames would never fire — the same reason
-  // CompositionStore keeps raw frames out of its own window refresh.
-  it('does not restart the interval from an at-rest heartbeat', async () => {
+  // The scale firmware heartbeats at 0.5 Hz while food SITS on the pan, and an
+  // unsettled frame arrives on every wobble. Neither changes the composition, so
+  // neither may restart the clock — the same reason CompositionStore keeps raw
+  // frames out of its own window refresh. (A true AT-REST frame is a different
+  // case again: it hits the placement-end crossing and DISARMS. See below.)
+  it('does not restart the interval from a repeated or unsettled frame', async () => {
     const { bridge, scheduler, publish, prime } = makeHarness();
     await prime();
     await publish({ id: SCALE, grams: 639, unit: 'g', stable: true });
@@ -184,6 +187,150 @@ describe('ScaleNutribotBridge quiet-commit', () => {
     scheduler.fire();
     await Promise.resolve();
     expect(accept.execute).not.toHaveBeenCalled();
+  });
+
+  // AcceptFoodLog is awaited, and a scan arriving during that await re-arms the
+  // clock. If the prompt is still claimable when the second timer fires, the same
+  // logUuid is accepted TWICE — a duplicate entry in nutrition history. Requires
+  // the accept to outlast the whole quiet interval, which is why it is a latent
+  // race rather than an everyday one; the cost when it lands is a wrong day's log.
+  it('accepts a prompt only once, even if the clock re-fires mid-accept', async () => {
+    const { bridge, accept, scheduler, publish, prime } = makeHarness();
+    let release;
+    const gate = new Promise((r) => { release = r; });
+    accept.execute.mockImplementationOnce(async () => { await gate; return { success: true }; });
+
+    await prime();
+    await publish({ id: SCALE, grams: 639, unit: 'g', stable: true });
+
+    scheduler.fire();                    // commit starts, parks on the gate
+    expect(accept.execute).toHaveBeenCalledTimes(1);
+
+    bridge.armCommitFor(SCALE);          // a scan lands while the accept is in flight
+    scheduler.fire();                    // and the clock comes round again
+    await Promise.resolve();
+    expect(accept.execute).toHaveBeenCalledTimes(1);   // NOT twice
+
+    release();
+    await Promise.resolve();
+    bridge.dispose();
+  });
+
+  // The claim must be a loan, not a theft: a failed accept has to leave the
+  // prompt commitable again, or a Telegram blip silently strands the entry with
+  // no way back other than answering it by hand.
+  it('gives the prompt back when the accept fails, so the next lull retries', async () => {
+    const { bridge, accept, scheduler, publish, prime } = makeHarness();
+    accept.execute.mockRejectedValueOnce(new Error('telegram down'));
+
+    await prime();
+    await publish({ id: SCALE, grams: 639, unit: 'g', stable: true });
+
+    scheduler.fire();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(accept.execute).toHaveBeenCalledTimes(1);
+
+    bridge.armCommitFor(SCALE);
+    scheduler.fire();
+    await Promise.resolve();
+    expect(accept.execute).toHaveBeenCalledTimes(2);   // retried, not stranded
+    bridge.dispose();
+  });
+
+  // A committed placement is OVER. Leaving the slots filled means the next food
+  // inherits them, which is the exact failure `endPlacement` (D10) exists to
+  // prevent — and quiet-commit makes it worse, because the inheriting entry then
+  // auto-accepts too.
+  it('consumes the composition once the accept succeeds', async () => {
+    const { bridge, accept, scheduler, publish, prime, compositionStore } = makeHarness();
+    await prime();
+    await publish({ id: SCALE, grams: 639, unit: 'g', stable: true });
+    expect(compositionStore.endPlacement).not.toHaveBeenCalled();
+
+    scheduler.fire();
+    await Promise.resolve();
+    expect(accept.execute).toHaveBeenCalledTimes(1);
+    expect(compositionStore.endPlacement).toHaveBeenCalledWith(SCALE);
+    bridge.dispose();
+  });
+
+  it('leaves the composition alone when the commit is refused', async () => {
+    for (const snapshot of [
+      { grams: 413, unit: 'g', density: null, container: null, complete: false, active: true },
+      { grams: 240, unit: 'ml', density: 4, container: null, complete: true, active: true },
+    ]) {
+      const { bridge, accept, scheduler, publish, prime, compositionStore } = makeHarness();
+      compositionStore.read = () => snapshot;
+      await prime(snapshot.unit);
+      await publish({ id: SCALE, grams: snapshot.grams, unit: snapshot.unit, stable: true });
+      scheduler.fire();
+      await Promise.resolve();
+
+      expect(accept.execute).not.toHaveBeenCalled();
+      expect(compositionStore.endPlacement).not.toHaveBeenCalled();
+      bridge.dispose();
+    }
+  });
+
+  // Driven through the REAL CompositionStore, because the failure this guards is
+  // a store-state failure: a mock hard-coded to `complete: true` reports the
+  // inherited entry as healthy and cannot see it.
+  it('does not let the next food on the pan inherit the committed density and tare', async () => {
+    const handlers = {};
+    const accept = { execute: vi.fn().mockResolvedValue({ success: true }) };
+    const seen = [];
+    const logFromScale = {
+      execute: vi.fn(async (input) => {
+        seen.push(input.composition);
+        return input.existingLogUuid
+          ? { success: true, logUuid: input.existingLogUuid, messageId: '9', edited: true }
+          : { success: true, logUuid: `L${seen.length}`, messageId: '9' };
+      }),
+    };
+    const store = new CompositionStore({ now: () => Date.now() });
+    const scheduler = manualScheduler();
+    const bridge = createScaleNutribotBridge({
+      eventBus: { subscribe: (t, fn) => { handlers[t] = fn; return () => {}; } },
+      nutribotContainer: {
+        getLogFoodFromScale: () => logFromScale,
+        getAcceptFoodLog: () => accept,
+        getRetractScaleLog: () => ({ execute: vi.fn() }),
+      },
+      userId: 'kckern', conversationId: 'telegram:b1_c2',
+      scaleConfig: { minGrams: 5 },
+      compositionStore: store,
+      commitQuietMs: 25_000,
+      scheduler,
+      logger: { info() {}, warn() {}, debug() {} },
+    });
+    const publish = (p) => handlers['food-scale'](p);
+
+    await publish({ id: SCALE, grams: 0, unit: 'g', stable: true });   // resting load
+    store.setDensity(SCALE, 4);
+    store.setContainer(SCALE, 'tupperware');
+    await publish({ id: SCALE, grams: 639, unit: 'g', stable: true }); // placement → prompt
+    expect(seen[0]).toMatchObject({ density: 4, container: 'tupperware' });
+
+    scheduler.fire();
+    await Promise.resolve();
+    expect(accept.execute).toHaveBeenCalledTimes(1);
+
+    // The plate is never lifted — it is nudged, which is a fresh qualifying
+    // placement. Under the old code this posted a prompt carrying the PREVIOUS
+    // food's density and tare, and auto-accepted it 25s later.
+    await publish({ id: SCALE, grams: 900, unit: 'g', stable: true });
+    // The prompt's own snapshot carries no grams yet — `post` reads the
+    // composition to render the prompt BEFORE it buffers the weight, which is
+    // pre-existing and true of any first placement. The slots are what matter
+    // here, and they are empty.
+    expect(seen.at(-1)).toMatchObject({ density: null, container: null });
+    expect(store.read(SCALE)).toMatchObject({ grams: 900, density: null, container: null });
+
+    scheduler.fire();
+    await Promise.resolve();
+    expect(accept.execute).toHaveBeenCalledTimes(1);   // incomplete → no second entry
+    bridge.dispose();
   });
 
   // The buffer is OPTIONAL — the prompt flow stands on its own. With no store
