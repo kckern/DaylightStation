@@ -56,10 +56,15 @@ const finite = (n) => (typeof n === 'number' && Number.isFinite(n) ? n : 0);
  *   pass, so a late mount, an element swap, and an unmount are all handled without
  *   the caller re-creating the clock.
  * @param {string} [opts.contentId] Correlation id carried on every emitted event.
+ * @param {object} [opts.logger] Optional logger override. Pass `SurroundHost`'s
+ *   child logger so clock events inherit its `sessionLog: true` and land in the
+ *   durable per-session file; without it they use the module logger and are
+ *   stdout + WebSocket only.
  * @returns {{ subscribe: (cb: Function) => Function, getState: () => object,
  *            start: () => void, stop: () => void, recordReactSample: () => void }}
  */
-export function createMediaClock({ getMediaEl, contentId = null } = {}) {
+export function createMediaClock({ getMediaEl, contentId = null, logger: injectedLogger = null } = {}) {
+  const log = () => injectedLogger || logger();
   let state = { ...ZERO_STATE };
   const subscribers = new Set();
 
@@ -168,7 +173,7 @@ export function createMediaClock({ getMediaEl, contentId = null } = {}) {
 
     lastTickAt = Date.now();
     stallWarned = false;
-    logger().debug?.('surround.clock.driver', { contentId, driver });
+    log().debug?.('surround.clock.driver', { contentId, driver });
     tick();
   };
 
@@ -188,7 +193,7 @@ export function createMediaClock({ getMediaEl, contentId = null } = {}) {
     const elapsed = now - windowStart;
     if (elapsed < HEALTH_WINDOW_MS) return;
     const secs = elapsed / 1000;
-    logger().sampled?.('surround.clock.health', {
+    log().sampled?.('surround.clock.health', {
       contentId,
       driver,
       ticksPerSec: +(ticks / secs).toFixed(1),
@@ -204,7 +209,7 @@ export function createMediaClock({ getMediaEl, contentId = null } = {}) {
     const since = now - lastTickAt;
     if (since < STALL_MS) return;
     stallWarned = true;
-    logger().warn?.('surround.clock.stalled', {
+    log().warn?.('surround.clock.stalled', {
       contentId, driver, sinceLastTickMs: Math.round(since), position: state.position,
     });
   };
@@ -251,7 +256,7 @@ export function createMediaClock({ getMediaEl, contentId = null } = {}) {
  * @param {{ getMediaEl: () => (HTMLMediaElement|null), contentId?: string }} opts
  * @returns {{ subscribe: (cb: Function) => Function, getState: () => object }}
  */
-export function useMediaClock({ getMediaEl, contentId = null } = {}) {
+export function useMediaClock({ getMediaEl, contentId = null, logger = null } = {}) {
   // Keep the latest accessor in a ref so an inline `() => ref.current` arrow from
   // the caller never tears down and re-attaches the driver.
   const getElRef = useRef(getMediaEl);
@@ -262,6 +267,7 @@ export function useMediaClock({ getMediaEl, contentId = null } = {}) {
     clockRef.current = createMediaClock({
       getMediaEl: () => (typeof getElRef.current === 'function' ? getElRef.current() : null),
       contentId,
+      logger,
     });
   }
 
@@ -283,8 +289,8 @@ export function useMediaClock({ getMediaEl, contentId = null } = {}) {
  * @param {{ getMediaEl: () => (HTMLMediaElement|null), contentId?: string, hz?: number }} opts
  * @returns {{ position: number, duration: number, playing: boolean, seeking: boolean }}
  */
-export function useMediaClockState({ getMediaEl, contentId = null, hz = 10 } = {}) {
-  const clock = useMediaClock({ getMediaEl, contentId });
+export function useMediaClockState({ getMediaEl, contentId = null, hz = 10, logger = null } = {}) {
+  const clock = useMediaClock({ getMediaEl, contentId, logger });
   const [snapshot, setSnapshot] = useState(ZERO_STATE);
 
   // Mirror of the committed snapshot, read inside the subscriber without making the
