@@ -1,0 +1,257 @@
+// frontend/src/modules/Surround/SurroundFrame.jsx
+//
+// The concert programme frame: a darkened auditorium (--hall-ink) with the video
+// locked to 16:9 on the left and printed programme panels around it.
+//
+// Layout geometry is a deliberate COPY of FitnessPlayerFrame's shell (main column
+// + rail + footer + inert overlay) in a `surround-frame__*` namespace. It is not
+// imported across the module boundary: the fitness frame is owned by the fitness
+// player and free to change for reasons that have nothing to do with a surround.
+//
+// Two rules make this frame different from that one:
+//
+//  1. The media box locks 16:9 INLINE (aspect-ratio + max-width + max-height), so
+//     the video letterboxes on ink and can never be distorted by an outer
+//     stylesheet. This is the quality floor of the whole feature.
+//  2. The footer is sized to the MEASURED media-box width, so it reads as that
+//     video's timeline rather than as page furniture.
+//
+// `PanelRenderer` is deliberately not used to resolve regions: it renders static
+// YAML props, and every module here is driven by a 10 Hz clock.
+
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import PropTypes from 'prop-types';
+import getLogger from '../../lib/logging/Logger.js';
+import { getSurroundRegistry } from './registry.js';
+import './SurroundFrame.scss';
+
+const DEFAULT_RAIL_WIDTH = '20%';
+const DEFAULT_FOOTER_FLOOR = 90;
+
+/** Lazy module-level child. Used only when no host logger was threaded down. */
+let moduleLogger = null;
+function fallbackLogger() {
+  if (!moduleLogger) moduleLogger = getLogger().child({ app: 'surround', component: 'surround-frame' });
+  return moduleLogger;
+}
+
+/**
+ * Resolve the logger to use. A host-supplied logger is re-childed so the event
+ * carries this component, while inheriting the host's `sessionLog` (durability)
+ * and `contentId`. Plain mock loggers with no `.child` are used as-is.
+ */
+function childLogger(logger, component) {
+  if (!logger) return fallbackLogger();
+  return logger.child?.({ app: 'surround', component }) ?? logger;
+}
+
+/** A region slot in the definition may be a single object or a list of them. */
+function normalizeRegions(value, slot) {
+  if (!value) return [];
+  const list = Array.isArray(value) ? value : [value];
+  return list
+    .filter((r) => r && typeof r === 'object' && typeof r.module === 'string' && r.module)
+    .map((r, i) => ({ ...r, slot, key: `${slot}:${i}:${r.module}` }));
+}
+
+export default function SurroundFrame({
+  data = null,
+  contentId = null,
+  position = 0,
+  duration = 0,
+  playing = false,
+  seeking = false,
+  logger = null,
+  className = '',
+  children = null,
+}) {
+  const log = useMemo(() => childLogger(logger, 'surround-frame'), [logger]);
+
+  const definition = data?.definition ?? null;
+  const railWidth = definition?.regions?.right?.width ?? DEFAULT_RAIL_WIDTH;
+  const footerFloor = Number.isFinite(definition?.collapse?.footerFloor)
+    ? definition.collapse.footerFloor
+    : DEFAULT_FOOTER_FLOOR;
+
+  const rightRegions = useMemo(
+    () => normalizeRegions(definition?.regions?.right, 'right'), [definition]);
+  const footerRegions = useMemo(
+    () => normalizeRegions(definition?.regions?.bottom, 'bottom'), [definition]);
+  const overlayRegions = useMemo(
+    () => normalizeRegions(definition?.regions?.overlay, 'overlay'), [definition]);
+
+  // The module contract is exactly { position, duration, playing, seeking, data,
+  // region }. contentId is not a seventh prop — it rides inside `data`, so every
+  // module can tag its events for correlation without widening the contract.
+  // Memoized on [data, contentId] so a 10 Hz tick never churns the object.
+  const payload = useMemo(() => {
+    if (!data) return null;
+    return data.contentId === contentId ? data : { ...data, contentId };
+  }, [data, contentId]);
+
+  const mediaRef = useRef(null);
+  const footerRef = useRef(null);
+  const [mediaWidth, setMediaWidth] = useState(null);
+  const [collapsed, setCollapsed] = useState(false);
+  const footerHeightRef = useRef(0);
+
+  // One observer watching both boxes: the media box drives the footer's width,
+  // the footer's own height drives the collapse rule.
+  useLayoutEffect(() => {
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver((entries) => {
+      entries.forEach((entry) => {
+        const rect = entry.contentRect ?? {};
+        if (entry.target === mediaRef.current) {
+          const w = Number(rect.width) || 0;
+          setMediaWidth(w > 0 ? w : null);
+        } else if (entry.target === footerRef.current) {
+          const h = Number(rect.height) || 0;
+          footerHeightRef.current = h;
+          // h === 0 means "not laid out yet", not "too short" — never collapse on it.
+          setCollapsed(h > 0 && h < footerFloor);
+        }
+      });
+    });
+    if (mediaRef.current) observer.observe(mediaRef.current);
+    if (footerRef.current) observer.observe(footerRef.current);
+    return () => observer.disconnect();
+  }, [footerFloor, footerRegions.length]);
+
+  // Report collapse transitions only — not the steady state on every render.
+  const prevCollapsed = useRef(collapsed);
+  useEffect(() => {
+    if (prevCollapsed.current === collapsed) return;
+    prevCollapsed.current = collapsed;
+    log.debug('surround.collapse', {
+      contentId,
+      collapsed,
+      floor: footerFloor,
+      footerHeight: Math.round(footerHeightRef.current),
+    });
+  }, [collapsed, footerFloor, contentId, log]);
+
+  const registry = getSurroundRegistry();
+  const allRegions = useMemo(
+    () => [...rightRegions, ...footerRegions, ...overlayRegions],
+    [rightRegions, footerRegions, overlayRegions],
+  );
+  const resolved = useMemo(
+    () => new Map(allRegions.map((r) => [r.key, registry.get(r.module)])),
+    // `registry` is a stable singleton; regions change only with the definition.
+    [allRegions], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  useEffect(() => {
+    allRegions.forEach((region) => {
+      if (resolved.get(region.key)) return;
+      log.warn('surround.module.missing', { contentId, module: region.module, slot: region.slot });
+    });
+  }, [allRegions, resolved, contentId, log]);
+
+  useEffect(() => {
+    log.debug('surround.frame.mount', {
+      contentId,
+      surroundId: data?.id ?? null,
+      regions: allRegions.map((r) => r.module),
+    });
+    return () => { log.debug('surround.frame.unmount', { contentId, surroundId: data?.id ?? null }); };
+    // Mount/unmount only: a definition swap remounts through SurroundHost's key.
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const visibleFooterRegions = collapsed
+    ? footerRegions.filter((r) => r.collapse !== 'first')
+    : footerRegions;
+
+  const renderRegion = (region) => {
+    const Module = resolved.get(region.key);
+    const style = region.height ? { height: `${region.height}px`, flex: `0 0 ${region.height}px` } : undefined;
+    return (
+      <div
+        key={region.key}
+        className={`surround-frame__region surround-frame__region--${region.slot}${Module ? '' : ' surround-frame__region--empty'}`}
+        data-module={region.module}
+        style={style}
+      >
+        {Module ? (
+          <Module
+            position={position}
+            duration={duration}
+            playing={playing}
+            seeking={seeking}
+            data={payload}
+            region={region}
+            logger={logger}
+          />
+        ) : null}
+      </div>
+    );
+  };
+
+  const rootClass = ['surround-frame', collapsed && 'surround-frame--collapsed', className]
+    .filter(Boolean).join(' ');
+
+  return (
+    <div className={rootClass} data-testid="surround-frame">
+      <div className="surround-frame__main">
+        <div className="surround-frame__stage">
+          {/* 16:9 lock lives inline so no outer cascade can stretch the video. */}
+          <div
+            className="surround-frame__media"
+            data-testid="surround-media"
+            ref={mediaRef}
+            style={{ aspectRatio: '16 / 9', maxWidth: '100%', maxHeight: '100%' }}
+          >
+            {children}
+          </div>
+        </div>
+
+        {footerRegions.length > 0 && (
+          <div
+            className="surround-frame__footer"
+            data-testid="surround-footer"
+            ref={footerRef}
+            style={mediaWidth ? { width: `${mediaWidth}px` } : undefined}
+          >
+            {visibleFooterRegions.map(renderRegion)}
+          </div>
+        )}
+      </div>
+
+      {rightRegions.length > 0 && (
+        <aside
+          className="surround-frame__rail"
+          data-testid="surround-rail"
+          style={{ width: railWidth, flex: `0 0 ${railWidth}` }}
+        >
+          {rightRegions.map(renderRegion)}
+        </aside>
+      )}
+
+      {/* Reserved for phase-two overlay cues. Inert until something is declared. */}
+      <div
+        className="surround-frame__overlay"
+        data-testid="surround-overlay"
+        style={{ pointerEvents: 'none' }}
+      >
+        {overlayRegions.map(renderRegion)}
+      </div>
+    </div>
+  );
+}
+
+SurroundFrame.propTypes = {
+  /** Resolved surround payload: { id, definition, piece, movements, cues, facts, composer, assetBase }. */
+  data: PropTypes.object,
+  /** Content id of the item being played — correlates every surround log event. */
+  contentId: PropTypes.string,
+  position: PropTypes.number,
+  duration: PropTypes.number,
+  playing: PropTypes.bool,
+  seeking: PropTypes.bool,
+  /** Host logger (carries sessionLog). Falls back to a module-level child. */
+  logger: PropTypes.object,
+  className: PropTypes.string,
+  /** The player. Rendered inside the aspect-locked media box. */
+  children: PropTypes.node,
+};
