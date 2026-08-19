@@ -22,12 +22,18 @@
 // stubs `compositionStore.read()` to answer `complete: true` proves nothing
 // about the arithmetic, so nothing on the composition path is stubbed.
 //
-// DOUBLED: only the Telegram-facing use cases — `LogFoodFromScale`,
-// `SelectScaleDensity`, `AcceptFoodLog`, `RetractScaleLog`. Those own message
-// rendering and history persistence and have their own suites. `SelectScaleDensity`
-// is the one that writes the CALORIES, so the commit path is asserted to call it,
-// with the buffered level, BEFORE it accepts — see `derive()` below for the
-// arithmetic itself, which runs through the real production helpers.
+// REAL, and deliberately so: `SelectScaleDensity`. It is the ONLY place
+// `calories = round(netGrams x kcal_per_g)` happens, and mocking it is exactly
+// what let a 0 kcal commit ship — a regression test for "the entry had no
+// calories" that stubs the calorie arithmetic reproduces the blind spot one layer
+// up. It runs against the real `CONFIG` and an in-memory log store, so the
+// number this file asserts is the number the pipeline writes.
+//
+// DOUBLED: the Telegram-facing use cases `LogFoodFromScale`, `AcceptFoodLog` and
+// `RetractScaleLog`. The `LogFoodFromScale` double is thin but NOT inert — it
+// persists the log the way production does, taking the net weight from the real
+// exported `resolveScaleNet` so the tare is computed rather than typed. Message
+// rendering is the part that is stubbed out.
 //
 // TIME is driven by hand via an injected scheduler (same shape as
 // `scaleNutribotQuietCommit.test.mjs`); `vi.useFakeTimers()` interleaves badly
@@ -45,9 +51,15 @@ import {
 } from '#apps/nutribot/lib/scaleNutribotConfig.mjs';
 import { computeNet, computeNutrition } from '#domains/nutrition/index.mjs';
 import { createScanDispatch } from '#composition/modules/scanDispatch.mjs';
+import { SelectScaleDensity } from '#apps/nutribot/usecases/SelectScaleDensity.mjs';
+import { NutriLog } from '#domains/nutrition/entities/NutriLog.mjs';
 
 const SCALE = 'kitchen-food-scale';
 const DEVICE = 'nutribot-upc';
+// A pinned log id, so the uuid assertions below read as constants rather than as
+// whatever `shortId()` produced. It has to be a real one — `NutriLog` validates
+// its id as 10 base62 characters or a UUID, and rejects anything shorter.
+const LOG_ID = 'L1incident';
 
 // Let every queued microtask AND both awaited use cases settle. A single
 // `await Promise.resolve()` is not enough: `commitNow` awaits SelectScaleDensity
@@ -102,14 +114,67 @@ function makeIncidentHarness() {
   const accept = {
     execute: vi.fn(async () => { calls.push('accept'); return { success: true }; }),
   };
-  const selectDensity = {
-    execute: vi.fn(async () => { calls.push('density'); return { success: true, calories: 578 }; }),
-  };
   const retract = { execute: vi.fn().mockResolvedValue({ success: true, retracted: true }) };
+
+  // The history the pipeline actually writes to. Keyed by log id, holding real
+  // `NutriLog` entities, so `SelectScaleDensity` reads and writes it exactly as
+  // it does in production.
+  const logs = new Map();
+  const foodLogStore = {
+    save: vi.fn(async (log) => { logs.set(log.id, log); return log; }),
+    findByUuid: vi.fn(async (uuid) => logs.get(uuid) ?? null),
+  };
+
+  // A create is told from an edit by `existingLogUuid`, and an edit MUST answer
+  // `edited: true` or the bridge treats the dispatch as failed and bails before
+  // it buffers the weight (and so before it arms). The log id is pinned to LOG_ID
+  // rather than left to `shortId()` so the uuid assertions below stay readable.
   const logFromScale = {
-    execute: vi.fn(async (input) => (input.existingLogUuid
-      ? { success: true, logUuid: input.existingLogUuid, messageId: 'm1', stage: 'density', edited: true }
-      : { success: true, logUuid: 'L1', messageId: 'm1', stage: 'density' })),
+    execute: vi.fn(async ({ grams, unit, scaleId, composition, existingLogUuid, messageId }) => {
+      const gross = Math.round(Number(grams));
+      // The REAL tare resolution — the same exported helper `LogFoodFromScale`
+      // itself calls — so 413 g is derived here, never typed.
+      const { net } = resolveScaleNet({ gross, composition }, CONFIG.containers);
+
+      if (existingLogUuid && messageId) {
+        const existing = logs.get(existingLogUuid);
+        // Production follows an UNTOUCHED prompt only: once a density is recorded
+        // the user owns the log and an edit would clobber it.
+        if (!existing || existing.status !== 'pending' || existing.metadata?.densityLevel != null) {
+          return { success: true, logUuid: existingLogUuid, edited: false, touched: true };
+        }
+        await foodLogStore.save(existing.with({
+          items: [{ ...existing.items[0].toJSON(), grams: net }],
+          metadata: { ...existing.metadata, grossGrams: gross },
+        }, new Date()));
+        return { success: true, logUuid: existingLogUuid, messageId: 'm1', stage: 'density', edited: true };
+      }
+
+      await foodLogStore.save(NutriLog.create({
+        userId: 'kckern',
+        conversationId: 'telegram:b1_c2',
+        // NET, not gross: SelectScaleDensity multiplies THIS by kcal_per_g, which
+        // is why the tare must not be applied a second time at commit.
+        items: [{ label: 'Unknown', grams: net, calories: 0, unit: unit || 'g', amount: 1, color: 'yellow' }],
+        metadata: { source: 'scale', scaleId: scaleId || null, grossGrams: gross },
+        timezone: 'America/Los_Angeles',
+        timestamp: new Date(),
+      }).with({ id: LOG_ID }, new Date()));
+      return { success: true, logUuid: LOG_ID, messageId: 'm1', stage: 'density' };
+    }),
+  };
+
+  // REAL use case, wrapped only to record call order and expose a vi spy. The
+  // wrapper delegates — the multiplication, the label and `metadata.densityLevel`
+  // are all the production code's doing.
+  const realSelectDensity = new SelectScaleDensity({
+    messagingGateway: { updateMessage: async () => {} },
+    foodLogStore,
+    scaleConfig: CONFIG,
+    logger: noop,
+  });
+  const selectDensity = {
+    execute: vi.fn(async (input) => { calls.push('density'); return realSelectDensity.execute(input); }),
   };
 
   // What the bridge says it committed, straight off its own commit path.
@@ -171,6 +236,7 @@ function makeIncidentHarness() {
   return {
     bridge, accept, selectDensity, calls, retract, logFromScale, compositionStore,
     applyScanToComposition, scheduler, publish, scan, scanDispatch, committed,
+    logs, foodLogStore,
   };
 }
 
@@ -180,6 +246,17 @@ function makeIncidentHarness() {
 // scenario below primes an at-rest frame first.
 const prime = (h) => h.publish({ id: SCALE, grams: 0, unit: 'g', stable: true });
 const settle = (h, grams) => h.publish({ id: SCALE, grams, unit: 'g', stable: true });
+
+/**
+ * The entry as it now stands in history — what a human would see tomorrow.
+ * `SelectScaleDensity` is REAL in this harness, so these are the figures the
+ * pipeline computed, not figures the test arranged.
+ */
+function persisted(h) {
+  const log = h.logs.get(LOG_ID);
+  const json = log.toJSON();
+  return { item: json.items[0], metadata: json.metadata };
+}
 
 /**
  * Derive net grams and calories from a composition snapshot exactly the way
@@ -232,10 +309,10 @@ describe('the 12:31 incident', () => {
     // ONE entry, and the bridge's own commit record agrees with the snapshot.
     expect(h.accept.execute).toHaveBeenCalledTimes(1);
     expect(h.accept.execute).toHaveBeenCalledWith(expect.objectContaining({
-      userId: 'kckern', conversationId: 'telegram:b1_c2', logUuid: 'L1', messageId: 'm1',
+      userId: 'kckern', conversationId: 'telegram:b1_c2', logUuid: LOG_ID, messageId: 'm1',
     }));
     expect(h.committed).toEqual([
-      { id: SCALE, logUuid: 'L1', grams: 473, density: 4, container: 'tupperware' },
+      { id: SCALE, logUuid: LOG_ID, grams: 473, density: 4, container: 'tupperware' },
     ]);
 
     // The buffered density was APPLIED before the entry closed. Without this step
@@ -243,10 +320,21 @@ describe('the 12:31 incident', () => {
     // it also takes away the density button that would have computed the calories,
     // which is worse than the stranding this feature exists to fix.
     expect(h.selectDensity.execute).toHaveBeenCalledWith(expect.objectContaining({
-      userId: 'kckern', conversationId: 'telegram:b1_c2', logUuid: 'L1',
+      userId: 'kckern', conversationId: 'telegram:b1_c2', logUuid: LOG_ID,
       level: 4, messageId: 'm1',
     }));
     expect(h.calls).toEqual(['density', 'accept']);
+
+    // THE ENTRY ITSELF. This is the assertion the 0-kcal defect would have failed:
+    // 473 g gross - 60 g tupperware = 413 g net, at 1.4 kcal/g = 578 kcal, filed
+    // as "Mixed" rather than "Unknown". Every one of these numbers is produced by
+    // production code — `resolveScaleNet` for the tare, `SelectScaleDensity` for
+    // the multiplication and the label.
+    const { item, metadata } = persisted(h);
+    expect(item.grams).toBe(413);
+    expect(item.calories).toBe(578);
+    expect(item.label).toBe('Mixed');
+    expect(metadata.densityLevel).toBe(4);
 
     // And the placement is over: the slots are consumed, so the next food on the
     // pan cannot inherit this tare and density.
@@ -303,6 +391,14 @@ describe('the 12:31 incident', () => {
     // performs `round(item0.grams x kcal_per_g)` on the stored NET grams — the
     // same multiplication, in the one place that owns it.
     expect(h.selectDensity.execute.mock.calls[0][0].level).toBe(level.level);
+
+    // The two routes to the number agree: this test's derivation through
+    // `resolveScaleNet` + `computeNutrition`, and what the pipeline actually
+    // wrote through `SelectScaleDensity`. Either alone could be self-consistent
+    // and wrong; together they pin the arithmetic to one answer.
+    const { item } = persisted(h);
+    expect(item.grams).toBe(resolution.net);
+    expect(item.calories).toBe(nutrition.calories);
 
     h.bridge.dispose();
   });
@@ -395,16 +491,26 @@ describe('every arrival order converges on the same entry', () => {
 
       expect(h.accept.execute).toHaveBeenCalledTimes(1);
       expect(h.accept.execute).toHaveBeenCalledWith(expect.objectContaining({
-        userId: 'kckern', conversationId: 'telegram:b1_c2', logUuid: 'L1',
+        userId: 'kckern', conversationId: 'telegram:b1_c2', logUuid: LOG_ID,
       }));
       // Identical committed snapshot in all six orders.
       expect(h.committed).toEqual([
-        { id: SCALE, logUuid: 'L1', grams: 473, density: 4, container: 'tupperware' },
+        { id: SCALE, logUuid: LOG_ID, grams: 473, density: 4, container: 'tupperware' },
       ]);
 
       const { resolution, nutrition } = derive(snap);
       expect(resolution.net).toBe(413);
       expect(nutrition.calories).toBe(578);
+
+      // Convergence of the ENTRY, not just of the buffer. The orders differ in
+      // when the tare becomes known — container-last means the log is first
+      // written at an untared weight and corrected by a later edit — so equal
+      // snapshots do not by themselves prove equal history.
+      const { item, metadata } = persisted(h);
+      expect(item.grams).toBe(413);
+      expect(item.calories).toBe(578);
+      expect(item.label).toBe('Mixed');
+      expect(metadata.densityLevel).toBe(4);
 
       h.bridge.dispose();
     },
