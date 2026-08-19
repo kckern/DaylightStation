@@ -109,27 +109,20 @@ export const FACT_INTERVAL_MS = 20000;
  */
 export const LISTEN_INTERVAL_MS = FACT_INTERVAL_MS;
 /**
- * How long the NOW register waits before its FIRST swap when it has nothing to
- * phase against — half a period, which at equal periods is the maximum
- * separation two rotations admit.
- *
- * THE OFFSET IS MEASURED FROM THE PIECE REGISTER'S OWN CLOCK, not from the
- * moment the NOW register re-arms, and that distinction is the whole of this
- * constant's honesty. The NOW register re-arms at every movement boundary and
- * at the end of every timed cue; the piece register's beat runs on untouched
- * from mount (it must — tearing it down on a cue edge in the OTHER zone was
- * itself a defect). So "wait half a period from HERE" gave an exact half-period
- * gap once, at mount, and an arbitrary one after the first boundary — the two
- * zones could land in lockstep and blink together, which is the single effect
- * this constant exists to prevent. `phaseDelay` below waits instead until the
- * next instant that is exactly half a period after a piece swap, so the gap is
- * re-established rather than merely intended.
- */
-export const LISTEN_PHASE_MS = Math.round(FACT_INTERVAL_MS / 2);
-
-/**
  * How long to wait so that the next NOW swap lands exactly half a period after a
  * PIECE swap.
+ *
+ * THE OFFSET IS MEASURED FROM THE PIECE REGISTER'S OWN CLOCK, not from the
+ * moment the NOW register re-arms, and that distinction is the whole of the
+ * invariant's honesty. The NOW register re-arms at every movement boundary and
+ * at the end of every timed cue; the piece register's beat runs on through both
+ * (it must — tearing it down on a cue edge in the OTHER zone was itself a
+ * defect). A flat "wait half a period from HERE" therefore gave an exact
+ * half-period gap once, at mount, and an arbitrary one after the first
+ * boundary — the two zones could land in lockstep and blink together, which is
+ * the single effect the phase exists to prevent. There is no `LISTEN_PHASE_MS`
+ * constant any more: a fixed delay was the bug, and a constant nothing computes
+ * from is surface to trip on.
  *
  * Pure and exported so the phase relation can be tested as a relation, rather
  * than by asserting the delay values — which is precisely how the false
@@ -221,17 +214,6 @@ export default function CueTicker({
     () => (Array.isArray(data?.movements) ? data.movements : []), [data],
   );
 
-  /**
-   * THE BAND SPLITS ONLY WHERE THERE IS A "NOW" TO SPLIT OFF.
-   *
-   * Without movements there is no current-movement header, no per-movement
-   * listen pool, and the right zone would be a second copy of the left one —
-   * two registers saying the same thing is worse than one saying it properly.
-   * So a movement-less piece keeps the single, full-width band this module
-   * shipped with, cues and all.
-   */
-  const split = movements.length > 0;
-
   // The rule ends where the MUSIC ends, not where the file does — the same
   // reading MovementMap takes, so the two halves of the band agree about when
   // the last movement stops sounding and the applause begins.
@@ -248,6 +230,26 @@ export default function CueTicker({
   const placedIndex = useMemo(
     () => activeMovementIndex({ placed, position, end }), [placed, position, end],
   );
+
+  /**
+   * THE BAND SPLITS ONLY WHERE THERE IS A "NOW" TO SPLIT OFF.
+   *
+   * Without movements there is no current-movement header, no per-movement
+   * listen pool, and the right zone would be a second copy of the left one —
+   * two registers saying the same thing is worse than one saying it properly.
+   * So a movement-less piece keeps the single, full-width band this module
+   * shipped with, cues and all.
+   *
+   * IT IS THE PLACED MOVEMENTS THAT DECIDE, not the authored ones. A recording
+   * whose timings are all unusable — every `starts` entry refused, or a work
+   * authored ahead of any timing at all — has movements on paper and none on the
+   * clock, so there is no "now" for a second register to be about: the rail
+   * beside it draws nothing, and a NOW zone under an empty rail would print
+   * `Listen for` over borrowed facts for the length of the piece. Two registers
+   * saying the same thing from the same pool is the case this split exists to
+   * avoid, and an untimed recording is that case exactly.
+   */
+  const split = placed.length > 0;
   const movement = placedIndex >= 0 ? placed[placedIndex].movement : null;
   /** The AUTHORED index of the sounding movement — what the log and the bond name. */
   const movementIndex = placedIndex >= 0 ? placed[placedIndex].index : -1;
@@ -297,6 +299,22 @@ export default function CueTicker({
    * `Date.now` is what a fake-timer suite can move.
    */
   const pieceSwappedAt = useRef(Date.now());
+  /**
+   * How many times the piece register's interval has been (re)armed.
+   *
+   * THE INVARIANT HAS TO HOLD WHICHEVER REGISTER MOVES. The NOW register
+   * re-phases whenever IT re-arms, which covers every movement boundary and
+   * every cue; but the piece register re-arms too — its effect depends on
+   * `facts.length`, and a corpus edit picked up by the mtime watcher can grow a
+   * work's fact pool without touching its movements. That re-seeds
+   * `pieceSwappedAt` and, without this, leaves the NOW register running on an
+   * offset measured against a clock that has since moved: the original defect
+   * with the roles swapped. Bumping a generation here and reading it in the NOW
+   * effect's dependencies makes the re-phase symmetric.
+   *
+   * State, not a ref, precisely because it has to retrigger an effect.
+   */
+  const [pieceArm, setPieceArm] = useState(0);
 
   // Fix round 1 (review finding I1). TWO separate effects, not one reading
   // `activeCue` for both branches: a single effect with `activeCue` in its
@@ -313,6 +331,10 @@ export default function CueTicker({
     if (!split) return undefined;
     if (facts.length < 2) return undefined;
     pieceSwappedAt.current = Date.now();
+    // The NOW register is phased against this clock, so a fresh arm has to tell
+    // it the clock moved. `setState` with an unchanged value bails out, so this
+    // costs nothing on the renders where the effect does not re-run.
+    setPieceArm((n) => n + 1);
     const id = setInterval(() => {
       pieceSwappedAt.current = Date.now();
       setFactIndex((i) => i + 1);
@@ -374,7 +396,9 @@ export default function CueTicker({
       interval = setInterval(() => setListenIndex((i) => i + 1), LISTEN_INTERVAL_MS);
     }, phaseDelay(Date.now() - pieceSwappedAt.current, LISTEN_INTERVAL_MS));
     return () => { clearTimeout(phase); if (interval) clearInterval(interval); };
-  }, [split, activeCue, movementIndex, nowPool.length]);
+    // `pieceArm` is in the list for its identity alone: it is how the OTHER
+    // register says "my clock restarted, re-measure your offset against it".
+  }, [split, activeCue, movementIndex, nowPool.length, pieceArm]);
 
   const nowNext = useMemo(() => {
     if (!split) return EMPTY;
@@ -447,7 +471,14 @@ export default function CueTicker({
   // hysteresis, and nothing anywhere reports it. `elapsedFraction` is now the
   // single source, called with the same inputs in both modules.
   const pieceEnd = end !== null ? end : (duration > 0 ? duration : 0);
-  const pieceFirst = movements.length ? (Number(movements[0]?.start) || 0) : 0;
+  // ...and from the same PLACED movements, for the same reason. Taking this from
+  // `movements[0]` with a `|| 0` coercion re-opened finding I3 one edge over:
+  // when the FIRST movement is the unplaceable one, the rail measures from the
+  // first movement it can place and this measured from second zero, so the two
+  // halves resolved opposite sides and each held there by its own hysteresis.
+  // The comment above says both modules are called with the same inputs; this is
+  // what makes that true rather than nearly true.
+  const pieceFirst = placed.length ? placed[0].start : 0;
   const fraction = elapsedFraction({ position, first: pieceFirst, end: pieceEnd });
   // NaN until the transport reports an extent. That is a real state, not zero:
   // seeding the side from a fraction of 0 and then swapping on the first real

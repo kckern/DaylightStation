@@ -58,8 +58,15 @@ const ID_KEYS = ['contentId', 'assetId', 'id', 'plex', 'key'];
 /** Handed to the clock while the frame is off: attaches to nothing, ticks nothing. */
 const NO_MEDIA = () => null;
 
-/** The slots a definition can fill, in the order the frame lays them out. */
-const REGION_SLOTS = Object.freeze(['top', 'right', 'bottom', 'overlay']);
+/**
+ * The slots a definition can fill, in the order the frame lays them out.
+ *
+ * IT IS THE SLOTS THE FRAME RENDERS, and it has to stay that way: naming a slot
+ * here that `SurroundFrame` does not lay out would put a module in this event
+ * that never mounts — a smaller version of the exact lie this helper was written
+ * to end. (`overlay` was dropped when the inert overlay layer was deleted.)
+ */
+const REGION_SLOTS = Object.freeze(['top', 'right', 'bottom']);
 
 /**
  * Every module the shipped definition actually mounts, in layout order.

@@ -5,7 +5,7 @@ import { render, act } from '@testing-library/react';
 import * as sass from 'sass-embedded';
 import CueTicker, {
   CUE_FADE_MS, CUE_HOLD_MS, CUE_SWAP_MS, CUE_DWELL_S, FACT_INTERVAL_MS,
-  LISTEN_INTERVAL_MS, LISTEN_PHASE_MS, phaseDelay,
+  LISTEN_INTERVAL_MS, phaseDelay,
 } from './CueTicker.jsx';
 import { ACCORDION_MS } from '../band.js';
 
@@ -709,7 +709,7 @@ describe('CueTicker — the split band (design wave 6)', () => {
   it('resets the rotation when the movement changes, so a new pool starts at its first note', () => {
     const view = renderSplit();
     // Advance movement I's pool to its second note.
-    tick(LISTEN_PHASE_MS);
+    tick(phaseDelay(0));
     settle();
     expect(view.listen()).toBe('A horn comes in four bars early.');
     // Into movement II and back: the pool is re-entered at note one, not at
@@ -757,21 +757,26 @@ describe('CueTicker — the split band (design wave 6)', () => {
    */
   it('offsets the two rotations by half a period', () => {
     expect(LISTEN_INTERVAL_MS).toBe(FACT_INTERVAL_MS);
-    expect(LISTEN_PHASE_MS).toBe(FACT_INTERVAL_MS / 2);
+    // Half a period, COMPUTED. There is no `LISTEN_PHASE_MS` constant: a fixed
+    // delay from the moment the NOW register re-armed was the defect (see "the
+    // two registers never blink together" at the foot of this file), so the wait
+    // is derived from the piece register's own clock. At mount that clock has
+    // just been armed, so this is the same number the constant used to be.
+    expect(phaseDelay(0)).toBe(FACT_INTERVAL_MS / 2);
 
     const view = renderSplit();
     const piece0 = view.piece();
     const listen0 = view.listen();
 
     // At half a period the NOW register has moved and the piece register has not.
-    tick(LISTEN_PHASE_MS);
+    tick(phaseDelay(0));
     settle();
     expect(view.listen()).not.toBe(listen0);
     expect(view.piece()).toBe(piece0);
 
     // ...and at the full period the piece register moves while the NOW one holds.
     const listen1 = view.listen();
-    tick(FACT_INTERVAL_MS - LISTEN_PHASE_MS - (CUE_FADE_MS * 2 + CUE_HOLD_MS));
+    tick(FACT_INTERVAL_MS - phaseDelay(0) - (CUE_FADE_MS * 2 + CUE_HOLD_MS));
     settle();
     expect(view.piece()).not.toBe(piece0);
     expect(view.listen()).toBe(listen1);
@@ -851,7 +856,7 @@ describe('CueTicker — the split band (design wave 6)', () => {
 
     // Cross the NOW register's own rotation boundary, but only one tick in —
     // it is now hidden and mid-fade, its commit still ~479ms away.
-    tick(LISTEN_PHASE_MS);
+    tick(phaseDelay(0));
     tick(1);
 
     // A cue lands while that ordinary dissolve is still in flight. No
@@ -1429,8 +1434,8 @@ describe('CueTicker — review round (I1, I3, I5)', () => {
 /**
  * THE HALF-PERIOD GAP, TESTED AS A RELATION (wave 8, critique finding 2).
  *
- * The existing spec above asserts the DELAY VALUES — that `LISTEN_PHASE_MS` is
- * half `FACT_INTERVAL_MS`, and that at half a period one zone has moved and the
+ * The existing spec above asserts the DELAY VALUES — that the wait is half
+ * `FACT_INTERVAL_MS`, and that at half a period one zone has moved and the
  * other has not. Both were true, and the invariant they were standing in for was
  * false: the NOW register re-arms at every movement boundary and at the end of
  * every cue, and it used to wait a flat half-period from THAT moment while the
@@ -1441,7 +1446,7 @@ describe('CueTicker — review round (I1, I3, I5)', () => {
  * against each other AFTER a boundary.
  *
  * TO GO RED: replace `phaseDelay(Date.now() - pieceSwappedAt.current, …)` in the
- * NOW register's effect with a flat `LISTEN_PHASE_MS`. The boundary at 7s then
+ * NOW register's effect with a flat `FACT_INTERVAL_MS / 2`. The boundary at 7s then
  * puts the NOW swap 3s from a piece swap instead of 10s, and the assertion
  * below reports the measured gap.
  */
@@ -1516,6 +1521,98 @@ describe('CueTicker — the two registers never blink together (wave 8)', () => 
         `a NOW swap at ${listenAt}ms landed ${nearestPieceGap}ms from a piece swap; the two registers are meant to be ${half}ms apart. piece swaps at [${pieceSwaps}], NOW swaps at [${listenSwaps}]`,
       ).toBeGreaterThan(half - (STEP * 4));
     });
+  });
+
+  /**
+   * ...AND WHICHEVER REGISTER RE-ARMS. The fix above re-phases the NOW register
+   * whenever IT re-arms — every movement boundary, every cue end. The PIECE
+   * register re-arms too: its effect depends on `facts.length`, so a corpus edit
+   * picked up by the mtime watcher can grow a work's fact pool without touching
+   * its movements, restarting the piece clock while the NOW register runs on an
+   * offset measured against where that clock used to be. Same defect, roles
+   * swapped.
+   *
+   * TO GO RED: drop `pieceArm` from the NOW effect's dependency list.
+   */
+  it('re-establishes the offset when the PIECE register is the one that re-arms', () => {
+    const props = (facts) => ({
+      position: 0, duration: 3223, playing: true, seeking: false,
+      data: { ...PHASED, facts }, region: { module: 'cue-ticker', height: 'fill' }, logger: makeLogger(),
+    });
+    const view = render(<CueTicker {...props(['Fact one.', 'Fact two.'])} />);
+    const read = (id) => view.container.querySelector(`[data-testid="${id}"]`)?.textContent ?? '';
+
+    const STEP = 250;
+    const HORIZON = 60000;
+    let now = 0;
+    let piece = read('surround-ticker-text');
+    let listen = read('surround-ticker-listen');
+    const pieceSwaps = [];
+    const listenSwaps = [];
+    // The corpus grows a third fact at 7s — off the beat, and touching nothing
+    // the NOW register's own effect depends on.
+    const EDIT_AT = 7000;
+    let edited = false;
+
+    while (now < HORIZON) {
+      if (!edited && now >= EDIT_AT) {
+        act(() => {
+          view.rerender(<CueTicker {...props(['Fact one.', 'Fact two.', 'Fact three.'])} />);
+        });
+        edited = true;
+        piece = read('surround-ticker-text');
+        listen = read('surround-ticker-listen');
+      }
+      act(() => { vi.advanceTimersByTime(STEP); });
+      now += STEP;
+      const p = read('surround-ticker-text');
+      const l = read('surround-ticker-listen');
+      if (p && p !== piece) { pieceSwaps.push(now); piece = p; }
+      if (l && l !== listen) { listenSwaps.push(now); listen = l; }
+    }
+
+    expect(pieceSwaps.length, 'the piece register never rotated after the edit').toBeGreaterThan(1);
+    expect(listenSwaps.length, 'the NOW register never rotated after the edit').toBeGreaterThan(1);
+
+    const half = FACT_INTERVAL_MS / 2;
+    listenSwaps.forEach((l) => {
+      const nearest = pieceSwaps.reduce((best, p) => Math.min(best, Math.abs(l - p)), Infinity);
+      expect(
+        nearest,
+        `a NOW swap at ${l}ms landed ${nearest}ms from a piece swap after the PIECE register re-armed; they are meant to be ${half}ms apart. piece swaps at [${pieceSwaps}], NOW swaps at [${listenSwaps}]`,
+      ).toBeGreaterThan(half - (STEP * 4));
+    });
+  });
+
+  /**
+   * A RECORDING WITH NO PLACEABLE MOVEMENT HAS NO "NOW" TO SPLIT OFF.
+   *
+   * The split used to be decided by the AUTHORED movement list while every
+   * downstream decision used the placeable one, so a work authored ahead of its
+   * timings — or a sidecar whose `starts` were all refused — got two registers
+   * above an empty rail, the right one printing `Listen for` over facts borrowed
+   * from the left one for the length of the piece. Two registers saying the same
+   * thing from the same pool is the case the split exists to avoid.
+   *
+   * TO GO RED: `const split = movements.length > 0`.
+   */
+  it('does not split the band for a recording whose movements cannot be placed', () => {
+    const untimed = {
+      ...PHASED,
+      movements: PHASED.movements.map((m) => ({ ...m, start: undefined })),
+    };
+    const view = render(
+      <CueTicker
+        position={100} duration={3223} playing seeking={false}
+        data={untimed} region={{ module: 'cue-ticker', height: 'fill' }} logger={makeLogger()}
+      />,
+    );
+    expect(view.container.querySelector('[data-testid="surround-cue-ticker"]').getAttribute('data-split'))
+      .toBe('false');
+    expect(view.container.querySelector('[data-testid="surround-ticker-zone-now"]')).toBeNull();
+    // ...and the one register it does keep still carries the programme note.
+    expect(view.container.querySelector('[data-testid="surround-ticker-text"]').textContent)
+      .toBe('Fact one.');
   });
 
   it('phaseDelay always lands half a period after a piece swap', () => {

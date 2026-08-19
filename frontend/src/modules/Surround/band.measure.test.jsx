@@ -58,7 +58,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import SurroundFrame from './SurroundFrame.jsx';
 import ComposerCard from './modules/ComposerCard.jsx';
-import { accordionShares, SEGMENT_FLOOR_PX } from './band.js';
+import { accordionShares, desiredWidth, SEGMENT_FLOOR_PX } from './band.js';
 import './builtins.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -274,6 +274,12 @@ async function layout(page, css, { width, height, data = EROICA, position = POSI
  * @returns the numbers the solve saw, so a failure can report them.
  */
 async function runAccordion(page) {
+  // The DOM READS, and only the DOM reads. Every number the accordion is
+  // computed from is measured here; not one of them is combined here. The
+  // arithmetic on top of them is `desiredWidth`, imported from the module the
+  // component imports it from — this file's whole purpose is to abolish copies
+  // of load-bearing arithmetic, and a transcription of `measureDesired` in the
+  // spec that measures `measureDesired` is the worst possible place for one.
   const measured = await page.evaluate(() => {
     const rule = document.querySelector('.surround-movement-map__rule');
     if (!rule) return null;
@@ -281,23 +287,27 @@ async function runAccordion(page) {
     const activeIndex = segs.findIndex((s) => s.getAttribute('data-state') === 'active');
     const natural = segs.map((s) => Number(s.getAttribute('data-natural')));
     const railPx = rule.getBoundingClientRect().width;
-    if (activeIndex < 0) return { natural, activeIndex, railPx, desiredPx: 0 };
+    if (activeIndex < 0) return { natural, activeIndex, railPx };
     const seg = segs[activeIndex];
     const cell = seg.querySelector('.surround-movement-map__text');
-    if (!cell) return { natural, activeIndex, railPx, desiredPx: 0 };
-    const segW = seg.getBoundingClientRect().width;
-    const cellW = cell.getBoundingClientRect().width;
-    if (!(cellW > 1) || !(segW > cellW)) return { natural, activeIndex, railPx, desiredPx: 0 };
+    if (!cell) return { natural, activeIndex, railPx };
     const heading = seg.querySelector('.surround-movement-map__heading');
     const gloss = seg.querySelector('.surround-movement-map__translation');
-    const need = Math.max(heading?.scrollWidth ?? 0, gloss?.scrollWidth ?? 0);
-    if (!(need > cellW + 0.5)) return { natural, activeIndex, railPx, desiredPx: 0, need, cellW, segW };
     return {
-      natural, activeIndex, railPx, need, cellW, segW,
-      desiredPx: Math.ceil((segW - cellW) + need) + 1,
+      natural,
+      activeIndex,
+      railPx,
+      segW: seg.getBoundingClientRect().width,
+      cellW: cell.getBoundingClientRect().width,
+      // `scrollWidth` on a `nowrap` + `overflow: hidden` box is the string's
+      // full single-line width whatever the box is currently showing.
+      need: Math.max(heading?.scrollWidth ?? 0, gloss?.scrollWidth ?? 0),
     };
   });
   if (!measured) return null;
+  measured.desiredPx = desiredWidth({
+    segW: measured.segW, cellW: measured.cellW, need: measured.need,
+  });
 
   const shares = accordionShares({
     natural: measured.natural,
@@ -313,17 +323,59 @@ async function runAccordion(page) {
   return { ...measured, shares };
 }
 
-/** Rendered line count of a clamped box: its own height over one line's height. */
-async function lineCount(page, selector) {
-  return page.locator(selector).first().evaluate((el) => {
-    const cs = getComputedStyle(el);
-    const lh = parseFloat(cs.lineHeight);
+/**
+ * THE NOTE, AS SET — measured off the element that actually holds line boxes.
+ *
+ * The first version of this divided `.surround-cue-ticker__text`'s height by its
+ * line-height. That box has `min-height == max-height` in every tier, so the
+ * division was `max-height ÷ line-height`: a ratio of two compiled CSS values,
+ * evaluated in a browser. It proved which container-query tier matched — worth
+ * having, and it needs real box heights — but it observed no text at all, which
+ * is the exact defect class this whole file exists to eliminate.
+ *
+ * `.surround-cue-ticker__line` is the element that truncates
+ * (`display: -webkit-box; -webkit-line-clamp: N; overflow: hidden`) and it
+ * carries NO height constraint of its own, so its rendered height is the number
+ * of line boxes the clamp actually allowed, times one line. That is painted
+ * text. Lifting the clamp and the reserve and re-measuring gives the height the
+ * note WANTED — the same technique the name-measure test below uses — and the
+ * difference between the two is what the ellipsis ate.
+ *
+ * @returns painted/natural/reserve, in both px and lines, plus the clamp count.
+ */
+async function noteMeasure(page) {
+  return page.locator('[data-testid="surround-ticker-text"]').first().evaluate((box) => {
+    const line = box.querySelector('.surround-cue-ticker__line');
+    const lh = parseFloat(getComputedStyle(box).lineHeight);
+    const clamp = Number(getComputedStyle(line).webkitLineClamp
+      ?? getComputedStyle(line).getPropertyValue('-webkit-line-clamp'));
+    const reservePx = box.getBoundingClientRect().height;
+    const paintedPx = line.getBoundingClientRect().height;
+
+    const prev = {
+      clamp: line.style.webkitLineClamp,
+      min: box.style.minHeight,
+      max: box.style.maxHeight,
+    };
+    line.style.webkitLineClamp = 'unset';
+    box.style.minHeight = '0';
+    box.style.maxHeight = 'none';
+    const naturalPx = line.getBoundingClientRect().height;
+    line.style.webkitLineClamp = prev.clamp;
+    box.style.minHeight = prev.min;
+    box.style.maxHeight = prev.max;
+
+    const px = (n) => Number(n.toFixed(2));
     return {
-      lines: Math.round(el.getBoundingClientRect().height / lh),
-      lineHeight: Number(lh.toFixed(2)),
-      height: Number(el.getBoundingClientRect().height.toFixed(2)),
-      scrollHeight: el.scrollHeight,
-      clientHeight: el.clientHeight,
+      lineHeight: px(lh),
+      fontSize: getComputedStyle(box).fontSize,
+      clampLines: Number.isFinite(clamp) ? clamp : null,
+      reservePx: px(reservePx),
+      reserveLines: Math.round(reservePx / lh),
+      paintedPx: px(paintedPx),
+      paintedLines: Math.round(paintedPx / lh),
+      naturalPx: px(naturalPx),
+      naturalLines: Math.round(naturalPx / lh),
     };
   });
 }
@@ -356,8 +408,16 @@ describe('the band, measured against the shipped stylesheet', () => {
   /**
    * THE LAW THE `overflow: hidden` HIDES. Every reserve in the ticker is a
    * `min-height`/`max-height` pair on a box that clips, so an over-budget tier
-   * does not look broken — it silently eats the last line of the note. This is
-   * the assertion the tier arithmetic exists to satisfy, at every size at once.
+   * does not look broken — it silently eats the last line of the note.
+   *
+   * `.surround-cue-ticker__line` is NOT in this sweep, and that is deliberate
+   * rather than an oversight: it is the clamped element, so on any note longer
+   * than its tier it overflows BY DESIGN — measured, `scrollHeight` 122 against
+   * `clientHeight` 98 at 1280x720, which is the ellipsis doing its job on a
+   * genuine overflow. Including it here would make this case red on shipped,
+   * correct output. What must be true of that element is asserted in the next
+   * case instead, where it belongs: every line the clamp PAINTS has to fit
+   * inside the reserve.
    */
   it.each(FLEET)('$name — the ticker never overflows its own reserve', async ({ width, height }) => {
     await layout(page, css, { width, height });
@@ -377,9 +437,27 @@ describe('the band, measured against the shipped stylesheet', () => {
   }, 60000);
 
   /**
-   * THE TIER LATTICE, asserted as OBSERVED LINES rather than as the presence of
-   * a CSS rule. A `@container` rule that exists but never matches is exactly the
-   * failure this spec is for, and a rule-presence assertion cannot see it.
+   * THE TIER LATTICE, asserted as PAINTED LINE BOXES — text that a viewer can
+   * count on the screen — rather than as the presence of a CSS rule or as a
+   * ratio of two compiled CSS values.
+   *
+   * Three things are asserted together, because each one alone is escapable:
+   *
+   *   1. THE TIER. `paintedLines` is `.surround-cue-ticker__line`'s own height
+   *      over one line's; that element has no height constraint, so its height
+   *      IS the number of line boxes the clamp allowed.
+   *   2. THE RESERVE AND THE CLAMP AGREE. Every tier's reserve is derived from
+   *      the line-height (`4.05em` is 3 x 1.35em, `5.4em` is 4 x 1.35em) and
+   *      nothing but a comment says so. Raise the line-height without moving the
+   *      reserve and the clamp still allows four lines into a box that now holds
+   *      three; the parent's `overflow: hidden` swallows the fourth in silence.
+   *      Asserting the two counts against the MEASURED line-height is what sees
+   *      that. (The painted height cannot exceed the reserve — the grid area
+   *      bounds it — so asserting that would be an assertion that cannot fail.)
+   *   3. THE MEASUREMENT IS NOT VACUOUS. The fact used has to genuinely NEED at
+   *      least the tier's line count, or "four lines were painted" would be
+   *      satisfied by any short string and prove nothing about the tier. That is
+   *      why the 224-character Napoleon fact is the fixture.
    *
    * The expected counts are the design's own, stated in `CueTicker.scss`:
    * 960x540 stays on the single-line tier; 1280x720 and 1920x1080 both reach
@@ -387,18 +465,54 @@ describe('the band, measured against the shipped stylesheet', () => {
    * the 161px one — the rail names the movement, so the NOW register spends no
    * height on a heading. See that tier's own derivation.)
    */
+  const tierCase = async ({ width, height, lines, threshold, data }) => {
+    await layout(page, css, { width, height, ...(data ? { data } : null) });
+    const container = await tickerContentBox(page);
+    const m = await noteMeasure(page);
+    const where = `tier ${threshold}; ticker content box ${container}px, reserve ${m.reservePx}px, line-height ${m.lineHeight}px at ${m.fontSize}; the note sets ${m.naturalLines} lines (${m.naturalPx}px) and ${m.paintedLines} are painted (${m.paintedPx}px)`;
+
+    expect(m.paintedLines, `expected ${lines} painted line(s), got ${m.paintedLines} — ${where}`)
+      .toBe(lines);
+    expect(
+      m.reserveLines,
+      `the clamp allows ${m.clampLines} lines and the reserve is ${m.reservePx}px, which is ${m.reserveLines} lines at the measured ${m.lineHeight}px — so the clamp's last ${m.clampLines - m.reserveLines} line(s) are clipped by the parent, with nothing on screen to say so. Every tier's reserve is derived from this line-height (4.05em is 3 x 1.35em, 5.4em is 4 x 1.35em); this is the assertion that notices when one moves and the other does not. ${where}`,
+    ).toBe(m.clampLines);
+    expect(
+      m.naturalLines,
+      `the fixture note only needs ${m.naturalLines} lines, so painting ${lines} proves nothing about this tier — ${where}`,
+    ).toBeGreaterThanOrEqual(lines);
+    return m;
+  };
+
   it.each([
     { ...FLEET[0], lines: 1, threshold: 'below 88px — the single-line tier' },
     { ...FLEET[1], lines: 4, threshold: '108px — the no-now-heading four-line tier' },
     { ...FLEET[2], lines: 4, threshold: '161px — the four-line tier' },
-  ])('$name — the note is set in $lines line(s)', async ({ width, height, lines, threshold }) => {
-    await layout(page, css, { width, height });
-    const box = await tickerContentBox(page);
-    const observed = await lineCount(page, '[data-testid="surround-ticker-text"]');
+  ])('$name — the note is set in $lines painted line(s)', tierCase, 60000);
+
+  /**
+   * THE FOURTH LINE PAYS FOR ITSELF AT THE TOP OF THE FLEET, and this is the
+   * thinnest margin in the whole design: the shipped 224-character fact sets
+   * WHOLE at 1920x1080 — the reason the four-line tier was added at all — with
+   * about a thirtieth of a pixel to spare. Any widening of the display face, any
+   * rise in the clamp's ceiling, any change to the line-height, and the note
+   * starts ellipsizing on the largest screen in the house.
+   *
+   * It is asserted only here, and deliberately not at the smaller sizes: at
+   * 1280x720 the same fact's fifth line IS ellipsized, and the stylesheet says
+   * so in as many words ("the fourth line — for this one fact, on this one
+   * measure — still ellipsizes, which is the wrap-or-ellipsis law doing exactly
+   * its job on a genuine overflow"). A blanket "the note is always whole" would
+   * be asserting a law the design does not hold.
+   */
+  it('1920x1080 — the shipped fact sets whole, with nothing ellipsized', async () => {
+    await layout(page, css, FLEET[2]);
+    const m = await noteMeasure(page);
     expect(
-      observed.lines,
-      `expected ${lines} lines, got ${observed.lines} (tier ${threshold}, ticker content box measured ${box}px, reserve ${observed.height}px at line-height ${observed.lineHeight}px)`,
-    ).toBe(lines);
+      m.naturalPx,
+      `the note wants ${m.naturalPx}px (${m.naturalLines} lines at ${m.lineHeight}px) and the four-line reserve is ${m.reservePx}px, so ${m.naturalLines - m.paintedLines} line(s) are being ellipsized on the largest screen in the fleet — the tier exists precisely so this fact is whole here`,
+    ).toBeLessThanOrEqual(m.reservePx + 0.5);
+    expect(m.naturalLines, 'the fixture stopped exercising the four-line tier').toBe(4);
   }, 60000);
 
   /**
@@ -407,15 +521,11 @@ describe('the band, measured against the shipped stylesheet', () => {
    * whose 88px crossover carries the thinnest margin in the design ("0.58px of
    * air"). Asserted where it actually binds rather than left underived.
    */
-  it('1280x720 with the NOW heading printed — the note is set in 3 lines', async () => {
+  it('1280x720 with the NOW heading printed — the note is set in 3 painted lines', async () => {
     const data = { ...EROICA, definition: { ...DEFINITION, band: { nowHeading: 'always' } } };
-    await layout(page, css, { ...FLEET[1], data });
-    const box = await tickerContentBox(page);
-    const observed = await lineCount(page, '[data-testid="surround-ticker-text"]');
-    expect(
-      observed.lines,
-      `expected 3 lines, got ${observed.lines} (tier threshold 88px / ceiling 161px, ticker content box measured ${box}px, reserve ${observed.height}px)`,
-    ).toBe(3);
+    await tierCase({
+      ...FLEET[1], data, lines: 3, threshold: '88px crossover, below the 161px ceiling',
+    });
     const heading = await page.locator('[data-testid="surround-ticker-now"]').count();
     expect(heading, 'nowHeading: always did not print the heading this tier is derived around').toBe(1);
   }, 60000);
@@ -428,7 +538,21 @@ describe('the band, measured against the shipped stylesheet', () => {
   it.each(FLEET)('$name — the sounding segment shows its heading and gloss whole, and no neighbour goes under the floor', async ({ width, height }) => {
     await layout(page, css, { width, height });
     const solved = await runAccordion(page);
-    if (solved === null) return; // no rail on this screen: the collapse rule dropped it
+    // SKIPPING IS NOT PASSING. `runAccordion` returns null only when there is no
+    // rule on the page, which on the shipped numbers means one thing: the band
+    // fell under `collapse.footerFloor` and dropped its `collapse: first`
+    // region. That is a real, testable state — so it is asserted rather than
+    // returned out of, and if the rail is missing for any OTHER reason this case
+    // fails instead of quietly passing with no assertions.
+    if (solved === null) {
+      const footerH = await page.locator('[data-testid="surround-footer"]')
+        .evaluate((el) => Number(el.getBoundingClientRect().height.toFixed(2)));
+      expect(
+        footerH,
+        `there is no movement rail on this screen, but the footer is ${footerH}px — above the ${DEFINITION.collapse.footerFloor}px floor, so the collapse rule is not why it is missing`,
+      ).toBeLessThan(DEFINITION.collapse.footerFloor);
+      return;
+    }
     const after = await page.evaluate(() => {
       const segs = [...document.querySelectorAll('.surround-movement-map__segment')];
       return segs.map((s, i) => {
@@ -465,6 +589,38 @@ describe('the band, measured against the shipped stylesheet', () => {
       under,
       `neighbours compressed under the ${SEGMENT_FLOOR_PX}px floor — at that width a segment is an unlabelled stripe: ${JSON.stringify(under)}`,
     ).toEqual([]);
+  }, 60000);
+
+  /**
+   * THE ACCORDION ONLY EVER OPENS WHEN IT NEEDS TO.
+   *
+   * The other half of the accordion's contract, and the one an outcome
+   * assertion cannot see: a movement whose heading and gloss ALREADY fit must
+   * not widen at all, because every pixel it takes comes off a neighbour that
+   * was telling the truth about its duration. `scrollWidth` is an integer and a
+   * segment's measured width is not, so a bare `need > cellW` is true by a
+   * rounding hair on a box that is not overflowing — which is how this used to
+   * quietly compress the whole rail for a name that fitted.
+   *
+   * Movement I at 1920x1080: "Allegro con brio" and "Fast, with spirit" in a
+   * segment a third of a 1251px rule wide. Nothing to open for.
+   *
+   * TO GO RED: drop the half-pixel threshold from `desiredWidth`.
+   */
+  it('1920x1080 — a sounding movement whose text already fits takes nothing from its neighbours', async () => {
+    await layout(page, css, { ...FLEET[2], position: 100 });
+    const solved = await runAccordion(page);
+    expect(solved, 'no rail to measure').not.toBeNull();
+    expect(solved.activeIndex, 'movement I should be sounding at 100s').toBe(0);
+    expect(
+      solved.desiredPx,
+      `the accordion wants ${solved.desiredPx}px for a segment already ${solved.segW.toFixed(2)}px wide whose text column is ${solved.cellW.toFixed(2)}px and whose widest line is ${solved.need}px — it fits, so nothing should open`,
+    ).toBe(0);
+    const drift = solved.shares.map((s, i) => Number((s - solved.natural[i]).toFixed(6)));
+    expect(
+      drift,
+      `the rail's rendered widths drifted from their duration-derived shares for a movement that needed no room: ${JSON.stringify(drift)}`,
+    ).toEqual(solved.natural.map(() => 0));
   }, 60000);
 
   /**

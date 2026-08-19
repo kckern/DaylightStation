@@ -68,7 +68,7 @@ import { surroundLogger } from '../moduleKit.js';
 import {
   resolveBandConfig, useNowSide, useEasedShares, accordionShares, playheadFraction,
   bondConnector, elapsedFraction, activeMovementIndex, placedMovements, roman,
-  ACCORDION_MS, SEGMENT_FLOOR_PX,
+  desiredWidth, ACCORDION_MS, SEGMENT_FLOOR_PX,
 } from '../band.js';
 import './MovementMap.scss';
 
@@ -250,24 +250,18 @@ export default function MovementMap({
     if (!seg || !cell) { setDesiredPx(0); return; }
     const segW = seg.getBoundingClientRect().width;
     const cellW = cell.getBoundingClientRect().width;
-    // The chrome around the text column — the numeral's gutter and the text
-    // insets — is a CONSTANT, so `desired` does not depend on the width the
-    // accordion is about to set and cannot feed back into itself. Below ~1px of
-    // cell there is nothing to subtract from and the reading would be garbage.
-    if (!(cellW > 1) || !(segW > cellW)) { setDesiredPx(0); return; }
     const heading = seg.querySelector('.surround-movement-map__heading');
     const gloss = seg.querySelector('.surround-movement-map__translation');
     // `scrollWidth` on a `nowrap` + `overflow: hidden` box is the string's full
     // single-line width whatever the box is currently showing.
     const need = Math.max(heading?.scrollWidth ?? 0, gloss?.scrollWidth ?? 0);
-    // THE ACCORDION ONLY EVER OPENS WHEN IT NEEDS TO (review finding, minor 3).
-    // On a `nowrap` box that is NOT overflowing, `scrollWidth === clientWidth`,
-    // so `need === cellW` and a bare `+ 1` asked for one pixel more than the
-    // segment already had — enough to clear `extra > EPS` and quietly take a
-    // pixel off every neighbour for a movement whose name already fitted. The
-    // rounding-up margin is only spent where there is genuine overflow.
-    if (!(need > cellW + 0.5)) { setDesiredPx(0); return; }
-    const desired = Math.ceil((segW - cellW) + need) + 1;
+    // THE DOM READ IS HERE; THE ARITHMETIC ON TOP OF IT IS IN `../band.js`. Only
+    // a rendered rail knows how wide a string is in this face at this size; the
+    // sum over those numbers is a rule, and it belongs where the accordion's
+    // other rules live — and where the spec that measures the rail can call the
+    // same function instead of transcribing it.
+    const desired = desiredWidth({ segW, cellW, need });
+    if (!(desired > 0)) { setDesiredPx(0); return; }
     setDesiredPx(desired);
     // Review finding I5: the accordion's one measured input. It decides every
     // width on the rail and it is read off the DOM in a face that arrives
