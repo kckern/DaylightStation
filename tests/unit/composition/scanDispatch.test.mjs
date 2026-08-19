@@ -14,6 +14,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createScanDispatch, SCAN_ROUTE_FALLBACK, errText } from '#composition/modules/scanDispatch.mjs';
+import { swallowNotice } from '#apps/nutribot/lib/routeNutribotScan.mjs';
 
 const makeLogger = () => ({
   debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(),
@@ -580,6 +581,63 @@ describe('nutrition — the nutriscan path', () => {
     expect(warns[0][1]).toMatchObject({ hint: 'further occurrences log at debug' });
     expect(debugs).toHaveLength(2);
     expect(h.execute).not.toHaveBeenCalled();
+  });
+
+  it('ACKs a swallowed fridge code on the live prompt, not just in the logs', async () => {
+    // THE test the design names as the one that would have caught the silent
+    // failure: a correct `swallowNotice` builder that nobody calls fixes
+    // nothing. This drives the swallow branch and asserts `refreshPrompt` was
+    // actually invoked, pinned to the SAME builder rather than a duplicated
+    // literal, so the wiring and the notice text can't drift apart unnoticed.
+    const h = harness({ applyScanToComposition: null });
+    const out = await h.scanDispatch.handleScan(relayScan({
+      device: 'nutribot-upc', route: 'nutribot', code: 'dl:140',
+    }));
+
+    expect(h.refreshPrompt).toHaveBeenCalledTimes(1);
+    expect(h.refreshPrompt).toHaveBeenCalledWith(
+      'kitchen-food-scale', swallowNotice('nutriscan-disabled'),
+    );
+    const [, notice] = h.refreshPrompt.mock.calls[0];
+    expect(notice).toEqual(expect.any(String));
+    expect(notice.length).toBeGreaterThan(0);
+    expect(out).toMatchObject({ domain: 'nutrition', ok: false });
+  });
+
+  it('does not let a rejected prompt edit turn a silent refusal into a thrown one', async () => {
+    // Pins the fire-and-forget `.catch` on the swallow branch's ACK — the same
+    // shape the nutriscan branch already relies on. A `refreshPrompt` that
+    // rejects (Telegram down, bad chat id, whatever) must not surface as a
+    // rejected `handleScan`, and the swallow outcome must still come back
+    // exactly as if the ACK had never been attempted.
+    const refreshPrompt = vi.fn(() => Promise.reject(new Error('telegram down')));
+    const h = harness({
+      applyScanToComposition: null,
+      getScaleNutribotBridge: () => ({ refreshPrompt }),
+    });
+    const scan = relayScan({ device: 'nutribot-upc', route: 'nutribot', code: 'dl:140' });
+
+    let out;
+    await expect((async () => { out = await h.scanDispatch.handleScan(scan); })()).resolves.toBeUndefined();
+    await Promise.resolve();
+
+    expect(refreshPrompt).toHaveBeenCalledTimes(1);
+    expect(out).toMatchObject({ domain: 'nutrition', status: 'swallowed', ok: false });
+  });
+
+  it('ACKs a successful nutriscan exactly once, never twice through the swallow path', async () => {
+    // The nutriscan and swallow branches are mutually exclusive `if`s that both
+    // `return`, so a single scan can only ever ACK once — this pins that
+    // invariant explicitly rather than leaving it implicit in the branch shape.
+    const applyScanToComposition = {
+      execute: vi.fn(() => ({ handled: true, ok: true, kind: 'density', level: 4 })),
+    };
+    const h = harness({ applyScanToComposition });
+    await h.scanDispatch.handleScan(relayScan({
+      device: 'nutribot-upc', route: 'nutribot', code: 'dl:4',
+    }));
+    expect(h.refreshPrompt).toHaveBeenCalledTimes(1);
+    expect(h.refreshPrompt).toHaveBeenCalledWith('kitchen-food-scale', null);
   });
 
   it('keeps the warn-once memory per dispatch instance, keyed by reason', async () => {
