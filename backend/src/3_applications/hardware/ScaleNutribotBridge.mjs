@@ -65,7 +65,12 @@ export function createScaleNutribotBridge({
   // The relay reports the unit on every frame and the scale really can send `ml`
   // (decode.units maps 0x02 to it). Asserting 'g' here relabelled a volume as a
   // mass, and nothing downstream could refuse what it was never told.
-  const bufferWeight = (id, grams, unit = 'g') => {
+  //
+  // `unit` is required, not defaulted — every call site (post, both force/auto
+  // edit-in-place branches) already resolves a unit (falling back to 'g' only
+  // when the payload itself omitted one, in `onPayload`) before calling this,
+  // so a default here would be dead code documenting a contract nothing uses.
+  const bufferWeight = (id, grams, unit) => {
     if (!compositionStore) return;
     try { compositionStore.setWeight(id, { grams, unit }); }
     catch (err) { logger.warn?.('scaleNutribot.composition.setWeight.failed', { id, grams, unit, error: err.message }); }

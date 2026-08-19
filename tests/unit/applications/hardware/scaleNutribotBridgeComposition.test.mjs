@@ -199,12 +199,44 @@ describe('ScaleNutribotBridge unit passthrough', () => {
     expect(execute.mock.calls[1][0].unit).toBe('ml');
   });
 
-  it('threads the unit into the log use case on a force (button) log', async () => {
+  // No live prompt exists yet when the button fires (the one prior emit only
+  // learns the baseline — `s.baseline === null` returns before any `execute`
+  // call), so the force branch falls through to `post` → `create`. This is
+  // the CREATE sub-path of force; see the next test for the DEDUP-EDIT
+  // sub-path, which is a different call site in the bridge.
+  it('threads the unit into the log use case on a force (button) log that POSTS (no live prompt yet)', async () => {
     build({ compositionStore: store });
     bus.emit('food-scale', { id: 'kitchen', grams: 300, stable: true, unit: 'ml' }); await flush();
     bus.emit('food-scale', { id: 'kitchen', grams: 300, stable: false, unit: 'ml', event: 'button' }); await flush();
 
-    expect(execute.mock.calls[0][0].unit).toBe('ml');
+    expect(execute).toHaveBeenCalledTimes(1);
+    const call = execute.mock.calls[0][0];
+    expect(call.existingLogUuid).toBeFalsy();   // proves this is create, not the dedup-edit path
+    expect(call.unit).toBe('ml');
+  });
+
+  // Here a live prompt IS already posted (baseline, then a placement rise that
+  // posts) before the button fires, and the button's weight lands within
+  // `forceToleranceG` (default 10 g) of `s.live.grams` — so the force branch
+  // takes the OTHER sub-path this time: `s.live && Math.abs(g - s.live.grams)
+  // <= forceTolG` → `editInPlace(...)`, a call site the previous test never
+  // reaches. Asserting `existingLogUuid` is truthy proves this really is the
+  // edit call and not a second create.
+  it('threads the unit into the log use case on a force (button) log that DEDUP-EDITS a live prompt', async () => {
+    build({ compositionStore: store });
+    bus.emit('food-scale', { id: 'kitchen', grams: 480, stable: true, unit: 'ml' }); await flush();   // baseline
+    bus.emit('food-scale', { id: 'kitchen', grams: 600, stable: true, unit: 'ml' }); await flush();   // posts → s.live set
+    execute.mockClear();
+
+    // s.lastGrams is already 600 from the emit above; the button event's own
+    // grams/stable fields are irrelevant to the force branch, which reads
+    // s.lastGrams, not the payload.
+    bus.emit('food-scale', { id: 'kitchen', grams: 600, stable: false, unit: 'ml', event: 'button' }); await flush();
+
+    expect(execute).toHaveBeenCalledTimes(1);
+    const call = execute.mock.calls[0][0];
+    expect(call.existingLogUuid).toBeTruthy();  // proves this is the dedup EDIT, not a fresh post
+    expect(call.unit).toBe('ml');
   });
 
   it('carries the original unit into a composition-triggered refresh (no new payload)', async () => {
