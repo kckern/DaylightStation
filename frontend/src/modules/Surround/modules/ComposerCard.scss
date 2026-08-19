@@ -173,10 +173,31 @@
 /* THE NAME USES THE VERTICAL (design wave 4). The plate has a column, not a
    line: "Antonio" over "Vivaldi" is what an engraved museum plate does, and it
    is what lets the type be BIG rather than what a single line can afford. So
-   the measure is capped at `6.4em` of the name's own size and the name breaks
-   at word boundaries inside it; the plate (`width: fit-content`) then hugs
-   whatever that wrapping produces — narrow and tall instead of wide and thin.
+   the measure is capped at `12ch` and the name breaks at word boundaries
+   inside it; the plate (`width: fit-content`) then hugs whatever that
+   wrapping produces — narrow and tall instead of wide and thin.
    Breaking beats shrinking: 1.35rem -> 1.75rem.
+
+   Fix round 1: the cap was originally `5.6em`, tuned against Cormorant
+   Garamond ("Antonio Vivaldi" measures 178px at 1.75rem/600, so 5.6em =
+   156.8px is what stacks it). `em` is fixed by font-SIZE alone, so it does
+   not know the font's own glyph widths — and this family loads via Google
+   Fonts with `display=swap`, so the FALLBACK (Georgia) is what actually
+   paints first. A wider fallback face fits fewer characters in that same
+   physical measure, so a name that wrapped to 3 lines in Cormorant could wrap
+   to 4 in the fallback window and be silently hard-clipped below, no
+   ellipsis, mid-glyph. `ch` is the advance width of the CURRENT font's "0"
+   glyph, so the measure re-derives itself on the font swap instead of staying
+   frozen at Cormorant's width. Headless Chrome measures Cormorant Garamond's
+   "0" at 13px (28px/600), so `12ch` = 156px — within 1px of the `5.6em` it
+   replaces, same stacking, all four names from the harness unchanged. In a
+   wider face, `12ch` is wider too, by the same proportion that face's own
+   characters are wider, which is the graceful-degradation property `em`
+   lacked: measured against DejaVu Serif as a metrics stand-in for Georgia
+   ("0" = 19.5px here, ~50% wider than Cormorant's), "Ludwig van Beethoven"
+   under the OLD `5.6em` already grazes the 3-line ceiling (96.59px of a
+   96.6px cap); under `12ch` (233px measure there) it holds at 2 lines —
+   headroom instead of a coin flip against the clip.
 
    THREE lines, not two — "Pyotr Ilyich Tchaikovsky" and "Ludwig van Beethoven"
    want the extra one at this measure, and the ceiling is a real `max-height`
@@ -188,7 +209,7 @@
 .surround-composer-card__name {
   margin: 0 auto;
   display: block;
-  max-width: 5.6em;
+  max-width: 12ch;
   max-height: 3.45em;              /* 3 lines at line-height 1.15 */
   overflow: hidden;
   overflow-wrap: break-word;       /* a single unbreakable word still cannot escape */

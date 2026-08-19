@@ -385,11 +385,12 @@ describe('ComposerCard hard content budget — long text', () => {
    * Design wave 4 — THE PLATE USES THE VERTICAL.
    *
    * An engraved museum plate sets a long name in a column: "Antonio" over
-   * "Vivaldi". So the name's MEASURE is capped (in ems of its own size, so the
-   * cap follows the type) and the name breaks at word boundaries inside it,
-   * rather than the type shrinking to fit one line — which is the trade the
-   * user asked for explicitly. The plate is `width: fit-content` (asserted
-   * above), so it then hugs whatever that wrapping produced: narrow and tall.
+   * "Vivaldi". So the name's MEASURE is capped (in `ch` — the current font's
+   * own "0"-glyph advance, so the cap follows the FACE, not just its size) and
+   * the name breaks at word boundaries inside it, rather than the type
+   * shrinking to fit one line — which is the trade the user asked for
+   * explicitly. The plate is `width: fit-content` (asserted above), so it then
+   * hugs whatever that wrapping produced: narrow and tall.
    *
    * Both halves are load-bearing. Without the measure cap the name never wraps
    * and the "vertical" is unused; without the bigger type the wrap buys
@@ -405,14 +406,18 @@ describe('ComposerCard hard content budget — long text', () => {
     const { container } = renderCard();
     const name = window.getComputedStyle(container.querySelector('.surround-composer-card__name'));
 
-    // A measure, in ems of the name's own size — narrow enough that a two-word
-    // name stacks. The UNIT is asserted against the compiled source (happy-dom
-    // resolves em to px in computed style, so the computed value cannot show
-    // it); `em`, not px, is what makes the cap follow the type.
+    // A measure, in `ch` of the CURRENT font — narrow enough that a two-word
+    // name stacks, and font-relative so it re-derives on the webfont swap
+    // (fix round 1: `em` stayed frozen at Cormorant Garamond's width, so a
+    // wider fallback face — Georgia, painted first under `display=swap` —
+    // fit fewer characters in the same physical measure and could clip a name
+    // that would have fit in Cormorant). happy-dom does not resolve `ch` to
+    // px in computed style (unlike `em`), so both checks below read the raw
+    // computed value, which stays the literal `"12ch"` string.
     expect(compiled.css.replace(/\s+/g, ' '))
-      .toMatch(/\.surround-composer-card__name \{[^}]*max-width: [\d.]+em/);
-    expect(parseFloat(name.getPropertyValue('max-width')))
-      .toBeLessThan(8 * 16);                 // < 8em, at happy-dom's 16px root
+      .toMatch(/\.surround-composer-card__name \{[^}]*max-width: [\d.]+ch/);
+    expect(name.getPropertyValue('max-width')).toMatch(/^\d+(\.\d+)?ch$/);
+    expect(parseFloat(name.getPropertyValue('max-width'))).toBeLessThan(16); // < 16ch
     // Breaking, not shrinking: bigger than the one-line size it replaces.
     expect(parseFloat(name.getPropertyValue('font-size'))).toBeGreaterThan(1.35 * 16);
     // ...and it breaks at WORD boundaries by preference.
