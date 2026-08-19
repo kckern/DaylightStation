@@ -1,8 +1,7 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
-import fs from 'fs'
-import yaml from 'js-yaml'
+import { resolvePorts } from './vite.ports.mjs'
 
 // Read app port from system config (SSOT)
 // Vite runs on app.port, proxies to backend on app.port + 1
@@ -10,33 +9,15 @@ function getPortsFromConfig(env) {
   const dataPath = env.DAYLIGHT_DATA_PATH || (env.DAYLIGHT_BASE_PATH ? path.join(env.DAYLIGHT_BASE_PATH, 'data') : null);
   const envName = env.DAYLIGHT_ENV;
 
-  const defaultAppPort = 3111;
+  const result = resolvePorts({ dataPath, envName });
 
-  if (!dataPath || !envName) {
+  if (result.usedDefault) {
     console.warn('[vite] DAYLIGHT_DATA_PATH/DAYLIGHT_BASE_PATH or DAYLIGHT_ENV not set, using default port');
-    return { app: defaultAppPort, backend: defaultAppPort + 1 };
+  } else {
+    console.log(`[vite] ${envName}: app port ${result.app}, backend port ${result.backend}`);
   }
 
-  // Try environment-specific config first, fall back to base system.yml
-  let config = null;
-  const localConfigPath = path.join(dataPath, 'system', 'config', `system-local.${envName}.yml`);
-  const baseConfigPath = path.join(dataPath, 'system', 'config', 'system.yml');
-
-  if (fs.existsSync(localConfigPath)) {
-    config = yaml.load(fs.readFileSync(localConfigPath, 'utf8'));
-  } else if (fs.existsSync(baseConfigPath)) {
-    config = yaml.load(fs.readFileSync(baseConfigPath, 'utf8'));
-  }
-
-  // Match ConfigService.getAppPort(): app.ports.{env} or legacy app.port
-  const ports = config?.app?.ports;
-  const appPort = (ports && typeof ports === 'object')
-    ? (ports[envName] ?? ports.default ?? defaultAppPort)
-    : (config?.app?.port ?? defaultAppPort);
-  const backendPort = appPort + 1;  // Backend always +1 in dev (Vite only runs in dev)
-
-  console.log(`[vite] ${envName}: app port ${appPort}, backend port ${backendPort}`);
-  return { app: appPort, backend: backendPort };
+  return { app: result.app, backend: result.backend };
 }
 
 // https://vitejs.dev/config/
