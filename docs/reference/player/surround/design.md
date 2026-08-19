@@ -235,7 +235,10 @@ breathing room.
   side of the band as the sounding segment, so the bond stays short. The
   crossover is at half-way with a hysteresis band below it, so a scrub sitting on
   the mark cannot flap the layout. The swap is a considered move: the panel
-  slides across the band while the registers' text dissolves.
+  slides across the band while the registers' text dissolves — and both halves
+  of the bond read the same elapsed fraction, measured from the FIRST MOVEMENT
+  rather than from the top of the file, so they can never point at opposite
+  sides of the screen.
 - The two rotations are **phase-offset by half a period**. Both play the house
   dissolve, and two of those in one instant reads as the whole band blinking.
 - A piece with no movements does not split at all: there is no "now" to give a
@@ -263,7 +266,10 @@ the rule down into the register, and the movement never has to be named twice.
   per-segment background that lights and unlights: a highlight that travels is
   followed, and being followed is the whole mechanism.
 - **It is state, not motion.** Under `prefers-reduced-motion` the bond still
-  moves to the sounding movement; it simply arrives in one frame.
+  moves to the sounding movement and to the configured side; it simply arrives
+  in one frame. Both halves are guarded — a guard on one half only would tear
+  the shape apart for the length of the other half's slide, which is worse than
+  no guard at all.
 - The panel rounds at its **head** (the top of the rail's segment) and at its
   **foot** (the bottom of the register), and squares off everywhere the shape
   continues. A radius in the middle of one object draws a seam across it.
@@ -328,6 +334,15 @@ movement is a segment proportional to its real duration.
   segment is that segment's own elapsed fraction, derived from the RENDERED
   widths, so it arrives at a segment's right edge exactly when the music crosses
   it. Under `prefers-reduced-motion` the widths snap.
+  **There is exactly one clock.** The widths are interpolated in JS, on the
+  frame's own easing, and the segment widths, the playhead, the bond and its
+  connector are all published from that one array in the same render. The
+  stylesheet animates none of it, and that is the point: a CSS `transition:
+  width` would be a second timeline, and a cursor derived from the *target*
+  widths while the *painted* boundary is still travelling ends up inside the
+  elapsed fill. The bond is the one thing that keeps a CSS transition, because
+  it does not track a segment — it travels from the old one to the new one, and
+  only its endpoints have to agree.
 - No clef, no notes, no staff of five lines. One rule and the barline grammar.
   The restraint is what keeps it from reading as fussy pastiche.
 
@@ -485,7 +500,7 @@ band:
 |---|---|
 | `nowSide` | Which half of the band the NOW register occupies. `dynamic` follows the playhead — left under half-way, right at and past it, with hysteresis so a scrub on the mark cannot flap the layout — so the bond stays short. |
 | `nowHeading` | Whether the NOW register prints the sounding movement's name. `auto` prints it only where the rail does not, which with the shipped rail means never: the rail names the movement and the bond points at it. |
-| `railDensity` | What the movement rail itself prints. `bars` is the hook for a compact rail with no names on it, and it is what makes `nowHeading: auto` resolve the other way. |
+| `railDensity` | What the movement rail itself prints. `bars` gives the **compact rail**: the rule, its barlines, the fills, the bond and the playhead, with no names, glosses or numerals under them, and a floor sized to that rather than to a named rail's. It is also what makes `nowHeading: auto` resolve the other way — with nothing named on the rule, the listening band is the only surface left that can say what is sounding. A definition that turns the rail compact should lower the region's own declared `height` too: a region floor authored in the definition still wins over the module's. |
 
 The corpus field the band consumes is `piece.short_title` — the work's alternate
 name, authored on the work in the library tree, used as the piece register's

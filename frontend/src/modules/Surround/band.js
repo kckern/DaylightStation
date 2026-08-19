@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { prefersReducedMotion } from './dissolve.js';
 
 // frontend/src/modules/Surround/band.js
 //
@@ -22,7 +23,13 @@ import { useEffect, useState } from 'react';
 // is only safe if the derivation lives in ONE place. That is this file. Every
 // DECISION here is a pure function or a frozen constant — which is what makes
 // the accordion's arithmetic unit-testable without rendering anything — and the
-// single React binding at the foot (`useNowSide`) is memory, not judgement.
+// two React bindings at the foot are memory and a clock, not judgement.
+//
+// THE ACCORDION HAS EXACTLY ONE CLOCK, and it is `useEasedShares`. Segment
+// widths, the playhead, the bond and its connector are all derived from the one
+// array it returns, in the same render. Anything animated by CSS *instead*
+// would be on a second timeline, and the playhead leaving the boundary it is
+// supposed to sit on is precisely what that costs (see the hook's own comment).
 //
 // CONFIG. The keys live on the surround DEFINITION (`definition.band.*`, from
 // `_surrounds/<id>.yml`), beside `regions` and `collapse` — they are decisions
@@ -116,6 +123,33 @@ export const NOW_SIDE_THRESHOLD = 0.5;
  * half-way mark still swaps.
  */
 export const NOW_SIDE_HYSTERESIS = 0.03;
+
+/**
+ * How far through the PIECE the transport is, 0..1.
+ *
+ * ONE definition, because two halves of one shape decide their side from it.
+ * Review finding I3: the rail measured `(position - first) / (end - first)` and
+ * the band measured `position / end`, which agree only while the first movement
+ * starts at 0. Both shipped sidecars do — and a sidecar whose first movement
+ * starts late (tuning, an offset transfer, the same class of fact `musicEndsAt`
+ * models at the other end) would have put the rail's connector and the band's
+ * panel on OPPOSITE SIDES for tens of seconds, each held there by its own
+ * hysteresis, with no error raised anywhere. The elapsed fraction is a property
+ * of the piece, so it is computed once.
+ *
+ * @returns {number} 0..1, or NaN when the transport has not reported a usable
+ *   extent yet — callers must treat that as "no answer", not as zero.
+ */
+export function elapsedFraction({ position, first = 0, end }) {
+  const start = Number.isFinite(first) ? first : 0;
+  const stop = Number(end);
+  const at = Number(position);
+  if (!Number.isFinite(stop) || !Number.isFinite(at)) return NaN;
+  const span = stop - start;
+  if (!(span > 0)) return NaN;
+  const f = (at - start) / span;
+  return f < 0 ? 0 : f > 1 ? 1 : f;
+}
 
 /**
  * Resolve the NOW register's side for this instant.
@@ -346,7 +380,7 @@ export function bondConnector({ segStart, segEnd, side }) {
 export default resolveBandConfig;
 
 /* -------------------------------------------------------------------------- */
-/* The one React binding in this file                                          */
+/* The React bindings in this file                                             */
 /* -------------------------------------------------------------------------- */
 
 /**
@@ -362,13 +396,150 @@ export default resolveBandConfig;
  * @param {number} fraction elapsed fraction of the piece, 0..1.
  * @returns {'left'|'right'}
  */
-export function useNowSide(config, fraction) {
+export function useNowSide(config, fraction, log = null) {
   const nowSide = config?.nowSide ?? BAND_DEFAULTS.nowSide;
   const [side, setSide] = useState(() => nowSideFor(config, fraction, null));
+  // RESOLVED DURING RENDER, remembered in the effect. Returning the stored
+  // state would put the answer one render behind the fraction that produced it,
+  // and that lag is not harmless: the band would commit the OLD side into its
+  // dissolve and then swap again a frame later, playing a full band-blanking
+  // transition for a side it had never actually shown. `nowSideFor` is pure and
+  // `side` is only its previous output, so computing it here writes nothing.
+  const resolved = nowSideFor({ nowSide }, fraction, side);
   useEffect(() => {
     // `setState` with an unchanged value bails out before re-rendering, so this
     // running at the transport's 10 Hz costs a comparison and nothing else.
-    setSide((prev) => nowSideFor({ nowSide }, fraction, prev));
-  }, [nowSide, fraction]);
-  return nowSide === 'dynamic' ? side : (nowSide === 'left' ? 'left' : 'right');
+    setSide((prev) => {
+      const next = nowSideFor({ nowSide }, fraction, prev);
+      // Review finding I5. The crossover is the one decision in this wave with
+      // no surface a viewer could point at afterwards — it happens once in a
+      // fifty-minute symphony, moves the whole band, and (flag: never yet seen
+      // on a real screen) is the thing a prod log has to be able to confirm.
+      // Both modules emit it, tagged with their own component, so the log also
+      // proves the two halves of the bond agreed on the same tick.
+      if (next !== prev && nowSide === 'dynamic') {
+        log?.debug?.('surround.band.side', {
+          side: next, from: prev, fraction: Number(fraction.toFixed?.(4) ?? fraction),
+        });
+      }
+      return next;
+    });
+  }, [nowSide, fraction, log]);
+  return nowSide === 'dynamic' ? resolved : (nowSide === 'left' ? 'left' : 'right');
+}
+
+/* -------------------------------------------------------------------------- */
+/* The accordion's clock                                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * `cubic-bezier(0.2, 0.8, 0.2, 1)` — the frame's `--enter-ease`, evaluated in JS.
+ *
+ * It exists because the accordion's widths are no longer animated by CSS (see
+ * `useEasedShares`), and the rest of the frame's motion still is: the bond's
+ * travel between segments and the band's panel slide both ride the same curve.
+ * One easing, two engines, so nothing in the band moves on a different feel.
+ *
+ * Newton's method on x(t) for the parameter, then y at it — the same solve a
+ * browser does, to a tolerance far finer than a pixel at these durations.
+ */
+export function easeAccordion(t) {
+  const x = t <= 0 ? 0 : t >= 1 ? 1 : t;
+  if (x === 0 || x === 1) return x;
+  const X1 = 0.2; const X2 = 0.2; const Y1 = 0.8; const Y2 = 1;
+  const cx = (u) => (((1 - 3 * X2 + 3 * X1) * u + (3 * X2 - 6 * X1)) * u + 3 * X1) * u;
+  const dcx = (u) => (3 * (1 - 3 * X2 + 3 * X1) * u + 2 * (3 * X2 - 6 * X1)) * u + 3 * X1;
+  const cy = (u) => (((1 - 3 * Y2 + 3 * Y1) * u + (3 * Y2 - 6 * Y1)) * u + 3 * Y1) * u;
+  let u = x;
+  for (let i = 0; i < 8; i += 1) {
+    const err = cx(u) - x;
+    if (Math.abs(err) < 1e-6) break;
+    const d = dcx(u);
+    if (Math.abs(d) < 1e-9) break;
+    u -= err / d;
+  }
+  return cy(Math.min(1, Math.max(0, u)));
+}
+
+/**
+ * Animate the rail's shares in JS, and hand back the array that is on screen.
+ *
+ * REVIEW FINDING I2 — THE REASON THIS EXISTS. The widths used to be animated by
+ * a CSS `transition: width` over `ACCORDION_MS` while the playhead ran on its
+ * own 120 ms ramp against the TARGET shares. At a movement boundary the head
+ * therefore reached the widened solution in ~120 ms while the painted boundary
+ * was still ~300 ms away from it — measured on the Eroica at 1280x720, the
+ * cursor sat ~70 px inside the elapsed fill's still-painted right edge for that
+ * window. The brief's instruction was explicit ("Do not let the accordion
+ * desynchronise the head from the boundaries"), and two clocks cannot satisfy
+ * it however either one is tuned.
+ *
+ * So there is ONE clock, and it is this one. The shares are interpolated here;
+ * the segment widths, the playhead, the bond and its connector are all derived
+ * from the array this returns, in the same render. They cannot drift because
+ * there is nothing left for them to drift against.
+ *
+ * The loop runs only while a move is in flight — a movement boundary is minutes
+ * apart, so this is idle for all but ~420 ms of a symphony.
+ *
+ * @param {number[]} target the solved shares.
+ * @param {number} durationMs
+ * @returns {{shares:number[], moving:boolean}}
+ */
+export function useEasedShares(target, durationMs) {
+  const [, tick] = useState(0);
+  const from = useRef(target);
+  const current = useRef(target);
+  const startedAt = useRef(0);
+  const frame = useRef(0);
+  const moving = useRef(false);
+
+  // A different piece, or a piece with a different number of movements, is not
+  // a move to animate — it is a new rail. Snap.
+  const sameShape = current.current.length === target.length;
+
+  useEffect(() => {
+    if (!sameShape) {
+      from.current = target;
+      current.current = target;
+      moving.current = false;
+      return undefined;
+    }
+    if (current.current.every((v, i) => Math.abs(v - target[i]) < 1e-6)) return undefined;
+    // Reduced motion: the widths snap. The accordion is layout, and layout that
+    // moves is exactly what the preference asks to stop.
+    if (prefersReducedMotion() || typeof requestAnimationFrame !== 'function') {
+      from.current = target;
+      current.current = target;
+      moving.current = false;
+      tick((n) => n + 1);
+      return undefined;
+    }
+    from.current = current.current.slice();
+    startedAt.current = (typeof performance !== 'undefined' && performance.now)
+      ? performance.now() : Date.now();
+    moving.current = true;
+    const step = () => {
+      const now = (typeof performance !== 'undefined' && performance.now)
+        ? performance.now() : Date.now();
+      const t = Math.min(1, (now - startedAt.current) / Math.max(1, durationMs));
+      const e = easeAccordion(t);
+      current.current = from.current.map((v, i) => v + (target[i] - v) * e);
+      if (t >= 1) {
+        current.current = target.slice();
+        moving.current = false;
+        tick((n) => n + 1);
+        return;
+      }
+      tick((n) => n + 1);
+      frame.current = requestAnimationFrame(step);
+    };
+    frame.current = requestAnimationFrame(step);
+    return () => { if (frame.current) cancelAnimationFrame(frame.current); };
+  }, [target, durationMs, sameShape]);
+
+  useEffect(() => () => { if (frame.current) cancelAnimationFrame(frame.current); }, []);
+
+  if (!sameShape) return { shares: target, moving: false };
+  return { shares: current.current, moving: moving.current };
 }

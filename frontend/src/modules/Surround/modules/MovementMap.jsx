@@ -66,8 +66,8 @@ import PropTypes from 'prop-types';
 import getLogger from '../../../lib/logging/Logger.js';
 import { smartQuotes } from '../typography.js';
 import {
-  resolveBandConfig, useNowSide, accordionShares, playheadFraction, bondConnector,
-  ACCORDION_MS, SEGMENT_FLOOR_PX,
+  resolveBandConfig, useNowSide, useEasedShares, accordionShares, playheadFraction,
+  bondConnector, elapsedFraction, ACCORDION_MS, SEGMENT_FLOOR_PX,
 } from '../band.js';
 import './MovementMap.scss';
 
@@ -106,11 +106,13 @@ function splitHeading(name) {
 const clamp01 = (n) => (n < 0 ? 0 : n > 1 ? 1 : n);
 
 /**
- * A nominal rule width for the first painted frame and for jsdom, where nothing
- * has a box. The accordion is inert until a real measurement arrives (see
- * `accordionShares`), so this only ever decides how long "inert" lasts.
+ * The rule has not been measured. Zero is not a width — it is the absence of
+ * one, and `accordionShares` treats it as such (the rail renders its
+ * duration-derived widths and the accordion stays inert). Named rather than
+ * inlined because "no measurement yet" is a state this module reasons about in
+ * three places, not a magic zero.
  */
-const NOMINAL_RAIL_PX = 0;
+const RAIL_UNMEASURED = 0;
 
 export default function MovementMap({
   position = 0,
@@ -127,6 +129,13 @@ export default function MovementMap({
   const log = useMemo(() => resolveLogger(logger), [logger]);
   const contentId = data?.contentId ?? null;
   const config = useMemo(() => resolveBandConfig(data), [data]);
+  // THE COMPACT RAIL (`band.railDensity: 'bars'`). The rule, its barlines and
+  // the playhead, with no names under them — for a band too short to carry
+  // type, or a screen where the movement titles belong somewhere else. It is
+  // what makes `nowHeading: 'auto'` a real decision rather than a constant:
+  // with no names on the rule, the listening band is the only surface left
+  // that can say what is sounding, so the NOW heading comes back on.
+  const named = config.railDensity !== 'bars';
 
   // Memoized: the `[]` fallback would otherwise be a fresh array every render and
   // recompute `segments` on every 10 Hz tick.
@@ -197,7 +206,7 @@ export default function MovementMap({
   // because both are typographic facts (how wide is this rail, how wide is this
   // string in this face at this size) that no amount of arithmetic can supply.
   const ruleRef = useRef(null);
-  const [railPx, setRailPx] = useState(NOMINAL_RAIL_PX);
+  const [railPx, setRailPx] = useState(RAIL_UNMEASURED);
   const [desiredPx, setDesiredPx] = useState(0);
   const [fontsTick, setFontsTick] = useState(0);
 
@@ -207,7 +216,7 @@ export default function MovementMap({
     const observer = new ResizeObserver((entries) => {
       entries.forEach((entry) => {
         const w = Number(entry.contentRect?.width) || 0;
-        setRailPx(w > 0 ? w : NOMINAL_RAIL_PX);
+        setRailPx(w > 0 ? w : RAIL_UNMEASURED);
       });
     });
     observer.observe(rule);
@@ -225,7 +234,8 @@ export default function MovementMap({
 
   const measureDesired = useCallback(() => {
     const rule = ruleRef.current;
-    if (!rule || activeIndex < 0) { setDesiredPx(0); return; }
+    // A bars-only rail has no type to right-size for.
+    if (!rule || activeIndex < 0 || !named) { setDesiredPx(0); return; }
     const seg = rule.querySelector(`[data-index="${activeIndex}"]`);
     const cell = seg?.querySelector('.surround-movement-map__text');
     if (!seg || !cell) { setDesiredPx(0); return; }
@@ -241,14 +251,29 @@ export default function MovementMap({
     // `scrollWidth` on a `nowrap` + `overflow: hidden` box is the string's full
     // single-line width whatever the box is currently showing.
     const need = Math.max(heading?.scrollWidth ?? 0, gloss?.scrollWidth ?? 0);
-    if (!(need > 0)) { setDesiredPx(0); return; }
-    setDesiredPx(Math.ceil((segW - cellW) + need) + 1);
-  }, [activeIndex]);
+    // THE ACCORDION ONLY EVER OPENS WHEN IT NEEDS TO (review finding, minor 3).
+    // On a `nowrap` box that is NOT overflowing, `scrollWidth === clientWidth`,
+    // so `need === cellW` and a bare `+ 1` asked for one pixel more than the
+    // segment already had — enough to clear `extra > EPS` and quietly take a
+    // pixel off every neighbour for a movement whose name already fitted. The
+    // rounding-up margin is only spent where there is genuine overflow.
+    if (!(need > cellW + 0.5)) { setDesiredPx(0); return; }
+    const desired = Math.ceil((segW - cellW) + need) + 1;
+    setDesiredPx(desired);
+    // Review finding I5: the accordion's one measured input. It decides every
+    // width on the rail and it is read off the DOM in a face that arrives
+    // asynchronously, so it is the number to look at first when a rail on a
+    // real screen is not the shape it should be.
+    log.debug('surround.accordion.measured', {
+      contentId, index: activeIndex, desired, need: Math.round(need),
+      chrome: Math.round(segW - cellW), railPx: Math.round(railPx),
+    });
+  }, [activeIndex, named, log, contentId, railPx]);
 
   useLayoutEffect(() => { measureDesired(); },
-    [measureDesired, segments, railPx, fontsTick]);
+    [measureDesired, segments, fontsTick]);
 
-  const shares = useMemo(() => accordionShares({
+  const targetShares = useMemo(() => accordionShares({
     natural: segments.map((s) => s.natural),
     activeIndex,
     railPx,
@@ -256,8 +281,44 @@ export default function MovementMap({
     floorPx: SEGMENT_FLOOR_PX,
   }), [segments, activeIndex, railPx, desiredPx]);
 
+  // ONE CLOCK (review finding I2). The widths are interpolated HERE, in JS, and
+  // everything positional below — the segment widths, the playhead, the bond
+  // and its connector — is derived from the array this returns in the same
+  // render. The stylesheet animates none of it. Two clocks (a CSS `transition:
+  // width` and the playhead's own ramp) is what let the cursor reach the
+  // widened solution while the painted boundary was still 300ms away from it.
+  const { shares, moving } = useEasedShares(targetShares, ACCORDION_MS);
+
+  // Review finding I5: the degrade branch. When the sounding movement's name
+  // cannot have the width it needs without starving its neighbours past the
+  // floor, it takes what is free and keeps its ellipsis — a designed
+  // degradation, and one that is invisible on screen (a trimmed name looks
+  // like a trimmed name whatever the reason). This is the only way to tell
+  // "the rail is crowded" from "the corpus authored a long name".
+  const starved = desiredPx > 0 && railPx > 0
+    && (targetShares[activeIndex] ?? 0) * railPx < desiredPx - 1;
+  const lastStarved = useRef(null);
+  useEffect(() => {
+    const key = starved ? `${activeIndex}` : null;
+    if (lastStarved.current === key) return;
+    lastStarved.current = key;
+    if (!starved) return;
+    log.debug('surround.accordion.degraded', {
+      contentId,
+      index: activeIndex,
+      desired: desiredPx,
+      granted: Math.round((targetShares[activeIndex] ?? 0) * railPx),
+      floor: SEGMENT_FLOOR_PX,
+      movements: segments.length,
+    });
+  }, [starved, activeIndex, desiredPx, targetShares, railPx, segments.length, contentId, log]);
+
   // ---- the bond -------------------------------------------------------------
-  const side = useNowSide(config, span > 0 ? clamp01((position - first) / span) : 0);
+  // ONE definition of "how far through the piece" (review finding I3) — see
+  // `elapsedFraction`. The band computes its own side from the same function
+  // with the same inputs, so the two halves of the bond cannot point at
+  // opposite sides of the screen.
+  const side = useNowSide(config, elapsedFraction({ position, first, end }), log);
 
   const bond = useMemo(() => {
     if (activeIndex < 0 || !shares.length) return null;
@@ -297,12 +358,20 @@ export default function MovementMap({
 
   return (
     <div
-      className="surround-movement-map"
+      className={`surround-movement-map${named ? '' : ' surround-movement-map--bars'}`}
       data-testid="surround-movement-map"
       data-now-side={side}
+      data-density={named ? 'names' : 'bars'}
       style={{
         '--numeral-chars': String(numeralChars),
         '--accordion-ms': `${ACCORDION_MS}ms`,
+        // The cursor's own smoothing. 120ms of linear ramp is one transport
+        // tick and is what turns the 10 Hz position steps into a glide — but
+        // while the ACCORDION is running the head is already being recomputed
+        // every animation frame from the same interpolated widths the segments
+        // use, and a second ramp on top of that would make it lag the boundary
+        // it is supposed to be sitting on. Zero during the move, 120ms at rest.
+        '--head-ms': moving ? '0ms' : '120ms',
       }}
     >
       <div className="surround-movement-map__rule" ref={ruleRef}>
@@ -397,7 +466,12 @@ export default function MovementMap({
                   fixed one for the index mark, and the text column. The
                   heading and the gloss are both inside the text column, so
                   they share one left edge and the gloss can never start under
-                  the numeral. */}
+                  the numeral.
+                  A BARS-ONLY rail (`band.railDensity`) omits the row entirely
+                  rather than hiding it: the band's height is its content, so a
+                  hidden-but-rendered row would leave the rail as tall as a
+                  named one and buy nothing. */}
+              {named && (
               <span className="surround-movement-map__text-row">
                 <span className="surround-movement-map__numeral">{roman(seg.n, i)}</span>
                 <span className="surround-movement-map__text">
@@ -421,6 +495,7 @@ export default function MovementMap({
                   )}
                 </span>
               </span>
+              )}
             </div>
           );
         })}

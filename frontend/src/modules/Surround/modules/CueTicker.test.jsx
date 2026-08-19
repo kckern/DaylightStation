@@ -1244,7 +1244,7 @@ describe('CueTicker — the fourth line, without a now-header (design wave 7)', 
     const css = withStyles().replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, ' ');
     const headed = [...css.matchAll(/@container ticker \(min-height: ([\d.]+)px\) \{ \.surround-cue-ticker__text/g)]
       .map((m) => Number(m[1]));
-    expect(headed, 'the unconditional tiers are gone').toContain(161);
+    expect(headed, 'the headed four-line tier lost its own, higher threshold').toContain(161);
   });
 });
 
@@ -1280,5 +1280,148 @@ describe('CueTicker — smart quotes at the render seam (design wave 7)', () => 
   it('curls a timed cue', () => {
     const view = mount({ ...DATA, cues: [{ at: 0, text: "Vivaldi's storm breaks." }] });
     expect(view.container.textContent).toContain('Vivaldi’s');
+  });
+});
+
+/**
+ * REVIEW ROUND — the three findings that land in this module.
+ */
+describe('CueTicker — review round (I1, I3, I5)', () => {
+  let injected = null;
+  const withStyles = () => {
+    const compiled = sass.compile(path.join(__dirname, 'CueTicker.scss'));
+    injected = document.createElement('style');
+    injected.textContent = compiled.css;
+    document.head.appendChild(injected);
+    return compiled.css;
+  };
+  afterEach(() => { injected?.remove(); injected = null; });
+
+  const mount = (data, position = 0, duration = 3223, logger = makeLogger()) => {
+    const props = (p) => ({
+      position: p, duration, playing: true, seeking: false,
+      data, region: { module: 'cue-ticker', height: 'fill' }, logger,
+    });
+    const view = render(<CueTicker {...props(position)} />);
+    return {
+      ...view,
+      logger,
+      side: () => view.container.querySelector('[data-testid="surround-cue-ticker"]')
+        .getAttribute('data-now-side'),
+      zones: () => view.container.querySelector('.surround-cue-ticker__zones'),
+      at: (p) => act(() => { view.rerender(<CueTicker {...props(p)} />); }),
+    };
+  };
+
+  /**
+   * I1. The band's half of the bond had no reduced-motion path: at a dynamic
+   * crossover the rail's bond jumped to the new side in one frame (correctly
+   * guarded in `MovementMap.scss`) while this panel slid across the band for
+   * 420ms — the "one shape" visibly tearing in half for the length of the
+   * slide, which is the exact opposite of what the guard is for.
+   */
+  it('stops the panel sliding and the registers cross-fading under reduced motion', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    const block = css.match(/@media \(prefers-reduced-motion: reduce\) \{(.*?)\} \}/);
+    expect(block, 'no reduced-motion block in the compiled sheet').not.toBeNull();
+    for (const sel of [
+      'surround-cue-ticker__text',
+      'surround-cue-ticker__zones',
+      'surround-cue-ticker__ground',
+    ]) {
+      expect(block[1], `${sel} still animates under reduced motion`).toContain(sel);
+    }
+    expect(block[1]).toMatch(/transition: none/);
+    // Every animated thing in the file is covered — a transition declared
+    // anywhere outside the guard is the next tear.
+    const animated = [...css.matchAll(/(\.surround-cue-ticker[\w-]*)[^{]*\{[^}]*transition:/g)]
+      .map((m) => m[1].slice(1))
+      .filter((cls) => !cls.includes('--'));
+    for (const cls of new Set(animated)) {
+      expect(block[1], `${cls} animates but is not in the reduced-motion block`).toContain(cls);
+    }
+    // ...and the bond is STATE: it still goes to the configured side, it just
+    // gets there in one frame. Nothing in the block hides it.
+    expect(block[1]).not.toMatch(/display: none/);
+    expect(block[1]).not.toMatch(/opacity/);
+  });
+
+  /**
+   * I3. The two halves used to measure different fractions — this module read
+   * `position / end` while the rail read `(position - first) / (end - first)`.
+   */
+  it('measures the piece from its FIRST MOVEMENT, not from the top of the file', () => {
+    // A sidecar whose first movement starts at 60s: at position 1530 the naive
+    // reading is 0.51 (past the mark) and the true one is exactly 0.50.
+    const late = {
+      contentId: 'x',
+      piece: { musicEndsAt: 3000 },
+      definition: { regions: {}, collapse: {}, band: { nowSide: 'dynamic' } },
+      movements: [
+        { n: 1, name: 'One', start: 60, listen: ['a'] },
+        { n: 2, name: 'Two', start: 1600, listen: ['b'] },
+      ],
+      facts: ['f'],
+    };
+    // 1400s → 0.4553 of the piece: under the mark, and under it on the naive
+    // reading too, so both agree here.
+    const view = mount(late, 1400, 3200);
+    expect(view.side()).toBe('left');
+    // 1520s → naive 0.5067 (would cross), true 0.4966 (must not).
+    view.at(1520);
+    expect(
+      view.side(),
+      'the band crossed on `position / end` while the rail was still short of the mark',
+    ).toBe('left');
+    // 1530s → true 0.5000. Now it crosses, with the rail.
+    view.at(1530);
+    expect(view.side()).toBe('right');
+  });
+
+  /** I5. */
+  it('reports the side crossover', () => {
+    const dyn = {
+      ...SPLIT, definition: { regions: {}, collapse: {}, band: { nowSide: 'dynamic' } },
+    };
+    const view = mount(dyn, 300);
+    view.logger.debug.mockClear();
+    view.at(2000);
+    const sides = view.logger.debug.mock.calls.filter(([n]) => n === 'surround.band.side');
+    expect(sides.length).toBe(1);
+    expect(sides[0][1]).toMatchObject({ side: 'right', from: 'left' });
+  });
+
+  /**
+   * Review round, minor 7. `pieceEnd` is `duration` for a work with no
+   * `musicEndsAt`, and `duration` is 0 until the transport reports — so the
+   * side used to seed from a fraction of zero and then swap on the first real
+   * tick, playing a full band-blanking dissolve during the entrance whenever
+   * such a work resumed past half-way.
+   */
+  it('does not play a swap on the transport’s first report', () => {
+    const noEnd = {
+      contentId: 'x',
+      piece: {},
+      definition: { regions: {}, collapse: {}, band: { nowSide: 'dynamic' } },
+      movements: [{ n: 1, name: 'One', start: 0, listen: ['a'] }],
+      facts: ['f'],
+    };
+    const view = mount(noEnd, 1800, 0);          // duration not yet known
+    expect(view.zones().className).not.toContain('--swapping');
+    view.at(1800);                                // still nothing
+    // ...and now the transport reports, past half-way.
+    act(() => {
+      view.rerender(
+        <CueTicker
+          position={1800} duration={3000} playing seeking={false}
+          data={noEnd} region={{ module: 'cue-ticker', height: 'fill' }} logger={view.logger}
+        />,
+      );
+    });
+    expect(view.side(), 'the first real reading did not land').toBe('right');
+    expect(
+      view.zones().className,
+      'the band blanked itself during the entrance for a side it had never actually shown',
+    ).not.toContain('--swapping');
   });
 });

@@ -69,6 +69,21 @@
   color: var(--ink, #2a1d07);
 }
 
+/* THE COMPACT RAIL (`band.railDensity: 'bars'`). The rule, its barlines and the
+   playhead, and nothing else — no names, no glosses, no numeral gutter, because
+   the component renders no text row at all in this density. The floor drops to
+   what that actually needs (the lane's 4px plus the bottom padding), so a
+   bars-only rail is a bars-only rail's height rather than a named rail's height
+   with the type invisible inside it.
+   This is what makes `band.nowHeading: 'auto'` a real decision: with no names
+   on the rule, the listening band is the only surface left that can say what is
+   sounding, so its heading comes back on. Note that a REGION floor authored in
+   the definition (`{ module: movement-map, height: 64 }`) still wins over this
+   one — a definition that turns the rail compact should lower it too. */
+.surround-movement-map--bars {
+  min-height: calc(4px + var(--band-pad-bottom));
+}
+
 /* The staff rule itself. Segments hang from it; the playhead rides over it. */
 .surround-movement-map__rule {
   position: relative;
@@ -83,12 +98,19 @@
    redesign is removing. The rule now runs unbroken and only the separator marks
    a movement end; the text inset lives on the text row instead.
    `flex: 0 0 auto` + an inline width percentage: the ACCORDION sets that
-   percentage, and it transitions. `width` rather than a transform, deliberately
-   and against the wave-5 law's letter: that law is about the two marks that
-   move at 10 Hz (the fill and the playhead), where the engine's pixel snapping
-   turns a half-pixel-per-second glide into a stutter. A segment's width changes
-   once per MOVEMENT — minutes apart, tens of pixels at a time — and a `scaleX`
-   would drag its rounded corner, its barline and its type along with it. */
+   percentage.
+
+   THERE IS NO `transition` HERE, AND ITS ABSENCE IS THE FIX (review finding
+   I2). A CSS transition on `width` is a SECOND clock: the widths would ease
+   over 420ms while the playhead — whose position is derived from those same
+   widths — ran on its own 120ms ramp against the FINAL values. Measured on the
+   Eroica at 1280x720, that put the cursor ~70px inside the elapsed fill's
+   still-painted right edge for ~300ms at every movement boundary, which is
+   exactly the desynchronisation the brief forbade. The widths are interpolated
+   in JS instead (`../band.js`, `useEasedShares`) on the frame's own easing, and
+   the segment, the playhead, the bond and the connector are all published from
+   that one array in the same render. Nothing is left for them to drift
+   against. */
 .surround-movement-map__segment {
   position: relative;
   flex: 0 0 auto;
@@ -98,7 +120,6 @@
   flex-direction: column;
   justify-content: flex-start;
   box-sizing: border-box;
-  transition: width var(--accordion-ms, 420ms) var(--enter-ease, cubic-bezier(0.2, 0.8, 0.2, 1));
 }
 
 /* ---------------------------------------------------------------------------
@@ -133,6 +154,14 @@
      there would draw a seam across the middle of one shape. */
   border-radius: 5px 5px 0 0;
   pointer-events: none;
+  /* THIS one keeps a CSS clock, and the difference from the segments above is
+     real rather than an oversight. A segment's width has to agree with the
+     playhead frame by frame, so it is interpolated in JS. The bond does not
+     TRACK a segment across a boundary — it TRAVELS from the old segment to the
+     new one, which is a different journey from either segment's own, and only
+     its endpoints have to be right. They are: it is published from the same
+     interpolated array, so wherever it starts and lands is exactly where the
+     segments are. Same duration, same easing, so it moves with them. */
   transition:
     left var(--accordion-ms, 420ms) var(--enter-ease, cubic-bezier(0.2, 0.8, 0.2, 1)),
     width var(--accordion-ms, 420ms) var(--enter-ease, cubic-bezier(0.2, 0.8, 0.2, 1)),
@@ -461,7 +490,12 @@
   height: 0.55em;                  /* box-clears the text row's clearance gap */
   transform: translateX(calc((var(--head, 0) - 1) * 100%));
   pointer-events: none;
-  transition: transform 120ms linear;
+  /* 120ms — one transport tick — at rest, and ZERO while the accordion is
+     moving: during those 420ms the head is already being recomputed every
+     animation frame from the same interpolated widths the segments use, and a
+     ramp on top of that would make it lag the boundary it sits on. Published
+     by the component (review finding I2). */
+  transition: transform var(--head-ms, 120ms) linear;
 }
 
 .surround-movement-map__playhead::after {
@@ -475,14 +509,15 @@
 }
 
 /* Reduced motion: nothing glides. The fill and the playhead still show the
-   right value — they just arrive at it in one step, and the accordion's widths
-   SNAP rather than opening. The bond itself is unaffected: it is state, not
+   right value — they just arrive at it in one step. The accordion's widths snap
+   too, but that is enforced in JS (`useEasedShares` checks the preference and
+   commits the target in one go) because there is no CSS transition here left to
+   cancel. The bond itself is unaffected: it is state, not
    motion. It still moves to the sounding movement, it simply gets there in one
    frame. */
 @media (prefers-reduced-motion: reduce) {
   .surround-movement-map__bar-fill,
   .surround-movement-map__playhead,
-  .surround-movement-map__segment,
   .surround-movement-map__bond,
   .surround-movement-map__bond-connector {
     transition: none;
