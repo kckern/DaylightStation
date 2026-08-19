@@ -29,12 +29,20 @@
 //     filter or the min-grams floor still ends, so its scans cannot be inherited by the
 //     next food — but it must NOT fire per at-rest frame, or a scan made before the food
 //     is set down is consumed within ~2s and scan-first becomes impossible.
+//
+// QUIET COMMIT (`commitQuietMs`): the entry finalises after a LULL, not on first
+// sufficiency. Weight, density and container arrive as separate events with no
+// payload boundary, so completeness is an absence rather than an event — see
+// `armCommit` for the incident that settled it. `scheduler` is injected so the
+// lull is testable without fake timers, which interleave badly with the awaited
+// AcceptFoodLog call.
 
 const DEFAULT_TOPICS = ['food-scale'];
 
 export function createScaleNutribotBridge({
   eventBus, nutribotContainer, userId, conversationId, scaleConfig, topics,
   logger = console, now = () => Date.now(), compositionStore = null,
+  commitQuietMs = 25_000, scheduler = { setTimeout, clearTimeout },
 }) {
   if (!eventBus?.subscribe) throw new Error('createScaleNutribotBridge: eventBus with subscribe required');
   if (!nutribotContainer?.getLogFoodFromScale) throw new Error('createScaleNutribotBridge: nutribotContainer required');
@@ -50,12 +58,15 @@ export function createScaleNutribotBridge({
   const heavyG = scaleConfig?.heavyG ?? 300;
   const forceTolG = scaleConfig?.forceToleranceG ?? 10;
 
-  const scales = new Map();   // id -> { baseline, lastGrams, live, postTimes[], placed }
+  const scales = new Map();   // id -> { baseline, lastGrams, live, postTimes[], placed, commitTimer }
   const inflight = new Set();
 
   const stateFor = (id) => {
     let s = scales.get(id);
-    if (!s) { s = { baseline: null, lastGrams: null, live: null, postTimes: [], placed: false }; scales.set(id, s); }
+    if (!s) {
+      s = { baseline: null, lastGrams: null, live: null, postTimes: [], placed: false, commitTimer: null };
+      scales.set(id, s);
+    }
     return s;
   };
 
@@ -79,6 +90,60 @@ export function createScaleNutribotBridge({
     if (!compositionStore) return;
     try { compositionStore.endPlacement(id); }
     catch (err) { logger.warn?.('scaleNutribot.composition.endPlacement.failed', { id, error: err.message }); }
+  };
+
+  // THE QUIET COMMIT. Weight, density and container arrive as separate events
+  // with no payload boundary, so "the composition is finished" is not an event
+  // anyone sends — it is an absence. Committing the instant weight+density are
+  // both present closed the entry 4.4s before the container scan that belonged
+  // to it (the 12:31 incident); waiting for a lull catches the whole gesture.
+  //
+  // Restarted by APPLIED inputs only. Raw scale frames must never restart it,
+  // for exactly the reason CompositionStore keeps them out of its own window
+  // refresh: the scale heartbeats while it rests on its shelf, so a
+  // frame-driven timer would never fire.
+  const armCommit = (id, s) => {
+    if (!compositionStore || !commitQuietMs) return;
+    if (s.commitTimer) scheduler.clearTimeout(s.commitTimer);
+    s.commitTimer = scheduler.setTimeout(() => {
+      s.commitTimer = null;
+      commitNow(id, s).catch((err) =>
+        logger.warn?.('scaleNutribot.commit.failed', { id, error: err.message }));
+    }, commitQuietMs);
+  };
+
+  const disarmCommit = (s) => {
+    if (s.commitTimer) { scheduler.clearTimeout(s.commitTimer); s.commitTimer = null; }
+  };
+
+  const commitNow = async (id, s) => {
+    if (!s.live) return;
+    let snapshot = null;
+    try { snapshot = compositionStore.read(id); }
+    catch (err) { logger.warn?.('scaleNutribot.commit.read-failed', { id, error: err.message }); return; }
+    if (!snapshot?.complete) {
+      logger.info?.('scaleNutribot.commit.skipped', { id, reason: 'incomplete' });
+      return;
+    }
+    // A volume cannot be multiplied by a kcal-per-GRAM density, so a millilitre
+    // reading must never finalise itself. This lives HERE and not on
+    // `Composition.isComplete`, which is a structural claim about filled slots —
+    // the codebase says so in its own tests and reference doc, and quiet-commit
+    // is the thing that makes a mislabelled reading dangerous rather than merely
+    // wrong. An absent unit is grams (the relay contract).
+    const unit = snapshot.unit ?? 'g';
+    if (unit !== 'g') {
+      logger.warn?.('scaleNutribot.commit.skipped', { id, reason: 'non-gram-unit', unit });
+      return;
+    }
+    const uc = nutribotContainer.getAcceptFoodLog?.();
+    if (!uc) return;
+    await uc.execute({ userId, conversationId, logUuid: s.live.logUuid, messageId: s.live.messageId });
+    logger.info?.('scaleNutribot.commit.committed', {
+      id, logUuid: s.live.logUuid, grams: snapshot.grams, density: snapshot.density,
+      container: snapshot.container ?? null,
+    });
+    s.live = null;
   };
 
   // Snapshot of what has been scanned for this scale, handed to the use case so the
@@ -121,6 +186,7 @@ export function createScaleNutribotBridge({
       s.live = { logUuid: res.logUuid, messageId: res.messageId || null, grams, unit };
       s.postTimes.push(now());
       bufferWeight(id, grams, unit);
+      armCommit(id, s);
       logger.info?.('scaleNutribot.pushed', { id, grams, unit, reason });
     }
     return res;
@@ -151,7 +217,7 @@ export function createScaleNutribotBridge({
       try {
         if (s.live && Math.abs(g - s.live.grams) <= forceTolG) {
           const res = await editInPlace(g, id, s.live, null, unit);
-          if (res?.edited) { s.live.grams = g; s.live.unit = unit; bufferWeight(id, g, unit); return; }   // already handled → no duplicate
+          if (res?.edited) { s.live.grams = g; s.live.unit = unit; bufferWeight(id, g, unit); armCommit(id, s); return; }   // already handled → no duplicate
           if (res?.touched) s.live = null;                 // answered → post fresh below
         }
         await post(id, s, g, 'button', unit);
@@ -201,7 +267,11 @@ export function createScaleNutribotBridge({
         // weight. Marking it closed sends the next placement down the normal
         // floor/suspicion path, where post() supersedes this one properly.
         if (s.live) s.live.closed = true;
-        if (s.placed) { s.placed = false; bufferEndPlacement(id); }
+        // Disarm on the CROSSING, alongside the buffer consumption it pairs
+        // with: `endPlacement` throws the scans away (D10), so a timer still
+        // running past this point would commit against a composition that no
+        // longer exists. A later scan re-arms it via `armCommitFor`.
+        if (s.placed) { s.placed = false; disarmCommit(s); bufferEndPlacement(id); }
         // CROSSING only — `rise <= baselineTolG` is also true on every at-rest
         // heartbeat, and consuming the buffer on those would eat a scan made
         // before the food is set down.
@@ -223,7 +293,7 @@ export function createScaleNutribotBridge({
       if (s.live && !s.live.closed) {
         if (Math.abs(grams - s.live.grams) < dedupDeltaG) return; // same held value
         const res = await editInPlace(grams, id, s.live, null, unit);
-        if (res?.edited) { s.live.grams = grams; s.live.unit = unit; bufferWeight(id, grams, unit); return; }  // still unanswered → followed
+        if (res?.edited) { s.live.grams = grams; s.live.unit = unit; bufferWeight(id, grams, unit); armCommit(id, s); return; }  // still unanswered → followed
         if (res?.touched) s.live = null;                    // answered → fall to new placement
         else return;                                        // dispatch failed → bail
       }
@@ -281,10 +351,36 @@ export function createScaleNutribotBridge({
   const unsubs = (topics && topics.length ? topics : DEFAULT_TOPICS).map((t) => eventBus.subscribe(t, onPayload));
   logger.info?.('scaleNutribot.bridge.ready', {
     conversationId, userId, minGrams, baselineTolG, placementDeltaG, dedupDeltaG,
-    storageWeightG, storageTolG, stormMinPushes, heavyG, forceTolG, topics: topics || DEFAULT_TOPICS,
+    storageWeightG, storageTolG, stormMinPushes, heavyG, forceTolG, commitQuietMs,
+    topics: topics || DEFAULT_TOPICS,
   });
 
-  return { refreshPrompt, dispose: () => { for (const u of unsubs) { try { u?.(); } catch { /* noop */ } } } };
+  /**
+   * Restart the quiet-commit clock for a scale after an APPLIED scan.
+   *
+   * A `dl:`/`ct:` scan is the other half of the composition and arrives on a
+   * different path entirely (`scanDispatch`, not the event bus), so it needs its
+   * own way back in. Synchronous and a no-op for a scale that has no state yet —
+   * a scan may legitimately precede the placement, and there is nothing to
+   * finalise until a weight posts a prompt of its own.
+   *
+   * @param {string} scaleId
+   */
+  const armCommitFor = (scaleId) => {
+    const s = scales.get(scaleId);
+    if (s) armCommit(scaleId, s);
+  };
+
+  return {
+    refreshPrompt,
+    armCommitFor,
+    dispose: () => {
+      // Disarm FIRST: an unsubscribed bridge that still holds a pending timer
+      // would fire into a torn-down container.
+      for (const s of scales.values()) disarmCommit(s);
+      for (const u of unsubs) { try { u?.(); } catch { /* noop */ } }
+    },
+  };
 }
 
 export default createScaleNutribotBridge;

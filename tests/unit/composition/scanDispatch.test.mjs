@@ -46,6 +46,7 @@ function makeDeps(over = {}) {
 
   const triggerDispatchService = { handleEvent: vi.fn(async () => ({ ok: true })) };
   const refreshPrompt = vi.fn(async () => {});
+  const armCommitFor = vi.fn();
   const execute = vi.fn(async () => ({ ok: true }));
 
   const deps = {
@@ -59,7 +60,7 @@ function makeDeps(over = {}) {
     },
     relayConfig: {},
     applyScanToComposition: { execute: vi.fn(() => ({ handled: false })) },
-    getScaleNutribotBridge: () => ({ refreshPrompt }),
+    getScaleNutribotBridge: () => ({ refreshPrompt, armCommitFor }),
     getLogFoodFromUPC: () => ({ execute }),
     configService: {
       getSystemConfig: () => ({ nutribot: { telegram: { bot_id: '777' } } }),
@@ -72,16 +73,17 @@ function makeDeps(over = {}) {
     ...over,
   };
 
-  return { deps, barcodeLogger, dispatcherLogger, refreshPrompt, execute };
+  return { deps, barcodeLogger, dispatcherLogger, refreshPrompt, armCommitFor, execute };
 }
 
 function harness(over = {}) {
-  const { deps, barcodeLogger, dispatcherLogger, refreshPrompt, execute } = makeDeps(over);
+  const { deps, barcodeLogger, dispatcherLogger, refreshPrompt, armCommitFor, execute } = makeDeps(over);
   return {
     ...deps,
     barcodeLogger,
     dispatcherLogger,
     refreshPrompt,
+    armCommitFor,
     execute,
     scanDispatch: createScanDispatch(deps),
   };
@@ -503,6 +505,53 @@ describe('nutrition — the nutriscan path', () => {
     expect(h.barcodeLogger.info).toHaveBeenCalledWith('barcode_relay.nutriscan', {
       device: 'nutribot-upc', scaleId: 'kitchen-food-scale', kind: 'density', ok: true, error: null,
     });
+  });
+
+  // The bridge finalises an entry after a LULL in input. A scan arrives on this
+  // path and not on the event bus, so unless the clock is restarted from here the
+  // entry closes 25s after the last WEIGHT — with a density or tare scanned in
+  // the meantime landing on an already-closed log (the 12:31 incident).
+  it('restarts the bridge quiet-commit clock for an applied scan', async () => {
+    const applyScanToComposition = {
+      execute: vi.fn(() => ({ handled: true, ok: true, kind: 'density', level: 4 })),
+    };
+    const h = harness({ applyScanToComposition });
+    await h.scanDispatch.handleScan(relayScan({
+      device: 'nutribot-upc', route: 'nutribot', code: 'dl:4',
+    }));
+    expect(h.armCommitFor).toHaveBeenCalledWith('kitchen-food-scale');
+  });
+
+  // A refusal restarts it too: the person is mid-gesture and about to rescan.
+  // Restarting too eagerly only delays a commit the next lull makes anyway;
+  // not restarting closes the entry under the hand still filling it in.
+  it('restarts the quiet-commit clock for a refused scan as well', async () => {
+    const applyScanToComposition = {
+      execute: vi.fn(() => ({
+        handled: true, ok: false, kind: 'container', error: 'UNKNOWN_CONTAINER', id: 'teapot',
+      })),
+    };
+    const h = harness({ applyScanToComposition });
+    await h.scanDispatch.handleScan(relayScan({
+      device: 'nutribot-upc', route: 'nutribot', code: 'ct:teapot',
+    }));
+    expect(h.armCommitFor).toHaveBeenCalledWith('kitchen-food-scale');
+  });
+
+  // The bridge is LATE-BOUND and only exists when the head of household and bot
+  // id resolve, so an absent one (or an older one without the hook) must leave
+  // the scan itself unharmed rather than throwing out of the handler.
+  it('survives a bridge that is absent or has no armCommitFor', async () => {
+    const applyScanToComposition = {
+      execute: vi.fn(() => ({ handled: true, ok: true, kind: 'density', level: 4 })),
+    };
+    for (const getScaleNutribotBridge of [() => null, () => ({ refreshPrompt: async () => {} })]) {
+      const h = harness({ applyScanToComposition, getScaleNutribotBridge });
+      const out = await h.scanDispatch.handleScan(relayScan({
+        device: 'nutribot-upc', route: 'nutribot', code: 'dl:4',
+      }));
+      expect(out).toMatchObject({ domain: 'nutrition', ok: true });
+    }
   });
 
   it('strips the `nut:` prefix before handing the body to the fridge grammar', async () => {

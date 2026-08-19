@@ -4008,6 +4008,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         conversationId: `telegram:b${scaleBotId}_c${scaleHeadPlatformId}`,
         scaleConfig: nutribotServices.scaleConfig,
         compositionStore,
+        commitQuietMs: (nutribotServices.scaleConfig?.commitQuietSec ?? 25) * 1000,
         logger: rootLogger.child({ module: 'scale-nutribot-bridge' }),
       });
     } else {

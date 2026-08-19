@@ -524,6 +524,20 @@ export function createScanDispatch(deps = {}) {
       // landed in the buffer.
       const notice = refused ? nutriscanRefusalNotice(outcome) : null;
       getScaleNutribotBridge()?.refreshPrompt?.(scaleId, notice)?.catch?.(() => {});
+      // A fridge-sheet scan restarts the bridge's quiet-commit clock. Without
+      // this the entry finalises 25s after the last WEIGHT, and a density or
+      // tare scanned in the meantime lands on a log that is already closed —
+      // the 12:31 incident, where a container arrived 4.4s behind its density.
+      //
+      // A REFUSED scan restarts it too, alongside the ACK above and for the same
+      // reason: the person is mid-gesture and about to rescan, and the failure
+      // directions are not symmetric. Restarting too eagerly only delays a
+      // commit the next lull will make anyway; not restarting closes the entry
+      // under the hand that was still filling it in.
+      //
+      // Fire-and-forget like the ACK: synchronous, optional, and never allowed
+      // to swallow a scan that already reached the buffer.
+      getScaleNutribotBridge()?.armCommitFor?.(scaleId);
       return { status: refused ? 'refused' : 'applied', ok: !refused, effect: outcome };
     }
 
