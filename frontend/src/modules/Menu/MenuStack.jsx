@@ -254,7 +254,10 @@ export function MenuStack({ rootMenu, playerRef, MENU_TIMEOUT = 0 }) {
       // selection unframed.
       return (
         <Suspense fallback={<LoadingFallback />}>
-          <SurroundHost getPlayerHandle={() => playerRef?.current ?? null}>
+          <SurroundHost
+            getPlayerHandle={() => playerRef?.current ?? null}
+            contentId={props.play ?? props.queue ?? null}
+          >
             <Player {...props} ref={playerRef} clear={exitToHome} />
           </SurroundHost>
         </Suspense>
@@ -264,7 +267,10 @@ export function MenuStack({ rootMenu, playerRef, MENU_TIMEOUT = 0 }) {
       // Composed presentation with visual + audio tracks
       return (
         <Suspense fallback={<LoadingFallback />}>
-          <SurroundHost getPlayerHandle={() => playerRef?.current ?? null}>
+          <SurroundHost
+            getPlayerHandle={() => playerRef?.current ?? null}
+            contentId={props.play ?? props.queue ?? null}
+          >
             <Player {...props} ref={playerRef} clear={exitToHome} />
           </SurroundHost>
         </Suspense>

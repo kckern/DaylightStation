@@ -55,7 +55,10 @@ const finite = (n) => (typeof n === 'number' && Number.isFinite(n) ? n : 0);
  * @param {() => (HTMLMediaElement|null)} opts.getMediaEl  Re-read on every supervisor
  *   pass, so a late mount, an element swap, and an unmount are all handled without
  *   the caller re-creating the clock.
- * @param {string} [opts.contentId] Correlation id carried on every emitted event.
+ * @param {string|(() => string)} [opts.contentId] Correlation id carried on every
+ *   emitted event. May be a GETTER: the clock now outlives a single item (its
+ *   owner is mounted for the whole session so the player never re-parents), so a
+ *   value captured at construction would mislabel every later event.
  * @param {object} [opts.logger] Optional logger override. Pass `SurroundHost`'s
  *   child logger so clock events inherit its `sessionLog: true` and land in the
  *   durable per-session file; without it they use the module logger and are
@@ -65,6 +68,10 @@ const finite = (n) => (typeof n === 'number' && Number.isFinite(n) ? n : 0);
  */
 export function createMediaClock({ getMediaEl, contentId = null, logger: injectedLogger = null } = {}) {
   const log = () => injectedLogger || logger();
+  const cid = () => {
+    if (typeof contentId !== 'function') return contentId;
+    try { return contentId(); } catch (_) { return null; }
+  };
   let state = { ...ZERO_STATE };
   const subscribers = new Set();
 
@@ -173,7 +180,7 @@ export function createMediaClock({ getMediaEl, contentId = null, logger: injecte
 
     lastTickAt = Date.now();
     stallWarned = false;
-    log().debug?.('surround.clock.driver', { contentId, driver });
+    log().debug?.('surround.clock.driver', { contentId: cid(), driver });
     tick();
   };
 
@@ -189,12 +196,16 @@ export function createMediaClock({ getMediaEl, contentId = null, logger: injecte
   };
 
   const checkHealth = (now) => {
+    // Nothing attached means nothing to report: an un-enriched item keeps a
+    // clock mounted but idle, and it must not emit a health event a minute
+    // about a driver it does not have.
+    if (!el) { windowStart = now; ticks = 0; reactSamples = 0; return; }
     if (!windowStart) { windowStart = now; return; }
     const elapsed = now - windowStart;
     if (elapsed < HEALTH_WINDOW_MS) return;
     const secs = elapsed / 1000;
     log().sampled?.('surround.clock.health', {
-      contentId,
+      contentId: cid(),
       driver,
       ticksPerSec: +(ticks / secs).toFixed(1),
       sampledHz: +(reactSamples / secs).toFixed(1),
@@ -210,7 +221,7 @@ export function createMediaClock({ getMediaEl, contentId = null, logger: injecte
     if (since < STALL_MS) return;
     stallWarned = true;
     log().warn?.('surround.clock.stalled', {
-      contentId, driver, sinceLastTickMs: Math.round(since), position: state.position,
+      contentId: cid(), driver, sinceLastTickMs: Math.round(since), position: state.position,
     });
   };
 
@@ -262,11 +273,16 @@ export function useMediaClock({ getMediaEl, contentId = null, logger = null } = 
   const getElRef = useRef(getMediaEl);
   getElRef.current = getMediaEl;
 
+  // Same treatment for the correlation id: the clock is created once, but the
+  // item it is watching changes under it on every queue advance.
+  const contentIdRef = useRef(contentId);
+  contentIdRef.current = contentId;
+
   const clockRef = useRef(null);
   if (!clockRef.current) {
     clockRef.current = createMediaClock({
       getMediaEl: () => (typeof getElRef.current === 'function' ? getElRef.current() : null),
-      contentId,
+      contentId: () => contentIdRef.current,
       logger,
     });
   }

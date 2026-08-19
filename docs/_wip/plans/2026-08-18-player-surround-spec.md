@@ -275,11 +275,19 @@ Renderless-when-inactive wrapper. Responsibilities:
 - `mode === '<id>'` (forced): fetch nothing extra in the PoC — forced mode only forces
   rendering when the item already carries `surround`; forcing a definition onto
   un-enriched items is deferred with the note that it would need a definition endpoint.
-- When active: render `<SurroundErrorBoundary><SurroundFrame …>{children}</SurroundFrame></SurroundErrorBoundary>`;
-  otherwise render `children` directly (no wrapper div — DOM-identical to today).
-- **`SurroundErrorBoundary`**: any render error inside the frame/modules logs
-  `surround.render.error` (error) and falls back to bare `children`. The surround can
-  never be the reason something won't play.
+- **Constant depth (revised).** `SurroundFrame` is mounted for EVERY item, active or
+  not, and `children` always sit in the same slot inside it. The host learns an item is
+  enriched only from a poll — i.e. after the player is mounted — so the original design
+  (bare `children`, then re-parented into the frame) remounted the player one second in,
+  and remounting a `<video>` reloads it. When inactive, every shell element on the path
+  down to `children` carries `display: contents`, no class and no attributes: no box, no
+  semantics, layout-identical to a bare player. The contract is therefore "a wrapper that
+  generates no box", not "no wrapper element".
+- **Module error boundaries**: each module renders inside its own boundary. React tears
+  down the whole subtree under a boundary that catches, so a boundary wrapping the player
+  would reload the video on any module error. A catch logs `surround.render.error` (error)
+  and switches the frame to its inactive shell — bare `children`, reached without moving
+  them. The surround can never be the reason something won't play.
 - Owns the clock: `useMediaClock({ getMediaEl: () => getPlayerHandle()?.getMediaElement?.() ?? null })`.
 
 ### `useMediaClock.js` (new, `frontend/src/lib/Player/useMediaClock.js`)

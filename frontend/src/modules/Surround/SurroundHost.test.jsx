@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { useEffect } from 'react';
 import { render, act } from '@testing-library/react';
 import SurroundHost from './SurroundHost.jsx';
 import { SurroundSettingContext } from './SurroundSettingContext.js';
@@ -6,9 +7,16 @@ import { registerSurroundModule, getSurroundRegistry } from './registry.js';
 
 /**
  * These tests encode the FAIL-SOFT CONTRACT, which is the whole point of the
- * host: an un-enriched item must reach the DOM byte-identically to a bare
- * `<Player/>`, and no surround failure may ever be the reason something does not
- * play. Everything else here is secondary.
+ * host: an un-enriched item must LAY OUT exactly like a bare `<Player/>`, and no
+ * surround failure may ever be the reason something does not play. Everything
+ * else here is secondary.
+ *
+ * The contract used to be "no wrapper element at all" and was asserted as an
+ * innerHTML string. It is now "a wrapper that generates no box" — the shell is
+ * always in the tree, because that is what keeps the player at a constant depth
+ * and stops React remounting (reloading) it when the frame engages. The
+ * assertion moved with it: `expectNoBox` below checks every wrapper declares
+ * `display: contents` and carries no class, no role and no aria.
  */
 
 // --- fakes -----------------------------------------------------------------
@@ -75,14 +83,53 @@ function makePlayer({ item = null, media = null } = {}) {
 
 const PLAYER_CHILD = <video data-testid="the-player" />;
 
-function renderHost({ getPlayerHandle, mode = 'auto', logger }) {
+/**
+ * A player that counts its own mounts. The reload defect is invisible to any
+ * assertion that only looks for the <video> — a remounted player is still THERE.
+ * Only mount identity distinguishes "kept" from "torn down and rebuilt".
+ */
+let playerMounts = 0;
+const CountingPlayer = () => {
+  useEffect(() => { playerMounts += 1; }, []);
+  return <video data-testid="the-player" />;
+};
+/** Created once: a fresh element per render would prove nothing about identity. */
+const COUNTING_CHILD = <CountingPlayer />;
+
+function renderHost({ getPlayerHandle, mode = 'auto', logger, children = PLAYER_CHILD }) {
   return render(
     <SurroundSettingContext.Provider value={mode}>
       <SurroundHost getPlayerHandle={getPlayerHandle} logger={logger}>
-        {PLAYER_CHILD}
+        {children}
       </SurroundHost>
     </SurroundSettingContext.Provider>,
   );
+}
+
+/** Every element between the player and the container, innermost first. */
+function wrapperChain(container) {
+  const video = container.querySelector('[data-testid="the-player"]');
+  const chain = [];
+  for (let el = video?.parentElement; el && el !== container; el = el.parentElement) chain.push(el);
+  return chain;
+}
+
+/**
+ * The fail-soft contract in its current form: the player is there, no frame is
+ * there, and every element between them generates no box and carries no
+ * semantics. Layout-equivalent to a bare `<Player/>`, without the re-parenting.
+ */
+function expectNoBox(container) {
+  expect(container.querySelector('[data-testid="the-player"]')).toBeTruthy();
+  expect(container.querySelector('[data-testid="surround-frame"]')).toBeNull();
+  const chain = wrapperChain(container);
+  expect(chain.length).toBeGreaterThan(0);
+  chain.forEach((el) => {
+    expect(el.style.display).toBe('contents');
+    expect(el.className).toBe('');
+    expect(el.getAttribute('role')).toBeNull();
+    expect([...el.attributes].some((a) => a.name.startsWith('aria-'))).toBe(false);
+  });
 }
 
 let recorded = [];
@@ -99,6 +146,7 @@ describe('SurroundHost', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     recorded = [];
+    playerMounts = 0;
     logger = makeLogger();
     registerSurroundModule('test-map', RecorderModule);
     registerSurroundModule('test-card', CardModule);
@@ -118,13 +166,11 @@ describe('SurroundHost', () => {
     expect(registry.get('composer-card')).toBeTruthy();
   });
 
-  it('renders children with NO wrapper element when the item carries no surround', () => {
+  it('renders children in a no-box shell when the item carries no surround', () => {
     const player = makePlayer({ item: { id: 'plex:1', title: 'Plain' }, media: new FakeMedia() });
     const { container } = renderHost({ getPlayerHandle: player.get, logger });
 
-    const bare = render(PLAYER_CHILD);
-    expect(container.innerHTML).toBe(bare.container.innerHTML);
-    expect(container.querySelector('[data-testid="surround-frame"]')).toBeNull();
+    expectNoBox(container);
 
     const changes = eventsNamed(logger, 'surround.item-change');
     expect(changes).toHaveLength(1);
@@ -158,8 +204,7 @@ describe('SurroundHost', () => {
     });
     const { container } = renderHost({ getPlayerHandle: player.get, mode: 'off', logger });
 
-    const bare = render(PLAYER_CHILD);
-    expect(container.innerHTML).toBe(bare.container.innerHTML);
+    expectNoBox(container);
     expect(eventsNamed(logger, 'surround.disabled')).toHaveLength(1);
     expect(eventsNamed(logger, 'surround.disabled')[0][1]).toMatchObject({ mode: 'off' });
     expect(eventsNamed(logger, 'surround.mount')).toHaveLength(0);
@@ -224,19 +269,17 @@ describe('SurroundHost', () => {
   });
 
   it('renders bare children when the handle is null or lacks getNowPlaying', async () => {
-    const bare = render(PLAYER_CHILD);
-
     const nullHost = renderHost({ getPlayerHandle: () => null, logger });
-    expect(nullHost.container.innerHTML).toBe(bare.container.innerHTML);
+    expectNoBox(nullHost.container);
 
     const partialHost = renderHost({ getPlayerHandle: () => ({}), logger });
-    expect(partialHost.container.innerHTML).toBe(bare.container.innerHTML);
+    expectNoBox(partialHost.container);
 
     const throwingHost = renderHost({
       getPlayerHandle: () => { throw new Error('handle blew up'); },
       logger,
     });
-    expect(throwingHost.container.innerHTML).toBe(bare.container.innerHTML);
+    expectNoBox(throwingHost.container);
 
     await act(async () => { vi.advanceTimersByTime(3000); });
     expect(logger.error).not.toHaveBeenCalled();
@@ -269,6 +312,11 @@ describe('SurroundHost', () => {
     const player = makePlayer({ item: { id: 'plex:663134', surround: SURROUND }, media });
     renderHost({ getPlayerHandle: player.get, logger });
 
+    // Let the clock's supervisor find the media element first (<=250ms): that
+    // attach is a legitimate one-off commit, and counting it here would say
+    // nothing about the poll.
+    await act(async () => { vi.advanceTimersByTime(300); });
+
     const before = recorded.length;
     // Three idle polls. A host that setStates on every tick (instead of only on a
     // real item change) would re-render the whole frame at 1Hz for 54 minutes.
@@ -284,5 +332,116 @@ describe('SurroundHost', () => {
 
     await act(async () => { vi.advanceTimersByTime(3000); });
     expect(getPlayerHandle.mock.calls.length).toBeGreaterThan(afterMount);
+  });
+
+  // --- player continuity ----------------------------------------------------
+  //
+  // THE DEFECT THESE EXIST FOR. The host used to render `children` bare and then
+  // re-parent them into the frame once the 1 Hz poll found a surround. Moving an
+  // element to a new depth is a React remount, and remounting the player reloads
+  // the video: an audible restart about a second into every enriched item.
+  //
+  // "The player is still in the DOM" does not detect this — a remounted player is
+  // still in the DOM. Every test below asserts IDENTITY: the same mount, and the
+  // same DOM node. One act() per step, so React 18 cannot batch two transitions
+  // into one commit and hide a remount in between.
+
+  describe('player continuity', () => {
+    it('does not remount the player when the surround engages', async () => {
+      const player = makePlayer({ item: { id: 'plex:900001' }, media: new FakeMedia() });
+      const { container } = renderHost({
+        getPlayerHandle: player.get, logger, children: COUNTING_CHILD,
+      });
+      const node = container.querySelector('[data-testid="the-player"]');
+      expect(playerMounts).toBe(1);
+      expect(container.querySelector('[data-testid="surround-frame"]')).toBeNull();
+
+      player.advanceTo({ id: 'plex:663134', surround: SURROUND });
+      await act(async () => { vi.advanceTimersByTime(1000); });
+
+      expect(container.querySelector('[data-testid="surround-frame"]')).toBeTruthy();
+      expect(container.querySelector('[data-testid="the-player"]')).toBe(node);
+      expect(playerMounts).toBe(1);
+    });
+
+    it('does not remount the player when the frame drops on a queue advance', async () => {
+      const player = makePlayer({
+        item: { id: 'plex:663134', surround: SURROUND }, media: new FakeMedia(),
+      });
+      const { container } = renderHost({
+        getPlayerHandle: player.get, logger, children: COUNTING_CHILD,
+      });
+      const node = container.querySelector('[data-testid="the-player"]');
+      expect(container.querySelector('[data-testid="surround-frame"]')).toBeTruthy();
+      expect(playerMounts).toBe(1);
+
+      player.advanceTo({ id: 'plex:900001', title: 'Something plain' });
+      await act(async () => { vi.advanceTimersByTime(1000); });
+
+      expect(container.querySelector('[data-testid="surround-frame"]')).toBeNull();
+      expect(container.querySelector('[data-testid="the-player"]')).toBe(node);
+      expect(playerMounts).toBe(1);
+    });
+
+    it('does not remount the player when one enriched item follows another', async () => {
+      const player = makePlayer({
+        item: { id: 'plex:663134', surround: SURROUND }, media: new FakeMedia(),
+      });
+      const { container } = renderHost({
+        getPlayerHandle: player.get, logger, children: COUNTING_CHILD,
+      });
+      const node = container.querySelector('[data-testid="the-player"]');
+
+      player.advanceTo({ id: 'plex:663135', surround: { ...SURROUND, id: 'concert-hall-2' } });
+      await act(async () => { vi.advanceTimersByTime(1000); });
+
+      expect(container.querySelector('[data-testid="surround-frame"]')).toBeTruthy();
+      expect(container.querySelector('[data-testid="the-player"]')).toBe(node);
+      expect(playerMounts).toBe(1);
+      // The per-item lifecycle still turns over even though nothing remounted.
+      expect(eventsNamed(logger, 'surround.unmount')).toHaveLength(1);
+      expect(eventsNamed(logger, 'surround.mount')).toHaveLength(2);
+    });
+
+    it('does not remount the player when a module throws and the frame falls back', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      const player = makePlayer({ item: { id: 'plex:900001' }, media: new FakeMedia() });
+      const { container } = renderHost({
+        getPlayerHandle: player.get, logger, children: COUNTING_CHILD,
+      });
+      const node = container.querySelector('[data-testid="the-player"]');
+
+      player.advanceTo({
+        id: 'plex:663134',
+        surround: { ...SURROUND, definition: { id: 'boom', regions: { bottom: [{ module: 'test-boom' }] } } },
+      });
+      await act(async () => { vi.advanceTimersByTime(1000); });
+
+      // Fell back to the bare player...
+      expect(container.querySelector('[data-testid="surround-frame"]')).toBeNull();
+      expect(eventsNamed(logger, 'surround.render.error')).toHaveLength(1);
+      // ...without tearing the player down to do it.
+      expect(container.querySelector('[data-testid="the-player"]')).toBe(node);
+      expect(playerMounts).toBe(1);
+    });
+
+    it('wraps an un-enriched player in elements that generate no layout box', () => {
+      const player = makePlayer({ item: { id: 'plex:1', title: 'Plain' }, media: new FakeMedia() });
+      const { container } = renderHost({ getPlayerHandle: player.get, logger });
+
+      // The wrapper now always exists (that is what keeps the depth constant)...
+      const chain = wrapperChain(container);
+      expect(chain.length).toBeGreaterThan(0);
+      chain.forEach((el) => {
+        // ...but generates no box, so an un-enriched page lays out as before.
+        expect(el.style.display).toBe('contents');
+        // display:contents removes the element from the box tree in some engines,
+        // so it must carry no semantics for an AT to lose.
+        expect(el.className).toBe('');
+        expect(el.getAttribute('role')).toBeNull();
+        expect([...el.attributes].some((a) => a.name.startsWith('aria-'))).toBe(false);
+      });
+      expect(container.querySelector('[data-testid="the-player"]')).toBeTruthy();
+    });
   });
 });
