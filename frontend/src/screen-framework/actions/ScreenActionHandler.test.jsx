@@ -88,6 +88,51 @@ describe('ScreenActionHandler', () => {
     expect(getByTestId('menu-stack').dataset.menu).toBe('music');
   });
 
+  // A MenuStack overlay RENDERS the shared MenuNavigation stack, and so does
+  // the screen's own menu widget. Unless the overlay claims the stack, both
+  // render it — and a menu selection then mounts the Player TWICE (two unmuted
+  // videos in sync, two transcode sessions). The claim is what MenuWidget reads
+  // to yield, so it has to be made at every site that opens a MenuStack.
+  it('claims the nav stack for the MenuStack it opens', () => {
+    function OwnershipProbe() {
+      const { overlayOwnsNavStack } = useScreenOverlay();
+      return <span data-testid="owns-nav-stack">{String(overlayOwnsNavStack)}</span>;
+    }
+
+    const { getByTestId } = render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+        <OwnershipProbe />
+      </ScreenOverlayProvider>
+    );
+
+    expect(getByTestId('owns-nav-stack').textContent).toBe('false');
+
+    act(() => getActionBus().emit('menu:open', { menuId: 'music' }));
+
+    expect(getByTestId('owns-nav-stack').textContent).toBe('true');
+  });
+
+  // A cast Player is fullscreen but renders nothing from the nav stack, so it
+  // must NOT make the menu widget drop whatever it is showing underneath.
+  it('does not claim the nav stack for a Player overlay', () => {
+    function OwnershipProbe() {
+      const { overlayOwnsNavStack } = useScreenOverlay();
+      return <span data-testid="owns-nav-stack">{String(overlayOwnsNavStack)}</span>;
+    }
+
+    const { getByTestId } = render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+        <OwnershipProbe />
+      </ScreenOverlayProvider>
+    );
+
+    act(() => getActionBus().emit('media:play', { contentId: 'plex:12345' }));
+
+    expect(getByTestId('owns-nav-stack').textContent).toBe('false');
+  });
+
   // A source-prefixed menuId is a CONTENT ID, not a watchlist key. Handed to
   // Menu.jsx as a bare string it resolves `api/v1/list/watchlist/plex:663144`,
   // which answers 200 with `items: []` — the menu opens empty and the trigger

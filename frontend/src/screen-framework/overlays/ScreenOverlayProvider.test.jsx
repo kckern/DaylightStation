@@ -353,3 +353,83 @@ describe('ScreenOverlayProvider - Phase 4 slots', () => {
     unsubscribe();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Nav-stack ownership.
+//
+// The MenuNavigation stack is screen-wide state with more than one possible
+// renderer: the screen's menu widget AND a MenuStack mounted as a fullscreen
+// overlay. Both rendering it at once mounted a menu selection's Player twice —
+// two unmuted videos in sync. `ownsNavStack` is how the overlay says "I am the
+// stack's renderer now"; the widget reads it and yields.
+// ---------------------------------------------------------------------------
+describe('ScreenOverlayProvider - nav-stack ownership', () => {
+  function OwnershipProbe() {
+    const { showOverlay, dismissOverlay, hasOverlay, overlayOwnsNavStack } = useScreenOverlay();
+    return (
+      <div>
+        <span data-testid="owns">{String(overlayOwnsNavStack)}</span>
+        <span data-testid="has">{String(hasOverlay)}</span>
+        <button
+          data-testid="show-owning"
+          onClick={() => showOverlay(() => <div>menu</div>, {}, { priority: 'high', ownsNavStack: true })}
+        />
+        <button
+          data-testid="show-plain"
+          onClick={() => showOverlay(() => <div>scene</div>, {}, { priority: 'high' })}
+        />
+        <button data-testid="dismiss" onClick={() => dismissOverlay()} />
+      </div>
+    );
+  }
+
+  const renderProbe = () => render(
+    <ScreenOverlayProvider>
+      <OwnershipProbe />
+    </ScreenOverlayProvider>
+  );
+
+  it('reports no owner while no overlay is up', () => {
+    renderProbe();
+    expect(screen.getByTestId('owns').textContent).toBe('false');
+  });
+
+  it('reports an owner only when the overlay declares ownsNavStack', () => {
+    renderProbe();
+
+    act(() => { screen.getByTestId('show-owning').click(); });
+    expect(screen.getByTestId('owns').textContent).toBe('true');
+    expect(screen.getByTestId('has').textContent).toBe('true');
+  });
+
+  // The distinction the whole mechanism rests on: an ArtMode scene, a cast
+  // Player or an app is fullscreen but renders NOTHING from the nav stack, so
+  // the menu widget must keep whatever it is showing underneath it.
+  it('does NOT claim the stack for an overlay that only says it is fullscreen', () => {
+    renderProbe();
+
+    act(() => { screen.getByTestId('show-plain').click(); });
+    expect(screen.getByTestId('has').textContent).toBe('true');
+    expect(screen.getByTestId('owns').textContent).toBe('false');
+  });
+
+  it('releases the stack when the owning overlay is dismissed', () => {
+    renderProbe();
+
+    act(() => { screen.getByTestId('show-owning').click(); });
+    expect(screen.getByTestId('owns').textContent).toBe('true');
+
+    act(() => { screen.getByTestId('dismiss').click(); });
+    expect(screen.getByTestId('owns').textContent).toBe('false');
+  });
+
+  it('releases the stack when a high-priority non-owning overlay replaces it', () => {
+    renderProbe();
+
+    act(() => { screen.getByTestId('show-owning').click(); });
+    expect(screen.getByTestId('owns').textContent).toBe('true');
+
+    act(() => { screen.getByTestId('show-plain').click(); });
+    expect(screen.getByTestId('owns').textContent).toBe('false');
+  });
+});

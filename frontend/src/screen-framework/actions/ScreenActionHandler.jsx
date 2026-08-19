@@ -146,10 +146,14 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
     }
     currentMenuRef.current = menuId;
     const menuTimeout = actions?.menu?.timeout ?? 0;
+    // `ownsNavStack`: a MenuStack overlay RENDERS the shared MenuNavigation
+    // stack, so for as long as it is up it is the stack's only renderer and the
+    // screen's own menu widget yields (MenuWidget). Without it, a selection made
+    // here mounted a Player in BOTH — two unmuted videos in sync.
     showOverlay(
       MenuStack,
       { rootMenu: toMenuRoot(menuId), MENU_TIMEOUT: menuTimeout, playerRef: navPlayerRef },
-      { priority: 'high' },
+      { priority: 'high', ownsNavStack: true },
     );
   }, [showOverlay, dismissOverlay, actions]);
 
@@ -236,7 +240,7 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
       } else if (action === 'media:play') {
         showOverlay(Player, { play: { contentId: secPayload.contentId, ...secPayload }, clear: () => dismissOverlay() }, { chrome: 'media' });
       } else if (action === 'menu:open') {
-        showOverlay(MenuStack, { rootMenu: toMenuRoot(secPayload.menuId), playerRef: navPlayerRef });
+        showOverlay(MenuStack, { rootMenu: toMenuRoot(secPayload.menuId), playerRef: navPlayerRef }, { ownsNavStack: true });
       }
       return;
     }
