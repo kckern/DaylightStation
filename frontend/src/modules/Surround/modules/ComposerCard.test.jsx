@@ -80,11 +80,17 @@ describe('ComposerCard', () => {
     expect(container.textContent).not.toContain('RV 269');
   });
 
-  it('sets the name on the brass nameplate', () => {
+  // Museum convention (settled by the user 2026-08-19): the brass reads name
+  // AND dates, engraved together. Birthplace is not on the metal.
+  it('sets the name and the dates on the brass nameplate', () => {
     const { container } = renderCard();
     const plate = container.querySelector('.surround-composer-card__nameplate');
     expect(plate).toBeTruthy();
     expect(plate.textContent).toContain('Antonio Vivaldi');
+    expect(plate.textContent).toContain('1678');
+    expect(plate.textContent).toContain('1741');
+    expect(plate.querySelector('.surround-composer-card__dates')).not.toBeNull();
+    expect(plate.textContent).not.toContain('Venice');
   });
 
   it('builds the portrait URL from assetBase through the static image route', () => {
@@ -140,19 +146,31 @@ describe('ComposerCard', () => {
     expect([...header.children].indexOf(portraitCol)).toBeLessThan([...header.children].indexOf(identity));
   });
 
-  it('stacks the nameplate, the dates and the birthplace in the identity column', () => {
+  // Updated 2026-08-19: museum convention settled the open design question —
+  // the brass reads name AND dates, engraved together, so the identity column
+  // now stacks just the nameplate (name+dates) and the birthplace, not three
+  // siblings. The old assertion here put dates on the rail ground as a sibling
+  // of the plate; that contract is superseded by this one.
+  it('stacks the nameplate (name + dates) and the birthplace in the identity column', () => {
     const { getByTestId } = renderCard();
     const identity = getByTestId('surround-composer-identity');
     const classes = [...identity.children].map((el) => el.className);
     expect(classes).toEqual([
       'surround-composer-card__nameplate',
-      'surround-composer-card__dates',
       'surround-composer-card__birthplace',
     ]);
-    // The brass carries the NAME. Dates and birthplace are rail voice below it,
-    // not two more engraved lines on the metal.
-    expect(identity.querySelector('.surround-composer-card__nameplate').textContent)
-      .toBe('Antonio Vivaldi');
+
+    const nameplate = identity.querySelector('.surround-composer-card__nameplate');
+    expect([...nameplate.children].map((el) => el.className)).toEqual([
+      'surround-composer-card__name',
+      'surround-composer-card__dates',
+    ]);
+    expect(nameplate.querySelector('.surround-composer-card__name').textContent).toBe('Antonio Vivaldi');
+    expect(nameplate.querySelector('.surround-composer-card__dates').textContent).toBe('1678 – 1741');
+
+    // Birthplace stays OUTSIDE the plate, in parchment, exactly where it was.
+    const birthplace = identity.querySelector('.surround-composer-card__birthplace');
+    expect(birthplace.closest('.surround-composer-card__nameplate')).toBeNull();
   });
 
   it('hides a broken portrait without breaking the layout, and warns', () => {
@@ -338,6 +356,28 @@ describe('ComposerCard hard content budget — long text', () => {
     const { container } = renderCard();
     const dates = container.querySelector('.surround-composer-card__dates');
     expect(dates.textContent.length).toBeLessThan(20);
+  });
+
+  // Museum convention (settled 2026-08-19): the plate hugs its widest line —
+  // the name — so the short dates line underneath can never be what widens it.
+  it('hugs the name — the plate is width: fit-content, so short dates cannot widen it', () => {
+    const compiled = sass.compile(path.join(__dirname, 'ComposerCard.scss'));
+    injectedStyle = document.createElement('style');
+    injectedStyle.textContent = compiled.css;
+    document.head.appendChild(injectedStyle);
+
+    const { container } = renderCard();
+    const plate = window.getComputedStyle(container.querySelector('.surround-composer-card__nameplate'));
+    expect(plate.getPropertyValue('width')).toBe('fit-content');
+  });
+
+  // Both lines on the brass get the same engraved treatment — the dates read as
+  // more engraving, not a sticker laid on top of the metal.
+  it('engraves the dates the same way as the name — multiply blend, scoped to the plate', () => {
+    const css = sass.compile(path.join(__dirname, 'ComposerCard.scss')).css.replace(/\s+/g, ' ');
+    expect(css).toMatch(
+      /\.surround-composer-card__nameplate \.surround-composer-card__name,\s*\.surround-composer-card__nameplate \.surround-composer-card__dates\s*\{[^}]*mix-blend-mode:\s*multiply/,
+    );
   });
 });
 
