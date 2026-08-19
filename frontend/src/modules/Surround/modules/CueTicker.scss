@@ -16,13 +16,15 @@
  * IT ADAPTS TO A BAND THAT CANNOT AFFORD IT (design wave 6). The ticker is a
  * size container, and the band's slack is not the same on every screen in the
  * fleet: on the 960x540 screen-root the movement names wrap and this zone is
- * left with barely forty pixels, while a 1080p frame gives it well over a
- * hundred. So the reserve is one line in the small band and THREE in the large
- * one (fix round 1 raised this from two — a two-line reserve still ellipsized
- * a real authored fact at every screen in the fleet), and the now-header's
- * translation appears only where there is room for it. The alternative — one
- * budget, sized for the small screen — would waste half of the tall band, and
- * sized for the tall one would clip the short.
+ * left with barely forty pixels, while a 1080p frame gives it well over two
+ * hundred. So the reserve is one line in the small band, THREE at 1280x720
+ * (fix round 1 raised this from two — a two-line reserve still ellipsized a
+ * real authored fact at every screen in the fleet), and FOUR at 1920x1080
+ * (fix round 2, live defect 2 — the Eroica's Napoleon fact is 224 characters
+ * and three lines only ever showed ~185 of them). The now-header's
+ * translation appears from the three-line tier up. The alternative — one
+ * budget, sized for the small screen — would waste most of the tall band,
+ * and sized for the tall one would clip the short.
  *
  * The opacity transition is set inline by the component so the fade duration has
  * a single source of truth with the JS choreography.
@@ -50,9 +52,10 @@
   /* The floor is the SMALL layout, measured: one line of now-header (0.78rem x
      1.2 = 14.98px) + its margin (0.1rem = 1.6px) + one line of note at the
      clamp's floor (0.88rem x 1.35 = 19.0px) = 35.58px of content, plus this
-     box's own padding (0.4rem = 6.4px) = 41.98px, so 2.7rem (43.2px). It went
-     DOWN from wave 5's 3.4rem, and deliberately: that number was a floor under
-     a two-line reserve that no longer applies unconditionally, and left where
+     box's own padding (fix round 2: 0.2rem = 3.2px, see below) = 38.78px, so
+     2.7rem (43.2px) still clears it with 4.4px to spare. It went DOWN from
+     wave 5's 3.4rem, and deliberately: that number was a floor under a
+     two-line reserve that no longer applies unconditionally, and left where
      it was it would have overflowed its own region on the tightest screen in
      the fleet rather than letting the container query do its job. */
   min-height: 2.7rem;
@@ -64,7 +67,17 @@
   display: flex;
   align-items: stretch;
   justify-content: center;
-  padding: 0.2rem 1rem;
+  /* Vertical 0.2rem -> 0.1rem (fix round 2, live defect 1+2). Live defect 1's
+     fix (MovementMap.scss) grows the band by 14.2px wherever a movement's
+     heading AND its gloss both need two lines — measured at 1280x720, that
+     drops this container's own content from 96.8px to 82.6px, BELOW the
+     88px threshold the three-line tier below needs to stay self-consistent.
+     3.2px of this box's own padding was never typographically load-bearing
+     (it is clearance around the whole panel, not around a line of text), so
+     trimming it here is what buys the three-line tier back its room without
+     taking anything from either module's actual reading room. See
+     MovementMap.scss's own padding trim for the other half of this budget. */
+  padding: 0.1rem 1rem;
   overflow: hidden;
   font-family: var(--surround-body, "EB Garamond", Georgia, serif);
 }
@@ -326,6 +339,56 @@
 
   .surround-cue-ticker__now-translation {
     display: block;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   THE VERY TALL BAND — a fourth line, live defect 2 (2026-08-19).
+   The Eroica's Napoleon fact is 224 characters (the live sidecar, fetched
+   verbatim — `GET /api/v1/play/plex:663134`); the three-line tier above
+   shows ~60 of them per line (~185 of 224, three of the four lines the fact
+   needs) before ellipsizing mid-sentence — measured against the real
+   compiled sheet at 1280x720. A fourth line is the only one of the three
+   options the finding allowed (a wider left zone was already tried and
+   measured, wave 6 fix round 1: a 58/42 split makes no difference to
+   chars-per-line, only a ~65/35 split reaches three lines a fourth EARLIER,
+   and it still lands on the character boundary) that is not "report and stop
+   cutting" — so this is that option, applied only where the arithmetic
+   actually clears itself.
+
+   THE THRESHOLD IS NOT THE NAIVE ONE. A first pass reused the three-line
+   tier's own logic (header-with-translation + 4 lines at the clamp's FLOOR
+   font, 30.4 + 4x0.88rem×1.35 = 106.4px) and it is WRONG: 106.4px is past the
+   three-line tier's OWN 88px crossover, where the clamp's `16cqh` coefficient
+   is no longer pinned to the floor — it is still climbing linearly toward its
+   1.5rem ceiling, so the note at 106px is already bigger than the floor
+   assumed, and a self-consistency check at that number overflows itself
+   (verified in the harness: budgetAt(106.4px) computes to ~123px, not 106.4).
+   The coefficient reaches its CEILING (1.5rem = 24px) at 24 / 0.16 = 150px of
+   content, and past that point the note's own size stops growing with the
+   container while the container keeps growing — so the four-line budget
+   stops growing too, fixed at 30.4 + 4 x 1.5rem x 1.35 = 160.0px. Solving
+   budgetAt(T) <= T with the note pinned at its ceiling gives T = 160.0
+   exactly; 161px is that number with the same order of safety margin as the
+   88px tier's own 0.58px (a hair, not a cushion — the true floor is 160.0,
+   proved algebraically the same way the three-line tier's was, not
+   spot-measured).
+   Measured at zero overflow (`scrollHeight <= clientHeight`) at 1920x1080,
+   the only real screen in the fleet whose content clears this threshold:
+   222.0px there after this round's padding trims (see the panel's own
+   padding comment), comfortably above 161px. 1280x720's ticker content
+   (89.0px, also post-trim) stays well under 161px, so this tier cannot
+   accidentally fire there — the three-line tier above is what that screen
+   gets, at its own ~1px margin (see MovementMap.scss's padding comment for
+   why that margin is as thin as it is). */
+@container ticker (min-height: 161px) {
+  .surround-cue-ticker__text {
+    min-height: 5.4em;             /* 4 lines at line-height 1.35 */
+    max-height: 5.4em;
+  }
+
+  .surround-cue-ticker__line {
+    -webkit-line-clamp: 4;
   }
 }
 

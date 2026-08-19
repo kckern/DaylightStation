@@ -59,8 +59,8 @@ Scale, tuned for a 10-foot living-room read at 1920×1080:
 | Piece provenance (under it) | `0.85rem` | 600, small caps, one line |
 | Composer name (brass plate) | `1.75rem` | 600, measure capped at `12ch`, up to 3 lines |
 | Movement name (active) | `1.05rem` | 600, italic for the tempo term |
-| Movement translation | `0.74rem` | 400, annotation sans, one line, 0.55 alpha |
-| Ticker body (both zones) | `clamp(0.88rem, 16cqh, 1.5rem)` | 500, 1 or 3 lines reserved |
+| Movement translation | `0.74rem` | 400, annotation sans, one line, or two wherever the segment can afford it, 0.55 alpha |
+| Ticker body (both zones) | `clamp(0.88rem, 16cqh, 1.5rem)` | 500, 1, 3, or 4 lines reserved |
 | Listening band now-header | `0.78rem` | 600, display face, one line |
 | Composer period | `0.72rem`, `0.12em` tracking | 600, uppercase, up to 2 lines |
 | Era timeline names | `0.72rem`, `0.12em` tracking | 500/600, uppercase, dropped not shrunk |
@@ -80,18 +80,29 @@ number to re-derive. Everything else in the table is fixed: a size that adapts i
 a decision, not a default.
 
 **Where the band cannot pay, the LAYOUT adapts too, not the type.** The listening
-band's two registers need one line of header and (fix round 1) three of note;
-measured, the 960×540 screen-root leaves them about forty pixels once the
-movement names have wrapped and the translation line has been paid for. So the
-ticker's own size container carries a query at 88px of content: below it the
-reserve is one line and the now-header's translation is dropped; above it both
-come back, three lines deep. Two lines shipped first and still ellipsized a real
-authored fact (232 characters) at every screen in the fleet; three lines needed
-the coefficient re-derived too (19cqh → 16cqh), or the reserve itself overflowed
-the ticker's own box on the 1280×720 kiosk. Shrinking the type instead would have
-broken the ten-foot floor, and budgeting for the small band everywhere would have
-wasted half of the tall one. A genuinely long fact can still run past three lines
-— the wrap-or-ellipsis law still governs that case, same as everywhere else.
+band's two registers need one line of header and up to four of note; the room for
+that is not the same screen to screen, so the ticker's own size container carries
+two queries. Below 88px of content the reserve is a single line and the
+now-header's translation is dropped — the 960×540 screen-root leaves it barely
+forty pixels once a movement's name has wrapped and its gloss has been paid for.
+At or above 88px both come back, three lines deep — the room the 1280×720 kiosk
+actually has. At or above 161px — comfortably clear of 1920×1080's own budget,
+nowhere near the fleet's smaller screens — a fourth line joins them: a real
+authored fact (the Eroica's Napoleon note, 224 characters) still needed a fourth
+line even at three, and a genuinely long fact can still run past four — the
+wrap-or-ellipsis law still governs that case, same as everywhere else. Shrinking
+the type instead would have broken the ten-foot floor, and budgeting the tall
+screen's reserve everywhere would have overflowed the small one.
+
+**The movement map and the ticker share one budget, and the map is the one that
+grows.** Where a movement's name and its translation both need two lines on the
+same narrow segment, the band's own height grows to hold them — the map has no
+ceiling — and every pixel of that growth comes out of the ticker's slack, not out
+of thin air. The two modules' thresholds are tuned together against that shared
+arithmetic, so the ticker's three-line tier survives the map's worst case at
+1280×720 with a couple of pixels to spare, and the smallest screen in the fleet
+keeps both modules at their safe, single-line floor rather than let either
+overflow the frame.
 | Map — subject country | `0.9rem`, `0.2em` tracking | 600, uppercase |
 | Labels / data / map neighbours | `0.72rem`, `0.14em` tracking | 600, uppercase |
 
@@ -171,11 +182,12 @@ box keeps its black, the rail its oxblood, the band its stone, the plate its
 stone.
 
 **The band's regions are sized to their contents.** The movement map claims only
-the rule lane, a line of name and its gloss; ALL the band's remaining height
+the rule lane, a name's line (or two, wrapped) and its gloss (one line, or two
+where the segment and the band both have room); ALL the band's remaining height
 belongs to the ticker, which centres its notes in it. A floor larger than the
-names need would be dead black between them and the note, not breathing room —
-so the map's floor covers the SHORT case and the band simply grows where a name
-genuinely wraps.
+short case needs would be dead black between the names and the note, not
+breathing room — so the map's floor covers the SHORT case and the band simply
+grows where a name or its gloss genuinely wraps.
 
 **The band's text zone is two registers, divided by a hairline.**
 
@@ -231,11 +243,14 @@ movement is a segment proportional to its real duration.
 - Movement names sit **below** the rule, tempo term in italic, wrapping to at
   most two lines.
 - Under each name, where one is authored, the **translation** of its tempo term
-  — "Allegro con brio" → *Fast, with spirit*. Annotation sans, one line,
-  ellipsized: unlike the name above it (which wraps, because a movement's name is
-  content the viewer needs whole) a gloss that will not fit its segment is a
-  convenience, and a second annotation line would cost the whole band. It recedes
-  with an elapsed movement and is never brightened for the sounding one.
+  — "Allegro con brio" → *Fast, with spirit*. Annotation sans, and it wraps by
+  the same law as the name above it — a narrow segment (a scherzo is shorter
+  than a first movement more often than not) is the fleet's normal case, not a
+  genuine overflow, so a single-line ellipsis there was cutting a routine gloss.
+  It wraps to a second line wherever the band can afford it without threatening
+  the ticker's own floor, and ellipsizes only where a gloss genuinely needs a
+  third. It recedes with an elapsed movement and is never brightened for the
+  sounding one.
 - No clef, no notes, no staff of five lines. One rule and the barline grammar.
   The restraint is what keeps it from reading as fussy pastiche.
 

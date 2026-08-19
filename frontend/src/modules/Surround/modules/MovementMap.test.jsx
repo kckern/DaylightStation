@@ -581,19 +581,72 @@ describe('MovementMap — the movement translations', () => {
   });
 
   /**
-   * WRAP OR ELLIPSIS, NEVER BOTH (wave 5) — and this line takes the OTHER
-   * branch from the heading above it, deliberately. `text-overflow` is the
-   * single-line idiom and is correct here precisely because this box is
-   * `nowrap`; what wave 5 deleted from the heading was `text-overflow` sitting
-   * beside a line CLAMP, which is a contradiction rather than a choice.
+   * THE BASE TIER IS THE SAFE ONE (fix round 2, live defect 1). Wave 6 shipped
+   * single-line + `nowrap` + `text-overflow: ellipsis` unconditionally; this is
+   * still true at the BASE tier (below the container query's threshold), which
+   * is what the tightest band in the fleet (960x540) needs — a compounding
+   * two-line-name-plus-two-line-gloss on the same segment there overflows the
+   * ticker's own floor (measured 13.6px past the frame's own edge), so the
+   * fallback is deliberate, not a leftover.
    */
-  it('takes the single-line branch: nowrap plus an ellipsis, and no clamp', () => {
+  it('takes the single-line branch at the base tier: nowrap plus an ellipsis, and no clamp', () => {
     const css = withStyles().replace(/\s+/g, ' ');
     const rule = css.match(/\.surround-movement-map__translation \{[^}]*\}/)[0];
     expect(rule).toContain('white-space: nowrap');
     expect(rule).toContain('text-overflow: ellipsis');
     expect(rule).toContain('overflow: hidden');
     expect(rule, 'two truncation mechanisms on one element').not.toContain('-webkit-line-clamp');
+  });
+
+  /**
+   * THE PROMOTED TIER — the gloss wraps to two lines wherever the band is wide
+   * enough that doing so cannot compound into the overflow above (fix round 2,
+   * live defect 1). Same mechanism as the heading: clamp + `max-height`, no
+   * `text-overflow` (wave 5's law — the single-line idiom does nothing on a
+   * wrapping box and declaring it beside a clamp is the "two mechanisms" the
+   * review caught on the heading).
+   */
+  it('wraps the gloss to two lines once the band has room, via its own container query', () => {
+    // Comments stripped first: this file's own prose quotes CSS-like
+    // fragments ("text-overflow: ellipsis`, ...") that would otherwise
+    // false-positive the "no text-overflow in the promoted rule" check below.
+    const css = withStyles().replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, ' ');
+
+    const panel = css.match(/\.surround-movement-map \{[^}]*\}/)[0];
+    expect(panel, 'the band carries no container for the gloss query to target')
+      .toContain('container-name: movement-map');
+    expect(panel).toContain('container-type: inline-size');
+
+    const q = css.match(/@container movement-map \(min-width: ([\d.]+)px\) \{(.*?)\} \}/);
+    expect(q, 'no container query — the gloss cannot adapt to the room the band has').not.toBeNull();
+    const threshold = Number(q[1]);
+
+    // THE THRESHOLD IS THE COLLISION'S OWN ARITHMETIC. The compounding
+    // worst case (two-line heading + two-line gloss on one segment) costs
+    // 91.42px of band, constant across every width in the fleet because it
+    // is built entirely from `em`/`rem`. The ticker below has its own hard
+    // floor (2.7rem = 43.2px). Below the threshold, giving the gloss its
+    // second line would push band + ticker-floor past the footer's own
+    // content budget — which is genuinely a per-render-width relationship
+    // this stylesheet cannot compute, so the threshold has to be wide enough
+    // that the fleet's actual narrow tier (960x540, 643.2px of band) stays
+    // below it and the actual wide tiers (857.6 / 1286.4px) clear it. 700 is
+    // that number, swept directly in a headless-Chromium harness (not just
+    // algebra): the frame first stops overflowing its own edge at ~693px of
+    // band width, and 700px leaves a couple of pixels of air.
+    expect(threshold, 'the query promotes a layout narrower bands cannot afford').toBeGreaterThan(693);
+    expect(threshold, 'the query is so conservative it never fires in the fleet').toBeLessThan(857.6);
+
+    const inside = q[2];
+    expect(inside).toMatch(/-webkit-line-clamp: 2/);
+    expect(inside).toMatch(/-webkit-box-orient: vertical/);
+    expect(inside).toMatch(/max-height: 2\.4em/);
+    expect(inside).toMatch(/white-space: normal/);
+    // Wave 5's law, re-applied here: the clamp is the mechanism, and a
+    // `text-overflow` beside it is the second one the review caught on the
+    // heading. The promoted rule must not re-introduce it.
+    expect(inside, 'the promoted tier still declares the single-line idiom')
+      .not.toMatch(/text-overflow/);
   });
 
   it('recedes with an elapsed movement, and only with an elapsed one', () => {
