@@ -104,6 +104,23 @@ describe('SurroundFrame', () => {
     expect(stub.getAttribute('data-height')).toBe('60');
   });
 
+  it('renders a top region band above the stage, width-pinned like the footer', () => {
+    const definition = { regions: { top: { module: 'movement-map' }, right: { module: 'composer-card' } } };
+    const { container } = renderFrame({ data: { ...DATA, definition } });
+    const main = container.querySelector('.surround-frame__main');
+    const header = main.querySelector('.surround-frame__header');
+    expect(header).toBeTruthy();
+    // First child of main: placard above the stage, never between stage and footer.
+    expect(main.firstElementChild).toBe(header);
+    expect(header.querySelector('.surround-frame__region--top')).toBeTruthy();
+  });
+
+  it('renders no header element at all when the definition has no top region', () => {
+    const definition = { regions: { right: { module: 'composer-card' } } };
+    const { container } = renderFrame({ data: { ...DATA, definition } });
+    expect(container.querySelector('.surround-frame__header')).toBeNull();
+  });
+
   it('gives modules a data payload carrying the contentId for log correlation', () => {
     const Spy = vi.fn(() => null);
     registerSurroundModule('movement-map', Spy);
@@ -152,6 +169,18 @@ describe('SurroundFrame', () => {
   it('takes the rail width from the definition', () => {
     const { getByTestId } = renderFrame();
     expect(getByTestId('surround-rail').style.width).toBe('20%');
+  });
+
+  it('takes the rail width from the first entry when the right region is a list', () => {
+    const definition = {
+      ...DEFINITION,
+      regions: {
+        ...DEFINITION.regions,
+        right: [{ module: 'composer-card', width: '33%' }, { module: 'composer-card' }],
+      },
+    };
+    const { getByTestId } = renderFrame({ data: { ...DATA, definition } });
+    expect(getByTestId('surround-rail').style.width).toBe('33%');
   });
 
   it('defaults the rail width to 20% when the definition omits it', () => {

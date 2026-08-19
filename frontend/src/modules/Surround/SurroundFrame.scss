@@ -59,7 +59,11 @@
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
-  align-items: center;
+  /* was: align-items: center — that split the letterbox slack above AND below
+     the video, opening a dead gap between the video and its own timeline. The
+     footer is the video's timeline; they must touch. Slack now lives above,
+     where it reads as the darkened house, not as a hole. */
+  align-items: flex-end;
   justify-content: center;
   overflow: hidden;
   background: var(--hall-ink);
@@ -102,6 +106,18 @@
   overflow: hidden;
 }
 
+/* The header belongs to the video exactly as the footer does: JS pins its width
+   to the measured media box so the placard reads as the video's nameplate, not
+   as page furniture. First child of __main — above the stage, always. */
+.surround-frame__header {
+  flex: 0 0 auto;
+  align-self: center;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 /* Right rail — full height, because it carries identity, not progress. */
 .surround-frame__rail {
   order: 1;
@@ -125,6 +141,10 @@
   background-size: 180px 180px;
   background-blend-mode: multiply;
   box-shadow: inset 0 0 0 1px var(--programme-edge);
+}
+
+.surround-frame__region--top {
+  flex: 0 0 auto;
 }
 
 .surround-frame__region--bottom {
