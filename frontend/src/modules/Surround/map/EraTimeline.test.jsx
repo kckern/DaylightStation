@@ -94,6 +94,19 @@ describe('EraTimeline — which eras a period lights', () => {
     expect(subjectErasFor('')).toEqual([]);
     expect(subjectErasFor(null)).toEqual([]);
   });
+
+  /**
+   * Fix round 1 (review finding M4). A plain substring test lit CLASSICAL for
+   * "Neoclassical" — a real, distinct 20th-century term this table does not
+   * carry, not a hinge phrase naming the Classical era the way "Classical to
+   * Romantic" does. Word-boundary matching is what tells the two apart, and it
+   * must still light the genuine hinge and qualified phrases exactly as
+   * before.
+   */
+  it('does not light an era for a period that merely contains its name as a substring', () => {
+    expect(subjectErasFor('Neoclassical')).toEqual([]);
+    expect(subjectErasFor('Neoclassicism')).toEqual([]);
+  });
 });
 
 describe('EraTimeline — where a year falls', () => {

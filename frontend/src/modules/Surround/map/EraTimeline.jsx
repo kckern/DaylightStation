@@ -118,19 +118,25 @@ export function fractionFor(year) {
 /**
  * Which era bands the piece's period lights up.
  *
- * Substring matching, case-insensitively, because the authored period is a
+ * WORD-BOUNDARY matching, case-insensitively, because the authored period is a
  * human phrase rather than an enum: "Baroque", "Classical", "Classical to
  * Romantic", "Late Romantic" all have to resolve, and a phrase naming two eras
  * genuinely means both — the work sits across the join, which is exactly what a
  * timeline can show and a single label cannot.
  *
+ * Fix round 1 (review finding M4): a plain substring test lit CLASSICAL for a
+ * period of "Neoclassical" — a real, distinct music-history term this table
+ * does not carry, not a hinge phrase naming the Classical era. `\b` anchors
+ * the match to a whole word, which "Classical to Romantic" and "Late
+ * Romantic" still satisfy exactly as before.
+ *
  * Returns era NAMES, in `ERAS` order, so two callers cannot disagree about
  * which of two matched eras is "first".
  */
 export function subjectErasFor(period) {
-  const text = String(period ?? '').toLowerCase();
+  const text = String(period ?? '');
   if (!text.trim()) return [];
-  return ERAS.filter((era) => text.includes(era.name.toLowerCase())).map((era) => era.name);
+  return ERAS.filter((era) => new RegExp(`\\b${era.name}\\b`, 'i').test(text)).map((era) => era.name);
 }
 
 /** A label's estimated width in px at the floor size. */

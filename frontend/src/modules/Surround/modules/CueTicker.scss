@@ -7,19 +7,22 @@
  * programme into a dashboard.
  *
  * RESERVED HEIGHT IS THE CONTRACT, in both zones. Each pool rotates between
- * one-line and two-line notes; sizing a zone to whatever happens to be showing
- * makes the whole band jump every twenty seconds. Each text box is therefore a
- * fixed reserve and its line is centred inside it — a short note sits where a
- * long one does, and the two dissolves can play without moving anything.
+ * one-line and multi-line notes; sizing a zone to whatever happens to be
+ * showing makes the whole band jump every twenty seconds. Each text box is
+ * therefore a fixed reserve and its line is centred inside it — a short note
+ * sits where a long one does, and the two dissolves can play without moving
+ * anything.
  *
  * IT ADAPTS TO A BAND THAT CANNOT AFFORD IT (design wave 6). The ticker is a
  * size container, and the band's slack is not the same on every screen in the
  * fleet: on the 960x540 screen-root the movement names wrap and this zone is
  * left with barely forty pixels, while a 1080p frame gives it well over a
- * hundred. So the reserve is one line in the small band and two in the large
- * one, and the now-header's translation appears only where there is room for
- * it. The alternative — one budget, sized for the small screen — would waste
- * half of the tall band, and sized for the tall one would clip the short.
+ * hundred. So the reserve is one line in the small band and THREE in the large
+ * one (fix round 1 raised this from two — a two-line reserve still ellipsized
+ * a real authored fact at every screen in the fleet), and the now-header's
+ * translation appears only where there is room for it. The alternative — one
+ * budget, sized for the small screen — would waste half of the tall band, and
+ * sized for the tall one would clip the short.
  *
  * The opacity transition is set inline by the component so the fade duration has
  * a single source of truth with the JS choreography.
@@ -180,10 +183,20 @@
      body text at this distance (wave 5's 0.95rem was measured against a band
      that had not yet been asked to carry a second register), 1.5rem is the
      point at which a programme note starts competing with the work's own title
-     on the plate. The coefficient is wave 5's, unchanged: the zones are half
-     as wide as the panel it was measured on, but `cqh` reads the band's
-     HEIGHT, which the split did not change. */
-  font-size: clamp(0.88rem, 19cqh, 1.5rem);
+     on the plate.
+     THE COEFFICIENT WAS RE-DERIVED, fix round 1 (review finding C1): wave 5's
+     19 sized the note for a TWO-line reserve; a real authored fact (the
+     Eroica's Napoleon note, 232 characters) still ellipsized at every screen
+     in the fleet, because a two-line box only ever showed 44-90 of them. The
+     reserve below goes to three lines wherever the band can pay for it, and at
+     19cqh three lines of the now-zone's header-plus-note no longer fit the
+     1280x720 kiosk's own content box (measured: 104.9px needed against 96.8px
+     available — an 8px overflow of the ticker's own `overflow: hidden`, caught
+     by the runtime gate's `scrollHeight <= clientHeight` case). 16cqh is the
+     coefficient the SAME arithmetic below solves for: it is what keeps three
+     lines paying for themselves at every real screen in the fleet, measured
+     with zero overflow at 1280x720 and 1920x1080 both. */
+  font-size: clamp(0.88rem, 16cqh, 1.5rem);
   line-height: 1.35;
   /* The reserve: ONE line here, two under the container query below — a floor
      AND a ceiling either way, so the box can neither collapse under the flex
@@ -267,31 +280,48 @@
 /* ---------------------------------------------------------------------------
    THE TALL BAND. Everything above is the layout that fits the tightest zone in
    the fleet; this is what the design actually wants, applied wherever the band
-   can pay for it. The threshold is measured, not chosen: two lines of note at
-   the clamp's floor (2 x 0.88rem x 1.35 = 23.8px), the now-header's two lines
-   (0.78rem x 1.2 + 0.15rem + 0.72rem x 1.2 = 24.1px) and this box's padding
-   (8px) come to 55.9px, so 58px is the first height at which the full layout
-   fits with a little air. Below it the single-line layout above holds.
+   can pay for it. Below the threshold the single-line layout above holds; at
+   or above it BOTH zones get a THREE-line reserve (fix round 1, review finding
+   C1 — wave 6 shipped two, and a real authored fact still ellipsized at every
+   screen in the fleet: a two-line box only ever showed 44-90 of the Eroica's
+   232-character Napoleon note).
 
-   THE NUMBER IS THE RIGHT ZONE'S ARITHMETIC, not a round figure. In the
-   two-line layout that zone owes: the now-header's two lines (0.78rem x 1.2 +
-   0.1rem + 0.72rem x 1.2 = 30.4px) plus two lines of note. The note is at the
-   clamp's floor (0.88rem) for every container up to 74px of content, so the
-   worst case is 30.4 + 2 x 0.88rem x 1.35 = 68.4px — and above 74px the
-   coefficient (19cqh) grows the reserve more slowly than the container, so it
-   only gets easier. 70px is that worst case with a pixel and a half of air.
-   Container queries evaluate against the query container's CONTENT box, which
-   is what these numbers are: measured, the ticker's content is 37.4px on the
-   960x540 screen-root (single line) and 96.8px at 1280x720 (two).
-   --------------------------------------------------------------------------- */
-@container ticker (min-height: 70px) {
+   THE THRESHOLD IS THE RIGHT ZONE'S ARITHMETIC, re-derived for three lines,
+   not a round figure. That zone owes the now-header's two lines (0.78rem x
+   1.2 + 0.1rem + 0.72rem x 1.2 = 30.4px) plus three lines of note. The note is
+   at the clamp's floor (0.88rem = 14.08px) for every container up to
+   14.08 / 0.16 = 88px of content — the coefficient above is 16cqh, so that is
+   exactly where 16cqh first equals the floor — and the worst case is right at
+   that crossover: 30.4 + 3 x 0.88rem x 1.35 = 87.42px against an 88px budget,
+   0.58px of air. Past 88px the container grows faster (0.16px of font per px
+   of container) than the three-line reserve costs (0.648px per px of
+   container), so the margin only widens — proved algebraically, not just
+   spot-measured, which is why one threshold covers every real screen above it
+   without a second tier. Container queries evaluate against the query
+   container's CONTENT box, which is what these numbers are: measured with the
+   real compiled sheet, the ticker's content is 37.4px on the 960x540
+   screen-root (single line, below the threshold), 96.8px at 1280x720 and
+   215.6px at 1920x1080 (both three lines, both measured at zero overflow of
+   the ticker's own `scrollHeight`).
+
+   THE SPLIT STAYS 50/50. An asymmetric 58/42 (piece/now) was tried and
+   measured against the Napoleon fact — it made no difference (58 characters
+   per line either way at 1280x720 and 1920x1080; the fact still needs a
+   fourth line at both). Only a ~65/35 split reached three lines, which is a
+   far bigger departure from "HALF EACH, and equally" (above) than the
+   symmetric fix earns back, and it would still be exact-to-the-character
+   rather than comfortable. Three lines is triple the old reserve either way;
+   the fourth line — for this one fact, on this one measure — still
+   ellipsizes, which is the wrap-or-ellipsis law doing exactly its job on a
+   genuine overflow rather than on every fact at every size. */
+@container ticker (min-height: 88px) {
   .surround-cue-ticker__text {
-    min-height: 2.7em;             /* 2 lines at line-height 1.35 */
-    max-height: 2.7em;
+    min-height: 4.05em;            /* 3 lines at line-height 1.35 */
+    max-height: 4.05em;
   }
 
   .surround-cue-ticker__line {
-    -webkit-line-clamp: 2;
+    -webkit-line-clamp: 3;
   }
 
   .surround-cue-ticker__now-translation {

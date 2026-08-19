@@ -60,7 +60,7 @@ Scale, tuned for a 10-foot living-room read at 1920×1080:
 | Composer name (brass plate) | `1.75rem` | 600, measure capped at `12ch`, up to 3 lines |
 | Movement name (active) | `1.05rem` | 600, italic for the tempo term |
 | Movement translation | `0.74rem` | 400, annotation sans, one line, 0.55 alpha |
-| Ticker body (both zones) | `clamp(0.88rem, 19cqh, 1.5rem)` | 500, 1–2 lines reserved |
+| Ticker body (both zones) | `clamp(0.88rem, 16cqh, 1.5rem)` | 500, 1 or 3 lines reserved |
 | Listening band now-header | `0.78rem` | 600, display face, one line |
 | Composer period | `0.72rem`, `0.12em` tracking | 600, uppercase, up to 2 lines |
 | Era timeline names | `0.72rem`, `0.12em` tracking | 500/600, uppercase, dropped not shrunk |
@@ -80,13 +80,18 @@ number to re-derive. Everything else in the table is fixed: a size that adapts i
 a decision, not a default.
 
 **Where the band cannot pay, the LAYOUT adapts too, not the type.** The listening
-band's two registers need one line of header and two of note; measured, the
-960×540 screen-root leaves them about forty pixels once the movement names have
-wrapped and the translation line has been paid for. So the ticker's own size
-container carries a query at 70px of content: below it the reserve is one line
-and the now-header's translation is dropped; above it both come back. Shrinking
-the type instead would have broken the ten-foot floor, and budgeting for the
-small band everywhere would have wasted half of the tall one.
+band's two registers need one line of header and (fix round 1) three of note;
+measured, the 960×540 screen-root leaves them about forty pixels once the
+movement names have wrapped and the translation line has been paid for. So the
+ticker's own size container carries a query at 88px of content: below it the
+reserve is one line and the now-header's translation is dropped; above it both
+come back, three lines deep. Two lines shipped first and still ellipsized a real
+authored fact (232 characters) at every screen in the fleet; three lines needed
+the coefficient re-derived too (19cqh → 16cqh), or the reserve itself overflowed
+the ticker's own box on the 1280×720 kiosk. Shrinking the type instead would have
+broken the ten-foot floor, and budgeting for the small band everywhere would have
+wasted half of the tall one. A genuinely long fact can still run past three lines
+— the wrap-or-ellipsis law still governs that case, same as everywhere else.
 | Map — subject country | `0.9rem`, `0.2em` tracking | 600, uppercase |
 | Labels / data / map neighbours | `0.72rem`, `0.14em` tracking | 600, uppercase |
 

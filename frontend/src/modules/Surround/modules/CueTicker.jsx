@@ -110,8 +110,32 @@ function useDissolve(next) {
   useEffect(() => {
     if (next.key === shown.key) return;
     clearTimers();
+    // Fix round 1 (review finding I2), scoped to the NOW ZONE ONLY — `mv` is
+    // carried solely on the now-zone's payload (see `nowNext`), so both
+    // conditions below are false whenever `next`/`shown` are the piece
+    // register's. The piece register's cue interrupt (the unsplit band, wave
+    // 2) keeps its original gentle dissolve on purpose: it has no header to
+    // disagree with, and a hard cut there was never the bug this finding
+    // named. Two now-zone edges ARE urgent enough to skip the out-fade
+    // entirely rather than queue a fresh full dissolve:
+    //   - an ACTIVATING CUE (`shown` was not a cue, `next` is) — a cue is a
+    //     claim about what is sounding RIGHT NOW, and a stale rotation note
+    //     lingering through even one fade-out is a wrong answer, however
+    //     briefly.
+    //   - a MOVEMENT BOUNDARY (`next.mv` names a different movement than
+    //     `shown.mv`). The header above this text is NOT dissolved (it just
+    //     re-renders), so a softened note here would show the NEW movement's
+    //     header over the OLD movement's note for up to a full fade — the two
+    //     halves of the band naming different movements at the same instant.
+    // Without this, a second edge arriving before the first dissolve's commit
+    // fires re-queues a full `DISSOLVE_COMMIT_MS` wait on top of whatever was
+    // left of the first — up to twice the normal commit latency for a cue
+    // that happens to land mid-rotation.
+    const isNowZone = next.mv !== undefined || shown.mv !== undefined;
+    const activating = isNowZone && next.kind === 'cue' && shown.kind !== 'cue';
+    const boundary = next.mv !== undefined && shown.mv !== undefined && next.mv !== shown.mv;
     // Nothing to fade out of (first line, or recovering from an empty panel).
-    if (!shown.text || prefersReducedMotion()) {
+    if (!shown.text || prefersReducedMotion() || activating || boundary) {
       setShown(next);
       setHidden(false);
       return;
@@ -226,13 +250,31 @@ export default function CueTicker({
   // ---- the PIECE register (left) -------------------------------------------
   const [factIndex, setFactIndex] = useState(0);
 
+  // Fix round 1 (review finding I1). TWO separate effects, not one reading
+  // `activeCue` for both branches: a single effect with `activeCue` in its
+  // deps tore the SPLIT rotation's interval down and rebuilt it on every cue
+  // edge, even though split mode never consumes `activeCue` here at all —
+  // resetting the piece register's clean 20s beat every time a cue anywhere
+  // in the now-zone started or ended. Splitting the effect means the split
+  // branch's dependency list can no longer even mention `activeCue`, so its
+  // identity churning cannot retrigger it.
   useEffect(() => {
-    if (facts.length < 2) return undefined;
     // Split, the piece register is never interrupted — cues belong to the NOW
-    // zone — so its timer is the one clean, unbroken beat in the band. Unsplit,
-    // this IS the panel a cue preempts, and the rotation holds still behind it
-    // so no fact goes unseen (the behaviour since wave 2).
-    if (!split && activeCue) return undefined;
+    // zone — so its timer is the one clean, unbroken beat in the band, and
+    // must survive a cue landing or lifting in the OTHER zone untouched.
+    if (!split) return undefined;
+    if (facts.length < 2) return undefined;
+    const id = setInterval(() => setFactIndex((i) => i + 1), FACT_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [split, facts.length]);
+
+  useEffect(() => {
+    // Unsplit, this IS the panel a cue preempts, and the rotation holds still
+    // behind it so no fact goes unseen (the behaviour since wave 2) — so this
+    // branch legitimately depends on `activeCue`.
+    if (split) return undefined;
+    if (facts.length < 2) return undefined;
+    if (activeCue) return undefined;
     const id = setInterval(() => setFactIndex((i) => i + 1), FACT_INTERVAL_MS);
     return () => clearInterval(id);
   }, [split, activeCue, facts.length]);
@@ -277,7 +319,13 @@ export default function CueTicker({
     if (!split) return EMPTY;
     if (activeCue) {
       const at = Number(activeCue.at);
-      return { key: `cue:${at}`, kind: 'cue', at, text: String(activeCue.text) };
+      // `mv` rides along even on a cue line: fix round 1 (review finding I2)
+      // reads it in `useDissolve` to force an instant commit across a
+      // movement boundary, and a cue landing exactly on one is not exempt —
+      // the header above it changes either way.
+      return {
+        key: `cue:${at}`, kind: 'cue', at, text: String(activeCue.text), mv: movementIndex,
+      };
     }
     if (nowPool.length) {
       const i = ((listenIndex % nowPool.length) + nowPool.length) % nowPool.length;
@@ -286,6 +334,13 @@ export default function CueTicker({
         kind: borrowed ? 'fact' : 'listen',
         at: null,
         text: nowPool[i],
+        // Fix round 1 (review finding I2): which movement this line belongs
+        // to. `useDissolve` compares this against the currently-SHOWN line's
+        // `mv` to detect a movement boundary and commit instantly instead of
+        // softening across it — the header (not part of the dissolve) has
+        // already changed by the time this renders, so a dissolved note would
+        // disagree with it for up to a full commit.
+        mv: movementIndex,
       };
     }
     return EMPTY;

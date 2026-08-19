@@ -86,6 +86,23 @@ describe('MovementMap', () => {
     expect(shortened).toBeLessThan(toEndOfFile);
   });
 
+  /**
+   * Fix round 1 (review finding I4). `musicEndsAt` used to be tested with the
+   * raw `Number.isFinite` — always false on a string, since YAML round-trips
+   * can hand this field back as text (`"613"`) rather than a number. The
+   * uncoerced read fell through to `duration` silently, drawing the rule over
+   * the applause; `CueTicker` already coerced the same field, so the two
+   * halves of the band could disagree about where the music stopped. This is
+   * the same reading, applied here too.
+   */
+  it('coerces a string musicEndsAt instead of falling back to duration', () => {
+    const stringEnd = { ...EROICA, piece: { title: 'Symphony No. 3', musicEndsAt: '613' } };
+    const w = widths(renderMap({ data: stringEnd, duration: 3223 }).container);
+    // Span becomes 613 (not 3223): only movement 1 (start 0) fits inside it,
+    // and its width reads against that shorter span.
+    expect(w[0]).toBeCloseTo((613 / 613) * 100, 3);
+  });
+
   it('falls back to duration when the piece declares no musicEndsAt', () => {
     const noEnd = { ...EROICA, piece: { title: 'Symphony No. 3' } };
     const w = widths(renderMap({ data: noEnd }).container);
