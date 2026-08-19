@@ -16,22 +16,35 @@ in `docs/_wip/plans/2026-08-18-player-surround-*.md`.
 Two parallel trees: data in the content corpus, pixels in the media tree.
 
 ```text
-data/content/surround/                  media/img/surround/
-  _surrounds/                             classical/
-    concert-hall.yml                        beethoven/
-  classical/                                  portrait.jpg
-    beethoven/                                vienna.jpg
-      _composer.yml                         vivaldi/
-      symphony-3-eroica.yml                   portrait.jpg
-    vivaldi/                                _maps/
-      _composer.yml                           europe-1800.svg
-      four-seasons-spring.yml
+data/content/surround/                       media/img/surround/
+  _surrounds/                                  classical/
+    concert-hall.yml                             beethoven/
+  classical/                                       portrait.jpg
+    beethoven/                                     vienna.jpg
+      _composer.yml                              vivaldi/
+      works/                                       portrait.jpg
+        symphony-3-eroica.yml                    _maps/
+      symphony-3-eroica.hr-2016.yml                europe.geo.json
+    vivaldi/
+      _composer.yml
+      works/
+        four-seasons-spring.yml
+      four-seasons-spring.plex663146.yml
 ```
 
+Three levels of authoring, each holding what is true at exactly that level:
+
+| File | Holds | True of |
+|---|---|---|
+| `_composer.yml` | portrait, dates, birthplace, map pin, composer facts | every piece the composer wrote |
+| `works/<work>.yml` | title, opus, movement names, cues, facts | every recording of that piece of music |
+| `<recording>.yml` | `match`, `starts`, `musicEndsAt`, `performance` | one performance, one video |
+
 - The folder under the domain is the **composer slug**; `_`-prefixed files and
-  folders are never treated as composer folders or piece files.
-- `_composer.yml` holds identity shared by every piece — portrait, dates,
-  birthplace, map pin. A piece inherits it and may override per key.
+  folders are never treated as composer folders or piece files, and `works/` is
+  never walked for sidecars.
+- A recording inherits its work by naming it, and its composer by living in the
+  folder. Overrides run outward-in: `_composer.yml` ← work ← recording, per key.
 - Assets are referenced relative to `assetBase` (`surround/classical`) and served
   by the existing static route: `/api/v1/static/img/surround/classical/...`.
   A missing asset renders an empty slot; it never breaks the surround.
@@ -70,32 +83,87 @@ Two fields worth calling out:
   lifelong home" — set as prose, not the tracked small-caps label a bare place name
   gets. Omit it and the caption falls back to `map.city` alone, set as a label.
 
-### Piece sidecar
+### Work file
+
+The music itself. Everything here is recording-independent, so it is written once
+however many performances of the piece the library holds. **Movements carry no
+`start`** — a timing belongs to a recording, not to a work.
 
 ```yaml
-surround: concert-hall              # required — definition id in _surrounds/
-match:                              # required
-  contentId: plex:663134            # exact-match fast path
-  title: "Beethoven: 3. Sinfonie"   # rebind fallback (normalized substring)
+# classical/beethoven/works/symphony-3-eroica.yml
 piece:
   title: Symphony No. 3 in E-flat major, "Eroica"
   opus: Op. 55
   composed: 1803-1804
+  year: 1804
   city: Vienna
-  premiered: 1805, Theater an der Wien
+  premiered: Theater an der Wien, 7 April 1805
+  period: "Classical to Romantic"
+  period_note: "Written at the hinge — Classical forms stretched to Romantic scale."
 movements:
-  - { n: 1, name: Allegro con brio,             start: 0 }
-  - { n: 2, name: "Marcia funebre. Adagio assai", start: 976 }
-  - { n: 3, name: "Scherzo. Allegro vivace",      start: 1925 }
-  - { n: 4, name: "Finale. Allegro molto",        start: 2278 }
+  - n: 1
+    name: "Allegro con brio"
+    translation: "Fast, with spirit"          # optional
+    listen:                                   # optional — what to listen for
+      - "Two hammered E-flat chords, then the cellos sing the heroic theme."
+  - { n: 2, name: "Marcia funebre. Adagio assai", translation: "Funeral march — very slow" }
 cues:                               # optional, timed
   - { at: 976, render: docked, text: "The funeral march begins." }
 facts:                              # optional, untimed pool
-  - "Beethoven dedicated it to Napoleon, then scratched the name out so hard he tore the page."
+  - "The published title page reads: composed to celebrate the memory of a great man."
 ```
 
 `render: docked` draws into the ticker region. `render: overlay` is reserved for
 phase two (pop-up-video style, over the video) and needs no schema change.
+
+### Recording sidecar
+
+One video. It names its work and adds what only this performance can supply: the
+Plex match, the measured movement starts, where the music stops, who played it.
+
+```yaml
+# classical/beethoven/symphony-3-eroica.hr-2016.yml
+work: beethoven/symphony-3-eroica    # <composer>/<work>, or a bare <work> in this folder
+surround: concert-hall               # required — definition id in _surrounds/
+match:                               # required
+  contentId: plex:663134             # exact-match fast path
+  title: "Beethoven: 3. Sinfonie"    # rebind fallback (normalized substring)
+performance: "hr-Sinfonieorchester · Andrés Orozco-Estrada · Alte Oper Frankfurt, 11 February 2016"
+starts: [0, 976, 1925, 2278]         # one per movement, measured (see below)
+musicEndsAt: 2955                    # last chord; applause follows
+```
+
+`work: beethoven/symphony-3-eroica` reads as
+`classical/beethoven/works/symphony-3-eroica.yml`. A reference with no slash
+resolves under the sidecar's own composer folder, which is the usual case;
+naming another composer is legal, for a work the folders disagree about.
+
+**`starts` and the work's `movements` are zipped index by index**, so they must
+be the same length. They disagree only when one file was edited and the other was
+not — exactly the situation that would put movement 2's text against movement 3's
+music — so a mismatch excludes the recording and says so
+(`starts-length-mismatch`). Nothing is ever mis-timed quietly.
+
+### The simple form: one file
+
+A work with one recording does not need two files. Omit `work:` and author
+`piece`, `movements` (with `start` on each), `cues` and `facts` inline, exactly as
+before. The store produces the identical payload either way, and the two shapes
+sit side by side in the same composer folder — split a work only when a second
+recording of it arrives.
+
+```yaml
+# classical/vivaldi/four-seasons-spring.yml — the flat shape, still supported
+surround: concert-hall
+match: { contentId: plex:663146, title: "Vivaldi: Spring" }
+piece: { title: "Violin Concerto in E major, \"Spring\"", opus: Op. 8 No. 1 }
+movements:
+  - { n: 1, name: Allegro, start: 0 }
+```
+
+Inline `piece`/`movements`/`cues`/`facts` **beside** a `work:` key are ignored —
+the work wins — and the store warns `inline-blocks-ignored` so a half-finished
+migration cannot lose an edit in silence.
 
 ### Why `match` has two keys
 
@@ -169,6 +237,11 @@ Measured for the two reference pieces:
 | Vivaldi, Spring (`plex:663146`) | 628 s | 0, 225, 385 | 3m45 / 2m40 / 4m03 | ~613 s |
 | Beethoven, Eroica (`plex:663134`) | 3223 s | 0, 976, 1925, 2278 | 15m26 / 15m06 / 5m33 / 11m17 | ~2955 s |
 
+The measured numbers go in the **recording** file, as `starts` and `musicEndsAt`.
+Re-measure per recording: two orchestras never take the same tempo, and the
+whole reason work and recording are separate files is that only the timings
+differ between them.
+
 ### 3. Write the sidecar and assets
 
 Portraits and city images: Wikimedia Commons for public-domain composers (the
@@ -177,8 +250,9 @@ progressive — progressive files render blocky in the kiosk Firefox.
 
 ### 4. Verify without restarting anything
 
-The store watches mtimes and rebuilds within ~2 s of an edit, so authoring is
-edit-and-refresh. Check that it took:
+The store watches mtimes and rebuilds within ~2 s of an edit — sidecars,
+`works/`, and `_composer.yml` alike — so authoring is edit-and-refresh. Check
+that it took:
 
 ```bash
 curl -s "http://{host}:{backend_port}/api/v1/play/plex:663146" | jq '.surround.id'
@@ -194,12 +268,24 @@ curl -s https://logs.kckern.net/select/logsql/query \
 
 | Event | Meaning |
 |---|---|
-| `surround.sidecar.invalid` | Malformed YAML or a missing required key. Carries `file`, one `reason`, and the full `reasons` list so a whole file is fixable in one pass. |
+| `surround.sidecar.invalid` | Malformed YAML or a missing required key. Carries `file`, one `reason`, and the full `reasons` list so a whole file is fixable in one pass. Work-resolution problems also carry `work`, the path that was looked for. |
 | `surround.definition.missing` | The `surround:` id has no file in `_surrounds/`. The piece is excluded rather than shipping half a payload. |
 | `surround.sidecar.duplicate` | Two sidecars claim one contentId. Names both files; last one walked wins. |
 | `surround.titles.ambiguous` | Two authored titles could match the same live title. Emitted at index time so you learn before a playback trips it. |
 | `surround.match.rebound` | A rescan invalidated a contentId and the title rebound it. Fix the id in the named file. |
 | `surround.lookup.miss` | An item played and nothing matched — the first thing to check when a surround doesn't appear. |
+
+The `reason` vocabulary for the two-file shape:
+
+| Reason | Meaning | Effect |
+|---|---|---|
+| `work-not-found` | The `work:` reference resolved to a path that does not exist or will not parse. `work` names it. | Recording excluded |
+| `starts-length-mismatch` | `starts` and the work's `movements` differ in length. Payload names both counts. | Recording excluded |
+| `work-not-a-string` | `work:` is a mapping, a list, or blank. | Recording excluded |
+| `inline-blocks-ignored` | `piece`/`movements`/`cues`/`facts` authored beside a `work:`. | Work wins; recording indexes |
+| `starts-not-a-list` | `starts:` is not a list — usually an indentation slip. | Reads as zero starts |
+| `work-*-not-a-list`, `work-piece-not-a-mapping` | The wrong-typed block is in the **work** file, not the sidecar the warning names. | Coerced to empty |
+| `missing-piece` | A sidecar with neither `work:` nor `piece:` — nothing to say about the music. | Indexes, renders empty |
 
 ---
 
