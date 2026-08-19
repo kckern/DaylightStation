@@ -630,7 +630,47 @@ git commit -am "feat(surround): wrap Player at both playback seams"
 
 Verified live: `plex:663146` = Vivaldi "Spring" (628 s), `plex:663134` = Eroica (3223 s). Eroica movement starts: 0 / 917 / 1810 / 2158.
 
-**Spring's movement start times are not in the spec** — take them from the actual video during authoring. Three movements over 628 s.
+### Movement timings — DERIVED FROM THE AUDIO, use these
+
+The numbers that appeared in earlier drafts of this plan (0/917/1810/2158) were
+illustrative placeholders and are **WRONG** — off by up to 120 s. These are measured
+from the actual media files by spectral analysis (method below):
+
+| Piece | Duration | Movement starts (s) | Lengths |
+|---|---|---|---|
+| Vivaldi, Spring (`plex:663146`) | 628 | **0, 225, 385** | 3m45 / 2m40 / 4m03 |
+| Beethoven, Eroica (`plex:663134`) | 3223 | **0, 976, 1925, 2278** | 15m26 / 15m06 / 5m33 / 11m17 |
+
+Both validate against canonical performance proportions (Spring: Allegro ~3½m,
+Largo ~2½m, Allegro pastorale ~4m; Eroica: a 5m33 Scherzo and 11m17 Finale are
+textbook). Movement **names** for the Eroica are authoritative from the Plex
+summary: I. Allegro con brio / II. Marcia funebre. Adagio assai / III. Scherzo.
+Allegro vivace / IV. Finale. Allegro molto.
+
+Also measured, useful for the movement map's end state: Spring's final applause
+begins ~613 s, the Eroica's ~2955 s (so the Eroica has ~4½ minutes of ovation
+after the music ends — do not let the last movement's bar run to `duration`).
+
+**Neither file has chapter markers**, so the design's "extract from source-video
+chapters" path yields nothing here; this is the fallback and it worked.
+
+**Method (reusable for the later backfill).** Per-second RMS over the full band and
+over a >9 kHz highpass, via `ffmpeg ... astats`, run on the media host (never
+locally — the files live on a Dropbox mount and hydrating them is expensive):
+
+- **Applause** = high-frequency ratio above ~-26 dB sustained ≥5 s, *and* preceded
+  within 5 s by a dip below -50 dB. The dip requirement is what makes it work —
+  without it, bright violin passages produce 14 false positives on Spring instead
+  of 3 true ones. Physically: a movement ends with the music stopping.
+- **Movement start** = after the applause decays to its floor, the first second
+  back above -45 dB. Taking the first second after the run's end instead lands
+  mid-decay and is ~7 s early.
+- **Symphonies have no inter-movement applause** — the Eroica's boundaries are
+  bare pauses, found as sustained runs below -55 dB. Concertos in this library do
+  get applause between movements. Handle both.
+- **Final applause** is separable by variance, not level: a 15 s window of applause
+  has a standard deviation near 0.3-0.4 dB, while music runs 2-11 dB. An orchestra
+  never sustains a flat wash.
 
 Portraits from Wikimedia Commons (public domain; the repo has a `wikimedia-commons-images` skill). Note the `feedback_progressive_jpeg_avatars` gotcha if these ever render in the garage Firefox kiosk — re-encode baseline.
 
