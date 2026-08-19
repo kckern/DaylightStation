@@ -27,7 +27,18 @@ function InterceptorRegistrar({ handled }) {
 
 // Mock MenuStack and Player to avoid importing their heavy dependency trees
 vi.mock('../../modules/Menu/MenuStack.jsx', () => ({
-  default: (props) => <div data-testid="menu-stack" data-menu={props.rootMenu}>MenuStack</div>,
+  // `rootMenu` is a legacy menu KEY (string) or a content id (object with
+  // `contentId`) — Menu.jsx picks a different endpoint per shape, so the mock
+  // exposes both rather than stringifying an object into "[object Object]".
+  default: (props) => (
+    <div
+      data-testid="menu-stack"
+      data-menu={typeof props.rootMenu === 'string' ? props.rootMenu : undefined}
+      data-menu-contentid={props.rootMenu?.contentId}
+    >
+      MenuStack
+    </div>
+  ),
 }));
 
 vi.mock('../../modules/Player/Player.jsx', () => ({
@@ -75,6 +86,25 @@ describe('ScreenActionHandler', () => {
 
     expect(getByTestId('menu-stack')).toBeTruthy();
     expect(getByTestId('menu-stack').dataset.menu).toBe('music');
+  });
+
+  // A source-prefixed menuId is a CONTENT ID, not a watchlist key. Handed to
+  // Menu.jsx as a bare string it resolves `api/v1/list/watchlist/plex:663144`,
+  // which answers 200 with `items: []` — the menu opens empty and the trigger
+  // looks like it did nothing. `?list=`, NFC triggers and WS dispatch all mint
+  // this shape (see `toContentId` in parseAutoplayParams).
+  it('opens a source-prefixed menuId as a content id, not a watchlist key', () => {
+    const { getByTestId } = render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+      </ScreenOverlayProvider>
+    );
+
+    act(() => getActionBus().emit('menu:open', { menuId: 'plex:663144' }));
+
+    const stack = getByTestId('menu-stack');
+    expect(stack.dataset.menuContentid).toBe('plex:663144');
+    expect(stack.dataset.menu).toBeUndefined();
   });
 
   it('opens Player overlay on media:play action', () => {

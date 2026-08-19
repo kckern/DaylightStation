@@ -477,11 +477,20 @@ describe('SurroundFrame — the shipped composition', () => {
     expect(rule[0]).toContain('pointer-events: none');
   });
 
+  // The stage must NOT shrink. `flex: 0` on both axes is the last thing standing
+  // between the band and the 16:9 lock: the media box is `width: 100%` +
+  // `aspect-ratio` + `max-height: 100%`, and the moment the column overflows,
+  // `max-height` clamps the box's height while nothing pulls its width down with
+  // it — the picture stretches. With a shrink factor of 1 the band could cause
+  // that overflow and did: a 960x540 living-room screen-root measured a 643x349
+  // media box (ratio 1.845) in the runtime gate. The band shrinks instead, and
+  // collapses past `collapse.footerFloor` if it has to. Only the runtime gate can
+  // measure the distortion; this pins the declaration that prevents it.
   it('anchors the video to the top and leaves the slack to the band', () => {
     const css = withStyles().replace(/\s+/g, ' ');
     const stage = css.match(/\.surround-frame__stage \{[^}]*\}/)[0];
     expect(stage).toContain('align-items: flex-start');
-    expect(stage).toMatch(/flex: 0 1 auto/);
+    expect(stage).toMatch(/flex: 0 0 auto/);
     expect(stage).toMatch(/padding-top: var\(--placard-inset/);
 
     const footer = css.match(/\.surround-frame__footer \{[^}]*\}/)[0];
