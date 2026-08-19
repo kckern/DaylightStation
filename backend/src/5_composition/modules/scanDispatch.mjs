@@ -104,7 +104,7 @@ import { ScanDispatcher, emit } from '#apps/scan/ScanDispatcher.mjs';
 import { PREFIX_REGISTRY, LEGACY_NUTRITION_TAGS } from '#domains/scan/ScanCode.mjs';
 import { KNOWN_COMMANDS } from '#domains/barcode/BarcodeCommandMap.mjs';
 import { TriggerEvent } from '#domains/trigger/TriggerEvent.mjs';
-import { routeNutribotScan, nutriscanRefusalNotice } from '#apps/nutribot/lib/routeNutribotScan.mjs';
+import { routeNutribotScan, nutriscanRefusalNotice, swallowNotice } from '#apps/nutribot/lib/routeNutribotScan.mjs';
 
 /**
  * Reader route -> namespace, for the dispatcher's step 5.
@@ -539,6 +539,12 @@ export function createScanDispatch(deps = {}) {
           device, code: raw, hint: 'further occurrences log at debug',
         });
       }
+      // ACK a refusal too. Without this the ONE path where nothing happened is
+      // the one path that says nothing: the user gets a scanner beep, no change
+      // on the prompt, and no way to tell a dead feature from a bad code.
+      // Fire-and-forget, exactly like the nutriscan branch — a failed edit must
+      // not turn a silent refusal into a thrown one.
+      getScaleNutribotBridge()?.refreshPrompt?.(scaleId, swallowNotice(decision.reason))?.catch?.(() => {});
       return { status: 'swallowed', ok: false, message: decision.reason };
     }
 
