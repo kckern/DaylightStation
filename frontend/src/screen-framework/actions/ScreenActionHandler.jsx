@@ -212,9 +212,9 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
       logger().debug('playback.secondary-fallback', { secondary: payload.secondary.action });
       const { action, payload: secPayload } = payload.secondary;
       if (action === 'media:queue') {
-        showOverlay(Player, { queue: { contentId: secPayload.contentId }, clear: () => dismissOverlay() }, { chrome: 'media' });
+        showOverlay(Player, { queue: { contentId: secPayload.contentId, ...secPayload }, clear: () => dismissOverlay() }, { chrome: 'media' });
       } else if (action === 'media:play') {
-        showOverlay(Player, { play: secPayload.contentId, clear: () => dismissOverlay() }, { chrome: 'media' });
+        showOverlay(Player, { play: { contentId: secPayload.contentId, ...secPayload }, clear: () => dismissOverlay() }, { chrome: 'media' });
       } else if (action === 'menu:open') {
         showOverlay(MenuStack, { rootMenu: secPayload.menuId, playerRef: navPlayerRef });
       }
