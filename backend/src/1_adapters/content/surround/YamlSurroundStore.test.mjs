@@ -986,11 +986,19 @@ describe('YamlSurroundStore library resolution', () => {
   });
 
   it('keeps a zero start, which is a valid offset and not a dropped one', () => {
+    // Every real work's first movement starts at 0, so a falsy check anywhere in
+    // the coercion would break the primary case while every edge-case test above
+    // still passed. The cue assertion matters as much as the start: the cue
+    // filter is a second place a zero could be dropped as falsy.
+    writeLib('classical/beethoven/symphony-3-eroica.yml',
+      'title: Symphony No. 3\nmovements:\n  - { n: 1, name: One, note: "Opens here." }\n');
     write('classical/beethoven/symphony-3-eroica.yml',
       'work: beethoven/symphony-3-eroica\nsurround: concert-hall\nmatch: { contentId: plex:663134 }\nstarts: [0]\n');
     const logger = makeLogger();
     const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
-    expect(store.lookup('plex:663134', '').movements[0].start).toBe(0);
+    const r = store.lookup('plex:663134', '');
+    expect(r.movements[0].start).toBe(0);
+    expect(r.cues).toEqual([{ at: 0, render: 'docked', text: 'Opens here.' }]);
     expect(logger.warn).not.toHaveBeenCalledWith('surround.sidecar.invalid',
       expect.objectContaining({ reasons: expect.arrayContaining(['starts-entry-invalid']) }));
   });
