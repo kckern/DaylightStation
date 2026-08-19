@@ -358,3 +358,59 @@ test.describe('Surround — PoC runtime gate', () => {
     ).toBeLessThanOrEqual(0.01);
   });
 });
+
+// ---------------------------------------------------------------------------
+// The composed-layout gate — this plan's recomposition (work-placard header,
+// rail moved LEFT at 33% width via `regions.right[0].side: 'left'`, dark
+// bottom band, capped rail content). Nothing here can be seen by the jsdom
+// unit suites; this is the only gate that pins real, measured geometry.
+// ---------------------------------------------------------------------------
+
+test.describe('Surround — composed layout gate', () => {
+  test.use({ viewport: HD });
+
+  test('the composed layout: nothing clips, nothing overlaps, nothing floats, rail is on the left', async ({ page }) => {
+    await openViaUrl(page, ENRICHED_ID);
+    await page.waitForSelector('[data-testid="surround-frame"]', { timeout: 20000 });
+
+    const box = async (sel) => {
+      const b = await page.locator(sel).first().boundingBox();
+      expect(b, `${sel} has no box`).not.toBeNull();
+      return b;
+    };
+    const viewport = page.viewportSize();
+
+    // 1. The placard is mounted, above the video, matching its width (±2px).
+    const placard = await box('.surround-frame__header');
+    const media = await box('.surround-frame__media');
+    expect(placard.y + placard.height).toBeLessThanOrEqual(media.y + 2);
+    expect(Math.abs(placard.width - media.width)).toBeLessThanOrEqual(2);
+
+    // 2. The video touches its timeline: gap ≤ 4px (was 19px of letterbox).
+    const footer = await box('.surround-frame__footer');
+    expect(footer.y - (media.y + media.height)).toBeLessThanOrEqual(4);
+
+    // 3. The playhead never enters the text band.
+    const heading = await box('.surround-movement-map__heading');
+    const playhead = await box('.surround-movement-map__playhead');
+    expect(playhead.y).toBeGreaterThanOrEqual(heading.y + heading.height - 1);
+
+    // 4. Every rail child ends on-screen (the bio used to end at 742 of 720).
+    for (const sel of [
+      '.surround-composer-card__fact',
+      '.surround-composer-card__nameplate',
+      '.surround-frame__region[data-module="country-map"]',
+    ]) {
+      const count = await page.locator(sel).count();
+      if (count === 0) continue; // fact may be absent for a composer without facts
+      const b = await box(sel);
+      expect(b.y + b.height, `${sel} clipped off-screen`).toBeLessThanOrEqual(viewport.height + 1);
+    }
+
+    // 5. The rail is on the LEFT, not the right — the recomposed contract.
+    // `regions.right[0].side: 'left'` moves it; the region KEY stays `right`.
+    const rail = await box('.surround-frame__rail');
+    expect(rail.x + rail.width, 'rail is not entirely left of the video').toBeLessThanOrEqual(media.x + 2);
+    expect(rail.width / viewport.width, 'rail is a fifth, not a third').toBeGreaterThan(0.30);
+  });
+});
