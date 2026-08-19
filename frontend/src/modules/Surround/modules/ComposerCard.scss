@@ -8,8 +8,11 @@
  *
  * Hard content budget: this card once measured its bio facts off-screen (bottom
  * at 742px on a 720px viewport). It is a flex column with `overflow: hidden` and
- * every child below is capped — portrait `max-height`, city `max-height`, and
- * the bio fact clamped to 3 lines — so nothing can bleed past the viewport again.
+ * every child below is capped — nameplate name/birthplace, portrait `max-height`,
+ * city `max-height`/caption, and the bio fact clamped/ellipsized — so nothing
+ * can bleed past the viewport again. `overflow: hidden` on the card is the last
+ * resort, not the budget: every text run that can grow unboundedly (a long name,
+ * a long birthplace, a long city) is capped at its own element instead.
  */
 
 .surround-composer-card {
@@ -53,13 +56,21 @@
   text-shadow: 0 1px 0 rgba(255, 248, 220, 0.5);
 }
 
+/* Two lines maximum — one is too tight for e.g. "Pyotr Ilyich Tchaikovsky" at
+   rail width; three would defeat the cap. Part of the hard content budget. */
 .surround-composer-card__name {
   margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
   font-size: 1.7rem;
   font-weight: 600;
   line-height: 1.1;
 }
 
+/* Dates are numeric and short ("1678 – 1741"), with a bounded vocabulary — they
+   cannot grow the way a name or place name can, so they are left uncapped. */
 .surround-composer-card__dates {
   margin: 0.1rem 0 0;
   font-size: 0.92rem;
@@ -68,8 +79,12 @@
   font-variant-numeric: lining-nums;
 }
 
+/* Single line, ellipsized — part of the hard content budget. */
 .surround-composer-card__birthplace {
   margin: 0.12rem 0 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 0.86rem;
   font-weight: 600;
   color: var(--ink-soft, #6b6152);
@@ -111,9 +126,13 @@
     filter: saturate(0.92);
   }
 
+  /* Single line, ellipsized — part of the hard content budget. */
   figcaption {
     line-height: 1.2;
     padding-top: 0.25rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     font-size: 0.72rem;
     font-weight: 600;
     letter-spacing: 0.14em;
