@@ -231,16 +231,10 @@ export class Composition {
   get container() { return this.#container; }
 
   /**
-   * Weight AND density AND a gram unit: those are what auto-accept requires. A
-   * container is optional enrichment and never gates completeness.
-   *
-   * `unit` gates completeness because calories come from kcal_per_g. A volume
-   * has no mass without a substance, so a millilitre reading is a measurement
-   * we cannot finish — it stays live and visible rather than auto-committing a
-   * number derived from the wrong quantity. A MISSING unit still reads as
-   * grams (the relay's default contract, and how every previously-stored
-   * composition is shaped), so only an explicitly non-gram unit blocks
-   * completeness.
+   * Weight AND density (D4): those two are what auto-accept requires. A
+   * container is optional enrichment and never gates completeness, and neither
+   * does the unit — a volumetric 'ml' is carried faithfully and the refusal, if
+   * any, belongs to the application layer.
    *
    * Compared against `null` rather than tested for truthiness, so a genuine
    * zero-gram reading still counts as a weight.
@@ -248,8 +242,7 @@ export class Composition {
    * @returns {boolean}
    */
   get isComplete() {
-    const isMass = !this.#unit || this.#unit === 'g';
-    return this.#grams !== null && this.#density !== null && isMass;
+    return this.#grams !== null && this.#density !== null;
   }
 
   /** A composition with every slot empty. */
