@@ -14,7 +14,7 @@ Every load-bearing claim in the design doc, checked against real code.
 |---|---|---|---|
 | 1 | "ScreenPlayer is the single seam every screen-framework playback path goes through." | **CORRECTED** | `ScreenPlayer.jsx` (32 lines, renders `<Player {...props} ref>` at `frontend/src/screen-framework/publishers/ScreenPlayer.jsx:29`) is the mount for ActionBus playback only: `media:play` / `media:queue` / `media:queue-op` / playback-secondary at `ScreenActionHandler.jsx:154,163,188,215,217`. **Menu-selected playback bypasses it entirely**: `MenuStack.jsx:12` lazy-imports raw `Player`, and mounts it at `MenuStack.jsx:250` (`case 'player'`) and `:257` (`case 'composite'`). MenuStack is reached from both the `menu:open` overlay (`ScreenActionHandler.jsx:133`) and — critically — the living-room's primary UI, the layout `menu` widget (`MenuWidget.jsx:43`). So remote-driven menu picks, the most common TV playback path, never touch ScreenPlayer. WS commands (`useScreenCommands.js:99-106`) and URL autoplay (`ScreenRenderer.jsx:122-135`) do converge on ScreenPlayer via the ActionBus. **Corrected seam: two mount points, one shared wrapper** — a `SurroundHost` wraps `<Player>` in both `ScreenPlayer.jsx` and MenuStack's `player`/`composite` cases (§ Render layer). `PipManager.jsx` does NOT mount Player (no import). Other Player mounts (Fitness ×3, Piano ×2, School, Feed `PersistentPlayer`, Media-app `PlayerBridge`, Admin preview) are separate app surfaces, deliberately out of scope. |
 | 2 | "`toQueueItem()` in `queue.mjs` is the single projection every played item flows through." | **CORRECTED** | `toQueueItem` (`backend/src/4_api/v1/routers/queue.mjs:7`) is used only by the queue route (`queue.mjs:149`) and already attaches optional `slideshow`/`titlecard`/`segment` (`queue.mjs:58-60`) — that half is confirmed. But the single-item path is a **second, independent projection**: `Player.jsx:1222` and `modules/Player/lib/api.js:149` fetch `/api/v1/play/<id>`, served by `play.mjs`, which builds its DTO via `PlayResponseService.toPlayResponse()` (`backend/src/3_applications/content/services/PlayResponseService.mjs:56`), called at five sites (`play.mjs:360,403,417,473,486`). `list.mjs`'s `toListItem` (`list.mjs:71`) is a menu projection, not a playback payload — items selected from lists are re-fetched through play/queue, so it needs no change. **Both** projections must attach `surround`: once in `toPlayResponse` (covers all five play call sites), once in the queue handler. |
-| 3 | "`DataService.content` scope exists with read/resolvePath/resolveDir." | **CONFIRMED** (with pattern correction) | `DataService.mjs:113` (`this.content = this.#createContentScope()`), scope at `DataService.mjs:292-345` with `resolvePath`/`resolveDir`/`read`/`write`. However the "adapter + manifest pair" framing is wrong for this feature: `manifest.mjs` files (`readalong/manifest.mjs:3-27`) are **content-source registration descriptors** for `ContentSourceRegistry` (`bootstrap.mjs:753-777`); adapters registered there serve playable IDs (`resolvePlayables`). A surround is enrichment, not a playable source — nothing plays `surround:x` — so registering it in the source registry would be wrong. **Corrected: a plain store class** (`SurroundStore`), composed in `contentApi.mjs` and injected into the two projections. On caching: SingalongAdapter reads YAML per request (`SingalongAdapter.mjs:141-143` → `loadContainedYaml`, `FileIO.mjs:212`, no cache); ReadalongAdapter caches manifests for process lifetime with no invalidation (`ReadalongAdapter.mjs:242-253`); the content-filter router — the closest precedent — reads per request (`contentFilter.mjs:29-43`). **The design's "cache reload hook" risk dissolves**: follow the per-request/mtime-guarded pattern and authoring edits are live without a restart (§ SurroundStore). |
+| 3 | "`DataService.content` scope exists with read/resolvePath/resolveDir." | **CONFIRMED** (with pattern correction) | `DataService.mjs:113` (`this.content = this.#createContentScope()`), scope at `DataService.mjs:292-345` with `resolvePath`/`resolveDir`/`read`/`write`. However the "adapter + manifest pair" framing is wrong for this feature: `manifest.mjs` files (`readalong/manifest.mjs:3-27`) are **content-source registration descriptors** for `ContentSourceRegistry` (`bootstrap.mjs:753-777`); adapters registered there serve playable IDs (`resolvePlayables`). A surround is enrichment, not a playable source — nothing plays `surround:x` — so registering it in the source registry would be wrong. **Corrected: a plain store class** (`YamlSurroundStore`), composed in `contentApi.mjs` and injected into the two projections. On caching: SingalongAdapter reads YAML per request (`SingalongAdapter.mjs:141-143` → `loadContainedYaml`, `FileIO.mjs:212`, no cache); ReadalongAdapter caches manifests for process lifetime with no invalidation (`ReadalongAdapter.mjs:242-253`); the content-filter router — the closest precedent — reads per request (`contentFilter.mjs:29-43`). **The design's "cache reload hook" risk dissolves**: follow the per-request/mtime-guarded pattern and authoring edits are live without a restart (§ YamlSurroundStore). |
 | 4 | "useContentFilter's rVFC ticker can be extracted into a shared useMediaClock." | **CORRECTED** | The driver exists exactly as described: rVFC per displayed frame with `timeupdate`/`seeked`/`ratechange`/`playing`/`waiting` re-evaluation and `seeking` release (`useContentFilter.js:250-285`). But it is not extractable at low risk: `tick` is a 110-line closure owning cue enter/exit lifecycle, skip-card pause/resume timers whose cleanup is deliberately asymmetric (`useContentFilter.js:276-283` — "do NOT clear the skip-card timer here"), overlay fade state, and session logging. Restructuring a production content filter to share a driver is exactly the destabilization the filter's comments warn about. **Corrected: a parallel, independent subscriber.** `requestVideoFrameCallback` supports multiple concurrent callbacks per element and event listeners are additive, so a new `useMediaClock` hook attaches its own listeners to the same element, modeled on lines 250-285, and never touches the filter. Cost is one extra rVFC callback — negligible. The media element is reachable without touching Player: the imperative handle exposes `getMediaElement` (`Player.jsx:1191`), `getCurrentTime`/`getDuration` (`Player.jsx:1175-1186`), and `getNowPlaying` (`Player.jsx:1194`); `ScreenPlayer` already holds that ref (`ScreenPlayer.jsx:14`), MenuStack receives one as a prop (`MenuStack.jsx:252`). |
 | 5 | "FitnessPlayerFrame can be generalized into SurroundFrame." | **CONFIRMED** as a model, not a reuse | `FitnessPlayerFrame.jsx:29-114` is genuinely pure layout — sidebar/footer/overlay slots, zero fitness domain knowledge; the SCSS geometry (`FitnessPlayerFrame.scss:14-91`) already matches the surround design: footer inside `__main` so it spans the main column only, sidebar full height, absolutely-positioned overlay. Fitness-specific: class namespace (`fitness-player-frame__*`), module location (`modules/Fitness/player/frames/`), fullscreen-mode semantics, no aspect lock. The 16:9 aspect-locked media box is achievable in this layout model: an inner `aspect-ratio: 16/9; max-width:100%; max-height:100%; margin:auto` box inside the content slot letterboxes cleanly. **Build a new `SurroundFrame` copied from this structure**; do not import or subclass the fitness component across module boundaries. |
 | 6 | "The widget registry + PanelRenderer can resolve region→module declarations." | **CORRECTED** | `WidgetRegistry` (`registry.js:1-47`) is a trivial name→component map and is worth reusing **as a class** — instantiate a *separate* registry for surround modules (mixing them into the shared screen widget registry would let a screen YAML mount `movement-map` as a dashboard panel with no playhead, and pollutes `list()`). `PanelRenderer` is only superficially similar: it renders a static screen-config layout tree, resolves widgets from the global registry with **static YAML props only** (`PanelRenderer.jsx:61` — `<Component {...(node.props || {})} />`), and is coupled to `useScreen()`/`usePip()` (`PanelRenderer.jsx:85`), which throw or misbehave outside their providers. It has no channel for per-tick `position` props. `GridLayout.jsx` (53 lines) is an unrelated static grid. **Corrected: reuse the WidgetRegistry class in a new `surroundRegistry`; region rendering is a small purpose-built map inside SurroundFrame, not PanelRenderer.** |
@@ -146,7 +146,7 @@ collapse:
 `collapse: first` marks the region dropped first when the footer's vertical remainder
 falls below `footerFloor` — the design's "collapse order is a design decision" requirement.
 
-### Matching and index (SurroundStore)
+### Matching and index (YamlSurroundStore)
 
 - Index: `contentId → resolved sidecar`, plus a parallel list of
   `{ normalizedTitle, file }` for rebind.
@@ -203,9 +203,9 @@ the PoC MovementMap uses plain proportional bars.
 
 ## Delivery layer (backend)
 
-### New: `backend/src/1_adapters/content/surround/SurroundStore.mjs`
+### New: `backend/src/1_adapters/content/surround/YamlSurroundStore.mjs`
 
-Class `SurroundStore({ rootDir, logger })` — `rootDir` =
+Class `YamlSurroundStore({ rootDir, logger })` — `rootDir` =
 `path.join(dataPath, 'content/surround')` at composition. Public API:
 
 ```js
@@ -232,7 +232,7 @@ No `manifest.mjs`, no ContentSourceRegistry registration (audit #3 correction).
 
 ### Modified: `backend/src/5_composition/modules/contentApi.mjs`
 
-- Construct `const surroundStore = new SurroundStore({ rootDir: path.join(dataPath, 'content/surround'), logger })`.
+- Construct `const surroundStore = new YamlSurroundStore({ rootDir: path.join(dataPath, 'content/surround'), logger })`.
 - Pass into `new PlayResponseService({ ..., surroundStore })` (`contentApi.mjs:121`) and
   `createQueueRouter({ ..., surroundStore })` (`contentApi.mjs:139`).
 
@@ -418,7 +418,7 @@ Discipline: no conditional assertion skipping; setup failures fail in `beforeAll
 
 ### Backend (vitest, colocated)
 
-`backend/src/1_adapters/content/surround/SurroundStore.test.mjs` — fixture tree written to
+`backend/src/1_adapters/content/surround/YamlSurroundStore.test.mjs` — fixture tree written to
 a temp dir (no PII, no real household data):
 1. Exact contentId lookup returns merged payload (piece + `_composer.yml` inheritance,
    piece `composer:` override winning per key).
@@ -495,14 +495,14 @@ Playwright port/URL discipline per `tests/_lib/configHelper.mjs` and
 1. **No sidecar** → play/queue responses contain no `surround` key and deep-equal
    pre-feature responses. (queue.surround.test 2, PlayResponseService test 2)
 2. **Malformed sidecar** → indexed library minus that file; warn logged; lookups for other
-   pieces unaffected. (SurroundStore test 3)
-3. **Missing definition** → whole lookup null; playback identical to un-enriched. (SurroundStore test 4)
+   pieces unaffected. (YamlSurroundStore test 3)
+3. **Missing definition** → whole lookup null; playback identical to un-enriched. (YamlSurroundStore test 4)
 4. **Store throws** (contract violation) → both projections catch and serve un-enriched. (queue.surround.test 3)
 5. **Unregistered module in definition** → empty region + warn; video plays. (frame behavior; SurroundHost test 4 covers the throw case)
 6. **Missing asset** → hidden `<img>`, sampled warn, layout intact.
 7. **Null media element** (audio-only, pre-mount) → clock zeros, frame renders, no throw. (useMediaClock test)
 8. **Any surround render error** → error boundary logs and yields bare `<Player>`. (SurroundHost test 4)
-9. **ratingKey churn after rescan** → title rebind serves the surround + actionable warn naming the stale id. (SurroundStore test 2)
+9. **ratingKey churn after rescan** → title rebind serves the surround + actionable warn naming the stale id. (YamlSurroundStore test 2)
 10. **Screen `surround: off`** → enriched items render bare. (SurroundHost test 3)
 
 ---
@@ -513,8 +513,8 @@ Playwright port/URL discipline per `tests/_lib/configHelper.mjs` and
 
 | Path | Purpose |
 |---|---|
-| `backend/src/1_adapters/content/surround/SurroundStore.mjs` | Sidecar index: load, inherit, match, mtime-guarded freshness, never-throw lookup |
-| `backend/src/1_adapters/content/surround/SurroundStore.test.mjs` | Store unit tests (fixture temp tree) |
+| `backend/src/1_adapters/content/surround/YamlSurroundStore.mjs` | Sidecar index: load, inherit, match, mtime-guarded freshness, never-throw lookup |
+| `backend/src/1_adapters/content/surround/YamlSurroundStore.test.mjs` | Store unit tests (fixture temp tree) |
 | `backend/src/4_api/v1/routers/queue.surround.test.mjs` | Queue enrichment + byte-identical fail-soft |
 | `backend/src/3_applications/content/services/PlayResponseService.surround.test.mjs` | Play enrichment + absence |
 | `frontend/src/lib/Player/useMediaClock.js` | Independent playhead subscriber (rVFC + events), 10 Hz sampled state |
@@ -539,7 +539,7 @@ Playwright port/URL discipline per `tests/_lib/configHelper.mjs` and
 |---|---|
 | `backend/src/3_applications/content/services/PlayResponseService.mjs` | Optional `surroundStore` dep; attach `response.surround` in `toPlayResponse` |
 | `backend/src/4_api/v1/routers/queue.mjs` | Optional `surroundStore` in config; enrich mapped queue items (try/catch) |
-| `backend/src/5_composition/modules/contentApi.mjs` | Construct SurroundStore; inject into both |
+| `backend/src/5_composition/modules/contentApi.mjs` | Construct YamlSurroundStore; inject into both |
 | `frontend/src/screen-framework/publishers/ScreenPlayer.jsx` | Wrap `<Player>` in `<SurroundHost>` |
 | `frontend/src/modules/Menu/MenuStack.jsx` | Wrap `case 'player'` and `case 'composite'` Players in `<SurroundHost>` |
 | `frontend/src/screen-framework/ScreenRenderer.jsx` | Provide `SurroundSettingContext` from `config.surround` |
