@@ -391,4 +391,59 @@ describe('CueTicker — reserved height and centred setting', () => {
     expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)/);
     expect(css).toMatch(/transition: none/);
   });
+
+  /**
+   * Fix round 1 (review finding, CRITICAL). Grid centring and the line clamp
+   * cannot share one element — `-webkit-line-clamp` needs `display:
+   * -webkit-box`, `align-content: center` needs `display: grid`, and CSS keeps
+   * only the last `display` written. Wave 5 resolved the conflict by deleting
+   * the clamp, which centred the reserve but left an overflowing note cut by
+   * `overflow: hidden` mid-glyph rather than ellipsized — live sidecar facts do
+   * overflow this reserve (the Eroica piece fact alone is 226 characters against
+   * this ~180-character two-line box). The fix restores the clamp on a SEPARATE
+   * inner element (`__line`), so `__text` keeps doing the centring and `__line`
+   * does the truncating.
+   */
+  it('clamps the line to two, with an ellipsis, on the inner element the outer box centres', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    const rule = css.match(/\.surround-cue-ticker__line \{[^}]*\}/);
+    expect(rule, 'no .surround-cue-ticker__line rule — the clamp was not restored').not.toBeNull();
+    expect(rule[0]).toContain('display: -webkit-box');
+    expect(rule[0]).toContain('-webkit-line-clamp: 2');
+    expect(rule[0]).toContain('-webkit-box-orient: vertical');
+    expect(rule[0]).toContain('overflow: hidden');
+
+    // The clamp lives on `__line`, not back on `__text` — reviving it there
+    // would reintroduce the exact `display` conflict this fix removes.
+    const outer = css.match(/\.surround-cue-ticker__text \{[^}]*\}/)[0];
+    expect(outer).not.toContain('-webkit-line-clamp');
+
+    // ...and the markup actually nests them: `__line` is what `__text`'s grid
+    // centres, not a sibling or a stand-in class that never renders.
+    const view = mount('A fact.');
+    const outerEl = view.container.querySelector('[data-testid="surround-ticker-text"]');
+    const lineEl = outerEl.querySelector('.surround-cue-ticker__line');
+    expect(lineEl, 'the outer box has no .surround-cue-ticker__line child').not.toBeNull();
+    expect(lineEl.textContent).toBe('A fact.');
+  });
+
+  // A fact well past what two lines of this reserve can hold — jsdom cannot
+  // measure where Chromium would actually paint the ellipsis, but the honest
+  // pin is that the clamp declaration is on the element carrying the overflow
+  // text, alongside the reserve that bounds it. That pairing is what makes the
+  // cut-off a trailing ellipsis instead of a mid-word chop.
+  it('carries the clamp on an overflowing fact, not just a short one', () => {
+    withStyles();
+    const longFact = 'A. '.repeat(100).trim(); // 300 characters, well past the two-line reserve
+    const view = mount(longFact);
+    const lineEl = view.container.querySelector('.surround-cue-ticker__line');
+    const style = window.getComputedStyle(lineEl);
+    expect(style.getPropertyValue('-webkit-line-clamp')).toBe('2');
+    expect(style.getPropertyValue('overflow')).toBe('hidden');
+    // The reserve above it is unchanged by the overflow — same box, longer text.
+    const reserve = window.getComputedStyle(
+      view.container.querySelector('[data-testid="surround-ticker-text"]'),
+    ).getPropertyValue('max-height');
+    expect(reserve).toBe('43.2px');
+  });
 });

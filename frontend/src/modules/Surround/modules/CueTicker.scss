@@ -71,11 +71,16 @@
      beneath it, which is the top-heavy gap the design review named. `grid` +
      `align-content: center` is what actually centres wrapped text vertically:
      `-webkit-box-pack` does not (the box idiom computes to `flow-root` in
-     current Chromium — wave 2, flag 4 — and takes its own alignment with it),
-     which is why the clamp idiom is gone from this rule entirely. The cost is
-     the ellipsis: a note too long for two lines is now cut by `overflow` rather
-     than ellipsized. The cue pool is authored and the reserve grew, so that is
-     a bound, not a behaviour anyone sees. */
+     current Chromium — wave 2, flag 4 — and takes its own alignment with it).
+     Fix round 1: wave 5 deleted the clamp here to make room for `align-content`
+     — the two cannot share ONE element, because the webkit line-clamp requires
+     `display: -webkit-box` and this rule needs `display: grid`, and CSS only
+     keeps the last `display` written. Deleting the clamp bought back the
+     centring but LOST the ellipsis: live facts (the Eroica piece note runs to
+     226 characters against this ~180-character two-line reserve) now cut
+     mid-word instead of trailing off cleanly. The fix is not one element doing
+     two jobs, it is two elements each doing one: THIS box stays the grid that
+     centres, `.surround-cue-ticker__line` below is the box that clamps. */
   display: grid;
   align-content: center;
   overflow: hidden;
@@ -90,6 +95,21 @@
 
 .surround-cue-ticker__text--hidden {
   opacity: 0;
+}
+
+/* THE LINE — the clamp, restored (fix round 1). Everything about SIZE and
+   POSITION lives on `__text` above; this inner span's only job is truncation:
+   wrap to two lines and ellipsize the second only when the note genuinely
+   needs a third. It is the sole grid item in `__text`, so `align-content:
+   center` on the parent centres exactly the height this clamp produces —
+   one line, two, or the ellipsised two — without the display conflict that
+   made wave 5 delete the clamp outright. Text styling (alignment, balance,
+   colour, weight) is not repeated here: it is inherited from `__text`. */
+.surround-cue-ticker__line {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 /* A timed cue is tied to what is sounding right now; one hairline is all that

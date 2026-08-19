@@ -21,6 +21,13 @@
 // makes this file the single source.
 //
 // `--enter-ease` stays in the SCSS: it is a design decision with no JS consumer.
+//
+// Fix round 1 (docs truth-fix): two OTHER duration literals live in the
+// stylesheets and are deliberately NOT published from here, unlike everything
+// above. `220ms` (SurroundFrame.scss, the reduced-motion opacity ramp) and
+// `120ms` (MovementMap.scss, the playhead/fill glide) are both design-only CSS
+// numbers with no JS consumer to keep in sync — nothing outside the stylesheet
+// times against them, so there is no drift for a shared constant to prevent.
 
 /** The chrome's own transition: rail, band, plate. */
 export const ENTER_MS = 420;

@@ -161,7 +161,14 @@ export default function CueTicker({
         data-testid="surround-ticker-text"
         style={{ transition: `opacity ${CUE_FADE_MS}ms ease` }}
       >
-        {shown.text}
+        {/* Fix round 1 (review finding): the reserve (grid + align-content) and
+            the ellipsis (the line clamp) are two jobs, and Chromium will not let
+            one element do both — `-webkit-line-clamp` needs `display:
+            -webkit-box`, which computes to `flow-root` and drags `align-content`
+            off with it (wave 2, flag 4). Splitting them across two elements lets
+            BOTH survive: this span clamps to two lines with an ellipsis, and the
+            `<p>` around it centres whatever height that clamp produces. */}
+        <span className="surround-cue-ticker__line">{shown.text}</span>
       </p>
     </div>
   );
