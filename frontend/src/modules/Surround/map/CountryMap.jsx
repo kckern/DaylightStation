@@ -27,7 +27,7 @@ import getLogger from '../../../lib/logging/Logger.js';
 import './CountryMap.scss';
 
 /** The shared geodata: Natural Earth 1:110m, public domain, ~41 KB, 52 features. */
-const GEO_PATH = 'media/img/surround/_maps/europe.geo.json';
+const GEO_PATH = 'media/img/library/_maps/europe.geo.json';
 
 /**
  * The card is ~420px wide, so the map paints at about this size. These are not a
