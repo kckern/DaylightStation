@@ -4,10 +4,19 @@
 // design spends any boldness.
 //
 // This is NOT a progress bar. It is set as the barline grammar of engraved music:
-// one hairline staff rule, movements separated by DOUBLE BARLINES (what actually
-// marks a movement end in notation), each segment proportional to that movement's
-// real duration, names above the rule with the tempo term in italic, and a slender
-// brass playhead with a lit leading edge — a barline in motion.
+// one hairline staff rule, one quiet separator between movements, each segment
+// proportional to that movement's real duration, names above the rule with the
+// tempo term in italic.
+//
+// WHERE PROGRESS IS READ (design wave 2)
+// --------------------------------------
+// From the FILL, not from the cursor. The sounding movement's rule thickens and
+// sweeps left to right as it elapses; finished movements read as filled; movements
+// still to come are a faint hairline. The playhead survives as a plain brass
+// HAIRLINE — no lit tip, no glow: the glowing tip read as a worm crawling the
+// band, and once the fill carries the progress the cursor has nothing left to
+// prove. Both the fill and the playhead glide on the same 120ms linear ramp,
+// which is what turns the clock's 10 Hz steps into motion.
 //
 // No clef, no notes, no five-line staff. The restraint is what keeps it from
 // reading as fussy pastiche.
@@ -140,6 +149,13 @@ export default function MovementMap({
         {segments.map((seg, i) => {
           const state = activeIndex === i ? 'active' : (activeIndex === -1 || i < activeIndex) ? 'elapsed' : 'future';
           const { title, tempo } = splitHeading(seg.name);
+          // How much of THIS movement has sounded. Elapsed movements read full,
+          // future ones empty, and the sounding one sweeps — that sweep is where
+          // the viewer reads progress now.
+          const length = seg.stop - seg.start;
+          const fill = state === 'elapsed' ? 1
+            : state === 'future' ? 0
+              : (length > 0 ? clamp01((position - seg.start) / length) : 0);
           return (
             <div
               key={`${seg.n ?? i}:${seg.start}`}
@@ -149,9 +165,13 @@ export default function MovementMap({
               data-index={i}
               style={{ width: `${seg.widthPct}%` }}
             >
+              {/* ONE quiet separator between movements. The double barline was
+                  correct notation and too much ink at this size — it read as
+                  clutter across four segments, so the grammar keeps the mark
+                  and drops the doubling. */}
               {i > 0 && (
                 <span
-                  className="surround-movement-map__barline surround-movement-map__barline--double"
+                  className="surround-movement-map__barline surround-movement-map__barline--separator"
                   aria-hidden="true"
                 />
               )}
@@ -160,21 +180,25 @@ export default function MovementMap({
                 {title && <span className="surround-movement-map__title">{title}</span>}
                 {tempo && <span className="surround-movement-map__tempo">{tempo}</span>}
               </span>
-              <span className="surround-movement-map__bar" aria-hidden="true" />
+              <span className="surround-movement-map__bar" aria-hidden="true">
+                <span
+                  className="surround-movement-map__bar-fill"
+                  data-testid="surround-movement-fill"
+                  style={{ width: `${fill * 100}%` }}
+                />
+              </span>
             </div>
           );
         })}
         <span className="surround-movement-map__barline surround-movement-map__barline--terminal surround-movement-map__barline--end" aria-hidden="true" />
 
-        {/* A barline in motion: a slender brass rule with a lit leading edge. */}
+        {/* A barline in motion: one brass hairline, unlit. */}
         <span
           className="surround-movement-map__playhead"
           data-testid="surround-playhead"
           style={{ left: `${headPct}%` }}
           aria-hidden="true"
-        >
-          <span className="surround-movement-map__playhead-edge" />
-        </span>
+        />
       </div>
     </div>
   );

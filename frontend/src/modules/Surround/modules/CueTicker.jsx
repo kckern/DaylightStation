@@ -11,17 +11,28 @@
 // `render: overlay` cues are ignored here; the pop-up-video overlay is phase two
 // and has its own region. An unknown or absent `render` is docked.
 //
-// A label change never hard-cuts. The choreography is ArtPlacards': fade the old
-// line out over 280 ms, swap, fade the new one in. Under prefers-reduced-motion
-// both fades collapse to an instant swap.
+// A label change never hard-cuts, and it does not flip either: it DISSOLVES
+// THROUGH THE DARK. The old line fades fully out to the band's near-black
+// ground, the ground is held empty for a beat, then the new line fades in —
+// ~800 ms end to end. On a dark band a 280 ms cross-flip reads as a blink; the
+// held beat is what makes it read as one line giving way to another.
+// Under prefers-reduced-motion the whole thing collapses to an instant swap.
+//
+// The reserved height in the SCSS is what makes this safe: the panel's box never
+// changes, whether the line is one line, two, or momentarily nothing at all.
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import getLogger from '../../../lib/logging/Logger.js';
 import './CueTicker.scss';
 
-/** Old line out / new line in — the same 280 ms as the ArtMode nameplate. */
-export const CUE_FADE_MS = 280;
+/** Each half of the dissolve: the old line out, then the new line in. */
+export const CUE_FADE_MS = 320;
+/** The beat of empty ground between them — the "through black" of the dissolve. */
+export const CUE_HOLD_MS = 160;
+/** Out + held ground + in. The CSS duration is set inline from CUE_FADE_MS, so
+ *  the stylesheet and this timer cannot drift apart. */
+export const CUE_SWAP_MS = CUE_FADE_MS + CUE_HOLD_MS + CUE_FADE_MS;
 /** How long a timed cue holds the panel when it names no dwell of its own. */
 export const CUE_DWELL_S = 12;
 /** Fact rotation. Slow: this plays behind music. */
@@ -124,8 +135,14 @@ export default function CueTicker({
       setHidden(false);
       return;
     }
+    // Fade out, hold the empty ground, then swap and fade in. The swap commits
+    // at the end of the held beat so the incoming line is never visible sliding
+    // in under the outgoing one's opacity.
     setHidden(true);
-    timers.current.push(setTimeout(() => { setShown(next); setHidden(false); }, CUE_FADE_MS));
+    timers.current.push(setTimeout(() => {
+      setShown(next);
+      setHidden(false);
+    }, CUE_FADE_MS + CUE_HOLD_MS));
   }, [next, shown]);
 
   useEffect(() => () => clearTimers(), []);

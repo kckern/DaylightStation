@@ -6,6 +6,13 @@
  * from the composer's map pin. The piece lives in the top placard instead. No
  * drop shadow per element, no third typeface.
  *
+ * The rail's ground is dark oxblood (SurroundFrame re-maps the ink tokens for
+ * `--right`), so this card reads as brass and lit paper on a dark wall. It does
+ * NOT re-map anything itself: it keeps reading `var(--ink)` / `var(--ink-soft)`
+ * and gets parchment for free. `--programme` is deliberately left alone by that
+ * re-map, which is what lets the portrait plate and the city figure keep real
+ * PAPER MATS — the printed programme survives exactly there.
+ *
  * Hard content budget: this card once measured its bio facts off-screen (bottom
  * at 742px on a 720px viewport). It is a flex column with `overflow: hidden` and
  * every child below is capped — nameplate name/birthplace, portrait `max-height`,
@@ -17,7 +24,7 @@
 
 .surround-composer-card {
   height: 100%;
-  padding: 1.15rem 1.1rem 1.3rem;
+  padding: 1rem 1rem 1.1rem;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -30,7 +37,7 @@
    whisper: same brass photo + gradient + edge sheen, screws omitted (a rail
    card, not a framed gallery plate). */
 .surround-composer-card__nameplate {
-  margin-bottom: 0.7rem;
+  margin-bottom: 0.55rem;
   padding: 0.45rem 0.9rem 0.5rem;
   text-align: center;
   border: 1px solid #5d4514;
@@ -90,10 +97,15 @@
   color: var(--ink-soft, #6b6152);
 }
 
-/* The single plate: a thin brass hairline around the portrait, seated on paper. */
+/* The single plate: a thin brass hairline around the portrait, seated on paper.
+   The mat HUGS the picture (`width: fit-content`, centred) now that the picture
+   is never cropped: a contained image in a full-width mat would sit in a pool of
+   paper, and a mounted print on the dark rail is the better object. */
 .surround-composer-card__plate {
   position: relative;
-  margin-bottom: 0.85rem;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto 0.7rem;
   padding: 3px;
   background: var(--programme, #efe6d2);
   box-shadow:
@@ -102,43 +114,84 @@
   line-height: 0;
 }
 
+/* NEVER CROPPED. `object-fit: cover` was cutting the top off a painting to fit
+   a box — a portrait is a picture of a person, and a rail is not a reason to
+   guillotine one. The image keeps its whole aspect ratio: it fills the mat's
+   width, and where the height cap bites it shrinks INSIDE the mat (contain,
+   centred) and the paper shows around it. Shrink, never crop. */
 .surround-composer-card__portrait {
   display: block;
-  width: 100%;
+  width: auto;                     /* the picture's own ratio decides the box */
   height: auto;
-  max-height: 26vh; /* was 34vh — the rail now also holds a map and a city */
-  object-fit: cover;
-  object-position: top center;
+  max-width: 100%;
+  max-height: 21vh;                /* was 26vh at `cover` — see the rail budget */
+  margin: 0 auto;
+  object-fit: contain;             /* belt and braces: never distort, never crop */
+  object-position: center;
   filter: saturate(0.92);
 }
 
-/* City photo — the composer's place, captioned from `map.city`. Budgeted small:
-   a supporting image, not a second portrait. */
+/* City photo — the composer's place, captioned. Budgeted small: a supporting
+   image, not a second portrait. Paper survives here as a MAT: a thin parchment
+   border around the figure keeps the printed-programme material alive against
+   the dark rail, exactly as the portrait plate does. */
 .surround-composer-card__city {
-  margin: 0 0 0.7rem;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto 0.5rem;
+  padding: 3px;
+  background: var(--programme, #efe6d2);
+  box-shadow: 0 1px 2px rgba(20, 16, 12, 0.28);
   line-height: 0;
 
   img {
     display: block;
-    width: 100%;
-    max-height: 14vh;
-    object-fit: cover;
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: 12vh;                 /* supporting picture, not a second portrait */
+    margin: 0 auto;
+    object-fit: contain;              /* see the portrait: shrink, never crop */
+    object-position: center;
     filter: saturate(0.92);
   }
+}
 
-  /* Single line, ellipsized — part of the hard content budget. */
-  figcaption {
-    line-height: 1.2;
-    padding-top: 0.25rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    font-size: 0.72rem;
-    font-weight: 600;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: var(--ink-soft, #6b6152);
-  }
+/* The caption sits BELOW the mat, on the rail ground — it is the rail's voice,
+   not part of the print. Centred, because the mat it belongs to is centred. */
+.surround-composer-card__city-caption {
+  line-height: 1.25;
+  padding-top: 0.3rem;
+  text-align: center;
+  color: var(--ink-soft, #6b6152);
+}
+
+/* An authored sentence: set as prose, two lines at most. The cap is a
+   `max-height` rather than a line clamp — the caption is a flex item in a card
+   with a hard height budget, and a clamped box can be squashed to nothing by the
+   flex algorithm (it was, before this: the whole caption rendered as 5px of
+   padding). Two line-heights of ceiling cannot be argued with. */
+.surround-composer-card__city-caption--sentence {
+  flex: 0 0 auto;
+  max-height: 2.6em;
+  overflow: hidden;
+  font-family: var(--surround-body, "EB Garamond", Georgia, serif);
+  font-size: 0.86rem;
+  font-weight: 500;
+  font-style: italic;
+}
+
+/* A bare city name: set as a label. Single line, ellipsized — part of the hard
+   content budget. */
+.surround-composer-card__city-caption--label {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
 }
 
 /* Composer facts — the quietest register in the rail. Body face, ink-soft, at
@@ -154,13 +207,27 @@
 }
 
 /* At most three lines, ellipsized — never clipped mid-glyph by the card edge,
-   never pushed off the screen. Part of the hard content budget. */
+   never pushed off the screen. Part of the hard content budget.
+   RESERVED at those three lines, too: the pool rotates between one-, two- and
+   three-line facts, and sizing the slot to whichever is showing walks the whole
+   foot of the rail up and down every 27 seconds. The reserve is the contract —
+   it is also what lets the fact dissolve through empty ground without the card
+   collapsing into the hole. (Precedent: the piano platform's `pg-slot`.) */
 .surround-composer-card__fact {
   margin: 0;
+  /* Exactly three lines: a floor AND a ceiling, so the slot can neither collapse
+     under the flex algorithm nor grow when a longer fact comes round. The line
+     clamp stays for the ellipsis where an engine honours it, but the box is
+     guaranteed by the two heights, not by the clamp. */
+  flex: 0 0 auto;
+  min-height: 4.05em;              /* 3 lines at line-height 1.35 */
+  max-height: 4.05em;
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  text-align: center;
+  text-wrap: balance;              /* progressive; wraps as before without it */
   font-family: var(--surround-body, "EB Garamond", Georgia, serif);
   font-size: 0.95rem;
   font-weight: 500;

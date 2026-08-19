@@ -1,6 +1,13 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, act } from '@testing-library/react';
-import CueTicker, { CUE_FADE_MS, CUE_DWELL_S, FACT_INTERVAL_MS } from './CueTicker.jsx';
+import * as sass from 'sass';
+import CueTicker, {
+  CUE_FADE_MS, CUE_HOLD_MS, CUE_SWAP_MS, CUE_DWELL_S, FACT_INTERVAL_MS,
+} from './CueTicker.jsx';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const makeLogger = () => ({
   debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), sampled: vi.fn(),
@@ -19,8 +26,8 @@ const DATA = {
 
 /** One act() per step — batching several into one collapses the renders. */
 const tick = (ms) => act(() => { vi.advanceTimersByTime(ms); });
-/** Fade out (280ms) then fade in — the swap commits at the halfway point. */
-const settle = () => { tick(CUE_FADE_MS); tick(CUE_FADE_MS); };
+/** Out, a beat of empty ground, then in — the swap commits after out+hold. */
+const settle = () => { tick(CUE_FADE_MS + CUE_HOLD_MS); tick(CUE_FADE_MS); };
 
 function renderTicker({ position = 0, data = DATA, logger = makeLogger() } = {}) {
   const props = (p) => ({
@@ -32,6 +39,9 @@ function renderTicker({ position = 0, data = DATA, logger = makeLogger() } = {})
     ...view,
     logger,
     text: () => view.container.querySelector('[data-testid="surround-ticker-text"]')?.textContent ?? '',
+    hidden: () => Boolean(view.container
+      .querySelector('[data-testid="surround-ticker-text"]')
+      ?.className.includes('surround-cue-ticker__text--hidden')),
     at: (p) => act(() => { view.rerender(<CueTicker {...props(p)} />); }),
   };
 }
@@ -142,10 +152,46 @@ describe('CueTicker', () => {
     view.at(976);
     // Mid-fade the OLD text is still mounted, just transparent.
     expect(view.text()).toBe('Beethoven tore the page.');
-    tick(CUE_FADE_MS - 1);
+    tick(CUE_FADE_MS + CUE_HOLD_MS - 1);
     expect(view.text()).toBe('Beethoven tore the page.');
     tick(1);
     expect(view.text()).toBe('The funeral march begins.');
+  });
+
+  // Design wave 2 (addendum): the swap DISSOLVES THROUGH THE DARK — out to the
+  // band's ground, a held beat of nothing, then in. A 280ms cross-flip on a dark
+  // band reads as a blink; the held beat is the whole point.
+  it('holds an empty ground between the two lines', () => {
+    const view = renderTicker();
+    view.at(976);
+
+    // Fully faded out, and still on the OLD line: the ground is empty here.
+    tick(CUE_FADE_MS);
+    expect(view.text()).toBe('Beethoven tore the page.');
+    expect(view.hidden()).toBe(true);
+
+    // ...and it stays empty for the beat, rather than swapping the instant the
+    // fade-out ends.
+    tick(CUE_HOLD_MS - 1);
+    expect(view.hidden()).toBe(true);
+
+    tick(1);
+    expect(view.text()).toBe('The funeral march begins.');
+    expect(view.hidden()).toBe(false);      // the new line fades in from here
+  });
+
+  it('spends the whole dissolve in the 700–900ms range the design asks for', () => {
+    expect(CUE_SWAP_MS).toBe(CUE_FADE_MS + CUE_HOLD_MS + CUE_FADE_MS);
+    expect(CUE_SWAP_MS).toBeGreaterThanOrEqual(700);
+    expect(CUE_SWAP_MS).toBeLessThanOrEqual(900);
+    expect(CUE_HOLD_MS).toBeGreaterThanOrEqual(120);
+  });
+
+  it('drives the CSS fade from the same constant as the JS timer', () => {
+    const view = renderTicker();
+    const el = view.container.querySelector('[data-testid="surround-ticker-text"]');
+    // Inline, so the stylesheet cannot drift away from the choreography.
+    expect(el.style.transition).toBe(`opacity ${CUE_FADE_MS}ms ease`);
   });
 
   it('swaps instantly under prefers-reduced-motion', () => {
@@ -212,5 +258,69 @@ describe('CueTicker', () => {
     const view = renderTicker();
     view.unmount();
     expect(() => tick(FACT_INTERVAL_MS * 3)).not.toThrow();
+  });
+});
+
+/**
+ * The panel's box is a CONTRACT, not a consequence of what is showing. The
+ * project's vitest config runs `css: false`, so the component's own SCSS import
+ * injects nothing — these specs compile the real sheet and inject it, the
+ * pattern ComposerCard.test.jsx established, so the assertions are about the
+ * shipped file rather than about a hand-typed stand-in.
+ */
+describe('CueTicker — reserved height and centred setting', () => {
+  let injected = null;
+  const withStyles = () => {
+    const compiled = sass.compile(path.join(__dirname, 'CueTicker.scss'));
+    injected = document.createElement('style');
+    injected.textContent = compiled.css;
+    document.head.appendChild(injected);
+    return compiled.css;
+  };
+  afterEach(() => { injected?.remove(); injected = null; });
+
+  const mount = (text) => render(
+    <CueTicker
+      position={0} duration={3223} playing seeking={false}
+      data={{ contentId: 'x', cues: [], facts: [text] }}
+      region={{ module: 'cue-ticker' }}
+      logger={makeLogger()}
+    />,
+  );
+
+  it('reserves two lines of height whatever is showing, so rotation never shifts layout', () => {
+    withStyles();
+    const short = mount('A fact.');
+    const long = mount('A considerably longer programme note that will certainly wrap onto a second line at this measure.');
+
+    const reserve = (view) => window.getComputedStyle(
+      view.container.querySelector('[data-testid="surround-ticker-text"]'),
+    ).getPropertyValue('min-height');
+
+    expect(parseFloat(reserve(short))).toBeGreaterThan(0);
+    expect(reserve(short)).toBe(reserve(long));   // one line and two: same box
+  });
+
+  it('caps the panel at those two lines so a long note cannot outgrow the reserve', () => {
+    withStyles();
+    const view = mount('A fact.');
+    const style = window.getComputedStyle(view.container.querySelector('[data-testid="surround-ticker-text"]'));
+    expect(style.getPropertyValue('-webkit-line-clamp')).toBe('2');
+    expect(style.getPropertyValue('overflow')).toBe('hidden');
+  });
+
+  it('sets the note centred and balanced', () => {
+    withStyles();
+    const view = mount('A fact.');
+    const style = window.getComputedStyle(view.container.querySelector('[data-testid="surround-ticker-text"]'));
+    expect(style.getPropertyValue('text-align')).toBe('center');
+    // Progressive enhancement: a browser without it just wraps as before.
+    expect(style.getPropertyValue('text-wrap')).toBe('balance');
+  });
+
+  it('keeps an instant swap under prefers-reduced-motion', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)/);
+    expect(css).toMatch(/transition: none/);
   });
 });

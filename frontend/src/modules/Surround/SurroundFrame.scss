@@ -28,6 +28,18 @@
   --surround-display: "Cormorant Garamond", "Hoefler Text", "EB Garamond", Georgia, serif;
   --surround-body: "EB Garamond", "Cormorant Garamond", Garamond, Georgia, serif;
 
+  /* How far the video's top edge sits below the top of the main column. The
+     floating placard is centred ON that edge, so this doubles as the room the
+     plate's upper half has to breathe in: at the shipped type sizes the plate is
+     ~64px tall, so 2.7rem (43px) leaves ~11px of dark hall above it. */
+  --placard-inset: 2.7rem;
+  /* How far the dark band rides up over the video's last pixels. Visual only —
+     a negative margin on the footer, never a change to the media box. */
+  --band-overlap: 10px;
+  /* One easing and one duration for the whole entrance, staggered by delay. */
+  --enter-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --enter-ms: 400ms;
+
   /* Low-contrast paper fibre for the programme panels — no asset, same trick as
      ArtMode's mat. Kept faint: this is stock, not texture for its own sake. */
   --programme-fibre: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.25'/%3E%3C/svg%3E");
@@ -44,8 +56,10 @@
 }
 
 /* Main column: stage on top, footer beneath, footer never squeezing the stage
-   out of its aspect box. */
+   out of its aspect box. `position: relative` is the placard's anchor — the
+   plate floats out of this column's flow. */
 .surround-frame__main {
+  position: relative;
   order: 0;
   flex: 1 1 auto;
   min-width: 0;
@@ -54,16 +68,17 @@
   height: 100%;
 }
 
-/* The darkened house: centres the media box and letterboxes it on ink. */
+/* The darkened house. The video is TOP-anchored now: `flex: 0 1 auto` sizes the
+   stage to the media box itself, so there is no slack inside it at all — every
+   spare pixel falls through to the footer, which is where the design wants it
+   (a band with room to breathe, not a letterbox hole).
+   `padding-top` is the strip of dark hall the floating placard straddles. */
 .surround-frame__stage {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-height: 0;
+  padding-top: var(--placard-inset);
   display: flex;
-  /* was: align-items: center — that split the letterbox slack above AND below
-     the video, opening a dead gap between the video and its own timeline. The
-     footer is the video's timeline; they must touch. Slack now lives above,
-     where it reads as the darkened house, not as a hole. */
-  align-items: flex-end;
+  align-items: flex-start;
   justify-content: center;
   overflow: hidden;
   background: var(--hall-ink);
@@ -96,26 +111,60 @@
 }
 
 /* The footer belongs to the video: JS pins its width to the measured media box
-   and it stays centred beneath it. */
+   and it stays centred beneath it.
+   It also ABSORBS the column's slack (`flex: 1 1 auto`) — the placard no longer
+   spends any of it — and rides up over the video's last few pixels so the join
+   reads as one deliberate edge rather than as two boxes that happen to meet. */
 .surround-frame__footer {
-  flex: 0 0 auto;
+  position: relative;
+  z-index: 20;
+  flex: 1 1 auto;
+  min-height: 0;
   align-self: center;
   max-width: 100%;
+  margin-top: calc(var(--band-overlap) * -1);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  /* was hidden — the join gradient below has to paint ABOVE this box. Each
+     region clips its own content, so nothing else escapes. */
+  overflow: visible;
 }
 
-/* The header belongs to the video exactly as the footer does: JS pins its width
-   to the measured media box so the placard reads as the video's nameplate, not
-   as page furniture. First child of __main — above the stage, always. */
+/* The soft join: the dark band fading upwards onto the video's last pixels.
+   Sits above the band's top edge, over the video, and is pure decoration. */
+.surround-frame__footer::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  height: 22px;
+  background: linear-gradient(to top, rgba(20, 16, 12, 0.92), rgba(20, 16, 12, 0));
+  pointer-events: none;
+}
+
+/* The work placard: a museum plate, not a band. Out of the column's flow,
+   content-width, centred on the video's TOP EDGE — half on the dark hall, half
+   over the video. `translate(-50%, -50%)` is what makes the straddle exact
+   whatever the plate's own height turns out to be.
+   The cap is 86% of the MEASURED video width (published by the frame as
+   `--surround-media-w`): a plate pinned over a painting is narrower than the
+   painting, and the runtime gate asserts exactly that. */
 .surround-frame__header {
-  flex: 0 0 auto;
-  align-self: center;
-  max-width: 100%;
+  position: absolute;
+  top: var(--placard-inset);
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 30;
+  width: max-content;
+  max-width: calc(var(--surround-media-w, 100%) * 0.86);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  /* It sits ON the video, so it casts: a tight contact shadow plus a wide soft
+     one. This is the one element in the frame allowed a drop shadow. */
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.55),
+    0 14px 30px -10px rgba(0, 0, 0, 0.85);
 }
 
 /* Right rail — full height, because it carries identity, not progress. */
@@ -152,12 +201,32 @@
   box-shadow: inset 0 0 0 1px var(--programme-edge);
 }
 
+/* The plate brings its own stone (WorkPlacard.scss); the programme ground would
+   only show as a paper hairline around it. */
 .surround-frame__region--top {
   flex: 0 0 auto;
+  background-color: transparent;
+  background-image: none;
+  box-shadow: inset 0 0 0 1px rgba(233, 223, 200, 0.16);
 }
 
 .surround-frame__region--bottom {
   flex: 0 0 auto;
+
+  /* The band's regions are sized by their CONTENT now (a declared height is a
+     floor, and one region claims the slack), so a module that asks for
+     `height: 100%` inside an auto-height region would be asking a circular
+     question — Chrome answers it by clipping the module against the region's
+     `overflow: hidden`. Making the region a column and stretching its single
+     module resolves it in the honest direction: the region takes the module's
+     natural height, and the module fills the region when the region is taller. */
+  display: flex;
+  flex-direction: column;
+
+  > * {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
 
   /* The work-in-time band is part of the darkened house, not the programme:
      near-black stone with the text in parchment. Re-mapping the frame tokens
@@ -171,9 +240,34 @@
   box-shadow: inset 0 1px 0 rgba(233, 223, 200, 0.08);
 }
 
+/* The rail is part of the darkened house too. A wall of video makes white paper
+   read as a light leak, so the rail's ground goes to deep oxblood — the same
+   move `--bottom` already makes, one register warmer, so band and rail read as
+   one house material (near-black stone under the video, maroon beside it).
+   The paper FIBRE stays, multiplied over the maroon, so the stock keeps its
+   tooth: this is a darker paper, not a flat panel.
+     `--programme` is deliberately NOT re-mapped. The portrait plate and the city
+   figure read it for their mats, and paper survives in the frame exactly there —
+   two lit mats and a brass nameplate on a dark wall.
+     `--velvet` IS re-mapped: the country map paints its highlighted country in
+   it, and #4a1018 on a #33131a ground is invisible. Re-lighting the token
+   restyles the map without touching the map (its redesign is a separate
+   dispatch) — the same token-remapping contract the bottom band established. */
 .surround-frame__region--right {
   flex: 1 1 auto;
   height: 100%;
+
+  --ink: #e9dfc8;
+  --ink-soft: #a89a80;
+  --programme-edge: rgba(233, 223, 200, 0.26);
+  --velvet: #8e2434;
+  background-color: #33131a;
+  background-image:
+    var(--programme-fibre),
+    linear-gradient(180deg, #3a1418 0%, #2a0f12 100%);
+  background-size: 180px 180px, cover;
+  background-blend-mode: multiply, normal;
+  box-shadow: inset 0 0 0 1px rgba(233, 223, 200, 0.1);
 }
 
 /* An unresolved module leaves paper, not a hole — the frame stays composed. */
@@ -191,5 +285,71 @@
 
   > * {
     pointer-events: auto;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   ENTRANCE
+   The surround's data arrives about a second after the video does (the host's
+   1 Hz enrichment poll), so the chrome would otherwise pop in on top of a
+   playing picture. It ARRIVES instead: the rail slides in from its own side,
+   the band rises from below, the plate settles down onto the video — in that
+   order, ~400ms each, on one deliberate easing.
+
+   THE VIDEO NEVER MOVES. Only the rail, the band and the plate are animated,
+   and only with transform/opacity — nothing reflows, nothing re-parents, the
+   media box is not in any animated subtree.
+
+   `--entering` lives on the frame root, which does not exist in the inactive
+   state (no class at all), so no animation state can leak into the boxless
+   shell — the same guarantee `--rail-left` carries.
+   --------------------------------------------------------------------------- */
+.surround-frame__rail,
+.surround-frame__footer,
+.surround-frame__header {
+  transition:
+    opacity var(--enter-ms) var(--enter-ease),
+    transform var(--enter-ms) var(--enter-ease);
+}
+
+/* Stagger: rail first, band a beat later, plate last onto the picture. */
+.surround-frame__footer { transition-delay: 90ms; }
+.surround-frame__header { transition-delay: 180ms; }
+
+.surround-frame--entering .surround-frame__rail {
+  opacity: 0;
+  transform: translateX(14%);              /* right rail: in from the right */
+}
+.surround-frame--entering.surround-frame--rail-left .surround-frame__rail {
+  opacity: 0;
+  transform: translateX(-14%);             /* left rail: in from the left */
+}
+.surround-frame--entering .surround-frame__footer {
+  opacity: 0;
+  transform: translateY(20px);
+}
+.surround-frame--entering .surround-frame__header {
+  opacity: 0;
+  /* The base transform IS the straddle; the entrance only adds the settle. */
+  transform: translate(-50%, calc(-50% - 12px));
+}
+
+/* Reduced motion: the arrival stays choreographed, but as light only — no
+   sliding, no settling, and the placard keeps its straddle transform. */
+@media (prefers-reduced-motion: reduce) {
+  .surround-frame__rail,
+  .surround-frame__footer,
+  .surround-frame__header {
+    transition: opacity 220ms linear;
+  }
+
+  .surround-frame--entering .surround-frame__rail,
+  .surround-frame--entering.surround-frame--rail-left .surround-frame__rail,
+  .surround-frame--entering .surround-frame__footer {
+    transform: none;
+  }
+
+  .surround-frame--entering .surround-frame__header {
+    transform: translate(-50%, -50%);
   }
 }

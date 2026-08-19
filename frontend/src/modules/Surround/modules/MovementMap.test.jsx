@@ -1,6 +1,11 @@
-import { describe, it, expect, vi } from 'vitest';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render } from '@testing-library/react';
+import * as sass from 'sass';
 import MovementMap from './MovementMap.jsx';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const makeLogger = () => ({
   debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), sampled: vi.fn(),
@@ -39,6 +44,11 @@ const widths = (container) =>
 const states = (container) =>
   [...container.querySelectorAll('[data-testid="surround-movement"]')]
     .map((el) => el.getAttribute('data-state'));
+
+/** How full each movement's rule reads, in percent. */
+const fills = (container) =>
+  [...container.querySelectorAll('[data-testid="surround-movement-fill"]')]
+    .map((el) => parseFloat(el.style.width));
 
 describe('MovementMap', () => {
   it('lays out segments proportional to each movement’s real duration', () => {
@@ -106,16 +116,19 @@ describe('MovementMap', () => {
       .toBeCloseTo(100, 6);
   });
 
-  it('separates movements with double barlines — one fewer than the segments', () => {
+  // Design wave 2: ONE quiet separator, not a double barline. Correct notation,
+  // too much ink at this size — four segments of doubled rule read as clutter.
+  it('separates movements with one quiet barline — one fewer than the segments', () => {
     const { container } = renderMap();
-    expect(container.querySelectorAll('.surround-movement-map__barline--double')).toHaveLength(3);
+    expect(container.querySelectorAll('.surround-movement-map__barline--separator')).toHaveLength(3);
+    expect(container.querySelectorAll('.surround-movement-map__barline--double')).toHaveLength(0);
   });
 
-  it('renders a single movement with no double barline', () => {
+  it('renders a single movement with no separator at all', () => {
     const solo = { contentId: 'x', piece: {}, movements: [{ n: 1, name: 'Allegro', start: 0 }] };
     const { container } = renderMap({ data: solo, duration: 600 });
     expect(container.querySelectorAll('[data-testid="surround-movement"]')).toHaveLength(1);
-    expect(container.querySelectorAll('.surround-movement-map__barline--double')).toHaveLength(0);
+    expect(container.querySelectorAll('.surround-movement-map__barline--separator')).toHaveLength(0);
   });
 
   it('sets the tempo term apart from the movement title, as an engraved score does', () => {
@@ -153,6 +166,48 @@ describe('MovementMap', () => {
     expect(container.innerHTML).toBe('');
   });
 
+  // -------------------------------------------------------------------------
+  // Design wave 2: progress is read from the FILL, not from the cursor.
+  // -------------------------------------------------------------------------
+
+  it('sweeps the sounding movement’s rule from its own start, not the piece’s', () => {
+    // 1450s is 474s into movement II (976→1925 = 949s long).
+    const { container } = renderMap({ position: 1450 });
+    const f = fills(container);
+    expect(f).toHaveLength(4);
+    expect(f[0]).toBeCloseTo(100, 6);                       // done
+    expect(f[1]).toBeCloseTo((474 / 949) * 100, 3);         // sounding
+    expect(f[2]).toBeCloseTo(0, 6);                         // still to come
+    expect(f[3]).toBeCloseTo(0, 6);
+  });
+
+  it('starts the sounding movement’s fill at zero on its first second', () => {
+    const { container } = renderMap({ position: 976 });
+    expect(fills(container)[1]).toBeCloseTo(0, 6);
+  });
+
+  it('reads every movement as fully filled once the music has ended', () => {
+    const { container } = renderMap({ position: 3100 });      // in the applause
+    expect(fills(container)).toEqual([100, 100, 100, 100]);
+  });
+
+  it('never lets a fill run past its own segment', () => {
+    // One tick before the next movement starts, the sounding fill is at most 100.
+    const { container } = renderMap({ position: 1924 });
+    fills(container).forEach((f) => {
+      expect(f).toBeGreaterThanOrEqual(0);
+      expect(f).toBeLessThanOrEqual(100);
+    });
+  });
+
+  // The lit tip was the "glowing worm" the design review killed. Its absence is
+  // asserted, not merely uncommented: an element is easy to reintroduce.
+  it('has no lit playhead tip — the cursor is one plain hairline', () => {
+    const { container } = renderMap({ position: 1450 });
+    expect(container.querySelector('.surround-movement-map__playhead-edge')).toBeNull();
+    expect(container.querySelector('[data-testid="surround-playhead"]').childElementCount).toBe(0);
+  });
+
   it('logs the movement change once, with the contentId', () => {
     const logger = makeLogger();
     const { rerender } = renderMap({ position: 0, logger });
@@ -171,5 +226,82 @@ describe('MovementMap', () => {
     at(1000);  // now movement 2
     expect(changes()).toHaveLength(2);
     expect(changes()[1][1]).toMatchObject({ n: 2, name: 'Marcia funebre. Adagio assai' });
+  });
+});
+
+/**
+ * The design of this band is mostly CSS, and the vitest config runs `css: false`
+ * — so `import './MovementMap.scss'` injects nothing and a computed-style
+ * assertion off a plain render would read UA defaults and pass regardless. These
+ * specs compile the REAL stylesheet with the project's sass and inject it, the
+ * pattern ComposerCard.test.jsx established, so a regression in the shipped file
+ * fails here rather than on the wall.
+ */
+describe('MovementMap — the band’s shipped design', () => {
+  let injected = null;
+  const withStyles = () => {
+    const compiled = sass.compile(path.join(__dirname, 'MovementMap.scss'));
+    injected = document.createElement('style');
+    injected.textContent = compiled.css;
+    document.head.appendChild(injected);
+    return compiled.css;
+  };
+  afterEach(() => { injected?.remove(); injected = null; });
+
+  it('glides the playhead over one clock tick instead of stepping at 10 Hz', () => {
+    withStyles();
+    const { container } = renderMap({ position: 1450 });
+    const head = container.querySelector('[data-testid="surround-playhead"]');
+    expect(window.getComputedStyle(head).getPropertyValue('transition')).toBe('left 120ms linear');
+  });
+
+  it('gives the playhead no glow — no shadow, no lit tip', () => {
+    const css = withStyles();
+    const { container } = renderMap({ position: 1450 });
+    const head = container.querySelector('[data-testid="surround-playhead"]');
+    const shadow = window.getComputedStyle(head).getPropertyValue('box-shadow');
+    expect(shadow === '' || shadow === 'none').toBe(true);
+    // ...and the rule that used to paint the lit tip is gone from the sheet.
+    expect(css).not.toContain('__playhead-edge');
+  });
+
+  it('sweeps the fill on the same ramp as the playhead', () => {
+    withStyles();
+    const { container } = renderMap({ position: 1450 });
+    const fill = container.querySelector('[data-testid="surround-movement-fill"]');
+    expect(window.getComputedStyle(fill).getPropertyValue('transition')).toBe('width 120ms linear');
+  });
+
+  it('lets a movement name wrap to two lines instead of ellipsizing on one', () => {
+    withStyles();
+    const { container } = renderMap();
+    const heading = container.querySelector('.surround-movement-map__heading');
+    const style = window.getComputedStyle(heading);
+    expect(style.getPropertyValue('-webkit-line-clamp')).toBe('2');
+    expect(style.getPropertyValue('-webkit-box-orient')).toBe('vertical');
+    // The single-line cap is what made short movements unreadable.
+    expect(style.getPropertyValue('white-space')).not.toBe('nowrap');
+  });
+
+  // Read off the compiled sheet rather than off computed style: happy-dom does
+  // not resolve `rem` in getComputedStyle, and a NaN comparison is the kind of
+  // assertion that passes for the wrong reason.
+  it('claims a band tall enough for those two lines', () => {
+    const css = withStyles();
+    const rule = css.match(/\.surround-movement-map\s*\{[^}]*\}/);
+    expect(rule, 'no .surround-movement-map rule in the compiled sheet').not.toBeNull();
+    const declared = rule[0].match(/min-height:\s*([\d.]+)(rem|px)/);
+    expect(declared, 'the band declares no min-height').not.toBeNull();
+    const px = declared[2] === 'rem' ? parseFloat(declared[1]) * 16 : parseFloat(declared[1]);
+    expect(px).toBeGreaterThanOrEqual(88);
+  });
+
+  it('drops both animations under prefers-reduced-motion', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    const block = css.match(/@media \(prefers-reduced-motion: reduce\) \{([^}]*\})*?[^{]*\}/);
+    expect(block, 'no reduced-motion block in the compiled sheet').not.toBeNull();
+    expect(block[0]).toContain('__bar-fill');
+    expect(block[0]).toContain('__playhead');
+    expect(block[0]).toContain('transition: none');
   });
 });

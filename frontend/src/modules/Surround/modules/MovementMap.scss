@@ -1,17 +1,28 @@
 /**
  * MovementMap — engraved-score barline grammar.
  *
- * One hairline rule. Movements separated by double barlines. Names above the
- * rule, tempo term italic. A slender brass playhead with a lit leading edge.
- * Nothing else: no clef, no notes, no five-line staff.
+ * One hairline rule. One quiet separator between movements. Names above the
+ * rule, tempo term italic, up to two lines. Progress is read from the FILL —
+ * the sounding movement's rule thickens and sweeps — with the playhead reduced
+ * to a plain brass hairline. Nothing glows.
  *
  * Tokens come from .surround-frame; the literal fallbacks keep the module honest
  * if it is ever rendered outside the frame.
  */
 
 .surround-movement-map {
-  height: 100%;
-  padding: 0.3rem 1.1rem 0.5rem;
+  /* NOT `height: 100%`. The band region is content-sized now, so a percentage
+     height here would be circular — the frame stretches this module into its
+     region instead (see `.surround-frame__region--bottom`).
+     The band's own floor. The sidecar's `height` is a floor too (the frame reads
+     it as min-height), but the real constraint is typographic: two lines of
+     movement name plus the rule lane. 5.75rem lands the band at 92px — the
+     middle of the range the recomposed footer has room for — and it is a
+     border-box floor, so the padding is inside the number rather than added to
+     it (content-box would have made the band 102px without saying so). */
+  min-height: 5.75rem;
+  box-sizing: border-box;          /* the floor is the BAND, padding included */
+  padding: 0.35rem 1.1rem 0.55rem;
   display: flex;
   align-items: flex-end;
   font-family: var(--surround-display, "Cormorant Garamond", Georgia, serif);
@@ -27,6 +38,10 @@
   height: 100%;
 }
 
+/* No horizontal padding here: the padding used to open a gap in the RULE at
+   every segment boundary, which is exactly the "clutter, fewer gaps" the
+   redesign is removing. The rule now runs unbroken and only the separator marks
+   a movement end; the text inset lives on the heading instead. */
 .surround-movement-map__segment {
   position: relative;
   flex: 0 0 auto;
@@ -35,7 +50,6 @@
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  padding: 0 0.4em 0 0.55em;
   box-sizing: border-box;
 }
 
@@ -44,14 +58,19 @@
    own bounding box (heading.y + heading.height), and padding would extend
    that box down through the gap, defeating the check even when the text
    reads clean of the playhead. Margin sits outside the box, so the box ends
-   exactly at the text and the gap is still there visually. */
+   exactly at the text and the gap is still there visually.
+   Two lines, because a short movement gets a narrow segment and "Marcia
+   funebre. Adagio assai" simply does not fit one — a single clamped line
+   ellipsized every interesting title away. */
 .surround-movement-map__heading {
-  display: block;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 1.15;
-  margin-bottom: 0.55em;           /* was padding-bottom: 0.45em — see above */
+  margin-bottom: 0.55em;           /* the rule lane's clearance — see above */
+  padding: 0 0.5em 0 0.55em;       /* text inset, off the rule */
   font-size: 1.05rem;
   font-weight: 600;
 }
@@ -71,111 +90,106 @@
   font-style: italic;
 }
 
-/* The rule under one movement. Its colour is the movement's state. */
+/* The rule under one movement: a hairline lane carrying an elapsed fill. The
+   LANE is always the same faint hairline; the FILL is the state. */
 .surround-movement-map__bar {
+  position: relative;
   display: block;
-  height: 1px;
+  height: 4px;                     /* the lane's box — the hairline is drawn inside */
   width: 100%;
-  background: var(--programme-edge, #ddd0b4);
 }
 
-/* Future — pale paper-edge rule (the default above), name recessive. */
-.surround-movement-map__segment--future .surround-movement-map__heading {
-  color: var(--ink-soft, #6b6152);
-  font-weight: 600;
-}
-
-/* Elapsed — the rule darkens to ink-soft, the name drops to 60%. */
-.surround-movement-map__segment--elapsed .surround-movement-map__bar {
-  background: var(--ink-soft, #6b6152);
-}
-.surround-movement-map__segment--elapsed .surround-movement-map__heading {
-  color: var(--ink-soft, #6b6152);
-  opacity: 0.6;
-}
-
-/* Active — velvet fill beneath the rule, name in full-weight ink.
-   The fill crossfades over 600ms; it never slides. */
-.surround-movement-map__segment--active .surround-movement-map__heading {
-  color: var(--ink, #2a1d07);
-  font-weight: 600;
-}
-.surround-movement-map__segment--active .surround-movement-map__bar {
-  background: var(--velvet, #4a1018);
-}
-.surround-movement-map__segment::after {
+.surround-movement-map__bar::before {
   content: "";
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
-  height: 0.42em;
-  background: var(--velvet, #4a1018);
-  opacity: 0;
-  transition: opacity 600ms ease-out;
-  pointer-events: none;
-}
-.surround-movement-map__segment--active::after {
-  opacity: 0.16;
+  height: 1px;
+  background: var(--programme-edge, #ddd0b4);
 }
 
-/* Barlines. Double barlines mark a movement end — the whole point of the
-   grammar. Terminals close the rule at both ends. */
+/* The elapsed fill. This is where progress is read; 120ms linear is one clock
+   tick, so the 10 Hz steps arrive as a sweep rather than as a stutter. */
+.surround-movement-map__bar-fill {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--ink-soft, #6b6152);
+  transition: width 120ms linear;
+}
+
+/* Future — nothing but the hairline lane, name recessive. */
+.surround-movement-map__segment--future .surround-movement-map__heading {
+  color: var(--ink-soft, #6b6152);
+  font-weight: 600;
+}
+
+/* Elapsed — the movement reads as done: its lane is filled end to end, at the
+   quieter 2px, and the name drops back. */
+.surround-movement-map__segment--elapsed .surround-movement-map__heading {
+  color: var(--ink-soft, #6b6152);
+  opacity: 0.6;
+}
+
+/* Active — the one thick line on the band. 4px of velvet-lit brass sweeping the
+   segment is the loudest mark the design makes, and it is the one thing the
+   viewer actually needs: how far through THIS movement we are. */
+.surround-movement-map__segment--active .surround-movement-map__heading {
+  color: var(--ink, #2a1d07);
+  font-weight: 600;
+}
+.surround-movement-map__segment--active .surround-movement-map__bar-fill {
+  height: 4px;
+  background: var(--brass, #c79a3e);
+}
+
+/* Barlines. One quiet separator marks a movement end; terminals close the rule
+   at both ends. The double barline is gone — correct notation, too much ink. */
 .surround-movement-map__barline {
   position: absolute;
   bottom: 0;
   width: 1px;
-  height: 0.85em;
+  height: 0.7em;
   background: var(--ink-soft, #6b6152);
   pointer-events: none;
 }
 
-.surround-movement-map__barline--double {
+.surround-movement-map__barline--separator {
   left: 0;
-  box-shadow: 2px 0 0 0 var(--ink-soft, #6b6152);
+  opacity: 0.55;
 }
 
 .surround-movement-map__barline--terminal {
-  height: 0.7em;
+  height: 0.6em;
   background: var(--programme-edge, #ddd0b4);
 }
 .surround-movement-map__barline--start { left: 0; }
 .surround-movement-map__barline--end { right: 0; }
 
-/* The playhead: a brushed-brass barline in motion with a lit leading edge.
-   Moves continuously at the clock's 10 Hz — no easing, no trail, no pulse.
-
-   The rule lane is the heading's margin-bottom plus the 1px bar; names live
+/* The playhead: one brass hairline, unlit, in the rule lane only.
+   The rule lane is the heading's margin-bottom plus the bar; names live
    strictly above it, box and all. The playhead never enters the text band —
-   it is a barline, not a cursor. */
+   it is a barline, not a cursor.
+   It GLIDES: positions arrive at 10 Hz, and 120ms linear (one tick) carries it
+   between them without ever running ahead of the clock. */
 .surround-movement-map__playhead {
   position: absolute;
-  bottom: 0;                       /* was -0.15em */
+  bottom: 0;
   width: 2px;
-  height: 0.55em;                  /* was 0.85em — box-clears the heading now that its gap is margin, not padding */
+  height: 0.55em;                  /* box-clears the heading's margin gap */
   margin-left: -1px;
-  background: linear-gradient(180deg,
-    var(--brass, #c79a3e) 0%,
-    var(--brass-lit, #f6e3a0) 55%,
-    var(--brass, #c79a3e) 100%);
-  pointer-events: none;
-}
-
-.surround-movement-map__playhead-edge {
-  position: absolute;
-  top: -0.05em;                    /* was -0.14em — the lit tip may kiss the band edge, not text; the shorter bar leaves less headroom to spend */
-  left: -1px;
-  width: 4px;
-  height: 0.34em;
-  border-radius: 1px;
   background: var(--brass-lit, #f6e3a0);
-  box-shadow: 0 0 4px rgba(246, 227, 160, 0.75);
+  pointer-events: none;
+  transition: left 120ms linear;
 }
 
-/* Nothing pulses, bounces, or shimmers; reduced motion drops the one crossfade
-   this module owns to an instant swap. */
+/* Reduced motion: nothing glides. The fill and the playhead still show the
+   right value — they just arrive at it in one step. */
 @media (prefers-reduced-motion: reduce) {
-  .surround-movement-map__segment::after {
+  .surround-movement-map__bar-fill,
+  .surround-movement-map__playhead {
     transition: none;
   }
 }

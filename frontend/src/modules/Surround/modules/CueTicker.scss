@@ -1,18 +1,29 @@
 /**
  * CueTicker — the programme note beneath the stage.
  *
- * One line of body Garamond on programme stock. No icon, no badge, no border:
- * the movement map is where the boldness is spent, and a busy ticker would
- * compete with the music it sits under.
+ * One or two lines of body Garamond, centred on the dark band. No icon, no
+ * badge, no border: the movement map is where the boldness is spent, and a busy
+ * ticker would compete with the music it sits under.
  *
- * The 280ms opacity transition is set inline by the component so the fade
- * duration has a single source of truth with the JS choreography.
+ * RESERVED HEIGHT IS THE CONTRACT. The pool rotates between one-line and
+ * two-line notes; sizing the panel to whatever happens to be showing makes the
+ * whole band jump every twenty seconds. The text box is therefore always two
+ * lines tall, and the line is centred inside it — a short note sits in the same
+ * place a long one does, and the dissolve can play without moving anything.
+ *
+ * The opacity transition is set inline by the component so the fade duration has
+ * a single source of truth with the JS choreography.
  */
 
 .surround-cue-ticker {
-  height: 100%;
+  position: relative;
+  /* No height at all: the band's regions are content-sized, and the frame
+     stretches this module into whatever slack the band has (see
+     `.surround-frame__region--bottom`). A percentage height here would ask a
+     circular question and get clipped for an answer. */
   display: flex;
   align-items: center;
+  justify-content: center;
   padding: 0.7rem 1.6rem;
   overflow: hidden;
   font-family: var(--surround-body, "EB Garamond", Georgia, serif);
@@ -20,6 +31,18 @@
 
 .surround-cue-ticker__text {
   margin: 0;
+  width: 100%;
+  /* The reserve: two lines at this line-height, always. `em` keeps it tied to
+     the type rather than to a pixel guess. */
+  min-height: 2.7em;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-align: center;
+  /* Progressive: browsers without it simply wrap as before. A note that breaks
+     one word onto its own second line looks like a mistake at this size. */
+  text-wrap: balance;
   font-size: 1.15rem;
   font-weight: 500;
   line-height: 1.35;
@@ -31,11 +54,23 @@
   opacity: 0;
 }
 
-/* A timed cue is tied to what is sounding right now; the velvet hairline is the
-   only thing that marks it apart from a fact. Accent, not area. */
-.surround-cue-ticker--cue .surround-cue-ticker__text {
-  padding-left: 0.75rem;
-  border-left: 1px solid var(--velvet, #4a1018);
+/* A timed cue is tied to what is sounding right now; one hairline is all that
+   marks it apart from a fact. Accent, not area.
+   It moved from a LEFT border to a short centred rule above the line, because
+   the text is centred now: a full-height rule pinned to the far left of a wide
+   band no longer reads as belonging to the sentence in the middle of it. Brass
+   rather than velvet — velvet is invisible against the band's near-black. */
+.surround-cue-ticker--cue::before {
+  content: "";
+  position: absolute;
+  top: 0.5rem;
+  left: 50%;
+  width: 2.4rem;
+  height: 1px;
+  transform: translateX(-50%);
+  background: var(--brass, #c79a3e);
+  opacity: 0.85;
+  pointer-events: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

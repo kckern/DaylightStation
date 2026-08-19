@@ -8,13 +8,16 @@
 // imported across the module boundary: the fitness frame is owned by the fitness
 // player and free to change for reasons that have nothing to do with a surround.
 //
-// Two rules make this frame different from that one:
+// Three rules make this frame different from that one:
 //
 //  1. The media box locks 16:9 INLINE (aspect-ratio + max-width + max-height), so
 //     the video letterboxes on ink and can never be distorted by an outer
 //     stylesheet. This is the quality floor of the whole feature.
 //  2. The footer is sized to the MEASURED media-box width, so it reads as that
 //     video's timeline rather than as page furniture.
+//  3. The video is TOP-anchored and the slack all falls to the bottom band. The
+//     work placard is not a band above it at all: it floats, content-width,
+//     straddling the video's top edge like a plate pinned over a painting.
 //
 // `PanelRenderer` is deliberately not used to resolve regions: it renders static
 // YAML props, and every module here is driven by a 10 Hz clock.
@@ -45,6 +48,29 @@ const DEFAULT_RAIL_WIDTH = '20%';
 /** The inactive shell: present in the tree, absent from the box tree. */
 const NO_BOX = Object.freeze({ display: 'contents' });
 const DEFAULT_FOOTER_FLOOR = 90;
+
+/**
+ * A region's declared `height`, turned into flex sizing.
+ *
+ *  * `fill`       — claim the band's slack. The footer now GROWS into the space
+ *                   the floating placard freed (see the SCSS), and something has
+ *                   to absorb it; the sidecar already says which region that is
+ *                   (`cue-ticker: height: fill`), so the frame honours it rather
+ *                   than hard-coding "the last one wins".
+ *  * bottom, Npx  — a FLOOR, not a cap. Movement names may wrap to two lines and
+ *                   the band has to grow to fit them; a fixed height would clip
+ *                   the second line against `overflow: hidden`.
+ *  * elsewhere    — exact, as before. The rail's country-map is sized against a
+ *                   rail whose regions are `height: 100%`; a floor there would
+ *                   let that percentage win and swallow the whole rail.
+ */
+function regionStyle(region) {
+  if (region?.height === 'fill') return { flex: '1 1 auto', minHeight: 0 };
+  const h = Number(region?.height);
+  if (!Number.isFinite(h) || h <= 0) return undefined;
+  if (region.slot === 'bottom') return { minHeight: `${h}px`, flex: '0 0 auto' };
+  return { height: `${h}px`, flex: `0 0 ${h}px` };
+}
 
 /** Lazy module-level child. Used only when no host logger was threaded down. */
 let moduleLogger = null;
@@ -237,13 +263,50 @@ export default function SurroundFrame({
     return () => { log.debug('surround.frame.unmount', { contentId, surroundId: data?.id ?? null }); };
   }, [enabled, contentId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ENTRANCE — the chrome arrives ~1s after the video, on the first enrichment
+  // poll, so without choreography it POPS in. `--entering` holds the rail, the
+  // band and the placard in their off-position for one committed frame; dropping
+  // it lets the CSS transitions play them in (rail → band → placard).
+  //
+  // It is a CLASS on the root and nothing else: the inactive shell has no
+  // className at all, so no animation state can leak there — the same guarantee
+  // `--rail-left` carries. And nothing in the choreography touches the stage or
+  // the media box: the video must not move or reload while the frame arrives.
+  const [entered, setEntered] = useState(false);
+  useEffect(() => {
+    if (!enabled) {
+      setEntered(false);
+      return undefined;
+    }
+    if (typeof requestAnimationFrame !== 'function') {
+      setEntered(true);           // no rAF (SSR/test env): arrive without the animation
+      return undefined;
+    }
+    // Two frames: the first commits the pre-entrance styles, the second releases
+    // them. Releasing in the same frame they were painted is a no-op transition.
+    let second = 0;
+    const first = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() => setEntered(true));
+    });
+    // Safety net. A background tab paints no frames, so rAF may never fire — and
+    // the pre-entrance state is `opacity: 0`. Without this, a frame that mounted
+    // while the kiosk tab was hidden would come back to the foreground with
+    // invisible chrome. Timers are throttled in the background, not stopped.
+    const net = setTimeout(() => setEntered(true), 400);
+    return () => {
+      cancelAnimationFrame(first);
+      if (second) cancelAnimationFrame(second);
+      clearTimeout(net);
+    };
+  }, [enabled]);
+
   const visibleFooterRegions = collapsed
     ? footerRegions.filter((r) => r.collapse !== 'first')
     : footerRegions;
 
   const renderRegion = (region) => {
     const Module = resolved.get(region.key);
-    const style = region.height ? { height: `${region.height}px`, flex: `0 0 ${region.height}px` } : undefined;
+    const style = regionStyle(region);
     return (
       <div
         key={region.key}
@@ -272,8 +335,16 @@ export default function SurroundFrame({
     'surround-frame',
     collapsed && 'surround-frame--collapsed',
     railSide === 'left' && 'surround-frame--rail-left',
+    !entered && 'surround-frame--entering',
     className,
   ].filter(Boolean).join(' ');
+
+  // The measured media width, published as a custom property so the SCSS can
+  // size the floating placard AGAINST the video (a plate pinned over a painting
+  // is narrower than the painting) without a magic number in JS.
+  const rootStyle = enabled
+    ? (mediaWidth ? { '--surround-media-w': `${mediaWidth}px` } : undefined)
+    : NO_BOX;
 
   // EVERY element on the path down to `children` is rendered in both states, in
   // the same order, so React sees the player at one fixed position for the whole
@@ -282,14 +353,15 @@ export default function SurroundFrame({
     <div
       className={enabled ? rootClass : undefined}
       data-testid={enabled ? 'surround-frame' : undefined}
-      style={enabled ? undefined : NO_BOX}
+      style={rootStyle}
     >
       <div className={enabled ? 'surround-frame__main' : undefined} style={enabled ? undefined : NO_BOX}>
+        {/* The placard is FLOATING: still the first child of the main column, but
+            out of flow and centred on the video's top edge (see the SCSS). It
+            carries no inline width any more — a museum plate is content-width,
+            capped against the measured video by `--surround-media-w`. */}
         {enabled && topRegions.length > 0 && (
-          <div
-            className="surround-frame__header"
-            style={mediaWidth ? { width: `${mediaWidth}px` } : undefined}
-          >
+          <div className="surround-frame__header" data-testid="surround-header">
             {topRegions.map(renderRegion)}
           </div>
         )}

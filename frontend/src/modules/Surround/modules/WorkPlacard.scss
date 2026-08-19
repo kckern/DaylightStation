@@ -1,11 +1,17 @@
 // frontend/src/modules/Surround/modules/WorkPlacard.scss
 //
 // ArtMode's "music plaque" material (dark stone over the brass texture, engraved
-// light text) recut as the proscenium nameplate. Deliberately recessive: the
-// plate must never compete with the video it sits above. Brass belongs to the
+// light text) recut as the work's museum plate. Deliberately recessive: the
+// plate must never compete with the video it is pinned to. Brass belongs to the
 // composer in the rail — this plate is the work's, in silver on stone.
+//
+// It FLOATS now (design wave 2): the frame positions it straddling the video's
+// top edge, content-width, with the drop shadow that makes it read as an object
+// ON the picture. Nothing about that geometry lives here — the plate only has to
+// be a plate, and stay narrow enough to be one (the padding below is what keeps
+// a short title from reading as a stripe).
 .surround-work-placard {
-  padding: 0.55rem 1.4rem 0.6rem;
+  padding: 0.6rem 1.6rem 0.65rem;
   text-align: center;
   background-color: #18181a;
   background-image:
