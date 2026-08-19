@@ -23,7 +23,7 @@ light matte board in a lit room; this is warm ink dark with lit programme panels
 | `--hall-ink` | `#14100c` | The darkened auditorium. Frame ground, video letterbox. |
 | `--programme` | `#efe6d2` | Printed programme stock. Rail and footer panels. |
 | `--programme-edge` | `#ddd0b4` | Paper edge / fold shadow. Hairline rules on stock. |
-| `--velvet` | `#4a1018` | Seat velvet. Accent only, never large areas. Declared but currently unused — the map that once painted its subject in it is drawn in ink hairlines now. |
+| `--velvet` | `#4a1018` | Seat velvet. Accent only, never large areas. Declared but currently unused: the map draws its subject in ink hairlines, not a solid fill. |
 | `--brass` | `#c79a3e` | Brushed brass. The playhead, plaque rules. |
 | `--brass-lit` | `#f6e3a0` | Lit brass highlight — the leading edge of the playhead. |
 | `--ink` | `#2a1d07` | Primary text on programme stock. |
@@ -58,24 +58,25 @@ Scale, tuned for a 10-foot living-room read at 1920×1080:
 ## Layout
 
 ```text
-┌──────────┬─────────────────────────────────────┐
-│ RAIL 33% │        ┌──────────────┐             │
-│          │        │ WORK PLACARD │  ← floats,  │
-│ ┌────┐   ├────────┴──────────────┴─────────────┤
-│ │POR-│AN-│                                     │
-│ │TRAIT│TONIO│    VIDEO — locked 16:9           │
-│ │(mat)│VIVALDI│  letterboxed on ink            │
-│ └────┘1678–1741│                               │
-│       Venice   │                               │
-│                ├─────────────────────────────────┤
-│  fun fact,     │ movement map                    │
-│  centred       ├─────────────────────────────────┤
-│                │ cue / fact ticker               │
-├──────────┬─────┴─────────────────────────────────┘
-│ PLACE    │
-│ CAROUSEL │  city photograph ⇄ regional map
-│          │  captioned, 5:3, dissolving
-└──────────┘
+┌───────────────────┬───────────────────────────────────────────┐
+│ RAIL 33%          │         ┌────────────┐                    │
+│                   │         │WORK PLACARD│ ← floats,          │
+│                   ├────────┴────────────┴────────────────────┤
+│ [mat] ANTONIO     │                                           │
+│       VIVALDI     │     VIDEO — locked 16:9                   │
+│       1678–1741   │     letterboxed on ink                    │
+│       Venice      │                                           │
+│                   │                                           │
+│  fun fact,        │                                           │
+│                   ├───────────────────────────────────────────┤
+│  centred          │  movement map                             │
+│                   ├───────────────────────────────────────────┤
+│                   │  cue / fact ticker                        │
+├───────────────────┴───────────────────────────────────────────┘
+│ PLACE CAROUSEL    │
+│  city photo ⇄ map │
+│  captioned, 5:3   │
+└───────────────────┘
 ```
 
 The video is TOP-anchored and the work placard FLOATS out of flow, straddling the

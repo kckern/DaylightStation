@@ -345,6 +345,56 @@ describe('PlaceCarousel — the dwell', () => {
 });
 
 /**
+ * Fix round 1 (review finding): `index` never reset when the composer changed
+ * under the carousel, so a new piece could open straight onto whatever slide
+ * the PREVIOUS composer happened to be dwelling on — most reachable via the
+ * map slide itself (a tap on it takes the surround to a different piece), so
+ * "mid-cycle" is not a hypothetical.
+ */
+describe('PlaceCarousel — a new composer opens mid-cycle', () => {
+  const tick = (ms) => act(() => { vi.advanceTimersByTime(ms); });
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('reopens on slide 0 when the content identity changes, even mid-cycle', () => {
+    const logger = makeLogger();
+    const view = renderCarousel({ logger });
+    expect(view.kind()).toBe('photo');
+
+    tick(PLACE_SLIDE_MS);
+    tick(DISSOLVE_COMMIT_MS);
+    expect(view.kind()).toBe('map');          // mid-cycle: dwelling on slide 1
+
+    const NEXT = {
+      contentId: 'plex:663200',
+      assetBase: 'surround/classical',
+      composer: {
+        name: 'Clara Schumann',
+        portrait: 'schumann/portrait.jpg',
+        city_image: 'schumann/leipzig.jpg',
+        map: { country: 'Italy', city: 'Rome', lat: 41.9, lon: 12.5 },
+      },
+    };
+    view.rerender(<PlaceCarousel {...props(NEXT, logger, 0)} />);
+    tick(DISSOLVE_COMMIT_MS);                 // let the swap to slide 0 settle
+    expect(view.kind()).toBe('photo');
+    expect(view.getByTestId('surround-place-photo').getAttribute('src')).toContain('leipzig.jpg');
+  });
+
+  it('does not reset the index on a mere clock tick — only a content change resets it', () => {
+    const view = renderCarousel();
+    tick(PLACE_SLIDE_MS);
+    tick(DISSOLVE_COMMIT_MS);
+    expect(view.kind()).toBe('map');
+
+    // Same composer, same contentId — just a later position. The reset effect
+    // is keyed on content identity, not on the clock.
+    view.at(999);
+    expect(view.kind()).toBe('map');
+  });
+});
+
+/**
  * The slot must not move when the slide changes — the same reserve contract the
  * fact rotations keep. Two things could break it: the two media having different
  * aspect ratios, and the caption's two registers having different heights.

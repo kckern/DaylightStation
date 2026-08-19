@@ -208,14 +208,22 @@ export default function ComposerCard({
       {hasHeader && (
         <div className="surround-composer-card__header" data-testid="surround-composer-header">
           {portraitSrc && (
-            <div className="surround-composer-card__plate" data-testid="surround-portrait-plate">
-              <img
-                className="surround-composer-card__portrait"
-                data-testid="surround-portrait"
-                src={portraitSrc}
-                alt={composer?.name ? `Portrait of ${composer.name}` : 'Composer portrait'}
-                onError={(e) => onAssetError(e, portraitRef)}
-              />
+            // Fix round 1 (review finding): the 45% share and "the mat hugs its
+            // picture" are two different jobs and now live on two different
+            // elements. The COLUMN below owns the 45% flex share of the row; the
+            // MAT inside it is `width: fit-content`, so a tall (2:3) portrait
+            // gets a snug mat sized to the picture rather than stretching to
+            // fill a 45%-wide slab — the "pool of paper" wave 2 removed.
+            <div className="surround-composer-card__portrait-col" data-testid="surround-portrait-col">
+              <div className="surround-composer-card__plate" data-testid="surround-portrait-plate">
+                <img
+                  className="surround-composer-card__portrait"
+                  data-testid="surround-portrait"
+                  src={portraitSrc}
+                  alt={composer?.name ? `Portrait of ${composer.name}` : 'Composer portrait'}
+                  onError={(e) => onAssetError(e, portraitRef)}
+                />
+              </div>
             </div>
           )}
 

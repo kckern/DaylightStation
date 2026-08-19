@@ -140,7 +140,20 @@ export default function PlaceCarousel({
   }, [composer, data]);
 
   const [index, setIndex] = useState(0);
+  // Read once per render, not subscribed. Deliberate, consistent with wave 2's
+  // fact rotations: a mid-session OS preference flip is vanishingly rare, and a
+  // `matchMedia` listener here would be one more subscription for a slide index
+  // that already resets to 0 on every genuine content change (below).
   const reduced = prefersReducedMotion();
+
+  // Fix round 1 (review finding): a new composer can open MID-carousel — most
+  // often from the map slide itself, when a tap on it takes the surround to a
+  // different piece. Without this, the incoming composer opened on whatever
+  // slide the outgoing one happened to be dwelling on (e.g. straight to its
+  // map, never its photograph). Content identity always reopens at slide 0.
+  useEffect(() => {
+    setIndex(0);
+  }, [contentId]);
 
   // One slide is not a carousel, and reduced motion asks for the first slide to
   // stand still — in both cases nothing is armed at all.

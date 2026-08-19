@@ -463,14 +463,19 @@ export default function CountryMap({
    *
    * The city's label is placed first and is never dropped — it is the one thing
    * on the map the programme actually asserts. The subject country next, nudged
-   * clear of the star if it wants the same spot (the NAME moves, not the star:
-   * the star is the fact). Then neighbours, biggest visible part first, while
-   * they are large enough to be worth a word and their box does not run into a
-   * name already written.
+   * clear of the star AND of the city's label box if it wants either spot (the
+   * NAME moves, not the star: the star is the fact). Then neighbours, biggest
+   * visible part first, while they are large enough to be worth a word and
+   * their box does not run into a name already written.
    *
    * Collision is tested on approximate BOXES, not on anchor points. A point test
    * is what let "LONDON" and "GERMANY" print into each other — the two anchors
-   * were a comfortable distance apart and the two words were not.
+   * were a comfortable distance apart and the two words were not. Fix round 1:
+   * the subject's OWN clearance check was still a point-radius test against the
+   * city's marker star (34px), which misses the city LABEL's text box entirely —
+   * "VENICE" reaches well past 34px from its anchor. The subject's candidate box
+   * is now also checked against `taken` (which already carries the city's label
+   * box at this point), the same way a neighbour's is.
    */
   const labels = useMemo(() => {
     if (!frame) return [];
@@ -494,12 +499,25 @@ export default function CountryMap({
       const spot = labelSpotFor(subject.boxes, frame);
       if (spot) {
         let { y } = spot;
-        if (point && Math.hypot(spot.x - point.x, y - point.y) < clearance) {
-          y = point.y + COUNTRY_LABEL_PX * 2.4 * unitsPerPx;
-        }
-        const box = labelBox({
+        let box = labelBox({
           x: spot.x, y, text: subject.name, sizePx: COUNTRY_LABEL_PX, unitsPerPx,
         });
+        // Two reasons to relocate: sitting on top of the star itself (the old
+        // radius test), or the candidate box overlapping something already
+        // placed — which at this point is only ever the city's LABEL box, since
+        // the subject is placed before any neighbour. A box overlapping `taken`
+        // relocates; it never drops, because the subject's name is the one
+        // thing this map exists to answer.
+        // (`taken` can only be non-empty here — before any neighbour is
+        // considered — if the city label was placed, which itself requires a
+        // point, so gating the whole relocation on `point` loses nothing.)
+        const onTheStar = point && Math.hypot(spot.x - point.x, y - point.y) < clearance;
+        if (point && (onTheStar || taken.some((t) => overlaps(t, box)))) {
+          y = point.y + COUNTRY_LABEL_PX * 2.4 * unitsPerPx;
+          box = labelBox({
+            x: spot.x, y, text: subject.name, sizePx: COUNTRY_LABEL_PX, unitsPerPx,
+          });
+        }
         taken.push(box);
         placed.push({
           key: `country:${subject.name}`,

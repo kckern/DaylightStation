@@ -478,6 +478,10 @@ test.describe('Surround — composed layout gate', () => {
     //     nameplate's left edge. This is the one thing about the new anatomy no
     //     jsdom test can see — the components render the same DOM whether the
     //     row lays out as a row or wraps into a column.
+    //     `.surround-composer-card__plate` is NOT optional here either: the
+    //     enriched fixture always authors a portrait, so `box()` failing to find
+    //     it is a mount failure, not an absent-content case — same convention as
+    //     the nameplate/carousel check in 4 above.
     const rail = await box('.surround-frame__rail');
     const portraitBox = await box('.surround-composer-card__plate');
     const nameplateBox = await box('.surround-composer-card__nameplate');
