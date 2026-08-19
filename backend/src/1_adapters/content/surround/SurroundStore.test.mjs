@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { SurroundStore } from './SurroundStore.mjs';
@@ -670,5 +670,174 @@ describe('SurroundStore warning totality', () => {
       'surround.sidecar.duplicate',
       'surround.titles.ambiguous'
     ]));
+  });
+});
+
+describe('SurroundStore freshness', () => {
+  // Authoring a surround is an edit-refresh loop; the alternative to this is a
+  // backend restart per timing tweak. Fake timers drive Date.now(), while file
+  // mtimes keep coming from the real clock — which is exactly the relation the
+  // guard has to survive in production too.
+  afterEach(() => { vi.useRealTimers(); });
+
+  // Fake timers freeze Date.now() while the filesystem clock keeps running, so an
+  // edit made "three virtual seconds later" has to be stamped there as well.
+  // Without it the write can land in the same real millisecond as the build and
+  // read as older than the index it is meant to invalidate — the same
+  // mtime-granularity race that the store's whole-millisecond floor exists for.
+  const touchAhead = (rel) => {
+    const when = new Date(Date.now() + 3000);
+    utimesSync(path.join(root, rel), when, when);
+  };
+
+  it('picks up an edited sidecar after the guard window without a restart', () => {
+    vi.useFakeTimers();
+    const store = new SurroundStore({ rootDir: root, logger: makeLogger() });
+    expect(store.lookup('plex:663134', '').piece.title).toBe('Symphony No. 3');
+
+    writeFileSync(path.join(root, 'classical/beethoven/symphony-3-eroica.yml'),
+      'surround: concert-hall\nmatch: { contentId: plex:663134 }\npiece: { title: Edited Title }\n');
+    touchAhead('classical/beethoven/symphony-3-eroica.yml');
+    vi.advanceTimersByTime(3000);   // past the 2s guard
+
+    expect(store.lookup('plex:663134', '').piece.title).toBe('Edited Title');
+    vi.useRealTimers();
+  });
+
+  // The most important test here. Warning state is build-local, so every rebuild
+  // re-emits the whole set: a store that rebuilt on window expiry alone would let
+  // one sidecar nobody ever fixes warn every two seconds forever.
+  it('does not rebuild, or re-warn, while the tree is unchanged', () => {
+    write('classical/beethoven/broken.yml', 'surround: concert-hall\nmatch: [unclosed\n');
+    vi.useFakeTimers();
+    const logger = makeLogger();
+    const store = new SurroundStore({ rootDir: root, logger });
+    const warnsAfterBuild = logger.warn.mock.calls.length;
+    expect(warnsAfterBuild).toBeGreaterThan(0);
+
+    for (let i = 0; i < 10; i += 1) {
+      vi.advanceTimersByTime(3000);
+      expect(store.lookup('plex:663134', '').piece.title).toBe('Symphony No. 3');
+    }
+
+    expect(logger.info.mock.calls.filter((c) => c[0] === 'surround.index.built')).toHaveLength(1);
+    expect(logger.warn.mock.calls).toHaveLength(warnsAfterBuild);
+  });
+
+  it('holds an edit until the window expires, rather than stat-ing every lookup', () => {
+    vi.useFakeTimers();
+    const logger = makeLogger();
+    const store = new SurroundStore({ rootDir: root, logger });
+    writeFileSync(path.join(root, 'classical/beethoven/symphony-3-eroica.yml'),
+      'surround: concert-hall\nmatch: { contentId: plex:663134, title: "Beethoven: 3. Sinfonie" }\npiece: { title: Edited Title }\n');
+    touchAhead('classical/beethoven/symphony-3-eroica.yml');
+
+    vi.advanceTimersByTime(1000);
+    expect(store.lookup('plex:663134', '').piece.title).toBe('Symphony No. 3');
+    expect(logger.info.mock.calls).toHaveLength(1);
+
+    vi.advanceTimersByTime(1500);
+    expect(store.lookup('plex:663134', '').piece.title).toBe('Edited Title');
+    expect(logger.info.mock.calls).toHaveLength(2);
+  });
+
+  it('picks up a sidecar file that did not exist when the index was built', () => {
+    vi.useFakeTimers();
+    const store = new SurroundStore({ rootDir: root, logger: makeLogger() });
+    expect(store.lookup('plex:663146', '')).toBeNull();
+
+    write('classical/vivaldi/spring.yml',
+      'surround: concert-hall\nmatch: { contentId: plex:663146, title: "Vivaldi: Spring" }\npiece: { title: Spring }\n');
+    touchAhead('classical/vivaldi/spring.yml');
+    vi.advanceTimersByTime(3000);
+
+    expect(store.lookup('plex:663146', '').piece.title).toBe('Spring');
+    expect(store.lookup('plex:663134', '').piece.title).toBe('Symphony No. 3');
+  });
+
+  it('stops resolving a sidecar that was deleted from the tree', () => {
+    vi.useFakeTimers();
+    const store = new SurroundStore({ rootDir: root, logger: makeLogger() });
+    expect(store.lookup('plex:663134', '')).not.toBeNull();
+
+    rmSync(path.join(root, 'classical/beethoven/symphony-3-eroica.yml'));
+    // A deletion leaves no file to stat; the parent directory's mtime is the record.
+    touchAhead('classical/beethoven');
+    vi.advanceTimersByTime(3000);
+
+    expect(store.lookup('plex:663134', '')).toBeNull();
+    expect(store.lookup('plex:000', 'Beethoven: 3. Sinfonie ∙ hr-Sinfonieorchester')).toBeNull();
+  });
+
+  it('re-warns about a file that is still broken after a rebuild', () => {
+    write('classical/beethoven/broken.yml', 'surround: concert-hall\nmatch: [unclosed\n');
+    vi.useFakeTimers();
+    const logger = makeLogger();
+    const store = new SurroundStore({ rootDir: root, logger });
+    const invalid = () => logger.warn.mock.calls.filter((c) => c[0] === 'surround.sidecar.invalid');
+    const before = invalid().length;
+
+    // A different file changes; the broken one is untouched and still broken.
+    write('classical/vivaldi/spring.yml',
+      'surround: concert-hall\nmatch: { contentId: plex:663146, title: "Vivaldi: Spring" }\npiece: { title: Spring }\n');
+    touchAhead('classical/vivaldi/spring.yml');
+    vi.advanceTimersByTime(3000);
+    store.lookup('plex:663134', '');
+
+    expect(invalid().length).toBeGreaterThan(before);
+    expect(invalid().at(-1)[1]).toMatchObject({ file: 'classical/beethoven/broken.yml' });
+  });
+
+  it('keeps serving the last good index when the tree vanishes under it', () => {
+    vi.useFakeTimers();
+    const store = new SurroundStore({ rootDir: root, logger: makeLogger() });
+    rmSync(root, { recursive: true, force: true });
+    vi.advanceTimersByTime(3000);
+
+    let r;
+    expect(() => { r = store.lookup('plex:663134', ''); }).not.toThrow();
+    expect(r.piece.title).toBe('Symphony No. 3');
+  });
+
+  it('survives rootDir being replaced by a regular file, and recovers when the tree returns', () => {
+    vi.useFakeTimers();
+    const store = new SurroundStore({ rootDir: root, logger: makeLogger() });
+    rmSync(root, { recursive: true, force: true });
+    writeFileSync(root, 'not a directory\n');
+    vi.advanceTimersByTime(3000);
+
+    // Either outcome is legal while the tree is nonsense — last-good or empty —
+    // but not a throw, and not a wedged store.
+    let r;
+    expect(() => { r = store.lookup('plex:663134', ''); }).not.toThrow();
+    expect(r === null || r.piece.title === 'Symphony No. 3').toBe(true);
+    expect(() => store.lookup('plex:000', 'Beethoven: 3. Sinfonie')).not.toThrow();
+
+    rmSync(root, { force: true });
+    writeFixture();
+    writeFileSync(path.join(root, 'classical/beethoven/symphony-3-eroica.yml'),
+      'surround: concert-hall\nmatch: { contentId: plex:663134, title: "Beethoven: 3. Sinfonie" }\npiece: { title: Restored }\n');
+    touchAhead('classical/beethoven/symphony-3-eroica.yml');
+    vi.advanceTimersByTime(3000);
+
+    expect(store.lookup('plex:663134', '').piece.title).toBe('Restored');
+  });
+
+  it('swaps the contentId lane and the title lane together', () => {
+    vi.useFakeTimers();
+    const store = new SurroundStore({ rootDir: root, logger: makeLogger() });
+    expect(store.lookup('plex:000', 'Beethoven: 3. Sinfonie ∙ hr-Sinfonieorchester').piece.title)
+      .toBe('Symphony No. 3');
+
+    writeFileSync(path.join(root, 'classical/beethoven/symphony-3-eroica.yml'),
+      'surround: concert-hall\nmatch: { contentId: plex:663134, title: "Mozart: Jupiter" }\npiece: { title: Jupiter }\n');
+    touchAhead('classical/beethoven/symphony-3-eroica.yml');
+    vi.advanceTimersByTime(3000);
+
+    // contentId lane rebuilt...
+    expect(store.lookup('plex:663134', '').piece.title).toBe('Jupiter');
+    // ...and the rebind lane with it: the old title is gone, the new one answers.
+    expect(store.lookup('plex:000', 'Beethoven: 3. Sinfonie ∙ hr-Sinfonieorchester')).toBeNull();
+    expect(store.lookup('plex:000', 'Mozart: Jupiter ∙ live').piece.title).toBe('Jupiter');
   });
 });
