@@ -104,6 +104,8 @@ nutribot:
   # Weight, density and container arrive as separate events with no payload
   # boundary, so completeness is an absence rather than something anyone sends.
   # Any applied input (a weight change, a dl:/ct: scan) restarts the clock.
+  # Clamped to a floor of 5s: a negative value fires the timer immediately (which is
+  # commit-on-sufficiency, the rejected design) and 0 silently disabled the feature.
   commit_quiet_sec: 25       # seconds of no new input before the entry auto-accepts
   containers:
     threshold_g: 150        # only offer container (tare) subtraction above this gross weight

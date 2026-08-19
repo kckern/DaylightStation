@@ -406,6 +406,129 @@ describe('ScaleNutribotBridge quiet-commit', () => {
     bridge.dispose();
   });
 
+  // THE DUPLICATE PROMPT. A commit can only happen with food still ON the pan —
+  // any lift-off disarms the timer — and `foodScaleRelay` broadcasts EVERY raw
+  // frame at ~4 Hz, not just deduped ones. So ~250 ms after the accept the same
+  // 473 g settles again, finds `s.live` nulled by the commit, skips the dedup
+  // guard for want of anything to compare against, clears `placementDeltaG` and
+  // is not suspicious (one post in the window). It posted a SECOND prompt for
+  // food already filed; tapping it filed a second entry and double-counted the
+  // meal, on the mainline success path.
+  it('does not re-prompt when the committed food is still sitting on the pan', async () => {
+    const { bridge, accept, logFromScale, scheduler, publish, prime } = makeHarness();
+    await prime();
+    await publish({ id: SCALE, grams: 473, unit: 'g', stable: true });   // posts
+    const postsBeforeCommit = logFromScale.execute.mock.calls
+      .filter((c) => !c[0].existingLogUuid).length;
+    expect(postsBeforeCommit).toBe(1);
+
+    scheduler.fire();
+    await flush();
+    expect(accept.execute).toHaveBeenCalledTimes(1);
+
+    // The identical frame the relay sends a quarter-second later. Nothing moved.
+    await publish({ id: SCALE, grams: 473, unit: 'g', stable: true });
+    await publish({ id: SCALE, grams: 475, unit: 'g', stable: true });   // and the next one
+    await flush();
+
+    // No new prompt: a CREATE is told from an edit by the absence of
+    // `existingLogUuid`, which is the same convention the harness's double uses.
+    const posts = logFromScale.execute.mock.calls.filter((c) => !c[0].existingLogUuid);
+    expect(posts).toHaveLength(1);
+    // And nothing re-armed the clock behind it, so there is no second accept
+    // waiting to happen either.
+    expect(scheduler.pending).toBeNull();
+    bridge.dispose();
+  });
+
+  // The other half of the same guard, and the reason it is a DEDUP rather than a
+  // latch: nudging the plate to a genuinely different weight without lifting it is
+  // a fresh placement and must still prompt. (The suite already asserts this
+  // through the real store, at "does not let the next food on the pan inherit…";
+  // this pins the marker itself so the two cannot drift apart.)
+  it('still prompts when the weight changes after a commit', async () => {
+    const { bridge, accept, logFromScale, scheduler, publish, prime } = makeHarness();
+    await prime();
+    await publish({ id: SCALE, grams: 473, unit: 'g', stable: true });
+    scheduler.fire();
+    await flush();
+    expect(accept.execute).toHaveBeenCalledTimes(1);
+
+    await publish({ id: SCALE, grams: 900, unit: 'g', stable: true });
+    await flush();
+    const posts = logFromScale.execute.mock.calls.filter((c) => !c[0].existingLogUuid);
+    expect(posts).toHaveLength(2);
+    bridge.dispose();
+  });
+
+  // The marker is released when the food comes OFF: the next thing on the pan is
+  // a new placement and gets its own prompt even at the same weight.
+  it('prompts again for the same weight once the pan has been cleared', async () => {
+    const { bridge, logFromScale, scheduler, publish, prime } = makeHarness();
+    await prime();
+    await publish({ id: SCALE, grams: 473, unit: 'g', stable: true });
+    scheduler.fire();
+    await flush();
+
+    await publish({ id: SCALE, grams: 0, unit: 'g', stable: true });     // lifted off
+    await publish({ id: SCALE, grams: 473, unit: 'g', stable: true });   // put back
+    await flush();
+
+    const posts = logFromScale.execute.mock.calls.filter((c) => !c[0].existingLogUuid);
+    expect(posts).toHaveLength(2);
+    bridge.dispose();
+  });
+
+  // IMPORTANT 3(b): the human tapping a density level during the quiet window owns
+  // the entry. `LogFoodFromScale` reports `touched: true` the moment
+  // `metadata.densityLevel` is set, and the commit must read that as "someone
+  // already answered" rather than reverting their correction to the scanned level
+  // and accepting it under their hand.
+  it('stands down when the human has already answered the prompt', async () => {
+    const { bridge, accept, selectDensity, logFromScale, scheduler, publish, prime } = makeHarness();
+    await prime();
+    await publish({ id: SCALE, grams: 473, unit: 'g', stable: true });
+
+    // The re-sync edit now reports the log as touched — the user pressed a button.
+    logFromScale.execute.mockImplementation(async (input) => (input.existingLogUuid
+      ? { success: true, logUuid: input.existingLogUuid, edited: false, touched: true }
+      : { success: true, logUuid: 'L1', messageId: '9' }));
+
+    scheduler.fire();
+    await flush();
+
+    expect(selectDensity.execute).not.toHaveBeenCalled();
+    expect(accept.execute).not.toHaveBeenCalled();
+    bridge.dispose();
+  });
+
+  // IMPORTANT 3(a): the commit multiplies the density by whatever grams are
+  // persisted, and a `ct:` scan whose ACK refresh was dropped (`inflight`) or threw
+  // never reached the log — so the tare lived only in the buffer and the entry was
+  // silently overcounted. The commit re-syncs first, against the SAME snapshot it
+  // resolves the density from.
+  it('re-syncs the persisted weight from the committed snapshot before applying the density', async () => {
+    const { bridge, calls, logFromScale, scheduler, publish, prime, compositionStore } = makeHarness();
+    await prime();
+    await publish({ id: SCALE, grams: 473, unit: 'g', stable: true });
+    logFromScale.execute.mockClear();
+
+    scheduler.fire();
+    await flush();
+
+    const edits = logFromScale.execute.mock.calls.filter((c) => c[0].existingLogUuid);
+    expect(edits).toHaveLength(1);
+    // The snapshot `commitNow` read — tare and all — is what the edit derives net
+    // from, not a fresh read that a consumed store would answer empty.
+    expect(edits[0][0]).toMatchObject({
+      existingLogUuid: 'L1', grams: 473, unit: 'g',
+      composition: compositionStore.read(SCALE),
+    });
+    // And it happened BEFORE the density multiplied it.
+    expect(calls).toEqual(['density', 'accept']);
+    bridge.dispose();
+  });
+
   // The buffer is OPTIONAL — the prompt flow stands on its own. With no store
   // there is no composition to be complete, so nothing may auto-commit.
   it('arms nothing when no composition store is injected', async () => {

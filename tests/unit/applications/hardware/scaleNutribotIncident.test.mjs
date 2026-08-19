@@ -426,6 +426,49 @@ describe('the 12:31 incident', () => {
     h.bridge.dispose();
   });
 
+  // `rs:done` is the card that says "the sequence is complete, process it now" —
+  // the one gesture that means the wait is over. It used to route to
+  // `endPlacement` alone, which WIPED the slots; `armCommitFor` then set a clock
+  // that fired 25 s later against an empty composition and skipped as incomplete.
+  // The explicit finish gesture therefore GUARANTEED a stranded entry with no
+  // density — the exact failure this branch exists to remove — while both the
+  // design and the reference doc claimed it committed immediately.
+  it('commits immediately on rs:done, rather than stranding the entry it was meant to finish', async () => {
+    const h = makeIncidentHarness();
+    await prime(h);
+    await settle(h, 639);
+    await h.scan('dl:140');
+    await h.scan('ct:60');
+    await settle(h, 473);
+    expect(h.accept.execute).not.toHaveBeenCalled();
+
+    await h.scan('rs:done');
+    await flush();
+
+    // Filed NOW, with no timer fired — and with the numbers the composition held
+    // at the moment the card was scanned, even though the slots are gone.
+    expect(h.accept.execute).toHaveBeenCalledTimes(1);
+    expect(h.committed).toEqual([
+      { id: SCALE, logUuid: LOG_ID, grams: 473, density: 4, container: 'tupperware' },
+    ]);
+    const { item, metadata } = persisted(h);
+    expect(item.grams).toBe(413);
+    expect(item.calories).toBe(578);
+    expect(item.label).toBe('Mixed');
+    expect(metadata.densityLevel).toBe(4);
+
+    // The slots are consumed — `done` still MEANS endPlacement — and no clock is
+    // left armed behind the commit.
+    expect(h.compositionStore.read(SCALE).active).toBe(false);
+    expect(h.scheduler.pending).toBeNull();
+
+    // And firing a stray timer afterwards cannot produce a second entry.
+    h.scheduler.fire();
+    await flush();
+    expect(h.accept.execute).toHaveBeenCalledTimes(1);
+    h.bridge.dispose();
+  });
+
   // Each fridge-sheet scan must restart the clock through the real dispatcher.
   // This is what stops the 25 s lull being measured from the last WEIGHT.
   it('restarts the quiet clock from each scan, via the real dispatch path', async () => {

@@ -47,6 +47,7 @@ function makeDeps(over = {}) {
   const triggerDispatchService = { handleEvent: vi.fn(async () => ({ ok: true })) };
   const refreshPrompt = vi.fn(async () => {});
   const armCommitFor = vi.fn();
+  const commitNowFor = vi.fn(async () => true);
   const execute = vi.fn(async () => ({ ok: true }));
 
   const deps = {
@@ -60,7 +61,7 @@ function makeDeps(over = {}) {
     },
     relayConfig: {},
     applyScanToComposition: { execute: vi.fn(() => ({ handled: false })) },
-    getScaleNutribotBridge: () => ({ refreshPrompt, armCommitFor }),
+    getScaleNutribotBridge: () => ({ refreshPrompt, armCommitFor, commitNowFor }),
     getLogFoodFromUPC: () => ({ execute }),
     configService: {
       getSystemConfig: () => ({ nutribot: { telegram: { bot_id: '777' } } }),
@@ -73,17 +74,20 @@ function makeDeps(over = {}) {
     ...over,
   };
 
-  return { deps, barcodeLogger, dispatcherLogger, refreshPrompt, armCommitFor, execute };
+  return { deps, barcodeLogger, dispatcherLogger, refreshPrompt, armCommitFor, commitNowFor, execute };
 }
 
 function harness(over = {}) {
-  const { deps, barcodeLogger, dispatcherLogger, refreshPrompt, armCommitFor, execute } = makeDeps(over);
+  const {
+    deps, barcodeLogger, dispatcherLogger, refreshPrompt, armCommitFor, commitNowFor, execute,
+  } = makeDeps(over);
   return {
     ...deps,
     barcodeLogger,
     dispatcherLogger,
     refreshPrompt,
     armCommitFor,
+    commitNowFor,
     execute,
     scanDispatch: createScanDispatch(deps),
   };
@@ -538,6 +542,54 @@ describe('nutrition — the nutriscan path', () => {
     expect(h.armCommitFor).toHaveBeenCalledWith('kitchen-food-scale');
   });
 
+  // `rs:done` is the "process it now" card, and arming a 25 s clock for it was the
+  // opposite of what it says: `ApplyScanToComposition` has already consumed the
+  // slots by the time this branch runs, so the timer fired against an empty
+  // composition and skipped as incomplete. The explicit finish gesture guaranteed
+  // a stranded entry.
+  it('commits immediately on rs:done instead of arming the clock', async () => {
+    const snapshot = { grams: 473, unit: 'g', density: 4, container: 'tupperware', complete: true, active: true };
+    const applyScanToComposition = {
+      execute: vi.fn(() => ({ handled: true, ok: true, kind: 'done', hadState: true, snapshot })),
+    };
+    const h = harness({ applyScanToComposition });
+    const out = await h.scanDispatch.handleScan(relayScan({
+      device: 'nutribot-upc', route: 'nutribot', code: 'rs:done',
+    }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    // The PRE-CONSUMPTION snapshot rides along, because the store has nothing
+    // left to read by now.
+    expect(h.commitNowFor).toHaveBeenCalledWith('kitchen-food-scale', snapshot);
+    expect(h.armCommitFor).not.toHaveBeenCalled();
+    // And NO ack refresh: `refreshPrompt` renders from a fresh store read, which
+    // on this path is the composition `done` just consumed — it would repaint the
+    // prompt with no tare and no density, and persist that un-tared weight for the
+    // commit to multiply. The commit re-renders the message itself.
+    expect(h.refreshPrompt).not.toHaveBeenCalled();
+    expect(out).toMatchObject({ domain: 'nutrition', ok: true });
+  });
+
+  it('survives a bridge with no commitNowFor, and never rejects the scan for one', async () => {
+    const snapshot = { grams: 473, unit: 'g', density: 4, container: null, complete: true, active: true };
+    const applyScanToComposition = {
+      execute: vi.fn(() => ({ handled: true, ok: true, kind: 'done', hadState: true, snapshot })),
+    };
+    const bridges = [
+      () => null,
+      () => ({ refreshPrompt: async () => {} }),
+      () => ({ refreshPrompt: async () => {}, commitNowFor: () => Promise.reject(new Error('nope')) }),
+    ];
+    for (const getScaleNutribotBridge of bridges) {
+      const h = harness({ applyScanToComposition, getScaleNutribotBridge });
+      const out = await h.scanDispatch.handleScan(relayScan({
+        device: 'nutribot-upc', route: 'nutribot', code: 'rs:done',
+      }));
+      await new Promise((r) => setTimeout(r, 0));
+      expect(out).toMatchObject({ domain: 'nutrition', ok: true });
+    }
+  });
+
   // The bridge is LATE-BOUND and only exists when the head of household and bot
   // id resolve, so an absent one (or an older one without the hook) must leave
   // the scan itself unharmed rather than throwing out of the handler.
@@ -693,7 +745,10 @@ describe('nutrition — the nutriscan path', () => {
     expect(h.refreshPrompt).toHaveBeenCalledWith('kitchen-food-scale', null);
   });
 
-  it('keeps the warn-once memory per dispatch instance, keyed by reason', async () => {
+  // Named for what it asserts. There is no warn-once memory any more —
+  // `emitSampled` is stateless, and this drives the FALLBACK path (the fake logger
+  // has no `sampled`), where every swallow reason lands on `warn` in its own right.
+  it('warns on the fallback path for each swallow reason', async () => {
     const h = harness();
     await h.scanDispatch.handleScan(relayScan({
       device: 'nutribot-noscale', route: 'nutribot', code: 'dl:4',

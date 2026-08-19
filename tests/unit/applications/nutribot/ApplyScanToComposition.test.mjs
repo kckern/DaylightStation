@@ -143,6 +143,30 @@ describe('ApplyScanToComposition', () => {
       apply.execute({ scaleId: 'kitchen', code: 'rs:done' });
       expect(apply.execute({ scaleId: 'kitchen', code: 'rs:undo' })).toMatchObject({ undone: false });
     });
+
+    // Consuming the slots is only the STORE half of "done". The other half —
+    // finalising the entry — happens in the bridge, after this returns, and by
+    // then there is nothing left to read. Handing back the pre-consumption
+    // snapshot is what lets the caller commit against what was actually scanned;
+    // without it the "process it now" card wiped the composition and the entry
+    // was stranded with no density, which is the failure the card exists to avoid.
+    it('hands back the composition as it stood BEFORE the slots were consumed', () => {
+      apply.execute({ scaleId: 'kitchen', code: 'ct:350' });
+      apply.execute({ scaleId: 'kitchen', code: 'dl:140' });
+      const r = apply.execute({ scaleId: 'kitchen', code: 'rs:done' });
+
+      expect(r.snapshot).toMatchObject({
+        density: 4, container: 'mug', active: true,
+      });
+      // ...and the store really is empty afterwards, so the snapshot is the only
+      // copy left.
+      expect(store.read('kitchen')).toMatchObject({ density: null, container: null, active: false });
+    });
+
+    it('reports a null-slotted snapshot when there was nothing live', () => {
+      const r = apply.execute({ scaleId: 'kitchen', code: 'rs:done' });
+      expect(r.snapshot).toMatchObject({ density: null, container: null, complete: false, active: false });
+    });
   });
 
   // ---------------------------------------------------------------------------

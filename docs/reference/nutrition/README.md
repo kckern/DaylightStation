@@ -110,7 +110,7 @@ match the verb would disable the one control code already in the field with no e
 |------|-----------|--------------|
 | `reset` | `clear(scaleId)` | `{ok: true, kind: 'reset', hadState}` |
 | `undo` | `undo(scaleId)` | `{ok: true, kind: 'undo', undone}` |
-| `done` | `endPlacement(scaleId)` | `{ok: true, kind: 'done', hadState}` |
+| `done` | `endPlacement(scaleId)`, after reading the snapshot | `{ok: true, kind: 'done', hadState, snapshot}` |
 
 All three are `ok: true` even when they found nothing to act on — `ok: false` is a refusal and
 paints a ⚠️ on the prompt, whereas a control scan that had no work still worked. The boolean
@@ -122,6 +122,19 @@ identical today and kept separate because they mean different things: `clear` is
 "process it now", which is the same event the bridge raises when the scale returns to rest —
 so it belongs on the `endPlacement` side. The result still reports `kind: 'done'` so the ack
 never conflates it with a reset.
+
+**...and consuming the slots is only half of it.** `done` also has to FINALISE the entry, and
+that happens one layer up. `ApplyScanToComposition` reads the composition *before*
+`endPlacement` wipes it and returns it as `snapshot`; `scanDispatch` then calls the bridge's
+`commitNowFor(scaleId, snapshot)` instead of `armCommitFor`. Without that the card wiped the
+composition and left an armed clock to fire 25 s later against nothing and skip as incomplete —
+the explicit finish gesture was the one path that *guaranteed* a stranded entry with no
+density.
+
+`done` deliberately skips the prompt ACK that every other claimed scan fires. `refreshPrompt`
+renders from a *fresh* store read, and on this path that is the composition just consumed — it
+would repaint the prompt with no tare and no density, and persist that un-tared weight for the
+commit to multiply. The commit re-renders the message itself once the density applies.
 
 **Undo is one deep.** The setters overwrite, so rescanning already fixes a *wrong* slot;
 `undo` exists for the fix rescanning cannot express — taking a slot back to empty. A second
@@ -243,8 +256,14 @@ under test.
 
 `ScaleNutribotBridge` finalises an entry on its own after **25 seconds** with no new *applied*
 input — configurable per scale as `commit_quiet_sec` in the `nutribot` block of `scales.yml`
-(surfaced to code as `commitQuietSec`, default `25`). This is the mechanism that turns a
-complete composition into a saved food-log entry; nothing else does.
+(surfaced to code as `commitQuietSec`, default `25`, **clamped to a floor of 5 seconds**).
+This is the mechanism that turns a complete composition into a saved food-log entry; nothing
+else does.
+
+The floor is not cosmetic. A negative value produced a timer that fires immediately — i.e.
+commit-on-sufficiency, the design this feature exists to replace — and `0` is falsy, so it
+silently disabled quiet-commit altogether. 5 s rather than 1 s because the 12:31 incident's
+container scan landed 4.4 s behind its density, and anything shorter cannot span the gesture.
 
 **What arms and re-arms the timer.** Only inputs that actually changed the composition: a
 qualifying weight placement (`setWeight`), an applied `dl:`/`ct:` scan (`armCommitFor`, called
@@ -273,7 +292,25 @@ next lull to retry, or for the human to answer directly.
 **A successful commit consumes the composition** (`bufferEndPlacement`, called only after the
 accept succeeds) so the next food placed on the scale cannot inherit this one's density or tare.
 
-`rs:done` bypasses the wait entirely and commits immediately, exactly as it always has.
+`rs:done` bypasses the wait entirely and commits immediately — see
+[What each control code does](#what-each-control-code-does) for how the pre-consumption
+snapshot gets from the scan use case to the bridge.
+
+**A commit marks the placement, so it cannot re-prompt itself.** A commit only ever happens
+with the food still on the pan (any lift-off disarms the clock) and the relay broadcasts every
+raw frame at ~4 Hz, so the next settle arrives about 250 ms after the accept. `commitNow`
+records the committed weight on the scale's state and the new-placement branch refuses a frame
+within `dedup_delta_g` of it; the marker is released when the pan returns to rest, or when a
+different weight posts a prompt of its own. Without it every successful quiet-commit posted a
+second prompt for food already filed, and answering it double-counted the meal.
+
+**The commit re-syncs the persisted weight first.** Before applying the density it calls
+`LogFoodFromScale` in place against the same snapshot it is committing. That covers a `ct:`
+scan whose ACK refresh was dropped (`refreshPrompt` bails when the scale is mid-settle) and so
+never reached the log — the density would otherwise have multiplied *gross* grams. It is also
+how the commit notices a human: `LogFoodFromScale` reports `touched: true` once
+`metadata.densityLevel` is set, and the commit then stands down rather than reverting somebody's
+tapped correction to the scanned level and accepting it.
 
 ---
 
@@ -318,6 +355,8 @@ restart before it takes effect.
 | Config — macros backfill by level | **shipped** — an override that omits `macros` borrows `DEFAULT_DENSITY_LEVELS`' for its level rather than disabling the feature; `nutriscan.macros.backfilled` logs the substitution |
 | Refusal ACK (`swallowNotice`) | **shipped** — a swallowed scan paints a `⚠️` line on the live prompt instead of producing no visible change |
 | Quiet-commit (`ScaleNutribotBridge` commit timer) | **shipped** — see [Quiet-commit](#quiet-commit) |
+| `rs:done` immediate commit (`commitNowFor`) | **shipped** — the snapshot is read before `endPlacement` consumes the slots and committed against |
+| **Macros persisted on a logged entry** | **NOT shipped.** `SelectScaleDensity` writes `label` + `calories` only, and `computeNutrition` (`ScanNutritionService`, 58 tests) still has NO production caller. The `macros:` table is validated, printed and tested, and nothing reads it into history — a scan-enriched entry carries calories but no fat/carb/protein split |
 | Memo (voice flow-state branch, Memo button) | not started |
 | Food grammar (`fd:` prefix) | not started — sheet prints foods as inert labels, if at all |
 
@@ -365,6 +404,11 @@ than the grams — see [Known gaps](#known-gaps--deliberate-do-not-silently-fix)
   the prompt so the next quiet lull retries — but a *persistent* cause (`'unknown level'`,
   `'log not found'`) fails identically forever, and only a `scaleNutribot.commit.skipped` warn
   log explains why. The entry just never finalises, with no notice on the prompt.
+- **Macros never reach the food log.** `ScanNutritionService.computeNutrition` derives fat/carb/
+  protein grams from a density row's `macros`, is fully tested, and has no production caller:
+  the commit path applies the density through `SelectScaleDensity`, which writes only the label
+  and the calorie total. Every scan-enriched entry in history is therefore macro-less. Wiring it
+  means deciding where macros live on a `NutriLog` item, which is a separate change.
 - **Print legibility is untested.** Nothing verifies a QR printed 25-to-a-page scans off a
   fridge door in kitchen lighting. Print one and try it before laminating.
 

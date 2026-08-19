@@ -74,15 +74,27 @@ export class ApplyScanToComposition {
 
     if (parsed.kind === 'done') {
       // Routed to `endPlacement`, whose contract — consume every slot for this
-      // scale, now — is precisely what "done" asks for. The store keeps
+      // scale, now — is the STORE half of what "done" asks for. The store keeps
       // `endPlacement` and `clear` as separate methods because they MEAN
       // different things, and `done` sits on the endPlacement side of that line:
       // it says "the sequence is complete, process it", not "forget it". The
       // result reports `kind: 'done'` rather than reusing 'reset', so the call
       // site and the ack the user reads never conflate the two.
+      //
+      // The SNAPSHOT is read first and travels back with the result. Consuming
+      // the slots is only half of what "done" asks for — the other half is that
+      // the entry gets FINALISED, and that happens in the bridge, one layer up,
+      // after this returns. Routing to `endPlacement` alone meant the card wiped
+      // the composition and the quiet-commit timer then fired against nothing and
+      // skipped as incomplete: the explicit "process it now" gesture guaranteed a
+      // stranded entry with no density, which is the exact failure this whole
+      // feature exists to remove. Handing the pre-consumption snapshot back is
+      // what lets the caller commit against what was actually scanned without
+      // this use case reaching into the bridge or reordering `endPlacement`.
+      const snapshot = this.#store.read?.(scaleId) ?? null;
       const hadState = this.#store.endPlacement(scaleId);
       this.#logger.info?.('applyScan.done', { scaleId, hadState });
-      return { handled: true, ok: true, kind: 'done', hadState };
+      return { handled: true, ok: true, kind: 'done', hadState, snapshot };
     }
 
     if (parsed.kind === 'density') {
