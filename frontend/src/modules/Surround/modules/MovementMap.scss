@@ -40,24 +40,37 @@
      one-line headings — and that case now costs lane (4px) + the heading's
      clearance (0.55em of 1.05rem = 9.24px) + one line of name (19.32px) + the
      translation's clearance (0.2em of 0.74rem = 2.37px) + one line of
-     translation (0.74rem x 1.2 = 14.21px) + the bottom padding (8.8px) =
-     57.94px, still inside 62.4px. The module has no ceiling, so where a heading
-     genuinely wraps the module (and the region, which is `flex: 0 0 auto` and
-     content-sized) simply grows — as it did before this wave, by one more line
-     now. Raising the floor to cover the wrapped case would have bought dead
-     black under every band that does NOT wrap, which is precisely the slack
-     wave 5 removed. */
+     translation (0.74rem x 1.2 = 14.21px) + the bottom padding (fix round 2:
+     5.6px, see below) = 54.74px, still inside 62.4px. The module has no
+     ceiling, so where a heading genuinely wraps the module (and the region,
+     which is `flex: 0 0 auto` and content-sized) simply grows — as it did
+     before this wave, by one more line now. Raising the floor to cover the
+     wrapped case would have bought dead black under every band that does NOT
+     wrap, which is precisely the slack wave 5 removed. */
   min-height: 3.9rem;
   box-sizing: border-box;          /* the floor is the BAND, padding included */
   /* NO TOP PADDING. The rule row has to sit tight against the video's bottom
      edge — the footer already rides up over it by `--band-overlap`, and any
      padding here would spend that overlap on empty black, which is exactly the
-     gap the user saw. Zero puts the lane inside the overlap zone. */
-  padding: 0 1.1rem 0.55rem;
+     gap the user saw. Zero puts the lane inside the overlap zone.
+     BOTTOM 0.55rem -> 0.35rem (fix round 2, live defect 1+2). The same
+     3.2px this trim buys back is not read as clearance around any line of
+     text — the gloss already carries its own `margin-top` — it is spare air
+     under the whole band, and reclaiming it is what lets the ticker's
+     three-line tier survive the ~15px this round's compounding-gloss fix
+     costs it at 1280x720 (see CueTicker.scss's own padding trim for the
+     rest of that budget). */
+  padding: 0 1.1rem 0.35rem;
   display: flex;
   align-items: flex-start;
   font-family: var(--surround-display, "Cormorant Garamond", Georgia, serif);
   color: var(--ink, #2a1d07);
+  /* THE GLOSS WRAPS WHERE THE BAND CAN AFFORD IT (fix round 2, live defect 1).
+     `inline-size` only — never `size` — so this box keeps sizing itself to its
+     content; only the WIDTH becomes queryable. See `__translation` below for
+     what reads it and why. */
+  container-type: inline-size;
+  container-name: movement-map;
 }
 
 /* The staff rule itself. Segments hang from it; the playhead rides over it. */
@@ -115,21 +128,35 @@
   font-weight: 600;
 }
 
-/* THE TRANSLATION (design wave 6) — the editor's gloss, one register down and
-   in a DIFFERENT FACE. Every other word in this frame is one of two Garamonds;
-   a translation set in a third weight of the same family would read as quieter
-   programme rather than as annotation, so this is the one place the design
-   breaks the serif and uses the annotation sans (`--surround-annotation`).
-   Recessive by three means at once — face, size, opacity — because it must not
-   compete with the movement NAME six pixels above it.
-   SINGLE LINE, ELLIPSIZED, and that is deliberately the opposite of the
-   heading's wrap-only law: the heading wraps because a movement's name is
-   content the viewer needs whole, while a translation that will not fit its
-   segment is a convenience. Wrapping it would cost the whole band a second
-   annotation line for the sake of one narrow segment. `text-overflow` is the
-   correct idiom HERE precisely because this box is `nowrap` — the thing wave 5
-   removed from the heading was `text-overflow` sitting beside a line CLAMP,
-   which is a different (and contradictory) pairing. */
+/* THE TRANSLATION (design wave 6, fix round 2) — the editor's gloss, one
+   register down and in a DIFFERENT FACE. Every other word in this frame is
+   one of two Garamonds; a translation set in a third weight of the same
+   family would read as quieter programme rather than as annotation, so this
+   is the one place the design breaks the serif and uses the annotation sans
+   (`--surround-annotation`). Recessive by three means at once — face, size,
+   opacity — because it must not compete with the movement NAME six pixels
+   above it.
+   WRAP OR ELLIPSIS, NEVER BOTH — THE SAME LAW AS THE HEADING, WHERE THE BAND
+   CAN AFFORD IT. Wave 6 shipped single-line + `nowrap` + `text-overflow:
+   ellipsis` everywhere, on the theory that a translation is a convenience the
+   band should not pay a second line for. Measured against a real segment (the
+   Eroica's Scherzo, the shortest movement and so the narrowest column at
+   every width in the fleet), that theory cut a gloss that had done nothing
+   wrong: "Playful — fast and lively" ellipsized to "Playful — fast a…" not
+   because it was unusually long but because its segment is unusually narrow —
+   the same segment whose NAME already needs two lines by wave 5's law. A
+   short segment IS the fleet's normal case (a scherzo is shorter than a first
+   movement more often than not), so the old rule cut a routine gloss, not a
+   genuine overflow.
+   BUT the two-line name and a two-line gloss compounding on the SAME segment
+   is the band's worst case (91.4px of typographic content — lane, clearance,
+   two heading lines, clearance, two gloss lines, padding — measured in the
+   harness, constant across every width because it is built entirely from
+   `em`/`rem`), and the ticker below has its own hard floor (2.7rem, wave 6
+   fix round 1 — CueTicker.scss). At the 960x540 screen-root the two floors
+   collide: the footer's own content budget there is 121px, so 91.4px of band
+   plus the ticker's 43.2px floor is 13.6px MORE than the column has — a real,
+   measured overflow past the frame's own edge, not a hypothetical one. */
 .surround-movement-map__translation {
   display: block;
   margin-top: 0.2em;
@@ -140,11 +167,47 @@
   font-style: normal;              /* it is NOT the tempo term — see __tempo */
   line-height: 1.2;
   letter-spacing: 0.01em;
+  color: var(--ink, #2a1d07);
+  opacity: 0.55;
+  /* THE BASE RULE IS THE SAFE ONE — single line, `nowrap` + ellipsis, wave 6's
+     original mechanism — because it is what the tightest band in the fleet
+     (960x540, the living-room screen-root) can afford without threatening the
+     ticker's own floor. The query below promotes it wherever there is room. */
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: var(--ink, #2a1d07);
-  opacity: 0.55;
+}
+
+/* THE PROMOTED TIER — wrap to two lines, clamped, once the band is wide enough
+   that doing so cannot compound into the overflow above.
+   THE THRESHOLD IS THE COLLISION'S OWN ARITHMETIC, not a round guess. The
+   footer's content budget is linear in the band's own width (measured at the
+   fleet's three sizes: 121 / 180.4 / 299.2px of footer content at 643.2 /
+   857.6 / 1286.4px of band width — a fit confirmed to the pixel at the middle
+   point). Solving footerBudget(bandWidth) - tickerFloor(43.19px) >=
+   worstCase(91.42px) puts the crossover at ~693px of band width; swept in the
+   harness directly (not just algebra) at 692/693/700/710px, the frame first
+   clears its own bottom edge at 693px and has 2.4px of air by 700px. 700px is
+   the number below, with that margin measured rather than assumed. Below it,
+   `container-type: inline-size` on `.surround-movement-map` (declared above)
+   is what makes "how wide is THIS band" — not the viewport — the thing being
+   asked; a rail width change or a future breakpoint moves the query with it
+   for free. */
+@container movement-map (min-width: 700px) {
+  .surround-movement-map__translation {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    max-height: 2.4em;             /* 2 lines at this rule's own line-height */
+    white-space: normal;
+    /* No `text-overflow` here, on purpose — same law as the heading (wave 5):
+       it is the single-line idiom, it does nothing on a wrapping box, and
+       declaring it beside a clamp is the "two mechanisms" the review caught
+       there. `white-space: normal` above is what cancels the base rule's
+       `nowrap`; the base's `text-overflow: ellipsis` then has nothing left to
+       apply to. */
+  }
 }
 
 .surround-movement-map__numeral {

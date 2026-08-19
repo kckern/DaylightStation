@@ -406,6 +406,67 @@ describe('CueTicker — reserved height and centred setting', () => {
     expect(budgetAt(215.6), '1920x1080 overflows the ticker').toBeLessThanOrEqual(215.6);
   });
 
+  /**
+   * Live defect 2 (2026-08-19) — A FOURTH LINE, wherever the arithmetic
+   * actually clears itself. Fix round 1 got the Eroica's 232-character
+   * Napoleon note from 44-90 shown characters to ~174 of 232 (three of the
+   * four lines it needs). Re-measured against the LIVE sidecar (224
+   * characters, verbatim from `GET /api/v1/play/plex:663134`), three lines
+   * at 1280x720 shows ~185 of 224; a fourth line, where it fits, shows every
+   * one of them.
+   */
+  it('promotes to a fourth line where the container clears the crossover', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    const q = css.match(/@container ticker \(min-height: (\d+)px\) \{ \.surround-cue-ticker__text \{ min-height: ([\d.]+)em[^}]*max-height: \2em; \} \.surround-cue-ticker__line \{ -webkit-line-clamp: 4/);
+    expect(q, 'no four-line container query — the ticker cannot promote further').not.toBeNull();
+    const threshold = Number(q[1]);
+    expect(Number(q[2])).toBeCloseTo(5.4, 5); // 4 lines at line-height 1.35
+
+    // THE THRESHOLD MUST CLEAR ITS OWN CROSSOVER TO THE FONT'S CEILING. Naively
+    // reusing the three-line tier's floor-font arithmetic (header + 4 lines at
+    // 0.88rem) UNDER-counts: past the three-line tier's own 88px crossover the
+    // clamp's `16cqh` coefficient keeps climbing (not pinned to the floor)
+    // until it hits its 1.5rem ceiling at 24 / 0.16 = 150px of content. This
+    // threshold has to be past THAT crossover, or the note it promotes to
+    // would still be smaller than 1.5rem and the arithmetic below would be
+    // checking the wrong number.
+    const CEIL_PX = 1.5 * 16;
+    const COEF = 0.16;
+    const ceilCrossover = CEIL_PX / COEF;
+    expect(threshold, 'the four-line tier fires before the font reaches its ceiling')
+      .toBeGreaterThan(ceilCrossover);
+
+    // SELF-CONSISTENCY AT THE CEILING (the worst case past the crossover: the
+    // note is fixed at 1.5rem and does not grow with the container, so the
+    // four-line budget is CONSTANT past this point — solving budgetAt(T) <= T
+    // with the note pinned at ceiling gives the true minimum threshold).
+    const header = css.match(/\.surround-cue-ticker__now-head \{[^}]*\}/)[0];
+    const headerLineHeight = Number(header.match(/font-size: ([\d.]+)rem/)[1])
+      * Number(header.match(/line-height: ([\d.]+)/)[1]) * 16;
+    const translation = css.match(/\.surround-cue-ticker__now-translation \{[^}]*\}/)[0];
+    const translationLineHeight = Number(translation.match(/font-size: ([\d.]+)rem/)[1])
+      * Number(translation.match(/line-height: ([\d.]+)/)[1]) * 16;
+    const nowBox = css.match(/\.surround-cue-ticker__now \{[^}]*\}/)[0];
+    const margin = Number(nowBox.match(/margin: [\d.]+ 0 ([\d.]+)rem/)[1]) * 16;
+    const headerBudget = headerLineHeight + margin + translationLineHeight;
+    const budgetAtCeiling = headerBudget + (4 * 1.35 * CEIL_PX);
+
+    expect(threshold, 'the four-line tier overflows the container that promotes it')
+      .toBeGreaterThanOrEqual(budgetAtCeiling);
+    // ...and it is the MINIMUM such threshold, not an arbitrarily generous
+    // one — the fourth line is only worth taking where the fleet actually
+    // has the room, and a threshold far past the true minimum would just be
+    // the three-line tier again with extra steps.
+    expect(threshold - budgetAtCeiling, 'far more margin than the 88px tier’s own precedent (0.58px)')
+      .toBeLessThan(10);
+
+    // The real fleet: 1920x1080's content (measured ~221.8px after this
+    // round's padding trim) clears the threshold; 1280x720's (~89px) does
+    // not, so it stays on the three-line tier above.
+    expect(threshold).toBeLessThan(221.8);
+    expect(threshold).toBeGreaterThan(89);
+  });
+
   it('sets the note centred and balanced', () => {
     withStyles();
     const view = mount('A fact.');
