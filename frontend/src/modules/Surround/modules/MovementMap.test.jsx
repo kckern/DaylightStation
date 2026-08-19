@@ -4,6 +4,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render } from '@testing-library/react';
 import * as sass from 'sass-embedded';
 import MovementMap from './MovementMap.jsx';
+import { ACCORDION_MS } from '../band.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -352,29 +353,43 @@ describe('MovementMap — the band’s shipped design', () => {
     expect(window.getComputedStyle(fill).getPropertyValue('transition')).toBe('transform 120ms linear');
   });
 
-  it('lets a movement name wrap to two lines instead of ellipsizing on one', () => {
+  it('sets the name on ONE line with an ellipsis — the segment widens instead', () => {
+    // Design wave 7 SUPERSEDES wave 5's two-line clamp. Nothing on this rail
+    // wraps any more: everything is one line with an ellipsis when it is not
+    // sounding, and the SOUNDING segment accordions wider until nothing is cut
+    // (see the accordion block below). Two mechanisms for "the name did not
+    // fit" is no rule at all, so the clamp is gone rather than disabled.
     const css = withStyles();
     const { container } = renderMap();
     const heading = container.querySelector('.surround-movement-map__heading');
     const style = window.getComputedStyle(heading);
-    expect(style.getPropertyValue('-webkit-line-clamp')).toBe('2');
-    expect(style.getPropertyValue('-webkit-box-orient')).toBe('vertical');
-    // The single-line cap is what made short movements unreadable.
-    expect(style.getPropertyValue('white-space')).not.toBe('nowrap');
-    // Design wave 5: WRAP **OR** ELLIPSIS, NEVER BOTH. `text-overflow` is the
-    // single-line truncation idiom; declared alongside a line clamp it is the
-    // second mechanism the review saw, and it belongs to neither behaviour the
-    // heading is allowed to have. The clamp gives the end-of-line-2 ellipsis;
-    // `max-height` is the box behind it (the clamp's own `display` computes to
-    // `flow-root` in current Chromium, so the height has to be stated), and at
-    // this line-height two lines and the cap are the same number.
+    expect(style.getPropertyValue('white-space')).toBe('nowrap');
+    expect(style.getPropertyValue('text-overflow')).toBe('ellipsis');
+    expect(style.getPropertyValue('overflow')).toBe('hidden');
+
+    // WRAP OR ELLIPSIS, NEVER BOTH — wave 5's law, still binding, now landing
+    // on the other branch: `text-overflow` is the correct idiom precisely
+    // because this box is single-line again, and the clamp that would
+    // contradict it must be gone from the compiled sheet.
     const rule = css.match(/\.surround-movement-map__heading\s*\{[^}]*\}/);
     expect(rule, 'no heading rule in the compiled sheet').not.toBeNull();
-    expect(rule[0], 'the heading still declares text-overflow').not.toMatch(/text-overflow/);
-    const cap = rule[0].match(/max-height:\s*([\d.]+)em/);
-    expect(cap, 'the heading declares no max-height').not.toBeNull();
-    const lineHeight = parseFloat(rule[0].match(/line-height:\s*([\d.]+)/)[1]);
-    expect(parseFloat(cap[1])).toBeCloseTo(lineHeight * 2, 2);
+    expect(rule[0], 'the heading still declares a line clamp beside an ellipsis')
+      .not.toMatch(/-webkit-line-clamp/);
+    expect(rule[0], 'the heading still caps its own height for a wrap it can no longer do')
+      .not.toMatch(/max-height/);
+  });
+
+  it('drops the container-query tier the gloss used to wrap under', () => {
+    // The live-defects round gave the gloss a two-line tier gated on a 700px
+    // container query. Design wave 7 supersedes it: the accordion shows the
+    // sounding movement's gloss whole without costing the band 14px of height
+    // at every screen and for every segment. Removed, not left dormant — a
+    // dormant tier is a second mechanism waiting to fire.
+    const css = withStyles().replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(css, 'the superseded gloss container query is still in the sheet')
+      .not.toMatch(/@container movement-map/);
+    expect(css, 'the band is still a query container nothing queries')
+      .not.toMatch(/container-type:/);
   });
 
   // Read off the compiled sheet rather than off computed style: happy-dom does
@@ -420,13 +435,14 @@ describe('MovementMap — the band’s shipped design', () => {
     const css = withStyles().replace(/\s+/g, ' ');
     const { container } = renderMap({ position: 300 });
 
-    // Source order: bar, then heading, inside each segment.
+    // Source order: bar, then the text row (numeral gutter + text column),
+    // inside each segment.
     const segment = container.querySelector('.surround-movement-map__segment');
     const classes = [...segment.children].map((el) => el.className);
     const bar = classes.findIndex((c) => c.includes('__bar'));
-    const heading = classes.findIndex((c) => c.includes('__heading'));
+    const row = classes.findIndex((c) => c.includes('__text-row'));
     expect(bar).toBeGreaterThanOrEqual(0);
-    expect(heading).toBeGreaterThan(bar);
+    expect(row).toBeGreaterThan(bar);
 
     // Both stacking boxes start at the top, not the bottom.
     expect(css).toMatch(/\.surround-movement-map \{[^}]*align-items: flex-start/);
@@ -441,8 +457,14 @@ describe('MovementMap — the band’s shipped design', () => {
     // The playhead and the barlines hang from the top edge with it.
     expect(css).toMatch(/\.surround-movement-map__playhead \{[^}]*top: 0/);
     expect(css).toMatch(/\.surround-movement-map__barline \{[^}]*top: 0/);
-    // The heading's clearance is a MARGIN above it now, not below.
-    expect(css).toMatch(/\.surround-movement-map__heading \{[^}]*margin-top: [\d.]+em/);
+    // The clearance under the rule lane is TOP padding on the text row (design
+    // wave 7 — the row is the box that has to clear the lane now that the
+    // numeral shares it with the heading). The runtime gate measures the
+    // HEADING's box, which starts after that padding, so the wave-4 clearance
+    // law reads exactly what it always did.
+    const rowRule = css.match(/\.surround-movement-map__text-row \{[^}]*\}/);
+    expect(rowRule, 'no text-row rule in the compiled sheet').not.toBeNull();
+    expect(rowRule[0]).toMatch(/padding: [\d.]+em/);
     expect(css).not.toMatch(/\.surround-movement-map__heading \{[^}]*margin-bottom:/);
   });
 
@@ -524,14 +546,23 @@ describe('MovementMap — the movement translations', () => {
     [...container.querySelectorAll('[data-testid="surround-movement-translation"]')]
       .map((el) => el.textContent);
 
-  it('writes the translation under the heading it glosses', () => {
+  it('writes the translation under the heading it glosses, in the same text column', () => {
     const { container } = renderMap();
     const first = container.querySelector('[data-testid="surround-movement"]');
-    const classes = [...first.children].map((el) => el.className);
+    // Design wave 7: both live inside the TEXT COLUMN, beside the numeral's
+    // gutter — that shared parent is what makes them share a left edge.
+    const cell = first.querySelector('.surround-movement-map__text');
+    expect(cell, 'the segment has no text column').not.toBeNull();
+    const classes = [...cell.children].map((el) => el.className);
     const heading = classes.findIndex((c) => c.includes('__heading'));
     const gloss = classes.findIndex((c) => c.includes('__translation'));
-    expect(gloss, 'the translation is not in the segment at all').toBeGreaterThanOrEqual(0);
+    expect(gloss, 'the translation is not in the text column at all').toBeGreaterThanOrEqual(0);
     expect(gloss, 'the gloss is written above the name it glosses').toBeGreaterThan(heading);
+    // ...and the numeral is NOT in that column: it is an index mark in its own
+    // fixed track, which is the whole point of design wave 7's gutter.
+    expect(cell.querySelector('.surround-movement-map__numeral'),
+      'the numeral is back inside the text column — the gloss will start under it')
+      .toBeNull();
     expect(translations(container)).toEqual([
       'Fast, with spirit', 'Funeral march — very slow', 'Finale — very fast',
     ]);
@@ -599,54 +630,60 @@ describe('MovementMap — the movement translations', () => {
   });
 
   /**
-   * THE PROMOTED TIER — the gloss wraps to two lines wherever the band is wide
-   * enough that doing so cannot compound into the overflow above (fix round 2,
-   * live defect 1). Same mechanism as the heading: clamp + `max-height`, no
-   * `text-overflow` (wave 5's law — the single-line idiom does nothing on a
-   * wrapping box and declaring it beside a clamp is the "two mechanisms" the
-   * review caught on the heading).
+   * THE NUMERAL'S GUTTER (design wave 7). `III. Scherzo. Allegro vivace` used
+   * to be one inline run, so the gloss under it started at the segment's left
+   * edge — UNDER the numeral. The numeral is an index mark, and an index mark
+   * belongs in a track of its own.
    */
-  it('wraps the gloss to two lines once the band has room, via its own container query', () => {
-    // Comments stripped first: this file's own prose quotes CSS-like
-    // fragments ("text-overflow: ellipsis`, ...") that would otherwise
-    // false-positive the "no text-overflow in the promoted rule" check below.
+  it('puts the numeral in a fixed track sized ONCE per rail, not per segment', () => {
     const css = withStyles().replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, ' ');
+    const row = css.match(/\.surround-movement-map__text-row \{[^}]*\}/)[0];
+    // Two tracks: the gutter, then the text column. `minmax(0, 1fr)` is what
+    // lets the ellipses inside it actually fire.
+    expect(row).toMatch(/grid-template-columns: var\(--numeral-gutter\) minmax\(0, 1fr\)/);
+    // The track is `ch`-based off the row's own face, so a font swap moves the
+    // gutter with the glyphs, and it is driven by `--numeral-chars` — published
+    // by the component as the LONGEST numeral the piece has.
+    expect(row).toMatch(/--numeral-gutter: calc\(var\(--numeral-chars[^)]*\)[^;]*ch/);
 
-    const panel = css.match(/\.surround-movement-map \{[^}]*\}/)[0];
-    expect(panel, 'the band carries no container for the gloss query to target')
-      .toContain('container-name: movement-map');
-    expect(panel).toContain('container-type: inline-size');
+    const { container } = renderMap();
+    const map = container.querySelector('.surround-movement-map');
+    // The Eroica runs to IV., so the longest numeral is "III." — four
+    // characters — and every segment gets that same track.
+    expect(map.style.getPropertyValue('--numeral-chars')).toBe('4');
+    const perSegment = [...container.querySelectorAll('.surround-movement-map__text-row')]
+      .map((el) => el.style.getPropertyValue('--numeral-gutter'));
+    expect(perSegment.every((v) => !v), 'a segment is sizing its own gutter').toBe(true);
+  });
 
-    const q = css.match(/@container movement-map \(min-width: ([\d.]+)px\) \{(.*?)\} \}/);
-    expect(q, 'no container query — the gloss cannot adapt to the room the band has').not.toBeNull();
-    const threshold = Number(q[1]);
+  it('sizes the gutter to the longest numeral the PIECE has, not to a constant', () => {
+    const nine = {
+      ...EROICA,
+      piece: { title: 'Nine', musicEndsAt: 900 },
+      movements: Array.from({ length: 8 }, (_, i) => ({
+        n: i + 1, name: `Movement ${i + 1}`, start: i * 100,
+      })),
+    };
+    const { container } = renderMap({ data: nine, duration: 900 });
+    // VIII. — five characters.
+    expect(container.querySelector('.surround-movement-map').style.getPropertyValue('--numeral-chars'))
+      .toBe('5');
+  });
 
-    // THE THRESHOLD IS THE COLLISION'S OWN ARITHMETIC. The compounding
-    // worst case (two-line heading + two-line gloss on one segment) costs
-    // 91.42px of band, constant across every width in the fleet because it
-    // is built entirely from `em`/`rem`. The ticker below has its own hard
-    // floor (2.7rem = 43.2px). Below the threshold, giving the gloss its
-    // second line would push band + ticker-floor past the footer's own
-    // content budget — which is genuinely a per-render-width relationship
-    // this stylesheet cannot compute, so the threshold has to be wide enough
-    // that the fleet's actual narrow tier (960x540, 643.2px of band) stays
-    // below it and the actual wide tiers (857.6 / 1286.4px) clear it. 700 is
-    // that number, swept directly in a headless-Chromium harness (not just
-    // algebra): the frame first stops overflowing its own edge at ~693px of
-    // band width, and 700px leaves a couple of pixels of air.
-    expect(threshold, 'the query promotes a layout narrower bands cannot afford').toBeGreaterThan(693);
-    expect(threshold, 'the query is so conservative it never fires in the fleet').toBeLessThan(857.6);
-
-    const inside = q[2];
-    expect(inside).toMatch(/-webkit-line-clamp: 2/);
-    expect(inside).toMatch(/-webkit-box-orient: vertical/);
-    expect(inside).toMatch(/max-height: 2\.4em/);
-    expect(inside).toMatch(/white-space: normal/);
-    // Wave 5's law, re-applied here: the clamp is the mechanism, and a
-    // `text-overflow` beside it is the second one the review caught on the
-    // heading. The promoted rule must not re-introduce it.
-    expect(inside, 'the promoted tier still declares the single-line idiom')
-      .not.toMatch(/text-overflow/);
+  it('gives the index mark its own quiet register, and brightens it only when sounding', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    const rule = css.match(/\.surround-movement-map__numeral \{[^}]*\}/)[0];
+    expect(rule, 'the numeral is not set as an index mark').toMatch(/font-variant-caps: all-small-caps/);
+    expect(rule).toMatch(/font-variant-numeric: lining-nums/);
+    const base = Number(rule.match(/opacity: ([\d.]+)/)[1]);
+    expect(base, 'the numeral competes with the name it numbers').toBeLessThan(0.6);
+    // Right-aligned in its track with its own air after it: a numbered list
+    // rags on the left, not against the text it numbers.
+    expect(rule).toMatch(/justify-self: end/);
+    expect(rule).toMatch(/padding-right: [\d.]+em/);
+    const active = css.match(/--active \.surround-movement-map__numeral \{([^}]*)\}/);
+    expect(active, 'the sounding movement’s numeral never comes up').not.toBeNull();
+    expect(Number(active[1].match(/opacity: ([\d.]+)/)[1])).toBeGreaterThan(base);
   });
 
   it('recedes with an elapsed movement, and only with an elapsed one', () => {
@@ -669,17 +706,22 @@ describe('MovementMap — the movement translations', () => {
    * wrap, which is exactly the slack wave 5 removed; the module has no ceiling,
    * so a band that genuinely needs the second line simply grows.
    */
-  it('still fits a one-line heading AND its gloss inside the floor it already had', () => {
+  it('fits the whole band — one name line and one gloss line — inside its floor', () => {
+    // Design wave 7: this is no longer the "short case". Nothing on the rail
+    // wraps, so this arithmetic is the band's height at EVERY screen and for
+    // every piece, and the floor is what the band simply IS.
     const css = withStyles();
     const band = css.match(/\.surround-movement-map\s*\{[^}]*\}/)[0];
     const declared = band.match(/min-height:\s*([\d.]+)rem/);
     expect(declared, 'the band declares no min-height').not.toBeNull();
     const floorPx = parseFloat(declared[1]) * 16;
 
+    const row = css.match(/\.surround-movement-map__text-row\s*\{[^}]*\}/)[0];
+    const rowSize = parseFloat(row.match(/font-size:\s*([\d.]+)rem/)[1]) * 16;
+    const headClear = parseFloat(row.match(/padding:\s*([\d.]+)em/)[1]) * rowSize;
     const heading = css.match(/\.surround-movement-map__heading\s*\{[^}]*\}/)[0];
-    const headSize = parseFloat(heading.match(/font-size:\s*([\d.]+)rem/)[1]) * 16;
+    const headSize = rowSize;                 // the heading is 1em of the row
     const headLh = parseFloat(heading.match(/line-height:\s*([\d.]+)/)[1]);
-    const headClear = parseFloat(heading.match(/margin-top:\s*([\d.]+)em/)[1]) * headSize;
 
     const gloss = css.match(/\.surround-movement-map__translation\s*\{[^}]*\}/)[0];
     const glossSize = parseFloat(gloss.match(/font-size:\s*([\d.]+)rem/)[1]) * 16;
@@ -687,7 +729,7 @@ describe('MovementMap — the movement translations', () => {
     const glossClear = parseFloat(gloss.match(/margin-top:\s*([\d.]+)em/)[1]) * glossSize;
 
     const lane = 4;
-    const padBottom = parseFloat(band.match(/padding:\s*0 [\d.]+rem ([\d.]+)rem/)[1]) * 16;
+    const padBottom = parseFloat(band.match(/--band-pad-bottom:\s*([\d.]+)rem/)[1]) * 16;
     const needed = lane + headClear + (headSize * headLh)
       + glossClear + (glossSize * glossLh) + padBottom;
 
@@ -695,5 +737,229 @@ describe('MovementMap — the movement translations', () => {
       .toBeLessThanOrEqual(floorPx);
     // ...and the floor is still not hoarding: wave 5's upper bound stands.
     expect(floorPx, 'the band hoards slack the ticker should have').toBeLessThan(88);
+  });
+});
+
+/**
+ * THE BOND (design wave 7).
+ *
+ * The user's complaint was that the listening band's NOW register reprinted the
+ * movement heading the rail already sets directly above it — "that seems
+ * wasteful". The replacement is visual: a lifted panel under the sounding
+ * segment, the SAME panel under the register, and a connector along the seam.
+ * These specs pin the rail's half of that shape; `CueTicker.test.jsx` pins the
+ * band's, and the runtime gate pins that they are actually contiguous on screen.
+ */
+describe('MovementMap — the bond', () => {
+  let injected = null;
+  const withStyles = () => {
+    const compiled = sass.compile(path.join(__dirname, 'MovementMap.scss'));
+    injected = document.createElement('style');
+    injected.textContent = compiled.css;
+    document.head.appendChild(injected);
+    return compiled.css;
+  };
+  afterEach(() => { injected?.remove(); injected = null; });
+
+  const bond = (c) => c.querySelector('[data-testid="surround-bond"]');
+  const connector = (c) => c.querySelector('[data-testid="surround-bond-connector"]');
+  const pct = (el, prop) => parseFloat(el.style.getPropertyValue(prop));
+
+  it('sits over the sounding segment, and moves to the next one at the boundary', () => {
+    const { container, rerender } = renderMap({ position: 300 });
+    // Movement I: 0..976 of 2955.
+    expect(pct(bond(container), '--bond-left')).toBeCloseTo(0, 6);
+    expect(pct(bond(container), '--bond-width')).toBeCloseTo((976 / 2955) * 100, 4);
+
+    rerender(
+      <MovementMap
+        position={1000} duration={DURATION} playing seeking={false}
+        data={EROICA} region={{ module: 'movement-map' }} logger={makeLogger()}
+      />,
+    );
+    expect(pct(bond(container), '--bond-left')).toBeCloseTo((976 / 2955) * 100, 4);
+    expect(pct(bond(container), '--bond-width')).toBeCloseTo((949 / 2955) * 100, 4);
+  });
+
+  it('goes out over the applause — there is nothing sounding to bond to', () => {
+    const { container } = renderMap({ position: 2960 });
+    expect(bond(container).getAttribute('data-bonded')).toBe('false');
+    expect(pct(bond(container), '--bond-width')).toBe(0);
+  });
+
+  it('needs NO connector when the sounding segment already sits over the panel', () => {
+    // Movement IV runs 2278..2955 — 77%..100% of the rail — and the NOW panel
+    // is the right half. They overlap, so the two boxes simply touch.
+    const { container } = renderMap({ position: 2500 });
+    expect(connector(container).getAttribute('data-bridging')).toBe('false');
+    expect(pct(connector(container), '--connector-width')).toBe(0);
+  });
+
+  it('bridges the gap when the sounding segment is on the far side of the band', () => {
+    // Movement I ends at 33% of the rail; the right-hand panel starts at 50%.
+    const { container } = renderMap({ position: 300 });
+    expect(connector(container).getAttribute('data-bridging')).toBe('true');
+    const left = pct(connector(container), '--connector-left');
+    const width = pct(connector(container), '--connector-width');
+    expect(left).toBeCloseTo((976 / 2955) * 100, 4);
+    expect(left + width, 'the connector does not reach the panel it is bridging to')
+      .toBeCloseTo(50, 6);
+  });
+
+  it('bridges LEFTWARDS when the register is configured onto the left', () => {
+    const left = { ...EROICA, definition: { band: { nowSide: 'left' } } };
+    const { container } = renderMap({ position: 2500, data: left });
+    expect(container.querySelector('[data-testid="surround-movement-map"]')
+      .getAttribute('data-now-side')).toBe('left');
+    expect(connector(container).getAttribute('data-bridging')).toBe('true');
+    expect(pct(connector(container), '--connector-left')).toBeCloseTo(50, 6);
+  });
+
+  it('follows the playhead across the band when the side is dynamic', () => {
+    const dyn = { ...EROICA, definition: { band: { nowSide: 'dynamic' } } };
+    const props = (position) => (
+      <MovementMap
+        position={position} duration={DURATION} playing seeking={false}
+        data={dyn} region={{ module: 'movement-map' }} logger={makeLogger()}
+      />
+    );
+    const { container, rerender } = render(props(300));
+    const side = () => container.querySelector('[data-testid="surround-movement-map"]')
+      .getAttribute('data-now-side');
+    expect(side(), 'under half-way the register belongs on the near side').toBe('left');
+    rerender(props(2000));                        // 68% — past the mark
+    expect(side()).toBe('right');
+    rerender(props(1450));                        // 49% — inside the hysteresis band
+    expect(side(), 'a wobble across the mark flapped the whole band').toBe('right');
+    rerender(props(1200));                        // 40.6% — clear of it
+    expect(side()).toBe('left');
+  });
+
+  it('paints the bond in the frame’s shared ground, and squares off where it continues', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    const panel = css.match(/\.surround-movement-map__bond \{[^}]*\}/)[0];
+    // ONE token, published by the frame, so the rail's panel and the band's
+    // cannot drift a few percent apart and stop reading as one shape.
+    expect(panel).toMatch(/background: var\(--bond-ground,/);
+    // Rounded at the head, square at the foot — the foot is not an edge, it is
+    // where this panel becomes the connector and then the register's.
+    expect(panel).toMatch(/border-radius: 5px 5px 0 0/);
+    // ...and it reaches THROUGH the band's bottom padding to the seam.
+    expect(panel).toMatch(/bottom: calc\(var\(--band-pad-bottom\) \* -1\)/);
+
+    const shoulder = css.match(/\.surround-movement-map__bond-connector \{[^}]*\}/)[0];
+    expect(shoulder).toMatch(/background: var\(--bond-ground,/);
+    expect(shoulder, 'the connector rounds a corner in the middle of one shape')
+      .not.toMatch(/border-radius/);
+    expect(shoulder).toMatch(/bottom: calc\(var\(--band-pad-bottom\) \* -1\)/);
+  });
+
+  it('gives the connector a height that reads at ten feet, and clears the type above it', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    const band = css.match(/\.surround-movement-map \{[^}]*\}/)[0];
+    const pad = parseFloat(band.match(/--band-pad-bottom: ([\d.]+)rem/)[1]) * 16;
+    const shoulderPx = parseFloat(band.match(/--bond-shoulder: ([\d.]+)px/)[1]);
+    // The minimum that reaches the seam is the bottom padding itself (5.6px),
+    // and rendered, that did not read — a strip that thin in a ground seven
+    // points lighter than the band is noise, not a bridge.
+    expect(shoulderPx, 'the connector is back to the bare minimum that reaches')
+      .toBeGreaterThan(pad);
+    // The band's own measured slack below the gloss's baseline is 14.89px
+    // (gloss bottom 49.11px in a 64px band); the shoulder must stay inside it.
+    expect(shoulderPx, 'the connector runs up into the movement names').toBeLessThan(14.89);
+  });
+
+  it('is state, not motion: reduced motion stops it gliding, not existing', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    const block = css.match(/@media \(prefers-reduced-motion: reduce\) \{(.*)\}/);
+    expect(block, 'no reduced-motion block in the compiled sheet').not.toBeNull();
+    expect(block[1]).toContain('surround-movement-map__bond');
+    expect(block[1]).toContain('surround-movement-map__segment');
+    expect(block[1]).toMatch(/transition: none/);
+    // ...and nothing hides the bond there: the highlight still says which
+    // movement is sounding, it just arrives in one frame.
+    expect(block[1]).not.toMatch(/surround-movement-map__bond[^{]*\{[^}]*(display|opacity)/);
+  });
+});
+
+/**
+ * THE ACCORDION (design wave 7), as the component drives it. The solver itself
+ * is pure and is tested in `../band.test.js`; these specs pin the two things
+ * only the component can get wrong — that it publishes what the solver returns,
+ * and that the playhead is derived from those RENDERED widths.
+ */
+describe('MovementMap — the accordion', () => {
+  const widthPct = (container) =>
+    [...container.querySelectorAll('[data-testid="surround-movement"]')]
+      .map((el) => parseFloat(el.style.width));
+
+  it('renders the duration-derived widths until the rail has been measured', () => {
+    // jsdom gives every box a zero rect and no ResizeObserver fires, so the
+    // accordion is inert and the rail is exactly its own timeline. That is the
+    // designed degradation, not an accident of the test environment: a rail
+    // whose width is unknown must not guess one.
+    const { container } = renderMap({ position: 2000 });
+    const w = widthPct(container);
+    expect(w[0]).toBeCloseTo((976 / 2955) * 100, 4);
+    expect(w[2]).toBeCloseTo((353 / 2955) * 100, 4);
+    expect(w.reduce((a, b) => a + b, 0)).toBeCloseTo(100, 6);
+  });
+
+  it('publishes each segment’s NATURAL share alongside its rendered one', () => {
+    // The rendered width is what the accordion chose; the natural share is what
+    // the movement's duration earns. Both have to be legible from the DOM or
+    // nothing downstream — the gate included — can tell a widened segment from
+    // a long movement.
+    const { container } = renderMap({ position: 2000 });
+    const naturals = [...container.querySelectorAll('[data-testid="surround-movement"]')]
+      .map((el) => Number(el.getAttribute('data-natural')));
+    expect(naturals[2]).toBeCloseTo(353 / 2955, 6);
+    expect(naturals.reduce((a, b) => a + b, 0)).toBeCloseTo(1, 5);
+  });
+
+  it('keeps the playhead truthful at every boundary', () => {
+    // The law the accordion must not break: whatever the widths, the cursor
+    // reaches a segment's right edge exactly when the music crosses it.
+    const props = (position) => (
+      <MovementMap
+        position={position} duration={DURATION} playing seeking={false}
+        data={EROICA} region={{ module: 'movement-map' }} logger={makeLogger()}
+      />
+    );
+    const { container, rerender } = render(props(0));
+    const head = () => parseFloat(
+      container.querySelector('[data-testid="surround-playhead"]').getAttribute('data-head'),
+    );
+    let cumulative = 0;
+    for (const [i, boundary] of [976, 1925, 2278].entries()) {
+      cumulative += widthPct(container)[i] / 100;
+      rerender(props(boundary));
+      // `data-head` is published to four places, which is the precision the
+      // comparison can honestly ask for.
+      expect(head(), `the cursor is not on movement ${i + 1}'s right edge at ${boundary}s`)
+        .toBeCloseTo(cumulative, 4);
+    }
+  });
+
+  it('publishes ONE accordion duration, from the shared timing module', () => {
+    const { container } = renderMap();
+    const map = container.querySelector('[data-testid="surround-movement-map"]');
+    expect(map.style.getPropertyValue('--accordion-ms')).toBe(`${ACCORDION_MS}ms`);
+  });
+
+  it('curls the quotes in a movement name and its gloss', () => {
+    const curly = {
+      ...EROICA,
+      movements: [{
+        n: 1, start: 0,
+        name: "Largo e pianissimo sempre. 'the dog that barks'",
+        translation: "Slow — Vivaldi's marking",
+      }],
+    };
+    const { container } = renderMap({ data: curly });
+    const seg = container.querySelector('[data-testid="surround-movement"]');
+    expect(seg.textContent).toContain('‘the dog that barks’');
+    expect(seg.textContent).toContain('Vivaldi’s');
+    expect(seg.textContent, 'a straight mark survived the render seam').not.toContain("'");
   });
 });

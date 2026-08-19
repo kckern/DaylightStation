@@ -1053,3 +1053,38 @@ describe('ComposerCard — the period line', () => {
     expect(inner.textContent).toBe('Classical to Romantic');
   });
 });
+
+/**
+ * SMART QUOTES AT THE RENDER SEAM (design wave 7). The rail's facts are the
+ * frame's densest prose and carry more possessives than anything else it prints.
+ */
+describe('ComposerCard — smart quotes', () => {
+  const mount = (composer, piece = null) => render(
+    <ComposerCard
+      position={0} duration={0} playing={false} seeking={false}
+      data={{ contentId: 'x', composer, piece, assetBase: 'library/classical' }}
+      region={{ module: 'composer-card' }} logger={makeLogger()}
+    />,
+  );
+
+  it('curls a fact’s possessives — the real Vivaldi collection title', () => {
+    const view = mount({
+      name: 'Antonio Vivaldi',
+      facts: ["Spring opened Il cimento dell'armonia e dell'inventione."],
+    });
+    expect(view.getByTestId('surround-composer-fact').textContent)
+      .toBe('Spring opened Il cimento dell’armonia e dell’inventione.');
+  });
+
+  it('curls the name and the birthplace', () => {
+    const view = mount({ name: "Adam de la Halle's circle", birthplace: "Arras, in the Count's lands" });
+    expect(view.container.textContent).toContain('Halle’s');
+    expect(view.container.textContent).toContain('Count’s');
+    expect(view.container.textContent).not.toContain("'");
+  });
+
+  it('curls a period note carried on the era line', () => {
+    const view = mount({ name: 'X' }, { period: "The composer's own century" });
+    expect(view.getByTestId('surround-composer-period').textContent).toContain('composer’s');
+  });
+});

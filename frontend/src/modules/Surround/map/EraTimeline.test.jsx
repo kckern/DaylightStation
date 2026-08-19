@@ -412,3 +412,17 @@ describe('EraTimeline — the shipped design', () => {
     expect(rule).not.toMatch(/padding|border|margin/);
   });
 });
+
+describe('EraTimeline — smart quotes at the render seam (design wave 7)', () => {
+  it('curls the period note', () => {
+    const { getByTestId } = render(
+      <EraTimeline
+        period="Classical"
+        year={1804}
+        note="Written at the hinge — many date the Romantic era from Beethoven's Third."
+      />,
+    );
+    expect(getByTestId('surround-era-note').textContent).toContain('Beethoven’s');
+    expect(getByTestId('surround-era-note').textContent).not.toContain("'");
+  });
+});

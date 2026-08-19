@@ -751,3 +751,19 @@ describe('PlaceCarousel — the era slide', () => {
     expect(view.caption()).not.toBeNull();
   });
 });
+
+describe('PlaceCarousel — smart quotes at the render seam (design wave 7)', () => {
+  it('curls an authored caption', () => {
+    const view = renderCarousel({
+      data: {
+        ...DATA,
+        composer: {
+          ...DATA.composer,
+          map: { ...DATA.composer.map, caption: "Venice — the Republic's own city" },
+        },
+      },
+    });
+    expect(view.caption().textContent).toBe('Venice — the Republic’s own city');
+    expect(view.caption().textContent).not.toContain("'");
+  });
+});

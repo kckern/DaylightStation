@@ -74,8 +74,16 @@ describe('surround builtins in the frame', () => {
       .toBe('The funeral march begins.');
     expect(document.querySelector('[data-testid="surround-ticker-text"]').textContent)
       .toBe('Beethoven tore the page.');
-    // ...and the NOW header names the movement the map calls active.
-    expect(document.querySelector('[data-testid="surround-ticker-now"]').textContent)
-      .toContain('Marcia funebre. Adagio assai');
+    // ...and design wave 7: the NOW register does NOT reprint the movement
+    // heading the rail above already sets. What names the sounding movement in
+    // the band is the BOND — this register's panel and that segment's, drawn in
+    // one ground and joined along the seam — so the header element is absent by
+    // default and the bond is present instead.
+    expect(document.querySelector('[data-testid="surround-ticker-now"]'),
+      'the NOW register is reprinting the movement heading the rail already set')
+      .toBeNull();
+    expect(document.querySelector('[data-testid="surround-bond"]').getAttribute('data-bonded'))
+      .toBe('true');
+    expect(document.querySelector('[data-testid="surround-ticker-ground"]')).not.toBeNull();
   });
 });

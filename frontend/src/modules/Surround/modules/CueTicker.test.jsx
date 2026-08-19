@@ -7,6 +7,7 @@ import CueTicker, {
   CUE_FADE_MS, CUE_HOLD_MS, CUE_SWAP_MS, CUE_DWELL_S, FACT_INTERVAL_MS,
   LISTEN_INTERVAL_MS, LISTEN_PHASE_MS,
 } from './CueTicker.jsx';
+import { ACCORDION_MS } from '../band.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -526,7 +527,7 @@ describe('CueTicker — reserved height and centred setting', () => {
     // module overflows its own container on the smallest screen in the fleet.
     // (Wave 5 did this arithmetic for two lines; wave 6's base reserve is one,
     // and the header is what took the other line.)
-    const padRem = Number(panel.match(/padding: ([\d.]+)rem/)[1]) * 2;
+    const padRem = Number(panel.match(/--ticker-pad-y: ([\d.]+)rem/)[1]) * 2;
     const header = css.match(/\.surround-cue-ticker__now-head \{[^}]*\}/)[0];
     const headerRem = Number(header.match(/font-size: ([\d.]+)rem/)[1])
       * Number(header.match(/line-height: ([\d.]+)/)[1]);
@@ -636,11 +637,27 @@ const SPLIT = {
   facts: ['Beethoven tore the page.', 'The premiere ran over two hours.'],
 };
 
+/**
+ * The same band with `band.nowHeading: 'always'`.
+ *
+ * Design wave 7 turned the NOW register's movement heading OFF by default —
+ * the rail names the movement and the bond points at it, so printing it twice
+ * was the repetition the user called wasteful. The heading is still a supported
+ * mode (a bars-only rail has no name for the bond to point at), so the wave-6
+ * specs that describe its behaviour keep describing it, against a fixture that
+ * asks for it explicitly rather than against a default that no longer implies
+ * it.
+ */
+const SPLIT_HEADED = {
+  ...SPLIT,
+  definition: { regions: {}, collapse: {}, band: { nowHeading: 'always' } },
+};
+
 describe('CueTicker — the split band (design wave 6)', () => {
   beforeEach(() => { vi.useFakeTimers(); });
   afterEach(() => { vi.useRealTimers(); });
 
-  const renderSplit = ({ position = 0, data = SPLIT, logger = makeLogger() } = {}) => {
+  const renderSplit = ({ position = 0, data = SPLIT_HEADED, logger = makeLogger() } = {}) => {
     const props = (p) => ({
       position: p, duration: 3223, playing: true, seeking: false,
       data, region: { module: 'cue-ticker', height: 'fill' }, logger,
@@ -874,10 +891,10 @@ describe('CueTicker — the split band’s shipped design', () => {
   };
   afterEach(() => { injected?.remove(); injected = null; });
 
-  const mountSplit = (position = 0) => render(
+  const mountSplit = (position = 0, data = SPLIT) => render(
     <CueTicker
       position={position} duration={3223} playing seeking={false}
-      data={SPLIT} region={{ module: 'cue-ticker' }} logger={makeLogger()}
+      data={data} region={{ module: 'cue-ticker' }} logger={makeLogger()}
     />,
   );
 
@@ -890,17 +907,29 @@ describe('CueTicker — the split band’s shipped design', () => {
     expect(zone).toContain('min-width: 0');
   });
 
-  it('divides them with a hairline of the frame’s own edge token, not a border', () => {
+  it('divides them with the bond panel’s own edge rule — ONE mark, not two', () => {
+    // Design wave 7 supersedes wave 6's free-standing hairline. The NOW
+    // register now carries a lifted panel ground, and that panel's edge IS the
+    // division; a separate hairline beside it would be the same statement made
+    // twice, six pixels apart. The edge is still the frame's own hairline
+    // token, so the line a viewer reads is unchanged in colour and weight.
     const css = withStyles().replace(/\s+/g, ' ');
-    const rule = css.match(/--split \.surround-cue-ticker__zone--now::before \{[^}]*\}/);
-    expect(rule, 'no dividing hairline between the two registers').not.toBeNull();
-    expect(rule[0]).toMatch(/background: var\(--programme-edge,/);
-    expect(rule[0]).toMatch(/width: 1px/);
-    // It divides two columns of text; it does not box them, so it must not run
-    // the zone's full height.
-    expect(rule[0]).toMatch(/top: \d+%/);
-    expect(rule[0]).toMatch(/bottom: \d+%/);
-    // ...and it is NOT a border on the zone itself, which would.
+    expect(css, 'the superseded free-standing hairline is still in the sheet')
+      .not.toMatch(/--split \.surround-cue-ticker__zone--now::before/);
+
+    const ground = css.match(/\.surround-cue-ticker__ground \{[^}]*\}/);
+    expect(ground, 'the NOW register has no panel to divide with').not.toBeNull();
+    expect(ground[0], 'the divider is not the frame’s hairline token')
+      .toMatch(/box-shadow: inset 1px 0 0 var\(--programme-edge,/);
+    // The panel is exactly half the band, on the side the config names.
+    expect(ground[0]).toMatch(/width: 50%/);
+    expect(ground[0]).toMatch(/left: var\(--now-left, 50%\)/);
+    // With the register on the LEFT the same rule sits on its other edge.
+    // Sass normalises the attribute selector's quotes away.
+    const mirrored = css.match(/\.surround-cue-ticker__ground\[data-side="?left"?\] \{[^}]*\}/);
+    expect(mirrored, 'the divider does not follow the register across the band').not.toBeNull();
+    expect(mirrored[0]).toMatch(/box-shadow: inset -1px 0 0 var\(--programme-edge,/);
+    // ...and it is NOT a border on the zone, which would box the text.
     const zone = css.match(/\.surround-cue-ticker__zone \{[^}]*\}/)[0];
     expect(zone).not.toMatch(/\bborder(-(left|right|top|bottom))?:/);
   });
@@ -936,7 +965,7 @@ describe('CueTicker — the split band’s shipped design', () => {
 
   it('keeps the now-header out of the dissolve', () => {
     withStyles();
-    const view = mountSplit();
+    const view = mountSplit(0, SPLIT_HEADED);
     const header = view.container.querySelector('[data-testid="surround-ticker-now"]');
     // The two text boxes carry the inline opacity transition; the header does
     // not, because it changes on a movement boundary the rule above has already
@@ -944,5 +973,312 @@ describe('CueTicker — the split band’s shipped design', () => {
     expect(header.style.transition).toBe('');
     expect(view.container.querySelector('[data-testid="surround-ticker-listen"]').style.transition)
       .toBe(`opacity ${CUE_FADE_MS}ms ease`);
+  });
+});
+
+/**
+ * DESIGN WAVE 7 — the bond replaces the repetition.
+ *
+ * The NOW register used to print the sounding movement's heading beneath a rail
+ * that had just printed it. It now carries the same lifted panel ground as that
+ * segment, joined along the seam, and the heading is off by default.
+ */
+describe('CueTicker — the bond, the header and the standing label (design wave 7)', () => {
+  let injected = null;
+  const withStyles = () => {
+    const compiled = sass.compile(path.join(__dirname, 'CueTicker.scss'));
+    injected = document.createElement('style');
+    injected.textContent = compiled.css;
+    document.head.appendChild(injected);
+    return compiled.css;
+  };
+  afterEach(() => { injected?.remove(); injected = null; });
+
+  const mount = (data, position = 0, duration = 3223) => {
+    const view = render(
+      <CueTicker
+        position={position} duration={duration} playing seeking={false}
+        data={data} region={{ module: 'cue-ticker', height: 'fill' }} logger={makeLogger()}
+      />,
+    );
+    return {
+      ...view,
+      root: () => view.container.querySelector('[data-testid="surround-cue-ticker"]'),
+      header: () => view.container.querySelector('[data-testid="surround-ticker-now"]'),
+      pieceHead: () => view.container.querySelector('[data-testid="surround-ticker-piece-head"]'),
+      ground: () => view.container.querySelector('[data-testid="surround-ticker-ground"]'),
+    };
+  };
+  const banded = (band, extra = {}) => ({
+    ...SPLIT, ...extra, definition: { regions: {}, collapse: {}, band },
+  });
+
+  it('prints NO movement heading by default — the rail already named it', () => {
+    const view = mount(SPLIT);
+    expect(view.header(), 'the NOW register is repeating the rail’s own heading').toBeNull();
+    // ...and the listening note it exists for is still there.
+    expect(view.container.querySelector('[data-testid="surround-ticker-listen"]')).not.toBeNull();
+  });
+
+  it('prints it on a bars-only rail, where nothing else names the movement', () => {
+    const view = mount(banded({ railDensity: 'bars' }));
+    expect(view.header().textContent).toContain('Allegro con brio');
+  });
+
+  it('honours always and never over the rail’s density, both ways', () => {
+    expect(mount(banded({ nowHeading: 'always' })).header()).not.toBeNull();
+    expect(mount(banded({ nowHeading: 'never', railDensity: 'bars' })).header()).toBeNull();
+  });
+
+  it('says on the root which mode it is in, because the four-line tier depends on it', () => {
+    expect(mount(SPLIT).root().className).toContain('surround-cue-ticker--no-now-heading');
+    expect(mount(banded({ nowHeading: 'always' })).root().className)
+      .not.toContain('surround-cue-ticker--no-now-heading');
+  });
+
+  it('carries the rail’s own bond ground on the NOW register, and nowhere else', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    const ground = css.match(/\.surround-cue-ticker__ground \{[^}]*\}/)[0];
+    expect(ground).toMatch(/background: var\(--bond-ground,/);
+    // Square at the top (it continues the rail's panel), rounded at the foot.
+    expect(ground).toMatch(/border-radius: 0 0 5px 5px/);
+    // It bleeds over the panel's own vertical padding so it meets the rail's
+    // connector at the region seam with no band ground between them.
+    expect(ground).toMatch(/top: calc\(var\(--ticker-pad-y\) \* -1\)/);
+    expect(ground).toMatch(/bottom: calc\(var\(--ticker-pad-y\) \* -1\)/);
+    // The PIECE register never takes it: the bond is state (what is sounding),
+    // and the piece is identity.
+    expect(css).not.toMatch(/zone--piece[^{]*\{[^}]*--bond-ground/);
+  });
+
+  it('renders no bond panel at all for a band that does not split', () => {
+    expect(mount(DATA).ground()).toBeNull();
+  });
+
+  it('prints the work’s short title as a standing label, curled', () => {
+    const view = mount(banded({}, { piece: { musicEndsAt: 2955, short_title: "Beethoven's Third Symphony" } }));
+    expect(view.pieceHead().textContent).toBe('Beethoven’s Third Symphony');
+    // It belongs to the PIECE register, not the sounding one.
+    expect(view.container.querySelector('[data-testid="surround-ticker-zone-piece"]')
+      .contains(view.pieceHead())).toBe(true);
+  });
+
+  it('renders NO header when the corpus has not authored one — never a truncated title', () => {
+    // The Eroica's real `title` is 43 characters. A header is a short title or
+    // it is nothing; a long one cut down to fit is a different, wronger claim
+    // about the work than saying nothing at all.
+    const view = mount(banded({}, {
+      piece: { musicEndsAt: 2955, title: 'Symphony No. 3 in E-flat major, "Eroica"' },
+    }));
+    expect(view.pieceHead()).toBeNull();
+    expect(view.container.textContent).not.toContain('Symphony No. 3');
+  });
+
+  it('treats a blank short title as an absent one', () => {
+    const view = mount(banded({}, { piece: { musicEndsAt: 2955, short_title: '   ' } }));
+    expect(view.pieceHead()).toBeNull();
+  });
+
+  it('sets the label quieter and smaller than the note it stands over', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    const label = css.match(/\.surround-cue-ticker__piece-head \{[^}]*\}/)[0];
+    const labelRem = Number(label.match(/font-size: ([\d.]+)rem/)[1]);
+    expect(labelRem, 'below the 0.72rem ten-foot floor').toBeGreaterThanOrEqual(0.72);
+    const note = css.match(/\.surround-cue-ticker__text \{[^}]*\}/)[0];
+    const noteFloor = Number(note.match(/font-size: clamp\(([\d.]+)rem/)[1]);
+    expect(labelRem, 'the label competes with the note it labels').toBeLessThan(noteFloor);
+    // A standing label, not a headline: tracked small caps in the soft ink.
+    expect(label).toMatch(/font-variant-caps: all-small-caps/);
+    expect(label).toMatch(/color: var\(--ink-soft,/);
+    // One line, ellipsised — a header that wraps stops being one.
+    expect(label).toContain('white-space: nowrap');
+    expect(label).toContain('text-overflow: ellipsis');
+  });
+});
+
+describe('CueTicker — which side the NOW register sits on (design wave 7)', () => {
+  // The swap plays the house dissolve, so its commit is on a timer.
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+  let injected = null;
+  const withStyles = () => {
+    const compiled = sass.compile(path.join(__dirname, 'CueTicker.scss'));
+    injected = document.createElement('style');
+    injected.textContent = compiled.css;
+    document.head.appendChild(injected);
+    return compiled.css;
+  };
+  afterEach(() => { injected?.remove(); injected = null; });
+
+  const banded = (band) => ({ ...SPLIT, definition: { regions: {}, collapse: {}, band } });
+  const mount = (data, position = 0) => {
+    const props = (p) => ({
+      position: p, duration: 3223, playing: true, seeking: false,
+      data, region: { module: 'cue-ticker', height: 'fill' }, logger: makeLogger(),
+    });
+    const view = render(<CueTicker {...props(position)} />);
+    return {
+      ...view,
+      side: () => view.container.querySelector('[data-testid="surround-cue-ticker"]')
+        .getAttribute('data-now-side'),
+      ground: () => view.container.querySelector('[data-testid="surround-ticker-ground"]'),
+      zones: () => view.container.querySelector('.surround-cue-ticker__zones'),
+      at: (p) => act(() => { view.rerender(<CueTicker {...props(p)} />); }),
+    };
+  };
+
+  it('defaults to the right — today’s behaviour, unchanged', () => {
+    const view = mount(SPLIT);
+    expect(view.side()).toBe('right');
+    expect(view.ground().style.getPropertyValue('--now-left')).toBe('50%');
+  });
+
+  it('takes a fixed left, and puts the panel there', () => {
+    const view = mount(banded({ nowSide: 'left' }));
+    expect(view.side()).toBe('left');
+    expect(view.ground().style.getPropertyValue('--now-left')).toBe('0%');
+    expect(view.container.querySelector('[data-testid="surround-cue-ticker"]').className)
+      .toContain('surround-cue-ticker--now-left');
+  });
+
+  it('keeps the DOM order fixed whichever side it lays out on', () => {
+    // A screen reader walks the piece register first in both, so the visual
+    // flip is a `row-reverse` and nothing more.
+    for (const data of [SPLIT, banded({ nowSide: 'left' })]) {
+      const view = mount(data);
+      const ids = [...view.container.querySelectorAll('[data-testid^="surround-ticker-zone"]')]
+        .map((el) => el.getAttribute('data-testid'));
+      expect(ids).toEqual(['surround-ticker-zone-piece', 'surround-ticker-zone-now']);
+    }
+    const css = withStyles().replace(/\s+/g, ' ');
+    expect(css).toMatch(/--now-left \.surround-cue-ticker__zones \{[^}]*flex-direction: row-reverse/);
+  });
+
+  it('crosses over at half-way when it is dynamic, and holds through a wobble', () => {
+    const view = mount(banded({ nowSide: 'dynamic' }), 300);
+    expect(view.side()).toBe('left');
+    view.at(2000);                       // 68%
+    expect(view.side()).toBe('right');
+    view.at(1450);                       // 49% — inside the hysteresis band
+    expect(view.side(), 'a scrub on the mark flapped the band’s whole layout').toBe('right');
+    view.at(1200);                       // 40.6% — clear of it
+    expect(view.side()).toBe('left');
+  });
+
+  it('makes the swap a considered move, not a jump', () => {
+    const view = mount(banded({ nowSide: 'dynamic' }), 300);
+    expect(view.zones().className).not.toContain('--swapping');
+    view.at(2000);
+    // THE PANEL MOVES FIRST. Its side is the raw decision, so it starts
+    // travelling in the same frame the rail's connector does.
+    expect(view.side()).toBe('right');
+    expect(view.ground().style.getPropertyValue('--now-left')).toBe('50%');
+    // THE WORDS FOLLOW, on the house dissolve: out to the ground, a held beat,
+    // then in with the registers on their new sides — the same choreography
+    // every other content change in the frame plays, so the band cannot
+    // develop a second transition language.
+    expect(view.zones().className, 'the registers changed sides with a hard cut')
+      .toContain('surround-cue-ticker__zones--swapping');
+    act(() => { vi.advanceTimersByTime(CUE_SWAP_MS); });
+    expect(view.zones().className).not.toContain('--swapping');
+  });
+
+  it('slides the panel across on the shared accordion clock', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    const ground = css.match(/\.surround-cue-ticker__ground \{[^}]*\}/)[0];
+    expect(ground).toMatch(/transition: left var\(--accordion-ms/);
+    const view = mount(SPLIT);
+    const root = view.container.querySelector('[data-testid="surround-cue-ticker"]');
+    expect(root.style.getPropertyValue('--accordion-ms')).toBe(`${ACCORDION_MS}ms`);
+    expect(root.style.getPropertyValue('--cue-fade-ms')).toBe(`${CUE_FADE_MS}ms`);
+  });
+});
+
+describe('CueTicker — the fourth line, without a now-header (design wave 7)', () => {
+  let injected = null;
+  const withStyles = () => {
+    const compiled = sass.compile(path.join(__dirname, 'CueTicker.scss'));
+    injected = document.createElement('style');
+    injected.textContent = compiled.css;
+    document.head.appendChild(injected);
+    return compiled.css;
+  };
+  afterEach(() => { injected?.remove(); injected = null; });
+
+  it('promotes to four lines EARLIER when the header’s 30.4px is not being spent', () => {
+    const css = withStyles().replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, ' ');
+    const q = css.match(/@container ticker \(min-height: ([\d.]+)px\) \{ \.surround-cue-ticker--no-now-heading (.*?)\} \}/);
+    expect(q, 'no heading-less four-line tier — the office screen keeps three').not.toBeNull();
+    const threshold = Number(q[1]);
+
+    // SELF-CONSISTENCY, re-derived from the compiled sheet rather than restated.
+    // The binding zone is the PIECE register: its standing label plus four
+    // lines of note at whatever size the clamp gives a container of exactly
+    // this height must fit inside that height.
+    const label = css.match(/\.surround-cue-ticker__piece-head \{[^}]*\}/)[0];
+    const labelPx = Number(label.match(/font-size: ([\d.]+)rem/)[1]) * 16
+      * Number(label.match(/line-height: ([\d.]+)/)[1])
+      + Number(label.match(/margin: 0 0 ([\d.]+)rem/)[1]) * 16;
+    const text = css.match(/\.surround-cue-ticker__text \{[^}]*\}/)[0];
+    const [, minRem, per, maxRem] = text
+      .match(/font-size: clamp\(([\d.]+)rem, ([\d.]+)cqh, ([\d.]+)rem\)/).map(Number);
+    const lh = Number(text.match(/line-height: ([\d.]+)/)[1]);
+    const noteAt = (t) => Math.min(Math.max(per * t / 100, minRem * 16), maxRem * 16);
+    const budgetAt = (t) => labelPx + 4 * lh * noteAt(t);
+    expect(budgetAt(threshold), 'the tier overflows itself at its own threshold')
+      .toBeLessThanOrEqual(threshold);
+    // ...and it is not so conservative that the office screen misses it: that
+    // band has 113.2px of ticker content, measured in the harness.
+    expect(threshold, 'the tier never fires on the screen it was derived for')
+      .toBeLessThanOrEqual(113.2);
+
+    const inside = q[2];
+    expect(inside).toMatch(/max-height: 5\.4em/);
+    expect(css).toMatch(/--no-now-heading \.surround-cue-ticker__line \{ -webkit-line-clamp: 4/);
+  });
+
+  it('keeps the headed tier at its own, higher threshold', () => {
+    // A band configured `nowHeading: always` genuinely cannot afford four lines
+    // at 113px — the header costs twice what the label does — so the two
+    // thresholds are different numbers rather than one relaxed one.
+    const css = withStyles().replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, ' ');
+    const headed = [...css.matchAll(/@container ticker \(min-height: ([\d.]+)px\) \{ \.surround-cue-ticker__text/g)]
+      .map((m) => Number(m[1]));
+    expect(headed, 'the unconditional tiers are gone').toContain(161);
+  });
+});
+
+describe('CueTicker — smart quotes at the render seam (design wave 7)', () => {
+  const mount = (data) => render(
+    <CueTicker
+      position={0} duration={3223} playing seeking={false}
+      data={data} region={{ module: 'cue-ticker', height: 'fill' }} logger={makeLogger()}
+    />,
+  );
+
+  it('curls the piece facts', () => {
+    const view = mount({ ...DATA, facts: ["Il cimento dell'armonia e dell'inventione"] });
+    expect(view.container.textContent).toContain('dell’armonia');
+    expect(view.container.textContent).not.toContain("'");
+  });
+
+  it('curls a listening note’s nested quotation — the real Vivaldi string', () => {
+    const viv = {
+      contentId: 'plex:663146',
+      piece: { musicEndsAt: 600 },
+      movements: [{
+        n: 2, name: 'Largo e pianissimo sempre', start: 0,
+        listen: ["The violas bark twice a bar, all the way through — Vivaldi marked the part 'the dog that barks'."],
+      }],
+      facts: ['x'],
+    };
+    const view = mount(viv);
+    expect(view.container.querySelector('[data-testid="surround-ticker-listen"]').textContent)
+      .toContain('‘the dog that barks’');
+  });
+
+  it('curls a timed cue', () => {
+    const view = mount({ ...DATA, cues: [{ at: 0, text: "Vivaldi's storm breaks." }] });
+    expect(view.container.textContent).toContain('Vivaldi’s');
   });
 });

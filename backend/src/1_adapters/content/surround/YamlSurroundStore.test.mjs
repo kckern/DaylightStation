@@ -1087,3 +1087,48 @@ describe('YamlSurroundStore library resolution', () => {
     vi.useRealTimers();
   });
 });
+
+/**
+ * DESIGN WAVE 7 — the two fields the band's new layout consumes.
+ *
+ * `piece.short_title` is a whitelisted piece field (the frame's band prints it
+ * as a standing label); `definition.band` is the third thing a definition says
+ * about a frame, beside `regions` and `collapse`.
+ */
+describe('YamlSurroundStore — the band’s fields (design wave 7)', () => {
+  it('carries piece.short_title through the whitelist', () => {
+    writeLib('classical/beethoven/symphony-3-eroica.yml',
+      'title: Symphony No. 3 in E-flat major, "Eroica"\nshort_title: Beethoven\'s Third Symphony\n'
+      + 'opus: Op. 55\nmovements:\n  - { n: 1, name: Allegro con brio }\n');
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const r = store.lookup('plex:663134', '');
+    expect(r.piece.short_title).toBe("Beethoven's Third Symphony");
+    // The frame curls it at the render seam; the store hands it over verbatim.
+    expect(r.piece.title).toBe('Symphony No. 3 in E-flat major, "Eroica"');
+  });
+
+  it('leaves short_title undefined when the corpus has not authored one', () => {
+    // The band renders NO header in that case — an absent short title is a
+    // supported state, not a gap to fill with a truncated long one.
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    expect(store.lookup('plex:663134', '').piece.short_title).toBeUndefined();
+  });
+
+  it('carries definition.band alongside regions and collapse', () => {
+    write('_surrounds/concert-hall.yml',
+      'id: concert-hall\nregions:\n  right: { width: 20%, module: composer-card }\n'
+      + '  bottom:\n    - { module: movement-map, height: 60 }\n'
+      + 'collapse: { footerFloor: 90 }\n'
+      + 'band: { nowSide: dynamic, nowHeading: always, railDensity: bars }\n');
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const { definition } = store.lookup('plex:663134', '');
+    expect(definition.band).toEqual({ nowSide: 'dynamic', nowHeading: 'always', railDensity: 'bars' });
+    expect(definition.regions).toBeDefined();
+    expect(definition.collapse).toBeDefined();
+  });
+
+  it('leaves definition.band undefined when unauthored — the frame owns the defaults', () => {
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    expect(store.lookup('plex:663134', '').definition.band).toBeUndefined();
+  });
+});

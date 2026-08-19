@@ -32,6 +32,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import getLogger from '../../../lib/logging/Logger.js';
+import { smartQuotes } from '../typography.js';
 import './EraTimeline.scss';
 
 /**
@@ -352,7 +353,10 @@ export default function EraTimeline({
 
       {note && (
         <p className="surround-era-timeline__note" data-testid="surround-era-note">
-          <span className="surround-era-timeline__note-line">{note}</span>
+          {/* The frame's one curl, at this plate's own render seam — see
+              `../typography.js`. A period note is editorial prose and carries
+              the possessives and quoted phrases prose carries. */}
+          <span className="surround-era-timeline__note-line">{smartQuotes(note)}</span>
         </p>
       )}
     </div>

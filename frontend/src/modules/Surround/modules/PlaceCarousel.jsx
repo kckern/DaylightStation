@@ -52,6 +52,7 @@ import { mapPinFrom } from './CountryMapModule.jsx';
 import {
   DISSOLVE_FADE_MS, DISSOLVE_COMMIT_MS, prefersReducedMotion,
 } from '../dissolve.js';
+import { smartQuotes } from '../typography.js';
 import './PlaceCarousel.scss';
 
 /**
@@ -321,7 +322,10 @@ export default function PlaceCarousel({
             className={`surround-place-carousel__caption surround-place-carousel__caption--${shown.captionKind}`}
             data-testid="surround-place-caption"
           >
-            {shown.caption}
+            {/* Curled at the seam, like every other authored string the frame
+                prints — a city caption may be authored ("Bonn, then the
+                Elector's seat"). See `../typography.js`. */}
+            {smartQuotes(shown.caption)}
           </figcaption>
         )}
       </figure>
