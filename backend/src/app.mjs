@@ -3699,6 +3699,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   const scanVocabConfig = normalizeScaleNutribotConfig(
     configService.getHouseholdAppConfig(householdId, 'scales') || {},
+    { logger: rootLogger.child({ module: 'nutriscan' }) },
   );
 
   // Fail SOFT, not fatal. A malformed nutriscan table must not keep the whole

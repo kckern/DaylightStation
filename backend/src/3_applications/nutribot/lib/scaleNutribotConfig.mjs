@@ -42,12 +42,19 @@ const DEFAULT_MACROS_BY_LEVEL = new Map(
 // override that omits `macros` borrows the default for its LEVEL rather than
 // disabling nutriscan wholesale, which is what dropping them used to do.
 // A level with no default keeps `undefined` so validateScanConfig still
-// refuses it by name.
-const withMacros = (row) => (
-  row.macros ? row : { ...row, macros: DEFAULT_MACROS_BY_LEVEL.get(row.level) }
-);
+// refuses it by name. The substitution is not silent: a `logger` (when given)
+// gets exactly one warn per affected level, so a table that quietly drifted
+// from its printed sheet is discoverable rather than just "working somehow".
+const makeWithMacros = (logger) => (row) => {
+  if (row.macros) return row;
+  const macros = DEFAULT_MACROS_BY_LEVEL.get(row.level);
+  if (macros !== undefined) {
+    logger?.warn?.('nutriscan.macros.backfilled', { level: row.level, source: 'DEFAULT_DENSITY_LEVELS' });
+  }
+  return { ...row, macros };
+};
 
-export function normalizeScaleNutribotConfig(raw = {}) {
+export function normalizeScaleNutribotConfig(raw = {}, { logger = null } = {}) {
   const nb = (raw && raw.nutribot) || {};
 
   const items = Array.isArray(nb.containers?.items) && nb.containers.items.length
@@ -96,7 +103,7 @@ export function normalizeScaleNutribotConfig(raw = {}) {
           if (l.per_100g !== undefined) out.per_100g = l.per_100g;
           return out;
         })
-        .map(withMacros)
+        .map(makeWithMacros(logger))
     : DEFAULT_DENSITY_LEVELS;
 
   // Common-foods list for the printed fridge sheet. There is NO default table:
