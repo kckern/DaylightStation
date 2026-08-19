@@ -123,3 +123,28 @@ describe('normalizeScaleNutribotConfig — macros backfill', () => {
     expect(cfg.densityLevels.find((r) => r.level === 42).macros).toBeUndefined();
   });
 });
+
+// The quiet-commit interval — how long the bridge waits for the composition to
+// stop growing before it finalises the entry. It reached `app.mjs` as
+// `scaleConfig.commitQuietSec` while the normalizer emitted no such key, so the
+// caller's `?? 25` always won and the documented `commit_quiet_sec:` knob did
+// nothing at all. A config field the docs advertise and the code ignores is
+// worse than no field.
+describe('normalizeScaleNutribotConfig — commit_quiet_sec', () => {
+  it('defaults to 25 seconds when the block says nothing', () => {
+    expect(normalizeScaleNutribotConfig({}).commitQuietSec).toBe(25);
+    expect(normalizeScaleNutribotConfig({ nutribot: {} }).commitQuietSec).toBe(25);
+  });
+
+  it('carries a configured value through', () => {
+    expect(normalizeScaleNutribotConfig({ nutribot: { commit_quiet_sec: 40 } }).commitQuietSec).toBe(40);
+  });
+
+  // Same `num()` treatment as every neighbouring knob: a value YAML parsed as a
+  // string is still a number, and unusable text falls back rather than poisoning
+  // the timer with NaN (which would disable quiet-commit outright, silently).
+  it('coerces a numeric string and falls back on unusable text', () => {
+    expect(normalizeScaleNutribotConfig({ nutribot: { commit_quiet_sec: '40' } }).commitQuietSec).toBe(40);
+    expect(normalizeScaleNutribotConfig({ nutribot: { commit_quiet_sec: 'soon' } }).commitQuietSec).toBe(25);
+  });
+});
