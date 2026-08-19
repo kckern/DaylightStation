@@ -251,13 +251,16 @@
    one house material (near-black stone under the video, maroon beside it).
    The paper FIBRE stays, multiplied over the maroon, so the stock keeps its
    tooth: this is a darker paper, not a flat panel.
-     `--programme` is deliberately NOT re-mapped. The portrait plate and the city
-   figure read it for their mats, and paper survives in the frame exactly there —
-   two lit mats and a brass nameplate on a dark wall.
-     `--velvet` IS re-mapped: the country map paints its highlighted country in
-   it, and #4a1018 on a #33131a ground is invisible. Re-lighting the token
-   restyles the map without touching the map (its redesign is a separate
-   dispatch) — the same token-remapping contract the bottom band established. */
+     `--programme` is deliberately NOT re-mapped. The portrait mat and the
+   carousel's mats read it, and paper survives in the frame exactly there — lit
+   mats and a brass nameplate on a dark wall.
+     `--map-halo` is the rail's own ground, published as a token because the
+   country map cannot derive it: its labels are haloed against whatever they are
+   drawn over, and that is the one colour the `--ink` family does not carry.
+   (This replaces wave 2's `--velvet` re-map, which existed only to keep the
+   pre-redesign map's SOLID highlight visible on maroon. The map is drawn in ink
+   hairlines now and reads `--ink`/`--ink-soft` like every other module, so the
+   stopgap is gone rather than retuned.) */
 .surround-frame__region--right {
   flex: 1 1 auto;
   height: 100%;
@@ -265,7 +268,7 @@
   --ink: #e9dfc8;
   --ink-soft: #a89a80;
   --programme-edge: rgba(233, 223, 200, 0.26);
-  --velvet: #8e2434;
+  --map-halo: #33131a;
   background-color: #33131a;
   background-image:
     var(--programme-fibre),

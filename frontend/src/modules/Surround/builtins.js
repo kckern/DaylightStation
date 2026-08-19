@@ -11,6 +11,12 @@
  * `country-map` is registered through `CountryMapModule`, a thin adapter: the
  * map component itself takes a country and a coordinate and knows nothing about
  * surround payloads, which is what keeps it reusable.
+ *
+ * `place-carousel` shows that same map as one of its slides, so the concert-hall
+ * definition no longer authors `country-map` anywhere. The registration stays:
+ * a definition that wants a bare, non-cycling map in a region of its own is a
+ * legitimate thing to author, and the two share `mapPinFrom` rather than each
+ * re-deriving the pin from the payload.
  */
 
 import { registerSurroundModule } from './registry.js';
@@ -18,6 +24,7 @@ import MovementMap from './modules/MovementMap.jsx';
 import CueTicker from './modules/CueTicker.jsx';
 import ComposerCard from './modules/ComposerCard.jsx';
 import CountryMapModule from './modules/CountryMapModule.jsx';
+import PlaceCarousel from './modules/PlaceCarousel.jsx';
 import WorkPlacard from './modules/WorkPlacard.jsx';
 
 /** The module names `SurroundFrame` resolves. */
@@ -26,6 +33,7 @@ export const SURROUND_BUILTIN_MODULES = Object.freeze([
   'cue-ticker',
   'composer-card',
   'country-map',
+  'place-carousel',
   'work-placard',
 ]);
 
@@ -40,6 +48,7 @@ export function registerSurroundBuiltins() {
   registerSurroundModule('cue-ticker', CueTicker, { regions: ['bottom'] });
   registerSurroundModule('composer-card', ComposerCard, { regions: ['right'] });
   registerSurroundModule('country-map', CountryMapModule, { regions: ['right', 'bottom'] });
+  registerSurroundModule('place-carousel', PlaceCarousel, { regions: ['right'] });
   registerSurroundModule('work-placard', WorkPlacard, { regions: ['top'] });
 }
 

@@ -8,13 +8,30 @@
 // alone a hundred pieces. So there is exactly one component here, and it frames
 // ITSELF around whatever country it is handed.
 //
-// Two moving parts:
+// Three moving parts:
 //
 //   1. A hand-rolled Mercator. Fifteen lines, no dependency — this repo has no
 //      d3-geo and is not gaining one for a static map of Europe.
-//   2. Auto-framing. The highlighted country's own bounding box, padded and then
-//      widened to the render box's aspect, IS the viewBox. Finland fills the
-//      frame exactly as well as Austria does, with zero per-country config.
+//   2. Auto-framing at REGIONAL zoom. The highlighted country's own bounding
+//      box, padded generously and then widened to the render box's aspect, IS
+//      the viewBox. Finland frames exactly as well as Austria does, with zero
+//      per-country config.
+//   3. Labels, chosen from the frame. The subject country is named; so is every
+//      neighbour with enough of itself inside the frame to be worth naming.
+//
+// WHAT THIS MAP IS FOR (and why it is drawn the way it is). A shape with a star
+// in it answers nothing — "Austria, with Vienna in it" is exactly as informative
+// to a viewer who cannot place Austria as a blank rectangle would be. Context is
+// the whole content: the subject sits at about half the frame's span, its
+// neighbours are drawn and NAMED around it, and the viewer reads the position
+// rather than being told it. That is why PAD is what it is.
+//
+// It is drawn in the programme's engraved language and nothing else: parchment
+// ink-lines on whatever ground it is placed over, hairline borders, and washes
+// so faint they tint rather than fill. No solid area of colour — a filled
+// country on the dark rail is a sticker, not an engraving. The colours are the
+// frame's own `--ink` / `--ink-soft` family, so the map is restyled by the
+// region it is placed in rather than by anything hard-coded here.
 //
 // Everything degrades to an empty slot, per the surround quality floor: unknown
 // country -> context map with no highlight; no lat/lon -> map with no marker;
@@ -30,17 +47,32 @@ import './CountryMap.scss';
 const GEO_PATH = 'media/img/surround/_maps/europe.geo.json';
 
 /**
- * The card is ~420px wide, so the map paints at about this size. These are not a
+ * The rail is ~420px wide, so the map paints at about this size. These are not a
  * hard render size — the SVG is fluid — but they fix the frame's ASPECT (which
- * the viewBox is matched to, so nothing ever stretches) and give the marker layer
- * a pixel scale to work against.
+ * the viewBox is matched to, so nothing ever stretches) and give the marker and
+ * label layers a pixel scale to work against.
+ *
+ * 420 x 252 is 5:3, which is also the shipped city photographs' ratio. That is
+ * deliberate and not a coincidence to be tidied away: in the place carousel the
+ * map and the photograph occupy the same slot, and identical geometry is what
+ * makes the swap between them a dissolve rather than a resize.
  */
 export const RENDER_W = 420;
-export const RENDER_H = 260;
+export const RENDER_H = 252;
 const ASPECT = RENDER_W / RENDER_H;
 
-/** Breathing room around the highlighted country, as a fraction of its own span. */
-const PAD = 0.25;
+/**
+ * Breathing room around the highlighted country, as a fraction of its own span.
+ *
+ * 0.9, not wave 1's 0.25. At 0.25 the subject filled ~80% of the frame and the
+ * map answered a question nobody asked ("what shape is Austria?") while refusing
+ * the one they did ("where IS that?"). At 0.9 the subject spans about half the
+ * frame — still unmistakably the subject — and the half around it is its
+ * neighbours, which is the content. The number is bounded on both sides: much
+ * below this and the context disappears again; much above it and the subject
+ * stops being the subject.
+ */
+const PAD = 0.9;
 /** Floor on a frame's span in degrees, so a sliver of a country cannot divide by ~0. */
 const MIN_SPAN = 0.75;
 
@@ -57,10 +89,40 @@ const EUROPE_FALLBACK = { west: -13, east: 42, south: 34, north: 71 };
 
 /** Design floor: nothing below 0.72rem, read at ten feet. */
 const LABEL_PX = 0.72 * 16;
+/** The subject country's own name — the map's primary label, one step up. */
+export const COUNTRY_LABEL_PX = 0.9 * 16;
+/** A neighbour's name: quieter, but never below the ten-foot floor. */
+export const NEIGHBOUR_LABEL_PX = LABEL_PX;
 const STAR_R = 6.5;
 const LABEL_GAP = 11;
 /** Past this fraction of the frame the label would run off the edge, so it flips. */
 const FLIP_AT = 0.66;
+
+/**
+ * A neighbour is worth naming when this much of the frame is filled by the part
+ * of it that is actually visible — in BOTH axes, so a country entering the frame
+ * as a 2px coastal strip is drawn but not labelled. Measured on the CLIPPED box,
+ * not the country's own: what matters is how much of it the viewer can see.
+ */
+const MIN_LABEL_SHARE = 0.14;
+/** At most this many neighbours are named. Past it the frame is a word cloud. */
+const MAX_NEIGHBOUR_LABELS = 7;
+/** The subject's name is nudged clear of the city marker inside this radius. */
+const MARKER_CLEARANCE_PX = 34;
+/**
+ * Average advance per character, in ems, for the tracked uppercase display face
+ * the labels are set in. Used to give every label an approximate BOX so two of
+ * them can be tested for overlap.
+ *
+ * Measuring the real advance would mean a DOM text measurement per label per
+ * render, in a component that also has to render server-side-ish in jsdom. The
+ * estimate is deliberately a little generous: over-estimating drops a label that
+ * would have just fitted, under-estimating ships "LONDONGERMANY", and only one
+ * of those is a defect a viewer sees.
+ */
+const LABEL_EM_PER_CHAR = 0.78;
+/** Breathing room around a label box, in ems of its own size. */
+const LABEL_MARGIN_EM = 0.5;
 
 let moduleLogger = null;
 function fallbackLogger() {
@@ -196,6 +258,51 @@ function frameFor(bbox) {
   return { x: cx - w / 2, y: cy - h / 2, w, h };
 }
 
+/**
+ * Where to write a country's name, and how much of it the viewer can see.
+ *
+ * Each disjoint part of the country is CLIPPED to the frame and the biggest
+ * surviving rectangle wins. Clipping first is what makes the label land on the
+ * visible half of a country that runs off the edge, instead of somewhere out in
+ * the margin where a centroid of the whole shape would put it. Returns null when
+ * nothing of the country is inside the frame at all.
+ */
+function labelSpotFor(boxes, frame) {
+  const right = frame.x + frame.w;
+  const bottom = frame.y + frame.h;
+  let best = null;
+  for (const b of boxes) {
+    const x0 = Math.max(b.minX, frame.x);
+    const x1 = Math.min(b.maxX, right);
+    const y0 = Math.max(b.minY, frame.y);
+    const y1 = Math.min(b.maxY, bottom);
+    if (x1 <= x0 || y1 <= y0) continue;
+    const area = (x1 - x0) * (y1 - y0);
+    if (!best || area > best.area) {
+      best = {
+        area, x: (x0 + x1) / 2, y: (y0 + y1) / 2, wShare: (x1 - x0) / frame.w, hShare: (y1 - y0) / frame.h,
+      };
+    }
+  }
+  return best;
+}
+
+/**
+ * A label's approximate footprint, in view units, so two of them can be tested
+ * for overlap before both are drawn. `anchor` mirrors the SVG attribute: the
+ * city's label hangs off the side of its star, the country names are centred.
+ */
+function labelBox({ x, y, text, sizePx, anchor = 'middle', unitsPerPx }) {
+  const w = (String(text).length * LABEL_EM_PER_CHAR + LABEL_MARGIN_EM * 2) * sizePx * unitsPerPx;
+  const h = (1 + LABEL_MARGIN_EM) * sizePx * unitsPerPx;
+  let x0 = x - w / 2;
+  if (anchor === 'start') x0 = x;
+  if (anchor === 'end') x0 = x - w;
+  return { x0, x1: x0 + w, y0: y - h / 2, y1: y + h / 2 };
+}
+
+const overlaps = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+
 const normalize = (name) => String(name ?? '').trim().toLowerCase();
 
 // ---------------------------------------------------------------------------
@@ -294,6 +401,9 @@ export default function CountryMap({
     () => features.map((f) => ({
       name: f?.properties?.name ?? '',
       d: pathFor(f?.geometry),
+      // The parts' boxes, kept for label placement: which part of a country is
+      // on screen decides where — and whether — its name is written.
+      boxes: outerRingsOf(f?.geometry).map(bboxOfRing).filter(Boolean),
       highlighted: f === highlight,
     })).filter((s) => s.d),
     [features, highlight],
@@ -328,25 +438,109 @@ export default function CountryMap({
     });
   }, [features.length, highlight, point]);
 
-  if (!shapes.length || !frame) return null;
+  // The marker and every label live in PIXEL space, not degrees: at Gamma's 1°
+  // frame a degree-sized star would swallow the country, and at Beta's 20° frame
+  // it would vanish. One scale factor converts px -> view units for all of them,
+  // which is also what keeps the type above the 0.72rem ten-foot floor at every
+  // zoom the auto-framing can produce.
+  const unitsPerPx = frame ? frame.w / RENDER_W : 1;
 
-  const viewBox = `${round(frame.x)} ${round(frame.y)} ${round(frame.w)} ${round(frame.h)}`;
-
-  // The marker lives in pixel space, not degrees: at Gamma's 1° frame a
-  // degree-sized star would swallow the country, and at Beta's 20° frame it would
-  // vanish. One scale factor converts px -> view units for the whole marker group.
-  const unitsPerPx = frame.w / RENDER_W;
-  let marker = null;
-  if (point) {
+  /** Where the city's own label hangs off its star, and which way. */
+  const marker = useMemo(() => {
+    if (!point || !frame) return null;
     const fracX = (point.x - frame.x) / frame.w;
     const flip = fracX > FLIP_AT;
-    marker = {
+    return {
       anchor: flip ? 'end' : 'start',
       dx: flip ? -LABEL_GAP : LABEL_GAP,
       // Near the top edge the label drops below the star instead of off the frame.
       dy: (point.y - frame.y) / frame.h < 0.1 ? LABEL_PX * 1.1 : LABEL_PX * 0.36,
     };
-  }
+  }, [point, frame]);
+
+  /**
+   * Who gets named.
+   *
+   * The city's label is placed first and is never dropped — it is the one thing
+   * on the map the programme actually asserts. The subject country next, nudged
+   * clear of the star if it wants the same spot (the NAME moves, not the star:
+   * the star is the fact). Then neighbours, biggest visible part first, while
+   * they are large enough to be worth a word and their box does not run into a
+   * name already written.
+   *
+   * Collision is tested on approximate BOXES, not on anchor points. A point test
+   * is what let "LONDON" and "GERMANY" print into each other — the two anchors
+   * were a comfortable distance apart and the two words were not.
+   */
+  const labels = useMemo(() => {
+    if (!frame) return [];
+    const placed = [];
+    const taken = [];
+    const clearance = MARKER_CLEARANCE_PX * unitsPerPx;
+
+    if (point && marker && city) {
+      taken.push(labelBox({
+        x: point.x + marker.dx * unitsPerPx,
+        y: point.y + marker.dy * unitsPerPx,
+        text: city,
+        sizePx: LABEL_PX,
+        anchor: marker.anchor,
+        unitsPerPx,
+      }));
+    }
+
+    const subject = shapes.find((s) => s.highlighted);
+    if (subject?.name) {
+      const spot = labelSpotFor(subject.boxes, frame);
+      if (spot) {
+        let { y } = spot;
+        if (point && Math.hypot(spot.x - point.x, y - point.y) < clearance) {
+          y = point.y + COUNTRY_LABEL_PX * 2.4 * unitsPerPx;
+        }
+        const box = labelBox({
+          x: spot.x, y, text: subject.name, sizePx: COUNTRY_LABEL_PX, unitsPerPx,
+        });
+        taken.push(box);
+        placed.push({
+          key: `country:${subject.name}`,
+          name: subject.name,
+          role: 'subject',
+          x: spot.x,
+          y,
+          size: COUNTRY_LABEL_PX,
+        });
+      }
+    }
+
+    shapes
+      .filter((s) => !s.highlighted && s.name)
+      .map((s) => ({ shape: s, spot: labelSpotFor(s.boxes, frame) }))
+      .filter(({ spot }) => spot
+        && spot.wShare >= MIN_LABEL_SHARE && spot.hShare >= MIN_LABEL_SHARE)
+      .sort((a, b) => b.spot.area - a.spot.area)
+      .forEach(({ shape, spot }) => {
+        if (placed.filter((p) => p.role === 'neighbour').length >= MAX_NEIGHBOUR_LABELS) return;
+        const box = labelBox({
+          x: spot.x, y: spot.y, text: shape.name, sizePx: NEIGHBOUR_LABEL_PX, unitsPerPx,
+        });
+        if (taken.some((t) => overlaps(t, box))) return;
+        taken.push(box);
+        placed.push({
+          key: `country:${shape.name}`,
+          name: shape.name,
+          role: 'neighbour',
+          x: spot.x,
+          y: spot.y,
+          size: NEIGHBOUR_LABEL_PX,
+        });
+      });
+
+    return placed;
+  }, [shapes, frame, point, marker, city, unitsPerPx]);
+
+  if (!shapes.length || !frame) return null;
+
+  const viewBox = `${round(frame.x)} ${round(frame.y)} ${round(frame.w)} ${round(frame.h)}`;
 
   return (
     <svg
@@ -357,16 +551,21 @@ export default function CountryMap({
       role="img"
       aria-label={city && country ? `${city}, ${country}` : (country || 'map')}
     >
-      {/* Context first, highlight over it, marker over both. */}
+      {/* Context first, subject over it, names over both, marker last.
+          Engraved, not filled: the washes are faint enough to TINT the ground
+          they sit on, and the line does the drawing. A solid country reads as a
+          sticker stuck on the rail; a hairline reads as print. */}
       {shapes.filter((s) => !s.highlighted).map((s) => (
         <path
           key={`ctx:${s.name}`}
           d={s.d}
           data-country={s.name}
           data-role="context"
-          fill="var(--programme-edge, #ddd0b4)"
-          stroke="var(--programme, #efe6d2)"
-          strokeWidth={1}
+          fill="var(--ink, #2a1d07)"
+          fillOpacity={0.05}
+          stroke="var(--ink-soft, #6b6152)"
+          strokeWidth={0.9}
+          strokeOpacity={0.55}
           vectorEffect="non-scaling-stroke"
         />
       ))}
@@ -376,11 +575,30 @@ export default function CountryMap({
           d={s.d}
           data-country={s.name}
           data-role="highlight"
-          fill="var(--velvet, #4a1018)"
-          stroke="var(--velvet, #4a1018)"
-          strokeWidth={1}
+          fill="var(--ink, #2a1d07)"
+          fillOpacity={0.16}
+          stroke="var(--ink, #2a1d07)"
+          strokeWidth={1.6}
           vectorEffect="non-scaling-stroke"
         />
+      ))}
+      {labels.map((l) => (
+        <g
+          key={l.key}
+          data-testid="country-map-country-label"
+          data-country-label={l.name}
+          data-role={l.role}
+          transform={`translate(${round(l.x)} ${round(l.y)}) scale(${round(unitsPerPx)})`}
+        >
+          <text
+            className={`surround-country-map__place surround-country-map__place--${l.role}`}
+            textAnchor="middle"
+            fontSize={l.size}
+            fill={l.role === 'subject' ? 'var(--ink, #2a1d07)' : 'var(--ink-soft, #6b6152)'}
+          >
+            {l.name}
+          </text>
+        </g>
       ))}
       {marker && (
         <g
