@@ -3,17 +3,75 @@
 // brass hardware. The visualiser under it is #d9d0c1 — the same warm hue this
 // ground is, driven down in value, so the overlay reads as a dimming rather
 // than a different app.
-// Both selectors carry the palette: `.nl-hold` renders as a SIBLING of the
-// launcher rather than inside it, so it inherits nothing from `.note-launcher`
-// — a ring declaring only `var(--brass)` out there would resolve to nothing and
-// paint no fill at all.
+// The picker's own names, mapped onto the shared chrome kit (gameChrome.scss),
+// which declares `--pg-*` on `.note-launcher` and `.nl-hold` for exactly this.
+//
+// These were five invented hexes — a brown-and-gold scheme that matched nothing
+// else in the app and made the picker read as a different product bolted on.
+// The keyboard still gets to look like a keyboard; it just does it in the
+// cabinet's colours, and follows the design tokens when those move.
 .note-launcher,
 .nl-hold {
-  --case:   #241E18;
-  --ivory:  #EFE7D8;
-  --ebony:  #17120E;
-  --felt:   #8E2A2C;
-  --brass:  #C08B3E;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  // Higher than the launcher AND than a running game's fullscreen overlay: the
+  // case this ring exists for is holding to quit WHILE a game is running.
+  z-index: 150;
+  /* Big enough to read as progress from across the room — it was reported as
+     showing up but not reading as filling. */
+  width: 16rem;
+  height: 16rem;
+  // Centred by transform, not by negative margins that have to be kept equal to
+  // half the size by hand — any change to the diameter silently pushed it off.
+  transform: translate(-50%, -50%);
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+
+  &__svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    // 12 o'clock, clockwise — the direction a clock hand sweeps, because this is
+    // a countdown and anything else reads as unwinding.
+    transform: rotate(-90deg);
+  }
+
+  &__track,
+  &__arc {
+    fill: none;
+    stroke-width: 9;
+    stroke-linecap: round;
+  }
+
+  &__track { stroke: rgb(0 0 0 / 55%); }
+
+  &__arc {
+    stroke: var(--brass);
+    // r=44 → circumference 2*pi*44 = 276.5. Stated rather than computed so the
+    // dash pattern can never drift from the radius above.
+    stroke-dasharray: 276.5;
+    stroke-dashoffset: 276.5;
+    animation: nl-hold-sweep linear forwards;
+    filter: drop-shadow(0 0 6px var(--brass));
+  }
+
+  &__label {
+    position: relative;
+    font-family: 'Roboto Condensed', sans-serif;
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    color: var(--ivory);
+    text-shadow: 0 1px 3px rgb(0 0 0 / 80%);
+  }
+}
+
+@keyframes nl-hold-sweep {
+  from { stroke-dashoffset: 276.5; }
+  to   { stroke-dashoffset: 0; }
 }
 
 .note-launcher {
@@ -40,6 +98,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 2rem;
+    flex-wrap: nowrap;
     // Bottom padding matters: without it the title sits on the key tops.
     padding: 1.75rem 2.5rem 1.1rem;
   }
@@ -81,7 +140,12 @@
     margin: 0;
     padding: 0 2.5rem 2.5rem;
     list-style: none;
-    height: 62%;
+    // `flex: 1` rather than `height: 62%`. With a fixed 62% and the column
+    // bottom-aligned, everything above the keys was dead space — a third of a
+    // takeover screen showing nothing. The keys now take whatever the head
+    // leaves, so the keyboard fills the surface it took over.
+    flex: 1;
+    min-height: 0;
     box-sizing: border-box;
   }
 
@@ -91,15 +155,6 @@
 // nested inside .note-launcher — it renders alongside the overlay and must
 // survive the overlay closing (see HoldRing.jsx). It centres on its nearest
 // positioned ancestor, which is .piano-visualizer.
-// The swept angle has to be a REGISTERED property or it cannot interpolate:
-// animating between two whole conic-gradient() values makes Chromium flip
-// discretely at 50%, so the ring reads empty, then instantly full, and never
-// as progress. Verified in headless Chromium before this was registered.
-@property --nl-hold-turn {
-  syntax: '<angle>';
-  inherits: false;
-  initial-value: 0turn;
-}
 
 .nl-hold {
   position: absolute;
@@ -109,10 +164,14 @@
   // case this ring exists for is holding to quit WHILE a game is running, and
   // at 50 it would have tied with that overlay and lost or won on DOM order.
   z-index: 150;
-  box-sizing: border-box; // so the 3px border stays inside the 7rem the margins undo
+  box-sizing: border-box; // so the border stays inside the ring's own diameter
   width: 7rem;
   height: 7rem;
-  margin: -3.5rem 0 0 -3.5rem;
+  // Centred by transform, not by negative margins that have to be kept equal to
+  // half the size by hand. The margins were the size's mirror image, so any
+  // change to the diameter silently pushed the ring off centre — and a ring
+  // reported as "not quite centred, edges sliced" is exactly that failure.
+  transform: translate(-50%, -50%);
   border-radius: 50%;
   border: 3px solid color-mix(in srgb, var(--brass) 25%, transparent);
   background: conic-gradient(var(--brass) var(--nl-hold-turn, 0turn), transparent 0);
@@ -125,6 +184,7 @@
 
 .nl-key {
   position: relative;
+  container-type: inline-size;
   // Descending, so every key paints over the one to its RIGHT and the sharp
   // hanging off its edge is never clipped by its neighbour. Tree order alone
   // is not enough: while the open animation runs, `transform`/`opacity` give
@@ -137,10 +197,17 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.9rem;
-  // 1.1rem clears the 1.9rem sharp, which hangs 0.95rem over each side of a
-  // key boundary — at 0.6rem a long label ran right up under the black key.
-  padding: 2rem 1.1rem 1.4rem;
+  gap: 0.7rem;
+  // Content sits at the TIP — the near end of the key, the part a player's eye
+  // and hand both go to, and the only part a black key never covers.
+  //
+  // No tall top padding: it was 52%, and percentage padding resolves against
+  // WIDTH, so it never bore any relation to the sharps it claimed to clear —
+  // it simply pushed the stack off the bottom of the screen. `flex-end` already
+  // puts the content below the sharps, which only reach 46% down the face.
+  justify-content: flex-end;
+  padding: 1rem 1.2rem 1.6rem;
+  min-height: 0;
   box-sizing: border-box;
   background: linear-gradient(
     180deg,
@@ -165,7 +232,12 @@
   // The black key between this white key and the next, hanging from the top
   // into the gap. Only rendered where the note math says one belongs.
   &.has-sharp::after {
-    --sharp-w: 1.9rem;
+    // A real black key is a bit over half the width of a white one. At a fixed
+    // 1.9rem it read as a wire between the keys rather than as a key, and it
+    // did not grow with the row. 58cqw of the white key it hangs off keeps the
+    // proportion at any width, with a floor so it stays hittable-looking on a
+    // narrow row.
+    --sharp-w: max(2.6rem, 58cqw);
     content: '';
     position: absolute;
     top: 0;
@@ -203,13 +275,18 @@
   }
 
   // Engraved on the key face, where the eye already looks for it.
+  //
+  // INK, not the accent. `--piano-accent-text` is specified as "accent used AS
+  // text on a charcoal surface (AA)" — a key face is ivory, so the green was
+  // both the wrong surface for that token and a colour with no business on
+  // white. It reads as the staff card's own ink, which is what it labels.
   &__note {
-    margin-top: auto;
     font-size: clamp(1rem, 1.5vw, 1.6rem);
     font-weight: 700;
     font-variant-numeric: tabular-nums;
     letter-spacing: 0.08em;
-    color: var(--brass);
+    color: var(--ebony);
+    opacity: 0.7;
   }
 }
 
@@ -223,10 +300,6 @@
   to   { transform: scaleX(0); }
 }
 
-@keyframes nl-hold {
-  from { --nl-hold-turn: 0turn; }
-  to   { --nl-hold-turn: 1turn; }
-}
 
 @media (prefers-reduced-motion: reduce) {
   // Only the decorative motion goes. The drain bar and the hold ring are
@@ -234,4 +307,135 @@
   // can override without !important anyway), and collapsing them would leave a
   // full ring reporting a hold that has not happened.
   .nl-key { animation: none; }
+}
+
+
+
+/* Who the game gets filed under. Quiet — it is a standing answer, not a
+   question — but named, because the office screen cannot know who sat down and
+   a silent default is how results end up under the wrong person. */
+.note-launcher__player {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.1rem;
+  margin-left: auto;          // top-right of the head, where a status belongs
+  white-space: nowrap;
+
+  // The name itself carries the weight. It was one dim uppercase line that read
+  // as decoration, so "who is this filed under" was answered but not visibly.
+  b {
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: var(--ivory);
+  }
+
+  i {
+    font-style: normal;
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--brass);
+    opacity: 0.85;
+  }
+}
+
+
+
+
+/* The house note card, sized for a key face. StaffNoteLabel brings its own
+   paper and clef; all this does is stop it growing to the width of the key. */
+.nl-key .chess-staff-label {
+  width: min(100%, 7.5rem);
+  flex: 0 0 auto;
+}
+
+/* Push the game key's contents clear of the sharps.
+ *
+ * The cards were landing at about a third of the way down, which is exactly
+ * where the black keys are — so each card had a black key running across it and
+ * read as damage rather than as a label. The sharps hang 46% down the face, so
+ * the contents start below that.
+ *
+ * A flex spacer, NOT `padding-top`: percentage padding resolves against WIDTH,
+ * which has nothing to do with how far down the sharps reach. `flex-basis` on a
+ * column item is a HEIGHT, which is the dimension actually in question. */
+.note-launcher--games .nl-key::before {
+  content: '';
+  flex: 0 0 50%;
+}
+
+/* A face, centred and large — it is what you recognise from across the room, so
+   it leads. CIRCULAR: the box has to be square or `border-radius: 50%` yields an
+   ellipse, which is what a percentage width against a tall key produced. */
+.nl-key__avatar {
+  width: clamp(4rem, 9vw, 8.5rem);
+  aspect-ratio: 1;
+  flex: 0 0 auto;
+
+  .piano-avatar {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .piano-avatar--fallback {
+    display: grid;
+    place-items: center;
+    background: var(--ebony);
+    color: var(--ivory);
+    font-weight: 700;
+    font-size: clamp(1.2rem, 2.6vw, 2.6rem);
+  }
+}
+
+/* The roster row carries a face at the top of each key, so its content needs a
+   little more room beneath than the game row's does. */
+/* A person reads top-down — face, name, then the key that picks them — so this
+   row centres its stack rather than hanging it at the tip like a game key. */
+.note-launcher--users .nl-key {
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 1.2rem 1rem;
+}
+
+/* Contained at the ROW, never at the key: a sharp hangs half its width past the
+   key it belongs to, so clipping the key cut every black key in half. */
+.note-launcher__keys { overflow: hidden; }
+
+
+/* The player readout carries their face too. It is the answer to "who is this
+   filed under", and a name alone is the weakest form of that answer on a screen
+   people walk past. */
+.note-launcher__player-avatar {
+  width: 2.6rem;
+  aspect-ratio: 1;
+  flex: 0 0 auto;
+
+  .piano-avatar {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .piano-avatar--fallback {
+    display: grid;
+    place-items: center;
+    background: var(--ebony);
+    color: var(--ivory);
+    font-weight: 700;
+    font-size: 0.95rem;
+  }
+}
+
+.note-launcher__player-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
 }

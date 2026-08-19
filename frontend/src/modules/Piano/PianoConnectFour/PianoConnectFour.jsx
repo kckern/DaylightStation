@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { chooseColumn } from '@shared-gaming/connect-four/opponent.mjs';
 import { playColumn, replayGame } from '@shared-gaming/connect-four/engine.mjs';
 import PianoGameHost from '../game-platform/host/PianoGameHost.jsx';
+import { useAnyKeyToContinue } from '../game-platform/input/useAnyKeyToContinue.js';
 import InstrumentBoardStage from '../game-platform/families/addressed-board/InstrumentBoardStage.jsx';
 import AddressRail from '../game-platform/families/addressed-board/AddressRail.jsx';
 import { BOARD_LAYOUTS } from '../game-platform/families/addressed-board/contracts.js';
@@ -75,6 +76,9 @@ const INPUT_MODES = [
   { value: 'notes', label: 'Single notes' },
   { value: 'chords', label: 'Major chords' },
 ];
+/** Search depth for a HINT — competent, and deliberately not the opponent's. */
+const HINT_SEARCH_LEVEL = 5;
+
 const HINT_CLUSTER = 7;
 
 export function shuffledColumns(seed) {
@@ -169,6 +173,11 @@ function Board({ game, hint, drop }) {
           <div
             key={`${rowIndex}-${column}`}
             role="gridcell"
+            /* Placed explicitly. The panel below spans the whole grid, and an
+               explicitly-placed item makes auto-placement route around it —
+               which pushed all 42 cells into implicit rows and left the holes
+               registered horizontally but 408px out vertically. */
+            style={{ gridRow: rowIndex + 1, gridColumn: column + 1 }}
             className={`connect-four-board__cell${hint === column ? ' is-hint' : ''}${won ? ' is-winner' : ''}`}
           >
             <span
@@ -186,8 +195,16 @@ function Board({ game, hint, drop }) {
         );
       }))}
       {/* The blue sheet with forty-two holes in it, drawn OVER the discs —
-          which is where it is in the physical game. See PianoConnectFour.scss. */}
-      <div className="connect-four-board__panel" aria-hidden="true" />
+          which is where it is in the physical game. See PianoConnectFour.scss.
+          It is a GRID ITEM spanning every track, not an absolutely-positioned
+          overlay, and each hole is a real grid cell rather than a tiled
+          background: that is what makes a hole land on its cell by construction
+          instead of by arithmetic that has to agree. */}
+      <div className="connect-four-board__panel" aria-hidden="true">
+        {Array.from({ length: 42 }, (_, i) => (
+          <span key={i} className="connect-four-board__hole" />
+        ))}
+      </div>
     </div>
   );
 }
@@ -285,15 +302,28 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
   }, [game.status.gameOver, game.turn, thinking]);
 
   useEffect(() => {
-    if (game.status.gameOver || game.turn !== 1 || thinking) return;
+    // Same silent swallow as checkers had: a finished board re-entered from the
+    // launcher eats every note and explains nothing. Sampled — evaluated per note.
+    if (game.status.gameOver || game.turn !== 1 || thinking) {
+      if (activeNotes.size > 0) {
+        logger.sampled('connect-four.input-ignored', {
+          reason: game.status.gameOver ? 'game-over' : thinking ? 'opponent-thinking' : 'not-your-turn',
+          turn: game.turn, ply: moves?.length ?? null,
+        }, { maxPerMinute: 6, aggregate: true });
+      }
+      return;
+    }
     if (activeNotes.size === 0) { latchedRef.current = false; setHint(null); return; }
     if (latchedRef.current) return;
     // Seven-note cluster is the universal best-move gesture, independent of
     // addressing mode.
     if (activeNotes.size >= HINT_CLUSTER) {
-      const suggested = chooseColumn(game.board, { player: 1, level });
+      // Searched at a competent depth, NOT the opponent's — see the same fix in
+      // checkers. At level 1 the search is one ply and cannot see the reply, so
+      // the "best column" it suggested was one that handed the game away.
+      const suggested = chooseColumn(game.board, { player: 1, level: HINT_SEARCH_LEVEL });
       setHint(suggested);
-      logger.debug('connect-four.hint', { column: suggested, level });
+      logger.info('connect-four.hint', { column: suggested, level, hintLevel: HINT_SEARCH_LEVEL });
       latchedRef.current = true;
       return;
     }
@@ -302,7 +332,7 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
     const next = playColumn({ moves }, column);
     if (!next.error) {
       setMoves(next.moves);
-      logger.debug('connect-four.drop', { column, ply: next.moves.length });
+      logger.info('connect-four.drop', { column, ply: next.moves.length });
     }
     // A full column is a refused address, not a landed one.
     reading.record({ ok: !next.error });
@@ -317,6 +347,12 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
     latchedRef.current = activeNotes.size > 0;
     resetSession();
   };
+
+  // No touchscreen on the office screen, so "Play again" is a dead end there:
+  // the board is finished and the only way out is the launcher combo. Any fresh
+  // key restarts. The keys still down from the winning move do not count — the
+  // player has to see who won first.
+  useAnyKeyToContinue({ enabled: game.status.gameOver, activeNotes, onContinue: restart });
 
   const opponentName = ladder?.current?.name ?? 'Pebble';
   // Who won, in the terms the player can check against the board: a colour and
@@ -411,7 +447,7 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
           <GameStatusBar
             aside={localPractice ? 'local practice' : null}
             action={game.status.gameOver && (
-              <GameButton variant="primary" onClick={restart}>Play again</GameButton>
+              <GameButton variant="primary" onClick={restart}>Play again — or press any key</GameButton>
             )}
           >
             {status}

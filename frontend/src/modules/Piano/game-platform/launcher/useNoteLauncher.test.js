@@ -342,3 +342,117 @@ describe('useNoteLauncher', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 });
+
+// Re-picking the game already on screen used to be a no-op setState, so the
+// component never remounted. If that game was FINISHED, the completed board
+// stayed up and swallowed every note — reported 2026-08-18 as checkers being
+// "stuck, can't make a move", with nothing logged because the games' own
+// gameOver guards return before any telemetry.
+describe('useNoteLauncher launch identity', () => {
+  const openAndPick = (result, rerender, note) => {
+    rerender({ activeNotes: notes(21, 108) });   // open the launcher
+    rerender({ activeNotes: new Map() });        // release the combo
+    rerender({ activeNotes: notes(note) });      // strike the slot key
+    rerender({ activeNotes: new Map() });
+  };
+
+  it('bumps the launch nonce every time a game is picked, same id or not', () => {
+    const { result, rerender } = setup();
+    expect(result.current.launchNonce).toBe(0);
+
+    openAndPick(result, rerender, 60);
+    const first = result.current.launchNonce;
+    expect(result.current.activeGameId).toBe('invaders');
+    expect(first).toBeGreaterThan(0);
+
+    // Same game again — the id does not change, so only the nonce can tell the
+    // renderer that this is a NEW game and the old one must be torn down.
+    openAndPick(result, rerender, 60);
+    expect(result.current.activeGameId).toBe('invaders');
+    expect(result.current.launchNonce).toBeGreaterThan(first);
+  });
+
+  it('does not bump the nonce on exit — that unmounts on its own', () => {
+    const { result, rerender } = setup();
+    openAndPick(result, rerender, 60);
+    const afterLaunch = result.current.launchNonce;
+    act(() => { result.current.exitGame('test'); });
+    expect(result.current.activeGameId).toBeNull();
+    expect(result.current.launchNonce).toBe(afterLaunch);
+  });
+});
+
+// A game was picked while the roster had never been shown, so it ran as a guest
+// and chess filed the record under nobody. The first level of the pick has to be
+// able to hold the floor.
+describe('useNoteLauncher selectionPaused', () => {
+  const open = (rerender) => {
+    rerender({ activeNotes: notes(21, 108) });
+    rerender({ activeNotes: new Map() });
+  };
+
+  it('does not start a game while the roster still owes an answer', () => {
+    const { result, rerender } = renderHook(
+      ({ activeNotes, selectionPaused }) => useNoteLauncher({ activeNotes, slots, selectionPaused }),
+      { initialProps: { activeNotes: new Map(), selectionPaused: true } },
+    );
+    open((p) => rerender({ ...p, selectionPaused: true }));
+    rerender({ activeNotes: notes(60), selectionPaused: true });
+    expect(result.current.activeGameId).toBeNull();
+  });
+
+  it('starts one again once the roster has been answered', () => {
+    const { result, rerender } = renderHook(
+      ({ activeNotes, selectionPaused }) => useNoteLauncher({ activeNotes, slots, selectionPaused }),
+      { initialProps: { activeNotes: new Map(), selectionPaused: false } },
+    );
+    rerender({ activeNotes: notes(21, 108), selectionPaused: false });
+    rerender({ activeNotes: new Map(), selectionPaused: false });
+    rerender({ activeNotes: notes(60), selectionPaused: false });
+    expect(result.current.activeGameId).toBe('invaders');
+  });
+});
+
+// The top key is BOTH half the opening combo and the "change player" key. Two
+// keys struck together almost never land in one event, so if the TOP one
+// registers first it looks exactly like a lone press — and the combo demanded a
+// new player every other time. Logged in production as launcher.dismissed
+// {combo} and launcher.user-requested {103} in the same second.
+describe('useNoteLauncher top key vs. combo', () => {
+  it('does not ask for a player when the combo arrives TOP KEY FIRST', () => {
+    const onRequestUser = vi.fn();
+    const { rerender } = renderHook(
+      ({ activeNotes }) => useNoteLauncher({ activeNotes, slots, onRequestUser }),
+      { initialProps: { activeNotes: new Map() } },
+    );
+    rerender({ activeNotes: notes(108) });        // top key lands first
+    rerender({ activeNotes: notes(108, 21) });    // its partner a beat later
+    act(() => { vi.advanceTimersByTime(1000); });
+    expect(onRequestUser).not.toHaveBeenCalled();
+  });
+
+  it('still asks when the top key really is played alone', () => {
+    const onRequestUser = vi.fn();
+    const { rerender } = renderHook(
+      ({ activeNotes }) => useNoteLauncher({ activeNotes, slots, onRequestUser }),
+      { initialProps: { activeNotes: new Map() } },
+    );
+    rerender({ activeNotes: notes(21, 108) });    // open it
+    rerender({ activeNotes: new Map() });
+    rerender({ activeNotes: notes(108) });        // top key, on its own
+    act(() => { vi.advanceTimersByTime(1000); });
+    expect(onRequestUser).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not ask when the combo arrives bottom-first either', () => {
+    const onRequestUser = vi.fn();
+    const { rerender } = renderHook(
+      ({ activeNotes }) => useNoteLauncher({ activeNotes, slots, onRequestUser }),
+      { initialProps: { activeNotes: new Map() } },
+    );
+    rerender({ activeNotes: notes(21) });
+    rerender({ activeNotes: notes(21, 108) });
+    act(() => { vi.advanceTimersByTime(1000); });
+    expect(onRequestUser).not.toHaveBeenCalled();
+  });
+});

@@ -10,11 +10,22 @@ let lastOnOpenTime = 0;
  * Loads piano config (device config + app config) and manages HA script lifecycle.
  * Retries config fetch on failure to prevent gamesConfig staying null.
  *
- * @returns {{ gamesConfig: Object|null }}
+ * `deviceConfig` is this screen's `piano-visualizer` module block from
+ * devices.yml. It was already being fetched for its HA `on_open`/`on_close`
+ * hooks but kept in a ref and never returned, so nothing else could read it —
+ * which is why the physical keyboard's range had nowhere to come from and the
+ * launcher combo stayed hardcoded to an 88-key board.
+ *
+ * @returns {{ gamesConfig: Object|null, deviceConfig: Object|null }}
  */
 export function usePianoConfig() {
   const logger = useMemo(() => getChildLogger({ component: 'piano-config' }), []);
   const [gamesConfig, setGamesConfig] = useState(null);
+  // Whole parsed piano app config. Hero needs `sheetmusic` for its song picker
+  // and previously read it from the kiosk's ActivePianoProvider, which does not
+  // exist on the office screen.
+  const [appConfig, setAppConfig] = useState(null);
+  const [deviceConfig, setDeviceConfig] = useState(null);
   const pianoConfigRef = useRef(null);
 
   useEffect(() => {
@@ -24,7 +35,7 @@ export function usePianoConfig() {
       try {
         const pianoAppConfig = await DaylightAPI('api/v1/admin/apps/piano/config');
         const gamesC = pianoAppConfig?.parsed?.games ?? null;
-        if (!cancelled) setGamesConfig(gamesC);
+        if (!cancelled) { setGamesConfig(gamesC); setAppConfig(pianoAppConfig?.parsed ?? null); }
         return true;
       } catch (err) {
         if (attempt < CONFIG_RETRY_DELAYS.length && !cancelled) {
@@ -42,6 +53,7 @@ export function usePianoConfig() {
         const devicesConfig = await DaylightAPI('api/v1/device/config');
         const pianoConfig = devicesConfig?.devices?.['office-tv']?.modules?.['piano-visualizer'] ?? {};
         pianoConfigRef.current = pianoConfig;
+        if (!cancelled) setDeviceConfig(pianoConfig);
 
         await fetchGamesConfig();
 
@@ -77,5 +89,5 @@ export function usePianoConfig() {
     };
   }, [logger]);
 
-  return { gamesConfig };
+  return { gamesConfig, deviceConfig, appConfig };
 }

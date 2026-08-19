@@ -59,8 +59,11 @@
   grid-template-rows: repeat(6, 1fr);
   padding: 2%;
   border-radius: 4%;
-  /* The backing behind the slots, not the blue: the blue is a layer ON TOP. */
-  background: var(--c4-hole);
+  /* The moulding. The holes' own plastic stops at the grid, so the board's
+     padding ring is what makes the panel look like one continuous sheet rather
+     than a tray of tiles; the dark backing that used to be here now lives on
+     each cell, which is the only place it is ever visible. */
+  background: var(--c4-grid);
   box-shadow: 0 1.2rem 2.5rem rgb(0 0 0 / 55%);
 }
 
@@ -97,21 +100,30 @@
  * is a hole the width of the disc plus a hair, whatever size the board is.
  */
 .connect-four-board__panel {
-  position: absolute;
-  inset: 0;
+  /* Spans every track of the board's own grid, so its box IS the box the cells
+     divide. The previous version was `position: absolute; inset: 0` with
+     `padding: 2%` and a tiled background sized `100%/7 x 100%/6`; the board and
+     the panel resolved that percentage padding against different boxes, so the
+     tiling anchored 8.55px up-and-left of the cells and ran ~2.5px oversized —
+     every disc sat off-centre in its hole and the oversized tiles broke ragged
+     at the rim. Grid placement removes the arithmetic entirely. */
+  grid-area: 1 / 1 / -1 / -1;
   z-index: 3;
-  padding: 2%;
-  border-radius: 4%;
   pointer-events: none;
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  grid-template-rows: repeat(6, 1fr);
+  box-shadow: inset 0 0.25rem 0.3rem rgb(140 198 255 / 53%);
+}
+
+/* One hole, one cell. `closest-side` reads the stops against half the cell, so
+   81% is the disc's width plus a hair whatever size the board is. */
+.connect-four-board__hole {
   background-image:
     /* the hole's wall — a bevel, so the hole reads as depth, not as a sticker */
     radial-gradient(circle closest-side at 50% 50%, transparent 0 81%, rgb(0 0 0 / 42%) 82%, transparent 96%),
     /* the plastic itself, lit at each rim and deepening into the moulding */
     radial-gradient(circle closest-side at 50% 50%, transparent 0 81%, var(--c4-grid) 82%, var(--c4-grid-deep));
-  background-origin: content-box;
-  background-clip: border-box;
-  background-size: calc(100% / 7) calc(100% / 6);
-  box-shadow: inset 0 0.25rem 0.3rem rgb(140 198 255 / 53%);
 }
 
 /* ── GRAVITY ───────────────────────────────────────────────────────────────

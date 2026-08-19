@@ -110,6 +110,32 @@ export function buildNotePool(noteRange, whiteKeysOnly = false) {
  * @param {[number, number]|null} noteRange - [low, high] or null for full range
  * @returns {{ startNote: number, endNote: number }}
  */
+/** Full 88-key board — the fallback when a screen names no keyboard. */
+export const FULL_BOARD_RANGE = Object.freeze({ startNote: 21, endNote: 108 });
+
+const usableNote = (n) => Number.isInteger(n) && n >= 0 && n <= 127;
+
+/**
+ * The PHYSICAL key range of the board wired to a screen, from its
+ * `devices.yml` module config (e.g. the office keyboard is a 76-key running
+ * E1..G7 = 28..103).
+ *
+ * Deliberately NOT computeKeyboardRange(): that one pads by a third of the span
+ * on each side to centre a GAME's note range, which would draw keys the board
+ * does not physically have. Here the configured numbers are the answer.
+ *
+ * Falls back to the full 88 when unconfigured or malformed, so a bad entry
+ * degrades to the old behaviour rather than rendering an empty keyboard.
+ *
+ * @param {{startNote?: number, endNote?: number}|null|undefined} keyboard
+ * @returns {{startNote: number, endNote: number}}
+ */
+export function resolveBoardRange(keyboard) {
+  const { startNote, endNote } = keyboard ?? {};
+  if (!usableNote(startNote) || !usableNote(endNote) || startNote >= endNote) return FULL_BOARD_RANGE;
+  return { startNote, endNote };
+}
+
 export function computeKeyboardRange(noteRange) {
   if (!noteRange) return { startNote: 21, endNote: 108 };
 

@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { applyMove, legalMoves, replayGame } from '@shared-gaming/checkers/engine.mjs';
 import { chooseMove } from '@shared-gaming/checkers/opponent.mjs';
 import PianoGameHost from '../game-platform/host/PianoGameHost.jsx';
+import { useAnyKeyToContinue } from '../game-platform/input/useAnyKeyToContinue.js';
+import { slideOffsetCells, slideDurationMs } from './moveSlide.js';
 import InstrumentBoardStage from '../game-platform/families/addressed-board/InstrumentBoardStage.jsx';
 import AddressRail from '../game-platform/families/addressed-board/AddressRail.jsx';
 import { BOARD_LAYOUTS } from '../game-platform/families/addressed-board/contracts.js';
@@ -33,6 +35,9 @@ const DEFAULT_CONFIG = Object.freeze({
 const LADDER_LEVELS = 7;
 // Used only when thinkTimeFor has nothing to read yet (no ladder resolved).
 const OPPONENT_THINK_FALLBACK_MS = 700;
+/** Search depth for a HINT — competent, and deliberately not the opponent's. */
+const HINT_SEARCH_LEVEL = 5;
+
 const HINT_CLUSTER = 7;
 const AXIS = 8;
 
@@ -62,6 +67,11 @@ export function legacyAddressing(config) {
 
 function CheckersBoard({ game, selected, hint }) {
   const moves = legalMoves(game.board, game.turn, game.forcedFrom);
+  // The move that just landed, so the piece now sitting on `to` can be shown
+  // arriving from `from` rather than simply being there. Matters most for the
+  // OPPONENT's move: the player did not make it and has to read it off the board.
+  const slide = slideOffsetCells(game.lastMove);
+  const slideMs = slideDurationMs(slide);
   const sources = new Set(moves.map((move) => move.from));
   const destinations = new Set(moves.filter((move) => move.from === selected).map((move) => move.to));
   return (
@@ -85,7 +95,18 @@ function CheckersBoard({ game, selected, hint }) {
         return (
           <div key={cell} className={classes} role="gridcell">
             {piece && (
-              <span className={`checkers-board__piece checkers-board__piece--${piece.toLowerCase() === 'r' ? 'player' : 'opponent'}`}>
+              <span
+                /* Keyed on the ply so the same piece moving twice running
+                   animates twice — a remount is the only thing that restarts a
+                   CSS animation. */
+                key={slide && square === game.lastMove?.to ? `slide-${game.moves.length}` : 'seated'}
+                className={`checkers-board__piece checkers-board__piece--${piece.toLowerCase() === 'r' ? 'player' : 'opponent'}${slide && square === game.lastMove?.to ? ' is-sliding' : ''}`}
+                style={slide && square === game.lastMove?.to ? {
+                  '--ck-slide-x': slide.dx,
+                  '--ck-slide-y': slide.dy,
+                  '--ck-slide-ms': `${slideMs}ms`,
+                } : undefined}
+              >
                 {piece === piece.toUpperCase() && <span className="checkers-board__crown">♛</span>}
               </span>
             )}
@@ -151,7 +172,15 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
   const { thinking } = useOpponentReply({
     enabled: opponentEnabled,
     thinkMs,
-    resetKey: gameSessionId,
+    // The ply and the forced-jump square are part of the key, not just the
+    // game id. `enabled` is `turn === 2`, and after an opponent CAPTURE with
+    // another jump available the engine leaves `forcedFrom` set and `turn` AT
+    // 2 (engine.mjs: `turn = forcedFrom === null ? swap : game.turn`). So
+    // `enabled` never toggled, the effect never re-ran, and the opponent
+    // stopped halfway through a double jump — the board stayed on its turn
+    // forever and every key the player pressed was discarded as
+    // `not-your-turn`. Any opponent multi-jump hung the game.
+    resetKey: `${gameSessionId}:${moves.length}:${game.forcedFrom ?? '-'}`,
     request: () => checkersClient.requestMove({ transcript: { moves }, level, gameSessionId, userId }),
     onReply: (answer) => {
       if (!answer?.move) noteLocalPractice();
@@ -168,14 +197,33 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
   }, [game.status.gameOver, game.turn, thinking]);
 
   useEffect(() => {
-    if (game.status.gameOver || game.turn !== 1 || thinking) return;
+    // Every one of these swallows the player's input. Silently, until now: a
+    // finished board re-entered from the launcher looks identical to a working
+    // one, and "I can't move" produced not a single log line to explain it.
+    // Sampled because it is evaluated on every note event.
+    if (game.status.gameOver || game.turn !== 1 || thinking) {
+      if (activeNotes.size > 0) {
+        logger.sampled('checkers.input-ignored', {
+          reason: game.status.gameOver ? 'game-over' : thinking ? 'opponent-thinking' : 'not-your-turn',
+          turn: game.turn, ply: game.moves?.length ?? null,
+        }, { maxPerMinute: 6, aggregate: true });
+      }
+      return;
+    }
     if (activeNotes.size === 0) { latchedRef.current = false; return; }
     if (latchedRef.current) return;
     if (activeNotes.size >= HINT_CLUSTER) {
-      const suggestion = chooseMove(game, { level });
+      // A HINT is not an opponent move. It used to be searched at the
+      // OPPONENT's level, and level 1 is depth 1 — `search(..., depth - 1)`
+      // with depth 1 never looks at the reply at all, so the "suggested" move
+      // walked pieces onto squares that were immediately jumped. Help that is
+      // deliberately weak is worse than none: the player trusts the glow and
+      // loses a piece for it. Chess already treats help this way — it asks for a
+      // genuine best move regardless of who it is playing against.
+      const suggestion = chooseMove(game, { level: HINT_SEARCH_LEVEL });
       setHint(suggestion);
       setMessage('Suggested move is glowing.');
-      logger.debug('checkers.hint', { from: suggestion?.from ?? null, to: suggestion?.to ?? null, level });
+      logger.info('checkers.hint', { from: suggestion?.from ?? null, to: suggestion?.to ?? null, level });
       latchedRef.current = true;
       return;
     }
@@ -201,8 +249,15 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
         setSelected(next.turn === 1 ? next.forcedFrom : null);
         setMessage(next.forcedFrom !== null ? 'Keep jumping with the same piece.' : null);
         setHint(null);
-        logger.debug('checkers.move', {
+        logger.info('checkers.move', {
           from: resolution.committed.from, to: resolution.committed.to, ply: next.moves.length,
+        });
+      } else {
+        // applyMove refused a move the resolver had already committed to. This
+        // path dropped the move and said nothing, which is indistinguishable
+        // from a dead keyboard.
+        logger.error('checkers.apply-failed', {
+          from: resolution.committed.from, to: resolution.committed.to, error: String(next.error),
         });
       }
     } else {
@@ -210,7 +265,7 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
       setMessage(resolution.rejection === 'select_source' ? "Play a glowing red piece's file and rank notes together."
         : resolution.rejection === 'select_destination' ? "Play a glowing destination's file and rank notes together." : null);
       if (resolution.rejection) {
-        logger.debug('checkers.rejected', { square, reason: resolution.rejection });
+        logger.info('checkers.rejected', { square, reason: resolution.rejection });
         // A refused address is still an address that did not land: the ladder
         // counts it, because accuracy is what it is judging.
         reading.record({ ok: false });
@@ -229,6 +284,12 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
     latchedRef.current = activeNotes.size > 0;
     resetSession();
   };
+
+  // No touchscreen on the office screen, so "Play again" is a dead end there:
+  // the board is finished and the only way out is the launcher combo. Any fresh
+  // key restarts. The keys still down from the winning move do not count — the
+  // player has to see who won first.
+  useAnyKeyToContinue({ enabled: game.status.gameOver, activeNotes, onContinue: restart });
 
   const opponentName = ladder?.current?.name ?? 'Button';
   const status = game.status.gameOver
@@ -353,7 +414,7 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
           <GameStatusBar
             aside={localPractice ? 'local practice' : null}
             action={game.status.gameOver && (
-              <GameButton variant="primary" onClick={restart}>Play again</GameButton>
+              <GameButton variant="primary" onClick={restart}>Play again — or press any key</GameButton>
             )}
           >
             {status}

@@ -90,3 +90,61 @@ describe('useSyncedPlaybackRate', () => {
     expect(result.current.rate).toBe(0.5);
   });
 });
+
+// The real path from a press to the element is asynchronous and multi-hop:
+// setPlaybackRate -> Player session state -> controller effect -> el.playbackRate
+// -> 'ratechange' -> setRate. The FakeMediaEl above collapses that to a
+// synchronous call, which is why the suite above never caught this.
+//
+// Prod evidence 2026-08-17: 84 of 462 presses produced NO change in the logged
+// rate, the worst run being 28 presses over 24.6s all logging '0.5'. A child
+// tapping ~1/s outruns the round trip, every press recomputes from the same
+// stale state, and the button reads as dead.
+class DeferredMediaEl extends EventTarget {
+  constructor(rate = 1) { super(); this.playbackRate = rate; this.pending = []; }
+  queueRate(next) { this.pending.push(next); }
+  flush() {
+    for (const r of this.pending) { this.playbackRate = r; this.dispatchEvent(new Event('ratechange')); }
+    this.pending = [];
+  }
+}
+
+describe('useSyncedPlaybackRate under a slow (realistic) apply path', () => {
+  it('advances one full step per press even when presses outrun the element', () => {
+    const el = new DeferredMediaEl(1);
+    const playerRef = { current: { setPlaybackRate: vi.fn((r) => el.queueRate(r)) } };
+    const { result } = renderHook(() => useSyncedPlaybackRate(el, playerRef));
+
+    // Three rapid taps before the element reports anything back.
+    act(() => { result.current.cycleRate(); });
+    act(() => { result.current.cycleRate(); });
+    act(() => { result.current.cycleRate(); });
+
+    // Each press must have asked for the NEXT slot: 1 -> 1.25 -> 1.5 -> 2.
+    expect(playerRef.current.setPlaybackRate.mock.calls.map((c) => c[0])).toEqual([1.25, 1.5, 2]);
+    // ...and the label must show where the user got to, not where it started.
+    expect(result.current.rate).toBe(2);
+
+    // When the element finally catches up it agrees; no fighting, no rebound.
+    act(() => { el.flush(); });
+    expect(el.playbackRate).toBe(2);
+    expect(result.current.rate).toBe(2);
+  });
+
+  it('a genuine external rate change still retargets the next cycle', () => {
+    const el = new DeferredMediaEl(1);
+    const playerRef = { current: { setPlaybackRate: vi.fn((r) => { el.playbackRate = r; el.dispatchEvent(new Event('ratechange')); }) } };
+    const { result } = renderHook(() => useSyncedPlaybackRate(el, playerRef));
+
+    act(() => { result.current.cycleRate(); });          // -> 1.25
+    expect(result.current.rate).toBe(1.25);
+
+    // Something outside the button moves the element (queued rate, remount).
+    act(() => { el.playbackRate = 2; el.dispatchEvent(new Event('ratechange')); });
+    expect(result.current.rate).toBe(2);
+
+    // The next press cycles from where the element REALLY is: after 2 comes 0.5.
+    act(() => { result.current.cycleRate(); });
+    expect(result.current.rate).toBe(0.5);
+  });
+});

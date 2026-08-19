@@ -32,7 +32,7 @@ const Player = lazy(() => import('../../../../Player/Player.jsx'));
 const EMPTY_NOTES = new Map();
 
 /** Custom student video player for a single piano lecture, with MIDI play-along. */
-export default function PianoVideoPlayer({ lecture, source, onBack, isSequential = false, engagementTimeoutSeconds = 90, engagementGateEnabled = true, onAutoAdvance = null }) {
+export default function PianoVideoPlayer({ lecture, source, onBack, isSequential = false, speedEnabled = false, engagementTimeoutSeconds = 90, engagementGateEnabled = true, onAutoAdvance = null }) {
   const playerRef = useRef(null);
   const ctrl = usePlayerController(playerRef);
   const { el: mediaEl, timedOut } = useResolvedMediaEl(playerRef);
@@ -345,6 +345,7 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
             rate={rate}
             loop={loop}
             isSequential={isSequential}
+            speedEnabled={speedEnabled}
             furthestWatched={furthestWatched}
             gateOpen={gateOpen}
             onToggle={ctrl.toggle}

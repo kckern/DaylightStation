@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation, useParams } from 'react-router-dom';
 import useDocumentTitle from '../hooks/useDocumentTitle.js';
 import getLogger, { configure as configureLogger } from '../lib/logging/Logger.js';
+import { attachPageLifecycleLogging } from '../lib/logging/pageLifecycle.js';
 import { launchAndroidTarget } from '../lib/fkb.js';
 import { DaylightAPI } from '../lib/api.mjs';
 import Icon from '../modules/Piano/ui/icons/Icon.jsx';
@@ -495,6 +496,11 @@ export default function PianoApp() {
   }, []);
   // Leaving the kiosk must not leave the rest of the SPA claiming to be it.
   useEffect(() => () => { configureLogger({ context: { sessionLog: false } }); }, []);
+
+  // Record the document's own suspend/resume transitions. The tablet WebView can
+  // pause media and throttle timers without the app ever hearing about it; when
+  // that happens these lines are the only evidence that the cause was external.
+  useEffect(() => attachPageLifecycleLogging({ app: PIANO_KIOSK_LOG_APP }), []);
 
   // Carries app + sessionLog explicitly (not just by inheritance) so this child
   // emits the session-log.start that opens a fresh file on the backend.

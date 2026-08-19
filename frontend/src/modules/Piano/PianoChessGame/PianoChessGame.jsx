@@ -22,7 +22,9 @@ import { playCue } from './chessSounds.js';
 import { onboardingCopy, onboardingStep, shouldOnboard } from './chessOnboarding.js';
 import { elapsedBySide, resolveTiming } from './chessClock.js';
 import { isPersistentUser } from '../PianoKiosk/pianoUser.js';
-import { usePianoMidi, usePianoMidiNotes } from '../PianoKiosk/PianoMidiContext.jsx';
+import { usePianoMidiOptional, usePianoMidiNotesOptional } from '../PianoKiosk/PianoMidiContext.jsx';
+import { useAnyKeyToContinue } from '../game-platform/input/useAnyKeyToContinue.js';
+import { keyFallbackNeeded } from '../game-platform/input/touchCapability.js';
 import { usePlayerLock } from '../PianoKiosk/PianoPlaybackContext.jsx';
 import {
   archiveGame, beaconArchive, fetchChessConfig, fetchLadder, requestBestMove, requestOpponentMove,
@@ -192,6 +194,10 @@ export function promptFor(state, rejection, hoveredChord = null, reading = false
 export function PianoChessGame({
   onDeactivate = null,
   gameConfig = null,
+  // Supplied by the game platform (PianoVisualizer). Absent only for kiosk
+  // callers that rely on PianoMidiProvider being above them.
+  activeNotes: activeNotesProp = null,
+  connected: connectedProp = null,
   currentUser = null,
   playerColor = gameConfig?.player_color ?? 'w',
   difficulty = gameConfig?.difficulty ?? 'learner',
@@ -300,8 +306,19 @@ export function PianoChessGame({
   const [gameSeed] = useState(() => (
     Number.isFinite(seed) ? Number(seed) >>> 0 : (Math.floor(Math.random() * 0xffffffff) >>> 0)
   ));
-  const { activeNotes } = usePianoMidiNotes();
-  const { connected } = usePianoMidi();
+  // Notes come from whoever mounts this game. The platform hands every game its
+  // `activeNotes` (PianoVisualizer does), and on the office screen that WS feed
+  // is the ONLY source — there is no PianoMidiProvider there, so reaching into
+  // the kiosk context threw and the game died on open the first time the note
+  // launcher made it reachable. Context is the fallback, for kiosk callers that
+  // mount it without passing notes.
+  const ctxNotes = usePianoMidiNotesOptional();
+  const midiCtx = usePianoMidiOptional();
+  const activeNotes = activeNotesProp ?? ctxNotes.activeNotes;
+  // No provider means no connection state to read. The visualizer only appears
+  // once notes are already flowing, so assume attached rather than nagging the
+  // player to connect a piano they are demonstrably playing.
+  const connected = connectedProp ?? midiCtx?.connected ?? true;
   const [game, setGame] = useState(() => createChessGameState({
     fen: fen ?? undefined, playerColor, scheme, seed: gameSeed, shuffleEachTurn,
   }));
@@ -763,6 +780,13 @@ export function PianoChessGame({
     }
     addressedPliesRef.current = game.history.length;
     readingLadder.record({ ok: true });
+    // Chess logged errors and nothing else — no record of a move ever landing.
+    // A game that stops accepting input looked identical to one nobody touched.
+    const last = game.history[game.history.length - 1];
+    logger().info('chess.move', {
+      from: last?.from ?? null, to: last?.to ?? null, san: last?.san ?? null,
+      ply: game.history.length, turn: game.turn ?? null,
+    });
   }, [game.history.length]);
 
   const rejection = game.rejection;
@@ -771,6 +795,11 @@ export function PianoChessGame({
   useEffect(() => {
     if (rejection?.seq === undefined) return;
     readingLadder.record({ ok: false });
+    // The reason is the whole point: "why won't it take my move" is otherwise
+    // unanswerable from outside the room.
+    logger().info('chess.rejected', {
+      reason: rejection.reason ?? null, square: rejection.square ?? null, ply: game.history.length,
+    });
   }, [rejection?.seq]);
   useEffect(() => {
     if (!rejection || !cues.toast) return undefined;
@@ -814,6 +843,15 @@ export function PianoChessGame({
     startedAtRef.current = Date.now();
     logger().info('restarted');
   }, [fen, gameSeed, playerColor, scheme, shuffleEachTurn, userId]);
+
+  // "Play again" is a button, and the office screen has no finger for it. Any
+  // fresh key restarts; the keys still down from the mating move do not count,
+  // so the result stays on screen long enough to read.
+  useAnyKeyToContinue({
+    enabled: keyFallbackNeeded(gameConfig) && !!game.status?.game_over,
+    activeNotes, onContinue: restart,
+  });
+
 
   /**
    * The rewind, budget first.

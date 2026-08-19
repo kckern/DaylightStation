@@ -333,7 +333,9 @@ const FitnessPlayerFooterSeekThumbnail = ({
               showSpark={showSpark}
             />
           )}
-          <span className="thumbnail-time">{label}</span>
+          {/* Absent, not empty: an empty span still carries its own padding and
+              background and would leave a blank chip under the first poster. */}
+          {label ? <span className="thumbnail-time">{label}</span> : null}
         </div>
       </div>
     </SingleThumbnailButton>

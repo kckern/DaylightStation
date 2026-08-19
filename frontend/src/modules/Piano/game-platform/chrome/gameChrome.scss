@@ -19,9 +19,25 @@
 
 /* Declared on BOTH the host and the fullscreen wrapper around it: a game owns
    its host, but the crash boundary and the loading skeleton replace the host
-   entirely and still have to be furniture from the same room. */
+   entirely and still have to be furniture from the same room.
+
+   `.tetris-fullscreen` is the office screen's equivalent of
+   `.piano-game-fullscreen` — PianoVisualizer's wrapper for a `replace` game.
+   It was missing from this list, so a game mounted there got NO cabinet tokens:
+   anything its own root styled with `--pg-*` (Space Invaders sets its text to
+   `--pg-ivory`) resolved to nothing. The kiosk had the palette and the office
+   screen did not, which is why the same game looked right in one place and
+   unfinished in the other. */
 .piano-game-host,
-.piano-game-fullscreen {
+.piano-game-fullscreen,
+.tetris-fullscreen,
+/* The launcher and its hold ring are SIBLINGS of the game wrapper, not children
+   — they have to survive the game closing — so they need the palette declared
+   on them directly or every `--pg-*` they name resolves to nothing. They used to
+   carry their own invented brown/gold instead, which is why the picker looked
+   like it came from a different product. */
+.note-launcher,
+.nl-hold {
   /* --- the cabinet --- */
   --pg-case: var(--piano-bg, #16161b);
   --pg-shelf: var(--piano-surface, #1f1f26);

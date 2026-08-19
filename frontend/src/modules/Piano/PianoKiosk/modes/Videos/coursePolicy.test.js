@@ -5,26 +5,30 @@ import { resolveCoursePolicy, nextLectureAfter } from './coursePolicy.js';
 describe('resolveCoursePolicy', () => {
   const cfg = {
     user_policies: {
-      kckern: { engagement_gate: false, auto_advance: true },
+      kckern: { engagement_gate: false, auto_advance: true, allow_speed: true },
       user_2: { engagement_gate: true },
     },
   };
 
   it('defaults: gate on, no auto-advance', () => {
-    expect(resolveCoursePolicy(cfg, 'user_3')).toEqual({ engagementGate: true, autoAdvance: false });
+    expect(resolveCoursePolicy(cfg, 'user_3')).toEqual({ engagementGate: true, autoAdvance: false, allowSpeed: false });
   });
 
   it('kckern: gate off, auto-advance on', () => {
-    expect(resolveCoursePolicy(cfg, 'kckern')).toEqual({ engagementGate: false, autoAdvance: true });
+    expect(resolveCoursePolicy(cfg, 'kckern')).toEqual({ engagementGate: false, autoAdvance: true, allowSpeed: true });
+  });
+
+  it('withholds speed unless the user entry explicitly grants it', () => {
+    expect(resolveCoursePolicy(cfg, 'user_2').allowSpeed).toBe(false);
   });
 
   it('partial entry only overrides what it names', () => {
-    expect(resolveCoursePolicy(cfg, 'user_2')).toEqual({ engagementGate: true, autoAdvance: false });
+    expect(resolveCoursePolicy(cfg, 'user_2')).toEqual({ engagementGate: true, autoAdvance: false, allowSpeed: false });
   });
 
   it('tolerates missing config and missing user', () => {
-    expect(resolveCoursePolicy(null, 'kckern')).toEqual({ engagementGate: true, autoAdvance: false });
-    expect(resolveCoursePolicy({}, null)).toEqual({ engagementGate: true, autoAdvance: false });
+    expect(resolveCoursePolicy(null, 'kckern')).toEqual({ engagementGate: true, autoAdvance: false, allowSpeed: false });
+    expect(resolveCoursePolicy({}, null)).toEqual({ engagementGate: true, autoAdvance: false, allowSpeed: false });
   });
 });
 

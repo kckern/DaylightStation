@@ -1,0 +1,84 @@
+/* Names the player just chosen, large enough to read from wherever the piano is.
+   Non-blocking: `pointer-events: none` and nothing waits on it — the next key
+   press belongs to the game row underneath, not to this. */
+.player-confirm {
+  position: absolute;
+  inset: 0;
+  z-index: 120;              /* over the launcher (60), under the spam overlays */
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  background: rgb(0 0 0 / 45%);
+  animation: player-confirm-fade 1600ms ease-out forwards;
+
+  &__card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 2.2rem 3rem;
+    border-radius: 1.4rem;
+    background: var(--pg-shelf, #1f1f26);
+    border: 1px solid var(--pg-hairline, #34343f);
+    box-shadow: 0 1.6rem 4rem rgb(0 0 0 / 60%);
+    font-family: 'Roboto Condensed', sans-serif;
+    animation: player-confirm-pop 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  &__avatar {
+    width: clamp(6rem, 12vw, 10rem);
+    aspect-ratio: 1;
+
+    .piano-avatar {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      object-fit: cover;
+      display: block;
+      /* A ring in the accent so the face reads as SELECTED rather than merely
+         shown — this is a confirmation, not a portrait. */
+      box-shadow: 0 0 0 4px var(--pg-brass, #5fe39a);
+    }
+
+    .piano-avatar--fallback {
+      display: grid;
+      place-items: center;
+      background: var(--pg-case, #16161b);
+      color: var(--pg-ivory, #f1f1f4);
+      font-weight: 700;
+      font-size: clamp(2rem, 4vw, 3.4rem);
+    }
+  }
+
+  &__name {
+    font-size: clamp(1.6rem, 3vw, 2.6rem);
+    font-weight: 700;
+    color: var(--pg-ivory, #f1f1f4);
+    letter-spacing: 0.02em;
+  }
+
+  &__caption {
+    font-size: 0.95rem;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--pg-brass, #5fe39a);
+  }
+}
+
+/* Holds long enough to read, then clears itself — the player is trying to start
+   a game, not admire a card. */
+@keyframes player-confirm-fade {
+  0%, 72% { opacity: 1; }
+  100%    { opacity: 0; }
+}
+
+@keyframes player-confirm-pop {
+  from { transform: scale(0.88); opacity: 0; }
+  to   { transform: none; opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .player-confirm,
+  .player-confirm__card { animation-duration: 1ms; animation-delay: 1400ms; }
+}
